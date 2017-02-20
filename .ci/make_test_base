@@ -1,0 +1,77 @@
+#!/usr/bin/env python
+"""
+Receives one parameter - PGDATA directory
+Creates test base using first initdb found in the PATH 
+Searches contrib directory for additional directives to 
+put into postgresql conf.
+
+On success, starts database
+"""
+import os,sys,subprocess,glob,re,os.path,time
+
+if len(sys.argv)!=2:
+    print >>sys.stderr,"Usage %s data-directory" % sys.argv[0]
+    sys.exit(1)
+
+datadir=sys.argv[1]
+
+if os.access(datadir,os.R_OK):
+    import shutil
+    shutil.rmtree(datadir)
+os.mkdir(datadir)
+env=os.environ.copy()
+env["LANG"]="C"
+with open("initdb.log","w") as f:
+    exitcode=subprocess.call(["initdb","-E","UTF8",datadir],env=env,stdout=f,stderr=subprocess.STDOUT)
+if exitcode:
+    sys.exit(exitcode)
+# Collect extra config option
+addopts={}
+for module in glob.glob("contrib/*"):
+    if not os.path.isdir(module):
+        continue
+    if not os.access(module+"/Makefile",os.R_OK):
+        continue
+    with open(module+"/Makefile","r") as makefile:
+        var={"top_srcdir":os.getcwd()}
+        for line in makefile:
+            m=re.match("\s*(\w+)\s*=\s*(.*)",line)
+            if m:
+                var[m.group(1)]=m.group(2)
+    if "EXTRA_REGRESS_OPTS" in var:
+        m=re.search("--temp-config=(\S+)",var["EXTRA_REGRESS_OPTS"])
+        if m:
+            filename=re.sub("\\$[{(](\w+)[})]",lambda m: var[m.group(1)],m.group(1))
+            with open(filename,"r") as config:
+                for line in config:
+                    m=re.match("(\w\S*\w)\s*=\s*(\S.*)\s*",line)
+                    if m:
+                        opt=m.group(1)
+                        value=m.group(2)
+                        if opt in addopts:
+                            if value[0]=="'":
+                                addopts[opt]=addopts[opt][:-1]+", "+value[1:]
+                            else:
+                                addopts[opt]+=", ".value
+                        else:
+                            addopts[opt]=value
+                                
+if addopts:                     
+    with open(datadir+"/postgresql.conf","a") as f:
+        for opt,value in addopts.items():
+            print >> f,"%s=%s"%(opt,value)
+with open("initdb.log","a") as f:
+    exitcode=subprocess.call(["pg_ctl","start","-D",datadir,"-l",datadir+"/postmaster.log"],env=env,stdout=f,stderr=subprocess.STDOUT)
+if exitcode:
+    sys.exit(exitcode)
+
+failtime=time.time()+60
+print "Waiting for database to start"
+while time.time() < failtime:
+    exitcode=subprocess.call(["psql","postgres","-c","select version()"],stderr=subprocess.STDOUT)
+    if exitcode == 0:
+        sys.exit(0)
+print >>sys.stderr,"Database havent't started in 60 seconds"
+sys.exit(1)
+
+

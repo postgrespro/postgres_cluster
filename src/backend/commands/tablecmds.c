@@ -20,6 +20,7 @@
 #include "access/reloptions.h"
 #include "access/relscan.h"
 #include "access/sysattr.h"
+#include "access/tupconvert.h"
 #include "access/xact.h"
 #include "access/xlog.h"
 #include "catalog/catalog.h"
@@ -57,6 +58,7 @@
 #include "commands/trigger.h"
 #include "commands/typecmds.h"
 #include "commands/user.h"
+#include "commands/partition.h"
 #include "executor/executor.h"
 #include "foreign/foreign.h"
 #include "miscadmin.h"
@@ -718,6 +720,12 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 	 * visible to anyone else anyway, until commit).
 	 */
 	relation_close(rel, NoLock);
+
+	/* Handle partitioning */
+	if (stmt->partition_info)
+	{
+		(void) create_partitions(stmt->partition_info, rel->rd_id, PDT_NONE);
+	}
 
 	return address;
 }
@@ -3059,6 +3067,16 @@ AlterTableGetLockLevel(List *cmds)
 				cmd_lockmode = AlterTableGetRelOptionsLockLevel((List *) cmd->def);
 				break;
 
+			/* TODO: determine lockmode */
+			case AT_AddPartition:
+			case AT_MergePartitions:
+			case AT_SplitPartition:
+			case AT_RenamePartition:
+			case AT_DropPartition:
+			case AT_MovePartition:
+			case AT_SetInterval:
+				break;
+
 			default:			/* oops */
 				elog(ERROR, "unrecognized alter table type: %d",
 					 (int) cmd->subtype);
@@ -3384,6 +3402,17 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
 			/* No command-specific prep needed */
 			pass = AT_PASS_MISC;
 			break;
+
+		case AT_AddPartition:
+		case AT_MergePartitions:
+		case AT_SplitPartition:
+		case AT_RenamePartition:
+		case AT_DropPartition:
+		case AT_MovePartition:
+		case AT_SetInterval:
+			pass = AT_PASS_MISC;
+			break;
+
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
 				 (int) cmd->subtype);
@@ -3705,6 +3734,27 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab, Relation rel,
 			break;
 		case AT_GenericOptions:
 			ATExecGenericOptions(rel, (List *) cmd->def);
+			break;
+		case AT_AddPartition:
+			AtExecAddRangePartition(rel->rd_id, cmd);
+			break;
+		case AT_MergePartitions:
+			AtExecMergePartitions(rel, cmd->partitions);
+			break;
+		case AT_SplitPartition:
+			AtExecSplitPartition(rel->rd_id, cmd);
+			break;
+		case AT_RenamePartition:
+			rename_partition(rel->rd_id, cmd);
+			break;
+		case AT_DropPartition:
+			drop_partition(rel->rd_id, cmd);
+			break;
+		case AT_MovePartition:
+			move_partition(rel->rd_id, cmd);
+			break;
+		case AT_SetInterval:
+			partitioned_table_set_interval(rel->rd_id, cmd);
 			break;
 		default:				/* oops */
 			elog(ERROR, "unrecognized alter table type: %d",
@@ -6206,7 +6256,7 @@ ATAddCheckConstraint(List **wqueue, AlteredTableInfo *tab, Relation rel,
 
 	/*
 	 * Check if ONLY was specified with ALTER TABLE.  If so, allow the
-	 * contraint creation only if there are no children currently.  Error out
+	 * constraint creation only if there are no children currently.  Error out
 	 * otherwise.
 	 */
 	if (!recurse && children != NIL)
@@ -8049,12 +8099,69 @@ ATPrepAlterColumnType(List **wqueue,
 	ReleaseSysCache(tuple);
 
 	/*
-	 * The recursion case is handled by ATSimpleRecursion.  However, if we are
-	 * told not to recurse, there had better not be any child tables; else the
-	 * alter would put them out of step.
+	 * Recurse manually by queueing a new command for each child, if
+	 * necessary. We cannot apply ATSimpleRecursion here because we need to
+	 * remap attribute numbers in the USING expression, if any.
+	 *
+	 * If we are told not to recurse, there had better not be any child
+	 * tables; else the alter would put them out of step.
 	 */
 	if (recurse)
-		ATSimpleRecursion(wqueue, rel, cmd, recurse, lockmode);
+	{
+		Oid			relid = RelationGetRelid(rel);
+		ListCell   *child;
+		List	   *children;
+
+		children = find_all_inheritors(relid, lockmode, NULL);
+
+		/*
+		 * find_all_inheritors does the recursive search of the inheritance
+		 * hierarchy, so all we have to do is process all of the relids in the
+		 * list that it returns.
+		 */
+		foreach(child, children)
+		{
+			Oid			childrelid = lfirst_oid(child);
+			Relation	childrel;
+
+			if (childrelid == relid)
+				continue;
+
+			/* find_all_inheritors already got lock */
+			childrel = relation_open(childrelid, NoLock);
+			CheckTableNotInUse(childrel, "ALTER TABLE");
+
+			/*
+			 * Remap the attribute numbers.  If no USING expression was
+			 * specified, there is no need for this step.
+			 */
+			if (def->cooked_default)
+			{
+				AttrNumber *attmap;
+				bool		found_whole_row;
+
+				/* create a copy to scribble on */
+				cmd = copyObject(cmd);
+
+				attmap = convert_tuples_by_name_map(RelationGetDescr(childrel),
+													RelationGetDescr(rel),
+								 gettext_noop("could not convert row type"));
+				((ColumnDef *) cmd->def)->cooked_default =
+					map_variable_attnos(def->cooked_default,
+										1, 0,
+										attmap, RelationGetDescr(rel)->natts,
+										&found_whole_row);
+				if (found_whole_row)
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						  errmsg("cannot convert whole-row table reference"),
+							 errdetail("USING expression contains a whole-row table reference.")));
+				pfree(attmap);
+			}
+			ATPrepCmd(wqueue, childrel, cmd, false, true, lockmode);
+			relation_close(childrel, NoLock);
+		}
+	}
 	else if (!recursing &&
 			 find_inheritance_children(RelationGetRelid(rel), NoLock) != NIL)
 		ereport(ERROR,
@@ -10417,6 +10524,39 @@ MergeAttributesIntoExisting(Relation child_rel, Relation parent_rel)
 		}
 	}
 
+	/*
+	 * If the parent has an OID column, so must the child, and we'd better
+	 * update the child's attinhcount and attislocal the same as for normal
+	 * columns.  We needn't check data type or not-nullness though.
+	 */
+	if (tupleDesc->tdhasoid)
+	{
+		/*
+		 * Here we match by column number not name; the match *must* be the
+		 * system column, not some random column named "oid".
+		 */
+		tuple = SearchSysCacheCopy2(ATTNUM,
+							   ObjectIdGetDatum(RelationGetRelid(child_rel)),
+									Int16GetDatum(ObjectIdAttributeNumber));
+		if (HeapTupleIsValid(tuple))
+		{
+			Form_pg_attribute childatt = (Form_pg_attribute) GETSTRUCT(tuple);
+
+			/* See comments above; these changes should be the same */
+			childatt->attinhcount++;
+			simple_heap_update(attrrel, &tuple->t_self, tuple);
+			CatalogUpdateIndexes(attrrel, tuple);
+			heap_freetuple(tuple);
+		}
+		else
+		{
+			ereport(ERROR,
+					(errcode(ERRCODE_DATATYPE_MISMATCH),
+					 errmsg("child table is missing column \"%s\"",
+							"oid")));
+		}
+	}
+
 	heap_close(attrrel, RowExclusiveLock);
 }
 
@@ -11368,6 +11508,12 @@ ATExecGenericOptions(Relation rel, List *options)
 	simple_heap_update(ftrel, &tuple->t_self, tuple);
 	CatalogUpdateIndexes(ftrel, tuple);
 
+	/*
+	 * Invalidate relcache so that all sessions will refresh any cached plans
+	 * that might depend on the old options.
+	 */
+	CacheInvalidateRelcache(rel);
+
 	InvokeObjectPostAlterHook(ForeignTableRelationId,
 							  RelationGetRelid(rel), 0);
 
@@ -12213,4 +12359,34 @@ RangeVarCallbackForAlterRelation(const RangeVar *rv, Oid relid, Oid oldrelid,
 						rv->relname)));
 
 	ReleaseSysCache(tuple);
+}
+
+/*
+ *
+ */
+void
+AtExecMergePartitions(Relation rel, List *rangevars)
+{
+	/*
+	 * The first element is a tablename to merge all partitions into. The rest
+	 * are partitions themselves
+	 */
+	PartitionNode  *into = linitial(rangevars);
+	List		   *partitions = list_copy_tail(rangevars, 1);
+
+	merge_range_partitions(partitions, into);
+}
+
+void
+AtExecAddRangePartition(Oid relid, AlterTableCmd *cmd)
+{
+	Assert(list_length(cmd->partitions) == 1);
+
+	add_range_partition(relid, linitial(cmd->partitions));
+}
+
+void
+AtExecSplitPartition(Oid relid, AlterTableCmd *cmd)
+{
+	split_range_partition(relid, cmd);
 }

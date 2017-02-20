@@ -20,15 +20,21 @@
 #include "datapagemap.h"
 
 /* directory exclusion list for backup mode listing */
-const char *pgdata_exclude[] =
+const char *pgdata_exclude_dir[] =
 {
 	"pg_xlog",
 	"pg_stat_tmp",
 	"pgsql_tmp",
-	"recovery.conf",
 	NULL,			/* arclog_path will be set later */
-	NULL,			/* 'pg_tblspc' will be set later */
-	NULL,			/* sentinel */
+	NULL,			/* pg_log will be set later */
+	NULL
+};
+
+static char *pgdata_exclude_files[] =
+{
+	"recovery.conf",
+	"postmaster.pid",
+	"postmaster.opts",
 	NULL
 };
 
@@ -92,6 +98,8 @@ pgFileNew(const char *path, bool omit_symlink)
 	file->ptrack_path = NULL;
 	file->segno = 0;
 	file->path = pgut_malloc(strlen(path) + 1);
+	file->generation = -1;
+	file->is_partial_copy = 0;
 	strcpy(file->path, path);		/* enough buffer size guaranteed */
 
 	return file;
@@ -241,54 +249,55 @@ BlackListCompare(const void *str1, const void *str2)
  * List files, symbolic links and directories in the directory "root" and add
  * pgFile objects to "files".  We add "root" to "files" if add_root is true.
  *
- * If the sub-directory name is in "exclude" list, the sub-directory itself is
- * listed but the contents of the sub-directory is ignored.
- *
  * When omit_symlink is true, symbolic link is ignored and only file or
  * directory llnked to will be listed.
  */
 void
-dir_list_file(parray *files, const char *root, const char *exclude[], bool omit_symlink, bool add_root)
+dir_list_file(parray *files, const char *root, bool exclude, bool omit_symlink,
+			  bool add_root)
 {
-	char path[MAXPGPATH];
-	char buf[MAXPGPATH * 2];
-	char black_item[MAXPGPATH * 2];
-	parray *black_list = NULL;
+	parray	   *black_list = NULL;
+	char		path[MAXPGPATH];
 
 	join_path_components(path, backup_path, PG_BLACK_LIST);
-	if (root && pgdata && strcmp(root, pgdata) == 0 &&
-	    fileExists(path))
+	/* List files with black list */
+	if (root && pgdata && strcmp(root, pgdata) == 0 && fileExists(path))
 	{
-		FILE *black_list_file = NULL;
+		FILE	   *black_list_file = NULL;
+		char		buf[MAXPGPATH * 2];
+		char		black_item[MAXPGPATH * 2];
+
 		black_list = parray_new();
 		black_list_file = fopen(path, "r");
+
 		if (black_list_file == NULL)
-			elog(ERROR, "cannot open black_list: %s",
-				strerror(errno));
+			elog(ERROR, "cannot open black_list: %s", strerror(errno));
+
 		while (fgets(buf, lengthof(buf), black_list_file) != NULL)
 		{
 			join_path_components(black_item, pgdata, buf);
+
 			if (black_item[strlen(black_item) - 1] == '\n')
 				black_item[strlen(black_item) - 1] = '\0';
+
 			if (black_item[0] == '#' || black_item[0] == '\0')
 				continue;
+
 			parray_append(black_list, black_item);
 		}
+
 		fclose(black_list_file);
 		parray_qsort(black_list, BlackListCompare);
-		dir_list_file_internal(files, root, exclude, omit_symlink, add_root, black_list);
-		parray_qsort(files, pgFileComparePath);
 	}
-	else
-	{
-		dir_list_file_internal(files, root, exclude, omit_symlink, add_root, NULL);
-		parray_qsort(files, pgFileComparePath);
-	}
+
+	dir_list_file_internal(files, root, exclude, omit_symlink, add_root,
+						   black_list);
+	parray_qsort(files, pgFileComparePath);
 }
 
 void
-dir_list_file_internal(parray *files, const char *root, const char *exclude[],
-			bool omit_symlink, bool add_root, parray *black_list)
+dir_list_file_internal(parray *files, const char *root, bool exclude,
+					   bool omit_symlink, bool add_root, parray *black_list)
 {
 	pgFile *file;
 
@@ -304,7 +313,33 @@ dir_list_file_internal(parray *files, const char *root, const char *exclude[],
 	}
 
 	if (add_root)
+	{
+		/* Skip files */
+		if (!S_ISDIR(file->mode) && exclude)
+		{
+			char	    *file_name;
+			int			i;
+
+			/* Extract file name */
+			file_name = strrchr(file->path, '/');
+			if (file_name == NULL)
+				file_name = file->path;
+			else
+				file_name++;
+
+			/*
+			 * If the item in the exclude list starts with '/', compare to the
+			 * absolute path of the directory. Otherwise compare to the directory
+			 * name portion.
+			 */
+			for (i = 0; pgdata_exclude_files[i]; i++)
+				if (strcmp(file_name, pgdata_exclude_files[i]) == 0)
+					/* Skip */
+					return;
+		}
+
 		parray_append(files, file);
+	}
 
 	/* chase symbolic link chain and find regular file or directory */
 	while (S_ISLNK(file->mode))
@@ -350,45 +385,49 @@ dir_list_file_internal(parray *files, const char *root, const char *exclude[],
 	 */
 	while (S_ISDIR(file->mode))
 	{
-		int				i;
 		bool			skip = false;
 		DIR			    *dir;
 		struct dirent   *dent;
-		char		    *dirname;
 
-		/* skip entry which matches exclude list */
-	   	dirname = strrchr(file->path, '/');
-		if (dirname == NULL)
-			dirname = file->path;
-		else
-			dirname++;
-
-		/*
-		 * If the item in the exclude list starts with '/', compare to the
-		 * absolute path of the directory. Otherwise compare to the directory
-		 * name portion.
-		 */
-		for (i = 0; exclude && exclude[i]; i++)
+		if (exclude)
 		{
-			if (exclude[i][0] == '/')
-			{
-				if (strcmp(file->path, exclude[i]) == 0)
-				{
-					skip = true;
-					break;
-				}
-			}
+			int			i;
+			char	    *dirname;
+
+			/* skip entry which matches exclude list */
+			dirname = strrchr(file->path, '/');
+			if (dirname == NULL)
+				dirname = file->path;
 			else
+				dirname++;
+
+			/*
+			 * If the item in the exclude list starts with '/', compare to the
+			 * absolute path of the directory. Otherwise compare to the directory
+			 * name portion.
+			 */
+			for (i = 0; exclude && pgdata_exclude_dir[i]; i++)
 			{
-				if (strcmp(dirname, exclude[i]) == 0)
+				if (pgdata_exclude_dir[i][0] == '/')
 				{
-					skip = true;
-					break;
+					if (strcmp(file->path, pgdata_exclude_dir[i]) == 0)
+					{
+						skip = true;
+						break;
+					}
+				}
+				else
+				{
+					if (strcmp(dirname, pgdata_exclude_dir[i]) == 0)
+					{
+						skip = true;
+						break;
+					}
 				}
 			}
+			if (skip)
+				break;
 		}
-		if (skip)
-			break;
 
 		/* open directory and list contents */
 		dir = opendir(file->path);
@@ -510,17 +549,20 @@ dir_print_file_list(FILE *out, const parray *files, const char *root, const char
 			type = '?';
 
 		fprintf(out, "%s %c %lu %u 0%o", path, type,
-			(unsigned long) file->write_size,
-			file->crc, file->mode & (S_IRWXU | S_IRWXG | S_IRWXO));
+				(unsigned long) file->write_size,
+				file->crc, file->mode & (S_IRWXU | S_IRWXG | S_IRWXO));
 
 		if (S_ISLNK(file->mode))
-			fprintf(out, " %s\n", file->linked);
+			fprintf(out, " %s", file->linked);
 		else
 		{
 			char timestamp[20];
 			time2iso(timestamp, 20, file->mtime);
-			fprintf(out, " %s\n", timestamp);
+			fprintf(out, " %s", timestamp);
 		}
+
+		fprintf(out, " " UINT64_FORMAT " %d\n",
+				file->generation, file->is_partial_copy);
 	}
 }
 
@@ -546,6 +588,8 @@ dir_read_file_list(const char *root, const char *file_txt)
 	{
 		char			path[MAXPGPATH];
 		char			type;
+		int				generation = -1;
+		int				is_partial_copy = 0;
 		unsigned long	write_size;
 		pg_crc32		crc;
 		unsigned int	mode;	/* bit length of mode_t depends on platforms */
@@ -553,14 +597,23 @@ dir_read_file_list(const char *root, const char *file_txt)
 		pgFile			*file;
 
 		memset(&tm, 0, sizeof(tm));
-		if (sscanf(buf, "%s %c %lu %u %o %d-%d-%d %d:%d:%d",
+		if (sscanf(buf, "%s %c %lu %u %o %d-%d-%d %d:%d:%d %d %d",
 			path, &type, &write_size, &crc, &mode,
 			&tm.tm_year, &tm.tm_mon, &tm.tm_mday,
-			&tm.tm_hour, &tm.tm_min, &tm.tm_sec) != 11)
+			&tm.tm_hour, &tm.tm_min, &tm.tm_sec,
+			&generation, &is_partial_copy) != 13)
 		{
-			elog(ERROR, "invalid format found in \"%s\"",
-				file_txt);
+			/* Maybe the file_list we're trying to recovery is in old format */
+			if (sscanf(buf, "%s %c %lu %u %o %d-%d-%d %d:%d:%d",
+				path, &type, &write_size, &crc, &mode,
+				&tm.tm_year, &tm.tm_mon, &tm.tm_mday,
+				&tm.tm_hour, &tm.tm_min, &tm.tm_sec) != 11)
+			{
+				elog(ERROR, "invalid format found in \"%s\"",
+					file_txt);
+			}
 		}
+
 		if (type != 'f' && type != 'F' && type != 'd' && type != 'l')
 		{
 			elog(ERROR, "invalid type '%c' found in \"%s\"",
@@ -581,6 +634,8 @@ dir_read_file_list(const char *root, const char *file_txt)
 		file->mode = mode |
 			((type == 'f' || type == 'F') ? S_IFREG :
 			 type == 'd' ? S_IFDIR : type == 'l' ? S_IFLNK : 0);
+		file->generation = generation;
+		file->is_partial_copy = is_partial_copy;
 		file->size = 0;
 		file->read_size = 0;
 		file->write_size = write_size;
@@ -627,30 +682,34 @@ dir_read_file_list(const char *root, const char *file_txt)
 	return files;
 }
 
-/* copy contents of directory from_root into to_root */
+/*
+ * Copy contents of directory from_root into to_root.
+ */
 void
 dir_copy_files(const char *from_root, const char *to_root)
 {
-	int		i;
-	parray *files = parray_new();
+	size_t		i;
+	parray	   *files = parray_new();
 
 	/* don't copy root directory */
-	dir_list_file(files, from_root, NULL, true, false);
+	dir_list_file(files, from_root, false, true, false);
 
 	for (i = 0; i < parray_num(files); i++)
 	{
-		pgFile *file = (pgFile *) parray_get(files, i);
+		pgFile	   *file = (pgFile *) parray_get(files, i);
 
 		if (S_ISDIR(file->mode))
 		{
-			char to_path[MAXPGPATH];
-			join_path_components(to_path, to_root, file->path + strlen(from_root) + 1);
+			char		to_path[MAXPGPATH];
+
+			join_path_components(to_path, to_root,
+								 file->path + strlen(from_root) + 1);
+
 			if (verbose && !check)
 				elog(LOG, "creating directory \"%s\"",
 					 file->path + strlen(from_root) + 1);
 			if (!check)
 				dir_create_dir(to_path, DIR_PERMISSION);
-			continue;
 		}
 		else if (S_ISREG(file->mode))
 		{

@@ -1,5 +1,4 @@
 \echo Use "CREATE EXTENSION fulleq" to load this file. \quit
-
 SET search_path = public;
 -- For bool
 
@@ -702,3 +701,4 @@ CREATE OPERATOR CLASS timetz_fill_ops
  FOR TYPE timetz USING hash AS
 	OPERATOR	1	==,
 	FUNCTION	1	fullhash_timetz(timetz);
+

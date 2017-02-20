@@ -2040,7 +2040,7 @@ CommitTransaction(void)
 		 * If there weren't any, we are done ... otherwise loop back to check
 		 * if they queued deferred triggers.  Lather, rinse, repeat.
 		 */
-		if (!PreCommit_Portals(false))
+		if (getNestLevelATX() != 0 || !PreCommit_Portals(false))
 			break;
 	}
 
@@ -2280,7 +2280,7 @@ PrepareTransaction(void)
 		 * If there weren't any, we are done ... otherwise loop back to check
 		 * if they queued deferred triggers.  Lather, rinse, repeat.
 		 */
-		if (!PreCommit_Portals(true))
+		if (getNestLevelATX() != 0 || !PreCommit_Portals(false))
 			break;
 	}
 
@@ -2825,7 +2825,7 @@ CommitTransactionCommand(void)
 			 * These shouldn't happen.  TBLOCK_DEFAULT means the previous
 			 * StartTransactionCommand didn't set the STARTED state
 			 * appropriately, while TBLOCK_PARALLEL_INPROGRESS should be ended
-			 * by EndParallelWorkerTranaction(), not this function.
+			 * by EndParallelWorkerTransaction(), not this function.
 			 */
 		case TBLOCK_DEFAULT:
 		case TBLOCK_PARALLEL_INPROGRESS:

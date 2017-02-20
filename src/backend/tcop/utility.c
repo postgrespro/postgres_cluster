@@ -39,6 +39,7 @@
 #include "commands/explain.h"
 #include "commands/extension.h"
 #include "commands/matview.h"
+#include "commands/partition.h"
 #include "commands/lockcmds.h"
 #include "commands/policy.h"
 #include "commands/portalcmds.h"
@@ -1062,6 +1063,17 @@ ProcessUtilitySlow(Node *parsetree,
 				}
 				break;
 
+			case T_PartitionStmt:
+				{
+					Oid		relid;
+					PartitionStmt *pstmt = (PartitionStmt *) parsetree;
+
+					relid = RangeVarGetRelid(pstmt->relation, NoLock, false);
+					create_partitions(pstmt->pinfo,
+									  relid,
+									  pstmt->concurrent ? PDT_CONCURRENT : PDT_REGULAR);
+				}
+				break;
 			case T_AlterTableStmt:
 				{
 					AlterTableStmt *atstmt = (AlterTableStmt *) parsetree;
@@ -1482,7 +1494,13 @@ ProcessUtilitySlow(Node *parsetree,
 				break;
 
 			case T_AlterTSConfigurationStmt:
-				address = AlterTSConfiguration((AlterTSConfigurationStmt *) parsetree);
+				AlterTSConfiguration((AlterTSConfigurationStmt *) parsetree);
+				/*
+				 * Commands are stashed in MakeConfigurationMapping and
+				 * DropConfigurationMapping, which are called from
+				 * AlterTSConfiguration
+				 */
+				commandCollected = true;
 				break;
 
 			case T_AlterTableMoveAllStmt:
@@ -2245,6 +2263,10 @@ CreateCommandTag(Node *parsetree)
 
 		case T_AlterTableStmt:
 			tag = AlterObjectTypeCommandTag(((AlterTableStmt *) parsetree)->relkind);
+			break;
+
+		case T_PartitionStmt:
+			tag = "ALTER TABLE";
 			break;
 
 		case T_AlterDomainStmt:

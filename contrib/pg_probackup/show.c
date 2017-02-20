@@ -29,7 +29,7 @@ do_show(time_t backup_id)
 	{
 		pgBackup *backup;
 
-		backup = catalog_get_backup(backup_id);
+		backup = read_backup(backup_id);
 		if (backup == NULL)
 		{
 			char timestamp[100];
@@ -58,6 +58,27 @@ do_show(time_t backup_id)
 		parray_walk(backup_list, pgBackupFree);
 		parray_free(backup_list);
 	}
+
+	return 0;
+}
+
+/*
+ * Show backup catalog retention policy configuration.
+ */
+int
+do_retention_show(void)
+{
+	if (retention_redundancy == 0 && retention_window == 0)
+	{
+		fprintf(stdout, "No retention policy is set\n");
+		return 0;
+	}
+
+	fprintf(stdout, "# retention policy\n");
+	if (retention_redundancy > 0)
+		fprintf(stdout, "REDUNDANCY=%u\n", retention_redundancy);
+	if (retention_window > 0)
+		fprintf(stdout, "WINDOW=%u\n", retention_window);
 
 	return 0;
 }
@@ -174,13 +195,14 @@ show_backup_list(FILE *out, parray *backup_list)
 		pgBackup *backup;
 		const char *modes[] = { "", "PAGE", "PTRACK", "FULL", "", "PAGE+STREAM", "PTRACK+STREAM", "FULL+STREAM"};
 		TimeLineID  parent_tli;
-		char timestamp[20];
+		char timestamp[20] = "----";
 		char duration[20] = "----";
 		char data_bytes_str[10] = "----";
 
 		backup = parray_get(backup_list, i);
 
-		time2iso(timestamp, lengthof(timestamp), backup->recovery_time);
+		if (backup->recovery_time != (time_t) 0)
+			time2iso(timestamp, lengthof(timestamp), backup->recovery_time);
 		if (backup->end_time != (time_t) 0)
 			snprintf(duration, lengthof(duration), "%lum",
 				(backup->end_time - backup->start_time) / 60);

@@ -1350,7 +1350,7 @@ select * from WSlot order by slotname;
 
 --
 -- Install the central phone system and create the phone numbers.
--- They are weired on insert to the patchfields. Again the
+-- They are wired on insert to the patchfields. Again the
 -- triggers automatically tell the PSlots to update their
 -- backlink field.
 --
@@ -4448,5 +4448,28 @@ do $$
 declare v_test plpgsql_domain := 1;
 begin
   v_test := 0;  -- fail
+end;
+$$;
+
+-- Test handling of expanded array passed to a domain constraint (bug #14472)
+
+create function plpgsql_arr_domain_check(val int[]) returns boolean as $$
+begin return val[1] > 0; end
+$$ language plpgsql immutable;
+
+create domain plpgsql_arr_domain as int[] check(plpgsql_arr_domain_check(value));
+
+do $$
+declare v_test plpgsql_arr_domain;
+begin
+  v_test := array[1];
+  v_test := v_test || 2;
+end;
+$$;
+
+do $$
+declare v_test plpgsql_arr_domain := array[1];
+begin
+  v_test := 0 || v_test;  -- fail
 end;
 $$;

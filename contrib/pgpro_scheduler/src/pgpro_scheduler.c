@@ -13,15 +13,17 @@
 #include "pg_config.h"
 #include "fmgr.h"
 #include "pgstat.h"
-#include "utils/builtins.h"
 #include "executor/spi.h"
 #include "tcop/utility.h"
 #include "lib/stringinfo.h"
+#include "catalog/pg_type.h"
 #include "access/xact.h"
 #include "utils/snapmgr.h"
 #include "utils/datetime.h"
+#include "utils/builtins.h"
 #include "catalog/pg_db_role_setting.h"
 #include "commands/dbcommands.h"
+
 
 #include "char_array.h"
 #include "sched_manager_poll.h"
@@ -40,12 +42,14 @@ volatile sig_atomic_t got_sighup = false;
 volatile sig_atomic_t got_sigterm = false;
 
 /* Custom GUC variables */
-static char *scheduler_databases = NULL;
-static char *scheduler_nodename = NULL;
-static char *scheduler_transaction_state = NULL;
-static int  scheduler_max_workers = 2;
-static bool scheduler_service_enabled = false;
-static char *scheduler_schema = NULL;
+char *scheduler_databases = NULL;
+char *scheduler_nodename = NULL;
+char *scheduler_transaction_state = NULL;
+int  scheduler_max_workers = 2;
+int  scheduler_max_parallel_workers = 2;
+int  scheduler_worker_job_limit = 1;
+bool scheduler_service_enabled = false;
+char *scheduler_schema = NULL;
 /* Custom GUC done */
 
 extern void
@@ -89,7 +93,7 @@ void reload_db_role_config(char *dbname)
 	CommitTransactionCommand();
 }
 
-TimestampTz timestamp_add_seconds(TimestampTz to, int add)
+TimestampTz timestamp_add_seconds(TimestampTz to, int64 add)
 {
 	if(to == 0) to = GetCurrentTimestamp();
 #ifdef HAVE_INT64_TIMESTAMP
@@ -107,17 +111,18 @@ int get_integer_from_string(char *s, int start, int len)
 	return atoi(buff);
 }
 
-char *make_date_from_timestamp(TimestampTz ts)
+char *make_date_from_timestamp(TimestampTz ts, bool hires)
 {
 	struct pg_tm dt;
-	char *str = worker_alloc(sizeof(char) * 17);
+	char *str = worker_alloc(sizeof(char) * 20);
 	int tz;
 	fsec_t fsec;
 	const char *tzn;
 
 	timestamp2tm(ts, &tz, &dt, &fsec, &tzn, NULL ); 
-	sprintf(str, "%04d-%02d-%02d %02d:%02d", dt.tm_year , dt.tm_mon,
-			dt.tm_mday, dt.tm_hour, dt.tm_min);
+	sprintf(str, "%04d-%02d-%02d %02d:%02d:%02d", dt.tm_year , dt.tm_mon,
+			dt.tm_mday, dt.tm_hour, dt.tm_min, dt.tm_sec);
+	if(!hires) str[16] = 0;
 	return str;
 }
 
@@ -157,6 +162,29 @@ bool is_scheduler_enabled(void)
 	opt = GetConfigOption("schedule.enabled", false, true);
 	if(memcmp(opt, "on", 2) == 0) return true;
 	return false;
+}
+
+char *set_schema(const char *name, bool get_old)
+{
+	char *schema_name = NULL;
+	char *current = NULL;
+	bool free_name = false;
+
+	if(get_old)
+		current = _copy_string((char *)GetConfigOption("search_path", true, false));
+	if(name)
+	{
+		schema_name = (char *)name;
+	}
+	else
+	{
+		schema_name = _copy_string((char *)GetConfigOption("schedule.schema", true, false));	
+		free_name = true;
+	}
+	SetConfigOption("search_path", schema_name,  PGC_USERSET, PGC_S_SESSION);
+	if(free_name) pfree(schema_name);
+
+	return current;
 }
 
 
@@ -278,9 +306,11 @@ void parent_scheduler_main(Datum arg)
 	schd_manager_share_t *shared;
 	bool refresh = false;
 
-	init_worker_mem_ctx("Parent scheduler context");
+	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
 
-	/*CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");*/
+	init_worker_mem_ctx("Parent scheduler context");
+	elog(LOG, "Start PostgresPro scheduler."); 
+
 	SetConfigOption("application_name", "pgp-s supervisor", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "Initialize");
 	pqsignal(SIGHUP, worker_spi_sighup);
@@ -380,19 +410,17 @@ pg_scheduler_startup(void)
 {
 	BackgroundWorker worker;
 
-	elog(LOG, "Start PostgresPro scheduler");
-
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_restart_time = BGW_NEVER_RESTART;
-	worker.bgw_main = parent_scheduler_main;
+	worker.bgw_main = NULL;
 	worker.bgw_notify_pid = 0;
-	worker.bgw_main_arg = 0;
-	strcpy(worker.bgw_name, "pgpro scheduler");
-
-	/* elog(LOG, "Register WORKER"); */
-
+	worker.bgw_main_arg = Int32GetDatum(0);
+	worker.bgw_extra[0] = 0;
+	memcpy(worker.bgw_function_name, "parent_scheduler_main", 22);
+	memcpy(worker.bgw_library_name, "pgpro_scheduler", 16);
+	memcpy(worker.bgw_name, "pgpro scheduler", 16);
 
 	RegisterBackgroundWorker(&worker); 
 }
@@ -455,9 +483,23 @@ void _PG_init(void)
 	);
 	DefineCustomIntVariable(
 		"schedule.max_workers",
-		"How much workers can serve scheduler on one database",
+		"How much workers can serve scheduled jobs on one database",
 		NULL,
 		&scheduler_max_workers,
+		2,
+		1,
+		100,
+		PGC_SUSET,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+	DefineCustomIntVariable(
+		"schedule.max_parallel_workers",
+		"How much workers can serve at jobs on one database",
+		NULL,
+		&scheduler_max_parallel_workers,
 		2,
 		1,
 		100,
@@ -479,53 +521,21 @@ void _PG_init(void)
 		NULL,
 		NULL
 	);
+	DefineCustomIntVariable(
+		"schedule.worker_job_limit",
+		"How much job can worker serve before shutdown",
+		NULL,
+		&scheduler_worker_job_limit,
+		1,
+		1,
+		20000,
+		PGC_SUSET,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
 	pg_scheduler_startup();
-}
-
-PG_FUNCTION_INFO_V1(temp_now);
-Datum
-temp_now(PG_FUNCTION_ARGS)
-{
-	TimestampTz ts;
-	struct pg_tm info;
-	struct pg_tm cp;
-	int tz;
-	fsec_t fsec;
-	const char *tzn;
-	long int toff = 0;
-
-	if(!PG_ARGISNULL(0))
-	{
-		ts = PG_GETARG_TIMESTAMPTZ(0);
-	}
-	else
-	{
-		ts = GetCurrentTimestamp();
-	}
-
-	timestamp2tm(ts, &tz, &info, &fsec, &tzn, session_timezone );
-	info.tm_wday = j2day(date2j(info.tm_year, info.tm_mon, info.tm_mday));
-
-/*	elog(NOTICE, "WDAY: %d, MON: %d, MDAY: %d, HOUR: %d, MIN: %d, YEAR: %d (%ld)", 
-		info.tm_wday, info.tm_mon, info.tm_mday, info.tm_hour, info.tm_min,
-		info.tm_year, info.tm_gmtoff);
-	elog(NOTICE, "TZP: %d, ZONE: %s", tz, tzn); */
-
-	cp.tm_mon = info.tm_mon;
-	cp.tm_mday = info.tm_mday;
-	cp.tm_hour = info.tm_hour;
-	cp.tm_min = info.tm_min;
-	cp.tm_year = info.tm_year;
-	cp.tm_sec = info.tm_sec;
-
-	toff = DetermineTimeZoneOffset(&cp, session_timezone);
-/*	elog(NOTICE, "Detect: offset = %ld", toff); */
-
-	cp.tm_gmtoff = -toff;
-	tm2timestamp(&cp, 0, &tz, &ts);
-
-
-	PG_RETURN_TIMESTAMPTZ(ts);
 }
 
 PG_FUNCTION_INFO_V1(cron_string_to_json_text);
@@ -566,6 +576,7 @@ cron_string_to_json_text(PG_FUNCTION_ARGS)
 			elog(ERROR, "unknown error: %d", cps_error);
 		}
 	}
+	PG_RETURN_NULL();
 }
 
 

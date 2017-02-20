@@ -255,7 +255,7 @@ INSERT INTO tmp3 values (5,50);
 -- Try (and fail) to add constraint due to invalid source columns
 ALTER TABLE tmp3 add constraint tmpconstr foreign key(c) references tmp2 match full;
 
--- Try (and fail) to add constraint due to invalide destination columns explicitly given
+-- Try (and fail) to add constraint due to invalid destination columns explicitly given
 ALTER TABLE tmp3 add constraint tmpconstr foreign key(a) references tmp2(b) match full;
 
 -- Try (and fail) to add constraint due to invalid data
@@ -1335,6 +1335,28 @@ select relname, conname, coninhcount, conislocal, connoinherit
   where relname like 'test_inh_check%' and c.conrelid = r.oid
   order by 1, 2;
 
+-- ALTER COLUMN TYPE with different schema in children
+-- Bug at https://postgr.es/m/20170102225618.GA10071@telsasoft.com
+CREATE TABLE test_type_diff (f1 int);
+CREATE TABLE test_type_diff_c (extra smallint) INHERITS (test_type_diff);
+ALTER TABLE test_type_diff ADD COLUMN f2 int;
+INSERT INTO test_type_diff_c VALUES (1, 2, 3);
+ALTER TABLE test_type_diff ALTER COLUMN f2 TYPE bigint USING f2::bigint;
+
+CREATE TABLE test_type_diff2 (int_two int2, int_four int4, int_eight int8);
+CREATE TABLE test_type_diff2_c1 (int_four int4, int_eight int8, int_two int2);
+CREATE TABLE test_type_diff2_c2 (int_eight int8, int_two int2, int_four int4);
+CREATE TABLE test_type_diff2_c3 (int_two int2, int_four int4, int_eight int8);
+ALTER TABLE test_type_diff2_c1 INHERIT test_type_diff2;
+ALTER TABLE test_type_diff2_c2 INHERIT test_type_diff2;
+ALTER TABLE test_type_diff2_c3 INHERIT test_type_diff2;
+INSERT INTO test_type_diff2_c1 VALUES (1, 2, 3);
+INSERT INTO test_type_diff2_c2 VALUES (4, 5, 6);
+INSERT INTO test_type_diff2_c3 VALUES (7, 8, 9);
+ALTER TABLE test_type_diff2 ALTER COLUMN int_four TYPE int8 USING int_four::int8;
+-- whole-row references are disallowed
+ALTER TABLE test_type_diff2 ALTER COLUMN int_four TYPE int4 USING (pg_column_size(test_type_diff2));
+
 -- check for rollback of ANALYZE corrupting table property flags (bug #11638)
 CREATE TABLE check_fk_presence_1 (id int PRIMARY KEY, t text);
 CREATE TABLE check_fk_presence_2 (id int REFERENCES check_fk_presence_1, t text);
@@ -1807,7 +1829,7 @@ CREATE UNLOGGED TABLE unlogged3(f1 SERIAL PRIMARY KEY, f2 INTEGER REFERENCES unl
 ALTER TABLE unlogged3 SET LOGGED; -- skip self-referencing foreign key
 ALTER TABLE unlogged2 SET LOGGED; -- fails because a foreign key to an unlogged table exists
 ALTER TABLE unlogged1 SET LOGGED;
--- check relpersistence of an unlogged table after changing to permament
+-- check relpersistence of an unlogged table after changing to permanent
 SELECT relname, relkind, relpersistence FROM pg_class WHERE relname ~ '^unlogged1'
 UNION ALL
 SELECT 'toast table', t.relkind, t.relpersistence FROM pg_class r JOIN pg_class t ON t.oid = r.reltoastrelid WHERE r.relname ~ '^unlogged1'

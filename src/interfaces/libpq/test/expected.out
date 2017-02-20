@@ -1,20 +1,20 @@
 trying postgresql://uri-user:secret@host:12345/db
-user='uri-user' password='secret' dbname='db' host='host' port='12345' (inet)
+user='uri-user' password='secret' dbname='db' host='host:12345' (inet)
 
 trying postgresql://uri-user@host:12345/db
-user='uri-user' dbname='db' host='host' port='12345' (inet)
+user='uri-user' dbname='db' host='host:12345' (inet)
 
 trying postgresql://uri-user@host/db
 user='uri-user' dbname='db' host='host' (inet)
 
 trying postgresql://host:12345/db
-dbname='db' host='host' port='12345' (inet)
+dbname='db' host='host:12345' (inet)
 
 trying postgresql://host/db
 dbname='db' host='host' (inet)
 
 trying postgresql://uri-user@host:12345/
-user='uri-user' host='host' port='12345' (inet)
+user='uri-user' host='host:12345' (inet)
 
 trying postgresql://uri-user@host/
 user='uri-user' host='host' (inet)
@@ -23,10 +23,10 @@ trying postgresql://uri-user@
 user='uri-user' (local)
 
 trying postgresql://host:12345/
-host='host' port='12345' (inet)
+host='host:12345' (inet)
 
 trying postgresql://host:12345
-host='host' port='12345' (inet)
+host='host:12345' (inet)
 
 trying postgresql://host/db
 dbname='db' host='host' (inet)
@@ -62,7 +62,7 @@ trying postgresql://host/db?u%7aer=someotheruser&port=12345
 uri-regress: invalid URI query parameter: "uzer"
 
 trying postgresql://host:12345?user=uri-user
-user='uri-user' host='host' port='12345' (inet)
+user='uri-user' host='host:12345' (inet)
 
 trying postgresql://host?user=uri-user
 user='uri-user' host='host' (inet)
@@ -71,19 +71,19 @@ trying postgresql://host?
 host='host' (inet)
 
 trying postgresql://[::1]:12345/db
-dbname='db' host='::1' port='12345' (inet)
+dbname='db' host='[::1]:12345' (inet)
 
 trying postgresql://[::1]/db
-dbname='db' host='::1' (inet)
+dbname='db' host='[::1]' (inet)
 
 trying postgresql://[2001:db8::1234]/
-host='2001:db8::1234' (inet)
+host='[2001:db8::1234]' (inet)
 
 trying postgresql://[200z:db8::1234]/
-host='200z:db8::1234' (inet)
+host='[200z:db8::1234]' (inet)
 
 trying postgresql://[::1]
-host='::1' (inet)
+host='[::1]' (inet)
 
 trying postgres://
 (local)
@@ -143,7 +143,7 @@ trying postgres://@host
 host='host' (inet)
 
 trying postgres://host:/
-host='host' (inet)
+uri-regress: invalid port number: "0"
 
 trying postgres://:12345/
 port='12345' (local)

@@ -626,9 +626,7 @@ XactLockTableWait(TransactionId xid, Relation rel, ItemPointer ctid,
 
 		SET_LOCKTAG_TRANSACTION(tag, xid);
 
-		LOCKTAG_PRINT("XactLockTableWait", &tag, ShareLock);
 		(void) LockAcquire(&tag, ShareLock, false, false);
-		elog(LOG, "XactLockTableWait acquired");
 
 		LockRelease(&tag, ShareLock, false);
 

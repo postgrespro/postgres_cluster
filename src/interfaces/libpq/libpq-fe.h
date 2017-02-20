@@ -62,7 +62,11 @@ typedef enum
 								 * backend startup. */
 	CONNECTION_SETENV,			/* Negotiating environment. */
 	CONNECTION_SSL_STARTUP,		/* Negotiating SSL. */
-	CONNECTION_NEEDED			/* Internal state: connect() needed */
+	CONNECTION_NEEDED,			/* Internal state: connect() needed */
+	CONNECTION_CHECK_RO,		/* Internal state: need to check is RO
+								 * connection acceptable */
+	CONNECTION_CHECK_RW,		/* Internal state: waiting that server replies
+								 * if it is in recovery */
 } ConnStatusType;
 
 typedef enum

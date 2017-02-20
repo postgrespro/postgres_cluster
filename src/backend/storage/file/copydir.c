@@ -129,13 +129,11 @@ copydir(char *fromdir, char *todir, bool recurse)
 }
 
 /*
- * copydir: copy a directory
- *
- * If recurse is false, subdirectories are ignored.  Anything that's not
- * a directory or a regular file is ignored.
+ * copyzipdir: copy a directory and change its compression mode.
  */
 void
-copyzipdir(char *fromdir, bool from_compressed, char *todir, bool to_compressed)
+copyzipdir(char *fromdir, bool from_compressed,
+		   char *todir, bool to_compressed)
 {
 	DIR		   *xldir;
 	struct dirent *xlde;
@@ -160,9 +158,10 @@ copyzipdir(char *fromdir, bool from_compressed, char *todir, bool to_compressed)
 		/* If we got a cancel signal during the copy of the directory, quit */
 		CHECK_FOR_INTERRUPTS();
 
-		if (strcmp(xlde->d_name, ".") == 0 ||
-			strcmp(xlde->d_name, "..") == 0 ||
-			(strlen(xlde->d_name) > 4 && strcmp(xlde->d_name + strlen(xlde->d_name) - 4, ".cfm") == 0))
+		if (strcmp(xlde->d_name, ".") == 0
+			|| strcmp(xlde->d_name, "..") == 0
+			|| (strlen(xlde->d_name) > 4
+			&& strcmp(xlde->d_name + strlen(xlde->d_name) - 4, ".cfm") == 0))
 			continue;
 
 		snprintf(fromfile, MAXPGPATH, "%s/%s", fromdir, xlde->d_name);
@@ -302,10 +301,11 @@ copy_file(char *fromfile, char *tofile)
 }
 
 /*
- * copy one file
+ * copy one file and change its compression mode
  */
 void
-copy_zip_file(char *fromfile, bool from_compressed, char *tofile, bool to_compressed)
+copy_zip_file(char *fromfile, bool from_compressed,
+			  char *tofile, bool to_compressed)
 {
 	File		srcfd;
 	File		dstfd;
@@ -318,7 +318,9 @@ copy_zip_file(char *fromfile, bool from_compressed, char *tofile, bool to_compre
 	char* sep = strrchr(fromfile, '/');
 	Assert(sep != NULL);
 
-	if ((sscanf(sep+1, "%d.%d%n", &relno, &segno, &n) != 2 && sscanf(sep+1, "%d%n", &relno, &n) != 1)
+	if ((sscanf(sep+1, "%d.%d%n", &relno, &segno, &n) != 2
+		&& sscanf(sep+1, "%d_init%n", &relno, &n) != 1
+		&& sscanf(sep+1, "%d%n", &relno, &n) != 1)
 		|| sep[n+1] != '\0'
 		|| relno < FirstNormalObjectId)
 	{
@@ -326,28 +328,27 @@ copy_zip_file(char *fromfile, bool from_compressed, char *tofile, bool to_compre
 		from_compressed = to_compressed = false;
 	}
 
-	if (to_compressed) {
-		fprintf(stderr, "Compress file %s, relno=%d, sep[n+1]=%s\n", tofile, relno, &sep[n+1]);
-	}
-	/*
-	 * Open the files
-	 */
-	srcfd = PathNameOpenFile(fromfile, O_RDONLY | PG_BINARY | (from_compressed ? PG_COMPRESSION : 0), 0);
+	if (to_compressed)
+		elog(DEBUG2, "Compress file %s, relno=%d, sep[n+1]=%s\n",
+				tofile, relno, &sep[n+1]);
+
+	/* Open the files */
+	srcfd = PathNameOpenFile(fromfile,
+							 O_RDONLY | PG_BINARY | (from_compressed ? PG_COMPRESSION : 0), 0);
 	if (srcfd < 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not open file \"%s\": %m", fromfile)));
 
-	dstfd = PathNameOpenFile(tofile, O_RDWR | O_CREAT | O_EXCL | PG_BINARY | (to_compressed ? PG_COMPRESSION : 0),
+	dstfd = PathNameOpenFile(tofile,
+							 O_RDWR | O_CREAT | O_EXCL | PG_BINARY | (to_compressed ? PG_COMPRESSION : 0),
 							 S_IRUSR | S_IWUSR);
 	if (dstfd < 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not create file \"%s\": %m", tofile)));
 
-	/*
-	 * Do the data copying.
-	 */
+	/* Do the data copying */
 	for (offset = 0;; offset += BLCKSZ)
 	{
 		/* If we got a cancel signal during the copy of the file, quit */

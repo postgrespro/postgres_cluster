@@ -189,27 +189,6 @@ postgres=#
   </sect2>
   <sect2 id="pg-hint-plan-install">
     <title>Installation</title>
-    <para>
-      This section describes the installation steps.
-    </para>
-    <sect3 id="pg-hint-plan-build">
-      <title>Building binary module</title>
-      <para>
-        Simply run <quote>make</quote> in the top of the source tree,
-        then <quote>make install</quote> as appropriate user. The PATH
-        environment variable should be set properly for the target
-        &productname; for this process.
-      </para>
-      <programlisting>
-$ tar xzvf pg_hint_plan-1.x.x.tar.gz
-$ cd pg_hint_plan-1.x.x
-$ make
-$ su
-# make install
-</programlisting>
-    </sect3>
-    <sect3 id="pg-hint-plan-hint-load">
-      <title>Loading pg_hint_plan</title>
       <para>
         Basically pg_hint_plan does not requires CREATE EXTENSION.
         Simply loading it by LOAD command will activate it and of
@@ -227,20 +206,6 @@ postgres=#
         Do CREATE EXTENSION and SET pg_hint_plan.enable_hint_table TO
         <literal>on</literal> if you are planning to use hint table.
       </para>
-    </sect3>
-  </sect2>
-  <sect2 id="pg-hint-plan-uninstall">
-    <title>Uninstallation</title>
-    <para>
-      <quote>make uninstall</quote> in the top directory of source tree
-      will uninstall the installed files if you installed from the
-      source tree and it is left available.
-    </para>
-    <programlisting>
-$ cd pg_hint_plan-1.x.x
-$ su
-# make uninstall
-</programlisting>
   </sect2>
   <sect2 id="pg-hint-plan-examples">
     <title>Hint descriptions</title>

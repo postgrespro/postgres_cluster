@@ -53,7 +53,7 @@ BEGIN; -- start ordinary tx T0
 |
 INSERT INTO t VALUES (1);
 :\
-: BEGIN AUTONOMOUS SUBTRANSACTION; -- start AST tx T1, pushes T0 into stack
+: BEGIN AUTONOMOUS TRANSACTION; -- start AST tx T1, pushes T0 into stack
 : |
 : INSERT INTO t VALUES (2);
 : |

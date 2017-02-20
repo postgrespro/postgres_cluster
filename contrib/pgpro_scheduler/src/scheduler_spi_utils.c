@@ -80,6 +80,53 @@ bool get_boolean_from_spi(int row_n, int pos, bool def)
 	return DatumGetBool(datum);
 }
 
+int64 *get_int64array_from_spi(int row_n, int pos, int *N)
+{
+	Datum datum;
+	bool is_null;
+	ArrayType *input;
+	Datum *datums;
+	bool i_typbyval;
+	char i_typalign;
+	int16 i_typlen;
+	int len, i, arr_len;
+	bool *nulls;
+	int64 *result;
+
+	*N = 0;
+
+	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
+	                        pos, &is_null);
+	if(is_null) return NULL;
+
+	input = DatumGetArrayTypeP(datum);
+	if(ARR_ELEMTYPE(input) != INT8OID)
+	{
+		return NULL;
+	}
+	get_typlenbyvalalign(INT8OID, &i_typlen, &i_typbyval, &i_typalign);
+	deconstruct_array(input, INT8OID, i_typlen, i_typbyval, i_typalign, &datums, &nulls, &len);
+
+	if(len == 0) return NULL;
+	arr_len  = len;
+
+	for(i=0; i < len; i++)
+	{
+		if(nulls[i]) arr_len--;
+	}
+	result = worker_alloc(sizeof(int64) * arr_len);
+	for(i=0; i < len; i++)
+	{
+		if(!nulls[i]) 
+		{
+			result[*N] = Int64GetDatum(datums[i]);
+			(*N)++;
+		}
+	}
+
+	return result;
+}
+
 char **get_textarray_from_spi(int row_n, int pos, int *N)
 {
 	Datum datum;
@@ -149,12 +196,12 @@ char *get_text_from_spi(int row_n, int pos)
 	return _copy_string(TextDatumGetCString(datum));
 }
 
-long int get_interval_seconds_from_spi(int row_n, int pos, long def)
+int64 get_interval_seconds_from_spi(int row_n, int pos, long def)
 {
 	Datum datum;
 	bool is_null;
 	Interval *interval;
-	long result = 0;
+	int64 result = 0;
 
 	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
 	                        pos, &is_null);
@@ -183,11 +230,23 @@ int get_int_from_spi(int row_n, int pos, int def)
 	return (int)DatumGetInt32(datum);
 }
 
+int64 get_int64_from_spi(int row_n, int pos, int def)
+{
+	Datum datum;
+	bool is_null;
+
+	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
+	                        pos, &is_null);
+	if(is_null) return def;
+	return (int64)DatumGetInt64(datum);
+}
+
 Datum select_onedatumvalue_sql(const char *sql, bool *is_null)
 {
 	int ret;
 	Datum datum = 0;
 
+	SetCurrentStatementStartTimestamp();
 	ret = SPI_execute(sql, true, 0);
 	if(ret == SPI_OK_SELECT)
 	{
@@ -208,6 +267,7 @@ int select_count_with_args(const char *sql, int n, Oid *argtypes, Datum *values,
 	Datum datum;
 	bool is_null;
 
+	SetCurrentStatementStartTimestamp();
 	ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, true, 0);
 	if(ret == SPI_OK_SELECT)
 	{
@@ -242,10 +302,13 @@ int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *valu
 
 	*error = NULL;
 
-
+	SetCurrentStatementStartTimestamp();
+	BeginInternalSubTransaction(NULL);
 	PG_TRY();
 	{
 		ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, false, 0);
+		ReleaseCurrentSubTransaction();
+		SPI_restore_connection();
 	}
 	PG_CATCH();
 	{
@@ -265,6 +328,8 @@ int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *valu
 			*error = _copy_string("unknown error");
 		}
 		errorSet = 1;
+		RollbackAndReleaseCurrentSubTransaction(); 
+		SPI_restore_connection();
 		FreeErrorData(edata);
 		MemoryContextSwitchTo(old);
 		FlushErrorState();
@@ -304,4 +369,95 @@ int execute_spi(const char *sql, char **error)
 	return execute_spi_sql_with_args(sql, 0, NULL, NULL, NULL, error);
 }
 
+int execute_spi_params_prepared(const char *sql, int nparams, char **params, char **error)
+{
+	int ret = -100;
+	ErrorData *edata;
+	MemoryContext old;
+	int errorSet = 0;
+	char other[100];
+	SPIPlanPtr plan;
+	Oid *paramtypes;
+	Datum *values;
+	int i;
 
+	*error = NULL;
+
+	paramtypes = worker_alloc(sizeof(Oid) * nparams);
+	values = worker_alloc(sizeof(Datum) * nparams);
+	for(i=0; i < nparams; i++)
+	{
+		paramtypes[i] = TEXTOID;
+		values[i] = CStringGetTextDatum(params[i]);
+	}
+
+	SetCurrentStatementStartTimestamp();
+	BeginInternalSubTransaction(NULL);
+
+	PG_TRY();
+	{
+		plan = SPI_prepare(sql, nparams, paramtypes);
+		if(plan)
+		{
+			SetCurrentStatementStartTimestamp();
+			ret = SPI_execute_plan(plan, values, NULL, false, 0);
+		}
+		ReleaseCurrentSubTransaction();
+		SPI_restore_connection();
+	}
+	PG_CATCH();
+	{
+		old = switch_to_worker_context();
+
+		edata = CopyErrorData();
+		if(edata->message)
+		{
+			*error = _copy_string(edata->message);
+		}
+		else if(edata->detail)
+		{
+			*error = _copy_string(edata->detail);
+		}
+		else
+		{
+			*error = _copy_string("unknown error");
+		}
+		errorSet = 1;
+		FreeErrorData(edata);
+		MemoryContextSwitchTo(old);
+		FlushErrorState();
+		RollbackAndReleaseCurrentSubTransaction(); 
+		SPI_restore_connection();
+	}
+	PG_END_TRY();
+
+	pfree(values);
+	pfree(paramtypes);
+
+	if(!errorSet && ret < 0)
+	{
+		if(ret == SPI_ERROR_CONNECT)
+		{
+			*error = _copy_string("Connection error");
+		}
+		else if(ret == SPI_ERROR_COPY)
+		{
+			*error = _copy_string("COPY error");
+		}
+		else if(ret == SPI_ERROR_OPUNKNOWN)
+		{
+			*error = _copy_string("SPI_ERROR_OPUNKNOWN");
+		}
+		else if(ret == SPI_ERROR_UNCONNECTED)
+		{
+			*error = _copy_string("Unconnected call");
+		}
+		else
+		{
+			sprintf(other, "error number: %d", ret);
+			*error = _copy_string(other);
+		}
+	}
+
+	return ret;
+}

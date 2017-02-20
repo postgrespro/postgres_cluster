@@ -59,20 +59,14 @@
    <title>Installation</title>
 
    <para>
-    Before you build and install <filename>rum</filename> you should ensure
-    that you have <productname>&productname;</productname> or
-    <productname>PostgreSQL</productname> version 9.6 or newer installed.
+    <filename>rum</filename> is a <productname>&productname;</productname>
+    extension and it has no special prerequisites.
    </para>
 
    <para>
-    Typical installation procedure may look like this:
+    Install extension as follows:
 <screen>
-$ git clone https://github.com/postgrespro/rum
-$ cd rum
-$ make USE_PGXS=1
-$ sudo make USE_PGXS=1 install
-$ make USE_PGXS=1 installcheck
-$ psql DB -c "CREATE EXTENSION rum;"
+$ psql <replaceable>dbname</replaceable> -c "CREATE EXTENSION rum"
 </screen>
    </para>
   </sect2>
