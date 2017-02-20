@@ -35,8 +35,7 @@ CREATE FUNCTION mtm.get_last_csn() RETURNS bigint
 AS 'MODULE_PATHNAME','mtm_get_last_csn'
 LANGUAGE C;
 
-
-CREATE TYPE mtm.node_state AS ("id" integer, "disabled" bool, "disconnected" bool, "catchUp" bool, "slotLag" bigint, "avgTransDelay" bigint, "lastStatusChange" timestamp, "oldestSnapshot" bigint, "SenderPid" integer, "SenderStartTime" timestamp, "ReceiverPid" integer, "ReceiverStartTime" timestamp, "connStr" text, "connectivityMask" bigint, "stalled" bool, "stopped" bool, "nHeartbeats" bigint);
+CREATE TYPE mtm.node_state AS ("id" integer, "enabled" bool, "connected" bool, "slot_active" bool, "stopped" bool, "catchUp" bool, "slotLag" bigint, "avgTransDelay" bigint, "lastStatusChange" timestamp, "oldestSnapshot" bigint, "SenderPid" integer, "SenderStartTime" timestamp, "ReceiverPid" integer, "ReceiverStartTime" timestamp, "connStr" text, "connectivityMask" bigint, "nHeartbeats" bigint);
 
 CREATE FUNCTION mtm.get_nodes_state() RETURNS SETOF mtm.node_state
 AS 'MODULE_PATHNAME','mtm_get_nodes_state'
