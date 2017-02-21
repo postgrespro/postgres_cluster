@@ -33,6 +33,9 @@ install: all installdirs
 installdirs:
 	$(MKDIR_P) '$(DESTDIR)$(bindir)'
 
+check:
+	$(prove_check)
+
 uninstall:
 	rm -f '$(DESTDIR)$(bindir)/pg_xlogdump$(X)'
 
