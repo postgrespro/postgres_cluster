@@ -309,6 +309,7 @@ int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *valu
 	PG_TRY();
 	{
 		ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, false, 0);
+		if(ret < 0) elog(LOG, "ret %d", ret);  
 		ReleaseCurrentSubTransaction();
 		switch_to_worker_context();
 		CurrentResourceOwner = oldowner;
@@ -317,7 +318,6 @@ int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *valu
 	PG_CATCH();
 	{
 		switch_to_worker_context();
-
 		edata = CopyErrorData();
 		if(edata->message)
 		{
@@ -333,8 +333,8 @@ int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *valu
 		}
 		errorSet = 1;
 		RollbackAndReleaseCurrentSubTransaction(); 
-		switch_to_worker_context();
 		CurrentResourceOwner = oldowner;
+		switch_to_worker_context();
 		SPI_restore_connection(); 
 		FreeErrorData(edata);
 		FlushErrorState();

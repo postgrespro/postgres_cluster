@@ -5,9 +5,10 @@ SET search_path TO schedule;
 
 CREATE TYPE job_status_t AS ENUM ('working', 'done', 'error');
 CREATE TYPE job_at_status_t AS ENUM ('submitted', 'processing', 'done');
+CREATE SEQUENCE schedule.at_jobs_submitted_id_seq;
 
 CREATE TABLE at_jobs_submitted(
-   id SERIAL PRIMARY KEY,
+   id int PRIMARY KEY,
    node text,
    name text,
    comments text,
@@ -36,6 +37,8 @@ CREATE TABLE at_jobs_done  (like at_jobs_process including all);
 ALTER TABLE at_jobs_done ADD status boolean;
 ALTER TABLE at_jobs_done ADD reason text;
 ALTER TABLE at_jobs_done ADD done_time timestamp with time zone default now();
+
+ALTER TABLE at_jobs_submitted ALTER id SET default nextval('schedule.at_jobs_submitted_id_seq');
 
 
 CREATE TABLE cron(
