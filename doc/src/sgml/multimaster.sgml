@@ -205,7 +205,7 @@ multimaster.conn_strings = 'dbname=mydb user=myuser host=node1, dbname=mydb user
       </listitem>
       <listitem>
         <para>
-          Allow replication in <literal>pg_hba.conf</literal>:
+          Allow replication in <filename>pg_hba.conf</filename>:
         </para>
         <programlisting>
 host myuser all node1 trust
@@ -517,7 +517,7 @@ pg_ctl -D ./datadir -l ./pg.log start
       </listitem>
       <listitem>
         <para>
-          Make sure the <literal>pg_hba.conf</literal> file allows
+          Make sure the <filename>pg_hba.conf</filename> file allows
           replication to the new node.
           <programlisting>host replication all node3 trust</programlisting>
         </para>
@@ -866,78 +866,131 @@ pg_ctl -D ./datadir -l ./pg.log start
        <itemizedlist>
           <listitem>
             <para>
-              <literal>id</literal>, <type>integer</type>
+              <parameter>id</parameter>, <type>integer</type>
+            </para>
+            <para>Node ID.
             </para>
           </listitem>
           <listitem>
             <para>
-              <literal>disabled</literal>, <type>boolean</type>
+              <parameter>enabled</parameter>, <type>boolean</type>
+            </para>
+            <para>Shows whether the node is excluded from the cluster. The node can only be disabled if responses to heartbeats are not received within the <varname>heartbeat_recv_timeout</> time interval. When the node starts responding to heartbeats, <filename>multimaster</filename> can automatically restore the node and switch it back to the enabled state.
+            Automatic recovery is only possible if the replication slot is still active. Otherwise, you can <link linkend="multimaster-restoring-a-node-manually">restore the node manually</link>.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>connected</parameter>, <type>boolean</type>
+            </para>
+            <para>
+            Shows whether the node is connected to the WAL sender.
             </para>
           </listitem>
           <listitem>
             <para>
-              <literal>disconnected</literal>, <type>boolean</type>
+              <parameter>slot_active</parameter>, <type>boolean</type>
+            </para>
+            <para>Shows whether the node has an active replication slot. For a disabled node, the slot remains active until the <varname>max_recovery_lag</varname> value is reached.
             </para>
           </listitem>
           <listitem>
             <para>
-              <literal>catchUp</literal>, <type>bool</type>
+              <parameter>stopped</parameter>, <type>boolean</type>
+            </para>
+            <para>Shows whether replication to this node was stopped by the <function>mtm.stop_node()</function> function. A stopped node acts as a disabled one, but cannot be automatically recovered. Call <function>mtm.recover_node()</function> to re-enable such a node.
             </para>
           </listitem>
           <listitem>
             <para>
-              <literal>slotLag</literal>, <type>bigint</type>
+              <parameter>catchUp</parameter>, <type>boolean</type>
+            </para>
+            <para>During the node recovery, shows whether the data is recovered up to the <varname>min_recovery_lag</varname> value.
             </para>
           </listitem>
           <listitem>
             <para>
-              <literal>avgTransDelay</literal>, <type>bigint</type>
+              <parameter>slotLag</parameter>, <type>bigint</type>
+            </para>
+            <para>The size of WAL data that the replication slot holds for a disabled/stopped node. The slot is dropped when <literal>slotLag</literal> reaches the <literal>max_recovery_lag</literal> value.
             </para>
           </listitem>
           <listitem>
             <para>
-              <literal>lastStatusChange</literal>, <type>timestamp</type>
+              <parameter>avgTransDelay</parameter>, <type>bigint</type>
+            </para>
+            <para>An average commit delay caused by this node, in microseconds.
             </para>
           </listitem>
           <listitem>
             <para>
-              <literal>oldestSnapshot</literal>, <type>bigint</type>
+              <parameter>lastStatusChange</parameter>, <type>timestamp</type>
             </para>
+            <para>Last time when the node changed its status (enabled/disabled).</para>
           </listitem>
           <listitem>
             <para>
-              <literal>SenderPid</literal> <type>integer</type>
+              <parameter>oldestSnapshot</parameter>, <type>bigint</type>
             </para>
+            <para>The oldest global snapshot existing on this node.</para>
           </listitem>
           <listitem>
             <para>
-              <literal>SenderStartTime</literal> <type>timestamp</type>
+              <parameter>SenderPid</parameter>, <type>integer</type>
             </para>
+            <para>Process ID of the WAL sender.</para>
           </listitem>
           <listitem>
             <para>
-              <literal>ReceiverPid</literal> <type>integer</type>
+              <parameter>SenderStartTime</parameter>, <type>timestamp</type>
             </para>
+            <para>WAL sender start time.</para>
           </listitem>
           <listitem>
             <para>
-              <literal>ReceiverStartTime</literal> <type>timestamp</type>
+              <parameter>ReceiverPid</parameter>, <type>integer</type>
             </para>
+            <para>Process ID of the WAL receiver.</para>
           </listitem>
           <listitem>
             <para>
-              <literal>connStr</literal> <type>text</type>
+              <parameter>ReceiverStartTime</parameter>, <type>timestamp</type>
             </para>
+            <para>WAL receiver start time.</para>
           </listitem>
           <listitem>
             <para>
-              <literal>connectivityMask</literal> <type>bigint</type>
+              <parameter>connStr</parameter>, <type>text</type>
             </para>
+            <para>Connection string to this node.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>connectivityMask</parameter>, <type>bigint</type>
+            </para>
+            <para>Bitmask representing connectivity to neighbor nodes. Each bit represents a connection to node.</para>
+          </listitem>
+          <listitem>
+          <para><parameter>nHeartbeats</parameter>, <type>integer</type></para>
+          <para>The number of heartbeat responses received from this node.</para>
           </listitem>
         </itemizedlist>
       </para>
      </listitem>
     </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>mtm.collect_cluster_state()</function>
+      <indexterm>
+       <primary><function>mtm.collect_cluster_state</></primary>
+      </indexterm>
+     </term>
+     <listitem>
+      <para>Collects the data returned by the <function>mtm.get_cluster_state()</function> function from all available nodes. For this function to work, in addition to replication connections, <filename>pg_hba.conf</filename> must allow ordinary connections to the node with the specified connection string.
+      </para>
+     </listitem>
+    </varlistentry>
+
         <varlistentry>
      <term>
       <function>mtm.get_cluster_state()</function>
@@ -946,87 +999,124 @@ pg_ctl -D ./datadir -l ./pg.log start
       </indexterm>
      </term>
      <listitem>
-      <para>Shows the status of the whole cluster. Returns a tuple of the following values:
+      <para>Shows the status of the <filename>multimaster</filename> extension. Returns a tuple of the following values:
       </para>
        <itemizedlist>
           <listitem>
             <para>
-              <literal>status</literal>, <type>text</type>
+              <parameter>status</parameter>, <type>text</type>
+            </para>
+            <para>Node status. Possible values are: <literal>Initialization</literal>, <literal>Offline</literal>, <literal>Connected</literal>, <literal>Online</literal>, <literal>Recovery</literal>, <literal>Recovered</literal>, <literal>InMinor</literal>, <literal>OutOfService</literal>.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>disabledNodeMask</parameter>, <type>bigint</type>
+            </para>
+            <para>Bitmask of disabled nodes.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>disconnectedNodeMask</parameter>, <type>bigint</type>
+            </para>
+            <para>Bitmask of disconnected nodes.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>catchUpNodeMask</parameter>, <type>bigint</type>
+            </para>
+            <para>Bitmask of nodes that completed the recovery.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>liveNodes</parameter>, <type>integer</type>
+            </para>
+            <para>Number of enabled nodes.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>allNodes</parameter>, <type>integer</type>
+            </para>
+            <para>Number of nodes in the cluster. The majority of alive nodes is calculated based on this parameter.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>nActiveQueries</parameter>, <type>integer</type>
+            </para>
+            <para>Number of queries being currently processed on this node.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>nPendingQueries</parameter>, <type>integer</type>
+            </para>
+            <para>Number of queries waiting for execution on this node.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>queueSize</parameter>, <type>bigint</type>
+            </para>
+            <para>Size of the pending query queue, in bytes.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>transCount</parameter>, <type>bigint</type>
+            </para>
+            <para>The total number of replicated transactions processed by this node.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>timeShift</parameter>, <type>bigint</type>
+            </para>
+            <para>Global snapshot shift caused by unsynchronized clocks on nodes, in microseconds.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>recoverySlot</parameter>, <type>integer</type>
+            </para>
+            <para>The node from which a failed node gets data updates during automatic recovery.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>xidHashSize</parameter>, <type>bigint</type>
+            </para>
+            <para>Size of xid2state hash.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>gidHashSize</parameter>, <type>bigint</type>
+            </para>
+            <para>Size of gid2state hash.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>oldestXid</parameter>, <type>bigint</type>
+            </para>
+            <para>The oldest transaction ID on this node.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>configChanges</parameter>, <type>integer</type>
+            </para>
+            <para>Number of state changes (enabled/disabled) since the last reboot.</para>
+          </listitem>
+          <listitem>
+            <para>
+              <parameter>stalledNodeMask</parameter>, <type>biint</type>
+            </para>
+            <para>Bitmask of nodes for which replication slots were dropped.
             </para>
           </listitem>
           <listitem>
             <para>
-              <literal>disabledNodeMask</literal>, <type>bigint</type>
+              <parameter>stoppedNodeMask</parameter>, <type>bigint</type>
+            </para>
+            <para>Bitmask of nodes that were stopped by <function>mtm.stop_node()</function>.
             </para>
           </listitem>
           <listitem>
             <para>
-              <literal>disconnectedNodeMask</literal>, <type>bigint</type>
+              <parameter>lastStatusChange</parameter>, <type>timestamp</type>
             </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>catchUpNodeMask</literal>, <type>bigint</type>
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>liveNodes</literal>, <type>integer</type>
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>allNodes</literal>, <type>integer</type>
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>nActiveQueries</literal>, <type>integer</type>
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>nPendingQueries</literal>, <type>integer</type>
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>queueSize</literal>, <type>bigint</type>
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>transCount</literal>, <type>bigint</type>
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>timeShift</literal>, <type>bigint</type>
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>recoverySlot</literal>, <type>integer</type>
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>xidHashSize</literal>, <type>bigint</type>
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>gidHashSize</literal>, <type>bigint</type>
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>oldestXid</literal>, <type>bigint</type>
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              <literal>configChanges</literal>, <type>integer</type>
+            <para>Timestamp of the last state change.
             </para>
           </listitem>
         </itemizedlist>
@@ -1153,7 +1243,7 @@ pg_ctl -D ./datadir -l ./pg.log start
     <para>
       The <filename>multimaster</filename> extension currently passes 162
       of 166 <productname>PostgreSQL</productname> regression tests. We are working right now on
-      proving full compatibility with the standard <productname>PostgreSQL</productname>.
+      providing full compatibility with the standard <productname>PostgreSQL</productname>.
     </para>
   </sect2>
   <sect2 id="multimaster-authors">
