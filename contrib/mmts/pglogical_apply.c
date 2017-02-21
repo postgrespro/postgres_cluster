@@ -19,6 +19,7 @@
 
 #include "executor/spi.h"
 #include "commands/vacuum.h"
+#include "commands/tablespace.h"
 #include "commands/defrem.h"
 #include "parser/parse_utilcmd.h"
 
@@ -395,6 +396,8 @@ process_remote_message(StringInfo s)
 			MtmVacuumStmt = NULL;
 			MtmIndexStmt = NULL;
 			MtmDropStmt = NULL;
+			MtmTablespaceStmt = NULL;
+
 			rc = SPI_execute(messageBody, false, 0);
 			SPI_finish();
 			if (rc < 0) { 
@@ -423,8 +426,24 @@ process_remote_message(StringInfo s)
 								false,		/* skip_build */
 								false);		/* quiet */
 					
-				} else if (MtmDropStmt != NULL) { 
+				}
+				else if (MtmDropStmt != NULL)
+				{
 					RemoveObjects(MtmDropStmt);
+				}
+				else if (MtmTablespaceStmt != NULL)
+				{
+					switch (nodeTag(MtmTablespaceStmt))
+					{
+						case T_CreateTableSpaceStmt:
+							CreateTableSpace((CreateTableSpaceStmt *) MtmTablespaceStmt);
+							break;
+						case T_DropTableSpaceStmt:
+							DropTableSpace((DropTableSpaceStmt *) MtmTablespaceStmt);
+							break;
+						default:
+							Assert(false);
+					}
 				}
 				if (ActiveSnapshotSet())
 					PopActiveSnapshot();

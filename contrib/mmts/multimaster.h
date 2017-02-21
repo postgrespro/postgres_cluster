@@ -354,6 +354,7 @@ extern HTAB* MtmGid2State;
 extern VacuumStmt* MtmVacuumStmt;
 extern IndexStmt*  MtmIndexStmt;
 extern DropStmt*   MtmDropStmt;
+extern void*   MtmTablespaceStmt; /* CREATE/DELETE tablespace */
 extern MemoryContext MtmApplyContext;
 extern lsn_t MtmSenderWalEnd;
 extern timestamp_t MtmRefreshClusterStatusSchedule;
