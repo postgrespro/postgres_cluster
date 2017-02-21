@@ -23,6 +23,10 @@ Default: 10000000
 
 ```multimaster.cluster_name``` Name of the cluster. If you set this variable, `multimaster` checks that the cluster name is the same for all the cluster nodes.
 
+```multimaster.queue_size``` Multimaster queue size. default = 256*1024*1024
+
+```multimaster.trans_spill_threshold``` Maximal size (Mb) of transaction after which transaction is written to the disk. Default = 100, /* 100Mb */
+
 
 
 ## Questionable
@@ -32,10 +36,6 @@ Default: 10000000
 ```multimaster.min_2pc_timeout``` Minimal timeout between receiving PREPARED message from nodes participated in transaction to coordinator (milliseconds). Default = 2000, /* 2 seconds */.
 
 ```multimaster.max_2pc_ratio``` Maximal ratio (in percents) between prepare time at different nodes: if T is time of preparing transaction at some node, then transaction can be aborted if prepared responce was not received in T*MtmMax2PCRatio/100. default = 200, /* 2 times */
-
-```multimaster.queue_size``` Multimaster queue size. default = 256*1024*1024,
-
-```multimaster.trans_spill_threshold``` Maximal size (Mb) of transaction after which transaction is written to the disk. Default = 1000, /* 1Gb */ (istm reorderbuffer also can do that, isn't it?)
 
 ```multimaster.vacuum_delay``` Minimal age of records which can be vacuumed (seconds). default = 1.
 
