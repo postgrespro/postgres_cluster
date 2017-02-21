@@ -121,7 +121,7 @@ PG_FUNCTION_INFO_V1(mtm_get_trans_by_xid);
 PG_FUNCTION_INFO_V1(mtm_get_last_csn);
 PG_FUNCTION_INFO_V1(mtm_get_nodes_state);
 PG_FUNCTION_INFO_V1(mtm_get_cluster_state);
-PG_FUNCTION_INFO_V1(mtm_get_cluster_info);
+PG_FUNCTION_INFO_V1(mtm_collect_cluster_info);
 PG_FUNCTION_INFO_V1(mtm_make_table_local);
 PG_FUNCTION_INFO_V1(mtm_dump_lock_graph);
 PG_FUNCTION_INFO_V1(mtm_inject_2pc_error);
@@ -4096,25 +4096,26 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
     bool      nulls[Natts_mtm_cluster_state] = {false};
 	get_call_result_type(fcinfo, NULL, &desc);
 
-	values[0] = CStringGetTextDatum(MtmNodeStatusMnem[Mtm->status]);
-	values[1] = Int64GetDatum(Mtm->disabledNodeMask);
-	values[2] = Int64GetDatum(SELF_CONNECTIVITY_MASK);
-	values[3] = Int64GetDatum(Mtm->nodeLockerMask);
-	values[4] = Int32GetDatum(Mtm->nLiveNodes);
-	values[5] = Int32GetDatum(Mtm->nAllNodes);
-	values[6] = Int32GetDatum((int)Mtm->pool.active);
-	values[7] = Int32GetDatum((int)Mtm->pool.pending);
-	values[8] = Int64GetDatum(BgwPoolGetQueueSize(&Mtm->pool));
-	values[9] = Int64GetDatum(Mtm->transCount);
-	values[10] = Int64GetDatum(Mtm->timeShift);
-	values[11] = Int32GetDatum(Mtm->recoverySlot);
-	values[12] = Int64GetDatum(hash_get_num_entries(MtmXid2State));
-	values[13] = Int64GetDatum(hash_get_num_entries(MtmGid2State));
-	values[14] = Int64GetDatum(Mtm->oldestXid);
-	values[15] = Int32GetDatum(Mtm->nConfigChanges);
-	values[16] = Int64GetDatum(Mtm->stalledNodeMask);
-	values[17] = Int64GetDatum(Mtm->stoppedNodeMask);
-	values[18] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[MtmNodeId-1].lastStatusChangeTime/USECS_PER_SEC));
+	values[0] = Int32GetDatum(MtmNodeId);
+	values[1] = CStringGetTextDatum(MtmNodeStatusMnem[Mtm->status]);
+	values[2] = Int64GetDatum(Mtm->disabledNodeMask);
+	values[3] = Int64GetDatum(SELF_CONNECTIVITY_MASK);
+	values[4] = Int64GetDatum(Mtm->nodeLockerMask);
+	values[5] = Int32GetDatum(Mtm->nLiveNodes);
+	values[6] = Int32GetDatum(Mtm->nAllNodes);
+	values[7] = Int32GetDatum((int)Mtm->pool.active);
+	values[8] = Int32GetDatum((int)Mtm->pool.pending);
+	values[9] = Int64GetDatum(BgwPoolGetQueueSize(&Mtm->pool));
+	values[10] = Int64GetDatum(Mtm->transCount);
+	values[11] = Int64GetDatum(Mtm->timeShift);
+	values[12] = Int32GetDatum(Mtm->recoverySlot);
+	values[13] = Int64GetDatum(hash_get_num_entries(MtmXid2State));
+	values[14] = Int64GetDatum(hash_get_num_entries(MtmGid2State));
+	values[15] = Int64GetDatum(Mtm->oldestXid);
+	values[16] = Int32GetDatum(Mtm->nConfigChanges);
+	values[17] = Int64GetDatum(Mtm->stalledNodeMask);
+	values[18] = Int64GetDatum(Mtm->stoppedNodeMask);
+	values[19] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[MtmNodeId-1].lastStatusChangeTime/USECS_PER_SEC));
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(desc, values, nulls)));
 }
@@ -4152,7 +4153,7 @@ PGconn *PQconnectdb_safe(const char *conninfo)
 }
 
 Datum
-mtm_get_cluster_info(PG_FUNCTION_ARGS)
+mtm_collect_cluster_info(PG_FUNCTION_ARGS)
 {
 
     FuncCallContext* funcctx;
@@ -4182,23 +4183,30 @@ mtm_get_cluster_info(PG_FUNCTION_ARGS)
 	if (usrfctx->nodeId > Mtm->nAllNodes) {
 		SRF_RETURN_DONE(funcctx);      
 	}	
+
 	conn = PQconnectdb_safe(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
-	if (PQstatus(conn) != CONNECTION_OK) {
-		MTM_ELOG(ERROR, "Failed to establish connection '%s' to node %d: error = %s", Mtm->nodes[usrfctx->nodeId-1].con.connStr, usrfctx->nodeId, PQerrorMessage(conn));
+	if (PQstatus(conn) != CONNECTION_OK)
+	{
+		MTM_ELOG(WARNING, "Failed to establish connection '%s' to node %d: error = %s", Mtm->nodes[usrfctx->nodeId-1].con.connStr, usrfctx->nodeId, PQerrorMessage(conn));
+		PQfinish(conn);
+		SRF_RETURN_NEXT_NULL(funcctx);
 	}
-	result = PQexec(conn, "select * from mtm.get_cluster_state()");
+	else
+	{
+		result = PQexec(conn, "select * from mtm.get_cluster_state()");
 
-	if (PQresultStatus(result) != PGRES_TUPLES_OK || PQntuples(result) != 1) { 
-		MTM_ELOG(ERROR, "Failed to receive data from %d", usrfctx->nodeId);
-	}
+		if (PQresultStatus(result) != PGRES_TUPLES_OK || PQntuples(result) != 1) { 
+			MTM_ELOG(ERROR, "Failed to receive data from %d", usrfctx->nodeId);
+		}
 
-	for (i = 0; i < Natts_mtm_cluster_state; i++) { 
-		values[i] = PQgetvalue(result, 0, i);
+		for (i = 0; i < Natts_mtm_cluster_state; i++) { 
+			values[i] = PQgetvalue(result, 0, i);
+		}
+		tuple = BuildTupleFromCStrings(funcctx->attinmeta, values);
+		PQclear(result);
+		PQfinish(conn);
+		SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(tuple));
 	}
-	tuple = BuildTupleFromCStrings(funcctx->attinmeta, values);
-	PQclear(result);
-	PQfinish(conn);
-	SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(tuple));
 }
 
 
