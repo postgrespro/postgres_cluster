@@ -176,6 +176,7 @@
 <!ENTITY contacts   SYSTEM "contacts.sgml">
 <!ENTITY datetime   SYSTEM "datetime.sgml">
 <!ENTITY docguide   SYSTEM "docguide.sgml">
+<!ENTITY demodb-bookings SYSTEM "demodb-bookings.sgml">
 <!ENTITY errcodes   SYSTEM "errcodes.sgml">
 <!ENTITY features   SYSTEM "features.sgml">
 <!ENTITY keywords   SYSTEM "keywords.sgml">

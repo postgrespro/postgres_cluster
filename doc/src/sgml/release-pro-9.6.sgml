@@ -39,8 +39,8 @@
         <itemizedlist>
           <listitem>
             <para>
-              Added <emphasis role="strong">retention show</emphasis> and
-              <emphasis role="strong">retention purge</emphasis> commands to
+              Added <command>retention show</command> and
+              <command>retention purge</command> commands to
               implement retention policy.
             </para>
           </listitem>
@@ -53,8 +53,8 @@
           </listitem>
           <listitem>
             <para>
-              Fixed <emphasis role="strong">validate</emphasis> command.
-              The <emphasis role="strong">backup-ID</emphasis> parameter is
+              Fixed <command>validate</command> command.
+              The <emphasis role="strong">backup_id</emphasis> parameter is
               optional now.
             </para>
           </listitem>
