@@ -94,7 +94,7 @@
 #else
 
 #define pg_socket(domain, type, protocol, isRsocket) \
-	socket(domain, type, protocol))
+	socket(domain, type, protocol)
 
 #define pg_bind(socket, addr, addrlen, isRsocket) \
 	bind(socket, addr, addrlen)

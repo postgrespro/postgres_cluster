@@ -4070,8 +4070,10 @@ BackendStartup(Port *port, bool isRsocket)
 			(errmsg_internal("forked new backend, pid=%d socket=%d",
 							 (int) pid, (int) port->sock)));
 
+#ifdef WITH_RSOCKET
 	/* Increment rsocket port number for next connection */
 	RsocketPortCounter++;
+#endif
 
 	/*
 	 * Everything's been successful, it's safe to add this backend to our list
