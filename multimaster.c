@@ -164,6 +164,7 @@ MtmState* Mtm;
 VacuumStmt* MtmVacuumStmt;
 IndexStmt*  MtmIndexStmt;
 DropStmt*   MtmDropStmt;
+void*		MtmTablespaceStmt; /* CREATE/DELETE tablespace */
 MemoryContext MtmApplyContext;
 
 HTAB* MtmXid2State;
@@ -4636,7 +4637,7 @@ char* MtmGucSerialize(void)
 		appendStringInfoString(serialized_gucs, " TO ");
 
 		/* quite a crutch */
-		if (strstr(cur_entry->key, "_mem") != NULL)
+		if (strstr(cur_entry->key, "_mem") != NULL || *(cur_entry->value) == '\0')
 		{
 			appendStringInfoString(serialized_gucs, "'");
 			appendStringInfoString(serialized_gucs, cur_entry->value);
@@ -4661,20 +4662,26 @@ char* MtmGucSerialize(void)
 
 static void MtmProcessDDLCommand(char const* queryString, bool transactional)
 {
-	char* gucCtx = MtmGucSerialize();
-	if (*gucCtx) {
-		queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s; %s", gucCtx, queryString);
-	} else { 
-		queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s", queryString);
-	}
-	MTM_LOG3("Sending utility: %s", queryString);
-	if (transactional) {
+	if (MtmTx.isReplicated)
+		return;
+
+	if (transactional)
+	{
+		char *gucCtx = MtmGucSerialize();
+		if (*gucCtx)
+			queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s; %s", gucCtx, queryString);
+		else
+			queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s", queryString);
+
 		/* Transactional DDL */
+		MTM_LOG3("Sending DDL: %s", queryString);
 		LogLogicalMessage("D", queryString, strlen(queryString) + 1, true);
 		MtmTx.containsDML = true;
-	} else {	
-		MTM_LOG1("Execute concurrent DDL: %s", queryString);
+	}
+	else
+	{
 		/* Concurrent DDL */
+		MTM_LOG1("Sending concurrent DDL: %s", queryString);
 		XLogFlush(LogLogicalMessage("C", queryString, strlen(queryString) + 1, false));
 	}
 }
@@ -4748,8 +4755,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_ClosePortalStmt:
 		case T_FetchStmt:
 		case T_DoStmt:
-		case T_CreateTableSpaceStmt:
-		case T_AlterTableSpaceOptionsStmt:
 		case T_CommentStmt:
 		case T_PrepareStmt:
 		case T_ExecuteStmt:
@@ -4761,11 +4766,30 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_ClusterStmt:
 		case T_VariableShowStmt:
 		case T_ReassignOwnedStmt:
-		case T_LockStmt:
+		case T_LockStmt: // XXX: check whether we should replicate that
 		case T_CheckPointStmt:
 		case T_ReindexStmt:
 		case T_ExplainStmt:
 			skipCommand = true;
+			break;
+
+		case T_CreateTableSpaceStmt:
+		case T_DropTableSpaceStmt:
+			{
+				if (MtmApplyContext != NULL)
+				{
+					MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
+					Assert(oldContext != MtmApplyContext);
+					MtmTablespaceStmt = copyObject(parsetree);
+					MemoryContextSwitchTo(oldContext);
+					return;
+				}
+				else
+				{
+					skipCommand = true;
+					MtmProcessDDLCommand(queryString, false);
+				}
+			}
 			break;
 
 		case T_VacuumStmt:

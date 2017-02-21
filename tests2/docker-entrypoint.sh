@@ -2,6 +2,7 @@
 
 if [ "$1" = 'postgres' ]; then
 	mkdir -p "$PGDATA"
+	mkdir -p /pg/src/src/test/regress/testtablespace
 
 	# look specifically for PG_VERSION, as it is expected in the DB dir
 	if [ ! -s "$PGDATA/PG_VERSION" ]; then
