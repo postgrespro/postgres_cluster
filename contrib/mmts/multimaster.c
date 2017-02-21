@@ -218,6 +218,7 @@ char const* const MtmTxnStatusMnem[] =
 bool  MtmDoReplication;
 char* MtmDatabaseName;
 char* MtmDatabaseUser;
+Oid   MtmDatabaseId;
 
 int   MtmNodes;
 int   MtmNodeId;
@@ -937,6 +938,12 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	TransactionId* subxids;
 	bool found;
 	MTM_TXTRACE(x, "PrePrepareTransaction Start");
+
+	if (!MtmDatabaseId)
+		MtmDatabaseId = get_database_oid(MtmDatabaseName, false);
+
+	if (MtmDatabaseId != MyDatabaseId)
+		MTM_ELOG(ERROR, "Refusing to work. Multimaster configured to work with database '%s'", MtmDatabaseName);
 
 	if (!x->isDistributed) {
 		return;
