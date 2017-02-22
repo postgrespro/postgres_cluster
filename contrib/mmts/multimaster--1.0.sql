@@ -35,14 +35,13 @@ CREATE FUNCTION mtm.get_last_csn() RETURNS bigint
 AS 'MODULE_PATHNAME','mtm_get_last_csn'
 LANGUAGE C;
 
-
-CREATE TYPE mtm.node_state AS ("id" integer, "disabled" bool, "disconnected" bool, "catchUp" bool, "slotLag" bigint, "avgTransDelay" bigint, "lastStatusChange" timestamp, "oldestSnapshot" bigint, "SenderPid" integer, "SenderStartTime" timestamp, "ReceiverPid" integer, "ReceiverStartTime" timestamp, "connStr" text, "connectivityMask" bigint, "stalled" bool, "stopped" bool, "nHeartbeats" bigint);
+CREATE TYPE mtm.node_state AS ("id" integer, "enabled" bool, "connected" bool, "slot_active" bool, "stopped" bool, "catchUp" bool, "slotLag" bigint, "avgTransDelay" bigint, "lastStatusChange" timestamp, "oldestSnapshot" bigint, "SenderPid" integer, "SenderStartTime" timestamp, "ReceiverPid" integer, "ReceiverStartTime" timestamp, "connStr" text, "connectivityMask" bigint, "nHeartbeats" bigint);
 
 CREATE FUNCTION mtm.get_nodes_state() RETURNS SETOF mtm.node_state
 AS 'MODULE_PATHNAME','mtm_get_nodes_state'
 LANGUAGE C;
 
-CREATE TYPE mtm.cluster_state AS ("status" text, "disabledNodeMask" bigint, "disconnectedNodeMask" bigint, "catchUpNodeMask" bigint, "liveNodes" integer, "allNodes" integer, "nActiveQueries" integer, "nPendingQueries" integer, "queueSize" bigint, "transCount" bigint, "timeShift" bigint, "recoverySlot" integer,
+CREATE TYPE mtm.cluster_state AS ("id" integer, "status" text, "disabledNodeMask" bigint, "disconnectedNodeMask" bigint, "catchUpNodeMask" bigint, "liveNodes" integer, "allNodes" integer, "nActiveQueries" integer, "nPendingQueries" integer, "queueSize" bigint, "transCount" bigint, "timeShift" bigint, "recoverySlot" integer,
 "xidHashSize" bigint, "gidHashSize" bigint, "oldestXid" bigint, "configChanges" integer, "stalledNodeMask" bigint, "stoppedNodeMask" bigint, "lastStatusChange" timestamp);
 
 CREATE TYPE mtm.trans_state AS ("status" text, "gid" text, "xid" bigint, "coordinator" integer, "gxid" bigint, "csn" timestamp, "snapshot" timestamp, "local" boolean, "prepared" boolean, "active" boolean, "twophase" boolean, "votingCompleted" boolean, "participants" bigint, "voted" bigint, "configChanges" integer);
@@ -59,8 +58,8 @@ CREATE FUNCTION mtm.get_cluster_state() RETURNS mtm.cluster_state
 AS 'MODULE_PATHNAME','mtm_get_cluster_state'
 LANGUAGE C;
 
-CREATE FUNCTION mtm.get_cluster_info() RETURNS SETOF mtm.cluster_state 
-AS 'MODULE_PATHNAME','mtm_get_cluster_info'
+CREATE FUNCTION mtm.collect_cluster_info() RETURNS SETOF mtm.cluster_state 
+AS 'MODULE_PATHNAME','mtm_collect_cluster_info'
 LANGUAGE C;
 
 CREATE FUNCTION mtm.make_table_local(relation regclass) RETURNS void

@@ -85,7 +85,7 @@
 
 #define Natts_mtm_trans_state   15
 #define Natts_mtm_nodes_state   17
-#define Natts_mtm_cluster_state 19
+#define Natts_mtm_cluster_state 20
 
 typedef ulong64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
@@ -354,6 +354,7 @@ extern HTAB* MtmGid2State;
 extern VacuumStmt* MtmVacuumStmt;
 extern IndexStmt*  MtmIndexStmt;
 extern DropStmt*   MtmDropStmt;
+extern void*   MtmTablespaceStmt; /* CREATE/DELETE tablespace */
 extern MemoryContext MtmApplyContext;
 extern lsn_t MtmSenderWalEnd;
 extern timestamp_t MtmRefreshClusterStatusSchedule;

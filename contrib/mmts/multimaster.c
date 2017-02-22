@@ -121,7 +121,7 @@ PG_FUNCTION_INFO_V1(mtm_get_trans_by_xid);
 PG_FUNCTION_INFO_V1(mtm_get_last_csn);
 PG_FUNCTION_INFO_V1(mtm_get_nodes_state);
 PG_FUNCTION_INFO_V1(mtm_get_cluster_state);
-PG_FUNCTION_INFO_V1(mtm_get_cluster_info);
+PG_FUNCTION_INFO_V1(mtm_collect_cluster_info);
 PG_FUNCTION_INFO_V1(mtm_make_table_local);
 PG_FUNCTION_INFO_V1(mtm_dump_lock_graph);
 PG_FUNCTION_INFO_V1(mtm_inject_2pc_error);
@@ -164,6 +164,7 @@ MtmState* Mtm;
 VacuumStmt* MtmVacuumStmt;
 IndexStmt*  MtmIndexStmt;
 DropStmt*   MtmDropStmt;
+void*		MtmTablespaceStmt; /* CREATE/DELETE tablespace */
 MemoryContext MtmApplyContext;
 
 HTAB* MtmXid2State;
@@ -217,6 +218,7 @@ char const* const MtmTxnStatusMnem[] =
 bool  MtmDoReplication;
 char* MtmDatabaseName;
 char* MtmDatabaseUser;
+Oid   MtmDatabaseId;
 
 int   MtmNodes;
 int   MtmNodeId;
@@ -936,6 +938,12 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	TransactionId* subxids;
 	bool found;
 	MTM_TXTRACE(x, "PrePrepareTransaction Start");
+
+	if (!MtmDatabaseId)
+		MtmDatabaseId = get_database_oid(MtmDatabaseName, false);
+
+	if (MtmDatabaseId != MyDatabaseId)
+		MTM_ELOG(ERROR, "Refusing to work. Multimaster configured to work with database '%s'", MtmDatabaseName);
 
 	if (!x->isDistributed) {
 		return;
@@ -3971,23 +3979,35 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 		SRF_RETURN_DONE(funcctx);      
 	}
 	usrfctx->values[0] = Int32GetDatum(usrfctx->nodeId);
-	usrfctx->values[1] = BoolGetDatum(BIT_CHECK(Mtm->disabledNodeMask, usrfctx->nodeId-1));
-	usrfctx->values[2] = BoolGetDatum(BIT_CHECK(SELF_CONNECTIVITY_MASK, usrfctx->nodeId-1));
-	usrfctx->values[3] = BoolGetDatum(BIT_CHECK(Mtm->nodeLockerMask, usrfctx->nodeId-1));
+	usrfctx->values[1] = BoolGetDatum(!BIT_CHECK(Mtm->disabledNodeMask, usrfctx->nodeId-1));
+	usrfctx->values[2] = BoolGetDatum(!BIT_CHECK(SELF_CONNECTIVITY_MASK, usrfctx->nodeId-1));
+	usrfctx->values[3] = BoolGetDatum(BIT_CHECK(Mtm->stalledNodeMask, usrfctx->nodeId-1));
+	usrfctx->values[4] = BoolGetDatum(BIT_CHECK(Mtm->stoppedNodeMask, usrfctx->nodeId-1));
+
+	usrfctx->values[5] = BoolGetDatum(BIT_CHECK(Mtm->nodeLockerMask, usrfctx->nodeId-1));
 	lag = MtmGetSlotLag(usrfctx->nodeId);
-	usrfctx->values[4] = Int64GetDatum(lag);
-	usrfctx->nulls[4] = lag < 0;
-	usrfctx->values[5] = Int64GetDatum(Mtm->transCount ? Mtm->nodes[usrfctx->nodeId-1].transDelay/Mtm->transCount : 0);
-	usrfctx->values[6] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].lastStatusChangeTime/USECS_PER_SEC));
-	usrfctx->values[7] = Int64GetDatum(Mtm->nodes[usrfctx->nodeId-1].oldestSnapshot);
-	usrfctx->values[8] = Int32GetDatum(Mtm->nodes[usrfctx->nodeId-1].senderPid);
-	usrfctx->values[9] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].senderStartTime/USECS_PER_SEC));
-	usrfctx->values[10] = Int32GetDatum(Mtm->nodes[usrfctx->nodeId-1].receiverPid);
-	usrfctx->values[11] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].receiverStartTime/USECS_PER_SEC));   
-	usrfctx->values[12] = CStringGetTextDatum(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
-	usrfctx->values[13] = Int64GetDatum(Mtm->nodes[usrfctx->nodeId-1].connectivityMask);
-	usrfctx->values[14] = BoolGetDatum(BIT_CHECK(Mtm->stalledNodeMask, usrfctx->nodeId-1));
-	usrfctx->values[15] = BoolGetDatum(BIT_CHECK(Mtm->stoppedNodeMask, usrfctx->nodeId-1));
+	usrfctx->values[6] = Int64GetDatum(lag);
+	usrfctx->nulls[6] = lag < 0;
+
+	usrfctx->values[7] = Int64GetDatum(Mtm->transCount ? Mtm->nodes[usrfctx->nodeId-1].transDelay/Mtm->transCount : 0);
+	usrfctx->values[8] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].lastStatusChangeTime/USECS_PER_SEC));
+	usrfctx->values[9] = Int64GetDatum(Mtm->nodes[usrfctx->nodeId-1].oldestSnapshot);
+
+	usrfctx->values[10] = Int32GetDatum(Mtm->nodes[usrfctx->nodeId-1].senderPid);
+	usrfctx->values[11] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].senderStartTime/USECS_PER_SEC));
+	usrfctx->values[12] = Int32GetDatum(Mtm->nodes[usrfctx->nodeId-1].receiverPid);
+	usrfctx->values[13] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[usrfctx->nodeId-1].receiverStartTime/USECS_PER_SEC));
+
+	if (usrfctx->nodeId == MtmNodeId)
+	{
+		usrfctx->nulls[10] = true;
+		usrfctx->nulls[11] = true;
+		usrfctx->nulls[12] = true;
+		usrfctx->nulls[13] = true;
+	}
+
+	usrfctx->values[14] = CStringGetTextDatum(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
+	usrfctx->values[15] = Int64GetDatum(Mtm->nodes[usrfctx->nodeId-1].connectivityMask);
 	usrfctx->values[16] = Int64GetDatum(Mtm->nodes[usrfctx->nodeId-1].nHeartbeats);
 	usrfctx->nodeId += 1;
 
@@ -4086,25 +4106,26 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
     bool      nulls[Natts_mtm_cluster_state] = {false};
 	get_call_result_type(fcinfo, NULL, &desc);
 
-	values[0] = CStringGetTextDatum(MtmNodeStatusMnem[Mtm->status]);
-	values[1] = Int64GetDatum(Mtm->disabledNodeMask);
-	values[2] = Int64GetDatum(SELF_CONNECTIVITY_MASK);
-	values[3] = Int64GetDatum(Mtm->nodeLockerMask);
-	values[4] = Int32GetDatum(Mtm->nLiveNodes);
-	values[5] = Int32GetDatum(Mtm->nAllNodes);
-	values[6] = Int32GetDatum((int)Mtm->pool.active);
-	values[7] = Int32GetDatum((int)Mtm->pool.pending);
-	values[8] = Int64GetDatum(BgwPoolGetQueueSize(&Mtm->pool));
-	values[9] = Int64GetDatum(Mtm->transCount);
-	values[10] = Int64GetDatum(Mtm->timeShift);
-	values[11] = Int32GetDatum(Mtm->recoverySlot);
-	values[12] = Int64GetDatum(hash_get_num_entries(MtmXid2State));
-	values[13] = Int64GetDatum(hash_get_num_entries(MtmGid2State));
-	values[14] = Int64GetDatum(Mtm->oldestXid);
-	values[15] = Int32GetDatum(Mtm->nConfigChanges);
-	values[16] = Int64GetDatum(Mtm->stalledNodeMask);
-	values[17] = Int64GetDatum(Mtm->stoppedNodeMask);
-	values[18] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[MtmNodeId-1].lastStatusChangeTime/USECS_PER_SEC));
+	values[0] = Int32GetDatum(MtmNodeId);
+	values[1] = CStringGetTextDatum(MtmNodeStatusMnem[Mtm->status]);
+	values[2] = Int64GetDatum(Mtm->disabledNodeMask);
+	values[3] = Int64GetDatum(SELF_CONNECTIVITY_MASK);
+	values[4] = Int64GetDatum(Mtm->nodeLockerMask);
+	values[5] = Int32GetDatum(Mtm->nLiveNodes);
+	values[6] = Int32GetDatum(Mtm->nAllNodes);
+	values[7] = Int32GetDatum((int)Mtm->pool.active);
+	values[8] = Int32GetDatum((int)Mtm->pool.pending);
+	values[9] = Int64GetDatum(BgwPoolGetQueueSize(&Mtm->pool));
+	values[10] = Int64GetDatum(Mtm->transCount);
+	values[11] = Int64GetDatum(Mtm->timeShift);
+	values[12] = Int32GetDatum(Mtm->recoverySlot);
+	values[13] = Int64GetDatum(hash_get_num_entries(MtmXid2State));
+	values[14] = Int64GetDatum(hash_get_num_entries(MtmGid2State));
+	values[15] = Int64GetDatum(Mtm->oldestXid);
+	values[16] = Int32GetDatum(Mtm->nConfigChanges);
+	values[17] = Int64GetDatum(Mtm->stalledNodeMask);
+	values[18] = Int64GetDatum(Mtm->stoppedNodeMask);
+	values[19] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[MtmNodeId-1].lastStatusChangeTime/USECS_PER_SEC));
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(desc, values, nulls)));
 }
@@ -4142,7 +4163,7 @@ PGconn *PQconnectdb_safe(const char *conninfo)
 }
 
 Datum
-mtm_get_cluster_info(PG_FUNCTION_ARGS)
+mtm_collect_cluster_info(PG_FUNCTION_ARGS)
 {
 
     FuncCallContext* funcctx;
@@ -4172,23 +4193,30 @@ mtm_get_cluster_info(PG_FUNCTION_ARGS)
 	if (usrfctx->nodeId > Mtm->nAllNodes) {
 		SRF_RETURN_DONE(funcctx);      
 	}	
+
 	conn = PQconnectdb_safe(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
-	if (PQstatus(conn) != CONNECTION_OK) {
-		MTM_ELOG(ERROR, "Failed to establish connection '%s' to node %d: error = %s", Mtm->nodes[usrfctx->nodeId-1].con.connStr, usrfctx->nodeId, PQerrorMessage(conn));
+	if (PQstatus(conn) != CONNECTION_OK)
+	{
+		MTM_ELOG(WARNING, "Failed to establish connection '%s' to node %d: error = %s", Mtm->nodes[usrfctx->nodeId-1].con.connStr, usrfctx->nodeId, PQerrorMessage(conn));
+		PQfinish(conn);
+		SRF_RETURN_NEXT_NULL(funcctx);
 	}
-	result = PQexec(conn, "select * from mtm.get_cluster_state()");
+	else
+	{
+		result = PQexec(conn, "select * from mtm.get_cluster_state()");
 
-	if (PQresultStatus(result) != PGRES_TUPLES_OK || PQntuples(result) != 1) { 
-		MTM_ELOG(ERROR, "Failed to receive data from %d", usrfctx->nodeId);
-	}
+		if (PQresultStatus(result) != PGRES_TUPLES_OK || PQntuples(result) != 1) { 
+			MTM_ELOG(ERROR, "Failed to receive data from %d", usrfctx->nodeId);
+		}
 
-	for (i = 0; i < Natts_mtm_cluster_state; i++) { 
-		values[i] = PQgetvalue(result, 0, i);
+		for (i = 0; i < Natts_mtm_cluster_state; i++) { 
+			values[i] = PQgetvalue(result, 0, i);
+		}
+		tuple = BuildTupleFromCStrings(funcctx->attinmeta, values);
+		PQclear(result);
+		PQfinish(conn);
+		SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(tuple));
 	}
-	tuple = BuildTupleFromCStrings(funcctx->attinmeta, values);
-	PQclear(result);
-	PQfinish(conn);
-	SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(tuple));
 }
 
 
@@ -4634,7 +4662,7 @@ char* MtmGucSerialize(void)
 		appendStringInfoString(serialized_gucs, " TO ");
 
 		/* quite a crutch */
-		if (strstr(cur_entry->key, "_mem") != NULL)
+		if (strstr(cur_entry->key, "_mem") != NULL || *(cur_entry->value) == '\0')
 		{
 			appendStringInfoString(serialized_gucs, "'");
 			appendStringInfoString(serialized_gucs, cur_entry->value);
@@ -4659,20 +4687,26 @@ char* MtmGucSerialize(void)
 
 static void MtmProcessDDLCommand(char const* queryString, bool transactional)
 {
-	char* gucCtx = MtmGucSerialize();
-	if (*gucCtx) {
-		queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s; %s", gucCtx, queryString);
-	} else { 
-		queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s", queryString);
-	}
-	MTM_LOG3("Sending utility: %s", queryString);
-	if (transactional) {
+	if (MtmTx.isReplicated)
+		return;
+
+	if (transactional)
+	{
+		char *gucCtx = MtmGucSerialize();
+		if (*gucCtx)
+			queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s; %s", gucCtx, queryString);
+		else
+			queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s", queryString);
+
 		/* Transactional DDL */
+		MTM_LOG3("Sending DDL: %s", queryString);
 		LogLogicalMessage("D", queryString, strlen(queryString) + 1, true);
 		MtmTx.containsDML = true;
-	} else {	
-		MTM_LOG1("Execute concurrent DDL: %s", queryString);
+	}
+	else
+	{
 		/* Concurrent DDL */
+		MTM_LOG1("Sending concurrent DDL: %s", queryString);
 		XLogFlush(LogLogicalMessage("C", queryString, strlen(queryString) + 1, false));
 	}
 }
@@ -4746,8 +4780,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_ClosePortalStmt:
 		case T_FetchStmt:
 		case T_DoStmt:
-		case T_CreateTableSpaceStmt:
-		case T_AlterTableSpaceOptionsStmt:
 		case T_CommentStmt:
 		case T_PrepareStmt:
 		case T_ExecuteStmt:
@@ -4759,11 +4791,30 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_ClusterStmt:
 		case T_VariableShowStmt:
 		case T_ReassignOwnedStmt:
-		case T_LockStmt:
+		case T_LockStmt: // XXX: check whether we should replicate that
 		case T_CheckPointStmt:
 		case T_ReindexStmt:
 		case T_ExplainStmt:
 			skipCommand = true;
+			break;
+
+		case T_CreateTableSpaceStmt:
+		case T_DropTableSpaceStmt:
+			{
+				if (MtmApplyContext != NULL)
+				{
+					MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
+					Assert(oldContext != MtmApplyContext);
+					MtmTablespaceStmt = copyObject(parsetree);
+					MemoryContextSwitchTo(oldContext);
+					return;
+				}
+				else
+				{
+					skipCommand = true;
+					MtmProcessDDLCommand(queryString, false);
+				}
+			}
 			break;
 
 		case T_VacuumStmt:
