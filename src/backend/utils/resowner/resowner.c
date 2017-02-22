@@ -21,6 +21,7 @@
 #include "postgres.h"
 
 #include "access/hash.h"
+#include "access/xact.h"
 #include "storage/predicate.h"
 #include "storage/proc.h"
 #include "utils/memutils.h"
@@ -555,7 +556,7 @@ ResourceOwnerReleaseInternal(ResourceOwner owner,
 	}
 	else if (phase == RESOURCE_RELEASE_LOCKS)
 	{
-		if (isTopLevel)
+		if (isTopLevel && getNestLevelATX() == 0)
 		{
 			/*
 			 * For a top-level xact we are going to release all locks (or at
@@ -578,7 +579,7 @@ ResourceOwnerReleaseInternal(ResourceOwner owner,
 			LOCALLOCK **locks;
 			int			nlocks;
 
-			Assert(owner->parent != NULL);
+			//Assert(owner->parent != NULL);
 
 			/*
 			 * Pass the list of locks owned by this resource owner to the lock
@@ -595,7 +596,7 @@ ResourceOwnerReleaseInternal(ResourceOwner owner,
 				nlocks = owner->nlocks;
 			}
 
-			if (isCommit)
+			if (isCommit && !isTopLevel)
 				LockReassignCurrentOwner(locks, nlocks);
 			else
 				LockReleaseCurrentOwner(locks, nlocks);

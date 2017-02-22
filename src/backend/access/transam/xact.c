@@ -3545,7 +3545,6 @@ void SuspendTransaction(void)
 		MOVELEFT(sus->CurTransactionContext, CurTransactionContext, NULL);
 		MOVELEFT(sus->TransactionAbortContext, TransactionAbortContext, NULL);
 
-		MemoryContextSwitchTo(CurTransactionContext);
 		MOVELEFT(sus->CurrentResourceOwner, CurrentResourceOwner, NULL);
 		MOVELEFT(sus->CurTransactionResourceOwner, CurTransactionResourceOwner, NULL);
 		MOVELEFT(sus->TopTransactionResourceOwner, TopTransactionResourceOwner, NULL);
@@ -3606,9 +3605,7 @@ bool ResumeTransaction(void)
 		CurTransactionContext = sus->CurTransactionContext;
 		TransactionAbortContext = sus->TransactionAbortContext;
 
-		//MemoryContextSwitchTo(CurTransactionContext);
 		CurrentResourceOwner = sus->CurrentResourceOwner;
-		Assert(*(unsigned long long*)CurrentResourceOwner != 0x7f7f7f7f7f7f7f7f);
 		CurTransactionResourceOwner = sus->CurTransactionResourceOwner;
 		TopTransactionResourceOwner = sus->TopTransactionResourceOwner;
 
