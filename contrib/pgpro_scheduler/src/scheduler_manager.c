@@ -396,13 +396,13 @@ scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *
 
 			for(i = 0; i < processed; i++)
 			{
-				tasks[i].id = get_int_from_spi(i, 1, 0);
+				tasks[i].id = get_int_from_spi(NULL, i, 1, 0);
 				dat = SPI_getbinval(SPI_tuptable->vals[i], tupdesc, 2,
 						&is_null);
 				tasks[i].rule = is_null ? NULL: DatumGetJsonb(dat);
-				tasks[i].postpone = get_interval_seconds_from_spi(i, 3, 0);
-				tasks[i].next = get_timestamp_from_spi(i, 4, 0);
-				statement = get_text_from_spi(i, 5);
+				tasks[i].postpone = get_interval_seconds_from_spi(NULL, i, 3, 0);
+				tasks[i].next = get_timestamp_from_spi(NULL, i, 4, 0);
+				statement = get_text_from_spi(NULL, i, 5);
 				if(statement)
 				{
 					tasks[i].has_next_time_statement = true;
@@ -1296,17 +1296,19 @@ int mark_job_broken(scheduler_manager_ctx_t *ctx, int cron_id, char *reason)
 {
 	Oid types[2] = { INT4OID, TEXTOID };
 	Datum values[2];
-	char *error;
 	char *sql = "update cron set reason = $2, broken = true where id = $1";
+	spi_response_t *r;
 	int ret;
 
 	values[0] = Int32GetDatum(cron_id);
 	values[1] = CStringGetTextDatum(reason);
-	ret = execute_spi_sql_with_args(sql, 2, types, values, NULL, &error);
-	if(ret < 0)
+	r = execute_spi_sql_with_args(sql, 2, types, values, NULL);
+	if(r->retval < 0)
 	{
-		manager_fatal_error(ctx, 0, "Cannot set cron %d broken: %s", cron_id, error);
+		manager_fatal_error(ctx, 0, "Cannot set cron %d broken: %s", cron_id, r->error);
 	}
+	ret = r->retval;
+	destroy_spi_data(r);
 	return ret;
 }
 
@@ -1315,9 +1317,9 @@ int update_cron_texttime(scheduler_manager_ctx_t *ctx, int cron_id, TimestampTz 
 	Oid types[2] = { INT4OID, TIMESTAMPTZOID };
 	Datum values[2];
 	bool nulls[2] = { ' ', ' ' };
-	char *error;
 	int ret;
 	char *sql = "update cron set _next_exec_time = $2 where id = $1";
+	spi_response_t *r;
 
 	values[0] = Int32GetDatum(cron_id);
 	if(next > 0)
@@ -1328,11 +1330,13 @@ int update_cron_texttime(scheduler_manager_ctx_t *ctx, int cron_id, TimestampTz 
 	{
 		nulls[1] = 'n';
 	}
-	ret = execute_spi_sql_with_args(sql, 2, types, values, nulls, &error);
+	r = execute_spi_sql_with_args(sql, 2, types, values, nulls);
+	ret = r->retval;
 	if(ret < 0)
 	{
-		manager_fatal_error(ctx, 0, "Cannot update cron %d next time: %s", cron_id, error);
+		manager_fatal_error(ctx, 0, "Cannot update cron %d next time: %s", cron_id, r->error);
 	}
+	destroy_spi_data(r);
 
 	return ret;
 }
@@ -1419,6 +1423,7 @@ int insert_at_record(char *nodename, int cron_id, TimestampTz start_at, Timestam
 	char *at_sql = "select count(start_at) from at where cron = $1 and start_at = $2";
 	char *log_sql = "select count(start_at) from log where cron = $1 and start_at = $2";
 	int count, ret;
+	spi_response_t *r;
 
 	argtypes[0] = INT4OID;
 	argtypes[1] = TIMESTAMPTZOID;
@@ -1448,7 +1453,11 @@ int insert_at_record(char *nodename, int cron_id, TimestampTz start_at, Timestam
 		nulls[1] = 'n';
 		values[1] = 0;
 	}
-	ret = execute_spi_sql_with_args(insert_sql, 4, argtypes, values, nulls, error);
+	r = execute_spi_sql_with_args(insert_sql, 4, argtypes, values, nulls);
+	
+	ret = r->retval;
+	if(r->error) *error = _copy_string(r->error);
+	destroy_spi_data(r);
 
 	if(ret < 0) return ret;
 	return 1;
@@ -1551,17 +1560,22 @@ int scheduler_make_atcron_record(scheduler_manager_ctx_t *ctx)
 
 void clean_at_table(scheduler_manager_ctx_t *ctx)
 {
-	char *error = NULL;
+	spi_response_t *r;
 
 	START_SPI_SNAP();
-	if(execute_spi("truncate at", &error) < 0)
+	r = execute_spi("truncate at");
+	if(r->retval < 0)
 	{
-		manager_fatal_error(ctx, 0, "Cannot clean 'at' table: %s", error);
+		manager_fatal_error(ctx, 0, "Cannot clean 'at' table: %s", r->error);
 	}
-	if(execute_spi("update cron set _next_exec_time = NULL where _next_exec_time is not NULL", &error) < 0)
+	destroy_spi_data(r);
+	r = execute_spi("update cron set _next_exec_time = NULL where _next_exec_time is not NULL");
+	if(r->retval  < 0)
 	{
-		manager_fatal_error(ctx, 0, "Cannot clean cron _next time: %s", error);
+		manager_fatal_error(ctx, 0, "Cannot clean cron _next time: %s",
+																	r->error);
 	}
+	destroy_spi_data(r);
 	STOP_SPI_SNAP();
 }
 

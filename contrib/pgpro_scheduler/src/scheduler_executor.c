@@ -161,7 +161,7 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 	char *error = NULL;
 	int i;
 	job_t *job;
-	int ret;
+	spi_response_t *r;
 
 	EE.n = 0;
 	EE.errors = NULL;
@@ -230,27 +230,27 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 		}
 		if(job->type == AtJob && i == 0 && job->sql_params_n > 0)
 		{
-			ret = execute_spi_params_prepared(job->dosql[i], job->sql_params_n, job->sql_params, &error);
+			r = execute_spi_params_prepared(job->dosql[i], job->sql_params_n, job->sql_params);
 		}
 		else
 		{
-			ret = execute_spi(job->dosql[i], &error);
+			r = execute_spi(job->dosql[i]);
 		}
-		if(ret < 0)
+		if(r->retval < 0)
 		{
 			/* success = false; */
 			*status = SchdExecutorError;
-			if(error)
+			if(r->error)
 			{
 				push_executor_error(&EE, "error in command #%d: %s",
-															i+1, error);
-				pfree(error);
+															i+1, r->error);
 			}
 			else
 			{
 				push_executor_error(&EE, "error in command #%d: code: %d",
-															i+1, ret);
+															i+1, r->retval);
 			}
+			destroy_spi_data(r);
 			ABORT_SPI_SNAP();
 			SetConfigOption("schedule.transaction_state", "failure", PGC_INTERNAL, PGC_S_SESSION);
 			executor_onrollback(job, &EE);
@@ -264,6 +264,7 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 				STOP_SPI_SNAP();
 			}
 		}
+		destroy_spi_data(r);
 	}
 	if(*status != SchdExecutorError)
 	{
@@ -331,27 +332,36 @@ int set_session_authorization(char *username, char **error)
 	Oid useroid;
 	Datum values[1];
 	bool is_superuser;
-	int ret;
+	spi_response_t *r;
+	int rv;
 	char *sql = "select oid, rolsuper from pg_catalog.pg_roles where rolname = $1";
 	char buff[1024];
 
 	values[0] = CStringGetTextDatum(username);	
 	START_SPI_SNAP();
-	ret = execute_spi_sql_with_args(sql, 1, types, values, NULL, error);
+	r = execute_spi_sql_with_args(sql, 1, types, values, NULL);
 
-	if(ret < 0) return ret;
-	if(SPI_processed == 0)
+	if(r->retval < 0)
+	{
+		rv = r->retval;
+		*error = _copy_string(r->error);
+		destroy_spi_data(r);
+		return rv;
+	}
+	if(r->n_rows == 0)
 	{
 		STOP_SPI_SNAP();
 		sprintf(buff, "Cannot find user with name: %s", username);
 		*error = _copy_string(buff);
+		destroy_spi_data(r);
 
 		return -200;
 	}
-	useroid = get_oid_from_spi(0, 1, 0);
-	is_superuser = get_boolean_from_spi(0, 2, false);
+	useroid = get_oid_from_spi(r, 0, 1, 0);
+	is_superuser = get_boolean_from_spi(r, 0, 2, false);
 
 	STOP_SPI_SNAP();
+	destroy_spi_data(r);
 
 	SetSessionAuthorization(useroid, is_superuser);
 
@@ -399,42 +409,43 @@ void set_shared_message(schd_executor_share_t *shared, executor_error_t *ee)
 
 TimestampTz get_next_excution_time(char *sql, executor_error_t *ee)
 {
-	char *error;
-	int ret;
 	TimestampTz ts = 0;
 	Datum d;
-	bool isnull;
+	spi_response_t *r;
 
 	START_SPI_SNAP();
 	pgstat_report_activity(STATE_RUNNING, "culc next time execution time");
-	ret = execute_spi(sql, &error);
-	if(ret < 0)
+	r = execute_spi(sql);
+	if(r->retval < 0)
 	{
-		if(error)
+		if(r->error)
 		{
-			push_executor_error(ee, "next time error: %s", error);
-			pfree(error);
+			push_executor_error(ee, "next time error: %s", r->error);
 		}
 		else
 		{
-			push_executor_error(ee, "next time error: code = %d", ret);
+			push_executor_error(ee, "next time error: code = %d", r->retval);
 		}
+		destroy_spi_data(r);
 		ABORT_SPI_SNAP();
 		return 0;
 	}
-	if(SPI_processed == 0)
+	if(r->n_rows == 0)
 	{	
 		push_executor_error(ee, "next time statement returns 0 rows");
 	}
-	else if(SPI_gettypeid(SPI_tuptable->tupdesc, 1) != TIMESTAMPTZOID)
+	else if(r->types[0] != TIMESTAMPTZOID)
 	{
 		push_executor_error(ee, "next time statement column 1 type is not timestamp with timezone");
 	}
+	else if(r->rows[0][0].null)
+	{
+		push_executor_error(ee, "next time statement column 1  is null");
+	}
 	else
 	{
-		d = SPI_getbinval(SPI_tuptable->vals[0], SPI_tuptable->tupdesc,
-								1, &isnull);
-		if(isnull)
+		d = r->rows[0][0].dat;
+		if(!d)
 		{
 			push_executor_error(ee, "next time statement row 0 column 1 ihas NULL value");
 		}
@@ -443,6 +454,7 @@ TimestampTz get_next_excution_time(char *sql, executor_error_t *ee)
 			ts = DatumGetTimestampTz(d);
 		}
 	}
+	destroy_spi_data(r);
 
 	STOP_SPI_SNAP();
 	return ts;
@@ -450,24 +462,23 @@ TimestampTz get_next_excution_time(char *sql, executor_error_t *ee)
 
 int executor_onrollback(job_t *job, executor_error_t *ee)
 {
-	char *error = NULL;
-	int ret;
+	int rv;
+	spi_response_t *r;
 
 	if(!job->onrollback) return 0;
 	pgstat_report_activity(STATE_RUNNING, "execure onrollback");
 
 	START_SPI_SNAP();
-	ret = execute_spi(job->onrollback, &error);
-	if(ret < 0)
+	r = execute_spi(job->onrollback);
+	if(r->retval < 0)
 	{
-		if(error)
+		if(r->error)
 		{
-			push_executor_error(ee, "onrollback error: %s", error);
-			pfree(error);
+			push_executor_error(ee, "onrollback error: %s", r->error);
 		}
 		else
 		{
-			push_executor_error(ee, "onrollback error: unknown: %d", ret);
+			push_executor_error(ee, "onrollback error: unknown: %d", r->retval);
 		}
 		ABORT_SPI_SNAP();
 	}
@@ -475,7 +486,9 @@ int executor_onrollback(job_t *job, executor_error_t *ee)
 	{
 		STOP_SPI_SNAP();
 	}
-	return ret;
+	rv = r->retval;
+	destroy_spi_data(r);
+	return rv;
 }
 
 void set_pg_var(bool result, executor_error_t *ee)
@@ -483,25 +496,25 @@ void set_pg_var(bool result, executor_error_t *ee)
 	char *sql = "select pgv_set_text('pgpro_scheduler', 'transaction', $1)";
 	Oid argtypes[1] = { TEXTOID };
 	Datum vals[1];
-	char *error = NULL;
-	int ret;
+	spi_response_t *r;
 
 	pgstat_report_activity(STATE_RUNNING, "set pg_valiable");
 
 	vals[0] = PointerGetDatum(cstring_to_text(result ? "success": "failure"));
 
-	ret = execute_spi_sql_with_args(sql, 1, argtypes, vals, NULL, &error);
-	if(ret < 0)
+	r = execute_spi_sql_with_args(sql, 1, argtypes, vals, NULL);
+	if(r->retval < 0)
 	{
-		if(error)
+		if(r->error)
 		{
-			push_executor_error(ee, "set variable: %s", error);
+			push_executor_error(ee, "set variable: %s", r->error);
 		}
 		else
 		{
-			push_executor_error(ee, "set variable error code: %d", ret);
+			push_executor_error(ee, "set variable error code: %d", r->retval);
 		}
 	}
+	destroy_spi_data(r);
 }
 
 job_t *initializeExecutorJob(schd_executor_share_t *data)
@@ -696,8 +709,9 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 	char *error = NULL;
 	char *set_error = NULL;
 	job_t *job;
-	int ret, set_ret;
+	int set_ret;
 	char buff[512];
+	spi_response_t *r;
 
 	*status = shared->status = SchdExecutorWork;
 
@@ -728,7 +742,6 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 		return -1;
 	} */
 	STOP_SPI_SNAP(); /* Commit changes */
-	elog(LOG, "JOB MOVED TO PROCESSED");
 	pgstat_report_activity(STATE_RUNNING, "job initialized");
 	START_SPI_SNAP();
 
@@ -767,11 +780,11 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 
 	if(job->sql_params_n > 0)
 	{
-		ret = execute_spi_params_prepared(job->dosql[0], job->sql_params_n, job->sql_params, &error);
+		r = execute_spi_params_prepared(job->dosql[0], job->sql_params_n, job->sql_params);
 	}
 	else
 	{
-		ret = execute_spi(job->dosql[0], &error);
+		r = execute_spi(job->dosql[0]);
 	}
 	if(job->timelimit)
 	{
@@ -780,23 +793,25 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 	ResetAllOptions();
 	SetConfigOption("enable_seqscan", "off", PGC_USERSET, PGC_S_SESSION);
 	SetSessionAuthorization(BOOTSTRAP_SUPERUSERID, true);
-	if(ret < 0)
+	if(r->retval < 0)
 	{
-		if(error)
+		if(r->error)
 		{
-			set_ret = set_at_job_done(job, error, resubmit_current_job, &set_error);
-			pfree(error);
+			set_ret = set_at_job_done(job, r->error, resubmit_current_job,
+																	&set_error);
 		}
 		else
 		{
-			sprintf(buff, "error in command: code: %d", ret);
-			set_ret = set_at_job_done(job, buff, resubmit_current_job, &set_error);
+			sprintf(buff, "error in command: code: %d", r->retval);
+			set_ret = set_at_job_done(job, buff, resubmit_current_job,
+																	&set_error);
 		}
 	}
 	else
 	{
 		set_ret = set_at_job_done(job, NULL, resubmit_current_job, &set_error);
 	}
+	destroy_spi_data(r);
 	
 	resubmit_current_job = 0;
 	current_job_id = -1;
