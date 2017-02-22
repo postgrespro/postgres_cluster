@@ -405,15 +405,12 @@ process_remote_message(StringInfo s)
 				if (MtmVacuumStmt != NULL) { 
 					ExecVacuum(MtmVacuumStmt, 1);
 				} else if (MtmIndexStmt != NULL) {
-					MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
 					Oid relid =	RangeVarGetRelidExtended(MtmIndexStmt->relation, ShareUpdateExclusiveLock,
 														 false, false,
 														 NULL,
 														 NULL);
 					/* Run parse analysis ... */
 					MtmIndexStmt = transformIndexStmt(relid, MtmIndexStmt, messageBody);
-
-					MemoryContextSwitchTo(oldContext);
 
 					DefineIndex(relid,		/* OID of heap relation */
 								MtmIndexStmt,
@@ -599,6 +596,7 @@ read_rel(StringInfo s, LOCKMODE mode)
 	RangeVar*	rv;
 	Oid			remote_relid = pq_getmsgint(s, 4);
 	Oid         local_relid;
+	MemoryContext old_context;
 
 	local_relid = pglogical_relid_map_get(remote_relid);
 	if (local_relid == InvalidOid) { 
@@ -611,7 +609,9 @@ read_rel(StringInfo s, LOCKMODE mode)
 		rv->relname = (char *) pq_getmsgbytes(s, relnamelen);
 		
 		local_relid = RangeVarGetRelidExtended(rv, mode, false, false, NULL, NULL);
+		old_context = MemoryContextSwitchTo(TopMemoryContext);
 		pglogical_relid_map_put(remote_relid, local_relid);
+		MemoryContextSwitchTo(old_context);
 	} else { 
 		nspnamelen = pq_getmsgbyte(s);
 		s->cursor += nspnamelen;
@@ -1041,7 +1041,8 @@ void MtmExecutor(void* work, size_t size)
 	int spill_file = -1;
 	int save_cursor = 0;
 	int save_len = 0;
-	MemoryContext topContext;
+	MemoryContext old_context;
+	MemoryContext top_context;
 
     s.data = work;
     s.len = size;
@@ -1055,13 +1056,15 @@ void MtmExecutor(void* work, size_t size)
 												ALLOCSET_DEFAULT_INITSIZE,
 												ALLOCSET_DEFAULT_MAXSIZE);
     }
-	topContext = MemoryContextSwitchTo(MtmApplyContext);
-
+	top_context = MemoryContextSwitchTo(MtmApplyContext);
 	replorigin_session_origin = InvalidRepOriginId;
     PG_TRY();
     {    
-        while (true) { 
+		bool inside_transaction = true;
+        do { 
             char action = pq_getmsgbyte(&s);
+			old_context = MemoryContextSwitchTo(MtmApplyContext);
+	
             MTM_LOG2("%d: REMOTE process action %c", MyProcPid, action);
 #if 0
 			if (Mtm->status == MTM_RECOVERY) { 
@@ -1072,50 +1075,48 @@ void MtmExecutor(void* work, size_t size)
             switch (action) {
                 /* BEGIN */
             case 'B':
-			    if (process_remote_begin(&s)) { 				   
-					continue;
-				} else { 
-					break;
-				}
+			    inside_transaction = process_remote_begin(&s);
+				break;
                 /* COMMIT */
             case 'C':
   			    close_rel(rel);
                 process_remote_commit(&s);
+				inside_transaction = false;
                 break;
                 /* INSERT */
             case 'I':
-                process_remote_insert(&s, rel);
-                continue;
+			    process_remote_insert(&s, rel);
+                break;
                 /* UPDATE */
             case 'U':
                 process_remote_update(&s, rel);
-                continue;
+                break;
                 /* DELETE */
             case 'D':
                 process_remote_delete(&s, rel);
-                continue;
+                break;
             case 'R':
   			    close_rel(rel);
                 rel = read_rel(&s, RowExclusiveLock);
-                continue;
+                break;
 			case 'F':
 			{
 				int node_id = pq_getmsgint(&s, 4);
 				int file_id = pq_getmsgint(&s, 4);
 				Assert(spill_file < 0);
 				spill_file = MtmOpenSpillFile(node_id, file_id);
-				continue;
+				break;
 			}
  		    case '(':
 			{
 			    size_t size = pq_getmsgint(&s, 4);    
-				s.data = palloc(size);
+				s.data = MemoryContextAlloc(TopMemoryContext, size);
 				save_cursor = s.cursor;
 				save_len = s.len;
 				s.cursor = 0;
 				s.len = size;
 				MtmReadSpillFile(spill_file, s.data, size);
-				continue;
+				break;
 			}
   		    case ')':
 			{
@@ -1123,33 +1124,32 @@ void MtmExecutor(void* work, size_t size)
 				s.data = work;
   			    s.cursor = save_cursor;
 				s.len = save_len;
-				continue;
+				break;
 			}
 			case 'M':
 			{
-				if (process_remote_message(&s)) { 
-					break;
-				}
-				continue;
+				inside_transaction = !process_remote_message(&s);
+				break;
 			}
 			case 'Z':
 			{
 				MtmRecoveryCompleted();
+				inside_transaction = false;
 				break;
 			}
             default:
                 MTM_ELOG(ERROR, "unknown action of type %c", action);
             }        
-            break;
-        }
+			MemoryContextSwitchTo(old_context);
+			MemoryContextResetAndDeleteChildren(MtmApplyContext);
+        } while (inside_transaction);
     }
     PG_CATCH();
     {
-		MemoryContext oldcontext;
 		MtmReleaseLock();
-		oldcontext = MemoryContextSwitchTo(MtmApplyContext);
+		old_context = MemoryContextSwitchTo(MtmApplyContext);
 		MtmHandleApplyError();
-		MemoryContextSwitchTo(oldcontext);
+		MemoryContextSwitchTo(old_context);
 		EmitErrorReport();
         FlushErrorState();
 		MTM_LOG1("%d: REMOTE begin abort transaction %llu", MyProcPid, (long64)MtmGetCurrentTransactionId());
@@ -1159,12 +1159,15 @@ void MtmExecutor(void* work, size_t size)
 		MTM_LOG2("%d: REMOTE end abort transaction %llu", MyProcPid, (long64)MtmGetCurrentTransactionId());
     }
     PG_END_TRY();
+	if (s.data != work) { 
+		pfree(s.data);
+	}
 #if 0 /* spill file is expecrted to be closed by tranaction commit or rollback */
 	if (spill_file >= 0) { 
 		MtmCloseSpillFile(spill_file);
 	}
 #endif
+	MemoryContextSwitchTo(top_context);
     MemoryContextResetAndDeleteChildren(MtmApplyContext);
-	MemoryContextSwitchTo(topContext);
 }
     

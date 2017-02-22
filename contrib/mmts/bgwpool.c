@@ -35,9 +35,9 @@ static void BgwPoolMainLoop(BgwPool* pool)
 	MtmIsLogicalReceiver = true;
 	MtmPool = pool;
 
-	signal(SIGINT, BgwShutdownWorker);
-	signal(SIGQUIT, BgwShutdownWorker);
-	signal(SIGTERM, BgwShutdownWorker);
+	pqsignal(SIGINT, BgwShutdownWorker);
+	pqsignal(SIGQUIT, BgwShutdownWorker);
+	pqsignal(SIGTERM, BgwShutdownWorker);
 
     BackgroundWorkerUnblockSignals();
 	BackgroundWorkerInitializeConnection(pool->dbname, pool->dbuser);

@@ -526,8 +526,8 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
         if (ts != NULL /*&& ts->status != TRANSACTION_STATUS_IN_PROGRESS*/)
         {
             if (ts->csn > MtmTx.snapshot) { 
-                MTM_LOG4("%d: tuple with xid=%d(csn=%lld) is invisible in snapshot %lld",
-						 MyProcPid, xid, ts->csn, MtmTx.snapshot);
+                MTM_LOG4("%d: tuple with xid=%lld(csn=%lld) is invisible in snapshot %lld",
+						 MyProcPid, (long64)xid, ts->csn, MtmTx.snapshot);
 				if (MtmGetSystemTime() - start > USECS_PER_SEC) { 
 					MTM_ELOG(WARNING, "Backend %d waits for transaction %s (%llu) status %lld usecs", MyProcPid, ts->gid, (long64)xid, MtmGetSystemTime() - start);
 				}
@@ -567,8 +567,8 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
             else
             {
                 bool invisible = ts->status != TRANSACTION_STATUS_COMMITTED;
-                MTM_LOG4("%d: tuple with xid=%d(csn= %lld) is %s in snapshot %lld",
-						 MyProcPid, xid, ts->csn, invisible ? "rollbacked" : "committed", MtmTx.snapshot);
+                MTM_LOG4("%d: tuple with xid=%lld(csn= %lld) is %s in snapshot %lld",
+						 MyProcPid, (long64)xid, ts->csn, invisible ? "rollbacked" : "committed", MtmTx.snapshot);
                 MtmUnlock();
 				if (MtmGetSystemTime() - start > USECS_PER_SEC) { 
 					MTM_ELOG(WARNING, "Backend %d waits for %s transaction %s (%llu) %lld usecs", MyProcPid, invisible ? "rollbacked" : "committed", 
@@ -579,7 +579,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
         }
         else
         {
-            MTM_LOG4("%d: visibility check is skipped for transaction %u in snapshot %llu", MyProcPid, xid, MtmTx.snapshot);
+            MTM_LOG4("%d: visibility check is skipped for transaction %llu in snapshot %llu", MyProcPid, (long64)xid, MtmTx.snapshot);
 			MtmUnlock();
 			return PgXidInMVCCSnapshot(xid, snapshot);
         }
@@ -4894,6 +4894,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			break;
 
 		case T_DropStmt:
+	    case T_TruncateStmt:
 			{
 				DropStmt *stmt = (DropStmt *) parsetree;
 				if (stmt->removeType == OBJECT_INDEX && stmt->concurrent)
