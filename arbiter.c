@@ -724,9 +724,9 @@ static void MtmSender(Datum arg)
 	MTM_ELOG(LOG, "Start arbiter sender %d", MyProcPid);
 	InitializeTimeouts();
 
-	signal(SIGINT, SetStop);
-	signal(SIGQUIT, SetStop);
-	signal(SIGTERM, SetStop);
+	pqsignal(SIGINT, SetStop);
+	pqsignal(SIGQUIT, SetStop);
+	pqsignal(SIGTERM, SetStop);
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -803,9 +803,9 @@ static bool MtmRecovery()
 
 static void MtmMonitor(Datum arg)
 {
-	signal(SIGINT, SetStop);
-	signal(SIGQUIT, SetStop);
-	signal(SIGTERM, SetStop);
+	pqsignal(SIGINT, SetStop);
+	pqsignal(SIGQUIT, SetStop);
+	pqsignal(SIGTERM, SetStop);
 	
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -840,9 +840,9 @@ static void MtmReceiver(Datum arg)
     max_fd = 0;
 #endif
 
-	signal(SIGINT, SetStop);
-	signal(SIGQUIT, SetStop);
-	signal(SIGTERM, SetStop);
+	pqsignal(SIGINT, SetStop);
+	pqsignal(SIGQUIT, SetStop);
+	pqsignal(SIGTERM, SetStop);
 	
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
