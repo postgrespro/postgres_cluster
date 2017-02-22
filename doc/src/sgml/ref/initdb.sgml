@@ -370,6 +370,45 @@ doc/src/sgml/ref/initdb.sgml
    </para>
 
    <para>
+    Other options for testing 64-bit XID:
+
+    <variablelist>
+     <varlistentry>
+      <term><option>-m <replaceable class="parameter">START_MX_ID</replaceable></option></term>
+      <term><option>--multixact-id=<replaceable class="parameter">START_MX_ID</replaceable></option></term>
+      <listitem>
+       <para>
+        Specifies a start multixact id value in the hex format for new db instance to test 64-bit xids,
+        default value is <literal>0</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-o <replaceable class="parameter">START_MX_OFFSET</replaceable></option></term>
+      <term><option>--multixact-offset=<replaceable class="parameter">START_MX_OFFSET</replaceable></option></term>
+      <listitem>
+       <para>
+        Specifies a start multixact offset value in the decimal format for new db instance to test 64-bit xids,
+        default value is <literal>0</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-x <replaceable class="parameter">START_XID</replaceable></option></term>
+      <term><option>--xid=<replaceable class="parameter">START_XID</replaceable></option></term>
+      <listitem>
+       <para>
+        Specifies a start xid value in the hex format for new db instance to test 64-bit xids,
+        default value is <literal>0</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </para>
+
+   <para>
     Other options:
 
     <variablelist>
