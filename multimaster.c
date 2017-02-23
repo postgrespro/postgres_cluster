@@ -159,6 +159,9 @@ static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
 static void MtmProcessDDLCommand(char const* queryString, bool transactional);
 
+static void MtmSuspendNode(void);
+static void MtmResumeNode(void);
+
 MtmState* Mtm;
 
 VacuumStmt* MtmVacuumStmt;
@@ -251,6 +254,7 @@ static bool  MtmIgnoreTablesWithoutPk;
 static int   MtmLockCount;
 static bool  MtmMajorNode;
 static bool  MtmBreakConnection;
+static bool  MtmSuspended;
 
 static ExecutorStart_hook_type PreviousExecutorStartHook;
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
@@ -272,8 +276,11 @@ static bool MtmAtExitHookRegistered = false;
  * This function is called when backend is terminated because of critical error or when error is catched 
  * by FINALLY block 
  */
-void MtmReleaseLock(void)
+void MtmReleaseLocks(void)
 {
+	if (MtmSuspended) {
+		MtmResumeNode();
+	}
 	if (MtmLockCount != 0) { 
 		Assert(Mtm->lastLockHolder == MyProcPid);
 		MtmLockCount = 0;
@@ -296,7 +303,7 @@ void MtmLock(LWLockMode mode)
 {
 	timestamp_t start, stop;
 	if (!MtmAtExitHookRegistered) { 
-		atexit(MtmReleaseLock);
+		atexit(MtmReleaseLocks);
 		MtmAtExitHookRegistered = true;
 	}
 	if (mode == LW_EXCLUSIVE || MtmLockCount != 0) { 
@@ -848,7 +855,6 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 			MTM_ELOG(MtmBreakConnection ? FATAL : ERROR, "Multimaster node is not online: current status %s", MtmNodeStatusMnem[Mtm->status]);
 		}
 		x->containsDML = false;
-        x->snapshot = MtmAssignCSN();	
 		x->gtid.xid = InvalidTransactionId;
 		x->gid[0] = '\0';
 		x->status = TRANSACTION_STATUS_IN_PROGRESS;
@@ -858,9 +864,14 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		 * Allow applying of replicated transactions to avoid deadlock (to caught-up we need active transaction counter to become zero).
 		 * Also allow user to complete explicit 2PC transactions.
 		 */
-		if (x->isDistributed && !x->isReplicated && !x->isTwoPhase && strcmp(application_name, MULTIMASTER_ADMIN) != 0) { 
+		if (x->isDistributed 
+			&& (Mtm->exclusiveLock || (!x->isReplicated && !x->isTwoPhase))
+			&& !MtmSuspended
+			&& strcmp(application_name, MULTIMASTER_ADMIN) != 0) 
+		{ 
 			MtmCheckClusterLock();
 		}
+        x->snapshot = MtmAssignCSN();	
 
 		MtmUnlock();
 
@@ -1319,6 +1330,9 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
 	MTM_LOG2("%d: End transaction %d, prepared=%d, replicated=%d, distributed=%d, 2pc=%d, gid=%s -> %s", 
 			 MyProcPid, x->xid, x->isPrepared, x->isReplicated, x->isDistributed, x->isTwoPhase, x->gid, commit ? "commit" : "abort");
+	if (MtmSuspended) { 
+		MtmResumeNode();
+	}
 	commit &= (x->status != TRANSACTION_STATUS_ABORTED);
 	if (x->isDistributed && (x->isPrepared || x->isReplicated) && !x->isTwoPhase) {
 		MtmTransState* ts = NULL;
@@ -2038,7 +2052,44 @@ void MtmSwitchClusterMode(MtmNodeStatus mode)
 	/* ??? Something else to do here? */
 }
 
+/*
+ * Prevent start of any new transactions at this node
+ */
+static void
+MtmSuspendNode(void)
+{
+	timestamp_t delay = MIN_WAIT_TIMEOUT;
+	bool insideTransaction = MtmTx.isActive;
+	Assert(!MtmSuspended);
+	MtmLock(LW_EXCLUSIVE);
+	if (Mtm->exclusiveLock) {
+		elog(ERROR, "There is already pending exclusive lock");
+	}
+	Mtm->exclusiveLock = true;
+	MtmSuspended = true;
+	while (Mtm->nActiveTransactions != insideTransaction) { 
+		MtmUnlock();
+		MtmSleep(delay);
+		if (delay*2 <= MAX_WAIT_TIMEOUT) {
+			delay *= 2;
+		}
+		MtmLock(LW_EXCLUSIVE);
+	}
+	MtmUnlock();
+}
 
+/*
+ * Resume transaction processing at node (blocked by MtmSuspendNode)
+ */
+static void
+MtmResumeNode(void)
+{
+	MtmLock(LW_EXCLUSIVE);                                                           
+	Mtm->exclusiveLock = false;
+	MtmSuspended = false;
+	MtmUnlock();
+}
+	
 /*
  * If there are recovering nodes which are catching-up WAL, check the status and prevent new transaction from commit to give
  * WAL-sender a chance to catch-up WAL, completely synchronize replica and switch it to normal mode.
@@ -2050,7 +2101,7 @@ MtmCheckClusterLock()
 	timestamp_t delay = MIN_WAIT_TIMEOUT;
 	while (true)
 	{
-		if (Mtm->globalLockerMask | Mtm->walSenderLockerMask) {
+		if (Mtm->exclusiveLock || (Mtm->globalLockerMask | Mtm->walSenderLockerMask)) {
 			/* some "almost cautch-up" wal-senders are still working. */
 			/* Do not start new transactions until them are completed. */
 			MtmUnlock();
@@ -2474,6 +2525,7 @@ static void MtmInitialize()
 		Mtm->reconnectMask = 0;
 		Mtm->recoveredLSN = INVALID_LSN;
 		Mtm->nLockers = 0;
+		Mtm->exclusiveLock = false;
 		Mtm->nActiveTransactions = 0;
 		Mtm->votingTransactions = NULL;
         Mtm->transListHead = NULL;
@@ -4944,8 +4996,12 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			}
 			break;
 
-		case T_DropStmt:
 	    case T_TruncateStmt:
+			skipCommand = false;
+			MtmSuspendNode();
+			break;
+
+		case T_DropStmt:
 			{
 				DropStmt *stmt = (DropStmt *) parsetree;
 				if (stmt->removeType == OBJECT_INDEX && stmt->concurrent)

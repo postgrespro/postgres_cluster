@@ -297,10 +297,11 @@ typedef struct
 	int    nActiveTransactions;        /* Number of active 2PC transactions */
 	int    nConfigChanges;             /* Number of cluster configuration changes */
 	int    recoveryCount;              /* Number of completed recoveries */
-	int    donorNodeId;               /* Cluster node from which this node was populated */
+	int    donorNodeId;                /* Cluster node from which this node was populated */
 	int64  timeShift;                  /* Local time correction */
 	csn_t  csn;                        /* Last obtained timestamp: used to provide unique ascending CSNs based on system time */
 	csn_t  lastCsn;                    /* CSN of last committed transaction */
+	sig_atomic_t exclusiveLock;        /* Exclusive node lock, preventing start of new transactions */
 	MtmTransState* votingTransactions; /* L1-list of replicated transactions notifications to coordinator.
 									 	 This list is used to pass information to mtm-sender BGW */
     MtmTransState* transListHead;      /* L1 list of all finished transactions present in xid2state hash.
@@ -420,6 +421,5 @@ extern void MtmPrecommitTransaction(char const* gid);
 extern char* MtmGucSerialize(void);
 extern bool MtmTransIsActive(void);
 extern MtmTransState* MtmGetActiveTransaction(MtmL2List* list);
-extern void MtmReleaseLock(void);
-
+extern void MtmReleaseLocks(void);
 #endif

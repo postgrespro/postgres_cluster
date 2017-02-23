@@ -1165,7 +1165,6 @@ void MtmExecutor(void* work, size_t size)
     }
     PG_CATCH();
     {
-		MtmReleaseLock();
 		old_context = MemoryContextSwitchTo(MtmApplyContext);
 		MtmHandleApplyError();
 		MemoryContextSwitchTo(old_context);
@@ -1188,5 +1187,6 @@ void MtmExecutor(void* work, size_t size)
 #endif
 	MemoryContextSwitchTo(top_context);
     MemoryContextResetAndDeleteChildren(MtmApplyContext);
+	MtmReleaseLocks();
 }
     
