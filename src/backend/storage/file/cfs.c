@@ -1107,13 +1107,22 @@ static void cfs_gc_bgworker_main(Datum arg)
 
 	elog(INFO, "Start CFS garbage collector %d", MyProcPid);
 
-	while (cfs_gc_scan_tablespace(worker_id)
-		   && !cfs_gc_stop
-		   && --cfs_state->max_iterations >= 0)
+	while (true)
 	{
-		int rc = WaitLatch(MyLatch,
-						   WL_TIMEOUT | WL_POSTMASTER_DEATH,
-						   cfs_gc_period /* ms */ );
+		int timeout = cfs_gc_period;
+		int rc;
+
+		if (!cfs_gc_scan_tablespace(worker_id)) 
+		{
+			timeout = CFS_RETRY_TIMEOUT;
+		}
+		if (cfs_gc_stop || --cfs_state->max_iterations <= 0)
+		{
+			break;
+		}
+		rc = WaitLatch(MyLatch,
+					   WL_TIMEOUT | WL_POSTMASTER_DEATH,
+					   timeout /* ms */ );
 		if (rc & WL_POSTMASTER_DEATH)
 			exit(1);
 	}
