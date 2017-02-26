@@ -294,6 +294,8 @@ typedef struct SubXactCallbackItem
 
 static SubXactCallbackItem *SubXact_callbacks = NULL;
 
+static bool	xactHasCatcacheInvalidationMessages;
+static bool xactHasRelcacheInvalidationMessages;
 
 /* local function prototypes */
 static void AssignTransactionId(TransactionState s);
@@ -1850,7 +1852,9 @@ typedef struct {
 	void *TriggerState;
 	void *SPIState;
 	void *SnapshotState;
+	struct TransInvalidationInfo* InvalidationInfo;
 } SuspendedTransactionState;
+
 static int suspendedXactNum = 0;
 static SuspendedTransactionState suspendedXacts[MAX_SUSPENDED_XACTS];
 
@@ -2168,6 +2172,8 @@ CommitTransaction(void)
 	 * waiting for lock on a relation we've modified, we want them to know
 	 * about the catalog change before they start using the relation).
 	 */
+	xactHasCatcacheInvalidationMessages = HasCatcacheInvalidationMessages(); 
+	xactHasRelcacheInvalidationMessages = HasRelcacheInvalidationMessages();
 	AtEOXact_Inval(true);
 
 	AtEOXact_MultiXact();
@@ -2662,6 +2668,8 @@ AbortTransaction(void)
 			AtEOXact_Buffers(false);
 		}
 		AtEOXact_RelationCache(false);
+		xactHasCatcacheInvalidationMessages = HasCatcacheInvalidationMessages(); 
+		xactHasRelcacheInvalidationMessages = HasRelcacheInvalidationMessages();
 		AtEOXact_Inval(false);
 		AtEOXact_MultiXact();
 		ResourceOwnerRelease(TopTransactionResourceOwner,
@@ -3504,7 +3512,20 @@ void SuspendTransaction(void)
 		SuspendedTransactionState *sus = suspendedXacts + suspendedXactNum++;
 
 		sus->TopTransactionStateData = TopTransactionStateData;
+
 		sus->SnapshotState = SuspendSnapshot(); /* only before the resource-owner stuff */
+		
+		if (HasCatcacheInvalidationMessages()) 
+		{
+			ResetCatalogCaches();
+		}
+		if (HasRelcacheInvalidationMessages()) 
+		{
+			RelationCacheInvalidate();			
+		}
+		sus->InvalidationInfo = SuspendInvalidationInfo();
+		xactHasCatcacheInvalidationMessages = false;
+		xactHasRelcacheInvalidationMessages = false;
 
 		tts = &TopTransactionStateData;
 		tts->state = TRANS_INPROGRESS;
@@ -3610,6 +3631,15 @@ bool ResumeTransaction(void)
 		TopTransactionResourceOwner = sus->TopTransactionResourceOwner;
 
 		ResumeSnapshot(sus->SnapshotState); /* only after the resource-owner stuff */
+		ResumeInvalidationInfo(sus->InvalidationInfo);
+		if (xactHasCatcacheInvalidationMessages) 
+		{
+			ResetCatalogCaches();
+		}
+		if (xactHasRelcacheInvalidationMessages) 
+		{
+			RelationCacheInvalidate();			
+		}
 
 		MyProc->backendId = sus->vxid.backendId;
 		MyProc->lxid = sus->vxid.localTransactionId;

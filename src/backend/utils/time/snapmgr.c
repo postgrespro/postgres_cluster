@@ -2176,9 +2176,6 @@ void *SuspendSnapshot(void)
 	MOVELEFT(s->ActiveSnapshot, ActiveSnapshot, NULL);
 	MOVELEFT(s->OldestActiveSnapshot, OldestActiveSnapshot, NULL);
 
-	RelationCacheInvalidate();
-	ResetCatalogCaches();
-
 	return s;
 }
 
@@ -2206,9 +2203,6 @@ void ResumeSnapshot(void *data)
 
 	ActiveSnapshot = s->ActiveSnapshot;
 	OldestActiveSnapshot = s->OldestActiveSnapshot;
-
-	RelationCacheInvalidate();
-	ResetCatalogCaches();
 
 	free(s);
 }
