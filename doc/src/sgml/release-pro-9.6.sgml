@@ -24,8 +24,9 @@
         is now initialized independently for each database instance.</para>
       </listitem>
       <listitem>
-        <para>Applied fixes for covering indexes. Now the keyword <literal>INCLUDING</literal> is
-          replaced by <literal>INCLUDE</literal> (see <xref linkend="indexes-unique">).</para>
+        <para>Syntax for covering indexes has been changed. Now the keyword <literal>INCLUDING</literal> is
+          replaced by <literal>INCLUDE</literal>. The previous syntax still works, but is deprecated
+          (see <xref linkend="indexes-unique">).</para>
       </listitem>
       <listitem>
         <para>RHEL-based distributions are installed in a separate location,
