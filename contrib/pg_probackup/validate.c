@@ -13,7 +13,6 @@
 #include <pthread.h>
 
 static void pgBackupValidateFiles(void *arg);
-void do_validate_last(void);
 
 typedef struct
 {
@@ -22,51 +21,6 @@ typedef struct
 	bool size_only;
 	bool corrupted;
 } validate_files_args;
-
-void do_validate_last(void)
-{
-	int		i;
-	int		ret;
-	parray	*backup_list;
-	bool	another_pg_probackup = false;
-
-	ret = catalog_lock(false);
-	if (ret == 1)
-		another_pg_probackup = true;
-
-	/* get backup list matches given range */
-	backup_list = catalog_get_backup_list(0);
-	if (!backup_list)
-		elog(ERROR, "cannot process any more.");
-
-	parray_qsort(backup_list, pgBackupCompareId);
-	for (i = 0; i < parray_num(backup_list); i++)
-	{
-		pgBackup *backup = (pgBackup *)parray_get(backup_list, i);
-
-		/* clean extra backups (switch STATUS to ERROR) */
-		if (!another_pg_probackup &&
-			(backup->status == BACKUP_STATUS_RUNNING ||
-			 backup->status == BACKUP_STATUS_DELETING))
-		{
-			backup->status = BACKUP_STATUS_ERROR;
-			pgBackupWriteIni(backup);
-		}
-
-		/* Validate completed backups only. */
-		if (backup->status != BACKUP_STATUS_DONE)
-			continue;
-
-		/* validate with CRC value and update status to OK */
-		pgBackupValidate(backup, false, false);
-	}
-
-	/* cleanup */
-	parray_walk(backup_list, pgBackupFree);
-	parray_free(backup_list);
-
-	catalog_unlock();
-}
 
 int
 do_validate(time_t backup_id,
@@ -82,7 +36,8 @@ do_validate(time_t backup_id,
 	parray	   *backups;
 	pgRecoveryTarget *rt = NULL;
 	pgBackup   *base_backup = NULL;
-	bool		backup_id_found = false;
+	bool		backup_id_found = false,
+				success_validate;
 
 	catalog_lock(false);
 
@@ -147,7 +102,7 @@ base_backup_found:
 		stream_wal = base_backup->stream;
 
 	/* validate base backup */
-	pgBackupValidate(base_backup, false, false);
+	success_validate = pgBackupValidate(base_backup, false, false);
 
 	last_restored_index = base_index;
 
@@ -189,7 +144,8 @@ base_backup_found:
 		if (backup_id != 0)
 			stream_wal = backup->stream;
 
-		pgBackupValidate(backup, false, false);
+		success_validate = success_validate &&
+			pgBackupValidate(backup, false, false);
 		last_restored_index = i;
 	}
 
@@ -200,6 +156,8 @@ base_backup_found:
 					 rt->recovery_target_time,
 					 rt->recovery_target_xid,
 					 base_backup->tli);
+	else if (success_validate)
+		elog(INFO, "backup validation stopped successfully");
 
 	/* release catalog lock */
 	catalog_unlock();
@@ -214,7 +172,7 @@ base_backup_found:
 /*
  * Validate each files in the backup with its size.
  */
-void
+bool
 pgBackupValidate(pgBackup *backup,
 				 bool size_only,
 				 bool for_get_timeline)
@@ -294,6 +252,8 @@ pgBackupValidate(pgBackup *backup,
 		else
 			elog(LOG, "backup %s is valid", backup_id_string);
 	}
+
+	return !corrupted;
 }
 
 static const char *

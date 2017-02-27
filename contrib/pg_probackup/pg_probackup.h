@@ -222,9 +222,6 @@ extern pgBackup current;
 /* exclude directory list for $PGDATA file listing */
 extern const char *pgdata_exclude_dir[];
 
-/* backup file list from non-snapshot */
-extern parray *backup_files_list;
-
 extern int num_threads;
 extern bool stream_wal;
 extern bool from_replica;
@@ -263,6 +260,8 @@ extern pgRecoveryTarget *checkIfCreateRecoveryConf(
 	const char *target_xid,
 	const char *target_inclusive);
 
+extern void opt_tablespace_map(pgut_option *opt, const char *arg);
+
 /* in init.c */
 extern int do_init(void);
 
@@ -288,7 +287,7 @@ extern int do_validate(time_t backup_id,
 					   const char *target_inclusive,
 					   TimeLineID target_tli);
 extern void do_validate_last(void);
-extern void pgBackupValidate(pgBackup *backup,
+extern bool pgBackupValidate(pgBackup *backup,
 							 bool size_only,
 							 bool for_get_timeline);
 
@@ -314,14 +313,16 @@ extern int pgBackupCompareIdDesc(const void *f1, const void *f2);
 /* in dir.c */
 extern void dir_list_file(parray *files, const char *root, bool exclude,
 						  bool omit_symlink, bool add_root);
-extern void dir_list_file_internal(parray *files, const char *root, bool exclude,
-						  bool omit_symlink, bool add_root, parray *black_list);
-extern void dir_print_mkdirs_sh(FILE *out, const parray *files, const char *root);
-extern void dir_print_file_list(FILE *out, const parray *files, const char *root, const char *prefix);
+extern void list_data_directories(parray *files, const char *path,
+								  bool is_root, bool exclude);
+
+extern void read_tablespace_map(parray *files, const char *backup_dir);
+
+extern void print_file_list(FILE *out, const parray *files, const char *root);
 extern parray *dir_read_file_list(const char *root, const char *file_txt);
 
 extern int dir_create_dir(const char *path, mode_t mode);
-extern void dir_copy_files(const char *from_root, const char *to_root);
+extern bool dir_is_empty(const char *path);
 
 extern pgFile *pgFileNew(const char *path, bool omit_symlink);
 extern void pgFileDelete(pgFile *file);
