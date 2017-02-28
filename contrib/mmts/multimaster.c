@@ -2718,6 +2718,7 @@ static void MtmSplitConnStrs(void)
 			MTM_ELOG(ERROR, "Failed to get host name: %m");
 		}
 		for (i = 0; i < MtmNodes; i++) {
+			MTM_LOG3("Node %d, host %s, port=%d, my port %d", i, MtmConnections[i].hostName, MtmConnections[i].postmasterPort, PostPortNumber);
 			if ((strcmp(MtmConnections[i].hostName, buf) == 0 || strcmp(MtmConnections[i].hostName, "localhost") == 0) 
 				&& MtmConnections[i].postmasterPort == PostPortNumber) 
 			{ 
@@ -3216,7 +3217,7 @@ _PG_init(void)
 	DefineCustomIntVariable(
 		"multimaster.reconnect_timeout",
 		"Multimaster nodes reconnect timeout",
-		"Interval in milliseconds for establishing connection with cluster node",
+		"Interval in milliseconds for reestablishing connection with cluster node",
 		&MtmReconnectTimeout,
 		5000, /* 5 seconds */
 		1,
