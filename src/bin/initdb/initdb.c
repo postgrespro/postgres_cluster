@@ -2693,14 +2693,14 @@ usage(const char *progname)
 	printf(_("  -U, --username=NAME       database superuser name\n"));
 	printf(_("  -W, --pwprompt            prompt for a password for the new superuser\n"));
 	printf(_("  -X, --xlogdir=XLOGDIR     location for the transaction log directory\n"));
-	printf(_("  -x, --xid=START_XID       specify start xid value in hex format for new db instance to test 64-bit xids,\n"
+	printf(_("  -x, --xid=START_XID       specify start xid value in decimal format for new db instance to test 64-bit xids,\n"
 			 "                            default value is 0\n"));
 	printf(_("\nLess commonly used options:\n"));
 	printf(_("  -d, --debug               generate lots of debugging output\n"));
 	printf(_("  -k, --data-checksums      use data page checksums\n"));
 	printf(_("  -L DIRECTORY              where to find the input files\n"));
 	printf(_("  -m, --multixact-id=START_MX_ID\n"
-			 "                            specify start multixact id value in hex format for new db instance\n"
+			 "                            specify start multixact id value in decimal format for new db instance\n"
 			 "                            to test 64-bit xids, default value is 0\n"));
 	printf(_("  -n, --noclean             do not clean up after errors\n"));
 	printf(_("  -N, --nosync              do not wait for changes to be written safely to disk\n"));
@@ -3469,9 +3469,9 @@ main(int argc, char *argv[])
 				printf(_("Running in debug mode.\n"));
 				break;
 			case 'm':
-				if (sscanf(optarg, HEX_XID_FMT, &start_mx_id) != 1)
+				if (sscanf(optarg, XID_FMT, &start_mx_id) != 1)
 				{
-					fprintf(stderr, "%s: invalid hex value of multixact-id\n", progname);
+					fprintf(stderr, "%s: invalid decimal value of multixact-id\n", progname);
 					exit(1);
 				}
 				break;
@@ -3535,9 +3535,9 @@ main(int argc, char *argv[])
 				xlog_dir = pg_strdup(optarg);
 				break;
 			case 'x':
-				if (sscanf(optarg, HEX_XID_FMT, &start_xid) != 1)
+				if (sscanf(optarg, XID_FMT, &start_xid) != 1)
 				{
-					fprintf(stderr, "%s: invalid hex value of xid\n", progname);
+					fprintf(stderr, "%s: invalid decimal value of xid\n", progname);
 					exit(1);
 				}
 				break;
