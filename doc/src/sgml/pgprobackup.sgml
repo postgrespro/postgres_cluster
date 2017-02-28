@@ -23,42 +23,48 @@ doc/src/sgml/pgprobackup.sgml
   <cmdsynopsis>
    <command>pg_probackup</command>
    <arg rep="repeat"><replaceable>option</replaceable></arg>
-   <arg>init</arg>
+   <arg choice="plain">init</arg>
   </cmdsynopsis>
   <cmdsynopsis>
    <command>pg_probackup</command>
    <arg rep="repeat"><replaceable>option</replaceable></arg>
-   <arg>backup</arg>
+   <arg choice="plain">backup</arg>
   </cmdsynopsis>
   <cmdsynopsis>
    <command>pg_probackup</command>
    <arg rep="repeat"><replaceable>option</replaceable></arg>
-   <arg>restore</arg>
+   <arg choice="plain">restore</arg>
    <arg choice="opt"><replaceable>backup_id</replaceable></arg>
   </cmdsynopsis>
   <cmdsynopsis>
    <command>pg_probackup</command>
    <arg rep="repeat"><replaceable>option</replaceable></arg>
-   <arg>validate</arg>
-   <arg choice="req"><replaceable>backup_id</replaceable></arg>
-  </cmdsynopsis>
-  <cmdsynopsis>
-   <command>pg_probackup</command>
-   <arg rep="repeat"><replaceable>option</replaceable></arg>
-   <arg>show</arg>
+   <arg choice="plain">validate</arg>
    <arg choice="opt"><replaceable>backup_id</replaceable></arg>
   </cmdsynopsis>
   <cmdsynopsis>
    <command>pg_probackup</command>
    <arg rep="repeat"><replaceable>option</replaceable></arg>
-   <arg>delete</arg>
-   <arg choice="req"><replaceable>backup_id</replaceable></arg>
+   <arg choice="plain">show</arg>
+   <arg choice="opt"><replaceable>backup_id</replaceable></arg>
   </cmdsynopsis>
   <cmdsynopsis>
    <command>pg_probackup</command>
    <arg rep="repeat"><replaceable>option</replaceable></arg>
-   <arg>delwal</arg>
+   <arg choice="plain">delete</arg>
+   <arg choice="plain"><replaceable>backup_id</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg rep="repeat"><replaceable>option</replaceable></arg>
+   <arg choice="plain">delwal</arg>
    <arg choice="opt"><replaceable>backup_id</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg rep="repeat"><replaceable>option</replaceable></arg>
+   <arg choice="plain">retention</arg> 
+   <arg choice="req">show | purge</arg>
   </cmdsynopsis>
  </refsynopsisdiv>
 
@@ -67,17 +73,17 @@ doc/src/sgml/pgprobackup.sgml
    Description
   </title>
   <para>
-   <application>pg_basebackup</application> is an utility to manage backup and
-   recovery of a <productname>&productname;</productname> database clusters.
-   It works with server version 9.5 or later.
+   <application>pg_probackup</application> is a utility to manage backup and
+   recovery of <productname>&productname;</productname> database clusters.
+   It works with server version 9.5 or higher.
   </para>
 
   <para>
    The utility makes a binary copy of database cluster files, almost like
    <application>pg_basebackup</application> does.
-   However <application>pg_probackup</application> provides additional features,
+   However, <application>pg_probackup</application> provides additional features
    required for implementing different backup strategies and
-   dealing with large amount of data:
+   dealing with large amounts of data:
    <itemizedlist>
     <listitem>
      <para>
@@ -106,7 +112,7 @@ doc/src/sgml/pgprobackup.sgml
   <para>
     <application>pg_probackup</application> understands the structure of
     database cluster files and works on page level to store only
-    meaningful parts of data pages in backups, and also to check
+    meaningful parts of data pages in backups and to check
     data consistency when checksums are enabled.
     Backups are also checked for correctness to detect possible disk failures.
   </para>
@@ -125,12 +131,11 @@ doc/src/sgml/pgprobackup.sgml
     The same backup directory can be used simultaneously by
     several <productname>&productname;</productname> servers with replication
     configured between them. Backups can be made from either primary or
-    standby server, and managed in a single backup strategy.
-  </para>
+    standby server, and managed in a single backup strategy. To avoid conflicts, <application>pg_probackup</application> does not allow storing backups for different clusters in a single directory. </para>
 
  </refsect1>
 
- <refsect1>
+ <refsect1 id="pg-probackup-options">
   <title>Options</title>
 
    <para>
@@ -139,8 +144,8 @@ doc/src/sgml/pgprobackup.sgml
      either one or two minus signs).
      If not given in command line, values for some options are derived
      from environment variables (names of environment variables are in uppercase).
-     Otherwise values for some options are taken from
-     <filename>pg_probackup.conf</filename> configuration file, located in
+     Otherwise, values for some options are taken from
+     <filename>pg_probackup.conf</filename> configuration file located in
      the backup directory (such option names are in lowercase).
    </para>
 
@@ -235,7 +240,7 @@ doc/src/sgml/pgprobackup.sgml
          Backup mode. Supported modes are: <literal>FULL</literal> (full backup),
          <literal>PAGE</literal> (incremental backup, tracking changes by scanning WAL files),
          <literal>PTRACK</literal> (incremental backup, tracking changes on-the-fly).
-         The last mode is not supported with vanilla <productname>PostgreSQL</productname> server.
+         The last mode is not supported with standard <productname>PostgreSQL</productname> server.
        </para>
       </listitem>
      </varlistentry>
@@ -288,7 +293,7 @@ doc/src/sgml/pgprobackup.sgml
    </refsect2>
 
    <refsect2>
-    <title>Restore Options</title>
+    <title>Restore and Validate Options</title>
 
     <variablelist>
      <varlistentry>
@@ -327,6 +332,17 @@ doc/src/sgml/pgprobackup.sgml
        </para>
       </listitem>
      </varlistentry>
+     
+      <varlistentry>
+      <term><option>-T <replaceable class="parameter">OLDDIR=NEWDIR</replaceable></option></term>
+      <term><option>--tablespace-mapping=<replaceable class="parameter">OLDDIR=NEWDIR</replaceable></option></term>
+      <listitem>
+       <para>
+         Relocate the tablespace from directory <replaceable>OLDDIR</replaceable> to <replaceable>NEWDIR</replaceable> at the time of recovery. Both <replaceable>OLDDIR</replaceable> and <replaceable>NEWDIR</replaceable> must be absolute paths.
+       </para>
+      </listitem>
+     </varlistentry>
+
     </variablelist>
    </refsect2>
 
@@ -339,6 +355,32 @@ doc/src/sgml/pgprobackup.sgml
       <listitem>
        <para>
          Delete WAL files that are no longer necessary to restore from any of existing backups.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </refsect2>
+
+   <refsect2>
+    <title>Retention Options</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><option>--redundancy</option></term>
+      <term><option>redundancy</option></term>
+      <listitem>
+       <para>
+         Specifies the number of full backup
+    copies to keep in the data directory. Must be a positive integer.
+       </para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><option>--window</option></term>
+      <term><option>window</option></term>
+      <listitem>
+       <para>
+         Defines the earliest point in time for which <application>pg_probackup</application> can complete the recovery. This option is set in the number of days from the current moment. For example, if <option>window</option>=7, <application>pg_probackup</application> must keep at least one full backup copy that is older than seven days, with all the corresponding WAL files. 
        </para>
       </listitem>
      </varlistentry>
@@ -360,7 +402,7 @@ doc/src/sgml/pgprobackup.sgml
       <term><envar>PGDATABASE</envar></term>
       <listitem>
       <para>
-       Specifies the name of the existing database to connect to (any one will do).
+       Specifies the name of the database to connect to. The connection is used only for managing backup process, so you can connect to any existing database. 
       </para>
       </listitem>
      </varlistentry>
@@ -404,7 +446,7 @@ doc/src/sgml/pgprobackup.sgml
       <term><option>--no-password</></term>
       <listitem>
        <para>
-        Never issue a password prompt.  If the server requires
+        Never issue a password prompt. If the server requires
         password authentication and a password is not available by
         other means such as a <filename>.pgpass</filename> file, the
         connection attempt will fail.  This option can be useful in
@@ -526,13 +568,13 @@ pg_probackup init -B <replaceable class="parameter">backup_directory</replaceabl
      The <option>-B</option> option specifies the directory where backups and
      meta information will be stored.
      As this option is required for all <application>pg_probackup</application> commands,
-     it makes sense to specify once it in the <envar>BACKUP_PATH</envar> environmental variable.
+     it makes sense to specify it once in the <envar>BACKUP_PATH</envar> environment variable.
    </para>
 
    <para>
      The <option>-D</option> option specifies the database cluster's data directory.
-     It is handy to put it in <envar>PGDATA</envar> environmental variable to
-     not specify it every time in command line. In the subsequent examples
+     It is handy to set it in the <envar>PGDATA</envar> environment variable instead of
+     specifying it every time in command line. In the subsequent examples
      these options are omitted.
    </para>
 
@@ -544,13 +586,13 @@ pg_probackup init -B <replaceable class="parameter">backup_directory</replaceabl
      <listitem>
       <para>
         <filename>pg_probackup.conf</filename> &mdash; configuration file
-        with default values for some of the options. Full list of options see below.
+        with default values for some of the options. The full list of options is provided in <xref linkend="pg-probackup-options">.
       </para>
      </listitem>
 
      <listitem>
       <para>
-       <filename>wal/</filename> &mdash; directory for WAL files;
+       <filename>wal/</filename> &mdash; directory for WAL files.
       </para>
      </listitem>
 
@@ -558,7 +600,7 @@ pg_probackup init -B <replaceable class="parameter">backup_directory</replaceabl
       <para>
         <filename>backups/</filename> &mdash; directory for backups.
         The utility will create separate subdirectories for each backup
-        it make, named by the backup identifier.
+        it makes, named by the backup identifier.
       </para>
      </listitem>
     </itemizedlist>
@@ -573,14 +615,14 @@ pg_probackup init -B <replaceable class="parameter">backup_directory</replaceabl
    <title>Autonomous Backups</title>
 
    <para>
-     Autonomous backups offer the simplest way to make a backup without need
+     Autonomous backups offer the simplest way to make a backup without the need
      to configure <productname>&productname;</productname> for continuous archiving.
      Such backups contain database cluster files as well as WAL files
      necessary for recovery.
    </para>
 
    <para>
-     Without WAL files archive, database cluster can be restored from
+     Without a WAL files archive, database cluster can be restored from
      an autonomous backup only to its state at the moment the backup was taken.
    </para>
 
@@ -680,7 +722,7 @@ pg_probackup show <replaceable class="parameter">backup_id</replaceable>
      <programlisting>
 pg_probackup validate <replaceable class="parameter">backup_id</replaceable>
      </programlisting>
-   </para>
+   For details, see <xref linkend="pg-probackup-checksums"> and <xref linkend="pg-probackup-validating-backups"></para>
 
    <para>
      To restore the database cluster from the backup,
@@ -692,16 +734,16 @@ pg_probackup restore <replaceable class="parameter">backup_id</replaceable>
    </para>
 
    <para>
-     After that start the database service. During startup, 
+     Then start the database service. During startup, 
      <productname>&productname;</productname> will recover a self-consistent state
-     by replaying WAL files and be ready to accept connections.
+     by replaying WAL files and will be ready to accept connections.
    </para>
 
    <para>
      Note that restoring from a backup can be performed exclusively by <application>pg_probackup</application> utility.
      Inside <filename><replaceable>backup_directory</replaceable>/backups/<replaceable>backup_id</replaceable>/database/</filename>
-     directory one can find files, corresponding to those in cluster's data directory. Nevertheless there files
-     cannot be copied directly into the data directory as <application>pg_probackup</application> always stores
+     directory you can find the files corresponding to those in the cluster's data directory. Nevertheless, you cannot copy these files
+     directly into the data directory as <application>pg_probackup</application> always stores
      them compressed to save disk space.
    </para>
   </refsect2>
@@ -784,12 +826,12 @@ pg_probackup backup -b full
      To restore the cluster from a backup, make sure that the database service
      is stopped and run the following command:
      <programlisting>
-pg_probackup restore <replaceable class="parameter">backup_id</replaceable>
+pg_probackup restore
      </programlisting>
    </para>
 
    <para>
-     The database cluster will be restored from the recent available backup
+     The database cluster will be restored from the latest backup available,
      and <filename>recovery.conf</filename> file will be created to access
      the archived WAL files. When started, <productname>&productname;</productname>
      server will automatically recover database cluster's state
@@ -826,7 +868,7 @@ pg_probackup restore <replaceable class="parameter">backup_id</replaceable>
    </para>
 
    <para>
-     Closest to the specified recovery target backup will be automatically chosen for recovery.
+     <application>pg_probackup</application> automatically chooses the backup that is the closest to the specified recovery target, and starts the recovery.
    </para>
 
    <para>
@@ -892,13 +934,13 @@ pg_probackup backup -b page
 
    <para>
      The second mode (tracking changes on-the-fly) requires <productname>Postgres Pro</productname>
-     server and will not work with <productname>PostgreSQL</productname>;
+     server and will not work with the standard <productname>PostgreSQL</productname>;
      continuous archiving is not necessary for it to operate.
    </para>
 
    <para>
      When <varname>ptrack_enable</varname> parameter is on,
-     <productname>Postgres Pro</productname> server tracks changed in data pages.
+     <productname>Postgres Pro</productname> server tracks changes in data pages.
      Each time a WAL record for some relation's page is constructed,
      this page is marked in a special <literal>ptrack</literal> fork for this relation.
      As one page requires just one bit in the fork, the fork is quite small but
@@ -943,8 +985,57 @@ pg_probackup backup -b ptrack
    </para>
   </refsect2>
 
+  <refsect2 id="pg-probackup-retention-policy">
+   <title>Configuring Backup Retention Policy</title>
+   <para>
+    By default, all backup copies created with
+    <application>pg_probackup</application> are stored in the specified backup
+    directory. To save disk space, you can configure retention policy
+    and set up your system to periodically clean up redundant backup
+    copies accordingly.
+  </para>
+  <para>
+    To configure retention policy, set one or more of the following
+    variables in the <filename>pg_probackup.conf</filename> file: </para>
+    <itemizedlist>
+    <listitem><para>
+    <option>redundancy</option> &mdash; specifies the number of full backup
+    copies to keep in the data directory.</para>
+    </listitem>
+    <listitem><para><option>window</option> &mdash; defines the earliest point in time for which <application>pg_probackup</application> can complete the recovery. This option is set in the number of days from the current moment. For example, if <option>window</option>=7, <application>pg_probackup</application> must keep at least one full backup copy that is older than seven days, with all the corresponding WAL files.</para></listitem>
+    </itemizedlist>
+  <para>
+    To view the current retention policy settings, run this command:
+  </para>
+  <programlisting>
+pg_probackup retention show
+</programlisting>
+  <para>
+    To clean up the backup directory in accordance with retention policy, run:
+  </para>
+  <programlisting>
+pg_probackup retention purge
+</programlisting>
+  <para>
+    <application>pg_probackup</application> deletes all backup copies and the corresponding WAL files that do not conform to the policy defined in the <filename>pg_probackup.conf</filename> file. 
+    If both <option>redundancy</option> and <option>window</option> options are
+    set, <application>pg_probackup</application> delete only those backup
+    copies that satisfy both conditions. For example, if you set <option>redundancy</option>=2 and <option>window</option>=7, <application>pg_probackup</application> cleans up the backup directory to keep only two full backup copies if at least one of them is older than 7 days.
+  </para>
+  <para>
+    Alternatively, you can override the default policy using <option>--redundancy</option> and <option>--window</option>
+    command-line options. For example:
+  </para>
+  <programlisting>
+pg_probackup retention purge --redundancy=3 --window=5
+</programlisting>
+  <para>
+    As a result, <application>pg_probackup</application> keeps three backup copies, at least one of which is older than five days.
+  </para>
+  </refsect2>
+
   <refsect2>
-   <title>Deleting of Backups</title>
+   <title>Deleting Backups</title>
 
    <para>
      Unnecessary backup can be deleted by specifying its identifier in <command>delete</command> command:
@@ -999,6 +1090,9 @@ pg_probackup delwal <replaceable>backup_id</replaceable>
      This mode should be used with caution as it allows to delete WAL files required for
      some of the existing backups.
    </para>
+   <para>Alternatively, you can configure backup retention policy
+    and set up your system to periodically clean up redundant backup
+    copies accordingly. For details, see <xref linkend="pg-probackup-retention-policy">.</para>
   </refsect2>
 
   <refsect2>
@@ -1075,14 +1169,14 @@ pg_probackup restore -j 4
    </para>
   </refsect2>
 
-  <refsect2>
+  <refsect2 id="pg-probackup-checksums">
    <title>Checking Cluster and Backup Consistency</title>
 
    <para>
      When checksums are enabled for the database cluster, <application>pg_probackup</application>
      uses this information to check correctness of data files. While reading each page,
-     <application>pg_probackup</application> checks whether calculated checksum coincides
-     with the checksum stored in page. This guarantees that backup is free of corrupted pages;
+     <application>pg_probackup</application> checks whether the calculated checksum coincides
+     with the checksum stored in the page. This guarantees that backup is free of corrupted pages;
      taking full backup effectively checks correctness of all cluster's data files.
    </para>
 
@@ -1098,6 +1192,21 @@ pg_probackup restore -j 4
      and right before restore, to timely detect possible backup corruptions.
    </para>
   </refsect2>
+
+  <refsect2 id="pg-probackup-validating-backups">
+   <title>Validating Backups</title>
+
+   <para>Before restoring the database cluster, you can validate the available backups.
+To make sure the recovery is possible, run the <command>validate</command> command with the exact options you are going to use for recovery. <application>pg_probackup</application> checks that all the required backup files are present and can be used to restore the database cluster if needed. </para>
+<para>For example, to check that you can restore the database cluster from a backup copy with the <replaceable>backup_id</replaceable> up to the specified <option>xid</option> transaction ID, run this command:
+<programlisting>
+pg_probackup validate --xid=<replaceable>xid</replaceable> <replaceable>backup_id</replaceable> 
+</programlisting>
+   For the list of available options, see <xref linkend="pg-probackup-options">.</para>
+   <para>If validation completed successfully, <application>pg_probackup</application> displays the corresponding message. If validation fails, you will receive an error message with the exact time and transaction ID up to which the recovery is possible. </para>
+
+  </refsect2>
+
  </refsect1>
 
  <refsect1>
@@ -1115,7 +1224,7 @@ pg_probackup restore -j 4
 
      <listitem>
       <para>
-        Server version 9.5 or later is supported.
+        Server version 9.5 or higher is supported.
       </para>
      </listitem>
 
@@ -1128,14 +1237,7 @@ pg_probackup restore -j 4
      <listitem>
       <para>
         Incremental backups in the <literal>PTRACK</literal> mode cannot be taken
-        with vanilla <productname>PostgreSQL</productname> server.
-      </para>
-     </listitem>
-
-     <listitem>
-      <para>
-        Data files from user tablespaces are restored to the same absolute paths
-        as they were during backup.
+        with standard <productname>PostgreSQL</productname> server.
       </para>
      </listitem>
 
@@ -1146,15 +1248,6 @@ pg_probackup restore -j 4
       </para>
      </listitem>
 
-     <listitem>
-      <para>
-        Only full backups are supported when using
-        <ulink
-        url="https://postgrespro.com/docs/postgresproee/current/cfs.html">compressed
-        tablespaces</ulink>
-        (<productname>Postgres Pro Enterprise</productname> feature).
-      </para>
-     </listitem>
     </itemizedlist>
   </para>
  </refsect1>
