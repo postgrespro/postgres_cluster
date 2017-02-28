@@ -3895,6 +3895,7 @@ BackendStartup(Port *port)
 	 */
 	if (!pg_strong_random(&MyCancelKey, sizeof(MyCancelKey)))
 	{
+		free(bn);
 		ereport(LOG,
 				(errmsg("could not generate random query cancel key")));
 		return STATUS_ERROR;
@@ -5549,6 +5550,7 @@ assign_backendlist_entry(RegisteredBgWorker *rw)
 	 */
 	if (!pg_strong_random(&MyCancelKey, sizeof(MyCancelKey)))
 	{
+		free(bn);
 		rw->rw_crashed_at = GetCurrentTimestamp();
 		return false;
 	}
