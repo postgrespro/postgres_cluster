@@ -396,7 +396,7 @@ sub init
 	mkdir $self->backup_dir;
 	mkdir $self->archive_dir;
 
-	TestLib::system_or_bail('initdb', '-D', $pgdata, '-A', 'trust', '-N');
+	TestLib::system_or_bail('initdb', '-D', $pgdata, '-A', 'trust', '-N', '-x', '4294967296', '-m', '4294967296');
 	TestLib::system_or_bail($ENV{PG_REGRESS}, '--config-auth', $pgdata);
 
 	open my $conf, ">>$pgdata/postgresql.conf";
