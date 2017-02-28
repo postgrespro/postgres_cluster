@@ -144,6 +144,9 @@ static bool sync_only = false;
 static bool show_setting = false;
 static bool data_checksums = false;
 static char *xlog_dir = "";
+static TransactionId start_xid = 0;
+static MultiXactId start_mx_id = 0;
+static MultiXactOffset start_mx_offset = 0;
 
 
 /* internal vars */
@@ -1535,9 +1538,12 @@ bootstrap_template1(void)
 	unsetenv("PGCLIENTENCODING");
 
 	snprintf(cmd, sizeof(cmd),
-			 "\"%s\" --boot -x1 %s %s %s",
+			 "\"%s\" --boot -x1 %s %s " HEX_XID_FMT " %s " HEX_XID_FMT " %s " XID_FMT " %s %s",
 			 backend_exec,
 			 data_checksums ? "-k" : "",
+			 "-X", start_xid,
+			 "-m", start_mx_id,
+			 "-o", start_mx_offset,
 			 boot_options, talkargs);
 
 	PG_CMD_OPEN;
@@ -2683,16 +2689,24 @@ usage(const char *progname)
 	printf(_("      --no-locale           equivalent to --locale=C\n"));
 	printf(_("      --pwfile=FILE         read password for the new superuser from file\n"));
 	printf(_("  -T, --text-search-config=CFG\n"
-		 "                            default text search configuration\n"));
+			 "                            default text search configuration\n"));
 	printf(_("  -U, --username=NAME       database superuser name\n"));
 	printf(_("  -W, --pwprompt            prompt for a password for the new superuser\n"));
 	printf(_("  -X, --xlogdir=XLOGDIR     location for the transaction log directory\n"));
+	printf(_("  -x, --xid=START_XID       specify start xid value in hex format for new db instance to test 64-bit xids,\n"
+			 "                            default value is 0\n"));
 	printf(_("\nLess commonly used options:\n"));
 	printf(_("  -d, --debug               generate lots of debugging output\n"));
 	printf(_("  -k, --data-checksums      use data page checksums\n"));
 	printf(_("  -L DIRECTORY              where to find the input files\n"));
+	printf(_("  -m, --multixact-id=START_MX_ID\n"
+			 "                            specify start multixact id value in hex format for new db instance\n"
+			 "                            to test 64-bit xids, default value is 0\n"));
 	printf(_("  -n, --noclean             do not clean up after errors\n"));
 	printf(_("  -N, --nosync              do not wait for changes to be written safely to disk\n"));
+	printf(_("  -o, --multixact-offset=START_MX_OFFSET\n"
+			 "                            specify start multixact offset value in decimal format for new db instance\n"
+			 "                            to test 64-bit xids, default value is 0\n"));
 	printf(_("  -s, --show                show internal settings\n"));
 	printf(_("  -S, --sync-only           only sync data directory\n"));
 	printf(_("\nOther options:\n"));
@@ -3371,6 +3385,9 @@ main(int argc, char *argv[])
 		{"nosync", no_argument, NULL, 'N'},
 		{"sync-only", no_argument, NULL, 'S'},
 		{"xlogdir", required_argument, NULL, 'X'},
+		{"xid", required_argument, NULL, 'x'},
+		{"multixact-id", required_argument, NULL, 'm'},
+		{"multixact-offset", required_argument, NULL, 'o'},
 		{"data-checksums", no_argument, NULL, 'k'},
 		{NULL, 0, NULL, 0}
 	};
@@ -3412,7 +3429,7 @@ main(int argc, char *argv[])
 
 	/* process command-line options */
 
-	while ((c = getopt_long(argc, argv, "dD:E:kL:nNU:WA:sST:X:", long_options, &option_index)) != -1)
+	while ((c = getopt_long(argc, argv, "dD:E:kL:m:nNU:WA:o:sST:X:x:", long_options, &option_index)) != -1)
 	{
 		switch (c)
 		{
@@ -3451,12 +3468,26 @@ main(int argc, char *argv[])
 				debug = true;
 				printf(_("Running in debug mode.\n"));
 				break;
+			case 'm':
+				if (sscanf(optarg, HEX_XID_FMT, &start_mx_id) != 1)
+				{
+					fprintf(stderr, "%s: invalid hex value of multixact-id\n", progname);
+					exit(1);
+				}
+				break;
 			case 'n':
 				noclean = true;
 				printf(_("Running in noclean mode.  Mistakes will not be cleaned up.\n"));
 				break;
 			case 'N':
 				do_sync = false;
+				break;
+			case 'o':
+				if (sscanf(optarg, XID_FMT, &start_mx_offset) != 1)
+				{
+					fprintf(stderr, "%s: invalid decimal value of multixact-offset\n", progname);
+					exit(1);
+				}
 				break;
 			case 'S':
 				sync_only = true;
@@ -3502,6 +3533,13 @@ main(int argc, char *argv[])
 				break;
 			case 'X':
 				xlog_dir = pg_strdup(optarg);
+				break;
+			case 'x':
+				if (sscanf(optarg, HEX_XID_FMT, &start_xid) != 1)
+				{
+					fprintf(stderr, "%s: invalid hex value of xid\n", progname);
+					exit(1);
+				}
 				break;
 			default:
 				/* getopt_long already emitted a complaint */

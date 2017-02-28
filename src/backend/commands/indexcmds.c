@@ -100,7 +100,7 @@ static void RangeVarCallbackForReindexIndex(const RangeVar *relation,
  * Errors arising from the attribute list still apply.
  *
  * Most column type changes that can skip a table rewrite do not invalidate
- * indexes.  We ackowledge this when all operator classes, collations and
+ * indexes.  We acknowledge this when all operator classes, collations and
  * exclusion operators match.  Though we could further permit intra-opfamily
  * changes for btree and hash indexes, that adds subtle complexity with no
  * concrete benefit for core types.
@@ -350,12 +350,12 @@ DefineIndex(Oid relationId,
 	numberOfKeyAttributes = list_length(stmt->indexParams);
 
 	/*
-	 * We append any INCLUDING columns onto the indexParams list so that
+	 * We append any INCLUDE columns onto the indexParams list so that
 	 * we have one list with all columns. Later we can determine which of these
-	 * are key columns, and which are just part of the INCLUDING list by check
+	 * are key columns, and which are just part of the INCLUDE list by checking
 	 * the list position. A list item in a position less than
 	 * ii_NumIndexKeyAttrs is part of the key columns, and anything equal to
-	 * and over is part of the INCLUDING columns.
+	 * and over is part of the INCLUDE columns.
 	 */
 	stmt->indexParams = list_concat(stmt->indexParams,
 									stmt->indexIncludingParams);
@@ -981,7 +981,7 @@ CheckMutability(Expr *expr)
  * indxpath.c could do something with.  However, that seems overly
  * restrictive.  One useful application of partial indexes is to apply
  * a UNIQUE constraint across a subset of a table, and in that scenario
- * any evaluatable predicate will work.  So accept any predicate here
+ * any evaluable predicate will work.  So accept any predicate here
  * (except ones requiring a plan), and let indxpath.c fend for itself.
  */
 static void

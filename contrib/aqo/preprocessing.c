@@ -46,6 +46,12 @@
  *
  *****************************************************************************/
 
+#define CREATE_EXTENSION_STARTSTRING_0 \
+"-- complain if script is sourced in psql, rather than via CREATE EXTENSION"
+#define CREATE_EXTENSION_STARTSTRING_1 \
+"SELECT 1 FROM ONLY \"public\".\"aqo_queries\" x WHERE \"query_hash\"\
+ OPERATOR(pg_catalog.=) $1 FOR KEY SHARE OF x"
+
 static const char *query_text;
 
 /*
@@ -81,7 +87,7 @@ call_default_planner(Query *parse,
  * This hook computes query_hash, and sets values of learn_aqo,
  * use_aqo and is_common flags for given query.
  * Creates an entry in aqo_queries for new type of query if it is
- * necessary, i. e. AQO mode is not "manual".
+ * necessary, i. e. AQO mode is "intelligent".
  */
 PlannedStmt *
 aqo_planner(Query *parse,
@@ -93,9 +99,15 @@ aqo_planner(Query *parse,
 	bool		query_nulls[5] = {false, false, false, false, false};
 
 	selectivity_cache_clear();
+	explain_aqo = false;
 
-	if (parse->commandType != CMD_SELECT && parse->commandType != CMD_INSERT &&
-		parse->commandType != CMD_UPDATE && parse->commandType != CMD_DELETE)
+	if ((parse->commandType != CMD_SELECT && parse->commandType != CMD_INSERT &&
+	 parse->commandType != CMD_UPDATE && parse->commandType != CMD_DELETE) ||
+		strncmp(query_text, CREATE_EXTENSION_STARTSTRING_0,
+				strlen(CREATE_EXTENSION_STARTSTRING_0)) == 0 ||
+		strncmp(query_text, CREATE_EXTENSION_STARTSTRING_1,
+				strlen(CREATE_EXTENSION_STARTSTRING_1)) == 0 ||
+		aqo_mode == AQO_MODE_DISABLED)
 	{
 		disable_aqo_for_query();
 		return call_default_planner(parse, cursorOptions, boundParams);
@@ -139,6 +151,9 @@ aqo_planner(Query *parse,
 				use_aqo = false;
 				collect_stat = false;
 				break;
+			case AQO_MODE_DISABLED:
+				/* Should never happen */
+				break;
 			default:
 				elog(WARNING,
 					 "unrecognized mode in AQO: %d",
@@ -162,8 +177,26 @@ aqo_planner(Query *parse,
 		if (!collect_stat)
 			add_deactivated_query(query_hash);
 	}
+	explain_aqo = use_aqo;
 
 	return call_default_planner(parse, cursorOptions, boundParams);
+}
+
+/*
+ * Prints if the plan was constructed with AQO.
+ */
+void print_into_explain(PlannedStmt *plannedstmt, IntoClause *into,
+			   ExplainState *es, const char *queryString,
+			   ParamListInfo params, const instr_time *planduration)
+{
+	if (prev_ExplainOnePlan_hook)
+		prev_ExplainOnePlan_hook(plannedstmt, into, es, queryString,
+								params, planduration);
+	if (explain_aqo)
+	{
+		ExplainPropertyBool("Using aqo", true, es);
+		explain_aqo = false;
+	}
 }
 
 /*

@@ -11,7 +11,7 @@
       optimization/planning stage is translated into plan tree wich is kind of
       imperative representation of declarative SQL query. EXPLAIN ANALYZE
       request allows to demonstrate execution statistics gathered from each
-      node of plan tree (full time of execution, number rows emitted to upper
+      node of plan tree (full time of execution, number of rows emitted to upper
       nodes, etc). But this statistics is collected after execution of query.
       This module allows to show actual statistics of query running on external
       backend. At that, format of resulting output is almost identical to
@@ -182,7 +182,7 @@
       </listitem>
     </itemizedlist>
     <para>
-      This parameters is set on called side before running any queries whose
+      These parameters are set on called side before running any queries whose
       states are attempted to extract. <literal>WARNING</literal>: if
       pg_query_state.enable_timing is turned off the calling side cannot get
       time statistics, similarly for pg_query_state.enable_buffers parameter.

@@ -2052,17 +2052,21 @@ doTransferRelDump(Archive *fout, void *dcontext)
 	 */
 	for (i = 0; i < nrels; i++)
 	{
-		transfer_relfile(&map[i], "", fout->dopt->transfer_dir,
+		transfer_relfile(&map[i], "", "", fout->dopt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
-		transfer_relfile(&map[i], "_fsm", fout->dopt->transfer_dir,
+		transfer_relfile(&map[i], "", ".cfm", fout->dopt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
-		transfer_relfile(&map[i], "_vm", fout->dopt->transfer_dir,
+		transfer_relfile(&map[i], "_fsm", "", fout->dopt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&map[i], "_vm", "", fout->dopt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
 	}
 
 	for (i = 0; i < nseqrels; i++)
 	{
-		transfer_relfile(&sequencemap[i], "", fout->dopt->transfer_dir,
+		transfer_relfile(&sequencemap[i], "", "", fout->dopt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&sequencemap[i], "", ".cfm", fout->dopt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
 	}
 
@@ -2072,11 +2076,13 @@ doTransferRelDump(Archive *fout, void *dcontext)
 	 */
 	for (i = 0; i < ntoastrels*2; i++)
 	{
-		transfer_relfile(&toastmap[i], "", fout->dopt->transfer_dir,
+		transfer_relfile(&toastmap[i], "", "", fout->dopt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
-		transfer_relfile(&toastmap[i], "_fsm", fout->dopt->transfer_dir,
+		transfer_relfile(&toastmap[i], "", ".cfm", fout->dopt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
-		transfer_relfile(&toastmap[i], "_vm", fout->dopt->transfer_dir,
+		transfer_relfile(&toastmap[i], "_fsm", "", fout->dopt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&toastmap[i], "_vm", "", fout->dopt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
 	}
 
@@ -9105,6 +9111,9 @@ getDefaultACLs(Archive *fout, int *numDefaultACLs)
 	int			i_defaclnamespace;
 	int			i_defaclobjtype;
 	int			i_defaclacl;
+	int			i_rdefaclacl;
+	int			i_initdefaclacl;
+	int			i_initrdefaclacl;
 	int			i,
 				ntups;
 
@@ -9119,13 +9128,50 @@ getDefaultACLs(Archive *fout, int *numDefaultACLs)
 	/* Make sure we are in proper schema */
 	selectSourceSchema(fout, "pg_catalog");
 
-	appendPQExpBuffer(query, "SELECT oid, tableoid, "
-					  "(%s defaclrole) AS defaclrole, "
-					  "defaclnamespace, "
-					  "defaclobjtype, "
-					  "defaclacl "
-					  "FROM pg_default_acl",
-					  username_subquery);
+	if (fout->remoteVersion >= 90600)
+	{
+		PQExpBuffer acl_subquery = createPQExpBuffer();
+		PQExpBuffer racl_subquery = createPQExpBuffer();
+		PQExpBuffer initacl_subquery = createPQExpBuffer();
+		PQExpBuffer initracl_subquery = createPQExpBuffer();
+
+		buildACLQueries(acl_subquery, racl_subquery, initacl_subquery,
+						initracl_subquery, "defaclacl", "defaclrole",
+						"CASE WHEN defaclobjtype = 'S' THEN 's' ELSE defaclobjtype END::\"char\"",
+						dopt->binary_upgrade);
+
+		appendPQExpBuffer(query, "SELECT d.oid, d.tableoid, "
+						  "(%s d.defaclrole) AS defaclrole, "
+						  "d.defaclnamespace, "
+						  "d.defaclobjtype, "
+						  "%s AS defaclacl, "
+						  "%s AS rdefaclacl, "
+						  "%s AS initdefaclacl, "
+						  "%s AS initrdefaclacl "
+						  "FROM pg_default_acl d "
+						  "LEFT JOIN pg_init_privs pip ON "
+						  "(d.oid = pip.objoid "
+						  "AND pip.classoid = 'pg_default_acl'::regclass "
+						  "AND pip.objsubid = 0) ",
+						  username_subquery,
+						  acl_subquery->data,
+						  racl_subquery->data,
+						  initacl_subquery->data,
+						  initracl_subquery->data);
+	}
+	else
+	{
+		appendPQExpBuffer(query, "SELECT oid, tableoid, "
+						  "(%s defaclrole) AS defaclrole, "
+						  "defaclnamespace, "
+						  "defaclobjtype, "
+						  "defaclacl, "
+						  "NULL AS rdefaclacl, "
+						  "NULL AS initdefaclacl, "
+						  "NULL AS initrdefaclacl "
+						  "FROM pg_default_acl",
+						  username_subquery);
+	}
 
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
 
@@ -9140,6 +9186,9 @@ getDefaultACLs(Archive *fout, int *numDefaultACLs)
 	i_defaclnamespace = PQfnumber(res, "defaclnamespace");
 	i_defaclobjtype = PQfnumber(res, "defaclobjtype");
 	i_defaclacl = PQfnumber(res, "defaclacl");
+	i_rdefaclacl = PQfnumber(res, "rdefaclacl");
+	i_initdefaclacl = PQfnumber(res, "initdefaclacl");
+	i_initrdefaclacl = PQfnumber(res, "initrdefaclacl");
 
 	for (i = 0; i < ntups; i++)
 	{
@@ -9161,6 +9210,9 @@ getDefaultACLs(Archive *fout, int *numDefaultACLs)
 		daclinfo[i].defaclrole = pg_strdup(PQgetvalue(res, i, i_defaclrole));
 		daclinfo[i].defaclobjtype = *(PQgetvalue(res, i, i_defaclobjtype));
 		daclinfo[i].defaclacl = pg_strdup(PQgetvalue(res, i, i_defaclacl));
+		daclinfo[i].rdefaclacl = pg_strdup(PQgetvalue(res, i, i_rdefaclacl));
+		daclinfo[i].initdefaclacl = pg_strdup(PQgetvalue(res, i, i_initdefaclacl));
+		daclinfo[i].initrdefaclacl = pg_strdup(PQgetvalue(res, i, i_initrdefaclacl));
 
 		/* Decide whether we want to dump it */
 		selectDumpableDefaultACL(&(daclinfo[i]), dopt);
@@ -12054,7 +12106,7 @@ dumpCast(Archive *fout, CastInfo *cast)
 	{
 		funcInfo = findFuncByOid(cast->castfunc);
 		if (funcInfo == NULL)
-			exit_horribly(NULL, "unable to find function definition for OID %u",
+			exit_horribly(NULL, "could not find function definition for function with OID %u\n",
 						  cast->castfunc);
 	}
 
@@ -12164,14 +12216,14 @@ dumpTransform(Archive *fout, TransformInfo *transform)
 	{
 		fromsqlFuncInfo = findFuncByOid(transform->trffromsql);
 		if (fromsqlFuncInfo == NULL)
-			exit_horribly(NULL, "unable to find function definition for OID %u",
+			exit_horribly(NULL, "could not find function definition for function with OID %u\n",
 						  transform->trffromsql);
 	}
 	if (OidIsValid(transform->trftosql))
 	{
 		tosqlFuncInfo = findFuncByOid(transform->trftosql);
 		if (tosqlFuncInfo == NULL)
-			exit_horribly(NULL, "unable to find function definition for OID %u",
+			exit_horribly(NULL, "could not find function definition for function with OID %u\n",
 						  transform->trftosql);
 	}
 
@@ -14770,6 +14822,9 @@ dumpDefaultACL(Archive *fout, DefaultACLInfo *daclinfo)
 								 daclinfo->dobj.namespace != NULL ?
 								 daclinfo->dobj.namespace->dobj.name : NULL,
 								 daclinfo->defaclacl,
+								 daclinfo->rdefaclacl,
+								 daclinfo->initdefaclacl,
+								 daclinfo->initrdefaclacl,
 								 daclinfo->defaclrole,
 								 fout->remoteVersion,
 								 q))
@@ -16277,7 +16332,7 @@ dumpConstraint(Archive *fout, ConstraintInfo *coninfo)
 			}
 
 			if (indxinfo->indnkeyattrs < indxinfo->indnattrs)
-				appendPQExpBuffer(q, ") INCLUDING (");
+				appendPQExpBuffer(q, ") INCLUDE (");
 
 			for (k = indxinfo->indnkeyattrs; k < indxinfo->indnattrs; k++)
 			{

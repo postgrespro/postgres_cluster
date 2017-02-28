@@ -19,6 +19,7 @@
 #include "pathman_workers.h"
 #include "relation_info.h"
 #include "utils.h"
+#include "xact_handling.h"
 
 #include "access/htup_details.h"
 #include "access/xact.h"
@@ -35,6 +36,7 @@
 #include "utils/datum.h"
 #include "utils/memutils.h"
 #include "utils/lsyscache.h"
+#include "utils/syscache.h"
 #include "utils/typcache.h"
 #include "utils/resowner.h"
 #include "utils/snapmgr.h"
@@ -364,8 +366,8 @@ bgw_main_spawn_partitions(Datum main_arg)
 							   args->parallel_master_pid))
 		return;
 #endif
-
 	/* Establish connection and start transaction */
+
 	BackgroundWorkerInitializeConnectionByOid(args->dbid, args->userid);
 
 	/* Start new transaction (syscache access etc.) */
@@ -390,7 +392,8 @@ bgw_main_spawn_partitions(Datum main_arg)
 	/* Create partitions and save the Oid of the last one */
 	args->result = create_partitions_for_value_internal(args->partitioned_table,
 														value, /* unpacked Datum */
-														args->value_type);
+														args->value_type,
+														true); /* background woker */
 
 	/* Finish transaction in an appropriate way */
 	if (args->result == InvalidOid)
@@ -484,24 +487,42 @@ bgw_main_concurrent_part(Datum main_arg)
 		/* Exec ret = _partition_data_concurrent() */
 		PG_TRY();
 		{
-			int		ret;
-			bool	isnull;
-
-			ret = SPI_execute_with_args(sql, 2, types, vals, nulls, false, 0);
-			if (ret == SPI_OK_SELECT)
+			/* Make sure that relation exists and has partitions */
+			if (SearchSysCacheExists1(RELOID, ObjectIdGetDatum(part_slot->relid)) &&
+				get_pathman_relation_info(part_slot->relid) != NULL)
 			{
-				TupleDesc	tupdesc = SPI_tuptable->tupdesc;
-				HeapTuple	tuple = SPI_tuptable->vals[0];
+				int		ret;
+				bool	isnull;
 
-				Assert(SPI_processed == 1); /* there should be 1 result at most */
+				ret = SPI_execute_with_args(sql, 2, types, vals, nulls, false, 0);
+				if (ret == SPI_OK_SELECT)
+				{
+					TupleDesc	tupdesc = SPI_tuptable->tupdesc;
+					HeapTuple	tuple = SPI_tuptable->vals[0];
 
-				rows = DatumGetInt32(SPI_getbinval(tuple, tupdesc, 1, &isnull));
+					Assert(SPI_processed == 1); /* there should be 1 result at most */
 
-				Assert(!isnull); /* ... and ofc it must not be NULL */
+					rows = DatumGetInt32(SPI_getbinval(tuple, tupdesc, 1, &isnull));
+
+					Assert(!isnull); /* ... and ofc it must not be NULL */
+				}
+			}
+			/* Otherwise it's time to exit */
+			else
+			{
+				failures_count = PART_WORKER_MAX_ATTEMPTS;
+
+				elog(LOG, "relation %u is not partitioned (or does not exist)",
+						  part_slot->relid);
 			}
 		}
 		PG_CATCH();
 		{
+			/*
+			 * The most common exception we can catch here is a deadlock with
+			 * concurrent user queries. Check that attempts count doesn't exceed
+			 * some reasonable value
+			 */
 			ErrorData  *error;
 			char	   *sleep_time_str;
 
@@ -524,25 +545,6 @@ bgw_main_concurrent_part(Datum main_arg)
 
 			FreeErrorData(error);
 
-			/*
-			 * The most common exception we can catch here is a deadlock with
-			 * concurrent user queries. Check that attempts count doesn't exceed
-			 * some reasonable value
-			 */
-			if (failures_count >= PART_WORKER_MAX_ATTEMPTS)
-			{
-				/* Mark slot as FREE */
-				cps_set_status(part_slot, CPS_FREE);
-
-				elog(LOG,
-					 "concurrent partitioning worker has canceled the task because "
-					 "maximum amount of attempts (%d) had been exceeded, "
-					 "see the error message below",
-					 PART_WORKER_MAX_ATTEMPTS);
-
-				return; /* exit quickly */
-			}
-
 			/* Set 'failed' flag */
 			failed = true;
 		}
@@ -551,12 +553,33 @@ bgw_main_concurrent_part(Datum main_arg)
 		SPI_finish();
 		PopActiveSnapshot();
 
-		if (failed)
+		/* We've run out of attempts, exit */
+		if (failures_count >= PART_WORKER_MAX_ATTEMPTS)
+		{
+			AbortCurrentTransaction();
+
+			/* Mark slot as FREE */
+			cps_set_status(part_slot, CPS_FREE);
+
+			elog(LOG,
+				 "concurrent partitioning worker has canceled the task because "
+				 "maximum amount of attempts (%d) had been exceeded, "
+				 "see the error message below",
+				 PART_WORKER_MAX_ATTEMPTS);
+
+			return; /* time to exit */
+		}
+
+		/* Failed this time, wait */
+		else if (failed)
 		{
 			/* Abort transaction and sleep for a second */
 			AbortCurrentTransaction();
+
 			DirectFunctionCall1(pg_sleep, Float8GetDatum(part_slot->sleep_time));
 		}
+
+		/* Everything is fine */
 		else
 		{
 			/* Commit transaction and reset 'failures_count' */
@@ -578,7 +601,7 @@ bgw_main_concurrent_part(Datum main_arg)
 		if (cps_check_status(part_slot) == CPS_STOPPING)
 			break;
 	}
-	while(rows > 0 || failed);  /* do while there's still rows to be relocated */
+	while(rows > 0 || failed); /* do while there's still rows to be relocated */
 
 	/* Reclaim the resources */
 	pfree(sql);
@@ -601,11 +624,12 @@ bgw_main_concurrent_part(Datum main_arg)
 Datum
 partition_table_concurrently(PG_FUNCTION_ARGS)
 {
-	Oid		relid = PG_GETARG_OID(0);
-	int32	batch_size = PG_GETARG_INT32(1);
-	float8	sleep_time = PG_GETARG_FLOAT8(2);
-	int		empty_slot_idx = -1,		/* do we have a slot for BGWorker? */
-			i;
+	Oid				relid = PG_GETARG_OID(0);
+	int32			batch_size = PG_GETARG_INT32(1);
+	float8			sleep_time = PG_GETARG_FLOAT8(2);
+	int				empty_slot_idx = -1,		/* do we have a slot for BGWorker? */
+					i;
+	TransactionId	rel_xmin;
 
 	/* Check batch_size */
 	if (batch_size < 1 || batch_size > 10000)
@@ -622,6 +646,16 @@ partition_table_concurrently(PG_FUNCTION_ARGS)
 							 get_pathman_relation_info_after_lock(relid, true, NULL),
 							 /* Partitioning type does not matter here */
 							 PT_INDIFFERENT);
+
+	/* Check that partitioning operation result is visible */
+	if (pathman_config_contains_relation(relid, NULL, NULL, &rel_xmin))
+	{
+		if (!xact_object_is_visible(rel_xmin))
+			ereport(ERROR, (errmsg("cannot start %s", concurrent_part_bgw),
+							errdetail("table is being partitioned now")));
+	}
+	else elog(ERROR, "cannot find relation %d", relid);
+
 	/*
 	 * Look for an empty slot and also check that a concurrent
 	 * partitioning operation for this table hasn't been started yet
@@ -686,7 +720,8 @@ partition_table_concurrently(PG_FUNCTION_ARGS)
 	/* Tell user everything's fine */
 	elog(NOTICE,
 		 "worker started, you can stop it "
-		 "with the following command: select %s('%s');",
+		 "with the following command: select %s.%s('%s');",
+		 get_namespace_name(get_pathman_schema()),
 		 CppAsString(stop_concurrent_part_task),
 		 get_rel_name(relid));
 

@@ -1,4 +1,6 @@
 create user __temp_robot;
+create user __temp_root WITH  SUPERUSER;
+SET SESSION AUTHORIZATION __temp_root;
 select schedule.create_job(
     '{
         "name": "Test @reboot",
@@ -51,7 +53,7 @@ select schedule.create_job(
           4
 (1 row)
 
-select id,node,name,rule,do_sql,same_transaction, postpone,retry from schedule.cron order by id;
+select id, node, name, rule, do_sql, same_transaction, postpone, retry from schedule.cron order by id;
  id |  node  |         name         |                                                                                                                                                                                                                                                                                             rule                                                                                                                                                                                                                                                                                             |                do_sql                 | same_transaction | postpone  | retry 
 ----+--------+----------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------------------------------------+------------------+-----------+-------
   1 | master | Test @reboot         | {"crontab": "@reboot", "onstart": 1}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | {"show all"}                          | f                |           |     0
@@ -60,4 +62,6 @@ select id,node,name,rule,do_sql,same_transaction, postpone,retry from schedule.c
   4 | master | Test 3               | {"days": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31], "hours": [1], "wdays": [0, 4], "months": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], "crontab": "23 1 * * THU,SUN", "minutes": [23]}                                                                                                                                                                                                                                                                                                                              | {"select 'ok' as ok"}                 | f                |           |     0
 (4 rows)
 
+RESET SESSION AUTHORIZATION;
+drop user __temp_root;
 drop user __temp_robot;

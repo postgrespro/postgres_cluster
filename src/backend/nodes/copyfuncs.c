@@ -2861,6 +2861,7 @@ _copyAlterTableCmd(const AlterTableCmd *from)
 	COPY_NODE_FIELD(def);
 	COPY_SCALAR_FIELD(behavior);
 	COPY_SCALAR_FIELD(missing_ok);
+	COPY_NODE_FIELD(partitions);
 
 	return newnode;
 }
@@ -3013,6 +3014,10 @@ CopyCreateStmtFields(const CreateStmt *from, CreateStmt *newnode)
 	COPY_SCALAR_FIELD(oncommit);
 	COPY_STRING_FIELD(tablespacename);
 	COPY_SCALAR_FIELD(if_not_exists);
+	if (from->partition_info)
+		COPY_POINTER_FIELD(partition_info, sizeof(PartitionInfo));
+	else
+		newnode->partition_info = NULL;
 }
 
 static CreateStmt *
@@ -4277,6 +4282,45 @@ _copyForeignKeyCacheInfo(const ForeignKeyCacheInfo *from)
 }
 
 
+static PartitionNode *
+_copyPartitionNode(const PartitionNode *from)
+{
+	PartitionNode *newnode = makeNode(PartitionNode);
+
+	COPY_NODE_FIELD(relation);
+	COPY_NODE_FIELD(upper_bound);
+	COPY_STRING_FIELD(tablespace);
+
+	return newnode;
+}
+
+static PartitionInfo *
+_copyPartitionInfo(const PartitionInfo *from)
+{
+	PartitionInfo *newnode = makeNode(PartitionInfo);
+
+	COPY_SCALAR_FIELD(partition_type);
+	COPY_NODE_FIELD(key);
+	COPY_SCALAR_FIELD(partitions_count);
+	COPY_NODE_FIELD(interval);
+	COPY_NODE_FIELD(partitions);
+	COPY_NODE_FIELD(start_value);
+
+	return newnode;
+}
+
+static PartitionStmt *
+_copyPartitionStmt(const PartitionStmt* from)
+{
+	PartitionStmt *newnode = makeNode(PartitionStmt);
+
+	COPY_NODE_FIELD(relation);
+	COPY_NODE_FIELD(pinfo);
+	COPY_SCALAR_FIELD(concurrent);
+
+	return newnode;
+}
+
 /*
  * copyObject
  *
@@ -5081,6 +5125,16 @@ copyObject(const void *from)
 		case T_ForeignKeyCacheInfo:
 			retval = _copyForeignKeyCacheInfo(from);
 			break;
+		case T_PartitionStmt:
+			retval = _copyPartitionStmt(from);
+			break;
+		case T_PartitionInfo:
+			retval = _copyPartitionInfo(from);
+			break;
+		case T_PartitionNode:
+			retval = _copyPartitionNode(from);
+			break;
+
 
 		default:
 			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(from));

@@ -407,6 +407,7 @@ typedef uint64 SubTransactionId;
 #define TopSubTransactionId			((SubTransactionId) 1)
 
 #define XID_FMT UINT64_FORMAT
+#define HEX_XID_FMT "%" INT64_MODIFIER "x"
 
 /* MultiXactId must be equivalent to TransactionId, to fit in t_xmax */
 typedef TransactionId MultiXactId;
@@ -984,7 +985,7 @@ typedef NameData *Name;
 /* gettext domain name mangling */
 
 /*
- * To better support parallel installations of major PostgeSQL
+ * To better support parallel installations of major PostgreSQL
  * versions as well as parallel installations of major library soname
  * versions, we mangle the gettext domain name by appending those
  * version numbers.  The coding rule ought to be that wherever the
