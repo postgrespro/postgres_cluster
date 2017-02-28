@@ -11,6 +11,7 @@ typedef enum {
 	SchdExecutorInit,
 	SchdExecutorWork,
 	SchdExecutorDone,
+	SchdExecutorResubmit,
 	SchdExecutorError
 } schd_executor_status_t;
 
@@ -20,6 +21,7 @@ typedef struct {
 	char user[NAMEDATALEN];
 
 	int cron_id;
+	task_type_t type;
 	TimestampTz start_at;
 
 	schd_executor_status_t status;
@@ -38,7 +40,7 @@ typedef struct {
 	char **errors;
 } executor_error_t;
 
-void executor_worker_main(Datum arg);
+extern PGDLLEXPORT void executor_worker_main(Datum arg);
 job_t *initializeExecutorJob(schd_executor_share_t *data);
 void set_shared_message(schd_executor_share_t *shared, executor_error_t *ee);
 TimestampTz get_next_excution_time(char *sql, executor_error_t *ee);
@@ -46,6 +48,9 @@ int executor_onrollback(job_t *job, executor_error_t *ee);
 void set_pg_var(bool resulti, executor_error_t *ee);
 int push_executor_error(executor_error_t *e, char *fmt, ...)  pg_attribute_printf(2, 3);
 int set_session_authorization(char *username, char **error);
+
+extern Datum get_self_id(PG_FUNCTION_ARGS);
+extern Datum resubmit(PG_FUNCTION_ARGS);
 
 
 #endif
