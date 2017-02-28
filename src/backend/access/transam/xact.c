@@ -3622,6 +3622,8 @@ bool ResumeTransaction(void)
 		prepareGID = sus->prepareGID;
 		forceSyncCommit = sus->forceSyncCommit;
 
+		MemoryContextDelete(TransactionAbortContext);
+
 		TopTransactionContext = sus->TopTransactionContext;
 		CurTransactionContext = sus->CurTransactionContext;
 		TransactionAbortContext = sus->TransactionAbortContext;

@@ -2188,6 +2188,13 @@ void ResumeSnapshot(void *data)
 	//UnregisterSnapshot(CatalogSnapshot);
 	//UnregisterSnapshot(HistoricSnapshot);
 
+	free(CurrentSnapshotData.xip);
+	free(CurrentSnapshotData.subxip);
+	free(SecondarySnapshotData.xip);
+	free(SecondarySnapshotData.subxip);
+	free(CatalogSnapshotData.xip);
+	free(CatalogSnapshotData.subxip);
+
 	CurrentSnapshotData = s->CurrentSnapshotData;
 	SecondarySnapshotData = s->SecondarySnapshotData;
 	CatalogSnapshotData = s->CatalogSnapshotData;
