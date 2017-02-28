@@ -143,7 +143,7 @@ aqo_planner(Query *parse,
 				use_aqo = true;
 				auto_tuning = false;
 				fspace_hash = 0;
-				collect_stat = true;
+				collect_stat = false;
 				break;
 			case AQO_MODE_MANUAL:
 				adding_query = false;
