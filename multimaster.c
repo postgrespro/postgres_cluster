@@ -3448,6 +3448,9 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 		MtmSleep(STATUS_POLL_DELAY);
 		MtmLock(LW_EXCLUSIVE);
 	}
+	if (Mtm->status == MTM_RECOVERED) { 
+		mode = REPLMODE_RECOVERED;
+	}
 	if (mode == REPLMODE_RECOVERED) { 
 		MTM_LOG1("%d: Restart replication from node %d after end of recovery", MyProcPid, nodeId);
 	} else if (mode == REPLMODE_CREATE_NEW) { 
