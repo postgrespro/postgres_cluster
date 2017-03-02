@@ -680,17 +680,17 @@ static void MtmAcceptIncomingConnections()
 
     gateway = socket(sock_inet.sin_family, SOCK_STREAM, 0);
 	if (gateway < 0) {
-		MTM_ELOG(ERROR, "Arbiter failed to create socket: %d", errno);
+		MTM_ELOG(ERROR, "Arbiter failed to create socket: %s", strerror(errno));
 	}
     if (setsockopt(gateway, SOL_SOCKET, SO_REUSEADDR, (char*)&on, sizeof on) < 0) {
-		MTM_ELOG(ERROR, "Arbiter failed to set options for socket: %d", errno);
+		MTM_ELOG(ERROR, "Arbiter failed to set options for socket: %s", strerror(errno));
 	}			
 
     if (bind(gateway, (struct sockaddr*)&sock_inet, sizeof(sock_inet)) < 0) {
-		MTM_ELOG(ERROR, "Arbiter failed to bind socket: %d", errno);
+		MTM_ELOG(ERROR, "Arbiter failed to bind socket: %s", strerror(errno));
 	}	
     if (listen(gateway, nNodes) < 0) {
-		MTM_ELOG(ERROR, "Arbiter failed to listen socket: %d", errno);
+		MTM_ELOG(ERROR, "Arbiter failed to listen socket: %s", strerror(errno));
 	}	
 
 	sockets[MtmNodeId-1] = gateway;
