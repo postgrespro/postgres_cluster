@@ -2176,9 +2176,6 @@ void *SuspendSnapshot(void)
 	MOVELEFT(s->ActiveSnapshot, ActiveSnapshot, NULL);
 	MOVELEFT(s->OldestActiveSnapshot, OldestActiveSnapshot, NULL);
 
-	RelationCacheInvalidate();
-	ResetCatalogCaches();
-
 	return s;
 }
 
@@ -2190,6 +2187,13 @@ void ResumeSnapshot(void *data)
 	//UnregisterSnapshot(SecondarySnapshot);
 	//UnregisterSnapshot(CatalogSnapshot);
 	//UnregisterSnapshot(HistoricSnapshot);
+
+	free(CurrentSnapshotData.xip);
+	free(CurrentSnapshotData.subxip);
+	free(SecondarySnapshotData.xip);
+	free(SecondarySnapshotData.subxip);
+	free(CatalogSnapshotData.xip);
+	free(CatalogSnapshotData.subxip);
 
 	CurrentSnapshotData = s->CurrentSnapshotData;
 	SecondarySnapshotData = s->SecondarySnapshotData;
@@ -2206,9 +2210,6 @@ void ResumeSnapshot(void *data)
 
 	ActiveSnapshot = s->ActiveSnapshot;
 	OldestActiveSnapshot = s->OldestActiveSnapshot;
-
-	RelationCacheInvalidate();
-	ResetCatalogCaches();
 
 	free(s);
 }
