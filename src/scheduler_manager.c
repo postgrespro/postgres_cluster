@@ -378,7 +378,7 @@ scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *
 
 	*nt = 0;
 	initStringInfo(&sql);
-	appendStringInfo(&sql, "select id, rule, postpone, _next_exec_time, next_time_statement from cron where active and not broken and (start_date <= 'now' or start_date is null) and (end_date >= 'now' or end_date is null) and node = '%s'", ctx->nodename);
+	appendStringInfo(&sql, "select id, rule, postpone, _next_exec_time, next_time_statement, start_date, end_date from cron where active and not broken and (start_date <= 'now' or start_date is null) and (end_date >= 'now' or end_date is null) and node = '%s'", ctx->nodename);
 
 	pgstat_report_activity(STATE_RUNNING, "select 'at' tasks");
 
@@ -413,6 +413,8 @@ scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *
 				{
 					tasks[i].has_next_time_statement = false;
 				}
+				tasks[i].date1 = get_timestamp_from_spi(NULL, i, 6, 0);
+				tasks[i].date2 = get_timestamp_from_spi(NULL, i, 7, 0);
 			}
 			*nt = processed;
 		}
@@ -622,6 +624,11 @@ TimestampTz *scheduler_calc_next_task_time(scheduler_task_t *task, TimestampTz s
 
 	*ntimes = 0;
 
+	if(task->date1 > 0 && task->date1 > stop) return NULL; 
+	if(task->date1 > 0 && task->date1 > start) start = task->date1;
+	if(task->date2 > 0 && task->date2 < start) return NULL;
+	if(task->date2 > 0 && task->date2 < stop) stop = task->date2;
+
 	if(first_time && jsonb_has_key(task->rule, "onstart"))
 	{
 		*ntimes  = 1;
@@ -642,6 +649,8 @@ TimestampTz *scheduler_calc_next_task_time(scheduler_task_t *task, TimestampTz s
 		}
 		return NULL;
 	}
+
+
 
 /* to avoid to set job on minute has already passed  we add 1 minute */
 	curr = start;
