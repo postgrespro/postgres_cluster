@@ -164,11 +164,10 @@ sub stopid
 	return stopnode($self->{nodes}->[$idx]);
 }
 
-sub stop
+sub dumplogs
 {
-	my ($self, $mode) = @_;
+	my ($self) = @_;
 	my $nodes = $self->{nodes};
-	$mode = 'fast' unless defined $mode;
 
 	diag("Dumping logs:");
 	foreach my $node (@$nodes) {
@@ -181,6 +180,15 @@ sub stop
 		diag($data);
 		diag("##################################################################\n\n");
 	}
+}
+
+sub stop
+{
+	my ($self, $mode) = @_;
+	my $nodes = $self->{nodes};
+	$mode = 'fast' unless defined $mode;
+
+	# $self->dumplogs();
 
 	my $ok = 1;
 	diag("stopping cluster ${mode}ly");
@@ -196,6 +204,13 @@ sub stop
 	}
 	sleep(2);
 	return $ok;
+}
+
+sub bail_out_with_logs
+{
+	my ($self, $msg) = @_;
+	$self->dumplogs();
+	BAIL_OUT($msg);
 }
 
 sub teardown
