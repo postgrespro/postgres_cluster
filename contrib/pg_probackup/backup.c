@@ -2,7 +2,8 @@
  *
  * backup.c: backup DB cluster, archived WAL
  *
- * Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2015-2017, Postgres Professional
  *
  *-------------------------------------------------------------------------
  */
@@ -403,7 +404,6 @@ do_backup_database(parray *backup_list, bool smooth_checkpoint)
 int
 do_backup(bool smooth_checkpoint)
 {
-	int			ret;
 	parray	   *backup_list;
 	parray	   *files_database;
 
@@ -432,12 +432,7 @@ do_backup(bool smooth_checkpoint)
 	elog(LOG, "----------------------------------------");
 
 	/* get exclusive lock of backup catalog */
-	ret = catalog_lock(true);
-	if (ret == -1)
-		elog(ERROR, "cannot lock backup catalog");
-	else if (ret == 1)
-		elog(ERROR,
-			 "another pg_probackup is running, skipping this backup");
+	catalog_lock(true);
 
 	/* initialize backup result */
 	current.status = BACKUP_STATUS_RUNNING;
@@ -507,9 +502,6 @@ do_backup(bool smooth_checkpoint)
 	parray_free(files_database);
 
 	pgBackupValidate(&current, false, false);
-
-	/* release catalog lock */
-	catalog_unlock();
 
 	return 0;
 }
