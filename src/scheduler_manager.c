@@ -643,7 +643,14 @@ TimestampTz *scheduler_calc_next_task_time(scheduler_task_t *task, TimestampTz s
 		return NULL;
 	}
 
+/* to avoid to set job on minute has already passed  we add 1 minute */
 	curr = start;
+#ifdef HAVE_INT64_TIMESTAMP
+	curr += USECS_PER_MINUTE;
+#else
+	curr += SECS_PER_MINUTE;
+#endif
+
 	nextarray = worker_alloc(sizeof(TimestampTz) * REALLOC_STEP);
 	convert_rule_to_cron(task->rule, cron);
 
