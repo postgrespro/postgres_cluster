@@ -22,17 +22,17 @@ sleep(10);
 diag("preparing the tables");
 if ($cluster->psql(0, 'postgres', "create table t (k int primary key, v int)"))
 {
-	BAIL_OUT('failed to create t');
+	$cluster->bail_out_with_logs('failed to create t');
 }
 
 if ($cluster->psql(0, 'postgres', "insert into t (select generate_series(0, 999), 0)"))
 {
-	BAIL_OUT('failed to fill t');
+	$cluster->bail_out_with_logs('failed to fill t');
 }
 
 if ($cluster->psql(0, 'postgres', "create table reader_log (v int)"))
 {
-	BAIL_OUT('failed to create reader_log');
+	$cluster->bail_out_with_logs('failed to create reader_log');
 }
 
 sub reader
@@ -98,7 +98,7 @@ foreach my $node (@{$cluster->{nodes}})
 diag("finishing benches");
 foreach my $bench (@benches)
 {
-	finish($bench) || BAIL_OUT("pgbench exited with $?");
+	finish($bench) || $cluster->bail_out_with_logs("pgbench exited with $?");
 }
 diag($out);
 

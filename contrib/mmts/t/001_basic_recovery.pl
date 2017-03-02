@@ -13,6 +13,7 @@ $cluster->start();
 # Wait until nodes are up
 ###############################################################################
 
+my $ret;
 my $psql_out;
 # XXX: create extension on start and poll_untill status is Online
 sleep(10);
@@ -39,32 +40,29 @@ is($psql_out, '10', "Check replication while all nodes are up.");
 ###############################################################################
 
 diag("stopping node 2");
-if ($cluster->stopid(2, 'immediate')) {
-	pass("node 2 stops");
+if ($cluster->stopid(2, 'fast')) {
+	pass("node 2 stops in fast mode");
 } else {
-	fail("node 2 stops");
-	if (!$cluster->stopid(2, 'kill')) {
-		my $name = $cluster->{nodes}->[2]->name;
-		BAIL_OUT("failed to kill $name");
-	}
+	my $name = $cluster->{nodes}->[2]->name;
+	$cluster->bail_out_with_logs("failed to stop $name in fast mode");
 }
 
 sleep(5); # Wait until failure of node will be detected
 
 diag("inserting 2 on node 0");
-my $ret = $cluster->psql(0, 'postgres', "insert into t values(2, 20);"); # this transaciton may fail
+$ret = $cluster->psql(0, 'postgres', "insert into t values(2, 20);"); # this transaciton may fail
 diag "tx1 status = $ret";
 
 diag("inserting 3 on node 1");
-my $ret = $cluster->psql(1, 'postgres', "insert into t values(3, 30);"); # this transaciton may fail
+$ret = $cluster->psql(1, 'postgres', "insert into t values(3, 30);"); # this transaciton may fail
 diag "tx2 status = $ret";
 
 diag("inserting 4 on node 0 (can fail)");
-my $ret = $cluster->psql(0, 'postgres', "insert into t values(4, 40);"); 
+$ret = $cluster->psql(0, 'postgres', "insert into t values(4, 40);"); 
 diag "tx1 status = $ret";
 
 diag("inserting 5 on node 1 (can fail)");
-my $ret = $cluster->psql(1, 'postgres', "insert into t values(5, 50);"); 
+$ret = $cluster->psql(1, 'postgres', "insert into t values(5, 50);"); 
 diag "tx2 status = $ret";
 
 diag("selecting");

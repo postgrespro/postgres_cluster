@@ -24,12 +24,12 @@ sleep(10);
 diag("preparing the tables");
 if ($cluster->psql(0, 'postgres', "create table t (k int primary key, v int)"))
 {
-	BAIL_OUT('failed to create t');
+	$cluster->bail_out_with_logs('failed to create t');
 }
 
 if ($cluster->psql(0, 'postgres', "insert into t (select generate_series(0, $nkeys - 1), 0)"))
 {
-	BAIL_OUT('failed to fill t');
+	$cluster->bail_out_with_logs('failed to fill t');
 }
 
 sub appender
@@ -145,7 +145,11 @@ while (time() - $started < $seconds)
 diag("finishing benches");
 foreach my $appender (@appenders)
 {
-	finish($appender) || BAIL_OUT("pgbench exited with $?");
+	if (!finish($appender))
+	{
+		$cluster->dumplogs();
+		$cluster->bail_out_with_logs("pgbench exited with $?");
+	}
 }
 
 is($anomalies, 0, "no cross anomalies after $selects selects");
