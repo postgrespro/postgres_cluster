@@ -188,7 +188,7 @@ sub stop
 	my $nodes = $self->{nodes};
 	$mode = 'fast' unless defined $mode;
 
-	# $self->dumplogs();
+	$self->dumplogs();
 
 	my $ok = 1;
 	diag("stopping cluster ${mode}ly");
