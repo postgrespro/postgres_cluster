@@ -58,7 +58,7 @@ typedef struct
  */
 static void backup_cleanup(bool fatal, void *userdata);
 static void backup_files(void *arg);
-static parray *do_backup_database(parray *backup_list, pgBackupOption bkupopt);
+static parray *do_backup_database(parray *backup_list, bool smooth_checkpoint);
 static void confirm_block_size(const char *name, int blcksz);
 static void pg_start_backup(const char *label, bool smooth, pgBackup *backup);
 static void pg_stop_backup(pgBackup *backup);
@@ -96,7 +96,7 @@ static void StreamLog(void *arg);
  * Take a backup of database and return the list of files backed up.
  */
 static parray *
-do_backup_database(parray *backup_list, pgBackupOption bkupopt)
+do_backup_database(parray *backup_list, bool smooth_checkpoint)
 {
 	int			i;
 	parray	   *prev_files = NULL;	/* file list of previous database backup */
@@ -113,9 +113,7 @@ do_backup_database(parray *backup_list, pgBackupOption bkupopt)
 	backup_files_args *backup_threads_args[num_threads];
 	bool		is_ptrack_support;
 
-
 	/* repack the options */
-	bool	smooth_checkpoint = bkupopt.smooth_checkpoint;
 	pgBackup   *prev_backup = NULL;
 
 	/* Block backup operations on a standby */
@@ -127,9 +125,6 @@ do_backup_database(parray *backup_list, pgBackupOption bkupopt)
 
 	/* Initialize size summary */
 	current.data_bytes = 0;
-
-	/* do some checks on the node */
-	sanityChecks();
 
 	/*
 	 * Obtain current timeline by scanning control file, theh LSN
@@ -154,11 +149,9 @@ do_backup_database(parray *backup_list, pgBackupOption bkupopt)
 	if (current.backup_mode == BACKUP_MODE_DIFF_PAGE ||
 		current.backup_mode == BACKUP_MODE_DIFF_PTRACK)
 	{
-		pgBackup   *prev_backup;
-
 		prev_backup = catalog_get_last_data_backup(backup_list, current.tli);
 		if (prev_backup == NULL)
-			elog(ERROR, "Timeline has changed since last full backup."
+			elog(ERROR, "Timeline has changed since last full backup. "
 						"Create new full backup before an incremental one.");
 	}
 
@@ -207,7 +200,7 @@ do_backup_database(parray *backup_list, pgBackupOption bkupopt)
 	 * mkdirs.sh, then sort them in order of path. Omit $PGDATA.
 	 */
 	backup_files_list = parray_new();
-	dir_list_file(backup_files_list, pgdata, NULL, false, false);
+	dir_list_file(backup_files_list, pgdata, false, false, false);
 
 	if (!check)
 	{
@@ -235,8 +228,7 @@ do_backup_database(parray *backup_list, pgBackupOption bkupopt)
 	if (current.backup_mode == BACKUP_MODE_DIFF_PAGE ||
 		current.backup_mode == BACKUP_MODE_DIFF_PTRACK)
 	{
-		/* find last completed database backup */
-		prev_backup = catalog_get_last_data_backup(backup_list, current.tli);
+		Assert(prev_backup);
 		pgBackupGetPath(prev_backup, prev_file_txt, lengthof(prev_file_txt),
 			DATABASE_FILE_LIST);
 		prev_files = dir_read_file_list(pgdata, prev_file_txt);
@@ -247,6 +239,9 @@ do_backup_database(parray *backup_list, pgBackupOption bkupopt)
 		lsn = &prev_backup->start_lsn;
 		elog(LOG, "backup only the page that there was of the update from LSN(%X/%08X)",
 			 (uint32) (*lsn >> 32), (uint32) *lsn);
+
+		current.parent_backup = prev_backup->start_time;
+		pgBackupWriteIni(&current);
 	}
 
 	/* initialize backup list */
@@ -290,10 +285,13 @@ do_backup_database(parray *backup_list, pgBackupOption bkupopt)
 	{
 		XLogRecPtr ptrack_lsn = get_last_ptrack_lsn();
 		if (ptrack_lsn > prev_backup->stop_lsn)
+		{
 			elog(ERROR, "Wrong ptrack lsn:%lx prev:%lx current:%lx",
 				ptrack_lsn,
 				prev_backup->start_lsn,
 				current.start_lsn);
+			elog(ERROR, "Create new full backup before an incremental one.");
+		}
 		parray_qsort(backup_files_list, pgFileComparePathDesc);
 		make_pagemap_from_ptrack(backup_files_list);
 	}
@@ -395,7 +393,7 @@ do_backup_database(parray *backup_list, pgBackupOption bkupopt)
 		/* Scan backup pg_xlog dir */
 		list_file = parray_new();
 		join_path_components(pg_xlog_path, path, "pg_xlog");
-		dir_list_file(list_file, pg_xlog_path, NULL, true, false);
+		dir_list_file(list_file, pg_xlog_path, false, true, false);
 
 		/* Remove file path root prefix and calc meta */
 		for (i = 0; i < parray_num(list_file); i++)
@@ -443,15 +441,11 @@ do_backup_database(parray *backup_list, pgBackupOption bkupopt)
 
 
 int
-do_backup(pgBackupOption bkupopt)
+do_backup(bool smooth_checkpoint)
 {
-	parray *backup_list;
-	parray *files_database;
-	int		ret;
-
-	/* repack the necessary options */
-	int keep_data_generations = bkupopt.keep_data_generations;
-	int keep_data_days        = bkupopt.keep_data_days;
+	int			ret;
+	parray	   *backup_list;
+	parray	   *files_database;
 
 	/* PGDATA and BACKUP_MODE are always required */
 	if (pgdata == NULL)
@@ -478,12 +472,12 @@ do_backup(pgBackupOption bkupopt)
 	elog(LOG, "----------------------------------------");
 
 	/* get exclusive lock of backup catalog */
-	ret = catalog_lock();
+	ret = catalog_lock(true);
 	if (ret == -1)
 		elog(ERROR, "cannot lock backup catalog");
 	else if (ret == 1)
 		elog(ERROR,
-			"another pg_probackup is running, skipping this backup");
+			 "another pg_probackup is running, skipping this backup");
 
 	/* initialize backup result */
 	current.status = BACKUP_STATUS_RUNNING;
@@ -518,7 +512,7 @@ do_backup(pgBackupOption bkupopt)
 	pgut_atexit_push(backup_cleanup, NULL);
 
 	/* backup data */
-	files_database = do_backup_database(backup_list, bkupopt);
+	files_database = do_backup_database(backup_list, smooth_checkpoint);
 	pgut_atexit_pop(backup_cleanup, NULL);
 
 	/* update backup status to DONE */
@@ -546,10 +540,6 @@ do_backup(pgBackupOption bkupopt)
 				 total_read, current.data_bytes);
 		elog(LOG, "========================================");
 	}
-
-
-	/* Delete old backup files after all backup operation. */
-	pgBackupDelete(keep_data_generations, keep_data_days);
 
 	/* Cleanup backup mode file list */
 	if (files_database)
@@ -1172,8 +1162,7 @@ backup_compressed_file_partially(pgFile *file, void *arg, size_t *skip_size)
 					file->path, current_file_size, prev_file->write_size);
 		}
 		else
-			elog(LOG, "Copy full %s. Generations are different: old=%d; new=%d",
-				file->path, prev_file->generation, file->generation);
+			elog(LOG, "Copy full %s.", file->path);
 	}
 
 	return result;
@@ -1342,21 +1331,21 @@ backup_files(void *arg)
 static void
 add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 {
-	parray	*list_file;
-	int		 i;
+	parray	   *list_file;
+	size_t		i;
 
 	list_file = parray_new();
 
 	/* list files with the logical path. omit $PGDATA */
-	dir_list_file(list_file, root, pgdata_exclude, true, add_root);
+	dir_list_file(list_file, root, true, true, add_root);
 
 	/* mark files that are possible datafile as 'datafile' */
-	for (i = 0; i < (int) parray_num(list_file); i++)
+	for (i = 0; i < parray_num(list_file); i++)
 	{
-		pgFile *file = (pgFile *) parray_get(list_file, i);
-		char *relative;
-		char *fname;
-		int path_len;
+		pgFile	   *file = (pgFile *) parray_get(list_file, i);
+		char	   *relative;
+		char	   *fname;
+		size_t		path_len;
 
 		/* data file must be a regular file */
 		if (!S_ISREG(file->mode))
@@ -1372,6 +1361,10 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 
 		/* Get file name from path */
 		fname = last_dir_separator(relative);
+		if (fname == NULL)
+			fname = relative;
+		else
+			fname++;
 
 		/* Remove temp tables from the list */
 		if (fname[0] == 't' && isdigit(fname[1]))
@@ -1384,32 +1377,41 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 
 		path_len = strlen(file->path);
 		/* Get link ptrack file to relations files */
-		if (path_len > 6 && strncmp(file->path+(path_len-6), "ptrack", 6) == 0)
+		if (path_len > 6 &&
+			strncmp(file->path + (path_len - 6), "ptrack", 6) == 0)
 		{
-			pgFile *search_file;
-			pgFile **pre_search_file;
-			int segno = 0;
-			while(true) {
-				pgFile tmp_file;
+			pgFile	   *search_file;
+			pgFile	  **pre_search_file;
+			int			segno = 0;
+
+			while (true)
+			{
+				pgFile		tmp_file;
+
 				tmp_file.path = pg_strdup(file->path);
 
 				/* Segno fits into 6 digits since it is not more than 4000 */
 				if (segno > 0)
-					sprintf(tmp_file.path+path_len-7, ".%d", segno);
+					sprintf(tmp_file.path + path_len - 7, ".%d", segno);
 				else
-					tmp_file.path[path_len-7] = '\0';
+					tmp_file.path[path_len - 7] = '\0';
 
-				pre_search_file = (pgFile **) parray_bsearch(list_file, &tmp_file, pgFileComparePath);
+				pre_search_file = (pgFile **) parray_bsearch(list_file,
+															 &tmp_file,
+															 pgFileComparePath);
 
 				if (pre_search_file != NULL)
 				{
 					search_file = *pre_search_file;
 					search_file->ptrack_path = pg_strdup(file->path);
 					search_file->segno = segno;
-				} else {
+				}
+				else
+				{
 					pg_free(tmp_file.path);
 					break;
 				}
+
 				pg_free(tmp_file.path);
 				segno++;
 			}
@@ -1418,68 +1420,24 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 			pgFileFree(file);
 			parray_remove(list_file, i);
 			i--;
-			continue;
 		}
-
 		/* compress map file it is not data file */
-		if (path_len > 4 && strncmp(file->path+(path_len-4), ".cfm", 4) == 0)
+		else if (path_len > 4 &&
+				 strncmp(file->path + (path_len - 4), ".cfm", 4) == 0)
 		{
-			if (current.backup_mode == BACKUP_MODE_DIFF_PAGE)
-				elog(ERROR, "You can't use PAGE mode backup with compressed tablespace.\n"
-							"Try FULL or PTRACK mode instead.");
-			continue;
-		}
+			pgFile	   **pre_search_file;
+			pgFile		tmp_file;
 
-		/* name of data file start with digit */
-		if (fname == NULL)
-			fname = relative;
-		else
-			fname++;
-		if (!isdigit(fname[0]))
-			continue;
-
-		file->is_datafile = true;
-		{
-			int find_dot;
-			int check_digit;
-			char *text_segno;
-			for(find_dot = path_len-1; file->path[find_dot] != '.' && find_dot >= 0; find_dot--);
-			if (find_dot <= 0)
-				continue;
-
-			text_segno = file->path + find_dot + 1;
-			for(check_digit=0; text_segno[check_digit] != '\0'; check_digit++)
-				if (!isdigit(text_segno[check_digit]))
-				{
-					check_digit = -1;
-					break;
-				}
-
-			if (check_digit == -1)
-				continue;
-
-			file->segno = (int) strtol(text_segno, NULL, 10);
-		}
-	}
-
-	/* mark cfs relations as not data */
-	for (i = 0; i < (int) parray_num(list_file); i++)
-	{
-		pgFile *file = (pgFile *) parray_get(list_file, i);
-		int path_len = (int) strlen(file->path);
-
-		if (path_len > 4 && strncmp(file->path+(path_len-4), ".cfm", 4) == 0)
-		{
-			pgFile **pre_search_file;
-			pgFile tmp_file;
 			tmp_file.path = pg_strdup(file->path);
-			tmp_file.path[path_len-4] = '\0';
+			tmp_file.path[path_len - 4] = '\0';
 			pre_search_file = (pgFile **) parray_bsearch(list_file,
-														 &tmp_file, pgFileComparePath);
+														 &tmp_file,
+														 pgFileComparePath);
 			if (pre_search_file != NULL)
 			{
-				FileMap* map;
-				int md = open(file->path, O_RDWR|PG_BINARY, 0);
+				FileMap	   *map;
+				int			md = open(file->path, O_RDWR|PG_BINARY, 0);
+
 				if (md < 0)
 					elog(ERROR, "add_files(). cannot open cfm file '%s'", file->path);
 
@@ -1495,16 +1453,51 @@ add_files(parray *files, const char *root, bool add_root, bool is_pgdata)
 				(*pre_search_file)->is_datafile = false;
 
 				if (cfs_munmap(map) < 0)
-					elog(LOG, "add_files(). CFS failed to unmap file %s: %m", file->path);
+					elog(LOG, "add_files(). CFS failed to unmap file %s: %m",
+						 file->path);
 				if (close(md) < 0)
-					elog(LOG, "add_files(). CFS failed to close file %s: %m", file->path);
+					elog(LOG, "add_files(). CFS failed to close file %s: %m",
+						 file->path);
 			}
 			else
-				elog(ERROR, "corresponding segment '%s' is not found", tmp_file.path);
+				elog(ERROR, "corresponding segment '%s' is not found",
+					 tmp_file.path);
 
 			pg_free(tmp_file.path);
 		}
+		/* name of data file start with digit */
+		else if (isdigit(fname[0]))
+		{
+			int			find_dot;
+			int			check_digit;
+			char	   *text_segno;
+
+			file->is_datafile = true;
+
+			/*
+			 * Find segment number.
+			 */
+
+			for (find_dot = (int) path_len - 1;
+				 file->path[find_dot] != '.' && find_dot >= 0;
+				 find_dot--);
+			/* There is not segment number */
+			if (find_dot <= 0)
+				continue;
+
+			text_segno = file->path + find_dot + 1;
+			for (check_digit = 0; text_segno[check_digit] != '\0'; check_digit++)
+				if (!isdigit(text_segno[check_digit]))
+				{
+					check_digit = -1;
+					break;
+				}
+
+			if (check_digit != -1)
+				file->segno = (int) strtol(text_segno, NULL, 10);
+		}
 	}
+
 	parray_concat(files, list_file);
 }
 
@@ -1751,18 +1744,20 @@ StreamLog(void *arg)
 				starttli);
 
 #if PG_VERSION_NUM >= 90600
-	StreamCtl ctl;
-	ctl.startpos = startpos;
-	ctl.timeline = starttli;
-	ctl.sysidentifier = NULL;
-	ctl.basedir = basedir;
-	ctl.stream_stop = stop_streaming;
-	ctl.standby_message_timeout = standby_message_timeout;
-	ctl.partial_suffix = NULL;
-	ctl.synchronous = false;
-	ctl.mark_done = false;
-	if(ReceiveXlogStream(conn, &ctl) == false)
-		elog(ERROR, "Problem in recivexlog");
+	{
+		StreamCtl ctl;
+		ctl.startpos = startpos;
+		ctl.timeline = starttli;
+		ctl.sysidentifier = NULL;
+		ctl.basedir = basedir;
+		ctl.stream_stop = stop_streaming;
+		ctl.standby_message_timeout = standby_message_timeout;
+		ctl.partial_suffix = NULL;
+		ctl.synchronous = false;
+		ctl.mark_done = false;
+		if(ReceiveXlogStream(conn, &ctl) == false)
+			elog(ERROR, "Problem in recivexlog");
+	}
 #else
 	if(ReceiveXlogStream(conn, startpos, starttli, NULL, basedir,
 					  stop_streaming, standby_message_timeout, NULL,

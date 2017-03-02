@@ -3033,7 +3033,7 @@ static struct config_int64 ConfigureNamesInt64[] =
 			NULL
 		},
 		&vacuum_freeze_min_age,
-		INT64CONST(50000000), INT64CONST(0), INT64CONST(1000000000),
+		INT64CONST(50000000), INT64CONST(0), INT64CONST(0x7FFFFFFFFFFFFFFF),
 		NULL, NULL, NULL
 	},
 
@@ -3043,7 +3043,7 @@ static struct config_int64 ConfigureNamesInt64[] =
 			NULL
 		},
 		&vacuum_freeze_table_age,
-		INT64CONST(150000000), INT64CONST(0), INT64CONST(2000000000),
+		INT64CONST(150000000), INT64CONST(0), INT64CONST(0x7FFFFFFFFFFFFFFF),
 		NULL, NULL, NULL
 	},
 
@@ -3053,7 +3053,7 @@ static struct config_int64 ConfigureNamesInt64[] =
 			NULL
 		},
 		&vacuum_multixact_freeze_min_age,
-		INT64CONST(5000000), INT64CONST(0), INT64CONST(1000000000),
+		INT64CONST(5000000), INT64CONST(0), INT64CONST(0x7FFFFFFFFFFFFFFF),
 		NULL, NULL, NULL
 	},
 
@@ -3063,7 +3063,7 @@ static struct config_int64 ConfigureNamesInt64[] =
 			NULL
 		},
 		&vacuum_multixact_freeze_table_age,
-		INT64CONST(150000000), INT64CONST(0), INT64CONST(2000000000),
+		INT64CONST(150000000), INT64CONST(0), INT64CONST(0x7FFFFFFFFFFFFFFF),
 		NULL, NULL, NULL
 	},
 
@@ -5719,7 +5719,7 @@ parse_int64(const char *value, int64 *result, int flags, const char **hintmsg)
 	if (errno == ERANGE)
 	{
 		if (hintmsg)
-			*hintmsg = gettext_noop("Value exceeds integer range.");
+			*hintmsg = gettext_noop("Value exceeds integer64 range.");
 		return false;
 	}
 
@@ -5949,7 +5949,7 @@ parse_and_validate_value(struct config_generic * record,
 					return false;
 				}
 
-				if (newval->intval < conf->min || newval->intval > conf->max)
+				if (newval->int64val < conf->min || newval->int64val > conf->max)
 				{
 					ereport(elevel,
 							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),

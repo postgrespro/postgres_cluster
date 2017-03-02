@@ -9,8 +9,10 @@
  */
 
 #include "xact_handling.h"
+#include "utils.h"
 
 #include "postgres.h"
+#include "access/transam.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
 #include "miscadmin.h"
@@ -157,6 +159,16 @@ xact_is_set_transaction_stmt(Node *stmt)
 }
 
 /*
+ * Check if object is visible in newer transactions.
+ */
+bool
+xact_object_is_visible(TransactionId obj_xmin)
+{
+	return TransactionIdPrecedes(obj_xmin, GetCurrentTransactionId()) ||
+		   TransactionIdEquals(obj_xmin, FrozenTransactionId);
+}
+
+/*
  * Do we hold the specified lock?
  */
 static inline bool
@@ -198,4 +210,32 @@ SetLocktagRelationOid(LOCKTAG *tag, Oid relid)
 		dbid = MyDatabaseId;
 
 	SET_LOCKTAG_RELATION(*tag, dbid, relid);
+}
+
+
+/*
+ * Lock relation exclusively & check for current isolation level.
+ */
+void
+prevent_relation_modification_internal(Oid relid)
+{
+	/*
+	 * Check that isolation level is READ COMMITTED.
+	 * Else we won't be able to see new rows
+	 * which could slip through locks.
+	 */
+	if (!xact_is_level_read_committed())
+		ereport(ERROR,
+				(errmsg("Cannot perform blocking partitioning operation"),
+				 errdetail("Expected READ COMMITTED isolation level")));
+
+	/*
+	 * Check if table is being modified
+	 * concurrently in a separate transaction.
+	 */
+	if (!xact_lock_rel_exclusive(relid, true))
+		ereport(ERROR,
+				(errmsg("Cannot perform blocking partitioning operation"),
+				 errdetail("Table \"%s\" is being modified concurrently",
+						   get_rel_name_or_relid(relid))));
 }

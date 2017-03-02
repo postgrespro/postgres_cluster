@@ -15,15 +15,20 @@
 #include <dirent.h>
 #include <unistd.h>
 
+#include "access/xact.h"
 #include "access/xlogreader.h"
 #include "access/xlogrecord.h"
 #include "access/xlog_internal.h"
 #include "access/xact.h"
 #include "access/transam.h"
+#include "c.h"
+#include "catalog/pg_control.h"
 #include "common/fe_memutils.h"
 #include "getopt_long.h"
+#include "nodes/bitmapset.h"
 #include "rmgrdesc.h"
 #include "replication/origin.h"
+#include "utils/timestamp.h"
 
 
 static const char *progname;
@@ -37,6 +42,15 @@ typedef struct XLogDumpPrivate
 	bool		endptr_reached;
 } XLogDumpPrivate;
 
+typedef enum
+{
+	RESTORE_POINT = 0,
+	COMMIT,
+	COMMIT_PREPARED,
+	ABORT,
+	ABORT_PREPARED
+} XLogRecTypesWithTs;
+
 typedef struct XLogDumpConfig
 {
 	/* display options */
@@ -47,6 +61,9 @@ typedef struct XLogDumpConfig
 	bool		dump_origin;
 	bool		stats;
 	bool		stats_per_record;
+	bool		start_ts;
+	bool		end_ts;
+	Bitmapset  *ts_rectypes;
 
 	/* filter options */
 	int			filter_by_rmgr;
@@ -71,6 +88,7 @@ typedef struct XLogDumpStats
 } XLogDumpStats;
 
 static void fatal_error(const char *fmt,...) pg_attribute_printf(1, 2);
+static void log_error(const char *fmt,...) pg_attribute_printf(1, 2);
 
 /*
  * Big red button to push when things go horribly wrong.
@@ -89,6 +107,20 @@ fatal_error(const char *fmt,...)
 	fputc('\n', stderr);
 
 	exit(EXIT_FAILURE);
+}
+
+static void
+log_error(const char *fmt,...)
+{
+	va_list		args;
+
+	fflush(stdout);
+
+	fprintf(stderr, "%s: ERROR:  ", progname);
+	va_start(args, fmt);
+	vfprintf(stderr, fmt, args);
+	va_end(args);
+	fputc('\n', stderr);
 }
 
 static void
@@ -700,6 +732,244 @@ XLogDumpDisplayStats(XLogDumpConfig *config, XLogDumpStats *stats)
 		   total_len, "[100%]");
 }
 
+/*
+ * Extract timestamp from WAL record type of which is in ts_rectypes.
+ *
+ * If the record contains a timestamp, returns true, and saves the timestamp
+ * in *recordXtime. If the record type has no timestamp, returns false.
+ * Currently, only transaction commit/abort records and restore points contain
+ * timestamps.
+ */
+static bool
+getRecordTimestamp(XLogReaderState *record, TimestampTz *recordXtime,
+				   Bitmapset *ts_rectypes)
+{
+	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		xact_info = info & XLOG_XACT_OPMASK;
+	uint8		rmid = XLogRecGetRmid(record);
+
+	if (rmid == RM_XLOG_ID && info == XLOG_RESTORE_POINT &&
+			bms_is_member(RESTORE_POINT, ts_rectypes))
+	{
+		*recordXtime = ((xl_restore_point *) XLogRecGetData(record))->rp_time;
+		return true;
+	}
+	if (rmid == RM_XACT_ID && ((xact_info == XLOG_XACT_COMMIT &&
+								bms_is_member(COMMIT, ts_rectypes)) ||
+							   (xact_info == XLOG_XACT_COMMIT_PREPARED &&
+								bms_is_member(COMMIT_PREPARED, ts_rectypes))))
+	{
+		*recordXtime = ((xl_xact_commit *) XLogRecGetData(record))->xact_time;
+		return true;
+	}
+	if (rmid == RM_XACT_ID && ((xact_info == XLOG_XACT_ABORT &&
+								bms_is_member(ABORT, ts_rectypes)) ||
+							   (xact_info == XLOG_XACT_ABORT_PREPARED &&
+								bms_is_member(ABORT_PREPARED, ts_rectypes))))
+	{
+		*recordXtime = ((xl_xact_abort *) XLogRecGetData(record))->xact_time;
+		return true;
+	}
+	return false;
+}
+
+/*
+ * Find the first valid record within startptr..endptr. If record is not found
+ * in current segment turn to the next segment.
+ */
+static XLogRecPtr
+XLogFindMultiSegmentNextRecord(XLogReaderState *xlogreader,
+							   XLogRecPtr startptr,
+							   XLogRecPtr endptr)
+{
+	XLogRecPtr	first_record;
+
+	AssertArg(startptr < endptr);
+
+	for (;;)
+	{
+		XLogSegNo	segno;
+
+		/* find first record in current segment */
+		first_record = XLogFindNextRecord(xlogreader, startptr);
+
+		if (first_record != InvalidXLogRecPtr)
+			break;
+
+		/* set startptr to the start of next segment */
+		XLByteToSeg(startptr, segno);
+		XLogSegNoOffsetToRecPtr(segno + 1, 0, startptr);
+
+		if (startptr >= endptr)
+			break;
+	}
+
+	return first_record;
+}
+
+/*
+ * Find the first xlog record with timestamp within interval
+ * private.startptr..private.endptr. Type of record must belong to ts_rectypes.
+ *
+ * This function scans xlog segments from private.startptr up to private.endptr.
+ *
+ * Result timestamp is saved in result var, recpointer - in target_ptr var.
+ * Function returns true if record with timestamp is found, false otherwise.
+ */
+static bool
+minXLogTimestamp(XLogDumpPrivate private, TimestampTz *result,
+				 XLogRecPtr *target_ptr, Bitmapset *ts_rectypes)
+{
+	XLogReaderState	   *xlogreader;
+	XLogRecPtr			first_record;
+	bool				rec_found = false;
+
+	/* init xlog reader (iterator) */
+	xlogreader = XLogReaderAllocate(XLogDumpReadPage, &private);
+	if (!xlogreader)
+		fatal_error("out of memory");
+
+	/* first find a valid recptr to start from private.startptr */
+	first_record = XLogFindMultiSegmentNextRecord(xlogreader,
+												  private.startptr,
+												  private.endptr);
+
+	if (first_record == InvalidXLogRecPtr)
+		fatal_error("could not find a valid record after %X/%X",
+					(uint32) (private.startptr >> 32),
+					(uint32) private.startptr);
+
+	/*
+	 * Iterate through xlog records from start segment skiping empty segments
+	 */
+	for (;;)
+	{
+		XLogRecord	   *record;
+		char 		   *errormsg;
+
+		/* try to read the next record */
+		record = XLogReadRecord(xlogreader, first_record, &errormsg);
+
+		if (!record)
+		{
+
+			/* check whether we achived private.endptr */
+			if (private.endptr_reached)
+				break;
+
+			/* print errormsg */
+			if (errormsg)
+				log_error("error in WAL record at %X/%X: %s\n",
+						  (uint32) (xlogreader->ReadRecPtr >> 32),
+						  (uint32) xlogreader->ReadRecPtr,
+						  errormsg);
+
+			/* continue to read starting from the next segment */
+			first_record = XLogFindMultiSegmentNextRecord(xlogreader,
+														  xlogreader->EndRecPtr,
+														  private.endptr);
+
+			/* check whether we could find any reasonable record */
+			if (first_record == InvalidXLogRecPtr)
+				return false;
+
+			continue;
+		}
+
+		/* discard first_record to read the next record in segment */
+		first_record = InvalidXLogRecPtr;
+
+		rec_found = getRecordTimestamp(xlogreader, result, ts_rectypes);
+		if (rec_found)
+			break;
+	}
+
+	*target_ptr = xlogreader->ReadRecPtr;
+	return rec_found;
+}
+
+/*
+ * Find the last xlog record with timestamp within xlog interval
+ * private.startptr..private.endptr. Type of record must belong to ts_rectypes.
+ *
+ * This function scans xlog segments in reverse order from private.endptr
+ * up to private.startptr.
+ *
+ * Result timestamp is saved in result var, recpointer - in target_ptr var.
+ * Function returns true if record with timestamp is found, otherwise false.
+ */
+static bool
+maxXLogTimestamp(XLogDumpPrivate private, TimestampTz *result,
+				 XLogRecPtr *target_ptr, Bitmapset *ts_rectypes)
+{
+	XLogRecPtr			startptr = private.startptr;
+	XLogReaderState	   *xlogreader;
+	bool				rec_found = false;
+
+	/* Iterate through xlog segments in reverse order */
+	for (;;)
+	{
+		XLogSegNo	segno;
+		XLogRecPtr	first_record;
+
+		/*
+		 * init private.startptr that shifted to previous segment from
+		 * private.endptr
+		 */
+		XLByteToPrevSeg(private.endptr, segno);
+		XLogSegNoOffsetToRecPtr(segno, 0, first_record);
+		private.startptr = Max(first_record, startptr);
+
+		/* init xlog reader (iterator) */
+		xlogreader = XLogReaderAllocate(XLogDumpReadPage, &private);
+		if (!xlogreader)
+			fatal_error("out of memory");
+
+		first_record = XLogFindNextRecord(xlogreader, private.startptr);
+
+		/* check whether we found any reasonable record */
+		if (first_record != InvalidXLogRecPtr)
+		{
+			for (;;)
+			{
+				XLogRecord	   *record;
+				char 		   *errormsg;
+				bool			rec_has_ts;
+				TimestampTz		ts;
+
+				/* try to read the next record */
+				record = XLogReadRecord(xlogreader, first_record, &errormsg);
+				if (!record)
+					break;
+
+				/*
+				 * discard first_record to read the next record in segment
+				 * on the next loop iteration
+				 */
+				first_record = InvalidXLogRecPtr;
+
+				rec_has_ts = getRecordTimestamp(xlogreader, &ts, ts_rectypes);
+				if (rec_has_ts)
+				{
+					rec_found = true;
+					*result = ts;
+					*target_ptr = xlogreader->ReadRecPtr;
+				}
+			}
+		}
+
+		if (rec_found)
+			break;
+
+		/* update private.endptr */
+		private.endptr = private.startptr;
+		if (private.endptr <= startptr)
+			break;
+	}
+
+	return rec_found;
+}
+
 static void
 usage(void)
 {
@@ -709,7 +979,15 @@ usage(void)
 	printf("  %s [OPTION]... [STARTSEG [ENDSEG]] \n", progname);
 	printf("\nOptions:\n");
 	printf("  -b, --bkp-details      output detailed information about backup blocks\n");
+	printf("  -E, --end-timestamp	 show the last timestamp from xlog records\n");
 	printf("  -e, --end=RECPTR       stop reading at log position RECPTR\n");
+	printf("  -F, --timestamp-filter=xlog_rec_type1,xlog_rec_type2,...\n"
+		   "                         specify filter for xlog record types that contain timestamp\n"
+		   "                         possible values for xlog type:\n"
+		   "                             XLOG_RESTORE_POINT,\n"
+		   "                             XLOG_XACT_COMMIT, XLOG_XACT_COMMIT_PREPARED,\n"
+		   "                             XLOG_XACT_ABORT, XLOG_XACT_ABORT_PREPARED\n"
+		   "                         on default XLOG_XACT_COMMIT is used\n");
 	printf("  -f, --follow           keep retrying after reaching end of WAL\n");
 	printf("  -o, --origin           dump origins\n");
 	printf("  -n, --limit=N          number of records to display\n");
@@ -718,6 +996,7 @@ usage(void)
 		   "                         (default: current directory, ./pg_xlog, PGDATA/pg_xlog)\n");
 	printf("  -r, --rmgr=RMGR        only show records generated by resource manager RMGR\n");
 	printf("                         use --rmgr=list to list valid resource manager names\n");
+	printf("  -S, --start-timestamp	 show the primary timestamp from xlog records\n");
 	printf("  -s, --start=RECPTR     start reading at log position RECPTR\n");
 	printf("  -t, --timeline=TLI     timeline from which to read log records\n");
 	printf("                         (default: 1 or the value used in STARTSEG)\n");
@@ -743,7 +1022,9 @@ main(int argc, char **argv)
 
 	static struct option long_options[] = {
 		{"bkp-details", no_argument, NULL, 'b'},
+		{"end-timestamp", no_argument, NULL, 'E'},
 		{"end", required_argument, NULL, 'e'},
+		{"timestamp-filter", required_argument, NULL, 'F'},
 		{"follow", no_argument, NULL, 'f'},
 		{"origin", no_argument, NULL, 'o'},
 		{"help", no_argument, NULL, '?'},
@@ -751,6 +1032,7 @@ main(int argc, char **argv)
 		{"path", required_argument, NULL, 'p'},
 		{"rmgr", required_argument, NULL, 'r'},
 		{"start", required_argument, NULL, 's'},
+		{"start-timestamp", no_argument, NULL, 'S'},
 		{"timeline", required_argument, NULL, 't'},
 		{"xid", required_argument, NULL, 'x'},
 		{"version", no_argument, NULL, 'V'},
@@ -782,6 +1064,7 @@ main(int argc, char **argv)
 	config.filter_by_xid_enabled = false;
 	config.stats = false;
 	config.stats_per_record = false;
+	config.start_ts = config.end_ts = false;
 
 	if (argc <= 1)
 	{
@@ -789,13 +1072,16 @@ main(int argc, char **argv)
 		goto bad_argument;
 	}
 
-	while ((option = getopt_long(argc, argv, "be:?f?on:p:r:s:t:Vx:z",
+	while ((option = getopt_long(argc, argv, "bEe:?F:fn:p:r:Ss:t:Vx:z",
 								 long_options, &optindex)) != -1)
 	{
 		switch (option)
 		{
 			case 'b':
 				config.bkp_details = true;
+				break;
+			case 'E':
+				config.end_ts = true;
 				break;
 			case 'e':
 				if (sscanf(optarg, "%X/%X", &xlogid, &xrecoff) != 2)
@@ -805,6 +1091,39 @@ main(int argc, char **argv)
 					goto bad_argument;
 				}
 				private.endptr = (uint64) xlogid << 32 | xrecoff;
+				break;
+			case 'F':
+				{
+					char   *tok;
+
+					tok = strtok(optarg, " ,");
+					while (tok != NULL)
+					{
+						if (strcmp(tok, "XLOG_RESTORE_POINT") == 0)
+							config.ts_rectypes = bms_add_member(
+									config.ts_rectypes, RESTORE_POINT);
+						else if (strcmp(tok, "XLOG_XACT_COMMIT") == 0)
+							config.ts_rectypes = bms_add_member(
+									config.ts_rectypes, COMMIT);
+						else if (strcmp(tok, "XLOG_XACT_COMMIT_PREPARED") == 0)
+							config.ts_rectypes = bms_add_member(
+									config.ts_rectypes, COMMIT_PREPARED);
+						else if (strcmp(tok, "XLOG_XACT_ABORT") == 0)
+							config.ts_rectypes = bms_add_member(
+									config.ts_rectypes, ABORT);
+						else if (strcmp(tok, "XLOG_XACT_ABORT_PREPARED") == 0)
+							config.ts_rectypes = bms_add_member(
+									config.ts_rectypes, ABORT_PREPARED);
+						else
+						{
+							fprintf(stderr, "%s: could not parse xlog record type \"%s\"\n",
+									progname, tok);
+							goto bad_argument;
+						}
+
+						tok = strtok(NULL, " ,");
+					}
+				}
 				break;
 			case 'f':
 				config.follow = true;
@@ -853,6 +1172,9 @@ main(int argc, char **argv)
 						goto bad_argument;
 					}
 				}
+				break;
+			case 'S':
+				config.start_ts = true;
 				break;
 			case 's':
 				if (sscanf(optarg, "%X/%X", &xlogid, &xrecoff) != 2)
@@ -923,6 +1245,14 @@ main(int argc, char **argv)
 					progname, private.inpath, strerror(errno));
 			goto bad_argument;
 		}
+	}
+
+	if (!config.start_ts && (config.end_ts || config.ts_rectypes))
+	{
+		fprintf(stderr,
+				"%s: options -E or -F must be specified along with -S\n",
+				progname);
+		goto bad_argument;
 	}
 
 	/* parse files as start/end boundaries, extract path if not specified */
@@ -1018,6 +1348,49 @@ main(int argc, char **argv)
 	}
 
 	/* done with argument parsing, do the actual work */
+
+	/* find min and max timestamps in WAL between startptr and endptr */
+	if (config.start_ts == true)
+	{
+		bool			first_ts_found, last_ts_found;
+		TimestampTz	   	first_ts, last_ts;
+		XLogRecPtr		first_rec_with_ts, last_rec_with_ts;
+
+		/*
+		 * if record type filter is not specified then we'll accept
+		 * only COMMIT records
+		 */
+		if (bms_is_empty(config.ts_rectypes))
+			config.ts_rectypes = bms_add_member(config.ts_rectypes, COMMIT);
+
+		first_ts_found = minXLogTimestamp(private, &first_ts,
+										  &first_rec_with_ts,
+										  config.ts_rectypes);
+
+		if (!first_ts_found)
+		{
+			printf("%s: xlog record with timestamp is not found\n", progname);
+			return EXIT_SUCCESS;
+		}
+
+		printf("%s: start timestamp: %s, lsn: %X/%08X\n",
+				progname, timestamptz_to_str(first_ts),
+				(uint32) (first_rec_with_ts >> 32), (uint32) first_rec_with_ts);
+
+		if (config.end_ts)
+		{
+			private.startptr = first_rec_with_ts;
+			last_ts_found = maxXLogTimestamp(private, &last_ts,
+											 &last_rec_with_ts,
+											 config.ts_rectypes);
+			if (last_ts_found)
+				printf("%s: end timestamp: %s, lsn: %X/%08X\n",
+					progname, timestamptz_to_str(last_ts),
+					(uint32) (last_rec_with_ts >> 32), (uint32) last_rec_with_ts);
+		}
+
+		return EXIT_SUCCESS;
+	}
 
 	/* we have everything we need, start reading */
 	xlogreader_state = XLogReaderAllocate(XLogDumpReadPage, &private);

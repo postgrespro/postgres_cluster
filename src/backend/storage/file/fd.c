@@ -1322,9 +1322,6 @@ PathNameOpenFile(FileName fileName, int fileFlags, int fileMode)
 			goto io_error;
 		}
 
-		if (ftruncate(vfdP->md, sizeof(FileMap)) != 0)
-			elog(LOG, "OPEN MAP ftruncate FAILED: %d", errno);
-
 		vfdP->map = cfs_mmap(vfdP->md);
 		if (vfdP->map == MAP_FAILED)
 		{
@@ -1760,7 +1757,7 @@ FileRead(File file, char *buffer, int amount)
 				}
 			} while (size != 0);
 
-			cfs_decrypt(compressedBuffer, VfdCache[file].seekPos, amount);
+			cfs_decrypt(VfdCache[file].fileName, compressedBuffer, VfdCache[file].seekPos, amount);
 
 			returnCode = cfs_decompress(buffer, BLCKSZ, compressedBuffer, amount);
 			if (returnCode != BLCKSZ)
@@ -1786,9 +1783,10 @@ FileRead(File file, char *buffer, int amount)
 	returnCode = read(VfdCache[file].fd, buffer, amount);
 	if (returnCode >= 0)
 	{
-		if (VfdCache[file].fileFlags & PG_COMPRESSION)
-			cfs_decrypt(buffer, VfdCache[file].seekPos, amount);
-
+		if (VfdCache[file].fileFlags & PG_COMPRESSION) 
+		{
+			cfs_decrypt(VfdCache[file].fileName, buffer, VfdCache[file].seekPos, amount);
+		}
 		VfdCache[file].seekPos += returnCode;
 	}
 	else
@@ -1901,8 +1899,9 @@ FileWrite(File file, char *buffer, int amount)
 			inode = CFS_INODE(compressedSize, pos);
 			buffer = compressedBuffer;
 			amount = compressedSize;
+
 			/* cfs_encrypt will check if encryption is actually needed */
-			cfs_encrypt(buffer, VfdCache[file].seekPos, amount);
+			cfs_encrypt(VfdCache[file].fileName, buffer, VfdCache[file].seekPos, amount);
 		}
 		else
 		{
@@ -1910,7 +1909,7 @@ FileWrite(File file, char *buffer, int amount)
 			{
 				memcpy(compressedBuffer, buffer, BLCKSZ);
 				buffer = compressedBuffer;
-				cfs_encrypt(buffer, VfdCache[file].seekPos, amount);
+				cfs_encrypt(VfdCache[file].fileName, buffer, VfdCache[file].seekPos, amount);
 			}
 
 			if (CFS_INODE_SIZE(inode) != BLCKSZ)

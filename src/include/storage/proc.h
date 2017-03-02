@@ -102,6 +102,8 @@ struct PGPROC
 	Oid			databaseId;		/* OID of database this backend is using */
 	Oid			roleId;			/* OID of role using this backend */
 
+	bool		isBackgroundWorker; /* true if background worker. */
+
 	/*
 	 * While in hot standby mode, shows that a conflict signal has been sent
 	 * for the current transaction. Set/cleared while holding ProcArrayLock,
@@ -260,12 +262,12 @@ extern PGPROC *PreparedXactProcs;
 
 
 /* configurable options */
-extern int	DeadlockTimeout;
-extern int	StatementTimeout;
-extern int	LockTimeout;
-extern int	IdleInTransactionSessionTimeout;
-extern int	IdleSessionTimeout;
-extern bool log_lock_waits;
+extern int	PGDLLIMPORT DeadlockTimeout;
+extern int	PGDLLIMPORT StatementTimeout;
+extern int	PGDLLIMPORT LockTimeout;
+extern int	PGDLLIMPORT IdleInTransactionSessionTimeout;
+extern int	PGDLLIMPORT IdleSessionTimeout;
+extern bool PGDLLIMPORT log_lock_waits;
 
 
 /*

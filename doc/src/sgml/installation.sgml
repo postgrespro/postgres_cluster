@@ -2014,11 +2014,9 @@ kill `cat /usr/local/pgsql/data/postmaster.pid`
 
   <para>
    If you have installation problems on a platform that is known
-   to be supported according to recent build farm results, please report
-   it to <email>pgsql-bugs@postgresql.org</email>.  If you are interested
-   in porting <productname>&productname;</> to a new platform,
-   <email>pgsql-hackers@postgresql.org</email> is the appropriate place
-   to discuss that.
+   to be supported, please report it to <email>bugs@postgrespro.com</email>.
+   If you are interested in porting <productname>&productname;</> to
+   a new platform, write us at <email>info@postgrespro.com</email>.
   </para>
  </sect1>
 

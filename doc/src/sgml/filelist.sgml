@@ -159,6 +159,7 @@
 <!ENTITY pgtrgm          SYSTEM "pgtrgm.sgml">
 <!ENTITY pgvariables     SYSTEM "pg_variables.sgml">
 <!ENTITY pgvisibility    SYSTEM "pgvisibility.sgml">
+<!ENTITY pg-wait-sampling    SYSTEM "pg-wait-sampling.sgml">
 <!ENTITY postgres-fdw    SYSTEM "postgres-fdw.sgml">
 <!ENTITY rum             SYSTEM "rum.sgml">
 <!ENTITY plantuner       SYSTEM "plantuner.sgml">

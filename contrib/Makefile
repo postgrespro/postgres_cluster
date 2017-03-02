@@ -52,6 +52,7 @@ SUBDIRS = \
 		tablefunc	\
 		tcn		\
 		test_decoding	\
+		test_partitioning \
 		tsm_system_rows \
 		tsm_system_time \
 		tsearch2	\

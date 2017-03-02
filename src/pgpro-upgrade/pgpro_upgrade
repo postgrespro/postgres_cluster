@@ -16,7 +16,7 @@ if [ "$1" = "--check" ]; then
 else
    check=
 fi
-echo "$PGBIN"
+#echo "$PGBIN"
 
 case "$PGBIN" in
 */bin/|*\\bin\\)
