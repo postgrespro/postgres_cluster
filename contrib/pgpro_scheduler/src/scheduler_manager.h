@@ -23,6 +23,8 @@ typedef struct {
 	TimestampTz postpone;
 	TimestampTz next;
 	bool has_next_time_statement;
+	TimestampTz date1;
+	TimestampTz date2;
 } scheduler_task_t;
 
 typedef enum {
