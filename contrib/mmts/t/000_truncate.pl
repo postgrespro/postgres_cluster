@@ -34,7 +34,7 @@ finish($init_run) || BAIL_OUT("pgbench exited with $?");
 
 my @bench_argv = (
 	'pgbench',
-	'-T 30',
+	"-T $seconds",
 	'-N',
 	'-c 8',
 	-h => $cluster->{nodes}->[0]->host(),
@@ -47,11 +47,14 @@ my $bench_run = start(\@bench_argv, $in, $out);
 my $started = time();
 while (time() - $started < $seconds)
 {
-	($rc, $out, $err) = $cluster->psql(2, 'postgres', "vacuum full;");
-	sleep(1);
+	($rc, $out, $err) = $cluster->psql(1, 'postgres', "truncate pgbench_history;");
+	($rc, $out, $err) = $cluster->psql(1, 'postgres', "vacuum full");
+	($rc, $out, $err) = $cluster->psql(0, 'postgres', "truncate pgbench_history;");
+	($rc, $out, $err) = $cluster->psql(0, 'postgres', "vacuum full");
+	sleep(0.5);
 }
 
-finish($bench_run) || BAIL_OUT("pgbench exited with $?");
+finish($bench_run) || $cluster->bail_out_with_logs("pgbench exited with $?");
 sleep(1);
 ok($cluster->stop('fast'), "cluster stops");
 1;
