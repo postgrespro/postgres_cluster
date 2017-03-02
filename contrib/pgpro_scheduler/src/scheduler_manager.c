@@ -378,7 +378,7 @@ scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *
 
 	*nt = 0;
 	initStringInfo(&sql);
-	appendStringInfo(&sql, "select id, rule, postpone, _next_exec_time, next_time_statement from cron where active and not broken and (start_date <= 'now' or start_date is null) and (end_date <= 'now' or end_date is null) and node = '%s'", ctx->nodename);
+	appendStringInfo(&sql, "select id, rule, postpone, _next_exec_time, next_time_statement from cron where active and not broken and (start_date <= 'now' or start_date is null) and (end_date >= 'now' or end_date is null) and node = '%s'", ctx->nodename);
 
 	pgstat_report_activity(STATE_RUNNING, "select 'at' tasks");
 
@@ -643,7 +643,14 @@ TimestampTz *scheduler_calc_next_task_time(scheduler_task_t *task, TimestampTz s
 		return NULL;
 	}
 
+/* to avoid to set job on minute has already passed  we add 1 minute */
 	curr = start;
+#ifdef HAVE_INT64_TIMESTAMP
+	curr += USECS_PER_MINUTE;
+#else
+	curr += SECS_PER_MINUTE;
+#endif
+
 	nextarray = worker_alloc(sizeof(TimestampTz) * REALLOC_STEP);
 	convert_rule_to_cron(task->rule, cron);
 
