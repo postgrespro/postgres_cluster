@@ -2213,7 +2213,7 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
         <listitem>
         <para>ID of the created job.</para>
         <para>Type: <type>bigint</type></para>
-     </listitem></itemizedlist>
+     </listitem></itemizedlist></listitem>
     </varlistentry>
 
     <varlistentry>
