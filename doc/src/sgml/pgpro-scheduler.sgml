@@ -1091,7 +1091,8 @@ CREATE TYPE schedule.cron_job AS(
                   <type>boolean</type>
                 </entry>
                 <entry><itemizedlist><listitem><para>
-                  <literal>true</literal> &mdash; job execution completed successfully.</para></listitem><listitem><para><literal>false</literal> &mdash; job execution completed with errors.</para></listitem>
+                  <literal>true</literal> &mdash; job execution completed successfully.</para></listitem>
+                  <listitem><para><literal>false</literal> &mdash; job execution completed with errors.</para></listitem></itemizedlist>
                 </entry>
               </row>
               <row>
