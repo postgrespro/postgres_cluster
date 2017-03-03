@@ -2117,7 +2117,7 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
 </sect4>
 <sect4 id="pgpro-scheduler-one-time-job-functions"><title>Functions for Managing One-Time Jobs</title>
     <variablelist>
-        <varlistentry id="pgpro-scheduler-submit-job" xreflabel="schedule.submit_job()">
+        <varlistentry>
      <term>
       <function>schedule.submit_job(<parameter>query</parameter> <type>text</type> [<replaceable>options...</replaceable>])
       </function>
@@ -2213,7 +2213,7 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
         <listitem>
         <para>ID of the created job.</para>
         <para>Type: <type>bigint</type></para>
-     </listitem>
+     </listitem></itemizedlist>
     </varlistentry>
 
     <varlistentry>
