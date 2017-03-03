@@ -58,15 +58,14 @@ int checkSchedulerNamespace(void)
 
 	schema = GetConfigOption("schedule.schema", false, true);
 
-	StartTransactionCommand();
-	SPI_connect();
-	PushActiveSnapshot(GetTransactionSnapshot());
+	START_SPI_SNAP(); 
 
 	values[0] = CStringGetTextDatum(schema);
 	count = select_count_with_args(sql, 1, argtypes, values, NULL);
 
 	if(count == -1)
 	{
+		STOP_SPI_SNAP();
 		elog(ERROR, "Scheduler manager: %s: cannot check namespace: sql error",
 													MyBgworkerEntry->bgw_name); 
 	}
@@ -82,13 +81,12 @@ int checkSchedulerNamespace(void)
 	}
 	else if(count != 1)
 	{
+		STOP_SPI_SNAP();
 		elog(ERROR, "Scheduler manager: %s: cannot check namespace: "
 					"unknown error %d", MyBgworkerEntry->bgw_name, count); 
 	}
+	STOP_SPI_SNAP();
 
-	SPI_finish();
-	PopActiveSnapshot();
-	CommitTransactionCommand();
 	if(count) {
 		SetConfigOption("search_path", schema, PGC_USERSET, PGC_S_SESSION);
 	}
@@ -380,7 +378,7 @@ scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *
 
 	*nt = 0;
 	initStringInfo(&sql);
-	appendStringInfo(&sql, "select id, rule, postpone, _next_exec_time, next_time_statement from cron where active and not broken and (start_date <= 'now' or start_date is null) and (end_date <= 'now' or end_date is null) and node = '%s'", ctx->nodename);
+	appendStringInfo(&sql, "select id, rule, postpone, _next_exec_time, next_time_statement, start_date, end_date from cron where active and not broken and (start_date <= 'now' or start_date is null) and (end_date >= 'now' or end_date is null) and node = '%s'", ctx->nodename);
 
 	pgstat_report_activity(STATE_RUNNING, "select 'at' tasks");
 
@@ -398,13 +396,13 @@ scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *
 
 			for(i = 0; i < processed; i++)
 			{
-				tasks[i].id = get_int_from_spi(i, 1, 0);
+				tasks[i].id = get_int_from_spi(NULL, i, 1, 0);
 				dat = SPI_getbinval(SPI_tuptable->vals[i], tupdesc, 2,
 						&is_null);
 				tasks[i].rule = is_null ? NULL: DatumGetJsonb(dat);
-				tasks[i].postpone = get_interval_seconds_from_spi(i, 3, 0);
-				tasks[i].next = get_timestamp_from_spi(i, 4, 0);
-				statement = get_text_from_spi(i, 5);
+				tasks[i].postpone = get_interval_seconds_from_spi(NULL, i, 3, 0);
+				tasks[i].next = get_timestamp_from_spi(NULL, i, 4, 0);
+				statement = get_text_from_spi(NULL, i, 5);
 				if(statement)
 				{
 					tasks[i].has_next_time_statement = true;
@@ -415,6 +413,8 @@ scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *
 				{
 					tasks[i].has_next_time_statement = false;
 				}
+				tasks[i].date1 = get_timestamp_from_spi(NULL, i, 6, 0);
+				tasks[i].date2 = get_timestamp_from_spi(NULL, i, 7, 0);
 			}
 			*nt = processed;
 		}
@@ -624,6 +624,11 @@ TimestampTz *scheduler_calc_next_task_time(scheduler_task_t *task, TimestampTz s
 
 	*ntimes = 0;
 
+	if(task->date1 > 0 && task->date1 > stop) return NULL; 
+	if(task->date1 > 0 && task->date1 > start) start = task->date1;
+	if(task->date2 > 0 && task->date2 < start) return NULL;
+	if(task->date2 > 0 && task->date2 < stop) stop = task->date2;
+
 	if(first_time && jsonb_has_key(task->rule, "onstart"))
 	{
 		*ntimes  = 1;
@@ -645,7 +650,16 @@ TimestampTz *scheduler_calc_next_task_time(scheduler_task_t *task, TimestampTz s
 		return NULL;
 	}
 
+
+
+/* to avoid to set job on minute has already passed  we add 1 minute */
 	curr = start;
+#ifdef HAVE_INT64_TIMESTAMP
+	curr += USECS_PER_MINUTE;
+#else
+	curr += SECS_PER_MINUTE;
+#endif
+
 	nextarray = worker_alloc(sizeof(TimestampTz) * REALLOC_STEP);
 	convert_rule_to_cron(task->rule, cron);
 
@@ -1298,17 +1312,19 @@ int mark_job_broken(scheduler_manager_ctx_t *ctx, int cron_id, char *reason)
 {
 	Oid types[2] = { INT4OID, TEXTOID };
 	Datum values[2];
-	char *error;
 	char *sql = "update cron set reason = $2, broken = true where id = $1";
+	spi_response_t *r;
 	int ret;
 
 	values[0] = Int32GetDatum(cron_id);
 	values[1] = CStringGetTextDatum(reason);
-	ret = execute_spi_sql_with_args(sql, 2, types, values, NULL, &error);
-	if(ret < 0)
+	r = execute_spi_sql_with_args(sql, 2, types, values, NULL);
+	if(r->retval < 0)
 	{
-		manager_fatal_error(ctx, 0, "Cannot set cron %d broken: %s", cron_id, error);
+		manager_fatal_error(ctx, 0, "Cannot set cron %d broken: %s", cron_id, r->error);
 	}
+	ret = r->retval;
+	destroy_spi_data(r);
 	return ret;
 }
 
@@ -1317,9 +1333,9 @@ int update_cron_texttime(scheduler_manager_ctx_t *ctx, int cron_id, TimestampTz 
 	Oid types[2] = { INT4OID, TIMESTAMPTZOID };
 	Datum values[2];
 	bool nulls[2] = { ' ', ' ' };
-	char *error;
 	int ret;
 	char *sql = "update cron set _next_exec_time = $2 where id = $1";
+	spi_response_t *r;
 
 	values[0] = Int32GetDatum(cron_id);
 	if(next > 0)
@@ -1330,11 +1346,13 @@ int update_cron_texttime(scheduler_manager_ctx_t *ctx, int cron_id, TimestampTz 
 	{
 		nulls[1] = 'n';
 	}
-	ret = execute_spi_sql_with_args(sql, 2, types, values, nulls, &error);
+	r = execute_spi_sql_with_args(sql, 2, types, values, nulls);
+	ret = r->retval;
 	if(ret < 0)
 	{
-		manager_fatal_error(ctx, 0, "Cannot update cron %d next time: %s", cron_id, error);
+		manager_fatal_error(ctx, 0, "Cannot update cron %d next time: %s", cron_id, r->error);
 	}
+	destroy_spi_data(r);
 
 	return ret;
 }
@@ -1421,6 +1439,7 @@ int insert_at_record(char *nodename, int cron_id, TimestampTz start_at, Timestam
 	char *at_sql = "select count(start_at) from at where cron = $1 and start_at = $2";
 	char *log_sql = "select count(start_at) from log where cron = $1 and start_at = $2";
 	int count, ret;
+	spi_response_t *r;
 
 	argtypes[0] = INT4OID;
 	argtypes[1] = TIMESTAMPTZOID;
@@ -1450,7 +1469,11 @@ int insert_at_record(char *nodename, int cron_id, TimestampTz start_at, Timestam
 		nulls[1] = 'n';
 		values[1] = 0;
 	}
-	ret = execute_spi_sql_with_args(insert_sql, 4, argtypes, values, nulls, error);
+	r = execute_spi_sql_with_args(insert_sql, 4, argtypes, values, nulls);
+	
+	ret = r->retval;
+	if(r->error) *error = _copy_string(r->error);
+	destroy_spi_data(r);
 
 	if(ret < 0) return ret;
 	return 1;
@@ -1553,17 +1576,22 @@ int scheduler_make_atcron_record(scheduler_manager_ctx_t *ctx)
 
 void clean_at_table(scheduler_manager_ctx_t *ctx)
 {
-	char *error = NULL;
+	spi_response_t *r;
 
 	START_SPI_SNAP();
-	if(execute_spi("truncate at", &error) < 0)
+	r = execute_spi("truncate at");
+	if(r->retval < 0)
 	{
-		manager_fatal_error(ctx, 0, "Cannot clean 'at' table: %s", error);
+		manager_fatal_error(ctx, 0, "Cannot clean 'at' table: %s", r->error);
 	}
-	if(execute_spi("update cron set _next_exec_time = NULL where _next_exec_time is not NULL", &error) < 0)
+	destroy_spi_data(r);
+	r = execute_spi("update cron set _next_exec_time = NULL where _next_exec_time is not NULL");
+	if(r->retval  < 0)
 	{
-		manager_fatal_error(ctx, 0, "Cannot clean cron _next time: %s", error);
+		manager_fatal_error(ctx, 0, "Cannot clean cron _next time: %s",
+																	r->error);
 	}
+	destroy_spi_data(r);
 	STOP_SPI_SNAP();
 }
 
@@ -1601,20 +1629,18 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 	MemoryContext old;
 	scheduler_manager_slot_t *item;
 
+	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
+
+	pgstat_report_activity(STATE_RUNNING, "register scheduler at executor");
+	segsize = (Size)sizeof(schd_executor_share_state_t);
+	seg = dsm_create(segsize, 0);
+
+	old = MemoryContextSwitchTo(SchedulerWorkerContext);
 	item = worker_alloc(sizeof(scheduler_manager_slot_t));
 	item->job = NULL;
 	item->started  = item->worker_started = GetCurrentTimestamp();
 	item->wait_worker_to_die = false;
 	item->stop_it = 0;
-
-	pgstat_report_activity(STATE_RUNNING, "register scheduler at executor");
-
-	segsize = (Size)sizeof(schd_executor_share_state_t);
-
-	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
-	old = MemoryContextSwitchTo(SchedulerWorkerContext);
-	seg = dsm_create(segsize, 0);
-
 	item->shared = seg;
 	shm_data = dsm_segment_address(item->shared);
 
@@ -1640,9 +1666,9 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 		elog(LOG, "Cannot register AT executor worker for db: %s",
 									shm_data->database);
 		dsm_detach(item->shared);
-		MemoryContextSwitchTo(old);
 		pfree(item);
 		ctx->at.slots[pos] = NULL;
+		MemoryContextSwitchTo(old);
 		return 0;
 	}
 	status = WaitForBackgroundWorkerStartup(item->handler, &(item->pid));
@@ -1651,13 +1677,13 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 		elog(LOG, "Cannot start AT executor worker for db: %s, status: %d",
 							shm_data->database,  status);
 		dsm_detach(item->shared);
-		MemoryContextSwitchTo(old);
 		pfree(item);
 		ctx->at.slots[pos] = NULL;
+		MemoryContextSwitchTo(old);
 		return 0;
 	}
-	MemoryContextSwitchTo(old);
 	ctx->at.slots[pos] = item;
+	MemoryContextSwitchTo(old);
 
 	return item->pid;
 }
@@ -1711,6 +1737,7 @@ void manager_worker_main(Datum arg)
 				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				 errmsg("corrupted dynamic shared memory segment")));
 	}
+	init_worker_mem_ctx("manager worker context");
 	shared->setbyparent = false;
 
 	SetConfigOption("application_name", "pgp-s manager", PGC_USERSET, PGC_S_SESSION);
@@ -1718,11 +1745,11 @@ void manager_worker_main(Datum arg)
 
 	database_len = strlen(MyBgworkerEntry->bgw_extra);
 	if(BGW_EXTRALEN < database_len +1) database_len = BGW_EXTRALEN - 1;
-	database  = palloc(sizeof(char) * (database_len+1));
+	database  = worker_alloc(sizeof(char) * (database_len+1));
 	memcpy(database, MyBgworkerEntry->bgw_extra, database_len);
 	database[database_len] = 0;
 
-	aname = palloc(sizeof(char) * ( 16 + database_len + 1 ));
+	aname = worker_alloc(sizeof(char) * ( 16 + database_len + 1 ));
 	sprintf(aname, "pgp-s manager [%s]", database);
 	SetConfigOption("application_name", aname, PGC_USERSET, PGC_S_SESSION);
 	pfree(aname);
@@ -1748,7 +1775,6 @@ void manager_worker_main(Datum arg)
 	parent_shared = dsm_segment_address(seg);
 	pgstat_report_activity(STATE_RUNNING, "initialize context");
 	changeChildBgwState(shared, SchdManagerConnected);
-	init_worker_mem_ctx("WorkerMemoryContext");
 	ctx = initialize_scheduler_manager_context(database, seg);
 	start_at_workers(ctx, shared);
 	clean_at_table(ctx);
@@ -1764,7 +1790,7 @@ void manager_worker_main(Datum arg)
 			{
 				got_sighup = false;
 				ProcessConfigFile(PGC_SIGHUP);
-				reload_db_role_config(database);
+				reload_db_role_config(database); 
 				refresh_scheduler_manager_context(ctx);
 				set_slots_stat_report(ctx);
 			}
@@ -1796,9 +1822,9 @@ void manager_worker_main(Datum arg)
 		ResetLatch(MyLatch);
 	}
 	scheduler_manager_stop(ctx);
-	delete_worker_mem_ctx();
 	changeChildBgwState(shared, SchdManagerDie);
 	pfree(database);
+	delete_worker_mem_ctx();
     dsm_detach(seg);
 	proc_exit(0);
 }

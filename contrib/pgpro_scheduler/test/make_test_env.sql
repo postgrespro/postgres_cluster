@@ -108,7 +108,6 @@ SELECT schedule.create_job(
 	'{
 		"name": "Test #2: every 15 minute, not sngl transaction",
 		"cron": "*/15 * * * *",
-		"cron": "* * * * *",
 		"commands": [
 			"insert into result2 (time_mark, n, text) values (now(), 1, ''start job'')",
 			"insert into result2 (time_mark, n, text) values (now(), 2, random_finish())"
@@ -122,7 +121,6 @@ SELECT schedule.create_job(
 	'{
 		"name": "Test #3: 2/3 minute, sngl transaction",
 		"cron": "*/15 * * * *",
-		"cron": "* * * * *",
 		"commands": [
 			"insert into result3 (time_mark, n, text) values (now(), 1, ''start job'')",
 			"insert into result3 (time_mark, n, text) values (now(), 2, random_finish())"

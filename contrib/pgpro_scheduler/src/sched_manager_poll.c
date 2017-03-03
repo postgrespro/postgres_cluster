@@ -43,7 +43,7 @@ char *supervisor_state(schd_managers_poll_t *poll)
 
 	if(!poll->enabled)
 	{
-		status = palloc(sizeof(char) * 9);
+		status = worker_alloc(sizeof(char) * 9);
 		memcpy(status, "disabled", 8);
 		status[8] = 0;
 		return status;
@@ -52,13 +52,13 @@ char *supervisor_state(schd_managers_poll_t *poll)
 	len = dbnames ? strlen(dbnames): 0;
 	if(len == 0)
 	{
-		status = palloc(sizeof(char)*26);
+		status = worker_alloc(sizeof(char)*26);
 		memcpy(status, "waiting databases to set", 25);
 		status[25] = 0;
 	}
 	else
 	{
-		status = palloc(sizeof(char) * (len + 10));
+		status = worker_alloc(sizeof(char) * (len + 10));
 		memcpy(status, "work on: ", 9);
 		memcpy(status+9, dbnames, len);
 		status[len+9] = 0;
@@ -82,7 +82,7 @@ char *poll_dbnames(schd_managers_poll_t *poll)
 		if(i < (poll->n - 1))
 			appendStringInfo(&string, ", ");
 	}
-	out = palloc(sizeof(char) * (string.len + 1));
+	out = worker_alloc(sizeof(char) * (string.len + 1));
 	memcpy(out, string.data, string.len);
 	out[string.len] = 0;
 	pfree(string.data);
@@ -297,29 +297,18 @@ int addManagerToPoll(schd_managers_poll_t *poll, char *name, int sort)
 	schd_manager_t *man;
 	schd_manager_share_t *shm_data;
 	Size segsize;
-/*	shm_toc_estimator e;
-	shm_toc *toc; */
 	dsm_segment *seg;
 
-/*	shm_toc_initialize_estimator(&e);
-	shm_toc_estimate_chunk(&e, sizeof(schd_manager_share_t));
-	shm_toc_estimate_keys(&e, 1);
-	segsize = shm_toc_estimate(&e); */
 	segsize = (Size)sizeof(schd_manager_share_t);
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
 	seg = dsm_create(segsize, 0);
 
-	man = palloc(sizeof(schd_manager_t));
-	man->dbname = palloc(sizeof(char *) * (strlen(name) + 1));
+	man = worker_alloc(sizeof(schd_manager_t));
+	man->dbname = worker_alloc(sizeof(char *) * (strlen(name) + 1));
 	man->connected = false;
 	memcpy(man->dbname, name, strlen(name) + 1);
 	man->shared = seg;
-/*	toc = shm_toc_create(PGPRO_SHM_TOC_MAGIC, dsm_segment_address(man->shared),
-	                         segsize);
-
-	shm_data = shm_toc_allocate(toc, sizeof(schd_manager_share_t));
-	shm_toc_insert(toc, 0, shm_data); */
 	shm_data = dsm_segment_address(man->shared);
 
 	shm_data->setbyparent = true;
@@ -331,7 +320,7 @@ int addManagerToPoll(schd_managers_poll_t *poll, char *name, int sort)
 		pos = poll->n++;
 		poll->workers = poll->workers ?
 			repalloc(poll->workers, sizeof(schd_manager_t *) * poll->n):
-			palloc(sizeof(schd_manager_t *));
+			worker_alloc(sizeof(schd_manager_t *));
 		poll->workers[pos] = man;
 		if(sort) _sortPollManagers(poll);
 
