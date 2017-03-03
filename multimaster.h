@@ -295,6 +295,7 @@ typedef struct
     int    nSenders;                   /* Number of started WAL senders (used to determine moment when recovery) */
 	int    nLockers;                   /* Number of lockers */
 	int    nActiveTransactions;        /* Number of active 2PC transactions */
+	int    nRunningTransactions;       /* Number of all running transactions */
 	int    nConfigChanges;             /* Number of cluster configuration changes */
 	int    recoveryCount;              /* Number of completed recoveries */
 	int    donorNodeId;                /* Cluster node from which this node was populated */
