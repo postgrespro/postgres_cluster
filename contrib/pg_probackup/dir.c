@@ -2,7 +2,8 @@
  *
  * dir.c: directory operation utility.
  *
- * Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2015-2017, Postgres Professional
  *
  *-------------------------------------------------------------------------
  */
@@ -204,6 +205,16 @@ int
 pgFileComparePathDesc(const void *f1, const void *f2)
 {
 	return -pgFileComparePath(f1, f2);
+}
+
+/* Compare two pgFile with their linked directory path. */
+int
+pgFileCompareLinked(const void *f1, const void *f2)
+{
+	pgFile	   *f1p = *(pgFile **)f1;
+	pgFile	   *f2p = *(pgFile **)f2;
+
+	return strcmp(f1p->linked, f2p->linked);
 }
 
 /* Compare two pgFile with their size */

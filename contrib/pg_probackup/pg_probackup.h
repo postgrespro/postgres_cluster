@@ -2,7 +2,8 @@
  *
  * pg_probackup.h: Backup/Recovery manager for PostgreSQL.
  *
- * Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2015-2017, Postgres Professional
  *
  *-------------------------------------------------------------------------
  */
@@ -40,6 +41,7 @@
 #define PG_TBLSPC_DIR			"pg_tblspc"
 #define BACKUP_CONF_FILE		"backup.conf"
 #define BACKUP_CATALOG_CONF_FILE	"pg_probackup.conf"
+#define BACKUP_CATALOG_PID		"pg_probackup.pid"
 #define MKDIRS_SH_FILE			"mkdirs.sh"
 #define DATABASE_FILE_LIST		"file_database.txt"
 #define PG_BACKUP_LABEL_FILE	"backup_label"
@@ -271,7 +273,7 @@ extern int do_retention_show(void);
 
 /* in delete.c */
 extern int do_delete(time_t backup_id);
-extern int do_deletewal(time_t backup_id, bool strict);
+extern int do_deletewal(time_t backup_id, bool strict, bool need_catalog_lock);
 extern int do_retention_purge(void);
 
 /* in fetch.c */
@@ -299,7 +301,6 @@ extern pgBackup *catalog_get_last_data_backup(parray *backup_list,
 											  TimeLineID tli);
 
 extern int catalog_lock(bool check_catalog);
-extern void catalog_unlock(void);
 
 extern void pgBackupWriteConfigSection(FILE *out, pgBackup *backup);
 extern void pgBackupWriteResultSection(FILE *out, pgBackup *backup);
@@ -330,6 +331,7 @@ extern void pgFileFree(void *file);
 extern pg_crc32 pgFileGetCRC(pgFile *file);
 extern int pgFileComparePath(const void *f1, const void *f2);
 extern int pgFileComparePathDesc(const void *f1, const void *f2);
+extern int pgFileCompareLinked(const void *f1, const void *f2);
 extern int pgFileCompareSize(const void *f1, const void *f2);
 extern int pgFileCompareMtime(const void *f1, const void *f2);
 extern int pgFileCompareMtimeDesc(const void *f1, const void *f2);
