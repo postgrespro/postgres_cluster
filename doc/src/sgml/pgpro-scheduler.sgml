@@ -2250,7 +2250,7 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
       <itemizedlist>
       <listitem>
         <para>
-          <parameter>job_id</parameter> &mdash; identifier of the job to cancel.
+          <parameter>job_id</parameter> &mdash; identifier of the job to cancel.</para>
       <para>Return values:</para>
      <itemizedlist>
       <listitem>
@@ -2264,7 +2264,8 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
     </para>
       </listitem>
     </itemizedlist>
-     </listitem>
+    </listitem>
+    </itemizedlist>
     </varlistentry>
 
     <varlistentry>
