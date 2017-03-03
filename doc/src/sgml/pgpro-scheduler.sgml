@@ -1386,7 +1386,7 @@ CREATE TYPE schedule.cron_job AS(
         </table>
   </sect4>
 </sect3>
-  <sect3 id="pgpro-scheduler-functions">
+<sect3 id="pgpro-scheduler-functions">
    <title>Functions</title>
    <para><filename>pgpro_scheduler</filename> provides two separate sets of functions for managing scheduled and one-time jobs:</para>
    <itemizedlist>
@@ -2250,7 +2250,7 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
       <itemizedlist>
       <listitem>
         <para>
-          <parameter>job_id</parameter> &mdash; identifier of the job to cancel.</para>
+          <parameter>job_id</parameter> &mdash; identifier of the job to cancel.</para></listitem></itemizedlist>
       <para>Return values:</para>
      <itemizedlist>
       <listitem>
@@ -2265,7 +2265,6 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
       </listitem>
     </itemizedlist>
     </listitem>
-    </itemizedlist>
     </varlistentry>
 
     <varlistentry>
@@ -2301,7 +2300,7 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
     </itemizedlist>
     </listitem>
     </varlistentry>
-   
+    
    </variablelist>
    </sect4>
    </sect3>
