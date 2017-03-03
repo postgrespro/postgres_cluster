@@ -255,6 +255,7 @@ static int   MtmLockCount;
 static bool  MtmMajorNode;
 static bool  MtmBreakConnection;
 static bool  MtmSuspended;
+static bool  MtmInsideTransaction;
 
 static ExecutorStart_hook_type PreviousExecutorStartHook;
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
@@ -278,6 +279,15 @@ static bool MtmAtExitHookRegistered = false;
  */
 void MtmReleaseLocks(void)
 {
+	MtmResetTransaction();
+	if (MtmInsideTransaction) 
+	{ 	
+		MtmLock(LW_EXCLUSIVE);                                                           
+		Assert(Mtm->nRunningTransactions > 0);
+		Mtm->nRunningTransactions -= 1;
+		MtmInsideTransaction = false;
+		MtmUnlock();
+	}	
 	if (MtmSuspended) {
 		MtmResumeNode();
 	}
@@ -287,6 +297,7 @@ void MtmReleaseLocks(void)
 		Mtm->lastLockHolder = 0;
 		LWLockRelease((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID]);
 	}
+
 }
 		
 /*
@@ -870,14 +881,20 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 			&& strcmp(application_name, MULTIMASTER_ADMIN) != 0) 
 		{ 
 			MtmCheckClusterLock();
-		}
+		}	
+		MtmInsideTransaction = true;
+		Mtm->nRunningTransactions += 1;
+
         x->snapshot = MtmAssignCSN();	
+		MTM_LOG1("Start transaction %lld with snapshot %lld", (long64)x->xid, x->snapshot);
 
 		MtmUnlock();
 
         MTM_LOG3("%d: MtmLocalTransaction: %s transaction %u uses local snapshot %llu", 
 				 MyProcPid, x->isDistributed ? "distributed" : "local", x->xid, x->snapshot);
-    }
+    } else { 
+		Assert(MtmInsideTransaction);
+	}
 }
 
 
@@ -1328,15 +1345,20 @@ MtmLogAbortLogicalMessage(int nodeId, char const* gid)
 static void 
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 {
-	MTM_LOG2("%d: End transaction %d, prepared=%d, replicated=%d, distributed=%d, 2pc=%d, gid=%s -> %s", 
-			 MyProcPid, x->xid, x->isPrepared, x->isReplicated, x->isDistributed, x->isTwoPhase, x->gid, commit ? "commit" : "abort");
-	if (MtmSuspended) { 
-		MtmResumeNode();
-	}
+	MTM_LOG3("%d: End transaction %lld, prepared=%d, replicated=%d, distributed=%d, 2pc=%d, gid=%s -> %s, LSN %lld", 
+			 MyProcPid, (long64)x->xid, x->isPrepared, x->isReplicated, x->isDistributed, x->isTwoPhase, x->gid, commit ? "commit" : "abort", (long64)GetXLogInsertRecPtr());
 	commit &= (x->status != TRANSACTION_STATUS_ABORTED);
+
+	MtmLock(LW_EXCLUSIVE);
+
+	if (MtmInsideTransaction) { 
+		Assert(Mtm->nRunningTransactions > 0);
+		Mtm->nRunningTransactions -= 1;
+		MtmInsideTransaction = false;
+	}
+
 	if (x->isDistributed && (x->isPrepared || x->isReplicated) && !x->isTwoPhase) {
 		MtmTransState* ts = NULL;
-		MtmLock(LW_EXCLUSIVE);
 		if (x->isPrepared) { 
 			ts = (MtmTransState*)hash_search(MtmXid2State, &x->xid, HASH_FIND, NULL);
 			Assert(ts != NULL);
@@ -1419,11 +1441,15 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 #endif
 		}
 		Assert(!x->isActive);
-		MtmUnlock();
 	}
+	MtmUnlock();
+
 	MtmResetTransaction();
 	if (!MyReplicationSlot) { 
 		MtmCheckSlots();
+	}
+	if (MtmSuspended) { 
+		MtmResumeNode();
 	}
 }
 
@@ -2059,7 +2085,6 @@ static void
 MtmSuspendNode(void)
 {
 	timestamp_t delay = MIN_WAIT_TIMEOUT;
-	bool insideTransaction = MtmTx.isActive;
 	Assert(!MtmSuspended);
 	MtmLock(LW_EXCLUSIVE);
 	if (Mtm->exclusiveLock) {
@@ -2067,7 +2092,9 @@ MtmSuspendNode(void)
 	}
 	Mtm->exclusiveLock = true;
 	MtmSuspended = true;
-	while (Mtm->nActiveTransactions != insideTransaction) { 
+	MTM_LOG2("Transaction %lld tries to suspend node at %lld insideTransaction=%d, active transactions=%lld", 
+			 (long64)MtmTx.xid, MtmGetCurrentTime(), insideTransaction, (long64)Mtm->nRunningTransactions);
+	while (Mtm->nRunningTransactions != 1) { /* I am one */
 		MtmUnlock();
 		MtmSleep(delay);
 		if (delay*2 <= MAX_WAIT_TIMEOUT) {
@@ -2075,6 +2102,7 @@ MtmSuspendNode(void)
 		}
 		MtmLock(LW_EXCLUSIVE);
 	}
+	MTM_LOG2("Transaction %lld suspended node at %lld, LSN %lld, active transactions=%lld", (long64)MtmTx.xid, MtmGetCurrentTime(), (long64)GetXLogInsertRecPtr(), (long64)Mtm->nRunningTransactions);
 	MtmUnlock();
 }
 
@@ -2085,6 +2113,7 @@ static void
 MtmResumeNode(void)
 {
 	MtmLock(LW_EXCLUSIVE);                                                           
+	MTM_LOG2("Transaction %lld resume node at %lld status %s LSN %lld", (long64)MtmTx.xid, MtmGetCurrentTime(),  MtmTxnStatusMnem[MtmTx.status], (long64)GetXLogInsertRecPtr());
 	Mtm->exclusiveLock = false;
 	MtmSuspended = false;
 	MtmUnlock();
@@ -2527,6 +2556,7 @@ static void MtmInitialize()
 		Mtm->nLockers = 0;
 		Mtm->exclusiveLock = false;
 		Mtm->nActiveTransactions = 0;
+		Mtm->nRunningTransactions = 0;
 		Mtm->votingTransactions = NULL;
         Mtm->transListHead = NULL;
         Mtm->transListTail = &Mtm->transListHead;		
@@ -3369,7 +3399,7 @@ void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
 	MtmTx.isActive = true;
 	FinishPreparedTransaction(ts->gid, commit);
 	if (commit) { 
-		MTM_LOG2("Distributed transaction %s is committed", ts->gid);
+		MTM_LOG2("Distributed transaction %s (%lld) is committed at %lld with LSN=%lld", ts->gid, (long64)ts->xid, MtmGetCurrentTime(), (long64)GetXLogInsertRecPtr());
 	}
 	if (!insideTransaction) { 
 		CommitTransactionCommand();
@@ -4556,7 +4586,7 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 					MTM_ELOG(ERROR, "Transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
 				} else {
 					FinishPreparedTransaction(x->gid, true);
-					MTM_LOG2("Distributed transaction %s is committed", x->gid);
+					MTM_LOG2("Distributed transaction %s (%lld) is committed at %lld with LSN=%lld", x->gid, (long64)x->xid, MtmGetCurrentTime(), (long64)GetXLogInsertRecPtr());
 				}
 			}
 		}
