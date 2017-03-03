@@ -12,7 +12,7 @@ int			aqo_mode;
 static const struct config_enum_entry format_options[] = {
 	{"intelligent", AQO_MODE_INTELLIGENT, false},
 	{"forced", AQO_MODE_FORCED, false},
-	{"manual", AQO_MODE_MANUAL, false},
+	{"controlled", AQO_MODE_CONTROLLED, false},
 	{"disabled", AQO_MODE_DISABLED, false},
 	{NULL, 0, false}
 };
@@ -74,7 +74,7 @@ _PG_init(void)
 							 "Mode of aqo usage.",
 							 NULL,
 							 &aqo_mode,
-							 AQO_MODE_MANUAL,
+							 AQO_MODE_CONTROLLED,
 							 format_options,
 							 PGC_SUSET,
 							 0,

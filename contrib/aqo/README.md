@@ -21,7 +21,7 @@ of per-connection.
 ## Usage
 
 Note that the extension works bad with dynamically generated views. If they
-appear in workload, please use "aqo.mode='manual'".
+appear in workload, please use "aqo.mode='controlled'".
 
 This extension has intelligent self-tuning mode. If you want to rely completely
 on it, just add line "aqo.mode = 'intelligent'" into your postgresql.conf.
@@ -36,8 +36,8 @@ For handling workloads with dynamically generated query structures the forced
 mode "aqo.mode = 'forced'" is provided. We cannot guarantee performance
 improvement with this mode, but you may try it nevertheless.
 
-If you want to completely control how PostgreSQL optimizes queries, use manual
-mode "aqo.mode = 'manual'" and
+If you want to completely control how PostgreSQL optimizes queries, use controlled
+mode "aqo.mode = 'controlled'" and
 contrib/aqo/learn_queries.sh file_with_sql_queries.sql "psql -d YOUR_DATABASE"
 where file_with_sql_queries.sql is a textfile with queries on which AQO is
 supposed to learn. Please use only SELECT queries file_with_sql_queries.sql.

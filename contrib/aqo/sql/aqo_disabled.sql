@@ -53,7 +53,7 @@ WHERE t1.a < 1 AND t3.b < 1 AND t2.c < 1 AND t3.d < 0 AND t1.a = t2.a AND t1.b =
 SELECT count(*) FROM tmp1;
 DROP TABLE tmp1;
 
-SET aqo.mode = 'manual';
+SET aqo.mode = 'controlled';
 
 UPDATE aqo_queries SET learn_aqo = true, use_aqo = true, auto_tuning = false;
 
