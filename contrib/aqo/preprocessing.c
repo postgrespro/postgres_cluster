@@ -54,6 +54,8 @@
  OPERATOR(pg_catalog.=) $1 FOR KEY SHARE OF x"
 
 static const char *query_text;
+static bool isQueryUsingSystemRelation(Query *query);
+static bool isQueryUsingSystemRelation_walker(Node *node, void *context);
 
 /*
  * Saves query text into query_text variable.
@@ -108,7 +110,7 @@ aqo_planner(Query *parse,
 				strlen(CREATE_EXTENSION_STARTSTRING_0)) == 0 ||
 		strncmp(query_text, CREATE_EXTENSION_STARTSTRING_1,
 				strlen(CREATE_EXTENSION_STARTSTRING_1)) == 0 ||
-		aqo_mode == AQO_MODE_DISABLED)
+		aqo_mode == AQO_MODE_DISABLED || isQueryUsingSystemRelation(parse))
 	{
 		disable_aqo_for_query();
 		return call_default_planner(parse, cursorOptions, boundParams);
@@ -211,4 +213,51 @@ disable_aqo_for_query(void)
 	use_aqo = false;
 	auto_tuning = false;
 	collect_stat = false;
+}
+
+/*
+ * Examine a fully-parsed query, and return TRUE iff any relation underlying
+ * the query is a system relation.
+ */
+bool
+isQueryUsingSystemRelation(Query *query)
+{
+	return isQueryUsingSystemRelation_walker((Node *) query, NULL);
+}
+
+bool
+isQueryUsingSystemRelation_walker(Node *node, void *context)
+{
+	if (node == NULL)
+		return false;
+
+	if (IsA(node, Query))
+	{
+		Query	   *query = (Query *) node;
+		ListCell   *rtable;
+
+		foreach(rtable, query->rtable)
+		{
+			RangeTblEntry *rte = lfirst(rtable);
+
+			if (rte->rtekind == RTE_RELATION)
+			{
+				Relation	rel = heap_open(rte->relid, AccessShareLock);
+				bool		is_catalog = IsCatalogRelation(rel);
+
+				heap_close(rel, AccessShareLock);
+				if (is_catalog)
+					return true;
+			}
+		}
+
+		return query_tree_walker(query,
+								 isQueryUsingSystemRelation_walker,
+								 context,
+								 0);
+	}
+
+	return expression_tree_walker(node,
+								  isQueryUsingSystemRelation_walker,
+								  context);
 }
