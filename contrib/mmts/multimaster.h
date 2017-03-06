@@ -154,7 +154,8 @@ typedef struct
 {
 	MtmMessageCode code;   /* Message code: MSG_PREPARE, MSG_PRECOMMIT, MSG_COMMIT, MSG_ABORT,... */
     int            node;   /* Sender node ID */	
-	bool           lockReq;/* Whether sender node needs to lock cluster tpo et wal-sender caught-up and complete recovery */
+	bool           lockReq;/* Whether sender node needs to lock cluster to let wal-sender caught-up and complete recovery */
+	bool           locked; /* Whether sender node is locked */
 	TransactionId  dxid;   /* Transaction ID at destination node */
 	TransactionId  sxid;   /* Transaction ID at sender node */  
     XidStatus      status; /* Transaction status */	
@@ -281,9 +282,10 @@ typedef struct
 	nodemask_t stoppedNodeMask;        /* Bitmask of stopped (permanently disabled nodes) */
 	nodemask_t pglogicalReceiverMask;  /* bitmask of started pglogic receivers */
 	nodemask_t pglogicalSenderMask;    /* bitmask of started pglogic senders */
-	nodemask_t walSenderLockerMask;    /* Mask of WAL-senders IDs locking the cluster */
-	nodemask_t globalLockerMask;       /* Global cluster mask of locked nodes to perform caught-up (updated using heartbeats) */
-	nodemask_t nodeLockerMask;         /* Mask of node IDs which WAL-senders are locking the cluster */
+	nodemask_t currentLockNodeMask;    /* Mask of nodes IDs which are locking the cluster */
+	nodemask_t inducedLockNodeMask;    /* Mask of node IDs which requested cluster-wide lock */
+	nodemask_t originLockNodeMask;     /* Mask of node IDs which WAL-senders are locking the cluster. 
+										* MtmNodeId bit is used by recovered node to complete recovery and by MtmLockCluster method */
 	nodemask_t reconnectMask; 	       /* Mask of nodes connection to which has to be reestablished by sender */
 	int        lastLockHolder;         /* PID of process last obtaining the node lock */
 	bool   localTablesHashLoaded;      /* Whether data from local_tables table is loaded in shared memory hash table */
@@ -293,7 +295,6 @@ typedef struct
     int    nAllNodes;                  /* Total number of nodes */
     int    nReceivers;                 /* Number of initialized logical receivers (used to determine moment when initialization/recovery is completed) */
     int    nSenders;                   /* Number of started WAL senders (used to determine moment when recovery) */
-	int    nLockers;                   /* Number of lockers */
 	int    nActiveTransactions;        /* Number of active 2PC transactions */
 	int    nRunningTransactions;       /* Number of all running transactions */
 	int    nConfigChanges;             /* Number of cluster configuration changes */
@@ -302,7 +303,6 @@ typedef struct
 	int64  timeShift;                  /* Local time correction */
 	csn_t  csn;                        /* Last obtained timestamp: used to provide unique ascending CSNs based on system time */
 	csn_t  lastCsn;                    /* CSN of last committed transaction */
-	sig_atomic_t exclusiveLock;        /* Exclusive node lock, preventing start of new transactions */
 	MtmTransState* votingTransactions; /* L1-list of replicated transactions notifications to coordinator.
 									 	 This list is used to pass information to mtm-sender BGW */
     MtmTransState* transListHead;      /* L1 list of all finished transactions present in xid2state hash.
@@ -423,4 +423,6 @@ extern char* MtmGucSerialize(void);
 extern bool MtmTransIsActive(void);
 extern MtmTransState* MtmGetActiveTransaction(MtmL2List* list);
 extern void MtmReleaseLocks(void);
+extern void MtmInitMessage(MtmArbiterMessage* msg, MtmMessageCode code);
+
 #endif

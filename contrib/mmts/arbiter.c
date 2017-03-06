@@ -299,12 +299,20 @@ static void MtmSetSocketOptions(int sd)
 #endif
 }
 
+/*
+ * Check response message and update onde state
+ */
 static void MtmCheckResponse(MtmArbiterMessage* resp)
 {
 	if (resp->lockReq) {
-		BIT_SET(Mtm->globalLockerMask, resp->node-1);
+		BIT_SET(Mtm->inducedLockNodeMask, resp->node-1);
 	} else { 
-		BIT_CLEAR(Mtm->globalLockerMask, resp->node-1);
+		BIT_CLEAR(Mtm->inducedLockNodeMask, resp->node-1);
+	}
+	if (resp->locked) {
+		BIT_SET(Mtm->currentLockNodeMask, resp->node-1);
+	} else { 
+		BIT_CLEAR(Mtm->currentLockNodeMask, resp->node-1);
 	}
 	if (BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1) 
 		&& !BIT_CHECK(Mtm->disabledNodeMask, resp->node-1)
@@ -340,11 +348,7 @@ static void MtmSendHeartbeat()
 	int i;
 	MtmArbiterMessage msg;
 	timestamp_t now = MtmGetSystemTime();
-	msg.code = MSG_HEARTBEAT;
-	msg.disabledNodeMask = Mtm->disabledNodeMask;
-	msg.connectivityMask = SELF_CONNECTIVITY_MASK;
-	msg.oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
-	msg.lockReq = Mtm->nodeLockerMask != 0;
+	MtmInitMessage(&msg, MSG_HEARTBEAT);
 	msg.node = MtmNodeId;
 	msg.csn = now;
 	if (last_sent_heartbeat != 0 && last_sent_heartbeat + MSEC_TO_USEC(MtmHeartbeatSendTimeout)*2 < now) { 
@@ -483,13 +487,11 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 		}
 	}
 	MtmSetSocketOptions(sd);
-	req.hdr.code = MSG_HANDSHAKE;
+	MtmInitMessage(&req.hdr, MSG_HANDSHAKE);
 	req.hdr.node = MtmNodeId;
 	req.hdr.dxid = HANDSHAKE_MAGIC;
 	req.hdr.sxid = ShmemVariableCache->nextXid;
 	req.hdr.csn  = MtmGetCurrentTime();
-	req.hdr.disabledNodeMask = Mtm->disabledNodeMask;
-	req.hdr.connectivityMask = SELF_CONNECTIVITY_MASK;
 	strcpy(req.connStr, Mtm->nodes[MtmNodeId-1].con.connStr);
 	if (!MtmWriteSocket(sd, &req, sizeof req)) { 
 		MTM_ELOG(WARNING, "Arbiter failed to send handshake message to %s:%d: %d", host, port, errno);
@@ -638,9 +640,7 @@ static void MtmAcceptOneConnection()
 			MtmCheckResponse(&req.hdr);
 			MtmUnlock();
 
-			resp.code = MSG_STATUS;
-			resp.disabledNodeMask = Mtm->disabledNodeMask;
-			resp.connectivityMask = SELF_CONNECTIVITY_MASK;
+			MtmInitMessage(&resp, MSG_STATUS);
 			resp.dxid = HANDSHAKE_MAGIC;
 			resp.sxid = ShmemVariableCache->nextXid;
 			resp.csn  = MtmGetCurrentTime();
@@ -949,10 +949,7 @@ static void MtmReceiver(Datum arg)
 							msg->csn = tm->state->csn;
 							MTM_LOG1("Send response %s for transaction %s to node %d", MtmTxnStatusMnem[msg->status], msg->gid, node);
 						}
-						msg->disabledNodeMask = Mtm->disabledNodeMask;
-						msg->connectivityMask = SELF_CONNECTIVITY_MASK;
-						msg->oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
-						msg->code = MSG_POLL_STATUS;	
+						MtmInitMessage(msg, MSG_POLL_STATUS);
 						MtmSendMessage(msg);
 						continue;
 					  case MSG_POLL_STATUS:
