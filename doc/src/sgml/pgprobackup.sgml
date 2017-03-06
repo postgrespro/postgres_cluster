@@ -560,7 +560,7 @@ GRANT EXECUTE ON FUNCTION pg_ptrack_get_and_clear(oid, oid) TO backup;
    <para>
      To initialize backup directory, execute the following command:
      <programlisting>
-pg_probackup init -B <replaceable class="parameter">backup_directory</replaceable>
+pg_probackup init -B <replaceable class="parameter">backup_directory</replaceable> -D <replaceable class="parameter">data_directory</replaceable>
      </programlisting>
    </para>
 
@@ -722,7 +722,7 @@ pg_probackup show <replaceable class="parameter">backup_id</replaceable>
      <programlisting>
 pg_probackup validate <replaceable class="parameter">backup_id</replaceable>
      </programlisting>
-   For details, see <xref linkend="pg-probackup-checksums"> and <xref linkend="pg-probackup-validating-backups"></para>
+   For details, see <xref linkend="pg-probackup-checksums"> and <xref linkend="pg-probackup-validating-backups">.</para>
 
    <para>
      To restore the database cluster from the backup,
@@ -1019,8 +1019,8 @@ pg_probackup retention purge
   <para>
     <application>pg_probackup</application> deletes all backup copies and the corresponding WAL files that do not conform to the policy defined in the <filename>pg_probackup.conf</filename> file. 
     If both <option>redundancy</option> and <option>window</option> options are
-    set, <application>pg_probackup</application> delete only those backup
-    copies that satisfy both conditions. For example, if you set <option>redundancy</option>=2 and <option>window</option>=7, <application>pg_probackup</application> cleans up the backup directory to keep only two full backup copies if at least one of them is older than 7 days.
+    set, <application>pg_probackup</application> keeps backup copies
+    that satisfy both conditions. For example, if you set <option>redundancy</option>=2 and <option>window</option>=7, <application>pg_probackup</application> cleans up the backup directory to keep only two full backup copies if at least one of them is older than 7 days.
   </para>
   <para>
     Alternatively, you can override the default policy using <option>--redundancy</option> and <option>--window</option>
@@ -1200,7 +1200,7 @@ pg_probackup restore -j 4
 To make sure the recovery is possible, run the <command>validate</command> command with the exact options you are going to use for recovery. <application>pg_probackup</application> checks that all the required backup files are present and can be used to restore the database cluster if needed. </para>
 <para>For example, to check that you can restore the database cluster from a backup copy with the <replaceable>backup_id</replaceable> up to the specified <option>xid</option> transaction ID, run this command:
 <programlisting>
-pg_probackup validate --xid=<replaceable>xid</replaceable> <replaceable>backup_id</replaceable> 
+pg_probackup validate --xid=<replaceable>xid</replaceable> <replaceable>backup_id</replaceable>
 </programlisting>
    For the list of available options, see <xref linkend="pg-probackup-options">.</para>
    <para>If validation completed successfully, <application>pg_probackup</application> displays the corresponding message. If validation fails, you will receive an error message with the exact time and transaction ID up to which the recovery is possible. </para>
