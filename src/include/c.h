@@ -390,12 +390,16 @@ typedef double float8;
 typedef Oid regproc;
 typedef regproc RegProcedure;
 
+#define MAX_START_XID	UINT64CONST(0x3fffffffffffffff)
+
 typedef uint64 TransactionId;
 
 #define TransactionIdPrecedes(id1, id2) ((id1) < (id2))
 #define TransactionIdPrecedesOrEquals(id1, id2) ((id1) <= (id2))
 #define TransactionIdFollows(id1, id2) ((id1) > (id2))
 #define TransactionIdFollowsOrEquals(id1, id2) ((id1) >= (id2))
+
+#define StartTransactionIdIsValid(start_xid)	((start_xid) <= MAX_START_XID)
 
 typedef uint32 ShortTransactionId;
 
@@ -417,7 +421,11 @@ typedef TransactionId MultiXactId;
 #define MultiXactIdFollows(id1, id2) ((id1) > (id2))
 #define MultiXactIdFollowsOrEquals(id1, id2) ((id1) >= (id2))
 
+#define StartMultiXactIdIsValid(start_mx_id)	((start_mx_id) <= MAX_START_XID)
+
 typedef uint64 MultiXactOffset;
+
+#define StartMultiXactOffsetIsValid(start_mx_offset)	((start_mx_offset) <= MAX_START_XID)
 
 typedef uint32 CommandId;
 
