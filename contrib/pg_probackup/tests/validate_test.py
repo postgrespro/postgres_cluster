@@ -51,12 +51,12 @@ class ValidateTest(ProbackupTest, unittest.TestCase):
 			target_xid = res[0][0]
 
 		node.execute("postgres", "SELECT pg_switch_xlog()")
-		node.stop({"-m": "immediate"})
+		node.stop({"-m": "smart"})
 
 		id_backup = self.show_pb(node)[0].id
 
 		# Validate to real time
-		self.assertIn(six.b("INFO: Backup validation stopped on"),
+		self.assertIn(six.b("INFO: backup validation completed successfully on"),
 			self.validate_pb(node, options=["--time='{:%Y-%m-%d %H:%M:%S}'".format(
 				target_time)]))
 
@@ -66,20 +66,20 @@ class ValidateTest(ProbackupTest, unittest.TestCase):
 				target_time - timedelta(days=2))]))
 
 		# Validate to unreal time #2
-		self.assertIn(six.b("ERROR: there are no WAL records to time"),
+		self.assertIn(six.b("ERROR: not enough WAL records to time"),
 			self.validate_pb(node, options=["--time='{:%Y-%m-%d %H:%M:%S}'".format(
 				target_time + timedelta(days=2))]))
 
 		# Validate to real xid
-		self.assertIn(six.b("INFO: Backup validation stopped on"),
+		self.assertIn(six.b("INFO: backup validation completed successfully on"),
 			self.validate_pb(node, options=["--xid=%s" % target_xid]))
 
 		# Validate to unreal xid
-		self.assertIn(six.b("ERROR: there are no WAL records to xid"),
+		self.assertIn(six.b("ERROR: not enough WAL records to xid"),
 			self.validate_pb(node, options=["--xid=%d" % (int(target_xid) + 1000)]))
 		
 		# Validate with backup ID
-		self.assertIn(six.b("INFO: Backup validation stopped on"),
+		self.assertIn(six.b("INFO: backup validation completed successfully on"),
 			self.validate_pb(node, id_backup))
 
 		# Validate broken WAL
@@ -91,4 +91,4 @@ class ValidateTest(ProbackupTest, unittest.TestCase):
 			f.write(six.b("blablabla"))
 
 		res = self.validate_pb(node, id_backup, options=['--xid=%s' % target_xid])
-		self.assertIn(six.b("there are no WAL records to xid"), res)
+		self.assertIn(six.b("not enough WAL records to xid"), res)

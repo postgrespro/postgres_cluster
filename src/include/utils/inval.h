@@ -61,4 +61,14 @@ extern void CacheRegisterRelcacheCallback(RelcacheCallbackFunction func,
 extern void CallSyscacheCallbacks(int cacheid, uint32 hashvalue);
 
 extern void InvalidateSystemCaches(void);
+
+/* Funcitons below are needed to support ATX */
+
+struct TransInvalidationInfo;
+
+extern bool HasCatcacheInvalidationMessages(void);
+extern bool HasRelcacheInvalidationMessages(void);
+extern struct TransInvalidationInfo* SuspendInvalidationInfo(void);
+extern void ResumeInvalidationInfo(struct TransInvalidationInfo* inval);
+
 #endif   /* INVAL_H */

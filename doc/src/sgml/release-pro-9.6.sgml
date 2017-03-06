@@ -8,7 +8,10 @@
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>Postgres Pro</productname>
-      9.6.1.2</para>
+      <link linkend="release-pro-9-6-1-2">9.6.1.2</link> and
+      <productname>PostgreSQL</productname> <link linkend="release-9-6-2">9.6.2</link>.</para>
+    <para>Major enhancements over <productname>Postgres Pro</productname>
+      9.6.1.2 include:</para>
     <para>Major enhancements over <productname>Postgres Pro</productname>
       9.6.1.2 include:</para>
     <para>Added k-nearest neighbors algorithm (KNN) for SP-GiST and B-tree
@@ -28,19 +31,22 @@
     <para>Utility <application>pg_repack</application> has been added (See <xref linkend="app-pgrepack">)</para>
     <itemizedlist>
       <listitem>
-        <para>Module <application>pg_pathman</application> has been updated to
-        version 1.3 (See <xref linkend="pg-pathman"> and <xref linkend="pg-pathman-how-to-update">).</para>
+        <para>Module <link linkend="pg-pathman"><application>pg_pathman</application></link> has been updated to
+        version 1.3 (see <xref linkend="pg-pathman-how-to-update">).</para>
       </listitem>
       <listitem>
-        <para>The <application>sr_plan</application> module is now initialized independently for each database instance (See <xref linkend="sr-plan">).</para>
+        <para>The <link linkend="sr-plan"><application>sr_plan</application></link> module
+        is now initialized independently for each database instance.</para>
       </listitem>
       <listitem>
-        <para>Applied fixes for covering indexes.</para>
+        <para>Syntax for covering indexes has been changed. Now the keyword <literal>INCLUDING</literal> is
+          replaced by <literal>INCLUDE</literal>. The previous syntax still works, but is deprecated
+          (see <xref linkend="indexes-unique">).</para>
       </listitem>
       <listitem>
         <para>RHEL-based distributions are installed in a separate location,
-          so the product can be installed in parallel with an existing
-          <productname>PostgreSQL</productname>.</para>
+          so the <productname>Postgres Pro</productname> database can be installed in parallel with an existing
+          <productname>PostgreSQL</productname> database.</para>
       </listitem>
       <listitem>
         <para>Improved the algorithm of automatic TCP-port selection for the case
@@ -48,12 +54,12 @@
           Windows systems.</para>
       </listitem>
       <listitem>
-        <para>Updated the <application>pg_probackup</application> backup manager:</para>
+        <para>Updated the <link linkend="app-pgprobackup"><application>pg_probackup</application></link> backup manager:</para>
         <itemizedlist>
           <listitem>
             <para>
-              Added <emphasis role="strong">retention show</emphasis> and
-              <emphasis role="strong">retention purge</emphasis> commands to
+              Added <command>retention show</command> and
+              <command>retention purge</command> commands to
               implement retention policy.
             </para>
           </listitem>
@@ -66,8 +72,8 @@
           </listitem>
           <listitem>
             <para>
-              Fixed <emphasis role="strong">validate</emphasis> command.
-              The <emphasis role="strong">backup-ID</emphasis> parameter is
+              Fixed <command>validate</command> command.
+              The <replaceable>backup_id</replaceable> parameter is
               optional now.
             </para>
           </listitem>
@@ -112,10 +118,10 @@
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>Postgres Pro</productname>
-      9.6.1.1 and upstream PostgreSQL patches.</para>
+      <link linkend="release-pro-9-6-1-1">9.6.1.1</link> and upstream PostgreSQL patches.
+    </para>
     <para>Major enhancements over <productname>Postgres Pro</productname>
       9.6.1.1 include:</para>
-
     <para>Several modules to support 1C Enterprise added:</para>
     <itemizedlist>
       <listitem>
@@ -149,7 +155,7 @@
     <itemizedlist>
       <listitem><para><application>pg_pathman</application> to version 1.2.2 (See <xref linkend="pg-pathman">)</para></listitem>
     </itemizedlist>
-    
+
     <para>
       Backup manager <application>pg_arman</application> has been replaced
       to <application>pg_probackup</application> (Version 1.0).
@@ -164,7 +170,7 @@
     <para>A dump/restore is not required for those running 9.6.1.1.</para>
     <para>However, if you are upgrading from vanilla PostgreSQL 9.6.x, some
       catalog changes should be applied.
-    </para>    
+    </para>
     <para>If you use binary packages, and your database is in the default
       location, this upgrade should be performed automatically. If you've
       compiled Postgres Pro from source or create your database in
@@ -188,9 +194,9 @@
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>PostgreSQL</productname>
-      9.6.1</para>
+      <link linkend="release-9-6-1">9.6.1</link>.</para>
     <para>Major enhancements over <productname>Postgres Pro</productname>
-      9.6.0.1 include:</para>
+      <link linkend="release-pro-9-6-0-1">9.6.0.1</link> include:</para>
     <para>Added fix for <application>pg_buffercache</application> module,
       which improves database response in the case of connected
       monitoring tools.</para>
@@ -208,7 +214,7 @@
     <para>A dump/restore is not required for those running 9.6.0.1.</para>
     <para>However, if you are upgrading from vanilla PostgreSQL 9.6.x, some
       catalog changes should be applied.
-    </para>    
+    </para>
     <para>If you use binary packages, and your database is in the default
       location, this upgrade should be performed automatically. If you've
       compiled Postgres Pro from source or create your database in
@@ -232,7 +238,7 @@
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>PostgreSQL</productname>
-      9.6.0</para>
+      <link linkend="release-9-6">9.6.0</link>.</para>
     <para>Major enhancements over <productname>PostgreSQL</productname>
       9.6.0 include:</para>
     <para>Core patches from Postgres Pro 9.5 has been applied:</para>
@@ -264,7 +270,7 @@
       <listitem>
         <para><application>pg_arman</application></para>
       </listitem>
-    </itemizedlist>    
+    </itemizedlist>
   </sect2>
   <sect2>
     <title>Migration to Version 9.6.0.1</title>
@@ -278,7 +284,7 @@
 
     <para>When upgrading from previous releases of Postgres Pro or from
       vanilla PostgreSQL 9.6.x, some catalog changes should be applied.</para>
-    
+
     <para>If you use binary packages, and your database is in the default
       location, this upgrade should be performed automatically. If you've
       compiled Postgres Pro from source or create your database in
@@ -286,7 +292,7 @@
       should run <literal>pgpro_upgrade</literal> script provided in this
       distribution.
     </para>
-    
+
     <para>Before running script, you should stop postgres service. Script
       should be run as user, owning the database (typically postgres) and
       PGDATA environment variable should be set to the directory where
