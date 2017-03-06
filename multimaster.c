@@ -159,8 +159,8 @@ static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg);
 static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
 static void MtmProcessDDLCommand(char const* queryString, bool transactional);
 
-static void MtmSuspendNode(void);
-static void MtmResumeNode(void);
+static void MtmLockCluster(void);
+static void MtmUnlockCluster(void);
 
 MtmState* Mtm;
 
@@ -254,7 +254,7 @@ static bool  MtmIgnoreTablesWithoutPk;
 static int   MtmLockCount;
 static bool  MtmMajorNode;
 static bool  MtmBreakConnection;
-static bool  MtmSuspended;
+static bool  MtmClusterLocked;
 static bool  MtmInsideTransaction;
 
 static ExecutorStart_hook_type PreviousExecutorStartHook;
@@ -288,8 +288,8 @@ void MtmReleaseLocks(void)
 		MtmInsideTransaction = false;
 		MtmUnlock();
 	}	
-	if (MtmSuspended) {
-		MtmResumeNode();
+	if (MtmClusterLocked) {
+		MtmUnlockCluster();
 	}
 	if (MtmLockCount != 0) { 
 		Assert(Mtm->lastLockHolder == MyProcPid);
@@ -876,8 +876,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		 * Also allow user to complete explicit 2PC transactions.
 		 */
 		if (x->isDistributed 
-			&& (Mtm->exclusiveLock || (!x->isReplicated && !x->isTwoPhase))
-			&& !MtmSuspended
+			&& !MtmClusterLocked /* do not lock myself */
 			&& strcmp(application_name, MULTIMASTER_ADMIN) != 0) 
 		{ 
 			MtmCheckClusterLock();
@@ -886,7 +885,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		Mtm->nRunningTransactions += 1;
 
         x->snapshot = MtmAssignCSN();	
-		MTM_LOG1("Start transaction %lld with snapshot %lld", (long64)x->xid, x->snapshot);
+		MTM_LOG2("Start transaction %lld with snapshot %lld", (long64)x->xid, x->snapshot);
 
 		MtmUnlock();
 
@@ -1448,10 +1447,24 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 	if (!MyReplicationSlot) { 
 		MtmCheckSlots();
 	}
-	if (MtmSuspended) { 
-		MtmResumeNode();
+	if (MtmClusterLocked) { 
+		MtmUnlockCluster();
 	}
 }
+
+/*
+ * Initialize message 
+ */
+void MtmInitMessage(MtmArbiterMessage* msg, MtmMessageCode code)
+{
+	msg->code = code;
+    msg->disabledNodeMask = Mtm->disabledNodeMask;
+    msg->connectivityMask = SELF_CONNECTIVITY_MASK;
+    msg->oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
+    msg->lockReq = Mtm->originLockNodeMask != 0;
+	msg->locked = (Mtm->originLockNodeMask|Mtm->inducedLockNodeMask) != 0;
+}
+
 
 /* 
  * Send arbiter's message
@@ -1489,13 +1502,9 @@ void MtmSendMessage(MtmArbiterMessage* msg)
 void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 {
 	MtmArbiterMessage msg;
-	msg.code = cmd;
+	MtmInitMessage(&msg, cmd);
 	msg.sxid = ts->xid;
 	msg.csn  = ts->csn;
-	msg.disabledNodeMask = Mtm->disabledNodeMask;
-	msg.connectivityMask = SELF_CONNECTIVITY_MASK;
-	msg.oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
-	msg.lockReq = Mtm->nodeLockerMask != 0;
 	memcpy(msg.gid, ts->gid, MULTIMASTER_MAX_GID_SIZE);
 
 	Assert(!MtmIsCoordinator(ts));  /* All broadcasts are now done through logical decoding */
@@ -1516,11 +1525,7 @@ static void MtmBroadcastPollMessage(MtmTransState* ts)
 {
 	int i;
 	MtmArbiterMessage msg;
-	msg.code = MSG_POLL_REQUEST;
-	msg.disabledNodeMask = Mtm->disabledNodeMask;
-	msg.connectivityMask = SELF_CONNECTIVITY_MASK;
-	msg.oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
-	msg.lockReq = Mtm->nodeLockerMask != 0;
+	MtmInitMessage(&msg, MSG_POLL_REQUEST);
 	memcpy(msg.gid, ts->gid, MULTIMASTER_MAX_GID_SIZE);
 	ts->votedMask = 0;
 
@@ -1928,7 +1933,7 @@ void MtmRecoveryCompleted(void)
 		 * logical replication connections with this node.
 		 * Under the intensive workload start of logical replication can be delayed for unpredictable amount of time
 		 */
-		BIT_SET(Mtm->nodeLockerMask, MtmNodeId-1); /* it is trick: this mask was originally used by WAL senders performing recovery, but here we are in opposite (recovered) side:
+		BIT_SET(Mtm->originLockNodeMask, MtmNodeId-1); /* it is trick: this mask was originally used by WAL senders performing recovery, but here we are in opposite (recovered) side:
 											   * if this mask is not zero loadReq will be broadcasted to all other nodes by heartbeat, suspending their activity
 											   */
 		MtmSwitchClusterMode(MTM_RECOVERED);  
@@ -2017,7 +2022,7 @@ void MtmCheckRecoveryCaughtUp(int nodeId, lsn_t slotLSN)
 	MtmLock(LW_EXCLUSIVE);
 	if (MtmIsRecoveredNode(nodeId)) { 
 		lsn_t walLSN = GetXLogInsertRecPtr();
-		if (!BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)
+		if (!BIT_CHECK(Mtm->originLockNodeMask, nodeId-1)
 			&& slotLSN + MtmMinRecoveryLag > walLSN) 
 		{ 
 			/*
@@ -2028,14 +2033,11 @@ void MtmCheckRecoveryCaughtUp(int nodeId, lsn_t slotLSN)
 			 */
 			MTM_LOG1("Node %d is almost caught-up: slot position %llx, WAL position %llx, active transactions %d", 
 				 nodeId, slotLSN, walLSN, Mtm->nActiveTransactions);
-			Assert(MyWalSnd != NULL); /* This function is called by WAL-sender, so it should not be NULL */
-			BIT_SET(Mtm->nodeLockerMask, nodeId-1);
-			BIT_SET(Mtm->walSenderLockerMask, MyWalSnd - WalSndCtl->walsnds);
-			Mtm->nLockers += 1;
+			BIT_SET(Mtm->originLockNodeMask, nodeId-1);
 		} else { 
 			MTM_LOG2("Continue recovery of node %d, slot position %llx, WAL position %llx,"
-			" WAL sender position %llx, lockers %d, active transactions %d", nodeId, slotLSN,
-			walLSN, MyWalSnd->sentPtr, Mtm->nLockers, Mtm->nActiveTransactions);
+					 " WAL sender position %llx, lockers %llx, active transactions %d", nodeId, slotLSN,
+					 walLSN, MyWalSnd->sentPtr, Mtm->orinLockNodeMask, Mtm->nActiveTransactions);
 		}
 	}
 	MtmUnlock();
@@ -2051,11 +2053,13 @@ bool MtmRecoveryCaughtUp(int nodeId, lsn_t walEndPtr)
 	bool caughtUp = false;
 	MtmLock(LW_EXCLUSIVE);
 	if (MtmIsRecoveredNode(nodeId) && Mtm->nActiveTransactions == 0) { 
-		if (BIT_CHECK(Mtm->nodeLockerMask, nodeId-1)) { 
+		if (BIT_CHECK(Mtm->originLockNodeMask, nodeId-1)) { 
 			MTM_LOG1("Node %d is caught-up at WAL position %llx", nodeId, walEndPtr);	
-			BIT_CLEAR(Mtm->walSenderLockerMask, MyWalSnd - WalSndCtl->walsnds);
-			BIT_CLEAR(Mtm->nodeLockerMask, nodeId-1);
-			Mtm->nLockers -= 1;
+			Assert(BIT_CHECK(Mtm->disabledNodeMask, nodeId-1));
+			BIT_CLEAR(Mtm->originLockNodeMask, nodeId-1);
+			BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
+			Mtm->nLiveNodes += 1;
+			MtmCheckQuorum();
 		} else { 
 			MTM_LOG1("Node %d is caught-up at WAL position %llx without locking cluster", nodeId, walEndPtr);	
 			/* We are lucky: caught-up without locking cluster! */
@@ -2082,19 +2086,22 @@ void MtmSwitchClusterMode(MtmNodeStatus mode)
  * Prevent start of any new transactions at this node
  */
 static void
-MtmSuspendNode(void)
+MtmLockCluster(void)
 {
 	timestamp_t delay = MIN_WAIT_TIMEOUT;
-	Assert(!MtmSuspended);
+	Assert(!MtmClusterLocked);
 	MtmLock(LW_EXCLUSIVE);
-	if (Mtm->exclusiveLock) {
+	if (BIT_CHECK(Mtm->originLockNodeMask, MtmNodeId-1)) {
 		elog(ERROR, "There is already pending exclusive lock");
 	}
-	Mtm->exclusiveLock = true;
-	MtmSuspended = true;
-	MTM_LOG2("Transaction %lld tries to suspend node at %lld insideTransaction=%d, active transactions=%lld", 
-			 (long64)MtmTx.xid, MtmGetCurrentTime(), insideTransaction, (long64)Mtm->nRunningTransactions);
-	while (Mtm->nRunningTransactions != 1) { /* I am one */
+	BIT_SET(Mtm->originLockNodeMask, MtmNodeId-1);
+	MtmClusterLocked = true;
+	MTM_LOG1("Transaction %lld tries to lock cluster at %lld, running transactions=%lld", 
+			 (long64)MtmTx.xid, MtmGetCurrentTime(), (long64)Mtm->nRunningTransactions);
+	/* Wait until everything is locked */
+	while (Mtm->nRunningTransactions != 1 /* I am one */
+		   || ((((nodemask_t)1 << Mtm->nAllNodes)-1) & ~(Mtm->currentLockNodeMask|Mtm->originLockNodeMask) & ~Mtm->disabledNodeMask) != 0)
+	{
 		MtmUnlock();
 		MtmSleep(delay);
 		if (delay*2 <= MAX_WAIT_TIMEOUT) {
@@ -2102,20 +2109,21 @@ MtmSuspendNode(void)
 		}
 		MtmLock(LW_EXCLUSIVE);
 	}
-	MTM_LOG2("Transaction %lld suspended node at %lld, LSN %lld, active transactions=%lld", (long64)MtmTx.xid, MtmGetCurrentTime(), (long64)GetXLogInsertRecPtr(), (long64)Mtm->nRunningTransactions);
+	MTM_LOG1("Transaction %lld locked cluster at %lld, LSN %lld, active transactions=%lld", 
+			 (long64)MtmTx.xid, MtmGetCurrentTime(), (long64)GetXLogInsertRecPtr(), (long64)Mtm->nRunningTransactions);
 	MtmUnlock();
 }
 
 /*
- * Resume transaction processing at node (blocked by MtmSuspendNode)
+ * Remove global cluster lock set by MtmLockCluster
  */
 static void
-MtmResumeNode(void)
+MtmUnlockCluster(void)
 {
 	MtmLock(LW_EXCLUSIVE);                                                           
-	MTM_LOG2("Transaction %lld resume node at %lld status %s LSN %lld", (long64)MtmTx.xid, MtmGetCurrentTime(),  MtmTxnStatusMnem[MtmTx.status], (long64)GetXLogInsertRecPtr());
-	Mtm->exclusiveLock = false;
-	MtmSuspended = false;
+	MTM_LOG1("Transaction %lld unlock cluster at %lld status %s LSN %lld", (long64)MtmTx.xid, MtmGetCurrentTime(),  MtmTxnStatusMnem[MtmTx.status], (long64)GetXLogInsertRecPtr());
+	BIT_CLEAR(Mtm->originLockNodeMask, MtmNodeId-1);
+	MtmClusterLocked = false;
 	MtmUnlock();
 }
 	
@@ -2128,33 +2136,15 @@ static void
 MtmCheckClusterLock()
 {	
 	timestamp_t delay = MIN_WAIT_TIMEOUT;
-	while (true)
-	{
-		if (Mtm->exclusiveLock || (Mtm->globalLockerMask | Mtm->walSenderLockerMask)) {
-			/* some "almost cautch-up" wal-senders are still working. */
-			/* Do not start new transactions until them are completed. */
-			MtmUnlock();
-			MtmSleep(delay);
-			if (delay*2 <= MAX_WAIT_TIMEOUT) { 
-				delay *= 2;
-			}
-			MtmLock(LW_EXCLUSIVE);
-		} else { 
-			if (Mtm->nodeLockerMask != 0) {  
-				/* All lockers have synchronized their logs */
-				/* Remove lock and mark them as recovered */
-				MTM_LOG1("Complete recovery of %d nodes (node mask %llx)", Mtm->nLockers, Mtm->nodeLockerMask);
-				Assert(Mtm->walSenderLockerMask == 0);
-				Assert((Mtm->nodeLockerMask & Mtm->disabledNodeMask) == Mtm->nodeLockerMask);
-				Mtm->disabledNodeMask &= ~Mtm->nodeLockerMask;
-				Mtm->nConfigChanges += 1;
-				Mtm->nLiveNodes += Mtm->nLockers;
-				Mtm->nLockers = 0;
-				Mtm->nodeLockerMask = 0;
-				MtmCheckQuorum();
-			}
-			break;
+	while (Mtm->originLockNodeMask | Mtm->inducedLockNodeMask) {
+		/* some "almost cautch-up" wal-senders are still working. */
+		/* Do not start new transactions until them are completed. */
+		MtmUnlock();
+		MtmSleep(delay);
+		if (delay*2 <= MAX_WAIT_TIMEOUT) { 
+			delay *= 2;
 		}
+		MtmLock(LW_EXCLUSIVE);
 	}
 }	
 
@@ -2548,13 +2538,11 @@ static void MtmInitialize()
 		Mtm->stoppedNodeMask = 0;
 		Mtm->pglogicalReceiverMask = 0;
 		Mtm->pglogicalSenderMask = 0;
-		Mtm->walSenderLockerMask = 0;
-		Mtm->globalLockerMask = 0;
-		Mtm->nodeLockerMask = 0;
+		Mtm->inducedLockNodeMask = 0;
+		Mtm->currentLockNodeMask = 0;
+		Mtm->originLockNodeMask = 0;
 		Mtm->reconnectMask = 0;
 		Mtm->recoveredLSN = INVALID_LSN;
-		Mtm->nLockers = 0;
-		Mtm->exclusiveLock = false;
 		Mtm->nActiveTransactions = 0;
 		Mtm->nRunningTransactions = 0;
 		Mtm->votingTransactions = NULL;
@@ -3326,7 +3314,7 @@ void MtmReceiverStarted(int nodeId)
 		if (++Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1 
 			&& (Mtm->status == MTM_RECOVERED || Mtm->status == MTM_CONNECTED)) 
 		{ 
-			BIT_CLEAR(Mtm->nodeLockerMask, MtmNodeId-1); /* recovery is completed: release cluster lock */
+			BIT_CLEAR(Mtm->originLockNodeMask, MtmNodeId-1); /* recovery is completed: release cluster lock */
 			MtmSwitchClusterMode(MTM_ONLINE);
 		}
 	}
@@ -3656,7 +3644,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 			&& (Mtm->status == MTM_RECOVERED || Mtm->status == MTM_CONNECTED)) 
 		{ 
 			/* All logical replication connections from and to this node are established, so we can switch cluster to online mode */
-			BIT_CLEAR(Mtm->nodeLockerMask, MtmNodeId-1); /* recovery is completed: release cluster lock */
+			BIT_CLEAR(Mtm->originLockNodeMask, MtmNodeId-1); /* recovery is completed: release cluster lock */
 			MtmSwitchClusterMode(MTM_ONLINE);
 		}
 	}
@@ -4070,7 +4058,7 @@ mtm_get_nodes_state(PG_FUNCTION_ARGS)
 	usrfctx->values[3] = BoolGetDatum(BIT_CHECK(Mtm->stalledNodeMask, usrfctx->nodeId-1));
 	usrfctx->values[4] = BoolGetDatum(BIT_CHECK(Mtm->stoppedNodeMask, usrfctx->nodeId-1));
 
-	usrfctx->values[5] = BoolGetDatum(BIT_CHECK(Mtm->nodeLockerMask, usrfctx->nodeId-1));
+	usrfctx->values[5] = BoolGetDatum(BIT_CHECK(Mtm->originLockNodeMask, usrfctx->nodeId-1));
 	lag = MtmGetSlotLag(usrfctx->nodeId);
 	usrfctx->values[6] = Int64GetDatum(lag);
 	usrfctx->nulls[6] = lag < 0;
@@ -4196,7 +4184,7 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
 	values[1] = CStringGetTextDatum(MtmNodeStatusMnem[Mtm->status]);
 	values[2] = Int64GetDatum(Mtm->disabledNodeMask);
 	values[3] = Int64GetDatum(SELF_CONNECTIVITY_MASK);
-	values[4] = Int64GetDatum(Mtm->nodeLockerMask);
+	values[4] = Int64GetDatum(Mtm->originLockNodeMask);
 	values[5] = Int32GetDatum(Mtm->nLiveNodes);
 	values[6] = Int32GetDatum(Mtm->nAllNodes);
 	values[7] = Int32GetDatum((int)Mtm->pool.active);
@@ -5032,7 +5020,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 
 	    case T_TruncateStmt:
 			skipCommand = false;
-			MtmSuspendNode();
+			MtmLockCluster();
 			break;
 
 		case T_DropStmt:
