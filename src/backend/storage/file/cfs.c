@@ -556,7 +556,7 @@ void cfs_lock_file(FileMap* map, char const* file_path)
 		} 
 		else 
 		{
-			if (!pg_atomic_unlocked_test_flag(&cfs_state->gc_started))
+			if (pg_atomic_unlocked_test_flag(&cfs_state->gc_started))
 			{
 				if (++n_attempts > MAX_LOCK_ATTEMPTS) 
 				{
@@ -566,6 +566,7 @@ void cfs_lock_file(FileMap* map, char const* file_path)
 					 * We should revoke the the lock to allow access to this segment.
 					 */
 					revokeLock = true;
+					elog(WARNING, "CFS revokes lock on file %s\n", file_path);
 				}
 			}
 			else
@@ -582,6 +583,8 @@ void cfs_lock_file(FileMap* map, char const* file_path)
 			 */
 			char* map_bck_path = psprintf("%s.cfm.bck", file_path);
 			char* file_bck_path = psprintf("%s.bck", file_path);
+
+			elog(WARNING, "CFS indicates that GC of %s was interrupted: try to perform recovery", file_path);
 
 			if (access(file_bck_path, R_OK) != 0)
 			{
@@ -742,6 +745,7 @@ static bool cfs_gc_file(char* map_path, bool noerror)
 				/* Uhhh... looks like last GC was interrupted.
 				 * Try to recover file
 				 */
+				elog(WARNING, "CFS indicates that last GC of %s was interrupted: perform recovery", file_bck_path);
 				if (access(file_bck_path, R_OK) != 0)
 				{
 					/* There is no backup file: new map should be constructed */
