@@ -3537,6 +3537,7 @@ void SuspendTransaction(void)
 		sus->xactStartTimestamp = xactStartTimestamp;
 		sus->stmtStartTimestamp = stmtStartTimestamp;
 		sus->xactStopTimestamp = xactStopTimestamp;
+		xactStartTimestamp = stmtStartTimestamp;
 
 		sus->prepareGID = prepareGID;
 		sus->forceSyncCommit = forceSyncCommit;
