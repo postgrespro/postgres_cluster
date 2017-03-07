@@ -130,7 +130,7 @@ ProcGlobalSemas(void)
 	 * We need a sema per backend (including autovacuum), plus one for each
 	 * auxiliary process.
 	 */
-	return MaxBackends + NUM_AUXILIARY_PROCS;
+	return MaxBackends + NUM_AUXILIARY_PROCS + NUM_EXTRA_SEMAPHORES;
 }
 
 /*

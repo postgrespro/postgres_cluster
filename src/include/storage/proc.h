@@ -260,6 +260,10 @@ extern PGPROC *PreparedXactProcs;
  */
 #define NUM_AUXILIARY_PROCS		4
 
+/*
+ * Number of extra semaphores used by Postgres (right now 3 semaphores are used by multimaster)
+ */
+#define NUM_EXTRA_SEMAPHORES    4
 
 /* configurable options */
 extern int	PGDLLIMPORT DeadlockTimeout;
