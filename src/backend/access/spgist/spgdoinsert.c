@@ -1116,9 +1116,8 @@ doPickSplit(Relation index, SpGistState *state,
 	/* Here we begin making the changes to the target pages */
 	if (newLeafBuffer != InvalidBuffer)
 		ptrack_add_block(index, BufferGetBlockNumber(newLeafBuffer));
-	if (saveCurrent.buffer != InvalidBuffer)
+	if (BufferIsValid(saveCurrent.buffer))
 		ptrack_add_block(index, BufferGetBlockNumber(saveCurrent.buffer));
-	ptrack_add_block(index, BufferGetBlockNumber(current->buffer));
 	if (parent->buffer != InvalidBuffer)
 		ptrack_add_block(index, BufferGetBlockNumber(parent->buffer));
 	START_CRIT_SECTION();
