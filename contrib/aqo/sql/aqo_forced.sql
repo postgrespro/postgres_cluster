@@ -20,7 +20,7 @@ ANALYZE aqo_test1;
 
 CREATE EXTENSION aqo;
 
-SET aqo.mode = 'manual';
+SET aqo.mode = 'controlled';
 
 EXPLAIN (COSTS FALSE)
 SELECT * FROM aqo_test0

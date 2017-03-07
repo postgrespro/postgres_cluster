@@ -961,7 +961,13 @@ GetNewMultiXactId(int nmembers, MultiXactOffset *offset)
 	 * GetMultiXactIdMembers() for motivation.
 	 */
 	nextOffset = MultiXactState->nextOffset;
-	*offset = nextOffset;
+	if (nextOffset == 0)
+	{
+		*offset = 1;
+		nmembers++;				/* allocate member slot 0 too */
+	}
+	else
+		*offset = nextOffset;
 
 	ExtendMultiXactMember(nextOffset, nmembers);
 

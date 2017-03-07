@@ -2,7 +2,8 @@
  *
  * pg_probackup.h: Backup/Recovery manager for PostgreSQL.
  *
- * Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2015-2017, Postgres Professional
  *
  *-------------------------------------------------------------------------
  */
@@ -40,6 +41,7 @@
 #define PG_TBLSPC_DIR			"pg_tblspc"
 #define BACKUP_CONF_FILE		"backup.conf"
 #define BACKUP_CATALOG_CONF_FILE	"pg_probackup.conf"
+#define BACKUP_CATALOG_PID		"pg_probackup.pid"
 #define MKDIRS_SH_FILE			"mkdirs.sh"
 #define DATABASE_FILE_LIST		"file_database.txt"
 #define PG_BACKUP_LABEL_FILE	"backup_label"
@@ -222,9 +224,6 @@ extern pgBackup current;
 /* exclude directory list for $PGDATA file listing */
 extern const char *pgdata_exclude_dir[];
 
-/* backup file list from non-snapshot */
-extern parray *backup_files_list;
-
 extern int num_threads;
 extern bool stream_wal;
 extern bool from_replica;
@@ -263,6 +262,8 @@ extern pgRecoveryTarget *checkIfCreateRecoveryConf(
 	const char *target_xid,
 	const char *target_inclusive);
 
+extern void opt_tablespace_map(pgut_option *opt, const char *arg);
+
 /* in init.c */
 extern int do_init(void);
 
@@ -272,7 +273,7 @@ extern int do_retention_show(void);
 
 /* in delete.c */
 extern int do_delete(time_t backup_id);
-extern int do_deletewal(time_t backup_id, bool strict);
+extern int do_deletewal(time_t backup_id, bool strict, bool need_catalog_lock);
 extern int do_retention_purge(void);
 
 /* in fetch.c */
@@ -288,7 +289,7 @@ extern int do_validate(time_t backup_id,
 					   const char *target_inclusive,
 					   TimeLineID target_tli);
 extern void do_validate_last(void);
-extern void pgBackupValidate(pgBackup *backup,
+extern bool pgBackupValidate(pgBackup *backup,
 							 bool size_only,
 							 bool for_get_timeline);
 
@@ -300,7 +301,6 @@ extern pgBackup *catalog_get_last_data_backup(parray *backup_list,
 											  TimeLineID tli);
 
 extern int catalog_lock(bool check_catalog);
-extern void catalog_unlock(void);
 
 extern void pgBackupWriteConfigSection(FILE *out, pgBackup *backup);
 extern void pgBackupWriteResultSection(FILE *out, pgBackup *backup);
@@ -314,14 +314,16 @@ extern int pgBackupCompareIdDesc(const void *f1, const void *f2);
 /* in dir.c */
 extern void dir_list_file(parray *files, const char *root, bool exclude,
 						  bool omit_symlink, bool add_root);
-extern void dir_list_file_internal(parray *files, const char *root, bool exclude,
-						  bool omit_symlink, bool add_root, parray *black_list);
-extern void dir_print_mkdirs_sh(FILE *out, const parray *files, const char *root);
-extern void dir_print_file_list(FILE *out, const parray *files, const char *root, const char *prefix);
+extern void list_data_directories(parray *files, const char *path,
+								  bool is_root, bool exclude);
+
+extern void read_tablespace_map(parray *files, const char *backup_dir);
+
+extern void print_file_list(FILE *out, const parray *files, const char *root);
 extern parray *dir_read_file_list(const char *root, const char *file_txt);
 
 extern int dir_create_dir(const char *path, mode_t mode);
-extern void dir_copy_files(const char *from_root, const char *to_root);
+extern bool dir_is_empty(const char *path);
 
 extern pgFile *pgFileNew(const char *path, bool omit_symlink);
 extern void pgFileDelete(pgFile *file);
@@ -329,6 +331,7 @@ extern void pgFileFree(void *file);
 extern pg_crc32 pgFileGetCRC(pgFile *file);
 extern int pgFileComparePath(const void *f1, const void *f2);
 extern int pgFileComparePathDesc(const void *f1, const void *f2);
+extern int pgFileCompareLinked(const void *f1, const void *f2);
 extern int pgFileCompareSize(const void *f1, const void *f2);
 extern int pgFileCompareMtime(const void *f1, const void *f2);
 extern int pgFileCompareMtimeDesc(const void *f1, const void *f2);

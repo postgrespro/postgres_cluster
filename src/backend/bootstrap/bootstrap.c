@@ -250,28 +250,28 @@ AuxiliaryProcessMain(int argc, char *argv[])
 				bootstrap_data_checksum_version = PG_DATA_CHECKSUM_VERSION;
 				break;
 			case 'm':
-				if (sscanf(optarg, HEX_XID_FMT, &start_mx_id) != 1)
-				{
-					fprintf(stderr, "%s: invalid hex value of multixact-id\n", progname);
-					exit(1);
-				}
+				if (sscanf(optarg, HEX_XID_FMT, &start_mx_id) != 1
+				 || !StartMultiXactIdIsValid(start_mx_id))
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("invalid start multixact id value")));
 				break;
 			case 'o':
-				if (sscanf(optarg, XID_FMT, &start_mx_offset) != 1)
-				{
-					fprintf(stderr, "%s: invalid decimal value of multixact-offset\n", progname);
-					exit(1);
-				}
+				if (sscanf(optarg, XID_FMT, &start_mx_offset) != 1
+				 || !StartMultiXactOffsetIsValid(start_mx_offset))
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("invalid start multixact offset value")));
 				break;
 			case 'r':
 				strlcpy(OutputFileName, optarg, MAXPGPATH);
 				break;
 			case 'X':
-				if (sscanf(optarg, HEX_XID_FMT, &start_xid) != 1)
-				{
-					fprintf(stderr, "%s: invalid hex value of xid\n", progname);
-					exit(1);
-				}
+				if (sscanf(optarg, HEX_XID_FMT, &start_xid) != 1
+				 || !StartTransactionIdIsValid(start_xid))
+					ereport(ERROR,
+							(errcode(ERRCODE_SYNTAX_ERROR),
+							 errmsg("invalid start xid value")));
 				break;
 			case 'x':
 				MyAuxProcType = atoi(optarg);

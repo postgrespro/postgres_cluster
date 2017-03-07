@@ -5,9 +5,10 @@ SET search_path TO schedule;
 
 CREATE TYPE job_status_t AS ENUM ('working', 'done', 'error');
 CREATE TYPE job_at_status_t AS ENUM ('submitted', 'processing', 'done');
+CREATE SEQUENCE schedule.at_jobs_submitted_id_seq;
 
 CREATE TABLE at_jobs_submitted(
-   id SERIAL PRIMARY KEY,
+   id int PRIMARY KEY,
    node text,
    name text,
    comments text,
@@ -36,6 +37,8 @@ CREATE TABLE at_jobs_done  (like at_jobs_process including all);
 ALTER TABLE at_jobs_done ADD status boolean;
 ALTER TABLE at_jobs_done ADD reason text;
 ALTER TABLE at_jobs_done ADD done_time timestamp with time zone default now();
+
+ALTER TABLE at_jobs_submitted ALTER id SET default nextval('schedule.at_jobs_submitted_id_seq');
 
 
 CREATE TABLE cron(
@@ -281,7 +284,12 @@ DECLARE
   cron_id INTEGER;
 BEGIN
   cron_id := NEW.id; 
-  IF NOT NEW.active OR NEW.broken OR NEW.rule <> OLD.rule OR NEW.postpone <> OLD.postpone  THEN
+  IF NOT NEW.active OR NEW.broken OR
+  	coalesce(NEW.rule <> OLD.rule, true) OR
+	coalesce(NEW.postpone <> OLD.postpone, true)  OR
+	coalesce(NEW.start_date <> OLD.start_date, true) OR
+	coalesce(NEW.end_date <> OLD.end_date, true)
+  THEN
      DELETE FROM at WHERE cron = cron_id AND active = false;
   END IF;
   RETURN OLD;
@@ -1203,9 +1211,9 @@ BEGIN
 	END IF;
 
 	IF usename = '___all___' THEN
-		sql_cmd := 'SELECT * FROM log as l , cron as cron WHERE cron.id = l.cron';
+		sql_cmd := 'SELECT * FROM log as l LEFT OUTER JOIN cron ON cron.id = l.cron';
 	ELSE
-		sql_cmd := 'SELECT * FROM log as l , cron as cron WHERE cron.executor = ''' || usename || ''' AND cron.id = l.cron';
+		sql_cmd := 'SELECT * FROM log as l LEFT OUTER JOIN cron ON cron.executor = ''' || usename || ''' AND cron.id = l.cron';
 	END IF;
 
 	FOR ii IN EXECUTE sql_cmd LOOP
@@ -1338,7 +1346,7 @@ CREATE VIEW all_job_status AS
 		attempt, resubmit_limit, postpone as max_wait_interval,
 		max_run_time as max_duration, submit_time,
 		start_time, status as is_success, reason as error, done_time,
-		'processing'::job_at_status_t status
+		'done'::job_at_status_t status
 	FROM schedule.at_jobs_done 
 		UNION 
 	SELECT
