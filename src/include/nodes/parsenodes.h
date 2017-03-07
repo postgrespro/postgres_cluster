@@ -1428,6 +1428,39 @@ typedef enum ObjectType
 } ObjectType;
 
 /* ----------------------
+ *		///
+ *
+ * Partition type defines is it HASH or RANGE partition, partitioning key,
+ * interval (for RANGE) or partitions count (for HASH)
+ * ----------------------
+ */
+
+typedef enum PartitionType
+{
+	P_HASH = 1,
+	P_RANGE
+} PartitionType;
+
+typedef struct PartitionInfo
+{
+	NodeTag			type;
+	PartitionType	partition_type;		/* partition type */
+	Node		   *key;				/* ColumnRef (Expr in future) */
+	uint32			partitions_count;	/* for PT_HASH only */
+	Node		   *interval;			/* for PT_RANGE only */
+	Node		   *start_value;		/* for PT_RANGE only */
+	List		   *partitions;			/* List of PartitionNodes */
+} PartitionInfo;
+
+typedef struct PartitionNode
+{
+	NodeTag			type;
+	RangeVar	   *relation;
+	Node		   *upper_bound;		/* For RANGE partitions only */
+	char		   *tablespace;
+} PartitionNode;
+
+/* ----------------------
  *		Create Schema Statement
  *
  * NOTE: the schemaElts list contains raw parsetrees for component statements
@@ -1527,7 +1560,15 @@ typedef enum AlterTableType
 	AT_DisableRowSecurity,		/* DISABLE ROW SECURITY */
 	AT_ForceRowSecurity,		/* FORCE ROW SECURITY */
 	AT_NoForceRowSecurity,		/* NO FORCE ROW SECURITY */
-	AT_GenericOptions			/* OPTIONS (...) */
+	AT_GenericOptions,			/* OPTIONS (...) */
+
+	AT_AddPartition,			/* ADD PARTITION */
+	AT_MergePartitions,			/* MERGE PARTITIONS */
+	AT_SplitPartition,			/* SPLIT PARTITION */
+	AT_RenamePartition,			/* RENAME PARTITION */
+	AT_DropPartition,			/* DROP PARTITION */
+	AT_MovePartition,			/* MOVE PARTITION */
+	AT_SetInterval				/* SET INTERVAL (...) */
 } AlterTableType;
 
 typedef struct ReplicaIdentityStmt
@@ -1548,6 +1589,8 @@ typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */
 								 * constraint, or parent table */
 	DropBehavior behavior;		/* RESTRICT or CASCADE for DROP cases */
 	bool		missing_ok;		/* skip error if missing? */
+
+	List	   *partitions;		/* For partitions commands */
 } AlterTableCmd;
 
 
@@ -1735,6 +1778,7 @@ typedef struct VariableShowStmt
 	char	   *name;
 } VariableShowStmt;
 
+
 /* ----------------------
  *		Create Table Statement
  *
@@ -1759,7 +1803,9 @@ typedef struct CreateStmt
 	OnCommitAction oncommit;	/* what do we do at COMMIT? */
 	char	   *tablespacename; /* table space to use, or NULL */
 	bool		if_not_exists;	/* just do nothing if it already exists? */
+	PartitionInfo *partition_info;
 } CreateStmt;
+
 
 /* ----------
  * Definitions for constraints in CreateStmt
@@ -3117,5 +3163,16 @@ typedef struct WaitLSNStmt
 	char	   *lsn;			/* Taraget LSN to wait for */
 	int			delay;			/* Delay to wait for LSN*/
 } WaitLSNStmt;
+
+/*
+ * ALTER TABLE ... PARTITION BY statement
+ */
+typedef struct PartitionStmt
+{
+	NodeTag		type;
+	RangeVar   *relation;
+	PartitionInfo *pinfo;
+	bool		concurrent;
+} PartitionStmt;
 
 #endif   /* PARSENODES_H */

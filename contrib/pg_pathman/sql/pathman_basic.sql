@@ -292,90 +292,6 @@ SELECT * FROM test.hash_varchar WHERE val = '12'::TEXT;
 
 DROP TABLE test.hash_varchar CASCADE;
 
-/*
- * Test CTE query
- */
-EXPLAIN (COSTS OFF)
-	WITH ttt AS (SELECT * FROM test.range_rel WHERE dt >= '2015-02-01' AND dt < '2015-03-15')
-SELECT * FROM ttt;
-
-EXPLAIN (COSTS OFF)
-	WITH ttt AS (SELECT * FROM test.hash_rel WHERE value = 2)
-SELECT * FROM ttt;
-
-/*
- * Test CTE query - by @parihaaraka (add varno to WalkerContext)
- */
-CREATE TABLE test.cte_del_xacts (id BIGSERIAL PRIMARY KEY, pdate DATE NOT NULL);
-INSERT INTO test.cte_del_xacts (pdate) SELECT gen_date FROM generate_series('2016-01-01'::date, '2016-04-9'::date, '1 day') AS gen_date;
-
-create table test.cte_del_xacts_specdata
-(
-	tid BIGINT PRIMARY KEY,
-	test_mode SMALLINT,
-	state_code SMALLINT NOT NULL DEFAULT 8,
-	regtime TIMESTAMP WITHOUT TIME ZONE NOT NULL
-);
-INSERT INTO test.cte_del_xacts_specdata VALUES(1, 1, 1, current_timestamp); /* for subquery test */
-
-/* create 2 partitions */
-SELECT pathman.create_range_partitions('test.cte_del_xacts'::regclass, 'pdate', '2016-01-01'::date, '50 days'::interval);
-
-EXPLAIN (COSTS OFF)
-WITH tmp AS (
-	SELECT tid, test_mode, regtime::DATE AS pdate, state_code
-	FROM test.cte_del_xacts_specdata)
-DELETE FROM test.cte_del_xacts t USING tmp
-WHERE t.id = tmp.tid AND t.pdate = tmp.pdate AND tmp.test_mode > 0;
-
-SELECT pathman.drop_partitions('test.cte_del_xacts'); /* now drop partitions */
-
-/* create 1 partition */
-SELECT pathman.create_range_partitions('test.cte_del_xacts'::regclass, 'pdate', '2016-01-01'::date, '1 year'::interval);
-
-/* parent enabled! */
-SELECT pathman.set_enable_parent('test.cte_del_xacts', true);
-EXPLAIN (COSTS OFF)
-WITH tmp AS (
-	SELECT tid, test_mode, regtime::DATE AS pdate, state_code
-	FROM test.cte_del_xacts_specdata)
-DELETE FROM test.cte_del_xacts t USING tmp
-WHERE t.id = tmp.tid AND t.pdate = tmp.pdate AND tmp.test_mode > 0;
-
-/* parent disabled! */
-SELECT pathman.set_enable_parent('test.cte_del_xacts', false);
-EXPLAIN (COSTS OFF)
-WITH tmp AS (
-	SELECT tid, test_mode, regtime::DATE AS pdate, state_code
-	FROM test.cte_del_xacts_specdata)
-DELETE FROM test.cte_del_xacts t USING tmp
-WHERE t.id = tmp.tid AND t.pdate = tmp.pdate AND tmp.test_mode > 0;
-
-/* create stub pl/PgSQL function */
-CREATE OR REPLACE FUNCTION test.cte_del_xacts_stab(name TEXT)
-RETURNS smallint AS
-$$
-begin
-	return 2::smallint;
-end
-$$
-LANGUAGE plpgsql STABLE;
-
-/* test subquery planning */
-WITH tmp AS (
-	SELECT tid FROM test.cte_del_xacts_specdata
-	WHERE state_code != test.cte_del_xacts_stab('test'))
-SELECT * FROM test.cte_del_xacts t JOIN tmp ON t.id = tmp.tid;
-
-/* test subquery planning (one more time) */
-WITH tmp AS (
-	SELECT tid FROM test.cte_del_xacts_specdata
-	WHERE state_code != test.cte_del_xacts_stab('test'))
-SELECT * FROM test.cte_del_xacts t JOIN tmp ON t.id = tmp.tid;
-
-DROP FUNCTION test.cte_del_xacts_stab(TEXT);
-DROP TABLE test.cte_del_xacts, test.cte_del_xacts_specdata CASCADE;
-
 
 /*
  * Test split and merge
@@ -399,6 +315,11 @@ EXPLAIN (COSTS OFF) SELECT * FROM test.num_range_rel WHERE id >= 4000;
 SELECT pathman.prepend_range_partition('test.num_range_rel');
 EXPLAIN (COSTS OFF) SELECT * FROM test.num_range_rel WHERE id < 0;
 SELECT pathman.drop_range_partition('test.num_range_rel_7');
+
+SELECT pathman.drop_range_partition_expand_next('test.num_range_rel_4');
+SELECT * FROM pathman.pathman_partition_list WHERE parent = 'test.num_range_rel'::regclass;
+SELECT pathman.drop_range_partition_expand_next('test.num_range_rel_6');
+SELECT * FROM pathman.pathman_partition_list WHERE parent = 'test.num_range_rel'::regclass;
 
 SELECT pathman.append_range_partition('test.range_rel');
 SELECT pathman.prepend_range_partition('test.range_rel');
@@ -424,6 +345,20 @@ CREATE TABLE test.range_rel_test2 (
 	id  SERIAL PRIMARY KEY,
 	dt  TIMESTAMP);
 SELECT pathman.attach_range_partition('test.range_rel', 'test.range_rel_test2', '2013-01-01'::DATE, '2014-01-01'::DATE);
+
+/* Half open ranges */
+SELECT pathman.add_range_partition('test.range_rel', NULL, '2014-12-01'::DATE, 'test.range_rel_minus_infinity');
+SELECT pathman.add_range_partition('test.range_rel', '2015-06-01'::DATE, NULL, 'test.range_rel_plus_infinity');
+SELECT pathman.append_range_partition('test.range_rel');
+SELECT pathman.prepend_range_partition('test.range_rel');
+DROP TABLE test.range_rel_minus_infinity;
+CREATE TABLE test.range_rel_minus_infinity (LIKE test.range_rel INCLUDING ALL);
+SELECT pathman.attach_range_partition('test.range_rel', 'test.range_rel_minus_infinity', NULL, '2014-12-01'::DATE);
+SELECT * FROM pathman.pathman_partition_list WHERE parent = 'test.range_rel'::REGCLASS;
+INSERT INTO test.range_rel (dt) VALUES ('2012-06-15');
+INSERT INTO test.range_rel (dt) VALUES ('2015-12-15');
+EXPLAIN (COSTS OFF) SELECT * FROM test.range_rel WHERE dt < '2015-01-01';
+EXPLAIN (COSTS OFF) SELECT * FROM test.range_rel WHERE dt >= '2015-05-01';
 
 /*
  * Zero partitions count and adding partitions with specified name
@@ -622,17 +557,6 @@ SELECT count(*) FROM bool_test WHERE b = false;	/* 75 values */
 SELECT count(*) FROM bool_test WHERE b = true;	/* 25 values */
 DROP TABLE bool_test CASCADE;
 
-/* Test foreign keys */
-CREATE TABLE test.messages(id SERIAL PRIMARY KEY, msg TEXT);
-CREATE TABLE test.replies(id SERIAL PRIMARY KEY, message_id INTEGER REFERENCES test.messages(id),  msg TEXT);
-INSERT INTO test.messages SELECT g, md5(g::text) FROM generate_series(1, 10) as g;
-INSERT INTO test.replies SELECT g, g, md5(g::text) FROM generate_series(1, 10) as g;
-SELECT create_range_partitions('test.messages', 'id', 1, 100, 2);
-ALTER TABLE test.replies DROP CONSTRAINT replies_message_id_fkey;
-SELECT create_range_partitions('test.messages', 'id', 1, 100, 2);
-EXPLAIN (COSTS OFF) SELECT * FROM test.messages;
-DROP TABLE test.messages, test.replies CASCADE;
-
 /* Special test case (quals generation) -- fixing commit f603e6c5 */
 CREATE TABLE test.special_case_1_ind_o_s(val serial, comment text);
 INSERT INTO test.special_case_1_ind_o_s SELECT generate_series(1, 200), NULL;
@@ -659,6 +583,19 @@ SELECT append_range_partition('test.index_on_childs', 'test.index_on_childs_4k_5
 SELECT set_enable_parent('test.index_on_childs', true);
 VACUUM ANALYZE test.index_on_childs;
 EXPLAIN (COSTS OFF) SELECT * FROM test.index_on_childs WHERE c1 > 100 AND c1 < 2500 AND c2 = 500;
+
+/* Test create_range_partitions() + partition_names */
+CREATE TABLE test.provided_part_names(id INT NOT NULL);
+INSERT INTO test.provided_part_names SELECT generate_series(1, 10);
+SELECT create_hash_partitions('test.provided_part_names', 'id', 2,
+							  partition_names := ARRAY['p1', 'p2']::TEXT[]); /* ok */
+/* list partitions */
+SELECT partition FROM pathman_partition_list
+WHERE parent = 'test.provided_part_names'::REGCLASS
+ORDER BY partition;
+
+DROP TABLE test.provided_part_names CASCADE;
+
 
 DROP SCHEMA test CASCADE;
 DROP EXTENSION pg_pathman CASCADE;

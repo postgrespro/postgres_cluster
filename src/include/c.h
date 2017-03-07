@@ -390,12 +390,16 @@ typedef double float8;
 typedef Oid regproc;
 typedef regproc RegProcedure;
 
+#define MAX_START_XID	UINT64CONST(0x3fffffffffffffff)
+
 typedef uint64 TransactionId;
 
 #define TransactionIdPrecedes(id1, id2) ((id1) < (id2))
 #define TransactionIdPrecedesOrEquals(id1, id2) ((id1) <= (id2))
 #define TransactionIdFollows(id1, id2) ((id1) > (id2))
 #define TransactionIdFollowsOrEquals(id1, id2) ((id1) >= (id2))
+
+#define StartTransactionIdIsValid(start_xid)	((start_xid) <= MAX_START_XID)
 
 typedef uint32 ShortTransactionId;
 
@@ -407,6 +411,7 @@ typedef uint64 SubTransactionId;
 #define TopSubTransactionId			((SubTransactionId) 1)
 
 #define XID_FMT UINT64_FORMAT
+#define HEX_XID_FMT "%" INT64_MODIFIER "x"
 
 /* MultiXactId must be equivalent to TransactionId, to fit in t_xmax */
 typedef TransactionId MultiXactId;
@@ -416,7 +421,11 @@ typedef TransactionId MultiXactId;
 #define MultiXactIdFollows(id1, id2) ((id1) > (id2))
 #define MultiXactIdFollowsOrEquals(id1, id2) ((id1) >= (id2))
 
+#define StartMultiXactIdIsValid(start_mx_id)	((start_mx_id) <= MAX_START_XID)
+
 typedef uint64 MultiXactOffset;
+
+#define StartMultiXactOffsetIsValid(start_mx_offset)	((start_mx_offset) <= MAX_START_XID)
 
 typedef uint32 CommandId;
 
@@ -984,7 +993,7 @@ typedef NameData *Name;
 /* gettext domain name mangling */
 
 /*
- * To better support parallel installations of major PostgeSQL
+ * To better support parallel installations of major PostgreSQL
  * versions as well as parallel installations of major library soname
  * versions, we mangle the gettext domain name by appending those
  * version numbers.  The coding rule ought to be that wherever the

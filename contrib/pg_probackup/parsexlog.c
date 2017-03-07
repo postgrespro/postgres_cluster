@@ -5,6 +5,7 @@
  *
  * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
+ * Portions Copyright (c) 2015-2017, Postgres Professional
  *
  *-------------------------------------------------------------------------
  */
@@ -17,6 +18,7 @@
 
 #include "commands/dbcommands_xlog.h"
 #include "catalog/storage_xlog.h"
+#include "access/transam.h"
 
 /*
  * RmgrNames is an array of resource manager names, to make error messages
@@ -30,10 +32,12 @@ static const char *RmgrNames[RM_MAX_ID + 1] = {
 };
 
 static void extractPageInfo(XLogReaderState *record);
+static bool getRecordTimestamp(XLogReaderState *record, TimestampTz *recordXtime);
 
 static int	xlogreadfd = -1;
 static XLogSegNo xlogreadsegno = -1;
 static char xlogfpath[MAXPGPATH];
+static bool xlogexists = false;
 
 typedef struct XLogPageReadPrivate
 {
@@ -81,8 +85,8 @@ extractPageMap(const char *archivedir, XLogRecPtr startpoint, TimeLineID tli,
 						 errormsg);
 			else
 				elog(ERROR, "could not read WAL record at %X/%X",
-						 (uint32) (startpoint >> 32),
-						 (uint32) (startpoint));
+						 (uint32) (errptr >> 32),
+						 (uint32) (errptr));
 		}
 
 		extractPageInfo(xlogreader);
@@ -96,6 +100,142 @@ extractPageMap(const char *archivedir, XLogRecPtr startpoint, TimeLineID tli,
 	{
 		close(xlogreadfd);
 		xlogreadfd = -1;
+		xlogexists = false;
+	}
+}
+
+void
+validate_wal(pgBackup *backup,
+			 const char *archivedir,
+			 time_t target_time,
+			 TransactionId target_xid,
+			 TimeLineID tli)
+{
+	XLogRecPtr	startpoint = backup->start_lsn;
+	XLogRecord *record;
+	XLogReaderState *xlogreader;
+	char	   *errormsg;
+	XLogPageReadPrivate private;
+	TransactionId last_xid = InvalidTransactionId;
+	TimestampTz last_time = 0;
+	char		last_timestamp[100],
+				target_timestamp[100];
+	bool		all_wal = false,
+				got_endpoint = false;
+
+	private.archivedir = archivedir;
+	private.tli = tli;
+	xlogreader = XLogReaderAllocate(&SimpleXLogPageRead, &private);
+	if (xlogreader == NULL)
+		elog(ERROR, "out of memory");
+
+	/* We will check it in the end */
+	xlogfpath[0] = '\0';
+
+	while (true)
+	{
+		bool timestamp_record;
+
+		record = XLogReadRecord(xlogreader, startpoint, &errormsg);
+		if (record == NULL)
+		{
+			if (errormsg)
+				elog(WARNING, "%s", errormsg);
+
+			break;
+		}
+
+		/* Got WAL record at stop_lsn */
+		if (xlogreader->ReadRecPtr == backup->stop_lsn)
+			got_endpoint = true;
+
+		timestamp_record = getRecordTimestamp(xlogreader, &last_time);
+		if (XLogRecGetXid(xlogreader) != InvalidTransactionId)
+			last_xid = XLogRecGetXid(xlogreader);
+
+		/* Check target xid */
+		if (TransactionIdIsValid(target_xid) && target_xid == last_xid)
+		{
+			all_wal = true;
+			break;
+		}
+		/* Check target time */
+		else if (target_time != 0 && timestamp_record && timestamptz_to_time_t(last_time) >= target_time)
+		{
+			all_wal = true;
+			break;
+		}
+		/* If there are no target xid and target time */
+		else if (!TransactionIdIsValid(target_xid) && target_time == 0 &&
+			xlogreader->ReadRecPtr == backup->stop_lsn)
+		{
+			all_wal = true;
+			/* We don't stop here. We want to get last_xid and last_time */
+		}
+
+		startpoint = InvalidXLogRecPtr; /* continue reading at next record */
+	}
+
+	if (last_time > 0)
+		time2iso(last_timestamp, lengthof(last_timestamp),
+				 timestamptz_to_time_t(last_time));
+	else
+		time2iso(last_timestamp, lengthof(last_timestamp),
+				 backup->recovery_time);
+	if (last_xid == InvalidTransactionId)
+		last_xid = backup->recovery_xid;
+
+	/* There are all need WAL records */
+	if (all_wal)
+		elog(INFO, "backup validation completed successfully on time %s and xid " XID_FMT,
+			 last_timestamp, last_xid);
+	/* There are not need WAL records */
+	else
+	{
+		if (xlogfpath[0] != 0)
+		{
+			/* XLOG reader couldnt read WAL segment */
+			if (!xlogexists)
+				elog(WARNING, "WAL segment \"%s\" is absent", xlogfpath);
+			else if (xlogreadfd != -1)
+				elog(WARNING, "error was occured during reading WAL segment \"%s\"",
+					 xlogfpath);
+		}
+
+		if (!got_endpoint)
+			elog(ERROR, "there are not enough WAL records to restore from %X/%X to %X/%X",
+				 (uint32) (backup->start_lsn >> 32),
+				 (uint32) (backup->start_lsn),
+				 (uint32) (backup->stop_lsn >> 32),
+				 (uint32) (backup->stop_lsn));
+		else
+		{
+			if (target_time > 0)
+				time2iso(target_timestamp, lengthof(target_timestamp),
+						 target_time);
+
+			elog(WARNING, "recovery can be done up to time %s and xid " XID_FMT,
+				 last_timestamp, last_xid);
+
+			if (TransactionIdIsValid(target_xid) && target_time != 0)
+				elog(ERROR, "not enough WAL records to time %s and xid " XID_FMT,
+					 target_timestamp, target_xid);
+			else if (TransactionIdIsValid(target_xid))
+				elog(ERROR, "not enough WAL records to xid " XID_FMT,
+					 target_xid);
+			else if (target_time != 0)
+				elog(ERROR, "not enough WAL records to time %s",
+					 target_timestamp);
+		}
+	}
+
+	/* clean */
+	XLogReaderFree(xlogreader);
+	if (xlogreadfd != -1)
+	{
+		close(xlogreadfd);
+		xlogreadfd = -1;
+		xlogexists = false;
 	}
 }
 
@@ -120,6 +260,7 @@ SimpleXLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr,
 	{
 		close(xlogreadfd);
 		xlogreadfd = -1;
+		xlogexists = false;
 	}
 
 	XLByteToSeg(targetPagePtr, xlogreadsegno);
@@ -131,16 +272,24 @@ SimpleXLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr,
 		XLogFileName(xlogfname, private->tli, xlogreadsegno);
 		snprintf(xlogfpath, MAXPGPATH, "%s/%s", private->archivedir,
 				 xlogfname);
-		elog(LOG, "opening WAL segment \"%s\"", xlogfpath);
 
-		xlogreadfd = open(xlogfpath, O_RDONLY | PG_BINARY, 0);
-
-		if (xlogreadfd < 0)
+		if (fileExists(xlogfpath))
 		{
-			elog(WARNING, "could not open WAL segment \"%s\": %s",
-				 xlogfpath, strerror(errno));
-			return -1;
+			elog(LOG, "opening WAL segment \"%s\"", xlogfpath);
+
+			xlogexists = true;
+			xlogreadfd = open(xlogfpath, O_RDONLY | PG_BINARY, 0);
+
+			if (xlogreadfd < 0)
+			{
+				elog(WARNING, "could not open WAL segment \"%s\": %s",
+					 xlogfpath, strerror(errno));
+				return -1;
+			}
 		}
+		/* Exit without error if WAL segment doesn't exist */
+		else
+			return -1;
 	}
 
 	/*
@@ -175,7 +324,7 @@ SimpleXLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr,
 static void
 extractPageInfo(XLogReaderState *record)
 {
-	int			block_id;
+	uint8		block_id;
 	RmgrId		rmid = XLogRecGetRmid(record);
 	uint8		info = XLogRecGetInfo(record);
 	uint8		rminfo = info & ~XLR_INFO_MASK;
@@ -240,3 +389,39 @@ extractPageInfo(XLogReaderState *record)
 		process_block_change(forknum, rnode, blkno);
 	}
 }
+
+/*
+ * Extract timestamp from WAL record.
+ *
+ * If the record contains a timestamp, returns true, and saves the timestamp
+ * in *recordXtime. If the record type has no timestamp, returns false.
+ * Currently, only transaction commit/abort records and restore points contain
+ * timestamps.
+ */
+static bool
+getRecordTimestamp(XLogReaderState *record, TimestampTz *recordXtime)
+{
+	uint8		info = XLogRecGetInfo(record) & ~XLR_INFO_MASK;
+	uint8		xact_info = info & XLOG_XACT_OPMASK;
+	uint8		rmid = XLogRecGetRmid(record);
+
+	if (rmid == RM_XLOG_ID && info == XLOG_RESTORE_POINT)
+	{
+		*recordXtime = ((xl_restore_point *) XLogRecGetData(record))->rp_time;
+		return true;
+	}
+	if (rmid == RM_XACT_ID && (xact_info == XLOG_XACT_COMMIT ||
+							   xact_info == XLOG_XACT_COMMIT_PREPARED))
+	{
+		*recordXtime = ((xl_xact_commit *) XLogRecGetData(record))->xact_time;
+		return true;
+	}
+	if (rmid == RM_XACT_ID && (xact_info == XLOG_XACT_ABORT ||
+							   xact_info == XLOG_XACT_ABORT_PREPARED))
+	{
+		*recordXtime = ((xl_xact_abort *) XLogRecGetData(record))->xact_time;
+		return true;
+	}
+	return false;
+}
+

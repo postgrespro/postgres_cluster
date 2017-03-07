@@ -15,8 +15,8 @@
  <title>&productname; &version; Documentation</title>
 
  <bookinfo>
+  <corpauthor>The PostgreSQL Global Development Group</corpauthor>   
   <corpauthor>Postgres Professional</corpauthor>
-  <corpauthor>The PostgreSQL Global Development Group</corpauthor>
   <productname>&productname;</productname>
   <productnumber>&version;</productnumber>
   &legal;
@@ -46,8 +46,11 @@
     on to reading <xref linkend="sql"> to gain a more formal knowledge
     of the SQL language, or <xref linkend="client-interfaces"> for
     information about developing applications for
-    <productname>&productname;</productname>.  Those who set up and
-    manage their own server should also read <xref linkend="admin">.
+    <productname>&productname;</productname>.
+    When learning SQL, you can use the demo database described in
+    <xref linkend="demodb-bookings">.
+    Those who set up and manage their own server
+    should also read <xref linkend="admin">.
    </para>
   </partintro>
 
@@ -274,6 +277,7 @@
   &external-projects;
   &sourcerepo;
   &docguide;
+  &demodb-bookings;
   &acronyms;
 
  </part>

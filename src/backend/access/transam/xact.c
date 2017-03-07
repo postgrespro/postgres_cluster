@@ -294,6 +294,8 @@ typedef struct SubXactCallbackItem
 
 static SubXactCallbackItem *SubXact_callbacks = NULL;
 
+static bool	xactHasCatcacheInvalidationMessages;
+static bool xactHasRelcacheInvalidationMessages;
 
 /* local function prototypes */
 static void AssignTransactionId(TransactionState s);
@@ -1850,7 +1852,9 @@ typedef struct {
 	void *TriggerState;
 	void *SPIState;
 	void *SnapshotState;
+	struct TransInvalidationInfo* InvalidationInfo;
 } SuspendedTransactionState;
+
 static int suspendedXactNum = 0;
 static SuspendedTransactionState suspendedXacts[MAX_SUSPENDED_XACTS];
 
@@ -2168,6 +2172,8 @@ CommitTransaction(void)
 	 * waiting for lock on a relation we've modified, we want them to know
 	 * about the catalog change before they start using the relation).
 	 */
+	xactHasCatcacheInvalidationMessages = HasCatcacheInvalidationMessages(); 
+	xactHasRelcacheInvalidationMessages = HasRelcacheInvalidationMessages();
 	AtEOXact_Inval(true);
 
 	AtEOXact_MultiXact();
@@ -2662,6 +2668,8 @@ AbortTransaction(void)
 			AtEOXact_Buffers(false);
 		}
 		AtEOXact_RelationCache(false);
+		xactHasCatcacheInvalidationMessages = HasCatcacheInvalidationMessages(); 
+		xactHasRelcacheInvalidationMessages = HasRelcacheInvalidationMessages();
 		AtEOXact_Inval(false);
 		AtEOXact_MultiXact();
 		ResourceOwnerRelease(TopTransactionResourceOwner,
@@ -2825,7 +2833,7 @@ CommitTransactionCommand(void)
 			 * These shouldn't happen.  TBLOCK_DEFAULT means the previous
 			 * StartTransactionCommand didn't set the STARTED state
 			 * appropriately, while TBLOCK_PARALLEL_INPROGRESS should be ended
-			 * by EndParallelWorkerTranaction(), not this function.
+			 * by EndParallelWorkerTransaction(), not this function.
 			 */
 		case TBLOCK_DEFAULT:
 		case TBLOCK_PARALLEL_INPROGRESS:
@@ -3504,7 +3512,20 @@ void SuspendTransaction(void)
 		SuspendedTransactionState *sus = suspendedXacts + suspendedXactNum++;
 
 		sus->TopTransactionStateData = TopTransactionStateData;
+
 		sus->SnapshotState = SuspendSnapshot(); /* only before the resource-owner stuff */
+		
+		if (HasCatcacheInvalidationMessages()) 
+		{
+			ResetCatalogCaches();
+		}
+		if (HasRelcacheInvalidationMessages()) 
+		{
+			RelationCacheInvalidate();			
+		}
+		sus->InvalidationInfo = SuspendInvalidationInfo();
+		xactHasCatcacheInvalidationMessages = false;
+		xactHasRelcacheInvalidationMessages = false;
 
 		tts = &TopTransactionStateData;
 		tts->state = TRANS_INPROGRESS;
@@ -3546,7 +3567,6 @@ void SuspendTransaction(void)
 		MOVELEFT(sus->CurTransactionContext, CurTransactionContext, NULL);
 		MOVELEFT(sus->TransactionAbortContext, TransactionAbortContext, NULL);
 
-		MemoryContextSwitchTo(CurTransactionContext);
 		MOVELEFT(sus->CurrentResourceOwner, CurrentResourceOwner, NULL);
 		MOVELEFT(sus->CurTransactionResourceOwner, CurTransactionResourceOwner, NULL);
 		MOVELEFT(sus->TopTransactionResourceOwner, TopTransactionResourceOwner, NULL);
@@ -3603,17 +3623,26 @@ bool ResumeTransaction(void)
 		prepareGID = sus->prepareGID;
 		forceSyncCommit = sus->forceSyncCommit;
 
+		MemoryContextDelete(TransactionAbortContext);
+
 		TopTransactionContext = sus->TopTransactionContext;
 		CurTransactionContext = sus->CurTransactionContext;
 		TransactionAbortContext = sus->TransactionAbortContext;
 
-		//MemoryContextSwitchTo(CurTransactionContext);
 		CurrentResourceOwner = sus->CurrentResourceOwner;
-		Assert(*(unsigned long long*)CurrentResourceOwner != 0x7f7f7f7f7f7f7f7f);
 		CurTransactionResourceOwner = sus->CurTransactionResourceOwner;
 		TopTransactionResourceOwner = sus->TopTransactionResourceOwner;
 
 		ResumeSnapshot(sus->SnapshotState); /* only after the resource-owner stuff */
+		ResumeInvalidationInfo(sus->InvalidationInfo);
+		if (xactHasCatcacheInvalidationMessages) 
+		{
+			ResetCatalogCaches();
+		}
+		if (xactHasRelcacheInvalidationMessages) 
+		{
+			RelationCacheInvalidate();			
+		}
 
 		MyProc->backendId = sus->vxid.backendId;
 		MyProc->lxid = sus->vxid.localTransactionId;

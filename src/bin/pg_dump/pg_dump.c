@@ -2052,17 +2052,21 @@ doTransferRelDump(Archive *fout, void *dcontext)
 	 */
 	for (i = 0; i < nrels; i++)
 	{
-		transfer_relfile(&map[i], "", fout->dopt->transfer_dir,
+		transfer_relfile(&map[i], "", "", fout->dopt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
-		transfer_relfile(&map[i], "_fsm", fout->dopt->transfer_dir,
+		transfer_relfile(&map[i], "", ".cfm", fout->dopt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
-		transfer_relfile(&map[i], "_vm", fout->dopt->transfer_dir,
+		transfer_relfile(&map[i], "_fsm", "", fout->dopt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&map[i], "_vm", "", fout->dopt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
 	}
 
 	for (i = 0; i < nseqrels; i++)
 	{
-		transfer_relfile(&sequencemap[i], "", fout->dopt->transfer_dir,
+		transfer_relfile(&sequencemap[i], "", "", fout->dopt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&sequencemap[i], "", ".cfm", fout->dopt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
 	}
 
@@ -2072,11 +2076,13 @@ doTransferRelDump(Archive *fout, void *dcontext)
 	 */
 	for (i = 0; i < ntoastrels*2; i++)
 	{
-		transfer_relfile(&toastmap[i], "", fout->dopt->transfer_dir,
+		transfer_relfile(&toastmap[i], "", "", fout->dopt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
-		transfer_relfile(&toastmap[i], "_fsm", fout->dopt->transfer_dir,
+		transfer_relfile(&toastmap[i], "", ".cfm", fout->dopt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
-		transfer_relfile(&toastmap[i], "_vm", fout->dopt->transfer_dir,
+		transfer_relfile(&toastmap[i], "_fsm", "", fout->dopt->transfer_dir,
+						 is_restore, copy_mode, is_verbose);
+		transfer_relfile(&toastmap[i], "_vm", "", fout->dopt->transfer_dir,
 						 is_restore, copy_mode, is_verbose);
 	}
 
@@ -12100,7 +12106,7 @@ dumpCast(Archive *fout, CastInfo *cast)
 	{
 		funcInfo = findFuncByOid(cast->castfunc);
 		if (funcInfo == NULL)
-			exit_horribly(NULL, "unable to find function definition for OID %u",
+			exit_horribly(NULL, "could not find function definition for function with OID %u\n",
 						  cast->castfunc);
 	}
 
@@ -12210,14 +12216,14 @@ dumpTransform(Archive *fout, TransformInfo *transform)
 	{
 		fromsqlFuncInfo = findFuncByOid(transform->trffromsql);
 		if (fromsqlFuncInfo == NULL)
-			exit_horribly(NULL, "unable to find function definition for OID %u",
+			exit_horribly(NULL, "could not find function definition for function with OID %u\n",
 						  transform->trffromsql);
 	}
 	if (OidIsValid(transform->trftosql))
 	{
 		tosqlFuncInfo = findFuncByOid(transform->trftosql);
 		if (tosqlFuncInfo == NULL)
-			exit_horribly(NULL, "unable to find function definition for OID %u",
+			exit_horribly(NULL, "could not find function definition for function with OID %u\n",
 						  transform->trftosql);
 	}
 

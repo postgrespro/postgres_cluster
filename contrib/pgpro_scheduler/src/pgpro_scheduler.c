@@ -46,6 +46,8 @@ char *scheduler_databases = NULL;
 char *scheduler_nodename = NULL;
 char *scheduler_transaction_state = NULL;
 int  scheduler_max_workers = 2;
+int  scheduler_max_parallel_workers = 2;
+int  scheduler_worker_job_limit = 1;
 bool scheduler_service_enabled = false;
 char *scheduler_schema = NULL;
 /* Custom GUC done */
@@ -91,7 +93,7 @@ void reload_db_role_config(char *dbname)
 	CommitTransactionCommand();
 }
 
-TimestampTz timestamp_add_seconds(TimestampTz to, int add)
+TimestampTz timestamp_add_seconds(TimestampTz to, int64 add)
 {
 	if(to == 0) to = GetCurrentTimestamp();
 #ifdef HAVE_INT64_TIMESTAMP
@@ -109,17 +111,18 @@ int get_integer_from_string(char *s, int start, int len)
 	return atoi(buff);
 }
 
-char *make_date_from_timestamp(TimestampTz ts)
+char *make_date_from_timestamp(TimestampTz ts, bool hires)
 {
 	struct pg_tm dt;
-	char *str = worker_alloc(sizeof(char) * 17);
+	char *str = worker_alloc(sizeof(char) * 20);
 	int tz;
 	fsec_t fsec;
 	const char *tzn;
 
 	timestamp2tm(ts, &tz, &dt, &fsec, &tzn, NULL ); 
-	sprintf(str, "%04d-%02d-%02d %02d:%02d", dt.tm_year , dt.tm_mon,
-			dt.tm_mday, dt.tm_hour, dt.tm_min);
+	sprintf(str, "%04d-%02d-%02d %02d:%02d:%02d", dt.tm_year , dt.tm_mon,
+			dt.tm_mday, dt.tm_hour, dt.tm_min, dt.tm_sec);
+	if(!hires) str[16] = 0;
 	return str;
 }
 
@@ -161,6 +164,29 @@ bool is_scheduler_enabled(void)
 	return false;
 }
 
+char *set_schema(const char *name, bool get_old)
+{
+	char *schema_name = NULL;
+	char *current = NULL;
+	bool free_name = false;
+
+	if(get_old)
+		current = _copy_string((char *)GetConfigOption("search_path", true, false));
+	if(name)
+	{
+		schema_name = (char *)name;
+	}
+	else
+	{
+		schema_name = _copy_string((char *)GetConfigOption("schedule.schema", true, false));	
+		free_name = true;
+	}
+	SetConfigOption("search_path", schema_name,  PGC_USERSET, PGC_S_SESSION);
+	if(free_name) pfree(schema_name);
+
+	return current;
+}
+
 
 /** END of SOME UTILS **/
 
@@ -186,7 +212,7 @@ char_array_t *readBasesToCheck(void)
 	pgstat_report_activity(STATE_RUNNING, "read configuration");
 	result = makeCharArray();
 
-	value = GetConfigOption("schedule.database", 1, 0);
+	value = GetConfigOption("schedule.database", true, false);
 	if(!value || strlen(value) == 0)
 	{
 		return result;
@@ -228,6 +254,7 @@ char_array_t *readBasesToCheck(void)
 	pfree(clean_value);
 	if(names->n == 0)
 	{
+		destroyCharArray(names);
 		return result;
 	}
 
@@ -238,26 +265,21 @@ char_array_t *readBasesToCheck(void)
 		appendStringInfo(&sql, "'%s'", names->data[i]);
 		if(i + 1  != names->n) appendStringInfo(&sql, ",");
 	} 
+	destroyCharArray(names);
 	appendStringInfo(&sql, ")");
-	SetCurrentStatementStartTimestamp();
-	StartTransactionCommand();
-	SPI_connect();
-	PushActiveSnapshot(GetTransactionSnapshot());
+
+	START_SPI_SNAP();
 
 	ret = SPI_execute(sql.data, true, 0);
 	if (ret != SPI_OK_SELECT)
 	{
-		SPI_finish();
-		PopActiveSnapshot();
-		CommitTransactionCommand();
+		STOP_SPI_SNAP();
+		elog(ERROR, "cannot select from pg_database");
 	}
-	destroyCharArray(names);
 	processed  = SPI_processed;
 	if(processed == 0)
 	{
-		SPI_finish();
-		PopActiveSnapshot();
-		CommitTransactionCommand();
+		STOP_SPI_SNAP();
 		return result;
 	}
 	for(i=0; i < processed; i++)
@@ -265,10 +287,9 @@ char_array_t *readBasesToCheck(void)
 		clean_value = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 1);
 		pushCharArray(result, clean_value);
 	}
-	SPI_finish();
-	PopActiveSnapshot();
-	CommitTransactionCommand();
+	STOP_SPI_SNAP();
 	sortCharArray(result);
+
 	return result;
 }
 
@@ -276,7 +297,7 @@ void parent_scheduler_main(Datum arg)
 {
 	int rc = 0, i;
 	char_array_t *names = NULL;
-	schd_managers_poll_t *poll;
+	schd_managers_poll_t *pool;
 	schd_manager_share_t *shared;
 	bool refresh = false;
 
@@ -293,10 +314,10 @@ void parent_scheduler_main(Datum arg)
 
 	BackgroundWorkerInitializeConnection("postgres", NULL);
 	names = readBasesToCheck();
-	poll = initSchedulerManagerPool(names);
+	pool = initSchedulerManagerPool(names);
 	destroyCharArray(names);
 
-	set_supervisor_pgstatus(poll);
+	set_supervisor_pgstatus(pool);
 
 	while(!got_sigterm)
 	{
@@ -308,62 +329,62 @@ void parent_scheduler_main(Datum arg)
 			ProcessConfigFile(PGC_SIGHUP);
 			refresh = false;
 			names = NULL;
-			if(is_scheduler_enabled() != poll->enabled)
+			if(is_scheduler_enabled() != pool->enabled)
 			{
-				if(poll->enabled)
+				if(pool->enabled)
 				{
-					poll->enabled = false;
-					stopAllManagers(poll);
-					set_supervisor_pgstatus(poll);
+					pool->enabled = false;
+					stopAllManagers(pool);
+					set_supervisor_pgstatus(pool);
 				}
 				else
 				{
 					refresh = true;
-					poll->enabled = true;
+					pool->enabled = true;
 					names = readBasesToCheck();
 				}
 			}
-			else if(poll->enabled)
+			else if(pool->enabled)
 			{
 				names = readBasesToCheck();
-				if(isBaseListChanged(names, poll)) refresh = true;
+				if(isBaseListChanged(names, pool)) refresh = true;
 				else destroyCharArray(names);
 			}
 
 			if(refresh)
 			{
-				refreshManagers(names, poll);
-				set_supervisor_pgstatus(poll);
+				refreshManagers(names, pool);
+				set_supervisor_pgstatus(pool);
 				destroyCharArray(names);
 			}
 		}
 		else 
 		{
-			for(i=0; i < poll->n; i++)
+			for(i=0; i < pool->n; i++)
 			{
-				shared = dsm_segment_address(poll->workers[i]->shared);
+				shared = dsm_segment_address(pool->workers[i]->shared);
 
 				if(shared->setbychild)
 				{
-				/* elog(LOG, "got status change from: %s", poll->workers[i]->dbname); */
+				/* elog(LOG, "got status change from: %s", pool->workers[i]->dbname); */
 					shared->setbychild = false;
 					if(shared->status == SchdManagerConnected)
 					{
-						poll->workers[i]->connected = true;
+						pool->workers[i]->connected = true;
 					}
 					else if(shared->status == SchdManagerQuit)
 					{
-						removeManagerFromPoll(poll, poll->workers[i]->dbname, 1, true);
-						set_supervisor_pgstatus(poll);
+						removeManagerFromPoll(pool, pool->workers[i]->dbname, 1, true);
+						set_supervisor_pgstatus(pool);
 					}
 					else if(shared->status == SchdManagerDie)
 					{
-						removeManagerFromPoll(poll, poll->workers[i]->dbname, 1, false);
-						set_supervisor_pgstatus(poll);
+						removeManagerFromPoll(pool, pool->workers[i]->dbname, 1, false);
+						set_supervisor_pgstatus(pool);
 					}
 					else
 					{
-						elog(WARNING, "manager: %s set strange status: %d", poll->workers[i]->dbname, shared->status);
+						elog(WARNING, "manager: %s set strange status: %d", pool->workers[i]->dbname, shared->status);
 					}
 				}
 			}
@@ -373,7 +394,7 @@ void parent_scheduler_main(Datum arg)
 		CHECK_FOR_INTERRUPTS();
 		ResetLatch(MyLatch);
 	}
-	stopAllManagers(poll);
+	stopAllManagers(pool);
 	delete_worker_mem_ctx();
 
 	proc_exit(0);
@@ -387,7 +408,7 @@ pg_scheduler_startup(void)
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
-	worker.bgw_restart_time = BGW_NEVER_RESTART;
+	worker.bgw_restart_time = 10;
 	worker.bgw_main = NULL;
 	worker.bgw_notify_pid = 0;
 	worker.bgw_main_arg = Int32GetDatum(0);
@@ -457,9 +478,23 @@ void _PG_init(void)
 	);
 	DefineCustomIntVariable(
 		"schedule.max_workers",
-		"How much workers can serve scheduler on one database",
+		"How much workers can serve scheduled jobs on one database",
 		NULL,
 		&scheduler_max_workers,
+		2,
+		1,
+		100,
+		PGC_SUSET,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+	DefineCustomIntVariable(
+		"schedule.max_parallel_workers",
+		"How much workers can serve at jobs on one database",
+		NULL,
+		&scheduler_max_parallel_workers,
 		2,
 		1,
 		100,
@@ -476,6 +511,20 @@ void _PG_init(void)
 		&scheduler_service_enabled,
 		false,
 		PGC_SIGHUP,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+	DefineCustomIntVariable(
+		"schedule.worker_job_limit",
+		"How much job can worker serve before shutdown",
+		NULL,
+		&scheduler_worker_job_limit,
+		1,
+		1,
+		20000,
+		PGC_SUSET,
 		0,
 		NULL,
 		NULL,

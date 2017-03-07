@@ -2,7 +2,8 @@
  *
  * catalog.c: backup catalog opration
  *
- * Copyright (c) 2009-2011, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2009-2011, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2015-2017, Postgres Professional
  *
  *-------------------------------------------------------------------------
  */
@@ -12,6 +13,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <libgen.h>
+#include <signal.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -21,56 +23,205 @@
 
 #include "pgut/pgut-port.h"
 
-static pgBackup *catalog_read_ini(const char *path);
+static pgBackup *read_backup_from_file(const char *path);
 
 #define BOOL_TO_STR(val)	((val) ? "true" : "false")
 
-static int lock_fd = -1;
+static bool exit_hook_registered = false;
+static char lock_file[MAXPGPATH];
 
-/*
- * Lock of the catalog with pg_probackup.conf file and return 0.
- * If the lock is held by another one, return 1 immediately.
- */
-int
-catalog_lock(void)
+static void
+unlink_lock_atexit(void)
 {
-	int		ret;
-	char	id_path[MAXPGPATH];
-
-	join_path_components(id_path, backup_path, PG_RMAN_INI_FILE);
-	lock_fd = open(id_path, O_RDWR);
-	if (lock_fd == -1)
-		elog(errno == ENOENT ? ERROR : ERROR,
-			"cannot open file \"%s\": %s", id_path, strerror(errno));
-
-	ret = flock(lock_fd, LOCK_EX | LOCK_NB);	/* non-blocking */
-	if (ret == -1)
-	{
-		if (errno == EWOULDBLOCK)
-		{
-			close(lock_fd);
-			return 1;
-		}
-		else
-		{
-			int errno_tmp = errno;
-			close(lock_fd);
-			elog(ERROR, "cannot lock file \"%s\": %s", id_path,
-				strerror(errno_tmp));
-		}
-	}
-
-	return 0;
+	int			res;
+	res = unlink(lock_file);
+	if (res != 0 && res != ENOENT)
+		elog(WARNING, "%s: %s", lock_file, strerror(errno));
 }
 
 /*
- * Release catalog lock.
+ * Create a lockfile.
  */
-void
-catalog_unlock(void)
+int
+catalog_lock(bool check_catalog)
 {
-	close(lock_fd);
-	lock_fd = -1;
+	int			fd;
+	char		buffer[MAXPGPATH * 2 + 256];
+	int			ntries;
+	int			len;
+	int			encoded_pid;
+	pid_t		my_pid,
+				my_p_pid;
+
+	join_path_components(lock_file, backup_path, BACKUP_CATALOG_PID);
+
+	/*
+	 * If the PID in the lockfile is our own PID or our parent's or
+	 * grandparent's PID, then the file must be stale (probably left over from
+	 * a previous system boot cycle).  We need to check this because of the
+	 * likelihood that a reboot will assign exactly the same PID as we had in
+	 * the previous reboot, or one that's only one or two counts larger and
+	 * hence the lockfile's PID now refers to an ancestor shell process.  We
+	 * allow pg_ctl to pass down its parent shell PID (our grandparent PID)
+	 * via the environment variable PG_GRANDPARENT_PID; this is so that
+	 * launching the postmaster via pg_ctl can be just as reliable as
+	 * launching it directly.  There is no provision for detecting
+	 * further-removed ancestor processes, but if the init script is written
+	 * carefully then all but the immediate parent shell will be root-owned
+	 * processes and so the kill test will fail with EPERM.  Note that we
+	 * cannot get a false negative this way, because an existing postmaster
+	 * would surely never launch a competing postmaster or pg_ctl process
+	 * directly.
+	 */
+	my_pid = getpid();
+#ifndef WIN32
+	my_p_pid = getppid();
+#else
+
+	/*
+	 * Windows hasn't got getppid(), but doesn't need it since it's not using
+	 * real kill() either...
+	 */
+	my_p_pid = 0;
+#endif
+
+	/*
+	 * We need a loop here because of race conditions.  But don't loop forever
+	 * (for example, a non-writable $backup_path directory might cause a failure
+	 * that won't go away).  100 tries seems like plenty.
+	 */
+	for (ntries = 0;; ntries++)
+	{
+		/*
+		 * Try to create the lock file --- O_EXCL makes this atomic.
+		 *
+		 * Think not to make the file protection weaker than 0600.  See
+		 * comments below.
+		 */
+		fd = open(lock_file, O_RDWR | O_CREAT | O_EXCL, 0600);
+		if (fd >= 0)
+			break;				/* Success; exit the retry loop */
+
+		/*
+		 * Couldn't create the pid file. Probably it already exists.
+		 */
+		if ((errno != EEXIST && errno != EACCES) || ntries > 100)
+			elog(ERROR, "could not create lock file \"%s\": %s",
+				 lock_file, strerror(errno));
+
+		/*
+		 * Read the file to get the old owner's PID.  Note race condition
+		 * here: file might have been deleted since we tried to create it.
+		 */
+		fd = open(lock_file, O_RDONLY, 0600);
+		if (fd < 0)
+		{
+			if (errno == ENOENT)
+				continue;		/* race condition; try again */
+			elog(ERROR, "could not open lock file \"%s\": %s",
+				 lock_file, strerror(errno));
+		}
+		if ((len = read(fd, buffer, sizeof(buffer) - 1)) < 0)
+			elog(ERROR, "could not read lock file \"%s\": %s",
+				 lock_file, strerror(errno));
+		close(fd);
+
+		if (len == 0)
+			elog(ERROR, "lock file \"%s\" is empty", lock_file);
+
+		buffer[len] = '\0';
+		encoded_pid = atoi(buffer);
+
+		if (encoded_pid <= 0)
+			elog(ERROR, "bogus data in lock file \"%s\": \"%s\"",
+				 lock_file, buffer);
+
+		/*
+		 * Check to see if the other process still exists
+		 *
+		 * Per discussion above, my_pid, my_p_pid can be
+		 * ignored as false matches.
+		 *
+		 * Normally kill() will fail with ESRCH if the given PID doesn't
+		 * exist.
+		 */
+		if (encoded_pid != my_pid && encoded_pid != my_p_pid)
+		{
+			if (kill(encoded_pid, 0) == 0 ||
+				(errno != ESRCH && errno != EPERM))
+				elog(ERROR, "lock file \"%s\" already exists", lock_file);
+		}
+
+		/*
+		 * Looks like nobody's home.  Unlink the file and try again to create
+		 * it.  Need a loop because of possible race condition against other
+		 * would-be creators.
+		 */
+		if (unlink(lock_file) < 0)
+			elog(ERROR, "could not remove old lock file \"%s\": %s",
+				 lock_file, strerror(errno));
+	}
+
+	/*
+	 * Successfully created the file, now fill it.
+	 */
+	snprintf(buffer, sizeof(buffer), "%d\n", my_pid);
+
+	errno = 0;
+	if (write(fd, buffer, strlen(buffer)) != strlen(buffer))
+	{
+		int			save_errno = errno;
+
+		close(fd);
+		unlink(lock_file);
+		/* if write didn't set errno, assume problem is no disk space */
+		errno = save_errno ? save_errno : ENOSPC;
+		elog(ERROR, "could not write lock file \"%s\": %s",
+			 lock_file, strerror(errno));
+	}
+	if (fsync(fd) != 0)
+	{
+		int			save_errno = errno;
+
+		close(fd);
+		unlink(lock_file);
+		errno = save_errno;
+		elog(ERROR, "could not write lock file \"%s\": %s",
+			 lock_file, strerror(errno));
+	}
+	if (close(fd) != 0)
+	{
+		int			save_errno = errno;
+
+		unlink(lock_file);
+		errno = save_errno;
+		elog(ERROR, "could not write lock file \"%s\": %s",
+			 lock_file, strerror(errno));
+	}
+
+	/*
+	 * Arrange to unlink the lock file(s) at proc_exit.
+	 */
+	if (!exit_hook_registered)
+	{
+		atexit(unlink_lock_atexit);
+		exit_hook_registered = true;
+	}
+
+	if (check_catalog)
+	{
+		uint64		id;
+
+		Assert(pgdata);
+
+		/* Check system-identifier */
+		id = get_system_identifier(true);
+		if (id != system_identifier)
+			elog(ERROR, "Backup directory was initialized for system id = %ld, but target system id = %ld",
+				 system_identifier, id);
+	}
+
+	return 0;
 }
 
 /*
@@ -78,15 +229,15 @@ catalog_unlock(void)
  * If no backup matches, return NULL.
  */
 pgBackup *
-catalog_get_backup(time_t timestamp)
+read_backup(time_t timestamp)
 {
 	pgBackup	tmp;
-	char		ini_path[MAXPGPATH];
+	char		conf_path[MAXPGPATH];
 
 	tmp.start_time = timestamp;
-	pgBackupGetPath(&tmp, ini_path, lengthof(ini_path), BACKUP_INI_FILE);
+	pgBackupGetPath(&tmp, conf_path, lengthof(conf_path), BACKUP_CONF_FILE);
 
-	return catalog_read_ini(ini_path);
+	return read_backup_from_file(conf_path);
 }
 
 static bool
@@ -140,8 +291,8 @@ catalog_get_backup_list(time_t backup_id)
 		join_path_components(date_path, backups_path, date_ent->d_name);
 
 		/* read backup information from backup.ini */
-		snprintf(ini_path, MAXPGPATH, "%s/%s", date_path, BACKUP_INI_FILE);
-		backup = catalog_read_ini(ini_path);
+		snprintf(ini_path, MAXPGPATH, "%s/%s", date_path, BACKUP_CONF_FILE);
+		backup = read_backup_from_file(ini_path);
 
 		/* ignore corrupted backup */
 		if (backup)
@@ -226,6 +377,10 @@ pgBackupCreateDir(pgBackup *backup)
 	char   *subdirs[] = { DATABASE_DIR, NULL };
 
 	pgBackupGetPath(backup, path, lengthof(path), NULL);
+
+	if (!dir_is_empty(path))
+		elog(ERROR, "backup destination is not empty \"%s\"", path);
+
 	dir_create_dir(path, DIR_PERMISSION);
 
 	/* create directories for actual backup files */
@@ -274,7 +429,7 @@ pgBackupWriteResultSection(FILE *out, pgBackup *backup)
 		time2iso(timestamp, lengthof(timestamp), backup->end_time);
 		fprintf(out, "END_TIME='%s'\n", timestamp);
 	}
-	fprintf(out, "RECOVERY_XID=%u\n", backup->recovery_xid);
+	fprintf(out, "RECOVERY_XID=" XID_FMT "\n", backup->recovery_xid);
 	if (backup->recovery_time > 0)
 	{
 		time2iso(timestamp, lengthof(timestamp), backup->recovery_time);
@@ -290,19 +445,25 @@ pgBackupWriteResultSection(FILE *out, pgBackup *backup)
 	fprintf(out, "STREAM=%u\n", backup->stream);
 
 	fprintf(out, "STATUS=%s\n", status2str(backup->status));
+	if (backup->parent_backup != 0)
+	{
+		char *parent_backup = base36enc(backup->parent_backup);
+		fprintf(out, "PARENT_BACKUP='%s'\n", parent_backup);
+		free(parent_backup);
+	}
 }
 
-/* create backup.ini */
+/* create backup.conf */
 void
 pgBackupWriteIni(pgBackup *backup)
 {
 	FILE   *fp = NULL;
 	char	ini_path[MAXPGPATH];
 
-	pgBackupGetPath(backup, ini_path, lengthof(ini_path), BACKUP_INI_FILE);
+	pgBackupGetPath(backup, ini_path, lengthof(ini_path), BACKUP_CONF_FILE);
 	fp = fopen(ini_path, "wt");
 	if (fp == NULL)
-		elog(ERROR, "cannot open INI file \"%s\": %s", ini_path,
+		elog(ERROR, "cannot open configuration file \"%s\": %s", ini_path,
 			strerror(errno));
 
 	/* configuration section */
@@ -320,39 +481,41 @@ pgBackupWriteIni(pgBackup *backup)
  *  - Do not care section.
  */
 static pgBackup *
-catalog_read_ini(const char *path)
+read_backup_from_file(const char *path)
 {
 	pgBackup   *backup;
 	char	   *backup_mode = NULL;
 	char	   *start_lsn = NULL;
 	char	   *stop_lsn = NULL;
 	char	   *status = NULL;
+	char	   *parent_backup = NULL;
 	int			i;
 
 	pgut_option options[] =
 	{
-		{ 's', 0, "backup-mode"			, NULL, SOURCE_ENV },
-		{ 'u', 0, "timelineid"			, NULL, SOURCE_ENV },
-		{ 's', 0, "start-lsn"			, NULL, SOURCE_ENV },
-		{ 's', 0, "stop-lsn"			, NULL, SOURCE_ENV },
-		{ 't', 0, "start-time"			, NULL, SOURCE_ENV },
-		{ 't', 0, "end-time"			, NULL, SOURCE_ENV },
-		{ 'U', 0, "recovery-xid"				, NULL, SOURCE_ENV },
-		{ 't', 0, "recovery-time"				, NULL, SOURCE_ENV },
-		{ 'I', 0, "data-bytes"		, NULL, SOURCE_ENV },
-		{ 'u', 0, "block-size"			, NULL, SOURCE_ENV },
-		{ 'u', 0, "xlog-block-size"		, NULL, SOURCE_ENV },
-		{ 'u', 0, "checksum_version"		, NULL, SOURCE_ENV },
-		{ 'u', 0, "stream"				, NULL, SOURCE_ENV },
-		{ 's', 0, "status"				, NULL, SOURCE_ENV },
-		{ 0 }
+		{'s', 0, "backup-mode",			NULL, SOURCE_FILE_STRICT},
+		{'u', 0, "timelineid",			NULL, SOURCE_FILE_STRICT},
+		{'s', 0, "start-lsn",			NULL, SOURCE_FILE_STRICT},
+		{'s', 0, "stop-lsn",			NULL, SOURCE_FILE_STRICT},
+		{'t', 0, "start-time",			NULL, SOURCE_FILE_STRICT},
+		{'t', 0, "end-time",			NULL, SOURCE_FILE_STRICT},
+		{'U', 0, "recovery-xid",		NULL, SOURCE_FILE_STRICT},
+		{'t', 0, "recovery-time",		NULL, SOURCE_FILE_STRICT},
+		{'I', 0, "data-bytes",			NULL, SOURCE_FILE_STRICT},
+		{'u', 0, "block-size",			NULL, SOURCE_FILE_STRICT},
+		{'u', 0, "xlog-block-size",		NULL, SOURCE_FILE_STRICT},
+		{'u', 0, "checksum_version",	NULL, SOURCE_FILE_STRICT},
+		{'u', 0, "stream",				NULL, SOURCE_FILE_STRICT},
+		{'s', 0, "status",				NULL, SOURCE_FILE_STRICT},
+		{'s', 0, "parent_backup",		NULL, SOURCE_FILE_STRICT},
+		{0}
 	};
 
 	if (access(path, F_OK) != 0)
 		return NULL;
 
 	backup = pgut_new(pgBackup);
-	catalog_init_config(backup);
+	init_backup(backup);
 
 	i = 0;
 	options[i++].var = &backup_mode;
@@ -369,6 +532,7 @@ catalog_read_ini(const char *path)
 	options[i++].var = &backup->checksum_version;
 	options[i++].var = &backup->stream;
 	options[i++].var = &status;
+	options[i++].var = &parent_backup;
 	Assert(i == lengthof(options) - 1);
 
 	pgut_readopt(path, options, ERROR);
@@ -422,6 +586,12 @@ catalog_read_ini(const char *path)
 		else
 			elog(WARNING, "invalid STATUS \"%s\"", status);
 		free(status);
+	}
+
+	if (parent_backup)
+	{
+		backup->parent_backup = base36dec(parent_backup);
+		free(parent_backup);
 	}
 
 	return backup;
@@ -494,10 +664,12 @@ pgBackupGetPath(const pgBackup *backup, char *path, size_t len, const char *subd
 	else
 		snprintf(path, len, "%s/%s/%s", backup_path, BACKUPS_DIR, datetime);
 	free(datetime);
+
+	make_native_path(path);
 }
 
 void
-catalog_init_config(pgBackup *backup)
+init_backup(pgBackup *backup)
 {
 	backup->backup_mode = BACKUP_MODE_INVALID;
 	backup->status = BACKUP_STATUS_INVALID;
@@ -510,4 +682,5 @@ catalog_init_config(pgBackup *backup)
 	backup->recovery_time = (time_t) 0;
 	backup->data_bytes = BYTES_INVALID;
 	backup->stream = false;
+	backup->parent_backup = 0;
 }

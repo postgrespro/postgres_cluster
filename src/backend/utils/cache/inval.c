@@ -841,6 +841,32 @@ xactGetCommittedInvalidationMessages(SharedInvalidationMessage **msgs,
 	return numSharedInvalidMessagesArray;
 }
 
+bool HasCatcacheInvalidationMessages(void)
+{
+	return transInvalInfo != NULL 
+		&& (transInvalInfo->CurrentCmdInvalidMsgs.cclist != NULL
+			|| transInvalInfo->PriorCmdInvalidMsgs.cclist != NULL);
+}
+
+bool HasRelcacheInvalidationMessages(void)
+{
+	return transInvalInfo != NULL 
+		&& (transInvalInfo->CurrentCmdInvalidMsgs.rclist != NULL
+			|| transInvalInfo->PriorCmdInvalidMsgs.rclist != NULL);
+}
+
+struct TransInvalidationInfo* SuspendInvalidationInfo()
+{
+	TransInvalidationInfo* state = transInvalInfo;
+	transInvalInfo = NULL;
+	return state;
+}
+
+void ResumeInvalidationInfo(struct TransInvalidationInfo* inval)
+{
+	transInvalInfo = inval;
+}
+
 /*
  * ProcessCommittedInvalidationMessages is executed by xact_redo_commit() or
  * standby_redo() to process invalidation messages. Currently that happens
