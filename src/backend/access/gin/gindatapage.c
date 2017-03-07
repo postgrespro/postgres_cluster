@@ -16,6 +16,7 @@
 
 #include "access/gin_private.h"
 #include "access/xloginsert.h"
+#include "access/ptrack.h"
 #include "lib/ilist.h"
 #include "miscadmin.h"
 #include "utils/rel.h"
@@ -835,6 +836,7 @@ ginVacuumPostingTreeLeaf(Relation indexrel, Buffer buffer, GinVacuumState *gvs)
 			computeLeafRecompressWALData(leaf);
 
 		/* Apply changes to page */
+		ptrack_add_block(indexrel, BufferGetBlockNumber(buffer));
 		START_CRIT_SECTION();
 
 		dataPlaceToPageLeafRecompress(buffer, leaf);
@@ -1811,6 +1813,7 @@ createPostingTree(Relation index, ItemPointerData *items, uint32 nitems,
 	page = BufferGetPage(buffer);
 	blkno = BufferGetBlockNumber(buffer);
 
+	ptrack_add_block(index, BufferGetBlockNumber(buffer));
 	START_CRIT_SECTION();
 
 	PageRestoreTempPage(tmppage, page);
