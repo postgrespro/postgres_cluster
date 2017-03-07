@@ -159,7 +159,7 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 		MTM_LOG2("%d: pglogical_write_begin XID=%lld sent", MyProcPid, (long64)txn->xid);
 		pq_sendbyte(out, 'B');		/* BEGIN */
 		pq_sendint(out, MtmNodeId, 4);
-		pq_sendint64(out, isRecovery ? InvalidTransactionId : txn->xid, 4);
+		pq_sendint64(out, isRecovery ? InvalidTransactionId : txn->xid);
 		pq_sendint64(out, csn);
 		pq_sendint64(out, participantsMask);
 
