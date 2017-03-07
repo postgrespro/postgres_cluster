@@ -342,7 +342,7 @@ process_remote_begin(StringInfo s)
 	int rc;
 
 	gtid.node = pq_getmsgint(s, 4); 
-	gtid.xid = pq_getmsgint(s, 4); 
+	gtid.xid = pq_getmsgint64(s); 
 	snapshot = pq_getmsgint64(s);    
 	participantsMask = pq_getmsgint64(s);
 	Assert(gtid.node > 0);
