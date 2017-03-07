@@ -566,13 +566,8 @@ gistplacetopage(Relation rel, Size freespace, GISTSTATE *giststate,
 	if (BufferIsValid(leftchildbuf))
 	{
 		Page		leftpg = BufferGetPage(leftchildbuf);
-		XLogRecPtr	fakerecptr = InvalidXLogRecPtr;
 
-		if (!is_build)
-			GistPageSetNSN(leftpg, recptr);
-		else
-			GistPageSetNSN(leftpg, fakerecptr);
-
+		GistPageSetNSN(leftpg, recptr);
 		GistClearFollowRight(leftpg);
 		PageSetLSN(leftpg, recptr);
 	}
