@@ -1114,12 +1114,14 @@ doPickSplit(Relation index, SpGistState *state,
 	leafdata = leafptr = (char *) palloc(totalLeafSizes);
 
 	/* Here we begin making the changes to the target pages */
+	if (current->buffer != InvalidBuffer)
+		ptrack_add_block(index, current->blkno);
+	if (parent->buffer != InvalidBuffer)
+		ptrack_add_block(index, parent->blkno);
+	if (newInnerBuffer != InvalidBuffer)
+		ptrack_add_block(index, BufferGetBlockNumber(newInnerBuffer));
 	if (newLeafBuffer != InvalidBuffer)
 		ptrack_add_block(index, BufferGetBlockNumber(newLeafBuffer));
-	if (BufferIsValid(saveCurrent.buffer))
-		ptrack_add_block(index, BufferGetBlockNumber(saveCurrent.buffer));
-	if (parent->buffer != InvalidBuffer)
-		ptrack_add_block(index, BufferGetBlockNumber(parent->buffer));
 	START_CRIT_SECTION();
 
 	/*
