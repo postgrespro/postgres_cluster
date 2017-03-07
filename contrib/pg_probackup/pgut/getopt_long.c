@@ -49,7 +49,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-
 #include <errno.h>
 #include "getopt.h"
 #include <stdlib.h>

@@ -34,6 +34,7 @@
 #include "getopt_long.h"
 #include "libpq/pqcomm.h"		/* needed for UNIXSOCK_PATH() */
 #include "pg_config_paths.h"
+#include "pg_config.h"
 
 /* for resultmap we need a list of pairs of strings */
 typedef struct _resultmap
@@ -73,6 +74,7 @@ char	   *inputdir = ".";
 char	   *outputdir = ".";
 char	   *bindir = PGBINDIR;
 char	   *launcher = NULL;
+char	   *xid_options = "";
 static _stringlist *loadlanguage = NULL;
 static _stringlist *loadextension = NULL;
 static int	max_connections = 0;
@@ -2215,13 +2217,17 @@ regression_main(int argc, char *argv[], init_function ifunc, test_function tfunc
 
 		/* initdb */
 		header(_("initializing database system"));
+#ifdef XID_IS_64BIT
+xid_options = " -x 4294967296 -m 4294967296";
+#endif
 		snprintf(buf, sizeof(buf),
-				 "\"%s%sinitdb\" -D \"%s/data\" --noclean --nosync%s%s > \"%s/log/initdb.log\" 2>&1",
+				 "\"%s%sinitdb\" -D \"%s/data\" --noclean --nosync%s%s%s > \"%s/log/initdb.log\" 2>&1",
 				 bindir ? bindir : "",
 				 bindir ? "/" : "",
 				 temp_instance,
 				 debug ? " --debug" : "",
 				 nolocale ? " --no-locale" : "",
+				 xid_options,
 				 outputdir);
 		if (system(buf))
 		{

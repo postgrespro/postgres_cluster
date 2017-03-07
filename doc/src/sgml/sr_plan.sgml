@@ -1,6 +1,6 @@
 <!-- doc/src/sgml/sr_plan.sgml -->
 
-<sect1 id="sr-plan" xreflabel="sr-plan">
+<sect1 id="sr-plan" xreflabel="sr_plan">
   <title>sr_plan</title>
   <indexterm zone="sr-plan">
   <primary>sr_plan</primary>

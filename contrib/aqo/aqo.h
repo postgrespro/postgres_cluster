@@ -34,7 +34,7 @@
  * "forced" mode makes no difference between query types and use AQO for them
  * all in the similar way. It considers each new query type as linked to special
  * feature space called COMMON with hash 0.
- * "manual" mode ignores unknown query types. In this case AQO is completely
+ * "Controlled" mode ignores unknown query types. In this case AQO is completely
  * configured manually by user.
  * Current mode is stored in aqo.mode variable.
  *
@@ -148,7 +148,7 @@ typedef enum
 	/* Treats new query types as linked to the common feature space */
 	AQO_MODE_FORCED,
 	/* New query types are not linked with any feature space */
-	AQO_MODE_MANUAL,
+	AQO_MODE_CONTROLLED,
 	/* Aqo is disabled for all queries */
 	AQO_MODE_DISABLED,
 }	AQO_MODE;

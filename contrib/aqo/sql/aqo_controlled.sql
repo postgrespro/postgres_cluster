@@ -30,7 +30,7 @@ ANALYZE aqo_test2;
 
 CREATE EXTENSION aqo;
 
-SET aqo.mode = 'manual';
+SET aqo.mode = 'controlled';
 
 EXPLAIN (COSTS FALSE)
 SELECT * FROM aqo_test0
@@ -75,7 +75,7 @@ WHERE t1.a = t2.b AND t2.a = t3.b AND t3.a = t4.b;
 SELECT count(*) FROM tmp1;
 DROP TABLE tmp1;
 
-SET aqo.mode = 'manual';
+SET aqo.mode = 'controlled';
 UPDATE aqo_queries SET auto_tuning=false;
 
 UPDATE aqo_queries SET learn_aqo=true;

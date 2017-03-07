@@ -578,6 +578,8 @@
 
 #define PGPRO_EE
 
+#define XID_IS_64BIT
+
 #define PGPRO_PACKAGE_STR "PostgresPro 9.6.2.1"
 
 /* Define to the one symbol short name of this package. */

@@ -10,9 +10,10 @@
 
 #define CFS_GC_LOCK  0x10000000
 
-#define CFS_LOCK_MIN_TIMEOUT 100    /* microseconds */
+#define CFS_LOCK_MIN_TIMEOUT 100    /* microseconds: initial timeout of GC lock acquisition */
 #define CFS_LOCK_MAX_TIMEOUT 10000  /* microseconds */
-#define CFS_DISABLE_TIMEOUT  1000   /* milliseconds */
+#define CFS_DISABLE_TIMEOUT  1000   /* milliseconds: timeout of waiting for enabling GC */
+#define CFS_RETRY_TIMEOUT    10000  /* milliseconds: delay between GC iterations in case of error */
 #define CFS_ESTIMATE_PROBES  10
 
 /* 

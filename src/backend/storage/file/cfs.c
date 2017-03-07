@@ -556,7 +556,7 @@ void cfs_lock_file(FileMap* map, char const* file_path)
 		} 
 		else 
 		{
-			if (!pg_atomic_unlocked_test_flag(&cfs_state->gc_started))
+			if (pg_atomic_unlocked_test_flag(&cfs_state->gc_started))
 			{
 				if (++n_attempts > MAX_LOCK_ATTEMPTS) 
 				{
@@ -566,6 +566,7 @@ void cfs_lock_file(FileMap* map, char const* file_path)
 					 * We should revoke the the lock to allow access to this segment.
 					 */
 					revokeLock = true;
+					elog(WARNING, "CFS revokes lock on file %s\n", file_path);
 				}
 			}
 			else
@@ -583,6 +584,8 @@ void cfs_lock_file(FileMap* map, char const* file_path)
 			char* map_bck_path = psprintf("%s.cfm.bck", file_path);
 			char* file_bck_path = psprintf("%s.bck", file_path);
 
+			elog(WARNING, "CFS indicates that GC of %s was interrupted: try to perform recovery", file_path);
+
 			if (access(file_bck_path, R_OK) != 0)
 			{
 				/* There is no backup file: new map should be constructed */
@@ -591,7 +594,7 @@ void cfs_lock_file(FileMap* map, char const* file_path)
 				{
 					/* Recover map. */
 					if (!cfs_read_file(md2, map, sizeof(FileMap)))
-						elog(LOG, "CFS failed to read file %s: %m", map_bck_path);
+						elog(WARNING, "CFS failed to read file %s: %m", map_bck_path);
 
 					close(md2);
 				}
@@ -646,8 +649,9 @@ static int cfs_cmp_page_offs(void const* p1, void const* p2)
 /*
  * Perform garbage collection (if required) on the file
  * @param map_path - path to the map file (*.cfm).
+ * @param noerror - surpress error message (when this function is called by cfs_gc_relation until there are available segments)
  */
-static bool cfs_gc_file(char* map_path)
+static bool cfs_gc_file(char* map_path, bool noerror)
 {
 	int md = open(map_path, O_RDWR|PG_BINARY, 0);
 	FileMap* map;
@@ -679,14 +683,16 @@ static bool cfs_gc_file(char* map_path)
 
 	if (md < 0)
 	{ 
-		elog(LOG, "CFS failed to open map file %s: %m", map_path);
+		if (!noerror) { 
+			elog(WARNING, "CFS failed to open map file %s: %m", map_path);
+		}
 		goto FinishGC;
 	}
 
 	map = cfs_mmap(md);
 	if (map == MAP_FAILED)
 	{
-		elog(LOG, "CFS failed to map file %s: %m", map_path);
+		elog(WARNING, "CFS failed to map file %s: %m", map_path);
 		close(md);
 		goto FinishGC;
 	}
@@ -739,6 +745,7 @@ static bool cfs_gc_file(char* map_path)
 				/* Uhhh... looks like last GC was interrupted.
 				 * Try to recover file
 				 */
+				elog(WARNING, "CFS indicates that last GC of %s was interrupted: perform recovery", file_bck_path);
 				if (access(file_bck_path, R_OK) != 0)
 				{
 					/* There is no backup file: new map should be constructed */
@@ -748,7 +755,7 @@ static bool cfs_gc_file(char* map_path)
 						/* Recover map */
 						if (!cfs_read_file(md2, newMap, sizeof(FileMap)))
 						{
-							elog(LOG, "CFS failed to read file %s: %m", map_bck_path);
+							elog(WARNING, "CFS failed to read file %s: %m", map_bck_path);
 							goto Cleanup;
 						}
 						close(md2);
@@ -820,14 +827,14 @@ static bool cfs_gc_file(char* map_path)
 
 				if (!cfs_read_file(fd, block, size))
 				{
-					elog(LOG, "CFS GC failed to read block %d of file %s at position %d size %d: %m",
+					elog(WARNING, "CFS GC failed to read block %d of file %s at position %d size %d: %m",
 							   i, file_path, offs, size);
 					goto Cleanup;
 				}
 
 				if (!cfs_write_file(fd2, block, size))
 				{
-					elog(LOG, "CFS failed to write file %s: %m", file_bck_path);
+					elog(WARNING, "CFS failed to write file %s: %m", file_bck_path);
 					goto Cleanup;
 				}
 				cfs_state->gc_stat.processedBytes += size;
@@ -841,7 +848,7 @@ static bool cfs_gc_file(char* map_path)
 
 		if (close(fd) < 0)
 		{
-			elog(LOG, "CFS failed to close file %s: %m", file_path);
+			elog(WARNING, "CFS failed to close file %s: %m", file_path);
 			goto Cleanup;
 		}
 		fd = -1;
@@ -849,12 +856,12 @@ static bool cfs_gc_file(char* map_path)
 		/* Persist copy of data file */
 		if (pg_fsync(fd2) < 0)
 		{
-			elog(LOG, "CFS failed to sync file %s: %m", file_bck_path);
+			elog(WARNING, "CFS failed to sync file %s: %m", file_bck_path);
 			goto Cleanup;
 		}
 		if (close(fd2) < 0)
 		{
-			elog(LOG, " CFS failed to close file %s: %m", file_bck_path);
+			elog(WARNING, "CFS failed to close file %s: %m", file_bck_path);
 			goto Cleanup;
 		}
 		fd2 = -1;
@@ -862,17 +869,17 @@ static bool cfs_gc_file(char* map_path)
 		/* Persist copy of map file */
 		if (!cfs_write_file(md2, &newMap, sizeof(newMap)))
 		{
-			elog(LOG, "CFS failed to write file %s: %m", map_bck_path);
+			elog(WARNING, "CFS failed to write file %s: %m", map_bck_path);
 			goto Cleanup;
 		}
 		if (pg_fsync(md2) < 0)
 		{
-			elog(LOG, "CFS failed to sync file %s: %m", map_bck_path);
+			elog(WARNING, "CFS failed to sync file %s: %m", map_bck_path);
 			goto Cleanup;
 		}
 		if (close(md2) < 0)
 		{
-			elog(LOG, "CFS failed to close file %s: %m", map_bck_path);
+			elog(WARNING, "CFS failed to close file %s: %m", map_bck_path);
 			goto Cleanup;
 		}
 		md2 = -1;
@@ -883,12 +890,12 @@ static bool cfs_gc_file(char* map_path)
 		 */
 		if (cfs_msync(map) < 0)
 		{
-			elog(LOG, "CFS failed to sync map %s: %m", map_path);
+			elog(WARNING, "CFS failed to sync map %s: %m", map_path);
 			goto Cleanup;
 		}
 		if (pg_fsync(md) < 0)
 		{
-			elog(LOG, "CFS failed to sync file %s: %m", map_path);
+			elog(WARNING, "CFS failed to sync file %s: %m", map_path);
 			goto Cleanup;
 		}
 
@@ -934,7 +941,7 @@ static bool cfs_gc_file(char* map_path)
 		remove_backups = false;
 		if (rename(file_bck_path, file_path) < 0)
 		{
-			elog(LOG, "CFS failed to rename file %s: %m", file_path);
+			elog(WARNING, "CFS failed to rename file %s: %m", file_path);
 			goto Cleanup;
 		}
 
@@ -953,12 +960,12 @@ static bool cfs_gc_file(char* map_path)
 		 * we need to flush updated map file */
 		if (cfs_msync(map) < 0)
 		{
-			elog(LOG, "CFS failed to sync map %s: %m", map_path);
+			elog(WARNING, "CFS failed to sync map %s: %m", map_path);
 			goto Cleanup;
 		}
 		if (pg_fsync(md) < 0)
 		{
-			elog(LOG, "CFS failed to sync file %s: %m", map_path);
+			elog(WARNING, "CFS failed to sync file %s: %m", map_path);
 
 			Cleanup:
 			if (fd >= 0) close(fd);
@@ -980,7 +987,7 @@ static bool cfs_gc_file(char* map_path)
 		/* remove map backup file */
 		if (remove_backups && unlink(map_bck_path))
 		{
-			elog(LOG, "CFS failed to unlink file %s: %m", map_bck_path);
+			elog(WARNING, "CFS failed to unlink file %s: %m", map_bck_path);
 			succeed = false;
 		}
 
@@ -989,7 +996,7 @@ static bool cfs_gc_file(char* map_path)
 
 		if (succeed)
 		{
-			elog(LOG, "%d: defragment file %s: old size %d, new size %d, logical size %d, used %d, compression ratio %f, time %ld usec",
+			elog(LOG, "CFS GC worker %d: defragment file %s: old size %d, new size %d, logical size %d, used %d, compression ratio %f, time %ld usec",
 				 MyProcPid, file_path, physSize, newSize, virtSize, usedSize, (double)virtSize/newSize,
 				 secs*USECS_PER_SEC + usecs);
 		}
@@ -1010,17 +1017,17 @@ static bool cfs_gc_file(char* map_path)
 		}
 	}
 	else if (cfs_state->max_iterations == 1)
-		elog(LOG, "%d: file %.*s: physical size %d, logical size %d, used %d, compression ratio %f",
+		elog(LOG, "CFS GC worker %d: file %.*s: physical size %d, logical size %d, used %d, compression ratio %f",
 			 MyProcPid, suf, map_path, physSize, virtSize, usedSize, (double)virtSize/physSize);
 
 	if (cfs_munmap(map) < 0)
 	{
-		elog(LOG, "CFS failed to unmap file %s: %m", map_path);
+		elog(WARNING, "CFS failed to unmap file %s: %m", map_path);
 		succeed = false;
 	}
 	if (close(md) < 0)
 	{
-		elog(LOG, "CFS failed to close file %s: %m", map_path);
+		elog(WARNING, "CFS failed to close file %s: %m", map_path);
 		succeed = false;
 	}
 
@@ -1059,7 +1066,7 @@ static bool cfs_gc_directory(int worker_id, char const* path)
 				strcmp(file_path + len - 4, ".cfm") == 0)
 			{
 				if (entry->d_ino % cfs_state->n_workers == worker_id
-					&& !cfs_gc_file(file_path))
+					&& !cfs_gc_file(file_path, false))
 				{
 					success = false;
 					break;
@@ -1104,13 +1111,22 @@ static void cfs_gc_bgworker_main(Datum arg)
 
 	elog(INFO, "Start CFS garbage collector %d", MyProcPid);
 
-	while (cfs_gc_scan_tablespace(worker_id)
-		   && !cfs_gc_stop
-		   && --cfs_state->max_iterations >= 0)
+	while (true)
 	{
-		int rc = WaitLatch(MyLatch,
-						   WL_TIMEOUT | WL_POSTMASTER_DEATH,
-						   cfs_gc_period /* ms */ );
+		int timeout = cfs_gc_period;
+		int rc;
+
+		if (!cfs_gc_scan_tablespace(worker_id)) 
+		{
+			timeout = CFS_RETRY_TIMEOUT;
+		}
+		if (cfs_gc_stop || --cfs_state->max_iterations <= 0)
+		{
+			break;
+		}
+		rc = WaitLatch(MyLatch,
+					   WL_TIMEOUT | WL_POSTMASTER_DEATH,
+					   timeout /* ms */ );
 		if (rc & WL_POSTMASTER_DEATH)
 			exit(1);
 	}
@@ -1304,7 +1320,7 @@ Datum cfs_compression_ratio(PG_FUNCTION_ARGS)
 			map = cfs_mmap(md);
 			if (map == MAP_FAILED)
 			{
-				elog(LOG, "cfs_compression_ration failed to map file %s: %m", map_path);
+				elog(WARNING, "CFS compression_ratio failed to map file %s: %m", map_path);
 				close(md);
 				break;
 			}
@@ -1313,9 +1329,9 @@ Datum cfs_compression_ratio(PG_FUNCTION_ARGS)
 			physSize += pg_atomic_read_u32(&map->physSize);
 
 			if (cfs_munmap(map) < 0)
-				elog(LOG, "CFS failed to unmap file %s: %m", map_path);
+				elog(WARNING, "CFS failed to unmap file %s: %m", map_path);
 			if (close(md) < 0)
-				elog(LOG, "CFS failed to close file %s: %m", map_path);
+				elog(WARNING, "CFS failed to close file %s: %m", map_path);
 
 			i += 1;
 		}
@@ -1356,7 +1372,7 @@ Datum cfs_fragmentation(PG_FUNCTION_ARGS)
 			map = cfs_mmap(md);
 			if (map == MAP_FAILED)
 			{
-				elog(LOG, "cfs_compression_ration failed to map file %s: %m", map_path);
+				elog(WARNING, "CFS compression_ratio failed to map file %s: %m", map_path);
 				close(md);
 				break;
 			}
@@ -1364,9 +1380,9 @@ Datum cfs_fragmentation(PG_FUNCTION_ARGS)
 			physSize += pg_atomic_read_u32(&map->physSize);
 
 			if (cfs_munmap(map) < 0)
-				elog(LOG, "CFS failed to unmap file %s: %m", map_path);
+				elog(WARNING, "CFS failed to unmap file %s: %m", map_path);
 			if (close(md) < 0)
-				elog(LOG, "CFS failed to close file %s: %m", map_path);
+				elog(WARNING, "CFS failed to close file %s: %m", map_path);
 
 			i += 1;
 		}
@@ -1395,7 +1411,7 @@ Datum cfs_gc_relation(PG_FUNCTION_ARGS)
 			
 			while (true)
 			{
-				if (!cfs_gc_file(map_path))
+				if (!cfs_gc_file(map_path, true))
 					break;
 				sprintf(map_path, "%s.%u.cfm", path, ++i);
 			}
