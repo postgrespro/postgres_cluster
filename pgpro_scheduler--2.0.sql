@@ -405,7 +405,10 @@ DECLARE
 	clean_cron jsonb;
 	N integer;
 	name text;
+	updatePrev boolean;
 BEGIN
+
+	updatePrev := true;
 
 	IF NOT params?'cron' AND NOT params?'rule' AND NOT params?'date' AND NOT params?'dates' THEN
 		RAISE  EXCEPTION 'There is no information about job''s schedule'
@@ -416,13 +419,11 @@ BEGIN
 		EXECUTE 'SELECT cron2jsontext($1::cstring)::jsonb' 
 			INTO cron
 			USING params->>'cron';
-		IF prev IS NOT NULL THEN
-			cron := prev || cron;
-		END IF;
 	END IF;
 
 	IF params?'rule' THEN
 		rule := params->'rule';
+		updatePrev := false;
 	END IF;
 
 	cron := coalesce(cron, '{}'::jsonb) || coalesce(rule, '{}'::jsonb);
@@ -446,6 +447,10 @@ BEGIN
 		EXECUTE 'SELECT array_agg(lll) FROM (SELECT distinct(date_trunc(''min'', unnest::timestamp with time zone)) as lll FROM unnest($1) ORDER BY date_trunc(''min'', unnest::timestamp with time zone)) as Z'
 			INTO dates USING dates;
 		cron := cron || jsonb_build_object('dates', array_to_json(dates));
+	END IF;
+
+	IF updatePrev AND prev IS NOT NULL THEN
+		cron := prev || cron;
 	END IF;
 
 	clean_cron := '{}'::jsonb;
