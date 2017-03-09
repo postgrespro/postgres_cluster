@@ -25,6 +25,7 @@ char_array_t *makeCharArray(void)
 
 char_array_t *sortCharArray(char_array_t *a)
 {
+	if(a->n <= 1) return a;
 	qsort(a->data, a->n, sizeof(char *), __sort_char_string);
 
 	return a;

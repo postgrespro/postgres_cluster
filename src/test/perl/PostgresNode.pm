@@ -392,11 +392,12 @@ sub init
 	  unless defined $params{hba_permit_replication};
 	$params{allows_streaming} = 0 unless defined $params{allows_streaming};
 	$params{has_archiving}    = 0 unless defined $params{has_archiving};
+	$params{use_tcp}          = 0 unless defined $params{use_tcp};
 
 	mkdir $self->backup_dir;
 	mkdir $self->archive_dir;
 
-	TestLib::system_or_bail('initdb', '-D', $pgdata, '-A', 'trust', '-N');
+	TestLib::system_or_bail('initdb', '-D', $pgdata, '-A', 'trust', '-N', '-x', '4294967296', '-m', '4294967296');
 	TestLib::system_or_bail($ENV{PG_REGRESS}, '--config-auth', $pgdata);
 
 	open my $conf, ">>$pgdata/postgresql.conf";
@@ -424,7 +425,14 @@ sub init
 	else
 	{
 		print $conf "unix_socket_directories = '$host'\n";
-		print $conf "listen_addresses = ''\n";
+		if ($params{use_tcp})
+		{
+			print $conf "listen_addresses = '$test_localhost'\n";
+		}
+		else
+		{
+			print $conf "listen_addresses = ''\n";
+		}
 	}
 	close $conf;
 

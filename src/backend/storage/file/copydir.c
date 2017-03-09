@@ -319,6 +319,7 @@ copy_zip_file(char *fromfile, bool from_compressed,
 	Assert(sep != NULL);
 
 	if ((sscanf(sep+1, "%d.%d%n", &relno, &segno, &n) != 2
+		&& sscanf(sep+1, "%d_init%n", &relno, &n) != 1
 		&& sscanf(sep+1, "%d%n", &relno, &n) != 1)
 		|| sep[n+1] != '\0'
 		|| relno < FirstNormalObjectId)
@@ -328,7 +329,7 @@ copy_zip_file(char *fromfile, bool from_compressed,
 	}
 
 	if (to_compressed)
-		fprintf(stderr, "Compress file %s, relno=%d, sep[n+1]=%s\n",
+		elog(DEBUG2, "Compress file %s, relno=%d, sep[n+1]=%s\n",
 				tofile, relno, &sep[n+1]);
 
 	/* Open the files */

@@ -7,6 +7,7 @@
 #include "utils/elog.h"
 #include "utils/lsyscache.h"
 #include "utils/builtins.h"
+#include "utils/datum.h"
 #include "catalog/pg_type.h"
 #include "memutils.h"
 
@@ -27,8 +28,8 @@ void START_SPI_SNAP(void)
 {
 	SetCurrentStatementStartTimestamp();
 	StartTransactionCommand();
-	PushActiveSnapshot(GetTransactionSnapshot());
 	SPI_connect();
+	PushActiveSnapshot(GetTransactionSnapshot()); 
 }
 
 void STOP_SPI_SNAP(void)
@@ -40,9 +41,109 @@ void STOP_SPI_SNAP(void)
 
 void ABORT_SPI_SNAP(void) 
 {
-	PopActiveSnapshot();
+	PopActiveSnapshot(); 
 	AbortCurrentTransaction();
 	SPI_finish();
+}
+
+void destroy_spi_data(spi_response_t *d)
+{
+	int i,j;
+
+	if(d->error) pfree(d->error);
+	if(d->n_rows > 0)
+	{
+		if(d->types) pfree(d->types);
+		for(i=0; i < d->n_rows; i++)
+		{
+			for(j=0; j < d->n_attrs; j++)
+			{
+				if(d->ref[j] && !(d->rows[i][j].null))
+							pfree(DatumGetPointer(d->rows[i][j].dat));
+			}
+			pfree(d->rows[i]);
+		}
+		if(d->ref) pfree(d->ref);
+	}
+	pfree(d);
+}
+
+spi_response_t *__error_spi_resp(int ret, char *error)
+{
+	spi_response_t *r;
+
+	r = worker_alloc(sizeof(spi_response_t));
+	r->n_rows = 0;
+	r->n_attrs = 0;
+	r->retval = ret;
+	r->types = NULL;
+	r->rows = NULL;
+	r->error = _copy_string(error);
+
+	return r;
+}
+
+spi_response_t *__copy_spi_data(int ret, int  n)
+{
+	spi_response_t *r;
+	MemoryContext old;
+	int i, j;
+	Datum dat;
+	bool is_null;
+
+
+	r = worker_alloc(sizeof(spi_response_t));
+	r->retval = ret;
+	r->error = NULL;
+
+	if(n == 0 || !SPI_tuptable)
+	{
+		r->types = NULL;
+		r->rows = NULL;
+		r->ref = NULL;
+		r->n_rows = 0;
+		r->n_attrs = 0;
+
+		return r;
+	}
+	r->n_rows = n;
+	r->n_attrs = SPI_tuptable->tupdesc->natts;
+	r->types = worker_alloc(sizeof(Oid) * r->n_attrs);
+	r->rows = worker_alloc(sizeof(spi_val_t *) * n);
+	r->ref = worker_alloc(sizeof(bool) * r->n_attrs);
+
+	old  = switch_to_worker_context();
+
+	for(i=0; i < r->n_attrs; i++)
+	{
+		r->types[i] = SPI_gettypeid(SPI_tuptable->tupdesc, i+1);
+		r->ref[i] = SPI_tuptable->tupdesc->attrs[i]->attbyval ? false: true;
+	}
+
+	for(i=0; i < n; i++)
+	{
+		r->rows[i] = worker_alloc(sizeof(spi_val_t) * r->n_attrs);
+		for(j=0; j < r->n_attrs; j++)
+		{
+			dat = SPI_getbinval(SPI_tuptable->vals[i],
+									SPI_tuptable->tupdesc, j+1, &is_null);
+			if(is_null)
+			{
+				r->rows[i][j].dat =  0;
+				r->rows[i][j].null =  true;
+			}	
+			else
+			{
+				r->rows[i][j].dat = datumCopy(dat,
+						SPI_tuptable->tupdesc->attrs[j]->attbyval,
+						SPI_tuptable->tupdesc->attrs[j]->attlen);
+				r->rows[i][j].null = false;
+			}
+		}
+	}
+	MemoryContextSwitchTo(old);
+
+	return r;
 }
 
 char *_copy_string(char *str)
@@ -58,29 +159,45 @@ char *_copy_string(char *str)
 	return cpy;
 }
 
-Oid get_oid_from_spi(int row_n, int pos, Oid def)
+Oid get_oid_from_spi(spi_response_t *r, int row_n, int pos, Oid def)
 {
 	Datum datum;
 	bool is_null;
 
-	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
-	                        pos, &is_null);
+	if(r)
+	{
+		datum = r->rows[row_n][pos-1].dat;
+		is_null = r->rows[row_n][pos-1].null;
+	}
+	else
+	{
+		datum = SPI_getbinval(SPI_tuptable->vals[row_n],
+							SPI_tuptable->tupdesc, pos, &is_null);
+	}
 	if(is_null) return def;
 	return DatumGetObjectId(datum);
 }
 
-bool get_boolean_from_spi(int row_n, int pos, bool def)
+bool get_boolean_from_spi(spi_response_t *r, int row_n, int pos, bool def)
 {
 	Datum datum;
 	bool is_null;
 
-	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
-	                        pos, &is_null);
+	if(r)
+	{
+		datum = r->rows[row_n][pos-1].dat;
+		is_null = r->rows[row_n][pos-1].null;
+	}
+	else
+	{
+		datum = SPI_getbinval(SPI_tuptable->vals[row_n],
+									SPI_tuptable->tupdesc, pos, &is_null);
+	}
 	if(is_null) return def;
 	return DatumGetBool(datum);
 }
 
-int64 *get_int64array_from_spi(int row_n, int pos, int *N)
+int64 *get_int64array_from_spi(spi_response_t *r, int row_n, int pos, int *N)
 {
 	Datum datum;
 	bool is_null;
@@ -95,8 +212,16 @@ int64 *get_int64array_from_spi(int row_n, int pos, int *N)
 
 	*N = 0;
 
-	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
-	                        pos, &is_null);
+	if(r)
+	{
+		datum = r->rows[row_n][pos-1].dat;
+		is_null = r->rows[row_n][pos-1].null;
+	}
+	else
+	{
+		datum = SPI_getbinval(SPI_tuptable->vals[row_n],
+							SPI_tuptable->tupdesc, pos, &is_null);
+	}
 	if(is_null) return NULL;
 
 	input = DatumGetArrayTypeP(datum);
@@ -127,7 +252,7 @@ int64 *get_int64array_from_spi(int row_n, int pos, int *N)
 	return result;
 }
 
-char **get_textarray_from_spi(int row_n, int pos, int *N)
+char **get_textarray_from_spi(spi_response_t *r, int row_n, int pos, int *N)
 {
 	Datum datum;
 	bool is_null;
@@ -142,8 +267,16 @@ char **get_textarray_from_spi(int row_n, int pos, int *N)
 
 	*N = 0;
 
-	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
-	                        pos, &is_null);
+	if(r)
+	{
+		datum = r->rows[row_n][pos-1].dat;
+		is_null = r->rows[row_n][pos-1].null;
+	}
+	else
+	{
+		datum = SPI_getbinval(SPI_tuptable->vals[row_n],
+							SPI_tuptable->tupdesc, pos, &is_null);
+	}
 	if(is_null) return NULL;
 
 	input = DatumGetArrayTypeP(datum);
@@ -174,37 +307,62 @@ char **get_textarray_from_spi(int row_n, int pos, int *N)
 	return result;
 }
 
-TimestampTz get_timestamp_from_spi(int row_n, int pos, TimestampTz def)
+TimestampTz get_timestamp_from_spi(spi_response_t *r, int row_n, int pos, TimestampTz def)
 {
 	Datum datum;
 	bool is_null;
 
-	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
-	                        pos, &is_null);
+	if(r)
+	{
+		datum = r->rows[row_n][pos-1].dat;
+		is_null = r->rows[row_n][pos-1].null;
+	}
+	else
+	{
+		datum = SPI_getbinval(SPI_tuptable->vals[row_n],
+								SPI_tuptable->tupdesc, pos, &is_null);
+	}
+
 	if(is_null) return def;
 	return DatumGetTimestampTz(datum);
 }
 
-char *get_text_from_spi(int row_n, int pos)
+char *get_text_from_spi(spi_response_t *r, int row_n, int pos)
 {
 	Datum datum;
 	bool is_null;
 
-	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
-	                        pos, &is_null);
+	if(r)
+	{
+		datum = r->rows[row_n][pos-1].dat;
+		is_null = r->rows[row_n][pos-1].null;
+	}
+	else
+	{
+		datum = SPI_getbinval(SPI_tuptable->vals[row_n],
+							SPI_tuptable->tupdesc, pos, &is_null);
+	}
 	if(is_null) return NULL;
 	return _copy_string(TextDatumGetCString(datum));
 }
 
-long int get_interval_seconds_from_spi(int row_n, int pos, long def)
+int64 get_interval_seconds_from_spi(spi_response_t *r, int row_n, int pos, long def)
 {
 	Datum datum;
 	bool is_null;
 	Interval *interval;
-	long result = 0;
+	int64 result = 0;
 
-	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
-	                        pos, &is_null);
+	if(r)
+	{
+		datum = r->rows[row_n][pos-1].dat;
+		is_null = r->rows[row_n][pos-1].null;
+	}
+	else
+	{
+		datum = SPI_getbinval(SPI_tuptable->vals[row_n],
+								SPI_tuptable->tupdesc, pos, &is_null);
+	}
 	if(is_null) return def;
 	interval = DatumGetIntervalP(datum);
 #ifdef HAVE_INT64_TIMESTAMP
@@ -219,24 +377,40 @@ long int get_interval_seconds_from_spi(int row_n, int pos, long def)
 	return result;
 }
 
-int get_int_from_spi(int row_n, int pos, int def)
+int get_int_from_spi(spi_response_t *r, int row_n, int pos, int def)
 {
 	Datum datum;
 	bool is_null;
 
-	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
-	                        pos, &is_null);
+	if(r)
+	{
+		datum = r->rows[row_n][pos-1].dat;
+		is_null = r->rows[row_n][pos-1].null;
+	}
+	else
+	{
+		datum = SPI_getbinval(SPI_tuptable->vals[row_n],
+							SPI_tuptable->tupdesc, pos, &is_null);
+	}
 	if(is_null) return def;
 	return (int)DatumGetInt32(datum);
 }
 
-int64 get_int64_from_spi(int row_n, int pos, int def)
+int64 get_int64_from_spi(spi_response_t *r, int row_n, int pos, int def)
 {
 	Datum datum;
 	bool is_null;
 
-	datum = SPI_getbinval(SPI_tuptable->vals[row_n], SPI_tuptable->tupdesc,
-	                        pos, &is_null);
+	if(r)
+	{
+		datum = r->rows[row_n][pos-1].dat;
+		is_null = r->rows[row_n][pos-1].null;
+	}
+	else
+	{
+		datum = SPI_getbinval(SPI_tuptable->vals[row_n],
+							SPI_tuptable->tupdesc, pos, &is_null);
+	}
 	if(is_null) return def;
 	return (int64)DatumGetInt64(datum);
 }
@@ -246,6 +420,7 @@ Datum select_onedatumvalue_sql(const char *sql, bool *is_null)
 	int ret;
 	Datum datum = 0;
 
+	SetCurrentStatementStartTimestamp();
 	ret = SPI_execute(sql, true, 0);
 	if(ret == SPI_OK_SELECT)
 	{
@@ -266,6 +441,7 @@ int select_count_with_args(const char *sql, int n, Oid *argtypes, Datum *values,
 	Datum datum;
 	bool is_null;
 
+	SetCurrentStatementStartTimestamp();
 	ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, true, 0);
 	if(ret == SPI_OK_SELECT)
 	{
@@ -290,91 +466,97 @@ int select_oneintvalue_sql(const char *sql, int def)
 	return DatumGetInt32(d);
 }
 
-int execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *values, char *nulls, char **error)
+spi_response_t *execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *values, char *nulls)
 {
 	int ret = -100;
 	ErrorData *edata;
-	MemoryContext old;
-	int errorSet = 0;
 	char other[100];
+	ResourceOwner oldowner = CurrentResourceOwner;
+	spi_response_t *rv = NULL;
 
-	*error = NULL;
-
+	SetCurrentStatementStartTimestamp();
+	BeginInternalSubTransaction(NULL);
+	switch_to_worker_context();
 
 	PG_TRY();
 	{
 		ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, false, 0);
+		rv = __copy_spi_data(ret, SPI_processed);
+		ReleaseCurrentSubTransaction();
+		switch_to_worker_context();
+		CurrentResourceOwner = oldowner;
+		SPI_restore_connection(); 
 	}
 	PG_CATCH();
 	{
-		old = switch_to_worker_context();
-
+		switch_to_worker_context();
 		edata = CopyErrorData();
 		if(edata->message)
 		{
-			*error = _copy_string(edata->message);
+			rv = __error_spi_resp(ret, edata->message);
 		}
 		else if(edata->detail)
 		{
-			*error = _copy_string(edata->detail);
+			rv = __error_spi_resp(ret, edata->detail);
 		}
 		else
 		{
-			*error = _copy_string("unknown error");
+			rv = __error_spi_resp(ret, "unknown error");
 		}
-		errorSet = 1;
+		RollbackAndReleaseCurrentSubTransaction(); 
+		CurrentResourceOwner = oldowner;
+		switch_to_worker_context();
+		SPI_restore_connection(); 
 		FreeErrorData(edata);
-		MemoryContextSwitchTo(old);
 		FlushErrorState();
 	}
 	PG_END_TRY();
 
-	if(!errorSet && ret < 0)
+	if(!rv && ret < 0)
 	{
 		if(ret == SPI_ERROR_CONNECT)
 		{
-			*error = _copy_string("Connection error");
+			rv = __error_spi_resp(ret, "Connection error");
 		}
 		else if(ret == SPI_ERROR_COPY)
 		{
-			*error = _copy_string("COPY error");
+			rv = __error_spi_resp(ret, "COPY error");
 		}
 		else if(ret == SPI_ERROR_OPUNKNOWN)
 		{
-			*error = _copy_string("SPI_ERROR_OPUNKNOWN");
+			rv = __error_spi_resp(ret, "SPI_ERROR_OPUNKNOWN");
 		}
 		else if(ret == SPI_ERROR_UNCONNECTED)
 		{
-			*error = _copy_string("Unconnected call");
+			rv = __error_spi_resp(ret, "Unconnected call");
 		}
 		else
 		{
 			sprintf(other, "error number: %d", ret);
-			*error = _copy_string(other);
+			rv = __error_spi_resp(ret, other);
 		}
 	}
 
-	return ret;
+	return rv;
 }
 
-int execute_spi(const char *sql, char **error)
+spi_response_t *execute_spi(const char *sql)
 {	
-	return execute_spi_sql_with_args(sql, 0, NULL, NULL, NULL, error);
+	return execute_spi_sql_with_args(sql, 0, NULL, NULL, NULL);
 }
 
-int execute_spi_params_prepared(const char *sql, int nparams, char **params, char **error)
+spi_response_t *execute_spi_params_prepared(const char *sql, int nparams, char **params)
 {
 	int ret = -100;
 	ErrorData *edata;
-	MemoryContext old;
-	int errorSet = 0;
 	char other[100];
 	SPIPlanPtr plan;
 	Oid *paramtypes;
 	Datum *values;
 	int i;
+	ResourceOwner oldowner = CurrentResourceOwner;
+	spi_response_t *rv;
 
-	*error = NULL;
 
 	paramtypes = worker_alloc(sizeof(Oid) * nparams);
 	values = worker_alloc(sizeof(Datum) * nparams);
@@ -384,65 +566,77 @@ int execute_spi_params_prepared(const char *sql, int nparams, char **params, cha
 		values[i] = CStringGetTextDatum(params[i]);
 	}
 
+	SetCurrentStatementStartTimestamp();
+	BeginInternalSubTransaction(NULL);
+	switch_to_worker_context();
+
 	PG_TRY();
 	{
 		plan = SPI_prepare(sql, nparams, paramtypes);
 		if(plan)
 		{
+			SetCurrentStatementStartTimestamp();
 			ret = SPI_execute_plan(plan, values, NULL, false, 0);
+			rv = __copy_spi_data(ret, SPI_processed);
 		}
+		ReleaseCurrentSubTransaction();
+		switch_to_worker_context();
+		CurrentResourceOwner = oldowner;
+		SPI_restore_connection();
 	}
 	PG_CATCH();
 	{
-		old = switch_to_worker_context();
+		switch_to_worker_context();
 
 		edata = CopyErrorData();
 		if(edata->message)
 		{
-			*error = _copy_string(edata->message);
+			rv = __error_spi_resp(ret, edata->message);
 		}
 		else if(edata->detail)
 		{
-			*error = _copy_string(edata->detail);
+			rv = __error_spi_resp(ret, edata->detail);
 		}
 		else
 		{
-			*error = _copy_string("unknown error");
+			rv = __error_spi_resp(ret, "unknown error");
 		}
-		errorSet = 1;
 		FreeErrorData(edata);
-		MemoryContextSwitchTo(old);
 		FlushErrorState();
+		RollbackAndReleaseCurrentSubTransaction(); 
+		CurrentResourceOwner = oldowner;
+		switch_to_worker_context();
+		SPI_restore_connection();
 	}
 	PG_END_TRY();
 
 	pfree(values);
 	pfree(paramtypes);
 
-	if(!errorSet && ret < 0)
+	if(!rv && ret < 0)
 	{
 		if(ret == SPI_ERROR_CONNECT)
 		{
-			*error = _copy_string("Connection error");
+			rv = __error_spi_resp(ret, "Connection error");
 		}
 		else if(ret == SPI_ERROR_COPY)
 		{
-			*error = _copy_string("COPY error");
+			rv = __error_spi_resp(ret, "COPY error");
 		}
 		else if(ret == SPI_ERROR_OPUNKNOWN)
 		{
-			*error = _copy_string("SPI_ERROR_OPUNKNOWN");
+			rv = __error_spi_resp(ret, "SPI_ERROR_OPUNKNOWN");
 		}
 		else if(ret == SPI_ERROR_UNCONNECTED)
 		{
-			*error = _copy_string("Unconnected call");
+			rv = __error_spi_resp(ret, "Unconnected call");
 		}
 		else
 		{
 			sprintf(other, "error number: %d", ret);
-			*error = _copy_string(other);
+			rv = __error_spi_resp(ret, other);
 		}
 	}
 
-	return ret;
+	return rv;
 }

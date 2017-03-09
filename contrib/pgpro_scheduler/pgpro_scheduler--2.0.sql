@@ -5,9 +5,10 @@ SET search_path TO schedule;
 
 CREATE TYPE job_status_t AS ENUM ('working', 'done', 'error');
 CREATE TYPE job_at_status_t AS ENUM ('submitted', 'processing', 'done');
+CREATE SEQUENCE schedule.at_jobs_submitted_id_seq;
 
 CREATE TABLE at_jobs_submitted(
-   id SERIAL PRIMARY KEY,
+   id int PRIMARY KEY,
    node text,
    name text,
    comments text,
@@ -28,21 +29,17 @@ CREATE TABLE at_jobs_submitted(
 CREATE INDEX ON at_jobs_submitted(at,submit_time);
 CREATE INDEX ON at_jobs_submitted (last_start_available, node);
 
-CREATE TABLE at_jobs_process(
-	start_time timestamp with time zone default now()
-) INHERITS (at_jobs_submitted);
+CREATE TABLE at_jobs_process  (like at_jobs_submitted including all);
+ALTER TABLE at_jobs_process ADD start_time timestamp with time zone default now();
+ CREATE INDEX at_jobs_process_node_at_idx on at_jobs_process (node,  at);
 
-ALTER TABLE at_jobs_process ADD  primary key (id);
-CREATE INDEX at_jobs_process_node_at_idx on at_jobs_process (node,  at);
+CREATE TABLE at_jobs_done  (like at_jobs_process including all);
+ALTER TABLE at_jobs_done ADD status boolean;
+ALTER TABLE at_jobs_done ADD reason text;
+ALTER TABLE at_jobs_done ADD done_time timestamp with time zone default now();
 
-CREATE TABLE at_jobs_done(
-	status boolean,
-	reason text,
-	done_time timestamp with time zone default now()
-) INHERITS (at_jobs_process);
+ALTER TABLE at_jobs_submitted ALTER id SET default nextval('schedule.at_jobs_submitted_id_seq');
 
-ALTER TABLE at_jobs_done ADD  primary key (id);
-CREATE INDEX at_jobs_done_node_at_idx on at_jobs_done (node,  at);
 
 CREATE TABLE cron(
    id SERIAL PRIMARY KEY,
@@ -287,7 +284,12 @@ DECLARE
   cron_id INTEGER;
 BEGIN
   cron_id := NEW.id; 
-  IF NOT NEW.active OR NEW.broken OR NEW.rule <> OLD.rule OR NEW.postpone <> OLD.postpone  THEN
+  IF NOT NEW.active OR NEW.broken OR
+  	coalesce(NEW.rule <> OLD.rule, true) OR
+	coalesce(NEW.postpone <> OLD.postpone, true)  OR
+	coalesce(NEW.start_date <> OLD.start_date, true) OR
+	coalesce(NEW.end_date <> OLD.end_date, true)
+  THEN
      DELETE FROM at WHERE cron = cron_id AND active = false;
   END IF;
   RETURN OLD;
@@ -1209,9 +1211,9 @@ BEGIN
 	END IF;
 
 	IF usename = '___all___' THEN
-		sql_cmd := 'SELECT * FROM log as l , cron as cron WHERE cron.id = l.cron';
+		sql_cmd := 'SELECT * FROM log as l LEFT OUTER JOIN cron ON cron.id = l.cron';
 	ELSE
-		sql_cmd := 'SELECT * FROM log as l , cron as cron WHERE cron.executor = ''' || usename || ''' AND cron.id = l.cron';
+		sql_cmd := 'SELECT * FROM log as l LEFT OUTER JOIN cron ON cron.executor = ''' || usename || ''' AND cron.id = l.cron';
 	END IF;
 
 	FOR ii IN EXECUTE sql_cmd LOOP
@@ -1344,7 +1346,7 @@ CREATE VIEW all_job_status AS
 		attempt, resubmit_limit, postpone as max_wait_interval,
 		max_run_time as max_duration, submit_time,
 		start_time, status as is_success, reason as error, done_time,
-		'processing'::job_at_status_t status
+		'done'::job_at_status_t status
 	FROM schedule.at_jobs_done 
 		UNION 
 	SELECT

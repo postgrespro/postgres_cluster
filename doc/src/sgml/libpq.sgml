@@ -792,7 +792,7 @@ host=localhost port=5432 dbname=mydb connect_timeout=10
    <para>
    The general form for a connection <acronym>URI</acronym> is:
 <synopsis>
-postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1&amp;...]
+postgresql://[user[:password]@][netloc][:port][,netloc[:port]...][/dbname][?param1=value1&amp;...]
 </synopsis>
    </para>
 
@@ -809,6 +809,7 @@ postgresql://localhost/mydb
 postgresql://user@localhost
 postgresql://user:secret@localhost
 postgresql://other@localhost/otherdb?connect_timeout=10&amp;application_name=myapp
+postgresql://node1,node2:5433,node3:4432,node4/mydb?hostorder=random&amp;target_server_type=any
 </programlisting>
     Components of the hierarchical part of the <acronym>URI</acronym> can also
     be given as parameters.  For example:
@@ -831,7 +832,9 @@ postgresql:///mydb?host=localhost&amp;port=5433
    <para>
     For improved compatibility with JDBC connection <acronym>URI</acronym>s,
     instances of parameter <literal>ssl=true</literal> are translated into
-    <literal>sslmode=require</literal>.
+    <literal>sslmode=require</literal> and
+    <literal>loadBalanceHosts=true</literal>  into
+    <literal>hostorder=random</literal>.
    </para>
 
    <para>
@@ -840,6 +843,10 @@ postgresql:///mydb?host=localhost&amp;port=5433
 <synopsis>
 postgresql://[2001:db8::1234]/database
 </synopsis>
+   </para>
+   <para>
+   There can be several host specifications, optionally accompanied
+   with port, separated by comma.
    </para>
 
    <para>
@@ -880,6 +887,21 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
         <filename>/tmp</filename> (or whatever socket directory was specified
         when <productname>&productname;</> was built). On machines without
         Unix-domain sockets, the default is to connect to <literal>localhost</>.
+       </para>
+       <para>
+        There can be more than one <literal>host</literal> parameter in
+        the connection string. In this case these hosts would be considered
+        alternate entries into same database and if connection to first one
+        fails, the second would be attemped, and so on. This can be used
+        for high availability clusters or for load balancing. See the
+        <xref linkend="libpq-connect-hostorder"> parameter. This feature
+        works for TCP/IP host names only.
+       </para>
+       <para>
+        The network host name can be accompanied by a port number, separated by
+        colon. This port number is used only when connected to
+        this host. If there is no port number, the port specified in the
+        <xref linkend="libpq-connect-port"> parameter would be used instead.
        </para>
       </listitem>
      </varlistentry>
@@ -933,7 +955,6 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
         is used to identify the connection in <filename>~/.pgpass</> (see
         <xref linkend="libpq-pgpass">).
        </para>
-
        <para>
         Without either a host name or host address,
         <application>libpq</application> will connect using a
@@ -941,6 +962,43 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
         sockets, it will attempt to connect to <literal>localhost</>.
        </para>
        </listitem>
+      </varlistentry>
+
+      <varlistentry id="libpq-connect-hostorder" xreflabel="hostorder">
+       <term><literal>hostorder</literal></term>
+       <listitem>
+       <para>
+        Specifies how to choose the host from the list of alternate hosts,
+        specified in the <xref linkend="libpq-connect-host"> parameter.
+       </para>
+       <para>
+        If the value of this argument is <literal>sequential</literal> (the
+        default) connections to the hosts will be attempted in the order in
+        which they are specified.
+       </para>
+       <para>
+        If the value is <literal>random</literal>, the host to connect to
+        will be randomly picked from the list. It allows load balacing between
+        several cluster nodes. However, PostgreSQL doesn't currently support
+        multimaster clusters. So, without the use of third-party products,
+        only read-only connections can take advantage from
+        load-balancing. See <xref linkend="libpq-connect-target-server-type">
+       </para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry id="libpq-connect-target-server-type" xreflabel="target_server_type">
+       <term><literal>target_server_type</literal></term>
+        <listitem>
+        <para>
+         If this parameter is <literal>master</literal>, upon
+         successful connection the host is checked to determine whether
+         it is in a recovery state.  If it is, it then tries next host
+         in the connection string. If this parameter is
+         <literal>any</literal>, connection to standby nodes are
+         considered successful. 
+        </para>
+        </listitem>
       </varlistentry>
 
       <varlistentry id="libpq-connect-port" xreflabel="port">
@@ -985,7 +1043,6 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
       </para>
       </listitem>
      </varlistentry>
-
      <varlistentry id="libpq-connect-connect-timeout" xreflabel="connect_timeout">
       <term><literal>connect_timeout</literal></term>
       <listitem>
@@ -996,7 +1053,28 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
       </para>
       </listitem>
      </varlistentry>
-
+     <varlistentry id="libpq-connect-falover-timeout" xreflabel="failover_timeout">
+      <term><literal>failover_timeout</literal></term>
+      <listitem>
+      <para>
+       Maximum time to cyclically retry all the hosts in the connection string.
+       (as decimal integer number of seconds). If not specified, then
+       hosts are tried just once.
+      </para>
+      <para>
+       If we have replicating cluster, and master node fails, it might
+       take some time to promote one of the standby nodes to the new master.
+       So clients which detect failure to connect to the master might
+       abandon attempts to reestablish a connection before the new master
+       becomes available.
+      </para>
+      <para>
+       Setting this parameter to a value that takes into account the amount of
+       time needed for failover to complete will ensure attempts to connect
+       to hosts continue to be made until the new master becomes available.
+      </para>
+      </listitem>
+     </varlistentry>
      <varlistentry id="libpq-connect-client-encoding" xreflabel="client_encoding">
       <term><literal>client_encoding</literal></term>
       <listitem>
@@ -7227,6 +7305,19 @@ user=admin
 </programlisting>
    An example file is provided at
    <filename>share/pg_service.conf.sample</filename>.
+  </para>
+  <para>
+  If more than one <literal>host</literal> option is present in the same
+  section of the service file, it is interpeted as alternate servers for
+  failover or load-balancing. See  <xref linkend="libpq-connect-host">
+  option in the connection string.
+  </para>
+  <para>
+  For all other options, the first value takes precedence over later ones.
+  </para>
+  <para>
+  Options specified in the connection string, along with the service option,
+  have precedence over values from the service file.
   </para>
  </sect1>
 

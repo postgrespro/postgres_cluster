@@ -36,7 +36,7 @@ OBJS=	fe-auth.o fe-auth-scram.o fe-connect.o fe-exec.o fe-misc.o fe-print.o fe-l
 	libpq-events.o
 # libpgport C files we always use
 OBJS += chklocale.o inet_net_ntop.o noblock.o pg_strong_random.o \
-	pgstrcasecmp.o pqsignal.o thread.o
+	pgstrcasecmp.o pqsignal.o thread.o pgsleep.o
 # libpgport C files that are needed if identified by configure
 OBJS += $(filter crypt.o getaddrinfo.o getpeereid.o inet_aton.o open.o system.o snprintf.o strerror.o strlcpy.o win32error.o win32setlocale.o, $(LIBOBJS))
 # backend/libpq
@@ -134,6 +134,9 @@ install: all installdirs install-lib
 installcheck:
 	$(MAKE) -C test $@
 
+check:
+	$(prove_check)
+
 installdirs: installdirs-lib
 	$(MKDIR_P) '$(DESTDIR)$(includedir)' '$(DESTDIR)$(includedir_internal)' '$(DESTDIR)$(datadir)'
 
@@ -147,6 +150,7 @@ uninstall: uninstall-lib
 clean distclean: clean-lib
 	$(MAKE) -C test $@
 	rm -f $(OBJS) pthread.h libpq.rc
+	rm -rf tmp_check
 # Might be left over from a Win32 client-only build
 	rm -f pg_config_paths.h
 	rm -f inet_net_ntop.c noblock.c pgstrcasecmp.c pqsignal.c thread.c

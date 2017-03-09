@@ -2,7 +2,8 @@
  *
  * util.c: log messages to log file or stderr, and misc code.
  *
- * Copyright (c) 2009-2011, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2009-2011, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2015-2017, Postgres Professional
  *
  *-------------------------------------------------------------------------
  */
@@ -72,20 +73,6 @@ digestControlFile(ControlFileData *ControlFile, char *src, size_t size)
 	checkControlFile(ControlFile);
 }
 
-void
-sanityChecks(void)
-{
-	ControlFileData	ControlFile;
-	char		   *buffer;
-	size_t			size;
-
-	/* First fetch file... */
-	buffer = slurpFile(pgdata, "global/pg_control", &size, false);
-	digestControlFile(&ControlFile, buffer, size);
-	pg_free(buffer);
-
-}
-
 XLogRecPtr
 get_last_ptrack_lsn(void)
 {
@@ -114,8 +101,9 @@ get_current_timeline(bool safe)
 
 	/* First fetch file... */
 	buffer = slurpFile(pgdata, "global/pg_control", &size, safe);
-	if (buffer == NULL)
+	if (safe && buffer == NULL)
 		return 0;
+
 	digestControlFile(&ControlFile, buffer, size);
 	pg_free(buffer);
 
@@ -166,6 +154,22 @@ time2iso(char *buf, size_t len, time_t time)
 	struct tm *tm = localtime(&time);
 
 	strftime(buf, len, "%Y-%m-%d %H:%M:%S", tm);
+}
+
+/* copied from timestamp.c */
+pg_time_t
+timestamptz_to_time_t(TimestampTz t)
+{
+	pg_time_t	result;
+
+#ifdef HAVE_INT64_TIMESTAMP
+	result = (pg_time_t) (t / USECS_PER_SEC +
+				 ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY));
+#else
+	result = (pg_time_t) (t +
+				 ((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY));
+#endif
+	return result;
 }
 
 const char *

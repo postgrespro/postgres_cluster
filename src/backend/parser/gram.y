@@ -227,6 +227,8 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	struct ImportQual	*importqual;
 	InsertStmt			*istmt;
 	VariableSetStmt		*vsetstmt;
+	PartitionInfo		*partinfo;
+	PartitionNode		*rangeinfo;
 }
 
 %type <node>	stmt schema_stmt
@@ -543,6 +545,13 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 %type <str>		opt_existing_window_name
 %type <boolean> opt_if_not_exists
 
+%type <partinfo> createPartitionType alterPartitionType;
+%type <rangeinfo> OptRangePartitionsListElement OptHashPartitionsListElement
+				PartitionNameTablespace
+%type <list>	OptRangePartitionsList OptHashPartitionsList OptRangePartitions
+				PartitionNameTablespaceList OptIntoPartitions
+%type <node>	OptRangePartitionsInterval
+
 /*
  * Non-keyword token types.  These are hard-wired into the "flex" lexer.
  * They must be listed first so that their numeric codes do not depend on
@@ -594,7 +603,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 	GLOBAL GRANT GRANTED GREATEST GROUP_P GROUPING
 
-	HANDLER HAVING HEADER_P HOLD HOUR_P
+	HANDLER HASH HAVING HEADER_P HOLD HOUR_P
 
 	IDENTITY_P IF_P ILIKE IMMEDIATE IMMUTABLE IMPLICIT_P IMPORT_P IN_P INCLUDE
 	INCLUDING INCREMENT INDEX INDEXES INHERIT INHERITS INITIALLY INLINE_P
@@ -606,10 +615,10 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	KEY
 
 	LABEL LANGUAGE LARGE_P LAST_P LATERAL_P
-	LEADING LEAKPROOF LEAST LEFT LEVEL LIKE LIMIT LISTEN LOAD LOCAL
+	LEADING LEAKPROOF LEAST LEFT LESS LEVEL LIKE LIMIT LISTEN LOAD LOCAL
 	LOCALTIME LOCALTIMESTAMP LOCATION LOCK_P LOCKED LOGGED
 
-	MAPPING MATCH MATERIALIZED MAXVALUE METHOD MINUTE_P MINVALUE MODE MONTH_P MOVE
+	MAPPING MATCH MATERIALIZED MAXVALUE MERGE METHOD MINUTE_P MINVALUE MODE MONTH_P MOVE
 
 	NAME_P NAMES NATIONAL NATURAL NCHAR NEXT NO NONE
 	NOT NOTHING NOTIFY NOTNULL NOWAIT NULL_P NULLIF
@@ -618,7 +627,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	OBJECT_P OF OFF OFFSET OIDS ON ONLY OPERATOR OPTION OPTIONS OR
 	ORDER ORDINALITY OUT_P OUTER_P OVER OVERLAPS OVERLAY OWNED OWNER
 
-	PARALLEL PARSER PARTIAL PARTITION PASSING PASSWORD PLACING PLANS POLICY
+	PARALLEL PARSER PARTIAL PARTITION PARTITIONS PASSING PASSWORD PLACING PLANS POLICY
 	POSITION PRECEDING PRECISION PRESERVE PREPARE PREPARED PRIMARY
 	PRIOR PRIVILEGES PROCEDURAL PROCEDURE PROGRAM
 
@@ -631,11 +640,11 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 	SAVEPOINT SCHEMA SCROLL SEARCH SECOND_P SECURITY SELECT SEQUENCE SEQUENCES
 	SERIALIZABLE SERVER SESSION SESSION_USER SET SETS SETOF SHARE SHOW
-	SIMILAR SIMPLE SKIP SMALLINT SNAPSHOT SOME SQL_P STABLE STANDALONE_P START
+	SIMILAR SIMPLE SKIP SMALLINT SNAPSHOT SOME SPLIT SQL_P STABLE STANDALONE_P START
 	STATEMENT STATISTICS STDIN STDOUT STORAGE STRICT_P STRIP_P SUBSTRING
 	SYMMETRIC SYSID SYSTEM_P
 
-	TABLE TABLES TABLESAMPLE TABLESPACE TEMP TEMPLATE TEMPORARY TEXT_P THEN
+	TABLE TABLES TABLESAMPLE TABLESPACE TEMP TEMPLATE TEMPORARY TEXT_P THAN THEN
 	TIME TIMESTAMP TO TRAILING TRANSACTION TRANSFORM TREAT TRIGGER TRIM TRUE_P
 	TRUNCATE TRUSTED TYPE_P TYPES_P
 
@@ -664,7 +673,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
  * as NOT, at least with respect to their left-hand subexpression.
  * NULLS_LA and WITH_LA are needed to make the grammar LALR(1).
  */
-%token		NOT_LA NULLS_LA WITH_LA
+%token		NOT_LA NULLS_LA WITH_LA ADD_PARTITION DROP_PARTITION RENAME_PARTITION
 
 
 /* Precedence: lowest to highest */
@@ -1791,6 +1800,14 @@ AlterTableStmt:
 					n->missing_ok = true;
 					$$ = (Node *)n;
 				}
+		|	ALTER TABLE relation_expr PARTITION BY alterPartitionType opt_concurrently
+				{
+					PartitionStmt *n = makeNode(PartitionStmt);
+					n->relation = $3;
+					n->pinfo = $6;
+					n->concurrent = $7;
+					$$ = (Node *)n;
+				}
 		|	ALTER TABLE ALL IN_P TABLESPACE name SET TABLESPACE name opt_nowait
 				{
 					AlterTableMoveAllStmt *n =
@@ -2323,6 +2340,14 @@ alter_table_cmd:
 					n->name = $3;
 					$$ = (Node *)n;
 				}
+			/* ALTER TABLE <name> SET INTERVAL <const> */
+			| SET INTERVAL '(' b_expr ')'
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_SetInterval;
+					n->def = $4;
+					$$ = (Node *)n;
+				}
 			/* ALTER TABLE <name> SET (...) */
 			| SET reloptions
 				{
@@ -2381,6 +2406,78 @@ alter_table_cmd:
 					n->subtype = AT_GenericOptions;
 					n->def = (Node *)$1;
 					$$ = (Node *) n;
+				}
+			| ADD_PARTITION OptRangePartitionsListElement
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_AddPartition;
+					n->partitions = list_make1($2);
+					$$ = (Node *) n;
+				}
+			| MERGE PARTITIONS qualified_name_list INTO PartitionNameTablespace
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_MergePartitions;
+
+					/*
+					 * The first element in partitions list is a partition name
+					 * to merge all partitions into
+					 */
+					if ($5 != NULL)
+						n->partitions = list_make1($5);
+					else
+						n->partitions = list_make1(NULL);
+
+					/* The rest elements are partitions to merge */
+					n->partitions = list_concat(n->partitions, $3);
+
+					$$ = (Node *) n;
+				}
+			| SPLIT PARTITION qualified_name AT '(' b_expr ')' OptIntoPartitions
+				{
+					PartitionNode *orig = makeNode(PartitionNode);
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					List *into_partitions = $8;
+
+					n->subtype = AT_SplitPartition;
+					n->partitions = list_make1(orig);
+
+					orig->relation = $3;
+
+					if (into_partitions != NIL
+						&& list_length(into_partitions) != 2)
+					{
+						elog(ERROR,
+							 "INTO clause must contain exactly two partitions");
+					 }
+
+					n->def = $6;
+					n->partitions = list_concat(n->partitions, into_partitions);
+
+					$$ = (Node *) n;
+				}
+			| RENAME_PARTITION PARTITION relation_expr TO name
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_RenamePartition;
+					n->partitions = list_make1($3);
+					n->name = $5;
+					$$ = (Node *)n;
+				}
+			| DROP_PARTITION PARTITION qualified_name
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_DropPartition;
+					n->partitions = list_make1($3);
+					$$ = (Node *)n;
+				}
+			| MOVE PARTITION qualified_name TABLESPACE name
+				{
+					AlterTableCmd *n = makeNode(AlterTableCmd);
+					n->subtype = AT_MovePartition;
+					n->partitions = list_make1($3);
+					n->name = $5;
+					$$ = (Node *)n;
 				}
 		;
 
@@ -2474,6 +2571,60 @@ reloption_elem:
 			| ColLabel '.' ColLabel
 				{
 					$$ = makeDefElemExtended($1, $3, NULL, DEFELEM_UNSPEC);
+				}
+		;
+
+OptIntoPartitions:
+			INTO '(' PartitionNameTablespaceList ')'
+				{
+					$$ = $3;
+				}
+			| /* EMPTY */
+				{
+					$$ = NIL;
+				}
+		;
+
+PartitionNameTablespaceList:
+			PartitionNameTablespace
+				{
+					$$ = list_make1($1);
+				}
+			| PartitionNameTablespaceList ',' PartitionNameTablespace
+				{
+					$$ = lappend($1, $3);
+				}
+		;
+
+PartitionNameTablespace:
+			PARTITION qualified_name OptTableSpace
+				{
+					PartitionNode *n = makeNode(PartitionNode);
+					n->relation = $2;
+					n->tablespace = $3;
+					$$ = n;
+				}
+		;
+
+alterPartitionType:
+			HASH '(' a_expr ')' PARTITIONS '(' Iconst ')'
+				{
+					PartitionInfo *n = makeNode(PartitionInfo);
+					n->partition_type = P_HASH;
+					n->key = $3;
+					n->partitions = NIL;
+					n->partitions_count = $7;
+					$$ = (PartitionInfo *)n;
+				}
+			| RANGE '(' columnref ')' START FROM '(' b_expr ')' INTERVAL '(' b_expr ')'
+				{
+					PartitionInfo *n = makeNode(PartitionInfo);
+					n->partition_type = P_RANGE;
+					n->key = $3;
+					n->start_value = $8;
+					n->interval = $12;
+					n->partitions = NIL;
+					$$ = (PartitionInfo *)n;
 				}
 		;
 
@@ -2835,6 +2986,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->oncommit = $10;
 					n->tablespacename = $11;
 					n->if_not_exists = false;
+					n->partition_info = NULL;
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE IF_P NOT EXISTS qualified_name '('
@@ -2852,6 +3004,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->oncommit = $13;
 					n->tablespacename = $14;
 					n->if_not_exists = true;
+					n->partition_info = NULL;
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE qualified_name OF any_name
@@ -2869,6 +3022,7 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->oncommit = $9;
 					n->tablespacename = $10;
 					n->if_not_exists = false;
+					n->partition_info = NULL;
 					$$ = (Node *)n;
 				}
 		| CREATE OptTemp TABLE IF_P NOT EXISTS qualified_name OF any_name
@@ -2886,8 +3040,109 @@ CreateStmt:	CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
 					n->oncommit = $12;
 					n->tablespacename = $13;
 					n->if_not_exists = true;
+					n->partition_info = NULL;
 					$$ = (Node *)n;
 				}
+		| CREATE OptTemp TABLE qualified_name '(' OptTableElementList ')'
+			OptInherit OptWith OnCommitOption OptTableSpace
+			PARTITION BY createPartitionType
+				{
+					CreateStmt *n = makeNode(CreateStmt);
+					$4->relpersistence = $2;
+					n->relation = $4;
+					n->tableElts = $6;
+					n->inhRelations = $8;
+					n->ofTypename = NULL;
+					n->constraints = NIL;
+					n->options = $9;
+					n->oncommit = $10;
+					n->tablespacename = $11;
+					n->if_not_exists = false;
+					n->partition_info = $14;
+					$$ = (Node *)n;
+				}
+		;
+
+createPartitionType:	HASH '(' a_expr ')' PARTITIONS '(' Iconst ')'
+					{
+						PartitionInfo *n = makeNode(PartitionInfo);
+						n->partition_type = P_HASH;
+						n->key = $3;
+						n->partitions = NIL;
+						n->partitions_count = $7;
+						$$ = (PartitionInfo *)n;
+					}
+				| HASH '(' a_expr ')' '(' OptHashPartitionsList ')'
+					{
+						PartitionInfo *n = makeNode(PartitionInfo);
+						n->partition_type = P_HASH;
+						n->key = $3;
+						n->partitions = $6;
+						n->partitions_count = list_length(n->partitions);
+						$$ = (PartitionInfo *)n;
+					}
+				| RANGE '(' columnref ')' OptRangePartitionsInterval OptRangePartitions
+					{
+						PartitionInfo *n = makeNode(PartitionInfo);
+						n->partition_type = P_RANGE;
+						n->key = $3;
+						n->interval = $5;
+						n->partitions = $6;
+						$$ = (PartitionInfo *)n;
+					}
+		;
+
+OptRangePartitions:
+			'(' OptRangePartitionsList ')'	{ $$ = $2; }
+			| /*EMPTY*/						{ $$ = NIL; }
+		;
+
+OptRangePartitionsList:
+			OptRangePartitionsListElement
+				{
+					$$ = list_make1($1);
+				}
+			| OptRangePartitionsList ',' OptRangePartitionsListElement
+				{
+					$$ = lappend($1, $3);
+				}
+		;
+
+OptRangePartitionsListElement:
+			PARTITION qualified_name VALUES LESS THAN '(' b_expr ')' OptTableSpace
+				{
+					PartitionNode *n = makeNode(PartitionNode);
+					n->relation = $2;
+					n->upper_bound = $7;
+					n->tablespace = $9;
+					$$ = (PartitionNode *)n;
+				}
+		;
+
+OptHashPartitionsList:
+			OptHashPartitionsListElement
+				{
+					$$ = list_make1($1);
+				}
+			| OptHashPartitionsList ',' OptHashPartitionsListElement
+				{
+					$$ = lappend($1, $3);
+				}
+		;
+
+OptHashPartitionsListElement:
+			PARTITION qualified_name OptTableSpace
+				{
+					PartitionNode *n = makeNode(PartitionNode);
+					n->relation = $2;
+					n->tablespace = $3;
+					$$ = (PartitionNode *)n;
+				}
+		;
+
+OptRangePartitionsInterval:
+			INTERVAL '(' b_expr ')'			{ $$ = $3; }
+			| /* EMPTY */					{ $$ = NULL; }
 		;
 
 /*
@@ -10775,7 +11030,7 @@ table_ref:	relation_expr opt_alias_clause
 					n->lateral = true;
 					n->subquery = $2;
 					n->alias = $3;
-					/* same coment as above */
+					/* same comment as above */
 					if ($3 == NULL)
 					{
 						if (IsA($2, SelectStmt) &&
@@ -13940,6 +14195,7 @@ unreserved_keyword:
 			| GLOBAL
 			| GRANTED
 			| HANDLER
+			| HASH
 			| HEADER_P
 			| HOLD
 			| HOUR_P
@@ -13969,6 +14225,7 @@ unreserved_keyword:
 			| LARGE_P
 			| LAST_P
 			| LEAKPROOF
+			| LESS
 			| LEVEL
 			| LISTEN
 			| LOAD
@@ -13981,6 +14238,7 @@ unreserved_keyword:
 			| MATCH
 			| MATERIALIZED
 			| MAXVALUE
+			| MERGE
 			| METHOD
 			| MINUTE_P
 			| MINVALUE
@@ -14010,6 +14268,7 @@ unreserved_keyword:
 			| PARSER
 			| PARTIAL
 			| PARTITION
+			| PARTITIONS
 			| PASSING
 			| PASSWORD
 			| PLANS
@@ -14066,6 +14325,7 @@ unreserved_keyword:
 			| SIMPLE
 			| SKIP
 			| SNAPSHOT
+			| SPLIT
 			| SQL_P
 			| STABLE
 			| STANDALONE_P
@@ -14085,6 +14345,7 @@ unreserved_keyword:
 			| TEMPLATE
 			| TEMPORARY
 			| TEXT_P
+			| THAN
 			| TRANSACTION
 			| TRANSFORM
 			| TRIGGER

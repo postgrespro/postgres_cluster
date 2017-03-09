@@ -19,11 +19,10 @@ OBJS = backup.o \
 	streamutil.o \
 	receivelog.o \
 	pgut/pgut.o \
-	pgut/pgut-port.o
+	pgut/pgut-port.o \
+	pgut/getopt_long.o
 
 EXTRA_CLEAN = datapagemap.c datapagemap.h xlogreader.c receivelog.c receivelog.h streamutil.c streamutil.h logging.h
-
-REGRESS = init option show delete backup restore
 
 all: checksrcdir datapagemap.h logging.h receivelog.h streamutil.h pg_probackup
 
@@ -53,6 +52,10 @@ endif
 PG_CPPFLAGS = -I$(libpq_srcdir) ${PTHREAD_CFLAGS}
 override CPPFLAGS := -DFRONTEND $(CPPFLAGS) $(PG_CPPFLAGS)
 PG_LIBS = $(libpq_pgport) ${PTHREAD_CFLAGS}
+
+ifeq ($(PORTNAME), aix)
+	CC=xlc_r
+endif
 
 envtest:
 	: top_srcdir=$(top_srcdir)

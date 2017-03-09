@@ -1626,7 +1626,7 @@ HeapTupleHeaderIsOnlyLocked(HeapTuple htup)
 }
 
 /*
- * check whether the transaciont id 'xid' is in the pre-sorted array 'xip'.
+ * check whether the transaction id 'xid' is in the pre-sorted array 'xip'.
  */
 static bool
 TransactionIdInArray(TransactionId xid, TransactionId *xip, Size num)

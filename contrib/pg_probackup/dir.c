@@ -2,7 +2,8 @@
  *
  * dir.c: directory operation utility.
  *
- * Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2015-2017, Postgres Professional
  *
  *-------------------------------------------------------------------------
  */
@@ -20,27 +21,38 @@
 #include "datapagemap.h"
 
 /* directory exclusion list for backup mode listing */
-const char *pgdata_exclude[] =
+const char *pgdata_exclude_dir[] =
 {
 	"pg_xlog",
 	"pg_stat_tmp",
 	"pgsql_tmp",
+	NULL,			/* pg_log will be set later */
+	NULL
+};
+
+static char *pgdata_exclude_files[] =
+{
 	"recovery.conf",
-	NULL,			/* arclog_path will be set later */
-	NULL,			/* 'pg_tblspc' will be set later */
-	NULL,			/* sentinel */
+	"postmaster.pid",
+	"postmaster.opts",
 	NULL
 };
 
 pgFile *pgFileNew(const char *path, bool omit_symlink);
 static int BlackListCompare(const void *str1, const void *str2);
 
-/* create directory, also create parent directories if necessary */
+static void dir_list_file_internal(parray *files, const char *root,
+								   bool exclude, bool omit_symlink,
+								   bool add_root, parray *black_list);
+
+/*
+ * Create directory, also create parent directories if necessary.
+ */
 int
 dir_create_dir(const char *dir, mode_t mode)
 {
-	char copy[MAXPGPATH];
-	char parent[MAXPGPATH];
+	char		copy[MAXPGPATH];
+	char		parent[MAXPGPATH];
 
 	strncpy(copy, dir, MAXPGPATH);
 	strncpy(parent, dirname(copy), MAXPGPATH);
@@ -54,8 +66,7 @@ dir_create_dir(const char *dir, mode_t mode)
 	{
 		if (errno == EEXIST)	/* already exist */
 			return 0;
-		elog(ERROR, "cannot create directory \"%s\": %s", dir,
-			strerror(errno));
+		elog(ERROR, "cannot create directory \"%s\": %s", dir, strerror(errno));
 	}
 
 	return 0;
@@ -196,6 +207,16 @@ pgFileComparePathDesc(const void *f1, const void *f2)
 	return -pgFileComparePath(f1, f2);
 }
 
+/* Compare two pgFile with their linked directory path. */
+int
+pgFileCompareLinked(const void *f1, const void *f2)
+{
+	pgFile	   *f1p = *(pgFile **)f1;
+	pgFile	   *f2p = *(pgFile **)f2;
+
+	return strcmp(f1p->linked, f2p->linked);
+}
+
 /* Compare two pgFile with their size */
 int
 pgFileCompareSize(const void *f1, const void *f2)
@@ -243,54 +264,55 @@ BlackListCompare(const void *str1, const void *str2)
  * List files, symbolic links and directories in the directory "root" and add
  * pgFile objects to "files".  We add "root" to "files" if add_root is true.
  *
- * If the sub-directory name is in "exclude" list, the sub-directory itself is
- * listed but the contents of the sub-directory is ignored.
- *
  * When omit_symlink is true, symbolic link is ignored and only file or
  * directory llnked to will be listed.
  */
 void
-dir_list_file(parray *files, const char *root, const char *exclude[], bool omit_symlink, bool add_root)
+dir_list_file(parray *files, const char *root, bool exclude, bool omit_symlink,
+			  bool add_root)
 {
-	char path[MAXPGPATH];
-	char buf[MAXPGPATH * 2];
-	char black_item[MAXPGPATH * 2];
-	parray *black_list = NULL;
+	parray	   *black_list = NULL;
+	char		path[MAXPGPATH];
 
 	join_path_components(path, backup_path, PG_BLACK_LIST);
-	if (root && pgdata && strcmp(root, pgdata) == 0 &&
-	    fileExists(path))
+	/* List files with black list */
+	if (root && pgdata && strcmp(root, pgdata) == 0 && fileExists(path))
 	{
-		FILE *black_list_file = NULL;
+		FILE	   *black_list_file = NULL;
+		char		buf[MAXPGPATH * 2];
+		char		black_item[MAXPGPATH * 2];
+
 		black_list = parray_new();
 		black_list_file = fopen(path, "r");
+
 		if (black_list_file == NULL)
-			elog(ERROR, "cannot open black_list: %s",
-				strerror(errno));
+			elog(ERROR, "cannot open black_list: %s", strerror(errno));
+
 		while (fgets(buf, lengthof(buf), black_list_file) != NULL)
 		{
 			join_path_components(black_item, pgdata, buf);
+
 			if (black_item[strlen(black_item) - 1] == '\n')
 				black_item[strlen(black_item) - 1] = '\0';
+
 			if (black_item[0] == '#' || black_item[0] == '\0')
 				continue;
+
 			parray_append(black_list, black_item);
 		}
+
 		fclose(black_list_file);
 		parray_qsort(black_list, BlackListCompare);
-		dir_list_file_internal(files, root, exclude, omit_symlink, add_root, black_list);
-		parray_qsort(files, pgFileComparePath);
 	}
-	else
-	{
-		dir_list_file_internal(files, root, exclude, omit_symlink, add_root, NULL);
-		parray_qsort(files, pgFileComparePath);
-	}
+
+	dir_list_file_internal(files, root, exclude, omit_symlink, add_root,
+						   black_list);
+	parray_qsort(files, pgFileComparePath);
 }
 
-void
-dir_list_file_internal(parray *files, const char *root, const char *exclude[],
-			bool omit_symlink, bool add_root, parray *black_list)
+static void
+dir_list_file_internal(parray *files, const char *root, bool exclude,
+					   bool omit_symlink, bool add_root, parray *black_list)
 {
 	pgFile *file;
 
@@ -306,7 +328,29 @@ dir_list_file_internal(parray *files, const char *root, const char *exclude[],
 	}
 
 	if (add_root)
+	{
+		/* Skip files */
+		if (!S_ISDIR(file->mode) && exclude)
+		{
+			char	    *file_name;
+			int			i;
+
+			/* Extract file name */
+			file_name = strrchr(file->path, '/');
+			if (file_name == NULL)
+				file_name = file->path;
+			else
+				file_name++;
+
+			/* Check if we need to exclude file by name */
+			for (i = 0; pgdata_exclude_files[i]; i++)
+				if (strcmp(file_name, pgdata_exclude_files[i]) == 0)
+					/* Skip */
+					return;
+		}
+
 		parray_append(files, file);
+	}
 
 	/* chase symbolic link chain and find regular file or directory */
 	while (S_ISLNK(file->mode))
@@ -352,45 +396,46 @@ dir_list_file_internal(parray *files, const char *root, const char *exclude[],
 	 */
 	while (S_ISDIR(file->mode))
 	{
-		int				i;
 		bool			skip = false;
 		DIR			    *dir;
 		struct dirent   *dent;
-		char		    *dirname;
 
-		/* skip entry which matches exclude list */
-	   	dirname = strrchr(file->path, '/');
-		if (dirname == NULL)
-			dirname = file->path;
-		else
-			dirname++;
-
-		/*
-		 * If the item in the exclude list starts with '/', compare to the
-		 * absolute path of the directory. Otherwise compare to the directory
-		 * name portion.
-		 */
-		for (i = 0; exclude && exclude[i]; i++)
+		if (exclude)
 		{
-			if (exclude[i][0] == '/')
-			{
-				if (strcmp(file->path, exclude[i]) == 0)
-				{
-					skip = true;
-					break;
-				}
-			}
+			int			i;
+			char	    *dirname;
+
+			/* skip entry which matches exclude list */
+			dirname = strrchr(file->path, '/');
+			if (dirname == NULL)
+				dirname = file->path;
 			else
+				dirname++;
+
+			/*
+			 * If the item in the exclude list starts with '/', compare to the
+			 * absolute path of the directory. Otherwise compare to the directory
+			 * name portion.
+			 */
+			for (i = 0; exclude && pgdata_exclude_dir[i]; i++)
 			{
-				if (strcmp(dirname, exclude[i]) == 0)
+				if (pgdata_exclude_dir[i][0] == '/')
+				{
+					if (strcmp(file->path, pgdata_exclude_dir[i]) == 0)
+					{
+						skip = true;
+						break;
+					}
+				}
+				else if (strcmp(dirname, pgdata_exclude_dir[i]) == 0)
 				{
 					skip = true;
 					break;
 				}
 			}
+			if (skip)
+				break;
 		}
-		if (skip)
-			break;
 
 		/* open directory and list contents */
 		dir = opendir(file->path);
@@ -431,74 +476,159 @@ dir_list_file_internal(parray *files, const char *root, const char *exclude[],
 	}
 }
 
-/* print mkdirs.sh */
+/*
+ * List data directories excluding directories from
+ * pgdata_exclude_dir array.
+ *
+ * **is_root** is a little bit hack. We exclude only first level of directories
+ * and on the first level we check all files and directories.
+ */
 void
-dir_print_mkdirs_sh(FILE *out, const parray *files, const char *root)
+list_data_directories(parray *files, const char *path, bool is_root,
+					  bool exclude)
 {
-	int i;
+	DIR		   *dir;
+	struct dirent *dent;
+	int			prev_errno;
+	bool		has_child_dirs = false;
 
-	for (i = 0; i < parray_num(files); i++)
+	/* open directory and list contents */
+	dir = opendir(path);
+	if (dir == NULL)
+		elog(ERROR, "cannot open directory \"%s\": %s", path, strerror(errno));
+
+	errno = 0;
+	while ((dent = readdir(dir)))
 	{
-		pgFile *file = (pgFile *) parray_get(files, i);
-		if (S_ISDIR(file->mode))
+		char		child[MAXPGPATH];
+		bool		skip = false;
+		struct stat	st;
+
+		/* skip entries point current dir or parent dir */
+		if (strcmp(dent->d_name, ".") == 0 ||
+			strcmp(dent->d_name, "..") == 0)
+			continue;
+
+		join_path_components(child, path, dent->d_name);
+
+		if (lstat(child, &st) == -1)
+			elog(ERROR, "cannot stat file \"%s\": %s", child, strerror(errno));
+
+		if (!S_ISDIR(st.st_mode))
 		{
-			if (strstr(file->path, root) == file->path &&
-				*(file->path + strlen(root)) == '/')
-			{
-				fprintf(out, "mkdir -m 700 -p %s\n", file->path + strlen(root) + 1);
-			}
+			/* Stop reading the directory if we met file */
+			if (!is_root)
+				break;
 			else
+				continue;
+		}
+
+		/* Check for exclude for the first level of listing */
+		if (is_root && exclude)
+		{
+			int			i;
+
+			for (i = 0; pgdata_exclude_dir[i]; i++)
 			{
-				fprintf(out, "mkdir -m 700 -p %s\n", file->path);
+				if (strcmp(dent->d_name, pgdata_exclude_dir[i]) == 0)
+				{
+					skip = true;
+					break;
+				}
 			}
 		}
+		if (skip)
+			continue;
+
+		has_child_dirs = true;
+		list_data_directories(files, child, false, exclude);
 	}
 
-	fprintf(out, "\n");
-
-	for (i = 0; i < parray_num(files); i++)
+	/* List only full and last directories */
+	if (!is_root && !has_child_dirs)
 	{
-		pgFile *file = (pgFile *) parray_get(files, i);
-		if (S_ISLNK(file->mode))
-		{
-			fprintf(out, "rm -f %s\n", file->path + strlen(root) + 1);
-			fprintf(out, "ln -s %s %s\n", file->linked, file->path + strlen(root) + 1);
-		}
+		pgFile	   *dir;
+
+		dir = pgFileNew(path, false);
+		parray_append(files, dir);
 	}
+
+	prev_errno = errno;
+	closedir(dir);
+
+	if (prev_errno && prev_errno != ENOENT)
+		elog(ERROR, "cannot read directory \"%s\": %s",
+			 path, strerror(prev_errno));
 }
 
-/* print file list */
+/*
+ * Read names of symbolik names of tablespaces with links to directories from
+ * tablespace_map or tablespace_map.txt.
+ */
 void
-dir_print_file_list(FILE *out, const parray *files, const char *root, const char *prefix)
+read_tablespace_map(parray *files, const char *backup_dir)
 {
-	int i;
-	int root_len = 0;
+	FILE	   *fp;
+	char		db_path[MAXPGPATH],
+				map_path[MAXPGPATH];
+	char		buf[MAXPGPATH * 2];
 
-	/* calculate length of root directory portion */
-	if (root)
+	join_path_components(db_path, backup_dir, DATABASE_DIR);
+	join_path_components(map_path, db_path, "tablespace_map");
+
+	/* Exit if database/tablespace_map don't exists */
+	if (!fileExists(map_path))
 	{
-		root_len = strlen(root);
-		if (root[root_len - 1] != '/')
-			root_len++;
+		elog(LOG, "there is no file tablespace_map");
+		return;
 	}
+
+	fp = fopen(map_path, "rt");
+	if (fp == NULL)
+		elog(ERROR, "cannot open \"%s\": %s", map_path, strerror(errno));
+
+	while (fgets(buf, lengthof(buf), fp))
+	{
+		char		link_name[MAXPGPATH],
+					path[MAXPGPATH];
+		pgFile	   *file;
+
+		if (sscanf(buf, "%s %s", link_name, path) != 2)
+			elog(ERROR, "invalid format found in \"%s\"", map_path);
+
+		file = pgut_new(pgFile);
+		memset(file, 0, sizeof(pgFile));
+
+		file->path = pgut_malloc(strlen(link_name) + 1);
+		strcpy(file->path, link_name);
+
+		file->linked = pgut_malloc(strlen(path) + 1);
+		strcpy(file->linked, path);
+
+		parray_append(files, file);
+	}
+
+	fclose(fp);
+}
+
+/*
+ * Print file list.
+ */
+void
+print_file_list(FILE *out, const parray *files, const char *root)
+{
+	size_t		i;
 
 	/* print each file in the list */
 	for (i = 0; i < parray_num(files); i++)
 	{
-		pgFile *file = (pgFile *)parray_get(files, i);
-		char path[MAXPGPATH];
-		char *ptr = file->path;
-		char type;
+		pgFile	   *file = (pgFile *) parray_get(files, i);
+		char	   *path = file->path;
+		char		type;
 
 		/* omit root directory portion */
-		if (root && strstr(ptr, root) == ptr)
-			ptr = JoinPathEnd(ptr, root);
-
-		/* append prefix if not NULL */
-		if (prefix)
-			join_path_components(path, prefix, ptr);
-		else
-			strcpy(path, ptr);
+		if (root && strstr(path, root) == path)
+			path = JoinPathEnd(path, root);
 
 		if (S_ISREG(file->mode) && file->is_datafile)
 			type = 'F';
@@ -519,12 +649,14 @@ dir_print_file_list(FILE *out, const parray *files, const char *root, const char
 			fprintf(out, " %s", file->linked);
 		else
 		{
-			char timestamp[20];
+			char		timestamp[20];
+
 			time2iso(timestamp, 20, file->mtime);
 			fprintf(out, " %s", timestamp);
 		}
 
-		fprintf(out, " %d %d\n", file->generation, file->is_partial_copy);
+		fprintf(out, " " UINT64_FORMAT " %d\n",
+				file->generation, file->is_partial_copy);
 	}
 }
 
@@ -644,42 +776,40 @@ dir_read_file_list(const char *root, const char *file_txt)
 	return files;
 }
 
-/* copy contents of directory from_root into to_root */
-void
-dir_copy_files(const char *from_root, const char *to_root)
+/*
+ * Check if directory empty.
+ */
+bool
+dir_is_empty(const char *path)
 {
-	int		i;
-	parray *files = parray_new();
+	DIR		   *dir;
+	struct dirent *dir_ent;
 
-	/* don't copy root directory */
-	dir_list_file(files, from_root, NULL, true, false);
-
-	for (i = 0; i < parray_num(files); i++)
+	dir = opendir(path);
+	if (dir == NULL)
 	{
-		pgFile *file = (pgFile *) parray_get(files, i);
-
-		if (S_ISDIR(file->mode))
-		{
-			char to_path[MAXPGPATH];
-			join_path_components(to_path, to_root, file->path + strlen(from_root) + 1);
-			if (verbose && !check)
-				elog(LOG, "creating directory \"%s\"",
-					 file->path + strlen(from_root) + 1);
-			if (!check)
-				dir_create_dir(to_path, DIR_PERMISSION);
-			continue;
-		}
-		else if (S_ISREG(file->mode))
-		{
-			if (verbose && !check)
-				elog(LOG, "copying \"%s\"",
-					file->path + strlen(from_root) + 1);
-			if (!check)
-				copy_file(from_root, to_root, file);
-		}
+		/* Directory in path doesn't exist */
+		if (errno == ENOENT)
+			return true;
+		elog(ERROR, "cannot open directory \"%s\": %s", path, strerror(errno));
 	}
 
-	/* cleanup */
-	parray_walk(files, pgFileFree);
-	parray_free(files);
+	errno = 0;
+	while ((dir_ent = readdir(dir)))
+	{
+		/* Skip entries point current dir or parent dir */
+		if (strcmp(dir_ent->d_name, ".") == 0 ||
+			strcmp(dir_ent->d_name, "..") == 0)
+			continue;
+
+		/* Directory is not empty */
+		closedir(dir);
+		return false;
+	}
+	if (errno)
+		elog(ERROR, "cannot read directory \"%s\": %s", path, strerror(errno));
+
+	closedir(dir);
+
+	return true;
 }

@@ -7,7 +7,7 @@ subdir = src/bin/pg_xlogdump
 top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
-OBJS = pg_xlogdump.o compat.o xlogreader.o rmgrdesc.o \
+OBJS = pg_xlogdump.o compat.o xlogreader.o rmgrdesc.o bitmapset.o \
 	$(RMGRDESCOBJS) $(WIN32RES)
 
 override CPPFLAGS := -DFRONTEND $(CPPFLAGS)
@@ -32,6 +32,9 @@ install: all installdirs
 
 installdirs:
 	$(MKDIR_P) '$(DESTDIR)$(bindir)'
+
+check:
+	$(prove_check)
 
 uninstall:
 	rm -f '$(DESTDIR)$(bindir)/pg_xlogdump$(X)'

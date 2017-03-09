@@ -116,6 +116,15 @@ base_yylex(YYSTYPE *lvalp, YYLTYPE *llocp, core_yyscan_t yyscanner)
 		case WITH:
 			cur_token_length = 4;
 			break;
+		case ADD_P:
+			cur_token_length = 3;
+			break;
+		case DROP:
+			cur_token_length = 4;
+			break;
+		case RENAME:
+			cur_token_length = 6;
+			break;
 		default:
 			return cur_token;
 	}
@@ -188,6 +197,18 @@ base_yylex(YYSTYPE *lvalp, YYLTYPE *llocp, core_yyscan_t yyscanner)
 					cur_token = WITH_LA;
 					break;
 			}
+			break;
+		case ADD_P:
+			if (next_token == PARTITION)
+				cur_token = ADD_PARTITION;
+			break;
+		case DROP:
+			if (next_token == PARTITION)
+				cur_token = DROP_PARTITION;
+			break;
+		case RENAME:
+			if (next_token == PARTITION)
+				cur_token = RENAME_PARTITION;
 			break;
 	}
 
