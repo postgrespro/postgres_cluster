@@ -13,6 +13,7 @@
 #include "tcop/pquery.h"
 
 #include "bgwpool.h"
+#include "multimaster.h"
 
 bool MtmIsLogicalReceiver;
 int  MtmMaxWorkers;
@@ -32,6 +33,8 @@ static void BgwPoolMainLoop(BgwPool* pool)
     void* work;
 	static PortalData fakePortal;
 
+	MTM_ELOG(LOG, "Start background worker %d, shutdown=%d", MyProcPid, pool->shutdown);
+
 	MtmIsLogicalReceiver = true;
 	MtmPool = pool;
 
@@ -48,7 +51,7 @@ static void BgwPoolMainLoop(BgwPool* pool)
     while (true) { 
         PGSemaphoreLock(&pool->available);
         SpinLockAcquire(&pool->lock);
-		if (pool->shutdown) { 
+		if (pool->shutdown) { 	
 			break;
 		}
         size = *(int*)&pool->queue[pool->head];
@@ -83,6 +86,7 @@ static void BgwPoolMainLoop(BgwPool* pool)
         SpinLockRelease(&pool->lock);
     }
 	SpinLockRelease(&pool->lock);
+	MTM_ELOG(LOG, "Shutdown background worker %d", MyProcPid);
 }
 
 void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbname,  char const* dbuser, size_t queueSize, size_t nWorkers)
