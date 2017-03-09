@@ -188,21 +188,22 @@ sub stop
 	my $nodes = $self->{nodes};
 	$mode = 'fast' unless defined $mode;
 
-	$self->dumplogs();
-
 	my $ok = 1;
 	diag("stopping cluster ${mode}ly");
 	
 	foreach my $node (@$nodes) {
 		if (!stopnode($node, $mode)) {
 			$ok = 0;
-			if (!stopnode($node, 'kill')) {
-				my $name = $node->name;
-				BAIL_OUT("failed to kill $name");
-			}
+			# if (!stopnode($node, 'kill')) {
+			# 	my $name = $node->name;
+			# 	BAIL_OUT("failed to kill $name");
+			# }
 		}
 	}
 	sleep(2);
+
+	$self->dumplogs();
+
 	return $ok;
 }
 
