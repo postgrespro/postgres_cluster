@@ -338,8 +338,8 @@ void MtmUnlock(void)
 		Assert(Mtm->lastLockHolder == MyProcPid);
 		return;
 	}
-	LWLockRelease((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID]);
 	Mtm->lastLockHolder = 0;
+	LWLockRelease((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID]);
 }
 
 void MtmLockNode(int nodeId, LWLockMode mode)
