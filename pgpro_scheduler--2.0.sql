@@ -396,34 +396,42 @@ END
 $BODY$
 LANGUAGE plpgsql set search_path FROM CURRENT;
 
-CREATE FUNCTION _get_cron_from_attrs(params jsonb) RETURNS jsonb AS
+CREATE FUNCTION _get_cron_from_attrs(params jsonb, prev jsonb) RETURNS jsonb AS
 $BODY$
 DECLARE
 	dates text[];
 	cron jsonb;
+	rule jsonb;
 	clean_cron jsonb;
 	N integer;
 	name text;
 BEGIN
 
-	IF params?'cron' THEN 
-		EXECUTE 'SELECT cron2jsontext($1::cstring)::jsonb' 
-			INTO cron
-			USING params->>'cron';
-	ELSIF params?'rule' THEN
-		cron := params->'rule';
-	ELSIF NOT params?'date' AND NOT params?'dates' THEN
+	IF NOT params?'cron' AND NOT params?'rule' AND NOT params?'date' AND NOT params?'dates' THEN
 		RAISE  EXCEPTION 'There is no information about job''s schedule'
 			USING HINT = 'Use ''cron'' - cron string, ''rule'' - json to set schedule rules or ''date'' and ''dates'' to set exact date(s)';
 	END IF;
 
-	IF cron IS NOT NULL THEN
-		IF cron?'date' THEN
-			dates := _get_array_from_jsonb(dates, cron->'date');
+	IF params?'cron' THEN 
+		EXECUTE 'SELECT cron2jsontext($1::cstring)::jsonb' 
+			INTO cron
+			USING params->>'cron';
+		IF prev IS NOT NULL THEN
+			cron := prev || cron;
 		END IF;
-		IF cron?'dates' THEN
-			dates := _get_array_from_jsonb(dates, cron->'dates');
-		END IF;
+	END IF;
+
+	IF params?'rule' THEN
+		rule := params->'rule';
+	END IF;
+
+	cron := coalesce(cron, '{}'::jsonb) || coalesce(rule, '{}'::jsonb);
+
+	IF cron?'date' THEN
+		dates := _get_array_from_jsonb(dates, cron->'date');
+	END IF;
+	IF cron?'dates' THEN
+		dates := _get_array_from_jsonb(dates, cron->'dates');
 	END IF;
 
 	IF params?'date' THEN
@@ -437,7 +445,7 @@ BEGIN
 	IF N > 0 THEN
 		EXECUTE 'SELECT array_agg(lll) FROM (SELECT distinct(date_trunc(''min'', unnest::timestamp with time zone)) as lll FROM unnest($1) ORDER BY date_trunc(''min'', unnest::timestamp with time zone)) as Z'
 			INTO dates USING dates;
-		cron := COALESCE(cron, '{}'::jsonb) || jsonb_build_object('dates', array_to_json(dates));
+		cron := cron || jsonb_build_object('dates', array_to_json(dates));
 	END IF;
 
 	clean_cron := '{}'::jsonb;
@@ -564,7 +572,7 @@ BEGIN
       RAISE WARNING 'You used excess keys in params: %.', array_to_string(excess, ', ');
    END IF;
 
-   cron := _get_cron_from_attrs(params);
+   cron := _get_cron_from_attrs(params, NULL);
    commands := _get_commands_from_attrs(params);
    executor := _get_executor_from_attrs(params);
    node := 'master';
@@ -711,7 +719,7 @@ BEGIN
 
    IF attrs?'cron' OR attrs?'date' OR attrs?'dates' OR attrs?'rule' THEN
       cmd := cmd || 'rule = ' ||
-        quote_literal(_get_cron_from_attrs(attrs)) || '::jsonb, ';
+        quote_literal(_get_cron_from_attrs(attrs, job.rule)) || '::jsonb, ';
    END IF;
 
    IF attrs?'command' OR attrs?'commands' THEN
