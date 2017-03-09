@@ -91,7 +91,7 @@ DECLARE
     seq_tuple record;
     node_id int;
     max_nodes int;
-    new_start int;
+    new_start bigint;
     altered boolean := false;
 BEGIN
     select current_setting('multimaster.max_nodes') into max_nodes;
