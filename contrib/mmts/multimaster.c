@@ -317,11 +317,10 @@ void MtmLock(LWLockMode mode)
 		atexit(MtmReleaseLocks);
 		MtmAtExitHookRegistered = true;
 	}
-	if (mode == LW_EXCLUSIVE || MtmLockCount != 0) { 
-		if (MtmLockCount++ != 0) { 
-			Assert(Mtm->lastLockHolder == MyProcPid);
-			return;
-		}
+	if (MtmLockCount != 0) { 
+		Assert(Mtm->lastLockHolder == MyProcPid);
+		MtmLockCount += 1;
+		return;
 	}
 	start = MtmGetSystemTime();
 	LWLockAcquire((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID], mode);
@@ -329,7 +328,11 @@ void MtmLock(LWLockMode mode)
 	if (stop > start + MSEC_TO_USEC(MtmHeartbeatSendTimeout)) { 
 		MTM_LOG1("%d: obtaining %s lock takes %lld microseconds", MyProcPid, (mode == LW_EXCLUSIVE ? "exclusive" : "shared"), stop - start);
 	}	
-	Mtm->lastLockHolder = MyProcPid;
+	if (mode == LW_EXCLUSIVE) { 
+		Assert(MtmLockCount == 0);
+		Mtm->lastLockHolder = MyProcPid;
+		MtmLockCount = 1;
+	}
 }
 
 void MtmUnlock(void)
