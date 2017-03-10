@@ -52,6 +52,7 @@ static void BgwPoolMainLoop(BgwPool* pool)
         PGSemaphoreLock(&pool->available);
         SpinLockAcquire(&pool->lock);
 		if (pool->shutdown) { 	
+			PGSemaphoreUnlock(&pool->available);
 			break;
 		}
         size = *(int*)&pool->queue[pool->head];
