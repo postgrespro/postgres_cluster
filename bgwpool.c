@@ -22,7 +22,7 @@ static BgwPool* MtmPool;
 
 static void BgwShutdownWorker(int sig)
 {
-	MTM_ELOG1("Background worker %d receive shutdown request", MyProcPid);
+	MTM_LOG1("Background worker %d receive shutdown request", MyProcPid);
 	if (MtmPool) { 
 		BgwPoolStop(MtmPool);
 	}
