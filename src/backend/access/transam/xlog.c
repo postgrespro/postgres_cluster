@@ -6763,7 +6763,6 @@ StartupXLOG(void)
 			do
 			{
 				bool		switchedTLI = false;
-				int nblock;
 
 #ifdef WAL_DEBUG
 				if (XLOG_DEBUG ||
@@ -6916,17 +6915,6 @@ StartupXLOG(void)
 
 				/* Pop the error context stack */
 				error_context_stack = errcallback.previous;
-
-				if (ptrack_enable)
-					for(nblock = 0; nblock < xlogreader->max_block_id; nblock++)
-					{
-						if(xlogreader->blocks[nblock].forknum == MAIN_FORKNUM)
-						{
-							ptrack_add_block(xlogreader->blocks[nblock].blkno,
-											xlogreader->blocks[nblock].rnode);
-							ptrack_save();
-						}
-					}
 
 				/*
 				 * Update lastReplayedEndRecPtr after this record has been
