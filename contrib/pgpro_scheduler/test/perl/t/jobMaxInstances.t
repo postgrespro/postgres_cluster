@@ -34,14 +34,15 @@ my $sth = $dbh->prepare($query);
 ok($sth->execute()) or (print $DBI::errstr . "\n" and $dbh->disconnect() and BAIL_OUT);
 my $job_id = $sth->fetchrow_array() and $sth->finish();
 
-sleep 120;
+sleep 180;
 $query = "SELECT schedule.deactivate_job(?)";
 $sth = $dbh->prepare($query);
 $sth->bind_param(1, $job_id);
 ok($sth->execute(), $dbh->errstr) or print $DBI::errstr . "\n";
 $sth->finish();
 
-$query = "SELECT message FROM schedule.get_log() WHERE cron=$job_id AND status=\'error\' ORDER BY cron DESC LIMIT 1";
+$query = "SELECT message FROM schedule.get_log()
+    WHERE cron=$job_id AND status=\'error\' AND message = 'max instances limit reached' LIMIT 1";
 my $sth = $dbh->prepare($query);
 ok($sth->execute()) or (print $DBI::errstr . "\n" and $dbh->disconnect() and BAIL_OUT);
 my $errorstr = $sth->fetchrow_array() and $sth->finish();
