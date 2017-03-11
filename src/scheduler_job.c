@@ -462,7 +462,7 @@ job_t *set_job_error(job_t *j, const char *fmt, ...)
 
 int move_job_to_log(job_t *j, bool status, bool process)
 {
-	if(j->type == CronJob) _cron_move_job_to_log(j, status);
+	if(j->type == CronJob) return _cron_move_job_to_log(j, status);
 	return _at_move_job_to_log(j, status, process);
 }
 
@@ -513,9 +513,9 @@ int move_at_job_process(int job_id)
 int set_at_job_done(job_t *job, char *error, int64 resubmit, char **set_error)
 {
 	char *this_error = NULL;
-	Datum values[20];	
-	char  nulls[20];
-	Oid argtypes[20] = { INT4OID };
+	Datum values[21];	
+	char  nulls[21];
+	Oid argtypes[21] = { INT4OID };
 	bool canceled = false;
 	int i;
 	char *oldpath;
@@ -524,8 +524,9 @@ int set_at_job_done(job_t *job, char *error, int64 resubmit, char **set_error)
 	int n = 1;
 	spi_response_t *r;
 	spi_response_t *r2;
+
 	const char *get_sql = "select * from at_jobs_process where id = $1";
-	const char *insert_sql = "insert into at_jobs_done values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)";
+	const char *insert_sql = "insert into at_jobs_done values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)";
 	const char *delete_sql = "delete from at_jobs_process where id = $1";
 	const char *resubmit_sql = "insert into at_jobs_submitted values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)";
 
@@ -558,8 +559,10 @@ int set_at_job_done(job_t *job, char *error, int64 resubmit, char **set_error)
 	}
 	argtypes[18] = BOOLOID;
 	argtypes[19] = TEXTOID;
+	argtypes[20] = TIMESTAMPTZOID;
 	nulls[18] = ' ';
 	nulls[19] = ' ';
+	nulls[20] = ' ';
 
 	canceled = nulls[15] == 'n' ? false: DatumGetBool(values[15]);
 
@@ -569,10 +572,11 @@ int set_at_job_done(job_t *job, char *error, int64 resubmit, char **set_error)
 		{
 			this_error = _copy_string("job was canceled while processing: cannot resubmit");
 			sql = insert_sql;
-			n = 20;
+			n = 21;
 
 			values[18] = BoolGetDatum(false);
 			values[19] = CStringGetTextDatum(this_error);
+			values[20] = TimestampTzGetDatum(GetCurrentTimestamp());
 		}
 		else if(job->attempt + 1 < job->resubmit_limit)
 		{
@@ -585,15 +589,16 @@ int set_at_job_done(job_t *job, char *error, int64 resubmit, char **set_error)
 		{
 			this_error = _copy_string("resubmit limit reached");
 			sql = insert_sql;
-			n = 20;
+			n = 21;
 
 			values[18] = BoolGetDatum(false);
 			values[19] = CStringGetTextDatum(this_error);
+			values[20] = TimestampTzGetDatum(GetCurrentTimestamp());
 		}
 	}
 	else
 	{
-		n = 20;
+		n = 21;
 		sql = insert_sql;
 		if(error)
 		{
@@ -605,6 +610,7 @@ int set_at_job_done(job_t *job, char *error, int64 resubmit, char **set_error)
 			values[18] = BoolGetDatum(true);
 			nulls[19] = 'n'; 
 		}
+		values[20] = TimestampTzGetDatum(GetCurrentTimestamp());
 	}
 	r2 = execute_spi_sql_with_args(sql, n, argtypes, values, nulls);
 	if(this_error) pfree(this_error);
