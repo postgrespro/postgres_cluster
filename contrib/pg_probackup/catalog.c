@@ -42,7 +42,7 @@ unlink_lock_atexit(void)
 /*
  * Create a lockfile.
  */
-int
+void
 catalog_lock(bool check_catalog)
 {
 	int			fd;
@@ -220,8 +220,6 @@ catalog_lock(bool check_catalog)
 			elog(ERROR, "Backup directory was initialized for system id = %ld, but target system id = %ld",
 				 system_identifier, id);
 	}
-
-	return 0;
 }
 
 /*
