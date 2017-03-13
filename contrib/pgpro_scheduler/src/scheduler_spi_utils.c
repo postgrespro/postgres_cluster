@@ -13,14 +13,14 @@
 
 void START_SNAP(void)
 {
-	SetCurrentStatementStartTimestamp(); 
-	StartTransactionCommand(); 
+	SetCurrentStatementStartTimestamp();
+	StartTransactionCommand();
 	PushActiveSnapshot(GetTransactionSnapshot());
 }
 
-void STOP_SNAP(void) 
+void STOP_SNAP(void)
 {
-	PopActiveSnapshot(); 
+	PopActiveSnapshot();
 	CommitTransactionCommand();
 }
 
@@ -29,19 +29,19 @@ void START_SPI_SNAP(void)
 	SetCurrentStatementStartTimestamp();
 	StartTransactionCommand();
 	SPI_connect();
-	PushActiveSnapshot(GetTransactionSnapshot()); 
+	PushActiveSnapshot(GetTransactionSnapshot());
 }
 
 void STOP_SPI_SNAP(void)
 {
 	SPI_finish();
-	PopActiveSnapshot(); 
+	PopActiveSnapshot();
 	CommitTransactionCommand();
 }
 
-void ABORT_SPI_SNAP(void) 
+void ABORT_SPI_SNAP(void)
 {
-	PopActiveSnapshot(); 
+	PopActiveSnapshot();
 	AbortCurrentTransaction();
 	SPI_finish();
 }
@@ -131,7 +131,7 @@ spi_response_t *__copy_spi_data(int ret, int  n)
 			{
 				r->rows[i][j].dat =  0;
 				r->rows[i][j].null =  true;
-			}	
+			}
 			else
 			{
 				r->rows[i][j].dat = datumCopy(dat,
@@ -242,7 +242,7 @@ int64 *get_int64array_from_spi(spi_response_t *r, int row_n, int pos, int *N)
 	result = worker_alloc(sizeof(int64) * arr_len);
 	for(i=0; i < len; i++)
 	{
-		if(!nulls[i]) 
+		if(!nulls[i])
 		{
 			result[*N] = Int64GetDatum(datums[i]);
 			(*N)++;
@@ -297,7 +297,7 @@ char **get_textarray_from_spi(spi_response_t *r, int row_n, int pos, int *N)
 	result = worker_alloc(sizeof(char *) * arr_len);
 	for(i=0; i < len; i++)
 	{
-		if(!nulls[i]) 
+		if(!nulls[i])
 		{
 			result[*N] = _copy_string(TextDatumGetCString(datums[i]));
 			(*N)++;
@@ -485,7 +485,7 @@ spi_response_t *execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes,
 		ReleaseCurrentSubTransaction();
 		switch_to_worker_context();
 		CurrentResourceOwner = oldowner;
-		SPI_restore_connection(); 
+		SPI_restore_connection();
 	}
 	PG_CATCH();
 	{
@@ -503,10 +503,10 @@ spi_response_t *execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes,
 		{
 			rv = __error_spi_resp(ret, "unknown error");
 		}
-		RollbackAndReleaseCurrentSubTransaction(); 
+		RollbackAndReleaseCurrentSubTransaction();
 		CurrentResourceOwner = oldowner;
 		switch_to_worker_context();
-		SPI_restore_connection(); 
+		SPI_restore_connection();
 		FreeErrorData(edata);
 		FlushErrorState();
 	}
@@ -541,7 +541,7 @@ spi_response_t *execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes,
 }
 
 spi_response_t *execute_spi(const char *sql)
-{	
+{
 	return execute_spi_sql_with_args(sql, 0, NULL, NULL, NULL);
 }
 
@@ -603,7 +603,7 @@ spi_response_t *execute_spi_params_prepared(const char *sql, int nparams, char *
 		}
 		FreeErrorData(edata);
 		FlushErrorState();
-		RollbackAndReleaseCurrentSubTransaction(); 
+		RollbackAndReleaseCurrentSubTransaction();
 		CurrentResourceOwner = oldowner;
 		switch_to_worker_context();
 		SPI_restore_connection();

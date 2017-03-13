@@ -238,7 +238,7 @@ pid_t registerManagerWorker(schd_manager_t *man)
 
 void _sortPollManagers(schd_managers_poll_t *poll)
 {
-	if(poll->n > 1) 
+	if(poll->n > 1)
 		qsort(poll->workers, poll->n, sizeof(schd_manager_t *), __cmp_managers);
 }
 
