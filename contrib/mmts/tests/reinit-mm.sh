@@ -48,7 +48,7 @@ do
         multimaster.workers = 1
         multimaster.heartbeat_recv_timeout = 2000
         multimaster.heartbeat_send_timeout = 250
-        multimaster.volkswagen_mode = 1
+        #multimaster.volkswagen_mode = 1
         multimaster.conn_strings = '$conn_str'
         multimaster.node_id = $i
         multimaster.max_nodes = 4
