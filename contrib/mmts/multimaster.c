@@ -312,7 +312,6 @@ void MtmReleaseLocks(void)
  */
 void MtmLock(LWLockMode mode)
 {
-	timestamp_t start, stop;
 	if (!MtmAtExitHookRegistered) { 
 		atexit(MtmReleaseLocks);
 		MtmAtExitHookRegistered = true;
@@ -320,18 +319,25 @@ void MtmLock(LWLockMode mode)
 	if (MtmLockCount != 0) { 
 		Assert(Mtm->lastLockHolder == MyProcPid);
 		MtmLockCount += 1;
-		return;
 	}
-	start = MtmGetSystemTime();
-	LWLockAcquire((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID], mode);
-	stop = MtmGetSystemTime();
-	if (stop > start + MSEC_TO_USEC(MtmHeartbeatSendTimeout)) { 
-		MTM_LOG1("%d: obtaining %s lock takes %lld microseconds", MyProcPid, (mode == LW_EXCLUSIVE ? "exclusive" : "shared"), stop - start);
-	}	
-	if (mode == LW_EXCLUSIVE) { 
-		Assert(MtmLockCount == 0);
-		Mtm->lastLockHolder = MyProcPid;
-		MtmLockCount = 1;
+	else
+	{
+#if DEBUG_LEVEL > 1
+		timestamp_t start, stop;
+		start = MtmGetSystemTime();
+#endif
+		LWLockAcquire((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID], mode);
+#if DEBUG_LEVEL > 1
+		stop = MtmGetSystemTime();
+		if (stop > start + MSEC_TO_USEC(MtmHeartbeatSendTimeout)) { 
+			MTM_LOG1("%d: obtaining %s lock takes %lld microseconds", MyProcPid, (mode == LW_EXCLUSIVE ? "exclusive" : "shared"), stop - start);
+		}	
+#endif
+		if (mode == LW_EXCLUSIVE) { 
+			Assert(MtmLockCount == 0);
+			Mtm->lastLockHolder = MyProcPid;
+			MtmLockCount = 1;
+		}
 	}
 }
 
@@ -527,9 +533,12 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
     static timestamp_t totalSleepTime;
     static timestamp_t maxSleepTime;
 #endif
-	timestamp_t start = MtmGetSystemTime();
     timestamp_t delay = MIN_WAIT_TIMEOUT;
 	int i;
+#if DEBUG_LEVEL > 1
+	timestamp_t start = MtmGetSystemTime();
+#endif
+
     Assert(xid != InvalidTransactionId);
 	
 	if (!MtmUseDtm) { 
@@ -551,9 +560,11 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
             if (ts->csn > MtmTx.snapshot) { 
                 MTM_LOG4("%d: tuple with xid=%lld(csn=%lld) is invisible in snapshot %lld",
 						 MyProcPid, (long64)xid, ts->csn, MtmTx.snapshot);
+#if DEBUG_LEVEL > 1
 				if (MtmGetSystemTime() - start > USECS_PER_SEC) { 
 					MTM_ELOG(WARNING, "Backend %d waits for transaction %s (%llu) status %lld usecs", MyProcPid, ts->gid, (long64)xid, MtmGetSystemTime() - start);
 				}
+#endif
 				MtmUnlock();
                 return true;
             }
@@ -593,10 +604,12 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
                 MTM_LOG4("%d: tuple with xid=%lld(csn= %lld) is %s in snapshot %lld",
 						 MyProcPid, (long64)xid, ts->csn, invisible ? "rollbacked" : "committed", MtmTx.snapshot);
                 MtmUnlock();
+#if DEBUG_LEVEL > 1
 				if (MtmGetSystemTime() - start > USECS_PER_SEC) { 
 					MTM_ELOG(WARNING, "Backend %d waits for %s transaction %s (%llu) %lld usecs", MyProcPid, invisible ? "rollbacked" : "committed", 
 						 ts->gid, (long64)xid, MtmGetSystemTime() - start);
 				}
+#endif
                 return invisible;
             }
         }
@@ -608,7 +621,11 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
         }
     }
 	MtmUnlock();
+#if DEBUG_LEVEL > 1
 	MTM_ELOG(ERROR, "Failed to get status of XID %llu in %lld usec", (long64)xid, MtmGetSystemTime() - start);
+#else
+	MTM_ELOG(ERROR, "Failed to get status of XID %llu", (long64)xid);
+#endif
 	return true;
 }    
 
@@ -3815,6 +3832,7 @@ bool MtmFilterTransaction(char* record, int size)
     switch (event)
     {
 	  case PGLOGICAL_PREPARE:
+		return false;
 	  case PGLOGICAL_PRECOMMIT_PREPARED:
 	  case PGLOGICAL_ABORT_PREPARED:
 		gid = pq_getmsgstring(&s);
