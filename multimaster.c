@@ -1181,8 +1181,11 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 	timestamp_t start = MtmGetSystemTime();
 	timestamp_t deadline = start + timeout;
 	timestamp_t now;
+	uint32 SaveCancelHoldoffCount = QueryCancelHoldoffCount;
 
 	Assert(ts->csn > ts->snapshot);
+
+	QueryCancelHoldoffCount = 0;
 
 	/* Wait votes from all nodes until: */
 	while (!MtmVotingCompleted(ts))
@@ -1212,6 +1215,8 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 			}
 		}
 	}
+	QueryCancelHoldoffCount = SaveCancelHoldoffCount;
+
 	if (ts->status != TRANSACTION_STATUS_ABORTED && !ts->votingCompleted) { 
 		if (ts->isPrepared) { 
 			MTM_ELOG(WARNING, "Commit of distributed transaction %s is suspended because node is switched to %s mode", ts->gid, MtmNodeStatusMnem[Mtm->status]);				
