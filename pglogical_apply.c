@@ -649,6 +649,9 @@ process_remote_commit(StringInfo in)
 	lsn_t       origin_lsn;
 	int         origin_node;
 	char        gid[MULTIMASTER_MAX_GID_SIZE];
+
+	gid[0] = '\0';
+
 	/* read event */
 	event = pq_getmsgbyte(in);
 	MtmReplicationNodeId = pq_getmsgbyte(in);
