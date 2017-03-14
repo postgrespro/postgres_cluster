@@ -91,7 +91,7 @@ do_restore(time_t backup_id,
 	pgBackup   *base_backup = NULL;
 	pgBackup   *dest_backup = NULL;
 	pgRecoveryTarget *rt = NULL;
-	bool		need_recovery_conf = false;
+	bool		need_recovery_conf = true;
 
 	/* PGDATA and ARCLOG_PATH are always required */
 	if (pgdata == NULL)
@@ -200,16 +200,16 @@ base_backup_found:
 	/* Tablespace directories checking */
 	check_tablespace_mapping((pgBackup *) parray_get(backups, last_diff_index));
 
+	if (dest_backup && dest_backup->stream)
+		need_recovery_conf = target_time != NULL || target_xid != NULL;
+
 	/* Restore backups from base_index to last_diff_index */
-	need_recovery_conf = target_time != NULL || target_xid != NULL;
 	for (i = base_index; i >= last_diff_index; i--)
 	{
 		pgBackup   *backup = (pgBackup *) parray_get(backups, i);
 
 		if (backup->status == BACKUP_STATUS_OK)
 		{
-			need_recovery_conf = need_recovery_conf || !backup->stream;
-
 			print_backup_lsn(backup);
 			restore_database(backup);
 		}
@@ -416,7 +416,7 @@ restore_directories(const char *pg_data_dir, const char *backup_dir)
 				link_name[len] = '\0';
 			}
 			else
-				strcpy(link_name, link_ptr);
+				goto create_directory;
 
 			tmp_ptr = dir->path;
 			dir->path = link_name;
@@ -442,7 +442,13 @@ restore_directories(const char *pg_data_dir, const char *backup_dir)
 					 * create it second time.
 					 */
 					if (strcmp(dir_created, linked_path) == 0)
-						continue;
+					{
+						/* Create rest of directories */
+						if (link_sep && (link_sep + 1))
+							goto create_directory;
+						else
+							continue;
+					}
 					else
 						elog(ERROR, "tablespace directory \"%s\" of page backup does not "
 							 "match with previous created tablespace directory \"%s\" of symlink \"%s\"",
@@ -467,12 +473,6 @@ restore_directories(const char *pg_data_dir, const char *backup_dir)
 
 				/* Firstly, create linked directory */
 				dir_create_dir(linked_path, DIR_PERMISSION);
-				/* Create rest of directories */
-				if (link_sep && (link_sep + 1))
-				{
-					join_path_components(to_path, linked_path, link_sep + 1);
-					dir_create_dir(to_path, DIR_PERMISSION);
-				}
 
 				join_path_components(to_path, pg_data_dir, PG_TBLSPC_DIR);
 				/* Create pg_tblspc directory just in case */
@@ -487,10 +487,15 @@ restore_directories(const char *pg_data_dir, const char *backup_dir)
 				/* Save linked directory */
 				set_tablespace_created(link_name, linked_path);
 
+				/* Create rest of directories */
+				if (link_sep && (link_sep + 1))
+					goto create_directory;
+
 				continue;
 			}
 		}
 
+create_directory:
 		elog(LOG, "create directory \"%s\"", relative_ptr);
 
 		/* This is not symlink, create directory */
