@@ -856,7 +856,7 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
         </listitem>
        </varlistentry>
 
-      </variablelist></para>
+      </variablelist>
     </listitem>
    </varlistentry>
 
