@@ -8,6 +8,29 @@ use TestLib;
 use Test::More;
 use Cwd;
 
+use Socket;
+
+sub check_port
+{
+	my ($host, $port) = @_;
+	my $iaddr = inet_aton($host);
+	my $paddr = sockaddr_in($port, $iaddr);
+	my $proto = getprotobyname("tcp");
+	my $available = 0;
+
+	socket(SOCK, PF_INET, SOCK_STREAM, $proto)
+		or die "socket failed: $!";
+
+	if (bind(SOCK, $paddr) && listen(SOCK, SOMAXCONN))
+	{
+		$available = 1;
+	}
+
+	close(SOCK);
+	diag("checking for port $port = $available\n");
+	return $available;
+}
+
 my %allocated_ports = ();
 sub allocate_ports
 {
@@ -18,8 +41,7 @@ sub allocate_ports
 	{
 		my $port = int(rand() * 16384) + 49152;
 		next if $allocated_ports{$port};
-		diag("checking for port $port\n");
-		if (!TestLib::run_log(['pg_isready', '-h', $host, '-p', $port]))
+		if (check_port($host, $port))
 		{
 			$allocated_ports{$port} = 1;
 			push(@allocated_now, $port);
