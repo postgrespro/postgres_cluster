@@ -6062,15 +6062,18 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
        </row>
        <row>
         <entry><literal>TZ</literal></entry>
-        <entry>upper case time-zone name</entry>
+        <entry>upper case time-zone abbreviation
+         (only supported in <function>to_char</>)</entry>
        </row>
        <row>
         <entry><literal>tz</literal></entry>
-        <entry>lower case time-zone name</entry>
+        <entry>lower case time-zone abbreviation
+         (only supported in <function>to_char</>)</entry>
        </row>
        <row>
         <entry><literal>OF</literal></entry>
-        <entry>time-zone offset</entry>
+        <entry>time-zone offset from UTC
+         (only supported in <function>to_char</>)</entry>
        </row>
       </tbody>
      </tgroup>
@@ -9615,7 +9618,7 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         </entry>
         <entry><type>tsquery</type></entry>
         <entry>make query that searches for <replaceable>query1</> followed by
-         <replaceable>query2</> at maximum distance <replaceable>distance</></entry>
+         <replaceable>query2</> at distance <replaceable>distance</></entry>
         <entry><literal>tsquery_phrase(to_tsquery('fat'), to_tsquery('cat'), 10)</literal></entry>
         <entry><literal>'fat' &lt;10&gt; 'cat'</literal></entry>
        </row>
@@ -10325,50 +10328,54 @@ SELECT xml_is_well_formed_document('<pg:foo xmlns:pg="http://postgresql.org/stuf
   <sect2 id="functions-xml-processing">
    <title>Processing XML</title>
 
-   <indexterm>
-    <primary>XPath</primary>
-   </indexterm>
-
    <para>
     To process values of data type <type>xml</type>, PostgreSQL offers
     the functions <function>xpath</function> and
     <function>xpath_exists</function>, which evaluate XPath 1.0
-    expressions.
+    expressions, and the <function>XMLTABLE</function>
+    table function.
    </para>
+
+   <sect3 id="functions-xml-processing-xpath">
+    <title><literal>xpath</literal></title>
+
+    <indexterm>
+     <primary>XPath</primary>
+    </indexterm>
 
 <synopsis>
 <function>xpath</function>(<replaceable>xpath</replaceable>, <replaceable>xml</replaceable> <optional>, <replaceable>nsarray</replaceable></optional>)
 </synopsis>
 
-   <para>
-    The function <function>xpath</function> evaluates the XPath
-    expression <replaceable>xpath</replaceable> (a <type>text</> value)
-    against the XML value
-    <replaceable>xml</replaceable>.  It returns an array of XML values
-    corresponding to the node set produced by the XPath expression.
-    If the XPath expression returns a scalar value rather than a node set,
-    a single-element array is returned.
-   </para>
+    <para>
+     The function <function>xpath</function> evaluates the XPath
+     expression <replaceable>xpath</replaceable> (a <type>text</> value)
+     against the XML value
+     <replaceable>xml</replaceable>.  It returns an array of XML values
+     corresponding to the node set produced by the XPath expression.
+     If the XPath expression returns a scalar value rather than a node set,
+     a single-element array is returned.
+    </para>
 
-  <para>
-    The second argument must be a well formed XML document. In particular,
-    it must have a single root node element.
-  </para>
+    <para>
+     The second argument must be a well formed XML document. In particular,
+     it must have a single root node element.
+    </para>
 
-   <para>
-    The optional third argument of the function is an array of namespace
-    mappings.  This array should be a two-dimensional <type>text</> array with
-    the length of the second axis being equal to 2 (i.e., it should be an
-    array of arrays, each of which consists of exactly 2 elements).
-    The first element of each array entry is the namespace name (alias), the
-    second the namespace URI. It is not required that aliases provided in
-    this array be the same as those being used in the XML document itself (in
-    other words, both in the XML document and in the <function>xpath</function>
-    function context, aliases are <emphasis>local</>).
-   </para>
+    <para>
+     The optional third argument of the function is an array of namespace
+     mappings.  This array should be a two-dimensional <type>text</> array with
+     the length of the second axis being equal to 2 (i.e., it should be an
+     array of arrays, each of which consists of exactly 2 elements).
+     The first element of each array entry is the namespace name (alias), the
+     second the namespace URI. It is not required that aliases provided in
+     this array be the same as those being used in the XML document itself (in
+     other words, both in the XML document and in the <function>xpath</function>
+     function context, aliases are <emphasis>local</>).
+    </para>
 
-   <para>
-    Example:
+    <para>
+     Example:
 <screen><![CDATA[
 SELECT xpath('/my:a/text()', '<my:a xmlns:my="http://example.com">test</my:a>',
              ARRAY[ARRAY['my', 'http://example.com']]);
@@ -10378,10 +10385,10 @@ SELECT xpath('/my:a/text()', '<my:a xmlns:my="http://example.com">test</my:a>',
  {test}
 (1 row)
 ]]></screen>
-   </para>
+    </para>
 
-   <para>
-    To deal with default (anonymous) namespaces, do something like this:
+    <para>
+     To deal with default (anonymous) namespaces, do something like this:
 <screen><![CDATA[
 SELECT xpath('//mydefns:b/text()', '<a xmlns="http://example.com"><b>test</b></a>',
              ARRAY[ARRAY['mydefns', 'http://example.com']]);
@@ -10391,27 +10398,31 @@ SELECT xpath('//mydefns:b/text()', '<a xmlns="http://example.com"><b>test</b></a
  {test}
 (1 row)
 ]]></screen>
-   </para>
+    </para>
+   </sect3>
 
-   <indexterm>
-    <primary>xpath_exists</primary>
-   </indexterm>
+   <sect3 id="functions-xml-processing-xpath-exists">
+    <title><literal>xpath_exists</literal></title>
+
+    <indexterm>
+     <primary>xpath_exists</primary>
+    </indexterm>
 
 <synopsis>
 <function>xpath_exists</function>(<replaceable>xpath</replaceable>, <replaceable>xml</replaceable> <optional>, <replaceable>nsarray</replaceable></optional>)
 </synopsis>
 
-   <para>
-    The function <function>xpath_exists</function> is a specialized form
-    of the <function>xpath</function> function.  Instead of returning the
-    individual XML values that satisfy the XPath, this function returns a
-    Boolean indicating whether the query was satisfied or not.  This
-    function is equivalent to the standard <literal>XMLEXISTS</> predicate,
-    except that it also offers support for a namespace mapping argument.
-   </para>
+    <para>
+     The function <function>xpath_exists</function> is a specialized form
+     of the <function>xpath</function> function.  Instead of returning the
+     individual XML values that satisfy the XPath, this function returns a
+     Boolean indicating whether the query was satisfied or not.  This
+     function is equivalent to the standard <literal>XMLEXISTS</> predicate,
+     except that it also offers support for a namespace mapping argument.
+    </para>
 
-   <para>
-    Example:
+    <para>
+     Example:
 <screen><![CDATA[
 SELECT xpath_exists('/my:a/text()', '<my:a xmlns:my="http://example.com">test</my:a>',
                      ARRAY[ARRAY['my', 'http://example.com']]);
@@ -10421,7 +10432,208 @@ SELECT xpath_exists('/my:a/text()', '<my:a xmlns:my="http://example.com">test</m
  t
 (1 row)
 ]]></screen>
-   </para>
+    </para>
+   </sect3>
+
+   <sect3 id="functions-xml-processing-xmltable">
+    <title><literal>xmltable</literal></title>
+
+    <indexterm>
+     <primary>xmltable</primary>
+    </indexterm>
+
+    <indexterm zone="functions-xml-processing-xmltable">
+     <primary>table function</primary>
+     <secondary>XMLTABLE</secondary>
+    </indexterm>
+
+<synopsis>
+<function>xmltable</function>( <optional>XMLNAMESPACES(<replaceable>namespace uri</replaceable> AS <replaceable>namespace name</replaceable><optional>, ...</optional>)</optional>
+          <replaceable>row_expression</replaceable> PASSING <optional>BY REF</optional> <replaceable>document_expression</replaceable> <optional>BY REF</optional>
+          COLUMNS <replaceable>name</replaceable> { <replaceable>type</replaceable> <optional>PATH <replaceable>column_expression</replaceable></optional> <optional>DEFAULT <replaceable>default_expression</replaceable></optional> <optional>NOT NULL | NULL</optional>
+                        | FOR ORDINALITY }
+                   <optional>, ...</optional>
+)
+</synopsis>
+
+    <para>
+     The <function>xmltable</function> function produces a table based
+     on the given XML value, an XPath filter to extract rows, and an
+     optional set of column definitions.
+    </para>
+
+    <para>
+     The optional <literal>XMLNAMESPACES</> clause is a comma-separated
+     list of namespaces.  It specifies the XML namespaces used in
+     the document and their aliases. A default namespace specification
+     is not currently supported.
+    </para>
+
+    <para>
+     The required <replaceable>row_expression</> argument is an XPath
+     expression that is evaluated against the supplied XML document to
+     obtain an ordered sequence of XML nodes. This sequence is what
+     <function>xmltable</> transforms into output rows.
+    </para>
+
+    <para>
+     <replaceable>document_expression</> provides the XML document to
+     operate on.
+     The <literal>BY REF</literal> clauses have no effect in PostgreSQL,
+     but are allowed for SQL conformance and compatibility with other
+     implementations.
+     The argument must be a well-formed XML document; fragments/forests
+     are not accepted.
+    </para>
+
+    <para>
+     The mandatory <literal>COLUMNS</literal> clause specifies the list
+     of columns in the output table.
+     If the <literal>COLUMNS</> clause is omitted, the rows in the result
+     set contain a single column of type <literal>xml</> containing the
+     data matched by <replaceable>row_expression</>.
+     If <literal>COLUMNS</literal> is specified, each entry describes a
+     single column.
+     See the syntax summary above for the format.
+     The column name and type are required; the path, default and
+     nullability clauses are optional.
+    </para>
+
+    <para>
+     A column marked <literal>FOR ORDINALITY</literal> will be populated
+     with row numbers matching the order in which the
+     output rows appeared in the original input XML document.
+     At most one column may be marked <literal>FOR ORDINALITY</literal>.
+    </para>
+
+    <para>
+     The <literal>column_expression</> for a column is an XPath expression
+     that is evaluated for each row, relative to the result of the
+     <replaceable>row_expression</>, to find the value of the column.
+     If no <literal>column_expression</> is given, then the column name
+     is used as an implicit path.
+    </para>
+
+    <para>
+     If a column's XPath expression returns multiple elements, an error
+     is raised.
+     If the expression matches an empty tag, the result is an
+     empty string (not <literal>NULL</>).
+     Any <literal>xsi:nil</> attributes are ignored.
+    </para>
+
+    <para>
+     The text body of the XML matched by the <replaceable>column_expression</>
+     is used as the column value. Multiple <literal>text()</literal> nodes
+     within an element are concatenated in order. Any child elements,
+     processing instructions, and comments are ignored, but the text contents
+     of child elements are concatenated to the result.
+     Note that the whitespace-only <literal>text()</> node between two non-text
+     elements is preserved, and that leading whitespace on a <literal>text()</>
+     node is not flattened.
+    </para>
+
+    <para>
+     If the path expression does not match for a given row but
+     <replaceable>default_expression</> is specified, the value resulting
+     from evaluating that expression is used.
+     If no <literal>DEFAULT</> clause is given for the column,
+     the field will be set to <literal>NULL</>.
+     It is possible for a <replaceable>default_expression</> to reference
+     the value of output columns that appear prior to it in the column list,
+     so the default of one column may be based on the value of another
+     column.
+    </para>
+
+    <para>
+     Columns may be marked <literal>NOT NULL</>. If the
+     <replaceable>column_expression</> for a <literal>NOT NULL</> column
+     does not match anything and there is no <literal>DEFAULT</> or the
+     <replaceable>default_expression</> also evaluates to null, an error
+     is reported.
+    </para>
+
+    <para>
+     Unlike regular PostgreSQL functions, <replaceable>column_expression</>
+     and <replaceable>default_expression</> are not evaluated to a simple
+     value before calling the function.
+     <replaceable>column_expression</> is normally evaluated
+     exactly once per input row, and <replaceable>default_expression</>
+     is evaluated each time a default is needed for a field.
+     If the expression qualifies as stable or immutable the repeat
+     evaluation may be skipped.
+     Effectively <function>xmltable</> behaves more like a subquery than a
+     function call.
+     This means that you can usefully use volatile functions like
+     <function>nextval</> in <replaceable>default_expression</>, and
+     <replaceable>column_expression</> may depend on other parts of the
+     XML document.
+    </para>
+
+    <para>
+     Examples:
+  <screen><![CDATA[
+CREATE TABLE xmldata AS SELECT
+xml $$
+<ROWS>
+  <ROW id="1">
+    <COUNTRY_ID>AU</COUNTRY_ID>
+    <COUNTRY_NAME>Australia</COUNTRY_NAME>
+  </ROW>
+  <ROW id="5">
+    <COUNTRY_ID>JP</COUNTRY_ID>
+    <COUNTRY_NAME>Japan</COUNTRY_NAME>
+    <PREMIER_NAME>Shinzo Abe</PREMIER_NAME>
+    <SIZE unit="sq_mi">145935</SIZE>
+  </ROW>
+  <ROW id="6">
+    <COUNTRY_ID>SG</COUNTRY_ID>
+    <COUNTRY_NAME>Singapore</COUNTRY_NAME>
+    <SIZE unit="sq_km">697</SIZE>
+  </ROW>
+</ROWS>
+$$ AS data;
+
+SELECT xmltable.*
+  FROM xmldata,
+       XMLTABLE('//ROWS/ROW'
+                PASSING data
+                COLUMNS id int PATH '@id',
+                        ordinality FOR ORDINALITY,
+                        "COUNTRY_NAME" text,
+                        country_id text PATH 'COUNTRY_ID',
+                        size_sq_km float PATH 'SIZE[@unit = "sq_km"]',
+                        size_other text PATH
+                             'concat(SIZE[@unit!="sq_km"], " ", SIZE[@unit!="sq_km"]/@unit)',
+                        premier_name text PATH 'PREMIER_NAME' DEFAULT 'not specified') ;
+
+ id | ordinality | COUNTRY_NAME | country_id | size_sq_km |  size_other  | premier_name  
+----+------------+--------------+------------+------------+--------------+---------------
+  1 |          1 | Australia    | AU         |            |              | not specified
+  5 |          2 | Japan        | JP         |            | 145935 sq_mi | Shinzo Abe
+  6 |          3 | Singapore    | SG         |        697 |              | not specified
+]]></screen>
+
+     The following example shows concatenation of multiple text() nodes,
+     usage of the column name as XPath filter, and the treatment of whitespace,
+     XML comments and processing instructions:
+
+  <screen><![CDATA[
+CREATE TABLE xmlelements AS SELECT
+xml $$
+  <root>
+   <element>  Hello<!-- xyxxz -->2a2<?aaaaa?> <!--x-->  bbb<x>xxx</x>CC  </element>
+  </root>
+$$ AS data;
+
+SELECT xmltable.*
+  FROM xmlelements, XMLTABLE('/root' PASSING data COLUMNS element text);
+       element        
+----------------------
+   Hello2a2   bbbCC  
+]]></screen>
+    </para>
+   </sect3>
   </sect2>
 
   <sect2 id="functions-xml-mapping">
@@ -15468,6 +15680,13 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
       </row>
 
       <row>
+       <entry><literal><function>pg_current_logfile(<optional><type>text</></optional>)</function></literal></entry>
+       <entry><type>text</type></entry>
+       <entry>Primary log file name, or log in the requested format,
+       currently in use by the logging collector</entry>
+      </row>
+
+      <row>
        <entry><literal><function>pg_my_temp_schema()</function></literal></entry>
        <entry><type>oid</type></entry>
        <entry>OID of session's temporary schema, or 0 if none</entry>
@@ -15683,6 +15902,45 @@ SET search_path TO <replaceable>schema</> <optional>, <replaceable>schema</>, ..
     when the session itself re-read the configuration files, so the
     reading will vary a little in different sessions.  Otherwise it is
     the time when the postmaster process re-read the configuration files.)
+   </para>
+
+   <indexterm>
+    <primary>pg_current_logfile</primary>
+   </indexterm>
+
+   <indexterm>
+    <primary>Logging</primary>
+    <secondary>pg_current_logfile function</secondary>
+   </indexterm>
+
+   <indexterm>
+     <primary>current_logfiles</primary>
+     <secondary>and the pg_current_logfile function</secondary>
+   </indexterm>
+
+   <indexterm>
+    <primary>Logging</primary>
+    <secondary>current_logfiles file and the pg_current_logfile
+    function</secondary>
+   </indexterm>
+
+   <para>
+    <function>pg_current_logfile</function> returns, as <type>text</type>,
+    the path of the log file(s) currently in use by the logging collector.
+    The path includes the <xref linkend="guc-log-directory"> directory
+    and the log file name.  Log collection must be enabled or the return value
+    is <literal>NULL</literal>.  When multiple log files exist, each in a
+    different format, <function>pg_current_logfile</function> called
+    without arguments returns the path of the file having the first format
+    found in the ordered list: <systemitem>stderr</>, <systemitem>csvlog</>.
+    <literal>NULL</literal> is returned when no log file has any of these
+    formats.  To request a specific file format supply, as <type>text</type>,
+    either <systemitem>csvlog</> or <systemitem>stderr</> as the value of the
+    optional parameter. The return value is <literal>NULL</literal> when the
+    log format requested is not a configured
+    <xref linkend="guc-log-destination">.  The
+    <function>pg_current_logfiles</function> reflects the contents of the
+    <filename>current_logfiles</> file.
    </para>
 
    <indexterm>
@@ -17653,11 +17911,6 @@ SELECT collation for ('foo' COLLATE "de_DE");
       </row>
 
       <row>
-       <entry><literal>bigint_timestamps</literal></entry>
-       <entry><type>boolean</type></entry>
-      </row>
-
-      <row>
        <entry><literal>float4_pass_by_value</literal></entry>
        <entry><type>boolean</type></entry>
       </row>
@@ -17952,13 +18205,13 @@ SELECT set_config('log_statement_stats', 'off', false);
     <primary>pg_create_restore_point</primary>
    </indexterm>
    <indexterm>
-    <primary>pg_current_xlog_flush_location</primary>
+    <primary>pg_current_wal_flush_location</primary>
    </indexterm>
    <indexterm>
-    <primary>pg_current_xlog_insert_location</primary>
+    <primary>pg_current_wal_insert_location</primary>
    </indexterm>
    <indexterm>
-    <primary>pg_current_xlog_location</primary>
+    <primary>pg_current_wal_location</primary>
    </indexterm>
    <indexterm>
     <primary>pg_start_backup</primary>
@@ -17973,16 +18226,16 @@ SELECT set_config('log_statement_stats', 'off', false);
     <primary>pg_backup_start_time</primary>
    </indexterm>
    <indexterm>
-    <primary>pg_switch_xlog</primary>
+    <primary>pg_switch_wal</primary>
    </indexterm>
    <indexterm>
-    <primary>pg_xlogfile_name</primary>
+    <primary>pg_walfile_name</primary>
    </indexterm>
    <indexterm>
-    <primary>pg_xlogfile_name_offset</primary>
+    <primary>pg_walfile_name_offset</primary>
    </indexterm>
    <indexterm>
-    <primary>pg_xlog_location_diff</primary>
+    <primary>pg_wal_location_diff</primary>
    </indexterm>
 
    <para>
@@ -17990,7 +18243,7 @@ SELECT set_config('log_statement_stats', 'off', false);
     linkend="functions-admin-backup-table"> assist in making on-line backups.
     These functions cannot be executed during recovery (except
     <function>pg_is_in_backup</function>, <function>pg_backup_start_time</function>
-    and <function>pg_xlog_location_diff</function>).
+    and <function>pg_wal_location_diff</function>).
    </para>
 
    <table id="functions-admin-backup-table">
@@ -18011,21 +18264,21 @@ SELECT set_config('log_statement_stats', 'off', false);
       </row>
       <row>
        <entry>
-        <literal><function>pg_current_xlog_flush_location()</function></literal>
+        <literal><function>pg_current_wal_flush_location()</function></literal>
         </entry>
        <entry><type>pg_lsn</type></entry>
        <entry>Get current transaction log flush location</entry>
       </row>
       <row>
        <entry>
-        <literal><function>pg_current_xlog_insert_location()</function></literal>
+        <literal><function>pg_current_wal_insert_location()</function></literal>
         </entry>
        <entry><type>pg_lsn</type></entry>
        <entry>Get current transaction log insert location</entry>
       </row>
       <row>
        <entry>
-        <literal><function>pg_current_xlog_location()</function></literal>
+        <literal><function>pg_current_wal_location()</function></literal>
         </entry>
        <entry><type>pg_lsn</type></entry>
        <entry>Get current transaction log write location</entry>
@@ -18067,28 +18320,28 @@ SELECT set_config('log_statement_stats', 'off', false);
       </row>
       <row>
        <entry>
-        <literal><function>pg_switch_xlog()</function></literal>
+        <literal><function>pg_switch_wal()</function></literal>
         </entry>
        <entry><type>pg_lsn</type></entry>
        <entry>Force switch to a new transaction log file (restricted to superusers by default, but other users can be granted EXECUTE to run the function)</entry>
       </row>
       <row>
        <entry>
-        <literal><function>pg_xlogfile_name(<parameter>location</> <type>pg_lsn</>)</function></literal>
+        <literal><function>pg_walfile_name(<parameter>location</> <type>pg_lsn</>)</function></literal>
         </entry>
        <entry><type>text</type></entry>
        <entry>Convert transaction log location string to file name</entry>
       </row>
       <row>
        <entry>
-        <literal><function>pg_xlogfile_name_offset(<parameter>location</> <type>pg_lsn</>)</function></literal>
+        <literal><function>pg_walfile_name_offset(<parameter>location</> <type>pg_lsn</>)</function></literal>
         </entry>
        <entry><type>text</>, <type>integer</></entry>
        <entry>Convert transaction log location string to file name and decimal byte offset within file</entry>
       </row>
       <row>
        <entry>
-        <literal><function>pg_xlog_location_diff(<parameter>location</> <type>pg_lsn</>, <parameter>location</> <type>pg_lsn</>)</function></literal>
+        <literal><function>pg_wal_location_diff(<parameter>location</> <type>pg_lsn</>, <parameter>location</> <type>pg_lsn</>)</function></literal>
        </entry>
        <entry><type>numeric</></entry>
        <entry>Calculate the difference between two transaction log locations</entry>
@@ -18146,11 +18399,11 @@ postgres=# select pg_start_backup('label_goes_here');
    </para>
 
    <para>
-    <function>pg_switch_xlog</> moves to the next transaction log file, allowing the
+    <function>pg_switch_wal</> moves to the next transaction log file, allowing the
     current file to be archived (assuming you are using continuous archiving).
     The return value is the ending transaction log location + 1 within the just-completed transaction log file.
     If there has been no transaction log activity since the last transaction log switch,
-    <function>pg_switch_xlog</> does nothing and returns the start location
+    <function>pg_switch_wal</> does nothing and returns the start location
     of the transaction log file currently in use.
    </para>
 
@@ -18165,10 +18418,10 @@ postgres=# select pg_start_backup('label_goes_here');
    </para>
 
    <para>
-    <function>pg_current_xlog_location</> displays the current transaction log write
+    <function>pg_current_wal_location</> displays the current transaction log write
     location in the same format used by the above functions.  Similarly,
-    <function>pg_current_xlog_insert_location</> displays the current transaction log
-    insertion point and <function>pg_current_xlog_flush_location</> displays the
+    <function>pg_current_wal_insert_location</> displays the current transaction log
+    insertion point and <function>pg_current_wal_flush_location</> displays the
     current transaction log flush point. The insertion point is the <quote>logical</>
     end of the transaction log at any instant, while the write location is the end of
     what has actually been written out from the server's internal buffers and flush
@@ -18181,17 +18434,17 @@ postgres=# select pg_start_backup('label_goes_here');
    </para>
 
    <para>
-    You can use <function>pg_xlogfile_name_offset</> to extract the
+    You can use <function>pg_walfile_name_offset</> to extract the
     corresponding transaction log file name and byte offset from the results of any of the
     above functions.  For example:
 <programlisting>
-postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
+postgres=# SELECT * FROM pg_walfile_name_offset(pg_stop_backup());
         file_name         | file_offset 
 --------------------------+-------------
  00000001000000000000000D |     4039624
 (1 row)
 </programlisting>
-    Similarly, <function>pg_xlogfile_name</> extracts just the transaction log file name.
+    Similarly, <function>pg_walfile_name</> extracts just the transaction log file name.
     When the given transaction log location is exactly at a transaction log file boundary, both
     these functions return the name of the preceding transaction log file.
     This is usually the desired behavior for managing transaction log archiving
@@ -18200,7 +18453,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
    </para>
 
    <para>
-    <function>pg_xlog_location_diff</> calculates the difference in bytes
+    <function>pg_wal_location_diff</> calculates the difference in bytes
     between two transaction log locations. It can be used with
     <structname>pg_stat_replication</structname> or some functions shown in
     <xref linkend="functions-admin-backup-table"> to get the replication lag.
@@ -18220,10 +18473,10 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
     <primary>pg_is_in_recovery</primary>
    </indexterm>
    <indexterm>
-    <primary>pg_last_xlog_receive_location</primary>
+    <primary>pg_last_wal_receive_location</primary>
    </indexterm>
    <indexterm>
-    <primary>pg_last_xlog_replay_location</primary>
+    <primary>pg_last_wal_replay_location</primary>
    </indexterm>
    <indexterm>
     <primary>pg_last_xact_replay_timestamp</primary>
@@ -18255,7 +18508,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
       </row>
       <row>
        <entry>
-        <literal><function>pg_last_xlog_receive_location()</function></literal>
+        <literal><function>pg_last_wal_receive_location()</function></literal>
         </entry>
        <entry><type>pg_lsn</type></entry>
        <entry>Get last transaction log location received and synced to disk by
@@ -18269,7 +18522,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
       </row>
       <row>
        <entry>
-        <literal><function>pg_last_xlog_replay_location()</function></literal>
+        <literal><function>pg_last_wal_replay_location()</function></literal>
         </entry>
        <entry><type>pg_lsn</type></entry>
        <entry>Get last transaction log location replayed during recovery.
@@ -18301,13 +18554,13 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
    </table>
 
    <indexterm>
-    <primary>pg_is_xlog_replay_paused</primary>
+    <primary>pg_is_wal_replay_paused</primary>
    </indexterm>
    <indexterm>
-    <primary>pg_xlog_replay_pause</primary>
+    <primary>pg_wal_replay_pause</primary>
    </indexterm>
    <indexterm>
-    <primary>pg_xlog_replay_resume</primary>
+    <primary>pg_wal_replay_resume</primary>
    </indexterm>
 
    <para>
@@ -18327,7 +18580,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
      <tbody>
       <row>
        <entry>
-        <literal><function>pg_is_xlog_replay_paused()</function></literal>
+        <literal><function>pg_is_wal_replay_paused()</function></literal>
         </entry>
        <entry><type>bool</type></entry>
        <entry>True if recovery is paused.
@@ -18335,7 +18588,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
       </row>
       <row>
        <entry>
-        <literal><function>pg_xlog_replay_pause()</function></literal>
+        <literal><function>pg_wal_replay_pause()</function></literal>
         </entry>
        <entry><type>void</type></entry>
        <entry>Pauses recovery immediately (restricted to superusers by default, but other users can be granted EXECUTE to run the function).
@@ -18343,7 +18596,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
       </row>
       <row>
        <entry>
-        <literal><function>pg_xlog_replay_resume()</function></literal>
+        <literal><function>pg_wal_replay_resume()</function></literal>
         </entry>
        <entry><type>void</type></entry>
        <entry>Restarts recovery if it was paused (restricted to superusers by default, but other users can be granted EXECUTE to run the function).
@@ -18492,7 +18745,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         <literal><function>pg_create_physical_replication_slot(<parameter>slot_name</parameter> <type>name</type> <optional>, <parameter>immediately_reserve</> <type>boolean</>, <parameter>temporary</> <type>boolean</></optional>)</function></literal>
        </entry>
        <entry>
-        (<parameter>slot_name</parameter> <type>name</type>, <parameter>xlog_position</parameter> <type>pg_lsn</type>)
+        (<parameter>slot_name</parameter> <type>name</type>, <parameter>wal_position</parameter> <type>pg_lsn</type>)
        </entry>
        <entry>
         Creates a new physical replication slot named
@@ -18536,7 +18789,7 @@ postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
         <literal><function>pg_create_logical_replication_slot(<parameter>slot_name</parameter> <type>name</type>, <parameter>plugin</parameter> <type>name</type> <optional>, <parameter>temporary</> <type>boolean</></optional>)</function></literal>
        </entry>
        <entry>
-        (<parameter>slot_name</parameter> <type>name</type>, <parameter>xlog_position</parameter> <type>pg_lsn</type>)
+        (<parameter>slot_name</parameter> <type>name</type>, <parameter>wal_position</parameter> <type>pg_lsn</type>)
        </entry>
        <entry>
         Creates a new logical (decoding) replication slot named

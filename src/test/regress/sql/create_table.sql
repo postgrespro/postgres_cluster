@@ -493,15 +493,17 @@ DROP TABLE temp_parted;
 CREATE TABLE no_oids_parted (
 	a int
 ) PARTITION BY RANGE (a) WITHOUT OIDS;
-CREATE TABLE fail_part PARTITION OF no_oids_parted FOR VALUES FROM (1) TO (10 )WITH OIDS;
+CREATE TABLE fail_part PARTITION OF no_oids_parted FOR VALUES FROM (1) TO (10) WITH OIDS;
 DROP TABLE no_oids_parted;
 
--- likewise, the reverse if also true
+-- If the partitioned table has oids, then the partition must have them.
+-- If the WITHOUT OIDS option is specified for partition, it is overridden.
 CREATE TABLE oids_parted (
 	a int
 ) PARTITION BY RANGE (a) WITH OIDS;
-CREATE TABLE fail_part PARTITION OF oids_parted FOR VALUES FROM (1) TO (10 ) WITHOUT OIDS;
-DROP TABLE oids_parted;
+CREATE TABLE part_forced_oids PARTITION OF oids_parted FOR VALUES FROM (1) TO (10) WITHOUT OIDS;
+\d+ part_forced_oids
+DROP TABLE oids_parted, part_forced_oids;
 
 -- check for partition bound overlap and other invalid specifications
 
@@ -593,10 +595,5 @@ CREATE TABLE part_c_1_10 PARTITION OF part_c FOR VALUES FROM (1) TO (10);
 -- returned.
 \d parted
 
--- cleanup: avoid using CASCADE
-DROP TABLE parted, part_a, part_b, part_c, part_c_1_10;
-DROP TABLE list_parted, part_1, part_2, part_null;
-DROP TABLE range_parted;
-DROP TABLE list_parted2, part_ab, part_null_z;
-DROP TABLE range_parted2, part0, part1, part2, part3;
-DROP TABLE range_parted3, part00, part10, part11, part12;
+-- cleanup
+DROP TABLE parted, list_parted, range_parted, list_parted2, range_parted2, range_parted3;

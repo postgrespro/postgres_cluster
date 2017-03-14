@@ -164,8 +164,6 @@
  */
 #define atoui(x)  ((unsigned int) strtoul((x), NULL, 10))
 
-#define atooid(x)  ((Oid) strtoul((x), NULL, 10))
-
 #define strtobool(x)  ((*(x) == 't') ? true : false)
 
 #define nullable_string(token,length)  \
@@ -455,6 +453,31 @@ _readRangeVar(void)
 	READ_BOOL_FIELD(inh);
 	READ_CHAR_FIELD(relpersistence);
 	READ_NODE_FIELD(alias);
+	READ_LOCATION_FIELD(location);
+
+	READ_DONE();
+}
+
+/*
+ * _readTableFunc
+ */
+static TableFunc *
+_readTableFunc(void)
+{
+	READ_LOCALS(TableFunc);
+
+	READ_NODE_FIELD(ns_names);
+	READ_NODE_FIELD(ns_uris);
+	READ_NODE_FIELD(docexpr);
+	READ_NODE_FIELD(rowexpr);
+	READ_NODE_FIELD(colnames);
+	READ_NODE_FIELD(coltypes);
+	READ_NODE_FIELD(coltypmods);
+	READ_NODE_FIELD(colcollations);
+	READ_NODE_FIELD(colexprs);
+	READ_NODE_FIELD(coldefexprs);
+	READ_BITMAPSET_FIELD(notnulls);
+	READ_INT_FIELD(ordinalitycol);
 	READ_LOCATION_FIELD(location);
 
 	READ_DONE();
@@ -1315,6 +1338,9 @@ _readRangeTblEntry(void)
 			READ_NODE_FIELD(functions);
 			READ_BOOL_FIELD(funcordinality);
 			break;
+		case RTE_TABLEFUNC:
+			READ_NODE_FIELD(tablefunc);
+			break;
 		case RTE_VALUES:
 			READ_NODE_FIELD(values_lists);
 			READ_NODE_FIELD(coltypes);
@@ -1607,6 +1633,7 @@ _readBitmapOr(void)
 
 	ReadCommonPlan(&local_node->plan);
 
+	READ_BOOL_FIELD(isshared);
 	READ_NODE_FIELD(bitmapplans);
 
 	READ_DONE();
@@ -1718,6 +1745,7 @@ _readBitmapIndexScan(void)
 	ReadCommonScan(&local_node->scan);
 
 	READ_OID_FIELD(indexid);
+	READ_BOOL_FIELD(isshared);
 	READ_NODE_FIELD(indexqual);
 	READ_NODE_FIELD(indexqualorig);
 
@@ -1796,6 +1824,21 @@ _readValuesScan(void)
 	ReadCommonScan(&local_node->scan);
 
 	READ_NODE_FIELD(values_lists);
+
+	READ_DONE();
+}
+
+/*
+ * _readTableFuncScan
+ */
+static TableFuncScan *
+_readTableFuncScan(void)
+{
+	READ_LOCALS(TableFuncScan);
+
+	ReadCommonScan(&local_node->scan);
+
+	READ_NODE_FIELD(tablefunc);
 
 	READ_DONE();
 }
@@ -2095,6 +2138,26 @@ _readGather(void)
 }
 
 /*
+ * _readGatherMerge
+ */
+static GatherMerge *
+_readGatherMerge(void)
+{
+	READ_LOCALS(GatherMerge);
+
+	ReadCommonPlan(&local_node->plan);
+
+	READ_INT_FIELD(num_workers);
+	READ_INT_FIELD(numCols);
+	READ_ATTRNUMBER_ARRAY(sortColIdx, local_node->numCols);
+	READ_OID_ARRAY(sortOperators, local_node->numCols);
+	READ_OID_ARRAY(collations, local_node->numCols);
+	READ_BOOL_ARRAY(nullsFirst, local_node->numCols);
+
+	READ_DONE();
+}
+
+/*
  * _readHash
  */
 static Hash *
@@ -2233,6 +2296,7 @@ _readSubPlan(void)
 	READ_OID_FIELD(firstColCollation);
 	READ_BOOL_FIELD(useHashTable);
 	READ_BOOL_FIELD(unknownEqFalse);
+	READ_BOOL_FIELD(parallel_safe);
 	READ_NODE_FIELD(setParam);
 	READ_NODE_FIELD(parParam);
 	READ_NODE_FIELD(args);
@@ -2357,6 +2421,8 @@ parseNodeString(void)
 		return_value = _readRangeVar();
 	else if (MATCH("INTOCLAUSE", 10))
 		return_value = _readIntoClause();
+	else if (MATCH("TABLEFUNC", 9))
+		return_value = _readTableFunc();
 	else if (MATCH("VAR", 3))
 		return_value = _readVar();
 	else if (MATCH("CONST", 5))
@@ -2499,6 +2565,8 @@ parseNodeString(void)
 		return_value = _readFunctionScan();
 	else if (MATCH("VALUESSCAN", 10))
 		return_value = _readValuesScan();
+	else if (MATCH("TABLEFUNCSCAN", 13))
+		return_value = _readTableFuncScan();
 	else if (MATCH("CTESCAN", 7))
 		return_value = _readCteScan();
 	else if (MATCH("WORKTABLESCAN", 13))
@@ -2529,6 +2597,8 @@ parseNodeString(void)
 		return_value = _readUnique();
 	else if (MATCH("GATHER", 6))
 		return_value = _readGather();
+	else if (MATCH("GATHERMERGE", 11))
+		return_value = _readGatherMerge();
 	else if (MATCH("HASH", 4))
 		return_value = _readHash();
 	else if (MATCH("SETOP", 5))

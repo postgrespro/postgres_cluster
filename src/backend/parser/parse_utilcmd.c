@@ -133,7 +133,7 @@ static void transformConstraintAttrs(CreateStmtContext *cxt,
 						 List *constraintList);
 static void transformColumnType(CreateStmtContext *cxt, ColumnDef *column);
 static void setSchemaName(char *context_schema, char **stmt_schema_name);
-static void transformAttachPartition(CreateStmtContext *cxt, PartitionCmd *cmd);
+static void transformPartitionCmd(CreateStmtContext *cxt, PartitionCmd *cmd);
 
 
 /*
@@ -469,7 +469,7 @@ transformColumnDefinition(CreateStmtContext *cxt, ColumnDef *column)
 		 */
 		seqstmt = makeNode(CreateSeqStmt);
 		seqstmt->sequence = makeRangeVar(snamespace, sname, -1);
-		seqstmt->options = NIL;
+		seqstmt->options = list_make1(makeDefElem("as", (Node *) makeTypeNameFromOid(column->typeName->typeOid, -1), -1));
 
 		/*
 		 * If this is ALTER ADD COLUMN, make sure the sequence will be owned
@@ -543,8 +543,7 @@ transformColumnDefinition(CreateStmtContext *cxt, ColumnDef *column)
 
 	foreach(clist, column->constraints)
 	{
-		constraint = lfirst(clist);
-		Assert(IsA(constraint, Constraint));
+		constraint = castNode(Constraint, lfirst(clist));
 
 		switch (constraint->contype)
 		{
@@ -948,10 +947,9 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 			CommentStmt *stmt = makeNode(CommentStmt);
 
 			stmt->objtype = OBJECT_COLUMN;
-			stmt->objname = list_make3(makeString(cxt->relation->schemaname),
-									   makeString(cxt->relation->relname),
-									   makeString(def->colname));
-			stmt->objargs = NIL;
+			stmt->object = (Node *) list_make3(makeString(cxt->relation->schemaname),
+											   makeString(cxt->relation->relname),
+											   makeString(def->colname));
 			stmt->comment = comment;
 
 			cxt->alist = lappend(cxt->alist, stmt);
@@ -1014,10 +1012,9 @@ transformTableLikeClause(CreateStmtContext *cxt, TableLikeClause *table_like_cla
 				CommentStmt *stmt = makeNode(CommentStmt);
 
 				stmt->objtype = OBJECT_TABCONSTRAINT;
-				stmt->objname = list_make3(makeString(cxt->relation->schemaname),
-										   makeString(cxt->relation->relname),
-										   makeString(n->conname));
-				stmt->objargs = NIL;
+				stmt->object = (Node *) list_make3(makeString(cxt->relation->schemaname),
+												   makeString(cxt->relation->relname),
+												   makeString(n->conname));
 				stmt->comment = comment;
 
 				cxt->alist = lappend(cxt->alist, stmt);
@@ -1520,9 +1517,8 @@ transformIndexConstraints(CreateStmtContext *cxt)
 	 */
 	foreach(lc, cxt->ixconstraints)
 	{
-		Constraint *constraint = (Constraint *) lfirst(lc);
+		Constraint *constraint = castNode(Constraint, lfirst(lc));
 
-		Assert(IsA(constraint, Constraint));
 		Assert(constraint->contype == CONSTR_PRIMARY ||
 			   constraint->contype == CONSTR_UNIQUE ||
 			   constraint->contype == CONSTR_EXCLUSION);
@@ -1842,10 +1838,8 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 			List	   *opname;
 
 			Assert(list_length(pair) == 2);
-			elem = (IndexElem *) linitial(pair);
-			Assert(IsA(elem, IndexElem));
-			opname = (List *) lsecond(pair);
-			Assert(IsA(opname, List));
+			elem = castNode(IndexElem, linitial(pair));
+			opname = castNode(List, lsecond(pair));
 
 			index->indexParams = lappend(index->indexParams, elem);
 			index->excludeOpNames = lappend(index->excludeOpNames, opname);
@@ -1872,8 +1866,7 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 
 		foreach(columns, cxt->columns)
 		{
-			column = (ColumnDef *) lfirst(columns);
-			Assert(IsA(column, ColumnDef));
+			column = castNode(ColumnDef, lfirst(columns));
 			if (strcmp(column->colname, key) == 0)
 			{
 				found = true;
@@ -1902,11 +1895,10 @@ transformIndexConstraint(Constraint *constraint, CreateStmtContext *cxt)
 
 			foreach(inher, cxt->inhRelations)
 			{
-				RangeVar   *inh = (RangeVar *) lfirst(inher);
+				RangeVar   *inh = castNode(RangeVar, lfirst(inher));
 				Relation	rel;
 				int			count;
 
-				Assert(IsA(inh, RangeVar));
 				rel = heap_openrv(inh, AccessShareLock);
 				/* check user requested inheritance from valid relkind */
 				if (rel->rd_rel->relkind != RELKIND_RELATION &&
@@ -2586,9 +2578,8 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 			case AT_AddColumn:
 			case AT_AddColumnToView:
 				{
-					ColumnDef  *def = (ColumnDef *) cmd->def;
+					ColumnDef  *def = castNode(ColumnDef, cmd->def);
 
-					Assert(IsA(def, ColumnDef));
 					transformColumnDefinition(&cxt, def);
 
 					/*
@@ -2654,12 +2645,12 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 				}
 
 			case AT_AttachPartition:
+			case AT_DetachPartition:
 				{
 					PartitionCmd *partcmd = (PartitionCmd *) cmd->def;
 
-					transformAttachPartition(&cxt, partcmd);
-
-					/* assign transformed values */
+					transformPartitionCmd(&cxt, partcmd);
+					/* assign transformed value of the partition bound */
 					partcmd->bound = cxt.partbound;
 				}
 
@@ -2693,9 +2684,8 @@ transformAlterTableStmt(Oid relid, AlterTableStmt *stmt,
 	 */
 	foreach(l, cxt.alist)
 	{
-		IndexStmt  *idxstmt = (IndexStmt *) lfirst(l);
+		IndexStmt  *idxstmt = castNode(IndexStmt, lfirst(l));
 
-		Assert(IsA(idxstmt, IndexStmt));
 		idxstmt = transformIndexStmt(relid, idxstmt, queryString);
 		newcmd = makeNode(AlterTableCmd);
 		newcmd->subtype = OidIsValid(idxstmt->indexOid) ? AT_AddIndexConstraint : AT_AddIndex;
@@ -3032,28 +3022,29 @@ setSchemaName(char *context_schema, char **stmt_schema_name)
 }
 
 /*
- * transformAttachPartition
- *		Analyze ATTACH PARTITION ... FOR VALUES ...
+ * transformPartitionCmd
+ *		Analyze the ATTACH/DETACH PARTITION command
+ *
+ * In case of the ATTACH PARTITION command, cxt->partbound is set to the
+ * transformed value of cmd->bound.
  */
 static void
-transformAttachPartition(CreateStmtContext *cxt, PartitionCmd *cmd)
+transformPartitionCmd(CreateStmtContext *cxt, PartitionCmd *cmd)
 {
 	Relation	parentRel = cxt->rel;
 
-	/*
-	 * We are going to try to validate the partition bound specification
-	 * against the partition key of rel, so it better have one.
-	 */
+	/* the table must be partitioned */
 	if (parentRel->rd_rel->relkind != RELKIND_PARTITIONED_TABLE)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
 				 errmsg("\"%s\" is not partitioned",
 						RelationGetRelationName(parentRel))));
 
-	/* transform the values */
+	/* transform the partition bound, if any */
 	Assert(RelationGetPartitionKey(parentRel) != NULL);
-	cxt->partbound = transformPartitionBound(cxt->pstate, parentRel,
-											 cmd->bound);
+	if (cmd->bound != NULL)
+		cxt->partbound = transformPartitionBound(cxt->pstate, parentRel,
+												 cmd->bound);
 }
 
 /*

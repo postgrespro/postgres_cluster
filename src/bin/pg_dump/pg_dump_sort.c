@@ -19,12 +19,17 @@
 #include "pg_backup_utils.h"
 #include "pg_dump.h"
 
+#include "catalog/pg_class.h"
+
 /* translator: this is a module name */
 static const char *modulename = gettext_noop("sorter");
 
 /*
  * Sort priority for database object types.
  * Objects are sorted by type, and within a type by name.
+ *
+ * Because materialized views can potentially reference system views,
+ * DO_REFRESH_MATVIEW should always be the last thing on the list.
  *
  * NOTE: object-type priorities must match the section assignments made in
  * pg_dump.c; that is, PRE_DATA objects must sort before DO_PRE_DATA_BOUNDARY,
@@ -70,11 +75,11 @@ static const int dbObjectTypePriority[] =
 	22,							/* DO_PRE_DATA_BOUNDARY */
 	26,							/* DO_POST_DATA_BOUNDARY */
 	33,							/* DO_EVENT_TRIGGER */
-	34,							/* DO_REFRESH_MATVIEW */
-	35,							/* DO_POLICY */
-	36,							/* DO_PUBLICATION */
-	37,							/* DO_PUBLICATION_REL */
-	38							/* DO_SUBSCRIPTION */
+	38,							/* DO_REFRESH_MATVIEW */
+	34,							/* DO_POLICY */
+	35,							/* DO_PUBLICATION */
+	36,							/* DO_PUBLICATION_REL */
+	37							/* DO_SUBSCRIPTION */
 };
 
 static DumpId preDataBoundId;
@@ -965,8 +970,8 @@ repairDependencyLoop(DumpableObject **loop,
 	if (nLoop == 2 &&
 		loop[0]->objType == DO_TABLE &&
 		loop[1]->objType == DO_RULE &&
-		(((TableInfo *) loop[0])->relkind == 'v' ||		/* RELKIND_VIEW */
-		 ((TableInfo *) loop[0])->relkind == 'm') &&	/* RELKIND_MATVIEW */
+		(((TableInfo *) loop[0])->relkind == RELKIND_VIEW ||
+		 ((TableInfo *) loop[0])->relkind == RELKIND_MATVIEW) &&
 		((RuleInfo *) loop[1])->ev_type == '1' &&
 		((RuleInfo *) loop[1])->is_instead &&
 		((RuleInfo *) loop[1])->ruletable == (TableInfo *) loop[0])
@@ -977,8 +982,8 @@ repairDependencyLoop(DumpableObject **loop,
 	if (nLoop == 2 &&
 		loop[1]->objType == DO_TABLE &&
 		loop[0]->objType == DO_RULE &&
-		(((TableInfo *) loop[1])->relkind == 'v' ||		/* RELKIND_VIEW */
-		 ((TableInfo *) loop[1])->relkind == 'm') &&	/* RELKIND_MATVIEW */
+		(((TableInfo *) loop[1])->relkind == RELKIND_VIEW ||
+		 ((TableInfo *) loop[1])->relkind == RELKIND_MATVIEW) &&
 		((RuleInfo *) loop[0])->ev_type == '1' &&
 		((RuleInfo *) loop[0])->is_instead &&
 		((RuleInfo *) loop[0])->ruletable == (TableInfo *) loop[1])
@@ -993,7 +998,7 @@ repairDependencyLoop(DumpableObject **loop,
 		for (i = 0; i < nLoop; i++)
 		{
 			if (loop[i]->objType == DO_TABLE &&
-				((TableInfo *) loop[i])->relkind == 'v')		/* RELKIND_VIEW */
+				((TableInfo *) loop[i])->relkind == RELKIND_VIEW)
 			{
 				for (j = 0; j < nLoop; j++)
 				{
@@ -1016,7 +1021,7 @@ repairDependencyLoop(DumpableObject **loop,
 		for (i = 0; i < nLoop; i++)
 		{
 			if (loop[i]->objType == DO_TABLE &&
-				((TableInfo *) loop[i])->relkind == 'm')		/* RELKIND_MATVIEW */
+				((TableInfo *) loop[i])->relkind == RELKIND_MATVIEW)
 			{
 				for (j = 0; j < nLoop; j++)
 				{

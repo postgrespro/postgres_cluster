@@ -126,6 +126,7 @@ bool		enable_nestloop = true;
 bool		enable_material = true;
 bool		enable_mergejoin = true;
 bool		enable_hashjoin = true;
+bool		enable_gathermerge = true;
 
 typedef struct
 {
@@ -373,6 +374,73 @@ cost_gather(GatherPath *path, PlannerInfo *root,
 }
 
 /*
+ * cost_gather_merge
+ *	  Determines and returns the cost of gather merge path.
+ *
+ * GatherMerge merges several pre-sorted input streams, using a heap that at
+ * any given instant holds the next tuple from each stream. If there are N
+ * streams, we need about N*log2(N) tuple comparisons to construct the heap at
+ * startup, and then for each output tuple, about log2(N) comparisons to
+ * replace the top heap entry with the next tuple from the same stream.
+ */
+void
+cost_gather_merge(GatherMergePath *path, PlannerInfo *root,
+				  RelOptInfo *rel, ParamPathInfo *param_info,
+				  Cost input_startup_cost, Cost input_total_cost,
+				  double *rows)
+{
+	Cost		startup_cost = 0;
+	Cost		run_cost = 0;
+	Cost		comparison_cost;
+	double		N;
+	double		logN;
+
+	/* Mark the path with the correct row estimate */
+	if (rows)
+		path->path.rows = *rows;
+	else if (param_info)
+		path->path.rows = param_info->ppi_rows;
+	else
+		path->path.rows = rel->rows;
+
+	if (!enable_gathermerge)
+		startup_cost += disable_cost;
+
+	/*
+	 * Add one to the number of workers to account for the leader.  This might
+	 * be overgenerous since the leader will do less work than other workers
+	 * in typical cases, but we'll go with it for now.
+	 */
+	Assert(path->num_workers > 0);
+	N = (double) path->num_workers + 1;
+	logN = LOG2(N);
+
+	/* Assumed cost per tuple comparison */
+	comparison_cost = 2.0 * cpu_operator_cost;
+
+	/* Heap creation cost */
+	startup_cost += comparison_cost * N * logN;
+
+	/* Per-tuple heap maintenance cost */
+	run_cost += path->path.rows * comparison_cost * logN;
+
+	/* small cost for heap management, like cost_merge_append */
+	run_cost += cpu_operator_cost * path->path.rows;
+
+	/*
+	 * Parallel setup and communication cost.  Since Gather Merge, unlike
+	 * Gather, requires us to block until a tuple is available from every
+	 * worker, we bump the IPC cost up a little bit as compared with Gather.
+	 * For lack of a better idea, charge an extra 5%.
+	 */
+	startup_cost += parallel_setup_cost;
+	run_cost += parallel_tuple_cost * path->path.rows * 1.05;
+
+	path->path.startup_cost = startup_cost + input_startup_cost;
+	path->path.total_cost = (startup_cost + run_cost + input_total_cost);
+}
+
+/*
  * cost_index
  *	  Determines and returns the cost of scanning a relation using an index.
  *
@@ -391,7 +459,8 @@ cost_gather(GatherPath *path, PlannerInfo *root,
  * we have to fetch from the table, so they don't reduce the scan cost.
  */
 void
-cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
+cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
+		   bool partial_path)
 {
 	IndexOptInfo *index = path->indexinfo;
 	RelOptInfo *baserel = index->rel;
@@ -400,6 +469,7 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 	List	   *qpquals;
 	Cost		startup_cost = 0;
 	Cost		run_cost = 0;
+	Cost		cpu_run_cost = 0;
 	Cost		indexStartupCost;
 	Cost		indexTotalCost;
 	Selectivity indexSelectivity;
@@ -413,6 +483,8 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 	Cost		cpu_per_tuple;
 	double		tuples_fetched;
 	double		pages_fetched;
+	double		rand_heap_pages;
+	double		index_pages;
 
 	/* Should only be applied to base relations */
 	Assert(IsA(baserel, RelOptInfo) &&
@@ -459,7 +531,8 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 	amcostestimate = (amcostestimate_function) index->amcostestimate;
 	amcostestimate(root, path, loop_count,
 				   &indexStartupCost, &indexTotalCost,
-				   &indexSelectivity, &indexCorrelation);
+				   &indexSelectivity, &indexCorrelation,
+				   &index_pages);
 
 	/*
 	 * Save amcostestimate's results for possible use in bitmap scan planning.
@@ -526,6 +599,8 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 		if (indexonly)
 			pages_fetched = ceil(pages_fetched * (1.0 - baserel->allvisfrac));
 
+		rand_heap_pages = pages_fetched;
+
 		max_IO_cost = (pages_fetched * spc_random_page_cost) / loop_count;
 
 		/*
@@ -564,6 +639,8 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 		if (indexonly)
 			pages_fetched = ceil(pages_fetched * (1.0 - baserel->allvisfrac));
 
+		rand_heap_pages = pages_fetched;
+
 		/* max_IO_cost is for the perfectly uncorrelated case (csquared=0) */
 		max_IO_cost = pages_fetched * spc_random_page_cost;
 
@@ -581,6 +658,29 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 		}
 		else
 			min_IO_cost = 0;
+	}
+
+	if (partial_path)
+	{
+		/*
+		 * Estimate the number of parallel workers required to scan index. Use
+		 * the number of heap pages computed considering heap fetches won't be
+		 * sequential as for parallel scans the pages are accessed in random
+		 * order.
+		 */
+		path->path.parallel_workers = compute_parallel_worker(baserel,
+											   (BlockNumber) rand_heap_pages,
+												  (BlockNumber) index_pages);
+
+		/*
+		 * Fall out if workers can't be assigned for parallel scan, because in
+		 * such a case this path will be rejected.  So there is no benefit in
+		 * doing extra computation.
+		 */
+		if (path->path.parallel_workers <= 0)
+			return;
+
+		path->path.parallel_aware = true;
 	}
 
 	/*
@@ -602,11 +702,24 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count)
 	startup_cost += qpqual_cost.startup;
 	cpu_per_tuple = cpu_tuple_cost + qpqual_cost.per_tuple;
 
-	run_cost += cpu_per_tuple * tuples_fetched;
+	cpu_run_cost += cpu_per_tuple * tuples_fetched;
 
 	/* tlist eval costs are paid per output row, not per tuple scanned */
 	startup_cost += path->path.pathtarget->cost.startup;
-	run_cost += path->path.pathtarget->cost.per_tuple * path->path.rows;
+	cpu_run_cost += path->path.pathtarget->cost.per_tuple * path->path.rows;
+
+	/* Adjust costing for parallelism, if used. */
+	if (path->path.parallel_workers > 0)
+	{
+		double		parallel_divisor = get_parallel_divisor(&path->path);
+
+		path->path.rows = clamp_row_est(path->path.rows / parallel_divisor);
+
+		/* The CPU cost is divided among all the workers. */
+		cpu_run_cost /= parallel_divisor;
+	}
+
+	run_cost += cpu_run_cost;
 
 	path->path.startup_cost = startup_cost;
 	path->path.total_cost = startup_cost + run_cost;
@@ -637,9 +750,8 @@ extract_nonindex_conditions(List *qual_clauses, List *indexquals)
 
 	foreach(lc, qual_clauses)
 	{
-		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
+		RestrictInfo *rinfo = castNode(RestrictInfo, lfirst(lc));
 
-		Assert(IsA(rinfo, RestrictInfo));
 		if (rinfo->pseudoconstant)
 			continue;			/* we may drop pseudoconstants here */
 		if (list_member_ptr(indexquals, rinfo))
@@ -816,6 +928,7 @@ cost_bitmap_heap_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 	QualCost	qpqual_cost;
 	Cost		cpu_per_tuple;
 	Cost		cost_per_page;
+	Cost		cpu_run_cost;
 	double		tuples_fetched;
 	double		pages_fetched;
 	double		spc_seq_page_cost,
@@ -877,8 +990,21 @@ cost_bitmap_heap_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 
 	startup_cost += qpqual_cost.startup;
 	cpu_per_tuple = cpu_tuple_cost + qpqual_cost.per_tuple;
+	cpu_run_cost = cpu_per_tuple * tuples_fetched;
 
-	run_cost += cpu_per_tuple * tuples_fetched;
+	/* Adjust costing for parallelism, if used. */
+	if (path->parallel_workers > 0)
+	{
+		double		parallel_divisor = get_parallel_divisor(path);
+
+		/* The CPU cost is divided among all the workers. */
+		cpu_run_cost /= parallel_divisor;
+
+		path->rows = clamp_row_est(path->rows / parallel_divisor);
+	}
+
+
+	run_cost += cpu_run_cost;
 
 	/* tlist eval costs are paid per output row, not per tuple scanned */
 	startup_cost += path->pathtarget->cost.startup;
@@ -1215,6 +1341,62 @@ cost_functionscan(Path *path, PlannerInfo *root,
 	 * refinement right now.
 	 */
 	cost_qual_eval_node(&exprcost, (Node *) rte->functions, root);
+
+	startup_cost += exprcost.startup + exprcost.per_tuple;
+
+	/* Add scanning CPU costs */
+	get_restriction_qual_cost(root, baserel, param_info, &qpqual_cost);
+
+	startup_cost += qpqual_cost.startup;
+	cpu_per_tuple = cpu_tuple_cost + qpqual_cost.per_tuple;
+	run_cost += cpu_per_tuple * baserel->tuples;
+
+	/* tlist eval costs are paid per output row, not per tuple scanned */
+	startup_cost += path->pathtarget->cost.startup;
+	run_cost += path->pathtarget->cost.per_tuple * path->rows;
+
+	path->startup_cost = startup_cost;
+	path->total_cost = startup_cost + run_cost;
+}
+
+/*
+ * cost_tablefuncscan
+ *	  Determines and returns the cost of scanning a table function.
+ *
+ * 'baserel' is the relation to be scanned
+ * 'param_info' is the ParamPathInfo if this is a parameterized path, else NULL
+ */
+void
+cost_tablefuncscan(Path *path, PlannerInfo *root,
+				   RelOptInfo *baserel, ParamPathInfo *param_info)
+{
+	Cost		startup_cost = 0;
+	Cost		run_cost = 0;
+	QualCost	qpqual_cost;
+	Cost		cpu_per_tuple;
+	RangeTblEntry *rte;
+	QualCost	exprcost;
+
+	/* Should only be applied to base relations that are functions */
+	Assert(baserel->relid > 0);
+	rte = planner_rt_fetch(baserel->relid, root);
+	Assert(rte->rtekind == RTE_TABLEFUNC);
+
+	/* Mark the path with the correct row estimate */
+	if (param_info)
+		path->rows = param_info->ppi_rows;
+	else
+		path->rows = baserel->rows;
+
+	/*
+	 * Estimate costs of executing the table func expression(s).
+	 *
+	 * XXX in principle we ought to charge tuplestore spill costs if the
+	 * number of rows is large.  However, given how phony our rowcount
+	 * estimates for tablefuncs tend to be, there's not a lot of point in that
+	 * refinement right now.
+	 */
+	cost_qual_eval_node(&exprcost, (Node *) rte->tablefunc, root);
 
 	startup_cost += exprcost.startup + exprcost.per_tuple;
 
@@ -1759,11 +1941,9 @@ cost_windowagg(Path *path, PlannerInfo *root,
 	 */
 	foreach(lc, windowFuncs)
 	{
-		WindowFunc *wfunc = (WindowFunc *) lfirst(lc);
+		WindowFunc *wfunc = castNode(WindowFunc, lfirst(lc));
 		Cost		wfunccost;
 		QualCost	argcosts;
-
-		Assert(IsA(wfunc, WindowFunc));
 
 		wfunccost = get_func_cost(wfunc->winfnoid) * cpu_operator_cost;
 
@@ -2798,10 +2978,8 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 		innerbucketsize = 1.0;
 		foreach(hcl, hashclauses)
 		{
-			RestrictInfo *restrictinfo = (RestrictInfo *) lfirst(hcl);
+			RestrictInfo *restrictinfo = castNode(RestrictInfo, lfirst(hcl));
 			Selectivity thisbucketsize;
-
-			Assert(IsA(restrictinfo, RestrictInfo));
 
 			/*
 			 * First we have to figure out which side of the hashjoin clause
@@ -3492,9 +3670,8 @@ compute_semi_anti_join_factors(PlannerInfo *root,
 		joinquals = NIL;
 		foreach(l, restrictlist)
 		{
-			RestrictInfo *rinfo = (RestrictInfo *) lfirst(l);
+			RestrictInfo *rinfo = castNode(RestrictInfo, lfirst(l));
 
-			Assert(IsA(rinfo, RestrictInfo));
 			if (!rinfo->is_pushed_down)
 				joinquals = lappend(joinquals, rinfo);
 		}
@@ -3925,9 +4102,8 @@ calc_joinrel_size_estimate(PlannerInfo *root,
 		/* Grovel through the clauses to separate into two lists */
 		foreach(l, restrictlist)
 		{
-			RestrictInfo *rinfo = (RestrictInfo *) lfirst(l);
+			RestrictInfo *rinfo = castNode(RestrictInfo, lfirst(l));
 
-			Assert(IsA(rinfo, RestrictInfo));
 			if (rinfo->is_pushed_down)
 				pushedquals = lappend(pushedquals, rinfo);
 			else
@@ -4282,8 +4458,10 @@ set_subquery_size_estimates(PlannerInfo *root, RelOptInfo *rel)
 
 	/* Should only be applied to base relations that are subqueries */
 	Assert(rel->relid > 0);
+#ifdef USE_ASSERT_CHECKING
 	rte = planner_rt_fetch(rel->relid, root);
 	Assert(rte->rtekind == RTE_SUBQUERY);
+#endif
 
 	/*
 	 * Copy raw number of output rows from subquery.  All of its paths should
@@ -4300,11 +4478,10 @@ set_subquery_size_estimates(PlannerInfo *root, RelOptInfo *rel)
 	 */
 	foreach(lc, subroot->parse->targetList)
 	{
-		TargetEntry *te = (TargetEntry *) lfirst(lc);
+		TargetEntry *te = castNode(TargetEntry, lfirst(lc));
 		Node	   *texpr = (Node *) te->expr;
 		int32		item_width = 0;
 
-		Assert(IsA(te, TargetEntry));
 		/* junk columns aren't visible to upper query */
 		if (te->resjunk)
 			continue;
@@ -4379,6 +4556,33 @@ set_function_size_estimates(PlannerInfo *root, RelOptInfo *rel)
 		if (ntup > rel->tuples)
 			rel->tuples = ntup;
 	}
+
+	/* Now estimate number of output rows, etc */
+	set_baserel_size_estimates(root, rel);
+}
+
+/*
+ * set_function_size_estimates
+ *		Set the size estimates for a base relation that is a function call.
+ *
+ * The rel's targetlist and restrictinfo list must have been constructed
+ * already.
+ *
+ * We set the same fields as set_tablefunc_size_estimates.
+ */
+void
+set_tablefunc_size_estimates(PlannerInfo *root, RelOptInfo *rel)
+{
+	RangeTblEntry *rte PG_USED_FOR_ASSERTS_ONLY;
+
+	/* Should only be applied to base relations that are functions */
+	Assert(rel->relid > 0);
+#ifdef USE_ASSERT_CHECKING
+	rte = planner_rt_fetch(rel->relid, root);
+	Assert(rte->rtekind == RTE_TABLEFUNC);
+#endif
+
+	rel->tuples = 100;
 
 	/* Now estimate number of output rows, etc */
 	set_baserel_size_estimates(root, rel);

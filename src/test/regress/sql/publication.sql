@@ -2,6 +2,7 @@
 -- PUBLICATION
 --
 CREATE ROLE regress_publication_user LOGIN SUPERUSER;
+CREATE ROLE regress_publication_user_dummy LOGIN NOSUPERUSER;
 SET SESSION AUTHORIZATION 'regress_publication_user';
 
 CREATE PUBLICATION testpub_default;
@@ -73,7 +74,16 @@ DROP TABLE testpub_tbl1;
 
 \dRp+ testpub_default
 
-DROP PUBLICATION testpub_default;
+-- faile - must be owner of publication
+SET ROLE regress_publication_user_dummy;
+ALTER PUBLICATION testpub_default RENAME TO testpub_dummy;
+RESET ROLE;
+
+ALTER PUBLICATION testpub_default RENAME TO testpub_foo;
+
+\dRp testpub_foo
+
+DROP PUBLICATION testpub_foo;
 DROP PUBLICATION testpib_ins_trunct;
 DROP PUBLICATION testpub_fortbl;
 
@@ -81,3 +91,4 @@ DROP SCHEMA pub_test CASCADE;
 
 RESET SESSION AUTHORIZATION;
 DROP ROLE regress_publication_user;
+DROP ROLE regress_publication_user_dummy;

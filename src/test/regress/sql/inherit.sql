@@ -194,6 +194,7 @@ create table base (i integer);
 create table derived () inherits (base);
 insert into derived (i) values (0);
 select derived::base from derived;
+select NULL::derived::base;
 drop table derived;
 drop table base;
 
@@ -612,5 +613,5 @@ explain (costs off) select * from range_list_parted where b is null;
 explain (costs off) select * from range_list_parted where a is not null and a < 67;
 explain (costs off) select * from range_list_parted where a >= 30;
 
-drop table list_parted cascade;
-drop table range_list_parted cascade;
+drop table list_parted;
+drop table range_list_parted;

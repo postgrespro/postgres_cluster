@@ -317,7 +317,8 @@ static char *pg_get_indexdef_worker(Oid indexrelid, int colno,
 					   const Oid *excludeOps,
 					   bool attrsOnly, bool showTblSpc,
 					   int prettyFlags, bool missing_ok);
-static char *pg_get_partkeydef_worker(Oid relid, int prettyFlags);
+static char *pg_get_partkeydef_worker(Oid relid, int prettyFlags,
+						 bool attrsOnly);
 static char *pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
 							int prettyFlags, bool missing_ok);
 static text *pg_get_expr_worker(text *expr, Oid relid, const char *relname,
@@ -428,6 +429,8 @@ static void get_const_expr(Const *constval, deparse_context *context,
 static void get_const_collation(Const *constval, deparse_context *context);
 static void simple_quote_literal(StringInfo buf, const char *val);
 static void get_sublink_expr(SubLink *sublink, deparse_context *context);
+static void get_tablefunc(TableFunc *tf, deparse_context *context,
+			  bool showimplicit);
 static void get_from_clause(Query *query, const char *prefix,
 				deparse_context *context);
 static void get_from_clause_item(Node *jtnode, Query *query,
@@ -644,7 +647,7 @@ Datum
 pg_get_viewdef_name(PG_FUNCTION_ARGS)
 {
 	/* By qualified name */
-	text	   *viewname = PG_GETARG_TEXT_P(0);
+	text	   *viewname = PG_GETARG_TEXT_PP(0);
 	int			prettyFlags;
 	RangeVar   *viewrel;
 	Oid			viewoid;
@@ -669,7 +672,7 @@ Datum
 pg_get_viewdef_name_ext(PG_FUNCTION_ARGS)
 {
 	/* By qualified name */
-	text	   *viewname = PG_GETARG_TEXT_P(0);
+	text	   *viewname = PG_GETARG_TEXT_PP(0);
 	bool		pretty = PG_GETARG_BOOL(1);
 	int			prettyFlags;
 	RangeVar   *viewrel;
@@ -1031,7 +1034,7 @@ pg_get_triggerdef_worker(Oid trigid, bool pretty)
 							tgrel->rd_att, &isnull);
 		if (isnull)
 			elog(ERROR, "tgargs is null for trigger %u", trigid);
-		p = (char *) VARDATA(DatumGetByteaP(value));
+		p = (char *) VARDATA_ANY(DatumGetByteaPP(value));
 		for (i = 0; i < trigrec->tgnargs; i++)
 		{
 			if (i > 0)
@@ -1431,14 +1434,26 @@ pg_get_partkeydef(PG_FUNCTION_ARGS)
 	Oid			relid = PG_GETARG_OID(0);
 
 	PG_RETURN_TEXT_P(string_to_text(pg_get_partkeydef_worker(relid,
-														PRETTYFLAG_INDENT)));
+														PRETTYFLAG_INDENT,
+															 false)));
+}
+
+/* Internal version that just reports the column definitions */
+char *
+pg_get_partkeydef_columns(Oid relid, bool pretty)
+{
+	int			prettyFlags;
+
+	prettyFlags = pretty ? PRETTYFLAG_PAREN | PRETTYFLAG_INDENT : PRETTYFLAG_INDENT;
+	return pg_get_partkeydef_worker(relid, prettyFlags, true);
 }
 
 /*
  * Internal workhorse to decompile a partition key definition.
  */
 static char *
-pg_get_partkeydef_worker(Oid relid, int prettyFlags)
+pg_get_partkeydef_worker(Oid relid, int prettyFlags,
+						 bool attrsOnly)
 {
 	Form_pg_partitioned_table form;
 	HeapTuple	tuple;
@@ -1508,17 +1523,20 @@ pg_get_partkeydef_worker(Oid relid, int prettyFlags)
 	switch (form->partstrat)
 	{
 		case PARTITION_STRATEGY_LIST:
-			appendStringInfo(&buf, "LIST");
+			if (!attrsOnly)
+				appendStringInfo(&buf, "LIST");
 			break;
 		case PARTITION_STRATEGY_RANGE:
-			appendStringInfo(&buf, "RANGE");
+			if (!attrsOnly)
+				appendStringInfo(&buf, "RANGE");
 			break;
 		default:
 			elog(ERROR, "unexpected partition strategy: %d",
 				 (int) form->partstrat);
 	}
 
-	appendStringInfo(&buf, " (");
+	if (!attrsOnly)
+		appendStringInfo(&buf, " (");
 	sep = "";
 	for (keyno = 0; keyno < form->partnatts; keyno++)
 	{
@@ -1561,14 +1579,17 @@ pg_get_partkeydef_worker(Oid relid, int prettyFlags)
 
 		/* Add collation, if not default for column */
 		partcoll = partcollation->values[keyno];
-		if (OidIsValid(partcoll) && partcoll != keycolcollation)
+		if (!attrsOnly && OidIsValid(partcoll) && partcoll != keycolcollation)
 			appendStringInfo(&buf, " COLLATE %s",
 							 generate_collation_name((partcoll)));
 
 		/* Add the operator class name, if not default */
-		get_opclass_name(partclass->values[keyno], keycoltype, &buf);
+		if (!attrsOnly)
+			get_opclass_name(partclass->values[keyno], keycoltype, &buf);
 	}
-	appendStringInfoChar(&buf, ')');
+
+	if (!attrsOnly)
+		appendStringInfoChar(&buf, ')');
 
 	/* Clean up */
 	ReleaseSysCache(tuple);
@@ -2013,7 +2034,7 @@ decompile_column_index_array(Datum column_index_array, Oid relId,
 Datum
 pg_get_expr(PG_FUNCTION_ARGS)
 {
-	text	   *expr = PG_GETARG_TEXT_P(0);
+	text	   *expr = PG_GETARG_TEXT_PP(0);
 	Oid			relid = PG_GETARG_OID(1);
 	int			prettyFlags;
 	char	   *relname;
@@ -2043,7 +2064,7 @@ pg_get_expr(PG_FUNCTION_ARGS)
 Datum
 pg_get_expr_ext(PG_FUNCTION_ARGS)
 {
-	text	   *expr = PG_GETARG_TEXT_P(0);
+	text	   *expr = PG_GETARG_TEXT_PP(0);
 	Oid			relid = PG_GETARG_OID(1);
 	bool		pretty = PG_GETARG_BOOL(2);
 	int			prettyFlags;
@@ -2141,7 +2162,7 @@ pg_get_userbyid(PG_FUNCTION_ARGS)
 Datum
 pg_get_serial_sequence(PG_FUNCTION_ARGS)
 {
-	text	   *tablename = PG_GETARG_TEXT_P(0);
+	text	   *tablename = PG_GETARG_TEXT_PP(0);
 	text	   *columnname = PG_GETARG_TEXT_PP(1);
 	RangeVar   *tablerv;
 	Oid			tableOid;
@@ -2569,8 +2590,7 @@ print_function_arguments(StringInfo buf, HeapTuple proctup,
 			List	   *argdefaults;
 
 			str = TextDatumGetCString(proargdefaults);
-			argdefaults = (List *) stringToNode(str);
-			Assert(IsA(argdefaults, List));
+			argdefaults = castNode(List, stringToNode(str));
 			pfree(str);
 			nextargdefault = list_head(argdefaults);
 			/* nlackdefaults counts only *input* arguments lacking defaults */
@@ -2762,8 +2782,7 @@ pg_get_function_arg_default(PG_FUNCTION_ARGS)
 	}
 
 	str = TextDatumGetCString(proargdefaults);
-	argdefaults = (List *) stringToNode(str);
-	Assert(IsA(argdefaults, List));
+	argdefaults = castNode(List, stringToNode(str));
 	pfree(str);
 
 	proc = (Form_pg_proc) GETSTRUCT(proctup);
@@ -3625,14 +3644,17 @@ set_relation_column_names(deparse_namespace *dpns, RangeTblEntry *rte,
 	 * are different from the underlying "real" names.  For a function RTE,
 	 * always emit a complete column alias list; this is to protect against
 	 * possible instability of the default column names (eg, from altering
-	 * parameter names).  For other RTE types, print if we changed anything OR
-	 * if there were user-written column aliases (since the latter would be
-	 * part of the underlying "reality").
+	 * parameter names).  For tablefunc RTEs, we never print aliases, because
+	 * the column names are part of the clause itself.  For other RTE types,
+	 * print if we changed anything OR if there were user-written column
+	 * aliases (since the latter would be part of the underlying "reality").
 	 */
 	if (rte->rtekind == RTE_RELATION)
 		colinfo->printaliases = changed_any;
 	else if (rte->rtekind == RTE_FUNCTION)
 		colinfo->printaliases = true;
+	else if (rte->rtekind == RTE_TABLEFUNC)
+		colinfo->printaliases = false;
 	else if (rte->alias && rte->alias->colnames != NIL)
 		colinfo->printaliases = true;
 	else
@@ -6709,6 +6731,7 @@ get_name_for_var_field(Var *var, int fieldno,
 			/* else fall through to inspect the expression */
 			break;
 		case RTE_FUNCTION:
+		case RTE_TABLEFUNC:
 
 			/*
 			 * We couldn't get here unless a function is declared with one of
@@ -7654,9 +7677,8 @@ get_rule_expr(Node *node, deparse_context *context,
 				appendStringInfoString(buf, "(alternatives: ");
 				foreach(lc, asplan->subplans)
 				{
-					SubPlan    *splan = (SubPlan *) lfirst(lc);
+					SubPlan    *splan = castNode(SubPlan, lfirst(lc));
 
-					Assert(IsA(splan, SubPlan));
 					if (splan->useHashTable)
 						appendStringInfo(buf, "hashed %s", splan->plan_name);
 					else
@@ -8210,8 +8232,7 @@ get_rule_expr(Node *node, deparse_context *context,
 							get_rule_expr((Node *) linitial(xexpr->args),
 										  context, true);
 
-							con = (Const *) lsecond(xexpr->args);
-							Assert(IsA(con, Const));
+							con = castNode(Const, lsecond(xexpr->args));
 							Assert(!con->constisnull);
 							if (DatumGetBool(con->constvalue))
 								appendStringInfoString(buf,
@@ -8234,8 +8255,7 @@ get_rule_expr(Node *node, deparse_context *context,
 							else
 								get_rule_expr((Node *) con, context, false);
 
-							con = (Const *) lthird(xexpr->args);
-							Assert(IsA(con, Const));
+							con = castNode(Const, lthird(xexpr->args));
 							if (con->constisnull)
 								 /* suppress STANDALONE NO VALUE */ ;
 							else
@@ -8548,6 +8568,10 @@ get_rule_expr(Node *node, deparse_context *context,
 			}
 			break;
 
+		case T_TableFunc:
+			get_tablefunc((TableFunc *) node, context, showimplicit);
+			break;
+
 		default:
 			elog(ERROR, "unrecognized node type: %d", (int) nodeTag(node));
 			break;
@@ -8743,10 +8767,9 @@ get_agg_expr(Aggref *aggref, deparse_context *context,
 	 */
 	if (DO_AGGSPLIT_COMBINE(aggref->aggsplit))
 	{
-		TargetEntry *tle = linitial(aggref->args);
+		TargetEntry *tle = castNode(TargetEntry, linitial(aggref->args));
 
 		Assert(list_length(aggref->args) == 1);
-		Assert(IsA(tle, TargetEntry));
 		resolve_special_varno((Node *) tle->expr, context, original_aggref,
 							  get_agg_combine_expr);
 		return;
@@ -9205,9 +9228,8 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 			sep = "";
 			foreach(l, ((BoolExpr *) sublink->testexpr)->args)
 			{
-				OpExpr	   *opexpr = (OpExpr *) lfirst(l);
+				OpExpr	   *opexpr = castNode(OpExpr, lfirst(l));
 
-				Assert(IsA(opexpr, OpExpr));
 				appendStringInfoString(buf, sep);
 				get_rule_expr(linitial(opexpr->args), context, true);
 				if (!opname)
@@ -9284,6 +9306,120 @@ get_sublink_expr(SubLink *sublink, deparse_context *context)
 		appendStringInfoChar(buf, ')');
 }
 
+
+/* ----------
+ * get_tablefunc			- Parse back a table function
+ * ----------
+ */
+static void
+get_tablefunc(TableFunc *tf, deparse_context *context, bool showimplicit)
+{
+	StringInfo	buf = context->buf;
+
+	/* XMLTABLE is the only existing implementation.  */
+
+	appendStringInfoString(buf, "XMLTABLE(");
+
+	if (tf->ns_uris != NIL)
+	{
+		ListCell   *lc1,
+				   *lc2;
+		bool		first = true;
+
+		appendStringInfoString(buf, "XMLNAMESPACES (");
+		forboth(lc1, tf->ns_uris, lc2, tf->ns_names)
+		{
+			Node	   *expr = (Node *) lfirst(lc1);
+			char	   *name = strVal(lfirst(lc2));
+
+			if (!first)
+				appendStringInfoString(buf, ", ");
+			else
+				first = false;
+
+			if (name != NULL)
+			{
+				get_rule_expr(expr, context, showimplicit);
+				appendStringInfo(buf, " AS %s", name);
+			}
+			else
+			{
+				appendStringInfoString(buf, "DEFAULT ");
+				get_rule_expr(expr, context, showimplicit);
+			}
+		}
+		appendStringInfoString(buf, "), ");
+	}
+
+	appendStringInfoChar(buf, '(');
+	get_rule_expr((Node *) tf->rowexpr, context, showimplicit);
+	appendStringInfoString(buf, ") PASSING (");
+	get_rule_expr((Node *) tf->docexpr, context, showimplicit);
+	appendStringInfoChar(buf, ')');
+
+	if (tf->colexprs != NIL)
+	{
+		ListCell   *l1;
+		ListCell   *l2;
+		ListCell   *l3;
+		ListCell   *l4;
+		ListCell   *l5;
+		int			colnum = 0;
+
+		l2 = list_head(tf->coltypes);
+		l3 = list_head(tf->coltypmods);
+		l4 = list_head(tf->colexprs);
+		l5 = list_head(tf->coldefexprs);
+
+		appendStringInfoString(buf, " COLUMNS ");
+		foreach(l1, tf->colnames)
+		{
+			char	   *colname = strVal(lfirst(l1));
+			Oid			typid;
+			int32		typmod;
+			Node	   *colexpr;
+			Node	   *coldefexpr;
+			bool		ordinality = tf->ordinalitycol == colnum;
+			bool		notnull = bms_is_member(colnum, tf->notnulls);
+
+			typid = lfirst_oid(l2);
+			l2 = lnext(l2);
+			typmod = lfirst_int(l3);
+			l3 = lnext(l3);
+			colexpr = (Node *) lfirst(l4);
+			l4 = lnext(l4);
+			coldefexpr = (Node *) lfirst(l5);
+			l5 = lnext(l5);
+
+			if (colnum > 0)
+				appendStringInfoString(buf, ", ");
+			colnum++;
+
+			appendStringInfo(buf, "%s %s", quote_identifier(colname),
+							 ordinality ? "FOR ORDINALITY" :
+							 format_type_with_typemod(typid, typmod));
+			if (ordinality)
+				continue;
+
+			if (coldefexpr != NULL)
+			{
+				appendStringInfoString(buf, " DEFAULT (");
+				get_rule_expr((Node *) coldefexpr, context, showimplicit);
+				appendStringInfoChar(buf, ')');
+			}
+			if (colexpr != NULL)
+			{
+				appendStringInfoString(buf, " PATH (");
+				get_rule_expr((Node *) colexpr, context, showimplicit);
+				appendStringInfoChar(buf, ')');
+			}
+			if (notnull)
+				appendStringInfoString(buf, " NOT NULL");
+		}
+	}
+
+	appendStringInfoChar(buf, ')');
+}
 
 /* ----------
  * get_from_clause			- Parse back a FROM clause
@@ -9517,6 +9653,9 @@ get_from_clause_item(Node *jtnode, Query *query, deparse_context *context)
 				}
 				if (rte->funcordinality)
 					appendStringInfoString(buf, " WITH ORDINALITY");
+				break;
+			case RTE_TABLEFUNC:
+				get_tablefunc(rte->tablefunc, context, true);
 				break;
 			case RTE_VALUES:
 				/* Values list RTE */

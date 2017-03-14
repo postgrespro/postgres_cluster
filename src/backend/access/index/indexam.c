@@ -196,7 +196,8 @@ index_insert(Relation indexRelation,
 			 bool *isnull,
 			 ItemPointer heap_t_ctid,
 			 Relation heapRelation,
-			 IndexUniqueCheck checkUnique)
+			 IndexUniqueCheck checkUnique,
+			 IndexInfo *indexInfo)
 {
 	RELATION_CHECKS;
 	CHECK_REL_PROCEDURE(aminsert);
@@ -208,7 +209,7 @@ index_insert(Relation indexRelation,
 
 	return indexRelation->rd_amroutine->aminsert(indexRelation, values, isnull,
 												 heap_t_ctid, heapRelation,
-												 checkUnique);
+												 checkUnique, indexInfo);
 }
 
 /*
@@ -534,8 +535,8 @@ index_getnext_tid(IndexScanDesc scan, ScanDirection direction)
 	/*
 	 * The AM's amgettuple proc finds the next index entry matching the scan
 	 * keys, and puts the TID into scan->xs_ctup.t_self.  It should also set
-	 * scan->xs_recheck and possibly scan->xs_itup, though we pay no attention
-	 * to those fields here.
+	 * scan->xs_recheck and possibly scan->xs_itup/scan->xs_hitup, though we
+	 * pay no attention to those fields here.
 	 */
 	found = scan->indexRelation->rd_amroutine->amgettuple(scan, direction);
 

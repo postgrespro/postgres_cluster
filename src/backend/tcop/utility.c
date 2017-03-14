@@ -1271,7 +1271,8 @@ ProcessUtilitySlow(ParseState *pstate,
 							Assert(stmt->args == NIL);
 							address = DefineCollation(pstate,
 													  stmt->defnames,
-													  stmt->definition);
+													  stmt->definition,
+													  stmt->if_not_exists);
 							break;
 						default:
 							elog(ERROR, "unrecognized define stmt type: %d",
@@ -1608,7 +1609,8 @@ ProcessUtilitySlow(ParseState *pstate,
 				break;
 
 			case T_CreateSubscriptionStmt:
-				address = CreateSubscription((CreateSubscriptionStmt *) parsetree);
+				address = CreateSubscription((CreateSubscriptionStmt *) parsetree,
+											 isTopLevel);
 				break;
 
 			case T_AlterSubscriptionStmt:
@@ -1616,7 +1618,7 @@ ProcessUtilitySlow(ParseState *pstate,
 				break;
 
 			case T_DropSubscriptionStmt:
-				DropSubscription((DropSubscriptionStmt *) parsetree);
+				DropSubscription((DropSubscriptionStmt *) parsetree, isTopLevel);
 				/* no commands stashed for DROP */
 				commandCollected = true;
 				break;

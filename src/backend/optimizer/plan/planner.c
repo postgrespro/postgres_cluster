@@ -69,17 +69,19 @@ create_upper_paths_hook_type create_upper_paths_hook = NULL;
 
 
 /* Expression kind codes for preprocess_expression */
-#define EXPRKIND_QUAL			0
-#define EXPRKIND_TARGET			1
-#define EXPRKIND_RTFUNC			2
-#define EXPRKIND_RTFUNC_LATERAL 3
-#define EXPRKIND_VALUES			4
-#define EXPRKIND_VALUES_LATERAL 5
-#define EXPRKIND_LIMIT			6
-#define EXPRKIND_APPINFO		7
-#define EXPRKIND_PHV			8
-#define EXPRKIND_TABLESAMPLE	9
-#define EXPRKIND_ARBITER_ELEM	10
+#define EXPRKIND_QUAL				0
+#define EXPRKIND_TARGET				1
+#define EXPRKIND_RTFUNC				2
+#define EXPRKIND_RTFUNC_LATERAL 	3
+#define EXPRKIND_VALUES				4
+#define EXPRKIND_VALUES_LATERAL 	5
+#define EXPRKIND_LIMIT				6
+#define EXPRKIND_APPINFO			7
+#define EXPRKIND_PHV				8
+#define EXPRKIND_TABLESAMPLE		9
+#define EXPRKIND_ARBITER_ELEM		10
+#define EXPRKIND_TABLEFUNC			11
+#define EXPRKIND_TABLEFUNC_LATERAL	12
 
 /* Passthrough data for standard_qp_callback */
 typedef struct
@@ -685,7 +687,15 @@ subquery_planner(PlannerGlobal *glob, Query *parse,
 		{
 			/* Preprocess the function expression(s) fully */
 			kind = rte->lateral ? EXPRKIND_RTFUNC_LATERAL : EXPRKIND_RTFUNC;
-			rte->functions = (List *) preprocess_expression(root, (Node *) rte->functions, kind);
+			rte->functions = (List *)
+				preprocess_expression(root, (Node *) rte->functions, kind);
+		}
+		else if (rte->rtekind == RTE_TABLEFUNC)
+		{
+			/* Preprocess the function expression(s) fully */
+			kind = rte->lateral ? EXPRKIND_TABLEFUNC_LATERAL : EXPRKIND_TABLEFUNC;
+			rte->tablefunc = (TableFunc *)
+				preprocess_expression(root, (Node *) rte->tablefunc, kind);
 		}
 		else if (rte->rtekind == RTE_VALUES)
 		{
@@ -844,7 +854,8 @@ preprocess_expression(PlannerInfo *root, Node *expr, int kind)
 	if (root->hasJoinRTEs &&
 		!(kind == EXPRKIND_RTFUNC ||
 		  kind == EXPRKIND_VALUES ||
-		  kind == EXPRKIND_TABLESAMPLE))
+		  kind == EXPRKIND_TABLESAMPLE ||
+		  kind == EXPRKIND_TABLEFUNC))
 		expr = flatten_join_alias_vars(root, expr);
 
 	/*
@@ -2099,52 +2110,6 @@ is_dummy_plan(Plan *plan)
 }
 
 /*
- * Create a bitmapset of the RT indexes of live base relations
- *
- * Helper for preprocess_rowmarks ... at this point in the proceedings,
- * the only good way to distinguish baserels from appendrel children
- * is to see what is in the join tree.
- */
-static Bitmapset *
-get_base_rel_indexes(Node *jtnode)
-{
-	Bitmapset  *result;
-
-	if (jtnode == NULL)
-		return NULL;
-	if (IsA(jtnode, RangeTblRef))
-	{
-		int			varno = ((RangeTblRef *) jtnode)->rtindex;
-
-		result = bms_make_singleton(varno);
-	}
-	else if (IsA(jtnode, FromExpr))
-	{
-		FromExpr   *f = (FromExpr *) jtnode;
-		ListCell   *l;
-
-		result = NULL;
-		foreach(l, f->fromlist)
-			result = bms_join(result,
-							  get_base_rel_indexes(lfirst(l)));
-	}
-	else if (IsA(jtnode, JoinExpr))
-	{
-		JoinExpr   *j = (JoinExpr *) jtnode;
-
-		result = bms_join(get_base_rel_indexes(j->larg),
-						  get_base_rel_indexes(j->rarg));
-	}
-	else
-	{
-		elog(ERROR, "unrecognized node type: %d",
-			 (int) nodeTag(jtnode));
-		result = NULL;			/* keep compiler quiet */
-	}
-	return result;
-}
-
-/*
  * preprocess_rowmarks - set up PlanRowMarks if needed
  */
 static void
@@ -2183,7 +2148,7 @@ preprocess_rowmarks(PlannerInfo *root)
 	 * make a bitmapset of all base rels and then remove the items we don't
 	 * need or have FOR [KEY] UPDATE/SHARE marks for.
 	 */
-	rels = get_base_rel_indexes((Node *) parse->jointree);
+	rels = get_relids_in_jointree((Node *) parse->jointree, false);
 	if (parse->resultRelation)
 		rels = bms_del_member(rels, parse->resultRelation);
 
@@ -3698,8 +3663,7 @@ create_grouping_paths(PlannerInfo *root,
 
 		/*
 		 * Now generate a complete GroupAgg Path atop of the cheapest partial
-		 * path. We need only bother with the cheapest path here, as the
-		 * output of Gather is never sorted.
+		 * path.  We can do this using either Gather or Gather Merge.
 		 */
 		if (grouped_rel->partial_pathlist)
 		{
@@ -3746,6 +3710,70 @@ create_grouping_paths(PlannerInfo *root,
 										   parse->groupClause,
 										   (List *) parse->havingQual,
 										   dNumGroups));
+
+			/*
+			 * The point of using Gather Merge rather than Gather is that it
+			 * can preserve the ordering of the input path, so there's no
+			 * reason to try it unless (1) it's possible to produce more than
+			 * one output row and (2) we want the output path to be ordered.
+			 */
+			if (parse->groupClause != NIL && root->group_pathkeys != NIL)
+			{
+				foreach(lc, grouped_rel->partial_pathlist)
+				{
+					Path	   *subpath = (Path *) lfirst(lc);
+					Path	   *gmpath;
+					double		total_groups;
+
+					/*
+					 * It's useful to consider paths that are already properly
+					 * ordered for Gather Merge, because those don't need a
+					 * sort.  It's also useful to consider the cheapest path,
+					 * because sorting it in parallel and then doing Gather
+					 * Merge may be better than doing an unordered Gather
+					 * followed by a sort.  But there's no point in
+					 * considering non-cheapest paths that aren't already
+					 * sorted correctly.
+					 */
+					if (path != subpath &&
+						!pathkeys_contained_in(root->group_pathkeys,
+											   subpath->pathkeys))
+						continue;
+
+					total_groups = subpath->rows * subpath->parallel_workers;
+
+					gmpath = (Path *)
+						create_gather_merge_path(root,
+												 grouped_rel,
+												 subpath,
+												 partial_grouping_target,
+												 root->group_pathkeys,
+												 NULL,
+												 &total_groups);
+
+					if (parse->hasAggs)
+						add_path(grouped_rel, (Path *)
+								 create_agg_path(root,
+												 grouped_rel,
+												 gmpath,
+												 target,
+								 parse->groupClause ? AGG_SORTED : AGG_PLAIN,
+												 AGGSPLIT_FINAL_DESERIAL,
+												 parse->groupClause,
+												 (List *) parse->havingQual,
+												 &agg_final_costs,
+												 dNumGroups));
+					else
+						add_path(grouped_rel, (Path *)
+								 create_group_path(root,
+												   grouped_rel,
+												   gmpath,
+												   target,
+												   parse->groupClause,
+												   (List *) parse->havingQual,
+												   dNumGroups));
+				}
+			}
 		}
 	}
 
@@ -3842,6 +3870,16 @@ create_grouping_paths(PlannerInfo *root,
 
 	/* Now choose the best path(s) */
 	set_cheapest(grouped_rel);
+
+	/*
+	 * We've been using the partial pathlist for the grouped relation to hold
+	 * partially aggregated paths, but that's actually a little bit bogus
+	 * because it's unsafe for later planning stages -- like ordered_rel ---
+	 * to get the idea that they can use these partial paths as if they didn't
+	 * need a FinalizeAggregate step.  Zap the partial pathlist at this stage
+	 * so we don't get confused.
+	 */
+	grouped_rel->partial_pathlist = NIL;
 
 	return grouped_rel;
 }
@@ -4009,9 +4047,8 @@ create_one_window_path(PlannerInfo *root,
 			window_target = copy_pathtarget(window_target);
 			foreach(lc2, wflists->windowFuncs[wc->winref])
 			{
-				WindowFunc *wfunc = (WindowFunc *) lfirst(lc2);
+				WindowFunc *wfunc = castNode(WindowFunc, lfirst(lc2));
 
-				Assert(IsA(wfunc, WindowFunc));
 				add_column_to_pathtarget(window_target, (Expr *) wfunc, 0);
 				window_target->width += get_typavgwidth(wfunc->wintype, -1);
 			}
@@ -4301,6 +4338,56 @@ create_ordered_paths(PlannerInfo *root,
 												 root->sort_pathkeys,
 												 limit_tuples);
 			}
+
+			/* Add projection step if needed */
+			if (path->pathtarget != target)
+				path = apply_projection_to_path(root, ordered_rel,
+												path, target);
+
+			add_path(ordered_rel, path);
+		}
+	}
+
+	/*
+	 * generate_gather_paths() will have already generated a simple Gather
+	 * path for the best parallel path, if any, and the loop above will have
+	 * considered sorting it.  Similarly, generate_gather_paths() will also
+	 * have generated order-preserving Gather Merge plans which can be used
+	 * without sorting if they happen to match the sort_pathkeys, and the loop
+	 * above will have handled those as well.  However, there's one more
+	 * possibility: it may make sense to sort the cheapest partial path
+	 * according to the required output order and then use Gather Merge.
+	 */
+	if (ordered_rel->consider_parallel && root->sort_pathkeys != NIL &&
+		input_rel->partial_pathlist != NIL)
+	{
+		Path	   *cheapest_partial_path;
+
+		cheapest_partial_path = linitial(input_rel->partial_pathlist);
+
+		/*
+		 * If cheapest partial path doesn't need a sort, this is redundant
+		 * with what's already been tried.
+		 */
+		if (!pathkeys_contained_in(root->sort_pathkeys,
+								   cheapest_partial_path->pathkeys))
+		{
+			Path	   *path;
+			double		total_groups;
+
+			path = (Path *) create_sort_path(root,
+											 ordered_rel,
+											 cheapest_partial_path,
+											 root->sort_pathkeys,
+											 limit_tuples);
+
+			total_groups = cheapest_partial_path->rows *
+				cheapest_partial_path->parallel_workers;
+			path = (Path *)
+				create_gather_merge_path(root, ordered_rel,
+										 path,
+										 target, root->sort_pathkeys, NULL,
+										 &total_groups);
 
 			/* Add projection step if needed */
 			if (path->pathtarget != target)
@@ -5379,7 +5466,7 @@ plan_cluster_use_sort(Oid tableOid, Oid indexOid)
 	indexScanPath = create_index_path(root, indexInfo,
 									  NIL, NIL, NIL, NIL, NIL,
 									  ForwardScanDirection, false,
-									  NULL, 1.0);
+									  NULL, 1.0, false);
 
 	return (seqScanAndSortPath.total_cost < indexScanPath->path.total_cost);
 }

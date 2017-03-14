@@ -165,7 +165,7 @@ build_pgstattuple_type(pgstattuple_type *stat, FunctionCallInfo fcinfo)
 Datum
 pgstattuple(PG_FUNCTION_ARGS)
 {
-	text	   *relname = PG_GETARG_TEXT_P(0);
+	text	   *relname = PG_GETARG_TEXT_PP(0);
 	RangeVar   *relrv;
 	Relation	rel;
 
@@ -191,7 +191,7 @@ pgstattuple(PG_FUNCTION_ARGS)
 Datum
 pgstattuple_v1_5(PG_FUNCTION_ARGS)
 {
-	text	   *relname = PG_GETARG_TEXT_P(0);
+	text	   *relname = PG_GETARG_TEXT_PP(0);
 	RangeVar   *relrv;
 	Relation	rel;
 
@@ -292,6 +292,9 @@ pgstat_relation(Relation rel, FunctionCallInfo fcinfo)
 			break;
 		case RELKIND_FOREIGN_TABLE:
 			err = "foreign table";
+			break;
+		case RELKIND_PARTITIONED_TABLE:
+			err = "partitioned table";
 			break;
 		default:
 			err = "unknown";

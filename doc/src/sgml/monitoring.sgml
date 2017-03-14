@@ -826,7 +826,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
 
       <tbody>
        <row>
-        <entry morerows="58"><literal>LWLock</></entry>
+        <entry morerows="59"><literal>LWLock</></entry>
         <entry><literal>ShmemIndexLock</></entry>
         <entry>Waiting to find or allocate space in shared memory.</entry>
        </row>
@@ -1082,6 +1082,10 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
          <entry>Waiting for parallel query dynamic shared memory allocation lock.</entry>
         </row>
         <row>
+         <entry><literal>tbm</></entry>
+         <entry>Waiting for TBM shared iterator lock.</entry>
+        </row>
+        <row>
          <entry morerows="9"><literal>Lock</></entry>
          <entry><literal>relation</></entry>
          <entry>Waiting to acquire a lock on a relation.</entry>
@@ -1207,13 +1211,17 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
          <entry>Waiting in an extension.</entry>
         </row>
         <row>
-         <entry morerows="9"><literal>IPC</></entry>
+         <entry morerows="11"><literal>IPC</></entry>
          <entry><literal>BgWorkerShutdown</></entry>
          <entry>Waiting for background worker to shut down.</entry>
         </row>
         <row>
          <entry><literal>BgWorkerStartup</></entry>
          <entry>Waiting for background worker to start up.</entry>
+        </row>
+        <row>
+         <entry><literal>BtreePage</></entry>
+         <entry>Waiting for the page number needed to continue a parallel btree scan to become available.</entry>
         </row>
         <row>
          <entry><literal>ExecuteGather</></entry>
@@ -1238,6 +1246,10 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
         <row>
          <entry><literal>ParallelFinish</></entry>
          <entry>Waiting for parallel workers to finish computing.</entry>
+        </row>
+        <row>
+         <entry><literal>ParallelBitmapPopulate</></entry>
+         <entry>Waiting for the leader to populate the TidBitmap.</entry>
         </row>
         <row>
          <entry><literal>SafeSnapshot</></entry>
@@ -3349,14 +3361,14 @@ SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
      <entry>Probe that fires when a dirty WAL buffer write is complete.</entry>
     </row>
     <row>
-     <entry><literal>xlog-insert</literal></entry>
+     <entry><literal>wal-insert</literal></entry>
      <entry><literal>(unsigned char, unsigned char)</literal></entry>
      <entry>Probe that fires when a WAL record is inserted.
       arg0 is the resource manager (rmid) for the record.
       arg1 contains the info flags.</entry>
     </row>
     <row>
-     <entry><literal>xlog-switch</literal></entry>
+     <entry><literal>wal-switch</literal></entry>
      <entry><literal>()</literal></entry>
      <entry>Probe that fires when a WAL segment switch is requested.</entry>
     </row>

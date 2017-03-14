@@ -16,7 +16,6 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
 #include <time.h>
@@ -39,8 +38,6 @@
 #include "replication/basebackup.h"
 #include "streamutil.h"
 
-
-#define atooid(x)  ((Oid) strtoul((x), NULL, 10))
 
 typedef struct TablespaceListCell
 {
@@ -337,14 +334,14 @@ usage(void)
 	printf(_("  -r, --max-rate=RATE    maximum transfer rate to transfer data directory\n"
 	  "                         (in kB/s, or use suffix \"k\" or \"M\")\n"));
 	printf(_("  -R, --write-recovery-conf\n"
-			 "                         write recovery.conf after backup\n"));
+			 "                         write recovery.conf for replication\n"));
 	printf(_("  -S, --slot=SLOTNAME    replication slot to use\n"));
 	printf(_("      --no-slot          prevent creation of temporary replication slot\n"));
 	printf(_("  -T, --tablespace-mapping=OLDDIR=NEWDIR\n"
 	  "                         relocate tablespace in OLDDIR to NEWDIR\n"));
-	printf(_("  -X, --xlog-method=none|fetch|stream\n"
+	printf(_("  -X, --wal-method=none|fetch|stream\n"
 			 "                         include required WAL files with specified method\n"));
-	printf(_("      --xlogdir=XLOGDIR  location for the transaction log directory\n"));
+	printf(_("      --waldir=WALDIR    location for the transaction log directory\n"));
 	printf(_("  -z, --gzip             compress tar output\n"));
 	printf(_("  -Z, --compress=0-9     compress tar output with given compression level\n"));
 	printf(_("\nGeneral options:\n"));
@@ -1754,6 +1751,14 @@ BaseBackup(void)
 	if (maxrate > 0)
 		maxrate_clause = psprintf("MAX_RATE %u", maxrate);
 
+	if (verbose)
+		fprintf(stderr,
+				_("%s: initiating base backup, waiting for checkpoint to complete\n"),
+				progname);
+
+	if (showprogress && !verbose)
+		fprintf(stderr, "waiting for checkpoint\n");
+
 	basebkp =
 		psprintf("BASE_BACKUP LABEL '%s' %s %s %s %s %s %s",
 				 escaped_label,
@@ -1791,6 +1796,9 @@ BaseBackup(void)
 
 	strlcpy(xlogstart, PQgetvalue(res, 0, 0), sizeof(xlogstart));
 
+	if (verbose)
+		fprintf(stderr, _("%s: checkpoint completed\n"), progname);
+
 	/*
 	 * 9.3 and later sends the TLI of the starting point. With older servers,
 	 * assume it's the same as the latest timeline reported by
@@ -1804,8 +1812,8 @@ BaseBackup(void)
 	MemSet(xlogend, 0, sizeof(xlogend));
 
 	if (verbose && includewal != NO_WAL)
-		fprintf(stderr, _("transaction log start point: %s on timeline %u\n"),
-				xlogstart, starttli);
+		fprintf(stderr, _("%s: transaction log start point: %s on timeline %u\n"),
+				progname, xlogstart, starttli);
 
 	/*
 	 * Get the header
@@ -1907,7 +1915,7 @@ BaseBackup(void)
 	}
 	strlcpy(xlogend, PQgetvalue(res, 0, 0), sizeof(xlogend));
 	if (verbose && includewal != NO_WAL)
-		fprintf(stderr, "transaction log end point: %s\n", xlogend);
+		fprintf(stderr, _("%s: transaction log end point: %s\n"), progname, xlogend);
 	PQclear(res);
 
 	res = PQgetResult(conn);
@@ -2048,7 +2056,7 @@ BaseBackup(void)
 	}
 
 	if (verbose)
-		fprintf(stderr, "%s: base backup completed\n", progname);
+		fprintf(stderr, _("%s: base backup completed\n"), progname);
 }
 
 
@@ -2065,7 +2073,7 @@ main(int argc, char **argv)
 		{"write-recovery-conf", no_argument, NULL, 'R'},
 		{"slot", required_argument, NULL, 'S'},
 		{"tablespace-mapping", required_argument, NULL, 'T'},
-		{"xlog-method", required_argument, NULL, 'X'},
+		{"wal-method", required_argument, NULL, 'X'},
 		{"gzip", no_argument, NULL, 'z'},
 		{"compress", required_argument, NULL, 'Z'},
 		{"label", required_argument, NULL, 'l'},
@@ -2080,7 +2088,7 @@ main(int argc, char **argv)
 		{"status-interval", required_argument, NULL, 's'},
 		{"verbose", no_argument, NULL, 'v'},
 		{"progress", no_argument, NULL, 'P'},
-		{"xlogdir", required_argument, NULL, 1},
+		{"waldir", required_argument, NULL, 1},
 		{"no-slot", no_argument, NULL, 2},
 		{NULL, 0, NULL, 0}
 	};
@@ -2170,7 +2178,7 @@ main(int argc, char **argv)
 				else
 				{
 					fprintf(stderr,
-							_("%s: invalid xlog-method option \"%s\", must be \"fetch\", \"stream\" or \"none\"\n"),
+							_("%s: invalid wal-method option \"%s\", must be \"fetch\", \"stream\" or \"none\"\n"),
 							progname, optarg);
 					exit(1);
 				}

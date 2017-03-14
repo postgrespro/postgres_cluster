@@ -21,6 +21,7 @@
 # Assorted byproducts from building the above
 /postgres.xml
 /INSTALL.html
+/INSTALL.xml
 /postgres-US.aux
 /postgres-US.log
 /postgres-US.out

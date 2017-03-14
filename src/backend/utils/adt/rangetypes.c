@@ -404,7 +404,7 @@ range_constructor3(PG_FUNCTION_ARGS)
 				(errcode(ERRCODE_DATA_EXCEPTION),
 			   errmsg("range constructor flags argument must not be null")));
 
-	flags = range_parse_flags(text_to_cstring(PG_GETARG_TEXT_P(2)));
+	flags = range_parse_flags(text_to_cstring(PG_GETARG_TEXT_PP(2)));
 
 	lower.val = PG_ARGISNULL(0) ? (Datum) 0 : arg1;
 	lower.infinite = PG_ARGISNULL(0);
@@ -1443,12 +1443,7 @@ tsrange_subdiff(PG_FUNCTION_ARGS)
 	Timestamp	v2 = PG_GETARG_TIMESTAMP(1);
 	float8		result;
 
-#ifdef HAVE_INT64_TIMESTAMP
 	result = ((float8) v1 - (float8) v2) / USECS_PER_SEC;
-#else
-	result = v1 - v2;
-#endif
-
 	PG_RETURN_FLOAT8(result);
 }
 
@@ -1459,12 +1454,7 @@ tstzrange_subdiff(PG_FUNCTION_ARGS)
 	Timestamp	v2 = PG_GETARG_TIMESTAMP(1);
 	float8		result;
 
-#ifdef HAVE_INT64_TIMESTAMP
 	result = ((float8) v1 - (float8) v2) / USECS_PER_SEC;
-#else
-	result = v1 - v2;
-#endif
-
 	PG_RETURN_FLOAT8(result);
 }
 

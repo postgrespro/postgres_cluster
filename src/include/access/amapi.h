@@ -72,7 +72,8 @@ typedef bool (*aminsert_function) (Relation indexRelation,
 											   bool *isnull,
 											   ItemPointer heap_tid,
 											   Relation heapRelation,
-											   IndexUniqueCheck checkUnique);
+											   IndexUniqueCheck checkUnique,
+											   struct IndexInfo *indexInfo);
 
 /* bulk delete */
 typedef IndexBulkDeleteResult *(*ambulkdelete_function) (IndexVacuumInfo *info,
@@ -94,7 +95,8 @@ typedef void (*amcostestimate_function) (struct PlannerInfo *root,
 													 Cost *indexStartupCost,
 													 Cost *indexTotalCost,
 											   Selectivity *indexSelectivity,
-												   double *indexCorrelation);
+													 double *indexCorrelation,
+													 double *indexPages);
 
 /* parse index reloptions */
 typedef bytea *(*amoptions_function) (Datum reloptions,
@@ -187,6 +189,8 @@ typedef struct IndexAmRoutine
 	bool		amclusterable;
 	/* does AM handle predicate locks? */
 	bool		ampredlocks;
+	/* does AM support parallel scan? */
+	bool		amcanparallel;
 	/* type of data stored in index, or InvalidOid if variable */
 	Oid			amkeytype;
 

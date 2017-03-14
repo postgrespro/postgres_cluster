@@ -923,7 +923,8 @@ DoCopy(ParseState *pstate, const CopyStmt *stmt,
 			 * relation which we have opened and locked.
 			 */
 			from = makeRangeVar(get_namespace_name(RelationGetNamespace(rel)),
-								RelationGetRelationName(rel), -1);
+								pstrdup(RelationGetRelationName(rel)),
+								-1);
 
 			/* Build query */
 			select = makeNode(SelectStmt);
@@ -1123,7 +1124,7 @@ ProcessCopyOptions(ParseState *pstate,
 			if (defel->arg && IsA(defel->arg, A_Star))
 				cstate->force_quote_all = true;
 			else if (defel->arg && IsA(defel->arg, List))
-				cstate->force_quote = (List *) defel->arg;
+				cstate->force_quote = castNode(List, defel->arg);
 			else
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),

@@ -107,7 +107,6 @@
 #include "postgres.h"
 
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 #include "miscadmin.h"
@@ -1152,7 +1151,7 @@ SnapBuildProcessRunningXacts(SnapBuild *builder, XLogRecPtr lsn, xl_running_xact
 		 running->oldestRunningXid);
 
 	/*
-	 * Inrease shared memory limits, so vacuum can work on tuples we prevented
+	 * Increase shared memory limits, so vacuum can work on tuples we prevented
 	 * from being pruned till now.
 	 */
 	LogicalIncreaseXminForSlot(lsn, running->oldestRunningXid);
@@ -1473,7 +1472,7 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 	/*
 	 * We identify snapshots by the LSN they are valid for. We don't need to
 	 * include timelines in the name as each LSN maps to exactly one timeline
-	 * unless the user used pg_resetxlog or similar. If a user did so, there's
+	 * unless the user used pg_resetwal or similar. If a user did so, there's
 	 * no hope continuing to decode anyway.
 	 */
 	sprintf(path, "pg_logical/snapshots/%X-%X.snap",

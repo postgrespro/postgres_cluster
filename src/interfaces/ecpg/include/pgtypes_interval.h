@@ -20,18 +20,12 @@ typedef long long int int64;
 #error must have a working 64-bit integer datatype
 #endif
 
-#ifdef USE_INTEGER_DATETIMES
 #define HAVE_INT64_TIMESTAMP
-#endif
 #endif   /* C_H */
 
 typedef struct
 {
-#ifdef HAVE_INT64_TIMESTAMP
 	int64		time;			/* all time units other than months and years */
-#else
-	double		time;			/* all time units other than months and years */
-#endif
 	long		month;			/* months and years, after time for alignment */
 }	interval;
 

@@ -1766,7 +1766,7 @@ DATA(insert OID = 1576 (  setval			PGNSP PGUID 12 1 0 0 0 f f f f t f v u 2 0 20
 DESCR("set sequence value");
 DATA(insert OID = 1765 (  setval			PGNSP PGUID 12 1 0 0 0 f f f f t f v u 3 0 20 "2205 20 16" _null_ _null_ _null_ _null_ _null_ setval3_oid _null_ _null_ _null_ ));
 DESCR("set sequence value and is_called status");
-DATA(insert OID = 3078 (  pg_sequence_parameters	PGNSP PGUID 12 1 0 0 0 f f f f t f s s 1 0 2249 "26" "{26,20,20,20,20,16,20}" "{i,o,o,o,o,o,o}" "{sequence_oid,start_value,minimum_value,maximum_value,increment,cycle_option,cache_size}" _null_ _null_ pg_sequence_parameters _null_ _null_ _null_));
+DATA(insert OID = 3078 (  pg_sequence_parameters	PGNSP PGUID 12 1 0 0 0 f f f f t f s s 1 0 2249 "26" "{26,20,20,20,20,16,20,26}" "{i,o,o,o,o,o,o,o}" "{sequence_oid,start_value,minimum_value,maximum_value,increment,cycle_option,cache_size,data_type}" _null_ _null_ pg_sequence_parameters _null_ _null_ _null_));
 DESCR("sequence parameters, for use by information schema");
 DATA(insert OID = 4032 ( pg_sequence_last_value		PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 20 "2205" _null_ _null_ _null_ _null_ _null_	pg_sequence_last_value _null_ _null_ _null_ ));
 DESCR("sequence last value");
@@ -3096,13 +3096,13 @@ DESCR("get transaction Id and commit timestamp of latest transaction commit");
 DATA(insert OID = 3537 (  pg_describe_object		PGNSP PGUID 12 1 0 0 0 f f f f t f s s 3 0 25 "26 26 23" _null_ _null_ _null_ _null_ _null_ pg_describe_object _null_ _null_ _null_ ));
 DESCR("get identification of SQL object");
 
-DATA(insert OID = 3839 (  pg_identify_object		PGNSP PGUID 12 1 0 0 0 f f f f t f s s 3 0 2249 "26 26 23" "{26,26,23,25,25,25,25}" "{i,i,i,o,o,o,o}" "{classid,objid,subobjid,type,schema,name,identity}" _null_ _null_ pg_identify_object _null_ _null_ _null_ ));
+DATA(insert OID = 3839 (  pg_identify_object		PGNSP PGUID 12 1 0 0 0 f f f f t f s s 3 0 2249 "26 26 23" "{26,26,23,25,25,25,25}" "{i,i,i,o,o,o,o}" "{classid,objid,objsubid,type,schema,name,identity}" _null_ _null_ pg_identify_object _null_ _null_ _null_ ));
 DESCR("get machine-parseable identification of SQL object");
 
-DATA(insert OID = 3382 (  pg_identify_object_as_address PGNSP PGUID 12 1 0 0 0 f f f f t f s s 3 0 2249 "26 26 23" "{26,26,23,25,1009,1009}" "{i,i,i,o,o,o}" "{classid,objid,subobjid,type,object_names,object_args}" _null_ _null_ pg_identify_object_as_address _null_ _null_ _null_ ));
+DATA(insert OID = 3382 (  pg_identify_object_as_address PGNSP PGUID 12 1 0 0 0 f f f f t f s s 3 0 2249 "26 26 23" "{26,26,23,25,1009,1009}" "{i,i,i,o,o,o}" "{classid,objid,objsubid,type,object_names,object_args}" _null_ _null_ pg_identify_object_as_address _null_ _null_ _null_ ));
 DESCR("get identification of SQL object for pg_get_object_address()");
 
-DATA(insert OID = 3954 (  pg_get_object_address    PGNSP PGUID 12 1 0 0 0 f f f f t f s s 3 0 2249 "25 1009 1009" "{25,1009,1009,26,26,23}" "{i,i,i,o,o,o}" "{type,name,args,classid,objid,subobjid}" _null_ _null_ pg_get_object_address _null_ _null_ _null_ ));
+DATA(insert OID = 3954 (  pg_get_object_address    PGNSP PGUID 12 1 0 0 0 f f f f t f s s 3 0 2249 "25 1009 1009" "{25,1009,1009,26,26,23}" "{i,i,i,o,o,o}" "{type,name,args,classid,objid,objsubid}" _null_ _null_ pg_get_object_address _null_ _null_ _null_ ));
 DESCR("get OID-based object address from name/args arrays");
 
 DATA(insert OID = 2079 (  pg_table_is_visible		PGNSP PGUID 12 10 0 0 0 f f f f t f s s 1 0 16 "26" _null_ _null_ _null_ _null_ _null_ pg_table_is_visible _null_ _null_ _null_ ));
@@ -3141,31 +3141,31 @@ DATA(insert OID = 2096 ( pg_terminate_backend		PGNSP PGUID 12 1 0 0 0 f f f f t 
 DESCR("terminate a server process");
 DATA(insert OID = 2172 ( pg_start_backup		PGNSP PGUID 12 1 0 0 0 f f f f t f v r 3 0 3220 "25 16 16" _null_ _null_ _null_ _null_ _null_ pg_start_backup _null_ _null_ _null_ ));
 DESCR("prepare for taking an online backup");
-DATA(insert OID = 2173 ( pg_stop_backup			PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 3220 "" _null_ _null_ _null_ _null_ _null_ pg_stop_backup _null_ _null_ _null_ ));
+DATA(insert OID = 2173 ( pg_stop_backup			PGNSP PGUID 12 1 0 0 0 f f f f t f v r 0 0 3220 "" _null_ _null_ _null_ _null_ _null_ pg_stop_backup _null_ _null_ _null_ ));
 DESCR("finish taking an online backup");
-DATA(insert OID = 2739 ( pg_stop_backup			PGNSP PGUID 12 1 1 0 0 f f f f t t v s 1 0 2249 "16" "{16,3220,25,25}" "{i,o,o,o}" "{exclusive,lsn,labelfile,spcmapfile}" _null_ _null_ pg_stop_backup_v2 _null_ _null_ _null_ ));
+DATA(insert OID = 2739 ( pg_stop_backup			PGNSP PGUID 12 1 1 0 0 f f f f t t v r 1 0 2249 "16" "{16,3220,25,25}" "{i,o,o,o}" "{exclusive,lsn,labelfile,spcmapfile}" _null_ _null_ pg_stop_backup_v2 _null_ _null_ _null_ ));
 DESCR("finish taking an online backup");
 DATA(insert OID = 3813 ( pg_is_in_backup		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 16 "" _null_ _null_ _null_ _null_ _null_ pg_is_in_backup _null_ _null_ _null_ ));
 DESCR("true if server is in online backup");
 DATA(insert OID = 3814 ( pg_backup_start_time		PGNSP PGUID 12 1 0 0 0 f f f f t f s s 0 0 1184 "" _null_ _null_ _null_ _null_ _null_ pg_backup_start_time _null_ _null_ _null_ ));
 DESCR("start time of an online backup");
-DATA(insert OID = 2848 ( pg_switch_xlog			PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 3220 "" _null_ _null_ _null_ _null_ _null_ pg_switch_xlog _null_ _null_ _null_ ));
-DESCR("switch to new xlog file");
+DATA(insert OID = 2848 ( pg_switch_wal			PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 3220 "" _null_ _null_ _null_ _null_ _null_ pg_switch_wal _null_ _null_ _null_ ));
+DESCR("switch to new wal file");
 DATA(insert OID = 3098 ( pg_create_restore_point	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 3220 "25" _null_ _null_ _null_ _null_ _null_ pg_create_restore_point _null_ _null_ _null_ ));
 DESCR("create a named restore point");
-DATA(insert OID = 2849 ( pg_current_xlog_location	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 3220 "" _null_ _null_ _null_ _null_ _null_ pg_current_xlog_location _null_ _null_ _null_ ));
-DESCR("current xlog write location");
-DATA(insert OID = 2852 ( pg_current_xlog_insert_location	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 3220 "" _null_ _null_ _null_ _null_ _null_ pg_current_xlog_insert_location _null_ _null_ _null_ ));
-DESCR("current xlog insert location");
-DATA(insert OID = 3330 ( pg_current_xlog_flush_location PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 3220 "" _null_ _null_ _null_ _null_ _null_ pg_current_xlog_flush_location _null_ _null_ _null_ ));
-DESCR("current xlog flush location");
-DATA(insert OID = 2850 ( pg_xlogfile_name_offset	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 2249 "3220" "{3220,25,23}" "{i,o,o}" "{wal_location,file_name,file_offset}" _null_ _null_ pg_xlogfile_name_offset _null_ _null_ _null_ ));
-DESCR("xlog filename and byte offset, given an xlog location");
-DATA(insert OID = 2851 ( pg_xlogfile_name			PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 25 "3220" _null_ _null_ _null_ _null_ _null_ pg_xlogfile_name _null_ _null_ _null_ ));
-DESCR("xlog filename, given an xlog location");
+DATA(insert OID = 2849 ( pg_current_wal_location	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 3220 "" _null_ _null_ _null_ _null_ _null_ pg_current_wal_location _null_ _null_ _null_ ));
+DESCR("current wal write location");
+DATA(insert OID = 2852 ( pg_current_wal_insert_location PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 3220 "" _null_ _null_ _null_ _null_ _null_ pg_current_wal_insert_location _null_ _null_ _null_ ));
+DESCR("current wal insert location");
+DATA(insert OID = 3330 ( pg_current_wal_flush_location PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 3220 "" _null_ _null_ _null_ _null_ _null_ pg_current_wal_flush_location _null_ _null_ _null_ ));
+DESCR("current wal flush location");
+DATA(insert OID = 2850 ( pg_walfile_name_offset PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 2249 "3220" "{3220,25,23}" "{i,o,o}" "{wal_location,file_name,file_offset}" _null_ _null_ pg_walfile_name_offset _null_ _null_ _null_ ));
+DESCR("wal filename and byte offset, given a wal location");
+DATA(insert OID = 2851 ( pg_walfile_name			PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 25 "3220" _null_ _null_ _null_ _null_ _null_ pg_walfile_name _null_ _null_ _null_ ));
+DESCR("wal filename, given a wal location");
 
-DATA(insert OID = 3165 ( pg_xlog_location_diff		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1700 "3220 3220" _null_ _null_ _null_ _null_ _null_ pg_xlog_location_diff _null_ _null_ _null_ ));
-DESCR("difference in bytes, given two xlog locations");
+DATA(insert OID = 3165 ( pg_wal_location_diff		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1700 "3220 3220" _null_ _null_ _null_ _null_ _null_ pg_wal_location_diff _null_ _null_ _null_ ));
+DESCR("difference in bytes, given two wal locations");
 
 DATA(insert OID = 3809 ( pg_export_snapshot		PGNSP PGUID 12 1 0 0 0 f f f f t f v u 0 0 25 "" _null_ _null_ _null_ _null_ _null_ pg_export_snapshot _null_ _null_ _null_ ));
 DESCR("export a snapshot");
@@ -3173,24 +3173,28 @@ DESCR("export a snapshot");
 DATA(insert OID = 3810 (  pg_is_in_recovery		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 16 "" _null_ _null_ _null_ _null_ _null_ pg_is_in_recovery _null_ _null_ _null_ ));
 DESCR("true if server is in recovery");
 
-DATA(insert OID = 3820 ( pg_last_xlog_receive_location	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 3220 "" _null_ _null_ _null_ _null_ _null_ pg_last_xlog_receive_location _null_ _null_ _null_ ));
-DESCR("current xlog flush location");
-DATA(insert OID = 3821 ( pg_last_xlog_replay_location	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 3220 "" _null_ _null_ _null_ _null_ _null_ pg_last_xlog_replay_location _null_ _null_ _null_ ));
-DESCR("last xlog replay location");
+DATA(insert OID = 3820 ( pg_last_wal_receive_location	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 3220 "" _null_ _null_ _null_ _null_ _null_ pg_last_wal_receive_location _null_ _null_ _null_ ));
+DESCR("current wal flush location");
+DATA(insert OID = 3821 ( pg_last_wal_replay_location	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 3220 "" _null_ _null_ _null_ _null_ _null_ pg_last_wal_replay_location _null_ _null_ _null_ ));
+DESCR("last wal replay location");
 DATA(insert OID = 3830 ( pg_last_xact_replay_timestamp	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 1184 "" _null_ _null_ _null_ _null_ _null_ pg_last_xact_replay_timestamp _null_ _null_ _null_ ));
 DESCR("timestamp of last replay xact");
 
-DATA(insert OID = 3071 ( pg_xlog_replay_pause		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 2278 "" _null_ _null_ _null_ _null_ _null_ pg_xlog_replay_pause _null_ _null_ _null_ ));
-DESCR("pause xlog replay");
-DATA(insert OID = 3072 ( pg_xlog_replay_resume		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 2278 "" _null_ _null_ _null_ _null_ _null_ pg_xlog_replay_resume _null_ _null_ _null_ ));
-DESCR("resume xlog replay, if it was paused");
-DATA(insert OID = 3073 ( pg_is_xlog_replay_paused	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 16 "" _null_ _null_ _null_ _null_ _null_ pg_is_xlog_replay_paused _null_ _null_ _null_ ));
-DESCR("true if xlog replay is paused");
+DATA(insert OID = 3071 ( pg_wal_replay_pause		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 2278 "" _null_ _null_ _null_ _null_ _null_ pg_wal_replay_pause _null_ _null_ _null_ ));
+DESCR("pause wal replay");
+DATA(insert OID = 3072 ( pg_wal_replay_resume		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 2278 "" _null_ _null_ _null_ _null_ _null_ pg_wal_replay_resume _null_ _null_ _null_ ));
+DESCR("resume wal replay, if it was paused");
+DATA(insert OID = 3073 ( pg_is_wal_replay_paused	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 16 "" _null_ _null_ _null_ _null_ _null_ pg_is_wal_replay_paused _null_ _null_ _null_ ));
+DESCR("true if wal replay is paused");
 
 DATA(insert OID = 2621 ( pg_reload_conf			PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 16 "" _null_ _null_ _null_ _null_ _null_ pg_reload_conf _null_ _null_ _null_ ));
 DESCR("reload configuration files");
 DATA(insert OID = 2622 ( pg_rotate_logfile		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 16 "" _null_ _null_ _null_ _null_ _null_ pg_rotate_logfile _null_ _null_ _null_ ));
 DESCR("rotate log file");
+DATA(insert OID = 3800 ( pg_current_logfile             PGNSP PGUID 12 1 0 0 0 f f f f f f v s 0 0 25 "" _null_ _null_ _null_ _null_ _null_ pg_current_logfile _null_ _null_ _null_ ));
+DESCR("current logging collector file location");
+DATA(insert OID = 3801 ( pg_current_logfile             PGNSP PGUID 12 1 0 0 0 f f f f f f v s 1 0 25 "25" _null_ _null_ _null_ _null_ _null_ pg_current_logfile_1arg _null_ _null_ _null_ ));
+DESCR("current logging collector file location");
 
 DATA(insert OID = 2623 ( pg_stat_file		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 2249 "25" "{25,20,1184,1184,1184,1184,16}" "{i,o,o,o,o,o,o}" "{filename,size,access,modification,change,creation,isdir}" _null_ _null_ pg_stat_file_1arg _null_ _null_ _null_ ));
 DESCR("get information about file");
@@ -5187,13 +5191,13 @@ DATA(insert OID = 5016 (  spg_box_quad_leaf_consistent	PGNSP PGUID 12 1 0 0 0 f 
 DESCR("SP-GiST support for quad tree over box");
 
 /* replication slots */
-DATA(insert OID = 3779 (  pg_create_physical_replication_slot PGNSP PGUID 12 1 0 0 0 f f f f t f v u 3 0 2249 "19 16 16" "{19,16,16,19,3220}" "{i,i,i,o,o}" "{slot_name,immediately_reserve,temporary,slot_name,xlog_position}" _null_ _null_ pg_create_physical_replication_slot _null_ _null_ _null_ ));
+DATA(insert OID = 3779 (  pg_create_physical_replication_slot PGNSP PGUID 12 1 0 0 0 f f f f t f v u 3 0 2249 "19 16 16" "{19,16,16,19,3220}" "{i,i,i,o,o}" "{slot_name,immediately_reserve,temporary,slot_name,wal_position}" _null_ _null_ pg_create_physical_replication_slot _null_ _null_ _null_ ));
 DESCR("create a physical replication slot");
 DATA(insert OID = 3780 (  pg_drop_replication_slot PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 2278 "19" _null_ _null_ _null_ _null_ _null_ pg_drop_replication_slot _null_ _null_ _null_ ));
 DESCR("drop a replication slot");
 DATA(insert OID = 3781 (  pg_get_replication_slots	PGNSP PGUID 12 1 10 0 0 f f f f f t s s 0 0 2249 "" "{19,19,25,26,16,16,23,28,28,3220,3220}" "{o,o,o,o,o,o,o,o,o,o,o}" "{slot_name,plugin,slot_type,datoid,temporary,active,active_pid,xmin,catalog_xmin,restart_lsn,confirmed_flush_lsn}" _null_ _null_ pg_get_replication_slots _null_ _null_ _null_ ));
 DESCR("information about replication slots currently in use");
-DATA(insert OID = 3786 (  pg_create_logical_replication_slot PGNSP PGUID 12 1 0 0 0 f f f f t f v u 3 0 2249 "19 19 16" "{19,19,16,25,3220}" "{i,i,i,o,o}" "{slot_name,plugin,temporary,slot_name,xlog_position}" _null_ _null_ pg_create_logical_replication_slot _null_ _null_ _null_ ));
+DATA(insert OID = 3786 (  pg_create_logical_replication_slot PGNSP PGUID 12 1 0 0 0 f f f f t f v u 3 0 2249 "19 19 16" "{19,19,16,25,3220}" "{i,i,i,o,o}" "{slot_name,plugin,temporary,slot_name,wal_position}" _null_ _null_ pg_create_logical_replication_slot _null_ _null_ _null_ ));
 DESCR("set up a logical replication slot");
 DATA(insert OID = 3782 (  pg_logical_slot_get_changes PGNSP PGUID 12 1000 1000 25 0 f f f f f t v u 4 0 2249 "19 3220 23 1009" "{19,3220,23,1009,3220,28,25}" "{i,i,i,v,o,o,o}" "{slot_name,upto_lsn,upto_nchanges,options,location,xid,data}" _null_ _null_ pg_logical_slot_get_changes _null_ _null_ _null_ ));
 DESCR("get changes from replication slot");
@@ -5355,7 +5359,7 @@ DESCR("pg_controldata checkpoint state information as a function");
 DATA(insert OID = 3443 ( pg_control_recovery PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 2249 "" "{3220,23,3220,3220,16}" "{o,o,o,o,o}" "{min_recovery_end_location,min_recovery_end_timeline,backup_start_location,backup_end_location,end_of_backup_record_required}" _null_ _null_ pg_control_recovery _null_ _null_ _null_ ));
 DESCR("pg_controldata recovery state information as a function");
 
-DATA(insert OID = 3444 ( pg_control_init PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 2249 "" "{23,23,23,23,23,23,23,23,23,16,16,16,23}" "{o,o,o,o,o,o,o,o,o,o,o,o,o}" "{max_data_alignment,database_block_size,blocks_per_segment,wal_block_size,bytes_per_wal_segment,max_identifier_length,max_index_columns,max_toast_chunk_size,large_object_chunk_size,bigint_timestamps,float4_pass_by_value,float8_pass_by_value,data_page_checksum_version}" _null_ _null_ pg_control_init _null_ _null_ _null_ ));
+DATA(insert OID = 3444 ( pg_control_init PGNSP PGUID 12 1 0 0 0 f f f f t f v s 0 0 2249 "" "{23,23,23,23,23,23,23,23,23,16,16,23}" "{o,o,o,o,o,o,o,o,o,o,o,o}" "{max_data_alignment,database_block_size,blocks_per_segment,wal_block_size,bytes_per_wal_segment,max_identifier_length,max_index_columns,max_toast_chunk_size,large_object_chunk_size,float4_pass_by_value,float8_pass_by_value,data_page_checksum_version}" _null_ _null_ pg_control_init _null_ _null_ _null_ ));
 DESCR("pg_controldata init state information as a function");
 
 DATA(insert OID = 3445 ( pg_import_system_collations PGNSP PGUID 12 100 0 0 0 f f f f t f v r 2 0 2278 "16 4089" _null_ _null_ "{if_not_exists,schema}" _null_ _null_ pg_import_system_collations _null_ _null_ _null_ ));

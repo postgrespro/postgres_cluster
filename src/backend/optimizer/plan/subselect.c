@@ -58,7 +58,7 @@ static Node *build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 			  List *plan_params,
 			  SubLinkType subLinkType, int subLinkId,
 			  Node *testexpr, bool adjust_testexpr,
-			  bool unknownEqFalse);
+			  bool unknownEqFalse, bool parallel_safe);
 static List *generate_subquery_params(PlannerInfo *root, List *tlist,
 						 List **paramIds);
 static List *generate_subquery_vars(PlannerInfo *root, List *tlist,
@@ -433,9 +433,8 @@ get_first_col_type(Plan *plan, Oid *coltype, int32 *coltypmod,
 	/* In cases such as EXISTS, tlist might be empty; arbitrarily use VOID */
 	if (plan->targetlist)
 	{
-		TargetEntry *tent = (TargetEntry *) linitial(plan->targetlist);
+		TargetEntry *tent = castNode(TargetEntry, linitial(plan->targetlist));
 
-		Assert(IsA(tent, TargetEntry));
 		if (!tent->resjunk)
 		{
 			*coltype = exprType((Node *) tent->expr);
@@ -551,7 +550,8 @@ make_subplan(PlannerInfo *root, Query *orig_subquery,
 	/* And convert to SubPlan or InitPlan format. */
 	result = build_subplan(root, plan, subroot, plan_params,
 						   subLinkType, subLinkId,
-						   testexpr, true, isTopQual);
+						   testexpr, true, isTopQual,
+						   best_path->parallel_safe);
 
 	/*
 	 * If it's a correlated EXISTS with an unimportant targetlist, we might be
@@ -600,13 +600,14 @@ make_subplan(PlannerInfo *root, Query *orig_subquery,
 				AlternativeSubPlan *asplan;
 
 				/* OK, convert to SubPlan format. */
-				hashplan = (SubPlan *) build_subplan(root, plan, subroot,
-													 plan_params,
-													 ANY_SUBLINK, 0,
-													 newtestexpr,
-													 false, true);
+				hashplan = castNode(SubPlan,
+									build_subplan(root, plan, subroot,
+												  plan_params,
+												  ANY_SUBLINK, 0,
+												  newtestexpr,
+												  false, true,
+												  best_path->parallel_safe));
 				/* Check we got what we expected */
-				Assert(IsA(hashplan, SubPlan));
 				Assert(hashplan->parParam == NIL);
 				Assert(hashplan->useHashTable);
 				/* build_subplan won't have filled in paramIds */
@@ -634,7 +635,7 @@ build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 			  List *plan_params,
 			  SubLinkType subLinkType, int subLinkId,
 			  Node *testexpr, bool adjust_testexpr,
-			  bool unknownEqFalse)
+			  bool unknownEqFalse, bool parallel_safe)
 {
 	Node	   *result;
 	SubPlan    *splan;
@@ -653,6 +654,7 @@ build_subplan(PlannerInfo *root, Plan *plan, PlannerInfo *subroot,
 					   &splan->firstColCollation);
 	splan->useHashTable = false;
 	splan->unknownEqFalse = unknownEqFalse;
+	splan->parallel_safe = parallel_safe;
 	splan->setParam = NIL;
 	splan->parParam = NIL;
 	splan->args = NIL;
@@ -1213,6 +1215,12 @@ SS_process_ctes(PlannerInfo *root)
 						   &splan->firstColCollation);
 		splan->useHashTable = false;
 		splan->unknownEqFalse = false;
+
+		/*
+		 * CTE scans are not considered for parallelism (cf
+		 * set_rel_consider_parallel).
+		 */
+		splan->parallel_safe = false;
 		splan->setParam = NIL;
 		splan->parParam = NIL;
 		splan->args = NIL;
@@ -2413,6 +2421,12 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 			}
 			break;
 
+		case T_TableFuncScan:
+			finalize_primnode((Node *) ((TableFuncScan *) plan)->tablefunc,
+							  &context);
+			context.paramids = bms_add_members(context.paramids, scan_params);
+			break;
+
 		case T_ValuesScan:
 			finalize_primnode((Node *) ((ValuesScan *) plan)->values_lists,
 							  &context);
@@ -2686,6 +2700,7 @@ finalize_plan(PlannerInfo *root, Plan *plan, Bitmapset *valid_params,
 		case T_Sort:
 		case T_Unique:
 		case T_Gather:
+		case T_GatherMerge:
 		case T_SetOp:
 		case T_Group:
 			/* no node-type-specific fields need fixing */

@@ -1917,18 +1917,23 @@ ALTER TABLE partitioned ALTER COLUMN b TYPE char(5);
 -- cannot drop NOT NULL on columns in the range partition key
 ALTER TABLE partitioned ALTER COLUMN a DROP NOT NULL;
 
+-- it's fine however to drop one on the list partition key column
+CREATE TABLE list_partitioned (a int not null) partition by list (a);
+ALTER TABLE list_partitioned ALTER a DROP NOT NULL;
+DROP TABLE list_partitioned;
+
 -- partitioned table cannot participate in regular inheritance
-CREATE TABLE foo (
+CREATE TABLE nonpartitioned (
 	a int,
 	b int
 );
-ALTER TABLE partitioned INHERIT foo;
-ALTER TABLE foo INHERIT partitioned;
+ALTER TABLE partitioned INHERIT nonpartitioned;
+ALTER TABLE nonpartitioned INHERIT partitioned;
 
 -- cannot add NO INHERIT constraint to partitioned tables
 ALTER TABLE partitioned ADD CONSTRAINT chk_a CHECK (a > 0) NO INHERIT;
 
-DROP TABLE partitioned, foo;
+DROP TABLE partitioned, nonpartitioned;
 
 --
 -- ATTACH PARTITION
@@ -2134,6 +2139,11 @@ ALTER TABLE list_parted2 ATTACH PARTITION list_parted2 FOR VALUES IN (0);
 -- DETACH PARTITION
 --
 
+-- check that the table is partitioned at all
+CREATE TABLE regular_table (a int);
+ALTER TABLE regular_table DETACH PARTITION any_name;
+DROP TABLE regular_table;
+
 -- check that the partition being detached exists at all
 ALTER TABLE list_parted2 DETACH PARTITION part_4;
 
@@ -2189,10 +2199,8 @@ ALTER TABLE part_2 INHERIT inh_test;
 ALTER TABLE list_parted2 DROP COLUMN b;
 ALTER TABLE list_parted2 ALTER COLUMN b TYPE text;
 
--- cleanup: avoid using CASCADE
-DROP TABLE list_parted, part_1;
-DROP TABLE list_parted2, part_2, part_5, part_5_a;
-DROP TABLE range_parted, part1, part2;
+-- cleanup
+DROP TABLE list_parted, list_parted2, range_parted;
 
 -- more tests for certain multi-level partitioning scenarios
 create table p (a int, b int) partition by range (a, b);
@@ -2217,5 +2225,6 @@ insert into p1 (a, b) values (2, 3);
 -- check that partition validation scan correctly detects violating rows
 alter table p attach partition p1 for values from (1, 2) to (1, 10);
 
--- cleanup: avoid using CASCADE
-drop table p, p1, p11;
+-- cleanup
+drop table p;
+drop table p1;

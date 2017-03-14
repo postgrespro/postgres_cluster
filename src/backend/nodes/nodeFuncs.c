@@ -111,8 +111,7 @@ exprType(const Node *expr)
 
 					if (!qtree || !IsA(qtree, Query))
 						elog(ERROR, "cannot get type for untransformed sublink");
-					tent = (TargetEntry *) linitial(qtree->targetList);
-					Assert(IsA(tent, TargetEntry));
+					tent = castNode(TargetEntry, linitial(qtree->targetList));
 					Assert(!tent->resjunk);
 					type = exprType((Node *) tent->expr);
 					if (sublink->subLinkType == ARRAY_SUBLINK)
@@ -322,8 +321,7 @@ exprTypmod(const Node *expr)
 
 					if (!qtree || !IsA(qtree, Query))
 						elog(ERROR, "cannot get type for untransformed sublink");
-					tent = (TargetEntry *) linitial(qtree->targetList);
-					Assert(IsA(tent, TargetEntry));
+					tent = castNode(TargetEntry, linitial(qtree->targetList));
 					Assert(!tent->resjunk);
 					return exprTypmod((Node *) tent->expr);
 					/* note we don't need to care if it's an array */
@@ -381,9 +379,8 @@ exprTypmod(const Node *expr)
 					return -1;	/* no point in trying harder */
 				foreach(arg, cexpr->args)
 				{
-					CaseWhen   *w = (CaseWhen *) lfirst(arg);
+					CaseWhen   *w = castNode(CaseWhen, lfirst(arg));
 
-					Assert(IsA(w, CaseWhen));
 					if (exprType((Node *) w->result) != casetype)
 						return -1;
 					if (exprTypmod((Node *) w->result) != typmod)
@@ -809,8 +806,7 @@ exprCollation(const Node *expr)
 
 					if (!qtree || !IsA(qtree, Query))
 						elog(ERROR, "cannot get collation for untransformed sublink");
-					tent = (TargetEntry *) linitial(qtree->targetList);
-					Assert(IsA(tent, TargetEntry));
+					tent = castNode(TargetEntry, linitial(qtree->targetList));
 					Assert(!tent->resjunk);
 					coll = exprCollation((Node *) tent->expr);
 					/* collation doesn't change if it's converted to array */
@@ -1052,8 +1048,7 @@ exprSetCollation(Node *expr, Oid collation)
 
 					if (!qtree || !IsA(qtree, Query))
 						elog(ERROR, "cannot set collation for untransformed sublink");
-					tent = (TargetEntry *) linitial(qtree->targetList);
-					Assert(IsA(tent, TargetEntry));
+					tent = castNode(TargetEntry, linitial(qtree->targetList));
 					Assert(!tent->resjunk);
 					Assert(collation == exprCollation((Node *) tent->expr));
 				}
@@ -1216,6 +1211,9 @@ exprLocation(const Node *expr)
 	{
 		case T_RangeVar:
 			loc = ((const RangeVar *) expr)->location;
+			break;
+		case T_TableFunc:
+			loc = ((const TableFunc *) expr)->location;
 			break;
 		case T_Var:
 			loc = ((const Var *) expr)->location;
@@ -2050,9 +2048,8 @@ expression_tree_walker(Node *node,
 				/* we assume walker doesn't care about CaseWhens, either */
 				foreach(temp, caseexpr->args)
 				{
-					CaseWhen   *when = (CaseWhen *) lfirst(temp);
+					CaseWhen   *when = castNode(CaseWhen, lfirst(temp));
 
-					Assert(IsA(when, CaseWhen));
 					if (walker(when->expr, context))
 						return true;
 					if (walker(when->result, context))
@@ -2217,6 +2214,22 @@ expression_tree_walker(Node *node,
 					return true;
 			}
 			break;
+		case T_TableFunc:
+			{
+				TableFunc  *tf = (TableFunc *) node;
+
+				if (walker(tf->ns_uris, context))
+					return true;
+				if (walker(tf->docexpr, context))
+					return true;
+				if (walker(tf->rowexpr, context))
+					return true;
+				if (walker(tf->colexprs, context))
+					return true;
+				if (walker(tf->coldefexprs, context))
+					return true;
+			}
+			break;
 		default:
 			elog(ERROR, "unrecognized node type: %d",
 				 (int) nodeTag(node));
@@ -2322,6 +2335,10 @@ range_table_walker(List *rtable,
 				break;
 			case RTE_FUNCTION:
 				if (walker(rte->functions, context))
+					return true;
+				break;
+			case RTE_TABLEFUNC:
+				if (walker(rte->tablefunc, context))
 					return true;
 				break;
 			case RTE_VALUES:
@@ -3013,6 +3030,20 @@ expression_tree_mutator(Node *node,
 				return (Node *) newnode;
 			}
 			break;
+		case T_TableFunc:
+			{
+				TableFunc  *tf = (TableFunc *) node;
+				TableFunc  *newnode;
+
+				FLATCOPY(newnode, tf, TableFunc);
+				MUTATE(newnode->ns_uris, tf->ns_uris, List *);
+				MUTATE(newnode->docexpr, tf->docexpr, Node *);
+				MUTATE(newnode->rowexpr, tf->rowexpr, Node *);
+				MUTATE(newnode->colexprs, tf->colexprs, List *);
+				MUTATE(newnode->coldefexprs, tf->coldefexprs, List *);
+				return (Node *) newnode;
+			}
+			break;
 		default:
 			elog(ERROR, "unrecognized node type: %d",
 				 (int) nodeTag(node));
@@ -3129,6 +3160,9 @@ range_table_mutator(List *rtable,
 				break;
 			case RTE_FUNCTION:
 				MUTATE(newrte->functions, rte->functions, List *);
+				break;
+			case RTE_TABLEFUNC:
+				MUTATE(newrte->tablefunc, rte->tablefunc, TableFunc *);
 				break;
 			case RTE_VALUES:
 				MUTATE(newrte->values_lists, rte->values_lists, List *);
@@ -3261,9 +3295,8 @@ raw_expression_tree_walker(Node *node,
 				/* we assume walker doesn't care about CaseWhens, either */
 				foreach(temp, caseexpr->args)
 				{
-					CaseWhen   *when = (CaseWhen *) lfirst(temp);
+					CaseWhen   *when = castNode(CaseWhen, lfirst(temp));
 
-					Assert(IsA(when, CaseWhen));
 					if (walker(when->expr, context))
 						return true;
 					if (walker(when->result, context))
@@ -3555,6 +3588,32 @@ raw_expression_tree_walker(Node *node,
 					return true;
 			}
 			break;
+		case T_RangeTableFunc:
+			{
+				RangeTableFunc *rtf = (RangeTableFunc *) node;
+
+				if (walker(rtf->docexpr, context))
+					return true;
+				if (walker(rtf->rowexpr, context))
+					return true;
+				if (walker(rtf->namespaces, context))
+					return true;
+				if (walker(rtf->columns, context))
+					return true;
+				if (walker(rtf->alias, context))
+					return true;
+			}
+			break;
+		case T_RangeTableFuncCol:
+			{
+				RangeTableFuncCol *rtfc = (RangeTableFuncCol *) node;
+
+				if (walker(rtfc->colexpr, context))
+					return true;
+				if (walker(rtfc->coldefexpr, context))
+					return true;
+			}
+			break;
 		case T_TypeName:
 			{
 				TypeName   *tn = (TypeName *) node;
@@ -3735,9 +3794,8 @@ planstate_walk_subplans(List *plans,
 
 	foreach(lc, plans)
 	{
-		SubPlanState *sps = (SubPlanState *) lfirst(lc);
+		SubPlanState *sps = castNode(SubPlanState, lfirst(lc));
 
-		Assert(IsA(sps, SubPlanState));
 		if (walker(sps->planstate, context))
 			return true;
 	}

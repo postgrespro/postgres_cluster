@@ -323,7 +323,7 @@ tsvector_setweight_by_filter(PG_FUNCTION_ARGS)
 					 errmsg("lexeme array may not contain nulls")));
 
 		lex = VARDATA(dlexemes[i]);
-		lex_len = VARSIZE_ANY_EXHDR(dlexemes[i]);
+		lex_len = VARSIZE(dlexemes[i]) - VARHDRSZ;
 		lex_pos = tsvector_bsearch(tsout, lex, lex_len);
 
 		if (lex_pos >= 0 && (j = POSDATALEN(tsout, entry + lex_pos)) != 0)
@@ -557,8 +557,8 @@ tsvector_delete_str(PG_FUNCTION_ARGS)
 {
 	TSVector	tsin = PG_GETARG_TSVECTOR(0),
 				tsout;
-	text	   *tlexeme = PG_GETARG_TEXT_P(1);
-	char	   *lexeme = VARDATA(tlexeme);
+	text	   *tlexeme = PG_GETARG_TEXT_PP(1);
+	char	   *lexeme = VARDATA_ANY(tlexeme);
 	int			lexeme_len = VARSIZE_ANY_EXHDR(tlexeme),
 				skip_index;
 
@@ -609,8 +609,8 @@ tsvector_delete_arr(PG_FUNCTION_ARGS)
 					(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
 					 errmsg("lexeme array may not contain nulls")));
 
-		lex = VARDATA_ANY(dlexemes[i]);
-		lex_len = VARSIZE_ANY_EXHDR(dlexemes[i]);
+		lex = VARDATA(dlexemes[i]);
+		lex_len = VARSIZE(dlexemes[i]) - VARHDRSZ;
 		lex_pos = tsvector_bsearch(tsin, lex, lex_len);
 
 		if (lex_pos >= 0)
@@ -793,7 +793,7 @@ array_to_tsvector(PG_FUNCTION_ARGS)
 
 	/* Calculate space needed for surviving lexemes. */
 	for (i = 0; i < nitems; i++)
-		datalen += VARSIZE_ANY_EXHDR(dlexemes[i]);
+		datalen += VARSIZE(dlexemes[i]) - VARHDRSZ;
 	tslen = CALCDATASIZE(nitems, datalen);
 
 	/* Allocate and fill tsvector. */
@@ -805,8 +805,8 @@ array_to_tsvector(PG_FUNCTION_ARGS)
 	cur = STRPTR(tsout);
 	for (i = 0; i < nitems; i++)
 	{
-		char	   *lex = VARDATA_ANY(dlexemes[i]);
-		int			lex_len = VARSIZE_ANY_EXHDR(dlexemes[i]);
+		char	   *lex = VARDATA(dlexemes[i]);
+		int			lex_len = VARSIZE(dlexemes[i]) - VARHDRSZ;
 
 		memcpy(cur, lex, lex_len);
 		arrout[i].haspos = 0;
@@ -2320,8 +2320,8 @@ ts_stat_sql(MemoryContext persistentContext, text *txt, text *ws)
 	{
 		char	   *buf;
 
-		buf = VARDATA(ws);
-		while (buf - VARDATA(ws) < VARSIZE(ws) - VARHDRSZ)
+		buf = VARDATA_ANY(ws);
+		while (buf - VARDATA_ANY(ws) < VARSIZE_ANY_EXHDR(ws))
 		{
 			if (pg_mblen(buf) == 1)
 			{
@@ -2384,7 +2384,7 @@ ts_stat1(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		TSVectorStat *stat;
-		text	   *txt = PG_GETARG_TEXT_P(0);
+		text	   *txt = PG_GETARG_TEXT_PP(0);
 
 		funcctx = SRF_FIRSTCALL_INIT();
 		SPI_connect();
@@ -2409,8 +2409,8 @@ ts_stat2(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		TSVectorStat *stat;
-		text	   *txt = PG_GETARG_TEXT_P(0);
-		text	   *ws = PG_GETARG_TEXT_P(1);
+		text	   *txt = PG_GETARG_TEXT_PP(0);
+		text	   *ws = PG_GETARG_TEXT_PP(1);
 
 		funcctx = SRF_FIRSTCALL_INIT();
 		SPI_connect();
@@ -2570,9 +2570,9 @@ tsvector_update_trigger(PG_FUNCTION_ARGS, bool config_column)
 		if (isnull)
 			continue;
 
-		txt = DatumGetTextP(datum);
+		txt = DatumGetTextPP(datum);
 
-		parsetext(cfgId, &prs, VARDATA(txt), VARSIZE(txt) - VARHDRSZ);
+		parsetext(cfgId, &prs, VARDATA_ANY(txt), VARSIZE_ANY_EXHDR(txt));
 
 		if (txt != (text *) DatumGetPointer(datum))
 			pfree(txt);

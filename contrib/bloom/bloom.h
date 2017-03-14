@@ -189,7 +189,8 @@ extern bool blvalidate(Oid opclassoid);
 /* index access method interface functions */
 extern bool blinsert(Relation index, Datum *values, bool *isnull,
 		 ItemPointer ht_ctid, Relation heapRel,
-		 IndexUniqueCheck checkUnique);
+		 IndexUniqueCheck checkUnique,
+		 struct IndexInfo *indexInfo);
 extern IndexScanDesc blbeginscan(Relation r, int nkeys, int norderbys);
 extern int64 blgetbitmap(IndexScanDesc scan, TIDBitmap *tbm);
 extern void blrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
@@ -207,6 +208,6 @@ extern bytea *bloptions(Datum reloptions, bool validate);
 extern void blcostestimate(PlannerInfo *root, IndexPath *path,
 			   double loop_count, Cost *indexStartupCost,
 			   Cost *indexTotalCost, Selectivity *indexSelectivity,
-			   double *indexCorrelation);
+			   double *indexCorrelation, double *indexPages);
 
 #endif

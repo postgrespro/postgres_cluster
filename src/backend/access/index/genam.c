@@ -119,6 +119,8 @@ RelationGetIndexScan(Relation indexRelation, int nkeys, int norderbys)
 
 	scan->xs_itup = NULL;
 	scan->xs_itupdesc = NULL;
+	scan->xs_hitup = NULL;
+	scan->xs_hitupdesc = NULL;
 
 	ItemPointerSetInvalid(&scan->xs_ctup.t_self);
 	scan->xs_ctup.t_data = NULL;
@@ -166,6 +168,10 @@ IndexScanEnd(IndexScanDesc scan)
  * The passed-in values/nulls arrays are the "raw" input to the index AM,
  * e.g. results of FormIndexDatum --- this is not necessarily what is stored
  * in the index, but it's what the user perceives to be stored.
+ *
+ * Note: if you change anything here, check whether
+ * ExecBuildSlotPartitionKeyDescription() in execMain.c needs a similar
+ * change.
  */
 char *
 BuildIndexValueDescription(Relation indexRelation,

@@ -161,6 +161,9 @@ BTPageOpaque
 BTPageOpaqueData
 BTPageStat
 BTPageState
+BTParallelScanDesc
+BTParallelScanDescData
+BTPS_State
 BTScanOpaque
 BTScanOpaqueData
 BTScanPos
@@ -241,6 +244,8 @@ BrinRevmap
 BrinSpecialSpace
 BrinTuple
 BrinValues
+BtreeCheckState
+BtreeLevel
 Bucket
 BufFile
 Buffer
@@ -742,7 +747,6 @@ FuncDetailCode
 FuncExpr
 FuncExprState
 FuncInfo
-FuncWithArgs
 FunctionCallInfo
 FunctionCallInfoData
 FunctionParameter
@@ -777,6 +781,9 @@ GV
 Gather
 GatherPath
 GatherState
+GatherMerge
+GatherMergePath
+GatherMergeState
 Gene
 GenericCosts
 GenericExprState
@@ -1225,6 +1232,7 @@ ObjectAddresses
 ObjectClass
 ObjectPropertyType
 ObjectType
+ObjectWithArgs
 Offset
 OffsetNumber
 OffsetVarNodes_context
@@ -1938,6 +1946,9 @@ SimpleStringList
 SimpleStringListCell
 SingleBoundSortItem
 Size
+SlabBlock
+SlabContext
+SlabChunk
 SlabSlot
 SlotNumber
 SlruCtl
@@ -1995,7 +2006,6 @@ SplitLR
 SplitVar
 SplitedPageLayout
 StackElem
-StandardChunkHeader
 StartBlobPtr
 StartBlobsPtr
 StartDataPtr

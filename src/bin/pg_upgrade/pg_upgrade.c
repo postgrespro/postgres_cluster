@@ -37,6 +37,7 @@
 #include "postgres_fe.h"
 
 #include "pg_upgrade.h"
+#include "catalog/pg_class.h"
 #include "common/restricted_token.h"
 #include "fe_utils/string_utils.h"
 
@@ -147,7 +148,7 @@ main(int argc, char **argv)
 	 */
 	prep_status("Setting next OID for new cluster");
 	exec_prog(UTILITY_LOG_FILE, NULL, true,
-			  "\"%s/pg_resetxlog\" -o %u \"%s\"",
+			  "\"%s/pg_resetwal\" -o %u \"%s\"",
 			  new_cluster.bindir, old_cluster.controldata.chkpnt_nxtoid,
 			  new_cluster.pgdata);
 	check_ok();
@@ -408,16 +409,16 @@ copy_clog_xlog_xid(void)
 	/* set the next transaction id and epoch of the new cluster */
 	prep_status("Setting next transaction ID and epoch for new cluster");
 	exec_prog(UTILITY_LOG_FILE, NULL, true,
-			  "\"%s/pg_resetxlog\" -f -x %u \"%s\"",
+			  "\"%s/pg_resetwal\" -f -x %u \"%s\"",
 			  new_cluster.bindir, old_cluster.controldata.chkpnt_nxtxid,
 			  new_cluster.pgdata);
 	exec_prog(UTILITY_LOG_FILE, NULL, true,
-			  "\"%s/pg_resetxlog\" -f -e %u \"%s\"",
+			  "\"%s/pg_resetwal\" -f -e %u \"%s\"",
 			  new_cluster.bindir, old_cluster.controldata.chkpnt_nxtepoch,
 			  new_cluster.pgdata);
 	/* must reset commit timestamp limits also */
 	exec_prog(UTILITY_LOG_FILE, NULL, true,
-			  "\"%s/pg_resetxlog\" -f -c %u,%u \"%s\"",
+			  "\"%s/pg_resetwal\" -f -c %u,%u \"%s\"",
 			  new_cluster.bindir,
 			  old_cluster.controldata.chkpnt_nxtxid,
 			  old_cluster.controldata.chkpnt_nxtxid,
@@ -443,7 +444,7 @@ copy_clog_xlog_xid(void)
 		 * counters here and the oldest multi present on system.
 		 */
 		exec_prog(UTILITY_LOG_FILE, NULL, true,
-				  "\"%s/pg_resetxlog\" -O %u -m %u,%u \"%s\"",
+				  "\"%s/pg_resetwal\" -O %u -m %u,%u \"%s\"",
 				  new_cluster.bindir,
 				  old_cluster.controldata.chkpnt_nxtmxoff,
 				  old_cluster.controldata.chkpnt_nxtmulti,
@@ -471,7 +472,7 @@ copy_clog_xlog_xid(void)
 		 * next=MaxMultiXactId, but multixact.c can cope with that just fine.
 		 */
 		exec_prog(UTILITY_LOG_FILE, NULL, true,
-				  "\"%s/pg_resetxlog\" -m %u,%u \"%s\"",
+				  "\"%s/pg_resetwal\" -m %u,%u \"%s\"",
 				  new_cluster.bindir,
 				  old_cluster.controldata.chkpnt_nxtmulti + 1,
 				  old_cluster.controldata.chkpnt_nxtmulti,
@@ -483,7 +484,7 @@ copy_clog_xlog_xid(void)
 	prep_status("Resetting WAL archives");
 	exec_prog(UTILITY_LOG_FILE, NULL, true,
 	/* use timeline 1 to match controldata and no WAL history file */
-			  "\"%s/pg_resetxlog\" -l 00000001%s \"%s\"", new_cluster.bindir,
+			  "\"%s/pg_resetwal\" -l 00000001%s \"%s\"", new_cluster.bindir,
 			  old_cluster.controldata.nextxlogfile + 8,
 			  new_cluster.pgdata);
 	check_ok();
@@ -565,7 +566,10 @@ set_frozenxids(bool minmxid_only)
 									  "UPDATE	pg_catalog.pg_class "
 									  "SET	relfrozenxid = '%u' "
 			/* only heap, materialized view, and TOAST are vacuumed */
-									  "WHERE	relkind IN ('r', 'm', 't')",
+									  "WHERE	relkind IN ("
+									  CppAsString2(RELKIND_RELATION) ", "
+									  CppAsString2(RELKIND_MATVIEW) ", "
+									  CppAsString2(RELKIND_TOASTVALUE) ")",
 									  old_cluster.controldata.chkpnt_nxtxid));
 
 		/* set pg_class.relminmxid */
@@ -573,7 +577,10 @@ set_frozenxids(bool minmxid_only)
 								  "UPDATE	pg_catalog.pg_class "
 								  "SET	relminmxid = '%u' "
 		/* only heap, materialized view, and TOAST are vacuumed */
-								  "WHERE	relkind IN ('r', 'm', 't')",
+								  "WHERE	relkind IN ("
+								  CppAsString2(RELKIND_RELATION) ", "
+								  CppAsString2(RELKIND_MATVIEW) ", "
+								  CppAsString2(RELKIND_TOASTVALUE) ")",
 								  old_cluster.controldata.chkpnt_nxtmulti));
 		PQfinish(conn);
 

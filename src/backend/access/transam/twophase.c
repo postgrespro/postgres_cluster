@@ -54,7 +54,6 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -1296,13 +1295,13 @@ XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len)
 		ereport(ERROR,
 				(errcode(ERRCODE_OUT_OF_MEMORY),
 				 errmsg("out of memory"),
-		   errdetail("Failed while allocating an XLog reading processor.")));
+		   errdetail("Failed while allocating a WAL reading processor.")));
 
 	record = XLogReadRecord(xlogreader, lsn, &errormsg);
 	if (record == NULL)
 		ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("could not read two-phase state from xlog at %X/%X",
+				 errmsg("could not read two-phase state from WAL at %X/%X",
 						(uint32) (lsn >> 32),
 						(uint32) lsn)));
 
@@ -1310,7 +1309,7 @@ XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len)
 		(XLogRecGetInfo(xlogreader) & XLOG_XACT_OPMASK) != XLOG_XACT_PREPARE)
 		ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("expected two-phase state data is not present in xlog at %X/%X",
+				 errmsg("expected two-phase state data is not present in WAL at %X/%X",
 						(uint32) (lsn >> 32),
 						(uint32) lsn)));
 

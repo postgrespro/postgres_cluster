@@ -1118,6 +1118,7 @@ pull_up_simple_subquery(PlannerInfo *root, Node *jtnode, RangeTblEntry *rte,
 				case RTE_SUBQUERY:
 				case RTE_FUNCTION:
 				case RTE_VALUES:
+				case RTE_TABLEFUNC:
 					child_rte->lateral = true;
 					break;
 				case RTE_JOIN:
@@ -1748,10 +1749,9 @@ is_simple_union_all(Query *subquery)
 		elog(ERROR, "subquery is bogus");
 
 	/* Is it a set-operation query at all? */
-	topop = (SetOperationStmt *) subquery->setOperations;
+	topop = castNode(SetOperationStmt, subquery->setOperations);
 	if (!topop)
 		return false;
-	Assert(IsA(topop, SetOperationStmt));
 
 	/* Can't handle ORDER BY, LIMIT/OFFSET, locking, or WITH */
 	if (subquery->sortClause ||
@@ -1963,6 +1963,11 @@ replace_vars_in_jointree(Node *jtnode,
 					case RTE_FUNCTION:
 						rte->functions = (List *)
 							pullup_replace_vars((Node *) rte->functions,
+												context);
+						break;
+					case RTE_TABLEFUNC:
+						rte->tablefunc = (TableFunc *)
+							pullup_replace_vars((Node *) rte->tablefunc,
 												context);
 						break;
 					case RTE_VALUES:
@@ -2323,8 +2328,8 @@ flatten_simple_union_all(PlannerInfo *root)
 	RangeTblRef *rtr;
 
 	/* Shouldn't be called unless query has setops */
-	topop = (SetOperationStmt *) parse->setOperations;
-	Assert(topop && IsA(topop, SetOperationStmt));
+	topop = castNode(SetOperationStmt, parse->setOperations);
+	Assert(topop);
 
 	/* Can't optimize away a recursive UNION */
 	if (root->hasRecursion)

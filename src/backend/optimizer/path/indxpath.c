@@ -337,8 +337,12 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 
 		bitmapqual = choose_bitmap_and(root, rel, bitindexpaths);
 		bpath = create_bitmap_heap_path(root, rel, bitmapqual,
-										rel->lateral_relids, 1.0);
+										rel->lateral_relids, 1.0, 0);
 		add_path(rel, (Path *) bpath);
+
+		/* create a partial bitmap heap path */
+		if (rel->consider_parallel && rel->lateral_relids == NULL)
+			create_partial_bitmap_paths(root, rel, bitmapqual);
 	}
 
 	/*
@@ -410,7 +414,7 @@ create_index_paths(PlannerInfo *root, RelOptInfo *rel)
 			required_outer = get_bitmap_tree_required_outer(bitmapqual);
 			loop_count = get_loop_count(root, rel->relid, required_outer);
 			bpath = create_bitmap_heap_path(root, rel, bitmapqual,
-											required_outer, loop_count);
+											required_outer, loop_count, 0);
 			add_path(rel, (Path *) bpath);
 		}
 	}
@@ -813,7 +817,7 @@ get_index_paths(PlannerInfo *root, RelOptInfo *rel,
 /*
  * build_index_paths
  *	  Given an index and a set of index clauses for it, construct zero
- *	  or more IndexPaths.
+ *	  or more IndexPaths. It also constructs zero or more partial IndexPaths.
  *
  * We return a list of paths because (1) this routine checks some cases
  * that should cause us to not generate any IndexPath, and (2) in some
@@ -1042,8 +1046,41 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 								  NoMovementScanDirection,
 								  index_only_scan,
 								  outer_relids,
-								  loop_count);
+								  loop_count,
+								  false);
 		result = lappend(result, ipath);
+
+		/*
+		 * If appropriate, consider parallel index scan.  We don't allow
+		 * parallel index scan for bitmap index scans.
+		 */
+		if (index->amcanparallel &&
+			rel->consider_parallel && outer_relids == NULL &&
+			scantype != ST_BITMAPSCAN)
+		{
+			ipath = create_index_path(root, index,
+									  index_clauses,
+									  clause_columns,
+									  orderbyclauses,
+									  orderbyclausecols,
+									  useful_pathkeys,
+									  index_is_ordered ?
+									  ForwardScanDirection :
+									  NoMovementScanDirection,
+									  index_only_scan,
+									  outer_relids,
+									  loop_count,
+									  true);
+
+			/*
+			 * if, after costing the path, we find that it's not worth
+			 * using parallel workers, just free it.
+			 */
+			if (ipath->path.parallel_workers > 0)
+				add_partial_path(rel, (Path *) ipath);
+			else
+				pfree(ipath);
+		}
 	}
 
 	/*
@@ -1066,8 +1103,36 @@ build_index_paths(PlannerInfo *root, RelOptInfo *rel,
 									  BackwardScanDirection,
 									  index_only_scan,
 									  outer_relids,
-									  loop_count);
+									  loop_count,
+									  false);
 			result = lappend(result, ipath);
+
+			/* If appropriate, consider parallel index scan */
+			if (index->amcanparallel &&
+				rel->consider_parallel && outer_relids == NULL &&
+				scantype != ST_BITMAPSCAN)
+			{
+				ipath = create_index_path(root, index,
+										  index_clauses,
+										  clause_columns,
+										  NIL,
+										  NIL,
+										  useful_pathkeys,
+										  BackwardScanDirection,
+										  index_only_scan,
+										  outer_relids,
+										  loop_count,
+										  true);
+
+				/*
+				 * if, after costing the path, we find that it's not worth
+				 * using parallel workers, just free it.
+				 */
+				if (ipath->path.parallel_workers > 0)
+					add_partial_path(rel, (Path *) ipath);
+				else
+					pfree(ipath);
+			}
 		}
 	}
 
@@ -1212,12 +1277,11 @@ generate_bitmap_or_paths(PlannerInfo *root, RelOptInfo *rel,
 
 	foreach(lc, clauses)
 	{
-		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
+		RestrictInfo *rinfo = castNode(RestrictInfo, lfirst(lc));
 		List	   *pathlist;
 		Path	   *bitmapqual;
 		ListCell   *j;
 
-		Assert(IsA(rinfo, RestrictInfo));
 		/* Ignore RestrictInfos that aren't ORs */
 		if (!restriction_is_or_clause(rinfo))
 			continue;
@@ -1249,11 +1313,11 @@ generate_bitmap_or_paths(PlannerInfo *root, RelOptInfo *rel,
 			}
 			else
 			{
+				RestrictInfo *rinfo = castNode(RestrictInfo, orarg);
 				List	   *orargs;
 
-				Assert(IsA(orarg, RestrictInfo));
-				Assert(!restriction_is_or_clause((RestrictInfo *) orarg));
-				orargs = list_make1(orarg);
+				Assert(!restriction_is_or_clause(rinfo));
+				orargs = list_make1(rinfo);
 
 				indlist = build_paths_for_OR(root, rel,
 											 orargs,
@@ -1557,6 +1621,11 @@ bitmap_scan_cost_est(PlannerInfo *root, RelOptInfo *rel, Path *ipath)
 	bpath.path.pathkeys = NIL;
 	bpath.bitmapqual = ipath;
 
+	/*
+	 * Check the cost of temporary path without considering parallelism.
+	 * Parallel bitmap heap path will be considered at later stage.
+	 */
+	bpath.path.parallel_workers = 0;
 	cost_bitmap_heap_scan(&bpath.path, root, rel,
 						  bpath.path.param_info,
 						  ipath,
@@ -1598,6 +1667,12 @@ bitmap_and_cost_est(PlannerInfo *root, RelOptInfo *rel, List *paths)
 													  required_outer);
 	bpath.path.pathkeys = NIL;
 	bpath.bitmapqual = (Path *) &apath;
+
+	/*
+	 * Check the cost of temporary path without considering parallelism.
+	 * Parallel bitmap heap path will be considered at later stage.
+	 */
+	bpath.path.parallel_workers = 0;
 
 	/* Now we can do cost_bitmap_heap_scan */
 	cost_bitmap_heap_scan(&bpath.path, root, rel,
@@ -2113,9 +2188,8 @@ match_clauses_to_index(IndexOptInfo *index,
 
 	foreach(lc, clauses)
 	{
-		RestrictInfo *rinfo = (RestrictInfo *) lfirst(lc);
+		RestrictInfo *rinfo = castNode(RestrictInfo, lfirst(lc));
 
-		Assert(IsA(rinfo, RestrictInfo));
 		match_clause_to_index(index, rinfo, clauseset);
 	}
 }

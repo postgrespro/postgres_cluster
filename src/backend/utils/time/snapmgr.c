@@ -83,13 +83,13 @@ typedef struct OldSnapshotControlData
 	 * only allowed to move forward.
 	 */
 	slock_t		mutex_current;	/* protect current_timestamp */
-	int64		current_timestamp;		/* latest snapshot timestamp */
+	TimestampTz current_timestamp;		/* latest snapshot timestamp */
 	slock_t		mutex_latest_xmin;		/* protect latest_xmin and
 										 * next_map_update */
 	TransactionId latest_xmin;	/* latest snapshot xmin */
-	int64		next_map_update;	/* latest snapshot valid up to */
+	TimestampTz next_map_update;	/* latest snapshot valid up to */
 	slock_t		mutex_threshold;	/* protect threshold fields */
-	int64		threshold_timestamp;	/* earlier snapshot is old */
+	TimestampTz threshold_timestamp;	/* earlier snapshot is old */
 	TransactionId threshold_xid;	/* earlier xid may be gone */
 
 	/*
@@ -121,7 +121,7 @@ typedef struct OldSnapshotControlData
 	 * Persistence is not needed.
 	 */
 	int			head_offset;	/* subscript of oldest tracked time */
-	int64		head_timestamp; /* time corresponding to head xid */
+	TimestampTz head_timestamp; /* time corresponding to head xid */
 	int			count_used;		/* how many slots are in use */
 	TransactionId xid_by_minute[FLEXIBLE_ARRAY_MEMBER];
 } OldSnapshotControlData;
@@ -219,7 +219,7 @@ static Snapshot FirstXactSnapshot = NULL;
 static List *exportedSnapshots = NIL;
 
 /* Prototypes for local functions */
-static int64 AlignTimestampToMinuteBoundary(int64 ts);
+static TimestampTz AlignTimestampToMinuteBoundary(TimestampTz ts);
 static Snapshot CopySnapshot(Snapshot snapshot);
 static void FreeSnapshot(Snapshot snapshot);
 static void SnapshotResetXmin(void);
@@ -239,7 +239,7 @@ typedef struct SerializedSnapshotData
 	bool		suboverflowed;
 	bool		takenDuringRecovery;
 	CommandId	curcid;
-	int64		whenTaken;
+	TimestampTz whenTaken;
 	XLogRecPtr	lsn;
 } SerializedSnapshotData;
 
@@ -1611,26 +1611,29 @@ ThereAreNoPriorRegisteredSnapshots(void)
 
 
 /*
- * Return an int64 timestamp which is exactly on a minute boundary.
+ * Return a timestamp that is exactly on a minute boundary.
  *
  * If the argument is already aligned, return that value, otherwise move to
  * the next minute boundary following the given time.
  */
-static int64
-AlignTimestampToMinuteBoundary(int64 ts)
+static TimestampTz
+AlignTimestampToMinuteBoundary(TimestampTz ts)
 {
-	int64		retval = ts + (USECS_PER_MINUTE - 1);
+	TimestampTz retval = ts + (USECS_PER_MINUTE - 1);
 
 	return retval - (retval % USECS_PER_MINUTE);
 }
 
 /*
- * Get current timestamp for snapshots as int64 that never moves backward.
+ * Get current timestamp for snapshots
+ *
+ * This is basically GetCurrentTimestamp(), but with a guarantee that
+ * the result never moves backward.
  */
-int64
+TimestampTz
 GetSnapshotCurrentTimestamp(void)
 {
-	int64		now = GetCurrentIntegerTimestamp();
+	TimestampTz now = GetCurrentTimestamp();
 
 	/*
 	 * Don't let time move backward; if it hasn't advanced, use the old value.
@@ -1652,10 +1655,10 @@ GetSnapshotCurrentTimestamp(void)
  * XXX: So far, we never trust that a 64-bit value can be read atomically; if
  * that ever changes, we could get rid of the spinlock here.
  */
-int64
+TimestampTz
 GetOldSnapshotThresholdTimestamp(void)
 {
-	int64		threshold_timestamp;
+	TimestampTz threshold_timestamp;
 
 	SpinLockAcquire(&oldSnapshotControl->mutex_threshold);
 	threshold_timestamp = oldSnapshotControl->threshold_timestamp;
@@ -1665,7 +1668,7 @@ GetOldSnapshotThresholdTimestamp(void)
 }
 
 static void
-SetOldSnapshotThresholdTimestamp(int64 ts, TransactionId xlimit)
+SetOldSnapshotThresholdTimestamp(TimestampTz ts, TransactionId xlimit)
 {
 	SpinLockAcquire(&oldSnapshotControl->mutex_threshold);
 	oldSnapshotControl->threshold_timestamp = ts;
@@ -1690,10 +1693,10 @@ TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
 		&& old_snapshot_threshold >= 0
 		&& RelationAllowsEarlyPruning(relation))
 	{
-		int64		ts = GetSnapshotCurrentTimestamp();
+		TimestampTz ts = GetSnapshotCurrentTimestamp();
 		TransactionId xlimit = recentXmin;
 		TransactionId latest_xmin;
-		int64		update_ts;
+		TimestampTz update_ts;
 		bool		same_ts_as_threshold = false;
 
 		SpinLockAcquire(&oldSnapshotControl->mutex_latest_xmin);
@@ -1790,11 +1793,11 @@ TransactionIdLimitedForOldSnapshots(TransactionId recentXmin,
  * Take care of the circular buffer that maps time to xid.
  */
 void
-MaintainOldSnapshotTimeMapping(int64 whenTaken, TransactionId xmin)
+MaintainOldSnapshotTimeMapping(TimestampTz whenTaken, TransactionId xmin)
 {
-	int64		ts;
+	TimestampTz ts;
 	TransactionId latest_xmin;
-	int64		update_ts;
+	TimestampTz update_ts;
 	bool		map_update_required = false;
 
 	/* Never call this function when old snapshot checking is disabled. */
@@ -2012,34 +2015,37 @@ EstimateSnapshotSpace(Snapshot snap)
 void
 SerializeSnapshot(Snapshot snapshot, char *start_address)
 {
-	SerializedSnapshotData *serialized_snapshot;
+	SerializedSnapshotData serialized_snapshot;
 
 	Assert(snapshot->subxcnt >= 0);
 
-	serialized_snapshot = (SerializedSnapshotData *) start_address;
-
 	/* Copy all required fields */
-	serialized_snapshot->xmin = snapshot->xmin;
-	serialized_snapshot->xmax = snapshot->xmax;
-	serialized_snapshot->xcnt = snapshot->xcnt;
-	serialized_snapshot->subxcnt = snapshot->subxcnt;
-	serialized_snapshot->suboverflowed = snapshot->suboverflowed;
-	serialized_snapshot->takenDuringRecovery = snapshot->takenDuringRecovery;
-	serialized_snapshot->curcid = snapshot->curcid;
-	serialized_snapshot->whenTaken = snapshot->whenTaken;
-	serialized_snapshot->lsn = snapshot->lsn;
+	serialized_snapshot.xmin = snapshot->xmin;
+	serialized_snapshot.xmax = snapshot->xmax;
+	serialized_snapshot.xcnt = snapshot->xcnt;
+	serialized_snapshot.subxcnt = snapshot->subxcnt;
+	serialized_snapshot.suboverflowed = snapshot->suboverflowed;
+	serialized_snapshot.takenDuringRecovery = snapshot->takenDuringRecovery;
+	serialized_snapshot.curcid = snapshot->curcid;
+	serialized_snapshot.whenTaken = snapshot->whenTaken;
+	serialized_snapshot.lsn = snapshot->lsn;
 
 	/*
 	 * Ignore the SubXID array if it has overflowed, unless the snapshot was
 	 * taken during recovey - in that case, top-level XIDs are in subxip as
 	 * well, and we mustn't lose them.
 	 */
-	if (serialized_snapshot->suboverflowed && !snapshot->takenDuringRecovery)
-		serialized_snapshot->subxcnt = 0;
+	if (serialized_snapshot.suboverflowed && !snapshot->takenDuringRecovery)
+		serialized_snapshot.subxcnt = 0;
+
+	/* Copy struct to possibly-unaligned buffer */
+	memcpy(start_address,
+		   &serialized_snapshot, sizeof(SerializedSnapshotData));
 
 	/* Copy XID array */
 	if (snapshot->xcnt > 0)
-		memcpy((TransactionId *) (serialized_snapshot + 1),
+		memcpy((TransactionId *) (start_address +
+								  sizeof(SerializedSnapshotData)),
 			   snapshot->xip, snapshot->xcnt * sizeof(TransactionId));
 
 	/*
@@ -2048,12 +2054,12 @@ SerializeSnapshot(Snapshot snapshot, char *start_address)
 	 * snapshot taken during recovery; all the top-level XIDs are in subxip as
 	 * well in that case, so we mustn't lose them.
 	 */
-	if (serialized_snapshot->subxcnt > 0)
+	if (serialized_snapshot.subxcnt > 0)
 	{
 		Size		subxipoff = sizeof(SerializedSnapshotData) +
 		snapshot->xcnt * sizeof(TransactionId);
 
-		memcpy((TransactionId *) ((char *) serialized_snapshot + subxipoff),
+		memcpy((TransactionId *) (start_address + subxipoff),
 			   snapshot->subxip, snapshot->subxcnt * sizeof(TransactionId));
 	}
 }
@@ -2068,50 +2074,51 @@ SerializeSnapshot(Snapshot snapshot, char *start_address)
 Snapshot
 RestoreSnapshot(char *start_address)
 {
-	SerializedSnapshotData *serialized_snapshot;
+	SerializedSnapshotData serialized_snapshot;
 	Size		size;
 	Snapshot	snapshot;
 	TransactionId *serialized_xids;
 
-	serialized_snapshot = (SerializedSnapshotData *) start_address;
+	memcpy(&serialized_snapshot, start_address,
+		   sizeof(SerializedSnapshotData));
 	serialized_xids = (TransactionId *)
 		(start_address + sizeof(SerializedSnapshotData));
 
 	/* We allocate any XID arrays needed in the same palloc block. */
 	size = sizeof(SnapshotData)
-		+ serialized_snapshot->xcnt * sizeof(TransactionId)
-		+ serialized_snapshot->subxcnt * sizeof(TransactionId);
+		+ serialized_snapshot.xcnt * sizeof(TransactionId)
+		+ serialized_snapshot.subxcnt * sizeof(TransactionId);
 
 	/* Copy all required fields */
 	snapshot = (Snapshot) MemoryContextAlloc(TopTransactionContext, size);
 	snapshot->satisfies = HeapTupleSatisfiesMVCC;
-	snapshot->xmin = serialized_snapshot->xmin;
-	snapshot->xmax = serialized_snapshot->xmax;
+	snapshot->xmin = serialized_snapshot.xmin;
+	snapshot->xmax = serialized_snapshot.xmax;
 	snapshot->xip = NULL;
-	snapshot->xcnt = serialized_snapshot->xcnt;
+	snapshot->xcnt = serialized_snapshot.xcnt;
 	snapshot->subxip = NULL;
-	snapshot->subxcnt = serialized_snapshot->subxcnt;
-	snapshot->suboverflowed = serialized_snapshot->suboverflowed;
-	snapshot->takenDuringRecovery = serialized_snapshot->takenDuringRecovery;
-	snapshot->curcid = serialized_snapshot->curcid;
-	snapshot->whenTaken = serialized_snapshot->whenTaken;
-	snapshot->lsn = serialized_snapshot->lsn;
+	snapshot->subxcnt = serialized_snapshot.subxcnt;
+	snapshot->suboverflowed = serialized_snapshot.suboverflowed;
+	snapshot->takenDuringRecovery = serialized_snapshot.takenDuringRecovery;
+	snapshot->curcid = serialized_snapshot.curcid;
+	snapshot->whenTaken = serialized_snapshot.whenTaken;
+	snapshot->lsn = serialized_snapshot.lsn;
 
 	/* Copy XIDs, if present. */
-	if (serialized_snapshot->xcnt > 0)
+	if (serialized_snapshot.xcnt > 0)
 	{
 		snapshot->xip = (TransactionId *) (snapshot + 1);
 		memcpy(snapshot->xip, serialized_xids,
-			   serialized_snapshot->xcnt * sizeof(TransactionId));
+			   serialized_snapshot.xcnt * sizeof(TransactionId));
 	}
 
 	/* Copy SubXIDs, if present. */
-	if (serialized_snapshot->subxcnt > 0)
+	if (serialized_snapshot.subxcnt > 0)
 	{
 		snapshot->subxip = ((TransactionId *) (snapshot + 1)) +
-			serialized_snapshot->xcnt;
-		memcpy(snapshot->subxip, serialized_xids + serialized_snapshot->xcnt,
-			   serialized_snapshot->subxcnt * sizeof(TransactionId));
+			serialized_snapshot.xcnt;
+		memcpy(snapshot->subxip, serialized_xids + serialized_snapshot.xcnt,
+			   serialized_snapshot.subxcnt * sizeof(TransactionId));
 	}
 
 	/* Set the copied flag so that the caller will set refcounts correctly. */

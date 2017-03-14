@@ -305,16 +305,11 @@ logicalrep_worker_launch(Oid dbid, Oid subid, const char *subname, Oid userid)
 /*
  * Stop the logical replication worker and wait until it detaches from the
  * slot.
- *
- * The caller must hold LogicalRepLauncherLock to ensure that new workers are
- * not being started during this function call.
  */
 void
 logicalrep_worker_stop(Oid subid)
 {
 	LogicalRepWorker *worker;
-
-	Assert(LWLockHeldByMe(LogicalRepLauncherLock));
 
 	LWLockAcquire(LogicalRepWorkerLock, LW_SHARED);
 
@@ -557,7 +552,7 @@ ApplyLauncherWakeup(void)
 void
 ApplyLauncherMain(Datum main_arg)
 {
-	ereport(LOG,
+	ereport(DEBUG1,
 			(errmsg("logical replication launcher started")));
 
 	/* Establish signal handlers. */
@@ -602,9 +597,6 @@ ApplyLauncherMain(Datum main_arg)
 										   ALLOCSET_DEFAULT_MAXSIZE);
 			oldctx = MemoryContextSwitchTo(subctx);
 
-			/* Block any concurrent DROP SUBSCRIPTION. */
-			LWLockAcquire(LogicalRepLauncherLock, LW_EXCLUSIVE);
-
 			/* search for subscriptions to start or stop. */
 			sublist = get_subscription_list();
 
@@ -627,8 +619,6 @@ ApplyLauncherMain(Datum main_arg)
 					break;
 				}
 			}
-
-			LWLockRelease(LogicalRepLauncherLock);
 
 			/* Switch back to original memory context. */
 			MemoryContextSwitchTo(oldctx);
@@ -662,7 +652,7 @@ ApplyLauncherMain(Datum main_arg)
 	LogicalRepCtx->launcher_pid = 0;
 
 	/* ... and if it returns, we're done */
-	ereport(LOG,
+	ereport(DEBUG1,
 			(errmsg("logical replication launcher shutting down")));
 
 	proc_exit(0);

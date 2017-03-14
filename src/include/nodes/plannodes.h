@@ -292,6 +292,7 @@ typedef struct BitmapAnd
 typedef struct BitmapOr
 {
 	Plan		plan;
+	bool		isshared;
 	List	   *bitmapplans;
 } BitmapOr;
 
@@ -420,6 +421,7 @@ typedef struct BitmapIndexScan
 {
 	Scan		scan;
 	Oid			indexid;		/* OID of index to scan */
+	bool		isshared;		/* Create shared bitmap if set */
 	List	   *indexqual;		/* list of index quals (OpExprs) */
 	List	   *indexqualorig;	/* the same in original form */
 } BitmapIndexScan;
@@ -494,6 +496,16 @@ typedef struct ValuesScan
 	Scan		scan;
 	List	   *values_lists;	/* list of expression lists */
 } ValuesScan;
+
+/* ----------------
+ *		TableFunc scan node
+ * ----------------
+ */
+typedef struct TableFuncScan
+{
+	Scan		scan;
+	TableFunc  *tablefunc;		/* table function node */
+} TableFuncScan;
 
 /* ----------------
  *		CteScan node
@@ -784,6 +796,22 @@ typedef struct Gather
 	bool		single_copy;
 	bool		invisible;		/* suppress EXPLAIN display (for testing)? */
 } Gather;
+
+/* ------------
+ *		gather merge node
+ * ------------
+ */
+typedef struct GatherMerge
+{
+	Plan		plan;
+	int			num_workers;
+	/* remaining fields are just like the sort-key info in struct Sort */
+	int			numCols;		/* number of sort-key columns */
+	AttrNumber *sortColIdx;		/* their indexes in the target list */
+	Oid		   *sortOperators;	/* OIDs of operators to sort them by */
+	Oid		   *collations;		/* OIDs of collations */
+	bool	   *nullsFirst;		/* NULLS FIRST/LAST directions */
+} GatherMerge;
 
 /* ----------------
  *		hash build node

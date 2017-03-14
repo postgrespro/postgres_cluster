@@ -17,7 +17,7 @@ DROP ROLE IF EXISTS regress_user4;
 DROP ROLE IF EXISTS regress_user5;
 DROP ROLE IF EXISTS regress_user6;
 
-SELECT lo_unlink(oid) FROM pg_largeobject_metadata;
+SELECT lo_unlink(oid) FROM pg_largeobject_metadata WHERE oid >= 1000 AND oid < 3000 ORDER BY oid;
 
 RESET client_min_messages;
 
@@ -398,6 +398,18 @@ DROP FUNCTION testfunc1(int); -- ok
 -- restore to sanity
 GRANT ALL PRIVILEGES ON LANGUAGE sql TO PUBLIC;
 
+-- verify privilege checks on coercions
+BEGIN;
+SELECT NULL::int4[]::int8[];
+SELECT '{1}'::int4[]::int8[];
+REVOKE ALL ON FUNCTION int8(integer) FROM PUBLIC;
+SELECT NULL::int4[]::int8[];
+SELECT '{1}'::int4[]::int8[]; --superuser, suceed
+SET SESSION AUTHORIZATION regress_user4;
+SELECT NULL::int4[]::int8[];  --other user, no elements to convert
+SELECT '{1}'::int4[]::int8[]; --other user, fail
+ROLLBACK;
+
 -- privileges on types
 
 -- switch to superuser
@@ -729,7 +741,7 @@ SELECT lo_unlink(2002);
 
 \c -
 -- confirm ACL setting
-SELECT oid, pg_get_userbyid(lomowner) ownername, lomacl FROM pg_largeobject_metadata;
+SELECT oid, pg_get_userbyid(lomowner) ownername, lomacl FROM pg_largeobject_metadata WHERE oid >= 1000 AND oid < 3000 ORDER BY oid;
 
 SET SESSION AUTHORIZATION regress_user3;
 
@@ -960,7 +972,7 @@ DROP TABLE atestc;
 DROP TABLE atestp1;
 DROP TABLE atestp2;
 
-SELECT lo_unlink(oid) FROM pg_largeobject_metadata;
+SELECT lo_unlink(oid) FROM pg_largeobject_metadata WHERE oid >= 1000 AND oid < 3000 ORDER BY oid;
 
 DROP GROUP regress_group1;
 DROP GROUP regress_group2;

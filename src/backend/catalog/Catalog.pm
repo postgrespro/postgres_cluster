@@ -46,6 +46,9 @@ sub Catalogs
 
 		open(INPUT_FILE, '<', $input_file) || die "$input_file: $!";
 
+		my ($filename) = ($input_file =~ m/(\w+)\.h$/);
+		my $natts_pat = "Natts_$filename";
+
 		# Scan the input file.
 		while (<INPUT_FILE>)
 		{
@@ -63,6 +66,9 @@ sub Catalogs
 				redo;
 			}
 
+			# Remember input line number for later.
+			my $input_line_number = $.;
+
 			# Strip useless whitespace and trailing semicolons.
 			chomp;
 			s/^\s+//;
@@ -70,8 +76,15 @@ sub Catalogs
 			s/\s+/ /g;
 
 			# Push the data into the appropriate data structure.
-			if (/^DATA\(insert(\s+OID\s+=\s+(\d+))?\s+\(\s*(.*)\s*\)\s*\)$/)
+			if (/$natts_pat\s+(\d+)/)
 			{
+				$catalog{natts} = $1;
+			}
+			elsif (/^DATA\(insert(\s+OID\s+=\s+(\d+))?\s+\(\s*(.*)\s*\)\s*\)$/)
+			{
+				check_natts($filename, $catalog{natts}, $3,
+							$input_file, $input_line_number);
+
 				push @{ $catalog{data} }, { oid => $2, bki_values => $3 };
 			}
 			elsif (/^DESCR\(\"(.*)\"\)$/)
@@ -214,6 +227,23 @@ sub RenameTempFile
 	my $temp_name  = $final_name . $extension;
 	print "Writing $final_name\n";
 	rename($temp_name, $final_name) || die "rename: $temp_name: $!";
+}
+
+# verify the number of fields in the passed-in bki structure
+sub check_natts
+{
+	my ($catname, $natts, $bki_val, $file, $line) = @_;
+	die "Could not find definition for Natts_${catname} before start of DATA() in $file\n"
+		unless defined $natts;
+
+	# we're working with a copy and need to count the fields only, so collapse
+	$bki_val =~ s/"[^"]*?"/xxx/g;
+	my @atts = split /\s+/, $bki_val;
+
+	die sprintf
+		"Wrong number of attributes in DATA() entry at %s:%d (expected %d but got %d)\n",
+		$file, $line, $natts, scalar @atts
+	  unless $natts == @atts;
 }
 
 1;

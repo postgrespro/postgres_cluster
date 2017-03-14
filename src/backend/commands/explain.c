@@ -149,6 +149,7 @@ ExplainQuery(ParseState *pstate, ExplainStmt *stmt, const char *queryString,
 	List	   *rewritten;
 	ListCell   *lc;
 	bool		timing_set = false;
+	bool		summary_set = false;
 
 	/* Parse options list. */
 	foreach(lc, stmt->options)
@@ -167,6 +168,11 @@ ExplainQuery(ParseState *pstate, ExplainStmt *stmt, const char *queryString,
 		{
 			timing_set = true;
 			es->timing = defGetBoolean(opt);
+		}
+		else if (strcmp(opt->defname, "summary") == 0)
+		{
+			summary_set = true;
+			es->summary = defGetBoolean(opt);
 		}
 		else if (strcmp(opt->defname, "format") == 0)
 		{
@@ -209,8 +215,8 @@ ExplainQuery(ParseState *pstate, ExplainStmt *stmt, const char *queryString,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("EXPLAIN option TIMING requires ANALYZE")));
 
-	/* currently, summary option is not exposed to users; just set it */
-	es->summary = es->analyze;
+	/* if the summary was not set explicitly, set default value */
+	es->summary = (summary_set) ? es->summary : es->analyze;
 
 	/*
 	 * Parse analysis was done already, but we still have to run the rule
@@ -571,7 +577,13 @@ ExplainOnePlan(PlannedStmt *plannedstmt, IntoClause *into, ExplainState *es,
 
 	totaltime += elapsed_time(&starttime);
 
-	if (es->summary)
+	/*
+	 * We only report execution time if we actually ran the query (that is,
+	 * the user specified ANALYZE), and if summary reporting is enabled (the
+	 * user can set SUMMARY OFF to not have the timing information included in
+	 * the output).  By default, ANALYZE sets SUMMARY to true.
+	 */
+	if (es->summary && es->analyze)
 	{
 		if (es->format == EXPLAIN_FORMAT_TEXT)
 			appendStringInfo(es->str, "Execution time: %.3f ms\n",
@@ -781,6 +793,7 @@ ExplainPreScanNode(PlanState *planstate, Bitmapset **rels_used)
 		case T_TidScan:
 		case T_SubqueryScan:
 		case T_FunctionScan:
+		case T_TableFuncScan:
 		case T_ValuesScan:
 		case T_CteScan:
 		case T_WorkTableScan:
@@ -905,6 +918,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_Gather:
 			pname = sname = "Gather";
 			break;
+		case T_GatherMerge:
+			pname = sname = "Gather Merge";
+			break;
 		case T_IndexScan:
 			pname = sname = "Index Scan";
 			break;
@@ -925,6 +941,9 @@ ExplainNode(PlanState *planstate, List *ancestors,
 			break;
 		case T_FunctionScan:
 			pname = sname = "Function Scan";
+			break;
+		case T_TableFuncScan:
+			pname = sname = "Table Function Scan";
 			break;
 		case T_ValuesScan:
 			pname = sname = "Values Scan";
@@ -1103,6 +1122,7 @@ ExplainNode(PlanState *planstate, List *ancestors,
 		case T_TidScan:
 		case T_SubqueryScan:
 		case T_FunctionScan:
+		case T_TableFuncScan:
 		case T_ValuesScan:
 		case T_CteScan:
 		case T_WorkTableScan:
@@ -1394,6 +1414,26 @@ ExplainNode(PlanState *planstate, List *ancestors,
 					ExplainPropertyBool("Single Copy", gather->single_copy, es);
 			}
 			break;
+		case T_GatherMerge:
+			{
+				GatherMerge *gm = (GatherMerge *) plan;
+
+				show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+				if (plan->qual)
+					show_instrumentation_count("Rows Removed by Filter", 1,
+											   planstate, es);
+				ExplainPropertyInteger("Workers Planned",
+									   gm->num_workers, es);
+				if (es->analyze)
+				{
+					int			nworkers;
+
+					nworkers = ((GatherMergeState *) planstate)->nworkers_launched;
+					ExplainPropertyInteger("Workers Launched",
+										   nworkers, es);
+				}
+			}
+			break;
 		case T_FunctionScan:
 			if (es->verbose)
 			{
@@ -1409,6 +1449,20 @@ ExplainNode(PlanState *planstate, List *ancestors,
 				/* We rely on show_expression to insert commas as needed */
 				show_expression((Node *) fexprs,
 								"Function Call", planstate, ancestors,
+								es->verbose, es);
+			}
+			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
+			if (plan->qual)
+				show_instrumentation_count("Rows Removed by Filter", 1,
+										   planstate, es);
+			break;
+		case T_TableFuncScan:
+			if (es->verbose)
+			{
+				TableFunc  *tablefunc = ((TableFuncScan *) plan)->tablefunc;
+
+				show_expression((Node *) tablefunc,
+								"Table Function Call", planstate, ancestors,
 								es->verbose, es);
 			}
 			show_scan_qual(plan->qual, "Filter", planstate, ancestors, es);
@@ -2592,6 +2646,11 @@ ExplainTargetRel(Plan *plan, Index rti, ExplainState *es)
 				}
 				objecttag = "Function Name";
 			}
+			break;
+		case T_TableFuncScan:
+			Assert(rte->rtekind == RTE_TABLEFUNC);
+			objectname = "xmltable";
+			objecttag = "Table Function Name";
 			break;
 		case T_ValuesScan:
 			Assert(rte->rtekind == RTE_VALUES);

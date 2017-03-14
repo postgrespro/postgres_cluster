@@ -224,10 +224,8 @@ set_plan_references(PlannerInfo *root, Plan *plan)
 	 */
 	foreach(lc, root->rowMarks)
 	{
-		PlanRowMark *rc = (PlanRowMark *) lfirst(lc);
+		PlanRowMark *rc = castNode(PlanRowMark, lfirst(lc));
 		PlanRowMark *newrc;
-
-		Assert(IsA(rc, PlanRowMark));
 
 		/* flat copy is enough since all fields are scalars */
 		newrc = (PlanRowMark *) palloc(sizeof(PlanRowMark));
@@ -395,6 +393,7 @@ add_rte_to_flat_rtable(PlannerGlobal *glob, RangeTblEntry *rte)
 	newrte->subquery = NULL;
 	newrte->joinaliasvars = NIL;
 	newrte->functions = NIL;
+	newrte->tablefunc = NULL;
 	newrte->values_lists = NIL;
 	newrte->coltypes = NIL;
 	newrte->coltypmods = NIL;
@@ -555,6 +554,19 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 					fix_scan_list(root, splan->functions, rtoffset);
 			}
 			break;
+		case T_TableFuncScan:
+			{
+				TableFuncScan *splan = (TableFuncScan *) plan;
+
+				splan->scan.scanrelid += rtoffset;
+				splan->scan.plan.targetlist =
+					fix_scan_list(root, splan->scan.plan.targetlist, rtoffset);
+				splan->scan.plan.qual =
+					fix_scan_list(root, splan->scan.plan.qual, rtoffset);
+				splan->tablefunc = (TableFunc *)
+					fix_scan_expr(root, (Node *) splan->tablefunc, rtoffset);
+			}
+			break;
 		case T_ValuesScan:
 			{
 				ValuesScan *splan = (ValuesScan *) plan;
@@ -604,6 +616,7 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 			break;
 
 		case T_Gather:
+		case T_GatherMerge:
 			set_upper_references(root, plan, rtoffset);
 			break;
 

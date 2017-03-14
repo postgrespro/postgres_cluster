@@ -1473,7 +1473,7 @@ Optional Features:
   --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
   --disable-integer-datetimes
-                          disable 64-bit integer date/time support
+                          obsolete option, no longer supported
   --enable-nls[=LANGUAGES]
                           enable Native Language Support
   --disable-rpath         do not embed shared library search path in
@@ -2984,10 +2984,10 @@ fi
 
 
 #
-# 64-bit integer date/time storage: enabled by default.
+# 64-bit integer date/time storage is now the only option, but to avoid
+# unnecessary breakage of build scripts, continue to accept an explicit
+# "--enable-integer-datetimes" switch.
 #
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking whether to build with 64-bit integer date/time support" >&5
-$as_echo_n "checking whether to build with 64-bit integer date/time support... " >&6; }
 
 
 # Check whether --enable-integer-datetimes was given.
@@ -2995,12 +2995,10 @@ if test "${enable_integer_datetimes+set}" = set; then :
   enableval=$enable_integer_datetimes;
   case $enableval in
     yes)
-
-$as_echo "#define USE_INTEGER_DATETIMES 1" >>confdefs.h
-
+      :
       ;;
     no)
-      :
+      as_fn_error $? "--disable-integer-datetimes is no longer supported" "$LINENO" 5
       ;;
     *)
       as_fn_error $? "no argument expected for --enable-integer-datetimes option" "$LINENO" 5
@@ -3010,13 +3008,9 @@ $as_echo "#define USE_INTEGER_DATETIMES 1" >>confdefs.h
 else
   enable_integer_datetimes=yes
 
-$as_echo "#define USE_INTEGER_DATETIMES 1" >>confdefs.h
-
 fi
 
 
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $enable_integer_datetimes" >&5
-$as_echo "$enable_integer_datetimes" >&6; }
 
 
 #
@@ -7588,10 +7582,16 @@ fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking Python configuration directory" >&5
 $as_echo_n "checking Python configuration directory... " >&6; }
 python_majorversion=`${PYTHON} -c "import sys; print(sys.version[0])"`
+python_minorversion=`${PYTHON} -c "import sys; print(sys.version[2])"`
 python_version=`${PYTHON} -c "import sys; print(sys.version[:3])"`
 python_configdir=`${PYTHON} -c "import distutils.sysconfig; print(' '.join(filter(None,distutils.sysconfig.get_config_vars('LIBPL'))))"`
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $python_configdir" >&5
 $as_echo "$python_configdir" >&6; }
+
+# Reject unsupported Python versions as soon as practical.
+if test "$python_majorversion" -lt 3 -a "$python_minorversion" -lt 4; then
+  as_fn_error $? "Python version $python_version is too old (version 2.4 or later is required)" "$LINENO" 5
+fi
 
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking Python include directories" >&5
 $as_echo_n "checking Python include directories... " >&6; }
@@ -10332,7 +10332,7 @@ fi
 ## Header files
 ##
 
-for ac_header in atomic.h crypt.h dld.h fp_class.h getopt.h ieeefp.h ifaddrs.h langinfo.h mbarrier.h poll.h pwd.h sys/epoll.h sys/ioctl.h sys/ipc.h sys/poll.h sys/pstat.h sys/resource.h sys/select.h sys/sem.h sys/shm.h sys/socket.h sys/sockio.h sys/tas.h sys/time.h sys/un.h termios.h ucred.h utime.h wchar.h wctype.h
+for ac_header in atomic.h crypt.h dld.h fp_class.h getopt.h ieeefp.h ifaddrs.h langinfo.h mbarrier.h poll.h sys/epoll.h sys/ipc.h sys/poll.h sys/pstat.h sys/resource.h sys/select.h sys/sem.h sys/shm.h sys/sockio.h sys/tas.h sys/un.h termios.h ucred.h utime.h wchar.h wctype.h
 do :
   as_ac_Header=`$as_echo "ac_cv_header_$ac_header" | $as_tr_sh`
 ac_fn_c_check_header_mongrel "$LINENO" "$ac_header" "$as_ac_Header" "$ac_includes_default"
@@ -10351,9 +10351,7 @@ done
 for ac_header in net/if.h
 do :
   ac_fn_c_check_header_compile "$LINENO" "net/if.h" "ac_cv_header_net_if_h" "$ac_includes_default
-#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
-#endif
 
 "
 if test "x$ac_cv_header_net_if_h" = xyes; then :
@@ -10386,24 +10384,10 @@ done
 
 # At least on IRIX, test for netinet/tcp.h will fail unless
 # netinet/in.h is included first.
-for ac_header in netinet/in.h
-do :
-  ac_fn_c_check_header_mongrel "$LINENO" "netinet/in.h" "ac_cv_header_netinet_in_h" "$ac_includes_default"
-if test "x$ac_cv_header_netinet_in_h" = xyes; then :
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_NETINET_IN_H 1
-_ACEOF
-
-fi
-
-done
-
 for ac_header in netinet/tcp.h
 do :
   ac_fn_c_check_header_compile "$LINENO" "netinet/tcp.h" "ac_cv_header_netinet_tcp_h" "$ac_includes_default
-#ifdef HAVE_NETINET_IN_H
 #include <netinet/in.h>
-#endif
 
 "
 if test "x$ac_cv_header_netinet_tcp_h" = xyes; then :
@@ -11671,8 +11655,12 @@ $as_echo "#define HAVE_TZNAME 1" >>confdefs.h
 fi
 
 ac_fn_c_check_type "$LINENO" "union semun" "ac_cv_type_union_semun" "#include <sys/types.h>
+#ifdef HAVE_SYS_IPC_H
 #include <sys/ipc.h>
+#endif
+#ifdef HAVE_SYS_SEM_H
 #include <sys/sem.h>
+#endif
 "
 if test "x$ac_cv_type_union_semun" = xyes; then :
 
@@ -11696,9 +11684,7 @@ $as_echo "#define HAVE_UNIX_SOCKETS 1" >>confdefs.h
 fi
 
 ac_fn_c_check_type "$LINENO" "struct sockaddr_storage" "ac_cv_type_struct_sockaddr_storage" "#include <sys/types.h>
-#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
-#endif
 
 "
 if test "x$ac_cv_type_struct_sockaddr_storage" = xyes; then :
@@ -11711,9 +11697,7 @@ _ACEOF
 fi
 
 ac_fn_c_check_member "$LINENO" "struct sockaddr_storage" "ss_family" "ac_cv_member_struct_sockaddr_storage_ss_family" "#include <sys/types.h>
-#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
-#endif
 
 "
 if test "x$ac_cv_member_struct_sockaddr_storage_ss_family" = xyes; then :
@@ -11725,9 +11709,7 @@ _ACEOF
 
 fi
 ac_fn_c_check_member "$LINENO" "struct sockaddr_storage" "__ss_family" "ac_cv_member_struct_sockaddr_storage___ss_family" "#include <sys/types.h>
-#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
-#endif
 
 "
 if test "x$ac_cv_member_struct_sockaddr_storage___ss_family" = xyes; then :
@@ -11739,9 +11721,7 @@ _ACEOF
 
 fi
 ac_fn_c_check_member "$LINENO" "struct sockaddr_storage" "ss_len" "ac_cv_member_struct_sockaddr_storage_ss_len" "#include <sys/types.h>
-#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
-#endif
 
 "
 if test "x$ac_cv_member_struct_sockaddr_storage_ss_len" = xyes; then :
@@ -11753,9 +11733,7 @@ _ACEOF
 
 fi
 ac_fn_c_check_member "$LINENO" "struct sockaddr_storage" "__ss_len" "ac_cv_member_struct_sockaddr_storage___ss_len" "#include <sys/types.h>
-#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
-#endif
 
 "
 if test "x$ac_cv_member_struct_sockaddr_storage___ss_len" = xyes; then :
@@ -11767,9 +11745,7 @@ _ACEOF
 
 fi
 ac_fn_c_check_member "$LINENO" "struct sockaddr" "sa_len" "ac_cv_member_struct_sockaddr_sa_len" "#include <sys/types.h>
-#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
-#endif
 
 "
 if test "x$ac_cv_member_struct_sockaddr_sa_len" = xyes; then :
@@ -12427,12 +12403,8 @@ else
         for ac_cv_func_accept_arg3 in 'int' 'size_t' 'socklen_t' 'unsigned int' 'void'; do
          cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
-#ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
-#endif
-#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
-#endif
 extern $ac_cv_func_accept_return accept ($ac_cv_func_accept_arg1, $ac_cv_func_accept_arg2, $ac_cv_func_accept_arg3 *);
 _ACEOF
 if ac_fn_c_try_compile "$LINENO"; then :

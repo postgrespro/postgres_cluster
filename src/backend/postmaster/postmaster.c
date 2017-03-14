@@ -1232,6 +1232,13 @@ PostmasterMain(int argc, char *argv[])
 	 */
 	RemovePromoteSignalFiles();
 
+	/* Remove any outdated file holding the current log filenames. */
+	if (unlink(LOG_METAINFO_DATAFILE) < 0 && errno != ENOENT)
+		ereport(LOG,
+				(errcode_for_file_access(),
+				 errmsg("could not remove file \"%s\": %m",
+					LOG_METAINFO_DATAFILE)));
+
 	/*
 	 * If enabled, start up syslogger collection subprocess
 	 */
@@ -3050,9 +3057,9 @@ CleanupBackgroundWorker(int pid,
 						int exitstatus) /* child's exit status */
 {
 	char		namebuf[MAXPGPATH];
-	slist_iter	iter;
+	slist_mutable_iter	iter;
 
-	slist_foreach(iter, &BackgroundWorkerList)
+	slist_foreach_modify(iter, &BackgroundWorkerList)
 	{
 		RegisteredBgWorker *rw;
 
@@ -3126,7 +3133,7 @@ CleanupBackgroundWorker(int pid,
 		rw->rw_backend = NULL;
 		rw->rw_pid = 0;
 		rw->rw_child_slot = 0;
-		ReportBackgroundWorkerPID(rw);	/* report child death */
+		ReportBackgroundWorkerExit(&iter);	/* report child death */
 
 		LogChildExit(EXIT_STATUS_0(exitstatus) ? DEBUG1 : LOG,
 					 namebuf, pid, exitstatus);

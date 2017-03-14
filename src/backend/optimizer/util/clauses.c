@@ -1162,20 +1162,18 @@ max_parallel_hazard_walker(Node *node, max_parallel_hazard_context *context)
 	}
 
 	/*
-	 * Since we don't have the ability to push subplans down to workers at
-	 * present, we treat subplan references as parallel-restricted.  We need
-	 * not worry about examining their contents; if they are unsafe, we would
-	 * have found that out while examining the whole tree before reduction of
-	 * sublinks to subplans.  (Really we should not see SubLink during a
-	 * max_interesting == restricted scan, but if we do, return true.)
+	 * Really we should not see SubLink during a max_interesting == restricted
+	 * scan, but if we do, return true.
 	 */
-	else if (IsA(node, SubLink) ||
-			 IsA(node, SubPlan) ||
-			 IsA(node, AlternativeSubPlan))
+	else if (IsA(node, SubLink))
 	{
 		if (max_parallel_hazard_test(PROPARALLEL_RESTRICTED, context))
 			return true;
 	}
+
+	/* We can push the subplans only if they are parallel-safe. */
+	else if (IsA(node, SubPlan))
+		return !((SubPlan *) node)->parallel_safe;
 
 	/*
 	 * We can't pass Params to workers at the moment either, so they are also
@@ -2702,9 +2700,8 @@ eval_const_expressions_mutator(Node *node,
 						 * Since the underlying operator is "=", must negate
 						 * its result
 						 */
-						Const	   *csimple = (Const *) simple;
+						Const	   *csimple = castNode(Const, simple);
 
-						Assert(IsA(csimple, Const));
 						csimple->constvalue =
 							BoolGetDatum(!DatumGetBool(csimple->constvalue));
 						return (Node *) csimple;
@@ -3093,11 +3090,9 @@ eval_const_expressions_mutator(Node *node,
 				const_true_cond = false;
 				foreach(arg, caseexpr->args)
 				{
-					CaseWhen   *oldcasewhen = (CaseWhen *) lfirst(arg);
+					CaseWhen   *oldcasewhen = castNode(CaseWhen, lfirst(arg));
 					Node	   *casecond;
 					Node	   *caseresult;
-
-					Assert(IsA(oldcasewhen, CaseWhen));
 
 					/* Simplify this alternative's test condition */
 					casecond = eval_const_expressions_mutator((Node *) oldcasewhen->expr,
@@ -4083,8 +4078,7 @@ fetch_function_defaults(HeapTuple func_tuple)
 	if (isnull)
 		elog(ERROR, "not enough default arguments");
 	str = TextDatumGetCString(proargdefaults);
-	defaults = (List *) stringToNode(str);
-	Assert(IsA(defaults, List));
+	defaults = castNode(List, stringToNode(str));
 	pfree(str);
 	return defaults;
 }

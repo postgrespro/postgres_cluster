@@ -52,7 +52,7 @@ $node_subscriber->safe_psql('postgres',
 
 # Wait for subscriber to finish initialization
 my $caughtup_query =
-"SELECT pg_current_xlog_location() <= replay_location FROM pg_stat_replication WHERE application_name = '$appname';";
+"SELECT pg_current_wal_location() <= replay_location FROM pg_stat_replication WHERE application_name = '$appname';";
 $node_publisher->poll_query_until('postgres', $caughtup_query)
   or die "Timed out while waiting for subscriber to catch up";
 
@@ -169,8 +169,17 @@ $result =
   $node_subscriber->safe_psql('postgres', "SELECT count(*), min(a), max(a) FROM tab_full");
 is($result, qq(11|0|100), 'check replicated insert after alter publication');
 
+# check restart on rename
+$oldpid = $node_publisher->safe_psql('postgres',
+	"SELECT pid FROM pg_stat_replication WHERE application_name = '$appname';");
+$node_subscriber->safe_psql('postgres',
+	"ALTER SUBSCRIPTION tap_sub RENAME TO tap_sub_renamed");
+$node_publisher->poll_query_until('postgres',
+	"SELECT pid != $oldpid FROM pg_stat_replication WHERE application_name = '$appname';")
+  or die "Timed out while waiting for apply to restart";
+
 # check all the cleanup
-$node_subscriber->safe_psql('postgres', "DROP SUBSCRIPTION tap_sub");
+$node_subscriber->safe_psql('postgres', "DROP SUBSCRIPTION tap_sub_renamed DROP SLOT");
 
 $result =
   $node_subscriber->safe_psql('postgres', "SELECT count(*) FROM pg_subscription");

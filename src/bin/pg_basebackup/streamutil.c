@@ -13,10 +13,7 @@
 
 #include "postgres_fe.h"
 
-#include <stdio.h>
-#include <string.h>
 #include <sys/time.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 /* for ntohl/htonl */
@@ -208,8 +205,8 @@ GetConnection(void)
 		PQconninfoFree(conn_opts);
 
 	/*
-	 * Ensure we have the same value of integer timestamps as the server we
-	 * are connecting to.
+	 * Ensure we have the same value of integer_datetimes (now always "on") as
+	 * the server we are connecting to.
 	 */
 	tmpparam = PQparameterStatus(tmpconn, "integer_datetimes");
 	if (!tmpparam)
@@ -221,11 +218,7 @@ GetConnection(void)
 		exit(1);
 	}
 
-#ifdef HAVE_INT64_TIMESTAMP
 	if (strcmp(tmpparam, "on") != 0)
-#else
-	if (strcmp(tmpparam, "off") != 0)
-#endif
 	{
 		fprintf(stderr,
 			 _("%s: integer_datetimes compile flag does not match server\n"),
@@ -437,20 +430,18 @@ DropReplicationSlot(PGconn *conn, const char *slot_name)
 
 /*
  * Frontend version of GetCurrentTimestamp(), since we are not linked with
- * backend code. The replication protocol always uses integer timestamps,
- * regardless of the server setting.
+ * backend code.
  */
-int64
+TimestampTz
 feGetCurrentTimestamp(void)
 {
-	int64		result;
+	TimestampTz result;
 	struct timeval tp;
 
 	gettimeofday(&tp, NULL);
 
-	result = (int64) tp.tv_sec -
+	result = (TimestampTz) tp.tv_sec -
 		((POSTGRES_EPOCH_JDATE - UNIX_EPOCH_JDATE) * SECS_PER_DAY);
-
 	result = (result * USECS_PER_SEC) + tp.tv_usec;
 
 	return result;
@@ -461,10 +452,10 @@ feGetCurrentTimestamp(void)
  * backend code.
  */
 void
-feTimestampDifference(int64 start_time, int64 stop_time,
+feTimestampDifference(TimestampTz start_time, TimestampTz stop_time,
 					  long *secs, int *microsecs)
 {
-	int64		diff = stop_time - start_time;
+	TimestampTz diff = stop_time - start_time;
 
 	if (diff <= 0)
 	{
@@ -483,11 +474,11 @@ feTimestampDifference(int64 start_time, int64 stop_time,
  * linked with backend code.
  */
 bool
-feTimestampDifferenceExceeds(int64 start_time,
-							 int64 stop_time,
+feTimestampDifferenceExceeds(TimestampTz start_time,
+							 TimestampTz stop_time,
 							 int msec)
 {
-	int64		diff = stop_time - start_time;
+	TimestampTz diff = stop_time - start_time;
 
 	return (diff >= msec * INT64CONST(1000));
 }

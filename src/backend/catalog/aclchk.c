@@ -667,11 +667,10 @@ objectNamesToOids(GrantObjectType objtype, List *objnames)
 		case ACL_OBJECT_FUNCTION:
 			foreach(cell, objnames)
 			{
-				FuncWithArgs *func = (FuncWithArgs *) lfirst(cell);
+				ObjectWithArgs *func = (ObjectWithArgs *) lfirst(cell);
 				Oid			funcid;
 
-				funcid = LookupFuncNameTypeNames(func->funcname,
-												 func->funcargs, false);
+				funcid = LookupFuncWithArgs(func, false);
 				objects = lappend_oid(objects, funcid);
 			}
 			break;

@@ -66,6 +66,7 @@ extern bool enable_nestloop;
 extern bool enable_material;
 extern bool enable_mergejoin;
 extern bool enable_hashjoin;
+extern bool enable_gathermerge;
 extern int	constraint_exclusion;
 
 extern double clamp_row_est(double nrows);
@@ -76,7 +77,7 @@ extern void cost_seqscan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 extern void cost_samplescan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 				ParamPathInfo *param_info);
 extern void cost_index(IndexPath *path, PlannerInfo *root,
-		   double loop_count);
+		   double loop_count, bool partial_path);
 extern void cost_bitmap_heap_scan(Path *path, PlannerInfo *root, RelOptInfo *baserel,
 					  ParamPathInfo *param_info,
 					  Path *bitmapqual, double loop_count);
@@ -89,8 +90,12 @@ extern void cost_subqueryscan(SubqueryScanPath *path, PlannerInfo *root,
 				  RelOptInfo *baserel, ParamPathInfo *param_info);
 extern void cost_functionscan(Path *path, PlannerInfo *root,
 				  RelOptInfo *baserel, ParamPathInfo *param_info);
+extern void cost_tableexprscan(Path *path, PlannerInfo *root,
+				   RelOptInfo *baserel, ParamPathInfo *param_info);
 extern void cost_valuesscan(Path *path, PlannerInfo *root,
 				RelOptInfo *baserel, ParamPathInfo *param_info);
+extern void cost_tablefuncscan(Path *path, PlannerInfo *root,
+				   RelOptInfo *baserel, ParamPathInfo *param_info);
 extern void cost_ctescan(Path *path, PlannerInfo *root,
 			 RelOptInfo *baserel, ParamPathInfo *param_info);
 extern void cost_recursive_union(Path *runion, Path *nrterm, Path *rterm);
@@ -181,6 +186,7 @@ extern void set_function_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 extern void set_values_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 extern void set_cte_size_estimates(PlannerInfo *root, RelOptInfo *rel,
 					   double cte_rows);
+extern void set_tablefunc_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 extern void set_foreign_size_estimates(PlannerInfo *root, RelOptInfo *rel);
 extern PathTarget *set_pathtarget_cost_width(PlannerInfo *root, PathTarget *target);
 extern double compute_bitmap_pages(PlannerInfo *root, RelOptInfo *baserel,
@@ -200,5 +206,9 @@ extern Selectivity clause_selectivity(PlannerInfo *root,
 				   int varRelid,
 				   JoinType jointype,
 				   SpecialJoinInfo *sjinfo);
+extern void cost_gather_merge(GatherMergePath *path, PlannerInfo *root,
+							  RelOptInfo *rel, ParamPathInfo *param_info,
+							  Cost input_startup_cost, Cost input_total_cost,
+							  double *rows);
 
 #endif   /* COST_H */

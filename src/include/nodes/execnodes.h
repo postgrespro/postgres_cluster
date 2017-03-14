@@ -26,6 +26,8 @@
 #include "utils/sortsupport.h"
 #include "utils/tuplestore.h"
 #include "utils/tuplesort.h"
+#include "nodes/tidbitmap.h"
+#include "storage/condition_variable.h"
 
 
 /* ----------------
@@ -52,6 +54,8 @@
  *		ReadyForInserts		is it valid for inserts?
  *		Concurrent			are we doing a concurrent index build?
  *		BrokenHotChain		did we detect any broken HOT chains?
+ *		AmCache				private cache area for index AM
+ *		Context				memory context holding this IndexInfo
  *
  * ii_Concurrent and ii_BrokenHotChain are used only during index build;
  * they're conventionally set to false otherwise.
@@ -76,6 +80,8 @@ typedef struct IndexInfo
 	bool		ii_ReadyForInserts;
 	bool		ii_Concurrent;
 	bool		ii_BrokenHotChain;
+	void	   *ii_AmCache;
+	MemoryContext ii_Context;
 } IndexInfo;
 
 /* ----------------
@@ -367,6 +373,7 @@ typedef struct EState
 	Snapshot	es_crosscheck_snapshot; /* crosscheck time qual for RI */
 	List	   *es_range_table; /* List of RangeTblEntry */
 	PlannedStmt *es_plannedstmt;	/* link to top of plan tree */
+	const char *es_sourceText;	/* Source text from QueryDesc */
 
 	JunkFilter *es_junkFilter;	/* top-level junk filter, if any */
 
@@ -1359,6 +1366,7 @@ typedef struct
  *		SortSupport		   for reordering ORDER BY exprs
  *		OrderByTypByVals   is the datatype of order by expression pass-by-value?
  *		OrderByTypLens	   typlens of the datatypes of order by expressions
+ *		pscan_len		   size of parallel index scan descriptor
  * ----------------
  */
 typedef struct IndexScanState
@@ -1385,6 +1393,7 @@ typedef struct IndexScanState
 	SortSupport iss_SortSupport;
 	bool	   *iss_OrderByTypByVals;
 	int16	   *iss_OrderByTypLens;
+	Size		iss_PscanLen;
 } IndexScanState;
 
 /* ----------------
@@ -1403,6 +1412,7 @@ typedef struct IndexScanState
  *		ScanDesc		   index scan descriptor
  *		VMBuffer		   buffer in use for visibility map testing, if any
  *		HeapFetches		   number of tuples we were forced to fetch from heap
+ *		ioss_PscanLen	   Size of parallel index-only scan descriptor
  * ----------------
  */
 typedef struct IndexOnlyScanState
@@ -1421,6 +1431,7 @@ typedef struct IndexOnlyScanState
 	IndexScanDesc ioss_ScanDesc;
 	Buffer		ioss_VMBuffer;
 	long		ioss_HeapFetches;
+	Size		ioss_PscanLen;
 } IndexOnlyScanState;
 
 /* ----------------
@@ -1456,6 +1467,51 @@ typedef struct BitmapIndexScanState
 } BitmapIndexScanState;
 
 /* ----------------
+ *	 SharedBitmapState information
+ *
+ *		BM_INITIAL		TIDBitmap creation is not yet started, so first worker
+ *						to see this state will set the state to BM_INPROGRESS
+ *						and that process will be responsible for creating
+ *						TIDBitmap.
+ *		BM_INPROGRESS	TIDBitmap creation is in progress; workers need to
+ *						sleep until it's finished.
+ *		BM_FINISHED		TIDBitmap creation is done, so now all workers can
+ *						proceed to iterate over TIDBitmap.
+ * ----------------
+ */
+typedef enum
+{
+	BM_INITIAL,
+	BM_INPROGRESS,
+	BM_FINISHED
+} SharedBitmapState;
+
+/* ----------------
+ *	 ParallelBitmapHeapState information
+ *		tbmiterator				iterator for scanning current pages
+ *		prefetch_iterator		iterator for prefetching ahead of current page
+ *		mutex					mutual exclusion for the prefetching variable
+ *								and state
+ *		prefetch_pages			# pages prefetch iterator is ahead of current
+ *		prefetch_target			current target prefetch distance
+ *		state					current state of the TIDBitmap
+ *		cv						conditional wait variable
+ *		phs_snapshot_data		snapshot data shared to workers
+ * ----------------
+ */
+typedef struct ParallelBitmapHeapState
+{
+	dsa_pointer tbmiterator;
+	dsa_pointer prefetch_iterator;
+	slock_t		mutex;
+	int			prefetch_pages;
+	int			prefetch_target;
+	SharedBitmapState state;
+	ConditionVariable cv;
+	char		phs_snapshot_data[FLEXIBLE_ARRAY_MEMBER];
+} ParallelBitmapHeapState;
+
+/* ----------------
  *	 BitmapHeapScanState information
  *
  *		bitmapqualorig	   execution state for bitmapqualorig expressions
@@ -1468,6 +1524,11 @@ typedef struct BitmapIndexScanState
  *		prefetch_pages	   # pages prefetch iterator is ahead of current
  *		prefetch_target    current target prefetch distance
  *		prefetch_maximum   maximum value for prefetch_target
+ *		pscan_len		   size of the shared memory for parallel bitmap
+ *		initialized		   is node is ready to iterate
+ *		shared_tbmiterator	   shared iterator
+ *		shared_prefetch_iterator shared iterator for prefetching
+ *		pstate			   shared state for parallel bitmap scan
  * ----------------
  */
 typedef struct BitmapHeapScanState
@@ -1483,6 +1544,11 @@ typedef struct BitmapHeapScanState
 	int			prefetch_pages;
 	int			prefetch_target;
 	int			prefetch_maximum;
+	Size		pscan_len;
+	bool		initialized;
+	TBMSharedIterator *shared_tbmiterator;
+	TBMSharedIterator *shared_prefetch_iterator;
+	ParallelBitmapHeapState *pstate;
 } BitmapHeapScanState;
 
 /* ----------------
@@ -1574,6 +1640,31 @@ typedef struct ValuesScanState
 	int			array_len;
 	int			curr_idx;
 } ValuesScanState;
+
+/* ----------------
+ *		TableFuncScanState node
+ *
+ * Used in table-expression functions like XMLTABLE.
+ * ----------------
+ */
+typedef struct TableFuncScanState
+{
+	ScanState	ss;				/* its first field is NodeTag */
+	ExprState  *docexpr;		/* state for document expression */
+	ExprState  *rowexpr;		/* state for row-generating expression */
+	List	   *colexprs;		/* state for column-generating expression */
+	List	   *coldefexprs;	/* state for column default expressions */
+	List	   *ns_names;		/* list of str nodes with namespace names */
+	List	   *ns_uris;		/* list of states of namespace uri exprs */
+	Bitmapset  *notnulls;		/* nullability flag for each output column */
+	void	   *opaque;			/* table builder private space */
+	const struct TableFuncRoutine *routine;		/* table builder methods */
+	FmgrInfo   *in_functions;	/* input function for each column */
+	Oid		   *typioparams;	/* typioparam for each column */
+	int64		ordinal;		/* row number to be output next */
+	MemoryContext perValueCxt;	/* short life context for value evaluation */
+	Tuplestorestate *tupstore;	/* output tuple store */
+} TableFuncScanState;
 
 /* ----------------
  *	 CteScanState information
@@ -2002,6 +2093,35 @@ typedef struct GatherState
 	TupleTableSlot *funnel_slot;
 	bool		need_to_scan_locally;
 } GatherState;
+
+/* ----------------
+ * GatherMergeState information
+ *
+ *		Gather merge nodes launch 1 or more parallel workers, run a
+ *		subplan which produces sorted output in each worker, and then
+ *		merge the results into a single sorted stream.
+ * ----------------
+ */
+struct GMReaderTuple;
+
+typedef struct GatherMergeState
+{
+	PlanState	ps;				/* its first field is NodeTag */
+	bool		initialized;
+	struct ParallelExecutorInfo *pei;
+	int			nreaders;
+	int			nworkers_launched;
+	struct TupleQueueReader **reader;
+	TupleDesc	tupDesc;
+	TupleTableSlot **gm_slots;
+	struct binaryheap *gm_heap; /* binary heap of slot indices */
+	bool		gm_initialized; /* gather merge initilized ? */
+	bool		need_to_scan_locally;
+	int			gm_nkeys;
+	SortSupport gm_sortkeys;	/* array of length ms_nkeys */
+	struct GMReaderTupleBuffer *gm_tuple_buffers;		/* tuple buffer per
+														 * reader */
+} GatherMergeState;
 
 /* ----------------
  *	 HashState information

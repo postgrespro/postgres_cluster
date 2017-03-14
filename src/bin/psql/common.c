@@ -119,9 +119,13 @@ setQFout(const char *fname)
  * If "escape" is true, return the value suitably quoted and escaped,
  * as an identifier or string literal depending on "as_ident".
  * (Failure in escaping should lead to returning NULL.)
+ *
+ * "passthrough" is the pointer previously given to psql_scan_set_passthrough.
+ * psql currently doesn't use this.
  */
 char *
-psql_get_variable(const char *varname, bool escape, bool as_ident)
+psql_get_variable(const char *varname, bool escape, bool as_ident,
+				  void *passthrough)
 {
 	char	   *result;
 	const char *value;
@@ -770,6 +774,10 @@ PrintQueryTuples(const PGresult *results)
 {
 	printQueryOpt my_popt = pset.popt;
 
+	/* one-shot expanded output requested via \gx */
+	if (pset.g_expanded)
+		my_popt.topt.expanded = 1;
+
 	/* write output to \g argument, if any */
 	if (pset.gfname)
 	{
@@ -1409,6 +1417,9 @@ sendquery_cleanup:
 		free(pset.gfname);
 		pset.gfname = NULL;
 	}
+
+	/* reset \gx's expanded-mode flag */
+	pset.g_expanded = false;
 
 	/* reset \gset trigger */
 	if (pset.gset_prefix)

@@ -15,7 +15,6 @@
 
 #include "postgres_fe.h"
 
-#include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <ctype.h>
@@ -1896,6 +1895,7 @@ PQconnectPoll(PGconn *conn)
 		case CONNECTION_SSL_STARTUP:
 		case CONNECTION_NEEDED:
 		case CONNECTION_CHECK_WRITABLE:
+		case CONNECTION_CONSUME:
 			break;
 
 		default:
@@ -2720,6 +2720,49 @@ keep_going:						/* We will come back to here until there is
 					}
 				}
 #endif
+				/* Get additional payload for SASL, if any */
+				if ((areq == AUTH_REQ_SASL ||
+					 areq == AUTH_REQ_SASL_CONT) &&
+					msgLength > 4)
+				{
+					int			llen = msgLength - 4;
+
+					/*
+					 * We can be called repeatedly for the same buffer. Avoid
+					 * re-allocating the buffer in this case - just re-use the
+					 * old buffer.
+					 */
+					if (llen != conn->auth_req_inlen)
+					{
+						if (conn->auth_req_inbuf)
+						{
+							free(conn->auth_req_inbuf);
+							conn->auth_req_inbuf = NULL;
+						}
+
+						conn->auth_req_inlen = llen;
+						conn->auth_req_inbuf = malloc(llen + 1);
+						if (!conn->auth_req_inbuf)
+						{
+							printfPQExpBuffer(&conn->errorMessage,
+											  libpq_gettext("out of memory allocating SASL buffer (%d)"),
+											  llen);
+							goto error_return;
+						}
+					}
+
+					if (pqGetnchar(conn->auth_req_inbuf, llen, conn))
+					{
+						/* We'll come back when there is more data. */
+						return PGRES_POLLING_READING;
+					}
+
+					/*
+					 * For safety and convenience, always ensure the in-buffer
+					 * is NULL-terminated.
+					 */
+					conn->auth_req_inbuf[llen] = '\0';
+				}
 
 				/*
 				 * OK, we successfully read the message; mark data consumed
@@ -2908,7 +2951,7 @@ keep_going:						/* We will come back to here until there is
 			}
 
 			/*
-			 * If a read-write connection is requisted check for same.
+			 * If a read-write connection is requested check for same.
 			 */
 			if (conn->target_session_attrs != NULL &&
 				strcmp(conn->target_session_attrs, "read-write") == 0)
@@ -2935,6 +2978,34 @@ keep_going:						/* We will come back to here until there is
 			conn->status = CONNECTION_OK;
 			return PGRES_POLLING_OK;
 
+		case CONNECTION_CONSUME:
+			{
+				conn->status = CONNECTION_OK;
+				if (!PQconsumeInput(conn))
+					goto error_return;
+
+				if (PQisBusy(conn))
+				{
+					conn->status = CONNECTION_CONSUME;
+					restoreErrorMessage(conn, &savedMessage);
+					return PGRES_POLLING_READING;
+				}
+
+				/*
+				 * Call PQgetResult() again to consume NULL result.
+				 */
+				res = PQgetResult(conn);
+				if (res != NULL)
+				{
+					PQclear(res);
+					conn->status = CONNECTION_CONSUME;
+					goto keep_going;
+				}
+
+				/* We are open for business! */
+				conn->status = CONNECTION_OK;
+				return PGRES_POLLING_OK;
+			}
 		case CONNECTION_CHECK_WRITABLE:
 			{
 				if (!saveErrorMessage(conn, &savedMessage))
@@ -2994,9 +3065,12 @@ keep_going:						/* We will come back to here until there is
 					/* We can release the address lists now. */
 					release_all_addrinfo(conn);
 
-					/* We are open for business! */
-					conn->status = CONNECTION_OK;
-					return PGRES_POLLING_OK;
+					/*
+					 * Finish reading any remaining messages before
+					 * being considered as ready.
+					 */
+					conn->status = CONNECTION_CONSUME;
+					goto keep_going;
 				}
 
 				/*
@@ -3475,6 +3549,15 @@ closePGconn(PGconn *conn)
 		conn->sspictx = NULL;
 	}
 #endif
+	if (conn->sasl_state)
+	{
+		/*
+		 * XXX: if support for more authentication mechanisms is added, this
+		 * needs to call the right 'free' function.
+		 */
+		pg_fe_scram_free(conn->sasl_state);
+		conn->sasl_state = NULL;
+	}
 }
 
 /*

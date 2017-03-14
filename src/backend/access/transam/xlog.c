@@ -15,6 +15,7 @@
 #include "postgres.h"
 
 #include <ctype.h>
+#include <math.h>
 #include <time.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -64,6 +65,7 @@
 #include "storage/reinit.h"
 #include "storage/smgr.h"
 #include "storage/spin.h"
+#include "utils/backend_random.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
 #include "utils/memutils.h"
@@ -95,6 +97,8 @@ bool		EnableHotStandby = false;
 bool		fullPageWrites = true;
 bool		wal_log_hints = false;
 bool		wal_compression = false;
+char	   *wal_consistency_checking_string = NULL;
+bool	   *wal_consistency_checking = NULL;
 bool		log_checkpoints = false;
 int			sync_method = DEFAULT_SYNC_METHOD;
 int			wal_level = WAL_LEVEL_MINIMAL;
@@ -244,6 +248,10 @@ bool		InArchiveRecovery = false;
 
 /* Was the last xlog file restored from archive, or local? */
 static bool restoredFromArchive = false;
+
+/* Buffers dedicated to consistency checks of size BLCKSZ */
+static char *replay_image_masked = NULL;
+static char *master_image_masked = NULL;
 
 /* options taken from recovery.conf for archive recovery */
 char	   *recoveryRestoreCommand = NULL;
@@ -903,6 +911,7 @@ static char *GetXLogBuffer(XLogRecPtr ptr);
 static XLogRecPtr XLogBytePosToRecPtr(uint64 bytepos);
 static XLogRecPtr XLogBytePosToEndRecPtr(uint64 bytepos);
 static uint64 XLogRecPtrToBytePos(XLogRecPtr ptr);
+static void checkXLogConsistency(XLogReaderState *record);
 
 static void WALInsertLockAcquire(void);
 static void WALInsertLockAcquireExclusive(void);
@@ -1107,7 +1116,7 @@ XLogInsertRecord(XLogRecData *rdata,
 	 */
 	if (isLogSwitch)
 	{
-		TRACE_POSTGRESQL_XLOG_SWITCH();
+		TRACE_POSTGRESQL_WAL_SWITCH();
 		XLogFlush(EndPos);
 
 		/*
@@ -1312,6 +1321,113 @@ ReserveXLogSwitch(XLogRecPtr *StartPos, XLogRecPtr *EndPos, XLogRecPtr *PrevPtr)
 	Assert(XLogRecPtrToBytePos(*PrevPtr) == prevbytepos);
 
 	return true;
+}
+
+/*
+ * Checks whether the current buffer page and backup page stored in the
+ * WAL record are consistent or not. Before comparing the two pages, a
+ * masking can be applied to the pages to ignore certain areas like hint bits,
+ * unused space between pd_lower and pd_upper among other things. This
+ * function should be called once WAL replay has been completed for a
+ * given record.
+ */
+static void
+checkXLogConsistency(XLogReaderState *record)
+{
+	RmgrId		rmid = XLogRecGetRmid(record);
+	RelFileNode rnode;
+	ForkNumber	forknum;
+	BlockNumber blkno;
+	int			block_id;
+
+	/* Records with no backup blocks have no need for consistency checks. */
+	if (!XLogRecHasAnyBlockRefs(record))
+		return;
+
+	Assert((XLogRecGetInfo(record) & XLR_CHECK_CONSISTENCY) != 0);
+
+	for (block_id = 0; block_id <= record->max_block_id; block_id++)
+	{
+		Buffer		buf;
+		Page		page;
+
+		if (!XLogRecGetBlockTag(record, block_id, &rnode, &forknum, &blkno))
+		{
+			/*
+			 * WAL record doesn't contain a block reference with the given id.
+			 * Do nothing.
+			 */
+			continue;
+		}
+
+		Assert(XLogRecHasBlockImage(record, block_id));
+
+		if (XLogRecBlockImageApply(record, block_id))
+		{
+			/*
+			 * WAL record has already applied the page, so bypass the
+			 * consistency check as that would result in comparing the full
+			 * page stored in the record with itself.
+			 */
+			continue;
+		}
+
+		/*
+		 * Read the contents from the current buffer and store it in a
+		 * temporary page.
+		 */
+		buf = XLogReadBufferExtended(rnode, forknum, blkno,
+									 RBM_NORMAL_NO_LOG);
+		if (!BufferIsValid(buf))
+			continue;
+
+		LockBuffer(buf, BUFFER_LOCK_EXCLUSIVE);
+		page = BufferGetPage(buf);
+
+		/*
+		 * Take a copy of the local page where WAL has been applied to have a
+		 * comparison base before masking it...
+		 */
+		memcpy(replay_image_masked, page, BLCKSZ);
+
+		/* No need for this page anymore now that a copy is in. */
+		UnlockReleaseBuffer(buf);
+
+		/*
+		 * If the block LSN is already ahead of this WAL record, we can't
+		 * expect contents to match.  This can happen if recovery is restarted.
+		 */
+		if (PageGetLSN(replay_image_masked) > record->EndRecPtr)
+			continue;
+
+		/*
+		 * Read the contents from the backup copy, stored in WAL record and
+		 * store it in a temporary page. There is no need to allocate a new
+		 * page here, a local buffer is fine to hold its contents and a mask
+		 * can be directly applied on it.
+		 */
+		if (!RestoreBlockImage(record, block_id, master_image_masked))
+			elog(ERROR, "failed to restore block image");
+
+		/*
+		 * If masking function is defined, mask both the master and replay
+		 * images
+		 */
+		if (RmgrTable[rmid].rm_mask != NULL)
+		{
+			RmgrTable[rmid].rm_mask(replay_image_masked, blkno);
+			RmgrTable[rmid].rm_mask(master_image_masked, blkno);
+		}
+
+		/* Time to compare the master and replay images. */
+		if (memcmp(replay_image_masked, master_image_masked, BLCKSZ) != 0)
+		{
+			elog(FATAL,
+			   "inconsistent page found, rel %u/%u/%u, forknum %u, blkno %u",
+				 rnode.spcNode, rnode.dbNode, rnode.relNode,
+				 forknum, blkno);
+		}
+	}
 }
 
 /*
@@ -4265,11 +4381,6 @@ WriteControlFile(void)
 	ControlFile->toast_max_chunk_size = TOAST_MAX_CHUNK_SIZE;
 	ControlFile->loblksize = LOBLKSIZE;
 
-#ifdef HAVE_INT64_TIMESTAMP
-	ControlFile->enableIntTimes = true;
-#else
-	ControlFile->enableIntTimes = false;
-#endif
 	ControlFile->float4ByVal = FLOAT4PASSBYVAL;
 	ControlFile->float8ByVal = FLOAT8PASSBYVAL;
 
@@ -4465,22 +4576,6 @@ ReadControlFile(void)
 					ControlFile->loblksize, (int) LOBLKSIZE),
 				 errhint("It looks like you need to recompile or initdb.")));
 
-#ifdef HAVE_INT64_TIMESTAMP
-	if (ControlFile->enableIntTimes != true)
-		ereport(FATAL,
-				(errmsg("database files are incompatible with server"),
-				 errdetail("The database cluster was initialized without HAVE_INT64_TIMESTAMP"
-				  " but the server was compiled with HAVE_INT64_TIMESTAMP."),
-				 errhint("It looks like you need to recompile or initdb.")));
-#else
-	if (ControlFile->enableIntTimes != false)
-		ereport(FATAL,
-				(errmsg("database files are incompatible with server"),
-				 errdetail("The database cluster was initialized with HAVE_INT64_TIMESTAMP"
-			   " but the server was compiled without HAVE_INT64_TIMESTAMP."),
-				 errhint("It looks like you need to recompile or initdb.")));
-#endif
-
 #ifdef USE_FLOAT4_BYVAL
 	if (ControlFile->float4ByVal != true)
 		ereport(FATAL,
@@ -4568,6 +4663,16 @@ GetSystemIdentifier(void)
 {
 	Assert(ControlFile != NULL);
 	return ControlFile->system_identifier;
+}
+
+/*
+ * Returns the random nonce from control file.
+ */
+char *
+GetMockAuthenticationNonce(void)
+{
+	Assert(ControlFile != NULL);
+	return ControlFile->mock_authentication_nonce;
 }
 
 /*
@@ -4820,6 +4925,7 @@ BootStrapXLOG(void)
 	char	   *recptr;
 	bool		use_existent;
 	uint64		sysidentifier;
+	char		mock_auth_nonce[MOCK_AUTH_NONCE_LEN];
 	struct timeval tv;
 	pg_crc32c	crc;
 
@@ -4839,6 +4945,17 @@ BootStrapXLOG(void)
 	sysidentifier = ((uint64) tv.tv_sec) << 32;
 	sysidentifier |= ((uint64) tv.tv_usec) << 12;
 	sysidentifier |= getpid() & 0xFFF;
+
+	/*
+	 * Generate a random nonce. This is used for authentication requests
+	 * that will fail because the user does not exist. The nonce is used to
+	 * create a genuine-looking password challenge for the non-existent user,
+	 * in lieu of an actual stored password.
+	 */
+	if (!pg_backend_random(mock_auth_nonce, MOCK_AUTH_NONCE_LEN))
+		ereport(PANIC,
+			(errcode(ERRCODE_INTERNAL_ERROR),
+			 errmsg("could not generation secret authorization token")));
 
 	/* First timeline ID is always 1 */
 	ThisTimeLineID = 1;
@@ -4946,6 +5063,7 @@ BootStrapXLOG(void)
 	memset(ControlFile, 0, sizeof(ControlFileData));
 	/* Initialize pg_control status fields */
 	ControlFile->system_identifier = sysidentifier;
+	memcpy(ControlFile->mock_authentication_nonce, mock_auth_nonce, MOCK_AUTH_NONCE_LEN);
 	ControlFile->state = DB_SHUTDOWNED;
 	ControlFile->time = checkPoint.time;
 	ControlFile->checkPoint = checkPoint.redo;
@@ -5766,7 +5884,7 @@ recoveryPausesHere(void)
 
 	ereport(LOG,
 			(errmsg("recovery has paused"),
-			 errhint("Execute pg_xlog_replay_resume() to continue.")));
+			 errhint("Execute pg_wal_replay_resume() to continue.")));
 
 	while (RecoveryIsPaused())
 	{
@@ -6197,8 +6315,15 @@ StartupXLOG(void)
 		ereport(ERROR,
 				(errcode(ERRCODE_OUT_OF_MEMORY),
 				 errmsg("out of memory"),
-		   errdetail("Failed while allocating an XLog reading processor.")));
+		   errdetail("Failed while allocating a WAL reading processor.")));
 	xlogreader->system_identifier = ControlFile->system_identifier;
+
+	/*
+	 * Allocate pages dedicated to WAL consistency checks, those had better
+	 * be aligned.
+	 */
+	replay_image_masked = (char *) palloc(BLCKSZ);
+	master_image_masked = (char *) palloc(BLCKSZ);
 
 	if (read_backup_label(&checkPointLoc, &backupEndRequired,
 						  &backupFromStandby))
@@ -6999,6 +7124,15 @@ StartupXLOG(void)
 
 				/* Now apply the WAL record itself */
 				RmgrTable[record->xl_rmid].rm_redo(xlogreader);
+
+				/*
+				 * After redo, check whether the backup pages associated with
+				 * the WAL record are consistent with the existing pages. This
+				 * check is done only if consistency check is enabled for this
+				 * record.
+				 */
+				if ((record->xl_info & XLR_CHECK_CONSISTENCY) != 0)
+					checkXLogConsistency(xlogreader);
 
 				/* Pop the error context stack */
 				error_context_stack = errcallback.previous;
@@ -9153,7 +9287,7 @@ KeepLogSeg(XLogRecPtr recptr, XLogSegNo *logSegNo)
 	/* then check whether slots limit removal further */
 	if (max_replication_slots > 0 && keep != InvalidXLogRecPtr)
 	{
-		XLogRecPtr	slotSegNo;
+		XLogSegNo	slotSegNo;
 
 		XLByteToSeg(keep, slotSegNo);
 
@@ -11112,8 +11246,8 @@ rm_redo_error_callback(void *arg)
 	initStringInfo(&buf);
 	xlog_outdesc(&buf, record);
 
-	/* translator: %s is an XLog record description */
-	errcontext("xlog redo at %X/%X for %s",
+	/* translator: %s is a WAL record description */
+	errcontext("WAL redo at %X/%X for %s",
 			   (uint32) (record->ReadRecPtr >> 32),
 			   (uint32) record->ReadRecPtr,
 			   buf.data);

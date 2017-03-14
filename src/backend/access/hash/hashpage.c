@@ -40,12 +40,9 @@ static void _hash_splitbucket(Relation rel, Buffer metabuf,
 				  Bucket obucket, Bucket nbucket,
 				  Buffer obuf,
 				  Buffer nbuf,
+				  HTAB *htab,
 				  uint32 maxbucket,
 				  uint32 highmask, uint32 lowmask);
-static void _hash_splitbucket_guts(Relation rel, Buffer metabuf,
-					   Bucket obucket, Bucket nbucket, Buffer obuf,
-					   Buffer nbuf, HTAB *htab, uint32 maxbucket,
-					   uint32 highmask, uint32 lowmask);
 
 
 /*
@@ -157,6 +154,36 @@ _hash_getinitbuf(Relation rel, BlockNumber blkno)
 	_hash_pageinit(BufferGetPage(buf), BufferGetPageSize(buf));
 
 	return buf;
+}
+
+/*
+ *	_hash_initbuf() -- Get and initialize a buffer by bucket number.
+ */
+void
+_hash_initbuf(Buffer buf, uint32 max_bucket, uint32 num_bucket, uint32 flag,
+			  bool initpage)
+{
+	HashPageOpaque pageopaque;
+	Page		page;
+
+	page = BufferGetPage(buf);
+
+	/* initialize the page */
+	if (initpage)
+		_hash_pageinit(page, BufferGetPageSize(buf));
+
+	pageopaque = (HashPageOpaque) PageGetSpecialPointer(page);
+
+	/*
+	 * Set hasho_prevblkno with current hashm_maxbucket. This value will
+	 * be used to validate cached HashMetaPageData. See
+	 * _hash_getbucketbuf_from_hashkey().
+	 */
+	pageopaque->hasho_prevblkno = max_bucket;
+	pageopaque->hasho_nextblkno = InvalidBlockNumber;
+	pageopaque->hasho_bucket = num_bucket;
+	pageopaque->hasho_flag = flag;
+	pageopaque->hasho_page_id = HASHO_PAGE_ID;
 }
 
 /*
@@ -291,7 +318,7 @@ _hash_dropscanbuf(Relation rel, HashScanOpaque so)
 
 
 /*
- *	_hash_metapinit() -- Initialize the metadata page of a hash index,
+ *	_hash_init() -- Initialize the metadata page of a hash index,
  *				the initial buckets, and the initial bitmap page.
  *
  * The initial number of buckets is dependent on num_tuples, an estimate
@@ -303,19 +330,18 @@ _hash_dropscanbuf(Relation rel, HashScanOpaque so)
  * multiple buffer locks is ignored.
  */
 uint32
-_hash_metapinit(Relation rel, double num_tuples, ForkNumber forkNum)
+_hash_init(Relation rel, double num_tuples, ForkNumber forkNum)
 {
-	HashMetaPage metap;
-	HashPageOpaque pageopaque;
 	Buffer		metabuf;
 	Buffer		buf;
+	Buffer		bitmapbuf;
 	Page		pg;
+	HashMetaPage metap;
+	RegProcedure procid;
 	int32		data_width;
 	int32		item_width;
 	int32		ffactor;
-	double		dnumbuckets;
 	uint32		num_buckets;
-	uint32		log2_num_buckets;
 	uint32		i;
 
 	/* safety check */
@@ -337,6 +363,96 @@ _hash_metapinit(Relation rel, double num_tuples, ForkNumber forkNum)
 	if (ffactor < 10)
 		ffactor = 10;
 
+	procid = index_getprocid(rel, 1, HASHPROC);
+
+	/*
+	 * We initialize the metapage, the first N bucket pages, and the first
+	 * bitmap page in sequence, using _hash_getnewbuf to cause smgrextend()
+	 * calls to occur.  This ensures that the smgr level has the right idea of
+	 * the physical index length.
+	 *
+	 * Critical section not required, because on error the creation of the
+	 * whole relation will be rolled back.
+	 */
+	metabuf = _hash_getnewbuf(rel, HASH_METAPAGE, forkNum);
+	_hash_init_metabuffer(metabuf, num_tuples, procid, ffactor, false);
+	MarkBufferDirty(metabuf);
+
+	pg = BufferGetPage(metabuf);
+	metap = HashPageGetMeta(pg);
+
+	num_buckets = metap->hashm_maxbucket + 1;
+
+	/*
+	 * Release buffer lock on the metapage while we initialize buckets.
+	 * Otherwise, we'll be in interrupt holdoff and the CHECK_FOR_INTERRUPTS
+	 * won't accomplish anything.  It's a bad idea to hold buffer locks for
+	 * long intervals in any case, since that can block the bgwriter.
+	 */
+	LockBuffer(metabuf, BUFFER_LOCK_UNLOCK);
+
+	/*
+	 * Initialize and WAL Log the first N buckets
+	 */
+	for (i = 0; i < num_buckets; i++)
+	{
+		BlockNumber blkno;
+
+		/* Allow interrupts, in case N is huge */
+		CHECK_FOR_INTERRUPTS();
+
+		blkno = BUCKET_TO_BLKNO(metap, i);
+		buf = _hash_getnewbuf(rel, blkno, forkNum);
+		_hash_initbuf(buf, metap->hashm_maxbucket, i, LH_BUCKET_PAGE, false);
+		MarkBufferDirty(buf);
+		_hash_relbuf(rel, buf);
+	}
+
+	/* Now reacquire buffer lock on metapage */
+	LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
+
+	/*
+	 * Initialize bitmap page
+	 */
+	bitmapbuf = _hash_getnewbuf(rel, num_buckets + 1, forkNum);
+	_hash_initbitmapbuffer(bitmapbuf, metap->hashm_bmsize, false);
+	MarkBufferDirty(bitmapbuf);
+
+	/* add the new bitmap page to the metapage's list of bitmaps */
+	/* metapage already has a write lock */
+	if (metap->hashm_nmaps >= HASH_MAX_BITMAPS)
+		ereport(ERROR,
+				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
+				 errmsg("out of overflow pages in hash index \"%s\"",
+						RelationGetRelationName(rel))));
+
+	metap->hashm_mapp[metap->hashm_nmaps] = num_buckets + 1;
+
+	metap->hashm_nmaps++;
+	MarkBufferDirty(metabuf);
+
+	/* all done */
+	_hash_relbuf(rel, bitmapbuf);
+	_hash_relbuf(rel, metabuf);
+
+	return num_buckets;
+}
+
+/*
+ *	_hash_init_metabuffer() -- Initialize the metadata page of a hash index.
+ */
+void
+_hash_init_metabuffer(Buffer buf, double num_tuples, RegProcedure procid,
+					  uint16 ffactor, bool initpage)
+{
+	HashMetaPage metap;
+	HashPageOpaque pageopaque;
+	Page		page;
+	double		dnumbuckets;
+	uint32		num_buckets;
+	uint32		log2_num_buckets;
+	uint32		i;
+
 	/*
 	 * Choose the number of initial bucket pages to match the fill factor
 	 * given the estimated number of tuples.  We round up the result to the
@@ -356,30 +472,25 @@ _hash_metapinit(Relation rel, double num_tuples, ForkNumber forkNum)
 	Assert(num_buckets == (((uint32) 1) << log2_num_buckets));
 	Assert(log2_num_buckets < HASH_MAX_SPLITPOINTS);
 
-	/*
-	 * We initialize the metapage, the first N bucket pages, and the first
-	 * bitmap page in sequence, using _hash_getnewbuf to cause smgrextend()
-	 * calls to occur.  This ensures that the smgr level has the right idea of
-	 * the physical index length.
-	 */
-	metabuf = _hash_getnewbuf(rel, HASH_METAPAGE, forkNum);
-	pg = BufferGetPage(metabuf);
+	page = BufferGetPage(buf);
+	if (initpage)
+		_hash_pageinit(page, BufferGetPageSize(buf));
 
-	pageopaque = (HashPageOpaque) PageGetSpecialPointer(pg);
+	pageopaque = (HashPageOpaque) PageGetSpecialPointer(page);
 	pageopaque->hasho_prevblkno = InvalidBlockNumber;
 	pageopaque->hasho_nextblkno = InvalidBlockNumber;
 	pageopaque->hasho_bucket = -1;
 	pageopaque->hasho_flag = LH_META_PAGE;
 	pageopaque->hasho_page_id = HASHO_PAGE_ID;
 
-	metap = HashPageGetMeta(pg);
+	metap = HashPageGetMeta(page);
 
 	metap->hashm_magic = HASH_MAGIC;
 	metap->hashm_version = HASH_VERSION;
 	metap->hashm_ntuples = 0;
 	metap->hashm_nmaps = 0;
 	metap->hashm_ffactor = ffactor;
-	metap->hashm_bsize = HashGetMaxBitmapSize(pg);
+	metap->hashm_bsize = HashGetMaxBitmapSize(page);
 	/* find largest bitmap array size that will fit in page size */
 	for (i = _hash_log2(metap->hashm_bsize); i > 0; --i)
 	{
@@ -396,7 +507,7 @@ _hash_metapinit(Relation rel, double num_tuples, ForkNumber forkNum)
 	 * pretty useless for normal operation (in fact, hashm_procid is not used
 	 * anywhere), but it might be handy for forensic purposes so we keep it.
 	 */
-	metap->hashm_procid = index_getprocid(rel, 1, HASHPROC);
+	metap->hashm_procid = procid;
 
 	/*
 	 * We initialize the index with N buckets, 0 .. N-1, occupying physical
@@ -414,48 +525,9 @@ _hash_metapinit(Relation rel, double num_tuples, ForkNumber forkNum)
 	metap->hashm_ovflpoint = log2_num_buckets;
 	metap->hashm_firstfree = 0;
 
-	/*
-	 * Release buffer lock on the metapage while we initialize buckets.
-	 * Otherwise, we'll be in interrupt holdoff and the CHECK_FOR_INTERRUPTS
-	 * won't accomplish anything.  It's a bad idea to hold buffer locks for
-	 * long intervals in any case, since that can block the bgwriter.
-	 */
-	MarkBufferDirty(metabuf);
-	LockBuffer(metabuf, BUFFER_LOCK_UNLOCK);
-
-	/*
-	 * Initialize the first N buckets
-	 */
-	for (i = 0; i < num_buckets; i++)
-	{
-		/* Allow interrupts, in case N is huge */
-		CHECK_FOR_INTERRUPTS();
-
-		buf = _hash_getnewbuf(rel, BUCKET_TO_BLKNO(metap, i), forkNum);
-		pg = BufferGetPage(buf);
-		pageopaque = (HashPageOpaque) PageGetSpecialPointer(pg);
-		pageopaque->hasho_prevblkno = InvalidBlockNumber;
-		pageopaque->hasho_nextblkno = InvalidBlockNumber;
-		pageopaque->hasho_bucket = i;
-		pageopaque->hasho_flag = LH_BUCKET_PAGE;
-		pageopaque->hasho_page_id = HASHO_PAGE_ID;
-		MarkBufferDirty(buf);
-		_hash_relbuf(rel, buf);
-	}
-
-	/* Now reacquire buffer lock on metapage */
-	LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
-
-	/*
-	 * Initialize first bitmap page
-	 */
-	_hash_initbitmap(rel, metap, num_buckets + 1, forkNum);
-
-	/* all done */
-	MarkBufferDirty(metabuf);
-	_hash_relbuf(rel, metabuf);
-
-	return num_buckets;
+	/* Set pd_lower just past the end of the metadata. */
+	((PageHeader) page)->pd_lower =
+		((char *) metap + sizeof(HashMetaPageData)) - (char *) page;
 }
 
 /*
@@ -464,7 +536,6 @@ _hash_metapinit(Relation rel, double num_tuples, ForkNumber forkNum)
 void
 _hash_pageinit(Page page, Size size)
 {
-	Assert(PageIsNew(page));
 	PageInit(page, size, sizeof(HashPageOpaqueData));
 }
 
@@ -492,7 +563,9 @@ _hash_expandtable(Relation rel, Buffer metabuf)
 	Buffer		buf_nblkno;
 	Buffer		buf_oblkno;
 	Page		opage;
+	Page		npage;
 	HashPageOpaque oopaque;
+	HashPageOpaque nopaque;
 	uint32		maxbucket;
 	uint32		highmask;
 	uint32		lowmask;
@@ -531,7 +604,7 @@ restart_expand:
 	 * than a disk block then this would be an independent constraint.
 	 *
 	 * If you change this, see also the maximum initial number of buckets in
-	 * _hash_metapinit().
+	 * _hash_init().
 	 */
 	if (metap->hashm_maxbucket >= (uint32) 0x7FFFFFFE)
 		goto fail;
@@ -680,18 +753,18 @@ restart_expand:
 		goto fail;
 	}
 
-
 	/*
-	 * Okay to proceed with split.  Update the metapage bucket mapping info.
-	 *
-	 * Since we are scribbling on the metapage data right in the shared
-	 * buffer, any failure in this next little bit leaves us with a big
+	 * Since we are scribbling on the pages in the shared buffers, establish a
+	 * critical section.  Any failure in this next code leaves us with a big
 	 * problem: the metapage is effectively corrupt but could get written back
 	 * to disk.  We don't really expect any failure, but just to be sure,
 	 * establish a critical section.
 	 */
 	START_CRIT_SECTION();
 
+	/*
+	 * Okay to proceed with split.  Update the metapage bucket mapping info.
+	 */
 	metap->hashm_maxbucket = new_bucket;
 
 	if (new_bucket > metap->hashm_highmask)
@@ -713,8 +786,7 @@ restart_expand:
 		metap->hashm_ovflpoint = spare_ndx;
 	}
 
-	/* Done mucking with metapage */
-	END_CRIT_SECTION();
+	MarkBufferDirty(metabuf);
 
 	/*
 	 * Copy bucket mapping info now; this saves re-accessing the meta page
@@ -727,15 +799,50 @@ restart_expand:
 	highmask = metap->hashm_highmask;
 	lowmask = metap->hashm_lowmask;
 
-	/* Write out the metapage and drop lock, but keep pin */
-	MarkBufferDirty(metabuf);
+	opage = BufferGetPage(buf_oblkno);
+	oopaque = (HashPageOpaque) PageGetSpecialPointer(opage);
+
+	/*
+	 * Mark the old bucket to indicate that split is in progress.  (At
+	 * operation end, we will clear the split-in-progress flag.)  Also,
+	 * for a primary bucket page, hasho_prevblkno stores the number of
+	 * buckets that existed as of the last split, so we must update that
+	 * value here.
+	 */
+	oopaque->hasho_flag |= LH_BUCKET_BEING_SPLIT;
+	oopaque->hasho_prevblkno = maxbucket;
+
+	MarkBufferDirty(buf_oblkno);
+
+	npage = BufferGetPage(buf_nblkno);
+
+	/*
+	 * initialize the new bucket's primary page and mark it to indicate that
+	 * split is in progress.
+	 */
+	nopaque = (HashPageOpaque) PageGetSpecialPointer(npage);
+	nopaque->hasho_prevblkno = maxbucket;
+	nopaque->hasho_nextblkno = InvalidBlockNumber;
+	nopaque->hasho_bucket = new_bucket;
+	nopaque->hasho_flag = LH_BUCKET_PAGE | LH_BUCKET_BEING_POPULATED;
+	nopaque->hasho_page_id = HASHO_PAGE_ID;
+
+	MarkBufferDirty(buf_nblkno);
+
+	END_CRIT_SECTION();
+
+	/* drop lock, but keep pin */
 	LockBuffer(metabuf, BUFFER_LOCK_UNLOCK);
 
 	/* Relocate records to the new bucket */
 	_hash_splitbucket(rel, metabuf,
 					  old_bucket, new_bucket,
-					  buf_oblkno, buf_nblkno,
+					  buf_oblkno, buf_nblkno, NULL,
 					  maxbucket, highmask, lowmask);
+
+	/* all done, now release the locks and pins on primary buckets. */
+	_hash_relbuf(rel, buf_oblkno);
+	_hash_relbuf(rel, buf_nblkno);
 
 	return;
 
@@ -798,10 +905,16 @@ _hash_alloc_buckets(Relation rel, BlockNumber firstblock, uint32 nblocks)
 /*
  * _hash_splitbucket -- split 'obucket' into 'obucket' and 'nbucket'
  *
+ * This routine is used to partition the tuples between old and new bucket and
+ * is used to finish the incomplete split operations.  To finish the previously
+ * interrupted split operation, the caller needs to fill htab.  If htab is set,
+ * then we skip the movement of tuples that exists in htab, otherwise NULL
+ * value of htab indicates movement of all the tuples that belong to the new
+ * bucket.
+ *
  * We are splitting a bucket that consists of a base bucket page and zero
  * or more overflow (bucket chain) pages.  We must relocate tuples that
- * belong in the new bucket, and compress out any free space in the old
- * bucket.
+ * belong in the new bucket.
  *
  * The caller must hold cleanup locks on both buckets to ensure that
  * no one else is trying to access them (see README).
@@ -827,68 +940,10 @@ _hash_splitbucket(Relation rel,
 				  Bucket nbucket,
 				  Buffer obuf,
 				  Buffer nbuf,
+				  HTAB *htab,
 				  uint32 maxbucket,
 				  uint32 highmask,
 				  uint32 lowmask)
-{
-	Page		opage;
-	Page		npage;
-	HashPageOpaque oopaque;
-	HashPageOpaque nopaque;
-
-	opage = BufferGetPage(obuf);
-	oopaque = (HashPageOpaque) PageGetSpecialPointer(opage);
-
-	/*
-	 * Mark the old bucket to indicate that split is in progress.  At
-	 * operation end, we clear split-in-progress flag.
-	 */
-	oopaque->hasho_flag |= LH_BUCKET_BEING_SPLIT;
-
-	npage = BufferGetPage(nbuf);
-
-	/*
-	 * initialize the new bucket's primary page and mark it to indicate that
-	 * split is in progress.
-	 */
-	nopaque = (HashPageOpaque) PageGetSpecialPointer(npage);
-	nopaque->hasho_prevblkno = InvalidBlockNumber;
-	nopaque->hasho_nextblkno = InvalidBlockNumber;
-	nopaque->hasho_bucket = nbucket;
-	nopaque->hasho_flag = LH_BUCKET_PAGE | LH_BUCKET_BEING_POPULATED;
-	nopaque->hasho_page_id = HASHO_PAGE_ID;
-
-	_hash_splitbucket_guts(rel, metabuf, obucket,
-						   nbucket, obuf, nbuf, NULL,
-						   maxbucket, highmask, lowmask);
-
-	/* all done, now release the locks and pins on primary buckets. */
-	_hash_relbuf(rel, obuf);
-	_hash_relbuf(rel, nbuf);
-}
-
-/*
- * _hash_splitbucket_guts -- Helper function to perform the split operation
- *
- * This routine is used to partition the tuples between old and new bucket and
- * to finish incomplete split operations.  To finish the previously
- * interrupted split operation, caller needs to fill htab.  If htab is set, then
- * we skip the movement of tuples that exists in htab, otherwise NULL value of
- * htab indicates movement of all the tuples that belong to new bucket.
- *
- * Caller needs to lock and unlock the old and new primary buckets.
- */
-static void
-_hash_splitbucket_guts(Relation rel,
-					   Buffer metabuf,
-					   Bucket obucket,
-					   Bucket nbucket,
-					   Buffer obuf,
-					   Buffer nbuf,
-					   HTAB *htab,
-					   uint32 maxbucket,
-					   uint32 highmask,
-					   uint32 lowmask)
 {
 	Buffer		bucket_obuf;
 	Buffer		bucket_nbuf;
@@ -978,6 +1033,7 @@ _hash_splitbucket_guts(Relation rel,
 				{
 					/* write out nbuf and drop lock, but keep pin */
 					MarkBufferDirty(nbuf);
+					/* drop lock, but keep pin */
 					LockBuffer(nbuf, BUFFER_LOCK_UNLOCK);
 					/* chain to a new overflow page */
 					nbuf = _hash_addovflpage(rel, metabuf, nbuf, (nbuf == bucket_nbuf) ? true : false);
@@ -1016,7 +1072,14 @@ _hash_splitbucket_guts(Relation rel,
 
 		/* Exit loop if no more overflow pages in old bucket */
 		if (!BlockNumberIsValid(oblkno))
+		{
+			MarkBufferDirty(nbuf);
+			if (nbuf == bucket_nbuf)
+				LockBuffer(nbuf, BUFFER_LOCK_UNLOCK);
+			else
+				_hash_relbuf(rel, nbuf);
 			break;
+		}
 
 		/* Else, advance to next old page */
 		obuf = _hash_getbuf(rel, oblkno, HASH_READ, LH_OVERFLOW_PAGE);
@@ -1032,17 +1095,6 @@ _hash_splitbucket_guts(Relation rel,
 	 * To avoid deadlocks due to locking order of buckets, first lock the old
 	 * bucket and then the new bucket.
 	 */
-	if (nbuf == bucket_nbuf)
-	{
-		MarkBufferDirty(bucket_nbuf);
-		LockBuffer(bucket_nbuf, BUFFER_LOCK_UNLOCK);
-	}
-	else
-	{
-		MarkBufferDirty(nbuf);
-		_hash_relbuf(rel, nbuf);
-	}
-
 	LockBuffer(bucket_obuf, BUFFER_LOCK_EXCLUSIVE);
 	opage = BufferGetPage(bucket_obuf);
 	oopaque = (HashPageOpaque) PageGetSpecialPointer(opage);
@@ -1183,11 +1235,144 @@ _hash_finish_split(Relation rel, Buffer metabuf, Buffer obuf, Bucket obucket,
 	npageopaque = (HashPageOpaque) PageGetSpecialPointer(npage);
 	nbucket = npageopaque->hasho_bucket;
 
-	_hash_splitbucket_guts(rel, metabuf, obucket,
-						   nbucket, obuf, bucket_nbuf, tidhtab,
-						   maxbucket, highmask, lowmask);
+	_hash_splitbucket(rel, metabuf, obucket,
+					  nbucket, obuf, bucket_nbuf, tidhtab,
+					  maxbucket, highmask, lowmask);
 
 	_hash_relbuf(rel, bucket_nbuf);
 	LockBuffer(obuf, BUFFER_LOCK_UNLOCK);
 	hash_destroy(tidhtab);
+}
+
+/*
+ *	_hash_getcachedmetap() -- Returns cached metapage data.
+ *
+ *	If metabuf is not InvalidBuffer, caller must hold a pin, but no lock, on
+ *  the metapage.  If not set, we'll set it before returning if we have to
+ *  refresh the cache, and return with a pin but no lock on it; caller is
+ *  responsible for releasing the pin.
+ *
+ *  We refresh the cache if it's not initialized yet or force_refresh is true.
+ */
+HashMetaPage
+_hash_getcachedmetap(Relation rel, Buffer *metabuf, bool force_refresh)
+{
+	Page		page;
+
+	Assert(metabuf);
+	if (force_refresh || rel->rd_amcache == NULL)
+	{
+		char   *cache = NULL;
+
+		/*
+		 * It's important that we don't set rd_amcache to an invalid
+		 * value.  Either MemoryContextAlloc or _hash_getbuf could fail,
+		 * so don't install a pointer to the newly-allocated storage in the
+		 * actual relcache entry until both have succeeeded.
+		 */
+		if (rel->rd_amcache == NULL)
+			cache = MemoryContextAlloc(rel->rd_indexcxt,
+									   sizeof(HashMetaPageData));
+
+		/* Read the metapage. */
+		if (BufferIsValid(*metabuf))
+			LockBuffer(*metabuf, BUFFER_LOCK_SHARE);
+		else
+			*metabuf = _hash_getbuf(rel, HASH_METAPAGE, HASH_READ,
+									LH_META_PAGE);
+		page = BufferGetPage(*metabuf);
+
+		/* Populate the cache. */
+		if (rel->rd_amcache == NULL)
+			rel->rd_amcache = cache;
+		memcpy(rel->rd_amcache, HashPageGetMeta(page),
+			   sizeof(HashMetaPageData));
+
+		/* Release metapage lock, but keep the pin. */
+		LockBuffer(*metabuf, BUFFER_LOCK_UNLOCK);
+	}
+
+	return (HashMetaPage) rel->rd_amcache;
+}
+
+/*
+ *	_hash_getbucketbuf_from_hashkey() -- Get the bucket's buffer for the given
+ *										 hashkey.
+ *
+ *	Bucket pages do not move or get removed once they are allocated. This give
+ *	us an opportunity to use the previously saved metapage contents to reach
+ *	the target bucket buffer, instead of reading from the metapage every time.
+ *	This saves one buffer access every time we want to reach the target bucket
+ *  buffer, which is very helpful savings in bufmgr traffic and contention.
+ *
+ *	The access type parameter (HASH_READ or HASH_WRITE) indicates whether the
+ *	bucket buffer has to be locked for reading or writing.
+ *
+ *	The out parameter cachedmetap is set with metapage contents used for
+ *	hashkey to bucket buffer mapping. Some callers need this info to reach the
+ *	old bucket in case of bucket split, see _hash_doinsert().
+ */
+Buffer
+_hash_getbucketbuf_from_hashkey(Relation rel, uint32 hashkey, int access,
+								HashMetaPage *cachedmetap)
+{
+	HashMetaPage metap;
+	Buffer		buf;
+	Buffer		metabuf = InvalidBuffer;
+	Page		page;
+	Bucket		bucket;
+	BlockNumber blkno;
+	HashPageOpaque opaque;
+
+	/* We read from target bucket buffer, hence locking is must. */
+	Assert(access == HASH_READ || access == HASH_WRITE);
+
+	metap = _hash_getcachedmetap(rel, &metabuf, false);
+	Assert(metap != NULL);
+
+	/*
+	 * Loop until we get a lock on the correct target bucket.
+	 */
+	for (;;)
+	{
+		/*
+		 * Compute the target bucket number, and convert to block number.
+		 */
+		bucket = _hash_hashkey2bucket(hashkey,
+									  metap->hashm_maxbucket,
+									  metap->hashm_highmask,
+									  metap->hashm_lowmask);
+
+		blkno = BUCKET_TO_BLKNO(metap, bucket);
+
+		/* Fetch the primary bucket page for the bucket */
+		buf = _hash_getbuf(rel, blkno, access, LH_BUCKET_PAGE);
+		page = BufferGetPage(buf);
+		opaque = (HashPageOpaque) PageGetSpecialPointer(page);
+		Assert(opaque->hasho_bucket == bucket);
+
+		/*
+		 * If this bucket hasn't been split, we're done.
+		 *
+		 * NB: The check for InvalidBlockNumber is only needed for on-disk
+		 * compatibility with indexes created before we started storing
+		 * hashm_maxbucket in the primary page's hasho_prevblkno.
+		 */
+		if (opaque->hasho_prevblkno == InvalidBlockNumber ||
+			opaque->hasho_prevblkno <= metap->hashm_maxbucket)
+			break;
+
+		/* Drop lock on this buffer, update cached metapage, and retry. */
+		_hash_relbuf(rel, buf);
+		metap = _hash_getcachedmetap(rel, &metabuf, true);
+		Assert(metap != NULL);
+	}
+
+	if (BufferIsValid(metabuf))
+		_hash_dropbuf(rel, metabuf);
+
+	if (cachedmetap)
+		*cachedmetap = metap;
+
+	return buf;
 }

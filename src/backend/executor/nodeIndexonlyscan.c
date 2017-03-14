@@ -21,6 +21,11 @@
  *		ExecEndIndexOnlyScan		releases all storage.
  *		ExecIndexOnlyMarkPos		marks scan position.
  *		ExecIndexOnlyRestrPos		restores scan position.
+ *		ExecIndexOnlyScanEstimate	estimates DSM space needed for
+ *						parallel index-only scan
+ *		ExecIndexOnlyScanInitializeDSM	initialize DSM for parallel
+ *						index-only scan
+ *		ExecIndexOnlyScanInitializeWorker attach to DSM info in parallel worker
  */
 #include "postgres.h"
 
@@ -72,6 +77,38 @@ IndexOnlyNext(IndexOnlyScanState *node)
 	scandesc = node->ioss_ScanDesc;
 	econtext = node->ss.ps.ps_ExprContext;
 	slot = node->ss.ss_ScanTupleSlot;
+
+	if (scandesc == NULL)
+	{
+		/*
+		 * We reach here if the index only scan is not parallel, or if we're
+		 * executing a index only scan that was intended to be parallel
+		 * serially.
+		 */
+		scandesc = index_beginscan(node->ss.ss_currentRelation,
+								   node->ioss_RelationDesc,
+								   estate->es_snapshot,
+								   node->ioss_NumScanKeys,
+								   node->ioss_NumOrderByKeys);
+
+		node->ioss_ScanDesc = scandesc;
+
+
+		/* Set it up for index-only scan */
+		node->ioss_ScanDesc->xs_want_itup = true;
+		node->ioss_VMBuffer = InvalidBuffer;
+
+		/*
+		 * If no run-time keys to calculate or they are ready, go ahead and
+		 * pass the scankeys to the index AM.
+		 */
+		if (node->ioss_NumRuntimeKeys == 0 || node->ioss_RuntimeKeysReady)
+			index_rescan(scandesc,
+						 node->ioss_ScanKeys,
+						 node->ioss_NumScanKeys,
+						 node->ioss_OrderByKeys,
+						 node->ioss_NumOrderByKeys);
+	}
 
 	/*
 	 * OK, now that we have what we need, fetch the next tuple.
@@ -144,9 +181,26 @@ IndexOnlyNext(IndexOnlyScanState *node)
 		}
 
 		/*
-		 * Fill the scan tuple slot with data from the index.
+		 * Fill the scan tuple slot with data from the index.  This might be
+		 * provided in either HeapTuple or IndexTuple format.  Conceivably an
+		 * index AM might fill both fields, in which case we prefer the heap
+		 * format, since it's probably a bit cheaper to fill a slot from.
 		 */
-		StoreIndexTuple(slot, scandesc->xs_itup, scandesc->xs_itupdesc);
+		if (scandesc->xs_hitup)
+		{
+			/*
+			 * We don't take the trouble to verify that the provided tuple has
+			 * exactly the slot's format, but it seems worth doing a quick
+			 * check on the number of fields.
+			 */
+			Assert(slot->tts_tupleDescriptor->natts ==
+				   scandesc->xs_hitupdesc->natts);
+			ExecStoreTuple(scandesc->xs_hitup, slot, InvalidBuffer, false);
+		}
+		else if (scandesc->xs_itup)
+			StoreIndexTuple(slot, scandesc->xs_itup, scandesc->xs_itupdesc);
+		else
+			elog(ERROR, "no data returned for index-only scan");
 
 		/*
 		 * If the index was lossy, we have to recheck the index quals.
@@ -277,6 +331,16 @@ ExecIndexOnlyScan(IndexOnlyScanState *node)
 void
 ExecReScanIndexOnlyScan(IndexOnlyScanState *node)
 {
+	bool		reset_parallel_scan = true;
+
+	/*
+	 * If we are here to just update the scan keys, then don't reset parallel
+	 * scan. For detailed reason behind this look in the comments for
+	 * ExecReScanIndexScan.
+	 */
+	if (node->ioss_NumRuntimeKeys != 0 && !node->ioss_RuntimeKeysReady)
+		reset_parallel_scan = false;
+
 	/*
 	 * If we are doing runtime key calculations (ie, any of the index key
 	 * values weren't simple Consts), compute the new key values.  But first,
@@ -296,10 +360,16 @@ ExecReScanIndexOnlyScan(IndexOnlyScanState *node)
 	node->ioss_RuntimeKeysReady = true;
 
 	/* reset index scan */
-	index_rescan(node->ioss_ScanDesc,
-				 node->ioss_ScanKeys, node->ioss_NumScanKeys,
-				 node->ioss_OrderByKeys, node->ioss_NumOrderByKeys);
+	if (node->ioss_ScanDesc)
+	{
 
+		index_rescan(node->ioss_ScanDesc,
+					 node->ioss_ScanKeys, node->ioss_NumScanKeys,
+					 node->ioss_OrderByKeys, node->ioss_NumOrderByKeys);
+
+		if (reset_parallel_scan && node->ioss_ScanDesc->parallel_scan)
+			index_parallelrescan(node->ioss_ScanDesc);
+	}
 	ExecScanReScan(&node->ss);
 }
 
@@ -534,31 +604,98 @@ ExecInitIndexOnlyScan(IndexOnlyScan *node, EState *estate, int eflags)
 	}
 
 	/*
-	 * Initialize scan descriptor.
-	 */
-	indexstate->ioss_ScanDesc = index_beginscan(currentRelation,
-												indexstate->ioss_RelationDesc,
-												estate->es_snapshot,
-												indexstate->ioss_NumScanKeys,
-											indexstate->ioss_NumOrderByKeys);
-
-	/* Set it up for index-only scan */
-	indexstate->ioss_ScanDesc->xs_want_itup = true;
-	indexstate->ioss_VMBuffer = InvalidBuffer;
-
-	/*
-	 * If no run-time keys to calculate, go ahead and pass the scankeys to the
-	 * index AM.
-	 */
-	if (indexstate->ioss_NumRuntimeKeys == 0)
-		index_rescan(indexstate->ioss_ScanDesc,
-					 indexstate->ioss_ScanKeys,
-					 indexstate->ioss_NumScanKeys,
-					 indexstate->ioss_OrderByKeys,
-					 indexstate->ioss_NumOrderByKeys);
-
-	/*
 	 * all done.
 	 */
 	return indexstate;
+}
+
+/* ----------------------------------------------------------------
+ *		Parallel Index-only Scan Support
+ * ----------------------------------------------------------------
+ */
+
+/* ----------------------------------------------------------------
+ *		ExecIndexOnlyScanEstimate
+ *
+ *	estimates the space required to serialize index-only scan node.
+ * ----------------------------------------------------------------
+ */
+void
+ExecIndexOnlyScanEstimate(IndexOnlyScanState *node,
+						  ParallelContext *pcxt)
+{
+	EState	   *estate = node->ss.ps.state;
+
+	node->ioss_PscanLen = index_parallelscan_estimate(node->ioss_RelationDesc,
+													  estate->es_snapshot);
+	shm_toc_estimate_chunk(&pcxt->estimator, node->ioss_PscanLen);
+	shm_toc_estimate_keys(&pcxt->estimator, 1);
+}
+
+/* ----------------------------------------------------------------
+ *		ExecIndexOnlyScanInitializeDSM
+ *
+ *		Set up a parallel index-only scan descriptor.
+ * ----------------------------------------------------------------
+ */
+void
+ExecIndexOnlyScanInitializeDSM(IndexOnlyScanState *node,
+							   ParallelContext *pcxt)
+{
+	EState	   *estate = node->ss.ps.state;
+	ParallelIndexScanDesc piscan;
+
+	piscan = shm_toc_allocate(pcxt->toc, node->ioss_PscanLen);
+	index_parallelscan_initialize(node->ss.ss_currentRelation,
+								  node->ioss_RelationDesc,
+								  estate->es_snapshot,
+								  piscan);
+	shm_toc_insert(pcxt->toc, node->ss.ps.plan->plan_node_id, piscan);
+	node->ioss_ScanDesc =
+		index_beginscan_parallel(node->ss.ss_currentRelation,
+								 node->ioss_RelationDesc,
+								 node->ioss_NumScanKeys,
+								 node->ioss_NumOrderByKeys,
+								 piscan);
+	node->ioss_ScanDesc->xs_want_itup = true;
+	node->ioss_VMBuffer = InvalidBuffer;
+
+	/*
+	 * If no run-time keys to calculate or they are ready, go ahead and pass
+	 * the scankeys to the index AM.
+	 */
+	if (node->ioss_NumRuntimeKeys == 0 || node->ioss_RuntimeKeysReady)
+		index_rescan(node->ioss_ScanDesc,
+					 node->ioss_ScanKeys, node->ioss_NumScanKeys,
+					 node->ioss_OrderByKeys, node->ioss_NumOrderByKeys);
+}
+
+/* ----------------------------------------------------------------
+ *		ExecIndexOnlyScanInitializeWorker
+ *
+ *		Copy relevant information from TOC into planstate.
+ * ----------------------------------------------------------------
+ */
+void
+ExecIndexOnlyScanInitializeWorker(IndexOnlyScanState *node, shm_toc *toc)
+{
+	ParallelIndexScanDesc piscan;
+
+	piscan = shm_toc_lookup(toc, node->ss.ps.plan->plan_node_id);
+	node->ioss_ScanDesc =
+		index_beginscan_parallel(node->ss.ss_currentRelation,
+								 node->ioss_RelationDesc,
+								 node->ioss_NumScanKeys,
+								 node->ioss_NumOrderByKeys,
+								 piscan);
+	node->ioss_ScanDesc->xs_want_itup = true;
+
+	/*
+	 * If no run-time keys to calculate or they are ready, go ahead and pass
+	 * the scankeys to the index AM.
+	 */
+	if (node->ioss_NumRuntimeKeys == 0 || node->ioss_RuntimeKeysReady)
+		index_rescan(node->ioss_ScanDesc,
+					 node->ioss_ScanKeys, node->ioss_NumScanKeys,
+					 node->ioss_OrderByKeys, node->ioss_NumOrderByKeys);
 }

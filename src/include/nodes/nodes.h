@@ -61,6 +61,7 @@ typedef enum NodeTag
 	T_SubqueryScan,
 	T_FunctionScan,
 	T_ValuesScan,
+	T_TableFuncScan,
 	T_CteScan,
 	T_WorkTableScan,
 	T_ForeignScan,
@@ -76,6 +77,7 @@ typedef enum NodeTag
 	T_WindowAgg,
 	T_Unique,
 	T_Gather,
+	T_GatherMerge,
 	T_Hash,
 	T_SetOp,
 	T_LockRows,
@@ -109,6 +111,7 @@ typedef enum NodeTag
 	T_TidScanState,
 	T_SubqueryScanState,
 	T_FunctionScanState,
+	T_TableFuncScanState,
 	T_ValuesScanState,
 	T_CteScanState,
 	T_WorkTableScanState,
@@ -125,6 +128,7 @@ typedef enum NodeTag
 	T_WindowAggState,
 	T_UniqueState,
 	T_GatherState,
+	T_GatherMergeState,
 	T_HashState,
 	T_SetOpState,
 	T_LockRowsState,
@@ -135,6 +139,7 @@ typedef enum NodeTag
 	 */
 	T_Alias,
 	T_RangeVar,
+	T_TableFunc,
 	T_Expr,
 	T_Var,
 	T_Const,
@@ -246,6 +251,7 @@ typedef enum NodeTag
 	T_MaterialPath,
 	T_UniquePath,
 	T_GatherPath,
+	T_GatherMergePath,
 	T_ProjectionPath,
 	T_ProjectSetPath,
 	T_SortPath,
@@ -278,6 +284,7 @@ typedef enum NodeTag
 	 */
 	T_MemoryContext,
 	T_AllocSetContext,
+	T_SlabContext,
 
 	/*
 	 * TAGS FOR VALUE NODES (value.h)
@@ -438,6 +445,8 @@ typedef enum NodeTag
 	T_RangeSubselect,
 	T_RangeFunction,
 	T_RangeTableSample,
+	T_RangeTableFunc,
+	T_RangeTableFuncCol,
 	T_TypeName,
 	T_ColumnDef,
 	T_IndexElem,
@@ -450,7 +459,7 @@ typedef enum NodeTag
 	T_SortGroupClause,
 	T_GroupingSet,
 	T_WindowClause,
-	T_FuncWithArgs,
+	T_ObjectWithArgs,
 	T_AccessPriv,
 	T_CreateOpClassItem,
 	T_TableLikeClause,

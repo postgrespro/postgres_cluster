@@ -28,9 +28,11 @@
 
 #include "access/commit_ts.h"
 #include "access/gin.h"
+#include "access/rmgr.h"
 #include "access/transam.h"
 #include "access/twophase.h"
 #include "access/xact.h"
+#include "access/xlog_internal.h"
 #include "catalog/namespace.h"
 #include "commands/async.h"
 #include "commands/prepare.h"
@@ -146,6 +148,10 @@ static bool call_enum_check_hook(struct config_enum * conf, int *newval,
 
 static bool check_log_destination(char **newval, void **extra, GucSource source);
 static void assign_log_destination(const char *newval, void *extra);
+
+static bool check_wal_consistency_checking(char **newval, void **extra,
+	GucSource source);
+static void assign_wal_consistency_checking(const char *newval, void *extra);
 
 #ifdef HAVE_SYSLOG
 static int	syslog_facility = LOG_LOCAL0;
@@ -403,6 +409,7 @@ static const struct config_enum_entry force_parallel_mode_options[] = {
 static const struct config_enum_entry password_encryption_options[] = {
 	{"plain", PASSWORD_TYPE_PLAINTEXT, false},
 	{"md5", PASSWORD_TYPE_MD5, false},
+	{"scram", PASSWORD_TYPE_SCRAM, false},
 	{"off", PASSWORD_TYPE_PLAINTEXT, false},
 	{"on", PASSWORD_TYPE_MD5, false},
 	{"true", PASSWORD_TYPE_MD5, true},
@@ -892,6 +899,15 @@ static struct config_bool ConfigureNamesBool[] =
 			NULL
 		},
 		&enable_hashjoin,
+		true,
+		NULL, NULL, NULL
+	},
+	{
+		{"enable_gathermerge", PGC_USERSET, QUERY_TUNING_METHOD,
+			gettext_noop("Enables the planner's use of gather merge plans."),
+			NULL
+		},
+		&enable_gathermerge,
 		true,
 		NULL, NULL, NULL
 	},
@@ -1501,11 +1517,7 @@ static struct config_bool ConfigureNamesBool[] =
 			GUC_REPORT | GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE
 		},
 		&integer_datetimes,
-#ifdef HAVE_INT64_TIMESTAMP
 		true,
-#else
-		false,
-#endif
 		NULL, NULL, NULL
 	},
 
@@ -1666,7 +1678,7 @@ static struct config_int ConfigureNamesInt[] =
 {
 	{
 		{"archive_timeout", PGC_SIGHUP, WAL_ARCHIVING,
-			gettext_noop("Forces a switch to the next xlog file if a "
+			gettext_noop("Forces a switch to the next WAL file if a "
 						 "new file has not been started within N seconds."),
 			NULL,
 			GUC_UNIT_S
@@ -2633,7 +2645,7 @@ static struct config_int ConfigureNamesInt[] =
 			NULL
 		},
 		&autovacuum_freeze_max_age,
-		/* see pg_resetxlog if you change the upper-limit value */
+		/* see pg_resetwal if you change the upper-limit value */
 		200000000, 100000, 2000000000,
 		NULL, NULL, NULL
 	},
@@ -2770,13 +2782,24 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		{"min_parallel_relation_size", PGC_USERSET, QUERY_TUNING_COST,
-			gettext_noop("Sets the minimum size of relations to be considered for parallel scan."),
-			NULL,
+		{"min_parallel_table_scan_size", PGC_USERSET, QUERY_TUNING_COST,
+			gettext_noop("Sets the minimum amount of table data for a parallel scan."),
+			gettext_noop("If the planner estimates that it will read a number of table pages too small to reach this limit, a parallel scan will not be considered."),
 			GUC_UNIT_BLOCKS,
 		},
-		&min_parallel_relation_size,
+		&min_parallel_table_scan_size,
 		(8 * 1024 * 1024) / BLCKSZ, 0, INT_MAX / 3,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"min_parallel_index_scan_size", PGC_USERSET, QUERY_TUNING_COST,
+			gettext_noop("Sets the minimum amount of index data for a parallel scan."),
+			gettext_noop("If the planner estimates that it will read a number of index pages too small to reach this limit, a parallel scan will not be considered."),
+			GUC_UNIT_BLOCKS,
+		},
+		&min_parallel_index_scan_size,
+		(512 * 1024) / BLCKSZ, 0, INT_MAX / 3,
 		NULL, NULL, NULL
 	},
 
@@ -3570,6 +3593,17 @@ static struct config_string ConfigureNamesString[] =
 		&cluster_name,
 		"",
 		check_cluster_name, NULL, NULL
+	},
+
+	{
+		{"wal_consistency_checking", PGC_SUSET, DEVELOPER_OPTIONS,
+			gettext_noop("Sets the WAL resource managers for which WAL consistency checks are done."),
+			gettext_noop("Full-page images will be logged for all data blocks and cross-checked against the results of WAL replay."),
+			GUC_LIST_INPUT | GUC_NOT_IN_SAMPLE
+		},
+		&wal_consistency_checking_string,
+		"",
+		check_wal_consistency_checking, assign_wal_consistency_checking, NULL
 	},
 
 	/* End-of-list marker */
@@ -7294,7 +7328,7 @@ ExecSetVariableStmt(VariableSetStmt *stmt, bool isTopLevel)
 			}
 			else if (strcmp(stmt->name, "TRANSACTION SNAPSHOT") == 0)
 			{
-				A_Const    *con = (A_Const *) linitial(stmt->args);
+				A_Const    *con = castNode(A_Const, linitial(stmt->args));
 
 				if (stmt->is_local)
 					ereport(ERROR,
@@ -7302,7 +7336,6 @@ ExecSetVariableStmt(VariableSetStmt *stmt, bool isTopLevel)
 							 errmsg("SET LOCAL TRANSACTION SNAPSHOT is not implemented")));
 
 				WarnNoTransactionChain(isTopLevel, "SET TRANSACTION");
-				Assert(IsA(con, A_Const));
 				Assert(nodeTag(&con->val) == T_String);
 				ImportSnapshot(strVal(&con->val));
 			}
@@ -9887,6 +9920,86 @@ call_enum_check_hook(struct config_enum * conf, int *newval, void **extra,
 /*
  * check_hook, assign_hook and show_hook subroutines
  */
+
+static bool
+check_wal_consistency_checking(char **newval, void **extra, GucSource source)
+{
+	char	   *rawstring;
+	List	   *elemlist;
+	ListCell   *l;
+	bool		newwalconsistency[RM_MAX_ID + 1];
+
+	/* Initialize the array */
+	MemSet(newwalconsistency, 0, (RM_MAX_ID + 1) * sizeof(bool));
+
+	/* Need a modifiable copy of string */
+	rawstring = pstrdup(*newval);
+
+	/* Parse string into list of identifiers */
+	if (!SplitIdentifierString(rawstring, ',', &elemlist))
+	{
+		/* syntax error in list */
+		GUC_check_errdetail("List syntax is invalid.");
+		pfree(rawstring);
+		list_free(elemlist);
+		return false;
+	}
+
+	foreach(l, elemlist)
+	{
+		char	   *tok = (char *) lfirst(l);
+		bool		found = false;
+		RmgrId		rmid;
+
+		/* Check for 'all'. */
+		if (pg_strcasecmp(tok, "all") == 0)
+		{
+			for (rmid = 0; rmid <= RM_MAX_ID; rmid++)
+				if (RmgrTable[rmid].rm_mask != NULL)
+					newwalconsistency[rmid] = true;
+			found = true;
+		}
+		else
+		{
+			/*
+			 * Check if the token matches with any individual resource
+			 * manager.
+			 */
+			for (rmid = 0; rmid <= RM_MAX_ID; rmid++)
+			{
+				if (pg_strcasecmp(tok, RmgrTable[rmid].rm_name) == 0 &&
+					RmgrTable[rmid].rm_mask != NULL)
+				{
+					newwalconsistency[rmid] = true;
+					found = true;
+				}
+			}
+		}
+
+		/* If a valid resource manager is found, check for the next one. */
+		if (!found)
+		{
+			GUC_check_errdetail("Unrecognized key word: \"%s\".", tok);
+			pfree(rawstring);
+			list_free(elemlist);
+			return false;
+		}
+	}
+
+	pfree(rawstring);
+	list_free(elemlist);
+
+	/* assign new value */
+	*extra = guc_malloc(ERROR, (RM_MAX_ID + 1) * sizeof(bool));
+	memcpy(*extra, newwalconsistency, (RM_MAX_ID + 1) * sizeof(bool));
+	return true;
+}
+
+static void
+assign_wal_consistency_checking(const char *newval, void *extra)
+{
+	wal_consistency_checking = (bool *) extra;
+}
 
 static bool
 check_log_destination(char **newval, void **extra, GucSource source)

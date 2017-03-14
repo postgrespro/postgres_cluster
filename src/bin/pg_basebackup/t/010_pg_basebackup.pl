@@ -15,15 +15,12 @@ my $tempdir = TestLib::tempdir;
 my $node = get_new_node('main');
 
 # Initialize node without replication settings
-$node->init(hba_permit_replication => 0);
+$node->init;
 $node->start;
 my $pgdata = $node->data_dir;
 
 $node->command_fails(['pg_basebackup'],
 	'pg_basebackup needs target directory specified');
-$node->command_fails(
-	[ 'pg_basebackup', '-D', "$tempdir/backup" ],
-	'pg_basebackup fails because of hba');
 
 # Some Windows ANSI code pages may reject this filename, in which case we
 # quietly proceed without this bit of test coverage.
@@ -56,7 +53,7 @@ close CONF;
 $node->restart;
 
 # Write some files to test that they are not copied.
-foreach my $filename (qw(backup_label tablespace_map postgresql.auto.conf.tmp))
+foreach my $filename (qw(backup_label tablespace_map postgresql.auto.conf.tmp current_logfiles.tmp))
 {
 	open FILE, ">>$pgdata/$filename";
 	print FILE "DONOTCOPY";
@@ -83,7 +80,7 @@ foreach my $dirname (qw(pg_dynshmem pg_notify pg_replslot pg_serial pg_snapshots
 }
 
 # These files should not be copied.
-foreach my $filename (qw(postgresql.auto.conf.tmp postmaster.opts postmaster.pid tablespace_map))
+foreach my $filename (qw(postgresql.auto.conf.tmp postmaster.opts postmaster.pid tablespace_map current_logfiles.tmp))
 {
 	ok(! -f "$tempdir/backup/$filename", "$filename not copied");
 }
@@ -93,7 +90,7 @@ isnt(slurp_file("$tempdir/backup/backup_label"), 'DONOTCOPY',
 	 'existing backup_label not copied');
 
 $node->command_ok(
-	[   'pg_basebackup', '-D', "$tempdir/backup2", '--xlogdir',
+	[   'pg_basebackup', '-D', "$tempdir/backup2", '--waldir',
 		"$tempdir/xlog2" ],
 	'separate xlog directory');
 ok(-f "$tempdir/backup2/PG_VERSION", 'backup was created');

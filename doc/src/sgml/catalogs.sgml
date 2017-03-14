@@ -1334,14 +1334,8 @@
       <entry><structfield>rolpassword</structfield></entry>
       <entry><type>text</type></entry>
       <entry>
-       Password (possibly encrypted); null if none.  If the password
-       is encrypted, this column will begin with the string <literal>md5</>
-       followed by a 32-character hexadecimal MD5 hash.  The MD5 hash
-       will be of the user's password concatenated to their user name.
-       For example, if user <literal>joe</> has password <literal>xyzzy</>,
-       <productname>PostgreSQL</> will store the md5 hash of
-       <literal>xyzzyjoe</>.  A password that does not follow that
-       format is assumed to be unencrypted.
+       Password (possibly encrypted); null if none. The format depends
+       on the form of encryption used.
       </entry>
      </row>
 
@@ -1355,6 +1349,21 @@
    </tgroup>
   </table>
 
+  <para>
+   For an MD5 encrypted password, <structfield>rolpassword</structfield>
+   column will begin with the string <literal>md5</> followed by a
+   32-character hexadecimal MD5 hash. The MD5 hash will be of the user's
+   password concatenated to their user name. For example, if user
+   <literal>joe</> has password <literal>xyzzy</>, <productname>PostgreSQL</>
+   will store the md5 hash of <literal>xyzzyjoe</>.  If the password is
+   encrypted with SCRAM-SHA-256, it consists of 5 fields separated by colons.
+   The first field is the constant <literal>scram-sha-256</literal>, to
+   identify the password as a SCRAM-SHA-256 verifier. The second field is a
+   salt, Base64-encoded, and the third field is the number of iterations used
+   to generate the password.  The fourth field and fifth field are the stored
+   key and server key, respectively, in hexadecimal format. A password that
+   does not follow either of those formats is assumed to be unencrypted.
+  </para>
  </sect1>
 
 
@@ -1749,12 +1758,15 @@
       <entry><type>char</type></entry>
       <entry></entry>
       <entry>
-       <literal>r</> = ordinary table, <literal>P</> = partitioned table,
-       <literal>i</> = index
-       <literal>S</> = sequence, <literal>v</> = view,
+       <literal>r</> = ordinary table,
+       <literal>i</> = index,
+       <literal>S</> = sequence,
+       <literal>t</> = TOAST table,
+       <literal>v</> = view,
        <literal>m</> = materialized view,
-       <literal>c</> = composite type, <literal>t</> = TOAST table,
-       <literal>f</> = foreign table
+       <literal>c</> = composite type,
+       <literal>f</> = foreign table,
+       <literal>p</> = partitioned table
       </entry>
      </row>
 
@@ -5774,10 +5786,10 @@
      </row>
 
      <row>
-      <entry><structfield>seqcycle</structfield></entry>
-      <entry><type>bool</type></entry>
-      <entry></entry>
-      <entry>Whether the sequence cycles</entry>
+      <entry><structfield>seqtypid</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-type"><structname>pg_type</structname></link>.oid</literal></entry>
+      <entry>Data type of the sequence</entry>
      </row>
 
      <row>
@@ -5813,6 +5825,13 @@
       <entry><type>int8</type></entry>
       <entry></entry>
       <entry>Cache size of the sequence</entry>
+     </row>
+
+     <row>
+      <entry><structfield>seqcycle</structfield></entry>
+      <entry><type>bool</type></entry>
+      <entry></entry>
+      <entry>Whether the sequence cycles</entry>
      </row>
     </tbody>
    </tgroup>
@@ -6317,9 +6336,8 @@
   </para>
 
   <para>
-   Access to this catalog is restricted from normal users.  Normal users can
-   use the view <xref linkend="pg-stat-subscription"> to get some information
-   about subscriptions.
+   Access to the column <structfield>subconninfo</structfield> is revoked from
+   normal users, because it could contain plain-text passwords.
   </para>
 
   <table>
@@ -9839,6 +9857,12 @@ SELECT * FROM pg_locks pl LEFT JOIN pg_prepared_xacts ppx
       <entry><type>name</type></entry>
       <entry><literal><link linkend="catalog-pg-authid"><structname>pg_authid</structname></link>.rolname</literal></entry>
       <entry>Name of sequence's owner</entry>
+     </row>
+     <row>
+      <entry><structfield>data_type</structfield></entry>
+      <entry><type>regtype</type></entry>
+      <entry><literal><link linkend="catalog-pg-authid"><structname>pg_type</structname></link>.oid</literal></entry>
+      <entry>Data type of the sequence</entry>
      </row>
      <row>
       <entry><structfield>start_value</structfield></entry>

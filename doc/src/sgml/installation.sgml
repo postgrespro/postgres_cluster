@@ -193,11 +193,7 @@ su - postgres
       language, you need a <productname>Python</productname>
       installation with the header files and
       the <application>distutils</application> module.  The minimum
-      required version is <productname>Python</productname> 2.3.
-      (To work with function arguments of type <type>numeric</>, a 2.3.x
-      installation must include the separately-available <filename>cdecimal</>
-      module; note the <application>PL/Python</> regression tests
-      will not pass if that is missing.)
+      required version is <productname>Python</productname> 2.4.
       <productname>Python 3</productname> is supported if it's
       version 3.1 or later; but see
       <![%standalone-include[the <application>PL/Python</> documentation]]>
@@ -960,28 +956,6 @@ su - postgres
       </varlistentry>
 
       <varlistentry>
-       <term><option>--disable-integer-datetimes</option></term>
-       <listitem>
-        <para>
-         Disable support for 64-bit integer storage for timestamps and
-         intervals, and store datetime values as floating-point
-         numbers instead. Floating-point datetime storage was the
-         default in <productname>PostgreSQL</productname> releases
-         prior to 8.4, but it is now deprecated, because it does not
-         support microsecond precision for the full range of
-         <type>timestamp</type> values. However, integer-based
-         datetime storage requires a 64-bit integer type. Therefore,
-         this option can be used when no such type is available, or
-         for compatibility with applications written for prior
-         versions of <productname>PostgreSQL</productname>. See
-         <![%standalone-include[the documentation about datetime datatypes]]>
-         <![%standalone-ignore[<xref linkend="datatype-datetime">]]>
-         for more information.
-        </para>
-       </listitem>
-      </varlistentry>
-
-      <varlistentry>
        <term><option>--disable-float4-byval</option></term>
        <listitem>
         <para>
@@ -1494,6 +1468,26 @@ su - postgres
      </variablelist>
     </para>
 
+    <para>
+     Sometimes it is useful to add compiler flags after-the-fact to the set
+     that were chosen by <filename>configure</>.  An important example is
+     that <application>gcc</>'s <option>-Werror</> option cannot be included
+     in the <envar>CFLAGS</envar> passed to <filename>configure</>, because
+     it will break many of <filename>configure</>'s built-in tests.  To add
+     such flags, include them in the <envar>COPT</envar> environment variable
+     while running <filename>make</>.  The contents of <envar>COPT</envar>
+     are added to both the <envar>CFLAGS</envar> and <envar>LDFLAGS</envar>
+     options set up by <filename>configure</>.  For example, you could do
+<screen>
+<userinput>make COPT='-Werror'</>
+</screen>
+     or
+<screen>
+<userinput>export COPT='-Werror'</>
+<userinput>make</>
+</screen>
+    </para>
+
     <note>
      <para>
       When developing code inside the server, it is recommended to
@@ -1513,6 +1507,14 @@ su - postgres
       optimized code, recompile the specific files of interest with
       <option>-O0</>.  An easy way to do this is by passing an option
       to <application>make</>: <command>make PROFILE=-O0 file.o</>.
+     </para>
+
+     <para>
+      The <envar>COPT</> and <envar>PROFILE</> environment variables are
+      actually handled identically by the <productname>PostgreSQL</>
+      makefiles.  Which to use is a matter of preference, but a common habit
+      among developers is to use <envar>PROFILE</> for one-time flag
+      adjustments, while <envar>COPT</> might be kept set all the time.
      </para>
     </note>
    </step>

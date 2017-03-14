@@ -15,9 +15,6 @@
  *	  launcher for every enabled subscription in a database. It uses
  *	  walsender protocol to communicate with publisher.
  *
- *	  The apply worker may spawn additional workers (sync) for initial data
- *	  synchronization of tables.
- *
  *	  This module includes server facing code and shares libpqwalreceiver
  *	  module with walreceiver for providing the libpq specific functionality.
  *
@@ -175,6 +172,9 @@ create_estate_for_relation(LogicalRepRelMapEntry *rel)
 	/* Triggers might need a slot */
 	if (resultRelInfo->ri_TrigDesc)
 		estate->es_trig_tuple_slot = ExecInitExtraTupleSlot(estate);
+
+	/* Prepare to catch AFTER triggers. */
+	AfterTriggerBeginQuery();
 
 	return estate;
 }
@@ -536,6 +536,10 @@ apply_handle_insert(StringInfo s)
 	/* Cleanup. */
 	ExecCloseIndices(estate->es_result_relation_info);
 	PopActiveSnapshot();
+
+	/* Handle queued AFTER triggers. */
+	AfterTriggerEndQuery(estate);
+
 	ExecResetTupleTable(estate->es_tupleTable, false);
 	FreeExecutorState(estate);
 
@@ -676,6 +680,10 @@ apply_handle_update(StringInfo s)
 	/* Cleanup. */
 	ExecCloseIndices(estate->es_result_relation_info);
 	PopActiveSnapshot();
+
+	/* Handle queued AFTER triggers. */
+	AfterTriggerEndQuery(estate);
+
 	EvalPlanQualEnd(&epqstate);
 	ExecResetTupleTable(estate->es_tupleTable, false);
 	FreeExecutorState(estate);
@@ -763,6 +771,10 @@ apply_handle_delete(StringInfo s)
 	/* Cleanup. */
 	ExecCloseIndices(estate->es_result_relation_info);
 	PopActiveSnapshot();
+
+	/* Handle queued AFTER triggers. */
+	AfterTriggerEndQuery(estate);
+
 	EvalPlanQualEnd(&epqstate);
 	ExecResetTupleTable(estate->es_tupleTable, false);
 	FreeExecutorState(estate);
@@ -984,12 +996,11 @@ ApplyLoop(void)
 					{
 						XLogRecPtr	start_lsn;
 						XLogRecPtr	end_lsn;
-						TimestampTz	send_time;
+						TimestampTz send_time;
 
 						start_lsn = pq_getmsgint64(&s);
 						end_lsn = pq_getmsgint64(&s);
-						send_time =
-							IntegerTimestampToTimestampTz(pq_getmsgint64(&s));
+						send_time = pq_getmsgint64(&s);
 
 						if (last_received < start_lsn)
 							last_received = start_lsn;
@@ -1003,13 +1014,12 @@ ApplyLoop(void)
 					}
 					else if (c == 'k')
 					{
-						XLogRecPtr endpos;
-						TimestampTz	timestamp;
-						bool reply_requested;
+						XLogRecPtr	endpos;
+						TimestampTz timestamp;
+						bool		reply_requested;
 
 						endpos = pq_getmsgint64(&s);
-						timestamp =
-							IntegerTimestampToTimestampTz(pq_getmsgint64(&s));
+						timestamp = pq_getmsgint64(&s);
 						reply_requested = pq_getmsgbyte(&s);
 
 						send_feedback(endpos, reply_requested, false);
@@ -1250,6 +1260,21 @@ reread_subscription(void)
 	}
 
 	/*
+	 * Exit if subscription name was changed (it's used for
+	 * fallback_application_name). The launcher will start new worker.
+	 */
+	if (strcmp(newsub->name, MySubscription->name) != 0)
+	{
+		ereport(LOG,
+				(errmsg("logical replication worker for subscription \"%s\" will "
+						"restart because subscription was renamed",
+						MySubscription->name)));
+
+		walrcv_disconnect(wrconn);
+		proc_exit(0);
+	}
+
+	/*
 	 * Exit if publication list was changed. The launcher will start
 	 * new worker.
 	 */
@@ -1282,7 +1307,6 @@ reread_subscription(void)
 
 	/* Check for other changes that should never happen too. */
 	if (newsub->dbid != MySubscription->dbid ||
-		strcmp(newsub->name, MySubscription->name) != 0 ||
 		strcmp(newsub->slotname, MySubscription->slotname) != 0)
 	{
 		elog(ERROR, "subscription %u changed unexpectedly",

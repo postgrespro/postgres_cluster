@@ -644,9 +644,10 @@ jsonb_categorize_type(Oid typoid,
 
 		default:
 			/* Check for arrays and composites */
-			if (OidIsValid(get_element_type(typoid)))
+			if (OidIsValid(get_element_type(typoid)) || typoid == ANYARRAYOID
+				|| typoid == RECORDARRAYOID)
 				*tcategory = JSONBTYPE_ARRAY;
-			else if (type_is_rowtype(typoid))
+			else if (type_is_rowtype(typoid)) /* includes RECORDOID */
 				*tcategory = JSONBTYPE_COMPOSITE;
 			else
 			{
@@ -856,7 +857,7 @@ datum_to_jsonb(Datum val, bool is_null, JsonbInState *result,
 					/* parse the json right into the existing result object */
 					JsonLexContext *lex;
 					JsonSemAction sem;
-					text	   *json = DatumGetTextP(val);
+					text	   *json = DatumGetTextPP(val);
 
 					lex = makeJsonLexContext(json, true);
 

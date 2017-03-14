@@ -117,6 +117,26 @@ _equalRangeVar(const RangeVar *a, const RangeVar *b)
 }
 
 static bool
+_equalTableFunc(const TableFunc *a, const TableFunc *b)
+{
+	COMPARE_NODE_FIELD(ns_names);
+	COMPARE_NODE_FIELD(ns_uris);
+	COMPARE_NODE_FIELD(docexpr);
+	COMPARE_NODE_FIELD(rowexpr);
+	COMPARE_NODE_FIELD(colnames);
+	COMPARE_NODE_FIELD(coltypes);
+	COMPARE_NODE_FIELD(coltypes);
+	COMPARE_NODE_FIELD(colcollations);
+	COMPARE_NODE_FIELD(colexprs);
+	COMPARE_NODE_FIELD(coldefexprs);
+	COMPARE_BITMAPSET_FIELD(notnulls);
+	COMPARE_SCALAR_FIELD(ordinalitycol);
+	COMPARE_LOCATION_FIELD(location);
+
+	return true;
+}
+
+static bool
 _equalIntoClause(const IntoClause *a, const IntoClause *b)
 {
 	COMPARE_NODE_FIELD(rel);
@@ -423,6 +443,7 @@ _equalSubPlan(const SubPlan *a, const SubPlan *b)
 	COMPARE_SCALAR_FIELD(firstColCollation);
 	COMPARE_SCALAR_FIELD(useHashTable);
 	COMPARE_SCALAR_FIELD(unknownEqFalse);
+	COMPARE_SCALAR_FIELD(parallel_safe);
 	COMPARE_NODE_FIELD(setParam);
 	COMPARE_NODE_FIELD(parParam);
 	COMPARE_NODE_FIELD(args);
@@ -1094,10 +1115,10 @@ _equalGrantStmt(const GrantStmt *a, const GrantStmt *b)
 }
 
 static bool
-_equalFuncWithArgs(const FuncWithArgs *a, const FuncWithArgs *b)
+_equalObjectWithArgs(const ObjectWithArgs *a, const ObjectWithArgs *b)
 {
-	COMPARE_NODE_FIELD(funcname);
-	COMPARE_NODE_FIELD(funcargs);
+	COMPARE_NODE_FIELD(objname);
+	COMPARE_NODE_FIELD(objargs);
 
 	return true;
 }
@@ -1210,6 +1231,7 @@ _equalDefineStmt(const DefineStmt *a, const DefineStmt *b)
 	COMPARE_NODE_FIELD(defnames);
 	COMPARE_NODE_FIELD(args);
 	COMPARE_NODE_FIELD(definition);
+	COMPARE_SCALAR_FIELD(if_not_exists);
 
 	return true;
 }
@@ -1218,7 +1240,6 @@ static bool
 _equalDropStmt(const DropStmt *a, const DropStmt *b)
 {
 	COMPARE_NODE_FIELD(objects);
-	COMPARE_NODE_FIELD(arguments);
 	COMPARE_SCALAR_FIELD(removeType);
 	COMPARE_SCALAR_FIELD(behavior);
 	COMPARE_SCALAR_FIELD(missing_ok);
@@ -1241,8 +1262,7 @@ static bool
 _equalCommentStmt(const CommentStmt *a, const CommentStmt *b)
 {
 	COMPARE_SCALAR_FIELD(objtype);
-	COMPARE_NODE_FIELD(objname);
-	COMPARE_NODE_FIELD(objargs);
+	COMPARE_NODE_FIELD(object);
 	COMPARE_STRING_FIELD(comment);
 
 	return true;
@@ -1252,8 +1272,7 @@ static bool
 _equalSecLabelStmt(const SecLabelStmt *a, const SecLabelStmt *b)
 {
 	COMPARE_SCALAR_FIELD(objtype);
-	COMPARE_NODE_FIELD(objname);
-	COMPARE_NODE_FIELD(objargs);
+	COMPARE_NODE_FIELD(object);
 	COMPARE_STRING_FIELD(provider);
 	COMPARE_STRING_FIELD(label);
 
@@ -1345,7 +1364,6 @@ _equalRenameStmt(const RenameStmt *a, const RenameStmt *b)
 	COMPARE_SCALAR_FIELD(relationType);
 	COMPARE_NODE_FIELD(relation);
 	COMPARE_NODE_FIELD(object);
-	COMPARE_NODE_FIELD(objarg);
 	COMPARE_STRING_FIELD(subname);
 	COMPARE_STRING_FIELD(newname);
 	COMPARE_SCALAR_FIELD(behavior);
@@ -1359,8 +1377,7 @@ _equalAlterObjectDependsStmt(const AlterObjectDependsStmt *a, const AlterObjectD
 {
 	COMPARE_SCALAR_FIELD(objectType);
 	COMPARE_NODE_FIELD(relation);
-	COMPARE_NODE_FIELD(objname);
-	COMPARE_NODE_FIELD(objargs);
+	COMPARE_NODE_FIELD(object);
 	COMPARE_NODE_FIELD(extname);
 
 	return true;
@@ -1372,7 +1389,6 @@ _equalAlterObjectSchemaStmt(const AlterObjectSchemaStmt *a, const AlterObjectSch
 	COMPARE_SCALAR_FIELD(objectType);
 	COMPARE_NODE_FIELD(relation);
 	COMPARE_NODE_FIELD(object);
-	COMPARE_NODE_FIELD(objarg);
 	COMPARE_STRING_FIELD(newschema);
 	COMPARE_SCALAR_FIELD(missing_ok);
 
@@ -1385,7 +1401,6 @@ _equalAlterOwnerStmt(const AlterOwnerStmt *a, const AlterOwnerStmt *b)
 	COMPARE_SCALAR_FIELD(objectType);
 	COMPARE_NODE_FIELD(relation);
 	COMPARE_NODE_FIELD(object);
-	COMPARE_NODE_FIELD(objarg);
 	COMPARE_NODE_FIELD(newowner);
 
 	return true;
@@ -1395,7 +1410,6 @@ static bool
 _equalAlterOperatorStmt(const AlterOperatorStmt *a, const AlterOperatorStmt *b)
 {
 	COMPARE_NODE_FIELD(opername);
-	COMPARE_NODE_FIELD(operargs);
 	COMPARE_NODE_FIELD(options);
 
 	return true;
@@ -1540,7 +1554,6 @@ _equalCreateOpClassItem(const CreateOpClassItem *a, const CreateOpClassItem *b)
 {
 	COMPARE_SCALAR_FIELD(itemtype);
 	COMPARE_NODE_FIELD(name);
-	COMPARE_NODE_FIELD(args);
 	COMPARE_SCALAR_FIELD(number);
 	COMPARE_NODE_FIELD(order_family);
 	COMPARE_NODE_FIELD(class_args);
@@ -1781,8 +1794,7 @@ _equalAlterExtensionContentsStmt(const AlterExtensionContentsStmt *a, const Alte
 	COMPARE_STRING_FIELD(extname);
 	COMPARE_SCALAR_FIELD(action);
 	COMPARE_SCALAR_FIELD(objtype);
-	COMPARE_NODE_FIELD(objname);
-	COMPARE_NODE_FIELD(objargs);
+	COMPARE_NODE_FIELD(object);
 
 	return true;
 }
@@ -2428,6 +2440,36 @@ _equalRangeTableSample(const RangeTableSample *a, const RangeTableSample *b)
 }
 
 static bool
+_equalRangeTableFunc(const RangeTableFunc *a, const RangeTableFunc *b)
+{
+	COMPARE_SCALAR_FIELD(lateral);
+	COMPARE_NODE_FIELD(docexpr);
+	COMPARE_NODE_FIELD(rowexpr);
+	COMPARE_NODE_FIELD(namespaces);
+	COMPARE_NODE_FIELD(columns);
+	COMPARE_NODE_FIELD(alias);
+	COMPARE_LOCATION_FIELD(location);
+
+	return true;
+}
+
+static bool
+_equalRangeTableFuncCol(const RangeTableFuncCol *a, const RangeTableFuncCol *b)
+{
+	COMPARE_STRING_FIELD(colname);
+	COMPARE_NODE_FIELD(typeName);
+	COMPARE_SCALAR_FIELD(for_ordinality);
+	COMPARE_NODE_FIELD(typeName);
+	COMPARE_SCALAR_FIELD(is_not_null);
+	COMPARE_NODE_FIELD(colexpr);
+	COMPARE_NODE_FIELD(coldefexpr);
+	COMPARE_LOCATION_FIELD(location);
+
+	return true;
+}
+
+
+static bool
 _equalIndexElem(const IndexElem *a, const IndexElem *b)
 {
 	COMPARE_STRING_FIELD(name);
@@ -2529,6 +2571,7 @@ _equalRangeTblEntry(const RangeTblEntry *a, const RangeTblEntry *b)
 	COMPARE_SCALAR_FIELD(jointype);
 	COMPARE_NODE_FIELD(joinaliasvars);
 	COMPARE_NODE_FIELD(functions);
+	COMPARE_NODE_FIELD(tablefunc);
 	COMPARE_SCALAR_FIELD(funcordinality);
 	COMPARE_NODE_FIELD(values_lists);
 	COMPARE_STRING_FIELD(ctename);
@@ -2894,6 +2937,9 @@ equal(const void *a, const void *b)
 			break;
 		case T_RangeVar:
 			retval = _equalRangeVar(a, b);
+			break;
+		case T_TableFunc:
+			retval = _equalTableFunc(a, b);
 			break;
 		case T_IntoClause:
 			retval = _equalIntoClause(a, b);
@@ -3476,6 +3522,12 @@ equal(const void *a, const void *b)
 		case T_RangeTableSample:
 			retval = _equalRangeTableSample(a, b);
 			break;
+		case T_RangeTableFunc:
+			retval = _equalRangeTableFunc(a, b);
+			break;
+		case T_RangeTableFuncCol:
+			retval = _equalRangeTableFuncCol(a, b);
+			break;
 		case T_TypeName:
 			retval = _equalTypeName(a, b);
 			break;
@@ -3530,8 +3582,8 @@ equal(const void *a, const void *b)
 		case T_CommonTableExpr:
 			retval = _equalCommonTableExpr(a, b);
 			break;
-		case T_FuncWithArgs:
-			retval = _equalFuncWithArgs(a, b);
+		case T_ObjectWithArgs:
+			retval = _equalObjectWithArgs(a, b);
 			break;
 		case T_AccessPriv:
 			retval = _equalAccessPriv(a, b);

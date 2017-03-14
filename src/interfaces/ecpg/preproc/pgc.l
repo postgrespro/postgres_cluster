@@ -19,7 +19,6 @@
 #include "postgres_fe.h"
 
 #include <ctype.h>
-#include <sys/types.h>
 #include <limits.h>
 
 #include "extern.h"
@@ -566,6 +565,7 @@ cppline			{space}*#([^i][A-Za-z]*|{if}|{ifdef}|{ifndef}|{import})((\/\*[^*/]*\*+
 				{
 					addlit(yytext, yyleng);
 					free(dolqstart);
+					dolqstart = NULL;
 					BEGIN(SQL);
 					base_yylval.str = mm_strdup(literalbuf);
 					return DOLCONST;

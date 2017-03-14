@@ -32,6 +32,7 @@
 #include "catalog/pg_opclass.h"
 #include "catalog/pg_opfamily.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_subscription.h"
 #include "catalog/pg_ts_config.h"
 #include "catalog/pg_ts_dict.h"
 #include "catalog/pg_ts_parser.h"
@@ -89,6 +90,12 @@ report_name_conflict(Oid classId, const char *name)
 			break;
 		case LanguageRelationId:
 			msgfmt = gettext_noop("language \"%s\" already exists");
+			break;
+		case PublicationRelationId:
+			msgfmt = gettext_noop("publication \"%s\" already exists");
+			break;
+		case SubscriptionRelationId:
+			msgfmt = gettext_noop("subscription \"%s\" already exists");
 			break;
 		default:
 			elog(ERROR, "unsupported object class %u", classId);
@@ -256,6 +263,12 @@ AlterObjectRename_internal(Relation rel, Oid objectId, const char *new_name)
 		IsThereOpFamilyInNamespace(new_name, opf->opfmethod,
 								   opf->opfnamespace);
 	}
+	else if (classId == SubscriptionRelationId)
+	{
+		if (SearchSysCacheExists2(SUBSCRIPTIONNAME, MyDatabaseId,
+								  CStringGetDatum(new_name)))
+			report_name_conflict(classId, new_name);
+	}
 	else if (nameCacheId >= 0)
 	{
 		if (OidIsValid(namespaceId))
@@ -364,13 +377,15 @@ ExecRenameStmt(RenameStmt *stmt)
 		case OBJECT_TSDICTIONARY:
 		case OBJECT_TSPARSER:
 		case OBJECT_TSTEMPLATE:
+		case OBJECT_PUBLICATION:
+		case OBJECT_SUBSCRIPTION:
 			{
 				ObjectAddress address;
 				Relation	catalog;
 				Relation	relation;
 
 				address = get_object_address(stmt->renameType,
-											 stmt->object, stmt->objarg,
+											 stmt->object,
 											 &relation,
 											 AccessExclusiveLock, false);
 				Assert(relation == NULL);
@@ -406,8 +421,8 @@ ExecAlterObjectDependsStmt(AlterObjectDependsStmt *stmt, ObjectAddress *refAddre
 	Relation	rel;
 
 	address =
-		get_object_address_rv(stmt->objectType, stmt->relation, stmt->objname,
-							stmt->objargs, &rel, AccessExclusiveLock, false);
+		get_object_address_rv(stmt->objectType, stmt->relation, (List *) stmt->object,
+							&rel, AccessExclusiveLock, false);
 
 	/*
 	 * If a relation was involved, it would have been opened and locked. We
@@ -416,8 +431,8 @@ ExecAlterObjectDependsStmt(AlterObjectDependsStmt *stmt, ObjectAddress *refAddre
 	if (rel)
 		heap_close(rel, NoLock);
 
-	refAddr = get_object_address(OBJECT_EXTENSION, list_make1(stmt->extname),
-								 NULL, &rel, AccessExclusiveLock, false);
+	refAddr = get_object_address(OBJECT_EXTENSION, (Node *) stmt->extname,
+								 &rel, AccessExclusiveLock, false);
 	Assert(rel == NULL);
 	if (refAddress)
 		*refAddress = refAddr;
@@ -446,7 +461,7 @@ ExecAlterObjectSchemaStmt(AlterObjectSchemaStmt *stmt,
 	switch (stmt->objectType)
 	{
 		case OBJECT_EXTENSION:
-			address = AlterExtensionNamespace(stmt->object, stmt->newschema,
+			address = AlterExtensionNamespace(strVal((Value *) stmt->object), stmt->newschema,
 										  oldSchemaAddr ? &oldNspOid : NULL);
 			break;
 
@@ -461,7 +476,7 @@ ExecAlterObjectSchemaStmt(AlterObjectSchemaStmt *stmt,
 
 		case OBJECT_DOMAIN:
 		case OBJECT_TYPE:
-			address = AlterTypeNamespace(stmt->object, stmt->newschema,
+			address = AlterTypeNamespace(castNode(List, stmt->object), stmt->newschema,
 										 stmt->objectType,
 										 oldSchemaAddr ? &oldNspOid : NULL);
 			break;
@@ -486,7 +501,6 @@ ExecAlterObjectSchemaStmt(AlterObjectSchemaStmt *stmt,
 
 				address = get_object_address(stmt->objectType,
 											 stmt->object,
-											 stmt->objarg,
 											 &relation,
 											 AccessExclusiveLock,
 											 false);
@@ -749,33 +763,34 @@ ExecAlterOwnerStmt(AlterOwnerStmt *stmt)
 	switch (stmt->objectType)
 	{
 		case OBJECT_DATABASE:
-			return AlterDatabaseOwner(strVal(linitial(stmt->object)), newowner);
+			return AlterDatabaseOwner(strVal((Value *) stmt->object), newowner);
 
 		case OBJECT_SCHEMA:
-			return AlterSchemaOwner(strVal(linitial(stmt->object)), newowner);
+			return AlterSchemaOwner(strVal((Value *) stmt->object), newowner);
 
 		case OBJECT_TYPE:
 		case OBJECT_DOMAIN:		/* same as TYPE */
-			return AlterTypeOwner(stmt->object, newowner, stmt->objectType);
+			return AlterTypeOwner(castNode(List, stmt->object), newowner, stmt->objectType);
+			break;
 
 		case OBJECT_FDW:
-			return AlterForeignDataWrapperOwner(strVal(linitial(stmt->object)),
+			return AlterForeignDataWrapperOwner(strVal((Value *) stmt->object),
 												newowner);
 
 		case OBJECT_FOREIGN_SERVER:
-			return AlterForeignServerOwner(strVal(linitial(stmt->object)),
+			return AlterForeignServerOwner(strVal((Value *) stmt->object),
 										   newowner);
 
 		case OBJECT_EVENT_TRIGGER:
-			return AlterEventTriggerOwner(strVal(linitial(stmt->object)),
+			return AlterEventTriggerOwner(strVal((Value *) stmt->object),
 										  newowner);
 
 		case OBJECT_PUBLICATION:
-			return AlterPublicationOwner(strVal(linitial(stmt->object)),
+			return AlterPublicationOwner(strVal((Value *) stmt->object),
 										 newowner);
 
 		case OBJECT_SUBSCRIPTION:
-			return AlterSubscriptionOwner(strVal(linitial(stmt->object)),
+			return AlterSubscriptionOwner(strVal((Value *) stmt->object),
 										  newowner);
 
 			/* Generic cases */
@@ -799,7 +814,6 @@ ExecAlterOwnerStmt(AlterOwnerStmt *stmt)
 
 				address = get_object_address(stmt->objectType,
 											 stmt->object,
-											 stmt->objarg,
 											 &relation,
 											 AccessExclusiveLock,
 											 false);

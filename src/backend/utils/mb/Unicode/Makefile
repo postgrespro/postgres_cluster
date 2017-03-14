@@ -52,10 +52,8 @@ SPECIALMAPS = euc_cn_to_utf8.map utf8_to_euc_cn.map \
 	big5_to_utf8.map utf8_to_big5.map \
 	johab_to_utf8.map utf8_to_johab.map \
 	uhc_to_utf8.map utf8_to_uhc.map \
-	euc_jis_2004_to_utf8.map euc_jis_2004_to_utf8_combined.map \
-	utf8_to_euc_jis_2004.map utf8_to_euc_jis_2004_combined.map \
-	shift_jis_2004_to_utf8.map shift_jis_2004_to_utf8_combined.map \
-	utf8_to_shift_jis_2004.map utf8_to_shift_jis_2004_combined.map
+	euc_jis_2004_to_utf8.map utf8_to_euc_jis_2004.map \
+	shift_jis_2004_to_utf8.map utf8_to_shift_jis_2004.map
 
 MAPS = $(GENERICMAPS) $(SPECIALMAPS)
 
@@ -104,10 +102,10 @@ gb18030_to_utf8.map utf8_to_gb18030.map: UCS_to_GB18030.pl gb-18030-2000.xml
 big5_to_utf8.map utf8_to_big5.map: UCS_to_BIG5.pl BIG5.TXT CP950.TXT
 	$(PERL) $<
 
-euc_jis_2004_to_utf8.map euc_jis_2004_to_utf8_combined.map utf8_to_euc_jis_2004.map utf8_to_euc_jis_2004_combined.map: UCS_to_EUC_JIS_2004.pl euc-jis-2004-std.txt
+euc_jis_2004_to_utf8.map utf8_to_euc_jis_2004.map: UCS_to_EUC_JIS_2004.pl euc-jis-2004-std.txt
 	$(PERL) $<
 
-shift_jis_2004_to_utf8.map shift_jis_2004_to_utf8_combined.map utf8_to_shift_jis_2004.map utf8_to_shift_jis_2004_combined.map: UCS_to_SHIFT_JIS_2004.pl sjis-0213-2004-std.txt
+shift_jis_2004_to_utf8.map utf8_to_shift_jis_2004.map: UCS_to_SHIFT_JIS_2004.pl sjis-0213-2004-std.txt
 	$(PERL) $<
 
 distclean: clean
@@ -132,7 +130,7 @@ gb-18030-2000.xml windows-949-2000.xml:
 GB2312.TXT:
 	$(DOWNLOAD) 'http://trac.greenstone.org/browser/trunk/gsdl/unicode/MAPPINGS/EASTASIA/GB/GB2312.TXT?rev=1842&format=txt'
 
-JIS0201.TXT JIS0208.TXT JIS0212.TXT:
+JIS0212.TXT:
 	$(DOWNLOAD) http://ftp.unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/$(@F)
 
 JOHAB.TXT KSX1001.TXT:

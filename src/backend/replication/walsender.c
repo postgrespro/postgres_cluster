@@ -488,6 +488,11 @@ StartReplication(StartReplicationCmd *cmd)
 	StringInfoData buf;
 	XLogRecPtr	FlushPtr;
 
+	if (ThisTimeLineID == 0)
+		ereport(ERROR,
+				(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+				 errmsg("IDENTIFY_SYSTEM has not been run before START_REPLICATION")));
+
 	/*
 	 * We assume here that we're logging enough information in the WAL for
 	 * log-shipping, since this is checked in PostmasterMain().
@@ -773,8 +778,6 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 							  cmd->temporary ? RS_TEMPORARY : RS_EPHEMERAL);
 	}
 
-	initStringInfo(&output_message);
-
 	if (cmd->kind == REPLICATION_KIND_LOGICAL)
 	{
 		LogicalDecodingContext *ctx;
@@ -825,12 +828,13 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 	dest = CreateDestReceiver(DestRemoteSimple);
 	MemSet(nulls, false, sizeof(nulls));
 
-	/*
+	/*----------
 	 * Need a tuple descriptor representing four columns:
 	 * - first field: the slot name
 	 * - second field: LSN at which we became consistent
 	 * - third field: exported snapshot's name
 	 * - fourth field: output plugin
+	 *----------
 	 */
 	tupdesc = CreateTemplateTupleDesc(4, false);
 	TupleDescInitBuiltinEntry(tupdesc, (AttrNumber) 1, "slot_name",
@@ -1016,7 +1020,7 @@ WalSndWriteData(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid,
 	 * several releases by streaming physical replication.
 	 */
 	resetStringInfo(&tmpbuf);
-	pq_sendint64(&tmpbuf, GetCurrentIntegerTimestamp());
+	pq_sendint64(&tmpbuf, GetCurrentTimestamp());
 	memcpy(&ctx->out->data[1 + sizeof(int64) + sizeof(int64)],
 		   tmpbuf.data, sizeof(int64));
 
@@ -1257,6 +1261,14 @@ exec_replication_command(const char *cmd_string)
 								  parse_rc))));
 
 	cmd_node = replication_parse_result;
+
+	/*
+	 * Allocate buffers that will be used for each outgoing and incoming
+	 * message.  We do this just once per command to reduce palloc overhead.
+	 */
+	initStringInfo(&output_message);
+	initStringInfo(&reply_message);
+	initStringInfo(&tmpbuf);
 
 	switch (cmd_node->type)
 	{
@@ -1736,14 +1748,6 @@ WalSndCheckTimeOut(TimestampTz now)
 static void
 WalSndLoop(WalSndSendDataCallback send_data)
 {
-	/*
-	 * Allocate buffers that will be used for each outgoing and incoming
-	 * message.  We do this just once to reduce palloc overhead.
-	 */
-	initStringInfo(&output_message);
-	initStringInfo(&reply_message);
-	initStringInfo(&tmpbuf);
-
 	/*
 	 * Initialize the last reply timestamp. That enables timeout processing
 	 * from hereon.
@@ -2336,7 +2340,7 @@ XLogSendPhysical(void)
 	 * Fill the send timestamp last, so that it is taken as late as possible.
 	 */
 	resetStringInfo(&tmpbuf);
-	pq_sendint64(&tmpbuf, GetCurrentIntegerTimestamp());
+	pq_sendint64(&tmpbuf, GetCurrentTimestamp());
 	memcpy(&output_message.data[1 + sizeof(int64) + sizeof(int64)],
 		   tmpbuf.data, sizeof(int64));
 
@@ -2435,7 +2439,7 @@ WalSndDone(WalSndSendDataCallback send_data)
 
 	/*
 	 * To figure out whether all WAL has successfully been replicated, check
-	 * flush location if valid, write otherwise. Tools like pg_receivexlog
+	 * flush location if valid, write otherwise. Tools like pg_receivewal
 	 * will usually (unless in synchronous mode) return an invalid flush
 	 * location.
 	 */
@@ -2844,7 +2848,7 @@ WalSndKeepalive(bool requestReply)
 	resetStringInfo(&output_message);
 	pq_sendbyte(&output_message, 'k');
 	pq_sendint64(&output_message, sentPtr);
-	pq_sendint64(&output_message, GetCurrentIntegerTimestamp());
+	pq_sendint64(&output_message, GetCurrentTimestamp());
 	pq_sendbyte(&output_message, requestReply ? 1 : 0);
 
 	/* ... and send it wrapped in CopyData */

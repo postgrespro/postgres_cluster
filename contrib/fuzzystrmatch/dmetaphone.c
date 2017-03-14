@@ -93,9 +93,6 @@ The remaining code is authored by Andrew Dunstan <amdunstan@ncshp.org> and
 ***********************************************************************/
 
 
-
-
-
 /* include these first, according to the docs */
 #ifndef DMETAPHONE_MAIN
 
@@ -105,14 +102,19 @@ The remaining code is authored by Andrew Dunstan <amdunstan@ncshp.org> and
 
 /* turn off assertions for embedded function */
 #define NDEBUG
-#endif
 
+#else							/* DMETAPHONE_MAIN */
+
+/* we need these if we didn't get them from postgres.h */
 #include <stdio.h>
-#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+
+#endif   /* DMETAPHONE_MAIN */
+
 #include <assert.h>
+#include <ctype.h>
 
 /* prototype for the main function we got from the perl module */
 static void DoubleMetaphone(char *, char **);
@@ -137,7 +139,7 @@ dmetaphone(PG_FUNCTION_ARGS)
 	if (PG_ARGISNULL(0))
 		PG_RETURN_NULL();
 #endif
-	arg = PG_GETARG_TEXT_P(0);
+	arg = PG_GETARG_TEXT_PP(0);
 	aptr = text_to_cstring(arg);
 
 	DoubleMetaphone(aptr, codes);
@@ -166,7 +168,7 @@ dmetaphone_alt(PG_FUNCTION_ARGS)
 	if (PG_ARGISNULL(0))
 		PG_RETURN_NULL();
 #endif
-	arg = PG_GETARG_TEXT_P(0);
+	arg = PG_GETARG_TEXT_PP(0);
 	aptr = text_to_cstring(arg);
 
 	DoubleMetaphone(aptr, codes);

@@ -629,6 +629,7 @@ typedef struct IndexOptInfo
 	bool		amsearchnulls;	/* can AM search for NULL/NOT NULL entries? */
 	bool		amhasgettuple;	/* does AM have amgettuple interface? */
 	bool		amhasgetbitmap; /* does AM have amgetbitmap interface? */
+	bool		amcanparallel;	/* does AM support parallel scan? */
 	/* Rather than include amapi.h here, we declare amcostestimate like this */
 	void		(*amcostestimate) ();	/* AM's cost estimator */
 } IndexOptInfo;
@@ -1201,6 +1202,19 @@ typedef struct GatherPath
 	Path	   *subpath;		/* path for each worker */
 	bool		single_copy;	/* don't execute path more than once */
 } GatherPath;
+
+/*
+ * GatherMergePath runs several copies of a plan in parallel and
+ * collects the results. For gather merge parallel leader always execute the
+ * plan.
+ */
+typedef struct GatherMergePath
+{
+	Path		path;
+	Path	   *subpath;		/* path for each worker */
+	int			num_workers;	/* number of workers sought to help */
+} GatherMergePath;
+
 
 /*
  * All join-type paths share these fields.

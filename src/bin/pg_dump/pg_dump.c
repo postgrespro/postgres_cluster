@@ -33,9 +33,6 @@
 
 #include <unistd.h>
 #include <ctype.h>
-#ifdef ENABLE_NLS
-#include <locale.h>
-#endif
 #ifdef HAVE_TERMIOS_H
 #include <termios.h>
 #endif
@@ -775,7 +772,15 @@ main(int argc, char **argv)
 	if (dopt.schemaOnly && dopt.sequence_data)
 		getTableData(&dopt, tblinfo, numTables, dopt.oids, RELKIND_SEQUENCE);
 
-	if (dopt.outputBlobs)
+	/*
+	 * In binary-upgrade mode, we do not have to worry about the actual blob
+	 * data or the associated metadata that resides in the pg_largeobject and
+	 * pg_largeobject_metadata tables, respectivly.
+	 *
+	 * However, we do need to collect blob information as there may be
+	 * comments or other information on blobs that we do need to dump out.
+	 */
+	if (dopt.outputBlobs || dopt.binary_upgrade)
 		getBlobs(fout);
 
 	/*
@@ -855,6 +860,7 @@ main(int argc, char **argv)
 	ropt->enable_row_security = dopt.enable_row_security;
 	ropt->sequence_data = dopt.sequence_data;
 	ropt->include_subscriptions = dopt.include_subscriptions;
+	ropt->binary_upgrade = dopt.binary_upgrade;
 
 	if (compressLevel == -1)
 		ropt->compression = 0;
@@ -2202,13 +2208,14 @@ buildMatViewRefreshDependencies(Archive *fout)
 					"SELECT d1.objid, d2.refobjid, c2.relkind AS refrelkind "
 						 "FROM pg_depend d1 "
 						 "JOIN pg_class c1 ON c1.oid = d1.objid "
-						 "AND c1.relkind = 'm' "
-						 "JOIN pg_rewrite r1 ON r1.ev_class = d1.objid "
+						 "AND c1.relkind = " CppAsString2(RELKIND_MATVIEW)
+						 " JOIN pg_rewrite r1 ON r1.ev_class = d1.objid "
 				  "JOIN pg_depend d2 ON d2.classid = 'pg_rewrite'::regclass "
 						 "AND d2.objid = r1.oid "
 						 "AND d2.refobjid <> d1.objid "
 						 "JOIN pg_class c2 ON c2.oid = d2.refobjid "
-						 "AND c2.relkind IN ('m','v') "
+						 "AND c2.relkind IN (" CppAsString2(RELKIND_MATVIEW) ","
+						 CppAsString2(RELKIND_VIEW) ") "
 						 "WHERE d1.classid = 'pg_class'::regclass "
 						 "UNION "
 						 "SELECT w.objid, d3.refobjid, c3.relkind "
@@ -2218,11 +2225,12 @@ buildMatViewRefreshDependencies(Archive *fout)
 						 "AND d3.objid = r3.oid "
 						 "AND d3.refobjid <> w.refobjid "
 						 "JOIN pg_class c3 ON c3.oid = d3.refobjid "
-						 "AND c3.relkind IN ('m','v') "
+						 "AND c3.relkind IN (" CppAsString2(RELKIND_MATVIEW) ","
+						 CppAsString2(RELKIND_VIEW) ") "
 						 ") "
 			  "SELECT 'pg_class'::regclass::oid AS classid, objid, refobjid "
 						 "FROM w "
-						 "WHERE refrelkind = 'm'");
+						 "WHERE refrelkind = " CppAsString2(RELKIND_MATVIEW));
 
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
 
@@ -2903,6 +2911,20 @@ getBlobs(Archive *fout)
 			PQgetisnull(res, i, i_initlomacl) &&
 			PQgetisnull(res, i, i_initrlomacl))
 			binfo[i].dobj.dump &= ~DUMP_COMPONENT_ACL;
+
+		/*
+		 * In binary-upgrade mode for blobs, we do *not* dump out the data or
+		 * the ACLs, should any exist.  The data and ACL (if any) will be
+		 * copied by pg_upgrade, which simply copies the pg_largeobject and
+		 * pg_largeobject_metadata tables.
+		 *
+		 * We *do* dump out the definition of the blob because we need that to
+		 * make the restoration of the comments, and anything else, work since
+		 * pg_upgrade copies the files behind pg_largeobject and
+		 * pg_largeobject_metadata after the dump is restored.
+		 */
+		if (dopt->binary_upgrade)
+			binfo[i].dobj.dump &= ~(DUMP_COMPONENT_DATA | DUMP_COMPONENT_ACL);
 	}
 
 	/*
@@ -3535,6 +3557,7 @@ getPublicationTables(Archive *fout, TableInfo tblinfo[], int numTables)
 			pubrinfo[j].dobj.catId.oid = atooid(PQgetvalue(res, j, i_oid));
 			AssignDumpId(&pubrinfo[j].dobj);
 			pubrinfo[j].dobj.namespace = tbinfo->dobj.namespace;
+			pubrinfo[j].dobj.name = tbinfo->dobj.name;
 			pubrinfo[j].pubname = pg_strdup(PQgetvalue(res, j, i_pubname));
 			pubrinfo[j].pubtable = tbinfo;
 		}
@@ -3985,12 +4008,32 @@ getNamespaces(Archive *fout, int *numNamespaces)
 						  "LEFT JOIN pg_init_privs pip "
 						  "ON (n.oid = pip.objoid "
 						  "AND pip.classoid = 'pg_namespace'::regclass "
-						  "AND pip.objsubid = 0) ",
+						  "AND pip.objsubid = 0",
 						  username_subquery,
 						  acl_subquery->data,
 						  racl_subquery->data,
 						  init_acl_subquery->data,
 						  init_racl_subquery->data);
+
+		/*
+		 * When we are doing a 'clean' run, we will be dropping and recreating
+		 * the 'public' schema (the only object which has that kind of
+		 * treatment in the backend and which has an entry in pg_init_privs)
+		 * and therefore we should not consider any initial privileges in
+		 * pg_init_privs in that case.
+		 *
+		 * See pg_backup_archiver.c:_printTocEntry() for the details on why
+		 * the public schema is special in this regard.
+		 *
+		 * Note that if the public schema is dropped and re-created, this is
+		 * essentially a no-op because the new public schema won't have an
+		 * entry in pg_init_privs anyway, as the entry will be removed when
+		 * the public schema is dropped.
+		 */
+		if (dopt->outputClean)
+			appendPQExpBuffer(query," AND pip.objoid <> 'public'::regnamespace");
+
+		appendPQExpBuffer(query,") ");
 
 		destroyPQExpBuffer(acl_subquery);
 		destroyPQExpBuffer(racl_subquery);
@@ -5426,7 +5469,8 @@ getTables(Archive *fout, int *numTables)
 
 		buildACLQueries(acl_subquery, racl_subquery, initacl_subquery,
 						initracl_subquery, "c.relacl", "c.relowner",
-				 "CASE WHEN c.relkind = 'S' THEN 's' ELSE 'r' END::\"char\"",
+						"CASE WHEN c.relkind = " CppAsString2(RELKIND_SEQUENCE)
+						" THEN 's' ELSE 'r' END::\"char\"",
 						dopt->binary_upgrade);
 
 		buildACLQueries(attacl_subquery, attracl_subquery, attinitacl_subquery,
@@ -6078,7 +6122,7 @@ getOwnedSeqs(Archive *fout, TableInfo tblinfo[], int numTables)
 
 		owning_tab = findTableByOid(seqinfo->owning_tab);
 		if (owning_tab == NULL)
-			exit_horribly(NULL, "failed sanity check, parent table OID %u of sequence OID %u not found\n",
+			exit_horribly(NULL, "failed sanity check, parent table with OID %u of sequence with OID %u not found\n",
 						  seqinfo->owning_tab, seqinfo->dobj.catId.oid);
 
 		/*
@@ -6134,7 +6178,8 @@ getInherits(Archive *fout, int *numInherits)
 	appendPQExpBufferStr(query,
 						 "SELECT inhrelid, inhparent "
 						 "FROM pg_inherits "
-						 "WHERE inhparent NOT IN (SELECT oid FROM pg_class WHERE relkind = 'P')");
+						 "WHERE inhparent NOT IN (SELECT oid FROM pg_class "
+						 "WHERE relkind = " CppAsString2(RELKIND_PARTITIONED_TABLE) ")");
 
 	res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
 
@@ -6768,7 +6813,7 @@ getRules(Archive *fout, int *numRules)
 		ruletableoid = atooid(PQgetvalue(res, i, i_ruletable));
 		ruleinfo[i].ruletable = findTableByOid(ruletableoid);
 		if (ruleinfo[i].ruletable == NULL)
-			exit_horribly(NULL, "failed sanity check, parent table OID %u of pg_rewrite entry OID %u not found\n",
+			exit_horribly(NULL, "failed sanity check, parent table with OID %u of pg_rewrite entry with OID %u not found\n",
 						  ruletableoid, ruleinfo[i].dobj.catId.oid);
 		ruleinfo[i].dobj.namespace = ruleinfo[i].ruletable->dobj.namespace;
 		ruleinfo[i].dobj.dump = ruleinfo[i].ruletable->dobj.dump;
@@ -7160,7 +7205,7 @@ getProcLangs(Archive *fout, int *numProcLangs)
 						  "FROM pg_language l "
 						  "LEFT JOIN pg_init_privs pip ON "
 						  "(l.oid = pip.objoid "
-						  "AND pip.classoid = 'pg_type'::regclass "
+						  "AND pip.classoid = 'pg_language'::regclass "
 						  "AND pip.objsubid = 0) "
 						  "WHERE l.lanispl "
 						  "ORDER BY l.oid",
@@ -8831,7 +8876,8 @@ dumpComment(Archive *fout, const char *target,
 	}
 	else
 	{
-		if (dopt->schemaOnly)
+		/* We do dump blob comments in binary-upgrade mode */
+		if (dopt->schemaOnly && !dopt->binary_upgrade)
 			return;
 	}
 
@@ -10809,12 +10855,12 @@ dumpProcLang(Archive *fout, ProcLangInfo *plang)
 	/* Dump Proc Lang Comments and Security Labels */
 	if (plang->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, "",
+					lanschema, plang->lanowner,
 					plang->dobj.catId, 0, plang->dobj.dumpId);
 
 	if (plang->dobj.dump & DUMP_COMPONENT_SECLABEL)
 		dumpSecLabel(fout, labelq->data,
-					 NULL, "",
+					 lanschema, plang->lanowner,
 					 plang->dobj.catId, 0, plang->dobj.dumpId);
 
 	if (plang->lanpltrusted && plang->dobj.dump & DUMP_COMPONENT_ACL)
@@ -11564,7 +11610,7 @@ dumpCast(Archive *fout, CastInfo *cast)
 	/* Dump Cast Comments */
 	if (cast->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, "",
+					"pg_catalog", "",
 					cast->dobj.catId, 0, cast->dobj.dumpId);
 
 	free(sourceType);
@@ -11688,7 +11734,7 @@ dumpTransform(Archive *fout, TransformInfo *transform)
 	/* Dump Transform Comments */
 	if (transform->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, "",
+					"pg_catalog", "",
 					transform->dobj.catId, 0, transform->dobj.dumpId);
 
 	free(lanname);
@@ -12462,7 +12508,7 @@ dumpOpclass(Archive *fout, OpclassInfo *opcinfo)
 	/* Dump Operator Class Comments */
 	if (opcinfo->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, opcinfo->rolname,
+					opcinfo->dobj.namespace->dobj.name, opcinfo->rolname,
 					opcinfo->dobj.catId, 0, opcinfo->dobj.dumpId);
 
 	free(amname);
@@ -12735,7 +12781,7 @@ dumpOpfamily(Archive *fout, OpfamilyInfo *opfinfo)
 	/* Dump Operator Family Comments */
 	if (opfinfo->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, opfinfo->rolname,
+					opfinfo->dobj.namespace->dobj.name, opfinfo->rolname,
 					opfinfo->dobj.catId, 0, opfinfo->dobj.dumpId);
 
 	free(amname);
@@ -13453,7 +13499,7 @@ dumpTSParser(Archive *fout, TSParserInfo *prsinfo)
 	/* Dump Parser Comments */
 	if (prsinfo->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, "",
+					prsinfo->dobj.namespace->dobj.name, "",
 					prsinfo->dobj.catId, 0, prsinfo->dobj.dumpId);
 
 	destroyPQExpBuffer(q);
@@ -13543,7 +13589,7 @@ dumpTSDictionary(Archive *fout, TSDictInfo *dictinfo)
 	/* Dump Dictionary Comments */
 	if (dictinfo->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, dictinfo->rolname,
+					dictinfo->dobj.namespace->dobj.name, dictinfo->rolname,
 					dictinfo->dobj.catId, 0, dictinfo->dobj.dumpId);
 
 	destroyPQExpBuffer(q);
@@ -13612,7 +13658,7 @@ dumpTSTemplate(Archive *fout, TSTemplateInfo *tmplinfo)
 	/* Dump Template Comments */
 	if (tmplinfo->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, "",
+					tmplinfo->dobj.namespace->dobj.name, "",
 					tmplinfo->dobj.catId, 0, tmplinfo->dobj.dumpId);
 
 	destroyPQExpBuffer(q);
@@ -13743,7 +13789,7 @@ dumpTSConfig(Archive *fout, TSConfigInfo *cfginfo)
 	/* Dump Configuration Comments */
 	if (cfginfo->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, cfginfo->rolname,
+					cfginfo->dobj.namespace->dobj.name, cfginfo->rolname,
 					cfginfo->dobj.catId, 0, cfginfo->dobj.dumpId);
 
 	destroyPQExpBuffer(q);
@@ -14226,7 +14272,8 @@ dumpSecLabel(Archive *fout, const char *target,
 	}
 	else
 	{
-		if (dopt->schemaOnly)
+		/* We do dump blob security labels in binary-upgrade mode */
+		if (dopt->schemaOnly && !dopt->binary_upgrade)
 			return;
 	}
 
@@ -14793,7 +14840,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 	{
 		switch (tbinfo->relkind)
 		{
-			case (RELKIND_FOREIGN_TABLE):
+			case RELKIND_FOREIGN_TABLE:
 				{
 					PQExpBuffer query = createPQExpBuffer();
 					PGresult   *res;
@@ -14825,7 +14872,7 @@ dumpTableSchema(Archive *fout, TableInfo *tbinfo)
 					destroyPQExpBuffer(query);
 					break;
 				}
-			case (RELKIND_MATVIEW):
+			case RELKIND_MATVIEW:
 				reltypename = "MATERIALIZED VIEW";
 				srvname = NULL;
 				ftoptions = NULL;
@@ -15912,18 +15959,15 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 	PGresult   *res;
 	char	   *startv,
 			   *incby,
-			   *maxv = NULL,
-			   *minv = NULL,
-			   *cache;
-	char		bufm[100],
-				bufx[100];
+			   *maxv,
+			   *minv,
+			   *cache,
+			   *seqtype;
 	bool		cycled;
+	bool		is_ascending;
 	PQExpBuffer query = createPQExpBuffer();
 	PQExpBuffer delqry = createPQExpBuffer();
 	PQExpBuffer labelq = createPQExpBuffer();
-
-	snprintf(bufm, sizeof(bufm), INT64_FORMAT, PG_INT64_MIN);
-	snprintf(bufx, sizeof(bufx), INT64_FORMAT, PG_INT64_MAX);
 
 	if (fout->remoteVersion >= 100000)
 	{
@@ -15931,20 +15975,13 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 		selectSourceSchema(fout, "pg_catalog");
 
 		appendPQExpBuffer(query,
-						  "SELECT seqstart, seqincrement, "
-						  "CASE WHEN seqincrement > 0 AND seqmax = %s THEN NULL "
-						  "     WHEN seqincrement < 0 AND seqmax = -1 THEN NULL "
-						  "     ELSE seqmax "
-						  "END AS seqmax, "
-						  "CASE WHEN seqincrement > 0 AND seqmin = 1 THEN NULL "
-						  "     WHEN seqincrement < 0 AND seqmin = %s THEN NULL "
-						  "     ELSE seqmin "
-						  "END AS seqmin, "
+						  "SELECT format_type(seqtypid, NULL), "
+						  "seqstart, seqincrement, "
+						  "seqmax, seqmin, "
 						  "seqcache, seqcycle "
 						  "FROM pg_class c "
 						  "JOIN pg_sequence s ON (s.seqrelid = c.oid) "
 						  "WHERE c.oid = '%u'::oid",
-						  bufx, bufm,
 						  tbinfo->dobj.catId.oid);
 	}
 	else if (fout->remoteVersion >= 80400)
@@ -15958,17 +15995,9 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 		selectSourceSchema(fout, tbinfo->dobj.namespace->dobj.name);
 
 		appendPQExpBuffer(query,
-						  "SELECT start_value, increment_by, "
-				   "CASE WHEN increment_by > 0 AND max_value = %s THEN NULL "
-				   "     WHEN increment_by < 0 AND max_value = -1 THEN NULL "
-						  "     ELSE max_value "
-						  "END AS max_value, "
-					"CASE WHEN increment_by > 0 AND min_value = 1 THEN NULL "
-				   "     WHEN increment_by < 0 AND min_value = %s THEN NULL "
-						  "     ELSE min_value "
-						  "END AS min_value, "
+						  "SELECT 'bigint'::name AS sequence_type, "
+						  "start_value, increment_by, max_value, min_value, "
 						  "cache_value, is_cycled FROM %s",
-						  bufx, bufm,
 						  fmtId(tbinfo->dobj.name));
 	}
 	else
@@ -15977,17 +16006,9 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 		selectSourceSchema(fout, tbinfo->dobj.namespace->dobj.name);
 
 		appendPQExpBuffer(query,
-						  "SELECT 0 AS start_value, increment_by, "
-				   "CASE WHEN increment_by > 0 AND max_value = %s THEN NULL "
-				   "     WHEN increment_by < 0 AND max_value = -1 THEN NULL "
-						  "     ELSE max_value "
-						  "END AS max_value, "
-					"CASE WHEN increment_by > 0 AND min_value = 1 THEN NULL "
-				   "     WHEN increment_by < 0 AND min_value = %s THEN NULL "
-						  "     ELSE min_value "
-						  "END AS min_value, "
+						  "SELECT 'bigint'::name AS sequence_type, "
+						  "0 AS start_value, increment_by, max_value, min_value, "
 						  "cache_value, is_cycled FROM %s",
-						  bufx, bufm,
 						  fmtId(tbinfo->dobj.name));
 	}
 
@@ -16002,14 +16023,48 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 		exit_nicely(1);
 	}
 
-	startv = PQgetvalue(res, 0, 0);
-	incby = PQgetvalue(res, 0, 1);
-	if (!PQgetisnull(res, 0, 2))
-		maxv = PQgetvalue(res, 0, 2);
-	if (!PQgetisnull(res, 0, 3))
-		minv = PQgetvalue(res, 0, 3);
-	cache = PQgetvalue(res, 0, 4);
-	cycled = (strcmp(PQgetvalue(res, 0, 5), "t") == 0);
+	seqtype = PQgetvalue(res, 0, 0);
+	startv = PQgetvalue(res, 0, 1);
+	incby = PQgetvalue(res, 0, 2);
+	maxv = PQgetvalue(res, 0, 3);
+	minv = PQgetvalue(res, 0, 4);
+	cache = PQgetvalue(res, 0, 5);
+	cycled = (strcmp(PQgetvalue(res, 0, 6), "t") == 0);
+
+	is_ascending = incby[0] != '-';
+
+	if (is_ascending && atoi(minv) == 1)
+		minv = NULL;
+	if (!is_ascending && atoi(maxv) == -1)
+		maxv = NULL;
+
+	if (strcmp(seqtype, "smallint") == 0)
+	{
+		if (!is_ascending && atoi(minv) == PG_INT16_MIN)
+			minv = NULL;
+		if (is_ascending && atoi(maxv) == PG_INT16_MAX)
+			maxv = NULL;
+	}
+	else if (strcmp(seqtype, "integer") == 0)
+	{
+		if (!is_ascending && atoi(minv) == PG_INT32_MIN)
+			minv = NULL;
+		if (is_ascending && atoi(maxv) == PG_INT32_MAX)
+			maxv = NULL;
+	}
+	else if (strcmp(seqtype, "bigint") == 0)
+	{
+		char		bufm[100],
+					bufx[100];
+
+		snprintf(bufm, sizeof(bufm), INT64_FORMAT, PG_INT64_MIN);
+		snprintf(bufx, sizeof(bufx), INT64_FORMAT, PG_INT64_MAX);
+
+		if (!is_ascending && strcmp(minv, bufm) == 0)
+			minv = NULL;
+		if (is_ascending && strcmp(maxv, bufx) == 0)
+			maxv = NULL;
+	}
 
 	/*
 	 * DROP must be fully qualified in case same name appears in pg_catalog
@@ -16032,6 +16087,9 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 	appendPQExpBuffer(query,
 					  "CREATE SEQUENCE %s\n",
 					  fmtId(tbinfo->dobj.name));
+
+	if (strcmp(seqtype, "bigint") != 0)
+		appendPQExpBuffer(query, "    AS %s\n", seqtype);
 
 	if (fout->remoteVersion >= 80400)
 		appendPQExpBuffer(query, "    START WITH %s\n", startv);
@@ -16090,7 +16148,7 @@ dumpSequence(Archive *fout, TableInfo *tbinfo)
 		TableInfo  *owning_tab = findTableByOid(tbinfo->owning_tab);
 
 		if (owning_tab == NULL)
-			exit_horribly(NULL, "failed sanity check, parent table OID %u of sequence OID %u not found\n",
+			exit_horribly(NULL, "failed sanity check, parent table with OID %u of sequence with OID %u not found\n",
 						  tbinfo->owning_tab, tbinfo->dobj.catId.oid);
 
 		if (owning_tab->dobj.dump & DUMP_COMPONENT_DEFINITION)

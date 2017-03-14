@@ -441,6 +441,7 @@ _outBitmapOr(StringInfo str, const BitmapOr *node)
 
 	_outPlanInfo(str, (const Plan *) node);
 
+	WRITE_BOOL_FIELD(isshared);
 	WRITE_NODE_FIELD(bitmapplans);
 }
 
@@ -454,6 +455,35 @@ _outGather(StringInfo str, const Gather *node)
 	WRITE_INT_FIELD(num_workers);
 	WRITE_BOOL_FIELD(single_copy);
 	WRITE_BOOL_FIELD(invisible);
+}
+
+static void
+_outGatherMerge(StringInfo str, const GatherMerge *node)
+{
+	int		i;
+
+	WRITE_NODE_TYPE("GATHERMERGE");
+
+	_outPlanInfo(str, (const Plan *) node);
+
+	WRITE_INT_FIELD(num_workers);
+	WRITE_INT_FIELD(numCols);
+
+	appendStringInfoString(str, " :sortColIdx");
+	for (i = 0; i < node->numCols; i++)
+		appendStringInfo(str, " %d", node->sortColIdx[i]);
+
+	appendStringInfoString(str, " :sortOperators");
+	for (i = 0; i < node->numCols; i++)
+		appendStringInfo(str, " %u", node->sortOperators[i]);
+
+	appendStringInfoString(str, " :collations");
+	for (i = 0; i < node->numCols; i++)
+		appendStringInfo(str, " %u", node->collations[i]);
+
+	appendStringInfoString(str, " :nullsFirst");
+	for (i = 0; i < node->numCols; i++)
+		appendStringInfo(str, " %s", booltostr(node->nullsFirst[i]));
 }
 
 static void
@@ -520,6 +550,7 @@ _outBitmapIndexScan(StringInfo str, const BitmapIndexScan *node)
 	_outScanInfo(str, (const Scan *) node);
 
 	WRITE_OID_FIELD(indexid);
+	WRITE_BOOL_FIELD(isshared);
 	WRITE_NODE_FIELD(indexqual);
 	WRITE_NODE_FIELD(indexqualorig);
 }
@@ -563,6 +594,16 @@ _outFunctionScan(StringInfo str, const FunctionScan *node)
 
 	WRITE_NODE_FIELD(functions);
 	WRITE_BOOL_FIELD(funcordinality);
+}
+
+static void
+_outTableFuncScan(StringInfo str, const TableFuncScan *node)
+{
+	WRITE_NODE_TYPE("TABLEFUNCSCAN");
+
+	_outScanInfo(str, (const Scan *) node);
+
+	WRITE_NODE_FIELD(tablefunc);
 }
 
 static void
@@ -956,6 +997,26 @@ _outRangeVar(StringInfo str, const RangeVar *node)
 }
 
 static void
+_outTableFunc(StringInfo str, const TableFunc *node)
+{
+	WRITE_NODE_TYPE("TABLEFUNC");
+
+	WRITE_NODE_FIELD(ns_names);
+	WRITE_NODE_FIELD(ns_uris);
+	WRITE_NODE_FIELD(docexpr);
+	WRITE_NODE_FIELD(rowexpr);
+	WRITE_NODE_FIELD(colnames);
+	WRITE_NODE_FIELD(coltypes);
+	WRITE_NODE_FIELD(coltypmods);
+	WRITE_NODE_FIELD(colcollations);
+	WRITE_NODE_FIELD(colexprs);
+	WRITE_NODE_FIELD(coldefexprs);
+	WRITE_BITMAPSET_FIELD(notnulls);
+	WRITE_INT_FIELD(ordinalitycol);
+	WRITE_LOCATION_FIELD(location);
+}
+
+static void
 _outIntoClause(StringInfo str, const IntoClause *node)
 {
 	WRITE_NODE_TYPE("INTOCLAUSE");
@@ -1226,6 +1287,7 @@ _outSubPlan(StringInfo str, const SubPlan *node)
 	WRITE_OID_FIELD(firstColCollation);
 	WRITE_BOOL_FIELD(useHashTable);
 	WRITE_BOOL_FIELD(unknownEqFalse);
+	WRITE_BOOL_FIELD(parallel_safe);
 	WRITE_NODE_FIELD(setParam);
 	WRITE_NODE_FIELD(parParam);
 	WRITE_NODE_FIELD(args);
@@ -1981,6 +2043,17 @@ _outLimitPath(StringInfo str, const LimitPath *node)
 	WRITE_NODE_FIELD(subpath);
 	WRITE_NODE_FIELD(limitOffset);
 	WRITE_NODE_FIELD(limitCount);
+}
+
+static void
+_outGatherMergePath(StringInfo str, const GatherMergePath *node)
+{
+	WRITE_NODE_TYPE("GATHERMERGEPATH");
+
+	_outPathInfo(str, (const Path *) node);
+
+	WRITE_NODE_FIELD(subpath);
+	WRITE_INT_FIELD(num_workers);
 }
 
 static void
@@ -2868,6 +2941,9 @@ _outRangeTblEntry(StringInfo str, const RangeTblEntry *node)
 			WRITE_NODE_FIELD(functions);
 			WRITE_BOOL_FIELD(funcordinality);
 			break;
+		case RTE_TABLEFUNC:
+			WRITE_NODE_FIELD(tablefunc);
+			break;
 		case RTE_VALUES:
 			WRITE_NODE_FIELD(values_lists);
 			WRITE_NODE_FIELD(coltypes);
@@ -3191,6 +3267,34 @@ _outRangeTableSample(StringInfo str, const RangeTableSample *node)
 }
 
 static void
+_outRangeTableFunc(StringInfo str, const RangeTableFunc *node)
+{
+	WRITE_NODE_TYPE("RANGETABLEFUNC");
+
+	WRITE_BOOL_FIELD(lateral);
+	WRITE_NODE_FIELD(docexpr);
+	WRITE_NODE_FIELD(rowexpr);
+	WRITE_NODE_FIELD(namespaces);
+	WRITE_NODE_FIELD(columns);
+	WRITE_NODE_FIELD(alias);
+	WRITE_LOCATION_FIELD(location);
+}
+
+static void
+_outRangeTableFuncCol(StringInfo str, const RangeTableFuncCol *node)
+{
+	WRITE_NODE_TYPE("RANGETABLEFUNCCOL");
+
+	WRITE_STRING_FIELD(colname);
+	WRITE_NODE_FIELD(typeName);
+	WRITE_BOOL_FIELD(for_ordinality);
+	WRITE_BOOL_FIELD(is_not_null);
+	WRITE_NODE_FIELD(colexpr);
+	WRITE_NODE_FIELD(coldefexpr);
+	WRITE_LOCATION_FIELD(location);
+}
+
+static void
 _outConstraint(StringInfo str, const Constraint *node)
 {
 	WRITE_NODE_TYPE("CONSTRAINT");
@@ -3409,6 +3513,9 @@ outNode(StringInfo str, const void *obj)
 			case T_Gather:
 				_outGather(str, obj);
 				break;
+			case T_GatherMerge:
+				_outGatherMerge(str, obj);
+				break;
 			case T_Scan:
 				_outScan(str, obj);
 				break;
@@ -3438,6 +3545,9 @@ outNode(StringInfo str, const void *obj)
 				break;
 			case T_FunctionScan:
 				_outFunctionScan(str, obj);
+				break;
+			case T_TableFuncScan:
+				_outTableFuncScan(str, obj);
 				break;
 			case T_ValuesScan:
 				_outValuesScan(str, obj);
@@ -3510,6 +3620,9 @@ outNode(StringInfo str, const void *obj)
 				break;
 			case T_RangeVar:
 				_outRangeVar(str, obj);
+				break;
+			case T_TableFunc:
+				_outTableFunc(str, obj);
 				break;
 			case T_IntoClause:
 				_outIntoClause(str, obj);
@@ -3739,6 +3852,9 @@ outNode(StringInfo str, const void *obj)
 			case T_LimitPath:
 				_outLimitPath(str, obj);
 				break;
+			case T_GatherMergePath:
+				_outGatherMergePath(str, obj);
+				break;
 			case T_NestPath:
 				_outNestPath(str, obj);
 				break;
@@ -3920,6 +4036,12 @@ outNode(StringInfo str, const void *obj)
 				break;
 			case T_RangeTableSample:
 				_outRangeTableSample(str, obj);
+				break;
+			case T_RangeTableFunc:
+				_outRangeTableFunc(str, obj);
+				break;
+			case T_RangeTableFuncCol:
+				_outRangeTableFuncCol(str, obj);
 				break;
 			case T_Constraint:
 				_outConstraint(str, obj);

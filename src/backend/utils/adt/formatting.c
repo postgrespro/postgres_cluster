@@ -2434,23 +2434,13 @@ DCH_to_char(FormatNode *node, bool is_interval, TmToChar *in, char *out, Oid col
 				s += strlen(s);
 				break;
 			case DCH_MS:		/* millisecond */
-#ifdef HAVE_INT64_TIMESTAMP
 				sprintf(s, "%03d", (int) (in->fsec / INT64CONST(1000)));
-#else
-				/* No rint() because we can't overflow and we might print US */
-				sprintf(s, "%03d", (int) (in->fsec * 1000));
-#endif
 				if (S_THth(n->suffix))
 					str_numth(s, s, S_TH_TYPE(n->suffix));
 				s += strlen(s);
 				break;
 			case DCH_US:		/* microsecond */
-#ifdef HAVE_INT64_TIMESTAMP
 				sprintf(s, "%06d", (int) in->fsec);
-#else
-				/* don't use rint() because we can't overflow 1000 */
-				sprintf(s, "%06d", (int) (in->fsec * 1000000));
-#endif
 				if (S_THth(n->suffix))
 					str_numth(s, s, S_TH_TYPE(n->suffix));
 				s += strlen(s);
@@ -3031,7 +3021,9 @@ DCH_from_char(FormatNode *node, char *in, TmFromChar *out)
 			case DCH_OF:
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("\"TZ\"/\"tz\"/\"OF\" format patterns are not supported in to_date")));
+				errmsg("formatting field \"%s\" is only supported in to_char",
+					   n->key->name)));
+				break;
 			case DCH_A_D:
 			case DCH_B_C:
 			case DCH_a_d:
@@ -3388,13 +3380,13 @@ Datum
 timestamp_to_char(PG_FUNCTION_ARGS)
 {
 	Timestamp	dt = PG_GETARG_TIMESTAMP(0);
-	text	   *fmt = PG_GETARG_TEXT_P(1),
+	text	   *fmt = PG_GETARG_TEXT_PP(1),
 			   *res;
 	TmToChar	tmtc;
 	struct pg_tm *tm;
 	int			thisdate;
 
-	if ((VARSIZE(fmt) - VARHDRSZ) <= 0 || TIMESTAMP_NOT_FINITE(dt))
+	if (VARSIZE_ANY_EXHDR(fmt) <= 0 || TIMESTAMP_NOT_FINITE(dt))
 		PG_RETURN_NULL();
 
 	ZERO_tmtc(&tmtc);
@@ -3419,14 +3411,14 @@ Datum
 timestamptz_to_char(PG_FUNCTION_ARGS)
 {
 	TimestampTz dt = PG_GETARG_TIMESTAMP(0);
-	text	   *fmt = PG_GETARG_TEXT_P(1),
+	text	   *fmt = PG_GETARG_TEXT_PP(1),
 			   *res;
 	TmToChar	tmtc;
 	int			tz;
 	struct pg_tm *tm;
 	int			thisdate;
 
-	if ((VARSIZE(fmt) - VARHDRSZ) <= 0 || TIMESTAMP_NOT_FINITE(dt))
+	if (VARSIZE_ANY_EXHDR(fmt) <= 0 || TIMESTAMP_NOT_FINITE(dt))
 		PG_RETURN_NULL();
 
 	ZERO_tmtc(&tmtc);
@@ -3456,12 +3448,12 @@ Datum
 interval_to_char(PG_FUNCTION_ARGS)
 {
 	Interval   *it = PG_GETARG_INTERVAL_P(0);
-	text	   *fmt = PG_GETARG_TEXT_P(1),
+	text	   *fmt = PG_GETARG_TEXT_PP(1),
 			   *res;
 	TmToChar	tmtc;
 	struct pg_tm *tm;
 
-	if ((VARSIZE(fmt) - VARHDRSZ) <= 0)
+	if (VARSIZE_ANY_EXHDR(fmt) <= 0)
 		PG_RETURN_NULL();
 
 	ZERO_tmtc(&tmtc);
@@ -3489,8 +3481,8 @@ interval_to_char(PG_FUNCTION_ARGS)
 Datum
 to_timestamp(PG_FUNCTION_ARGS)
 {
-	text	   *date_txt = PG_GETARG_TEXT_P(0);
-	text	   *fmt = PG_GETARG_TEXT_P(1);
+	text	   *date_txt = PG_GETARG_TEXT_PP(0);
+	text	   *fmt = PG_GETARG_TEXT_PP(1);
 	Timestamp	result;
 	int			tz;
 	struct pg_tm tm;
@@ -3516,8 +3508,8 @@ to_timestamp(PG_FUNCTION_ARGS)
 Datum
 to_date(PG_FUNCTION_ARGS)
 {
-	text	   *date_txt = PG_GETARG_TEXT_P(0);
-	text	   *fmt = PG_GETARG_TEXT_P(1);
+	text	   *date_txt = PG_GETARG_TEXT_PP(0);
+	text	   *fmt = PG_GETARG_TEXT_PP(1);
 	DateADT		result;
 	struct pg_tm tm;
 	fsec_t		fsec;
@@ -3791,17 +3783,10 @@ do_to_timestamp(text *date_txt, text *fmt,
 		}
 	}
 
-#ifdef HAVE_INT64_TIMESTAMP
 	if (tmfc.ms)
 		*fsec += tmfc.ms * 1000;
 	if (tmfc.us)
 		*fsec += tmfc.us;
-#else
-	if (tmfc.ms)
-		*fsec += (double) tmfc.ms / 1000;
-	if (tmfc.us)
-		*fsec += (double) tmfc.us / 1000000;
-#endif
 
 	/* Range-check date fields according to bit mask computed above */
 	if (fmask != 0)
@@ -3824,12 +3809,7 @@ do_to_timestamp(text *date_txt, text *fmt,
 	if (tm->tm_hour < 0 || tm->tm_hour >= HOURS_PER_DAY ||
 		tm->tm_min < 0 || tm->tm_min >= MINS_PER_HOUR ||
 		tm->tm_sec < 0 || tm->tm_sec >= SECS_PER_MINUTE ||
-#ifdef HAVE_INT64_TIMESTAMP
-		*fsec < INT64CONST(0) || *fsec >= USECS_PER_SEC
-#else
-		*fsec < 0 || *fsec >= 1
-#endif
-		)
+		*fsec < INT64CONST(0) || *fsec >= USECS_PER_SEC)
 		DateTimeParseError(DTERR_FIELD_OVERFLOW, date_str, "timestamp");
 
 	DEBUG_TM(tm);
@@ -5058,8 +5038,8 @@ do { \
 Datum
 numeric_to_number(PG_FUNCTION_ARGS)
 {
-	text	   *value = PG_GETARG_TEXT_P(0);
-	text	   *fmt = PG_GETARG_TEXT_P(1);
+	text	   *value = PG_GETARG_TEXT_PP(0);
+	text	   *fmt = PG_GETARG_TEXT_PP(1);
 	NUMDesc		Num;
 	Datum		result;
 	FormatNode *format;
@@ -5069,7 +5049,7 @@ numeric_to_number(PG_FUNCTION_ARGS)
 	int			scale,
 				precision;
 
-	len = VARSIZE(fmt) - VARHDRSZ;
+	len = VARSIZE_ANY_EXHDR(fmt);
 
 	if (len <= 0 || len >= INT_MAX / NUM_MAX_ITEM_SIZ)
 		PG_RETURN_NULL();
@@ -5078,8 +5058,8 @@ numeric_to_number(PG_FUNCTION_ARGS)
 
 	numstr = (char *) palloc((len * NUM_MAX_ITEM_SIZ) + 1);
 
-	NUM_processor(format, &Num, VARDATA(value), numstr,
-				  VARSIZE(value) - VARHDRSZ, 0, 0, false, PG_GET_COLLATION());
+	NUM_processor(format, &Num, VARDATA_ANY(value), numstr,
+				  VARSIZE_ANY_EXHDR(value), 0, 0, false, PG_GET_COLLATION());
 
 	scale = Num.post;
 	precision = Num.pre + Num.multi + scale;
@@ -5120,7 +5100,7 @@ Datum
 numeric_to_char(PG_FUNCTION_ARGS)
 {
 	Numeric		value = PG_GETARG_NUMERIC(0);
-	text	   *fmt = PG_GETARG_TEXT_P(1);
+	text	   *fmt = PG_GETARG_TEXT_PP(1);
 	NUMDesc		Num;
 	FormatNode *format;
 	text	   *result;
@@ -5244,7 +5224,7 @@ Datum
 int4_to_char(PG_FUNCTION_ARGS)
 {
 	int32		value = PG_GETARG_INT32(0);
-	text	   *fmt = PG_GETARG_TEXT_P(1);
+	text	   *fmt = PG_GETARG_TEXT_PP(1);
 	NUMDesc		Num;
 	FormatNode *format;
 	text	   *result;
@@ -5339,7 +5319,7 @@ Datum
 int8_to_char(PG_FUNCTION_ARGS)
 {
 	int64		value = PG_GETARG_INT64(0);
-	text	   *fmt = PG_GETARG_TEXT_P(1);
+	text	   *fmt = PG_GETARG_TEXT_PP(1);
 	NUMDesc		Num;
 	FormatNode *format;
 	text	   *result;
@@ -5449,7 +5429,7 @@ Datum
 float4_to_char(PG_FUNCTION_ARGS)
 {
 	float4		value = PG_GETARG_FLOAT4(0);
-	text	   *fmt = PG_GETARG_TEXT_P(1);
+	text	   *fmt = PG_GETARG_TEXT_PP(1);
 	NUMDesc		Num;
 	FormatNode *format;
 	text	   *result;
@@ -5555,7 +5535,7 @@ Datum
 float8_to_char(PG_FUNCTION_ARGS)
 {
 	float8		value = PG_GETARG_FLOAT8(0);
-	text	   *fmt = PG_GETARG_TEXT_P(1);
+	text	   *fmt = PG_GETARG_TEXT_PP(1);
 	NUMDesc		Num;
 	FormatNode *format;
 	text	   *result;

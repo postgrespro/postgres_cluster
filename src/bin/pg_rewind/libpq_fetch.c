@@ -9,7 +9,6 @@
  */
 #include "postgres_fe.h"
 
-#include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -121,7 +120,7 @@ run_simple_query(const char *sql)
 }
 
 /*
- * Calls pg_current_xlog_insert_location() function
+ * Calls pg_current_wal_insert_location() function
  */
 XLogRecPtr
 libpqGetCurrentXlogInsertLocation(void)
@@ -131,7 +130,7 @@ libpqGetCurrentXlogInsertLocation(void)
 	uint32		lo;
 	char	   *val;
 
-	val = run_simple_query("SELECT pg_current_xlog_insert_location()");
+	val = run_simple_query("SELECT pg_current_wal_insert_location()");
 
 	if (sscanf(val, "%X/%X", &hi, &lo) != 2)
 		pg_fatal("unrecognized result \"%s\" for current WAL insert location\n", val);

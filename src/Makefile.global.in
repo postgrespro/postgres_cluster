@@ -582,6 +582,11 @@ ifneq ($(CUSTOM_COPT),)
   COPT= $(CUSTOM_COPT)
 endif
 
+#
+# These variables are meant to be set in the environment of "make"
+# to add flags to whatever configure picked.  Unlike the ones above,
+# they are documented.
+#
 ifdef COPT
    CFLAGS += $(COPT)
    LDFLAGS += $(COPT)
@@ -622,6 +627,7 @@ TAS         = @TAS@
 ifdef FLEX
 	$(FLEX) $(if $(FLEX_NO_BACKUP),-b) $(FLEXFLAGS) -o'$@' $<
 	@$(if $(FLEX_NO_BACKUP),if [ `wc -l <lex.backup` -eq 1 ]; then rm lex.backup; else echo "Scanner requires backup; see lex.backup." 1>&2; exit 1; fi)
+	$(if $(FLEX_FIX_WARNING),$(PERL) $(top_srcdir)/src/tools/fix-old-flex-code.pl '$@')
 else
 	@$(missing) flex $< '$@'
 endif

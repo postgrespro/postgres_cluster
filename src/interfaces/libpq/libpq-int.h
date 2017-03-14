@@ -21,11 +21,9 @@
 #define LIBPQ_INT_H
 
 /* We assume libpq-fe.h has already been included. */
-#include "postgres_fe.h"
 #include "libpq-events.h"
 
 #include <time.h>
-#include <sys/types.h>
 #ifndef WIN32
 #include <sys/time.h>
 #endif
@@ -454,7 +452,12 @@ struct pg_conn
 	PGresult   *result;			/* result being constructed */
 	PGresult   *next_result;	/* next result (used in single-row mode) */
 
-	/* Assorted state for SSL, GSS, etc */
+	/* Buffer to hold incoming authentication request data */
+	char	   *auth_req_inbuf;
+	int			auth_req_inlen;
+
+	/* Assorted state for SASL, SSL, GSS, etc */
+	void	   *sasl_state;
 
 #ifdef USE_SSL
 	bool		allow_ssl_try;	/* Allowed to try SSL negotiation */

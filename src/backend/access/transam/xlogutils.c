@@ -275,9 +275,9 @@ XLogCheckInvalidPages(void)
  * will complain if we don't have the lock.  In hot standby mode it's
  * definitely necessary.)
  *
- * Note: when a backup block is available in XLOG, we restore it
- * unconditionally, even if the page in the database appears newer.  This is
- * to protect ourselves against database pages that were partially or
+ * Note: when a backup block is available in XLOG with the BKPIMAGE_APPLY flag
+ * set, we restore it, even if the page in the database appears newer.  This
+ * is to protect ourselves against database pages that were partially or
  * incorrectly written during a crash.  We assume that the XLOG data must be
  * good because it has passed a CRC check, while the database page might not
  * be.  This will force us to replay all subsequent modifications of the page
@@ -352,9 +352,10 @@ XLogReadBufferForRedoExtended(XLogReaderState *record,
 	if (!willinit && zeromode)
 		elog(PANIC, "block to be initialized in redo routine must be marked with WILL_INIT flag in the WAL record");
 
-	/* If it's a full-page image, restore it. */
-	if (XLogRecHasBlockImage(record, block_id))
+	/* If it has a full-page image and it should be restored, do it. */
+	if (XLogRecBlockImageApply(record, block_id))
 	{
+		Assert(XLogRecHasBlockImage(record, block_id));
 		*buf = XLogReadBufferExtended(rnode, forknum, blkno,
 		   get_cleanup_lock ? RBM_ZERO_AND_CLEANUP_LOCK : RBM_ZERO_AND_LOCK);
 		page = BufferGetPage(*buf);
@@ -646,7 +647,7 @@ XLogTruncateRelation(RelFileNode rnode, ForkNumber forkNum,
  * always be one descriptor left open until the process ends, but never
  * more than one.
  *
- * XXX This is very similar to pg_xlogdump's XLogDumpXLogRead and to XLogRead
+ * XXX This is very similar to pg_waldump's XLogDumpXLogRead and to XLogRead
  * in walsender.c but for small differences (such as lack of elog() in
  * frontend).  Probably these should be merged at some point.
  */

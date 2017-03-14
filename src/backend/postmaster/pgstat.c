@@ -3340,8 +3340,8 @@ pgstat_get_wait_client(WaitEventClient w)
 		case WAIT_EVENT_WAL_RECEIVER_WAIT_START:
 			event_name = "WalReceiverWaitStart";
 			break;
-		case WAIT_EVENT_LIBPQWALRECEIVER_READ:
-			event_name = "LibPQWalReceiverRead";
+		case WAIT_EVENT_LIBPQWALRECEIVER:
+			event_name = "LibPQWalReceiver";
 			break;
 		case WAIT_EVENT_WAL_SENDER_WAIT_WAL:
 			event_name = "WalSenderWaitForWAL";
@@ -3374,6 +3374,9 @@ pgstat_get_wait_ipc(WaitEventIPC w)
 		case WAIT_EVENT_BGWORKER_STARTUP:
 			event_name = "BgWorkerStartup";
 			break;
+		case WAIT_EVENT_BTREE_PAGE:
+			event_name = "BtreePage";
+			break;
 		case WAIT_EVENT_EXECUTE_GATHER:
 			event_name = "ExecuteGather";
 			break;
@@ -3391,6 +3394,9 @@ pgstat_get_wait_ipc(WaitEventIPC w)
 			break;
 		case WAIT_EVENT_PARALLEL_FINISH:
 			event_name = "ParallelFinish";
+			break;
+		case WAIT_EVENT_PARALLEL_BITMAP_SCAN:
+			event_name = "ParallelBitmapScan";
 			break;
 		case WAIT_EVENT_SAFE_SNAPSHOT:
 			event_name = "SafeSnapshot";

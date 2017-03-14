@@ -124,8 +124,8 @@ pg_file_write(PG_FUNCTION_ARGS)
 
 	requireSuperuser();
 
-	filename = convert_and_check_filename(PG_GETARG_TEXT_P(0), false);
-	data = PG_GETARG_TEXT_P(1);
+	filename = convert_and_check_filename(PG_GETARG_TEXT_PP(0), false);
+	data = PG_GETARG_TEXT_PP(1);
 
 	if (!PG_GETARG_BOOL(2))
 	{
@@ -136,10 +136,10 @@ pg_file_write(PG_FUNCTION_ARGS)
 					(ERRCODE_DUPLICATE_FILE,
 					 errmsg("file \"%s\" exists", filename)));
 
-		f = fopen(filename, "wb");
+		f = AllocateFile(filename, "wb");
 	}
 	else
-		f = fopen(filename, "ab");
+		f = AllocateFile(filename, "ab");
 
 	if (!f)
 		ereport(ERROR,
@@ -147,16 +147,11 @@ pg_file_write(PG_FUNCTION_ARGS)
 				 errmsg("could not open file \"%s\" for writing: %m",
 						filename)));
 
-	if (VARSIZE(data) != 0)
-	{
-		count = fwrite(VARDATA(data), 1, VARSIZE(data) - VARHDRSZ, f);
-
-		if (count != VARSIZE(data) - VARHDRSZ)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not write file \"%s\": %m", filename)));
-	}
-	fclose(f);
+	count = fwrite(VARDATA_ANY(data), 1, VARSIZE_ANY_EXHDR(data), f);
+	if (count != VARSIZE_ANY_EXHDR(data) || FreeFile(f))
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not write file \"%s\": %m", filename)));
 
 	PG_RETURN_INT64(count);
 }
@@ -175,12 +170,12 @@ pg_file_rename(PG_FUNCTION_ARGS)
 	if (PG_ARGISNULL(0) || PG_ARGISNULL(1))
 		PG_RETURN_NULL();
 
-	fn1 = convert_and_check_filename(PG_GETARG_TEXT_P(0), false);
-	fn2 = convert_and_check_filename(PG_GETARG_TEXT_P(1), false);
+	fn1 = convert_and_check_filename(PG_GETARG_TEXT_PP(0), false);
+	fn2 = convert_and_check_filename(PG_GETARG_TEXT_PP(1), false);
 	if (PG_ARGISNULL(2))
 		fn3 = 0;
 	else
-		fn3 = convert_and_check_filename(PG_GETARG_TEXT_P(2), false);
+		fn3 = convert_and_check_filename(PG_GETARG_TEXT_PP(2), false);
 
 	if (access(fn1, W_OK) < 0)
 	{
@@ -259,7 +254,7 @@ pg_file_unlink(PG_FUNCTION_ARGS)
 
 	requireSuperuser();
 
-	filename = convert_and_check_filename(PG_GETARG_TEXT_P(0), false);
+	filename = convert_and_check_filename(PG_GETARG_TEXT_PP(0), false);
 
 	if (access(filename, W_OK) < 0)
 	{

@@ -18,6 +18,7 @@
 
 #include "access/genam.h"
 #include "access/spgist_private.h"
+#include "access/spgxlog.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
 #include "catalog/index.h"
@@ -206,7 +207,8 @@ spgbuildempty(Relation index)
 bool
 spginsert(Relation index, Datum *values, bool *isnull,
 		  ItemPointer ht_ctid, Relation heapRel,
-		  IndexUniqueCheck checkUnique)
+		  IndexUniqueCheck checkUnique,
+		  IndexInfo *indexInfo)
 {
 	SpGistState spgstate;
 	MemoryContext oldCtx;
