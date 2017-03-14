@@ -2869,10 +2869,15 @@ heap_page_prepare_for_xid(Relation relation, Buffer buffer,
 		/* No items on the page? */
 		if (!found)
 		{
+			int64	delta;
+
 			if (!multi)
-				pageHdr->pd_xid_epoch = xid - FirstNormalTransactionId;
+				delta = (xid - FirstNormalTransactionId) - pageHdr->pd_xid_epoch;
 			else
-				pageHdr->pd_multi_epoch = xid - FirstNormalTransactionId;
+				delta = (xid - FirstNormalTransactionId) - pageHdr->pd_multi_epoch;
+
+			heap_page_shift_epoch(RelationNeedsWAL(relation) ? buffer : InvalidBuffer,
+				page, multi, delta);
 			MarkBufferDirty(buffer);
 			return false;
 		}
