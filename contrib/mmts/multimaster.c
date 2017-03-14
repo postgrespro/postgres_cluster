@@ -291,13 +291,6 @@ void MtmReleaseLocks(void)
 	if (MtmClusterLocked) {
 		MtmUnlockCluster();
 	}
-	if (MtmLockCount != 0) { 
-		Assert(Mtm->lastLockHolder == MyProcPid);
-		MtmLockCount = 0;
-		Mtm->lastLockHolder = 0;
-		LWLockRelease((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID]);
-	}
-
 }
 		
 /*
@@ -1808,6 +1801,7 @@ void MtmAbortTransaction(MtmTransState* ts)
 void MtmHandleApplyError(void)
 {
 	ErrorData *edata = CopyErrorData();
+	MtmLockCount = 0; /* LWLocks will be released by AbortTransaction, we just need to clear owr MtmLockCount */
 	switch (edata->sqlerrcode) { 
 		case ERRCODE_DISK_FULL:
 		case ERRCODE_INSUFFICIENT_RESOURCES:
