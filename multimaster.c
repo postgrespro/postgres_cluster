@@ -319,6 +319,9 @@ void MtmLock(LWLockMode mode)
 		timestamp_t start, stop;
 		start = MtmGetSystemTime();
 #endif
+		if (MyProc == NULL) { /* Can not wait if have no PGPROC. It can happen at process exit. TODO: without lock we can get race condition and corrupt Mtm state */
+			return;
+		}
 		LWLockAcquire((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID], mode);
 #if DEBUG_LEVEL > 1
 		stop = MtmGetSystemTime();
@@ -338,6 +341,9 @@ void MtmUnlock(void)
 {
 	if (MtmLockCount != 0 && --MtmLockCount != 0) { 
 		Assert(Mtm->lastLockHolder == MyProcPid);
+		return;
+	}
+	if (MyProc == NULL) { /* If we have no PGPROC, then lock was not obtained. */
 		return;
 	}
 	Mtm->lastLockHolder = 0;
@@ -4584,10 +4590,10 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 			MTM_ELOG(WARNING, "Failed to prepare transaction %s (%llu)", x->gid, (long64)x->xid);
 		} else { 	
 			CommitTransactionCommand();
+			StartTransactionCommand();
 			if (x->isSuspended) { 
 				MTM_ELOG(WARNING, "Transaction %s (%llu) is left in prepared state because coordinator node is not online", x->gid, (long64)x->xid);
 			} else { 				
-				StartTransactionCommand();
 				Assert(x->isActive);
 				if (x->status == TRANSACTION_STATUS_ABORTED) { 
 					FinishPreparedTransaction(x->gid, false);
