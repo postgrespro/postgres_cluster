@@ -482,6 +482,10 @@ DecodeHeapOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 			/* we don't care about row level locks for now */
 			break;
 
+		case XLOG_HEAP_EPOCH_SHIFT:
+			/* shift of epoch has no influence on snapshot */
+			break;
+
 		default:
 			elog(ERROR, "unexpected RM_HEAP_ID record type: %u", info);
 			break;
