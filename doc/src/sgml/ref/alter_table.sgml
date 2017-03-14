@@ -835,7 +835,7 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     <listitem>
      <para>
       This clause splits the created table into partitions based on the specified partitioning options.
-      The supported partitioning options are:
+      The supported partitioning options are:</para>
 
       <variablelist>
        <varlistentry>
