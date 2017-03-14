@@ -826,7 +826,7 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
   </variablelist>
   </para>
 
-  <para><emphasis role="strong">Partitioning Actions</emphasis>
+  <para><emphasis role="strong">Partitioning Actions</emphasis></para>
   <para>You must have <productname>&productname;</productname> installed with <filename>pg_pathman</filename> enabled to use this syntax for creating and managing table partitions.</para>
     <variablelist>
 
