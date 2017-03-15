@@ -7,13 +7,15 @@
 #include "storage/relfilenode.h"
 #include "utils/relcache.h"
 
-extern PGDLLIMPORT unsigned int blocks_track_count;
+/* Number of bits allocated for each heap block. */
+#define PTRACK_BITS_PER_HEAPBLOCK 1
 
 extern PGDLLIMPORT bool ptrack_enable;
 
-extern void ptrack_save(void);
-
-extern void ptrack_add_block(BlockNumber block_number, RelFileNode rel);
+extern void ptrack_add_block(Relation rel, BlockNumber heapBlk);
+extern void ptrack_add_block_redo(RelFileNode rnode, BlockNumber heapBlk);
+extern void ptrack_pin(Relation rel, BlockNumber heapBlk, Buffer *buf);
+extern void ptrack_set(BlockNumber heapBlk, Buffer ptrackBuf);
 
 extern void ptrack_clear(void);
 extern bytea *ptrack_get_and_clear(Oid tablespace_oid, Oid table_oid);

@@ -53,6 +53,7 @@
 #include "access/xlog.h"
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
+#include "access/ptrack.h"
 #include "catalog/catalog.h"
 #include "catalog/namespace.h"
 #include "commands/vacuum.h"
@@ -2425,6 +2426,7 @@ heap_insert(Relation relation, HeapTuple tup, CommandId cid,
 	HeapTupleCopyEpochFromPage(heaptup, BufferGetPage(buffer));
 
 	/* NO EREPORT(ERROR) from here till changes are logged */
+	ptrack_add_block(relation, BufferGetBlockNumber(buffer));
 	START_CRIT_SECTION();
 
 	RelationPutHeapTuple(relation, buffer, heaptup,
@@ -2799,6 +2801,7 @@ freeze_single_heap_page(Relation relation, Buffer buffer)
 	{
 		int			i;
 
+		ptrack_add_block(relation, BufferGetBlockNumber(buffer));
 		START_CRIT_SECTION();
 
 		MarkBufferDirty(buffer);
@@ -2866,10 +2869,15 @@ heap_page_prepare_for_xid(Relation relation, Buffer buffer,
 		/* No items on the page? */
 		if (!found)
 		{
+			int64	delta;
+
 			if (!multi)
-				pageHdr->pd_xid_epoch = xid - FirstNormalTransactionId;
+				delta = (xid - FirstNormalTransactionId) - pageHdr->pd_xid_epoch;
 			else
-				pageHdr->pd_multi_epoch = xid - FirstNormalTransactionId;
+				delta = (xid - FirstNormalTransactionId) - pageHdr->pd_multi_epoch;
+
+			heap_page_shift_epoch(RelationNeedsWAL(relation) ? buffer : InvalidBuffer,
+				page, multi, delta);
 			MarkBufferDirty(buffer);
 			return false;
 		}
@@ -3147,6 +3155,7 @@ heap_multi_insert(Relation relation, HeapTuple *tuples, int ntuples,
 		heap_page_prepare_for_xid(relation, buffer, xid, false);
 
 		/* NO EREPORT(ERROR) from here till changes are logged */
+		ptrack_add_block(relation, BufferGetBlockNumber(buffer));
 		START_CRIT_SECTION();
 
 		/*
@@ -3675,6 +3684,7 @@ l1:
 		(new_infomask & HEAP_XMAX_IS_MULTI) ? true : false);
 	HeapTupleCopyEpochFromPage(&tp, page);
 
+	ptrack_add_block(relation, BufferGetBlockNumber(buffer));
 	START_CRIT_SECTION();
 
 	/*
@@ -4423,6 +4433,7 @@ l2:
 			(infomask_lock_old_tuple & HEAP_XMAX_IS_MULTI) ? true : false);
 		HeapTupleCopyEpochFromPage(&oldtup, page);
 
+		ptrack_add_block(relation, BufferGetBlockNumber(buffer));
 		START_CRIT_SECTION();
 
 		/* Clear obsolete visibility flags ... */
@@ -4600,6 +4611,9 @@ l2:
 	HeapTupleCopyEpochFromPage(&oldtup, page);
 
 	/* NO EREPORT(ERROR) from here till changes are logged */
+	ptrack_add_block(relation, BufferGetBlockNumber(buffer));
+	if (newbuf != buffer)
+		ptrack_add_block(relation, BufferGetBlockNumber(newbuf));
 	START_CRIT_SECTION();
 
 	/*
@@ -5610,6 +5624,7 @@ failed:
 		(new_infomask & HEAP_XMAX_IS_MULTI) ? true : false);
 	HeapTupleCopyEpochFromPage(tuple, page);
 
+	ptrack_add_block(relation, BufferGetBlockNumber(*buffer));
 	START_CRIT_SECTION();
 
 	/*
@@ -6355,6 +6370,7 @@ l4:
 			(new_infomask & HEAP_XMAX_IS_MULTI) ? true : false);
 		HeapTupleCopyEpochFromPage(&mytup, BufferGetPage(buf));
 
+		ptrack_add_block(rel, BufferGetBlockNumber(buf));
 		START_CRIT_SECTION();
 
 		/* ... and set them */
@@ -6509,6 +6525,7 @@ heap_finish_speculative(Relation relation, HeapTuple tuple)
 					 "invalid speculative token constant");
 
 	/* NO EREPORT(ERROR) from here till changes are logged */
+	ptrack_add_block(relation, BufferGetBlockNumber(buffer));
 	START_CRIT_SECTION();
 
 	Assert(HeapTupleHeaderIsSpeculative(tuple->t_data));
@@ -6623,6 +6640,7 @@ heap_abort_speculative(Relation relation, HeapTuple tuple)
 	 * do anything special with infomask bits.
 	 */
 
+	ptrack_add_block(relation, BufferGetBlockNumber(buffer));
 	START_CRIT_SECTION();
 
 	/*
@@ -6756,6 +6774,7 @@ heap_inplace_update(Relation relation, HeapTuple tuple)
 		elog(ERROR, "wrong tuple length");
 
 	/* NO EREPORT(ERROR) from here till changes are logged */
+	ptrack_add_block(relation, BufferGetBlockNumber(buffer));
 	START_CRIT_SECTION();
 
 	memcpy((char *) htup + htup->t_hoff,
@@ -8463,6 +8482,7 @@ heap_xlog_clean(XLogReaderState *record)
 	XLogRedoAction action;
 
 	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
 
 	/*
 	 * We're about to remove tuples. In Hot Standby mode, ensure that there's
@@ -8555,6 +8575,7 @@ heap_xlog_visible(XLogReaderState *record)
 	XLogRedoAction action;
 
 	XLogRecGetBlockTag(record, 1, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
 
 	/*
 	 * If there are any Hot Standby transactions running that have an xmin
@@ -8665,6 +8686,11 @@ heap_xlog_freeze_page(XLogReaderState *record)
 	TransactionId cutoff_xid = xlrec->cutoff_xid;
 	Buffer		buffer;
 	int			ntup;
+	RelFileNode rnode;
+	BlockNumber blkno;
+
+	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
 
 	/*
 	 * In Hot Standby mode, ensure that there's no queries running which still
@@ -8750,6 +8776,7 @@ heap_xlog_delete(XLogReaderState *record)
 	ItemPointerData target_tid;
 
 	XLogRecGetBlockTag(record, 0, &target_node, NULL, &blkno);
+	ptrack_add_block_redo(target_node, blkno);
 	ItemPointerSetBlockNumber(&target_tid, blkno);
 	ItemPointerSetOffsetNumber(&target_tid, xlrec->offnum);
 
@@ -8840,6 +8867,7 @@ heap_xlog_insert(XLogReaderState *record)
 	xlrec = (xl_heap_insert *) rec_data;
 
 	XLogRecGetBlockTag(record, 0, &target_node, NULL, &blkno);
+	ptrack_add_block_redo(target_node, blkno);
 	ItemPointerSetBlockNumber(&target_tid, blkno);
 	ItemPointerSetOffsetNumber(&target_tid, xlrec->offnum);
 
@@ -8974,6 +9002,7 @@ heap_xlog_multi_insert(XLogReaderState *record)
 	xlrec = (xl_heap_multi_insert *) rec_data;
 
 	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
 
 	/*
 	 * The visibility map may need to be fixed even if the heap page is
@@ -9136,8 +9165,10 @@ heap_xlog_update(XLogReaderState *record, bool hot_update)
 	oldtup.t_len = 0;
 
 	XLogRecGetBlockTag(record, 0, &rnode, NULL, &newblk);
+	ptrack_add_block_redo(rnode, newblk);
 	if (XLogRecGetBlockTag(record, 1, NULL, NULL, &oldblk))
 	{
+		ptrack_add_block_redo(rnode, oldblk);
 		/* HOT updates are never done across pages */
 		Assert(!hot_update);
 	}
@@ -9388,6 +9419,11 @@ heap_xlog_confirm(XLogReaderState *record)
 	OffsetNumber offnum;
 	ItemId		lp = NULL;
 	HeapTupleHeader htup;
+	RelFileNode rnode;
+	BlockNumber blkno;
+
+	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
 
 	if (XLogReadBufferForRedo(record, 0, &buffer) == BLK_NEEDS_REDO)
 	{
@@ -9424,6 +9460,11 @@ heap_xlog_lock(XLogReaderState *record)
 	OffsetNumber offnum;
 	ItemId		lp = NULL;
 	HeapTupleHeader htup;
+	RelFileNode rnode;
+	BlockNumber blkno;
+
+	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
 
 	/*
 	 * The visibility map may need to be fixed even if the heap page is
@@ -9495,6 +9536,11 @@ heap_xlog_lock_updated(XLogReaderState *record)
 	OffsetNumber offnum;
 	ItemId		lp = NULL;
 	HeapTupleHeader htup;
+	RelFileNode rnode;
+	BlockNumber blkno;
+
+	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
 
 	xlrec = (xl_heap_lock_updated *) XLogRecGetData(record);
 
@@ -9557,6 +9603,11 @@ heap_xlog_inplace(XLogReaderState *record)
 	HeapTupleHeader htup;
 	uint32		oldlen;
 	Size		newlen;
+	RelFileNode rnode;
+	BlockNumber blkno;
+
+	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
 
 	if (XLogReadBufferForRedo(record, 0, &buffer) == BLK_NEEDS_REDO)
 	{
@@ -9597,6 +9648,7 @@ heap_xlog_epoch_shift(XLogReaderState *record)
 	RelFileNode target_node;
 
 	XLogRecGetBlockTag(record, 0, &target_node, NULL, &blkno);
+	ptrack_add_block_redo(target_node, blkno);
 
 	if (XLogReadBufferForRedo(record, 0, &buffer) == BLK_NEEDS_REDO)
 	{

@@ -16,8 +16,6 @@
 extern Datum pg_start_backup(PG_FUNCTION_ARGS);
 extern Datum pg_stop_backup(PG_FUNCTION_ARGS);
 extern Datum pg_stop_backup_v2(PG_FUNCTION_ARGS);
-extern Datum pg_ptrack_clear(PG_FUNCTION_ARGS);
-extern Datum pg_ptrack_get_and_clear(PG_FUNCTION_ARGS);
 extern Datum pg_switch_xlog(PG_FUNCTION_ARGS);
 extern Datum pg_create_restore_point(PG_FUNCTION_ARGS);
 extern Datum pg_current_xlog_location(PG_FUNCTION_ARGS);
@@ -35,6 +33,5 @@ extern Datum pg_is_xlog_replay_paused(PG_FUNCTION_ARGS);
 extern Datum pg_xlog_location_diff(PG_FUNCTION_ARGS);
 extern Datum pg_is_in_backup(PG_FUNCTION_ARGS);
 extern Datum pg_backup_start_time(PG_FUNCTION_ARGS);
-extern Datum pg_ptrack_test(PG_FUNCTION_ARGS);
 
 #endif   /* XLOG_FN_H */

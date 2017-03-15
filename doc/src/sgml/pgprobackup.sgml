@@ -1102,7 +1102,8 @@ pg_probackup delwal <replaceable>backup_id</replaceable>
      If replication is in use, starting with server version 9.6
      a backup can be taken not only from primary server, but also from standby.
      Backup taken from standby is absolutely interchangeable with backup taken
-     from primary (bearing in mind possible replication delay).
+     from primary (bearing in mind possible replication delay). 
+     Page-level incremental backups from standby are not allowed.
    </para>
 
    <para>

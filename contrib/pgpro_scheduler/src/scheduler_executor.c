@@ -182,7 +182,7 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 	if(!job)
 	{
 		if(shared->message[0] == 0)
-			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX, 
+			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
 											"Cannot retrive job information");
 		shared->worker_exit = true;
 		*status = shared->status = SchdExecutorError;
@@ -324,7 +324,7 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 
 	return 1;
 }
-	
+
 
 int set_session_authorization(char *username, char **error)
 {
@@ -337,7 +337,7 @@ int set_session_authorization(char *username, char **error)
 	char *sql = "select oid, rolsuper from pg_catalog.pg_roles where rolname = $1";
 	char buff[1024];
 
-	values[0] = CStringGetTextDatum(username);	
+	values[0] = CStringGetTextDatum(username);
 	START_SPI_SNAP();
 	r = execute_spi_sql_with_args(sql, 1, types, values, NULL);
 
@@ -431,7 +431,7 @@ TimestampTz get_next_excution_time(char *sql, executor_error_t *ee)
 		return 0;
 	}
 	if(r->n_rows == 0)
-	{	
+	{
 		push_executor_error(ee, "next time statement returns 0 rows");
 	}
 	else if(r->types[0] != TIMESTAMPTZOID)
@@ -581,33 +581,33 @@ int push_executor_error(executor_error_t *e, char *fmt, ...)
 }
 
 PG_FUNCTION_INFO_V1(get_self_id);
-Datum 
+Datum
 get_self_id(PG_FUNCTION_ARGS)
 {
 	if(current_job_id == -1)
 	{
-		elog(ERROR, "There is no active job in progress");	
+		elog(ERROR, "There is no active job in progress");
 	}
 	PG_RETURN_INT64(current_job_id);
 }
 
 PG_FUNCTION_INFO_V1(resubmit);
-Datum 
+Datum
 resubmit(PG_FUNCTION_ARGS)
 {
-	Interval *interval;	
+	Interval *interval;
 
 	if(current_job_id == -1)
 	{
-		elog(ERROR, "There is no active job in progress");	
+		elog(ERROR, "There is no active job in progress");
 	}
 	if(PG_ARGISNULL(0))
 	{
-		resubmit_current_job = 1;		
+		resubmit_current_job = 1;
 		PG_RETURN_INT64(1);
 	}
 	interval = PG_GETARG_INTERVAL_P(0);
-#ifdef HAVE_INT64_TIMESTAMP 
+#ifdef HAVE_INT64_TIMESTAMP
     resubmit_current_job = interval->time / 1000000.0;
 #else
     resubmit_current_job = interval->time;
@@ -662,7 +662,7 @@ void at_executor_worker_main(Datum arg)
 
 	while(1)
 	{
-		if(shared->stop_worker) break; 
+		if(shared->stop_worker) break;
 		if(got_sighup)
 		{
 			got_sighup = false;
@@ -671,7 +671,7 @@ void at_executor_worker_main(Datum arg)
 		CHECK_FOR_INTERRUPTS();
 		result = process_one_job(shared, &status);
 
-		if(result == 0) 
+		if(result == 0)
 		{
 			lets_sleep = true;
 		}
@@ -812,7 +812,7 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 		set_ret = set_at_job_done(job, NULL, resubmit_current_job, &set_error);
 	}
 	destroy_spi_data(r);
-	
+
 	resubmit_current_job = 0;
 	current_job_id = -1;
 	pgstat_report_activity(STATE_RUNNING, "finish job processing");

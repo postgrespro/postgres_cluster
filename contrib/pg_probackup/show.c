@@ -28,7 +28,7 @@ do_show(time_t backup_id)
 	 */
 	if (backup_id != 0)
 	{
-		pgBackup *backup;
+		pgBackup   *backup;
 
 		backup = read_backup(backup_id);
 		if (backup == NULL)
@@ -40,6 +40,7 @@ do_show(time_t backup_id)
 			/* This is not error case */
 			return 0;
 		}
+
 		show_backup_detail(stdout, backup);
 
 		/* cleanup */
@@ -184,7 +185,7 @@ get_parent_tli(TimeLineID child_tli)
 static void
 show_backup_list(FILE *out, parray *backup_list)
 {
-	int i;
+	int			i;
 
 	/* show header */
 	fputs("=========================================================================================\n", out);
@@ -193,14 +194,12 @@ show_backup_list(FILE *out, parray *backup_list)
 
 	for (i = 0; i < parray_num(backup_list); i++)
 	{
-		pgBackup *backup;
-		const char *modes[] = { "", "PAGE", "PTRACK", "FULL", "", "PAGE+STREAM", "PTRACK+STREAM", "FULL+STREAM"};
-		TimeLineID  parent_tli;
-		char timestamp[20] = "----";
-		char duration[20] = "----";
-		char data_bytes_str[10] = "----";
-
-		backup = parray_get(backup_list, i);
+		pgBackup   *backup = parray_get(backup_list, i);
+		const char *modes[] = {"", "PAGE", "PTRACK", "FULL", "", "PAGE+STREAM", "PTRACK+STREAM", "FULL+STREAM"};
+		TimeLineID	parent_tli;
+		char		timestamp[20] = "----";
+		char		duration[20] = "----";
+		char		data_bytes_str[10] = "----";
 
 		if (backup->recovery_time != (time_t) 0)
 			time2iso(timestamp, lengthof(timestamp), backup->recovery_time);
