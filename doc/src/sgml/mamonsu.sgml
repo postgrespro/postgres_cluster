@@ -248,7 +248,7 @@ mamonsu tune
 <para>To add your own custom plugin to <filename>mamonsu</filename>, follow these steps:</para>
 
 <orderedlist>
-<listitem><para>Make sure a plugin directory is defined in your configuration file, and put your plugin files into this directory.
+<listitem><para>Make sure a plugin directory is defined in your configuration file, and put your plugin files into this directory.</para>
 <programlisting>
 [plugins]
 directory = /etc/mamonsu/plugins
