@@ -745,7 +745,7 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     <term><literal>VALUES LESS THAN (<replaceable class="PARAMETER">value</replaceable>)</literal></term>
     <listitem>
      <para>
-      This form specifies the range of values to include into a single partition. The specified <literal>value</literal> is not included into the created partition.
+      This clause specifies the range of values to include into a single partition. The specified <replaceable>value</replaceable> is not included into the created partition.
      </para>
     </listitem>
    </varlistentry>
@@ -754,7 +754,7 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     <term><literal>TABLESPACE <replaceable class="PARAMETER">tablespace_name</replaceable></literal></term>
     <listitem>
      <para>
-      This form specifies the name of the tablespace to which the created partition will belong.
+      This clause specifies the name of the tablespace to which the created partition will belong.
       If not specified, <xref linkend="guc-default-tablespace"> is consulted.
      </para>
     </listitem>
@@ -769,21 +769,21 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
 
     <varlistentry>
     <term><literal>SPLIT PARTITION <replaceable class="PARAMETER">partition_name</replaceable></literal></term>
-    <listitem><para>This form separates a range partition into two based on the value provided in the <literal>AT</literal> form.
+    <listitem><para>This form separates a range partition into two based on the value provided in the <literal>AT</literal> clause.
     </para>
     </listitem>
     </varlistentry>
 
     <varlistentry>
     <term><literal>AT (<replaceable class="PARAMETER">value</replaceable>)</literal></term>
-    <listitem><para>This form specifies the value by which to split a range partition. The provided value serves as the lower bound of the second partition.
+    <listitem><para>This clause specifies the value by which to split a range partition. The provided value serves as the lower bound of the right partition.
     </para>
     </listitem>
     </varlistentry>
 
     <varlistentry>
     <term><literal>INTO</literal></term>
-    <listitem><para>This form specifies one or more target partitions. Use this form when performing <literal>SPLIT</literal> and <literal>MERGE</literal> actions. If you omit this form when splitting partitions, the left partition will use the parent partion name, and the right partition name will be generated automatically.
+    <listitem><para>This clause specifies one or more target partitions. Use this clause when performing <literal>SPLIT</literal> and <literal>MERGE</literal> actions. If you omit this clause when splitting partitions, the left partition will use the parent partion name, and the right partition name will be generated automatically.
     </para>
     </listitem>
     </varlistentry>
@@ -797,21 +797,21 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
 
     <varlistentry>
     <term><literal>RENAME PARTITION <replaceable class="PARAMETER">partition_name</replaceable></literal></term>
-    <listitem><para>This form renames a partition. The new partition name must be specified in the <literal>TO</literal> form.
+    <listitem><para>This form renames a partition. The new partition name must be specified in the <literal>TO</literal> clause.
     </para>
     </listitem>
     </varlistentry>
 
     <varlistentry>
     <term><literal>TO <replaceable class="PARAMETER">new_partition_name</replaceable></literal></term>
-    <listitem><para>This form specifies a new partition name.
+    <listitem><para>This clause specifies a new partition name.
     </para>
     </listitem>
     </varlistentry>
 
     <varlistentry>
     <term><literal>MOVE PARTITION <replaceable class="PARAMETER">partition_name</replaceable></literal></term>
-    <listitem><para>This form moves the partition to a different tablespace specified in the <literal>TABLESPACE</literal> form.
+    <listitem><para>This form moves the partition to a different tablespace specified in the <literal>TABLESPACE</literal> clause.
     </para>
     </listitem>
     </varlistentry>
@@ -834,7 +834,7 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     <term><literal>PARTITION BY</literal></term>
     <listitem>
      <para>
-      This clause splits the created table into partitions based on the specified partitioning options.
+      This form splits the created table into partitions based on the specified partitioning options.
       The supported partitioning options are:</para>
 
       <variablelist>
@@ -864,7 +864,7 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     <term><literal>PARTITIONS <replaceable class="PARAMETER">partition_count</replaceable></literal></term>
     <listitem>
      <para>
-      Specify the number of partitions to create with hash partitioning. Alternatively, you can specify the exact partitions to create using <literal>PARTITION</literal> option.
+      Specify the number of partitions to create with hash partitioning.
      </para>
     </listitem>
    </varlistentry>
@@ -873,7 +873,7 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     <term><literal>START FROM (<replaceable class="PARAMETER">start_value</replaceable>)</literal></term>
     <listitem>
     <para>
-    Specify the lower bound of the first partition to create. The <literal>start_value</literal> must be not greater than the smallest value in the partitioning key column. Otherwise, <filename>pg_pathman</filename> returns the corresponding error.
+    Specify the lower bound of the first partition to create. The <replaceable>start_value</replaceable> must be not greater than the smallest value in the partitioning key column. Otherwise, <filename>pg_pathman</filename> returns the corresponding error.
     </para>
     </listitem>
     </varlistentry>
@@ -882,7 +882,7 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     <term><literal>INTERVAL <replaceable class="PARAMETER">interval</replaceable></literal></term>
     <listitem>
      <para>
-      Specify the interval for range partitioning. When you insert data outside of the existing data range, all new partitions will be created with this interval. You can omit this option if you specify the exact partitions to create using the <literal>PARTITION</literal> option. If the <literal>INTERVAL</literal> is not specified, <filename>pg_pathman</filename> cannot create new partitions automatically. You can later use the <literal>SET INTERVAL</literal> form to enable automatic partition creation.
+      Specify the interval for range partitioning. When you insert data outside of the existing data range, all new partitions will be created with this interval. If the <literal>INTERVAL</literal> is not specified, <filename>pg_pathman</filename> cannot create new partitions automatically. You can later use the <literal>SET INTERVAL</literal> form to enable automatic partition creation.
      </para>
     </listitem>
    </varlistentry>
@@ -898,8 +898,8 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
 
   <para>
    All the forms of ALTER TABLE that act on a single table, except
-   <literal>RENAME</literal>, and <literal>SET SCHEMA</literal>
-   can be combined into a list of multiple alterations to applied together.
+   <literal>RENAME</literal>, <literal>PARTITION BY</literal>, and <literal>SET SCHEMA</literal>,
+   can be combined into a list of multiple alterations to be applied together.
    For example, it
    is possible to add several columns and/or alter the type of several
    columns in a single command.  This is particularly useful with large
