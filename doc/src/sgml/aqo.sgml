@@ -121,7 +121,7 @@ where <replaceable>mode</> is the name of the optimization mode to use.
     <sect3 id="aqo-choosing-query-optimization-modes">
       <title>Choosing Query Optimization Modes</title>
       <para>
-        If you often run queries of the same type, for example, you application limits the number 
+        If you often run queries of the same type, for example, your application limits the number 
         of possible query types, you can use the <literal>intelligent</literal> mode to
         improve planning for these queries. In this mode, <filename>aqo</filename>
         analyzes each query execution and stores statistics. Statistics on queries of
@@ -170,7 +170,7 @@ SET aqo.mode = 'controlled';
       When run in the <literal>intelligent</literal> mode, <filename>aqo</filename> assigns a unique hash value
       to each query type to separate the collected statistics. If you
       switch to the <literal>forced</literal> mode, the statistics for all untracked query
-      types is stored in common query type with hash 0. You can view all
+      types is stored in a common query type with hash 0. You can view all
       the processed query types and their corresponding hash values in
       the <structname>aqo_query_texts</structname> table:
     </para>
