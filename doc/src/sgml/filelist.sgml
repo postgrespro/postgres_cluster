@@ -194,6 +194,7 @@
 
 <!ENTITY release    SYSTEM "release.sgml">
 <!ENTITY release-pro-9.6 SYSTEM "release-pro-9.6.sgml">
+<!ENTITY release-proee-9.6 SYSTEM "release-proee-9.6.sgml">
 <!ENTITY release-9.6    SYSTEM "release-9.6.sgml">
 <!ENTITY release-9.5    SYSTEM "release-9.5.sgml">
 <!ENTITY release-9.4    SYSTEM "release-9.4.sgml">
