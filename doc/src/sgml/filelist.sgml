@@ -135,6 +135,7 @@
 <!ENTITY jsquery         SYSTEM "jsquery.sgml">
 <!ENTITY lo              SYSTEM "lo.sgml">
 <!ENTITY ltree           SYSTEM "ltree.sgml">
+<!ENTITY mamonsu           SYSTEM "mamonsu.sgml">
 <!ENTITY mchar           SYSTEM "mchar.sgml">
 <!ENTITY oid2name        SYSTEM "oid2name.sgml">
 <!ENTITY online-analyze  SYSTEM "online-analyze.sgml">

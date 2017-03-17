@@ -1,0 +1,270 @@
+<!-- doc/src/sgml/mamonsu.sgml -->
+
+<refentry id="mamonsu">
+ <indexterm zone="mamonsu">
+  <primary>mamonsu</primary>
+ </indexterm>
+
+<refmeta>
+  <refentrytitle><application>mamonsu</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Application</refmiscinfo>
+</refmeta>
+
+<refnamediv>
+  <refname>mamonsu</refname>
+  <refpurpose> a monitoring agent for collecting <productname>PostgreSQL</productname> and system metrics.</refpurpose>
+</refnamediv>
+
+<refsect1><title>Description</title>
+  <para>
+    <filename>mamonsu</filename> is an active monitoring agent for
+    <productname>&productname;</productname>. Based on <filename>zabbix</filename>,
+    <filename>mamonsu</filename> provides an extensible cross-platform
+    solution that can collect and visualize multiple <productname>PostgreSQL</productname> and
+    system metrics.
+  </para>
+  <para>
+    The <filename>mamonsu</filename> agent includes the following
+    components:
+  </para>
+  <itemizedlist>
+    <listitem>
+      <para>
+        A supervisor process that monitors all the running threads.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        Plugins that specify which metrics to collect, and how to
+        visualize the collected data. To ensure a stable connection to
+        the monitored system, <filename>mamonsu</filename> plugins use a
+        <productname>PostgreSQL</productname> connection pooler.
+      </para>
+    </listitem>
+  </itemizedlist>
+  <para>
+    If required, you can add your own custom plugins to monitor specific
+    metrics critical for your system.
+  </para>
+  <refsect2 id="installation-and-setup">
+    <title>Installation and Setup</title>
+    <para>
+      To use <filename>mamonsu</filename>, you must have a <filename>zabbix</filename> account and a <filename>zabbix</filename> server set up, and install the
+      <filename>zabbix</filename> agent on the system you are going to monitor.</para>
+      <para>Pre-built <filename>mamonsu</filename> packages are
+      provided together with <productname>&productname;</productname>, but have a
+      separate installer. Once you have installed both <productname>&productname;</productname> and <filename>mamonsu</filename>, complete the following
+      steps to set up metrics collection:
+    </para>
+    <orderedlist>
+      <listitem>
+        <para>
+          If you are starting from scratch, configure your <productname>&productname;</productname> instance and intialize a new database. For details, see
+          <xref linkend="creating-cluster">.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          Bootstrap <filename>mamonsu</filename>. You must specify the IP
+          address of the host you are going to monitor and the first database to connect to, as well as provide the username and password of the <productname>PostgreSQL</productname> user for <filename>mamonsu</filename> to connect as. You can omit the <literal>-W</literal> option if the password is not required.
+        </para>
+        <programlisting>
+mamonsu bootstrap --host <replaceable>host_ip</replaceable> --dbname <replaceable>database_name</replaceable> --username <replaceable>username</replaceable> -W <replaceable>password</replaceable>
+</programlisting>
+        <para>
+          As a result, <filename>mamonsu</filename> creates several tables
+          with the <filename>mamonsu</filename> prefix in the specified
+          database. Do not delete these tables as they are required for
+          <filename>mamonsu</filename> to work.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          If you are going to use <filename>zabbix</filename> from the
+          command line, configure the following environment variables
+          for your <filename>zabbix</filename> server:
+        </para>
+        <itemizedlist>
+        <listitem>
+        <para>Set the <varname>ZABBIX_USER</varname> and <varname>ZABBIX_PASSWD</varname> variables to the login and password of your <filename>zabbix</filename> account, respectively.</para>
+        </listitem>
+        <listitem>
+        <para>Set the <varname>ZABBIX_URL</varname> to <literal>'http://zabbix/'</literal></para>
+        </listitem>
+        </itemizedlist>
+        <para>
+          If you configure these variables, you can omit the
+          following options in the subsequent commands:
+        </para>
+        <programlisting>
+--url=http://zabbix/ --user=<replaceable>zabbix_login</replaceable> --password=<replaceable>zabbix_password</replaceable>
+</programlisting>
+      </listitem>
+      <listitem>
+        <para>
+          Edit the <filename>agent.conf</filename> configuration file
+          pre-installed with <filename>mamonsu</filename>. By default, <filename>agent.conf</filename> is located in the <filename>mamonsu</filename> installation directory.
+        </para>
+    <itemizedlist>
+      <listitem>
+        <para>
+          Configure <filename>zabbix</filename>-related settings. You must
+          set <varname>address</varname>to the <filename>zabbix</filename> server address and specify the name of the <filename>zabbix</filename> host that will receive the collected metrics. You can find the hosts available for your account in the <filename>zabbix</filename> web interface under <emphasis role="srong"><guimenu>Configuration</guimenu></emphasis> > <emphasis role="srong"><guimenu>Hosts</guimenu></emphasis>. 
+        </para>
+    <programlisting>
+[zabbix]
+; enabled by default
+enabled = <literal>True</literal>
+client = <replaceable>zabbix_host_name</replaceable>
+address = <replaceable>zabbix_server_ip</replaceable>
+</programlisting>
+<note><para>If required, you can create a new <filename>zabbix</filename> host
+          from the command line:
+        </para>
+        <programlisting>
+mamonsu zabbix host create \<replaceable>host_name</replaceable> \<replaceable>hostgroup_id</replaceable> \<replaceable>template_id</replaceable> \<replaceable>host_ip</replaceable> --url=http://zabbix/ --user=<replaceable>zabbix_login</replaceable> --password=<replaceable>zabbix_password</replaceable>
+</programlisting></note></listitem>
+      <listitem>
+        <para>
+          Specify the <productname>PostgreSQL</productname> user and the database to connect to. In
+          the example below, we connect to a <literal>postgres</literal>
+          database as a <literal>postgres</literal> user. If the
+          password is not required, set the <literal>password</literal>
+          parameter to <literal>None</literal>.
+          <filename>mamonsu</filename> will start collecting metrics
+          starting from this database, and will try to connect to other
+          databases available in your system. By default,
+          <filename>mamonsu</filename> collects metrics data each 10ms.
+          You can change the <literal>query_timeout</literal> parameter
+          to modify this behavior. If you are using a custom port for
+          <productname>&productname;</productname>, make sure to change the <literal>port</literal>
+          parameter accordingly.
+        </para>
+        <programlisting>
+[postgres]
+; enabled by default
+enabled = True
+user = postgres
+database = postgres
+; empty password
+password = None
+port = 5432
+query_timeout = 10
+</programlisting>
+      </listitem>
+      <listitem>
+        <para>
+          By default, <filename>mamonsu</filename> will collect both
+          <productname>PostgreSQL</productname> and system metrics. If required, you can disable
+          metrics collection of either type by setting the
+          <literal>enabled</literal> parameter to
+          <literal>False</literal> in the corresponding section of the
+          <filename>agent.conf</filename> file.
+        </para>
+        <programlisting>
+[system]
+; enabled by default
+enabled = True
+</programlisting>
+</listitem></itemizedlist>
+    </listitem>    
+      <listitem>
+        <para>
+          Export a template for <filename>zabbix</filename>:
+        </para>
+        <programlisting>
+mamonsu export template template.xml
+</programlisting>
+        <para>
+          <filename>mamonsu</filename> generates the
+          <literal>template.xml</literal> file in your current
+          directory.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          Import the <literal>template.xml</literal> into
+          <filename>zabbix</filename>:
+        </para>
+        <programlisting>
+mamonsu zabbix template export template.xml --url=http://zabbix/ --user=<replaceable>zabbix_login</replaceable> --password=<replaceable>zabbix_password</replaceable>
+</programlisting>
+        <para>
+          To upload the template through the <filename>zabbix</filename> web interface, you can go to <emphasis role="strong">Templates</emphasis> > <emphasis role="strong">Import</emphasis> in your <filename>zabbix</filename> account.</para>
+      </listitem>
+      <listitem>
+        <para>
+          Add the template to your monitoring host. In the web interface, select your host, go to <emphasis role="strong">Templates</emphasis>, click <emphasis role="strong">Add</emphasis>, select the <literal>PostgresPro-Linux</literal> template, and click <emphasis role="strong">Update</emphasis>.</para>
+      </listitem>
+    </orderedlist>
+    <para>
+      When the setup is complete, start <filename>mamonsu</filename>:
+    </para>
+    <programlisting>
+service mamonsu start
+</programlisting>
+    <para>
+      <filename>mamonsu</filename> picks up all the parameters from the
+      configuration file and starts monitoring your system.
+    </para>
+  </refsect2>
+  <refsect2 id="collecting-metrics-data">
+    <title>Collecting Metrics Data</title>
+    <para>
+      To view the list of available metrics, run the following command:
+    </para>
+    <programlisting>
+mamonsu agent metric-list
+</programlisting>
+    <para>
+      To monitor a specific metric, run:
+    </para>
+    <programlisting>
+mamonsu agent metric-get <replaceable>key</replaceable>
+</programlisting>
+    <para>
+      where <replaceable>key</replaceable> is the name of the metric. You can view graphs for the
+      collected metrics in the <filename>zabbix</filename> web interface under the <emphasis role="strong"><guimenu>Graphs</guimenu></emphasis> menu.
+    </para>
+    <para>
+      To create a report about the used hardware and <productname>PostgreSQL</productname>, run:
+    </para>
+    <programlisting>
+mamonsu report
+</programlisting>
+    <para>
+      Based on the hardware information, <filename>mamonsu</filename>
+      enables you to make a generic optimization for your system and the
+      <productname>PostgreSQL</productname> instance:
+    </para>
+    <programlisting>
+mamonsu tune
+</programlisting>
+</refsect2>
+
+<refsect2 id="mamonsu-adding-custom-plugins">
+<title>Adding Custom Plugins</title>
+<para>To add your own custom plugin to <filename>mamonsu</filename>, follow these steps:</para>
+
+<orderedlist>
+<listitem><para>Make sure a plugin directory is defined in your configuration file, and put your plugin files into this directory.</para>
+<programlisting>
+[plugins]
+directory = /etc/mamonsu/plugins
+</programlisting>
+</listitem>
+<listitem><para>Re-export the <filename>zabbix</filename> template:</para>
+<programlisting>
+mamonsu -c agent.conf -e template.xml
+</programlisting>
+</listitem>
+      <listitem>
+        <para>
+          Upload the new <filename>template.xml</filename> to the <filename>zabbix</filename> server.
+        </para>
+      </listitem>
+    </orderedlist>
+  </refsect2>
+  </refsect1>
+</refentry>

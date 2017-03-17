@@ -113,12 +113,12 @@
     <para>Dump/restore is neccessary when migrating from <productname>PostgreSQL</productname>
       or <productname>Postgres Pro Standard</productname> edition.</para>
 
-    <para>For upgrades from previous releases of <productname>Postgres Pro</productname> or 
+    <para>For upgrades from previous releases of <productname>Postgres Pro Standard</productname> or
       PostgreSQL 9.6.x, some catalog changes should be applied.</para>
     
     <para>If you use binary packages, and your database is in the default
       location, this upgrade should be performed automatically. If you've
-      compiled <productname>Postgres Pro</productname> from source or created your database in
+      compiled <productname>Postgres Pro Enterprise</productname> from source or created your database in
       a non-default location running <literal>initdb</literal> manually, you
       should run the <literal>pgpro_upgrade</literal> script provided in this
       distribution.
