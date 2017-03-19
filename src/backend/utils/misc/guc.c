@@ -186,6 +186,8 @@ static void assign_application_name(const char *newval, void *extra);
 static bool check_cluster_name(char **newval, void **extra, GucSource source);
 static const char *show_unix_socket_permissions(void);
 static const char *show_log_file_mode(void);
+static void set_cfs_gc_enabled(bool newval, void* extra);
+static char const* show_cfs_gc_enabled(void);
 
 /* Private functions in guc-file.l that need to be called from guc.c */
 static ConfigVariable *ProcessConfigFileInternal(GucContext context,
@@ -446,6 +448,7 @@ bool		row_security;
 bool		check_function_bodies = true;
 bool		default_with_oids = false;
 bool		SQL_inheritance = true;
+bool        cfs_gc_enabled = true;
 
 int			log_min_error_statement = ERROR;
 int			log_min_messages = WARNING;
@@ -1687,6 +1690,16 @@ static struct config_bool ConfigureNamesBool[] =
 		&cfs_encryption,
 		false,
 		NULL, NULL, NULL
+	},
+
+	{
+		{"cfs_enable_gc", PGC_USERSET, UNGROUPED,
+		 gettext_noop("Enable garbage collection of compressed pages"),
+		 NULL,
+		},
+		&cfs_gc_enabled,
+		true,
+		NULL, set_cfs_gc_enabled, show_cfs_gc_enabled
 	},
 
 	{
@@ -10841,5 +10854,16 @@ show_log_file_mode(void)
 	snprintf(buf, sizeof(buf), "%04o", Log_file_mode);
 	return buf;
 }
+
+static void set_cfs_gc_enabled(bool newval, void* extra)
+{
+	cfs_control_gc(newval);
+}
+
+static char const* show_cfs_gc_enabled(void)
+{
+	return cfs_state && cfs_state->gc_enabled ? "true" : "false";
+}
+
 
 #include "guc-file.c"
