@@ -1150,6 +1150,8 @@ void MtmExecutor(void* work, size_t size)
 			}
 			case 'M':
 			{
+  			    close_rel(rel);
+				rel = NULL;
 				inside_transaction = !process_remote_message(&s);
 				break;
 			}
