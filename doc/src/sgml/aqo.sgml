@@ -44,7 +44,7 @@ shared_preload_libraries = 'aqo'
           Create the <filename>aqo</filename> extension using the following query:
         </para>
         <programlisting>
-&quot;CREATE EXTENSION aqo;&quot;
+CREATE EXTENSION aqo;
 </programlisting>
       </listitem>
     </orderedlist>
@@ -231,7 +231,7 @@ SELECT * FROM aqo_queries;
 
 SET aqo.mode='intelligent';
 SELECT * FROM a, b WHERE a.id=b.id;
-SET aqo.mode='manual';
+SET aqo.mode='controlled';
 
  -- Disable auto_tuning, enable both learn_aqo and use_aqo 
  -- for this query type:
@@ -325,7 +325,7 @@ UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;
      <entry>Optimizes all queries together, regardless of the query type.</entry>
     </row>
     <row>
-     <entry><literal>manual</literal></entry>
+     <entry><literal>controlled</literal></entry>
      <entry><emphasis role="strong">Default.</emphasis> Uses the default planner for all new queries, but can reuse the collected statistics for already known query types, if any.</entry>
     </row>
     <row>
@@ -424,7 +424,7 @@ UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;
               intelligent mode. In other modes, new queries are not
               appended to <structname>aqo_queries</structname> automatically.
               You can change this behavior by setting the
-              <literal>auto_tuning</literal> variable to TRUE.</entry>
+              <literal>auto_tuning</literal> variable to <literal>true</literal>.</entry>
     </row>
    </tbody>
   </tgroup>

@@ -52,15 +52,15 @@
     <para>
       To use <filename>mamonsu</filename>, you must have a <filename>zabbix</filename> account and a <filename>zabbix</filename> server set up, and install the
       <filename>zabbix</filename> agent on the system you are going to monitor.</para>
-      <para>Pre-built <filename>mamonsu</filename> packages are
-      provided together with <productname>&productname;</productname>, but have a
+      <para>A pre-built <filename>mamonsu</filename> package is provided together with 
+      <productname>&productname;</productname>, but has a
       separate installer. Once you have installed both <productname>&productname;</productname> and <filename>mamonsu</filename>, complete the following
       steps to set up metrics collection:
     </para>
     <orderedlist>
       <listitem>
         <para>
-          If you are starting from scratch, configure your <productname>&productname;</productname> instance and intialize a new database. For details, see
+          If you are starting from scratch, configure your <productname>&productname;</productname> instance and initialize a new database. For details, see
           <xref linkend="creating-cluster">.
         </para>
       </listitem>
@@ -90,7 +90,7 @@ mamonsu bootstrap --host <replaceable>host_ip</replaceable> --dbname <replaceabl
         <para>Set the <varname>ZABBIX_USER</varname> and <varname>ZABBIX_PASSWD</varname> variables to the login and password of your <filename>zabbix</filename> account, respectively.</para>
         </listitem>
         <listitem>
-        <para>Set the <varname>ZABBIX_URL</varname> to <literal>'http://zabbix/'</literal></para>
+        <para>Set the <varname>ZABBIX_URL</varname> to <literal>http://zabbix/</literal></para>
         </listitem>
         </itemizedlist>
         <para>
@@ -110,7 +110,7 @@ mamonsu bootstrap --host <replaceable>host_ip</replaceable> --dbname <replaceabl
       <listitem>
         <para>
           Configure <filename>zabbix</filename>-related settings. You must
-          set <varname>address</varname>to the <filename>zabbix</filename> server address and specify the name of the <filename>zabbix</filename> host that will receive the collected metrics. You can find the hosts available for your account in the <filename>zabbix</filename> web interface under <emphasis role="srong"><guimenu>Configuration</guimenu></emphasis> > <emphasis role="srong"><guimenu>Hosts</guimenu></emphasis>. 
+          set <varname>address</varname> to the <filename>zabbix</filename> server address and specify the name of the <filename>zabbix</filename> host that will receive the collected metrics. You can find the hosts available for your account in the <filename>zabbix</filename> web interface under <emphasis role="srong"><guimenu>Configuration</guimenu></emphasis> > <emphasis role="srong"><guimenu>Hosts</guimenu></emphasis>. 
         </para>
     <programlisting>
 [zabbix]
@@ -236,7 +236,7 @@ mamonsu report
     <para>
       Based on the hardware information, <filename>mamonsu</filename>
       enables you to make a generic optimization for your system and the
-      <productname>PostgreSQL</productname> instance:
+      <productname>&productname;</productname> instance:
     </para>
     <programlisting>
 mamonsu tune
