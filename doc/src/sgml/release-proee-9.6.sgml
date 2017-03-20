@@ -54,7 +54,7 @@
           workers. (See <xref linkend="pg-wait-sampling">.)</para>
       </listitem>
       <listitem><para>Added support for timestamp output in
-      the <application>pg_xlogdump</application> extension.</para></listitem>
+      the <application>pg_xlogdump</application> application.</para></listitem>
       <listitem>
         <para>Added support for one-time background jobs in
           <application>pgpro_scheduler</application>. You can now submit jobs
@@ -119,7 +119,7 @@
     <para>If you use binary packages, and your database is in the default
       location, this upgrade should be performed automatically. If you've
       compiled <productname>Postgres Pro Enterprise</productname> from source or created your database in
-      a non-default location running <literal>initdb</literal> manually, you
+      a non-default location, running <literal>initdb</literal> manually, you
       should run the <literal>pgpro_upgrade</literal> script provided in this
       distribution.
     </para>
@@ -166,15 +166,15 @@
         use of <xref linkend="pgupgrade">, is required for those
           wishing to migrate data from any previous major release.</para>
 
-    <para>Dump/restore is neccessary when migrating from PostgreSQL
-      or Postgres Pro Standard edition.</para>
+    <para>Dump/restore is neccessary when migrating from <productname>PostgreSQL</productname>
+      or <productname>Postgres Pro Standard</productname> edition.</para>
 
-    <para>When upgrading from previous releases of Postgres Pro or from
-      vanilla PostgreSQL 9.6.x, some catalog changes should be applied.</para>
+    <para>For upgrades from previous releases of <productname>Postgres Pro Standard</productname> or from
+      <productname>PostgreSQL</productname> 9.6.x, some catalog changes should be applied.</para>
     
     <para>If you use binary packages, and your database is in the default
       location, this upgrade should be performed automatically. If you've
-      compiled Postgres Pro from source or create your database in
+      compiled <productname>Postgres Pro</productname> from source or create your database in
       non-default location, running <literal>initdb</literal> manually, you
       should run <literal>pgpro_upgrade</literal> script provided in this
       distribution.
