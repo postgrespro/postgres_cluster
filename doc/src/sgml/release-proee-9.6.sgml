@@ -84,7 +84,7 @@
         <para>Bug Fixes:</para>
         <itemizedlist>
           <listitem>
-            <para>Provided a bug fix for k-NN patch (intarray?)</para>
+            <para>Added a fix for WAL optimization on creating indexes.</para>
           </listitem>
           <listitem>
             <para>Fixed incorrect <literal>xmin</literal>,
