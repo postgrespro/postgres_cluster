@@ -171,6 +171,7 @@ static void
 pglogical_write_message(StringInfo out,
 						const char *prefix, Size sz, const char *message)
 {
+	MtmLastRelId = InvalidOid;
 	switch (*prefix) { 
 	  case 'L':
 		if (MtmIsRecoveredNode(MtmReplicationNodeId)) { 			

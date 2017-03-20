@@ -1276,7 +1276,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		MtmUnlock();
 		if (x->isTwoPhase) { 
 			if (x->status == TRANSACTION_STATUS_ABORTED) { 
-				MTM_ELOG(ERROR, "Prepare of user's 2PC transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
+				MTM_ELOG(WARNING, "Prepare of user's 2PC transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
 			}
 			MtmResetTransaction();
 		}
@@ -3412,7 +3412,7 @@ void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit)
 	MtmTx.isActive = true;
 	FinishPreparedTransaction(ts->gid, commit);
 	if (commit) { 
-		MTM_LOG1("Distributed transaction %s (%lld) is committed at %lld with LSN=%lld", ts->gid, (long64)ts->xid, MtmGetCurrentTime(), (long64)GetXLogInsertRecPtr());
+		MTM_LOG2("Distributed transaction %s (%lld) is committed at %lld with LSN=%lld", ts->gid, (long64)ts->xid, MtmGetCurrentTime(), (long64)GetXLogInsertRecPtr());
 	}
 	if (!insideTransaction) { 
 		CommitTransactionCommand();
@@ -4600,7 +4600,7 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 					MTM_ELOG(ERROR, "Transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
 				} else {
 					FinishPreparedTransaction(x->gid, true);
-					MTM_LOG1("Distributed transaction %s (%lld) is committed at %lld with LSN=%lld", x->gid, (long64)x->xid, MtmGetCurrentTime(), (long64)GetXLogInsertRecPtr());
+					MTM_LOG2("Distributed transaction %s (%lld) is committed at %lld with LSN=%lld", x->gid, (long64)x->xid, MtmGetCurrentTime(), (long64)GetXLogInsertRecPtr());
 				}
 			}
 		}
@@ -4868,7 +4868,6 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 				case TRANS_STMT_ROLLBACK_PREPARED:
 				    Assert(!MtmTx.isTwoPhase);
   				    strcpy(MtmTx.gid, stmt->gid);
-					//MtmTx.isTwoPhase = true;
 					break;
 				default:
 					break;
