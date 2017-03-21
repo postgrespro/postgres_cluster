@@ -263,7 +263,7 @@ DELETE FROM aqo_data;
 </programlisting>
     <para>
       Alternatively, you can specify a particular query type to reset by
-      providing its hash value in the <literal>fspase_hash</literal> option. For example:
+      providing its hash value in the <literal>fspace_hash</literal> option. For example:
     </para>
     <programlisting>
 DELETE FROM aqo_data WHERE fspace_hash = (SELECT fspace_hash FROM aqo_queries 
