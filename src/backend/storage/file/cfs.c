@@ -396,7 +396,7 @@ void cfs_initialize()
 	pg_atomic_init_flag(&cfs_state->gc_started);
 	pg_atomic_init_u32(&cfs_state->n_active_gc, 0);
 	cfs_state->n_workers = 0;
-	cfs_state->gc_enabled = true;
+	cfs_state->gc_enabled = cfs_gc_enabled;
 	cfs_state->max_iterations = 0;
 	
 	if (cfs_encryption)

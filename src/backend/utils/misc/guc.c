@@ -1693,7 +1693,7 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
-		{"cfs_enable_gc", PGC_USERSET, UNGROUPED,
+		{"cfs_gc", PGC_USERSET, UNGROUPED,
 		 gettext_noop("Enable garbage collection of compressed pages"),
 		 NULL,
 		},
@@ -10857,12 +10857,14 @@ show_log_file_mode(void)
 
 static void set_cfs_gc_enabled(bool newval, void* extra)
 {
-	cfs_control_gc(newval);
+	cfs_gc_enabled = newval;
+	if (cfs_state) 
+		cfs_control_gc(newval);
 }
 
 static char const* show_cfs_gc_enabled(void)
 {
-	return cfs_state && cfs_state->gc_enabled ? "true" : "false";
+	return (cfs_state ? cfs_state->gc_enabled : cfs_gc_enabled) ? "true" : "false";
 }
 
 
