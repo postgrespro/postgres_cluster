@@ -24,7 +24,7 @@
   <cmdsynopsis>
    <command>mamonsu</command>
    <arg choice="plain">agent</arg>
-   <arg choice="plain"><replaceable>agent-action</replaceable></arg>
+   <arg choice="plain"><replaceable>action</replaceable></arg>
   </cmdsynopsis>
   <cmdsynopsis>
    <command>mamonsu</command>
@@ -249,7 +249,7 @@ service mamonsu start
      <varlistentry>
       <term><option>agent</option></term>
       <listitem>
-       <para><filename>mamonsu</filename> <command>agent</command> command provides access to the available metrics from the command line. You can specify one of the following options:
+       <para><filename>mamonsu</filename> <command>agent</command> command provides access to the available metrics from the command line. You can specify one of the following actions:
        </para>
 <variablelist>
 
@@ -284,7 +284,7 @@ service mamonsu start
      <varlistentry>
       <term><option>zabbix template</option></term>
       <listitem>
-       <para>Manage the <filename>zabbix</filename> template using one of the options described in <xref linkend="mamonsu-zabbix-options">.
+       <para>Manage the <filename>zabbix</filename> template using one of the actions described in <xref linkend="mamonsu-zabbix-actions">.
        </para>
       </listitem>
      </varlistentry>
@@ -292,7 +292,7 @@ service mamonsu start
      <varlistentry>
       <term><option>zabbix host</option></term>
       <listitem>
-       <para>Manage the <filename>zabbix</filename> host using one of the options described in <xref linkend="mamonsu-zabbix-options">.
+       <para>Manage the <filename>zabbix</filename> host using one of the actions described in <xref linkend="mamonsu-zabbix-actions">.
        </para>
       </listitem>
      </varlistentry>
@@ -300,14 +300,14 @@ service mamonsu start
      <varlistentry>
       <term><option>zabbix hostgroup</option></term>
       <listitem>
-       <para>Manage the <filename>zabbix</filename> host group using one of the options described in <xref linkend="mamonsu-zabbix-options">.
+       <para>Manage the <filename>zabbix</filename> host group using one of the actions described in <xref linkend="mamonsu-zabbix-actions">.
        </para>
       </listitem>
      </varlistentry>
 
 </variablelist>
 
-  <refsect2 id="mamonsu-zabbix-options"><title>zabbix Options</title>
+  <refsect2 id="mamonsu-zabbix-actions"><title>zabbix Actions</title>
   <para>Using <filename>mamonsu</filename> you can control some of the <filename>zabbix</filename> server functionality from the command line. Specifically, you can create or delete <filename>zabbix</filename> hosts and host groups, as well as generate, import, and delete <filename>zabbix</filename> templates using one of the following commands. The <replaceable>object_name</replaceable> to use must correspond to the type of the <filename>zabbix</filename> object specified in the command: template, host, or hostgroup.</para>
 <variablelist>
      <varlistentry>
@@ -353,7 +353,7 @@ service mamonsu start
      </varlistentry>
 
      <varlistentry>
-      <term><option>export</option> <replaceable>tempalate_name</replaceable></term>
+      <term><option>export</option> <replaceable>template_name</replaceable></term>
       <listitem>
        <para>Generate a <filename>zabbix</filename> template.
        </para>
@@ -378,7 +378,7 @@ service mamonsu start
      <varlistentry>
       <term><option>hostgroups</option> <replaceable>host_id</replaceable></term>
       <listitem>
-       <para>Display the host group to which the specified host belongs.
+       <para>Display the host groups to which the specified host belongs.
        </para>
       </listitem>
      </varlistentry>
