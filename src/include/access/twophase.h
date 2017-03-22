@@ -15,8 +15,17 @@
 #define TWOPHASE_H
 
 #include "access/xlogdefs.h"
+#include "access/xact.h"
 #include "datatype/timestamp.h"
 #include "storage/lock.h"
+
+typedef struct PreparedTransactionData
+{
+	Oid			owner;
+	char		gid[GIDSIZE];	/* The GID assigned to the prepared xact */
+	char        state_3pc[MAX_3PC_STATE_SIZE]; /* 3PC transaction state  */	
+} PreparedTransactionData, *PreparedTransaction;
+
 
 /*
  * GlobalTransactionData is defined in twophase.c; other places have no
@@ -46,6 +55,8 @@ extern bool StandbyTransactionIdIsPrepared(TransactionId xid);
 
 extern TransactionId PrescanPreparedTransactions(TransactionId **xids_p,
 							int *nxids_p);
+extern void ParsePrepareRecord(uint8 info, char *xlrec,
+							xl_xact_parsed_prepare *parsed);
 extern void StandbyRecoverPreparedTransactions(bool overwriteOK);
 extern void RecoverPreparedTransactions(void);
 
@@ -55,5 +66,15 @@ extern void RemoveTwoPhaseFile(TransactionId xid, bool giveWarning);
 extern void CheckPointTwoPhase(XLogRecPtr redo_horizon);
 
 extern void FinishPreparedTransaction(const char *gid, bool isCommit);
+
+extern const char *GetLockedGlobalTransactionId(void);
+
+extern int FinishAllPreparedTransactions(bool isCommit);
+
+extern int GetPreparedTransactions(PreparedTransaction* pxacts);
+
+extern void SetPreparedTransactionState(char const* gid, char const* state);
+
+extern bool GetPreparedTransactionState(char const* gid, char* state);
 
 #endif   /* TWOPHASE_H */

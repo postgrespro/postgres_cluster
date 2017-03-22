@@ -1,0 +1,107 @@
+---
+
+- hosts: nodes[1]:nodes[2]:nodes[3]
+  # accelerate: true
+
+  roles:
+  - role: postgres
+    pg_port: 15432
+    pg_repo: https://github.com/postgrespro/postgres_cluster.git
+    pg_version_tag: master
+    pg_destroy_and_init: true
+    pg_datadir: "/mnt/pgtmpfs/data_{{pg_port}}"
+    pg_config_role:
+    - line: "multimaster.buffer_size = 65536"
+
+  tasks:
+  - name: generate connstrings
+    set_fact:
+      connstr: "host={{item}} user={{ansible_ssh_user}} port=15432 dbname=postgres sslmode=disable"
+    with_items:
+      groups['nodes'] | reverse | batch(nnodes | d(3) | int) | first
+    register: connstrs
+
+  - name: make a list
+    set_fact:
+      connections: "{{ connstrs.results | map(attribute='ansible_facts.connstr') | join(', ') }}"
+
+  - name: build raftable
+    shell: "make clean && make -j {{makejobs}} install"
+    args:
+      chdir: "{{pg_src}}/contrib/raftable"
+
+  - name: build multimaster
+    shell: "make clean && make -j {{makejobs}} install"
+    args:
+      chdir: "{{pg_src}}/contrib/mmts"
+
+  - name: enable dtm extension on datanodes
+    lineinfile:
+      dest: "{{pg_datadir}}/postgresql.conf"
+      line: "{{item}}"
+      state: present
+    with_items:
+    - "wal_level = logical"
+    - "max_wal_senders = 10"
+    - "wal_sender_timeout = 0"
+    - "max_replication_slots = 10"
+    - "max_connections = 200"
+    - "max_worker_processes = 100"
+    - "shared_preload_libraries = 'raftable,multimaster'"
+    - "multimaster.conn_strings = '{{connections}}'"
+    - "multimaster.node_id = {{ node_id }}"
+    - "multimaster.buffer_size = 65536"
+    - "multimaster.queue_size = 1073741824"
+    - "multimaster.arbiter_port = 5600"
+    - "multimaster.vacuum_delay = 1"
+    - "multimaster.workers = 32"
+    - "multimaster.use_dtm = 1"
+
+  - name: restart postgrespro
+    command: "{{pg_dst}}/bin/pg_ctl restart -w -D {{pg_datadir}} -l {{pg_datadir}}/pg.log"
+    environment:
+      LD_LIBRARY_PATH: "{{pg_dst}}/lib/"
+
+
+- hosts: clients
+
+  tasks:
+  - name: copy transfers source
+    copy: src=../{{item}} dest=~/{{item}} mode=0755
+    with_items:
+      - "dtmbench.cpp"
+      - "dtmacid.cpp"
+
+  - name: clone pqxx
+    git: repo=https://github.com/Ambrosys/pqxx.git
+      dest=~/pg_cluster/pqxx
+      accept_hostkey=yes
+      update=no
+      force=yes
+    register: pqxx
+
+  # - name: ensure dirs
+  #   shell: "mkdir -p /home/{{ansible_ssh_user}}/pg_cluster/install/lib/"
+
+  - name: build pqxx
+    shell: "./configure --prefix=/home/{{ansible_ssh_user}}/pg_cluster/install/ --enable-shared && make -j 6 && make install"
+    args:
+      chdir: "~/pg_cluster/pqxx"
+    environment:
+      PATH: "/home/{{ansible_ssh_user}}/pg_cluster/install/bin/:{{ansible_env.PATH}}"
+    when: pqxx.changed
+
+  - name: compile dtmbench
+    shell: "g++ -g -Wall -O2 -o dtmbench dtmbench.cpp -lpqxx -lpq -pthread -L/home/{{ansible_ssh_user}}/pg_cluster/install/lib/ -I/home/{{ansible_ssh_user}}/pg_cluster/install/include/"
+
+  - name: install dtmbench
+    shell: "mv dtmbench ~/pg_cluster/install/bin/dtmbench"
+
+  - name: compile dtmacid
+    shell: "g++ -g -Wall -O2 -o dtmacid dtmacid.cpp -lpqxx -lpq -pthread -L/home/{{ansible_ssh_user}}/pg_cluster/install/lib/ -I/home/{{ansible_ssh_user}}/pg_cluster/install/include/"
+
+  - name: install dtmacid
+    shell: "mv dtmacid ~/pg_cluster/install/bin/dtmacid"
+
+
+

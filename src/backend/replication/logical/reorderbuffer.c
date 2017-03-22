@@ -160,7 +160,6 @@ static const Size max_cached_changes = 4096 * 2;
 static const Size max_cached_tuplebufs = 4096 * 2;		/* ~8MB */
 static const Size max_cached_transactions = 512;
 
-
 /* ---------------------------------------
  * primary reorderbuffer support routines
  * ---------------------------------------
@@ -1347,7 +1346,7 @@ ReorderBufferFreeSnap(ReorderBuffer *rb, Snapshot snap)
  *
  * We currently can only decode a transaction's contents in when their commit
  * record is read because that's currently the only place where we know about
- * cache invalidations. Thus, once a toplevel commit is read, we iterate over
+ * cache invalidati ons. Thus, once a toplevel commit is read, we iterate over
  * the top and subtransactions (using a k-way merge) and replay the changes in
  * lsn order.
  */
@@ -1375,6 +1374,9 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 	txn->commit_time = commit_time;
 	txn->origin_id = origin_id;
 	txn->origin_lsn = origin_lsn;
+	txn->xact_action = rb->xact_action;
+	strcpy(txn->gid, rb->gid);
+	strcpy(txn->state_3pc, rb->state_3pc);
 
 	/*
 	 * If this transaction didn't have any real changes in our database, it's
@@ -1457,11 +1459,12 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 						change->data.tp.newtuple == NULL &&
 						change->data.tp.oldtuple == NULL)
 						goto change_done;
-					else if (reloid == InvalidOid)
+					else if (reloid == InvalidOid) {
+						Assert(reloid != InvalidOid);
 						elog(ERROR, "could not map filenode \"%s\" to relation OID",
 							 relpathperm(change->data.tp.relnode,
 										 MAIN_FORKNUM));
-
+					}
 					relation = RelationIdGetRelation(reloid);
 
 					if (relation == NULL)
@@ -1708,6 +1711,33 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
+}
+
+
+/*
+ * Send standalone xact event. This is used to handle COMMIT/ABORT PREPARED.
+ */
+void
+ReorderBufferCommitBareXact(ReorderBuffer *rb, TransactionId xid,
+					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
+					TimestampTz commit_time,
+					RepOriginId origin_id, XLogRecPtr origin_lsn)
+{
+	ReorderBufferTXN *txn;
+
+	txn = ReorderBufferTXNByXid(rb, xid, true, NULL, commit_lsn,
+								true);
+
+	txn->final_lsn = commit_lsn;
+	txn->end_lsn = end_lsn;
+	txn->commit_time = commit_time;
+	txn->origin_id = origin_id;
+	txn->origin_lsn = origin_lsn;
+	txn->xact_action = rb->xact_action;
+	strcpy(txn->gid, rb->gid);
+	*txn->state_3pc = '\0';
+
+	rb->commit(rb, txn, commit_lsn);
 }
 
 /*

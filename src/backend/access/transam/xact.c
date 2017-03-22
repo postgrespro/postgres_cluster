@@ -27,6 +27,7 @@
 #include "access/transam.h"
 #include "access/twophase.h"
 #include "access/xact.h"
+#include "access/xtm.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
@@ -308,7 +309,6 @@ static void AtCommit_Memory(void);
 static void AtStart_Cache(void);
 static void AtStart_Memory(void);
 static void AtStart_ResourceOwner(void);
-static void CallXactCallbacks(XactEvent event);
 static void CallSubXactCallbacks(SubXactEvent event,
 					 SubTransactionId mySubid,
 					 SubTransactionId parentSubid);
@@ -1248,7 +1248,7 @@ RecordTransactionCommit(void)
 							nchildren, children, nrels, rels,
 							nmsgs, invalMessages,
 							RelcacheInitFileInval, forceSyncCommit,
-							InvalidTransactionId /* plain commit */ );
+							InvalidTransactionId, NULL /* plain commit */ );
 
 		if (replorigin)
 			/* Move LSNs forward for this replication origin */
@@ -1577,9 +1577,10 @@ RecordTransactionAbort(bool isSubXact)
 	/*
 	 * Check that we haven't aborted halfway through RecordTransactionCommit.
 	 */
-	if (TransactionIdDidCommit(xid))
-		elog(PANIC, "cannot abort transaction " XID_FMT ", it was already committed",
-			 xid);
+	// XXX: MTM-CRUTCH
+	// if (TransactionIdDidCommit(xid))
+	// 	elog(PANIC, "cannot abort transaction " XID_FMT ", it was already committed",
+	// 		 xid);
 
 	/* Fetch the data we need for the abort record */
 	nrels = smgrGetPendingDeletes(false, &rels);
@@ -1600,7 +1601,7 @@ RecordTransactionAbort(bool isSubXact)
 	XactLogAbortRecord(xact_time,
 					   nchildren, children,
 					   nrels, rels,
-					   InvalidTransactionId);
+					   InvalidTransactionId, NULL);
 
 	/*
 	 * Report the latest async abort LSN, so that the WAL writer knows to
@@ -1990,6 +1991,7 @@ StartTransaction(void)
 	 */
 	s->state = TRANS_INPROGRESS;
 
+	CallXactCallbacks(XACT_EVENT_START);
 	ShowTransactionState("StartTransaction");
 }
 
@@ -2370,6 +2372,7 @@ PrepareTransaction(void)
 	 */
 	gxact = MarkAsPreparing(xid, prepareGID, prepared_at,
 							GetUserId(), MyDatabaseId);
+	//elog(LOG, "Prepare transaction %s xid %d", prepareGID, xid);
 	prepareGID = NULL;
 
 	/*
@@ -2509,6 +2512,8 @@ PrepareTransaction(void)
 	 * back to default
 	 */
 	s->state = TRANS_DEFAULT;
+
+	CallXactCallbacks(XACT_EVENT_POST_PREPARE);
 
 	RESUME_INTERRUPTS();
 }
@@ -2826,6 +2831,8 @@ void
 CommitTransactionCommand(void)
 {
 	TransactionState s = CurrentTransactionState;
+
+	CallXactCallbacks(XACT_EVENT_COMMIT_COMMAND);
 
 	switch (s->blockState)
 	{
@@ -3428,7 +3435,7 @@ UnregisterXactCallback(XactCallback callback, void *arg)
 	}
 }
 
-static void
+void
 CallXactCallbacks(XactEvent event)
 {
 	XactCallbackItem *item;
@@ -3774,7 +3781,7 @@ BeginTransactionBlock(bool autonomous)
  * resource owner, etc while executing inside a Portal.
  */
 bool
-PrepareTransactionBlock(char *gid)
+PrepareTransactionBlock(const char *gid)
 {
 	TransactionState s;
 	bool		result;
@@ -5139,8 +5146,9 @@ EstimateTransactionStateSpace(void)
 		nxids = add_size(nxids, s->nChildXids);
 	}
 
-	nxids = add_size(nxids, nParallelCurrentXids);
-	return mul_size(nxids, sizeof(TransactionId));
+	nxids = add_size(nxids, nParallelCurrentXids);	
+	nxids = mul_size(nxids, sizeof(TransactionId));
+	return add_size(nxids, TM->GetTransactionStateSize());
 }
 
 /*
@@ -5186,6 +5194,7 @@ SerializeTransactionState(Size maxsize, char *start_address)
 		Assert(maxsize >= (nParallelCurrentXids + c) * sizeof(TransactionId));
 		memcpy(&result[c], ParallelCurrentXids,
 			   nParallelCurrentXids * sizeof(TransactionId));
+		TM->SerializeTransactionState(&result[c + nParallelCurrentXids]);
 		return;
 	}
 
@@ -5219,6 +5228,7 @@ SerializeTransactionState(Size maxsize, char *start_address)
 	/* Copy data into output area. */
 	result[c++] = (TransactionId) nxids;
 	memcpy(&result[c], workspace, nxids * sizeof(TransactionId));
+	TM->SerializeTransactionState(&result[c + nxids]);
 }
 
 /*
@@ -5241,6 +5251,7 @@ StartParallelWorkerTransaction(char *tstatespace)
 	currentCommandId = tstate[4];
 	nParallelCurrentXids = (int) tstate[5];
 	ParallelCurrentXids = &tstate[6];
+	TM->DeserializeTransactionState(&tstate[nParallelCurrentXids + 6]);
 
 	CurrentTransactionState->blockState = TBLOCK_PARALLEL_INPROGRESS;
 }
@@ -5425,7 +5436,7 @@ XactLogCommitRecord(TimestampTz commit_time,
 					int nrels, RelFileNode *rels,
 					int nmsgs, SharedInvalidationMessage *msgs,
 					bool relcacheInval, bool forceSync,
-					TransactionId twophase_xid)
+					TransactionId twophase_xid, const char *twophase_gid)
 {
 	xl_xact_commit xlrec;
 	xl_xact_xinfo xl_xinfo;
@@ -5485,6 +5496,7 @@ XactLogCommitRecord(TimestampTz commit_time,
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_TWOPHASE;
 		xl_twophase.xid = twophase_xid;
+		xl_twophase.gidlen = strlen(twophase_gid) + 1; /* Include '\0' */
 	}
 
 	if (nrels > 0)
@@ -5503,7 +5515,6 @@ XactLogCommitRecord(TimestampTz commit_time,
 	if (replorigin_session_origin != InvalidRepOriginId)
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_ORIGIN;
-
 		xl_origin.origin_lsn = replorigin_session_origin_lsn;
 		xl_origin.origin_timestamp = replorigin_session_origin_timestamp;
 	}
@@ -5532,7 +5543,10 @@ XactLogCommitRecord(TimestampTz commit_time,
 	}
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_TWOPHASE)
-		XLogRegisterData((char *) (&xl_twophase), sizeof(xl_xact_twophase));
+	{
+		XLogRegisterData((char *) (&xl_twophase), MinSizeOfXactTwophase);
+		XLogRegisterData((char *) twophase_gid, INTALIGN(xl_twophase.gidlen));
+	}
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_RELFILENODES)
 	{
@@ -5568,13 +5582,15 @@ XLogRecPtr
 XactLogAbortRecord(TimestampTz abort_time,
 				   int nsubxacts, TransactionId *subxacts,
 				   int nrels, RelFileNode *rels,
-				   TransactionId twophase_xid)
+				   TransactionId twophase_xid, const char *twophase_gid)
 {
 	xl_xact_abort xlrec;
 	xl_xact_xinfo xl_xinfo;
 	xl_xact_subxacts xl_subxacts;
 	xl_xact_twophase xl_twophase;
 	xl_xact_relfilenodes xl_relfilenodes;
+	xl_xact_dbinfo xl_dbinfo;
+	xl_xact_origin xl_origin;
 
 	uint8		info;
 
@@ -5603,6 +5619,22 @@ XactLogAbortRecord(TimestampTz abort_time,
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_TWOPHASE;
 		xl_twophase.xid = twophase_xid;
+		xl_twophase.gidlen = strlen(twophase_gid) + 1; /* Include '\0' */
+	}
+
+	if (TransactionIdIsValid(twophase_xid) && XLogLogicalInfoActive())
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_DBINFO;
+		xl_dbinfo.dbId = MyDatabaseId;
+		xl_dbinfo.tsId = MyDatabaseTableSpace;
+	}
+
+	/* dump transaction origin information */
+	if (replorigin_session_origin != InvalidRepOriginId)
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_ORIGIN;
+		xl_origin.origin_lsn = replorigin_session_origin_lsn;
+		xl_origin.origin_timestamp = replorigin_session_origin_timestamp;
 	}
 
 	if (nrels > 0)
@@ -5623,6 +5655,9 @@ XactLogAbortRecord(TimestampTz abort_time,
 	if (xl_xinfo.xinfo != 0)
 		XLogRegisterData((char *) (&xl_xinfo), sizeof(xl_xinfo));
 
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_DBINFO)
+		XLogRegisterData((char *) (&xl_dbinfo), sizeof(xl_dbinfo));
+
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_SUBXACTS)
 	{
 		XLogRegisterData((char *) (&xl_subxacts),
@@ -5632,7 +5667,15 @@ XactLogAbortRecord(TimestampTz abort_time,
 	}
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_TWOPHASE)
-		XLogRegisterData((char *) (&xl_twophase), sizeof(xl_xact_twophase));
+	{
+		XLogRegisterData((char *) (&xl_twophase), MinSizeOfXactTwophase);
+		XLogRegisterData((char *) twophase_gid, INTALIGN(xl_twophase.gidlen));
+	}
+
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_ORIGIN)
+		XLogRegisterData((char *) (&xl_origin), sizeof(xl_xact_origin));
+
+	XLogIncludeOrigin();
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_RELFILENODES)
 	{
@@ -5820,7 +5863,10 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
  * because subtransaction commit is never WAL logged.
  */
 static void
-xact_redo_abort(xl_xact_parsed_abort *parsed, TransactionId xid)
+xact_redo_abort(xl_xact_parsed_abort *parsed, 
+				TransactionId xid,
+				XLogRecPtr lsn,
+				RepOriginId origin_id)
 {
 	int			i;
 	TransactionId max_xid;
@@ -5883,6 +5929,13 @@ xact_redo_abort(xl_xact_parsed_abort *parsed, TransactionId xid)
 		StandbyReleaseLockTree(xid, parsed->nsubxacts, parsed->subxacts);
 	}
 
+	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
+	{
+		/* recover apply progress */
+		replorigin_advance(origin_id, parsed->origin_lsn, lsn,
+						   false /* backward */ , false /* WAL */ );
+	}
+
 	/* Make sure files supposed to be dropped are dropped */
 	for (i = 0; i < parsed->nrels; i++)
 	{
@@ -5937,20 +5990,34 @@ xact_redo(XLogReaderState *record)
 		if (info == XLOG_XACT_ABORT)
 		{
 			Assert(!TransactionIdIsValid(parsed.twophase_xid));
-			xact_redo_abort(&parsed, XLogRecGetXid(record));
+			xact_redo_abort(&parsed, XLogRecGetXid(record),
+							record->EndRecPtr, XLogRecGetOrigin(record));
 		}
 		else
 		{
 			Assert(TransactionIdIsValid(parsed.twophase_xid));
-			xact_redo_abort(&parsed, parsed.twophase_xid);
+			xact_redo_abort(&parsed, parsed.twophase_xid,
+							record->EndRecPtr, XLogRecGetOrigin(record));
 			RemoveTwoPhaseFile(parsed.twophase_xid, false);
 		}
 	}
 	else if (info == XLOG_XACT_PREPARE)
 	{
+		RepOriginId originId = XLogRecGetOrigin(record);
+
 		/* the record contents are exactly the 2PC file */
 		RecreateTwoPhaseFile(XLogRecGetXid(record),
-						  XLogRecGetData(record), XLogRecGetDataLen(record));
+							 XLogRecGetData(record), XLogRecGetDataLen(record));
+
+		if (originId != InvalidRepOriginId && originId != DoNotReplicateId) 
+		{
+			xl_xact_parsed_prepare parsed;		
+			ParsePrepareRecord(XLogRecGetXid(record), XLogRecGetData(record), &parsed);
+			Assert(parsed.origin_lsn != InvalidXLogRecPtr);
+			/* recover apply progress */
+			replorigin_advance(originId, parsed.origin_lsn,
+							   record->EndRecPtr, false /* backward */ , false /* WAL */ );
+		}
 	}
 	else if (info == XLOG_XACT_ASSIGNMENT)
 	{
@@ -5980,3 +6047,9 @@ Datum pg_current_atx_has_ancestor(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(TransactionIdIsAncestorOfCurrentATX(xid));
 }
 
+void
+MarkAsAborted()
+{
+	CurrentTransactionState->state = TRANS_INPROGRESS;
+	CurrentTransactionState->blockState = TBLOCK_STARTED;
+}

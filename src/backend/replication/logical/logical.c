@@ -269,14 +269,19 @@ CreateInitDecodingContext(char *plugin,
 	 * protecting against vacuum.
 	 * ----
 	 */
+	elog(LOG, "CreateInitDecodingContext: try to obtain proc array lock");
 	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+	elog(LOG, "CreateInitDecodingContext: grant proc array lock");
 
 	slot->effective_catalog_xmin = GetOldestSafeDecodingTransactionId();
 	slot->data.catalog_xmin = slot->effective_catalog_xmin;
 
+	elog(LOG, "CreateInitDecodingContext: GetOldestSafeDecodingTransactionId");
 	ReplicationSlotsComputeRequiredXmin(true);
+	elog(LOG, "CreateInitDecodingContext: ReplicationSlotsComputeRequiredXmin");
 
 	LWLockRelease(ProcArrayLock);
+	elog(LOG, "CreateInitDecodingContext: release proc array lock");
 
 	/*
 	 * tell the snapshot builder to only assemble snapshot once reaching the
@@ -414,11 +419,12 @@ void
 DecodingContextFindStartpoint(LogicalDecodingContext *ctx)
 {
 	XLogRecPtr	startptr;
+	int n_records = 0;
 
 	/* Initialize from where to start reading WAL. */
 	startptr = ctx->slot->data.restart_lsn;
 
-	elog(DEBUG1, "searching for logical decoding starting point, starting at %X/%X",
+	elog(LOG, "searching for logical decoding starting point, starting at %X/%X",
 		 (uint32) (ctx->slot->data.restart_lsn >> 32),
 		 (uint32) ctx->slot->data.restart_lsn);
 
@@ -436,7 +442,7 @@ DecodingContextFindStartpoint(LogicalDecodingContext *ctx)
 			elog(ERROR, "no record found");		/* shouldn't happen */
 
 		startptr = InvalidXLogRecPtr;
-
+		n_records += 1;
 		LogicalDecodingProcessRecord(ctx, ctx->reader);
 
 		/* only continue till we found a consistent spot */
@@ -445,6 +451,11 @@ DecodingContextFindStartpoint(LogicalDecodingContext *ctx)
 
 		CHECK_FOR_INTERRUPTS();
 	}
+
+	elog(LOG, "Locate starting point at %X/%X after proceeding %d records",
+		 (uint32) (ctx->reader->EndRecPtr >> 32),
+		 (uint32) ctx->reader->EndRecPtr,
+		 n_records);
 
 	ctx->slot->data.confirmed_flush = ctx->reader->EndRecPtr;
 }
@@ -745,6 +756,35 @@ message_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 	/* Pop the error context stack */
 	error_context_stack = errcallback.previous;
 }
+
+void LogicalDecodingCaughtUp(LogicalDecodingContext *ctx)
+{
+	LogicalErrorCallbackState state;
+	ErrorContextCallback errcallback;
+
+	if (ctx->callbacks.caughtup_cb == NULL)
+		return;
+
+	/* Push callback + info on the error context stack */
+	state.ctx = ctx;
+	state.callback_name = "caughtup";
+	state.report_location = ctx->reader->EndRecPtr;
+	errcallback.callback = output_plugin_error_callback;
+	errcallback.arg = (void *) &state;
+	errcallback.previous = error_context_stack;
+	error_context_stack = &errcallback;
+
+	/* set output state */
+	ctx->accept_writes = true;
+	ctx->write_xid = InvalidTransactionId;
+	ctx->write_location = ctx->reader->EndRecPtr;
+
+	/* do the actual work: call callback */
+	ctx->callbacks.caughtup_cb(ctx);
+
+	/* Pop the error context stack */
+	error_context_stack = errcallback.previous;
+}	
 
 /*
  * Set the required catalog xmin horizon for historic snapshots in the current

@@ -18,6 +18,7 @@
 #include "access/multixact.h"
 #include "access/transam.h"
 #include "access/xact.h"
+#include "access/xtm.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
@@ -1335,10 +1336,15 @@ init_params(List *options, bool isInit,
 		new->start_value = defGetInt64(start_value);
 	else if (isInit)
 	{
-		if (new->increment_by > 0)
-			new->start_value = new->min_value;	/* ascending seq */
-		else
-			new->start_value = new->max_value;	/* descending seq */
+		if (increment_by == NULL) { 
+            /* if neither start, neither increment are not specified explcitly, assign this values using XTM API */
+			TM->InitializeSequence(&new->start_value, &new->increment_by);
+		} else { 
+			if (new->increment_by > 0)
+				new->start_value = new->min_value;	/* ascending seq */
+			else
+				new->start_value = new->max_value;	/* descending seq */
+		}
 	}
 
 	/* crosscheck START */

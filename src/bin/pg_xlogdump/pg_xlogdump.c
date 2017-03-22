@@ -19,6 +19,7 @@
 #include "access/xlogreader.h"
 #include "access/xlogrecord.h"
 #include "access/xlog_internal.h"
+#include "access/xact.h"
 #include "access/transam.h"
 #include "c.h"
 #include "catalog/pg_control.h"
@@ -26,6 +27,7 @@
 #include "getopt_long.h"
 #include "nodes/bitmapset.h"
 #include "rmgrdesc.h"
+#include "replication/origin.h"
 #include "utils/timestamp.h"
 
 
@@ -56,6 +58,7 @@ typedef struct XLogDumpConfig
 	int			stop_after_records;
 	int			already_displayed_records;
 	bool		follow;
+	bool		dump_origin;
 	bool		stats;
 	bool		stats_per_record;
 	bool		start_ts;
@@ -453,7 +456,8 @@ static void
 XLogDumpDisplayRecord(XLogDumpConfig *config, XLogReaderState *record)
 {
 	const char *id;
-	const RmgrDescData *desc = &RmgrDescTable[XLogRecGetRmid(record)];
+	int rmid = XLogRecGetRmid(record);
+	const RmgrDescData *desc = &RmgrDescTable[rmid];
 	RelFileNode rnode;
 	ForkNumber	forknum;
 	BlockNumber blk;
@@ -471,6 +475,35 @@ XLogDumpDisplayRecord(XLogDumpConfig *config, XLogReaderState *record)
 		   XLogRecGetXid(record),
 		   (uint32) (record->ReadRecPtr >> 32), (uint32) record->ReadRecPtr,
 		   (uint32) (xl_prev >> 32), (uint32) xl_prev);
+
+	if (config->dump_origin && rmid == RM_XACT_ID) {
+		switch (info & XLOG_XACT_OPMASK) { 
+		case XLOG_XACT_COMMIT:
+		case XLOG_XACT_COMMIT_PREPARED:
+			{
+				xl_xact_commit *xlrec;
+				xl_xact_parsed_commit parsed;
+
+				xlrec = (xl_xact_commit *) XLogRecGetData(record);
+				ParseCommitRecord(info, xlrec, &parsed);
+				printf("gid=%s, origin_id=%d, origin_lsn=%llx, ", parsed.twophase_gid, XLogRecGetOrigin(record), (long long)parsed.origin_lsn);
+				break;
+			}
+		case XLOG_XACT_ABORT:
+		case XLOG_XACT_ABORT_PREPARED:
+			{
+				xl_xact_abort *xlrec;
+				xl_xact_parsed_abort parsed;
+
+				xlrec = (xl_xact_abort *) XLogRecGetData(record);
+				ParseAbortRecord(info, xlrec, &parsed);
+
+				printf("gid=%s, origin_id=%d, origin_lsn=%llx, ", parsed.twophase_gid, XLogRecGetOrigin(record), (long long)parsed.origin_lsn);
+				break;
+			}
+		}
+	}		
+
 	printf("desc: %s ", id);
 
 	/* the desc routine will printf the description directly to stdout */
@@ -956,6 +989,7 @@ usage(void)
 		   "                             XLOG_XACT_ABORT, XLOG_XACT_ABORT_PREPARED\n"
 		   "                         on default XLOG_XACT_COMMIT is used\n");
 	printf("  -f, --follow           keep retrying after reaching end of WAL\n");
+	printf("  -o, --origin           dump origins\n");
 	printf("  -n, --limit=N          number of records to display\n");
 	printf("  -p, --path=PATH        directory in which to find log segment files or a\n");
 	printf("                         directory with a ./pg_xlog that contains such files\n"
@@ -992,6 +1026,7 @@ main(int argc, char **argv)
 		{"end", required_argument, NULL, 'e'},
 		{"timestamp-filter", required_argument, NULL, 'F'},
 		{"follow", no_argument, NULL, 'f'},
+		{"origin", no_argument, NULL, 'o'},
 		{"help", no_argument, NULL, '?'},
 		{"limit", required_argument, NULL, 'n'},
 		{"path", required_argument, NULL, 'p'},
@@ -1023,6 +1058,7 @@ main(int argc, char **argv)
 	config.stop_after_records = -1;
 	config.already_displayed_records = 0;
 	config.follow = false;
+	config.dump_origin = false;
 	config.filter_by_rmgr = -1;
 	config.filter_by_xid = InvalidTransactionId;
 	config.filter_by_xid_enabled = false;
@@ -1091,6 +1127,9 @@ main(int argc, char **argv)
 				break;
 			case 'f':
 				config.follow = true;
+				break;
+		    case 'o':
+			    config.dump_origin = true;
 				break;
 			case '?':
 				usage();

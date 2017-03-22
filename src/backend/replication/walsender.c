@@ -1244,6 +1244,9 @@ WalSndWaitForWal(XLogRecPtr loc)
 
 		/* Waiting for new WAL. Since we need to wait, we're now caught up. */
 		WalSndCaughtUp = true;
+		if (logical_decoding_ctx) {
+			LogicalDecodingCaughtUp(logical_decoding_ctx);
+		}
 
 		/*
 		 * Try to flush pending output to the client. Also wait for the socket
@@ -2425,8 +2428,10 @@ XLogSendLogical(void)
 		 * If the record we just wanted read is at or beyond the flushed
 		 * point, then we're caught up.
 		 */
-		if (logical_decoding_ctx->reader->EndRecPtr >= GetFlushRecPtr())
+		if (logical_decoding_ctx->reader->EndRecPtr >= GetFlushRecPtr()) {
 			WalSndCaughtUp = true;
+			LogicalDecodingCaughtUp(logical_decoding_ctx);
+		}
 	}
 
 	/* Update shared memory status */
