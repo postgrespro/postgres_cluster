@@ -5120,6 +5120,7 @@ XactLogCommitRecord(TimestampTz commit_time,
 	xl_xact_origin xl_origin;
 
 	uint8		info;
+	int			gidlen = 0;
 
 	Assert(CritSectionCount > 0);
 
@@ -5180,7 +5181,13 @@ XactLogCommitRecord(TimestampTz commit_time,
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_TWOPHASE;
 		xl_twophase.xid = twophase_xid;
-		xl_twophase.gidlen = strlen(twophase_gid) + 1; /* Include '\0' */
+		Assert(twophase_gid != NULL);
+
+		if (XLogLogicalInfoActive())
+		{
+			xl_xinfo.xinfo |= XACT_XINFO_HAS_GID;
+			gidlen = strlen(twophase_gid) + 1; /* include '\0' */
+		}
 	}
 
 	/* dump transaction origin information */
@@ -5233,7 +5240,9 @@ XactLogCommitRecord(TimestampTz commit_time,
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_TWOPHASE)
 	{
 		XLogRegisterData((char *) (&xl_twophase), MinSizeOfXactTwophase);
-		XLogRegisterData((char *) twophase_gid, xl_twophase.gidlen);
+
+		if (xl_xinfo.xinfo & XACT_XINFO_HAS_GID)
+			XLogRegisterData((char *) twophase_gid, gidlen);
 	}
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_ORIGIN)
@@ -5263,8 +5272,10 @@ XactLogAbortRecord(TimestampTz abort_time,
 	xl_xact_relfilenodes xl_relfilenodes;
 	xl_xact_twophase xl_twophase;
 	xl_xact_dbinfo xl_dbinfo;
+	xl_xact_origin xl_origin;
 
 	uint8		info;
+	int			gidlen = 0;
 
 	Assert(CritSectionCount > 0);
 
@@ -5275,7 +5286,6 @@ XactLogAbortRecord(TimestampTz abort_time,
 		info = XLOG_XACT_ABORT;
 	else
 		info = XLOG_XACT_ABORT_PREPARED;
-
 
 	/* First figure out and collect all the information needed */
 
@@ -5297,7 +5307,13 @@ XactLogAbortRecord(TimestampTz abort_time,
 	{
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_TWOPHASE;
 		xl_twophase.xid = twophase_xid;
-		xl_twophase.gidlen = strlen(twophase_gid) + 1; /* Include '\0' */
+		Assert(twophase_gid != NULL);
+
+		if (XLogLogicalInfoActive())
+		{
+			xl_xinfo.xinfo |= XACT_XINFO_HAS_GID;
+			gidlen = strlen(twophase_gid) + 1; /* include '\0' */
+		}
 	}
 
 	if (TransactionIdIsValid(twophase_xid) && XLogLogicalInfoActive())
@@ -5305,6 +5321,17 @@ XactLogAbortRecord(TimestampTz abort_time,
 		xl_xinfo.xinfo |= XACT_XINFO_HAS_DBINFO;
 		xl_dbinfo.dbId = MyDatabaseId;
 		xl_dbinfo.tsId = MyDatabaseTableSpace;
+	}
+
+	/* dump transaction origin information only for abort prepared */
+	if ( (replorigin_session_origin != InvalidRepOriginId) &&
+			TransactionIdIsValid(twophase_xid) &&
+			XLogLogicalInfoActive())
+	{
+		xl_xinfo.xinfo |= XACT_XINFO_HAS_ORIGIN;
+
+		xl_origin.origin_lsn = replorigin_session_origin_lsn;
+		xl_origin.origin_timestamp = replorigin_session_origin_timestamp;
 	}
 
 	if (xl_xinfo.xinfo != 0)
@@ -5341,11 +5368,19 @@ XactLogAbortRecord(TimestampTz abort_time,
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_TWOPHASE)
 	{
 		XLogRegisterData((char *) (&xl_twophase), MinSizeOfXactTwophase);
-		XLogRegisterData((char *) twophase_gid, xl_twophase.gidlen);
+
+		if (xl_xinfo.xinfo & XACT_XINFO_HAS_GID)
+			XLogRegisterData((char *) twophase_gid, gidlen);
 	}
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_DBINFO)
 		XLogRegisterData((char *) (&xl_dbinfo), sizeof(xl_dbinfo));
+
+	if (xl_xinfo.xinfo & XACT_XINFO_HAS_ORIGIN)
+		XLogRegisterData((char *) (&xl_origin), sizeof(xl_xact_origin));
+
+	if (TransactionIdIsValid(twophase_xid))
+		XLogSetRecordFlags(XLOG_INCLUDE_ORIGIN);
 
 	return XLogInsert(RM_XACT_ID, info);
 }

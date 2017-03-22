@@ -98,13 +98,15 @@ ParseCommitRecord(uint8 info, xl_xact_commit *xlrec, xl_xact_parsed_commit *pars
 	if (parsed->xinfo & XACT_XINFO_HAS_TWOPHASE)
 	{
 		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
-		uint8 gidlen = xl_twophase->gidlen;
 
 		parsed->twophase_xid = xl_twophase->xid;
 		data += MinSizeOfXactTwophase;
 
-		strcpy(parsed->twophase_gid, data);
-		data += gidlen;
+		if (parsed->xinfo & XACT_XINFO_HAS_GID)
+		{
+			strcpy(parsed->twophase_gid, data);
+			data += strlen(parsed->twophase_gid) + 1;
+		}
 	}
 
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
@@ -177,13 +179,28 @@ ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_abort *parsed)
 	if (parsed->xinfo & XACT_XINFO_HAS_TWOPHASE)
 	{
 		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
-		uint8 gidlen = xl_twophase->gidlen;
 
 		parsed->twophase_xid = xl_twophase->xid;
 		data += MinSizeOfXactTwophase;
 
-		strcpy(parsed->twophase_gid, data);
-		data += gidlen;
+		if (parsed->xinfo & XACT_XINFO_HAS_GID)
+		{
+			strcpy(parsed->twophase_gid, data);
+			data += strlen(parsed->twophase_gid) + 1;
+		}
+	}
+
+	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
+	{
+		xl_xact_origin xl_origin;
+
+		/* we're only guaranteed 4 byte alignment, so copy onto stack */
+		memcpy(&xl_origin, data, sizeof(xl_origin));
+
+		parsed->origin_lsn = xl_origin.origin_lsn;
+		parsed->origin_timestamp = xl_origin.origin_timestamp;
+
+		data += sizeof(xl_xact_origin);
 	}
 }
 

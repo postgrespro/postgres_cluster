@@ -22,7 +22,7 @@
 #include "utils/datetime.h"
 
 /*
- * Maximum size of Global Transaction ID.
+ * Maximum size of Global Transaction ID (including '\0').
  */
 #define GIDSIZE 200
 
@@ -141,6 +141,7 @@ typedef void (*SubXactCallback) (SubXactEvent event, SubTransactionId mySubid,
 #define XACT_XINFO_HAS_INVALS			(1U << 3)
 #define XACT_XINFO_HAS_TWOPHASE			(1U << 4)
 #define XACT_XINFO_HAS_ORIGIN			(1U << 5)
+#define XACT_XINFO_HAS_GID				(1U << 6)
 
 /*
  * Also stored in xinfo, these indicating a variety of additional actions that
@@ -228,8 +229,7 @@ typedef struct xl_xact_invals
 typedef struct xl_xact_twophase
 {
 	TransactionId xid;
- 	uint8 gidlen;
- 	char gid[GIDSIZE];
+	char gid[GIDSIZE];
 } xl_xact_twophase;
 #define MinSizeOfXactTwophase offsetof(xl_xact_twophase, gid)
 
@@ -314,6 +314,9 @@ typedef struct xl_xact_parsed_prepare
 
 	TransactionId twophase_xid;
 	char 		twophase_gid[GIDSIZE];
+
+	XLogRecPtr	origin_lsn;
+	TimestampTz origin_timestamp;
 } xl_xact_parsed_prepare;
 
 typedef struct xl_xact_parsed_abort
@@ -332,6 +335,9 @@ typedef struct xl_xact_parsed_abort
 
 	TransactionId twophase_xid; /* only for 2PC */
 	char 		twophase_gid[GIDSIZE];
+
+	XLogRecPtr	origin_lsn;
+	TimestampTz origin_timestamp;
 } xl_xact_parsed_abort;
 
 
