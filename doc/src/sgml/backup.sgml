@@ -382,10 +382,10 @@ tar -cf backup.tar /usr/local/pgsql/data
       directories. This will <emphasis>not</> work because the
       information contained in these files is not usable without
       the commit log files,
-      <filename>pg_clog/*</filename>, which contain the commit status of
+      <filename>pg_xact/*</filename>, which contain the commit status of
       all transactions. A table file is only usable with this
       information. Of course it is also impossible to restore only a
-      table and the associated <filename>pg_clog</filename> data
+      table and the associated <filename>pg_xact</filename> data
       because that would render all other tables in the database
       cluster useless.  So file system backups only work for complete
       backup and restoration of an entire database cluster.
@@ -878,7 +878,7 @@ SELECT pg_start_backup('label', false, false);
      <application>pg_dump</application> or
      <application>pg_dumpall</application>).  It is neither
      necessary nor desirable to stop normal operation of the database
-     while you do this. See section
+     while you do this. See
      <xref linkend="backup-lowlevel-base-backup-data"> for things to
      consider during this backup.
     </para>
@@ -988,7 +988,7 @@ SELECT pg_start_backup('label', true);
      <application>pg_dump</application> or
      <application>pg_dumpall</application>).  It is neither
      necessary nor desirable to stop normal operation of the database
-     while you do this. See section
+     while you do this. See
      <xref linkend="backup-lowlevel-base-backup-data"> for things to
      consider during this backup.
     </para>
@@ -1536,19 +1536,6 @@ archive_command = 'local_backup_script.sh "%p" "%f"'
     technique.  These will probably be fixed in future releases:
 
   <itemizedlist>
-   <listitem>
-    <para>
-     Operations on hash indexes are not presently WAL-logged, so
-     replay will not update these indexes.  This will mean that any new inserts
-     will be ignored by the index, updated rows will apparently disappear and
-     deleted rows will still retain pointers. In other words, if you modify a
-     table with a hash index on it then you will get incorrect query results
-     on a standby server.  When recovery completes it is recommended that you
-     manually <xref linkend="sql-reindex">
-     each such index after completing a recovery operation.
-    </para>
-   </listitem>
-
    <listitem>
     <para>
      If a <xref linkend="sql-createdatabase">

@@ -859,7 +859,7 @@ static bool InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 					   bool find_free, XLogSegNo max_segno,
 					   bool use_lock);
 static int XLogFileRead(XLogSegNo segno, int emode, TimeLineID tli,
-			 int source, bool notexistOk);
+			 int source, bool notfoundOk);
 static int	XLogFileReadAnyTLI(XLogSegNo segno, int emode, int source);
 static int XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr,
 			 int reqLen, XLogRecPtr targetRecPtr, char *readBuf,
@@ -2456,7 +2456,9 @@ XLogWrite(XLogwrtRqst WriteRqst, bool flexible)
 			do
 			{
 				errno = 0;
+				pgstat_report_wait_start(WAIT_EVENT_WAL_WRITE);
 				written = write(openLogFile, from, nleft);
+				pgstat_report_wait_end();
 				if (written <= 0)
 				{
 					if (errno == EINTR)
@@ -3207,6 +3209,7 @@ XLogFileInit(XLogSegNo logsegno, bool *use_existent, bool use_lock)
 	for (nbytes = 0; nbytes < XLogSegSize; nbytes += XLOG_BLCKSZ)
 	{
 		errno = 0;
+		pgstat_report_wait_start(WAIT_EVENT_WAL_INIT_WRITE);
 		if ((int) write(fd, zbuffer, XLOG_BLCKSZ) != (int) XLOG_BLCKSZ)
 		{
 			int			save_errno = errno;
@@ -3225,8 +3228,10 @@ XLogFileInit(XLogSegNo logsegno, bool *use_existent, bool use_lock)
 					(errcode_for_file_access(),
 					 errmsg("could not write to file \"%s\": %m", tmppath)));
 		}
+		pgstat_report_wait_end();
 	}
 
+	pgstat_report_wait_start(WAIT_EVENT_WAL_INIT_SYNC);
 	if (pg_fsync(fd) != 0)
 	{
 		close(fd);
@@ -3234,6 +3239,7 @@ XLogFileInit(XLogSegNo logsegno, bool *use_existent, bool use_lock)
 				(errcode_for_file_access(),
 				 errmsg("could not fsync file \"%s\": %m", tmppath)));
 	}
+	pgstat_report_wait_end();
 
 	if (close(fd))
 		ereport(ERROR,
@@ -3360,6 +3366,7 @@ XLogFileCopy(XLogSegNo destsegno, TimeLineID srcTLI, XLogSegNo srcsegno,
 			if (nread > sizeof(buffer))
 				nread = sizeof(buffer);
 			errno = 0;
+			pgstat_report_wait_start(WAIT_EVENT_WAL_COPY_READ);
 			if (read(srcfd, buffer, nread) != nread)
 			{
 				if (errno != 0)
@@ -3372,8 +3379,10 @@ XLogFileCopy(XLogSegNo destsegno, TimeLineID srcTLI, XLogSegNo srcsegno,
 							(errmsg("not enough data in file \"%s\"",
 									path)));
 			}
+			pgstat_report_wait_end();
 		}
 		errno = 0;
+		pgstat_report_wait_start(WAIT_EVENT_WAL_COPY_WRITE);
 		if ((int) write(fd, buffer, sizeof(buffer)) != (int) sizeof(buffer))
 		{
 			int			save_errno = errno;
@@ -3389,12 +3398,15 @@ XLogFileCopy(XLogSegNo destsegno, TimeLineID srcTLI, XLogSegNo srcsegno,
 					(errcode_for_file_access(),
 					 errmsg("could not write to file \"%s\": %m", tmppath)));
 		}
+		pgstat_report_wait_end();
 	}
 
+	pgstat_report_wait_start(WAIT_EVENT_WAL_COPY_SYNC);
 	if (pg_fsync(fd) != 0)
 		ereport(ERROR,
 				(errcode_for_file_access(),
 				 errmsg("could not fsync file \"%s\": %m", tmppath)));
+	pgstat_report_wait_end();
 
 	if (CloseTransientFile(fd))
 		ereport(ERROR,
@@ -4414,6 +4426,7 @@ WriteControlFile(void)
 						XLOG_CONTROL_FILE)));
 
 	errno = 0;
+	pgstat_report_wait_start(WAIT_EVENT_CONTROL_FILE_WRITE);
 	if (write(fd, buffer, PG_CONTROL_SIZE) != PG_CONTROL_SIZE)
 	{
 		/* if write didn't set errno, assume problem is no disk space */
@@ -4423,11 +4436,14 @@ WriteControlFile(void)
 				(errcode_for_file_access(),
 				 errmsg("could not write to control file: %m")));
 	}
+	pgstat_report_wait_end();
 
+	pgstat_report_wait_start(WAIT_EVENT_CONTROL_FILE_SYNC);
 	if (pg_fsync(fd) != 0)
 		ereport(PANIC,
 				(errcode_for_file_access(),
 				 errmsg("could not fsync control file: %m")));
+	pgstat_report_wait_end();
 
 	if (close(fd))
 		ereport(PANIC,
@@ -4453,10 +4469,12 @@ ReadControlFile(void)
 				 errmsg("could not open control file \"%s\": %m",
 						XLOG_CONTROL_FILE)));
 
+	pgstat_report_wait_start(WAIT_EVENT_CONTROL_FILE_READ);
 	if (read(fd, ControlFile, sizeof(ControlFileData)) != sizeof(ControlFileData))
 		ereport(PANIC,
 				(errcode_for_file_access(),
 				 errmsg("could not read from control file: %m")));
+	pgstat_report_wait_end();
 
 	close(fd);
 
@@ -4634,6 +4652,7 @@ UpdateControlFile(void)
 						XLOG_CONTROL_FILE)));
 
 	errno = 0;
+	pgstat_report_wait_start(WAIT_EVENT_CONTROL_FILE_WRITE_UPDATE);
 	if (write(fd, ControlFile, sizeof(ControlFileData)) != sizeof(ControlFileData))
 	{
 		/* if write didn't set errno, assume problem is no disk space */
@@ -4643,11 +4662,14 @@ UpdateControlFile(void)
 				(errcode_for_file_access(),
 				 errmsg("could not write to control file: %m")));
 	}
+	pgstat_report_wait_end();
 
+	pgstat_report_wait_start(WAIT_EVENT_CONTROL_FILE_SYNC_UPDATE);
 	if (pg_fsync(fd) != 0)
 		ereport(PANIC,
 				(errcode_for_file_access(),
 				 errmsg("could not fsync control file: %m")));
+	pgstat_report_wait_end();
 
 	if (close(fd))
 		ereport(PANIC,
@@ -4995,7 +5017,7 @@ BootStrapXLOG(void)
 	ShmemVariableCache->oidCount = 0;
 	MultiXactSetNextMXact(checkPoint.nextMulti, checkPoint.nextMultiOffset);
 	SetTransactionIdLimit(checkPoint.oldestXid, checkPoint.oldestXidDB);
-	SetMultiXactIdLimit(checkPoint.oldestMulti, checkPoint.oldestMultiDB);
+	SetMultiXactIdLimit(checkPoint.oldestMulti, checkPoint.oldestMultiDB, true);
 	SetCommitTsLimit(InvalidTransactionId, InvalidTransactionId);
 
 	/* Set up the XLOG page header */
@@ -5036,6 +5058,7 @@ BootStrapXLOG(void)
 
 	/* Write the first page with the initial record */
 	errno = 0;
+	pgstat_report_wait_start(WAIT_EVENT_WAL_BOOTSTRAP_WRITE);
 	if (write(openLogFile, page, XLOG_BLCKSZ) != XLOG_BLCKSZ)
 	{
 		/* if write didn't set errno, assume problem is no disk space */
@@ -5045,11 +5068,14 @@ BootStrapXLOG(void)
 				(errcode_for_file_access(),
 			  errmsg("could not write bootstrap transaction log file: %m")));
 	}
+	pgstat_report_wait_end();
 
+	pgstat_report_wait_start(WAIT_EVENT_WAL_BOOTSTRAP_SYNC);
 	if (pg_fsync(openLogFile) != 0)
 		ereport(PANIC,
 				(errcode_for_file_access(),
 			  errmsg("could not fsync bootstrap transaction log file: %m")));
+	pgstat_report_wait_end();
 
 	if (close(openLogFile))
 		ereport(PANIC,
@@ -6597,7 +6623,7 @@ StartupXLOG(void)
 	ShmemVariableCache->oidCount = 0;
 	MultiXactSetNextMXact(checkPoint.nextMulti, checkPoint.nextMultiOffset);
 	SetTransactionIdLimit(checkPoint.oldestXid, checkPoint.oldestXidDB);
-	SetMultiXactIdLimit(checkPoint.oldestMulti, checkPoint.oldestMultiDB);
+	SetMultiXactIdLimit(checkPoint.oldestMulti, checkPoint.oldestMultiDB, true);
 	SetCommitTsLimit(checkPoint.oldestCommitTsXid,
 					 checkPoint.newestCommitTsXid);
 	XLogCtl->ckptXidEpoch = checkPoint.nextXidEpoch;
@@ -8710,7 +8736,7 @@ CreateCheckPoint(int flags)
 	 * that are currently in commit critical sections.  If an xact inserted
 	 * its commit record into XLOG just before the REDO point, then a crash
 	 * restart from the REDO point would not replay that record, which means
-	 * that our flushing had better include the xact's update of pg_clog.  So
+	 * that our flushing had better include the xact's update of pg_xact.  So
 	 * we wait till he's out of his commit critical section before proceeding.
 	 * See notes in RecordTransactionCommit().
 	 *
@@ -9999,11 +10025,13 @@ assign_xlog_sync_method(int new_sync_method, void *extra)
 		 */
 		if (openLogFile >= 0)
 		{
+			pgstat_report_wait_start(WAIT_EVENT_WAL_SYNC_METHOD_ASSIGN);
 			if (pg_fsync(openLogFile) != 0)
 				ereport(PANIC,
 						(errcode_for_file_access(),
 						 errmsg("could not fsync log segment %s: %m",
 							  XLogFileNameP(ThisTimeLineID, openLogSegNo))));
+			pgstat_report_wait_end();
 			if (get_sync_bit(sync_method) != get_sync_bit(new_sync_method))
 				XLogFileClose();
 		}
@@ -11456,10 +11484,12 @@ retry:
 		goto next_record_is_invalid;
 	}
 
+	pgstat_report_wait_start(WAIT_EVENT_WAL_READ);
 	if (read(readFile, readBuf, XLOG_BLCKSZ) != XLOG_BLCKSZ)
 	{
 		char		fname[MAXFNAMELEN];
 
+		pgstat_report_wait_end();
 		XLogFileName(fname, curFileTLI, readSegNo);
 		ereport(emode_for_corrupt_record(emode, targetPagePtr + reqLen),
 				(errcode_for_file_access(),
@@ -11467,6 +11497,7 @@ retry:
 						fname, readOff)));
 		goto next_record_is_invalid;
 	}
+	pgstat_report_wait_end();
 
 	Assert(targetSegNo == readSegNo);
 	Assert(targetPageOff == readOff);

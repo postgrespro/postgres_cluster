@@ -41,6 +41,7 @@ test: reltime
 test: tinterval
 test: inet
 test: macaddr
+test: macaddr8
 test: tstypes
 test: comments
 test: geometry
@@ -128,6 +129,7 @@ test: dbsize
 test: misc_functions
 test: sysviews
 test: tsrf
+test: tidscan
 test: rules
 test: psql_crosstab
 test: select_parallel

@@ -663,14 +663,21 @@ cost_index(IndexPath *path, PlannerInfo *root, double loop_count,
 	if (partial_path)
 	{
 		/*
+		 * For index only scans compute workers based on number of index pages
+		 * fetched; the number of heap pages we fetch might be so small as
+		 * to effectively rule out parallelism, which we don't want to do.
+		 */
+		if (indexonly)
+			rand_heap_pages = -1;
+
+		/*
 		 * Estimate the number of parallel workers required to scan index. Use
 		 * the number of heap pages computed considering heap fetches won't be
 		 * sequential as for parallel scans the pages are accessed in random
 		 * order.
 		 */
 		path->path.parallel_workers = compute_parallel_worker(baserel,
-											   (BlockNumber) rand_heap_pages,
-												  (BlockNumber) index_pages);
+											   rand_heap_pages, index_pages);
 
 		/*
 		 * Fall out if workers can't be assigned for parallel scan, because in
@@ -2140,7 +2147,12 @@ final_cost_nestloop(PlannerInfo *root, NestPath *path,
 
 	/* For partial paths, scale row estimate. */
 	if (path->path.parallel_workers > 0)
-		path->path.rows /= get_parallel_divisor(&path->path);
+	{
+		double	parallel_divisor = get_parallel_divisor(&path->path);
+
+		path->path.rows =
+			clamp_row_est(path->path.rows / parallel_divisor);
+	}
 
 	/*
 	 * We could include disable_cost in the preliminary estimate, but that
@@ -2562,7 +2574,12 @@ final_cost_mergejoin(PlannerInfo *root, MergePath *path,
 
 	/* For partial paths, scale row estimate. */
 	if (path->jpath.path.parallel_workers > 0)
-		path->jpath.path.rows /= get_parallel_divisor(&path->jpath.path);
+	{
+		double	parallel_divisor = get_parallel_divisor(&path->jpath.path);
+
+		path->jpath.path.rows =
+			clamp_row_est(path->jpath.path.rows / parallel_divisor);
+	}
 
 	/*
 	 * We could include disable_cost in the preliminary estimate, but that
@@ -2945,7 +2962,12 @@ final_cost_hashjoin(PlannerInfo *root, HashPath *path,
 
 	/* For partial paths, scale row estimate. */
 	if (path->jpath.path.parallel_workers > 0)
-		path->jpath.path.rows /= get_parallel_divisor(&path->jpath.path);
+	{
+		double	parallel_divisor = get_parallel_divisor(&path->jpath.path);
+
+		path->jpath.path.rows =
+			clamp_row_est(path->jpath.path.rows / parallel_divisor);
+	}
 
 	/*
 	 * We could include disable_cost in the preliminary estimate, but that

@@ -23,7 +23,7 @@ test: numerology
 # ----------
 # The second group of parallel tests
 # ----------
-test: point lseg line box path polygon circle date time timetz timestamp timestamptz interval abstime reltime tinterval inet macaddr tstypes comments
+test: point lseg line box path polygon circle date time timetz timestamp timestamptz interval abstime reltime tinterval inet macaddr macaddr8 tstypes comments
 
 # ----------
 # Another group of parallel tests
@@ -89,7 +89,7 @@ test: brin gin gist spgist privileges init_privs security_label collate matview 
 # ----------
 # Another group of parallel tests
 # ----------
-test: alter_generic alter_operator misc psql async dbsize misc_functions sysviews tsrf
+test: alter_generic alter_operator misc psql async dbsize misc_functions sysviews tsrf tidscan
 
 # rules cannot run concurrently with any test that creates a view
 test: rules psql_crosstab amutils

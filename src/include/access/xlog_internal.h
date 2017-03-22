@@ -31,7 +31,7 @@
 /*
  * Each page of XLOG file has a header like this:
  */
-#define XLOG_PAGE_MAGIC 0xD095	/* can be used as WAL version indicator */
+#define XLOG_PAGE_MAGIC 0xD096	/* can be used as WAL version indicator */
 
 typedef struct XLogPageHeaderData
 {
@@ -288,7 +288,7 @@ extern const RmgrData RmgrTable[];
  * Exported to support xlog switching from checkpointer
  */
 extern pg_time_t GetLastSegSwitchData(XLogRecPtr *lastSwitchLSN);
-extern XLogRecPtr RequestXLogSwitch(bool mark_uninmportant);
+extern XLogRecPtr RequestXLogSwitch(bool mark_unimportant);
 
 extern void GetOldestRestartPoint(XLogRecPtr *oldrecptr, TimeLineID *oldtli);
 

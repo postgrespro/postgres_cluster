@@ -2,6 +2,7 @@
 -- PUBLICATION
 --
 CREATE ROLE regress_publication_user LOGIN SUPERUSER;
+CREATE ROLE regress_publication_user2;
 CREATE ROLE regress_publication_user_dummy LOGIN NOSUPERUSER;
 SET SESSION AUTHORIZATION 'regress_publication_user';
 
@@ -69,12 +70,33 @@ ALTER PUBLICATION testpub_default DROP TABLE pub_test.testpub_nopk;
 
 \d+ testpub_tbl1
 
+-- permissions
+SET ROLE regress_publication_user2;
+CREATE PUBLICATION testpub2;  -- fail
+
+SET ROLE regress_publication_user;
+GRANT CREATE ON DATABASE regression TO regress_publication_user2;
+SET ROLE regress_publication_user2;
+CREATE PUBLICATION testpub2;  -- ok
+
+ALTER PUBLICATION testpub2 ADD TABLE testpub_tbl1;  -- fail
+
+SET ROLE regress_publication_user;
+GRANT regress_publication_user TO regress_publication_user2;
+SET ROLE regress_publication_user2;
+ALTER PUBLICATION testpub2 ADD TABLE testpub_tbl1;  -- ok
+
+DROP PUBLICATION testpub2;
+
+SET ROLE regress_publication_user;
+REVOKE CREATE ON DATABASE regression FROM regress_publication_user2;
+
 DROP VIEW testpub_view;
 DROP TABLE testpub_tbl1;
 
 \dRp+ testpub_default
 
--- faile - must be owner of publication
+-- fail - must be owner of publication
 SET ROLE regress_publication_user_dummy;
 ALTER PUBLICATION testpub_default RENAME TO testpub_dummy;
 RESET ROLE;
@@ -83,12 +105,15 @@ ALTER PUBLICATION testpub_default RENAME TO testpub_foo;
 
 \dRp testpub_foo
 
-DROP PUBLICATION testpub_foo;
+-- rename back to keep the rest simple
+ALTER PUBLICATION testpub_foo RENAME TO testpub_default;
+
+DROP PUBLICATION testpub_default;
 DROP PUBLICATION testpib_ins_trunct;
 DROP PUBLICATION testpub_fortbl;
 
 DROP SCHEMA pub_test CASCADE;
 
 RESET SESSION AUTHORIZATION;
-DROP ROLE regress_publication_user;
+DROP ROLE regress_publication_user, regress_publication_user2;
 DROP ROLE regress_publication_user_dummy;

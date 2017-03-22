@@ -68,6 +68,7 @@ static void libpqrcv_send(WalReceiverConn *conn, const char *buffer,
 static char *libpqrcv_create_slot(WalReceiverConn *conn,
 								  const char *slotname,
 								  bool temporary,
+								  bool export_snapshot,
 								  XLogRecPtr *lsn);
 static bool libpqrcv_command(WalReceiverConn *conn,
 							 const char *cmd, char **err);
@@ -158,41 +159,41 @@ libpqrcv_connect(const char *conninfo, bool logical, const char *appname,
 	/*
 	 * Poll connection until we have OK or FAILED status.
 	 *
-	 * Note that the initial state after PQconnectStartParams is
-	 * PGRES_POLLING_WRITING.
+	 * Per spec for PQconnectPoll, first wait till socket is write-ready.
 	 */
-	for (status = PGRES_POLLING_WRITING;
-		 status != PGRES_POLLING_OK && status != PGRES_POLLING_FAILED;
-		 status = PQconnectPoll(conn->streamConn))
+	status = PGRES_POLLING_WRITING;
+	do
 	{
-		/* Sleep a bit if waiting for socket. */
-		if (status == PGRES_POLLING_READING ||
-			status == PGRES_POLLING_WRITING)
+		/* Wait for socket ready and/or other events. */
+		int			io_flag;
+		int			rc;
+
+		io_flag = (status == PGRES_POLLING_READING
+				   ? WL_SOCKET_READABLE
+				   : WL_SOCKET_WRITEABLE);
+
+		rc = WaitLatchOrSocket(&MyProc->procLatch,
+							   WL_POSTMASTER_DEATH |
+							   WL_LATCH_SET | io_flag,
+							   PQsocket(conn->streamConn),
+							   0,
+							   WAIT_EVENT_LIBPQWALRECEIVER);
+
+		/* Emergency bailout? */
+		if (rc & WL_POSTMASTER_DEATH)
+			exit(1);
+
+		/* Interrupted? */
+		if (rc & WL_LATCH_SET)
 		{
-			int		extra_flag;
-			int		rc;
-
-			extra_flag = (status == PGRES_POLLING_READING
-						  ? WL_SOCKET_READABLE
-						  : WL_SOCKET_WRITEABLE);
-
 			ResetLatch(&MyProc->procLatch);
-			rc = WaitLatchOrSocket(&MyProc->procLatch,
-								   WL_POSTMASTER_DEATH |
-								   WL_LATCH_SET | extra_flag,
-								   PQsocket(conn->streamConn),
-								   0,
-								   WAIT_EVENT_LIBPQWALRECEIVER);
-
-			/* Emergency bailout. */
-			if (rc & WL_POSTMASTER_DEATH)
-				exit(1);
-
-			/* Interrupted. */
-			if (rc & WL_LATCH_SET)
-				CHECK_FOR_INTERRUPTS();
+			CHECK_FOR_INTERRUPTS();
 		}
-	}
+
+		/* If socket is ready, advance the libpq state machine */
+		if (rc & io_flag)
+			status = PQconnectPoll(conn->streamConn);
+	} while (status != PGRES_POLLING_OK && status != PGRES_POLLING_FAILED);
 
 	if (PQstatus(conn->streamConn) != CONNECTION_OK)
 	{
@@ -720,7 +721,7 @@ libpqrcv_send(WalReceiverConn *conn, const char *buffer, int nbytes)
  */
 static char *
 libpqrcv_create_slot(WalReceiverConn *conn, const char *slotname,
-					 bool temporary, XLogRecPtr *lsn)
+					 bool temporary, bool export_snapshot, XLogRecPtr *lsn)
 {
 	PGresult	   *res;
 	StringInfoData	cmd;
@@ -728,13 +729,19 @@ libpqrcv_create_slot(WalReceiverConn *conn, const char *slotname,
 
 	initStringInfo(&cmd);
 
-	appendStringInfo(&cmd, "CREATE_REPLICATION_SLOT \"%s\" ", slotname);
+	appendStringInfo(&cmd, "CREATE_REPLICATION_SLOT \"%s\"", slotname);
 
 	if (temporary)
-		appendStringInfo(&cmd, "TEMPORARY ");
+		appendStringInfo(&cmd, " TEMPORARY");
 
 	if (conn->logical)
-		appendStringInfo(&cmd, "LOGICAL pgoutput");
+	{
+		appendStringInfo(&cmd, " LOGICAL pgoutput");
+		if (export_snapshot)
+			appendStringInfo(&cmd, " EXPORT_SNAPSHOT");
+		else
+			appendStringInfo(&cmd, " NOEXPORT_SNAPSHOT");
+	}
 
 	res = libpqrcv_PQexec(conn->streamConn, cmd.data);
 	pfree(cmd.data);

@@ -877,7 +877,7 @@ struct fmgr_security_definer_cache
  * To execute a call, we temporarily replace the flinfo with the cached
  * and looked-up one, while keeping the outer fcinfo (which contains all
  * the actual arguments, etc.) intact.  This is not re-entrant, but then
- * the fcinfo itself can't be used re-entrantly anyway.
+ * the fcinfo itself can't be used reentrantly anyway.
  */
 static Datum
 fmgr_security_definer(PG_FUNCTION_ARGS)
@@ -1276,6 +1276,56 @@ DirectFunctionCall9Coll(PGFunction func, Oid collation, Datum arg1, Datum arg2,
 	return result;
 }
 
+/*
+ * These functions work like the DirectFunctionCall functions except that
+ * they use the flinfo parameter to initialise the fcinfo for the call.
+ * It's recommended that the callee only use the fn_extra and fn_mcxt
+ * fields, as other fields will typically describe the calling function
+ * not the callee.  Conversely, the calling function should not have
+ * used fn_extra, unless its use is known to be compatible with the callee's.
+ */
+
+Datum
+CallerFInfoFunctionCall1(PGFunction func, FmgrInfo *flinfo, Oid collation, Datum arg1)
+{
+	FunctionCallInfoData fcinfo;
+	Datum		result;
+
+	InitFunctionCallInfoData(fcinfo, flinfo, 1, collation, NULL, NULL);
+
+	fcinfo.arg[0] = arg1;
+	fcinfo.argnull[0] = false;
+
+	result = (*func) (&fcinfo);
+
+	/* Check for null result, since caller is clearly not expecting one */
+	if (fcinfo.isnull)
+		elog(ERROR, "function %p returned NULL", (void *) func);
+
+	return result;
+}
+
+Datum
+CallerFInfoFunctionCall2(PGFunction func, FmgrInfo *flinfo, Oid collation, Datum arg1, Datum arg2)
+{
+	FunctionCallInfoData fcinfo;
+	Datum		result;
+
+	InitFunctionCallInfoData(fcinfo, flinfo, 2, collation, NULL, NULL);
+
+	fcinfo.arg[0] = arg1;
+	fcinfo.arg[1] = arg2;
+	fcinfo.argnull[0] = false;
+	fcinfo.argnull[1] = false;
+
+	result = (*func) (&fcinfo);
+
+	/* Check for null result, since caller is clearly not expecting one */
+	if (fcinfo.isnull)
+		elog(ERROR, "function %p returned NULL", (void *) func);
+
+	return result;
+}
 
 /*
  * These are for invocation of a previously-looked-up function with a

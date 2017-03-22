@@ -28,6 +28,7 @@
 #include "utils/builtins.h"
 #include "utils/index_selfuncs.h"
 #include "utils/rel.h"
+#include "miscadmin.h"
 
 
 /* Working state for hashbuild and its callback */
@@ -35,6 +36,7 @@ typedef struct
 {
 	HSpool	   *spool;			/* NULL if not using spooling */
 	double		indtuples;		/* # tuples accepted into index */
+	Relation	heapRel;		/* heap relation descriptor */
 } HashBuildState;
 
 static void hashbuildCallback(Relation index,
@@ -153,6 +155,7 @@ hashbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 
 	/* prepare to build the index */
 	buildstate.indtuples = 0;
+	buildstate.heapRel = heap;
 
 	/* do the heap scan */
 	reltuples = IndexBuildHeapScan(heap, index, indexInfo, true,
@@ -161,7 +164,7 @@ hashbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	if (buildstate.spool)
 	{
 		/* sort the tuples and insert them into the index */
-		_h_indexbuild(buildstate.spool);
+		_h_indexbuild(buildstate.spool, buildstate.heapRel);
 		_h_spooldestroy(buildstate.spool);
 	}
 
@@ -217,7 +220,7 @@ hashbuildCallback(Relation index,
 		itup = index_form_tuple(RelationGetDescr(index),
 								index_values, index_isnull);
 		itup->t_tid = htup->t_self;
-		_hash_doinsert(index, itup);
+		_hash_doinsert(index, itup, buildstate->heapRel);
 		pfree(itup);
 	}
 
@@ -250,7 +253,7 @@ hashinsert(Relation rel, Datum *values, bool *isnull,
 	itup = index_form_tuple(RelationGetDescr(rel), index_values, index_isnull);
 	itup->t_tid = *ht_ctid;
 
-	_hash_doinsert(rel, itup);
+	_hash_doinsert(rel, itup, heapRel);
 
 	pfree(itup);
 
@@ -303,6 +306,11 @@ hashgettuple(IndexScanDesc scan, ScanDirection dir)
 		buf = so->hashso_curbuf;
 		Assert(BufferIsValid(buf));
 		page = BufferGetPage(buf);
+
+		/*
+		 * We don't need test for old snapshot here as the current buffer is
+		 * pinned, so vacuum can't clean the page.
+		 */
 		maxoffnum = PageGetMaxOffsetNumber(page);
 		for (offnum = ItemPointerGetOffsetNumber(current);
 			 offnum <= maxoffnum;
@@ -325,14 +333,24 @@ hashgettuple(IndexScanDesc scan, ScanDirection dir)
 		if (scan->kill_prior_tuple)
 		{
 			/*
-			 * Yes, so mark it by setting the LP_DEAD state in the item flags.
+			 * Yes, so remember it for later. (We'll deal with all such
+			 * tuples at once right after leaving the index page or at
+			 * end of scan.) In case if caller reverses the indexscan
+			 * direction it is quite possible that the same item might
+			 * get entered multiple times. But, we don't detect that;
+			 * instead, we just forget any excess entries.
 			 */
-			ItemIdMarkDead(PageGetItemId(page, offnum));
+			if (so->killedItems == NULL)
+				so->killedItems = palloc(MaxIndexTuplesPerPage *
+										 sizeof(HashScanPosItem));
 
-			/*
-			 * Since this can be redone later if needed, mark as a hint.
-			 */
-			MarkBufferDirtyHint(buf, true);
+			if (so->numKilled < MaxIndexTuplesPerPage)
+			{
+				so->killedItems[so->numKilled].heapTid = so->hashso_heappos;
+				so->killedItems[so->numKilled].indexOffset =
+							ItemPointerGetOffsetNumber(&(so->hashso_curpos));
+				so->numKilled++;
+			}
 		}
 
 		/*
@@ -440,6 +458,9 @@ hashbeginscan(Relation rel, int nkeys, int norderbys)
 	so->hashso_buc_populated = false;
 	so->hashso_buc_split = false;
 
+	so->killedItems = NULL;
+	so->numKilled = 0;
+
 	scan->opaque = so;
 
 	return scan;
@@ -454,6 +475,10 @@ hashrescan(IndexScanDesc scan, ScanKey scankey, int nscankeys,
 {
 	HashScanOpaque so = (HashScanOpaque) scan->opaque;
 	Relation	rel = scan->indexRelation;
+
+	/* Before leaving current page, deal with any killed items */
+	if (so->numKilled > 0)
+		_hash_kill_items(scan);
 
 	_hash_dropscanbuf(rel, so);
 
@@ -482,8 +507,14 @@ hashendscan(IndexScanDesc scan)
 	HashScanOpaque so = (HashScanOpaque) scan->opaque;
 	Relation	rel = scan->indexRelation;
 
+	/* Before leaving current page, deal with any killed items */
+	if (so->numKilled > 0)
+		_hash_kill_items(scan);
+
 	_hash_dropscanbuf(rel, so);
 
+	if (so->killedItems != NULL)
+		pfree(so->killedItems);
 	pfree(so);
 	scan->opaque = NULL;
 }
@@ -623,6 +654,7 @@ loop_top:
 	}
 
 	/* Okay, we're really done.  Update tuple count in metapage. */
+	START_CRIT_SECTION();
 
 	if (orig_maxbucket == metap->hashm_maxbucket &&
 		orig_ntuples == metap->hashm_ntuples)
@@ -649,6 +681,26 @@ loop_top:
 	}
 
 	MarkBufferDirty(metabuf);
+
+	/* XLOG stuff */
+	if (RelationNeedsWAL(rel))
+	{
+		xl_hash_update_meta_page xlrec;
+		XLogRecPtr	recptr;
+
+		xlrec.ntuples = metap->hashm_ntuples;
+
+		XLogBeginInsert();
+		XLogRegisterData((char *) &xlrec, sizeof(SizeOfHashUpdateMetaPage));
+
+		XLogRegisterBuffer(0, metabuf, REGBUF_STANDARD);
+
+		recptr = XLogInsert(RM_HASH_ID, XLOG_HASH_UPDATE_META_PAGE);
+		PageSetLSN(BufferGetPage(metabuf), recptr);
+	}
+
+	END_CRIT_SECTION();
+
 	_hash_relbuf(rel, metabuf);
 
 	/* return statistics */
@@ -738,6 +790,7 @@ hashbucketcleanup(Relation rel, Bucket cur_bucket, Buffer bucket_buf,
 		OffsetNumber deletable[MaxOffsetNumber];
 		int			ndeletable = 0;
 		bool		retain_pin = false;
+		bool		clear_dead_marking = false;
 
 		vacuum_delay_point();
 
@@ -816,9 +869,54 @@ hashbucketcleanup(Relation rel, Bucket cur_bucket, Buffer bucket_buf,
 		 */
 		if (ndeletable > 0)
 		{
+			/* No ereport(ERROR) until changes are logged */
+			START_CRIT_SECTION();
+
 			PageIndexMultiDelete(page, deletable, ndeletable);
 			bucket_dirty = true;
+
+			/*
+			 * Let us mark the page as clean if vacuum removes the DEAD tuples
+			 * from an index page. We do this by clearing LH_PAGE_HAS_DEAD_TUPLES
+			 * flag.
+			 */
+			if (tuples_removed && *tuples_removed > 0 &&
+				opaque->hasho_flag & LH_PAGE_HAS_DEAD_TUPLES)
+			{
+				opaque->hasho_flag &= ~LH_PAGE_HAS_DEAD_TUPLES;
+				clear_dead_marking = true;
+			}
+
 			MarkBufferDirty(buf);
+
+			/* XLOG stuff */
+			if (RelationNeedsWAL(rel))
+			{
+				xl_hash_delete xlrec;
+				XLogRecPtr	recptr;
+
+				xlrec.clear_dead_marking = clear_dead_marking;
+				xlrec.is_primary_bucket_page = (buf == bucket_buf) ? true : false;
+
+				XLogBeginInsert();
+				XLogRegisterData((char *) &xlrec, SizeOfHashDelete);
+
+				/*
+				 * bucket buffer needs to be registered to ensure that we can
+				 * acquire a cleanup lock on it during replay.
+				 */
+				if (!xlrec.is_primary_bucket_page)
+					XLogRegisterBuffer(0, bucket_buf, REGBUF_STANDARD | REGBUF_NO_IMAGE);
+
+				XLogRegisterBuffer(1, buf, REGBUF_STANDARD);
+				XLogRegisterBufData(1, (char *) deletable,
+									ndeletable * sizeof(OffsetNumber));
+
+				recptr = XLogInsert(RM_HASH_ID, XLOG_HASH_DELETE);
+				PageSetLSN(BufferGetPage(buf), recptr);
+			}
+
+			END_CRIT_SECTION();
 		}
 
 		/* bail out if there are no more pages to scan. */
@@ -866,8 +964,25 @@ hashbucketcleanup(Relation rel, Bucket cur_bucket, Buffer bucket_buf,
 		page = BufferGetPage(bucket_buf);
 		bucket_opaque = (HashPageOpaque) PageGetSpecialPointer(page);
 
+		/* No ereport(ERROR) until changes are logged */
+		START_CRIT_SECTION();
+
 		bucket_opaque->hasho_flag &= ~LH_BUCKET_NEEDS_SPLIT_CLEANUP;
 		MarkBufferDirty(bucket_buf);
+
+		/* XLOG stuff */
+		if (RelationNeedsWAL(rel))
+		{
+			XLogRecPtr	recptr;
+
+			XLogBeginInsert();
+			XLogRegisterBuffer(0, bucket_buf, REGBUF_STANDARD);
+
+			recptr = XLogInsert(RM_HASH_ID, XLOG_HASH_SPLIT_CLEANUP);
+			PageSetLSN(page, recptr);
+		}
+
+		END_CRIT_SECTION();
 	}
 
 	/*
@@ -880,10 +995,4 @@ hashbucketcleanup(Relation rel, Bucket cur_bucket, Buffer bucket_buf,
 							bstrategy);
 	else
 		LockBuffer(bucket_buf, BUFFER_LOCK_UNLOCK);
-}
-
-void
-hash_redo(XLogReaderState *record)
-{
-	elog(PANIC, "hash_redo: unimplemented");
 }

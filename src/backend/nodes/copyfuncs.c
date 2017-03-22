@@ -90,6 +90,7 @@ _copyPlannedStmt(const PlannedStmt *from)
 	COPY_NODE_FIELD(planTree);
 	COPY_NODE_FIELD(rtable);
 	COPY_NODE_FIELD(resultRelations);
+	COPY_NODE_FIELD(nonleafResultRelations);
 	COPY_NODE_FIELD(subplans);
 	COPY_BITMAPSET_FIELD(rewindPlanIDs);
 	COPY_NODE_FIELD(rowMarks);
@@ -200,6 +201,7 @@ _copyModifyTable(const ModifyTable *from)
 	COPY_SCALAR_FIELD(operation);
 	COPY_SCALAR_FIELD(canSetTag);
 	COPY_SCALAR_FIELD(nominalRelation);
+	COPY_NODE_FIELD(partitioned_rels);
 	COPY_NODE_FIELD(resultRelations);
 	COPY_SCALAR_FIELD(resultRelIndex);
 	COPY_NODE_FIELD(plans);
@@ -235,6 +237,7 @@ _copyAppend(const Append *from)
 	/*
 	 * copy remainder of node
 	 */
+	COPY_NODE_FIELD(partitioned_rels);
 	COPY_NODE_FIELD(appendplans);
 
 	return newnode;
@@ -256,6 +259,7 @@ _copyMergeAppend(const MergeAppend *from)
 	/*
 	 * copy remainder of node
 	 */
+	COPY_NODE_FIELD(partitioned_rels);
 	COPY_NODE_FIELD(mergeplans);
 	COPY_SCALAR_FIELD(numCols);
 	COPY_POINTER_FIELD(sortColIdx, from->numCols * sizeof(AttrNumber));
@@ -2205,6 +2209,20 @@ _copyAppendRelInfo(const AppendRelInfo *from)
 }
 
 /*
+ * _copyPartitionedChildRelInfo
+ */
+static PartitionedChildRelInfo *
+_copyPartitionedChildRelInfo(const PartitionedChildRelInfo *from)
+{
+	PartitionedChildRelInfo *newnode = makeNode(PartitionedChildRelInfo);
+
+	COPY_SCALAR_FIELD(parent_relid);
+	COPY_NODE_FIELD(child_rels);
+
+	return newnode;
+}
+
+/*
  * _copyPlaceHolderInfo
  */
 static PlaceHolderInfo *
@@ -3067,6 +3085,7 @@ _copyObjectWithArgs(const ObjectWithArgs *from)
 
 	COPY_NODE_FIELD(objname);
 	COPY_NODE_FIELD(objargs);
+	COPY_SCALAR_FIELD(args_unspecified);
 
 	return newnode;
 }
@@ -3916,6 +3935,7 @@ _copyCreateForeignServerStmt(const CreateForeignServerStmt *from)
 	COPY_STRING_FIELD(version);
 	COPY_STRING_FIELD(fdwname);
 	COPY_NODE_FIELD(options);
+	COPY_SCALAR_FIELD(if_not_exists);
 
 	return newnode;
 }
@@ -3941,6 +3961,7 @@ _copyCreateUserMappingStmt(const CreateUserMappingStmt *from)
 	COPY_NODE_FIELD(user);
 	COPY_STRING_FIELD(servername);
 	COPY_NODE_FIELD(options);
+	COPY_SCALAR_FIELD(if_not_exists);
 
 	return newnode;
 }
@@ -4890,6 +4911,9 @@ copyObject(const void *from)
 			break;
 		case T_AppendRelInfo:
 			retval = _copyAppendRelInfo(from);
+			break;
+		case T_PartitionedChildRelInfo:
+			retval = _copyPartitionedChildRelInfo(from);
 			break;
 		case T_PlaceHolderInfo:
 			retval = _copyPlaceHolderInfo(from);

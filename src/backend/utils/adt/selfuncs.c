@@ -3800,6 +3800,7 @@ convert_to_scalar(Datum value, Oid valuetypid, double *scaledvalue,
 		case INETOID:
 		case CIDROID:
 		case MACADDROID:
+		case MACADDR8OID:
 			*scaledvalue = convert_network_to_scalar(value, valuetypid);
 			*scaledlobound = convert_network_to_scalar(lobound, boundstypid);
 			*scaledhibound = convert_network_to_scalar(hibound, boundstypid);
@@ -4312,7 +4313,7 @@ get_restriction_variable(PlannerInfo *root, List *args, int varRelid,
 		return true;
 	}
 
-	/* Ooops, clause has wrong structure (probably var op var) */
+	/* Oops, clause has wrong structure (probably var op var) */
 	ReleaseVariableStats(*vardata);
 	ReleaseVariableStats(rdata);
 

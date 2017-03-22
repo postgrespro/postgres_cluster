@@ -34,7 +34,7 @@
  * xid. That is we keep a list of transactions between snapshot->(xmin, xmax)
  * that we consider committed, everything else is considered aborted/in
  * progress. That also allows us not to care about subtransactions before they
- * have committed which means this modules, in contrast to HS, doesn't have to
+ * have committed which means this module, in contrast to HS, doesn't have to
  * care about suboverflowed subtransactions and similar.
  *
  * One complexity of doing this is that to e.g. handle mixed DDL/DML
@@ -82,7 +82,7 @@
  * Initially the machinery is in the START stage. When an xl_running_xacts
  * record is read that is sufficiently new (above the safe xmin horizon),
  * there's a state transition. If there were no running xacts when the
- * runnign_xacts record was generated, we'll directly go into CONSISTENT
+ * running_xacts record was generated, we'll directly go into CONSISTENT
  * state, otherwise we'll switch to the FULL_SNAPSHOT state. Having a full
  * snapshot means that all transactions that start henceforth can be decoded
  * in their entirety, but transactions that started previously can't. In
@@ -114,6 +114,8 @@
 #include "access/heapam_xlog.h"
 #include "access/transam.h"
 #include "access/xact.h"
+
+#include "pgstat.h"
 
 #include "replication/logical.h"
 #include "replication/reorderbuffer.h"
@@ -273,7 +275,7 @@ static bool SnapBuildRestore(SnapBuild *builder, XLogRecPtr lsn);
 /*
  * Allocate a new snapshot builder.
  *
- * xmin_horizon is the xid >=which we can be sure no catalog rows have been
+ * xmin_horizon is the xid >= which we can be sure no catalog rows have been
  * removed, start_lsn is the LSN >= we want to replay commits.
  */
 SnapBuild *
@@ -1580,6 +1582,7 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 		ereport(ERROR,
 				(errmsg("could not open file \"%s\": %m", path)));
 
+	pgstat_report_wait_start(WAIT_EVENT_SNAPBUILD_WRITE);
 	if ((write(fd, ondisk, needed_length)) != needed_length)
 	{
 		CloseTransientFile(fd);
@@ -1587,6 +1590,7 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 				(errcode_for_file_access(),
 				 errmsg("could not write to file \"%s\": %m", tmppath)));
 	}
+	pgstat_report_wait_end();
 
 	/*
 	 * fsync the file before renaming so that even if we crash after this we
@@ -1596,6 +1600,7 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 	 * some noticeable overhead since it's performed synchronously during
 	 * decoding?
 	 */
+	pgstat_report_wait_start(WAIT_EVENT_SNAPBUILD_SYNC);
 	if (pg_fsync(fd) != 0)
 	{
 		CloseTransientFile(fd);
@@ -1603,6 +1608,7 @@ SnapBuildSerialize(SnapBuild *builder, XLogRecPtr lsn)
 				(errcode_for_file_access(),
 				 errmsg("could not fsync file \"%s\": %m", tmppath)));
 	}
+	pgstat_report_wait_end();
 	CloseTransientFile(fd);
 
 	fsync_fname("pg_logical/snapshots", true);
@@ -1677,7 +1683,9 @@ SnapBuildRestore(SnapBuild *builder, XLogRecPtr lsn)
 
 
 	/* read statically sized portion of snapshot */
+	pgstat_report_wait_start(WAIT_EVENT_SNAPBUILD_READ);
 	readBytes = read(fd, &ondisk, SnapBuildOnDiskConstantSize);
+	pgstat_report_wait_end();
 	if (readBytes != SnapBuildOnDiskConstantSize)
 	{
 		CloseTransientFile(fd);
@@ -1703,7 +1711,9 @@ SnapBuildRestore(SnapBuild *builder, XLogRecPtr lsn)
 			SnapBuildOnDiskConstantSize - SnapBuildOnDiskNotChecksummedSize);
 
 	/* read SnapBuild */
+	pgstat_report_wait_start(WAIT_EVENT_SNAPBUILD_READ);
 	readBytes = read(fd, &ondisk.builder, sizeof(SnapBuild));
+	pgstat_report_wait_end();
 	if (readBytes != sizeof(SnapBuild))
 	{
 		CloseTransientFile(fd);
@@ -1717,7 +1727,9 @@ SnapBuildRestore(SnapBuild *builder, XLogRecPtr lsn)
 	/* restore running xacts information */
 	sz = sizeof(TransactionId) * ondisk.builder.running.xcnt_space;
 	ondisk.builder.running.xip = MemoryContextAllocZero(builder->context, sz);
+	pgstat_report_wait_start(WAIT_EVENT_SNAPBUILD_READ);
 	readBytes = read(fd, ondisk.builder.running.xip, sz);
+	pgstat_report_wait_end();
 	if (readBytes != sz)
 	{
 		CloseTransientFile(fd);
@@ -1731,7 +1743,9 @@ SnapBuildRestore(SnapBuild *builder, XLogRecPtr lsn)
 	/* restore committed xacts information */
 	sz = sizeof(TransactionId) * ondisk.builder.committed.xcnt;
 	ondisk.builder.committed.xip = MemoryContextAllocZero(builder->context, sz);
+	pgstat_report_wait_start(WAIT_EVENT_SNAPBUILD_READ);
 	readBytes = read(fd, ondisk.builder.committed.xip, sz);
+	pgstat_report_wait_end();
 	if (readBytes != sz)
 	{
 		CloseTransientFile(fd);
@@ -1840,7 +1854,7 @@ CheckPointSnapBuild(void)
 	char		path[MAXPGPATH];
 
 	/*
-	 * We start of with a minimum of the last redo pointer. No new replication
+	 * We start off with a minimum of the last redo pointer. No new replication
 	 * slot will start before that, so that's a safe upper bound for removal.
 	 */
 	redo = GetRedoRecPtr();
@@ -1898,7 +1912,7 @@ CheckPointSnapBuild(void)
 			/*
 			 * It's not particularly harmful, though strange, if we can't
 			 * remove the file here. Don't prevent the checkpoint from
-			 * completing, that'd be cure worse than the disease.
+			 * completing, that'd be a cure worse than the disease.
 			 */
 			if (unlink(path) < 0)
 			{

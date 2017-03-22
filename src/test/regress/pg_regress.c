@@ -1871,6 +1871,10 @@ open_result_files(void)
 	char		file[MAXPGPATH];
 	FILE	   *difffile;
 
+	/* create outputdir directory if not present */
+	if (!directory_exists(outputdir))
+		make_directory(outputdir);
+
 	/* create the log file (copy of running status output) */
 	snprintf(file, sizeof(file), "%s/regression.out", outputdir);
 	logfilename = pg_strdup(file);
@@ -1895,7 +1899,7 @@ open_result_files(void)
 	/* we don't keep the diffs file open continuously */
 	fclose(difffile);
 
-	/* also create the output directory if not present */
+	/* also create the results directory if not present */
 	snprintf(file, sizeof(file), "%s/results", outputdir);
 	if (!directory_exists(file))
 		make_directory(file);
@@ -1929,8 +1933,9 @@ create_database(const char *dbname)
 				 "ALTER DATABASE \"%s\" SET lc_monetary TO 'C';"
 				 "ALTER DATABASE \"%s\" SET lc_numeric TO 'C';"
 				 "ALTER DATABASE \"%s\" SET lc_time TO 'C';"
+				 "ALTER DATABASE \"%s\" SET bytea_output TO 'hex';"
 			"ALTER DATABASE \"%s\" SET timezone_abbreviations TO 'Default';",
-				 dbname, dbname, dbname, dbname, dbname);
+				 dbname, dbname, dbname, dbname, dbname, dbname);
 
 	/*
 	 * Install any requested procedural languages.  We use CREATE OR REPLACE

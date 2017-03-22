@@ -280,7 +280,7 @@ ProcArrayAdd(PGPROC *proc)
 	if (arrayP->numProcs >= arrayP->maxProcs)
 	{
 		/*
-		 * Ooops, no room.  (This really shouldn't happen, since there is a
+		 * Oops, no room.  (This really shouldn't happen, since there is a
 		 * fixed supply of PGPROC structs too, and so we should have failed
 		 * earlier.)
 		 */
@@ -370,7 +370,7 @@ ProcArrayRemove(PGPROC *proc, TransactionId latestXid)
 		}
 	}
 
-	/* Ooops */
+	/* Oops */
 	LWLockRelease(ProcArrayLock);
 
 	elog(LOG, "failed to find proc %p in ProcArray", proc);
@@ -381,7 +381,7 @@ ProcArrayRemove(PGPROC *proc, TransactionId latestXid)
  * ProcArrayEndTransaction -- mark a transaction as no longer running
  *
  * This is used interchangeably for commit and abort cases.  The transaction
- * commit/abort must already be reported to WAL and pg_clog.
+ * commit/abort must already be reported to WAL and pg_xact.
  *
  * proc is currently always MyProc, but we pass it explicitly for flexibility.
  * latestXid is the latest Xid among the transaction's main XID and
@@ -1174,7 +1174,7 @@ TransactionIdIsInProgress(TransactionId xid)
 	 * At this point, we know it's either a subtransaction of one of the Xids
 	 * in xids[], or it's not running.  If it's an already-failed
 	 * subtransaction, we want to say "not running" even though its parent may
-	 * still be running.  So first, check pg_clog to see if it's been aborted.
+	 * still be running.  So first, check pg_xact to see if it's been aborted.
 	 */
 	xc_slow_answer_inc();
 

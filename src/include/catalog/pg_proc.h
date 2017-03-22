@@ -692,6 +692,8 @@ DATA(insert OID = 422 (  hashinet		   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0
 DESCR("hash");
 DATA(insert OID = 432 (  hash_numeric	   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 23 "1700" _null_ _null_ _null_ _null_ _null_ hash_numeric _null_ _null_ _null_ ));
 DESCR("hash");
+DATA(insert OID = 328 (  hashmacaddr8	   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 23 "774" _null_ _null_ _null_ _null_ _null_ hashmacaddr8 _null_ _null_ _null_ ));
+DESCR("hash");
 
 DATA(insert OID = 438 (  num_nulls		   PGNSP PGUID 12 1 0 2276 0 f f f f f f i s 1 0 23 "2276" "{2276}" "{v}" _null_ _null_ _null_ pg_num_nulls _null_ _null_ _null_ ));
 DESCR("count the number of NULL arguments");
@@ -2098,14 +2100,14 @@ DESCR("get bit");
 DATA(insert OID = 3033 (  set_bit		   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 3 0 1560 "1560 23 23" _null_ _null_ _null_ _null_ _null_ bitsetbit _null_ _null_ _null_ ));
 DESCR("set bit");
 
-/* for mac type support */
+/* for macaddr type support */
 DATA(insert OID = 436 (  macaddr_in			PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 829 "2275" _null_ _null_ _null_ _null_ _null_ macaddr_in _null_ _null_ _null_ ));
 DESCR("I/O");
 DATA(insert OID = 437 (  macaddr_out		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 2275 "829" _null_ _null_ _null_ _null_ _null_ macaddr_out _null_ _null_ _null_ ));
 DESCR("I/O");
 
 DATA(insert OID = 753 (  trunc				PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 829 "829" _null_ _null_ _null_ _null_ _null_ macaddr_trunc _null_ _null_ _null_ ));
-DESCR("MAC manufacturer fields");
+DESCR("MACADDR manufacturer fields");
 
 DATA(insert OID = 830 (  macaddr_eq			PGNSP PGUID 12 1 0 0 0 f f f t t f i s 2 0 16 "829 829" _null_ _null_ _null_ _null_ _null_	macaddr_eq _null_ _null_ _null_ ));
 DATA(insert OID = 831 (  macaddr_lt			PGNSP PGUID 12 1 0 0 0 f f f t t f i s 2 0 16 "829 829" _null_ _null_ _null_ _null_ _null_	macaddr_lt _null_ _null_ _null_ ));
@@ -2118,6 +2120,33 @@ DESCR("less-equal-greater");
 DATA(insert OID = 3144 (  macaddr_not		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 829 "829" _null_ _null_ _null_ _null_ _null_ macaddr_not _null_ _null_ _null_ ));
 DATA(insert OID = 3145 (  macaddr_and		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 829 "829 829" _null_ _null_ _null_ _null_ _null_ macaddr_and _null_ _null_ _null_ ));
 DATA(insert OID = 3146 (  macaddr_or		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 829 "829 829" _null_ _null_ _null_ _null_ _null_ macaddr_or _null_ _null_ _null_ ));
+
+/* for macaddr8 type support */
+DATA(insert OID = 4110 (  macaddr8_in		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 774 "2275" _null_ _null_ _null_ _null_ _null_ macaddr8_in _null_ _null_ _null_ ));
+DESCR("I/O");
+DATA(insert OID = 4111 (  macaddr8_out		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 2275 "774" _null_ _null_ _null_ _null_ _null_ macaddr8_out _null_ _null_ _null_ ));
+DESCR("I/O");
+
+DATA(insert OID = 4112 (  trunc				PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 774 "774" _null_ _null_ _null_ _null_ _null_ macaddr8_trunc _null_ _null_ _null_ ));
+DESCR("MACADDR8 manufacturer fields");
+
+DATA(insert OID = 4113 (  macaddr8_eq		PGNSP PGUID 12 1 0 0 0 f f f t t f i s 2 0 16 "774 774" _null_ _null_ _null_ _null_ _null_	macaddr8_eq _null_ _null_ _null_ ));
+DATA(insert OID = 4114 (  macaddr8_lt		PGNSP PGUID 12 1 0 0 0 f f f t t f i s 2 0 16 "774 774" _null_ _null_ _null_ _null_ _null_	macaddr8_lt _null_ _null_ _null_ ));
+DATA(insert OID = 4115 (  macaddr8_le		PGNSP PGUID 12 1 0 0 0 f f f t t f i s 2 0 16 "774 774" _null_ _null_ _null_ _null_ _null_	macaddr8_le _null_ _null_ _null_ ));
+DATA(insert OID = 4116 (  macaddr8_gt		PGNSP PGUID 12 1 0 0 0 f f f t t f i s 2 0 16 "774 774" _null_ _null_ _null_ _null_ _null_	macaddr8_gt _null_ _null_ _null_ ));
+DATA(insert OID = 4117 (  macaddr8_ge		PGNSP PGUID 12 1 0 0 0 f f f t t f i s 2 0 16 "774 774" _null_ _null_ _null_ _null_ _null_	macaddr8_ge _null_ _null_ _null_ ));
+DATA(insert OID = 4118 (  macaddr8_ne		PGNSP PGUID 12 1 0 0 0 f f f t t f i s 2 0 16 "774 774" _null_ _null_ _null_ _null_ _null_	macaddr8_ne _null_ _null_ _null_ ));
+DATA(insert OID = 4119 (  macaddr8_cmp		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 23 "774 774" _null_ _null_ _null_ _null_ _null_	macaddr8_cmp _null_ _null_ _null_ ));
+DESCR("less-equal-greater");
+DATA(insert OID = 4120 (  macaddr8_not		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 774 "774" _null_ _null_ _null_ _null_ _null_ macaddr8_not _null_ _null_ _null_ ));
+DATA(insert OID = 4121 (  macaddr8_and		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 774 "774 774" _null_ _null_ _null_ _null_ _null_ macaddr8_and _null_ _null_ _null_ ));
+DATA(insert OID = 4122 (  macaddr8_or		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 774 "774 774" _null_ _null_ _null_ _null_ _null_ macaddr8_or _null_ _null_ _null_ ));
+DATA(insert OID = 4123 (  macaddr8			PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 774 "829" _null_ _null_ _null_ _null_ _null_ macaddrtomacaddr8 _null_ _null_ _null_ ));
+DESCR("convert macaddr to macaddr8");
+DATA(insert OID = 4124 (  macaddr			PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 829 "774" _null_ _null_ _null_ _null_ _null_ macaddr8tomacaddr _null_ _null_ _null_ ));
+DESCR("convert macaddr8 to macaddr");
+DATA(insert OID = 4125 (  macaddr8_set7bit	PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 774 "774" _null_ _null_ _null_ _null_ _null_ macaddr8_set7bit _null_ _null_ _null_ ));
+DESCR("set 7th bit in macaddr8");
 
 /* for inet type support */
 DATA(insert OID = 910 (  inet_in			PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 869 "2275" _null_ _null_ _null_ _null_ _null_ inet_in _null_ _null_ _null_ ));
@@ -4056,6 +4085,10 @@ DATA(insert OID = 3120 (  void_recv			   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 
 DESCR("I/O");
 DATA(insert OID = 3121 (  void_send			   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 17 "2278" _null_ _null_ _null_ _null_ _null_	void_send _null_ _null_ _null_ ));
 DESCR("I/O");
+DATA(insert OID = 3446 (  macaddr8_recv		   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 774 "2281" _null_ _null_ _null_ _null_ _null_ macaddr8_recv _null_ _null_ _null_ ));
+DESCR("I/O");
+DATA(insert OID = 3447 (  macaddr8_send		   PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 17 "774" _null_ _null_ _null_ _null_ _null_ macaddr8_send _null_ _null_ _null_ ));
+DESCR("I/O");
 
 /* System-view support functions with pretty-print option */
 DATA(insert OID = 2504 (  pg_get_ruledef	   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 2 0 25 "26 16" _null_ _null_ _null_ _null_ _null_ pg_get_ruledef_ext _null_ _null_ _null_ ));
@@ -5364,6 +5397,12 @@ DESCR("pg_controldata init state information as a function");
 
 DATA(insert OID = 3445 ( pg_import_system_collations PGNSP PGUID 12 100 0 0 0 f f f f t f v r 2 0 2278 "16 4089" _null_ _null_ "{if_not_exists,schema}" _null_ _null_ pg_import_system_collations _null_ _null_ _null_ ));
 DESCR("import collations from operating system");
+
+/* system management/monitoring related functions */
+DATA(insert OID = 3353 (  pg_ls_logdir               PGNSP PGUID 12 10 20 0 0 f f f f t t v s 0 0 2249 "" "{25,20,1184}" "{o,o,o}" "{name,size,modification}" _null_ _null_ pg_ls_logdir _null_ _null_ _null_ ));
+DESCR("list files in the log directory");
+DATA(insert OID = 3354 (  pg_ls_waldir               PGNSP PGUID 12 10 20 0 0 f f f f t t v s 0 0 2249 "" "{25,20,1184}" "{o,o,o}" "{name,size,modification}" _null_ _null_ pg_ls_waldir _null_ _null_ _null_ ));
+DESCR("list of files in the WAL directory");
 
 /*
  * Symbolic values for provolatile column: these indicate whether the result

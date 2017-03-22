@@ -879,12 +879,25 @@ CreateForeignServer(CreateForeignServerStmt *stmt)
 
 	/*
 	 * Check that there is no other foreign server by this name.
+	 * Do nothing if IF NOT EXISTS was enforced.
 	 */
 	if (GetForeignServerByName(stmt->servername, true) != NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_DUPLICATE_OBJECT),
-				 errmsg("server \"%s\" already exists",
-						stmt->servername)));
+	{
+		if (stmt->if_not_exists)
+		{
+			ereport(NOTICE,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("server \"%s\" already exists, skipping",
+							stmt->servername)));
+			heap_close(rel, RowExclusiveLock);
+			return InvalidObjectAddress;
+		}
+		else
+			ereport(ERROR,
+					(errcode(ERRCODE_DUPLICATE_OBJECT),
+					 errmsg("server \"%s\" already exists",
+							stmt->servername)));
+	}
 
 	/*
 	 * Check that the FDW exists and that we have USAGE on it. Also get the
@@ -1152,12 +1165,27 @@ CreateUserMapping(CreateUserMappingStmt *stmt)
 	umId = GetSysCacheOid2(USERMAPPINGUSERSERVER,
 						   ObjectIdGetDatum(useId),
 						   ObjectIdGetDatum(srv->serverid));
+
 	if (OidIsValid(umId))
-		ereport(ERROR,
+	{
+		if (stmt->if_not_exists)
+		{
+			ereport(NOTICE,
 				(errcode(ERRCODE_DUPLICATE_OBJECT),
-				 errmsg("user mapping \"%s\" already exists for server %s",
+				 errmsg("user mapping for \"%s\" already exists for server %s, skipping",
 						MappingUserName(useId),
 						stmt->servername)));
+
+			heap_close(rel, RowExclusiveLock);
+			return InvalidObjectAddress;
+		}
+		else
+			ereport(ERROR,
+				(errcode(ERRCODE_DUPLICATE_OBJECT),
+				 errmsg("user mapping for \"%s\" already exists for server %s",
+						MappingUserName(useId),
+						stmt->servername)));
+	}
 
 	fdw = GetForeignDataWrapper(srv->fdwid);
 
@@ -1247,7 +1275,7 @@ AlterUserMapping(AlterUserMappingStmt *stmt)
 	if (!OidIsValid(umId))
 		ereport(ERROR,
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
-				 errmsg("user mapping \"%s\" does not exist for the server",
+				 errmsg("user mapping for \"%s\" does not exist for the server",
 						MappingUserName(useId))));
 
 	user_mapping_ddl_aclcheck(useId, srv->serverid, stmt->servername);
@@ -1362,12 +1390,12 @@ RemoveUserMapping(DropUserMappingStmt *stmt)
 		if (!stmt->missing_ok)
 			ereport(ERROR,
 					(errcode(ERRCODE_UNDEFINED_OBJECT),
-				  errmsg("user mapping \"%s\" does not exist for the server",
+				  errmsg("user mapping for \"%s\" does not exist for the server",
 						 MappingUserName(useId))));
 
 		/* IF EXISTS specified, just note it */
 		ereport(NOTICE,
-		(errmsg("user mapping \"%s\" does not exist for the server, skipping",
+		(errmsg("user mapping for \"%s\" does not exist for the server, skipping",
 				MappingUserName(useId))));
 		return InvalidOid;
 	}

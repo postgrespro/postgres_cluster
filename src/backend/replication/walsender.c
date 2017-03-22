@@ -48,9 +48,11 @@
 #include "access/transam.h"
 #include "access/xact.h"
 #include "access/xlog_internal.h"
+#include "access/xlogutils.h"
 
 #include "catalog/pg_type.h"
 #include "commands/dbcommands.h"
+#include "commands/defrem.h"
 #include "funcapi.h"
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
@@ -462,7 +464,9 @@ SendTimeLineHistory(TimeLineHistoryCmd *cmd)
 		char		rbuf[BLCKSZ];
 		int			nread;
 
+		pgstat_report_wait_start(WAIT_EVENT_WALSENDER_TIMELINE_HISTORY_READ);
 		nread = read(fd, rbuf, sizeof(rbuf));
+		pgstat_report_wait_end();
 		if (nread <= 0)
 			ereport(ERROR,
 					(errcode_for_file_access(),
@@ -718,6 +722,12 @@ logical_read_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr, int req
 	XLogRecPtr	flushptr;
 	int			count;
 
+	XLogReadDetermineTimeline(state, targetPagePtr, reqLen);
+	sendTimeLineIsHistoric = (state->currTLI != ThisTimeLineID);
+	sendTimeLine = state->currTLI;
+	sendTimeLineValidUpto = state->currTLIValidUntil;
+	sendTimeLineNextTLI = state->nextTLI;
+
 	/* make sure we have enough WAL available */
 	flushptr = WalSndWaitForWal(targetPagePtr + reqLen);
 
@@ -738,6 +748,48 @@ logical_read_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr, int req
 }
 
 /*
+ * Process extra options given to CREATE_REPLICATION_SLOT.
+ */
+static void
+parseCreateReplSlotOptions(CreateReplicationSlotCmd *cmd,
+						   bool *reserve_wal,
+						   bool *export_snapshot)
+{
+	ListCell   *lc;
+	bool		snapshot_action_given = false;
+	bool		reserve_wal_given = false;
+
+	/* Parse options */
+	foreach (lc, cmd->options)
+	{
+		DefElem    *defel = (DefElem *) lfirst(lc);
+
+		if (strcmp(defel->defname, "export_snapshot") == 0)
+		{
+			if (snapshot_action_given || cmd->kind != REPLICATION_KIND_LOGICAL)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+
+			snapshot_action_given = true;
+			*export_snapshot = defGetBoolean(defel);
+		}
+		else if (strcmp(defel->defname, "reserve_wal") == 0)
+		{
+			if (reserve_wal_given || cmd->kind != REPLICATION_KIND_PHYSICAL)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+
+			reserve_wal_given = true;
+			*reserve_wal = true;
+		}
+		else
+			elog(ERROR, "unrecognized option: %s", defel->defname);
+	}
+}
+
+/*
  * Create a new replication slot.
  */
 static void
@@ -746,6 +798,8 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 	const char *snapshot_name = NULL;
 	char		xpos[MAXFNAMELEN];
 	char	   *slot_name;
+	bool		reserve_wal = false;
+	bool		export_snapshot = true;
 	DestReceiver *dest;
 	TupOutputState *tstate;
 	TupleDesc	tupdesc;
@@ -753,6 +807,8 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 	bool		nulls[4];
 
 	Assert(!MyReplicationSlot);
+
+	parseCreateReplSlotOptions(cmd, &reserve_wal, &export_snapshot);
 
 	/* setup state for XLogReadPage */
 	sendTimeLineIsHistoric = false;
@@ -799,10 +855,13 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 		DecodingContextFindStartpoint(ctx);
 
 		/*
-		 * Export a plain (not of the snapbuild.c type) snapshot to the user
-		 * that can be imported into another session.
+		 * Export the snapshot if we've been asked to do so.
+		 *
+		 * NB. We will convert the snapbuild.c kind of snapshot to normal
+		 * snapshot when doing this.
 		 */
-		snapshot_name = SnapBuildExportSnapshot(ctx->snapshot_builder);
+		if (export_snapshot)
+			snapshot_name = SnapBuildExportSnapshot(ctx->snapshot_builder);
 
 		/* don't need the decoding context anymore */
 		FreeDecodingContext(ctx);
@@ -810,7 +869,7 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 		if (!cmd->temporary)
 			ReplicationSlotPersist();
 	}
-	else if (cmd->kind == REPLICATION_KIND_PHYSICAL && cmd->reserve_wal)
+	else if (cmd->kind == REPLICATION_KIND_PHYSICAL && reserve_wal)
 	{
 		ReplicationSlotReserveWal();
 
@@ -921,10 +980,6 @@ StartLogicalReplication(StartReplicationCmd *cmd)
 	pq_sendint(&buf, 0, 2);
 	pq_endmessage(&buf);
 	pq_flush();
-
-	/* setup state for XLogReadPage */
-	sendTimeLineIsHistoric = false;
-	sendTimeLine = ThisTimeLineID;
 
 	/*
 	 * Initialize position to the last ack'ed one, then the xlog records begin
@@ -2076,7 +2131,9 @@ retry:
 		else
 			segbytes = nbytes;
 
+		pgstat_report_wait_start(WAIT_EVENT_WAL_READ);
 		readbytes = read(sendFile, p, segbytes);
+		pgstat_report_wait_end();
 		if (readbytes <= 0)
 		{
 			ereport(ERROR,

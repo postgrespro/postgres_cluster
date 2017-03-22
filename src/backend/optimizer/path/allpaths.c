@@ -95,7 +95,8 @@ static void set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 						Index rti, RangeTblEntry *rte);
 static void generate_mergeappend_paths(PlannerInfo *root, RelOptInfo *rel,
 						   List *live_childrels,
-						   List *all_child_pathkeys);
+						   List *all_child_pathkeys,
+						   List *partitioned_rels);
 static Path *get_cheapest_parameterized_child_path(PlannerInfo *root,
 									  RelOptInfo *rel,
 									  Relids required_outer);
@@ -129,6 +130,8 @@ static void subquery_push_qual(Query *subquery,
 static void recurse_push_qual(Node *setOp, Query *topquery,
 				  RangeTblEntry *rte, Index rti, Node *qual);
 static void remove_unused_subquery_outputs(Query *subquery, RelOptInfo *rel);
+static void add_paths_to_append_rel(PlannerInfo *root, RelOptInfo *rel,
+						List *live_childrels);
 
 
 /*
@@ -343,6 +346,14 @@ set_rel_size(PlannerInfo *root, RelOptInfo *rel,
 				{
 					/* Foreign table */
 					set_foreign_size(root, rel, rte);
+				}
+				else if (rte->relkind == RELKIND_PARTITIONED_TABLE)
+				{
+					/*
+					 * A partitioned table without leaf partitions is marked
+					 * as a dummy rel.
+					 */
+					set_dummy_rel_pathlist(rel);
 				}
 				else if (rte->tablesample != NULL)
 				{
@@ -692,7 +703,7 @@ create_plain_partial_paths(PlannerInfo *root, RelOptInfo *rel)
 {
 	int			parallel_workers;
 
-	parallel_workers = compute_parallel_worker(rel, rel->pages, 0);
+	parallel_workers = compute_parallel_worker(rel, rel->pages, -1);
 
 	/* If any limit was set to zero, the user doesn't want a parallel scan. */
 	if (parallel_workers <= 0)
@@ -1182,19 +1193,11 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 {
 	int			parentRTindex = rti;
 	List	   *live_childrels = NIL;
-	List	   *subpaths = NIL;
-	bool		subpaths_valid = true;
-	List	   *partial_subpaths = NIL;
-	bool		partial_subpaths_valid = true;
-	List	   *all_child_pathkeys = NIL;
-	List	   *all_child_outers = NIL;
 	ListCell   *l;
 
 	/*
 	 * Generate access paths for each member relation, and remember the
-	 * cheapest path for each one.  Also, identify all pathkeys (orderings)
-	 * and parameterizations (required_outer sets) available for the member
-	 * relations.
+	 * non-dummy children.
 	 */
 	foreach(l, root->append_rel_list)
 	{
@@ -1202,7 +1205,6 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 		int			childRTindex;
 		RangeTblEntry *childRTE;
 		RelOptInfo *childrel;
-		ListCell   *lcp;
 
 		/* append_rel_list contains all append rels; ignore others */
 		if (appinfo->parent_relid != parentRTindex)
@@ -1237,6 +1239,55 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 		 * Child is live, so add it to the live_childrels list for use below.
 		 */
 		live_childrels = lappend(live_childrels, childrel);
+	}
+
+	/* Add paths to the "append" relation. */
+	add_paths_to_append_rel(root, rel, live_childrels);
+}
+
+
+/*
+ * add_paths_to_append_rel
+ *		Generate paths for given "append" relation given the set of non-dummy
+ *		child rels.
+ *
+ * The function collects all parameterizations and orderings supported by the
+ * non-dummy children. For every such parameterization or ordering, it creates
+ * an append path collecting one path from each non-dummy child with given
+ * parameterization or ordering. Similarly it collects partial paths from
+ * non-dummy children to create partial append paths.
+ */
+static void
+add_paths_to_append_rel(PlannerInfo *root, RelOptInfo *rel,
+						List *live_childrels)
+{
+	List	   *subpaths = NIL;
+	bool		subpaths_valid = true;
+	List	   *partial_subpaths = NIL;
+	bool		partial_subpaths_valid = true;
+	List	   *all_child_pathkeys = NIL;
+	List	   *all_child_outers = NIL;
+	ListCell   *l;
+	List	   *partitioned_rels = NIL;
+	RangeTblEntry *rte;
+
+	rte = planner_rt_fetch(rel->relid, root);
+	if (rte->relkind == RELKIND_PARTITIONED_TABLE)
+	{
+		partitioned_rels = get_partitioned_child_rels(root, rel->relid);
+		/* The root partitioned table is included as a child rel */
+		Assert(list_length(partitioned_rels) >= 1);
+	}
+
+	/*
+	 * For every non-dummy child, remember the cheapest path.  Also, identify
+	 * all pathkeys (orderings) and parameterizations (required_outer sets)
+	 * available for the non-dummy member relations.
+	 */
+	foreach(l, live_childrels)
+	{
+		RelOptInfo *childrel = lfirst(l);
+		ListCell   *lcp;
 
 		/*
 		 * If child has an unparameterized cheapest-total path, add that to
@@ -1327,7 +1378,8 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	 * if we have zero or one live subpath due to constraint exclusion.)
 	 */
 	if (subpaths_valid)
-		add_path(rel, (Path *) create_append_path(rel, subpaths, NULL, 0));
+		add_path(rel, (Path *) create_append_path(rel, subpaths, NULL, 0,
+												  partitioned_rels));
 
 	/*
 	 * Consider an append of partial unordered, unparameterized partial paths.
@@ -1354,7 +1406,7 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 
 		/* Generate a partial append path. */
 		appendpath = create_append_path(rel, partial_subpaths, NULL,
-										parallel_workers);
+										parallel_workers, partitioned_rels);
 		add_partial_path(rel, (Path *) appendpath);
 	}
 
@@ -1364,7 +1416,8 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 	 */
 	if (subpaths_valid)
 		generate_mergeappend_paths(root, rel, live_childrels,
-								   all_child_pathkeys);
+								   all_child_pathkeys,
+								   partitioned_rels);
 
 	/*
 	 * Build Append paths for each parameterization seen among the child rels.
@@ -1406,7 +1459,8 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 
 		if (subpaths_valid)
 			add_path(rel, (Path *)
-					 create_append_path(rel, subpaths, required_outer, 0));
+					 create_append_path(rel, subpaths, required_outer, 0,
+										partitioned_rels));
 	}
 }
 
@@ -1436,7 +1490,8 @@ set_append_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 static void
 generate_mergeappend_paths(PlannerInfo *root, RelOptInfo *rel,
 						   List *live_childrels,
-						   List *all_child_pathkeys)
+						   List *all_child_pathkeys,
+						   List *partitioned_rels)
 {
 	ListCell   *lcp;
 
@@ -1500,13 +1555,15 @@ generate_mergeappend_paths(PlannerInfo *root, RelOptInfo *rel,
 														rel,
 														startup_subpaths,
 														pathkeys,
-														NULL));
+														NULL,
+														partitioned_rels));
 		if (startup_neq_total)
 			add_path(rel, (Path *) create_merge_append_path(root,
 															rel,
 															total_subpaths,
 															pathkeys,
-															NULL));
+															NULL,
+															partitioned_rels));
 	}
 }
 
@@ -1639,7 +1696,7 @@ set_dummy_rel_pathlist(RelOptInfo *rel)
 	rel->pathlist = NIL;
 	rel->partial_pathlist = NIL;
 
-	add_path(rel, (Path *) create_append_path(rel, NIL, NULL, 0));
+	add_path(rel, (Path *) create_append_path(rel, NIL, NULL, 0, NIL));
 
 	/*
 	 * We set the cheapest path immediately, to ensure that IS_DUMMY_REL()
@@ -2938,7 +2995,7 @@ create_partial_bitmap_paths(PlannerInfo *root, RelOptInfo *rel,
 	pages_fetched = compute_bitmap_pages(root, rel, bitmapqual, 1.0,
 										 NULL, NULL);
 
-	parallel_workers = compute_parallel_worker(rel, pages_fetched, 0);
+	parallel_workers = compute_parallel_worker(rel, pages_fetched, -1);
 
 	if (parallel_workers <= 0)
 		return;
@@ -2953,16 +3010,16 @@ create_partial_bitmap_paths(PlannerInfo *root, RelOptInfo *rel,
  * be scanned and the size of the index to be scanned, then choose a minimum
  * of those.
  *
- * "heap_pages" is the number of pages from the table that we expect to scan.
- * "index_pages" is the number of pages from the index that we expect to scan.
+ * "heap_pages" is the number of pages from the table that we expect to scan, or
+ * -1 if we don't expect to scan any.
+ *
+ * "index_pages" is the number of pages from the index that we expect to scan, or
+ * -1 if we don't expect to scan any.
  */
 int
-compute_parallel_worker(RelOptInfo *rel, BlockNumber heap_pages,
-						BlockNumber index_pages)
+compute_parallel_worker(RelOptInfo *rel, double heap_pages, double index_pages)
 {
 	int			parallel_workers = 0;
-	int			heap_parallel_workers = 1;
-	int			index_parallel_workers = 1;
 
 	/*
 	 * If the user has set the parallel_workers reloption, use that; otherwise
@@ -2972,23 +3029,24 @@ compute_parallel_worker(RelOptInfo *rel, BlockNumber heap_pages,
 		parallel_workers = rel->rel_parallel_workers;
 	else
 	{
-		int			heap_parallel_threshold;
-		int			index_parallel_threshold;
-
 		/*
-		 * If this relation is too small to be worth a parallel scan, just
-		 * return without doing anything ... unless it's an inheritance child.
-		 * In that case, we want to generate a parallel path here anyway.  It
-		 * might not be worthwhile just for this relation, but when combined
-		 * with all of its inheritance siblings it may well pay off.
+		 * If the number of pages being scanned is insufficient to justify a
+		 * parallel scan, just return zero ... unless it's an inheritance
+		 * child. In that case, we want to generate a parallel path here
+		 * anyway.  It might not be worthwhile just for this relation, but
+		 * when combined with all of its inheritance siblings it may well pay
+		 * off.
 		 */
-		if (heap_pages < (BlockNumber) min_parallel_table_scan_size &&
-			index_pages < (BlockNumber) min_parallel_index_scan_size &&
-			rel->reloptkind == RELOPT_BASEREL)
+		if (rel->reloptkind == RELOPT_BASEREL &&
+			((heap_pages >= 0 && heap_pages < min_parallel_table_scan_size) ||
+		   (index_pages >= 0 && index_pages < min_parallel_index_scan_size)))
 			return 0;
 
-		if (heap_pages > 0)
+		if (heap_pages >= 0)
 		{
+			int			heap_parallel_threshold;
+			int			heap_parallel_workers = 1;
+
 			/*
 			 * Select the number of workers based on the log of the size of
 			 * the relation.  This probably needs to be a good deal more
@@ -3008,8 +3066,11 @@ compute_parallel_worker(RelOptInfo *rel, BlockNumber heap_pages,
 			parallel_workers = heap_parallel_workers;
 		}
 
-		if (index_pages > 0)
+		if (index_pages >= 0)
 		{
+			int			index_parallel_workers = 1;
+			int			index_parallel_threshold;
+
 			/* same calculation as for heap_pages above */
 			index_parallel_threshold = Max(min_parallel_index_scan_size, 1);
 			while (index_pages >= (BlockNumber) (index_parallel_threshold * 3))

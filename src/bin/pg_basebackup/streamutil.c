@@ -317,8 +317,7 @@ RunIdentifySystem(PGconn *conn, char **sysid, TimeLineID *starttli,
 
 /*
  * Create a replication slot for the given connection. This function
- * returns true in case of success as well as the start position
- * obtained after the slot creation.
+ * returns true in case of success.
  */
 bool
 CreateReplicationSlot(PGconn *conn, const char *slot_name, const char *plugin,
@@ -338,8 +337,13 @@ CreateReplicationSlot(PGconn *conn, const char *slot_name, const char *plugin,
 		appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" PHYSICAL",
 						  slot_name);
 	else
+	{
 		appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"",
 						  slot_name, plugin);
+		if (PQserverVersion(conn) >= 100000)
+			/* pg_recvlogical doesn't use an exported snapshot, so suppress */
+			appendPQExpBuffer(query, " NOEXPORT_SNAPSHOT");
+	}
 
 	res = PQexec(conn, query->data);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK)

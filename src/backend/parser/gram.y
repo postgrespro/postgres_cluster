@@ -4621,6 +4621,19 @@ CreateForeignServerStmt: CREATE SERVER name opt_type opt_foreign_server_version
 					n->version = $5;
 					n->fdwname = $9;
 					n->options = $10;
+					n->if_not_exists = false;
+					$$ = (Node *) n;
+				}
+				| CREATE SERVER IF_P NOT EXISTS name opt_type opt_foreign_server_version
+						 FOREIGN DATA_P WRAPPER name create_generic_options
+				{
+					CreateForeignServerStmt *n = makeNode(CreateForeignServerStmt);
+					n->servername = $6;
+					n->servertype = $7;
+					n->version = $8;
+					n->fdwname = $12;
+					n->options = $13;
+					n->if_not_exists = true;
 					$$ = (Node *) n;
 				}
 		;
@@ -4853,6 +4866,16 @@ CreateUserMappingStmt: CREATE USER MAPPING FOR auth_ident SERVER name create_gen
 					n->user = $5;
 					n->servername = $7;
 					n->options = $8;
+					n->if_not_exists = false;
+					$$ = (Node *) n;
+				}
+				| CREATE USER MAPPING IF_P NOT EXISTS FOR auth_ident SERVER name create_generic_options
+				{
+					CreateUserMappingStmt *n = makeNode(CreateUserMappingStmt);
+					n->user = $8;
+					n->servername = $10;
+					n->options = $11;
+					n->if_not_exists = true;
 					$$ = (Node *) n;
 				}
 		;
@@ -7200,6 +7223,33 @@ function_with_argtypes:
 					ObjectWithArgs *n = makeNode(ObjectWithArgs);
 					n->objname = $1;
 					n->objargs = extractArgTypes($2);
+					$$ = n;
+				}
+			/*
+			 * Because of reduce/reduce conflicts, we can't use func_name
+			 * below, but we can write it out the long way, which actually
+			 * allows more cases.
+			 */
+			| type_func_name_keyword
+				{
+					ObjectWithArgs *n = makeNode(ObjectWithArgs);
+					n->objname = list_make1(makeString(pstrdup($1)));
+					n->args_unspecified = true;
+					$$ = n;
+				}
+			| ColId
+				{
+					ObjectWithArgs *n = makeNode(ObjectWithArgs);
+					n->objname = list_make1(makeString($1));
+					n->args_unspecified = true;
+					$$ = n;
+				}
+			| ColId indirection
+				{
+					ObjectWithArgs *n = makeNode(ObjectWithArgs);
+					n->objname = check_func_name(lcons(makeString($1), $2),
+												  yyscanner);
+					n->args_unspecified = true;
 					$$ = n;
 				}
 		;
