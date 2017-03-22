@@ -43,6 +43,7 @@ my @bench_argv = (
 );
 diag("running pgbench: " . join(' ', @bench_argv));
 my $bench_run = start(\@bench_argv, $in, $out);
+sleep(2);
 
 my $started = time();
 while (time() - $started < $seconds)
