@@ -1693,7 +1693,7 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
-		{"cfs_gc", PGC_USERSET, UNGROUPED,
+		{"cfs_gc", PGC_SIGHUP, UNGROUPED,
 		 gettext_noop("Enable garbage collection of compressed pages"),
 		 NULL,
 		},
@@ -1703,7 +1703,7 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
-		{"cfs_gc_verify_file", PGC_USERSET, UNGROUPED,
+		{"cfs_gc_verify_file", PGC_SIGHUP, UNGROUPED,
 		 gettext_noop("Verify correctness of data written by GC"),
 		 NULL,
 		},
@@ -2826,7 +2826,7 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		{"cfs_level", PGC_USERSET, UNGROUPED,
+		{"cfs_level", PGC_SIGHUP, UNGROUPED,
 		 gettext_noop("CFS compression level: 0 - no compression, 1 - maximal speed,"
 					  "other possible values depend on the specific algorithm."),
 		 NULL,
@@ -2838,7 +2838,7 @@ static struct config_int ConfigureNamesInt[] =
     },
 
 	{
-		{"cfs_gc_threshold", PGC_USERSET, UNGROUPED,
+		{"cfs_gc_threshold", PGC_SIGHUP, UNGROUPED,
 		 gettext_noop("Minimum percent of garbage blocks in the file prior to garbage collection"),
 		 NULL,
 		 0
@@ -2849,7 +2849,7 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		{"cfs_gc_period", PGC_USERSET, UNGROUPED,
+		{"cfs_gc_period", PGC_SIGHUP, UNGROUPED,
 		 gettext_noop("Time to sleep between GC runs in milliseconds"),
 		 NULL,
 		 GUC_UNIT_MS
@@ -2860,7 +2860,7 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		{"cfs_gc_delay", PGC_USERSET, UNGROUPED,
+		{"cfs_gc_delay", PGC_SIGHUP, UNGROUPED,
 		 gettext_noop("Delay in milliseconds between files defragmentation"),
 		 NULL,
 		 GUC_UNIT_MS
@@ -10864,7 +10864,7 @@ static void set_cfs_gc_enabled(bool newval, void* extra)
 
 static char const* show_cfs_gc_enabled(void)
 {
-	return (cfs_state ? cfs_state->gc_enabled : cfs_gc_enabled) ? "on" : "off";
+	return cfs_gc_enabled ? "on" : "off";
 }
 
 
