@@ -70,9 +70,6 @@
       <listitem>
         <para>Improved compressed tablespaces:</para>
         <itemizedlist>
-          <!-- Waiting for the license:
-          <listitem><para>Replaced <acronym>RC4</acronym> encryption algorithm
-          with <acronym>AES</acronym>.</para></listitem> -->
           <listitem>
             <para>Added function <function>cfs_garbage_ratio</function>, which
               returns garbage ratio for a given relation.</para></listitem>

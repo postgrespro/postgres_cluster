@@ -153,7 +153,7 @@
 
   <para>
     <productname>&productname;</productname> is the most actual PostgreSQL version with some additional patches applied and extensions added.
-      Mostly, these are patches already accepted by the PostgreSQL community and committed into PostgreSQL. 
+      Mostly, these are patches already accepted by the PostgreSQL community and committed into PostgreSQL.
       Also there some patches and extensions developed by Postgres Professional.
       Users of <productname>&productname;</productname> thus have early access to some important features and fixes.
   </para>
@@ -161,63 +161,63 @@
   <para>Currently the difference between <productname>&productname;</productname> and PostgreSQL is the following:
    <itemizedlist spacing="compact">
     <listitem>
-     <simpara>Performance improvement on multicore systems (buffer manager and locks optimization).</simpara>
+     <simpara>Performance improvement on multicore systems (buffer manager and locks optimization)</simpara>
     </listitem>
     <listitem>
-     <simpara>Full text search improvements: phrase search, hunspell morphology, 
-              some dictionaries are bundled with distribution and can be enabled by a single SQL statement, 
-              <application>shared_ispell</application> allowing to store dictionaries in shared memory.</simpara>
+     <simpara>Full text search improvements: phrase search, hunspell morphology,
+              some dictionaries are bundled with distribution and can be enabled by a single SQL statement,
+              <link linkend="shared-ispell"><application>shared_ispell</application></link> allowing to store dictionaries in shared memory</simpara>
     </listitem>
     <listitem>
-     <simpara>Covering indexes.</simpara>
+     <simpara>Covering indexes</simpara>
     </listitem>
     <listitem>
-     <simpara><application>libicu</application> support on all platforms, providing platform-independent sort for various locales.</simpara>
+     <simpara><application>libicu</application> support on all platforms, providing platform-independent sort for various locales</simpara>
     </listitem>
     <listitem>
-     <simpara><application>pg_trgm</application> module supporting fuzzy string comparison and substring search.</simpara>
+     <simpara><link linkend="pgtrgm"><application>pg_trgm</application></link> module supporting fuzzy string comparison and substring search</simpara>
     </listitem>
     <listitem>
-     <simpara>Improved <application>pageinspect</application> module provides access to internal data storage structure.</simpara>
+     <simpara>Improved <link linkend="pageinspect"><application>pageinspect</application></link> module provides access to internal data storage structure</simpara>
     </listitem>
     <listitem>
-     <simpara><application>sr_plan</application> module allows to save and restore query plans.</simpara>
+     <simpara><link linkend="sr-plan"><application>sr_plan</application></link> module allows to save and restore query plans</simpara>
     </listitem>
     <listitem>
-     <simpara><application>dump_stat</application> module allowing to save and restore database statistics when dumping/restoring the database. </simpara>
+     <simpara><link linkend="dump-stat"><application>dump_stat</application></link> module allowing to save and restore database statistics when dumping/restoring the database</simpara>
     </listitem>
     <listitem>
-     <simpara><application>jsquery</application> module provides a specific language for effective index-supported querying of JSONB data.</simpara>
+     <simpara><link linkend="jsquery"><application>jsquery</application></link> module provides a specific language for effective index-supported querying of JSONB data</simpara>
     </listitem>
     <listitem>
-     <simpara><application>pg_variables</application> module provides functions to work with variables of various types.</simpara>
+     <simpara><link linkend="pg-variables"><application>pg_variables</application></link> module provides functions to work with variables of various types</simpara>
     </listitem>
     <listitem>
-     <simpara><application>pg_pathman</application> module provides optimized partitioning mechanism and functions to manage partitions.</simpara>
+     <simpara><link linkend="pg-pathman"><application>pg_pathman</application></link> module provides optimized partitioning mechanism and functions to manage partitions</simpara>
     </listitem>
     <listitem>
-     <simpara><application>pg_query_state</application> module provides a facility to know the current state of query execution on working backend.</simpara>
+     <simpara><link linkend="pg-query-state"><application>pg_query_state</application></link> module provides a facility to know the current state of query execution on working backend</simpara>
     </listitem>
     <listitem>
-     <simpara><application>pg_probackup</application> is a backup and recovery manager.</simpara>
+     <simpara><link linkend="app-pgprobackup"><application>pg_probackup</application></link> is a backup and recovery manager</simpara>
     </listitem>
     <listitem>
-     <simpara><application>mchar</application> module provides additional data type to compatibility with Microsoft SQL Server.</simpara>
+     <simpara><link linkend="mchar"><application>mchar</application></link> module provides additional data type to compatibility with Microsoft SQL Server</simpara>
     </listitem>
     <listitem>
-     <simpara><application>fulleq</application> module provides additional equivalence operator to compatibility with Microsoft SQL Server.</simpara>
+     <simpara><link linkend="fulleq"><application>fulleq</application></link> module provides additional equivalence operator to compatibility with Microsoft SQL Server</simpara>
     </listitem>
     <listitem>
-     <simpara><application>fasttrun</application> module provides transaction unsafe function to truncate temporary tables without growing pg_class size.</simpara>
+     <simpara><link linkend="fasttrun"><application>fasttrun</application></link> module provides transaction unsafe function to truncate temporary tables without growing pg_class size</simpara>
     </listitem>
     <listitem>
-     <simpara><application>online_analyze</application> module provides set of
+     <simpara><link linkend="online-analyze"><application>online_analyze</application></link> module provides set of
      changes, which immediately update stats after INSERT, UPDATE, DELETE
-     or SELECT INTO operations applied for affected tables.</simpara>
+     or SELECT INTO operations applied for affected tables</simpara>
     </listitem>
     <listitem>
-     <simpara><application>plantuner</application> module provides hits for planner, which can do disable or enable indexes for query execution.</simpara>
-    </listitem>    
+     <simpara><link linkend="plantuner"><application>plantuner</application></link> module provides hits for planner, which can do disable or enable indexes for query execution</simpara>
+    </listitem>
     <listitem>
       <simpara>Added k-nearest neighbors algorithm (KNN) for SP-GiST and B-tree (See <xref linkend="spgist">)</simpara>
     </listitem>
@@ -246,7 +246,7 @@
       <simpara>Added support for relocatable tables (See <xref linkend="pgtransfer">)</simpara>
     </listitem>
     <listitem>
-      <simpara>Extension <application>pg_hint_plan</application> has been added (See <xref linkend="pg-hint-plan">)</simpara>
+      <simpara>Extension <link linkend="pg-hint-plan"><application>pg_hint_plan</application></link> has been added</simpara>
     </listitem>
     <listitem>
       <simpara>Transaction IDs on 64-bit platforms use 64-bit data type</simpara>
@@ -258,13 +258,13 @@
       <simpara>Consistent read on slaves (wait for WAL apply, see <xref linkend="sql-waitlsn">)</simpara>
     </listitem>
     <listitem>
-      <simpara>Utility <application>pg_repack</application> has been added (See <xref linkend="app-pgrepack">)</simpara>
-    </listitem>        
+      <simpara>Utility <link linkend="app-pgrepack"><application>pg_repack</application></link> has been added</simpara>
+    </listitem>
    </itemizedlist>
   </para>
 
   <para>
-     <productname>&productname;</productname> releases are following the PostgreSQL releases, though sometimes occur more frequently. 
+     <productname>&productname;</productname> releases are following the PostgreSQL releases, though sometimes occur more frequently.
      The <productname>&productname;</productname> versioning scheme is based on the PostgreSQL one and has an additional decimal place.
   </para>
 
