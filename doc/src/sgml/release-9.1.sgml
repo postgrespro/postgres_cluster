@@ -11172,8 +11172,7 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
       <listitem>
        <para>
-         Require <acronym>GNU</> <link
-         linkend="install-requirements"><application>make</></link>
+         Require <acronym>GNU</> <application>make</>
          3.80 or newer (Peter Eisentraut)
        </para>
 

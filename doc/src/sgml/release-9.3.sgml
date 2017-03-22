@@ -11073,7 +11073,7 @@ ALTER EXTENSION hstore UPDATE;
 
       <listitem>
        <para>
-        Fix <link linkend="install">install-strip</link> on Mac <productname>OS
+        Fix install-strip on Mac <productname>OS
         X</> (Peter Eisentraut)
        </para>
       </listitem>

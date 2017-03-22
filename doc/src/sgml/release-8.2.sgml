@@ -6702,8 +6702,7 @@
       </para>
 
       <para>
-       Use configure <link
-       linkend="configure"><literal>--with-libedit-preferred</></link>.
+       Use configure <literal>--with-libedit-preferred</>.
       </para>
      </listitem>
 
