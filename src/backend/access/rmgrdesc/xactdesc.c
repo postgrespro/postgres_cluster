@@ -76,10 +76,11 @@ ParseCommitRecord(uint8 info, xl_xact_commit *xlrec, xl_xact_parsed_commit *pars
 	if (parsed->xinfo & XACT_XINFO_HAS_TWOPHASE)
 	{
 		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
+		uint8 gidlen = xl_twophase->gidlen;
 
 		parsed->twophase_xid = xl_twophase->xid;
-
-		data += sizeof(xl_xact_twophase);
+		strcpy(parsed->twophase_gid, xl_twophase->gid);
+		data += INTALIGN(MinSizeOfXactTwophase + gidlen);
 	}
 
 	if (parsed->xinfo & XACT_XINFO_HAS_RELFILENODES)
@@ -139,6 +140,16 @@ ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_abort *parsed)
 		data += sizeof(xl_xact_xinfo);
 	}
 
+	if (parsed->xinfo & XACT_XINFO_HAS_DBINFO)
+	{
+		xl_xact_dbinfo *xl_dbinfo = (xl_xact_dbinfo *) data;
+
+		parsed->dbId = xl_dbinfo->dbId;
+		parsed->tsId = xl_dbinfo->tsId;
+
+		data += sizeof(xl_xact_dbinfo);
+	}
+
 	if (parsed->xinfo & XACT_XINFO_HAS_SUBXACTS)
 	{
 		xl_xact_subxacts *xl_subxacts = (xl_xact_subxacts *) data;
@@ -153,10 +164,24 @@ ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_abort *parsed)
 	if (parsed->xinfo & XACT_XINFO_HAS_TWOPHASE)
 	{
 		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
+		uint8 gidlen = xl_twophase->gidlen;
 
 		parsed->twophase_xid = xl_twophase->xid;
+		strcpy(parsed->twophase_gid, xl_twophase->gid);
+		data += INTALIGN(MinSizeOfXactTwophase + gidlen);
+	}
 
-		data += sizeof(xl_xact_twophase);
+	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
+	{
+		xl_xact_origin xl_origin;
+
+		/* we're only guaranteed 4 byte alignment, so copy onto stack */
+		memcpy(&xl_origin, data, sizeof(xl_origin));
+
+		parsed->origin_lsn = xl_origin.origin_lsn;
+		parsed->origin_timestamp = xl_origin.origin_timestamp;
+
+		data += sizeof(xl_xact_origin);
 	}
 
 	if (parsed->xinfo & XACT_XINFO_HAS_RELFILENODES)
@@ -223,7 +248,7 @@ xact_desc_commit(StringInfo buf, uint8 info, xl_xact_commit *xlrec, RepOriginId 
 }
 
 static void
-xact_desc_abort(StringInfo buf, uint8 info, xl_xact_abort *xlrec)
+xact_desc_abort(StringInfo buf, uint8 info, xl_xact_abort *xlrec, RepOriginId origin_id)
 {
 	xl_xact_parsed_abort parsed;
 	int			i;
@@ -252,6 +277,14 @@ xact_desc_abort(StringInfo buf, uint8 info, xl_xact_abort *xlrec)
 		appendStringInfoString(buf, "; subxacts:");
 		for (i = 0; i < parsed.nsubxacts; i++)
 			appendStringInfo(buf, " " XID_FMT, parsed.subxacts[i]);
+	}
+	if (parsed.xinfo & XACT_XINFO_HAS_ORIGIN)
+	{
+		appendStringInfo(buf, "; origin: node %u, lsn %X/%X, at %s",
+						 origin_id,
+						 (uint32) (parsed.origin_lsn >> 32),
+						 (uint32) parsed.origin_lsn,
+						 timestamptz_to_str(parsed.origin_timestamp));
 	}
 }
 
@@ -283,7 +316,8 @@ xact_desc(StringInfo buf, XLogReaderState *record)
 	{
 		xl_xact_abort *xlrec = (xl_xact_abort *) rec;
 
-		xact_desc_abort(buf, XLogRecGetInfo(record), xlrec);
+		xact_desc_abort(buf, XLogRecGetInfo(record), xlrec,
+						XLogRecGetOrigin(record));
 	}
 	else if (info == XLOG_XACT_ASSIGNMENT)
 	{

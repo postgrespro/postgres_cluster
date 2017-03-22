@@ -21,6 +21,15 @@
 #include "storage/sinval.h"
 #include "utils/datetime.h"
 
+/*
+ * Maximum size of Global Transaction ID.
+ */
+#define GIDSIZE 200
+
+/*
+ * Maximal size of 3PC transaction state
+ */
+#define MAX_3PC_STATE_SIZE 16
 
 /*
  * Xact isolation levels
@@ -81,6 +90,7 @@ extern bool MyXactAccessedTempRel;
  */
 typedef enum
 {
+	XACT_EVENT_START,
 	XACT_EVENT_COMMIT,
 	XACT_EVENT_PARALLEL_COMMIT,
 	XACT_EVENT_ABORT,
@@ -88,7 +98,12 @@ typedef enum
 	XACT_EVENT_PREPARE,
 	XACT_EVENT_PRE_COMMIT,
 	XACT_EVENT_PARALLEL_PRE_COMMIT,
-	XACT_EVENT_PRE_PREPARE
+	XACT_EVENT_PRE_PREPARE,
+	XACT_EVENT_POST_PREPARE,
+	XACT_EVENT_PRE_COMMIT_PREPARED,
+	XACT_EVENT_COMMIT_PREPARED,
+	XACT_EVENT_ABORT_PREPARED,
+	XACT_EVENT_COMMIT_COMMAND
 } XactEvent;
 
 typedef void (*XactCallback) (XactEvent event, void *arg);
@@ -103,6 +118,8 @@ typedef enum
 
 typedef void (*SubXactCallback) (SubXactEvent event, SubTransactionId mySubid,
 									SubTransactionId parentSubid, void *arg);
+
+void		CallXactCallbacks(XactEvent event);
 
 
 /* ----------------
@@ -212,7 +229,14 @@ typedef struct xl_xact_subxacts
 typedef struct xl_xact_twophase
 {
 	TransactionId xid;
+	/*
+	 * Gid and gidlen will be set only with wal_level=logical.
+	 * See details in XactLogCommitRecord().
+	 */
+	int  gidlen;
+	char gid[GIDSIZE];
 } xl_xact_twophase;
+#define MinSizeOfXactTwophase offsetof(xl_xact_twophase, gid)
 
 typedef struct xl_xact_relfilenodes
 {
@@ -285,13 +309,40 @@ typedef struct xl_xact_parsed_commit
 	SharedInvalidationMessage *msgs;
 
 	TransactionId twophase_xid; /* only for 2PC */
+	char 		twophase_gid[GIDSIZE]; // GIDSIZE
 
 	XLogRecPtr	origin_lsn;
 	TimestampTz origin_timestamp;
 } xl_xact_parsed_commit;
 
+typedef struct xl_xact_parsed_prepare
+{
+	uint32		xinfo;
+
+	Oid			dbId;			/* MyDatabaseId */
+
+	int			nsubxacts;
+	TransactionId *subxacts;
+
+	int			nrels;
+	RelFileNode *xnodes;
+
+	int			nmsgs;
+	SharedInvalidationMessage *msgs;
+
+	TransactionId twophase_xid;
+	char 		twophase_gid[GIDSIZE];
+	char 		state_3pc[MAX_3PC_STATE_SIZE];
+
+	XLogRecPtr	origin_lsn;
+	TimestampTz origin_timestamp;
+} xl_xact_parsed_prepare;
+
 typedef struct xl_xact_parsed_abort
 {
+	Oid			dbId;
+	Oid			tsId;
+
 	TimestampTz xact_time;
 	uint32		xinfo;
 
@@ -302,6 +353,10 @@ typedef struct xl_xact_parsed_abort
 	RelFileNode *xnodes;
 
 	TransactionId twophase_xid; /* only for 2PC */
+	char 		twophase_gid[GIDSIZE];
+
+	XLogRecPtr	origin_lsn;
+	TimestampTz origin_timestamp;
 } xl_xact_parsed_abort;
 
 
@@ -338,7 +393,7 @@ extern void CommitTransactionCommand(void);
 extern void AbortCurrentTransaction(void);
 extern void BeginTransactionBlock(bool autonomous);
 extern bool EndTransactionBlock(bool autonomous);
-extern bool PrepareTransactionBlock(char *gid);
+extern bool PrepareTransactionBlock(const char *gid);
 extern void UserAbortTransactionBlock(bool autonomous);
 extern void ReleaseSavepoint(List *options);
 extern void DefineSavepoint(char *name);
@@ -371,12 +426,12 @@ extern XLogRecPtr XactLogCommitRecord(TimestampTz commit_time,
 					int nrels, RelFileNode *rels,
 					int nmsgs, SharedInvalidationMessage *msgs,
 					bool relcacheInval, bool forceSync,
-					TransactionId twophase_xid);
+					TransactionId twophase_xid, const char *twophase_gid);
 
 extern XLogRecPtr XactLogAbortRecord(TimestampTz abort_time,
 				   int nsubxacts, TransactionId *subxacts,
 				   int nrels, RelFileNode *rels,
-				   TransactionId twophase_xid);
+				   TransactionId twophase_xid, const char *twophase_gid);
 extern void xact_redo(XLogReaderState *record);
 
 /* xactdesc.c */
@@ -392,5 +447,7 @@ extern void ExitParallelMode(void);
 extern bool IsInParallelMode(void);
 
 extern int getNestLevelATX(void);
+
+extern void MarkAsAborted(void);
 
 #endif   /* XACT_H */

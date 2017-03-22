@@ -45,18 +45,24 @@ SELECT data FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL, 'inc
  BEGIN
  table public.test_prepared1: INSERT: id[integer]:1
  COMMIT
+ COMMIT
  BEGIN
  table public.test_prepared1: INSERT: id[integer]:2
+ COMMIT
+ BEGIN
+ table public.test_prepared1: INSERT: id[integer]:3
+ COMMIT
  COMMIT
  BEGIN
  table public.test_prepared1: INSERT: id[integer]:4
  COMMIT
  BEGIN
- table public.test_prepared2: INSERT: id[integer]:7
- COMMIT
- BEGIN
  table public.test_prepared1: INSERT: id[integer]:5
  table public.test_prepared1: INSERT: id[integer]:6 data[text]:'frakbar'
+ COMMIT
+ BEGIN
+ table public.test_prepared2: INSERT: id[integer]:7
+ COMMIT
  COMMIT
  BEGIN
  table public.test_prepared1: INSERT: id[integer]:8 data[text]:null
@@ -64,7 +70,7 @@ SELECT data FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL, 'inc
  BEGIN
  table public.test_prepared2: INSERT: id[integer]:9
  COMMIT
-(22 rows)
+(28 rows)
 
 SELECT pg_drop_replication_slot('regression_slot');
  pg_drop_replication_slot 

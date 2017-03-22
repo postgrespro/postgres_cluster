@@ -1,0 +1,97 @@
+version: '2'
+
+services:
+
+  node1:
+    container_name: node1
+    build: ..
+    privileged: true
+    ulimits:
+      core: 14294967296
+    environment:
+      POSTGRES_USER: 'pg'
+      POSTGRES_DB: 'regression'
+      NODE_ID: 1
+      # CONNSTRS: >-
+      #   dbname=regression user=pg host=node1,
+      #   dbname=regression user=pg host=toxi port=12000 arbiterport=12001,
+      #   dbname=regression user=pg host=toxi port=13000 arbiterport=13001
+      CONNSTRS: >-
+        dbname=regression user=pg host=node1,
+        dbname=regression user=pg host=node2,
+        dbname=regression user=pg host=node3
+    ports:
+      - "15432:5432"
+
+  node2:
+    container_name: node2
+    build: ..
+    privileged: true
+    ulimits:
+      core: 14294967296
+    environment:
+      POSTGRES_USER: 'pg'
+      POSTGRES_DB: 'regression'
+      NODE_ID: 2
+      # CONNSTRS: >-
+      #   dbname=regression user=pg host=toxi port=21000 arbiterport=21001,
+      #   dbname=regression user=pg host=node2,
+      #   dbname=regression user=pg host=toxi port=23000 arbiterport=23001
+      CONNSTRS: >-
+        dbname=regression user=pg host=node1,
+        dbname=regression user=pg host=node2,
+        dbname=regression user=pg host=node3
+    ports:
+      - "15433:5432"
+
+  node3:
+    container_name: node3
+    build: ..
+    privileged: true
+    ulimits:
+      core: 14294967296
+    environment:
+      POSTGRES_USER: 'pg'
+      POSTGRES_DB: 'regression'
+      NODE_ID: 3
+      # CONNSTRS: >-
+      #   dbname=regression user=pg host=toxi port=31000 arbiterport=31001,
+      #   dbname=regression user=pg host=toxi port=32000 arbiterport=32001,
+      #   dbname=regression user=pg host=node3
+      CONNSTRS: >-
+        dbname=regression user=pg host=node1,
+        dbname=regression user=pg host=node2,
+        dbname=regression user=pg host=node3
+    ports:
+      - "15434:5432"
+
+  # toxi:
+  #   image: kelvich/toxiproxy
+  #   ports:
+  #     - "8474:8474"
+
+  # toxi_seed:
+  #   image: kelvich/toxiproxy
+  #   depends_on:
+  #     - toxi
+  #   entrypoint: |
+  #     curl
+  #     -X POST 'http://toxi:8474/populate'
+  #     -H 'Content-Type: application/json; charset=utf-8'
+  #     -d
+  #     '[
+  #       {"name": "rep12", "listen": "0.0.0.0:12000", "upstream": "node2:5432"},
+  #       {"name": "arb12", "listen": "0.0.0.0:12001", "upstream": "node2:5433"},
+  #       {"name": "rep13", "listen": "0.0.0.0:13000", "upstream": "node3:5432"},
+  #       {"name": "arb13", "listen": "0.0.0.0:13001", "upstream": "node3:5433"},
+
+  #       {"name": "rep21", "listen": "0.0.0.0:21000", "upstream": "node1:5432"},
+  #       {"name": "arb21", "listen": "0.0.0.0:21001", "upstream": "node1:5433"},
+  #       {"name": "rep23", "listen": "0.0.0.0:23000", "upstream": "node3:5432"},
+  #       {"name": "arb23", "listen": "0.0.0.0:23001", "upstream": "node3:5433"},
+
+  #       {"name": "rep31", "listen": "0.0.0.0:31000", "upstream": "node1:5432"},
+  #       {"name": "arb31", "listen": "0.0.0.0:31001", "upstream": "node1:5433"},
+  #       {"name": "rep32", "listen": "0.0.0.0:32000", "upstream": "node2:5432"},
+  #       {"name": "arb32", "listen": "0.0.0.0:32001", "upstream": "node2:5433"}
+  #     ]'

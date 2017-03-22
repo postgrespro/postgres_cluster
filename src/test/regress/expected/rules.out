@@ -1409,8 +1409,9 @@ pg_prepared_xacts| SELECT p.transaction,
     p.gid,
     p.prepared,
     u.rolname AS owner,
-    d.datname AS database
-   FROM ((pg_prepared_xact() p(transaction, gid, prepared, ownerid, dbid)
+    d.datname AS database,
+    p.state3pc
+   FROM ((pg_prepared_xact() p(transaction, gid, prepared, ownerid, dbid, state3pc)
      LEFT JOIN pg_authid u ON ((p.ownerid = u.oid)))
      LEFT JOIN pg_database d ON ((p.dbid = d.oid)));
 pg_replication_origin_status| SELECT pg_show_replication_origin_status.local_id,

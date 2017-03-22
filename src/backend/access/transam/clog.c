@@ -38,6 +38,7 @@
 #include "access/xlog.h"
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
+#include "access/xtm.h"
 #include "miscadmin.h"
 #include "pg_trace.h"
 
@@ -91,6 +92,12 @@ static void TransactionIdSetStatusBit(TransactionId xid, XidStatus status,
 static void set_status_by_pages(int nsubxids, TransactionId *subxids,
 					XidStatus status, XLogRecPtr lsn);
 
+void
+TransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
+					TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
+{
+	return TM->SetTransactionStatus(xid, nsubxids, subxids, status, lsn);
+}
 
 /*
  * TransactionIdSetTreeStatus
@@ -144,7 +151,7 @@ static void set_status_by_pages(int nsubxids, TransactionId *subxids,
  * cache yet.
  */
 void
-TransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
+PgTransactionIdSetTreeStatus(TransactionId xid, int nsubxids,
 					TransactionId *subxids, XidStatus status, XLogRecPtr lsn)
 {
 	int64		pageno = TransactionIdToPage(xid);		/* get page of parent */
@@ -344,10 +351,10 @@ TransactionIdSetStatusBit(TransactionId xid, XidStatus status, XLogRecPtr lsn, i
 	 * Current state change should be from 0 or subcommitted to target state
 	 * or we should already be there when replaying changes during recovery.
 	 */
-	Assert(curval == 0 ||
-		   (curval == TRANSACTION_STATUS_SUB_COMMITTED &&
-			status != TRANSACTION_STATUS_IN_PROGRESS) ||
-		   curval == status);
+/*	Assert(curval == 0 || */
+/*		   (curval == TRANSACTION_STATUS_SUB_COMMITTED && */
+/*			status != TRANSACTION_STATUS_IN_PROGRESS) || */
+/*		   curval == status); */
 
 	/* note this assumes exclusive access to the clog page */
 	byteval = *byteptr;
@@ -389,6 +396,12 @@ TransactionIdSetStatusBit(TransactionId xid, XidStatus status, XLogRecPtr lsn, i
  */
 XidStatus
 TransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
+{
+	return TM->GetTransactionStatus(xid, lsn);
+}
+
+XidStatus
+PgTransactionIdGetStatus(TransactionId xid, XLogRecPtr *lsn)
 {
 	int64		pageno = TransactionIdToPage(xid);
 	int			byteno = TransactionIdToByte(xid);

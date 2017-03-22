@@ -485,8 +485,9 @@ typedef enum
 	DS_NO_DEADLOCK,				/* no deadlock detected */
 	DS_SOFT_DEADLOCK,			/* deadlock avoided by queue rearrangement */
 	DS_HARD_DEADLOCK,			/* deadlock, no way out but ERROR */
-	DS_BLOCKED_BY_AUTOVACUUM	/* no deadlock; queue blocked by autovacuum
+	DS_BLOCKED_BY_AUTOVACUUM,	/* no deadlock; queue blocked by autovacuum
 								 * worker */
+	DS_DISTRIBUTED_DEADLOCK		/* distributed deadlock detected by DTM */
 } DeadLockState;
 
 /*
@@ -582,6 +583,10 @@ extern int	LockWaiterCount(const LOCKTAG *locktag);
 extern void DumpLocks(PGPROC *proc);
 extern void DumpAllLocks(void);
 #endif
+
+typedef void (*LockIterator) (PROCLOCK *lock, void *arg);
+
+extern void EnumerateLocks(LockIterator iterator, void *arg);
 
 /* Lock a VXID (used to wait for a transaction to finish) */
 extern void VirtualXactLockTableInsert(VirtualTransactionId vxid);
