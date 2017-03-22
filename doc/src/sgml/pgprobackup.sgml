@@ -371,7 +371,8 @@ doc/src/sgml/pgprobackup.sgml
       <listitem>
        <para>
          Specifies the number of full backup
-    copies to keep in the data directory. Must be a positive integer.
+    copies to keep in the data directory. Must be a positive integer.</para>
+    <para>You can use this option with the <command>retention purge</command> command to override the default retention policy set in <filename>pg_probackup.conf</filename>.
        </para>
       </listitem>
      </varlistentry>
@@ -380,7 +381,8 @@ doc/src/sgml/pgprobackup.sgml
       <term><option>window</option></term>
       <listitem>
        <para>
-         Defines the earliest point in time for which <application>pg_probackup</application> can complete the recovery. This option is set in the number of days from the current moment. For example, if <option>window</option>=7, <application>pg_probackup</application> must keep at least one full backup copy that is older than seven days, with all the corresponding WAL files. 
+         Defines the recovery point, in the number of days from the current moment. This is the earliest point in time for which <application>pg_probackup</application> can complete the recovery. For example, if <option>window</option>=7, <application>pg_probackup</application> must keep at least one full backup copy that is older than seven days, with all the corresponding WAL files.</para>
+    <para>You can use this option with the <command>retention purge</command> command to override the default retention policy set in <filename>pg_probackup.conf</filename>.
        </para>
       </listitem>
      </varlistentry>
@@ -664,7 +666,7 @@ pg_probackup show
 
       <listitem>
        <para>
-         Recovery time &mdash; the least moment of time, the database cluster's state can be restored at.
+         Recovery time &mdash; the earliest moment for which you can restore the state of the database cluster.
        </para>
       </listitem>
 
