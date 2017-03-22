@@ -260,6 +260,32 @@
     <listitem>
       <simpara>Utility <link linkend="app-pgrepack"><application>pg_repack</application></link> has been added</simpara>
     </listitem>
+    <listitem>
+      <simpara>Added <application>multimaster</application> extension. (See <xref linkend="multimaster">.)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Added failover algorithm for <application>libpq</application> connections.</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Added <application>aqo</application> extension for
+        adaptive query optimization. (See <xref linkend="aqo">.) </simpara>
+    </listitem>    
+    <listitem>
+      <simpara>Implemented declarative syntax for
+        partitioning. (See <xref linkend="pg-pathman-using-declarative-syntax">.)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Added <application>mamonsu</application> monitoring
+        service, which is implemented as a <application>Zabbix</application>
+        agent. (See <xref linkend="mamonsu">.)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Added <application>pg_wait_sampling</application>
+        extension for sampling-based statistics of wait events.  With this
+        extension, you can get an insight into the server activity,
+        including the current wait events for all processes and background
+        workers. (See <xref linkend="pg-wait-sampling">.)</simpara>
+    </listitem>
    </itemizedlist>
   </para>
 

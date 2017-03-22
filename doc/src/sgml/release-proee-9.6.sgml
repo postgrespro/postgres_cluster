@@ -3,7 +3,7 @@
   <title>&productname; 9.6.2.1</title>
   <note>
     <title>Release Date</title>
-    <simpara>2017-03-__</simpara>
+    <simpara>2017-03-24</simpara>
   </note>
   <sect2>
     <title>Overview</title>
@@ -13,9 +13,8 @@
     <para>Major enhancements over <productname>Postgres Pro Enterprise</productname>
       9.6.1.2 include:</para>
     <itemizedlist>
-      <!-- Waiting for merge of multimaster:
       <listitem><para>Added <application>multimaster</application>
-      extension. With this extension, you can turn a
+          extension. With this extension, you can turn a
           <productname>PostgreSQL</productname> master-slave cluster into a
           shared-nothing cluster with synchronous multi-master
           replication. Such a cluster provides <acronym>OLTP</acronym>
@@ -25,7 +24,6 @@
           upgrades. (See <xref linkend="multimaster">.)</para>
       </listitem>
       <listitem><para>Added failover algorithm for <application>libpq</application> connections.</para></listitem>
-      -->
       <listitem><para>Added <application>aqo</application> extension for
           adaptive query optimization. Based on the collected statistics on
           query execution, <application>aqo</application> improves cardinality
