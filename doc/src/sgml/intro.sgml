@@ -261,14 +261,13 @@
       <simpara>Utility <link linkend="app-pgrepack"><application>pg_repack</application></link> has been added</simpara>
     </listitem>
     <listitem>
-      <simpara>Added <application>multimaster</application> extension. (See <xref linkend="multimaster">.)</simpara>
+      <simpara>Added <link linkend="multimaster"><application>multimaster</application></link> extension</simpara>
     </listitem>
     <listitem>
-      <simpara>Added failover algorithm for <application>libpq</application> connections.</simpara>
+      <simpara>Added failover algorithm for <application>libpq</application> connections</simpara>
     </listitem>
     <listitem>
-      <simpara>Added <application>aqo</application> extension for
-        adaptive query optimization. (See <xref linkend="aqo">.) </simpara>
+      <simpara>Added <link linkend="aqo"><application>aqo</application></link> extension for adaptive query optimization</simpara>
     </listitem>    
     <listitem>
       <simpara>Implemented declarative syntax for
@@ -280,11 +279,12 @@
         agent. (See <xref linkend="mamonsu">.)</simpara>
     </listitem>
     <listitem>
-      <simpara>Added <application>pg_wait_sampling</application>
+      <simpara>Added <link linkend="pg-wait-sampling">
+          <application>pg_wait_sampling</application></link>
         extension for sampling-based statistics of wait events.  With this
         extension, you can get an insight into the server activity,
         including the current wait events for all processes and background
-        workers. (See <xref linkend="pg-wait-sampling">.)</simpara>
+        workers.</simpara>
     </listitem>
    </itemizedlist>
   </para>
