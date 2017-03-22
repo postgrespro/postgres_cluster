@@ -10858,7 +10858,7 @@ show_log_file_mode(void)
 static void set_cfs_gc_enabled(bool newval, void* extra)
 {
 	cfs_gc_enabled = newval;
-	if (cfs_state) 
+	if (cfs_state && MyProcPid == PostmasterPid) 
 		cfs_control_gc(newval);
 }
 
