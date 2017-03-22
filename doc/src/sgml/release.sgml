@@ -53,7 +53,7 @@ For new features, add links to the documentation sections.
 
   <para>
    A complete list of changes for each release can be obtained by
-   viewing the <link linkend="git">Git</link> logs for each release.
+   viewing the Git logs for each release.
    The <ulink
    url="http://archives.postgresql.org/pgsql-committers/"><literal>pgsql-committers</literal>
    email list</ulink> records all source code changes as well.  There is also

@@ -150,8 +150,6 @@
    </para>
   </partintro>
 
-  &installation;
-  &installw;
   &runtime;
   &config;
   &client-auth;
@@ -275,7 +273,6 @@
   &release;
   &contrib;
   &external-projects;
-  &sourcerepo;
   &docguide;
   &demodb-bookings;
   &acronyms;

@@ -10440,8 +10440,7 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
      <listitem>
       <para>
-       New <filename>Makefile</> targets <link
-       linkend="build"><literal>world</></link>,
+       New <filename>Makefile</> targets <literal>world</>,
        <literal>install-world</>, and <literal>installcheck-world</>
        (Andrew Dunstan)
       </para>

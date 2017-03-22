@@ -29,8 +29,8 @@
 
    <para>
     If you are installing <productname>&productname;</productname>
-    yourself, then refer to <xref linkend="installation">
-    for instructions on installation, and return to
+    yourself, then see
+    instructions on installation, and return to
     this guide when the installation is complete.  Be sure to follow
     closely the section about setting up the appropriate environment
     variables.

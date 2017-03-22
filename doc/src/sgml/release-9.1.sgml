@@ -11317,7 +11317,7 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
       <listitem>
        <para>
-        Run <link linkend="build">regression tests</link> in the
+        Run regression tests in the
         default encoding (Peter Eisentraut)
        </para>
 

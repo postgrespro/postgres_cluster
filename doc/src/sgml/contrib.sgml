@@ -22,8 +22,7 @@
 
  <para>
   When building from the source distribution, these components are not built
-  automatically, unless you build the "world" target
-  (see <xref linkend="build">).
+  automatically, unless you build the "world" target.
   You can build and install all of them by running:
 <screen>
 <userinput>make</userinput>
