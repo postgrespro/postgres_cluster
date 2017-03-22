@@ -11228,8 +11228,8 @@ SELECT * FROM places ORDER BY location <-> point '(101,456)' LIMIT 10;
 
       <listitem>
        <para>
-        Add support for collecting <link linkend="windows-crash-dumps">crash
-        dumps</link> on Windows (Craig Ringer, Magnus Hagander)
+        Add support for collecting crash
+        dumps on Windows (Craig Ringer, Magnus Hagander)
        </para>
 
        <para>
