@@ -14,23 +14,23 @@
       9.6.1.2 include:</para>
     <itemizedlist>
       <listitem><para>Added <application>multimaster</application>
-          extension. With this extension, you can turn a
-          <productname>PostgreSQL</productname> master-slave cluster into a
-          shared-nothing cluster with synchronous multi-master
-          replication. Such a cluster provides <acronym>OLTP</acronym>
-          scalability for read transactions, ensures fault tolerance and
-          automatic node recovery, as well as
-          enables <productname>PostgreSQL</productname> online
+          extension. 
+          </para><para>This extension enables you to set up
+          shared-nothing clusters with synchronous multi-master
+          replication. Such clusters provide <acronym>OLTP</acronym>
+          scalability for read transactions, ensure fault tolerance and
+          automatic node recovery, and enable <productname>&productname;</productname> online
           upgrades. (See <xref linkend="multimaster">.)</para>
       </listitem>
       <listitem><para>Added failover algorithm for <application>libpq</application> connections.</para></listitem>
       <listitem><para>Added <application>aqo</application> extension for
-          adaptive query optimization. Based on the collected statistics on
+          adaptive query optimization. 
+          </para><para>Based on the collected statistics on
           query execution, <application>aqo</application> improves cardinality
           estimation, which can speed up subsequent
           queries. (See <xref linkend="aqo">.)</para></listitem>
       <listitem><para>Implemented declarative syntax for
-          partitioning. The <application>pg_pathman</application> extension
+          partitioning. </para><para>The <application>pg_pathman</application> extension
           can now perform range and hash partitioning as part of
           the <command>CREATE TABLE</command> query. Partition management can
           be done with various forms of
@@ -39,14 +39,16 @@
       </listitem>
       <listitem><para>Added <application>mamonsu</application> monitoring
           service, which is implemented as a <application>Zabbix</application>
-          agent.  Using <application>mamonsu</application>, you can monitor
+          agent. </para>
+          <para>Using <application>mamonsu</application>, you can monitor
           multiple <productname>PostgreSQL</productname> and system metrics
           and visualize the collected data in comprehensive graphs. If
           required, you can extend <application>mamonsu</application> with
           your own custom plugins. (See <xref linkend="mamonsu">.)</para>
       </listitem>
       <listitem><para>Added <application>pg_wait_sampling</application>
-          extension for sampling-based statistics of wait events.  With this
+          extension for sampling-based statistics of wait events. 
+          </para><para>With this
           extension, you can get an insight into the server activity,
           including the current wait events for all processes and background
           workers. (See <xref linkend="pg-wait-sampling">.)</para>
@@ -55,7 +57,7 @@
       the <application>pg_xlogdump</application> application.</para></listitem>
       <listitem>
         <para>Added support for one-time background jobs in
-          <application>pgpro_scheduler</application>. You can now submit jobs
+          <application>pgpro_scheduler</application>. </para><para>You can now submit jobs
           for immediate or delayed one-time execution in parallel with the
           scheduled jobs. (See <xref linkend="pgpro-scheduler">.)</para>
       </listitem>
