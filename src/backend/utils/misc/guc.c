@@ -31,6 +31,7 @@
 #include "access/transam.h"
 #include "access/twophase.h"
 #include "access/xact.h"
+#include "access/ptrack.h"
 #include "catalog/namespace.h"
 #include "commands/async.h"
 #include "commands/prepare.h"
@@ -998,6 +999,16 @@ static struct config_bool ConfigureNamesBool[] =
 		&wal_log_hints,
 		false,
 		NULL, NULL, NULL
+	},
+
+	{
+		{"ptrack_enable", PGC_SIGHUP, WAL_SETTINGS,
+			gettext_noop("Enable page tracking."),
+			NULL
+		},
+		&ptrack_enable,
+		false,
+		NULL, &assign_ptrack_enable, NULL
 	},
 
 	{
