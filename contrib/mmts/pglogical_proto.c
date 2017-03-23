@@ -476,6 +476,7 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 		transfer_type = decide_datum_transfer(att, typclass,
 											  data->allow_internal_basetypes,
 											  data->allow_binary_basetypes);
+			
         pq_sendbyte(out, transfer_type);
 		switch (transfer_type)
 		{
