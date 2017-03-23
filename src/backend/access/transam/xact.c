@@ -5239,7 +5239,7 @@ XactLogCommitRecord(TimestampTz commit_time,
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_TWOPHASE)
 	{
-		XLogRegisterData((char *) (&xl_twophase), MinSizeOfXactTwophase);
+		XLogRegisterData((char *) (&xl_twophase), sizeof(xl_xact_twophase));
 
 		if (xl_xinfo.xinfo & XACT_XINFO_HAS_GID)
 			XLogRegisterData((char *) twophase_gid, gidlen);
@@ -5367,7 +5367,7 @@ XactLogAbortRecord(TimestampTz abort_time,
 
 	if (xl_xinfo.xinfo & XACT_XINFO_HAS_TWOPHASE)
 	{
-		XLogRegisterData((char *) (&xl_twophase), MinSizeOfXactTwophase);
+		XLogRegisterData((char *) (&xl_twophase), sizeof(xl_xact_twophase));
 
 		if (xl_xinfo.xinfo & XACT_XINFO_HAS_GID)
 			XLogRegisterData((char *) twophase_gid, gidlen);

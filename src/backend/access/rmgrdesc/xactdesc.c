@@ -100,7 +100,7 @@ ParseCommitRecord(uint8 info, xl_xact_commit *xlrec, xl_xact_parsed_commit *pars
 		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
 
 		parsed->twophase_xid = xl_twophase->xid;
-		data += MinSizeOfXactTwophase;
+		data += sizeof(xl_xact_twophase);
 
 		if (parsed->xinfo & XACT_XINFO_HAS_GID)
 		{
@@ -181,7 +181,7 @@ ParseAbortRecord(uint8 info, xl_xact_abort *xlrec, xl_xact_parsed_abort *parsed)
 		xl_xact_twophase *xl_twophase = (xl_xact_twophase *) data;
 
 		parsed->twophase_xid = xl_twophase->xid;
-		data += MinSizeOfXactTwophase;
+		data += sizeof(xl_xact_twophase);
 
 		if (parsed->xinfo & XACT_XINFO_HAS_GID)
 		{

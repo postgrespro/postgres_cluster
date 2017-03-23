@@ -229,9 +229,7 @@ typedef struct xl_xact_invals
 typedef struct xl_xact_twophase
 {
 	TransactionId xid;
-	char gid[GIDSIZE];
 } xl_xact_twophase;
-#define MinSizeOfXactTwophase offsetof(xl_xact_twophase, gid)
 
 typedef struct xl_xact_origin
 {
