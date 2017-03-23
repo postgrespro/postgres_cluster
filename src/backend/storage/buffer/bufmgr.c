@@ -693,17 +693,6 @@ ReadBufferWithoutRelcache(RelFileNode rnode, ForkNumber forkNum,
 							 mode, strategy, &hit);
 }
 
-Buffer
-ReadBufferWithoutRelcache2(SMgrRelation smgr, ForkNumber forkNum,
-						  BlockNumber blockNum, ReadBufferMode mode,
-						  BufferAccessStrategy strategy)
-{
-	bool		hit;
-
-	return ReadBuffer_common(smgr, RELPERSISTENCE_PERMANENT, forkNum, blockNum,
-							 mode, strategy, &hit);
-}
-
 
 /*
  * ReadBuffer_common -- common logic for all ReadBuffer variants
