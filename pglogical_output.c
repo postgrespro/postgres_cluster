@@ -187,8 +187,8 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 										  ALLOCSET_DEFAULT_MINSIZE,
 										  ALLOCSET_DEFAULT_INITSIZE,
 										  ALLOCSET_DEFAULT_MAXSIZE);
-	data->allow_internal_basetypes = false;
-	data->allow_binary_basetypes = false;
+	data->allow_internal_basetypes = true;
+	data->allow_binary_basetypes = true;
 
 
 	ctx->output_plugin_private = data;
