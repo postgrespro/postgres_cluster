@@ -2271,7 +2271,9 @@ void MtmRefreshClusterStatus()
 			timestamp_t now = MtmGetSystemTime();
 			for (i = 0, mask = disabled; mask != 0; i++, mask >>= 1) {
 				if (mask & 1) { 
-					if (Mtm->nodes[i].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < now) {
+					if ((i+1 != MtmNodeId || Mtm->status == MTM_ONLINE)
+						&& Mtm->nodes[i].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < now) 
+					{
 						MtmDisableNode(i+1);
 					}
 				}
