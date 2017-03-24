@@ -11486,7 +11486,7 @@ ALTER EXTENSION hstore UPDATE;
 
       <listitem>
        <para>
-        Add <link linkend="docguide-toolsets">instructions</link> for setting
+        Add instructions for setting
         up the documentation tool chain on <productname>macOS</>
         (Peter Eisentraut)
        </para>

@@ -244,8 +244,6 @@
   &arch-dev;
   &catalogs;
   &protocol;
-  &sources;
-  &nls;
   &plhandler;
   &fdwhandler;
   &tablesample-method;
@@ -273,7 +271,6 @@
   &release;
   &contrib;
   &external-projects;
-  &docguide;
   &demodb-bookings;
   &acronyms;
 
