@@ -239,13 +239,13 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			appendStringInfoString(ctx->out, "COMMIT");
 			break;
 		case XLOG_XACT_PREPARE:
-			appendStringInfoString(ctx->out, "PREPARE");
+			appendStringInfo(ctx->out, "PREPARE '%s'", txn->gid);
 			break;
 		case XLOG_XACT_COMMIT_PREPARED:
-			appendStringInfoString(ctx->out, "COMMIT PREPARED");
+			appendStringInfo(ctx->out, "COMMIT PREPARED '%s'", txn->gid);
 			break;
 		case XLOG_XACT_ABORT_PREPARED:
-			appendStringInfoString(ctx->out, "ABORT PREPARED");
+			appendStringInfo(ctx->out, "ABORT PREPARED '%s'", txn->gid);
 			break;
 	}
 

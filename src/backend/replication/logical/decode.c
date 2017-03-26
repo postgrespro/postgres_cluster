@@ -282,12 +282,31 @@ DecodeXactOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 				break;
 			}
 		case XLOG_XACT_PREPARE:
- 			{
- 				xl_xact_parsed_prepare parsed;
- 				ParsePrepareRecord(XLogRecGetInfo(buf->record),
- 									XLogRecGetData(buf->record), &parsed);
- 				DecodePrepare(ctx, buf, &parsed);
- 				break;
+			{
+				xl_xact_parsed_prepare parsed;
+
+				/* check that output plugin capable of twophase decoding */
+				if (!ctx->twophase_hadling)
+				{
+					ReorderBufferProcessXid(reorder, XLogRecGetXid(r), buf->origptr);
+					break;
+				}
+
+				/* ok, parse it */
+				ParsePrepareRecord(XLogRecGetInfo(buf->record),
+										XLogRecGetData(buf->record), &parsed);
+
+				/* does output plugin wants this particular transaction? */
+				if (ReorderBufferPrepareNeedSkip(reorder, parsed.twophase_xid,
+													 parsed.twophase_gid))
+				{
+					ReorderBufferProcessXid(reorder, parsed.twophase_xid,
+												buf->origptr);
+					break;
+				}
+
+				DecodePrepare(ctx, buf, &parsed);
+				break;
 			}
 		default:
 			elog(ERROR, "unexpected RM_XACT_ID record type: %u", info);

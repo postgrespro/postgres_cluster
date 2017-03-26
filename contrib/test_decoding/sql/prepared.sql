@@ -32,10 +32,9 @@ PREPARE TRANSACTION 'test_prepared#3';
 -- with ddl exists.
 
 -- separate table because of the lock from the ALTER
--- this will come before the '5' row above, as this commits before it.
 INSERT INTO test_prepared2 VALUES (7);
 
-COMMIT PREPARED 'test_prepared#3';
+ROLLBACK PREPARED 'test_prepared#3';
 
 -- make sure stuff still works
 INSERT INTO test_prepared1 VALUES (8);

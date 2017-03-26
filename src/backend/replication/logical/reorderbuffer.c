@@ -1669,6 +1669,27 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 	PG_END_TRY();
 }
 
+bool
+ReorderBufferPrepareNeedSkip(ReorderBuffer *rb, TransactionId xid, char *gid)
+{
+	ReorderBufferTXN *txn;
+
+	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr, false);
+	Assert(txn != NULL);
+	return rb->filter_prepare(rb, txn, gid);
+}
+
+void
+ReorderBufferStartPrepare()
+{
+
+}
+
+void
+ReorderBufferFinishPrepare()
+{
+
+}
 
 /*
  * Send standalone xact event. This is used to handle COMMIT/ABORT PREPARED.
