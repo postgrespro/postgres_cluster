@@ -908,7 +908,7 @@ static bool cfs_gc_file(char* map_path, bool noerror)
 			{
 				inode_t inode = newMap->inodes[i];
 				int size = CFS_INODE_SIZE(inode);
-				if (size != 0)
+				if (size != 0 && size < BLCKSZ)
 				{
 					char block[BLCKSZ];
 					char decomressedBlock[BLCKSZ];
@@ -926,7 +926,7 @@ static bool cfs_gc_file(char* map_path, bool noerror)
 						pg_atomic_fetch_sub_u32(&map->lock, CFS_GC_LOCK); /* release lock */
 						/* TODO Is it worth to PANIC or ERROR will be enough? */
 						elog(PANIC, "Verification failed for block %d of relation %s: error code %d",
-									 i, file_path, (int)res);					
+									 i, file_bck_path, (int)res);					
 					}
 				}
 			}
