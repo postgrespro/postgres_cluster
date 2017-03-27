@@ -224,8 +224,6 @@ DecodeXactOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	if (SnapBuildCurrentState(builder) < SNAPBUILD_FULL_SNAPSHOT)
 		return;
 
-	reorder->xact_action = info;
-
 	switch (info)
 	{
 		case XLOG_XACT_COMMIT:
@@ -627,14 +625,15 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 								 buf->origptr, buf->endptr);
 	}
 
-	if (TransactionIdIsValid(parsed->twophase_xid)) {
+	if (TransactionIdIsValid(parsed->twophase_xid) &&
+								ReorderBufferTxnIsPrepared(ctx->reorder, xid))
+	{
 		/*
 		 * We are processing COMMIT PREPARED and know that reorder buffer is
 		 * empty. So we can skip use shortcut for coomiting bare xact.
 		 */
-		strcpy(ctx->reorder->gid, parsed->twophase_gid);
-		ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
-							commit_time, origin_id, origin_lsn);
+		ReorderBufferFinishPrepared(ctx->reorder, xid, buf->origptr, buf->endptr,
+							commit_time, origin_id, origin_lsn, parsed->twophase_gid, true);
 	} else {
 		/* replay actions of all transaction + subtransactions in order */
 		ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
@@ -651,7 +650,6 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	XLogRecPtr	origin_id = XLogRecGetOrigin(buf->record);
 	int			i;
 	TransactionId xid = parsed->twophase_xid;
-	strcpy(ctx->reorder->gid, parsed->twophase_gid);
 
 	/*
 	 * Process invalidation messages, even if we're not interested in the
@@ -689,8 +687,8 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	}
 
 	/* replay actions of all transaction + subtransactions in order */
-	ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
-						commit_time, origin_id, origin_lsn);
+	ReorderBufferPrepare(ctx->reorder, xid, buf->origptr, buf->endptr,
+						commit_time, origin_id, origin_lsn, parsed->twophase_gid);
 }
 
 /*
@@ -709,13 +707,13 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	/*
 	 * If that is ROLLBACK PREPARED than send that to callbacks.
 	 */
-	if (TransactionIdIsValid(parsed->twophase_xid)
-			&& (parsed->dbId == ctx->slot->data.database)) {
-
-		strcpy(ctx->reorder->gid, parsed->twophase_gid);
-
-		ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
-							commit_time, origin_id, origin_lsn);
+	if (TransactionIdIsValid(xid) &&
+			parsed->dbId == ctx->slot->data.database &&
+			ReorderBufferTxnIsPrepared(ctx->reorder, xid))
+	{
+		ReorderBufferFinishPrepared(ctx->reorder, xid, buf->origptr, buf->endptr,
+						commit_time, origin_id, origin_lsn,
+						parsed->twophase_gid, false);
 		return;
 	}
 

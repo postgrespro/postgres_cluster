@@ -1308,20 +1308,17 @@ ReorderBufferFreeSnap(ReorderBuffer *rb, Snapshot snap)
  * the top and subtransactions (using a k-way merge) and replay the changes in
  * lsn order.
  */
-void
-ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
+static void
+ReorderBufferCommitInternal(ReorderBufferTXN *txn,
+					ReorderBuffer *rb, TransactionId xid,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 					TimestampTz commit_time,
 					RepOriginId origin_id, XLogRecPtr origin_lsn)
 {
-	ReorderBufferTXN *txn;
 	volatile Snapshot snapshot_now;
 	volatile CommandId command_id = FirstCommandId;
 	bool		using_subtxn;
 	ReorderBufferIterTXNState *volatile iterstate = NULL;
-
-	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
-								false);
 
 	/* unknown transaction, nothing to replay */
 	if (txn == NULL)
@@ -1332,8 +1329,6 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 	txn->commit_time = commit_time;
 	txn->origin_id = origin_id;
 	txn->origin_lsn = origin_lsn;
-	txn->xact_action = rb->xact_action;
-	memcpy(txn->gid, rb->gid, GIDSIZE);
 
 	/*
 	 * If this transaction didn't have any real changes in our database, it's
@@ -1607,8 +1602,11 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 		ReorderBufferIterTXNFinish(rb, iterstate);
 		iterstate = NULL;
 
-		/* call commit callback */
-		rb->commit(rb, txn, commit_lsn);
+		/* call commit or prepare callback */
+		if (txn->prepared)
+			rb->prepare(rb, txn, commit_lsn);
+		else
+			rb->commit(rb, txn, commit_lsn);
 
 		/* this is just a sanity check against bad output plugin behaviour */
 		if (GetCurrentTransactionIdIfAny() != InvalidTransactionId)
@@ -1676,29 +1674,65 @@ ReorderBufferPrepareNeedSkip(ReorderBuffer *rb, TransactionId xid, char *gid)
 
 	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr, false);
 	Assert(txn != NULL);
+	// ctx->callbacks.filter_prepare_cb
 	return rb->filter_prepare(rb, txn, gid);
 }
 
 void
-ReorderBufferStartPrepare()
+ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
+					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
+					TimestampTz commit_time,
+					RepOriginId origin_id, XLogRecPtr origin_lsn)
 {
+	ReorderBufferTXN *txn;
 
+	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
+								false);
+
+	ReorderBufferCommitInternal(txn, rb, xid, commit_lsn, end_lsn,
+										commit_time, origin_id, origin_lsn);
 }
 
 void
-ReorderBufferFinishPrepare()
+ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
+					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
+					TimestampTz commit_time,
+					RepOriginId origin_id, XLogRecPtr origin_lsn,
+					char *gid)
 {
+	ReorderBufferTXN *txn;
 
+	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
+								false);
+
+	txn->prepared = true;
+	strcpy(txn->gid, gid);
+
+	ReorderBufferCommitInternal(txn, rb, xid, commit_lsn, end_lsn,
+										commit_time, origin_id, origin_lsn);
+}
+
+bool
+ReorderBufferTxnIsPrepared(ReorderBuffer *rb, TransactionId xid)
+{
+	ReorderBufferTXN *txn;
+
+	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
+								false);
+
+	/* TXN not found mean that it was send already, isn't it? */
+	return txn == NULL ? true : txn->prepared;
 }
 
 /*
  * Send standalone xact event. This is used to handle COMMIT/ABORT PREPARED.
  */
 void
-ReorderBufferCommitBareXact(ReorderBuffer *rb, TransactionId xid,
+ReorderBufferFinishPrepared(ReorderBuffer *rb, TransactionId xid,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 					TimestampTz commit_time,
-					RepOriginId origin_id, XLogRecPtr origin_lsn)
+					RepOriginId origin_id, XLogRecPtr origin_lsn,
+					char *gid, bool is_commit)
 {
 	ReorderBufferTXN *txn;
 
@@ -1710,10 +1744,13 @@ ReorderBufferCommitBareXact(ReorderBuffer *rb, TransactionId xid,
 	txn->commit_time = commit_time;
 	txn->origin_id = origin_id;
 	txn->origin_lsn = origin_lsn;
-	txn->xact_action = rb->xact_action;
-	strcpy(txn->gid, rb->gid);
+	strcpy(txn->gid, gid);
 
-	rb->commit(rb, txn, commit_lsn);
+	if (is_commit)
+		rb->commit_prepared(rb, txn, commit_lsn);
+	else
+		rb->abort_prepared(rb, txn, commit_lsn);
+
 }
 
 /*

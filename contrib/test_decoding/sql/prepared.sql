@@ -25,16 +25,16 @@ BEGIN;
 INSERT INTO test_prepared1 VALUES (5);
 ALTER TABLE test_prepared1 ADD COLUMN data text;
 INSERT INTO test_prepared1 VALUES (6, 'frakbar');
-LOCK test_prepared1;
 PREPARE TRANSACTION 'test_prepared#3';
 
 -- test that we decode correctly while an uncommitted prepared xact
 -- with ddl exists.
 
 -- separate table because of the lock from the ALTER
+-- this will come before the '5' row above, as this commits before it.
 INSERT INTO test_prepared2 VALUES (7);
 
-ROLLBACK PREPARED 'test_prepared#3';
+COMMIT PREPARED 'test_prepared#3';
 
 -- make sure stuff still works
 INSERT INTO test_prepared1 VALUES (8);

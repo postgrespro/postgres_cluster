@@ -145,13 +145,15 @@ typedef struct ReorderBufferTXN
 	 */
 	TransactionId xid;
 
-	/*
-	 * Commit callback is used for COMMIT/PREPARE/COMMMIT PREPARED,
-	 * as well as abort for ROLLBACK and ROLLBACK PREPARED. Here
-	 * stored actual xact action allowing decoding plugin to distinguish them.
-	 */
-	uint8		xact_action;
+	/* In case of 2PC we need to pass GID to output plugin */
 	char		gid[GIDSIZE];
+
+	/*
+	 * We have ability to treat twophase transaction as ordinary one
+	 * with the help of filter_prepare callback.
+	 * XXX: try to reword that comment
+	 */
+	bool		prepared;
 
 	/* did the TX have catalog changes */
 	bool		has_catalog_changes;
@@ -331,10 +333,6 @@ struct ReorderBuffer
 	 */
 	HTAB	   *by_txn;
 
-	/* For twophase tx support we need to pass XACT action to ReorderBufferTXN */
-	uint8		xact_action;
-	char		gid[GIDSIZE];
-
 	/*
 	 * Transactions that could be a toplevel xact, ordered by LSN of the first
 	 * record bearing that xid.
@@ -413,10 +411,11 @@ void ReorderBufferQueueMessage(ReorderBuffer *, TransactionId, Snapshot snapshot
 void ReorderBufferCommit(ReorderBuffer *, TransactionId,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 	  TimestampTz commit_time, RepOriginId origin_id, XLogRecPtr origin_lsn);
-void ReorderBufferCommitBareXact(ReorderBuffer *rb, TransactionId xid,
+void ReorderBufferFinishPrepared(ReorderBuffer *rb, TransactionId xid,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 					TimestampTz commit_time,
-					RepOriginId origin_id, XLogRecPtr origin_lsn);
+					RepOriginId origin_id, XLogRecPtr origin_lsn,
+					char *gid, bool is_commit);
 void		ReorderBufferAssignChild(ReorderBuffer *, TransactionId, TransactionId, XLogRecPtr commit_lsn);
 void ReorderBufferCommitChild(ReorderBuffer *, TransactionId, TransactionId,
 						 XLogRecPtr commit_lsn, XLogRecPtr end_lsn);
@@ -441,7 +440,12 @@ bool		ReorderBufferXidHasCatalogChanges(ReorderBuffer *, TransactionId xid);
 bool		ReorderBufferXidHasBaseSnapshot(ReorderBuffer *, TransactionId xid);
 
 bool		ReorderBufferPrepareNeedSkip(ReorderBuffer *rb, TransactionId xid, char *gid);
-
+bool		ReorderBufferTxnIsPrepared(ReorderBuffer *rb, TransactionId xid);
+void		ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
+					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
+					TimestampTz commit_time,
+					RepOriginId origin_id, XLogRecPtr origin_lsn,
+					char *gid);
 ReorderBufferTXN *ReorderBufferGetOldestTXN(ReorderBuffer *);
 
 void		ReorderBufferSetRestartPoint(ReorderBuffer *, XLogRecPtr ptr);

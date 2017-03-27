@@ -814,8 +814,8 @@ filter_prepare_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn, char *gid
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
 
-	// /* set output state */
-	// ctx->accept_writes = false;
+	/* set output state */
+	ctx->accept_writes = true; // ->false
 
 	/* do the actual work: call callback */
 	ret = ctx->callbacks.filter_prepare_cb(ctx, txn, gid);

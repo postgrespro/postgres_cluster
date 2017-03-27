@@ -25,7 +25,6 @@ BEGIN;
 INSERT INTO test_prepared1 VALUES (5);
 ALTER TABLE test_prepared1 ADD COLUMN data text;
 INSERT INTO test_prepared1 VALUES (6, 'frakbar');
-LOCK test_prepared1;
 PREPARE TRANSACTION 'test_prepared#3';
 -- test that we decode correctly while an uncommitted prepared xact
 -- with ddl exists.
@@ -45,33 +44,27 @@ SELECT data FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL, 'inc
 -------------------------------------------------------------------------
  BEGIN
  table public.test_prepared1: INSERT: id[integer]:1
- PREPARE
- COMMIT PREPARED
+ COMMIT
  BEGIN
  table public.test_prepared1: INSERT: id[integer]:2
  COMMIT
  BEGIN
- table public.test_prepared1: INSERT: id[integer]:3
- PREPARE
- ABORT PREPARED
- BEGIN
  table public.test_prepared1: INSERT: id[integer]:4
+ COMMIT
+ BEGIN
+ table public.test_prepared2: INSERT: id[integer]:7
  COMMIT
  BEGIN
  table public.test_prepared1: INSERT: id[integer]:5
  table public.test_prepared1: INSERT: id[integer]:6 data[text]:'frakbar'
- PREPARE
- BEGIN
- table public.test_prepared2: INSERT: id[integer]:7
  COMMIT
- COMMIT PREPARED
  BEGIN
  table public.test_prepared1: INSERT: id[integer]:8 data[text]:null
  COMMIT
  BEGIN
  table public.test_prepared2: INSERT: id[integer]:9
  COMMIT
-(28 rows)
+(22 rows)
 
 SELECT pg_drop_replication_slot('regression_slot');
  pg_drop_replication_slot 
