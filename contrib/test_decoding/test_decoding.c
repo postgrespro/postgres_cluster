@@ -24,6 +24,8 @@
 #include "replication/message.h"
 #include "replication/origin.h"
 
+#include "storage/procarray.h"
+
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -283,15 +285,35 @@ pg_filter_prepare(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 {
 	TestDecodingData *data = ctx->output_plugin_private;
 
-	// has_catalog_changes?
-	// LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
+	if (!data->twophase_decoding)
+		return true;
 
-	// OutputPluginPrepareWrite(ctx, true);
+	if (txn->has_catalog_changes)
+	{
+		LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
 
-	// appendStringInfo(ctx->out, "pg_filter_prepare %s", gid);
+		if (TransactionIdIsInProgress(txn->xid))
+		{
+			/*
+			 * XXX
+			 */
+			LWLockRelease(TwoPhaseStateLock);
+			return true;
+		}
+		else if (TransactionIdDidAbort(txn->xid))
+		{
+			/*
+			 * Here we know that it is already aborted and should humble
+			 * ourselves.
+			 */
+			LWLockRelease(TwoPhaseStateLock);
+			return true;
+		}
 
-	// OutputPluginWrite(ctx, true);
-	return true;
+		LWLockRelease(TwoPhaseStateLock);
+	}
+
+	return false;
 }
 
 
@@ -307,7 +329,7 @@ pg_decode_prepare_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 	OutputPluginPrepareWrite(ctx, true);
 
-	appendStringInfo(ctx->out, "PREPARE! '%s'", txn->gid);
+	appendStringInfo(ctx->out, "PREPARE '%s'", txn->gid);
 
 	if (data->include_xids)
 		appendStringInfo(ctx->out, " %u", txn->xid);
