@@ -311,6 +311,17 @@ pg_filter_prepare(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 			/*
 			 * For the sake of simplicity we just ignore in-progess transaction
 			 * in this extension, as they may abort during deconing.
+			 *
+			 * It is possible to move that LWLockRelease() to pg_decode_prepare_txn()
+			 * and allow decoding of running prepared tx, but such lock will prevent
+			 * any 2pc transaction commit during decoding time, that can be big
+			 * enough in case of massive changes/inserts in that tx.
+			 *
+			 * Better solution would be to use own custom lock here and register
+			 * XACT_EVENT_PRE_COMMIT callback in extension to conflict with this
+			 * lock. Decode should hold it in shared way, while commit in excluseve.
+			 * That will allow to lock stuff granularly ang block only tx that is
+			 * being decoded.
 			 */
 			LWLockRelease(TwoPhaseStateLock);
 			return true;
