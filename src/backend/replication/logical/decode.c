@@ -663,7 +663,7 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		ReorderBufferXidSetCatalogChanges(ctx->reorder, xid, buf->origptr);
 	}
 
-	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
+	SnapBuildPrepareTxnStart(ctx->snapshot_builder, buf->origptr, xid,
 					   parsed->nsubxacts, parsed->subxacts);
 
 	if (SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr) ||
@@ -689,6 +689,8 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	/* replay actions of all transaction + subtransactions in order */
 	ReorderBufferPrepare(ctx->reorder, xid, buf->origptr, buf->endptr,
 						commit_time, origin_id, origin_lsn, parsed->twophase_gid);
+
+	SnapBuildPrepareTxnFinish(ctx->snapshot_builder, xid);
 }
 
 /*

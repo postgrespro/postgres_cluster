@@ -868,7 +868,7 @@ SnapBuildPurgeCommittedTxn(SnapBuild *builder)
 	/* copy xids that still are interesting to workspace */
 	for (off = 0; off < builder->committed.xcnt; off++)
 	{
-		if (NormalTransactionIdPrecedes(builder->committed.xip[off],
+		if (TransactionIdPrecedes(builder->committed.xip[off],
 										builder->xmin))
 			;					/* remove */
 		else
@@ -1101,6 +1101,29 @@ SnapBuildCommitTxn(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
 	}
 }
 
+void
+SnapBuildPrepareTxnStart(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
+				   int nsubxacts, TransactionId *subxacts)
+{
+	SnapBuildCommitTxn(builder, lsn, xid, nsubxacts, subxacts);
+}
+
+void
+SnapBuildPrepareTxnFinish(SnapBuild *builder, TransactionId xid)
+{
+	TransactionId *search = bsearch(&xid, builder->running.xip,
+				builder->running.xcnt_space, sizeof(TransactionId), xidComparator);
+
+	if (search == NULL)
+		return;
+
+	/* delete that xid */
+	memmove(search, search + 1,
+			((builder->running.xip + builder->running.xcnt - 1) - search) * sizeof(TransactionId));
+	builder->running.xcnt--;
+	builder->running.xmin = builder->running.xip[0];
+	builder->running.xmax = builder->running.xip[builder->running.xcnt - 1];
+}
 
 /* -----------------------------------
  * Snapshot building functions dealing with xlog records
