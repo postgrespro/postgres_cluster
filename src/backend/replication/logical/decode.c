@@ -651,6 +651,12 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	int			i;
 	TransactionId xid = parsed->twophase_xid;
 
+	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
+	{
+		origin_lsn = parsed->origin_lsn;
+		commit_time = parsed->origin_timestamp;
+	}
+
 	/*
 	 * Process invalidation messages, even if we're not interested in the
 	 * transaction's contents, since the various caches need to always be
@@ -703,8 +709,14 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 {
 	int			i;
 	XLogRecPtr	origin_lsn = InvalidXLogRecPtr;
-	XLogRecPtr	commit_time = InvalidXLogRecPtr;
+	TimestampTz	commit_time = 0;
 	XLogRecPtr	origin_id = XLogRecGetOrigin(buf->record);
+
+	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
+	{
+		origin_lsn = parsed->origin_lsn;
+		commit_time = parsed->origin_timestamp;
+	}
 
 	/*
 	 * If that is ROLLBACK PREPARED than send that to callbacks.
