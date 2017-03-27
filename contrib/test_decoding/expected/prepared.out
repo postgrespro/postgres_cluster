@@ -39,7 +39,7 @@ INSERT INTO test_prepared2 VALUES (9);
 DROP TABLE test_prepared1;
 DROP TABLE test_prepared2;
 -- show results
-SELECT data FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL, 'include-xids', '0', 'skip-empty-xacts', '1');
+SELECT data FROM pg_logical_slot_peek_changes('regression_slot', NULL, NULL, 'include-xids', '0', 'skip-empty-xacts', '1');
                                   data                                   
 -------------------------------------------------------------------------
  BEGIN
@@ -65,6 +65,39 @@ SELECT data FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL, 'inc
  table public.test_prepared2: INSERT: id[integer]:9
  COMMIT
 (22 rows)
+
+-- same but with twophase decoding
+SELECT data FROM pg_logical_slot_peek_changes('regression_slot', NULL, NULL, 'include-xids', '0', 'skip-empty-xacts', '1', 'twophase-decoding', '1');
+                                  data                                   
+-------------------------------------------------------------------------
+ BEGIN
+ table public.test_prepared1: INSERT: id[integer]:1
+ PREPARE 'test_prepared#1'
+ COMMIT PREPARED 'test_prepared#1'
+ BEGIN
+ table public.test_prepared1: INSERT: id[integer]:2
+ COMMIT
+ BEGIN
+ table public.test_prepared1: INSERT: id[integer]:3
+ PREPARE 'test_prepared#2'
+ ABORT PREPARED 'test_prepared#2'
+ BEGIN
+ table public.test_prepared1: INSERT: id[integer]:4
+ COMMIT
+ BEGIN
+ table public.test_prepared1: INSERT: id[integer]:5
+ table public.test_prepared1: INSERT: id[integer]:6 data[text]:'frakbar'
+ PREPARE 'test_prepared#3'
+ BEGIN
+ table public.test_prepared2: INSERT: id[integer]:7
+ COMMIT
+ BEGIN
+ table public.test_prepared1: INSERT: id[integer]:8 data[text]:null
+ COMMIT
+ BEGIN
+ table public.test_prepared2: INSERT: id[integer]:9
+ COMMIT
+(27 rows)
 
 SELECT pg_drop_replication_slot('regression_slot');
  pg_drop_replication_slot 
