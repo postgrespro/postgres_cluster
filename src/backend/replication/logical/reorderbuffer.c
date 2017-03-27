@@ -1667,17 +1667,24 @@ ReorderBufferCommitInternal(ReorderBufferTXN *txn,
 	PG_END_TRY();
 }
 
+/*
+ * Ask output plugin whether we want to skip this PREPARE and send
+ * this transaction as one-phase later on commit.
+ */
 bool
 ReorderBufferPrepareNeedSkip(ReorderBuffer *rb, TransactionId xid, char *gid)
 {
 	ReorderBufferTXN *txn;
 
 	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr, false);
-	Assert(txn != NULL);
-	// ctx->callbacks.filter_prepare_cb
+
 	return rb->filter_prepare(rb, txn, gid);
 }
 
+
+/*
+ * Commit non-twophase transaction. See comments to ReorderBufferCommitInternal()
+ */
 void
 ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
@@ -1693,6 +1700,10 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 										commit_time, origin_id, origin_lsn);
 }
 
+/*
+ * Prepare twophase transaction. It calls ReorderBufferCommitInternal()
+ * since all transaction changes should be decoded on PREPARE.
+ */
 void
 ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
@@ -1712,6 +1723,10 @@ ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
 										commit_time, origin_id, origin_lsn);
 }
 
+/*
+ * Check whether this transaction was sent as prepared to receiver.
+ * Called upon commit/abort prepared.
+ */
 bool
 ReorderBufferTxnIsPrepared(ReorderBuffer *rb, TransactionId xid)
 {
@@ -1720,7 +1735,6 @@ ReorderBufferTxnIsPrepared(ReorderBuffer *rb, TransactionId xid)
 	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
 								false);
 
-	/* TXN not found mean that it was send already, isn't it? */
 	return txn == NULL ? true : txn->prepared;
 }
 

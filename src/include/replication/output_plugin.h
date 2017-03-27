@@ -71,7 +71,7 @@ typedef void (*LogicalDecodeCommitCB) (struct LogicalDecodingContext *ctx,
  * Called before decoding of PREPARE record to decide whether this
  * transaction should be decoded with separate calls to prepare
  * and commit_prepared/abort_prepared callbacks or wait till COMMIT PREPARED
- * and send as usual transaction.
+ * and sent as usual transaction.
  */
 typedef bool (*LogicalDecodeFilterPrepareCB) (struct LogicalDecodingContext *ctx,
 													  ReorderBufferTXN *txn,

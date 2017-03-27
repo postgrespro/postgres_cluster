@@ -1101,6 +1101,13 @@ SnapBuildCommitTxn(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
 	}
 }
 
+/*
+ * Just a wrapper to clarify DecodePrepare().
+ * Right now we can't extract correct historic catalog data that
+ * was produced by aborted prepared transaction, so it work of
+ * decoding plugin to avoid such situation and here we just construct usual
+ * snapshot to able to decode prepare.
+ */
 void
 SnapBuildPrepareTxnStart(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
 				   int nsubxacts, TransactionId *subxacts)
@@ -1108,11 +1115,25 @@ SnapBuildPrepareTxnStart(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
 	SnapBuildCommitTxn(builder, lsn, xid, nsubxacts, subxacts);
 }
 
+
+/*
+ * When decoding of preppare is finished we want should exclude our xid
+ * from list of committed xids to have correct snapshot between prepare
+ * and commit.
+ *
+ * However, this is not sctrictly needed. Prepared transaction holds locks
+ * between prepare and commit so nodody can produce new version of our
+ * catalog tuples. In case of abort we will have this xid in array of
+ * commited xids, but it also will not cause a problem since checks of
+ * HeapTupleHeaderXminInvalid() in HeapTupleSatisfiesHistoricMVCC()
+ * have higher priority then checks for xip array. Anyway let's be consistent
+ * about definitions and delete this xid from xip array.
+ */
 void
 SnapBuildPrepareTxnFinish(SnapBuild *builder, TransactionId xid)
 {
 	TransactionId *search = bsearch(&xid, builder->running.xip,
-				builder->running.xcnt_space, sizeof(TransactionId), xidComparator);
+				builder->running.xcnt, sizeof(TransactionId), xidComparator);
 
 	if (search == NULL)
 		return;
@@ -1121,6 +1142,8 @@ SnapBuildPrepareTxnFinish(SnapBuild *builder, TransactionId xid)
 	memmove(search, search + 1,
 			((builder->running.xip + builder->running.xcnt - 1) - search) * sizeof(TransactionId));
 	builder->running.xcnt--;
+
+	/* update min/max */
 	builder->running.xmin = builder->running.xip[0];
 	builder->running.xmax = builder->running.xip[builder->running.xcnt - 1];
 }

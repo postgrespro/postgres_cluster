@@ -279,15 +279,29 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	OutputPluginWrite(ctx, true);
 }
 
+
+/* Filter out unnecessary two-phase transactions */
 static bool
 pg_filter_prepare(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					char *gid)
 {
 	TestDecodingData *data = ctx->output_plugin_private;
 
+	/* treat all transaction as one-phase */
 	if (!data->twophase_decoding)
 		return true;
 
+	/*
+	 * Two-phase transactions that accessed catalog require special treatment.
+	 *
+	 * Right now we don't have a save way to decode catalog changes made in
+	 * prepared transaction that was already aborted by the time of decoding.
+	 *
+	 * That kind of problem arises only when we are trying to retrospectively
+	 * decode aborted transactions. If one wants to code distributed commit
+	 * based on prepare decoding then commits/aborts will happend strictly after
+	 * decoding will be completed, so it is safe to skip any checks/locks here.
+	 */
 	if (txn->has_catalog_changes)
 	{
 		LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
@@ -295,7 +309,8 @@ pg_filter_prepare(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		if (TransactionIdIsInProgress(txn->xid))
 		{
 			/*
-			 * XXX
+			 * For the sake of simplicity we just ignore in-progess transaction
+			 * in this extension, as they may abort during deconing.
 			 */
 			LWLockRelease(TwoPhaseStateLock);
 			return true;
@@ -303,8 +318,9 @@ pg_filter_prepare(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		else if (TransactionIdDidAbort(txn->xid))
 		{
 			/*
-			 * Here we know that it is already aborted and should humble
-			 * ourselves.
+			 * Here we know that it is already aborted and there is no
+			 * mush sence in doing something with this transaction.
+			 * Consequent ABORT PREPARED will be suppressed.
 			 */
 			LWLockRelease(TwoPhaseStateLock);
 			return true;

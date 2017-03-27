@@ -149,9 +149,9 @@ typedef struct ReorderBufferTXN
 	char		gid[GIDSIZE];
 
 	/*
-	 * We have ability to treat twophase transaction as ordinary one
-	 * with the help of filter_prepare callback.
-	 * XXX: try to reword that comment
+	 * By using filter_prepare() callback we can force decoding to treat
+	 * two-phase transaction as on ordinary one. This flag is set if we are
+	 * actually called prepape() callback in output plugin.
 	 */
 	bool		prepared;
 

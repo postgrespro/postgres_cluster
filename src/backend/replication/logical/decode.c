@@ -295,7 +295,8 @@ DecodeXactOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 										XLogRecGetData(buf->record), &parsed);
 
 				/* does output plugin wants this particular transaction? */
-				if (ReorderBufferPrepareNeedSkip(reorder, parsed.twophase_xid,
+				if (ctx->callbacks.filter_prepare_cb &&
+					ReorderBufferPrepareNeedSkip(reorder, parsed.twophase_xid,
 													 parsed.twophase_gid))
 				{
 					ReorderBufferProcessXid(reorder, parsed.twophase_xid,
@@ -641,21 +642,22 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	}
 }
 
+
+/*
+ * Decode PREPARE record. Same logic as in COMMIT, but diffent calls
+ * to SnapshotBuilder as we need to mark this transaction as commited
+ * instead of running to properly decode it. When prepared transation
+ * is decoded we mark it in snapshot as running again.
+ */
 static void
 DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 			 xl_xact_parsed_prepare *parsed)
 {
-	XLogRecPtr	origin_lsn = InvalidXLogRecPtr;
-	TimestampTz	commit_time = 0;
+	XLogRecPtr	origin_lsn = parsed->origin_lsn;
+	TimestampTz	commit_time = parsed->origin_timestamp;
 	XLogRecPtr	origin_id = XLogRecGetOrigin(buf->record);
 	int			i;
 	TransactionId xid = parsed->twophase_xid;
-
-	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
-	{
-		origin_lsn = parsed->origin_lsn;
-		commit_time = parsed->origin_timestamp;
-	}
 
 	/*
 	 * Process invalidation messages, even if we're not interested in the
