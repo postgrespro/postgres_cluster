@@ -1719,6 +1719,8 @@ ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
 	txn->prepared = true;
 	strcpy(txn->gid, gid);
 
+	fprintf(stderr, "ReorderBufferPrepare xid = %d, found = %d\n", xid, txn == NULL ? 42 : txn->prepared);
+
 	ReorderBufferCommitInternal(txn, rb, xid, commit_lsn, end_lsn,
 										commit_time, origin_id, origin_lsn);
 }
@@ -1734,6 +1736,8 @@ ReorderBufferTxnIsPrepared(ReorderBuffer *rb, TransactionId xid)
 
 	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
 								false);
+
+	fprintf(stderr, "ReorderBufferTxnIsPrepared xid = %d, found = %d\n", xid, txn == NULL ? 42 : txn->prepared);
 
 	return txn == NULL ? true : txn->prepared;
 }

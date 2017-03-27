@@ -91,6 +91,7 @@ SELECT data FROM pg_logical_slot_peek_changes('regression_slot', NULL, NULL, 'in
  BEGIN
  table public.test_prepared2: INSERT: id[integer]:7
  COMMIT
+ COMMIT PREPARED 'test_prepared#3'
  BEGIN
  table public.test_prepared1: INSERT: id[integer]:8 data[text]:null
  COMMIT
