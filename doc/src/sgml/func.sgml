@@ -16721,6 +16721,10 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
    </indexterm>
 
    <indexterm>
+    <primary>pg_get_statisticsextdef</primary>
+   </indexterm>
+
+   <indexterm>
     <primary>pg_get_triggerdef</primary>
    </indexterm>
 
@@ -16890,6 +16894,11 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
        uses</entry>
       </row>
       <row>
+       <entry><literal><function>pg_get_statisticsextdef(<parameter>statext_oid</parameter>)</function></literal></entry>
+       <entry><type>text</type></entry>
+       <entry>get <command>CREATE STATISTICS</> command for extended statistics objects</entry>
+      </row>
+      <row>
        <entry><function>pg_get_triggerdef</function>(<parameter>trigger_oid</parameter>)</entry>
        <entry><type>text</type></entry>
        <entry>get <command>CREATE [ CONSTRAINT ] TRIGGER</> command for trigger</entry>
@@ -17034,19 +17043,20 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
   <para>
    <function>pg_get_constraintdef</function>,
    <function>pg_get_indexdef</function>, <function>pg_get_ruledef</function>,
-   and <function>pg_get_triggerdef</function>, respectively reconstruct the
-   creating command for a constraint, index, rule, or trigger. (Note that this
-   is a decompiled reconstruction, not the original text of the command.)
-   <function>pg_get_expr</function> decompiles the internal form of an
-   individual expression, such as the default value for a column.  It can be
-   useful when examining the contents of system catalogs.  If the expression
-   might contain Vars, specify the OID of the relation they refer to as the
-   second parameter; if no Vars are expected, zero is sufficient.
-   <function>pg_get_viewdef</function> reconstructs the <command>SELECT</>
-   query that defines a view. Most of these functions come in two variants,
-   one of which can optionally <quote>pretty-print</> the result.  The
-   pretty-printed format is more readable, but the default format is more
-   likely to be interpreted the same way by future versions of
+   <function>pg_get_statisticsextdef</function>, and
+   <function>pg_get_triggerdef</function>, respectively reconstruct the
+   creating command for a constraint, index, rule, extended statistics object,
+   or trigger. (Note that this is a decompiled reconstruction, not the
+   original text of the command.) <function>pg_get_expr</function> decompiles
+   the internal form of an individual expression, such as the default value
+   for a column.  It can be useful when examining the contents of system
+   catalogs.  If the expression might contain Vars, specify the OID of the
+   relation they refer to as the second parameter; if no Vars are expected,
+   zero is sufficient. <function>pg_get_viewdef</function> reconstructs the
+   <command>SELECT</> query that defines a view. Most of these functions come
+   in two variants, one of which can optionally <quote>pretty-print</> the
+   result.  The pretty-printed format is more readable, but the default format
+   is more likely to be interpreted the same way by future versions of
    <productname>PostgreSQL</>; avoid using pretty-printed output for dump
    purposes.  Passing <literal>false</> for the pretty-print parameter yields
    the same result as the variant that does not have the parameter at all.
@@ -17523,6 +17533,10 @@ SELECT collation for ('foo' COLLATE "de_DE");
     <primary>txid_visible_in_snapshot</primary>
    </indexterm>
 
+   <indexterm>
+    <primary>txid_status</primary>
+   </indexterm>
+
    <para>
     The functions shown in <xref linkend="functions-txid-snapshot">
     provide server transaction information in an exportable form.  The main
@@ -17572,6 +17586,11 @@ SELECT collation for ('foo' COLLATE "de_DE");
        <entry><literal><function>txid_visible_in_snapshot(<parameter>bigint</parameter>, <parameter>txid_snapshot</parameter>)</function></literal></entry>
        <entry><type>boolean</type></entry>
        <entry>is transaction ID visible in snapshot? (do not use with subtransaction ids)</entry>
+      </row>
+      <row>
+       <entry><literal><function>txid_status(<parameter>bigint</parameter>)</function></literal></entry>
+       <entry><type>txid_status</type></entry>
+       <entry>report the status of the given xact - <literal>committed</literal>, <literal>aborted</literal>, <literal>in progress</literal>, or NULL if the txid is too old</entry>
       </row>
      </tbody>
     </tgroup>
@@ -17640,6 +17659,24 @@ SELECT collation for ('foo' COLLATE "de_DE");
     <literal><replaceable>xmin</>:<replaceable>xmax</>:<replaceable>xip_list</></literal>.
     For example <literal>10:20:10,14,15</literal> means
     <literal>xmin=10, xmax=20, xip_list=10, 14, 15</literal>.
+   </para>
+
+   <para>
+    <function>txid_status(bigint)</> reports the commit status of a recent
+    transaction.  Applications may use it to determine whether a transaction
+    committed or aborted when the application and database server become
+    disconnected while a <literal>COMMIT</literal> is in progress.
+    The status of a transaction will be reported as either
+    <literal>in progress</>,
+    <literal>committed</>, or <literal>aborted</>, provided that the
+    transaction is recent enough that the system retains the commit status
+    of that transaction.  If is old enough that no references to that
+    transaction survive in the system and the commit status information has
+    been discarded, this function will return NULL.  Note that prepared
+    transactions are reported as <literal>in progress</>; applications must
+    check <link
+    linkend="view-pg-prepared-xacts"><literal>pg_prepared_xacts</></> if they
+    need to determine whether the txid is a prepared transaction.
    </para>
 
    <para>
@@ -18355,7 +18392,7 @@ SELECT set_config('log_statement_stats', 'off', false);
       </row>
       <row>
        <entry>
-        <literal><function>pg_stop_backup(<parameter>exclusive</> <type>boolean</>)</function></literal>
+        <literal><function>pg_stop_backup(<parameter>exclusive</> <type>boolean</> <optional>, <parameter>wait_for_archive</> <type>boolean</> </optional>)</function></literal>
         </entry>
        <entry><type>setof record</type></entry>
        <entry>Finish performing exclusive or non-exclusive on-line backup (restricted to superusers by default, but other users can be granted EXECUTE to run the function)</entry>
@@ -18439,7 +18476,13 @@ postgres=# select pg_start_backup('label_goes_here');
     <function>pg_start_backup</>. In a non-exclusive backup, the contents of
     the <filename>backup_label</> and <filename>tablespace_map</> are returned
     in the result of the function, and should be written to files in the
-    backup (and not in the data directory).
+    backup (and not in the data directory).  There is an optional second
+    parameter of type boolean.  If false, the <function>pg_stop_backup</>
+    will return immediately after the backup is completed without waiting for
+    WAL to be archived.  This behavior is only useful for backup
+    software which independently monitors WAL archiving. Otherwise, WAL
+    required to make the backup consistent might be missing and make the backup
+    useless.
    </para>
 
    <para>
@@ -19541,6 +19584,14 @@ postgres=# SELECT * FROM pg_walfile_name_offset(pg_stop_backup());
      <tbody>
       <row>
        <entry>
+        <indexterm><primary>pg_collation_actual_version</primary></indexterm>
+        <literal><function>pg_collation_actual_version(<type>oid</>)</function></literal>
+       </entry>
+       <entry><type>text</type></entry>
+       <entry>Return actual version of collation from operating system</entry>
+      </row>
+      <row>
+       <entry>
         <indexterm><primary>pg_import_system_collations</primary></indexterm>
         <literal><function>pg_import_system_collations(<parameter>if_not_exists</> <type>boolean</>, <parameter>schema</> <type>regnamespace</>)</function></literal>
        </entry>
@@ -19550,6 +19601,15 @@ postgres=# SELECT * FROM pg_walfile_name_offset(pg_stop_backup());
      </tbody>
     </tgroup>
    </table>
+
+   <para>
+    <function>pg_collation_actual_version</function> returns the actual
+    version of the collation object as it is currently installed in the
+    operating system.  If this is different from the value
+    in <literal>pg_collation.collversion</literal>, then objects depending on
+    the collation might need to be rebuilt.  See also
+    <xref linkend="sql-altercollation">.
+   </para>
 
    <para>
     <function>pg_import_system_collations</> populates the system

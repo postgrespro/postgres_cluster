@@ -314,7 +314,7 @@ SPI_execute(const char *src, bool read_only, long tcount)
 
 	memset(&plan, 0, sizeof(_SPI_plan));
 	plan.magic = _SPI_PLAN_MAGIC;
-	plan.cursor_options = 0;
+	plan.cursor_options = CURSOR_OPT_PARALLEL_OK;
 
 	_SPI_prepare_oneshot_plan(src, &plan);
 
@@ -458,7 +458,7 @@ SPI_execute_with_args(const char *src,
 
 	memset(&plan, 0, sizeof(_SPI_plan));
 	plan.magic = _SPI_PLAN_MAGIC;
-	plan.cursor_options = 0;
+	plan.cursor_options = CURSOR_OPT_PARALLEL_OK;
 	plan.nargs = nargs;
 	plan.argtypes = argtypes;
 	plan.parserSetup = NULL;
@@ -2305,7 +2305,7 @@ _SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, uint64 tcount)
 
 	ExecutorStart(queryDesc, eflags);
 
-	ExecutorRun(queryDesc, ForwardScanDirection, tcount);
+	ExecutorRun(queryDesc, ForwardScanDirection, tcount, true);
 
 	_SPI_current->processed = queryDesc->estate->es_processed;
 	_SPI_current->lastoid = queryDesc->estate->es_lastoid;

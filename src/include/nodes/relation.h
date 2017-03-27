@@ -529,6 +529,7 @@ typedef struct RelOptInfo
 	List	   *lateral_vars;	/* LATERAL Vars and PHVs referenced by rel */
 	Relids		lateral_referencers;	/* rels that reference me laterally */
 	List	   *indexlist;		/* list of IndexOptInfo */
+	List	   *statlist;		/* list of StatisticExtInfo */
 	BlockNumber pages;			/* size estimates derived from pg_class */
 	double		tuples;
 	double		allvisfrac;
@@ -668,6 +669,24 @@ typedef struct ForeignKeyOptInfo
 	List	   *rinfos[INDEX_MAX_KEYS];
 } ForeignKeyOptInfo;
 
+/*
+ * StatisticExtInfo
+ *		Information about extended statistics for planning/optimization
+ *
+ * This contains information about which columns are covered by the
+ * statistics (stakeys), which options were requested while adding the
+ * statistics (*_enabled), and which kinds of statistics were actually
+ * built and are available for the optimizer (*_built).
+ */
+typedef struct StatisticExtInfo
+{
+	NodeTag		type;
+
+	Oid			statOid;		/* OID of the statistics row */
+	RelOptInfo *rel;			/* back-link to index's table */
+	char		kind;			/* statistic kind of this entry */
+	Bitmapset  *keys;			/* attnums of the columns covered */
+} StatisticExtInfo;
 
 /*
  * EquivalenceClasses
@@ -1399,17 +1418,37 @@ typedef struct AggPath
 } AggPath;
 
 /*
- * GroupingSetsPath represents a GROUPING SETS aggregation
- *
- * Currently we only support this in sorted not hashed form, so the input
- * must always be appropriately presorted.
+ * Various annotations used for grouping sets in the planner.
  */
+
+typedef struct GroupingSetData
+{
+	NodeTag		type;
+	List	   *set;			/* grouping set as list of sortgrouprefs */
+	double		numGroups;		/* est. number of result groups */
+} GroupingSetData;
+
+typedef struct RollupData
+{
+	NodeTag		type;
+	List	   *groupClause;	/* applicable subset of parse->groupClause */
+	List	   *gsets;			/* lists of integer indexes into groupClause */
+	List	   *gsets_data;		/* list of GroupingSetData */
+	double		numGroups;		/* est. number of result groups */
+	bool		hashable;		/* can be hashed */
+	bool		is_hashed;		/* to be implemented as a hashagg */
+} RollupData;
+
+/*
+ * GroupingSetsPath represents a GROUPING SETS aggregation
+ */
+
 typedef struct GroupingSetsPath
 {
 	Path		path;
 	Path	   *subpath;		/* path representing input source */
-	List	   *rollup_groupclauses;	/* list of lists of SortGroupClause's */
-	List	   *rollup_lists;	/* parallel list of lists of grouping sets */
+	AggStrategy aggstrategy;	/* basic strategy */
+	List	   *rollups;		/* list of RollupData */
 	List	   *qual;			/* quals (HAVING quals), if any */
 } GroupingSetsPath;
 

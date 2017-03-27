@@ -590,10 +590,6 @@ StandbyLockTimeoutHandler(void)
  * RelationLockList, so we can keep track of the various entries made by
  * the Startup process's virtual xid in the shared lock table.
  *
- * We record the lock against the top-level xid, rather than individual
- * subtransaction xids. This means AccessExclusiveLocks held by aborted
- * subtransactions are not released as early as possible on standbys.
- *
  * List elements use type xl_rel_lock, since the WAL record type exactly
  * matches the information that we need to keep track of.
  *
@@ -1052,7 +1048,7 @@ LogAccessExclusiveLock(Oid dbOid, Oid relOid)
 {
 	xl_standby_lock xlrec;
 
-	xlrec.xid = GetTopTransactionId();
+	xlrec.xid = GetCurrentTransactionId();
 
 	/*
 	 * Decode the locktag back to the original values, to avoid sending lots
@@ -1063,6 +1059,7 @@ LogAccessExclusiveLock(Oid dbOid, Oid relOid)
 	xlrec.relOid = relOid;
 
 	LogAccessExclusiveLocks(1, &xlrec);
+	MyXactFlags |= XACT_FLAGS_ACQUIREDACCESSEXCLUSIVELOCK;
 }
 
 /*
@@ -1083,7 +1080,7 @@ LogAccessExclusiveLockPrepare(void)
 	 * GetRunningTransactionLocks() might see a lock associated with an
 	 * InvalidTransactionId which we later assert cannot happen.
 	 */
-	(void) GetTopTransactionId();
+	(void) GetCurrentTransactionId();
 }
 
 /*

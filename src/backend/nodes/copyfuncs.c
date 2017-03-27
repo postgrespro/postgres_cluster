@@ -3046,6 +3046,16 @@ _copyAlterTableCmd(const AlterTableCmd *from)
 	return newnode;
 }
 
+static AlterCollationStmt *
+_copyAlterCollationStmt(const AlterCollationStmt *from)
+{
+	AlterCollationStmt *newnode = makeNode(AlterCollationStmt);
+
+	COPY_NODE_FIELD(collname);
+
+	return newnode;
+}
+
 static AlterDomainStmt *
 _copyAlterDomainStmt(const AlterDomainStmt *from)
 {
@@ -3322,6 +3332,20 @@ _copyIndexStmt(const IndexStmt *from)
 	COPY_SCALAR_FIELD(initdeferred);
 	COPY_SCALAR_FIELD(transformed);
 	COPY_SCALAR_FIELD(concurrent);
+	COPY_SCALAR_FIELD(if_not_exists);
+
+	return newnode;
+}
+
+static CreateStatsStmt *
+_copyCreateStatsStmt(const CreateStatsStmt *from)
+{
+	CreateStatsStmt *newnode = makeNode(CreateStatsStmt);
+
+	COPY_NODE_FIELD(defnames);
+	COPY_NODE_FIELD(relation);
+	COPY_NODE_FIELD(keys);
+	COPY_NODE_FIELD(options);
 	COPY_SCALAR_FIELD(if_not_exists);
 
 	return newnode;
@@ -4450,7 +4474,10 @@ _copyAlterSubscriptionStmt(const AlterSubscriptionStmt *from)
 {
 	AlterSubscriptionStmt *newnode = makeNode(AlterSubscriptionStmt);
 
+	COPY_SCALAR_FIELD(kind);
 	COPY_STRING_FIELD(subname);
+	COPY_STRING_FIELD(conninfo);
+	COPY_NODE_FIELD(publication);
 	COPY_NODE_FIELD(options);
 
 	return newnode;
@@ -4983,6 +5010,9 @@ copyObject(const void *from)
 		case T_AlterTableCmd:
 			retval = _copyAlterTableCmd(from);
 			break;
+		case T_AlterCollationStmt:
+			retval = _copyAlterCollationStmt(from);
+			break;
 		case T_AlterDomainStmt:
 			retval = _copyAlterDomainStmt(from);
 			break;
@@ -5033,6 +5063,9 @@ copyObject(const void *from)
 			break;
 		case T_IndexStmt:
 			retval = _copyIndexStmt(from);
+			break;
+		case T_CreateStatsStmt:
+			retval = _copyCreateStatsStmt(from);
 			break;
 		case T_CreateFunctionStmt:
 			retval = _copyCreateFunctionStmt(from);

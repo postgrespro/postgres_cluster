@@ -503,7 +503,7 @@ init_execution_state(List *queryTree_list,
 			}
 			else
 				stmt = pg_plan_query(queryTree,
-						  fcache->readonly_func ? CURSOR_OPT_PARALLEL_OK : 0,
+									 CURSOR_OPT_PARALLEL_OK,
 									 NULL);
 
 			/*
@@ -855,7 +855,7 @@ postquel_getnext(execution_state *es, SQLFunctionCachePtr fcache)
 		/* Run regular commands to completion unless lazyEval */
 		uint64		count = (es->lazyEval) ? 1 : 0;
 
-		ExecutorRun(es->qd, ForwardScanDirection, count);
+		ExecutorRun(es->qd, ForwardScanDirection, count, !fcache->returnsSet || !es->lazyEval);
 
 		/*
 		 * If we requested run to completion OR there was no tuple returned,
@@ -1279,7 +1279,7 @@ fmgr_sql(PG_FUNCTION_ARGS)
 			rsi->returnMode = SFRM_Materialize;
 			rsi->setResult = fcache->tstore;
 			fcache->tstore = NULL;
-			/* must copy desc because execQual will free it */
+			/* must copy desc because execSRF.c will free it */
 			if (fcache->junkFilter)
 				rsi->setDesc = CreateTupleDescCopy(fcache->junkFilter->jf_cleanTupType);
 

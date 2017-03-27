@@ -799,22 +799,23 @@ PostgreSQL documentation
      </varlistentry>
 
      <varlistentry>
-      <term><option>--no-create-subscription-slots</option></term>
+      <term><option>--no-security-labels</option></term>
       <listitem>
        <para>
-        When dumping logical replication subscriptions,
-        generate <command>CREATE SUBSCRIPTION</command> commands that do not
-        create the remote replication slot.  That way, the dump can be
-        restored without requiring network access to the remote servers.
+        Do not dump security labels.
        </para>
       </listitem>
      </varlistentry>
 
      <varlistentry>
-      <term><option>--no-security-labels</option></term>
+      <term><option>--no-subscription-connect</option></term>
       <listitem>
        <para>
-        Do not dump security labels.
+        When dumping logical replication subscriptions,
+        generate <command>CREATE SUBSCRIPTION</command> commands that do not
+        make remote connections for creating replication slot or initial table
+        copy.  That way, the dump can be restored without requiring network
+        access to the remote servers.
        </para>
       </listitem>
      </varlistentry>
@@ -855,6 +856,20 @@ PostgreSQL documentation
         effect on whether or not the table definitions (schema) are dumped;
         it only suppresses dumping the table data. Data in unlogged tables
         is always excluded when dumping from a standby server.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-sync</option></term>
+      <listitem>
+       <para>
+        By default, <command>pg_dump</command> will wait for all files
+        to be written safely to disk.  This option causes
+        <command>pg_dump</command> to return without waiting, which is
+        faster, but means that a subsequent operating system crash can leave
+        the dump corrupt.  Generally, this option is useful for testing
+        but should not be used when dumping data from production installation.
        </para>
       </listitem>
      </varlistentry>

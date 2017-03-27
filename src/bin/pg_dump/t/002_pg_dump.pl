@@ -2424,7 +2424,7 @@ qr/^\QINSERT INTO test_fifth_table (col1, col2, col3, col4, col5) VALUES (NULL, 
 		  'CREATE COLLATION test0 FROM "C";',
 		regexp =>
 		  qr/^
-		  \QCREATE COLLATION test0 (lc_collate = 'C', lc_ctype = 'C');\E/xm,
+		  \QCREATE COLLATION test0 (provider = libc, locale = 'C');\E/xm,
 	    collation => 1,
 		like => {
 			binary_upgrade           => 1,
@@ -4224,7 +4224,7 @@ qr/CREATE TRANSFORM FOR integer LANGUAGE sql \(FROM SQL WITH FUNCTION pg_catalog
 		create_order => 50,
 		create_sql   => 'CREATE SUBSCRIPTION sub1
 						 CONNECTION \'dbname=doesnotexist\' PUBLICATION pub1
-						 WITH (DISABLED, NOCREATE SLOT);',
+						 WITH (DISABLED, NOCONNECT);',
 		regexp       => qr/^
 			\QCREATE SUBSCRIPTION sub1 CONNECTION 'dbname=doesnotexist' PUBLICATION pub1 WITH (DISABLED, SLOT NAME = 'sub1');\E
 			/xm,

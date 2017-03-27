@@ -31,9 +31,11 @@ typedef struct LogicalDecodingContext
 	/* memory context this is all allocated in */
 	MemoryContext context;
 
-	/* infrastructure pieces */
-	XLogReaderState *reader;
+	/* The associated replication slot */
 	ReplicationSlot *slot;
+
+	/* infrastructure pieces for decoding */
+	XLogReaderState *reader;
 	struct ReorderBuffer *reorder;
 	struct SnapBuild *snapshot_builder;
 
@@ -80,6 +82,7 @@ typedef struct LogicalDecodingContext
 	bool		twophase_hadling;
 } LogicalDecodingContext;
 
+
 extern void CheckLogicalDecodingRequirements(void);
 
 extern LogicalDecodingContext *CreateInitDecodingContext(char *plugin,
@@ -97,10 +100,18 @@ extern void DecodingContextFindStartpoint(LogicalDecodingContext *ctx);
 extern bool DecodingContextReady(LogicalDecodingContext *ctx);
 extern void FreeDecodingContext(LogicalDecodingContext *ctx);
 
+extern LogicalDecodingContext *CreateCopyDecodingContext(
+					  List *output_plugin_options,
+					  LogicalOutputPluginWriterPrepareWrite prepare_write,
+					  LogicalOutputPluginWriterWrite do_write);
+extern List *DecodingContextGetTableList(LogicalDecodingContext *ctx);
+
 extern void LogicalIncreaseXminForSlot(XLogRecPtr lsn, TransactionId xmin);
 extern void LogicalIncreaseRestartDecodingForSlot(XLogRecPtr current_lsn,
 									  XLogRecPtr restart_lsn);
 extern void LogicalConfirmReceivedLocation(XLogRecPtr lsn);
+
+extern void LagTrackerWrite(XLogRecPtr lsn, TimestampTz local_flush_time);
 
 extern bool filter_by_origin_cb_wrapper(LogicalDecodingContext *ctx, RepOriginId origin_id);
 #endif

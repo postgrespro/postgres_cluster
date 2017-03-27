@@ -23,14 +23,14 @@ test: numerology
 # ----------
 # The second group of parallel tests
 # ----------
-test: point lseg line box path polygon circle date time timetz timestamp timestamptz interval abstime reltime tinterval inet macaddr macaddr8 tstypes comments
+test: point lseg line box path polygon circle date time timetz timestamp timestamptz interval abstime reltime tinterval inet macaddr macaddr8 tstypes
 
 # ----------
 # Another group of parallel tests
 # geometry depends on point, lseg, box, path, polygon and circle
 # horology depends on interval, timetz, timestamp, timestamptz, reltime and abstime
 # ----------
-test: geometry horology regex oidjoins type_sanity opr_sanity expressions
+test: geometry horology regex oidjoins type_sanity opr_sanity comments expressions
 
 # ----------
 # These four each depend on the previous one
@@ -89,7 +89,7 @@ test: brin gin gist spgist privileges init_privs security_label collate matview 
 # ----------
 # Another group of parallel tests
 # ----------
-test: alter_generic alter_operator misc psql async dbsize misc_functions sysviews tsrf tidscan
+test: alter_generic alter_operator misc psql async dbsize misc_functions sysviews tsrf tidscan stats_ext
 
 # rules cannot run concurrently with any test that creates a view
 test: rules psql_crosstab amutils

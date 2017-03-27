@@ -1096,6 +1096,14 @@ _equalAlterTableCmd(const AlterTableCmd *a, const AlterTableCmd *b)
 }
 
 static bool
+_equalAlterCollationStmt(const AlterCollationStmt *a, const AlterCollationStmt *b)
+{
+	COMPARE_NODE_FIELD(collname);
+
+	return true;
+}
+
+static bool
 _equalAlterDomainStmt(const AlterDomainStmt *a, const AlterDomainStmt *b)
 {
 	COMPARE_SCALAR_FIELD(subtype);
@@ -1321,6 +1329,18 @@ _equalIndexStmt(const IndexStmt *a, const IndexStmt *b)
 	COMPARE_SCALAR_FIELD(initdeferred);
 	COMPARE_SCALAR_FIELD(transformed);
 	COMPARE_SCALAR_FIELD(concurrent);
+	COMPARE_SCALAR_FIELD(if_not_exists);
+
+	return true;
+}
+
+static bool
+_equalCreateStatsStmt(const CreateStatsStmt *a, const CreateStatsStmt *b)
+{
+	COMPARE_NODE_FIELD(defnames);
+	COMPARE_NODE_FIELD(relation);
+	COMPARE_NODE_FIELD(keys);
+	COMPARE_NODE_FIELD(options);
 	COMPARE_SCALAR_FIELD(if_not_exists);
 
 	return true;
@@ -2199,7 +2219,10 @@ static bool
 _equalAlterSubscriptionStmt(const AlterSubscriptionStmt *a,
 							const AlterSubscriptionStmt *b)
 {
+	COMPARE_SCALAR_FIELD(kind);
 	COMPARE_STRING_FIELD(subname);
+	COMPARE_STRING_FIELD(conninfo);
+	COMPARE_NODE_FIELD(publication);
 	COMPARE_NODE_FIELD(options);
 
 	return true;
@@ -3171,6 +3194,9 @@ equal(const void *a, const void *b)
 		case T_AlterTableCmd:
 			retval = _equalAlterTableCmd(a, b);
 			break;
+		case T_AlterCollationStmt:
+			retval = _equalAlterCollationStmt(a, b);
+			break;
 		case T_AlterDomainStmt:
 			retval = _equalAlterDomainStmt(a, b);
 			break;
@@ -3221,6 +3247,9 @@ equal(const void *a, const void *b)
 			break;
 		case T_IndexStmt:
 			retval = _equalIndexStmt(a, b);
+			break;
+		case T_CreateStatsStmt:
+			retval = _equalCreateStatsStmt(a, b);
 			break;
 		case T_CreateFunctionStmt:
 			retval = _equalCreateFunctionStmt(a, b);

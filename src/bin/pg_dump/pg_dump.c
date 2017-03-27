@@ -89,6 +89,8 @@ typedef enum OidOptions
 /* global decls */
 bool		g_verbose;			/* User wants verbose narration of our
 								 * activities. */
+static bool dosync = true;		/* Issue fsync() to make dump durable
+								 * on disk. */
 
 /* subquery used to convert user ID (eg, datdba) to user name */
 static const char *username_subquery;
@@ -190,6 +192,7 @@ static void dumpAttrDef(Archive *fout, AttrDefInfo *adinfo);
 static void dumpSequence(Archive *fout, TableInfo *tbinfo);
 static void dumpSequenceData(Archive *fout, TableDataInfo *tdinfo);
 static void dumpIndex(Archive *fout, IndxInfo *indxinfo);
+static void dumpStatisticsExt(Archive *fout, StatsExtInfo *statsextinfo);
 static void dumpConstraint(Archive *fout, ConstraintInfo *coninfo);
 static void dumpTableConstraintComment(Archive *fout, ConstraintInfo *coninfo);
 static void dumpTSParser(Archive *fout, TSParserInfo *prsinfo);
@@ -349,10 +352,11 @@ main(int argc, char **argv)
 		{"snapshot", required_argument, NULL, 6},
 		{"strict-names", no_argument, &strict_names, 1},
 		{"use-set-session-authorization", no_argument, &dopt.use_setsessauth, 1},
-		{"no-create-subscription-slots", no_argument, &dopt.no_create_subscription_slots, 1},
 		{"no-security-labels", no_argument, &dopt.no_security_labels, 1},
+		{"no-subscription-connect", no_argument, &dopt.no_subscription_connect, 1},
 		{"no-synchronized-snapshots", no_argument, &dopt.no_synchronized_snapshots, 1},
 		{"no-unlogged-table-data", no_argument, &dopt.no_unlogged_table_data, 1},
+		{"no-sync", no_argument, NULL, 7},
 
 		{NULL, 0, NULL, 0}
 	};
@@ -533,6 +537,10 @@ main(int argc, char **argv)
 				dumpsnapshot = pg_strdup(optarg);
 				break;
 
+			case 7:				/* no-sync */
+				dosync = false;
+				break;
+
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 				exit_nicely(1);
@@ -632,8 +640,8 @@ main(int argc, char **argv)
 		exit_horribly(NULL, "parallel backup only supported by the directory format\n");
 
 	/* Open the output file */
-	fout = CreateArchive(filename, archiveFormat, compressLevel, archiveMode,
-						 setupDumpWorker);
+	fout = CreateArchive(filename, archiveFormat, compressLevel, dosync,
+						 archiveMode, setupDumpWorker);
 
 	/* Make dump options accessible right away */
 	SetArchiveOptions(fout, &dopt, NULL);
@@ -914,6 +922,7 @@ help(const char *progname)
 	printf(_("  -V, --version                output version information, then exit\n"));
 	printf(_("  -Z, --compress=0-9           compression level for compressed formats\n"));
 	printf(_("  --lock-wait-timeout=TIMEOUT  fail after waiting TIMEOUT for a table lock\n"));
+	printf(_("  --no-sync                    do not wait for changes to be written safely to disk\n"));
 	printf(_("  -?, --help                   show this help, then exit\n"));
 
 	printf(_("\nOptions controlling the output content:\n"));
@@ -943,9 +952,8 @@ help(const char *progname)
 	printf(_("  --if-exists                  use IF EXISTS when dropping objects\n"));
 	printf(_("  --include-subscriptions      dump logical replication subscriptions\n"));
 	printf(_("  --inserts                    dump data as INSERT commands, rather than COPY\n"));
-	printf(_("  --no-create-subscription-slots\n"
-			 "                               do not create replication slots for subscriptions\n"));
 	printf(_("  --no-security-labels         do not dump security label assignments\n"));
+	printf(_("  --no-subscription-connect    dump subscriptions so they don't connect on restore\n"));
 	printf(_("  --no-synchronized-snapshots  do not use synchronized snapshots in parallel jobs\n"));
 	printf(_("  --no-tablespaces             do not dump tablespace assignments\n"));
 	printf(_("  --no-unlogged-table-data     do not dump unlogged table data\n"));
@@ -3766,8 +3774,8 @@ dumpSubscription(Archive *fout, SubscriptionInfo *subinfo)
 	appendPQExpBufferStr(query, ", SLOT NAME = ");
 	appendStringLiteralAH(query, subinfo->subslotname, fout);
 
-	if (dopt->no_create_subscription_slots)
-		appendPQExpBufferStr(query, ", NOCREATE SLOT");
+	if (dopt->no_subscription_connect)
+		appendPQExpBufferStr(query, ", NOCONNECT");
 
 	appendPQExpBufferStr(query, ");\n");
 
@@ -6576,6 +6584,99 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 }
 
 /*
+ * getExtendedStatistics
+ *	  get information about extended statistics on a dumpable table
+ *	  or materialized view.
+ *
+ * Note: extended statistics data is not returned directly to the caller, but
+ * it does get entered into the DumpableObject tables.
+ */
+void
+getExtendedStatistics(Archive *fout, TableInfo tblinfo[], int numTables)
+{
+	int				i,
+					j;
+	PQExpBuffer		query;
+	PGresult	   *res;
+	StatsExtInfo   *statsextinfo;
+	int				ntups;
+	int				i_tableoid;
+	int				i_oid;
+	int				i_staname;
+	int				i_stadef;
+
+	/* Extended statistics were new in v10 */
+	if (fout->remoteVersion < 100000)
+		return;
+
+	query = createPQExpBuffer();
+
+	for (i = 0; i < numTables; i++)
+	{
+		TableInfo  *tbinfo = &tblinfo[i];
+
+		/* Only plain tables and materialized views can have extended statistics. */
+		if (tbinfo->relkind != RELKIND_RELATION &&
+			tbinfo->relkind != RELKIND_MATVIEW)
+			continue;
+
+		/*
+		 * Ignore extended statistics of tables whose definitions are not to
+		 * be dumped.
+		 */
+		if (!(tbinfo->dobj.dump & DUMP_COMPONENT_DEFINITION))
+			continue;
+
+		if (g_verbose)
+			write_msg(NULL, "reading extended statistics for table \"%s.%s\"\n",
+					  tbinfo->dobj.namespace->dobj.name,
+					  tbinfo->dobj.name);
+
+		/* Make sure we are in proper schema so stadef is right */
+		selectSourceSchema(fout, tbinfo->dobj.namespace->dobj.name);
+
+		resetPQExpBuffer(query);
+
+		appendPQExpBuffer(query,
+						  "SELECT "
+							"tableoid, "
+							"oid, "
+							"staname, "
+						  "pg_catalog.pg_get_statisticsextdef(oid) AS stadef "
+						  "FROM pg_statistic_ext "
+						  "WHERE starelid = '%u' "
+						  "ORDER BY staname", tbinfo->dobj.catId.oid);
+
+		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
+
+		ntups = PQntuples(res);
+
+		i_tableoid = PQfnumber(res, "tableoid");
+		i_oid = PQfnumber(res, "oid");
+		i_staname = PQfnumber(res, "staname");
+		i_stadef = PQfnumber(res, "stadef");
+
+		statsextinfo = (StatsExtInfo *) pg_malloc(ntups * sizeof(StatsExtInfo));
+
+		for (j = 0; j < ntups; j++)
+		{
+			statsextinfo[j].dobj.objType = DO_STATSEXT;
+			statsextinfo[j].dobj.catId.tableoid = atooid(PQgetvalue(res, j, i_tableoid));
+			statsextinfo[j].dobj.catId.oid = atooid(PQgetvalue(res, j, i_oid));
+			AssignDumpId(&statsextinfo[j].dobj);
+			statsextinfo[j].dobj.name = pg_strdup(PQgetvalue(res, j, i_staname));
+			statsextinfo[j].dobj.namespace = tbinfo->dobj.namespace;
+			statsextinfo[j].statsexttable = tbinfo;
+			statsextinfo[j].statsextdef = pg_strdup(PQgetvalue(res, j, i_stadef));
+		}
+
+		PQclear(res);
+	}
+
+	destroyPQExpBuffer(query);
+}
+
+/*
  * getConstraints
  *
  * Get info about constraints on dumpable tables.
@@ -9226,6 +9327,9 @@ dumpDumpableObject(Archive *fout, DumpableObject *dobj)
 			break;
 		case DO_INDEX:
 			dumpIndex(fout, (IndxInfo *) dobj);
+			break;
+		case DO_STATSEXT:
+			dumpStatisticsExt(fout, (StatsExtInfo *) dobj);
 			break;
 		case DO_REFRESH_MATVIEW:
 			refreshMatViewData(fout, (TableDataInfo *) dobj);
@@ -12827,8 +12931,10 @@ dumpCollation(Archive *fout, CollInfo *collinfo)
 	PQExpBuffer delq;
 	PQExpBuffer labelq;
 	PGresult   *res;
+	int			i_collprovider;
 	int			i_collcollate;
 	int			i_collctype;
+	const char *collprovider;
 	const char *collcollate;
 	const char *collctype;
 
@@ -12845,18 +12951,32 @@ dumpCollation(Archive *fout, CollInfo *collinfo)
 	selectSourceSchema(fout, collinfo->dobj.namespace->dobj.name);
 
 	/* Get collation-specific details */
-	appendPQExpBuffer(query, "SELECT "
-					  "collcollate, "
-					  "collctype "
-					  "FROM pg_catalog.pg_collation c "
-					  "WHERE c.oid = '%u'::pg_catalog.oid",
-					  collinfo->dobj.catId.oid);
+	if (fout->remoteVersion >= 100000)
+		appendPQExpBuffer(query, "SELECT "
+						  "collprovider, "
+						  "collcollate, "
+						  "collctype, "
+						  "collversion "
+						  "FROM pg_catalog.pg_collation c "
+						  "WHERE c.oid = '%u'::pg_catalog.oid",
+						  collinfo->dobj.catId.oid);
+	else
+		appendPQExpBuffer(query, "SELECT "
+						  "'p'::char AS collprovider, "
+						  "collcollate, "
+						  "collctype, "
+						  "NULL AS collversion "
+						  "FROM pg_catalog.pg_collation c "
+						  "WHERE c.oid = '%u'::pg_catalog.oid",
+						  collinfo->dobj.catId.oid);
 
 	res = ExecuteSqlQueryForSingleRow(fout, query->data);
 
+	i_collprovider = PQfnumber(res, "collprovider");
 	i_collcollate = PQfnumber(res, "collcollate");
 	i_collctype = PQfnumber(res, "collctype");
 
+	collprovider = PQgetvalue(res, 0, i_collprovider);
 	collcollate = PQgetvalue(res, 0, i_collcollate);
 	collctype = PQgetvalue(res, 0, i_collctype);
 
@@ -12868,11 +12988,50 @@ dumpCollation(Archive *fout, CollInfo *collinfo)
 	appendPQExpBuffer(delq, ".%s;\n",
 					  fmtId(collinfo->dobj.name));
 
-	appendPQExpBuffer(q, "CREATE COLLATION %s (lc_collate = ",
+	appendPQExpBuffer(q, "CREATE COLLATION %s (",
 					  fmtId(collinfo->dobj.name));
-	appendStringLiteralAH(q, collcollate, fout);
-	appendPQExpBufferStr(q, ", lc_ctype = ");
-	appendStringLiteralAH(q, collctype, fout);
+
+	appendPQExpBufferStr(q, "provider = ");
+	if (collprovider[0] == 'c')
+		appendPQExpBufferStr(q, "libc");
+	else if (collprovider[0] == 'i')
+		appendPQExpBufferStr(q, "icu");
+	else
+		exit_horribly(NULL,
+					  "unrecognized collation provider: %s\n",
+					  collprovider);
+
+	if (strcmp(collcollate, collctype) == 0)
+	{
+		appendPQExpBufferStr(q, ", locale = ");
+		appendStringLiteralAH(q, collcollate, fout);
+	}
+	else
+	{
+		appendPQExpBufferStr(q, ", lc_collate = ");
+		appendStringLiteralAH(q, collcollate, fout);
+		appendPQExpBufferStr(q, ", lc_ctype = ");
+		appendStringLiteralAH(q, collctype, fout);
+	}
+
+	/*
+	 * For binary upgrade, carry over the collation version.  For normal
+	 * dump/restore, omit the version, so that it is computed upon restore.
+	 */
+	if (dopt->binary_upgrade)
+	{
+		int			i_collversion;
+
+		i_collversion = PQfnumber(res, "collversion");
+		if (!PQgetisnull(res, 0, i_collversion))
+		{
+			appendPQExpBufferStr(q, ", version = ");
+			appendStringLiteralAH(q,
+								  PQgetvalue(res, 0, i_collversion),
+								  fout);
+		}
+	}
+
 	appendPQExpBufferStr(q, ");\n");
 
 	appendPQExpBuffer(labelq, "COLLATION %s", fmtId(collinfo->dobj.name));
@@ -15667,6 +15826,61 @@ dumpIndex(Archive *fout, IndxInfo *indxinfo)
 }
 
 /*
+ * dumpStatisticsExt
+ *	  write out to fout an extended statistics object
+ */
+static void
+dumpStatisticsExt(Archive *fout, StatsExtInfo *statsextinfo)
+{
+	DumpOptions *dopt = fout->dopt;
+	TableInfo  *tbinfo = statsextinfo->statsexttable;
+	PQExpBuffer q;
+	PQExpBuffer delq;
+	PQExpBuffer labelq;
+
+	if (dopt->dataOnly)
+		return;
+
+	q = createPQExpBuffer();
+	delq = createPQExpBuffer();
+	labelq = createPQExpBuffer();
+
+	appendPQExpBuffer(labelq, "STATISTICS %s",
+					  fmtId(statsextinfo->dobj.name));
+
+	appendPQExpBuffer(q, "%s;\n", statsextinfo->statsextdef);
+
+	appendPQExpBuffer(delq, "DROP STATISTICS %s.",
+						  fmtId(tbinfo->dobj.namespace->dobj.name));
+	appendPQExpBuffer(delq, "%s;\n",
+						  fmtId(statsextinfo->dobj.name));
+
+	if (statsextinfo->dobj.dump & DUMP_COMPONENT_DEFINITION)
+			ArchiveEntry(fout, statsextinfo->dobj.catId,
+						 statsextinfo->dobj.dumpId,
+						 statsextinfo->dobj.name,
+						 tbinfo->dobj.namespace->dobj.name,
+						 NULL,
+						 tbinfo->rolname, false,
+						 "STATISTICS", SECTION_POST_DATA,
+						 q->data, delq->data, NULL,
+						 NULL, 0,
+						 NULL, NULL);
+
+	/* Dump Statistics Comments */
+	if (statsextinfo->dobj.dump & DUMP_COMPONENT_COMMENT)
+		dumpComment(fout, labelq->data,
+					tbinfo->dobj.namespace->dobj.name,
+					tbinfo->rolname,
+					statsextinfo->dobj.catId, 0,
+					statsextinfo->dobj.dumpId);
+
+	destroyPQExpBuffer(q);
+	destroyPQExpBuffer(delq);
+	destroyPQExpBuffer(labelq);
+}
+
+/*
  * dumpConstraint
  *	  write out to fout a user-defined constraint
  */
@@ -17204,6 +17418,7 @@ addBoundaryDependencies(DumpableObject **dobjs, int numObjs,
 				addObjectDependency(postDataBound, dobj->dumpId);
 				break;
 			case DO_INDEX:
+			case DO_STATSEXT:
 			case DO_REFRESH_MATVIEW:
 			case DO_TRIGGER:
 			case DO_EVENT_TRIGGER:

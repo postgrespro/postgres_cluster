@@ -696,6 +696,25 @@ typedef struct PgStat_GlobalStats
 
 
 /* ----------
+ * Backend types
+ * ----------
+ */
+typedef enum BackendType
+{
+	B_AUTOVAC_LAUNCHER,
+	B_AUTOVAC_WORKER,
+	B_BACKEND,
+	B_BG_WORKER,
+	B_BG_WRITER,
+	B_CHECKPOINTER,
+	B_STARTUP,
+	B_WAL_RECEIVER,
+	B_WAL_SENDER,
+	B_WAL_WRITER
+} BackendType;
+
+
+/* ----------
  * Backend states
  * ----------
  */
@@ -790,7 +809,9 @@ typedef enum
 	WAIT_EVENT_PARALLEL_FINISH,
 	WAIT_EVENT_PARALLEL_BITMAP_SCAN,
 	WAIT_EVENT_SAFE_SNAPSHOT,
-	WAIT_EVENT_SYNC_REP
+	WAIT_EVENT_SYNC_REP,
+	WAIT_EVENT_LOGICAL_SYNC_DATA,
+	WAIT_EVENT_LOGICAL_SYNC_STATE_CHANGE
 } WaitEventIPC;
 
 /* ----------
@@ -814,7 +835,7 @@ typedef enum
  */
 typedef enum
 {
-	WAIT_EVENT_BUFFILE_READ,
+	WAIT_EVENT_BUFFILE_READ = PG_WAIT_IO,
 	WAIT_EVENT_BUFFILE_WRITE,
 	WAIT_EVENT_CONTROL_FILE_READ,
 	WAIT_EVENT_CONTROL_FILE_SYNC,
@@ -827,7 +848,7 @@ typedef enum
 	WAIT_EVENT_DATA_FILE_FLUSH,
 	WAIT_EVENT_DATA_FILE_IMMEDIATE_SYNC,
 	WAIT_EVENT_DATA_FILE_PREFETCH,
-	WAIT_EVENT_DATA_FILE_READ = PG_WAIT_IO,
+	WAIT_EVENT_DATA_FILE_READ,
 	WAIT_EVENT_DATA_FILE_SYNC,
 	WAIT_EVENT_DATA_FILE_TRUNCATE,
 	WAIT_EVENT_DATA_FILE_WRITE,
@@ -925,6 +946,9 @@ typedef struct PgBackendSSLStatus
  * showing its current activity.  (The structs are allocated according to
  * BackendId, but that is not critical.)  Note that the collector process
  * has no involvement in, or even access to, these structs.
+ *
+ * Each auxiliary process also maintains a PgBackendStatus struct in shared
+ * memory.
  * ----------
  */
 typedef struct PgBackendStatus
@@ -948,6 +972,9 @@ typedef struct PgBackendStatus
 
 	/* The entry is valid iff st_procpid > 0, unused if st_procpid == 0 */
 	int			st_procpid;
+
+	/* Type of backends */
+	BackendType st_backendType;
 
 	/* Times when current backend, transaction, and activity started */
 	TimestampTz st_proc_start_timestamp;
@@ -1147,6 +1174,7 @@ extern const char *pgstat_get_wait_event_type(uint32 wait_event_info);
 extern const char *pgstat_get_backend_current_activity(int pid, bool checkUser);
 extern const char *pgstat_get_crashed_backend_activity(int pid, char *buffer,
 									int buflen);
+extern const char *pgstat_get_backend_desc(BackendType backendType);
 
 extern void pgstat_progress_start_command(ProgressCommandType cmdtype,
 							  Oid relid);

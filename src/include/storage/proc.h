@@ -39,13 +39,23 @@ struct XidCache
 	TransactionId xids[PGPROC_MAX_CACHED_SUBXIDS];
 };
 
-/* Flags for PGXACT->vacuumFlags */
+/*
+ * Flags for PGXACT->vacuumFlags
+ *
+ * Note: If you modify these flags, you need to modify PROCARRAY_XXX flags
+ * in src/include/storage/procarray.h.
+ *
+ * PROC_RESERVED may later be assigned for use in vacuumFlags, but its value is
+ * used for PROCARRAY_SLOTS_XMIN in procarray.h, so GetOldestXmin won't be able
+ * to match and ignore processes with this flag set.
+ */
 #define		PROC_IS_AUTOVACUUM	0x01	/* is it an autovac worker? */
 #define		PROC_IN_VACUUM		0x02	/* currently running lazy vacuum */
 #define		PROC_IN_ANALYZE		0x04	/* currently running analyze */
 #define		PROC_VACUUM_FOR_WRAPAROUND	0x08	/* set by autovac only */
 #define		PROC_IN_LOGICAL_DECODING	0x10	/* currently doing logical
 												 * decoding outside xact */
+#define		PROC_RESERVED				0x20	/* reserved for procarray */
 
 /* flags reset at EOXact */
 #define		PROC_VACUUM_STATE_MASK \
@@ -262,7 +272,6 @@ extern PGPROC *PreparedXactProcs;
  */
 #define NUM_AUXILIARY_PROCS		4
 
-
 /* configurable options */
 extern int	DeadlockTimeout;
 extern int	StatementTimeout;
@@ -298,6 +307,8 @@ extern void LockErrorCleanup(void);
 
 extern void ProcWaitForSignal(uint32 wait_event_info);
 extern void ProcSendSignal(int pid);
+
+extern PGPROC *AuxiliaryPidGetProc(int pid);
 
 extern void BecomeLockGroupLeader(void);
 extern bool BecomeLockGroupMember(PGPROC *leader, int pid);

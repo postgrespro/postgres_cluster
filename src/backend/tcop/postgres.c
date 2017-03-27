@@ -1101,6 +1101,7 @@ exec_simple_query(const char *query_string)
 		(void) PortalRun(portal,
 						 FETCH_ALL,
 						 isTopLevel,
+						 true,
 						 receiver,
 						 receiver,
 						 completionTag);
@@ -1985,6 +1986,7 @@ exec_execute_message(const char *portal_name, long max_rows)
 	completed = PortalRun(portal,
 						  max_rows,
 						  true, /* always top level */
+						  !execute_is_fetch && max_rows == FETCH_ALL,
 						  receiver,
 						  receiver,
 						  completionTag);
@@ -4061,7 +4063,10 @@ PostgresMain(int argc, char *argv[],
 					pq_getmsgend(&input_message);
 
 					if (am_walsender)
-						exec_replication_command(query_string);
+					{
+						if (!exec_replication_command(query_string))
+							exec_simple_query(query_string);
+					}
 					else
 						exec_simple_query(query_string);
 

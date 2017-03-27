@@ -921,8 +921,12 @@ get_qual_from_partbound(Relation rel, Relation parent, Node *bound)
  * map_partition_varattnos - maps varattno of any Vars in expr from the
  * parent attno to partition attno.
  *
- * We must allow for a case where physical attnos of a partition can be
+ * We must allow for cases where physical attnos of a partition can be
  * different from the parent's.
+ *
+ * Note: this will work on any node tree, so really the argument and result
+ * should be declared "Node *".  But a substantial majority of the callers
+ * are working on Lists, so it's less messy to do the casts internally.
  */
 List *
 map_partition_varattnos(List *expr, int target_varno,
@@ -1618,8 +1622,7 @@ FormPartitionKeyDatum(PartitionDispatch pd,
 			   GetPerTupleExprContext(estate)->ecxt_scantuple == slot);
 
 		/* First time through, set up expression evaluation state */
-		pd->keystate = (List *) ExecPrepareExpr((Expr *) pd->key->partexprs,
-												estate);
+		pd->keystate = ExecPrepareExprList(pd->key->partexprs, estate);
 	}
 
 	partexpr_item = list_head(pd->keystate);
@@ -1726,10 +1729,14 @@ get_partition_for_tuple(PartitionDispatch *pd,
 						errmsg("range partition key of row contains null")));
 		}
 
-		if (partdesc->boundinfo->has_null && isnull[0])
-			/* Tuple maps to the null-accepting list partition */
+		/*
+		 * A null partition key is only acceptable if null-accepting list
+		 * partition exists.
+		 */
+		cur_index = -1;
+		if (isnull[0] && partdesc->boundinfo->has_null)
 			cur_index = partdesc->boundinfo->null_index;
-		else
+		else if (!isnull[0])
 		{
 			/* Else bsearch in partdesc->boundinfo */
 			bool		equal = false;

@@ -35,6 +35,7 @@
 #include "catalog/pg_operator.h"
 #include "catalog/pg_partitioned_table.h"
 #include "catalog/pg_proc.h"
+#include "catalog/pg_statistic_ext.h"
 #include "catalog/pg_trigger.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
@@ -317,6 +318,7 @@ static char *pg_get_indexdef_worker(Oid indexrelid, int colno,
 					   const Oid *excludeOps,
 					   bool attrsOnly, bool showTblSpc,
 					   int prettyFlags, bool missing_ok);
+static char *pg_get_statisticsext_worker(Oid statextid, bool missing_ok);
 static char *pg_get_partkeydef_worker(Oid relid, int prettyFlags,
 						 bool attrsOnly);
 static char *pg_get_constraintdef_worker(Oid constraintId, bool fullCommand,
@@ -1417,6 +1419,75 @@ pg_get_indexdef_worker(Oid indexrelid, int colno,
 	ReleaseSysCache(ht_idx);
 	ReleaseSysCache(ht_idxrel);
 	ReleaseSysCache(ht_am);
+
+	return buf.data;
+}
+
+/*
+ * pg_get_statisticsextdef
+ *		Get the definition of an extended statistics object
+ */
+Datum
+pg_get_statisticsextdef(PG_FUNCTION_ARGS)
+{
+	Oid			statextid = PG_GETARG_OID(0);
+	char	   *res;
+
+	res = pg_get_statisticsext_worker(statextid, true);
+
+	if (res == NULL)
+		PG_RETURN_NULL();
+
+	PG_RETURN_TEXT_P(string_to_text(res));
+}
+
+/*
+ * Internal workhorse to decompile an extended statistics object.
+ */
+static char *
+pg_get_statisticsext_worker(Oid statextid, bool missing_ok)
+{
+	Form_pg_statistic_ext	statextrec;
+	HeapTuple	statexttup;
+	StringInfoData buf;
+	int			colno;
+	char	   *nsp;
+
+	statexttup = SearchSysCache1(STATEXTOID, ObjectIdGetDatum(statextid));
+
+	if (!HeapTupleIsValid(statexttup))
+	{
+		if (missing_ok)
+			return NULL;
+		elog(ERROR, "cache lookup failed for extended statistics %u", statextid);
+	}
+
+	statextrec = (Form_pg_statistic_ext) GETSTRUCT(statexttup);
+
+	initStringInfo(&buf);
+
+	nsp = get_namespace_name(statextrec->stanamespace);
+	appendStringInfo(&buf, "CREATE STATISTICS %s ON (",
+					 quote_qualified_identifier(nsp,
+												NameStr(statextrec->staname)));
+
+	for (colno = 0; colno < statextrec->stakeys.dim1; colno++)
+	{
+		AttrNumber	attnum = statextrec->stakeys.values[colno];
+		char	   *attname;
+
+		if (colno > 0)
+			appendStringInfoString(&buf, ", ");
+
+		attname = get_relid_attribute_name(statextrec->starelid, attnum);
+
+		appendStringInfoString(&buf, quote_identifier(attname));
+	}
+
+	appendStringInfo(&buf, ") FROM %s",
+					 generate_relation_name(statextrec->starelid, NIL));
+
+	ReleaseSysCache(statexttup);
 
 	return buf.data;
 }
@@ -6919,7 +6990,7 @@ find_param_referent(Param *param, deparse_context *context,
 			foreach(lc2, ps->subPlan)
 			{
 				SubPlanState *sstate = (SubPlanState *) lfirst(lc2);
-				SubPlan    *subplan = (SubPlan *) sstate->xprstate.expr;
+				SubPlan    *subplan = sstate->subplan;
 				ListCell   *lc3;
 				ListCell   *lc4;
 
@@ -6960,7 +7031,7 @@ find_param_referent(Param *param, deparse_context *context,
 					continue;
 
 				/* No parameters to be had here. */
-				Assert(((SubPlan *) sstate->xprstate.expr)->parParam == NIL);
+				Assert(sstate->subplan->parParam == NIL);
 
 				/* Keep looking, but we are emerging from an initplan. */
 				in_same_plan_level = false;

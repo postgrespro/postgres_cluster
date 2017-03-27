@@ -1593,6 +1593,7 @@ typedef enum ObjectType
 	OBJECT_SCHEMA,
 	OBJECT_SEQUENCE,
 	OBJECT_SUBSCRIPTION,
+	OBJECT_STATISTIC_EXT,
 	OBJECT_TABCONSTRAINT,
 	OBJECT_TABLE,
 	OBJECT_TABLESPACE,
@@ -1730,6 +1731,17 @@ typedef struct AlterTableCmd	/* one subcommand of an ALTER TABLE */
 	DropBehavior behavior;		/* RESTRICT or CASCADE for DROP cases */
 	bool		missing_ok;		/* skip error if missing? */
 } AlterTableCmd;
+
+
+/* ----------------------
+ * Alter Collation
+ * ----------------------
+ */
+typedef struct AlterCollationStmt
+{
+	NodeTag		type;
+	List	   *collname;
+} AlterCollationStmt;
 
 
 /* ----------------------
@@ -2646,6 +2658,20 @@ typedef struct IndexStmt
 } IndexStmt;
 
 /* ----------------------
+ *		Create Statistics Statement
+ * ----------------------
+ */
+typedef struct CreateStatsStmt
+{
+	NodeTag		type;
+	List	   *defnames;		/* qualified name (list of Value strings) */
+	RangeVar   *relation;		/* relation to build statistics on */
+	List	   *keys;			/* String nodes naming referenced columns */
+	List	   *options;		/* list of DefElem */
+	bool		if_not_exists;	/* do nothing if statistics already exists */
+} CreateStatsStmt;
+
+/* ----------------------
  *		Create Function Statement
  * ----------------------
  */
@@ -3319,10 +3345,23 @@ typedef struct CreateSubscriptionStmt
 	List	   *options;		/* List of DefElem nodes */
 } CreateSubscriptionStmt;
 
+typedef enum AlterSubscriptionType
+{
+	ALTER_SUBSCRIPTION_OPTIONS,
+	ALTER_SUBSCRIPTION_CONNECTION,
+	ALTER_SUBSCRIPTION_PUBLICATION,
+	ALTER_SUBSCRIPTION_PUBLICATION_REFRESH,
+	ALTER_SUBSCRIPTION_REFRESH,
+	ALTER_SUBSCRIPTION_ENABLED
+} AlterSubscriptionType;
+
 typedef struct AlterSubscriptionStmt
 {
 	NodeTag		type;
+	AlterSubscriptionType kind;	/* ALTER_SUBSCRIPTION_OPTIONS, etc */
 	char	   *subname;		/* Name of of the subscription */
+	char	   *conninfo;		/* Connection string to publisher */
+	List	   *publication;	/* One or more publication to subscribe to */
 	List	   *options;		/* List of DefElem nodes */
 } AlterSubscriptionStmt;
 

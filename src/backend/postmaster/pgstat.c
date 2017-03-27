@@ -50,6 +50,7 @@
 #include "postmaster/autovacuum.h"
 #include "postmaster/fork_process.h"
 #include "postmaster/postmaster.h"
+#include "replication/walsender.h"
 #include "storage/backendid.h"
 #include "storage/dsm.h"
 #include "storage/fd.h"
@@ -100,6 +101,18 @@
 #define PGSTAT_DB_HASH_SIZE		16
 #define PGSTAT_TAB_HASH_SIZE	512
 #define PGSTAT_FUNCTION_HASH_SIZE	512
+
+
+/* ----------
+ * Total number of backends including auxiliary
+ *
+ * We reserve a slot for each possible BackendId, plus one for each
+ * possible auxiliary process type.  (This scheme assumes there is not
+ * more than one of any auxiliary process type at a time.) MaxBackends
+ * includes autovacuum workers and background workers as well.
+ * ----------
+ */
+#define NumBackendStatSlots (MaxBackends + NUM_AUXPROCTYPES)
 
 
 /* ----------
@@ -161,6 +174,20 @@ typedef struct TabStatusArray
 static TabStatusArray *pgStatTabList = NULL;
 
 /*
+ * pgStatTabHash entry
+ */
+typedef struct TabStatHashEntry
+{
+	Oid t_id;
+	PgStat_TableStatus* tsa_entry;
+} TabStatHashEntry;
+
+/*
+ * Hash table for O(1) t_id -> tsa_entry lookup
+ */
+static HTAB *pgStatTabHash = NULL;
+
+/*
  * Backends store per-function info that's waiting to be sent to the collector
  * in this hash table (indexed by function OID).
  */
@@ -212,7 +239,11 @@ typedef struct TwoPhasePgStatRecord
  */
 static MemoryContext pgStatLocalContext = NULL;
 static HTAB *pgStatDBHash = NULL;
+
+/* Status for backends including auxiliary */
 static LocalPgBackendStatus *localBackendStatusTable = NULL;
+
+/* Total number of backends including auxiliary */
 static int	localNumBackends = 0;
 
 /*
@@ -822,6 +853,14 @@ pgstat_report_stat(bool force)
 			   tsa->tsa_used * sizeof(PgStat_TableStatus));
 		tsa->tsa_used = 0;
 	}
+
+	/*
+	 * pgStatTabHash is outdated on this point so we have to clean it,
+	 * hash_destroy() will remove hash memory context, allocated in
+	 * make_sure_stat_tab_initialized()
+	 */
+	hash_destroy(pgStatTabHash);
+	pgStatTabHash = NULL;
 
 	/*
 	 * Send partial messages.  Make sure that any pending xact commit/abort
@@ -1668,59 +1707,87 @@ pgstat_initstats(Relation rel)
 }
 
 /*
+ * Make sure pgStatTabList and pgStatTabHash are initialized.
+ */
+static void
+make_sure_stat_tab_initialized()
+{
+	HASHCTL			ctl;
+	MemoryContext	new_ctx;
+
+	if(!pgStatTabList)
+	{
+		/* This is first time procedure is called */
+		pgStatTabList = (TabStatusArray *) MemoryContextAllocZero(TopMemoryContext,
+												sizeof(TabStatusArray));
+	}
+
+	if(pgStatTabHash)
+		return;
+
+	/* Hash table was freed or never existed.  */
+
+	new_ctx = AllocSetContextCreate(
+		TopMemoryContext,
+		"PGStatLookupHashTableContext",
+		ALLOCSET_DEFAULT_SIZES);
+
+	memset(&ctl, 0, sizeof(ctl));
+	ctl.keysize = sizeof(Oid);
+	ctl.entrysize = sizeof(TabStatHashEntry);
+	ctl.hcxt = new_ctx;
+
+	pgStatTabHash = hash_create("pgstat t_id to tsa_entry lookup hash table",
+		TABSTAT_QUANTUM, &ctl, HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+}
+
+/*
  * get_tabstat_entry - find or create a PgStat_TableStatus entry for rel
  */
 static PgStat_TableStatus *
 get_tabstat_entry(Oid rel_id, bool isshared)
 {
+	TabStatHashEntry* hash_entry;
 	PgStat_TableStatus *entry;
 	TabStatusArray *tsa;
-	TabStatusArray *prev_tsa;
-	int			i;
+	bool found;
+
+	make_sure_stat_tab_initialized();
 
 	/*
-	 * Search the already-used tabstat slots for this relation.
+	 * Find an entry or create a new one.
 	 */
-	prev_tsa = NULL;
-	for (tsa = pgStatTabList; tsa != NULL; prev_tsa = tsa, tsa = tsa->tsa_next)
+	hash_entry = hash_search(pgStatTabHash, &rel_id, HASH_ENTER, &found);
+	if(found)
+		return hash_entry->tsa_entry;
+
+	/*
+	 * `hash_entry` was just created and now we have to fill it.
+	 * First make sure there is a free space in a last element of pgStatTabList.
+	 */
+	tsa = pgStatTabList;
+	while(tsa->tsa_used == TABSTAT_QUANTUM)
 	{
-		for (i = 0; i < tsa->tsa_used; i++)
+		if(tsa->tsa_next == NULL)
 		{
-			entry = &tsa->tsa_entries[i];
-			if (entry->t_id == rel_id)
-				return entry;
+			tsa->tsa_next = (TabStatusArray *) MemoryContextAllocZero(TopMemoryContext,
+														sizeof(TabStatusArray));
 		}
 
-		if (tsa->tsa_used < TABSTAT_QUANTUM)
-		{
-			/*
-			 * It must not be present, but we found a free slot instead. Fine,
-			 * let's use this one.  We assume the entry was already zeroed,
-			 * either at creation or after last use.
-			 */
-			entry = &tsa->tsa_entries[tsa->tsa_used++];
-			entry->t_id = rel_id;
-			entry->t_shared = isshared;
-			return entry;
-		}
+		tsa = tsa->tsa_next;
 	}
 
 	/*
-	 * We ran out of tabstat slots, so allocate more.  Be sure they're zeroed.
-	 */
-	tsa = (TabStatusArray *) MemoryContextAllocZero(TopMemoryContext,
-													sizeof(TabStatusArray));
-	if (prev_tsa)
-		prev_tsa->tsa_next = tsa;
-	else
-		pgStatTabList = tsa;
-
-	/*
-	 * Use the first entry of the new TabStatusArray.
+	 * Add an entry.
 	 */
 	entry = &tsa->tsa_entries[tsa->tsa_used++];
 	entry->t_id = rel_id;
 	entry->t_shared = isshared;
+
+	/*
+	 * Add a corresponding entry to pgStatTabHash.
+	 */
+	hash_entry->tsa_entry = entry;
 	return entry;
 }
 
@@ -1732,22 +1799,19 @@ get_tabstat_entry(Oid rel_id, bool isshared)
 PgStat_TableStatus *
 find_tabstat_entry(Oid rel_id)
 {
-	PgStat_TableStatus *entry;
-	TabStatusArray *tsa;
-	int			i;
+	TabStatHashEntry* hash_entry;
 
-	for (tsa = pgStatTabList; tsa != NULL; tsa = tsa->tsa_next)
-	{
-		for (i = 0; i < tsa->tsa_used; i++)
-		{
-			entry = &tsa->tsa_entries[i];
-			if (entry->t_id == rel_id)
-				return entry;
-		}
-	}
+	/*
+	 * There are no entries at all.
+	 */
+	if(!pgStatTabHash)
+		return NULL;
 
-	/* Not present */
-	return NULL;
+	hash_entry = hash_search(pgStatTabHash, &rel_id, HASH_FIND, NULL);
+	if(!hash_entry)
+		return NULL;
+
+	return hash_entry->tsa_entry;
 }
 
 /*
@@ -2505,20 +2569,20 @@ BackendStatusShmemSize(void)
 	Size		size;
 
 	/* BackendStatusArray: */
-	size = mul_size(sizeof(PgBackendStatus), MaxBackends);
+	size = mul_size(sizeof(PgBackendStatus), NumBackendStatSlots);
 	/* BackendAppnameBuffer: */
 	size = add_size(size,
-					mul_size(NAMEDATALEN, MaxBackends));
+					mul_size(NAMEDATALEN, NumBackendStatSlots));
 	/* BackendClientHostnameBuffer: */
 	size = add_size(size,
-					mul_size(NAMEDATALEN, MaxBackends));
+					mul_size(NAMEDATALEN, NumBackendStatSlots));
 	/* BackendActivityBuffer: */
 	size = add_size(size,
-					mul_size(pgstat_track_activity_query_size, MaxBackends));
+			mul_size(pgstat_track_activity_query_size, NumBackendStatSlots));
 #ifdef USE_SSL
 	/* BackendSslStatusBuffer: */
 	size = add_size(size,
-					mul_size(sizeof(PgBackendSSLStatus), MaxBackends));
+				  mul_size(sizeof(PgBackendSSLStatus), NumBackendStatSlots));
 #endif
 	return size;
 }
@@ -2536,7 +2600,7 @@ CreateSharedBackendStatus(void)
 	char	   *buffer;
 
 	/* Create or attach to the shared array */
-	size = mul_size(sizeof(PgBackendStatus), MaxBackends);
+	size = mul_size(sizeof(PgBackendStatus), NumBackendStatSlots);
 	BackendStatusArray = (PgBackendStatus *)
 		ShmemInitStruct("Backend Status Array", size, &found);
 
@@ -2559,7 +2623,7 @@ CreateSharedBackendStatus(void)
 
 		/* Initialize st_appname pointers. */
 		buffer = BackendAppnameBuffer;
-		for (i = 0; i < MaxBackends; i++)
+		for (i = 0; i < NumBackendStatSlots; i++)
 		{
 			BackendStatusArray[i].st_appname = buffer;
 			buffer += NAMEDATALEN;
@@ -2577,7 +2641,7 @@ CreateSharedBackendStatus(void)
 
 		/* Initialize st_clienthostname pointers. */
 		buffer = BackendClientHostnameBuffer;
-		for (i = 0; i < MaxBackends; i++)
+		for (i = 0; i < NumBackendStatSlots; i++)
 		{
 			BackendStatusArray[i].st_clienthostname = buffer;
 			buffer += NAMEDATALEN;
@@ -2586,7 +2650,7 @@ CreateSharedBackendStatus(void)
 
 	/* Create or attach to the shared activity buffer */
 	BackendActivityBufferSize = mul_size(pgstat_track_activity_query_size,
-										 MaxBackends);
+										 NumBackendStatSlots);
 	BackendActivityBuffer = (char *)
 		ShmemInitStruct("Backend Activity Buffer",
 						BackendActivityBufferSize,
@@ -2598,7 +2662,7 @@ CreateSharedBackendStatus(void)
 
 		/* Initialize st_activity pointers. */
 		buffer = BackendActivityBuffer;
-		for (i = 0; i < MaxBackends; i++)
+		for (i = 0; i < NumBackendStatSlots; i++)
 		{
 			BackendStatusArray[i].st_activity = buffer;
 			buffer += pgstat_track_activity_query_size;
@@ -2607,7 +2671,7 @@ CreateSharedBackendStatus(void)
 
 #ifdef USE_SSL
 	/* Create or attach to the shared SSL status buffer */
-	size = mul_size(sizeof(PgBackendSSLStatus), MaxBackends);
+	size = mul_size(sizeof(PgBackendSSLStatus), NumBackendStatSlots);
 	BackendSslStatusBuffer = (PgBackendSSLStatus *)
 		ShmemInitStruct("Backend SSL Status Buffer", size, &found);
 
@@ -2619,7 +2683,7 @@ CreateSharedBackendStatus(void)
 
 		/* Initialize st_sslstatus pointers. */
 		ptr = BackendSslStatusBuffer;
-		for (i = 0; i < MaxBackends; i++)
+		for (i = 0; i < NumBackendStatSlots; i++)
 		{
 			BackendStatusArray[i].st_sslstatus = ptr;
 			ptr++;
@@ -2633,7 +2697,8 @@ CreateSharedBackendStatus(void)
  * pgstat_initialize() -
  *
  *	Initialize pgstats state, and set up our on-proc-exit hook.
- *	Called from InitPostgres.  MyBackendId must be set,
+ *	Called from InitPostgres and AuxiliaryProcessMain. For auxiliary process,
+ *	MyBackendId is invalid. Otherwise, MyBackendId must be set,
  *	but we must not have started any transaction yet (since the
  *	exit hook must run after the last transaction exit).
  *	NOTE: MyDatabaseId isn't set yet; so the shutdown hook has to be careful.
@@ -2643,8 +2708,26 @@ void
 pgstat_initialize(void)
 {
 	/* Initialize MyBEEntry */
-	Assert(MyBackendId >= 1 && MyBackendId <= MaxBackends);
-	MyBEEntry = &BackendStatusArray[MyBackendId - 1];
+	if (MyBackendId != InvalidBackendId)
+	{
+		Assert(MyBackendId >= 1 && MyBackendId <= MaxBackends);
+		MyBEEntry = &BackendStatusArray[MyBackendId - 1];
+	}
+	else
+	{
+		/* Must be an auxiliary process */
+		Assert(MyAuxProcType != NotAnAuxProcess);
+
+		/*
+		 * Assign the MyBEEntry for an auxiliary process.  Since it doesn't
+		 * have a BackendId, the slot is statically allocated based on the
+		 * auxiliary process type (MyAuxProcType).  Backends use slots indexed
+		 * in the range from 1 to MaxBackends (inclusive), so we use
+		 * MaxBackends + AuxBackendType + 1 as the index of the slot for an
+		 * auxiliary process.
+		 */
+		MyBEEntry = &BackendStatusArray[MaxBackends + MyAuxProcType];
+	}
 
 	/* Set up a process-exit hook to clean up */
 	on_shmem_exit(pgstat_beshutdown_hook, 0);
@@ -2655,15 +2738,16 @@ pgstat_initialize(void)
  *
  *	Initialize this backend's entry in the PgBackendStatus array.
  *	Called from InitPostgres.
- *	MyDatabaseId, session userid, and application_name must be set
- *	(hence, this cannot be combined with pgstat_initialize).
+ *
+ *	Apart from auxiliary processes, MyBackendId, MyDatabaseId,
+ *	session userid, and application_name must be set for a
+ *	backend (hence, this cannot be combined with pgstat_initialize).
  * ----------
  */
 void
 pgstat_bestart(void)
 {
 	TimestampTz proc_start_timestamp;
-	Oid			userid;
 	SockAddr	clientaddr;
 	volatile PgBackendStatus *beentry;
 
@@ -2678,7 +2762,6 @@ pgstat_bestart(void)
 		proc_start_timestamp = MyProcPort->SessionStartTime;
 	else
 		proc_start_timestamp = GetCurrentTimestamp();
-	userid = GetSessionUserId();
 
 	/*
 	 * We may not have a MyProcPort (eg, if this is the autovacuum process).
@@ -2697,6 +2780,66 @@ pgstat_bestart(void)
 	 * cute.
 	 */
 	beentry = MyBEEntry;
+
+	/* pgstats state must be initialized from pgstat_initialize() */
+	Assert(beentry != NULL);
+
+	if (MyBackendId != InvalidBackendId)
+	{
+		if (IsAutoVacuumLauncherProcess())
+		{
+			/* Autovacuum Launcher */
+			beentry->st_backendType = B_AUTOVAC_LAUNCHER;
+		}
+		else if (IsAutoVacuumWorkerProcess())
+		{
+			/* Autovacuum Worker */
+			beentry->st_backendType = B_AUTOVAC_WORKER;
+		}
+		else if (am_walsender)
+		{
+			/* Wal sender */
+			beentry->st_backendType = B_WAL_SENDER;
+		}
+		else if (IsBackgroundWorker)
+		{
+			/* bgworker */
+			beentry->st_backendType = B_BG_WORKER;
+		}
+		else
+		{
+			/* client-backend */
+			beentry->st_backendType = B_BACKEND;
+		}
+	}
+	else
+	{
+		/* Must be an auxiliary process */
+		Assert(MyAuxProcType != NotAnAuxProcess);
+		switch (MyAuxProcType)
+		{
+			case StartupProcess:
+				beentry->st_backendType = B_STARTUP;
+				break;
+			case BgWriterProcess:
+				beentry->st_backendType = B_BG_WRITER;
+				break;
+			case CheckpointerProcess:
+				beentry->st_backendType = B_CHECKPOINTER;
+				break;
+			case WalWriterProcess:
+				beentry->st_backendType = B_WAL_WRITER;
+				break;
+			case WalReceiverProcess:
+				beentry->st_backendType = B_WAL_RECEIVER;
+				break;
+			default:
+				elog(FATAL, "unrecognized process type: %d",
+					(int) MyAuxProcType);
+				proc_exit(1);
+		}
+	}
+
 	do
 	{
 		pgstat_increment_changecount_before(beentry);
@@ -2708,7 +2851,15 @@ pgstat_bestart(void)
 	beentry->st_state_start_timestamp = 0;
 	beentry->st_xact_start_timestamp = 0;
 	beentry->st_databaseid = MyDatabaseId;
-	beentry->st_userid = userid;
+
+	/* We have userid for client-backends, wal-sender and bgworker processes */
+	if (beentry->st_backendType == B_BACKEND
+			|| beentry->st_backendType == B_WAL_SENDER
+			|| beentry->st_backendType == B_BG_WORKER)
+		beentry->st_userid = GetSessionUserId();
+	else
+		beentry->st_userid = InvalidOid;
+
 	beentry->st_clientaddr = clientaddr;
 	if (MyProcPort && MyProcPort->remote_hostname)
 		strlcpy(beentry->st_clienthostname, MyProcPort->remote_hostname,
@@ -3046,24 +3197,24 @@ pgstat_read_current_status(void)
 
 	localtable = (LocalPgBackendStatus *)
 		MemoryContextAlloc(pgStatLocalContext,
-						   sizeof(LocalPgBackendStatus) * MaxBackends);
+						 sizeof(LocalPgBackendStatus) * NumBackendStatSlots);
 	localappname = (char *)
 		MemoryContextAlloc(pgStatLocalContext,
-						   NAMEDATALEN * MaxBackends);
+						   NAMEDATALEN * NumBackendStatSlots);
 	localactivity = (char *)
 		MemoryContextAlloc(pgStatLocalContext,
-						   pgstat_track_activity_query_size * MaxBackends);
+					 pgstat_track_activity_query_size * NumBackendStatSlots);
 #ifdef USE_SSL
 	localsslstatus = (PgBackendSSLStatus *)
 		MemoryContextAlloc(pgStatLocalContext,
-						   sizeof(PgBackendSSLStatus) * MaxBackends);
+						   sizeof(PgBackendSSLStatus) * NumBackendStatSlots);
 #endif
 
 	localNumBackends = 0;
 
 	beentry = BackendStatusArray;
 	localentry = localtable;
-	for (i = 1; i <= MaxBackends; i++)
+	for (i = 1; i <= NumBackendStatSlots; i++)
 	{
 		/*
 		 * Follow the protocol of retrying if st_changecount changes while we
@@ -3414,6 +3565,12 @@ pgstat_get_wait_ipc(WaitEventIPC w)
 			break;
 		case WAIT_EVENT_SYNC_REP:
 			event_name = "SyncRep";
+			break;
+		case WAIT_EVENT_LOGICAL_SYNC_DATA:
+			event_name = "LogicalSyncData";
+			break;
+		case WAIT_EVENT_LOGICAL_SYNC_STATE_CHANGE:
+			event_name = "LogicalSyncStateChange";
 			break;
 		/* no default case, so that compiler will warn */
 	}
@@ -3823,7 +3980,47 @@ pgstat_get_crashed_backend_activity(int pid, char *buffer, int buflen)
 	return NULL;
 }
 
+const char *
+pgstat_get_backend_desc(BackendType backendType)
+{
+	const char *backendDesc = "unknown process type";
 
+	switch (backendType)
+	{
+		case B_AUTOVAC_LAUNCHER:
+			backendDesc = "autovacuum launcher";
+			break;
+		case B_AUTOVAC_WORKER:
+			backendDesc = "autovacuum worker";
+			break;
+		case B_BACKEND:
+			backendDesc = "client backend";
+			break;
+		case B_BG_WORKER:
+			backendDesc = "background worker";
+			break;
+		case B_BG_WRITER:
+			backendDesc = "background writer";
+			break;
+		case B_CHECKPOINTER:
+			backendDesc = "checkpointer";
+			break;
+		case B_STARTUP:
+			backendDesc = "startup";
+			break;
+		case B_WAL_RECEIVER:
+			backendDesc = "walreceiver";
+			break;
+		case B_WAL_SENDER:
+			backendDesc = "walsender";
+			break;
+		case B_WAL_WRITER:
+			backendDesc = "walwriter";
+			break;
+	}
+
+	return backendDesc;
+}
 /* ------------------------------------------------------------
  * Local support functions follow
  * ------------------------------------------------------------

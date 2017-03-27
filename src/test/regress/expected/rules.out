@@ -1608,6 +1608,29 @@ UNION ALL
 UNION ALL
  SELECT l.objoid,
     l.classoid,
+    l.objsubid,
+    'publication'::text AS objtype,
+    NULL::oid AS objnamespace,
+    quote_ident((p.pubname)::text) AS objname,
+    l.provider,
+    l.label
+   FROM (pg_seclabel l
+     JOIN pg_publication p ON (((l.classoid = p.tableoid) AND (l.objoid = p.oid))))
+  WHERE (l.objsubid = 0)
+UNION ALL
+ SELECT l.objoid,
+    l.classoid,
+    0 AS objsubid,
+    'subscription'::text AS objtype,
+    NULL::oid AS objnamespace,
+    quote_ident((s.subname)::text) AS objname,
+    l.provider,
+    l.label
+   FROM (pg_shseclabel l
+     JOIN pg_subscription s ON (((l.classoid = s.tableoid) AND (l.objoid = s.oid))))
+UNION ALL
+ SELECT l.objoid,
+    l.classoid,
     0 AS objsubid,
     'database'::text AS objtype,
     NULL::oid AS objnamespace,
@@ -1704,8 +1727,9 @@ pg_stat_activity| SELECT s.datid,
     s.state,
     s.backend_xid,
     s.backend_xmin,
-    s.query
-   FROM ((pg_stat_get_activity(NULL::integer) s(datid, pid, usesysid, application_name, state, query, wait_event_type, wait_event, xact_start, query_start, backend_start, state_change, client_addr, client_hostname, client_port, backend_xid, backend_xmin, ssl, sslversion, sslcipher, sslbits, sslcompression, sslclientdn)
+    s.query,
+    s.backend_type
+   FROM ((pg_stat_get_activity(NULL::integer) s(datid, pid, usesysid, application_name, state, query, wait_event_type, wait_event, xact_start, query_start, backend_start, state_change, client_addr, client_hostname, client_port, backend_xid, backend_xmin, backend_type, ssl, sslversion, sslcipher, sslbits, sslcompression, sslclientdn)
      LEFT JOIN pg_database d ON ((s.datid = d.oid)))
      LEFT JOIN pg_authid u ON ((s.usesysid = u.oid)));
 pg_stat_all_indexes| SELECT c.oid AS relid,
@@ -1831,10 +1855,13 @@ pg_stat_replication| SELECT s.pid,
     w.write_location,
     w.flush_location,
     w.replay_location,
+    w.write_lag,
+    w.flush_lag,
+    w.replay_lag,
     w.sync_priority,
     w.sync_state
-   FROM ((pg_stat_get_activity(NULL::integer) s(datid, pid, usesysid, application_name, state, query, wait_event_type, wait_event, xact_start, query_start, backend_start, state_change, client_addr, client_hostname, client_port, backend_xid, backend_xmin, ssl, sslversion, sslcipher, sslbits, sslcompression, sslclientdn)
-     JOIN pg_stat_get_wal_senders() w(pid, state, sent_location, write_location, flush_location, replay_location, sync_priority, sync_state) ON ((s.pid = w.pid)))
+   FROM ((pg_stat_get_activity(NULL::integer) s(datid, pid, usesysid, application_name, state, query, wait_event_type, wait_event, xact_start, query_start, backend_start, state_change, client_addr, client_hostname, client_port, backend_xid, backend_xmin, backend_type, ssl, sslversion, sslcipher, sslbits, sslcompression, sslclientdn)
+     JOIN pg_stat_get_wal_senders() w(pid, state, sent_location, write_location, flush_location, replay_location, write_lag, flush_lag, replay_lag, sync_priority, sync_state) ON ((s.pid = w.pid)))
      LEFT JOIN pg_authid u ON ((s.usesysid = u.oid)));
 pg_stat_ssl| SELECT s.pid,
     s.ssl,
@@ -1843,17 +1870,18 @@ pg_stat_ssl| SELECT s.pid,
     s.sslbits AS bits,
     s.sslcompression AS compression,
     s.sslclientdn AS clientdn
-   FROM pg_stat_get_activity(NULL::integer) s(datid, pid, usesysid, application_name, state, query, wait_event_type, wait_event, xact_start, query_start, backend_start, state_change, client_addr, client_hostname, client_port, backend_xid, backend_xmin, ssl, sslversion, sslcipher, sslbits, sslcompression, sslclientdn);
+   FROM pg_stat_get_activity(NULL::integer) s(datid, pid, usesysid, application_name, state, query, wait_event_type, wait_event, xact_start, query_start, backend_start, state_change, client_addr, client_hostname, client_port, backend_xid, backend_xmin, backend_type, ssl, sslversion, sslcipher, sslbits, sslcompression, sslclientdn);
 pg_stat_subscription| SELECT su.oid AS subid,
     su.subname,
     st.pid,
+    st.relid,
     st.received_lsn,
     st.last_msg_send_time,
     st.last_msg_receipt_time,
     st.latest_end_lsn,
     st.latest_end_time
    FROM (pg_subscription su
-     LEFT JOIN pg_stat_get_subscription(NULL::oid) st(subid, pid, received_lsn, last_msg_send_time, last_msg_receipt_time, latest_end_lsn, latest_end_time) ON ((st.subid = su.oid)));
+     LEFT JOIN pg_stat_get_subscription(NULL::oid) st(subid, relid, pid, received_lsn, last_msg_send_time, last_msg_receipt_time, latest_end_lsn, latest_end_time) ON ((st.subid = su.oid)));
 pg_stat_sys_indexes| SELECT pg_stat_all_indexes.relid,
     pg_stat_all_indexes.indexrelid,
     pg_stat_all_indexes.schemaname,
@@ -2160,6 +2188,14 @@ pg_stats| SELECT n.nspname AS schemaname,
      JOIN pg_attribute a ON (((c.oid = a.attrelid) AND (a.attnum = s.staattnum))))
      LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace)))
   WHERE ((NOT a.attisdropped) AND has_column_privilege(c.oid, a.attnum, 'select'::text) AND ((c.relrowsecurity = false) OR (NOT row_security_active(c.oid))));
+pg_stats_ext| SELECT n.nspname AS schemaname,
+    c.relname AS tablename,
+    s.staname,
+    s.stakeys AS attnums,
+    length((s.standistinct)::text) AS ndistbytes
+   FROM ((pg_statistic_ext s
+     JOIN pg_class c ON ((c.oid = s.starelid)))
+     LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace)));
 pg_tables| SELECT n.nspname AS schemaname,
     c.relname AS tablename,
     pg_get_userbyid(c.relowner) AS tableowner,
@@ -3128,6 +3164,12 @@ SELECT pg_get_indexdef(0);
 SELECT pg_get_ruledef(0);
  pg_get_ruledef 
 ----------------
+ 
+(1 row)
+
+SELECT pg_get_statisticsextdef(0);
+ pg_get_statisticsextdef 
+-------------------------
  
 (1 row)
 

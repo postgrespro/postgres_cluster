@@ -525,7 +525,7 @@ OpenTableList(List *tables)
 		myrelid = RelationGetRelid(rel);
 		/*
 		 * filter out duplicates when user specifies "foo, foo"
-		 * Note that this algorithm is know to not be very effective (O(N^2))
+		 * Note that this algorithm is known to not be very efficient (O(N^2))
 		 * but given that it only works on list of tables given to us by user
 		 * it's deemed acceptable.
 		 */
@@ -670,17 +670,31 @@ AlterPublicationOwner_internal(Relation rel, HeapTuple tup, Oid newOwnerId)
 	if (form->pubowner == newOwnerId)
 		return;
 
-	if (!pg_publication_ownercheck(HeapTupleGetOid(tup), GetUserId()))
-		aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PUBLICATION,
-					   NameStr(form->pubname));
+	if (!superuser())
+	{
+		AclResult	aclresult;
 
-	/* New owner must be a superuser */
-	if (!superuser_arg(newOwnerId))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("permission denied to change owner of publication \"%s\"",
-						NameStr(form->pubname)),
-				 errhint("The owner of a publication must be a superuser.")));
+		/* Must be owner */
+		if (!pg_publication_ownercheck(HeapTupleGetOid(tup), GetUserId()))
+			aclcheck_error(ACLCHECK_NOT_OWNER, ACL_KIND_PUBLICATION,
+						   NameStr(form->pubname));
+
+		/* Must be able to become new owner */
+		check_is_member_of_role(GetUserId(), newOwnerId);
+
+		/* New owner must have CREATE privilege on database */
+		aclresult = pg_database_aclcheck(MyDatabaseId, newOwnerId, ACL_CREATE);
+		if (aclresult != ACLCHECK_OK)
+			aclcheck_error(aclresult, ACL_KIND_DATABASE,
+						   get_database_name(MyDatabaseId));
+
+		if (form->puballtables && !superuser_arg(newOwnerId))
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("permission denied to change owner of publication \"%s\"",
+							NameStr(form->pubname)),
+					 errhint("The owner of a FOR ALL TABLES publication must be a superuser.")));
+	}
 
 	form->pubowner = newOwnerId;
 	CatalogTupleUpdate(rel, &tup->t_self, tup);

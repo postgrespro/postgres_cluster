@@ -19,7 +19,7 @@ include $(top_builddir)/src/Makefile.global
 
 SUBDIRS = access bootstrap catalog parser commands executor foreign lib libpq \
 	main nodes optimizer port postmaster regex replication rewrite \
-	storage tcop tsearch utils $(top_builddir)/src/timezone
+	statistics storage tcop tsearch utils $(top_builddir)/src/timezone
 
 include $(srcdir)/common.mk
 
@@ -58,7 +58,7 @@ ifneq ($(PORTNAME), win32)
 ifneq ($(PORTNAME), aix)
 
 postgres: $(OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(LDFLAGS_EX) $(export_dynamic) $(call expand_subsys,$^) $(LIBS) -o $@
+	$(CC) $(CFLAGS) $(LDFLAGS) $(LDFLAGS_EX) $(export_dynamic) $(call expand_subsys,$^) $(LIBS) $(ICU_LIBS) -o $@
 
 endif
 endif

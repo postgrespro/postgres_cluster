@@ -119,9 +119,12 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
      <para>
       This form drops a column from a table.  Indexes and
       table constraints involving the column will be automatically
-      dropped as well.  You will need to say <literal>CASCADE</> if
-      anything outside the table depends on the column, for example,
-      foreign key references or views.
+      dropped as well.
+      Multivariate statistics referencing the dropped column will also be
+      removed if the removal of the column would cause the statistics to
+      contain data for only a single column.
+      You will need to say <literal>CASCADE</> if anything outside the table
+      depends on the column, for example, foreign key references or views.
       If <literal>IF EXISTS</literal> is specified and the column
       does not exist, no error is thrown. In this case a notice
       is issued instead.
@@ -172,9 +175,14 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="PARAMETER">name</replaceable>
      </para>
 
      <para>
-      If this table is a partition, one cannot perform <literal>DROP NOT NULL</>
+      If this table is a partition, one cannot perform <literal>DROP NOT NULL</literal>
       on a column if it is marked <literal>NOT NULL</literal> in the parent
-      table.
+      table.  To drop the <literal>NOT NULL</literal> constraint from all the
+      partitions, perform <literal>DROP NOT NULL</literal> on the parent
+      table.  Even if there is no <literal>NOT NULL</> constraint on the
+      parent, such a constraint can still be added to individual partitions,
+      if desired; that is, the children can disallow nulls even if the parent
+      allows them, but not the other way around. 
      </para>
     </listitem>
    </varlistentry>

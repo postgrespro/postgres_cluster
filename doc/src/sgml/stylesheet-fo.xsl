@@ -18,10 +18,41 @@
   <xsl:attribute name="wrap-option">wrap</xsl:attribute>
 </xsl:attribute-set>
 
+<xsl:attribute-set name="nongraphical.admonition.properties">
+  <xsl:attribute name="border-style">solid</xsl:attribute>
+  <xsl:attribute name="border-width">1pt</xsl:attribute>
+  <xsl:attribute name="border-color">black</xsl:attribute>
+  <xsl:attribute name="padding-start">12pt</xsl:attribute>
+  <xsl:attribute name="padding-end">12pt</xsl:attribute>
+  <xsl:attribute name="padding-top">6pt</xsl:attribute>
+  <xsl:attribute name="padding-bottom">6pt</xsl:attribute>
+</xsl:attribute-set>
+
+<xsl:attribute-set name="admonition.title.properties">
+  <xsl:attribute name="text-align">center</xsl:attribute>
+</xsl:attribute-set>
+
 <!-- Change display of some elements -->
 
 <xsl:template match="command">
   <xsl:call-template name="inline.monoseq"/>
+</xsl:template>
+
+<xsl:template match="confgroup" mode="bibliography.mode">
+  <fo:inline>
+    <xsl:apply-templates select="conftitle/text()" mode="bibliography.mode"/>
+    <xsl:text>, </xsl:text>
+    <xsl:apply-templates select="confdates/text()" mode="bibliography.mode"/>
+    <xsl:value-of select="$biblioentry.item.separator"/>
+  </fo:inline>
+</xsl:template>
+
+<xsl:template match="isbn" mode="bibliography.mode">
+  <fo:inline>
+    <xsl:text>ISBN </xsl:text>
+    <xsl:apply-templates mode="bibliography.mode"/>
+    <xsl:value-of select="$biblioentry.item.separator"/>
+  </fo:inline>
 </xsl:template>
 
 <!-- bug fix from <https://sourceforge.net/p/docbook/bugs/1360/#831b> -->

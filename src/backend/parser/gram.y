@@ -244,7 +244,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 }
 
 %type <node>	stmt schema_stmt
-		AlterEventTrigStmt
+		AlterEventTrigStmt AlterCollationStmt
 		AlterDatabaseStmt AlterDatabaseSetStmt AlterDomainStmt AlterEnumStmt
 		AlterFdwStmt AlterForeignServerStmt AlterGroupStmt
 		AlterObjectDependsStmt AlterObjectSchemaStmt AlterOwnerStmt
@@ -257,7 +257,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 		ConstraintsSetStmt CopyStmt CreateAsStmt CreateCastStmt
 		CreateDomainStmt CreateExtensionStmt CreateGroupStmt CreateOpClassStmt
 		CreateOpFamilyStmt AlterOpFamilyStmt CreatePLangStmt
-		CreateSchemaStmt CreateSeqStmt CreateStmt CreateTableSpaceStmt
+		CreateSchemaStmt CreateSeqStmt CreateStmt CreateStatsStmt CreateTableSpaceStmt
 		CreateFdwStmt CreateForeignServerStmt CreateForeignTableStmt
 		CreateAssertStmt CreateTransformStmt CreateTrigStmt CreateEventTrigStmt
 		CreateUserStmt CreateUserMappingStmt CreateRoleStmt CreatePolicyStmt
@@ -651,7 +651,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 	MAPPING MATCH MATERIALIZED MAXVALUE METHOD MINUTE_P MINVALUE MODE MONTH_P MOVE
 
 	NAME_P NAMES NATIONAL NATURAL NCHAR NEW NEXT NO NONE
-	NOT NOTHING NOTIFY NOTNULL NOWAIT NULL_P NULLIF
+	NOREFRESH NOT NOTHING NOTIFY NOTNULL NOWAIT NULL_P NULLIF
 	NULLS_P NUMERIC
 
 	OBJECT_P OF OFF OFFSET OIDS OLD ON ONLY OPERATOR OPTION OPTIONS OR
@@ -812,6 +812,7 @@ stmtmulti:	stmtmulti ';' stmt
 
 stmt :
 			AlterEventTrigStmt
+			| AlterCollationStmt
 			| AlterDatabaseStmt
 			| AlterDatabaseSetStmt
 			| AlterDefaultPrivilegesStmt
@@ -873,6 +874,7 @@ stmt :
 			| CreateSeqStmt
 			| CreateStmt
 			| CreateSubscriptionStmt
+			| CreateStatsStmt
 			| CreateTableSpaceStmt
 			| CreateTransformStmt
 			| CreateTrigStmt
@@ -3746,6 +3748,35 @@ OptConsTableSpace:   USING INDEX TABLESPACE name	{ $$ = $4; }
 ExistingIndex:   USING INDEX index_name				{ $$ = $3; }
 		;
 
+/*****************************************************************************
+ *
+ *		QUERY :
+ *				CREATE STATISTICS stats_name WITH (options) ON (columns) FROM relname
+ *
+ *****************************************************************************/
+
+
+CreateStatsStmt:	CREATE STATISTICS any_name opt_reloptions ON '(' columnList ')' FROM qualified_name
+						{
+							CreateStatsStmt *n = makeNode(CreateStatsStmt);
+							n->defnames = $3;
+							n->relation = $10;
+							n->keys = $7;
+							n->options = $4;
+							n->if_not_exists = false;
+							$$ = (Node *)n;
+						}
+					| CREATE STATISTICS IF_P NOT EXISTS any_name opt_reloptions ON '(' columnList ')' FROM qualified_name
+						{
+							CreateStatsStmt *n = makeNode(CreateStatsStmt);
+							n->defnames = $6;
+							n->relation = $13;
+							n->keys = $10;
+							n->options = $7;
+							n->if_not_exists = true;
+							$$ = (Node *)n;
+						}
+			;
 
 /*****************************************************************************
  *
@@ -6041,6 +6072,7 @@ drop_type_any_name:
 			| FOREIGN TABLE							{ $$ = OBJECT_FOREIGN_TABLE; }
 			| COLLATION								{ $$ = OBJECT_COLLATION; }
 			| CONVERSION_P							{ $$ = OBJECT_CONVERSION; }
+			| STATISTICS							{ $$ = OBJECT_STATISTIC_EXT; }
 			| TEXT_P SEARCH PARSER					{ $$ = OBJECT_TSPARSER; }
 			| TEXT_P SEARCH DICTIONARY				{ $$ = OBJECT_TSDICTIONARY; }
 			| TEXT_P SEARCH TEMPLATE				{ $$ = OBJECT_TSTEMPLATE; }
@@ -6118,7 +6150,7 @@ opt_restart_seqs:
  *                 EXTENSION | EVENT TRIGGER | FOREIGN DATA WRAPPER |
  *                 FOREIGN TABLE | INDEX | [PROCEDURAL] LANGUAGE |
  *                 MATERIALIZED VIEW | POLICY | ROLE | SCHEMA | SEQUENCE |
- *                 SERVER | TABLE | TABLESPACE |
+ *                 SERVER | STATISTICS | TABLE | TABLESPACE |
  *                 TEXT SEARCH CONFIGURATION | TEXT SEARCH DICTIONARY |
  *                 TEXT SEARCH PARSER | TEXT SEARCH TEMPLATE | TYPE |
  *                 VIEW] <objname> |
@@ -6287,6 +6319,7 @@ comment_type_any_name:
 			COLUMN								{ $$ = OBJECT_COLUMN; }
 			| INDEX								{ $$ = OBJECT_INDEX; }
 			| SEQUENCE							{ $$ = OBJECT_SEQUENCE; }
+			| STATISTICS						{ $$ = OBJECT_STATISTIC_EXT; }
 			| TABLE								{ $$ = OBJECT_TABLE; }
 			| VIEW								{ $$ = OBJECT_VIEW; }
 			| MATERIALIZED VIEW					{ $$ = OBJECT_MATVIEW; }
@@ -6307,9 +6340,11 @@ comment_type_name:
 			| EXTENSION							{ $$ = OBJECT_EXTENSION; }
 			| FOREIGN DATA_P WRAPPER			{ $$ = OBJECT_FDW; }
 			| opt_procedural LANGUAGE			{ $$ = OBJECT_LANGUAGE; }
+			| PUBLICATION						{ $$ = OBJECT_PUBLICATION; }
 			| ROLE								{ $$ = OBJECT_ROLE; }
 			| SCHEMA							{ $$ = OBJECT_SCHEMA; }
 			| SERVER							{ $$ = OBJECT_FOREIGN_SERVER; }
+			| SUBSCRIPTION						{ $$ = OBJECT_SUBSCRIPTION; }
 			| TABLESPACE						{ $$ = OBJECT_TABLESPACE; }
 		;
 
@@ -6420,8 +6455,10 @@ security_label_type_name:
 			DATABASE							{ $$ = OBJECT_DATABASE; }
 			| EVENT TRIGGER						{ $$ = OBJECT_EVENT_TRIGGER; }
 			| opt_procedural LANGUAGE			{ $$ = OBJECT_LANGUAGE; }
+			| PUBLICATION						{ $$ = OBJECT_PUBLICATION; }
 			| ROLE								{ $$ = OBJECT_ROLE; }
 			| SCHEMA							{ $$ = OBJECT_SCHEMA; }
+			| SUBSCRIPTION						{ $$ = OBJECT_SUBSCRIPTION; }
 			| TABLESPACE						{ $$ = OBJECT_TABLESPACE; }
 		;
 
@@ -8427,6 +8464,15 @@ RenameStmt: ALTER AGGREGATE aggregate_with_argtypes RENAME TO name
 					n->missing_ok = false;
 					$$ = (Node *)n;
 				}
+			| ALTER STATISTICS any_name RENAME TO name
+				{
+					RenameStmt *n = makeNode(RenameStmt);
+					n->renameType = OBJECT_STATISTIC_EXT;
+					n->object = (Node *) $3;
+					n->newname = $6;
+					n->missing_ok = false;
+					$$ = (Node *)n;
+				}
 			| ALTER TEXT_P SEARCH PARSER any_name RENAME TO name
 				{
 					RenameStmt *n = makeNode(RenameStmt);
@@ -8640,6 +8686,15 @@ AlterObjectSchemaStmt:
 					n->relation = $5;
 					n->newschema = $8;
 					n->missing_ok = true;
+					$$ = (Node *)n;
+				}
+			| ALTER STATISTICS any_name SET SCHEMA name
+				{
+					AlterObjectSchemaStmt *n = makeNode(AlterObjectSchemaStmt);
+					n->objectType = OBJECT_STATISTIC_EXT;
+					n->object = (Node *) $3;
+					n->newschema = $6;
+					n->missing_ok = false;
 					$$ = (Node *)n;
 				}
 			| ALTER TEXT_P SEARCH PARSER any_name SET SCHEMA name
@@ -8905,6 +8960,14 @@ AlterOwnerStmt: ALTER AGGREGATE aggregate_with_argtypes OWNER TO RoleSpec
 					n->newowner = $6;
 					$$ = (Node *)n;
 				}
+			| ALTER STATISTICS any_name OWNER TO RoleSpec
+				{
+					AlterOwnerStmt *n = makeNode(AlterOwnerStmt);
+					n->objectType = OBJECT_STATISTIC_EXT;
+					n->object = (Node *) $3;
+					n->newowner = $6;
+					$$ = (Node *)n;
+				}
 			| ALTER TEXT_P SEARCH DICTIONARY any_name OWNER TO RoleSpec
 				{
 					AlterOwnerStmt *n = makeNode(AlterOwnerStmt);
@@ -9095,6 +9158,7 @@ AlterSubscriptionStmt:
 				{
 					AlterSubscriptionStmt *n =
 						makeNode(AlterSubscriptionStmt);
+					n->kind = ALTER_SUBSCRIPTION_OPTIONS;
 					n->subname = $3;
 					n->options = $5;
 					$$ = (Node *)n;
@@ -9103,24 +9167,45 @@ AlterSubscriptionStmt:
 				{
 					AlterSubscriptionStmt *n =
 						makeNode(AlterSubscriptionStmt);
+					n->kind = ALTER_SUBSCRIPTION_CONNECTION;
 					n->subname = $3;
-					n->options = list_make1(makeDefElem("conninfo",
-											(Node *)makeString($5), @1));
+					n->conninfo = $5;
 					$$ = (Node *)n;
 				}
-			| ALTER SUBSCRIPTION name SET PUBLICATION publication_name_list
+			| ALTER SUBSCRIPTION name REFRESH PUBLICATION opt_definition
 				{
 					AlterSubscriptionStmt *n =
 						makeNode(AlterSubscriptionStmt);
+					n->kind = ALTER_SUBSCRIPTION_REFRESH;
 					n->subname = $3;
-					n->options = list_make1(makeDefElem("publication",
-											(Node *)$6, @1));
+					n->options = $6;
+					$$ = (Node *)n;
+				}
+			| ALTER SUBSCRIPTION name SET PUBLICATION publication_name_list REFRESH opt_definition
+				{
+					AlterSubscriptionStmt *n =
+						makeNode(AlterSubscriptionStmt);
+					n->kind = ALTER_SUBSCRIPTION_PUBLICATION_REFRESH;
+					n->subname = $3;
+					n->publication = $6;
+					n->options = $8;
+					$$ = (Node *)n;
+				}
+			| ALTER SUBSCRIPTION name SET PUBLICATION publication_name_list NOREFRESH
+				{
+					AlterSubscriptionStmt *n =
+						makeNode(AlterSubscriptionStmt);
+					n->kind = ALTER_SUBSCRIPTION_PUBLICATION;
+					n->subname = $3;
+					n->publication = $6;
+					n->options = NIL;
 					$$ = (Node *)n;
 				}
 			| ALTER SUBSCRIPTION name ENABLE_P
 				{
 					AlterSubscriptionStmt *n =
 						makeNode(AlterSubscriptionStmt);
+					n->kind = ALTER_SUBSCRIPTION_ENABLED;
 					n->subname = $3;
 					n->options = list_make1(makeDefElem("enabled",
 											(Node *)makeInteger(TRUE), @1));
@@ -9130,11 +9215,13 @@ AlterSubscriptionStmt:
 				{
 					AlterSubscriptionStmt *n =
 						makeNode(AlterSubscriptionStmt);
+					n->kind = ALTER_SUBSCRIPTION_ENABLED;
 					n->subname = $3;
 					n->options = list_make1(makeDefElem("enabled",
 											(Node *)makeInteger(FALSE), @1));
 					$$ = (Node *)n;
-				}		;
+				}
+		;
 
 /*****************************************************************************
  *
@@ -9676,6 +9763,21 @@ DropdbStmt: DROP DATABASE database_name
 					DropdbStmt *n = makeNode(DropdbStmt);
 					n->dbname = $5;
 					n->missing_ok = TRUE;
+					$$ = (Node *)n;
+				}
+		;
+
+
+/*****************************************************************************
+ *
+ *		ALTER COLLATION
+ *
+ *****************************************************************************/
+
+AlterCollationStmt: ALTER COLLATION any_name REFRESH VERSION_P
+				{
+					AlterCollationStmt *n = makeNode(AlterCollationStmt);
+					n->collname = $3;
 					$$ = (Node *)n;
 				}
 		;
@@ -14548,6 +14650,7 @@ unreserved_keyword:
 			| NEW
 			| NEXT
 			| NO
+			| NOREFRESH
 			| NOTHING
 			| NOTIFY
 			| NOWAIT

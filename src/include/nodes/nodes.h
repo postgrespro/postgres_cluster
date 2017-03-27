@@ -192,36 +192,18 @@ typedef enum NodeTag
 	/*
 	 * TAGS FOR EXPRESSION STATE NODES (execnodes.h)
 	 *
-	 * These correspond (not always one-for-one) to primitive nodes derived
-	 * from Expr.
+	 * ExprState represents the evaluation state for a whole expression tree.
+	 * Most Expr-based plan nodes do not have a corresponding expression state
+	 * node, they're fully handled within execExpr* - but sometimes the state
+	 * needs to be shared with other parts of the executor, as for example
+	 * with AggrefExprState, which nodeAgg.c has to modify.
 	 */
 	T_ExprState,
-	T_GenericExprState,
-	T_WholeRowVarExprState,
 	T_AggrefExprState,
-	T_GroupingFuncExprState,
 	T_WindowFuncExprState,
-	T_ArrayRefExprState,
-	T_FuncExprState,
-	T_ScalarArrayOpExprState,
-	T_BoolExprState,
+	T_SetExprState,
 	T_SubPlanState,
 	T_AlternativeSubPlanState,
-	T_FieldSelectState,
-	T_FieldStoreState,
-	T_CoerceViaIOState,
-	T_ArrayCoerceExprState,
-	T_ConvertRowtypeExprState,
-	T_CaseExprState,
-	T_CaseWhenState,
-	T_ArrayExprState,
-	T_RowExprState,
-	T_RowCompareExprState,
-	T_CoalesceExprState,
-	T_MinMaxExprState,
-	T_XmlExprState,
-	T_NullTestState,
-	T_CoerceToDomainState,
 	T_DomainConstraintState,
 
 	/*
@@ -279,6 +261,9 @@ typedef enum NodeTag
 	T_PlaceHolderInfo,
 	T_MinMaxAggInfo,
 	T_PlannerParamItem,
+	T_RollupData,
+	T_GroupingSetData,
+	T_StatisticExtInfo,
 
 	/*
 	 * TAGS FOR MEMORY NODES (memnodes.h)
@@ -424,6 +409,8 @@ typedef enum NodeTag
 	T_CreateSubscriptionStmt,
 	T_AlterSubscriptionStmt,
 	T_DropSubscriptionStmt,
+	T_CreateStatsStmt,
+	T_AlterCollationStmt,
 
 	/*
 	 * TAGS FOR PARSE TREE NODES (parsenodes.h)
@@ -488,6 +475,7 @@ typedef enum NodeTag
 	T_DropReplicationSlotCmd,
 	T_StartReplicationCmd,
 	T_TimeLineHistoryCmd,
+	T_SQLCmd,
 
 	/*
 	 * TAGS FOR RANDOM OTHER STUFF
@@ -738,7 +726,8 @@ typedef enum AggStrategy
 {
 	AGG_PLAIN,					/* simple agg across all input rows */
 	AGG_SORTED,					/* grouped agg, input must be sorted */
-	AGG_HASHED					/* grouped agg, use internal hashtable */
+	AGG_HASHED,					/* grouped agg, use internal hashtable */
+	AGG_MIXED					/* grouped agg, hash and sort both used */
 } AggStrategy;
 
 /*

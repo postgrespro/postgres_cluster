@@ -186,6 +186,16 @@ CREATE OR REPLACE VIEW pg_sequences AS
     WHERE NOT pg_is_other_temp_schema(N.oid)
           AND relkind = 'S';
 
+CREATE VIEW pg_stats_ext AS
+    SELECT
+        N.nspname AS schemaname,
+        C.relname AS tablename,
+        S.staname AS staname,
+        S.stakeys AS attnums,
+        length(s.standistinct) AS ndistbytes
+    FROM (pg_statistic_ext S JOIN pg_class C ON (C.oid = S.starelid))
+        LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace);
+
 CREATE VIEW pg_stats WITH (security_barrier) AS
     SELECT
         nspname AS schemaname,
@@ -413,6 +423,28 @@ FROM
 		AND l.objoid = evt.oid
 WHERE
 	l.objsubid = 0
+UNION ALL
+SELECT
+	l.objoid, l.classoid, l.objsubid,
+	'publication'::text AS objtype,
+	NULL::oid AS objnamespace,
+	quote_ident(p.pubname) AS objname,
+	l.provider, l.label
+FROM
+	pg_seclabel l
+	JOIN pg_publication p ON l.classoid = p.tableoid AND l.objoid = p.oid
+WHERE
+	l.objsubid = 0
+UNION ALL
+SELECT
+	l.objoid, l.classoid, 0::int4 AS objsubid,
+	'subscription'::text AS objtype,
+	NULL::oid AS objnamespace,
+	quote_ident(s.subname) AS objname,
+	l.provider, l.label
+FROM
+	pg_shseclabel l
+	JOIN pg_subscription s ON l.classoid = s.tableoid AND l.objoid = s.oid
 UNION ALL
 SELECT
 	l.objoid, l.classoid, 0::int4 AS objsubid,
@@ -684,7 +716,8 @@ CREATE VIEW pg_stat_activity AS
             S.state,
             S.backend_xid,
             s.backend_xmin,
-            S.query
+            S.query,
+            S.backend_type
     FROM pg_stat_get_activity(NULL) AS S
         LEFT JOIN pg_database AS D ON (S.datid = D.oid)
         LEFT JOIN pg_authid AS U ON (S.usesysid = U.oid);
@@ -705,6 +738,9 @@ CREATE VIEW pg_stat_replication AS
             W.write_location,
             W.flush_location,
             W.replay_location,
+            W.write_lag,
+            W.flush_lag,
+            W.replay_lag,
             W.sync_priority,
             W.sync_state
     FROM pg_stat_get_activity(NULL) AS S
@@ -733,6 +769,7 @@ CREATE VIEW pg_stat_subscription AS
             su.oid AS subid,
             su.subname,
             st.pid,
+            st.relid,
             st.received_lsn,
             st.last_msg_send_time,
             st.last_msg_receipt_time,
@@ -988,6 +1025,12 @@ CREATE OR REPLACE FUNCTION
   RETURNS pg_lsn STRICT VOLATILE LANGUAGE internal AS 'pg_start_backup'
   PARALLEL RESTRICTED;
 
+CREATE OR REPLACE FUNCTION pg_stop_backup (
+        exclusive boolean, wait_for_archive boolean DEFAULT true,
+        OUT lsn pg_lsn, OUT labelfile text, OUT spcmapfile text)
+  RETURNS SETOF record STRICT VOLATILE LANGUAGE internal as 'pg_stop_backup_v2'
+  PARALLEL RESTRICTED;
+
 -- legacy definition for compatibility with 9.3
 CREATE OR REPLACE FUNCTION
   json_populate_record(base anyelement, from_json json, use_json_as_text boolean DEFAULT false)
@@ -1088,7 +1131,7 @@ AS 'jsonb_insert';
 -- available to superuser / cluster owner, if they choose.
 REVOKE EXECUTE ON FUNCTION pg_start_backup(text, boolean, boolean) FROM public;
 REVOKE EXECUTE ON FUNCTION pg_stop_backup() FROM public;
-REVOKE EXECUTE ON FUNCTION pg_stop_backup(boolean) FROM public;
+REVOKE EXECUTE ON FUNCTION pg_stop_backup(boolean, boolean) FROM public;
 REVOKE EXECUTE ON FUNCTION pg_create_restore_point(text) FROM public;
 REVOKE EXECUTE ON FUNCTION pg_switch_wal() FROM public;
 REVOKE EXECUTE ON FUNCTION pg_wal_replay_pause() FROM public;

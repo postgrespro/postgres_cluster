@@ -2320,6 +2320,57 @@ describeOneTableDetails(const char *schemaname,
 			PQclear(result);
 		}
 
+		/* print any extended statistics */
+		if (pset.sversion >= 100000)
+		{
+			printfPQExpBuffer(&buf,
+							  "SELECT oid, stanamespace::regnamespace AS nsp, staname, stakeys,\n"
+							  "  (SELECT pg_catalog.string_agg(pg_catalog.quote_ident(attname::text),', ') \n"
+						   "    FROM ((SELECT pg_catalog.unnest(stakeys) AS attnum) s\n"
+			   "         JOIN pg_catalog.pg_attribute a ON (starelid = a.attrelid AND\n"
+							  "a.attnum = s.attnum AND not attisdropped))) AS columns,\n"
+							  "  (staenabled::char[] @> '{d}'::char[]) AS ndist_enabled\n"
+			  "FROM pg_catalog.pg_statistic_ext stat WHERE starelid  = '%s'\n"
+			  "ORDER BY 1;",
+							  oid);
+
+			result = PSQLexec(buf.data);
+			if (!result)
+				goto error_return;
+			else
+				tuples = PQntuples(result);
+
+			if (tuples > 0)
+			{
+				printTableAddFooter(&cont, _("Statistics:"));
+
+				for (i = 0; i < tuples; i++)
+				{
+					int		cnt = 0;
+
+					printfPQExpBuffer(&buf, "    ");
+
+					/* statistics name (qualified with namespace) */
+					appendPQExpBuffer(&buf, "\"%s.%s\" WITH (",
+									  PQgetvalue(result, i, 1),
+									  PQgetvalue(result, i, 2));
+
+					/* options */
+					if (strcmp(PQgetvalue(result, i, 5), "t") == 0)
+					{
+						appendPQExpBufferStr(&buf, "ndistinct");
+						cnt++;
+					}
+
+					appendPQExpBuffer(&buf, ") ON (%s)",
+									  PQgetvalue(result, i, 4));
+
+					printTableAddFooter(&cont, buf.data);
+				}
+			}
+			PQclear(result);
+		}
+
 		/* print rules */
 		if (tableinfo.hasrules && tableinfo.relkind != RELKIND_MATVIEW)
 		{
@@ -2421,7 +2472,7 @@ describeOneTableDetails(const char *schemaname,
 			printfPQExpBuffer(&buf,
 							  "SELECT pub.pubname\n"
 							  " FROM pg_catalog.pg_publication pub\n"
-							  " LEFT JOIN pg_publication_rel pr\n"
+							  " LEFT JOIN pg_catalog.pg_publication_rel pr\n"
 							  "      ON (pr.prpubid = pub.oid)\n"
 							  "WHERE pr.prrelid = '%s' OR pub.puballtables\n"
 							  "ORDER BY 1;",
@@ -3738,7 +3789,7 @@ listCollations(const char *pattern, bool verbose, bool showSystem)
 	PQExpBufferData buf;
 	PGresult   *res;
 	printQueryOpt myopt = pset.popt;
-	static const bool translate_columns[] = {false, false, false, false, false};
+	static const bool translate_columns[] = {false, false, false, false, false, false};
 
 	if (pset.sversion < 90100)
 	{
@@ -3761,6 +3812,11 @@ listCollations(const char *pattern, bool verbose, bool showSystem)
 					  gettext_noop("Name"),
 					  gettext_noop("Collate"),
 					  gettext_noop("Ctype"));
+
+	if (pset.sversion >= 100000)
+		appendPQExpBuffer(&buf,
+						  ",\n       CASE c.collprovider WHEN 'd' THEN 'default' WHEN 'c' THEN 'libc' WHEN 'i' THEN 'icu' END AS \"%s\"",
+						  gettext_noop("Provider"));
 
 	if (verbose)
 		appendPQExpBuffer(&buf,

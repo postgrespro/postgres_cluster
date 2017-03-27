@@ -387,6 +387,10 @@ AuxiliaryProcessMain(int argc, char *argv[])
 		/* finish setting up bufmgr.c */
 		InitBufferPoolBackend();
 
+		/* Initialize backend status information */
+		pgstat_initialize();
+		pgstat_bestart();
+
 		/* register a before-shutdown callback for LWLock cleanup */
 		before_shmem_exit(ShutdownAuxiliaryProcess, 0);
 	}
@@ -1084,7 +1088,7 @@ index_register(Oid heap,
 	/* predicate will likely be null, but may as well copy it */
 	newind->il_info->ii_Predicate = (List *)
 		copyObject(indexInfo->ii_Predicate);
-	newind->il_info->ii_PredicateState = NIL;
+	newind->il_info->ii_PredicateState = NULL;
 	/* no exclusion constraints at bootstrap time, so no need to copy */
 	Assert(indexInfo->ii_ExclusionOps == NULL);
 	Assert(indexInfo->ii_ExclusionProcs == NULL);

@@ -8,6 +8,9 @@ SET SESSION AUTHORIZATION 'regress_publication_user';
 
 CREATE PUBLICATION testpub_default;
 
+COMMENT ON PUBLICATION testpub_default IS 'test publication';
+SELECT obj_description(p.oid, 'pg_publication') FROM pg_publication p;
+
 CREATE PUBLICATION testpib_ins_trunct WITH (nopublish delete, nopublish update);
 
 ALTER PUBLICATION testpub_default WITH (nopublish insert, nopublish delete);
@@ -107,6 +110,10 @@ ALTER PUBLICATION testpub_default RENAME TO testpub_foo;
 
 -- rename back to keep the rest simple
 ALTER PUBLICATION testpub_foo RENAME TO testpub_default;
+
+ALTER PUBLICATION testpub_default OWNER TO regress_publication_user2;
+
+\dRp testpub_default
 
 DROP PUBLICATION testpub_default;
 DROP PUBLICATION testpib_ins_trunct;
