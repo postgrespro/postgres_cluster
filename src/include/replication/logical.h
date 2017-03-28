@@ -75,6 +75,11 @@ typedef struct LogicalDecodingContext
 	bool		prepared_write;
 	XLogRecPtr	write_location;
 	TransactionId write_xid;
+
+	/*
+	 * Capabilities of decoding plugin used.
+	 */
+	bool		twophase_hadling;
 } LogicalDecodingContext;
 
 
@@ -109,5 +114,4 @@ extern void LogicalConfirmReceivedLocation(XLogRecPtr lsn);
 extern void LagTrackerWrite(XLogRecPtr lsn, TimestampTz local_flush_time);
 
 extern bool filter_by_origin_cb_wrapper(LogicalDecodingContext *ctx, RepOriginId origin_id);
-
 #endif
