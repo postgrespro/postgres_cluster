@@ -49,6 +49,7 @@ typedef struct
 	bool		xact_wrote_changes;
 	bool		only_local;
 	bool		twophase_decoding;
+	bool		twophase_decode_with_catalog_changes;
 } TestDecodingData;
 
 static void pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
@@ -130,6 +131,7 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 	data->skip_empty_xacts = false;
 	data->only_local = false;
 	data->twophase_decoding = false;
+	data->twophase_decode_with_catalog_changes = false;
 
 	ctx->output_plugin_private = data;
 
@@ -205,6 +207,16 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 			if (elem->arg == NULL)
 				data->twophase_decoding = true;
 			else if (!parse_bool(strVal(elem->arg), &data->twophase_decoding))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				  errmsg("could not parse value \"%s\" for parameter \"%s\"",
+						 strVal(elem->arg), elem->defname)));
+		}
+		else if (strcmp(elem->defname, "twophase-decode-with-catalog-changes") == 0)
+		{
+			if (elem->arg == NULL)
+				data->twophase_decode_with_catalog_changes = true;
+			else if (!parse_bool(strVal(elem->arg), &data->twophase_decode_with_catalog_changes))
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				  errmsg("could not parse value \"%s\" for parameter \"%s\"",
@@ -292,15 +304,23 @@ pg_filter_prepare(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		return true;
 
 	/*
-	 * Two-phase transactions that accessed catalog require special treatment.
+	 * Two-phase transactions that accessed catalog require special
+	 * treatment.
 	 *
-	 * Right now we don't have a save way to decode catalog changes made in
-	 * prepared transaction that was already aborted by the time of decoding.
+	 * Right now we don't have a safe way to decode catalog changes made in
+	 * prepared transaction that was already aborted by the time of
+	 * decoding.
 	 *
-	 * That kind of problem arises only when we are trying to retrospectively
-	 * decode aborted transactions. If one wants to code distributed commit
-	 * based on prepare decoding then commits/aborts will happend strictly after
-	 * decoding will be completed, so it is safe to skip any checks/locks here.
+	 * That kind of problem arises only when we are trying to
+	 * retrospectively decode aborted transactions with catalog changes -
+	 * including if a transaction aborts while we're decoding it. If one
+	 * wants to code distributed commit based on prepare decoding then
+	 * commits/aborts will happend strictly after decoding will be
+	 * completed, so it is possible to skip any checks/locks here.
+	 *
+	 * We'll also get stuck trying to acquire locks on catalog relations
+	 * we need for decoding if the prepared xact holds a strong lock on
+	 * one of them and we also need to decode row changes.
 	 */
 	if (txn->has_catalog_changes)
 	{
@@ -309,23 +329,33 @@ pg_filter_prepare(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		if (TransactionIdIsInProgress(txn->xid))
 		{
 			/*
-			 * For the sake of simplicity we just ignore in-progess transaction
-			 * in this extension, as they may abort during deconing.
+			 * For the sake of simplicity, by default we just
+			 * ignore in-progess prepared transactions with catalog
+			 * changes in this extension. If they abort during
+			 * decoding then tuples we need to decode them may be
+			 * overwritten while we're still decoding, causing
+			 * wrong catalog lookups.
 			 *
-			 * It is possible to move that LWLockRelease() to pg_decode_prepare_txn()
-			 * and allow decoding of running prepared tx, but such lock will prevent
-			 * any 2pc transaction commit during decoding time, that can be big
-			 * enough in case of massive changes/inserts in that tx.
+			 * It is possible to move that LWLockRelease() to
+			 * pg_decode_prepare_txn() and allow decoding of
+			 * running prepared tx, but such lock will prevent any
+			 * 2pc transaction commit during decoding time.  That
+			 * can be a long time in case of lots of
+			 * changes/inserts in that tx or if the downstream is
+			 * slow/unresonsive.
+			 *
+			 * (Continuing to decode without the lock is unsafe, XXX)
 			 */
 			LWLockRelease(TwoPhaseStateLock);
-			return true;
+			return !data->twophase_decode_with_catalog_changes;
 		}
 		else if (TransactionIdDidAbort(txn->xid))
 		{
 			/*
-			 * Here we know that it is already aborted and there is no
-			 * mush sence in doing something with this transaction.
-			 * Consequent ABORT PREPARED will be suppressed.
+			 * Here we know that it is already aborted and there is
+			 * not much sense in doing something with this
+			 * transaction.  Consequently ABORT PREPARED will be
+			 * suppressed.
 			 */
 			LWLockRelease(TwoPhaseStateLock);
 			return true;
@@ -350,7 +380,8 @@ pg_decode_prepare_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 	OutputPluginPrepareWrite(ctx, true);
 
-	appendStringInfo(ctx->out, "PREPARE '%s'", txn->gid);
+	appendStringInfo(ctx->out, "PREPARE TRANSACTION %s",
+		quote_literal_cstr(txn->gid));
 
 	if (data->include_xids)
 		appendStringInfo(ctx->out, " %u", txn->xid);
@@ -374,7 +405,8 @@ pg_decode_commit_prepared_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn
 
 	OutputPluginPrepareWrite(ctx, true);
 
-	appendStringInfo(ctx->out, "COMMIT PREPARED '%s'", txn->gid);
+	appendStringInfo(ctx->out, "COMMIT PREPARED %s",
+		quote_literal_cstr(txn->gid));
 
 	if (data->include_xids)
 		appendStringInfo(ctx->out, " %u", txn->xid);
@@ -398,7 +430,8 @@ pg_decode_abort_prepared_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 	OutputPluginPrepareWrite(ctx, true);
 
-	appendStringInfo(ctx->out, "ABORT PREPARED '%s'", txn->gid);
+	appendStringInfo(ctx->out, "ABORT PREPARED %s",
+		quote_literal_cstr(txn->gid));
 
 	if (data->include_xids)
 		appendStringInfo(ctx->out, " %u", txn->xid);
