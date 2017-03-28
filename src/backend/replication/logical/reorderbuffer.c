@@ -1633,8 +1633,12 @@ ReorderBufferCommitInternal(ReorderBufferTXN *txn,
 		if (snapshot_now->copied)
 			ReorderBufferFreeSnap(rb, snapshot_now);
 
-		/* remove potential on-disk data, and deallocate */
-		ReorderBufferCleanupTXN(rb, txn);
+		/*
+		 * remove potential on-disk data, and deallocate or postpone that
+		 * till the finish of two-phase tx
+		 */
+		if (!txn->prepared)
+			ReorderBufferCleanupTXN(rb, txn);
 	}
 	PG_CATCH();
 	{
@@ -1735,6 +1739,10 @@ ReorderBufferTxnIsPrepared(ReorderBuffer *rb, TransactionId xid)
 	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
 								false);
 
+	/*
+	 * If txn == NULL then presumably subscriber confirmed prepare
+	 * but we are rebooted.
+	 */
 	return txn == NULL ? true : txn->prepared;
 }
 
@@ -1765,6 +1773,7 @@ ReorderBufferFinishPrepared(ReorderBuffer *rb, TransactionId xid,
 	else
 		rb->abort_prepared(rb, txn, commit_lsn);
 
+	ReorderBufferCleanupTXN(rb, txn);
 }
 
 /*

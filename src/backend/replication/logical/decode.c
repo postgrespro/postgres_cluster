@@ -570,8 +570,13 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	 * Process invalidation messages, even if we're not interested in the
 	 * transaction's contents, since the various caches need to always be
 	 * consistent.
+	 *
+	 * Also if that transaction was sent to prepare callback then both
+	 * this function were called during prepare.
 	 */
-	if (parsed->nmsgs > 0)
+	if (parsed->nmsgs > 0 &&
+			!(TransactionIdIsValid(parsed->twophase_xid) &&
+				ReorderBufferTxnIsPrepared(ctx->reorder, xid)))
 	{
 		ReorderBufferAddInvalidations(ctx->reorder, xid, buf->origptr,
 									  parsed->nmsgs, parsed->msgs);
@@ -634,8 +639,10 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		 * empty. So we can skip use shortcut for coomiting bare xact.
 		 */
 		ReorderBufferFinishPrepared(ctx->reorder, xid, buf->origptr, buf->endptr,
-							commit_time, origin_id, origin_lsn, parsed->twophase_gid, true);
-	} else {
+					commit_time, origin_id, origin_lsn, parsed->twophase_gid, true);
+	}
+	else
+	{
 		/* replay actions of all transaction + subtransactions in order */
 		ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
 							commit_time, origin_id, origin_lsn);
@@ -724,7 +731,9 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	 * If that is ROLLBACK PREPARED than send that to callbacks.
 	 */
 	if (TransactionIdIsValid(xid) &&
+			!SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr) &&
 			parsed->dbId == ctx->slot->data.database &&
+			!FilterByOrigin(ctx, origin_id) &&
 			ReorderBufferTxnIsPrepared(ctx->reorder, xid))
 	{
 		ReorderBufferFinishPrepared(ctx->reorder, xid, buf->origptr, buf->endptr,
