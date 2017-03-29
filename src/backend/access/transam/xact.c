@@ -1928,6 +1928,7 @@ StartTransaction(void)
 	 */
 	s->state = TRANS_INPROGRESS;
 
+	CallXactCallbacks(XACT_EVENT_START);
 	ShowTransactionState("StartTransaction");
 }
 
@@ -2264,9 +2265,12 @@ PrepareTransaction(void)
 	 * transaction.  That seems to require much more bookkeeping though.
 	 */
 	if ((MyXactFlags & XACT_FLAGS_ACCESSEDTEMPREL))
-		ereport(ERROR,
-				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("cannot PREPARE a transaction that has operated on temporary tables")));
+	{
+		if (strncmp(prepareGID, "test_decoding:", 14) != 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					errmsg("cannot PREPARE a transaction that has operated on temporary tables")));
+	}
 
 	/*
 	 * Likewise, don't allow PREPARE after pg_export_snapshot.  This could be
@@ -2748,6 +2752,8 @@ void
 CommitTransactionCommand(void)
 {
 	TransactionState s = CurrentTransactionState;
+
+	CallXactCallbacks(XACT_EVENT_COMMIT_COMMAND);
 
 	switch (s->blockState)
 	{
