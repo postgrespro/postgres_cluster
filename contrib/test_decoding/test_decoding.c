@@ -45,6 +45,7 @@
 #include "storage/ipc.h"
 #include "pgstat.h"
 #include "tcop/utility.h"
+#include "commands/portalcmds.h"
 
 PG_MODULE_MAGIC;
 
@@ -190,28 +191,32 @@ test_decoding_process_utility(PlannedStmt *pstmt,
 					ParamListInfo params, DestReceiver *dest, char *completionTag)
 {
 	Node	   *parsetree = pstmt->utilityStmt;
+
 	switch (nodeTag(parsetree))
 	{
 		case T_TransactionStmt:
-		{
-			TransactionStmt *stmt = (TransactionStmt *) parsetree;
-			switch (stmt->kind)
 			{
-				case TRANS_STMT_BEGIN:
-				case TRANS_STMT_START:
-					break;
-				case TRANS_STMT_COMMIT:
-					if (test_decoding_twophase_commit())
-						return; /* do not proceed */
-					break;
-				case TRANS_STMT_PREPARE:
-				case TRANS_STMT_COMMIT_PREPARED:
-				case TRANS_STMT_ROLLBACK_PREPARED:
-					break;
-				default:
-					break;
+				TransactionStmt *stmt = (TransactionStmt *) parsetree;
+				switch (stmt->kind)
+				{
+					case TRANS_STMT_COMMIT:
+						if (test_decoding_twophase_commit())
+							return; /* do not proceed */
+						break;
+					default:
+						break;
+				}
 			}
-		}
+			break;
+
+		/* cannot PREPARE a transaction that has executed LISTEN, UNLISTEN, or NOTIFY */
+		case T_NotifyStmt:
+		case T_ListenStmt:
+		case T_UnlistenStmt:
+			CurrentTxNonpreparable = true;
+			break;
+
+		/* create/reindex/drop concurrently can not be execuled in prepared tx */
 		case T_ReindexStmt:
 			{
 				ReindexStmt *stmt = (ReindexStmt *) parsetree;
@@ -220,7 +225,6 @@ test_decoding_process_utility(PlannedStmt *pstmt,
 					case REINDEX_OBJECT_SCHEMA:
 					case REINDEX_OBJECT_SYSTEM:
 					case REINDEX_OBJECT_DATABASE:
-						LogLogicalMessage("C", queryString, strlen(queryString) + 1, false);
 						CurrentTxNonpreparable = true;
 					default:
 						break;
@@ -231,17 +235,35 @@ test_decoding_process_utility(PlannedStmt *pstmt,
 			{
 				IndexStmt *indexStmt = (IndexStmt *) parsetree;
 				if (indexStmt->concurrent)
-				{
-					LogLogicalMessage("C", queryString, strlen(queryString) + 1, false);
 					CurrentTxNonpreparable = true;
-				}
 			}
 			break;
+		case T_DropStmt:
+			{
+				DropStmt *stmt = (DropStmt *) parsetree;
+				if (stmt->removeType == OBJECT_INDEX && stmt->concurrent)
+					CurrentTxNonpreparable = true;
+			}
+			break;
+
+		/* cannot PREPARE a transaction that has created a cursor WITH HOLD */
+		case T_DeclareCursorStmt:
+			{
+				DeclareCursorStmt *stmt = (DeclareCursorStmt *) parsetree;
+				if (stmt->options & CURSOR_OPT_HOLD)
+					CurrentTxNonpreparable = true;
+			}
+			break;
+
 		default:
 			LogLogicalMessage("D", queryString, strlen(queryString) + 1, true);
 			CurrentTxContainsDDL = true;
 			break;
 	}
+
+	/* Send non-transactional message then */
+	if (CurrentTxNonpreparable)
+		LogLogicalMessage("C", queryString, strlen(queryString) + 1, false);
 
 	if (PreviousProcessUtilityHook != NULL)
 	{
