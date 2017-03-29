@@ -424,5 +424,6 @@ extern bool MtmTransIsActive(void);
 extern MtmTransState* MtmGetActiveTransaction(MtmL2List* list);
 extern void MtmReleaseLocks(void);
 extern void MtmInitMessage(MtmArbiterMessage* msg, MtmMessageCode code);
+extern void MtmSetSnapshot(csn_t snapshot);
 
 #endif

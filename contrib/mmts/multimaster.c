@@ -504,10 +504,22 @@ csn_t MtmDistributedTransactionSnapshot(TransactionId xid, int nodeId, nodemask_
     return snapshot;
 }
 
+void MtmSetSnapshot(csn_t globalSnapshot)
+{
+	MtmLock(LW_EXCLUSIVE);
+	MtmSyncClock(globalSnapshot);	
+	MtmTx.snapshot = globalSnapshot;	
+	MtmUnlock();
+}
 
+		
 Snapshot MtmGetSnapshot(Snapshot snapshot)
 {
 	snapshot = PgGetSnapshotData(snapshot);
+	if (XactIsoLevel == XACT_READ_COMMITTED && MtmTx.snapshot != INVALID_CSN && TransactionIdIsValid(GetCurrentTransactionIdIfAny())) { 
+		MtmTx.snapshot = MtmGetCurrentTime();
+		LogLogicalMessage("S", (char*)&MtmTx.snapshot, sizeof(MtmTx.snapshot), true);
+	}
 	RecentGlobalDataXmin = RecentGlobalXmin = Mtm->oldestXid;
 	return snapshot;
 }
@@ -540,7 +552,7 @@ bool MtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 
     Assert(xid != InvalidTransactionId);
 	
-	if (!MtmUseDtm) { 
+	if (!MtmUseDtm || TransactionIdPrecedes(xid, Mtm->oldestXid)) { 
 		return PgXidInMVCCSnapshot(xid, snapshot);
 	}
 	MtmLock(LW_SHARED);
@@ -681,6 +693,10 @@ MtmAdjustOldestXid(TransactionId xid)
 				hash_search(MtmGid2State, &prev->gid, HASH_REMOVE, NULL);
 			}
 		}
+		if (ts != NULL) { 
+			MTM_LOG2("Adjust(%lld) stop at snashot %lld, xid %lld, pinned=%d, oldestSnaphsot=%lld\n",
+					 (long64)xid, ts->csn, (long64)ts->xid, ts->isPinned, oldestSnapshot);
+		}					 
 	} 
 
 	if (MtmUseDtm && !MtmVolksWagenMode) 
@@ -2827,11 +2843,13 @@ static bool ConfigIsSane(void)
 {
 	bool ok = true;
 
+#if 0
 	if (DefaultXactIsoLevel != XACT_REPEATABLE_READ)
 	{
 		MTM_ELOG(WARNING, "multimaster requires default_transaction_isolation = 'repeatable read'");
 		ok = false;
 	}
+#endif
 
 	if (MtmMaxNodes < 1)
 	{
@@ -5123,10 +5141,11 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		standard_ProcessUtility(parsetree, queryString, context,
 								params, dest, completionTag);
 	}
+#if 0
     if (!MtmVolksWagenMode && MtmTx.isDistributed && XactIsoLevel != XACT_REPEATABLE_READ) { 
 		MTM_ELOG(ERROR, "Isolation level %s is not supported by multimaster", isoLevelStr[XactIsoLevel]);
 	}
-
+#endif
 	if (MyXactAccessedTempRel)
 	{
 		MTM_LOG1("Xact accessed temp table, stopping replication");
