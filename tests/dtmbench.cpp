@@ -69,6 +69,7 @@ struct config
     int updatePercent;
     vector<string> connections;
 	bool scatter;
+	bool avoidDeadlocks;
 
     config() {
         nReaders = 1;
@@ -77,6 +78,7 @@ struct config
         nAccounts = 100000;
         updatePercent = 100;
 		scatter = false;
+		avoidDeadlocks = false;
     }
 };
 
@@ -157,6 +159,12 @@ void* writer(void* arg)
 		if (cfg.scatter) { 
 			srcAcc = srcAcc/cfg.nWriters*cfg.nWriters + t.id;
 			dstAcc = dstAcc/cfg.nWriters*cfg.nWriters + t.id;
+		} else if (cfg.avoidDeadlocks) { 
+			if (dstAcc < srcAcc) { 
+				int tmp = srcAcc;
+				srcAcc = dstAcc;
+				dstAcc = tmp;
+			}
 		}
         try {            
             if (random() % 100 < cfg.updatePercent) { 
@@ -240,6 +248,9 @@ int main (int argc, char* argv[])
             case 'i':
                 initialize = true;
                 continue;
+            case 'd':
+			    cfg.avoidDeadlocks = true;
+                continue;
             }
         }
         printf("Options:\n"
@@ -249,6 +260,8 @@ int main (int argc, char* argv[])
                "\t-n N\tnumber of iterations (1000)\n"
                "\t-p N\tupdate percent (100)\n"
                "\t-c STR\tdatabase connection string\n"
+               "\t-s\tscattern avoid deadlocks\n"
+               "\t-d\tavoid deadlocks\n"
                "\t-i\tinitialize database\n");
         return 1;
     }

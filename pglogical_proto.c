@@ -180,6 +180,11 @@ pglogical_write_message(StringInfo out,
 			MTM_LOG1("Send deadlock message to node %d", MtmReplicationNodeId);
 		}
 		break;
+	  case 'S':
+		if (MtmIsFilteredTxn) {
+			return;
+		}
+		break;
 	  case 'D':
 		if (MtmIsFilteredTxn) {
 			MTM_LOG2("%d: pglogical_write_message filtered", MyProcPid);
