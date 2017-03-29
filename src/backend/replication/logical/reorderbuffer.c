@@ -1320,10 +1320,6 @@ ReorderBufferCommitInternal(ReorderBufferTXN *txn,
 	bool		using_subtxn;
 	ReorderBufferIterTXNState *volatile iterstate = NULL;
 
-	/* unknown transaction, nothing to replay */
-	if (txn == NULL)
-		return;
-
 	txn->final_lsn = commit_lsn;
 	txn->end_lsn = end_lsn;
 	txn->commit_time = commit_time;
@@ -1700,6 +1696,10 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
 								false);
 
+	/* unknown transaction, nothing to replay */
+	if (txn == NULL)
+		return;
+
 	ReorderBufferCommitInternal(txn, rb, xid, commit_lsn, end_lsn,
 										commit_time, origin_id, origin_lsn);
 }
@@ -1719,6 +1719,10 @@ ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
 
 	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
 								false);
+
+	/* unknown transaction, nothing to replay */
+	if (txn == NULL)
+		return;
 
 	txn->prepared = true;
 	strcpy(txn->gid, gid);
