@@ -5333,7 +5333,7 @@ fi
 
 
 if test "$with_rsocket" = yes ; then
-  LDFLAGS="$LDFLAGS -lrdmacm"
+  LIBS="$LIBS -lrdmacm"
 fi
 
 #
