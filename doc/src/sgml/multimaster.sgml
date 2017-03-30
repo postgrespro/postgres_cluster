@@ -350,7 +350,7 @@ of tables without primary keys by setting the <varname>multimaster.ignore_tables
       <listitem>
         <para>
           Isolation level. The <filename>multimaster</filename> extension
-          supports <emphasis>read committed</emphasis> and <emphasis>repeatable read</emphasis> isolation levels. <emphasis>Serializable</emphasis> isolation level is currently not supported.</para>
+          supports <emphasis><literal>read committed</literal></emphasis> and <emphasis><literal>repeatable read</literal></emphasis> isolation levels. <emphasis><literal>Serializable</literal></emphasis> isolation level is currently not supported.</para>
         <important>
         <para>When performing a write transaction, <filename>multimaster</filename> blocks the affected objects only on the node on which the transaction is performed. However, since write transactions are allowed on all nodes, other transactions can try to change the same objects on the neighbor nodes at the same time. In this case, the replication of the first transaction can fail because the affected objects on the neighbor nodes are already blocked by another transaction. Similarly, the latter transaction cannot be replicated to the first node. In this case, a distributed deadlock occurs, and one of the transactions needs to be rolled back and repeated.
   </para>
@@ -653,10 +653,10 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
       </listitem>
     </orderedlist>
     <important>
-        <para>When performing a write transaction, <filename>multimaster</filename> blocks the affected objects on the node on which the transaction is performed. However, since write transactions are allowed on all nodes, other transactions can try to change the same objects on the neighbor nodes at the same time. In this case, the replication of the first transaction can fail because the affected objects on the neighbor nodes are already blocked by another transaction. Similarly, the latter transaction cannot be replicated to the first node. In this case, a distributed deadlock occurs, and one of the transactions needs to be rolled back and repeated.
+        <para>When performing a write transaction, <filename>multimaster</filename> blocks the affected objects only on the node on which the transaction is performed. However, since write transactions are allowed on all nodes, other transactions can try to change the same objects on the neighbor nodes at the same time. In this case, the replication of the first transaction can fail because the affected objects on the neighbor nodes are already blocked by another transaction. Similarly, the latter transaction cannot be replicated to the first node. In this case, a distributed deadlock occurs, and one of the transactions needs to be rolled back and repeated.
   </para>
   <para>
-If your typical workload has too many rollbacks, it is recommended to use read committed isolation level. If it does not help, you can try directing all the write transactions to a single node.</para>
+If your typical workload has too many rollbacks, it is recommended to use <literal>read committed</literal> isolation level. If it does not help, you can try directing all the write transactions to a single node.</para>
     </important>
     <para>
       If a node crashes or gets disconnected from the cluster between
