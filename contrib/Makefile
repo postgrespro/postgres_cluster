@@ -27,7 +27,6 @@ SUBDIRS = \
 		isn		\
 		lo		\
 		ltree		\
-		mmts	\
 		oid2name	\
 		pageinspect	\
 		passwordcheck	\
