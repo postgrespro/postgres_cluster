@@ -311,7 +311,7 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 	offsetof(struct pg_conn, failover_timeout)},
 
 #ifdef WITH_RSOCKET
-	{"with_rsocket", NULL, NULL, NULL,
+	{"with_rsocket", "WITH_RSOCKET", NULL, NULL,
 		"WithRsocket", "D", 5,
 	offsetof(struct pg_conn, with_rsocket)},
 #endif
