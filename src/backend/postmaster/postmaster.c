@@ -4275,7 +4275,7 @@ RsocketInitialize(Port *port)
 				 errmsg("failed to send rsocket port: %m")));
 	}
 
-	/* accept connection and fill in the client (remote) address */
+	/* Accept connection and fill in the client (remote) address */
 	port->raddr.salen = sizeof(port->raddr.addr);
 	if ((sfd = pg_accept(fd,
 						 (struct sockaddr *) &port->raddr.addr,
@@ -4434,6 +4434,18 @@ BackendInitialize(Port *port)
 	/* And now we can issue the Log_connections message, if wanted */
 	if (Log_connections)
 	{
+#ifdef WITH_RSOCKET
+		if (port->isRsocket && remote_port[0])
+			ereport(LOG,
+					(errmsg("connection received: host=%s port=%s with_rsocket=true",
+							remote_host,
+							remote_port)));
+		else if (port->isRsocket)
+			ereport(LOG,
+					(errmsg("connection received: host=%s with_rsocket=true",
+							remote_host)));
+		else
+#endif
 		if (remote_port[0])
 			ereport(LOG,
 					(errmsg("connection received: host=%s port=%s",
