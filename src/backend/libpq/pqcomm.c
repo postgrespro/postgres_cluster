@@ -317,7 +317,7 @@ socket_close(int code, Datum arg)
 int
 StreamServerPort(int family, char *hostName, unsigned short portNumber,
 				 char *unixSocketDir,
-				 pgsocket ListenSocket[], bool ListenRdma[], int MaxListen,
+				 pgsocket *ListenSocket, bool *ListenRdma, int MaxListen,
 				 bool isRsocket)
 {
 	pgsocket	fd;
