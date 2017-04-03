@@ -2590,7 +2590,7 @@ LOG:  disconnection: session time: 0:00:00.622 user=postgres database= host=172.
        </para>
        <orderedlist>
          <listitem>
-           <para>Set the <envar>WITH_RSOCKET<envar> environment variable:
+           <para>Set the <envar>WITH_RSOCKET</envar> environment variable:
            <programlisting>
 export WITH_RSOCKET=true
 </programlisting>
