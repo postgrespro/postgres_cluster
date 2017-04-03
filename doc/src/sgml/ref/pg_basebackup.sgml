@@ -484,6 +484,16 @@ doc/src/sgml/ref/pg_basebackup.sgml
      </varlistentry>
 
      <varlistentry>
+      <term><option>--with-rsocket</option></term>
+      <listitem>
+       <para>
+        Connects to the server using <literal>rsocket</literal> API.
+        You must also set the <xref linkend="listen-rdma-addresses"> variable for your server to enable <acronym>RDMA</acronym> connections via <literal>rsocket</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
       <term><option>-s <replaceable class="parameter">interval</replaceable></option></term>
       <term><option>--status-interval=<replaceable class="parameter">interval</replaceable></option></term>
       <listitem>

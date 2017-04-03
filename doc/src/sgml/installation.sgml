@@ -763,6 +763,17 @@ su - postgres
        </listitem>
       </varlistentry>
 
+
+      <varlistentry>
+       <term><option>--with-rsocket</option></term>
+       <listitem>
+        <para>
+         Enable <literal>rsocket</literal> API support for remote direct memory access (<acronym>RDMA</acronym>).
+         You must also set the <xref linkend="listen-rdma-addresses"> variable for your server to enable <acronym>RDMA</acronym> connections via <literal>rsocket</literal>.
+        </para>
+       </listitem>
+      </varlistentry>
+
       <varlistentry>
        <term><option>--with-openssl</option>
        <indexterm>

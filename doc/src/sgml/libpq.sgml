@@ -1106,6 +1106,17 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
       </listitem>
      </varlistentry>
 
+     <varlistentry id="libpq-with-rsocket" xreflabel="libpq_with_rsocket">
+      <term><literal>with_rsocket</literal></term>
+      <listitem>
+       <para>
+        Connects to the server using <literal>rsocket</literal> API.
+        You must also set the <xref linkend="listen-rdma-addresses"> variable for your server to enable <acronym>RDMA</acronym> connections via <literal>rsocket</literal>.
+       </para>
+      </listitem>
+     </varlistentry>
+
+
      <varlistentry id="libpq-connect-application-name" xreflabel="application_name">
       <term><literal>application_name</literal></term>
       <listitem>
@@ -7124,6 +7135,16 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
       linkend="libpq-connect-client-encoding"> connection parameter.
      </para>
     </listitem>
+
+    <listitem>
+     <para>
+      <indexterm>
+       <primary><envar>WITH_RSOCKET</envar></primary>
+      </indexterm>
+      <envar>WITH_RSOCKET</envar> behaves the same as the <xref linkend="libpq-with-rsocket"> connection parameter.
+     </para>
+    </listitem>
+
    </itemizedlist>
   </para>
 

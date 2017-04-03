@@ -2463,6 +2463,170 @@ ssh -L 63333:db.foo.com:5432 joe@shell.foo.com
 
  </sect1>
 
+  <sect1 id="rdma-connections">
+  <title>RDMA Connections</title>
+
+   <para><productname>&productname;</productname> provides support for client/server connections that use remote direct memory access (<acronym>RDMA</acronym>) technology. You must have an <acronym>RDMA</acronym> implementation set up on both client and server systems.</para>
+   <para>With <acronym>RDMA</acronym>, data can be sent directly into the memory of the remote system, bypassing the operating system kernel. As a result, this reduces the CPU load, ensures low network latency in distributed systems, and yields better performance.
+   </para>
+
+ <sect2 id="rdma-setup">
+  <title>Enabling <productname>&productname;</productname> Client/Server <acronym>RDMA</acronym> Connections</title>
+
+   <para>For client/server <acronym>RDMA</acronym> connections, <productname>&productname;</productname> uses <application>libpq</application> with <literal>rsocket</literal> API. 
+   To enable <acronym>RDMA</acronym> connections for your <productname>&productname;</productname> database via <literal>rsocket</literal>, you must configure both client and server systems, as follows:
+   </para>
+
+   <orderedlist>
+     <listitem>
+   <para>On the server side, add the <xref linkend="listen-rdma-addresses"> GUC variable to the <filename>postgresql.conf</filename> configuration file to specify TCP/IP address(es) on which the server is to listen for new <acronym>RDMA</acronym> connections via <literal>rsocket</literal> from client applications. For example:
+         <programlisting>
+listen_rdma_addresses = '<replaceable>hostname1</replaceable>, <replaceable>hostname2</replaceable>'
+</programlisting>
+You can specify a comma-separated list of host names and/or numeric IP addresses. If set to <literal>*</>, this variable will enable <acronym>RDMA</acronym> connections via <literal>rsocket</literal> to all the available IP interfaces. 
+   </para>
+     </listitem>
+
+     <listitem>
+   <para>
+   On the client side, modify the <application>libpq</application> connection parameters to use <literal>rsocket</literal> API. This can be done in one of the following ways:
+   </para>
+        <itemizedlist>
+          <listitem>
+            <para>Add the following <literal>rsocket</literal> settings to the <application>libpq</application> <link linkend="libpq-pgservice">connection service file</link> <filename>pg_service.conf</filename>:
+            <programlisting>
+# rsocket configuration
+[rsocket]
+host=<replaceable>hostname</>
+port=5433
+user=<replaceable>username</>
+with_rsocket=true
+</programlisting>
+            When the client is connecting to the server via <application>libpq</application>, the name of the service provided in square brackets in the <filename>pg_service.conf</filename> file must be specified in the <link linkend="LIBPQ-PARAMKEYWORDS"><option>service</option></link> parameter keyword, or in the corresponding <link linkend="libpq-envars"><envar>PGSERVICE</envar></link> environment variable. This approach enables you to dynamically control client/server connection type.
+            </para>
+          </listitem>
+
+          <listitem>
+            <para>Alternatively, you can set the <envar>WITH_RSOCKET</envar> environment variable:
+            <programlisting>
+export WITH_RSOCKET=true
+</programlisting>
+In this case, all the client/server connections will use <literal>rsocket</literal> API.
+            </para>
+          </listitem>
+        </itemizedlist>
+     </listitem>
+   </orderedlist>
+
+</sect2>
+
+   <sect2>
+   <title>Using <acronym>RDMA</acronym> with <application>pg_dump</application></title>
+   <para>To connect <application>pg_dump</application> to the server over <acronym>RDMA</acronym> via <literal>rsocket</literal>:</para>
+   <orderedlist>
+     <listitem>
+       <para>Set up the server as described in <xref linkend="rdma-setup">. 
+       </para>
+     </listitem>
+     <listitem>
+       <para>Set the <envar>WITH_RSOCKET</envar> environment variable:
+       <programlisting>
+export WITH_RSOCKET=true
+</programlisting>
+       </para>
+     </listitem>
+   </orderedlist>
+<para>Once the setup is complete, launch <application>pg_dump</application> as usual. For example:
+</para>
+<programlisting>
+pg_dump <replaceable>mydb</> -h <replaceable>hostname</> > db.sql
+</programlisting>
+
+   </sect2>
+
+   <sect2>
+   <title>Using <acronym>RDMA</acronym> for Master-Slave Replication</title>
+   <para>To enable master-slave replication over <acronym>RDMA</acronym> connections via <literal>rsocket</literal>, you need to configure master and slave nodes as described below.</para>
+
+       <para><emphasis role="strong">To set up the master node for replication over <acronym>RDMA</acronym> connections via <literal>rsocket</literal>:</emphasis>
+       </para>
+       <orderedlist>
+         <listitem>
+           <para>Edit the <filename>pg_hba.conf</filename> file to allow client connections and replication at the specified IP addresses. For example:
+           <programlisting>
+host    all            postgres     172.0.3.0/24         md5
+host    replication    postgres     172.0.3.0/24         md5
+</programlisting>
+           </para>
+         </listitem>
+         <listitem>
+           <para>
+           Edit the <filename>postgresql.conf</filename> file:
+           <programlisting>
+listen_rdma_addresses = '172.0.3.21'
+wal_level = hot_standby
+hot_standby = on
+max_wal_senders = 1
+</programlisting>
+           The <varname>listen_rdma_addresses</varname> specifies the TCP/IP address(es) on which the server is to listen for new <acronym>RDMA</acronym> connections via <literal>rsocket</literal>.
+           </para>
+         </listitem>
+         <listitem>
+           <para>Restart the master node.
+           </para>
+         </listitem>
+       </orderedlist>
+
+<tip>
+<para>If you set <varname>log_connections</varname> and <varname>log_disconnections</varname> GUC variables, the log file will include detailed information on each client connection and disconnection, respectively. For example: 
+<programlisting>
+LOG:  connection received: host=172.0.3.22 port=37709 with_rsocket=true
+LOG:  disconnection: session time: 0:00:00.622 user=postgres database= host=172.0.3.22 port=37709 with_rsocket=true
+</programlisting>
+</para>
+</tip>
+
+       <para><emphasis role="strong">To set up the slave node:</emphasis>
+       </para>
+       <orderedlist>
+         <listitem>
+           <para>Set the <envar>WITH_RSOCKET<envar> environment variable:
+           <programlisting>
+export WITH_RSOCKET=true
+</programlisting>
+           </para>
+         </listitem>
+         <listitem>
+           <para>Copy the data from the master node using <application>pg_basebackup</application>:
+           <programlisting>
+pg_basebackup -D <replaceable>datadir</> -x -R -h 172.0.3.21 -U postgres
+</programlisting>
+All the data appears on the slave node under the specified <replaceable>datadir</> directory.
+           </para>
+         </listitem>
+         <listitem>
+           <para>Make sure the <replaceable>datadir</>/recovery.conf contains the <literal>with_rsocket</literal> parameter. 
+           <programlisting>
+standby_mode = 'on'
+primary_conninfo = 'user=postgres host=172.0.3.21 port=5432 with_rsocket=true'
+</programlisting>
+           </para>
+         </listitem>
+         <listitem>
+           <para>In the <filename>postgresql.conf</filename> file, clear the <varname>listen_rdma_addresses</varname> parameter:
+           <programlisting>
+listen_rdma_addresses = ''
+</programlisting>
+           </para>
+         </listitem>
+       </orderedlist>
+
+<para>Once the setup is complete, start the slave node. The streaming replication is now performed over the <acronym>RDMA</acronym> connections using <literal>rsocket</literal> API.</para>
+
+   </sect2>
+
+ </sect1>
+
  <sect1 id="event-log-registration">
   <title>Registering <application>Event Log</> on <systemitem
   class="osname">Windows</></title>
