@@ -98,11 +98,11 @@ sub switch_server_cert
 	my $cafile = $_[2] || "root+client_ca";
 	my $pgdata   = $node->data_dir;
 
-	diag "Reloading server with certfile \"$certfile\" and cafile \"$cafile\"...";
+	note "reloading server with certfile \"$certfile\" and cafile \"$cafile\"";
 
 	open my $sslconf, '>', "$pgdata/sslconfig.conf";
 	print $sslconf "ssl=on\n";
-	print $sslconf "ssl_ca_file='root+client_ca.crt'\n";
+	print $sslconf "ssl_ca_file='$cafile.crt'\n";
 	print $sslconf "ssl_cert_file='$certfile.crt'\n";
 	print $sslconf "ssl_key_file='$certfile.key'\n";
 	print $sslconf "ssl_crl_file='root+client.crl'\n";

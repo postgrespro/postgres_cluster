@@ -1157,7 +1157,7 @@ inheritance_planner(PlannerInfo *root)
 		 * executor doesn't need to see the modified copies --- we can just
 		 * pass it the original rowMarks list.)
 		 */
-		subroot->rowMarks = (List *) copyObject(root->rowMarks);
+		subroot->rowMarks = copyObject(root->rowMarks);
 
 		/*
 		 * The append_rel_list likewise might contain references to subquery
@@ -1179,7 +1179,7 @@ inheritance_planner(PlannerInfo *root)
 				AppendRelInfo *appinfo2 = (AppendRelInfo *) lfirst(lc2);
 
 				if (bms_is_member(appinfo2->child_relid, modifiableARIindexes))
-					appinfo2 = (AppendRelInfo *) copyObject(appinfo2);
+					appinfo2 = copyObject(appinfo2);
 
 				subroot->append_rel_list = lappend(subroot->append_rel_list,
 												   appinfo2);
@@ -3361,6 +3361,8 @@ get_number_of_groups(PlannerInfo *root,
 			/* Add up the estimates for each grouping set */
 			ListCell   *lc;
 			ListCell   *lc2;
+
+			Assert(gd);  /* keep Coverity happy */
 
 			dNumGroups = 0;
 
@@ -5999,7 +6001,7 @@ plan_cluster_use_sort(Oid tableOid, Oid indexOid)
 	setup_simple_rel_arrays(root);
 
 	/* Build RelOptInfo */
-	rel = build_simple_rel(root, 1, RELOPT_BASEREL);
+	rel = build_simple_rel(root, 1, NULL);
 
 	/* Locate IndexOptInfo for the target index */
 	indexInfo = NULL;

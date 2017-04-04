@@ -616,7 +616,7 @@ pg_parse_query(const char *query_string)
 #ifdef COPY_PARSE_PLAN_TREES
 	/* Optional debugging check: pass raw parsetrees through copyObject() */
 	{
-		List	   *new_list = (List *) copyObject(raw_parsetree_list);
+		List	   *new_list = copyObject(raw_parsetree_list);
 
 		/* This checks both copyObject() and the equal() routines... */
 		if (!equal(new_list, raw_parsetree_list))
@@ -642,7 +642,8 @@ pg_parse_query(const char *query_string)
  */
 List *
 pg_analyze_and_rewrite(RawStmt *parsetree, const char *query_string,
-					   Oid *paramTypes, int numParams)
+					   Oid *paramTypes, int numParams,
+					   QueryEnvironment *queryEnv)
 {
 	Query	   *query;
 	List	   *querytree_list;
@@ -655,7 +656,8 @@ pg_analyze_and_rewrite(RawStmt *parsetree, const char *query_string,
 	if (log_parser_stats)
 		ResetUsage();
 
-	query = parse_analyze(parsetree, query_string, paramTypes, numParams);
+	query = parse_analyze(parsetree, query_string, paramTypes, numParams,
+						  queryEnv);
 
 	if (log_parser_stats)
 		ShowUsage("PARSE ANALYSIS STATISTICS");
@@ -679,7 +681,8 @@ List *
 pg_analyze_and_rewrite_params(RawStmt *parsetree,
 							  const char *query_string,
 							  ParserSetupHook parserSetup,
-							  void *parserSetupArg)
+							  void *parserSetupArg,
+							  QueryEnvironment *queryEnv)
 {
 	ParseState *pstate;
 	Query	   *query;
@@ -697,6 +700,7 @@ pg_analyze_and_rewrite_params(RawStmt *parsetree,
 
 	pstate = make_parsestate(NULL);
 	pstate->p_sourcetext = query_string;
+	pstate->p_queryEnv = queryEnv;
 	(*parserSetup) (pstate, parserSetupArg);
 
 	query = transformTopLevelStmt(pstate, parsetree);
@@ -756,7 +760,7 @@ pg_rewrite_query(Query *query)
 	{
 		List	   *new_list;
 
-		new_list = (List *) copyObject(querytree_list);
+		new_list = copyObject(querytree_list);
 		/* This checks both copyObject() and the equal() routines... */
 		if (!equal(new_list, querytree_list))
 			elog(WARNING, "copyObject() failed to produce equal parse tree");
@@ -803,7 +807,7 @@ pg_plan_query(Query *querytree, int cursorOptions, ParamListInfo boundParams)
 #ifdef COPY_PARSE_PLAN_TREES
 	/* Optional debugging check: pass plan output through copyObject() */
 	{
-		PlannedStmt *new_plan = (PlannedStmt *) copyObject(plan);
+		PlannedStmt *new_plan = copyObject(plan);
 
 		/*
 		 * equal() currently does not have routines to compare Plan nodes, so
@@ -1024,7 +1028,7 @@ exec_simple_query(const char *query_string)
 		oldcontext = MemoryContextSwitchTo(MessageContext);
 
 		querytree_list = pg_analyze_and_rewrite(parsetree, query_string,
-												NULL, 0);
+												NULL, 0, NULL);
 
 		plantree_list = pg_plan_queries(querytree_list,
 										CURSOR_OPT_PARALLEL_OK, NULL);
@@ -1769,7 +1773,7 @@ exec_bind_message(StringInfo input_message)
 	 * will be generated in MessageContext.  The plan refcount will be
 	 * assigned to the Portal, so it will be released at portal destruction.
 	 */
-	cplan = GetCachedPlan(psrc, params, false);
+	cplan = GetCachedPlan(psrc, params, false, NULL);
 
 	/*
 	 * Now we can define the portal.
@@ -2367,7 +2371,7 @@ exec_describe_statement_message(const char *stmt_name)
 		List	   *tlist;
 
 		/* Get the plan's primary targetlist */
-		tlist = CachedPlanGetTargetList(psrc);
+		tlist = CachedPlanGetTargetList(psrc, NULL);
 
 		SendRowDescriptionMessage(psrc->resultDesc, tlist, NULL);
 	}

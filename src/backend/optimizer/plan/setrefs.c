@@ -111,10 +111,10 @@ static Var *search_indexed_tlist_for_var(Var *var,
 							 indexed_tlist *itlist,
 							 Index newvarno,
 							 int rtoffset);
-static Var *search_indexed_tlist_for_non_var(Node *node,
+static Var *search_indexed_tlist_for_non_var(Expr *node,
 								 indexed_tlist *itlist,
 								 Index newvarno);
-static Var *search_indexed_tlist_for_sortgroupref(Node *node,
+static Var *search_indexed_tlist_for_sortgroupref(Expr *node,
 									  Index sortgroupref,
 									  indexed_tlist *itlist,
 									  Index newvarno);
@@ -583,6 +583,17 @@ set_plan_refs(PlannerInfo *root, Plan *plan, int rtoffset)
 		case T_CteScan:
 			{
 				CteScan    *splan = (CteScan *) plan;
+
+				splan->scan.scanrelid += rtoffset;
+				splan->scan.plan.targetlist =
+					fix_scan_list(root, splan->scan.plan.targetlist, rtoffset);
+				splan->scan.plan.qual =
+					fix_scan_list(root, splan->scan.plan.qual, rtoffset);
+			}
+			break;
+		case T_NamedTuplestoreScan:
+			{
+				NamedTuplestoreScan *splan = (NamedTuplestoreScan *) plan;
 
 				splan->scan.scanrelid += rtoffset;
 				splan->scan.plan.targetlist =
@@ -1440,7 +1451,7 @@ fix_param_node(PlannerInfo *root, Param *p)
 			elog(ERROR, "unexpected PARAM_MULTIEXPR ID: %d", p->paramid);
 		return copyObject(list_nth(params, colno - 1));
 	}
-	return copyObject(p);
+	return (Node *) copyObject(p);
 }
 
 /*
@@ -1727,7 +1738,7 @@ set_upper_references(PlannerInfo *root, Plan *plan, int rtoffset)
 		if (tle->ressortgroupref != 0 && !IsA(tle->expr, Var))
 		{
 			newexpr = (Node *)
-				search_indexed_tlist_for_sortgroupref((Node *) tle->expr,
+				search_indexed_tlist_for_sortgroupref(tle->expr,
 													  tle->ressortgroupref,
 													  subplan_itlist,
 													  OUTER_VAR);
@@ -1810,7 +1821,7 @@ convert_combining_aggrefs(Node *node, void *context)
 		 */
 		child_agg->args = NIL;
 		child_agg->aggfilter = NULL;
-		parent_agg = (Aggref *) copyObject(child_agg);
+		parent_agg = copyObject(child_agg);
 		child_agg->args = orig_agg->args;
 		child_agg->aggfilter = orig_agg->aggfilter;
 
@@ -2054,7 +2065,7 @@ search_indexed_tlist_for_var(Var *var, indexed_tlist *itlist,
  * so there's a correctness reason not to call it unless that's set.
  */
 static Var *
-search_indexed_tlist_for_non_var(Node *node,
+search_indexed_tlist_for_non_var(Expr *node,
 								 indexed_tlist *itlist, Index newvarno)
 {
 	TargetEntry *tle;
@@ -2095,7 +2106,7 @@ search_indexed_tlist_for_non_var(Node *node,
  * And it's also faster than search_indexed_tlist_for_non_var.
  */
 static Var *
-search_indexed_tlist_for_sortgroupref(Node *node,
+search_indexed_tlist_for_sortgroupref(Expr *node,
 									  Index sortgroupref,
 									  indexed_tlist *itlist,
 									  Index newvarno)
@@ -2229,7 +2240,7 @@ fix_join_expr_mutator(Node *node, fix_join_expr_context *context)
 		/* See if the PlaceHolderVar has bubbled up from a lower plan node */
 		if (context->outer_itlist && context->outer_itlist->has_ph_vars)
 		{
-			newvar = search_indexed_tlist_for_non_var((Node *) phv,
+			newvar = search_indexed_tlist_for_non_var((Expr *) phv,
 													  context->outer_itlist,
 													  OUTER_VAR);
 			if (newvar)
@@ -2237,7 +2248,7 @@ fix_join_expr_mutator(Node *node, fix_join_expr_context *context)
 		}
 		if (context->inner_itlist && context->inner_itlist->has_ph_vars)
 		{
-			newvar = search_indexed_tlist_for_non_var((Node *) phv,
+			newvar = search_indexed_tlist_for_non_var((Expr *) phv,
 													  context->inner_itlist,
 													  INNER_VAR);
 			if (newvar)
@@ -2252,7 +2263,7 @@ fix_join_expr_mutator(Node *node, fix_join_expr_context *context)
 	/* Try matching more complex expressions too, if tlists have any */
 	if (context->outer_itlist && context->outer_itlist->has_non_vars)
 	{
-		newvar = search_indexed_tlist_for_non_var(node,
+		newvar = search_indexed_tlist_for_non_var((Expr *) node,
 												  context->outer_itlist,
 												  OUTER_VAR);
 		if (newvar)
@@ -2260,7 +2271,7 @@ fix_join_expr_mutator(Node *node, fix_join_expr_context *context)
 	}
 	if (context->inner_itlist && context->inner_itlist->has_non_vars)
 	{
-		newvar = search_indexed_tlist_for_non_var(node,
+		newvar = search_indexed_tlist_for_non_var((Expr *) node,
 												  context->inner_itlist,
 												  INNER_VAR);
 		if (newvar)
@@ -2344,7 +2355,7 @@ fix_upper_expr_mutator(Node *node, fix_upper_expr_context *context)
 		/* See if the PlaceHolderVar has bubbled up from a lower plan node */
 		if (context->subplan_itlist->has_ph_vars)
 		{
-			newvar = search_indexed_tlist_for_non_var((Node *) phv,
+			newvar = search_indexed_tlist_for_non_var((Expr *) phv,
 													  context->subplan_itlist,
 													  context->newvarno);
 			if (newvar)
@@ -2380,7 +2391,7 @@ fix_upper_expr_mutator(Node *node, fix_upper_expr_context *context)
 	/* Try matching more complex expressions too, if tlist has any */
 	if (context->subplan_itlist->has_non_vars)
 	{
-		newvar = search_indexed_tlist_for_non_var(node,
+		newvar = search_indexed_tlist_for_non_var((Expr *) node,
 												  context->subplan_itlist,
 												  context->newvarno);
 		if (newvar)
@@ -2571,6 +2582,11 @@ extract_query_dependencies_walker(Node *node, PlannerInfo *context)
 			if (rte->rtekind == RTE_RELATION)
 				context->glob->relationOids =
 					lappend_oid(context->glob->relationOids, rte->relid);
+			else if (rte->rtekind == RTE_NAMEDTUPLESTORE &&
+					 OidIsValid(rte->relid))
+				context->glob->relationOids =
+					lappend_oid(context->glob->relationOids,
+								rte->relid);
 		}
 
 		/* And recurse into the query's subexpressions */

@@ -1742,16 +1742,17 @@ create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 														  required_outer);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = false;
-	pathnode->path.parallel_workers = subpath->parallel_workers;
+	pathnode->path.parallel_workers = 0;
 	pathnode->path.pathkeys = NIL;		/* Gather has unordered result */
 
 	pathnode->subpath = subpath;
+	pathnode->num_workers = subpath->parallel_workers;
 	pathnode->single_copy = false;
 
-	if (pathnode->path.parallel_workers == 0)
+	if (pathnode->num_workers == 0)
 	{
-		pathnode->path.parallel_workers = 1;
 		pathnode->path.pathkeys = subpath->pathkeys;
+		pathnode->num_workers = 1;
 		pathnode->single_copy = true;
 	}
 
@@ -1887,6 +1888,32 @@ create_ctescan_path(PlannerInfo *root, RelOptInfo *rel, Relids required_outer)
 	pathnode->pathkeys = NIL;	/* XXX for now, result is always unordered */
 
 	cost_ctescan(pathnode, root, rel, pathnode->param_info);
+
+	return pathnode;
+}
+
+/*
+ * create_namedtuplestorescan_path
+ *	  Creates a path corresponding to a scan of a named tuplestore, returning
+ *	  the pathnode.
+ */
+Path *
+create_namedtuplestorescan_path(PlannerInfo *root, RelOptInfo *rel,
+								Relids required_outer)
+{
+	Path	   *pathnode = makeNode(Path);
+
+	pathnode->pathtype = T_NamedTuplestoreScan;
+	pathnode->parent = rel;
+	pathnode->pathtarget = rel->reltarget;
+	pathnode->param_info = get_baserel_parampathinfo(root, rel,
+													 required_outer);
+	pathnode->parallel_aware = false;
+	pathnode->parallel_safe = rel->consider_parallel;
+	pathnode->parallel_workers = 0;
+	pathnode->pathkeys = NIL;	/* result is always unordered */
+
+	cost_namedtuplestorescan(pathnode, root, rel, pathnode->param_info);
 
 	return pathnode;
 }

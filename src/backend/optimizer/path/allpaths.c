@@ -111,6 +111,8 @@ static void set_tablefunc_pathlist(PlannerInfo *root, RelOptInfo *rel,
 					   RangeTblEntry *rte);
 static void set_cte_pathlist(PlannerInfo *root, RelOptInfo *rel,
 				 RangeTblEntry *rte);
+static void set_namedtuplestore_pathlist(PlannerInfo *root, RelOptInfo *rel,
+				 RangeTblEntry *rte);
 static void set_worktable_pathlist(PlannerInfo *root, RelOptInfo *rel,
 					   RangeTblEntry *rte);
 static RelOptInfo *make_rel_from_joinlist(PlannerInfo *root, List *joinlist);
@@ -396,6 +398,9 @@ set_rel_size(PlannerInfo *root, RelOptInfo *rel,
 				else
 					set_cte_pathlist(root, rel, rte);
 				break;
+			case RTE_NAMEDTUPLESTORE:
+				set_namedtuplestore_pathlist(root, rel, rte);
+				break;
 			default:
 				elog(ERROR, "unexpected rtekind: %d", (int) rel->rtekind);
 				break;
@@ -464,6 +469,9 @@ set_rel_pathlist(PlannerInfo *root, RelOptInfo *rel,
 			case RTE_CTE:
 				/* CTE reference --- fully handled during set_rel_size */
 				break;
+			case RTE_NAMEDTUPLESTORE:
+				/* tuplestore reference --- fully handled during set_rel_size */
+				break;
 			default:
 				elog(ERROR, "unexpected rtekind: %d", (int) rel->rtekind);
 				break;
@@ -531,8 +539,7 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 	Assert(root->glob->parallelModeOK);
 
 	/* This should only be called for baserels and appendrel children. */
-	Assert(rel->reloptkind == RELOPT_BASEREL ||
-		   rel->reloptkind == RELOPT_OTHER_MEMBER_REL);
+	Assert(IS_SIMPLE_REL(rel));
 
 	/* Assorted checks based on rtekind. */
 	switch (rte->rtekind)
@@ -637,6 +644,13 @@ set_rel_consider_parallel(PlannerInfo *root, RelOptInfo *rel,
 			 * the CTE would require executing a subplan that's not available
 			 * in the worker, might be parallel-restricted, and must get
 			 * executed only once.
+			 */
+			return;
+
+		case RTE_NAMEDTUPLESTORE:
+			/*
+			 * tuplestore cannot be shared, at least without more
+			 * infrastructure to support that.
 			 */
 			return;
 	}
@@ -831,7 +845,7 @@ set_foreign_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 
 /*
  * set_append_rel_size
- *	  Set size estimates for an "append relation"
+ *	  Set size estimates for a simple "append relation"
  *
  * The passed-in rel and RTE represent the entire append relation.  The
  * relation's contents are computed by appending together the output of
@@ -851,6 +865,8 @@ set_append_rel_size(PlannerInfo *root, RelOptInfo *rel,
 	double	   *parent_attrsizes;
 	int			nattrs;
 	ListCell   *l;
+
+	Assert(IS_SIMPLE_REL(rel));
 
 	/*
 	 * Initialize to compute size estimates for whole append relation.
@@ -2087,6 +2103,36 @@ set_cte_pathlist(PlannerInfo *root, RelOptInfo *rel, RangeTblEntry *rte)
 
 	/* Generate appropriate path */
 	add_path(rel, create_ctescan_path(root, rel, required_outer));
+}
+
+/*
+ * set_namedtuplestore_pathlist
+ *		Build the (single) access path for a named tuplestore RTE
+ *
+ * There's no need for a separate set_namedtuplestore_size phase, since we
+ * don't support join-qual-parameterized paths for tuplestores.
+ */
+static void
+set_namedtuplestore_pathlist(PlannerInfo *root, RelOptInfo *rel,
+							 RangeTblEntry *rte)
+{
+	Relids		required_outer;
+
+	/* Mark rel with estimated output rows, width, etc */
+	set_namedtuplestore_size_estimates(root, rel);
+
+	/*
+	 * We don't support pushing join clauses into the quals of a tuplestore
+	 * scan, but it could still have required parameterization due to LATERAL
+	 * refs in its tlist.
+	 */
+	required_outer = rel->lateral_relids;
+
+	/* Generate appropriate path */
+	add_path(rel, create_namedtuplestorescan_path(root, rel, required_outer));
+
+	/* Select cheapest path (pretty easy in this case...) */
+	set_cheapest(rel);
 }
 
 /*

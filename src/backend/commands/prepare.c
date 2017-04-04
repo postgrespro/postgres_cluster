@@ -243,7 +243,7 @@ ExecuteQuery(ExecuteStmt *stmt, IntoClause *intoClause,
 									   entry->plansource->query_string);
 
 	/* Replan if needed, and increment plan refcount for portal */
-	cplan = GetCachedPlan(entry->plansource, paramLI, false);
+	cplan = GetCachedPlan(entry->plansource, paramLI, false, NULL);
 	plan_list = cplan->stmt_list;
 
 	/*
@@ -352,7 +352,7 @@ EvaluateParams(PreparedStatement *pstmt, List *params,
 	 * We have to run parse analysis for the expressions.  Since the parser is
 	 * not cool about scribbling on its input, copy first.
 	 */
-	params = (List *) copyObject(params);
+	params = copyObject(params);
 
 	pstate = make_parsestate(NULL);
 	pstate->p_sourcetext = queryString;
@@ -551,10 +551,10 @@ FetchPreparedStatementTargetList(PreparedStatement *stmt)
 	List	   *tlist;
 
 	/* Get the plan's primary targetlist */
-	tlist = CachedPlanGetTargetList(stmt->plansource);
+	tlist = CachedPlanGetTargetList(stmt->plansource, NULL);
 
 	/* Copy into caller's context in case plan gets invalidated */
-	return (List *) copyObject(tlist);
+	return copyObject(tlist);
 }
 
 /*
@@ -629,7 +629,8 @@ DropAllPreparedStatements(void)
  */
 void
 ExplainExecuteQuery(ExecuteStmt *execstmt, IntoClause *into, ExplainState *es,
-					const char *queryString, ParamListInfo params)
+					const char *queryString, ParamListInfo params,
+					QueryEnvironment *queryEnv)
 {
 	PreparedStatement *entry;
 	const char *query_string;
@@ -668,7 +669,7 @@ ExplainExecuteQuery(ExecuteStmt *execstmt, IntoClause *into, ExplainState *es,
 	}
 
 	/* Replan if needed, and acquire a transient refcount */
-	cplan = GetCachedPlan(entry->plansource, paramLI, true);
+	cplan = GetCachedPlan(entry->plansource, paramLI, true, queryEnv);
 
 	INSTR_TIME_SET_CURRENT(planduration);
 	INSTR_TIME_SUBTRACT(planduration, planstart);
@@ -681,9 +682,11 @@ ExplainExecuteQuery(ExecuteStmt *execstmt, IntoClause *into, ExplainState *es,
 		PlannedStmt *pstmt = castNode(PlannedStmt, lfirst(p));
 
 		if (pstmt->commandType != CMD_UTILITY)
-			ExplainOnePlan(pstmt, into, es, query_string, paramLI, &planduration);
+			ExplainOnePlan(pstmt, into, es, query_string, paramLI, queryEnv,
+						   &planduration);
 		else
-			ExplainOneUtility(pstmt->utilityStmt, into, es, query_string, paramLI);
+			ExplainOneUtility(pstmt->utilityStmt, into, es, query_string,
+							  paramLI, queryEnv);
 
 		/* No need for CommandCounterIncrement, as ExplainOnePlan did it */
 

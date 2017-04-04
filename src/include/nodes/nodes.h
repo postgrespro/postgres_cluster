@@ -63,6 +63,7 @@ typedef enum NodeTag
 	T_ValuesScan,
 	T_TableFuncScan,
 	T_CteScan,
+	T_NamedTuplestoreScan,
 	T_WorkTableScan,
 	T_ForeignScan,
 	T_CustomScan,
@@ -114,6 +115,7 @@ typedef enum NodeTag
 	T_TableFuncScanState,
 	T_ValuesScanState,
 	T_CteScanState,
+	T_NamedTuplestoreScanState,
 	T_WorkTableScanState,
 	T_ForeignScanState,
 	T_CustomScanState,
@@ -610,7 +612,13 @@ extern int16 *readAttrNumberCols(int numCols);
 /*
  * nodes/copyfuncs.c
  */
-extern void *copyObject(const void *obj);
+extern void *copyObjectImpl(const void *obj);
+/* cast result back to argument type, if supported by compiler */
+#ifdef HAVE_TYPEOF
+#define copyObject(obj) ((typeof(obj)) copyObjectImpl(obj))
+#else
+#define copyObject(obj) copyObjectImpl(obj)
+#endif
 
 /*
  * nodes/equalfuncs.c

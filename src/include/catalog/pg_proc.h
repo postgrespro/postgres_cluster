@@ -564,6 +564,10 @@ DATA(insert OID = 335 (  brinhandler	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 
 DESCR("brin index access method handler");
 DATA(insert OID = 3952 (  brin_summarize_new_values PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 23 "2205" _null_ _null_ _null_ _null_ _null_ brin_summarize_new_values _null_ _null_ _null_ ));
 DESCR("brin: standalone scan new table pages");
+DATA(insert OID = 3999 (  brin_summarize_range PGNSP PGUID 12 1 0 0 0 f f f f t f v s 2 0 23 "2205 20" _null_ _null_ _null_ _null_ _null_ brin_summarize_range _null_ _null_ _null_ ));
+DESCR("brin: standalone scan new table pages");
+DATA(insert OID = 4014 (  brin_desummarize_range PGNSP PGUID 12 1 0 0 0 f f f f t f v s 2 0 2278 "2205 20" _null_ _null_ _null_ _null_ _null_ brin_desummarize_range _null_ _null_ _null_ ));
+DESCR("brin: desummarize page range");
 
 DATA(insert OID = 338 (  amvalidate		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 16 "26" _null_ _null_ _null_ _null_ _null_	amvalidate _null_ _null_ _null_ ));
 DESCR("validate an operator class");
@@ -2125,6 +2129,8 @@ DESCR("less-equal-greater");
 DATA(insert OID = 3144 (  macaddr_not		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 829 "829" _null_ _null_ _null_ _null_ _null_ macaddr_not _null_ _null_ _null_ ));
 DATA(insert OID = 3145 (  macaddr_and		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 829 "829 829" _null_ _null_ _null_ _null_ _null_ macaddr_and _null_ _null_ _null_ ));
 DATA(insert OID = 3146 (  macaddr_or		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 829 "829 829" _null_ _null_ _null_ _null_ _null_ macaddr_or _null_ _null_ _null_ ));
+DATA(insert OID = 3359 (  macaddr_sortsupport PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 2278 "2281" _null_ _null_ _null_ _null_ _null_ macaddr_sortsupport _null_ _null_ _null_ ));
+DESCR("sort support");
 
 /* for macaddr8 type support */
 DATA(insert OID = 4110 (  macaddr8_in		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 774 "2275" _null_ _null_ _null_ _null_ _null_ macaddr8_in _null_ _null_ _null_ ));
@@ -2959,7 +2965,7 @@ DESCR("statistics: reset collected statistics for a single table or index in the
 DATA(insert OID = 3777 (  pg_stat_reset_single_function_counters	PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 2278 "26" _null_ _null_ _null_ _null_ _null_ pg_stat_reset_single_function_counters _null_ _null_ _null_ ));
 DESCR("statistics: reset collected statistics for a single function in the current database");
 
-DATA(insert OID = 3163 (  pg_trigger_depth				PGNSP PGUID 12 1 0 0 0 f f f f t f s s 0 0 23 "" _null_ _null_ _null_ _null_ _null_ pg_trigger_depth _null_ _null_ _null_ ));
+DATA(insert OID = 3163 (  pg_trigger_depth				PGNSP PGUID 12 1 0 0 0 f f f f t f s r 0 0 23 "" _null_ _null_ _null_ _null_ _null_ pg_trigger_depth _null_ _null_ _null_ ));
 DESCR("current trigger depth");
 
 DATA(insert OID = 3778 ( pg_tablespace_location PGNSP PGUID 12 1 0 0 0 f f f f t f s s 1 0 25 "26" _null_ _null_ _null_ _null_ _null_ pg_tablespace_location _null_ _null_ _null_ ));
@@ -4810,6 +4816,24 @@ DESCR("generate headline");
 DATA(insert OID = 3755 (  ts_headline	PGNSP PGUID 12 100 0 0 0 f f f f t f s s 2 0 25 "25 3615" _null_ _null_ _null_ _null_ _null_ ts_headline _null_ _null_ _null_ ));
 DESCR("generate headline");
 
+DATA(insert OID = 4201 (  ts_headline	PGNSP PGUID 12 100 0 0 0 f f f f t f i s 4 0 3802 "3734 3802 3615 25" _null_ _null_ _null_ _null_ _null_ ts_headline_jsonb_byid_opt _null_ _null_ _null_ ));
+DESCR("generate headline from jsonb");
+DATA(insert OID = 4202 (  ts_headline	PGNSP PGUID 12 100 0 0 0 f f f f t f i s 3 0 3802 "3734 3802 3615" _null_ _null_ _null_ _null_ _null_ ts_headline_jsonb_byid _null_ _null_ _null_ ));
+DESCR("generate headline from jsonb");
+DATA(insert OID = 4203 (  ts_headline	PGNSP PGUID 12 100 0 0 0 f f f f t f s s 3 0 3802 "3802 3615 25" _null_ _null_ _null_ _null_ _null_ ts_headline_jsonb_opt _null_ _null_ _null_ ));
+DESCR("generate headline from jsonb");
+DATA(insert OID = 4204 (  ts_headline	PGNSP PGUID 12 100 0 0 0 f f f f t f s s 2 0 3802 "3802 3615" _null_ _null_ _null_ _null_ _null_ ts_headline_jsonb _null_ _null_ _null_ ));
+DESCR("generate headline from jsonb");
+
+DATA(insert OID = 4205 (  ts_headline	PGNSP PGUID 12 100 0 0 0 f f f f t f i s 4 0 114 "3734 114 3615 25" _null_ _null_ _null_ _null_ _null_ ts_headline_json_byid_opt _null_ _null_ _null_ ));
+DESCR("generate headline from json");
+DATA(insert OID = 4206 (  ts_headline	PGNSP PGUID 12 100 0 0 0 f f f f t f i s 3 0 114 "3734 114 3615" _null_ _null_ _null_ _null_ _null_ ts_headline_json_byid _null_ _null_ _null_ ));
+DESCR("generate headline from json");
+DATA(insert OID = 4207 (  ts_headline	PGNSP PGUID 12 100 0 0 0 f f f f t f s s 3 0 114 "114 3615 25" _null_ _null_ _null_ _null_ _null_ ts_headline_json_opt _null_ _null_ _null_ ));
+DESCR("generate headline from json");
+DATA(insert OID = 4208 (  ts_headline	PGNSP PGUID 12 100 0 0 0 f f f f t f s s 2 0 114 "114 3615" _null_ _null_ _null_ _null_ _null_ ts_headline_json _null_ _null_ _null_ ));
+DESCR("generate headline from json");
+
 DATA(insert OID = 3745 (  to_tsvector		PGNSP PGUID 12 100 0 0 0 f f f f t f i s 2 0 3614 "3734 25" _null_ _null_ _null_ _null_ _null_ to_tsvector_byid _null_ _null_ _null_ ));
 DESCR("transform to tsvector");
 DATA(insert OID = 3746 (  to_tsquery		PGNSP PGUID 12 100 0 0 0 f f f f t f i s 2 0 3615 "3734 25" _null_ _null_ _null_ _null_ _null_ to_tsquery_byid _null_ _null_ _null_ ));
@@ -4826,6 +4850,14 @@ DATA(insert OID = 3751 (  plainto_tsquery	PGNSP PGUID 12 100 0 0 0 f f f f t f s
 DESCR("transform to tsquery");
 DATA(insert OID = 5001 (  phraseto_tsquery	PGNSP PGUID 12 100 0 0 0 f f f f t f s s 1 0 3615 "25" _null_ _null_ _null_ _null_ _null_ phraseto_tsquery _null_ _null_ _null_ ));
 DESCR("transform to tsquery");
+DATA(insert OID = 4209 (  to_tsvector		PGNSP PGUID 12 100 0 0 0 f f f f t f s s 1 0 3614 "3802" _null_ _null_ _null_ _null_ _null_ jsonb_to_tsvector _null_ _null_ _null_ ));
+DESCR("transform jsonb to tsvector");
+DATA(insert OID = 4210 (  to_tsvector		PGNSP PGUID 12 100 0 0 0 f f f f t f s s 1 0 3614 "114" _null_ _null_ _null_ _null_ _null_ json_to_tsvector _null_ _null_ _null_ ));
+DESCR("transform json to tsvector");
+DATA(insert OID = 4211 (  to_tsvector		PGNSP PGUID 12 100 0 0 0 f f f f t f s s 2 0 3614 "3734 3802" _null_ _null_ _null_ _null_ _null_ jsonb_to_tsvector_byid _null_ _null_ _null_ ));
+DESCR("transform jsonb to tsvector");
+DATA(insert OID = 4212 (  to_tsvector		PGNSP PGUID 12 100 0 0 0 f f f f t f s s 2 0 3614 "3734 114" _null_ _null_ _null_ _null_ _null_ json_to_tsvector_byid _null_ _null_ _null_ ));
+DESCR("transform json to tsvector");
 
 DATA(insert OID = 3752 (  tsvector_update_trigger			PGNSP PGUID 12 1 0 0 0 f f f f f f v s 0 0 2279 "" _null_ _null_ _null_ _null_ _null_ tsvector_update_trigger_byid _null_ _null_ _null_ ));
 DESCR("trigger for automatic update of tsvector column");
@@ -5262,13 +5294,13 @@ DATA(insert OID = 3578 (  pg_logical_emit_message PGNSP PGUID 12 1 0 0 0 f f f f
 DESCR("emit a binary logical decoding message");
 
 /* event triggers */
-DATA(insert OID = 3566 (  pg_event_trigger_dropped_objects		PGNSP PGUID 12 10 100 0 0 f f f f t t s s 0 0 2249 "" "{26,26,23,16,16,16,25,25,25,25,1009,1009}" "{o,o,o,o,o,o,o,o,o,o,o,o}" "{classid, objid, objsubid, original, normal, is_temporary, object_type, schema_name, object_name, object_identity, address_names, address_args}" _null_ _null_ pg_event_trigger_dropped_objects _null_ _null_ _null_ ));
+DATA(insert OID = 3566 (  pg_event_trigger_dropped_objects		PGNSP PGUID 12 10 100 0 0 f f f f t t s r 0 0 2249 "" "{26,26,23,16,16,16,25,25,25,25,1009,1009}" "{o,o,o,o,o,o,o,o,o,o,o,o}" "{classid, objid, objsubid, original, normal, is_temporary, object_type, schema_name, object_name, object_identity, address_names, address_args}" _null_ _null_ pg_event_trigger_dropped_objects _null_ _null_ _null_ ));
 DESCR("list objects dropped by the current command");
-DATA(insert OID = 4566 (  pg_event_trigger_table_rewrite_oid	PGNSP PGUID 12 1 0 0 0 f f f f t f s s 0 0 26 "" "{26}" "{o}" "{oid}" _null_ _null_ pg_event_trigger_table_rewrite_oid _null_ _null_ _null_ ));
+DATA(insert OID = 4566 (  pg_event_trigger_table_rewrite_oid	PGNSP PGUID 12 1 0 0 0 f f f f t f s r 0 0 26 "" "{26}" "{o}" "{oid}" _null_ _null_ pg_event_trigger_table_rewrite_oid _null_ _null_ _null_ ));
 DESCR("return Oid of the table getting rewritten");
-DATA(insert OID = 4567 (  pg_event_trigger_table_rewrite_reason PGNSP PGUID 12 1 0 0 0 f f f f t f s s 0 0 23 "" _null_ _null_ _null_ _null_ _null_ pg_event_trigger_table_rewrite_reason _null_ _null_ _null_ ));
+DATA(insert OID = 4567 (  pg_event_trigger_table_rewrite_reason PGNSP PGUID 12 1 0 0 0 f f f f t f s r 0 0 23 "" _null_ _null_ _null_ _null_ _null_ pg_event_trigger_table_rewrite_reason _null_ _null_ _null_ ));
 DESCR("return reason code for table getting rewritten");
-DATA(insert OID = 4568 (  pg_event_trigger_ddl_commands			PGNSP PGUID 12 10 100 0 0 f f f f t t s s 0 0 2249 "" "{26,26,23,25,25,25,25,16,32}" "{o,o,o,o,o,o,o,o,o}" "{classid, objid, objsubid, command_tag, object_type, schema_name, object_identity, in_extension, command}" _null_ _null_ pg_event_trigger_ddl_commands _null_ _null_ _null_ ));
+DATA(insert OID = 4568 (  pg_event_trigger_ddl_commands			PGNSP PGUID 12 10 100 0 0 f f f f t t s r 0 0 2249 "" "{26,26,23,25,25,25,25,16,32}" "{o,o,o,o,o,o,o,o,o}" "{classid, objid, objsubid, command_tag, object_type, schema_name, object_identity, in_extension, command}" _null_ _null_ pg_event_trigger_ddl_commands _null_ _null_ _null_ ));
 DESCR("list DDL actions being executed by the current command");
 
 /* generic transition functions for ordered-set aggregates */

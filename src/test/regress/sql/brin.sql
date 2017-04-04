@@ -400,6 +400,7 @@ INSERT INTO brintest SELECT
 	box(point(odd, even), point(thousand, twothousand))
 FROM tenk1 ORDER BY unique2 LIMIT 5 OFFSET 5;
 
+SELECT brin_desummarize_range('brinidx', 0);
 VACUUM brintest;  -- force a summarization cycle in brinidx
 
 UPDATE brintest SET int8col = int8col * int4col;
@@ -409,3 +410,37 @@ UPDATE brintest SET textcol = '' WHERE textcol IS NOT NULL;
 SELECT brin_summarize_new_values('brintest'); -- error, not an index
 SELECT brin_summarize_new_values('tenk1_unique1'); -- error, not a BRIN index
 SELECT brin_summarize_new_values('brinidx'); -- ok, no change expected
+
+-- Tests for brin_desummarize_range
+SELECT brin_desummarize_range('brinidx', -1); -- error, invalid range
+SELECT brin_desummarize_range('brinidx', 0);
+SELECT brin_desummarize_range('brinidx', 0);
+SELECT brin_desummarize_range('brinidx', 100000000);
+
+-- Test brin_summarize_range
+CREATE TABLE brin_summarize (
+    value int
+) WITH (fillfactor=10, autovacuum_enabled=false);
+CREATE INDEX brin_summarize_idx ON brin_summarize USING brin (value) WITH (pages_per_range=2);
+-- Fill a few pages
+DO $$
+DECLARE curtid tid;
+BEGIN
+  LOOP
+    INSERT INTO brin_summarize VALUES (1) RETURNING ctid INTO curtid;
+    EXIT WHEN curtid > tid '(2, 0)';
+  END LOOP;
+END;
+$$;
+
+-- summarize one range
+SELECT brin_summarize_range('brin_summarize_idx', 0);
+-- nothing: already summarized
+SELECT brin_summarize_range('brin_summarize_idx', 1);
+-- summarize one range
+SELECT brin_summarize_range('brin_summarize_idx', 2);
+-- nothing: page doesn't exist in table
+SELECT brin_summarize_range('brin_summarize_idx', 4294967295);
+-- invalid block number values
+SELECT brin_summarize_range('brin_summarize_idx', -1);
+SELECT brin_summarize_range('brin_summarize_idx', 4294967296);

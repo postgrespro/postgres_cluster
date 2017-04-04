@@ -770,17 +770,32 @@ testdb=&gt;
     </para>
 
     <para>
-    Within an argument, text that is enclosed in backquotes
-    (<literal>`</literal>) is taken as a command line that is passed to the
-    shell. The output of the command (with any trailing newline removed)
-    replaces the backquoted text.
-    </para>
-
-    <para>
     If an unquoted colon (<literal>:</literal>) followed by a
     <application>psql</> variable name appears within an argument, it is
     replaced by the variable's value, as described in <xref
     linkend="APP-PSQL-interpolation" endterm="APP-PSQL-interpolation-title">.
+    The forms <literal>:'<replaceable>variable_name</>'</literal> and
+    <literal>:"<replaceable>variable_name</>"</literal> described there
+    work as well.
+    </para>
+
+    <para>
+    Within an argument, text that is enclosed in backquotes
+    (<literal>`</literal>) is taken as a command line that is passed to the
+    shell.  The output of the command (with any trailing newline removed)
+    replaces the backquoted text.  Within the text enclosed in backquotes,
+    no special quoting or other processing occurs, except that appearances
+    of <literal>:<replaceable>variable_name</></literal> where
+    <replaceable>variable_name</> is a <application>psql</> variable name
+    are replaced by the variable's value.  Also, appearances of
+    <literal>:'<replaceable>variable_name</>'</literal> are replaced by the
+    variable's value suitably quoted to become a single shell command
+    argument.  (The latter form is almost always preferable, unless you are
+    very sure of what is in the variable.)  Because carriage return and line
+    feed characters cannot be safely quoted on all platforms, the
+    <literal>:'<replaceable>variable_name</>'</literal> form prints an
+    error message and does not substitute the variable value when such
+    characters appear in the value.
     </para>
 
     <para>
@@ -806,6 +821,14 @@ testdb=&gt;
     <application>psql</application> commands can be freely mixed on a
     line. But in any case, the arguments of a meta-command cannot
     continue beyond the end of the line.
+    </para>
+
+    <para>
+    Many of the meta-commands act on the <firstterm>current query buffer</>.
+    This is simply a buffer holding whatever SQL command text has been typed
+    but not yet sent to the server for execution.  This will include previous
+    input lines as well as any text appearing before the meta-command on the
+    same line.
     </para>
 
     <para>
@@ -966,8 +989,10 @@ testdb=&gt;
         command.  All options other than the data source/destination are
         as specified for <xref linkend="sql-copy">.
         Because of this, special parsing rules apply to the <command>\copy</>
-        command. In particular, <application>psql</>'s variable substitution
-        rules and backslash escapes do not apply.
+        meta-command.  Unlike most other meta-commands, the entire remainder
+        of the line is always taken to be the arguments of <command>\copy</>,
+        and neither variable interpolation nor backquote expansion are
+        performed in the arguments.
         </para>
 
         <tip>
@@ -1698,22 +1723,28 @@ testdb=&gt;
         <listitem>
         <para>
         If <replaceable class="parameter">filename</replaceable> is
-        specified, the file is edited; after the editor exits, its
-        content is copied back to the query buffer. If no <replaceable
+        specified, the file is edited; after the editor exits, the file's
+        content is copied into the current query buffer. If no <replaceable
         class="parameter">filename</replaceable> is given, the current query
         buffer is copied to a temporary file which is then edited in the same
+        fashion.  Or, if the current query buffer is empty, the most recently
+        executed query is copied to a temporary file and edited in the same
         fashion.
         </para>
 
         <para>
-        The new query buffer is then re-parsed according to the normal
-        rules of <application>psql</application>, where the whole buffer
-        is treated as a single line. (Thus you cannot make scripts this
-        way. Use <command>\i</command> for that.) This means that
-        if the query ends with (or contains) a semicolon, it is
-        immediately executed. Otherwise it will merely wait in the
-        query buffer; type semicolon or <literal>\g</> to send it, or
-        <literal>\r</> to cancel.
+        The new contents of the query buffer are then re-parsed according to
+        the normal rules of <application>psql</application>, treating the
+        whole buffer as a single line.  Any complete queries are immediately
+        executed; that is, if the query buffer contains or ends with a
+        semicolon, everything up to that point is executed.  Whatever remains
+        will wait in the query buffer; type semicolon or <literal>\g</> to
+        send it, or <literal>\r</> to cancel it by clearing the query buffer.
+        Treating the buffer as a single line primarily affects meta-commands:
+        whatever is in the buffer after a meta-command will be taken as
+        argument(s) to the meta-command, even if it spans multiple lines.
+        (Thus you cannot make meta-command-using scripts this way.
+        Use <command>\i</command> for that.)
         </para>
 
         <para>
@@ -1791,6 +1822,13 @@ Tue Oct 26 21:40:57 CEST 1999
         line of the file.)
         </para>
 
+        <para>
+        Unlike most other meta-commands, the entire remainder of the line is
+        always taken to be the argument(s) of <command>\ef</>, and neither
+        variable interpolation nor backquote expansion are performed in the
+        arguments.
+        </para>
+
         <tip>
         <para>
         See under <xref linkend="app-psql-environment"
@@ -1850,6 +1888,13 @@ Tue Oct 26 21:40:57 CEST 1999
          If a line number is specified, <application>psql</application> will
          position the cursor on the specified line of the view definition.
         </para>
+
+        <para>
+        Unlike most other meta-commands, the entire remainder of the line is
+        always taken to be the argument(s) of <command>\ev</>, and neither
+        variable interpolation nor backquote expansion are performed in the
+        arguments.
+        </para>
         </listitem>
       </varlistentry>
 
@@ -1873,18 +1918,27 @@ Tue Oct 26 21:40:57 CEST 1999
         <term><literal>\g [ |<replaceable class="parameter">command</replaceable> ]</literal></term>
         <listitem>
         <para>
-        Sends the current query input buffer to the server, and
-        optionally stores the query's output in <replaceable
-        class="parameter">filename</replaceable> or pipes the output
-        to the shell command <replaceable
-        class="parameter">command</replaceable>.  The file or command is
-        written to only if the query successfully returns zero or more tuples,
-        not if the query fails or is a non-data-returning SQL command.
+        Sends the current query buffer to the server for execution.
+        If an argument is given, the query's output is written to the named
+        file or piped to the given shell command, instead of displaying it as
+        usual.  The file or command is written to only if the query
+        successfully returns zero or more tuples, not if the query fails or
+        is a non-data-returning SQL command.
         </para>
         <para>
-        A bare <literal>\g</literal> is essentially equivalent to a semicolon.
+        If the current query buffer is empty, the most recently sent query is
+        re-executed instead.  Except for that behavior, <literal>\g</literal>
+        without an argument is essentially equivalent to a semicolon.
         A <literal>\g</literal> with argument is a <quote>one-shot</quote>
         alternative to the <command>\o</command> command.
+        </para>
+        <para>
+        If the argument begins with <literal>|</>, then the entire remainder
+        of the line is taken to be
+        the <replaceable class="parameter">command</replaceable> to execute,
+        and neither variable interpolation nor backquote expansion are
+        performed in it.  The rest of the line is simply passed literally to
+        the shell.
         </para>
         </listitem>
       </varlistentry>
@@ -1907,7 +1961,7 @@ Tue Oct 26 21:40:57 CEST 1999
 
         <listitem>
         <para>
-         Sends the current query input buffer to the server, then treats
+         Sends the current query buffer to the server, then treats
          each column of each row of the query's output (if any) as a SQL
          statement to be executed.  For example, to create an index on each
          column of <structname>my_table</>:
@@ -1940,6 +1994,10 @@ CREATE INDEX
          timing, and other query execution features apply to each generated
          query as well.
         </para>
+        <para>
+         If the current query buffer is empty, the most recently sent query
+         is re-executed instead.
+        </para>
         </listitem>
       </varlistentry>
 
@@ -1949,7 +2007,7 @@ CREATE INDEX
 
         <listitem>
         <para>
-         Sends the current query input buffer to the server and stores the
+         Sends the current query buffer to the server and stores the
          query's output into <application>psql</> variables (see <xref
          linkend="APP-PSQL-variables" endterm="APP-PSQL-variables-title">).
          The query to be executed must return exactly one row.  Each column of
@@ -1981,6 +2039,10 @@ hello 10
          If the query fails or does not return one row,
          no variables are changed.
         </para>
+        <para>
+         If the current query buffer is empty, the most recently sent query
+         is re-executed instead.
+        </para>
         </listitem>
       </varlistentry>
 
@@ -1995,6 +2057,13 @@ hello 10
         <replaceable class="parameter">command</replaceable> is an
         asterisk (<literal>*</literal>), then syntax help on all
         <acronym>SQL</acronym> commands is shown.
+        </para>
+
+        <para>
+        Unlike most other meta-commands, the entire remainder of the line is
+        always taken to be the argument(s) of <command>\help</>, and neither
+        variable interpolation nor backquote expansion are performed in the
+        arguments.
         </para>
 
         <note>
@@ -2059,6 +2128,95 @@ hello 10
         directory in which the script is located, rather than the current
         working directory.
         </para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\if</literal> <replaceable class="parameter">expression</replaceable></term>
+        <term><literal>\elif</literal> <replaceable class="parameter">expression</replaceable></term>
+        <term><literal>\else</literal></term>
+        <term><literal>\endif</literal></term>
+        <listitem>
+        <para>
+        This group of commands implements nestable conditional blocks.
+        A conditional block must begin with an <command>\if</command> and end
+        with an <command>\endif</command>.  In between there may be any number
+        of <command>\elif</command> clauses, which may optionally be followed
+        by a single <command>\else</command> clause.  Ordinary queries and
+        other types of backslash commands may (and usually do) appear between
+        the commands forming a conditional block.
+        </para>
+        <para>
+        The <command>\if</command> and <command>\elif</command> commands read
+        their argument(s) and evaluate them as a boolean expression.  If the
+        expression yields <literal>true</literal> then processing continues
+        normally; otherwise, lines are skipped until a
+        matching <command>\elif</command>, <command>\else</command>,
+        or <command>\endif</command> is reached.  Once
+        an <command>\if</command> or <command>\elif</command> test has
+        succeeded, the arguments of later <command>\elif</command> commands in
+        the same block are not evaluated but are treated as false.  Lines
+        following an <command>\else</command> are processed only if no earlier
+        matching <command>\if</command> or <command>\elif</command> succeeded.
+        </para>
+        <para>
+        The <replaceable class="parameter">expression</replaceable> argument
+        of an <command>\if</command> or <command>\elif</command> command
+        is subject to variable interpolation and backquote expansion, just
+        like any other backslash command argument.  After that it is evaluated
+        like the value of an on/off option variable.  So a valid value
+        is any unambiguous case-insensitive match for one of:
+        <literal>true</literal>, <literal>false</literal>, <literal>1</literal>,
+        <literal>0</literal>, <literal>on</literal>, <literal>off</literal>,
+        <literal>yes</literal>, <literal>no</literal>.  For example,
+        <literal>t</literal>, <literal>T</literal>, and <literal>tR</literal>
+        will all be considered to be <literal>true</literal>.
+        </para>
+        <para>
+        Expressions that do not properly evaluate to true or false will
+        generate a warning and be treated as false.
+        </para>
+        <para>
+        Lines being skipped are parsed normally to identify queries and
+        backslash commands, but queries are not sent to the server, and
+        backslash commands other than conditionals
+        (<command>\if</command>, <command>\elif</command>,
+        <command>\else</command>, <command>\endif</command>) are
+        ignored.  Conditional commands are checked only for valid nesting.
+        Variable references in skipped lines are not expanded, and backquote
+        expansion is not performed either.
+        </para>
+        <para>
+        All the backslash commands of a given conditional block must appear in
+        the same source file. If EOF is reached on the main input file or an
+        <command>\include</command>-ed file before all local
+        <command>\if</command>-blocks have been closed,
+        then <application>psql</> will raise an error.
+        </para>
+        <para>
+         Here is an example:
+        </para>
+<programlisting>
+-- check for the existence of two separate records in the database and store
+-- the results in separate psql variables
+SELECT
+    EXISTS(SELECT 1 FROM customer WHERE customer_id = 123) as is_customer,
+    EXISTS(SELECT 1 FROM employee WHERE employee_id = 456) as is_employee
+\gset
+\if :is_customer
+    SELECT * FROM customer WHERE customer_id = 123;
+\elif :is_employee
+    \echo 'is not a customer but is an employee'
+    SELECT * FROM employee WHERE employee_id = 456;
+\else
+    \if yes
+        \echo 'not a customer or employee'
+    \else
+        \echo 'this will never print'
+    \endif
+\endif
+</programlisting>
         </listitem>
       </varlistentry>
 
@@ -2176,10 +2334,20 @@ lo_import 152801
         specified, the query output is reset to the standard output.
         </para>
 
-        <para><quote>Query results</quote> includes all tables, command
+        <para>
+        If the argument begins with <literal>|</>, then the entire remainder
+        of the line is taken to be
+        the <replaceable class="parameter">command</replaceable> to execute,
+        and neither variable interpolation nor backquote expansion are
+        performed in it.  The rest of the line is simply passed literally to
+        the shell.
+        </para>
+
+        <para>
+        <quote>Query results</quote> includes all tables, command
         responses, and notices obtained from the database server, as
         well as output of various backslash commands that query the
-        database (such as <command>\d</command>), but not error
+        database (such as <command>\d</command>); but not error
         messages.
         </para>
 
@@ -2198,6 +2366,8 @@ lo_import 152801
         <listitem>
         <para>
         Print the current query buffer to the standard output.
+        If the current query buffer is empty, the most recently executed query
+        is printed instead.
         </para>
         </listitem>
       </varlistentry>
@@ -2778,6 +2948,13 @@ testdb=&gt; <userinput>\setenv LESS -imx4F</userinput>
          output lines are numbered, with the first line of the function body
          being line 1.
         </para>
+
+        <para>
+        Unlike most other meta-commands, the entire remainder of the line is
+        always taken to be the argument(s) of <command>\sf</>, and neither
+        variable interpolation nor backquote expansion are performed in the
+        arguments.
+        </para>
         </listitem>
       </varlistentry>
 
@@ -2797,6 +2974,13 @@ testdb=&gt; <userinput>\setenv LESS -imx4F</userinput>
           If <literal>+</literal> is appended to the command name, then the
           output lines are numbered from 1.
          </para>
+
+        <para>
+        Unlike most other meta-commands, the entire remainder of the line is
+        always taken to be the argument(s) of <command>\sv</>, and neither
+        variable interpolation nor backquote expansion are performed in the
+        arguments.
+        </para>
         </listitem>
       </varlistentry>
 
@@ -2866,9 +3050,20 @@ testdb=&gt; <userinput>\setenv LESS -imx4F</userinput>
         <term><literal>\w</literal> or <literal>\write</literal> <literal>|</><replaceable class="parameter">command</replaceable></term>
         <listitem>
         <para>
-        Outputs the current query buffer to the file <replaceable
+        Writes the current query buffer to the file <replaceable
         class="parameter">filename</replaceable> or pipes it to the shell
         command <replaceable class="parameter">command</replaceable>.
+        If the current query buffer is empty, the most recently executed query
+        is written instead.
+        </para>
+
+        <para>
+        If the argument begins with <literal>|</>, then the entire remainder
+        of the line is taken to be
+        the <replaceable class="parameter">command</replaceable> to execute,
+        and neither variable interpolation nor backquote expansion are
+        performed in it.  The rest of the line is simply passed literally to
+        the shell.
         </para>
         </listitem>
       </varlistentry>
@@ -2883,6 +3078,10 @@ testdb=&gt; <userinput>\setenv LESS -imx4F</userinput>
         seconds (default 2) between executions.  Each query result is
         displayed with a header that includes the <literal>\pset title</>
         string (if any), the time as of query start, and the delay interval.
+        </para>
+        <para>
+        If the current query buffer is empty, the most recently sent query
+        is re-executed instead.
         </para>
         </listitem>
       </varlistentry>
@@ -2922,11 +3121,17 @@ testdb=&gt; <userinput>\setenv LESS -imx4F</userinput>
         <term><literal>\! [ <replaceable class="parameter">command</replaceable> ]</literal></term>
         <listitem>
         <para>
-        Escapes to a separate shell or executes the shell command
-        <replaceable class="parameter">command</replaceable>. The
-        arguments are not further interpreted; the shell will see them
-        as-is.  In particular, the variable substitution rules and
-        backslash escapes do not apply.
+        With no argument, escapes to a sub-shell; <application>psql</>
+        resumes when the sub-shell exits.  With an argument, executes the
+        shell command <replaceable class="parameter">command</replaceable>.
+        </para>
+
+        <para>
+        Unlike most other meta-commands, the entire remainder of the line is
+        always taken to be the argument(s) of <command>\!</>, and neither
+        variable interpolation nor backquote expansion are performed in the
+        arguments.  The rest of the line is simply passed literally to the
+        shell.
         </para>
         </listitem>
       </varlistentry>
@@ -3715,7 +3920,8 @@ testdb=&gt; <userinput>INSERT INTO my_table VALUES (:'content');</userinput>
         <listitem>
         <para>
         In prompt 1 normally <literal>=</literal>,
-        but <literal>^</literal> if in single-line mode,
+        but <literal>@</literal> if the session is in an inactive branch of a
+        conditional block, or <literal>^</literal> if in single-line mode,
         or <literal>!</literal> if the session is disconnected from the
         database (which can happen if <command>\connect</command> fails).
         In prompt 2 <literal>%R</literal> is replaced by a character that

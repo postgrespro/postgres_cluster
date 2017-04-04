@@ -43,7 +43,7 @@
 
 /* Copy a field that is a pointer to some kind of Node or Node tree */
 #define COPY_NODE_FIELD(fldname) \
-	(newnode->fldname = copyObject(from->fldname))
+	(newnode->fldname = copyObjectImpl(from->fldname))
 
 /* Copy a field that is a pointer to a Bitmapset */
 #define COPY_BITMAPSET_FIELD(fldname) \
@@ -678,6 +678,27 @@ _copyCteScan(const CteScan *from)
 	 */
 	COPY_SCALAR_FIELD(ctePlanId);
 	COPY_SCALAR_FIELD(cteParam);
+
+	return newnode;
+}
+
+/*
+ * _copyNamedTuplestoreScan
+ */
+static NamedTuplestoreScan *
+_copyNamedTuplestoreScan(const NamedTuplestoreScan *from)
+{
+	NamedTuplestoreScan    *newnode = makeNode(NamedTuplestoreScan);
+
+	/*
+	 * copy node superclass fields
+	 */
+	CopyScanFields((const Scan *) from, (Scan *) newnode);
+
+	/*
+	 * copy remainder of node
+	 */
+	COPY_STRING_FIELD(enrname);
 
 	return newnode;
 }
@@ -2265,6 +2286,7 @@ _copyRangeTblEntry(const RangeTblEntry *from)
 	COPY_STRING_FIELD(ctename);
 	COPY_SCALAR_FIELD(ctelevelsup);
 	COPY_SCALAR_FIELD(self_reference);
+	COPY_STRING_FIELD(enrname);
 	COPY_NODE_FIELD(coltypes);
 	COPY_NODE_FIELD(coltypmods);
 	COPY_NODE_FIELD(colcollations);
@@ -4507,7 +4529,7 @@ _copyDropSubscriptionStmt(const DropSubscriptionStmt *from)
  */
 #define COPY_NODE_CELL(new, old)					\
 	(new) = (ListCell *) palloc(sizeof(ListCell));	\
-	lfirst(new) = copyObject(lfirst(old));
+	lfirst(new) = copyObjectImpl(lfirst(old));
 
 static List *
 _copyList(const List *from)
@@ -4610,13 +4632,13 @@ _copyForeignKeyCacheInfo(const ForeignKeyCacheInfo *from)
 
 
 /*
- * copyObject
+ * copyObjectImpl -- implementation of copyObject(); see nodes/nodes.h
  *
  * Create a copy of a Node tree or list.  This is a "deep" copy: all
  * substructure is copied too, recursively.
  */
 void *
-copyObject(const void *from)
+copyObjectImpl(const void *from)
 {
 	void	   *retval;
 
@@ -4705,6 +4727,9 @@ copyObject(const void *from)
 			break;
 		case T_CteScan:
 			retval = _copyCteScan(from);
+			break;
+		case T_NamedTuplestoreScan:
+			retval = _copyNamedTuplestoreScan(from);
 			break;
 		case T_WorkTableScan:
 			retval = _copyWorkTableScan(from);

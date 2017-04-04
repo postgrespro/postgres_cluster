@@ -632,6 +632,16 @@ _outCteScan(StringInfo str, const CteScan *node)
 }
 
 static void
+_outNamedTuplestoreScan(StringInfo str, const NamedTuplestoreScan *node)
+{
+	WRITE_NODE_TYPE("NAMEDTUPLESTORESCAN");
+
+	_outScanInfo(str, (const Scan *) node);
+
+	WRITE_STRING_FIELD(enrname);
+}
+
+static void
 _outWorkTableScan(StringInfo str, const WorkTableScan *node)
 {
 	WRITE_NODE_TYPE("WORKTABLESCAN");
@@ -1870,6 +1880,7 @@ _outGatherPath(StringInfo str, const GatherPath *node)
 
 	WRITE_NODE_FIELD(subpath);
 	WRITE_BOOL_FIELD(single_copy);
+	WRITE_INT_FIELD(num_workers);
 }
 
 static void
@@ -2239,6 +2250,7 @@ _outRelOptInfo(StringInfo str, const RelOptInfo *node)
 	WRITE_UINT_FIELD(baserestrict_min_security);
 	WRITE_NODE_FIELD(joininfo);
 	WRITE_BOOL_FIELD(has_eclass_joins);
+	WRITE_BITMAPSET_FIELD(top_parent_relids);
 }
 
 static void
@@ -3023,6 +3035,13 @@ _outRangeTblEntry(StringInfo str, const RangeTblEntry *node)
 			WRITE_NODE_FIELD(coltypmods);
 			WRITE_NODE_FIELD(colcollations);
 			break;
+		case RTE_NAMEDTUPLESTORE:
+			WRITE_STRING_FIELD(enrname);
+			WRITE_OID_FIELD(relid);
+			WRITE_NODE_FIELD(coltypes);
+			WRITE_NODE_FIELD(coltypmods);
+			WRITE_NODE_FIELD(colcollations);
+			break;
 		default:
 			elog(ERROR, "unrecognized RTE kind: %d", (int) node->rtekind);
 			break;
@@ -3619,6 +3638,9 @@ outNode(StringInfo str, const void *obj)
 				break;
 			case T_CteScan:
 				_outCteScan(str, obj);
+				break;
+			case T_NamedTuplestoreScan:
+				_outNamedTuplestoreScan(str, obj);
 				break;
 			case T_WorkTableScan:
 				_outWorkTableScan(str, obj);

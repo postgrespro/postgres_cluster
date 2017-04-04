@@ -17,6 +17,7 @@
 
 #include "access/tupdesc.h"
 #include "nodes/params.h"
+#include "utils/queryenvironment.h"
 
 /* Forward declaration, to avoid including parsenodes.h here */
 struct RawStmt;
@@ -172,11 +173,13 @@ extern CachedPlanSource *CopyCachedPlan(CachedPlanSource *plansource);
 
 extern bool CachedPlanIsValid(CachedPlanSource *plansource);
 
-extern List *CachedPlanGetTargetList(CachedPlanSource *plansource);
+extern List *CachedPlanGetTargetList(CachedPlanSource *plansource,
+							QueryEnvironment *queryEnv);
 
 extern CachedPlan *GetCachedPlan(CachedPlanSource *plansource,
 			  ParamListInfo boundParams,
-			  bool useResOwner);
+			  bool useResOwner,
+			  QueryEnvironment *queryEnv);
 extern void ReleaseCachedPlan(CachedPlan *plan, bool useResOwner);
 
 #endif   /* PLANCACHE_H */

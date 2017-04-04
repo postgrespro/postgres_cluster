@@ -78,6 +78,7 @@ static void ProcessUtilitySlow(ParseState *pstate,
 				   const char *queryString,
 				   ProcessUtilityContext context,
 				   ParamListInfo params,
+				   QueryEnvironment *queryEnv,
 				   DestReceiver *dest,
 				   char *completionTag);
 static void ExecDropStmt(DropStmt *stmt, bool isTopLevel);
@@ -307,6 +308,8 @@ CheckRestrictedOperation(const char *cmdname)
  *	context: identifies source of statement (toplevel client command,
  *		non-toplevel client command, subcommand of a larger utility command)
  *	params: parameters to use during execution
+ *	queryEnv: environment for parse through execution (e.g., ephemeral named
+ *		tables like trigger transition tables).  May be NULL.
  *	dest: where to send results
  *	completionTag: points to a buffer of size COMPLETION_TAG_BUFSIZE
  *		in which to store a command completion status string.
@@ -333,6 +336,7 @@ ProcessUtility(PlannedStmt *pstmt,
 			   const char *queryString,
 			   ProcessUtilityContext context,
 			   ParamListInfo params,
+			   QueryEnvironment *queryEnv,
 			   DestReceiver *dest,
 			   char *completionTag)
 {
@@ -347,11 +351,11 @@ ProcessUtility(PlannedStmt *pstmt,
 	 */
 	if (ProcessUtility_hook)
 		(*ProcessUtility_hook) (pstmt, queryString,
-								context, params,
+								context, params, queryEnv,
 								dest, completionTag);
 	else
 		standard_ProcessUtility(pstmt, queryString,
-								context, params,
+								context, params, queryEnv,
 								dest, completionTag);
 }
 
@@ -371,6 +375,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 						const char *queryString,
 						ProcessUtilityContext context,
 						ParamListInfo params,
+						QueryEnvironment *queryEnv,
 						DestReceiver *dest,
 						char *completionTag)
 {
@@ -672,7 +677,8 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 			break;
 
 		case T_ExplainStmt:
-			ExplainQuery(pstate, (ExplainStmt *) parsetree, queryString, params, dest);
+			ExplainQuery(pstate, (ExplainStmt *) parsetree, queryString, params,
+						 queryEnv, dest);
 			break;
 
 		case T_AlterSystemStmt:
@@ -819,7 +825,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 
 				if (EventTriggerSupportsGrantObjectType(stmt->objtype))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
-									   context, params,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					ExecuteGrantStmt(stmt);
@@ -832,7 +838,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 
 				if (EventTriggerSupportsObjectType(stmt->removeType))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
-									   context, params,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					ExecDropStmt(stmt, isTopLevel);
@@ -845,7 +851,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 
 				if (EventTriggerSupportsObjectType(stmt->renameType))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
-									   context, params,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					ExecRenameStmt(stmt);
@@ -858,7 +864,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 
 				if (EventTriggerSupportsObjectType(stmt->objectType))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
-									   context, params,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					ExecAlterObjectDependsStmt(stmt, NULL);
@@ -871,7 +877,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 
 				if (EventTriggerSupportsObjectType(stmt->objectType))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
-									   context, params,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					ExecAlterObjectSchemaStmt(stmt, NULL);
@@ -884,7 +890,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 
 				if (EventTriggerSupportsObjectType(stmt->objectType))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
-									   context, params,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					ExecAlterOwnerStmt(stmt);
@@ -897,7 +903,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 
 				if (EventTriggerSupportsObjectType(stmt->objtype))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
-									   context, params,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					CommentObject(stmt);
@@ -910,7 +916,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 
 				if (EventTriggerSupportsObjectType(stmt->objtype))
 					ProcessUtilitySlow(pstate, pstmt, queryString,
-									   context, params,
+									   context, params, queryEnv,
 									   dest, completionTag);
 				else
 					ExecSecLabelStmt(stmt);
@@ -920,7 +926,7 @@ standard_ProcessUtility(PlannedStmt *pstmt,
 		default:
 			/* All other statement types have event trigger support */
 			ProcessUtilitySlow(pstate, pstmt, queryString,
-							   context, params,
+							   context, params, queryEnv,
 							   dest, completionTag);
 			break;
 	}
@@ -939,6 +945,7 @@ ProcessUtilitySlow(ParseState *pstate,
 				   const char *queryString,
 				   ProcessUtilityContext context,
 				   ParamListInfo params,
+				   QueryEnvironment *queryEnv,
 				   DestReceiver *dest,
 				   char *completionTag)
 {
@@ -1062,6 +1069,7 @@ ProcessUtilitySlow(ParseState *pstate,
 										   queryString,
 										   PROCESS_UTILITY_SUBCOMMAND,
 										   params,
+										   NULL,
 										   None_Receiver,
 										   NULL);
 						}
@@ -1140,6 +1148,7 @@ ProcessUtilitySlow(ParseState *pstate,
 											   queryString,
 											   PROCESS_UTILITY_SUBCOMMAND,
 											   params,
+											   NULL,
 											   None_Receiver,
 											   NULL);
 								EventTriggerAlterTableStart(parsetree);
@@ -1438,7 +1447,8 @@ ProcessUtilitySlow(ParseState *pstate,
 
 			case T_CreateTableAsStmt:
 				address = ExecCreateTableAs((CreateTableAsStmt *) parsetree,
-										 queryString, params, completionTag);
+											queryString, params, queryEnv,
+											completionTag);
 				break;
 
 			case T_RefreshMatViewStmt:
