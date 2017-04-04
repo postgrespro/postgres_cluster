@@ -516,9 +516,11 @@ void MtmSetSnapshot(csn_t globalSnapshot)
 Snapshot MtmGetSnapshot(Snapshot snapshot)
 {
 	snapshot = PgGetSnapshotData(snapshot);
-	if (XactIsoLevel == XACT_READ_COMMITTED && MtmTx.snapshot != INVALID_CSN && TransactionIdIsValid(GetCurrentTransactionIdIfAny())) { 
+	if (XactIsoLevel == XACT_READ_COMMITTED && MtmTx.snapshot != INVALID_CSN) { 
 		MtmTx.snapshot = MtmGetCurrentTime();
-		LogLogicalMessage("S", (char*)&MtmTx.snapshot, sizeof(MtmTx.snapshot), true);
+		if (TransactionIdIsValid(GetCurrentTransactionIdIfAny())) { 
+			LogLogicalMessage("S", (char*)&MtmTx.snapshot, sizeof(MtmTx.snapshot), true);
+		}
 	}
 	RecentGlobalDataXmin = RecentGlobalXmin = Mtm->oldestXid;
 	return snapshot;

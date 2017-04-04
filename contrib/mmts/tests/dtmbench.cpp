@@ -11,6 +11,7 @@
 
 #include <pqxx/connection>
 #include <pqxx/transaction>
+#include <pqxx/subtransaction.hxx>
 #include <pqxx/nontransaction>
 #include <pqxx/pipeline>
 
@@ -70,7 +71,8 @@ struct config
     vector<string> connections;
 	bool scatter;
 	bool avoidDeadlocks;
-
+	bool subtransactions;
+	
     config() {
         nReaders = 1;
         nWriters = 10;
@@ -79,6 +81,7 @@ struct config
         updatePercent = 100;
 		scatter = false;
 		avoidDeadlocks = false;
+		subtransactions = false;
     }
 };
 
@@ -159,6 +162,33 @@ void* writer(void* arg)
 		if (cfg.scatter) { 
 			srcAcc = srcAcc/cfg.nWriters*cfg.nWriters + t.id;
 			dstAcc = dstAcc/cfg.nWriters*cfg.nWriters + t.id;
+		} else if (cfg.subtransactions) { 
+			if (dstAcc < srcAcc) { 
+				int tmp = srcAcc;
+				srcAcc = dstAcc;
+				dstAcc = tmp;
+			}
+			while (true) {
+				try {
+					subtransaction subtxn(txn, "withdraw");
+					exec(subtxn, "update t set v = v - 1 where u=%d", srcAcc);
+					break;
+				} catch (pqxx_exception const& x) { 
+					t.aborts += 1;
+				}
+			}
+			while (true) {
+				try {
+					subtransaction subtxn(txn, "deposit");
+					exec(subtxn, "update t set v = v + 1 where u=%d", dstAcc);
+					break;
+				} catch (pqxx_exception const& x) { 
+					t.aborts += 1;
+				}
+			}
+			txn.commit();            
+            t.transactions += 1;
+			continue;
 		} else if (cfg.avoidDeadlocks) { 
 			if (dstAcc < srcAcc) { 
 				int tmp = srcAcc;
@@ -198,8 +228,8 @@ void initializeDatabase()
 	printf("Creating database schema...\n");
 	{
 		nontransaction txn(conn);
-        exec(txn, "drop extension if exists multimaster");
-        exec(txn, "create extension multimaster");
+        //exec(txn, "drop extension if exists multimaster");
+        //exec(txn, "create extension multimaster");
 		exec(txn, "drop table if exists t");
 		exec(txn, "create table t(u int primary key, v int)");
 	}
@@ -251,6 +281,9 @@ int main (int argc, char* argv[])
             case 'd':
 			    cfg.avoidDeadlocks = true;
                 continue;
+            case 'x':
+			    cfg.subtransactions = true;
+                continue;
             }
         }
         printf("Options:\n"
@@ -260,7 +293,8 @@ int main (int argc, char* argv[])
                "\t-n N\tnumber of iterations (1000)\n"
                "\t-p N\tupdate percent (100)\n"
                "\t-c STR\tdatabase connection string\n"
-               "\t-s\tscattern avoid deadlocks\n"
+               "\t-s\tscatter ids to avoid conflicts\n"
+               "\t-x\tuse subtransactions\n"
                "\t-d\tavoid deadlocks\n"
                "\t-i\tinitialize database\n");
         return 1;
