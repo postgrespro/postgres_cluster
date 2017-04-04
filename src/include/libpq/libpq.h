@@ -56,7 +56,7 @@ extern PGDLLIMPORT PQcommMethods *PqCommMethods;
  */
 extern int StreamServerPort(int family, char *hostName,
 				 unsigned short portNumber, char *unixSocketDir,
-				 pgsocket *ListenSocket, bool *ListenRdma, int MaxListen,
+				 pgsocket ListenSocket[], bool *ListenRdma, int MaxListen,
 				 bool isRsocket);
 extern int	StreamConnection(pgsocket server_fd, Port *port);
 extern void StreamClose(pgsocket sock, bool isRsocket);
