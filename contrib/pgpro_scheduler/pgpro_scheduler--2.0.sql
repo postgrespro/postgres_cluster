@@ -145,6 +145,20 @@ CREATE TYPE cron_job AS(
 	message text			-- error message if one
 );
 
+----------------------------------
+-- ADD Extension tables to Dump --
+----------------------------------
+
+select pg_extension_config_dump('at_jobs_submitted'::regclass, '');
+select pg_extension_config_dump('at_jobs_submitted_id_seq'::regclass, '');
+select pg_extension_config_dump('at_jobs_process'::regclass, '');
+select pg_extension_config_dump('at_jobs_done'::regclass, '');
+select pg_extension_config_dump('cron'::regclass, '');
+select pg_extension_config_dump('cron_id_seq'::regclass, '');
+select pg_extension_config_dump('at'::regclass, '');
+select pg_extension_config_dump('log'::regclass, '');
+
+
 ---------------
 -- FUNCTIONS --
 ---------------
