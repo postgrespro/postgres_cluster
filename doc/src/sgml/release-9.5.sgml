@@ -7058,7 +7058,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 2014-07-12 [8d9a0e8] Magnus..: Support &#8211;&#8211;with-extra-version equivalent functi..
 -->
        <para>
-        Allow <link linkend="install-procedure">configure</>'s
+        Allow configure's
         <option>--with-extra-version</> option to be honored by the
         <productname>MSVC</> build (Michael Paquier)
        </para>

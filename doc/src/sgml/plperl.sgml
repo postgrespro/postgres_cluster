@@ -41,8 +41,7 @@
   <note>
    <para>
     Users of source packages must specially enable the build of
-    PL/Perl during the installation process.  (Refer to <xref
-    linkend="installation"> for more information.)  Users of
+    PL/Perl during the installation process. Users of
     binary packages might find PL/Perl in a separate subpackage.
    </para>
   </note>

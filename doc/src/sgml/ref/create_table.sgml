@@ -552,7 +552,7 @@ PARTITION <replaceable class="PARAMETER">partition_name</replaceable> VALUES LES
       index on the column or group of columns used in the constraint.
       Optional clause <literal>INCLUDE</literal> allows to add into the index
       a portion of columns on which the uniqueness is not enforced upon.
-      Note, that althogh constraint is not enforced upon included columns, it still
+      Note, that although constraint is not enforced upon included columns, it still
       depends on them. Consequently, some operations on these columns (e.g. <literal>DROP COLUMN</literal>)
       can cause cascade constraint and index deletion.
       See paragraph about <literal>INCLUDE</literal> in
@@ -594,7 +594,7 @@ PARTITION <replaceable class="PARAMETER">partition_name</replaceable> VALUES LES
       index on the column or group of columns used in the constraint.
       An optional clause <literal>INCLUDE</literal> allows to add into the index
       a portion of columns on which the constraint is not enforced upon.
-      Note, that althogh constraint is not enforced upon included columns, it still
+      Note, that although constraint is not enforced upon included columns, it still
       depends on them. Consequently, some operations on these columns (e.g. <literal>DROP COLUMN</literal>)
       can cause cascade constraint and index deletion.
       See paragraph about <literal>INCLUDE</literal> in
@@ -979,7 +979,7 @@ PARTITION <replaceable class="PARAMETER">partition_name</replaceable> VALUES LES
      <para>
       The name of the column by which to perform table partitioning. It is recommended to choose partitioning keys of the following types:</para>
       <itemizedlist>
-      <listitem><para><type>text</type> of <type>integer</type> data types for hash partitioning</para></listitem>
+      <listitem><para><type>text</type> or <type>integer</type> data types for hash partitioning</para></listitem>
       <listitem><para>numeric or date/time data types for range partitioning</para></listitem>
       </itemizedlist>
     </listitem>

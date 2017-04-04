@@ -1,6 +1,7 @@
 <!-- doc/src/sgml/release-pro-9.6.sgml -->
-<sect1 id="release-pro-enterprise-9-6-1-2">
-  <title>&productname; 9.6.1.2</title>
+<!-- See header comment in release.sgml about typical markup -->
+<sect1 id="release-pro-9-6-2-1">
+  <title>Postgres Pro 9.6.2.1</title>
   <note>
     <title>Release Date</title>
     <simpara>2017-02-22</simpara>
@@ -12,23 +13,7 @@
       <productname>PostgreSQL</productname> <link linkend="release-9-6-2">9.6.2</link>.</para>
     <para>Major enhancements over <productname>Postgres Pro</productname>
       9.6.1.2 include:</para>
-    <para>Major enhancements over <productname>Postgres Pro</productname>
-      9.6.1.2 include:</para>
-    <para>Added k-nearest neighbors algorithm (KNN) for SP-GiST and B-tree
-    (See <xref linkend="spgist">)</para>
-    <para>Added RUM index, based on GIN, as separate module (See <xref linkend="rum">)</para>
-    <para>WAL size has been reduced on <command>CREATE INDEX</command> operation in the GiST, GIN, SP-GiST</para>
-    <para>Added timeout for idle sessions on the server side (See <xref linkend="guc-idle-session-timeout">)</para>
-    <para>Added SHA-2 algorithm for password encryption (See <xref linkend="auth-password">)</para>
-    <para>Added page level compression (CFS) (See <xref linkend="cfs">)</para>
-    <para>Added support of autonomous transactions (See <xref linkend="atx">)</para>
-    <para>Added new optional background worker to schedule tasks by rules (See <xref linkend="pgpro-scheduler">)</para>
-    <para>Added support for relocatable tables (See <xref linkend="pgtransfer">)</para>
-    <para>Extension <application>pg_hint_plan</application> has been added (See <xref linkend="pg-hint-plan">)</para>
-    <para>Transaction IDs on 64-bit platforms use 64-bit data type</para>
-    <para>Lazy placement of temporary tables on disk</para>
-    <para>Consistent read on slaves (wait for WAL apply, see <xref linkend="sql-waitlsn">)</para>
-    <para>Utility <application>pg_repack</application> has been added (See <xref linkend="app-pgrepack">)</para>
+
     <itemizedlist>
       <listitem>
         <para>Module <link linkend="pg-pathman"><application>pg_pathman</application></link> has been updated to
@@ -80,28 +65,25 @@
         </itemizedlist>
       </listitem>
     </itemizedlist>
+
   </sect2>
   <sect2>
-    <title>Migration to Version &productname; 9.6.1.2</title>
-
+    <title>Migration to Version 9.6.2.1</title>
     <para>A dump/restore using <xref linkend="app-pg-dumpall">, or
         use of <xref linkend="pgupgrade">, is required for those
-          wishing to migrate data from any previous major release.</para>
-
-    <para>Dump/restore is neccessary when migrating from PostgreSQL
-      or Postgres Pro Standard edition.</para>
-
-    <para>When upgrading from previous releases of Postgres Pro or from
-      vanilla PostgreSQL 9.6.x, some catalog changes should be applied.</para>
-    
+        wishing to migrate data from any previous major release.
+    </para>
+    <para>A dump/restore is not required for those running 9.6.1.2.</para>
+    <para>However, if you are upgrading from vanilla PostgreSQL 9.6.x, some
+      catalog changes should be applied.
+    </para>
     <para>If you use binary packages, and your database is in the default
       location, this upgrade should be performed automatically. If you've
-      compiled Postgres Pro from source or create your database in
+      compiled Postgres Pro from source or create your database in a
       non-default location, running <literal>initdb</literal> manually, you
       should run <literal>pgpro_upgrade</literal> script provided in this
       distribution.
     </para>
-
     <para>Before running the script, you should stop postgres service.
       Script should be run on behalf of the user owning the database
       (typically postgres) and PGDATA environment variable should be
@@ -122,6 +104,7 @@
     </para>
     <para>Major enhancements over <productname>Postgres Pro</productname>
       9.6.1.1 include:</para>
+
     <para>Several modules to support 1C Enterprise added:</para>
     <itemizedlist>
       <listitem>

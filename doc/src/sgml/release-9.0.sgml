@@ -7766,8 +7766,8 @@
 
     <listitem>
      <para>
-      Full support for <link linkend="install-windows">64-bit
-      <productname>Windows</></link>.
+      Full support for 64-bit
+      <productname>Windows</>.
      </para>
     </listitem>
 
@@ -10408,8 +10408,7 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
      </para>
 
      <para>
-      The thread-safety option can be disabled with <link
-      linkend="configure"><literal>configure</></link>
+      The thread-safety option can be disabled with <literal>configure</>
       <option>--disable-thread-safety</>.
      </para>
     </listitem>
@@ -10440,8 +10439,7 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
      <listitem>
       <para>
-       New <filename>Makefile</> targets <link
-       linkend="build"><literal>world</></link>,
+       New <filename>Makefile</> targets <literal>world</>,
        <literal>install-world</>, and <literal>installcheck-world</>
        (Andrew Dunstan)
       </para>
@@ -10480,9 +10478,8 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
      <listitem>
       <para>
-       Support compiling on <link
-       linkend="install-windows">64-bit
-       <productname>Windows</></link> and running in 64-bit
+       Support compiling on 64-bit
+       <productname>Windows</> and running in 64-bit
        mode (Tsutomu Yamada, Magnus Hagander)
       </para>
 
@@ -10493,9 +10490,8 @@ if TG_OP = 'INSERT' and NEW.col1 = ... then
 
      <listitem>
       <para>
-       Support server builds using <link
-       linkend="install-windows-full"><productname>Visual Studio
-       2008</></link> (Magnus Hagander)
+       Support server builds using <productname>Visual Studio
+       2008</> (Magnus Hagander)
       </para>
      </listitem>
 

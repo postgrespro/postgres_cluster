@@ -44,7 +44,7 @@ shared_preload_libraries = 'aqo'
           Create the <filename>aqo</filename> extension using the following query:
         </para>
         <programlisting>
-&quot;CREATE EXTENSION aqo;&quot;
+CREATE EXTENSION aqo;
 </programlisting>
       </listitem>
     </orderedlist>
@@ -121,7 +121,7 @@ where <replaceable>mode</> is the name of the optimization mode to use.
     <sect3 id="aqo-choosing-query-optimization-modes">
       <title>Choosing Query Optimization Modes</title>
       <para>
-        If you often run queries of the same type, for example, you application limits the number 
+        If you often run queries of the same type, for example, your application limits the number 
         of possible query types, you can use the <literal>intelligent</literal> mode to
         improve planning for these queries. In this mode, <filename>aqo</filename>
         analyzes each query execution and stores statistics. Statistics on queries of
@@ -170,7 +170,7 @@ SET aqo.mode = 'controlled';
       When run in the <literal>intelligent</literal> mode, <filename>aqo</filename> assigns a unique hash value
       to each query type to separate the collected statistics. If you
       switch to the <literal>forced</literal> mode, the statistics for all untracked query
-      types is stored in common query type with hash 0. You can view all
+      types is stored in a common query type with hash 0. You can view all
       the processed query types and their corresponding hash values in
       the <structname>aqo_query_texts</structname> table:
     </para>
@@ -231,7 +231,7 @@ SELECT * FROM aqo_queries;
 
 SET aqo.mode='intelligent';
 SELECT * FROM a, b WHERE a.id=b.id;
-SET aqo.mode='manual';
+SET aqo.mode='controlled';
 
  -- Disable auto_tuning, enable both learn_aqo and use_aqo 
  -- for this query type:
@@ -263,7 +263,7 @@ DELETE FROM aqo_data;
 </programlisting>
     <para>
       Alternatively, you can specify a particular query type to reset by
-      providing its hash value in the <literal>fspase_hash</literal> option. For example:
+      providing its hash value in the <literal>fspace_hash</literal> option. For example:
     </para>
     <programlisting>
 DELETE FROM aqo_data WHERE fspace_hash = (SELECT fspace_hash FROM aqo_queries 
@@ -325,7 +325,7 @@ UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;
      <entry>Optimizes all queries together, regardless of the query type.</entry>
     </row>
     <row>
-     <entry><literal>manual</literal></entry>
+     <entry><literal>controlled</literal></entry>
      <entry><emphasis role="strong">Default.</emphasis> Uses the default planner for all new queries, but can reuse the collected statistics for already known query types, if any.</entry>
     </row>
     <row>
@@ -424,7 +424,7 @@ UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;
               intelligent mode. In other modes, new queries are not
               appended to <structname>aqo_queries</structname> automatically.
               You can change this behavior by setting the
-              <literal>auto_tuning</literal> variable to TRUE.</entry>
+              <literal>auto_tuning</literal> variable to <literal>true</literal>.</entry>
     </row>
    </tbody>
   </tgroup>

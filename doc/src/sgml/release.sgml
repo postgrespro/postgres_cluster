@@ -53,7 +53,7 @@ For new features, add links to the documentation sections.
 
   <para>
    A complete list of changes for each release can be obtained by
-   viewing the <link linkend="git">Git</link> logs for each release.
+   viewing the Git logs for each release.
    The <ulink
    url="http://archives.postgresql.org/pgsql-committers/"><literal>pgsql-committers</literal>
    email list</ulink> records all source code changes as well.  There is also
@@ -72,7 +72,8 @@ For new features, add links to the documentation sections.
 
   The reason for splitting the release notes this way is so that appropriate
   subsets can easily be copied into back branches.
--->
+ -->
+&release-proee-9.6;
 &release-pro-9.6;
 &release-9.6;
 &release-9.5;

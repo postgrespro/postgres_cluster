@@ -11073,14 +11073,14 @@ ALTER EXTENSION hstore UPDATE;
 
       <listitem>
        <para>
-        Fix <link linkend="install">install-strip</link> on Mac <productname>OS
+        Fix install-strip on Mac <productname>OS
         X</> (Peter Eisentraut)
        </para>
       </listitem>
 
       <listitem>
        <para>
-        Remove <link linkend="configure">configure</link> flag
+        Remove configure flag
         <option>--disable-shared</>, as it is no longer supported
         (Bruce Momjian)
        </para>
@@ -11486,7 +11486,7 @@ ALTER EXTENSION hstore UPDATE;
 
       <listitem>
        <para>
-        Add <link linkend="docguide-toolsets">instructions</link> for setting
+        Add instructions for setting
         up the documentation tool chain on <productname>macOS</>
         (Peter Eisentraut)
        </para>
