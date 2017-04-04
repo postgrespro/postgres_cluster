@@ -6017,7 +6017,9 @@ xact_redo(XLogReaderState *record)
 			Assert(TransactionIdIsValid(parsed.twophase_xid));
 			xact_redo_commit(&parsed, parsed.twophase_xid,
 							 record->EndRecPtr, XLogRecGetOrigin(record));
-			RemoveTwoPhaseFile(parsed.twophase_xid, false);
+
+			/* Delete TwoPhaseState gxact entry and/or 2PC file. */
+			PrepareRedoRemove(parsed.twophase_xid, false);
 		}
 	}
 	else if (info == XLOG_XACT_ABORT || info == XLOG_XACT_ABORT_PREPARED)
@@ -6039,16 +6041,14 @@ xact_redo(XLogReaderState *record)
 			Assert(TransactionIdIsValid(parsed.twophase_xid));
 			xact_redo_abort(&parsed, parsed.twophase_xid,
 							record->EndRecPtr, XLogRecGetOrigin(record));
-			RemoveTwoPhaseFile(parsed.twophase_xid, false);
+
+			/* Delete TwoPhaseState gxact entry and/or 2PC file. */
+			PrepareRedoRemove(parsed.twophase_xid, false);
 		}
 	}
 	else if (info == XLOG_XACT_PREPARE)
 	{
 		RepOriginId originId = XLogRecGetOrigin(record);
-
-		/* the record contents are exactly the 2PC file */
-		RecreateTwoPhaseFile(XLogRecGetXid(record),
-							 XLogRecGetData(record), XLogRecGetDataLen(record));
 
 		if (originId != InvalidRepOriginId && originId != DoNotReplicateId) 
 		{
@@ -6059,6 +6059,15 @@ xact_redo(XLogReaderState *record)
 			replorigin_advance(originId, parsed.origin_lsn,
 							   record->EndRecPtr, false /* backward */ , false /* WAL */ );
 		}
+
+		/*
+		 * Store xid and start/end pointers of the WAL record in
+		 * TwoPhaseState gxact entry.
+		 */
+		PrepareRedoAdd(XLogRecGetData(record),
+					   record->ReadRecPtr,
+					   record->EndRecPtr);
+
 	}
 	else if (info == XLOG_XACT_ASSIGNMENT)
 	{

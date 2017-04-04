@@ -60,9 +60,6 @@ extern void ParsePrepareRecord(uint8 info, char *xlrec,
 extern void StandbyRecoverPreparedTransactions(bool overwriteOK);
 extern void RecoverPreparedTransactions(void);
 
-extern void RecreateTwoPhaseFile(TransactionId xid, void *content, int len);
-extern void RemoveTwoPhaseFile(TransactionId xid, bool giveWarning);
-
 extern void CheckPointTwoPhase(XLogRecPtr redo_horizon);
 
 extern void FinishPreparedTransaction(const char *gid, bool isCommit);
@@ -77,4 +74,8 @@ extern void SetPreparedTransactionState(char const* gid, char const* state);
 
 extern bool GetPreparedTransactionState(char const* gid, char* state);
 
+extern void PrepareRedoAdd(char *buf, XLogRecPtr start_lsn,
+						   XLogRecPtr end_lsn);
+extern void PrepareRedoRemove(TransactionId xid, bool giveWarning);
+extern void restoreTwoPhaseData(void);
 #endif   /* TWOPHASE_H */
