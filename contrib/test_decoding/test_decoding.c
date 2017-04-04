@@ -102,7 +102,8 @@ static void test_decoding_xact_callback(XactEvent event, void *arg);
 
 static void test_decoding_process_utility(PlannedStmt *pstmt,
 					const char *queryString, ProcessUtilityContext context,
-					ParamListInfo params, DestReceiver *dest, char *completionTag);
+					ParamListInfo params, QueryEnvironment *queryEnv,
+					DestReceiver *dest, char *completionTag);
 
 static bool test_decoding_twophase_commit();
 
@@ -188,7 +189,8 @@ test_decoding_executor_finish(QueryDesc *queryDesc)
 static void
 test_decoding_process_utility(PlannedStmt *pstmt,
 					const char *queryString, ProcessUtilityContext context,
-					ParamListInfo params, DestReceiver *dest, char *completionTag)
+					ParamListInfo params, QueryEnvironment *queryEnv,
+					DestReceiver *dest, char *completionTag)
 {
 	Node	   *parsetree = pstmt->utilityStmt;
 
@@ -267,13 +269,13 @@ test_decoding_process_utility(PlannedStmt *pstmt,
 
 	if (PreviousProcessUtilityHook != NULL)
 	{
-		PreviousProcessUtilityHook(pstmt, queryString, context,
-								   params, dest, completionTag);
+		PreviousProcessUtilityHook(pstmt, queryString, context, params, queryEnv,
+								   dest, completionTag);
 	}
 	else
 	{
-		standard_ProcessUtility(pstmt, queryString, context,
-								params, dest, completionTag);
+		standard_ProcessUtility(pstmt, queryString, context, params, queryEnv,
+								dest, completionTag);
 	}
 }
 
