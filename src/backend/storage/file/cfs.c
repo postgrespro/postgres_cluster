@@ -389,23 +389,31 @@ void cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size)
  *	Section 3: Compression implementation.
  * ----------------------------------------------------------------
  */
-void cfs_initialize()
+int cfs_shmem_size()
 {
-	cfs_state = (CfsState*)ShmemAlloc(sizeof(CfsState));
-	memset(&cfs_state->gc_stat, 0, sizeof cfs_state->gc_stat);
-	pg_atomic_init_flag(&cfs_state->gc_started);
-	pg_atomic_init_u32(&cfs_state->n_active_gc, 0);
-	cfs_state->n_workers = 0;
-	cfs_state->gc_enabled = cfs_gc_enabled;
-	cfs_state->max_iterations = 0;
-	
-	if (cfs_encryption)
-		cfs_crypto_init();
-
-	elog(LOG, "Start CFS version %s compression algorithm %s encryption %s", 
-		 CFS_VERSION, cfs_algorithm(), cfs_encryption ? "enabled" : "disabled");
+	return sizeof(CfsState);
 }
 
+void cfs_initialize()
+{
+	bool found;
+	cfs_state = (CfsState*)ShmemInitStruct("CFS Control", sizeof(CfsState), &found);
+	if (!found)
+	{
+		memset(&cfs_state->gc_stat, 0, sizeof cfs_state->gc_stat);
+		pg_atomic_init_flag(&cfs_state->gc_started);
+		pg_atomic_init_u32(&cfs_state->n_active_gc, 0);
+		cfs_state->n_workers = 0;
+		cfs_state->gc_enabled = cfs_gc_enabled;
+		cfs_state->max_iterations = 0;
+		
+		if (cfs_encryption)
+			cfs_crypto_init();
+		
+		elog(LOG, "Start CFS version %s compression algorithm %s encryption %s GC %s", 
+			 CFS_VERSION, cfs_algorithm(), cfs_encryption ? "enabled" : "disabled", cfs_gc_enabled ? "enabled" : "disabled");
+	}
+}
 int cfs_msync(FileMap* map)
 {
 #ifdef WIN32
@@ -566,7 +574,7 @@ void cfs_lock_file(FileMap* map, char const* file_path)
 				char* map_bck_path = psprintf("%s.cfm.bck", file_path);
 				char* file_bck_path = psprintf("%s.bck", file_path);
 				
-				elog(WARNING, "CFS indicates that GC of %s was interrupted: try to perform recovery", file_path);
+				elog(WARNING, "CFS indicates that GC of %s was interrupted: trying to perform recovery", file_path);
 				
 				if (access(file_bck_path, R_OK) != 0)
 				{
