@@ -1,3 +1,24 @@
+CREATE TABLE serializable_update_tab (
+	id int,
+	filler  text,
+	description text
+);
+CREATE TABLE writetest (a int);
+
+
+BEGIN;
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+UPDATE serializable_update_tab SET description = 'no no', id = 1 WHERE id = 1;
+COMMIT;
+
+
+BEGIN;
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE, READ ONLY, DEFERRABLE; -- ok
+SELECT * FROM writetest; -- ok
+SET TRANSACTION READ WRITE; --fail
+COMMIT;
+
+
 --
 -- BOOLEAN
 --

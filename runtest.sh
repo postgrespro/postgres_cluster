@@ -24,9 +24,9 @@ sleep 3
 
 cd src/test/regress
 
-./pg_regress --inputdir=. --bindir='../../../tmp_install/bin' --dlpath=. --schedule=./parallel_schedule --use-existing
+# ./pg_regress --inputdir=. --bindir='../../../tmp_install/bin' --dlpath=. --schedule=./parallel_schedule --use-existing
 
-# ./pg_regress --inputdir=. --bindir='../../../tmp_install/bin' --dlpath=. --schedule=./serial_schedule --use-existing
+./pg_regress --inputdir=. --bindir='../../../tmp_install/bin' --dlpath=. --schedule=./serial_schedule --use-existing
 
 cd ../../..
 
