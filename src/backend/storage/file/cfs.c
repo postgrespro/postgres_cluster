@@ -540,86 +540,72 @@ static bool cfs_write_file(int fd, void const* data, uint32 size)
 void cfs_lock_file(FileMap* map, char const* file_path)
 {
 	long delay = CFS_LOCK_MIN_TIMEOUT;
-	int n_attempts = 0;
 
 	while (true)
 	{
-		uint64 count = pg_atomic_fetch_add_u32(&map->lock, 1);
-		bool revokeLock = false;
+		uint32 count = pg_atomic_fetch_add_u32(&map->lock, 1);
 
 		if (count < CFS_GC_LOCK)
+		{
+			/* No GC is active for this segment */
 			break;
-		
-		if (InRecovery) 
-		{
-			revokeLock = true;
-		} 
-		else 
-		{
-			if (pg_atomic_unlocked_test_flag(&cfs_state->gc_started))
-			{
-				if (++n_attempts > MAX_LOCK_ATTEMPTS) 
-				{
-					/* So there is GC lock, but no active GC process during MAX_LOCK_ATTEMPTS.
-					 * Most likely it means that GC is crashed (may be together with other postgres processes or even OS)
-					 * without releasing lock. And for some reasons recovery was not performed and this page left locked.
-					 * We should revoke the the lock to allow access to this segment.
-					 */
-					revokeLock = true;
-					elog(WARNING, "CFS revokes lock on file %s\n", file_path);
-				}
-			}
-			else
-			{
-				n_attempts = 0; /* Reset counter of attempts because GC is in progress */
-			}
 		}
-		if (revokeLock 
-            /* use gc_started flag to prevent race condition with other backends and GC */
-			&& pg_atomic_test_set_flag(&cfs_state->gc_started)) 
-		{
-			/* Ugggh... looks like last GC was interrupted.
-			 * Try to recover the file.
-			 */
-			char* map_bck_path = psprintf("%s.cfm.bck", file_path);
-			char* file_bck_path = psprintf("%s.bck", file_path);
 
-			elog(WARNING, "CFS indicates that GC of %s was interrupted: try to perform recovery", file_path);
+		if (pg_atomic_read_u32(&cfs_state->n_active_gc) == 0) 
+		{ 
+			/* There is no active GC, so lock is set by crashed GC */
 
-			if (access(file_bck_path, R_OK) != 0)
+			LWLockAcquire(CfsGcLock, LW_EXCLUSIVE); /* Prevent race condition with GC */
+
+			/* Recheck under CfsGcLock that map->lock was not released */
+			if (pg_atomic_read_u32(&map->lock) >= CFS_GC_LOCK) 
 			{
-				/* There is no backup file: new map should be constructed */
-				int md2 = open(map_bck_path, O_RDWR|PG_BINARY, 0);
-				if (md2 >= 0)
-				{
-					/* Recover map. */
-					if (!cfs_read_file(md2, map, sizeof(FileMap)))
-						elog(WARNING, "CFS failed to read file %s: %m", map_bck_path);
-
-					close(md2);
-				}
-			}
-			else
-			{
-				/* Presence of backup file means that we still have
-				 * unchanged data and map files. Just remove backup files and 
-				 * revoke GC lock.
+				/* Uhhh... looks like last GC was interrupted.
+				 * Try to recover the file.
 				 */
-				unlink(file_bck_path);
-				unlink(map_bck_path);
+				char* map_bck_path = psprintf("%s.cfm.bck", file_path);
+				char* file_bck_path = psprintf("%s.bck", file_path);
+				
+				elog(WARNING, "CFS indicates that GC of %s was interrupted: try to perform recovery", file_path);
+				
+				if (access(file_bck_path, R_OK) != 0)
+				{
+					/* There is no backup file: new map should be constructed */
+					int md2 = open(map_bck_path, O_RDWR|PG_BINARY, 0);
+					if (md2 >= 0)
+					{
+						/* Recover map. */
+						if (!cfs_read_file(md2, map, sizeof(FileMap)))
+							elog(WARNING, "CFS failed to read file %s: %m", map_bck_path);
+						
+						close(md2);
+					}
+				}
+				else
+				{
+					/* Presence of backup file means that we still have
+					 * unchanged data and map files. Just remove backup files and 
+					 * revoke GC lock.
+					 */
+					unlink(file_bck_path);
+					unlink(map_bck_path);
+				}
+				
+				count = pg_atomic_fetch_sub_u32(&map->lock, CFS_GC_LOCK); /* revoke GC lock */
+				Assert((int)count > 0);
+				pfree(file_bck_path);
+				pfree(map_bck_path);
 			}
-
-			pg_atomic_clear_flag(&cfs_state->gc_started);
-			count = pg_atomic_fetch_sub_u32(&map->lock, CFS_GC_LOCK); /* revoke GC lock */
-			Assert((int)count > 0);
-			pfree(file_bck_path);
-			pfree(map_bck_path);
+			LWLockRelease(CfsGcLock);
 			break;
-		} 
+		}
+		/* Wait until GC of segment is completed */
 		pg_atomic_fetch_sub_u32(&map->lock, 1);
 		pg_usleep(delay);
 		if (delay < CFS_LOCK_MAX_TIMEOUT)
+		{
 			delay *= 2;
+		}
 	}
 
 	if (IsUnderPostmaster && cfs_gc_workers != 0
@@ -649,11 +635,11 @@ static int cfs_cmp_page_offs(void const* p1, void const* p2)
 /*
  * Perform garbage collection (if required) on the file
  * @param map_path - path to the map file (*.cfm).
- * @param noerror - surpress error message (when this function is called by cfs_gc_relation until there are available segments)
+ * @param bacground - GC is performed in background by BGW: surpress error message and set CfsGcLock
  */
-static bool cfs_gc_file(char* map_path, bool noerror)
+static bool cfs_gc_file(char* map_path, bool background)
 {
-	int md = open(map_path, O_RDWR|PG_BINARY, 0);
+	int md;
 	FileMap* map;
 	uint32 physSize;
 	uint32 usedSize;
@@ -663,29 +649,33 @@ static bool cfs_gc_file(char* map_path, bool noerror)
 	int fd2 = -1;
 	int md2 = -1;
 	bool succeed = false;
+	int rc;
+			
 
 	pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
 
-	while (!cfs_state->gc_enabled)
+	if (background)
 	{
-		int rc;
+		while (!cfs_state->gc_enabled)
+		{
+			pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
+			
+			rc = WaitLatch(MyLatch,
+						   WL_TIMEOUT | WL_POSTMASTER_DEATH,
+						   CFS_DISABLE_TIMEOUT /* ms */);
+			if (cfs_gc_stop || (rc & WL_POSTMASTER_DEATH))
+				exit(1);
+			
+			pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
+		}
 
-		pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
-
-		rc = WaitLatch(MyLatch,
-					   WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   CFS_DISABLE_TIMEOUT /* ms */);
-		if (cfs_gc_stop || (rc & WL_POSTMASTER_DEATH))
-			exit(1);
-
-		pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
+		LWLockAcquire(CfsGcLock, LW_SHARED); /* avoid race condition with cfs_file_lock */
 	}
 
+	md = open(map_path, O_RDWR|PG_BINARY, 0);
 	if (md < 0)
 	{ 
-		if (!noerror) { 
-			elog(WARNING, "CFS failed to open map file %s: %m", map_path);
-		}
+		elog(DEBUG1, "CFS failed to open map file %s: %m", map_path);
 		goto FinishGC;
 	}
 
@@ -1032,7 +1022,12 @@ static bool cfs_gc_file(char* map_path, bool noerror)
 	}
 
   FinishGC:
+	if (background)
+	{
+		LWLockRelease(CfsGcLock);
+	}
 	pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
+
 	return succeed;
 }
 
@@ -1066,7 +1061,7 @@ static bool cfs_gc_directory(int worker_id, char const* path)
 				strcmp(file_path + len - 4, ".cfm") == 0)
 			{
 				if (entry->d_ino % cfs_state->n_workers == worker_id
-					&& !cfs_gc_file(file_path, false))
+					&& !cfs_gc_file(file_path, true))
 				{
 					success = false;
 					break;
@@ -1395,31 +1390,35 @@ Datum cfs_fragmentation(PG_FUNCTION_ARGS)
 
 Datum cfs_gc_relation(PG_FUNCTION_ARGS)
 {
-	cfs_gc_processed_segments = 0;
-
-	if (cfs_gc_workers == 0 && pg_atomic_test_set_flag(&cfs_state->gc_started))
+	Oid oid =  PG_GETARG_OID(0);
+	Relation rel = try_relation_open(oid, AccessShareLock);
+	int processed_segments = 0;
+	
+	if (rel != NULL)
 	{
-		Oid oid =  PG_GETARG_OID(0);
-		Relation rel = try_relation_open(oid, AccessShareLock);
-				
-		if (rel != NULL)
-		{
-			char* path = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
-			char* map_path = (char*)palloc(strlen(path) + 16);
-			int i = 0;
-			sprintf(map_path, "%s.cfm", path);
+		char* path;
+		char* map_path;
+		int i = 0;
+
+		LWLockAcquire(CfsGcLock, LW_EXCLUSIVE); /* Prevent interaction with background GC */
+
+		processed_segments = cfs_gc_processed_segments;
+
+		path = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
+		map_path = (char*)palloc(strlen(path) + 16);
+		sprintf(map_path, "%s.cfm", path);
 			
-			while (true)
-			{
-				if (!cfs_gc_file(map_path, true))
-					break;
-				sprintf(map_path, "%s.%u.cfm", path, ++i);
-			}
-			pfree(path);
-			pfree(map_path);
-			relation_close(rel, AccessShareLock);
+		while (cfs_gc_file(map_path, false))
+		{
+			sprintf(map_path, "%s.%u.cfm", path, ++i);
 		}
-		pg_atomic_clear_flag(&cfs_state->gc_started);
+		pfree(path);
+		pfree(map_path);
+		relation_close(rel, AccessShareLock);
+
+		processed_segments -= cfs_gc_processed_segments;
+
+		LWLockRelease(CfsGcLock);
 	}
 	PG_RETURN_INT32(cfs_gc_processed_segments);
 }
