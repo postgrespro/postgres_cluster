@@ -5119,7 +5119,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	}
 
 	/* XXX: dirty. Clear on new tx */
-	if (!skipCommand && (context == PROCESS_UTILITY_TOPLEVEL || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
+	if (!skipCommand && (context != PROCESS_UTILITY_SUBCOMMAND || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
 		MtmUtilityProcessedInXid = InvalidTransactionId;
 
 	if (!skipCommand && !MtmTx.isReplicated && (MtmUtilityProcessedInXid == InvalidTransactionId)) {
