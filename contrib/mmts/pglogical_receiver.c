@@ -550,8 +550,7 @@ pglogical_receiver_main(Datum main_arg)
 					if (stmt[0] == 'Z' || (stmt[0] == 'M' && (stmt[1] == 'L' || stmt[1] == 'A' || stmt[1] == 'C'))) {
 						MTM_LOG3("Process '%c' message from %d", stmt[1], nodeId);
 						if (stmt[0] == 'M' && stmt[1] == 'C') { /* concurrent DDL should be executed by parallel workers */
-							//MtmExecute(stmt, msg_len);
-							MtmExecutore(stmt, msg_len);
+							MtmExecute(stmt, msg_len);
 						} else {
 							MtmExecutor(stmt, msg_len); /* all other messages can be processed by receiver itself */
 						}
