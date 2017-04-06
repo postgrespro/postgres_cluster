@@ -13,15 +13,33 @@
 
 <refnamediv>
   <refname>mamonsu</refname>
-  <refpurpose> a monitoring agent for collecting <productname>PostgreSQL</productname> and system metrics.</refpurpose>
+  <refpurpose> a monitoring agent for collecting <productname>&productname;</productname> and system metrics.</refpurpose>
 </refnamediv>
+
+<refsynopsisdiv>
+  <cmdsynopsis>
+   <command>mamonsu</command>
+   <arg choice="req"> <option>report</option> | <option>tune</option> </arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>mamonsu</command>
+   <arg choice="plain">agent</arg>
+   <arg choice="plain"><replaceable>action</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>mamonsu</command>
+   <arg choice="plain">zabbix</arg>
+   <arg choice="req"><option>template</option> | <option>host</option> | <option>hostgroup</option></arg>
+   <arg choice="plain"><replaceable>zabbix-action</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
 
 <refsect1><title>Description</title>
   <para>
     <filename>mamonsu</filename> is an active monitoring agent for
     <productname>&productname;</productname>. Based on <filename>zabbix</filename>,
     <filename>mamonsu</filename> provides an extensible cross-platform
-    solution that can collect and visualize multiple <productname>PostgreSQL</productname> and
+    solution that can collect and visualize multiple <productname>&productname;</productname> and
     system metrics.
   </para>
   <para>
@@ -37,37 +55,36 @@
     <listitem>
       <para>
         Plugins that specify which metrics to collect, and how to
-        visualize the collected data. To ensure a stable connection to
-        the monitored system, <filename>mamonsu</filename> plugins use a
-        <productname>PostgreSQL</productname> connection pooler.
+        visualize the collected data. 
       </para>
     </listitem>
   </itemizedlist>
   <para>
-    If required, you can add your own custom plugins to monitor specific
+    To ensure a stable connection to
+        the monitored system, <filename>mamonsu</filename> plugins use a
+        <productname>&productname;</productname> connection pooler. If required, you can add your own custom plugins to monitor specific
     metrics critical for your system.
   </para>
   <refsect2 id="installation-and-setup">
     <title>Installation and Setup</title>
     <para>
-      To use <filename>mamonsu</filename>, you must have a <filename>zabbix</filename> account and a <filename>zabbix</filename> server set up, and install the
-      <filename>zabbix</filename> agent on the system you are going to monitor.</para>
-      <para>Pre-built <filename>mamonsu</filename> packages are
-      provided together with <productname>&productname;</productname>, but have a
+      To use <filename>mamonsu</filename>, you must have a <filename>zabbix</filename> account and a <filename>zabbix</filename> server set up.</para>
+      <para>A pre-built <filename>mamonsu</filename> package is provided together with 
+      <productname>&productname;</productname>, but has a
       separate installer. Once you have installed both <productname>&productname;</productname> and <filename>mamonsu</filename>, complete the following
       steps to set up metrics collection:
     </para>
     <orderedlist>
       <listitem>
         <para>
-          If you are starting from scratch, configure your <productname>&productname;</productname> instance and intialize a new database. For details, see
+          If you are starting from scratch, configure your <productname>&productname;</productname> instance and initialize a new database. For details, see
           <xref linkend="creating-cluster">.
         </para>
       </listitem>
       <listitem>
         <para>
           Bootstrap <filename>mamonsu</filename>. You must specify the IP
-          address of the host you are going to monitor and the first database to connect to, as well as provide the username and password of the <productname>PostgreSQL</productname> user for <filename>mamonsu</filename> to connect as. You can omit the <literal>-W</literal> option if the password is not required.
+          address of the host you are going to monitor and the first database to connect to, as well as provide the username and password of the <productname>&productname;</productname> user for <filename>mamonsu</filename> to connect as. You can omit the <literal>-W</literal> option if the password is not required.
         </para>
         <programlisting>
 mamonsu bootstrap --host <replaceable>host_ip</replaceable> --dbname <replaceable>database_name</replaceable> --username <replaceable>username</replaceable> -W <replaceable>password</replaceable>
@@ -81,16 +98,14 @@ mamonsu bootstrap --host <replaceable>host_ip</replaceable> --dbname <replaceabl
       </listitem>
       <listitem>
         <para>
-          If you are going to use <filename>zabbix</filename> from the
-          command line, configure the following environment variables
-          for your <filename>zabbix</filename> server:
+        <filename>mamonsu</filename> enables you to control some of the <filename>zabbix</filename> server functionality from the command line. You can create and delete <filename>zabbix</filename> hosts and host groups, as well as create, delete, or import <filename>zabbix</filename> templates. If you are going run <filename>zabbix</filename>-related commands, configure the following environment variables for your <filename>zabbix</filename> server:
         </para>
         <itemizedlist>
         <listitem>
         <para>Set the <varname>ZABBIX_USER</varname> and <varname>ZABBIX_PASSWD</varname> variables to the login and password of your <filename>zabbix</filename> account, respectively.</para>
         </listitem>
         <listitem>
-        <para>Set the <varname>ZABBIX_URL</varname> to <literal>'http://zabbix/'</literal></para>
+        <para>Set the <varname>ZABBIX_URL</varname> to <literal>http://zabbix/</literal></para>
         </listitem>
         </itemizedlist>
         <para>
@@ -101,6 +116,11 @@ mamonsu bootstrap --host <replaceable>host_ip</replaceable> --dbname <replaceabl
 --url=http://zabbix/ --user=<replaceable>zabbix_login</replaceable> --password=<replaceable>zabbix_password</replaceable>
 </programlisting>
       </listitem>
+      <listitem><para>If you do not have a <filename>zabbix</filename> host yet, create a new <filename>zabbix</filename> host group and host to use for metrics collection:</para>
+      <programlisting>
+mamonsu zabbix hostgroup create <replaceable>hostgroup_id</replaceable>
+mamonsu zabbix host create <replaceable>host_name</replaceable> <replaceable>hostgroup_id</replaceable> <replaceable>template_id</replaceable> <replaceable>IP_address</replaceable>
+      </programlisting></listitem>
       <listitem>
         <para>
           Edit the <filename>agent.conf</filename> configuration file
@@ -110,7 +130,7 @@ mamonsu bootstrap --host <replaceable>host_ip</replaceable> --dbname <replaceabl
       <listitem>
         <para>
           Configure <filename>zabbix</filename>-related settings. You must
-          set <varname>address</varname>to the <filename>zabbix</filename> server address and specify the name of the <filename>zabbix</filename> host that will receive the collected metrics. You can find the hosts available for your account in the <filename>zabbix</filename> web interface under <emphasis role="srong"><guimenu>Configuration</guimenu></emphasis> > <emphasis role="srong"><guimenu>Hosts</guimenu></emphasis>. 
+          set <varname>address</varname> to the <filename>zabbix</filename> server address and specify the name of the <filename>zabbix</filename> host that will receive the collected metrics. You can find the hosts available for your account in the <filename>zabbix</filename> web interface under <emphasis role="strong"><guimenu>Configuration</guimenu></emphasis> > <emphasis role="strong"><guimenu>Hosts</guimenu></emphasis>. 
         </para>
     <programlisting>
 [zabbix]
@@ -119,15 +139,10 @@ enabled = <literal>True</literal>
 client = <replaceable>zabbix_host_name</replaceable>
 address = <replaceable>zabbix_server_ip</replaceable>
 </programlisting>
-<note><para>If required, you can create a new <filename>zabbix</filename> host
-          from the command line:
-        </para>
-        <programlisting>
-mamonsu zabbix host create \<replaceable>host_name</replaceable> \<replaceable>hostgroup_id</replaceable> \<replaceable>template_id</replaceable> \<replaceable>host_ip</replaceable> --url=http://zabbix/ --user=<replaceable>zabbix_login</replaceable> --password=<replaceable>zabbix_password</replaceable>
-</programlisting></note></listitem>
+</listitem>
       <listitem>
         <para>
-          Specify the <productname>PostgreSQL</productname> user and the database to connect to. In
+          Specify the <productname>&productname;</productname> user and the database to connect to. In
           the example below, we connect to a <literal>postgres</literal>
           database as a <literal>postgres</literal> user. If the
           password is not required, set the <literal>password</literal>
@@ -156,7 +171,7 @@ query_timeout = 10
       <listitem>
         <para>
           By default, <filename>mamonsu</filename> will collect both
-          <productname>PostgreSQL</productname> and system metrics. If required, you can disable
+          <productname>&productname;</productname> and system metrics. If required, you can disable
           metrics collection of either type by setting the
           <literal>enabled</literal> parameter to
           <literal>False</literal> in the corresponding section of the
@@ -168,7 +183,7 @@ query_timeout = 10
 enabled = True
 </programlisting>
 </listitem></itemizedlist>
-    </listitem>    
+    </listitem>
       <listitem>
         <para>
           Export a template for <filename>zabbix</filename>:
@@ -209,6 +224,181 @@ service mamonsu start
       configuration file and starts monitoring your system.
     </para>
   </refsect2>
+  </refsect1>
+  <refsect1><title>Options</title>
+  <para><filename>mamonsu</filename> enables you to manage metrics collection and control some of the <filename>zabbix</filename> options from the command line. The <command>mamonsu</command> can take the following options.</para>
+
+<variablelist>
+
+     <varlistentry>
+      <term><option>report</option></term>
+      <listitem>
+       <para>Display detailed information about the used hardware and <productname>&productname;</productname> settings.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>tune</option></term>
+      <listitem>
+       <para>Optimize system configuration based on the collected information about the used hardware and <productname>&productname;</productname> settings.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>agent</option></term>
+      <listitem>
+       <para><filename>mamonsu</filename> <command>agent</command> command provides access to the available metrics from the command line. You can specify one of the following actions:
+       </para>
+<variablelist>
+
+     <varlistentry>
+      <term><option>version</option></term>
+      <listitem>
+       <para>Display <filename>mamonsu</filename> version.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>metric-list</option></term>
+      <listitem>
+       <para>Show the list of available metrics.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>metric-get <replaceable>metric_name</replaceable></option></term>
+      <listitem>
+       <para>Specify the metric to monitor. You can get the list of available metrics using the <option>metric-list</option> option.
+       </para>
+      </listitem>
+     </varlistentry>
+
+</variablelist>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>zabbix template</option></term>
+      <listitem>
+       <para>Manage the <filename>zabbix</filename> template using one of the actions described in <xref linkend="mamonsu-zabbix-actions">.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>zabbix host</option></term>
+      <listitem>
+       <para>Manage the <filename>zabbix</filename> host using one of the actions described in <xref linkend="mamonsu-zabbix-actions">.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>zabbix hostgroup</option></term>
+      <listitem>
+       <para>Manage the <filename>zabbix</filename> host group using one of the actions described in <xref linkend="mamonsu-zabbix-actions">.
+       </para>
+      </listitem>
+     </varlistentry>
+
+</variablelist>
+
+  <refsect2 id="mamonsu-zabbix-actions"><title>zabbix Actions</title>
+  <para>Using <filename>mamonsu</filename> you can control some of the <filename>zabbix</filename> server functionality from the command line. Specifically, you can create or delete <filename>zabbix</filename> hosts and host groups, as well as generate, import, and delete <filename>zabbix</filename> templates using one of the following commands. The <replaceable>object_name</replaceable> to use must correspond to the type of the <filename>zabbix</filename> object specified in the command: template, host, or hostgroup.</para>
+<variablelist>
+     <varlistentry>
+      <term><option>list</option></term>
+      <listitem>
+       <para>Display the list of available templates, hosts, or host groups.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>show</option> <replaceable>object_name</replaceable></term>
+      <listitem>
+       <para>Display the details about the specified template, host, or host group. 
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>id</option> <replaceable>object_name</replaceable></term>
+      <listitem>
+       <para>Show ID of the specified object.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>delete</option> <replaceable>object_id</replaceable></term>
+      <listitem>
+       <para>Delete the specified object.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>create</option> <replaceable>hostgroup_name</replaceable></term>
+      <term><option>create</option> <replaceable>host_name</replaceable> <replaceable>hostgroup_id</replaceable> 
+      <replaceable>template_id</replaceable> <replaceable>ip_address</replaceable></term>
+      <listitem>
+       <para>Create a new host or a host group.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>export</option> <replaceable>template_name</replaceable></term>
+      <listitem>
+       <para>Generate a <filename>zabbix</filename> template.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>info</option></term>
+      <listitem>
+       <para>Display detailed information about the specified host using one of the following options:
+       </para>
+       <variablelist>
+
+     <varlistentry>
+      <term><option>templates</option> <replaceable>host_id</replaceable></term>
+      <listitem>
+       <para>Display the list of templates available for the specified host.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>hostgroups</option> <replaceable>host_id</replaceable></term>
+      <listitem>
+       <para>Display the host groups to which the specified host belongs.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>graphs</option> <replaceable>host_id</replaceable></term>
+      <listitem>
+       <para>Display the graphs available for the specified host.
+       </para>
+      </listitem>
+     </varlistentry>
+
+</variablelist>
+      </listitem>
+     </varlistentry>
+
+</variablelist>
+  </refsect2>
+  </refsect1>
+  <refsect1><title>Usage</title>
   <refsect2 id="collecting-metrics-data">
     <title>Collecting Metrics Data</title>
     <para>
@@ -221,14 +411,14 @@ mamonsu agent metric-list
       To monitor a specific metric, run:
     </para>
     <programlisting>
-mamonsu agent metric-get <replaceable>key</replaceable>
+mamonsu agent metric-get <replaceable>metric_name</replaceable>
 </programlisting>
     <para>
-      where <replaceable>key</replaceable> is the name of the metric. You can view graphs for the
+      where <replaceable>metric_name</replaceable> is the name of the metric to monitor. You can view graphs for the
       collected metrics in the <filename>zabbix</filename> web interface under the <emphasis role="strong"><guimenu>Graphs</guimenu></emphasis> menu.
     </para>
     <para>
-      To create a report about the used hardware and <productname>PostgreSQL</productname>, run:
+      To create a report about the used hardware and <productname>&productname;</productname> settings, run:
     </para>
     <programlisting>
 mamonsu report
@@ -236,7 +426,7 @@ mamonsu report
     <para>
       Based on the hardware information, <filename>mamonsu</filename>
       enables you to make a generic optimization for your system and the
-      <productname>PostgreSQL</productname> instance:
+      <productname>&productname;</productname> instance:
     </para>
     <programlisting>
 mamonsu tune

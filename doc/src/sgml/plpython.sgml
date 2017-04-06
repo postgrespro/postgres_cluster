@@ -103,8 +103,8 @@
    <para>
     The built variant depends on which Python version was found during
     the installation or which version was explicitly set using
-    the <envar>PYTHON</envar> environment variable;
-    see <xref linkend="install-procedure">.  To make both variants of
+    the <envar>PYTHON</envar> environment variable.
+    To make both variants of
     PL/Python available in one installation, the source tree has to be
     configured and built twice.
    </para>

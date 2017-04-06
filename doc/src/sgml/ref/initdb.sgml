@@ -400,7 +400,7 @@ doc/src/sgml/ref/initdb.sgml
       <term><option>--xid=<replaceable class="parameter">START_XID</replaceable></option></term>
       <listitem>
        <para>
-        Specifies a start xid value in the decimal for new db instance to test 64-bit xids,
+        Specifies a start xid value in the decimal format for new db instance to test 64-bit xids,
         default value is <literal>0</literal>.
        </para>
       </listitem>

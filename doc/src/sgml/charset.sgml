@@ -309,16 +309,6 @@ initdb --locale=sv_SE
     applications are advised to make use of the error code scheme
     instead.
    </para>
-
-   <para>
-    Maintaining catalogs of message translations requires the on-going
-    efforts of many volunteers that want to see
-    <productname>&productname;</> speak their preferred language well.
-    If messages in your language are currently not available or not fully
-    translated, your assistance would be appreciated.  If you want to
-    help, refer to <xref linkend="nls"> or write to the developers'
-    mailing list.
-   </para>
   </sect2>
  </sect1>
 

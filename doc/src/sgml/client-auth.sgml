@@ -967,8 +967,7 @@ omicron         bryanh                  guest1
    </para>
 
    <para>
-    GSSAPI support has to be enabled when <productname>&productname;</> is built;
-    see <xref linkend="installation"> for more information.
+    GSSAPI support has to be enabled when <productname>&productname;</> is built.
    </para>
 
    <para>

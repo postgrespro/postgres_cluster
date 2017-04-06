@@ -10529,8 +10529,8 @@ Branch: REL9_2_STABLE [6b700301c] 2015-02-17 16:03:00 +0100
 
       <listitem>
        <para>
-        Add support for building with <link linkend="install-windows">MS
-        Visual Studio 2010</link> (Brar Piening)
+        Add support for building with MS
+        Visual Studio 2010 (Brar Piening)
        </para>
       </listitem>
 
