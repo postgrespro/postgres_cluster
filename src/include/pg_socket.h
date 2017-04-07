@@ -76,8 +76,9 @@
 	((isRsocket) ? rpoll(fds, nfds, timeout) : \
 		poll(fds, nfds, timeout))
 
-#define pg_select(nfds, readfds, writefds, exceptfds, timeout) \
-	rselect(nfds, readfds, writefds, exceptfds, timeout)
+#define pg_select(nfds, readfds, writefds, exceptfds, timeout, isRsocket) \
+	((isRsocket) ? rselect(nfds, readfds, writefds, exceptfds, timeout) : \
+		select(nfds, readfds, writefds, exceptfds, timeout))
 
 #define pg_getsockname(socket, addr, addrlen, isRsocket) \
 	((isRsocket) ? rgetsockname(socket, addr, addrlen) : \
@@ -123,7 +124,7 @@
 #define pg_poll(fds, nfds, timeout, isRsocket) \
 	poll(fds, nfds, timeout)
 
-#define pg_select(nfds, readfds, writefds, exceptfds, timeout) \
+#define pg_select(nfds, readfds, writefds, exceptfds, timeout, isRsocket) \
 	select(nfds, readfds, writefds, exceptfds, timeout)
 
 #define pg_getsockname(socket, addr, addrlen, isRsocket) \

@@ -6464,9 +6464,13 @@ PQsocket(const PGconn *conn)
 bool
 PQisRsocket(const PGconn *conn)
 {
+#ifdef WITH_RSOCKET
 	if (!conn)
 		return false;
 	return (conn->sock != PGINVALID_SOCKET) ? conn->isRsocket : false;
+#else
+	return false;
+#endif
 }
 
 int

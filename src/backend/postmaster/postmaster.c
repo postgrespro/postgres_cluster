@@ -1746,13 +1746,8 @@ ServerLoop(void)
 
 			PG_SETMASK(&UnBlockSig);
 
-			/*
-			 * rsockets fd's cannot be passed into non-rsocket calls.
-			 * For applications which must mix rsocket fd's with standard
-			 * socket fd's or opened files, rpoll and rselect support polling
-			 * both rsockets and normal fd's.
-			 */
-			selres = pg_select(nSockets, &rmask, NULL, NULL, &timeout);
+			/* Here all listened sockets are not rsockets, so pass 'false' */
+			selres = pg_select(nSockets, &rmask, NULL, NULL, &timeout, false);
 
 			PG_SETMASK(&BlockSig);
 		}
@@ -1790,11 +1785,10 @@ ServerLoop(void)
 					{
 						BackendStartup(port,
 #ifdef WITH_RSOCKET
-									   ListenRdma[i]
+									   ListenRdma[i]);
 #else
-									   false
+									   false);
 #endif
-									   );
 
 						/*
 						 * We no longer need the open socket or port structure
