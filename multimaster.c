@@ -237,6 +237,7 @@ int   MtmHeartbeatRecvTimeout;
 int   MtmMin2PCTimeout;
 int   MtmMax2PCRatio;
 bool  MtmUseDtm;
+bool  MtmUseRDMA;
 bool  MtmPreserveCommitOrder;
 bool  MtmVolksWagenMode; /* Pretend to be normal postgres. This means skip some NOTICE's and use local sequences */
 
@@ -3085,6 +3086,19 @@ _PG_init(void)
 		&MtmUseDtm,
 		true,
 		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomBoolVariable(
+		"multimaster.use_rdma",
+		"Use RDMA sockets",
+		NULL,
+		&MtmUseRDMA,
+		false,
+		PGC_POSTMASTER,
 		0,
 		NULL,
 		NULL,

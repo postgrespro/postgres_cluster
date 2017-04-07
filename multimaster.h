@@ -349,6 +349,7 @@ extern int   MtmNodeDisableDelay;
 extern int   MtmTransSpillThreshold;
 extern int   MtmHeartbeatSendTimeout;
 extern int   MtmHeartbeatRecvTimeout;
+extern bool  MtmUseRDMA;
 extern bool  MtmUseDtm;
 extern bool  MtmPreserveCommitOrder;
 extern HTAB* MtmXid2State;
