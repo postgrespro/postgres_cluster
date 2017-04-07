@@ -2481,7 +2481,7 @@ ssh -L 63333:db.foo.com:5432 joe@shell.foo.com
      <listitem>
    <para>On the server side, add the <xref linkend="listen-rdma-addresses"> GUC variable to the <filename>postgresql.conf</filename> configuration file to specify TCP/IP address(es) on which the server is to listen for new <acronym>RDMA</acronym> connections via <literal>rsocket</literal> from client applications. For example:
          <programlisting>
-listen_rdma_addresses = '<replaceable>hostname1</replaceable>, <replaceable>hostname2</replaceable>'
+listen_rdma_addresses = 'server1,172.0.3.21'
 </programlisting>
 You can specify a comma-separated list of host names and/or numeric IP addresses. If set to <literal>*</>, this variable will enable <acronym>RDMA</acronym> connections via <literal>rsocket</literal> to all the available IP interfaces. 
    </para>
@@ -2539,20 +2539,20 @@ export WITH_RSOCKET=true
 <para>Once the setup is complete, launch <application>pg_dump</application> as usual. For example:
 </para>
 <programlisting>
-pg_dump <replaceable>mydb</> -h <replaceable>hostname</> > db.sql
+pg_dump <replaceable>dbname</> -h <replaceable>hostname</> > db.sql
 </programlisting>
 
    </sect2>
 
    <sect2>
    <title>Using <acronym>RDMA</acronym> for Master-Slave Replication</title>
-   <para>To enable master-slave replication over <acronym>RDMA</acronym> connections via <literal>rsocket</literal>, you need to configure master and slave nodes as described below.</para>
+   <para>To enable master-slave replication over <acronym>RDMA</acronym> connections via <literal>rsocket</literal>, you need to configure master and slave nodes. For example, to allow client connections to the server 172.0.3.21 from 172.0.3.0/24 addresses on behalf of the <literal>postgres</> user, follow the steps below:</para>
 
        <para><emphasis role="strong">To set up the master node for replication over <acronym>RDMA</acronym> connections via <literal>rsocket</literal>:</emphasis>
        </para>
        <orderedlist>
          <listitem>
-           <para>Edit the <filename>pg_hba.conf</filename> file to allow client connections and replication at the specified IP addresses. For example:
+           <para>Edit the <filename>pg_hba.conf</filename> file to allow client connections and replication from the specified IP addresses:
            <programlisting>
 host    all            postgres     172.0.3.0/24         md5
 host    replication    postgres     172.0.3.0/24         md5
@@ -2568,7 +2568,7 @@ wal_level = hot_standby
 hot_standby = on
 max_wal_senders = 1
 </programlisting>
-           The <varname>listen_rdma_addresses</varname> specifies the TCP/IP address(es) on which the server is to listen for new <acronym>RDMA</acronym> connections via <literal>rsocket</literal>.
+           The <varname>listen_rdma_addresses</varname> variable specifies the TCP/IP address(es) on which the server is to listen for new <acronym>RDMA</acronym> connections via <literal>rsocket</literal>. 
            </para>
          </listitem>
          <listitem>
@@ -2605,7 +2605,7 @@ All the data appears on the slave node under the specified <replaceable>datadir<
            </para>
          </listitem>
          <listitem>
-           <para>Make sure the <replaceable>datadir</>/recovery.conf contains the <literal>with_rsocket</literal> parameter. 
+           <para>Make sure the <filename><replaceable>datadir</>/recovery.conf</filename> contains the <literal>with_rsocket</literal> parameter. 
            <programlisting>
 standby_mode = 'on'
 primary_conninfo = 'user=postgres host=172.0.3.21 port=5432 with_rsocket=true'
