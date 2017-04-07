@@ -740,6 +740,20 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 	HASH_SEQ_STATUS scan;
 	ConnCacheEntry *entry;
 
+	/* Do nothing for this events */
+	switch (event)
+	{
+		case XACT_EVENT_START:
+		case XACT_EVENT_POST_PREPARE:
+		case XACT_EVENT_COMMIT_PREPARED:
+		case XACT_EVENT_PRE_COMMIT_PREPARED:
+		case XACT_EVENT_ABORT_PREPARED:
+		case XACT_EVENT_COMMIT_COMMAND:
+			return;
+		default:
+			break;
+	}
+
 	/* Quick exit if no connections were touched in this transaction. */
 	if (!xact_got_connection)
 		return;
@@ -902,8 +916,11 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 					break;
 
 				case XACT_EVENT_START:
-				case XACT_EVENT_ABORT_PREPARED:
+				case XACT_EVENT_POST_PREPARE:
 				case XACT_EVENT_COMMIT_PREPARED:
+				case XACT_EVENT_PRE_COMMIT_PREPARED:
+				case XACT_EVENT_ABORT_PREPARED:
+				case XACT_EVENT_COMMIT_COMMAND:
 					break;
 			}
 		}
