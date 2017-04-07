@@ -484,8 +484,15 @@ process_remote_message(StringInfo s)
 			standalone = true;
 			break;
 		}
-
-	}
+	    case 'S':
+		{
+  		    Assert(messageSize == sizeof(csn_t));
+		    MtmSetSnapshot(*(csn_t*)messageBody);
+			break;
+		}
+	    default:
+		    Assert(false);
+ 	}
 	return standalone;
 }
 	

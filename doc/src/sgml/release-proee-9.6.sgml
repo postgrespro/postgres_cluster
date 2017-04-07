@@ -140,21 +140,51 @@
       <link linkend="release-pro-9-6-1-2">9.6.1.2</link></para>
     <para>Major enhancements over <productname>Postgres Pro</productname>
       9.6.1.2 include:</para>
+    <itemizedlist>
+    <listitem>
     <para>Added k-nearest neighbors algorithm (KNN) for SP-GiST and B-tree
     (See <xref linkend="spgist">)</para>
+    </listitem>
+    <listitem>
     <para>Added RUM index, based on GIN, as separate module (See <xref linkend="rum">)</para>
+    </listitem>
+    <listitem>
     <para>WAL size has been reduced on <command>CREATE INDEX</command> operation in the GiST, GIN, SP-GiST</para>
+    </listitem>
+    <listitem>
     <para>Added timeout for idle sessions on the server side (See <xref linkend="guc-idle-session-timeout">)</para>
+    </listitem>
+    <listitem>
     <para>Added SHA-2 algorithm for password encryption (See <xref linkend="auth-password">)</para>
+    </listitem>
+    <listitem>
     <para>Added page level compression (CFS) (See <xref linkend="cfs">)</para>
+    </listitem>
+    <listitem>
     <para>Added support of autonomous transactions (See <xref linkend="atx">)</para>
+    </listitem>
+    <listitem>
     <para>Added new optional background worker to schedule tasks by rules (See <xref linkend="pgpro-scheduler">)</para>
+    </listitem>
+    <listitem>
     <para>Added support for relocatable tables (See <xref linkend="pgtransfer">)</para>
+    </listitem>
+    <listitem>
     <para>Extension <application>pg_hint_plan</application> has been added (See <xref linkend="pg-hint-plan">)</para>
+    </listitem>
+    <listitem>
     <para>Transaction IDs on 64-bit platforms use 64-bit data type</para>
+    </listitem>
+    <listitem>
     <para>Lazy placement of temporary tables on disk</para>
+    </listitem>
+    <listitem>
     <para>Consistent read on slaves (wait for WAL apply, see <xref linkend="sql-waitlsn">)</para>
+    </listitem>
+    <listitem>
     <para>Utility <application>pg_repack</application> has been added (See <xref linkend="app-pgrepack">)</para>
+    </listitem>
+    </itemizedlist>
   </sect2>
   <sect2>
     <title>Migration to Version &productname; 9.6.1.2</title>
