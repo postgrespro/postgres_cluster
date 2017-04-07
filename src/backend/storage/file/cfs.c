@@ -764,6 +764,11 @@ static bool cfs_gc_file(char* map_path, bool background)
 						remove_backups = false;
 						goto ReplaceMap;
 					}
+					else
+					{
+						/* No backups - nothing has to be recovered. Just release GC lock */
+						break;
+					}
 				}
 				else
 				{
