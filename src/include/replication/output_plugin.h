@@ -100,6 +100,11 @@ typedef void (*LogicalDecodeShutdownCB) (
 );
 
 /*
+ * Called when WAL sender caught up.
+ */
+typedef void (*LogicalDecodeCaughtUpCB) (struct LogicalDecodingContext * ctx);
+
+/*
  * Output plugin callbacks
  */
 typedef struct OutputPluginCallbacks
@@ -111,6 +116,7 @@ typedef struct OutputPluginCallbacks
 	LogicalDecodeMessageCB message_cb;
 	LogicalDecodeFilterByOriginCB filter_by_origin_cb;
 	LogicalDecodeShutdownCB shutdown_cb;
+	LogicalDecodeCaughtUpCB caughtup_cb;
 } OutputPluginCallbacks;
 
 void		OutputPluginPrepareWrite(struct LogicalDecodingContext *ctx, bool last_write);

@@ -101,13 +101,13 @@ find_pkey_tuple(ScanKey skey, Relation rel, Relation idxrel,
 	InitDirtySnapshot(snap);
 	scan = index_beginscan(rel, idxrel,
 						   &snap,
-						   RelationGetNumberOfAttributes(idxrel),
+						   IndexRelationGetNumberOfKeyAttributes(idxrel),
 						   0);
 
 retry:
 	found = false;
 
-	index_rescan(scan, skey, RelationGetNumberOfAttributes(idxrel), NULL, 0);
+	index_rescan(scan, skey, IndexRelationGetNumberOfKeyAttributes(idxrel), NULL, 0);
 
 	if ((scantuple = index_getnext(scan, ForwardScanDirection)) != NULL)
 	{
@@ -236,7 +236,7 @@ build_index_scan_key(ScanKey skey, Relation rel, Relation idxrel, TupleData *tup
 	indkey = (int2vector *) DatumGetPointer(indkeyDatum);
 
 
-	for (attoff = 0; attoff < RelationGetNumberOfAttributes(idxrel); attoff++)
+	for (attoff = 0; attoff < IndexRelationGetNumberOfKeyAttributes(idxrel); attoff++)
 	{
 		Oid			operator;
 		Oid			opfamily;
@@ -345,11 +345,11 @@ process_remote_begin(StringInfo s)
 
 	Assert(gtid.node > 0);
 
-	MTM_LOG2("REMOTE begin node=%d xid=%d snapshot=%ld", gtid.node, gtid.xid, snapshot);
+	MTM_LOG2("REMOTE begin node=%d xid=%d snapshot=%lld", gtid.node, gtid.xid, snapshot);
 	MtmResetTransaction();		
 #if 1
 	if (BIT_CHECK(Mtm->disabledNodeMask, gtid.node-1)) { 
-		elog(WARNING, "Ignore transaction %d from disabled node %d", gtid.xid, gtid.node);
+		elog(WARNING, "Ignore transaction %llu from disabled node %d", (long64)gtid.xid, gtid.node);
 		return false;
 	}
 #endif
@@ -447,17 +447,17 @@ process_remote_message(StringInfo s)
 			 * restartLSN without locks
 			 */
 			if (origin_node == MtmReplicationNodeId) { 
-				Assert(msg->origin_lsn == InvalidXLogRecPtr);
+				Assert(msg->origin_lsn == INVALID_LSN);
 				msg->origin_lsn = MtmSenderWalEnd;
 			}
 			if (Mtm->nodes[origin_node-1].restartLSN < msg->origin_lsn) { 
-				MTM_LOG1("Receive logical abort message for transaction %s from node %d: %lx < %lx", msg->gid, origin_node, Mtm->nodes[origin_node-1].restartLSN, msg->origin_lsn);
+				MTM_LOG1("Receive logical abort message for transaction %s from node %d: %llx < %llx", msg->gid, origin_node, Mtm->nodes[origin_node-1].restartLSN, msg->origin_lsn);
 				Mtm->nodes[origin_node-1].restartLSN = msg->origin_lsn;
 				replorigin_session_origin_lsn = msg->origin_lsn; 				
 				MtmRollbackPreparedTransaction(origin_node, msg->gid);
 			} else { 
-				if (msg->origin_lsn != InvalidXLogRecPtr) { 
-					MTM_LOG1("Ignore rollback of transaction %s from node %d because it's LSN %lx <= %lx", 
+				if (msg->origin_lsn != INVALID_LSN) { 
+					MTM_LOG1("Ignore rollback of transaction %s from node %d because it's LSN %llx <= %llx", 
 							 msg->gid, origin_node, msg->origin_lsn, Mtm->nodes[origin_node-1].restartLSN);
 				}
 			}
@@ -466,7 +466,7 @@ process_remote_message(StringInfo s)
 		}
 		case 'L':
 		{
-			MTM_LOG3("%ld: Process deadlock message with size %d from %d", MtmGetSystemTime(), messageSize, MtmReplicationNodeId);
+			MTM_LOG3("%lld: Process deadlock message with size %d from %d", MtmGetSystemTime(), messageSize, MtmReplicationNodeId);
 			MtmUpdateLockGraph(MtmReplicationNodeId, messageBody, messageSize);
 			standalone = true;
 			break;
@@ -619,14 +619,14 @@ read_rel(StringInfo s, LOCKMODE mode)
 static void
 process_remote_commit(StringInfo in)
 {
-	uint8 		flags;
+	uint8 		event;
 	csn_t       csn;
 	const char *gid = NULL;	
-	XLogRecPtr  end_lsn;
-	XLogRecPtr  origin_lsn;
+	lsn_t       end_lsn;
+	lsn_t       origin_lsn;
 	int         origin_node;
-	/* read flags */
-	flags = pq_getmsgbyte(in);
+	/* read event */
+	event = pq_getmsgbyte(in);
 	MtmReplicationNodeId = pq_getmsgbyte(in);
 
 	/* read fields */
@@ -640,7 +640,7 @@ process_remote_commit(StringInfo in)
 	replorigin_session_origin_lsn = origin_node == MtmReplicationNodeId ? end_lsn : origin_lsn;
 	Assert(replorigin_session_origin == InvalidRepOriginId);
 
-	switch (PGLOGICAL_XACT_EVENT(flags))
+	switch (event)
 	{
 	    case PGLOGICAL_PRECOMMIT_PREPARED:
 		{
@@ -699,7 +699,7 @@ process_remote_commit(StringInfo in)
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			csn = pq_getmsgint64(in); 
 			gid = pq_getmsgstring(in);
-			MTM_LOG2("PGLOGICAL_COMMIT_PREPARED commit: csn=%ld, gid=%s, lsn=%lx", csn, gid, end_lsn);
+			MTM_LOG2("PGLOGICAL_COMMIT_PREPARED commit: csn=%lld, gid=%s, lsn=%llx", csn, gid, end_lsn);
 			MtmResetTransaction();
 			StartTransactionCommand();
 			MtmBeginSession(origin_node);
@@ -723,12 +723,9 @@ process_remote_commit(StringInfo in)
 			Assert(false);
 	}
 	if (Mtm->status == MTM_RECOVERY) { 
-		MTM_LOG1("Recover transaction %s flags=%d", gid,  flags);
+		MTM_LOG1("Recover transaction %s event=%d", gid,  event);
 	}
 	MtmUpdateLsnMapping(MtmReplicationNodeId, end_lsn);
-	if (flags & PGLOGICAL_CAUGHT_UP) {
-		MtmRecoveryCompleted();
-	}
 }
 
 static void
@@ -1119,6 +1116,11 @@ void MtmExecutor(void* work, size_t size)
 				}
 				continue;
 			}
+			case 'Z':
+			{
+				MtmRecoveryCompleted();
+				break;
+			}
             default:
                 elog(ERROR, "unknown action of type %c", action);
             }        
@@ -1132,10 +1134,10 @@ void MtmExecutor(void* work, size_t size)
 		MemoryContextSwitchTo(oldcontext);
 		EmitErrorReport();
         FlushErrorState();
-		MTM_LOG1("%d: REMOTE begin abort transaction %d", MyProcPid, MtmGetCurrentTransactionId());
+		MTM_LOG1("%d: REMOTE begin abort transaction %llu", MyProcPid, (long64)MtmGetCurrentTransactionId());
 		MtmEndSession(MtmReplicationNodeId, false);
         AbortCurrentTransaction();
-		MTM_LOG2("%d: REMOTE end abort transaction %d", MyProcPid, MtmGetCurrentTransactionId());
+		MTM_LOG2("%d: REMOTE end abort transaction %llu", MyProcPid, (long64)MtmGetCurrentTransactionId());
     }
     PG_END_TRY();
 	if (spill_file >= 0) { 

@@ -475,6 +475,7 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 	{
 		if (strcmp(gxact->gid, gid) == 0)
 		{
+			LWLockRelease(TwoPhaseStateLock);
 			ereport(ERROR,
 					(errcode(ERRCODE_DUPLICATE_OBJECT),
 					 errmsg("transaction identifier \"%s\" is already in use",
@@ -484,11 +485,14 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 
 	/* Get a free gxact from the freelist */
 	if (TwoPhaseState->freeGXacts == NULL)
+	{
+		LWLockRelease(TwoPhaseStateLock);
 		ereport(ERROR,
 				(errcode(ERRCODE_OUT_OF_MEMORY),
 				 errmsg("maximum number of prepared transactions reached"),
 				 errhint("Increase max_prepared_transactions (currently %d).",
 						 max_prepared_xacts)));
+	}
 	gxact = TwoPhaseState->freeGXacts;
 	TwoPhaseState->freeGXacts = gxact->next;
 
@@ -793,6 +797,7 @@ bool GetPreparedTransactionState(char const* gid, char* state)
 {
 	int i;
 	GlobalTransaction gxact;
+	bool result = false;
 
 	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
 	i = string_hash(gid, 0)  % max_prepared_xacts;
@@ -801,11 +806,12 @@ bool GetPreparedTransactionState(char const* gid, char* state)
 		if (strcmp(gxact->gid, gid) == 0)
 		{
 			strcpy(state, gxact->state_3pc);
-			return true;
+			result = true;
+			break;
 		}
 	}
 	LWLockRelease(TwoPhaseStateLock);
-	return false;
+	return result;
 }
 
 
@@ -844,6 +850,9 @@ void SetPreparedTransactionState(char const* gid, char const* state)
 
 	START_CRIT_SECTION();
 	MyPgXact->delayChkpt = true;
+
+	hdr->xl_origin.origin_lsn = replorigin_session_origin_lsn;
+	hdr->xl_origin.origin_timestamp = replorigin_session_origin_timestamp;
 
 	XLogBeginInsert();
 	XLogRegisterData(buf, hdr->total_len - sizeof(pg_crc32c));

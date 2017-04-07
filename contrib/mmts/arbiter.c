@@ -360,7 +360,7 @@ static void MtmSendHeartbeat()
 	msg.node = MtmNodeId;
 	msg.csn = now;
 	if (last_sent_heartbeat != 0 && last_sent_heartbeat + MSEC_TO_USEC(MtmHeartbeatSendTimeout)*2 < now) { 
-		MTM_LOG1("More than %ld microseconds since last heartbeat", now - last_sent_heartbeat);
+		MTM_LOG1("More than %lld microseconds since last heartbeat", now - last_sent_heartbeat);
 	}
 	last_sent_heartbeat = now;
 
@@ -377,7 +377,7 @@ static void MtmSendHeartbeat()
 					elog(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
 				} else {
 					if (last_heartbeat_to_node[i] + MSEC_TO_USEC(MtmHeartbeatSendTimeout)*2 < now) { 
-						MTM_LOG1("Last heartbeat to node %d was sent %ld microseconds ago", i+1, now - last_heartbeat_to_node[i]);
+						MTM_LOG1("Last heartbeat to node %d was sent %lld microseconds ago", i+1, now - last_heartbeat_to_node[i]);
 					}
 					last_heartbeat_to_node[i] = now;
 					/* Connectivity mask can be cleared by MtmWatchdog: in this case sockets[i] >= 0 */
@@ -388,7 +388,7 @@ static void MtmSendHeartbeat()
 						MtmReconnectNode(i+1); /* set reconnect mask to force node reconnent */
 						//MtmOnNodeConnect(i+1);
 					}
-					MTM_LOG4("Send heartbeat to node %d with timestamp %ld", i+1, now);    
+					MTM_LOG4("Send heartbeat to node %d with timestamp %lld", i+1, now);    
 				}
 			} else { 
 				MTM_LOG2("Do not send heartbeat to node %d, busy mask %lld, status %s", i+1, (long long) busy_mask, MtmNodeStatusMnem[Mtm->status]);
@@ -940,7 +940,7 @@ static void MtmReceiver(Datum arg)
 
 					switch (msg->code) {
 					  case MSG_HEARTBEAT:
-						MTM_LOG4("Receive HEARTBEAT from node %d with timestamp %ld delay %ld", 
+						MTM_LOG4("Receive HEARTBEAT from node %d with timestamp %lld delay %lld", 
 								 node, msg->csn, USEC_TO_MSEC(MtmGetSystemTime() - msg->csn)); 
 						continue;
 					  case MSG_POLL_REQUEST:
@@ -1017,13 +1017,13 @@ static void MtmReceiver(Datum arg)
 					}
 					ts = (MtmTransState*)hash_search(MtmXid2State, &msg->dxid, HASH_FIND, NULL);
 					if (ts == NULL) { 
-						elog(WARNING, "Ignore response for unexisted transaction %d from node %d", msg->dxid, node);
+						elog(WARNING, "Ignore response for unexisted transaction %llu from node %d", (long64)msg->dxid, node);
 						continue;
 					}
 					Assert(msg->code == MSG_ABORTED || strcmp(msg->gid, ts->gid) == 0);
 					if (BIT_CHECK(ts->votedMask, node-1)) {
-						elog(WARNING, "Receive deteriorated %s response for transaction %d (%s) from node %d",
-							 MtmMessageKindMnem[msg->code], ts->xid, ts->gid, node);
+						elog(WARNING, "Receive deteriorated %s response for transaction %s (%llu) from node %d",
+							 MtmMessageKindMnem[msg->code], ts->gid, (long64)ts->xid, node);
 						continue;
 					}
 					BIT_SET(ts->votedMask, node-1);
@@ -1033,8 +1033,8 @@ static void MtmReceiver(Datum arg)
 						  case MSG_PREPARED:
 							MTM_TXTRACE(ts, "MtmTransReceiver got MSG_PREPARED");
 							if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
-								elog(WARNING, "Receive PREPARED response for already committed transaction %d from node %d",
-									 ts->xid, node);
+								elog(WARNING, "Receive PREPARED response for already committed transaction %llu from node %d",
+									 (long64)ts->xid, node);
 								continue;
 							}
 							Mtm->nodes[node-1].transDelay += MtmGetCurrentTime() - ts->csn;
@@ -1043,8 +1043,8 @@ static void MtmReceiver(Datum arg)
 							if ((~msg->disabledNodeMask & Mtm->disabledNodeMask) != 0) { 
 								/* Coordinator's disabled mask is wider than of this node: so reject such transaction to avoid 
 								   commit on smaller subset of nodes */
-								elog(WARNING, "Coordinator of distributed transaction %s (%d) see less nodes than node %d: %llx instead of %llx",
-									 ts->gid, ts->xid, node, (long long) Mtm->disabledNodeMask, (long long) msg->disabledNodeMask);
+								elog(WARNING, "Coordinator of distributed transaction %s (%llu) see less nodes than node %d: %llx instead of %llx",
+									 ts->gid, (long64)ts->xid, node, Mtm->disabledNodeMask, msg->disabledNodeMask);
 								MtmAbortTransaction(ts);
 							}
 							if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
@@ -1053,7 +1053,7 @@ static void MtmReceiver(Datum arg)
 									MtmWakeUpBackend(ts);								
 								} else { 
 									Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-									MTM_LOG2("Transaction %s is prepared (status=%s participants=%lx disabled=%lx, voted=%lx)", 
+									MTM_LOG2("Transaction %s is prepared (status=%s participants=%llx disabled=%llx, voted=%llx)", 
 											 ts->gid, MtmTxnStatusMnem[ts->status], ts->participantsMask, Mtm->disabledNodeMask, ts->votedMask);
 									ts->isPrepared = true;
 									if (ts->isTwoPhase) { 
@@ -1079,12 +1079,12 @@ static void MtmReceiver(Datum arg)
 							break;						   
 						  case MSG_ABORTED:
 							if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
-								elog(WARNING, "Receive ABORTED response for already committed transaction %d (%s) from node %d",
-									 ts->xid, ts->gid, node);
+								elog(WARNING, "Receive ABORTED response for already committed transaction %s (%llu) from node %d",
+									 ts->gid, (long64)ts->xid, node);
 								continue;
 							}
 							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
-								MTM_LOG1("Arbiter receive abort message for transaction %s (%d)", ts->gid, ts->xid);
+								MTM_LOG1("Arbiter receive abort message for transaction %s (%llu)", ts->gid, (long64)ts->xid);
 								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
 								MtmAbortTransaction(ts);
 							}
@@ -1095,8 +1095,8 @@ static void MtmReceiver(Datum arg)
 						  case MSG_PRECOMMITTED:
 							MTM_TXTRACE(ts, "MtmTransReceiver got MSG_PRECOMMITTED");
                             if (ts->status == TRANSACTION_STATUS_COMMITTED) {
-                                elog(WARNING, "Receive PRECOMMITTED response for already committed transaction %d (%s) from node %d",
-                                     ts->xid, ts->gid, node);
+                                elog(WARNING, "Receive PRECOMMITTED response for already committed transaction %s (%llu) from node %d",
+                                     ts->gid, (long64)ts->xid, node);
                                 continue;
                             }
 							if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
@@ -1111,8 +1111,8 @@ static void MtmReceiver(Datum arg)
 								}
 							} else { 
 								Assert(ts->status == TRANSACTION_STATUS_ABORTED);
-								elog(WARNING, "Receive PRECOMMITTED response for aborted transaction %d (%s) from node %d", 
-									 ts->xid, ts->gid, node); // How it can happen? SHould we use assert here?
+								elog(WARNING, "Receive PRECOMMITTED response for aborted transaction %s (%llu) from node %d", 
+									 ts->gid, (long64)ts->xid, node); // How it can happen? SHould we use assert here?
 								if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
 									MtmWakeUpBackend(ts);
 								}
@@ -1160,7 +1160,7 @@ static void MtmReceiver(Datum arg)
 					if (!MtmWatchdog(now)) { 
 						for (i = 0; i < nNodes; i++) { 
 							if (Mtm->nodes[i].lastHeartbeat != 0 && sockets[i] >= 0) {
-								MTM_LOG1("Last heartbeat from node %d received %ld microseconds ago", i+1, now - Mtm->nodes[i].lastHeartbeat);
+								MTM_LOG1("Last heartbeat from node %d received %lld microseconds ago", i+1, now - Mtm->nodes[i].lastHeartbeat);
 							}
 						}
 					}

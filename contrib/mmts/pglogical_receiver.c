@@ -56,8 +56,8 @@ static bool receiver_sync_mode = true; /* We need sync mode to have up-to-date v
 static char worker_proc[BGW_MAXLEN];
 
 /* Lastly written positions */
-static XLogRecPtr output_written_lsn = InvalidXLogRecPtr;
-XLogRecPtr MtmSenderWalEnd;
+static lsn_t output_written_lsn = INVALID_LSN;
+lsn_t MtmSenderWalEnd;
 
 /* Stream functions */
 static void fe_sendint64(int64 i, char *buf);
@@ -91,8 +91,8 @@ sendFeedback(PGconn *conn, int64 now, int node_id)
 {
 	char		replybuf[1 + 8 + 8 + 8 + 8 + 1];
 	int		 len = 0;
-	XLogRecPtr output_applied_lsn = output_written_lsn;
-	XLogRecPtr output_flushed_lsn = MtmGetFlushPosition(node_id);
+	lsn_t output_applied_lsn = output_written_lsn;
+	lsn_t output_flushed_lsn = MtmGetFlushPosition(node_id);
 
 	replybuf[len] = 'r';
 	len += 1;
@@ -262,7 +262,7 @@ pglogical_receiver_main(Datum main_arg)
 	}
 	CommitTransactionCommand();
 	Mtm->nodes[nodeId-1].originId = originId;
-	Mtm->nodes[nodeId-1].restartLSN = InvalidXLogRecPtr;
+	Mtm->nodes[nodeId-1].restartLSN = INVALID_LSN;
 
 	/* This is main loop of logical replication.
 	 * In case of errors we will try to reestablish connection.
@@ -272,7 +272,7 @@ pglogical_receiver_main(Datum main_arg)
 	{ 
 		int  count;
 		ConnStatusType status;
-		XLogRecPtr originStartPos = Mtm->nodes[nodeId-1].restartLSN;
+		lsn_t originStartPos = Mtm->nodes[nodeId-1].restartLSN;
 		int timeline;
 
 		/* 
@@ -333,30 +333,30 @@ pglogical_receiver_main(Datum main_arg)
 		}
 		
 		/* Start logical replication at specified position */
-		if (originStartPos == InvalidXLogRecPtr) { 
+		if (originStartPos == INVALID_LSN) { 
 			originStartPos = replorigin_get_progress(originId, false);
-			if (originStartPos == InvalidXLogRecPtr) {
+			if (originStartPos == INVALID_LSN) {
 				/* 
 				 * We are just creating new replication slot.
 				 * It is assumed that state of local and remote nodes is the same at this moment.
 				 * Them are either empty, either new node is synchronized using base_backup.
 				 * So we assume that LSNs are the same for local and remote node
 				 */
-				originStartPos = Mtm->status == MTM_RECOVERY && Mtm->donorNodeId == nodeId ? GetXLogInsertRecPtr() : InvalidXLogRecPtr;
-				MTM_LOG1("Start logical receiver at position %lx from node %d", originStartPos, nodeId);
+				originStartPos = (Mtm->status == MTM_RECOVERY && Mtm->donorNodeId == nodeId) ? GetXLogInsertRecPtr() : INVALID_LSN;
+				MTM_LOG1("Start logical receiver at position %llx from node %d", originStartPos, nodeId);
 			} else { 
 				if (Mtm->nodes[nodeId-1].restartLSN < originStartPos) { 
-					MTM_LOG2("[restartlsn] node %d: %lx -> %lx (pglogical_receiver_mains)", nodeId, Mtm->nodes[nodeId-1].restartLSN, originStartPos);
+					MTM_LOG1("Advance restartLSN for node %d: from %llx to %llx (pglogical_receiver_main)", nodeId, Mtm->nodes[nodeId-1].restartLSN, originStartPos);
 					Mtm->nodes[nodeId-1].restartLSN = originStartPos;
 				}
-				MTM_LOG1("Restart logical receiver at position %lx with origin=%d from node %d", originStartPos, originId, nodeId);
+				MTM_LOG1("Restart logical receiver at position %llx with origin=%d from node %d", originStartPos, originId, nodeId);
 			}
 		}		
 		
-		MTM_LOG1("Start replication on slot %s from node %d at position %lx, mode %s, recovered lsn %lx", 
+		MTM_LOG1("Start replication on slot %s from node %d at position %llx, mode %s, recovered lsn %llx", 
 				 slotName, nodeId, originStartPos, MtmReplicationModeName[mode], Mtm->recoveredLSN);
 
-		appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %x/%x (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"forward_changesets\" '1', \"mtm_replication_mode\" '%s', \"mtm_restart_pos\" '%lx', \"mtm_recovered_pos\" '%lx')",
+		appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %x/%x (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"forward_changesets\" '1', \"mtm_replication_mode\" '%s', \"mtm_restart_pos\" '%llx', \"mtm_recovered_pos\" '%llx')",
 						  slotName,
 						  (uint32) (originStartPos >> 32),
 						  (uint32) originStartPos,
@@ -427,7 +427,7 @@ pglogical_receiver_main(Datum main_arg)
 			 */
 			while (true)
 			{
-				XLogRecPtr  walEnd;
+				lsn_t walEnd;
 				char* stmt;
 				
 				/* Some cleanup */
@@ -528,7 +528,7 @@ pglogical_receiver_main(Datum main_arg)
 						}
 						mode = REPLMODE_OPEN_EXISTED;
 					}
-					MTM_LOG3("%ld: Receive message %c from node %d", MtmGetSystemTime(), stmt[0], nodeId);
+					MTM_LOG3("Receive message %c from node %d", stmt[0], nodeId);
 					if (buf.used >= MtmTransSpillThreshold*MB) { 
 						if (spill_file < 0) {
 							int file_id;
@@ -543,18 +543,19 @@ pglogical_receiver_main(Datum main_arg)
 						MtmSpillToFile(spill_file, buf.data, buf.used);
 						ByteBufferReset(&buf);
 					}
-					if (stmt[0] == 'M' && (stmt[1] == 'L' || stmt[1] == 'A' || stmt[1] == 'C')) {
+					if (stmt[0] == 'Z' || (stmt[0] == 'M' && (stmt[1] == 'L' || stmt[1] == 'A' || stmt[1] == 'C'))) {
 						MTM_LOG3("Process '%c' message from %d", stmt[1], nodeId);
-						if ( stmt[1] == 'C') { /* concurrent DDL */
+						if (stmt[0] == 'M' && stmt[1] == 'C') { /* concurrent DDL should be executed by parallel workers */
 							MtmExecute(stmt, rc - hdr_len);
 						} else {
-							MtmExecutor(stmt, rc - hdr_len);
+							MtmExecutor(stmt, rc - hdr_len); /* all other messages can be processed by receiver itself */
 						}
 					} else { 
 						ByteBufferAppend(&buf, stmt, rc - hdr_len);
 						if (stmt[0] == 'C') /* commit */
 						{
-							if (!MtmFilterTransaction(stmt, rc - hdr_len)) { 
+							if (!MtmFilterTransaction(stmt, rc - hdr_len)) 
+							{ 
 								if (spill_file >= 0) { 
 									ByteBufferAppend(&buf, ")", 1);
 									pq_sendbyte(&spill_info, '(');
@@ -571,9 +572,10 @@ pglogical_receiver_main(Datum main_arg)
 										MtmExecutor(buf.data, buf.used);
 										stop = MtmGetSystemTime();
 										if (stop - start > USECS_PER_SEC) { 
-											elog(WARNING, "Commit of prepared transaction takes %ld usec, flags=%x", stop - start, stmt[1]);
+											elog(WARNING, "Commit of prepared transaction takes %lld usec, flags=%x", stop - start, stmt[1]);
 										}
 									} else {
+										Assert(stmt[1] == PGLOGICAL_PREPARE || stmt[1] == PGLOGICAL_COMMIT); /* all other commits should be applied in place */
 										MtmExecute(buf.data, buf.used);
 									}
 								}
@@ -634,7 +636,7 @@ pglogical_receiver_main(Datum main_arg)
 					int64 now = feGetCurrentTimestamp();
 					
 					/* Leave is feedback is not sent properly */
-					MtmUpdateLsnMapping(nodeId, InvalidXLogRecPtr);
+					MtmUpdateLsnMapping(nodeId, INVALID_LSN);
 					sendFeedback(conn, now, nodeId);
 				}
 				else if (r < 0 && errno == EINTR)
