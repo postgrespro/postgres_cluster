@@ -2481,10 +2481,14 @@ ssh -L 63333:db.foo.com:5432 joe@shell.foo.com
      <listitem>
    <para>On the server side, add the <xref linkend="listen-rdma-addresses"> GUC variable to the <filename>postgresql.conf</filename> configuration file to specify TCP/IP address(es) on which the server is to listen for new <acronym>RDMA</acronym> connections via <literal>rsocket</literal> from client applications. For example:
          <programlisting>
-listen_rdma_addresses = 'server1,172.0.3.21'
+listen_rdma_addresses = 'server1,172.17.3.21'
 </programlisting>
 You can specify a comma-separated list of host names and/or numeric IP addresses. If set to <literal>*</>, this variable will enable <acronym>RDMA</acronym> connections via <literal>rsocket</literal> to all the available IP interfaces. 
    </para>
+   <important>
+   <para>Since all connections use the same port specified in the <varname>port</varname> variable, make sure to specify different IP addresses in <varname>listen_addresses</varname> and <varname>listen_rdma_addresses</varname> to avoid conflicts.
+   </para>
+   </important>
      </listitem>
 
      <listitem>
@@ -2546,7 +2550,7 @@ pg_dump <replaceable>dbname</> -h <replaceable>hostname</> > db.sql
 
    <sect2>
    <title>Using <acronym>RDMA</acronym> for Master-Slave Replication</title>
-   <para>To enable master-slave replication over <acronym>RDMA</acronym> connections via <literal>rsocket</literal>, you need to configure master and slave nodes. For example, to allow client connections to the server 172.0.3.21 from 172.0.3.0/24 addresses on behalf of the <literal>postgres</> user, follow the steps below:</para>
+   <para>To enable master-slave replication over <acronym>RDMA</acronym> connections via <literal>rsocket</literal>, you need to configure master and slave nodes. For example, to allow client connections to the server 172.17.3.21 from 172.17.3.0/24 addresses on behalf of the <literal>postgres</> user, follow the steps below:</para>
 
        <para><emphasis role="strong">To set up the master node for replication over <acronym>RDMA</acronym> connections via <literal>rsocket</literal>:</emphasis>
        </para>
@@ -2554,8 +2558,8 @@ pg_dump <replaceable>dbname</> -h <replaceable>hostname</> > db.sql
          <listitem>
            <para>Edit the <filename>pg_hba.conf</filename> file to allow client connections and replication from the specified IP addresses:
            <programlisting>
-host    all            postgres     172.0.3.0/24         md5
-host    replication    postgres     172.0.3.0/24         md5
+host    all            postgres     172.17.3.0/24         md5
+host    replication    postgres     172.17.3.0/24         md5
 </programlisting>
            </para>
          </listitem>
@@ -2563,7 +2567,7 @@ host    replication    postgres     172.0.3.0/24         md5
            <para>
            Edit the <filename>postgresql.conf</filename> file:
            <programlisting>
-listen_rdma_addresses = '172.0.3.21'
+listen_rdma_addresses = '172.17.3.21'
 wal_level = hot_standby
 hot_standby = on
 max_wal_senders = 1
@@ -2580,8 +2584,8 @@ max_wal_senders = 1
 <tip>
 <para>If you set <varname>log_connections</varname> and <varname>log_disconnections</varname> GUC variables, the log file will include detailed information on each client connection and disconnection, respectively. For example: 
 <programlisting>
-LOG:  connection received: host=172.0.3.22 port=37709 with_rsocket=true
-LOG:  disconnection: session time: 0:00:00.622 user=postgres database= host=172.0.3.22 port=37709 with_rsocket=true
+LOG:  connection received: host=172.17.3.22 port=37709 with_rsocket=true
+LOG:  disconnection: session time: 0:00:00.622 user=postgres database= host=172.17.3.22 port=37709 with_rsocket=true
 </programlisting>
 </para>
 </tip>
@@ -2599,7 +2603,7 @@ export WITH_RSOCKET=true
          <listitem>
            <para>Copy the data from the master node using <application>pg_basebackup</application>:
            <programlisting>
-pg_basebackup -D <replaceable>datadir</> -x -R -h 172.0.3.21 -U postgres
+pg_basebackup -D <replaceable>datadir</> -x -R -h 172.17.3.21 -U postgres
 </programlisting>
 All the data appears on the slave node under the specified <replaceable>datadir</> directory.
            </para>
@@ -2608,7 +2612,7 @@ All the data appears on the slave node under the specified <replaceable>datadir<
            <para>Make sure the <filename><replaceable>datadir</>/recovery.conf</filename> contains the <literal>with_rsocket</literal> parameter. 
            <programlisting>
 standby_mode = 'on'
-primary_conninfo = 'user=postgres host=172.0.3.21 port=5432 with_rsocket=true'
+primary_conninfo = 'user=postgres host=172.17.3.21 port=5432 with_rsocket=true'
 </programlisting>
            </para>
          </listitem>
