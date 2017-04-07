@@ -14,10 +14,15 @@
  */
 
 /* Some general headers for custom bgworker facility */
+#ifdef WITH_RSOCKET
+#include <rdma/rsocket.h>
+#endif
+
 #include <unistd.h>
 #include "postgres.h"
 #include "fmgr.h"
 #include "miscadmin.h"
+#include "pg_socket.h"
 #include "libpq-fe.h"
 #include "pqexpbuffer.h"
 #include "access/xact.h"
@@ -635,7 +640,7 @@ pglogical_receiver_main(Datum main_arg)
 				timeout.tv_usec = usecs;
 				timeoutptr = &timeout;
 
-				r = select(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr);
+				r = pg_select(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr, conn->isRsocket);
 				if (r == 0)
 				{
 					int64 now = feGetCurrentTimestamp();

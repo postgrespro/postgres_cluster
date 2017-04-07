@@ -403,6 +403,7 @@ process_remote_message(StringInfo s)
 			if (rc < 0) { 
 				MTM_ELOG(ERROR, "Failed to execute utility statement %s", messageBody);
 			} else { 
+				MemoryContextSwitchTo(MtmApplyContext);
 				PushActiveSnapshot(GetTransactionSnapshot());
 
 				if (MtmVacuumStmt != NULL) { 

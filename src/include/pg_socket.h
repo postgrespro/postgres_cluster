@@ -36,6 +36,9 @@
 
 #ifdef WITH_RSOCKET
 
+#define pg_fcntl(fd, flag, value, isRsocket) \
+    ((isRsocket) ? rfcntl(fd, flag, value) : fcntl(fd, flag, value))
+	 
 #define pg_socket(domain, type, protocol, isRsocket) \
 	((isRsocket) ? rsocket(domain, type, protocol) : \
 		socket(domain, type, protocol))
@@ -94,6 +97,9 @@
 
 #else
 
+#define pg_fcntl(fd, flag, value, isRsocket) \
+    fcntl(fd, flag, value)
+	 
 #define pg_socket(domain, type, protocol, isRsocket) \
 	socket(domain, type, protocol)
 

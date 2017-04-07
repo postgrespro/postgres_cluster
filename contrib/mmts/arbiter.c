@@ -18,9 +18,14 @@
 #include <time.h>
 #include <fcntl.h>
 
+#ifdef WITH_RSOCKET
+#include <rdma/rsocket.h>
+#endif
+
 #include "postgres.h"
 #include "fmgr.h"
 #include "miscadmin.h"
+#include "pg_socket.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/bgworker.h"
 #include "storage/s_lock.h"
@@ -57,6 +62,7 @@
 #include "port/atomics.h"
 #include "tcop/utility.h"
 #include "libpq/ip.h"
+
 
 #ifndef USE_EPOLL
 #ifdef __linux__
@@ -185,7 +191,7 @@ static void MtmUnregisterSocket(int fd)
 static void MtmDisconnect(int node)
 {
 	MtmUnregisterSocket(sockets[node]);
-	close(sockets[node]);
+	pg_closesocket(sockets[node], MtmUseRDMA);
 	sockets[node] = -1;
 	MtmOnNodeDisconnect(node+1);
 }
@@ -208,7 +214,7 @@ static int MtmWaitSocket(int sd, bool forWrite, timestamp_t timeoutMsec)
 		FD_SET(sd, &set); 
 		tv.tv_sec = (deadline - now)/USECS_PER_SEC; 
 		tv.tv_usec = (deadline - now)%USECS_PER_SEC;
-	} while ((rc = select(sd+1, forWrite ? NULL : &set, forWrite ? &set : NULL, NULL, &tv)) < 0 && errno == EINTR);
+	} while ((rc = pg_select([sd+1, forWrite ? NULL : &set, forWrite ? &set : NULL, NULL, &tv, MtmUseRDMA)) < 0 && errno == EINTR);
 
 	return rc;
 }
@@ -219,7 +225,7 @@ static bool MtmWriteSocket(int sd, void const* buf, int size)
     while (size != 0) {
 		int rc = MtmWaitSocket(sd, true, MtmHeartbeatSendTimeout);
 		if (rc == 1) { 
-			while ((rc = send(sd, src, size, 0)) < 0 && errno == EINTR);			
+			while ((rc = pg_send(sd, src, size, 0, MtmUseRDMA)) < 0 && errno == EINTR);			
 			if (rc < 0) {
 				if (errno == EINPROGRESS) { 
 					continue;
@@ -238,11 +244,11 @@ static bool MtmWriteSocket(int sd, void const* buf, int size)
 static int MtmReadSocket(int sd, void* buf, int buf_size)
 {
 	int rc;
-	while ((rc = recv(sd, buf, buf_size, 0)) < 0 && errno == EINTR);			
+	while ((rc = pg_recv(sd, buf, buf_size, 0, MtmUseRDMA)) < 0 && errno == EINTR);			
 	if (rc <= 0 && (errno == EAGAIN || errno == EINPROGRESS)) { 
 		rc = MtmWaitSocket(sd, false, MtmHeartbeatSendTimeout);
 		if (rc == 1) { 
-			while ((rc = recv(sd, buf, buf_size, 0)) < 0 && errno == EINTR);			
+			while ((rc = pg_recv(sd, buf, buf_size, 0, MtmUseRDMA)) < 0 && errno == EINTR);			
 		}
 	}
 	return rc;
@@ -254,25 +260,25 @@ static void MtmSetSocketOptions(int sd)
 {
 #ifdef TCP_NODELAY
 	int on = 1;
-	if (setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char const*)&on, sizeof(on)) < 0) {
+	if (pg_setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char const*)&on, sizeof(on), MtmUseRDMA) < 0) {
 		MTM_ELOG(WARNING, "Failed to set TCP_NODELAY: %m");
 	}
 #endif
-	if (setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, (char const*)&on, sizeof(on)) < 0) {
+	if (pg_setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, (char const*)&on, sizeof(on), MtmUseRDMA) < 0) {
 		MTM_ELOG(WARNING, "Failed to set SO_KEEPALIVE: %m");
 	}
 
 	if (tcp_keepalives_idle) { 
 #ifdef TCP_KEEPIDLE
-		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPIDLE,
-					   (char *) &tcp_keepalives_idle, sizeof(tcp_keepalives_idle)) < 0)
+		if (pg_setsockopt(sd, IPPROTO_TCP, TCP_KEEPIDLE,
+						  (char *) &tcp_keepalives_idle, sizeof(tcp_keepalives_idle), MtmUseRDMA) < 0)
 		{
 			MTM_ELOG(WARNING, "Failed to set TCP_KEEPIDLE: %m");
 		}
 #else
 #ifdef TCP_KEEPALIVE
-		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPALIVE,
-					   (char *) &tcp_keepalives_idle, sizeof(tcp_keepalives_idle)) < 0) 
+		if (pg_setsockopt(sd, IPPROTO_TCP, TCP_KEEPALIVE,
+						  (char *) &tcp_keepalives_idle, sizeof(tcp_keepalives_idle), MtmUseRDMA) < 0) 
 		{
 			MTM_ELOG(WARNING, "Failed to set TCP_KEEPALIVE: %m");
 		}
@@ -281,8 +287,8 @@ static void MtmSetSocketOptions(int sd)
 	}
 #ifdef TCP_KEEPINTVL
 	if (tcp_keepalives_interval) { 
-		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPINTVL,
-					   (char *) &tcp_keepalives_interval, sizeof(tcp_keepalives_interval)) < 0)
+		if (pg_setsockopt(sd, IPPROTO_TCP, TCP_KEEPINTVL,
+						  (char *) &tcp_keepalives_interval, sizeof(tcp_keepalives_interval), MtmUseRDMA) < 0)
 		{
 			MTM_ELOG(WARNING, "Failed to set TCP_KEEPINTVL: %m");
 		}
@@ -290,8 +296,8 @@ static void MtmSetSocketOptions(int sd)
 #endif
 #ifdef TCP_KEEPCNT
 	if (tcp_keepalives_count) {
-		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPCNT,
-					   (char *) &tcp_keepalives_count, sizeof(tcp_keepalives_count)) < 0)
+		if (pg_setsockopt(sd, IPPROTO_TCP, TCP_KEEPCNT,
+						  (char *) &tcp_keepalives_count, sizeof(tcp_keepalives_count), MtmUseRDMA) < 0)
 		{
 			MTM_ELOG(WARNING, "Failed to set TCP_KEEPCNT: %m");
 		}
@@ -375,7 +381,7 @@ static void MtmSendHeartbeat()
 					/* Connectivity mask can be cleared by MtmWatchdog: in this case sockets[i] >= 0 */
 					if (BIT_CHECK(SELF_CONNECTIVITY_MASK, i)) { 
 						MTM_LOG1("Force reconnect to node %d", i+1);    
-						close(sockets[i]);
+						pg_closesocket(sockets[i], MtmUseRDMA);
 						sockets[i] = -1;
 						MtmReconnectNode(i+1); /* set reconnect mask to force node reconnent */
 					}
@@ -436,12 +442,12 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
   Retry:
     while (1) {
 		int rc = -1;
-		sd = socket(AF_INET, SOCK_STREAM, 0);
+		sd = pg_socket(AF_INET, SOCK_STREAM, 0, MtmUseRDMA);
 		if (sd < 0) {
 			MTM_ELOG(LOG, "Arbiter failed to create socket: %d", errno);
 			goto Error;
 		}
-		rc = fcntl(sd, F_SETFL, O_NONBLOCK);
+		rc = pg_fcntl(sd, F_SETFL, O_NONBLOCK, MtmUseRDMA);
 		if (rc < 0) {
 			MTM_ELOG(LOG, "Arbiter failed to switch socket to non-blocking mode: %d", errno);
 			goto Error;
@@ -449,7 +455,7 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 		for (addr = addrs; addr != NULL; addr = addr->ai_next)
 		{
 			do {
-				rc = connect(sd, addr->ai_addr, addr->ai_addrlen);
+				rc = pg_connect(sd, addr->ai_addr, addr->ai_addrlen, MtmUseRDMA);
 			} while (rc < 0 && errno == EINTR);
 
 			if (rc >= 0 || errno == EINPROGRESS) {
@@ -479,7 +485,7 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 			} else { 
 				MTM_ELOG(WARNING, "Arbiter waiting socket to %s:%d: rc=%d, error=%d", host, port, rc, errno);
 			}
-			close(sd);
+			pg_closesocket(sd, MtmUseRDMA);
 			afterWait = MtmGetSystemTime();
 			if (afterWait < beforeWait + MSEC_TO_USEC(MtmHeartbeatSendTimeout)) {
 				MtmSleep(beforeWait + MSEC_TO_USEC(MtmHeartbeatSendTimeout) - afterWait);
@@ -495,17 +501,17 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 	strcpy(req.connStr, Mtm->nodes[MtmNodeId-1].con.connStr);
 	if (!MtmWriteSocket(sd, &req, sizeof req)) { 
 		MTM_ELOG(WARNING, "Arbiter failed to send handshake message to %s:%d: %d", host, port, errno);
-		close(sd);
+		pg_closesocket(sd, MtmUseRDMA);
 		goto Retry;
 	}
 	if (MtmReadSocket(sd, &resp, sizeof resp) != sizeof(resp)) { 
 		MTM_ELOG(WARNING, "Arbiter failed to receive response for handshake message from %s:%d: errno=%d", host, port, errno);
-		close(sd);
+		pg_closesocket(sd, MtmUseRDMA);
 		goto Retry;
 	}
 	if (resp.code != MSG_STATUS || resp.dxid != HANDSHAKE_MAGIC) {
 		MTM_ELOG(WARNING, "Arbiter get unexpected response %d for handshake message from %s:%d", resp.code, host, port);
-		close(sd);
+		pg_closesocket(sd, MtmUseRDMA);
 		goto Retry;
 	}
 	if (addrs)
@@ -524,7 +530,7 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
   Error:
 	busy_mask = save_mask;
 	if (sd >= 0) { 
-		close(sd);
+		pg_closesocket(sd, MtmUseRDMA);
 	}
 	if (addrs) {
 		pg_freeaddrinfo_all(hint.ai_family, addrs);
@@ -572,7 +578,7 @@ static bool MtmSendToNode(int node, void const* buf, int size, time_t reconnectT
 		 */
 		if (sockets[node] >= 0 && BIT_CHECK(Mtm->reconnectMask, node)) {
 			MTM_ELOG(WARNING, "Arbiter is forced to reconnect to node %d", node+1); 
-			close(sockets[node]);
+			pg_closesocket(sockets[node], MtmUseRDMA);
 			sockets[node] = -1;
 		}
 #endif
@@ -584,7 +590,7 @@ static bool MtmSendToNode(int node, void const* buf, int size, time_t reconnectT
 		if (sockets[node] < 0 || !MtmWriteSocket(sockets[node], buf, size)) {
 			if (sockets[node] >= 0) { 
 				MTM_ELOG(WARNING, "Arbiter fail to write to node %d: %d", node+1, errno);
-				close(sockets[node]);
+				pg_closesocket(sockets[node], MtmUseRDMA);
 				sockets[node] = -1;
 			}
 			sockets[node] = MtmConnectSocket(node, Mtm->nodes[node].con.arbiterPort, reconnectTimeout);
@@ -615,23 +621,23 @@ static int MtmReadFromNode(int node, void* buf, int buf_size)
 
 static void MtmAcceptOneConnection()
 {
-	int fd = accept(gateway, NULL, NULL);
+	int fd = pg_accept(gateway, NULL, NULL, MtmUseRDMA);
 	if (fd < 0) {
 		MTM_ELOG(WARNING, "Arbiter failed to accept socket: %d", errno);
 	} else { 	
 		MtmHandshakeMessage req;
 		MtmArbiterMessage resp;		
-		int rc = fcntl(fd, F_SETFL, O_NONBLOCK);
+		int rc = pg_fcntl(fd, F_SETFL, O_NONBLOCK, MtmUseRDMA);
 		if (rc < 0) {
 			MTM_ELOG(ERROR, "Arbiter failed to switch socket to non-blocking mode: %d", errno);
 		}
 		rc = MtmReadSocket(fd, &req, sizeof req);
 		if (rc < sizeof(req)) { 
 			MTM_ELOG(WARNING, "Arbiter failed to handshake socket: %d, errno=%d", rc, errno);
-			close(fd);
+			pg_closesocket(fd, MtmUseRDMA);
 		} else if (req.hdr.code != MSG_HANDSHAKE && req.hdr.dxid != HANDSHAKE_MAGIC) { 
 			MTM_ELOG(WARNING, "Arbiter get unexpected handshake message %d", req.hdr.code);
-			close(fd);
+			pg_closesocket(fd, MtmUseRDMA);
 		} else { 
 			int node = req.hdr.node-1;
 			Assert(node >= 0 && node < Mtm->nAllNodes && node+1 != MtmNodeId);
@@ -648,7 +654,7 @@ static void MtmAcceptOneConnection()
 			MtmUpdateNodeConnectionInfo(&Mtm->nodes[node].con, req.connStr);
 			if (!MtmWriteSocket(fd, &resp, sizeof resp)) { 
 				MTM_ELOG(WARNING, "Arbiter failed to write response for handshake message to node %d", node+1);
-				close(fd);
+				pg_closesocket(fd, MtmUseRDMA);
 			} else { 
 				MTM_LOG1("Arbiter established connection with node %d", node+1); 
 				if (sockets[node] >= 0) { 
@@ -678,18 +684,18 @@ static void MtmAcceptIncomingConnections()
 	sock_inet.sin_addr.s_addr = htonl(INADDR_ANY);
 	sock_inet.sin_port = htons(MtmArbiterPort);
 
-    gateway = socket(sock_inet.sin_family, SOCK_STREAM, 0);
+    gateway = pg_socket(sock_inet.sin_family, SOCK_STREAM, 0, MtmUseRDMA);
 	if (gateway < 0) {
 		MTM_ELOG(ERROR, "Arbiter failed to create socket: %s", strerror(errno));
 	}
-    if (setsockopt(gateway, SOL_SOCKET, SO_REUSEADDR, (char*)&on, sizeof on) < 0) {
+    if (pg_setsockopt(gateway, SOL_SOCKET, SO_REUSEADDR, (char*)&on, sizeof on) < 0) {
 		MTM_ELOG(ERROR, "Arbiter failed to set options for socket: %s", strerror(errno));
 	}			
 
-    if (bind(gateway, (struct sockaddr*)&sock_inet, sizeof(sock_inet)) < 0) {
+    if (pg_bind(gateway, (struct sockaddr*)&sock_inet, sizeof(sock_inet), MtmUseRDMA) < 0) {
 		MTM_ELOG(ERROR, "Arbiter failed to bind socket: %s", strerror(errno));
 	}	
-    if (listen(gateway, nNodes) < 0) {
+    if (pg_listen(gateway, nNodes, MtmUseRDMA) < 0) {
 		MTM_ELOG(ERROR, "Arbiter failed to listen socket: %s", strerror(errno));
 	}	
 
@@ -790,7 +796,7 @@ static bool MtmRecovery()
             fd_set tryset;
             FD_ZERO(&tryset);
             FD_SET(sd, &tryset);
-            if (select(sd+1, &tryset, NULL, NULL, &tm) < 0) {
+            if (pg_select(sd+1, &tryset, NULL, NULL, &tm, MtmUseRDMA) < 0) {
 				MTM_ELOG(WARNING, "Arbiter lost connection with node %d", i+1);
 				MtmDisconnect(i);
 				recovered = true;
@@ -883,7 +889,7 @@ static void MtmReceiver(Datum arg)
 			tv.tv_sec = selectTimeout/1000;
 			tv.tv_usec = selectTimeout%1000*1000;
 			do { 
-				n = select(max_fd+1, &events, NULL, NULL, &tv);
+				n = pg_select(max_fd+1, &events, NULL, NULL, &tv, MtmUseRDMA);
 			} while (n < 0 && errno == EINTR);
 		} while (n < 0 && MtmRecovery());
 		

@@ -237,6 +237,7 @@ int   MtmHeartbeatRecvTimeout;
 int   MtmMin2PCTimeout;
 int   MtmMax2PCRatio;
 bool  MtmUseDtm;
+bool  MtmUseRDMA;
 bool  MtmPreserveCommitOrder;
 bool  MtmVolksWagenMode; /* Pretend to be normal postgres. This means skip some NOTICE's and use local sequences */
 
@@ -3072,6 +3073,19 @@ _PG_init(void)
 	);
 
 	DefineCustomBoolVariable(
+		"multimaster.use_rdma",
+		"Use RDMA sockets",
+		NULL,
+		&MtmUseRDMA,
+		false,
+		PGC_POSTMASTER,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomBoolVariable(
 		"multimaster.preserve_commit_order",
 		"Transactions from one node will be committed in same order on all nodes",
 		NULL,
@@ -5099,7 +5113,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	}
 
 	/* XXX: dirty. Clear on new tx */
-	if (!skipCommand && (context == PROCESS_UTILITY_TOPLEVEL || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
+	if (!skipCommand && (context != PROCESS_UTILITY_SUBCOMMAND || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
 		MtmUtilityProcessedInXid = InvalidTransactionId;
 
 	if (!skipCommand && !MtmTx.isReplicated && (MtmUtilityProcessedInXid == InvalidTransactionId)) {
