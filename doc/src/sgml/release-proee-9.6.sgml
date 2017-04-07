@@ -13,6 +13,15 @@
     <para>Major enhancements over <productname>Postgres Pro Enterprise</productname>
       9.6.1.2 include:</para>
     <itemizedlist>
+      <listitem><para>Added <application>multimaster</application>
+          extension. 
+          </para><para>This extension enables you to set up
+          shared-nothing clusters with synchronous multi-master
+          replication. Such clusters provide <acronym>OLTP</acronym>
+          scalability for read transactions, ensure fault tolerance and
+          automatic node recovery, and enable <productname>&productname;</productname> online
+          upgrades. (See <xref linkend="multimaster">.)</para>
+      </listitem>
       <listitem><para>Added failover algorithm for <application>libpq</application> connections.</para></listitem>
       <listitem><para>Added <application>aqo</application> extension for
           adaptive query optimization. 
