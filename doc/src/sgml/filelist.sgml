@@ -137,6 +137,7 @@
 <!ENTITY ltree           SYSTEM "ltree.sgml">
 <!ENTITY mamonsu           SYSTEM "mamonsu.sgml">
 <!ENTITY mchar           SYSTEM "mchar.sgml">
+<!ENTITY multimaster           SYSTEM "multimaster.sgml">
 <!ENTITY oid2name        SYSTEM "oid2name.sgml">
 <!ENTITY online-analyze  SYSTEM "online-analyze.sgml">
 <!ENTITY pageinspect     SYSTEM "pageinspect.sgml">

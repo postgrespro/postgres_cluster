@@ -261,6 +261,9 @@
       <simpara>Utility <link linkend="app-pgrepack"><application>pg_repack</application></link> has been added</simpara>
     </listitem>
     <listitem>
+      <simpara>Added <link linkend="multimaster"><application>multimaster</application></link> extension</simpara>
+    </listitem>
+    <listitem>
       <simpara>Added failover algorithm for <application>libpq</application> connections</simpara>
     </listitem>
     <listitem>
