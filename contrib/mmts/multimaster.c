@@ -1358,10 +1358,14 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_FIND, NULL);
 		if (tm == NULL) { 
 			MTM_ELOG(WARNING, "Global transaction ID '%s' is not found", x->gid);
-		} else { 
-			Assert(tm->state != NULL);
+		} else {
+			MtmTransState* ts = tm->state;
+			Assert(ts != NULL);
 			MTM_LOG1("Abort prepared transaction %s (%llu)", x->gid, (long64)x->xid);
-			MtmAbortTransaction(tm->state);
+			MtmAbortTransaction(ts);
+			if (ts->isTwoPhase) { 
+				MtmDeactivateTransaction(ts);
+			}
 		}
 		MtmUnlock();
 		x->status = TRANSACTION_STATUS_ABORTED;
