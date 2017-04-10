@@ -46,6 +46,7 @@
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "commands/dbcommands.h"
+#include "commands/extension.h"
 #include "postmaster/autovacuum.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
@@ -4865,7 +4866,8 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	bool skipCommand = false;
 	bool executed = false;
 
-	MTM_LOG3("%d: Process utility statement %s", MyProcPid, queryString);
+	MTM_LOG3("%d: Process utility statement tag=%d, context=%d, issubtrans=%d, query=%s", 
+			 MyProcPid, nodeTag(parsetree), context, IsSubTransaction(), queryString);
 	switch (nodeTag(parsetree))
 	{
 		case T_TransactionStmt:
@@ -5119,7 +5121,13 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	}
 
 	/* XXX: dirty. Clear on new tx */
-	if (!skipCommand && (context != PROCESS_UTILITY_SUBCOMMAND || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
+	/* Some "black magic here":( We want to avoid redundant execution of utility statement by ProcessUtilitySlow (which is done with PROCESS_UTILITY_SUBCOMMAND).
+	 * But if we allow only PROCESS_UTILITY_TOPLEVEL context, then we will not replicated DDL inside dynamic queries in plpgsql functions (see https://jira.postgrespro.ru/browse/CORE-526).
+	 * If we disable only PROCESS_UTILITY_SUBCOMMAND, then we will get problems with "create extension" which is executed also in PROCESS_UTILITY_QUERY context.
+	 * So workaround at this moment is to treat extension as special case. 
+	 * TODO: try to find right solution and rewrite this dummy check.
+	 */
+	if (!skipCommand && (context == PROCESS_UTILITY_TOPLEVEL || (context == PROCESS_UTILITY_QUERY && !creating_extension) || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
 		MtmUtilityProcessedInXid = InvalidTransactionId;
 
 	if (!skipCommand && !MtmTx.isReplicated && (MtmUtilityProcessedInXid == InvalidTransactionId)) {
