@@ -23,7 +23,6 @@
 #include "fmgr.h"
 #include "miscadmin.h"
 #include "pg_socket.h"
-#include "libpq-fe.h"
 #include "pqexpbuffer.h"
 #include "access/xact.h"
 #include "access/clog.h"
@@ -42,6 +41,7 @@
 #include "replication/origin.h"
 #include "utils/portal.h"
 #include "tcop/pquery.h"
+#include "libpq-int.h"
 
 #include "multimaster.h"
 #include "spill.h"
