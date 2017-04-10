@@ -214,7 +214,7 @@ static int MtmWaitSocket(int sd, bool forWrite, timestamp_t timeoutMsec)
 		FD_SET(sd, &set); 
 		tv.tv_sec = (deadline - now)/USECS_PER_SEC; 
 		tv.tv_usec = (deadline - now)%USECS_PER_SEC;
-	} while ((rc = pg_select([sd+1, forWrite ? NULL : &set, forWrite ? &set : NULL, NULL, &tv, MtmUseRDMA)) < 0 && errno == EINTR);
+	} while ((rc = pg_select(sd+1, forWrite ? NULL : &set, forWrite ? &set : NULL, NULL, &tv, MtmUseRDMA)) < 0 && errno == EINTR);
 
 	return rc;
 }
@@ -688,7 +688,7 @@ static void MtmAcceptIncomingConnections()
 	if (gateway < 0) {
 		MTM_ELOG(ERROR, "Arbiter failed to create socket: %s", strerror(errno));
 	}
-    if (pg_setsockopt(gateway, SOL_SOCKET, SO_REUSEADDR, (char*)&on, sizeof on) < 0) {
+    if (pg_setsockopt(gateway, SOL_SOCKET, SO_REUSEADDR, (char*)&on, sizeof on, MtmUseRDMA) < 0) {
 		MTM_ELOG(ERROR, "Arbiter failed to set options for socket: %s", strerror(errno));
 	}			
 
