@@ -44,6 +44,7 @@
 #include "storage/procsignal.h"
 #include "storage/sinvaladt.h"
 #include "storage/spin.h"
+#include "storage/cfs.h"
 #include "utils/snapmgr.h"
 
 
@@ -142,6 +143,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 		size = add_size(size, BTreeShmemSize());
 		size = add_size(size, SyncScanShmemSize());
 		size = add_size(size, AsyncShmemSize());
+		size = add_size(size, cfs_shmem_size());
 #ifdef EXEC_BACKEND
 		size = add_size(size, ShmemBackendArraySize());
 #endif
@@ -254,7 +256,8 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	BTreeShmemInit();
 	SyncScanShmemInit();
 	AsyncShmemInit();
-
+	cfs_initialize();
+	
 	/*
 	 * Init array of Latches  in SHMEM for WAITLSN
 	 */
