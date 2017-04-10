@@ -4532,16 +4532,6 @@ log_disconnections(int code, Datum arg)
 	minutes = secs / SECS_PER_MINUTE;
 	seconds = secs % SECS_PER_MINUTE;
 
-#ifdef WITH_RSOCKET
-	if (port->isRsocket)
-		ereport(LOG,
-				(errmsg("disconnection: session time: %d:%02d:%02d.%03d "
-						"user=%s database=%s host=%s%s%s with_rsocket=true",
-						hours, minutes, seconds, msecs,
-						port->user_name, port->database_name, port->remote_host,
-					  port->remote_port[0] ? " port=" : "", port->remote_port)));
-	else
-#endif
 	ereport(LOG,
 			(errmsg("disconnection: session time: %d:%02d:%02d.%03d "
 					"user=%s database=%s host=%s%s%s",

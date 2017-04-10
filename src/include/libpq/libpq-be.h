@@ -190,8 +190,8 @@ typedef struct Port
 	/*
 	 * Rsocket structures.
 	 */
-	bool		isRsocket;		/* Is sock rsocket */
-	bool		rsocket_negotiate;
+	bool		isRsocket;		/* Is rsocket connection made? */
+	bool		with_rsocket;
 
 	/*
 	 * OpenSSL structures. (Keep these last so that the locations of other

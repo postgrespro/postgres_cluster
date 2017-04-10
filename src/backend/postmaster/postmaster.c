@@ -396,7 +396,7 @@ static void LogChildExit(int lev, const char *procname,
 			 int pid, int exitstatus);
 static void PostmasterStateMachine(void);
 #ifdef WITH_RSOCKET
-static int RsocketInitialize(Port *port);
+static void RsocketInitialize(Port *port);
 #endif
 static void BackendInitialize(Port *port);
 static void BackendRun(Port *port) pg_attribute_noreturn();
@@ -970,7 +970,7 @@ PostmasterMain(int argc, char *argv[])
 
 #ifdef WITH_RSOCKET
 	/* Rsocket ports start from PostPortNumber + 1 */
-	RsocketPortCounter = PostPortNumber + 1;
+	RsocketPortCounter = PostPortNumber;
 #endif
 
 	if (ListenAddresses)
@@ -1784,7 +1784,7 @@ ServerLoop(void)
 					if (port)
 					{
 #ifdef WITH_RSOCKET
-						port->rsocket_negotiate = ListenRdma[i];
+						port->with_rsocket = ListenRdma[i];
 #endif
 						BackendStartup(port);
 
@@ -1979,6 +1979,9 @@ ProcessStartupPacket(Port *port, bool SSLdone)
 	void	   *buf;
 	ProtocolVersion proto;
 	MemoryContext oldcontext;
+#ifdef WITH_RSOCKET
+	bool		with_rsocket = false;
+#endif
 
 	pq_startmsgread();
 	if (pq_getbytes((char *) &len, 4) == EOF)
@@ -2044,14 +2047,6 @@ ProcessStartupPacket(Port *port, bool SSLdone)
 	{
 		char		SSLok;
 
-#ifdef WITH_RSOCKET
-		if (port->rsocket_negotiate)
-			ereport(COMMERROR,
-					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("SSL connection through rsocket is not supported")));
-		return STATUS_ERROR;	/* close the connection */
-#endif
-
 #ifdef USE_SSL
 		/* No SSL when disabled or on Unix sockets */
 		if (!EnableSSL || IS_AF_UNIX(port->laddr.addr.ss_family))
@@ -2079,39 +2074,6 @@ retry1:
 #endif
 		/* regular startup packet, cancel, etc packet should follow... */
 		/* but not another SSL negotiation request */
-		return ProcessStartupPacket(port, true);
-	}
-	else if (proto == NEGOTIATE_RSOCKET_CODE && !SSLdone)
-	{
-		char		Rsocketok;
-
-#ifdef WITH_RSOCKET
-		if (port->rsocket_negotiate)
-			Rsocketok = 'S';
-		else
-			Rsocketok = 'N';
-#else
-		Rsocketok = 'N';
-#endif
-
-retry2:
-		if (pg_send(port->sock, &Rsocketok, 1, 0, port->isRsocket) != 1)
-		{
-			if (errno == EINTR)
-				goto retry2;	/* if interrupted, just retry */
-			ereport(COMMERROR,
-					(errcode_for_socket_access(),
-					 errmsg("failed to send rsocket negotiation response: %m")));
-			return STATUS_ERROR;	/* close the connection */
-		}
-
-#ifdef WITH_RSOCKET
-		/* Rsocket doesn't support forks. Initialize new rsocket connection. */
-		if (Rsocketok == 'S' && RsocketInitialize(port) == -1)
-			return STATUS_ERROR;
-#endif
-		/* regular startup packet, cancel, etc packet should follow... */
-		/* but not another rsocket negotiation request */
 		return ProcessStartupPacket(port, true);
 	}
 
@@ -2199,6 +2161,18 @@ retry2:
 								valptr),
 							 errhint("Valid values are: \"false\", 0, \"true\", 1, \"database\".")));
 			}
+#ifdef WITH_RSOCKET
+			else if (strcmp(nameptr, "with_rsocket") == 0)
+			{
+				if (!parse_bool(valptr, &with_rsocket))
+					ereport(FATAL,
+							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("invalid value for parameter \"%s\": \"%s\"",
+								"with_rsocket",
+								valptr),
+							 errhint("Valid values are: \"false\", 0, \"true\", 1.")));
+			}
+#endif
 			else
 			{
 				/* Assume it's a generic GUC option */
@@ -2240,6 +2214,21 @@ retry2:
 			port->cmdline_options[sizeof(packet->options)] = '\0';
 		port->guc_options = NIL;
 	}
+
+#ifdef WITH_RSOCKET
+	/*if (port->with_rsocket && !with_rsocket)
+		ereport(FATAL,
+				(errcode(ERRCODE_CANNOT_CONNECT_NOW),
+				 errmsg("server is configured to connect using rsocket, but client requested non-rsocket connection")));
+	else */
+	if (!port->with_rsocket && with_rsocket)
+		ereport(FATAL,
+				(errcode(ERRCODE_CANNOT_CONNECT_NOW),
+				 errmsg("server does not configured to connect using rsocket, but client requested rsocket connection")));
+	else if (with_rsocket)
+		/* Rsocket doesn't support forks. Initialize new rsocket connection. */
+		RsocketInitialize(port);
+#endif
 
 	/* Check a user name was given. */
 	if (port->user_name == NULL || port->user_name[0] == '\0')
@@ -2466,7 +2455,7 @@ ConnCreate(int serverFd)
 	}
 
 	port->isRsocket = false;
-	port->rsocket_negotiate = false;
+	port->with_rsocket = false;
 
 	if (StreamConnection(serverFd, port) != STATUS_OK)
 	{
@@ -4151,7 +4140,7 @@ report_fork_failure_to_client(Port *port, int errnum)
 
 
 #ifdef WITH_RSOCKET
-static int
+static void
 RsocketInitialize(Port *port)
 {
 	pgsocket	fd,
@@ -4191,6 +4180,8 @@ RsocketInitialize(Port *port)
 							port->laddr.addr.ss_family)));
 	}
 
+retry2:
+	RsocketPortCounter++;
 	snprintf(local_port, sizeof(local_port), "%d", RsocketPortCounter);
 
 	MemSet(&hint, 0, sizeof(hint));
@@ -4266,6 +4257,11 @@ RsocketInitialize(Port *port)
 	{
 		pg_freeaddrinfo_all(hint.ai_family, addr);
 		pg_closesocket(fd, true);
+
+		/* Retry with new port */
+		if (errno == EADDRINUSE)
+			goto retry2;
+
 		ereport(FATAL,
 				(errcode_for_socket_access(),
 				 errmsg("could not bind socket: %m"),
@@ -4320,6 +4316,14 @@ RsocketInitialize(Port *port)
 
 	port->sock = sfd;
 	port->isRsocket = true;
+
+	if (Log_connections)
+		ereport(LOG,
+				(errmsg("rsocket connection established")));
+
+	/* Re-initialize libpq for rsocket connection */
+	pq_reinit();
+
 	/* fill in the server (local) address */
 	port->laddr.salen = sizeof(port->laddr.addr);
 	if (pg_getsockname(port->sock,
@@ -4361,8 +4365,6 @@ RsocketInitialize(Port *port)
 
 	/* Close listened socket */
 	pg_closesocket(fd, true);
-
-	return 0;
 }
 #endif
 
@@ -4464,18 +4466,6 @@ BackendInitialize(Port *port)
 	/* And now we can issue the Log_connections message, if wanted */
 	if (Log_connections)
 	{
-#ifdef WITH_RSOCKET
-		if (port->isRsocket && remote_port[0])
-			ereport(LOG,
-					(errmsg("connection received: host=%s port=%s with_rsocket=true",
-							remote_host,
-							remote_port)));
-		else if (port->isRsocket)
-			ereport(LOG,
-					(errmsg("connection received: host=%s with_rsocket=true",
-							remote_host)));
-		else
-#endif
 		if (remote_port[0])
 			ereport(LOG,
 					(errmsg("connection received: host=%s port=%s",

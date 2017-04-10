@@ -215,6 +215,44 @@ pq_init(void)
 }
 
 /* --------------------------------
+ *		pq_free - re-initialize libpq at backend startup
+ * --------------------------------
+ */
+void
+pq_reinit(void)
+{
+	/* Free common socket event set */
+	FreeWaitEventSet(FeBeWaitSet);
+
+	/*
+	 * In backends (as soon as forked) we operate the underlying socket in
+	 * nonblocking mode and use latches to implement blocking semantics if
+	 * needed. That allows us to provide safely interruptible reads and
+	 * writes.
+	 *
+	 * Use COMMERROR on failure, because ERROR would try to send the error to
+	 * the client, which might require changing the mode again, leading to
+	 * infinite recursion.
+	 */
+#ifndef WIN32
+	if (!pg_set_noblock(MyProcPort->sock, MyProcPort->isRsocket))
+		ereport(COMMERROR,
+				(errmsg("could not set socket to nonblocking mode: %m")));
+#endif
+
+#ifdef WITH_RSOCKET
+	if (MyProcPort->isRsocket)
+		FeBeWaitSet = CreateWaitEventSetForRsocket(TopMemoryContext, 3);
+	else
+#endif
+		FeBeWaitSet = CreateWaitEventSet(TopMemoryContext, 3);
+	AddWaitEventToSet(FeBeWaitSet, WL_SOCKET_WRITEABLE, MyProcPort->sock,
+					  NULL, NULL);
+	AddWaitEventToSet(FeBeWaitSet, WL_LATCH_SET, -1, MyLatch, NULL);
+	AddWaitEventToSet(FeBeWaitSet, WL_POSTMASTER_DEATH, -1, NULL, NULL);
+}
+
+/* --------------------------------
  *		socket_comm_reset - reset libpq during error recovery
  *
  * This is called from error recovery at the outer idle loop.  It's

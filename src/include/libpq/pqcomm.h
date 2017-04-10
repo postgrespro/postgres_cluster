@@ -203,9 +203,4 @@ typedef struct CancelRequestPacket
  */
 #define NEGOTIATE_SSL_CODE PG_PROTOCOL(1234,5679)
 
-/*
- * rsocket negotiation request code.
- */
-#define NEGOTIATE_RSOCKET_CODE PG_PROTOCOL(1234,5700)
-
 #endif   /* PQCOMM_H */

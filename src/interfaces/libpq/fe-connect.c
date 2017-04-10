@@ -2238,7 +2238,7 @@ keep_going:						/* We will come back to here until there is
 			{
 #ifdef WITH_RSOCKET
 				/* Close previous connection */
-				if (conn->rsocket_negotiate && conn->isRsocket)
+				if (conn->isRsocket)
 				{
 					Assert(conn->rsocket_addrlist);
 
@@ -2644,22 +2644,13 @@ keep_going:						/* We will come back to here until there is
 #endif   /* USE_SSL */
 
 #ifdef WITH_RSOCKET
-				/* Make rsocket connection */
-				if (conn->rsocket_negotiate)
+				/*
+				 * Do not send startup packet twice for rsocket.
+				 * It was sent in socket connection.
+				 */
+				if (conn->isRsocket)
 				{
-					ProtocolVersion pv;
-
-					/* Send the rsocket request packet */
-					pv = htonl(NEGOTIATE_RSOCKET_CODE);
-					if (pqPacketSend(conn, 0, &pv, sizeof(pv)) != STATUS_OK)
-					{
-						appendPQExpBuffer(&conn->errorMessage,
-										  libpq_gettext("could not send rsocket negotiation packet: %s\n"),
-							SOCK_STRERROR(SOCK_ERRNO, sebuf, sizeof(sebuf)));
-						goto error_return;
-					}
-					/* Wait for response*/
-					conn->status = CONNECTION_RSOCKET_STARTUP;
+					conn->status = CONNECTION_AWAITING_RESPONSE;
 					return PGRES_POLLING_READING;
 				}
 #endif
@@ -2700,6 +2691,15 @@ keep_going:						/* We will come back to here until there is
 				}
 
 				free(startpacket);
+
+#ifdef WITH_RSOCKET
+				/* Make rsocket connection */
+				if (conn->rsocket_negotiate && !conn->isRsocket)
+				{
+					conn->status = CONNECTION_RSOCKET_STARTUP;
+					return PGRES_POLLING_READING;
+				}
+#endif
 
 				conn->status = CONNECTION_AWAITING_RESPONSE;
 				return PGRES_POLLING_READING;
@@ -2833,29 +2833,10 @@ keep_going:						/* We will come back to here until there is
 	case CONNECTION_RSOCKET_STARTUP:
 		{
 #ifdef WITH_RSOCKET
-			char		Rsocketok;
 			struct addrinfo hint;
 			const char *node = NULL;
 			struct addrinfo *raddrs = NULL;
 			int			ret;
-
-			ret = pqReadData(conn);
-			if (ret < 0)
-			{
-				/* errorMessage is already filled in */
-				goto error_return;
-			}
-			if (pqGetc(&Rsocketok, conn) < 0)
-			{
-				/* should not happen really */
-				return PGRES_POLLING_READING;
-			}
-			if (Rsocketok == 'N')
-			{
-				appendPQExpBufferStr(&conn->errorMessage,
-									 libpq_gettext("server does not allow rsocket connection\n"));
-				goto error_return;
-			}
 
 			if (pqGets(&conn->workBuffer, conn) < 0)
 			{
@@ -2907,6 +2888,7 @@ keep_going:						/* We will come back to here until there is
 			conn->rsocket_addrlist = raddrs;
 			conn->addr_cur = raddrs;
 
+			/* Make rsocket connection without sending startup packet */
 			conn->isRsocket = true;
 			conn->status = CONNECTION_NEEDED;
 			goto keep_going;

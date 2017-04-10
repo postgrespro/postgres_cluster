@@ -2174,6 +2174,10 @@ build_startup_packet(const PGconn *conn, char *packet,
 		ADD_STARTUP_OPTION("replication", conn->replication);
 	if (conn->pgoptions && conn->pgoptions[0])
 		ADD_STARTUP_OPTION("options", conn->pgoptions);
+#ifdef WITH_RSOCKET
+	if (conn->with_rsocket && conn->with_rsocket[0])
+		ADD_STARTUP_OPTION("with_rsocket", conn->with_rsocket);
+#endif
 	if (conn->send_appname)
 	{
 		/* Use appname if present, otherwise use fallback */
