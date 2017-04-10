@@ -118,7 +118,6 @@ typedef struct
 typedef struct Port
 {
 	pgsocket	sock;			/* File descriptor */
-	bool		isRsocket;		/* Is sock rsocket */
 	bool		noblock;		/* is the socket in non-blocking mode? */
 	ProtocolVersion proto;		/* FE/BE protocol version */
 	SockAddr	laddr;			/* local addr (postmaster) */
@@ -187,6 +186,12 @@ typedef struct Port
 	bool		ssl_in_use;
 	char	   *peer_cn;
 	bool		peer_cert_valid;
+
+	/*
+	 * Rsocket structures.
+	 */
+	bool		isRsocket;		/* Is sock rsocket */
+	bool		rsocket_negotiate;
 
 	/*
 	 * OpenSSL structures. (Keep these last so that the locations of other

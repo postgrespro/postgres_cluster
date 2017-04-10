@@ -715,9 +715,9 @@ PQconnectStartParams(const char *const * keywords,
 #ifdef WITH_RSOCKET
 	if (conn->with_rsocket && conn->with_rsocket[0] != '\0')
 	{
-		bool		isRsocket;
+		bool		with_rsocket;
 
-		if (!parse_bool(conn->with_rsocket, &isRsocket))
+		if (!parse_bool(conn->with_rsocket, &with_rsocket))
 		{
 			printfPQExpBuffer(&conn->errorMessage,
 							  libpq_gettext("invalid value for parameter \"%s\": \"%s\""),
@@ -727,7 +727,7 @@ PQconnectStartParams(const char *const * keywords,
 			return conn;
 		}
 
-		conn->isPreRsocket = isRsocket;
+		conn->rsocket_negotiate = with_rsocket;
 	}
 #endif
 	/*
@@ -2190,7 +2190,7 @@ PQconnectPoll(PGconn *conn)
 			/* These are reading states */
 		case CONNECTION_AWAITING_RESPONSE:
 		case CONNECTION_AUTH_OK:
-		case CONNECTION_RSOCKET_NEEDED:
+		case CONNECTION_RSOCKET_STARTUP:
 			{
 				/* Load waiting data */
 				int			n = pqReadData(conn);
@@ -2238,12 +2238,12 @@ keep_going:						/* We will come back to here until there is
 			{
 #ifdef WITH_RSOCKET
 				/* Close previous connection */
-				if (conn->isPreRsocket && conn->isRsocket)
+				if (conn->rsocket_negotiate && conn->isRsocket)
 				{
 					Assert(conn->rsocket_addrlist);
 
 					pqDropConnection(conn, true);
-					conn->isPreRsocket = false;
+					conn->rsocket_negotiate = false;
 				}
 #endif
 
@@ -2515,16 +2515,6 @@ keep_going:						/* We will come back to here until there is
 					goto error_return;
 				}
 
-#ifdef WITH_RSOCKET
-				/* Make rsocket connection */
-				if (conn->isPreRsocket)
-				{
-					/* Wait for rsocket port from backend */
-					conn->status = CONNECTION_RSOCKET_NEEDED;
-					return PGRES_POLLING_READING;
-				}
-#endif
-
 				/* Fill in the client address */
 				conn->laddr.salen = sizeof(conn->laddr.addr);
 				if (pg_getsockname(conn->sock,
@@ -2542,74 +2532,6 @@ keep_going:						/* We will come back to here until there is
 				 */
 				conn->status = CONNECTION_MADE;
 				return PGRES_POLLING_WRITING;
-			}
-
-		case CONNECTION_RSOCKET_NEEDED:
-			{
-#ifdef WITH_RSOCKET
-				struct addrinfo hint;
-				const char *node = NULL;
-				struct addrinfo *raddrs = NULL;
-				int			ret;
-
-				if (pqGets(&conn->workBuffer, conn) < 0)
-				{
-					/* should not happen really */
-					return PGRES_POLLING_READING;
-				}
-				/* Got rsocket port from backend */
-
-				if (conn->workBuffer.len == 0)
-				{
-					appendPQExpBuffer(&conn->errorMessage,
-									  libpq_gettext("rsocket port got from backend is empty\n"));
-					goto error_return;
-				}
-
-				/* Initialize hint structure */
-				MemSet(&hint, 0, sizeof(hint));
-				hint.ai_socktype = SOCK_STREAM;
-				hint.ai_family = AF_UNSPEC;
-
-				if (conn->pghostaddr != NULL && conn->pghostaddr[0] != '\0')
-				{
-					/* Using pghostaddr avoids a hostname lookup */
-					node = conn->pghostaddr;
-					hint.ai_flags = AI_NUMERICHOST;
-				}
-				else if (conn->pghost != NULL && conn->pghost[0] != '\0')
-					/* Using pghost, so we have to look-up the hostname */
-					node = conn->pghost;
-
-				if (node == NULL)
-				{
-					appendPQExpBuffer(&conn->errorMessage,
-									  libpq_gettext("cannot get backend address\n"));
-					goto error_return;
-				}
-
-				ret = pg_getaddrinfo_all(node, conn->workBuffer.data,
-										 &hint, &raddrs);
-				if (ret || !raddrs)
-				{
-					appendPQExpBuffer(&conn->errorMessage,
-									  libpq_gettext("could not translate host name \"%s\" to address: %s\n"),
-									  node, gai_strerror(ret));
-					if (raddrs)
-						pg_freeaddrinfo_all(hint.ai_family, raddrs);
-					goto error_return;
-				}
-
-				conn->rsocket_addrlist = raddrs;
-				conn->addr_cur = raddrs;
-
-				conn->isRsocket = true;
-				conn->status = CONNECTION_NEEDED;
-				goto keep_going;
-#else							/* !WITH_RSOCKET */
-				/* can't get here */
-				goto error_return;
-#endif   /* WITH_RSOCKET */
 			}
 
 		case CONNECTION_MADE:
@@ -2691,6 +2613,15 @@ keep_going:						/* We will come back to here until there is
 				{
 					ProtocolVersion pv;
 
+#ifdef WITH_RSOCKET
+					if (conn->rsocket_negotiate)
+					{
+						appendPQExpBuffer(&conn->errorMessage,
+										  libpq_gettext("SSL connection through rsocket is not supported\n"));
+						goto error_return;
+					}
+#endif
+
 					/*
 					 * Send the SSL request packet.
 					 *
@@ -2711,6 +2642,27 @@ keep_going:						/* We will come back to here until there is
 					return PGRES_POLLING_READING;
 				}
 #endif   /* USE_SSL */
+
+#ifdef WITH_RSOCKET
+				/* Make rsocket connection */
+				if (conn->rsocket_negotiate)
+				{
+					ProtocolVersion pv;
+
+					/* Send the rsocket request packet */
+					pv = htonl(NEGOTIATE_RSOCKET_CODE);
+					if (pqPacketSend(conn, 0, &pv, sizeof(pv)) != STATUS_OK)
+					{
+						appendPQExpBuffer(&conn->errorMessage,
+										  libpq_gettext("could not send rsocket negotiation packet: %s\n"),
+							SOCK_STRERROR(SOCK_ERRNO, sebuf, sizeof(sebuf)));
+						goto error_return;
+					}
+					/* Wait for response*/
+					conn->status = CONNECTION_RSOCKET_STARTUP;
+					return PGRES_POLLING_READING;
+				}
+#endif
 
 				/*
 				 * Build the startup packet.
@@ -2877,6 +2829,92 @@ keep_going:						/* We will come back to here until there is
 				goto error_return;
 #endif   /* USE_SSL */
 			}
+
+	case CONNECTION_RSOCKET_STARTUP:
+		{
+#ifdef WITH_RSOCKET
+			char		Rsocketok;
+			struct addrinfo hint;
+			const char *node = NULL;
+			struct addrinfo *raddrs = NULL;
+			int			ret;
+
+			ret = pqReadData(conn);
+			if (ret < 0)
+			{
+				/* errorMessage is already filled in */
+				goto error_return;
+			}
+			if (pqGetc(&Rsocketok, conn) < 0)
+			{
+				/* should not happen really */
+				return PGRES_POLLING_READING;
+			}
+			if (Rsocketok == 'N')
+			{
+				appendPQExpBufferStr(&conn->errorMessage,
+									 libpq_gettext("server does not allow rsocket connection\n"));
+				goto error_return;
+			}
+
+			if (pqGets(&conn->workBuffer, conn) < 0)
+			{
+				/* should not happen really */
+				return PGRES_POLLING_READING;
+			}
+			/* Got rsocket port from backend */
+			if (conn->workBuffer.len == 0)
+			{
+				appendPQExpBuffer(&conn->errorMessage,
+								  libpq_gettext("rsocket port got from backend is empty\n"));
+				goto error_return;
+			}
+
+			/* Initialize hint structure */
+			MemSet(&hint, 0, sizeof(hint));
+			hint.ai_socktype = SOCK_STREAM;
+			hint.ai_family = AF_UNSPEC;
+
+			if (conn->pghostaddr != NULL && conn->pghostaddr[0] != '\0')
+			{
+				/* Using pghostaddr avoids a hostname lookup */
+				node = conn->pghostaddr;
+				hint.ai_flags = AI_NUMERICHOST;
+			}
+			else if (conn->pghost != NULL && conn->pghost[0] != '\0')
+				/* Using pghost, so we have to look-up the hostname */
+				node = conn->pghost;
+
+			if (node == NULL)
+			{
+				appendPQExpBuffer(&conn->errorMessage,
+								  libpq_gettext("cannot get backend address\n"));
+				goto error_return;
+			}
+
+			ret = pg_getaddrinfo_all(node, conn->workBuffer.data,
+									 &hint, &raddrs);
+			if (ret || !raddrs)
+			{
+				appendPQExpBuffer(&conn->errorMessage,
+								  libpq_gettext("could not translate host name \"%s\" to address: %s\n"),
+								  node, gai_strerror(ret));
+				if (raddrs)
+					pg_freeaddrinfo_all(hint.ai_family, raddrs);
+				goto error_return;
+			}
+
+			conn->rsocket_addrlist = raddrs;
+			conn->addr_cur = raddrs;
+
+			conn->isRsocket = true;
+			conn->status = CONNECTION_NEEDED;
+			goto keep_going;
+#else							/* !WITH_RSOCKET */
+			/* can't get here */
+			goto error_return;
+#endif   /* WITH_RSOCKET */
+		}
 
 			/*
 			 * Handle authentication exchange: wait for postmaster messages
@@ -3622,7 +3660,7 @@ makeEmptyPGconn(void)
 	conn->show_context = PQSHOW_CONTEXT_ERRORS;
 	conn->sock = PGINVALID_SOCKET;
 	conn->isRsocket = false;
-	conn->isPreRsocket = false;
+	conn->rsocket_negotiate = false;
 	conn->auth_req_received = false;
 	conn->password_needed = false;
 	conn->dot_pgpass_used = false;

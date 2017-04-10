@@ -396,13 +396,13 @@ static void LogChildExit(int lev, const char *procname,
 			 int pid, int exitstatus);
 static void PostmasterStateMachine(void);
 #ifdef WITH_RSOCKET
-static void RsocketInitialize(Port *port);
+static int RsocketInitialize(Port *port);
 #endif
 static void BackendInitialize(Port *port);
 static void BackendRun(Port *port) pg_attribute_noreturn();
 static void ExitPostmaster(int status) pg_attribute_noreturn();
 static int	ServerLoop(void);
-static int	BackendStartup(Port *port, bool isRsocket);
+static int	BackendStartup(Port *port);
 static int	ProcessStartupPacket(Port *port, bool SSLdone);
 static void processCancelRequest(Port *port, void *pkt);
 static int	initMasks(fd_set *rmask);
@@ -1783,12 +1783,10 @@ ServerLoop(void)
 					port = ConnCreate(ListenSocket[i]);
 					if (port)
 					{
-						BackendStartup(port,
 #ifdef WITH_RSOCKET
-									   ListenRdma[i]);
-#else
-									   false);
+						port->rsocket_negotiate = ListenRdma[i];
 #endif
+						BackendStartup(port);
 
 						/*
 						 * We no longer need the open socket or port structure
@@ -2046,6 +2044,14 @@ ProcessStartupPacket(Port *port, bool SSLdone)
 	{
 		char		SSLok;
 
+#ifdef WITH_RSOCKET
+		if (port->rsocket_negotiate)
+			ereport(COMMERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("SSL connection through rsocket is not supported")));
+		return STATUS_ERROR;	/* close the connection */
+#endif
+
 #ifdef USE_SSL
 		/* No SSL when disabled or on Unix sockets */
 		if (!EnableSSL || IS_AF_UNIX(port->laddr.addr.ss_family))
@@ -2073,6 +2079,39 @@ retry1:
 #endif
 		/* regular startup packet, cancel, etc packet should follow... */
 		/* but not another SSL negotiation request */
+		return ProcessStartupPacket(port, true);
+	}
+	else if (proto == NEGOTIATE_RSOCKET_CODE && !SSLdone)
+	{
+		char		Rsocketok;
+
+#ifdef WITH_RSOCKET
+		if (port->rsocket_negotiate)
+			Rsocketok = 'S';
+		else
+			Rsocketok = 'N';
+#else
+		Rsocketok = 'N';
+#endif
+
+retry2:
+		if (pg_send(port->sock, &Rsocketok, 1, 0, port->isRsocket) != 1)
+		{
+			if (errno == EINTR)
+				goto retry2;	/* if interrupted, just retry */
+			ereport(COMMERROR,
+					(errcode_for_socket_access(),
+					 errmsg("failed to send rsocket negotiation response: %m")));
+			return STATUS_ERROR;	/* close the connection */
+		}
+
+#ifdef WITH_RSOCKET
+		/* Rsocket doesn't support forks. Initialize new rsocket connection. */
+		if (Rsocketok == 'S' && RsocketInitialize(port) == -1)
+			return STATUS_ERROR;
+#endif
+		/* regular startup packet, cancel, etc packet should follow... */
+		/* but not another rsocket negotiation request */
 		return ProcessStartupPacket(port, true);
 	}
 
@@ -2427,6 +2466,7 @@ ConnCreate(int serverFd)
 	}
 
 	port->isRsocket = false;
+	port->rsocket_negotiate = false;
 
 	if (StreamConnection(serverFd, port) != STATUS_OK)
 	{
@@ -3968,7 +4008,7 @@ TerminateChildren(int signal)
  * Note: if you change this code, also consider StartAutovacuumWorker.
  */
 static int
-BackendStartup(Port *port, bool isRsocket)
+BackendStartup(Port *port)
 {
 	Backend    *bn;				/* for backend cleanup */
 	pid_t		pid;
@@ -4029,12 +4069,6 @@ BackendStartup(Port *port, bool isRsocket)
 
 		/* Close the postmaster's sockets */
 		ClosePostmasterPorts(false);
-
-		/* Rsocket doesn't support forks. Initialize new rsocket connection. */
-#ifdef WITH_RSOCKET
-		if (isRsocket)
-			RsocketInitialize(port);
-#endif
 
 		/* Perform additional initialization and collect startup packet */
 		BackendInitialize(port);
@@ -4117,7 +4151,7 @@ report_fork_failure_to_client(Port *port, int errnum)
 
 
 #ifdef WITH_RSOCKET
-static void
+static int
 RsocketInitialize(Port *port)
 {
 	pgsocket	fd,
@@ -4261,7 +4295,7 @@ RsocketInitialize(Port *port)
 
 	/* Send to client rsocket port */
 	len = strlen(local_port) + 1;
-	if (pg_send(port->sock, local_port, len, 0, port->isRsocket) != len)
+	if (pg_send(port->sock, local_port, len, 0, false) != len)
 	{
 		pg_closesocket(fd, true);
 		ereport(FATAL,
@@ -4282,7 +4316,7 @@ RsocketInitialize(Port *port)
 	}
 
 	/* Replace port->sock with rsocket descriptor */
-	StreamClose(port->sock, port->isRsocket);
+	StreamClose(port->sock, false);
 
 	port->sock = sfd;
 	port->isRsocket = true;
@@ -4327,6 +4361,8 @@ RsocketInitialize(Port *port)
 
 	/* Close listened socket */
 	pg_closesocket(fd, true);
+
+	return 0;
 }
 #endif
 
@@ -5069,7 +5105,7 @@ SubPostmasterMain(int argc, char *argv[])
 		 * PGPROC slots, we have already initialized libpq and are able to
 		 * report the error to the client.
 		 */
-		BackendInitialize(&port);
+		BackendInitialize(&port, false);
 
 		/* Restore basic shared memory pointers */
 		InitShmemAccess(UsedShmemSegAddr);

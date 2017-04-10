@@ -376,7 +376,7 @@ struct pg_conn
 	pgsocket	sock;			/* FD for socket, PGINVALID_SOCKET if
 								 * unconnected */
 	bool		isRsocket;		/* Is sock rsocket */
-	bool		isPreRsocket;	/* Is auxiliary socket for rsocket connection */
+	bool		rsocket_negotiate;	/* Is auxiliary socket for rsocket connection */
 	SockAddr	laddr;			/* Local address */
 	SockAddr	raddr;			/* Remote address */
 	ProtocolVersion pversion;	/* FE/BE protocol version in use */
