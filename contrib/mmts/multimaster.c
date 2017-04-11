@@ -1254,6 +1254,15 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 	MTM_LOG3("%d: Result of vote: %d", MyProcPid, MtmTxnStatusMnem[ts->status]);
 }
 		
+static void MtmStopTransaction(void)
+{
+	if (MtmInsideTransaction) { 
+		Assert(Mtm->nRunningTransactions > 0);
+		Mtm->nRunningTransactions -= 1;
+		MtmInsideTransaction = false;
+	}
+}
+	
 static void
 MtmPostPrepareTransaction(MtmCurrentTrans* x)
 { 
@@ -1292,13 +1301,14 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		} else { 
 			ts->votingCompleted = true;
 		}
-		MtmUnlock();
 		if (x->isTwoPhase) { 
 			if (x->status == TRANSACTION_STATUS_ABORTED) { 
 				MTM_ELOG(WARNING, "Prepare of user's 2PC transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
-			}
+			}			
+			MtmStopTransaction();
 			MtmResetTransaction();
 		}
+		MtmUnlock();
 	}
 	if (Mtm->inject2PCError == 3) { 
 		Mtm->inject2PCError = 0;
@@ -1386,7 +1396,7 @@ MtmLogAbortLogicalMessage(int nodeId, char const* gid)
 	XLogFlush(lsn);
 	MTM_LOG1("MtmLogAbortLogicalMessage node=%d transaction=%s lsn=%llx", nodeId, gid, lsn);
 }
-
+	
 
 static void 
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
@@ -1397,11 +1407,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 
 	MtmLock(LW_EXCLUSIVE);
 
-	if (MtmInsideTransaction) { 
-		Assert(Mtm->nRunningTransactions > 0);
-		Mtm->nRunningTransactions -= 1;
-		MtmInsideTransaction = false;
-	}
+	MtmStopTransaction();
 
 	if (x->isDistributed && (x->isPrepared || x->isReplicated) && !x->isTwoPhase) {
 		MtmTransState* ts = NULL;
