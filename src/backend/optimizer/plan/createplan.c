@@ -1395,7 +1395,7 @@ create_gather_plan(PlannerInfo *root, GatherPath *best_path)
 
 	gather_plan = make_gather(tlist,
 							  NIL,
-							  best_path->path.parallel_workers,
+							  best_path->num_workers,
 							  best_path->single_copy,
 							  subplan);
 
@@ -5628,6 +5628,16 @@ materialize_finished_plan(Plan *subplan)
 	Path		matpath;		/* dummy for result of cost_material */
 
 	matplan = (Plan *) make_material(subplan);
+
+	/*
+	 * XXX horrid kluge: if there are any initPlans attached to the subplan,
+	 * move them up to the Material node, which is now effectively the top
+	 * plan node in its query level.  This prevents failure in
+	 * SS_finalize_plan(), which see for comments.  We don't bother adjusting
+	 * the subplan's cost estimate for this.
+	 */
+	matplan->initPlan = subplan->initPlan;
+	subplan->initPlan = NIL;
 
 	/* Set cost data */
 	cost_material(&matpath,

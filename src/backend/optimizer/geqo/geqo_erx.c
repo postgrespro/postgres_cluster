@@ -111,7 +111,7 @@ gimme_edge_table(PlannerInfo *root, Gene *tour1, Gene *tour2,
 	for (index1 = 0; index1 < num_gene; index1++)
 	{
 		/*
-		 * presume the tour is circular, i.e. 1->2, 2->3, 3->1 this operaton
+		 * presume the tour is circular, i.e. 1->2, 2->3, 3->1 this operation
 		 * maps n back to 1
 		 */
 
@@ -314,7 +314,7 @@ gimme_gene(PlannerInfo *root, Edge edge, Edge *edge_table)
 		/*
 		 * give priority to candidates with fewest remaining unused edges;
 		 * find out what the minimum number of unused edges is
-		 * (minimum_edges); if there is more than one cadidate with the
+		 * (minimum_edges); if there is more than one candidate with the
 		 * minimum number of unused edges keep count of this number
 		 * (minimum_count);
 		 */
@@ -458,7 +458,7 @@ edge_failure(PlannerInfo *root, Gene *gene, int index, Edge *edge_table, int num
 			if (edge_table[i].unused_edges >= 0)
 				return (Gene) i;
 
-		elog(LOG, "no edge found via looking for the last ununsed point");
+		elog(LOG, "no edge found via looking for the last unused point");
 	}
 
 

@@ -19,7 +19,7 @@ PostgresNode - class representing PostgreSQL server instance
 
   # Change a setting and restart
   $node->append_conf('postgresql.conf', 'hot_standby = on');
-  $node->restart('fast');
+  $node->restart();
 
   # run a query with psql, like:
   #   echo 'SELECT 1' | psql -qAXt postgres -v ON_ERROR_STOP=1
@@ -1116,7 +1116,7 @@ sub psql
 			# IPC::Run::run threw an exception. re-throw unless it's a
 			# timeout, which we'll handle by testing is_expired
 			die $exc_save
-			  if (blessed($exc_save) || $exc_save ne $timeout_exception);
+			  if (blessed($exc_save) || $exc_save !~ /^\Q$timeout_exception\E/);
 
 			$ret = undef;
 

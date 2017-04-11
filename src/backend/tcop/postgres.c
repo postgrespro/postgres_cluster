@@ -844,7 +844,7 @@ pg_plan_queries(List *querytrees, int cursorOptions, ParamListInfo boundParams)
 
 	foreach(query_list, querytrees)
 	{
-		Query	   *query = (Query *) lfirst(query_list);
+		Query	   *query = castNode(Query, lfirst(query_list));
 		Node	   *stmt;
 
 		if (query->commandType == CMD_UTILITY)
@@ -3948,6 +3948,12 @@ PostgresMain(int argc, char *argv[],
 		initStringInfo(&input_message);
 
 		/*
+		 * Also consider releasing our catalog snapshot if any, so that it's
+		 * not preventing advance of global xmin while we wait for the client.
+		 */
+		InvalidateCatalogSnapshotConditionally();
+
+		/*
 		 * (1) If we've reached idle state, tell the frontend we're ready for
 		 * a new query.
 		 *
@@ -4159,19 +4165,7 @@ PostgresMain(int argc, char *argv[],
 				/* switch back to message context */
 				MemoryContextSwitchTo(MessageContext);
 
-				if (HandleFunctionRequest(&input_message) == EOF)
-				{
-					/* lost frontend connection during F message input */
-
-					/*
-					 * Reset whereToSendOutput to prevent ereport from
-					 * attempting to send any more messages to client.
-					 */
-					if (whereToSendOutput == DestRemote)
-						whereToSendOutput = DestNone;
-
-					proc_exit(0);
-				}
+				HandleFunctionRequest(&input_message);
 
 				/* commit the function-invocation transaction */
 				finish_xact_command();

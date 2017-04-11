@@ -640,6 +640,9 @@ AddWaitEventToSet(WaitEventSet *set, uint32 events, pgsocket fd, Latch *latch,
 	event->fd = fd;
 	event->events = events;
 	event->user_data = user_data;
+#ifdef WIN32
+	event->reset = false;
+#endif
 
 	if (events == WL_LATCH_SET)
 	{
@@ -854,7 +857,7 @@ WaitEventAdjustWin32(WaitEventSet *set, WaitEvent *event)
  * reached.  At most nevents occurred events are returned.
  *
  * If timeout = -1, block until an event occurs; if 0, check sockets for
- * readiness, but don't block; if > 0, block for at most timeout miliseconds.
+ * readiness, but don't block; if > 0, block for at most timeout milliseconds.
  *
  * Returns the number of events occurred, or 0 if the timeout was reached.
  *
@@ -1381,6 +1384,50 @@ WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 	DWORD		rc;
 	WaitEvent  *cur_event;
 
+	/* Reset any wait events that need it */
+	for (cur_event = set->events;
+		 cur_event < (set->events + set->nevents);
+		 cur_event++)
+	{
+		if (cur_event->reset)
+		{
+			WaitEventAdjustWin32(set, cur_event);
+			cur_event->reset = false;
+		}
+
+		/*
+		 * Windows does not guarantee to log an FD_WRITE network event
+		 * indicating that more data can be sent unless the previous send()
+		 * failed with WSAEWOULDBLOCK.  While our caller might well have made
+		 * such a call, we cannot assume that here.  Therefore, if waiting for
+		 * write-ready, force the issue by doing a dummy send().  If the dummy
+		 * send() succeeds, assume that the socket is in fact write-ready, and
+		 * return immediately.  Also, if it fails with something other than
+		 * WSAEWOULDBLOCK, return a write-ready indication to let our caller
+		 * deal with the error condition.
+		 */
+		if (cur_event->events & WL_SOCKET_WRITEABLE)
+		{
+			char		c;
+			WSABUF		buf;
+			DWORD		sent;
+			int			r;
+
+			buf.buf = &c;
+			buf.len = 0;
+
+			r = WSASend(cur_event->fd, &buf, 1, &sent, 0, NULL, NULL);
+			if (r == 0 || WSAGetLastError() != WSAEWOULDBLOCK)
+			{
+				occurred_events->pos = cur_event->pos;
+				occurred_events->user_data = cur_event->user_data;
+				occurred_events->events = WL_SOCKET_WRITEABLE;
+				occurred_events->fd = cur_event->fd;
+				return 1;
+			}
+		}
+	}
+
 	/*
 	 * Sleep.
 	 *
@@ -1464,6 +1511,18 @@ WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 		{
 			/* data available in socket */
 			occurred_events->events |= WL_SOCKET_READABLE;
+
+			/*------
+			 * WaitForMultipleObjects doesn't guarantee that a read event will
+			 * be returned if the latch is set at the same time.  Even if it
+			 * did, the caller might drop that event expecting it to reoccur
+			 * on next call.  So, we must force the event to be reset if this
+			 * WaitEventSet is used again in order to avoid an indefinite
+			 * hang.  Refer https://msdn.microsoft.com/en-us/library/windows/desktop/ms741576(v=vs.85).aspx
+			 * for the behavior of socket events.
+			 *------
+			 */
+			cur_event->reset = true;
 		}
 		if ((cur_event->events & WL_SOCKET_WRITEABLE) &&
 			(resEvents.lNetworkEvents & FD_WRITE))

@@ -515,7 +515,6 @@ RestoreArchive(Archive *AHX)
 						 * knows how to do it, without depending on
 						 * te->dropStmt; use that.  For other objects we need
 						 * to parse the command.
-						 *
 						 */
 						if (strncmp(te->desc, "BLOB", 4) == 0)
 						{
@@ -523,10 +522,8 @@ RestoreArchive(Archive *AHX)
 						}
 						else
 						{
-							char		buffer[40];
-							char	   *mark;
 							char	   *dropStmt = pg_strdup(te->dropStmt);
-							char	   *dropStmtPtr = dropStmt;
+							char	   *dropStmtOrig = dropStmt;
 							PQExpBuffer ftStmt = createPQExpBuffer();
 
 							/*
@@ -543,18 +540,28 @@ RestoreArchive(Archive *AHX)
 							/*
 							 * ALTER TABLE..ALTER COLUMN..DROP DEFAULT does
 							 * not support the IF EXISTS clause, and therefore
-							 * we simply emit the original command for such
-							 * objects. For other objects, we need to extract
-							 * the first part of the DROP which includes the
-							 * object type. Most of the time this matches
+							 * we simply emit the original command for DEFAULT
+							 * objects (modulo the adjustment made above).
+							 *
+							 * If we used CREATE OR REPLACE VIEW as a means of
+							 * quasi-dropping an ON SELECT rule, that should
+							 * be emitted unchanged as well.
+							 *
+							 * For other object types, we need to extract the
+							 * first part of the DROP which includes the
+							 * object type.  Most of the time this matches
 							 * te->desc, so search for that; however for the
 							 * different kinds of CONSTRAINTs, we know to
 							 * search for hardcoded "DROP CONSTRAINT" instead.
 							 */
-							if (strcmp(te->desc, "DEFAULT") == 0)
+							if (strcmp(te->desc, "DEFAULT") == 0 ||
+								strncmp(dropStmt, "CREATE OR REPLACE VIEW", 22) == 0)
 								appendPQExpBufferStr(ftStmt, dropStmt);
 							else
 							{
+								char		buffer[40];
+								char	   *mark;
+
 								if (strcmp(te->desc, "CONSTRAINT") == 0 ||
 								 strcmp(te->desc, "CHECK CONSTRAINT") == 0 ||
 									strcmp(te->desc, "FK CONSTRAINT") == 0)
@@ -564,19 +571,28 @@ RestoreArchive(Archive *AHX)
 											 te->desc);
 
 								mark = strstr(dropStmt, buffer);
-								Assert(mark != NULL);
 
-								*mark = '\0';
-								appendPQExpBuffer(ftStmt, "%s%s IF EXISTS%s",
-												  dropStmt, buffer,
-												  mark + strlen(buffer));
+								if (mark)
+								{
+									*mark = '\0';
+									appendPQExpBuffer(ftStmt, "%s%s IF EXISTS%s",
+													  dropStmt, buffer,
+													  mark + strlen(buffer));
+								}
+								else
+								{
+									/* complain and emit unmodified command */
+									write_msg(modulename,
+											  "WARNING: could not find where to insert IF EXISTS in statement \"%s\"\n",
+											  dropStmtOrig);
+									appendPQExpBufferStr(ftStmt, dropStmt);
+								}
 							}
 
 							ahprintf(AH, "%s", ftStmt->data);
 
 							destroyPQExpBuffer(ftStmt);
-
-							pg_free(dropStmtPtr);
+							pg_free(dropStmtOrig);
 						}
 					}
 				}
@@ -1083,7 +1099,8 @@ PrintTOCSummary(Archive *AHX)
 
 	ahprintf(AH, ";\n; Archive created at %s\n", stamp_str);
 	ahprintf(AH, ";     dbname: %s\n;     TOC Entries: %d\n;     Compression: %d\n",
-			 AH->archdbname, AH->tocCount, AH->compression);
+			 replace_line_endings(AH->archdbname),
+			 AH->tocCount, AH->compression);
 
 	switch (AH->format)
 	{
@@ -1120,10 +1137,37 @@ PrintTOCSummary(Archive *AHX)
 			curSection = te->section;
 		if (ropt->verbose ||
 			(_tocEntryRequired(te, curSection, ropt) & (REQ_SCHEMA | REQ_DATA)) != 0)
+		{
+			char	   *sanitized_name;
+			char	   *sanitized_schema;
+			char	   *sanitized_owner;
+
+			/*
+			 * As in _printTocEntry(), sanitize strings that might contain
+			 * newlines, to ensure that each logical output line is in fact
+			 * one physical output line.  This prevents confusion when the
+			 * file is read by "pg_restore -L".  Note that we currently don't
+			 * bother to quote names, meaning that the name fields aren't
+			 * automatically parseable.  "pg_restore -L" doesn't care because
+			 * it only examines the dumpId field, but someday we might want to
+			 * try harder.
+			 */
+			sanitized_name = replace_line_endings(te->tag);
+			if (te->namespace)
+				sanitized_schema = replace_line_endings(te->namespace);
+			else
+				sanitized_schema = pg_strdup("-");
+			sanitized_owner = replace_line_endings(te->owner);
+
 			ahprintf(AH, "%d; %u %u %s %s %s %s\n", te->dumpId,
 					 te->catalogId.tableoid, te->catalogId.oid,
-					 te->desc, te->namespace ? te->namespace : "-",
-					 te->tag, te->owner);
+					 te->desc, sanitized_schema, sanitized_name,
+					 sanitized_owner);
+
+			free(sanitized_name);
+			free(sanitized_schema);
+			free(sanitized_owner);
+		}
 		if (ropt->verbose && te->nDeps > 0)
 		{
 			int			i;
@@ -2826,7 +2870,17 @@ _tocEntryRequired(TocEntry *te, teSection curSection, RestoreOptions *ropt)
 
 	/* Mask it if we only want schema */
 	if (ropt->schemaOnly)
-		res = res & REQ_SCHEMA;
+	{
+		/*
+		 * In binary-upgrade mode, even with schema-only set, we do not mask
+		 * out large objects.  Only large object definitions, comments and
+		 * other information should be generated in binary-upgrade mode (not
+		 * the actual data).
+		 */
+		if (!(ropt->binary_upgrade && strcmp(te->desc,"BLOB") == 0) &&
+		!(ropt->binary_upgrade && strncmp(te->tag,"LARGE OBJECT ", 13) == 0))
+			res = res & REQ_SCHEMA;
+	}
 
 	/* Mask it if we only want data */
 	if (ropt->dataOnly)
@@ -3469,8 +3523,9 @@ _printTocEntry(ArchiveHandle *AH, TocEntry *te, bool isData, bool acl_pass)
 }
 
 /*
- * Sanitize a string to be included in an SQL comment, by replacing any
- * newlines with spaces.
+ * Sanitize a string to be included in an SQL comment or TOC listing,
+ * by replacing any newlines with spaces.
+ * The result is a freshly malloc'd string.
  */
 static char *
 replace_line_endings(const char *str)
