@@ -1,7 +1,7 @@
 <sect1 id="multimaster">
   <title>multimaster</title>
       <para><emphasis role="strong">Table of Contents</emphasis></para>
-      <para><link linkend="multimaster-usage">Limitations</link></para>
+      <para><link linkend="multimaster-limitations">Limitations</link></para>
       <para><link linkend="multimaster-architecture">Architecture</link></para>
       <para><link linkend="multimaster-installation">Installation and Setup</link></para>
       <para><link linkend="multimaster-administration">Multi-Master Cluster Administration</link></para>
@@ -64,13 +64,13 @@
       fast-forward the node to the actual state based on the
       Write-Ahead Log (<acronym>WAL</acronym>) data in the corresponding replication slot. If <acronym>WAL</acronym> data is no longer available for the time when the node was excluded from the cluster, you can <link linkend="multimaster-restoring-a-node-manually">restore the node using <application>pg_basebackup</application></link>.
     </para>
-    <important><para>When using <filename>multimaster</filename>, make sure to take its replication restrictions into account. For details, see <xref linkend="multimaster-usage">.</para></important>
+    <important><para>When using <filename>multimaster</filename>, make sure to take its replication restrictions into account. For details, see <xref linkend="multimaster-limitations">.</para></important>
     <para>
       To learn more about the <filename>multimaster</filename> internals, see
       <xref linkend="multimaster-architecture">.
     </para>
     
-  <sect2 id="multimaster-usage">
+  <sect2 id="multimaster-limitations">
     <title>Limitations</title>
     <para>The <filename>multimaster</filename> extension takes care of the database replication in a fully automated way. You can perform write transactions on any node and work with temporary tables on each cluster node simultaneosly. However, make sure to take the following replication restrictions into account:</para>
     <itemizedlist>
@@ -188,7 +188,7 @@ of tables without primary keys by setting the <varname>multimaster.ignore_tables
       </listitem>
     </orderedlist>
     <important>
-        <para><filename>multimaster</filename> currently supports the <literal>read committed</literal> and <literal>repeatable read</literal> isolation levels only, which can cause unexpected serialization failures in your workload. For details, see <xref linkend="multimaster-usage">.</para>
+        <para><filename>multimaster</filename> currently supports the <literal>read committed</literal> and <literal>repeatable read</literal> isolation levels only, which can cause unexpected serialization failures in your workload. For details, see <xref linkend="multimaster-limitations">.</para>
     </important>
     <para>
       If a node crashes or gets disconnected from the cluster between
