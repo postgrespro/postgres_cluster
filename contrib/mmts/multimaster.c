@@ -822,7 +822,7 @@ MtmXactCallback(XactEvent event, void *arg)
 		MtmEndTransaction(&MtmTx, false);
 		break;
 	  case XACT_EVENT_COMMIT_COMMAND:
-		if (!MtmTx.isTransactionBlock) { 
+		if (!MtmTx.isTransactionBlock && !IsSubTransaction()) { 
 			MtmTwoPhaseCommit(&MtmTx);
 		}
 		break;
