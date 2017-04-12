@@ -2143,7 +2143,9 @@ static void
 MtmLockCluster(void)
 {
 	timestamp_t delay = MIN_WAIT_TIMEOUT;
-	Assert(!MtmClusterLocked);
+	if (MtmClusterLocked) { 
+		MtmUnlockCluster();
+	}
 	MtmLock(LW_EXCLUSIVE);
 	if (BIT_CHECK(Mtm->originLockNodeMask, MtmNodeId-1)) {
 		elog(ERROR, "There is already pending exclusive lock");
