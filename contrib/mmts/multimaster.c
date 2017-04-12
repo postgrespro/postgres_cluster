@@ -46,6 +46,7 @@
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "commands/dbcommands.h"
+#include "commands/extension.h"
 #include "postmaster/autovacuum.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
@@ -1253,6 +1254,15 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 	MTM_LOG3("%d: Result of vote: %d", MyProcPid, MtmTxnStatusMnem[ts->status]);
 }
 		
+static void MtmStopTransaction(void)
+{
+	if (MtmInsideTransaction) { 
+		Assert(Mtm->nRunningTransactions > 0);
+		Mtm->nRunningTransactions -= 1;
+		MtmInsideTransaction = false;
+	}
+}
+	
 static void
 MtmPostPrepareTransaction(MtmCurrentTrans* x)
 { 
@@ -1291,13 +1301,14 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		} else { 
 			ts->votingCompleted = true;
 		}
-		MtmUnlock();
 		if (x->isTwoPhase) { 
 			if (x->status == TRANSACTION_STATUS_ABORTED) { 
 				MTM_ELOG(WARNING, "Prepare of user's 2PC transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
-			}
+			}			
+			MtmStopTransaction();
 			MtmResetTransaction();
 		}
+		MtmUnlock();
 	}
 	if (Mtm->inject2PCError == 3) { 
 		Mtm->inject2PCError = 0;
@@ -1357,10 +1368,14 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_FIND, NULL);
 		if (tm == NULL) { 
 			MTM_ELOG(WARNING, "Global transaction ID '%s' is not found", x->gid);
-		} else { 
-			Assert(tm->state != NULL);
+		} else {
+			MtmTransState* ts = tm->state;
+			Assert(ts != NULL);
 			MTM_LOG1("Abort prepared transaction %s (%llu)", x->gid, (long64)x->xid);
-			MtmAbortTransaction(tm->state);
+			MtmAbortTransaction(ts);
+			if (ts->isTwoPhase) { 
+				MtmDeactivateTransaction(ts);
+			}
 		}
 		MtmUnlock();
 		x->status = TRANSACTION_STATUS_ABORTED;
@@ -1381,7 +1396,7 @@ MtmLogAbortLogicalMessage(int nodeId, char const* gid)
 	XLogFlush(lsn);
 	MTM_LOG1("MtmLogAbortLogicalMessage node=%d transaction=%s lsn=%llx", nodeId, gid, lsn);
 }
-
+	
 
 static void 
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
@@ -1392,11 +1407,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 
 	MtmLock(LW_EXCLUSIVE);
 
-	if (MtmInsideTransaction) { 
-		Assert(Mtm->nRunningTransactions > 0);
-		Mtm->nRunningTransactions -= 1;
-		MtmInsideTransaction = false;
-	}
+	MtmStopTransaction();
 
 	if (x->isDistributed && (x->isPrepared || x->isReplicated) && !x->isTwoPhase) {
 		MtmTransState* ts = NULL;
@@ -4865,7 +4876,8 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	bool skipCommand = false;
 	bool executed = false;
 
-	MTM_LOG3("%d: Process utility statement %s", MyProcPid, queryString);
+	MTM_LOG3("%d: Process utility statement tag=%d, context=%d, issubtrans=%d, query=%s", 
+			 MyProcPid, nodeTag(parsetree), context, IsSubTransaction(), queryString);
 	switch (nodeTag(parsetree))
 	{
 		case T_TransactionStmt:
@@ -5119,7 +5131,13 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	}
 
 	/* XXX: dirty. Clear on new tx */
-	if (!skipCommand && (context != PROCESS_UTILITY_SUBCOMMAND || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
+	/* Some "black magic here":( We want to avoid redundant execution of utility statement by ProcessUtilitySlow (which is done with PROCESS_UTILITY_SUBCOMMAND).
+	 * But if we allow only PROCESS_UTILITY_TOPLEVEL context, then we will not replicated DDL inside dynamic queries in plpgsql functions (see https://jira.postgrespro.ru/browse/CORE-526).
+	 * If we disable only PROCESS_UTILITY_SUBCOMMAND, then we will get problems with "create extension" which is executed also in PROCESS_UTILITY_QUERY context.
+	 * So workaround at this moment is to treat extension as special case. 
+	 * TODO: try to find right solution and rewrite this dummy check.
+	 */
+	if (!skipCommand && (context == PROCESS_UTILITY_TOPLEVEL || (context == PROCESS_UTILITY_QUERY && !creating_extension) || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
 		MtmUtilityProcessedInXid = InvalidTransactionId;
 
 	if (!skipCommand && !MtmTx.isReplicated && (MtmUtilityProcessedInXid == InvalidTransactionId)) {

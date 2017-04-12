@@ -99,18 +99,23 @@ BEGIN
     FOR seq_class IN
         SELECT * FROM pg_class WHERE pg_class.relkind = 'S'
     LOOP
-        EXECUTE 'select * from ' || seq_class.relname || ';' INTO seq_tuple;
-        IF seq_tuple.increment_by != max_nodes THEN
-            altered := true;
-            RAISE NOTICE 'Altering step for sequence % to %.', seq_tuple.sequence_name, max_nodes;
-            EXECUTE 'ALTER SEQUENCE ' || seq_class.relname || ' INCREMENT BY ' || max_nodes || ';';
-        END IF;
-        IF (seq_tuple.last_value % max_nodes) != node_id THEN
-            altered := true;
-            new_start := (seq_tuple.last_value / max_nodes + 1)*max_nodes + node_id;
-            RAISE NOTICE 'Altering start for sequence % to %.', seq_tuple.sequence_name, new_start;
-            EXECUTE 'ALTER SEQUENCE ' || seq_class.relname || ' RESTART WITH ' || new_start || ';';
-        END IF;
+	    BEGIN
+            EXECUTE 'select * from ' || seq_class.relname || ';' INTO seq_tuple;
+            IF seq_tuple.increment_by != max_nodes THEN
+                altered := true;
+                RAISE NOTICE 'Altering step for sequence % to %.', seq_tuple.sequence_name, max_nodes;
+                EXECUTE 'ALTER SEQUENCE ' || seq_class.relname || ' INCREMENT BY ' || max_nodes || ';';
+            END IF;
+            IF (seq_tuple.last_value % max_nodes) != node_id THEN
+                altered := true;
+                new_start := (seq_tuple.last_value / max_nodes + 1)*max_nodes + node_id;
+                RAISE NOTICE 'Altering start for sequence % to %.', seq_tuple.sequence_name, new_start;
+                EXECUTE 'ALTER SEQUENCE ' || seq_class.relname || ' RESTART WITH ' || new_start || ';';
+            END IF;
+       EXCEPTION
+            WHEN OTHERS THEN
+	            RAISE NOTICE 'Failed to alter sequence %s', seq_class.relname;
+       END;
     END LOOP;
     IF altered = false THEN
         RAISE NOTICE 'All found sequnces have proper params.';
