@@ -4878,8 +4878,8 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	bool skipCommand = false;
 	bool executed = false;
 
-	MTM_LOG3("%d: Process utility statement tag=%d, context=%d, issubtrans=%d, query=%s", 
-			 MyProcPid, nodeTag(parsetree), context, IsSubTransaction(), queryString);
+	MTM_LOG1("%d: Process utility statement tag=%d, context=%d, issubtrans=%d, creating_extension=%d, query=%s", 
+			 MyProcPid, nodeTag(parsetree), context, IsSubTransaction(), creating_extension, queryString);
 	switch (nodeTag(parsetree))
 	{
 		case T_TransactionStmt:
