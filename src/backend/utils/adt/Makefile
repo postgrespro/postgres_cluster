@@ -35,4 +35,6 @@ like.o: like.c like_match.c
 
 varlena.o: varlena.c levenshtein.c
 
+version.o: version.c $(top_builddir)/src/include/commit_id.h
+
 include $(top_srcdir)/src/backend/common.mk
