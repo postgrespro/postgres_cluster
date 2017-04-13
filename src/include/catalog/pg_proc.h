@@ -5324,6 +5324,8 @@ DESCR("PostgresPro version string");
 DATA(insert OID =  6019 (  pgpro_edition		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 0 0 25 "" _null_ _null_ _null_ _null_ _null_ pgpro_edition _null_ _null_ _null_ ));
 DESCR("PostgresPro edition");
 
+DATA(insert OID =  6020 (  pgpro_build		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 0 0 25 "" _null_ _null_ _null_ _null_ _null_ pgpro_build _null_ _null_ _null_ ));
+DESCR("PostgresPro edition");
 /* rls */
 DATA(insert OID = 3298 (  row_security_active	   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 1 0 16 "26" _null_ _null_ _null_ _null_ _null_	row_security_active _null_ _null_ _null_ ));
 DESCR("row security for current context active on table by table oid");
