@@ -376,7 +376,9 @@ struct pg_conn
 	pgsocket	sock;			/* FD for socket, PGINVALID_SOCKET if
 								 * unconnected */
 	bool		isRsocket;		/* Is sock rsocket */
+#ifdef WITH_RSOCKET
 	bool		rsocket_negotiate;	/* Is auxiliary socket for rsocket connection */
+#endif
 	SockAddr	laddr;			/* Local address */
 	SockAddr	raddr;			/* Remote address */
 	ProtocolVersion pversion;	/* FE/BE protocol version in use */
@@ -390,10 +392,6 @@ struct pg_conn
 
 	/* Transient state needed while establishing connection */
 	struct addrinfo *addrlist;	/* list of possible backend addresses */
-#ifdef WITH_RSOCKET
-	struct addrinfo *rsocket_addrlist;	/* list of possible backend addresses
-										 * for rsocket connection */
-#endif
 	struct addrinfo *addr_cur;	/* the one currently being tried */
 	int			addrlist_family;	/* needed to know how to free addrlist */
 	time_t		failover_finish_time;	/* how long to retry host list waiting

@@ -395,9 +395,6 @@ static void HandleChildCrash(int pid, int exitstatus, const char *procname);
 static void LogChildExit(int lev, const char *procname,
 			 int pid, int exitstatus);
 static void PostmasterStateMachine(void);
-#ifdef WITH_RSOCKET
-static void RsocketInitialize(Port *port);
-#endif
 static void BackendInitialize(Port *port);
 static void BackendRun(Port *port) pg_attribute_noreturn();
 static void ExitPostmaster(int status) pg_attribute_noreturn();
@@ -1792,7 +1789,7 @@ ServerLoop(void)
 						 * We no longer need the open socket or port structure
 						 * in this process
 						 */
-						StreamClose(port->sock, false);
+						StreamClose(port->sock, port->isRsocket);
 						ConnFree(port);
 					}
 				}
@@ -2215,21 +2212,6 @@ retry1:
 		port->guc_options = NIL;
 	}
 
-#ifdef WITH_RSOCKET
-	/*if (port->with_rsocket && !with_rsocket)
-		ereport(FATAL,
-				(errcode(ERRCODE_CANNOT_CONNECT_NOW),
-				 errmsg("server is configured to connect using rsocket, but client requested non-rsocket connection")));
-	else */
-	if (!port->with_rsocket && with_rsocket)
-		ereport(FATAL,
-				(errcode(ERRCODE_CANNOT_CONNECT_NOW),
-				 errmsg("server does not configured to connect using rsocket, but client requested rsocket connection")));
-	else if (with_rsocket)
-		/* Rsocket doesn't support forks. Initialize new rsocket connection. */
-		RsocketInitialize(port);
-#endif
-
 	/* Check a user name was given. */
 	if (port->user_name == NULL || port->user_name[0] == '\0')
 		ereport(FATAL,
@@ -2455,7 +2437,9 @@ ConnCreate(int serverFd)
 	}
 
 	port->isRsocket = false;
+#ifdef WITH_RSOCKET
 	port->with_rsocket = false;
+#endif
 
 	if (StreamConnection(serverFd, port) != STATUS_OK)
 	{
@@ -4137,236 +4121,6 @@ report_fork_failure_to_client(Port *port, int errnum)
 		rc = pg_send(port->sock, buffer, strlen(buffer) + 1, 0, port->isRsocket);
 	} while (rc < 0 && errno == EINTR);
 }
-
-
-#ifdef WITH_RSOCKET
-static void
-RsocketInitialize(Port *port)
-{
-	pgsocket	fd,
-				sfd;
-	char		local_addr[NI_MAXHOST];
-	char		local_port[NI_MAXSERV];
-	struct addrinfo *addr = NULL,
-				hint;
-
-	struct sockaddr_in *addr_in;
-#ifdef HAVE_IPV6
-	struct sockaddr_in6 *addr_in6;
-#endif
-
-	ssize_t		len;
-	int			ret;
-	int			maxconn;
-	int			one = 1;
-
-	switch (port->laddr.addr.ss_family)
-	{
-		case AF_INET:
-			addr_in = (struct sockaddr_in *) &port->laddr.addr;
-			inet_ntop(AF_INET, &(addr_in->sin_addr), local_addr,
-					  sizeof(local_addr));
-			break;
-#ifdef HAVE_IPV6
-		case AF_INET6:
-			addr_in6 = (struct sockaddr_in6 *) &port->laddr.addr;
-			inet_ntop(AF_INET6, &(addr_in6->sin6_addr), local_addr,
-					  sizeof(local_addr));
-			break;
-#endif
-		default:
-			ereport(FATAL,
-					(errmsg("unrecognized address family %d",
-							port->laddr.addr.ss_family)));
-	}
-
-retry2:
-	RsocketPortCounter++;
-	snprintf(local_port, sizeof(local_port), "%d", RsocketPortCounter);
-
-	MemSet(&hint, 0, sizeof(hint));
-	hint.ai_family = port->laddr.addr.ss_family;
-	hint.ai_flags = AI_NUMERICHOST;
-	hint.ai_socktype = SOCK_STREAM;
-
-	ret = pg_getaddrinfo_all(local_addr, local_port, &hint, &addr);
-	if (ret || !addr)
-	{
-		if (addr)
-			pg_freeaddrinfo_all(hint.ai_family, addr);
-		ereport(FATAL,
-				(errmsg("could not translate host name \"%s\", service \"%s\" to address: %s",
-						local_addr, local_port, gai_strerror(ret))));
-	}
-
-	if ((fd = pg_socket(addr->ai_family, SOCK_STREAM, 0, true))
-		 == PGINVALID_SOCKET)
-	{
-		pg_freeaddrinfo_all(hint.ai_family, addr);
-		ereport(FATAL,
-				(errcode_for_socket_access(),
-				 errmsg("could not create socket: %m")));
-	}
-
-#ifndef WIN32
-	/*
-	 * Without the SO_REUSEADDR flag, a new postmaster can't be started
-	 * right away after a stop or crash, giving "address already in use"
-	 * error on TCP ports.
-	 *
-	 * On win32, however, this behavior only happens if the
-	 * SO_EXLUSIVEADDRUSE is set. With SO_REUSEADDR, win32 allows multiple
-	 * servers to listen on the same address, resulting in unpredictable
-	 * behavior. With no flags at all, win32 behaves as Unix with
-	 * SO_REUSEADDR.
-	 */
-	if ((pg_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
-					   (char *) &one, sizeof(one), true)) == -1)
-	{
-		pg_freeaddrinfo_all(hint.ai_family, addr);
-		pg_closesocket(fd, true);
-		ereport(FATAL,
-				(errcode_for_socket_access(),
-				 errmsg("setsockopt(SO_REUSEADDR) failed: %m")));
-	}
-#endif
-
-#ifdef IPV6_V6ONLY
-	if (addr->ai_family == AF_INET6)
-	{
-		if (pg_setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
-						  (char *) &one, sizeof(one), true) == -1)
-		{
-			pg_freeaddrinfo_all(hint.ai_family, addr);
-			pg_closesocket(fd, true);
-			ereport(FATAL,
-					(errcode_for_socket_access(),
-					 errmsg("setsockopt(IPV6_V6ONLY) failed: %m")));
-		}
-	}
-#endif
-
-	/*
-	 * Note: This might fail on some OS's, like Linux older than
-	 * 2.4.21-pre3, that don't have the IPV6_V6ONLY socket option, and map
-	 * ipv4 addresses to ipv6.  It will show ::ffff:ipv4 for all ipv4
-	 * connections.
-	 */
-	ret = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, true);
-	if (ret < 0)
-	{
-		pg_freeaddrinfo_all(hint.ai_family, addr);
-		pg_closesocket(fd, true);
-
-		/* Retry with new port */
-		if (errno == EADDRINUSE)
-			goto retry2;
-
-		ereport(FATAL,
-				(errcode_for_socket_access(),
-				 errmsg("could not bind socket: %m"),
-			  errhint("Is another postmaster already running on port %s?"
-					  " If not, wait a few seconds and retry.",
-					  local_port)));
-	}
-	pg_freeaddrinfo_all(hint.ai_family, addr);
-
-	/*
-	 * Select appropriate accept-queue length limit.  PG_SOMAXCONN is only
-	 * intended to provide a clamp on the request on platforms where an
-	 * overly large request provokes a kernel error (are there any?).
-	 */
-	maxconn = MaxBackends * 2;
-	if (maxconn > PG_SOMAXCONN)
-		maxconn = PG_SOMAXCONN;
-
-	ret = pg_listen(fd, maxconn, true);
-	if (ret < 0)
-	{
-		pg_closesocket(fd, true);
-		ereport(FATAL,
-				(errcode_for_socket_access(),
-				 errmsg("could not listen on socket: %m")));
-	}
-
-	/* Send to client rsocket port */
-	len = strlen(local_port) + 1;
-	if (pg_send(port->sock, local_port, len, 0, false) != len)
-	{
-		pg_closesocket(fd, true);
-		ereport(FATAL,
-				(errcode_for_socket_access(),
-				 errmsg("failed to send rsocket port: %m")));
-	}
-
-	/* Accept connection and fill in the client (remote) address */
-	port->raddr.salen = sizeof(port->raddr.addr);
-	if ((sfd = pg_accept(fd,
-						 (struct sockaddr *) &port->raddr.addr,
-						 &port->raddr.salen, true)) == PGINVALID_SOCKET)
-	{
-		pg_closesocket(fd, true);
-		ereport(FATAL,
-				(errcode_for_socket_access(),
-				 errmsg("could not accept new connection: %m")));
-	}
-
-	/* Replace port->sock with rsocket descriptor */
-	StreamClose(port->sock, false);
-
-	port->sock = sfd;
-	port->isRsocket = true;
-
-	if (Log_connections)
-		ereport(LOG,
-				(errmsg("rsocket connection established")));
-
-	/* Re-initialize libpq for rsocket connection */
-	pq_reinit();
-
-	/* fill in the server (local) address */
-	port->laddr.salen = sizeof(port->laddr.addr);
-	if (pg_getsockname(port->sock,
-					   (struct sockaddr *) & port->laddr.addr,
-					   &port->laddr.salen, port->isRsocket) < 0)
-	{
-		pg_closesocket(port->sock, port->isRsocket);
-		elog(FATAL, "getsockname() failed: %m");
-	}
-
-	/* select NODELAY and KEEPALIVE options */
-#ifdef	TCP_NODELAY
-	one = 1;
-	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_NODELAY,
-					  (char *) &one, sizeof(one), port->isRsocket) < 0)
-	{
-		pg_closesocket(port->sock, port->isRsocket);
-		elog(FATAL, "setsockopt(TCP_NODELAY) failed: %m");
-	}
-#endif
-	one = 1;
-	if (pg_setsockopt(port->sock, SOL_SOCKET, SO_KEEPALIVE,
-					  (char *) &one, sizeof(one), port->isRsocket) < 0)
-	{
-		pg_closesocket(port->sock, port->isRsocket);
-		elog(FATAL, "setsockopt(SO_KEEPALIVE) failed: %m");
-	}
-
-	/*
-	 * Also apply the current keepalive parameters.  If we fail to set a
-	 * parameter, don't error out, because these aren't universally
-	 * supported.  (Note: you might think we need to reset the GUC
-	 * variables to 0 in such a case, but it's not necessary because the
-	 * show hooks for these variables report the truth anyway.)
-	 */
-	(void) pq_setkeepalivesidle(tcp_keepalives_idle, port);
-	(void) pq_setkeepalivesinterval(tcp_keepalives_interval, port);
-	(void) pq_setkeepalivescount(tcp_keepalives_count, port);
-
-	/* Close listened socket */
-	pg_closesocket(fd, true);
-}
-#endif
 
 
 /*

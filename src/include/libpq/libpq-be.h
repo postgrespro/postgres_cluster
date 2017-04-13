@@ -191,7 +191,9 @@ typedef struct Port
 	 * Rsocket structures.
 	 */
 	bool		isRsocket;		/* Is rsocket connection made? */
+#ifdef WITH_RSOCKET
 	bool		with_rsocket;
+#endif
 
 	/*
 	 * OpenSSL structures. (Keep these last so that the locations of other
