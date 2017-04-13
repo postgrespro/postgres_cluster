@@ -2443,6 +2443,11 @@ keep_going:						/* We will come back to here until there is
 								continue;
 							}
 
+							pg_freeaddrinfo_all(conn->addrlist_family,
+												conn->addrlist);
+							conn->addrlist = NULL;
+							conn->addr_cur = NULL;
+
 							conn->status = CONNECTION_OK;
 							return PGRES_POLLING_OK;
 						}
@@ -3526,7 +3531,7 @@ keep_going:						/* We will come back to here until there is
 				/* Initialize hint structure */
 				MemSet(&hint, 0, sizeof(hint));
 				hint.ai_socktype = SOCK_STREAM;
-				hint.ai_family = AF_UNSPEC;
+				hint.ai_family = conn->addrlist_family;
 
 				host = PQhost(conn);
 
@@ -3555,6 +3560,7 @@ keep_going:						/* We will come back to here until there is
 				Assert(!conn->addrlist);
 				Assert(!conn->addr_cur);
 
+				conn->addrlist = raddrs;
 				conn->addr_cur = raddrs;
 				conn->isRsocket = true;
 				conn->status = CONNECTION_NEEDED;
