@@ -836,7 +836,8 @@ endif # enable_nls
 
 .PHONY: $(top_builddir)/src/include/commit_id.h
 $(top_builddir)/src/include/commit_id.h:
-	[ -d .git ] && git log -1 --format='#define COMMIT_ID "%h"' > $@.tmp && mv $@.tmp $@
+	-[ -e $(top_srcdir)/src/include/commit_id.h ] && cp $(top_srcdir)/src/include/commit_id.h $@
+	-[ -d $(top_srcdir)/.git ] && git log -1 --format='#define COMMIT_ID "%h"' > $@.tmp && mv $@.tmp $@
 	[ -e $@ ] ||  echo '#define COMMIT_ID "00000000"' >$@ 
 
 ##########################################################################
