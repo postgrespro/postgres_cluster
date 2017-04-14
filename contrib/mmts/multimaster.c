@@ -62,6 +62,7 @@
 #include "access/htup_details.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_constraint_fn.h"
 #include "pglogical_output/hooks.h"
 #include "parser/analyze.h"
 #include "parser/parse_relation.h"
@@ -5178,6 +5179,23 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	if (executed)
 	{
 		MtmFinishDDLCommand();
+	}
+    if (nodeTag(parsetree) == T_CreateStmt)
+	{
+		CreateStmt* create = (CreateStmt*)parsetree;
+		Oid relid = RangeVarGetRelid(create->relation, NoLock, true);
+		if (relid != InvalidOid) { 
+			Oid constraint_oid;
+			Bitmapset* pk = get_primary_key_attnos(relid, true, &constraint_oid);
+			if (pk == NULL) { 
+				elog(WARNING, 
+					 MtmIgnoreTablesWithoutPk
+					 ? "Table %s.%s without primary will not be replicated"
+					 : "Updates and deletes of table %s.%s without primary will not be replicated",
+					 create->relation->schemaname ? create->relation->schemaname : "public",
+					 create->relation->relname);
+			}
+		}
 	}
 }
 
