@@ -1882,6 +1882,11 @@ connectDBStart(PGconn *conn)
 	/* setup values based on SSL mode */
 	if (conn->sslmode[0] == 'd')	/* "disable" */
 		conn->allow_ssl_try = false;
+#ifdef WITH_RSOCKET
+	else if (conn->rsocket_negotiate)	/* disable if client wants rsocket
+										   connection */
+		conn->allow_ssl_try = false;
+#endif
 	else if (conn->sslmode[0] == 'a')	/* "allow" */
 		conn->wait_ssl_try = true;
 #endif
