@@ -499,6 +499,22 @@ EOF
 			last;
 		}
 	}
+	# Generate commit_id file
+	# If there is .git rewrite file whenever gitlog succeeds
+	if ( -d ".git" ) {
+		open P,"git log -1 --format='%h' |";
+		my $commit_id = <P>;
+		if (close(P)) {
+			open(O, ">src/include/commit_id.h");
+			print O "#define COMMIT_ID \"$commit_id\"\n";
+			close O;
+		}	
+	} elsif (! -f "src/include/commit_id.h" ) {
+		# Otheriwse write file only if it not exists
+		open(O, ">src/include/commit_id.h");
+		print O "#define COMMIT_ID \"00000000\"\n";
+		close O;
+	}
 
 	open(O, ">doc/src/sgml/version.sgml")
 	  || croak "Could not write to version.sgml\n";
