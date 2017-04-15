@@ -12,13 +12,13 @@ jobs:
         trigger: true
       - task: specs
         config:
-          platform: linux
+          platform: darwin
           inputs:
             - name: postgres_src
           run:
-            # path: pwd
-            path: postgres_src/configure
-            args: ["--enable-debug --enable-cassert --enable-tap-tests --enable-depend"]
+            path: pwd
+            # path: postgres_src/configure
+            # args: ["--enable-debug --enable-cassert --enable-tap-tests --enable-depend"]
             # path: sh
             # args:
             #   - -c
