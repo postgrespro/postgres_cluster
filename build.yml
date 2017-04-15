@@ -3,7 +3,6 @@ resources:
     type: git
     source:
       uri: https://github.com/postgrespro/postgres_cluster.git
-      # uri: file:///Users/stas/code/postgres_cluster
       branch: ci
 
 jobs:
