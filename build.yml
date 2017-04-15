@@ -1,0 +1,32 @@
+resources:
+  - name: postgres_src
+    type: git
+    source:
+      uri: https://github.com/postgrespro/postgres_cluster.git
+      branch: ci
+
+jobs:
+  - name: build
+    plan:
+      - get: postgres_src
+        trigger: true
+      - task: specs
+        config:
+          platform: linux
+          inputs:
+            - name: postgres_src
+          run:
+            # path: pwd
+            path: postgres_src/configure
+            args: ["--enable-debug --enable-cassert --enable-tap-tests --enable-depend"]
+            # path: sh
+            # args:
+            #   - -c
+            #   - |
+            #     env
+            #     mkdir ios-concourse/ExampleForConcourse/Pods
+            #     chown -R $SUDO_USER ios-concourse/
+            #     chown -R $SUDO_USER ~/Library/Caches/CocoaPods
+            #     chown -R $SUDO_USER ~/.cocoapods
+            #     cd ios-concourse/ExampleForConcourse
+            #     sudo -u $SUDO_USER bundle exec fastlane test
