@@ -162,6 +162,10 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 	int i;
 	job_t *job;
 	spi_response_t *r;
+	MemoryContext old;
+	MemoryContext mem = init_mem_ctx("executor");
+
+	old = MemoryContextSwitchTo(mem);
 
 	EE.n = 0;
 	EE.errors = NULL;
@@ -230,11 +234,11 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 		}
 		if(job->type == AtJob && i == 0 && job->sql_params_n > 0)
 		{
-			r = execute_spi_params_prepared(job->dosql[i], job->sql_params_n, job->sql_params);
+			r = execute_spi_params_prepared(mem, job->dosql[i], job->sql_params_n, job->sql_params);
 		}
 		else
 		{
-			r = execute_spi(job->dosql[i]);
+			r = execute_spi(mem, job->dosql[i]);
 		}
 		if(r->retval < 0)
 		{
@@ -321,6 +325,8 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 
 	SetSessionAuthorization(BOOTSTRAP_SUPERUSERID, true);
 	ResetAllOptions();
+	MemoryContextSwitchTo(old);
+	MemoryContextDelete(mem);
 
 	return 1;
 }
@@ -336,15 +342,16 @@ int set_session_authorization(char *username, char **error)
 	int rv;
 	char *sql = "select oid, rolsuper from pg_catalog.pg_roles where rolname = $1";
 	char buff[1024];
+	MemoryContext mem = CurrentMemoryContext;
 
 	values[0] = CStringGetTextDatum(username);	
 	START_SPI_SNAP();
-	r = execute_spi_sql_with_args(sql, 1, types, values, NULL);
+	r = execute_spi_sql_with_args(mem, sql, 1, types, values, NULL);
 
 	if(r->retval < 0)
 	{
 		rv = r->retval;
-		*error = _copy_string(r->error);
+		*error = _mcopy_string(mem, r->error);
 		destroy_spi_data(r);
 		return rv;
 	}
@@ -352,7 +359,7 @@ int set_session_authorization(char *username, char **error)
 	{
 		STOP_SPI_SNAP();
 		sprintf(buff, "Cannot find user with name: %s", username);
-		*error = _copy_string(buff);
+		*error = _mcopy_string(mem, buff);
 		destroy_spi_data(r);
 
 		return -200;
@@ -415,7 +422,7 @@ TimestampTz get_next_excution_time(char *sql, executor_error_t *ee)
 
 	START_SPI_SNAP();
 	pgstat_report_activity(STATE_RUNNING, "culc next time execution time");
-	r = execute_spi(sql);
+	r = execute_spi(CurrentMemoryContext, sql);
 	if(r->retval < 0)
 	{
 		if(r->error)
@@ -469,7 +476,7 @@ int executor_onrollback(job_t *job, executor_error_t *ee)
 	pgstat_report_activity(STATE_RUNNING, "execure onrollback");
 
 	START_SPI_SNAP();
-	r = execute_spi(job->onrollback);
+	r = execute_spi(CurrentMemoryContext, job->onrollback);
 	if(r->retval < 0)
 	{
 		if(r->error)
@@ -502,7 +509,7 @@ void set_pg_var(bool result, executor_error_t *ee)
 
 	vals[0] = PointerGetDatum(cstring_to_text(result ? "success": "failure"));
 
-	r = execute_spi_sql_with_args(sql, 1, argtypes, vals, NULL);
+	r = execute_spi_sql_with_args(NULL, sql, 1, argtypes, vals, NULL);
 	if(r->retval < 0)
 	{
 		if(r->error)
@@ -712,14 +719,16 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 	int set_ret;
 	char buff[512];
 	spi_response_t *r;
+	MemoryContext old;
+	MemoryContext mem = init_mem_ctx("at job processor");
+	old = MemoryContextSwitchTo(mem);
 
 	*status = shared->status = SchdExecutorWork;
 
 	pgstat_report_activity(STATE_RUNNING, "initialize at job");
 	START_SPI_SNAP();
 
-	/* job = get_next_at_job_with_lock(shared->nodename, &error); */
-	job = get_at_job_for_process(shared->nodename, &error);
+	job = get_at_job_for_process(mem, shared->nodename, &error);
 	if(!job)
 	{
 		if(error)
@@ -765,7 +774,8 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 			return -1;
 		}
 		STOP_SPI_SNAP();
-	elog(LOG, "JOB MOVED TO DONE");
+		MemoryContextSwitchTo(old);
+		MemoryContextDelete(mem);
 		return 1;
 	}
 
@@ -780,11 +790,11 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 
 	if(job->sql_params_n > 0)
 	{
-		r = execute_spi_params_prepared(job->dosql[0], job->sql_params_n, job->sql_params);
+		r = execute_spi_params_prepared(mem, job->dosql[0], job->sql_params_n, job->sql_params);
 	}
 	else
 	{
-		r = execute_spi(job->dosql[0]);
+		r = execute_spi(mem, job->dosql[0]);
 	}
 	if(job->timelimit)
 	{
@@ -819,6 +829,8 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 	if(set_ret > 0)
 	{
 		STOP_SPI_SNAP();
+		MemoryContextSwitchTo(old);
+		MemoryContextDelete(mem);
 		return 1;
 	}
 	if(set_error)
@@ -831,6 +843,8 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 		elog(LOG, "AT_EXECUTOR ERROR: set log: unknown error");
 	}
 	ABORT_SPI_SNAP();
+	MemoryContextSwitchTo(old);
+	MemoryContextDelete(mem);
 
 	return -1;
 }
@@ -846,7 +860,7 @@ Oid set_session_authorization_by_name(char *rolename, char **error)
 	if(!HeapTupleIsValid(roleTup))
 	{
 		snprintf(buffer, 512, "There is no user name: %s", rolename);
-		*error = _copy_string(buffer);
+		*error = _mcopy_string(NULL, buffer);
 		return InvalidOid;
 	}
 	rform = (Form_pg_authid) GETSTRUCT(roleTup);

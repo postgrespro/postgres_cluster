@@ -55,6 +55,8 @@ typedef struct {
 	BackgroundWorkerHandle *handler;
 	dsm_segment *shared;
 	bool wait_worker_to_die;
+	ResourceOwner res_owner;
+
 } scheduler_manager_slot_t;
 
 typedef struct {

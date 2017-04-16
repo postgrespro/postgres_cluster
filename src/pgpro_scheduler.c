@@ -171,14 +171,14 @@ char *set_schema(const char *name, bool get_old)
 	bool free_name = false;
 
 	if(get_old)
-		current = _copy_string((char *)GetConfigOption("search_path", true, false));
+		current = _mcopy_string(NULL, (char *)GetConfigOption("search_path", true, false));
 	if(name)
 	{
 		schema_name = (char *)name;
 	}
 	else
 	{
-		schema_name = _copy_string((char *)GetConfigOption("schedule.schema", true, false));	
+		schema_name = _mcopy_string(NULL, (char *)GetConfigOption("schedule.schema", true, false));	
 		free_name = true;
 	}
 	SetConfigOption("search_path", schema_name,  PGC_USERSET, PGC_S_SESSION);
@@ -483,7 +483,7 @@ void _PG_init(void)
 		&scheduler_max_workers,
 		2,
 		1,
-		100,
+		1000,
 		PGC_SUSET,
 		0,
 		NULL,
@@ -497,7 +497,7 @@ void _PG_init(void)
 		&scheduler_max_parallel_workers,
 		2,
 		1,
-		100,
+		1000,
 		PGC_SUSET,
 		0,
 		NULL,
