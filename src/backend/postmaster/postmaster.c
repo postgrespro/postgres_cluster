@@ -1976,9 +1976,6 @@ ProcessStartupPacket(Port *port, bool SSLdone)
 	void	   *buf;
 	ProtocolVersion proto;
 	MemoryContext oldcontext;
-#ifdef WITH_RSOCKET
-	bool		with_rsocket = false;
-#endif
 
 	pq_startmsgread();
 	if (pq_getbytes((char *) &len, 4) == EOF)
@@ -2158,18 +2155,6 @@ retry1:
 								valptr),
 							 errhint("Valid values are: \"false\", 0, \"true\", 1, \"database\".")));
 			}
-#ifdef WITH_RSOCKET
-			else if (strcmp(nameptr, "with_rsocket") == 0)
-			{
-				if (!parse_bool(valptr, &with_rsocket))
-					ereport(FATAL,
-							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("invalid value for parameter \"%s\": \"%s\"",
-								"with_rsocket",
-								valptr),
-							 errhint("Valid values are: \"false\", 0, \"true\", 1.")));
-			}
-#endif
 			else
 			{
 				/* Assume it's a generic GUC option */
