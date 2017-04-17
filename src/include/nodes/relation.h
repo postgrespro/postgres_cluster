@@ -1197,6 +1197,7 @@ typedef struct GatherPath
 	Path		path;
 	Path	   *subpath;		/* path for each worker */
 	bool		single_copy;	/* path must not be executed >1x */
+	int			num_workers;	/* number of workers sought to help */
 } GatherPath;
 
 /*

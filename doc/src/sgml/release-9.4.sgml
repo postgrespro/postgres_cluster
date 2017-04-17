@@ -48,8 +48,8 @@
 
      <para>
       If <command>CREATE INDEX CONCURRENTLY</> was used to build an index
-      that depends on a column not previously indexed, then rows inserted
-      or updated by transactions that ran concurrently with
+      that depends on a column not previously indexed, then rows
+      updated by transactions that ran concurrently with
       the <command>CREATE INDEX</> command could have received incorrect
       index entries.  If you suspect this may have happened, the most
       reliable solution is to rebuild affected indexes after installing
@@ -8899,7 +8899,7 @@ Branch: REL9_4_STABLE [c2b06ab17] 2015-01-30 22:45:58 -0500
       <listitem>
        <para>
         Add <xref linkend="APP-CREATEUSER"> option <option>-g</>
-        to specify role membership (Chistopher Browne)
+        to specify role membership (Christopher Browne)
        </para>
       </listitem>
 
