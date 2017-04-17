@@ -162,10 +162,7 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 	int i;
 	job_t *job;
 	spi_response_t *r;
-	MemoryContext old;
-	MemoryContext mem = init_mem_ctx("executor");
-
-	old = MemoryContextSwitchTo(mem);
+	MemoryContext old, mem;
 
 	EE.n = 0;
 	EE.errors = NULL;
@@ -177,6 +174,9 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 	{
 		return 0;
 	}
+
+	mem = init_mem_ctx("executor");
+	old = MemoryContextSwitchTo(mem);
 
 	*status = shared->status = SchdExecutorWork;
 	shared->message[0] = 0;
@@ -190,6 +190,9 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 											"Cannot retrive job information");
 		shared->worker_exit = true;
 		*status = shared->status = SchdExecutorError;
+
+		MemoryContextSwitchTo(old);
+		MemoryContextDelete(mem);
 
 		return -1;
 	}
@@ -211,6 +214,8 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 		}
 		*status = shared->worker_exit = true;
 		shared->status = SchdExecutorError;
+		MemoryContextSwitchTo(old);
+		MemoryContextDelete(mem);
 		return -2;
 	}
 
@@ -257,7 +262,7 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 			destroy_spi_data(r);
 			ABORT_SPI_SNAP();
 			SetConfigOption("schedule.transaction_state", "failure", PGC_INTERNAL, PGC_S_SESSION);
-			executor_onrollback(job, &EE);
+			executor_onrollback(mem, job, &EE);
 
 			break;
 		}
@@ -467,7 +472,7 @@ TimestampTz get_next_excution_time(char *sql, executor_error_t *ee)
 	return ts;
 }
 
-int executor_onrollback(job_t *job, executor_error_t *ee)
+int executor_onrollback(MemoryContext mem, job_t *job, executor_error_t *ee)
 {
 	int rv;
 	spi_response_t *r;
@@ -476,7 +481,7 @@ int executor_onrollback(job_t *job, executor_error_t *ee)
 	pgstat_report_activity(STATE_RUNNING, "execure onrollback");
 
 	START_SPI_SNAP();
-	r = execute_spi(CurrentMemoryContext, job->onrollback);
+	r = execute_spi(mem, job->onrollback);
 	if(r->retval < 0)
 	{
 		if(r->error)

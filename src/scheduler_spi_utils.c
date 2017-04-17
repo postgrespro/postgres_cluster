@@ -78,6 +78,7 @@ spi_response_t *__error_spi_resp(MemoryContext ctx, int ret, char *error)
 	r->retval = ret;
 	r->types = NULL;
 	r->rows = NULL;
+	r->ref = NULL;
 	r->error = _mcopy_string(ctx, error);
 
 	return r;
