@@ -18,7 +18,6 @@
 #include "access/genam.h"
 #include "access/spgist_private.h"
 #include "access/xloginsert.h"
-#include "access/ptrack.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
 #include "utils/rel.h"
@@ -214,7 +213,6 @@ addLeafTuple(Relation index, SpGistState *state, SpGistLeafTuple leafTuple,
 	xlrec.offnumParent = InvalidOffsetNumber;
 	xlrec.nodeI = 0;
 
-	ptrack_add_block(index, BufferGetBlockNumber(current->buffer));
 	START_CRIT_SECTION();
 
 	if (current->offnum == InvalidOffsetNumber ||
@@ -459,9 +457,6 @@ moveLeafs(Relation index, SpGistState *state,
 
 	leafdata = leafptr = palloc(size);
 
-	ptrack_add_block(index, BufferGetBlockNumber(current->buffer));
-	ptrack_add_block(index, BufferGetBlockNumber(nbuf));
-	ptrack_add_block(index, BufferGetBlockNumber(parent->buffer));
 	START_CRIT_SECTION();
 
 	/* copy all the old tuples to new page, unless they're dead */
@@ -1114,14 +1109,6 @@ doPickSplit(Relation index, SpGistState *state,
 	leafdata = leafptr = (char *) palloc(totalLeafSizes);
 
 	/* Here we begin making the changes to the target pages */
-	if (current->buffer != InvalidBuffer)
-		ptrack_add_block(index, current->blkno);
-	if (parent->buffer != InvalidBuffer)
-		ptrack_add_block(index, parent->blkno);
-	if (newInnerBuffer != InvalidBuffer)
-		ptrack_add_block(index, BufferGetBlockNumber(newInnerBuffer));
-	if (newLeafBuffer != InvalidBuffer)
-		ptrack_add_block(index, BufferGetBlockNumber(newLeafBuffer));
 	START_CRIT_SECTION();
 
 	/*
@@ -1532,7 +1519,6 @@ spgAddNodeAction(Relation index, SpGistState *state,
 		/*
 		 * We can replace the inner tuple by new version in-place
 		 */
-		ptrack_add_block(index, BufferGetBlockNumber(current->buffer));
 		START_CRIT_SECTION();
 
 		PageIndexTupleDelete(current->page, current->offnum);
@@ -1616,9 +1602,6 @@ spgAddNodeAction(Relation index, SpGistState *state,
 		else
 			xlrec.parentBlk = 2;
 
-		ptrack_add_block(index, BufferGetBlockNumber(current->buffer));
-		ptrack_add_block(index, BufferGetBlockNumber(saveCurrent.buffer));
-		ptrack_add_block(index, BufferGetBlockNumber(parent->buffer));
 		START_CRIT_SECTION();
 
 		/* insert new ... */
@@ -1781,9 +1764,6 @@ spgSplitNodeAction(Relation index, SpGistState *state,
 									&xlrec.newPage);
 	}
 
-	if (newBuffer != InvalidBuffer)
-		ptrack_add_block(index, BufferGetBlockNumber(newBuffer));
-	ptrack_add_block(index, BufferGetBlockNumber(current->buffer));
 	START_CRIT_SECTION();
 
 	/*

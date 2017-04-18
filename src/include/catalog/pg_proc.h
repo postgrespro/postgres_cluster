@@ -3142,12 +3142,6 @@ DATA(insert OID = 2850 ( pg_xlogfile_name_offset	PGNSP PGUID 12 1 0 0 0 f f f f 
 DESCR("xlog filename and byte offset, given an xlog location");
 DATA(insert OID = 2851 ( pg_xlogfile_name			PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 25 "3220" _null_ _null_ _null_ _null_ _null_ pg_xlogfile_name _null_ _null_ _null_ ));
 DESCR("xlog filename, given an xlog location");
-DATA(insert OID = 6016 ( pg_ptrack_clear		PGNSP PGUID 12 1 0 0 0 f f f f t f v u 0 0 2278 "" _null_ _null_ _null_ _null_ _null_ pg_ptrack_clear _null_ _null_ _null_ ));
-DESCR("clear ptrack fork files");
-DATA(insert OID = 6017 ( pg_ptrack_test		PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 1007 "26" _null_ _null_ _null_ _null_ _null_ pg_ptrack_test _null_ _null_ _null_ ));
-DESCR("test ptrack fork relation");
-DATA(insert OID = 6018 ( pg_ptrack_get_and_clear		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 2 0 17 "26 26" _null_ _null_ _null_ _null_ _null_ pg_ptrack_get_and_clear _null_ _null_ _null_ ));
-DESCR("get ptrack file as bytea and clear him");
 
 DATA(insert OID = 3165 ( pg_xlog_location_diff		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1700 "3220 3220" _null_ _null_ _null_ _null_ _null_ pg_xlog_location_diff _null_ _null_ _null_ ));
 DESCR("difference in bytes, given two xlog locations");

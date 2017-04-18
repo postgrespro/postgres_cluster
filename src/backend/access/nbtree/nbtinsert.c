@@ -19,7 +19,6 @@
 #include "access/nbtree.h"
 #include "access/transam.h"
 #include "access/xloginsert.h"
-#include "access/ptrack.h"
 #include "miscadmin.h"
 #include "storage/lmgr.h"
 #include "storage/predicate.h"
@@ -840,11 +839,6 @@ _bt_insertonpg(Relation rel,
 		}
 
 		/* Do the update.  No ereport(ERROR) until changes are logged */
-		ptrack_add_block(rel, BufferGetBlockNumber(buf));
-		if (BufferIsValid(metabuf))
-			ptrack_add_block(rel, BufferGetBlockNumber(metabuf));
-		if (BufferIsValid(cbuf))
-			ptrack_add_block(rel, BufferGetBlockNumber(cbuf));
 		START_CRIT_SECTION();
 
 		if (!_bt_pgaddtup(page, itemsz, itup, newitemoff))
@@ -1249,12 +1243,6 @@ _bt_split(Relation rel, Buffer buf, Buffer cbuf, OffsetNumber firstright,
 	 * not starting the critical section till here because we haven't been
 	 * scribbling on the original page yet; see comments above.
 	 */
-	ptrack_add_block(rel, BufferGetBlockNumber(buf));
-	ptrack_add_block(rel, BufferGetBlockNumber(rbuf));
-	if (!P_RIGHTMOST(ropaque))
-		ptrack_add_block(rel, BufferGetBlockNumber(sbuf));
-	if (BufferIsValid(cbuf))
-		ptrack_add_block(rel, BufferGetBlockNumber(cbuf));
 	START_CRIT_SECTION();
 
 	/*
@@ -2007,9 +1995,6 @@ _bt_newroot(Relation rel, Buffer lbuf, Buffer rbuf)
 	ItemPointerSet(&(right_item->t_tid), rbkno, P_HIKEY);
 
 	/* NO EREPORT(ERROR) from here till newroot op is logged */
-	ptrack_add_block(rel, BufferGetBlockNumber(lbuf));
-	ptrack_add_block(rel, BufferGetBlockNumber(rootbuf));
-	ptrack_add_block(rel, BufferGetBlockNumber(metabuf));
 	START_CRIT_SECTION();
 
 	/* set btree special data */

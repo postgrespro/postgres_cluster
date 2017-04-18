@@ -16,7 +16,6 @@
 
 #include "access/gin_private.h"
 #include "access/xloginsert.h"
-#include "access/ptrack.h"
 #include "commands/vacuum.h"
 #include "miscadmin.h"
 #include "postmaster/autovacuum.h"
@@ -210,9 +209,6 @@ ginDeletePage(GinVacuumState *gvs, BlockNumber deleteBlkno, BlockNumber leftBlkn
 								 * LockBufferForCleanup() */
 		LockBuffer(pBuffer, GIN_EXCLUSIVE);
 
-	ptrack_add_block(gvs->index, BufferGetBlockNumber(pBuffer));
-	ptrack_add_block(gvs->index, BufferGetBlockNumber(lBuffer));
-	ptrack_add_block(gvs->index, BufferGetBlockNumber(dBuffer));
 	START_CRIT_SECTION();
 
 	/* Unlink the page by changing left sibling's rightlink */
@@ -607,7 +603,6 @@ ginbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 
 		if (resPage)
 		{
-			ptrack_add_block(gvs.index, BufferGetBlockNumber(buffer));
 			START_CRIT_SECTION();
 			PageRestoreTempPage(resPage, page);
 			MarkBufferDirty(buffer);

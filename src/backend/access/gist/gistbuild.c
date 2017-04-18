@@ -20,7 +20,6 @@
 #include "access/gist_private.h"
 #include "access/xloginsert.h"
 #include "access/generic_xlog.h"
-#include "access/ptrack.h"
 #include "catalog/index.h"
 #include "miscadmin.h"
 #include "optimizer/cost.h"
@@ -173,7 +172,6 @@ gistbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	Assert(BufferGetBlockNumber(buffer) == GIST_ROOT_BLKNO);
 	page = BufferGetPage(buffer);
 
-	ptrack_add_block(index, BufferGetBlockNumber(buffer));
 	START_CRIT_SECTION();
 
 	GISTInitBuffer(buffer, F_LEAF);

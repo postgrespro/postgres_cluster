@@ -18,7 +18,6 @@
 #include "access/transam.h"
 #include "access/xlog.h"
 #include "access/xlogutils.h"
-#include "access/ptrack.h"
 #include "storage/standby.h"
 #include "utils/memutils.h"
 
@@ -77,15 +76,6 @@ spgRedoCreateIndex(XLogReaderState *record)
 	XLogRecPtr	lsn = record->EndRecPtr;
 	Buffer		buffer;
 	Page		page;
-	RelFileNode rnode;
-	BlockNumber blkno;
-
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
-	XLogRecGetBlockTag(record, 1, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
-	XLogRecGetBlockTag(record, 2, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
 
 	buffer = XLogInitBufferForRedo(record, 0);
 	Assert(BufferGetBlockNumber(buffer) == SPGIST_METAPAGE_BLKNO);
@@ -123,16 +113,6 @@ spgRedoAddLeaf(XLogReaderState *record)
 	Buffer		buffer;
 	Page		page;
 	XLogRedoAction action;
-	RelFileNode rnode;
-	BlockNumber blkno;
-
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
-	if (xldata->offnumParent != InvalidOffsetNumber)
-	{
-		XLogRecGetBlockTag(record, 1, &rnode, NULL, &blkno);
-		ptrack_add_block_redo(rnode, blkno);
-	}
 
 	ptr += sizeof(spgxlogAddLeaf);
 	leafTuple = ptr;
@@ -233,15 +213,8 @@ spgRedoMoveLeafs(XLogReaderState *record)
 	Page		page;
 	XLogRedoAction action;
 	BlockNumber blknoDst;
-	RelFileNode rnode;
-	BlockNumber blkno;
 
-	XLogRecGetBlockTag(record, 1, &rnode, NULL, &blknoDst);
-	ptrack_add_block_redo(rnode, blknoDst);
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
-	XLogRecGetBlockTag(record, 2, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
+	XLogRecGetBlockTag(record, 1, NULL, NULL, &blknoDst);
 
 	fillFakeState(&state, xldata->stateSrc);
 
@@ -351,21 +324,6 @@ spgRedoAddNode(XLogReaderState *record)
 	Buffer		buffer;
 	Page		page;
 	XLogRedoAction action;
-	RelFileNode rnode;
-	BlockNumber blkno;
-
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
-	if(XLogRecHasBlockRef(record, 1))
-	{
-		XLogRecGetBlockTag(record, 1, &rnode, NULL, &blkno);
-		ptrack_add_block_redo(rnode, blkno);
-	}
-	if (xldata->parentBlk == 2)
-	{
-		XLogRecGetBlockTag(record, 2, &rnode, NULL, &blkno);
-		ptrack_add_block_redo(rnode, blkno);
-	}
 
 	ptr += sizeof(spgxlogAddNode);
 	innerTuple = ptr;
@@ -534,13 +492,6 @@ spgRedoSplitTuple(XLogReaderState *record)
 	Buffer		buffer;
 	Page		page;
 	XLogRedoAction action;
-	RelFileNode rnode;
-	BlockNumber blkno;
-
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
-	XLogRecGetBlockTag(record, 1, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
 
 	ptr += sizeof(spgxlogSplitTuple);
 	prefixTuple = ptr;
@@ -627,23 +578,8 @@ spgRedoPickSplit(XLogReaderState *record)
 	int			i;
 	BlockNumber blknoInner;
 	XLogRedoAction action;
-	RelFileNode rnode;
-	BlockNumber blkno;
 
-	XLogRecGetBlockTag(record, 2, &rnode, NULL, &blknoInner);
-	ptrack_add_block_redo(rnode, blknoInner);
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
-	if (XLogRecHasBlockRef(record, 1))
-	{
-		XLogRecGetBlockTag(record, 1, &rnode, NULL, &blkno);
-		ptrack_add_block_redo(rnode, blkno);
-	}
-	if (XLogRecHasBlockRef(record, 3))
-	{
-		XLogRecGetBlockTag(record, 3, &rnode, NULL, &blkno);
-		ptrack_add_block_redo(rnode, blkno);
-	}
+	XLogRecGetBlockTag(record, 2, NULL, NULL, &blknoInner);
 
 	fillFakeState(&state, xldata->stateSrc);
 
@@ -859,11 +795,6 @@ spgRedoVacuumLeaf(XLogReaderState *record)
 	Buffer		buffer;
 	Page		page;
 	int			i;
-	RelFileNode rnode;
-	BlockNumber blkno;
-
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
 
 	fillFakeState(&state, xldata->stateSrc);
 
@@ -940,11 +871,6 @@ spgRedoVacuumRoot(XLogReaderState *record)
 	OffsetNumber *toDelete;
 	Buffer		buffer;
 	Page		page;
-	RelFileNode rnode;
-	BlockNumber blkno;
-
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
 
 	toDelete = xldata->offsets;
 
@@ -970,11 +896,6 @@ spgRedoVacuumRedirect(XLogReaderState *record)
 	spgxlogVacuumRedirect *xldata = (spgxlogVacuumRedirect *) ptr;
 	OffsetNumber *itemToPlaceholder;
 	Buffer		buffer;
-	RelFileNode rnode;
-	BlockNumber blkno;
-
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
 
 	itemToPlaceholder = xldata->offsets;
 
