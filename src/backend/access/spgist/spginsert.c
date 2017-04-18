@@ -20,7 +20,6 @@
 #include "access/spgist_private.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
-#include "access/ptrack.h"
 #include "catalog/index.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
@@ -91,9 +90,6 @@ spgbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	Assert(BufferGetBlockNumber(rootbuffer) == SPGIST_ROOT_BLKNO);
 	Assert(BufferGetBlockNumber(nullbuffer) == SPGIST_NULL_BLKNO);
 
-	ptrack_add_block(index, BufferGetBlockNumber(metabuffer));
-	ptrack_add_block(index, BufferGetBlockNumber(rootbuffer));
-	ptrack_add_block(index, BufferGetBlockNumber(nullbuffer));
 	START_CRIT_SECTION();
 
 	SpGistInitMetapage(BufferGetPage(metabuffer));

@@ -5354,14 +5354,6 @@ DESCR("pg_controldata init state information as a function");
 #define PROPARALLEL_RESTRICTED	'r'		/* can run in parallel master only */
 #define PROPARALLEL_UNSAFE		'u'		/* banned while in parallel mode */
 
-/* ptrack related functions*/
-DATA(insert OID = 6016 ( pg_ptrack_clear		PGNSP PGUID 12 1 0 0 0 f f f f t f v u 0 0 2278 "" _null_ _null_ _null_ _null_ _null_ pg_ptrack_clear _null_ _null_ _null_ ));
-DESCR("clear ptrack fork files");
-DATA(insert OID = 6017 ( pg_ptrack_test		PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 1007 "26" _null_ _null_ _null_ _null_ _null_ pg_ptrack_test _null_ _null_ _null_ ));
-DESCR("test ptrack fork relation");
-DATA(insert OID = 6018 ( pg_ptrack_get_and_clear		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 2 0 17 "26 26" _null_ _null_ _null_ _null_ _null_ pg_ptrack_get_and_clear _null_ _null_ _null_ ));
-DESCR("get ptrack file as bytea and clear him");
-
 /*
  * Symbolic values for proargmodes column.  Note that these must agree with
  * the FunctionParameterMode enum in parsenodes.h; we declare them here to

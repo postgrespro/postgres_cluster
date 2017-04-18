@@ -19,7 +19,6 @@
 #include "access/transam.h"
 #include "access/xlog.h"
 #include "access/xlogutils.h"
-#include "access/ptrack.h"
 #include "storage/procarray.h"
 #include "miscadmin.h"
 
@@ -83,11 +82,6 @@ _bt_restore_meta(XLogReaderState *record, uint8 block_id)
 	xl_btree_metadata *xlrec;
 	char	   *ptr;
 	Size		len;
-	RelFileNode rnode;
-	BlockNumber blkno;
-
-	XLogRecGetBlockTag(record, block_id, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
 
 	metabuf = XLogInitBufferForRedo(record, block_id);
 	ptr = XLogRecGetBlockData(record, block_id, &len);
@@ -133,11 +127,6 @@ _bt_clear_incomplete_split(XLogReaderState *record, uint8 block_id)
 {
 	XLogRecPtr	lsn = record->EndRecPtr;
 	Buffer		buf;
-	RelFileNode rnode;
-	BlockNumber blkno;
-
-	XLogRecGetBlockTag(record, block_id, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
 
 	if (XLogReadBufferForRedo(record, block_id, &buf) == BLK_NEEDS_REDO)
 	{
@@ -161,11 +150,6 @@ btree_xlog_insert(bool isleaf, bool ismeta, XLogReaderState *record)
 	xl_btree_insert *xlrec = (xl_btree_insert *) XLogRecGetData(record);
 	Buffer		buffer;
 	Page		page;
-	RelFileNode rnode;
-	BlockNumber blkno;
-
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
 
 	/*
 	 * Insertion to an internal page finishes an incomplete split at the child
@@ -223,17 +207,11 @@ btree_xlog_split(bool onleft, bool isroot, XLogReaderState *record)
 	BlockNumber leftsib;
 	BlockNumber rightsib;
 	BlockNumber rnext;
-	RelFileNode rnode;
 
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &leftsib);
-	ptrack_add_block_redo(rnode, leftsib);
-	XLogRecGetBlockTag(record, 1, &rnode, NULL, &rightsib);
-	ptrack_add_block_redo(rnode, rightsib);
-
+	XLogRecGetBlockTag(record, 0, NULL, NULL, &leftsib);
+	XLogRecGetBlockTag(record, 1, NULL, NULL, &rightsib);
 	if (!XLogRecGetBlockTag(record, 2, NULL, NULL, &rnext))
 		rnext = P_NONE;
-	else
-		ptrack_add_block_redo(rnode, rnext);
 
 	/*
 	 * Clear the incomplete split flag on the left sibling of the child page
@@ -410,12 +388,6 @@ btree_xlog_vacuum(XLogReaderState *record)
 	Buffer		buffer;
 	Page		page;
 	BTPageOpaque opaque;
-	RelFileNode rnode;
-	BlockNumber blkno;
-
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
-
 #ifdef UNUSED
 	xl_btree_vacuum *xlrec = (xl_btree_vacuum *) XLogRecGetData(record);
 
@@ -594,7 +566,6 @@ btree_xlog_delete_get_latestRemovedXid(XLogReaderState *record)
 	 * overkill, but it's safe, and certainly better than panicking here.
 	 */
 	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
 	ibuffer = XLogReadBufferExtended(rnode, MAIN_FORKNUM, blkno, RBM_NORMAL);
 	if (!BufferIsValid(ibuffer))
 		return InvalidTransactionId;
@@ -620,7 +591,6 @@ btree_xlog_delete_get_latestRemovedXid(XLogReaderState *record)
 		 */
 		hblkno = ItemPointerGetBlockNumber(&(itup->t_tid));
 		hbuffer = XLogReadBufferExtended(xlrec->hnode, MAIN_FORKNUM, hblkno, RBM_NORMAL);
-		ptrack_add_block_redo(rnode, hblkno);
 		if (!BufferIsValid(hbuffer))
 		{
 			UnlockReleaseBuffer(ibuffer);
@@ -695,11 +665,6 @@ btree_xlog_delete(XLogReaderState *record)
 	Buffer		buffer;
 	Page		page;
 	BTPageOpaque opaque;
-	RelFileNode rnode;
-	BlockNumber blkno;
-
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
 
 	/*
 	 * If we have any conflict processing to do, it must happen before we
@@ -762,13 +727,6 @@ btree_xlog_mark_page_halfdead(uint8 info, XLogReaderState *record)
 	Page		page;
 	BTPageOpaque pageop;
 	IndexTupleData trunctuple;
-	RelFileNode rnode;
-	BlockNumber blkno;
-
-	XLogRecGetBlockTag(record, 1, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
 
 	/*
 	 * In normal operation, we would lock all the pages this WAL record
@@ -852,26 +810,9 @@ btree_xlog_unlink_page(uint8 info, XLogReaderState *record)
 	Buffer		buffer;
 	Page		page;
 	BTPageOpaque pageop;
-	RelFileNode rnode;
-	BlockNumber blkno;
 
 	leftsib = xlrec->leftsib;
 	rightsib = xlrec->rightsib;
-
-	XLogRecGetBlockTag(record, 2, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
-	if (leftsib != P_NONE)
-	{
-		XLogRecGetBlockTag(record, 1, &rnode, NULL, &blkno);
-		ptrack_add_block_redo(rnode, blkno);
-	}
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
-	if (XLogRecHasBlockRef(record, 3))
-	{
-		XLogRecGetBlockTag(record, 3, &rnode, NULL, &blkno);
-		ptrack_add_block_redo(rnode, blkno);
-	}
 
 	/*
 	 * In normal operation, we would lock all the pages this WAL record
@@ -983,11 +924,6 @@ btree_xlog_newroot(XLogReaderState *record)
 	BTPageOpaque pageop;
 	char	   *ptr;
 	Size		len;
-	RelFileNode rnode;
-	BlockNumber blkno;
-
-	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
-	ptrack_add_block_redo(rnode, blkno);
 
 	buffer = XLogInitBufferForRedo(record, 0);
 	page = (Page) BufferGetPage(buffer);

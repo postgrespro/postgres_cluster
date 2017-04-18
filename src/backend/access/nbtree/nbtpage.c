@@ -26,7 +26,6 @@
 #include "access/transam.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
-#include "access/ptrack.h"
 #include "miscadmin.h"
 #include "storage/indexfsm.h"
 #include "storage/lmgr.h"
@@ -222,8 +221,6 @@ _bt_getroot(Relation rel, int access)
 		rootopaque->btpo_cycleid = 0;
 
 		/* NO ELOG(ERROR) till meta is updated */
-		ptrack_add_block(rel, BufferGetBlockNumber(rootbuf));
-		ptrack_add_block(rel, BufferGetBlockNumber(metabuf));
 		START_CRIT_SECTION();
 
 		metad->btm_root = rootblkno;
@@ -796,7 +793,6 @@ _bt_delitems_vacuum(Relation rel, Buffer buf,
 	BTPageOpaque opaque;
 
 	/* No ereport(ERROR) until changes are logged */
-	ptrack_add_block(rel, BufferGetBlockNumber(buf));
 	START_CRIT_SECTION();
 
 	/* Fix the page */
@@ -873,7 +869,6 @@ _bt_delitems_delete(Relation rel, Buffer buf,
 	Assert(nitems > 0);
 
 	/* No ereport(ERROR) until changes are logged */
-	ptrack_add_block(rel, BufferGetBlockNumber(buf));
 	START_CRIT_SECTION();
 
 	/* Fix the page */
@@ -1415,8 +1410,6 @@ _bt_mark_page_halfdead(Relation rel, Buffer leafbuf, BTStack stack)
 	PredicateLockPageCombine(rel, leafblkno, leafrightsib);
 
 	/* No ereport(ERROR) until changes are logged */
-	ptrack_add_block(rel, BufferGetBlockNumber(topparent));
-	ptrack_add_block(rel, BufferGetBlockNumber(leafbuf));
 	START_CRIT_SECTION();
 
 	/*
@@ -1739,12 +1732,6 @@ _bt_unlink_halfdead_page(Relation rel, Buffer leafbuf, bool *rightsib_empty)
 	 */
 
 	/* No ereport(ERROR) until changes are logged */
-	ptrack_add_block(rel, BufferGetBlockNumber(rbuf));
-	ptrack_add_block(rel, BufferGetBlockNumber(buf));
-	if (BufferIsValid(lbuf))
-		ptrack_add_block(rel, BufferGetBlockNumber(lbuf));
-	if (BufferIsValid(metabuf))
-		ptrack_add_block(rel, BufferGetBlockNumber(metabuf));
 	START_CRIT_SECTION();
 
 	/*

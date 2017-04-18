@@ -16,7 +16,6 @@
 
 #include "access/gin_private.h"
 #include "access/xloginsert.h"
-#include "access/ptrack.h"
 #include "miscadmin.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
@@ -386,9 +385,6 @@ ginPlaceToPage(GinBtree btree, GinBtreeStack *stack,
 	else if (rc == GPTP_INSERT)
 	{
 		/* It will fit, perform the insertion */
-		ptrack_add_block(btree->index, BufferGetBlockNumber(stack->buffer));
-		if (BufferIsValid(childbuf))
-			ptrack_add_block(btree->index, BufferGetBlockNumber(childbuf));
 		START_CRIT_SECTION();
 
 		if (RelationNeedsWAL(btree->index))
@@ -538,12 +534,6 @@ ginPlaceToPage(GinBtree btree, GinBtreeStack *stack,
 		 * the new contents of the root.
 		 */
 
-		ptrack_add_block(btree->index, BufferGetBlockNumber(rbuffer));
-		ptrack_add_block(btree->index, BufferGetBlockNumber(stack->buffer));
-		if (stack->parent == NULL)
-			ptrack_add_block(btree->index, BufferGetBlockNumber(lbuffer));
-		if (BufferIsValid(childbuf))
-			ptrack_add_block(btree->index, BufferGetBlockNumber(childbuf));
 		START_CRIT_SECTION();
 
 		MarkBufferDirty(rbuffer);

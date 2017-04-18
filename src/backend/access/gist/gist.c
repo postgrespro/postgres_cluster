@@ -16,7 +16,6 @@
 
 #include "access/gist_private.h"
 #include "access/gistscan.h"
-#include "access/ptrack.h"
 #include "catalog/pg_collation.h"
 #include "miscadmin.h"
 #include "utils/index_selfuncs.h"
@@ -123,7 +122,6 @@ gistbuildempty(Relation index)
 	LockBuffer(buffer, BUFFER_LOCK_EXCLUSIVE);
 
 	/* Initialize and xlog buffer */
-	ptrack_add_block(index, BufferGetBlockNumber(buffer));
 	START_CRIT_SECTION();
 	GISTInitBuffer(buffer, F_LEAF);
 	MarkBufferDirty(buffer);
@@ -449,10 +447,6 @@ gistplacetopage(Relation rel, Size freespace, GISTSTATE *giststate,
 		if (RelationNeedsWAL(rel))
 			XLogEnsureRecordSpace(npage, 1 + npage * 2);
 
-		for (ptr = dist; ptr; ptr = ptr->next)
-			ptrack_add_block(rel, BufferGetBlockNumber(ptr->buffer));
-		if (BufferIsValid(leftchildbuf))
-			ptrack_add_block(rel, BufferGetBlockNumber(leftchildbuf));
 		START_CRIT_SECTION();
 
 		/*
@@ -502,9 +496,6 @@ gistplacetopage(Relation rel, Size freespace, GISTSTATE *giststate,
 		/*
 		 * Enough space. We also get here if ntuples==0.
 		 */
-		ptrack_add_block(rel, BufferGetBlockNumber(buffer));
-		if (BufferIsValid(leftchildbuf))
-			ptrack_add_block(rel, BufferGetBlockNumber(leftchildbuf));
 		START_CRIT_SECTION();
 
 		/*
@@ -1528,7 +1519,6 @@ gistvacuumpage(Relation rel, Page page, Buffer buffer)
 
 	if (ndeletable > 0)
 	{
-		ptrack_add_block(rel, BufferGetBlockNumber(buffer));
 		START_CRIT_SECTION();
 
 		PageIndexMultiDelete(page, deletable, ndeletable);

@@ -27,7 +27,6 @@
 #include "access/brin_xlog.h"
 #include "access/rmgr.h"
 #include "access/xloginsert.h"
-#include "access/ptrack.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
@@ -476,8 +475,6 @@ revmap_physical_extend(BrinRevmap *revmap)
 	 * Ok, we have now locked the metapage and the target block. Re-initialize
 	 * it as a revmap page.
 	 */
-	ptrack_add_block(irel, BufferGetBlockNumber(buf));
-	ptrack_add_block(irel, BufferGetBlockNumber(revmap->rm_metaBuf));
 	START_CRIT_SECTION();
 
 	/* the rm_tids array is initialized to all invalid by PageInit */
