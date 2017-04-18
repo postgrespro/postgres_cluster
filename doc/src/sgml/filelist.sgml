@@ -180,6 +180,7 @@
 <!ENTITY errcodes   SYSTEM "errcodes.sgml">
 <!ENTITY features   SYSTEM "features.sgml">
 <!ENTITY keywords   SYSTEM "keywords.sgml">
+<!ENTITY config-one-c   SYSTEM "config-one-c.sgml">
 <!ENTITY sourcerepo SYSTEM "sourcerepo.sgml">
 
 <!ENTITY release    SYSTEM "release.sgml">
