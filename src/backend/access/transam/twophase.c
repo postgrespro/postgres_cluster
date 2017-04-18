@@ -2633,6 +2633,7 @@ PrepareRedoRemove(TransactionId xid, bool giveWarning)
 {
 	GlobalTransaction gxact = NULL;
 	int			i;
+	bool		found = false;
 
 	Assert(LWLockHeldByMeInMode(TwoPhaseStateLock, LW_EXCLUSIVE));
 	Assert(RecoveryInProgress());
@@ -2644,6 +2645,7 @@ PrepareRedoRemove(TransactionId xid, bool giveWarning)
 		if (gxact->xid == xid)
 		{
 			Assert(gxact->inredo);
+			found = true;
 			break;
 		}
 	}
@@ -2651,7 +2653,7 @@ PrepareRedoRemove(TransactionId xid, bool giveWarning)
 	/*
 	 * Just leave if there is nothing, this is expected during WAL replay.
 	 */
-	if (gxact == NULL)
+	if (!found)
 		return;
 
 	/*
