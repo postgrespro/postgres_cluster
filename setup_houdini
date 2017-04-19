@@ -1,0 +1,20 @@
+
+
+
+ssh-keygen -t rsa -f worker
+
+cat <<-KEY > host_key.pub
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDfLQY4mn3VU1fZ0XB0w2qJOo/CEEo73sT9sGIGh/y+NRogx6oj42XB/3ko4WUXg8xgHlSVSwSD4M6V3LjQW8bLdM0qDgMe4Hxhg9OhAedw6Zwmo/c8yPhH4dW1BDl3RXv/laxG0/0C2mZfod/78ShcARy4pJe8oBi8eyqnfIWGWCeojLJzfb85W3kdomWcq9tZcoMtwaHJ5a998B2kixLRif61SRQD+1G+Xz/oD2mtUIaaKgZUXNnJ2xm+MnIErNFi95L0gttB27BRQ72VTSUBIbD2JOIBuVT/9fjjjH79FxsPGIcDgDM7VRmlfBhl5k05oH5NBCNlNgDzv3if5hzn stas@bladerunner
+KEY
+
+cat <<-JSON > worker.json
+{
+    "name": "stas",
+    "platform": "houdini",
+    "tags": ["macos","amd64"],
+    "resource_types": []
+}
+JSON
+
+ssh -p 2222 br.theor.mephi.ru -i worker -o UserKnownHostsFile=host_key.pub -R0.0.0.0:0:127.0.0.1:7777 forward-worker < worker.json
+
