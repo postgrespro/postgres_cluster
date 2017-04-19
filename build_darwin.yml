@@ -9,4 +9,6 @@ inputs:
   path: postgresql
 
 run:
+  # path: ls
+  # args: ["-la","postgresql"]
   path: postgresql/check.sh

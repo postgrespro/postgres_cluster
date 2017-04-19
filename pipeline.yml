@@ -6,11 +6,8 @@ resources:
     uri: https://github.com/postgrespro/postgres_cluster
     branch: ci2
 
-
 jobs:
 - name: runtest_freebsd
-  public: true
-  serial: true
   plan:
   - get: postgresql
     trigger: true
@@ -18,8 +15,6 @@ jobs:
     file: postgresql/build.yml
 
 - name: runtest_darwin
-  public: true
-  serial: true
   plan:
   - get: postgresql
     trigger: true
