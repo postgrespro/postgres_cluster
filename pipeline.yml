@@ -8,10 +8,20 @@ resources:
 
 
 jobs:
-- name: runtests
+- name: runtest_freebsd
   public: true
   serial: true
   plan:
   - get: postgresql
-  - task: runtests
+    trigger: true
+  - task: tests_freebsd
     file: postgresql/build.yml
+
+- name: runtest_darwin
+  public: true
+  serial: true
+  plan:
+  - get: postgresql
+    trigger: true
+  - task: tests_darwin
+    file: postgresql/build_darwin.yml

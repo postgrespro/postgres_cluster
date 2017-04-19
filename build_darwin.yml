@@ -1,0 +1,12 @@
+platform: darwin
+
+# image_resource:
+#   type: docker-image
+#   source: {repository: concourse/bin-ci}
+
+inputs:
+- name: postgresql
+  path: postgresql
+
+run:
+  path: postgresql/check.sh
