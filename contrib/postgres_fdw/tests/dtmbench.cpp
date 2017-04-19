@@ -52,6 +52,7 @@ struct config
     int updatePercent;
 	int nShards;
     string connection;
+	bool prepared;
 
     config() {
 		nShards = 1;
@@ -60,6 +61,7 @@ struct config
         nIterations = 1000;
         nAccounts = 10000;
         updatePercent = 100;
+		prepared = false;
     }
 };
 
@@ -76,14 +78,14 @@ static time_t getCurrentTime()
 }
 
 
-void exec(transaction_base& txn, char const* sql, ...)
+int exec(transaction_base& txn, char const* sql, ...)
 {
     va_list args;
     va_start(args, sql);
     char buf[1024];
     vsprintf(buf, sql, args);
     va_end(args);
-    txn.exec(buf);
+    return txn.exec(buf).affected_rows();
 }
 
 template<class T>
@@ -123,15 +125,28 @@ void* writer(void* arg)
 {
     thread& t = *(thread*)arg;
     connection conn(cfg.connection);
+	if (cfg.prepared) { 
+		conn.prepare("transfer", "update t set v = v + $1 where u=$2");
+	}
     for (int i = 0; i < cfg.nIterations; i++)
     {
 		work txn(conn);
         int srcAcc = random() % cfg.nAccounts;
         int dstAcc = random() % cfg.nAccounts;
         try {
-            if (random() % 100 < cfg.updatePercent) {
-                exec(txn, "update t set v = v - 1 where u=%d", srcAcc);
-                exec(txn, "update t set v = v + 1 where u=%d", dstAcc);
+            if (random() % 100 < cfg.updatePercent) {				
+                int rc = cfg.prepared 
+					? txn.prepared("transfer")(-1)(srcAcc).exec().affected_rows()
+					: exec(txn, "update t set v = v - 1 where u=%d", srcAcc);
+				if (rc != 1) { 
+					printf("Failed to withdraw from account %d\n", srcAcc);
+				}
+                rc = cfg.prepared 
+					? txn.prepared("transfer")(1)(dstAcc).exec().affected_rows()
+					: exec(txn, "update t set v = v + 1 where u=%d", dstAcc);
+				if (rc != 1) { 
+					printf("Failed to deposit to account %d\n", dstAcc);
+				}				
                 t.updates += 2;
             } else {
                 int64_t sum = execQuery<int64_t>(txn, "select v from t where u=%d", srcAcc)
@@ -158,7 +173,7 @@ void initializeDatabase()
     connection conn(cfg.connection);
 	if (cfg.nShards == 0) { 
 		work txn(conn);
-		exec(txn, "insert into t (select generate_series(1,%d), 0)", cfg.nAccounts);
+		exec(txn, "insert into t (select generate_series(0,%d), 0)", cfg.nAccounts-1);
 		txn.commit();
 	} else { 
 		int accountsPerShard = (cfg.nAccounts + cfg.nShards - 1)/cfg.nShards;
@@ -206,6 +221,9 @@ int main (int argc, char* argv[])
                 initialize = true;
 				cfg.nShards = atoi(argv[++i]);
                 continue;
+            case 'P':
+			    cfg.prepared = true;
+                continue;
             }
         }
         printf("Options:\n"
@@ -215,7 +233,8 @@ int main (int argc, char* argv[])
                "\t-n N\tnumber of iterations (1000)\n"
                "\t-p N\tupdate percent (100)\n"
                "\t-c STR\tdatabase connection string\n"
-               "\t-i N\tinitialize N shards\n");
+               "\t-i N\tinitialize N shards\n"
+               "\t-P\tuse prepared statements\n");
         return 1;
     }
 
@@ -263,7 +282,7 @@ int main (int argc, char* argv[])
     printf(
         "{\"tps\":%f, \"transactions\":%ld,"
         " \"selects\":%ld, \"updates\":%ld, \"aborts\":%ld, \"abort_percent\": %d,"
-        " \"readers\":%d, \"writers\":%d, \"update_percent\":%d, \"accounts\":%d, \"iterations\":%d ,\"shards\":%d}\n",
+        " \"readers\":%d, \"writers\":%d, \"update_percent\":%d, \"accounts\":%d, \"iterations\":%d ,\"shards\":%d, \"prepared\":%d}\n",
         (double)(nTransactions*USEC)/elapsed,
         nTransactions,
         nSelects,
@@ -275,7 +294,8 @@ int main (int argc, char* argv[])
         cfg.updatePercent,
         cfg.nAccounts,
         cfg.nIterations,
-		cfg.nShards);
+		cfg.nShards,
+		cfg.prepared);
 
     return 0;
 }
