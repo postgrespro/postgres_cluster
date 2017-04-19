@@ -6,6 +6,7 @@ resources:
     uri: https://github.com/postgrespro/postgres_cluster
     branch: ci2
 
+
 jobs:
 - name: runtests
   public: true
