@@ -22,6 +22,11 @@
 
 #include "rumsort.h"
 
+/* RUM distance strategies */
+#define RUM_DISTANCE			20
+#define RUM_LEFT_DISTANCE		21
+#define RUM_RIGHT_DISTANCE		22
+
 /*
  * Page opaque data in a inverted index page.
  *
@@ -233,10 +238,19 @@ typedef signed char RumNullCategory;
 #define RumSetPostingOffset(itup,n) ItemPointerSetBlockNumber(&(itup)->t_tid,n)
 #define RumGetPosting(itup)			((Pointer) ((char*)(itup) + RumGetPostingOffset(itup)))
 
+/*
+ * Maximum size of an item on entry tree page. Make sure that we fit at least
+ * three items on each page. (On regular B-tree indexes, we must fit at least
+ * three items: two data items and the "high key". In RUM entry tree, we don't
+ * currently store the high key explicitly, we just use the rightmost item on
+ * the page, so it would actually be enough to fit two items.)
+ */
 #define RumMaxItemSize \
-	MAXALIGN_DOWN(((BLCKSZ - SizeOfPageHeaderData - \
-		MAXALIGN(sizeof(RumPageOpaqueData))) / 6 - \
-		sizeof(RumKey) /* right bound */))
+	Min(INDEX_SIZE_MASK, \
+		MAXALIGN_DOWN(((BLCKSZ - \
+						MAXALIGN(SizeOfPageHeaderData + 3 * sizeof(ItemIdData)) - \
+						MAXALIGN(sizeof(RumPageOpaqueData))) / 3)))
+
 
 /*
  * Access macros for non-leaf entry tuples
@@ -418,7 +432,11 @@ extern IndexBuildResult *rumbuild(Relation heap, Relation index,
 extern void rumbuildempty(Relation index);
 extern bool ruminsert(Relation index, Datum *values, bool *isnull,
 		  ItemPointer ht_ctid, Relation heapRel,
-		  IndexUniqueCheck checkUnique);
+		  IndexUniqueCheck checkUnique
+#if PG_VERSION_NUM >= 100000
+		  , struct IndexInfo *indexInfo
+#endif
+		  );
 extern void rumEntryInsert(RumState * rumstate,
 			   OffsetNumber attnum, Datum key, RumNullCategory category,
 			   RumKey * items, uint32 nitem, GinStatsData *buildStats);
@@ -601,6 +619,7 @@ typedef struct RumScanKeyData
 	bool		recheckCurItem;
 	bool		isFinished;
 	bool		orderBy;
+	bool		willSort; /* just a copy of RumScanOpaqueData.willSort */
 	ScanDirection	scanDirection;
 
 	RumScanKey	*addInfoKeys;
@@ -688,6 +707,7 @@ typedef struct RumScanOpaqueData
 	RumKey		key;
 	bool		firstCall;
 	bool		isVoidRes;		/* true if query is unsatisfiable */
+	bool		willSort;
 	RumScanType	scanType;
 	TIDBitmap  *tbm;
 
