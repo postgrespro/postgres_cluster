@@ -1,0 +1,16 @@
+---
+resources:
+- name: postgresql
+  type: git
+  source:
+    uri: https://github.com/postgrespro/postgres_cluster
+    branch: ci
+
+jobs:
+- name: runtests
+  public: true
+  serial: true
+  plan:
+  - get: postgresql
+  - task: runtests
+    file: postgresql/build.yml
