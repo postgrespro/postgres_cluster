@@ -1,10 +1,13 @@
-#!/bin/sh
+#!/usr/local/bin/bash
+
 set -e -x
 
 export CFLAGS="-O0"
 
+cd postgresql
+
 ./configure --enable-debug --enable-cassert --enable-tap-tests --enable-depend 
 
-make check
+make -j4
 
-
+gmake check

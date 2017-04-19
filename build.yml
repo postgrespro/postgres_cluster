@@ -1,4 +1,4 @@
-platform: darwin
+platform: freebsd
 
 # image_resource:
 #   type: docker-image
@@ -9,5 +9,4 @@ inputs:
   path: postgresql
 
 run:
-  path: pwd
-  #postgresql/check
+  path: postgresql/check.sh
