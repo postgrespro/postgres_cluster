@@ -4879,7 +4879,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	bool skipCommand = false;
 	bool executed = false;
 
-	MTM_LOG1("%d: Process utility statement tag=%d, context=%d, issubtrans=%d, creating_extension=%d, query=%s", 
+	MTM_LOG2("%d: Process utility statement tag=%d, context=%d, issubtrans=%d, creating_extension=%d, query=%s", 
 			 MyProcPid, nodeTag(parsetree), context, IsSubTransaction(), creating_extension, queryString);
 	switch (nodeTag(parsetree))
 	{
@@ -5133,24 +5133,14 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			break;
 	}
 
-	/* XXX: dirty. Clear on new tx */
-	/* Some "black magic here":( We want to avoid redundant execution of utility statement by ProcessUtilitySlow (which is done with PROCESS_UTILITY_SUBCOMMAND).
-	 * But if we allow only PROCESS_UTILITY_TOPLEVEL context, then we will not replicated DDL inside dynamic queries in plpgsql functions (see https://jira.postgrespro.ru/browse/CORE-526).
-	 * If we disable only PROCESS_UTILITY_SUBCOMMAND, then we will get problems with "create extension" which is executed also in PROCESS_UTILITY_QUERY context.
-	 * So workaround at this moment is to treat extension as special case. 
-	 * TODO: try to find right solution and rewrite this dummy check.
-	 */
-	if (!skipCommand && (context == PROCESS_UTILITY_TOPLEVEL || (context == PROCESS_UTILITY_QUERY && !creating_extension) || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
-		MtmUtilityProcessedInXid = InvalidTransactionId;
-
-	if (!skipCommand && !MtmTx.isReplicated && (MtmUtilityProcessedInXid == InvalidTransactionId)) {
+	if (!skipCommand && !MtmTx.isReplicated && (context == PROCESS_UTILITY_TOPLEVEL || MtmUtilityProcessedInXid != GetCurrentTransactionId())) 
+	{
 		MtmUtilityProcessedInXid = GetCurrentTransactionId();
-
-		if (context == PROCESS_UTILITY_TOPLEVEL)
+		if (context == PROCESS_UTILITY_TOPLEVEL) { 
 			MtmProcessDDLCommand(queryString, true);
-		else
+		} else { 
 			MtmProcessDDLCommand(ActivePortal->sourceText, true);
-
+		}
 		executed = true;
 	}
 
@@ -5196,6 +5186,9 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 					 create->relation->relname);
 			}
 		}
+	}
+	if (context == PROCESS_UTILITY_TOPLEVEL) { 
+		MtmUtilityProcessedInXid = InvalidTransactionId;
 	}
 }
 
