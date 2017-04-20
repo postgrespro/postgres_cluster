@@ -5177,7 +5177,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		if (relid != InvalidOid) { 
 			Oid constraint_oid;
 			Bitmapset* pk = get_primary_key_attnos(relid, true, &constraint_oid);
-			if (pk == NULL) { 
+			if (pk == NULL && !MtmVolksWagenMode) {
 				elog(WARNING, 
 					 MtmIgnoreTablesWithoutPk
 					 ? "Table %s.%s without primary will not be replicated"
