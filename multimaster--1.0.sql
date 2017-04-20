@@ -120,4 +120,4 @@ END
 $$
 LANGUAGE plpgsql;
 
-select mtm.alter_sequences();
+-- select mtm.alter_sequences();
