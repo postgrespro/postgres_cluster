@@ -35,6 +35,7 @@
 #include "access/xloginsert.h"
 #include "access/xlogreader.h"
 #include "access/xlogutils.h"
+#include "access/ptrack.h"
 #include "catalog/catversion.h"
 #include "catalog/pg_control.h"
 #include "catalog/pg_database.h"
@@ -9431,6 +9432,11 @@ xlog_redo(XLogReaderState *record)
 	else if (info == XLOG_FPI || info == XLOG_FPI_FOR_HINT)
 	{
 		Buffer		buffer;
+		RelFileNode rnode;
+		BlockNumber blkno;
+
+		XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
+		ptrack_add_block_redo(rnode, blkno);
 
 		/*
 		 * Full-page image (FPI) records contain nothing else but a backup
