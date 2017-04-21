@@ -10,4 +10,5 @@ cd postgresql
 
 make -j4
 
-gmake check
+make check
+

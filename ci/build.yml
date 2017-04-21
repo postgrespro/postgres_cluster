@@ -1,4 +1,4 @@
-platform: freebsd
+platform: necrolinux
 
 # image_resource:
 #   type: docker-image
@@ -9,4 +9,4 @@ inputs:
   path: postgresql
 
 run:
-  path: postgresql/check.sh
+  path: postgresql/run_tests.sh

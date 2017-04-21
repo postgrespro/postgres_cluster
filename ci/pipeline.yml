@@ -1,0 +1,36 @@
+---
+resources:
+- name: postgresql
+  type: git
+  source:
+    uri: https://github.com/postgrespro/postgres_cluster
+    branch: ci2
+
+jobs:
+- name: tests-freebsd32
+  plan:
+  - get: postgresql
+    trigger: true
+  - task: basic check
+    config:
+      platform: freebsd
+      inputs:
+      - name: postgresql
+        path: postgresql
+      run:
+        path: postgresql/run_tests.sh
+
+
+- name: tests-goslinux-6
+  plan:
+  - get: postgresql
+    trigger: true
+  - task: basic check
+    tags: ["goslinux-6"]
+    config:
+      platform: necrolinux
+      inputs:
+      - name: postgresql
+        path: postgresql
+      run:
+        path: postgresql/run_tests.sh
