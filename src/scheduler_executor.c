@@ -139,6 +139,13 @@ void executor_worker_main(Datum arg)
 		}
 		else if(result < 0)
 		{
+			if(result == -100)
+			{
+				snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX, 
+											"Cannot allocate memory");
+				shared->worker_exit = true;
+				shared->status = SchdExecutorError;
+			}
 			delete_worker_mem_ctx();
 			dsm_detach(seg);
 			proc_exit(0);
@@ -159,10 +166,11 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 {
 	executor_error_t EE;
 	char *error = NULL;
-	int i;
+	int i, ret;
 	job_t *job;
 	spi_response_t *r;
 	MemoryContext old, mem;
+	char buffer[1024];
 
 	EE.n = 0;
 	EE.errors = NULL;
@@ -245,24 +253,29 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 		{
 			r = execute_spi(mem, job->dosql[i]);
 		}
+		snprintf(buffer, 1024, "finalize: %s", job->dosql[i]);
+		if(!r) return -100;   /* cannot allocate memory */
+		pgstat_report_activity(STATE_RUNNING, buffer);
 		if(r->retval < 0)
 		{
 			/* success = false; */
 			*status = SchdExecutorError;
 			if(r->error)
 			{
-				push_executor_error(&EE, "error in command #%d: %s",
+				ret = push_executor_error(&EE, "error in command #%d: %s",
 															i+1, r->error);
 			}
 			else
 			{
-				push_executor_error(&EE, "error in command #%d: code: %d",
+				ret = push_executor_error(&EE, "error in command #%d: code: %d",
 															i+1, r->retval);
 			}
+			if(ret < 0)  return -100; /* cannot alloc memory */
 			destroy_spi_data(r);
 			ABORT_SPI_SNAP();
 			SetConfigOption("schedule.transaction_state", "failure", PGC_INTERNAL, PGC_S_SESSION);
-			executor_onrollback(mem, job, &EE);
+			if(executor_onrollback(mem, job, &EE) == -14000)
+									return -100;   /* cannot alloc memory */
 
 			break;
 		}
@@ -486,11 +499,13 @@ int executor_onrollback(MemoryContext mem, job_t *job, executor_error_t *ee)
 	{
 		if(r->error)
 		{
-			push_executor_error(ee, "onrollback error: %s", r->error);
+			if(push_executor_error(ee, "onrollback error: %s", r->error)) < 0)
+					return -14000;
 		}
 		else
 		{
-			push_executor_error(ee, "onrollback error: unknown: %d", r->retval);
+			if(push_executor_error(ee, "onrollback error: unknown: %d", r->retval)) < 0)
+				return -14000;
 		}
 		ABORT_SPI_SNAP();
 	}
@@ -582,6 +597,10 @@ int push_executor_error(executor_error_t *e, char *fmt, ...)
 	else
 	{
 		e->errors = repalloc(e->errors, sizeof(char *) * (e->n+1));
+	}
+	if(e->errors == NULL)
+	{	
+		return -1;
 	}
 	e->errors[e->n] = worker_alloc(sizeof(char)*(len + 1));
 	memcpy(e->errors[e->n], buf, len+1);
