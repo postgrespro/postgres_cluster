@@ -1395,7 +1395,6 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type
 	}
 	else if(nexpired > 0)
 	{
-		elog(LOG, "found expired");
 		ret = nexpired;
 		for(i=0; i < nexpired; i++)
 		{
