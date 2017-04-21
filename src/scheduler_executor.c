@@ -499,12 +499,12 @@ int executor_onrollback(MemoryContext mem, job_t *job, executor_error_t *ee)
 	{
 		if(r->error)
 		{
-			if(push_executor_error(ee, "onrollback error: %s", r->error)) < 0)
+			if(push_executor_error(ee, "onrollback error: %s", r->error) < 0)
 					return -14000;
 		}
 		else
 		{
-			if(push_executor_error(ee, "onrollback error: unknown: %d", r->retval)) < 0)
+			if(push_executor_error(ee, "onrollback error: unknown: %d", r->retval) < 0)
 				return -14000;
 		}
 		ABORT_SPI_SNAP();
