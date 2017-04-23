@@ -452,7 +452,7 @@ job_t *get_expired_cron_jobs(char *nodename, int *n, int *is_error)
 	return jobs;
 }
 
-job_t *set_job_error(job_t *j, const char *fmt, ...)
+job_t *set_job_error(MemoryContext mem, job_t *j, const char *fmt, ...)
 {
 	va_list arglist;
 	char buf[1024];
@@ -462,7 +462,7 @@ job_t *set_job_error(job_t *j, const char *fmt, ...)
 	va_end(arglist);
 
 	if(j->error) pfree(j->error);
-	j->error = my_copy_string(buf); 
+	j->error = _mcopy_string(mem, buf); 
 
 	return j;
 }
@@ -769,6 +769,46 @@ int _cron_move_job_to_log(job_t *j, bool status)
 		}
 	}
 	return ret;
+}
+
+void copy_job(MemoryContext mem, job_t *dst, job_t *src)
+{
+	int i;
+
+	memcpy(dst, src, sizeof(job_t));
+	if(src->node) dst->node = _mcopy_string(mem, src->node);
+	if(src->executor) dst->executor = _mcopy_string(mem, src->executor);
+	if(src->owner) dst->owner = _mcopy_string(mem, src->owner);
+	if(src->onrollback) dst->onrollback = _mcopy_string(mem, src->onrollback);
+	if(src->next_time_statement) dst->next_time_statement = _mcopy_string(mem, src->next_time_statement);
+	if(src->error) dst->error = _mcopy_string(mem, src->error);
+	if(src->dosql_n && src->dosql)
+	{
+		src->dosql = MemoryContextAlloc(mem, sizeof(char *) * src->dosql_n);
+		for(i=0; i < src->dosql_n; i++)
+		{
+			if(src->dosql[i])
+				dst->dosql[i] = _mcopy_string(mem, src->dosql[i]);
+			else
+				dst->dosql[i] = NULL;
+		}
+	}
+	if(src->sql_params_n && src->sql_params)
+	{
+		src->sql_params = MemoryContextAlloc(mem, sizeof(char *) * src->sql_params_n);
+		for(i=0; i < src->sql_params_n; i++)
+		{
+			if(src->sql_params[i])
+				dst->sql_params[i] = _mcopy_string(mem, src->sql_params[i]);
+			else
+				dst->sql_params[i] = NULL;
+		}
+	}
+	if(src->depends_on_n > 0)
+	{
+		dst->depends_on = MemoryContextAlloc(mem, sizeof(int64) * src->depends_on_n);
+		memcpy(dst->depends_on, src->depends_on, sizeof(int64) * src->depends_on_n);
+	}
 }
 
 void destroy_job(job_t *j, int selfdestroy)

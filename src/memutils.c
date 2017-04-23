@@ -39,4 +39,5 @@ void delete_worker_mem_ctx(void)
 {
 	MemoryContextSwitchTo(TopMemoryContext);
 	MemoryContextDelete(SchedulerWorkerContext);
+	SchedulerWorkerContext = NULL;
 }

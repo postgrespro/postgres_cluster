@@ -66,6 +66,8 @@ typedef struct {
 } scheduler_manager_pool_t;
 
 typedef struct {
+	MemoryContext mem_ctx;
+
 	char *database;
 	char *nodename;
 
@@ -86,12 +88,13 @@ int checkSchedulerNamespace(void);
 extern PGDLLEXPORT void manager_worker_main(Datum arg);
 int get_scheduler_maxworkers(void);
 int get_scheduler_at_max_workers(void);
-char *get_scheduler_nodename(void);
-scheduler_manager_ctx_t *initialize_scheduler_manager_context(char *dbname, dsm_segment *seg);
+char *get_scheduler_nodename(MemoryContext mem);
+scheduler_manager_ctx_t *initialize_scheduler_manager_context(MemoryContext mem,char *dbname, dsm_segment *seg);
 int refresh_scheduler_manager_context(scheduler_manager_ctx_t *ctx);
 void destroy_scheduler_manager_context(scheduler_manager_ctx_t *ctx);
 int scheduler_manager_stop(scheduler_manager_ctx_t *ctx);
 scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *nt);
+scheduler_manager_slot_t *init_manager_slot(MemoryContext mem);
 bool jsonb_has_key(Jsonb *J, const char *name);
 bool _is_in_rule_array(Jsonb *J, const char *name, int value);
 TimestampTz *scheduler_calc_next_task_time(scheduler_task_t *task, TimestampTz start, TimestampTz stop, int first_time, int *ntimes);
@@ -117,8 +120,8 @@ void set_slots_stat_report(scheduler_manager_ctx_t *ctx);
 bool check_parent_stop_signal(scheduler_manager_ctx_t *ctx, schd_manager_share_t *shared);
 int set_cron_job_started(job_t *job);
 int set_at_job_started(job_t *job);
-int init_manager_pool(scheduler_manager_pool_t *p, int N);
-int refresh_manager_pool(const char *database, const char *name, scheduler_manager_pool_t *p, int N);
+int init_manager_pool(MemoryContext mem, scheduler_manager_pool_t *p, int N);
+int refresh_manager_pool(MemoryContext mem, const char *database, const char *name, scheduler_manager_pool_t *p, int N);
 void destroy_scheduler_manager_pool(scheduler_manager_pool_t *p);
 void init_executor_shared_data(schd_executor_share_t *data, scheduler_manager_ctx_t *ctx, job_t *job);
 int start_at_worker(scheduler_manager_ctx_t *ctx, int pos);
