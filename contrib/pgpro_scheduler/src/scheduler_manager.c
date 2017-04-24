@@ -236,7 +236,6 @@ int refresh_manager_pool(MemoryContext mem, const char *database, const char *na
 {
 	int i, busy;
 	scheduler_manager_slot_t **old;
-
 	if(N == p->len) return 0; /* we have nothing to change */
 
 	elog(LOG, "Scheduler Manager %s: Change available %s workers number %d => %d", database,  name, p->len, N);
