@@ -58,7 +58,7 @@ int checkSchedulerNamespace(void)
 
 	schema = GetConfigOption("schedule.schema", false, true);
 
-	START_SPI_SNAP();
+	START_SPI_SNAP(); 
 
 	values[0] = CStringGetTextDatum(schema);
 	count = select_count_with_args(sql, 1, argtypes, values, NULL);
@@ -67,7 +67,7 @@ int checkSchedulerNamespace(void)
 	{
 		STOP_SPI_SNAP();
 		elog(ERROR, "Scheduler manager: %s: cannot check namespace: sql error",
-													MyBgworkerEntry->bgw_name);
+													MyBgworkerEntry->bgw_name); 
 	}
 	else if(count > 1 || count == 0 )
 	{
@@ -83,7 +83,7 @@ int checkSchedulerNamespace(void)
 	{
 		STOP_SPI_SNAP();
 		elog(ERROR, "Scheduler manager: %s: cannot check namespace: "
-					"unknown error %d", MyBgworkerEntry->bgw_name, count);
+					"unknown error %d", MyBgworkerEntry->bgw_name, count); 
 	}
 	STOP_SPI_SNAP();
 
@@ -124,21 +124,21 @@ int get_scheduler_at_max_workers(void)
 	return var;
 }
 
-char *get_scheduler_nodename(void)
+char *get_scheduler_nodename(MemoryContext mem)
 {
 	const char *opt;
 	opt = GetConfigOption("schedule.nodename", true, false);
 
-	return _copy_string((char *)(opt == NULL || strlen(opt) == 0 ? "master": opt));
+	return _mcopy_string(mem, (char *)(opt == NULL || strlen(opt) == 0 ? "master": opt));
 }
 
-int init_manager_pool(scheduler_manager_pool_t *p, int N)
+int init_manager_pool(MemoryContext mem, scheduler_manager_pool_t *p, int N)
 {
 	int i;
 
 	p->len = N;
 	p->free = N;
-	p->slots = worker_alloc(sizeof(scheduler_manager_slot_t *) * p->len);
+	p->slots = MemoryContextAlloc(mem, sizeof(scheduler_manager_slot_t *) * p->len);
 	for(i=0; i < N; i++)
 	{
 		p->slots[i] = NULL;
@@ -147,20 +147,21 @@ int init_manager_pool(scheduler_manager_pool_t *p, int N)
 	return N;
 }
 
-scheduler_manager_ctx_t *initialize_scheduler_manager_context(char *dbname, dsm_segment *seg)
+scheduler_manager_ctx_t *initialize_scheduler_manager_context(MemoryContext mem, char *dbname, dsm_segment *seg)
 {
 	scheduler_manager_ctx_t *ctx;
 
-	ctx = worker_alloc(sizeof(scheduler_manager_ctx_t));
+	ctx = MemoryContextAlloc(mem, sizeof(scheduler_manager_ctx_t));
 
-	ctx->nodename = get_scheduler_nodename();
-	ctx->database = _copy_string(dbname);
-	ctx->seg = seg;
+	ctx->mem_ctx = mem;
+	ctx->nodename = get_scheduler_nodename(mem);
+	ctx->database = _mcopy_string(mem, dbname);
+	ctx->seg = seg; 
 
 	/* initialize cront workers pool */
-	init_manager_pool(&(ctx->cron), get_scheduler_maxworkers());
+	init_manager_pool(mem, &(ctx->cron), get_scheduler_maxworkers());
 	/* initialize at workers pool */
-	init_manager_pool(&(ctx->at), get_scheduler_at_max_workers());
+	init_manager_pool(mem, &(ctx->at), get_scheduler_at_max_workers());
 
 	ctx->next_at_time = 0;
 	ctx->next_checkjob_time = 0;
@@ -186,13 +187,13 @@ int refresh_manager_at_pool(scheduler_manager_ctx_t *ctx, scheduler_manager_pool
 		pgstat_report_activity(STATE_RUNNING, "extend the number of AT workers");
 
 		old = p->slots;
-		p->slots = worker_alloc(sizeof(scheduler_manager_slot_t *) * N);
+		p->slots = MemoryContextAlloc(ctx->mem_ctx, sizeof(scheduler_manager_slot_t *) * N);
 		for(i=0; i < N; i++)
 		{
 			p->slots[i] = NULL;
 		}
 		for(i=0; i < p->len; i++)
-		{
+		{ 
 			p->slots[i] = old[i];
 		}
 		pfree(old);
@@ -209,7 +210,7 @@ int refresh_manager_at_pool(scheduler_manager_ctx_t *ctx, scheduler_manager_pool
 		pgstat_report_activity(STATE_RUNNING, "shrink the number of workers");
 
 		old = p->slots;
-		p->slots = worker_alloc(sizeof(scheduler_manager_slot_t *) * N);
+		p->slots = MemoryContextAlloc(ctx->mem_ctx, sizeof(scheduler_manager_slot_t *) * N);
 		for(i=0; i < N; i++)
 		{
 			p->slots[i] = old[i];
@@ -231,7 +232,7 @@ int refresh_manager_at_pool(scheduler_manager_ctx_t *ctx, scheduler_manager_pool
 	return 0;
 }
 
-int refresh_manager_pool(const char *database, const char *name, scheduler_manager_pool_t *p, int N)
+int refresh_manager_pool(MemoryContext mem, const char *database, const char *name, scheduler_manager_pool_t *p, int N)
 {
 	int i, busy;
 	scheduler_manager_slot_t **old;
@@ -244,13 +245,13 @@ int refresh_manager_pool(const char *database, const char *name, scheduler_manag
 		pgstat_report_activity(STATE_RUNNING, "extend the number of workers");
 
 		old = p->slots;
-		p->slots = worker_alloc(sizeof(scheduler_manager_slot_t *) * N);
+		p->slots = MemoryContextAlloc(mem, sizeof(scheduler_manager_slot_t *) * N);
 		for(i=0; i < N; i++)
 		{
 			p->slots[i] = NULL;
 		}
 		for(i=0; i < p->len; i++)
-		{
+		{ 
 			p->slots[i] = old[i];
 		}
 		pfree(old);
@@ -289,7 +290,7 @@ int refresh_scheduler_manager_context(scheduler_manager_ctx_t *ctx)
 	while(1)
 	{
 		if(waitCron > 0)
-			waitCron = refresh_manager_pool(ctx->database, "cron", &(ctx->cron), Ncron);
+			waitCron = refresh_manager_pool(ctx->mem_ctx, ctx->database, "cron", &(ctx->cron), Ncron);
 		if(waitCron == 0) break;
 
 		pgstat_report_activity(STATE_RUNNING, "wait for some workers free slots");
@@ -334,7 +335,7 @@ void destroy_scheduler_manager_context(scheduler_manager_ctx_t *ctx)
 	if(ctx->nodename) pfree(ctx->nodename);
 	if(ctx->database) pfree(ctx->database);
 
-	pfree(ctx);
+	pfree(ctx); 
 }
 
 int scheduler_manager_stop(scheduler_manager_ctx_t *ctx)
@@ -392,7 +393,7 @@ scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *
 			processed = SPI_processed;
 			tupdesc = SPI_tuptable->tupdesc;
 
-			tasks = worker_alloc(sizeof(scheduler_task_t) * processed);
+			tasks = palloc(sizeof(scheduler_task_t) * processed);
 
 			for(i = 0; i < processed; i++)
 			{
@@ -402,7 +403,7 @@ scheduler_task_t *scheduler_get_active_tasks(scheduler_manager_ctx_t *ctx, int *
 				tasks[i].rule = is_null ? NULL: DatumGetJsonb(dat);
 				tasks[i].postpone = get_interval_seconds_from_spi(NULL, i, 3, 0);
 				tasks[i].next = get_timestamp_from_spi(NULL, i, 4, 0);
-				statement = get_text_from_spi(NULL, i, 5);
+				statement = get_text_from_spi(CurrentMemoryContext, NULL, i, 5);
 				if(statement)
 				{
 					tasks[i].has_next_time_statement = true;
@@ -471,7 +472,7 @@ void fill_cron_array_from_rule(Jsonb *J, const char *name, bit_array_t *ce, int 
 		)
 	)
 	{
-		if(v->type == jbvArray)
+		if(v->type == jbvArray)	
 		{
 			VN = v->val.array.nElems;
 		}
@@ -492,11 +493,11 @@ void fill_cron_array_from_rule(Jsonb *J, const char *name, bit_array_t *ce, int 
 
 bit_array_t *convert_rule_to_cron(Jsonb *J, bit_array_t *cron)
 {
-	fill_cron_array_from_rule(J, "days", &cron[CEO_DAY_POS], CE_DAYS_LEN, 1);
-	fill_cron_array_from_rule(J, "wdays", &cron[CEO_DOW_POS], CE_DOWS_LEN, 0);
-	fill_cron_array_from_rule(J, "hours", &cron[CEO_HRS_POS], CE_HOURS_LEN, 0);
-	fill_cron_array_from_rule(J, "minutes", &cron[CEO_MIN_POS], CE_MINUTES_LEN, 0);
-	fill_cron_array_from_rule(J, "months", &cron[CEO_MON_POS], CE_MONTHS_LEN, 1);
+	fill_cron_array_from_rule(J, "days", &cron[CEO_DAY_POS], CE_DAYS_LEN, 1); 
+	fill_cron_array_from_rule(J, "wdays", &cron[CEO_DOW_POS], CE_DOWS_LEN, 0); 
+	fill_cron_array_from_rule(J, "hours", &cron[CEO_HRS_POS], CE_HOURS_LEN, 0); 
+	fill_cron_array_from_rule(J, "minutes", &cron[CEO_MIN_POS], CE_MINUTES_LEN, 0); 
+	fill_cron_array_from_rule(J, "months", &cron[CEO_MON_POS], CE_MONTHS_LEN, 1); 
 	return cron;
 }
 
@@ -587,14 +588,14 @@ char **get_dates_array_from_rule(scheduler_task_t *task, int *num)
 	if(v && v->type == jbvBinary && v->val.binary.data->header & JB_FARRAY)
 	{
 		VN = v->val.binary.data->header & JB_CMASK;
-		dates = worker_alloc(sizeof(char *) * VN);
+		dates = palloc(sizeof(char *) * VN);
 		for(i=0; i < VN; i++)
 		{
 			ai = getIthJsonbValueFromContainer(v->val.binary.data, i);
 			if(ai->type == jbvString && ai->val.string.len >= 16)
 			{
 				slen = ai->val.string.len > 16 ? 16: ai->val.string.len;
-				dates[*num] = worker_alloc(sizeof(char) * 17);
+				dates[*num] = palloc(sizeof(char) * 17);
 				memcpy(dates[*num], ai->val.string.val, slen);
 				dates[*num][16] = 0;
 				if(dates[*num][10] == 'T') dates[*num][10] = ' ';
@@ -624,7 +625,7 @@ TimestampTz *scheduler_calc_next_task_time(scheduler_task_t *task, TimestampTz s
 
 	*ntimes = 0;
 
-	if(task->date1 > 0 && task->date1 > stop) return NULL;
+	if(task->date1 > 0 && task->date1 > stop) return NULL; 
 	if(task->date1 > 0 && task->date1 > start) start = task->date1;
 	if(task->date2 > 0 && task->date2 < start) return NULL;
 	if(task->date2 > 0 && task->date2 < stop) stop = task->date2;
@@ -632,8 +633,8 @@ TimestampTz *scheduler_calc_next_task_time(scheduler_task_t *task, TimestampTz s
 	if(first_time && jsonb_has_key(task->rule, "onstart"))
 	{
 		*ntimes  = 1;
-		nextarray = worker_alloc(sizeof(TimestampTz));
-		nextarray[0] = _round_timestamp_to_minute(GetCurrentTimestamp());
+		nextarray = palloc(sizeof(TimestampTz));
+		nextarray[0] = _round_timestamp_to_minute(GetCurrentTimestamp()); 
 
 		return nextarray;
 	}
@@ -642,7 +643,7 @@ TimestampTz *scheduler_calc_next_task_time(scheduler_task_t *task, TimestampTz s
 		if(task->next >= start && stop >= task->next)
 		{
 			*ntimes  = 1;
-			nextarray = worker_alloc(sizeof(TimestampTz));
+			nextarray = palloc(sizeof(TimestampTz));
 			nextarray[0] = task->next;
 
 			return nextarray;
@@ -660,7 +661,7 @@ TimestampTz *scheduler_calc_next_task_time(scheduler_task_t *task, TimestampTz s
 	curr += SECS_PER_MINUTE;
 #endif
 
-	nextarray = worker_alloc(sizeof(TimestampTz) * REALLOC_STEP);
+	nextarray = palloc(sizeof(TimestampTz) * REALLOC_STEP);
 	convert_rule_to_cron(task->rule, cron);
 
 /*	elog(LOG, "minutes: %s", bit_array_string(&cron[CEO_MIN_POS]));
@@ -789,8 +790,9 @@ int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 			}
 			else
 			{
-				item->job = worker_alloc(sizeof(job_t));
-				memcpy(item->job, job, sizeof(job_t));
+				item->job = MemoryContextAlloc(ctx->mem_ctx, sizeof(job_t));
+				copy_job(ctx->mem_ctx, item->job, job);
+				/* memcpy(item->job, job, sizeof(job_t)); */
 				item->started  = GetCurrentTimestamp();
 				item->wait_worker_to_die = false;
 				item->stop_it = job->timelimit ?
@@ -806,7 +808,7 @@ int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 				}
 				else
 				{
-					pfree(item->job);
+					destroy_job(item->job, 1);
 					return 0;
 				}
 			}
@@ -814,9 +816,10 @@ int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 		if(!started)
 		{
 			/* need to launch new worker to process job */
-			item = worker_alloc(sizeof(scheduler_manager_slot_t));
-			item->job = worker_alloc(sizeof(job_t));
-			memcpy(item->job, job, sizeof(job_t));
+			item = init_manager_slot(ctx->mem_ctx); 
+			item->job = MemoryContextAlloc(ctx->mem_ctx, sizeof(job_t));
+			copy_job(ctx->mem_ctx, item->job, job);
+			/* memcpy(item->job, job, sizeof(job_t)); */
 
 			item->started  = item->worker_started = GetCurrentTimestamp();
 			item->wait_worker_to_die = false;
@@ -825,18 +828,27 @@ int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job)
 
 			if(launch_executor_worker(ctx, item) == 0)
 			{
-				pfree(item->job);
+				destroy_job(item->job, 1);
 				pfree(item);
 				return 0;
 			}
 			p->slots[idx] = item;
 		}
 		p->free--;
-		job->cron_id = -1;  /* job copied to slot - no need to be destroyed */
+		/* job->cron_id = -1;  *//* job copied to slot - no need to be destroyed */
 
 		return 1;
 	}
 	return 0;
+}
+
+scheduler_manager_slot_t *init_manager_slot(MemoryContext mem)
+{
+	scheduler_manager_slot_t *item = MemoryContextAlloc(mem,
+										sizeof(scheduler_manager_slot_t));
+	memset(item, 0, sizeof(scheduler_manager_slot_t));
+
+	return item;
 }
 
 int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_t *item)
@@ -847,16 +859,19 @@ int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_
 	schd_executor_share_t *shm_data;
 	BgwHandleStatus status;
 	MemoryContext old;
+	ResourceOwner prev_owner;
 
 	pgstat_report_activity(STATE_RUNNING, "register scheduler executor");
 
 	segsize = (Size)sizeof(schd_executor_share_t);
 
+	prev_owner = CurrentResourceOwner;
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
-	old = MemoryContextSwitchTo(SchedulerWorkerContext);
 	seg = dsm_create(segsize, 0);
 
 	item->shared = seg;
+	item->res_owner = CurrentResourceOwner;
+
 	shm_data = dsm_segment_address(item->shared);
 
 	init_executor_shared_data(shm_data, ctx, item->job);
@@ -872,6 +887,9 @@ int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_
 	snprintf(worker.bgw_name, BGW_MAXLEN, "scheduler executor %s", shm_data->database);
 	worker.bgw_notify_pid = MyProcPid;
 
+	CurrentResourceOwner = prev_owner;
+
+	old = MemoryContextSwitchTo(ctx->mem_ctx);
 	if(!RegisterDynamicBackgroundWorker(&worker, &(item->handler)))
 	{
 		elog(LOG, "Cannot register executor worker for db: %s, cron: %d",
@@ -880,16 +898,15 @@ int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_
 		MemoryContextSwitchTo(old);
 		return 0;
 	}
+	MemoryContextSwitchTo(old);
 	status = WaitForBackgroundWorkerStartup(item->handler, &(item->pid));
 	if(status != BGWH_STARTED)
 	{
 		elog(LOG, "Cannot start executor worker for db: %s, cron: %d, status: %d",
 							shm_data->database, item->job->cron_id, status);
 		dsm_detach(item->shared);
-		MemoryContextSwitchTo(old);
 		return 0;
 	}
-	MemoryContextSwitchTo(old);
 	return item->pid;
 }
 
@@ -956,8 +973,7 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 		return 1;
 	}
 
-
-	jobs = get_jobs_to_do(ctx->nodename, type, &njobs, &is_error, p->free);
+	jobs = get_jobs_to_do(CurrentMemoryContext, ctx->nodename, type, &njobs, &is_error, p->free);
 
 	nwaiting = njobs;
 	if(is_error)
@@ -976,8 +992,7 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 	while(p->free && nwaiting)
 	{
 		N = p->free;
-		if(N > nwaiting) N = nwaiting;
-
+		if(N > nwaiting) N = nwaiting; 
 
 		for(i = start_i; i < N + start_i; i++)
 		{
@@ -985,7 +1000,7 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 				how_many_instances_on_work(ctx, &(jobs[i])): 100000;
 			if(type == CronJob && ni >= jobs[i].max_instances)
 			{
-				set_job_error(&jobs[i], "max instances limit reached");
+				set_job_error(ctx->mem_ctx, &jobs[i], "max instances limit reached");
 				START_SPI_SNAP();
 				move_job_to_log(&jobs[i], false, false);
 				STOP_SPI_SNAP();
@@ -999,17 +1014,17 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 					if(type == CronJob)
 					{
 						ts = make_date_from_timestamp(jobs[i].start_at, false);
-						set_job_error(&jobs[i],
+						set_job_error(ctx->mem_ctx, &jobs[i],
 								"Cannot set job %d@%s:00 to worker",
 								 			jobs[i].cron_id, ts);
 						pfree(ts);
 					}
 					else
 					{
-						set_job_error(&jobs[i],
+						set_job_error(ctx->mem_ctx, &jobs[i],
 								"Cannot set at job %d to worker",
 								 			jobs[i].cron_id);
-						elog(ERROR, "Cannot set job to free slot type=%d, id=%d",
+						elog(ERROR, "Cannot set job to free slot type=%d, id=%d", 
 									jobs[i].type, jobs[i].cron_id);
 					}
 					START_SPI_SNAP();
@@ -1067,6 +1082,8 @@ void destroy_slot_item(scheduler_manager_slot_t *item)
 {
 	if(item->job) destroy_job(item->job, 1);
 	dsm_detach(item->shared);
+	if(item->res_owner) ResourceOwnerDelete(item->res_owner);
+	if(item->handler) pfree(item->handler);
 	pfree(item);
 }
 
@@ -1145,8 +1162,8 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 
 			if(toremove[i].reason == RmTimeout)  /* TIME OUT */
 			{
-				set_job_error(item->job, "job timeout");
-				elog(LOG, "Terminate bgworker %d", item->pid);
+				set_job_error(ctx->mem_ctx, item->job, "job timeout");
+				elog(LOG, "Terminate bgworker %d due to job timeout", item->pid);
 				TerminateBackgroundWorker(item->handler);
 				if(GetBackgroundWorkerPid(item->handler, &tmppid) == BGWH_STARTED)
 				{
@@ -1173,7 +1190,7 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 				job_status = true;
 				if(shm_data->message[0] != 0)
 				{
-					set_job_error(item->job, "%s", shm_data->message);
+					set_job_error(ctx->mem_ctx, item->job, "%s", shm_data->message);
 				}
 			}
 			else if(toremove[i].reason == RmError)
@@ -1181,11 +1198,11 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 			    shm_data = dsm_segment_address(item->shared);
 				if(shm_data->message[0] != 0)
 				{
-					set_job_error(item->job, "%s", shm_data->message);
+					set_job_error(ctx->mem_ctx, item->job, "%s", shm_data->message);
 				}
 				else
 				{
-					set_job_error(item->job, "unknown error occured" );
+					set_job_error(ctx->mem_ctx, item->job, "unknown error occured" );
 				}
 			}
 			else if(toremove[i].reason == RmFreeSlot)
@@ -1198,7 +1215,7 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 			}
 			else
 			{
-				set_job_error(item->job, "reason: %d", toremove[i].reason);
+				set_job_error(ctx->mem_ctx, item->job, "reason: %d", toremove[i].reason);
 			}
 
 			if(removeJob)
@@ -1234,7 +1251,7 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 							update_cron_texttime(ctx,item->job->cron_id, next_time);
 							if(!item->job->error)
 							{
-								set_job_error(item->job, "set next exec time: %s", next_time_str);
+								set_job_error(ctx->mem_ctx, item->job, "set next exec time: %s", next_time_str);
 								pfree(next_time_str);
 							}
 						}
@@ -1245,13 +1262,13 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 						{
 							if(resubmit_at_job(item->job, shm_data->next_time) == -2)
 							{
-								set_job_error(item->job, "was canceled while processing");
+								set_job_error(ctx->mem_ctx, item->job, "was canceled while processing");
 								move_job_to_log(item->job, false, true);
 							}
 						}
 						else
 						{
-							set_job_error(item->job, "cannot resubmit Cron job");
+							set_job_error(ctx->mem_ctx, item->job, "cannot resubmit Cron job");
 							move_job_to_log(item->job, false, true);
 						}
 					}
@@ -1270,6 +1287,7 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 				else
 				{
 					item->is_free = true;
+					if(item->handler) pfree(item->handler); /* release worker struct */
 				}
 
 				if(toremove[i].pos != last)
@@ -1287,7 +1305,7 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 
 					for(j=i+1; j < nremove; j++)
 					{
-						if(toremove[j].pos == last)
+						if(toremove[j].pos == last) 
 						{
 							toremove[j].pos = toremove[i].pos;
 							break;
@@ -1318,7 +1336,7 @@ int mark_job_broken(scheduler_manager_ctx_t *ctx, int cron_id, char *reason)
 
 	values[0] = Int32GetDatum(cron_id);
 	values[1] = CStringGetTextDatum(reason);
-	r = execute_spi_sql_with_args(sql, 2, types, values, NULL);
+	r = execute_spi_sql_with_args(CurrentMemoryContext, sql, 2, types, values, NULL);
 	if(r->retval < 0)
 	{
 		manager_fatal_error(ctx, 0, "Cannot set cron %d broken: %s", cron_id, r->error);
@@ -1346,7 +1364,7 @@ int update_cron_texttime(scheduler_manager_ctx_t *ctx, int cron_id, TimestampTz 
 	{
 		nulls[1] = 'n';
 	}
-	r = execute_spi_sql_with_args(sql, 2, types, values, nulls);
+	r = execute_spi_sql_with_args(SchedulerWorkerContext, sql, 2, types, values, nulls);
 	ret = r->retval;
 	if(ret < 0)
 	{
@@ -1358,7 +1376,7 @@ int update_cron_texttime(scheduler_manager_ctx_t *ctx, int cron_id, TimestampTz 
 }
 
 int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
-{
+{ 
 	job_t *expired;
 	int nexpired  = 0;
 	int is_error  = 0;
@@ -1377,7 +1395,7 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type
 	pgstat_report_activity(STATE_RUNNING, "vanish expired tasks");
 
 	START_SPI_SNAP();
-	expired = type == CronJob ?
+	expired = type == CronJob ? 
 		get_expired_cron_jobs(ctx->nodename, &nexpired, &is_error):
 		get_expired_at_jobs(ctx->nodename, &nexpired, &is_error);
 	if(type == AtJob) ts_hires = true;
@@ -1389,20 +1407,19 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type
 	}
 	else if(nexpired > 0)
 	{
-		elog(LOG, "found expired");
 		ret = nexpired;
 		for(i=0; i < nexpired; i++)
 		{
-			ts = make_date_from_timestamp(expired[i].last_start_avail, ts_hires);
+			ts = make_date_from_timestamp(expired[i].last_start_avail, ts_hires); 
 			if(type == CronJob)
 			{
-				set_job_error(&expired[i],
+				set_job_error(ctx->mem_ctx, &expired[i],
 					"job cron = %d start time (%s:00) expired",
 					expired[i].cron_id, ts);
 			}
 			else
 			{
-				set_job_error(&expired[i], "job expired");
+				set_job_error(ctx->mem_ctx, &expired[i], "job expired");
 			}
 
 			move_ret  = move_job_to_log(&expired[i], 0, false);
@@ -1469,10 +1486,11 @@ int insert_at_record(char *nodename, int cron_id, TimestampTz start_at, Timestam
 		nulls[1] = 'n';
 		values[1] = 0;
 	}
-	r = execute_spi_sql_with_args(insert_sql, 4, argtypes, values, nulls);
 
+	r = execute_spi_sql_with_args(SchedulerWorkerContext, insert_sql, 4, argtypes, values, nulls);
+	
 	ret = r->retval;
-	if(r->error) *error = _copy_string(r->error);
+	if(r->error) *error = my_copy_string(r->error);
 	destroy_spi_data(r);
 
 	if(ret < 0) return ret;
@@ -1492,6 +1510,8 @@ int scheduler_make_atcron_record(scheduler_manager_ctx_t *ctx)
 	TimestampTz start, stop, tt;
 	bool realloced = false;
 	char *error;
+	MemoryContext this_ctx;
+	MemoryContext old;
 
 	start = GetCurrentTimestamp();
 	stop = timestamp_add_seconds(0, 600);
@@ -1500,6 +1520,13 @@ int scheduler_make_atcron_record(scheduler_manager_ctx_t *ctx)
 	{
 		return -1;
 	}
+	this_ctx = AllocSetContextCreate(TopMemoryContext, "ctx for at create",
+				ALLOCSET_DEFAULT_MINSIZE,
+				ALLOCSET_DEFAULT_INITSIZE,
+				ALLOCSET_DEFAULT_MAXSIZE);
+	if(this_ctx == NULL) elog(ERROR, "Cannot create ctx for at create");
+	old = MemoryContextSwitchTo(this_ctx);
+
 	START_SPI_SNAP();
 	pgstat_report_activity(STATE_RUNNING, "make 'at' cron tasks");
 	tasks = scheduler_get_active_tasks(ctx, &ntasks);
@@ -1507,6 +1534,8 @@ int scheduler_make_atcron_record(scheduler_manager_ctx_t *ctx)
 	{
 		ctx->next_at_time = timestamp_add_seconds(0, 25);
 		STOP_SPI_SNAP();
+		MemoryContextSwitchTo(old);
+		MemoryContextDelete(this_ctx);
 		return 0;
 	}
 	pgstat_report_activity(STATE_RUNNING, "calc next runtime");
@@ -1527,7 +1556,7 @@ int scheduler_make_atcron_record(scheduler_manager_ctx_t *ctx)
 			date1 = make_date_from_timestamp(start, false);
 			date2 = make_date_from_timestamp(stop, false);
 
-
+	
 			for(j=0; j < n_exec_dates; j++)
 			{
 				r1 = strcmp(date1, exec_dates[j]);
@@ -1538,7 +1567,7 @@ int scheduler_make_atcron_record(scheduler_manager_ctx_t *ctx)
 					{
 						if(ntimes == 0)
 						{
-							next_times = worker_alloc(sizeof(TimestampTz)*n_exec_dates);
+							next_times = palloc(sizeof(TimestampTz)*n_exec_dates);
 						}
 						else
 						{
@@ -1567,25 +1596,30 @@ int scheduler_make_atcron_record(scheduler_manager_ctx_t *ctx)
 			pfree(next_times);
 		}
 	}
-	STOP_SPI_SNAP();
 	pfree(tasks);
+	STOP_SPI_SNAP();
 
 	ctx->next_at_time = timestamp_add_seconds(0, 25);
+
+	MemoryContextSwitchTo(old);
+	MemoryContextDelete(this_ctx);
+
 	return ntasks;
 }
 
 void clean_at_table(scheduler_manager_ctx_t *ctx)
 {
 	spi_response_t *r;
+	MemoryContext mem = init_mem_ctx("clean ctx");
 
 	START_SPI_SNAP();
-	r = execute_spi("truncate at");
+	r = execute_spi(mem, "truncate at");
 	if(r->retval < 0)
 	{
 		manager_fatal_error(ctx, 0, "Cannot clean 'at' table: %s", r->error);
 	}
 	destroy_spi_data(r);
-	r = execute_spi("update cron set _next_exec_time = NULL where _next_exec_time is not NULL");
+	r = execute_spi(mem, "update cron set _next_exec_time = NULL where _next_exec_time is not NULL");
 	if(r->retval  < 0)
 	{
 		manager_fatal_error(ctx, 0, "Cannot clean cron _next time: %s",
@@ -1593,6 +1627,7 @@ void clean_at_table(scheduler_manager_ctx_t *ctx)
 	}
 	destroy_spi_data(r);
 	STOP_SPI_SNAP();
+	MemoryContextDelete(mem);
 }
 
 bool check_parent_stop_signal(scheduler_manager_ctx_t *ctx, schd_manager_share_t *shared)
@@ -1626,22 +1661,24 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 	Size segsize;
 	schd_executor_share_state_t *shm_data;
 	BgwHandleStatus status;
-	MemoryContext old;
 	scheduler_manager_slot_t *item;
+	ResourceOwner prev_owner;
+	MemoryContext old;
 
+	prev_owner = CurrentResourceOwner;
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
 
 	pgstat_report_activity(STATE_RUNNING, "register scheduler at executor");
 	segsize = (Size)sizeof(schd_executor_share_state_t);
 	seg = dsm_create(segsize, 0);
 
-	old = MemoryContextSwitchTo(SchedulerWorkerContext);
-	item = worker_alloc(sizeof(scheduler_manager_slot_t));
+	item = MemoryContextAlloc(ctx->mem_ctx, sizeof(scheduler_manager_slot_t));
 	item->job = NULL;
 	item->started  = item->worker_started = GetCurrentTimestamp();
 	item->wait_worker_to_die = false;
 	item->stop_it = 0;
 	item->shared = seg;
+	item->res_owner = CurrentResourceOwner;
 	shm_data = dsm_segment_address(item->shared);
 
 	memcpy(shm_data->database, ctx->database, strlen(ctx->database));
@@ -1661,6 +1698,9 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 	snprintf(worker.bgw_name, BGW_MAXLEN, "scheduler at-executor %s", shm_data->database);
 	worker.bgw_notify_pid = MyProcPid;
 
+	CurrentResourceOwner = prev_owner;
+
+	old = MemoryContextSwitchTo(ctx->mem_ctx);
 	if(!RegisterDynamicBackgroundWorker(&worker, &(item->handler)))
 	{
 		elog(LOG, "Cannot register AT executor worker for db: %s",
@@ -1671,6 +1711,7 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 		MemoryContextSwitchTo(old);
 		return 0;
 	}
+	MemoryContextSwitchTo(old);
 	status = WaitForBackgroundWorkerStartup(item->handler, &(item->pid));
 	if(status != BGWH_STARTED)
 	{
@@ -1679,11 +1720,9 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 		dsm_detach(item->shared);
 		pfree(item);
 		ctx->at.slots[pos] = NULL;
-		MemoryContextSwitchTo(old);
 		return 0;
 	}
 	ctx->at.slots[pos] = item;
-	MemoryContextSwitchTo(old);
 
 	return item->pid;
 }
@@ -1692,7 +1731,7 @@ void start_at_workers(scheduler_manager_ctx_t *ctx, schd_manager_share_t *shared
 {
 	int i;
 
-	if(ctx->at.len > 0)
+	if(ctx->at.len > 0) 
 	{
 		for(i=0 ; i < ctx->at.len; i++)
 		{
@@ -1710,15 +1749,16 @@ void start_at_workers(scheduler_manager_ctx_t *ctx, schd_manager_share_t *shared
 
 void manager_worker_main(Datum arg)
 {
-	char *database;
-	int database_len;
+	char database[NAMEDATALEN];
+	char buffer[1024];
 	int rc = 0;
-	char *aname;
 	schd_manager_share_t *shared;
 	dsm_segment *seg;
 	scheduler_manager_ctx_t *ctx;
 	int wait = 0;
 	schd_manager_share_t *parent_shared;
+	MemoryContext old;
+	MemoryContext longTerm;
 
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
@@ -1743,16 +1783,9 @@ void manager_worker_main(Datum arg)
 	SetConfigOption("application_name", "pgp-s manager", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "initialize");
 
-	database_len = strlen(MyBgworkerEntry->bgw_extra);
-	if(BGW_EXTRALEN < database_len +1) database_len = BGW_EXTRALEN - 1;
-	database  = worker_alloc(sizeof(char) * (database_len+1));
-	memcpy(database, MyBgworkerEntry->bgw_extra, database_len);
-	database[database_len] = 0;
-
-	aname = worker_alloc(sizeof(char) * ( 16 + database_len + 1 ));
-	sprintf(aname, "pgp-s manager [%s]", database);
-	SetConfigOption("application_name", aname, PGC_USERSET, PGC_S_SESSION);
-	pfree(aname);
+	snprintf(database, NAMEDATALEN, "%s", MyBgworkerEntry->bgw_extra);
+	snprintf(buffer, 1024, "pgp-s manager [%s]", database);
+	SetConfigOption("application_name", buffer, PGC_USERSET, PGC_S_SESSION);
 
 	BackgroundWorkerInitializeConnection(database, NULL);
 	elog(LOG, "Started scheduler manager for '%s'", database);
@@ -1761,9 +1794,9 @@ void manager_worker_main(Datum arg)
 	{
 		elog(LOG, "cannot start scheduler for %s - there is no namespace", database);
 		changeChildBgwState(shared, SchdManagerQuit);
-		pfree(database);
 		dsm_detach(seg);
-		proc_exit(0);
+		delete_worker_mem_ctx();
+		proc_exit(0); 
 	}
 	SetCurrentStatementStartTimestamp();
 	pgstat_report_activity(STATE_RUNNING, "initialize.");
@@ -1775,14 +1808,20 @@ void manager_worker_main(Datum arg)
 	parent_shared = dsm_segment_address(seg);
 	pgstat_report_activity(STATE_RUNNING, "initialize context");
 	changeChildBgwState(shared, SchdManagerConnected);
-	ctx = initialize_scheduler_manager_context(database, seg);
+
+	longTerm = init_mem_ctx("long term context for slots");
+	ctx = initialize_scheduler_manager_context(longTerm, database, seg);
+
 	start_at_workers(ctx, shared);
 	clean_at_table(ctx);
 	set_slots_stat_report(ctx);
-	SetConfigOption("enable_seqscan", "off", PGC_USERSET, PGC_S_SESSION);
+	/* SetConfigOption("enable_seqscan", "off", PGC_USERSET, PGC_S_SESSION); */
 
 	while(!got_sigterm)
 	{
+		if(!SchedulerWorkerContext)
+				init_worker_mem_ctx("manager worker context 2");
+		old = switch_to_worker_context();
 		if(rc)
 		{
 			if(rc & WL_POSTMASTER_DEATH) proc_exit(1);
@@ -1790,42 +1829,48 @@ void manager_worker_main(Datum arg)
 			{
 				got_sighup = false;
 				ProcessConfigFile(PGC_SIGHUP);
-				reload_db_role_config(database);
-				refresh_scheduler_manager_context(ctx);
+				reload_db_role_config(database); 
+				refresh_scheduler_manager_context(ctx); /* TODO */
 				set_slots_stat_report(ctx);
 			}
 			if(!got_sigterm)
 			{
 				wait = 0;
-				if(check_parent_stop_signal(ctx, parent_shared))  break;
-				/** start at jobs **/
+				if(check_parent_stop_signal(ctx, parent_shared))  break; 
+				/** start at jobs **/	
 				/**** wait += scheduler_start_jobs(ctx, AtJob); */
 
-				/** start cron jobs **/
-				wait += scheduler_start_jobs(ctx, CronJob);
+				/** start cron jobs **/	
+				wait += scheduler_start_jobs(ctx, CronJob); 
 
-				/** check at slots **/
+				/** check at slots **/	
 				/**** scheduler_check_slots(ctx, &(ctx->at)); */
 
-				/** check cron slots **/
+				/** check cron slots **/	
 				scheduler_check_slots(ctx, &(ctx->cron));
 
-				scheduler_make_atcron_record(ctx);
-				set_slots_stat_report(ctx);
+				scheduler_make_atcron_record(ctx); 
+				set_slots_stat_report(ctx); 
 				/* if there are any expired jobs to get rid of */
+
 				scheduler_vanish_expired_jobs(ctx, AtJob);
 				scheduler_vanish_expired_jobs(ctx, CronJob);
 			}
 		}
+
+		MemoryContextSwitchTo(old);
+		delete_worker_mem_ctx();
 		rc = WaitLatch(MyLatch,
 			WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1500L);
 		ResetLatch(MyLatch);
 	}
 	scheduler_manager_stop(ctx);
+	pgstat_report_activity(STATE_RUNNING, "finalize manager");
 	changeChildBgwState(shared, SchdManagerDie);
-	pfree(database);
-	delete_worker_mem_ctx();
-    dsm_detach(seg);
+	if(SchedulerWorkerContext) delete_worker_mem_ctx();
+	dsm_detach(seg);
+	pgstat_report_activity(STATE_RUNNING, "drop context");
+	MemoryContextDelete(longTerm);
 	proc_exit(0);
 }
 

@@ -4,6 +4,14 @@
 
 MemoryContext SchedulerWorkerContext = NULL;
 
+MemoryContext init_mem_ctx(const char *name)
+{
+	return AllocSetContextCreate(TopMemoryContext, name,
+								 ALLOCSET_DEFAULT_MINSIZE,
+								 ALLOCSET_DEFAULT_INITSIZE,
+								 ALLOCSET_DEFAULT_MAXSIZE);
+}
+
 MemoryContext init_worker_mem_ctx(const char *name)
 {
 	AssertState(SchedulerWorkerContext == NULL);
@@ -31,4 +39,5 @@ void delete_worker_mem_ctx(void)
 {
 	MemoryContextSwitchTo(TopMemoryContext);
 	MemoryContextDelete(SchedulerWorkerContext);
+	SchedulerWorkerContext = NULL;
 }
