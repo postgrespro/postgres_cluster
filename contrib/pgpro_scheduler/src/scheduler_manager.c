@@ -1738,7 +1738,7 @@ void start_at_workers(scheduler_manager_ctx_t *ctx, schd_manager_share_t *shared
 			if(start_at_worker(ctx, i) == 0)
 			{
 				scheduler_manager_stop(ctx);
-				delete_worker_mem_ctx();
+				delete_worker_mem_ctx(NULL);
 				changeChildBgwState(shared, SchdManagerDie);
 				dsm_detach(ctx->seg);
 				proc_exit(0);
@@ -1757,7 +1757,7 @@ void manager_worker_main(Datum arg)
 	scheduler_manager_ctx_t *ctx;
 	int wait = 0;
 	schd_manager_share_t *parent_shared;
-	MemoryContext old;
+	MemoryContext old = NULL;
 	MemoryContext longTerm;
 
 
@@ -1795,7 +1795,7 @@ void manager_worker_main(Datum arg)
 		elog(LOG, "cannot start scheduler for %s - there is no namespace", database);
 		changeChildBgwState(shared, SchdManagerQuit);
 		dsm_detach(seg);
-		delete_worker_mem_ctx();
+		delete_worker_mem_ctx(NULL);
 		proc_exit(0); 
 	}
 	SetCurrentStatementStartTimestamp();
@@ -1837,17 +1837,12 @@ void manager_worker_main(Datum arg)
 			{
 				wait = 0;
 				if(check_parent_stop_signal(ctx, parent_shared))  break; 
-				/** start at jobs **/	
-				/**** wait += scheduler_start_jobs(ctx, AtJob); */
 
 				/** start cron jobs **/	
 				wait += scheduler_start_jobs(ctx, CronJob); 
 
-				/** check at slots **/	
-				/**** scheduler_check_slots(ctx, &(ctx->at)); */
-
 				/** check cron slots **/	
-				scheduler_check_slots(ctx, &(ctx->cron));
+				scheduler_check_slots(ctx, &(ctx->cron)); 
 
 				scheduler_make_atcron_record(ctx); 
 				set_slots_stat_report(ctx); 
@@ -1858,8 +1853,7 @@ void manager_worker_main(Datum arg)
 			}
 		}
 
-		MemoryContextSwitchTo(old);
-		delete_worker_mem_ctx();
+		delete_worker_mem_ctx(old);
 		rc = WaitLatch(MyLatch,
 			WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1500L);
 		ResetLatch(MyLatch);
@@ -1867,7 +1861,7 @@ void manager_worker_main(Datum arg)
 	scheduler_manager_stop(ctx);
 	pgstat_report_activity(STATE_RUNNING, "finalize manager");
 	changeChildBgwState(shared, SchdManagerDie);
-	if(SchedulerWorkerContext) delete_worker_mem_ctx();
+	if(SchedulerWorkerContext) delete_worker_mem_ctx(old);
 	dsm_detach(seg);
 	pgstat_report_activity(STATE_RUNNING, "drop context");
 	MemoryContextDelete(longTerm);
@@ -1888,7 +1882,7 @@ void manager_fatal_error(scheduler_manager_ctx_t *ctx, int ecode, char *message,
 	va_end(arglist);
 
 
-	delete_worker_mem_ctx();
+	delete_worker_mem_ctx(NULL);
 	if(ecode == 0)
 	{
 		ecode = ERRCODE_INTERNAL_ERROR;

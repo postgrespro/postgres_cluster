@@ -93,8 +93,9 @@ spi_response_t *__copy_spi_data(MemoryContext ctx, int ret, int  n)
 	int i, j;
 	Datum dat;
 	bool is_null;
+	MemoryContext old;
 
-
+	old = MemoryContextSwitchTo(ctx);
 	r = MemoryContextAlloc(ctx, sizeof(spi_response_t));
 	if(!r)  return NULL;
 	r->retval = ret;
@@ -147,6 +148,7 @@ spi_response_t *__copy_spi_data(MemoryContext ctx, int ret, int  n)
 			}
 		}
 	}
+	MemoryContextSwitchTo(old);
 
 	return r;
 }
@@ -495,18 +497,19 @@ spi_response_t *execute_spi_sql_with_args(MemoryContext ctx, const char *sql, in
 	char other[100];
 	ResourceOwner oldowner = CurrentResourceOwner;
 	spi_response_t *rv = NULL;
-	MemoryContext old;
+	MemoryContext old = CurrentMemoryContext;
 
 	if(!ctx) ctx = SchedulerWorkerContext;
 
+
+
 	SetCurrentStatementStartTimestamp();
 	BeginInternalSubTransaction(NULL);
-	old = MemoryContextSwitchTo(ctx);
+	MemoryContextSwitchTo(old);
 
 	PG_TRY();
 	{
 		ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, false, 0);
-		MemoryContextSwitchTo(ctx);
 		rv = __copy_spi_data(ctx, ret, SPI_processed);
 		if(!rv)
 		{
@@ -514,13 +517,12 @@ spi_response_t *execute_spi_sql_with_args(MemoryContext ctx, const char *sql, in
 			return NULL;
 		}
 		ReleaseCurrentSubTransaction();
-		MemoryContextSwitchTo(ctx);
+		MemoryContextSwitchTo(old);
 		CurrentResourceOwner = oldowner;
 		SPI_restore_connection(); 
 	}
 	PG_CATCH();
 	{
-		MemoryContextSwitchTo(ctx);
 		edata = CopyErrorData();
 		if(edata->message)
 		{
@@ -541,7 +543,7 @@ spi_response_t *execute_spi_sql_with_args(MemoryContext ctx, const char *sql, in
 		}
 		RollbackAndReleaseCurrentSubTransaction(); 
 		CurrentResourceOwner = oldowner;
-		MemoryContextSwitchTo(ctx);
+		MemoryContextSwitchTo(old);
 		SPI_restore_connection(); 
 		FreeErrorData(edata);
 		FlushErrorState();
@@ -574,12 +576,10 @@ spi_response_t *execute_spi_sql_with_args(MemoryContext ctx, const char *sql, in
 		if(!rv)
 		{
 			elog(LOG, "ESSWA: Cannot allocate memory while reporting pg error");
-			MemoryContextSwitchTo(old);
 			return NULL;
 		}
 	}
 
-	MemoryContextSwitchTo(old);
 	return rv;
 }
 
@@ -599,6 +599,7 @@ spi_response_t *execute_spi_params_prepared(MemoryContext ctx, const char *sql, 
 	int i;
 	ResourceOwner oldowner = CurrentResourceOwner;
 	spi_response_t *rv;
+	MemoryContext old = CurrentMemoryContext;
 
 	if(!ctx) ctx = SchedulerWorkerContext;
 
@@ -613,7 +614,7 @@ spi_response_t *execute_spi_params_prepared(MemoryContext ctx, const char *sql, 
 
 	SetCurrentStatementStartTimestamp();
 	BeginInternalSubTransaction(NULL);
-	switch_to_worker_context();
+	MemoryContextSwitchTo(old);
 
 	PG_TRY();
 	{
@@ -630,14 +631,12 @@ spi_response_t *execute_spi_params_prepared(MemoryContext ctx, const char *sql, 
 			}
 		}
 		ReleaseCurrentSubTransaction();
-		switch_to_worker_context();
+		MemoryContextSwitchTo(old);
 		CurrentResourceOwner = oldowner;
 		SPI_restore_connection();
 	}
 	PG_CATCH();
 	{
-		switch_to_worker_context();
-
 		edata = CopyErrorData();
 		if(edata->message)
 		{
@@ -660,7 +659,7 @@ spi_response_t *execute_spi_params_prepared(MemoryContext ctx, const char *sql, 
 		FlushErrorState();
 		RollbackAndReleaseCurrentSubTransaction(); 
 		CurrentResourceOwner = oldowner;
-		switch_to_worker_context();
+		MemoryContextSwitchTo(old);
 		SPI_restore_connection();
 	}
 	PG_END_TRY();

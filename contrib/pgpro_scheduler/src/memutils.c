@@ -35,9 +35,11 @@ void *worker_alloc(Size size)
 	return MemoryContextAlloc(SchedulerWorkerContext, size);
 }
 
-void delete_worker_mem_ctx(void)
+void delete_worker_mem_ctx(MemoryContext old)
 {
-	MemoryContextSwitchTo(TopMemoryContext);
+	if(!old) old = TopMemoryContext;
+
+	MemoryContextSwitchTo(old);
 	MemoryContextDelete(SchedulerWorkerContext);
 	SchedulerWorkerContext = NULL;
 }
