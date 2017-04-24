@@ -395,7 +395,7 @@ void parent_scheduler_main(Datum arg)
 		ResetLatch(MyLatch);
 	}
 	stopAllManagers(pool);
-	delete_worker_mem_ctx();
+	delete_worker_mem_ctx(NULL);
 
 	proc_exit(0);
 }

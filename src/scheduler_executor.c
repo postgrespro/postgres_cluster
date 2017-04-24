@@ -84,6 +84,8 @@ void executor_worker_main(Datum arg)
 	PGPROC *parent;
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_executor");
+	init_worker_mem_ctx("ExecutorMemoryContext");
+
 	seg = dsm_attach(DatumGetInt32(arg));
 	if(seg == NULL)
 		ereport(ERROR,
@@ -107,7 +109,6 @@ void executor_worker_main(Datum arg)
 	pqsignal(SIGHUP, worker_spi_sighup);
 	BackgroundWorkerUnblockSignals();
 
-	init_worker_mem_ctx("ExecutorMemoryContext");
 	worker_jobs_limit = read_worker_job_limit();
 
 	while(1)
@@ -146,7 +147,7 @@ void executor_worker_main(Datum arg)
 				shared->worker_exit = true;
 				shared->status = SchdExecutorError;
 			}
-			delete_worker_mem_ctx();
+			delete_worker_mem_ctx(NULL);
 			dsm_detach(seg);
 			proc_exit(0);
 		}
@@ -157,7 +158,7 @@ void executor_worker_main(Datum arg)
 		if(rc && rc & WL_POSTMASTER_DEATH) break;
 	}
 
-	delete_worker_mem_ctx();
+	delete_worker_mem_ctx(NULL);
 	dsm_detach(seg);
 	proc_exit(0);
 }
@@ -360,7 +361,7 @@ int set_session_authorization(char *username, char **error)
 	int rv;
 	char *sql = "select oid, rolsuper from pg_catalog.pg_roles where rolname = $1";
 	char buff[1024];
-	MemoryContext mem = CurrentMemoryContext;
+	MemoryContext mem = SchedulerWorkerContext;
 
 	values[0] = CStringGetTextDatum(username);	
 	START_SPI_SNAP();
@@ -440,7 +441,7 @@ TimestampTz get_next_excution_time(char *sql, executor_error_t *ee)
 
 	START_SPI_SNAP();
 	pgstat_report_activity(STATE_RUNNING, "culc next time execution time");
-	r = execute_spi(CurrentMemoryContext, sql);
+	r = execute_spi(SchedulerWorkerContext, sql);
 	if(r->retval < 0)
 	{
 		if(r->error)
@@ -665,6 +666,7 @@ void at_executor_worker_main(Datum arg)
 	/* PGPROC *parent; */
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_at_executor");
+	init_worker_mem_ctx("ExecutorMemoryContext");
 	seg = dsm_attach(DatumGetInt32(arg));
 	if(seg == NULL)
 		ereport(ERROR,
@@ -689,7 +691,6 @@ void at_executor_worker_main(Datum arg)
 	pqsignal(SIGHUP, worker_spi_sighup);
 	BackgroundWorkerUnblockSignals();
 
-	init_worker_mem_ctx("ExecutorMemoryContext");
 
 	while(1)
 	{
@@ -708,7 +709,7 @@ void at_executor_worker_main(Datum arg)
 		}
 		else if(result < 0)
 		{
-			delete_worker_mem_ctx();
+			delete_worker_mem_ctx(NULL);
 			dsm_detach(seg);
 			proc_exit(1);
 		}
@@ -730,7 +731,7 @@ void at_executor_worker_main(Datum arg)
 		elog(LOG, "at worker stopped by parent signal");
 	}
 
-	delete_worker_mem_ctx();
+	delete_worker_mem_ctx(NULL);
 	dsm_detach(seg);
 	proc_exit(0);
 }
