@@ -1663,6 +1663,7 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 	BgwHandleStatus status;
 	scheduler_manager_slot_t *item;
 	ResourceOwner prev_owner;
+	MemoryContext old;
 
 	prev_owner = CurrentResourceOwner;
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
@@ -1699,6 +1700,7 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 
 	CurrentResourceOwner = prev_owner;
 
+	old = MemoryContextSwitchTo(ctx->mem_ctx);
 	if(!RegisterDynamicBackgroundWorker(&worker, &(item->handler)))
 	{
 		elog(LOG, "Cannot register AT executor worker for db: %s",
@@ -1706,8 +1708,10 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 		dsm_detach(item->shared);
 		pfree(item);
 		ctx->at.slots[pos] = NULL;
+		MemoryContextSwitchTo(old);
 		return 0;
 	}
+	MemoryContextSwitchTo(old);
 	status = WaitForBackgroundWorkerStartup(item->handler, &(item->pid));
 	if(status != BGWH_STARTED)
 	{
