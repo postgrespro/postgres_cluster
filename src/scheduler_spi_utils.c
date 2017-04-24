@@ -498,6 +498,7 @@ spi_response_t *execute_spi_sql_with_args(MemoryContext ctx, const char *sql, in
 	ResourceOwner oldowner = CurrentResourceOwner;
 	spi_response_t *rv = NULL;
 	MemoryContext old = CurrentMemoryContext;
+	MemoryContext pe;
 
 	if(!ctx) ctx = SchedulerWorkerContext;
 
@@ -523,7 +524,9 @@ spi_response_t *execute_spi_sql_with_args(MemoryContext ctx, const char *sql, in
 	}
 	PG_CATCH();
 	{
+		pe = MemoryContextSwitchTo(ctx);
 		edata = CopyErrorData();
+		MemoryContextSwitchTo(pe);
 		if(edata->message)
 		{
 			rv = __error_spi_resp(ctx, ret, edata->message);
@@ -600,6 +603,7 @@ spi_response_t *execute_spi_params_prepared(MemoryContext ctx, const char *sql, 
 	ResourceOwner oldowner = CurrentResourceOwner;
 	spi_response_t *rv;
 	MemoryContext old = CurrentMemoryContext;
+	MemoryContext pe;
 
 	if(!ctx) ctx = SchedulerWorkerContext;
 
@@ -637,7 +641,9 @@ spi_response_t *execute_spi_params_prepared(MemoryContext ctx, const char *sql, 
 	}
 	PG_CATCH();
 	{
+		pe = MemoryContextSwitchTo(ctx);
 		edata = CopyErrorData();
+		MemoryContextSwitchTo(pe);
 		if(edata->message)
 		{
 			rv = __error_spi_resp(ctx, ret, edata->message);
