@@ -495,11 +495,13 @@ spi_response_t *execute_spi_sql_with_args(MemoryContext ctx, const char *sql, in
 	char other[100];
 	ResourceOwner oldowner = CurrentResourceOwner;
 	spi_response_t *rv = NULL;
+	MemoryContext old;
+
 	if(!ctx) ctx = SchedulerWorkerContext;
 
 	SetCurrentStatementStartTimestamp();
 	BeginInternalSubTransaction(NULL);
-	MemoryContextSwitchTo(ctx);
+	old = MemoryContextSwitchTo(ctx);
 
 	PG_TRY();
 	{
@@ -572,10 +574,12 @@ spi_response_t *execute_spi_sql_with_args(MemoryContext ctx, const char *sql, in
 		if(!rv)
 		{
 			elog(LOG, "ESSWA: Cannot allocate memory while reporting pg error");
+			MemoryContextSwitchTo(old);
 			return NULL;
 		}
 	}
 
+	MemoryContextSwitchTo(old);
 	return rv;
 }
 

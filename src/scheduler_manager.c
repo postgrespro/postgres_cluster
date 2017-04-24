@@ -1364,7 +1364,7 @@ int update_cron_texttime(scheduler_manager_ctx_t *ctx, int cron_id, TimestampTz 
 	{
 		nulls[1] = 'n';
 	}
-	r = execute_spi_sql_with_args(CurrentMemoryContext, sql, 2, types, values, nulls);
+	r = execute_spi_sql_with_args(SchedulerWorkerContext, sql, 2, types, values, nulls);
 	ret = r->retval;
 	if(ret < 0)
 	{
@@ -1487,7 +1487,7 @@ int insert_at_record(char *nodename, int cron_id, TimestampTz start_at, Timestam
 		values[1] = 0;
 	}
 
-	r = execute_spi_sql_with_args(CurrentMemoryContext, insert_sql, 4, argtypes, values, nulls);
+	r = execute_spi_sql_with_args(SchedulerWorkerContext, insert_sql, 4, argtypes, values, nulls);
 	
 	ret = r->retval;
 	if(r->error) *error = my_copy_string(r->error);
