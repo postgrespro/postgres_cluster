@@ -545,14 +545,13 @@ _bt_buildadd(BTWriteState *wstate, BTPageState *state, IndexTuple itup)
 		if (indnkeyatts != indnatts && P_ISLEAF(opageop))
 		{
 			/*
-			 * It's essential to truncate High key here.
-			 * The purpose is not just to save more space on this particular page,
-			 * but to keep whole b-tree structure consistent. Subsequent insertions
-			 * assume that hikey is already truncated, and so they should not
-			 * worry about it, when copying the high key into the parent page
-			 * as a downlink.
-			 * NOTE It is not crutial for reliability in present,
-			 * but maybe it will be that in the future.
+			 * We truncate included attributes of High key here.
+			 * Subsequent insertions assume that hikey is already truncated,
+			 * and so they need not worry about it, when copying the high key
+			 * into the parent page as a downlink.
+			 * NOTE: It is not crucial for reliability in present, but maybe
+			 * it will be that in the future. Now the purpose is just to save
+			 * more space on inner pages of btree.
 			 */
 			keytup = index_truncate_tuple(wstate->index, oitup);
 
