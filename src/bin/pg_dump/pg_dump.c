@@ -3627,7 +3627,7 @@ dumpPublicationTable(Archive *fout, PublicationRelInfo *pubrinfo)
 
 	query = createPQExpBuffer();
 
-	appendPQExpBuffer(query, "ALTER PUBLICATION %s ADD TABLE",
+	appendPQExpBuffer(query, "ALTER PUBLICATION %s ADD TABLE ONLY",
 					  fmtId(pubrinfo->pubname));
 	appendPQExpBuffer(query, " %s;",
 					  fmtId(tbinfo->dobj.name));
@@ -6663,8 +6663,8 @@ getExtendedStatistics(Archive *fout, TableInfo tblinfo[], int numTables)
 	int				ntups;
 	int				i_tableoid;
 	int				i_oid;
-	int				i_staname;
-	int				i_stadef;
+	int				i_stxname;
+	int				i_stxdef;
 
 	/* Extended statistics were new in v10 */
 	if (fout->remoteVersion < 100000)
@@ -6676,9 +6676,14 @@ getExtendedStatistics(Archive *fout, TableInfo tblinfo[], int numTables)
 	{
 		TableInfo  *tbinfo = &tblinfo[i];
 
-		/* Only plain tables and materialized views can have extended statistics. */
+		/*
+		 * Only plain tables, materialized views, foreign tables and
+		 * partitioned tables can have extended statistics.
+		 */
 		if (tbinfo->relkind != RELKIND_RELATION &&
-			tbinfo->relkind != RELKIND_MATVIEW)
+			tbinfo->relkind != RELKIND_MATVIEW &&
+			tbinfo->relkind != RELKIND_FOREIGN_TABLE &&
+			tbinfo->relkind != RELKIND_PARTITIONED_TABLE)
 			continue;
 
 		/*
@@ -6702,11 +6707,11 @@ getExtendedStatistics(Archive *fout, TableInfo tblinfo[], int numTables)
 						  "SELECT "
 							"tableoid, "
 							"oid, "
-							"staname, "
-						  "pg_catalog.pg_get_statisticsextdef(oid) AS stadef "
+							"stxname, "
+						  "pg_catalog.pg_get_statisticsextdef(oid) AS stxdef "
 						  "FROM pg_statistic_ext "
-						  "WHERE starelid = '%u' "
-						  "ORDER BY staname", tbinfo->dobj.catId.oid);
+						  "WHERE stxrelid = '%u' "
+						  "ORDER BY stxname", tbinfo->dobj.catId.oid);
 
 		res = ExecuteSqlQuery(fout, query->data, PGRES_TUPLES_OK);
 
@@ -6714,8 +6719,8 @@ getExtendedStatistics(Archive *fout, TableInfo tblinfo[], int numTables)
 
 		i_tableoid = PQfnumber(res, "tableoid");
 		i_oid = PQfnumber(res, "oid");
-		i_staname = PQfnumber(res, "staname");
-		i_stadef = PQfnumber(res, "stadef");
+		i_stxname = PQfnumber(res, "stxname");
+		i_stxdef = PQfnumber(res, "stxdef");
 
 		statsextinfo = (StatsExtInfo *) pg_malloc(ntups * sizeof(StatsExtInfo));
 
@@ -6725,10 +6730,10 @@ getExtendedStatistics(Archive *fout, TableInfo tblinfo[], int numTables)
 			statsextinfo[j].dobj.catId.tableoid = atooid(PQgetvalue(res, j, i_tableoid));
 			statsextinfo[j].dobj.catId.oid = atooid(PQgetvalue(res, j, i_oid));
 			AssignDumpId(&statsextinfo[j].dobj);
-			statsextinfo[j].dobj.name = pg_strdup(PQgetvalue(res, j, i_staname));
+			statsextinfo[j].dobj.name = pg_strdup(PQgetvalue(res, j, i_stxname));
 			statsextinfo[j].dobj.namespace = tbinfo->dobj.namespace;
 			statsextinfo[j].statsexttable = tbinfo;
-			statsextinfo[j].statsextdef = pg_strdup(PQgetvalue(res, j, i_stadef));
+			statsextinfo[j].statsextdef = pg_strdup(PQgetvalue(res, j, i_stxdef));
 		}
 
 		PQclear(res);

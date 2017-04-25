@@ -5104,7 +5104,7 @@ pg_publication_ownercheck(Oid pub_oid, Oid roleid)
 }
 
 /*
- * Ownership check for an subscription (specified by OID).
+ * Ownership check for a subscription (specified by OID).
  */
 bool
 pg_subscription_ownercheck(Oid sub_oid, Oid roleid)
@@ -5148,7 +5148,7 @@ pg_statistics_ownercheck(Oid stat_oid, Oid roleid)
 				(errcode(ERRCODE_UNDEFINED_OBJECT),
 				 errmsg("statistics with OID %u do not exist", stat_oid)));
 
-	ownerId = ((Form_pg_statistic_ext) GETSTRUCT(tuple))->staowner;
+	ownerId = ((Form_pg_statistic_ext) GETSTRUCT(tuple))->stxowner;
 
 	ReleaseSysCache(tuple);
 

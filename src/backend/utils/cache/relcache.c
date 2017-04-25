@@ -4497,9 +4497,9 @@ RelationGetStatExtList(Relation relation)
 	 */
 	result = NIL;
 
-	/* Prepare to scan pg_statistic_ext for entries having starelid = this rel. */
+	/* Prepare to scan pg_statistic_ext for entries having stxrelid = this rel. */
 	ScanKeyInit(&skey,
-				Anum_pg_statistic_ext_starelid,
+				Anum_pg_statistic_ext_stxrelid,
 				BTEqualStrategyNumber, F_OIDEQ,
 				ObjectIdGetDatum(RelationGetRelid(relation)));
 
@@ -6074,7 +6074,7 @@ RelationCacheInitFileRemove(void)
 	const char *tblspcdir = "pg_tblspc";
 	DIR		   *dir;
 	struct dirent *de;
-	char		path[MAXPGPATH];
+	char		path[MAXPGPATH + 10 + sizeof(TABLESPACE_VERSION_DIRECTORY)];
 
 	/*
 	 * We zap the shared cache file too.  In theory it can't get out of sync
@@ -6116,7 +6116,7 @@ RelationCacheInitFileRemoveInDir(const char *tblspcpath)
 {
 	DIR		   *dir;
 	struct dirent *de;
-	char		initfilename[MAXPGPATH];
+	char		initfilename[MAXPGPATH * 2];
 
 	/* Scan the tablespace directory to find per-database directories */
 	dir = AllocateDir(tblspcpath);

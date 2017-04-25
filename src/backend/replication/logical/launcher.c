@@ -72,6 +72,8 @@ typedef struct LogicalRepCtxStruct
 
 LogicalRepCtxStruct *LogicalRepCtx;
 
+static void ApplyLauncherWakeup(void);
+static void logicalrep_launcher_onexit(int code, Datum arg);
 static void logicalrep_worker_onexit(int code, Datum arg);
 static void logicalrep_worker_detach(void);
 
@@ -291,6 +293,7 @@ logicalrep_worker_launch(Oid dbid, Oid subid, const char *subname, Oid userid,
 	LWLockRelease(LogicalRepWorkerLock);
 
 	/* Register the new dynamic worker. */
+	memset(&bgw, 0, sizeof(bgw));
 	bgw.bgw_flags =	BGWORKER_SHMEM_ACCESS |
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
 	bgw.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -305,7 +308,7 @@ logicalrep_worker_launch(Oid dbid, Oid subid, const char *subname, Oid userid,
 
 	bgw.bgw_restart_time = BGW_NEVER_RESTART;
 	bgw.bgw_notify_pid = MyProcPid;
-	bgw.bgw_main_arg = slot;
+	bgw.bgw_main_arg = Int32GetDatum(slot);
 
 	if (!RegisterDynamicBackgroundWorker(&bgw, &bgw_handle))
 	{
@@ -480,6 +483,17 @@ logicalrep_worker_detach(void)
 }
 
 /*
+ * Cleanup function for logical replication launcher.
+ *
+ * Called on logical replication launcher exit.
+ */
+static void
+logicalrep_launcher_onexit(int code, Datum arg)
+{
+	LogicalRepCtx->launcher_pid = 0;
+}
+
+/*
  * Cleanup function.
  *
  * Called on logical replication worker exit.
@@ -560,6 +574,10 @@ ApplyLauncherShmemSize(void)
 	return size;
 }
 
+/*
+ * ApplyLauncherRegister
+ *		Register a background worker running the logical replication launcher.
+ */
 void
 ApplyLauncherRegister(void)
 {
@@ -568,6 +586,7 @@ ApplyLauncherRegister(void)
 	if (max_logical_replication_workers == 0)
 		return;
 
+	memset(&bgw, 0, sizeof(bgw));
 	bgw.bgw_flags =	BGWORKER_SHMEM_ACCESS |
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
 	bgw.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -637,10 +656,10 @@ ApplyLauncherWakeupAtCommit(void)
 		on_commit_launcher_wakeup = true;
 }
 
-void
+static void
 ApplyLauncherWakeup(void)
 {
-	if (IsBackendPid(LogicalRepCtx->launcher_pid))
+	if (LogicalRepCtx->launcher_pid != 0)
 		kill(LogicalRepCtx->launcher_pid, SIGUSR1);
 }
 
@@ -652,6 +671,8 @@ ApplyLauncherMain(Datum main_arg)
 {
 	ereport(DEBUG1,
 			(errmsg("logical replication launcher started")));
+
+	before_shmem_exit(logicalrep_launcher_onexit, (Datum) 0);
 
 	/* Establish signal handlers. */
 	pqsignal(SIGHUP, logicalrep_worker_sighup);

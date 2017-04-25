@@ -12,7 +12,7 @@ DROP STATISTICS ab1_a_b_stats;
 CREATE SCHEMA regress_schema_2;
 CREATE STATISTICS regress_schema_2.ab1_a_b_stats ON (a, b) FROM ab1;
 -- Let's also verify the pg_get_statisticsextdef output looks sane.
-SELECT pg_get_statisticsextdef(oid) FROM pg_statistic_ext WHERE staname = 'ab1_a_b_stats';
+SELECT pg_get_statisticsextdef(oid) FROM pg_statistic_ext WHERE stxname = 'ab1_a_b_stats';
                        pg_get_statisticsextdef                       
 ---------------------------------------------------------------------
  CREATE STATISTICS regress_schema_2.ab1_a_b_stats ON (a, b) FROM ab1
@@ -40,11 +40,53 @@ ALTER TABLE ab1 ALTER a SET STATISTICS 0;
 INSERT INTO ab1 SELECT a, a%23 FROM generate_series(1, 1000) a;
 CREATE STATISTICS ab1_a_b_stats ON (a, b) FROM ab1;
 ANALYZE ab1;
-ERROR:  extended statistics could not be collected for column "a" of relation public.ab1
-HINT:  Consider ALTER TABLE "public"."ab1" ALTER "a" SET STATISTICS -1
+WARNING:  extended statistics "public.ab1_a_b_stats" could not be collected for relation public.ab1
 ALTER TABLE ab1 ALTER a SET STATISTICS -1;
+-- partial analyze doesn't build stats either
+ANALYZE ab1 (a);
+WARNING:  extended statistics "public.ab1_a_b_stats" could not be collected for relation public.ab1
 ANALYZE ab1;
 DROP TABLE ab1;
+-- Verify supported object types for extended statistics
+CREATE schema tststats;
+CREATE TABLE tststats.t (a int, b int, c text);
+CREATE INDEX ti ON tststats.t (a, b);
+CREATE SEQUENCE tststats.s;
+CREATE VIEW tststats.v AS SELECT * FROM tststats.t;
+CREATE MATERIALIZED VIEW tststats.mv AS SELECT * FROM tststats.t;
+CREATE TYPE tststats.ty AS (a int, b int, c text);
+CREATE FOREIGN DATA WRAPPER extstats_dummy_fdw;
+CREATE SERVER extstats_dummy_srv FOREIGN DATA WRAPPER extstats_dummy_fdw;
+CREATE FOREIGN TABLE tststats.f (a int, b int, c text) SERVER extstats_dummy_srv;
+CREATE TABLE tststats.pt (a int, b int, c text) PARTITION BY RANGE (a, b);
+CREATE TABLE tststats.pt1 PARTITION OF tststats.pt FOR VALUES FROM (-10, -10) TO (10, 10);
+CREATE STATISTICS tststats.s1 ON (a, b) FROM tststats.t;
+CREATE STATISTICS tststats.s2 ON (a, b) FROM tststats.ti;
+ERROR:  relation "ti" is not a table, foreign table, or materialized view
+CREATE STATISTICS tststats.s3 ON (a, b) FROM tststats.s;
+ERROR:  relation "s" is not a table, foreign table, or materialized view
+CREATE STATISTICS tststats.s4 ON (a, b) FROM tststats.v;
+ERROR:  relation "v" is not a table, foreign table, or materialized view
+CREATE STATISTICS tststats.s5 ON (a, b) FROM tststats.mv;
+CREATE STATISTICS tststats.s6 ON (a, b) FROM tststats.ty;
+ERROR:  relation "ty" is not a table, foreign table, or materialized view
+CREATE STATISTICS tststats.s7 ON (a, b) FROM tststats.f;
+CREATE STATISTICS tststats.s8 ON (a, b) FROM tststats.pt;
+CREATE STATISTICS tststats.s9 ON (a, b) FROM tststats.pt1;
+DO $$
+DECLARE
+	relname text := reltoastrelid::regclass FROM pg_class WHERE oid = 'tststats.t'::regclass;
+BEGIN
+	EXECUTE 'CREATE STATISTICS tststats.s10 ON (a, b) FROM ' || relname;
+EXCEPTION WHEN wrong_object_type THEN
+	RAISE NOTICE 'stats on toast table not created';
+END;
+$$;
+NOTICE:  stats on toast table not created
+SET client_min_messages TO warning;
+DROP SCHEMA tststats CASCADE;
+DROP FOREIGN DATA WRAPPER extstats_dummy_fdw CASCADE;
+RESET client_min_messages;
 -- n-distinct tests
 CREATE TABLE ndistinct (
     filler1 TEXT,
@@ -131,11 +173,11 @@ ERROR:  duplicate column name in statistics definition
 -- correct command
 CREATE STATISTICS s10 ON (a, b, c) FROM ndistinct;
 ANALYZE ndistinct;
-SELECT staenabled, standistinct
-  FROM pg_statistic_ext WHERE starelid = 'ndistinct'::regclass;
- staenabled |                                          standistinct                                          
-------------+------------------------------------------------------------------------------------------------
- {d,f}      | [{(b 3 4), 301.000000}, {(b 3 6), 301.000000}, {(b 4 6), 301.000000}, {(b 3 4 6), 301.000000}]
+SELECT stxkind, stxndistinct
+  FROM pg_statistic_ext WHERE stxrelid = 'ndistinct'::regclass;
+ stxkind |                                          stxndistinct                                          
+---------+------------------------------------------------------------------------------------------------
+ {d,f}   | [{(b 3 4), 301.000000}, {(b 3 6), 301.000000}, {(b 4 6), 301.000000}, {(b 3 4 6), 301.000000}]
 (1 row)
 
 -- Hash Aggregate, thanks to estimates improved by the statistic
@@ -197,11 +239,11 @@ INSERT INTO ndistinct (a, b, c, filler1)
             cash_words(mod(i,33)::int::money)
        FROM generate_series(1,10000) s(i);
 ANALYZE ndistinct;
-SELECT staenabled, standistinct
-  FROM pg_statistic_ext WHERE starelid = 'ndistinct'::regclass;
- staenabled |                                            standistinct                                            
-------------+----------------------------------------------------------------------------------------------------
- {d,f}      | [{(b 3 4), 2550.000000}, {(b 3 6), 800.000000}, {(b 4 6), 1632.000000}, {(b 3 4 6), 10000.000000}]
+SELECT stxkind, stxndistinct
+  FROM pg_statistic_ext WHERE stxrelid = 'ndistinct'::regclass;
+ stxkind |                                            stxndistinct                                            
+---------+----------------------------------------------------------------------------------------------------
+ {d,f}   | [{(b 3 4), 2550.000000}, {(b 3 6), 800.000000}, {(b 4 6), 1632.000000}, {(b 3 4 6), 10000.000000}]
 (1 row)
 
 -- plans using Group Aggregate, thanks to using correct esimates
@@ -257,10 +299,10 @@ EXPLAIN (COSTS off)
 (3 rows)
 
 DROP STATISTICS s10;
-SELECT staenabled, standistinct
-  FROM pg_statistic_ext WHERE starelid = 'ndistinct'::regclass;
- staenabled | standistinct 
-------------+--------------
+SELECT stxkind, stxndistinct
+  FROM pg_statistic_ext WHERE stxrelid = 'ndistinct'::regclass;
+ stxkind | stxndistinct 
+---------+--------------
 (0 rows)
 
 -- dropping the statistics switches the plans to Hash Aggregate,
