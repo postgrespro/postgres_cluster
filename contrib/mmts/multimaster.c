@@ -62,6 +62,7 @@
 #include "access/htup_details.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_constraint_fn.h"
 #include "pglogical_output/hooks.h"
 #include "parser/analyze.h"
 #include "parser/parse_relation.h"
@@ -2144,7 +2145,9 @@ static void
 MtmLockCluster(void)
 {
 	timestamp_t delay = MIN_WAIT_TIMEOUT;
-	Assert(!MtmClusterLocked);
+	if (MtmClusterLocked) { 
+		MtmUnlockCluster();
+	}
 	MtmLock(LW_EXCLUSIVE);
 	if (BIT_CHECK(Mtm->originLockNodeMask, MtmNodeId-1)) {
 		elog(ERROR, "There is already pending exclusive lock");
@@ -4890,8 +4893,8 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	bool skipCommand = false;
 	bool executed = false;
 
-	MTM_LOG3("%d: Process utility statement tag=%d, context=%d, issubtrans=%d, query=%s", 
-			 MyProcPid, nodeTag(parsetree), context, IsSubTransaction(), queryString);
+	MTM_LOG2("%d: Process utility statement tag=%d, context=%d, issubtrans=%d, creating_extension=%d, query=%s", 
+			 MyProcPid, nodeTag(parsetree), context, IsSubTransaction(), creating_extension, queryString);
 	switch (nodeTag(parsetree))
 	{
 		case T_TransactionStmt:
@@ -5144,24 +5147,14 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			break;
 	}
 
-	/* XXX: dirty. Clear on new tx */
-	/* Some "black magic here":( We want to avoid redundant execution of utility statement by ProcessUtilitySlow (which is done with PROCESS_UTILITY_SUBCOMMAND).
-	 * But if we allow only PROCESS_UTILITY_TOPLEVEL context, then we will not replicated DDL inside dynamic queries in plpgsql functions (see https://jira.postgrespro.ru/browse/CORE-526).
-	 * If we disable only PROCESS_UTILITY_SUBCOMMAND, then we will get problems with "create extension" which is executed also in PROCESS_UTILITY_QUERY context.
-	 * So workaround at this moment is to treat extension as special case. 
-	 * TODO: try to find right solution and rewrite this dummy check.
-	 */
-	if (!skipCommand && (context == PROCESS_UTILITY_TOPLEVEL || (context == PROCESS_UTILITY_QUERY && !creating_extension) || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
-		MtmUtilityProcessedInXid = InvalidTransactionId;
-
-	if (!skipCommand && !MtmTx.isReplicated && (MtmUtilityProcessedInXid == InvalidTransactionId)) {
+	if (!skipCommand && !MtmTx.isReplicated && (context == PROCESS_UTILITY_TOPLEVEL || MtmUtilityProcessedInXid != GetCurrentTransactionId())) 
+	{
 		MtmUtilityProcessedInXid = GetCurrentTransactionId();
-
-		if (context == PROCESS_UTILITY_TOPLEVEL)
+		if (context == PROCESS_UTILITY_TOPLEVEL) { 
 			MtmProcessDDLCommand(queryString, true);
-		else
+		} else { 
 			MtmProcessDDLCommand(ActivePortal->sourceText, true);
-
+		}
 		executed = true;
 	}
 
@@ -5190,6 +5183,26 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	if (executed)
 	{
 		MtmFinishDDLCommand();
+	}
+    if (nodeTag(parsetree) == T_CreateStmt)
+	{
+		CreateStmt* create = (CreateStmt*)parsetree;
+		Oid relid = RangeVarGetRelid(create->relation, NoLock, true);
+		if (relid != InvalidOid) { 
+			Oid constraint_oid;
+			Bitmapset* pk = get_primary_key_attnos(relid, true, &constraint_oid);
+			if (pk == NULL && !MtmVolksWagenMode) {
+				elog(WARNING, 
+					 MtmIgnoreTablesWithoutPk
+					 ? "Table %s.%s without primary will not be replicated"
+					 : "Updates and deletes of table %s.%s without primary will not be replicated",
+					 create->relation->schemaname ? create->relation->schemaname : "public",
+					 create->relation->relname);
+			}
+		}
+	}
+	if (context == PROCESS_UTILITY_TOPLEVEL) { 
+		MtmUtilityProcessedInXid = InvalidTransactionId;
 	}
 }
 
