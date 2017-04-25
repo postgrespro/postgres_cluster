@@ -74,10 +74,6 @@ static int ldapServiceLookup(const char *purl, PQconninfoOption *options,
 #include "common/ip.h"
 #include "mb/pg_wchar.h"
 
-#ifndef FD_CLOEXEC
-#define FD_CLOEXEC 1
-#endif
-
 
 #ifndef WIN32
 #define PGPASSFILE ".pgpass"

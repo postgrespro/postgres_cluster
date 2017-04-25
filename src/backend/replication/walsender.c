@@ -1369,14 +1369,6 @@ exec_replication_command(const char *cmd_string)
 	MemoryContext old_context;
 
 	/*
-	 * Log replication command if log_replication_commands is enabled. Even
-	 * when it's disabled, log the command with DEBUG1 level for backward
-	 * compatibility.
-	 */
-	ereport(log_replication_commands ? LOG : DEBUG1,
-			(errmsg("received replication command: %s", cmd_string)));
-
-	/*
 	 * CREATE_REPLICATION_SLOT ... LOGICAL exports a snapshot until the next
 	 * command arrives. Clean up the old stuff if there's anything.
 	 */
@@ -1398,6 +1390,16 @@ exec_replication_command(const char *cmd_string)
 								  parse_rc))));
 
 	cmd_node = replication_parse_result;
+
+	/*
+	 * Log replication command if log_replication_commands is enabled. Even
+	 * when it's disabled, log the command with DEBUG1 level for backward
+	 * compatibility. Note that SQL commands are not logged here, and will be
+	 * logged later if log_statement is enabled.
+	 */
+	if (cmd_node->type != T_SQLCmd)
+		ereport(log_replication_commands ? LOG : DEBUG1,
+				(errmsg("received replication command: %s", cmd_string)));
 
 	/*
 	 * CREATE_REPLICATION_SLOT ... LOGICAL exports a snapshot. If it was
@@ -3326,7 +3328,16 @@ LagTrackerRead(int head, XLogRecPtr lsn, TimestampTz now)
 			WalTimeSample prev = LagTracker.last_read[head];
 			WalTimeSample next = LagTracker.buffer[LagTracker.read_heads[head]];
 
-			Assert(lsn >= prev.lsn);
+			if (lsn < prev.lsn)
+			{
+				/*
+				 * Reported LSNs shouldn't normally go backwards, but it's
+				 * possible when there is a timeline change.  Treat as not
+				 * found.
+				 */
+				return -1;
+			}
+
 			Assert(prev.lsn < next.lsn);
 
 			if (prev.time > next.time)
