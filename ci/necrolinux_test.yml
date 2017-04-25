@@ -9,4 +9,4 @@ inputs:
   path: postgresql
 
 run:
-  path: postgresql/run_tests.sh
+  path: postgresql/ci/run_tests.sh

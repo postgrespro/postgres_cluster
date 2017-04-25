@@ -14,12 +14,14 @@ jobs:
   - task: basic check
     config:
       platform: freebsd
-      inputs:
-      - name: postgresql
-        path: postgresql
+      inputs: 
+        - name: postgresql
       run:
-        path: postgresql/run_tests.sh
+        path: postgresql/ci/run_tests.sh
 
+###############################################################################
+# Necrolinuxes
+###############################################################################
 
 - name: tests-goslinux-6
   plan:
@@ -27,10 +29,61 @@ jobs:
     trigger: true
   - task: basic check
     tags: ["goslinux-6"]
-    config:
-      platform: necrolinux
-      inputs:
-      - name: postgresql
-        path: postgresql
-      run:
-        path: postgresql/run_tests.sh
+    file: postgresql/ci/necrolinux_test.yml
+
+- name: tests-altlinux-6
+  plan:
+  - get: postgresql
+    trigger: true
+  - task: basic check
+    tags: ["altlinux-6"]
+    file: postgresql/ci/necrolinux_test.yml
+
+- name: tests-altlinux-7
+  plan:
+  - get: postgresql
+    trigger: true
+  - task: basic check
+    tags: ["altlinux-7"]
+    file: postgresql/ci/necrolinux_test.yml
+
+- name: tests-astra-1-4
+  plan:
+  - get: postgresql
+    trigger: true
+  - task: basic check
+    tags: ["astra-1-4"]
+    file: postgresql/ci/necrolinux_test.yml
+
+- name: tests-astra-1-5
+  plan:
+  - get: postgresql
+    trigger: true
+  - task: basic check
+    tags: ["astra-1-5"]
+    file: postgresql/ci/necrolinux_test.yml
+
+- name: tests-rosa-marathon-2012
+  plan:
+  - get: postgresql
+    trigger: true
+  - task: basic check
+    tags: ["rosa-marathon-2012"]
+    file: postgresql/ci/necrolinux_test.yml
+
+- name: tests-rosa-sx-chrome
+  plan:
+  - get: postgresql
+    trigger: true
+  - task: basic check
+    tags: ["rosa-sx-chrome"]
+    file: postgresql/ci/necrolinux_test.yml
+
+- name: tests-rosa-sx-cobalt
+  plan:
+  - get: postgresql
+    trigger: true
+  - task: basic check
+    tags: ["rosa-sx-cobalt"]
+    file: postgresql/ci/necrolinux_test.yml
+
