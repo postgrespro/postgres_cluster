@@ -57,7 +57,7 @@ extern TransactionId PrescanPreparedTransactions(TransactionId **xids_p,
 							int *nxids_p);
 extern void ParsePrepareRecord(uint8 info, char *xlrec,
 							xl_xact_parsed_prepare *parsed);
-extern void StandbyRecoverPreparedTransactions(bool overwriteOK);
+extern void StandbyRecoverPreparedTransactions(void);
 extern void RecoverPreparedTransactions(void);
 
 extern void CheckPointTwoPhase(XLogRecPtr redo_horizon);
