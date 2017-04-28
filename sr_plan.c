@@ -1,5 +1,11 @@
 #include "sr_plan.h"
 #include "commands/event_trigger.h"
+#include "commands/extension.h"
+#include "catalog/pg_extension.h"
+#include "catalog/indexing.h"
+#include "access/sysattr.h" 
+#include "access/xact.h"
+#include "utils/lsyscache.h"
 
 PG_MODULE_MAGIC;
 
@@ -17,6 +23,8 @@ PlanCacheRelCallback(Datum arg, Oid relid);*/
 void sr_analyze(ParseState *pstate,
 				Query *query);
 
+static Oid get_sr_plan_schema(void);
+static Oid sr_get_relname_oid(Oid schema_oid, const char *relname);
 bool sr_query_walker(Query *node, void *context);
 bool sr_query_expr_walker(Node *node, void *context);
 void *replace_fake(void *node);
@@ -39,6 +47,65 @@ void sr_analyze(ParseState *pstate, Query *query)
 	query_text = pstate->p_sourcetext;
 }
 
+/*
+ * Return sr_plan schema's Oid or InvalidOid if that's not possible.
+ */
+static Oid
+get_sr_plan_schema(void)
+{
+	Oid				result;
+	Relation		rel;
+	SysScanDesc		scandesc;
+	HeapTuple		tuple;
+	ScanKeyData		entry[1];
+	Oid				ext_schema;
+	LOCKMODE heap_lock =  AccessShareLock; 
+
+	/* It's impossible to fetch sr_plan's schema now */
+	if (!IsTransactionState())
+		return InvalidOid;
+
+	ext_schema = get_extension_oid("sr_plan", true);
+	if (ext_schema == InvalidOid)
+		return InvalidOid; /* exit if sr_plan does not exist */
+
+	ScanKeyInit(&entry[0],
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(ext_schema));
+
+	rel = heap_open(ExtensionRelationId, heap_lock);
+	scandesc = systable_beginscan(rel, ExtensionOidIndexId, true,
+								  NULL, 1, entry);
+
+	tuple = systable_getnext(scandesc);
+
+	/* We assume that there can be at most one matching tuple */
+	if (HeapTupleIsValid(tuple))
+		result = ((Form_pg_extension) GETSTRUCT(tuple))->extnamespace;
+	else
+		result = InvalidOid;
+
+	systable_endscan(scandesc);
+
+	heap_close(rel, heap_lock); 
+
+	return result;
+}
+
+/*
+ * Return Oid of relation in sr_plan extension schema or
+ * InvalidOid if that's not possible.
+ */
+
+static Oid sr_get_relname_oid(Oid schema_oid, const char *relname)
+{
+	if(schema_oid == InvalidOid) schema_oid = get_sr_plan_schema();
+	if(schema_oid == InvalidOid) return InvalidOid;
+
+	return get_relname_relid(relname, schema_oid);
+}
+
 PlannedStmt *sr_planner(Query *parse,
 						int cursorOptions,
 						ParamListInfo boundParams)
@@ -47,7 +114,6 @@ PlannedStmt *sr_planner(Query *parse,
 	Jsonb *out_jsonb;
 	Jsonb *out_jsonb2;
 	int query_hash;
-	RangeVar *sr_plans_table_rv;
 	Relation sr_plans_heap;
 	Relation query_index_rel;
 	HeapTuple tuple;
@@ -58,19 +124,42 @@ PlannedStmt *sr_planner(Query *parse,
 	Datum		search_values[6];
 	static bool search_nulls[6] = {false, false, false, false, false, false};
 	bool find_ok = false;
-	LOCKMODE heap_lock = AccessShareLock;
+	LOCKMODE heap_lock =  RowExclusiveLock; /* AccessShareLock; */
 	Oid query_index_rel_oid;
-	Oid			sr_plans_oid;
+	Oid	sr_plans_oid;
+	Oid	schema_oid;
+	char *schema_name;
 	IndexScanDesc query_index_scan;
 	ScanKeyData key;
+	List *func_name_list;
 
-	if(sr_plan_write_mode)
-		heap_lock = RowExclusiveLock;
+	if(!sr_plan_write_mode)   
+		return standard_planner(parse, cursorOptions, boundParams);
+
+	schema_oid = get_sr_plan_schema();
+	if(!OidIsValid(schema_oid))
+	{
+		/* Just call standard_planner() if schema doesn't exist. */
+		return standard_planner(parse, cursorOptions, boundParams);
+	}
+
+	if(sr_plan_fake_func)
+	{
+		HeapTuple   ftup;
+		ftup = SearchSysCache1(PROCOID, ObjectIdGetDatum(sr_plan_fake_func));
+		if(!HeapTupleIsValid(ftup)) sr_plan_fake_func = 0;
+		else ReleaseSysCache(ftup);
+	}
 
 	if (!sr_plan_fake_func)
 	{
 		Oid args[1] = {ANYELEMENTOID};
-		sr_plan_fake_func = LookupFuncName(list_make1(makeString("_p")), 1, args, true);
+
+		schema_name = get_namespace_name(schema_oid);
+		func_name_list = list_make2(makeString(schema_name), makeString("_p")); 
+		sr_plan_fake_func = LookupFuncName(func_name_list, 1, args, true);
+		list_free(func_name_list);
+		pfree(schema_name);
 	}
 	
 	
@@ -81,25 +170,21 @@ PlannedStmt *sr_planner(Query *parse,
 	/* Make list with all _p functions and his position */
 	sr_query_walker((Query *)parse, NULL);
 
-	sr_plans_table_rv = makeRangeVar("public", "sr_plans", -1);
-	/* First check existance of "sr_plans" table */
-	sr_plans_oid = RangeVarGetRelid(sr_plans_table_rv, heap_lock, true);
+	sr_plans_oid = sr_get_relname_oid(schema_oid, SR_PLANS_TABLE_NAME);
+
 	if (!OidIsValid(sr_plans_oid))
 		/* Just call standard_planner() if table doesn't exist. */
 		return standard_planner(parse, cursorOptions, boundParams);
 
 	/* Table "sr_plans" exists */
-	sr_plans_heap = heap_open(sr_plans_oid, NoLock);
+	sr_plans_heap = heap_open(sr_plans_oid, heap_lock);
 
-#if PG_VERSION_NUM >= 90600
-	query_index_rel_oid = DatumGetObjectId(DirectFunctionCall1(to_regclass, PointerGetDatum(cstring_to_text("sr_plans_query_hash_idx"))));
-#else
-	query_index_rel_oid = DatumGetObjectId(DirectFunctionCall1(to_regclass, CStringGetDatum("sr_plans_query_hash_idx")));
-#endif
+	query_index_rel_oid = sr_get_relname_oid(schema_oid, SR_PLANS_TABLE_QUERY_INDEX_NAME);
+
 	if (query_index_rel_oid == InvalidOid)
 	{
 		heap_close(sr_plans_heap, heap_lock);
-		elog(WARNING, "Not found sr_plans_query_hash_idx index");
+		elog(WARNING, "Not found %s index", SR_PLANS_TABLE_QUERY_INDEX_NAME);
 		return standard_planner(parse, cursorOptions, boundParams);
 	}
 
@@ -358,11 +443,11 @@ sr_plan_invalid_table(PG_FUNCTION_ARGS)
 	FmgrInfo	flinfo;
 	ExprContext econtext;
 	TupleTableSlot *slot = NULL;
-	RangeVar *sr_plans_table_rv;
 	Relation sr_plans_heap;
 	Datum		search_values[6];
 	static bool search_nulls[6];
 	static bool search_replaces[6];
+	Oid sr_plans_oid;
 	HeapScanDesc heapScan;
 	Jsonb *jsonb;
 	JsonbValue relation_key;
@@ -372,9 +457,13 @@ sr_plan_invalid_table(PG_FUNCTION_ARGS)
 	if (!CALLED_AS_EVENT_TRIGGER(fcinfo))  /* internal error */
 		elog(ERROR, "not fired by event trigger manager");
 
-	sr_plans_table_rv = makeRangeVar("public", "sr_plans", -1);
-	sr_plans_heap = heap_openrv(sr_plans_table_rv, RowExclusiveLock);
-	
+	sr_plans_oid = sr_get_relname_oid(InvalidOid, SR_PLANS_TABLE_NAME);
+	if(sr_plans_oid == InvalidOid)
+	{
+		elog(ERROR, "Cannot find %s table", SR_PLANS_TABLE_NAME);
+	}
+	sr_plans_heap = heap_open(sr_plans_oid, RowExclusiveLock);
+
 	relation_key.type = jbvString;
 	relation_key.val.string.len = strlen("relationOids");
 	relation_key.val.string.val = "relationOids";
