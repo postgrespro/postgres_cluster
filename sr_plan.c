@@ -124,7 +124,7 @@ PlannedStmt *sr_planner(Query *parse,
 	Datum		search_values[6];
 	static bool search_nulls[6] = {false, false, false, false, false, false};
 	bool find_ok = false;
-	LOCKMODE heap_lock =  RowExclusiveLock; /* AccessShareLock; */
+	LOCKMODE heap_lock =  AccessShareLock; 
 	Oid query_index_rel_oid;
 	Oid	sr_plans_oid;
 	Oid	schema_oid;
@@ -133,8 +133,8 @@ PlannedStmt *sr_planner(Query *parse,
 	ScanKeyData key;
 	List *func_name_list;
 
-	if(!sr_plan_write_mode)   
-		return standard_planner(parse, cursorOptions, boundParams);
+	if(sr_plan_write_mode)   
+		heap_lock = RowExclusiveLock;
 
 	schema_oid = get_sr_plan_schema();
 	if(!OidIsValid(schema_oid))
