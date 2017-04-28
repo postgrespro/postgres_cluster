@@ -210,8 +210,7 @@ PlannedStmt *sr_planner(Query *parse,
 		HeapTuple local_tuple;
 		local_tuple = index_getnext(query_index_scan, ForwardScanDirection);
 
-		if (local_tuple == NULL)
-			break;
+		if (local_tuple == NULL) break;
 
 		heap_deform_tuple(local_tuple, sr_plans_heap->rd_att,
 						  search_values, search_nulls);
@@ -227,7 +226,7 @@ PlannedStmt *sr_planner(Query *parse,
 	
 	if (find_ok)
 	{
-		elog(WARNING, "Ok we find saved plan.");
+		/* elog(WARNING, "Ok we find saved plan."); */
 		out_jsonb2 = (Jsonb *)DatumGetPointer(PG_DETOAST_DATUM(search_values[3]));
 		if (query_params != NULL)
 			pl_stmt = jsonb_to_node_tree(out_jsonb2, &replace_fake);
