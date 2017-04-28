@@ -118,7 +118,7 @@ typedef struct OnCommitItem
 	SubTransactionId deleting_subid;
 } OnCommitItem;
 
-static List *on_commits = NIL;
+List* pg_on_commit_actions = NIL;
 
 
 /*
@@ -11985,7 +11985,7 @@ register_on_commit_action(Oid relid, OnCommitAction action)
 	oc->creating_subid = GetCurrentSubTransactionId();
 	oc->deleting_subid = InvalidSubTransactionId;
 
-	on_commits = lcons(oc, on_commits);
+	pg_on_commit_actions = lcons(oc, pg_on_commit_actions);
 
 	MemoryContextSwitchTo(oldcxt);
 }
@@ -12000,7 +12000,7 @@ remove_on_commit_action(Oid relid)
 {
 	ListCell   *l;
 
-	foreach(l, on_commits)
+	foreach(l, pg_on_commit_actions)
 	{
 		OnCommitItem *oc = (OnCommitItem *) lfirst(l);
 
@@ -12024,7 +12024,7 @@ PreCommit_on_commit_actions(void)
 	ListCell   *l;
 	List	   *oids_to_truncate = NIL;
 
-	foreach(l, on_commits)
+	foreach(l, pg_on_commit_actions)
 	{
 		OnCommitItem *oc = (OnCommitItem *) lfirst(l);
 
@@ -12096,7 +12096,7 @@ AtEOXact_on_commit_actions(bool isCommit)
 	ListCell   *prev_item;
 
 	prev_item = NULL;
-	cur_item = list_head(on_commits);
+	cur_item = list_head(pg_on_commit_actions);
 
 	while (cur_item != NULL)
 	{
@@ -12106,12 +12106,12 @@ AtEOXact_on_commit_actions(bool isCommit)
 			oc->creating_subid != InvalidSubTransactionId)
 		{
 			/* cur_item must be removed */
-			on_commits = list_delete_cell(on_commits, cur_item, prev_item);
+			pg_on_commit_actions = list_delete_cell(pg_on_commit_actions, cur_item, prev_item);
 			pfree(oc);
 			if (prev_item)
 				cur_item = lnext(prev_item);
 			else
-				cur_item = list_head(on_commits);
+				cur_item = list_head(pg_on_commit_actions);
 		}
 		else
 		{
@@ -12139,7 +12139,7 @@ AtEOSubXact_on_commit_actions(bool isCommit, SubTransactionId mySubid,
 	ListCell   *prev_item;
 
 	prev_item = NULL;
-	cur_item = list_head(on_commits);
+	cur_item = list_head(pg_on_commit_actions);
 
 	while (cur_item != NULL)
 	{
@@ -12148,12 +12148,12 @@ AtEOSubXact_on_commit_actions(bool isCommit, SubTransactionId mySubid,
 		if (!isCommit && oc->creating_subid == mySubid)
 		{
 			/* cur_item must be removed */
-			on_commits = list_delete_cell(on_commits, cur_item, prev_item);
+			pg_on_commit_actions = list_delete_cell(pg_on_commit_actions, cur_item, prev_item);
 			pfree(oc);
 			if (prev_item)
 				cur_item = lnext(prev_item);
 			else
-				cur_item = list_head(on_commits);
+				cur_item = list_head(pg_on_commit_actions);
 		}
 		else
 		{
