@@ -2506,6 +2506,44 @@ _outSelectStmt(StringInfo str, const SelectStmt *node)
 }
 
 static void
+_outInsertStmt(StringInfo str, const InsertStmt *node)
+{
+	WRITE_NODE_TYPE("INSERT");
+
+	WRITE_NODE_FIELD(relation);
+	WRITE_NODE_FIELD(cols);
+	WRITE_NODE_FIELD(selectStmt);
+	WRITE_NODE_FIELD(onConflictClause);
+	WRITE_NODE_FIELD(returningList);
+	WRITE_NODE_FIELD(withClause);
+}
+
+static void
+_outDeleteStmt(StringInfo str, const DeleteStmt *node)
+{
+	WRITE_NODE_TYPE("DELETE");
+
+	WRITE_NODE_FIELD(relation);
+	WRITE_NODE_FIELD(usingClause);
+	WRITE_NODE_FIELD(whereClause);
+	WRITE_NODE_FIELD(returningList);
+	WRITE_NODE_FIELD(withClause);
+}
+
+static void
+_outUpdateStmt(StringInfo str, const UpdateStmt *node)
+{
+	WRITE_NODE_TYPE("UPDATE");
+
+	WRITE_NODE_FIELD(relation);
+	WRITE_NODE_FIELD(targetList);
+	WRITE_NODE_FIELD(whereClause);
+	WRITE_NODE_FIELD(fromClause);
+	WRITE_NODE_FIELD(returningList);
+	WRITE_NODE_FIELD(withClause);
+}
+
+static void
 _outFuncCall(StringInfo str, const FuncCall *node)
 {
 	WRITE_NODE_TYPE("FUNCCALL");
@@ -3732,6 +3770,15 @@ outNode(StringInfo str, const void *obj)
 				break;
 			case T_SelectStmt:
 				_outSelectStmt(str, obj);
+				break;
+			case T_UpdateStmt:
+				_outUpdateStmt(str, obj);
+				break;
+			case T_DeleteStmt:
+				_outDeleteStmt(str, obj);
+				break;
+			case T_InsertStmt:
+				_outInsertStmt(str, obj);
 				break;
 			case T_ColumnDef:
 				_outColumnDef(str, obj);

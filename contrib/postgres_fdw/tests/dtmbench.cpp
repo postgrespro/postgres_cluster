@@ -53,6 +53,8 @@ struct config
 	int nShards;
     string connection;
 	bool prepared;
+	bool local;
+	bool pathman_sharding;
 
     config() {
 		nShards = 1;
@@ -62,6 +64,8 @@ struct config
         nAccounts = 10000;
         updatePercent = 100;
 		prepared = false;
+		local = false;
+		pathman_sharding = false;
     }
 };
 
@@ -125,14 +129,17 @@ void* writer(void* arg)
 {
     thread& t = *(thread*)arg;
     connection conn(cfg.connection);
+
 	if (cfg.prepared) { 
 		conn.prepare("transfer", "update t set v = v + $1 where u=$2");
 	}
+
     for (int i = 0; i < cfg.nIterations; i++)
     {
 		work txn(conn);
         int srcAcc = random() % cfg.nAccounts;
-        int dstAcc = random() % cfg.nAccounts;
+        int dstAcc = (cfg.local ? srcAcc + 1 : random()) % cfg.nAccounts;
+
         try {
             if (random() % 100 < cfg.updatePercent) {				
                 int rc = cfg.prepared 
@@ -180,8 +187,17 @@ void initializeDatabase()
 		for (int i = 0; i < cfg.nShards; i++)
 		{
 			work txn(conn);
-			exec(txn, "alter table t_fdw%i add check (u between %d and %d)", i+1, accountsPerShard*i, accountsPerShard*(i+1)-1);
+
+			if (!cfg.pathman_sharding) {
+				exec(txn, "alter table t_fdw%i add check (u between %d and %d)", i+1, accountsPerShard*i, accountsPerShard*(i+1)-1);
+			} else {
+				//exec(txn, "SELECT add_range_partition('t', %d::int, %d, 't_fdw%i')",
+				exec(txn, "SELECT add_foreign_range_partition('t', %d::int, %d, 't_fdw%i', 'shard%i')",
+					 accountsPerShard*i, accountsPerShard*(i+1), i+1, i % 3 + 1);
+			}
+
 			exec(txn, "insert into t_fdw%i (select generate_series(%d,%d), %d)", i+1, accountsPerShard*i, accountsPerShard*(i+1)-1, 0);
+
 			txn.commit();
 		}
 	}
@@ -221,9 +237,15 @@ int main (int argc, char* argv[])
                 initialize = true;
 				cfg.nShards = atoi(argv[++i]);
                 continue;
+            case 'l':
+			    cfg.local = true;
+                continue;
             case 'P':
 			    cfg.prepared = true;
                 continue;
+			case 'S':
+				cfg.pathman_sharding = true;
+				continue;
             }
         }
         printf("Options:\n"
@@ -234,7 +256,9 @@ int main (int argc, char* argv[])
                "\t-p N\tupdate percent (100)\n"
                "\t-c STR\tdatabase connection string\n"
                "\t-i N\tinitialize N shards\n"
-               "\t-P\tuse prepared statements\n");
+			   "\t-l\ttlocal tranfers\n"
+               "\t-P\tuse prepared statements\n"
+			   "\t-S\tuse pathman_sharding\n");
         return 1;
     }
 
@@ -282,7 +306,8 @@ int main (int argc, char* argv[])
     printf(
         "{\"tps\":%f, \"transactions\":%ld,"
         " \"selects\":%ld, \"updates\":%ld, \"aborts\":%ld, \"abort_percent\": %d,"
-        " \"readers\":%d, \"writers\":%d, \"update_percent\":%d, \"accounts\":%d, \"iterations\":%d ,\"shards\":%d, \"prepared\":%d}\n",
+        " \"readers\":%d, \"writers\":%d, \"update_percent\":%d, \"accounts\":%d,"
+		" \"iterations\":%d ,\"shards\":%d, \"prepared\":%d, \"pathman_sharding\":%d, \"local\":%d}\n",
         (double)(nTransactions*USEC)/elapsed,
         nTransactions,
         nSelects,
@@ -295,7 +320,9 @@ int main (int argc, char* argv[])
         cfg.nAccounts,
         cfg.nIterations,
 		cfg.nShards,
-		cfg.prepared);
+		cfg.prepared,
+		cfg.pathman_sharding,
+		cfg.local);
 
     return 0;
 }

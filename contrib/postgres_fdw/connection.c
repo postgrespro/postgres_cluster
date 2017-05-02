@@ -67,6 +67,8 @@ static bool xact_got_connection = false;
 typedef long long csn_t;
 static csn_t currentGlobalTransactionId = 0;
 static int	currentLocalTransactionId = 0;
+static PGconn* currentConnection = NULL;
+
 
 /* prototypes of private functions */
 static PGconn *connect_pg_server(ForeignServer *server, UserMapping *user);
@@ -406,6 +408,8 @@ static void
 begin_remote_xact(ConnCacheEntry *entry)
 {
 	int			curlevel = GetCurrentTransactionNestLevel();
+	PGresult   *res;
+			
 
 	/* Start main transaction if we haven't yet */
 	if (entry->xact_depth <= 0)
@@ -419,8 +423,6 @@ begin_remote_xact(ConnCacheEntry *entry)
 		if (TransactionIdIsValid(gxid))
 		{
 			char		stmt[64];
-			PGresult   *res;
-
 			snprintf(stmt, sizeof(stmt), "select public.dtm_join_transaction(%d)", gxid);
 			res = PQexec(entry->conn, stmt);
 			PQclear(res);
@@ -434,26 +436,30 @@ begin_remote_xact(ConnCacheEntry *entry)
 		entry->xact_depth = 1;
 		if (UseTsDtmTransactions)
 		{
-			if (!currentGlobalTransactionId)
+			if (currentConnection == NULL) 
 			{
-				PGresult   *res = PQexec(entry->conn, psprintf("SELECT public.dtm_extend('%d.%d')",
-									MyProcPid, ++currentLocalTransactionId));
-				char	   *resp;
-
-				if (PQresultStatus(res) != PGRES_TUPLES_OK)
-				{
-					pgfdw_report_error(ERROR, res, entry->conn, true, sql);
-				}
-				resp = PQgetvalue(res, 0, 0);
-				if (resp == NULL || (*resp) == '\0' || sscanf(resp, "%lld", &currentGlobalTransactionId) != 1)
-				{
-					pgfdw_report_error(ERROR, res, entry->conn, true, sql);
-				}
-				PQclear(res);
-			}
-			else
+				currentConnection = entry->conn;
+			} 
+			else if (entry->conn != currentConnection)
 			{
-				PGresult   *res = PQexec(entry->conn, psprintf("SELECT public.dtm_access(%llu, '%d.%d')", currentGlobalTransactionId, MyProcPid, currentLocalTransactionId));
+				if (!currentGlobalTransactionId)
+				{	
+					char	   *resp;
+					res = PQexec(currentConnection, psprintf("SELECT public.dtm_extend('%d.%d')",
+															 MyProcPid, ++currentLocalTransactionId));
+					
+					if (PQresultStatus(res) != PGRES_TUPLES_OK)
+					{
+						pgfdw_report_error(ERROR, res, currentConnection, true, sql);
+					}
+					resp = PQgetvalue(res, 0, 0);
+					if (resp == NULL || (*resp) == '\0' || sscanf(resp, "%lld", &currentGlobalTransactionId) != 1)
+					{
+						pgfdw_report_error(ERROR, res, currentConnection, true, sql);
+					}
+					PQclear(res);
+				}
+				res = PQexec(entry->conn, psprintf("SELECT public.dtm_access(%llu, '%d.%d')", currentGlobalTransactionId, MyProcPid, currentLocalTransactionId));
 
 				if (PQresultStatus(res) != PGRES_TUPLES_OK)
 				{
@@ -954,6 +960,7 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 		cursor_number = 0;
 
 		currentGlobalTransactionId = 0;
+		currentConnection = NULL;
 	}
 }
 

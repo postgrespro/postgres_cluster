@@ -450,6 +450,10 @@ int			tcp_keepalives_idle;
 int			tcp_keepalives_interval;
 int			tcp_keepalives_count;
 
+
+int         autoprepare_threshold;
+int         autoprepare_limit;
+
 /*
  * SSL renegotiation was been removed in PostgreSQL 9.5, but we tolerate it
  * being set to zero (meaning never renegotiate) for backward compatibility.
@@ -1947,6 +1951,28 @@ static struct config_int ConfigureNamesInt[] =
 		&max_stack_depth,
 		100, 100, MAX_KILOBYTES,
 		check_max_stack_depth, assign_max_stack_depth, NULL
+	},
+
+	/*
+	 * Threshold for implicit preparing of frequently executed queries
+	 */
+	{
+		{"autoprepare_threshold", PGC_USERSET, QUERY_TUNING_OTHER,
+		 gettext_noop("Threshold for autopreparing query."),
+		 gettext_noop("0 value disables autoprepare."),
+		},
+		&autoprepare_threshold,
+		0, 0, INT_MAX,
+		NULL, NULL, NULL
+	},
+	{
+		{"autoprepare_limit", PGC_USERSET, QUERY_TUNING_OTHER,
+		 gettext_noop("Maximal number of autoprepared queries."),
+		 gettext_noop("0 means unlimited number of autoprepared queries."),
+		},
+		&autoprepare_limit,
+		0, 0, INT_MAX,
+		NULL, NULL, NULL
 	},
 
 	{

@@ -3179,22 +3179,29 @@ execute_dml_stmt(ForeignScanState *node)
 	/*
 	 * Construct array of query parameter values in text format.
 	 */
-	if (numParams > 0)
+	if (numParams > 0) 
+	{
 		process_query_params(econtext,
 							 dmstate->param_flinfo,
 							 dmstate->param_exprs,
 							 values);
-
-	/*
-	 * Notice that we pass NULL for paramTypes, thus forcing the remote server
-	 * to infer types for all parameters.  Since we explicitly cast every
-	 * parameter (see deparse.c), the "inference" is trivial and will produce
-	 * the desired result.  This allows us to avoid assuming that the remote
-	 * server has the same OIDs we do for the parameters' types.
-	 */
-	if (!PQsendQueryParams(dmstate->conn, dmstate->query, numParams,
-						   NULL, values, NULL, NULL, 0))
-		pgfdw_report_error(ERROR, NULL, dmstate->conn, false, dmstate->query);
+		
+		/*
+		 * Notice that we pass NULL for paramTypes, thus forcing the remote server
+		 * to infer types for all parameters.  Since we explicitly cast every
+		 * parameter (see deparse.c), the "inference" is trivial and will produce
+		 * the desired result.  This allows us to avoid assuming that the remote
+		 * server has the same OIDs we do for the parameters' types.
+		 */
+		if (!PQsendQueryParams(dmstate->conn, dmstate->query, numParams,
+							   NULL, values, NULL, NULL, 0))
+			pgfdw_report_error(ERROR, NULL, dmstate->conn, false, dmstate->query);
+	} 
+	else 
+	{
+		if (!PQsendQuery(dmstate->conn, dmstate->query))
+			pgfdw_report_error(ERROR, NULL, dmstate->conn, false, dmstate->query);
+	}
 
 	/*
 	 * Get the result, and check for success.

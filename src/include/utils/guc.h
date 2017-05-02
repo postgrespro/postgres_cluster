@@ -252,6 +252,9 @@ extern int	client_min_messages;
 extern int	log_min_duration_statement;
 extern int	log_temp_files;
 
+extern int  autoprepare_threshold;
+extern int  autoprepare_limit;
+
 extern int	temp_file_limit;
 
 extern int	num_temp_buffers;

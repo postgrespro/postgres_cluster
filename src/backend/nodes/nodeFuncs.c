@@ -3610,6 +3610,454 @@ raw_expression_tree_walker(Node *node,
 }
 
 /*
+ * raw_expression_tree_mutator --- transform raw parse tree. 
+ *
+ * This function is implementing slightly different approach for tree update than expression_tree_mutator().
+ * Callback is given pointer to pointer to the current node and can update this field instead of returning reference to new node.
+ * It makes it possible to remember changes and easily revert them without extra traversal of the tree.
+ * 
+ * This function do not need QTW_DONT_COPY_QUERY flag: it never implicitly copy tree nodes, doing in-place update.
+ * 
+ * Like raw_expression_tree_walker, there is no special rule about query
+ * boundaries: we descend to everything that's possibly interesting.
+ *
+ * Currently, the node type coverage here extends only to DML statements
+ * (SELECT/INSERT/UPDATE/DELETE) and nodes that can appear in them, because
+ * this is used mainly during analysis of CTEs, and only DML statements can
+ * appear in CTEs. If some other node is visited, iteration is immediately stopped and true is returned.
+ */
+bool
+raw_expression_tree_mutator(Node *node,
+							bool (*mutator) (),
+							void *context)
+{
+	ListCell   *temp;
+
+	/*
+	 * The walker has already visited the current node, and so we need only
+	 * recurse into any sub-nodes it has.
+	 */
+	if (node == NULL)
+		return false;
+
+	/* Guard against stack overflow due to overly complex expressions */
+	check_stack_depth();
+
+	switch (nodeTag(node))
+	{
+		case T_SetToDefault:
+		case T_CurrentOfExpr:
+		case T_Integer:
+		case T_Float:
+		case T_String:
+		case T_BitString:
+		case T_Null:
+		case T_ParamRef:
+		case T_A_Const:
+		case T_A_Star:
+			/* primitive node types with no subnodes */
+			break;
+		case T_Alias:
+			/* we assume the colnames list isn't interesting */
+			break;
+		case T_RangeVar:
+			return mutator(&((RangeVar *) node)->alias, context);
+		case T_GroupingFunc:
+			return mutator(&((GroupingFunc *) node)->args, context);
+		case T_SubLink:
+			{
+				SubLink    *sublink = (SubLink *) node;
+
+				if (mutator(&sublink->testexpr, context))
+					return true;
+				/* we assume the operName is not interesting */
+				if (mutator(&sublink->subselect, context))
+					return true;
+			}
+			break;
+		case T_CaseExpr:
+			{
+				CaseExpr   *caseexpr = (CaseExpr *) node;
+
+				if (mutator(&caseexpr->arg, context))
+					return true;
+				/* we assume mutator(& doesn't care about CaseWhens, either */
+				foreach(temp, caseexpr->args)
+				{
+					CaseWhen   *when = (CaseWhen *) lfirst(temp);
+
+					Assert(IsA(when, CaseWhen));
+					if (mutator(&when->expr, context))
+						return true;
+					if (mutator(&when->result, context))
+						return true;
+				}
+				if (mutator(&caseexpr->defresult, context))
+					return true;
+			}
+			break;
+		case T_RowExpr:
+			/* Assume colnames isn't interesting */
+			return mutator(&((RowExpr *) node)->args, context);
+		case T_CoalesceExpr:
+			return mutator(&((CoalesceExpr *) node)->args, context);
+		case T_MinMaxExpr:
+			return mutator(&((MinMaxExpr *) node)->args, context);
+		case T_XmlExpr:
+			{
+				XmlExpr    *xexpr = (XmlExpr *) node;
+
+				if (mutator(&xexpr->named_args, context))
+					return true;
+				/* we assume mutator(& doesn't care about arg_names */
+				if (mutator(&xexpr->args, context))
+					return true;
+			}
+			break;
+		case T_NullTest:
+			return mutator(&((NullTest *) node)->arg, context);
+		case T_BooleanTest:
+			return mutator(&((BooleanTest *) node)->arg, context);
+		case T_JoinExpr:
+			{
+				JoinExpr   *join = (JoinExpr *) node;
+
+				if (mutator(&join->larg, context))
+					return true;
+				if (mutator(&join->rarg, context))
+					return true;
+				if (mutator(&join->quals, context))
+					return true;
+				if (mutator(&join->alias, context))
+					return true;
+				/* using list is deemed uninteresting */
+			}
+			break;
+		case T_IntoClause:
+			{
+				IntoClause *into = (IntoClause *) node;
+
+				if (mutator(&into->rel, context))
+					return true;
+				/* colNames, options are deemed uninteresting */
+				/* viewQuery should be null in raw parsetree, but check it */
+				if (mutator(&into->viewQuery, context))
+					return true;
+			}
+			break;
+		case T_List:
+			foreach(temp, (List *) node)
+			{
+				if (mutator(&lfirst(temp), context))
+					return true;
+			}
+			break;
+		case T_InsertStmt:
+			{
+				InsertStmt *stmt = (InsertStmt *) node;
+
+				if (mutator(&stmt->relation, context))
+					return true;
+				if (mutator(&stmt->cols, context))
+					return true;
+				if (mutator(&stmt->selectStmt, context))
+					return true;
+				if (mutator(&stmt->onConflictClause, context))
+					return true;
+				if (mutator(&stmt->returningList, context))
+					return true;
+				if (mutator(&stmt->withClause, context))
+					return true;
+			}
+			break;
+		case T_DeleteStmt:
+			{
+				DeleteStmt *stmt = (DeleteStmt *) node;
+
+				if (mutator(&stmt->relation, context))
+					return true;
+				if (mutator(&stmt->usingClause, context))
+					return true;
+				if (mutator(&stmt->whereClause, context))
+					return true;
+				if (mutator(&stmt->returningList, context))
+					return true;
+				if (mutator(&stmt->withClause, context))
+					return true;
+			}
+			break;
+		case T_UpdateStmt:
+			{
+				UpdateStmt *stmt = (UpdateStmt *) node;
+
+				if (mutator(&stmt->relation, context))
+					return true;
+				if (mutator(&stmt->targetList, context))
+					return true;
+				if (mutator(&stmt->whereClause, context))
+					return true;
+				if (mutator(&stmt->fromClause, context))
+					return true;
+				if (mutator(&stmt->returningList, context))
+					return true;
+				if (mutator(&stmt->withClause, context))
+					return true;
+			}
+			break;
+		case T_SelectStmt:
+			{
+				SelectStmt *stmt = (SelectStmt *) node;
+
+				if (mutator(&stmt->distinctClause, context))
+					return true;
+				if (mutator(&stmt->intoClause, context))
+					return true;
+				if (mutator(&stmt->targetList, context))
+					return true;
+				if (mutator(&stmt->fromClause, context))
+					return true;
+				if (mutator(&stmt->whereClause, context))
+					return true;
+				if (mutator(&stmt->groupClause, context))
+					return true;
+				if (mutator(&stmt->havingClause, context))
+					return true;
+				if (mutator(&stmt->windowClause, context))
+					return true;
+				if (mutator(&stmt->valuesLists, context))
+					return true;
+				if (mutator(&stmt->sortClause, context))
+					return true;
+				if (mutator(&stmt->limitOffset, context))
+					return true;
+				if (mutator(&stmt->limitCount, context))
+					return true;
+				if (mutator(&stmt->lockingClause, context))
+					return true;
+				if (mutator(&stmt->withClause, context))
+					return true;
+				if (mutator(&stmt->larg, context))
+					return true;
+				if (mutator(&stmt->rarg, context))
+					return true;
+			}
+			break;
+		case T_A_Expr:
+			{
+				A_Expr	   *expr = (A_Expr *) node;
+
+				if (mutator(&expr->lexpr, context))
+					return true;
+				if (mutator(&expr->rexpr, context))
+					return true;
+				/* operator name is deemed uninteresting */
+			}
+			break;
+		case T_BoolExpr:
+			{
+				BoolExpr   *expr = (BoolExpr *) node;
+
+				if (mutator(&expr->args, context))
+					return true;
+			}
+			break;
+		case T_ColumnRef:
+			/* we assume the fields contain nothing interesting */
+			break;
+		case T_FuncCall:
+			{
+				FuncCall   *fcall = (FuncCall *) node;
+
+				if (mutator(&fcall->args, context))
+					return true;
+				if (mutator(&fcall->agg_order, context))
+					return true;
+				if (mutator(&fcall->agg_filter, context))
+					return true;
+				if (mutator(&fcall->over, context))
+					return true;
+				/* function name is deemed uninteresting */
+			}
+			break;
+		case T_NamedArgExpr:
+			return mutator(&((NamedArgExpr *) node)->arg, context);
+		case T_A_Indices:
+			{
+				A_Indices  *indices = (A_Indices *) node;
+
+				if (mutator(&indices->lidx, context))
+					return true;
+				if (mutator(&indices->uidx, context))
+					return true;
+			}
+			break;
+		case T_A_Indirection:
+			{
+				A_Indirection *indir = (A_Indirection *) node;
+
+				if (mutator(&indir->arg, context))
+					return true;
+				if (mutator(&indir->indirection, context))
+					return true;
+			}
+			break;
+		case T_A_ArrayExpr:
+			return mutator(&((A_ArrayExpr *) node)->elements, context);
+		case T_ResTarget:
+			{
+				ResTarget  *rt = (ResTarget *) node;
+
+				if (mutator(&rt->indirection, context))
+					return true;
+				if (mutator(&rt->val, context))
+					return true;
+			}
+			break;
+		case T_MultiAssignRef:
+			return mutator(&((MultiAssignRef *) node)->source, context);
+		case T_TypeCast:
+			{
+				TypeCast   *tc = (TypeCast *) node;
+
+				if (mutator(&tc->arg, context))
+					return true;
+				if (mutator(&tc->typeName, context))
+					return true;
+			}
+			break;
+		case T_CollateClause:
+			return mutator(&((CollateClause *) node)->arg, context);
+		case T_SortBy:
+			return mutator(&((SortBy *) node)->node, context);
+		case T_WindowDef:
+			{
+				WindowDef  *wd = (WindowDef *) node;
+
+				if (mutator(&wd->partitionClause, context))
+					return true;
+				if (mutator(&wd->orderClause, context))
+					return true;
+				if (mutator(&wd->startOffset, context))
+					return true;
+				if (mutator(&wd->endOffset, context))
+					return true;
+			}
+			break;
+		case T_RangeSubselect:
+			{
+				RangeSubselect *rs = (RangeSubselect *) node;
+
+				if (mutator(&rs->subquery, context))
+					return true;
+				if (mutator(&rs->alias, context))
+					return true;
+			}
+			break;
+		case T_RangeFunction:
+			{
+				RangeFunction *rf = (RangeFunction *) node;
+
+				if (mutator(&rf->functions, context))
+					return true;
+				if (mutator(&rf->alias, context))
+					return true;
+				if (mutator(&rf->coldeflist, context))
+					return true;
+			}
+			break;
+		case T_RangeTableSample:
+			{
+				RangeTableSample *rts = (RangeTableSample *) node;
+
+				if (mutator(&rts->relation, context))
+					return true;
+				/* method name is deemed uninteresting */
+				if (mutator(&rts->args, context))
+					return true;
+				if (mutator(&rts->repeatable, context))
+					return true;
+			}
+			break;
+		case T_TypeName:
+			{
+				TypeName   *tn = (TypeName *) node;
+
+				if (mutator(&tn->typmods, context))
+					return true;
+				if (mutator(&tn->arrayBounds, context))
+					return true;
+				/* type name itself is deemed uninteresting */
+			}
+			break;
+		case T_ColumnDef:
+			{
+				ColumnDef  *coldef = (ColumnDef *) node;
+
+				if (mutator(&coldef->typeName, context))
+					return true;
+				if (mutator(&coldef->raw_default, context))
+					return true;
+				if (mutator(&coldef->collClause, context))
+					return true;
+				/* for now, constraints are ignored */
+			}
+			break;
+		case T_IndexElem:
+			{
+				IndexElem  *indelem = (IndexElem *) node;
+
+				if (mutator(&indelem->expr, context))
+					return true;
+				/* collation and opclass names are deemed uninteresting */
+			}
+			break;
+		case T_GroupingSet:
+			return mutator(&((GroupingSet *) node)->content, context);
+		case T_LockingClause:
+			return mutator(&((LockingClause *) node)->lockedRels, context);
+		case T_XmlSerialize:
+			{
+				XmlSerialize *xs = (XmlSerialize *) node;
+
+				if (mutator(&xs->expr, context))
+					return true;
+				if (mutator(&xs->typeName, context))
+					return true;
+			}
+			break;
+		case T_WithClause:
+			return mutator(&((WithClause *) node)->ctes, context);
+		case T_InferClause:
+			{
+				InferClause *stmt = (InferClause *) node;
+
+				if (mutator(&stmt->indexElems, context))
+					return true;
+				if (mutator(&stmt->whereClause, context))
+					return true;
+			}
+			break;
+		case T_OnConflictClause:
+			{
+				OnConflictClause *stmt = (OnConflictClause *) node;
+
+				if (mutator(&stmt->infer, context))
+					return true;
+				if (mutator(&stmt->targetList, context))
+					return true;
+				if (mutator(&stmt->whereClause, context))
+					return true;
+			}
+			break;
+		case T_CommonTableExpr:
+			return mutator(&((CommonTableExpr *) node)->ctequery, context);
+		default:
+		    return true;
+	}
+	return false;
+}
+
+/*
  * planstate_tree_walker --- walk plan state trees
  *
  * The walker has already visited the current node, and so we need only

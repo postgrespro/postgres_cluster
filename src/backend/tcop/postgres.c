@@ -42,11 +42,13 @@
 #include "catalog/pg_type.h"
 #include "commands/async.h"
 #include "commands/prepare.h"
+#include "commands/defrem.h"
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
 #include "libpq/pqsignal.h"
 #include "miscadmin.h"
 #include "nodes/print.h"
+#include "nodes/nodeFuncs.h"
 #include "optimizer/planner.h"
 #include "pgstat.h"
 #include "pg_trace.h"
@@ -69,6 +71,7 @@
 #include "tcop/utility.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
+#include "utils/builtins.h"
 #include "utils/ps_status.h"
 #include "utils/snapmgr.h"
 #include "utils/timeout.h"
@@ -188,6 +191,7 @@ static bool IsTransactionStmtList(List *parseTrees);
 static void drop_unnamed_stmt(void);
 static void SigHupHandler(SIGNAL_ARGS);
 static void log_disconnections(int code, Datum arg);
+static bool exec_cached_query(const char* query, Node* parse_tree);
 
 
 /* ----------------------------------------------------------------
@@ -949,6 +953,14 @@ exec_simple_query(const char *query_string)
 	 * significant to PreventTransactionChain.)
 	 */
 	isTopLevel = (list_length(parsetree_list) == 1);
+
+	/*
+	 * Try to find cached plan
+	 */
+	if (isTopLevel && autoprepare_threshold != 0 && exec_cached_query(query_string, linitial(parsetree_list)))
+	{
+		return;
+	}
 
 	/*
 	 * Run through the raw parsetree(s) and process each one.
@@ -4499,4 +4511,849 @@ log_disconnections(int code, Datum arg)
 					hours, minutes, seconds, msecs,
 					port->user_name, port->database_name, port->remote_host,
 				  port->remote_port[0] ? " port=" : "", port->remote_port)));
+}
+
+/*
+ * Autoprepare implementation.
+ * It combines exec_parse_message + exec_bind_message + exec_execute_message
+ */
+
+/*
+ * Plan cache entry
+ */
+typedef struct {
+	Node*             parse_tree; /* tree is used as hash key */
+	dlist_node        lru;        /* double linked list to implement LRU */
+	int64             exec_count; /* counter of execution of this query */
+	CachedPlanSource* plan;
+	uint32            hash;       /* hash calculated for this parsed tree */
+	int               n_params;	  /* number of parameters extracted for this query */
+	int16             format;     /* portal output format */
+	bool              disable_autoprepare; /* disable preparing of this query */
+} plan_cache_entry;
+
+static uint32 plan_cache_hash_fn(const void *key, Size keysize)
+{
+	return ((plan_cache_entry*)key)->hash;
+}
+
+static int plan_cache_match_fn(const void *key1, const void *key2, Size keysize)
+{
+	return !equal(((plan_cache_entry*)key1)->parse_tree, ((plan_cache_entry*)key2)->parse_tree);
+}
+
+static void* plan_cache_keycopy_fn(void *dest, const void *src, Size keysize)
+{
+	plan_cache_entry* dst_entry = (plan_cache_entry*)dest;
+	plan_cache_entry* src_entry = (plan_cache_entry*)src;
+	dst_entry->parse_tree = copyObject(src_entry->parse_tree);
+	dst_entry->hash = src_entry->hash;
+    return dest;
+}
+
+#define PLAN_CACHE_SIZE 113
+
+/*
+ * Plan cache access statistic
+ */
+size_t n_plan_cache_hits;
+size_t n_plan_cache_misses;
+size_t n_cached_queries;
+
+/*
+ * Mapping between parameters and replaced literals
+ */
+typedef struct ConstParam {
+	A_Const*     literal; /* Original literal */
+	ParamRef*    param;   /* Constructed parameter reference */
+	Node**       ref;     /* Pointer to pointer to literal node (used to revert parse tree update) */
+	struct ConstParam* next; /* L1-list of query parameters */
+} ConstParam;
+
+/*
+ * Context for raw_expression_tree_mutator
+ */
+typedef struct {
+	int          n_params; /* Number of extracted parameters */
+	uint32       hash;     /* We calculate hash for parse tree during plan traversal */
+	ConstParam** param_list_tail; /* pointer to last element "next" field address, used to contruct L1 list of parameters */
+} GeneralizerCtx;
+
+/*
+ * Check if expression is constant (used to eliminate substitution of literals with parameters in such expressions
+ */
+static bool is_constant_expression(Node* node)
+{
+	return node != NULL
+		&& (IsA(node, A_Const)
+			|| (IsA(node, A_Expr)
+				&& is_constant_expression(((A_Expr*)node)->lexpr)
+				&& is_constant_expression(((A_Expr*)node)->rexpr)));
+}
+
+/*
+ * Callback for raw_expression_tree_mutator performing susbtitution of literals with paramaters
+ */
+static bool
+query_plan_generalizer(Node** ref, void *context)
+{
+	Node* node = *ref;
+	GeneralizerCtx* ctx = (GeneralizerCtx*)context;
+	if (node == NULL)
+	{
+		return false;
+	}
+	/*
+	 * Calculate hash for parse tree. We consider only node tags here, precise comparion of trees is done using equal() function.
+	 * Here we calculate hash for original (unpatched) tree, without ParamRef nodes.
+	 * It is non priniciple, because hash calculation doesn't take in account types and values of Const nodes. So the same generalized queries
+	 * will have the same hash value. There are about 1000 dirrent nodes tags, this is why we rotate hash on 10 bits.
+	 */
+	ctx->hash = (ctx->hash << 10) ^ (ctx->hash >> 22) ^ nodeTag(node);
+
+	switch (nodeTag(node))
+	{
+		case T_A_Expr:
+		{
+			/*
+			 * Do not perform substitution of literals in constant expression (which is likely to be the the same for all queries and optimized by compiler)
+			 */
+		    if (!is_constant_expression(node))
+			{
+				A_Expr	   *expr = (A_Expr *) node;
+				if (query_plan_generalizer((Node**)&expr->lexpr, context))
+					return true;
+				if (query_plan_generalizer((Node**)&expr->rexpr, context))
+					return true;
+			}
+			break;
+		}
+	    case T_A_Const:
+		{
+			/*
+			 * Do sunstitution of literals with parameters here
+			 */
+			A_Const* literal = (A_Const*)node;
+			ConstParam* cp = palloc(sizeof(ConstParam));
+			ParamRef* param = makeNode(ParamRef);
+			param->number = ++ctx->n_params;
+			param->location = literal->location;
+			cp->ref = ref;
+			cp->param = param;
+			cp->literal = literal;
+			*ctx->param_list_tail = cp;
+			ctx->param_list_tail = &cp->next;
+			*ref = (Node*)param;
+			break;
+		}
+	  case T_SelectStmt:
+	  {
+		  /*
+		   * Substitute literals onlu in WHERE, VALUES and WITH clause,
+		   * skipping target and from lists, which is unlikely contains some parameterized values
+		   */
+		  SelectStmt *stmt = (SelectStmt *) node;
+		  if (query_plan_generalizer((Node**)&stmt->targetList, context))
+			  return true;
+		  if (query_plan_generalizer((Node**)&stmt->whereClause, context))
+			  return true;
+		  if (query_plan_generalizer((Node**)&stmt->valuesLists, context))
+			  return true;
+		  if (query_plan_generalizer((Node**)&stmt->withClause, context))
+			  return true;
+		  if (query_plan_generalizer((Node**)&stmt->larg, context))
+			  return true;
+		  if (query_plan_generalizer((Node**)&stmt->rarg, context))
+			  return true;
+		  break;
+	  }
+	  case T_TypeName:
+	  case T_SortGroupClause:
+	  case T_SortBy:
+	  case T_A_ArrayExpr:
+		/*
+		 * Literals in this clauses should not be replaced with parameters
+		 */
+		break;
+	  default:
+		/*
+		 * Default traversal. raw_expression_tree_mutator returns true for all not recognized nodes, for example right now
+		 * all transaction control statements are not covered by raw_expression_tree_mutator and so will not pe autoprepared.
+		 * My experiments show that effect of non-preparing start/commit transaction statements is positive.
+		 */
+		return raw_expression_tree_mutator(node, query_plan_generalizer, context);
+	}
+	return false;
+}
+
+/*
+ * Restore original parse tree, replacing all ParamRef back with Const nodes.
+ * Such undo operation seems to be more efficient than copying the whole parse tree by raw_expression_tree_mutator
+ */
+static void undo_query_plan_changes(Node* parse_tree, ConstParam* cp)
+{
+	while (cp != NULL) {
+		*cp->ref = (Node*)cp->literal;
+		cp = cp->next;
+	}
+	n_plan_cache_misses += 1;
+}
+
+/*
+ * Callback for raw_expression_tree_walker droping parse tree
+ */
+static bool drop_tree_node(Node* node, void* context)
+{
+	if (node) {
+		raw_expression_tree_walker(node, drop_tree_node, NULL);
+		pfree(node);
+	}
+	return false;
+}
+
+/*
+ * Location of converted literal in query.
+ * Used for precise error reporting (line number)
+ */
+static int param_location;
+
+/*
+ * Error callback adding information about error location
+ */
+static void
+prepare_error_callback(void *arg)
+{
+	CachedPlanSource *psrc = (CachedPlanSource*)arg;
+	/* And pass it to the ereport mechanism */
+	if (geterrcode() != ERRCODE_QUERY_CANCELED) {
+		int pos = pg_mbstrlen_with_len(psrc->query_string, param_location) + 1;
+		(void)errposition(pos);
+	}
+}
+
+/*
+ * Try to generalize query, find cached plan for it and execute
+ */
+ static bool exec_cached_query(const char *query_string, Node* parse_tree)
+{
+	CommandDest       dest = whereToSendOutput;
+	DestReceiver     *receiver;
+	int               n_params;
+	plan_cache_entry *entry;
+	bool              found;
+	MemoryContext     old_context;
+	CachedPlanSource *psrc;
+	ParamListInfo     params;
+	int               paramno;
+	CachedPlan       *cplan;
+	Portal		      portal;
+	bool		      was_logged = false;
+	bool		      is_xact_command;
+	bool		      execute_is_fetch;
+	char		      completion_tag[COMPLETION_TAG_BUFSIZE];
+	bool	 	      save_log_statement_stats = log_statement_stats;
+	ParamListInfo     portal_params;
+	const char       *source_text;
+	char		      msec_str[32];
+	bool		      snapshot_set = false;
+	GeneralizerCtx    ctx;
+	ConstParam*       const_param;
+	ConstParam*       const_param_list;
+	plan_cache_entry  pattern;
+
+	static HTAB*      plan_cache; /* hash table for plan cache */
+	static dlist_head lru;        /* LRU L2-list for cached queries */
+	static MemoryContext plan_cache_context; /* memory context used for plan cache */
+
+	/*
+	 * Substitute literals with parameters and calculate hash for parse tree
+	 */
+	ctx.param_list_tail = &const_param_list;
+	ctx.n_params = 0;
+	ctx.hash = 0;
+	if (query_plan_generalizer((Node**)&parse_tree, &ctx)) {
+		*ctx.param_list_tail = NULL;
+		undo_query_plan_changes(parse_tree, const_param_list);
+		return false;
+	}
+	*ctx.param_list_tail = NULL;
+	n_params = ctx.n_params;
+
+	/*
+	 * Construct plan cache context if not constructed yet.
+	 */
+	if (plan_cache_context == NULL) {
+		plan_cache_context = AllocSetContextCreate(TopMemoryContext,
+												   "plan cache context",
+												   ALLOCSET_DEFAULT_SIZES);
+	}
+	/* Manipulations with hash table are performed in plan_cache_context memory context */
+	old_context = MemoryContextSwitchTo(plan_cache_context);
+
+	/*
+	 * Initialize hash table if not initialized yet
+	 */
+	if (plan_cache == NULL)
+	{
+		static HASHCTL info;
+		info.keysize = sizeof(plan_cache_entry);
+		info.entrysize = sizeof(plan_cache_entry);
+		info.hash = plan_cache_hash_fn;
+		info.match = plan_cache_match_fn;
+		info.keycopy = plan_cache_keycopy_fn;
+		plan_cache = hash_create("plan_cache", autoprepare_limit != 0 ? autoprepare_limit : PLAN_CACHE_SIZE,
+								 &info, HASH_ELEM | HASH_FUNCTION | HASH_COMPARE | HASH_KEYCOPY);
+		dlist_init(&lru);
+	}
+
+	/*
+	 * Lookup generalized query
+	 */
+	pattern.parse_tree = parse_tree;
+	pattern.hash = ctx.hash;
+	entry = (plan_cache_entry*)hash_search(plan_cache, &pattern, HASH_ENTER, &found);
+	if (!found)
+	{
+		/* Check number of cached queries */
+		if (++n_cached_queries > autoprepare_limit && autoprepare_limit != 0)
+		{
+			/* Drop least recently access query */
+			plan_cache_entry* victim = dlist_container(plan_cache_entry, lru, lru.head.prev);
+			Node* dropped_tree = victim->parse_tree;
+			dlist_delete(&victim->lru);
+			DropCachedPlan(victim->plan);
+			hash_search(plan_cache, victim, HASH_REMOVE, NULL);
+			raw_expression_tree_walker(dropped_tree, drop_tree_node, NULL);
+			n_cached_queries -= 1;
+		}
+		entry->exec_count = 0;
+		entry->plan = NULL;
+		entry->disable_autoprepare = false;
+	}
+	else
+	{
+		dlist_delete(&entry->lru); /* accessed entry will be moved to the head of LRU list */
+		if (entry->plan != NULL && !entry->plan->is_valid) {
+			/* Drop invalidated plan: it will be reconstructed later */
+			DropCachedPlan(entry->plan);
+			entry->plan = NULL;
+		}
+	}
+	dlist_insert_after(&lru.head, &entry->lru); /* prepend entry to the head of LRU list */
+	MemoryContextSwitchTo(old_context); /* Done with plan_cache_context memory context */
+
+	/*
+	 * Prepare query only when it is executed more than autoprepare_threshold times
+	 */
+	if (entry->disable_autoprepare || entry->exec_count++ < autoprepare_threshold)
+	{
+		undo_query_plan_changes(parse_tree, const_param_list);
+		return false;
+	}
+	if (entry->plan == NULL)
+	{
+		/*
+		 * Prepare new plan
+		 */
+		const char *command_tag;
+		Query	   *query;
+		List	   *querytree_list;
+		Oid        *param_types = NULL;
+		int         num_params = 0;
+
+		/*
+		 * Switch to appropriate context for constructing parsetrees.
+		 */
+		old_context = MemoryContextSwitchTo(MessageContext);
+
+		/*
+		 * Get the command name for possible use in status display.
+		 */
+		command_tag = CreateCommandTag(parse_tree);
+
+		/*
+		 * If we are in an aborted transaction, reject all commands except
+		 * COMMIT/ROLLBACK.  It is important that this test occur before we
+		 * try to do parse analysis, rewrite, or planning, since all those
+		 * phases try to do database accesses, which may fail in abort state.
+		 * (It might be safe to allow some additional utility commands in this
+		 * state, but not many...)
+		 */
+		if (IsAbortedTransactionBlockState() &&
+			!IsTransactionExitStmt(parse_tree))
+			ereport(ERROR,
+					(errcode(ERRCODE_IN_FAILED_SQL_TRANSACTION),
+					 errmsg("current transaction is aborted, "
+						  "commands ignored until end of transaction block"),
+					 errdetail_abort()));
+
+		/*
+		 * Create the CachedPlanSource before we do parse analysis, since it
+		 * needs to see the unmodified raw parse tree.
+		 */
+		psrc = CreateCachedPlan(parse_tree, query_string, command_tag);
+
+		/*
+		 * Set up a snapshot if parse analysis will need one.
+		 */
+		if (analyze_requires_snapshot(parse_tree))
+		{
+			PushActiveSnapshot(GetTransactionSnapshot());
+			snapshot_set = true;
+		}
+
+		/*
+		 * Analyze and rewrite the query.  Note that the originally specified
+		 * parameter set is not required to be complete, so we have to use
+		 * parse_analyze_varparams().
+		 */
+		if (log_parser_stats) {
+			ResetUsage();
+		}
+
+		PG_TRY();
+		{
+			query = parse_analyze_varparams(parse_tree,
+											query_string,
+											&param_types,
+											&num_params);
+		}
+		PG_CATCH();
+		{
+			/*
+			 * In case of analyze errors revert back to original query processing
+			 * and disable autoprepare for this query to avoid such problems in future.
+			 */
+			FlushErrorState();
+			if (snapshot_set) {
+				PopActiveSnapshot();
+			}
+			entry->disable_autoprepare = true;
+			undo_query_plan_changes(parse_tree, const_param_list);
+			MemoryContextSwitchTo(old_context);
+			return false;
+		}
+		PG_END_TRY();
+
+		Assert(num_params == n_params);
+
+		/*
+		 * Check all parameter types got determined.
+		 */
+		for (paramno = 0, const_param = const_param_list;
+			 paramno < n_params;
+			 paramno++, const_param = const_param->next)
+		{
+			Oid			ptype = param_types[paramno];
+
+			/*
+			 * Check if type of parameter can be infered from query and is compatible with actual literal type.
+			 * We explicitly exclude some cases when parameter type is wrongly assumed to be TEXT.
+			 * Hopefully there will be few such misdetections in real queries.
+			 */
+			if (ptype == InvalidOid || ptype == UNKNOWNOID
+				|| (ptype == TEXTOID && (const_param->literal->val.type == T_BitString || const_param->literal->val.type == T_Integer)))
+			{
+				/* Type of parameter can not be determined: disable autoprepare for this query. */
+				if (snapshot_set) {
+					PopActiveSnapshot();
+				}
+				entry->disable_autoprepare = true;
+				undo_query_plan_changes(parse_tree, const_param_list);
+				MemoryContextSwitchTo(old_context);
+				return false;
+			}
+		}
+
+		if (log_parser_stats) {
+			ShowUsage("PARSE ANALYSIS STATISTICS");
+		}
+
+		querytree_list = pg_rewrite_query(query);
+
+		/* Done with the snapshot used for parsing */
+		if (snapshot_set) {
+			PopActiveSnapshot();
+			snapshot_set = false;
+		}
+
+		CompleteCachedPlan(psrc,
+						   querytree_list,
+						   NULL,
+						   param_types,
+						   n_params,
+						   NULL,
+						   NULL,
+						   CURSOR_OPT_PARALLEL_OK,	/* allow parallel mode */
+						   true);	/* fixed result */
+
+		/* If we got a cancel signal during analysis, quit */
+		CHECK_FOR_INTERRUPTS();
+
+		entry->format = 0;				/* TEXT is default */
+		if (IsA(parse_tree, FetchStmt))
+		{
+			FetchStmt  *stmt = (FetchStmt *)parse_tree;
+
+			if (!stmt->ismove)
+			{
+				Portal		fportal = GetPortalByName(stmt->portalname);
+
+				if (PortalIsValid(fportal) &&
+					(fportal->cursorOptions & CURSOR_OPT_BINARY))
+					entry->format = 1; /* BINARY */
+			}
+		}
+
+		/*
+		 * Register cached plan for invalidation mechanism
+		 */
+		SaveCachedPlan(psrc);
+		entry->plan = psrc;
+		entry->n_params = n_params;
+
+		MemoryContextSwitchTo(old_context); /* Done with message context */
+
+		/*
+		 * We do NOT close the open transaction command here; that only happens
+		 * when the client sends Sync.  Instead, do CommandCounterIncrement just
+		 * in case something happened during parse/plan.
+		 */
+		CommandCounterIncrement();
+	}
+	else
+	{
+		/* Plan found */
+		psrc = entry->plan;
+		Assert(n_params == entry->n_params);
+	}
+
+	/*
+	 * If we are in aborted transaction state, the only portals we can
+	 * actually run are those containing COMMIT or ROLLBACK commands. We
+	 * disallow binding anything else to avoid problems with infrastructure
+	 * that expects to run inside a valid transaction.  We also disallow
+	 * binding any parameters, since we can't risk calling user-defined I/O
+	 * functions.
+	 */
+	if (IsAbortedTransactionBlockState() &&
+		(!IsTransactionExitStmt(psrc->raw_parse_tree) ||
+		 n_params != 0))
+		ereport(ERROR,
+				(errcode(ERRCODE_IN_FAILED_SQL_TRANSACTION),
+				 errmsg("current transaction is aborted, "
+						"commands ignored until end of transaction block"),
+				 errdetail_abort()));
+
+	/*
+	 * Create unnamed portal to run the query or queries in. If there
+	 * already is one, silently drop it.
+	 */
+	portal = CreatePortal("", true, true);
+	/* Don't display the portal in pg_cursors */
+	portal->visible = false;
+
+	/*
+	 * Prepare to copy stuff into the portal's memory context.  We do all this
+	 * copying first, because it could possibly fail (out-of-memory) and we
+	 * don't want a failure to occur between GetCachedPlan and
+	 * PortalDefineQuery; that would result in leaking our plancache refcount.
+	 */
+	old_context = MemoryContextSwitchTo(PortalGetHeapMemory(portal));
+
+	/* Copy the plan's query string into the portal */
+	query_string = pstrdup(psrc->query_string);
+
+	/*
+	 * Set a snapshot if we have parameters to fetch (since the input
+	 * functions might need it) or the query isn't a utility command (and
+	 * hence could require redoing parse analysis and planning).  We keep the
+	 * snapshot active till we're done, so that plancache.c doesn't have to
+	 * take new ones.
+	 */
+	if (n_params > 0 ||
+		(psrc->raw_parse_tree &&
+		 analyze_requires_snapshot(psrc->raw_parse_tree)))
+	{
+		PushActiveSnapshot(GetTransactionSnapshot());
+		snapshot_set = true;
+	}
+
+	/*
+	 * Fetch parameters, if any, and store in the portal's memory context.
+	 */
+	if (n_params > 0)
+	{
+		ErrorContextCallback errcallback;
+		Oid  typinput;
+		Oid  typioparam;
+		char buf[64];
+
+		/*
+		 * Register error callback to precisely report error in case of conversion error while storig parameter value.
+		 */
+		errcallback.callback = prepare_error_callback;
+		errcallback.arg = (void *) psrc;
+		errcallback.previous = error_context_stack;
+		error_context_stack = &errcallback;
+
+		params = (ParamListInfo) palloc(offsetof(ParamListInfoData, params) +
+										n_params * sizeof(ParamExternData));
+		params->paramFetch = NULL;
+		params->paramFetchArg = NULL;
+		params->parserSetup = NULL;
+		params->parserSetupArg = NULL;
+		params->numParams = n_params;
+		params->paramMask = NULL;
+
+		for (paramno = 0, const_param = const_param_list;
+			 paramno < n_params;
+			 paramno++, const_param = const_param->next)
+		{
+			Oid	ptype = psrc->param_types[paramno];
+
+
+			param_location = const_param->literal->location;
+
+			params->params[paramno].isnull = false;
+
+			/* Convert literal value to parameter value */
+			switch (const_param->literal->val.type)
+			{
+			  /*
+			   * Convert from integer literal
+			   */
+			  case T_Integer:
+				switch (ptype) {
+				  case INT8OID:
+					params->params[paramno].value = Int64GetDatum((int64)const_param->literal->val.val.ival);
+					break;
+				  case INT4OID:
+					params->params[paramno].value = Int32GetDatum((int32)const_param->literal->val.val.ival);
+					break;
+				  case INT2OID:
+					if (const_param->literal->val.val.ival < SHRT_MIN
+						|| const_param->literal->val.val.ival > SHRT_MAX)
+					{
+						ereport(ERROR,
+								(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+								 errmsg("smallint out of range")));
+					}
+					params->params[paramno].value = Int16GetDatum((int16)const_param->literal->val.val.ival);
+					break;
+				  case FLOAT4OID:
+					params->params[paramno].value = Float4GetDatum((float)const_param->literal->val.val.ival);
+					break;
+				  case FLOAT8OID:
+					params->params[paramno].value = Float8GetDatum((double)const_param->literal->val.val.ival);
+					break;
+				  case INT4RANGEOID:
+					sprintf(buf, "[%ld,%ld]", const_param->literal->val.val.ival, const_param->literal->val.val.ival);
+					getTypeInputInfo(ptype, &typinput, &typioparam);
+					params->params[paramno].value = OidInputFunctionCall(typinput, buf, typioparam, -1);
+					break;
+				  default:
+					pg_lltoa(const_param->literal->val.val.ival, buf);
+					getTypeInputInfo(ptype, &typinput, &typioparam);
+					params->params[paramno].value = OidInputFunctionCall(typinput, buf, typioparam, -1);
+				}
+				break;
+			  case T_Null:
+				params->params[paramno].isnull = true;
+				break;
+			  default:
+				/*
+				 * Convert from string literal
+				 */
+				getTypeInputInfo(ptype, &typinput, &typioparam);
+				params->params[paramno].value = OidInputFunctionCall(typinput, const_param->literal->val.val.str, typioparam, -1);
+			}
+			/*
+			 * We mark the params as CONST.  This ensures that any custom plan
+			 * makes full use of the parameter values.
+			 */
+			params->params[paramno].pflags = PARAM_FLAG_CONST;
+			params->params[paramno].ptype = ptype;
+		}
+		error_context_stack = errcallback.previous;
+	} else {
+		params = NULL;
+	}
+
+	/* Done storing stuff in portal's context */
+	MemoryContextSwitchTo(old_context);
+
+	/*
+	 * Obtain a plan from the CachedPlanSource.  Any cruft from (re)planning
+	 * will be generated in MessageContext.  The plan refcount will be
+	 * assigned to the Portal, so it will be released at portal destruction.
+	 */
+	cplan = GetCachedPlan(psrc, params, false);
+
+	/*
+	 * Now we can define the portal.
+	 *
+	 * DO NOT put any code that could possibly throw an error between the
+	 * above GetCachedPlan call and here.
+	 */
+	PortalDefineQuery(portal,
+					  NULL,
+					  query_string,
+					  psrc->commandTag,
+					  cplan->stmt_list,
+					  cplan);
+
+	/* Done with the snapshot used for parameter I/O and parsing/planning */
+	if (snapshot_set) {
+		PopActiveSnapshot();
+	}
+
+	/*
+	 * And we're ready to start portal execution.
+	 */
+	PortalStart(portal, params, 0, InvalidSnapshot);
+
+	/*
+	 * Apply the result format requests to the portal.
+	 */
+	PortalSetResultFormat(portal, 1, &entry->format);
+
+	/* Does the portal contain a transaction command? */
+	is_xact_command = IsTransactionStmtList(portal->stmts);
+
+	/*
+	 * We must copy the sourceText into MessageContext in
+	 * case the portal is destroyed during finish_xact_command. Can avoid the
+	 * copy if it's not an xact command, though.
+	 */
+	if (is_xact_command)
+	{
+		source_text = pstrdup(portal->sourceText);
+		/*
+		 * An xact command shouldn't have any parameters, which is a good
+		 * thing because they wouldn't be around after finish_xact_command.
+		 */
+		portal_params = NULL;
+	}
+	else
+	{
+		source_text = portal->sourceText;
+		portal_params = portal->portalParams;
+	}
+
+	/*
+	 * Report query to various monitoring facilities.
+	 */
+	debug_query_string = source_text;
+
+	pgstat_report_activity(STATE_RUNNING, source_text);
+
+	set_ps_display(portal->commandTag, false);
+
+	if (save_log_statement_stats) {
+		ResetUsage();
+	}
+
+	BeginCommand(portal->commandTag, dest);
+
+	PortalSetResultFormat(portal, 1, &entry->format);
+
+
+	/*
+	 * Create dest receiver in MessageContext (we don't want it in transaction
+	 * context, because that may get deleted if portal contains VACUUM).
+	 */
+	receiver = CreateDestReceiver(dest);
+	if (dest == DestRemote) {
+		SetRemoteDestReceiverParams(receiver, portal);
+	}
+
+	/*
+	 * If we re-issue an Execute protocol request against an existing portal,
+	 * then we are only fetching more rows rather than completely re-executing
+	 * the query from the start. atStart is never reset for a v3 portal, so we
+	 * are safe to use this check.
+	 */
+	execute_is_fetch = !portal->atStart;
+
+	/* Log immediately if dictated by log_statement */
+	if (check_log_statement(portal->stmts))
+	{
+		ereport(LOG,
+				(errmsg("%s %s%s%s: %s",
+						execute_is_fetch ?
+						_("execute fetch from") :
+						_("execute"),
+						"<unnamed>",
+						"",
+						"",
+						source_text),
+				 errhidestmt(true),
+				 errdetail_params(portal_params)));
+		was_logged = true;
+	}
+
+	/* Check for cancel signal before we start execution */
+	CHECK_FOR_INTERRUPTS();
+
+	/*
+	 * Run the portal to completion, and then drop it (and the receiver).
+	 */
+	(void) PortalRun(portal,
+					 FETCH_ALL,
+					 true,
+					 receiver,
+					 receiver,
+					 completion_tag);
+
+	(*receiver->rDestroy) (receiver);
+
+	PortalDrop(portal, false);
+
+	/*
+	 * Tell client that we're done with this query.  Note we emit exactly
+	 * one EndCommand report for each raw parsetree, thus one for each SQL
+	 * command the client sent, regardless of rewriting. (But a command
+	 * aborted by error will not send an EndCommand report at all.)
+	 */
+	EndCommand(completion_tag, dest);
+
+	/*
+	 * Close down transaction statement, if one is open.
+	 */
+	finish_xact_command();
+
+	/*
+	 * Emit duration logging if appropriate.
+	 */
+	switch (check_log_duration(msec_str, was_logged))
+	{
+		case 1:
+			ereport(LOG,
+					(errmsg("duration: %s ms", msec_str),
+					 errhidestmt(true)));
+			break;
+		case 2:
+			ereport(LOG,
+					(errmsg("duration: %s ms  %s %s%s%s: %s",
+							msec_str,
+							execute_is_fetch ?
+							_("execute fetch from") :
+							_("execute"),
+							"<unnamed>",
+							"",
+							"",
+							source_text),
+					 errhidestmt(true),
+					 errdetail_params(portal_params)));
+			break;
+	}
+
+	if (save_log_statement_stats) {
+		ShowUsage("EXECUTE MESSAGE STATISTICS");
+	}
+	debug_query_string = NULL;
+	n_plan_cache_hits += 1;
+
+	return true;
 }
