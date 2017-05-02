@@ -1854,6 +1854,8 @@ typedef struct {
 	void *SPIState;
 	void *SnapshotState;
 	struct TransInvalidationInfo* InvalidationInfo;
+
+	List *on_commit_actions;
 } SuspendedTransactionState;
 
 static int suspendedXactNum = 0;
@@ -2209,8 +2211,10 @@ CommitTransaction(void)
 	AtEOXact_Namespace(true, is_parallel_worker);
 	AtEOXact_SMgr();
 	if (getNestLevelATX() == 0) 
+	{
 		AtEOXact_Files();
-	AtEOXact_ComboCid();
+		AtEOXact_ComboCid();
+	}
 	AtEOXact_HashTables(true);
 	AtEOXact_PgStat(true);
 	AtEOXact_Snapshot(true);
@@ -3581,9 +3585,11 @@ void SuspendTransaction(void)
 		MOVELEFT(sus->vxid.backendId, MyProc->backendId, MyBackendId);
 		MOVELEFT(sus->vxid.localTransactionId, MyProc->lxid, GetNextLocalTransactionId());
 
+		MOVELEFT(sus->on_commit_actions, pg_on_commit_actions, NULL);
+
 		sus->PgStatState = PgStatSuspend();
 		sus->TriggerState = TriggerSuspend();
-		sus->SPIState = SuspendSPI();
+		sus->SPIState = SuspendSPI();	  
 	}
 
 	AtStart_Memory();
@@ -3653,6 +3659,8 @@ bool ResumeTransaction(void)
 
 		MyProc->backendId = sus->vxid.backendId;
 		MyProc->lxid = sus->vxid.localTransactionId;
+
+		pg_on_commit_actions = sus->on_commit_actions;
 	}
 
 	ResumePgXact(MyPgXact);
