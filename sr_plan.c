@@ -226,7 +226,7 @@ PlannedStmt *sr_planner(Query *parse,
 	
 	if (find_ok)
 	{
-		/* elog(WARNING, "Ok we find saved plan."); */
+		elog(LOG, "Ok we find saved plan.");
 		out_jsonb2 = (Jsonb *)DatumGetPointer(PG_DETOAST_DATUM(search_values[3]));
 		if (query_params != NULL)
 			pl_stmt = jsonb_to_node_tree(out_jsonb2, &replace_fake);
