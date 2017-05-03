@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/waitlsn.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-WAITLSN">
@@ -37,7 +37,7 @@ WAITLSN <replaceable class="PARAMETER">'LSN'</replaceable> [ , <replaceable clas
   <para>
    <command>WAITLSN</command> provides a simple
    interprocess <acronym>LSN</> wait mechanism for a backends on slave
-   in master-slave replication scheme on <productname>PostgreSQL</productname> database.
+   in master-slave replication scheme on <productname>&productname;</productname> database.
   </para>
  </refsect1>
 

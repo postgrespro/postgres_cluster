@@ -23,7 +23,7 @@
     MS-SQL behavoir concerning end-of-value whitespace.
     </para>
     <para>
-    Differences from PostgreSQL standard CHAR and VARCHAR are:
+    Differences from &productname; standard CHAR and VARCHAR are:
     </para>
     <itemizedlist>
     <listitem>
