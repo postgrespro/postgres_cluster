@@ -15,10 +15,10 @@
     It implements types MCHAR and MVARCHAR, which are bug-to-bug
     compatible with MSSQL CHAR and VARCHAR respectively. Additionaly, 
     these types use libicu for comparation and case conversion, so their
-    behavior is identical across different operating system.
+    behavior is identical across different operating systems.
     </para>
     <para>
-    PostgresPro also includes <xref linkend="citext"> extension which
+    &productname; also includes <xref linkend="citext"> extension which
     provides types similar to MCHAR. But this extension doesn't emulate
     MS-SQL behavior concerning end-of-value whitespace.
     </para>
