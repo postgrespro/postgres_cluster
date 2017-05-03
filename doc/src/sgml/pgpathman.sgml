@@ -136,7 +136,7 @@ SET pg_pathman.enable = t;</programlisting>
       ensure scalability, and optimize database administration processes
       you can use partitioning &mdash; splitting a large table into smaller
       pieces, with each row moved to a single partition according to the
-      partitioning key. <productname>PostgreSQL</productname> supports partitioning via table
+      partitioning key. <productname>&productname;</productname> supports partitioning via table
       inheritance. Each partition is created as a child table with a
       CHECK constraint. For example:
     </para>
@@ -250,7 +250,7 @@ create_range_partitions(relation       REGCLASS,
                         attribute      TEXT,
                         start_value    ANYELEMENT,
                         p_interval     ANYELEMENT | INTERVAL,
-                        p_count        INTEGER DEFAULT NULL
+                        p_count        INTEGER DEFAULT NULL,
                         partition_data BOOLEAN DEFAULT TRUE)
 </programlisting>
         <para>
@@ -988,14 +988,14 @@ create_range_partitions(relation       REGCLASS,
                         attribute      TEXT,
                         start_value    ANYELEMENT,
                         p_interval     ANYELEMENT,
-                        count          INTEGER DEFAULT NULL
+                        p_count        INTEGER DEFAULT NULL,
                         partition_data BOOLEAN DEFAULT TRUE)
 
 create_range_partitions(relation       REGCLASS,
                         attribute      TEXT,
                         start_value    ANYELEMENT,
                         p_interval     INTERVAL,
-                        count          INTEGER DEFAULT NULL,
+                        p_count        INTEGER DEFAULT NULL,
                         partition_data BOOLEAN DEFAULT TRUE)
 </programlisting>
       <para>
