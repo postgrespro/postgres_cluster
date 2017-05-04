@@ -204,7 +204,7 @@ char const* const MtmNodeStatusMnem[] =
 { 
 	"Initialization", 
 	"Offline", 
-	"Connected",
+	"Connecting",
 	"Online",
 	"Recovery",
 	"Recovered",
@@ -229,8 +229,6 @@ int   MtmNodes;
 int   MtmNodeId;
 int   MtmReplicationNodeId;
 int   MtmArbiterPort;
-int   MtmConnectTimeout;
-int   MtmReconnectTimeout;
 int   MtmNodeDisableDelay;
 int   MtmTransSpillThreshold;
 int   MtmMaxNodes;
@@ -3269,36 +3267,6 @@ _PG_init(void)
 		NULL,
 		&MtmNodeId,
 		INT_MAX,
-		1,
-		INT_MAX,
-		PGC_BACKEND,
-		0,
-		NULL,
-		NULL,
-		NULL
-	);
-
-	DefineCustomIntVariable(
-		"multimaster.connect_timeout",
-		"Multimaster nodes connect timeout",
-		"Interval in milliseconds for establishing connection with cluster node",
-		&MtmConnectTimeout,
-		10000, /* 10 seconds */
-		1,
-		INT_MAX,
-		PGC_BACKEND,
-		0,
-		NULL,
-		NULL,
-		NULL
-	);
-
-	DefineCustomIntVariable(
-		"multimaster.reconnect_timeout",
-		"Multimaster nodes reconnect timeout",
-		"Interval in milliseconds for reestablishing connection with cluster node",
-		&MtmReconnectTimeout,
-		5000, /* 5 seconds */
 		1,
 		INT_MAX,
 		PGC_BACKEND,
