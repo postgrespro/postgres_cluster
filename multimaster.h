@@ -343,8 +343,6 @@ extern int   MtmNodes;
 extern int   MtmArbiterPort;
 extern char* MtmDatabaseName;
 extern char* MtmDatabaseUser;
-extern int   MtmConnectTimeout;
-extern int   MtmReconnectTimeout;
 extern int   MtmNodeDisableDelay;
 extern int   MtmTransSpillThreshold;
 extern int   MtmHeartbeatSendTimeout;
