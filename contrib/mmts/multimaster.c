@@ -204,7 +204,7 @@ char const* const MtmNodeStatusMnem[] =
 { 
 	"Initialization", 
 	"Offline", 
-	"Connected",
+	"Connecting",
 	"Online",
 	"Recovery",
 	"Recovered",
@@ -229,8 +229,6 @@ int   MtmNodes;
 int   MtmNodeId;
 int   MtmReplicationNodeId;
 int   MtmArbiterPort;
-int   MtmConnectTimeout;
-int   MtmReconnectTimeout;
 int   MtmNodeDisableDelay;
 int   MtmTransSpillThreshold;
 int   MtmMaxNodes;
@@ -3278,36 +3276,6 @@ _PG_init(void)
 		NULL
 	);
 
-	DefineCustomIntVariable(
-		"multimaster.connect_timeout",
-		"Multimaster nodes connect timeout",
-		"Interval in milliseconds for establishing connection with cluster node",
-		&MtmConnectTimeout,
-		10000, /* 10 seconds */
-		1,
-		INT_MAX,
-		PGC_BACKEND,
-		0,
-		NULL,
-		NULL,
-		NULL
-	);
-
-	DefineCustomIntVariable(
-		"multimaster.reconnect_timeout",
-		"Multimaster nodes reconnect timeout",
-		"Interval in milliseconds for reestablishing connection with cluster node",
-		&MtmReconnectTimeout,
-		5000, /* 5 seconds */
-		1,
-		INT_MAX,
-		PGC_BACKEND,
-		0,
-		NULL,
-		NULL,
-		NULL
-	);
-
 	if (!ConfigIsSane()) {
 		MTM_ELOG(ERROR, "Multimaster config is insane, refusing to work");
 	}
@@ -5182,7 +5150,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		if (relid != InvalidOid) { 
 			Oid constraint_oid;
 			Bitmapset* pk = get_primary_key_attnos(relid, true, &constraint_oid);
-			if (pk == NULL) { 
+			if (pk == NULL && !MtmVolksWagenMode) {
 				elog(WARNING, 
 					 MtmIgnoreTablesWithoutPk
 					 ? "Table %s.%s without primary will not be replicated"
