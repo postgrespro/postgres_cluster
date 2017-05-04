@@ -4933,6 +4933,11 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			skipCommand = true;
 			break;
 
+	    case T_CreatedbStmt:
+	    case T_DropdbStmt:
+		    elog(ERROR, "Multimaster doesn't support creating and dropping databases");
+			break;
+
 		case T_CreateTableSpaceStmt:
 		case T_DropTableSpaceStmt:
 			{
