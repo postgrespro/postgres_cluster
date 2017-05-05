@@ -94,6 +94,22 @@ typedef struct
 	 */
 	void        (*InitializeSequence)(int64* start, int64* step);
 
+	/*
+	 * Create custom savepoint context.
+	 * This function can be used to accociate any data with savepoint which will be used by RestoreSavepointContext function to restore context
+	 */
+	void*       (*CreateSavepointContext)(void);
+
+	/*
+	 * Restore context saved by CreateSavepointContext
+	 */
+	void        (*RestoreSavepointContext)(void* ctx);
+
+	/*
+	 * Release context saved by CreateSavepointContext
+	 */
+	void        (*ReleaseSavepointContext)(void* ctx);
+
 }	TransactionManager;
 
 /* Get pointer to transaction manager: actually returns content of TM variable */
@@ -128,6 +144,9 @@ extern size_t PgGetTransactionStateSize(void);
 extern void PgSerializeTransactionState(void* ctx);
 extern void PgDeserializeTransactionState(void* ctx);
 extern void PgInitializeSequence(int64* start, int64* step);
+extern void* PgCreateSavepointContext(void);
+extern void PgRestoreSavepointContext(void*);
+extern void PgReleaseSavepointContext(void*);
 
 
 #endif

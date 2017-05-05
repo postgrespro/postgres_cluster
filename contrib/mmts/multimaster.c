@@ -146,9 +146,12 @@ static bool MtmDetectGlobalDeadLock(PGPROC* proc);
 static void MtmAddSubtransactions(MtmTransState* ts, TransactionId* subxids, int nSubxids);
 static char const* MtmGetName(void);
 static size_t MtmGetTransactionStateSize(void);
-static void MtmSerializeTransactionState(void* ctx);
-static void MtmDeserializeTransactionState(void* ctx);
-static void MtmInitializeSequence(int64* start, int64* step);
+static void   MtmSerializeTransactionState(void* ctx);
+static void   MtmDeserializeTransactionState(void* ctx);
+static void   MtmInitializeSequence(int64* start, int64* step);
+static void*  MtmCreateSavepointContext(void);
+static void   MtmRestoreSavepointContext(void* ctx);
+static void   MtmReleaseSavepointContext(void* ctx);
 
 static void MtmCheckClusterLock(void);
 static void MtmCheckSlots(void);
@@ -197,7 +200,10 @@ static TransactionManager MtmTM =
 	MtmGetTransactionStateSize,
 	MtmSerializeTransactionState,
 	MtmDeserializeTransactionState,
-	MtmInitializeSequence
+	MtmInitializeSequence,
+	MtmCreateSavepointContext,
+	MtmRestoreSavepointContext,
+	MtmReleaseSavepointContext
 };
 
 char const* const MtmNodeStatusMnem[] = 
@@ -464,6 +470,20 @@ MtmInitializeSequence(int64* start, int64* step)
 		*start = MtmNodeId;
 		*step  = MtmMaxNodes;
 	}
+}
+
+static void* MtmCreateSavepointContext(void)
+{
+	return (void*)(size_t)MtmTx.containsDML;
+}
+
+static void  MtmRestoreSavepointContext(void* ctx)
+{
+	MtmTx.containsDML = ctx != NULL;
+}
+
+static void  MtmReleaseSavepointContext(void* ctx)
+{
 }
 
 

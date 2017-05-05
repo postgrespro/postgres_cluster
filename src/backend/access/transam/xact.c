@@ -176,6 +176,7 @@ typedef struct TransactionStateData
 	SubTransactionId subTransactionId;	/* my subxact ID */
 	char	   *name;			/* savepoint name, if any */
 	int			savepointLevel; /* savepoint level */
+	void*       savepointContext;        /* savepoint XTM context */
 	TransState	state;			/* low-level state */
 	TBlockState blockState;		/* high-level state */
 	int			nestingLevel;	/* transaction nesting depth */
@@ -4095,6 +4096,7 @@ DefineSavepoint(char *name)
 			 */
 			if (name)
 				s->name = MemoryContextStrdup(TopTransactionContext, name);
+			s->savepointContext = TM->CreateSavepointContext();
 			break;
 
 			/* These cases are invalid. */
@@ -4227,6 +4229,7 @@ ReleaseSavepoint(List *options)
 	{
 		Assert(xact->blockState == TBLOCK_SUBINPROGRESS);
 		xact->blockState = TBLOCK_SUBRELEASE;
+		TM->ReleaseSavepointContext(xact->savepointContext);
 		if (xact == target)
 			break;
 		xact = xact->parent;
@@ -4346,9 +4349,11 @@ RollbackToSavepoint(List *options)
 		else
 			elog(FATAL, "RollbackToSavepoint: unexpected state %s",
 				 BlockStateAsString(xact->blockState));
+		TM->ReleaseSavepointContext(xact->savepointContext);
 		xact = xact->parent;
 		Assert(PointerIsValid(xact));
 	}
+	TM->RestoreSavepointContext(xact->savepointContext);
 
 	/* And mark the target as "restart pending" */
 	if (xact->blockState == TBLOCK_SUBINPROGRESS)
