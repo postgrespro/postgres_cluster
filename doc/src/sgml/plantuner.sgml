@@ -11,12 +11,13 @@
       Whether somebody think it's bad or not, but sometime it's very
       interesting to be able to control planner (provide hints, which tell
       optimizer to ignore its algorithm in part), which is currently
-      impossible in PostgreSQL. Oracle, for example, has over 120 hints,
+      impossible in &productname; (and PostgreSQL).
+      Oracle, for example, has over 120 hints,
       and Microsoft SQL Server also supports hints.
     </para>
     <para>
       This first version of plantuner provides a possibility to hide
-      specified indexes from PostgreSQL planner, so it will not use them.
+      specified indexes from &productname; planner, so it will not use them.
     </para>
     <para>
       There are many situations when developer want to temporarily disable
@@ -24,7 +25,7 @@
       use specific index.
     </para>
     <para>
-      Next, for some workload PostgreSQL could be too pessimistic for
+      Next, for some workload &productname; could be too pessimistic for
       newly created tables and assumes much more rows in table than
       it actually has. If plantuner.fix_empty_table GUC variable is set
       to true then module will set to zero the number of pages/tuples of
