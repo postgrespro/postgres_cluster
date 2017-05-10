@@ -20,6 +20,7 @@
 #include "xact_handling.h"
 
 #include "access/transam.h"
+#include "catalog/pg_authid.h"
 #include "miscadmin.h"
 #include "optimizer/cost.h"
 #include "optimizer/restrictinfo.h"
@@ -146,17 +147,31 @@ pathman_join_pathlist_hook(PlannerInfo *root,
 		if (saved_jointype == JOIN_UNIQUE_INNER)
 			return; /* No way to do this with a parameterized inner path */
 
+#if PG_VERSION_NUM >= 90603
+		initial_cost_nestloop(root, &workspace, jointype,
+							  outer, inner, /* built paths */
+							  extra);
+#else
 		initial_cost_nestloop(root, &workspace, jointype,
 							  outer, inner, /* built paths */
 							  extra->sjinfo, &extra->semifactors);
+#endif
 
 		pathkeys = build_join_pathkeys(root, joinrel, jointype, outer->pathkeys);
 
+#if PG_VERSION_NUM >= 90603
+		nest_path = create_nestloop_path(root, joinrel, jointype, &workspace,
+										 extra, outer, inner,
+										 extra->restrictlist,
+										 pathkeys,
+										 calc_nestloop_required_outer(outer, inner));
+#else
 		nest_path = create_nestloop_path(root, joinrel, jointype, &workspace,
 										 extra->sjinfo, &extra->semifactors,
 										 outer, inner, extra->restrictlist,
 										 pathkeys,
 										 calc_nestloop_required_outer(outer, inner));
+#endif
 
 		/* Discard all clauses that are to be evaluated by 'inner' */
 		foreach (rinfo_lc, extra->restrictlist)
@@ -556,13 +571,34 @@ pathman_post_parse_analysis_hook(ParseState *pstate, Query *query)
 		/* Check that pg_pathman is the last extension loaded */
 		if (post_parse_analyze_hook != pathman_post_parse_analysis_hook)
 		{
-			char *spl_value; /* value of "shared_preload_libraries" GUC */
+			Oid		save_userid;
+			int		save_sec_context;
+			bool	need_priv_escalation = !superuser(); /* we might be a SU */
+			char   *spl_value; /* value of "shared_preload_libraries" GUC */
 
+			/* Do we have to escalate privileges? */
+			if (need_priv_escalation)
+			{
+				/* Get current user's Oid and security context */
+				GetUserIdAndSecContext(&save_userid, &save_sec_context);
+
+				/* Become superuser in order to bypass sequence ACL checks */
+				SetUserIdAndSecContext(BOOTSTRAP_SUPERUSERID,
+									   save_sec_context | SECURITY_LOCAL_USERID_CHANGE);
+			}
+
+			/* TODO: add a test for this case (non-privileged user etc) */
+
+			/* Only SU can read this GUC */
 #if PG_VERSION_NUM >= 90600
 			spl_value = GetConfigOptionByName("shared_preload_libraries", NULL, false);
 #else
 			spl_value = GetConfigOptionByName("shared_preload_libraries", NULL);
 #endif
+
+			/* Restore user's privileges */
+			if (need_priv_escalation)
+				SetUserIdAndSecContext(save_userid, save_sec_context);
 
 			ereport(ERROR,
 					(errmsg("extension conflict has been detected"),
