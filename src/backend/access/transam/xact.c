@@ -207,6 +207,7 @@ static TransactionStateData TopTransactionStateData = {
 	0,							/* subtransaction id */
 	NULL,						/* savepoint name */
 	0,							/* savepoint level */
+	NULL,                       /* savepoint context */
 	TRANS_DEFAULT,				/* transaction state */
 	TBLOCK_DEFAULT,				/* transaction block state from the client
 								 * perspective */
@@ -4096,7 +4097,6 @@ DefineSavepoint(char *name)
 			 */
 			if (name)
 				s->name = MemoryContextStrdup(TopTransactionContext, name);
-			s->savepointContext = TM->CreateSavepointContext();
 			break;
 
 			/* These cases are invalid. */
@@ -5085,6 +5085,7 @@ PushTransaction(void)
 	GetUserIdAndSecContext(&s->prevUser, &s->prevSecContext);
 	s->prevXactReadOnly = XactReadOnly;
 	s->parallelModeLevel = 0;
+	s->savepointContext = TM->CreateSavepointContext();
 
 	CurrentTransactionState = s;
 
@@ -5115,7 +5116,9 @@ PopTransaction(void)
 	if (s->parent == NULL)
 		elog(FATAL, "PopTransaction with no parent");
 
+	TM->ReleaseSavepointContext(s->savepointContext);
 	CurrentTransactionState = s->parent;
+	TM->RestoreSavepointContext(CurrentTransactionState->savepointContext);
 
 	/* Let's just make sure CurTransactionContext is good */
 	CurTransactionContext = s->parent->curTransactionContext;
