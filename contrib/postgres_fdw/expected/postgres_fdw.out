@@ -5329,6 +5329,7 @@ select * from bar where f1 in (select f1 from foo) for update;
    Output: bar.f1, bar.f2, bar.ctid, bar.*, bar.tableoid, foo.ctid, foo.*, foo.tableoid
    ->  Hash Join
          Output: bar.f1, bar.f2, bar.ctid, bar.*, bar.tableoid, foo.ctid, foo.*, foo.tableoid
+         Inner Unique: true
          Hash Cond: (bar.f1 = foo.f1)
          ->  Append
                ->  Seq Scan on public.bar
@@ -5347,7 +5348,7 @@ select * from bar where f1 in (select f1 from foo) for update;
                            ->  Foreign Scan on public.foo2
                                  Output: foo2.ctid, foo2.*, foo2.tableoid, foo2.f1
                                  Remote SQL: SELECT f1, f2, f3, ctid FROM public.loct1
-(22 rows)
+(23 rows)
 
 select * from bar where f1 in (select f1 from foo) for update;
  f1 | f2 
