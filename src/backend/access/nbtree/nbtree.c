@@ -21,6 +21,7 @@
 #include "access/nbtree.h"
 #include "access/relscan.h"
 #include "access/xlog.h"
+#include "access/ptrack.h"
 #include "catalog/index.h"
 #include "commands/vacuum.h"
 #include "storage/indexfsm.h"
@@ -253,9 +254,13 @@ btbuildempty(Relation index)
 	PageSetChecksumInplace(metapage, BTREE_METAPAGE);
 	smgrwrite(index->rd_smgr, INIT_FORKNUM, BTREE_METAPAGE,
 			  (char *) metapage, true);
+
+	/* Don't forget to set ptrack bit even if we're skipping bufmgr stage */
+	ptrack_add_block_redo(index->rd_smgr->smgr_rnode.node, BTREE_METAPAGE);
 	log_newpage(&index->rd_smgr->smgr_rnode.node, INIT_FORKNUM,
 				BTREE_METAPAGE, metapage, false);
-
+	/* Ensure rd_smgr is open (could have been closed by relcache flush!) */
+	RelationOpenSmgr(index);
 	/*
 	 * An immediate sync is required even if we xlog'd the page, because the
 	 * write did not go through shared_buffers and therefore a concurrent

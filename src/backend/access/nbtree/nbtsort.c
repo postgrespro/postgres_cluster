@@ -69,6 +69,7 @@
 #include "access/nbtree.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
+#include "access/ptrack.h"
 #include "miscadmin.h"
 #include "storage/smgr.h"
 #include "tcop/tcopprot.h"
@@ -276,8 +277,12 @@ _bt_blwritepage(BTWriteState *wstate, Page page, BlockNumber blkno)
 	/* XLOG stuff */
 	if (wstate->btws_use_wal)
 	{
+		/* Don't forget to set ptrack bit even if we're skipping bufmgr stage */
+		ptrack_add_block_redo(wstate->index->rd_node, blkno);
 		/* We use the heap NEWPAGE record type for this */
 		log_newpage(&wstate->index->rd_node, MAIN_FORKNUM, blkno, page, true);
+		/* Ensure rd_smgr is open (could have been closed by relcache flush!) */
+		RelationOpenSmgr(wstate->index);
 	}
 
 	/*
