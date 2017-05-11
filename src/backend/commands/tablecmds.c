@@ -23,6 +23,7 @@
 #include "access/tupconvert.h"
 #include "access/xact.h"
 #include "access/xlog.h"
+#include "access/ptrack.h"
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
 #include "catalog/heap.h"
@@ -9761,6 +9762,13 @@ ATExecSetTableSpace(Oid tableOid, Oid newTableSpace, LOCKMODE lockmode)
 	/* copy those extra forks that exist */
 	for (forkNum = MAIN_FORKNUM + 1; forkNum <= MAX_FORKNUM; forkNum++)
 	{
+		/*
+		 * Do not copy ptrack fork, because it will be created
+		 * for new relation while copying data.
+		 */
+		if (forkNum == PAGESTRACK_FORKNUM)
+			continue;
+
 		if (smgrexists(rel->rd_smgr, forkNum))
 		{
 			smgrcreate(dstrel, forkNum, false);
@@ -10044,7 +10052,11 @@ copy_relation_data(SMgrRelation src, SMgrRelation dst,
 		 * space.
 		 */
 		if (use_wal)
+		{
+			if (forkNum == MAIN_FORKNUM)
+				ptrack_add_block_redo(dst->smgr_rnode.node, blkno);
 			log_newpage(&dst->smgr_rnode.node, forkNum, blkno, page, false);
+		}
 
 		PageSetChecksumInplace(page, blkno);
 

@@ -1,10 +1,12 @@
 PROGRAM = pg_probackup
 OBJS = backup.o \
 	catalog.o \
+	configure.o \
 	data.o \
 	delete.o \
 	dir.o \
 	fetch.o \
+	help.o \
 	init.o \
 	parray.o \
 	pg_probackup.o \
@@ -18,9 +20,7 @@ OBJS = backup.o \
 	xlogreader.o \
 	streamutil.o \
 	receivelog.o \
-	pgut/pgut.o \
-	pgut/pgut-port.o \
-	pgut/getopt_long.o
+	pgut/pgut.o
 
 EXTRA_CLEAN = datapagemap.c datapagemap.h xlogreader.c receivelog.c receivelog.h streamutil.c streamutil.h logging.h
 

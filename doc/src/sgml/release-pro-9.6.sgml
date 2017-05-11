@@ -1,5 +1,84 @@
 <!-- doc/src/sgml/release-pro-9.6.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
+<sect1 id="release-pro-9-6-3-1">
+  <title>Postgres Pro 9.6.3.1</title>
+  <note>
+    <title>Release Date</title>
+    <simpara>2017-05-12</simpara>
+  </note>
+  <sect2>
+    <title>Overview</title>
+    <para>This release is based on <productname>Postgres Pro</productname>
+      <link linkend="release-pro-9-6-2-1">9.6.2.1</link> and
+      <productname>PostgreSQL</productname> <link linkend="release-9-6-3">9.6.3</link>.</para>
+    <para>Major enhancements over <productname>Postgres Pro</productname>
+      9.6.2.1 include:</para>
+    <itemizedlist>
+      <listitem>
+        <para>Added <application>pg_tsparser</application> extension for text search.</para>
+        <para>In addition to the default search results, this extension also returns a single word for the following cases:</para>
+        <itemizedlist>
+          <listitem>
+            <para>words that include underscores</para>
+          </listitem>
+          <listitem>
+            <para>words that include numbers and letters separated by the hyphen character</para>
+          </listitem>
+        </itemizedlist>
+      </listitem>
+      <listitem>
+        <para>Updated the <link linkend="pg-pathman"><application>pg_pathman</application></link> module to
+          version 1.3.2. This version provides compatibility fixes for <productname>PostgreSQL</productname> 9.6.3.</para>
+      </listitem>
+      <listitem>
+        <para>The <link linkend="sr-plan"><application>sr_plan</application></link> module
+          is now working with non-default <literal>search_path</literal> variable.</para>
+      </listitem>
+      <listitem>
+        <para>Fixed WAL inconsisency bug in covering indexes.</para>
+      </listitem>
+      <listitem>
+        <para>Added distribution for SUSE Linux Enterprise Server 12 SP1 and Ubuntu 17.04.</para>
+      </listitem>
+      <listitem>
+        <para>Applied patches to optimize inheritance.</para>
+      </listitem>
+      <listitem>
+        <para>Updated PTRACK patch to version 1.2.</para>
+      </listitem>
+      <listitem>
+        <para>Updated pg_probackup to version 1.1.11. Command line interface
+          has been changed.</para>
+      </listitem>
+      <listitem>
+        <para>Provided performance improvements for queries typical for 1C solutions.</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Migration to Version 9.6.3.1</title>
+    <para>A dump/restore using <xref linkend="app-pg-dumpall">, or
+        use of <xref linkend="pgupgrade">, is required for those
+        wishing to migrate data from any previous major release.
+    </para>
+    <para>A dump/restore is not required for those running 9.6.2.1.</para>
+    <para>However, if you are upgrading from vanilla PostgreSQL 9.6.x, some
+      catalog changes should be applied.
+    </para>
+    <para>If you use binary packages, and your database is in the default
+      location, this upgrade should be performed automatically. If you've
+      compiled Postgres Pro from source or create your database in a
+      non-default location, running <literal>initdb</literal> manually, you
+      should run <literal>pgpro_upgrade</literal> script provided in this
+      distribution.
+    </para>
+    <para>Before running the script, you should stop postgres service.
+      Script should be run on behalf of the user owning the database
+      (typically postgres) and PGDATA environment variable should be
+      set to the directory where database resides.
+    </para>
+  </sect2>
+</sect1>
 <sect1 id="release-pro-9-6-2-1">
   <title>Postgres Pro 9.6.2.1</title>
   <note>
