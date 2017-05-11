@@ -1330,20 +1330,16 @@ _bt_split(Relation rel, Buffer buf, Buffer cbuf, OffsetNumber firstright,
 		if (newitemonleft)
 			XLogRegisterBufData(0, (char *) newitem, MAXALIGN(newitemsz));
 
-		/* Log left page */
-		if (!isleaf)
-		{
-			/*
-			 * We must also log the left page's high key, because the right
-			 * page's leftmost key is suppressed on non-leaf levels.  Show it
-			 * as belonging to the left page buffer, so that it is not stored
-			 * if XLogInsert decides it needs a full-page image of the left
-			 * page.
-			 */
-			itemid = PageGetItemId(origpage, P_HIKEY);
-			item = (IndexTuple) PageGetItem(origpage, itemid);
-			XLogRegisterBufData(0, (char *) item, MAXALIGN(IndexTupleSize(item)));
-		}
+		/*
+		 * We must also log the left page's high key, because the right
+		 * page's leftmost key is suppressed on non-leaf levels.  Show it
+		 * as belonging to the left page buffer, so that it is not stored
+		 * if XLogInsert decides it needs a full-page image of the left
+		 * page.
+		 */
+		itemid = PageGetItemId(origpage, P_HIKEY);
+		item = (IndexTuple) PageGetItem(origpage, itemid);
+		XLogRegisterBufData(0, (char *) item, MAXALIGN(IndexTupleSize(item)));
 
 		/*
 		 * Log the contents of the right page in the format understood by
