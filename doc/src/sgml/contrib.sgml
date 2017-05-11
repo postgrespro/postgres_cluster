@@ -143,6 +143,7 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &pgstatstatements;
  &pgstattuple;
  &pgtrgm;
+ &pg-tsparser;
  &pgvariables;
  &pgvisibility;
  &plantuner; 
