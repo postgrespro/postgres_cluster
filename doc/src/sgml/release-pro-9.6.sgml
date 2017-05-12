@@ -16,13 +16,13 @@
     <itemizedlist>
       <listitem>
         <para>Added <link linkend="pg-tsparser"><application>pg_tsparser</application></link> extension for text search.</para>
-        <para>In addition to the default search results, this extension also returns a single word in the following cases:</para>
+        <para>In addition to separate word parts returned by default, <application>pg_tsparser</application> also returns the whole word if this word includes:</para>
         <itemizedlist>
           <listitem>
-            <para>words that include underscores</para>
+            <para>underscores</para>
           </listitem>
           <listitem>
-            <para>words that include numbers and letters separated by the hyphen character</para>
+            <para>numbers and letters separated by the hyphen character</para>
           </listitem>
         </itemizedlist>
       </listitem>

@@ -1,24 +1,22 @@
 <sect1 id="pg-tsparser">
   <title>pg_tsparser</title>
   <para>
-    The <filename>pg_tsparser</filename> is a <productname>&productname;</productname> extension that
-    modifies the default text search parser. In addition to the default
-    search results, this extension also returns a single word in the
-    following cases:
+    <filename>pg_tsparser</filename> is a <productname>&productname;</productname> extension for text search. 
+    This extension modifies the default text parsing strategy for words that include: 
   </para>
   <itemizedlist spacing="compact">
     <listitem>
       <para>
-        words that include underscores
+        underscores
       </para>
     </listitem>
     <listitem>
       <para>
-        words that include numbers and letters separated by the hyphen
-        character
+        numbers and letters separated by the hyphen character
       </para>
     </listitem>
   </itemizedlist>
+  <para>In addition to separate word parts returned by default, <filename>pg_tsparser</filename> also returns the whole word.</para>
   <sect2 id="pg-tsparser-install">
     <title>Installation and Setup</title>
     <para>
