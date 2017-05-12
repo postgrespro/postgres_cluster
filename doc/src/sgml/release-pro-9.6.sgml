@@ -15,8 +15,8 @@
       9.6.2.1 include:</para>
     <itemizedlist>
       <listitem>
-        <para>Added <application>pg_tsparser</application> extension for text search.</para>
-        <para>In addition to the default search results, this extension also returns a single word for the following cases:</para>
+        <para>Added <link linkend="pg-tsparser"><application>pg_tsparser</application></link> extension for text search.</para>
+        <para>In addition to the default search results, this extension also returns a single word in the following cases:</para>
         <itemizedlist>
           <listitem>
             <para>words that include underscores</para>
@@ -28,7 +28,7 @@
       </listitem>
       <listitem>
         <para>Updated the <link linkend="pg-pathman"><application>pg_pathman</application></link> module to
-          version 1.3.2. This version provides compatibility fixes for <productname>PostgreSQL</productname> 9.6.3.</para>
+          version 1.3.2. This version provides compatibility fixes for this release.</para>
       </listitem>
       <listitem>
         <para>The <link linkend="sr-plan"><application>sr_plan</application></link> module
