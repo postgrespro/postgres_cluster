@@ -288,25 +288,11 @@ EXPLAIN SELECT * FROM pgbench_accounts WHERE filler LIKE '%x%';
  <sect2 id="parallel-aggregation">
   <title>Parallel Aggregation</title>
   <para>
-    It is not possible to perform the aggregation portion of a query entirely
-    in parallel.  For example, if a query involves selecting
-    <literal>COUNT(*)</>, each worker could compute a total, but those totals
-    would need to combined in order to produce a final answer.  If the query
-    involved a <literal>GROUP BY</> clause, a separate total would need to
-    be computed for each group.  Even though aggregation can't be done entirely
-    in parallel, queries involving aggregation are often excellent candidates
-    for parallel query, because they typically read many rows but return only
-    a few rows to the client.  Queries that return many rows to the client
-    are often limited by the speed at which the client can read the data,
-    in which case parallel query cannot help very much.
-  </para>
-
-  <para>
-    <productname>&productname;</> supports parallel aggregation by aggregating
-    twice.  First, each process participating in the parallel portion of the
-    query performs an aggregation step, producing a partial result for each
-    group of which that process is aware.  This is reflected in the plan as
-    a <literal>PartialAggregate</> node.  Second, the partial results are
+    <productname>&productname;</> supports parallel aggregation by aggregating in
+    two stages.  First, each process participating in the parallel portion of
+    the query performs an aggregation step, producing a partial result for
+    each group of which that process is aware.  This is reflected in the plan
+    as a <literal>Partial Aggregate</> node.  Second, the partial results are
     transferred to the leader via the <literal>Gather</> node.  Finally, the
     leader re-aggregates the results across all workers in order to produce
     the final result.  This is reflected in the plan as a
