@@ -35,7 +35,7 @@
           is now working with non-default <literal>search_path</literal> variable.</para>
       </listitem>
       <listitem>
-        <para>Fixed WAL inconsisency bug in covering indexes.</para>
+        <para>Fixed WAL inconsistency bug in covering indexes.</para>
       </listitem>
       <listitem>
         <para>Added distribution for SUSE Linux Enterprise Server 12 SP1 and Ubuntu 17.04.</para>
