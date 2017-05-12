@@ -1,7 +1,7 @@
 <sect1 id="pg-tsparser">
   <title>pg_tsparser</title>
   <para>
-    The <filename>pg_tsparser</filename> is a Postgres Pro extension that
+    The <filename>pg_tsparser</filename> is a <productname>&productname;</productname> extension that
     modifies the default text search parser. In addition to the default
     search results, this extension also returns a single word in the
     following cases:
@@ -22,8 +22,9 @@
   <sect2 id="pg-tsparser-install">
     <title>Installation and Setup</title>
     <para>
-      The <filename>pg_tsparser</filename> extension is included into the
-      Postgres Pro. To enable <filename>pg_tsparser</filename>,
+      <filename>pg_tsparser</filename> is included into the <productname>&productname;</productname> 
+      distribution. To enable <filename>pg_tsparser</filename>, once 
+      <productname>&productname;</productname> is installed,
       create the <filename>pg_tsparser</filename> extension for each
       database you are planning to use:
     </para>
