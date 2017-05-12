@@ -601,7 +601,7 @@ spi_response_t *execute_spi_params_prepared(MemoryContext ctx, const char *sql, 
 	Datum *values;
 	int i;
 	ResourceOwner oldowner = CurrentResourceOwner;
-	spi_response_t *rv;
+	spi_response_t *rv = NULL;
 	MemoryContext old = CurrentMemoryContext;
 	MemoryContext pe;
 
