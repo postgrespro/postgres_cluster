@@ -7,6 +7,11 @@
 #include "storage/relfilenode.h"
 #include "utils/relcache.h"
 
+/* Ptrack version as a string */
+#define PTRACK_VERSION "1.2"
+/* Ptrack version as a number */
+#define PTRACK_VERSION_NUM 102
+
 /* Number of bits allocated for each heap block. */
 #define PTRACK_BITS_PER_HEAPBLOCK 1
 

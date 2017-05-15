@@ -1856,6 +1856,7 @@ ReadCommonJoin(Join *local_node)
 	ReadCommonPlan(&local_node->plan);
 
 	READ_ENUM_FIELD(jointype, JoinType);
+	READ_BOOL_FIELD(inner_unique);
 	READ_NODE_FIELD(joinqual);
 }
 
@@ -1899,6 +1900,7 @@ _readMergeJoin(void)
 
 	ReadCommonJoin(&local_node->join);
 
+	READ_BOOL_FIELD(skip_mark_restore);
 	READ_NODE_FIELD(mergeclauses);
 
 	numCols = list_length(local_node->mergeclauses);

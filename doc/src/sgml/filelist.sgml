@@ -158,6 +158,7 @@
 <!ENTITY pgstattuple     SYSTEM "pgstattuple.sgml">
 <!ENTITY pgtransfer      SYSTEM "pgtransfer.sgml">
 <!ENTITY pgtrgm          SYSTEM "pgtrgm.sgml">
+<!ENTITY pg-tsparser          SYSTEM "pg_tsparser.sgml">
 <!ENTITY pgvariables     SYSTEM "pg_variables.sgml">
 <!ENTITY pgvisibility    SYSTEM "pgvisibility.sgml">
 <!ENTITY pg-wait-sampling    SYSTEM "pg-wait-sampling.sgml">
@@ -191,6 +192,7 @@
 <!ENTITY errcodes   SYSTEM "errcodes.sgml">
 <!ENTITY features   SYSTEM "features.sgml">
 <!ENTITY keywords   SYSTEM "keywords.sgml">
+<!ENTITY config-one-c   SYSTEM "config-one-c.sgml">
 <!ENTITY sourcerepo SYSTEM "sourcerepo.sgml">
 
 <!ENTITY release    SYSTEM "release.sgml">

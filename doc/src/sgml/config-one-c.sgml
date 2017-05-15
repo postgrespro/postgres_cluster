@@ -1,0 +1,89 @@
+<!-- doc/src/sgml/config-one-c.sgml -->
+
+<appendix id="config-one-c">
+  <title>Configuring <productname>&productname;</productname> for <productname>1C</productname> Solutions</title>
+   <para>You can install and use <productname>&productname;</productname> with <productname>1C</productname> solutions in a client/server model. For optimal performance and stability, modify the following settings in the <filename>postgresql.conf</filename> configuration file of <productname>&productname;</productname> server:</para>
+
+   <orderedlist>
+     <listitem>
+      <para>Increase the maximum number of allowed concurrent connections to the database server, up to 1000 connections. <productname>1C</productname> solutions can open a large number of connections, even if not all of them are used, so it is recommended to allow not less than 500 connections.
+      <programlisting>
+max_connections = 1000
+</programlisting>
+      </para>
+     </listitem>
+
+    <listitem>
+      <para>To ensure that temporary tables are handled correctly, modify the following parameters:
+      </para>
+      <itemizedlist>
+       <listitem>
+        <para>Increase the buffer size for temporary tables: 
+        <programlisting>
+temp_buffers = 32MB
+</programlisting>
+        </para>
+       </listitem>
+
+       <listitem>
+        <para>Increase the number of allowed locks of tables or indexes per transaction to 256: </para>
+        <programlisting>
+max_locks_per_transaction = 256
+</programlisting>
+        <para>Typically, <productname>1C</productname> solutions use a lot of temporary tables. Every backend process usually contains multiple temporary tables. When closing a connection, <productname>&productname;</productname> tries to drop all temporary tables in a single transactio, so this transaction may use a lot of locks. If the number of locks exceeds the <varname>max_locks_per_transaction</varname> value, the transaction will fail, leaving multiple orphaned temporary tables.
+        </para>
+      </listitem>
+      </itemizedlist>
+    </listitem>
+
+    <listitem>
+     <para>Enable backslash escapes in all strings, and switch off the warning about using the backslash escape symbol: 
+     <programlisting>
+standard_conforming_strings = off
+escape_string_warning = off
+</programlisting>
+      </para>
+    </listitem>
+
+    <listitem>
+     <para>Optimize query planning using <link linkend="online-analyze"><filename>online_analyze</filename></link> and <link linkend="plantuner"><filename>plantuner</filename></link> extensions, as follows:
+     </para>
+
+        <itemizedlist>
+          <listitem>
+            <para>Add <filename>online_analyze</filename> and <filename>plantuner</filename> to the <varname>shared_preload_libraries</varname> variable.
+            </para>
+                 <programlisting>
+shared_preload_libraries = 'online_analyze, plantuner'
+</programlisting>
+          </listitem>
+
+          <listitem>
+            <para>Enable automatic analysis of temporary tables when they are modified:
+            </para>
+                 <programlisting>
+online_analyze.table_type = 'temporary'
+</programlisting>
+          </listitem>
+
+          <listitem>
+            <para>Tune <productname>&productname;</productname> optimizer to improve planning for recently created empty tables:
+            </para>
+                 <programlisting>
+plantuner.fix_empty_table = 'on'
+</programlisting>
+          </listitem>
+
+          <listitem>
+            <para>Suppress detailed messages from the <filename>online_analyze</filename> extension:
+            </para>
+                 <programlisting>
+online_analyze.verbose = 'off'
+</programlisting>
+          </listitem>
+
+        </itemizedlist>
+    </listitem>
+
+   </orderedlist>
+ </appendix>

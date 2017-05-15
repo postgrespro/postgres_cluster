@@ -3006,7 +3006,7 @@ exec_stmt_return_query(PLpgSQL_execstate *estate,
 	if (stmt->query != NULL)
 	{
 		/* static query */
-		exec_run_select(estate, stmt->query, 0, &portal, true);
+		exec_run_select(estate, stmt->query, 0, &portal, false);
 	}
 	else
 	{
@@ -3014,7 +3014,7 @@ exec_stmt_return_query(PLpgSQL_execstate *estate,
 		Assert(stmt->dynquery != NULL);
 		portal = exec_dynquery_with_params(estate, stmt->dynquery,
 										   stmt->params, NULL,
-										   CURSOR_OPT_PARALLEL_OK);
+										   0);
 	}
 
 	tupmap = convert_tuples_by_position(portal->tupDesc,

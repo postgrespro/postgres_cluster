@@ -530,7 +530,6 @@ DETAIL:  Unrecognized hint keyword "".
                                       QUERY PLAN                                       
 ---------------------------------------------------------------------------------------
  Nested Loop  (cost=xxx rows=100 width=xxx)
-   Join Filter: (t1.c1 = t4.c1)
    ->  Merge Join  (cost=xxx rows=100 width=xxx)
          Merge Cond: (t1.c1 = t2.c1)
          ->  Merge Join  (cost=xxx rows=1000 width=xxx)
@@ -541,8 +540,8 @@ DETAIL:  Unrecognized hint keyword "".
                Sort Key: t2.c1
                ->  Seq Scan on t2  (cost=xxx rows=100 width=xxx)
    ->  Index Scan using t4_i1 on t4  (cost=xxx rows=1 width=xxx)
-         Index Cond: (c1 = t3.c1)
-(13 rows)
+         Index Cond: (c1 = t1.c1)
+(12 rows)
 
 ----
 ---- No. R-1-6 object type for the hint
@@ -1253,7 +1252,6 @@ error hint:
                  ->  Index Only Scan using t2_i1 on t2 b2t2  (cost=xxx rows=1 width=xxx)
                        Index Cond: (c1 = b2t1.c1)
    ->  Nested Loop  (cost=xxx rows=100 width=xxx)
-         Join Filter: (bmt1.c1 = bmt4.c1)
          ->  Hash Join  (cost=xxx rows=100 width=xxx)
                Hash Cond: (bmt3.c1 = bmt1.c1)
                ->  Seq Scan on t3 bmt3  (cost=xxx rows=1130 width=xxx)
@@ -1265,8 +1263,8 @@ error hint:
                                  Sort Key: bmt2.c1
                                  ->  Seq Scan on t2 bmt2  (cost=xxx rows=100 width=xxx)
          ->  Index Only Scan using t4_i1 on t4 bmt4  (cost=xxx rows=1 width=xxx)
-               Index Cond: (c1 = bmt3.c1)
-(44 rows)
+               Index Cond: (c1 = bmt1.c1)
+(43 rows)
 
 \o results/ut-R.tmpout
 /*+
@@ -1367,7 +1365,6 @@ error hint:
                  ->  Index Only Scan using t2_i1 on t2 b2t2  (cost=xxx rows=1 width=xxx)
                        Index Cond: (c1 = b2t1.c1)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
-         Join Filter: (bmt1.c1 = bmt4.c1)
          ->  Hash Join  (cost=xxx rows=1 width=xxx)
                Hash Cond: (bmt3.c1 = bmt1.c1)
                ->  Seq Scan on t3 bmt3  (cost=xxx rows=1130 width=xxx)
@@ -1379,8 +1376,8 @@ error hint:
                                  Sort Key: bmt2.c1
                                  ->  Seq Scan on t2 bmt2  (cost=xxx rows=100 width=xxx)
          ->  Index Only Scan using t4_i1 on t4 bmt4  (cost=xxx rows=1 width=xxx)
-               Index Cond: (c1 = bmt3.c1)
-(44 rows)
+               Index Cond: (c1 = bmt1.c1)
+(43 rows)
 
 -- No. R-2-1-2
 \o results/ut-R.tmpout
@@ -1483,7 +1480,6 @@ error hint:
    InitPlan 3 (returns $5)
      ->  Aggregate  (cost=xxx rows=1 width=xxx)
            ->  Nested Loop  (cost=xxx rows=100 width=xxx)
-                 Join Filter: (b3t1.c1 = b3t3.c1)
                  ->  Hash Join  (cost=xxx rows=100 width=xxx)
                        Hash Cond: (b3t1.c1 = b3t2.c1)
                        ->  Merge Join  (cost=xxx rows=1000 width=xxx)
@@ -1493,9 +1489,8 @@ error hint:
                        ->  Hash  (cost=xxx rows=100 width=xxx)
                              ->  Seq Scan on t2 b3t2  (cost=xxx rows=100 width=xxx)
                  ->  Index Only Scan using t3_i1 on t3 b3t3  (cost=xxx rows=1 width=xxx)
-                       Index Cond: (c1 = b3t4.c1)
+                       Index Cond: (c1 = b3t1.c1)
    ->  Nested Loop  (cost=xxx rows=100 width=xxx)
-         Join Filter: (bmt1.c1 = bmt4.c1)
          ->  Hash Join  (cost=xxx rows=100 width=xxx)
                Hash Cond: (bmt3.c1 = bmt1.c1)
                ->  Seq Scan on t3 bmt3  (cost=xxx rows=1130 width=xxx)
@@ -1507,8 +1502,8 @@ error hint:
                                  Sort Key: bmt2.c1
                                  ->  Seq Scan on t2 bmt2  (cost=xxx rows=100 width=xxx)
          ->  Index Only Scan using t4_i1 on t4 bmt4  (cost=xxx rows=1 width=xxx)
-               Index Cond: (c1 = bmt3.c1)
-(58 rows)
+               Index Cond: (c1 = bmt1.c1)
+(56 rows)
 
 \o results/ut-R.tmpout
 /*+
@@ -1630,7 +1625,6 @@ error hint:
    InitPlan 3 (returns $5)
      ->  Aggregate  (cost=xxx rows=1 width=xxx)
            ->  Nested Loop  (cost=xxx rows=1 width=xxx)
-                 Join Filter: (b3t1.c1 = b3t3.c1)
                  ->  Hash Join  (cost=xxx rows=1 width=xxx)
                        Hash Cond: (b3t1.c1 = b3t2.c1)
                        ->  Merge Join  (cost=xxx rows=1 width=xxx)
@@ -1640,9 +1634,8 @@ error hint:
                        ->  Hash  (cost=xxx rows=100 width=xxx)
                              ->  Seq Scan on t2 b3t2  (cost=xxx rows=100 width=xxx)
                  ->  Index Only Scan using t3_i1 on t3 b3t3  (cost=xxx rows=1 width=xxx)
-                       Index Cond: (c1 = b3t4.c1)
+                       Index Cond: (c1 = b3t1.c1)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
-         Join Filter: (bmt1.c1 = bmt4.c1)
          ->  Hash Join  (cost=xxx rows=1 width=xxx)
                Hash Cond: (bmt3.c1 = bmt1.c1)
                ->  Seq Scan on t3 bmt3  (cost=xxx rows=1130 width=xxx)
@@ -1654,8 +1647,8 @@ error hint:
                                  Sort Key: bmt2.c1
                                  ->  Seq Scan on t2 bmt2  (cost=xxx rows=100 width=xxx)
          ->  Index Only Scan using t4_i1 on t4 bmt4  (cost=xxx rows=1 width=xxx)
-               Index Cond: (c1 = bmt3.c1)
-(58 rows)
+               Index Cond: (c1 = bmt1.c1)
+(56 rows)
 
 -- No. R-2-1-3
 \o results/ut-R.tmpout
@@ -1898,7 +1891,6 @@ error hint:
                  ->  Index Only Scan using t2_i1 on t2 b2t2  (cost=xxx rows=1 width=xxx)
                        Index Cond: (c1 = b2t1.c1)
    ->  Nested Loop  (cost=xxx rows=100 width=xxx)
-         Join Filter: (bmt1.c1 = bmt4.c1)
          ->  Hash Join  (cost=xxx rows=100 width=xxx)
                Hash Cond: (bmt3.c1 = bmt1.c1)
                ->  Seq Scan on t3 bmt3  (cost=xxx rows=1130 width=xxx)
@@ -1911,8 +1903,8 @@ error hint:
                                  Sort Key: bmt2.c1
                                  ->  Seq Scan on t2 bmt2  (cost=xxx rows=100 width=xxx)
          ->  Index Only Scan using t4_i1 on t4 bmt4  (cost=xxx rows=1 width=xxx)
-               Index Cond: (c1 = bmt3.c1)
-(45 rows)
+               Index Cond: (c1 = bmt1.c1)
+(44 rows)
 
 \o results/ut-R.tmpout
 /*+
@@ -2015,7 +2007,6 @@ error hint:
                  ->  Index Only Scan using t2_i1 on t2 b2t2  (cost=xxx rows=1 width=xxx)
                        Index Cond: (c1 = b2t1.c1)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
-         Join Filter: (bmt1.c1 = bmt4.c1)
          ->  Hash Join  (cost=xxx rows=1 width=xxx)
                Hash Cond: (bmt3.c1 = bmt1.c1)
                ->  Seq Scan on t3 bmt3  (cost=xxx rows=1130 width=xxx)
@@ -2028,8 +2019,8 @@ error hint:
                                  Sort Key: bmt2.c1
                                  ->  Seq Scan on t2 bmt2  (cost=xxx rows=100 width=xxx)
          ->  Index Only Scan using t4_i1 on t4 bmt4  (cost=xxx rows=1 width=xxx)
-               Index Cond: (c1 = bmt3.c1)
-(45 rows)
+               Index Cond: (c1 = bmt1.c1)
+(44 rows)
 
 -- No. R-2-1-6
 \o results/ut-R.tmpout
@@ -2132,7 +2123,6 @@ error hint:
    InitPlan 3 (returns $5)
      ->  Aggregate  (cost=xxx rows=1 width=xxx)
            ->  Nested Loop  (cost=xxx rows=100 width=xxx)
-                 Join Filter: (b3t1.c1 = b3t3.c1)
                  ->  Hash Join  (cost=xxx rows=100 width=xxx)
                        Hash Cond: (b3t1.c1 = b3t2.c1)
                        ->  Merge Join  (cost=xxx rows=1000 width=xxx)
@@ -2142,9 +2132,8 @@ error hint:
                        ->  Hash  (cost=xxx rows=100 width=xxx)
                              ->  Seq Scan on t2 b3t2  (cost=xxx rows=100 width=xxx)
                  ->  Index Only Scan using t3_i1 on t3 b3t3  (cost=xxx rows=1 width=xxx)
-                       Index Cond: (c1 = b3t4.c1)
+                       Index Cond: (c1 = b3t1.c1)
    ->  Nested Loop  (cost=xxx rows=100 width=xxx)
-         Join Filter: (bmt1.c1 = bmt4.c1)
          ->  Hash Join  (cost=xxx rows=100 width=xxx)
                Hash Cond: (bmt3.c1 = bmt1.c1)
                ->  Seq Scan on t3 bmt3  (cost=xxx rows=1130 width=xxx)
@@ -2157,8 +2146,8 @@ error hint:
                                  Sort Key: bmt2.c1
                                  ->  Seq Scan on t2 bmt2  (cost=xxx rows=100 width=xxx)
          ->  Index Only Scan using t4_i1 on t4 bmt4  (cost=xxx rows=1 width=xxx)
-               Index Cond: (c1 = bmt3.c1)
-(59 rows)
+               Index Cond: (c1 = bmt1.c1)
+(57 rows)
 
 \o results/ut-R.tmpout
 /*+
@@ -2280,7 +2269,6 @@ error hint:
    InitPlan 3 (returns $5)
      ->  Aggregate  (cost=xxx rows=1 width=xxx)
            ->  Nested Loop  (cost=xxx rows=1 width=xxx)
-                 Join Filter: (b3t1.c1 = b3t3.c1)
                  ->  Hash Join  (cost=xxx rows=1 width=xxx)
                        Hash Cond: (b3t1.c1 = b3t2.c1)
                        ->  Merge Join  (cost=xxx rows=1 width=xxx)
@@ -2290,9 +2278,8 @@ error hint:
                        ->  Hash  (cost=xxx rows=100 width=xxx)
                              ->  Seq Scan on t2 b3t2  (cost=xxx rows=100 width=xxx)
                  ->  Index Only Scan using t3_i1 on t3 b3t3  (cost=xxx rows=1 width=xxx)
-                       Index Cond: (c1 = b3t4.c1)
+                       Index Cond: (c1 = b3t1.c1)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
-         Join Filter: (bmt1.c1 = bmt4.c1)
          ->  Hash Join  (cost=xxx rows=1 width=xxx)
                Hash Cond: (bmt3.c1 = bmt1.c1)
                ->  Seq Scan on t3 bmt3  (cost=xxx rows=1130 width=xxx)
@@ -2305,8 +2292,8 @@ error hint:
                                  Sort Key: bmt2.c1
                                  ->  Seq Scan on t2 bmt2  (cost=xxx rows=100 width=xxx)
          ->  Index Only Scan using t4_i1 on t4 bmt4  (cost=xxx rows=1 width=xxx)
-               Index Cond: (c1 = bmt3.c1)
-(59 rows)
+               Index Cond: (c1 = bmt1.c1)
+(57 rows)
 
 -- No. R-2-1-7
 \o results/ut-R.tmpout
@@ -2686,7 +2673,6 @@ error hint:
    CTE c3
      ->  Aggregate  (cost=xxx rows=1 width=xxx)
            ->  Nested Loop  (cost=xxx rows=100 width=xxx)
-                 Join Filter: (b3t1.c1 = b3t3.c1)
                  ->  Hash Join  (cost=xxx rows=100 width=xxx)
                        Hash Cond: (b3t1.c1 = b3t2.c1)
                        ->  Merge Join  (cost=xxx rows=1000 width=xxx)
@@ -2696,9 +2682,8 @@ error hint:
                        ->  Hash  (cost=xxx rows=100 width=xxx)
                              ->  Seq Scan on t2 b3t2  (cost=xxx rows=100 width=xxx)
                  ->  Index Only Scan using t3_i1 on t3 b3t3  (cost=xxx rows=1 width=xxx)
-                       Index Cond: (c1 = b3t4.c1)
+                       Index Cond: (c1 = b3t1.c1)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
-         Join Filter: (bmt1.c1 = bmt4.c1)
          ->  Hash Join  (cost=xxx rows=1 width=xxx)
                Hash Cond: (bmt3.c1 = bmt1.c1)
                ->  Seq Scan on t3 bmt3  (cost=xxx rows=1130 width=xxx)
@@ -2726,8 +2711,8 @@ error hint:
                                  Sort Key: bmt2.c1
                                  ->  Seq Scan on t2 bmt2  (cost=xxx rows=100 width=xxx)
          ->  Index Only Scan using t4_i1 on t4 bmt4  (cost=xxx rows=1 width=xxx)
-               Index Cond: (c1 = bmt3.c1)
-(74 rows)
+               Index Cond: (c1 = bmt1.c1)
+(72 rows)
 
 \o results/ut-R.tmpout
 /*+
@@ -2867,7 +2852,6 @@ error hint:
    CTE c3
      ->  Aggregate  (cost=xxx rows=1 width=xxx)
            ->  Nested Loop  (cost=xxx rows=1 width=xxx)
-                 Join Filter: (b3t1.c1 = b3t3.c1)
                  ->  Hash Join  (cost=xxx rows=1 width=xxx)
                        Hash Cond: (b3t1.c1 = b3t2.c1)
                        ->  Merge Join  (cost=xxx rows=1 width=xxx)
@@ -2877,9 +2861,8 @@ error hint:
                        ->  Hash  (cost=xxx rows=100 width=xxx)
                              ->  Seq Scan on t2 b3t2  (cost=xxx rows=100 width=xxx)
                  ->  Index Only Scan using t3_i1 on t3 b3t3  (cost=xxx rows=1 width=xxx)
-                       Index Cond: (c1 = b3t4.c1)
+                       Index Cond: (c1 = b3t1.c1)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
-         Join Filter: (bmt1.c1 = bmt4.c1)
          ->  Hash Join  (cost=xxx rows=1 width=xxx)
                Hash Cond: (bmt3.c1 = bmt1.c1)
                ->  Seq Scan on t3 bmt3  (cost=xxx rows=1130 width=xxx)
@@ -2907,8 +2890,8 @@ error hint:
                                  Sort Key: bmt2.c1
                                  ->  Seq Scan on t2 bmt2  (cost=xxx rows=100 width=xxx)
          ->  Index Only Scan using t4_i1 on t4 bmt4  (cost=xxx rows=1 width=xxx)
-               Index Cond: (c1 = bmt3.c1)
-(74 rows)
+               Index Cond: (c1 = bmt1.c1)
+(72 rows)
 
 ----
 ---- No. R-2-2 the number of the tables per quiry block
@@ -3863,6 +3846,8 @@ error hint:
  Aggregate  (cost=xxx rows=1 width=xxx)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
          Join Filter: (t1.c1 = t4.c1)
+         ->  Tid Scan on t4  (cost=xxx rows=1 width=xxx)
+               TID Cond: (ctid = '(1,1)'::tid)
          ->  Nested Loop  (cost=xxx rows=1 width=xxx)
                Join Filter: (t1.c1 = t3.c1)
                ->  Merge Join  (cost=xxx rows=1 width=xxx)
@@ -3876,11 +3861,10 @@ error hint:
                            Sort Key: t2.c1
                            ->  Seq Scan on t2  (cost=xxx rows=1 width=xxx)
                                  Filter: (ctid = '(1,1)'::tid)
-               ->  Tid Scan on t3  (cost=xxx rows=1 width=xxx)
-                     TID Cond: (ctid = '(1,1)'::tid)
-         ->  Tid Scan on t4  (cost=xxx rows=1 width=xxx)
-               TID Cond: (ctid = '(1,1)'::tid)
-(20 rows)
+               ->  Materialize  (cost=xxx rows=1 width=xxx)
+                     ->  Tid Scan on t3  (cost=xxx rows=1 width=xxx)
+                           TID Cond: (ctid = '(1,1)'::tid)
+(21 rows)
 
 \o results/ut-R.tmpout
 /*+
@@ -3957,6 +3941,8 @@ error hint:
  Aggregate  (cost=xxx rows=1 width=xxx)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
          Join Filter: (b1t1.c1 = b1t4.c1)
+         ->  Tid Scan on t4 b1t4  (cost=xxx rows=1 width=xxx)
+               TID Cond: (ctid = '(1,1)'::tid)
          ->  Nested Loop  (cost=xxx rows=1 width=xxx)
                Join Filter: (b1t1.c1 = b1t3.c1)
                ->  Merge Join  (cost=xxx rows=1 width=xxx)
@@ -3970,11 +3956,10 @@ error hint:
                            Sort Key: b1t2.c1
                            ->  Seq Scan on t2 b1t2  (cost=xxx rows=1 width=xxx)
                                  Filter: (ctid = '(1,1)'::tid)
-               ->  Tid Scan on t3 b1t3  (cost=xxx rows=1 width=xxx)
-                     TID Cond: (ctid = '(1,1)'::tid)
-         ->  Tid Scan on t4 b1t4  (cost=xxx rows=1 width=xxx)
-               TID Cond: (ctid = '(1,1)'::tid)
-(20 rows)
+               ->  Materialize  (cost=xxx rows=1 width=xxx)
+                     ->  Tid Scan on t3 b1t3  (cost=xxx rows=1 width=xxx)
+                           TID Cond: (ctid = '(1,1)'::tid)
+(21 rows)
 
 \o results/ut-R.tmpout
 /*+
@@ -4059,6 +4044,8 @@ error hint:
  Aggregate  (cost=xxx rows=1 width=xxx)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
          Join Filter: (t1.c1 = t4.c1)
+         ->  Tid Scan on t4  (cost=xxx rows=1 width=xxx)
+               TID Cond: (ctid = '(1,1)'::tid)
          ->  Nested Loop  (cost=xxx rows=1 width=xxx)
                Join Filter: (t1.c1 = t3.c1)
                ->  Merge Join  (cost=xxx rows=1 width=xxx)
@@ -4072,14 +4059,15 @@ error hint:
                            Sort Key: t2.c1
                            ->  Seq Scan on t2  (cost=xxx rows=1 width=xxx)
                                  Filter: (ctid = '(1,1)'::tid)
-               ->  Tid Scan on t3  (cost=xxx rows=1 width=xxx)
-                     TID Cond: (ctid = '(1,1)'::tid)
-         ->  Tid Scan on t4  (cost=xxx rows=1 width=xxx)
-               TID Cond: (ctid = '(1,1)'::tid)
+               ->  Materialize  (cost=xxx rows=1 width=xxx)
+                     ->  Tid Scan on t3  (cost=xxx rows=1 width=xxx)
+                           TID Cond: (ctid = '(1,1)'::tid)
  
  Aggregate  (cost=xxx rows=1 width=xxx)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
          Join Filter: (t1.c1 = t4.c1)
+         ->  Tid Scan on t4  (cost=xxx rows=1 width=xxx)
+               TID Cond: (ctid = '(1,1)'::tid)
          ->  Nested Loop  (cost=xxx rows=1 width=xxx)
                Join Filter: (t1.c1 = t3.c1)
                ->  Merge Join  (cost=xxx rows=1 width=xxx)
@@ -4093,11 +4081,10 @@ error hint:
                            Sort Key: t2.c1
                            ->  Seq Scan on t2  (cost=xxx rows=1 width=xxx)
                                  Filter: (ctid = '(1,1)'::tid)
-               ->  Tid Scan on t3  (cost=xxx rows=1 width=xxx)
-                     TID Cond: (ctid = '(1,1)'::tid)
-         ->  Tid Scan on t4  (cost=xxx rows=1 width=xxx)
-               TID Cond: (ctid = '(1,1)'::tid)
-(41 rows)
+               ->  Materialize  (cost=xxx rows=1 width=xxx)
+                     ->  Tid Scan on t3  (cost=xxx rows=1 width=xxx)
+                           TID Cond: (ctid = '(1,1)'::tid)
+(43 rows)
 
 \o results/ut-R.tmpout
 /*+
@@ -4215,6 +4202,8 @@ error hint:
  Aggregate  (cost=xxx rows=1 width=xxx)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
          Join Filter: (b1t1.c1 = b1t4.c1)
+         ->  Tid Scan on t4 b1t4  (cost=xxx rows=1 width=xxx)
+               TID Cond: (ctid = '(1,1)'::tid)
          ->  Nested Loop  (cost=xxx rows=1 width=xxx)
                Join Filter: (b1t1.c1 = b1t3.c1)
                ->  Merge Join  (cost=xxx rows=1 width=xxx)
@@ -4228,14 +4217,15 @@ error hint:
                            Sort Key: b1t2.c1
                            ->  Seq Scan on t2 b1t2  (cost=xxx rows=1 width=xxx)
                                  Filter: (ctid = '(1,1)'::tid)
-               ->  Tid Scan on t3 b1t3  (cost=xxx rows=1 width=xxx)
-                     TID Cond: (ctid = '(1,1)'::tid)
-         ->  Tid Scan on t4 b1t4  (cost=xxx rows=1 width=xxx)
-               TID Cond: (ctid = '(1,1)'::tid)
+               ->  Materialize  (cost=xxx rows=1 width=xxx)
+                     ->  Tid Scan on t3 b1t3  (cost=xxx rows=1 width=xxx)
+                           TID Cond: (ctid = '(1,1)'::tid)
  
  Aggregate  (cost=xxx rows=1 width=xxx)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
          Join Filter: (b2t1.c1 = b2t4.c1)
+         ->  Tid Scan on t4 b2t4  (cost=xxx rows=1 width=xxx)
+               TID Cond: (ctid = '(1,1)'::tid)
          ->  Nested Loop  (cost=xxx rows=1 width=xxx)
                Join Filter: (b2t1.c1 = b2t3.c1)
                ->  Merge Join  (cost=xxx rows=1 width=xxx)
@@ -4249,11 +4239,10 @@ error hint:
                            Sort Key: b2t2.c1
                            ->  Seq Scan on t2 b2t2  (cost=xxx rows=1 width=xxx)
                                  Filter: (ctid = '(1,1)'::tid)
-               ->  Tid Scan on t3 b2t3  (cost=xxx rows=1 width=xxx)
-                     TID Cond: (ctid = '(1,1)'::tid)
-         ->  Tid Scan on t4 b2t4  (cost=xxx rows=1 width=xxx)
-               TID Cond: (ctid = '(1,1)'::tid)
-(41 rows)
+               ->  Materialize  (cost=xxx rows=1 width=xxx)
+                     ->  Tid Scan on t3 b2t3  (cost=xxx rows=1 width=xxx)
+                           TID Cond: (ctid = '(1,1)'::tid)
+(43 rows)
 
 \o results/ut-R.tmpout
 /*+
@@ -4395,6 +4384,8 @@ error hint:
  Aggregate  (cost=xxx rows=1 width=xxx)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
          Join Filter: (t1.c1 = t4.c1)
+         ->  Tid Scan on t4  (cost=xxx rows=1 width=xxx)
+               TID Cond: (ctid = '(1,1)'::tid)
          ->  Nested Loop  (cost=xxx rows=1 width=xxx)
                Join Filter: (t1.c1 = t3.c1)
                ->  Merge Join  (cost=xxx rows=1 width=xxx)
@@ -4408,14 +4399,15 @@ error hint:
                            Sort Key: t2.c1
                            ->  Seq Scan on t2  (cost=xxx rows=1 width=xxx)
                                  Filter: (ctid = '(1,1)'::tid)
-               ->  Tid Scan on t3  (cost=xxx rows=1 width=xxx)
-                     TID Cond: (ctid = '(1,1)'::tid)
-         ->  Tid Scan on t4  (cost=xxx rows=1 width=xxx)
-               TID Cond: (ctid = '(1,1)'::tid)
+               ->  Materialize  (cost=xxx rows=1 width=xxx)
+                     ->  Tid Scan on t3  (cost=xxx rows=1 width=xxx)
+                           TID Cond: (ctid = '(1,1)'::tid)
  
  Aggregate  (cost=xxx rows=1 width=xxx)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
          Join Filter: (t1.c1 = t4.c1)
+         ->  Tid Scan on t4  (cost=xxx rows=1 width=xxx)
+               TID Cond: (ctid = '(1,1)'::tid)
          ->  Nested Loop  (cost=xxx rows=1 width=xxx)
                Join Filter: (t1.c1 = t3.c1)
                ->  Merge Join  (cost=xxx rows=1 width=xxx)
@@ -4429,14 +4421,15 @@ error hint:
                            Sort Key: t2.c1
                            ->  Seq Scan on t2  (cost=xxx rows=1 width=xxx)
                                  Filter: (ctid = '(1,1)'::tid)
-               ->  Tid Scan on t3  (cost=xxx rows=1 width=xxx)
-                     TID Cond: (ctid = '(1,1)'::tid)
-         ->  Tid Scan on t4  (cost=xxx rows=1 width=xxx)
-               TID Cond: (ctid = '(1,1)'::tid)
+               ->  Materialize  (cost=xxx rows=1 width=xxx)
+                     ->  Tid Scan on t3  (cost=xxx rows=1 width=xxx)
+                           TID Cond: (ctid = '(1,1)'::tid)
  
  Aggregate  (cost=xxx rows=1 width=xxx)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
          Join Filter: (t1.c1 = t4.c1)
+         ->  Tid Scan on t4  (cost=xxx rows=1 width=xxx)
+               TID Cond: (ctid = '(1,1)'::tid)
          ->  Nested Loop  (cost=xxx rows=1 width=xxx)
                Join Filter: (t1.c1 = t3.c1)
                ->  Merge Join  (cost=xxx rows=1 width=xxx)
@@ -4450,11 +4443,10 @@ error hint:
                            Sort Key: t2.c1
                            ->  Seq Scan on t2  (cost=xxx rows=1 width=xxx)
                                  Filter: (ctid = '(1,1)'::tid)
-               ->  Tid Scan on t3  (cost=xxx rows=1 width=xxx)
-                     TID Cond: (ctid = '(1,1)'::tid)
-         ->  Tid Scan on t4  (cost=xxx rows=1 width=xxx)
-               TID Cond: (ctid = '(1,1)'::tid)
-(62 rows)
+               ->  Materialize  (cost=xxx rows=1 width=xxx)
+                     ->  Tid Scan on t3  (cost=xxx rows=1 width=xxx)
+                           TID Cond: (ctid = '(1,1)'::tid)
+(65 rows)
 
 \o results/ut-R.tmpout
 /*+
@@ -4615,6 +4607,8 @@ error hint:
  Aggregate  (cost=xxx rows=1 width=xxx)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
          Join Filter: (b1t1.c1 = b1t4.c1)
+         ->  Tid Scan on t4 b1t4  (cost=xxx rows=1 width=xxx)
+               TID Cond: (ctid = '(1,1)'::tid)
          ->  Nested Loop  (cost=xxx rows=1 width=xxx)
                Join Filter: (b1t1.c1 = b1t3.c1)
                ->  Merge Join  (cost=xxx rows=1 width=xxx)
@@ -4628,14 +4622,15 @@ error hint:
                            Sort Key: b1t2.c1
                            ->  Seq Scan on t2 b1t2  (cost=xxx rows=1 width=xxx)
                                  Filter: (ctid = '(1,1)'::tid)
-               ->  Tid Scan on t3 b1t3  (cost=xxx rows=1 width=xxx)
-                     TID Cond: (ctid = '(1,1)'::tid)
-         ->  Tid Scan on t4 b1t4  (cost=xxx rows=1 width=xxx)
-               TID Cond: (ctid = '(1,1)'::tid)
+               ->  Materialize  (cost=xxx rows=1 width=xxx)
+                     ->  Tid Scan on t3 b1t3  (cost=xxx rows=1 width=xxx)
+                           TID Cond: (ctid = '(1,1)'::tid)
  
  Aggregate  (cost=xxx rows=1 width=xxx)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
          Join Filter: (b2t1.c1 = b2t4.c1)
+         ->  Tid Scan on t4 b2t4  (cost=xxx rows=1 width=xxx)
+               TID Cond: (ctid = '(1,1)'::tid)
          ->  Nested Loop  (cost=xxx rows=1 width=xxx)
                Join Filter: (b2t1.c1 = b2t3.c1)
                ->  Merge Join  (cost=xxx rows=1 width=xxx)
@@ -4649,14 +4644,15 @@ error hint:
                            Sort Key: b2t2.c1
                            ->  Seq Scan on t2 b2t2  (cost=xxx rows=1 width=xxx)
                                  Filter: (ctid = '(1,1)'::tid)
-               ->  Tid Scan on t3 b2t3  (cost=xxx rows=1 width=xxx)
-                     TID Cond: (ctid = '(1,1)'::tid)
-         ->  Tid Scan on t4 b2t4  (cost=xxx rows=1 width=xxx)
-               TID Cond: (ctid = '(1,1)'::tid)
+               ->  Materialize  (cost=xxx rows=1 width=xxx)
+                     ->  Tid Scan on t3 b2t3  (cost=xxx rows=1 width=xxx)
+                           TID Cond: (ctid = '(1,1)'::tid)
  
  Aggregate  (cost=xxx rows=1 width=xxx)
    ->  Nested Loop  (cost=xxx rows=1 width=xxx)
          Join Filter: (b3t1.c1 = b3t4.c1)
+         ->  Tid Scan on t4 b3t4  (cost=xxx rows=1 width=xxx)
+               TID Cond: (ctid = '(1,1)'::tid)
          ->  Nested Loop  (cost=xxx rows=1 width=xxx)
                Join Filter: (b3t1.c1 = b3t3.c1)
                ->  Merge Join  (cost=xxx rows=1 width=xxx)
@@ -4670,11 +4666,10 @@ error hint:
                            Sort Key: b3t2.c1
                            ->  Seq Scan on t2 b3t2  (cost=xxx rows=1 width=xxx)
                                  Filter: (ctid = '(1,1)'::tid)
-               ->  Tid Scan on t3 b3t3  (cost=xxx rows=1 width=xxx)
-                     TID Cond: (ctid = '(1,1)'::tid)
-         ->  Tid Scan on t4 b3t4  (cost=xxx rows=1 width=xxx)
-               TID Cond: (ctid = '(1,1)'::tid)
-(62 rows)
+               ->  Materialize  (cost=xxx rows=1 width=xxx)
+                     ->  Tid Scan on t3 b3t3  (cost=xxx rows=1 width=xxx)
+                           TID Cond: (ctid = '(1,1)'::tid)
+(65 rows)
 
 \o results/ut-R.tmpout
 /*+
@@ -5204,7 +5199,6 @@ LOG:  statement: EXPLAIN SELECT max(bmt1.c1) FROM s1.t1 bmt1, (SELECT ctid, * FR
 ------------------------------------------------------------------------------------------------------
  Aggregate  (cost=xxx rows=1 width=xxx)
    ->  Nested Loop  (cost=xxx rows=100 width=xxx)
-         Join Filter: (bmt1.c1 = bmt4.c1)
          ->  Merge Join  (cost=xxx rows=100 width=xxx)
                Merge Cond: (bmt1.c1 = bmt2.c1)
                ->  Merge Join  (cost=xxx rows=1000 width=xxx)
@@ -5215,8 +5209,8 @@ LOG:  statement: EXPLAIN SELECT max(bmt1.c1) FROM s1.t1 bmt1, (SELECT ctid, * FR
                      Sort Key: bmt2.c1
                      ->  Seq Scan on t2 bmt2  (cost=xxx rows=100 width=xxx)
          ->  Index Only Scan using t4_i1 on t4 bmt4  (cost=xxx rows=1 width=xxx)
-               Index Cond: (c1 = bmt3.c1)
-(14 rows)
+               Index Cond: (c1 = bmt1.c1)
+(13 rows)
 
 \o results/ut-R.tmpout
 /*+
@@ -5266,7 +5260,6 @@ LOG:  statement: EXPLAIN SELECT bmt1.c1 FROM s1.t1 bmt1, (SELECT ctid, * FROM s1
                                            QUERY PLAN                                           
 ------------------------------------------------------------------------------------------------
  Nested Loop  (cost=xxx rows=100 width=xxx)
-   Join Filter: (bmt1.c1 = bmt4.c1)
    ->  Merge Join  (cost=xxx rows=100 width=xxx)
          Merge Cond: (bmt1.c1 = bmt2.c1)
          ->  Merge Join  (cost=xxx rows=1000 width=xxx)
@@ -5277,8 +5270,8 @@ LOG:  statement: EXPLAIN SELECT bmt1.c1 FROM s1.t1 bmt1, (SELECT ctid, * FROM s1
                Sort Key: bmt2.c1
                ->  Seq Scan on t2 bmt2  (cost=xxx rows=100 width=xxx)
    ->  Index Only Scan using t4_i1 on t4 bmt4  (cost=xxx rows=1 width=xxx)
-         Index Cond: (c1 = bmt3.c1)
-(13 rows)
+         Index Cond: (c1 = bmt1.c1)
+(12 rows)
 
 \o results/ut-R.tmpout
 /*+
@@ -5328,7 +5321,6 @@ LOG:  statement: EXPLAIN SELECT bmt1.c1 FROM s1.t1 bmt1, (SELECT ctid, * FROM s1
                                            QUERY PLAN                                           
 ------------------------------------------------------------------------------------------------
  Nested Loop  (cost=xxx rows=100 width=xxx)
-   Join Filter: (bmt1.c1 = bmt4.c1)
    ->  Merge Join  (cost=xxx rows=100 width=xxx)
          Merge Cond: (bmt1.c1 = bmt2.c1)
          ->  Merge Join  (cost=xxx rows=1000 width=xxx)
@@ -5339,8 +5331,8 @@ LOG:  statement: EXPLAIN SELECT bmt1.c1 FROM s1.t1 bmt1, (SELECT ctid, * FROM s1
                Sort Key: bmt2.c1
                ->  Seq Scan on t2 bmt2  (cost=xxx rows=100 width=xxx)
    ->  Index Only Scan using t4_i1 on t4 bmt4  (cost=xxx rows=1 width=xxx)
-         Index Cond: (c1 = bmt3.c1)
-(13 rows)
+         Index Cond: (c1 = bmt1.c1)
+(12 rows)
 
 \o results/ut-R.tmpout
 /*+

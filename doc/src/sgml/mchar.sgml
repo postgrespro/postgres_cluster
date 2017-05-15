@@ -18,7 +18,7 @@
     behavior is identical across different operating system.
     </para>
     <para>
-    Postgres Pro also includes <xref linkend="citext"> extension which
+    &productname; also includes <xref linkend="citext"> extension which
     provides types similar to MCHAR. But this extension doesn't emulate
     MS-SQL behavior concerning end-of-value whitespace.
     </para>

@@ -5988,15 +5988,18 @@ SELECT regexp_matches('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
        </row>
        <row>
         <entry><literal>TZ</literal></entry>
-        <entry>upper case time-zone name</entry>
+        <entry>upper case time-zone abbreviation
+         (only supported in <function>to_char</>)</entry>
        </row>
        <row>
         <entry><literal>tz</literal></entry>
-        <entry>lower case time-zone name</entry>
+        <entry>lower case time-zone abbreviation
+         (only supported in <function>to_char</>)</entry>
        </row>
        <row>
         <entry><literal>OF</literal></entry>
-        <entry>time-zone offset</entry>
+        <entry>time-zone offset from UTC
+         (only supported in <function>to_char</>)</entry>
        </row>
       </tbody>
      </tgroup>
@@ -9541,7 +9544,7 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
         </entry>
         <entry><type>tsquery</type></entry>
         <entry>make query that searches for <replaceable>query1</> followed by
-         <replaceable>query2</> at maximum distance <replaceable>distance</></entry>
+         <replaceable>query2</> at distance <replaceable>distance</></entry>
         <entry><literal>tsquery_phrase(to_tsquery('fat'), to_tsquery('cat'), 10)</literal></entry>
         <entry><literal>'fat' &lt;10&gt; 'cat'</literal></entry>
        </row>
@@ -15304,6 +15307,12 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
       </row>
 
       <row>
+       <entry><literal><function>current_role</function></literal></entry>
+       <entry><type>name</type></entry>
+       <entry>equivalent to <function>current_user</function></entry>
+      </row>
+
+      <row>
        <entry><literal><function>current_schema</function>[()]</literal></entry>
        <entry><type>name</type></entry>
        <entry>name of current schema</entry>
@@ -15436,8 +15445,11 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
 
    <note>
     <para>
-     <function>current_catalog</function>, <function>current_schema</function>,
-     <function>current_user</function>, <function>session_user</function>,
+     <function>current_catalog</function>,
+     <function>current_role</function>,
+     <function>current_schema</function>,
+     <function>current_user</function>,
+     <function>session_user</function>,
      and <function>user</function> have special syntactic status
      in <acronym>SQL</acronym>: they must be called without trailing
      parentheses.  (In &productname;, parentheses can optionally be used with
@@ -15455,6 +15467,10 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
 
    <indexterm>
     <primary>current_query</primary>
+   </indexterm>
+
+   <indexterm>
+    <primary>current_role</primary>
    </indexterm>
 
    <indexterm>
@@ -15508,6 +15524,11 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
     functions with the attribute <literal>SECURITY DEFINER</literal>.
     In Unix parlance, the session user is the <quote>real user</quote> and
     the current user is the <quote>effective user</quote>.
+    <function>current_role</function> and <function>user</function> are
+    synonyms for <function>current_user</function>.  (The SQL standard draws
+    a distinction between <function>current_role</function>
+    and <function>current_user</function>, but <productname>PostgreSQL</>
+    does not, since it unifies users and roles into a single kind of entity.)
    </para>
 
    <para>

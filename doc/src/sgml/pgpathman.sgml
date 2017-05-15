@@ -84,6 +84,18 @@ CREATE EXTENSION pg_pathman;
       Once <filename>pg_pathman</filename> is enabled, you can start
       partitioning tables.
     </para>
+    <tip>
+      <para>You can also build <filename>pg_pathman</filename> from source code by executing the following command in the <filename>pg_pathman</filename> directory:
+      </para>
+      <programlisting>
+make install USE_PGXS=1
+</programlisting>
+      <para>When this operation is complete, follow the steps described above to complete the setup.
+      </para>
+      <para>In addition, do not forget to set the <envar>PG_CONFIG</envar> variable if you want to test <filename>pg_pathman</filename> on a custom build of <productname>&productname;</productname>. For details, see 
+      <ulink url="https://wiki.postgresql.org/wiki/Building_and_Installing_PostgreSQL_Extension_Modules">Building and Installing PostgreSQL Extension Modules</ulink>.
+      </para>
+    </tip>
       <para>You can toggle <filename>pg_pathman</filename> or its specific custom
         nodes on and off using <acronym>GUC</acronym> variables. For details, see <xref linkend="pg-pathman-guc-variables">.</para>
       <para>
@@ -101,7 +113,7 @@ SELECT disable_pathman_for('range_rel');
       </para>
       <sect3 id="pg-pathman-how-to-update">
       <title>Updating pg_pathman</title>
-      <para>If you already have a previous version of <filename>pg_pathman</filename> installed, complete the following steps to upgrade to a newer version provided with <productname>&productname;</productname>:</para>
+      <para>If you already have a previous version of <filename>pg_pathman</filename> installed, complete the following steps to upgrade to a newer version:</para>
       <orderedlist>
       <listitem><para>Install <productname>&productname;</productname>.</para>
       </listitem>
