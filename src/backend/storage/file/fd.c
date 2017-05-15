@@ -1749,8 +1749,12 @@ FileRead(File file, char *buffer, int amount)
 				{
 					if (errno != EINTR)
 					{
-						elog(LOG, "Failed to read block %u position %u size %u from compressed file %s: %m", 
-							 (uint32)(VfdCache[file].seekPos / BLCKSZ), (uint32)seekPos, size, VfdCache[file].fileName);
+						if (returnCode == 0)
+							elog(LOG, "Block %u position %u size %u is beyond end of compressed file %s", 
+								 (uint32)(VfdCache[file].seekPos / BLCKSZ), (uint32)seekPos, size, VfdCache[file].fileName);
+						else
+							elog(LOG, "Failed to read block %u position %u size %u from compressed file %s: %m", 
+								 (uint32)(VfdCache[file].seekPos / BLCKSZ), (uint32)seekPos, size, VfdCache[file].fileName);
 						cfs_unlock_file(map);
 						return returnCode;
 					}
