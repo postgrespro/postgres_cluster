@@ -10,7 +10,7 @@
 #include "postgres_fe.h"
 #include "libpq/pqsignal.h"
 
-#include "getopt_long.h"
+#include "getopt.h"
 #include <limits.h>
 #include <time.h>
 #include <unistd.h>
@@ -35,9 +35,13 @@ const char	   *username = NULL;
 char		   *password = NULL;
 bool			verbose = false;
 bool			quiet = false;
-bool			prompt_password = true;
+
+#ifndef PGUT_NO_PROMPT
+YesNo	prompt_password = DEFAULT;
+#endif
 
 /* Database connections */
+PGconn	   *connection = NULL;
 static PGcancel *volatile cancel_conn = NULL;
 
 /* Interrupted by SIGINT (Ctrl+C) ? */
@@ -65,6 +69,21 @@ static void on_cleanup(void);
 static void exit_or_abort(int exitcode);
 static const char *get_username(void);
 
+static pgut_option default_options[] =
+{
+	{ 's', 'd', "dbname"	, &pgut_dbname, SOURCE_CMDLINE },
+	{ 's', 'h', "host"		, &host, SOURCE_CMDLINE },
+	{ 's', 'p', "port"		, &port, SOURCE_CMDLINE },
+	{ 'b', 'q', "quiet"		, &quiet, SOURCE_CMDLINE },
+	{ 's', 'U', "username"	, &username, SOURCE_CMDLINE },
+	{ 'b', 'v', "verbose"	, &verbose, SOURCE_CMDLINE },
+#ifndef PGUT_NO_PROMPT
+	{ 'Y', 'w', "no-password"	, &prompt_password, SOURCE_CMDLINE },
+	{ 'y', 'W', "password"		, &prompt_password, SOURCE_CMDLINE },
+#endif
+	{ 0 }
+};
+
 static size_t
 option_length(const pgut_option opts[])
 {
@@ -80,6 +99,8 @@ option_has_arg(char type)
 	{
 		case 'b':
 		case 'B':
+		case 'y':
+		case 'Y':
 			return no_argument;
 		default:
 			return required_argument;
@@ -100,14 +121,33 @@ option_copy(struct option dst[], const pgut_option opts[], size_t len)
 	}
 }
 
+static struct option *
+option_merge(const pgut_option opts1[], const pgut_option opts2[])
+{
+	struct option *result;
+	size_t	len1 = option_length(opts1);
+	size_t	len2 = option_length(opts2);
+	size_t	n = len1 + len2;
+
+	result = pgut_newarray(struct option, n + 1);
+	option_copy(result, opts1, len1);
+	option_copy(result + len1, opts2, len2);
+	memset(&result[n], 0, sizeof(pgut_option));
+
+	return result;
+}
+
 static pgut_option *
-option_find(int c, pgut_option opts1[])
+option_find(int c, pgut_option opts1[], pgut_option opts2[])
 {
 	size_t	i;
 
 	for (i = 0; opts1 && opts1[i].type; i++)
 		if (opts1[i].sname == c)
 			return &opts1[i];
+	for (i = 0; opts2 && opts2[i].type; i++)
+		if (opts2[i].sname == c)
+			return &opts2[i];
 
 	return NULL;	/* not found */
 }
@@ -185,6 +225,24 @@ assign_option(pgut_option *opt, const char *optarg, pgut_optsrc src)
 				if (parse_time(optarg, opt->var))
 					return;
 				message = "a time";
+				break;
+			case 'y':
+			case 'Y':
+				if (optarg == NULL)
+				{
+					*(YesNo *) opt->var = (opt->type == 'y' ? YES : NO);
+					return;
+				}
+				else
+				{
+					bool	value;
+					if (parse_bool(optarg, &value))
+					{
+						*(YesNo *) opt->var = (value ? YES : NO);
+						return;
+					}
+				}
+				message = "a boolean";
 				break;
 			default:
 				elog(ERROR, "invalid option type: %c", opt->type);
@@ -505,38 +563,32 @@ longopts_to_optstring(const struct option opts[])
 	return result;
 }
 
-void
-pgut_getopt_env(pgut_option options[])
+static void
+option_from_env(pgut_option options[])
 {
 	size_t	i;
 
 	for (i = 0; options && options[i].type; i++)
 	{
 		pgut_option	   *opt = &options[i];
-		const char	   *value = NULL;
+		char			name[256];
+		size_t			j;
+		const char	   *s;
+		const char	   *value;
 
-		/* If option was already set do not check env */
 		if (opt->source > SOURCE_ENV || opt->allowed < SOURCE_ENV)
 			continue;
 
-		if (strcmp(opt->lname, "pgdata") == 0)
-			value = getenv("PGDATA");
-		if (strcmp(opt->lname, "port") == 0)
-			value = getenv("PGPORT");
-		if (strcmp(opt->lname, "host") == 0)
-			value = getenv("PGHOST");
-		if (strcmp(opt->lname, "username") == 0)
-			value = getenv("PGUSER");
-		if (strcmp(opt->lname, "pgdatabase") == 0)
+		for (s = opt->lname, j = 0; *s && j < lengthof(name) - 1; s++, j++)
 		{
-			value = getenv("PGDATABASE");
-			if (value == NULL)
-				value = getenv("PGUSER");
-			if (value == NULL)
-				value = get_username();
+			if (strchr("-_ ", *s))
+				name[j] = '_';	/* - to _ */
+			else
+				name[j] = toupper(*s);
 		}
+		name[j] = '\0';
 
-		if (value)
+		if ((value = getenv(name)) != NULL)
 			assign_option(opt, value, SOURCE_ENV);
 	}
 }
@@ -547,26 +599,51 @@ pgut_getopt(int argc, char **argv, pgut_option options[])
 	int					c;
 	int					optindex = 0;
 	char			   *optstring;
+	struct option	   *longopts;
 	pgut_option		   *opt;
-	struct option *longopts;
-	size_t	len1;
 
-	len1 = option_length(options);
-	longopts = pgut_newarray(struct option, len1 + 1);
-	option_copy(longopts, options, len1);
+	if (PROGRAM_NAME == NULL)
+	{
+		PROGRAM_NAME = get_progname(argv[0]);
+		set_pglocale_pgservice(argv[0], "pgscripts");
+	}
 
+	/* Help message and version are handled at first. */
+	if (argc > 1)
+	{
+		if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-?") == 0)
+		{
+			help(true);
+			exit_or_abort(0);
+		}
+		if (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-V") == 0)
+		{
+			fprintf(stderr, "%s %s\n", PROGRAM_NAME, PROGRAM_VERSION);
+			exit_or_abort(0);
+		}
+	}
+
+	/* Merge default and user options. */
+	longopts = option_merge(default_options, options);
 	optstring = longopts_to_optstring(longopts);
 
 	/* Assign named options */
 	while ((c = getopt_long(argc, argv, optstring, longopts, &optindex)) != -1)
 	{
-		opt = option_find(c, options);
+		opt = option_find(c, default_options, options);
 		if (opt && opt->allowed < SOURCE_CMDLINE)
 			elog(ERROR, "option %s cannot be specified in command line",
 				 opt->lname);
 		/* Check 'opt == NULL' is performed in assign_option() */
 		assign_option(opt, optarg, SOURCE_CMDLINE);
 	}
+
+	/* Read environment variables */
+	option_from_env(options);
+	(void) (pgut_dbname ||
+	(pgut_dbname = getenv("PGDATABASE")) ||
+	(pgut_dbname = getenv("PGUSER")) ||
+	(pgut_dbname = get_username()));
 
 	init_cancel_handler();
 	atexit(on_cleanup);
@@ -791,6 +868,7 @@ parse_pair(const char buffer[], char key[], char value[])
 	return true;
 }
 
+#ifndef PGUT_NO_PROMPT
 /*
  * Ask the user for a password; 'username' is the username the
  * password is for, if one has been explicitly specified.
@@ -825,31 +903,38 @@ prompt_for_password(const char *username)
 	}
 #endif
 }
+#endif
 
 PGconn *
-pgut_connect(const char *dbname)
+pgut_connect(int elevel)
 {
 	PGconn	   *conn;
+
 	if (interrupted && !in_cleanup)
 		elog(ERROR, "interrupted");
+
+#ifndef PGUT_NO_PROMPT
+	if (prompt_password == YES)
+		prompt_for_password(username);
+#endif
 
 	/* Start the connection. Loop until we have a password if requested by backend. */
 	for (;;)
 	{
-		conn = PQsetdbLogin(host, port, NULL, NULL, dbname, username, password);
+		conn = PQsetdbLogin(host, port, NULL, NULL, pgut_dbname, username, password);
 
 		if (PQstatus(conn) == CONNECTION_OK)
 			return conn;
 
-		if (conn && PQconnectionNeedsPassword(conn) && prompt_password)
+#ifndef PGUT_NO_PROMPT
+		if (conn && PQconnectionNeedsPassword(conn) && prompt_password != NO)
 		{
 			PQfinish(conn);
 			prompt_for_password(username);
 			continue;
 		}
-		elog(ERROR, "could not connect to database %s: %s",
-			 dbname, PQerrorMessage(conn));
-
+#endif
+		elog(elevel, "could not connect to database %s: %s", pgut_dbname, PQerrorMessage(conn));
 		PQfinish(conn);
 		return NULL;
 	}
@@ -859,7 +944,37 @@ void
 pgut_disconnect(PGconn *conn)
 {
 	if (conn)
+	{
 		PQfinish(conn);
+		if (conn == connection)
+			connection = NULL;
+	}
+}
+
+/*
+ * the result is also available with the global variable 'connection'.
+ */
+PGconn *
+reconnect_elevel(int elevel)
+{
+	disconnect();
+	return connection = pgut_connect(elevel);
+}
+
+void
+reconnect(void)
+{
+	reconnect_elevel(ERROR);
+}
+
+void
+disconnect(void)
+{
+	if (connection)
+	{
+		PQfinish(connection);
+		connection = NULL;
+	}
 }
 
 /*  set/get host and port for connecting standby server */
@@ -888,7 +1003,7 @@ pgut_set_port(const char *new_port)
 }
 
 PGresult *
-pgut_execute(PGconn* conn, const char *query, int nParams, const char **params)
+pgut_execute(PGconn* conn, const char *query, int nParams, const char **params, int elevel)
 {
 	PGresult   *res;
 
@@ -910,7 +1025,7 @@ pgut_execute(PGconn* conn, const char *query, int nParams, const char **params)
 
 	if (conn == NULL)
 	{
-		elog(ERROR, "not connected");
+		elog(elevel, "not connected");
 		return NULL;
 	}
 
@@ -928,12 +1043,18 @@ pgut_execute(PGconn* conn, const char *query, int nParams, const char **params)
 		case PGRES_COPY_IN:
 			break;
 		default:
-			elog(ERROR, "query failed: %squery was: %s",
-				 PQerrorMessage(conn), query);
+			elog(elevel, "query failed: %squery was: %s",
+				PQerrorMessage(conn), query);
 			break;
 	}
 
 	return res;
+}
+
+void
+pgut_command(PGconn* conn, const char *query, int nParams, const char **params, int elevel)
+{
+	PQclear(pgut_execute(conn, query, nParams, params, elevel));
 }
 
 bool
@@ -1030,6 +1151,30 @@ pgut_wait(int num, PGconn *connections[], struct timeval *timeout)
 
 	errno = EINTR;
 	return -1;
+}
+
+PGresult *
+execute_elevel(const char *query, int nParams, const char **params, int elevel)
+{
+	return pgut_execute(connection, query, nParams, params, elevel);
+}
+
+/*
+ * execute - Execute a SQL and return the result, or exit_or_abort() if failed.
+ */
+PGresult *
+execute(const char *query, int nParams, const char **params)
+{
+	return execute_elevel(query, nParams, params, ERROR);
+}
+
+/*
+ * command - Execute a SQL and discard the result, or exit_or_abort() if failed.
+ */
+void
+command(const char *query, int nParams, const char **params)
+{
+	PQclear(execute(query, nParams, params));
 }
 
 /*
@@ -1268,6 +1413,7 @@ on_cleanup(void)
 	in_cleanup = true;
 	interrupted = false;
 	call_atexit_callbacks(false);
+	disconnect();
 }
 
 static void
@@ -1283,6 +1429,43 @@ exit_or_abort(int exitcode)
 	{
 		/* normal exit */
 		exit(exitcode);
+	}
+}
+
+void
+help(bool details)
+{
+	pgut_help(details);
+
+	if (details)
+	{
+		printf("\nConnection options:\n");
+		printf("  -d, --dbname=DBNAME       database to connect\n");
+		printf("  -h, --host=HOSTNAME       database server host or socket directory\n");
+		printf("  -p, --port=PORT           database server port\n");
+		printf("  -U, --username=USERNAME   user name to connect as\n");
+#ifndef PGUT_NO_PROMPT
+		printf("  -w, --no-password         never prompt for password\n");
+		printf("  -W, --password            force password prompt\n");
+#endif
+	}
+
+	printf("\nGeneric options:\n");
+	if (details)
+	{
+		printf("  -q, --quiet               don't write any messages\n");
+		printf("  -v, --verbose             verbose mode\n");
+	}
+		printf("      --help                show this help, then exit\n");
+		printf("      --version             output version information and exit\n");
+
+	if (details && (PROGRAM_URL || PROGRAM_EMAIL))
+	{
+		printf("\n");
+		if (PROGRAM_URL)
+			printf("Read the website for details. <%s>\n", PROGRAM_URL);
+		if (PROGRAM_EMAIL)
+			printf("Report bugs to <%s>.\n", PROGRAM_EMAIL);
 	}
 }
 

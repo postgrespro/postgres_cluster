@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------
  *
- * init.c: - initialize backup catalog.
+ * init.c: manage backup catalog.
  *
  * Portions Copyright (c) 2009-2011, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
  * Portions Copyright (c) 2015-2017, Postgres Professional
@@ -15,11 +15,10 @@
 
 /*
  * selects function for scandir.
- * Select all files except hidden.
  */
 static int selects(const struct dirent *dir)
 {
-	return dir->d_name[0] != '.';
+  return dir->d_name[0] != '.';
 }
 
 /*
@@ -28,12 +27,13 @@ static int selects(const struct dirent *dir)
 int
 do_init(void)
 {
-	char		path[MAXPGPATH];
-	char		arclog_path_dir[MAXPGPATH];
+	char	path[MAXPGPATH];
+	char	arclog_path_dir[MAXPGPATH];
+	FILE   *fp;
+	uint64 _system_identifier;
 
 	struct dirent **dp;
 	int results;
-	pgBackupConfig *config = pgut_new(pgBackupConfig);
 
 	/* PGDATA is always required */
 	if (pgdata == NULL)
@@ -47,9 +47,6 @@ do_init(void)
 			elog(ERROR, "backup catalog already exist and it's not empty");
 	}
 
-	/* Read system_identifier from PGDATA */
-	system_identifier = get_system_identifier();
-
 	/* create backup catalog root directory */
 	dir_create_dir(backup_path, DIR_PERMISSION);
 
@@ -61,14 +58,16 @@ do_init(void)
 	join_path_components(arclog_path_dir, backup_path, "wal");
 	dir_create_dir(arclog_path_dir, DIR_PERMISSION);
 
-	/*
-	 * Wite initial config. system-identifier and pgdata are set in
-	 * init subcommand and will never be updated.
-	 */
-	pgBackupConfigInit(config);
-	config->system_identifier = system_identifier;
-	config->pgdata = pgdata;
-	writeBackupCatalogConfigFile(config);
+	_system_identifier = get_system_identifier(false);
+	/* create pg_probackup.conf */
+	join_path_components(path, backup_path, BACKUP_CATALOG_CONF_FILE);
+	fp = fopen(path, "wt");
+	if (fp == NULL)
+		elog(ERROR, "cannot create pg_probackup.conf: %s", strerror(errno));
+
+	fprintf(fp, "system-identifier = %li\n", _system_identifier);
+	fprintf(fp, "\n");
+	fclose(fp);
 
 	return 0;
 }

@@ -291,7 +291,7 @@ This mode should be used with caution as it allows to delete WAL files required 
 
 ### Backup from Standby
 
-If replication is in use, starting with PostgreSQL 9.6 a backup can be taken not only from primary server, but also from standby. Backup taken from standby is absolutely interchangeable with backup taken from primary (bearing in mind possible replication delay).
+If replication is in use, starting with PostgreSQL 9.6 a backup can be taken not only from primary server, but also from standby. Backup taken from standby is absolutely interchangeable with backup taken from primary (bearing in mind possible replication delay). Page-level incremental backups are not allowed to perform from standby.
 
 Currently it is required for primary database server to have `full_page_writes` turned `on` (in future this requirement may be relaxed in the case checksums are enabled on data pages).
 
@@ -409,10 +409,6 @@ Backup mode. Supported modes are: FULL (full backup), PAGE (incremental backup, 
 --stream
 
 Makes an autonomous backup that includes all necessary WAL files, by streaming them from database server via replication protocol.
-
---archive-timeout
-
-Wait timeout for WAL segment archiving. `pg_probackup` waits after `pg_start_backup()` and `pg_stop_backup()` executing when WAL segments with necessary LSN will be archived. For backup from master WAL segment will be archived fast, because master instance switch WAL segment during backup. For backup from standby `pg_probackup` will wait a long time, because standby instance cannot switch WAL segment. By default timeout is 300 seconds.
 
 -S _slot\_name_  
 --slot=_slot\_name_

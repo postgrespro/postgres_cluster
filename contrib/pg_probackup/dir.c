@@ -17,6 +17,7 @@
 #include <dirent.h>
 #include <time.h>
 
+#include "pgut/pgut-port.h"
 #include "datapagemap.h"
 
 /*
@@ -26,43 +27,43 @@
  */
 const char *pgdata_exclude_dir[] =
 {
-	PG_XLOG_DIR,
-	/*
-	 * Skip temporary statistics files. PG_STAT_TMP_DIR must be skipped even
-	 * when stats_temp_directory is set because PGSS_TEXT_FILE is always created
-	 * there.
-	 */
-	"pg_stat_tmp",
-	"pgsql_tmp",
+		"pg_xlog",
+       /*
+        * Skip temporary statistics files. PG_STAT_TMP_DIR must be skipped even
+        * when stats_temp_directory is set because PGSS_TEXT_FILE is always created
+        * there.
+        */
+        "pg_stat_tmp",
+        "pgsql_tmp",
 
-	/*
-	 * It is generally not useful to backup the contents of this directory even
-	 * if the intention is to restore to another master. See backup.sgml for a
-	 * more detailed description.
-	 */
-	"pg_replslot",
+       /*
+        * It is generally not useful to backup the contents of this directory even
+        * if the intention is to restore to another master. See backup.sgml for a
+        * more detailed description.
+        */
+       "pg_replslot",
 
-	/* Contents removed on startup, see dsm_cleanup_for_mmap(). */
-	"pg_dynshmem",
+       /* Contents removed on startup, see dsm_cleanup_for_mmap(). */
+       "pg_dynshmem",
 
-	/* Contents removed on startup, see AsyncShmemInit(). */
-	"pg_notify",
+       /* Contents removed on startup, see AsyncShmemInit(). */
+       "pg_notify",
 
-	/*
-	 * Old contents are loaded for possible debugging but are not required for
-	 * normal operation, see OldSerXidInit().
-	 */
-	"pg_serial",
+       /*
+        * Old contents are loaded for possible debugging but are not required for
+        * normal operation, see OldSerXidInit().
+        */
+       "pg_serial",
 
-	/* Contents removed on startup, see DeleteAllExportedSnapshotFiles(). */
-	"pg_snapshots",
+       /* Contents removed on startup, see DeleteAllExportedSnapshotFiles(). */
+       "pg_snapshots",
 
-	/* Contents zeroed on startup, see StartupSUBTRANS(). */
-	"pg_subtrans",
+       /* Contents zeroed on startup, see StartupSUBTRANS(). */
+       "pg_subtrans",
 
-	/* end of list */
-	NULL,				/* pg_log will be set later */
-	NULL
+       /* end of list */
+        NULL,                   /* pg_log will be set later */
+        NULL
 };
 
 static char *pgdata_exclude_files[] =
@@ -128,23 +129,13 @@ pgFileNew(const char *path, bool omit_symlink)
 			strerror(errno));
 	}
 
-	file = pgFileInit(path);
-	file->size = st.st_size;
-	file->mode = st.st_mode;
-
-	return file;
-}
-
-pgFile *
-pgFileInit(const char *path)
-{
-	pgFile		   *file;
 	file = (pgFile *) pgut_malloc(sizeof(pgFile));
 
-	file->size = 0;
-	file->mode = 0;
+	file->mtime = st.st_mtime;
+	file->size = st.st_size;
 	file->read_size = 0;
 	file->write_size = 0;
+	file->mode = st.st_mode;
 	file->crc = 0;
 	file->is_datafile = false;
 	file->linked = NULL;
@@ -153,9 +144,10 @@ pgFileInit(const char *path)
 	file->ptrack_path = NULL;
 	file->segno = 0;
 	file->path = pgut_malloc(strlen(path) + 1);
-	strcpy(file->path, path);		/* enough buffer size guaranteed */
 	file->generation = -1;
 	file->is_partial_copy = 0;
+	strcpy(file->path, path);		/* enough buffer size guaranteed */
+
 	return file;
 }
 
@@ -230,18 +222,12 @@ pgFileGetCRC(pgFile *file)
 void
 pgFileFree(void *file)
 {
-	pgFile	   *file_ptr;
-
 	if (file == NULL)
 		return;
-
-	file_ptr = (pgFile *) file;
-
-	if (file_ptr->linked)
-		free(file_ptr->linked);
-	free(file_ptr->path);
-	if (file_ptr->ptrack_path != NULL)
-		free(file_ptr->ptrack_path);
+	free(((pgFile *)file)->linked);
+	free(((pgFile *)file)->path);
+	if (((pgFile *)file)->ptrack_path != NULL)
+		free(((pgFile *)file)->ptrack_path);
 	free(file);
 }
 
@@ -285,6 +271,28 @@ pgFileCompareSize(const void *f1, const void *f2)
 		return -1;
 	else
 		return 0;
+}
+
+/* Compare two pgFile with their modify timestamp. */
+int
+pgFileCompareMtime(const void *f1, const void *f2)
+{
+	pgFile *f1p = *(pgFile **)f1;
+	pgFile *f2p = *(pgFile **)f2;
+
+	if (f1p->mtime > f2p->mtime)
+		return 1;
+	else if (f1p->mtime < f2p->mtime)
+		return -1;
+	else
+		return 0;
+}
+
+/* Compare two pgFile with their modify timestamp in descending order. */
+int
+pgFileCompareMtimeDesc(const void *f1, const void *f2)
+{
+	return -pgFileCompareMtime(f1, f2);
 }
 
 static int
@@ -343,9 +351,6 @@ dir_list_file(parray *files, const char *root, bool exclude, bool omit_symlink,
 	parray_qsort(files, pgFileComparePath);
 }
 
-/*
- * TODO Add comment, review
- */
 static void
 dir_list_file_internal(parray *files, const char *root, bool exclude,
 					   bool omit_symlink, bool add_root, parray *black_list)
@@ -359,17 +364,7 @@ dir_list_file_internal(parray *files, const char *root, bool exclude,
 	/* skip if the file is in black_list defined by user */
 	if (black_list && parray_bsearch(black_list, root, BlackListCompare))
 	{
-		elog(LOG, "Skip file \"%s\": file is in the user's black list", file->path);
-		return;
-	}
-
-	/*
-	 * Add to files list only files, links and directories. Skip sockets and
-	 * other unexpected file formats.
-	 */
-	if (!S_ISDIR(file->mode) && !S_ISLNK(file->mode) &&	!S_ISREG(file->mode))
-	{
-		elog(WARNING, "Skip file \"%s\": unexpected file format", file->path);
+		/* found in black_list. skip this item */
 		return;
 	}
 
@@ -614,9 +609,9 @@ read_tablespace_map(parray *files, const char *backup_dir)
 	char		buf[MAXPGPATH * 2];
 
 	join_path_components(db_path, backup_dir, DATABASE_DIR);
-	join_path_components(map_path, db_path, PG_TABLESPACE_MAP_FILE);
+	join_path_components(map_path, db_path, "tablespace_map");
 
-	/* Exit if database/tablespace_map doesn't exist */
+	/* Exit if database/tablespace_map don't exists */
 	if (!fileExists(map_path))
 	{
 		elog(LOG, "there is no file tablespace_map");
@@ -648,12 +643,11 @@ read_tablespace_map(parray *files, const char *backup_dir)
 		parray_append(files, file);
 	}
 
-	parray_qsort(files, pgFileCompareLinked);
 	fclose(fp);
 }
 
 /*
- * Print backup content list.
+ * Print file list.
  */
 void
 print_file_list(FILE *out, const parray *files, const char *root)
@@ -665,167 +659,44 @@ print_file_list(FILE *out, const parray *files, const char *root)
 	{
 		pgFile	   *file = (pgFile *) parray_get(files, i);
 		char	   *path = file->path;
+		char		type;
 
 		/* omit root directory portion */
 		if (root && strstr(path, root) == path)
-			path = GetRelativePath(path, root);
+			path = JoinPathEnd(path, root);
 
-		fprintf(out, "{\"path\":\"%s\", \"size\":\"%lu\",\"mode\":\"%u\","
-					 "\"is_datafile\":\"%u\", \"crc\":\"%u\"",
-				path, (unsigned long) file->write_size, file->mode,
-				file->is_datafile?1:0, file->crc);
+		if (S_ISREG(file->mode) && file->is_datafile)
+			type = 'F';
+		else if (S_ISREG(file->mode) && !file->is_datafile)
+			type = 'f';
+		else if (S_ISDIR(file->mode))
+			type = 'd';
+		else if (S_ISLNK(file->mode))
+			type = 'l';
+		else
+			type = '?';
 
-		if (file->is_datafile)
-			fprintf(out, ",\"segno\":\"%d\"", file->segno);
+		fprintf(out, "%s %c %lu %u 0%o", path, type,
+				(unsigned long) file->write_size,
+				file->crc, file->mode & (S_IRWXU | S_IRWXG | S_IRWXO));
 
-		/* TODO What for do we write it to file? */
 		if (S_ISLNK(file->mode))
-			fprintf(out, ",\"linked\":\"%s\"", file->linked);
-
-#ifdef PGPRO_EE
-		fprintf(out, ",\"CFS_generation\":\"" UINT64_FORMAT "\",\"is_partial_copy\":\"%d\"",
-				file->generation, file->is_partial_copy);
-#endif
-		fprintf(out, "}\n");
-	}
-}
-
-/* Parsing states for get_control_value() */
-#define CONTROL_WAIT_NAME			1
-#define CONTROL_INNAME				2
-#define CONTROL_WAIT_COLON			3
-#define CONTROL_WAIT_VALUE			4
-#define CONTROL_INVALUE				5
-#define CONTROL_WAIT_NEXT_NAME		6
-
-/*
- * Get value from json-like line "str" of backup_content.control file.
- *
- * The line has the following format:
- *   {"name1":"value1", "name2":"value2"}
- *
- * The value will be returned to "value_str" as string if it is not NULL. If it
- * is NULL the value will be returned to "value_ulong" as unsigned long.
- */
-static void
-get_control_value(const char *str, const char *name,
-				  char *value_str, uint64 *value_uint64, bool is_mandatory)
-{
-	int			state = CONTROL_WAIT_NAME;
-	char	   *name_ptr = (char *) name;
-	char	   *buf = (char *) str;
-	char		buf_uint64[32],	/* Buffer for "value_uint64" */
-			   *buf_uint64_ptr;
-
-	/* Set default values */
-	if (value_str)
-		*value_str = '\0';
-	else if (value_uint64)
-		*value_uint64 = 0;
-
-	while (*buf)
-	{
-		switch (state)
+			fprintf(out, " %s", file->linked);
+		else
 		{
-			case CONTROL_WAIT_NAME:
-				if (*buf == '"')
-					state = CONTROL_INNAME;
-				else if (IsAlpha(*buf))
-					goto bad_format;
-				break;
-			case CONTROL_INNAME:
-				/* Found target field. Parse value. */
-				if (*buf == '"')
-					state = CONTROL_WAIT_COLON;
-				/* Check next field */
-				else if (*buf != *name_ptr)
-				{
-					name_ptr = (char *) name;
-					state = CONTROL_WAIT_NEXT_NAME;
-				}
-				else
-					name_ptr++;
-				break;
-			case CONTROL_WAIT_COLON:
-				if (*buf == ':')
-					state = CONTROL_WAIT_VALUE;
-				else if (!IsSpace(*buf))
-					goto bad_format;
-				break;
-			case CONTROL_WAIT_VALUE:
-				if (*buf == '"')
-				{
-					state = CONTROL_INVALUE;
-					buf_uint64_ptr = buf_uint64;
-				}
-				else if (IsAlpha(*buf))
-					goto bad_format;
-				break;
-			case CONTROL_INVALUE:
-				/* Value was parsed, exit */
-				if (*buf == '"')
-				{
-					if (value_str)
-					{
-						*value_str = '\0';
-					}
-					else if (value_uint64)
-					{
-						/* Length of buf_uint64 should not be greater than 31 */
-						if (buf_uint64_ptr - buf_uint64 >= 32)
-							elog(ERROR, "field \"%s\" is out of range in the line %s of the file %s",
-								 name, str, DATABASE_FILE_LIST);
+			char		timestamp[20];
 
-						*buf_uint64_ptr = '\0';
-						if (!parse_uint64(buf_uint64, value_uint64))
-							goto bad_format;
-					}
-
-					return;
-				}
-				else
-				{
-					if (value_str)
-					{
-						*value_str = *buf;
-						value_str++;
-					}
-					else
-					{
-						*buf_uint64_ptr = *buf;
-						buf_uint64_ptr++;
-					}
-				}
-				break;
-			case CONTROL_WAIT_NEXT_NAME:
-				if (*buf == ',')
-					state = CONTROL_WAIT_NAME;
-				break;
-			default:
-				/* Should not happen */
-				break;
+			time2iso(timestamp, 20, file->mtime);
+			fprintf(out, " %s", timestamp);
 		}
 
-		buf++;
+		fprintf(out, " " UINT64_FORMAT " %d\n",
+				file->generation, file->is_partial_copy);
 	}
-
-	/* There is no close quotes */
-	if (state == CONTROL_INNAME || state == CONTROL_INVALUE)
-		goto bad_format;
-
-	/* Did not find target field */
-	if (is_mandatory)
-		elog(ERROR, "field \"%s\" is not found in the line %s of the file %s",
-			 name, str, DATABASE_FILE_LIST);
-	return;
-
-bad_format:
-	elog(ERROR, "%s file has invalid format in line %s",
-		 DATABASE_FILE_LIST, str);
 }
 
 /*
- * Construct parray of pgFile from the backup content list.
+ * Construct parray of pgFile from the file list.
  * If root is not NULL, path will be absolute path.
  */
 parray *
@@ -844,57 +715,99 @@ dir_read_file_list(const char *root, const char *file_txt)
 
 	while (fgets(buf, lengthof(buf), fp))
 	{
-		char		path[MAXPGPATH];
-		char		filepath[MAXPGPATH];
-		char		linked[MAXPGPATH];
-		uint64		write_size,
-					mode,		/* bit length of mode_t depends on platforms */
-					is_datafile,
-					crc,
-					segno;
-#ifdef PGPRO_EE
-		uint64		generation,
-					is_partial_copy;
-#endif
-		pgFile	   *file;
+		char			path[MAXPGPATH];
+		char			type;
+		int				generation = -1;
+		int				is_partial_copy = 0;
+		unsigned long	write_size;
+		pg_crc32		crc;
+		unsigned int	mode;	/* bit length of mode_t depends on platforms */
+		struct tm		tm;
+		pgFile			*file;
 
-		get_control_value(buf, "path", path, NULL, true);
-		get_control_value(buf, "size", NULL, &write_size, true);
-		get_control_value(buf, "mode", NULL, &mode, true);
-		get_control_value(buf, "is_datafile", NULL, &is_datafile, true);
-		get_control_value(buf, "crc", NULL, &crc, true);
+		memset(&tm, 0, sizeof(tm));
+		if (sscanf(buf, "%s %c %lu %u %o %d-%d-%d %d:%d:%d %d %d",
+			path, &type, &write_size, &crc, &mode,
+			&tm.tm_year, &tm.tm_mon, &tm.tm_mday,
+			&tm.tm_hour, &tm.tm_min, &tm.tm_sec,
+			&generation, &is_partial_copy) != 13)
+		{
+			/* Maybe the file_list we're trying to recovery is in old format */
+			if (sscanf(buf, "%s %c %lu %u %o %d-%d-%d %d:%d:%d",
+				path, &type, &write_size, &crc, &mode,
+				&tm.tm_year, &tm.tm_mon, &tm.tm_mday,
+				&tm.tm_hour, &tm.tm_min, &tm.tm_sec) != 11)
+			{
+				elog(ERROR, "invalid format found in \"%s\"",
+					file_txt);
+			}
+		}
 
-		/* optional fields */
-		get_control_value(buf, "linked", linked, NULL, false);
-		get_control_value(buf, "segno", NULL, &segno, false);
+		if (type != 'f' && type != 'F' && type != 'd' && type != 'l')
+		{
+			elog(ERROR, "invalid type '%c' found in \"%s\"",
+				type, file_txt);
+		}
+		tm.tm_isdst = -1;
 
-#ifdef PGPRO_EE
-		get_control_value(buf, "CFS_generation", NULL, &generation, true);
-		get_control_value(buf, "is_partial_copy", NULL, &is_partial_copy, true);
-#endif
-		if (root)
-			join_path_components(filepath, root, path);
-		else
-			strcpy(filepath, path);
+		file = (pgFile *) pgut_malloc(sizeof(pgFile));
+		file->path = pgut_malloc((root ? strlen(root) + 1 : 0) + strlen(path) + 1);
+		file->ptrack_path = NULL;
+		file->segno = 0;
+		file->pagemap.bitmap = NULL;
+		file->pagemap.bitmapsize = 0;
 
-		file = pgFileInit(filepath);
-
-		file->write_size = (size_t) write_size;
-		file->mode = (mode_t) mode;
-		file->is_datafile = is_datafile ? true : false;
-		file->crc = (pg_crc32) crc;
-		if (linked[0])
-			file->linked = pgut_strdup(linked);
-		file->segno = (int) segno;
-#ifdef PGPRO_EE
+		tm.tm_year -= 1900;
+		tm.tm_mon -= 1;
+		file->mtime = mktime(&tm);
+		file->mode = mode |
+			((type == 'f' || type == 'F') ? S_IFREG :
+			 type == 'd' ? S_IFDIR : type == 'l' ? S_IFLNK : 0);
 		file->generation = generation;
-		file->is_partial_copy = (int) is_partial_copy;
-#endif
+		file->is_partial_copy = is_partial_copy;
+		file->size = 0;
+		file->read_size = 0;
+		file->write_size = write_size;
+		file->crc = crc;
+		file->is_datafile = (type == 'F' ? true : false);
+		file->linked = NULL;
+		if (root)
+			sprintf(file->path, "%s/%s", root, path);
+		else
+			strcpy(file->path, path);
 
 		parray_append(files, file);
+
+		if(file->is_datafile)
+		{
+			int find_dot;
+			int check_digit;
+			char *text_segno;
+			size_t path_len = strlen(file->path);
+			for(find_dot = path_len-1; file->path[find_dot] != '.' && find_dot >= 0; find_dot--);
+			if (find_dot <= 0)
+				continue;
+
+			text_segno = file->path + find_dot + 1;
+			for(check_digit=0; text_segno[check_digit] != '\0'; check_digit++)
+				if (!isdigit(text_segno[check_digit]))
+				{
+					check_digit = -1;
+					break;
+				}
+
+			if (check_digit == -1)
+				continue;
+
+			file->segno = (int) strtol(text_segno, NULL, 10);
+		}
 	}
 
 	fclose(fp);
+
+	/* file.txt is sorted, so this qsort is redundant */
+	parray_qsort(files, pgFileComparePath);
+
 	return files;
 }
 

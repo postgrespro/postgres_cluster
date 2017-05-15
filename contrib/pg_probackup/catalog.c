@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------
  *
- * catalog.c: backup catalog operation
+ * catalog.c: backup catalog opration
  *
  * Portions Copyright (c) 2009-2011, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
  * Portions Copyright (c) 2015-2017, Postgres Professional
@@ -21,8 +21,11 @@
 #include <time.h>
 #include <unistd.h>
 
-static const char *backupModes[] = {"", "PAGE", "PTRACK", "FULL"};
-static pgBackup *readBackupControlFile(const char *path);
+#include "pgut/pgut-port.h"
+
+static pgBackup *read_backup_from_file(const char *path);
+
+#define BOOL_TO_STR(val)	((val) ? "true" : "false")
 
 static bool exit_hook_registered = false;
 static char lock_file[MAXPGPATH];
@@ -40,7 +43,7 @@ unlink_lock_atexit(void)
  * Create a lockfile.
  */
 void
-catalog_lock(void)
+catalog_lock(bool check_catalog)
 {
 	int			fd;
 	char		buffer[MAXPGPATH * 2 + 256];
@@ -204,10 +207,23 @@ catalog_lock(void)
 		atexit(unlink_lock_atexit);
 		exit_hook_registered = true;
 	}
+
+	if (check_catalog)
+	{
+		uint64		id;
+
+		Assert(pgdata);
+
+		/* Check system-identifier */
+		id = get_system_identifier(true);
+		if (id != system_identifier)
+			elog(ERROR, "Backup directory was initialized for system id = %ld, but target system id = %ld",
+				 system_identifier, id);
+	}
 }
 
 /*
- * Read backup meta information from BACKUP_CONTROL_FILE.
+ * Create a pgBackup which taken at timestamp.
  * If no backup matches, return NULL.
  */
 pgBackup *
@@ -217,18 +233,9 @@ read_backup(time_t timestamp)
 	char		conf_path[MAXPGPATH];
 
 	tmp.start_time = timestamp;
-	pgBackupGetPath(&tmp, conf_path, lengthof(conf_path), BACKUP_CONTROL_FILE);
+	pgBackupGetPath(&tmp, conf_path, lengthof(conf_path), BACKUP_CONF_FILE);
 
-	return readBackupControlFile(conf_path);
-}
-
-/*
- * Get backup_mode in string representation.
- */
-const char *
-pgBackupGetBackupMode(pgBackup *backup)
-{
-	return backupModes[backup->backup_mode];
+	return read_backup_from_file(conf_path);
 }
 
 static bool
@@ -243,17 +250,18 @@ IsDir(const char *dirpath, const char *entry)
 }
 
 /*
- * Create list of backups.
- * If 'requested_backup_id' is INVALID_BACKUP_ID, return list of all backups.
+ * Create list fo backups started between begin and end from backup catalog.
+ * If range was NULL, all of backup are listed.
  * The list is sorted in order of descending start time.
- * If valid backup id is passed only matching backup will be added to the list.
  */
 parray *
-catalog_get_backup_list(time_t requested_backup_id)
+catalog_get_backup_list(time_t backup_id)
 {
 	DIR			   *date_dir = NULL;
 	struct dirent  *date_ent = NULL;
+	DIR			   *time_dir = NULL;
 	char			backups_path[MAXPGPATH];
+	char			date_path[MAXPGPATH];
 	parray		   *backups = NULL;
 	pgBackup	   *backup = NULL;
 
@@ -267,30 +275,27 @@ catalog_get_backup_list(time_t requested_backup_id)
 		goto err_proc;
 	}
 
-	/* scan the directory and list backups */
+	/* scan date/time directories and list backups in the range */
 	backups = parray_new();
 	for (; (date_ent = readdir(date_dir)) != NULL; errno = 0)
 	{
-		char backup_conf_path[MAXPGPATH];
-		char date_path[MAXPGPATH];
+		char ini_path[MAXPGPATH];
 
 		/* skip not-directory entries and hidden entries */
-		if (!IsDir(backups_path, date_ent->d_name)
-			|| date_ent->d_name[0] == '.')
+		if (!IsDir(backups_path, date_ent->d_name) || date_ent->d_name[0] == '.')
 			continue;
 
-		/* open subdirectory of specific backup */
+		/* open subdirectory (date directory) and search time directory */
 		join_path_components(date_path, backups_path, date_ent->d_name);
 
-		/* read backup information from BACKUP_CONTROL_FILE */
-		snprintf(backup_conf_path, MAXPGPATH, "%s/%s", date_path, BACKUP_CONTROL_FILE);
-		backup = readBackupControlFile(backup_conf_path);
+		/* read backup information from backup.ini */
+		snprintf(ini_path, MAXPGPATH, "%s/%s", date_path, BACKUP_CONF_FILE);
+		backup = read_backup_from_file(ini_path);
 
-		/* ignore corrupted backups */
+		/* ignore corrupted backup */
 		if (backup)
 		{
-			if (requested_backup_id != INVALID_BACKUP_ID
-				&& requested_backup_id != backup->start_time)
+			if (backup_id != 0 && backup_id != backup->start_time)
 			{
 				pgBackupFree(backup);
 				continue;
@@ -298,11 +303,10 @@ catalog_get_backup_list(time_t requested_backup_id)
 			parray_append(backups, backup);
 			backup = NULL;
 		}
-
 		if (errno && errno != ENOENT)
 		{
 			elog(WARNING, "cannot read date directory \"%s\": %s",
-				 date_ent->d_name, strerror(errno));
+				date_ent->d_name, strerror(errno));
 			goto err_proc;
 		}
 	}
@@ -321,6 +325,8 @@ catalog_get_backup_list(time_t requested_backup_id)
 	return backups;
 
 err_proc:
+	if (time_dir)
+		closedir(time_dir);
 	if (date_dir)
 		closedir(date_dir);
 	if (backup)
@@ -332,7 +338,7 @@ err_proc:
 }
 
 /*
- * Find the last completed backup on given timeline
+ * Find the last completed database backup from the backup list.
  */
 pgBackup *
 catalog_get_last_data_backup(parray *backup_list, TimeLineID tli)
@@ -343,9 +349,17 @@ catalog_get_last_data_backup(parray *backup_list, TimeLineID tli)
 	/* backup_list is sorted in order of descending ID */
 	for (i = 0; i < parray_num(backup_list); i++)
 	{
-		backup = (pgBackup *) parray_get(backup_list, (size_t) i);
+		backup = (pgBackup *) parray_get(backup_list, i);
 
-		if (backup->status == BACKUP_STATUS_OK && backup->tli == tli)
+		/*
+		 * We need completed database backup in the case of a full or
+		 * differential backup on current timeline.
+		 */
+		if (backup->status == BACKUP_STATUS_OK &&
+			backup->tli == tli &&
+			(backup->backup_mode == BACKUP_MODE_DIFF_PAGE ||
+			 backup->backup_mode == BACKUP_MODE_DIFF_PTRACK ||
+			 backup->backup_mode == BACKUP_MODE_FULL))
 			return backup;
 	}
 
@@ -378,123 +392,147 @@ pgBackupCreateDir(pgBackup *backup)
 }
 
 /*
- * Write information about backup.in to stream "out".
+ * Write configuration section of backup.in to stream "out".
  */
 void
-pgBackupWriteControl(FILE *out, pgBackup *backup)
+pgBackupWriteConfigSection(FILE *out, pgBackup *backup)
 {
-	char		timestamp[20];
+	static const char *modes[] = { "", "PAGE", "PTRACK", "FULL"};
 
-	fprintf(out, "#Configuration\n");
-	fprintf(out, "backup-mode = %s\n", pgBackupGetBackupMode(backup));
-	fprintf(out, "stream = %s\n", backup->stream?"true":"false");
-	
-	fprintf(out, "\n#Compatibility\n");
-	fprintf(out, "block-size = %u\n", backup->block_size);
-	fprintf(out, "xlog-block-size = %u\n", backup->wal_block_size);
-	fprintf(out, "checksum-version = %u\n", backup->checksum_version);
+	fprintf(out, "# configuration\n");
+	fprintf(out, "BACKUP_MODE=%s\n", modes[backup->backup_mode]);
+}
 
-	fprintf(out, "\n#Result backup info\n");
-	fprintf(out, "timelineid = %d\n", backup->tli);
-	/* LSN returned by pg_start_backup */
-	fprintf(out, "start-lsn = %x/%08x\n",
+/*
+ * Write result section of backup.in to stream "out".
+ */
+void
+pgBackupWriteResultSection(FILE *out, pgBackup *backup)
+{
+	char timestamp[20];
+
+	fprintf(out, "# result\n");
+	fprintf(out, "TIMELINEID=%d\n", backup->tli);
+	fprintf(out, "START_LSN=%x/%08x\n",
 			(uint32) (backup->start_lsn >> 32),
 			(uint32) backup->start_lsn);
-	/* LSN returned by pg_stop_backup */
-	fprintf(out, "stop-lsn = %x/%08x\n",
+	fprintf(out, "STOP_LSN=%x/%08x\n",
 			(uint32) (backup->stop_lsn >> 32),
 			(uint32) backup->stop_lsn);
 
 	time2iso(timestamp, lengthof(timestamp), backup->start_time);
-	fprintf(out, "start-time = '%s'\n", timestamp);
+	fprintf(out, "START_TIME='%s'\n", timestamp);
 	if (backup->end_time > 0)
 	{
 		time2iso(timestamp, lengthof(timestamp), backup->end_time);
-		fprintf(out, "end-time = '%s'\n", timestamp);
+		fprintf(out, "END_TIME='%s'\n", timestamp);
 	}
-	fprintf(out, "recovery-xid = " XID_FMT "\n", backup->recovery_xid);
+	fprintf(out, "RECOVERY_XID=" XID_FMT "\n", backup->recovery_xid);
 	if (backup->recovery_time > 0)
 	{
 		time2iso(timestamp, lengthof(timestamp), backup->recovery_time);
-		fprintf(out, "recovery-time = '%s'\n", timestamp);
+		fprintf(out, "RECOVERY_TIME='%s'\n", timestamp);
 	}
 
-	/*
-	 * Size of PGDATA directory. The size does not include size of related
-	 * WAL segments in archive 'wal' directory.
-	 */
 	if (backup->data_bytes != BYTES_INVALID)
-		fprintf(out, "data-bytes = " INT64_FORMAT "\n", backup->data_bytes);
+		fprintf(out, "DATA_BYTES=" INT64_FORMAT "\n",
+				backup->data_bytes);
+	fprintf(out, "BLOCK_SIZE=%u\n", backup->block_size);
+	fprintf(out, "XLOG_BLOCK_SIZE=%u\n", backup->wal_block_size);
+	fprintf(out, "CHECKSUM_VERSION=%u\n", backup->checksum_version);
+	fprintf(out, "STREAM=%u\n", backup->stream);
 
-	fprintf(out, "status = %s\n", status2str(backup->status));
-
-	/* 'parent_backup' is set if it is incremental backup */
+	fprintf(out, "STATUS=%s\n", status2str(backup->status));
 	if (backup->parent_backup != 0)
 	{
-		char	   *parent_backup = base36enc(backup->parent_backup);
-
-		fprintf(out, "parent-backup-id = '%s'\n", parent_backup);
+		char *parent_backup = base36enc(backup->parent_backup);
+		fprintf(out, "PARENT_BACKUP='%s'\n", parent_backup);
 		free(parent_backup);
 	}
 }
 
-/* create BACKUP_CONTROL_FILE */
+/* create backup.conf */
 void
-pgBackupWriteBackupControlFile(pgBackup *backup)
+pgBackupWriteIni(pgBackup *backup)
 {
 	FILE   *fp = NULL;
 	char	ini_path[MAXPGPATH];
 
-	pgBackupGetPath(backup, ini_path, lengthof(ini_path), BACKUP_CONTROL_FILE);
+	pgBackupGetPath(backup, ini_path, lengthof(ini_path), BACKUP_CONF_FILE);
 	fp = fopen(ini_path, "wt");
 	if (fp == NULL)
 		elog(ERROR, "cannot open configuration file \"%s\": %s", ini_path,
 			strerror(errno));
 
-	pgBackupWriteControl(fp, backup);
+	/* configuration section */
+	pgBackupWriteConfigSection(fp, backup);
+
+	/* result section */
+	pgBackupWriteResultSection(fp, backup);
 
 	fclose(fp);
 }
 
 /*
- * Read BACKUP_CONTROL_FILE and create pgBackup.
+ * Read backup.ini and create pgBackup.
  *  - Comment starts with ';'.
  *  - Do not care section.
  */
 static pgBackup *
-readBackupControlFile(const char *path)
+read_backup_from_file(const char *path)
 {
-	pgBackup   *backup = pgut_new(pgBackup);
+	pgBackup   *backup;
 	char	   *backup_mode = NULL;
 	char	   *start_lsn = NULL;
 	char	   *stop_lsn = NULL;
 	char	   *status = NULL;
 	char	   *parent_backup = NULL;
+	int			i;
 
 	pgut_option options[] =
 	{
-		{'s', 0, "backup-mode",			&backup_mode, SOURCE_FILE_STRICT},
-		{'u', 0, "timelineid",			&backup->tli, SOURCE_FILE_STRICT},
-		{'s', 0, "start-lsn",			&start_lsn, SOURCE_FILE_STRICT},
-		{'s', 0, "stop-lsn",			&stop_lsn, SOURCE_FILE_STRICT},
-		{'t', 0, "start-time",			&backup->start_time, SOURCE_FILE_STRICT},
-		{'t', 0, "end-time",			&backup->end_time, SOURCE_FILE_STRICT},
-		{'U', 0, "recovery-xid",		&backup->recovery_xid, SOURCE_FILE_STRICT},
-		{'t', 0, "recovery-time",		&backup->recovery_time, SOURCE_FILE_STRICT},
-		{'I', 0, "data-bytes",			&backup->data_bytes, SOURCE_FILE_STRICT},
-		{'u', 0, "block-size",			&backup->block_size, SOURCE_FILE_STRICT},
-		{'u', 0, "xlog-block-size",		&backup->wal_block_size, SOURCE_FILE_STRICT},
-		{'u', 0, "checksum_version",	&backup->checksum_version, SOURCE_FILE_STRICT},
-		{'b', 0, "stream",				&backup->stream, SOURCE_FILE_STRICT},
-		{'s', 0, "status",				&status, SOURCE_FILE_STRICT},
-		{'s', 0, "parent-backup-id",	&parent_backup, SOURCE_FILE_STRICT},
+		{'s', 0, "backup-mode",			NULL, SOURCE_FILE_STRICT},
+		{'u', 0, "timelineid",			NULL, SOURCE_FILE_STRICT},
+		{'s', 0, "start-lsn",			NULL, SOURCE_FILE_STRICT},
+		{'s', 0, "stop-lsn",			NULL, SOURCE_FILE_STRICT},
+		{'t', 0, "start-time",			NULL, SOURCE_FILE_STRICT},
+		{'t', 0, "end-time",			NULL, SOURCE_FILE_STRICT},
+		{'U', 0, "recovery-xid",		NULL, SOURCE_FILE_STRICT},
+		{'t', 0, "recovery-time",		NULL, SOURCE_FILE_STRICT},
+		{'I', 0, "data-bytes",			NULL, SOURCE_FILE_STRICT},
+		{'u', 0, "block-size",			NULL, SOURCE_FILE_STRICT},
+		{'u', 0, "xlog-block-size",		NULL, SOURCE_FILE_STRICT},
+		{'u', 0, "checksum_version",	NULL, SOURCE_FILE_STRICT},
+		{'u', 0, "stream",				NULL, SOURCE_FILE_STRICT},
+		{'s', 0, "status",				NULL, SOURCE_FILE_STRICT},
+		{'s', 0, "parent_backup",		NULL, SOURCE_FILE_STRICT},
 		{0}
 	};
 
 	if (access(path, F_OK) != 0)
 		return NULL;
 
-	pgBackup_init(backup);
+	backup = pgut_new(pgBackup);
+	init_backup(backup);
+
+	i = 0;
+	options[i++].var = &backup_mode;
+	options[i++].var = &backup->tli;
+	options[i++].var = &start_lsn;
+	options[i++].var = &stop_lsn;
+	options[i++].var = &backup->start_time;
+	options[i++].var = &backup->end_time;
+	options[i++].var = &backup->recovery_xid;
+	options[i++].var = &backup->recovery_time;
+	options[i++].var = &backup->data_bytes;
+	options[i++].var = &backup->block_size;
+	options[i++].var = &backup->wal_block_size;
+	options[i++].var = &backup->checksum_version;
+	options[i++].var = &backup->stream;
+	options[i++].var = &status;
+	options[i++].var = &parent_backup;
+	Assert(i == lengthof(options) - 1);
+
 	pgut_readopt(path, options, ERROR);
 
 	if (backup_mode)
@@ -568,11 +606,11 @@ parse_backup_mode(const char *value)
 		v++;
 	len = strlen(v);
 
-	if (len > 0 && pg_strncasecmp("full", v, len) == 0)
+	if (len > 0 && pg_strncasecmp("full", v, strlen("full")) == 0)
 		return BACKUP_MODE_FULL;
-	else if (len > 0 && pg_strncasecmp("page", v, len) == 0)
+	else if (len > 0 && pg_strncasecmp("page", v, strlen("page")) == 0)
 		return BACKUP_MODE_DIFF_PAGE;
-	else if (len > 0 && pg_strncasecmp("ptrack", v, len) == 0)
+	else if (len > 0 && pg_strncasecmp("ptrack", v, strlen("ptrack")) == 0)
 		return BACKUP_MODE_DIFF_PTRACK;
 
 	/* Backup mode is invalid, so leave with an error */
@@ -616,7 +654,7 @@ pgBackupCompareIdDesc(const void *l, const void *r)
 void
 pgBackupGetPath(const pgBackup *backup, char *path, size_t len, const char *subdir)
 {
-	char	   *datetime;
+	char	*datetime;
 
 	datetime = base36enc(backup->start_time);
 	if (subdir)
@@ -626,4 +664,21 @@ pgBackupGetPath(const pgBackup *backup, char *path, size_t len, const char *subd
 	free(datetime);
 
 	make_native_path(path);
+}
+
+void
+init_backup(pgBackup *backup)
+{
+	backup->backup_mode = BACKUP_MODE_INVALID;
+	backup->status = BACKUP_STATUS_INVALID;
+	backup->tli = 0;
+	backup->start_lsn = 0;
+	backup->stop_lsn = 0;
+	backup->start_time = (time_t) 0;
+	backup->end_time = (time_t) 0;
+	backup->recovery_xid = 0;
+	backup->recovery_time = (time_t) 0;
+	backup->data_bytes = BYTES_INVALID;
+	backup->stream = false;
+	backup->parent_backup = 0;
 }

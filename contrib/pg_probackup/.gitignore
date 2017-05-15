@@ -28,7 +28,6 @@
 /env
 /tests/__pycache__/
 /tests/tmp_dirs/
-/tests/*pyc
 
 # Extra files
 /datapagemap.c
