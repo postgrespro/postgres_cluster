@@ -119,7 +119,7 @@ char *make_date_from_timestamp(TimestampTz ts, bool hires)
 	fsec_t fsec;
 	const char *tzn;
 
-	timestamp2tm(ts, &tz, &dt, &fsec, &tzn, NULL );
+	timestamp2tm(ts, &tz, &dt, &fsec, &tzn, NULL ); 
 	sprintf(str, "%04d-%02d-%02d %02d:%02d:%02d", dt.tm_year , dt.tm_mon,
 			dt.tm_mday, dt.tm_hour, dt.tm_min, dt.tm_sec);
 	if(!hires) str[16] = 0;
@@ -171,14 +171,14 @@ char *set_schema(const char *name, bool get_old)
 	bool free_name = false;
 
 	if(get_old)
-		current = _copy_string((char *)GetConfigOption("search_path", true, false));
+		current = _mcopy_string(NULL, (char *)GetConfigOption("search_path", true, false));
 	if(name)
 	{
 		schema_name = (char *)name;
 	}
 	else
 	{
-		schema_name = _copy_string((char *)GetConfigOption("schedule.schema", true, false));
+		schema_name = _mcopy_string(NULL, (char *)GetConfigOption("schedule.schema", true, false));	
 		free_name = true;
 	}
 	SetConfigOption("search_path", schema_name,  PGC_USERSET, PGC_S_SESSION);
@@ -264,7 +264,7 @@ char_array_t *readBasesToCheck(void)
 	{
 		appendStringInfo(&sql, "'%s'", names->data[i]);
 		if(i + 1  != names->n) appendStringInfo(&sql, ",");
-	}
+	} 
 	destroyCharArray(names);
 	appendStringInfo(&sql, ")");
 
@@ -304,7 +304,7 @@ void parent_scheduler_main(Datum arg)
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
 
 	init_worker_mem_ctx("Parent scheduler context");
-	elog(LOG, "Start PostgresPro scheduler.");
+	elog(LOG, "Start PostgresPro scheduler."); 
 
 	SetConfigOption("application_name", "pgp-s supervisor", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "Initialize");
@@ -358,7 +358,7 @@ void parent_scheduler_main(Datum arg)
 				destroyCharArray(names);
 			}
 		}
-		else
+		else 
 		{
 			for(i=0; i < pool->n; i++)
 			{
@@ -395,7 +395,7 @@ void parent_scheduler_main(Datum arg)
 		ResetLatch(MyLatch);
 	}
 	stopAllManagers(pool);
-	delete_worker_mem_ctx();
+	delete_worker_mem_ctx(NULL);
 
 	proc_exit(0);
 }
@@ -417,7 +417,7 @@ pg_scheduler_startup(void)
 	memcpy(worker.bgw_library_name, "pgpro_scheduler", 16);
 	memcpy(worker.bgw_name, "pgpro scheduler", 16);
 
-	RegisterBackgroundWorker(&worker);
+	RegisterBackgroundWorker(&worker); 
 }
 
 void _PG_init(void)
@@ -468,7 +468,7 @@ void _PG_init(void)
 		"schedule.transaction_state",
 		"State of scheduler executor transaction",
 		"If not under scheduler executor process the variable has no mean and has a value = 'undefined', possible values: progress, success, failure",
-		&scheduler_transaction_state ,
+		&scheduler_transaction_state , 
 		"undefined",
 		PGC_INTERNAL,
 		0,
@@ -483,7 +483,7 @@ void _PG_init(void)
 		&scheduler_max_workers,
 		2,
 		1,
-		100,
+		1000,
 		PGC_SUSET,
 		0,
 		NULL,
@@ -497,7 +497,7 @@ void _PG_init(void)
 		&scheduler_max_parallel_workers,
 		2,
 		1,
-		100,
+		1000,
 		PGC_SUSET,
 		0,
 		NULL,
@@ -542,14 +542,14 @@ cron_string_to_json_text(PG_FUNCTION_ARGS)
 	text *text_p;
 	int len;
 	char *error = NULL;
-
+	
 	if(PG_ARGISNULL(0))
-	{
+	{  
 		PG_RETURN_NULL();
 	}
 	source = PG_GETARG_CSTRING(0);
 	jsonText = parse_crontab_to_json_text(source);
-
+	
 	if(jsonText)
 	{
 		len = strlen(jsonText);

@@ -30,7 +30,8 @@ void START_SPI_SNAP(void);
 void STOP_SPI_SNAP(void);
 void ABORT_SPI_SNAP(void);
 
-char *_copy_string(char *str);
+char *_mcopy_string(MemoryContext ctx, char *str);
+char *my_copy_string(char *str);
 
 int select_oneintvalue_sql(const char *sql, int d);
 Datum select_onedatumvalue_sql(const char *sql, bool *is_null);
@@ -40,19 +41,19 @@ TimestampTz get_timestamp_from_spi(spi_response_t *r, int row_n, int pos, Timest
 int get_int_from_spi(spi_response_t *r, int row_n, int pos, int def);
 int64 get_int64_from_spi(spi_response_t *r, int row_n, int pos, int def);
 int64 get_interval_seconds_from_spi(spi_response_t *r, int row_n, int pos, long def);
-char **get_textarray_from_spi(spi_response_t *r, int row_n, int pos, int *N);
-int64 *get_int64array_from_spi(spi_response_t *r, int row_n, int pos, int *N);
+char **get_textarray_from_spi(MemoryContext ctx, spi_response_t *r, int row_n, int pos, int *N);
+int64 *get_int64array_from_spi(MemoryContext ctx, spi_response_t *r, int row_n, int pos, int *N);
 bool get_boolean_from_spi(spi_response_t *r, int row_n, int pos, bool def);
-char *get_text_from_spi(spi_response_t *r, int row_n, int pos);
+char *get_text_from_spi(MemoryContext ctx, spi_response_t *r, int row_n, int pos);
 Oid get_oid_from_spi(spi_response_t *r, int row_n, int pos, Oid def);
 
-spi_response_t *execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *values, char *nulls);
-spi_response_t *execute_spi(const char *sql);
-spi_response_t *execute_spi_params_prepared(const char *sql, int nparams, char **params);
+spi_response_t *execute_spi_sql_with_args(MemoryContext ctx, const char *sql, int n, Oid *argtypes, Datum *values, char *nulls);
+spi_response_t *execute_spi(MemoryContext ctx, const char *sql);
+spi_response_t *execute_spi_params_prepared(MemoryContext ctx, const char *sql, int nparams, char **params);
 
 
-spi_response_t *__error_spi_resp(int ret, char *error);
-spi_response_t *__copy_spi_data(int ret, int  n);
+spi_response_t *__error_spi_resp(MemoryContext ctx, int ret, char *error);
+spi_response_t *__copy_spi_data(MemoryContext ctx, int ret, int  n);
 void destroy_spi_data(spi_response_t *d);
 
 #endif

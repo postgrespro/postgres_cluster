@@ -9898,7 +9898,7 @@ done
 fi
 
 if test "$with_icu" = yes ; then
- { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open" >&5
 $as_echo_n "checking for library containing ucol_open... " >&6; }
 if ${ac_cv_search_ucol_open+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -9954,7 +9954,63 @@ if test "$ac_res" != no; then :
 
 else
 
- { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_57" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_58" >&5
+$as_echo_n "checking for library containing ucol_open_58... " >&6; }
+if ${ac_cv_search_ucol_open_58+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char ucol_open_58 ();
+int
+main ()
+{
+return ucol_open_58 ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' icui18n icuin; do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_search_ucol_open_58=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext
+  if ${ac_cv_search_ucol_open_58+:} false; then :
+  break
+fi
+done
+if ${ac_cv_search_ucol_open_58+:} false; then :
+
+else
+  ac_cv_search_ucol_open_58=no
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_ucol_open_58" >&5
+$as_echo "$ac_cv_search_ucol_open_58" >&6; }
+ac_res=$ac_cv_search_ucol_open_58
+if test "$ac_res" != no; then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+else
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_57" >&5
 $as_echo_n "checking for library containing ucol_open_57... " >&6; }
 if ${ac_cv_search_ucol_open_57+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10010,7 +10066,7 @@ if test "$ac_res" != no; then :
 
 else
 
- { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_56" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_56" >&5
 $as_echo_n "checking for library containing ucol_open_56... " >&6; }
 if ${ac_cv_search_ucol_open_56+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10066,7 +10122,7 @@ if test "$ac_res" != no; then :
 
 else
 
- { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_55" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_55" >&5
 $as_echo_n "checking for library containing ucol_open_55... " >&6; }
 if ${ac_cv_search_ucol_open_55+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10122,7 +10178,7 @@ if test "$ac_res" != no; then :
 
 else
 
- { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_54" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_54" >&5
 $as_echo_n "checking for library containing ucol_open_54... " >&6; }
 if ${ac_cv_search_ucol_open_54+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10178,7 +10234,7 @@ if test "$ac_res" != no; then :
 
 else
 
- { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_53" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_53" >&5
 $as_echo_n "checking for library containing ucol_open_53... " >&6; }
 if ${ac_cv_search_ucol_open_53+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10234,7 +10290,7 @@ if test "$ac_res" != no; then :
 
 else
 
- { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_52" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_52" >&5
 $as_echo_n "checking for library containing ucol_open_52... " >&6; }
 if ${ac_cv_search_ucol_open_52+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10290,7 +10346,63 @@ if test "$ac_res" != no; then :
 
 else
 
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_50" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_52_1" >&5
+$as_echo_n "checking for library containing ucol_open_52_1... " >&6; }
+if ${ac_cv_search_ucol_open_52_1+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char ucol_open_52_1 ();
+int
+main ()
+{
+return ucol_open_52_1 ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' icui18n icuin; do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_search_ucol_open_52_1=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext
+  if ${ac_cv_search_ucol_open_52_1+:} false; then :
+  break
+fi
+done
+if ${ac_cv_search_ucol_open_52_1+:} false; then :
+
+else
+  ac_cv_search_ucol_open_52_1=no
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_ucol_open_52_1" >&5
+$as_echo "$ac_cv_search_ucol_open_52_1" >&6; }
+ac_res=$ac_cv_search_ucol_open_52_1
+if test "$ac_res" != no; then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+else
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_50" >&5
 $as_echo_n "checking for library containing ucol_open_50... " >&6; }
 if ${ac_cv_search_ucol_open_50+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10346,7 +10458,7 @@ if test "$ac_res" != no; then :
 
 else
 
-   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_48" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_48" >&5
 $as_echo_n "checking for library containing ucol_open_48... " >&6; }
 if ${ac_cv_search_ucol_open_48+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10402,7 +10514,7 @@ if test "$ac_res" != no; then :
 
 else
 
-    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_46" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_46" >&5
 $as_echo_n "checking for library containing ucol_open_46... " >&6; }
 if ${ac_cv_search_ucol_open_46+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10458,7 +10570,7 @@ if test "$ac_res" != no; then :
 
 else
 
-      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_44" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_44" >&5
 $as_echo_n "checking for library containing ucol_open_44... " >&6; }
 if ${ac_cv_search_ucol_open_44+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10514,7 +10626,7 @@ if test "$ac_res" != no; then :
 
 else
 
-        { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_43" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_43" >&5
 $as_echo_n "checking for library containing ucol_open_43... " >&6; }
 if ${ac_cv_search_ucol_open_43+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10570,7 +10682,7 @@ if test "$ac_res" != no; then :
 
 else
 
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_4_2" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_4_2" >&5
 $as_echo_n "checking for library containing ucol_open_4_2... " >&6; }
 if ${ac_cv_search_ucol_open_4_2+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10626,7 +10738,7 @@ if test "$ac_res" != no; then :
 
 else
 
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_4_1" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_4_1" >&5
 $as_echo_n "checking for library containing ucol_open_4_1... " >&6; }
 if ${ac_cv_search_ucol_open_4_1+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10682,7 +10794,7 @@ if test "$ac_res" != no; then :
 
 else
 
-		 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_4_0" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_4_0" >&5
 $as_echo_n "checking for library containing ucol_open_4_0... " >&6; }
 if ${ac_cv_search_ucol_open_4_0+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10738,7 +10850,7 @@ if test "$ac_res" != no; then :
 
 else
 
-          { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_3_8" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_3_8" >&5
 $as_echo_n "checking for library containing ucol_open_3_8... " >&6; }
 if ${ac_cv_search_ucol_open_3_8+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10794,7 +10906,7 @@ if test "$ac_res" != no; then :
 
 else
 
-            { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_3_6" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_3_6" >&5
 $as_echo_n "checking for library containing ucol_open_3_6... " >&6; }
 if ${ac_cv_search_ucol_open_3_6+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10850,7 +10962,7 @@ if test "$ac_res" != no; then :
 
 else
 
-              { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_3_4" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing ucol_open_3_4" >&5
 $as_echo_n "checking for library containing ucol_open_3_4... " >&6; }
 if ${ac_cv_search_ucol_open_3_4+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -10959,7 +11071,13 @@ fi
 
 fi
 
- { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars in -licuuc" >&5
+
+fi
+
+
+fi
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11004,7 +11122,52 @@ _ACEOF
 
 else
 
- { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_57 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_58 in -licuuc" >&5
+$as_echo_n "checking for ucnv_fromUChars_58 in -licuuc... " >&6; }
+if ${ac_cv_lib_icuuc_ucnv_fromUChars_58+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-licuuc  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char ucnv_fromUChars_58 ();
+int
+main ()
+{
+return ucnv_fromUChars_58 ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_icuuc_ucnv_fromUChars_58=yes
+else
+  ac_cv_lib_icuuc_ucnv_fromUChars_58=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_icuuc_ucnv_fromUChars_58" >&5
+$as_echo "$ac_cv_lib_icuuc_ucnv_fromUChars_58" >&6; }
+if test "x$ac_cv_lib_icuuc_ucnv_fromUChars_58" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_LIBICUUC 1
+_ACEOF
+
+  LIBS="-licuuc $LIBS"
+
+else
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_57 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_57 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_57+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11049,7 +11212,7 @@ _ACEOF
 
 else
 
- { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_56 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_56 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_56 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_56+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11094,7 +11257,7 @@ _ACEOF
 
 else
 
- { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_55 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_55 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_55 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_55+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11139,7 +11302,7 @@ _ACEOF
 
 else
 
- { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_54 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_54 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_54 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_54+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11184,7 +11347,7 @@ _ACEOF
 
 else
 
- { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_53 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_53 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_53 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_53+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11229,7 +11392,7 @@ _ACEOF
 
 else
 
- { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_52 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_52 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_52 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_52+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11274,7 +11437,52 @@ _ACEOF
 
 else
 
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_50 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_52_1 in -licuuc" >&5
+$as_echo_n "checking for ucnv_fromUChars_52_1 in -licuuc... " >&6; }
+if ${ac_cv_lib_icuuc_ucnv_fromUChars_52_1+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-licuuc  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char ucnv_fromUChars_52_1 ();
+int
+main ()
+{
+return ucnv_fromUChars_52_1 ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_icuuc_ucnv_fromUChars_52_1=yes
+else
+  ac_cv_lib_icuuc_ucnv_fromUChars_52_1=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_icuuc_ucnv_fromUChars_52_1" >&5
+$as_echo "$ac_cv_lib_icuuc_ucnv_fromUChars_52_1" >&6; }
+if test "x$ac_cv_lib_icuuc_ucnv_fromUChars_52_1" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_LIBICUUC 1
+_ACEOF
+
+  LIBS="-licuuc $LIBS"
+
+else
+
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_50 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_50 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_50+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11319,7 +11527,7 @@ _ACEOF
 
 else
 
-   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_48 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_48 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_48 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_48+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11364,7 +11572,7 @@ _ACEOF
 
 else
 
-    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_46 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_46 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_46 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_46+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11409,7 +11617,7 @@ _ACEOF
 
 else
 
-      { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_44 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_44 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_44 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_44+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11454,7 +11662,7 @@ _ACEOF
 
 else
 
-        { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_43 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_43 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_43 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_43+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11499,7 +11707,7 @@ _ACEOF
 
 else
 
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_4_2 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_4_2 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_4_2 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_4_2+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11544,7 +11752,7 @@ _ACEOF
 
 else
 
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_4_1 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_4_1 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_4_1 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_4_1+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11589,7 +11797,7 @@ _ACEOF
 
 else
 
-		{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_4_0 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_4_0 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_4_0 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_4_0+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11634,7 +11842,7 @@ _ACEOF
 
 else
 
-          { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_3_8 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_3_8 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_3_8 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_3_8+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11679,7 +11887,7 @@ _ACEOF
 
 else
 
-            { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_3_6 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_3_6 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_3_6 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_3_6+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11724,7 +11932,7 @@ _ACEOF
 
 else
 
-              { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_3_4 in -licuuc" >&5
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for ucnv_fromUChars_3_4 in -licuuc" >&5
 $as_echo_n "checking for ucnv_fromUChars_3_4 in -licuuc... " >&6; }
 if ${ac_cv_lib_icuuc_ucnv_fromUChars_3_4+:} false; then :
   $as_echo_n "(cached) " >&6
@@ -11769,6 +11977,12 @@ _ACEOF
 
 else
   as_fn_error $? "library 'icuuc' is required for ICU" "$LINENO" 5
+fi
+
+
+fi
+
+
 fi
 
 

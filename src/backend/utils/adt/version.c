@@ -16,6 +16,7 @@
 
 #include "utils/builtins.h"
 
+#include "commit_id.h"
 
 Datum
 pgsql_version(PG_FUNCTION_ARGS)
@@ -33,4 +34,10 @@ Datum
 pgpro_edition(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_TEXT_P(cstring_to_text(PGPRO_EDITION));
+}	
+
+Datum
+pgpro_build(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_TEXT_P(cstring_to_text(COMMIT_ID));
 }
