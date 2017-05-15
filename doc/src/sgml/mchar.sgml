@@ -13,8 +13,8 @@
     </para>
     <para>
     It implements types MCHAR and MVARCHAR, which are bug-to-bug
-    compatible with MSSQL CHAR and VARCHAR respectively. Additionaly, 
-    these types use libicu for comparation and case conversion, so their
+    compatible with MSSQL CHAR and VARCHAR respectively. Additionally, 
+    these types use libicu for comparison and case conversion, so their
     behavior is identical across different operating systems.
     </para>
     <para>
@@ -28,7 +28,7 @@
     <itemizedlist>
     <listitem>
     <para>
-    Case insensitive comparation
+    Case insensitive comparison
     </para>
     </listitem>
     <listitem>

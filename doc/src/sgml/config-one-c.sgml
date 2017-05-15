@@ -30,7 +30,7 @@ temp_buffers = 32MB
         <programlisting>
 max_locks_per_transaction = 256
 </programlisting>
-        <para>Typically, <productname>1C</productname> solutions use a lot of temporary tables. Every backend process usually contains multiple temporary tables. When closing a connection, <productname>&productname;</productname> tries to drop all temporary tables in a single transactio, so this transaction may use a lot of locks. If the number of locks exceeds the <varname>max_locks_per_transaction</varname> value, the transaction will fail, leaving multiple orphaned temporary tables.
+        <para>Typically, <productname>1C</productname> solutions use a lot of temporary tables. Every backend process usually contains multiple temporary tables. When closing a connection, <productname>&productname;</productname> tries to drop all temporary tables in a single transaction, so this transaction may use a lot of locks. If the number of locks exceeds the <varname>max_locks_per_transaction</varname> value, the transaction will fail, leaving multiple orphaned temporary tables.
         </para>
       </listitem>
       </itemizedlist>

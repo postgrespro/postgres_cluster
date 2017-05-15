@@ -687,7 +687,7 @@ pg_probackup show
 
       <listitem>
        <para>
-         Time &mdash; time it took to peform the backup.
+         Time &mdash; time it took to perform the backup.
        </para>
       </listitem>
 
