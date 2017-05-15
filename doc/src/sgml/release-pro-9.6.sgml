@@ -47,10 +47,6 @@
         <para>Updated PTRACK patch to version 1.2.</para>
       </listitem>
       <listitem>
-        <para>Updated pg_probackup to version 1.1.11. Command line interface
-          has been changed.</para>
-      </listitem>
-      <listitem>
         <para>Provided performance improvements for queries typical for 1C solutions.</para>
       </listitem>
     </itemizedlist>
