@@ -4442,9 +4442,9 @@ l2:
 		HeapTupleClearHotUpdated(&oldtup);
 		/* ... and store info about transaction updating this tuple */
 		Assert(TransactionIdIsValid(xmax_lock_old_tuple));
-		HeapTupleSetXmax(&oldtup, xmax_lock_old_tuple);
 		oldtup.t_data->t_infomask |= infomask_lock_old_tuple;
 		oldtup.t_data->t_infomask2 |= infomask2_lock_old_tuple;
+		HeapTupleSetXmax(&oldtup, xmax_lock_old_tuple);
 		HeapTupleHeaderSetCmax(oldtup.t_data, cid, iscombo);
 
 		/* temporarily make it look not-updated, but locked */

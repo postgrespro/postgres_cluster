@@ -46,6 +46,7 @@
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "commands/dbcommands.h"
+#include "commands/extension.h"
 #include "postmaster/autovacuum.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
@@ -61,6 +62,7 @@
 #include "access/htup_details.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
+#include "catalog/pg_constraint_fn.h"
 #include "pglogical_output/hooks.h"
 #include "parser/analyze.h"
 #include "parser/parse_relation.h"
@@ -820,7 +822,7 @@ MtmXactCallback(XactEvent event, void *arg)
 		MtmEndTransaction(&MtmTx, false);
 		break;
 	  case XACT_EVENT_COMMIT_COMMAND:
-		if (!MtmTx.isTransactionBlock) { 
+		if (!MtmTx.isTransactionBlock && !IsSubTransaction()) { 
 			MtmTwoPhaseCommit(&MtmTx);
 		}
 		break;
@@ -1253,6 +1255,15 @@ Mtm2PCVoting(MtmCurrentTrans* x, MtmTransState* ts)
 	MTM_LOG3("%d: Result of vote: %d", MyProcPid, MtmTxnStatusMnem[ts->status]);
 }
 		
+static void MtmStopTransaction(void)
+{
+	if (MtmInsideTransaction) { 
+		Assert(Mtm->nRunningTransactions > 0);
+		Mtm->nRunningTransactions -= 1;
+		MtmInsideTransaction = false;
+	}
+}
+	
 static void
 MtmPostPrepareTransaction(MtmCurrentTrans* x)
 { 
@@ -1291,13 +1302,14 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		} else { 
 			ts->votingCompleted = true;
 		}
-		MtmUnlock();
 		if (x->isTwoPhase) { 
 			if (x->status == TRANSACTION_STATUS_ABORTED) { 
 				MTM_ELOG(WARNING, "Prepare of user's 2PC transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
-			}
+			}			
+			MtmStopTransaction();
 			MtmResetTransaction();
 		}
+		MtmUnlock();
 	}
 	if (Mtm->inject2PCError == 3) { 
 		Mtm->inject2PCError = 0;
@@ -1357,10 +1369,14 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_FIND, NULL);
 		if (tm == NULL) { 
 			MTM_ELOG(WARNING, "Global transaction ID '%s' is not found", x->gid);
-		} else { 
-			Assert(tm->state != NULL);
+		} else {
+			MtmTransState* ts = tm->state;
+			Assert(ts != NULL);
 			MTM_LOG1("Abort prepared transaction %s (%llu)", x->gid, (long64)x->xid);
-			MtmAbortTransaction(tm->state);
+			MtmAbortTransaction(ts);
+			if (ts->isTwoPhase) { 
+				MtmDeactivateTransaction(ts);
+			}
 		}
 		MtmUnlock();
 		x->status = TRANSACTION_STATUS_ABORTED;
@@ -1381,7 +1397,7 @@ MtmLogAbortLogicalMessage(int nodeId, char const* gid)
 	XLogFlush(lsn);
 	MTM_LOG1("MtmLogAbortLogicalMessage node=%d transaction=%s lsn=%llx", nodeId, gid, lsn);
 }
-
+	
 
 static void 
 MtmEndTransaction(MtmCurrentTrans* x, bool commit)
@@ -1392,11 +1408,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 
 	MtmLock(LW_EXCLUSIVE);
 
-	if (MtmInsideTransaction) { 
-		Assert(Mtm->nRunningTransactions > 0);
-		Mtm->nRunningTransactions -= 1;
-		MtmInsideTransaction = false;
-	}
+	MtmStopTransaction();
 
 	if (x->isDistributed && (x->isPrepared || x->isReplicated) && !x->isTwoPhase) {
 		MtmTransState* ts = NULL;
@@ -2132,7 +2144,9 @@ static void
 MtmLockCluster(void)
 {
 	timestamp_t delay = MIN_WAIT_TIMEOUT;
-	Assert(!MtmClusterLocked);
+	if (MtmClusterLocked) { 
+		MtmUnlockCluster();
+	}
 	MtmLock(LW_EXCLUSIVE);
 	if (BIT_CHECK(Mtm->originLockNodeMask, MtmNodeId-1)) {
 		elog(ERROR, "There is already pending exclusive lock");
@@ -4865,7 +4879,8 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	bool skipCommand = false;
 	bool executed = false;
 
-	MTM_LOG3("%d: Process utility statement %s", MyProcPid, queryString);
+	MTM_LOG2("%d: Process utility statement tag=%d, context=%d, issubtrans=%d, creating_extension=%d, query=%s", 
+			 MyProcPid, nodeTag(parsetree), context, IsSubTransaction(), creating_extension, queryString);
 	switch (nodeTag(parsetree))
 	{
 		case T_TransactionStmt:
@@ -5118,18 +5133,14 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			break;
 	}
 
-	/* XXX: dirty. Clear on new tx */
-	if (!skipCommand && (context != PROCESS_UTILITY_SUBCOMMAND || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
-		MtmUtilityProcessedInXid = InvalidTransactionId;
-
-	if (!skipCommand && !MtmTx.isReplicated && (MtmUtilityProcessedInXid == InvalidTransactionId)) {
+	if (!skipCommand && !MtmTx.isReplicated && (context == PROCESS_UTILITY_TOPLEVEL || MtmUtilityProcessedInXid != GetCurrentTransactionId())) 
+	{
 		MtmUtilityProcessedInXid = GetCurrentTransactionId();
-
-		if (context == PROCESS_UTILITY_TOPLEVEL)
+		if (context == PROCESS_UTILITY_TOPLEVEL) { 
 			MtmProcessDDLCommand(queryString, true);
-		else
+		} else { 
 			MtmProcessDDLCommand(ActivePortal->sourceText, true);
-
+		}
 		executed = true;
 	}
 
@@ -5158,6 +5169,26 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	if (executed)
 	{
 		MtmFinishDDLCommand();
+	}
+    if (nodeTag(parsetree) == T_CreateStmt)
+	{
+		CreateStmt* create = (CreateStmt*)parsetree;
+		Oid relid = RangeVarGetRelid(create->relation, NoLock, true);
+		if (relid != InvalidOid) { 
+			Oid constraint_oid;
+			Bitmapset* pk = get_primary_key_attnos(relid, true, &constraint_oid);
+			if (pk == NULL && !MtmVolksWagenMode) {
+				elog(WARNING, 
+					 MtmIgnoreTablesWithoutPk
+					 ? "Table %s.%s without primary will not be replicated"
+					 : "Updates and deletes of table %s.%s without primary will not be replicated",
+					 create->relation->schemaname ? create->relation->schemaname : "public",
+					 create->relation->relname);
+			}
+		}
+	}
+	if (context == PROCESS_UTILITY_TOPLEVEL) { 
+		MtmUtilityProcessedInXid = InvalidTransactionId;
 	}
 }
 

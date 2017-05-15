@@ -2564,7 +2564,7 @@ static void
 WriteMZeroPageXlogRec(int64 pageno, uint8 info)
 {
 	XLogBeginInsert();
-	XLogRegisterData((char *) (&pageno), sizeof(int));
+	XLogRegisterData((char *) (&pageno), sizeof(int64));
 	(void) XLogInsert(RM_MULTIXACT_ID, info);
 }
 

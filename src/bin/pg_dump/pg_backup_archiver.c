@@ -314,6 +314,7 @@ RestoreArchive(Archive *AHX)
 	bool		parallel_mode;
 	TocEntry   *te;
 	OutputContext sav;
+	bool gc_was_enabled = false;
 
 	AH->stage = STAGE_INITIALIZING;
 
@@ -453,6 +454,16 @@ RestoreArchive(Archive *AHX)
 			StartTransaction(AHX);
 		else
 			ahprintf(AH, "BEGIN;\n\n");
+	}
+
+	/* 
+	 * Stop CFS GC
+	 */
+	if (AH->connection)
+	{
+		PGresult *res = ExecuteSqlQuery((Archive*)AH, "select cfs_enable_gc(false)", PGRES_TUPLES_OK);
+		gc_was_enabled = *PQgetvalue(res, 0, 0);
+		PQclear(res);
 	}
 
 	/*
@@ -691,6 +702,12 @@ RestoreArchive(Archive *AHX)
 			CommitTransaction(AHX);
 		else
 			ahprintf(AH, "COMMIT;\n\n");
+	}
+
+	if (gc_was_enabled) 
+	{
+		PGresult *res = ExecuteSqlQuery((Archive*)AH, "select cfs_enable_gc(true)", PGRES_TUPLES_OK);
+		PQclear(res);
 	}
 
 	if (AH->public.verbose)
