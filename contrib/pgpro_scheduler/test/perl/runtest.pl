@@ -16,7 +16,7 @@ GetOptions ( "--host=s" => \$host,
 
 print "Prepare test enviroment\n";
 my $dbh = DBI->connect("dbi:Pg:dbname=$dbname; host=$host", "$username", "$password",
-    {PrintError => 0});
+    {PrintError => 1});
 if($dbh->err != 0){
     print $DBI::errstr . "\n";
     exit(-1);

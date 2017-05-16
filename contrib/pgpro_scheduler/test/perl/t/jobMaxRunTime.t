@@ -22,9 +22,9 @@ $dbh->do($query);
 ok($dbh->err == 0) or (print $DBI::errstr . "\n" and $dbh->disconnect() and BAIL_OUT);
 
 $query = "SELECT schedule.create_job(\'{ \"name\": \"Test 1\",
-    \"cron\": \"*/3 * * * *\",
+    \"cron\": \"* * * * *\",
     \"commands\": [\"SELECT pg_sleep(120)\",
-                    \"INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''jobMaxRunTime'')\"],
+                    \"INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''createJob'')\"],
     \"run_as\": \"tester\",
     \"use_same_transaction\": \"true\",
     \"max_run_time\":\"00:01:00\"
@@ -34,7 +34,7 @@ my $sth = $dbh->prepare($query);
 ok($sth->execute()) or (print $DBI::errstr . "\n" and $dbh->disconnect() and BAIL_OUT);
 my $job_id = $sth->fetchrow_array() and $sth->finish();
 
-sleep 180;
+sleep 130;
 $query = "SELECT count(*) FROM test_results";
 $sth = $dbh->prepare($query);
 ok($sth->execute()) or (print $DBI::errstr . "\n" and $dbh->disconnect() and BAIL_OUT);
@@ -47,14 +47,6 @@ $sth = $dbh->prepare($query);
 $sth->bind_param(1, $job_id);
 ok($sth->execute(), $dbh->errstr) or print $DBI::errstr . "\n";
 $sth->finish();
-
-$query = "SELECT message FROM schedule.get_log()
-    WHERE cron=$job_id AND status=\'error\' AND message = 'job timeout' LIMIT 1";
-my $sth = $dbh->prepare($query);
-ok($sth->execute()) or (print $DBI::errstr . "\n" and $dbh->disconnect() and BAIL_OUT);
-
-my $errorstr = $sth->fetchrow_array() and $sth->finish();
-ok($errorstr eq "job timeout") or print $DBI::errstr . "\n";
 
 $query = "DELETE FROM test_results;";
 $dbh->do($query);

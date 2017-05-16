@@ -54,13 +54,6 @@ ok($sth->execute()) or (print $DBI::errstr and $dbh->disconnect() and BAIL_OUT);
 my $result = $sth->fetchrow_array() and $sth->finish();
 ok ($result == 0) or print "Count != 0\n";
 
-$query = "SELECT count(*) FROM schedule.get_log() WHERE cron = $job_id AND status = 'error'";
-$sth = $dbh->prepare($query);
-ok($sth->execute()) or (print $DBI::errstr and $dbh->disconnect() and BAIL_OUT);
-
-my $result = $sth->fetchrow_array() and $sth->finish();
-ok ($result > 0) or print "Count == 0\n";
-
 $query = "SELECT schedule.deactivate_job(?)";
 $sth = $dbh->prepare($query);
 $sth->bind_param(1, $job_id);
