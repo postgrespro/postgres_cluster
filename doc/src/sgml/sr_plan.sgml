@@ -20,7 +20,7 @@
     <para>
       Typically, DBA would play with queries interactively, and save
       their plans and then enable use of saved plans for the queries,
-      where predictable responce time is essential.
+      where predictable response time is essential.
     </para>
     <para>
       Then application which uses these queries would use saved plans.
@@ -136,7 +136,7 @@ SET
       <literal>_p()</> function.
     </para>
     <programlisting>
-=&gt;update sr_plans set enable = true where quesry=
+=&gt;update sr_plans set enable = true where query=
   'select a,b from test_table where a = _p(1)';
 UPDATE 1
 -- These queries would use saved plan

@@ -588,7 +588,7 @@ CREATE TABLE js (
         Unfortunately, jsonb have no statistics yet. That's why JsQuery
         optimizer has to do imperative decision while selecting
         conditions to be evaluated using index. This decision is made by
-        assumtion that some condition types are less selective than
+        assumption that some condition types are less selective than
         others. Optimizer divides conditions into following selectivity
         class (listed by descending of selectivity).
       </para>
