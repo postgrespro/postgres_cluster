@@ -54,7 +54,7 @@ typedef struct SMgrRelationData
 	 */
 	BlockNumber smgr_targblock; /* current insertion target block */
 	BlockNumber smgr_fsm_nblocks;		/* last known size of fsm fork */
-	BlockNumber smgr_vm_nblocks;	/* last known size of vm fork */
+	BlockNumber smgr_vm_nblocks;		/* last known size of vm fork */
 	BlockNumber smgr_ptrack_nblocks;	/* last known size of ptrack fork */
 
 	/*
