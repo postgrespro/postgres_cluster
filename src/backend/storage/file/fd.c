@@ -981,6 +981,8 @@ LruDelete(File file)
 
 	vfdP = &VfdCache[file];
 
+	/* delete the vfd record from the LRU ring */
+	Delete(file);
 
 	if (vfdP->fileFlags & PG_COMPRESSION)
 	{
@@ -1011,17 +1013,15 @@ LruDelete(File file)
 					vfdP->fileName);
 		}
 
-		/*
-		* Close the file.  We aren't expecting this to fail; if it does, better
-		* to leak the FD than to mess up our internal state.
-		*/
-		if (close(vfdP->fd))
-			elog(LOG, "could not close file \"%s\": %m", vfdP->fileName);
-		vfdP->fd = VFD_CLOSED;
 		--nfile;
 	}
-	/* delete the vfd record from the LRU ring */
-	Delete(file);
+	/*
+	* Close the file.  We aren't expecting this to fail; if it does, better
+	* to leak the FD than to mess up our internal state.
+	*/
+	if (close(vfdP->fd))
+		elog(LOG, "could not close file \"%s\": %m", vfdP->fileName);
+	vfdP->fd = VFD_CLOSED;
 }
 
 static void
@@ -1072,7 +1072,7 @@ LruInsert(File file)
 								 vfdP->fileMode);
 		if (vfdP->fd < 0)
 		{
-			DO_DB(elog(LOG, "re-open failed: %m"));
+			DO_DB(elog(LOG, "RE-OPEN FAILED: %m"));
 			return -1;
 		}
 		else
@@ -1107,32 +1107,33 @@ LruInsert(File file)
 		else
 		{
 
-		/*
-		 * Seek to the right position.  We need no special case for seekPos
-		 * equal to FileUnknownPos, as lseek() will certainly reject that
-		 * (thus completing the logic noted in LruDelete() that we will fail
-		 * to re-open a file if we couldn't get its seek position before
-		 * closing).
-		 */
-		if (vfdP->seekPos != (off_t) 0)
-		{
-			if (lseek(vfdP->fd, vfdP->seekPos, SEEK_SET) < 0)
+			/*
+			* Seek to the right position.  We need no special case for seekPos
+			* equal to FileUnknownPos, as lseek() will certainly reject that
+			* (thus completing the logic noted in LruDelete() that we will fail
+			* to re-open a file if we couldn't get its seek position before
+			* closing).
+			*/
+			if (vfdP->seekPos != (off_t) 0)
 			{
-				/*
-				 * If we fail to restore the seek position, treat it like an
-				 * open() failure.
-				 */
-				int			save_errno = errno;
+				if (lseek(vfdP->fd, vfdP->seekPos, SEEK_SET) < 0)
+				{
+					/*
+					* If we fail to restore the seek position, treat it like an
+					* open() failure.
+					*/
+					int			save_errno = errno;
 
-				elog(LOG, "could not seek file \"%s\" after re-opening: %m",
-					 vfdP->fileName);
-				(void) close(vfdP->fd);
-				vfdP->fd = VFD_CLOSED;
-				--nfile;
-				errno = save_errno;
-				return -1;
+					elog(LOG, "could not seek file \"%s\" after re-opening: %m",
+						vfdP->fileName);
+					(void) close(vfdP->fd);
+					vfdP->fd = VFD_CLOSED;
+					--nfile;
+					errno = save_errno;
+					return -1;
+				}
 			}
-		}
+			nfile += 1;
 		}
 	}
 
