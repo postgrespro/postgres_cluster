@@ -30,13 +30,6 @@ typedef char bool;
 
 #define INFINITE_STR		"INFINITE"
 
-typedef enum YesNo
-{
-	DEFAULT,
-	NO,
-	YES
-} YesNo;
-
 typedef enum pgut_optsrc
 {
 	SOURCE_DEFAULT,
@@ -58,8 +51,6 @@ typedef enum pgut_optsrc
  *	U: 64bit unsigned integer
  *	s: string
  *  t: time_t
- *	y: YesNo (YES)
- *	Y: YesNo (NO)
  */
 typedef struct pgut_option
 {
@@ -94,43 +85,29 @@ extern const char  *username;
 extern char		   *password;
 extern bool			verbose;
 extern bool			quiet;
+extern bool			prompt_password;
 
-#ifndef PGUT_NO_PROMPT
-extern YesNo	prompt_password;
-#endif
-
-extern PGconn	   *connection;
 extern bool			interrupted;
 
-extern void help(bool details);
 extern int pgut_getopt(int argc, char **argv, pgut_option options[]);
 extern void pgut_readopt(const char *path, pgut_option options[], int elevel);
+extern void pgut_getopt_env(pgut_option options[]);
 extern void pgut_atexit_push(pgut_atexit_callback callback, void *userdata);
 extern void pgut_atexit_pop(pgut_atexit_callback callback, void *userdata);
 
 /*
  * Database connections
  */
-extern PGconn *pgut_connect(int elevel);
+extern PGconn *pgut_connect(const char *dbname);
 extern void pgut_disconnect(PGconn *conn);
-extern PGresult *pgut_execute(PGconn* conn, const char *query, int nParams, const char **params, int elevel);
-extern void pgut_command(PGconn* conn, const char *query, int nParams, const char **params, int elevel);
+extern PGresult *pgut_execute(PGconn* conn, const char *query, int nParams, const char **params);
 extern bool pgut_send(PGconn* conn, const char *query, int nParams, const char **params, int elevel);
 extern int pgut_wait(int num, PGconn *connections[], struct timeval *timeout);
-
-extern PGconn *reconnect_elevel(int elevel);
-extern void reconnect(void);
-extern void disconnect(void);
 
 extern const char *pgut_get_host(void);
 extern const char *pgut_get_port(void);
 extern void pgut_set_host(const char *new_host);
 extern void pgut_set_port(const char *new_port);
-
-
-extern PGresult *execute_elevel(const char *query, int nParams, const char **params, int elevel);
-extern PGresult *execute(const char *query, int nParams, const char **params);
-extern void command(const char *query, int nParams, const char **params);
 
 /*
  * memory allocators
@@ -152,6 +129,7 @@ extern FILE *pgut_fopen(const char *path, const char *mode, bool missing_ok);
 /*
  * elog
  */
+#define VERBOSE		(-5)
 #define LOG			(-4)
 #define INFO		(-3)
 #define NOTICE		(-2)
