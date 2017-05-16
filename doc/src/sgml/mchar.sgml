@@ -15,7 +15,7 @@
     It implements types MCHAR and MVARCHAR, which are bug-to-bug
     compatible with MSSQL CHAR and VARCHAR respectively. Additionaly, 
     these types use libicu for comparation and case conversion, so their
-    behavior is identical across different operating system.
+    behavior is identical across different operating systems.
     </para>
     <para>
     &productname; also includes <xref linkend="citext"> extension which
