@@ -13,7 +13,8 @@
     k-NN algorithm, <filename>aqo</filename> improves cardinality estimation, which can optimize execution plans and, consequently, speed up query execution.
   </para>
   <para>The <filename>aqo</filename> module can collect statistics on all the executed
-    queries and classify it according to the query type. If the
+    queries, excluding the queries that access system relations. 
+    The collected statistics is classified by query type. If the
     queries differ in their constants only, they belong to the same
     type. For each type, <filename>aqo</filename> stores the cardinality quality, planning
     time, execution time, and execution statistics for machine learning. Based on this data, <filename>aqo</filename> builds a new query plan and uses it for the next query of the same type.
