@@ -407,7 +407,7 @@ CREATE EXTENSION jsquery;
     </para>
     <para>
       Type checking operators and &quot;every&quot; placeholders are
-      useful for document schema validation. JsQuery matchig operator
+      useful for document schema validation. JsQuery matching operator
       <literal>@@</literal> is immutable and can be used in CHECK
       constraint. See following example.
     </para>
