@@ -90,8 +90,8 @@ DROP EXTENSION aqo;
         <listitem>
           <para>
           <literal>controlled</literal> &mdash; this mode
-        uses the default planner for all new queries, but continues collecting
-        statistics for already known query types, if any.
+        uses the default planner for all new queries, but continues using
+        the previously specified planning settings for already known query types, if any.
           </para>
         </listitem>
         <listitem>
@@ -111,7 +111,7 @@ SET aqo.mode = '<replaceable>mode</>';
 </programlisting>
 where <replaceable>mode</> is the name of the optimization mode to use.
 </para>
-          <important><para>The intelligent mode of <filename>aqo</filename>
+          <important><para>The <literal>intelligent</literal> mode of <filename>aqo</filename>
           may not work well if the queries in your workload are of multiple 
           different types. In this case, you can try resetting the optimization mode to <literal>controlled</literal>.</para>
         </important>
@@ -255,7 +255,8 @@ UPDATE aqo_queries SET learn_aqo=false
 </programlisting>
 
     <para>
-      If your data or query distribution is rapidly changing, obsolete statistics may affect <filename>aqo</filename> performance. After a while, <filename>aqo</filename> will learn the new statistics, but it may take longer than expected. To speed up learning, reset the
+      If your data or query distribution is rapidly changing, learning new statistics will take longer than usual. 
+      In this case, obsolete statistics may affect performance. To speed up <filename>aqo</filename> learning, reset the
       statistics. To remove all the collected machine learning
       statistics, run the following command:
     </para>
