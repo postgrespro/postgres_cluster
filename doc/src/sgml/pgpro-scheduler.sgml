@@ -131,7 +131,7 @@ Make sure to create the <filename>pgpro_scheduler</filename> extension for each 
       <programlisting>
 <varname>schedule.max_parallel_workers</varname> = 3
 </programlisting>
-<para>By default, two backgound workers for one-time jobs are available. These workers are not included into the <varname>schedule.max_workers</> number. Thus, one-time jobs can run in parallel with the scheduled jobs even if all the <varname>schedule.max_workers</> workers are busy.</para>
+<para>By default, two background workers for one-time jobs are available. These workers are not included into the <varname>schedule.max_workers</> number. Thus, one-time jobs can run in parallel with the scheduled jobs even if all the <varname>schedule.max_workers</> workers are busy.</para>
       </listitem>
       <listitem>
         <para>

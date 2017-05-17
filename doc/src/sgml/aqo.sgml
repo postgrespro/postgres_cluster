@@ -137,7 +137,7 @@ where <replaceable>mode</> is the name of the optimization mode to use.
         </note>
       <para>
         Since the <literal>intelligent</literal> mode tries to learn separately for
-        different query types, <filename>aqo</filename> may fail to provide peformance improvements if the types of the queries in the workload are constantly changing. For such dynamic workloads, reset the <filename>aqo</filename> extension to
+        different query types, <filename>aqo</filename> may fail to provide performance improvements if the types of the queries in the workload are constantly changing. For such dynamic workloads, reset the <filename>aqo</filename> extension to
         the <literal>controlled</literal> mode, or try using the <literal>forced</literal> mode.
       </para>
       <para>

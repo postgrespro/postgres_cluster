@@ -107,7 +107,7 @@
         use of <xref linkend="pgupgrade">, is required for those
           wishing to migrate data from any previous major release.</para>
 
-    <para>Dump/restore is neccessary when migrating from <productname>PostgreSQL</productname>
+    <para>Dump/restore is necessary when migrating from <productname>PostgreSQL</productname>
       or <productname>Postgres Pro Standard</productname> edition.</para>
 
     <para>For upgrades from previous releases of <productname>Postgres Pro Standard</productname> or
@@ -193,7 +193,7 @@
         use of <xref linkend="pgupgrade">, is required for those
           wishing to migrate data from any previous major release.</para>
 
-    <para>Dump/restore is neccessary when migrating from <productname>PostgreSQL</productname>
+    <para>Dump/restore is necessary when migrating from <productname>PostgreSQL</productname>
       or <productname>Postgres Pro Standard</productname> edition.</para>
 
     <para>For upgrades from previous releases of <productname>Postgres Pro Standard</productname> or from
