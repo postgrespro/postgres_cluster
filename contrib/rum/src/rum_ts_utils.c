@@ -26,6 +26,11 @@
 
 #include <math.h>
 
+/* Use TS_EXEC_PHRASE_AS_AND when TS_EXEC_PHRASE_NO_POS is not defined */
+#ifndef TS_EXEC_PHRASE_NO_POS
+#define TS_EXEC_PHRASE_NO_POS TS_EXEC_PHRASE_AS_AND
+#endif
+
 PG_FUNCTION_INFO_V1(rum_extract_tsvector);
 PG_FUNCTION_INFO_V1(rum_extract_tsvector_hash);
 PG_FUNCTION_INFO_V1(rum_extract_tsquery);
@@ -53,11 +58,11 @@ typedef Datum (*TSVectorEntryBuilder)(TSVector vector, WordEntry *we);
 typedef Datum (*TSQueryEntryBuilder)(TSQuery query, QueryOperand *operand);
 
 static Datum *rum_extract_tsvector_internal(TSVector vector, int32 *nentries,
-							  				Datum **addInfo,
+											Datum **addInfo,
 											bool **addInfoIsNull,
-							  				TSVectorEntryBuilder build_tsvector_entry);
+											TSVectorEntryBuilder build_tsvector_entry);
 static Datum *rum_extract_tsquery_internal(TSQuery query, int32 *nentries,
-							 			   bool **ptr_partialmatch,
+										   bool **ptr_partialmatch,
 										   Pointer **extra_data,
 										   int32 *searchMode,
 										   TSQueryEntryBuilder build_tsquery_entry);
@@ -177,7 +182,7 @@ rum_tsquery_pre_consistent(PG_FUNCTION_ARGS)
 
 		res = TS_execute(GETQUERY(query),
 						 &gcv,
-						 TS_EXEC_PHRASE_AS_AND,
+						 TS_EXEC_PHRASE_NO_POS,
 						 pre_checkcondition_rum);
 	}
 
@@ -326,7 +331,7 @@ rum_tsquery_timestamp_consistent(PG_FUNCTION_ARGS)
 		gcv.recheckPhrase = true;
 
 		res = TS_execute(GETQUERY(query), &gcv,
-						 TS_EXEC_CALC_NOT | TS_EXEC_PHRASE_AS_AND,
+						 TS_EXEC_CALC_NOT | TS_EXEC_PHRASE_NO_POS,
 						 checkcondition_rum);
 	}
 
@@ -539,8 +544,14 @@ rum_extract_tsvector_internal(TSVector	vector,
 			if (we->haspos)
 			{
 				posVec = _POSVECPTR(vector, we);
+
+				/*
+				 * In some cases compressed positions may take more memory than
+				 * uncompressed positions. So allocate memory with a margin.
+				 */
 				posDataSize = VARHDRSZ + 2 * posVec->npos * sizeof(WordEntryPos);
 				posData = (bytea *) palloc(posDataSize);
+
 				posDataSize = compress_pos(posData->vl_dat, posVec->pos, posVec->npos) + VARHDRSZ;
 				SET_VARSIZE(posData, posDataSize);
 
@@ -1519,13 +1530,13 @@ rum_ts_join_pos(PG_FUNCTION_ARGS)
 	bytea	   *result;
 	int			count1 = count_pos(in1, VARSIZE_ANY_EXHDR(addInfo1)),
 				count2 = count_pos(in2, VARSIZE_ANY_EXHDR(addInfo2)),
-				countRes = 0,
-				i1 = 0, i2 = 0, size;
+				countRes = 0;
+	int			i1 = 0, i2 = 0;
+	Size		size;
 	WordEntryPos pos1 = 0,
 				pos2 = 0,
 			   *pos;
 
-	result = palloc(VARHDRSZ + sizeof(WordEntryPos) * (count1 + count2));
 	pos = palloc(sizeof(WordEntryPos) * (count1 + count2));
 
 	Assert(count1 > 0 && count2 > 0);
@@ -1576,6 +1587,15 @@ rum_ts_join_pos(PG_FUNCTION_ARGS)
 			in2 = decompress_pos(in2, &pos2);
 		i2++;
 	}
+
+	Assert(countRes <= (count1 + count2));
+
+	/*
+	 * In some cases compressed positions may take more memory than
+	 * uncompressed positions. So allocate memory with a margin.
+	 */
+	size = VARHDRSZ + 2 * sizeof(WordEntryPos) * countRes;
+	result = palloc(size);
 
 	size = compress_pos(result->vl_dat, pos, countRes) + VARHDRSZ;
 	SET_VARSIZE(result, size);
