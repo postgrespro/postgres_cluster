@@ -1971,7 +1971,7 @@ static struct config_int ConfigureNamesInt[] =
 		 gettext_noop("0 means unlimited number of autoprepared queries."),
 		},
 		&autoprepare_limit,
-		0, 0, INT_MAX,
+		113, 0, INT_MAX,
 		NULL, NULL, NULL
 	},
 

@@ -138,7 +138,7 @@ void* writer(void* arg)
     {
 		work txn(conn);
         int srcAcc = random() % cfg.nAccounts;
-        int dstAcc = (cfg.local ? srcAcc + 1 : random()) % cfg.nAccounts;
+        int dstAcc = (cfg.local ? srcAcc /*+ 1*/ : random()) % cfg.nAccounts;
 
         try {
             if (random() % 100 < cfg.updatePercent) {				
