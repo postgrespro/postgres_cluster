@@ -101,7 +101,7 @@ find_pkey_tuple(ScanKey skey, Relation rel, Relation idxrel,
 	InitDirtySnapshot(snap);
 	scan = index_beginscan(rel, idxrel,
 						   &snap,
-						   IndexRelationGetNumberOfAttributes(idxrel),
+						   RelationGetNumberOfAttributes(idxrel),
 						   0);
 
 retry:
