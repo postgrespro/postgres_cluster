@@ -4570,8 +4570,10 @@ typedef struct
 	int				  n_params;	  /* number of parameters extracted for this query */
 	int16			  format;	  /* portal output format */
 	bool			  disable_autoprepare; /* disable preparing of this query */
-	uint64            non_prepared_time; /* averge time of original (non-prepared) query execution (sum of autoprepare_threshold query execution times) */ 
-	uint64            prepared_time; /* averge time of prepared query execution (sum of autoprepare_threshold query execution times) */
+	uint64            non_prepared_time_sum; /* sum of times of non-prepared query execution (up to autoprepare_threshold measurements) */ 
+	uint64            prepared_time_sum; /* sum of times of prepared query execution (up to autoprepare_threshold measurements) */ 
+	double            non_prepared_time_sum2; /* sum of squares of non-prepared query execution (up to autoprepare_threshold measurements) */ 
+	double            prepared_time_sum2; /* sum of squares of prepared query execution (up to autoprepare_threshold measurements) */ 
 } plan_cache_entry;
 
 static uint32 plan_cache_hash_fn(const void *key, Size keysize)
@@ -4652,11 +4654,13 @@ static void end_exec_simple(void)
 	{
 		long		secs;
 		int			usecs;
+		uint64      elapsed;
 		TimestampDifference(exec_start_timestamp,
 							GetCurrentTimestamp(),
 							&secs, &usecs);
-
-		entry->non_prepared_time += secs * USECS_PER_SEC + usecs;		
+		elapsed = secs * USECS_PER_SEC + usecs;		
+		entry->non_prepared_time_sum += elapsed;		
+		entry->non_prepared_time_sum2 += elapsed*elapsed;
 	}
 }
 
@@ -5031,8 +5035,10 @@ static bool exec_cached_query(const char *query_string, List *parsetree_list)
 			autoprepare_cached_plans -= 1;
 		}
 		entry->exec_count = 0;
-		entry->prepared_time = 0;
-		entry->non_prepared_time = 0;
+		entry->prepared_time_sum = 0;
+		entry->non_prepared_time_sum = 0;
+		entry->prepared_time_sum2 = 0;
+		entry->non_prepared_time_sum2 = 0;
 		entry->plan = NULL;
 		entry->disable_autoprepare = false;
 	}
@@ -5358,24 +5364,32 @@ static bool exec_cached_query(const char *query_string, List *parsetree_list)
 		/* Calculate average time of execution of prepared query */
 		long		secs;
 		int			usecs;
+		uint64      elapsed;
 		TimestampDifference(exec_start_timestamp,
 							GetCurrentTimestamp(),
 							&secs, &usecs);
-
-		entry->prepared_time += secs * USECS_PER_SEC + usecs;		
+		elapsed = secs * USECS_PER_SEC + usecs;		
+		entry->prepared_time_sum += elapsed;
+		entry->prepared_time_sum2 += elapsed*elapsed;
 
 		if (entry->exec_count == autoprepare_threshold*2)
 		{
 			/* Now we can compare average times of prepared and non-prepared queries execution */
-			if (entry->prepared_time > entry->non_prepared_time)
+			int n = autoprepare_threshold;
+			double prepared_time_deviation = sqrt((entry->prepared_time_sum2 - (double)entry->prepared_time_sum*entry->prepared_time_sum/n)/n);
+			double non_prepared_time_deviation = sqrt((entry->non_prepared_time_sum2 - (double)entry->non_prepared_time_sum*entry->non_prepared_time_sum/n)/n);
+			if (entry->prepared_time_sum - prepared_time_deviation*n > entry->non_prepared_time_sum + non_prepared_time_deviation*n)
 			{
 				/* 
 				 * Disable autoprepare if average time of execution of prepared query
 				 * is worser than of non-prepared query 
 				 */
 				entry->disable_autoprepare = true;
-				elog(LOG, "Disable autoprepared plan for %s because its average time %ld is greater than time of non-prepared query %ld", 
-					 query_string, entry->prepared_time, entry->non_prepared_time);
+				elog(LOG, "Disable autoprepared plan for %s (generic cost=%lg, avg custom cost=%lg, avg=%lg, dev=%lg) because its worser than non-prepared plan (avg=%lg, dev=%lg)", 
+					 query_string, 
+					 psrc->generic_cost, psrc->num_custom_plans != 0 ? psrc->total_custom_cost/psrc->num_custom_plans : 0, 
+					 (double)entry->prepared_time_sum/n, prepared_time_deviation,
+					 (double)entry->non_prepared_time_sum/n, non_prepared_time_deviation);
 			}
 		}
 	}

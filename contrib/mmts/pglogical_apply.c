@@ -101,13 +101,13 @@ find_pkey_tuple(ScanKey skey, Relation rel, Relation idxrel,
 	InitDirtySnapshot(snap);
 	scan = index_beginscan(rel, idxrel,
 						   &snap,
-						   IndexRelationGetNumberOfKeyAttributes(idxrel),
+						   IndexRelationGetNumberOfAttributes(idxrel),
 						   0);
 
 retry:
 	found = false;
 
-	index_rescan(scan, skey, IndexRelationGetNumberOfKeyAttributes(idxrel), NULL, 0);
+	index_rescan(scan, skey, RelationGetNumberOfAttributes(idxrel), NULL, 0);
 
 	if ((scantuple = index_getnext(scan, ForwardScanDirection)) != NULL)
 	{
@@ -236,7 +236,7 @@ build_index_scan_key(ScanKey skey, Relation rel, Relation idxrel, TupleData *tup
 	indkey = (int2vector *) DatumGetPointer(indkeyDatum);
 
 
-	for (attoff = 0; attoff < IndexRelationGetNumberOfKeyAttributes(idxrel); attoff++)
+	for (attoff = 0; attoff < RelationGetNumberOfAttributes(idxrel); attoff++)
 	{
 		Oid			operator;
 		Oid			opfamily;
