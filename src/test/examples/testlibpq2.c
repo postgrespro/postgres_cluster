@@ -34,9 +34,11 @@
 #include <errno.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#ifdef HAVE_SYS_SELECT_H
+#include <sys/select.h>
+#endif
 
 #include "libpq-fe.h"
-#include "pg_socket.h"
 
 static void
 exit_nicely(PGconn *conn)
@@ -112,8 +114,7 @@ main(int argc, char **argv)
 		FD_ZERO(&input_mask);
 		FD_SET(sock, &input_mask);
 
-		if (pg_select(sock + 1, &input_mask, NULL, NULL, NULL,
-					  PQisRsocket(conn)) < 0)
+		if (select(sock + 1, &input_mask, NULL, NULL, NULL) < 0)
 		{
 			fprintf(stderr, "select() failed: %s\n", strerror(errno));
 			exit_nicely(conn);
