@@ -429,21 +429,21 @@ static int MtmConnectSocket(int node, int port)
 	snprintf(portstr, sizeof(portstr), "%d", port);
 
 	rc = pg_getaddrinfo_all(host, portstr, &hint, &addrs);
-	if (rc != 0)
+	if (rc != 0) 
 	{
 		MTM_ELOG(LOG, "Arbiter failed to resolve host '%s' by name: %s", host, gai_strerror(rc));
 		return -1;
 	}
 	BIT_SET(busy_mask, node);
 	
-Retry:
+  Retry:
 
-	sd = socket(AF_INET, SOCK_STREAM, 0);
+	sd = pg_socket(AF_INET, SOCK_STREAM, 0, MtmUseRDMA);
 	if (sd < 0) {
 		MTM_ELOG(LOG, "Arbiter failed to create socket: %s", strerror(errno));
 		goto Error;
 	}
-	rc = fcntl(sd, F_SETFL, O_NONBLOCK);
+	rc = pg_fcntl(sd, F_SETFL, O_NONBLOCK, MtmUseRDMA);
 	if (rc < 0) {
 		MTM_ELOG(LOG, "Arbiter failed to switch socket to non-blocking mode: %s", strerror(errno));
 		goto Error;
@@ -451,7 +451,7 @@ Retry:
 	for (addr = addrs; addr != NULL; addr = addr->ai_next)
 	{
 		do {
-			rc = connect(sd, addr->ai_addr, addr->ai_addrlen);
+			rc = pg_connect(sd, addr->ai_addr, addr->ai_addrlen, MtmUseRDMA);
 		} while (rc < 0 && errno == EINTR);
 
 		if (rc >= 0 || errno == EINPROGRESS) {
@@ -491,12 +491,12 @@ Retry:
 	strcpy(req.connStr, Mtm->nodes[MtmNodeId-1].con.connStr);
 	if (!MtmWriteSocket(sd, &req, sizeof req)) { 
 		MTM_ELOG(WARNING, "Arbiter failed to send handshake message to %s:%d: %s", host, port, strerror(errno));
-		close(sd);
+		pg_closesocket(sd, MtmUseRDMA);
 		goto Retry;
 	}
 	if (MtmReadSocket(sd, &resp, sizeof resp) != sizeof(resp)) { 
 		MTM_ELOG(WARNING, "Arbiter failed to receive response for handshake message from %s:%d: %s", host, port, strerror(errno));
-		close(sd);
+		pg_closesocket(sd, MtmUseRDMA);
 		goto Retry;
 	}
 	if (resp.code != MSG_STATUS || resp.dxid != HANDSHAKE_MAGIC) {
@@ -580,7 +580,7 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 		if (sockets[node] < 0 || !MtmWriteSocket(sockets[node], buf, size)) {
 			if (sockets[node] >= 0) { 
 				MTM_ELOG(WARNING, "Arbiter fail to write to node %d: %s", node+1, strerror(errno));
-				close(sockets[node]);
+				pg_closesocket(sockets[node], MtmUseRDMA);
 				sockets[node] = -1;
 			}
 			sockets[node] = MtmConnectSocket(node, Mtm->nodes[node].con.arbiterPort);
@@ -626,7 +626,7 @@ static void MtmAcceptOneConnection()
 			MTM_ELOG(WARNING, "Arbiter failed to handshake socket: %s", strerror(errno));
 			pg_closesocket(fd, MtmUseRDMA);
 		} else if (req.hdr.code != MSG_HANDSHAKE && req.hdr.dxid != HANDSHAKE_MAGIC) { 
-			MTM_ELOG(WARNING, "Arbiter get unexpected handshake message %d", req.hdr.code);
+			MTM_ELOG(WARNING, "Arbiter failed to handshake socket: %s", strerror(errno));
 			pg_closesocket(fd, MtmUseRDMA);
 		} else { 
 			int node = req.hdr.node-1;
