@@ -159,7 +159,7 @@
  </para>
  <para>
   By supporting the ordering &lt;-&gt; operator the quad_point_ops and kd_point_ops provide 
-  a user with the ability to perform a K-nearest-neighbour search over the indexed point dataset.
+  a user with the ability to perform a K-nearest-neighbor search over the indexed point dataset.
  </para>
 
 </sect1>

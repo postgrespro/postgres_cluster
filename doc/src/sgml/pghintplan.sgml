@@ -11,7 +11,7 @@
     <title>Synopsis</title>
     <para>
       &productname; uses cost-based optimizer, which utilizes data
-      statistics, not static rules. The planner (optimizer) esitimates
+      statistics, not static rules. The planner (optimizer) estimates
       costs of each possible execution plans for a SQL statement then
       the execution plan with the lowest cost finally be executed. The
       planner does its best to select the best execution plan, but
@@ -284,7 +284,7 @@ postgres=# /*+ Leading((t1 (t2 t3))) */ SELECT...
         condition. This hint can corrects the number by several methods,
         which are absolute value, addition/subtraction and
         multiplication. The parameters are the list of objects compose
-        the targetted join then operation. The following example shows
+        the targeted join then operation. The following example shows
         notations to correct the number of the join on a and b by the
         four correction methods.
       </para>
@@ -299,7 +299,7 @@ postgres=# /*+ Rows(a b *10) */ SELECT... ; Makes the number 10 times larger.
       <title>GUC temporarily setting</title>
       <para>
         <quote>Set</quote> hint sets GUC parameter values during the
-        target statement is under plannning. In the following example,
+        target statement is under planning. In the following example,
         planning for the query is done with random_page_cost is 2.0.
       </para>
       <programlisting>
@@ -407,10 +407,10 @@ postgres=#
       <title>Limitations on multiple VALUES lists in FROM
       clauses</title>
       <para>
-        All occurences of VALUES lists in FROM clauses in a query has
+        All occurrences of VALUES lists in FROM clauses in a query has
         the same name <quote>*VALUES*</quote> irrespective of aliases
         syntactically given to them or shown in explain descriptions. So
-        it cannot be hinted at all if appeares twice or more in a target
+        it cannot be hinted at all if appears twice or more in a target
         query.
       </para>
     </sect3>
@@ -453,7 +453,7 @@ postgres=#
         Hints are effective on any objects with the target name even if
         they aren't apparent in the query, specifically objects in views.
         For that reason, you should create different views in which
-        targetted objects have distinct aliases if you want to hint them
+        targeted objects have distinct aliases if you want to hint them
         differently from the first view.
       </para>
       <para>
@@ -580,9 +580,9 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
     <sect3>
       <title>Object misspecifications</title>
       <para>
-        Object misspecifications results silent ingorance of the hints.
+        Object misspecifications results silent ignorance of the hints.
         This kind of error is reported as <quote>not used hints</quote>
-        in the server log by the same condtion to syntax errors.
+        in the server log by the same condition to syntax errors.
       </para>
     </sect3>
     <sect3>
@@ -643,7 +643,7 @@ postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
       <para>
         ECPG removes comments in queries written as embedded SQLs so
         hints cannot be passed form those queries. The only exception is
-        that EXECUTE command passes given string unmodifed. Please
+        that EXECUTE command passes given string unmodified. Please
         consider hint tables for this case.
       </para>
     </sect3>

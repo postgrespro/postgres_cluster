@@ -13,7 +13,8 @@
     k-NN algorithm, <filename>aqo</filename> improves cardinality estimation, which can optimize execution plans and, consequently, speed up query execution.
   </para>
   <para>The <filename>aqo</filename> module can collect statistics on all the executed
-    queries and classify it according to the query type. If the
+    queries, excluding the queries that access system relations. 
+    The collected statistics is classified by query type. If the
     queries differ in their constants only, they belong to the same
     type. For each type, <filename>aqo</filename> stores the cardinality quality, planning
     time, execution time, and execution statistics for machine learning. Based on this data, <filename>aqo</filename> builds a new query plan and uses it for the next query of the same type.
@@ -89,8 +90,8 @@ DROP EXTENSION aqo;
         <listitem>
           <para>
           <literal>controlled</literal> &mdash; this mode
-        uses the default planner for all new queries, but continues collecting
-        statistics for already known query types, if any.
+        uses the default planner for all new queries, but continues using
+        the previously specified planning settings for already known query types, if any.
           </para>
         </listitem>
         <listitem>
@@ -110,7 +111,7 @@ SET aqo.mode = '<replaceable>mode</>';
 </programlisting>
 where <replaceable>mode</> is the name of the optimization mode to use.
 </para>
-          <important><para>The intelligent mode of <filename>aqo</filename>
+          <important><para>The <literal>intelligent</literal> mode of <filename>aqo</filename>
           may not work well if the queries in your workload are of multiple 
           different types. In this case, you can try resetting the optimization mode to <literal>controlled</literal>.</para>
         </important>
@@ -136,7 +137,7 @@ where <replaceable>mode</> is the name of the optimization mode to use.
         </note>
       <para>
         Since the <literal>intelligent</literal> mode tries to learn separately for
-        different query types, <filename>aqo</filename> may fail to provide peformance improvements if the types of the queries in the workload are constantly changing. For such dynamic workloads, reset the <filename>aqo</filename> extension to
+        different query types, <filename>aqo</filename> may fail to provide performance improvements if the types of the queries in the workload are constantly changing. For such dynamic workloads, reset the <filename>aqo</filename> extension to
         the <literal>controlled</literal> mode, or try using the <literal>forced</literal> mode.
       </para>
       <para>
@@ -254,7 +255,8 @@ UPDATE aqo_queries SET learn_aqo=false
 </programlisting>
 
     <para>
-      If your data or query distribution is rapidly changing, obsolete statistics may affect <filename>aqo</filename> performance. After a while, <filename>aqo</filename> will learn the new statistics, but it may take longer than expected. To speed up learning, reset the
+      If your data or query distribution is rapidly changing, learning new statistics will take longer than usual. 
+      In this case, obsolete statistics may affect performance. To speed up <filename>aqo</filename> learning, reset the
       statistics. To remove all the collected machine learning
       statistics, run the following command:
     </para>

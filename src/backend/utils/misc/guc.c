@@ -186,6 +186,8 @@ static void assign_application_name(const char *newval, void *extra);
 static bool check_cluster_name(char **newval, void **extra, GucSource source);
 static const char *show_unix_socket_permissions(void);
 static const char *show_log_file_mode(void);
+static void set_cfs_gc_enabled(bool newval, void* extra);
+static char const* show_cfs_gc_enabled(void);
 
 /* Private functions in guc-file.l that need to be called from guc.c */
 static ConfigVariable *ProcessConfigFileInternal(GucContext context,
@@ -446,6 +448,7 @@ bool		row_security;
 bool		check_function_bodies = true;
 bool		default_with_oids = false;
 bool		SQL_inheritance = true;
+bool        cfs_gc_enabled = true;
 
 int			log_min_error_statement = ERROR;
 int			log_min_messages = WARNING;
@@ -1690,7 +1693,17 @@ static struct config_bool ConfigureNamesBool[] =
 	},
 
 	{
-		{"cfs_gc_verify_file", PGC_USERSET, UNGROUPED,
+		{"cfs_gc", PGC_SIGHUP, UNGROUPED,
+		 gettext_noop("Enable garbage collection of compressed pages"),
+		 NULL,
+		},
+		&cfs_gc_enabled,
+		true,
+		NULL, set_cfs_gc_enabled, show_cfs_gc_enabled
+	},
+
+	{
+		{"cfs_gc_verify_file", PGC_SIGHUP, UNGROUPED,
 		 gettext_noop("Verify correctness of data written by GC"),
 		 NULL,
 		},
@@ -2813,7 +2826,7 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		{"cfs_level", PGC_USERSET, UNGROUPED,
+		{"cfs_level", PGC_SIGHUP, UNGROUPED,
 		 gettext_noop("CFS compression level: 0 - no compression, 1 - maximal speed,"
 					  "other possible values depend on the specific algorithm."),
 		 NULL,
@@ -2825,7 +2838,7 @@ static struct config_int ConfigureNamesInt[] =
     },
 
 	{
-		{"cfs_gc_threshold", PGC_USERSET, UNGROUPED,
+		{"cfs_gc_threshold", PGC_SIGHUP, UNGROUPED,
 		 gettext_noop("Minimum percent of garbage blocks in the file prior to garbage collection"),
 		 NULL,
 		 0
@@ -2836,7 +2849,7 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		{"cfs_gc_period", PGC_USERSET, UNGROUPED,
+		{"cfs_gc_period", PGC_SIGHUP, UNGROUPED,
 		 gettext_noop("Time to sleep between GC runs in milliseconds"),
 		 NULL,
 		 GUC_UNIT_MS
@@ -2847,7 +2860,7 @@ static struct config_int ConfigureNamesInt[] =
 	},
 
 	{
-		{"cfs_gc_delay", PGC_USERSET, UNGROUPED,
+		{"cfs_gc_delay", PGC_SIGHUP, UNGROUPED,
 		 gettext_noop("Delay in milliseconds between files defragmentation"),
 		 NULL,
 		 GUC_UNIT_MS
@@ -10841,5 +10854,20 @@ show_log_file_mode(void)
 	snprintf(buf, sizeof(buf), "%04o", Log_file_mode);
 	return buf;
 }
+
+static void set_cfs_gc_enabled(bool newval, void* extra)
+{
+	cfs_gc_enabled = newval;
+	if (cfs_state && MyProcPid == PostmasterPid) 
+	{
+		cfs_state->gc_enabled = newval;
+	}
+}
+
+static char const* show_cfs_gc_enabled(void)
+{
+	return (cfs_state ? cfs_state->gc_enabled : cfs_gc_enabled) ? "on" : "off";
+}
+
 
 #include "guc-file.c"

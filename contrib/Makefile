@@ -40,6 +40,7 @@ SUBDIRS = \
 		pg_stat_statements \
 		pg_transfer	\
 		pg_trgm		\
+		pg_tsparser	\
 		pgcrypto	\
 		pgrowlocks	\
 		pgstattuple	\

@@ -17,7 +17,11 @@ my $dbh = DBI->connect("dbi:Pg:dbname=$dbname; host=$host", "$username", "$passw
     {PrintError => 0});
 ok($dbh->err == 0) or (print $DBI::errstr and BAIL_OUT);
 
-my $query = "SELECT schedule.create_job(\'{ \"name\": \"Test\",
+my $query = "SELECT schedule.clean_log();";
+$dbh->do($query);
+ok($dbh->err == 0) or (print $DBI::errstr . "\n" and $dbh->disconnect() and BAIL_OUT);
+
+$query = "SELECT schedule.create_job(\'{ \"name\": \"Test\",
     \"cron\": \"* * * * *\",
     \"command\": \"aaaaaaaaaa;\",
     \"run_as\": \"tester\",

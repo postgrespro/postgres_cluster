@@ -23,6 +23,7 @@
 #include "access/tupconvert.h"
 #include "access/xact.h"
 #include "access/xlog.h"
+#include "access/ptrack.h"
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
 #include "catalog/heap.h"
@@ -118,7 +119,7 @@ typedef struct OnCommitItem
 	SubTransactionId deleting_subid;
 } OnCommitItem;
 
-static List *on_commits = NIL;
+List* pg_on_commit_actions = NIL;
 
 
 /*
@@ -6972,9 +6973,10 @@ ATExecValidateConstraint(Relation rel, char *constrName, bool recurse,
 
 			/*
 			 * If we're recursing, the parent has already done this, so skip
-			 * it.
+			 * it.  Also, if the constraint is a NO INHERIT constraint, we
+			 * shouldn't try to look for it in the children.
 			 */
-			if (!recursing)
+			if (!recursing && !con->connoinherit)
 				children = find_all_inheritors(RelationGetRelid(rel),
 											   lockmode, NULL);
 
@@ -9896,6 +9898,13 @@ ATExecSetTableSpace(Oid tableOid, Oid newTableSpace, LOCKMODE lockmode)
 	/* copy those extra forks that exist */
 	for (forkNum = MAIN_FORKNUM + 1; forkNum <= MAX_FORKNUM; forkNum++)
 	{
+		/*
+		 * Do not copy ptrack fork, because it will be created
+		 * for new relation while copying data.
+		 */
+		if (forkNum == PAGESTRACK_FORKNUM)
+			continue;
+
 		if (smgrexists(rel->rd_smgr, forkNum))
 		{
 			smgrcreate(dstrel, forkNum, false);
@@ -10179,7 +10188,11 @@ copy_relation_data(SMgrRelation src, SMgrRelation dst,
 		 * space.
 		 */
 		if (use_wal)
+		{
+			if (forkNum == MAIN_FORKNUM)
+				ptrack_add_block_redo(dst->smgr_rnode.node, blkno);
 			log_newpage(&dst->smgr_rnode.node, forkNum, blkno, page, false);
+		}
 
 		PageSetChecksumInplace(page, blkno);
 
@@ -11985,7 +11998,7 @@ register_on_commit_action(Oid relid, OnCommitAction action)
 	oc->creating_subid = GetCurrentSubTransactionId();
 	oc->deleting_subid = InvalidSubTransactionId;
 
-	on_commits = lcons(oc, on_commits);
+	pg_on_commit_actions = lcons(oc, pg_on_commit_actions);
 
 	MemoryContextSwitchTo(oldcxt);
 }
@@ -12000,7 +12013,7 @@ remove_on_commit_action(Oid relid)
 {
 	ListCell   *l;
 
-	foreach(l, on_commits)
+	foreach(l, pg_on_commit_actions)
 	{
 		OnCommitItem *oc = (OnCommitItem *) lfirst(l);
 
@@ -12024,7 +12037,7 @@ PreCommit_on_commit_actions(void)
 	ListCell   *l;
 	List	   *oids_to_truncate = NIL;
 
-	foreach(l, on_commits)
+	foreach(l, pg_on_commit_actions)
 	{
 		OnCommitItem *oc = (OnCommitItem *) lfirst(l);
 
@@ -12096,7 +12109,7 @@ AtEOXact_on_commit_actions(bool isCommit)
 	ListCell   *prev_item;
 
 	prev_item = NULL;
-	cur_item = list_head(on_commits);
+	cur_item = list_head(pg_on_commit_actions);
 
 	while (cur_item != NULL)
 	{
@@ -12106,12 +12119,12 @@ AtEOXact_on_commit_actions(bool isCommit)
 			oc->creating_subid != InvalidSubTransactionId)
 		{
 			/* cur_item must be removed */
-			on_commits = list_delete_cell(on_commits, cur_item, prev_item);
+			pg_on_commit_actions = list_delete_cell(pg_on_commit_actions, cur_item, prev_item);
 			pfree(oc);
 			if (prev_item)
 				cur_item = lnext(prev_item);
 			else
-				cur_item = list_head(on_commits);
+				cur_item = list_head(pg_on_commit_actions);
 		}
 		else
 		{
@@ -12139,7 +12152,7 @@ AtEOSubXact_on_commit_actions(bool isCommit, SubTransactionId mySubid,
 	ListCell   *prev_item;
 
 	prev_item = NULL;
-	cur_item = list_head(on_commits);
+	cur_item = list_head(pg_on_commit_actions);
 
 	while (cur_item != NULL)
 	{
@@ -12148,12 +12161,12 @@ AtEOSubXact_on_commit_actions(bool isCommit, SubTransactionId mySubid,
 		if (!isCommit && oc->creating_subid == mySubid)
 		{
 			/* cur_item must be removed */
-			on_commits = list_delete_cell(on_commits, cur_item, prev_item);
+			pg_on_commit_actions = list_delete_cell(pg_on_commit_actions, cur_item, prev_item);
 			pfree(oc);
 			if (prev_item)
 				cur_item = lnext(prev_item);
 			else
-				cur_item = list_head(on_commits);
+				cur_item = list_head(pg_on_commit_actions);
 		}
 		else
 		{

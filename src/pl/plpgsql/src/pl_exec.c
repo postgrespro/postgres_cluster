@@ -1171,6 +1171,7 @@ exec_stmt_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 		MemoryContext oldcontext = CurrentMemoryContext;
 		ExprContext *old_eval_econtext = estate->eval_econtext;
 		ErrorData  *save_cur_error = estate->cur_error;
+		bool error_inside_commit = false;
 
 		estate->err_text = gettext_noop("during autonomous statement block entry");
 
@@ -1209,6 +1210,7 @@ exec_stmt_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 
 			old_shared_estate = shared_simple_eval_estate;
 			shared_simple_eval_estate = NULL;
+			error_inside_commit = true;
 			CommitTransactionCommand();
 			shared_simple_eval_estate = old_shared_estate;
 
@@ -1230,13 +1232,16 @@ exec_stmt_block(PLpgSQL_execstate *estate, PLpgSQL_stmt_block *block)
 			edata = CopyErrorData();
 			FlushErrorState();
 
-			plpgsql_destroy_econtext(estate);
-
-			old_shared_estate = shared_simple_eval_estate;
-			shared_simple_eval_estate = NULL;
+			if (!error_inside_commit)
+			{
+				plpgsql_destroy_econtext(estate);
+				
+				old_shared_estate = shared_simple_eval_estate;
+				shared_simple_eval_estate = NULL;
+			}
 			AbortCurrentTransaction();
 			shared_simple_eval_estate = old_shared_estate;
-
+			
 			estate->eval_econtext = old_eval_econtext;
 
 			if (block->exceptions)
@@ -3001,7 +3006,7 @@ exec_stmt_return_query(PLpgSQL_execstate *estate,
 	if (stmt->query != NULL)
 	{
 		/* static query */
-		exec_run_select(estate, stmt->query, 0, &portal, true);
+		exec_run_select(estate, stmt->query, 0, &portal, false);
 	}
 	else
 	{
@@ -3009,7 +3014,7 @@ exec_stmt_return_query(PLpgSQL_execstate *estate,
 		Assert(stmt->dynquery != NULL);
 		portal = exec_dynquery_with_params(estate, stmt->dynquery,
 										   stmt->params, NULL,
-										   CURSOR_OPT_PARALLEL_OK);
+										   0);
 	}
 
 	tupmap = convert_tuples_by_position(portal->tupDesc,

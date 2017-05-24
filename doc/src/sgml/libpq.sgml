@@ -978,7 +978,7 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
        </para>
        <para>
         If the value is <literal>random</literal>, the host to connect to
-        will be randomly picked from the list. It allows load balacing between
+        will be randomly picked from the list. It allows load balancing between
         several cluster nodes. However, PostgreSQL doesn't currently support
         multimaster clusters. So, without the use of third-party products,
         only read-only connections can take advantage from
@@ -7022,6 +7022,9 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
       </indexterm>
       <envar>PGREQUIRESSL</envar> behaves the same as the <xref
       linkend="libpq-connect-requiressl"> connection parameter.
+      This environment variable is deprecated in favor of the
+      <envar>PGSSLMODE</envar> variable; setting both variables suppresses the
+      effect of this one.
      </para>
     </listitem>
 
@@ -7308,7 +7311,7 @@ user=admin
   </para>
   <para>
   If more than one <literal>host</literal> option is present in the same
-  section of the service file, it is interpeted as alternate servers for
+  section of the service file, it is interpreted as alternate servers for
   failover or load-balancing. See  <xref linkend="libpq-connect-host">
   option in the connection string.
   </para>

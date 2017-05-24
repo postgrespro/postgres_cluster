@@ -848,21 +848,19 @@ NOTICE:  f_leak => a87ff679a2f3e71d9181a67b7542122c
 (2 rows)
 
 EXPLAIN (COSTS OFF) SELECT * FROM only s1 WHERE f_leak(b);
-                        QUERY PLAN                        
-----------------------------------------------------------
+                     QUERY PLAN                     
+----------------------------------------------------
  Subquery Scan on s1
    Filter: f_leak(s1.b)
-   ->  Hash Join
+   ->  Hash Semi Join
          Hash Cond: (s1_1.a = s2.x)
          ->  Seq Scan on s1 s1_1
          ->  Hash
-               ->  HashAggregate
-                     Group Key: s2.x
-                     ->  Subquery Scan on s2
-                           Filter: (s2.y ~~ '%2f%'::text)
-                           ->  Seq Scan on s2 s2_1
-                                 Filter: ((x % 2) = 0)
-(12 rows)
+               ->  Subquery Scan on s2
+                     Filter: (s2.y ~~ '%2f%'::text)
+                     ->  Seq Scan on s2 s2_1
+                           Filter: ((x % 2) = 0)
+(10 rows)
 
 SET SESSION AUTHORIZATION regress_rls_alice;
 ALTER POLICY p1 ON s1 USING (a in (select x from v2)); -- using VIEW in RLS policy
@@ -877,21 +875,19 @@ NOTICE:  f_leak => 1679091c5a880faf6fb5e6087eb1b2dc
 (2 rows)
 
 EXPLAIN (COSTS OFF) SELECT * FROM s1 WHERE f_leak(b);
-                        QUERY PLAN                        
-----------------------------------------------------------
+                     QUERY PLAN                     
+----------------------------------------------------
  Subquery Scan on s1
    Filter: f_leak(s1.b)
-   ->  Hash Join
+   ->  Hash Semi Join
          Hash Cond: (s1_1.a = s2.x)
          ->  Seq Scan on s1 s1_1
          ->  Hash
-               ->  HashAggregate
-                     Group Key: s2.x
-                     ->  Subquery Scan on s2
-                           Filter: (s2.y ~~ '%af%'::text)
-                           ->  Seq Scan on s2 s2_1
-                                 Filter: ((x % 2) = 0)
-(12 rows)
+               ->  Subquery Scan on s2
+                     Filter: (s2.y ~~ '%af%'::text)
+                     ->  Seq Scan on s2 s2_1
+                           Filter: ((x % 2) = 0)
+(10 rows)
 
 SELECT (SELECT x FROM s1 LIMIT 1) xx, * FROM s2 WHERE y like '%28%';
  xx | x  |                y                 

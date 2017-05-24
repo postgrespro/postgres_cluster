@@ -1378,7 +1378,7 @@ mXactCachePut(MultiXactId multi, int nmembers, MultiXactMember *members)
 	{
 		/* The cache only lives as long as the current transaction */
 		debug_elog2(DEBUG2, "CachePut: initializing memory context");
-		MXactContext = AllocSetContextCreate(TopTransactionContext,
+		MXactContext = AllocSetContextCreate(TopMemoryContext,
 											 "MultiXact cache context",
 											 ALLOCSET_SMALL_SIZES);
 	}
@@ -1484,7 +1484,11 @@ AtEOXact_MultiXact(void)
 	 * Discard the local MultiXactId cache.  Since MXactContext was created as
 	 * a child of TopTransactionContext, we needn't delete it explicitly.
 	 */
-	MXactContext = NULL;
+	if (MXactContext)
+	{
+		MemoryContextDelete(MXactContext);
+		MXactContext = NULL;
+	}
 	dlist_init(&MXactCache);
 	MXactCacheMembers = 0;
 }
@@ -1551,7 +1555,11 @@ PostPrepare_MultiXact(TransactionId xid)
 	/*
 	 * Discard the local MultiXactId cache like in AtEOX_MultiXact
 	 */
-	MXactContext = NULL;
+	if (MXactContext)
+	{
+		MemoryContextDelete(MXactContext);
+		MXactContext = NULL;
+	}
 	dlist_init(&MXactCache);
 	MXactCacheMembers = 0;
 }
@@ -2556,7 +2564,7 @@ static void
 WriteMZeroPageXlogRec(int64 pageno, uint8 info)
 {
 	XLogBeginInsert();
-	XLogRegisterData((char *) (&pageno), sizeof(int));
+	XLogRegisterData((char *) (&pageno), sizeof(int64));
 	(void) XLogInsert(RM_MULTIXACT_ID, info);
 }
 

@@ -28,6 +28,7 @@
 #include "utils/inval.h"
 #include "utils/array.h"
 #include "utils/relfilenodemap.h"
+#include "utils/builtins.h"
 #include <unistd.h>
 #include <sys/stat.h>
 
@@ -660,4 +661,14 @@ pg_ptrack_get_and_clear(PG_FUNCTION_ARGS)
 		 (errmsg("must be superuser or replication role to clear ptrack files"))));
 
 	PG_RETURN_BYTEA_P(ptrack_get_and_clear(PG_GETARG_OID(0), PG_GETARG_OID(1)));
+}
+
+/*
+ * Returns ptrack version currently in use.
+ */
+PG_FUNCTION_INFO_V1(ptrack_version);
+Datum
+ptrack_version(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_TEXT_P(cstring_to_text(PTRACK_VERSION));
 }

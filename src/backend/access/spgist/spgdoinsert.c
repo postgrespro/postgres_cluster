@@ -215,6 +215,8 @@ addLeafTuple(Relation index, SpGistState *state, SpGistLeafTuple leafTuple,
 	xlrec.nodeI = 0;
 
 	ptrack_add_block(index, BufferGetBlockNumber(current->buffer));
+	if (parent->buffer)
+		ptrack_add_block(index, BufferGetBlockNumber(parent->buffer));
 	START_CRIT_SECTION();
 
 	if (current->offnum == InvalidOffsetNumber ||

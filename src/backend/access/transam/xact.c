@@ -1856,6 +1856,8 @@ typedef struct {
 	void *SPIState;
 	void *SnapshotState;
 	struct TransInvalidationInfo* InvalidationInfo;
+
+	List *on_commit_actions;
 } SuspendedTransactionState;
 
 static int suspendedXactNum = 0;
@@ -2013,8 +2015,11 @@ CommitTransaction(void)
 	TransactionState s = CurrentTransactionState;
 	TransactionId latestXid;
 	bool		is_parallel_worker;
+	bool        is_autonomous_transaction;
 
 	is_parallel_worker = (s->blockState == TBLOCK_PARALLEL_INPROGRESS);
+	is_autonomous_transaction = getNestLevelATX() != 0;
+
 
 	/* Enforce parallel mode restrictions during parallel worker commit. */
 	if (is_parallel_worker)
@@ -2048,7 +2053,7 @@ CommitTransaction(void)
 		 * If there weren't any, we are done ... otherwise loop back to check
 		 * if they queued deferred triggers.  Lather, rinse, repeat.
 		 */
-		if (getNestLevelATX() != 0 || !PreCommit_Portals(false))
+		if (is_autonomous_transaction || !PreCommit_Portals(false))
 			break;
 	}
 
@@ -2160,7 +2165,7 @@ CommitTransaction(void)
 						 RESOURCE_RELEASE_BEFORE_LOCKS,
 						 true, true);
 
-	if (getNestLevelATX() == 0)
+	if (!is_autonomous_transaction)
 	{
 		/* Check we've released all buffer pins */
 		AtEOXact_Buffers(true);
@@ -2180,8 +2185,10 @@ CommitTransaction(void)
 	xactHasRelcacheInvalidationMessages = HasRelcacheInvalidationMessages();
 	AtEOXact_Inval(true);
 
-	AtEOXact_MultiXact();
-
+	if (!is_autonomous_transaction)
+	{
+		AtEOXact_MultiXact();
+	}
 	ResourceOwnerRelease(TopTransactionResourceOwner,
 						 RESOURCE_RELEASE_LOCKS,
 						 true, true);
@@ -2189,30 +2196,37 @@ CommitTransaction(void)
 						 RESOURCE_RELEASE_AFTER_LOCKS,
 						 true, true);
 
-	/*
-	 * Likewise, dropping of files deleted during the transaction is best done
-	 * after releasing relcache and buffer pins.  (This is not strictly
-	 * necessary during commit, since such pins should have been released
-	 * already, but this ordering is definitely critical during abort.)  Since
-	 * this may take many seconds, also delay until after releasing locks.
-	 * Other backends will observe the attendant catalog changes and not
-	 * attempt to access affected files.
-	 */
-	smgrDoPendingDeletes(true);
+	if (!is_autonomous_transaction) 
+	{
+		/*
+		 * Likewise, dropping of files deleted during the transaction is best done
+		 * after releasing relcache and buffer pins.  (This is not strictly
+		 * necessary during commit, since such pins should have been released
+		 * already, but this ordering is definitely critical during abort.)  Since
+		 * this may take many seconds, also delay until after releasing locks.
+		 * Other backends will observe the attendant catalog changes and not
+		 * attempt to access affected files.
+		 */
+		smgrDoPendingDeletes(true);
+	}
 
 	/* Check we've released all catcache entries */
 	AtEOXact_CatCache(true);
 
 	AtCommit_Notify();
 	AtEOXact_GUC(true, s->gucNestLevel);
-	if (getNestLevelATX() == 0) 
+	if (!is_autonomous_transaction) 
+	{
 		AtEOXact_SPI(true);
+	}
 	AtEOXact_on_commit_actions(true);
 	AtEOXact_Namespace(true, is_parallel_worker);
-	AtEOXact_SMgr();
-	if (getNestLevelATX() == 0) 
+	if (!is_autonomous_transaction) 
+	{
+		AtEOXact_SMgr();
 		AtEOXact_Files();
-	AtEOXact_ComboCid();
+		AtEOXact_ComboCid();
+	}
 	AtEOXact_HashTables(true);
 	AtEOXact_PgStat(true);
 	AtEOXact_Snapshot(true);
@@ -3583,9 +3597,11 @@ void SuspendTransaction(void)
 		MOVELEFT(sus->vxid.backendId, MyProc->backendId, MyBackendId);
 		MOVELEFT(sus->vxid.localTransactionId, MyProc->lxid, GetNextLocalTransactionId());
 
+		MOVELEFT(sus->on_commit_actions, pg_on_commit_actions, NULL);
+
 		sus->PgStatState = PgStatSuspend();
 		sus->TriggerState = TriggerSuspend();
-		sus->SPIState = SuspendSPI();
+		sus->SPIState = SuspendSPI();	  
 	}
 
 	AtStart_Memory();
@@ -3655,6 +3671,8 @@ bool ResumeTransaction(void)
 
 		MyProc->backendId = sus->vxid.backendId;
 		MyProc->lxid = sus->vxid.localTransactionId;
+
+		pg_on_commit_actions = sus->on_commit_actions;
 	}
 
 	ResumePgXact(MyPgXact);

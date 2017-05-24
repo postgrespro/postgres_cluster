@@ -525,7 +525,7 @@ CREATE EXTENSION pg_repack
     <para>
      For previous versions load the script
      <filename>$SHAREDIR/contrib/uninstall_pg_repack.sql</filename> into the database
-     where the error occured and then load <filename>$SHAREDIR/contrib/pg_repack.sql</filename>
+     where the error occurred and then load <filename>$SHAREDIR/contrib/pg_repack.sql</filename>
      again.
     </para>
 

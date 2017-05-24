@@ -179,6 +179,13 @@ spgbuildempty(Relation index)
 	log_newpage(&index->rd_smgr->smgr_rnode.node, INIT_FORKNUM,
 				SPGIST_NULL_BLKNO, page, true);
 
+	/* Don't forget to set ptrack bit even if we're skipping bufmgr stage */
+	ptrack_add_block_redo(index->rd_smgr->smgr_rnode.node, SPGIST_METAPAGE_BLKNO);
+	ptrack_add_block_redo(index->rd_smgr->smgr_rnode.node, SPGIST_ROOT_BLKNO);
+	ptrack_add_block_redo(index->rd_smgr->smgr_rnode.node, SPGIST_NULL_BLKNO);
+
+	/* Ensure rd_smgr is open (could have been closed by relcache flush!) */
+	RelationOpenSmgr(index);
 	/*
 	 * An immediate sync is required even if we xlog'd the pages, because the
 	 * writes did not go through shared buffers and therefore a concurrent

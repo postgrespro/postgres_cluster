@@ -69,6 +69,7 @@
 #include "access/nbtree.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
+#include "access/ptrack.h"
 #include "miscadmin.h"
 #include "storage/smgr.h"
 #include "tcop/tcopprot.h"
@@ -276,8 +277,12 @@ _bt_blwritepage(BTWriteState *wstate, Page page, BlockNumber blkno)
 	/* XLOG stuff */
 	if (wstate->btws_use_wal)
 	{
+		/* Don't forget to set ptrack bit even if we're skipping bufmgr stage */
+		ptrack_add_block_redo(wstate->index->rd_node, blkno);
 		/* We use the heap NEWPAGE record type for this */
 		log_newpage(&wstate->index->rd_node, MAIN_FORKNUM, blkno, page, true);
+		/* Ensure rd_smgr is open (could have been closed by relcache flush!) */
+		RelationOpenSmgr(wstate->index);
 	}
 
 	/*
@@ -545,14 +550,13 @@ _bt_buildadd(BTWriteState *wstate, BTPageState *state, IndexTuple itup)
 		if (indnkeyatts != indnatts && P_ISLEAF(opageop))
 		{
 			/*
-			 * It's essential to truncate High key here.
-			 * The purpose is not just to save more space on this particular page,
-			 * but to keep whole b-tree structure consistent. Subsequent insertions
-			 * assume that hikey is already truncated, and so they should not
-			 * worry about it, when copying the high key into the parent page
-			 * as a downlink.
-			 * NOTE It is not crutial for reliability in present,
-			 * but maybe it will be that in the future.
+			 * We truncate included attributes of High key here.
+			 * Subsequent insertions assume that hikey is already truncated,
+			 * and so they need not worry about it, when copying the high key
+			 * into the parent page as a downlink.
+			 * NOTE: It is not crucial for reliability in present, but maybe
+			 * it will be that in the future. Now the purpose is just to save
+			 * more space on inner pages of btree.
 			 */
 			keytup = index_truncate_tuple(wstate->index, oitup);
 
