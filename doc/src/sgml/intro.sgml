@@ -286,6 +286,9 @@
         including the current wait events for all processes and background
         workers.</simpara>
     </listitem>
+    <listitem>
+     <simpara><application>pg_tsparser</application> module is an alternative text search parser.</simpara>
+    </listitem>
    </itemizedlist>
   </para>
 

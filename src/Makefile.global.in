@@ -42,6 +42,7 @@ VERSION_NUM = @PG_VERSION_NUM@
 
 PGPRO_VERSION = @PGPRO_VERSION@
 PGPRO_PACKAGE_NAME = @PGPRO_PACKAGE_NAME@
+PGPRO_EDITION = @PGPRO_EDITION@
 
 # Set top_srcdir, srcdir, and VPATH.
 ifdef PGXS
@@ -597,6 +598,11 @@ ifneq ($(CUSTOM_COPT),)
   COPT= $(CUSTOM_COPT)
 endif
 
+#
+# These variables are meant to be set in the environment of "make"
+# to add flags to whatever configure picked.  Unlike the ones above,
+# they are documented.
+#
 ifdef COPT
    CFLAGS += $(COPT)
    LDFLAGS += $(COPT)

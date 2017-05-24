@@ -147,6 +147,7 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &pgstattuple;
  &pgtransfer;
  &pgtrgm;
+ &pg-tsparser;
  &pgvariables;
  &pgvisibility;
  &pg-wait-sampling;

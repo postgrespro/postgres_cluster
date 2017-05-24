@@ -17,7 +17,7 @@ dnl Read the Autoconf manual for details.
 dnl
 m4_pattern_forbid(^PGAC_)dnl to catch undefined macros
 
-AC_INIT([PostgreSQL], [9.6.2], [bugs@postgrespro.ru],[postgrespro])
+AC_INIT([PostgreSQL], [9.6.3], [bugs@postgrespro.ru],[postgrespro])
 PACKAGE_TARNAME=postgrespro
 
 m4_if(m4_defn([m4_PACKAGE_VERSION]), [2.69], [], [m4_fatal([Autoconf version 2.69 is required.
@@ -1173,75 +1173,83 @@ if test "$with_openssl" = yes ; then
 fi
 
 if test "$with_icu" = yes ; then
- AC_SEARCH_LIBS(ucol_open, [icui18n icuin], [], [
- AC_SEARCH_LIBS(ucol_open_57, [icui18n icuin], [], [
- AC_SEARCH_LIBS(ucol_open_56, [icui18n icuin], [], [
- AC_SEARCH_LIBS(ucol_open_55, [icui18n icuin], [], [
- AC_SEARCH_LIBS(ucol_open_54, [icui18n icuin], [], [
- AC_SEARCH_LIBS(ucol_open_53, [icui18n icuin], [], [
- AC_SEARCH_LIBS(ucol_open_52, [icui18n icuin], [], [
-  AC_SEARCH_LIBS(ucol_open_50, [icui18n icuin], [], [
-   AC_SEARCH_LIBS(ucol_open_48, [icui18n icuin], [], [
-    AC_SEARCH_LIBS(ucol_open_46, [icui18n icuin], [], [
-      AC_SEARCH_LIBS(ucol_open_44, [icui18n icuin], [], [
-        AC_SEARCH_LIBS(ucol_open_43, [icui18n icuin], [], [
-		AC_SEARCH_LIBS(ucol_open_4_2, [icui18n icuin], [], [
-		AC_SEARCH_LIBS(ucol_open_4_1, [icui18n icuin], [], [
-		 AC_SEARCH_LIBS(ucol_open_4_0, [icui18n icuin], [], [
-          AC_SEARCH_LIBS(ucol_open_3_8, [icui18n icuin], [], [
-            AC_SEARCH_LIBS(ucol_open_3_6, [icui18n icuin], [], [
-              AC_SEARCH_LIBS(ucol_open_3_4, [icui18n icuin], [], [AC_MSG_ERROR([library 'icui18n' is required for ICU])])
-            ])
-          ])
-        ])
-      ])
-    ])
-   ])
-  ])
-  ])
- ])
- ])
- ])
- ])
- ])
- ])
- ])
- ])
+AC_SEARCH_LIBS(ucol_open, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_58, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_57, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_56, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_55, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_54, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_53, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_52, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_52_1, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_50, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_48, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_46, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_44, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_43, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_4_2, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_4_1, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_4_0, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_3_8, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_3_6, [icui18n icuin], [], [
+AC_SEARCH_LIBS(ucol_open_3_4, [icui18n icuin], [], [AC_MSG_ERROR([library 'icui18n' is required for ICU])])
 ])
- AC_CHECK_LIB(icuuc, ucnv_fromUChars, [], [
- AC_CHECK_LIB(icuuc, ucnv_fromUChars_57, [], [
- AC_CHECK_LIB(icuuc, ucnv_fromUChars_56, [], [
- AC_CHECK_LIB(icuuc, ucnv_fromUChars_55, [], [
- AC_CHECK_LIB(icuuc, ucnv_fromUChars_54, [], [
- AC_CHECK_LIB(icuuc, ucnv_fromUChars_53, [], [
- AC_CHECK_LIB(icuuc, ucnv_fromUChars_52, [], [
-  AC_CHECK_LIB(icuuc, ucnv_fromUChars_50, [], [
-   AC_CHECK_LIB(icuuc, ucnv_fromUChars_48, [], [
-    AC_CHECK_LIB(icuuc, ucnv_fromUChars_46, [], [
-      AC_CHECK_LIB(icuuc, ucnv_fromUChars_44, [], [
-        AC_CHECK_LIB(icuuc, ucnv_fromUChars_43, [], [
-		AC_CHECK_LIB(icuuc, ucnv_fromUChars_4_2, [], [
-		AC_CHECK_LIB(icuuc, ucnv_fromUChars_4_1, [], [
-		AC_CHECK_LIB(icuuc, ucnv_fromUChars_4_0, [], [
-          AC_CHECK_LIB(icuuc, ucnv_fromUChars_3_8, [], [
-            AC_CHECK_LIB(icuuc, ucnv_fromUChars_3_6, [], [
-              AC_CHECK_LIB(icuuc, ucnv_fromUChars_3_4, [], [AC_MSG_ERROR([library 'icuuc' is required for ICU])])
-            ])
-          ])
-        ])
-		])
-      ])
-    ])
-   ])
-  ])
- ])
- ])
- ])
- ])
- ])
- ])
- ])
- ])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+AC_CHECK_LIB(icuuc, ucnv_fromUChars, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_58, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_57, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_56, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_55, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_54, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_53, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_52, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_52_1, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_50, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_48, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_46, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_44, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_43, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_4_2, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_4_1, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_4_0, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_3_8, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_3_6, [], [
+AC_CHECK_LIB(icuuc, ucnv_fromUChars_3_4, [], [AC_MSG_ERROR([library 'icuuc' is required for ICU])])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
+])
 ])
 fi
 

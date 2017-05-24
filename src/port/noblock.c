@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  *
  * noblock.c
- *	  set a file descriptor as non-blocking
+ *	  set a file descriptor as blocking or non-blocking
  *
  * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
@@ -20,16 +20,31 @@
 #endif
 
 
+/*
+ * Put socket into nonblock mode.
+ * Returns true on success, false on failure.
+ */
 bool
 pg_set_noblock(pgsocket sock, bool isRsocket)
 {
 #if !defined(WIN32)
+	int			flags;
+
+#ifdef WITH_RSOCKET
+	if (isRsocket)
+		flags = rfcntl(sock, F_GETFL, O_NONBLOCK);
+	else
+#endif
+	    flags = fcntl(sock, F_GETFL);
+	if (flags < 0)
+		return false;
 #ifdef WITH_RSOCKET
 	if (isRsocket)
 		return (rfcntl(sock, F_SETFL, O_NONBLOCK) != -1);
 	else
 #endif
 		return (fcntl(sock, F_SETFL, O_NONBLOCK) != -1);
+	return true;
 #else
 	unsigned long ioctlsocket_ret = 1;
 
@@ -38,7 +53,10 @@ pg_set_noblock(pgsocket sock, bool isRsocket)
 #endif
 }
 
-
+/*
+ * Put socket into blocking mode.
+ * Returns true on success, false on failure.
+ */
 bool
 pg_set_block(pgsocket sock, bool isRsocket)
 {

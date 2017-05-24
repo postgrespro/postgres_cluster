@@ -72,7 +72,7 @@
     
   <sect2 id="multimaster-limitations">
     <title>Limitations</title>
-    <para>The <filename>multimaster</filename> extension takes care of the database replication in a fully automated way. You can perform write transactions on any node and work with temporary tables on each cluster node simultaneosly. However, make sure to take the following replication restrictions into account:</para>
+    <para>The <filename>multimaster</filename> extension takes care of the database replication in a fully automated way. You can perform write transactions on any node and work with temporary tables on each cluster node simultaneously. However, make sure to take the following replication restrictions into account:</para>
     <itemizedlist>
       <listitem>
         <para>
@@ -832,7 +832,7 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
   <varlistentry><term><varname>multimaster.max_recovery_lag</varname><indexterm><primary><varname>multimaster.max_recovery_lag</varname></primary></indexterm></term><listitem><para>
     Maximal WAL lag
     size, in bytes. When a node is disconnected from the cluster, other
-    nodes copy WALs for all new trasactions into the replication slot of
+    nodes copy WALs for all new transactions into the replication slot of
     this node. Upon reaching the
     <varname>multimaster.max_recovery_lag</varname> value, the
     replication slot for the disconnected node is dropped to avoid

@@ -117,9 +117,10 @@ typedef struct _restoreOptions
 
 	bool	   *idWanted;		/* array showing which dump IDs to emit */
 	int			enable_row_security;
-	const char	*transfer_dir;
+	const char *transfer_dir;
 	int			generate_wal;
 	int			copy_mode_transfer;
+	int			binary_upgrade;
 } RestoreOptions;
 
 typedef struct _dumpOptions

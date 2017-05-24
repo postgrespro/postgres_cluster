@@ -425,30 +425,47 @@ ConstructTupleDescriptor(Relation heapRelation,
 		colnames_item = lnext(colnames_item);
 
 		/*
+		 * Check the opclass and index AM to see if either provides a keytype
+		 * (overriding the attribute type).  Opclass (if exists) takes precedence.
+		 */
+		keyType = amroutine->amkeytype;
+
+		/*
 		 * Code below is concerned to the opclasses which are not used
 		 * with the included columns.
 		 */
-		if (i >= indexInfo->ii_NumIndexKeyAttrs)
-			continue;
+		if (i < indexInfo->ii_NumIndexKeyAttrs)
+		{
+			tuple = SearchSysCache1(CLAOID, ObjectIdGetDatum(classObjectId[i]));
+			if (!HeapTupleIsValid(tuple))
+				elog(ERROR, "cache lookup failed for opclass %u",
+					 classObjectId[i]);
+			opclassTup = (Form_pg_opclass) GETSTRUCT(tuple);
+			if (OidIsValid(opclassTup->opckeytype))
+				keyType = opclassTup->opckeytype;
+
+			ReleaseSysCache(tuple);
+		}
 
 		/*
-		 * Check the opclass and index AM to see if either provides a keytype
-		 * (overriding the attribute type).  Opclass takes precedence.
+		 * If keytype is specified as ANYELEMENT, and opcintype is ANYARRAY,
+		 * then the attribute type must be an array (else it'd not have
+		 * matched this opclass); use its element type.
 		 */
-		tuple = SearchSysCache1(CLAOID, ObjectIdGetDatum(classObjectId[i]));
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for opclass %u",
-				 classObjectId[i]);
-		opclassTup = (Form_pg_opclass) GETSTRUCT(tuple);
-		if (OidIsValid(opclassTup->opckeytype))
-			keyType = opclassTup->opckeytype;
-		else
-			keyType = amroutine->amkeytype;
-		ReleaseSysCache(tuple);
+		if (keyType == ANYELEMENTOID && opclassTup->opcintype == ANYARRAYOID)
+		{
+			keyType = get_base_element_type(to->atttypid);
+			if (!OidIsValid(keyType))
+				elog(ERROR, "could not get element type of array type %u",
+					 to->atttypid);
+		}
 
+		/*
+		 * If a key type different from the heap value is specified, update
+		 * the type-related fields in the index tupdesc.
+		 */
 		if (OidIsValid(keyType) && keyType != to->atttypid)
 		{
-			/* index value and heap value have different types */
 			tuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(keyType));
 			if (!HeapTupleIsValid(tuple))
 				elog(ERROR, "cache lookup failed for type %u", keyType);

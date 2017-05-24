@@ -382,7 +382,7 @@ doc/src/sgml/ref/pg_basebackup.sgml
       <term><option>--checkpoint=<replaceable class="parameter">fast|spread</replaceable></option></term>
       <listitem>
        <para>
-        Sets checkpoint mode to fast or spread (default) (see <xref linkend="backup-lowlevel-base-backup">).
+        Sets checkpoint mode to fast (immediate) or spread (default) (see <xref linkend="backup-lowlevel-base-backup">).
        </para>
       </listitem>
      </varlistentry>
@@ -598,6 +598,14 @@ doc/src/sgml/ref/pg_basebackup.sgml
 
  <refsect1>
   <title>Notes</title>
+
+  <para>
+   At the beginning of the backup, a checkpoint needs to be written on the
+   server the backup is taken from.  Especially if the option
+   <literal>--checkpoint=fast</literal> is not used, this can take some time
+   during which <application>pg_basebackup</application> will be appear
+   to be idle.
+  </para>
 
   <para>
    The backup will include all files in the data directory and tablespaces,

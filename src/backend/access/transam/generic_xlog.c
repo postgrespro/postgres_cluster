@@ -15,6 +15,7 @@
 
 #include "access/generic_xlog.h"
 #include "access/xlogutils.h"
+#include "access/ptrack.h"
 #include "miscadmin.h"
 #include "utils/memutils.h"
 
@@ -305,10 +306,18 @@ GenericXLogRegisterBuffer(GenericXLogState *state, Buffer buffer, int flags)
 
 		if (BufferIsInvalid(page->buffer))
 		{
+			RelFileNode rnode;
+			BlockNumber blkno;
+			ForkNumber 	forkno;
+
 			/* Empty slot, so use it (there cannot be a match later) */
 			page->buffer = buffer;
 			page->flags = flags;
 			memcpy(page->image, BufferGetPage(buffer), BLCKSZ);
+
+			BufferGetTag(buffer, &rnode, &forkno, &blkno);
+			if (forkno == MAIN_FORKNUM)
+				ptrack_add_block_redo(rnode, blkno);
 			return (Page) page->image;
 		}
 		else if (page->buffer == buffer)
@@ -490,12 +499,17 @@ generic_redo(XLogReaderState *record)
 	for (block_id = 0; block_id <= record->max_block_id; block_id++)
 	{
 		XLogRedoAction action;
+		RelFileNode rnode;
+		BlockNumber blkno;
 
 		if (!XLogRecHasBlockRef(record, block_id))
 		{
 			buffers[block_id] = InvalidBuffer;
 			continue;
 		}
+
+		XLogRecGetBlockTag(record, block_id, &rnode, NULL, &blkno);
+		ptrack_add_block_redo(rnode, blkno);
 
 		action = XLogReadBufferForRedo(record, block_id, &buffers[block_id]);
 
