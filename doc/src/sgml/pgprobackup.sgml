@@ -23,60 +23,65 @@ doc/src/sgml/pgprobackup.sgml
 
   <cmdsynopsis>
    <command>pg_probackup</command>
-   <arg choice="plain">init</arg>
-   <arg choice="plain">-B <replaceable>backup-dir</replaceable></arg>
-   <arg choice="plain">-D <replaceable>pgdata-dir</replaceable></arg>
+   <arg choice="plain"><option>init</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>backupdir</replaceable>></arg>
+   <arg choice="plain"><option>-D</option> <replaceable>datadir</replaceable></arg>
    <arg rep="repeat"><replaceable>option</replaceable></arg>
   </cmdsynopsis>
   <cmdsynopsis>
    <command>pg_probackup</command>
-   <arg choice="plain">set-config</arg>
-   <arg choice="plain">-B <replaceable>backup-dir</replaceable></arg>
+   <arg choice="plain"><option>set-config</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>backupdir</replaceable></arg>
    <arg rep="repeat"><replaceable>option</replaceable></arg>
   </cmdsynopsis>
   <cmdsynopsis>
    <command>pg_probackup</command>
-   <arg choice="plain">show-config</arg>
-   <arg choice="plain">-B <replaceable>backup-dir</replaceable></arg>
+   <arg choice="plain"><option>show-config</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>backupdir</replaceable></arg>
   </cmdsynopsis>
   <cmdsynopsis>
    <command>pg_probackup</command>
-   <arg choice="plain">backup</arg>
-   <arg choice="plain">-B <replaceable>backup-dir</replaceable></arg>
-   <arg choice="plain">-b <replaceable>backup-mode</replaceable></arg>
+   <arg choice="plain"><option>backup</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>backupdir</replaceable></arg>
+   <arg choice="plain"><option>-b</option> <replaceable>backup_mode</replaceable></arg>
    <arg rep="repeat"><replaceable>option</replaceable></arg>
   </cmdsynopsis>
   <cmdsynopsis>
    <command>pg_probackup</command>
-   <arg choice="plain">restore</arg>
-   <arg choice="plain">-B <replaceable>backup-dir</replaceable></arg>
+   <arg choice="plain"><option>restore</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>backupdir</replaceable></arg>
    <arg rep="repeat"><replaceable>option</replaceable></arg>
   </cmdsynopsis>
   <cmdsynopsis>
    <command>pg_probackup</command>
-   <arg choice="plain">validate</arg>
-   <arg choice="plain">-B <replaceable>backup-dir</replaceable></arg>
+   <arg choice="plain"><option>validate</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>backupdir</replaceable></arg>
    <arg rep="repeat"><replaceable>option</replaceable></arg>
   </cmdsynopsis>
   <cmdsynopsis>
    <command>pg_probackup</command>
-   <arg choice="plain">show</arg>
-   <arg choice="plain">-B <replaceable>backup-dir</replaceable></arg>
+   <arg choice="plain"><option>show</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>backupdir</replaceable></arg>
    <arg rep="repeat"><replaceable>option</replaceable></arg>
   </cmdsynopsis>
   <cmdsynopsis>
    <command>pg_probackup</command>
-   <arg choice="plain">delete</arg>
-   <arg choice="plain">-B <replaceable>backup-dir</replaceable></arg>
-   <arg choice="req">-i <replaceable>backup-id</replaceable> | --wal | --expired</arg>
+   <arg choice="plain"><option>delete</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>backupdir</replaceable></arg>
+   <group choice="req">
+   <arg choice="plain"><option>-i</option> <replaceable>backup_id</replaceable></arg>
+   <arg choice="plain"><option>--wal</option></arg>
+   <arg choice="plain"><option>--expired</option></arg>
+   </group>
   </cmdsynopsis>
   <cmdsynopsis>
    <command>pg_probackup</command>
-   <arg choice="plain">version</arg>
+   <arg choice="plain"><option>version</option></arg>
   </cmdsynopsis>
   <cmdsynopsis>
    <command>pg_probackup</command>
-   <arg choice="plain">help</arg> <arg choice="opt"><replaceable>command</replaceable></arg>
+   <arg choice="plain"><option>help</option></arg>
+   <arg choice="opt"><replaceable>command</replaceable></arg>
   </cmdsynopsis>
 
   </refsynopsisdiv>
@@ -136,7 +141,7 @@ doc/src/sgml/pgprobackup.sgml
     <listitem>
       <para>
         Automatic data consistency checks and on-demand backup
-        validation prior to cluster recovery
+        validation without actual data recovery
       </para>
     </listitem>
     <listitem>
@@ -158,21 +163,21 @@ doc/src/sgml/pgprobackup.sgml
   </itemizedlist>
   <para>
     To manage backup data, <application>pg_probackup</application> creates a
-    special <emphasis>backup catalog</emphasis> directory. The backup
-    catalog stores all backup files with additional meta information, as
+    special <emphasis>backup catalog</emphasis>. This directory
+    stores all backup files with additional meta information, as
     well as <acronym>WAL</acronym> archives required for point-in-time recovery. To avoid
     conflicts, <application>pg_probackup</application> does not allow storing
     backups for different clusters in a single backup catalog.
   </para>
   <para>
-    Depending on the amount of saved data, <application>pg_probackup</application> can take
+    Using <application>pg_probackup</application>, you can take
     <emphasis>full</emphasis> or <emphasis>incremental</emphasis> backups:
   </para>
   <itemizedlist spacing="compact">
     <listitem>
       <para>
-        Full backups contain all the data files of the 
-        <productname>&productname;</productname> cluster to be restored.
+        Full backups contain all the data files required to restore
+        the database cluster from scratch.
       </para>
     </listitem>
     <listitem>
@@ -180,7 +185,7 @@ doc/src/sgml/pgprobackup.sgml
         Incremental backups only store the data that has changed since
         the previous backup. It allows to decrease the backup size
         and speed up backup and restore operations.
-        pg_probackup provides the following modes of incremental backups:
+        <application>pg_probackup</application> supports the following modes of incremental backups:
       </para>
       <itemizedlist spacing="compact">
         <listitem>
@@ -221,7 +226,7 @@ doc/src/sgml/pgprobackup.sgml
       <para><emphasis>Autonomous backups</emphasis> include all
     the files required to restore the cluster to a consistent state at
     the time the backup was taken. Even if continuous archiving is not
-    set up, the minimum required <acronym>WAL</acronym> file segments are included into the
+    set up, the required <acronym>WAL</acronym> segments are included into the
     backup. Since an autonomous backup is quite lightweight, you can
     copy the backup and restore the cluster on another system.
       </para>
@@ -298,22 +303,22 @@ doc/src/sgml/pgprobackup.sgml
       To initialize the backup catalog, run the following command:
     </para>
     <programlisting>
-pg_probackup init -B <replaceable>backup-dir</replaceable> -D <replaceable>pgdata-dir</replaceable>
+pg_probackup init -B <replaceable>backupdir</replaceable> -D <replaceable>datadir</replaceable>
 </programlisting>
     <para>
       where:
     <itemizedlist spacing="compact">
       <listitem>
         <para>
-          <literal>backup-dir</literal> is the backup catalog. If the
-          <literal>backup-dir</literal> already exists, it must be
+          <replaceable>backupdir</replaceable> is the backup catalog. If the
+          <replaceable>backupdir</replaceable> already exists, it must be
           empty. Otherwise, <application>pg_probackup</application> returns an
           error.
         </para>
       </listitem>
       <listitem>
         <para>
-          <literal>pgdata-dir</literal> is the data directory of the
+          <replaceable>datadir</replaceable> is the data directory of the
           cluster you are going to back up. To set up and use
           <application>pg_probackup</application>, write access to this
           directory is required.
@@ -322,7 +327,7 @@ pg_probackup init -B <replaceable>backup-dir</replaceable> -D <replaceable>pgdat
     </itemizedlist>
     </para>
     <para>
-      The utility creates the <literal>backup-dir</literal> backup
+      The utility creates the <replaceable>backupdir</replaceable> backup
       catalog, with the following files and subdirectories:
     </para>
     <itemizedlist spacing="compact">
@@ -425,7 +430,7 @@ CREATE ROLE backup WITH LOGIN REPLICATION;
         </listitem>
         <listitem>
           <para>
-            Modify the <literal>postgresql.conf</literal> configuration
+            Modify the <filename>postgresql.conf</filename> configuration
             file of the <productname>&productname;</productname> server, as follows:
           </para>
           <itemizedlist spacing="compact">
@@ -483,7 +488,7 @@ CREATE ROLE backup WITH LOGIN;
         <listitem>
           <para>
             Configure the following parameters in
-            <literal>postgresql.conf</literal> to enable continuous
+            <filename>postgresql.conf</filename> to enable continuous
             archiving on a <productname>&productname;</productname> server:
           </para>
       <itemizedlist spacing="compact">
@@ -540,7 +545,7 @@ GRANT EXECUTE ON FUNCTION txid_snapshot_xmax(txid_snapshot) TO backup;
               <para>
                 Set the <literal>max_wal_senders</literal> and
                 <literal>hot_standby</literal> parameters in
-                <literal>postgresql.conf</literal>.
+                <filename>postgresql.conf</filename>.
               </para>
             </listitem>
             <listitem>
@@ -555,7 +560,7 @@ GRANT EXECUTE ON FUNCTION txid_snapshot_xmax(txid_snapshot) TO backup;
           <para>
             On the master server, enable
             <literal>full_page_writes</literal> in
-            <literal>postgresql.conf</literal>.
+            <filename>postgresql.conf</filename>.
           </para>
         </listitem>
       </orderedlist>
@@ -584,7 +589,7 @@ GRANT EXECUTE ON FUNCTION txid_snapshot_xmax(txid_snapshot) TO backup;
       </note>
     </refsect3>
     <refsect3 id="ptrack-backup">
-      <title><literal>ptrack</literal> Backup</title>
+      <title><literal>PTRACK</literal> Backup</title>
       <para>
         If you are going to use <literal>PTRACK</literal> backups, complete the following
         additional steps:
@@ -592,7 +597,7 @@ GRANT EXECUTE ON FUNCTION txid_snapshot_xmax(txid_snapshot) TO backup;
       <orderedlist numeration="arabic" spacing="compact">
         <listitem>
           <para>
-            In <literal>postgresql.conf</literal>, set
+            In <filename>postgresql.conf</filename>, set
             <literal>ptrack_enable</literal> to <literal>'on'</literal>.
           </para>
         </listitem>
@@ -633,13 +638,13 @@ GRANT EXECUTE ON FUNCTION pg_ptrack_get_and_clear(oid, oid) TO backup;
          Syntax:
        </para>
        <programlisting>
-pg_probackup init <link linkend="pg-probackup-backup-dir">-B <replaceable>backup-dir</replaceable></link> <link linkend="pg-probackup-pgdata-dir">-D <replaceable>pgdata-dir</replaceable></link>
+pg_probackup init <link linkend="pg-probackup-backup-dir">-B <replaceable>backupdir</replaceable></link> <link linkend="pg-probackup-pgdata-dir">-D <replaceable>datadir</replaceable></link>
 </programlisting>
          <para>
-    Initializes a backup catalog <replaceable>backup-dir</replaceable> that will store
-    backup copies for the specified <replaceable>pgdata-dir</replaceable> data directory,
+    Initializes a backup catalog <replaceable>backupdir</replaceable> that will store
+    backup copies for the specified <replaceable>datadir</replaceable> data directory,
     together with the <acronym>WAL</acronym> archive and meta information. 
-    If the specified <replaceable>backup-dir</replaceable> already exists, it must be empty. Otherwise,
+    If the specified <replaceable>backupdir</replaceable> already exists, it must be empty. Otherwise,
     <application>pg_probackup</application> displays a corresponding error message.
   </para>
        </listitem>
@@ -652,7 +657,7 @@ pg_probackup init <link linkend="pg-probackup-backup-dir">-B <replaceable>backup
          Syntax:
        </para>
        <programlisting>
-pg_probackup set-config -B <replaceable>backup-dir</replaceable> 
+pg_probackup set-config -B <replaceable>backupdir</replaceable> 
 [-d <replaceable>dbname</replaceable>] [-h <replaceable>host</replaceable>] [-p <replaceable>port</replaceable>] [-U <replaceable>username</replaceable>] 
 [--retention-redundancy=<replaceable>redundancy</replaceable>][--retention-window=<replaceable>window</replaceable>]
 </programlisting>
@@ -672,11 +677,11 @@ pg_probackup set-config -B <replaceable>backup-dir</replaceable>
          Syntax:
        </para>
        <programlisting>
-pg_probackup show-config -B <replaceable>backup-dir</replaceable>
+pg_probackup show-config -B <replaceable>backupdir</replaceable>
 </programlisting>
        <para>
        Displays the contents of the <filename>pg_probackup.conf</filename> 
-       configuration file located in the <replaceable>backup-dir</replaceable> directory.
+       configuration file located in the <replaceable>backupdir</replaceable> directory.
        To edit <filename>pg_probackup.conf</filename>, use the <xref linkend="pg-probackup-set-config"> command. It is not allowed to edit <filename>pg_probackup.conf</filename> directly.
        </para>
        </listitem>
@@ -689,8 +694,8 @@ pg_probackup show-config -B <replaceable>backup-dir</replaceable>
          Syntax:
        </para>
        <programlisting>
-pg_probackup backup -B <replaceable>backup-dir</replaceable> -b <replaceable>backup-mode</replaceable> 
-[-D <replaceable>pgdata-dir</replaceable>]
+pg_probackup backup -B <replaceable>backupdir</replaceable> -b <replaceable>backup_mode</replaceable> 
+[-D <replaceable>datadir</replaceable>]
 [-C] [--stream [-S <replaceable>slot-name</replaceable>]] [--backup-pg-log] 
 -archive-timeout=<replaceable>timeout</replaceable>] [--delete-expired] 
 [-d <replaceable>dbname</replaceable>] [-h <replaceable>host</replaceable>] [-p <replaceable>port</replaceable>] [-U <replaceable>username</replaceable>] [-w]
@@ -698,7 +703,7 @@ pg_probackup backup -B <replaceable>backup-dir</replaceable> -b <replaceable>bac
 </programlisting>
        <para>
        Creates a backup copy of the <productname>&productname;</productname> instance. 
-       The <link linkend="pg-probackup-backup-mode"><replaceable>backup-mode</replaceable></link>
+       The <link linkend="pg-probackup-backup-mode"><replaceable>backup_mode</replaceable></link>
        option specifies the backup mode to use. For details, 
        see <xref linkend="pg-probackup-creating-backup">.
        </para>
@@ -716,14 +721,14 @@ pg_probackup backup -B <replaceable>backup-dir</replaceable> -b <replaceable>bac
          Syntax:
        </para>
        <programlisting>
-pg_probackup restore -B <replaceable>backup-dir</replaceable>
-[-D <replaceable>pgdata-dir</replaceable>] 
-[ -i <replaceable>backup-id</replaceable> | [{--time=<replaceable>time</replaceable> | --xid=<replaceable>xid</replaceable> } [--inclusive=<replaceable>boolean</replaceable>]]][--timeline=<replaceable>timeline</replaceable>] [-T OLDDIR=<replaceable>NEWDIR</replaceable>]
+pg_probackup restore -B <replaceable>backupdir</replaceable>
+[-D <replaceable>datadir</replaceable>] 
+[ -i <replaceable>backup_id</replaceable> | [{--time=<replaceable>time</replaceable> | --xid=<replaceable>xid</replaceable> } [--inclusive=<replaceable>boolean</replaceable>]]][--timeline=<replaceable>timeline</replaceable>] [-T OLDDIR=<replaceable>NEWDIR</replaceable>]
 [-j <replaceable>num-threads</replaceable>] [--progress] [-q] [-v]
 </programlisting>
        <para>
        Restores the <productname>&productname;</productname> instance from a backup copy
-       located in the <replaceable>backup-dir</replaceable> backup catalog. 
+       located in the <replaceable>backupdir</replaceable> backup catalog. 
        If you specify one or more <link linkend="pg-probackup-recovery-target-opts">recovery target options</link>,
        <application>pg_probackup</application> restores the database cluster up to the 
        specified recovery target. Otherwise, the most recent backup is used.
@@ -738,9 +743,9 @@ pg_probackup restore -B <replaceable>backup-dir</replaceable>
          Syntax:
        </para>
        <programlisting>
-pg_probackup validate -B <replaceable>backup-dir</replaceable> 
-[-D <replaceable>pgdata-dir</replaceable>] 
-[ -i <replaceable>backup-id</replaceable> | [{--time=<replaceable>time</replaceable> | --xid=<replaceable>xid</replaceable> } [--inclusive=<replaceable>boolean</replaceable>]]]
+pg_probackup validate -B <replaceable>backupdir</replaceable> 
+[-D <replaceable>datadir</replaceable>] 
+[ -i <replaceable>backup_id</replaceable> | [{--time=<replaceable>time</replaceable> | --xid=<replaceable>xid</replaceable> } [--inclusive=<replaceable>boolean</replaceable>]]]
 [--timeline=<replaceable>timeline</replaceable>]
 [-j <replaceable>num-threads</replaceable>] [--progress] [-q] [-v] 
 </programlisting>
@@ -761,11 +766,11 @@ pg_probackup validate -B <replaceable>backup-dir</replaceable>
          Syntax:
        </para>
        <programlisting>
-pg_probackup show -B <replaceable>backup-dir</replaceable> [-i <replaceable>backup-id</replaceable>]
+pg_probackup show -B <replaceable>backupdir</replaceable> [-i <replaceable>backup_id</replaceable>]
 </programlisting>
        <para>
        Shows the contents of the backup catalog. 
-       If <replaceable>backup-id</replaceable> is specified, shows detailed information about
+       If <replaceable>backup_id</replaceable> is specified, shows detailed information about
        this backup.
        </para>
        </listitem>
@@ -778,10 +783,10 @@ pg_probackup show -B <replaceable>backup-dir</replaceable> [-i <replaceable>back
          Syntax:
        </para>
        <programlisting>
-pg_probackup delete -B <replaceable>backup-dir</replaceable> {-i <replaceable>backup-id</replaceable> | --wal | --expired}
+pg_probackup delete -B <replaceable>backupdir</replaceable> {-i <replaceable>backup_id</replaceable> | --wal | --expired}
 </programlisting>
        <para>
-       Deletes the specified backup files from the <replaceable>backup-dir</replaceable> backup catalog:
+       Deletes the specified backup files from the <replaceable>backupdir</replaceable> backup catalog:
         <itemizedlist spacing="compact">
           <listitem>
             <para>The <option>backup-id</option> option removes the specified backup copy.
@@ -885,8 +890,8 @@ pg_probackup help [<replaceable>command</replaceable>]
      </varlistentry>
 
      <varlistentry>
-      <term><option>-i <replaceable>backup-id</replaceable></option></term>
-      <term><option>-backup-id=<replaceable>backup-id</replaceable></option></term>
+      <term><option>-i <replaceable>backup_id</replaceable></option></term>
+      <term><option>-backup-id=<replaceable>backup_id</replaceable></option></term>
       <listitem>
        <para>
          Specifies the unique identifier of the backup.
@@ -1015,7 +1020,7 @@ pg_probackup help [<replaceable>command</replaceable>]
      </varlistentry>
 
      <varlistentry>
-      <term><option>--archive-timeout=<replaceable>wait-time</replaceable></option></term>
+      <term><option>--archive-timeout=<replaceable>wait_time</replaceable></option></term>
       <listitem>
        <para>
          Sets the timeout for <acronym>WAL</acronym> segment archiving, in seconds.
@@ -1181,7 +1186,7 @@ pg_probackup help [<replaceable>command</replaceable>]
        If this option is not provided on the command line, <envar>PGDATABASE</envar> 
        environment variable, or the <filename>pg_probackup.conf</filename> configuration file, 
        <application>pg_probackup</application> tries to take this value from 
-       the <envar>PGUSER</envar> environment variable, or from the current username if <envar>PGUSER</envar> variable is not set.
+       the <envar>PGUSER</envar> environment variable, or from the current user name if <envar>PGUSER</envar> variable is not set.
       </para>
       </listitem>
      </varlistentry>
@@ -1217,7 +1222,7 @@ pg_probackup help [<replaceable>command</replaceable>]
       <term><envar>PGUSER</></term>
       <listitem>
        <para>
-        Username to connect as.
+        User name to connect as.
        </para>
       </listitem>
      </varlistentry>
@@ -1250,9 +1255,9 @@ pg_probackup help [<replaceable>command</replaceable>]
     <title>Creating a Backup</title>
     <para>To create a backup, run the following command:
     <programlisting>
-pg_probackup backup -b <replaceable>backup-mode</replaceable>
+pg_probackup backup -b <replaceable>backup_mode</replaceable>
 </programlisting>
-where <replaceable>backup-mode</replaceable> can take one of the following values:</para>
+where <replaceable>backup_mode</replaceable> can take one of the following values:</para>
   <itemizedlist spacing="compact">
     <listitem>
       <para><literal>FULL</literal> &mdash; creates a full backup that contains all the data files
@@ -1298,7 +1303,7 @@ pg_probackup backup -b FULL --stream
    <para>
    Autonomous backups include all the <acronym>WAL</acronym> segments required to restore the
    cluster to a consistent state at the time the backup was taken. To restore a cluster
-   from an incremenal autonomous backup, <application>pg_probackup</application> still
+   from an incremental autonomous backup, <application>pg_probackup</application> still
    requires a full backup and all the previous incremented backups.
    </para>
 
@@ -1391,7 +1396,7 @@ pg_probackup validate --xid=xid
     </listitem>
   </orderedlist>
   <programlisting>
-pg_probackup restore -D <replaceable>pgdata-dir</replaceable> -i <replaceable>backup-id</replaceable>
+pg_probackup restore -D <replaceable>datadir</replaceable> -i <replaceable>backup_id</replaceable>
 </programlisting>
   <para>
     where:
@@ -1399,16 +1404,16 @@ pg_probackup restore -D <replaceable>pgdata-dir</replaceable> -i <replaceable>ba
   <itemizedlist spacing="compact">
     <listitem>
       <para>
-        <replaceable>pgdata-dir</replaceable> specifies the location of the
+        <replaceable>datadir</replaceable> specifies the location of the
         restored data directory of the cluster. If you omit the
-        <literal>-D</literal> option, the <replaceable>pgdata-dir</replaceable> value is taken from
+        <literal>-D</literal> option, the <replaceable>datadir</replaceable> value is taken from
         the <filename>pg_probackup.conf</filename> configuration file, and
         the restored cluster replaces the original cluster. 
       </para>
     </listitem>
     <listitem>
       <para>
-        <literal>backup-id</literal> specifies the backup to restore the
+        <replaceable>backup_id</replaceable> specifies the backup to restore the
         cluster from. If you omit the <literal>-i</literal> option,
         <application>pg_probackup</application> uses the latest available
         backup.
@@ -1466,7 +1471,7 @@ pg_probackup restore --xid=687
     tablespaces. For example:
   </para>
   <programlisting>
-pg_probackup restore -D <replaceable>pgdata-dir</replaceable> -j 4 -i <replaceable>backup-id</replaceable> -T <replaceable>/tmp/tblspc1</replaceable>=<replaceable>/tmp/tblspc1_new</replaceable> -T <replaceable>/tmp/tblspc2</replaceable>=<replaceable>/tmp/tblspc2_new</replaceable>
+pg_probackup restore -D <replaceable>datadir</replaceable> -j 4 -i <replaceable>backup_id</replaceable> -T <replaceable>/tmp/tblspc1</replaceable>=<replaceable>/tmp/tblspc1_new</replaceable> -T <replaceable>/tmp/tblspc2</replaceable>=<replaceable>/tmp/tblspc2_new</replaceable>
 </programlisting>
   <para>
     Once the <literal>restore</literal> command is complete, start the
@@ -1512,7 +1517,7 @@ pg_probackup backup -b full -j 4
   <link linkend="pg-probackup-retention-opts">retention options</link> using the 
   <xref linkend="pg-probackup-set-config"> command:</para>
 <programlisting>
-pg_probackup set-config -B <replaceable>backup-dir</replaceable> [<replaceable>connection-options</replaceable>] [<replaceable>retention-options</replaceable>]
+pg_probackup set-config -B <replaceable>backupdir</replaceable> [<replaceable>connection-options</replaceable>] [<replaceable>retention-options</replaceable>]
 </programlisting>
 <para>where: 
 <itemizedlist spacing="compact">
@@ -1542,7 +1547,7 @@ If you define connection parameters in the <filename>pg_probackup.conf</filename
   </para>
      <para>
      If nothing is given, the default values are taken. <application>pg_probackup</application>
-     tries to use local connection and tries to get the database name and the username from the <envar>PGUSER</envar> environment variable or the current <acronym>OS</acronym> username.
+     tries to use local connection and tries to get the database name and the user name from the <envar>PGUSER</envar> environment variable or the current <acronym>OS</acronym> user name.
    </para>
   </refsect2>
   <refsect2 id="pg-probackup-retention-policy">
@@ -1670,7 +1675,7 @@ pg_probackup show
       To get more detailed information about the backup, run the <command>show</command> with the backup ID:
     </para>
     <programlisting>
-    pg_probackup show -i <replaceable>backup-id</replaceable>
+    pg_probackup show -i <replaceable>backup_id</replaceable>
 </programlisting>
     <para>
       The sample output is as follows:
@@ -1709,7 +1714,7 @@ status = OK
 </programlisting>
     <para>
       This command will delete the backup with the specified
-      <literal>backup-id</literal>, together with all the incremental backups
+      <replaceable>backup_id</replaceable>, together with all the incremental backups
       that followed, if any. This way, you can delete
       some recent incremental backups, retaining the underlying full
       backup and some of the incremental backups that follow it. 
