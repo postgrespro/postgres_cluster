@@ -12,13 +12,10 @@
 
 #include "postgres_fe.h"
 
-#ifdef HAVE_SYS_SELECT_H
-#include <sys/select.h>
-#endif
-
 #include "common.h"
 #include "fe_utils/simple_list.h"
 #include "fe_utils/string_utils.h"
+#include "pg_socket.h"
 
 
 #define ERRCODE_UNDEFINED_TABLE  "42P01"
@@ -71,7 +68,8 @@ static bool GetQueryResult(PGconn *conn, const char *progname);
 
 static void DisconnectDatabase(ParallelSlot *slot);
 
-static int	select_loop(int maxFd, fd_set *workerset, bool *aborting);
+static int	select_loop(int maxFd, fd_set *workerset, bool *aborting,
+						bool isRsocket);
 
 static void init_slot(ParallelSlot *slot, PGconn *conn, const char *progname);
 
@@ -736,6 +734,7 @@ GetIdleSlot(ParallelSlot slots[], int numslots,
 	int			firstFree = -1;
 	fd_set		slotset;
 	pgsocket	maxFd;
+	bool		isRsocket = false;
 
 	for (i = 0; i < numslots; i++)
 		if ((slots + i)->isFree)
@@ -749,6 +748,10 @@ GetIdleSlot(ParallelSlot slots[], int numslots,
 		FD_SET((slots + i)->sock, &slotset);
 		if ((slots + i)->sock > maxFd)
 			maxFd = (slots + i)->sock;
+#ifdef WITH_RSOCKET
+		if (PQisRsocket((slots + i)->connection))
+			isRsocket = true;
+#endif
 	}
 
 	/*
@@ -760,7 +763,7 @@ GetIdleSlot(ParallelSlot slots[], int numslots,
 		bool		aborting;
 
 		SetCancelConn(slots->connection);
-		i = select_loop(maxFd, &slotset, &aborting);
+		i = select_loop(maxFd, &slotset, &aborting, isRsocket);
 		ResetCancelConn();
 
 		if (aborting)
@@ -871,7 +874,7 @@ DisconnectDatabase(ParallelSlot *slot)
  * ignored in this case.  Otherwise, *aborting is set to false.
  */
 static int
-select_loop(int maxFd, fd_set *workerset, bool *aborting)
+select_loop(int maxFd, fd_set *workerset, bool *aborting, bool isRsocket)
 {
 	int			i;
 	fd_set		saveSet = *workerset;
@@ -900,7 +903,7 @@ select_loop(int maxFd, fd_set *workerset, bool *aborting)
 #endif
 
 		*workerset = saveSet;
-		i = select(maxFd + 1, workerset, NULL, NULL, tvp);
+		i = pg_select(maxFd + 1, workerset, NULL, NULL, tvp, isRsocket);
 
 #ifdef WIN32
 		if (i == SOCKET_ERROR)

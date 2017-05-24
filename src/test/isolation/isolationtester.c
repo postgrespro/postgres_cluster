@@ -11,14 +11,12 @@
 #include <windows.h>
 #endif
 #include <sys/time.h>
-#ifdef HAVE_SYS_SELECT_H
-#include <sys/select.h>
-#endif
 
 #include "datatype/timestamp.h"
 #include "libpq-fe.h"
 #include "pqexpbuffer.h"
 #include "pg_getopt.h"
+#include "pg_socket.h"
 
 #include "isolationtester.h"
 
@@ -720,7 +718,8 @@ try_complete_step(Step *step, int flags)
 		timeout.tv_sec = 0;
 		timeout.tv_usec = 10000;	/* Check for lock waits every 10ms. */
 
-		ret = select(sock + 1, &read_set, NULL, NULL, &timeout);
+		ret = pg_select(sock + 1, &read_set, NULL, NULL, &timeout,
+						PQisRsocket(conn));
 		if (ret < 0)			/* error in select() */
 		{
 			if (errno == EINTR)
