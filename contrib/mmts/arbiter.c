@@ -97,7 +97,7 @@ static void MtmSender(Datum arg);
 static void MtmReceiver(Datum arg);
 static void MtmMonitor(Datum arg);
 static void MtmSendHeartbeat(void);
-static bool MtmSendToNode(int node, void const* buf, int size, time_t reconnectTimeout);
+static bool MtmSendToNode(int node, void const* buf, int size);
 
 char const* const MtmMessageKindMnem[] = 
 {
@@ -166,7 +166,7 @@ static void MtmRegisterSocket(int fd, int node)
     ev.events = EPOLLIN;
     ev.data.u32 = node;        
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &ev) < 0) {
-        MTM_ELOG(LOG, "Arbiter failed to add socket to epoll set: %d", errno);
+		MTM_ELOG(LOG, "Arbiter failed to add socket to epoll set: %s", strerror(errno));
     } 
 #else
     FD_SET(fd, &inset);    
@@ -180,7 +180,7 @@ static void MtmUnregisterSocket(int fd)
 {
 #if USE_EPOLL
     if (epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL) < 0) { 
-		MTM_ELOG(LOG, "Arbiter failed to unregister socket from epoll set: %d", errno);
+		MTM_ELOG(LOG, "Arbiter failed to unregister socket from epoll set: %s", strerror(errno));
     } 
 #else
 	FD_CLR(fd, &inset); 
@@ -371,7 +371,7 @@ static void MtmSendHeartbeat()
 					|| !BIT_CHECK(Mtm->disabledNodeMask, i)
 					|| BIT_CHECK(Mtm->reconnectMask, i)))
 			{ 
-				if (!MtmSendToNode(i, &msg, sizeof(msg), MtmHeartbeatRecvTimeout)) { 
+				if (!MtmSendToNode(i, &msg, sizeof(msg))) {
 					MTM_ELOG(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
 				} else {
 					if (last_heartbeat_to_node[i] + MSEC_TO_USEC(MtmHeartbeatSendTimeout)*2 < now) { 
@@ -408,7 +408,7 @@ void MtmCheckHeartbeat()
 }
 
 
-static int MtmConnectSocket(int node, int port, time_t timeout)
+static int MtmConnectSocket(int node, int port)
 {
  	struct addrinfo *addrs = NULL;
 	struct addrinfo *addr;
@@ -417,12 +417,9 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 	MtmHandshakeMessage req;
 	MtmArbiterMessage   resp;
 	int sd = -1;
-	int ret;
-	timestamp_t start = MtmGetSystemTime();
+	int rc;
 	char const* host = Mtm->nodes[node].con.hostName;
 	nodemask_t save_mask = busy_mask;
-	timestamp_t afterWait;
-	timestamp_t beforeWait;
 
 	/* Initialize hint structure */
 	MemSet(&hint, 0, sizeof(hint));
@@ -431,67 +428,60 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 
 	snprintf(portstr, sizeof(portstr), "%d", port);
 
-	ret = pg_getaddrinfo_all(host, portstr, &hint, &addrs);
-	if (ret != 0) 
+	rc = pg_getaddrinfo_all(host, portstr, &hint, &addrs);
+	if (rc != 0) 
 	{
-		MTM_ELOG(LOG, "Arbiter failed to resolve host '%s' by name: (%d) %s", host, ret, gai_strerror(ret));
+		MTM_ELOG(LOG, "Arbiter failed to resolve host '%s' by name: %s", host, gai_strerror(rc));
 		return -1;
 	}
 	BIT_SET(busy_mask, node);
 	
   Retry:
-    while (1) {
-		int rc = -1;
-		sd = pg_socket(AF_INET, SOCK_STREAM, 0, MtmUseRDMA);
-		if (sd < 0) {
-			MTM_ELOG(LOG, "Arbiter failed to create socket: %d", errno);
-			goto Error;
-		}
-		rc = pg_fcntl(sd, F_SETFL, O_NONBLOCK, MtmUseRDMA);
-		if (rc < 0) {
-			MTM_ELOG(LOG, "Arbiter failed to switch socket to non-blocking mode: %d", errno);
-			goto Error;
-		}
-		for (addr = addrs; addr != NULL; addr = addr->ai_next)
-		{
-			do {
-				rc = pg_connect(sd, addr->ai_addr, addr->ai_addrlen, MtmUseRDMA);
-			} while (rc < 0 && errno == EINTR);
 
-			if (rc >= 0 || errno == EINPROGRESS) {
-				break;
-			}
-		}
-		if (rc == 0) {
+	sd = pg_socket(AF_INET, SOCK_STREAM, 0, MtmUseRDMA);
+	if (sd < 0) {
+		MTM_ELOG(LOG, "Arbiter failed to create socket: %s", strerror(errno));
+		goto Error;
+	}
+	rc = pg_fcntl(sd, F_SETFL, O_NONBLOCK, MtmUseRDMA);
+	if (rc < 0) {
+		MTM_ELOG(LOG, "Arbiter failed to switch socket to non-blocking mode: %s", strerror(errno));
+		goto Error;
+	}
+	for (addr = addrs; addr != NULL; addr = addr->ai_next)
+	{
+		do {
+			rc = pg_connect(sd, addr->ai_addr, addr->ai_addrlen, MtmUseRDMA);
+		} while (rc < 0 && errno == EINTR);
+
+		if (rc >= 0 || errno == EINPROGRESS) {
 			break;
 		}
-		beforeWait = MtmGetSystemTime();
-		if (errno != EINPROGRESS || start + MSEC_TO_USEC(timeout) < beforeWait ) {
-			MTM_ELOG(WARNING, "Arbiter failed to connect to %s:%d: error=%d", host, port, errno);
-			goto Error;
+	}
+
+	if (rc != 0 && errno == EINPROGRESS) {
+		rc = MtmWaitSocket(sd, true, MtmHeartbeatSendTimeout);
+		if (rc == 1) {
+			socklen_t	optlen = sizeof(int);
+			int			errcode;
+
+			if (getsockopt(sd, SOL_SOCKET, SO_ERROR, (void*)&errcode, &optlen) < 0) {
+				MTM_ELOG(WARNING, "Arbiter failed to getsockopt for %s:%d: %s", host, port, strerror(errcode));
+				goto Error;
+			}
+			if (errcode != 0) {
+				MTM_ELOG(WARNING, "Arbiter trying to connect to %s:%d: %s", host, port, strerror(errcode));
+				goto Error;
+			}
 		} else {
-			rc = MtmWaitSocket(sd, true, MtmHeartbeatSendTimeout);
-			if (rc == 1) {
-				socklen_t optlen = sizeof(int); 
-				if (getsockopt(sd, SOL_SOCKET, SO_ERROR, (void*)&rc, &optlen) < 0) { 
-					MTM_ELOG(WARNING, "Arbiter failed to getsockopt for %s:%d: error=%d", host, port, errno);
-					goto Error;
-				}
-				if (rc == 0) { 
-					break;
-				} else { 
-					MTM_ELOG(WARNING, "Arbiter trying to connect to %s:%d: rc=%d, error=%d", host, port, rc, errno);
-				}
-			} else { 
-				MTM_ELOG(WARNING, "Arbiter waiting socket to %s:%d: rc=%d, error=%d", host, port, rc, errno);
-			}
-			pg_closesocket(sd, MtmUseRDMA);
-			afterWait = MtmGetSystemTime();
-			if (afterWait < beforeWait + MSEC_TO_USEC(MtmHeartbeatSendTimeout)) {
-				MtmSleep(beforeWait + MSEC_TO_USEC(MtmHeartbeatSendTimeout) - afterWait);
-			}
+			MTM_ELOG(WARNING, "Arbiter waiting socket to %s:%d: %s", host, port, strerror(errno));
 		}
 	}
+	else if (rc != 0) {
+		MTM_ELOG(WARNING, "Arbiter failed to connect to %s:%d: (%d) %s", host, port, rc, strerror(errno));
+		goto Error;
+	}
+
 	MtmSetSocketOptions(sd);
 	MtmInitMessage(&req.hdr, MSG_HANDSHAKE);
 	req.hdr.node = MtmNodeId;
@@ -500,12 +490,12 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 	req.hdr.csn  = MtmGetCurrentTime();
 	strcpy(req.connStr, Mtm->nodes[MtmNodeId-1].con.connStr);
 	if (!MtmWriteSocket(sd, &req, sizeof req)) { 
-		MTM_ELOG(WARNING, "Arbiter failed to send handshake message to %s:%d: %d", host, port, errno);
+		MTM_ELOG(WARNING, "Arbiter failed to send handshake message to %s:%d: %s", host, port, strerror(errno));
 		pg_closesocket(sd, MtmUseRDMA);
 		goto Retry;
 	}
 	if (MtmReadSocket(sd, &resp, sizeof resp) != sizeof(resp)) { 
-		MTM_ELOG(WARNING, "Arbiter failed to receive response for handshake message from %s:%d: errno=%d", host, port, errno);
+		MTM_ELOG(WARNING, "Arbiter failed to receive response for handshake message from %s:%d: %s", host, port, strerror(errno));
 		pg_closesocket(sd, MtmUseRDMA);
 		goto Retry;
 	}
@@ -527,7 +517,7 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 	
 	return sd;
 
-  Error:
+Error:
 	busy_mask = save_mask;
 	if (sd >= 0) { 
 		pg_closesocket(sd, MtmUseRDMA);
@@ -551,7 +541,7 @@ static void MtmOpenConnections()
 	}
 	for (i = 0; i < nNodes; i++) {
 		if (i+1 != MtmNodeId && i < Mtm->nAllNodes) { 
-			sockets[i] = MtmConnectSocket(i, Mtm->nodes[i].con.arbiterPort, MtmConnectTimeout);
+			sockets[i] = MtmConnectSocket(i, Mtm->nodes[i].con.arbiterPort);
 			if (sockets[i] < 0) { 
 				MtmOnNodeDisconnect(i+1);
 			} 
@@ -566,7 +556,7 @@ static void MtmOpenConnections()
 }
 
 
-static bool MtmSendToNode(int node, void const* buf, int size, time_t reconnectTimeout)
+static bool MtmSendToNode(int node, void const* buf, int size)
 {	
 	bool result = true;
 	nodemask_t save_mask = busy_mask;
@@ -589,11 +579,11 @@ static bool MtmSendToNode(int node, void const* buf, int size, time_t reconnectT
 		}
 		if (sockets[node] < 0 || !MtmWriteSocket(sockets[node], buf, size)) {
 			if (sockets[node] >= 0) { 
-				MTM_ELOG(WARNING, "Arbiter fail to write to node %d: %d", node+1, errno);
+				MTM_ELOG(WARNING, "Arbiter fail to write to node %d: %s", node+1, strerror(errno));
 				pg_closesocket(sockets[node], MtmUseRDMA);
 				sockets[node] = -1;
 			}
-			sockets[node] = MtmConnectSocket(node, Mtm->nodes[node].con.arbiterPort, reconnectTimeout);
+			sockets[node] = MtmConnectSocket(node, Mtm->nodes[node].con.arbiterPort);
 			if (sockets[node] < 0) { 
 				MtmOnNodeDisconnect(node+1);
 				result = false;
@@ -613,7 +603,7 @@ static int MtmReadFromNode(int node, void* buf, int buf_size)
 {
 	int rc = MtmReadSocket(sockets[node], buf, buf_size);
 	if (rc <= 0) { 
-		MTM_ELOG(WARNING, "Arbiter failed to read from node=%d, rc=%d, errno=%d", node+1, rc, errno);
+		MTM_ELOG(WARNING, "Arbiter failed to read from node=%d: %s", node+1, strerror(errno));
 		MtmDisconnect(node);
 	}
 	return rc;
@@ -623,20 +613,20 @@ static void MtmAcceptOneConnection()
 {
 	int fd = pg_accept(gateway, NULL, NULL, MtmUseRDMA);
 	if (fd < 0) {
-		MTM_ELOG(WARNING, "Arbiter failed to accept socket: %d", errno);
+		MTM_ELOG(WARNING, "Arbiter failed to accept socket: %s", strerror(errno));
 	} else { 	
 		MtmHandshakeMessage req;
 		MtmArbiterMessage resp;		
 		int rc = pg_fcntl(fd, F_SETFL, O_NONBLOCK, MtmUseRDMA);
 		if (rc < 0) {
-			MTM_ELOG(ERROR, "Arbiter failed to switch socket to non-blocking mode: %d", errno);
+			MTM_ELOG(ERROR, "Arbiter failed to switch socket to non-blocking mode: %s", strerror(errno));
 		}
 		rc = MtmReadSocket(fd, &req, sizeof req);
 		if (rc < sizeof(req)) { 
 			MTM_ELOG(WARNING, "Arbiter failed to handshake socket: %d, errno=%d", rc, errno);
 			pg_closesocket(fd, MtmUseRDMA);
 		} else if (req.hdr.code != MSG_HANDSHAKE && req.hdr.dxid != HANDSHAKE_MAGIC) { 
-			MTM_ELOG(WARNING, "Arbiter get unexpected handshake message %d", req.hdr.code);
+			MTM_ELOG(WARNING, "Arbiter failed to handshake socket: %s", strerror(errno));
 			pg_closesocket(fd, MtmUseRDMA);
 		} else { 
 			int node = req.hdr.node-1;
@@ -770,7 +760,7 @@ static void MtmSender(Datum arg)
 
 		for (i = 0; i < Mtm->nAllNodes; i++) { 
 			if (txBuffer[i].used != 0) { 
-				MtmSendToNode(i, txBuffer[i].data, txBuffer[i].used*sizeof(MtmArbiterMessage), MtmReconnectTimeout);
+				MtmSendToNode(i, txBuffer[i].data, txBuffer[i].used*sizeof(MtmArbiterMessage));
 				txBuffer[i].used = 0;
 			}
 		}		
@@ -870,7 +860,7 @@ static void MtmReceiver(Datum arg)
 			if (errno == EINTR) { 
 				continue;
 			}
-			MTM_ELOG(ERROR, "Arbiter failed to poll sockets: %d", errno);
+			MTM_ELOG(ERROR, "Arbiter failed to poll sockets: %s", strerror(errno));
 		}
 		for (j = 0; j < n; j++) {
 			i = events[j].data.u32;
@@ -894,7 +884,7 @@ static void MtmReceiver(Datum arg)
 		} while (n < 0 && MtmRecovery());
 		
 		if (n < 0) {
-			MTM_ELOG(ERROR, "Arbiter failed to select sockets: %d", errno);
+			MTM_ELOG(ERROR, "Arbiter failed to select sockets: %s", strerror(errno));
 		}
 		for (i = 0; i < nNodes; i++) { 
 			if (sockets[i] >= 0 && FD_ISSET(sockets[i], &events)) 

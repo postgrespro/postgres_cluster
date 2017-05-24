@@ -52,12 +52,26 @@ PgDeserializeTransactionState(void* ctx)
 {
 }
 
-void PgInitializeSequence(int64* init, int64* step)
+void 
+PgInitializeSequence(int64* init, int64* step)
 {
 	*init = 1;
 	*step = 1;
 }
 
+
+void* PgCreateSavepointContext(void)
+{
+	return NULL;
+}
+
+void PgRestoreSavepointContext(void* ctx)
+{
+}
+
+void PgReleaseSavepointContext(void* ctx)
+{
+}
 
 TransactionManager PgTM = {
 	PgTransactionIdGetStatus,
@@ -73,7 +87,10 @@ TransactionManager PgTM = {
 	PgGetTransactionStateSize,
 	PgSerializeTransactionState,
 	PgDeserializeTransactionState,
-	PgInitializeSequence
+	PgInitializeSequence,
+	PgCreateSavepointContext,
+	PgRestoreSavepointContext,
+	PgReleaseSavepointContext
 };
 
 TransactionManager *TM = &PgTM;

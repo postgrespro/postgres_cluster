@@ -176,6 +176,7 @@ typedef struct TransactionStateData
 	SubTransactionId subTransactionId;	/* my subxact ID */
 	char	   *name;			/* savepoint name, if any */
 	int			savepointLevel; /* savepoint level */
+	void*       savepointContext;        /* savepoint XTM context */
 	TransState	state;			/* low-level state */
 	TBlockState blockState;		/* high-level state */
 	int			nestingLevel;	/* transaction nesting depth */
@@ -206,6 +207,7 @@ static TransactionStateData TopTransactionStateData = {
 	0,							/* subtransaction id */
 	NULL,						/* savepoint name */
 	0,							/* savepoint level */
+	NULL,                       /* savepoint context */
 	TRANS_DEFAULT,				/* transaction state */
 	TBLOCK_DEFAULT,				/* transaction block state from the client
 								 * perspective */
@@ -4245,6 +4247,7 @@ ReleaseSavepoint(List *options)
 	{
 		Assert(xact->blockState == TBLOCK_SUBINPROGRESS);
 		xact->blockState = TBLOCK_SUBRELEASE;
+		TM->ReleaseSavepointContext(xact->savepointContext);
 		if (xact == target)
 			break;
 		xact = xact->parent;
@@ -4364,9 +4367,11 @@ RollbackToSavepoint(List *options)
 		else
 			elog(FATAL, "RollbackToSavepoint: unexpected state %s",
 				 BlockStateAsString(xact->blockState));
+		TM->ReleaseSavepointContext(xact->savepointContext);
 		xact = xact->parent;
 		Assert(PointerIsValid(xact));
 	}
+	TM->RestoreSavepointContext(xact->savepointContext);
 
 	/* And mark the target as "restart pending" */
 	if (xact->blockState == TBLOCK_SUBINPROGRESS)
@@ -5098,6 +5103,7 @@ PushTransaction(void)
 	GetUserIdAndSecContext(&s->prevUser, &s->prevSecContext);
 	s->prevXactReadOnly = XactReadOnly;
 	s->parallelModeLevel = 0;
+	s->savepointContext = TM->CreateSavepointContext();
 
 	CurrentTransactionState = s;
 
@@ -5128,7 +5134,9 @@ PopTransaction(void)
 	if (s->parent == NULL)
 		elog(FATAL, "PopTransaction with no parent");
 
+	TM->ReleaseSavepointContext(s->savepointContext);
 	CurrentTransactionState = s->parent;
+	TM->RestoreSavepointContext(CurrentTransactionState->savepointContext);
 
 	/* Let's just make sure CurTransactionContext is good */
 	CurTransactionContext = s->parent->curTransactionContext;

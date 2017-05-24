@@ -1,6 +1,15 @@
 -- complain if script is sourced in psql, rather than via CREATE EXTENSION
 \echo Use "CREATE EXTENSION multimaster" to load this file. \quit
 
+-- check that multimaster shared library is really loaded
+DO $$
+BEGIN
+    IF strpos(current_setting('shared_preload_libraries'), 'multimaster') = 0 THEN
+        RAISE EXCEPTION 'Multimaster must be loaded via shared_preload_libraries. Refusing to proceed.';
+    END IF;
+END
+$$;
+
 CREATE FUNCTION mtm.start_replication() RETURNS void
 AS 'MODULE_PATHNAME','mtm_start_replication'
 LANGUAGE C;
