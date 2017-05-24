@@ -6577,15 +6577,15 @@ PQsocket(const PGconn *conn)
 	return (conn->sock != PGINVALID_SOCKET) ? conn->sock : -1;
 }
 
-bool
+int
 PQisRsocket(const PGconn *conn)
 {
 #ifdef WITH_RSOCKET
 	if (!conn)
-		return false;
-	return (conn->sock != PGINVALID_SOCKET) ? conn->isRsocket : false;
+		return (int) false;
+	return (int)((conn->sock != PGINVALID_SOCKET) ? conn->isRsocket : false);
 #else
-	return false;
+	return (int) false;
 #endif
 }
 
