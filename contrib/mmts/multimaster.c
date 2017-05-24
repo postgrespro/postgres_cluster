@@ -146,9 +146,12 @@ static bool MtmDetectGlobalDeadLock(PGPROC* proc);
 static void MtmAddSubtransactions(MtmTransState* ts, TransactionId* subxids, int nSubxids);
 static char const* MtmGetName(void);
 static size_t MtmGetTransactionStateSize(void);
-static void MtmSerializeTransactionState(void* ctx);
-static void MtmDeserializeTransactionState(void* ctx);
-static void MtmInitializeSequence(int64* start, int64* step);
+static void   MtmSerializeTransactionState(void* ctx);
+static void   MtmDeserializeTransactionState(void* ctx);
+static void   MtmInitializeSequence(int64* start, int64* step);
+static void*  MtmCreateSavepointContext(void);
+static void   MtmRestoreSavepointContext(void* ctx);
+static void   MtmReleaseSavepointContext(void* ctx);
 
 static void MtmCheckClusterLock(void);
 static void MtmCheckSlots(void);
@@ -197,14 +200,17 @@ static TransactionManager MtmTM =
 	MtmGetTransactionStateSize,
 	MtmSerializeTransactionState,
 	MtmDeserializeTransactionState,
-	MtmInitializeSequence
+	MtmInitializeSequence,
+	MtmCreateSavepointContext,
+	MtmRestoreSavepointContext,
+	MtmReleaseSavepointContext
 };
 
 char const* const MtmNodeStatusMnem[] = 
 { 
 	"Initialization", 
 	"Offline", 
-	"Connected",
+	"Connecting",
 	"Online",
 	"Recovery",
 	"Recovered",
@@ -229,8 +235,6 @@ int   MtmNodes;
 int   MtmNodeId;
 int   MtmReplicationNodeId;
 int   MtmArbiterPort;
-int   MtmConnectTimeout;
-int   MtmReconnectTimeout;
 int   MtmNodeDisableDelay;
 int   MtmTransSpillThreshold;
 int   MtmMaxNodes;
@@ -467,6 +471,20 @@ MtmInitializeSequence(int64* start, int64* step)
 		*start = MtmNodeId;
 		*step  = MtmMaxNodes;
 	}
+}
+
+static void* MtmCreateSavepointContext(void)
+{
+	return (void*)(size_t)MtmTx.containsDML;
+}
+
+static void  MtmRestoreSavepointContext(void* ctx)
+{
+	MtmTx.containsDML = ctx != NULL;
+}
+
+static void  MtmReleaseSavepointContext(void* ctx)
+{
 }
 
 
@@ -3292,36 +3310,6 @@ _PG_init(void)
 		NULL
 	);
 
-	DefineCustomIntVariable(
-		"multimaster.connect_timeout",
-		"Multimaster nodes connect timeout",
-		"Interval in milliseconds for establishing connection with cluster node",
-		&MtmConnectTimeout,
-		10000, /* 10 seconds */
-		1,
-		INT_MAX,
-		PGC_BACKEND,
-		0,
-		NULL,
-		NULL,
-		NULL
-	);
-
-	DefineCustomIntVariable(
-		"multimaster.reconnect_timeout",
-		"Multimaster nodes reconnect timeout",
-		"Interval in milliseconds for reestablishing connection with cluster node",
-		&MtmReconnectTimeout,
-		5000, /* 5 seconds */
-		1,
-		INT_MAX,
-		PGC_BACKEND,
-		0,
-		NULL,
-		NULL,
-		NULL
-	);
-
 	if (!ConfigIsSane()) {
 		MTM_ELOG(ERROR, "Multimaster config is insane, refusing to work");
 	}
@@ -4945,6 +4933,11 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_ReindexStmt:
 		case T_ExplainStmt:
 			skipCommand = true;
+			break;
+
+	    case T_CreatedbStmt:
+	    case T_DropdbStmt:
+		    elog(ERROR, "Multimaster doesn't support creating and dropping databases");
 			break;
 
 		case T_CreateTableSpaceStmt:
