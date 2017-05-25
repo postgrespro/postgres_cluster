@@ -165,7 +165,7 @@ doc/src/sgml/pgprobackup.sgml
     To manage backup data, <application>pg_probackup</application> creates a
     special <emphasis>backup catalog</emphasis>. This directory
     stores all backup files with additional meta information, as
-    well as <acronym>WAL</acronym> archives required for point-in-time recovery. To avoid
+    well as <acronym>WAL</acronym> archives required for <link linkend="continuous-archiving">point-in-time recovery</link>. To avoid
     conflicts, <application>pg_probackup</application> does not allow storing
     backups for different clusters in a single backup catalog.
   </para>
@@ -366,7 +366,7 @@ pg_probackup init -B <replaceable>backupdir</replaceable> -D <replaceable>datadi
       </listitem>
     </itemizedlist>
       <para>
-        The backup catalog must be accessible from the file
+        The backup catalog must belong to the file
         system of the database server. The user launching
         <application>pg_probackup</application> must have full access to the
         contents of the backup catalog. If you specify the path to the
@@ -416,7 +416,7 @@ pg_probackup init -B <replaceable>backupdir</replaceable> -D <replaceable>datadi
         <listitem>
           <para>
             Create the <literal>backup</literal> role with the
-            <link linkend="role-attributes"><literal>REPLICATION</literal> privilege</link>.
+            <link linkend="role-attributes"><literal>LOGIN</literal> and <literal>REPLICATION</literal> privileges</link>.
           </para>
           <programlisting>
 CREATE ROLE backup WITH LOGIN REPLICATION;
@@ -436,14 +436,14 @@ CREATE ROLE backup WITH LOGIN REPLICATION;
           <itemizedlist spacing="compact">
             <listitem>
               <para>
-                Make sure the <literal>max_wal_senders</literal>
+                Make sure the <varname>max_wal_senders</varname>
                 parameter is set high enough to leave at least one
                 session available for the backup process.
               </para>
             </listitem>
             <listitem>
               <para>
-                Set the <literal>wal_level</literal> parameter to be
+                Set the <varname>wal_level</varname> parameter to be
                 <literal>replica</literal> or higher.
               </para>
             </listitem>
@@ -495,14 +495,14 @@ CREATE ROLE backup WITH LOGIN;
         <listitem>
           <para>
             Set <literal>archive_mode</literal> to
-            <literal>'on'</literal>.
+            <literal>on</literal>.
           </para>
         </listitem>
         <listitem>
           <para>
-            Set <literal>archive_command</literal> to
-            <literal>'test ! -f backup\_dir/wal/%f &amp;&amp; cp %p backup\_dir/wal/%f';</literal>
-            where <literal>backup_dir</literal> is the initialized
+            Set <varname>archive_command</varname> to
+            <literal>test ! -f backup_dir/wal/%f &amp;&amp; cp %p backup_dir/wal/%f</literal>
+            where <replaceable>backup_dir</replaceable> is the initialized
             backup catalog.
           </para>
         </listitem>
@@ -543,8 +543,8 @@ GRANT EXECUTE ON FUNCTION txid_snapshot_xmax(txid_snapshot) TO backup;
           <itemizedlist spacing="compact">
             <listitem>
               <para>
-                Set the <literal>max_wal_senders</literal> and
-                <literal>hot_standby</literal> parameters in
+                Set the <varname>max_wal_senders</varname> and
+                <varname>hot_standby</varname> parameters in
                 <filename>postgresql.conf</filename>.
               </para>
             </listitem>
@@ -559,7 +559,7 @@ GRANT EXECUTE ON FUNCTION txid_snapshot_xmax(txid_snapshot) TO backup;
         <listitem>
           <para>
             On the master server, enable
-            <literal>full_page_writes</literal> in
+            <varname>full_page_writes</varname> in
             <filename>postgresql.conf</filename>.
           </para>
         </listitem>
@@ -578,10 +578,10 @@ GRANT EXECUTE ON FUNCTION txid_snapshot_xmax(txid_snapshot) TO backup;
           <listitem>
             <para>All <acronym>WAL</acronym> records required
           for the backup must contain sufficient full-page writes. This
-          requires you to enable <literal>full_page_writes</literal> on
+          requires you to enable <varname>full_page_writes</varname> on
           the master, and not to use a tool like
-          <literal>pg_compresslog</literal> as
-          <literal>archive_command</literal> to remove full-page writes
+          <application>pg_compresslog</application> as
+          <varname>archive_command</varname> to remove full-page writes
           from <acronym>WAL</acronym> files.
             </para>
           </listitem>
@@ -598,7 +598,7 @@ GRANT EXECUTE ON FUNCTION txid_snapshot_xmax(txid_snapshot) TO backup;
         <listitem>
           <para>
             In <filename>postgresql.conf</filename>, set
-            <literal>ptrack_enable</literal> to <literal>'on'</literal>.
+            <varname>ptrack_enable</varname> to <literal>on</literal>.
           </para>
         </listitem>
         <listitem>
@@ -699,7 +699,7 @@ pg_probackup backup -B <replaceable>backupdir</replaceable> -b <replaceable>back
 [-C] [--stream [-S <replaceable>slot-name</replaceable>]] [--backup-pg-log] 
 -archive-timeout=<replaceable>timeout</replaceable>] [--delete-expired] 
 [-d <replaceable>dbname</replaceable>] [-h <replaceable>host</replaceable>] [-p <replaceable>port</replaceable>] [-U <replaceable>username</replaceable>] [-w]
-[-j <replaceable>num-threads</replaceable>][--progress] [-q] [-v] 
+[-j <replaceable>num_threads</replaceable>][--progress] [-q] [-v] 
 </programlisting>
        <para>
        Creates a backup copy of the <productname>&productname;</productname> instance. 
@@ -724,7 +724,7 @@ pg_probackup backup -B <replaceable>backupdir</replaceable> -b <replaceable>back
 pg_probackup restore -B <replaceable>backupdir</replaceable>
 [-D <replaceable>datadir</replaceable>] 
 [ -i <replaceable>backup_id</replaceable> | [{--time=<replaceable>time</replaceable> | --xid=<replaceable>xid</replaceable> } [--inclusive=<replaceable>boolean</replaceable>]]][--timeline=<replaceable>timeline</replaceable>] [-T OLDDIR=<replaceable>NEWDIR</replaceable>]
-[-j <replaceable>num-threads</replaceable>] [--progress] [-q] [-v]
+[-j <replaceable>num_threads</replaceable>] [--progress] [-q] [-v]
 </programlisting>
        <para>
        Restores the <productname>&productname;</productname> instance from a backup copy
@@ -747,7 +747,7 @@ pg_probackup validate -B <replaceable>backupdir</replaceable>
 [-D <replaceable>datadir</replaceable>] 
 [ -i <replaceable>backup_id</replaceable> | [{--time=<replaceable>time</replaceable> | --xid=<replaceable>xid</replaceable> } [--inclusive=<replaceable>boolean</replaceable>]]]
 [--timeline=<replaceable>timeline</replaceable>]
-[-j <replaceable>num-threads</replaceable>] [--progress] [-q] [-v] 
+[-j <replaceable>num_threads</replaceable>] [--progress] [-q] [-v] 
 </programlisting>
        <para>
        Verifies that all files in the backup are present and not corrupted.
@@ -789,7 +789,7 @@ pg_probackup delete -B <replaceable>backupdir</replaceable> {-i <replaceable>bac
        Deletes the specified backup files from the <replaceable>backupdir</replaceable> backup catalog:
         <itemizedlist spacing="compact">
           <listitem>
-            <para>The <option>backup-id</option> option removes the specified backup copy.
+            <para>The <option>-i</option> option removes the specified backup copy.
             </para>
           </listitem>
           <listitem>
@@ -815,7 +815,7 @@ pg_probackup delete -B <replaceable>backupdir</replaceable> {-i <replaceable>bac
 pg_probackup version
 </programlisting>
        <para>
-         Shows the current version of <application>pg_probackup</application>.
+         Prints <application>pg_probackup</application> version.
        </para>
       </listitem>
      </varlistentry>
@@ -1304,7 +1304,7 @@ pg_probackup backup -b FULL --stream
    Autonomous backups include all the <acronym>WAL</acronym> segments required to restore the
    cluster to a consistent state at the time the backup was taken. To restore a cluster
    from an incremental autonomous backup, <application>pg_probackup</application> still
-   requires a full backup and all the previous incremented backups.
+   requires the full backup and all the incremental backups it depends on.
    </para>
 
   <para>
@@ -1356,10 +1356,10 @@ pg_probackup backup -b FULL --stream
   </para>
   <para>For example, to check that you can restore the
     database cluster from a backup copy up to the specified 
-    <literal>xid</literal> transaction ID, run this command:
+    <replaceable>xid</replaceable> transaction ID, run this command:
   </para>
   <programlisting>
-pg_probackup validate --xid=xid
+pg_probackup validate --xid=<replaceable>xid</replaceable>
 </programlisting>
   <para>
     If validation completes successfully,
@@ -1438,7 +1438,7 @@ pg_probackup restore -D <replaceable>datadir</replaceable> -i <replaceable>backu
     <xref linkend="recovery-target-inclusive"> parameter defines whether the recovery
     target is included into the backup. You can explicitly include or
     exclude the recovery target using the
-    <option>--inclusive='<replaceable>boolean</replaceable>'</option> option.
+    <option>--inclusive=<replaceable>boolean</replaceable></option> option.
   </para>
   <para>
     To restore the cluster state at the exact time, specify the
@@ -1471,7 +1471,7 @@ pg_probackup restore --xid=687
     tablespaces. For example:
   </para>
   <programlisting>
-pg_probackup restore -D <replaceable>datadir</replaceable> -j 4 -i <replaceable>backup_id</replaceable> -T <replaceable>/tmp/tblspc1</replaceable>=<replaceable>/tmp/tblspc1_new</replaceable> -T <replaceable>/tmp/tblspc2</replaceable>=<replaceable>/tmp/tblspc2_new</replaceable>
+pg_probackup restore -D <replaceable>datadir</replaceable> -j 4 -i <replaceable>backup_id</replaceable> -T <replaceable>/tmp/tablespace1</replaceable>=<replaceable>/tmp/tablespace1_new</replaceable> -T <replaceable>/tmp/tablespace2</replaceable>=<replaceable>/tmp/tablespace2_new</replaceable>
 </programlisting>
   <para>
     Once the <literal>restore</literal> command is complete, start the
@@ -1495,7 +1495,7 @@ pg_probackup restore -D <replaceable>datadir</replaceable> -j 4 -i <replaceable>
      command line option. For example, to create a backup using four parallel threads, run:
      <programlisting>
 pg_probackup backup -b full -j 4
-     </programlisting>
+</programlisting>
    </para>
 
    <note>
@@ -1517,17 +1517,17 @@ pg_probackup backup -b full -j 4
   <link linkend="pg-probackup-retention-opts">retention options</link> using the 
   <xref linkend="pg-probackup-set-config"> command:</para>
 <programlisting>
-pg_probackup set-config -B <replaceable>backupdir</replaceable> [<replaceable>connection-options</replaceable>] [<replaceable>retention-options</replaceable>]
+pg_probackup set-config -B <replaceable>backupdir</replaceable> [<replaceable>connection_options</replaceable>] [<replaceable>retention_options</replaceable>]
 </programlisting>
 <para>where: 
 <itemizedlist spacing="compact">
   <listitem>
-    <para><replaceable>connection-options</replaceable> are:
+    <para><replaceable>connection_options</replaceable> are:
 [-d <replaceable>dbname</replaceable>] [-h <replaceable>host</replaceable>] [-p <replaceable>port</replaceable>] [-U <replaceable>username</replaceable>]
     </para>
   </listitem>
   <listitem>
-    <para><replaceable>retention-options</replaceable> are:
+    <para><replaceable>retention_options</replaceable> are:
 [--retention-redundancy=<replaceable>redundancy</replaceable>]
 [--retention-window=<replaceable>window</replaceable>]
     </para>
@@ -1564,13 +1564,13 @@ If you define connection parameters in the <filename>pg_probackup.conf</filename
     <itemizedlist spacing="compact">
     <listitem><para>
     <option>retention-redundancy</option> &mdash; specifies the number of full backup
-    copies to keep in the data directory.</para>
+    copies to keep in the backup catalog.</para>
     </listitem>
-    <listitem><para><option>retention-window</option> &mdash; defines the earliest point in time for which <application>pg_probackup</application> can complete the recovery. This option is set in the number of days from the current moment. For example, if <option>window</option>=7, <application>pg_probackup</application> must keep at least one full backup copy that is older than seven days, with all the corresponding <acronym>WAL</acronym> files.</para></listitem>
+    <listitem><para><option>retention-window</option> &mdash; defines the earliest point in time for which <application>pg_probackup</application> can complete the recovery. This option is set in the number of days from the current moment. For example, if <option>retention-window</option>=7, <application>pg_probackup</application> must keep at least one full backup copy that is older than seven days, with all the corresponding <acronym>WAL</acronym> files.</para></listitem>
     </itemizedlist>
     <para>If both <option>retention-redundancy</option> and <option>retention-window</option> 
     options are set, <application>pg_probackup</application> keeps backup copies
-    that satisfy both conditions. For example, if you set <option>redundancy</option>=2 and <option>window</option>=7, <application>pg_probackup</application> cleans up the backup directory to keep only two full backup copies if at least one of them is older than seven days.
+    that satisfy both conditions. For example, if you set <option>retention-redundancy</option>=2 and <option>retention-window</option>=7, <application>pg_probackup</application> cleans up the backup directory to keep only two full backup copies if at least one of them is older than seven days.
     </para>
   <para>
     To clean up the backup catalog in accordance with retention policy, run:
@@ -1586,7 +1586,7 @@ pg_probackup delete --expired
     Alternatively, you can configure backup retention policy
     and use the <literal>--delete-expired</literal>
       option together with the <literal>backup</literal> command to
-      remove the outdated backup copy once the new backup is created.</para>
+      remove the outdated backup copies once the new backup is created.</para>
   </refsect2>
   </refsect1>
 
@@ -1647,7 +1647,7 @@ pg_probackup show
         </para>
       </listitem>
       <listitem>
-        <para>Time &mdash; the time it took to peform the backup.
+        <para>Time &mdash; the time it took to perform the backup.
         </para>
       </listitem>
       <listitem>
@@ -1675,7 +1675,7 @@ pg_probackup show
       To get more detailed information about the backup, run the <command>show</command> with the backup ID:
     </para>
     <programlisting>
-    pg_probackup show -i <replaceable>backup_id</replaceable>
+pg_probackup show -i <replaceable>backup_id</replaceable>
 </programlisting>
     <para>
       The sample output is as follows:
@@ -1710,7 +1710,7 @@ status = OK
       command:
     </para>
     <programlisting>
-    pg_probackup delete -i backup-id
+pg_probackup delete -i <replaceable>backup_id</replaceable>
 </programlisting>
     <para>
       This command will delete the backup with the specified
@@ -1721,9 +1721,10 @@ status = OK
     </para>
     <note>
       <para>
-      In this case the next <literal>PTRACK</literal> backup will not be correct as some
-      changes since the last retained backup will be lost. Either FULL
-      backup or incremental PAGE backup (given that all necessary WAL
+      In this case, the next <literal>PTRACK</literal> backup will be incomplete as some
+      changes since the last retained backup will be lost. Either a full
+      backup or an incremental <literal>PAGE</literal> backup 
+      (if all the necessary <acronym>WAL</acronym>
       files are still present in the archive) must be taken then.
       </para>
     </note>
@@ -1732,7 +1733,7 @@ status = OK
       of the remaining backups, use the <literal>--wal</literal> option:
     </para>
     <programlisting>
-    pg_probackup delete --wal
+pg_probackup delete --wal
 </programlisting>
     <para>
       To delete backups that are expired according to the current
@@ -1740,7 +1741,7 @@ status = OK
       <literal>--expired</literal> option:
     </para>
     <programlisting>
-    pg_probackup delete --expired
+pg_probackup delete --expired
 </programlisting>
     <para>For details, see <xref linkend="pg-probackup-retention-policy">.</para>
   </refsect2>
