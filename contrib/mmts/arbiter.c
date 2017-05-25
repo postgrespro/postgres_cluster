@@ -429,7 +429,7 @@ static int MtmConnectSocket(int node, int port)
 	snprintf(portstr, sizeof(portstr), "%d", port);
 
 	rc = pg_getaddrinfo_all(host, portstr, &hint, &addrs);
-	if (rc != 0) 
+	if (rc != 0)
 	{
 		MTM_ELOG(LOG, "Arbiter failed to resolve host '%s' by name: %s", host, gai_strerror(rc));
 		return -1;
