@@ -465,7 +465,7 @@ static int MtmConnectSocket(int node, int port)
 			socklen_t	optlen = sizeof(int);
 			int			errcode;
 
-			if (getsockopt(sd, SOL_SOCKET, SO_ERROR, (void*)&errcode, &optlen) < 0) {
+			if (pg_getsockopt(sd, SOL_SOCKET, SO_ERROR, (void*)&errcode, &optlen, MtmUseRDMA) < 0) {
 				MTM_ELOG(WARNING, "Arbiter failed to getsockopt for %s:%d: %s", host, port, strerror(errcode));
 				goto Error;
 			}
