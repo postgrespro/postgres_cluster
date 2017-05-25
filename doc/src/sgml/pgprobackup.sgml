@@ -239,7 +239,7 @@ doc/src/sgml/pgprobackup.sgml
     </listitem>
   </itemizedlist>
   <para><emphasis role="strong">See Also</emphasis></para>
-<para><xref linkend="pg-probackup-creating-backup"></para>
+<para><link linkend="pg-probackup-creating-backup">Creating Backups</link></para>
 
   <refsect2 id="pg-probackup-limitations">
   <title>Limitations</title>
@@ -293,7 +293,7 @@ doc/src/sgml/pgprobackup.sgml
     </listitem>
     <listitem>
       <para>
-        <link linkend="configuring-the-database-cluster-for-backups">Configure the database cluster for backups</link>.
+        <link linkend="configuring-database-cluster">Configure the database cluster to enable <application>pg_probackup</application> backups</link>.
       </para>
     </listitem>
   </orderedlist>
@@ -385,8 +385,8 @@ pg_probackup init -B <replaceable>backupdir</replaceable> -D <replaceable>datadi
       For details, see <xref linkend="configuring-pg-probackup">. 
     </para>
   </refsect2>
-  <refsect2 id="configuring-the-database-cluster-for-backups">
-    <title>Configuring the Database Cluster for Backups</title>
+  <refsect2 id="configuring-database-cluster">
+    <title>Configuring the Database Cluster</title>
     <para>Depending on whether you are going to use autonomous or archive backup
         strategies, <productname>&productname;</productname> cluster configuration
         will differ. To backup the database cluster from a standby
@@ -415,7 +415,7 @@ pg_probackup init -B <replaceable>backupdir</replaceable> -D <replaceable>datadi
       <orderedlist numeration="arabic">
         <listitem>
           <para>
-            Create the <literal>backup</literal> role with the
+            Create the <literal>backup</literal> role with 
             <link linkend="role-attributes"><literal>LOGIN</literal> and <literal>REPLICATION</literal> privileges</link>.
           </para>
           <programlisting>
@@ -501,8 +501,8 @@ CREATE ROLE backup WITH LOGIN;
         <listitem>
           <para>
             Set <varname>archive_command</varname> to
-            <literal>test ! -f backup_dir/wal/%f &amp;&amp; cp %p backup_dir/wal/%f</literal>
-            where <replaceable>backup_dir</replaceable> is the initialized
+            <literal>test ! -f backupdir/wal/%f &amp;&amp; cp %p backupdir/wal/%f</literal>
+            where <replaceable>backupdir</replaceable> is the initialized
             backup catalog.
           </para>
         </listitem>
@@ -1255,7 +1255,7 @@ pg_probackup help [<replaceable>command</replaceable>]
     <title>Creating a Backup</title>
     <para>To create a backup, run the following command:
     <programlisting>
-pg_probackup backup -b <replaceable>backup_mode</replaceable>
+pg_probackup backup -B <replaceable>backupdir</replaceable> -b <replaceable>backup_mode</replaceable>
 </programlisting>
 where <replaceable>backup_mode</replaceable> can take one of the following values:</para>
   <itemizedlist spacing="compact">
@@ -1297,7 +1297,7 @@ Thus, you must create at least one full backup before taking incremental ones.
     To make a backup autonomous, add the <option>--stream</option> option to the above command. For example, to create a full autonomous backup, run:
   </para>
     <programlisting>
-pg_probackup backup -b FULL --stream
+pg_probackup backup -B <replaceable>backupdir</replaceable> -b FULL --stream
 </programlisting>
 
    <para>
@@ -1359,7 +1359,7 @@ pg_probackup backup -b FULL --stream
     <replaceable>xid</replaceable> transaction ID, run this command:
   </para>
   <programlisting>
-pg_probackup validate --xid=<replaceable>xid</replaceable>
+pg_probackup validate -B <replaceable>backupdir</replaceable> --xid=<replaceable>xid</replaceable>
 </programlisting>
   <para>
     If validation completes successfully,
@@ -1396,7 +1396,7 @@ pg_probackup validate --xid=<replaceable>xid</replaceable>
     </listitem>
   </orderedlist>
   <programlisting>
-pg_probackup restore -D <replaceable>datadir</replaceable> -i <replaceable>backup_id</replaceable>
+pg_probackup restore -B <replaceable>backupdir</replaceable> -D <replaceable>datadir</replaceable> -i <replaceable>backup_id</replaceable>
 </programlisting>
   <para>
     where:
@@ -1446,13 +1446,13 @@ pg_probackup restore -D <replaceable>datadir</replaceable> -i <replaceable>backu
     format. For example:
   </para>
   <programlisting>
-pg_probackup restore --time='2017-05-18 14:18:11'
+pg_probackup restore -B <replaceable>backupdir</replaceable> --time='2017-05-18 14:18:11'
 </programlisting>
   <para>
     To restore the cluster state up to a specific transaction ID, use the <option>xid</option>:
   </para>
   <programlisting>
-pg_probackup restore --xid=687
+pg_probackup restore -B <replaceable>backupdir</replaceable> --xid=687
 </programlisting>
   <para>
     If the cluster to restore contains tablespaces,
@@ -1471,7 +1471,7 @@ pg_probackup restore --xid=687
     tablespaces. For example:
   </para>
   <programlisting>
-pg_probackup restore -D <replaceable>datadir</replaceable> -j 4 -i <replaceable>backup_id</replaceable> -T <replaceable>/tmp/tablespace1</replaceable>=<replaceable>/tmp/tablespace1_new</replaceable> -T <replaceable>/tmp/tablespace2</replaceable>=<replaceable>/tmp/tablespace2_new</replaceable>
+pg_probackup restore -B <replaceable>backupdir</replaceable> -D <replaceable>datadir</replaceable> -j 4 -i <replaceable>backup_id</replaceable> -T <replaceable>tablespace1_dir</replaceable>=<replaceable>tablespace1_newdir</replaceable> -T <replaceable>tablespace2_dir</replaceable>=<replaceable>tablespace2_newdir</replaceable>
 </programlisting>
   <para>
     Once the <literal>restore</literal> command is complete, start the
@@ -1494,7 +1494,7 @@ pg_probackup restore -D <replaceable>datadir</replaceable> -j 4 -i <replaceable>
      Parallel execution is controlled by the <option>-j</option>/<option>--threads</option>
      command line option. For example, to create a backup using four parallel threads, run:
      <programlisting>
-pg_probackup backup -b full -j 4
+pg_probackup backup -B <replaceable>backupdir</replaceable> -b FULL -j 4
 </programlisting>
    </para>
 
@@ -1593,16 +1593,16 @@ pg_probackup delete --expired
 <refsect1 id="managing-backup-catalog">
   <title>Managing the Backup Catalog</title>
   <para>
-    With <application>pg_probackup</application>, you can manage and configure
+    With <application>pg_probackup</application>, you can manage
     backups from the command line:
   </para>
     <itemizedlist>
       <listitem>
-        <para><xref linkend="viewing-backup-info">
+        <para><link linkend="viewing-backup-info">View available backups</link>
         </para>
       </listitem>
       <listitem>
-        <para><xref linkend="pg-probackup-deleting-backups">
+        <para><link linkend="pg-probackup-deleting-backups">Delete backups</link>
         </para>
       </listitem>
     </itemizedlist>
