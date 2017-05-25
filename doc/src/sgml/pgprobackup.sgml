@@ -24,7 +24,7 @@ doc/src/sgml/pgprobackup.sgml
   <cmdsynopsis>
    <command>pg_probackup</command>
    <arg choice="plain"><option>init</option></arg>
-   <arg choice="plain"><option>-B</option> <replaceable>backupdir</replaceable>></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>backupdir</replaceable></arg>
    <arg choice="plain"><option>-D</option> <replaceable>datadir</replaceable></arg>
    <arg rep="repeat"><replaceable>option</replaceable></arg>
   </cmdsynopsis>
