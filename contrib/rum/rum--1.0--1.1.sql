@@ -97,6 +97,12 @@ RETURNS float8
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT IMMUTABLE;
 
+CREATE FUNCTION rum_int2_config(internal)
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C IMMUTABLE STRICT;
+
+
 
 CREATE OPERATOR CLASS rum_int2_ops
 DEFAULT FOR TYPE int2 USING rum
@@ -115,6 +121,7 @@ AS
 	FUNCTION	4	rum_btree_consistent(internal,smallint,internal,int,internal,internal,internal,internal),
 	FUNCTION	5	rum_int2_compare_prefix(int2,int2,int2, internal),
 	-- support to int2 distance in rum_tsvector_addon_ops
+	FUNCTION	6	rum_int2_config(internal),
 	FUNCTION	9	rum_int2_outer_distance(int2, int2, smallint),
 STORAGE		 int2;
 
@@ -178,6 +185,12 @@ RETURNS float8
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT IMMUTABLE;
 
+CREATE FUNCTION rum_int4_config(internal)
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C IMMUTABLE STRICT;
+
+
 
 CREATE OPERATOR CLASS rum_int4_ops
 DEFAULT FOR TYPE int4 USING rum
@@ -196,6 +209,7 @@ AS
 	FUNCTION	4	rum_btree_consistent(internal,smallint,internal,int,internal,internal,internal,internal),
 	FUNCTION	5	rum_int4_compare_prefix(int4,int4,int2, internal),
 	-- support to int4 distance in rum_tsvector_addon_ops
+	FUNCTION	6	rum_int4_config(internal),
 	FUNCTION	9	rum_int4_outer_distance(int4, int4, smallint),
 STORAGE		 int4;
 
@@ -259,6 +273,12 @@ RETURNS float8
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT IMMUTABLE;
 
+CREATE FUNCTION rum_int8_config(internal)
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C IMMUTABLE STRICT;
+
+
 
 CREATE OPERATOR CLASS rum_int8_ops
 DEFAULT FOR TYPE int8 USING rum
@@ -277,6 +297,7 @@ AS
 	FUNCTION	4	rum_btree_consistent(internal,smallint,internal,int,internal,internal,internal,internal),
 	FUNCTION	5	rum_int8_compare_prefix(int8,int8,int2, internal),
 	-- support to int8 distance in rum_tsvector_addon_ops
+	FUNCTION	6	rum_int8_config(internal),
 	FUNCTION	9	rum_int8_outer_distance(int8, int8, smallint),
 STORAGE		 int8;
 
@@ -340,6 +361,12 @@ RETURNS float8
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT IMMUTABLE;
 
+CREATE FUNCTION rum_float4_config(internal)
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C IMMUTABLE STRICT;
+
+
 
 CREATE OPERATOR CLASS rum_float4_ops
 DEFAULT FOR TYPE float4 USING rum
@@ -358,6 +385,7 @@ AS
 	FUNCTION	4	rum_btree_consistent(internal,smallint,internal,int,internal,internal,internal,internal),
 	FUNCTION	5	rum_float4_compare_prefix(float4,float4,int2, internal),
 	-- support to float4 distance in rum_tsvector_addon_ops
+	FUNCTION	6	rum_float4_config(internal),
 	FUNCTION	9	rum_float4_outer_distance(float4, float4, smallint),
 STORAGE		 float4;
 
@@ -421,6 +449,12 @@ RETURNS float8
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT IMMUTABLE;
 
+CREATE FUNCTION rum_float8_config(internal)
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C IMMUTABLE STRICT;
+
+
 
 CREATE OPERATOR CLASS rum_float8_ops
 DEFAULT FOR TYPE float8 USING rum
@@ -439,6 +473,7 @@ AS
 	FUNCTION	4	rum_btree_consistent(internal,smallint,internal,int,internal,internal,internal,internal),
 	FUNCTION	5	rum_float8_compare_prefix(float8,float8,int2, internal),
 	-- support to float8 distance in rum_tsvector_addon_ops
+	FUNCTION	6	rum_float8_config(internal),
 	FUNCTION	9	rum_float8_outer_distance(float8, float8, smallint),
 STORAGE		 float8;
 
@@ -502,6 +537,12 @@ RETURNS float8
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT IMMUTABLE;
 
+CREATE FUNCTION rum_money_config(internal)
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C IMMUTABLE STRICT;
+
+
 
 CREATE OPERATOR CLASS rum_money_ops
 DEFAULT FOR TYPE money USING rum
@@ -520,6 +561,7 @@ AS
 	FUNCTION	4	rum_btree_consistent(internal,smallint,internal,int,internal,internal,internal,internal),
 	FUNCTION	5	rum_money_compare_prefix(money,money,int2, internal),
 	-- support to money distance in rum_tsvector_addon_ops
+	FUNCTION	6	rum_money_config(internal),
 	FUNCTION	9	rum_money_outer_distance(money, money, smallint),
 STORAGE		 money;
 
@@ -583,6 +625,12 @@ RETURNS float8
 AS 'MODULE_PATHNAME'
 LANGUAGE C STRICT IMMUTABLE;
 
+CREATE FUNCTION rum_oid_config(internal)
+RETURNS void
+AS 'MODULE_PATHNAME'
+LANGUAGE C IMMUTABLE STRICT;
+
+
 
 CREATE OPERATOR CLASS rum_oid_ops
 DEFAULT FOR TYPE oid USING rum
@@ -601,6 +649,7 @@ AS
 	FUNCTION	4	rum_btree_consistent(internal,smallint,internal,int,internal,internal,internal,internal),
 	FUNCTION	5	rum_oid_compare_prefix(oid,oid,int2, internal),
 	-- support to oid distance in rum_tsvector_addon_ops
+	FUNCTION	6	rum_oid_config(internal),
 	FUNCTION	9	rum_oid_outer_distance(oid, oid, smallint),
 STORAGE		 oid;
 
