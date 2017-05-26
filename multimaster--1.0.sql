@@ -91,6 +91,10 @@ CREATE FUNCTION mtm.check_deadlock(xid bigint) RETURNS boolean
 AS 'MODULE_PATHNAME','mtm_check_deadlock'
 LANGUAGE C;
 
+CREATE FUNCTION mtm.arbitraror_poll_status(xid bigint) RETURNS bigint
+AS 'MODULE_PATHNAME','mtm_arbitrator_poll'
+LANGUAGE C;
+
 CREATE TABLE IF NOT EXISTS mtm.local_tables(rel_schema text, rel_name text, primary key(rel_schema, rel_name));
 
 CREATE OR REPLACE FUNCTION mtm.alter_sequences() RETURNS boolean AS 
