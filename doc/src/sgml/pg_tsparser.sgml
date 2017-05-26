@@ -31,7 +31,11 @@ CREATE EXTENSION pg_tsparser;
 </programlisting>
     <para>
       Once <filename>pg_tsparser</filename> is enabled, you can create
-      your own text search configuration. For example:
+      your own text search configuration. In addition to <filename>pg_tsparser</filename>,
+      you can use any available dictionary.
+    </para>
+    <para>For example, you can create <literal>english_ts</literal> configuration
+    for the English language, as follows:
     </para>
     <programlisting>
 CREATE TEXT SEARCH CONFIGURATION english_ts (
@@ -79,6 +83,9 @@ SELECT to_tsvector('english', 'rel-3.2-A') as def_parser,
  '-3.2':2 'rel':1 | '3.2':3 'rel':2 'rel-3.2-a':1
 (1 row)
 </programlisting>
+  <para><emphasis role="strong">See Also</emphasis></para>
+  <para><xref linkend="sql-createtsconfig"></para>
+  <para><xref linkend="sql-altertsconfig"></para>
   </sect2>
   <sect2 id="pg-tsparser-authors">
     <title>Authors</title>
