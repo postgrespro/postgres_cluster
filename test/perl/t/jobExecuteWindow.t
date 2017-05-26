@@ -54,7 +54,7 @@ ok($sth->execute()) or (print $DBI::errstr and $dbh->disconnect() and BAIL_OUT);
 $sth->finish();
 
 
-sleep 120;
+sleep 60;
 $query = "SELECT count(*) FROM test_results";
 $sth = $dbh->prepare($query);
 ok($sth->execute()) or (print $DBI::errstr and $dbh->disconnect() and BAIL_OUT);
