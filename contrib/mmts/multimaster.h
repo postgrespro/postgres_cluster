@@ -277,8 +277,9 @@ typedef struct
 	PGSemaphoreData sendSemaphore;     /* semaphore used to notify mtm-sender about new responses to coordinator */
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
-	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes */
-	nodemask_t stalledNodeMask;        /* bitmask of stalled nodes (node with dropped replication slot which makes it not possible automatic recovery of such node) */
+	nodemask_t disabledNodeMask;       /* Bitmask of disabled nodes */
+	nodemask_t arbitratorDisabledMask; /* Bitmask of node disabled by arbitrator */
+	nodemask_t stalledNodeMask;        /* Bitmask of stalled nodes (node with dropped replication slot which makes it not possible automatic recovery of such node) */
 	nodemask_t stoppedNodeMask;        /* Bitmask of stopped (permanently disabled nodes) */
 	nodemask_t pglogicalReceiverMask;  /* bitmask of started pglogic receivers */
 	nodemask_t pglogicalSenderMask;    /* bitmask of started pglogic senders */
