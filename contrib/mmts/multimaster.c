@@ -1964,6 +1964,7 @@ static void MtmEnableNode(int nodeId)
 	if (BIT_SET(Mtm->disabledNodeMask, nodeId-1)) {
 		BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
 		BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
+		BIT_SET(Mtm->recoveredNodeMask, nodeId-1);
 		Mtm->nConfigChanges += 1;
 		Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 		Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
@@ -2132,6 +2133,7 @@ bool MtmRecoveryCaughtUp(int nodeId, lsn_t walEndPtr)
 			Assert(BIT_CHECK(Mtm->disabledNodeMask, nodeId-1));
 			BIT_CLEAR(Mtm->originLockNodeMask, nodeId-1);
 			BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
+			BIT_SET(Mtm->recoveredNodeMask, nodeId-1);
 			Mtm->nLiveNodes += 1;
 			MtmCheckQuorum();
 		} else {
@@ -2271,6 +2273,22 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix)
 }
 
 
+static int MtmGetNumberOfVotingNodes()
+{
+	int i;
+	int nVotingNodes = Mtm->nAllNodes;
+	notebask_t deadNodeMask = Mtm->deadNodeMask;
+	for (i = 0; deadNodeMask != 0; i++) {
+		if (BIT_CHECK(deadNodeMask, i)) {
+			if (!BIT_CHECK(newClique, i)) {
+				nVotingNodes -= 1;
+			}
+			BIT_CLEAR(deadNodeMask, i);
+		}
+	}
+	return nVotingNodes;
+}
+
 /**
  * Build connectivity graph, find clique in it and extend disabledNodeMask by nodes not included in clique.
  * This function is called by arbiter monitor process with period MtmHeartbeatSendTimeout
@@ -2281,9 +2299,7 @@ void MtmRefreshClusterStatus()
 	nodemask_t matrix[MAX_NODES];
 	int cliqueSize;
 	nodemask_t oldClique = ~Mtm->disabledNodeMask & (((nodemask_t)1 << Mtm->nAllNodes)-1);
-	nodemask_t arbitratorDisabledMask;
 	int nVotingNodes;
-	int i;
 
 	MtmBuildConnectivityMatrix(matrix);
 	newClique = MtmFindMaxClique(matrix, Mtm->nAllNodes, &cliqueSize);
@@ -2304,16 +2320,7 @@ void MtmRefreshClusterStatus()
 		newClique = MtmFindMaxClique(matrix, Mtm->nAllNodes, &cliqueSize);
 	} while (newClique != oldClique);
 
-	nVotingNodes = Mtm->nAllNodes;
-	arbitratorDisabledMask = Mtm->arbitratorDisabledMask;
-	for (i = 0; arbitratorDisabledMask != 0; i++) {
-		if (BIT_CHECK(arbitratorDisabledMask, i)) {
-			if (!BIT_CHECK(newClique, i)) {
-				nVotingNodes -= 1;
-			}
-			BIT_CLEAR(arbitratorDisabledMask, i);
-		}
-	}
+	nVotingNodes = MtmGetNumberOfVotingNodes();
 	if (cliqueSize >= nVotingNodes/2+1 || (cliqueSize == (nVotingNodes+1)/2 && MtmMajorNode)) { /* have quorum */
 		fprintf(stderr, "Old mask: ");
 		for (i = 0; i <	 Mtm->nAllNodes; i++) {
@@ -2378,7 +2385,9 @@ void MtmRefreshClusterStatus()
  */
 void MtmCheckQuorum(void)
 {
-	if (Mtm->nLiveNodes >= Mtm->nAllNodes/2+1 || (Mtm->nLiveNodes == (Mtm->nAllNodes+1)/2 && MtmMajorNode)) { /* have quorum */
+	int nVotingNodes = MtmGetNumberOfVotingNodes();
+
+	if (Mtm->nLiveNodes >= nVotingNodes/2+1 || (Mtm->nLiveNodes == (nVotingNodes+1)/2 && MtmMajorNode)) { /* have quorum */
 		if (Mtm->status == MTM_IN_MINORITY) {
 			MTM_LOG1("Node is in majority: disabled mask %llx", Mtm->disabledNodeMask);
 			MtmSwitchClusterMode(MTM_ONLINE);
@@ -2626,7 +2635,8 @@ static void MtmInitialize()
 		Mtm->disabledNodeMask = 0;
 		Mtm->stalledNodeMask = 0;
 		Mtm->stoppedNodeMask = 0;
-		Mtm->arbitratorDisabledMask = 0;
+		Mtm->deadNodeMask = 0;
+		Mtm->recoveredNodeMask = 0;
 		Mtm->pglogicalReceiverMask = 0;
 		Mtm->pglogicalSenderMask = 0;
 		Mtm->inducedLockNodeMask = 0;
@@ -5444,6 +5454,14 @@ Datum mtm_check_deadlock(PG_FUNCTION_ARGS)
 
 Datum mtm_arbitrator_poll(PG_FUNCTION_ARGS)
 {
-	Mtm->arbitratorDisabledMask = PG_GETARG_INT64(0);
-	PG_RETURN_INT64(Mtm->disabledNodeMask);
+	nodemask_t recoveredNodeMask;
+
+	MtmLock(LW_EXCLUSIVE);
+	recoveredNodeMask = Mtm->recoveredNodeMask;
+	Mtm->deadNodeMask = PG_GETARG_INT64(0);
+	Mtm->recoveredNodeMask &= ~Mtm->deadNodeMask;
+	MtmCheckQuorum();
+	MtmUnlock();
+
+	PG_RETURN_INT64(recoveredNodeMask);
 }
