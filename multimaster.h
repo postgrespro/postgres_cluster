@@ -278,7 +278,8 @@ typedef struct
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* Bitmask of disabled nodes */
-	nodemask_t arbitratorDisabledMask; /* Bitmask of node disabled by arbitrator */
+	nodemask_t deadNodeMask;           /* Bitmask of nodes considered as dead by arbitrator */
+	nodemask_t recoveredNodeMask;      /* Bitmask of nodes recoverd after been reported as dead by arbitrator */
 	nodemask_t stalledNodeMask;        /* Bitmask of stalled nodes (node with dropped replication slot which makes it not possible automatic recovery of such node) */
 	nodemask_t stoppedNodeMask;        /* Bitmask of stopped (permanently disabled nodes) */
 	nodemask_t pglogicalReceiverMask;  /* bitmask of started pglogic receivers */

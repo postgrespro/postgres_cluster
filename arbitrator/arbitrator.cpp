@@ -103,7 +103,7 @@ int main (int argc, char* argv[])
 				queries[i] = pipes[i]->insert(sql);
 			}
 			sleep(cfg.timeout);
-			enabledMask = disabledMask;
+			enabledMask = 0;
 			for (size_t i = 0; i < nConns; i++) {        
 				if (!BIT_CHECK(didsabledMask, i)) { 
 					if (!pipes[i]->is_finished(queries[i])) 
@@ -113,8 +113,14 @@ int main (int argc, char* argv[])
 						delete conns[i];
 						conns[i] = NULL;
 					} else {
-						result r = pipes[i]->retrieve(results[i]);
-						enabledMask &= ~r[0][0].as(nodemask_t());
+						try { 
+							result r = pipes[i]->retrieve(results[i]);
+							enabledMask |= r[0][0].as(nodemask_t());
+						} catch (pqxx_exception const& x) { 
+							delete conns[i];
+							conns[i] = NULL;
+							fprintf(stderr, "Failed to retrieve result from node %d: %s\n", (int)i+1, x.base().what());
+						}							
 					}
 				}
 			}
