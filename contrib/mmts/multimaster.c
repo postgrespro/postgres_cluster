@@ -2522,7 +2522,7 @@ MtmCreateLocalTableMap(void)
 	return htab;
 }
 
-void MtmMakeRelationLocal(Oid relid)
+static void MtmMakeRelationLocal(Oid relid)
 {
 	if (OidIsValid(relid)) {
 		MtmLock(LW_EXCLUSIVE);
@@ -2532,17 +2532,17 @@ void MtmMakeRelationLocal(Oid relid)
 }
 
 
-static void MtmMakeTableLocal(char* schema, char* name)
+void MtmMakeTableLocal(char const* schema, char const* name)
 {
-	RangeVar* rv = makeRangeVar(schema, name, -1);
+	RangeVar* rv = makeRangeVar((char*)schema, (char*)name, -1);
 	Oid relid = RangeVarGetRelid(rv, NoLock, true);
 	MtmMakeRelationLocal(relid);
 }
 
 
 typedef struct {
-	NameData schema;
-	NameData name;
+	text schema;
+	text name;
 } MtmLocalTablesTuple;
 
 static void MtmLoadLocalTables(void)
@@ -2562,7 +2562,7 @@ static void MtmLoadLocalTables(void)
 		while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 		{
 			MtmLocalTablesTuple	*t = (MtmLocalTablesTuple*) GETSTRUCT(tuple);
-			MtmMakeTableLocal(NameStr(t->schema), NameStr(t->name));
+			MtmMakeTableLocal(text_to_cstring(&t->schema), text_to_cstring(&t->name));
 		}
 
 		systable_endscan(scan);
