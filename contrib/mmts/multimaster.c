@@ -2512,12 +2512,12 @@ MtmCreateLocalTableMap(void)
 	HASHCTL info;
 	HTAB* htab;
 	memset(&info, 0, sizeof(info));
-	info.keysize = sizeof(Oid);
+	info.entrysize = info.keysize = sizeof(Oid);
 	htab = ShmemInitHash(
 		"MtmLocalTables",
 		MULTIMASTER_MAX_LOCAL_TABLES, MULTIMASTER_MAX_LOCAL_TABLES,
 		&info,
-		0
+		HASH_ELEM
 	);
 	return htab;
 }
