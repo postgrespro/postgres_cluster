@@ -2273,14 +2273,14 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix)
 }
 
 
-static int MtmGetNumberOfVotingNodes()
+static int MtmGetNumberOfVotingNodes(nodemask_t clique)
 {
 	int i;
 	int nVotingNodes = Mtm->nAllNodes;
-	notebask_t deadNodeMask = Mtm->deadNodeMask;
+	nodemask_t deadNodeMask = Mtm->deadNodeMask;
 	for (i = 0; deadNodeMask != 0; i++) {
 		if (BIT_CHECK(deadNodeMask, i)) {
-			if (!BIT_CHECK(newClique, i)) {
+			if (!BIT_CHECK(clique, i)) {
 				nVotingNodes -= 1;
 			}
 			BIT_CLEAR(deadNodeMask, i);
@@ -2299,7 +2299,7 @@ void MtmRefreshClusterStatus()
 	nodemask_t matrix[MAX_NODES];
 	int cliqueSize;
 	nodemask_t oldClique = ~Mtm->disabledNodeMask & (((nodemask_t)1 << Mtm->nAllNodes)-1);
-	int nVotingNodes;
+	int i, nVotingNodes;
 
 	MtmBuildConnectivityMatrix(matrix);
 	newClique = MtmFindMaxClique(matrix, Mtm->nAllNodes, &cliqueSize);
@@ -2320,7 +2320,7 @@ void MtmRefreshClusterStatus()
 		newClique = MtmFindMaxClique(matrix, Mtm->nAllNodes, &cliqueSize);
 	} while (newClique != oldClique);
 
-	nVotingNodes = MtmGetNumberOfVotingNodes();
+	nVotingNodes = MtmGetNumberOfVotingNodes(newClique);
 	if (cliqueSize >= nVotingNodes/2+1 || (cliqueSize == (nVotingNodes+1)/2 && MtmMajorNode)) { /* have quorum */
 		fprintf(stderr, "Old mask: ");
 		for (i = 0; i <	 Mtm->nAllNodes; i++) {
@@ -2385,7 +2385,8 @@ void MtmRefreshClusterStatus()
  */
 void MtmCheckQuorum(void)
 {
-	int nVotingNodes = MtmGetNumberOfVotingNodes();
+	nodemask_t oldClique = ~Mtm->disabledNodeMask & (((nodemask_t)1 << Mtm->nAllNodes)-1);
+	int nVotingNodes = MtmGetNumberOfVotingNodes(oldClique);
 
 	if (Mtm->nLiveNodes >= nVotingNodes/2+1 || (Mtm->nLiveNodes == (nVotingNodes+1)/2 && MtmMajorNode)) { /* have quorum */
 		if (Mtm->status == MTM_IN_MINORITY) {
@@ -4383,8 +4384,8 @@ Datum mtm_make_table_local(PG_FUNCTION_ARGS)
 	rv = makeRangeVar(MULTIMASTER_SCHEMA_NAME, MULTIMASTER_LOCAL_TABLES_TABLE, -1);
 	rel = heap_openrv(rv, RowExclusiveLock);
 	if (rel != NULL) {
-		char* tableName = RelationGetRelationName(rel);
-		Oid	  schemaid = RelationGetNamespace(rel);
+		char* tableName = get_rel_name(reloid);
+		Oid	  schemaid = get_rel_namespace(reloid);
 		char* schemaName = get_namespace_name(schemaid);
 
 		tupDesc = RelationGetDescr(rel);
