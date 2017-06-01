@@ -1839,6 +1839,7 @@ FileWrite(File file, char *buffer, int amount)
 	inode_t inode = 0;
 	/*inode_t prev_inode;*/
 	off_t   seekPos;
+	uint32  pos = 0;
 
 	Assert(FileIsValid(file));
 
@@ -1878,7 +1879,6 @@ FileWrite(File file, char *buffer, int amount)
 
 	if (VfdCache[file].fileFlags & PG_COMPRESSION) 
 	{
-		uint32   pos;
 		FileMap* map = VfdCache[file].map;
 		uint32   compressedSize;
 		Assert(amount == BLCKSZ);
@@ -2006,8 +2006,18 @@ retry:
 	}
 
 	if (VfdCache[file].fileFlags & PG_COMPRESSION) 
+	{
 		cfs_unlock_file(VfdCache[file].map);
-
+		/* 
+		 * If GC is disabled for a long time, then faile can unlimited grow.
+		 * To avoid wrap aound of 32-bit offsets we force GC on this file when destination position
+		 * cross 2Gb boundary.								
+		 */
+		if ((int32)pos >= 0 && (int32)(pos + amount) < 0) 
+		{ 
+			cfs_gc_segment(VfdCache[file].fileName);
+		}
+	}
 	return returnCode;
 }
 

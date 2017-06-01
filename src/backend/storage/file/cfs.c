@@ -257,9 +257,9 @@ static void cfs_crypto_init(void)
 	uint8 aes_key[32] = {0}; /* at most 256 bits */
 
 	cipher_key = getenv("PG_CIPHER_KEY");
-	if (cipher_key == NULL) { 
+	if (cipher_key == NULL) {
 		elog(ERROR, "PG_CIPHER_KEY environment variable is not set");
-	} 
+	}
 	unsetenv("PG_CIPHER_KEY"); /* disable inspection of this environment variable */
     key_length = strlen(cipher_key);
 
@@ -406,11 +406,11 @@ void cfs_initialize()
 		cfs_state->n_workers = 0;
 		cfs_state->gc_enabled = cfs_gc_enabled;
 		cfs_state->max_iterations = 0;
-		
+
 		if (cfs_encryption)
 			cfs_crypto_init();
-		
-		elog(LOG, "Start CFS version %s compression algorithm %s encryption %s GC %s", 
+
+		elog(LOG, "Start CFS version %s compression algorithm %s encryption %s GC %s",
 			 CFS_VERSION, cfs_algorithm(), cfs_encryption ? "enabled" : "disabled", cfs_gc_enabled ? "enabled" : "disabled");
 	}
 }
@@ -426,19 +426,19 @@ int cfs_msync(FileMap* map)
 FileMap* cfs_mmap(int md)
 {
 	FileMap* map;
-	if (ftruncate(md, sizeof(FileMap)) != 0) 
+	if (ftruncate(md, sizeof(FileMap)) != 0)
 	{
 		return (FileMap*)MAP_FAILED;
 	}
-	
+
 #ifdef WIN32
 	{
-		HANDLE mh = CreateFileMapping(_get_osfhandle(md), NULL, PAGE_READWRITE, 
+		HANDLE mh = CreateFileMapping(_get_osfhandle(md), NULL, PAGE_READWRITE,
 								  0, (DWORD)sizeof(FileMap), NULL);
 		if (mh == NULL)
 			return (FileMap*)MAP_FAILED;
 
-		map = (FileMap*)MapViewOfFile(mh, FILE_MAP_ALL_ACCESS, 0, 0, 0); 
+		map = (FileMap*)MapViewOfFile(mh, FILE_MAP_ALL_ACCESS, 0, 0, 0);
 		CloseHandle(mh);
 	}
 	if (map == NULL)
@@ -499,7 +499,7 @@ static bool cfs_read_file(int fd, void* data, uint32 size)
 		else
 			offs += rc;
 	} while (offs < size);
-	
+
 	return true;
 }
 
@@ -519,7 +519,7 @@ static bool cfs_write_file(int fd, void const* data, uint32 size)
 		else
 			offs += rc;
 	} while (offs < size);
-	
+
 	return true;
 }
 
@@ -559,23 +559,23 @@ void cfs_lock_file(FileMap* map, char const* file_path)
 			break;
 		}
 
-		if (pg_atomic_read_u32(&cfs_state->n_active_gc) == 0) 
-		{ 
+		if (pg_atomic_read_u32(&cfs_state->n_active_gc) == 0)
+		{
 			/* There is no active GC, so lock is set by crashed GC */
 
 			LWLockAcquire(CfsGcLock, LW_EXCLUSIVE); /* Prevent race condition with GC */
 
 			/* Recheck under CfsGcLock that map->lock was not released */
-			if (pg_atomic_read_u32(&map->lock) >= CFS_GC_LOCK) 
+			if (pg_atomic_read_u32(&map->lock) >= CFS_GC_LOCK)
 			{
 				/* Uhhh... looks like last GC was interrupted.
 				 * Try to recover the file.
 				 */
 				char* map_bck_path = psprintf("%s.cfm.bck", file_path);
 				char* file_bck_path = psprintf("%s.bck", file_path);
-				
+
 				elog(WARNING, "CFS indicates that GC of %s was interrupted: trying to perform recovery", file_path);
-				
+
 				if (access(file_bck_path, R_OK) != 0)
 				{
 					/* There is no backup file: new map should be constructed */
@@ -585,20 +585,20 @@ void cfs_lock_file(FileMap* map, char const* file_path)
 						/* Recover map. */
 						if (!cfs_read_file(md2, map, sizeof(FileMap)))
 							elog(WARNING, "CFS failed to read file %s: %m", map_bck_path);
-						
+
 						close(md2);
 					}
 				}
 				else
 				{
 					/* Presence of backup file means that we still have
-					 * unchanged data and map files. Just remove backup files and 
+					 * unchanged data and map files. Just remove backup files and
 					 * revoke GC lock.
 					 */
 					unlink(file_bck_path);
 					unlink(map_bck_path);
 				}
-				
+
 				count = pg_atomic_fetch_sub_u32(&map->lock, CFS_GC_LOCK); /* revoke GC lock */
 				Assert((int)count > 0);
 				pfree(file_bck_path);
@@ -634,12 +634,13 @@ void cfs_unlock_file(FileMap* map)
 /*
  * Sort pages by offset to improve access locality
  */
-static int cfs_cmp_page_offs(void const* p1, void const* p2) 
+static int cfs_cmp_page_offs(void const* p1, void const* p2)
 {
 	uint32 o1 = CFS_INODE_OFFS(**(inode_t**)p1);
 	uint32 o2 = CFS_INODE_OFFS(**(inode_t**)p2);
 	return o1 < o2 ? -1 : o1 == o2 ? 0 : 1;
 }
+
 /*
  * Perform garbage collection (if required) on the file
  * @param map_path - path to the map file (*.cfm).
@@ -658,7 +659,7 @@ static bool cfs_gc_file(char* map_path, bool background)
 	int md2 = -1;
 	bool succeed = false;
 	int rc;
-			
+
 
 	pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
 
@@ -667,13 +668,13 @@ static bool cfs_gc_file(char* map_path, bool background)
 		while (!cfs_state->gc_enabled)
 		{
 			pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
-			
+
 			rc = WaitLatch(MyLatch,
 						   WL_TIMEOUT | WL_POSTMASTER_DEATH,
 						   CFS_DISABLE_TIMEOUT /* ms */);
 			if (cfs_gc_stop || (rc & WL_POSTMASTER_DEATH))
 				exit(1);
-			
+
 			pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
 		}
 
@@ -682,7 +683,7 @@ static bool cfs_gc_file(char* map_path, bool background)
 
 	md = open(map_path, O_RDWR|PG_BINARY, 0);
 	if (md < 0)
-	{ 
+	{
 		elog(DEBUG1, "CFS failed to open map file %s: %m", map_path);
 		goto FinishGC;
 	}
@@ -699,7 +700,7 @@ static bool cfs_gc_file(char* map_path, bool background)
 	usedSize = pg_atomic_read_u32(&map->usedSize);
 	physSize = pg_atomic_read_u32(&map->physSize);
 	virtSize = pg_atomic_read_u32(&map->virtSize);
-	
+
 	cfs_state->gc_stat.scannedFiles += 1;
 
 	/* do we need to perform defragmentation? */
@@ -804,7 +805,7 @@ static bool cfs_gc_file(char* map_path, bool background)
 		}
 		/* sort inodes by offset to improve read locality */
 		qsort(inodes, n_pages, sizeof(inode_t*), cfs_cmp_page_offs);
-		
+
 		fd = open(file_path, O_RDONLY|PG_BINARY, 0);
 		if (fd < 0)
 			goto Cleanup;
@@ -927,9 +928,8 @@ static bool cfs_gc_file(char* map_path, bool background)
 					if (res != BLCKSZ)
 					{
 						pg_atomic_fetch_sub_u32(&map->lock, CFS_GC_LOCK); /* release lock */
-						/* TODO Is it worth to PANIC or ERROR will be enough? */
-						elog(PANIC, "Verification failed for block %d of relation %s: error code %d",
-									 i, file_bck_path, (int)res);					
+						elog(ERROR, "Verification failed for block %d position %d size %d of relation %s: error code %d",
+							 i, (int)CFS_INODE_OFFS(inode), size, file_bck_path, (int)res);
 					}
 				}
 			}
@@ -977,7 +977,7 @@ static bool cfs_gc_file(char* map_path, bool background)
 			if (remove_backups)
 			{
 				unlink(file_bck_path);
-				unlink(map_bck_path);		
+				unlink(map_bck_path);
 				remove_backups = false;
 			}
 			succeed = false;
@@ -1070,7 +1070,7 @@ static bool cfs_gc_directory(int worker_id, char const* path)
 			/* If we have found a map file, run gc worker on it.
 			 * Otherwise, try to gc the directory recursively.
 			 */
-			if (len > 4 && 
+			if (len > 4 &&
 				strcmp(file_path + len - 4, ".cfm") == 0)
 			{
 				if (entry->d_ino % cfs_state->n_workers == worker_id
@@ -1080,7 +1080,7 @@ static bool cfs_gc_directory(int worker_id, char const* path)
 					break;
 				}
 			}
-			else if (!cfs_gc_directory(worker_id, file_path)) 
+			else if (!cfs_gc_directory(worker_id, file_path))
 			{
 				success = false;
 				break;
@@ -1124,7 +1124,7 @@ static void cfs_gc_bgworker_main(Datum arg)
 		int timeout = cfs_gc_period;
 		int rc;
 
-		if (!cfs_gc_scan_tablespace(worker_id)) 
+		if (!cfs_gc_scan_tablespace(worker_id))
 		{
 			timeout = CFS_RETRY_TIMEOUT;
 		}
@@ -1148,7 +1148,7 @@ void cfs_gc_start_bgworkers()
 
 	for (i = 0; i < cfs_gc_workers; i++)
 	{
-		BackgroundWorker worker;	
+		BackgroundWorker worker;
 		BackgroundWorkerHandle* handle;
 		MemSet(&worker, 0, sizeof(worker));
 		sprintf(worker.bgw_name, "cfs-worker-%d", i);
@@ -1165,9 +1165,9 @@ void cfs_gc_start_bgworkers()
 }
 
 /* Enable/disable garbage colection. */
-bool cfs_control_gc(bool enabled) 
+bool cfs_control_gc(bool enabled)
 {
-	bool was_enabled = cfs_state->gc_enabled;	
+	bool was_enabled = cfs_state->gc_enabled;
 	cfs_state->gc_enabled = enabled;
 	if (was_enabled && !enabled)
 	{
@@ -1272,7 +1272,7 @@ Datum cfs_estimate(PG_FUNCTION_ARGS)
 				off_t step = rc / BLCKSZ / CFS_ESTIMATE_PROBES * BLCKSZ;
 				for (i = 0; i < CFS_ESTIMATE_PROBES; i++)
 				{
-					rc = lseek(fd, step*i, SEEK_SET); 
+					rc = lseek(fd, step*i, SEEK_SET);
 					if (rc < 0)
 						break;
 
@@ -1406,7 +1406,7 @@ Datum cfs_gc_relation(PG_FUNCTION_ARGS)
 	Oid oid =  PG_GETARG_OID(0);
 	Relation rel = try_relation_open(oid, AccessShareLock);
 	int processed_segments = 0;
-	
+
 	if (rel != NULL)
 	{
 		char* path;
@@ -1420,7 +1420,7 @@ Datum cfs_gc_relation(PG_FUNCTION_ARGS)
 		path = relpathbackend(rel->rd_node, rel->rd_backend, MAIN_FORKNUM);
 		map_path = (char*)palloc(strlen(path) + 16);
 		sprintf(map_path, "%s.cfm", path);
-			
+
 		while (cfs_gc_file(map_path, false))
 		{
 			sprintf(map_path, "%s.%u.cfm", path, ++i);
@@ -1435,6 +1435,21 @@ Datum cfs_gc_relation(PG_FUNCTION_ARGS)
 	}
 	PG_RETURN_INT32(cfs_gc_processed_segments);
 }
+
+
+void cfs_gc_segment(char const* fileName)
+{
+	char* mapFileName = psprintf("%s.cfm", fileName);
+
+	LWLockAcquire(CfsGcLock, LW_EXCLUSIVE); /* Prevent interaction with background GC */
+
+	cfs_gc_file(mapFileName, false);
+
+	LWLockRelease(CfsGcLock);
+
+	pfree(mapFileName);
+}
+
 
 Datum cfs_gc_activity_processed_bytes(PG_FUNCTION_ARGS)
 {

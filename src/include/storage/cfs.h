@@ -124,6 +124,8 @@ int      cfs_shmem_size(void);
 void     cfs_encrypt(const char* fname, void* block, uint32 offs, uint32 size);
 void     cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size);
 
+void     cfs_gc_segment(char const* name);
+
 extern CfsState* cfs_state;
 
 extern int cfs_level;
