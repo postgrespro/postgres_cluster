@@ -55,6 +55,8 @@
 #include "pgbench.h"
 #include "pg_socket.h"
 
+#define ERRCODE_IN_FAILED_SQL_TRANSACTION  "25P02"
+#define ERRCODE_T_R_SERIALIZATION_FAILURE  "40001"
 #define ERRCODE_UNDEFINED_TABLE  "42P01"
 
 /*
@@ -232,6 +234,8 @@ typedef struct StatsData
 	int64		cnt;			/* number of transactions */
 	int64		skipped;		/* number of transactions skipped under --rate
 								 * and --latency-limit */
+	int64		serialization_failures;	/* number of transactions with
+										 * serialization failures */
 	SimpleStats latency;
 	SimpleStats lag;
 } StatsData;
@@ -260,6 +264,8 @@ typedef struct
 
 	/* per client collected stats */
 	int64		cnt;			/* transaction count */
+	bool		serialization_failure;	/* if there was serialization failure
+										 * during script execution */
 	int			ecnt;			/* error count */
 } CState;
 
@@ -336,6 +342,24 @@ typedef struct BuiltinScript
 	const char *desc;			/* short description */
 	const char *script;			/* actual pgbench script */
 } BuiltinScript;
+
+/* Default transaction isolation level */
+typedef enum DefaultIsolationLevel
+{
+	READ_COMMITTED,
+	REPEATABLE_READ,
+	SERIALIZABLE,
+	NUM_DEFAULT_ISOLATION_LEVEL
+} DefaultIsolationLevel;
+
+DefaultIsolationLevel default_isolation_level = READ_COMMITTED;
+
+static const char *DEFAULT_ISOLATION_LEVEL_ABBREVIATION[] = {"RC", "RR", "S"};
+static const char *DEFAULT_ISOLATION_LEVEL_SQL[] = {
+	"read committed",
+	"repeatable read",
+	"serializable"
+};
 
 static const BuiltinScript builtin_script[] =
 {
@@ -427,6 +451,8 @@ usage(void)
 		   "  -C, --connect            establish new connection for each transaction\n"
 		   "  -D, --define=VARNAME=VALUE\n"
 	  "                           define variable for use by custom script\n"
+		   "  -I, --default-isolation-level=RC|RR|S\n"
+	  "                           default transaction isolation level (default: RC)\n"
 		   "  -j, --jobs=NUM           number of threads (default: 1)\n"
 		   "  -l, --log                write transaction times to log file\n"
 		   "  -L, --latency-limit=NUM  count transactions lasting more than NUM ms as late\n"
@@ -717,6 +743,7 @@ initStats(StatsData *sd, double start_time)
 	sd->start_time = start_time;
 	sd->cnt = 0;
 	sd->skipped = 0;
+	sd->serialization_failures = 0;
 	initSimpleStats(&sd->latency);
 	initSimpleStats(&sd->lag);
 }
@@ -725,7 +752,8 @@ initStats(StatsData *sd, double start_time)
  * Accumulate one additional item into the given stats object.
  */
 static void
-accumStats(StatsData *stats, bool skipped, double lat, double lag)
+accumStats(StatsData *stats, bool skipped, bool serialization_failure,
+		   double lat, double lag)
 {
 	stats->cnt++;
 
@@ -733,6 +761,11 @@ accumStats(StatsData *stats, bool skipped, double lat, double lag)
 	{
 		/* no latency to record on skipped transactions */
 		stats->skipped++;
+	}
+	else if (serialization_failure)
+	{
+		/* no latency to record on transactions with serialization failures */
+		stats->serialization_failures++;
 	}
 	else
 	{
@@ -1872,7 +1905,11 @@ top:
 	}
 
 	if (st->listen)
-	{							/* are we receiver? */
+	{
+		ExecStatusType result_status;
+		bool		serialization_failure = false;
+
+		/* are we receiver? */
 		if (commands[st->state]->type == SQL_COMMAND)
 		{
 			if (debug)
@@ -1886,11 +1923,27 @@ top:
 				return true;	/* don't have the whole result yet */
 		}
 
+		/* command finished */
+		if (commands[st->state]->type == SQL_COMMAND)
+		{
+			char	   *sqlState;
+
+			/* read the query result */
+			res = PQgetResult(st->con);
+			result_status = PQresultStatus(res);
+			sqlState = PQresultErrorField(res, PG_DIAG_SQLSTATE);
+			serialization_failure = sqlState &&
+				(strcmp(sqlState, ERRCODE_T_R_SERIALIZATION_FAILURE) == 0 ||
+				 strcmp(sqlState, ERRCODE_IN_FAILED_SQL_TRANSACTION) == 0);
+			if (serialization_failure)
+				st->serialization_failure = true;
+		}
+
 		/*
-		 * command finished: accumulate per-command execution times in
-		 * thread-local data structure, if per-command latencies are requested
+		 * accumulate per-command execution times in thread-local data
+		 * structure, if per-command latencies are requested
 		 */
-		if (is_latencies)
+		if (is_latencies && !serialization_failure)
 		{
 			if (INSTR_TIME_IS_ZERO(now))
 				INSTR_TIME_SET_CURRENT(now);
@@ -1906,28 +1959,31 @@ top:
 		{
 			if (progress || throttle_delay || latency_limit ||
 				per_script_stats || use_log)
+			{
 				processXactStats(thread, st, &now, false, agg);
+			}
 			else
+			{
 				thread->stats.cnt++;
+				if (st->serialization_failure)
+					thread->stats.serialization_failures++;
+			}
 		}
 
 		if (commands[st->state]->type == SQL_COMMAND)
 		{
 			/*
-			 * Read and discard the query result; note this is not included in
-			 * the statement latency numbers.
+			 * Discard the query result; note this is not included in the
+			 * statement latency numbers.
 			 */
-			res = PQgetResult(st->con);
-			switch (PQresultStatus(res))
+			if (!(result_status == PGRES_COMMAND_OK ||
+				  result_status == PGRES_TUPLES_OK ||
+				  serialization_failure))
 			{
-				case PGRES_COMMAND_OK:
-				case PGRES_TUPLES_OK:
-					break;		/* OK */
-				default:
-					fprintf(stderr, "client %d aborted in state %d: %s",
-							st->id, st->state, PQerrorMessage(st->con));
-					PQclear(res);
-					return clientDone(st);
+				fprintf(stderr, "client %d aborted in state %d: %s",
+						st->id, st->state, PQerrorMessage(st->con));
+				PQclear(res);
+				return clientDone(st);
 			}
 			PQclear(res);
 			discard_response(st);
@@ -1957,6 +2013,7 @@ top:
 				fprintf(stderr, "client %d executing script \"%s\"\n", st->id,
 						sql_script[st->use_file].desc);
 			st->is_throttled = false;
+			st->serialization_failure = false;
 
 			/*
 			 * No transaction is underway anymore, which means there is
@@ -1974,6 +2031,7 @@ top:
 	{
 		instr_time	start,
 					end;
+		char		buffer[256];
 
 		INSTR_TIME_SET_CURRENT(start);
 		if ((st->con = doConnect()) == NULL)
@@ -1989,7 +2047,16 @@ top:
 		st->listen = false;
 		st->sleeping = false;
 		st->throttling = false;
+		st->serialization_failure = false;
 		memset(st->prepared, 0, sizeof(st->prepared));
+
+		/* set default isolation level */
+		snprintf(buffer, sizeof(buffer),
+				"set session characteristics as transaction isolation level %s",
+				 DEFAULT_ISOLATION_LEVEL_SQL[default_isolation_level]);
+		executeStatement(st->con, buffer);
+		if (debug)
+			fprintf(stderr, "client %d execute command: %s\n", st->id, buffer);
 	}
 
 	/*
@@ -2249,6 +2316,7 @@ doLog(TState *thread, CState *st, instr_time *now,
 				if (latency_limit)
 					fprintf(logfile, " " INT64_FORMAT, agg->skipped);
 			}
+			fprintf(logfile, " " INT64_FORMAT, agg->serialization_failures);
 			fputc('\n', logfile);
 
 			/* reset data and move to next interval */
@@ -2256,7 +2324,7 @@ doLog(TState *thread, CState *st, instr_time *now,
 		}
 
 		/* accumulate the current transaction */
-		accumStats(agg, skipped, latency, lag);
+		accumStats(agg, skipped, st->serialization_failure, latency, lag);
 	}
 	else
 	{
@@ -2268,6 +2336,10 @@ doLog(TState *thread, CState *st, instr_time *now,
 			fprintf(logfile, "%d " INT64_FORMAT " skipped %d %ld %ld",
 					st->id, st->cnt, st->use_file,
 					(long) now->tv_sec, (long) now->tv_usec);
+		else if (st->serialization_failure)
+			fprintf(logfile, "%d " INT64_FORMAT " serialization failure %d %ld %ld",
+					st->id, st->cnt, st->use_file,
+					(long) now->tv_sec, (long) now->tv_usec);
 		else
 			fprintf(logfile, "%d " INT64_FORMAT " %.0f %d %ld %ld",
 					st->id, st->cnt, latency, st->use_file,
@@ -2277,6 +2349,9 @@ doLog(TState *thread, CState *st, instr_time *now,
 		/* On Windows, instr_time doesn't provide a timestamp anyway */
 		if (skipped)
 			fprintf(logfile, "%d " INT64_FORMAT " skipped %d 0 0",
+					st->id, st->cnt, st->use_file);
+		else if (st->serialization_failure)
+			fprintf(logfile, "%d " INT64_FORMAT " serialization failure %d 0 0",
 					st->id, st->cnt, st->use_file);
 		else
 			fprintf(logfile, "%d " INT64_FORMAT " %.0f %d 0 0",
@@ -2303,7 +2378,7 @@ processXactStats(TState *thread, CState *st, instr_time *now,
 	if ((!skipped || agg_interval) && INSTR_TIME_IS_ZERO(*now))
 		INSTR_TIME_SET_CURRENT(*now);
 
-	if (!skipped)
+	if (!skipped && !st->serialization_failure)
 	{
 		/* compute latency & lag */
 		latency = INSTR_TIME_GET_MICROSEC(*now) - st->txn_scheduled;
@@ -2312,21 +2387,27 @@ processXactStats(TState *thread, CState *st, instr_time *now,
 
 	if (progress || throttle_delay || latency_limit)
 	{
-		accumStats(&thread->stats, skipped, latency, lag);
+		accumStats(&thread->stats, skipped, st->serialization_failure, latency,
+				   lag);
 
 		/* count transactions over the latency limit, if needed */
 		if (latency_limit && latency > latency_limit)
 			thread->latency_late++;
 	}
 	else
+	{
 		thread->stats.cnt++;
+		if (st->serialization_failure)
+			thread->stats.serialization_failures++;
+	}
 
 	if (use_log)
 		doLog(thread, st, now, agg, skipped, latency, lag);
 
 	/* XXX could use a mutex here, but we choose not to */
 	if (per_script_stats)
-		accumStats(&sql_script[st->use_file].stats, skipped, latency, lag);
+		accumStats(&sql_script[st->use_file].stats, skipped,
+				   st->serialization_failure, latency, lag);
 }
 
 
@@ -3281,6 +3362,8 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 	/* Report test parameters. */
 	printf("transaction type: %s\n",
 		   num_scripts == 1 ? sql_script[0].desc : "multiple scripts");
+	printf("default transaction isolation level: %s\n",
+		   DEFAULT_ISOLATION_LEVEL_SQL[default_isolation_level]);
 	printf("scaling factor: %d\n", scale);
 	printf("query mode: %s\n", QUERYMODE[querymode]);
 	printf("number of clients: %d\n", nclients);
@@ -3301,6 +3384,10 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 	/* Remaining stats are nonsensical if we failed to execute any xacts */
 	if (total->cnt <= 0)
 		return;
+
+	printf("number of transactions with serialization failures: " INT64_FORMAT " (%.3f %%)\n",
+		   total->serialization_failures,
+		   (100.0 * total->serialization_failures / total->cnt));
 
 	if (throttle_delay && latency_limit)
 		printf("number of transactions skipped: " INT64_FORMAT " (%.3f %%)\n",
@@ -3356,6 +3443,11 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 			else
 				printf("script statistics:\n");
 
+			printf(" - number of transactions with serialization failures: " INT64_FORMAT " (%.3f%%)\n",
+				   sql_script[i].stats.serialization_failures,
+				   (100.0 * sql_script[i].stats.serialization_failures /
+					sql_script[i].stats.cnt));
+
 			if (latency_limit)
 				printf(" - number of transactions skipped: " INT64_FORMAT " (%.3f%%)\n",
 					   sql_script[i].stats.skipped,
@@ -3399,6 +3491,7 @@ main(int argc, char **argv)
 		{"fillfactor", required_argument, NULL, 'F'},
 		{"host", required_argument, NULL, 'h'},
 		{"initialize", no_argument, NULL, 'i'},
+		{"default-isolation-level", required_argument, NULL, 'I'},
 		{"jobs", required_argument, NULL, 'j'},
 		{"log", no_argument, NULL, 'l'},
 		{"latency-limit", required_argument, NULL, 'L'},
@@ -3493,7 +3586,7 @@ main(int argc, char **argv)
 	state = (CState *) pg_malloc(sizeof(CState));
 	memset(state, 0, sizeof(CState));
 
-	while ((c = getopt_long(argc, argv, "ih:nvp:dqb:SNc:j:Crs:t:T:U:lf:D:F:M:P:R:L:", long_options, &optindex)) != -1)
+	while ((c = getopt_long(argc, argv, "ih:nvp:dqb:SNc:j:Crs:t:T:U:lf:D:F:M:P:R:L:I:", long_options, &optindex)) != -1)
 	{
 		char	   *script;
 
@@ -3731,6 +3824,25 @@ main(int argc, char **argv)
 					}
 					benchmarking_option_set = true;
 					latency_limit = (int64) (limit_ms * 1000);
+				}
+				break;
+			case 'I':
+				{
+					benchmarking_option_set = true;
+
+					for (default_isolation_level = 0;
+						 default_isolation_level < NUM_DEFAULT_ISOLATION_LEVEL;
+						 default_isolation_level++)
+						if (strcmp(optarg,
+								DEFAULT_ISOLATION_LEVEL_ABBREVIATION[
+									default_isolation_level]) == 0)
+							break;
+					if (default_isolation_level >= NUM_DEFAULT_ISOLATION_LEVEL)
+					{
+						fprintf(stderr, "invalid default isolation level (-I): \"%s\"\n",
+								optarg);
+						exit(1);
+					}
 				}
 				break;
 			case 0:
@@ -4122,6 +4234,7 @@ main(int argc, char **argv)
 		mergeSimpleStats(&stats.lag, &thread->stats.lag);
 		stats.cnt += thread->stats.cnt;
 		stats.skipped += thread->stats.skipped;
+		stats.serialization_failures += thread->stats.serialization_failures;
 		latency_late += thread->latency_late;
 		INSTR_TIME_ADD(conn_total_time, thread->conn_time);
 	}
@@ -4197,8 +4310,19 @@ threadRun(void *arg)
 		/* make connections to the database */
 		for (i = 0; i < nstate; i++)
 		{
+			char		buffer[256];
+
 			if ((state[i].con = doConnect()) == NULL)
 				goto done;
+
+			/* set default isolation level */
+			snprintf(buffer, sizeof(buffer),
+				"set session characteristics as transaction isolation level %s",
+				DEFAULT_ISOLATION_LEVEL_SQL[default_isolation_level]);
+			executeStatement(state[i].con, buffer);
+			if (debug)
+				fprintf(stderr, "client %d execute command: %s\n",
+						state[i].id, buffer);
 		}
 	}
 
@@ -4266,6 +4390,7 @@ threadRun(void *arg)
 					remains--;
 					st->sleeping = false;
 					st->throttling = false;
+					st->serialization_failure = false;
 					PQfinish(st->con);
 					st->con = NULL;
 					continue;
@@ -4447,6 +4572,8 @@ threadRun(void *arg)
 					mergeSimpleStats(&cur.lag, &thread[i].stats.lag);
 					cur.cnt += thread[i].stats.cnt;
 					cur.skipped += thread[i].stats.skipped;
+					cur.serialization_failures +=
+						thread[i].stats.serialization_failures;
 				}
 
 				total_run = (now - thread_start) / 1000000.0;
@@ -4476,6 +4603,9 @@ threadRun(void *arg)
 						fprintf(stderr, ", " INT64_FORMAT " skipped",
 								cur.skipped - last.skipped);
 				}
+				fprintf(stderr, ", " INT64_FORMAT " serialization failures",
+						(cur.serialization_failures -
+						 last.serialization_failures));
 				fprintf(stderr, "\n");
 
 				last = cur;
