@@ -8,9 +8,13 @@ Portions Copyright (c) 1996-2017, PostgreSQL Global Development Group
 Portions Copyright (c) 1994, The Regents of the University of California
 
 Permission to use, copy, modify, and distribute this software and its
-documentation for any purpose, without fee, and without a written agreement
+documentation for the purposes of testing and studying its features and performance,
+as well as educational purposes, without fee, and without a written agreement
 is hereby granted, provided that the above copyright notice and this
-paragraph and the following two paragraphs appear in all copies.
+paragraph and the following two paragraphs appear in all copies. Using this
+software and its documentation for other purposes, including its packaging with
+other software, copying, modification and redistribution, requires
+a special license from Postgres Professional.
 
 IN NO EVENT SHALL THE UNIVERSITY OF CALIFORNIA BE LIABLE TO ANY PARTY FOR
 DIRECT, INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING
