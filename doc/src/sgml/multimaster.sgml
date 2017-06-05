@@ -127,8 +127,8 @@ of tables without primary keys by setting the <varname>multimaster.ignore_tables
       </listitem>
     </itemizedlist>
 <para>If you have any data that must be present on one of the nodes only, you can exclude a particular table from replication, as follows:
-    <programlisting>SELECT * FROM <function>mtm.make_table_local</function>(::regclass::oid) </programlisting> 
-    where <literal>regclass</literal> is the name of the table and <literal>oid</literal> is the unique table identifier.</para>
+    <programlisting>SELECT * FROM <function>mtm.make_table_local</function>('table_name') </programlisting> 
+    </para>
   </sect2>
     
     <sect2 id="multimaster-architecture">
