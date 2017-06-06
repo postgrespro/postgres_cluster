@@ -57,6 +57,7 @@
 
 #define ERRCODE_IN_FAILED_SQL_TRANSACTION  "25P02"
 #define ERRCODE_T_R_SERIALIZATION_FAILURE  "40001"
+#define ERRCODE_T_R_DEADLOCK_DETECTED  "40P01"
 #define ERRCODE_UNDEFINED_TABLE  "42P01"
 
 /*
@@ -236,6 +237,8 @@ typedef struct StatsData
 								 * and --latency-limit */
 	int64		serialization_failures;	/* number of transactions with
 										 * serialization failures */
+	int64		deadlock_failures; /* number of transactions with deadlock
+									* failures */
 	SimpleStats latency;
 	SimpleStats lag;
 } StatsData;
@@ -266,6 +269,8 @@ typedef struct
 	int64		cnt;			/* transaction count */
 	bool		serialization_failure;	/* if there was serialization failure
 										 * during script execution */
+	bool		deadlock_failure;	/* if there was deadlock failure during
+									 * script execution */
 	int			ecnt;			/* error count */
 } CState;
 
@@ -744,6 +749,7 @@ initStats(StatsData *sd, double start_time)
 	sd->cnt = 0;
 	sd->skipped = 0;
 	sd->serialization_failures = 0;
+	sd->deadlock_failures = 0;
 	initSimpleStats(&sd->latency);
 	initSimpleStats(&sd->lag);
 }
@@ -753,19 +759,19 @@ initStats(StatsData *sd, double start_time)
  */
 static void
 accumStats(StatsData *stats, bool skipped, bool serialization_failure,
-		   double lat, double lag)
+		   bool deadlock_failure, double lat, double lag)
 {
 	stats->cnt++;
 
-	if (skipped)
+	if (skipped || serialization_failure || deadlock_failure)
 	{
-		/* no latency to record on skipped transactions */
-		stats->skipped++;
-	}
-	else if (serialization_failure)
-	{
-		/* no latency to record on transactions with serialization failures */
-		stats->serialization_failures++;
+		/* no latency to record on such transactions */
+		if (skipped)
+			stats->skipped++;
+		if (serialization_failure)
+			stats->serialization_failures++;
+		if (deadlock_failure)
+			stats->deadlock_failures++;
 	}
 	else
 	{
@@ -1908,6 +1914,8 @@ top:
 	{
 		ExecStatusType result_status;
 		bool		serialization_failure = false;
+		bool		deadlock_failure = false;
+		bool		in_failed_transaction = false;
 
 		/* are we receiver? */
 		if (commands[st->state]->type == SQL_COMMAND)
@@ -1932,18 +1940,26 @@ top:
 			res = PQgetResult(st->con);
 			result_status = PQresultStatus(res);
 			sqlState = PQresultErrorField(res, PG_DIAG_SQLSTATE);
-			serialization_failure = sqlState &&
-				(strcmp(sqlState, ERRCODE_T_R_SERIALIZATION_FAILURE) == 0 ||
-				 strcmp(sqlState, ERRCODE_IN_FAILED_SQL_TRANSACTION) == 0);
-			if (serialization_failure)
-				st->serialization_failure = true;
+			if (sqlState) {
+				serialization_failure =
+					strcmp(sqlState, ERRCODE_T_R_SERIALIZATION_FAILURE) == 0;
+				deadlock_failure =
+					strcmp(sqlState, ERRCODE_T_R_DEADLOCK_DETECTED) == 0;
+				in_failed_transaction =
+					strcmp(sqlState, ERRCODE_IN_FAILED_SQL_TRANSACTION) == 0;
+
+				if (serialization_failure)
+					st->serialization_failure = true;
+				else if (deadlock_failure)
+					st->deadlock_failure = true;
+			}
 		}
 
 		/*
 		 * accumulate per-command execution times in thread-local data
 		 * structure, if per-command latencies are requested
 		 */
-		if (is_latencies && !serialization_failure)
+		if (is_latencies && !serialization_failure && !deadlock_failure)
 		{
 			if (INSTR_TIME_IS_ZERO(now))
 				INSTR_TIME_SET_CURRENT(now);
@@ -1967,6 +1983,8 @@ top:
 				thread->stats.cnt++;
 				if (st->serialization_failure)
 					thread->stats.serialization_failures++;
+				if (st->deadlock_failure)
+					thread->stats.deadlock_failures++;
 			}
 		}
 
@@ -1978,7 +1996,9 @@ top:
 			 */
 			if (!(result_status == PGRES_COMMAND_OK ||
 				  result_status == PGRES_TUPLES_OK ||
-				  serialization_failure))
+				  serialization_failure ||
+				  deadlock_failure ||
+				  in_failed_transaction))
 			{
 				fprintf(stderr, "client %d aborted in state %d: %s",
 						st->id, st->state, PQerrorMessage(st->con));
@@ -2014,6 +2034,7 @@ top:
 						sql_script[st->use_file].desc);
 			st->is_throttled = false;
 			st->serialization_failure = false;
+			st->deadlock_failure = false;
 
 			/*
 			 * No transaction is underway anymore, which means there is
@@ -2048,6 +2069,7 @@ top:
 		st->sleeping = false;
 		st->throttling = false;
 		st->serialization_failure = false;
+		st->deadlock_failure = false;
 		memset(st->prepared, 0, sizeof(st->prepared));
 
 		/* set default isolation level */
@@ -2316,7 +2338,8 @@ doLog(TState *thread, CState *st, instr_time *now,
 				if (latency_limit)
 					fprintf(logfile, " " INT64_FORMAT, agg->skipped);
 			}
-			fprintf(logfile, " " INT64_FORMAT, agg->serialization_failures);
+			fprintf(logfile, " " INT64_FORMAT " " INT64_FORMAT,
+					agg->serialization_failures, agg->deadlock_failures);
 			fputc('\n', logfile);
 
 			/* reset data and move to next interval */
@@ -2324,21 +2347,29 @@ doLog(TState *thread, CState *st, instr_time *now,
 		}
 
 		/* accumulate the current transaction */
-		accumStats(agg, skipped, st->serialization_failure, latency, lag);
+		accumStats(agg, skipped, st->serialization_failure,
+				   st->deadlock_failure, latency, lag);
 	}
 	else
 	{
 		/* no, print raw transactions */
+		char		transaction_label[256];
+
+		if (skipped)
+			snprintf(transaction_label, sizeof(transaction_label), "skipped");
+		else if (st->serialization_failure && st->deadlock_failure)
+			snprintf(transaction_label, sizeof(transaction_label),
+					 "serialization and deadlock failures");
+		else if (st->serialization_failure || st->deadlock_failure)
+			snprintf(transaction_label, sizeof(transaction_label), "%s failure",
+					 st->serialization_failure ? "serialization" : "deadlock");
+
 #ifndef WIN32
 
 		/* This is more than we really ought to know about instr_time */
-		if (skipped)
-			fprintf(logfile, "%d " INT64_FORMAT " skipped %d %ld %ld",
-					st->id, st->cnt, st->use_file,
-					(long) now->tv_sec, (long) now->tv_usec);
-		else if (st->serialization_failure)
-			fprintf(logfile, "%d " INT64_FORMAT " serialization failure %d %ld %ld",
-					st->id, st->cnt, st->use_file,
+		if (skipped || st->serialization_failure || st->deadlock_failure)
+			fprintf(logfile, "%d " INT64_FORMAT " %s %d %ld %ld",
+					st->id, st->cnt, transaction_label, st->use_file,
 					(long) now->tv_sec, (long) now->tv_usec);
 		else
 			fprintf(logfile, "%d " INT64_FORMAT " %.0f %d %ld %ld",
@@ -2347,12 +2378,9 @@ doLog(TState *thread, CState *st, instr_time *now,
 #else
 
 		/* On Windows, instr_time doesn't provide a timestamp anyway */
-		if (skipped)
-			fprintf(logfile, "%d " INT64_FORMAT " skipped %d 0 0",
-					st->id, st->cnt, st->use_file);
-		else if (st->serialization_failure)
-			fprintf(logfile, "%d " INT64_FORMAT " serialization failure %d 0 0",
-					st->id, st->cnt, st->use_file);
+		if (skipped || st->serialization_failure || st->deadlock_failure)
+			fprintf(logfile, "%d " INT64_FORMAT " %s %d 0 0",
+					st->id, st->cnt, transaction_label, st->use_file);
 		else
 			fprintf(logfile, "%d " INT64_FORMAT " %.0f %d 0 0",
 					st->id, st->cnt, latency, st->use_file);
@@ -2378,7 +2406,7 @@ processXactStats(TState *thread, CState *st, instr_time *now,
 	if ((!skipped || agg_interval) && INSTR_TIME_IS_ZERO(*now))
 		INSTR_TIME_SET_CURRENT(*now);
 
-	if (!skipped && !st->serialization_failure)
+	if (!skipped && !st->serialization_failure && !st->deadlock_failure)
 	{
 		/* compute latency & lag */
 		latency = INSTR_TIME_GET_MICROSEC(*now) - st->txn_scheduled;
@@ -2387,8 +2415,8 @@ processXactStats(TState *thread, CState *st, instr_time *now,
 
 	if (progress || throttle_delay || latency_limit)
 	{
-		accumStats(&thread->stats, skipped, st->serialization_failure, latency,
-				   lag);
+		accumStats(&thread->stats, skipped, st->serialization_failure,
+				   st->deadlock_failure, latency, lag);
 
 		/* count transactions over the latency limit, if needed */
 		if (latency_limit && latency > latency_limit)
@@ -2399,6 +2427,8 @@ processXactStats(TState *thread, CState *st, instr_time *now,
 		thread->stats.cnt++;
 		if (st->serialization_failure)
 			thread->stats.serialization_failures++;
+		if (st->deadlock_failure)
+			thread->stats.deadlock_failures++;
 	}
 
 	if (use_log)
@@ -2407,7 +2437,8 @@ processXactStats(TState *thread, CState *st, instr_time *now,
 	/* XXX could use a mutex here, but we choose not to */
 	if (per_script_stats)
 		accumStats(&sql_script[st->use_file].stats, skipped,
-				   st->serialization_failure, latency, lag);
+				   st->serialization_failure, st->deadlock_failure, latency,
+				   lag);
 }
 
 
@@ -3389,6 +3420,10 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 		   total->serialization_failures,
 		   (100.0 * total->serialization_failures / total->cnt));
 
+	printf("number of transactions with deadlock failures: " INT64_FORMAT " (%.3f %%)\n",
+		   total->deadlock_failures,
+		   (100.0 * total->deadlock_failures / total->cnt));
+
 	if (throttle_delay && latency_limit)
 		printf("number of transactions skipped: " INT64_FORMAT " (%.3f %%)\n",
 			   total->skipped,
@@ -3446,6 +3481,11 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 			printf(" - number of transactions with serialization failures: " INT64_FORMAT " (%.3f%%)\n",
 				   sql_script[i].stats.serialization_failures,
 				   (100.0 * sql_script[i].stats.serialization_failures /
+					sql_script[i].stats.cnt));
+
+			printf(" - number of transactions with deadlock failures: " INT64_FORMAT " (%.3f%%)\n",
+				   sql_script[i].stats.deadlock_failures,
+				   (100.0 * sql_script[i].stats.deadlock_failures /
 					sql_script[i].stats.cnt));
 
 			if (latency_limit)
@@ -4235,6 +4275,7 @@ main(int argc, char **argv)
 		stats.cnt += thread->stats.cnt;
 		stats.skipped += thread->stats.skipped;
 		stats.serialization_failures += thread->stats.serialization_failures;
+		stats.deadlock_failures += thread->stats.deadlock_failures;
 		latency_late += thread->latency_late;
 		INSTR_TIME_ADD(conn_total_time, thread->conn_time);
 	}
@@ -4391,6 +4432,7 @@ threadRun(void *arg)
 					st->sleeping = false;
 					st->throttling = false;
 					st->serialization_failure = false;
+					st->deadlock_failure = false;
 					PQfinish(st->con);
 					st->con = NULL;
 					continue;
@@ -4574,6 +4616,7 @@ threadRun(void *arg)
 					cur.skipped += thread[i].stats.skipped;
 					cur.serialization_failures +=
 						thread[i].stats.serialization_failures;
+					cur.deadlock_failures += thread[i].stats.deadlock_failures;
 				}
 
 				total_run = (now - thread_start) / 1000000.0;
@@ -4606,6 +4649,9 @@ threadRun(void *arg)
 				fprintf(stderr, ", " INT64_FORMAT " serialization failures",
 						(cur.serialization_failures -
 						 last.serialization_failures));
+				fprintf(stderr, ", " INT64_FORMAT " deadlock failures",
+						(cur.deadlock_failures - last.deadlock_failures));
+
 				fprintf(stderr, "\n");
 
 				last = cur;
