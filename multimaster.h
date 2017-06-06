@@ -209,6 +209,13 @@ typedef struct
 
 typedef struct
 {
+	Oid sourceTable;
+	nodemask_t targetNodes;
+} MtmCopyRequest;
+
+
+typedef struct
+{
 	MtmConnectionInfo con;
 	timestamp_t transDelay;
 	timestamp_t lastStatusChangeTime;

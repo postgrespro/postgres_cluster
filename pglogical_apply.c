@@ -14,6 +14,7 @@
 #include "catalog/catversion.h"
 #include "catalog/dependency.h"
 #include "catalog/index.h"
+#include "catalog/heap.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
 
@@ -367,6 +368,49 @@ process_remote_begin(StringInfo s)
 	return true;
 }
 
+static void 
+process_broadcast_table(StringInfo s)
+{
+	Relation rel;
+	char ch;
+	EState *estate;
+	TupleData new_tuple;
+	TupleTableSlot *newslot;
+	TupleTableSlot *oldslot;
+	HeapTuple tup;
+
+	StartTransactionCommand();
+
+    ch = pq_getmsgbyte(s);
+	Assert(ch == 'R');
+	rel = read_rel(s, AccessExclusiveLock);
+
+	heap_truncate_one_rel(rel);
+
+	estate = create_rel_estate(rel);
+	newslot = ExecInitExtraTupleSlot(estate);
+	oldslot = ExecInitExtraTupleSlot(estate);
+	ExecSetSlotDescriptor(newslot, RelationGetDescr(rel));
+	ExecSetSlotDescriptor(oldslot, RelationGetDescr(rel));
+
+	ExecOpenIndices(estate->es_result_relation_info, false);
+	
+	while (s->cursor != s->len) { 
+		read_tuple_parts(s, rel, &new_tuple);
+		tup = heap_form_tuple(RelationGetDescr(rel),
+							  new_tuple.values, new_tuple.isnull);
+		ExecStoreTuple(tup, newslot, InvalidBuffer, true);
+		simple_heap_insert(rel, newslot->tts_tuple);
+		UserTableUpdateOpenIndexes(estate, newslot);
+	}
+
+	ExecCloseIndices(estate->es_result_relation_info);
+    ExecResetTupleTable(estate->es_tupleTable, true); 
+    FreeExecutorState(estate);
+
+	CommitTransactionCommand();
+}
+
 static bool
 process_remote_message(StringInfo s)
 {
@@ -377,6 +421,12 @@ process_remote_message(StringInfo s)
 
 	switch (action)
 	{
+  	    case 'B':
+		{
+			process_broadcast_table(s);
+			standalone = true;
+			break;
+		}
 		case 'C':
 		{
 			MTM_LOG1("%d: Executing non-tx utility statement %s", MyProcPid, messageBody);

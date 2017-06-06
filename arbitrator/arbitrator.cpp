@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <inttypes.h>
 #include <sys/time.h>
 #include <pthread.h>
@@ -34,18 +35,34 @@ class my_unique_ptr
   public:
     my_unique_ptr(T* p = NULL) : ptr(p) {}
     ~my_unique_ptr() { delete ptr; }
-    T& operator*() { return *ptr; }
-    T* operator->() { return ptr; }
-    void operator=(T* p) { ptr = p; }
+    T& operator*() const  { return *ptr; }
+    T* operator->() const { return ptr; }
+	bool operator ==(T const* p) const { return ptr == p; }
+	bool operator !=(T const* p) const { return ptr != p; }
+    void operator=(T* p) { 
+		delete ptr;
+		ptr = p; 
+	}
     void operator=(my_unique_ptr& other) {
+		delete ptr;
         ptr = other.ptr;
         other.ptr = NULL;
     }        
 };
 
+struct config
+{
+	int timeout;
+	vector<string> connections;
+
+	config() {
+		timeout = 1000000; // 1 second
+	}	
+};
+
 int main (int argc, char* argv[])
 {
-	vector<string> connection_strings;
+	config cfg;
 
 	if (argc == 1){
         printf("Use -h to show usage options\n");
@@ -56,7 +73,7 @@ int main (int argc, char* argv[])
         if (argv[i][0] == '-') { 
             switch (argv[i][1]) {
 			  case 't':
-				cfs.timeout = atoi(argv[++i]);
+				cfg.timeout = atoi(argv[++i]);
 				continue;
 			  case 'c':
                 cfg.connections.push_back(string(argv[++i]));
@@ -64,18 +81,19 @@ int main (int argc, char* argv[])
 			}
         }
 		printf("Options:\n"
-                "\t-t TIMEOUT\ttimeout in seconds of waiting database connection string\n"
+                "\t-t TIMEOUT\ttimeout in microseconds of waiting database connection string (default: 1 second)\n"
 			   "\t-c STR\tdatabase connection string\n");
         return 1;
     }
 	
-	size_t nConns = connection_strings.size();
+	size_t nConns = cfg.connections.size();
     vector< my_unique_ptr<connection> > conns(nConns);
 	for (size_t i = 0; i < nConns; i++) {
-		conns[i] = new connection(connection_strings[i]);
+		conns[i] = new connection(cfg.connections[i]);
     }
 	nodemask_t disabledMask = 0;
-	nodemask_t enabledMask = 0;
+	nodemask_t newEnabledMask = 0;
+	nodemask_t oldEnabledMask = 0;
 
 	while (true) { 
         vector< my_unique_ptr<nontransaction> > txns(conns.size());
@@ -84,46 +102,63 @@ int main (int argc, char* argv[])
 		char sql[128];
 		sprintf(sql, "select mtm.arbitrator_poll(%lld)", disabledMask);
 
+		// Initiate queries to all live nodes
         for (size_t i = 0; i < nConns; i++) {        
-			if (BIT_CHECK(disabledMask, i)) { 
-				if (BIT_CHECK(enabledMask, i)) { 
+			// Some of live node reestablished connection with dead node, so arbitrator should also try to connect to this node
+			if (conns[i] == NULL) { 
+				if (BIT_CHECK(newEnabledMask, i)) { 
 					try { 
-						delete conns[i];
-						conns[i] = new connection(connection_strings[i]);
+						conns[i] = new connection(cfg.connections[i]);
 						BIT_CLEAR(disabledMask, i);
+						fprintf(stdout, "Reestablish connection with node %d\n", (int)i+1);
 					} catch (pqxx_exception const& x) { 
-						conns[i] = NULL;
-						fprintf(stderr, "Failed to connect to node %d: %s\n", (int)i+1, x.base().what());
+						if (conns[i] == NULL) { 
+							conns[i] = NULL;
+							fprintf(stderr, "Failed to connect to node %d: %s\n", (int)i+1, x.base().what());
+						}
 					}
 				}
-			}
-			if (!BIT_CHECK(disabledMask, i)) { 
+			} else { 
 				txns[i] = new nontransaction(*conns[i]);
 				pipes[i] = new pipeline(*txns[i]);
 				queries[i] = pipes[i]->insert(sql);
 			}
-			sleep(cfg.timeout);
-			enabledMask = 0;
-			for (size_t i = 0; i < nConns; i++) {        
-				if (!BIT_CHECK(didsabledMask, i)) { 
-					if (!pipes[i]->is_finished(queries[i])) 
-					{ 
-						fprintf(stderr, "Doesn't receive response from node %d within %d seconds\n", (int)i+1, cfs.timeout);
-						BIT_SET(disabledMask, i);
-						delete conns[i];
+		}
+		// Wait some time
+		usleep(cfg.timeout);
+		oldEnabledMask = newEnabledMask;
+		newEnabledMask = ~0;
+		for (size_t i = 0; i < nConns; i++) {        
+			if (!BIT_CHECK(disabledMask, i)) { 
+				if (!pipes[i]->is_finished(queries[i])) { 
+					fprintf(stderr, "Doesn't receive response from node %d within %d microseconds\n", (int)i+1, cfg.timeout);
+					BIT_SET(disabledMask, i);
+					conns[i] = NULL;
+				} else {
+					try { 
+						result r = pipes[i]->retrieve(queries[i]);
+						newEnabledMask &= r[0][0].as(nodemask_t());
+					} catch (pqxx_exception const& x) { 
 						conns[i] = NULL;
-					} else {
-						try { 
-							result r = pipes[i]->retrieve(results[i]);
-							enabledMask |= r[0][0].as(nodemask_t());
-						} catch (pqxx_exception const& x) { 
-							delete conns[i];
-							conns[i] = NULL;
-							fprintf(stderr, "Failed to retrieve result from node %d: %s\n", (int)i+1, x.base().what());
-						}							
-					}
+						fprintf(stderr, "Failed to retrieve result from node %d: %s\n", (int)i+1, x.base().what());
+					}							
 				}
 			}
+		}
+		if (newEnabledMask == ~0) { 
+			if (oldEnabledMask != ~0) { 
+				fprintf(stdout, "There are no more live nodes\n");
+			}				
+			// No live nodes: 
+			disabledNodeMask = 0;
+		} else { 
+			if (newEnabledMask != oldEnabledMask) { 
+				for (size_t i = 0; i < nConns; i++) {        
+					if (BIT_CHECK(newEnabledMask ^ oldEnabledMask, i)) { 					
+						fprintf(stdout, "Node %d is %s\n", (int)i+1, BIT_CHECK(newEnabledMask, i) ? "enabled" : "disabled");
+					}
+				}
+			}	   
 		}
 	}
 }

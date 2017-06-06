@@ -34,6 +34,7 @@
 #include "utils/syscache.h"
 #include "utils/timestamp.h"
 #include "utils/typcache.h"
+#include "utils/snapmgr.h"
 
 #include "multimaster.h"
 #include "pglogical_relid_map.h"
@@ -61,7 +62,7 @@ static void pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 							Relation rel, HeapTuple oldtuple);
 
 static void pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
-								   Relation rel, HeapTuple tuple);
+								  Relation rel, HeapTuple tuple);
 static char decide_datum_transfer(Form_pg_attribute att,
 								  Form_pg_type typclass,
 								  bool allow_internal_basetypes,
@@ -167,8 +168,38 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 	}
 }
 
+static void pglogical_broadcast_table(StringInfo out, PGLogicalOutputData *data, MtmCopyRequest* copy)
+{
+	if (BIT_CHECK(copy->targetNodes, MtmReplicationNodeId-1)) { 
+		HeapScanDesc scandesc;
+		HeapTuple	 tuple;
+		Relation     rel;
+		
+		StartTransactionCommand();
+
+		rel = heap_open(copy->sourceTable, ShareLock);
+		
+		pq_sendbyte(out, 'M');
+		pq_sendbyte(out, 'B');
+		pq_sendint(out, sizeof(*copy), 4);
+		pq_sendbytes(out, (char*)copy, sizeof(*copy));
+		
+		pglogical_write_rel(out, data, rel);
+
+		scandesc = heap_beginscan(rel, GetTransactionSnapshot(), 0, NULL);
+		while ((tuple = heap_getnext(scandesc, ForwardScanDirection)) != NULL)
+		{
+			pglogical_write_tuple(out, data, rel, tuple);
+		}
+		heap_endscan(scandesc);
+		heap_close(rel, ShareLock);
+
+		CommitTransactionCommand();
+	}
+}
+
 static void
-pglogical_write_message(StringInfo out,
+pglogical_write_message(StringInfo out, PGLogicalOutputData *data,
 						const char *prefix, Size sz, const char *message)
 {
 	MtmLastRelId = InvalidOid;
@@ -198,6 +229,9 @@ pglogical_write_message(StringInfo out,
 		 * we use End message only as indicator of DDL transaction finish,
 		 * so no need to send that to replicas.
 		 */
+		return;
+	  case 'B':
+		pglogical_broadcast_table(out, data, (MtmCopyRequest*)message);
 		return;
 	}
 	pq_sendbyte(out, 'M');
