@@ -75,6 +75,14 @@ CREATE FUNCTION mtm.make_table_local(relation regclass) RETURNS void
 AS 'MODULE_PATHNAME','mtm_make_table_local'
 LANGUAGE C;
 
+CREATE FUNCTION mtm.broadcast_table(srcTable regclass, dstNodesMask bigint) RETURNS void
+AS 'MODULE_PATHNAME','mtm_broadcast_table'
+LANGUAGE C;
+
+CREATE FUNCTION mtm.copy_table(srcTable regclass, dstNode integer) RETURNS void
+AS 'MODULE_PATHNAME','mtm_copy_table'
+LANGUAGE C;
+
 CREATE FUNCTION mtm.dump_lock_graph() RETURNS text
 AS 'MODULE_PATHNAME','mtm_dump_lock_graph'
 LANGUAGE C;

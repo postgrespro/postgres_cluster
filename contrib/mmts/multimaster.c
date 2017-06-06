@@ -129,6 +129,8 @@ PG_FUNCTION_INFO_V1(mtm_dump_lock_graph);
 PG_FUNCTION_INFO_V1(mtm_inject_2pc_error);
 PG_FUNCTION_INFO_V1(mtm_check_deadlock);
 PG_FUNCTION_INFO_V1(mtm_arbitrator_poll);
+PG_FUNCTION_INFO_V1(mtm_broadcast_table);
+PG_FUNCTION_INFO_V1(mtm_copy_table);
 
 static Snapshot MtmGetSnapshot(Snapshot snapshot);
 static void MtmInitialize(void);
@@ -4366,6 +4368,24 @@ mtm_collect_cluster_info(PG_FUNCTION_ARGS)
 		PQfinish(conn);
 		SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(tuple));
 	}
+}
+
+Datum mtm_broadcast_table(PG_FUNCTION_ARGS)
+{
+	MtmCopyRequest copy;
+	copy.sourceTable = PG_GETARG_OID(0);
+	copy.targetNodes = PG_GETARG_INT64(1);
+	LogLogicalMessage("B", (char*)&copy, sizeof(copy), false);
+	PG_RETURN_VOID();
+}
+
+Datum mtm_copy_table(PG_FUNCTION_ARGS)
+{
+	MtmCopyRequest copy;
+	copy.sourceTable = PG_GETARG_OID(0);
+	copy.targetNodes = (nodemask_t)1 << (PG_GETARG_INT32(1) - 1);
+	LogLogicalMessage("B", (char*)&copy, sizeof(copy), false);
+	PG_RETURN_VOID();
 }
 
 
