@@ -323,6 +323,10 @@ typedef struct
 	char	   *argv[MAX_ARGS]; /* command word list */
 	PgBenchExpr *expr;			/* parsed expression, if needed */
 	SimpleStats stats;			/* time spent in this command */
+	int64		serialization_failures;	/* number of serialization failures in
+										 * this command */
+	int64		deadlock_failures;	/* number of deadlock failures in this
+									 * command */
 } Command;
 
 typedef struct ParsedScript
@@ -1970,6 +1974,15 @@ top:
 							 INSTR_TIME_GET_DOUBLE(st->stmt_begin));
 		}
 
+		/*
+		 * accumulate per-command serialization / deadlock failures count in
+		 * thread-local data structure
+		 */
+		if (serialization_failure)
+			commands[st->state]->serialization_failures++;
+		if (deadlock_failure)
+			commands[st->state]->deadlock_failures++;
+
 		/* transaction finished: calculate latency and log the transaction */
 		if (commands[st->state + 1] == NULL)
 		{
@@ -2877,6 +2890,8 @@ process_sql_command(PQExpBuffer buf, const char *source)
 	my_command->type = SQL_COMMAND;
 	my_command->argc = 0;
 	initSimpleStats(&my_command->stats);
+	my_command->serialization_failures = 0;
+	my_command->deadlock_failures = 0;
 
 	/*
 	 * If SQL command is multi-line, we only want to save the first line as
@@ -2946,6 +2961,8 @@ process_backslash_command(PsqlScanState sstate, const char *source)
 	my_command->type = META_COMMAND;
 	my_command->argc = 0;
 	initSimpleStats(&my_command->stats);
+	my_command->serialization_failures = 0;
+	my_command->deadlock_failures = 0;
 
 	/* Save first word (command name) */
 	j = 0;
@@ -3462,6 +3479,7 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 	if (per_script_stats || latency_limit || is_latencies)
 	{
 		int			i;
+		Command   **commands;
 
 		for (i = 0; i < num_scripts; i++)
 		{
@@ -3497,20 +3515,26 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 			if (num_scripts > 1)
 				printSimpleStats(" - latency", &sql_script[i].stats.latency);
 
-			/* Report per-command latencies */
+			/*
+			 * Report per-command serialization / deadlock failures and
+			 * latencies (if needed). */
 			if (is_latencies)
+				printf(" - statement serialization, deadlock failures and latencies in milliseconds:\n");
+			else
+				printf(" - statement serialization and deadlock failures:\n");
+
+			for (commands = sql_script[i].commands;
+				 *commands != NULL;
+				 commands++)
 			{
-				Command   **commands;
-
-				printf(" - statement latencies in milliseconds:\n");
-
-				for (commands = sql_script[i].commands;
-					 *commands != NULL;
-					 commands++)
-					printf("   %11.3f  %s\n",
+				printf("   %25" INT64_MODIFIER "d  %25" INT64_MODIFIER "d",
+					   (*commands)->serialization_failures,
+					   (*commands)->deadlock_failures);
+				if (is_latencies)
+					printf("  %11.3f",
 						   1000.0 * (*commands)->stats.sum /
-						   (*commands)->stats.count,
-						   (*commands)->line);
+						   (*commands)->stats.count);
+				printf("  %s\n", (*commands)->line);
 			}
 		}
 	}
@@ -3869,6 +3893,7 @@ main(int argc, char **argv)
 			case 'I':
 				{
 					benchmarking_option_set = true;
+					per_script_stats = true;
 
 					for (default_isolation_level = 0;
 						 default_isolation_level < NUM_DEFAULT_ISOLATION_LEVEL;
