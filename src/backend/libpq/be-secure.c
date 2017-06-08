@@ -208,7 +208,7 @@ secure_raw_read(Port *port, void *ptr, size_t len)
 #ifdef WIN32
 	pgwin32_noblock = true;
 #endif
-	n = pg_recv(port->sock, ptr, len, 0, port->isRsocket);
+	n = pg_recv(port->sock, ptr, len, 0);
 #ifdef WIN32
 	pgwin32_noblock = false;
 #endif
@@ -289,7 +289,7 @@ secure_raw_write(Port *port, const void *ptr, size_t len)
 #ifdef WIN32
 	pgwin32_noblock = true;
 #endif
-	n = pg_send(port->sock, ptr, len, 0, port->isRsocket);
+	n = pg_send(port->sock, ptr, len, 0);
 #ifdef WIN32
 	pgwin32_noblock = false;
 #endif

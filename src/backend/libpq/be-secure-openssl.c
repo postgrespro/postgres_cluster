@@ -423,9 +423,9 @@ aloop:
 				else
 					waitfor = WL_SOCKET_WRITEABLE;
 
-				WaitLatchOrSocket(MyLatch, waitfor, port->sock,
+				WaitLatchOrSocket(MyLatch, waitfor, PG_SOCK(port->sock),
 #ifdef WITH_RSOCKET
-								  port->isRsocket,
+								  PG_ISRSOCKET(port->isRsocket),
 #endif
 								  0);
 				goto aloop;

@@ -206,6 +206,7 @@ with_uuid	= @with_uuid@
 with_zlib	= @with_zlib@
 with_zstd 	= @with_zstd@
 with_icu	= @with_icu@
+with_rsocket	= @with_rsocket@
 enable_rpath	= @enable_rpath@
 enable_nls	= @enable_nls@
 enable_debug	= @enable_debug@

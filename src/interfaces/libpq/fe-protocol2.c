@@ -1236,7 +1236,7 @@ pqGetline2(PGconn *conn, char *s, int maxlen)
 {
 	int			result = 1;		/* return value if buffer overflows */
 
-	if (conn->sock == PGINVALID_SOCKET ||
+	if (conn->sock == PGINVALID_SOCKET_EXTENDED ||
 		conn->asyncStatus != PGASYNC_COPY_OUT)
 	{
 		*s = '\0';

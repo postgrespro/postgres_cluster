@@ -8,6 +8,7 @@
 /inet_net_ntop.c
 /noblock.c
 /open.c
+/pg_socket.c
 /pg_strong_random.c
 /pgstrcasecmp.c
 /pqsignal.c

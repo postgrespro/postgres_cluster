@@ -1834,7 +1834,7 @@ auth_peer(hbaPort *port)
 	gid_t		gid;
 	struct passwd *pw;
 
-	if (getpeereid(port->sock, &uid, &gid) != 0)
+	if (getpeereid(PG_SOCK(port->sock), &uid, &gid) != 0)
 	{
 		/* Provide special error message if getpeereid is a stub */
 		if (errno == ENOSYS)

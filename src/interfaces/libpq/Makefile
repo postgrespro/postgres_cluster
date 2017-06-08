@@ -50,6 +50,10 @@ else
 OBJS += sha2.o
 endif
 
+ifeq ($(with_rsocket),yes)
+OBJS += pg_socket.o
+endif
+
 ifeq ($(PORTNAME), cygwin)
 override shlib = cyg$(NAME)$(DLSUFFIX)
 endif
@@ -71,9 +75,9 @@ endif
 # shared library link.  (The order in which you list them here doesn't
 # matter.)
 ifneq ($(PORTNAME), win32)
-SHLIB_LINK += $(filter -lcrypt -ldes -lcom_err -lcrypto -lk5crypto -lkrb5 -lgssapi_krb5 -lgss -lgssapi -lssl -lsocket -lnsl -lresolv -lintl -lrdmacm, $(LIBS)) $(LDAP_LIBS_FE) $(PTHREAD_LIBS)
+SHLIB_LINK += $(filter -lcrypt -ldes -lcom_err -lcrypto -lk5crypto -lkrb5 -lgssapi_krb5 -lgss -lgssapi -lssl -lsocket -lnsl -lresolv -lintl, $(LIBS)) $(LDAP_LIBS_FE) $(PTHREAD_LIBS)
 else
-SHLIB_LINK += $(filter -lcrypt -ldes -lcom_err -lcrypto -lk5crypto -lkrb5 -lgssapi32 -lssl -lsocket -lnsl -lresolv -lintl $(PTHREAD_LIBS) -lrdmacm, $(LIBS)) $(LDAP_LIBS_FE)
+SHLIB_LINK += $(filter -lcrypt -ldes -lcom_err -lcrypto -lk5crypto -lkrb5 -lgssapi32 -lssl -lsocket -lnsl -lresolv -lintl $(PTHREAD_LIBS), $(LIBS)) $(LDAP_LIBS_FE)
 endif
 ifeq ($(PORTNAME), win32)
 SHLIB_LINK += -lshell32 -lws2_32 -lsecur32 $(filter -leay32 -lssleay32 -lcomerr32 -lkrb5_32, $(LIBS))
@@ -95,7 +99,7 @@ backend_src = $(top_srcdir)/src/backend
 # For some libpgport modules, this only happens if configure decides
 # the module is needed (see filter hack in OBJS, above).
 
-chklocale.c crypt.c getaddrinfo.c getpeereid.c inet_aton.c inet_net_ntop.c noblock.c open.c system.c pgsleep.c pg_strong_random.c pgstrcasecmp.c pqsignal.c snprintf.c strerror.c strlcpy.c thread.c win32error.c win32setlocale.c: % : $(top_srcdir)/src/port/%
+chklocale.c crypt.c getaddrinfo.c getpeereid.c inet_aton.c inet_net_ntop.c noblock.c open.c system.c pgsleep.c pg_strong_random.c pgstrcasecmp.c pqsignal.c snprintf.c strerror.c strlcpy.c thread.c win32error.c win32setlocale.c pg_socket.c: % : $(top_srcdir)/src/port/%
 	rm -f $@ && $(LN_S) $< .
 
 ip.c md5.c: % : $(backend_src)/libpq/%
@@ -154,7 +158,7 @@ clean distclean: clean-lib
 # Might be left over from a Win32 client-only build
 	rm -f pg_config_paths.h
 	rm -f inet_net_ntop.c noblock.c pgstrcasecmp.c pqsignal.c thread.c
-	rm -f chklocale.c crypt.c getaddrinfo.c getpeereid.c inet_aton.c open.c system.c snprintf.c strerror.c strlcpy.c win32error.c win32setlocale.c
+	rm -f chklocale.c crypt.c getaddrinfo.c getpeereid.c inet_aton.c open.c system.c snprintf.c strerror.c strlcpy.c win32error.c win32setlocale.c pg_socket.c
 	rm -f pgsleep.c
 	rm -f md5.c ip.c
 	rm -f encnames.c wchar.c

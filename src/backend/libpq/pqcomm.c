@@ -73,6 +73,7 @@
 #include <grp.h>
 #include <unistd.h>
 #include <sys/file.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <netdb.h>
@@ -91,7 +92,6 @@
 #include "libpq/ip.h"
 #include "libpq/libpq.h"
 #include "miscadmin.h"
-#include "pg_socket.h"
 #include "storage/ipc.h"
 #include "utils/guc.h"
 #include "utils/memutils.h"

@@ -68,6 +68,7 @@ typedef struct
 #include "datatype/timestamp.h"
 #include "libpq/hba.h"
 #include "libpq/pqcomm.h"
+#include "pg_socket.h"
 
 
 typedef enum CAC_state
@@ -117,7 +118,7 @@ typedef struct
 
 typedef struct Port
 {
-	pgsocket	sock;			/* File descriptor */
+	PgSocket	sock;			/* File descriptor */
 	bool		noblock;		/* is the socket in non-blocking mode? */
 	ProtocolVersion proto;		/* FE/BE protocol version */
 	SockAddr	laddr;			/* local addr (postmaster) */
@@ -190,7 +191,6 @@ typedef struct Port
 	/*
 	 * Rsocket structures.
 	 */
-	bool		isRsocket;		/* Is rsocket connection made? */
 #ifdef WITH_RSOCKET
 	bool		with_rsocket;
 #endif

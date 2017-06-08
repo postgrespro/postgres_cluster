@@ -15,9 +15,6 @@
 #include "c.h"
 
 #include <fcntl.h>
-#ifdef WITH_RSOCKET
-#include <rdma/rsocket.h>
-#endif
 
 
 /*

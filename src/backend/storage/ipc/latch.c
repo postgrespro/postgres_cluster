@@ -1751,8 +1751,8 @@ WaitEventSetWaitBlockForRsocket(WaitEventSet *set, int cur_timeout,
 	WaitEvent  *cur_event;
 	struct pollfd *cur_pollfd;
 
-	/* Sleep */
-	rc = pg_poll(set->rpollfds, set->nevents, (int) cur_timeout, true);
+	/* Sleep using rpoll() from pg_socket.h */
+	rc = rpoll(set->rpollfds, set->nevents, (int) cur_timeout);
 
 	/* Check return code */
 	if (rc < 0)
