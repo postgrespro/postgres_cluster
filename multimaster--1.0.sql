@@ -51,7 +51,7 @@ AS 'MODULE_PATHNAME','mtm_get_nodes_state'
 LANGUAGE C;
 
 CREATE TYPE mtm.cluster_state AS ("id" integer, "status" text, "disabledNodeMask" bigint, "disconnectedNodeMask" bigint, "catchUpNodeMask" bigint, "liveNodes" integer, "allNodes" integer, "nActiveQueries" integer, "nPendingQueries" integer, "queueSize" bigint, "transCount" bigint, "timeShift" bigint, "recoverySlot" integer,
-"xidHashSize" bigint, "gidHashSize" bigint, "oldestXid" bigint, "configChanges" integer, "stalledNodeMask" bigint, "stoppedNodeMask" bigint, "lastStatusChange" timestamp);
+"xidHashSize" bigint, "gidHashSize" bigint, "oldestXid" bigint, "configChanges" integer, "stalledNodeMask" bigint, "stoppedNodeMask" bigint, "deadNodeMask" bigint, "lastStatusChange" timestamp);
 
 CREATE TYPE mtm.trans_state AS ("status" text, "gid" text, "xid" bigint, "coordinator" integer, "gxid" bigint, "csn" timestamp, "snapshot" timestamp, "local" boolean, "prepared" boolean, "active" boolean, "twophase" boolean, "votingCompleted" boolean, "participants" bigint, "voted" bigint, "configChanges" integer);
 
@@ -99,8 +99,8 @@ CREATE FUNCTION mtm.check_deadlock(xid bigint) RETURNS boolean
 AS 'MODULE_PATHNAME','mtm_check_deadlock'
 LANGUAGE C;
 
-CREATE FUNCTION mtm.arbitraror_poll_status(xid bigint) RETURNS bigint
-AS 'MODULE_PATHNAME','mtm_arbitrator_poll'
+CREATE FUNCTION mtm.referee_poll(xid bigint) RETURNS bigint
+AS 'MODULE_PATHNAME','mtm_referee_poll'
 LANGUAGE C;
 
 CREATE TABLE IF NOT EXISTS mtm.local_tables(rel_schema text, rel_name text, primary key(rel_schema, rel_name));
