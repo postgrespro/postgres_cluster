@@ -4408,7 +4408,8 @@ Datum mtm_broadcast_table(PG_FUNCTION_ARGS)
 	MtmCopyRequest copy;
 	copy.sourceTable = PG_GETARG_OID(0);
 	copy.targetNodes = PG_GETARG_INT64(1);
-	LogLogicalMessage("B", (char*)&copy, sizeof(copy), false);
+	LogLogicalMessage("B", (char*)&copy, sizeof(copy), true);
+	MtmTx.containsDML = true;
 	PG_RETURN_VOID();
 }
 
@@ -4417,7 +4418,8 @@ Datum mtm_copy_table(PG_FUNCTION_ARGS)
 	MtmCopyRequest copy;
 	copy.sourceTable = PG_GETARG_OID(0);
 	copy.targetNodes = (nodemask_t)1 << (PG_GETARG_INT32(1) - 1);
-	LogLogicalMessage("B", (char*)&copy, sizeof(copy), false);
+	LogLogicalMessage("B", (char*)&copy, sizeof(copy), true);
+	MtmTx.containsDML = true;
 	PG_RETURN_VOID();
 }
 

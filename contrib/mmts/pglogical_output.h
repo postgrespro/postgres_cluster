@@ -102,4 +102,7 @@ typedef struct PGLogicalTupleData
 	bool	changed[MaxTupleAttributeNumber];
 } PGLogicalTupleData;
 
+extern void MtmOutputPluginWrite(LogicalDecodingContext *ctx, bool last_write, bool flush);
+extern void MtmOutputPluginPrepareWrite(LogicalDecodingContext *ctx, bool last_write, bool flush);
+
 #endif /* PG_LOGICAL_OUTPUT_H */
