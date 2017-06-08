@@ -4531,6 +4531,8 @@ RollbackAndReleaseCurrentSubTransaction(void)
 	CleanupSubTransaction();
 
 	s = CurrentTransactionState;	/* changed by pop */
+	TM->RestoreSavepointContext(s->savepointContext);
+
 	AssertState(s->blockState == TBLOCK_SUBINPROGRESS ||
 				s->blockState == TBLOCK_INPROGRESS ||
 				s->blockState == TBLOCK_STARTED);
@@ -5118,7 +5120,6 @@ PopTransaction(void)
 
 	TM->ReleaseSavepointContext(s->savepointContext);
 	CurrentTransactionState = s->parent;
-	TM->RestoreSavepointContext(CurrentTransactionState->savepointContext);
 
 	/* Let's just make sure CurTransactionContext is good */
 	CurTransactionContext = s->parent->curTransactionContext;
