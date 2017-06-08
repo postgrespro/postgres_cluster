@@ -579,7 +579,7 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	}
 
 	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
-					   parsed->nsubxacts, parsed->subxacts, true);
+					   parsed->nsubxacts, parsed->subxacts, true, parsed->nmsgs > 0);
 
 	/* ----
 	 * Check whether we are interested in this specific transaction, and tell
@@ -646,7 +646,7 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		strcpy(ctx->reorder->gid, parsed->twophase_gid);
 		*ctx->reorder->state_3pc = '\0';
 		SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
-						   parsed->nsubxacts, parsed->subxacts, true);
+						   parsed->nsubxacts, parsed->subxacts, true, false);
 		ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
 							commit_time, origin_id, origin_lsn);
 	} else {
