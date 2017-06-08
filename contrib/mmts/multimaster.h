@@ -85,7 +85,7 @@
 
 #define Natts_mtm_trans_state   15
 #define Natts_mtm_nodes_state   17
-#define Natts_mtm_cluster_state 20
+#define Natts_mtm_cluster_state 21
 
 typedef ulong64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
@@ -285,8 +285,8 @@ typedef struct
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* Bitmask of disabled nodes */
-	nodemask_t deadNodeMask;           /* Bitmask of nodes considered as dead by arbitrator */
-	nodemask_t recoveredNodeMask;      /* Bitmask of nodes recoverd after been reported as dead by arbitrator */
+	nodemask_t deadNodeMask;           /* Bitmask of nodes considered as dead by referee */
+	nodemask_t recoveredNodeMask;      /* Bitmask of nodes recoverd after been reported as dead by referee */
 	nodemask_t stalledNodeMask;        /* Bitmask of stalled nodes (node with dropped replication slot which makes it not possible automatic recovery of such node) */
 	nodemask_t stoppedNodeMask;        /* Bitmask of stopped (permanently disabled nodes) */
 	nodemask_t pglogicalReceiverMask;  /* bitmask of started pglogic receivers */
@@ -367,6 +367,7 @@ extern void*   MtmTablespaceStmt; /* CREATE/DELETE tablespace */
 extern MemoryContext MtmApplyContext;
 extern lsn_t MtmSenderWalEnd;
 extern timestamp_t MtmRefreshClusterStatusSchedule;
+extern MtmConnectionInfo* MtmConnections;
 
 
 extern void  MtmArbiterInitialize(void);
@@ -432,5 +433,6 @@ extern MtmTransState* MtmGetActiveTransaction(MtmL2List* list);
 extern void MtmReleaseLocks(void);
 extern void MtmInitMessage(MtmArbiterMessage* msg, MtmMessageCode code);
 extern void MtmSetSnapshot(csn_t snapshot);
+extern void MtmRefereeInitialize(void);
 
 #endif

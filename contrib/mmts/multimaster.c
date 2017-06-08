@@ -128,7 +128,7 @@ PG_FUNCTION_INFO_V1(mtm_make_table_local);
 PG_FUNCTION_INFO_V1(mtm_dump_lock_graph);
 PG_FUNCTION_INFO_V1(mtm_inject_2pc_error);
 PG_FUNCTION_INFO_V1(mtm_check_deadlock);
-PG_FUNCTION_INFO_V1(mtm_arbitrator_poll);
+PG_FUNCTION_INFO_V1(mtm_referee_poll);
 PG_FUNCTION_INFO_V1(mtm_broadcast_table);
 PG_FUNCTION_INFO_V1(mtm_copy_table);
 
@@ -177,13 +177,13 @@ IndexStmt*	MtmIndexStmt;
 DropStmt*	MtmDropStmt;
 void*		MtmTablespaceStmt; /* CREATE/DELETE tablespace */
 MemoryContext MtmApplyContext;
+MtmConnectionInfo* MtmConnections;
 
 HTAB* MtmXid2State;
 HTAB* MtmGid2State;
 static HTAB* MtmLocalTables;
 
 static bool MtmIsRecoverySession;
-static MtmConnectionInfo* MtmConnections;
 
 static MtmCurrentTrans MtmTx;
 static dlist_head MtmLsnMapping = DLIST_STATIC_INIT(MtmLsnMapping);
@@ -265,6 +265,7 @@ static bool	 MtmMajorNode;
 static bool	 MtmBreakConnection;
 static bool	 MtmClusterLocked;
 static bool	 MtmInsideTransaction;
+static bool  MtmReferee;
 
 static ExecutorStart_hook_type PreviousExecutorStartHook;
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
@@ -2238,7 +2239,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix)
 	bool changed = false;
 
 	for (i = 0; i < n; i++) {
-		matrix[i] = Mtm->nodes[i].connectivityMask;
+		matrix[i] = Mtm->nodes[i].connectivityMask | Mtm->deadNodeMask;
 		if (lastKnownMatrix[i] != matrix[i])
 		{
 			changed = true;
@@ -2275,16 +2276,14 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix)
 }
 
 
-static int MtmGetNumberOfVotingNodes(nodemask_t clique)
+static int MtmGetNumberOfVotingNodes()
 {
 	int i;
 	int nVotingNodes = Mtm->nAllNodes;
 	nodemask_t deadNodeMask = Mtm->deadNodeMask;
 	for (i = 0; deadNodeMask != 0; i++) {
 		if (BIT_CHECK(deadNodeMask, i)) {
-			if (!BIT_CHECK(clique, i)) {
-				nVotingNodes -= 1;
-			}
+			nVotingNodes -= 1;
 			BIT_CLEAR(deadNodeMask, i);
 		}
 	}
@@ -2322,7 +2321,18 @@ void MtmRefreshClusterStatus()
 		newClique = MtmFindMaxClique(matrix, Mtm->nAllNodes, &cliqueSize);
 	} while (newClique != oldClique);
 
-	nVotingNodes = MtmGetNumberOfVotingNodes(newClique);
+	if (newClique & Mtm->deadNodeMask) {
+		Assert(cliqueSize == 1);
+		newClique = 0;
+		if (!BIT_CHECK(Mtm->deadNodeMask, MtmNodeId-1)) {
+			BIT_SET(newClique, MtmNodeId-1);
+			cliqueSize = 1;
+		} else {
+			cliqueSize = 0;
+		}
+	}
+
+	nVotingNodes = MtmGetNumberOfVotingNodes();
 	if (cliqueSize >= nVotingNodes/2+1 || (cliqueSize == (nVotingNodes+1)/2 && MtmMajorNode)) { /* have quorum */
 		fprintf(stderr, "Old mask: ");
 		for (i = 0; i <	 Mtm->nAllNodes; i++) {
@@ -2387,8 +2397,7 @@ void MtmRefreshClusterStatus()
  */
 void MtmCheckQuorum(void)
 {
-	nodemask_t oldClique = ~Mtm->disabledNodeMask & (((nodemask_t)1 << Mtm->nAllNodes)-1);
-	int nVotingNodes = MtmGetNumberOfVotingNodes(oldClique);
+	int nVotingNodes = MtmGetNumberOfVotingNodes();
 
 	if (Mtm->nLiveNodes >= nVotingNodes/2+1 || (Mtm->nLiveNodes == (nVotingNodes+1)/2 && MtmMajorNode)) { /* have quorum */
 		if (Mtm->status == MTM_IN_MINORITY) {
@@ -2835,64 +2844,67 @@ static void MtmSplitConnStrs(void)
 		}
 		pfree(copy);
 	}
-	if (MtmNodeId == INT_MAX) {
-		if (gethostname(buf, sizeof buf) != 0) {
-			MTM_ELOG(ERROR, "Failed to get host name: %m");
-		}
-		for (i = 0; i < MtmNodes; i++) {
-			MTM_LOG3("Node %d, host %s, port=%d, my port %d", i, MtmConnections[i].hostName, MtmConnections[i].postmasterPort, PostPortNumber);
-			if ((strcmp(MtmConnections[i].hostName, buf) == 0 || strcmp(MtmConnections[i].hostName, "localhost") == 0)
-				&& MtmConnections[i].postmasterPort == PostPortNumber)
-			{
-				if (MtmNodeId == INT_MAX) {
-					MtmNodeId = i+1;
-				} else {
-					MTM_ELOG(ERROR, "multimaster.node_id is not explicitly specified and more than one nodes are configured for host %s port %d", buf, PostPortNumber);
+	if (!MtmReferee)
+	{
+		if (MtmNodeId == INT_MAX) {
+			if (gethostname(buf, sizeof buf) != 0) {
+				MTM_ELOG(ERROR, "Failed to get host name: %m");
+			}
+			for (i = 0; i < MtmNodes; i++) {
+				MTM_LOG3("Node %d, host %s, port=%d, my port %d", i, MtmConnections[i].hostName, MtmConnections[i].postmasterPort, PostPortNumber);
+				if ((strcmp(MtmConnections[i].hostName, buf) == 0 || strcmp(MtmConnections[i].hostName, "localhost") == 0)
+					&& MtmConnections[i].postmasterPort == PostPortNumber)
+				{
+					if (MtmNodeId == INT_MAX) {
+						MtmNodeId = i+1;
+					} else {
+						MTM_ELOG(ERROR, "multimaster.node_id is not explicitly specified and more than one nodes are configured for host %s port %d", buf, PostPortNumber);
+					}
 				}
 			}
+			if (MtmNodeId == INT_MAX) {
+				MTM_ELOG(ERROR, "multimaster.node_id and host name %s can not be located in connection strings list", buf);
+			}
+		} else if (MtmNodeId > i) {
+			MTM_ELOG(ERROR, "Multimaster node id %d is out of range [%d..%d]", MtmNodeId, 1, MtmNodes);
 		}
-		if (MtmNodeId == INT_MAX) {
-			MTM_ELOG(ERROR, "multimaster.node_id and host name %s can not be located in connection strings list", buf);
-		}
-	} else if (MtmNodeId > i) {
-		MTM_ELOG(ERROR, "Multimaster node id %d is out of range [%d..%d]", MtmNodeId, 1, MtmNodes);
-	}
-	{
-		char* connStr = MtmConnections[MtmNodeId-1].connStr;
-		char* dbName = strstr(connStr, "dbname="); // XXX: shoud we care about string 'itisnotdbname=xxx'?
-		char* dbUser = strstr(connStr, "user=");
-		char* end;
-		size_t len;
-
-		if (dbName == NULL)
-			MTM_ELOG(ERROR, "Database is not specified in connection string: '%s'", connStr);
-
-		if (dbUser == NULL)
 		{
-			char *errstr;
-			const char *username = get_user_name(&errstr);
-			if (!username)
-				MTM_ELOG(FATAL, "Database user is not specified in connection string '%s', fallback failed: %s", connStr, errstr);
+			char* connStr = MtmConnections[MtmNodeId-1].connStr;
+			char* dbName = strstr(connStr, "dbname="); // XXX: shoud we care about string 'itisnotdbname=xxx'?
+			char* dbUser = strstr(connStr, "user=");
+			char* end;
+			size_t len;
+
+			if (dbName == NULL)
+				MTM_ELOG(ERROR, "Database is not specified in connection string: '%s'", connStr);
+
+			if (dbUser == NULL)
+			{
+				char *errstr;
+				const char *username = get_user_name(&errstr);
+				if (!username)
+					MTM_ELOG(FATAL, "Database user is not specified in connection string '%s', fallback failed: %s", connStr, errstr);
+				else
+					MTM_ELOG(WARNING, "Database user is not specified in connection string '%s', fallback to '%s'", connStr, username);
+				MtmDatabaseUser = pstrdup(username);
+			}
 			else
-				MTM_ELOG(WARNING, "Database user is not specified in connection string '%s', fallback to '%s'", connStr, username);
-			MtmDatabaseUser = pstrdup(username);
-		}
-		else
-		{
-			dbUser += 5;
-			end = strchr(dbUser, ' ');
-			if (!end) end = strchr(dbUser, '\0');
-			Assert(end != NULL);
-			len = end - dbUser;
-			MtmDatabaseUser = pnstrdup(dbUser, len);
-		}
+			{
+				dbUser += 5;
+				end = strchr(dbUser, ' ');
+				if (!end) end = strchr(dbUser, '\0');
+				Assert(end != NULL);
+				len = end - dbUser;
+				MtmDatabaseUser = pnstrdup(dbUser, len);
+			}
 
-		dbName += 7;
-		end = strchr(dbName, ' ');
-		if (!end) end = strchr(dbName, '\0');
-		Assert(end != NULL);
-		len = end - dbName;
-		MtmDatabaseName = pnstrdup(dbName, len);
+			dbName += 7;
+			end = strchr(dbName, ' ');
+			if (!end) end = strchr(dbName, '\0');
+			Assert(end != NULL);
+			len = end - dbName;
+			MtmDatabaseName = pnstrdup(dbName, len);
+		}
 	}
 	MemoryContextSwitchTo(old_context);
 }
@@ -3151,8 +3163,21 @@ _PG_init(void)
 	);
 
 	DefineCustomBoolVariable(
+		"multimaster.referee",
+		"This instance of Postgres contains no data and peforms role of referee for other nodes",
+		NULL,
+		&MtmReferee,
+		false,
+		PGC_POSTMASTER,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomBoolVariable(
 		"multimaster.preserve_commit_order",
-		"Transactions from one node will be committed in same order on all nodes",
+		"Transactions from one node will be committed in same order al all nodes",
 		NULL,
 		&MtmPreserveCommitOrder,
 		true,
@@ -3322,6 +3347,13 @@ _PG_init(void)
 		NULL,
 		NULL
 	);
+
+	if (MtmReferee)
+	{
+		MtmSplitConnStrs();
+		MtmRefereeInitialize();
+		return;
+	}
 
 	if (!ConfigIsSane()) {
 		MTM_ELOG(ERROR, "Multimaster config is insane, refusing to work");
@@ -4276,7 +4308,8 @@ mtm_get_cluster_state(PG_FUNCTION_ARGS)
 	values[16] = Int32GetDatum(Mtm->nConfigChanges);
 	values[17] = Int64GetDatum(Mtm->stalledNodeMask);
 	values[18] = Int64GetDatum(Mtm->stoppedNodeMask);
-	values[19] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[MtmNodeId-1].lastStatusChangeTime/USECS_PER_SEC));
+	values[19] = Int64GetDatum(Mtm->deadNodeMask);
+	values[20] = TimestampTzGetDatum(time_t_to_timestamptz(Mtm->nodes[MtmNodeId-1].lastStatusChangeTime/USECS_PER_SEC));
 
 	PG_RETURN_DATUM(HeapTupleGetDatum(heap_form_tuple(desc, values, nulls)));
 }
@@ -5473,7 +5506,7 @@ Datum mtm_check_deadlock(PG_FUNCTION_ARGS)
 	PG_RETURN_BOOL(MtmDetectGlobalDeadLockForXid(xid));
 }
 
-Datum mtm_arbitrator_poll(PG_FUNCTION_ARGS)
+Datum mtm_referee_poll(PG_FUNCTION_ARGS)
 {
 	nodemask_t recoveredNodeMask;
 
@@ -5486,3 +5519,4 @@ Datum mtm_arbitrator_poll(PG_FUNCTION_ARGS)
 
 	PG_RETURN_INT64(recoveredNodeMask);
 }
+
