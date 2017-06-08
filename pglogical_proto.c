@@ -168,38 +168,34 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 	}
 }
 
-static void pglogical_broadcast_table(StringInfo out, PGLogicalOutputData *data, MtmCopyRequest* copy)
+static void pglogical_broadcast_table(StringInfo out, LogicalDecodingContext *ctx, MtmCopyRequest* copy)
 {
 	if (BIT_CHECK(copy->targetNodes, MtmReplicationNodeId-1)) { 
 		HeapScanDesc scandesc;
 		HeapTuple	 tuple;
 		Relation     rel;
 		
-		StartTransactionCommand();
-
 		rel = heap_open(copy->sourceTable, ShareLock);
 		
-		pq_sendbyte(out, 'M');
-		pq_sendbyte(out, 'B');
-		pq_sendint(out, sizeof(*copy), 4);
-		pq_sendbytes(out, (char*)copy, sizeof(*copy));
-		
-		pglogical_write_rel(out, data, rel);
+		pglogical_write_rel(out, ctx->output_plugin_private, rel);
+
+		pq_sendbyte(out, '0');
 
 		scandesc = heap_beginscan(rel, GetTransactionSnapshot(), 0, NULL);
 		while ((tuple = heap_getnext(scandesc, ForwardScanDirection)) != NULL)
 		{
-			pglogical_write_tuple(out, data, rel, tuple);
+			MtmOutputPluginPrepareWrite(ctx, false, false);
+			pq_sendbyte(out, 'I');		/* action INSERT */
+			pglogical_write_tuple(out, ctx->output_plugin_private, rel, tuple);
+			MtmOutputPluginWrite(ctx, false, false);
 		}
 		heap_endscan(scandesc);
 		heap_close(rel, ShareLock);
-
-		CommitTransactionCommand();
 	}
 }
 
 static void
-pglogical_write_message(StringInfo out, PGLogicalOutputData *data,
+pglogical_write_message(StringInfo out, LogicalDecodingContext *ctx,
 						const char *prefix, Size sz, const char *message)
 {
 	MtmLastRelId = InvalidOid;
@@ -231,7 +227,7 @@ pglogical_write_message(StringInfo out, PGLogicalOutputData *data,
 		 */
 		return;
 	  case 'B':
-		pglogical_broadcast_table(out, data, (MtmCopyRequest*)message);
+		pglogical_broadcast_table(out, ctx, (MtmCopyRequest*)message);
 		return;
 	}
 	pq_sendbyte(out, 'M');
