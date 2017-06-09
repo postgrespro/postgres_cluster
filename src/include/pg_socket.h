@@ -30,8 +30,6 @@
 #endif
 
 
-#ifdef WITH_RSOCKET
-
 /*
  * API struct for socket methods.
  */
@@ -78,8 +76,6 @@ typedef struct PgSocketData
 
 typedef PgSocketData *PgSocket;
 
-#define PGINVALID_SOCKET_EXTENDED NULL
-
 extern PgSocket pg_socket(int domain, int type, int protocol, bool isRsocket);
 extern int pg_closesocket(PgSocket socket);
 
@@ -108,6 +104,7 @@ extern int pg_closesocket(PgSocket socket);
 #define pg_sendmsg(socket, msg, flags) \
 	(socket)->sendmsg((socket)->fd, msg, flags)
 
+#ifdef WITH_RSOCKET
 #ifdef HAVE_POLL
 #define pg_poll(fds, nfds, timeout, isRsocket) \
 	((isRsocket) ? rpoll(fds, nfds, timeout) : \
@@ -116,6 +113,14 @@ extern int pg_closesocket(PgSocket socket);
 #define pg_select(nfds, readfds, writefds, exceptfds, timeout, isRsocket) \
 	((isRsocket) ? rselect(nfds, readfds, writefds, exceptfds, timeout) : \
 		select(nfds, readfds, writefds, exceptfds, timeout))
+#else
+#ifdef HAVE_POLL
+#define pg_poll(fds, nfds, timeout, isRsocket) \
+	poll(fds, nfds, timeout)
+#endif
+#define pg_select(nfds, readfds, writefds, exceptfds, timeout, isRsocket) \
+	select(nfds, readfds, writefds, exceptfds, timeout)
+#endif   /* WITH_RSOCKET */
 
 #define pg_getsockname(socket, addr, addrlen) \
 	(socket)->getsockname((socket)->fd, addr, addrlen)
@@ -130,11 +135,13 @@ extern int pg_closesocket(PgSocket socket);
 #endif
 
 extern PgSocket initialize_socket(void);
-extern PgSocket initialize_rsocket(void);
 
+#ifdef WITH_RSOCKET
+extern PgSocket initialize_rsocket(void);
 extern int rpoll(struct pollfd *fds, nfds_t nfds, int timeout);
 extern int rselect(pgsocket nfds, fd_set *readfds, fd_set *writefds,
 				   fd_set *exceptfds, struct timeval *timeout);
+#endif
 
 extern bool pg_set_noblock_extended(PgSocket sock);
 extern bool pg_set_block_extended(PgSocket sock);
@@ -144,72 +151,5 @@ do {											\
 	if ((sock) && (sock)->fd != PGINVALID_SOCKET)	\
 		pg_closesocket(sock);					\
 } while (0)										\
-
-#else   /* !WITH_RSOCKET */
-
-typedef pgsocket PgSocket;
-
-#define PGINVALID_SOCKET_EXTENDED PGINVALID_SOCKET
-
-#define PG_SOCK(socket) \
-	socket
-#define PG_ISRSOCKET(socket) \
-	false
-
-/*
- * Wrappers to socket functions
- */
-
-#define pg_socket(domain, type, protocol, isRsocket) \
-	socket(domain, type, protocol)
-#define pg_bind(socket, addr, addrlen) \
-	bind(socket, addr, addrlen)
-#define pg_listen(socket, backlog) \
-	listen(socket, backlog)
-#define pg_accept(socket, addr, addrlen) \
-	accept(socket, addr, addrlen)
-#define pg_connect(socket, addr, addrlen) \
-	connect(socket, addr, addrlen)
-#define pg_closesocket(socket) \
-	close(socket)
-
-#define pg_recv(socket, buf, len, flags) \
-	recv(socket, buf, len, flags)
-#define pg_send(socket, buf, len, flags) \
-	send(socket, buf, len, flags)
-#define pg_sendmsg(socket, msg, flags) \
-	sendmsg(socket, msg, flags)
-
-#ifdef HAVE_POLL
-#define pg_poll(fds, nfds, timeout, isRsocket) \
-	poll(fds, nfds, timeout)
-#endif
-#define pg_select(nfds, readfds, writefds, exceptfds, timeout, isRsocket) \
-	select(nfds, readfds, writefds, exceptfds, timeout)
-
-#define pg_getsockname(socket, addr, addrlen) \
-	getsockname(socket, addr, addrlen)
-#define pg_setsockopt(socket, level, optname, optval, optlen) \
-	setsockopt(socket, level, optname, optval, optlen)
-#define pg_getsockopt(socket, level, optname, optval, optlen) \
-	getsockopt(socket, level, optname, optval, optlen)
-
-#if !defined(WIN32)
-#define pg_fcntl(socket, flag, value) \
-	fcntl(socket, flag, value)
-#endif
-
-#define pg_set_noblock_extended(sock) \
-	pg_set_noblock(sock)
-#define pg_set_block_extended(sock) \
-	pg_set_block(sock)
-
-#define StreamCloseExtended(sock)	\
-do {								\
-	if ((sock) != PGINVALID_SOCKET)	\
-		StreamClose(sock);			\
-} while (0)
-
-#endif   /* WITH_RSOCKET */
 
 #endif   /* PG_SOCKET_H */

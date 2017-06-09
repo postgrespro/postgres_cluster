@@ -722,7 +722,6 @@ with_perl
 with_tcl
 enable_thread_safety
 INCLUDES
-with_rsocket
 autodepend
 TAS
 GCC

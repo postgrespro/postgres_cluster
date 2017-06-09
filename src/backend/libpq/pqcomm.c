@@ -197,18 +197,18 @@ pq_init(void)
 	 * infinite recursion.
 	 */
 #ifndef WIN32
-	if (!pg_set_noblock(MyProcPort->sock, MyProcPort->isRsocket))
+	if (!pg_set_noblock_extended(MyProcPort->sock))
 		ereport(COMMERROR,
 				(errmsg("could not set socket to nonblocking mode: %m")));
 #endif
 
 #ifdef WITH_RSOCKET
-	if (MyProcPort->isRsocket)
+	if (PG_ISRSOCKET(MyProcPort->sock))
 		FeBeWaitSet = CreateWaitEventSetForRsocket(TopMemoryContext, 3);
 	else
 #endif
 		FeBeWaitSet = CreateWaitEventSet(TopMemoryContext, 3);
-	AddWaitEventToSet(FeBeWaitSet, WL_SOCKET_WRITEABLE, MyProcPort->sock,
+	AddWaitEventToSet(FeBeWaitSet, WL_SOCKET_WRITEABLE, PG_SOCK(MyProcPort->sock),
 					  NULL, NULL);
 	AddWaitEventToSet(FeBeWaitSet, WL_LATCH_SET, -1, MyLatch, NULL);
 	AddWaitEventToSet(FeBeWaitSet, WL_POSTMASTER_DEATH, -1, NULL, NULL);
@@ -235,18 +235,18 @@ pq_reinit(void)
 	 * infinite recursion.
 	 */
 #ifndef WIN32
-	if (!pg_set_noblock(MyProcPort->sock, MyProcPort->isRsocket))
+	if (!pg_set_noblock_extended(MyProcPort->sock))
 		ereport(COMMERROR,
 				(errmsg("could not set socket to nonblocking mode: %m")));
 #endif
 
 #ifdef WITH_RSOCKET
-	if (MyProcPort->isRsocket)
+	if (PG_ISRSOCKET(MyProcPort->sock))
 		FeBeWaitSet = CreateWaitEventSetForRsocket(TopMemoryContext, 3);
 	else
 #endif
 		FeBeWaitSet = CreateWaitEventSet(TopMemoryContext, 3);
-	AddWaitEventToSet(FeBeWaitSet, WL_SOCKET_WRITEABLE, MyProcPort->sock,
+	AddWaitEventToSet(FeBeWaitSet, WL_SOCKET_WRITEABLE, PG_SOCK(MyProcPort->sock),
 					  NULL, NULL);
 	AddWaitEventToSet(FeBeWaitSet, WL_LATCH_SET, -1, MyLatch, NULL);
 	AddWaitEventToSet(FeBeWaitSet, WL_POSTMASTER_DEATH, -1, NULL, NULL);
@@ -323,8 +323,9 @@ socket_close(int code, Datum arg)
 		 * We do set sock to PGINVALID_SOCKET to prevent any further I/O,
 		 * though.
 		 */
-		MyProcPort->sock = PGINVALID_SOCKET;
-		MyProcPort->isRsocket = false;
+		Assert(MyProcPort->sock);
+		free(MyProcPort->sock);
+		MyProcPort->sock = NULL;
 	}
 }
 
@@ -477,7 +478,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 				break;
 		}
 
-		if ((fd = pg_socket(addr->ai_family, SOCK_STREAM, 0, false))
+		if ((fd = socket(addr->ai_family, SOCK_STREAM, 0))
 			 == PGINVALID_SOCKET)
 		{
 			ereport(LOG,
@@ -503,13 +504,13 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		 */
 		if (!IS_AF_UNIX(addr->ai_family))
 		{
-			if ((pg_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
-							   (char *) &one, sizeof(one), false)) == -1)
+			if ((setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
+							(char *) &one, sizeof(one))) == -1)
 			{
 				ereport(LOG,
 						(errcode_for_socket_access(),
 						 errmsg("setsockopt(SO_REUSEADDR) failed: %m")));
-				pg_closesocket(fd, false);
+				closesocket(fd);
 				continue;
 			}
 		}
@@ -518,13 +519,13 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 #ifdef IPV6_V6ONLY
 		if (addr->ai_family == AF_INET6)
 		{
-			if (pg_setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
-							  (char *) &one, sizeof(one), false) == -1)
+			if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
+						   (char *) &one, sizeof(one)) == -1)
 			{
 				ereport(LOG,
 						(errcode_for_socket_access(),
 						 errmsg("setsockopt(IPV6_V6ONLY) failed: %m")));
-				pg_closesocket(fd, false);
+				closesocket(fd);
 				continue;
 			}
 		}
@@ -536,7 +537,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		 * ipv4 addresses to ipv6.  It will show ::ffff:ipv4 for all ipv4
 		 * connections.
 		 */
-		err = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, false);
+		err = bind(fd, addr->ai_addr, addr->ai_addrlen);
 		if (err < 0)
 		{
 			ereport(LOG,
@@ -551,7 +552,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 				  errhint("Is another postmaster already running on port %d?"
 						  " If not, wait a few seconds and retry.",
 						  (int) portNumber)));
-			pg_closesocket(fd, false);
+			closesocket(fd);
 			continue;
 		}
 
@@ -560,7 +561,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		{
 			if (Setup_AF_UNIX(service) != STATUS_OK)
 			{
-				pg_closesocket(fd, false);
+				closesocket(fd);
 				break;
 			}
 		}
@@ -575,7 +576,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 		if (maxconn > PG_SOMAXCONN)
 			maxconn = PG_SOMAXCONN;
 
-		err = pg_listen(fd, maxconn, false);
+		err = listen(fd, maxconn);
 		if (err < 0)
 		{
 			ereport(LOG,
@@ -583,7 +584,7 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 			/* translator: %s is IPv4, IPv6, or Unix */
 					 errmsg("could not listen on %s socket: %m",
 							familyDesc)));
-			pg_closesocket(fd, false);
+			closesocket(fd);
 			continue;
 		}
 		ListenSocket[listen_index] = fd;
@@ -711,11 +712,13 @@ Setup_AF_UNIX(char *sock_path)
 int
 StreamConnection(pgsocket server_fd, Port *port)
 {
+	pgsocket	fd;
+
 	/* accept connection and fill in the client (remote) address */
 	port->raddr.salen = sizeof(port->raddr.addr);
-	if ((port->sock = pg_accept(server_fd,
-								(struct sockaddr *) & port->raddr.addr,
-								&port->raddr.salen, port->isRsocket)) == PGINVALID_SOCKET)
+	if ((fd = accept(server_fd,
+					 (struct sockaddr *) & port->raddr.addr,
+					 &port->raddr.salen)) == PGINVALID_SOCKET)
 	{
 		ereport(LOG,
 				(errcode_for_socket_access(),
@@ -732,6 +735,9 @@ StreamConnection(pgsocket server_fd, Port *port)
 		return STATUS_ERROR;
 	}
 
+	port->sock = initialize_socket();
+	port->sock->fd = fd;
+
 #ifdef SCO_ACCEPT_BUG
 
 	/*
@@ -746,7 +752,7 @@ StreamConnection(pgsocket server_fd, Port *port)
 	port->laddr.salen = sizeof(port->laddr.addr);
 	if (pg_getsockname(port->sock,
 					   (struct sockaddr *) & port->laddr.addr,
-					   &port->laddr.salen, port->isRsocket) < 0)
+					   &port->laddr.salen) < 0)
 	{
 		elog(LOG, "getsockname() failed: %m");
 		return STATUS_ERROR;
@@ -765,7 +771,7 @@ StreamConnection(pgsocket server_fd, Port *port)
 #ifdef	TCP_NODELAY
 		on = 1;
 		if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_NODELAY,
-						  (char *) &on, sizeof(on), port->isRsocket) < 0)
+						  (char *) &on, sizeof(on)) < 0)
 		{
 			elog(LOG, "setsockopt(TCP_NODELAY) failed: %m");
 			return STATUS_ERROR;
@@ -773,7 +779,7 @@ StreamConnection(pgsocket server_fd, Port *port)
 #endif
 		on = 1;
 		if (pg_setsockopt(port->sock, SOL_SOCKET, SO_KEEPALIVE,
-						  (char *) &on, sizeof(on), port->isRsocket) < 0)
+						  (char *) &on, sizeof(on)) < 0)
 		{
 			elog(LOG, "setsockopt(SO_KEEPALIVE) failed: %m");
 			return STATUS_ERROR;
@@ -803,8 +809,8 @@ StreamConnection(pgsocket server_fd, Port *port)
 		 * https://msdn.microsoft.com/en-us/library/bb736549%28v=vs.85%29.aspx
 		 */
 		optlen = sizeof(oldopt);
-		if (pg_getsockopt(port->sock, SOL_SOCKET, SO_SNDBUF, (char *) &oldopt,
-						  &optlen, port->isRsocket) < 0)
+		if (pg_getsockopt(port->sock, SOL_SOCKET, SO_SNDBUF,
+						  (char *) &oldopt, &optlen) < 0)
 		{
 			elog(LOG, "getsockopt(SO_SNDBUF) failed: %m");
 			return STATUS_ERROR;
@@ -812,8 +818,8 @@ StreamConnection(pgsocket server_fd, Port *port)
 		newopt = PQ_SEND_BUFFER_SIZE * 4;
 		if (oldopt < newopt)
 		{
-			if (pg_setsockopt(port->sock, SOL_SOCKET, SO_SNDBUF, (char *) &newopt,
-							  sizeof(newopt), port->isRsocket) < 0)
+			if (pg_setsockopt(port->sock, SOL_SOCKET, SO_SNDBUF,
+							  (char *) &newopt, sizeof(newopt)) < 0)
 			{
 				elog(LOG, "setsockopt(SO_SNDBUF) failed: %m");
 				return STATUS_ERROR;
@@ -847,9 +853,9 @@ StreamConnection(pgsocket server_fd, Port *port)
  * we do NOT want to send anything to the far end.
  */
 void
-StreamClose(pgsocket sock, bool isRsocket)
+StreamClose(pgsocket sock)
 {
-	pg_closesocket(sock, isRsocket);
+	closesocket(sock);
 }
 
 /*
@@ -1675,7 +1681,7 @@ pq_setkeepaliveswin32(Port *port, int idle, int interval)
 	ka.keepalivetime = idle * 1000;
 	ka.keepaliveinterval = interval * 1000;
 
-	if (WSAIoctl(port->sock,
+	if (WSAIoctl(port->sock->fd,
 				 SIO_KEEPALIVE_VALS,
 				 (LPVOID) &ka,
 				 sizeof(ka),
@@ -1716,7 +1722,7 @@ pq_getkeepalivesidle(Port *port)
 #ifdef TCP_KEEPIDLE
 		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPIDLE,
 						  (char *) &port->default_keepalives_idle,
-						  &size, port->isRsocket) < 0)
+						  &size) < 0)
 		{
 			elog(LOG, "getsockopt(TCP_KEEPIDLE) failed: %m");
 			port->default_keepalives_idle = -1; /* don't know */
@@ -1724,7 +1730,7 @@ pq_getkeepalivesidle(Port *port)
 #else
 		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPALIVE,
 						  (char *) &port->default_keepalives_idle,
-						  &size, port->isRsocket) < 0)
+						  &size) < 0)
 		{
 			elog(LOG, "getsockopt(TCP_KEEPALIVE) failed: %m");
 			port->default_keepalives_idle = -1; /* don't know */
@@ -1769,14 +1775,14 @@ pq_setkeepalivesidle(int idle, Port *port)
 
 #ifdef TCP_KEEPIDLE
 	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPIDLE,
-					  (char *) &idle, sizeof(idle), port->isRsocket) < 0)
+					  (char *) &idle, sizeof(idle)) < 0)
 	{
 		elog(LOG, "setsockopt(TCP_KEEPIDLE) failed: %m");
 		return STATUS_ERROR;
 	}
 #else
 	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPALIVE,
-					  (char *) &idle, sizeof(idle), port->isRsocket) < 0)
+					  (char *) &idle, sizeof(idle)) < 0)
 	{
 		elog(LOG, "setsockopt(TCP_KEEPALIVE) failed: %m");
 		return STATUS_ERROR;
@@ -1814,7 +1820,7 @@ pq_getkeepalivesinterval(Port *port)
 
 		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPINTVL,
 						  (char *) &port->default_keepalives_interval,
-						  &size, port->isRsocket) < 0)
+						  &size) < 0)
 		{
 			elog(LOG, "getsockopt(TCP_KEEPINTVL) failed: %m");
 			port->default_keepalives_interval = -1;		/* don't know */
@@ -1857,7 +1863,7 @@ pq_setkeepalivesinterval(int interval, Port *port)
 		interval = port->default_keepalives_interval;
 
 	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPINTVL,
-					  (char *) &interval, sizeof(interval), port->isRsocket) < 0)
+					  (char *) &interval, sizeof(interval)) < 0)
 	{
 		elog(LOG, "setsockopt(TCP_KEEPINTVL) failed: %m");
 		return STATUS_ERROR;
@@ -1894,7 +1900,7 @@ pq_getkeepalivescount(Port *port)
 
 		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPCNT,
 						  (char *) &port->default_keepalives_count,
-						  &size, port->isRsocket) < 0)
+						  &size) < 0)
 		{
 			elog(LOG, "getsockopt(TCP_KEEPCNT) failed: %m");
 			port->default_keepalives_count = -1;		/* don't know */
@@ -1932,7 +1938,7 @@ pq_setkeepalivescount(int count, Port *port)
 		count = port->default_keepalives_count;
 
 	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPCNT,
-					  (char *) &count, sizeof(count), port->isRsocket) < 0)
+					  (char *) &count, sizeof(count)) < 0)
 	{
 		elog(LOG, "setsockopt(TCP_KEEPCNT) failed: %m");
 		return STATUS_ERROR;

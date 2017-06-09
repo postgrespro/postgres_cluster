@@ -582,7 +582,6 @@ PGAC_ARG_BOOL(with, rsocket, no, [replace socket with rsocket (RDMA socket API)]
               [AC_DEFINE([WITH_RSOCKET], 1,
                          [Define to 1 to build with rsocket instead socket. (--with-rsocket)])])
 AC_MSG_RESULT([$with_rsocket])
-AC_SUBST(with_rsocket)
 
 #
 # Include directories

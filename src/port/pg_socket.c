@@ -25,15 +25,12 @@
 
 
 #ifdef WITH_RSOCKET
-
-#ifdef HAVE_DLOPEN
-#include <dlfcn.h>
-#endif
-
 /*
  * Copy of defines from dynloader.h
  */
 #ifdef HAVE_DLOPEN
+
+#include <dlfcn.h>
 
 /*
  * In some older systems, the RTLD_NOW flag isn't defined and the mode
@@ -54,10 +51,10 @@
 #define pg_dlerror		dlerror
 #endif   /* HAVE_DLOPEN */
 
-
 /* Buffer structs used to initialize PgSocket with pg_socket() */
 static PgSocketData rsocket_buf = {0};
 static void *rdmacm_handle = NULL;
+#endif   /* WITH_RSOCKET */
 
 /*
  * Creates socket or rsocket if isRsocket is true. You must call
@@ -72,9 +69,11 @@ pg_socket(int domain, int type, int protocol, bool isRsocket)
 {
 	PgSocket	sock;
 
+#ifdef WITH_RSOCKET
 	if (isRsocket)
 		sock = initialize_rsocket();
 	else
+#endif
 	{
 		sock = initialize_socket();
 	}
@@ -150,6 +149,7 @@ initialize_socket(void)
 	return sock;
 }
 
+#ifdef WITH_RSOCKET
 #define RDMACM_NAME "librdmacm.so.1"
 
 static void *
@@ -296,6 +296,7 @@ rselect(pgsocket nfds, fd_set *readfds, fd_set *writefds,
 		/* Some error was happened in initialize_rsocket_buf() */
 		return -1;
 }
+#endif   /* WITH_RSOCKET */
 
 /*
  * Put socket into nonblock mode.
@@ -330,5 +331,3 @@ pg_set_block_extended(PgSocket sock)
 		return false;
 	return true;
 }
-
-#endif

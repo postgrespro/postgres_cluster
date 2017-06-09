@@ -637,7 +637,7 @@ pqReadData(PGconn *conn)
 	int			someread = 0;
 	int			nread;
 
-	if (conn->sock == PGINVALID_SOCKET_EXTENDED)
+	if (conn->sock == NULL)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("connection not open\n"));
@@ -838,7 +838,7 @@ pqSendSome(PGconn *conn, int len)
 	int			remaining = conn->outCount;
 	int			result = 0;
 
-	if (conn->sock == PGINVALID_SOCKET_EXTENDED)
+	if (conn->sock == NULL)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("connection not open\n"));
@@ -1056,7 +1056,7 @@ pqSocketCheck(PGconn *conn, int forRead, int forWrite, time_t end_time)
 
 	if (!conn)
 		return -1;
-	if (conn->sock == PGINVALID_SOCKET_EXTENDED)
+	if (conn->sock == NULL)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("invalid socket\n"));
@@ -1148,11 +1148,11 @@ pqSocketPoll(PgSocket sock, int forRead, int forWrite, time_t end_time)
 	FD_ZERO(&output_mask);
 	FD_ZERO(&except_mask);
 	if (forRead)
-		FD_SET(sock, &input_mask);
+		FD_SET(PG_SOCK(sock), &input_mask);
 
 	if (forWrite)
-		FD_SET(sock, &output_mask);
-	FD_SET(sock, &except_mask);
+		FD_SET(PG_SOCK(sock), &output_mask);
+	FD_SET(PG_SOCK(sock), &except_mask);
 
 	/* Compute appropriate timeout interval */
 	if (end_time == ((time_t) -1))
@@ -1169,7 +1169,7 @@ pqSocketPoll(PgSocket sock, int forRead, int forWrite, time_t end_time)
 		ptr_timeout = &timeout;
 	}
 
-	return pg_select(sock + 1, &input_mask, &output_mask,
+	return pg_select(PG_SOCK(sock) + 1, &input_mask, &output_mask,
 					 &except_mask, ptr_timeout, PG_ISRSOCKET(sock));
 #endif   /* HAVE_POLL */
 }

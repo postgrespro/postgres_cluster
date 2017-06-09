@@ -22,25 +22,16 @@
  * Returns true on success, false on failure.
  */
 bool
-pg_set_noblock(pgsocket sock, bool isRsocket)
+pg_set_noblock(pgsocket sock)
 {
 #if !defined(WIN32)
 	int			flags;
 
-#ifdef WITH_RSOCKET
-	if (isRsocket)
-		flags = rfcntl(sock, F_GETFL, O_NONBLOCK);
-	else
-#endif
-	    flags = fcntl(sock, F_GETFL);
+	flags = fcntl(sock, F_GETFL);
 	if (flags < 0)
 		return false;
-#ifdef WITH_RSOCKET
-	if (isRsocket)
-		return (rfcntl(sock, F_SETFL, O_NONBLOCK) != -1);
-	else
-#endif
-		return (fcntl(sock, F_SETFL, O_NONBLOCK) != -1);
+	if (fcntl(sock, F_SETFL, (flags | O_NONBLOCK)) == -1)
+		return false;
 	return true;
 #else
 	unsigned long ioctlsocket_ret = 1;
@@ -55,25 +46,16 @@ pg_set_noblock(pgsocket sock, bool isRsocket)
  * Returns true on success, false on failure.
  */
 bool
-pg_set_block(pgsocket sock, bool isRsocket)
+pg_set_block(pgsocket sock)
 {
 #if !defined(WIN32)
 	int			flags;
 
-#ifdef WITH_RSOCKET
-	if (isRsocket)
-	{
-		flags = rfcntl(sock, F_GETFL);
-		if (flags < 0 || rfcntl(sock, F_SETFL, (long) (flags & ~O_NONBLOCK)))
-			return false;
-	}
-	else
-#endif
-	{
-		flags = fcntl(sock, F_GETFL);
-		if (flags < 0 || fcntl(sock, F_SETFL, (long) (flags & ~O_NONBLOCK)))
-			return false;
-	}
+	flags = fcntl(sock, F_GETFL);
+	if (flags < 0)
+		return false;
+	if (fcntl(sock, F_SETFL, (flags & ~O_NONBLOCK)) == -1)
+		return false;
 	return true;
 #else
 	unsigned long ioctlsocket_ret = 0;
