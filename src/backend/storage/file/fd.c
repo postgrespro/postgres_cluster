@@ -2134,9 +2134,9 @@ FileSeek(File file, off_t offset, int whence)
 				vfdP->seekPos += offset;
 				break;
 			case SEEK_END:
-				returnCode = FileAccess(file);
-				if (returnCode < 0)
-					return returnCode;
+			    returnCode = FileAccess(file);
+			    if (returnCode < 0)
+				  return returnCode;
 
 				if (VfdCache[file].fileFlags & PG_COMPRESSION)
 				{
@@ -2147,10 +2147,10 @@ FileSeek(File file, off_t offset, int whence)
 						offset = fileSize;
 
 					VfdCache[file].seekPos = fileSize - offset;
-				}
-				else
-					if (FileAccess(file) < 0)
-						return (off_t) -1;
+			    }
+			    else
+				if (FileAccess(file) < 0)
+					return (off_t) -1;
 				vfdP->seekPos = lseek(vfdP->fd, offset, whence);
 
 				break;

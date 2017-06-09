@@ -64,7 +64,8 @@ static int	pqPutMsgBytes(const void *buf, size_t len, PGconn *conn);
 static int	pqSendSome(PGconn *conn, int len);
 static int pqSocketCheck(PGconn *conn, int forRead, int forWrite,
 			  time_t end_time);
-static int	pqSocketPoll(PgSocket sock, int forRead, int forWrite, time_t end_time);
+static int	pqSocketPoll(int sock, int forRead, int forWrite, time_t end_time,
+						 bool isRsocket);
 
 /*
  * PQlibVersion: return the libpq version number
@@ -637,7 +638,7 @@ pqReadData(PGconn *conn)
 	int			someread = 0;
 	int			nread;
 
-	if (conn->sock == NULL)
+	if (conn->sock == PGINVALID_SOCKET)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("connection not open\n"));
@@ -838,7 +839,7 @@ pqSendSome(PGconn *conn, int len)
 	int			remaining = conn->outCount;
 	int			result = 0;
 
-	if (conn->sock == NULL)
+	if (conn->sock == PGINVALID_SOCKET)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("connection not open\n"));
@@ -1056,7 +1057,7 @@ pqSocketCheck(PGconn *conn, int forRead, int forWrite, time_t end_time)
 
 	if (!conn)
 		return -1;
-	if (conn->sock == NULL)
+	if (conn->sock == PGINVALID_SOCKET)
 	{
 		printfPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("invalid socket\n"));
@@ -1074,7 +1075,8 @@ pqSocketCheck(PGconn *conn, int forRead, int forWrite, time_t end_time)
 
 	/* We will retry as long as we get EINTR */
 	do
-		result = pqSocketPoll(conn->sock, forRead, forWrite, end_time);
+		result = pqSocketPoll(conn->sock, forRead, forWrite, end_time,
+							  conn->isRsocket);
 	while (result < 0 && SOCK_ERRNO == EINTR);
 
 	if (result < 0)
@@ -1100,7 +1102,8 @@ pqSocketCheck(PGconn *conn, int forRead, int forWrite, time_t end_time)
  * if end_time is 0 (or indeed, any time before now).
  */
 static int
-pqSocketPoll(PgSocket sock, int forRead, int forWrite, time_t end_time)
+pqSocketPoll(int sock, int forRead, int forWrite, time_t end_time,
+			 bool isRsocket)
 {
 	/* We use poll(2) if available, otherwise select(2) */
 #ifdef HAVE_POLL
@@ -1110,7 +1113,7 @@ pqSocketPoll(PgSocket sock, int forRead, int forWrite, time_t end_time)
 	if (!forRead && !forWrite)
 		return 0;
 
-	input_fd.fd = sock->fd;
+	input_fd.fd = sock;
 	input_fd.events = POLLERR;
 	input_fd.revents = 0;
 
@@ -1132,7 +1135,7 @@ pqSocketPoll(PgSocket sock, int forRead, int forWrite, time_t end_time)
 			timeout_ms = 0;
 	}
 
-	return pg_poll(&input_fd, 1, timeout_ms, sock->isRsocket);
+	return pg_poll(&input_fd, 1, timeout_ms, isRsocket);
 #else							/* !HAVE_POLL */
 
 	fd_set		input_mask;
@@ -1148,11 +1151,11 @@ pqSocketPoll(PgSocket sock, int forRead, int forWrite, time_t end_time)
 	FD_ZERO(&output_mask);
 	FD_ZERO(&except_mask);
 	if (forRead)
-		FD_SET(sock->fd, &input_mask);
+		FD_SET(sock, &input_mask);
 
 	if (forWrite)
-		FD_SET(sock->fd, &output_mask);
-	FD_SET(sock->fd, &except_mask);
+		FD_SET(sock, &output_mask);
+	FD_SET(sock, &except_mask);
 
 	/* Compute appropriate timeout interval */
 	if (end_time == ((time_t) -1))
@@ -1169,8 +1172,8 @@ pqSocketPoll(PgSocket sock, int forRead, int forWrite, time_t end_time)
 		ptr_timeout = &timeout;
 	}
 
-	return pg_select(sock->fd + 1, &input_mask, &output_mask,
-					 &except_mask, ptr_timeout, sock->isRsocket);
+	return pg_select(sock + 1, &input_mask, &output_mask,
+					 &except_mask, ptr_timeout, isRsocket);
 #endif   /* HAVE_POLL */
 }
 

@@ -71,7 +71,6 @@
 #include <sys/wait.h>
 #include <ctype.h>
 #include <sys/stat.h>
-#include <sys/socket.h>
 #include <fcntl.h>
 #include <sys/param.h>
 #include <netinet/in.h>
@@ -1428,7 +1427,7 @@ CloseServerPorts(int status, Datum arg)
 	{
 		if (ListenSocket[i] != PGINVALID_SOCKET)
 		{
-			StreamClose(ListenSocket[i]);
+			StreamClose(ListenSocket[i], false);
 			ListenSocket[i] = PGINVALID_SOCKET;
 #ifdef WITH_RSOCKET
 			ListenRdma[i] = false;
@@ -1759,7 +1758,7 @@ ServerLoop(void)
 			PG_SETMASK(&UnBlockSig);
 
 			/* Here all listened sockets are not rsockets, so pass 'false' */
-			selres = select(nSockets, &rmask, NULL, NULL, &timeout);
+			selres = pg_select(nSockets, &rmask, NULL, NULL, &timeout, false);
 
 			PG_SETMASK(&BlockSig);
 		}
@@ -1804,7 +1803,7 @@ ServerLoop(void)
 						 * We no longer need the open socket or port structure
 						 * in this process
 						 */
-						StreamCloseExtended(port->sock);
+						StreamClose(port->sock, port->isRsocket);
 						ConnFree(port);
 					}
 				}
@@ -2067,7 +2066,7 @@ ProcessStartupPacket(Port *port, bool SSLdone)
 #endif
 
 retry1:
-		if (pg_send(port->sock, &SSLok, 1, 0) != 1)
+		if (pg_send(port->sock, &SSLok, 1, 0, port->isRsocket) != 1)
 		{
 			if (errno == EINTR)
 				goto retry1;	/* if interrupted, just retry */
@@ -2436,13 +2435,15 @@ ConnCreate(int serverFd)
 		ExitPostmaster(1);
 	}
 
+	port->isRsocket = false;
 #ifdef WITH_RSOCKET
 	port->with_rsocket = false;
 #endif
 
 	if (StreamConnection(serverFd, port) != STATUS_OK)
 	{
-		StreamCloseExtended(port->sock);
+		if (port->sock != PGINVALID_SOCKET)
+			StreamClose(port->sock, port->isRsocket);
 		ConnFree(port);
 		return NULL;
 	}
@@ -2516,7 +2517,7 @@ ClosePostmasterPorts(bool am_syslogger)
 	{
 		if (ListenSocket[i] != PGINVALID_SOCKET)
 		{
-			StreamClose(ListenSocket[i]);
+			StreamClose(ListenSocket[i], false);
 			ListenSocket[i] = PGINVALID_SOCKET;
 #ifdef WITH_RSOCKET
 			ListenRdma[i] = false;
@@ -4067,7 +4068,7 @@ BackendStartup(Port *port)
 	/* in parent, successful fork */
 	ereport(DEBUG2,
 			(errmsg_internal("forked new backend, pid=%d socket=%d",
-							 (int) pid, (int) port->sock->fd)));
+							 (int) pid, (int) port->sock)));
 
 #ifdef WITH_RSOCKET
 	/* Increment rsocket port number for next connection */
@@ -4110,13 +4111,13 @@ report_fork_failure_to_client(Port *port, int errnum)
 			 strerror(errnum));
 
 	/* Set port to non-blocking.  Don't do send() if this fails */
-	if (!pg_set_noblock_extended(port->sock))
+	if (!pg_set_noblock(port->sock, port->isRsocket))
 		return;
 
 	/* We'll retry after EINTR, but ignore all other failures */
 	do
 	{
-		rc = pg_send(port->sock, buffer, strlen(buffer) + 1, 0);
+		rc = pg_send(port->sock, buffer, strlen(buffer) + 1, 0, port->isRsocket);
 	} while (rc < 0 && errno == EINTR);
 }
 

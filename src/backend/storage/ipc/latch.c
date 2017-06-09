@@ -352,7 +352,10 @@ int
 WaitLatch(volatile Latch *latch, int wakeEvents, long timeout)
 {
 	return WaitLatchOrSocket(latch, wakeEvents, PGINVALID_SOCKET,
-							 false, timeout);
+#if defined (WITH_RSOCKET)
+							 false,
+#endif
+							 timeout);
 }
 
 /*
@@ -369,7 +372,10 @@ WaitLatch(volatile Latch *latch, int wakeEvents, long timeout)
  */
 int
 WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
-				  bool isRsocket, long timeout)
+#if defined (WITH_RSOCKET)
+				  bool isRsocket,
+#endif
+				  long timeout)
 {
 	int			ret = 0;
 	int			rc;
@@ -1745,8 +1751,8 @@ WaitEventSetWaitBlockForRsocket(WaitEventSet *set, int cur_timeout,
 	WaitEvent  *cur_event;
 	struct pollfd *cur_pollfd;
 
-	/* Sleep using rpoll() from pg_socket.h */
-	rc = rpoll(set->rpollfds, set->nevents, (int) cur_timeout);
+	/* Sleep */
+	rc = pg_poll(set->rpollfds, set->nevents, (int) cur_timeout, true);
 
 	/* Check return code */
 	if (rc < 0)

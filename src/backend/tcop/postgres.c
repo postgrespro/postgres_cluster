@@ -3584,8 +3584,8 @@ static void
 RsocketInitialize(Port *port)
 {
 	int			RsocketPortCounter = PostPortNumber;
-	PgSocket	rsock;
-	pgsocket	accept_fd;
+	pgsocket	fd,
+				sfd;
 	char		local_addr[NI_MAXHOST];
 	char		local_port[NI_MAXSERV];
 	struct addrinfo *addr = NULL,
@@ -3643,8 +3643,8 @@ retry2:
 						local_addr, local_port, gai_strerror(ret))));
 	}
 
-	rsock = pg_socket(addr->ai_family, SOCK_STREAM, 0, true);
-	if (!PG_SOCKET_ISVALID(rsock))
+	if ((fd = pg_socket(addr->ai_family, SOCK_STREAM, 0, true))
+		 == PGINVALID_SOCKET)
 	{
 		pg_freeaddrinfo_all(hint.ai_family, addr);
 		ereport(FATAL,
@@ -3664,11 +3664,11 @@ retry2:
 	 * behavior. With no flags at all, win32 behaves as Unix with
 	 * SO_REUSEADDR.
 	 */
-	if ((pg_setsockopt(rsock, SOL_SOCKET, SO_REUSEADDR,
-					   (char *) &one, sizeof(one))) == -1)
+	if ((pg_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
+					   (char *) &one, sizeof(one), true)) == -1)
 	{
 		pg_freeaddrinfo_all(hint.ai_family, addr);
-		pg_closesocket(rsock);
+		pg_closesocket(fd, true);
 		ereport(FATAL,
 				(errcode_for_socket_access(),
 				 errmsg("setsockopt(SO_REUSEADDR) failed: %m")));
@@ -3678,11 +3678,11 @@ retry2:
 #ifdef IPV6_V6ONLY
 	if (addr->ai_family == AF_INET6)
 	{
-		if (pg_setsockopt(rsock, IPPROTO_IPV6, IPV6_V6ONLY,
-						  (char *) &one, sizeof(one)) == -1)
+		if (pg_setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
+						  (char *) &one, sizeof(one), true) == -1)
 		{
 			pg_freeaddrinfo_all(hint.ai_family, addr);
-			pg_closesocket(rsock);
+			pg_closesocket(fd, true);
 			ereport(FATAL,
 					(errcode_for_socket_access(),
 					 errmsg("setsockopt(IPV6_V6ONLY) failed: %m")));
@@ -3696,11 +3696,11 @@ retry2:
 	 * ipv4 addresses to ipv6.  It will show ::ffff:ipv4 for all ipv4
 	 * connections.
 	 */
-	ret = pg_bind(rsock, addr->ai_addr, addr->ai_addrlen);
+	ret = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, true);
 	if (ret < 0)
 	{
 		pg_freeaddrinfo_all(hint.ai_family, addr);
-		pg_closesocket(rsock);
+		pg_closesocket(fd, true);
 
 		/* Retry with new port */
 		if (errno == EADDRINUSE)
@@ -3724,10 +3724,10 @@ retry2:
 	if (maxconn > PG_SOMAXCONN)
 		maxconn = PG_SOMAXCONN;
 
-	ret = pg_listen(rsock, maxconn);
+	ret = pg_listen(fd, maxconn, true);
 	if (ret < 0)
 	{
-		pg_closesocket(rsock);
+		pg_closesocket(fd, true);
 
 		/* Retry with new port */
 		if (errno == EADDRINUSE)
@@ -3746,22 +3746,21 @@ retry2:
 
 	/* Accept connection and fill in the client (remote) address */
 	port->raddr.salen = sizeof(port->raddr.addr);
-	if ((accept_fd = pg_accept(rsock,
-							   (struct sockaddr *) &port->raddr.addr,
-							   &port->raddr.salen)) == PGINVALID_SOCKET)
+	if ((sfd = pg_accept(fd,
+						 (struct sockaddr *) &port->raddr.addr,
+						 &port->raddr.salen, true)) == PGINVALID_SOCKET)
 	{
-		pg_closesocket(rsock);
+		pg_closesocket(fd, true);
 		ereport(FATAL,
 				(errcode_for_socket_access(),
 				 errmsg("could not accept new connection: %m")));
 	}
-	/* Close listened socket */
-	rsock->close(rsock->fd);
-	rsock->fd = accept_fd;
 
 	/* Replace port->sock with rsocket descriptor */
-	StreamCloseExtended(port->sock);
-	port->sock = rsock;
+	StreamClose(port->sock, port->isRsocket);
+
+	port->sock = sfd;
+	port->isRsocket = true;
 
 	/* Re-initialize libpq for rsocket connection */
 	pq_reinit();
@@ -3803,9 +3802,9 @@ retry2:
 	port->laddr.salen = sizeof(port->laddr.addr);
 	if (pg_getsockname(port->sock,
 					   (struct sockaddr *) & port->laddr.addr,
-					   &port->laddr.salen) < 0)
+					   &port->laddr.salen, port->isRsocket) < 0)
 	{
-		pg_closesocket(port->sock);
+		pg_closesocket(port->sock, port->isRsocket);
 		elog(FATAL, "getsockname() failed: %m");
 	}
 
@@ -3813,17 +3812,17 @@ retry2:
 #ifdef	TCP_NODELAY
 	one = 1;
 	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_NODELAY,
-					  (char *) &one, sizeof(one)) < 0)
+					  (char *) &one, sizeof(one), port->isRsocket) < 0)
 	{
-		pg_closesocket(port->sock);
+		pg_closesocket(port->sock, port->isRsocket);
 		elog(FATAL, "setsockopt(TCP_NODELAY) failed: %m");
 	}
 #endif
 	one = 1;
 	if (pg_setsockopt(port->sock, SOL_SOCKET, SO_KEEPALIVE,
-					  (char *) &one, sizeof(one)) < 0)
+					  (char *) &one, sizeof(one), port->isRsocket) < 0)
 	{
-		pg_closesocket(port->sock);
+		pg_closesocket(port->sock, port->isRsocket);
 		elog(FATAL, "setsockopt(SO_KEEPALIVE) failed: %m");
 	}
 
@@ -3837,6 +3836,9 @@ retry2:
 	(void) pq_setkeepalivesidle(tcp_keepalives_idle, port);
 	(void) pq_setkeepalivesinterval(tcp_keepalives_interval, port);
 	(void) pq_setkeepalivescount(tcp_keepalives_count, port);
+
+	/* Close listened socket */
+	pg_closesocket(fd, true);
 }
 #endif
 

@@ -495,7 +495,10 @@ pgfdw_get_result(PGconn *conn, const char *query)
 			/* Sleep until there's something to do */
 			wc = WaitLatchOrSocket(MyLatch,
 								   WL_LATCH_SET | WL_SOCKET_READABLE,
-								   PQsocket(conn), PQisRsocket(conn),
+								   PQsocket(conn),
+#ifdef WITH_RSOCKET
+								   PQisRsocket(conn),
+#endif
 								   -1L);
 			ResetLatch(MyLatch);
 

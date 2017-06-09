@@ -228,7 +228,7 @@ pqsecure_raw_read(PGconn *conn, void *ptr, size_t len)
 	int			result_errno = 0;
 	char		sebuf[256];
 
-	n = pg_recv(conn->sock, ptr, len, 0);
+	n = pg_recv(conn->sock, ptr, len, 0, conn->isRsocket);
 
 	if (n < 0)
 	{
@@ -317,7 +317,7 @@ retry_masked:
 
 	DISABLE_SIGPIPE(conn, spinfo, return -1);
 
-	n = pg_send(conn->sock, ptr, len, flags);
+	n = pg_send(conn->sock, ptr, len, flags, conn->isRsocket);
 
 	if (n < 0)
 	{

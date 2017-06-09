@@ -45,8 +45,6 @@
 /* include stuff found in fe only */
 #include "pqexpbuffer.h"
 
-#include "pg_socket.h"
-
 #ifdef ENABLE_GSS
 #if defined(HAVE_GSSAPI_H)
 #include <gssapi.h>
@@ -375,8 +373,9 @@ struct pg_conn
 
 	/* Connection data */
 	/* See PQconnectPoll() for how we use 'int' and not 'pgsocket'. */
-	PgSocket	sock;			/* FD for socket, PGINVALID_SOCKET if
+	pgsocket	sock;			/* FD for socket, PGINVALID_SOCKET if
 								 * unconnected */
+	bool		isRsocket;		/* Is sock rsocket */
 #ifdef WITH_RSOCKET
 	bool		rsocket_negotiate;	/* Is auxiliary socket for rsocket connection */
 #endif

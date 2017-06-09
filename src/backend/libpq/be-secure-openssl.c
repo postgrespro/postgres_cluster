@@ -423,8 +423,11 @@ aloop:
 				else
 					waitfor = WL_SOCKET_WRITEABLE;
 
-				WaitLatchOrSocket(MyLatch, waitfor,
-								  port->sock->fd, port->sock->isRsocket, 0);
+				WaitLatchOrSocket(MyLatch, waitfor, port->sock,
+#ifdef WITH_RSOCKET
+								  port->isRsocket,
+#endif
+								  0);
 				goto aloop;
 			case SSL_ERROR_SYSCALL:
 				if (r < 0)

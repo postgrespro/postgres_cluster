@@ -165,7 +165,11 @@ extern void ModifyWaitEvent(WaitEventSet *set, int pos, uint32 events, Latch *la
 extern int	WaitEventSetWait(WaitEventSet *set, long timeout, WaitEvent *occurred_events, int nevents);
 extern int	WaitLatch(volatile Latch *latch, int wakeEvents, long timeout);
 extern int WaitLatchOrSocket(volatile Latch *latch, int wakeEvents,
-							 pgsocket sock, bool isRsocket, long timeout);
+				  pgsocket sock,
+#if defined (WITH_RSOCKET)
+				  bool isRsocket,
+#endif
+				  long timeout);
 
 /*
  * Unix implementation uses SIGUSR1 for inter-process signaling.

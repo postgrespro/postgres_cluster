@@ -486,7 +486,10 @@ WalReceiverMain(void)
 				rc = WaitLatchOrSocket(&walrcv->latch,
 								   WL_POSTMASTER_DEATH | WL_SOCKET_READABLE |
 									   WL_TIMEOUT | WL_LATCH_SET,
-									   wait_fd, isRsocket,
+									   wait_fd,
+#ifdef WITH_RSOCKET
+									   isRsocket,
+#endif
 									   NAPTIME_PER_CYCLE);
 				if (rc & WL_LATCH_SET)
 				{
