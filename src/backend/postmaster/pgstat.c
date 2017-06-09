@@ -3736,11 +3736,7 @@ PgstatCollectorMain(int argc, char *argv[])
 #ifndef WIN32
 		wr = WaitLatchOrSocket(MyLatch,
 					 WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_READABLE,
-							   pgStatSock,
-#ifdef WITH_RSOCKET
-							   false,
-#endif
-							   -1L);
+							   pgStatSock, false, -1L);
 #else
 
 		/*
@@ -3755,7 +3751,7 @@ PgstatCollectorMain(int argc, char *argv[])
 		 */
 		wr = WaitLatchOrSocket(MyLatch,
 		WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_READABLE | WL_TIMEOUT,
-							   pgStatSock,
+							   pgStatSock, false,
 							   2 * 1000L /* msec */ );
 #endif
 

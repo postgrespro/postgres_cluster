@@ -423,11 +423,7 @@ SysLoggerMain(int argc, char *argv[])
 #ifndef WIN32
 		rc = WaitLatchOrSocket(MyLatch,
 							   WL_LATCH_SET | WL_SOCKET_READABLE | cur_flags,
-							   syslogPipe[0],
-#ifdef WITH_RSOCKET
-							   false,
-#endif
-							   cur_timeout);
+							   syslogPipe[0], false, cur_timeout);
 
 		if (rc & WL_SOCKET_READABLE)
 		{

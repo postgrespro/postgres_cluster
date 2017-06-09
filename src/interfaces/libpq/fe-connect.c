@@ -2294,7 +2294,7 @@ keep_going:						/* We will come back to here until there is
 						}
 					}
 					/* Set noblock mode for rsocket connection after connect() */
-					if (!PG_ISRSOCKET(conn->sock) &&
+					if (!conn->sock->isRsocket &&
 						!pg_set_noblock_extended(conn->sock))
 					{
 						appendPQExpBuffer(&conn->errorMessage,
@@ -2306,7 +2306,7 @@ keep_going:						/* We will come back to here until there is
 					}
 
 #ifdef F_SETFD
-					if (!PG_ISRSOCKET(conn->sock) &&
+					if (!conn->sock->isRsocket &&
 						pg_fcntl(conn->sock, F_SETFD, FD_CLOEXEC) == -1)
 					{
 						appendPQExpBuffer(&conn->errorMessage,
@@ -2436,7 +2436,7 @@ keep_going:						/* We will come back to here until there is
 						 * Skip them if we got here after
 						 * CONNECTION_RSOCKET_STARTUP step.
 						 */
-						if (PG_ISRSOCKET(conn->sock))
+						if (conn->sock->isRsocket)
 						{
 							/* Set nonblock mode for rsocket connection */
 							if (!pg_set_noblock_extended(conn->sock))
@@ -2579,7 +2579,7 @@ keep_going:						/* We will come back to here until there is
 					gid_t		gid;
 
 					errno = 0;
-					if (getpeereid(PG_SOCK(conn->sock), &uid, &gid) != 0)
+					if (getpeereid(conn->sock->fd, &uid, &gid) != 0)
 					{
 						/*
 						 * Provide special error message if getpeereid is a
@@ -6573,7 +6573,7 @@ PQsocket(const PGconn *conn)
 {
 	if (!conn)
 		return -1;
-	return (conn->sock != NULL) ? PG_SOCK(conn->sock) : -1;
+	return (PG_SOCKET_ISVALID(conn->sock)) ? conn->sock->fd : -1;
 }
 
 int
@@ -6582,8 +6582,8 @@ PQisRsocket(const PGconn *conn)
 #ifdef WITH_RSOCKET
 	if (!conn)
 		return (int) false;
-	return (int)((conn->sock != NULL) ?
-		PG_ISRSOCKET(conn->sock) : false);
+	return (int)((PG_SOCKET_ISVALID(conn->sock)) ?
+		conn->sock->isRsocket : false);
 #else
 	return (int) false;
 #endif

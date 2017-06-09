@@ -352,10 +352,7 @@ int
 WaitLatch(volatile Latch *latch, int wakeEvents, long timeout)
 {
 	return WaitLatchOrSocket(latch, wakeEvents, PGINVALID_SOCKET,
-#if defined (WITH_RSOCKET)
-							 false,
-#endif
-							 timeout);
+							 false, timeout);
 }
 
 /*
@@ -372,10 +369,7 @@ WaitLatch(volatile Latch *latch, int wakeEvents, long timeout)
  */
 int
 WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
-#if defined (WITH_RSOCKET)
-				  bool isRsocket,
-#endif
-				  long timeout)
+				  bool isRsocket, long timeout)
 {
 	int			ret = 0;
 	int			rc;

@@ -3644,7 +3644,7 @@ retry2:
 	}
 
 	rsock = pg_socket(addr->ai_family, SOCK_STREAM, 0, true);
-	if (PG_SOCK(rsock) == PGINVALID_SOCKET)
+	if (!PG_SOCKET_ISVALID(rsock))
 	{
 		pg_freeaddrinfo_all(hint.ai_family, addr);
 		ereport(FATAL,

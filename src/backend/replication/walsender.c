@@ -1145,10 +1145,7 @@ WalSndWriteData(LogicalDecodingContext *ctx, XLogRecPtr lsn, TransactionId xid,
 
 		/* Sleep until something happens or we time out */
 		WaitLatchOrSocket(MyLatch, wakeEvents,
-						  PG_SOCK(MyProcPort->sock),
-#ifdef WITH_RSOCKET
-						  PG_ISRSOCKET(MyProcPort->sock),
-#endif
+						  MyProcPort->sock->fd, MyProcPort->sock->isRsocket,
 						  sleeptime);
 	}
 
@@ -1278,10 +1275,7 @@ WalSndWaitForWal(XLogRecPtr loc)
 
 		/* Sleep until something happens or we time out */
 		WaitLatchOrSocket(MyLatch, wakeEvents,
-						  PG_SOCK(MyProcPort->sock),
-#ifdef WITH_RSOCKET
-						  PG_ISRSOCKET(MyProcPort->sock),
-#endif
+						  MyProcPort->sock->fd, MyProcPort->sock->isRsocket,
 						  sleeptime);
 	}
 
@@ -1903,10 +1897,7 @@ WalSndLoop(WalSndSendDataCallback send_data)
 
 			/* Sleep until something happens or we time out */
 			WaitLatchOrSocket(MyLatch, wakeEvents,
-							  PG_SOCK(MyProcPort->sock),
-#ifdef WITH_RSOCKET
-							  PG_ISRSOCKET(MyProcPort->sock),
-#endif
+							  MyProcPort->sock->fd, MyProcPort->sock->isRsocket,
 							  sleeptime);
 		}
 	}

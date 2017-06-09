@@ -4067,7 +4067,7 @@ BackendStartup(Port *port)
 	/* in parent, successful fork */
 	ereport(DEBUG2,
 			(errmsg_internal("forked new backend, pid=%d socket=%d",
-							 (int) pid, (int) PG_SOCK(port->sock))));
+							 (int) pid, (int) port->sock->fd)));
 
 #ifdef WITH_RSOCKET
 	/* Increment rsocket port number for next connection */

@@ -1110,7 +1110,7 @@ pqSocketPoll(PgSocket sock, int forRead, int forWrite, time_t end_time)
 	if (!forRead && !forWrite)
 		return 0;
 
-	input_fd.fd = PG_SOCK(sock);
+	input_fd.fd = sock->fd;
 	input_fd.events = POLLERR;
 	input_fd.revents = 0;
 
@@ -1132,7 +1132,7 @@ pqSocketPoll(PgSocket sock, int forRead, int forWrite, time_t end_time)
 			timeout_ms = 0;
 	}
 
-	return pg_poll(&input_fd, 1, timeout_ms, PG_ISRSOCKET(sock));
+	return pg_poll(&input_fd, 1, timeout_ms, sock->isRsocket);
 #else							/* !HAVE_POLL */
 
 	fd_set		input_mask;
@@ -1148,11 +1148,11 @@ pqSocketPoll(PgSocket sock, int forRead, int forWrite, time_t end_time)
 	FD_ZERO(&output_mask);
 	FD_ZERO(&except_mask);
 	if (forRead)
-		FD_SET(PG_SOCK(sock), &input_mask);
+		FD_SET(sock->fd, &input_mask);
 
 	if (forWrite)
-		FD_SET(PG_SOCK(sock), &output_mask);
-	FD_SET(PG_SOCK(sock), &except_mask);
+		FD_SET(sock->fd, &output_mask);
+	FD_SET(sock->fd, &except_mask);
 
 	/* Compute appropriate timeout interval */
 	if (end_time == ((time_t) -1))
@@ -1169,8 +1169,8 @@ pqSocketPoll(PgSocket sock, int forRead, int forWrite, time_t end_time)
 		ptr_timeout = &timeout;
 	}
 
-	return pg_select(PG_SOCK(sock) + 1, &input_mask, &output_mask,
-					 &except_mask, ptr_timeout, PG_ISRSOCKET(sock));
+	return pg_select(sock->fd + 1, &input_mask, &output_mask,
+					 &except_mask, ptr_timeout, sock->isRsocket);
 #endif   /* HAVE_POLL */
 }
 

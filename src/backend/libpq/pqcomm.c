@@ -203,12 +203,12 @@ pq_init(void)
 #endif
 
 #ifdef WITH_RSOCKET
-	if (PG_ISRSOCKET(MyProcPort->sock))
+	if (MyProcPort->sock->isRsocket)
 		FeBeWaitSet = CreateWaitEventSetForRsocket(TopMemoryContext, 3);
 	else
 #endif
 		FeBeWaitSet = CreateWaitEventSet(TopMemoryContext, 3);
-	AddWaitEventToSet(FeBeWaitSet, WL_SOCKET_WRITEABLE, PG_SOCK(MyProcPort->sock),
+	AddWaitEventToSet(FeBeWaitSet, WL_SOCKET_WRITEABLE, MyProcPort->sock->fd,
 					  NULL, NULL);
 	AddWaitEventToSet(FeBeWaitSet, WL_LATCH_SET, -1, MyLatch, NULL);
 	AddWaitEventToSet(FeBeWaitSet, WL_POSTMASTER_DEATH, -1, NULL, NULL);
@@ -241,12 +241,12 @@ pq_reinit(void)
 #endif
 
 #ifdef WITH_RSOCKET
-	if (PG_ISRSOCKET(MyProcPort->sock))
+	if (MyProcPort->sock->isRsocket)
 		FeBeWaitSet = CreateWaitEventSetForRsocket(TopMemoryContext, 3);
 	else
 #endif
 		FeBeWaitSet = CreateWaitEventSet(TopMemoryContext, 3);
-	AddWaitEventToSet(FeBeWaitSet, WL_SOCKET_WRITEABLE, PG_SOCK(MyProcPort->sock),
+	AddWaitEventToSet(FeBeWaitSet, WL_SOCKET_WRITEABLE, MyProcPort->sock->fd,
 					  NULL, NULL);
 	AddWaitEventToSet(FeBeWaitSet, WL_LATCH_SET, -1, MyLatch, NULL);
 	AddWaitEventToSet(FeBeWaitSet, WL_POSTMASTER_DEATH, -1, NULL, NULL);

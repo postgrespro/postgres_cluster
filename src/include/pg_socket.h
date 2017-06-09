@@ -79,10 +79,8 @@ typedef PgSocketData *PgSocket;
 extern PgSocket pg_socket(int domain, int type, int protocol, bool isRsocket);
 extern int pg_closesocket(PgSocket socket);
 
-#define PG_SOCK(socket) \
-	(socket)->fd
-#define PG_ISRSOCKET(socket) \
-	(socket)->isRsocket
+#define PG_SOCKET_ISVALID(socket) \
+	((socket != NULL) && (socket)->fd != PGINVALID_SOCKET)
 
 /*
  * Wrappers to function pointers of PgSocketData struct
