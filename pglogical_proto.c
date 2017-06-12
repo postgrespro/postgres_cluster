@@ -168,6 +168,17 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 	}
 }
 
+
+static void pglogical_seq_nextval(StringInfo out, LogicalDecodingContext *ctx, MtmSeqPosition* pos)
+{
+	Relation rel = heap_open(pos->seqid, NoLock);
+	pglogical_write_rel(out, ctx->output_plugin_private, rel);
+	heap_close(rel, NoLock);
+	pq_sendbyte(out, 'N');
+	pq_sendint64(out, pos->next);
+}
+	
+
 static void pglogical_broadcast_table(StringInfo out, LogicalDecodingContext *ctx, MtmCopyRequest* copy)
 {
 	if (BIT_CHECK(copy->targetNodes, MtmReplicationNodeId-1)) { 
@@ -229,6 +240,9 @@ pglogical_write_message(StringInfo out, LogicalDecodingContext *ctx,
 	  case 'B':
 		pglogical_broadcast_table(out, ctx, (MtmCopyRequest*)message);
 		return;
+	  case 'N':
+		pglogical_seq_nextval(out, ctx, (MtmSeqPosition*)message);
+		return;		
 	}
 	pq_sendbyte(out, 'M');
 	pq_sendbyte(out, *prefix);
