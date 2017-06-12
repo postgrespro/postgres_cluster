@@ -22,6 +22,7 @@
 #include "commands/vacuum.h"
 #include "commands/tablespace.h"
 #include "commands/defrem.h"
+#include "commands/sequence.h"
 #include "parser/parse_utilcmd.h"
 
 #include "libpq/pqformat.h"
@@ -1157,7 +1158,18 @@ void MtmExecutor(void* work, size_t size)
 				s.len = save_len;
 				break;
 			}
+ 		    case 'N':
+			{
+				int64 next;
+			    Assert(rel != NULL);
+				next = pq_getmsgint64(&s); 
+				AdjustSequence(RelationGetRelid(rel), next);
+  			    close_rel(rel);
+				rel = NULL;
+				break;
+			}			   
 		    case '0':
+			    Assert(rel != NULL);
 			    heap_truncate_one_rel(rel);
 				break;
 			case 'M':

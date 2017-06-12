@@ -337,6 +337,12 @@ typedef struct MtmFlushPosition
 } MtmFlushPosition;
 
 
+typedef struct MtmSeqPosition
+{
+	Oid   seqid;
+	int64 next;
+} MtmSeqPosition;
+ 
 #define MtmIsCoordinator(ts) (ts->gtid.node == MtmNodeId)
 
 extern char const* const MtmNodeStatusMnem[];

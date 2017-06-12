@@ -47,6 +47,7 @@
 #include "utils/memutils.h"
 #include "commands/dbcommands.h"
 #include "commands/extension.h"
+#include "commands/sequence.h"
 #include "postmaster/autovacuum.h"
 #include "storage/pmsignal.h"
 #include "storage/proc.h"
@@ -266,11 +267,13 @@ static bool	 MtmBreakConnection;
 static bool	 MtmClusterLocked;
 static bool	 MtmInsideTransaction;
 static bool  MtmReferee;
+static bool  MtmMonotonicSequences;
 
 static ExecutorStart_hook_type PreviousExecutorStartHook;
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
 static ProcessUtility_hook_type PreviousProcessUtilityHook;
 static shmem_startup_hook_type PreviousShmemStartupHook;
+static seq_nextval_hook_t PreviousSeqNextvalHook;
 
 static nodemask_t lastKnownMatrix[MAX_NODES];
 
@@ -279,6 +282,7 @@ static void MtmExecutorFinish(QueryDesc *queryDesc);
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							 ProcessUtilityContext context, ParamListInfo params,
 							 DestReceiver *dest, char *completionTag);
+static void MtmSeqNextvalHook(Oid seqid, int64 next);
 
 static bool MtmAtExitHookRegistered = false;
 
@@ -3137,6 +3141,19 @@ _PG_init(void)
 	);
 
 	DefineCustomBoolVariable(
+		"multimaster.monotonic_sequences",
+		"Enforce monotinic behaviour of sequence values obtained from different nodes",
+		NULL,
+		&MtmMonotonicSequences,
+		false,
+		PGC_BACKEND,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomBoolVariable(
 		"multimaster.ignore_tables_without_pk",
 		"Do not replicate tables without primary key",
 		NULL,
@@ -3390,6 +3407,9 @@ _PG_init(void)
 
 	PreviousProcessUtilityHook = ProcessUtility_hook;
 	ProcessUtility_hook = MtmProcessUtility;
+
+	PreviousSeqNextvalHook = SeqNextvalHook; 
+	SeqNextvalHook = MtmSeqNextvalHook;
 }
 
 /*
@@ -3401,6 +3421,7 @@ _PG_fini(void)
 	shmem_startup_hook = PreviousShmemStartupHook;
 	ExecutorFinish_hook = PreviousExecutorFinishHook;
 	ProcessUtility_hook = PreviousProcessUtilityHook;
+	SeqNextvalHook = PreviousSeqNextvalHook;
 }
 
 
@@ -5335,6 +5356,17 @@ MtmExecutorFinish(QueryDesc *queryDesc)
 	else
 	{
 		standard_ExecutorFinish(queryDesc);
+	}
+}
+
+static void MtmSeqNextvalHook(Oid seqid, int64 next)
+{
+	if (MtmMonotonicSequences)
+	{
+		MtmSeqPosition pos;
+		pos.seqid = seqid;
+		pos.next = next;
+		LogLogicalMessage("N", (char*)&pos, sizeof(pos), true);		
 	}
 }
 
