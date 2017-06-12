@@ -882,6 +882,8 @@ void AdjustSequence(Oid relid, int64 next)
 	{
 		Assert(next >= seq->min_value && next <= seq->max_value);
 	
+		next = last + elm->increment*((next - last + elm->increment)/elm->increment);
+
 		/* Set the currval() state only if iscalled = true */
 		if (seq->is_called)
 		{
