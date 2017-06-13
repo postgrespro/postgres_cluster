@@ -1161,11 +1161,13 @@ void MtmExecutor(void* work, size_t size)
  		    case 'N':
 			{
 				int64 next;
+				Oid relid;
 			    Assert(rel != NULL);
-				next = pq_getmsgint64(&s); 
-				AdjustSequence(RelationGetRelid(rel), next);
+				relid = RelationGetRelid(rel);
   			    close_rel(rel);
 				rel = NULL;
+				next = pq_getmsgint64(&s); 
+				AdjustSequence(relid, next);
 				break;
 			}			   
 		    case '0':

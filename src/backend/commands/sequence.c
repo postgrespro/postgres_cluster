@@ -861,9 +861,6 @@ void AdjustSequence(Oid relid, int64 next)
 	/* open and AccessShareLock sequence */
 	init_sequence(relid, &elm, &seqrel);
 
-	/* lock page' buffer and read tuple */
-	seq = read_seq_tuple(elm, seqrel, &buf, &seqtuple);
-
 	if (elm->last != elm->cached && elm->last + elm->increment > next) /* cached number is greater than received */
 	{
 		relation_close(seqrel, NoLock);
