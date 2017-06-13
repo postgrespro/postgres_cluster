@@ -1900,6 +1900,10 @@ FileWrite(File file, char *buffer, int amount)
 			 * because we want to write all updated pages sequentially
 			 */
 			pos = cfs_alloc_page(map, CFS_INODE_SIZE(inode), compressedSize);
+			if (pos > pos + compressedSize) {
+				elog(ERROR, "CFS segment file exceeed 4Gb limit");
+			}
+
 			inode = CFS_INODE(compressedSize, pos);
 			buffer = compressedBuffer;
 			amount = compressedSize;
