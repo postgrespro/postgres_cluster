@@ -928,7 +928,8 @@ static bool cfs_gc_file(char* map_path, bool background)
 					if (res != BLCKSZ)
 					{
 						pg_atomic_fetch_sub_u32(&map->lock, CFS_GC_LOCK); /* release lock */
-						elog(ERROR, "Verification failed for block %d position %d size %d of relation %s: error code %d",
+						pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
+						elog(ERROR, "CFS: verification failed for block %d position %d size %d of relation %s: error code %d",
 							 i, (int)CFS_INODE_OFFS(inode), size, file_bck_path, (int)res);
 					}
 				}
@@ -1429,11 +1430,11 @@ Datum cfs_gc_relation(PG_FUNCTION_ARGS)
 		pfree(map_path);
 		relation_close(rel, AccessShareLock);
 
-		processed_segments -= cfs_gc_processed_segments;
+		processed_segments = cfs_gc_processed_segments - processed_segments;
 
 		LWLockRelease(CfsGcLock);
 	}
-	PG_RETURN_INT32(cfs_gc_processed_segments);
+	PG_RETURN_INT32(processed_segments);
 }
 
 

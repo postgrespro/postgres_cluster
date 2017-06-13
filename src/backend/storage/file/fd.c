@@ -1770,7 +1770,7 @@ FileRead(File file, char *buffer, int amount)
 				INIT_TRADITIONAL_CRC32(crc);
 				COMP_TRADITIONAL_CRC32(crc, compressedBuffer, amount);
 				FIN_TRADITIONAL_CRC32(crc);
-				elog(LOG, "Decompress error: %d for file %s block %u position %u compressed size %u crc %x", 
+				elog(LOG, "CFS: decompress error: %d for file %s block %u position %u compressed size %u crc %x", 
 					 returnCode, VfdCache[file].fileName, (uint32)(VfdCache[file].seekPos / BLCKSZ), (uint32)seekPos, amount, crc);
 				VfdCache[file].seekPos = FileUnknownPos;
 				returnCode = -1;
@@ -2015,6 +2015,8 @@ retry:
 		 */
 		if ((int32)pos >= 0 && (int32)(pos + amount) < 0) 
 		{ 
+			elog(LOG, "CFS: backend %d forced to performe GC on file %s block %u because it's size exceed %u bytes", 
+				 MyProcPid, VfdCache[file].fileName, (uint32)(VfdCache[file].seekPos / BLCKSZ),  pos);
 			cfs_gc_segment(VfdCache[file].fileName);
 		}
 	}
