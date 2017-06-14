@@ -1427,7 +1427,7 @@ CloseServerPorts(int status, Datum arg)
 	{
 		if (ListenSocket[i] != PGINVALID_SOCKET)
 		{
-			StreamClose(ListenSocket[i], false);
+			StreamClose(ListenSocket[i]);
 			ListenSocket[i] = PGINVALID_SOCKET;
 #ifdef WITH_RSOCKET
 			ListenRdma[i] = false;
@@ -1757,8 +1757,7 @@ ServerLoop(void)
 
 			PG_SETMASK(&UnBlockSig);
 
-			/* Here all listened sockets are not rsockets, so pass 'false' */
-			selres = pg_select(nSockets, &rmask, NULL, NULL, &timeout, false);
+			selres = select(nSockets, &rmask, NULL, NULL, &timeout);
 
 			PG_SETMASK(&BlockSig);
 		}
@@ -1803,7 +1802,7 @@ ServerLoop(void)
 						 * We no longer need the open socket or port structure
 						 * in this process
 						 */
-						StreamClose(port->sock, port->isRsocket);
+						StreamClose(port->sock);
 						ConnFree(port);
 					}
 				}
@@ -2066,7 +2065,7 @@ ProcessStartupPacket(Port *port, bool SSLdone)
 #endif
 
 retry1:
-		if (pg_send(port->sock, &SSLok, 1, 0, port->isRsocket) != 1)
+		if (send(port->sock, &SSLok, 1, 0) != 1)
 		{
 			if (errno == EINTR)
 				goto retry1;	/* if interrupted, just retry */
@@ -2443,7 +2442,7 @@ ConnCreate(int serverFd)
 	if (StreamConnection(serverFd, port) != STATUS_OK)
 	{
 		if (port->sock != PGINVALID_SOCKET)
-			StreamClose(port->sock, port->isRsocket);
+			StreamClose(port->sock);
 		ConnFree(port);
 		return NULL;
 	}
@@ -2517,7 +2516,7 @@ ClosePostmasterPorts(bool am_syslogger)
 	{
 		if (ListenSocket[i] != PGINVALID_SOCKET)
 		{
-			StreamClose(ListenSocket[i], false);
+			StreamClose(ListenSocket[i]);
 			ListenSocket[i] = PGINVALID_SOCKET;
 #ifdef WITH_RSOCKET
 			ListenRdma[i] = false;
@@ -4117,7 +4116,7 @@ report_fork_failure_to_client(Port *port, int errnum)
 	/* We'll retry after EINTR, but ignore all other failures */
 	do
 	{
-		rc = pg_send(port->sock, buffer, strlen(buffer) + 1, 0, port->isRsocket);
+		rc = send(port->sock, buffer, strlen(buffer) + 1, 0);
 	} while (rc < 0 && errno == EINTR);
 }
 

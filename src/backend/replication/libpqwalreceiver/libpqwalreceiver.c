@@ -26,8 +26,6 @@
 #include "replication/walreceiver.h"
 #include "utils/builtins.h"
 
-#include "pg_socket.h"
-
 PG_MODULE_MAGIC;
 
 void		_PG_init(void);
@@ -377,38 +375,7 @@ libpq_select(int timeout_ms)
 				(errcode_for_socket_access(),
 				 errmsg("invalid socket: %s", PQerrorMessage(streamConn))));
 
-	/* We use poll(2) if available, otherwise select(2) */
-	{
-#ifdef HAVE_POLL
-		struct pollfd input_fd;
-
-		input_fd.fd = PQsocket(streamConn);
-		input_fd.events = POLLIN | POLLERR;
-		input_fd.revents = 0;
-
-		ret = pg_poll(&input_fd, 1, timeout_ms, PQisRsocket(streamConn));
-#else							/* !HAVE_POLL */
-
-		fd_set		input_mask;
-		struct timeval timeout;
-		struct timeval *ptr_timeout;
-
-		FD_ZERO(&input_mask);
-		FD_SET(PQsocket(streamConn), &input_mask);
-
-		if (timeout_ms < 0)
-			ptr_timeout = NULL;
-		else
-		{
-			timeout.tv_sec = timeout_ms / 1000;
-			timeout.tv_usec = (timeout_ms % 1000) * 1000;
-			ptr_timeout = &timeout;
-		}
-
-		ret = pg_select(PQsocket(streamConn) + 1, &input_mask,
-						NULL, NULL, ptr_timeout, PQisRsocket(streamConn));
-#endif   /* HAVE_POLL */
-	}
+	ret = PQselectExtended(streamConn, timeout_ms);
 
 	if (ret == 0 || (ret < 0 && errno == EINTR))
 		return false;
@@ -547,7 +514,7 @@ libpqrcv_receive(char **buffer, pgsocket *wait_fd, bool *isRsocket)
 		{
 			/* Tell caller to try again when our socket is ready. */
 			*wait_fd = PQsocket(streamConn);
-			*isRsocket = PQsocket(streamConn);
+			*isRsocket = PQisRsocket(streamConn);
 			return 0;
 		}
 	}

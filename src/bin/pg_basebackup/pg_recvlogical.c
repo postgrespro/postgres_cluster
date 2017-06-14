@@ -406,8 +406,8 @@ StreamLogicalLog(void)
 				timeoutptr = &timeout;
 			}
 
-			r = pg_select(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr,
-						  PQisRsocket(conn));
+			r = PQselect(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr,
+						 PQisRsocket(conn));
 			if (r == 0 || (r < 0 && errno == EINTR))
 			{
 				/*

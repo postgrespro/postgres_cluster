@@ -903,7 +903,7 @@ select_loop(int maxFd, fd_set *workerset, bool *aborting, bool isRsocket)
 #endif
 
 		*workerset = saveSet;
-		i = pg_select(maxFd + 1, workerset, NULL, NULL, tvp, isRsocket);
+		i = PQselect(maxFd + 1, workerset, NULL, NULL, tvp, isRsocket);
 
 #ifdef WIN32
 		if (i == SOCKET_ERROR)

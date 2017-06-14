@@ -326,6 +326,9 @@ extern int	PQserverVersion(const PGconn *conn);
 extern char *PQerrorMessage(const PGconn *conn);
 extern int	PQsocket(const PGconn *conn);
 extern int	PQisRsocket(const PGconn *conn);
+extern int	PQselect(pgsocket nfds, fd_set *readfds, fd_set *writefds,
+					 fd_set *exceptfds, struct timeval *timeout, int isRsocket);
+extern int	PQselectExtended(const PGconn *conn, int timeout_ms);
 extern int	PQbackendPID(const PGconn *conn);
 extern int	PQconnectionNeedsPassword(const PGconn *conn);
 extern int	PQconnectionUsedPassword(const PGconn *conn);

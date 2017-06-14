@@ -950,8 +950,8 @@ CopyStreamPoll(PGconn *conn, long timeout_ms)
 		timeoutptr = &timeout;
 	}
 
-	ret = pg_select(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr,
-					PQisRsocket(conn));
+	ret = PQselect(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr,
+				   PQisRsocket(conn));
 	if (ret == 0 || (ret < 0 && errno == EINTR))
 		return 0;				/* Got a timeout or signal */
 	else if (ret < 0)

@@ -3604,6 +3604,9 @@ RsocketInitialize(Port *port)
 	char		remote_host[NI_MAXHOST];
 	char		remote_port[NI_MAXSERV];
 
+	/* It is necessary to dynamically load librdmacm at first call */
+	initialize_rsocket();
+
 	switch (port->laddr.addr.ss_family)
 	{
 		case AF_INET:
@@ -3757,7 +3760,7 @@ retry2:
 	}
 
 	/* Replace port->sock with rsocket descriptor */
-	StreamClose(port->sock, port->isRsocket);
+	StreamClose(port->sock);
 
 	port->sock = sfd;
 	port->isRsocket = true;

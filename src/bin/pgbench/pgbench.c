@@ -4430,9 +4430,7 @@ threadRun(void *arg)
 		int			maxsock;	/* max socket number to be waited */
 		int64		now_usec = 0;
 		int64		min_usec;
-#ifdef WITH_RSOCKET
 		bool		isRsocket = false;
-#endif
 
 		FD_ZERO(&input_mask);
 
@@ -4535,20 +4533,12 @@ threadRun(void *arg)
 
 				timeout.tv_sec = min_usec / 1000000;
 				timeout.tv_usec = min_usec % 1000000;
-				nsocks = pg_select(maxsock + 1, &input_mask, NULL, NULL, &timeout,
-#ifdef WITH_RSOCKET
-								   isRsocket);
-#else
-								   false);
-#endif
+				nsocks = PQselect(maxsock + 1, &input_mask, NULL, NULL, &timeout,
+								  isRsocket);
 			}
 			else
-				nsocks = pg_select(maxsock + 1, &input_mask, NULL, NULL, NULL,
-#ifdef WITH_RSOCKET
-								   isRsocket);
-#else
-								   false);
-#endif
+				nsocks = PQselect(maxsock + 1, &input_mask, NULL, NULL, NULL,
+								  isRsocket);
 			if (nsocks < 0)
 			{
 				if (errno == EINTR)

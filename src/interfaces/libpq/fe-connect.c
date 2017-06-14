@@ -560,6 +560,9 @@ PQping(const char *conninfo)
 }
 
 #ifdef WITH_RSOCKET
+/*
+ * Copy of parse_bool_with_len() from src/backend/utils/adt/bool.c
+ */
 static bool
 parse_bool(const char *value, bool *result)
 {
@@ -2245,6 +2248,14 @@ keep_going:						/* We will come back to here until there is
 	{
 		case CONNECTION_NEEDED:
 			{
+#ifdef WITH_RSOCKET
+				/*
+				 * It is necessary to dynamically load librdmacm at first call
+				 */
+				if (conn->isRsocket)
+					initialize_rsocket();
+#endif
+
 				/*
 				 * Try to initiate a connection to one of the addresses
 				 * returned by pg_getaddrinfo_all().  conn->addr_cur is the
@@ -6587,6 +6598,47 @@ PQisRsocket(const PGconn *conn)
 #else
 	return (int) false;
 #endif
+}
+
+int
+PQselect(pgsocket nfds, fd_set *readfds, fd_set *writefds,
+		 fd_set *exceptfds, struct timeval *timeout, int isRsocket)
+{
+	return pg_select(nfds, readfds, writefds, exceptfds, timeout, isRsocket);
+}
+
+int
+PQselectExtended(const PGconn *conn, int timeout_ms)
+{
+	/* We use poll(2) if available, otherwise select(2) */
+#ifdef HAVE_POLL
+	struct pollfd input_fd;
+
+	input_fd.fd = PQsocket(conn);
+	input_fd.events = POLLIN | POLLERR;
+	input_fd.revents = 0;
+
+	return pg_poll(&input_fd, 1, timeout_ms, PQisRsocket(conn));
+#else    /* !HAVE_POLL */
+	fd_set		input_mask;
+	struct timeval timeout;
+	struct timeval *ptr_timeout;
+
+	FD_ZERO(&input_mask);
+	FD_SET(PQsocket(conn), &input_mask);
+
+	if (timeout_ms < 0)
+		ptr_timeout = NULL;
+	else
+	{
+		timeout.tv_sec = timeout_ms / 1000;
+		timeout.tv_usec = (timeout_ms % 1000) * 1000;
+		ptr_timeout = &timeout;
+	}
+
+	ret = pg_select(PQsocket(conn) + 1, &input_mask,
+					NULL, NULL, ptr_timeout, PQisRsocket(conn));
+#endif   /* HAVE_POLL */
 }
 
 int

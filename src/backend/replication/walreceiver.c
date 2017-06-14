@@ -471,6 +471,12 @@ WalReceiverMain(void)
 				if (endofwal)
 					break;
 
+#ifdef WITH_RSOCKET
+				/* Make sure that librdmacm is loaded */
+				if (isRsocket)
+					initialize_rsocket();
+#endif
+
 				/*
 				 * Ideally we would reuse a WaitEventSet object repeatedly
 				 * here to avoid the overheads of WaitLatchOrSocket on epoll
@@ -486,10 +492,7 @@ WalReceiverMain(void)
 				rc = WaitLatchOrSocket(&walrcv->latch,
 								   WL_POSTMASTER_DEATH | WL_SOCKET_READABLE |
 									   WL_TIMEOUT | WL_LATCH_SET,
-									   wait_fd,
-#ifdef WITH_RSOCKET
-									   isRsocket,
-#endif
+									   wait_fd, isRsocket,
 									   NAPTIME_PER_CYCLE);
 				if (rc & WL_LATCH_SET)
 				{

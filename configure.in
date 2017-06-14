@@ -577,13 +577,12 @@ PGAC_ARG_BOOL(enable, cassert, no, [enable assertion checks (for debugging)],
 #
 # Replace socket with rsocket
 #
+AC_MSG_CHECKING([whether to build with rsocket support])
 PGAC_ARG_BOOL(with, rsocket, no, [replace socket with rsocket (RDMA socket API)],
               [AC_DEFINE([WITH_RSOCKET], 1,
                          [Define to 1 to build with rsocket instead socket. (--with-rsocket)])])
-
-if test "$with_rsocket" = yes ; then
-  LIBS="$LIBS -lrdmacm"
-fi
+AC_MSG_RESULT([$with_rsocket])
+AC_SUBST(with_rsocket)
 
 #
 # Include directories
@@ -1387,10 +1386,6 @@ Use --without-readline to disable libedit support.])])])])
   AC_CHECK_HEADERS(editline/history.h, [],
         [AC_CHECK_HEADERS(history.h, [],
                 [AC_CHECK_HEADERS(readline/history.h)])])
-fi
-
-if test "$with_rsocket" = yes; then
-  AC_CHECK_HEADER(rdma/rsocket.h, [], [AC_MSG_ERROR([header file <rdma/rsocket.h> is required for RDMA API])])
 fi
 
 if test "$with_zlib" = yes; then
