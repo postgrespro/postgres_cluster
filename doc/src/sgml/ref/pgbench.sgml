@@ -469,7 +469,8 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
         characteristics since the last report: the tps, the number of
         transactions with serialization and deadlock failures, and the
         transaction latency average and standard deviation.  Under throttling
-        (<option>-R</>), the latency is computed with respect to the transaction scheduled start time, not the actual transaction beginning time, thus it
+        (<option>-R</>), the latency is computed with respect to the transaction
+        scheduled start time, not the actual transaction beginning time, thus it
         also includes the average schedule lag time.
        </para>
       </listitem>
