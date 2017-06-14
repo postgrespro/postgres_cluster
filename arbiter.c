@@ -18,10 +18,6 @@
 #include <time.h>
 #include <fcntl.h>
 
-#ifdef WITH_RSOCKET
-#include <rdma/rsocket.h>
-#endif
-
 #include "postgres.h"
 #include "fmgr.h"
 #include "miscadmin.h"

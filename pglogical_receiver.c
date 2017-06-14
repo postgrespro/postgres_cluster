@@ -14,9 +14,6 @@
  */
 
 /* Some general headers for custom bgworker facility */
-#ifdef WITH_RSOCKET
-#include <rdma/rsocket.h>
-#endif
 
 #include <unistd.h>
 #include "postgres.h"
