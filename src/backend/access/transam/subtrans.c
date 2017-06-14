@@ -111,7 +111,7 @@ SubTransGetParent(TransactionId xid)
 	TransactionId parent;
 
 	/* Can't ask about stuff that might not be around anymore */
-	Assert(TransactionIdFollowsOrEquals(xid, TransactionXmin));
+	//Assert(TransactionIdFollowsOrEquals(xid, TransactionXmin));
 
 	/* Bootstrap and frozen XIDs have no parent */
 	if (!TransactionIdIsNormal(xid))
@@ -149,7 +149,10 @@ SubTransGetTopmostTransaction(TransactionId xid)
 				previousXid = xid;
 
 	/* Can't ask about stuff that might not be around anymore */
-	Assert(TransactionIdFollowsOrEquals(xid, TransactionXmin));
+	if (!TransactionIdFollowsOrEquals(xid, TransactionXmin)) 
+	{
+		return xid;
+	}
 
 	while (TransactionIdIsValid(parentXid))
 	{

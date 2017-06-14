@@ -4,3 +4,4 @@
 /pg_config_ext.h
 /pg_config_os.h
 /dynloader.h
+/commit_id.h

@@ -145,6 +145,20 @@ CREATE TYPE cron_job AS(
 	message text			-- error message if one
 );
 
+----------------------------------
+-- ADD Extension tables to Dump --
+----------------------------------
+
+select pg_extension_config_dump('at_jobs_submitted'::regclass, '');
+select pg_extension_config_dump('at_jobs_submitted_id_seq'::regclass, '');
+select pg_extension_config_dump('at_jobs_process'::regclass, '');
+select pg_extension_config_dump('at_jobs_done'::regclass, '');
+select pg_extension_config_dump('cron'::regclass, '');
+select pg_extension_config_dump('cron_id_seq'::regclass, '');
+select pg_extension_config_dump('at'::regclass, '');
+select pg_extension_config_dump('log'::regclass, '');
+
+
 ---------------
 -- FUNCTIONS --
 ---------------
@@ -338,7 +352,7 @@ LANGUAGE plpgsql set search_path FROM CURRENT;
 CREATE FUNCTION _possible_args() RETURNS jsonb AS
 $BODY$
 BEGIN 
-   RETURN json_build_object(
+   RETURN jsonb_build_object(
       'node', 'node name (default: master)',
       'name', 'job name',
       'comments', 'some comments on job',
@@ -396,34 +410,43 @@ END
 $BODY$
 LANGUAGE plpgsql set search_path FROM CURRENT;
 
-CREATE FUNCTION _get_cron_from_attrs(params jsonb) RETURNS jsonb AS
+CREATE FUNCTION _get_cron_from_attrs(params jsonb, prev jsonb) RETURNS jsonb AS
 $BODY$
 DECLARE
 	dates text[];
 	cron jsonb;
+	rule jsonb;
 	clean_cron jsonb;
 	N integer;
 	name text;
+	updatePrev boolean;
 BEGIN
+
+	updatePrev := true;
+
+	IF NOT params?'cron' AND NOT params?'rule' AND NOT params?'date' AND NOT params?'dates' THEN
+		RAISE  EXCEPTION 'There is no information about job''s schedule'
+			USING HINT = 'Use ''cron'' - cron string, ''rule'' - json to set schedule rules or ''date'' and ''dates'' to set exact date(s)';
+	END IF;
 
 	IF params?'cron' THEN 
 		EXECUTE 'SELECT cron2jsontext($1::cstring)::jsonb' 
 			INTO cron
 			USING params->>'cron';
-	ELSIF params?'rule' THEN
-		cron := params->'rule';
-	ELSIF NOT params?'date' AND NOT params?'dates' THEN
-		RAISE  EXCEPTION 'There is no information about job''s schedule'
-			USING HINT = 'Use ''cron'' - cron string, ''rule'' - json to set schedule rules or ''date'' and ''dates'' to set exact date(s)';
 	END IF;
 
-	IF cron IS NOT NULL THEN
-		IF cron?'date' THEN
-			dates := _get_array_from_jsonb(dates, cron->'date');
-		END IF;
-		IF cron?'dates' THEN
-			dates := _get_array_from_jsonb(dates, cron->'dates');
-		END IF;
+	IF params?'rule' THEN
+		rule := params->'rule';
+		updatePrev := false;
+	END IF;
+
+	cron := coalesce(cron, '{}'::jsonb) || coalesce(rule, '{}'::jsonb);
+
+	IF cron?'date' THEN
+		dates := _get_array_from_jsonb(dates, cron->'date');
+	END IF;
+	IF cron?'dates' THEN
+		dates := _get_array_from_jsonb(dates, cron->'dates');
 	END IF;
 
 	IF params?'date' THEN
@@ -437,9 +460,13 @@ BEGIN
 	IF N > 0 THEN
 		EXECUTE 'SELECT array_agg(lll) FROM (SELECT distinct(date_trunc(''min'', unnest::timestamp with time zone)) as lll FROM unnest($1) ORDER BY date_trunc(''min'', unnest::timestamp with time zone)) as Z'
 			INTO dates USING dates;
-		cron := COALESCE(cron, '{}'::jsonb) || json_build_object('dates', array_to_json(dates))::jsonb;
+		cron := cron || jsonb_build_object('dates', array_to_json(dates));
 	END IF;
-	
+
+	IF updatePrev AND prev IS NOT NULL THEN
+		cron := prev || cron;
+	END IF;
+
 	clean_cron := '{}'::jsonb;
 	FOR name IN SELECT * FROM unnest('{dates, crontab, onstart, days, hours, wdays, months, minutes}'::text[])
 	LOOP
@@ -564,7 +591,7 @@ BEGIN
       RAISE WARNING 'You used excess keys in params: %.', array_to_string(excess, ', ');
    END IF;
 
-   cron := _get_cron_from_attrs(params);
+   cron := _get_cron_from_attrs(params, NULL);
    commands := _get_commands_from_attrs(params);
    executor := _get_executor_from_attrs(params);
    node := 'master';
@@ -635,7 +662,7 @@ LANGUAGE plpgsql
 CREATE FUNCTION create_job(cron text, command text, node text DEFAULT NULL) RETURNS integer AS
 $BODY$
 BEGIN
-	RETURN create_job(json_build_object('cron', cron, 'command', command, 'node', node)::jsonb);
+	RETURN create_job(jsonb_build_object('cron', cron, 'command', command, 'node', node));
 END
 $BODY$
 LANGUAGE plpgsql
@@ -644,7 +671,7 @@ LANGUAGE plpgsql
 CREATE FUNCTION create_job(dt timestamp with time zone, command text, node text DEFAULT NULL) RETURNS integer AS
 $BODY$
 BEGIN
-	RETURN create_job(json_build_object('date', dt::text, 'command', command, 'node', node)::jsonb);
+	RETURN create_job(jsonb_build_object('date', dt::text, 'command', command, 'node', node));
 END
 $BODY$
 LANGUAGE plpgsql
@@ -653,7 +680,7 @@ LANGUAGE plpgsql
 CREATE FUNCTION create_job(dts timestamp with time zone[], command text, node text DEFAULT NULL) RETURNS integer AS
 $BODY$
 BEGIN
-	RETURN create_job(json_build_object('dates', array_to_json(dts), 'command', command, 'node', node)::jsonb);
+	RETURN create_job(jsonb_build_object('dates', array_to_json(dts), 'command', command, 'node', node));
 END
 $BODY$
 LANGUAGE plpgsql
@@ -662,7 +689,7 @@ LANGUAGE plpgsql
 CREATE FUNCTION create_job(cron text, commands text[], node text DEFAULT NULL) RETURNS integer AS
 $BODY$
 BEGIN
-	RETURN create_job(json_build_object('cron', cron, 'commands', array_to_json(commands), 'node', node)::jsonb);
+	RETURN create_job(jsonb_build_object('cron', cron, 'commands', array_to_json(commands), 'node', node));
 END
 $BODY$
 LANGUAGE plpgsql
@@ -671,7 +698,7 @@ LANGUAGE plpgsql
 CREATE FUNCTION create_job(dt timestamp with time zone, commands text[], node text DEFAULT NULL) RETURNS integer AS
 $BODY$
 BEGIN
-	RETURN create_job(json_build_object('date', dt::text, 'commands', array_to_json(commands), 'node', node)::jsonb);
+	RETURN create_job(jsonb_build_object('date', dt::text, 'commands', array_to_json(commands), 'node', node));
 END
 $BODY$
 LANGUAGE plpgsql
@@ -680,7 +707,7 @@ LANGUAGE plpgsql
 CREATE FUNCTION create_job(dts timestamp with time zone[], commands text[], node text DEFAULT NULL) RETURNS integer AS
 $BODY$
 BEGIN
-	RETURN create_job(json_build_object('dates', array_to_json(dts), 'commands', array_to_json(commands), 'node', node)::jsonb);
+	RETURN create_job(jsonb_build_object('dates', array_to_json(dts), 'commands', array_to_json(commands), 'node', node));
 END
 $BODY$
 LANGUAGE plpgsql
@@ -711,7 +738,7 @@ BEGIN
 
    IF attrs?'cron' OR attrs?'date' OR attrs?'dates' OR attrs?'rule' THEN
       cmd := cmd || 'rule = ' ||
-        quote_literal(_get_cron_from_attrs(attrs)) || '::jsonb, ';
+        quote_literal(_get_cron_from_attrs(attrs, job.rule)) || '::jsonb, ';
    END IF;
 
    IF attrs?'command' OR attrs?'commands' THEN
@@ -796,6 +823,19 @@ $BODY$
 LANGUAGE plpgsql
    SECURITY DEFINER set search_path FROM CURRENT;
 
+CREATE FUNCTION set_job_attribute(jobId integer, name text, value jsonb) RETURNS boolean AS
+$BODY$
+BEGIN
+   IF name <> 'rule'  THEN
+      RAISE EXCEPTION 'key % cannot have a jsonb value. Only "rule" allowed', name;
+   END IF;
+
+   RETURN set_job_attributes(jobId, jsonb_build_object(name, value));
+END
+$BODY$
+LANGUAGE plpgsql
+   SECURITY DEFINER set search_path FROM CURRENT;
+
 CREATE FUNCTION set_job_attribute(jobId integer, name text, value anyarray) RETURNS boolean AS
 $BODY$
 BEGIN
@@ -803,7 +843,7 @@ BEGIN
       RAISE EXCEPTION 'key % cannot have an array value. Only dates, commands allowed', name;
    END IF;
 
-   RETURN set_job_attributes(jobId, json_build_object(name, array_to_json(value))::jsonb);
+   RETURN set_job_attributes(jobId, jsonb_build_object(name, array_to_json(value)));
 END
 $BODY$
 LANGUAGE plpgsql
@@ -815,9 +855,11 @@ DECLARE
    attrs jsonb;
 BEGIN
    IF name = 'dates' OR name = 'commands' THEN
-      attrs := json_build_object(name, array_to_json(value::text[]));
+      attrs := jsonb_build_object(name, array_to_json(value::text[]));
+   ELSIF name = 'rule' THEN
+      attrs := jsonb_build_object('rule', value::jsonb);
    ELSE
-      attrs := json_build_object(name, value);
+      attrs := jsonb_build_object(name, value);
    END IF;
    RETURN set_job_attributes(jobId, attrs);
 END
@@ -1344,7 +1386,7 @@ CREATE VIEW all_job_status AS
 		id, node, name, comments, at as run_after,
 		do_sql as query, params, depends_on, executor as run_as, owner,
 		attempt, resubmit_limit, postpone as max_wait_interval,
-		max_run_time as max_duration, submit_time,
+		max_run_time as max_duration, submit_time, canceled,
 		start_time, status as is_success, reason as error, done_time,
 		'done'::job_at_status_t status
 	FROM schedule.at_jobs_done 
@@ -1353,7 +1395,7 @@ CREATE VIEW all_job_status AS
 		id, node, name, comments, at as run_after,
 		do_sql as query, params, depends_on, executor as run_as, owner,
 		attempt, resubmit_limit, postpone as max_wait_interval,
-		max_run_time as max_duration, submit_time, start_time,
+		max_run_time as max_duration, submit_time, canceled, start_time,
 		NULL as is_success, NULL as error, NULL as done_time,
 		'processing'::job_at_status_t status
 	FROM ONLY schedule.at_jobs_process 
@@ -1362,7 +1404,7 @@ CREATE VIEW all_job_status AS
 		id, node, name, comments, at as run_after,
 		do_sql as query, params, depends_on, executor as run_as, owner,
 		attempt, resubmit_limit, postpone as max_wait_interval,
-		max_run_time as max_duration, submit_time, 
+		max_run_time as max_duration, submit_time, canceled,
 		NULL as start_time, NULL as is_success, NULL as error,
 		NULL as done_time,
 		'submitted'::job_at_status_t status

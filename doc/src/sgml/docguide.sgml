@@ -949,9 +949,9 @@ save_size.pdfjadetex = 15000
    <para>
     The installation instructions are also distributed as plain text,
     in case they are needed in a situation where better reading tools
-    are not available.  The <filename>INSTALL</filename> file
+    are not available. <!-- The <filename>INSTALL</filename> file
     corresponds to <xref linkend="installation">, with some minor
-    changes to account for the different context.  To recreate the
+    changes to account for the different context. --> To recreate the
     file, change to the directory <filename>doc/src/sgml</filename>
     and enter <userinput>make INSTALL</userinput>.
    </para>

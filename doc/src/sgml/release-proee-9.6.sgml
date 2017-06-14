@@ -1,0 +1,302 @@
+<!-- doc/src/sgml/release-proee-9.6.sgml -->
+<sect1 id="release-proee-9-6-3-1">
+  <title>&productname; 9.6.3.1</title>
+  <note>
+    <title>Release Date</title>
+    <simpara>2017-05-25</simpara>
+  </note>
+  <sect2>
+    <title>Overview</title>
+    <para>This release is based on <productname>Postgres Pro Enterprise</productname>
+      <link linkend="release-proee-9-6-2-1">9.6.2.1</link> and
+      <productname>Postgres Pro Standard</productname> <link linkend="release-pro-9-6-3-1">9.6.3.1</link>.</para>
+    <para>Major enhancements over <productname>Postgres Pro Enterprise</productname>
+      9.6.2.1 include:</para>
+    <itemizedlist>
+      <listitem>
+        <para>Updated
+          the <link linkend="app-pgprobackup"><application>pg_probackup</application></link>
+          backup manager to version 1.1.11. Command-line interface
+          has been changed.</para>
+      </listitem>
+      <listitem><para>Improved <application>multimaster</application>
+          extension:
+          <itemizedlist>
+            <listitem>
+              <para>Added support for savepoints.
+              </para>
+            </listitem>
+            <listitem>
+              <para>Extended support for <acronym>DDL</acronym> statements.
+              </para>
+            </listitem>
+          </itemizedlist>
+          </para>
+          <para>(See <xref linkend="multimaster">.)</para>
+      </listitem>
+      <listitem><para>Enabled support for multiple data types in RUM index,
+          such as <literal>int</literal>, <literal>bigint</literal>,
+          <literal>float</literal>, <literal>time</literal>, <literal>interval</literal>,
+          <literal>bytea</literal>, <literal>text</literal>,
+          and more. You can now store <literal>tsvector</literal> type together
+          with other types in a single index.
+          </para><para>(See <xref linkend="rum">.)</para>
+      </listitem>
+      <listitem><para>Improved autonomous transaction support:
+            <itemizedlist>
+            <listitem>
+              <para>Fixed handling of multixact IDs.
+              </para>
+            </listitem>
+            <listitem>
+              <para>Speeded up execution of autonomous transactions.
+              </para>
+            </listitem>
+          </itemizedlist>
+          </para><para>(See <xref linkend="atx">.)</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Migration to Version &productname; 9.6.3.1</title>
+
+    <para>A dump/restore using <xref linkend="app-pg-dumpall">, or
+        use of <xref linkend="pgupgrade">, is required for those
+          wishing to migrate data from any previous major release.</para>
+
+    <para>Dump/restore is necessary when migrating from <productname>PostgreSQL</productname>,
+      <productname>Postgres Pro Standard</productname>, or <productname>Postgres Pro Enterprise</productname> edition.</para>
+
+    <para>For upgrades from previous releases of <productname>Postgres Pro Enterprise</productname>, <productname>Postgres Pro Standard</productname>, or
+      PostgreSQL 9.6.x, some catalog changes should be applied.</para>
+    
+    <para>If you use binary packages, and your database is in the default
+      location, this upgrade should be performed automatically. If you've
+      created your database in
+      a non-default location, running <literal>initdb</literal> manually, you
+      should run the <literal>pgpro_upgrade</literal> script provided in this
+      distribution.
+    </para>
+
+    <para>Before running the script, you should stop the <literal>postgres</literal> service.
+      The script should be run on behalf of the user owning the database
+      (typically <literal>postgres</literal>), and the <envar>PGDATA</envar> environment variable should be
+      set to the directory where the database resides.
+    </para>
+  </sect2>
+</sect1>
+<sect1 id="release-proee-9-6-2-1">
+  <title>&productname; 9.6.2.1</title>
+  <note>
+    <title>Release Date</title>
+    <simpara>2017-03-24</simpara>
+  </note>
+  <sect2>
+    <title>Overview</title>
+    <para>This release is based on <productname>Postgres Pro Enterprise</productname>
+      <link linkend="release-proee-9-6-1-2">9.6.1.2</link> and
+      <productname>Postgres Pro Standard</productname> <link linkend="release-pro-9-6-2-1">9.6.2.1</link>.</para>
+    <para>Major enhancements over <productname>Postgres Pro Enterprise</productname>
+      9.6.1.2 include:</para>
+    <itemizedlist>
+      <listitem><para>Added <application>multimaster</application>
+          extension. 
+          </para><para>This extension enables you to set up
+          shared-nothing clusters with synchronous multi-master
+          replication. Such clusters provide <acronym>OLTP</acronym>
+          scalability for read transactions, ensure fault tolerance and
+          automatic node recovery, and enable <productname>&productname;</productname> online
+          upgrades. (See <xref linkend="multimaster">.)</para>
+      </listitem>
+      <listitem><para>Added failover algorithm for <application>libpq</application> connections.</para></listitem>
+      <listitem><para>Added <application>aqo</application> extension for
+          adaptive query optimization. 
+          </para><para>Based on the collected statistics on
+          query execution, <application>aqo</application> improves cardinality
+          estimation, which can speed up subsequent
+          queries. (See <xref linkend="aqo">.)</para></listitem>
+      <listitem><para>Implemented declarative syntax for
+          partitioning. </para><para>The <application>pg_pathman</application> extension
+          can now perform range and hash partitioning as part of
+          the <command>CREATE TABLE</command> query. Partition management can
+          be done with various forms of
+          <command>ALTER
+          TABLE</command>. (See <xref linkend="pg-pathman-using-declarative-syntax">.)</para>
+      </listitem>
+      <listitem><para>Added <application>mamonsu</application> monitoring
+          service, which is implemented as a <application>Zabbix</application>
+          agent. </para>
+          <para>Using <application>mamonsu</application>, you can monitor
+          multiple <productname>PostgreSQL</productname> and system metrics
+          and visualize the collected data in comprehensive graphs. If
+          required, you can extend <application>mamonsu</application> with
+          your own custom plugins. (See <xref linkend="mamonsu">.)</para>
+      </listitem>
+      <listitem><para>Added <application>pg_wait_sampling</application>
+          extension for sampling-based statistics of wait events. 
+          </para><para>With this
+          extension, you can get an insight into the server activity,
+          including the current wait events for all processes and background
+          workers. (See <xref linkend="pg-wait-sampling">.)</para>
+      </listitem>
+      <listitem><para>Added support for timestamp output in
+      the <application>pg_xlogdump</application> application.</para></listitem>
+      <listitem>
+        <para>Added support for one-time background jobs in
+          <application>pgpro_scheduler</application>. </para><para>You can now submit jobs
+          for immediate or delayed one-time execution in parallel with the
+          scheduled jobs. (See <xref linkend="pgpro-scheduler">.)</para>
+      </listitem>
+      <listitem>
+        <para>Updated
+          the <link linkend="app-pgprobackup"><application>pg_probackup</application></link>
+          backup manager to version 1.1.0. This release adds cleanup and
+          portability fixes.</para>
+      </listitem>
+      <listitem>
+        <para>Improved compressed tablespaces:</para>
+        <itemizedlist>
+          <listitem>
+            <para>Added function <function>cfs_garbage_ratio</function>, which
+              returns garbage ratio for a given relation.</para></listitem>
+          <listitem><para>Improved stability on the server hard reset or
+              process killed by <literal>SIGTERM</literal>.</para></listitem>
+        </itemizedlist>
+      </listitem>
+      <listitem>
+        <para>Bug Fixes:</para>
+        <itemizedlist>
+          <listitem>
+            <para>Added a fix for WAL optimization on creating indexes.</para>
+          </listitem>
+          <listitem>
+            <para>Fixed incorrect <literal>xmin</literal>,
+              <literal>xmax</literal> values in autonomous
+              transactions.</para>
+          </listitem>
+          <listitem>
+            <para>Fixed <function>submit_job</function> and
+              <function>set_job_attribute</function> <application>pgpro_scheduler</application>
+              functions on Microsoft Windows systems.</para>
+          </listitem>
+          <listitem>
+            <para>Resolved the issue of data corruption in compressed
+              tablespaces.</para></listitem>
+        </itemizedlist>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Migration to Version &productname; 9.6.2.1</title>
+
+    <para>A dump/restore using <xref linkend="app-pg-dumpall">, or
+        use of <xref linkend="pgupgrade">, is required for those
+          wishing to migrate data from any previous major release.</para>
+
+    <para>Dump/restore is necessary when migrating from <productname>PostgreSQL</productname>
+      or <productname>Postgres Pro Standard</productname> edition.</para>
+
+    <para>For upgrades from previous releases of <productname>Postgres Pro Standard</productname> or
+      PostgreSQL 9.6.x, some catalog changes should be applied.</para>
+    
+    <para>If you use binary packages, and your database is in the default
+      location, this upgrade should be performed automatically. If you've
+      created your database in
+      a non-default location, running <literal>initdb</literal> manually, you
+      should run the <literal>pgpro_upgrade</literal> script provided in this
+      distribution.
+    </para>
+
+    <para>Before running the script, you should stop the <literal>postgres</literal> service.
+      The script should be run on behalf of the user owning the database
+      (typically <literal>postgres</literal>), and the <envar>PGDATA</envar> environment variable should be
+      set to the directory where the database resides.
+    </para>
+  </sect2>
+</sect1>
+<sect1 id="release-proee-9-6-1-2">
+  <title>&productname; 9.6.1.2</title>
+  <note>
+    <title>Release Date</title>
+    <simpara>2016-12-15</simpara>
+  </note>
+  <sect2>
+    <title>Overview</title>
+    <para>This release is based on <productname>Postgres Pro</productname>
+      <link linkend="release-pro-9-6-1-2">9.6.1.2</link></para>
+    <para>Major enhancements over <productname>Postgres Pro</productname>
+      9.6.1.2 include:</para>
+    <itemizedlist>
+    <listitem>
+    <para>Added k-nearest neighbors algorithm (KNN) for SP-GiST and B-tree
+    (See <xref linkend="spgist">)</para>
+    </listitem>
+    <listitem>
+    <para>Added RUM index, based on GIN, as separate module (See <xref linkend="rum">)</para>
+    </listitem>
+    <listitem>
+    <para>WAL size has been reduced on <command>CREATE INDEX</command> operation in the GiST, GIN, SP-GiST</para>
+    </listitem>
+    <listitem>
+    <para>Added timeout for idle sessions on the server side (See <xref linkend="guc-idle-session-timeout">)</para>
+    </listitem>
+    <listitem>
+    <para>Added SHA-2 algorithm for password encryption (See <xref linkend="auth-password">)</para>
+    </listitem>
+    <listitem>
+    <para>Added page level compression (CFS) (See <xref linkend="cfs">)</para>
+    </listitem>
+    <listitem>
+    <para>Added support of autonomous transactions (See <xref linkend="atx">)</para>
+    </listitem>
+    <listitem>
+    <para>Added new optional background worker to schedule tasks by rules (See <xref linkend="pgpro-scheduler">)</para>
+    </listitem>
+    <listitem>
+    <para>Added support for relocatable tables (See <xref linkend="pgtransfer">)</para>
+    </listitem>
+    <listitem>
+    <para>Extension <application>pg_hint_plan</application> has been added (See <xref linkend="pg-hint-plan">)</para>
+    </listitem>
+    <listitem>
+    <para>Transaction IDs on 64-bit platforms use 64-bit data type</para>
+    </listitem>
+    <listitem>
+    <para>Lazy placement of temporary tables on disk</para>
+    </listitem>
+    <listitem>
+    <para>Consistent read on slaves (wait for WAL apply, see <xref linkend="sql-waitlsn">)</para>
+    </listitem>
+    <listitem>
+    <para>Utility <application>pg_repack</application> has been added (See <xref linkend="app-pgrepack">)</para>
+    </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Migration to Version &productname; 9.6.1.2</title>
+
+    <para>A dump/restore using <xref linkend="app-pg-dumpall">, or
+        use of <xref linkend="pgupgrade">, is required for those
+          wishing to migrate data from any previous major release.</para>
+
+    <para>Dump/restore is necessary when migrating from <productname>PostgreSQL</productname>
+      or <productname>Postgres Pro Standard</productname> edition.</para>
+
+    <para>For upgrades from previous releases of <productname>Postgres Pro Standard</productname> or from
+      <productname>PostgreSQL</productname> 9.6.x, some catalog changes should be applied.</para>
+    
+    <para>If you use binary packages, and your database is in the default
+      location, this upgrade should be performed automatically. If you've
+      compiled <productname>Postgres Pro</productname> from source or create your database in
+      non-default location, running <literal>initdb</literal> manually, you
+      should run <literal>pgpro_upgrade</literal> script provided in this
+      distribution.
+    </para>
+
+    <para>Before running script, you should stop postgres service. Script
+      should be run as user, owning the database (typically postgres) and
+      PGDATA environment variable should be set to the directory where
+      database resides.
+    </para>
+  </sect2>
+</sect1>

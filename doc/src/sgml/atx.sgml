@@ -1,102 +1,102 @@
 <!-- doc/src/sgml/atx.sgml -->
 
 <chapter id="atx">
- <title>Autonomous transactions</title>
+ <title>Autonomous Transactions</title>
 
 <sect1 id="atx-overview">
-  <title>Overview of autonomous transactions</title>
+  <title>Overview</title>
 
 <para>
 &productname; supports nested transactions: they are rarely explicitly used by programmer and mostly used for error handling and stored
-procedures. It is possible to rollback subtransaction without affecting parent transaction. But commit of subtraction is delayed until
+procedures. It is possible to rollback a subtransaction without affecting the parent transaction. But commit of a subtraction is delayed until
 commit of parent transaction.
 </para>
 <para>
-But in some cases application needs to run several independent transactions in one session.
-<quote>Autonomous Subtransactions</quote> (in short <acronym>AST</acronym>) denotes the capability of a single session
-to run multiple independent transactions, as if multiple different sessions were executing each transaction.
-</para>
-<para>
-Autonomous transactions are needed mostly for implementing audits, when the fact of performing audit should be reported regardless
-status of audit itself: whether it was successfully completed or not.
-Autonomous transactions are widely used in Oracle PL-SQL, so porting such procedures to &productname; is problematic without autonomous transaction support.
+However, in some cases applications need to run several independent transactions inside a single transaction &mdash; <quote>autonomous transactions</quote>. Autonomous transactions are needed mostly for implementing audits, when the fact of performing an audit should be reported regardless of the
+status of the audit itself: whether it was successfully completed or not.
 </para>
 
 </sect1>
 
 <sect1><title>Behavior</title>
 <para>
-An <acronym>AST</acronym> can happen only inside another transaction.
-Inside an existing transaction (call it T0), the user can decide to start a subtransaction. Then T0 is paused and pushed in an <acronym>AST</acronym> stack, and a new transaction (call it T1) is started.
+An autonomous transaction can happen only inside another transaction.
+Inside an existing transaction (call it T0), the user can decide to start an autonomous transaction. Then T0 is paused and pushed in an autonomous transaction stack, and a new transaction (call it T1) is started.
 </para>
 <para>
-At some point in the future the user can commit the subtransaction; after T1 is committed then T0 is popped from the <acronym>AST</acronym> stack and resumed.
-The user can also decide to <command>COMMIT</command> the parent transaction T0, in which case T1 is committed, then T0 is popped from the <acronym>AST</acronym> stack and then committed.
+At some point in the future the user can commit the autonomous transaction; after T1 is committed then T0 is popped from the autonomous transaction stack and resumed.
+The user can also decide to <command>COMMIT</command> the parent transaction T0, in which case T1 is committed, then T0 is popped from the autonomous transaction stack and then committed.
 </para>
 <para>
 All the transactions happen synchronously; at any time only one transaction can be active, while in the stack there are zero (or more) paused transactions in the stack.
 All the possible combinations of <command>COMMIT</command> / <command>ROLLBACK</command> for T0 and T1 can happen;
 for instance, it is possible to COMMIT T1 and ROLLBACK T0.
-It is possible to nest subtransactions, up to a global resource limit (e.g. the <acronym>AST</acronym> stack size) which can be set on the server.
+It is possible to nest autonomous transactions, up to a global resource limit (e.g. the autonomous transaction stack size) which can be set on the server.
 </para>
 
 </sect1>
 
-<sect1><title>Example</title>
+<sect1><title>Examples</title>
 
 <para>
-The following figure describes an example where a transaction executes a subtransaction. A continuous line denotes an active transaction, while a dotted line denotes a transaction which has been paused and pushed in the <acronym>AST</acronym> stack. Time flows downwards.
+This example illustrates how an autonomous transaction is executed. A continuous line denotes an active transaction, while a dotted line denotes a transaction which has been paused and pushed in the autonomous transaction stack. Time flows downwards.
 </para>
 
 <programlisting>
-BEGIN; -- start ordinary tx T0
+BEGIN; -- starts ordinary transaction T0
 |
 INSERT INTO t VALUES (1);
 :\
-: BEGIN AUTONOMOUS TRANSACTION; -- start AST tx T1, pushes T0 into stack
+: BEGIN AUTONOMOUS TRANSACTION; -- starts autonomous transaction 
+: |                             -- T1, pushes T0 into stack
 : |
 : INSERT INTO t VALUES (2);
 : |
-: COMMIT AUTONOMOUS TRANSACTION / ROLLBACK AUTONOMOUS TRANSACTION; -- ends tx T1, pops tx T0 from stack
+: COMMIT AUTONOMOUS TRANSACTION / ROLLBACK AUTONOMOUS TRANSACTION; 
+: |                             -- ends autonomous transaction 
+: |                             -- T1, pops transaction T0 from stack
 :/
-COMMIT / ROLLBACK; -- ends tx T0
+COMMIT / ROLLBACK;              -- ends transaction T0
 </programlisting>
 
 <para>
-Depending on the two choices between <command>COMMIT</command> and <command>ROLLBACK</command> we can get 4 different outputs from:
+Depending on the two choices between <command>COMMIT</command> and <command>ROLLBACK</command>, we can get four different outputs from:
 
 <programlisting>
 SELECT sum(x) from t;
 </programlisting>
 </para>
 
-</sect1>
-<sect1><title>Example 2 (more than one subtransaction)</title>
-
 <para>
-The parent transaction can have more than one subtransaction, just by repeating the application of the push/pop cycle.
+The parent transaction can have more than one autonomous transaction if the push/pop cycle is repeated.
 </para>
 
 <programlisting>
-BEGIN; -- start ordinary tx T0
+BEGIN;                          -- starts ordinary transaction T0
 |
 INSERT INTO t VALUES (1);
 :\
-: BEGIN AUTONOMOUS TRANSACTION; -- start AST tx T1, pushes T0 into stack
+: BEGIN AUTONOMOUS TRANSACTION; -- starts autonomous transaction
+: |                             -- T1, pushes T0 into stack
 : |
 : INSERT INTO t VALUES (2);
 : |
-: COMMIT AUTONOMOUS TRANSACTION / ROLLBACK AUTONOMOUS TRANSACTION; -- ends tx T1, pops tx T0 from stack
+: COMMIT AUTONOMOUS TRANSACTION / ROLLBACK AUTONOMOUS TRANSACTION; 
+: |                             -- ends autonomous transaction 
+: |                             -- T1, pops T0 from stack
 :/
 |
 :\
-: BEGIN AUTONOMOUS TRANSACTION; -- start AST tx T2, pushes T0 into stack
+: BEGIN AUTONOMOUS TRANSACTION; -- starts autonomous transaction 
+: |                             -- T2, pushes T0 into stack
 : |
 : INSERT INTO t VALUES (4);
 : |
-: COMMIT AUTONOMOUS TRANSACTION / ROLLBACK AUTONOMOUS TRANSACTION; -- ends tx T2, pops tx T0 from stack
+: COMMIT AUTONOMOUS TRANSACTION / ROLLBACK AUTONOMOUS TRANSACTION; 
+: |                             -- ends autonomous transaction 
+: |                             -- T2, pops T0 from stack
 :/
-COMMIT / ROLLBACK; -- ends tx T0
+COMMIT / ROLLBACK;              -- ends transaction T0
 </programlisting>
 
 </sect1>
@@ -106,19 +106,19 @@ COMMIT / ROLLBACK; -- ends tx T0
 <para>
 Visibility rules work as in the case of independent transactions executed via <literal>dblink</literal>.
 T1 does not see the effects of T0, because the latter has not been committed yet. T0 might see the effects of T1, depending on its own transaction isolation mode.
-In case of Read Committed isolation level the parent transaction will see changes made by autonomous subtransaction.
-But in case of Repeatable Read isolation level the parent transaction will not see changes made by autonomous subtransaction.
+In case of Read Committed isolation level the parent transaction will see changes made by autonomous transactions.
+But in case of Repeatable Read isolation level the parent transaction will not see changes made by autonomous transactions.
 </para>
 
 <para>
-Now single-session deadlocks become possible, because an <acronym>AST</acronym> can become entangled with one of the paused transactions in it's session.
+Now single-session deadlocks become possible, because an autonomous transaction can become entangled with one of the paused transactions in its session.
 Autonomous transaction T1 is assumed to depend on parent transaction T0 and if it attempts to obtain any resource locked by T0, then
 deadlock is reported.
 </para>
 
 </sect1>
 
-<sect1><title>SQL grammar extension for autonomous transactions</title>
+<sect1><title>SQL Grammar Extension for Autonomous Transactions</title>
 
 <para>
 &productname; <literal>BEGIN</literal>/<literal>END</literal> transaction statements are extended by optional keyword <literal>AUTONOMOUS</literal>:
@@ -131,16 +131,16 @@ deadlock is reported.
 
 <para>
 Specifying <literal>AUTONOMOUS</literal> keyword in <literal>END TRANSACTION</literal> clause is optional.
-It is possible to have several nesting levels of autonomous transactions, but top level transaction can not be autonomous.
+It is possible to have several nesting levels of autonomous transactions, but top level transaction cannot be autonomous.
 </para>
 
 </sect1>
 
-<sect1><title>PL/pgSQL grammar extension for autonomous transactions</title>
+<sect1><title>PL/pgSQL Grammar Extension for Autonomous Transactions</title>
 
 <para>
 Block construction in PL/pgSQL is extended by optional <literal>autonomous</literal> keyword.
-It is possible to treat all function body as autonomous transaction:
+It is possible to treat the whole function body as an autonomous transaction:
 </para>
 
 <programlisting>
@@ -178,11 +178,11 @@ When an error is caught by an <literal>EXCEPTION</literal> clause, the local var
 
 </sect1>
 
-<sect1><title>PL/Python extension for autonomous transactions</title>
+<sect1><title>PL/Python Extension for Autonomous Transactions</title>
 
 <para>
 In addition to <varname>subtransaction</varname> method, PL/Python module provides new <varname>autonomous</varname> method
-which can be used in <varname>WITH</varname> clause to start autonomous transaction:
+which can be used in <varname>WITH</varname> clause to start an autonomous transaction:
 </para>
 
 <programlisting>

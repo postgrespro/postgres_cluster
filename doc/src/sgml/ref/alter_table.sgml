@@ -22,7 +22,9 @@ doc/src/sgml/ref/alter_table.sgml
  <refsynopsisdiv>
 <synopsis>
 ALTER TABLE [ IF EXISTS ] [ ONLY ] <replaceable class="PARAMETER">name</replaceable> [ * ]
-    <replaceable class="PARAMETER">action</replaceable> [, ... ]
+    <replaceable class="PARAMETER">action</replaceable> [, ... ] 
+ALTER TABLE [ IF EXISTS ] [ ONLY ] <replaceable class="PARAMETER">name</replaceable> [ * ]
+    <replaceable class="PARAMETER">partitioning_action</replaceable>
 ALTER TABLE [ IF EXISTS ] [ ONLY ] <replaceable class="PARAMETER">name</replaceable> [ * ]
     RENAME [ COLUMN ] <replaceable class="PARAMETER">column_name</replaceable> TO <replaceable class="PARAMETER">new_column_name</replaceable>
 ALTER TABLE [ IF EXISTS ] [ ONLY ] <replaceable class="PARAMETER">name</replaceable> [ * ]
@@ -78,6 +80,21 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     NOT OF
     OWNER TO { <replaceable class="PARAMETER">new_owner</replaceable> | CURRENT_USER | SESSION_USER }
     REPLICA IDENTITY { DEFAULT | USING INDEX <replaceable class="PARAMETER">index_name</replaceable> | FULL | NOTHING }
+
+<phrase>The following actions are only available if you have <productname>&productname;</productname> installed with <filename>pg_pathman</filename> enabled:</phrase>
+
+    ADD PARTITION <replaceable class="PARAMETER">partition_name</replaceable> VALUES LESS THAN ( <replaceable class="PARAMETER">value</replaceable> ) [ TABLESPACE <replaceable class="PARAMETER">tablespace_name</replaceable> ]
+    DROP PARTITION <replaceable class="PARAMETER">partition_name</replaceable>
+    SPLIT PARTITION <replaceable class="PARAMETER">partition_name</replaceable> AT ( <replaceable class="PARAMETER">value</replaceable> ) [ INTO ( PARTITION <replaceable class="PARAMETER">left_partition</replaceable> [ TABLESPACE <replaceable class="PARAMETER">tablespace_name1</replaceable> ], PARTITION <replaceable class="PARAMETER">right_partition</replaceable> [ TABLESPACE <replaceable class="PARAMETER">tablespace_name2</replaceable> ] ) ]
+    MERGE PARTITIONS <replaceable class="PARAMETER">partition_name</replaceable> [, ... ] INTO PARTITION <replaceable class="PARAMETER">partition_name</replaceable> [ TABLESPACE <replaceable class="PARAMETER">tablespace_name</replaceable> ]
+    RENAME PARTITION <replaceable class="PARAMETER">partition_name</replaceable> TO <replaceable class="PARAMETER">new_partition_name</replaceable>
+    MOVE PARTITION <replaceable class="PARAMETER">partition_name</replaceable> [ TABLESPACE <replaceable class="PARAMETER">tablespace_name</replaceable> ]
+    SET INTERVAL ( <replaceable class="PARAMETER">value</replaceable> )
+
+<phrase><replaceable class="PARAMETER">partitioning_action</replaceable> is one of:</phrase>
+
+    PARTITION BY HASH ( <replaceable class="PARAMETER">partitioning_key</replaceable> ) PARTITIONS ( <replaceable class="PARAMETER">partition_count</replaceable> ) [ CONCURRENTLY ]
+    PARTITION BY RANGE ( <replaceable class="PARAMETER">partitioning_key</replaceable> ) START FROM ( <replaceable class="PARAMETER">start_value</replaceable> ) INTERVAL ( <replaceable class="PARAMETER">interval</replaceable> ) [ CONCURRENTLY ]
 
 <phrase>and <replaceable class="PARAMETER">table_constraint_using_index</replaceable> is:</phrase>
 
@@ -717,13 +734,172 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
     </listitem>
    </varlistentry>
 
+   <varlistentry>
+    <term><literal>ADD PARTITION <replaceable class="PARAMETER">partition_name</replaceable></literal></term>
+    <listitem><para>This form adds a new partition to a range-partitioned table.
+    </para>
+    </listitem>
+    </varlistentry>
+
+   <varlistentry>
+    <term><literal>VALUES LESS THAN (<replaceable class="PARAMETER">value</replaceable>)</literal></term>
+    <listitem>
+     <para>
+      This clause specifies the range of values to include into a single partition. The specified <replaceable>value</replaceable> is not included into the created partition.
+     </para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>TABLESPACE <replaceable class="PARAMETER">tablespace_name</replaceable></literal></term>
+    <listitem>
+     <para>
+      This clause specifies the name of the tablespace to which the created partition will belong.
+      If not specified, <xref linkend="guc-default-tablespace"> is consulted.
+     </para>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+    <term><literal>DROP PARTITION <replaceable class="PARAMETER">partition_name</replaceable></literal></term>
+    <listitem><para>This form deletes the specified partition.
+    </para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>SPLIT PARTITION <replaceable class="PARAMETER">partition_name</replaceable></literal></term>
+    <listitem><para>This form separates a range partition into two based on the value provided in the <literal>AT</literal> clause.
+    </para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>AT (<replaceable class="PARAMETER">value</replaceable>)</literal></term>
+    <listitem><para>This clause specifies the value by which to split a range partition. The provided value serves as the lower bound of the right partition.
+    </para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>INTO</literal></term>
+    <listitem><para>This clause specifies one or more target partitions. Use this clause when performing <literal>SPLIT</literal> and <literal>MERGE</literal> actions. If you omit this clause when splitting partitions, the left partition will use the parent partion name, and the right partition name will be generated automatically.
+    </para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>MERGE PARTITIONS <replaceable class="PARAMETER">partition_name</replaceable> [, ... ]</literal></term>
+    <listitem><para>This form merges two or more adjacent range partitions into one. 
+    </para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>RENAME PARTITION <replaceable class="PARAMETER">partition_name</replaceable></literal></term>
+    <listitem><para>This form renames a partition. The new partition name must be specified in the <literal>TO</literal> clause.
+    </para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>TO <replaceable class="PARAMETER">new_partition_name</replaceable></literal></term>
+    <listitem><para>This clause specifies a new partition name.
+    </para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>MOVE PARTITION <replaceable class="PARAMETER">partition_name</replaceable></literal></term>
+    <listitem><para>This form moves the partition to a different tablespace specified in the <literal>TABLESPACE</literal> clause.
+    </para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>SET INTERVAL (<replaceable class="PARAMETER">value</replaceable>)</literal></term>
+    <listitem><para>This form specifies the partitioning interval to use when creating new partitions. This form only works for already partitioned tables.
+    </para>
+    </listitem>
+    </varlistentry>
+
   </variablelist>
   </para>
 
+  <para><emphasis role="strong">Partitioning Actions</emphasis></para>
+  <para>You must have <productname>&productname;</productname> installed with <filename>pg_pathman</filename> enabled to use this syntax for creating and managing table partitions.</para>
+    <variablelist>
+
+   <varlistentry>
+    <term><literal>PARTITION BY</literal></term>
+    <listitem>
+     <para>
+      This form splits the created table into partitions based on the specified partitioning options.
+      The supported partitioning options are:</para>
+
+      <variablelist>
+       <varlistentry>
+        <term><literal>HASH</literal></term>
+        <listitem>
+         <para>
+          Split the table into partitions based on the hash function.
+         </para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>RANGE</literal></term>
+        <listitem>
+         <para>
+          Split the table into partitions by range.
+         </para>
+        </listitem>
+       </varlistentry>
+
+      </variablelist>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+    <term><literal>PARTITIONS <replaceable class="PARAMETER">partition_count</replaceable></literal></term>
+    <listitem>
+     <para>
+      Specify the number of partitions to create with hash partitioning.
+     </para>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+    <term><literal>START FROM (<replaceable class="PARAMETER">start_value</replaceable>)</literal></term>
+    <listitem>
+    <para>
+    Specify the lower bound of the first partition to create. The <replaceable>start_value</replaceable> must be not greater than the smallest value in the partitioning key column. Otherwise, <filename>pg_pathman</filename> returns the corresponding error.
+    </para>
+    </listitem>
+    </varlistentry>
+
+   <varlistentry>
+    <term><literal>INTERVAL <replaceable class="PARAMETER">interval</replaceable></literal></term>
+    <listitem>
+     <para>
+      Specify the interval for range partitioning. When you insert data outside of the existing data range, all new partitions will be created with this interval. If the <literal>INTERVAL</literal> is not specified, <filename>pg_pathman</filename> cannot create new partitions automatically. You can later use the <literal>SET INTERVAL</literal> form to enable automatic partition creation.
+     </para>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+    <term><literal>CONCURRENTLY</literal></term>
+    <listitem><para>Create empty partitions and then migrate the data to partitions in batches of 1000 rows to avoid locks.
+    </para>
+    </listitem>
+    </varlistentry>
+
+    </variablelist>
+
   <para>
    All the forms of ALTER TABLE that act on a single table, except
-   <literal>RENAME</literal>, and <literal>SET SCHEMA</literal>
-   can be combined into a list of multiple alterations to applied together.
+   <literal>RENAME</literal>, <literal>PARTITION BY</literal>, and <literal>SET SCHEMA</literal>,
+   can be combined into a list of multiple alterations to be applied together.
    For example, it
    is possible to add several columns and/or alter the type of several
    columns in a single command.  This is particularly useful with large
@@ -745,6 +921,7 @@ ALTER TABLE ALL IN TABLESPACE <replaceable class="PARAMETER">name</replaceable> 
    clause, you must also have <literal>USAGE</literal> privilege on the data
    type.
   </para>
+
  </refsect1>
 
  <refsect1>

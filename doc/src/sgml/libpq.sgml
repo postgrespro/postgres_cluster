@@ -892,7 +892,7 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
         There can be more than one <literal>host</literal> parameter in
         the connection string. In this case these hosts would be considered
         alternate entries into same database and if connection to first one
-        fails, the second would be attemped, and so on. This can be used
+        fails, the second would be attempted, and so on. This can be used
         for high availability clusters or for load balancing. See the
         <xref linkend="libpq-connect-hostorder"> parameter. This feature
         works for TCP/IP host names only.
@@ -972,17 +972,17 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
         specified in the <xref linkend="libpq-connect-host"> parameter.
        </para>
        <para>
-        If the value of this argument is <literal>sequential</literal> (the
-        default) connections to the hosts will be attempted in the order in
+        If the value of this argument is <literal>sequential</literal>
+        (default), connections to the hosts will be attempted in the order in
         which they are specified.
        </para>
        <para>
         If the value is <literal>random</literal>, the host to connect to
-        will be randomly picked from the list. It allows load balacing between
+        will be randomly picked from the list. It allows load balancing between
         several cluster nodes. However, PostgreSQL doesn't currently support
         multimaster clusters. So, without the use of third-party products,
         only read-only connections can take advantage from
-        load-balancing. See <xref linkend="libpq-connect-target-server-type">
+        load-balancing. See <xref linkend="libpq-connect-target-server-type">.
        </para>
        </listitem>
       </varlistentry>
@@ -1057,7 +1057,7 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
       <term><literal>failover_timeout</literal></term>
       <listitem>
       <para>
-       Maximum time to cyclically retry all the hosts in the connection string.
+       Maximum time to cyclically retry all the hosts in the connection string
        (as decimal integer number of seconds). If not specified, then
        hosts are tried just once.
       </para>
@@ -7022,6 +7022,9 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
       </indexterm>
       <envar>PGREQUIRESSL</envar> behaves the same as the <xref
       linkend="libpq-connect-requiressl"> connection parameter.
+      This environment variable is deprecated in favor of the
+      <envar>PGSSLMODE</envar> variable; setting both variables suppresses the
+      effect of this one.
      </para>
     </listitem>
 
@@ -7308,7 +7311,7 @@ user=admin
   </para>
   <para>
   If more than one <literal>host</literal> option is present in the same
-  section of the service file, it is interpeted as alternate servers for
+  section of the service file, it is interpreted as alternate servers for
   failover or load-balancing. See  <xref linkend="libpq-connect-host">
   option in the connection string.
   </para>

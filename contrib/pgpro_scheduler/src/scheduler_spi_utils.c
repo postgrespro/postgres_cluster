@@ -53,7 +53,6 @@ void destroy_spi_data(spi_response_t *d)
 	if(d->error) pfree(d->error);
 	if(d->n_rows > 0)
 	{
-		if(d->types) pfree(d->types);
 		for(i=0; i < d->n_rows; i++)
 		{
 			for(j=0; j < d->n_attrs; j++)
@@ -63,36 +62,42 @@ void destroy_spi_data(spi_response_t *d)
 			}
 			pfree(d->rows[i]);
 		}
-		if(d->ref) pfree(d->ref);
 	}
+	if(d->types) pfree(d->types);
+	if(d->ref) pfree(d->ref);
 	pfree(d);
 }
 
-spi_response_t *__error_spi_resp(int ret, char *error)
+spi_response_t *__error_spi_resp(MemoryContext ctx, int ret, char *error)
 {
 	spi_response_t *r;
 
-	r = worker_alloc(sizeof(spi_response_t));
+	r = MemoryContextAlloc(ctx, sizeof(spi_response_t));
+	if(!r) return NULL;
+
 	r->n_rows = 0;
 	r->n_attrs = 0;
 	r->retval = ret;
 	r->types = NULL;
 	r->rows = NULL;
-	r->error = _copy_string(error);
+	r->ref = NULL;
+	r->error = _mcopy_string(ctx, error);
+	if(!(r->error)) return NULL;
 
 	return r;
 }
 
-spi_response_t *__copy_spi_data(int ret, int  n)
+spi_response_t *__copy_spi_data(MemoryContext ctx, int ret, int  n)
 {
 	spi_response_t *r;
-	MemoryContext old;
 	int i, j;
 	Datum dat;
 	bool is_null;
+	MemoryContext old;
 
-
-	r = worker_alloc(sizeof(spi_response_t));
+	old = MemoryContextSwitchTo(ctx);
+	r = MemoryContextAlloc(ctx, sizeof(spi_response_t));
+	if(!r)  return NULL;
 	r->retval = ret;
 	r->error = NULL;
 
@@ -108,11 +113,12 @@ spi_response_t *__copy_spi_data(int ret, int  n)
 	}
 	r->n_rows = n;
 	r->n_attrs = SPI_tuptable->tupdesc->natts;
-	r->types = worker_alloc(sizeof(Oid) * r->n_attrs);
-	r->rows = worker_alloc(sizeof(spi_val_t *) * n);
-	r->ref = worker_alloc(sizeof(bool) * r->n_attrs);
-
-	old  = switch_to_worker_context();
+	r->types = MemoryContextAlloc(ctx, sizeof(Oid) * r->n_attrs);
+	if(!r->types) return NULL;
+	r->rows = MemoryContextAlloc(ctx, sizeof(spi_val_t *) * n);
+	if(!r->rows) return NULL;
+	r->ref = MemoryContextAlloc(ctx, sizeof(bool) * r->n_attrs);
+	if(!r->ref) return NULL;
 
 	for(i=0; i < r->n_attrs; i++)
 	{
@@ -122,7 +128,8 @@ spi_response_t *__copy_spi_data(int ret, int  n)
 
 	for(i=0; i < n; i++)
 	{
-		r->rows[i] = worker_alloc(sizeof(spi_val_t) * r->n_attrs);
+		r->rows[i] = MemoryContextAlloc(ctx, sizeof(spi_val_t) * r->n_attrs);
+		if(!(r->rows[i])) return NULL;
 		for(j=0; j < r->n_attrs; j++)
 		{
 			dat = SPI_getbinval(SPI_tuptable->vals[i],
@@ -146,12 +153,29 @@ spi_response_t *__copy_spi_data(int ret, int  n)
 	return r;
 }
 
-char *_copy_string(char *str)
+char *_mcopy_string(MemoryContext ctx, char *str)
 {
 	int len = strlen(str);
 	char *cpy;
 
-	cpy = worker_alloc(sizeof(char) * (len+1));
+	if(!ctx) ctx = SchedulerWorkerContext;
+
+	cpy = MemoryContextAlloc(ctx, sizeof(char) * (len+1));
+	if(!cpy) return NULL;
+
+	memcpy(cpy, str, len);
+	cpy[len] = 0;
+
+	return cpy;
+}
+
+char *my_copy_string(char *str)
+{
+	int len = strlen(str);
+	char *cpy;
+
+	cpy = palloc(sizeof(char) * (len+1));
+	if(!cpy) return NULL;
 
 	memcpy(cpy, str, len);
 	cpy[len] = 0;
@@ -197,7 +221,7 @@ bool get_boolean_from_spi(spi_response_t *r, int row_n, int pos, bool def)
 	return DatumGetBool(datum);
 }
 
-int64 *get_int64array_from_spi(spi_response_t *r, int row_n, int pos, int *N)
+int64 *get_int64array_from_spi(MemoryContext mem, spi_response_t *r, int row_n, int pos, int *N)
 {
 	Datum datum;
 	bool is_null;
@@ -239,7 +263,7 @@ int64 *get_int64array_from_spi(spi_response_t *r, int row_n, int pos, int *N)
 	{
 		if(nulls[i]) arr_len--;
 	}
-	result = worker_alloc(sizeof(int64) * arr_len);
+	result = MemoryContextAlloc(mem, sizeof(int64) * arr_len);
 	for(i=0; i < len; i++)
 	{
 		if(!nulls[i]) 
@@ -252,7 +276,7 @@ int64 *get_int64array_from_spi(spi_response_t *r, int row_n, int pos, int *N)
 	return result;
 }
 
-char **get_textarray_from_spi(spi_response_t *r, int row_n, int pos, int *N)
+char **get_textarray_from_spi(MemoryContext mem, spi_response_t *r, int row_n, int pos, int *N)
 {
 	Datum datum;
 	bool is_null;
@@ -294,12 +318,12 @@ char **get_textarray_from_spi(spi_response_t *r, int row_n, int pos, int *N)
 	{
 		if(nulls[i]) arr_len--;
 	}
-	result = worker_alloc(sizeof(char *) * arr_len);
+	result = MemoryContextAlloc(mem, sizeof(char *) * arr_len);
 	for(i=0; i < len; i++)
 	{
 		if(!nulls[i]) 
 		{
-			result[*N] = _copy_string(TextDatumGetCString(datums[i]));
+			result[*N] = _mcopy_string(mem, TextDatumGetCString(datums[i]));
 			(*N)++;
 		}
 	}
@@ -327,7 +351,7 @@ TimestampTz get_timestamp_from_spi(spi_response_t *r, int row_n, int pos, Timest
 	return DatumGetTimestampTz(datum);
 }
 
-char *get_text_from_spi(spi_response_t *r, int row_n, int pos)
+char *get_text_from_spi(MemoryContext mem, spi_response_t *r, int row_n, int pos)
 {
 	Datum datum;
 	bool is_null;
@@ -343,7 +367,7 @@ char *get_text_from_spi(spi_response_t *r, int row_n, int pos)
 							SPI_tuptable->tupdesc, pos, &is_null);
 	}
 	if(is_null) return NULL;
-	return _copy_string(TextDatumGetCString(datum));
+	return _mcopy_string(mem, TextDatumGetCString(datum));
 }
 
 int64 get_interval_seconds_from_spi(spi_response_t *r, int row_n, int pos, long def)
@@ -466,46 +490,63 @@ int select_oneintvalue_sql(const char *sql, int def)
 	return DatumGetInt32(d);
 }
 
-spi_response_t *execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes, Datum *values, char *nulls)
+spi_response_t *execute_spi_sql_with_args(MemoryContext ctx, const char *sql, int n, Oid *argtypes, Datum *values, char *nulls)
 {
 	int ret = -100;
 	ErrorData *edata;
 	char other[100];
 	ResourceOwner oldowner = CurrentResourceOwner;
 	spi_response_t *rv = NULL;
+	MemoryContext old = CurrentMemoryContext;
+	MemoryContext pe;
+
+	if(!ctx) ctx = SchedulerWorkerContext;
+
+
 
 	SetCurrentStatementStartTimestamp();
 	BeginInternalSubTransaction(NULL);
-	switch_to_worker_context();
+	MemoryContextSwitchTo(old);
 
 	PG_TRY();
 	{
 		ret = SPI_execute_with_args(sql, n, argtypes, values, nulls, false, 0);
-		rv = __copy_spi_data(ret, SPI_processed);
+		rv = __copy_spi_data(ctx, ret, SPI_processed);
+		if(!rv)
+		{
+			elog(LOG, "ESSWA: Cannot allocate memory while copy resp data");
+			return NULL;
+		}
 		ReleaseCurrentSubTransaction();
-		switch_to_worker_context();
+		MemoryContextSwitchTo(old);
 		CurrentResourceOwner = oldowner;
 		SPI_restore_connection(); 
 	}
 	PG_CATCH();
 	{
-		switch_to_worker_context();
+		pe = MemoryContextSwitchTo(ctx);
 		edata = CopyErrorData();
+		MemoryContextSwitchTo(pe);
 		if(edata->message)
 		{
-			rv = __error_spi_resp(ret, edata->message);
+			rv = __error_spi_resp(ctx, ret, edata->message);
 		}
 		else if(edata->detail)
 		{
-			rv = __error_spi_resp(ret, edata->detail);
+			rv = __error_spi_resp(ctx, ret, edata->detail);
 		}
 		else
 		{
-			rv = __error_spi_resp(ret, "unknown error");
+			rv = __error_spi_resp(ctx, ret, "unknown error");
+		}
+		if(!rv)
+		{
+			elog(LOG, "ESSWA: Cannot allocate memory while reporting error");
+			return NULL;
 		}
 		RollbackAndReleaseCurrentSubTransaction(); 
 		CurrentResourceOwner = oldowner;
-		switch_to_worker_context();
+		MemoryContextSwitchTo(old);
 		SPI_restore_connection(); 
 		FreeErrorData(edata);
 		FlushErrorState();
@@ -516,36 +557,41 @@ spi_response_t *execute_spi_sql_with_args(const char *sql, int n, Oid *argtypes,
 	{
 		if(ret == SPI_ERROR_CONNECT)
 		{
-			rv = __error_spi_resp(ret, "Connection error");
+			rv = __error_spi_resp(ctx, ret, "Connection error");
 		}
 		else if(ret == SPI_ERROR_COPY)
 		{
-			rv = __error_spi_resp(ret, "COPY error");
+			rv = __error_spi_resp(ctx, ret, "COPY error");
 		}
 		else if(ret == SPI_ERROR_OPUNKNOWN)
 		{
-			rv = __error_spi_resp(ret, "SPI_ERROR_OPUNKNOWN");
+			rv = __error_spi_resp(ctx, ret, "SPI_ERROR_OPUNKNOWN");
 		}
 		else if(ret == SPI_ERROR_UNCONNECTED)
 		{
-			rv = __error_spi_resp(ret, "Unconnected call");
+			rv = __error_spi_resp(ctx, ret, "Unconnected call");
 		}
 		else
 		{
 			sprintf(other, "error number: %d", ret);
-			rv = __error_spi_resp(ret, other);
+			rv = __error_spi_resp(ctx, ret, other);
+		}
+		if(!rv)
+		{
+			elog(LOG, "ESSWA: Cannot allocate memory while reporting pg error");
+			return NULL;
 		}
 	}
 
 	return rv;
 }
 
-spi_response_t *execute_spi(const char *sql)
+spi_response_t *execute_spi(MemoryContext ctx, const char *sql)
 {	
-	return execute_spi_sql_with_args(sql, 0, NULL, NULL, NULL);
+	return execute_spi_sql_with_args(ctx, sql, 0, NULL, NULL, NULL);
 }
 
-spi_response_t *execute_spi_params_prepared(const char *sql, int nparams, char **params)
+spi_response_t *execute_spi_params_prepared(MemoryContext ctx, const char *sql, int nparams, char **params)
 {
 	int ret = -100;
 	ErrorData *edata;
@@ -555,7 +601,11 @@ spi_response_t *execute_spi_params_prepared(const char *sql, int nparams, char *
 	Datum *values;
 	int i;
 	ResourceOwner oldowner = CurrentResourceOwner;
-	spi_response_t *rv;
+	spi_response_t *rv = NULL;
+	MemoryContext old = CurrentMemoryContext;
+	MemoryContext pe;
+
+	if(!ctx) ctx = SchedulerWorkerContext;
 
 
 	paramtypes = worker_alloc(sizeof(Oid) * nparams);
@@ -568,7 +618,7 @@ spi_response_t *execute_spi_params_prepared(const char *sql, int nparams, char *
 
 	SetCurrentStatementStartTimestamp();
 	BeginInternalSubTransaction(NULL);
-	switch_to_worker_context();
+	MemoryContextSwitchTo(old);
 
 	PG_TRY();
 	{
@@ -577,35 +627,45 @@ spi_response_t *execute_spi_params_prepared(const char *sql, int nparams, char *
 		{
 			SetCurrentStatementStartTimestamp();
 			ret = SPI_execute_plan(plan, values, NULL, false, 0);
-			rv = __copy_spi_data(ret, SPI_processed);
+			rv = __copy_spi_data(ctx, ret, SPI_processed);
+			if(!rv)
+			{
+				elog(LOG, "ESSWAP: Cannot allocate memory while copy data");
+				return NULL;
+			}
 		}
 		ReleaseCurrentSubTransaction();
-		switch_to_worker_context();
+		MemoryContextSwitchTo(old);
 		CurrentResourceOwner = oldowner;
 		SPI_restore_connection();
 	}
 	PG_CATCH();
 	{
-		switch_to_worker_context();
-
+		pe = MemoryContextSwitchTo(ctx);
 		edata = CopyErrorData();
+		MemoryContextSwitchTo(pe);
 		if(edata->message)
 		{
-			rv = __error_spi_resp(ret, edata->message);
+			rv = __error_spi_resp(ctx, ret, edata->message);
 		}
 		else if(edata->detail)
 		{
-			rv = __error_spi_resp(ret, edata->detail);
+			rv = __error_spi_resp(ctx, ret, edata->detail);
 		}
 		else
 		{
-			rv = __error_spi_resp(ret, "unknown error");
+			rv = __error_spi_resp(ctx, ret, "unknown error");
+		}
+		if(!rv)
+		{
+			elog(LOG, "ESSWAP: Cannot allocate memory while report error");
+			return NULL;
 		}
 		FreeErrorData(edata);
 		FlushErrorState();
 		RollbackAndReleaseCurrentSubTransaction(); 
 		CurrentResourceOwner = oldowner;
-		switch_to_worker_context();
+		MemoryContextSwitchTo(old);
 		SPI_restore_connection();
 	}
 	PG_END_TRY();
@@ -617,24 +677,29 @@ spi_response_t *execute_spi_params_prepared(const char *sql, int nparams, char *
 	{
 		if(ret == SPI_ERROR_CONNECT)
 		{
-			rv = __error_spi_resp(ret, "Connection error");
+			rv = __error_spi_resp(ctx, ret, "Connection error");
 		}
 		else if(ret == SPI_ERROR_COPY)
 		{
-			rv = __error_spi_resp(ret, "COPY error");
+			rv = __error_spi_resp(ctx, ret, "COPY error");
 		}
 		else if(ret == SPI_ERROR_OPUNKNOWN)
 		{
-			rv = __error_spi_resp(ret, "SPI_ERROR_OPUNKNOWN");
+			rv = __error_spi_resp(ctx, ret, "SPI_ERROR_OPUNKNOWN");
 		}
 		else if(ret == SPI_ERROR_UNCONNECTED)
 		{
-			rv = __error_spi_resp(ret, "Unconnected call");
+			rv = __error_spi_resp(ctx, ret, "Unconnected call");
 		}
 		else
 		{
 			sprintf(other, "error number: %d", ret);
-			rv = __error_spi_resp(ret, other);
+			rv = __error_spi_resp(ctx, ret, other);
+		}
+		if(!rv)
+		{
+			elog(LOG, "ESSWAP: Cannot allocate memory while report pg error");
+			return NULL;
 		}
 	}
 

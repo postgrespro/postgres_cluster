@@ -46,16 +46,16 @@ typedef struct SMgrRelationData
 	struct SMgrRelationData **smgr_owner;
 
 	/*
-	 * These next three fields are not actually used or manipulated by smgr,
+	 * These next four fields are not actually used or manipulated by smgr,
 	 * except that they are reset to InvalidBlockNumber upon a cache flush
 	 * event (in particular, upon truncation of the relation).  Higher levels
 	 * store cached state here so that it will be reset when truncation
-	 * happens.  In all three cases, InvalidBlockNumber means "unknown".
+	 * happens.  In all four cases, InvalidBlockNumber means "unknown".
 	 */
 	BlockNumber smgr_targblock; /* current insertion target block */
 	BlockNumber smgr_fsm_nblocks;		/* last known size of fsm fork */
-	BlockNumber smgr_vm_nblocks;	/* last known size of vm fork */
-	BlockNumber smgr_ptrack_nblocks;	/* last known size of vm fork */
+	BlockNumber smgr_vm_nblocks;		/* last known size of vm fork */
+	BlockNumber smgr_ptrack_nblocks;	/* last known size of ptrack fork */
 
 	/*
 	 * It's unnecessary to create a physical file for a local temp

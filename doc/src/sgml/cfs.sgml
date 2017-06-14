@@ -98,7 +98,7 @@
     most frequently used pages. Each page is fixed size (8kb by default). But if we compress page, then
     its size will depend on its content. So updated page can require more (or less) space than original page.
     So we may not always perform in-place update of the page. Instead of it we have to locate new space for the page and somehow release
-    old space. There are two main apporaches of solving this problem:
+    old space. There are two main approaches to solving this problem:
   </para>
 
   <variablelist>

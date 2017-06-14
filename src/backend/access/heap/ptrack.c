@@ -1,3 +1,14 @@
+/*-------------------------------------------------------------------------
+ *
+ * ptrack.c
+ *	  bitmap for tracking updates of relation's pages
+ *
+ * TODO Add description
+ *
+ * IDENTIFICATION
+ *	  src/backend/access/heap/ptrack.c
+ */
+
 #include "postgres.h"
 
 #include "access/heapam_xlog.h"
@@ -7,6 +18,7 @@
 #include "access/xlogutils.h"
 #include "access/skey.h"
 #include "access/genam.h"
+#include "access/generic_xlog.h"
 #include "catalog/pg_depend.h"
 #include "access/htup_details.h"
 #include "miscadmin.h"
@@ -16,190 +28,215 @@
 #include "utils/inval.h"
 #include "utils/array.h"
 #include "utils/relfilenodemap.h"
+#include "utils/builtins.h"
 #include <unistd.h>
 #include <sys/stat.h>
+
 /* Effective data size */
 #define MAPSIZE (BLCKSZ - MAXALIGN(SizeOfPageHeaderData))
 
-/* Number of bits allocated for each heap block. */
-#define BITS_PER_HEAPBLOCK 1
-
 /* Number of heap blocks we can represent in one byte. */
-#define HEAPBLOCKS_PER_BYTE 8
+#define HEAPBLOCKS_PER_BYTE (BITS_PER_BYTE / PTRACK_BITS_PER_HEAPBLOCK)
 
-#define HEAPBLK_TO_MAPBLOCK(x) ((x) / HEAPBLOCKS_PER_PAGE)
-#define HEAPBLK_TO_MAPBYTE(x) (((x) % HEAPBLOCKS_PER_PAGE) / HEAPBLOCKS_PER_BYTE)
-#define HEAPBLK_TO_MAPBIT(x) ((x) % HEAPBLOCKS_PER_BYTE)
-
+/* Number of heap blocks we can represent in one ptrack map page. */
 #define HEAPBLOCKS_PER_PAGE (MAPSIZE * HEAPBLOCKS_PER_BYTE)
 
-typedef struct BlockTrack
-{
-	BlockNumber		block_number;
-	RelFileNode		rel;
-} BlockTrack;
+/* Mapping from heap block number to the right bit in the ptrack map */
+#define HEAPBLK_TO_MAPBLOCK(x) ((x) / HEAPBLOCKS_PER_PAGE)
+#define HEAPBLK_TO_MAPBYTE(x) (((x) % HEAPBLOCKS_PER_PAGE) / HEAPBLOCKS_PER_BYTE)
+/* NOTE If you're going to increase PTRACK_BITS_PER_HEAPBLOCK, update macro below */
+#define HEAPBLK_TO_MAPBIT(x) ((x) % HEAPBLOCKS_PER_BYTE)
 
-static BlockTrack blocks_track[XLR_MAX_BLOCK_ID];
-unsigned int blocks_track_count = 0;
 bool ptrack_enable = false;
 
-static Buffer ptrack_readbuf(RelFileNode rnode, BlockNumber blkno, bool extend);
-static void ptrack_extend(SMgrRelation smgr, BlockNumber nvmblocks);
-static void ptrack_set(BlockNumber heapBlk, Buffer vmBuf);
+static Buffer ptrack_readbuf(Relation rel, BlockNumber blkno, bool extend);
+static void ptrack_extend(Relation rel, BlockNumber nvmblocks);
 void SetPtrackClearLSN(bool set_invalid);
 Datum pg_ptrack_test(PG_FUNCTION_ARGS);
+Datum pg_ptrack_clear(PG_FUNCTION_ARGS);
+Datum pg_ptrack_get_and_clear(PG_FUNCTION_ARGS);
 
-/* Tracking memory block inside critical zone */
+/*
+ * Mark tracked memory block during recovery.
+ * We should not miss any recovery actions, including
+ * recovery from full-page writes.
+ */
 void
-ptrack_add_block(BlockNumber block_number, RelFileNode rel)
+ptrack_add_block_redo(RelFileNode rnode, BlockNumber heapBlk)
 {
-	BlockTrack *bt = &blocks_track[blocks_track_count];
-	bt->block_number = block_number;
-	bt->rel = rel;
-	blocks_track_count++;
-	Assert(blocks_track_count < XLR_MAX_BLOCK_ID);
+	Relation reln;
+	reln = CreateFakeRelcacheEntry(rnode);
+	ptrack_add_block(reln, heapBlk);
+	FreeFakeRelcacheEntry(reln);
 }
 
-/* Save tracked memory block after end of critical zone */
+/* Save tracked memory block inside critical zone */
 void
-ptrack_save(void)
+ptrack_add_block(Relation rel, BlockNumber heapBlk)
 {
-	Buffer pbuf = InvalidBuffer;
-	unsigned int i;
+	Buffer ptrackbuf = InvalidBuffer;
 
-	for (i = 0; i < blocks_track_count; i++)
+	if (ptrack_enable)
 	{
-		BlockTrack *bt = &blocks_track[i];
-		BlockNumber mapBlock = HEAPBLK_TO_MAPBLOCK(bt->block_number);
-
-		/* Reuse the old pinned buffer if possible */
-		if (BufferIsValid(pbuf))
-		{
-			if (BufferGetBlockNumber(pbuf) == mapBlock)
-				goto set_bit;
-			else
-				ReleaseBuffer(pbuf);
-		}
-
-		pbuf = ptrack_readbuf(bt->rel, mapBlock, true);
-		set_bit:
-		ptrack_set(bt->block_number, pbuf);
+		ptrack_pin(rel, heapBlk, &ptrackbuf);
+		ptrack_set(heapBlk, ptrackbuf);
+		ReleaseBuffer(ptrackbuf);
 	}
-	if (pbuf != InvalidBuffer)
-		ReleaseBuffer(pbuf);
-
-	blocks_track_count = 0;
 }
 
-/* Set one bit to buffer */
+/* Pin a ptrack map page for setting a bit */
 void
-ptrack_set(BlockNumber heapBlk, Buffer vmBuf)
+ptrack_pin(Relation rel, BlockNumber heapBlk, Buffer *buf)
+{
+	BlockNumber mapBlock = HEAPBLK_TO_MAPBLOCK(heapBlk);
+
+	*buf = ptrack_readbuf(rel, mapBlock, true);
+}
+
+/* Set one bit to buffer  */
+void
+ptrack_set(BlockNumber heapBlk, Buffer ptrackBuf)
 {
 	BlockNumber mapBlock = HEAPBLK_TO_MAPBLOCK(heapBlk);
 	uint32		mapByte = HEAPBLK_TO_MAPBYTE(heapBlk);
-	uint8		mapBit = HEAPBLK_TO_MAPBIT(heapBlk);
+	uint8		mapOffset = HEAPBLK_TO_MAPBIT(heapBlk);
 	Page		page;
 	char	   *map;
 
-	/* Check that we have the right VM page pinned */
-	if (!BufferIsValid(vmBuf) || BufferGetBlockNumber(vmBuf) != mapBlock)
-		elog(ERROR, "wrong VM buffer passed to ptrack_set");
-	page = BufferGetPage(vmBuf);
-	map = PageGetContents(page);
-	LockBuffer(vmBuf, BUFFER_LOCK_SHARE);
+	/* Check that we have the right ptrack page pinned */
+	if (!BufferIsValid(ptrackBuf)
+		|| BufferGetBlockNumber(ptrackBuf) != mapBlock)
+		elog(ERROR, "wrong ptrack buffer passed to ptrack_set");
 
-	if (!(map[mapByte] & (1 << mapBit)))
+	page = BufferGetPage(ptrackBuf);
+	map = PageGetContents(page);
+	LockBuffer(ptrackBuf, BUFFER_LOCK_SHARE);
+
+	if (!(map[mapByte] & (1 << mapOffset)))
 	{
 		/* Bad luck. Take an exclusive lock now after unlock share.*/
-		LockBuffer(vmBuf, BUFFER_LOCK_UNLOCK);
-		LockBuffer(vmBuf, BUFFER_LOCK_EXCLUSIVE);
-		if (!(map[mapByte] & (1 << mapBit)))
+		LockBuffer(ptrackBuf, BUFFER_LOCK_UNLOCK);
+		LockBuffer(ptrackBuf, BUFFER_LOCK_EXCLUSIVE);
+
+		if (!(map[mapByte] & (1 << mapOffset)))
 		{
 			START_CRIT_SECTION();
 
-			map[mapByte] |= (1 << mapBit);
-			MarkBufferDirty(vmBuf);
+			map[mapByte] |= (1 << mapOffset);
+			MarkBufferDirty(ptrackBuf);
 
-			END_CRIT_SECTION_WITHOUT_TRACK();
+			/*
+			 * We don't have Xlog entry for ptrack, but update pages
+			 * on recovery.
+			 */
+			END_CRIT_SECTION();
 		}
 	}
 
-	LockBuffer(vmBuf, BUFFER_LOCK_UNLOCK);
+	LockBuffer(ptrackBuf, BUFFER_LOCK_UNLOCK);
 }
 
+/*
+ * Read a ptrack map page.
+ *
+ * If the page doesn't exist, InvalidBuffer is returned, or if 'extend' is
+ * true, the ptrack map file is extended.
+ */
 static Buffer
-ptrack_readbuf(RelFileNode rnode, BlockNumber blkno, bool extend)
+ptrack_readbuf(Relation rel, BlockNumber blkno, bool extend)
 {
 	Buffer		buf;
 
-	SMgrRelation smgr = smgropen(rnode, InvalidBackendId);
+	/*
+	 * We might not have opened the relation at the smgr level yet, or we
+	 * might have been forced to close it by a sinval message.  The code below
+	 * won't necessarily notice relation extension immediately when extend =
+	 * false, so we rely on sinval messages to ensure that our ideas about the
+	 * size of the map aren't too far out of date.
+	 */
+	RelationOpenSmgr(rel);
 
 	/*
 	 * If we haven't cached the size of the ptrack map fork yet, check it
 	 * first.
 	 */
-	if (smgr->smgr_ptrack_nblocks == InvalidBlockNumber)
+	if (rel->rd_smgr->smgr_ptrack_nblocks == InvalidBlockNumber)
 	{
-		if (smgrexists(smgr, PAGESTRACK_FORKNUM))
-			smgr->smgr_ptrack_nblocks = smgrnblocks(smgr,
+		if (smgrexists(rel->rd_smgr, PAGESTRACK_FORKNUM))
+			rel->rd_smgr->smgr_ptrack_nblocks = smgrnblocks(rel->rd_smgr,
 													  PAGESTRACK_FORKNUM);
 		else
-			smgr->smgr_ptrack_nblocks = 0;
+			rel->rd_smgr->smgr_ptrack_nblocks = 0;
 	}
+
 	/* Handle requests beyond EOF */
-	if (blkno >= smgr->smgr_ptrack_nblocks)
+	if (blkno >= rel->rd_smgr->smgr_ptrack_nblocks)
 	{
 		if (extend)
-			ptrack_extend(smgr, blkno + 1);
+			ptrack_extend(rel, blkno + 1);
 		else
 			return InvalidBuffer;
 	}
 
-	/*
-	 * Use ZERO_ON_ERROR mode, and initialize the page if necessary. It's
-	 * always safe to clear bits, so it's better to clear corrupt pages than
-	 * error out.
-	 */
-	buf = ReadBufferWithoutRelcache2(smgr, PAGESTRACK_FORKNUM, blkno,
-							 RBM_ZERO_ON_ERROR, NULL);
+	/* We should never miss updated pages, so error out if page is corrupted */
+	buf = ReadBufferExtended(rel, PAGESTRACK_FORKNUM, blkno,
+							 RBM_NORMAL, NULL);
 
 	if (PageIsNew(BufferGetPage(buf)))
-	{
-		Page pg = BufferGetPage(buf);
-		PageInit(pg, BLCKSZ, 0);
-	}
+		PageInit(BufferGetPage(buf), BLCKSZ, 0);
+
 	return buf;
 }
 
+/*
+ * Ensure that the ptrack map fork is at least ptrack_nblocks long, extending
+ * it if necessary with zeroed pages.
+ */
 static void
-ptrack_extend(SMgrRelation smgr, BlockNumber vm_nblocks)
+ptrack_extend(Relation rel, BlockNumber ptrack_nblocks)
 {
-	BlockNumber vm_nblocks_now;
+	BlockNumber ptrack_nblocks_now;
 	Page		pg;
 
 	pg = (Page) palloc(BLCKSZ);
 	PageInit(pg, BLCKSZ, 0);
 
-	LockSmgrForExtension(smgr, ExclusiveLock);
+	/*
+	 * We use the relation extension lock to lock out other backends trying to
+	 * extend the ptrack map at the same time. It also locks out extension
+	 * of the main fork, unnecessarily, but extending the ptrack map
+	 * happens seldom enough that it doesn't seem worthwhile to have a
+	 * separate lock tag type for it.
+	 *
+	 * Note that another backend might have extended or created the relation
+	 * by the time we get the lock.
+	 */
+	LockRelationForExtension(rel, ExclusiveLock);
+
+	/* Might have to re-open if a cache flush happened */
+	RelationOpenSmgr(rel);
+
 	/*
 	 * Create the file first if it doesn't exist.  If smgr_ptrack_nblocks is
 	 * positive then it must exist, no need for an smgrexists call.
 	 */
-	if ((smgr->smgr_ptrack_nblocks == 0 ||
-		 smgr->smgr_ptrack_nblocks == InvalidBlockNumber) &&
-		!smgrexists(smgr, PAGESTRACK_FORKNUM))
-		smgrcreate(smgr, PAGESTRACK_FORKNUM, false);
+	if ((rel->rd_smgr->smgr_ptrack_nblocks == 0 ||
+		 rel->rd_smgr->smgr_ptrack_nblocks == InvalidBlockNumber) &&
+		!smgrexists(rel->rd_smgr, PAGESTRACK_FORKNUM))
+		smgrcreate(rel->rd_smgr, PAGESTRACK_FORKNUM, false);
 
-	vm_nblocks_now = smgrnblocks(smgr, PAGESTRACK_FORKNUM);
+	ptrack_nblocks_now = smgrnblocks(rel->rd_smgr, PAGESTRACK_FORKNUM);
 
 	/* Now extend the file */
-	while (vm_nblocks_now < vm_nblocks)
+	while (ptrack_nblocks_now < ptrack_nblocks)
 	{
-		PageSetChecksumInplace(pg, vm_nblocks_now);
-		smgrextend(smgr, PAGESTRACK_FORKNUM, vm_nblocks_now,
+		PageSetChecksumInplace(pg, ptrack_nblocks_now);
+
+		smgrextend(rel->rd_smgr, PAGESTRACK_FORKNUM, ptrack_nblocks_now,
 				   (char *) pg, false);
-		vm_nblocks_now++;
+		ptrack_nblocks_now++;
 	}
+
 	/*
 	 * Send a shared-inval message to force other backends to close any smgr
 	 * references they may have for this rel, which we are about to change.
@@ -207,13 +244,62 @@ ptrack_extend(SMgrRelation smgr, BlockNumber vm_nblocks)
 	 * to keep checking for creation or extension of the file, which happens
 	 * infrequently.
 	 */
-	CacheInvalidateSmgr(smgr->smgr_rnode);
+	CacheInvalidateSmgr(rel->rd_smgr->smgr_rnode);
+
 	/* Update local cache with the up-to-date size */
-	smgr->smgr_ptrack_nblocks = vm_nblocks_now;
+	rel->rd_smgr->smgr_ptrack_nblocks = ptrack_nblocks_now;
+
+	UnlockRelationForExtension(rel, ExclusiveLock);
 
 	pfree(pg);
+}
 
-	UnlockSmgrForExtension(smgr, ExclusiveLock);
+/* Clear all blocks of relation's ptrack map */
+static void
+ptrack_clear_one_rel(Oid relid)
+{
+	BlockNumber nblock;
+	Relation rel = relation_open(relid, AccessShareLock);
+
+	RelationOpenSmgr(rel);
+
+	if (rel->rd_smgr == NULL)
+	{
+		relation_close(rel, AccessShareLock);
+		return;
+	}
+
+	LockRelationForExtension(rel, ExclusiveLock);
+
+	if (rel->rd_smgr->smgr_ptrack_nblocks == InvalidBlockNumber)
+	{
+		if (smgrexists(rel->rd_smgr, PAGESTRACK_FORKNUM))
+			rel->rd_smgr->smgr_ptrack_nblocks = smgrnblocks(rel->rd_smgr,
+													PAGESTRACK_FORKNUM);
+		else
+			rel->rd_smgr->smgr_ptrack_nblocks = 0;
+	}
+
+	for(nblock = 0; nblock < rel->rd_smgr->smgr_ptrack_nblocks; nblock++)
+	{
+		Buffer	buf = ReadBufferExtended(rel, PAGESTRACK_FORKNUM,
+											nblock, RBM_ZERO_ON_ERROR, NULL);
+		Page page = BufferGetPage(buf);
+		char *map = PageGetContents(page);
+
+		LockBuffer(buf, BUFFER_LOCK_EXCLUSIVE);
+
+		START_CRIT_SECTION();
+		MemSet(map, 0, MAPSIZE);
+		MarkBufferDirty(buf);
+		END_CRIT_SECTION();
+
+		UnlockReleaseBuffer(buf);
+	}
+
+	UnlockRelationForExtension(rel, ExclusiveLock);
+	relation_close(rel, AccessShareLock);
+	return;
 }
 
 /* Clear all ptrack files */
@@ -226,57 +312,27 @@ ptrack_clear(void)
 
 	while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 	{
-		BlockNumber nblock;
-		Relation rel = RelationIdGetRelation(HeapTupleGetOid(tuple));
-
-		RelationOpenSmgr(rel);
-		if (rel->rd_smgr == NULL)
-			goto end_rel;
-
-		LockSmgrForExtension(rel->rd_smgr, ExclusiveLock);
-
-		if (rel->rd_smgr->smgr_ptrack_nblocks == InvalidBlockNumber)
-		{
-			if (smgrexists(rel->rd_smgr, PAGESTRACK_FORKNUM))
-				rel->rd_smgr->smgr_ptrack_nblocks = smgrnblocks(rel->rd_smgr,
-														PAGESTRACK_FORKNUM);
-			else
-				rel->rd_smgr->smgr_ptrack_nblocks = 0;
-		}
-
-		for(nblock = 0; nblock < rel->rd_smgr->smgr_ptrack_nblocks; nblock++)
-		{
-			Buffer	buf = ReadBufferExtended(rel, PAGESTRACK_FORKNUM,
-				   nblock, RBM_ZERO_ON_ERROR, NULL);
-			Page page = BufferGetPage(buf);
-			char *map = PageGetContents(page);
-			LockBuffer(buf, BUFFER_LOCK_EXCLUSIVE);
-			START_CRIT_SECTION();
-			MemSet(map, 0, MAPSIZE);
-			MarkBufferDirty(buf);
-			END_CRIT_SECTION_WITHOUT_TRACK();
-			LockBuffer(buf, BUFFER_LOCK_UNLOCK);
-			ReleaseBuffer(buf);
-		}
-
-		UnlockSmgrForExtension(rel->rd_smgr, ExclusiveLock);
-		end_rel:
-			RelationClose(rel);
+		ptrack_clear_one_rel(HeapTupleGetOid(tuple));
 	}
 
 	systable_endscan(scan);
 	heap_close(catalog, AccessShareLock);
 
+	/*
+	 * Update ptrack_enabled_lsn to know
+	 * that we track all changes since this LSN.
+	 */
 	SetPtrackClearLSN(false);
 }
 
-/* Get ptrack file as bytea and clear him */
+/* TODO Rewiew and clean the code
+ * Get ptrack file as bytea and clear it */
 bytea *
 ptrack_get_and_clear(Oid tablespace_oid, Oid table_oid)
 {
 	bytea *result = NULL;
 	BlockNumber nblock;
-        Relation rel = RelationIdGetRelation(RelidByRelfilenode(tablespace_oid, table_oid));
+	Relation rel = RelationIdGetRelation(RelidByRelfilenode(tablespace_oid, table_oid));
 
 	if (table_oid == InvalidOid)
 	{
@@ -294,7 +350,7 @@ ptrack_get_and_clear(Oid tablespace_oid, Oid table_oid)
 	if (rel->rd_smgr == NULL)
 		goto end_rel;
 
-	LockSmgrForExtension(rel->rd_smgr, ExclusiveLock);
+	LockRelationForExtension(rel, ExclusiveLock);
 
 	if (rel->rd_smgr->smgr_ptrack_nblocks == InvalidBlockNumber)
 	{
@@ -306,7 +362,7 @@ ptrack_get_and_clear(Oid tablespace_oid, Oid table_oid)
 	}
 	if (rel->rd_smgr->smgr_ptrack_nblocks == 0)
 	{
-		UnlockSmgrForExtension(rel->rd_smgr, ExclusiveLock);
+		UnlockRelationForExtension(rel, ExclusiveLock);
 		goto end_rel;
 	}
 	result = (bytea *) palloc(rel->rd_smgr->smgr_ptrack_nblocks*MAPSIZE + VARHDRSZ);
@@ -323,15 +379,19 @@ ptrack_get_and_clear(Oid tablespace_oid, Oid table_oid)
 		memcpy(VARDATA(result) + nblock*MAPSIZE, map, MAPSIZE);
 		MemSet(map, 0, MAPSIZE);
 		MarkBufferDirty(buf);
-		END_CRIT_SECTION_WITHOUT_TRACK();
+		END_CRIT_SECTION();
 		LockBuffer(buf, BUFFER_LOCK_UNLOCK);
 		ReleaseBuffer(buf);
 	}
 
-	UnlockSmgrForExtension(rel->rd_smgr, ExclusiveLock);
+	UnlockRelationForExtension(rel, ExclusiveLock);
 	end_rel:
 		RelationClose(rel);
 
+	/*
+	 * Update ptrack_enabled_lsn to know
+	 * that we track all changes since this LSN.
+	 */
 	SetPtrackClearLSN(false);
 	full_end:
 	if (result == NULL)
@@ -343,16 +403,28 @@ ptrack_get_and_clear(Oid tablespace_oid, Oid table_oid)
 	return result;
 }
 
+/*
+ * Reset LSN in ptrack_control file.
+ * If server started with ptrack_enable = off,
+ * set ptrack_enabled_lsn to InvalidXLogRecPtr,
+ * otherwise set it to current lsn.
+ *
+ * Also we update the value after ptrack_clear() call,
+ * to to know that we track all changes since this LSN.
+ *
+ * Judging by this value, we can say, if it's legal to perform incremental
+ * ptrack backup, or we had lost ptrack mapping since previous backup and
+ * must do full backup now.
+ */
 void
 SetPtrackClearLSN(bool set_invalid)
 {
 	int			fd;
-	XLogRecPtr	ptr;
+	XLogRecPtr	ptrack_enabled_lsn;
 	char		file_path[MAXPGPATH];
-	if (set_invalid)
-		ptr = InvalidXLogRecPtr;
-	else
-		ptr = GetXLogInsertRecPtr();
+
+	ptrack_enabled_lsn = (set_invalid)?
+						 InvalidXLogRecPtr : GetXLogInsertRecPtr();
 
 	join_path_components(file_path, DataDir, "global/ptrack_control");
 	canonicalize_path(file_path);
@@ -367,7 +439,7 @@ SetPtrackClearLSN(bool set_invalid)
 						"global/ptrack_control")));
 
 	errno = 0;
-	if (write(fd, &ptr, sizeof(XLogRecPtr)) != sizeof(XLogRecPtr))
+	if (write(fd, &ptrack_enabled_lsn, sizeof(XLogRecPtr)) != sizeof(XLogRecPtr))
 	{
 		/* if write didn't set errno, assume problem is no disk space */
 		if (errno == 0)
@@ -388,7 +460,18 @@ SetPtrackClearLSN(bool set_invalid)
 				 errmsg("could not close ptrack control file: %m")));
 }
 
-/* Test ptrack file */
+/*
+ * If we disabled ptrack_enable, reset ptrack_enabled_lsn in ptrack_control
+ * file, to know, that it's illegal to perform incremental ptrack backup.
+ */
+void
+assign_ptrack_enable(bool newval, void *extra)
+{
+	if(DataDir != NULL && !IsBootstrapProcessingMode() && !newval)
+		SetPtrackClearLSN(true);
+}
+
+/* Test ptrack file. */
 Datum
 pg_ptrack_test(PG_FUNCTION_ARGS)
 {
@@ -443,12 +526,13 @@ pg_ptrack_test(PG_FUNCTION_ARGS)
 		elog(WARNING, "Relation not found.");
 		goto end_return;
 	}
+
 	LockRelationOid(relation_oid, AccessShareLock);
 	RelationOpenSmgr(rel);
 	if (rel->rd_smgr == NULL)
 		goto end_rel;
 
-	LockSmgrForExtension(rel->rd_smgr, ExclusiveLock);
+	LockRelationForExtension(rel, ExclusiveLock);
 
 	num_blocks = smgrnblocks(rel->rd_smgr, MAIN_FORKNUM);
 	if (rel->rd_smgr->smgr_ptrack_nblocks == InvalidBlockNumber)
@@ -488,7 +572,7 @@ pg_ptrack_test(PG_FUNCTION_ARGS)
 			else
 				ReleaseBuffer(ptrack_buf);
 		}
-		ptrack_buf = ptrack_readbuf(rel->rd_node, mapBlock, false);
+		ptrack_buf = ptrack_readbuf(rel, mapBlock, false);
 
 		read_bit:
 		if (ptrack_buf == InvalidBuffer)
@@ -542,6 +626,7 @@ pg_ptrack_test(PG_FUNCTION_ARGS)
 	end_rel:
 	if (ptrack_buf != InvalidBuffer)
 		ReleaseBuffer(ptrack_buf);
+	UnlockRelationForExtension(rel, ExclusiveLock);
 	RelationClose(rel);
 	UnlockRelationOid(relation_oid, AccessShareLock);
 
@@ -552,9 +637,38 @@ pg_ptrack_test(PG_FUNCTION_ARGS)
 	PG_RETURN_ARRAYTYPE_P(result_array);
 }
 
-void
-assign_ptrack_enable(bool newval, void *extra)
+/* Clear all ptrack files */
+Datum
+pg_ptrack_clear(PG_FUNCTION_ARGS)
 {
-	if(DataDir != NULL && !IsBootstrapProcessingMode() && !newval)
-		SetPtrackClearLSN(true);
+	if (!superuser() && !has_rolreplication(GetUserId()))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+		 (errmsg("must be superuser or replication role to clear ptrack files"))));
+
+	ptrack_clear();
+
+	PG_RETURN_VOID();
+}
+
+/* Read all ptrack files and clear them afterwards */
+Datum
+pg_ptrack_get_and_clear(PG_FUNCTION_ARGS)
+{
+	if (!superuser() && !has_rolreplication(GetUserId()))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+		 (errmsg("must be superuser or replication role to clear ptrack files"))));
+
+	PG_RETURN_BYTEA_P(ptrack_get_and_clear(PG_GETARG_OID(0), PG_GETARG_OID(1)));
+}
+
+/*
+ * Returns ptrack version currently in use.
+ */
+PG_FUNCTION_INFO_V1(ptrack_version);
+Datum
+ptrack_version(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_TEXT_P(cstring_to_text(PTRACK_VERSION));
 }

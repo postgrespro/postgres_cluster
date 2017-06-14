@@ -3057,8 +3057,12 @@ DATA(insert OID = 1371 (  pg_lock_status   PGNSP PGUID 12 1 1000 0 0 f f f f t t
 DESCR("view system lock information");
 DATA(insert OID = 2561 (  pg_blocking_pids PGNSP PGUID 12 1 0 0 0 f f f f t f v s 1 0 1007 "23" _null_ _null_ _null_ _null_ _null_ pg_blocking_pids _null_ _null_ _null_ ));
 DESCR("get array of PIDs of sessions blocking specified backend PID");
-DATA(insert OID = 1065 (  pg_prepared_xact PGNSP PGUID 12 1 1000 0 0 f f f f t t v s 0 0 2249 "" "{28,25,1184,26,26}" "{o,o,o,o,o}" "{transaction,gid,prepared,ownerid,dbid}" _null_ _null_ pg_prepared_xact _null_ _null_ _null_ ));
+DATA(insert OID = 1065 (  pg_prepared_xact PGNSP PGUID 12 1 1000 0 0 f f f f t t v s 0 0 2249 "" "{28,25,1184,26,26,25}" "{o,o,o,o,o,o}" "{transaction,gid,prepared,ownerid,dbid,state3pc}" _null_ _null_ pg_prepared_xact _null_ _null_ _null_ ));
 DESCR("view two-phase transactions");
+DATA(insert OID = 3445 (  pg_precommit_prepared PGNSP PGUID 12 1 0 0 0 f f f f t f v s 2 0 2278 "2275 2275" _null_ _null_ _null_ _null_ _null_ pg_precommit_prepared _null_ _null_ _null_ ));
+DESCR("alter state of prepared transaction (used for 3pc)");
+DATA(insert OID = 4014 (   pg_rollback_prepared_xacts PGNSP PGUID 12 1 0 0 0 f f f f t f s u 0 0 23 "" _null_ _null_ _null_ _null_ _null_ pg_rollback_prepared_xacts _null_ _null_ _null_ ));
+DESCR("rollback all two-phase transactions");
 DATA(insert OID = 3819 (  pg_get_multixact_members PGNSP PGUID 12 1 1000 0 0 f f f f t t v s 1 0 2249 "28" "{28,28,25}" "{i,o,o}" "{multixid,xid,mode}" _null_ _null_ pg_get_multixact_members _null_ _null_ _null_ ));
 DESCR("view members of a multixactid");
 
@@ -3138,12 +3142,6 @@ DATA(insert OID = 2850 ( pg_xlogfile_name_offset	PGNSP PGUID 12 1 0 0 0 f f f f 
 DESCR("xlog filename and byte offset, given an xlog location");
 DATA(insert OID = 2851 ( pg_xlogfile_name			PGNSP PGUID 12 1 0 0 0 f f f f t f i s 1 0 25 "3220" _null_ _null_ _null_ _null_ _null_ pg_xlogfile_name _null_ _null_ _null_ ));
 DESCR("xlog filename, given an xlog location");
-DATA(insert OID = 6016 ( pg_ptrack_clear		PGNSP PGUID 12 1 0 0 0 f f f f t f v u 0 0 2278 "" _null_ _null_ _null_ _null_ _null_ pg_ptrack_clear _null_ _null_ _null_ ));
-DESCR("clear ptrack fork files");
-DATA(insert OID = 6017 ( pg_ptrack_test		PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 1007 "26" _null_ _null_ _null_ _null_ _null_ pg_ptrack_test _null_ _null_ _null_ ));
-DESCR("test ptrack fork relation");
-DATA(insert OID = 6018 ( pg_ptrack_get_and_clear		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 2 0 17 "26 26" _null_ _null_ _null_ _null_ _null_ pg_ptrack_get_and_clear _null_ _null_ _null_ ));
-DESCR("get ptrack file as bytea and clear him");
 
 DATA(insert OID = 3165 ( pg_xlog_location_diff		PGNSP PGUID 12 1 0 0 0 f f f f t f i s 2 0 1700 "3220 3220" _null_ _null_ _null_ _null_ _null_ pg_xlog_location_diff _null_ _null_ _null_ ));
 DESCR("difference in bytes, given two xlog locations");
@@ -5320,6 +5318,8 @@ DESCR("PostgresPro version string");
 DATA(insert OID =  6019 (  pgpro_edition		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 0 0 25 "" _null_ _null_ _null_ _null_ _null_ pgpro_edition _null_ _null_ _null_ ));
 DESCR("PostgresPro edition");
 
+DATA(insert OID =  6020 (  pgpro_build		   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 0 0 25 "" _null_ _null_ _null_ _null_ _null_ pgpro_build _null_ _null_ _null_ ));
+DESCR("PostgresPro edition");
 /* rls */
 DATA(insert OID = 3298 (  row_security_active	   PGNSP PGUID 12 1 0 0 0 f f f f t f s s 1 0 16 "26" _null_ _null_ _null_ _null_ _null_	row_security_active _null_ _null_ _null_ ));
 DESCR("row security for current context active on table by table oid");
@@ -5410,6 +5410,16 @@ DESCR("check if xid is ancestor of the current autonomous transaction");
 #define PROPARALLEL_SAFE		's'		/* can run in worker or master */
 #define PROPARALLEL_RESTRICTED	'r'		/* can run in parallel master only */
 #define PROPARALLEL_UNSAFE		'u'		/* banned while in parallel mode */
+
+/* ptrack related functions*/
+DATA(insert OID = 6016 ( pg_ptrack_clear		PGNSP PGUID 12 1 0 0 0 f f f f t f v u 0 0 2278 "" _null_ _null_ _null_ _null_ _null_ pg_ptrack_clear _null_ _null_ _null_ ));
+DESCR("clear ptrack fork files");
+DATA(insert OID = 6017 ( pg_ptrack_test		PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 1007 "26" _null_ _null_ _null_ _null_ _null_ pg_ptrack_test _null_ _null_ _null_ ));
+DESCR("test ptrack fork relation");
+DATA(insert OID = 6018 ( pg_ptrack_get_and_clear		PGNSP PGUID 12 1 0 0 0 f f f f t f v s 2 0 17 "26 26" _null_ _null_ _null_ _null_ _null_ pg_ptrack_get_and_clear _null_ _null_ _null_ ));
+DESCR("get ptrack file as bytea and clear him");
+DATA(insert OID =  6021 ( ptrack_version	PGNSP PGUID 12 1 0 0 0 f f f f t f s s 0 0 25 "" _null_ _null_ _null_ _null_ _null_ ptrack_version _null_ _null_ _null_ ));
+DESCR("Ptrack version string");
 
 /*
  * Symbolic values for proargmodes column.  Note that these must agree with

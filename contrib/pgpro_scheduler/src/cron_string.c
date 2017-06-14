@@ -49,7 +49,7 @@ char *_cps_append_string(char *str, char *to_add)
 {
 	int end = str ? strlen(str): 0;
 	int len = strlen(to_add);
-	
+
 	str = realloc(str, end + len + 1);
 	memcpy(str+end, to_add, len);
 	str[end+len] = 0;
@@ -66,7 +66,7 @@ char *_cps_make_array(int *src, int len)
 	out = _cps_append_string(out, "[");
 	for(i=0; i<len; i++)
 	{
-		sprintf(buff, "%d,", src[i]); 
+		sprintf(buff, "%d,", src[i]);
 		if(len == (i+1)) buff[strlen(buff)-1] = 0;
 		out = _cps_append_string(out, buff);
 	}
@@ -78,7 +78,7 @@ int _cps_dig_digit(char *str)
 	int len = strlen(str);
 	char *endptr = NULL;
 	int res;
-	
+
 	if(len == 1 && str[0] == '*')
 	{
 		return -1;
@@ -110,14 +110,14 @@ char **_cps_split_by(char sep, char *src, int *N)
 	char **res = NULL;
 	int i, n = 1, ri = 0, ti = 0;
 	char tmp[1024];
-	
+
 	for(i=0; i<len; i++)
 	{
 		if(src[i] == sep) n++;
 	}
 	res = malloc(sizeof(char *)*n);
 	*N = n;
-	
+
 	for(i=0; i < len; i++)
 	{
 		if(src[i] == sep)
@@ -205,7 +205,7 @@ int *_cps_parse_range(char *src, int start, int end, int *len)
 					}
 					for(i = 0; i < range_len; i++)
 					{
-						if(i >= (a-start) && i <= (b-start)) values[i] = 1; 
+						if(i >= (a-start) && i <= (b-start)) values[i] = 1;
 					}
 					_cps_clean_charchar(elements, e_len);
 				}
@@ -272,16 +272,16 @@ int *_cps_parse_range(char *src, int start, int end, int *len)
 				}
 				values[a-start] = 1;
 			}
-		} 
+		}
 	}
-	
+
 	if(isError == 0)
 	{
 		for(i =0; i < range_len; i++)
 		{
 			if(values[i]) (*len)++;
 		}
-			
+
 		if(*len > 0)
 		{
 			ptr = malloc(sizeof(int)*(*len));
@@ -290,7 +290,7 @@ int *_cps_parse_range(char *src, int start, int end, int *len)
 		{
 			ptr = NULL;
 		}
-		
+
 		for(i = 0; i < range_len; i++)
 		{
 			if(values[i]) ptr[ni++] = i+start;
@@ -450,11 +450,11 @@ cron_ent_t *parse_crontab(char *cron_str)
 	int N = strlen(cron_str);
 	char tmp[256];
 	int i, ti =0, en = 0 ;
-	
+
 	if(N == 7 && strcmp(cron_str, "@reboot") == 0)
 	{
 		CE = (cron_ent_t *)malloc(sizeof(cron_ent_t));
-		memset((void *)CE, 0, sizeof(cron_ent_t)); 
+		memset((void *)CE, 0, sizeof(cron_ent_t));
 		CE->onstart = 1;
 
 		return CE;
@@ -492,11 +492,11 @@ cron_ent_t *parse_crontab(char *cron_str)
 	}
 
 	CE = (cron_ent_t *)malloc(sizeof(cron_ent_t));
-	memset((void *)CE, 0, sizeof(cron_ent_t)); 
+	memset((void *)CE, 0, sizeof(cron_ent_t));
 
 
 	entrs[3] = _cps_subst_str(entrs[3], cps_month_subst_data, 12, 1);
-	entrs[4] = _cps_subst_str(entrs[4], cps_wday_subst_data, 7, 0); 
+	entrs[4] = _cps_subst_str(entrs[4], cps_wday_subst_data, 7, 0);
 
 	CE->mins = _cps_parse_range(entrs[0], 0, 59, &(CE->mins_len));
 	if(CE->mins) CE->hour = _cps_parse_range(entrs[1], 0, 23, &(CE->hour_len));

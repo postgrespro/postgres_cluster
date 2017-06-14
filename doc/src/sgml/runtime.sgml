@@ -1815,9 +1815,7 @@ $ <userinput>kill -INT `head -1 /usr/local/pgsql/data/postmaster.pid`</userinput
 
     <step>
      <para>
-      Install the new version of <productname>&productname;</productname> as
-      outlined in <![%standalone-include[the next section.]]>
-      <![%standalone-ignore[<xref linkend="install-procedure">.]]>
+      Install the new version of <productname>&productname;</productname>.
      </para>
     </step>
 
@@ -2125,7 +2123,7 @@ pg_dumpall -p 5432 | psql -d postgres -p 5433
    for increased security. This requires that
    <productname>OpenSSL</productname> is installed on both client and
    server systems and that support in <productname>&productname;</> is
-   enabled at build time (see <xref linkend="installation">).
+   enabled at build time.
   </para>
 
   <para>

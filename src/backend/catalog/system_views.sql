@@ -246,7 +246,7 @@ CREATE VIEW pg_available_extension_versions AS
 
 CREATE VIEW pg_prepared_xacts AS
     SELECT P.transaction, P.gid, P.prepared,
-           U.rolname AS owner, D.datname AS database
+           U.rolname AS owner, D.datname AS database, P.state3pc AS state3pc
     FROM pg_prepared_xact() AS P
          LEFT JOIN pg_authid U ON P.ownerid = U.oid
          LEFT JOIN pg_database D ON P.dbid = D.oid;
@@ -826,11 +826,11 @@ CREATE VIEW pg_user_mappings AS
         ELSE
             A.rolname
         END AS usename,
-        CASE WHEN pg_has_role(S.srvowner, 'USAGE') OR has_server_privilege(S.oid, 'USAGE') THEN
-            U.umoptions
-        ELSE
-            NULL
-        END AS umoptions
+        CASE WHEN (U.umuser <> 0 AND A.rolname = current_user)
+                    OR (U.umuser = 0 AND pg_has_role(S.srvowner, 'USAGE'))
+                    OR (SELECT rolsuper FROM pg_authid WHERE rolname = current_user)
+                    THEN U.umoptions
+                 ELSE NULL END AS umoptions
     FROM pg_user_mapping U
          LEFT JOIN pg_authid A ON (A.oid = U.umuser) JOIN
         pg_foreign_server S ON (U.umserver = S.oid);

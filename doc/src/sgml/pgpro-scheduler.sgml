@@ -131,7 +131,7 @@ Make sure to create the <filename>pgpro_scheduler</filename> extension for each 
       <programlisting>
 <varname>schedule.max_parallel_workers</varname> = 3
 </programlisting>
-<para>By default, two backgound workers for one-time jobs are available. These workers are not included into the <varname>schedule.max_workers</> number. Thus, one-time jobs can run in parallel with the scheduled jobs even if all the <varname>schedule.max_workers</> workers are busy.</para>
+<para>By default, two background workers for one-time jobs are available. These workers are not included into the <varname>schedule.max_workers</> number. Thus, one-time jobs can run in parallel with the scheduled jobs even if all the <varname>schedule.max_workers</> workers are busy.</para>
       </listitem>
       <listitem>
         <para>
@@ -493,7 +493,7 @@ SELECT schedule.create_job('{&quot;commands&quot;: &quot;SELECT ''zzz''&quot;, &
       <programlisting>
 schedule.submit_job(query := 'select 1');
 </programlisting>
-<para>Instead of passing <acronym>SQL</acronym> commands directly, you can define numbered placeholders in the <parameter>query</parameter> argument, such as $1 and $2, and pass an array of <acronym>SQL</acronym> commands in the <parameter>params</parameter> argument, with each array element corresponding to a placeholder. For brevity, you can omit the <parameter>query</parameter> and <parameter>params</parameter> names:</para>
+<para>Instead of passing <acronym>SQL</acronym> query parameters directly, you can define numbered placeholders in the <parameter>query</parameter> argument, such as $1 and $2, and pass an array of parameters in the <parameter>params</parameter> argument, with each array element corresponding to a placeholder. For brevity, you can omit the <parameter>query</parameter> and <parameter>params</parameter> names:</para>
 <programlisting>
 schedule.submit_job(query := 'select $1, $2', params := '{&quot;text 1&quot;, &quot;text 2&quot;}')
 </programlisting>
@@ -976,10 +976,10 @@ CREATE TYPE schedule.cron_job AS(
                   <literal>params</literal>
                 </entry>
                 <entry>
-                  <type>text</type>
+                  <type>text[]</type>
                 </entry>
                 <entry>
-                   An array of <acronym>SQL</acronym> commands.
+                   An array of parameters for the <acronym>SQL</acronym> query.
                 </entry>
               </row>
               <row>
@@ -1222,10 +1222,10 @@ CREATE TYPE schedule.cron_job AS(
                   <literal>params</literal>
                 </entry>
                 <entry>
-                  <type>text</type>
+                  <type>text[]</type>
                 </entry>
                 <entry>
-                   An array of <acronym>SQL</acronym> commands.
+                   An array of parameters for the <acronym>SQL</acronym> query.
                 </entry>
               </row>
               <row>
@@ -2140,7 +2140,7 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
       </listitem>
       <listitem>
         <para>
-          <parameter>params</parameter> &mdash; an array of SQL commands that can
+          <parameter>params</parameter> &mdash; an array of parameters for the SQL query that can
           substitute numbered placeholders in the <parameter>query</parameter> argument, such as $1, $2, etc. Default: <literal>NULL</literal> 
         </para>
         <para>Type: <type>text[]</type></para>

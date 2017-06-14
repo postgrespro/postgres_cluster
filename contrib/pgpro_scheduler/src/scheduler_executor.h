@@ -60,7 +60,7 @@ extern PGDLLEXPORT void executor_worker_main(Datum arg);
 job_t *initializeExecutorJob(schd_executor_share_t *data);
 void set_shared_message(schd_executor_share_t *shared, executor_error_t *ee);
 TimestampTz get_next_excution_time(char *sql, executor_error_t *ee);
-int executor_onrollback(job_t *job, executor_error_t *ee);
+int executor_onrollback(MemoryContext mem, job_t *job, executor_error_t *ee);
 void set_pg_var(bool resulti, executor_error_t *ee);
 int push_executor_error(executor_error_t *e, char *fmt, ...)  pg_attribute_printf(2, 3);
 int set_session_authorization(char *username, char **error);

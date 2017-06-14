@@ -161,8 +161,7 @@ typedef enum LockTagType
 	 * Also, we use DB OID = 0 for shared objects such as tablespaces.
 	 */
 	LOCKTAG_USERLOCK,			/* reserved for old contrib/userlock code */
-	LOCKTAG_ADVISORY,			/* advisory user locks */
-	LOCKTAG_SMGR /**/
+	LOCKTAG_ADVISORY			/* advisory user locks */
 } LockTagType;
 
 #define LOCKTAG_LAST_TYPE	LOCKTAG_ADVISORY
@@ -206,14 +205,6 @@ typedef struct LOCKTAG
 	 (locktag).locktag_field3 = 0, \
 	 (locktag).locktag_field4 = 0, \
 	 (locktag).locktag_type = LOCKTAG_RELATION_EXTEND, \
-	 (locktag).locktag_lockmethodid = DEFAULT_LOCKMETHOD)
-
-#define SET_LOCKTAG_SMGR(locktag,relfilenode) \
-	((locktag).locktag_field1 = (relfilenode), \
-	 (locktag).locktag_field2 = 0, \
-	 (locktag).locktag_field3 = 0, \
-	 (locktag).locktag_field4 = 0, \
-	 (locktag).locktag_type = LOCKTAG_SMGR, \
 	 (locktag).locktag_lockmethodid = DEFAULT_LOCKMETHOD)
 
 #define SET_LOCKTAG_PAGE(locktag,dboid,reloid,blocknum) \
@@ -494,8 +485,9 @@ typedef enum
 	DS_NO_DEADLOCK,				/* no deadlock detected */
 	DS_SOFT_DEADLOCK,			/* deadlock avoided by queue rearrangement */
 	DS_HARD_DEADLOCK,			/* deadlock, no way out but ERROR */
-	DS_BLOCKED_BY_AUTOVACUUM	/* no deadlock; queue blocked by autovacuum
+	DS_BLOCKED_BY_AUTOVACUUM,	/* no deadlock; queue blocked by autovacuum
 								 * worker */
+	DS_DISTRIBUTED_DEADLOCK		/* distributed deadlock detected by DTM */
 } DeadLockState;
 
 /*
@@ -591,6 +583,10 @@ extern int	LockWaiterCount(const LOCKTAG *locktag);
 extern void DumpLocks(PGPROC *proc);
 extern void DumpAllLocks(void);
 #endif
+
+typedef void (*LockIterator) (PROCLOCK *lock, void *arg);
+
+extern void EnumerateLocks(LockIterator iterator, void *arg);
 
 /* Lock a VXID (used to wait for a transaction to finish) */
 extern void VirtualXactLockTableInsert(VirtualTransactionId vxid);

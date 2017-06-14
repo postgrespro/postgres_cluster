@@ -21,6 +21,7 @@
 #include "storage/lock.h"
 #include "utils/relcache.h"
 
+extern List* pg_on_commit_actions;
 
 extern ObjectAddress DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 			   ObjectAddress *typaddress);

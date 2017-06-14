@@ -777,7 +777,7 @@ data. Empty in ordinary tables.</entry>
   from the page start to the start of unallocated space, to the end of
   unallocated space, and to the start of the special space.
   Next are two 8-byte fields containing epoch, i. e. an offset, for
-  short (4-byte) transacion IDs in this page. The next 2
+  short (4-byte) transaction IDs in this page. The next 2
   bytes of the page header, <structfield>pd_pagesize_version</structfield>,
   store both the page size and a version indicator.  Beginning with
   <productname>PostgreSQL</productname> 8.3 the version number is 4;

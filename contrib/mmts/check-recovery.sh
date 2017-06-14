@@ -1,0 +1,2 @@
+rm -rf /home/knizhnik/postgres_cluster/contrib/mmts/tmp_check
+TESTDIR='/home/knizhnik/postgres_cluster/contrib/mmts' PATH="/home/knizhnik/postgres_cluster/tmp_install/home/knizhnik/postgres_cluster/dist/bin:$PATH" LD_LIBRARY_PATH="/home/knizhnik/postgres_cluster/tmp_install/home/knizhnik/postgres_cluster/dist/lib:$LD_LIBRARY_PATH" PGPORT='65432' PG_REGRESS='/home/knizhnik/postgres_cluster/contrib/mmts/../../src/test/regress/pg_regress' prove -I ../../src/test/perl/ --verbose t/001_basic_recovery.pl

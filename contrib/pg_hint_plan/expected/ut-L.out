@@ -11,7 +11,6 @@ LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM s1.t1, s1.t2, s1.t3, s1.t4 
                    QUERY PLAN                   
 ------------------------------------------------
  Nested Loop
-   Join Filter: (t1.c1 = t4.c1)
    ->  Merge Join
          Merge Cond: (t1.c1 = t2.c1)
          ->  Merge Join
@@ -22,8 +21,8 @@ LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM s1.t1, s1.t2, s1.t3, s1.t4 
                Sort Key: t2.c1
                ->  Seq Scan on t2
    ->  Index Scan using t4_i1 on t4
-         Index Cond: (c1 = t3.c1)
-(13 rows)
+         Index Cond: (c1 = t1.c1)
+(12 rows)
 
 ----
 ---- No. L-1-1 specified pattern of the object name
@@ -73,7 +72,6 @@ error hint:
                      QUERY PLAN                     
 ----------------------------------------------------
  Nested Loop
-   Join Filter: (t_1.c1 = t_4.c1)
    ->  Merge Join
          Merge Cond: (t_1.c1 = t_2.c1)
          ->  Merge Join
@@ -84,8 +82,8 @@ error hint:
                Sort Key: t_2.c1
                ->  Seq Scan on t2 t_2
    ->  Index Scan using t4_i1 on t4 t_4
-         Index Cond: (c1 = t_3.c1)
-(13 rows)
+         Index Cond: (c1 = t_1.c1)
+(12 rows)
 
 -- No. L-1-1-3
 /*+Leading(t_4 t_2 t_3 t_1)*/
@@ -165,7 +163,6 @@ error hint:
                    QUERY PLAN                   
 ------------------------------------------------
  Nested Loop
-   Join Filter: (t1.c1 = t4.c1)
    ->  Merge Join
          Merge Cond: (t1.c1 = t2.c1)
          ->  Merge Join
@@ -176,8 +173,8 @@ error hint:
                Sort Key: t2.c1
                ->  Seq Scan on t2
    ->  Index Scan using t4_i1 on t4
-         Index Cond: (c1 = t3.c1)
-(13 rows)
+         Index Cond: (c1 = t1.c1)
+(12 rows)
 
 ----
 ---- No. L-1-3 table doesn't exist in the hint option
@@ -227,7 +224,6 @@ error hint:
                    QUERY PLAN                   
 ------------------------------------------------
  Nested Loop
-   Join Filter: (t1.c1 = t4.c1)
    ->  Merge Join
          Merge Cond: (t1.c1 = t2.c1)
          ->  Merge Join
@@ -238,8 +234,8 @@ error hint:
                Sort Key: t2.c1
                ->  Seq Scan on t2
    ->  Index Scan using t4_i1 on t4
-         Index Cond: (c1 = t3.c1)
-(13 rows)
+         Index Cond: (c1 = t1.c1)
+(12 rows)
 
 ----
 ---- No. L-1-4 conflict table name
@@ -410,11 +406,9 @@ LOG:  statement: EXPLAIN (COSTS false) SELECT *, (SELECT max(t1.c1) FROM s1.t1, 
                                QUERY PLAN                               
 ------------------------------------------------------------------------
  Nested Loop
-   Join Filter: (t1.c1 = t4.c1)
    InitPlan 1 (returns $1)
      ->  Aggregate
            ->  Nested Loop
-                 Join Filter: (t1_1.c1 = t4_1.c1)
                  ->  Merge Join
                        Merge Cond: (t1_1.c1 = t2_1.c1)
                        ->  Merge Join
@@ -425,7 +419,7 @@ LOG:  statement: EXPLAIN (COSTS false) SELECT *, (SELECT max(t1.c1) FROM s1.t1, 
                              Sort Key: t2_1.c1
                              ->  Seq Scan on t2 t2_1
                  ->  Index Only Scan using t4_i1 on t4 t4_1
-                       Index Cond: (c1 = t3_1.c1)
+                       Index Cond: (c1 = t1_1.c1)
    ->  Merge Join
          Merge Cond: (t1.c1 = t2.c1)
          ->  Merge Join
@@ -436,8 +430,8 @@ LOG:  statement: EXPLAIN (COSTS false) SELECT *, (SELECT max(t1.c1) FROM s1.t1, 
                Sort Key: t2.c1
                ->  Seq Scan on t2
    ->  Index Scan using t4_i1 on t4
-         Index Cond: (c1 = t3.c1)
-(28 rows)
+         Index Cond: (c1 = t1.c1)
+(26 rows)
 
 /*+Leading(t4 t2 t3 t1)*/
 EXPLAIN (COSTS false) SELECT *, (SELECT max(t1.c1) FROM s1.t1, s1.t2, s1.t3, s1.t4 WHERE t1.c1 = t2.c1 AND t1.c1 = t3.c1 AND t1.c1 = t4.c1) FROM s1.t1, s1.t2, s1.t3, s1.t4 WHERE t1.c1 = t2.c1 AND t1.c1 = t3.c1 AND t1.c1 = t4.c1;
@@ -578,7 +572,6 @@ Leading(t4 t2 t3 t1 t4)
                    QUERY PLAN                   
 ------------------------------------------------
  Nested Loop
-   Join Filter: (t1.c1 = t4.c1)
    ->  Merge Join
          Merge Cond: (t1.c1 = t2.c1)
          ->  Merge Join
@@ -589,8 +582,8 @@ Leading(t4 t2 t3 t1 t4)
                Sort Key: t2.c1
                ->  Seq Scan on t2
    ->  Index Scan using t4_i1 on t4
-         Index Cond: (c1 = t3.c1)
-(13 rows)
+         Index Cond: (c1 = t1.c1)
+(12 rows)
 
 /*+Leading(t4 t2 t3 t4)*/
 EXPLAIN (COSTS false) SELECT * FROM s1.t1, s1.t2, s1.t3, s1.t4 WHERE t1.c1 = t2.c1 AND t1.c1 = t3.c1 AND t1.c1 = t4.c1;
@@ -608,7 +601,6 @@ Leading(t4 t2 t3 t4)
                    QUERY PLAN                   
 ------------------------------------------------
  Nested Loop
-   Join Filter: (t1.c1 = t4.c1)
    ->  Merge Join
          Merge Cond: (t1.c1 = t2.c1)
          ->  Merge Join
@@ -619,8 +611,8 @@ Leading(t4 t2 t3 t4)
                Sort Key: t2.c1
                ->  Seq Scan on t2
    ->  Index Scan using t4_i1 on t4
-         Index Cond: (c1 = t3.c1)
-(13 rows)
+         Index Cond: (c1 = t1.c1)
+(12 rows)
 
 -- No. L-1-5-3
 /*+Leading(t4 t2 t3 t1 t4 t2 t3 t1)*/
@@ -639,7 +631,6 @@ Leading(t4 t2 t3 t1 t4 t2 t3 t1)
                    QUERY PLAN                   
 ------------------------------------------------
  Nested Loop
-   Join Filter: (t1.c1 = t4.c1)
    ->  Merge Join
          Merge Cond: (t1.c1 = t2.c1)
          ->  Merge Join
@@ -650,8 +641,8 @@ Leading(t4 t2 t3 t1 t4 t2 t3 t1)
                Sort Key: t2.c1
                ->  Seq Scan on t2
    ->  Index Scan using t4_i1 on t4
-         Index Cond: (c1 = t3.c1)
-(13 rows)
+         Index Cond: (c1 = t1.c1)
+(12 rows)
 
 /*+Leading(t4 t2 t2 t4)*/
 EXPLAIN (COSTS false) SELECT * FROM s1.t1, s1.t2, s1.t3, s1.t4 WHERE t1.c1 = t2.c1 AND t1.c1 = t3.c1 AND t1.c1 = t4.c1;
@@ -669,7 +660,6 @@ Leading(t4 t2 t2 t4)
                    QUERY PLAN                   
 ------------------------------------------------
  Nested Loop
-   Join Filter: (t1.c1 = t4.c1)
    ->  Merge Join
          Merge Cond: (t1.c1 = t2.c1)
          ->  Merge Join
@@ -680,8 +670,8 @@ Leading(t4 t2 t2 t4)
                Sort Key: t2.c1
                ->  Seq Scan on t2
    ->  Index Scan using t4_i1 on t4
-         Index Cond: (c1 = t3.c1)
-(13 rows)
+         Index Cond: (c1 = t1.c1)
+(12 rows)
 
 ----
 ---- No. L-1-6 object type for the hint
@@ -1225,7 +1215,6 @@ LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM s1.t1, s1.t2, s1.t3, (SELEC
                    QUERY PLAN                   
 ------------------------------------------------
  Nested Loop
-   Join Filter: (t1.c1 = t4.c1)
    ->  Merge Join
          Merge Cond: (t1.c1 = t2.c1)
          ->  Merge Join
@@ -1236,8 +1225,8 @@ LOG:  statement: EXPLAIN (COSTS false) SELECT * FROM s1.t1, s1.t2, s1.t3, (SELEC
                Sort Key: t2.c1
                ->  Seq Scan on t2
    ->  Index Only Scan using t4_i1 on t4
-         Index Cond: (c1 = t3.c1)
-(13 rows)
+         Index Cond: (c1 = t1.c1)
+(12 rows)
 
 /*+Leading(st4 t2 t3 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM s1.t1, s1.t2, s1.t3, (SELECT t4.c1 FROM s1.t4) st4 WHERE t1.c1 = t2.c1 AND t1.c1 = t3.c1 AND t1.c1 = st4.c1;
@@ -1253,7 +1242,6 @@ error hint:
                    QUERY PLAN                   
 ------------------------------------------------
  Nested Loop
-   Join Filter: (t1.c1 = t4.c1)
    ->  Merge Join
          Merge Cond: (t1.c1 = t2.c1)
          ->  Merge Join
@@ -1264,8 +1252,8 @@ error hint:
                Sort Key: t2.c1
                ->  Seq Scan on t2
    ->  Index Only Scan using t4_i1 on t4
-         Index Cond: (c1 = t3.c1)
-(13 rows)
+         Index Cond: (c1 = t1.c1)
+(12 rows)
 
 /*+Leading(t4 t2 t3 t1)*/
 EXPLAIN (COSTS false) SELECT * FROM s1.t1, s1.t2, s1.t3, (SELECT t4.c1 FROM s1.t4) st4 WHERE t1.c1 = t2.c1 AND t1.c1 = t3.c1 AND t1.c1 = st4.c1;
@@ -4863,7 +4851,6 @@ Leading((t2))
                    QUERY PLAN                   
 ------------------------------------------------
  Nested Loop
-   Join Filter: (t1.c1 = t4.c1)
    ->  Merge Join
          Merge Cond: (t1.c1 = t2.c1)
          ->  Merge Join
@@ -4874,8 +4861,8 @@ Leading((t2))
                Sort Key: t2.c1
                ->  Seq Scan on t2
    ->  Index Scan using t4_i1 on t4
-         Index Cond: (c1 = t3.c1)
-(13 rows)
+         Index Cond: (c1 = t1.c1)
+(12 rows)
 
 -- No. L-3-6-2
 /*+Leading((t2 t3))*/
@@ -4922,7 +4909,6 @@ Leading((t2 t3 t4))
                    QUERY PLAN                   
 ------------------------------------------------
  Nested Loop
-   Join Filter: (t1.c1 = t4.c1)
    ->  Merge Join
          Merge Cond: (t1.c1 = t2.c1)
          ->  Merge Join
@@ -4933,8 +4919,8 @@ Leading((t2 t3 t4))
                Sort Key: t2.c1
                ->  Seq Scan on t2
    ->  Index Scan using t4_i1 on t4
-         Index Cond: (c1 = t3.c1)
-(13 rows)
+         Index Cond: (c1 = t1.c1)
+(12 rows)
 
 -- No. L-3-6-4
 /*+Leading(((t1 t2) (t3 t4)))*/

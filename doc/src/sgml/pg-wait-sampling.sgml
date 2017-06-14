@@ -4,10 +4,10 @@
   <title>pg_wait_sampling</title>
   <para>
     <filename>pg_wait_sampling</filename> is a <productname>&productname;</productname> extension for
-    collecting sampling-based statistics for wait events.
+    collecting sampling-based statistics on wait events.
   </para>
   <para>
-    Starting from the 9.6 version, <productname>PostgreSQL</productname> provides information about
+    Starting from the 9.6 version, <productname>&productname;</productname> provides information about
     the current wait events for particular processes. However, to get
     descriptive statistics of the server activity, you have to sample
     wait events multiple times. The
@@ -17,18 +17,18 @@
     <listitem>
       <para>
         <emphasis>Waits history</emphasis> &mdash; the list of wait events for
-        recent processes, with timestamps
+        recent processes, with timestamps.
       </para>
     </listitem>
     <listitem>
       <para>
-        <emphasis>Waits profile</emphasis> &mdash; the number wait event samples for all processes over time, per wait event type
+        <emphasis>Waits profile</emphasis> &mdash; the number of wait event samples for all processes over time, per wait event type.
       </para>
     </listitem>
     <listitem>
       <para>
         Current wait events for all processes, including background
-        workers
+        workers.
       </para>
     </listitem>
   </itemizedlist>
@@ -38,7 +38,7 @@
     what a particular process is waiting for at each moment of time, and
     analyze wait events statistics. For the list of possible wait
     events, see
-    <xref linkend="wait-event-table">
+    <xref linkend="wait-event-table">.
   </para>
   <para>
     <emphasis role="strong">See Also</emphasis></para>
@@ -50,7 +50,7 @@
     <title>Installation</title>
     <para>The <filename>pg_wait_sampling</filename> extension is included into <productname>&productname;</productname> and requires no special prerequisites.</para>
     <para>
-      To complete the <filename>pg_wait_sampling</filename> installation:
+      To enable <filename>pg_wait_sampling</filename>, do the following:
     </para>
     <orderedlist>
       <listitem>
@@ -65,15 +65,11 @@ shared_preload_libraries = 'pg_wait_sampling'
       </listitem>
       <listitem>
         <para>
-          From the command line, run the following query:
+          Create the <filename>pg_wait_sampling</filename> extension using the following query:
         </para>
         <programlisting>
-$ psql -d <replaceable>dbname</replaceable> -c &quot;CREATE EXTENSION pg_wait_sampling;&quot;
+CREATE EXTENSION pg_wait_sampling;
 </programlisting>
-        <para>
-          where <replaceable>dbname</replaceable> is the name of the database
-          for which you would like to use <filename>pg_wait_sampling</filename>.
-        </para>
       </listitem>
       <listitem>
         <para>
@@ -110,8 +106,7 @@ $ psql -d <replaceable>dbname</replaceable> -c &quot;CREATE EXTENSION pg_wait_sa
         <literal>pg_wait_sampling_current</literal> view:
       </para>
       <programlisting>
-CREATE VIEW pg_wait_sampling_current AS
-SELECT * FROM pg_wait_sampling_get_current();
+SELECT * FROM pg_wait_sampling_get_current;
 </programlisting>
       <para>
         The returned statistics covers all the active processes,
@@ -119,7 +114,6 @@ SELECT * FROM pg_wait_sampling_get_current();
         process, run <function>pg_wait_sampling_get_current()</function> function specifying the process ID:
       </para>
       <programlisting>
-CREATE VIEW pg_wait_sampling_current AS
 SELECT * FROM pg_wait_sampling_get_current(<replaceable>pid</replaceable>);
 </programlisting>
       <para>
@@ -128,13 +122,11 @@ SELECT * FROM pg_wait_sampling_get_current(<replaceable>pid</replaceable>);
         that provides the wait events history for the latest processes:
       </para>
       <programlisting>
-CREATE VIEW pg_wait_sampling_history AS
-SELECT * FROM pg_wait_sampling_get_history();
+SELECT * FROM pg_wait_sampling_get_history;
 </programlisting>
       <para>
         The returned view displays wait samples per process, with event timestamps. Waits history is implemented as an in-memory ring buffer. By
-        default, the history size is limited to 5000 samples. If you
-        would like to save history for a longer period of time, you can
+        default, the history size is limited to 5000 samples. To save history for a longer period of time, you can
         modify the <varname>pg_wait_sampling.history_size</varname>
         variable, or connect a client application to periodically read
         waits history and dump it to a local storage.
@@ -144,8 +136,7 @@ SELECT * FROM pg_wait_sampling_get_history();
         <literal>pg_wait_sampling_profile</literal> view:
       </para>
       <programlisting>
-CREATE VIEW pg_wait_sampling_profile AS
-SELECT * FROM pg_wait_sampling_get_profile();
+SELECT * FROM pg_wait_sampling_get_profile;
 </programlisting>
       <para>
         Waits profile is stored as an in-memory hash table that
@@ -161,10 +152,10 @@ SELECT * FROM pg_wait_sampling_get_profile();
           waits profile from time to time to avoid memory overflow.</para>
         </important>
       <para>
-        If you are are not interested in the distribution of wait events
+        If you are not interested in the distribution of wait events
         between processes, you can set the
         <varname>pg_wait_sampling.profile_pid</varname> variable to
-        false. In this case, the <literal>pid</literal> value for each
+        <literal>false</literal>. In this case, the <literal>pid</literal> value for each
         process is set to zero, and wait samples for all the processes
         are stored together.
       </para>
@@ -229,16 +220,16 @@ SELECT * FROM pg_wait_sampling_get_profile();
      </indexterm>
      </term>
      <listitem>
-      <para>Sampling mode for waits profile. If set to true, waits
+      <para>Sampling mode for waits profile. If set to <literal>true</literal>, waits
                 profile is collected per process. If you set
                 <literal>pg_wait_sampling.profile_pid</literal> to
-                false, the sampling profile is collected for all
+                <literal>false</literal>, waits profile is collected for all
                 processes together. In this case, the
                 <literal>pid</literal> value for each process is set to
                 zero, and the corresponding row contains wait samples
                 for all the processes.
       </para>
-       <para>Default: true
+       <para>Default: <literal>true</literal>
       </para>
      </listitem>
     </varlistentry>
@@ -252,7 +243,7 @@ SELECT * FROM pg_wait_sampling_get_profile();
       <sect4 id="pg-wait-sampling-current-view">
         <title>pg_wait_sampling_current View</title>
         <para>
-          The <literal>pg_wait_sampling_current</literal> view provides
+          The <structname>pg_wait_sampling_current</structname> view provides
           the information about the current wait events for all
           processes, including background workers.
         </para>
@@ -313,7 +304,7 @@ SELECT * FROM pg_wait_sampling_get_profile();
       <sect4 id="pg-wait-sampling-history-view">
         <title>pg_wait_sampling_history View</title>
         <para>
-          The <literal>pg_wait_sampling_history</literal> view provides
+          The <structname>pg_wait_sampling_history</structname> view provides
           the history of wait events. This data is stored as an
           in-memory ring buffer.
         </para>
@@ -385,7 +376,7 @@ SELECT * FROM pg_wait_sampling_get_profile();
       <sect4 id="pg-wait-sampling-profile-view">
         <title>pg_wait_sampling_profile View</title>
         <para>
-          The <literal>pg_wait_sampling_profile</literal> view provides
+          The <structname>pg_wait_sampling_profile</structname> view provides
           the profile of wait events. This data is stored as an
           in-memory hash table.
         </para>
@@ -447,7 +438,7 @@ SELECT * FROM pg_wait_sampling_get_profile();
                   <type>text</type>
                 </entry>
                 <entry>
-                  Count of samples
+                  Number of samples
                 </entry>
               </row>
             </tbody>
@@ -469,20 +460,6 @@ SELECT * FROM pg_wait_sampling_get_profile();
     <listitem><para><parameter>pid</parameter> &mdash; Optional. The process ID for which to display the current wait events.</para>
     </listitem>
     </itemizedlist></listitem>
-    </varlistentry>
-    <varlistentry>
-    <term><function>pg_wait_sampling_get_history()</function>
-    <indexterm><primary><function>pg_wait_sampling_get_history</></primary>
-    </indexterm>
-    </term>
-    <listitem><para>Returns the <literal>pg_wait_sampling_history</literal> view with the list of wait events for recent processes, with timestamps.</para></listitem>
-    </varlistentry>
-    <varlistentry>
-    <term><function>pg_wait_sampling_get_profile()</function>
-    <indexterm><primary><function>pg_wait_sampling_get_profile</function></primary>
-    </indexterm>
-    </term>
-    <listitem><para>Returns the profile of wait events.</para></listitem>
     </varlistentry>
     <varlistentry>
     <term><function>pg_wait_sampling_reset_profile()</function>
