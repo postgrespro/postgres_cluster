@@ -352,24 +352,6 @@ typedef struct BuiltinScript
 	const char *script;			/* actual pgbench script */
 } BuiltinScript;
 
-/* Default transaction isolation level */
-typedef enum DefaultIsolationLevel
-{
-	READ_COMMITTED,
-	REPEATABLE_READ,
-	SERIALIZABLE,
-	NUM_DEFAULT_ISOLATION_LEVEL
-} DefaultIsolationLevel;
-
-DefaultIsolationLevel default_isolation_level = READ_COMMITTED;
-
-static const char *DEFAULT_ISOLATION_LEVEL_ABBREVIATION[] = {"RC", "RR", "S"};
-static const char *DEFAULT_ISOLATION_LEVEL_SQL[] = {
-	"read committed",
-	"repeatable read",
-	"serializable"
-};
-
 static const BuiltinScript builtin_script[] =
 {
 	{
@@ -406,6 +388,24 @@ static const BuiltinScript builtin_script[] =
 		"\\set aid random(1, " CppAsString2(naccounts) " * :scale)\n"
 		"SELECT abalance FROM pgbench_accounts WHERE aid = :aid;\n"
 	}
+};
+
+/* Default transaction isolation level */
+typedef enum DefaultIsolationLevel
+{
+	READ_COMMITTED,
+	REPEATABLE_READ,
+	SERIALIZABLE,
+	NUM_DEFAULT_ISOLATION_LEVEL
+} DefaultIsolationLevel;
+
+DefaultIsolationLevel default_isolation_level = READ_COMMITTED;
+
+static const char *DEFAULT_ISOLATION_LEVEL_ABBREVIATION[] = {"RC", "RR", "S"};
+static const char *DEFAULT_ISOLATION_LEVEL_SQL[] = {
+	"read committed",
+	"repeatable read",
+	"serializable"
 };
 
 

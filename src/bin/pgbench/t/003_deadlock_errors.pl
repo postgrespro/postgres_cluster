@@ -15,20 +15,22 @@ $node->safe_psql('postgres',
 	  . 'INSERT INTO xy VALUES (1, 2), (2, 3);');
 
 my $script1 = $node->basedir . '/pgbench_script1';
-append_to_file($script1, "\\set delta1 random(-5000, 5000)\n");
-append_to_file($script1, "\\set delta2 random(-5000, 5000)\n");
-append_to_file($script1, "BEGIN;");
-append_to_file($script1, "UPDATE xy SET y = y + :delta1 WHERE x = 1;");
-append_to_file($script1, "UPDATE xy SET y = y + :delta2 WHERE x = 2;");
-append_to_file($script1, "END;");
+append_to_file($script1,
+		"\\set delta1 random(-5000, 5000)\n"
+	  . "\\set delta2 random(-5000, 5000)\n"
+	  . "BEGIN;"
+	  . "UPDATE xy SET y = y + :delta1 WHERE x = 1;"
+	  . "UPDATE xy SET y = y + :delta2 WHERE x = 2;"
+	  . "END;");
 
 my $script2 = $node->basedir . '/pgbench_script2';
-append_to_file($script2, "\\set delta1 random(-5000, 5000)\n");
-append_to_file($script2, "\\set delta2 random(-5000, 5000)\n");
-append_to_file($script2, "BEGIN;");
-append_to_file($script2, "UPDATE xy SET y = y + :delta2 WHERE x = 2;");
-append_to_file($script2, "UPDATE xy SET y = y + :delta1 WHERE x = 1;");
-append_to_file($script2, "END;");
+append_to_file($script2,
+		"\\set delta1 random(-5000, 5000)\n"
+	  . "\\set delta2 random(-5000, 5000)\n"
+	  . "BEGIN;"
+	  . "UPDATE xy SET y = y + :delta2 WHERE x = 2;"
+	  . "UPDATE xy SET y = y + :delta1 WHERE x = 1;"
+	  . "END;");
 
 # Test deadlock transactions with Read committed default isolation level:
 $node->command_like(
