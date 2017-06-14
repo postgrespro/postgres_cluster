@@ -981,9 +981,6 @@ LruDelete(File file)
 
 	vfdP = &VfdCache[file];
 
-	/* delete the vfd record from the LRU ring */
-	Delete(file);
-
 	if (vfdP->fileFlags & PG_COMPRESSION)
 	{
 		if (cfs_munmap(vfdP->map))
@@ -1022,6 +1019,9 @@ LruDelete(File file)
 	if (close(vfdP->fd))
 		elog(LOG, "could not close file \"%s\": %m", vfdP->fileName);
 	vfdP->fd = VFD_CLOSED;
+
+	/* delete the vfd record from the LRU ring */
+	Delete(file);
 }
 
 static void
@@ -1128,7 +1128,6 @@ LruInsert(File file)
 						vfdP->fileName);
 					(void) close(vfdP->fd);
 					vfdP->fd = VFD_CLOSED;
-					--nfile;
 					errno = save_errno;
 					return -1;
 				}
@@ -2169,9 +2168,7 @@ FileSeek(File file, off_t offset, int whence)
 					VfdCache[file].seekPos = fileSize - offset;
 			    }
 			    else
-				if (FileAccess(file) < 0)
-					return (off_t) -1;
-				vfdP->seekPos = lseek(vfdP->fd, offset, whence);
+					vfdP->seekPos = lseek(vfdP->fd, offset, whence);
 
 				break;
 			default:
