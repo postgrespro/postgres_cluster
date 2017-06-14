@@ -7,8 +7,9 @@
 extern MemoryContext SchedulerWorkerContext;
 
 MemoryContext init_worker_mem_ctx(const char *name);
+MemoryContext init_mem_ctx(const char *name);
 MemoryContext switch_to_worker_context(void);
 void *worker_alloc(Size size);
-void delete_worker_mem_ctx(void);
+void delete_worker_mem_ctx(MemoryContext toswitch);
 
 #endif

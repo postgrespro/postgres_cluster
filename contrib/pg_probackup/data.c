@@ -1,6 +1,6 @@
 /*-------------------------------------------------------------------------
  *
- * data.c: data parsing pages
+ * data.c: utils to parse and backup data pages
  *
  * Portions Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
  * Portions Copyright (c) 2015-2017, Postgres Professional
@@ -25,6 +25,7 @@ typedef struct BackupPageHeader
 	BlockNumber	block;			/* block number */
 } BackupPageHeader;
 
+/* Verify page's header */
 static bool
 parse_page(const DataPage *page, XLogRecPtr *lsn)
 {
@@ -46,11 +47,16 @@ parse_page(const DataPage *page, XLogRecPtr *lsn)
 	return false;
 }
 
+/*
+ * Backup the specified block from a file of a relation.
+ * Verify page header and checksum of the page and write it
+ * to the backup file.
+ */
 static void
-backup_data_page(pgFile *file, const XLogRecPtr *lsn,
-				BlockNumber blknum, BlockNumber nblocks,
-				FILE *in, FILE *out,
-				pg_crc32 *crc)
+backup_data_page(pgFile *file, XLogRecPtr prev_backup_start_lsn,
+				 BlockNumber blknum, BlockNumber nblocks,
+				 FILE *in, FILE *out,
+				 pg_crc32 *crc, int *n_skipped)
 {
 	BackupPageHeader	header;
 	off_t				offset;
@@ -58,45 +64,40 @@ backup_data_page(pgFile *file, const XLogRecPtr *lsn,
 	size_t				write_buffer_size = sizeof(header) + BLCKSZ;
 	char				write_buffer[write_buffer_size];
 	size_t				read_len = 0;
-	XLogRecPtr	page_lsn;
-	int 	ret;
-	int		try_checksum = 100;
-	bool	is_zero_page = false;
-	struct stat 		st;
+	XLogRecPtr			page_lsn;
+	int					try_checksum = 100;
+	bool				is_zero_page = false;
 
 	header.block = blknum;
 	offset = blknum * BLCKSZ;
 
 	while(try_checksum--)
 	{
-		ret = fseek(in, offset, SEEK_SET);
-		if (ret != 0)
-			elog(ERROR, "Can't seek in file offset: %llu ret:%i\n",
-			(long long unsigned int) offset, ret);
+		if (fseek(in, offset, SEEK_SET) != 0)
+			elog(ERROR, "File: %s, could not seek to block %u: %s",
+				 file->path, blknum, strerror(errno));
 
-		read_len = fread(&page, 1, sizeof(page), in);
+		read_len = fread(&page, 1, BLCKSZ, in);
 
-		if (read_len != sizeof(page))
+		if (read_len != BLCKSZ)
 		{
-			stat(file->path, &st);
-
-			if (st.st_size/BLCKSZ <= blknum)
-			{
-				if (verbose)
-					elog(LOG, "File: %s, file was truncated after backup start."
-							  "Expected nblocks %u. Real nblocks %ld. Cannot read block %u ",
-							  file->path, nblocks, st.st_size/BLCKSZ, blknum);
-				return;
-			}
-			else
-				elog(ERROR, "File: %s, block size of block %u of nblocks %u is incorrect %lu",
-						file->path, blknum, nblocks, read_len);
+			elog(ERROR, "File: %s, invalid block size of block %u : %lu",
+				 file->path, blknum, read_len);
 		}
 
 		/*
-		* If an invalid data page was found, fallback to simple copy to ensure
-		* all pages in the file don't have BackupPageHeader.
-		*/
+		 * If we found page with invalid header, at first check if it is zeroed,
+		 * which is valid state for page. If it is not, read it and check header
+		 * again, because it's possible that we've read a partly flushed page.
+		 * If after several attempts page header is still invalid, throw an error.
+		 * The same idea is applied to checksum verification.
+		 */
+
+		/*
+		 * TODO Should we show a hint about possible false positives suggesting to
+		 * decrease concurrent load? Or we can just copy this page and rely on
+		 * xlog recovery, marking backup as untrusted.
+		 */
 		if (!parse_page(&page, &page_lsn))
 		{
 			int i;
@@ -105,6 +106,7 @@ backup_data_page(pgFile *file, const XLogRecPtr *lsn,
 			if (i == BLCKSZ)
 			{
 				is_zero_page = true;
+				try_checksum = 0;
 				elog(LOG, "File: %s blknum %u, empty page", file->path, blknum);
 			}
 
@@ -117,14 +119,24 @@ backup_data_page(pgFile *file, const XLogRecPtr *lsn,
 				/* Try to read and verify this page again several times. */
 				if (try_checksum)
 				{
-					elog(WARNING, "File: %s blknum %u have wrong page header, try again",
-									file->path, blknum);
+					if (verbose)
+						elog(WARNING, "File: %s blknum %u have wrong page header, try again",
+							 file->path, blknum);
 					usleep(100);
 					continue;
 				}
 				else
 					elog(ERROR, "File: %s blknum %u have wrong page header.", file->path, blknum);
 			}
+		}
+
+		/* If the page hasn't changed since previous backup, don't backup it. */
+		if (!XLogRecPtrIsInvalid(prev_backup_start_lsn)
+			&& !XLogRecPtrIsInvalid(page_lsn)
+			&& page_lsn < prev_backup_start_lsn)
+		{
+			*n_skipped += 1;
+			return;
 		}
 
 		/* Verify checksum */
@@ -138,8 +150,9 @@ backup_data_page(pgFile *file, const XLogRecPtr *lsn,
 			{
 				if (try_checksum)
 				{
-					elog(WARNING, "File: %s blknum %u have wrong checksum, try again",
-									file->path, blknum);
+					if (verbose)
+						elog(WARNING, "File: %s blknum %u have wrong checksum, try again",
+							 file->path, blknum);
 					usleep(100);
 				}
 				else
@@ -147,13 +160,12 @@ backup_data_page(pgFile *file, const XLogRecPtr *lsn,
 									file->path, blknum);
 			}
 		}
-		else
-			try_checksum = 0;
 	}
 
 	file->read_size += read_len;
 
 	memcpy(write_buffer, &header, sizeof(header));
+	/* TODO implement block compression here? */
 	memcpy(write_buffer + sizeof(header), page.data, BLCKSZ);
 	/* write data page */
 	if(fwrite(write_buffer, 1, write_buffer_size, out) != write_buffer_size)
@@ -174,59 +186,61 @@ backup_data_page(pgFile *file, const XLogRecPtr *lsn,
 
 /*
  * Backup data file in the from_root directory to the to_root directory with
- * same relative path.
- * If lsn is not NULL, pages only which are modified after the lsn will be
- * copied.
+ * same relative path. If prev_backup_start_lsn is not NULL, only pages with
+ * higher lsn will be copied.
  */
 bool
 backup_data_file(const char *from_root, const char *to_root,
-				 pgFile *file, const XLogRecPtr *lsn)
+				 pgFile *file, XLogRecPtr prev_backup_start_lsn)
 {
-	char				to_path[MAXPGPATH];
-	FILE				*in;
-	FILE				*out;
-	BlockNumber			blknum = 0;
-	BlockNumber			nblocks = 0;
-	pg_crc32			crc;
-	struct stat 		st;
-
-	INIT_CRC32C(crc);
+	char			to_path[MAXPGPATH];
+	FILE			*in;
+	FILE			*out;
+	BlockNumber		blknum = 0;
+	BlockNumber		nblocks = 0;
+	int n_blocks_skipped = 0;
+	int n_blocks_read = 0;
 
 	/* reset size summary */
 	file->read_size = 0;
 	file->write_size = 0;
+	INIT_CRC32C(file->crc);
 
 	/* open backup mode file for read */
 	in = fopen(file->path, "r");
 	if (in == NULL)
 	{
-		FIN_CRC32C(crc);
-		file->crc = crc;
+		FIN_CRC32C(file->crc);
 
-		/* maybe vanished, it's not error */
+		/*
+		 * If file is not found, this is not en error.
+		 * It could have been deleted by concurrent postgres transaction.
+		 */
 		if (errno == ENOENT)
+		{
+			elog(LOG, "File \"%s\" is not found", file->path);
 			return false;
+		}
 
-		elog(ERROR, "cannot open backup mode file \"%s\": %s",
+		elog(ERROR, "cannot open file \"%s\": %s",
 			 file->path, strerror(errno));
 	}
-	stat(file->path, &st);
-
-	if (st.st_size < file->size)
-		elog(WARNING, "File: %s, file was truncated after backup start. Expected size %lu",
-					 file->path, file->size);
 
 	if (file->size % BLCKSZ != 0)
-		elog(ERROR, "File: %s, file size %lu is incorrect",
-					 file->path, file->size);
+	{
+		fclose(in);
+		elog(ERROR, "File: %s, invalid file size %lu", file->path, file->size);
+	}
 
+	/*
+	 * Compute expected number of blocks in the file.
+	 * NOTE This is a normal situation, if the file size has changed
+	 * since the moment we computed it.
+	 */
 	nblocks = file->size/BLCKSZ;
 
 	/* open backup file for write  */
-	if (check)
-		snprintf(to_path, lengthof(to_path), "%s/tmp", backup_path);
-	else
-		join_path_components(to_path, to_root, file->path + strlen(from_root) + 1);
+	join_path_components(to_path, to_root, file->path + strlen(from_root) + 1);
 	out = fopen(to_path, "w");
 	if (out == NULL)
 	{
@@ -238,33 +252,34 @@ backup_data_file(const char *from_root, const char *to_root,
 
 	/*
 	 * Read each page, verify checksum and write it to backup.
-	 * If page map is not empty we scan only these blocks, otherwise
+	 * If page map is not empty we scan only changed blocks, otherwise
 	 * backup all pages of the relation.
 	 */
 	if (file->pagemap.bitmapsize == 0)
 	{
 		for (blknum = 0; blknum < nblocks; blknum++)
-			backup_data_page(file, lsn, blknum, nblocks, in, out, &crc);
+		{
+			backup_data_page(file, prev_backup_start_lsn, blknum,
+							 nblocks, in, out, &(file->crc), &n_blocks_skipped);
+			n_blocks_read++;
+		}
 	}
 	else
 	{
 		datapagemap_iterator_t *iter;
 		iter = datapagemap_iterate(&file->pagemap);
 		while (datapagemap_next(iter, &blknum))
-			backup_data_page(file, lsn, blknum, nblocks, in, out, &crc);
+		{
+			backup_data_page(file, prev_backup_start_lsn, blknum,
+							 nblocks, in, out, &(file->crc), &n_blocks_skipped);
+			n_blocks_read++;
+		}
 
 		pg_free(iter);
-		/*
-		 * If we have pagemap then file can't be a zero size.
-		 * Otherwise, we will clear the last file.
-		 * Increase read_size to delete after.
-		 */
-		if (file->read_size == 0)
-			file->read_size++;
 	}
 
 	/* update file permission */
-	if (!check && chmod(to_path, FILE_PERMISSION) == -1)
+	if (chmod(to_path, FILE_PERMISSION) == -1)
 	{
 		int errno_tmp = errno;
 		fclose(in);
@@ -276,16 +291,17 @@ backup_data_file(const char *from_root, const char *to_root,
 	fclose(in);
 	fclose(out);
 
-	/* finish CRC calculation and store into pgFile */
-	FIN_CRC32C(crc);
-	file->crc = crc;
+	FIN_CRC32C(file->crc);
 
-	/* Treat empty file as not-datafile */
+	/* Treat empty file as not-datafile. TODO Why? */
 	if (file->read_size == 0)
 		file->is_datafile = false;
 
-	/* We do not backup if all pages skipped. */
-	if (file->write_size == 0 && file->read_size > 0)
+	/*
+	 * If we have pagemap then file can't be a zero size.
+	 * Otherwise, we will clear the last file.
+	 */
+	if (n_blocks_read == n_blocks_skipped)
 	{
 		if (remove(to_path) == -1)
 			elog(ERROR, "cannot remove file \"%s\": %s", to_path,
@@ -293,16 +309,12 @@ backup_data_file(const char *from_root, const char *to_root,
 		return false;
 	}
 
-	/* remove $BACKUP_PATH/tmp created during check */
-	if (check)
-		remove(to_path);
-
 	return true;
 }
 
 /*
  * Restore compressed file that was backed up partly.
- * 
+ * TODO review
  */
 static void
 restore_file_partly(const char *from_root,const char *to_root, pgFile *file)
@@ -313,7 +325,7 @@ restore_file_partly(const char *from_root,const char *to_root, pgFile *file)
 	int			errno_tmp;
 	struct stat	st;
 	char		to_path[MAXPGPATH];
-	char		buf[8192];
+	char		buf[BLCKSZ];
 	size_t write_size = 0;
 
 	join_path_components(to_path, to_root, file->path + strlen(from_root) + 1);
@@ -400,7 +412,7 @@ restore_file_partly(const char *from_root,const char *to_root, pgFile *file)
 	fclose(out);
 }
 
-static void
+void
 restore_compressed_file(const char *from_root,
 						const char *to_root,
 						pgFile *file)
@@ -429,20 +441,6 @@ restore_data_file(const char *from_root,
 	FILE			   *out;
 	BackupPageHeader	header;
 	BlockNumber			blknum;
-
-	if (!file->is_datafile)
-	{
-		/*
-		 * If the file is not a datafile and not compressed file,
-		 * just copy it.
-		 */
-		if (file->generation == -1)
-			copy_file(from_root, to_root, file);
-		else
-			restore_compressed_file(from_root, to_root, file);
-
-		return;
-	}
 
 	/* open backup mode file for read */
 	in = fopen(file->path, "r");
@@ -555,6 +553,11 @@ is_compressed_data_file(pgFile *file)
 	return (file->generation != -1);
 }
 
+/*
+ * Add check that file is not bigger than RELSEG_SIZE.
+ * WARNING compressed file can be exceed this limit.
+ * Add compression.
+ */
 bool
 copy_file(const char *from_root, const char *to_root, pgFile *file)
 {
@@ -563,7 +566,7 @@ copy_file(const char *from_root, const char *to_root, pgFile *file)
 	FILE	   *out;
 	size_t		read_len = 0;
 	int			errno_tmp;
-	char		buf[8192];
+	char		buf[BLCKSZ];
 	struct stat	st;
 	pg_crc32	crc;
 
@@ -589,10 +592,7 @@ copy_file(const char *from_root, const char *to_root, pgFile *file)
 	}
 
 	/* open backup file for write  */
-	if (check)
-		snprintf(to_path, lengthof(to_path), "%s/tmp", backup_path);
-	else
-		join_path_components(to_path, to_root, file->path + strlen(from_root) + 1);
+	join_path_components(to_path, to_root, file->path + strlen(from_root) + 1);
 	out = fopen(to_path, "w");
 	if (out == NULL)
 	{
@@ -678,9 +678,6 @@ copy_file(const char *from_root, const char *to_root, pgFile *file)
 	fclose(in);
 	fclose(out);
 
-	if (check)
-		remove(to_path);
-
 	return true;
 }
 
@@ -699,7 +696,7 @@ copy_file_partly(const char *from_root, const char *to_root,
 	size_t		read_len = 0;
 	int			errno_tmp;
 	struct stat	st;
-	char		buf[8192];
+	char		buf[BLCKSZ];
 
 	/* reset size summary */
 	file->read_size = 0;
@@ -718,10 +715,7 @@ copy_file_partly(const char *from_root, const char *to_root,
 	}
 
 	/* open backup file for write  */
-	if (check)
-		snprintf(to_path, lengthof(to_path), "%s/tmp", backup_path);
-	else
-		join_path_components(to_path, to_root, file->path + strlen(from_root) + 1);
+	join_path_components(to_path, to_root, file->path + strlen(from_root) + 1);
 
 	out = fopen(to_path, "w");
 	if (out == NULL)
@@ -812,19 +806,22 @@ copy_file_partly(const char *from_root, const char *to_root,
 	fclose(in);
 	fclose(out);
 
-	if (check)
-		remove(to_path);
-
 	return true;
 }
 
+
+/*
+ * Calculate checksum of various files which are not copied from PGDATA,
+ * but created in process of backup, such as stream XLOG files,
+ * PG_TABLESPACE_MAP_FILE and PG_BACKUP_LABEL_FILE.
+ */
 bool
-calc_file(pgFile *file)
+calc_file_checksum(pgFile *file)
 {
 	FILE	   *in;
 	size_t		read_len = 0;
 	int			errno_tmp;
-	char		buf[8192];
+	char		buf[BLCKSZ];
 	struct stat	st;
 	pg_crc32	crc;
 

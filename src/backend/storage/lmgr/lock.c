@@ -3896,6 +3896,20 @@ GetLockmodeName(LOCKMETHODID lockmethodid, LOCKMODE mode)
 	return LockMethods[lockmethodid]->lockModeNames[mode];
 }
 
+void
+EnumerateLocks(LockIterator iterator, void* arg)
+{
+	PROCLOCK   *proclock;
+	HASH_SEQ_STATUS status;
+
+	hash_seq_init(&status, LockMethodProcLockHash);
+
+	while ((proclock = (PROCLOCK *) hash_seq_search(&status)) != NULL)
+	{
+		iterator(proclock, arg);
+	}
+}
+
 #ifdef LOCK_DEBUG
 /*
  * Dump all locks in the given proc's myProcLocks lists.

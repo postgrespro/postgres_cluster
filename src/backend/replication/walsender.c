@@ -808,13 +808,12 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 		ReplicationSlotCreate(cmd->slotname, true, RS_EPHEMERAL);
 	}
 
-	initStringInfo(&output_message);
-
 	if (cmd->kind == REPLICATION_KIND_LOGICAL)
 	{
 		LogicalDecodingContext *ctx;
 
 		ctx = CreateInitDecodingContext(cmd->plugin, NIL,
+										true, /* build snapshot */
 										logical_read_xlog_page,
 										WalSndPrepareWrite, WalSndWriteData);
 
@@ -1244,6 +1243,9 @@ WalSndWaitForWal(XLogRecPtr loc)
 
 		/* Waiting for new WAL. Since we need to wait, we're now caught up. */
 		WalSndCaughtUp = true;
+		if (logical_decoding_ctx) {
+			LogicalDecodingCaughtUp(logical_decoding_ctx);
+		}
 
 		/*
 		 * Try to flush pending output to the client. Also wait for the socket
@@ -1321,6 +1323,14 @@ exec_replication_command(const char *cmd_string)
 								  parse_rc))));
 
 	cmd_node = replication_parse_result;
+
+	/*
+	 * Allocate buffers that will be used for each outgoing and incoming
+	 * message.  We do this just once per command to reduce palloc overhead.
+	 */
+	initStringInfo(&output_message);
+	initStringInfo(&reply_message);
+	initStringInfo(&tmpbuf);
 
 	switch (cmd_node->type)
 	{
@@ -1763,14 +1773,6 @@ WalSndCheckTimeOut(TimestampTz now)
 static void
 WalSndLoop(WalSndSendDataCallback send_data)
 {
-	/*
-	 * Allocate buffers that will be used for each outgoing and incoming
-	 * message.  We do this just once to reduce palloc overhead.
-	 */
-	initStringInfo(&output_message);
-	initStringInfo(&reply_message);
-	initStringInfo(&tmpbuf);
-
 	/*
 	 * Initialize the last reply timestamp. That enables timeout processing
 	 * from hereon.
@@ -2425,8 +2427,10 @@ XLogSendLogical(void)
 		 * If the record we just wanted read is at or beyond the flushed
 		 * point, then we're caught up.
 		 */
-		if (logical_decoding_ctx->reader->EndRecPtr >= GetFlushRecPtr())
+		if (logical_decoding_ctx->reader->EndRecPtr >= GetFlushRecPtr()) {
 			WalSndCaughtUp = true;
+			LogicalDecodingCaughtUp(logical_decoding_ctx);
+		}
 	}
 
 	/* Update shared memory status */

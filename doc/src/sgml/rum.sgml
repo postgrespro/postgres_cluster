@@ -20,7 +20,7 @@
        <para>
         Slow ranking. The positional information is needed for ranking.
         <literal>GIN</literal> index doesn't store positions of lexems.
-        So after index scan we need an additional heap scan to retreive
+        So after index scan we need an additional heap scan to retrieve
         lexems positions.
        </para>
       </listitem>

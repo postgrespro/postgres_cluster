@@ -99,9 +99,9 @@ createPostingTree(RumState * rumstate, OffsetNumber attnum, Relation index,
  * are making a leaf-level key entry containing a posting list of nipd items.
  * If the caller is actually trying to make a posting-tree entry, non-leaf
  * entry, or pending-list entry, it should pass nipd = 0 and then overwrite
- * the t_tid fields as necessary.  In any case, ipd can be NULL to skip
+ * the t_tid fields as necessary.  In any case, items can be NULL to skip
  * copying any itempointers into the posting list; the caller is responsible
- * for filling the posting list afterwards, if ipd = NULL and nipd > 0.
+ * for filling the posting list afterwards, if items = NULL and nipd > 0.
  */
 static IndexTuple
 RumFormTuple(RumState * rumstate,
@@ -175,15 +175,14 @@ RumFormTuple(RumState * rumstate,
 	}
 	newsize = MAXALIGN(newsize);
 
-	if (newsize > Min(INDEX_SIZE_MASK, RumMaxItemSize))
+	if (newsize > RumMaxItemSize)
 	{
 		if (errorTooBig)
 			ereport(ERROR,
 					(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
 			errmsg("index row size %lu exceeds maximum %lu for index \"%s\"",
 				   (unsigned long) newsize,
-				   (unsigned long) Min(INDEX_SIZE_MASK,
-									   RumMaxItemSize),
+				   (unsigned long) RumMaxItemSize,
 				   RelationGetRelationName(rumstate->index))));
 		pfree(itup);
 		return NULL;
@@ -348,7 +347,6 @@ buildFreshLeafTuple(RumState * rumstate,
 
 		if (size >= RumDataPageSize)
 			itemsCount--;
-
 
 		/*
 		 * Build posting-tree-only result tuple.  We do this first so as to
@@ -540,10 +538,10 @@ rumBuildCallback(Relation index, HeapTuple htup, Datum *values,
 	Datum		outerAddInfo = (Datum) 0;
 	bool		outerAddInfoIsNull = true;
 
-	if (AttributeNumberIsValid(buildstate->rumstate.attrnOrderByColumn))
+	if (AttributeNumberIsValid(buildstate->rumstate.attrnAttachColumn))
 	{
-		outerAddInfo = values[buildstate->rumstate.attrnOrderByColumn - 1];
-		outerAddInfoIsNull = isnull[buildstate->rumstate.attrnOrderByColumn - 1];
+		outerAddInfo = values[buildstate->rumstate.attrnAttachColumn - 1];
+		outerAddInfoIsNull = isnull[buildstate->rumstate.attrnAttachColumn - 1];
 	}
 
 	oldCtx = MemoryContextSwitchTo(buildstate->tmpCtx);
@@ -789,7 +787,11 @@ rumHeapTupleInsert(RumState * rumstate, OffsetNumber attnum,
 bool
 ruminsert(Relation index, Datum *values, bool *isnull,
 		  ItemPointer ht_ctid, Relation heapRel,
-		  IndexUniqueCheck checkUnique)
+		  IndexUniqueCheck checkUnique
+#if PG_VERSION_NUM >= 100000
+		  , struct IndexInfo *indexInfo
+#endif
+		  )
 {
 	RumState	rumstate;
 	MemoryContext oldCtx;
@@ -808,10 +810,10 @@ ruminsert(Relation index, Datum *values, bool *isnull,
 
 	initRumState(&rumstate, index);
 
-	if (AttributeNumberIsValid(rumstate.attrnOrderByColumn))
+	if (AttributeNumberIsValid(rumstate.attrnAttachColumn))
 	{
-		outerAddInfo = values[rumstate.attrnOrderByColumn - 1];
-		outerAddInfoIsNull = isnull[rumstate.attrnOrderByColumn - 1];
+		outerAddInfo = values[rumstate.attrnAttachColumn - 1];
+		outerAddInfoIsNull = isnull[rumstate.attrnAttachColumn - 1];
 	}
 
 	for (i = 0; i < rumstate.origTupdesc->natts; i++)

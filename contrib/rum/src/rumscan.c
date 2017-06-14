@@ -164,26 +164,37 @@ rumFillScanKey(RumScanOpaque so, OffsetNumber attnum,
 	key->addInfoKeys = NULL;
 	key->addInfoNKeys = 0;
 
-	if (key->orderBy && key->attnum == rumstate->attrnOrderByColumn)
+	if (key->orderBy)
 	{
-		if (nQueryValues != 1)
-			elog(ERROR, "extractQuery should return only one value for ordering");
-		if (rumstate->canOuterOrdering[attnum - 1] == false)
-			elog(ERROR, "doesn't support ordering as additional info");
+		if (key->attnum == rumstate->attrnAttachColumn)
+		{
+			if (nQueryValues != 1)
+				elog(ERROR, "extractQuery should return only one value for ordering");
+			if (rumstate->canOuterOrdering[attnum - 1] == false)
+				elog(ERROR, "doesn't support ordering as additional info");
+			if (rumstate->origTupdesc->attrs[rumstate->attrnAttachColumn - 1]->attbyval == false)
+				elog(ERROR, "doesn't support order by over pass-by-reference column");
 
-		key->useAddToColumn = true;
-		key->attnum = rumstate->attrnAddToColumn;
-		key->nentries = 0;
-		key->nuserentries = 0;
+			key->useAddToColumn = true;
+			key->attnum = rumstate->attrnAddToColumn;
+			key->nentries = 0;
+			key->nuserentries = 0;
 
-		key->outerAddInfoIsNull = true;
+			key->outerAddInfoIsNull = true;
 
-		key->scanEntry = NULL;
-		key->entryRes = NULL;
-		key->addInfo = NULL;
-		key->addInfoIsNull = NULL;
+			key->scanEntry = NULL;
+			key->entryRes = NULL;
+			key->addInfo = NULL;
+			key->addInfoIsNull = NULL;
 
-		return;
+			so->willSort = true;
+
+			return;
+		}
+		else if (rumstate->canOrdering[attnum - 1] == false)
+		{
+			elog(ERROR,"doesn't support ordering, check operator class definition");
+		}
 	}
 
 	key->nentries = nQueryValues;
@@ -526,6 +537,7 @@ rumNewScanKey(IndexScanDesc scan)
 	so->tbm = NULL;
 	so->entriesIncrIndex = -1;
 	so->norderbys = scan->numberOfOrderBys;
+	so->willSort = false;
 
 	/*
 	 * Allocate all the scan key information in the key context. (If
@@ -587,9 +599,11 @@ rumNewScanKey(IndexScanDesc scan)
 		{
 			if (key->attnumOrig == so->rumstate.attrnAddToColumn)
 				hasAddOnFilter |= haofHasAddToRestriction;
-			if (key->attnumOrig == so->rumstate.attrnOrderByColumn)
+			if (key->attnumOrig == so->rumstate.attrnAttachColumn)
 				 hasAddOnFilter |= haofHasAddOnRestriction;
 		}
+
+		key->willSort = so->willSort;
 	}
 
 	if ((hasAddOnFilter & haofHasAddToRestriction) &&
@@ -605,7 +619,7 @@ rumNewScanKey(IndexScanDesc scan)
 			RumScanKey  key = so->keys[i];
 
 			if (key->orderBy == false &&
-				key->attnumOrig == so->rumstate.attrnOrderByColumn)
+				key->attnumOrig == so->rumstate.attrnAttachColumn)
 			{
 				for(j=0; addToKey == NULL && j<so->nkeys; j++)
 					if (so->keys[j]->orderBy == false &&

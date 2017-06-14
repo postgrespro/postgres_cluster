@@ -84,6 +84,8 @@ void executor_worker_main(Datum arg)
 	PGPROC *parent;
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_executor");
+	init_worker_mem_ctx("ExecutorMemoryContext");
+
 	seg = dsm_attach(DatumGetInt32(arg));
 	if(seg == NULL)
 		ereport(ERROR,
@@ -107,7 +109,6 @@ void executor_worker_main(Datum arg)
 	pqsignal(SIGHUP, worker_spi_sighup);
 	BackgroundWorkerUnblockSignals();
 
-	init_worker_mem_ctx("ExecutorMemoryContext");
 	worker_jobs_limit = read_worker_job_limit();
 
 	while(1)
@@ -139,7 +140,14 @@ void executor_worker_main(Datum arg)
 		}
 		else if(result < 0)
 		{
-			delete_worker_mem_ctx();
+			if(result == -100)
+			{
+				snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX, 
+											"Cannot allocate memory");
+				shared->worker_exit = true;
+				shared->status = SchdExecutorError;
+			}
+			delete_worker_mem_ctx(NULL);
 			dsm_detach(seg);
 			proc_exit(0);
 		}
@@ -150,7 +158,7 @@ void executor_worker_main(Datum arg)
 		if(rc && rc & WL_POSTMASTER_DEATH) break;
 	}
 
-	delete_worker_mem_ctx();
+	delete_worker_mem_ctx(NULL);
 	dsm_detach(seg);
 	proc_exit(0);
 }
@@ -159,9 +167,11 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 {
 	executor_error_t EE;
 	char *error = NULL;
-	int i;
+	int i, ret;
 	job_t *job;
 	spi_response_t *r;
+	MemoryContext old, mem;
+	char buffer[1024];
 
 	EE.n = 0;
 	EE.errors = NULL;
@@ -174,6 +184,9 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 		return 0;
 	}
 
+	mem = init_mem_ctx("executor");
+	old = MemoryContextSwitchTo(mem);
+
 	*status = shared->status = SchdExecutorWork;
 	shared->message[0] = 0;
 
@@ -182,10 +195,13 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 	if(!job)
 	{
 		if(shared->message[0] == 0)
-			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX, 
+			snprintf(shared->message, PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
 											"Cannot retrive job information");
 		shared->worker_exit = true;
 		*status = shared->status = SchdExecutorError;
+
+		MemoryContextSwitchTo(old);
+		MemoryContextDelete(mem);
 
 		return -1;
 	}
@@ -207,6 +223,8 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 		}
 		*status = shared->worker_exit = true;
 		shared->status = SchdExecutorError;
+		MemoryContextSwitchTo(old);
+		MemoryContextDelete(mem);
 		return -2;
 	}
 
@@ -230,30 +248,35 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 		}
 		if(job->type == AtJob && i == 0 && job->sql_params_n > 0)
 		{
-			r = execute_spi_params_prepared(job->dosql[i], job->sql_params_n, job->sql_params);
+			r = execute_spi_params_prepared(mem, job->dosql[i], job->sql_params_n, job->sql_params);
 		}
 		else
 		{
-			r = execute_spi(job->dosql[i]);
+			r = execute_spi(mem, job->dosql[i]);
 		}
+		snprintf(buffer, 1024, "finalize: %s", job->dosql[i]);
+		if(!r) return -100;   /* cannot allocate memory */
+		pgstat_report_activity(STATE_RUNNING, buffer);
 		if(r->retval < 0)
 		{
 			/* success = false; */
 			*status = SchdExecutorError;
 			if(r->error)
 			{
-				push_executor_error(&EE, "error in command #%d: %s",
+				ret = push_executor_error(&EE, "error in command #%d: %s",
 															i+1, r->error);
 			}
 			else
 			{
-				push_executor_error(&EE, "error in command #%d: code: %d",
+				ret = push_executor_error(&EE, "error in command #%d: code: %d",
 															i+1, r->retval);
 			}
+			if(ret < 0)  return -100; /* cannot alloc memory */
 			destroy_spi_data(r);
 			ABORT_SPI_SNAP();
 			SetConfigOption("schedule.transaction_state", "failure", PGC_INTERNAL, PGC_S_SESSION);
-			executor_onrollback(job, &EE);
+			if(executor_onrollback(mem, job, &EE) == -14000)
+									return -100;   /* cannot alloc memory */
 
 			break;
 		}
@@ -321,10 +344,12 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 
 	SetSessionAuthorization(BOOTSTRAP_SUPERUSERID, true);
 	ResetAllOptions();
+	MemoryContextSwitchTo(old);
+	MemoryContextDelete(mem);
 
 	return 1;
 }
-	
+
 
 int set_session_authorization(char *username, char **error)
 {
@@ -336,15 +361,16 @@ int set_session_authorization(char *username, char **error)
 	int rv;
 	char *sql = "select oid, rolsuper from pg_catalog.pg_roles where rolname = $1";
 	char buff[1024];
+	MemoryContext mem = SchedulerWorkerContext;
 
-	values[0] = CStringGetTextDatum(username);	
+	values[0] = CStringGetTextDatum(username);
 	START_SPI_SNAP();
-	r = execute_spi_sql_with_args(sql, 1, types, values, NULL);
+	r = execute_spi_sql_with_args(mem, sql, 1, types, values, NULL);
 
 	if(r->retval < 0)
 	{
 		rv = r->retval;
-		*error = _copy_string(r->error);
+		*error = _mcopy_string(mem, r->error);
 		destroy_spi_data(r);
 		return rv;
 	}
@@ -352,7 +378,7 @@ int set_session_authorization(char *username, char **error)
 	{
 		STOP_SPI_SNAP();
 		sprintf(buff, "Cannot find user with name: %s", username);
-		*error = _copy_string(buff);
+		*error = _mcopy_string(mem, buff);
 		destroy_spi_data(r);
 
 		return -200;
@@ -415,7 +441,7 @@ TimestampTz get_next_excution_time(char *sql, executor_error_t *ee)
 
 	START_SPI_SNAP();
 	pgstat_report_activity(STATE_RUNNING, "culc next time execution time");
-	r = execute_spi(sql);
+	r = execute_spi(SchedulerWorkerContext, sql);
 	if(r->retval < 0)
 	{
 		if(r->error)
@@ -431,7 +457,7 @@ TimestampTz get_next_excution_time(char *sql, executor_error_t *ee)
 		return 0;
 	}
 	if(r->n_rows == 0)
-	{	
+	{
 		push_executor_error(ee, "next time statement returns 0 rows");
 	}
 	else if(r->types[0] != TIMESTAMPTZOID)
@@ -460,7 +486,7 @@ TimestampTz get_next_excution_time(char *sql, executor_error_t *ee)
 	return ts;
 }
 
-int executor_onrollback(job_t *job, executor_error_t *ee)
+int executor_onrollback(MemoryContext mem, job_t *job, executor_error_t *ee)
 {
 	int rv;
 	spi_response_t *r;
@@ -469,16 +495,18 @@ int executor_onrollback(job_t *job, executor_error_t *ee)
 	pgstat_report_activity(STATE_RUNNING, "execure onrollback");
 
 	START_SPI_SNAP();
-	r = execute_spi(job->onrollback);
+	r = execute_spi(mem, job->onrollback);
 	if(r->retval < 0)
 	{
 		if(r->error)
 		{
-			push_executor_error(ee, "onrollback error: %s", r->error);
+			if(push_executor_error(ee, "onrollback error: %s", r->error) < 0)
+					return -14000;
 		}
 		else
 		{
-			push_executor_error(ee, "onrollback error: unknown: %d", r->retval);
+			if(push_executor_error(ee, "onrollback error: unknown: %d", r->retval) < 0)
+				return -14000;
 		}
 		ABORT_SPI_SNAP();
 	}
@@ -502,7 +530,7 @@ void set_pg_var(bool result, executor_error_t *ee)
 
 	vals[0] = PointerGetDatum(cstring_to_text(result ? "success": "failure"));
 
-	r = execute_spi_sql_with_args(sql, 1, argtypes, vals, NULL);
+	r = execute_spi_sql_with_args(NULL, sql, 1, argtypes, vals, NULL);
 	if(r->retval < 0)
 	{
 		if(r->error)
@@ -571,6 +599,10 @@ int push_executor_error(executor_error_t *e, char *fmt, ...)
 	{
 		e->errors = repalloc(e->errors, sizeof(char *) * (e->n+1));
 	}
+	if(e->errors == NULL)
+	{	
+		return -1;
+	}
 	e->errors[e->n] = worker_alloc(sizeof(char)*(len + 1));
 	memcpy(e->errors[e->n], buf, len+1);
 
@@ -581,33 +613,33 @@ int push_executor_error(executor_error_t *e, char *fmt, ...)
 }
 
 PG_FUNCTION_INFO_V1(get_self_id);
-Datum 
+Datum
 get_self_id(PG_FUNCTION_ARGS)
 {
 	if(current_job_id == -1)
 	{
-		elog(ERROR, "There is no active job in progress");	
+		elog(ERROR, "There is no active job in progress");
 	}
 	PG_RETURN_INT64(current_job_id);
 }
 
 PG_FUNCTION_INFO_V1(resubmit);
-Datum 
+Datum
 resubmit(PG_FUNCTION_ARGS)
 {
-	Interval *interval;	
+	Interval *interval;
 
 	if(current_job_id == -1)
 	{
-		elog(ERROR, "There is no active job in progress");	
+		elog(ERROR, "There is no active job in progress");
 	}
 	if(PG_ARGISNULL(0))
 	{
-		resubmit_current_job = 1;		
+		resubmit_current_job = 1;
 		PG_RETURN_INT64(1);
 	}
 	interval = PG_GETARG_INTERVAL_P(0);
-#ifdef HAVE_INT64_TIMESTAMP 
+#ifdef HAVE_INT64_TIMESTAMP
     resubmit_current_job = interval->time / 1000000.0;
 #else
     resubmit_current_job = interval->time;
@@ -634,6 +666,7 @@ void at_executor_worker_main(Datum arg)
 	/* PGPROC *parent; */
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_at_executor");
+	init_worker_mem_ctx("ExecutorMemoryContext");
 	seg = dsm_attach(DatumGetInt32(arg));
 	if(seg == NULL)
 		ereport(ERROR,
@@ -658,11 +691,10 @@ void at_executor_worker_main(Datum arg)
 	pqsignal(SIGHUP, worker_spi_sighup);
 	BackgroundWorkerUnblockSignals();
 
-	init_worker_mem_ctx("ExecutorMemoryContext");
 
 	while(1)
 	{
-		if(shared->stop_worker) break; 
+		if(shared->stop_worker) break;
 		if(got_sighup)
 		{
 			got_sighup = false;
@@ -671,13 +703,13 @@ void at_executor_worker_main(Datum arg)
 		CHECK_FOR_INTERRUPTS();
 		result = process_one_job(shared, &status);
 
-		if(result == 0) 
+		if(result == 0)
 		{
 			lets_sleep = true;
 		}
 		else if(result < 0)
 		{
-			delete_worker_mem_ctx();
+			delete_worker_mem_ctx(NULL);
 			dsm_detach(seg);
 			proc_exit(1);
 		}
@@ -699,7 +731,7 @@ void at_executor_worker_main(Datum arg)
 		elog(LOG, "at worker stopped by parent signal");
 	}
 
-	delete_worker_mem_ctx();
+	delete_worker_mem_ctx(NULL);
 	dsm_detach(seg);
 	proc_exit(0);
 }
@@ -712,14 +744,16 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 	int set_ret;
 	char buff[512];
 	spi_response_t *r;
+	MemoryContext old;
+	MemoryContext mem = init_mem_ctx("at job processor");
+	old = MemoryContextSwitchTo(mem);
 
 	*status = shared->status = SchdExecutorWork;
 
 	pgstat_report_activity(STATE_RUNNING, "initialize at job");
 	START_SPI_SNAP();
 
-	/* job = get_next_at_job_with_lock(shared->nodename, &error); */
-	job = get_at_job_for_process(shared->nodename, &error);
+	job = get_at_job_for_process(mem, shared->nodename, &error);
 	if(!job)
 	{
 		if(error)
@@ -765,7 +799,8 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 			return -1;
 		}
 		STOP_SPI_SNAP();
-	elog(LOG, "JOB MOVED TO DONE");
+		MemoryContextSwitchTo(old);
+		MemoryContextDelete(mem);
 		return 1;
 	}
 
@@ -780,11 +815,11 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 
 	if(job->sql_params_n > 0)
 	{
-		r = execute_spi_params_prepared(job->dosql[0], job->sql_params_n, job->sql_params);
+		r = execute_spi_params_prepared(mem, job->dosql[0], job->sql_params_n, job->sql_params);
 	}
 	else
 	{
-		r = execute_spi(job->dosql[0]);
+		r = execute_spi(mem, job->dosql[0]);
 	}
 	if(job->timelimit)
 	{
@@ -812,13 +847,15 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 		set_ret = set_at_job_done(job, NULL, resubmit_current_job, &set_error);
 	}
 	destroy_spi_data(r);
-	
+
 	resubmit_current_job = 0;
 	current_job_id = -1;
 	pgstat_report_activity(STATE_RUNNING, "finish job processing");
 	if(set_ret > 0)
 	{
 		STOP_SPI_SNAP();
+		MemoryContextSwitchTo(old);
+		MemoryContextDelete(mem);
 		return 1;
 	}
 	if(set_error)
@@ -831,6 +868,8 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 		elog(LOG, "AT_EXECUTOR ERROR: set log: unknown error");
 	}
 	ABORT_SPI_SNAP();
+	MemoryContextSwitchTo(old);
+	MemoryContextDelete(mem);
 
 	return -1;
 }
@@ -846,7 +885,7 @@ Oid set_session_authorization_by_name(char *rolename, char **error)
 	if(!HeapTupleIsValid(roleTup))
 	{
 		snprintf(buffer, 512, "There is no user name: %s", rolename);
-		*error = _copy_string(buffer);
+		*error = _mcopy_string(NULL, buffer);
 		return InvalidOid;
 	}
 	rform = (Form_pg_authid) GETSTRUCT(roleTup);

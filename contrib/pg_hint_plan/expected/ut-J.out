@@ -471,7 +471,6 @@ HashJoin(t1 t1 t2 t2)
                    QUERY PLAN                   
 ------------------------------------------------
  Nested Loop
-   Join Filter: (t1.c1 = t4.c1)
    ->  Merge Join
          Merge Cond: (t1.c1 = t2.c1)
          ->  Merge Join
@@ -482,8 +481,8 @@ HashJoin(t1 t1 t2 t2)
                Sort Key: t2.c1
                ->  Seq Scan on t2
    ->  Index Scan using t4_i1 on t4
-         Index Cond: (c1 = t3.c1)
-(13 rows)
+         Index Cond: (c1 = t1.c1)
+(12 rows)
 
 ----
 ---- No. J-1-6 object type for the hint

@@ -97,7 +97,7 @@ make MAX_CONNECTIONS=10 check
    <title>Running the Tests Against an Existing Installation</title>
 
   <para>
-   To run the tests after installation (see <xref linkend="installation">),
+   To run the tests after installation,
    initialize a data area and start the
    server as explained in <xref linkend="runtime">, then type:
 <screen>

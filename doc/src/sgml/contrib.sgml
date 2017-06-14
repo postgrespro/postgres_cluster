@@ -22,8 +22,7 @@
 
  <para>
   When building from the source distribution, these components are not built
-  automatically, unless you build the "world" target
-  (see <xref linkend="build">).
+  automatically, unless you build the "world" target.
   You can build and install all of them by running:
 <screen>
 <userinput>make</userinput>
@@ -131,6 +130,7 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &lo;
  &ltree;
  &mchar;
+ &multimaster;
  &online-analyze;
  &pageinspect;
  &passwordcheck;
@@ -147,6 +147,7 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &pgstattuple;
  &pgtransfer;
  &pgtrgm;
+ &pg-tsparser;
  &pgvariables;
  &pgvisibility;
  &pg-wait-sampling;
@@ -227,5 +228,6 @@ pages.
   </para>
 
  &pgstandby;
+ &mamonsu;
  </sect1>
 </appendix>

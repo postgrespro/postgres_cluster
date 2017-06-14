@@ -114,6 +114,7 @@ static LogicalDecodingContext *
 StartupDecodingContext(List *output_plugin_options,
 					   XLogRecPtr start_lsn,
 					   TransactionId xmin_horizon,
+					   bool need_full_snapshot,
 					   XLogPageReadCB read_page,
 					   LogicalOutputPluginWriterPrepareWrite prepare_write,
 					   LogicalOutputPluginWriterWrite do_write)
@@ -171,7 +172,8 @@ StartupDecodingContext(List *output_plugin_options,
 
 	ctx->reorder = ReorderBufferAllocate();
 	ctx->snapshot_builder =
-		AllocateSnapshotBuilder(ctx->reorder, xmin_horizon, start_lsn);
+		AllocateSnapshotBuilder(ctx->reorder, xmin_horizon, start_lsn,
+								need_full_snapshot);
 
 	ctx->reorder->private_data = ctx;
 
@@ -210,6 +212,7 @@ StartupDecodingContext(List *output_plugin_options,
 LogicalDecodingContext *
 CreateInitDecodingContext(char *plugin,
 						  List *output_plugin_options,
+						  bool need_full_snapshot,
 						  XLogPageReadCB read_page,
 						  LogicalOutputPluginWriterPrepareWrite prepare_write,
 						  LogicalOutputPluginWriterWrite do_write)
@@ -267,28 +270,42 @@ CreateInitDecodingContext(char *plugin,
 	 * the slot machinery about the new limit. Once that's done the
 	 * ProcArrayLock can be released as the slot machinery now is
 	 * protecting against vacuum.
+	 *
+	 * Note that, temporarily, the data, not just the catalog, xmin has to be
+	 * reserved if a data snapshot is to be exported.  Otherwise the initial
+	 * data snapshot created here is not guaranteed to be valid. After that
+	 * the data xmin doesn't need to be managed anymore and the global xmin
+	 * should be recomputed. As we are fine with losing the pegged data xmin
+	 * after crash - no chance a snapshot would get exported anymore - we can
+	 * get away with just setting the slot's
+	 * effective_xmin. ReplicationSlotRelease will reset it again.
+	 *
 	 * ----
 	 */
+	elog(LOG, "CreateInitDecodingContext: try to obtain proc array lock");
 	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+	elog(LOG, "CreateInitDecodingContext: grant proc array lock");
 
-	slot->effective_catalog_xmin = GetOldestSafeDecodingTransactionId();
-	slot->data.catalog_xmin = slot->effective_catalog_xmin;
+	xmin_horizon = GetOldestSafeDecodingTransactionId(need_full_snapshot);
 
+	slot->effective_catalog_xmin = xmin_horizon;
+	slot->data.catalog_xmin = xmin_horizon;
+	if (need_full_snapshot)
+		slot->effective_xmin = xmin_horizon;
+
+	elog(LOG, "CreateInitDecodingContext: GetOldestSafeDecodingTransactionId");
 	ReplicationSlotsComputeRequiredXmin(true);
+	elog(LOG, "CreateInitDecodingContext: ReplicationSlotsComputeRequiredXmin");
 
 	LWLockRelease(ProcArrayLock);
-
-	/*
-	 * tell the snapshot builder to only assemble snapshot once reaching the
-	 * running_xact's record with the respective xmin.
-	 */
-	xmin_horizon = slot->data.catalog_xmin;
+	elog(LOG, "CreateInitDecodingContext: release proc array lock");
 
 	ReplicationSlotMarkDirty();
 	ReplicationSlotSave();
 
 	ctx = StartupDecodingContext(NIL, InvalidXLogRecPtr, xmin_horizon,
-								 read_page, prepare_write, do_write);
+								 need_full_snapshot, read_page, prepare_write,
+								 do_write);
 
 	/* call output plugin initialization callback */
 	old_context = MemoryContextSwitchTo(ctx->context);
@@ -377,7 +394,7 @@ CreateDecodingContext(XLogRecPtr start_lsn,
 	}
 
 	ctx = StartupDecodingContext(output_plugin_options,
-								 start_lsn, InvalidTransactionId,
+								 start_lsn, InvalidTransactionId, false,
 								 read_page, prepare_write, do_write);
 
 	/* call output plugin initialization callback */
@@ -414,11 +431,12 @@ void
 DecodingContextFindStartpoint(LogicalDecodingContext *ctx)
 {
 	XLogRecPtr	startptr;
+	int n_records = 0;
 
 	/* Initialize from where to start reading WAL. */
 	startptr = ctx->slot->data.restart_lsn;
 
-	elog(DEBUG1, "searching for logical decoding starting point, starting at %X/%X",
+	elog(LOG, "searching for logical decoding starting point, starting at %X/%X",
 		 (uint32) (ctx->slot->data.restart_lsn >> 32),
 		 (uint32) ctx->slot->data.restart_lsn);
 
@@ -436,7 +454,7 @@ DecodingContextFindStartpoint(LogicalDecodingContext *ctx)
 			elog(ERROR, "no record found");		/* shouldn't happen */
 
 		startptr = InvalidXLogRecPtr;
-
+		n_records += 1;
 		LogicalDecodingProcessRecord(ctx, ctx->reader);
 
 		/* only continue till we found a consistent spot */
@@ -445,6 +463,11 @@ DecodingContextFindStartpoint(LogicalDecodingContext *ctx)
 
 		CHECK_FOR_INTERRUPTS();
 	}
+
+	elog(LOG, "Locate starting point at %X/%X after proceeding %d records",
+		 (uint32) (ctx->reader->EndRecPtr >> 32),
+		 (uint32) ctx->reader->EndRecPtr,
+		 n_records);
 
 	ctx->slot->data.confirmed_flush = ctx->reader->EndRecPtr;
 }
@@ -745,6 +768,35 @@ message_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 	/* Pop the error context stack */
 	error_context_stack = errcallback.previous;
 }
+
+void LogicalDecodingCaughtUp(LogicalDecodingContext *ctx)
+{
+	LogicalErrorCallbackState state;
+	ErrorContextCallback errcallback;
+
+	if (ctx->callbacks.caughtup_cb == NULL)
+		return;
+
+	/* Push callback + info on the error context stack */
+	state.ctx = ctx;
+	state.callback_name = "caughtup";
+	state.report_location = ctx->reader->EndRecPtr;
+	errcallback.callback = output_plugin_error_callback;
+	errcallback.arg = (void *) &state;
+	errcallback.previous = error_context_stack;
+	error_context_stack = &errcallback;
+
+	/* set output state */
+	ctx->accept_writes = true;
+	ctx->write_xid = InvalidTransactionId;
+	ctx->write_location = ctx->reader->EndRecPtr;
+
+	/* do the actual work: call callback */
+	ctx->callbacks.caughtup_cb(ctx);
+
+	/* Pop the error context stack */
+	error_context_stack = errcallback.previous;
+}	
 
 /*
  * Set the required catalog xmin horizon for historic snapshots in the current

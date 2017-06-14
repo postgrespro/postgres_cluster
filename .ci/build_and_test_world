@@ -1,5 +1,10 @@
 #!/bin/sh
-
+if [ -z "$TCLCONFIG" ]; then
+[ -x /usr/lib/tcl8.5/tclConfig.sh ] && TCLCONFIG=/usr/lib/tcl8.5
+[ -x /usr/lib/tcl8.6/tclConfig.sh ] && TCLCONFIG=/usr/lib/tcl8.6
+fi
+[ -n "$TCLCONFIG" ] && export TCLCONFIG
+echo TCLCONFIG=${TCLCONFIG}
 #
 # script which exececutes all the build stages. If script executed with
 # no arguments and something fails, every bit of logs, stack traces and

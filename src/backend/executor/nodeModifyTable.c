@@ -1102,6 +1102,13 @@ ExecOnConflictUpdate(ModifyTableState *mtstate,
 	test = heap_lock_tuple(relation, &tuple, estate->es_output_cid,
 						   lockmode, LockWaitBlock, false, &buffer,
 						   &hufd);
+	/*
+	 * We must hold share lock on the buffer content while examining tuple
+	 * visibility.  Afterwards, however, the tuples we have found to be
+	 * visible are guaranteed good as long as we hold the buffer pin.
+	 */
+	LockBuffer(buffer, BUFFER_LOCK_SHARE);
+
 	switch (test)
 	{
 		case HeapTupleMayBeUpdated:
@@ -1157,6 +1164,7 @@ ExecOnConflictUpdate(ModifyTableState *mtstate,
 			 * loop here, as the new version of the row might not conflict
 			 * anymore, or the conflicting tuple has actually been deleted.
 			 */
+			LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
 			ReleaseBuffer(buffer);
 			return false;
 
@@ -1189,6 +1197,8 @@ ExecOnConflictUpdate(ModifyTableState *mtstate,
 
 	/* Store target's existing tuple in the state's dedicated slot */
 	ExecStoreTuple(&tuple, mtstate->mt_existing, buffer, false);
+
+	LockBuffer(buffer, BUFFER_LOCK_UNLOCK);
 
 	/*
 	 * Make tuple and any needed join variables available to ExecQual and

@@ -1409,8 +1409,9 @@ pg_prepared_xacts| SELECT p.transaction,
     p.gid,
     p.prepared,
     u.rolname AS owner,
-    d.datname AS database
-   FROM ((pg_prepared_xact() p(transaction, gid, prepared, ownerid, dbid)
+    d.datname AS database,
+    p.state3pc
+   FROM ((pg_prepared_xact() p(transaction, gid, prepared, ownerid, dbid, state3pc)
      LEFT JOIN pg_authid u ON ((p.ownerid = u.oid)))
      LEFT JOIN pg_database d ON ((p.dbid = d.oid)));
 pg_replication_origin_status| SELECT pg_show_replication_origin_status.local_id,
@@ -2151,7 +2152,9 @@ pg_user_mappings| SELECT u.oid AS umid,
             ELSE a.rolname
         END AS usename,
         CASE
-            WHEN (pg_has_role(s.srvowner, 'USAGE'::text) OR has_server_privilege(s.oid, 'USAGE'::text)) THEN u.umoptions
+            WHEN (((u.umuser <> (0)::oid) AND (a.rolname = "current_user"())) OR ((u.umuser = (0)::oid) AND pg_has_role(s.srvowner, 'USAGE'::text)) OR ( SELECT pg_authid.rolsuper
+               FROM pg_authid
+              WHERE (pg_authid.rolname = "current_user"()))) THEN u.umoptions
             ELSE NULL::text[]
         END AS umoptions
    FROM ((pg_user_mapping u

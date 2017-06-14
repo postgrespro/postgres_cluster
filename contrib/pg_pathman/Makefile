@@ -25,6 +25,7 @@ REGRESS = pathman_basic \
 		  pathman_cte \
 		  pathman_bgw \
 		  pathman_inserts \
+		  pathman_updates \
 		  pathman_domains \
 		  pathman_interval \
 		  pathman_callbacks \
@@ -33,7 +34,8 @@ REGRESS = pathman_basic \
 		  pathman_rowmarks \
 		  pathman_runtime_nodes \
 		  pathman_utility_stmt_hooking \
-		  pathman_calamity
+		  pathman_calamity \
+		  pathman_join_clause
 
 EXTRA_REGRESS_OPTS=--temp-config=$(top_srcdir)/$(subdir)/conf.add
 

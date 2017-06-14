@@ -1,7 +1,7 @@
 <!-- doc/src/sgml/aqo.sgml -->
 
 <sect1 id="aqo">
-  <title>aqo (Adaptive Query Optimization)</title>
+  <title>aqo</title>
 
   <indexterm zone="aqo">
    <primary>aqo</primary>
@@ -10,44 +10,25 @@
   <para>
     The <filename>aqo</filename> module is a <productname>&productname;</productname> extension for cost-based query
     optimization. Using machine learning methods, more precisely, a modification of the
-    k-NN algorithm, <filename>aqo</filename> improves cardinality estimation, which can improve execution plans and, consequently, speed up query execution. 
+    k-NN algorithm, <filename>aqo</filename> improves cardinality estimation, which can optimize execution plans and, consequently, speed up query execution.
   </para>
-  <para>
-    With <filename>aqo</filename>, you can: 
-  </para>
-  <itemizedlist spacing="compact">
-    <listitem>
-      <para>
-        Automatically tune your database for the most typical database queries
-      </para>
-    </listitem>
-    <listitem>
-      <para>
-        Experiment with execution plans for complex queries
-      </para>
-    </listitem>
-  </itemizedlist>
-  <para>In the learning modes, <filename>aqo</filename> collects statistics on all the executed
-    queries and classifies it according to the query type. If the
+  <para>The <filename>aqo</filename> module can collect statistics on all the executed
+    queries, excluding the queries that access system relations. 
+    The collected statistics is classified by query type. If the
     queries differ in their constants only, they belong to the same
     type. For each type, <filename>aqo</filename> stores the cardinality quality, planning
-    time, execution time, and execution statistics for machine learning. Based on this data, <filename>aqo</filename> builds the new query plan and uses it for the next query of the same type.
-    Experimental evaluation shows that <filename>aqo</filename> can significantly improve
-    performance for complex queries.
+    time, execution time, and execution statistics for machine learning. Based on this data, <filename>aqo</filename> builds a new query plan and uses it for the next query of the same type.
+    <filename>aqo</filename> test runs have shown significant performance improvements for complex queries.
   </para>
   <sect2 id="aqo-installation">
-    <title>Installation</title>
+    <title>Installation and Setup</title>
     <para>
-      <emphasis role="strong">Prerequisites:</emphasis> You must have <productname>&productname;</productname> installed to
-      use the <filename>aqo</filename> extension.
-    </para>
-    <para>
-      To complete the installation of <filename>aqo</filename>:
+      The <filename>aqo</filename> extension is included into the <productname>&productname;</productname>. Once you have <productname>&productname;</productname> installed, complete the following steps to enable <filename>aqo</filename>:
     </para>
     <orderedlist>
       <listitem>
         <para>
-          When setting up your server, add <filename>aqo.so</filename> to the
+          When setting up your server, add <filename>aqo</filename> to the
           <varname>shared_preload_libraries</varname> variable in the
           <filename>postgresql.conf</filename> file:
         </para>
@@ -55,38 +36,34 @@
 shared_preload_libraries = 'aqo'
 </programlisting>
         <para>
-          You should preload the `aqo` library at the server startup, since
- adaptive query optimization needs to be enabled per cluster. Otherwise, the <filename>aqo</filename> will only be used for the session in which you created the <filename>aqo</filename> extension.
+          The <literal>aqo</literal> library must be preloaded at the server startup, since
+ adaptive query optimization needs to be enabled per cluster. Otherwise, <filename>aqo</filename> will only be used for the session in which you created the <filename>aqo</filename> extension.
         </para>
       </listitem>
       <listitem>
         <para>
-          From the command line, run the following query:
+          Create the <filename>aqo</filename> extension using the following query:
         </para>
         <programlisting>
-$ psql -d <replaceable>dbname</replaceable> -c &quot;CREATE EXTENSION aqo;&quot;
+CREATE EXTENSION aqo;
 </programlisting>
       </listitem>
     </orderedlist>
     <para>
-      where <replaceable>dbname</replaceable> is the name of the database for
-      which you would like to use <filename>aqo</filename>. Once the extension is created,
-      you can start optimizing queries.
+      Once the extension is created, you can start optimizing queries.
     </para>
     <para>
-      To permanently disable <filename>aqo</filename>, run:
+      To disable <filename>aqo</filename> at the cluster level and remove all the collected statistics, run:
     </para>
     <programlisting>
 DROP EXTENSION aqo;
 </programlisting>
-  </sect2>
-  <sect2 id="aqo-usage">
-    <title>Usage</title>
-    <sect3 id="aqo-choosing-query-optimization-modes">
-      <title>Choosing Query Optimization Modes</title>
+
+<sect3 id="aqo-configuration">
+      <title>Configuration</title>
       <para>
         By default, <filename>aqo</filename> does not affect query performance. To enable
-        optimization modes for your database, add the
+        adaptive query optimization for your database, add the
         <varname>aqo.mode</varname> variable to your
         <filename>postgresql.conf</filename> file and reload the cluster.
         Depending on your database usage model, you can choose between
@@ -98,28 +75,28 @@ DROP EXTENSION aqo;
       <itemizedlist spacing="compact">
         <listitem>
           <para>
-          <varname>aqo.mode</varname> = <literal>'intelligent'</literal> &mdash; this
+           <literal>intelligent</literal> &mdash; this
         mode auto-tunes your queries based on statistics collected per
         query type.
           </para>
         </listitem>
         <listitem>
           <para>
-         <varname>aqo.mode</varname> = <literal>'forced'</literal> &mdash;  
+         <literal>forced</literal> &mdash;  
         this mode tries to optimize all queries together, regardless of
         the query type.
           </para>
         </listitem>
         <listitem>
           <para>
-          <varname>aqo.mode</varname> = <literal>'manual'</literal> &mdash; this mode
-        uses the default planner for all new queries, but can reuse the
-        collected statistics for already known query types, if any.
+          <literal>controlled</literal> &mdash; this mode
+        uses the default planner for all new queries, but continues using
+        the previously specified planning settings for already known query types, if any.
           </para>
         </listitem>
         <listitem>
           <para>
-          <varname>aqo.mode</varname> = <literal>'disabled'</literal> &mdash; this mode
+          <literal>disabled</literal> &mdash; this mode
         disables <filename>aqo</filename> for all queries, even for the known query types.
         You can use this mode to temporarily disable <filename>aqo</filename> without losing 
         the collected statistics and configuration.
@@ -134,82 +111,75 @@ SET aqo.mode = '<replaceable>mode</>';
 </programlisting>
 where <replaceable>mode</> is the name of the optimization mode to use.
 </para>
-      <blockquote>
-        <para>
-          <emphasis role="strong">Important:</emphasis> The <filename>aqo</filename>
-          extension will not work well for queries with dynamically
-          generated views. If such queries appear in your workload,
-          reset the optimization mode to <literal>aqo.mode='manual'</literal>.
-        </para>
-      </blockquote>
+          <important><para>The <literal>intelligent</literal> mode of <filename>aqo</filename>
+          may not work well if the queries in your workload are of multiple 
+          different types. In this case, you can try resetting the optimization mode to <literal>controlled</literal>.</para>
+        </important>
+      </sect3>
+  </sect2>
+  <sect2 id="aqo-usage">
+    <title>Usage</title>
+    <sect3 id="aqo-choosing-query-optimization-modes">
+      <title>Choosing Query Optimization Modes</title>
       <para>
-        If you often run queries of the same type and some query types takes too long because of non-optimal query execution plans, you can use the intelligent mode to
-        improve planning for such queries. In the intelligent mode, <filename>aqo</filename>
-        analyzes previous query execution and stores statistics. Statistics on queries of
+        If you often run queries of the same type, for example, your application limits the number 
+        of possible query types, you can use the <literal>intelligent</literal> mode to
+        improve planning for these queries. In this mode, <filename>aqo</filename>
+        analyzes each query execution and stores statistics. Statistics on queries of
         different types is stored separately. If performance is not
         improved after 50 iterations, the <filename>aqo</filename> extension falls back to
         the default query planner.
       </para>
-      <blockquote>
-        <para>
-          <emphasis role="strong">Note:</emphasis> You can view the
-          current query plan using the standard <productname>PostgreSQL</productname> <command>EXPLAIN</> command with the 
-          <command>ANALYZE</> option. For details, see the <xref linkend="using-explain">.
-        </para>
-      </blockquote>
+      <note><para>
+          You can view the
+          current query plan using the standard <productname>&productname;</productname> <command>EXPLAIN</> command with the 
+          <command>ANALYZE</> option. For details, see the <xref linkend="using-explain">.</para>
+        </note>
       <para>
-        Since the intelligent mode tries to learn separately for
-        different query types, <filename>aqo</filename> may fail to optimize queries with
-        dynamic structure. For such cases, reset the <filename>aqo</filename> extension to
-        the <literal>manual</literal> mode, or try using the forced mode.
+        Since the <literal>intelligent</literal> mode tries to learn separately for
+        different query types, <filename>aqo</filename> may fail to provide performance improvements if the types of the queries in the workload are constantly changing. For such dynamic workloads, reset the <filename>aqo</filename> extension to
+        the <literal>controlled</literal> mode, or try using the <literal>forced</literal> mode.
       </para>
       <para>
-        In the <literal>forced</literal> mode, <filename>aqo</filename> ignores different
-        query types and tries to optimize them together. This mode can
-        help you optimize workloads with dynamically generated query
-        structures, and it consumes less memory than the intelligent
+        In the <literal>forced</literal> mode, <filename>aqo</filename> 
+        does not classify the collected statistics by query types and tries to optimize all queries together. This mode can
+        help you optimize workloads with multiple different query
+        types, and it consumes less memory than the intelligent
         mode. However, since the <literal>forced</literal> mode lacks
         intelligent tuning, performance may decrease for some queries.
         If you see performance issues in this mode, switch <filename>aqo</filename> to the
-        <literal>manual</literal> mode.
-      </para>
-      <para>
-        When you have reached the required optimization level in the intelligent mode, you can stop performance tuning by switching <filename>aqo</filename> to the manual mode:
+        <literal>controlled</literal> mode:
       </para>
       <programlisting>
-SET aqo.mode = 'manual';
+SET aqo.mode = 'controlled';
 </programlisting>
       <para>
-        In the <literal>manual</literal> mode, <filename>aqo</filename> does not collect statistics for new
+        In the <literal>controlled</literal> mode, <filename>aqo</filename> does not collect statistics for new
         query types, so they will not be optimized. For known query
-        types, <filename>aqo</filename> will continue using the optimized planning
+        types, <filename>aqo</filename> will continue collecting statistics and using optimized planning
         algorithms.
       </para>
-      <para>If you want to fully disable <filename>aqo</filename>, you can switch <filename>aqo</filename> to the <literal>disabled</literal> mode. In this case, the default planner is used for all queries, but the collected statistics and <filename>aqo</filename> settings are saved and can be used in the future. </para>
+      <para>If you want to fully disable <filename>aqo</filename>, you can switch <filename>aqo</filename> to the <literal>disabled</literal> mode. In this case, the default planner is used for all queries, but the collected statistics and <filename>aqo</filename> settings are saved and can be used in the future.</para>
     </sect3>
     <sect3 id="aqo-advanced-query-tuning">
-    <title>Advanced Query Tuning</title>
-    <blockquote>
-      <para>
+    <title>Fine-Tuning aqo</title>
+    <para>
         You must have superuser rights to access <filename>aqo</filename> tables and
         configure advanced query settings.
       </para>
-    </blockquote>
-    <para>
-      When run in the intelligent mode, <filename>aqo</filename> assigns a unique hash value
+      <para>
+      When run in the <literal>intelligent</literal> mode, <filename>aqo</filename> assigns a unique hash value
       to each query type to separate the collected statistics. If you
-      switch to the forced mode, the statistics for all untracked query
-      types is stored in common query type with hash 0. You can view all
+      switch to the <literal>forced</literal> mode, the statistics for all untracked query
+      types is stored in a common query type with hash 0. You can view all
       the processed query types and their corresponding hash values in
-      the <literal>aqo_query_texts</literal> table:
+      the <structname>aqo_query_texts</structname> table:
     </para>
     <programlisting>
 SELECT * FROM aqo_query_texts;
 </programlisting>
     <para>
-      Each query type has its own optimization settings. To review the
-      current settings for each type, view the
-      <literal>aqo_queries</literal> table:
+      Each query type has its own optimization settings. These settings are stored in the <structname>aqo_queries</structname> table:
     </para>
     <programlisting>
 SELECT * FROM aqo_queries;
@@ -239,7 +209,7 @@ SELECT * FROM aqo_queries;
       <listitem>
         <para>
           <literal>fspace_hash</literal> is a unique identifier of the
-          separate space in which the data for this query type is
+          separate space in which the statistics for this query type is
           collected. By default, <literal>fspace_hash</literal> is equal
           to <literal>query_hash</literal>.
         </para>
@@ -247,9 +217,9 @@ SELECT * FROM aqo_queries;
       <listitem>
         <para>
           <literal>auto_tuning</literal> shows whether
-          <filename>aqo</filename> tries to tune other settings for the
+          <filename>aqo</filename> tries to change other settings for the
           given query. By default, auto-tuning is enabled in the
-          intelligent mode.
+          <literal>intelligent</literal> mode.
         </para>
       </listitem>
     </itemizedlist>
@@ -262,9 +232,10 @@ SELECT * FROM aqo_queries;
 
 SET aqo.mode='intelligent';
 SELECT * FROM a, b WHERE a.id=b.id;
-SET aqo.mode='manual';
+SET aqo.mode='controlled';
 
- -- Disable auto_tuning, enable both learn_aqo and use_aqo for this query type:
+ -- Disable auto_tuning, enable both learn_aqo and use_aqo 
+ -- for this query type:
 
 UPDATE aqo_queries SET use_aqo=true, learn_aqo=true, auto_tuning=false 
   WHERE query_hash = (SELECT query_hash from aqo_query_texts 
@@ -275,7 +246,8 @@ UPDATE aqo_queries SET use_aqo=true, learn_aqo=true, auto_tuning=false
 EXPLAIN ANALYZE SELECT * FROM a, b WHERE a.id=b.id;
 EXPLAIN ANALYZE SELECT * FROM a, b WHERE a.id=b.id;
 
- -- Disable learning to stop statistics collection and use the optimized plan:
+ -- Disable learning to stop statistics collection 
+ -- and use the optimized plan:
 
 UPDATE aqo_queries SET learn_aqo=false 
   WHERE query_hash = (SELECT query_hash from aqo_query_texts 
@@ -283,7 +255,8 @@ UPDATE aqo_queries SET learn_aqo=false
 </programlisting>
 
     <para>
-      If your data or query distribution is rapidly changing, obsolete statistics may affect AQO performance. After a while, <filename>aqo</filename> will learn the new statistics, but it may take longer than expected. To speed up learning, reset the
+      If your data or query distribution is rapidly changing, learning new statistics will take longer than usual. 
+      In this case, obsolete statistics may affect performance. To speed up <filename>aqo</filename> learning, reset the
       statistics. To remove all the collected machine learning
       statistics, run the following command:
     </para>
@@ -292,7 +265,7 @@ DELETE FROM aqo_data;
 </programlisting>
     <para>
       Alternatively, you can specify a particular query type to reset by
-      providing its hash value in the <literal>fspase_hash</literal> option. For example:
+      providing its hash value in the <literal>fspace_hash</literal> option. For example:
     </para>
     <programlisting>
 DELETE FROM aqo_data WHERE fspace_hash = (SELECT fspace_hash FROM aqo_queries 
@@ -331,12 +304,12 @@ UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;
       <sect3 id="aqo-variables">
       <title>Configuration Variables</title>
         <sect4 id="aqo-mode">
-        <title>aqo.mode</title>
-        <para>Defines the <filename>aqo</filename> optimization modes. 
+        <title><varname>aqo.mode</varname></title>
+        <para>Defines <filename>aqo</filename> optimization modes. 
         </para>
         
  <table id="aqo-mode-options">
-  <title>aqo.mode Options</title>
+  <title><varname>aqo.mode</varname> Options</title>
   <tgroup cols="2">
    <thead>
     <row><entry>Option</entry> <entry>Description</entry>
@@ -354,7 +327,7 @@ UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;
      <entry>Optimizes all queries together, regardless of the query type.</entry>
     </row>
     <row>
-     <entry><literal>manual</literal></entry>
+     <entry><literal>controlled</literal></entry>
      <entry><emphasis role="strong">Default.</emphasis> Uses the default planner for all new queries, but can reuse the collected statistics for already known query types, if any.</entry>
     </row>
     <row>
@@ -370,14 +343,16 @@ UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;
     </sect3>
     <sect3 id="aqo-tables">
       <title>Tables</title>
+              <important><para>You can manually change optimization settings in the <structname>aqo_queries</structname> table. Avoid modifying other tables as it may lead to unexpected results.</para>
+        </important>
       <sect4 id="aqo-query-texts-table">
-        <title>aqo_query_texts Table</title>
+        <title><structname>aqo_query_texts</structname> Table</title>
         <para>
-          The <literal>aqo_query_texts</literal> table classifies all
+          The <structname>aqo_query_texts</structname> table classifies all
           the query types processed by <filename>aqo</filename>. 
         </para>
          <table id="aqo-query-texts-ref">
-         <title>aqo_query_texts Table</title>
+         <title><structname>aqo_query_texts</structname> Table</title>
   <tgroup cols="2">
    <thead>
     <row><entry>Column Name</entry> <entry>Description</entry>
@@ -400,14 +375,14 @@ UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;
  </table>
       </sect4>
       <sect4 id="aqo-queries-table">
-        <title>aqo_queries Table</title>
+        <title><structname>aqo_queries</structname> Table</title>
         <para>
-          The <literal>aqo_queries</literal> table stores optimization
+          The <structname>aqo_queries</structname> table stores optimization
           settings for different query types.
         </para>
 
  <table id="aqo-queries-table-ref">
- <title>aqo_queries Table</title>
+ <title><structname>aqo_queries</structname> Table</title>
   <tgroup cols="2">
    <thead>
     <row><entry>Setting</entry><entry>Description</entry>
@@ -435,11 +410,9 @@ UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;
     <row>
      <entry><literal>fspace_hash</literal></entry>
      <entry>Provides a unique identifier of
-              the separate space in which the data for this query type
+              the separate space in which the statistics for this query type
               is collected. By default, <literal>fspace_hash</literal>
-              is equal to <literal>query_hash</literal>. Using this
-              setting, you can manually change the optimization model
-              used for a particular query type. It may decrease the
+              is equal to <literal>query_hash</literal>. You can change this setting to a different <literal>query_hash</literal> to optimize different query types together. It may decrease the
               amount of memory for models and even improve query
               execution performance. However, changing this setting may
               cause unexpected <filename>aqo</filename> behavior, so make sure to use it only
@@ -451,34 +424,34 @@ UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;
               <filename>aqo</filename> tries to tune other settings for
               the given query. By default, auto-tuning in enabled in the
               intelligent mode. In other modes, new queries are not
-              appended to <literal>aqo_queries</literal> automatically.
+              appended to <structname>aqo_queries</structname> automatically.
               You can change this behavior by setting the
-              <literal>auto_tuning</literal> variable to TRUE.</entry>
+              <literal>auto_tuning</literal> variable to <literal>true</literal>.</entry>
     </row>
    </tbody>
   </tgroup>
  </table>
       </sect4>
       <sect4 id="aqo-data-table">
-        <title>aqo_data Table</title>
+        <title><structname>aqo_data</structname> Table</title>
         <para>
-          The <literal>aqo_data</literal> table contains machine
+          The <structname>aqo_data</structname> table contains machine
           learning data for cardinality estimation refinement. To forget
           all the collected statistics for a particular query type, you
-          can delete all rows from aqo_data with the corresponding
+          can delete all rows from <structname>aqo_data</structname> with the corresponding
           <literal>fspace_hash</literal>.
         </para>
       </sect4>
       <sect4 id="aqo-query-stat-table">
-        <title>aqo_query_stat Table</title>
+        <title><structname>aqo_query_stat</structname> Table</title>
          <para>
-          The <literal>aqo_query_stat</literal> table stores statistics
-          about query execution, by query type. The <filename>aqo</filename> extension uses this data when the
+          The <structname>aqo_query_stat</structname> table stores statistics
+          on query execution, by query type. The <filename>aqo</filename> extension uses this data when the
           <literal>auto_tuning</literal> option is enabled for a
           particular query type.
         </para>
         <table id="aqo-query-stat-ref">
- <title>aqo_query_stat Table</title>
+ <title><structname>aqo_query_stat</structname> Table</title>
   <tgroup cols="2">
    <thead>
     <row><entry>Data</entry><entry>Description</entry>

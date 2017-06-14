@@ -27,6 +27,7 @@ SUBDIRS = \
 		isn		\
 		lo		\
 		ltree		\
+		mmts	\
 		oid2name	\
 		pageinspect	\
 		passwordcheck	\
@@ -39,6 +40,7 @@ SUBDIRS = \
 		pg_stat_statements \
 		pg_transfer	\
 		pg_trgm		\
+		pg_tsparser	\
 		pgcrypto	\
 		pgrowlocks	\
 		pgstattuple	\

@@ -407,6 +407,19 @@ RangeVarGetRelidExtended(const RangeVar *relation, LOCKMODE lockmode,
 		oldRelId = relId;
 	}
 
+	/*
+	 * MTM-CRUTCH: It's possible to create DDL statements that are checking
+	 * for relation existense but do not open them. So in case of temp relation
+	 * we won't call relation_open() and hence will not set MyXactAccessedTempRel.
+	 *
+	 * To skip replication of such DDL do dummy open/close here.
+	 */
+	if (OidIsValid(relId))
+	{
+		Relation	r = try_relation_open(relId, NoLock);
+		relation_close(r, NoLock);
+	}
+
 	if (!OidIsValid(relId) && !missing_ok)
 	{
 		if (relation->schemaname)

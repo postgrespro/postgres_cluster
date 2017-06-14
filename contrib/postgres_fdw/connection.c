@@ -593,6 +593,20 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 	HASH_SEQ_STATUS scan;
 	ConnCacheEntry *entry;
 
+	/* Do nothing for this events */
+	switch (event)
+	{
+		case XACT_EVENT_START:
+		case XACT_EVENT_POST_PREPARE:
+		case XACT_EVENT_COMMIT_PREPARED:
+		case XACT_EVENT_PRE_COMMIT_PREPARED:
+		case XACT_EVENT_ABORT_PREPARED:
+		case XACT_EVENT_COMMIT_COMMAND:
+			return;
+		default:
+			break;
+	}
+
 	/* Quick exit if no connections were touched in this transaction. */
 	if (!xact_got_connection)
 		return;
@@ -713,6 +727,18 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 						entry->have_prep_stmt = false;
 						entry->have_error = false;
 					}
+					break;
+				case XACT_EVENT_START:
+				case XACT_EVENT_POST_PREPARE:
+				case XACT_EVENT_COMMIT_PREPARED:
+				case XACT_EVENT_PRE_COMMIT_PREPARED:
+				case XACT_EVENT_ABORT_PREPARED:
+				case XACT_EVENT_COMMIT_COMMAND:
+					/*
+					 * New event can break our state machine, so let's list
+					 * them here explicitely and force compiler warning in
+					 * case of unhandled event.
+					 */
 					break;
 			}
 		}

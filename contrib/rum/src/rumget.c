@@ -32,6 +32,78 @@ static int	scan_entry_cmp(const void *p1, const void *p2, void *arg);
 static void entryGetItem(RumState * rumstate, RumScanEntry entry, bool *nextEntryList);
 
 
+static bool
+callAddInfoConsistentFn(RumState * rumstate, RumScanKey key)
+{
+	uint32		i;
+	bool		res = true;
+
+	/* it should be true for search key, but it could be false for order key */
+	Assert(key->attnum == key->attnumOrig);
+
+	if (key->attnum != rumstate->attrnAddToColumn)
+		return true;
+
+	/*
+	 * remember some addinfo value for later ordering by addinfo from
+	 * another column
+	 */
+
+	key->outerAddInfoIsNull = true;
+
+	if (key->addInfoKeys == false && key->willSort == false)
+		return true;
+
+	for (i = 0; i < key->nentries; i++)
+	{
+		if (key->entryRes[i] && key->addInfoIsNull[i] == false)
+		{
+			key->outerAddInfoIsNull = false;
+
+			/*
+			 * XXX FIXME only pass-by-value!!! Value should be copied to
+			 * long-lived memory context and, somehow, freeed. Seems, the
+			 * last is real problem.
+			 * But actually it's a problem only for ordering, as restricting
+			 * clause it used only inside this function.
+			 */
+			key->outerAddInfo = key->addInfo[i];
+			break;
+		}
+	}
+
+	if (key->addInfoKeys)
+	{
+		if (key->outerAddInfoIsNull)
+			res = false; /* assume strict operator */
+
+		for(i = 0; res && i < key->addInfoNKeys; i++)
+		{
+			RumScanKey subkey = key->addInfoKeys[i];
+			int j;
+
+			for(j=0; res && j<subkey->nentries; j++)
+			{
+				RumScanEntry	scanSubEntry = subkey->scanEntry[j];
+				int cmp =
+				DatumGetInt32(FunctionCall4Coll(
+					&rumstate->comparePartialFn[scanSubEntry->attnumOrig - 1],
+					rumstate->supportCollation[scanSubEntry->attnumOrig - 1],
+					scanSubEntry->queryKey,
+					key->outerAddInfo,
+					UInt16GetDatum(scanSubEntry->strategy),
+					PointerGetDatum(scanSubEntry->extra_data)
+				));
+
+				if (cmp != 0)
+					res = false;
+			}
+		}
+	}
+
+	return res;
+}
+
 /*
  * Convenience function for invoking a key's consistentFn
  */
@@ -42,6 +114,7 @@ callConsistentFn(RumState * rumstate, RumScanKey key)
 
 	/* it should be true for search key, but it could be false for order key */
 	Assert(key->attnum == key->attnumOrig);
+
 	/*
 	 * If we're dealing with a dummy EVERYTHING key, we don't want to call the
 	 * consistentFn; just claim it matches.
@@ -75,64 +148,7 @@ callConsistentFn(RumState * rumstate, RumScanKey key)
 											  ));
 	}
 
-	if (res && key->attnum == rumstate->attrnAddToColumn)
-	{
-		uint32		i;
-
-		/*
-		 * remember some addinfo value for later ordering by addinfo from
-		 * another column
-		 */
-
-		key->outerAddInfoIsNull = true;
-
-		for (i = 0; i < key->nentries; i++)
-		{
-			if (key->entryRes[i] && key->addInfoIsNull[i] == false)
-			{
-				key->outerAddInfoIsNull = false;
-
-				/*
-				 * XXX FIXME only pass-by-value!!! Value should be copied to
-				 * long-lived memory context and, somehow, freeed. Seems, the
-				 * last is real problem
-				 */
-				key->outerAddInfo = key->addInfo[i];
-				break;
-			}
-		}
-
-		if (key->addInfoKeys)
-		{
-			if (key->outerAddInfoIsNull)
-				res = false; /* assume strict operator */
-
-			for(i = 0; res && i < key->addInfoNKeys; i++)
-			{
-				RumScanKey subkey = key->addInfoKeys[i];
-				int j;
-
-				for(j=0; res && j<subkey->nentries; j++)
-				{
-					RumScanEntry	scanSubEntry = subkey->scanEntry[j];
-					int cmp =
-					DatumGetInt32(FunctionCall4Coll(
-						&rumstate->comparePartialFn[scanSubEntry->attnumOrig - 1],
-						rumstate->supportCollation[scanSubEntry->attnumOrig - 1],
-						scanSubEntry->queryKey,
-						key->outerAddInfo,
-						UInt16GetDatum(scanSubEntry->strategy),
-						PointerGetDatum(scanSubEntry->extra_data)
-					));
-
-					if (cmp != 0)
-						res = false;
-				}
-			}
-		}
-	}
-
-	return res;
+	return res && callAddInfoConsistentFn(rumstate, key);
 }
 
 /*
@@ -246,7 +262,7 @@ collectMatchBitmap(RumBtreeData * btree, RumBtreeStack * stack,
 	if (rumstate->useAlternativeOrder &&
 		scanEntry->attnumOrig == rumstate->attrnAddToColumn)
 	{
-		cmp = &rumstate->compareFn[rumstate->attrnOrderByColumn - 1];
+		cmp = &rumstate->compareFn[rumstate->attrnAttachColumn - 1];
 	}
 
 	/* Initialize  */
@@ -693,7 +709,7 @@ startScan(IndexScanDesc scan)
 	RumScanOpaque so = (RumScanOpaque) scan->opaque;
 	RumState   *rumstate = &so->rumstate;
 	uint32		i;
-	RumScanType	scanType = RumRegularScan;
+	RumScanType	scanType = RumFastScan;
 
 	MemoryContextSwitchTo(so->keyCtx);
 	for (i = 0; i < so->totalentries; i++)
@@ -734,8 +750,10 @@ startScan(IndexScanDesc scan)
 		startScanKey(rumstate, so->keys[i]);
 
 	/*
-	 * Check if we can use a fast scan: should exists at least one
-	 * preConsistent method.
+	 * Check if we can use a fast scan.
+	 * Use fast scan iff all keys have preConsistent method. But we can stop
+	 * checking if at least one key have not preConsistent method and use
+	 * regular scan.
 	 */
 	for (i = 0; i < so->nkeys; i++)
 	{
@@ -747,9 +765,10 @@ startScan(IndexScanDesc scan)
 			scanType = RumFullScan;
 			break;
 		}
-		else if (so->rumstate.canPreConsistent[key->attnum - 1])
+		/* Else check keys for preConsistent method */
+		else if (!so->rumstate.canPreConsistent[key->attnum - 1])
 		{
-			scanType = RumFastScan;
+			scanType = RumRegularScan;
 			break;
 		}
 	}
@@ -833,11 +852,8 @@ entryGetNextItem(RumState * rumstate, RumScanEntry entry)
 			 * It's needed to go by right link. During that we should refind
 			 * first ItemPointer greater that stored
 			 */
-			if ((ScanDirectionIsForward(entry->scanDirection) && RumPageRightMost(page))
-				||
+			if ((ScanDirectionIsForward(entry->scanDirection) && RumPageRightMost(page)) ||
 				(ScanDirectionIsBackward(entry->scanDirection) && RumPageLeftMost(page)))
-
-
 			{
 				UnlockReleaseBuffer(entry->buffer);
 				ItemPointerSetInvalid(&entry->curRumKey.iptr);
@@ -895,6 +911,7 @@ entryGetNextItem(RumState * rumstate, RumScanEntry entry)
 			}
 
 			entry->curRumKey = entry->list[entry->offset];
+			entry->offset += entry->scanDirection;
 			return;
 		}
 	}
@@ -1039,8 +1056,8 @@ entryGetNextItemList(RumState * rumstate, RumScanEntry entry)
 
 	Assert(entry->nlist > 0);
 
-	entry->offset++;
-	entry->curRumKey = entry->list[entry->offset - 1];
+	entry->curRumKey = entry->list[entry->offset];
+	entry->offset += entry->scanDirection;
 
 	/*
 	 * Done with this entry, go to the next for the future.
@@ -1601,6 +1618,7 @@ scanPage(RumState * rumstate, RumScanEntry entry, RumKey *item,
 
 end:
 	entry->curRumKey = entry->list[entry->offset];
+	entry->offset += entry->scanDirection;
 	return true;
 }
 
@@ -1954,11 +1972,11 @@ scanGetItemFull(IndexScanDesc scan, RumKey *advancePast,
 	if (entry->isFinished == TRUE)
 		return false;
 
-	/* Fill outerAddInfo using callConstistentFn() */
+	/* Fill outerAddInfo */
 	key->entryRes[0] = TRUE;
 	key->addInfo[0] = entry->curRumKey.addInfo;
 	key->addInfoIsNull[0] = entry->curRumKey.addInfoIsNull;
-	callConsistentFn(&so->rumstate, key);
+	callAddInfoConsistentFn(&so->rumstate, key);
 
 	/* Move related order by entries */
 	if (nextEntryList)
@@ -2075,7 +2093,7 @@ keyGetOrdering(RumState * rumstate, MemoryContext tempCtx, RumScanKey key,
 			return get_float8_infinity();
 
 		return DatumGetFloat8(FunctionCall3(
-				&rumstate->outerOrderingFn[rumstate->attrnOrderByColumn - 1],
+				&rumstate->outerOrderingFn[rumstate->attrnAttachColumn - 1],
 											key->outerAddInfo,
 											key->queryValues[0],
 											UInt16GetDatum(key->strategy)
