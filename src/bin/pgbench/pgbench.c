@@ -2334,9 +2334,11 @@ doLog(TState *thread, CState *st, instr_time *now,
 		while (agg->start_time + agg_interval < INSTR_TIME_GET_DOUBLE(*now))
 		{
 			/* print aggregated report to logfile */
-			fprintf(logfile, "%ld " INT64_FORMAT " %.0f %.0f %.0f %.0f",
+			fprintf(logfile, "%ld " INT64_FORMAT " " INT64_FORMAT " " INT64_FORMAT " %.0f %.0f %.0f %.0f",
 					agg->start_time,
 					agg->cnt,
+					agg->serialization_failures,
+					agg->deadlock_failures,
 					agg->latency.sum,
 					agg->latency.sum2,
 					agg->latency.min,
@@ -2351,8 +2353,6 @@ doLog(TState *thread, CState *st, instr_time *now,
 				if (latency_limit)
 					fprintf(logfile, " " INT64_FORMAT, agg->skipped);
 			}
-			fprintf(logfile, " " INT64_FORMAT " " INT64_FORMAT,
-					agg->serialization_failures, agg->deadlock_failures);
 			fputc('\n', logfile);
 
 			/* reset data and move to next interval */
@@ -4651,8 +4651,14 @@ threadRun(void *arg)
 					sprintf(tbuf, "%.1f s", total_run);
 
 				fprintf(stderr,
-						"progress: %s, %.1f tps, lat %.3f ms stddev %.3f",
-						tbuf, tps, latency, stdev);
+						"progress: %s, %.1f tps, " INT64_FORMAT " serialization failures transactions, " INT64_FORMAT " deadlock failures transactions, lat %.3f ms stddev %.3f",
+						tbuf,
+						tps,
+						(cur.serialization_failures -
+						 last.serialization_failures),
+						(cur.deadlock_failures - last.deadlock_failures),
+						latency,
+						stdev);
 
 				if (throttle_delay)
 				{
@@ -4661,12 +4667,6 @@ threadRun(void *arg)
 						fprintf(stderr, ", " INT64_FORMAT " skipped",
 								cur.skipped - last.skipped);
 				}
-				fprintf(stderr, ", " INT64_FORMAT " serialization failures",
-						(cur.serialization_failures -
-						 last.serialization_failures));
-				fprintf(stderr, ", " INT64_FORMAT " deadlock failures",
-						(cur.deadlock_failures - last.deadlock_failures));
-
 				fprintf(stderr, "\n");
 
 				last = cur;
