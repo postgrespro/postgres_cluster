@@ -81,6 +81,8 @@ typedef struct SeqTableData
 
 typedef SeqTableData *SeqTable;
 
+seq_nextval_hook_t SeqNextvalHook;
+
 static HTAB *seqhashtab = NULL; /* hash table for SeqTable items */
 
 /*
@@ -588,6 +590,10 @@ nextval_internal(Oid relid)
 		elm->last += elm->increment;
 		relation_close(seqrel, NoLock);
 		last_used_seq = elm;
+
+		if (SeqNextvalHook)
+			SeqNextvalHook(relid, elm->last);
+
 		return elm->last;
 	}
 
@@ -775,6 +781,9 @@ nextval_internal(Oid relid)
 
 	relation_close(seqrel, NoLock);
 
+	if (SeqNextvalHook)
+		SeqNextvalHook(relid, result);
+
 	return result;
 }
 
@@ -843,6 +852,86 @@ lastval(PG_FUNCTION_ARGS)
 
 	PG_RETURN_INT64(result);
 }
+
+void AdjustSequence(Oid relid, int64 next)
+{
+	SeqTable	elm;
+	Relation	seqrel;
+	Buffer		buf;
+	int64       last;
+	HeapTupleData seqtuple;
+	Form_pg_sequence seq;
+
+	/* open and AccessShareLock sequence */
+	init_sequence(relid, &elm, &seqrel);
+
+	if (elm->last != elm->cached && elm->last + elm->increment > next) /* cached number is greater than received */
+	{
+		relation_close(seqrel, NoLock);
+		return;
+	}
+
+	/* lock page' buffer and read tuple */
+	seq = read_seq_tuple(elm, seqrel, &buf, &seqtuple);
+
+	last = seq->last_value;
+	if (seq->is_called) 
+	{
+		last += elm->increment;
+	}
+	if (last <= next) 
+	{
+		Assert(next >= seq->min_value && next <= seq->max_value);
+	
+		next = last + elm->increment*((next - last + elm->increment)/elm->increment);
+
+		/* Set the currval() state only if iscalled = true */
+		if (seq->is_called)
+		{
+			elm->last = next;		/* last returned number */
+			elm->last_valid = true;
+		}
+		
+		/* In any case, forget any future cached numbers */
+		elm->cached = elm->last;
+		
+		/* check the comment above nextval_internal()'s equivalent call. */
+		if (RelationNeedsWAL(seqrel))
+			GetTopTransactionId();
+		
+		START_CRIT_SECTION();
+
+		seq->last_value = next;		/* last fetched number */
+		seq->log_cnt = 0;
+		
+		MarkBufferDirty(buf);
+		
+		/* XLOG stuff */
+		if (RelationNeedsWAL(seqrel))
+		{
+			xl_seq_rec	xlrec;
+			XLogRecPtr	recptr;
+			Page		page = BufferGetPage(buf);
+			
+			XLogBeginInsert();
+			XLogRegisterBuffer(0, buf, REGBUF_WILL_INIT);
+			
+			xlrec.node = seqrel->rd_node;
+			XLogRegisterData((char *) &xlrec, sizeof(xl_seq_rec));
+			XLogRegisterData((char *) seqtuple.t_data, seqtuple.t_len);
+			
+			recptr = XLogInsert(RM_SEQ_ID, XLOG_SEQ_LOG);
+			
+			PageSetLSN(page, recptr);
+		}
+		END_CRIT_SECTION();
+	}
+
+	UnlockReleaseBuffer(buf);
+
+	relation_close(seqrel, NoLock);
+}	
+		
 
 /*
  * Main internal procedure that handles 2 & 3 arg forms of SETVAL.

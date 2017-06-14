@@ -965,7 +965,7 @@ SnapBuildAbortTxn(SnapBuild *builder, XLogRecPtr lsn,
  */
 void
 SnapBuildCommitTxn(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
-				   int nsubxacts, TransactionId *subxacts, bool isCommit)
+				   int nsubxacts, TransactionId *subxacts, bool isCommit, bool forceCatalog)
 {
 	int			nxact;
 
@@ -1023,7 +1023,7 @@ SnapBuildCommitTxn(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
 		 * Add subtransaction to base snapshot if it DDL, we don't distinguish
 		 * to toplevel transactions there.
 		 */
-		else if (ReorderBufferXidHasCatalogChanges(builder->reorder, subxid))
+		else if (ReorderBufferXidHasCatalogChanges(builder->reorder, subxid) || forceCatalog)
 		{
 			sub_needs_timetravel = true;
 
@@ -1051,7 +1051,7 @@ SnapBuildCommitTxn(SnapBuild *builder, XLogRecPtr lsn, TransactionId xid,
 		SnapBuildAddCommittedTxn(builder, xid);
 	}
 	/* add toplevel transaction to base snapshot */
-	else if (ReorderBufferXidHasCatalogChanges(builder->reorder, xid))
+	else if (ReorderBufferXidHasCatalogChanges(builder->reorder, xid) || forceCatalog)
 	{
 		elog(DEBUG2, "found top level transaction " XID_FMT ", with catalog changes!",
 			 xid);

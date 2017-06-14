@@ -1,7 +1,7 @@
 
 EXTENSION = multimaster
 DATA = multimaster--1.0.sql
-OBJS = multimaster.o arbiter.o bytebuf.o bgwpool.o pglogical_output.o pglogical_proto.o pglogical_receiver.o pglogical_apply.o pglogical_hooks.o pglogical_config.o pglogical_relid_map.o ddd.o bkb.o spill.o
+OBJS = multimaster.o arbiter.o bytebuf.o bgwpool.o pglogical_output.o pglogical_proto.o pglogical_receiver.o pglogical_apply.o pglogical_hooks.o pglogical_config.o pglogical_relid_map.o ddd.o bkb.o spill.o referee.o
 MODULE_big = multimaster
 
 PG_CPPFLAGS = -I$(libpq_srcdir)
