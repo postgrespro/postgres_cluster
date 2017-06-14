@@ -1165,7 +1165,7 @@ void cfs_gc_start_bgworkers()
 	elog(LOG, "Start %d background garbage collection workers for CFS", i);
 }
 
-/* Enable/disable garbage colection. */
+/* Enable/disable garbage collection. */
 bool cfs_control_gc(bool enabled)
 {
 	bool was_enabled = cfs_state->gc_enabled;

@@ -2178,10 +2178,14 @@ FileTruncate(File file, off_t offset)
 
 		pg_atomic_write_u32(&map->virtSize, offset);
 		pg_atomic_fetch_sub_u32(&map->usedSize, released);
+		
+		if (offset == 0) 
+		{
+			/* We can truncate compressed file only with zero offset */
+			pg_atomic_write_u32(&map->physSize, 0);
+			returnCode = ftruncate(VfdCache[file].fd, 0);
+		}
 		cfs_unlock_file(map);
-
-		/* We can truncate compressed file only with zero offset */
-		returnCode = (offset == 0) ? ftruncate(VfdCache[file].fd, 0) : 0;
 	}
 	else
 		returnCode = ftruncate(VfdCache[file].fd, offset);
