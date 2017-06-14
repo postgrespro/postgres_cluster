@@ -1949,3 +1949,21 @@ LWLockHeldByMe(LWLock *l)
 	}
 	return false;
 }
+
+/*
+ * LWLockHeldByMeInMode - test whether my process holds a lock in given mode
+ *
+ * This is meant as debug support only.
+ */
+bool
+LWLockHeldByMeInMode(LWLock *l, LWLockMode mode)
+{
+	int			i;
+
+	for (i = 0; i < num_held_lwlocks; i++)
+	{
+		if (held_lwlocks[i].lock == l && held_lwlocks[i].mode == mode)
+			return true;
+	}
+	return false;
+}
