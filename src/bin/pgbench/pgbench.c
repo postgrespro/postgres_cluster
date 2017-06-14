@@ -176,6 +176,8 @@ int			nthreads = 1;		/* number of threads */
 bool		is_connect;			/* establish connection for each transaction */
 bool		is_latencies;		/* report per-command latencies */
 int			main_pid;			/* main process id used in log filename */
+bool		report_failures = false;	/* whether to report serialization and
+										 * deadlock failures per command */
 
 char	   *pghost = "";
 char	   *pgport = "";
@@ -477,6 +479,7 @@ usage(void)
 		   "  -v, --vacuum-all         vacuum all four standard tables before tests\n"
 		   "  --aggregate-interval=NUM aggregate data over NUM seconds\n"
 		"  --progress-timestamp     use Unix epoch timestamps for progress\n"
+		"  --report-failures        report serialization and deadlock failures per command\n"
 		   "  --sampling-rate=NUM      fraction of transactions to log (e.g., 0.01 for 1%%)\n"
 		   "\nCommon options:\n"
 		   "  -d, --debug              print debugging output\n"
@@ -3479,7 +3482,6 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 	if (per_script_stats || latency_limit || is_latencies)
 	{
 		int			i;
-		Command   **commands;
 
 		for (i = 0; i < num_scripts; i++)
 		{
@@ -3517,24 +3519,40 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 
 			/*
 			 * Report per-command serialization / deadlock failures and
-			 * latencies (if needed). */
-			if (is_latencies)
-				printf(" - statement serialization, deadlock failures and latencies in milliseconds:\n");
-			else
-				printf(" - statement serialization and deadlock failures:\n");
-
-			for (commands = sql_script[i].commands;
-				 *commands != NULL;
-				 commands++)
+			 * latencies */
+			if (report_failures || is_latencies)
 			{
-				printf("   %25" INT64_MODIFIER "d  %25" INT64_MODIFIER "d",
-					   (*commands)->serialization_failures,
-					   (*commands)->deadlock_failures);
-				if (is_latencies)
-					printf("  %11.3f",
-						   1000.0 * (*commands)->stats.sum /
-						   (*commands)->stats.count);
-				printf("  %s\n", (*commands)->line);
+				Command   **commands;
+
+				if (report_failures && is_latencies)
+					printf(" - statement serialization, deadlock failures and latencies in milliseconds:\n");
+				else if (report_failures)
+					printf(" - statement serialization and deadlock failures:\n");
+				else
+					printf(" - statement latencies in milliseconds:\n");
+
+				for (commands = sql_script[i].commands;
+					 *commands != NULL;
+					 commands++)
+				{
+					if (report_failures && is_latencies)
+						printf("   %25" INT64_MODIFIER "d  %25" INT64_MODIFIER "d  %11.3f  %s\n",
+							   (*commands)->serialization_failures,
+							   (*commands)->deadlock_failures,
+							   1000.0 * (*commands)->stats.sum /
+							   (*commands)->stats.count,
+							   (*commands)->line);
+					else if (report_failures)
+						printf("   %25" INT64_MODIFIER "d  %25" INT64_MODIFIER "d  %s\n",
+							   (*commands)->serialization_failures,
+							   (*commands)->deadlock_failures,
+							   (*commands)->line);
+					else
+						printf("   %11.3f  %s\n",
+							   1000.0 * (*commands)->stats.sum /
+							   (*commands)->stats.count,
+							   (*commands)->line);
+				}
 			}
 		}
 	}
@@ -3584,6 +3602,7 @@ main(int argc, char **argv)
 #ifdef WITH_RSOCKET
 		{"with-rsocket", no_argument, NULL, 7},
 #endif
+		{"report-failures", no_argument, NULL, 8},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -3893,7 +3912,6 @@ main(int argc, char **argv)
 			case 'I':
 				{
 					benchmarking_option_set = true;
-					per_script_stats = true;
 
 					for (default_isolation_level = 0;
 						 default_isolation_level < NUM_DEFAULT_ISOLATION_LEVEL;
@@ -3956,6 +3974,11 @@ main(int argc, char **argv)
 				isRsocket = true;
 				break;
 #endif
+			case 8:
+				benchmarking_option_set = true;
+				per_script_stats = true;
+				report_failures = true;
+				break;
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 				exit(1);
