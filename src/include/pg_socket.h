@@ -13,6 +13,10 @@
 #ifndef PG_SOCKET_H
 #define PG_SOCKET_H
 
+#include "postgres.h"
+#else
+#include "postgres_fe.h"
+#endif
 #include "pg_config.h"
 
 #ifndef WIN32
