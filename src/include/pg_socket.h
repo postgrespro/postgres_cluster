@@ -13,6 +13,7 @@
 #ifndef PG_SOCKET_H
 #define PG_SOCKET_H
 
+#ifndef FRONTEND
 #include "postgres.h"
 #else
 #include "postgres_fe.h"
