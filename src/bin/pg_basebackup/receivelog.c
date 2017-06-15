@@ -18,7 +18,6 @@
 #include <unistd.h>
 
 /* local includes */
-#include "pg_socket.h"
 #include "receivelog.h"
 #include "streamutil.h"
 

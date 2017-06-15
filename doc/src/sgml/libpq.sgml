@@ -330,8 +330,8 @@ PostgresPollingStatusType PQconnectPoll(PGconn *conn);
        socket underlying the database connection.
        Loop thus: If <function>PQconnectPoll(conn)</function> last returned
        <symbol>PGRES_POLLING_READING</symbol>, wait until the socket is ready to
-       read (as indicated by <function>select()</>, <function>poll()</>, or
-       similar system function).
+       read (as indicated by <function>PQselect()</> or
+       <function>PQselectExtended()</>).
        Then call <function>PQconnectPoll(conn)</function> again.
        Conversely, if <function>PQconnectPoll(conn)</function> last returned
        <symbol>PGRES_POLLING_WRITING</symbol>, wait until the socket is ready
@@ -1873,6 +1873,42 @@ char *PQerrorMessage(const PGconn *conn);
 
 <synopsis>
 int PQsocket(const PGconn *conn);
+</synopsis>
+
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry id="libpq-pqselect">
+     <term><function>PQselect</function><indexterm><primary>PQselect</></></term>
+     <listitem>
+      <para>
+       Uses select(2) to monitor multiple file descriptors, waiting until one or
+       more of the file descriptors become "ready" for some class of I/O
+       operation (e.g., input possible).
+
+<synopsis>
+int PQselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout, int isRsocket);
+</synopsis>
+
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry id="libpq-pqselectextended">
+     <term><function>PQselectExtended</function><indexterm><primary>PQselectExtended</></></term>
+     <listitem>
+      <para>
+       Uses select(2) or poll(2) to wait for input. The <literal>timeout</>
+       argument specifies the number of milliseconds that
+       <function>PQselectExtended</> should block waiting for a file descriptor
+       of the connection to become ready. Specifying a negative value
+       in <literal>timeout</> means an infinite timeout. Specifying a
+       <literal>timeout</> of zero causes <function>poll()</> to return
+       immediately.
+
+<synopsis>
+int PQselectExtended(const PGconn *conn, int timeout_ms);
 </synopsis>
 
       </para>
@@ -4494,10 +4530,10 @@ int PQconsumeInput(PGconn *conn);
        <function>PQconsumeInput</function> can be called even if the
        application is not prepared to deal with a result or notification
        just yet.  The function will read available data and save it in
-       a buffer, thereby causing a <function>select()</function>
+       a buffer, thereby causing a <function>PQselect()</function>
        read-ready indication to go away.  The application can thus use
        <function>PQconsumeInput</function> to clear the
-       <function>select()</function> condition immediately, and then
+       <function>PQselect()</function> condition immediately, and then
        examine the results at leisure.
       </para>
      </listitem>
@@ -4534,10 +4570,10 @@ int PQisBusy(PGconn *conn);
 
   <para>
    A typical application using these functions will have a main loop that
-   uses <function>select()</function> or <function>poll()</> to wait for
+   uses <function>PQselect()</function> or <function>PQselectExtended()</> to wait for
    all the conditions that it must respond to.  One of the conditions
    will be input available from the server, which in terms of
-   <function>select()</function> means readable data on the file
+   <function>PQselect()</function> means readable data on the file
    descriptor identified by <function>PQsocket</function>.  When the main
    loop detects input ready, it should call
    <function>PQconsumeInput</function> to read the input.  It can then
@@ -5084,10 +5120,11 @@ typedef struct pgNotify
    useful commands to execute is to call
    <function>PQconsumeInput</function>, then check
    <function>PQnotifies</function>.  You can use
-   <function>select()</function> to wait for data to arrive from the
+   <function>PQselect()</function> or <function>PQselectExtended()</function>
+   to wait for data to arrive from the
    server, thereby using no <acronym>CPU</acronym> power unless there is
    something to do.  (See <function>PQsocket</function> to obtain the file
-   descriptor number to use with <function>select()</function>.) Note that
+   descriptor number to use with <function>PQselect()</function>.) Note that
    this will work OK whether you submit commands with
    <function>PQsendQuery</function>/<function>PQgetResult</function> or
    simply use <function>PQexec</function>.  You should, however, remember
@@ -8347,12 +8384,10 @@ main(int argc, char **argv)
     while (nnotifies < 4)
     {
         /*
-         * Sleep until something happens on the connection.  We use select(2)
-         * to wait for input, but you could also use poll() or similar
-         * facilities.
+         * Sleep until something happens on the connection.  We use
+         * PQselectExtended to wait for input.
          */
         int         sock;
-        fd_set      input_mask;
 
         sock = PQsocket(conn);
 
@@ -8362,9 +8397,9 @@ main(int argc, char **argv)
         FD_ZERO(&input_mask);
         FD_SET(sock, &input_mask);
 
-        if (select(sock + 1, &input_mask, NULL, NULL, NULL) < 0)
+        if (PQselectExtended(conn, -1) < 0)
         {
-            fprintf(stderr, "select() failed: %s\n", strerror(errno));
+            fprintf(stderr, "PQselectExtended() failed: %s\n", strerror(errno));
             exit_nicely(conn);
         }
 

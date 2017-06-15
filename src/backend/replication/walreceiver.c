@@ -67,6 +67,10 @@
 #include "utils/resowner.h"
 #include "utils/timestamp.h"
 
+#ifdef WITH_RSOCKET
+#include "pg_socket.h"
+#endif
+
 
 /* GUC variables */
 int			wal_receiver_status_interval;

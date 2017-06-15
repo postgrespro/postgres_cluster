@@ -6636,8 +6636,8 @@ PQselectExtended(const PGconn *conn, int timeout_ms)
 		ptr_timeout = &timeout;
 	}
 
-	ret = pg_select(PQsocket(conn) + 1, &input_mask,
-					NULL, NULL, ptr_timeout, PQisRsocket(conn));
+	return pg_select(PQsocket(conn) + 1, &input_mask,
+					 NULL, NULL, ptr_timeout, PQisRsocket(conn));
 #endif   /* HAVE_POLL */
 }
 

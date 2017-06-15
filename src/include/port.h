@@ -489,7 +489,4 @@ extern char *escape_single_quotes_ascii(const char *src);
 /* port/wait_error.c */
 extern char *wait_result_to_str(int exit_status);
 
-/* port/pg_rsocket.c */
-extern void initialize_rsocket(void);
-
 #endif   /* PG_PORT_H */

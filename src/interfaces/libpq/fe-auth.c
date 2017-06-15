@@ -42,6 +42,7 @@
 #include "fe-auth.h"
 #include "libpq/scram.h"
 #include "libpq/md5.h"
+#include "pg_socket.h"
 
 
 #ifdef ENABLE_GSS

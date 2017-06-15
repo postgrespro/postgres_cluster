@@ -13,14 +13,9 @@
 #ifndef PG_SOCKET_H
 #define PG_SOCKET_H
 
-#ifndef FRONTEND
-#include "postgres.h"
-#else
-#include "postgres_fe.h"
-#endif
-
 #include "pg_config.h"
 
+#ifndef WIN32
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -35,46 +30,44 @@
 #ifdef HAVE_SYS_SELECT_H
 #include <sys/select.h>
 #endif
+#else    /* WIN32 */
+#include "win32.h"
+#endif   /* WIN32 */
 
 #ifdef WITH_RSOCKET
-
-#include "port.h"
 
 /* Rsocket function pointers */
 typedef struct PgSocketCall
 {
-	pgsocket	(*socket) (int domain, int type, int protocol);
-	int			(*bind) (pgsocket socket, const struct sockaddr *addr,
+	int			(*socket) (int domain, int type, int protocol);
+	int			(*bind) (int socket, const struct sockaddr *addr,
 						 socklen_t addrlen);
-	int			(*listen) (pgsocket socket, int backlog);
-	int			(*accept) (pgsocket socket, struct sockaddr *addr,
+	int			(*listen) (int socket, int backlog);
+	int			(*accept) (int socket, struct sockaddr *addr,
 						   socklen_t *addrlen);
-	int			(*connect) (pgsocket socket, const struct sockaddr *addr,
+	int			(*connect) (int socket, const struct sockaddr *addr,
 							socklen_t addrlen);
-	int			(*close) (pgsocket socket);
+	int			(*close) (int socket);
 
-	ssize_t		(*recv) (pgsocket socket, void *buf, size_t len, int flags);
-	ssize_t		(*send) (pgsocket socket, const void *buf, size_t len,
+	ssize_t		(*recv) (int socket, void *buf, size_t len, int flags);
+	ssize_t		(*send) (int socket, const void *buf, size_t len,
 						 int flags);
-	ssize_t		(*sendmsg) (pgsocket socket, const struct msghdr *msg,
-							int flags);
+	ssize_t		(*sendmsg) (int socket, const struct msghdr *msg, int flags);
 
 #ifdef HAVE_POLL
 	int			(*poll) (struct pollfd *fds, nfds_t nfds, int timeout);
 #endif
-	int			(*select) (pgsocket nfds, fd_set *readfds, fd_set *writefds,
+	int			(*select) (int nfds, fd_set *readfds, fd_set *writefds,
 						   fd_set *exceptfds, struct timeval *timeout);
 
-	int			(*getsockname) (pgsocket socket, struct sockaddr *addr,
+	int			(*getsockname) (int socket, struct sockaddr *addr,
 								socklen_t *addrlen);
-	int			(*setsockopt) (pgsocket socket, int level, int optname,
+	int			(*setsockopt) (int socket, int level, int optname,
 							   const void *optval, socklen_t optlen);
-	int			(*getsockopt) (pgsocket socket, int level, int optname,
+	int			(*getsockopt) (int socket, int level, int optname,
 							   void *optval, socklen_t *optlen);
 
-#if !defined(WIN32)
-	int			(*fcntl) (pgsocket socket, int cmd, ... /* arg */ );
-#endif
+	int			(*fcntl) (int socket, int cmd, ... /* arg */ );
 } PgSocketCall;
 
 extern PgSocketCall *rcalls;
@@ -109,7 +102,7 @@ extern PgSocketCall *rcalls;
 
 #define pg_closesocket(socket, isRsocket) \
 	((isRsocket) ? rcalls->close(socket) : \
-		close(socket))
+		closesocket(socket))
 
 #define pg_recv(socket, buf, len, flags, isRsocket) \
 	((isRsocket) ? rcalls->recv(socket, buf, len, flags) : \
@@ -145,10 +138,15 @@ extern PgSocketCall *rcalls;
 	((isRsocket) ? rcalls->getsockopt(socket, level, optname, optval, optlen) : \
 		getsockopt(socket, level, optname, optval, optlen))
 
+/* port/pg_rsocket.c */
+extern void initialize_rsocket(void);
+
 #else
 
+#if !defined(WIN32)
 #define pg_fcntl(fd, flag, value, isRsocket) \
 	fcntl(fd, flag, value)
+#endif
 
 #define pg_socket(domain, type, protocol, isRsocket) \
 	socket(domain, type, protocol)
@@ -166,7 +164,7 @@ extern PgSocketCall *rcalls;
 	connect(socket, addr, addrlen)
 
 #define pg_closesocket(socket, isRsocket) \
-	close(socket)
+	closesocket(socket)
 
 #define pg_recv(socket, buf, len, flags, isRsocket) \
 	recv(socket, buf, len, flags)
@@ -174,8 +172,10 @@ extern PgSocketCall *rcalls;
 #define pg_send(socket, buf, len, flags, isRsocket) \
 	send(socket, buf, len, flags)
 
+#if !defined(WIN32)
 #define pg_sendmsg(socket, msg, flags, isRsocket) \
 	sendmsg(socket, msg, flags)
+#endif
 
 #ifdef HAVE_POLL
 #define pg_poll(fds, nfds, timeout, isRsocket) \

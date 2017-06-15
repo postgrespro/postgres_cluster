@@ -53,7 +53,6 @@
 #endif
 
 #include "pgbench.h"
-#include "pg_socket.h"
 
 #define ERRCODE_IN_FAILED_SQL_TRANSACTION  "25P02"
 #define ERRCODE_T_R_SERIALIZATION_FAILURE  "40001"

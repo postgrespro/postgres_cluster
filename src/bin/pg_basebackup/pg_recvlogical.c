@@ -17,7 +17,6 @@
 #include <unistd.h>
 
 /* local includes */
-#include "pg_socket.h"
 #include "streamutil.h"
 
 #include "access/xlog_internal.h"

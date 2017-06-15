@@ -22,6 +22,12 @@ extern		"C"
 
 #include <stdio.h>
 
+#ifndef WIN32
+#include <sys/time.h>
+#else
+#include <winsock2.h>
+#endif
+
 /*
  * postgres_ext.h defines the backend's externally visible types,
  * such as Oid.
@@ -326,7 +332,7 @@ extern int	PQserverVersion(const PGconn *conn);
 extern char *PQerrorMessage(const PGconn *conn);
 extern int	PQsocket(const PGconn *conn);
 extern int	PQisRsocket(const PGconn *conn);
-extern int	PQselect(pgsocket nfds, fd_set *readfds, fd_set *writefds,
+extern int	PQselect(int nfds, fd_set *readfds, fd_set *writefds,
 					 fd_set *exceptfds, struct timeval *timeout, int isRsocket);
 extern int	PQselectExtended(const PGconn *conn, int timeout_ms);
 extern int	PQbackendPID(const PGconn *conn);

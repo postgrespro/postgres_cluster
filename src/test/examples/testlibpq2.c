@@ -99,24 +99,19 @@ main(int argc, char **argv)
 	while (nnotifies < 4)
 	{
 		/*
-		 * Sleep until something happens on the connection.  We use select(2)
-		 * to wait for input, but you could also use poll() or similar
-		 * facilities.
+		 * Sleep until something happens on the connection.  We use
+		 * PQselectExtended to wait for input.
 		 */
 		int			sock;
-		fd_set		input_mask;
 
 		sock = PQsocket(conn);
 
 		if (sock < 0)
 			break;				/* shouldn't happen */
 
-		FD_ZERO(&input_mask);
-		FD_SET(sock, &input_mask);
-
-		if (select(sock + 1, &input_mask, NULL, NULL, NULL) < 0)
+		if (PQselectExtended(conn, -1) < 0)
 		{
-			fprintf(stderr, "select() failed: %s\n", strerror(errno));
+			fprintf(stderr, "PQselectExtended() failed: %s\n", strerror(errno));
 			exit_nicely(conn);
 		}
 

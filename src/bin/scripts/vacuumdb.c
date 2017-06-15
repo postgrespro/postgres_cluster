@@ -15,7 +15,6 @@
 #include "common.h"
 #include "fe_utils/simple_list.h"
 #include "fe_utils/string_utils.h"
-#include "pg_socket.h"
 
 
 #define ERRCODE_UNDEFINED_TABLE  "42P01"
