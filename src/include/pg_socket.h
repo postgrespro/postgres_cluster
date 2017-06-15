@@ -34,9 +34,7 @@
 #ifdef HAVE_SYS_SELECT_H
 #include <sys/select.h>
 #endif
-#else    /* WIN32 */
-#include "win32.h"
-#endif   /* WIN32 */
+#endif   /* !WIN32 */
 
 #ifdef WITH_RSOCKET
 
