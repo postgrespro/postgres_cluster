@@ -1068,37 +1068,33 @@ LruInsert(File file)
 		 * overall system file table being full.  So, be prepared to release
 		 * another FD if necessary...
 		 */
-		vfdP->fd = BasicOpenFile(vfdP->fileName, vfdP->fileFlags,
-								 vfdP->fileMode);
-		if (vfdP->fd < 0)
-		{
-			DO_DB(elog(LOG, "RE-OPEN FAILED: %m"));
-			return -1;
-		}
-		else
-			DO_DB(elog(LOG, "RE_OPEN SUCCESS"));
-
-		if (vfdP->fileFlags & PG_COMPRESSION)
+		if (vfdP->fileFlags & PG_COMPRESSION) 
 		{
 			char* mapFileName = psprintf("%s.cfm", vfdP->fileName);
 			vfdP->md = open(mapFileName, vfdP->fileFlags & ~PG_COMPRESSION, vfdP->fileMode);
 			pfree(mapFileName);
-
 			if (vfdP->md < 0)
 			{
 				elog(LOG, "RE_OPEN MAP FAILED: %d", errno);
-				close(vfdP->fd);
-				vfdP->fd = VFD_CLOSED;
 				return -1;
 			}
-
 			vfdP->map = cfs_mmap(vfdP->md);
 			if (vfdP->map == MAP_FAILED)
 			{
 				elog(LOG, "RE_MAP FAILED: %d", errno);
-				close(vfdP->fd);
 				close(vfdP->md);
-				vfdP->fd = VFD_CLOSED;
+				return -1;
+			}
+			/* We need to copy generation before openning data file */
+			vfdP->generation = vfdP->map->generation;
+
+			vfdP->fd = BasicOpenFile(vfdP->fileName, vfdP->fileFlags,
+									 vfdP->fileMode);
+			if (vfdP->fd < 0)
+			{
+				DO_DB(elog(LOG, "re-open failed: %m"));
+				cfs_munmap(vfdP->map);
+				close(vfdP->md);
 				vfdP->md = VFD_CLOSED;
 				return -1;
 			}
@@ -1106,6 +1102,13 @@ LruInsert(File file)
 		}
 		else
 		{
+			vfdP->fd = BasicOpenFile(vfdP->fileName, vfdP->fileFlags,
+								 vfdP->fileMode);
+			if (vfdP->fd < 0)
+			{
+				DO_DB(elog(LOG, "RE-OPEN FAILED: %m"));
+				return -1;
+			}
 
 			/*
 			* Seek to the right position.  We need no special case for seekPos
@@ -1553,6 +1556,7 @@ FileClose(File file)
 
 			if (close(vfdP->md))
 				elog(ERROR, "could not close map file \"%s.cfm\": %m", vfdP->fileName);
+			vfdP->md = VFD_CLOSED;
 			--nfile;
 		}
 		--nfile;
