@@ -1708,12 +1708,16 @@ static bool
 FileLock(File file)
 {
 	Vfd *vfdP = &VfdCache[file];
+	uint64 map_generation;
 
 	 /* protect file from GC */
 	cfs_lock_file(vfdP->map, vfdP->fileName);
 
+	map_generation = vfdP->map->generation;
+	pg_read_barrier();
+	
 	/* Reopen file, because it was rewritten by gc */
-	if (vfdP->generation != vfdP->map->generation)
+	if (vfdP->generation != map_generation)
 	{
 		close(vfdP->fd);
 		vfdP->fd = BasicOpenFile(vfdP->fileName, vfdP->fileFlags, vfdP->fileMode);
@@ -1722,7 +1726,7 @@ FileLock(File file)
 			DO_DB(elog(LOG, "RE_OPEN FAILED: %d", errno));
 			return false;
 		}
-		vfdP->generation = vfdP->map->generation;
+		vfdP->generation = map_generation;
 	}
 	return true;
 }
@@ -2004,6 +2008,8 @@ FileWrite(File file, char *buffer, int amount)
 retry:
 	errno = 0;
 	returnCode = write(vfdP->fd, buffer, amount);
+
+    Assert(vfdP->generation = vfdP->map->generation);
 
 	/* if write didn't set errno, assume problem is no disk space */
 	if (returnCode != amount && errno == 0)

@@ -986,6 +986,7 @@ static bool cfs_gc_file(char* map_path, bool background)
 		else
 			remove_backups = true; /* we don't need backups anymore */
 
+		pg_write_barrier();
 		pg_atomic_fetch_sub_u32(&map->lock, CFS_GC_LOCK); /* release lock */
 
 		/* remove map backup file */
