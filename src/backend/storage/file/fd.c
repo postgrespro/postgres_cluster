@@ -2010,8 +2010,6 @@ retry:
 	errno = 0;
 	returnCode = write(vfdP->fd, buffer, amount);
 
-    Assert(vfdP->generation == vfdP->map->generation);
-
 	/* if write didn't set errno, assume problem is no disk space */
 	if (returnCode != amount && errno == 0)
 		errno = ENOSPC;
@@ -2026,6 +2024,7 @@ retry:
 				VfdCache[file].seekPos += BLCKSZ;
 				cfs_extend(VfdCache[file].map, VfdCache[file].seekPos);
 				returnCode = BLCKSZ;
+				Assert(vfdP->generation == vfdP->map->generation);
 			}
 			else
 			{
