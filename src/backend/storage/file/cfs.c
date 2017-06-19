@@ -605,7 +605,6 @@ void cfs_lock_file(FileMap* map, char const* file_path)
 				pfree(map_bck_path);
 			}
 			LWLockRelease(CfsGcLock);
-			break;
 		}
 		/* Wait until GC of segment is completed */
 		pg_atomic_fetch_sub_u32(&map->lock, 1);
@@ -831,7 +830,7 @@ static bool cfs_gc_file(char* map_path, bool background)
 
 				if (!cfs_read_file(fd, block, size))
 				{
-					elog(WARNING, "CFS GC failed to read block %d of file %s at position %d size %d: %m",
+					elog(WARNING, "CFS GC failed to read block %u of file %s at position %u size %u: %m",
 							   i, file_path, offs, size);
 					goto Cleanup;
 				}
@@ -929,7 +928,7 @@ static bool cfs_gc_file(char* map_path, bool background)
 					{
 						pg_atomic_fetch_sub_u32(&map->lock, CFS_GC_LOCK); /* release lock */
 						pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
-						elog(ERROR, "CFS: verification failed for block %d position %d size %d of relation %s: error code %d",
+						elog(ERROR, "CFS: verification failed for block %u position %u size %u of relation %s: error code %d",
 							 i, (int)CFS_INODE_OFFS(inode), size, file_bck_path, (int)res);
 					}
 				}
@@ -1001,7 +1000,7 @@ static bool cfs_gc_file(char* map_path, bool background)
 
 		if (succeed)
 		{
-			elog(LOG, "CFS GC worker %d: defragment file %s: old size %d, new size %d, logical size %d, used %d, compression ratio %f, time %ld usec",
+			elog(LOG, "CFS GC worker %d: defragment file %s: old size %u, new size %u, logical size %u, used %u, compression ratio %f, time %ld usec",
 				 MyProcPid, file_path, physSize, newSize, virtSize, usedSize, (double)virtSize/newSize,
 				 secs*USECS_PER_SEC + usecs);
 		}
@@ -1022,7 +1021,7 @@ static bool cfs_gc_file(char* map_path, bool background)
 		}
 	}
 	else if (cfs_state->max_iterations == 1)
-		elog(LOG, "CFS GC worker %d: file %.*s: physical size %d, logical size %d, used %d, compression ratio %f",
+		elog(LOG, "CFS GC worker %d: file %.*s: physical size %u, logical size %u, used %u, compression ratio %f",
 			 MyProcPid, suf, map_path, physSize, virtSize, usedSize, (double)virtSize/physSize);
 
 	if (cfs_munmap(map) < 0)
