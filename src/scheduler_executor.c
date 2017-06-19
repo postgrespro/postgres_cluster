@@ -85,6 +85,13 @@ void executor_worker_main(Datum arg)
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_executor");
 	init_worker_mem_ctx("ExecutorMemoryContext");
+	pqsignal(SIGTERM, handle_sigterm);
+	pqsignal(SIGHUP, worker_spi_sighup);
+	/* must be called before connection initialization otherwise infint wait
+	 * could happend if bgworker starts while one of 7th critical tables
+	 * being locked 
+	 */
+	BackgroundWorkerUnblockSignals();
 
 	seg = dsm_attach(DatumGetInt32(arg));
 	if(seg == NULL)
@@ -92,7 +99,6 @@ void executor_worker_main(Datum arg)
 			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			 errmsg("executor unable to map dynamic shared memory segment")));
 	shared = dsm_segment_address(seg);
-	parent = BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid);
 
 	if(shared->status != SchdExecutorInit)
 	{
@@ -100,14 +106,12 @@ void executor_worker_main(Datum arg)
 			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			 errmsg("executor corrupted dynamic shared memory segment")));
 	}
-
-	SetConfigOption("application_name", "pgp-s executor", PGC_USERSET, PGC_S_SESSION);
-	pgstat_report_activity(STATE_RUNNING, "initialize");
 	BackgroundWorkerInitializeConnection(shared->database, NULL);
 
-	pqsignal(SIGTERM, handle_sigterm);
-	pqsignal(SIGHUP, worker_spi_sighup);
-	BackgroundWorkerUnblockSignals();
+	parent = BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid);
+	SetConfigOption("application_name", "pgp-s executor", PGC_USERSET, PGC_S_SESSION);
+	pgstat_report_activity(STATE_RUNNING, "initialize");
+
 
 	worker_jobs_limit = read_worker_job_limit();
 
@@ -667,6 +671,10 @@ void at_executor_worker_main(Datum arg)
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_at_executor");
 	init_worker_mem_ctx("ExecutorMemoryContext");
+	pqsignal(SIGTERM, handle_sigterm);
+	pqsignal(SIGHUP, worker_spi_sighup);
+	BackgroundWorkerUnblockSignals();
+
 	seg = dsm_attach(DatumGetInt32(arg));
 	if(seg == NULL)
 		ereport(ERROR,
@@ -683,13 +691,9 @@ void at_executor_worker_main(Datum arg)
 	}
 	shared->start_at = GetCurrentTimestamp();
 
+	BackgroundWorkerInitializeConnection(shared->database, NULL);
 	SetConfigOption("application_name", "pgp-s at executor", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "initialize");
-	BackgroundWorkerInitializeConnection(shared->database, NULL);
-
-	pqsignal(SIGTERM, handle_sigterm);
-	pqsignal(SIGHUP, worker_spi_sighup);
-	BackgroundWorkerUnblockSignals();
 
 
 	while(1)
