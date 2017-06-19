@@ -1087,6 +1087,7 @@ LruInsert(File file)
 			}
 			/* We need to copy generation before openning data file */
 			vfdP->generation = vfdP->map->generation;
+			pg_read_barrier();
 
 			vfdP->fd = BasicOpenFile(vfdP->fileName, vfdP->fileFlags,
 									 vfdP->fileMode);
@@ -2009,7 +2010,7 @@ retry:
 	errno = 0;
 	returnCode = write(vfdP->fd, buffer, amount);
 
-    Assert(vfdP->generation = vfdP->map->generation);
+    Assert(vfdP->generation == vfdP->map->generation);
 
 	/* if write didn't set errno, assume problem is no disk space */
 	if (returnCode != amount && errno == 0)
