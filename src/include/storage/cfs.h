@@ -6,7 +6,7 @@
 #include "port/atomics.h"
 #include "storage/rijndael.h"
 
-#define CFS_VERSION "0.32"
+#define CFS_VERSION "0.36"
 
 #define CFS_GC_LOCK  0x10000000
 
