@@ -1784,10 +1784,15 @@ void manager_worker_main(Datum arg)
 
 	snprintf(database, NAMEDATALEN, "%s", MyBgworkerEntry->bgw_extra);
 	snprintf(buffer, 1024, "pgp-s manager [%s]", database);
-	SetConfigOption("application_name", buffer, PGC_USERSET, PGC_S_SESSION);
+
+	pqsignal(SIGHUP, worker_spi_sighup);
+	pqsignal(SIGTERM, worker_spi_sigterm);
+	BackgroundWorkerUnblockSignals();
+
 
 	BackgroundWorkerInitializeConnection(database, NULL);
 	elog(LOG, "Started scheduler manager for '%s'", database);
+	SetConfigOption("application_name", buffer, PGC_USERSET, PGC_S_SESSION);
 
 	if(!checkSchedulerNamespace())
 	{
@@ -1799,10 +1804,6 @@ void manager_worker_main(Datum arg)
 	}
 	SetCurrentStatementStartTimestamp();
 	pgstat_report_activity(STATE_RUNNING, "initialize.");
-
-	pqsignal(SIGHUP, worker_spi_sighup);
-	pqsignal(SIGTERM, worker_spi_sigterm);
-	BackgroundWorkerUnblockSignals();
 
 	parent_shared = dsm_segment_address(seg);
 	pgstat_report_activity(STATE_RUNNING, "initialize context");
