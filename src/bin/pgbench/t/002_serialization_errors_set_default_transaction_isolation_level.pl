@@ -26,13 +26,13 @@ $node->command_like(
 	'concurrent update: Read Committed: check default isolation level');
 
 $node->command_like(
-	[   qw(pgbench --no-vacuum --client=5 --transactions=10
+	[   qw(pgbench --no-vacuum --client=30 --transactions=400
 		  --default-isolation-level=RC --file), $script ],
-	qr{processed: 50/50},
+	qr{processed: 12000/12000},
 	'concurrent update: Read Committed: check processed transactions');
 
 $node->command_like(
-	[   qw(pgbench --no-vacuum --client=5 --transactions=10
+	[   qw(pgbench --no-vacuum --client=30 --transactions=400
 		  --default-isolation-level=RC --file), $script ],
 	qr{serialization failures: 0 \(0\.000 %\)},
 	'concurrent update: Read Committed: check serialization failures');
@@ -45,15 +45,15 @@ $node->command_like(
 	'concurrent update: Repeatable Read: check default isolation level');
 
 $node->command_like(
-	[   qw(pgbench --no-vacuum --client=5 --transactions=10
+	[   qw(pgbench --no-vacuum --client=30 --transactions=400
 		  --default-isolation-level=RR --file), $script ],
-	qr{processed: 50/50},
+	qr{processed: 12000/12000},
 	'concurrent update: Repeatable Read: check processed transactions');
 
 $node->command_like(
-	[   qw(pgbench --no-vacuum --client=5 --transactions=10
+	[   qw(pgbench --no-vacuum --client=30 --transactions=400
 		  --default-isolation-level=RR --file), $script ],
-	qr{serialization failures: [1-9]\d* \([1-9]\d*\.\d* %\)},
+	qr{serialization failures: [1-9]\d*},
 	'concurrent update: Repeatable Read: check serialization failures');
 
 # Test transactions with Serializable default isolation level:
@@ -64,13 +64,13 @@ $node->command_like(
 	'concurrent update: Serializable: check default isolation level');
 
 $node->command_like(
-	[   qw(pgbench --no-vacuum --client=5 --transactions=10
+	[   qw(pgbench --no-vacuum --client=30 --transactions=400
 		  --default-isolation-level=S --file), $script ],
-	qr{processed: 50/50},
+	qr{processed: 12000/12000},
 	'concurrent update: Serializable: check processed transactions');
 
 $node->command_like(
-	[   qw(pgbench --no-vacuum --client=5 --transactions=10
+	[   qw(pgbench --no-vacuum --client=30 --transactions=400
 		  --default-isolation-level=S --file), $script ],
-	qr{serialization failures: [1-9]\d* \([1-9]\d*\.\d* %\)},
+	qr{serialization failures: [1-9]\d*},
 	'concurrent update: Serializable: check serialization failures');
