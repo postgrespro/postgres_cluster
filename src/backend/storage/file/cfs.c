@@ -1253,8 +1253,25 @@ Datum cfs_start_gc(PG_FUNCTION_ARGS)
 
 Datum cfs_enable_gc(PG_FUNCTION_ARGS)
 {
+	bool enabled = PG_GETARG_BOOL(0);
 	bool was_enabled = cfs_state->background_gc_enabled;
-	cfs_state->background_gc_enabled = PG_GETARG_BOOL(0);
+	cfs_state->background_gc_enabled = enabled;
+
+	if (was_enabled && !enabled)
+	{
+		/* Wait until there are no active GC workers */
+		while (pg_atomic_read_u32(&cfs_state->n_active_gc) != 0)
+		{
+			int rc = WaitLatch(MyLatch,
+							   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+							   CFS_DISABLE_TIMEOUT /* ms */);
+			if (rc & WL_POSTMASTER_DEATH)
+				exit(1);
+
+			ResetLatch(MyLatch);
+			CHECK_FOR_INTERRUPTS();
+		}
+	}
 	PG_RETURN_BOOL(was_enabled);
 }
 
