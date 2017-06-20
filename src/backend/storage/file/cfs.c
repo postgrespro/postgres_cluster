@@ -669,10 +669,13 @@ static bool cfs_gc_file(char* map_path, bool background)
 			pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
 
 			rc = WaitLatch(MyLatch,
-						   WL_TIMEOUT | WL_POSTMASTER_DEATH,
+						   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
 						   CFS_DISABLE_TIMEOUT /* ms */);
 			if (cfs_gc_stop || (rc & WL_POSTMASTER_DEATH))
 				exit(1);
+
+			CHECK_FOR_INTERRUPTS();
+			ResetLatch(MyLatch);
 
 			pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
 		}
@@ -1014,10 +1017,13 @@ static bool cfs_gc_file(char* map_path, bool background)
 		if (cfs_gc_delay != 0)
 		{
 			int rc = WaitLatch(MyLatch,
-							   WL_TIMEOUT | WL_POSTMASTER_DEATH,
+							   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
 							   cfs_gc_delay /* ms */ );
 			if (rc & WL_POSTMASTER_DEATH)
 				exit(1);
+
+			CHECK_FOR_INTERRUPTS();
+			ResetLatch(MyLatch);
 		}
 	}
 	else if (cfs_state->max_iterations == 1)
@@ -1134,10 +1140,13 @@ static void cfs_gc_bgworker_main(Datum arg)
 			break;
 		}
 		rc = WaitLatch(MyLatch,
-					   WL_TIMEOUT | WL_POSTMASTER_DEATH,
+					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
 					   timeout /* ms */ );
 		if (rc & WL_POSTMASTER_DEATH)
 			exit(1);
+
+		CHECK_FOR_INTERRUPTS();
+		ResetLatch(MyLatch);
 	}
 }
 
@@ -1176,10 +1185,13 @@ bool cfs_control_gc(bool enabled)
 		while (pg_atomic_read_u32(&cfs_state->n_active_gc) != 0)
 		{
 			int rc = WaitLatch(MyLatch,
-							   WL_TIMEOUT | WL_POSTMASTER_DEATH,
+							   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
 							   CFS_DISABLE_TIMEOUT /* ms */);
 			if (rc & WL_POSTMASTER_DEATH)
 				exit(1);
+
+			CHECK_FOR_INTERRUPTS();
+			ResetLatch(MyLatch);
 		}
 	}
 	return was_enabled;
