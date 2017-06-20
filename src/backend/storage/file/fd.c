@@ -1341,8 +1341,8 @@ PathNameOpenFile(FileName fileName, int fileFlags, int fileMode)
 
 	if (fileFlags & PG_COMPRESSION)
 	{
-		char* mapFileName = psprintf("%s.cfm", vfdP->fileName);
-		vfdP->md = BasicOpenFile(mapFileName, vfdP->fileFlags & ~PG_COMPRESSION, vfdP->fileMode);
+		char* mapFileName = psprintf("%s.cfm", fileName);
+		vfdP->md = BasicOpenFile(mapFileName, fileFlags, fileMode);
 		pfree(mapFileName);
 		if (vfdP->md < 0)
 		{
@@ -1362,8 +1362,7 @@ PathNameOpenFile(FileName fileName, int fileFlags, int fileMode)
 		vfdP->generation = vfdP->map->generation;
 		pg_read_barrier();
 
-		vfdP->fd = BasicOpenFile(vfdP->fileName, vfdP->fileFlags,
-								 vfdP->fileMode);
+		vfdP->fd = BasicOpenFile(fileName, fileFlags, fileMode);
 		if (vfdP->fd < 0)
 		{
 			save_errno = errno;
