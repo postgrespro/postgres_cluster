@@ -68,11 +68,10 @@ tps = 85.296346 (excluding connections establishing)
   and number of transactions per client); these will be equal unless the run
   failed before completion.  (In <option>-T</> mode, only the actual
   number of transactions is printed.)
-  The next two lines report the number of
-  transactions with serialization and deadlock failures; unlike other errors
-  transactions with these ones don't fail and continue run normally, but
-  transaction result is rolled back.
-  And the last two lines report the number of transactions per second,
+  The next two lines report the number of transactions with serialization and
+  deadlock failures.  With such errors, transactions do not fail and continue
+  running normally, but the transaction result is rolled back.
+  The last two lines report the number of transactions per second,
   figured with and without counting the time to start database sessions.
  </para>
 
@@ -345,25 +344,24 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
      </varlistentry>
 
      <varlistentry>
-      <term><option>-I</option> <replaceable>isolationlevel</></term>
-      <term><option>--default-isolation-level=</option><replaceable>isolationlevel</></term>
+      <term><option>-I</option> <replaceable>isolation_level</></term>
+      <term><option>--default-isolation-level=</option><replaceable>isolation_level</></term>
       <listitem>
        <para>
-         Set default transaction isolation level.  Use next abbreviations for
-         <replaceable>isolationlevel</>:
+         Set the default transaction isolation level:
           <itemizedlist>
            <listitem>
-            <para><literal>RC</>: set default transaction isolation level as Read Committed.</para>
+            <para><literal>RC</>: Read Committed</para>
            </listitem>
            <listitem>
-            <para><literal>RR</>: set default transaction isolation level as Repeatable Read.</para>
+            <para><literal>RR</>: Repeatable Read</para>
            </listitem>
            <listitem>
-            <para><literal>S</>: set default transaction isolation level as Serializable.</para>
+            <para><literal>S</>: Serializable</para>
            </listitem>
           </itemizedlist>
-          The default is Read Committed isolation level.  (See
-          <xref linkend="transaction-iso"> for more information.)
+          By default, Read Committed isolation level is used.  For more
+          information, see <xref linkend="transaction-iso">.
        </para>
       </listitem>
      </varlistentry>
@@ -465,13 +463,13 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
       <listitem>
        <para>
         Show progress report every <replaceable>sec</> seconds.  The report
-        includes the time since the beginning of the run and next
-        characteristics since the last report: the tps, the number of
-        transactions with serialization and deadlock failures, and the
-        transaction latency average and standard deviation.  Under throttling
-        (<option>-R</>), the latency is computed with respect to the transaction
-        scheduled start time, not the actual transaction beginning time, thus it
-        also includes the average schedule lag time.
+        includes the time since the beginning of the run and the following
+        statistics since the last report: the tps, the number of transactions
+        with serialization and deadlock failures, and the transaction latency
+        average and standard deviation.  Under throttling (<option>-R</>), the
+        latency is computed with respect to the transaction scheduled start
+        time, not the actual transaction beginning time, thus it also includes
+        the average schedule lag time.
        </para>
       </listitem>
      </varlistentry>
@@ -483,9 +481,11 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
        <para>
         Report the average per-statement latency (execution time from the
         perspective of the client) of each command after the benchmark
-        finishes (with the number of serialization and deadlock failures for
-        each command if it is used with <option>--report-failures</> option).
-        See below for details.
+        finishes.  You can use this option together with the
+        <option>--report-failures</> option to get the number of serialization
+        and deadlock failures for each command.
+        For details, see <xref linkend="per-statement-latencies-failures"
+        endterm="per-statement-latencies-failures-title">.
        </para>
       </listitem>
      </varlistentry>
@@ -644,9 +644,11 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
       <listitem>
        <para>
         Report the number of serialization and deadlock failures for each
-        command after the benchmark finishes (with the average per-statement
-        latencies of each command if it is used with <option>-r</> option).  See
-        below for details.
+        command after the benchmark finishes.  You can use this option together
+        with the <option>--report-latencies</> option to get the average
+        per-statement latencies of each command.
+        For details, see <xref linkend="per-statement-latencies-failures"
+        endterm="per-statement-latencies-failures-title">.
        </para>
       </listitem>
      </varlistentry>
@@ -1218,14 +1220,19 @@ END;
    When both <option>--rate</> and <option>--latency-limit</> are used,
    the <replaceable>time</> for a skipped transaction will be reported as
    <literal>skipped</>.
-   If transaction has serialization / deadlock failure or them both (last thing
-   is possible if used script contains several transactions; see
-   <xref linkend="transactions-and-scripts"
-   endterm="transactions-and-scripts-title"> for more information), its
-   <replaceable>time</> will be reported as <literal>serialization failure</> /
-   <literal>deadlock failure</> /
-   <literal>serialization and deadlock failures</> appropriately.
+   If a transaction has serialization and/or deadlock failures, its
+   <replaceable>time</> will be reported as <literal>serialization failure</>,
+   <literal>deadlock failure</>, or
+   <literal>serialization and deadlock failures</>, respectively.
   </para>
+  <note>
+   <para>
+     Transactions can have both serialization and deadlock failures if the
+     used script contained several transactions.  See
+     <xref linkend="transactions-and-scripts"
+     endterm="transactions-and-scripts-title"> for more information.
+    </para>
+  </note>
 
   <para>
    Here is a snippet of the log file generated:
@@ -1253,7 +1260,7 @@ END;
   </para>
 
   <para>
-   Example with serialization, deadlock and both these failures:
+   Example with serialization and deadlock failures:
 <screen>
 1 128 24968 0 1496759158 426984
 0 129 serialization failure 0 1496759158 427023
@@ -1287,7 +1294,7 @@ END;
    format time stamp), <replaceable>num_of_transactions</> is the number of transactions
    within the interval, <replaceable>num_serialization_failures_transactions</>
    and <replaceable>num_deadlock_failures_transactions</> are the numbers of
-   transactions with appropriate failures within the interval, <replaceable>
+   transactions with the corresponding failures within the interval, <replaceable>
    latency_sum</replaceable> is a sum of latencies (so you can compute average
    latency easily). The following two fields are useful for variance estimation
    - <replaceable>latency_sum</> is a sum of latencies and <replaceable>
@@ -1322,27 +1329,42 @@ END;
 
  </refsect2>
 
- <refsect2>
-  <title>Per-Statement Latencies and Failures</title>
+ <refsect2 id="per-statement-latencies-failures">
+  <title id="per-statement-latencies-failures-title">Per-Statement Latencies and Failures</title>
 
   <para>
-   There're two options to get some per-statement characteristics: <option>-r</>
-   and <option>--report-failures</> (they can be combined together).  All values
-   are computed for each statement executed by every client and are reported
-   after the benchmark has finished.  With the <option>-r</> option,
-   <application>pgbench</> collects the elapsed transaction time of each
-   statement.  It then reports an average of those values, referred to as the
-   latency for each statement.  With the <option>--report-failures</> option,
-   <application>pgbench</> collects the number of serialization and deadlock
-   failures for each statement (notice that the total sum of per-command
-   failures of each type can be greater than the number of "transactions" with
-   these failures; see <xref linkend="transactions-and-scripts"
-   endterm="transactions-and-scripts-title"> for more information).
+   To get per-statement statistics, you can use the following options:
+   <itemizedlist>
+     <listitem>
+       <para>
+         <option>--report-latencies</> &mdash; collects the elapsed transaction
+         time of each statement and reports an average of those values, referred
+         to as the latency for each statement.
+       </para>
+     </listitem>
+    <listitem>
+       <para>
+         <option>--report-failures</> &mdash; collects the number of
+         serialization and deadlock failures for each statement.
+       </para>
+       <note>
+         <para>The total sum of per-command failures of each type can be greater
+         than the number of transactions with reported failures.
+         See <xref linkend="transactions-and-scripts"
+         endterm="transactions-and-scripts-title"> for more information.
+         </para>
+       </note>
+     </listitem>
+   </itemizedlist>
+   All values are computed for each statement executed by every client and are
+   reported after the benchmark has finished.  You can use
+   <option>--report-latencies</> and <option>--report-failures</> options
+   together to get a full report.
   </para>
 
   <para>
-   For the default script if you use <option>-r</> option, the output will look
-   similar to this:
+   For the default script, if you use the <option>-r</> option, the output will
+   look similar to this:
 <screen>
 starting vacuum...end.
 transaction type: &lt;builtin: TPC-B (sort of)&gt;
@@ -1377,7 +1399,8 @@ script statistics:
 </screen>
 
    Another example of output for the default script using serializable default
-   transaction isolation level (-I S) and <option>--report-failures</> option:
+   transaction isolation level (<option>-I S</option>) and
+   <option>--report-failures</> option:
 <screen>
 starting vacuum...end.
 transaction type: &lt;builtin: TPC-B (sort of)&gt;
@@ -1397,17 +1420,23 @@ script statistics:
  - number of transactions with serialization failures: 9284 (92.840%)
  - number of transactions with deadlock failures: 0 (0.000%)
  - statement serialization and deadlock failures:
-                           0                          0  \set aid random(1, 100000 * :scale)
-                           0                          0  \set bid random(1, 1 * :scale)
-                           0                          0  \set tid random(1, 10 * :scale)
-                           0                          0  \set delta random(-5000, 5000)
-                           0                          0  BEGIN;
-                           0                          0  UPDATE pgbench_accounts SET abalance = abalance + :delta WHERE aid = :aid;
-                           0                          0  SELECT abalance FROM pgbench_accounts WHERE aid = :aid;
-                        7975                          0  UPDATE pgbench_tellers SET tbalance = tbalance + :delta WHERE tid = :tid;
-                        1305                          0  UPDATE pgbench_branches SET bbalance = bbalance + :delta WHERE bid = :bid;
-                           0                          0  INSERT INTO pgbench_history (tid, bid, aid, delta, mtime) VALUES (:tid, :bid, :aid, :delta, CURRENT_TIMESTAMP);
-                           4                          0  END;
+     0     0  \set aid random(1, 100000 * :scale)
+     0     0  \set bid random(1, 1 * :scale)
+     0     0  \set tid random(1, 10 * :scale)
+     0     0  \set delta random(-5000, 5000)
+     0     0  BEGIN;
+     0     0  UPDATE pgbench_accounts
+              SET abalance = abalance + :delta WHERE aid = :aid;
+     0     0  SELECT abalance FROM pgbench_accounts
+              WHERE aid = :aid;
+  7975     0  UPDATE pgbench_tellers
+              SET tbalance = tbalance + :delta WHERE tid = :tid;
+  1305     0  UPDATE pgbench_branches
+              SET bbalance = bbalance + :delta WHERE bid = :bid;
+     0     0  INSERT INTO pgbench_history
+                     (tid, bid, aid, delta, mtime)
+              VALUES (:tid, :bid, :aid, :delta, CURRENT_TIMESTAMP);
+     4     0  END;
 </screen>
   </para>
 
