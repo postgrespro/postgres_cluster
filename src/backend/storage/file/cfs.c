@@ -404,7 +404,8 @@ void cfs_initialize()
 		pg_atomic_init_flag(&cfs_state->gc_started);
 		pg_atomic_init_u32(&cfs_state->n_active_gc, 0);
 		cfs_state->n_workers = 0;
-		cfs_state->gc_enabled = cfs_gc_enabled;
+		cfs_state->background_gc_enabled = cfs_gc_enabled;
+		cfs_state->gc_enabled = true;
 		cfs_state->max_iterations = 0;
 
 		if (cfs_encryption)
@@ -662,24 +663,23 @@ static bool cfs_gc_file(char* map_path, bool background)
 
 	pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
 
+	while (!(background ? (cfs_state->gc_enabled & cfs_state->background_gc_enabled) : cfs_state->gc_enabled))
+	{
+		pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
+
+		rc = WaitLatch(MyLatch,
+					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+					   CFS_DISABLE_TIMEOUT /* ms */);
+		if (cfs_gc_stop || (rc & WL_POSTMASTER_DEATH))
+			exit(1);
+
+		ResetLatch(MyLatch);
+		CHECK_FOR_INTERRUPTS();
+
+		pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
+	}
 	if (background)
 	{
-		while (!cfs_state->gc_enabled)
-		{
-			pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
-
-			rc = WaitLatch(MyLatch,
-						   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-						   CFS_DISABLE_TIMEOUT /* ms */);
-			if (cfs_gc_stop || (rc & WL_POSTMASTER_DEATH))
-				exit(1);
-
-			CHECK_FOR_INTERRUPTS();
-			ResetLatch(MyLatch);
-
-			pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
-		}
-
 		LWLockAcquire(CfsGcLock, LW_SHARED); /* avoid race condition with cfs_file_lock */
 	}
 
@@ -1022,8 +1022,8 @@ static bool cfs_gc_file(char* map_path, bool background)
 			if (rc & WL_POSTMASTER_DEATH)
 				exit(1);
 
-			CHECK_FOR_INTERRUPTS();
 			ResetLatch(MyLatch);
+			CHECK_FOR_INTERRUPTS();
 		}
 	}
 	else if (cfs_state->max_iterations == 1)
@@ -1145,8 +1145,8 @@ static void cfs_gc_bgworker_main(Datum arg)
 		if (rc & WL_POSTMASTER_DEATH)
 			exit(1);
 
-		CHECK_FOR_INTERRUPTS();
 		ResetLatch(MyLatch);
+		CHECK_FOR_INTERRUPTS();
 	}
 }
 
@@ -1190,8 +1190,8 @@ bool cfs_control_gc(bool enabled)
 			if (rc & WL_POSTMASTER_DEATH)
 				exit(1);
 
-			CHECK_FOR_INTERRUPTS();
 			ResetLatch(MyLatch);
+			CHECK_FOR_INTERRUPTS();
 		}
 	}
 	return was_enabled;

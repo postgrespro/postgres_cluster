@@ -22,7 +22,7 @@
 #define CFS_MAX_COMPRESSED_SIZE(size) ((size)*2)
 
 /* Minimal compression ratio when compression is expected to be reasonable.
- * Right now it is hardcoded and equal to 2/3 of original size. If compressed image is larger than 2/3 of original image, 
+ * Right now it is hardcoded and equal to 2/3 of original size. If compressed image is larger than 2/3 of original image,
  * then uncompressed version of the page is stored.
  */
 #define CFS_MIN_COMPRESSED_SIZE(size) ((size)*2/3)
@@ -39,7 +39,7 @@
  * Set CFS_COMPRESSOR to one of the names above
  * to compile postgres with chosen compression algorithm
  */
-#ifndef CFS_COMPRESSOR 
+#ifndef CFS_COMPRESSOR
 #define CFS_COMPRESSOR ZLIB_COMPRESSOR
 #endif
 
@@ -79,18 +79,20 @@ typedef struct
 	/* Max number of garbage collection background workers.
 	 * Duplicates 'cfs_gc_workers' global variable. */
 	int            n_workers;
-	/* Maximal number of iterations with GC should perform. Automatically started GC performs infinite number of iterations. 
+	/* Maximal number of iterations with GC should perform. Automatically started GC performs infinite number of iterations.
 	 * Manually started GC performs just one iteration. */
 	int            max_iterations;
-	/* Flag for temporary didsabling GC */
+	/* Flag for temporary disabling GC */
 	bool           gc_enabled;
+	/* Flag for controlling background GC */
+	bool           background_gc_enabled;
 	/* CFS GC statatistic */
 	CfsStatistic   gc_stat;
 	rijndael_ctx   aes_context;
 } CfsState;
 
 
-/* Map file format (mmap in memory and shared by all backends) */ 
+/* Map file format (mmap in memory and shared by all backends) */
 typedef struct
 {
 	/* Physical size of the file (size of the file on disk) */
@@ -101,7 +103,7 @@ typedef struct
 	pg_atomic_uint32 usedSize;
 	/* Lock used to synchronize access to the file */
 	pg_atomic_uint32 lock;
-	/* PID (process identifier) of postmaster. We check it at open time to revoke lock in case when postgres is restarted. 
+	/* PID (process identifier) of postmaster. We check it at open time to revoke lock in case when postgres is restarted.
 	 * TODO: not so reliable because it can happen that occasionally postmaster will be given the same PID */
 	pid_t            postmasterPid;
 	/* Each pass of GC updates generation of the map */
