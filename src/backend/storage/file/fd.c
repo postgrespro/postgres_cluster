@@ -1339,46 +1339,56 @@ PathNameOpenFile(FileName fileName, int fileFlags, int fileMode)
 	/* Close excess kernel FDs. */
 	ReleaseLruFiles();
 
-	vfdP->fd = BasicOpenFile(fileName, fileFlags, fileMode);
-
-	if (vfdP->fd < 0)
-	{
-		save_errno = errno;
-	io_error:
-		FreeVfd(file);
-		free(fnamecopy);
-		errno = save_errno;
-		return -1;
-	}
-
 	if (fileFlags & PG_COMPRESSION)
 	{
-		char* mapFileName = psprintf("%s.cfm", fileName);
-		vfdP->md = open(mapFileName, O_CREAT | O_RDWR | (fileFlags & ~(PG_COMPRESSION|O_EXCL)), fileMode);
+		char* mapFileName = psprintf("%s.cfm", vfdP->fileName);
+		vfdP->md = BasicOpenFile(mapFileName, vfdP->fileFlags & ~PG_COMPRESSION, vfdP->fileMode);
 		pfree(mapFileName);
 		if (vfdP->md < 0)
 		{
 			save_errno = errno;
-			close(vfdP->fd);
-			vfdP->fd = VFD_CLOSED;
-			elog(LOG, "OPEN MAP FAILED: %d", errno);
+			elog(LOG, "RE_OPEN MAP FAILED: %d", errno);
 			goto io_error;
 		}
-
 		vfdP->map = cfs_mmap(vfdP->md);
 		if (vfdP->map == MAP_FAILED)
 		{
 			save_errno = errno;
-			close(vfdP->fd);
+			elog(LOG, "RE_MAP FAILED: %d", errno);
 			close(vfdP->md);
-			vfdP->fd = VFD_CLOSED;
-			vfdP->md = VFD_CLOSED;
-			elog(LOG, "MAP FAILED: %d", errno);
 			goto io_error;
 		}
-		++nfile;
+		/* We need to copy generation before openning data file */
+		vfdP->generation = vfdP->map->generation;
+		pg_read_barrier();
+
+		vfdP->fd = BasicOpenFile(vfdP->fileName, vfdP->fileFlags,
+								 vfdP->fileMode);
+		if (vfdP->fd < 0)
+		{
+			save_errno = errno;
+			DO_DB(elog(LOG, "re-open failed: %m"));
+			cfs_munmap(vfdP->map);
+			close(vfdP->md);
+			vfdP->md = VFD_CLOSED;
+			goto io_error;
+		}
+		nfile += 2;
 	}
-	++nfile;
+	else
+	{
+		vfdP->fd = BasicOpenFile(fileName, fileFlags, fileMode);
+		if (vfdP->fd < 0)
+		{
+			save_errno = errno;
+		  io_error:
+			FreeVfd(file);
+			free(fnamecopy);
+			errno = save_errno;
+			return -1;
+		}
+		nfile += 1;
+	}
 	DO_DB(elog(LOG, "PathNameOpenFile: success %d",
 			   vfdP->fd));
 

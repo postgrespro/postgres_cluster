@@ -1124,7 +1124,7 @@ static void cfs_gc_bgworker_main(Datum arg)
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
 
-	elog(INFO, "Start CFS garbage collector %d", MyProcPid);
+	elog(INFO, "Start CFS garbage collector %d (enabled=%d)", MyProcPid, cfs_state->background_gc_enabled);
 
 	while (true)
 	{
@@ -1253,7 +1253,9 @@ Datum cfs_start_gc(PG_FUNCTION_ARGS)
 
 Datum cfs_enable_gc(PG_FUNCTION_ARGS)
 {
-	PG_RETURN_BOOL(cfs_control_gc(PG_GETARG_BOOL(0)));
+	bool was_enabled = cfs_state->background_gc_enabled;
+	cfs_state->background_gc_enabled = PG_GETARG_BOOL(0);
+	PG_RETURN_BOOL(was_enabled);
 }
 
 Datum cfs_version(PG_FUNCTION_ARGS)
