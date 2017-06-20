@@ -1071,7 +1071,7 @@ LruInsert(File file)
 		if (vfdP->fileFlags & PG_COMPRESSION)
 		{
 			char* mapFileName = psprintf("%s.cfm", vfdP->fileName);
-			vfdP->md = BasicOpenFile(mapFileName, vfdP->fileFlags & ~PG_COMPRESSION, vfdP->fileMode);
+			vfdP->md = BasicOpenFile(mapFileName, vfdP->fileFlags, vfdP->fileMode);
 			pfree(mapFileName);
 			if (vfdP->md < 0)
 			{
@@ -1342,7 +1342,7 @@ PathNameOpenFile(FileName fileName, int fileFlags, int fileMode)
 	if (fileFlags & PG_COMPRESSION)
 	{
 		char* mapFileName = psprintf("%s.cfm", fileName);
-		vfdP->md = BasicOpenFile(mapFileName, fileFlags, fileMode);
+		vfdP->md = BasicOpenFile(mapFileName, O_CREAT|O_RDWR|(fileFlags & ~O_EXCL), fileMode);
 		pfree(mapFileName);
 		if (vfdP->md < 0)
 		{

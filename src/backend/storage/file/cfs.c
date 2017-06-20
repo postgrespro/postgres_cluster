@@ -873,7 +873,7 @@ static bool cfs_gc_file(char* map_path, bool background)
 		fd2 = -1;
 
 		/* Persist copy of map file */
-		if (!cfs_write_file(md2, &newMap, sizeof(FileMap)))
+		if (!cfs_write_file(md2, newMap, sizeof(FileMap)))
 		{
 			elog(WARNING, "CFS failed to write file %s: %m", map_bck_path);
 			goto Cleanup;
