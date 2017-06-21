@@ -91,9 +91,7 @@ typedef struct
 	rijndael_ctx   aes_context;
 } CfsState;
 
-
-/* Map file format (mmap in memory and shared by all backends) */
-typedef struct
+typedef struct FileHeader
 {
 	/* Physical size of the file (size of the file on disk) */
 	pg_atomic_uint32 physSize;
@@ -101,6 +99,14 @@ typedef struct
 	pg_atomic_uint32 virtSize;
 	/* Total size of used pages. File may contain multiple versions of the same page, this is why physSize can be larger than usedSize */
 	pg_atomic_uint32 usedSize;
+} FileHeader;
+
+
+
+/* Map file format (mmap in memory and shared by all backends) */
+typedef struct
+{
+	FileHeader hdr;
 	/* Lock used to synchronize access to the file */
 	pg_atomic_uint32 lock;
 	/* PID (process identifier) of postmaster. We check it at open time to revoke lock in case when postgres is restarted.

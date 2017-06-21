@@ -470,8 +470,8 @@ int cfs_munmap(FileMap* map)
  */
 uint32 cfs_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize)
 {
-	pg_atomic_fetch_add_u32(&map->usedSize, newSize - oldSize);
-	return pg_atomic_fetch_add_u32(&map->physSize, newSize);
+	pg_atomic_fetch_add_u32(&map->hdr.usedSize, newSize - oldSize);
+	return pg_atomic_fetch_add_u32(&map->hdr.physSize, newSize);
 }
 
 /*
@@ -479,8 +479,8 @@ uint32 cfs_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize)
  */
 void cfs_extend(FileMap* map, uint32 newSize)
 {
-	uint32 oldSize = pg_atomic_read_u32(&map->virtSize);
-	while (newSize > oldSize && !pg_atomic_compare_exchange_u32(&map->virtSize, &oldSize, newSize));
+	uint32 oldSize = pg_atomic_read_u32(&map->hdr.virtSize);
+	while (newSize > oldSize && !pg_atomic_compare_exchange_u32(&map->hdr.virtSize, &oldSize, newSize));
 }
 
 /*
@@ -584,8 +584,10 @@ void cfs_lock_file(FileMap* map, char const* file_path)
 					if (md2 >= 0)
 					{
 						/* Recover map. */
-						if (!cfs_read_file(md2, map, sizeof(FileMap)))
-							elog(WARNING, "CFS failed to read file %s: %m", map_bck_path);
+						if (!cfs_read_file(md2, &map->hdr, sizeof(map->hdr)))
+							elog(WARNING, "CFS failed to read file header %s: %m", map_bck_path);
+						else if (!cfs_read_file(md2, map->inodes, sizeof(map->inodes)))
+							elog(WARNING, "CFS failed to read file inodes %s: %m", map_bck_path);
 
 						close(md2);
 					}
@@ -699,9 +701,9 @@ static bool cfs_gc_file(char* map_path, bool background)
 	}
 
 	succeed = true;
-	usedSize = pg_atomic_read_u32(&map->usedSize);
-	physSize = pg_atomic_read_u32(&map->physSize);
-	virtSize = pg_atomic_read_u32(&map->virtSize);
+	usedSize = pg_atomic_read_u32(&map->hdr.usedSize);
+	physSize = pg_atomic_read_u32(&map->hdr.physSize);
+	virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
 
 	cfs_state->gc_stat.scannedFiles += 1;
 
@@ -754,15 +756,20 @@ static bool cfs_gc_file(char* map_path, bool background)
 					if (md2 >= 0)
 					{
 						/* Recover map */
-						if (!cfs_read_file(md2, newMap, sizeof(FileMap)))
+						if (!cfs_read_file(md2, &newMap->hdr, sizeof(newMap->hdr)))
 						{
-							elog(WARNING, "CFS failed to read file %s: %m", map_bck_path);
+							elog(WARNING, "CFS failed to read file header %s: %m", map_bck_path);
+							goto Cleanup;
+						}
+						if (!cfs_read_file(md2, newMap->inodes, sizeof(newMap->inodes)))
+						{
+							elog(WARNING, "CFS failed to read file inodes %s: %m", map_bck_path);
 							goto Cleanup;
 						}
 						close(md2);
 						md2 = -1;
-						newSize = pg_atomic_read_u32(&newMap->usedSize);
-						virtSize = pg_atomic_read_u32(&newMap->virtSize);
+						newSize = pg_atomic_read_u32(&newMap->hdr.usedSize);
+						virtSize = pg_atomic_read_u32(&newMap->hdr.virtSize);
 						n_pages = virtSize / BLCKSZ;
 						remove_backups = false;
 						goto ReplaceMap;
@@ -791,9 +798,9 @@ static bool cfs_gc_file(char* map_path, bool background)
 		}
 
 		/* Reread variables after locking file */
-		usedSize = pg_atomic_read_u32(&map->usedSize);
-		physSize = pg_atomic_read_u32(&map->physSize);
-		virtSize = pg_atomic_read_u32(&map->virtSize);
+		usedSize = pg_atomic_read_u32(&map->hdr.usedSize);
+		physSize = pg_atomic_read_u32(&map->hdr.physSize);
+		virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
 		n_pages = virtSize / BLCKSZ;
 
 		md2 = open(map_bck_path, O_CREAT|O_RDWR|PG_BINARY|O_TRUNC, 0600);
@@ -872,8 +879,17 @@ static bool cfs_gc_file(char* map_path, bool background)
 		}
 		fd2 = -1;
 
+		pg_atomic_write_u32(&newMap->hdr.usedSize, newSize);
+		pg_atomic_write_u32(&newMap->hdr.physSize, newSize);
+		pg_atomic_write_u32(&newMap->hdr.virtSize, virtSize);
+
 		/* Persist copy of map file */
-		if (!cfs_write_file(md2, newMap, sizeof(FileMap)))
+		if (!cfs_write_file(md2, &newMap->hdr, sizeof(newMap->hdr)))
+		{
+			elog(WARNING, "CFS failed to write file %s: %m", map_bck_path);
+			goto Cleanup;
+		}
+		if (!cfs_write_file(md2, newMap->inodes, sizeof(newMap->inodes)))
 		{
 			elog(WARNING, "CFS failed to write file %s: %m", map_bck_path);
 			goto Cleanup;
@@ -963,8 +979,8 @@ static bool cfs_gc_file(char* map_path, bool background)
 		 * If crash happens at this point, map can be recovered from backup file
 		 */
 		memcpy(map->inodes, newMap->inodes, n_pages * sizeof(inode_t));
-		pg_atomic_write_u32(&map->usedSize, newSize);
-		pg_atomic_write_u32(&map->physSize, newSize);
+		pg_atomic_write_u32(&map->hdr.usedSize, newSize);
+		pg_atomic_write_u32(&map->hdr.physSize, newSize);
 		map->generation += 1; /* force all backends to reopen the file */
 
 		/* Before removing backup files and releasing locks
@@ -1370,8 +1386,8 @@ Datum cfs_compression_ratio(PG_FUNCTION_ARGS)
 				break;
 			}
 
-			virtSize += pg_atomic_read_u32(&map->virtSize);
-			physSize += pg_atomic_read_u32(&map->physSize);
+			virtSize += pg_atomic_read_u32(&map->hdr.virtSize);
+			physSize += pg_atomic_read_u32(&map->hdr.physSize);
 
 			if (cfs_munmap(map) < 0)
 				elog(WARNING, "CFS failed to unmap file %s: %m", map_path);
@@ -1421,8 +1437,8 @@ Datum cfs_fragmentation(PG_FUNCTION_ARGS)
 				close(md);
 				break;
 			}
-			usedSize += pg_atomic_read_u32(&map->usedSize);
-			physSize += pg_atomic_read_u32(&map->physSize);
+			usedSize += pg_atomic_read_u32(&map->hdr.usedSize);
+			physSize += pg_atomic_read_u32(&map->hdr.physSize);
 
 			if (cfs_munmap(map) < 0)
 				elog(WARNING, "CFS failed to unmap file %s: %m", map_path);
