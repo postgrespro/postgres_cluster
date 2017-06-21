@@ -6,7 +6,7 @@
 #include "port/atomics.h"
 #include "storage/rijndael.h"
 
-#define CFS_VERSION "0.41"
+#define CFS_VERSION "0.42"
 
 #define CFS_GC_LOCK  0x10000000
 
@@ -81,7 +81,7 @@ typedef struct
 	int            n_workers;
 	/* Maximal number of iterations with GC should perform. Automatically started GC performs infinite number of iterations.
 	 * Manually started GC performs just one iteration. */
-	int            max_iterations;
+	int64          max_iterations;
 	/* Flag for temporary disabling GC */
 	bool           gc_enabled;
 	/* Flag for controlling background GC */

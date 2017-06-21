@@ -961,14 +961,9 @@ static bool cfs_gc_file(char* map_path, bool background)
 		 * Use rename and rely on file system to provide atomicity of this operation.
 		 */
 		remove_backups = false;
-		if (rename(file_bck_path, file_path) < 0)
+		if (durable_rename(file_bck_path, file_path, LOG) < 0)
 		{
 			elog(WARNING, "CFS failed to rename file %s: %m", file_path);
-			goto Cleanup;
-		}
-		if (fsync_parent_path(file_path, LOG) != 0)
-		{
-			elog(WARNING, "CFS failed to sync directory for file %s: %m", file_path);
 			goto Cleanup;
 		}
 
@@ -1174,7 +1169,7 @@ static void cfs_gc_bgworker_main(Datum arg)
 void cfs_gc_start_bgworkers()
 {
 	int i;
-	cfs_state->max_iterations = INT_MAX;
+	cfs_state->max_iterations = INT64_MAX;
 	cfs_state->n_workers = cfs_gc_workers;
 
 	for (i = 0; i < cfs_gc_workers; i++)

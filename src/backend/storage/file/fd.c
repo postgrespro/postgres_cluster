@@ -330,6 +330,7 @@ static void pre_sync_fname(const char *fname, bool isdir, int elevel);
 static void datadir_fsync_fname(const char *fname, bool isdir, int elevel);
 
 static int	fsync_fname_ext(const char *fname, bool isdir, bool ignore_perm, int elevel);
+static int  fsync_parent_path(const char *fname, int elevel);
 
 
 /*
@@ -1774,7 +1775,7 @@ FileRead(File file, char *buffer, int amount)
 		amount = CFS_INODE_SIZE(inode);
 		if (amount == 0)
 		{
-			uint32 fileSize = pg_atomic_read_u32(&map->virtSize);
+			uint32 fileSize = pg_atomic_read_u32(&map->hdr.virtSize);
 			if (VfdCache[file].seekPos + BLCKSZ <= fileSize)
 			{
 				amount = BLCKSZ;
@@ -2178,7 +2179,7 @@ FileSeek(File file, off_t offset, int whence)
 				if (VfdCache[file].fileFlags & PG_COMPRESSION)
 				{
 					FileMap* map = VfdCache[file].map;
-					uint32 fileSize = pg_atomic_read_u32(&map->virtSize);
+					uint32 fileSize = pg_atomic_read_u32(&map->hdr.virtSize);
 
 					if (offset > 0 && offset > fileSize)
 						offset = fileSize;
@@ -2267,13 +2268,13 @@ FileTruncate(File file, off_t offset)
 			map->inodes[i] = 0;
 		}
 
-		pg_atomic_write_u32(&map->virtSize, offset);
-		pg_atomic_fetch_sub_u32(&map->usedSize, released);
+		pg_atomic_write_u32(&map->hdr.virtSize, offset);
+		pg_atomic_fetch_sub_u32(&map->hdr.usedSize, released);
 
 		if (offset == 0)
 		{
 			/* We can truncate compressed file only with zero offset */
-			pg_atomic_write_u32(&map->physSize, 0);
+			pg_atomic_write_u32(&map->hdr.physSize, 0);
 			returnCode = ftruncate(VfdCache[file].fd, 0);
 		}
 		cfs_unlock_file(map);
@@ -3519,7 +3520,7 @@ fsync_fname_ext(const char *fname, bool isdir, bool ignore_perm, int elevel)
  * This is aimed at making file operations persistent on disk in case of
  * an OS crash or power failure.
  */
-int
+static int
 fsync_parent_path(const char *fname, int elevel)
 {
 	char		parentpath[MAXPGPATH];
