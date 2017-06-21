@@ -706,7 +706,7 @@ static bool cfs_gc_file(char* map_path, bool background)
 	cfs_state->gc_stat.scannedFiles += 1;
 
 	/* do we need to perform defragmentation? */
-	if ((physSize - usedSize)*100 > physSize*cfs_gc_threshold)
+	if ((uint64)(physSize - usedSize)*100 > (uint64)physSize*cfs_gc_threshold)
 	{
 		long delay = CFS_LOCK_MIN_TIMEOUT;
 		char* file_path = (char*)palloc(suf+1);
@@ -948,6 +948,11 @@ static bool cfs_gc_file(char* map_path, bool background)
 		if (rename(file_bck_path, file_path) < 0)
 		{
 			elog(WARNING, "CFS failed to rename file %s: %m", file_path);
+			goto Cleanup;
+		}
+		if (fsync_parent_path(file_path, LOG) != 0)
+		{
+			elog(WARNING, "CFS failed to sync directory for file %s: %m", file_path);
 			goto Cleanup;
 		}
 
