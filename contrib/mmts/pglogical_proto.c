@@ -34,6 +34,7 @@
 #include "utils/syscache.h"
 #include "utils/timestamp.h"
 #include "utils/typcache.h"
+#include "utils/snapmgr.h"
 
 #include "multimaster.h"
 #include "pglogical_relid_map.h"
@@ -61,7 +62,7 @@ static void pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 							Relation rel, HeapTuple oldtuple);
 
 static void pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
-								   Relation rel, HeapTuple tuple);
+								  Relation rel, HeapTuple tuple);
 static char decide_datum_transfer(Form_pg_attribute att,
 								  Form_pg_type typclass,
 								  bool allow_internal_basetypes,
@@ -167,8 +168,45 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 	}
 }
 
+
+static void pglogical_seq_nextval(StringInfo out, LogicalDecodingContext *ctx, MtmSeqPosition* pos)
+{
+	Relation rel = heap_open(pos->seqid, NoLock);
+	pglogical_write_rel(out, ctx->output_plugin_private, rel);
+	heap_close(rel, NoLock);
+	pq_sendbyte(out, 'N');
+	pq_sendint64(out, pos->next);
+}
+	
+
+static void pglogical_broadcast_table(StringInfo out, LogicalDecodingContext *ctx, MtmCopyRequest* copy)
+{
+	if (BIT_CHECK(copy->targetNodes, MtmReplicationNodeId-1)) { 
+		HeapScanDesc scandesc;
+		HeapTuple	 tuple;
+		Relation     rel;
+		
+		rel = heap_open(copy->sourceTable, ShareLock);
+		
+		pglogical_write_rel(out, ctx->output_plugin_private, rel);
+
+		pq_sendbyte(out, '0');
+
+		scandesc = heap_beginscan(rel, GetTransactionSnapshot(), 0, NULL);
+		while ((tuple = heap_getnext(scandesc, ForwardScanDirection)) != NULL)
+		{
+			MtmOutputPluginPrepareWrite(ctx, false, false);
+			pq_sendbyte(out, 'I');		/* action INSERT */
+			pglogical_write_tuple(out, ctx->output_plugin_private, rel, tuple);
+			MtmOutputPluginWrite(ctx, false, false);
+		}
+		heap_endscan(scandesc);
+		heap_close(rel, ShareLock);
+	}
+}
+
 static void
-pglogical_write_message(StringInfo out,
+pglogical_write_message(StringInfo out, LogicalDecodingContext *ctx,
 						const char *prefix, Size sz, const char *message)
 {
 	MtmLastRelId = InvalidOid;
@@ -199,6 +237,12 @@ pglogical_write_message(StringInfo out,
 		 * so no need to send that to replicas.
 		 */
 		return;
+	  case 'B':
+		pglogical_broadcast_table(out, ctx, (MtmCopyRequest*)message);
+		return;
+	  case 'N':
+		pglogical_seq_nextval(out, ctx, (MtmSeqPosition*)message);
+		return;		
 	}
 	pq_sendbyte(out, 'M');
 	pq_sendbyte(out, *prefix);

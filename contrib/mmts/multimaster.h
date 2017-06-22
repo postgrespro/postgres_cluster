@@ -85,7 +85,7 @@
 
 #define Natts_mtm_trans_state   15
 #define Natts_mtm_nodes_state   17
-#define Natts_mtm_cluster_state 20
+#define Natts_mtm_cluster_state 21
 
 typedef ulong64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
@@ -209,6 +209,13 @@ typedef struct
 
 typedef struct
 {
+	Oid sourceTable;
+	nodemask_t targetNodes;
+} MtmCopyRequest;
+
+
+typedef struct
+{
 	MtmConnectionInfo con;
 	timestamp_t transDelay;
 	timestamp_t lastStatusChangeTime;
@@ -277,8 +284,10 @@ typedef struct
 	PGSemaphoreData sendSemaphore;     /* semaphore used to notify mtm-sender about new responses to coordinator */
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
-	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes */
-	nodemask_t stalledNodeMask;        /* bitmask of stalled nodes (node with dropped replication slot which makes it not possible automatic recovery of such node) */
+	nodemask_t disabledNodeMask;       /* Bitmask of disabled nodes */
+	nodemask_t deadNodeMask;           /* Bitmask of nodes considered as dead by referee */
+	nodemask_t recoveredNodeMask;      /* Bitmask of nodes recoverd after been reported as dead by referee */
+	nodemask_t stalledNodeMask;        /* Bitmask of stalled nodes (node with dropped replication slot which makes it not possible automatic recovery of such node) */
 	nodemask_t stoppedNodeMask;        /* Bitmask of stopped (permanently disabled nodes) */
 	nodemask_t pglogicalReceiverMask;  /* bitmask of started pglogic receivers */
 	nodemask_t pglogicalSenderMask;    /* bitmask of started pglogic senders */
@@ -328,6 +337,12 @@ typedef struct MtmFlushPosition
 } MtmFlushPosition;
 
 
+typedef struct MtmSeqPosition
+{
+	Oid   seqid;
+	int64 next;
+} MtmSeqPosition;
+ 
 #define MtmIsCoordinator(ts) (ts->gtid.node == MtmNodeId)
 
 extern char const* const MtmNodeStatusMnem[];
@@ -358,6 +373,7 @@ extern void*   MtmTablespaceStmt; /* CREATE/DELETE tablespace */
 extern MemoryContext MtmApplyContext;
 extern lsn_t MtmSenderWalEnd;
 extern timestamp_t MtmRefreshClusterStatusSchedule;
+extern MtmConnectionInfo* MtmConnections;
 
 
 extern void  MtmArbiterInitialize(void);
@@ -401,7 +417,7 @@ extern void  MtmCheckQuorum(void);
 extern bool  MtmRecoveryCaughtUp(int nodeId, lsn_t walEndPtr);
 extern void  MtmCheckRecoveryCaughtUp(int nodeId, lsn_t slotLSN);
 extern void  MtmRecoveryCompleted(void);
-extern void  MtmMakeRelationLocal(Oid relid);
+extern void  MtmMakeTableLocal(char const* schema, char const* name);
 extern void  MtmHandleApplyError(void);
 extern void  MtmUpdateLsnMapping(int nodeId, lsn_t endLsn);
 extern lsn_t MtmGetFlushPosition(int nodeId);
@@ -423,5 +439,6 @@ extern MtmTransState* MtmGetActiveTransaction(MtmL2List* list);
 extern void MtmReleaseLocks(void);
 extern void MtmInitMessage(MtmArbiterMessage* msg, MtmMessageCode code);
 extern void MtmSetSnapshot(csn_t snapshot);
+extern void MtmRefereeInitialize(void);
 
 #endif
