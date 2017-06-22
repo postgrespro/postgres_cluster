@@ -32,7 +32,7 @@
 #define ZLIB_COMPRESSOR   2
 #define LZ4_COMPRESSOR    3
 #define SNAPPY_COMPRESSOR 4
-#define LCFSE_COMPRESSOR  5
+#define LZFSE_COMPRESSOR  5
 #define ZSTD_COMPRESSOR   6
 
 /*

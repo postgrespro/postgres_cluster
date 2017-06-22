@@ -112,7 +112,7 @@ static int  cfs_gc_processed_segments;
  * - ZLIB_COMPRESSOR - default choice
  * - LZ4_COMPRESSOR
  * - SNAPPY_COMPRESSOR
- * - LCFSE_COMPRESSOR
+ * - LZFSE_COMPRESSOR
  * - ZSTD_COMPRESSOR
  * - LZ_COMPRESSOR - if none of options is chosen, use standard pglz_compress
  *					 which is slow and non-efficient in comparison with others,
@@ -181,29 +181,29 @@ char const* cfs_algorithm()
 	return "snappy";
 }
 
-#elif CFS_COMPRESSOR == LCFSE_COMPRESSOR
+#elif CFS_COMPRESSOR == LZFSE_COMPRESSOR
 
-#include <lcfse.h>
+#include <lzfse.h>
 
 size_t cfs_compress(void* dst, size_t dst_size, void const* src, size_t src_size)
 {
-	char* scratch_buf = palloc(lcfse_encode_scratch_size());
-	size_t rc = lcfse_encode_buffer(dst, dst_size, src, src_size, scratch_buf);
+	char* scratch_buf = palloc(lzfse_encode_scratch_size());
+	size_t rc = lzfse_encode_buffer(dst, dst_size, src, src_size, scratch_buf);
 	pfree(scratch_buf);
 	return rc;
 }
 
 size_t cfs_decompress(void* dst, size_t dst_size, void const* src, size_t src_size)
 {
-	char* scratch_buf = palloc(lcfse_encode_scratch_size());
-	size_t rc = lcfse_decode_buffer(dst, dst_size, src, src_size, scratch_buf);
+	char* scratch_buf = palloc(lzfse_encode_scratch_size());
+	size_t rc = lzfse_decode_buffer(dst, dst_size, src, src_size, scratch_buf);
 	pfree(scratch_buf);
 	return rc;
 }
 
 char const* cfs_algorithm()
 {
-	return "lcfse";
+	return "lzfse";
 }
 
 #elif CFS_COMPRESSOR == ZSTD_COMPRESSOR
