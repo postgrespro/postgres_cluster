@@ -1499,6 +1499,49 @@ void cfs_gc_segment(char const* fileName)
 }
 
 
+void cfs_recover_map(FileMap* map)
+{
+	int i;
+	uint32 physSize;
+	uint32 virtSize;
+	uint32 usedSize = 0;
+
+	physSize = pg_atomic_read_u32(&map->hdr.physSize);
+	virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
+
+	for (i = 0; i < RELSEG_SIZE; i++)
+	{
+		inode_t inode = map->inodes[i];
+		int size = CFS_INODE_SIZE(inode);
+		if (size != 0)
+		{
+			uint32 offs = CFS_INODE_OFFS(inode);
+			if (offs + size > physSize)
+			{
+				physSize = offs + size;
+			}
+			if ((i+1)*BLCKSZ > virtSize)
+			{
+				virtSize = (i+1)*BLCKSZ;
+			}
+			usedSize += size;
+		}
+		if (usedSize != pg_atomic_read_u32(&map->hdr.usedSize))
+		{
+			pg_atomic_write_u32(&map->hdr.usedSize, usedSize);
+		}
+		if (physSize != pg_atomic_read_u32(&map->hdr.physSize))
+		{
+			pg_atomic_write_u32(&map->hdr.physSize, physSize);
+		}
+		if (virtSize != pg_atomic_read_u32(&map->hdr.virtSize))
+		{
+			pg_atomic_write_u32(&map->hdr.virtSize, virtSize);
+		}
+	}
+}
+
+
 Datum cfs_gc_activity_processed_bytes(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT64(cfs_state->gc_stat.processedBytes);

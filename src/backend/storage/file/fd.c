@@ -984,10 +984,10 @@ LruDelete(File file)
 	if (vfdP->fileFlags & PG_COMPRESSION)
 	{
 		if (cfs_munmap(vfdP->map))
-			elog(ERROR, "could not unmap file \"%s.cfm\": %m", vfdP->fileName);
+			elog(ERROR, "CFS: could not unmap file \"%s.cfm\": %m", vfdP->fileName);
 
 		if (close(vfdP->md))
-			elog(ERROR, "could not close map file \"%s.cfm\": %m", vfdP->fileName);
+			elog(ERROR, "CFS: could not close map file \"%s.cfm\": %m", vfdP->fileName);
 
 		vfdP->md = VFD_CLOSED;
 		nfile -= 2;
@@ -1075,13 +1075,13 @@ LruInsert(File file)
 			pfree(mapFileName);
 			if (vfdP->md < 0)
 			{
-				elog(LOG, "RE_OPEN MAP FAILED: %d", errno);
+				elog(LOG, "CFS: reopen map failed: %d", errno);
 				return -1;
 			}
 			vfdP->map = cfs_mmap(vfdP->md);
 			if (vfdP->map == MAP_FAILED)
 			{
-				elog(LOG, "RE_MAP FAILED: %d", errno);
+				elog(LOG, "CFS: remap failed: %d", errno);
 				close(vfdP->md);
 				return -1;
 			}
@@ -1093,7 +1093,7 @@ LruInsert(File file)
 									 vfdP->fileMode);
 			if (vfdP->fd < 0)
 			{
-				DO_DB(elog(LOG, "re-open failed: %m"));
+				DO_DB(elog(LOG, "CFS: reopen failed: %m"));
 				cfs_munmap(vfdP->map);
 				close(vfdP->md);
 				vfdP->md = VFD_CLOSED;
@@ -1347,14 +1347,14 @@ PathNameOpenFile(FileName fileName, int fileFlags, int fileMode)
 		if (vfdP->md < 0)
 		{
 			save_errno = errno;
-			elog(LOG, "RE_OPEN MAP FAILED: %d", errno);
+			elog(LOG, "CFS: open map failed: %d", errno);
 			goto io_error;
 		}
 		vfdP->map = cfs_mmap(vfdP->md);
 		if (vfdP->map == MAP_FAILED)
 		{
 			save_errno = errno;
-			elog(LOG, "RE_MAP FAILED: %d", errno);
+			elog(LOG, "CFS: map failed: %d", errno);
 			close(vfdP->md);
 			goto io_error;
 		}
@@ -1362,11 +1362,16 @@ PathNameOpenFile(FileName fileName, int fileFlags, int fileMode)
 		vfdP->generation = vfdP->map->generation;
 		pg_read_barrier();
 
+		if (InRecovery)
+		{
+			cfs_recover_map(vfdP->map);
+		}
+
 		vfdP->fd = BasicOpenFile(fileName, fileFlags, fileMode);
 		if (vfdP->fd < 0)
 		{
 			save_errno = errno;
-			DO_DB(elog(LOG, "re-open failed: %m"));
+			DO_DB(elog(LOG, "CFS: open failed: %m"));
 			cfs_munmap(vfdP->map);
 			close(vfdP->md);
 			vfdP->md = VFD_CLOSED;
@@ -1562,10 +1567,10 @@ FileClose(File file)
 		if (vfdP->fileFlags & PG_COMPRESSION)
 		{
 			if (cfs_munmap(vfdP->map))
-				elog(ERROR, "could not unmap file \"%s.cfm\": %m", vfdP->fileName);
+				elog(ERROR, "CFS: could not unmap file \"%s.cfm\": %m", vfdP->fileName);
 
 			if (close(vfdP->md))
-				elog(ERROR, "could not close map file \"%s.cfm\": %m", vfdP->fileName);
+				elog(ERROR, "CFS: could not close map file \"%s.cfm\": %m", vfdP->fileName);
 			vfdP->md = VFD_CLOSED;
 			--nfile;
 		}
@@ -1610,7 +1615,7 @@ FileClose(File file)
 		if (vfdP->fileFlags & PG_COMPRESSION) {
 			char* mapFileName = psprintf("%s.cfm", vfdP->fileName);
 			if (unlink(mapFileName))
-				elog(LOG, "could not unlink file \"%s\": %m", mapFileName);
+				elog(LOG, "CFS: could not unlink file \"%s\": %m", mapFileName);
 			pfree(mapFileName);
 		}
 
@@ -1976,7 +1981,7 @@ FileWrite(File file, char *buffer, int amount)
 			 */
 			pos = cfs_alloc_page(map, CFS_INODE_SIZE(inode), compressedSize);
 			if (pos > pos + compressedSize) {
-				elog(ERROR, "CFS segment file exceeed 4Gb limit");
+				elog(ERROR, "CFS: segment file exceeed 4Gb limit");
 			}
 
 			inode = CFS_INODE(compressedSize, pos);
@@ -2037,7 +2042,7 @@ retry:
 			}
 			else
 			{
-				elog(LOG, "Write to file %s block %u position %u size %u failed with code %d: %m",
+				elog(LOG, "CFS: write to file %s block %u position %u size %u failed with code %d: %m",
 					 VfdCache[file].fileName, (uint32)(VfdCache[file].seekPos / BLCKSZ),
 					 (uint32)seekPos, amount, returnCode);
 				returnCode = 0;

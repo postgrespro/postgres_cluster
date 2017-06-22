@@ -6,7 +6,7 @@
 #include "port/atomics.h"
 #include "storage/rijndael.h"
 
-#define CFS_VERSION "0.42"
+#define CFS_VERSION "0.43"
 
 #define CFS_GC_LOCK  0x10000000
 
@@ -133,6 +133,7 @@ void     cfs_encrypt(const char* fname, void* block, uint32 offs, uint32 size);
 void     cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size);
 
 void     cfs_gc_segment(char const* name);
+void     cfs_recover_map(FileMap* map);
 
 extern CfsState* cfs_state;
 
