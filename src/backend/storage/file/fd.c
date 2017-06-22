@@ -330,7 +330,7 @@ static void pre_sync_fname(const char *fname, bool isdir, int elevel);
 static void datadir_fsync_fname(const char *fname, bool isdir, int elevel);
 
 static int	fsync_fname_ext(const char *fname, bool isdir, bool ignore_perm, int elevel);
-static int	fsync_parent_path(const char *fname, int elevel);
+static int  fsync_parent_path(const char *fname, int elevel);
 
 
 /*
@@ -985,7 +985,7 @@ LruDelete(File file)
 	{
 		if (cfs_munmap(vfdP->map))
 			elog(ERROR, "could not unmap file \"%s.cfm\": %m", vfdP->fileName);
-		
+
 		if (close(vfdP->md))
 			elog(ERROR, "could not close map file \"%s.cfm\": %m", vfdP->fileName);
 
@@ -1068,37 +1068,34 @@ LruInsert(File file)
 		 * overall system file table being full.  So, be prepared to release
 		 * another FD if necessary...
 		 */
-		vfdP->fd = BasicOpenFile(vfdP->fileName, vfdP->fileFlags,
-								 vfdP->fileMode);
-		if (vfdP->fd < 0)
-		{
-			DO_DB(elog(LOG, "RE-OPEN FAILED: %m"));
-			return -1;
-		}
-		else
-			DO_DB(elog(LOG, "RE_OPEN SUCCESS"));
-
 		if (vfdP->fileFlags & PG_COMPRESSION)
 		{
 			char* mapFileName = psprintf("%s.cfm", vfdP->fileName);
-			vfdP->md = open(mapFileName, vfdP->fileFlags & ~PG_COMPRESSION, vfdP->fileMode);
+			vfdP->md = BasicOpenFile(mapFileName, vfdP->fileFlags, vfdP->fileMode);
 			pfree(mapFileName);
-
 			if (vfdP->md < 0)
 			{
 				elog(LOG, "RE_OPEN MAP FAILED: %d", errno);
-				close(vfdP->fd);
-				vfdP->fd = VFD_CLOSED;
 				return -1;
 			}
-
 			vfdP->map = cfs_mmap(vfdP->md);
 			if (vfdP->map == MAP_FAILED)
 			{
 				elog(LOG, "RE_MAP FAILED: %d", errno);
-				close(vfdP->fd);
 				close(vfdP->md);
-				vfdP->fd = VFD_CLOSED;
+				return -1;
+			}
+			/* We need to copy generation before openning data file */
+			vfdP->generation = vfdP->map->generation;
+			pg_read_barrier();
+
+			vfdP->fd = BasicOpenFile(vfdP->fileName, vfdP->fileFlags,
+									 vfdP->fileMode);
+			if (vfdP->fd < 0)
+			{
+				DO_DB(elog(LOG, "re-open failed: %m"));
+				cfs_munmap(vfdP->map);
+				close(vfdP->md);
 				vfdP->md = VFD_CLOSED;
 				return -1;
 			}
@@ -1106,6 +1103,13 @@ LruInsert(File file)
 		}
 		else
 		{
+			vfdP->fd = BasicOpenFile(vfdP->fileName, vfdP->fileFlags,
+								 vfdP->fileMode);
+			if (vfdP->fd < 0)
+			{
+				DO_DB(elog(LOG, "RE-OPEN FAILED: %m"));
+				return -1;
+			}
 
 			/*
 			* Seek to the right position.  We need no special case for seekPos
@@ -1335,46 +1339,55 @@ PathNameOpenFile(FileName fileName, int fileFlags, int fileMode)
 	/* Close excess kernel FDs. */
 	ReleaseLruFiles();
 
-	vfdP->fd = BasicOpenFile(fileName, fileFlags, fileMode);
-
-	if (vfdP->fd < 0)
-	{
-		save_errno = errno;
-	io_error:
-		FreeVfd(file);
-		free(fnamecopy);
-		errno = save_errno;
-		return -1;
-	}
-
 	if (fileFlags & PG_COMPRESSION)
 	{
 		char* mapFileName = psprintf("%s.cfm", fileName);
-		vfdP->md = open(mapFileName, O_CREAT | O_RDWR | (fileFlags & ~(PG_COMPRESSION|O_EXCL)), fileMode);
+		vfdP->md = BasicOpenFile(mapFileName, O_CREAT|O_RDWR|(fileFlags & ~O_EXCL), fileMode);
 		pfree(mapFileName);
 		if (vfdP->md < 0)
 		{
 			save_errno = errno;
-			close(vfdP->fd);
-			vfdP->fd = VFD_CLOSED;
-			elog(LOG, "OPEN MAP FAILED: %d", errno);
+			elog(LOG, "RE_OPEN MAP FAILED: %d", errno);
 			goto io_error;
 		}
-
 		vfdP->map = cfs_mmap(vfdP->md);
 		if (vfdP->map == MAP_FAILED)
 		{
 			save_errno = errno;
-			close(vfdP->fd);
+			elog(LOG, "RE_MAP FAILED: %d", errno);
 			close(vfdP->md);
-			vfdP->fd = VFD_CLOSED;
-			vfdP->md = VFD_CLOSED;
-			elog(LOG, "MAP FAILED: %d", errno);
 			goto io_error;
 		}
-		++nfile;
+		/* We need to copy generation before openning data file */
+		vfdP->generation = vfdP->map->generation;
+		pg_read_barrier();
+
+		vfdP->fd = BasicOpenFile(fileName, fileFlags, fileMode);
+		if (vfdP->fd < 0)
+		{
+			save_errno = errno;
+			DO_DB(elog(LOG, "re-open failed: %m"));
+			cfs_munmap(vfdP->map);
+			close(vfdP->md);
+			vfdP->md = VFD_CLOSED;
+			goto io_error;
+		}
+		nfile += 2;
 	}
-	++nfile;
+	else
+	{
+		vfdP->fd = BasicOpenFile(fileName, fileFlags, fileMode);
+		if (vfdP->fd < 0)
+		{
+			save_errno = errno;
+		  io_error:
+			FreeVfd(file);
+			free(fnamecopy);
+			errno = save_errno;
+			return -1;
+		}
+		nfile += 1;
+	}
 	DO_DB(elog(LOG, "PathNameOpenFile: success %d",
 			   vfdP->fd));
 
@@ -1553,6 +1566,7 @@ FileClose(File file)
 
 			if (close(vfdP->md))
 				elog(ERROR, "could not close map file \"%s.cfm\": %m", vfdP->fileName);
+			vfdP->md = VFD_CLOSED;
 			--nfile;
 		}
 		--nfile;
@@ -1593,7 +1607,7 @@ FileClose(File file)
 		if (unlink(vfdP->fileName))
 			elog(LOG, "could not unlink file \"%s\": %m", vfdP->fileName);
 
-		if (vfdP->fileFlags & PG_COMPRESSION) { 
+		if (vfdP->fileFlags & PG_COMPRESSION) {
 			char* mapFileName = psprintf("%s.cfm", vfdP->fileName);
 			if (unlink(mapFileName))
 				elog(LOG, "could not unlink file \"%s\": %m", mapFileName);
@@ -1704,12 +1718,16 @@ static bool
 FileLock(File file)
 {
 	Vfd *vfdP = &VfdCache[file];
+	uint64 map_generation;
 
 	 /* protect file from GC */
 	cfs_lock_file(vfdP->map, vfdP->fileName);
 
+	map_generation = vfdP->map->generation;
+	pg_read_barrier();
+
 	/* Reopen file, because it was rewritten by gc */
-	if (vfdP->generation != vfdP->map->generation)
+	if (vfdP->generation != map_generation)
 	{
 		close(vfdP->fd);
 		vfdP->fd = BasicOpenFile(vfdP->fileName, vfdP->fileFlags, vfdP->fileMode);
@@ -1718,7 +1736,7 @@ FileLock(File file)
 			DO_DB(elog(LOG, "RE_OPEN FAILED: %d", errno));
 			return false;
 		}
-		vfdP->generation = vfdP->map->generation;
+		vfdP->generation = map_generation;
 	}
 	return true;
 }
@@ -1750,14 +1768,14 @@ FileRead(File file, char *buffer, int amount)
 		if (VfdCache[file].seekPos / BLCKSZ >= RELSEG_SIZE)
 			return 0;
 
-		if (!FileLock(file)) 
+		if (!FileLock(file))
 			return -1;
 
 		inode = map->inodes[VfdCache[file].seekPos / BLCKSZ];
 		amount = CFS_INODE_SIZE(inode);
 		if (amount == 0)
 		{
-			uint32 fileSize = pg_atomic_read_u32(&map->virtSize);
+			uint32 fileSize = pg_atomic_read_u32(&map->hdr.virtSize);
 			if (VfdCache[file].seekPos + BLCKSZ <= fileSize)
 			{
 				amount = BLCKSZ;
@@ -1768,7 +1786,7 @@ FileRead(File file, char *buffer, int amount)
 			return amount;
 		}
 
-		seekPos = lseek(VfdCache[file].fd, CFS_INODE_OFFS(inode), SEEK_SET);		
+		seekPos = lseek(VfdCache[file].fd, CFS_INODE_OFFS(inode), SEEK_SET);
 		Assert(seekPos == (off_t)CFS_INODE_OFFS(inode));
 
 		if (amount < BLCKSZ)
@@ -1788,8 +1806,12 @@ FileRead(File file, char *buffer, int amount)
 				{
 					if (errno != EINTR)
 					{
-						elog(LOG, "Failed to read block %u position %u size %u from compressed file %s: %m", 
-							 (uint32)(VfdCache[file].seekPos / BLCKSZ), (uint32)seekPos, size, VfdCache[file].fileName);
+						if (returnCode == 0)
+							elog(LOG, "Block %u position %u size %u is beyond end of compressed file %s",
+								 (uint32)(VfdCache[file].seekPos / BLCKSZ), (uint32)seekPos, size, VfdCache[file].fileName);
+						else
+							elog(LOG, "Failed to read block %u position %u size %u from compressed file %s: %m",
+								 (uint32)(VfdCache[file].seekPos / BLCKSZ), (uint32)seekPos, size, VfdCache[file].fileName);
 						cfs_unlock_file(map);
 						return returnCode;
 					}
@@ -1805,7 +1827,7 @@ FileRead(File file, char *buffer, int amount)
 				INIT_TRADITIONAL_CRC32(crc);
 				COMP_TRADITIONAL_CRC32(crc, compressedBuffer, amount);
 				FIN_TRADITIONAL_CRC32(crc);
-				elog(LOG, "Decompress error: %d for file %s block %u position %u compressed size %u crc %x", 
+				elog(LOG, "CFS: decompress error: %d for file %s block %u position %u compressed size %u crc %x",
 					 returnCode, VfdCache[file].fileName, (uint32)(VfdCache[file].seekPos / BLCKSZ), (uint32)seekPos, amount, crc);
 				VfdCache[file].seekPos = FileUnknownPos;
 				returnCode = -1;
@@ -1822,7 +1844,7 @@ FileRead(File file, char *buffer, int amount)
 	returnCode = read(VfdCache[file].fd, buffer, amount);
 	if (returnCode >= 0)
 	{
-		if (VfdCache[file].fileFlags & PG_COMPRESSION) 
+		if (VfdCache[file].fileFlags & PG_COMPRESSION)
 		{
 			cfs_decrypt(VfdCache[file].fileName, buffer, VfdCache[file].seekPos, amount);
 		}
@@ -1861,7 +1883,7 @@ FileRead(File file, char *buffer, int amount)
 		VfdCache[file].seekPos = FileUnknownPos;
 	}
 
-	if (VfdCache[file].fileFlags & PG_COMPRESSION) 
+	if (VfdCache[file].fileFlags & PG_COMPRESSION)
 	{
 		cfs_unlock_file(VfdCache[file].map);
 	}
@@ -1871,11 +1893,12 @@ FileRead(File file, char *buffer, int amount)
 int
 FileWrite(File file, char *buffer, int amount)
 {
-	int  returnCode;	
+	int  returnCode;
 	char compressedBuffer[CFS_MAX_COMPRESSED_SIZE(BLCKSZ)];
 	inode_t inode = 0;
 	/*inode_t prev_inode;*/
 	off_t   seekPos;
+	uint32	pos = 0;
 	Vfd		   *vfdP;
 
 	Assert(FileIsValid(file));
@@ -1929,9 +1952,8 @@ FileWrite(File file, char *buffer, int amount)
 		}
 	}
 
-	if (VfdCache[file].fileFlags & PG_COMPRESSION) 
+	if (VfdCache[file].fileFlags & PG_COMPRESSION)
 	{
-		uint32   pos;
 		FileMap* map = VfdCache[file].map;
 		uint32   compressedSize;
 		Assert(amount == BLCKSZ);
@@ -1953,6 +1975,10 @@ FileWrite(File file, char *buffer, int amount)
 			 * because we want to write all updated pages sequentially
 			 */
 			pos = cfs_alloc_page(map, CFS_INODE_SIZE(inode), compressedSize);
+			if (pos > pos + compressedSize) {
+				elog(ERROR, "CFS segment file exceeed 4Gb limit");
+			}
+
 			inode = CFS_INODE(compressedSize, pos);
 			buffer = compressedBuffer;
 			amount = compressedSize;
@@ -2002,11 +2028,12 @@ retry:
 		if (VfdCache[file].fileFlags & PG_COMPRESSION)
 		{
 			if (returnCode == amount)
-			{	
+			{
 				VfdCache[file].map->inodes[VfdCache[file].seekPos / BLCKSZ] = inode;
 				VfdCache[file].seekPos += BLCKSZ;
 				cfs_extend(VfdCache[file].map, VfdCache[file].seekPos);
 				returnCode = BLCKSZ;
+				Assert(vfdP->generation == vfdP->map->generation);
 			}
 			else
 			{
@@ -2065,9 +2092,21 @@ retry:
 		vfdP->seekPos = FileUnknownPos;
 	}
 
-	if (VfdCache[file].fileFlags & PG_COMPRESSION) 
+	if (VfdCache[file].fileFlags & PG_COMPRESSION)
+	{
 		cfs_unlock_file(VfdCache[file].map);
-
+		/*
+		 * If GC is disabled for a long time, then file can unlimited grow.
+		 * To avoid wrap aound of 32-bit offsets we force GC on this file when destination position
+		 * cross 2Gb boundary.
+		 */
+		if ((int32)pos >= 0 && (int32)(pos + amount) < 0)
+		{
+			elog(LOG, "CFS: backend %d forced to perform GC on file %s block %u because it's size exceed %u bytes",
+				 MyProcPid, VfdCache[file].fileName, (uint32)(VfdCache[file].seekPos / BLCKSZ),  pos);
+			cfs_gc_segment(VfdCache[file].fileName);
+		}
+	}
 	return returnCode;
 }
 
@@ -2140,7 +2179,7 @@ FileSeek(File file, off_t offset, int whence)
 				if (VfdCache[file].fileFlags & PG_COMPRESSION)
 				{
 					FileMap* map = VfdCache[file].map;
-					uint32 fileSize = pg_atomic_read_u32(&map->virtSize);
+					uint32 fileSize = pg_atomic_read_u32(&map->hdr.virtSize);
 
 					if (offset > 0 && offset > fileSize)
 						offset = fileSize;
@@ -2229,12 +2268,16 @@ FileTruncate(File file, off_t offset)
 			map->inodes[i] = 0;
 		}
 
-		pg_atomic_write_u32(&map->virtSize, offset);
-		pg_atomic_fetch_sub_u32(&map->usedSize, released);
-		cfs_unlock_file(map);
+		pg_atomic_write_u32(&map->hdr.virtSize, offset);
+		pg_atomic_fetch_sub_u32(&map->hdr.usedSize, released);
 
-		/* We can truncate compressed file only with zero offset */
-		returnCode = (offset == 0) ? ftruncate(VfdCache[file].fd, 0) : 0;
+		if (offset == 0)
+		{
+			/* We can truncate compressed file only with zero offset */
+			pg_atomic_write_u32(&map->hdr.physSize, 0);
+			returnCode = ftruncate(VfdCache[file].fd, 0);
+		}
+		cfs_unlock_file(map);
 	}
 	else
 		returnCode = ftruncate(VfdCache[file].fd, offset);
