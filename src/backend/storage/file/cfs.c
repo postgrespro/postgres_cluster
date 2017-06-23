@@ -923,7 +923,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 
 				/* xfs doesn't like if writeback performed closer than 128k to
 				 * file end */
-				if (writeback + 2*128*1024 < newSize)
+				if (writeback + 16*1024*1024 < newSize)
 				{
 					uint32 newwb = (newSize - 128*1024) & ~(128*1024-1);
 					pg_flush_data(fd2, writeback, newwb - writeback);
