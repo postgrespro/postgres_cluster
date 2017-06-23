@@ -1695,6 +1695,7 @@ void
 FileWriteback(File file, off_t offset, off_t nbytes)
 {
 	int			returnCode;
+	FileMap		*map = NULL;
 
 	Assert(FileIsValid(file));
 
@@ -1715,7 +1716,6 @@ FileWriteback(File file, off_t offset, off_t nbytes)
 
 	if (VfdCache[file].fileFlags & PG_COMPRESSION)
 	{
-		FileMap *map = VfdCache[file].map;
 		inode_t inode;
 		uint32 i = (uint32)(offset / BLCKSZ);
 		uint32 end = (uint32)((offset + nbytes + (BLCKSZ-1)) / BLCKSZ);
@@ -1727,6 +1727,7 @@ FileWriteback(File file, off_t offset, off_t nbytes)
 		/* if GC is in progress, no need to flush this file */
 		if (!FileLock(file))
 			return;
+		map = VfdCache[file].map;
 		virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
 		/* in fact, we should not be here. Should it be Assert? */
 		if (virtSize / BLCKSZ < end)
