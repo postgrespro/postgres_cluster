@@ -676,6 +676,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 	int fd2 = -1;
 	int md2 = -1;
 	bool succeed = false;
+	bool performed = false;
 	int rc;
 
 	pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
@@ -1055,17 +1056,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		pfree(inodes);
 		pfree(newMap);
 
-		if (cfs_gc_delay != 0 && background == CFS_BACKGROUND)
-		{
-			int rc = WaitLatch(MyLatch,
-							   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-							   cfs_gc_delay /* ms */ );
-			if (rc & WL_POSTMASTER_DEATH)
-				exit(1);
-
-			ResetLatch(MyLatch);
-			CHECK_FOR_INTERRUPTS();
-		}
+		performed = true;
 	}
 	else if (cfs_state->max_iterations == 1)
 		elog(LOG, "CFS GC worker %d: file %.*s: physical size %u, logical size %u, used %u, compression ratio %f",
@@ -1089,6 +1080,17 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 	}
 	pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
 
+	if (cfs_gc_delay != 0 && performed && background == CFS_BACKGROUND)
+	{
+		int rc = WaitLatch(MyLatch,
+						   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+						   cfs_gc_delay /* ms */ );
+		if (rc & WL_POSTMASTER_DEATH)
+			exit(1);
+
+		ResetLatch(MyLatch);
+		CHECK_FOR_INTERRUPTS();
+	}
 	return succeed;
 }
 

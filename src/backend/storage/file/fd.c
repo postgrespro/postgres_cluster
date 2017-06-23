@@ -1689,6 +1689,8 @@ FilePrefetch(File file, off_t offset, int amount)
 #endif
 }
 
+static bool FileLock(File file);
+
 void
 FileWriteback(File file, off_t offset, off_t nbytes)
 {
@@ -1711,7 +1713,55 @@ FileWriteback(File file, off_t offset, off_t nbytes)
 	if (returnCode < 0)
 		return;
 
+	if (VfdCache[file].fileFlags & PG_COMPRESSION)
+	{
+		FileMap *map = VfdCache[file].map;
+		inode_t inode;
+		uint32 i = (uint32)(offset / BLCKSZ);
+		uint32 end = (uint32)((offset + nbytes + (BLCKSZ-1)) / BLCKSZ);
+		uint32 max = 0;
+		uint32 min = UINT32_MAX;
+		uint32 virtSize;
+		uint32 physSize;
+
+		/* if GC is in progress, no need to flush this file */
+		if (!FileLock(file))
+			return;
+		virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
+		/* in fact, we should not be here. Should it be Assert? */
+		if (virtSize / BLCKSZ < end)
+			end = virtSize / BLCKSZ;
+		for (; i <= end; i++)
+		{
+			uint32_t offs, size;
+			inode = map->inodes[i];
+			offs = CFS_INODE_SIZE(inode);
+			size = CFS_INODE_OFFS(inode);
+			if (offs < min)
+				min = offs;
+			if (offs + size > max)
+				max = offs + size;
+		}
+		physSize = pg_atomic_read_u32(&map->hdr.physSize);
+		if (min > physSize)
+			min = physSize;
+		if (max > physSize)
+			max = physSize;
+		if (max <= min)
+		{
+			cfs_unlock_file(map);
+			return;
+		}
+		offset = min;
+		nbytes = max - min;
+		/* if off_t == int32, we will fail in many other places,
+		 * so don't check off_t overflow here */
+	}
 	pg_flush_data(VfdCache[file].fd, offset, nbytes);
+	if (VfdCache[file].fileFlags & PG_COMPRESSION)
+	{
+		cfs_unlock_file(map);
+	}
 }
 
 /*
