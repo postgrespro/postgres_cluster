@@ -1980,8 +1980,9 @@ FileWrite(File file, char *buffer, int amount)
 			 * because we want to write all updated pages sequentially
 			 */
 			pos = cfs_alloc_page(map, CFS_INODE_SIZE(inode), compressedSize);
-			if (pos > pos + compressedSize) {
-				elog(ERROR, "CFS: segment file exceeed 4Gb limit");
+			if (pos > CFS_RED_LINE) {
+				cfs_undo_alloc_page(map, CFS_INODE_SIZE(inode), compressedSize);
+				elog(ERROR, "CFS: segment file exceed 4Gb limit");
 			}
 
 			inode = CFS_INODE(compressedSize, pos);
@@ -2102,14 +2103,14 @@ retry:
 		cfs_unlock_file(VfdCache[file].map);
 		/*
 		 * If GC is disabled for a long time, then file can unlimited grow.
-		 * To avoid wrap aound of 32-bit offsets we force GC on this file when destination position
+		 * To avoid wrap around of 32-bit offsets we force GC on this file when destination position
 		 * cross 2Gb boundary.
 		 */
-		if ((int32)pos >= 0 && (int32)(pos + amount) < 0)
+		if (pos + amount > CFS_IMPLICIT_GC_THRESHOLD)
 		{
 			elog(LOG, "CFS: backend %d forced to perform GC on file %s block %u because it's size exceed %u bytes",
 				 MyProcPid, VfdCache[file].fileName, (uint32)(VfdCache[file].seekPos / BLCKSZ),  pos);
-			cfs_gc_segment(VfdCache[file].fileName);
+			cfs_gc_segment(VfdCache[file].fileName, pos + amount < CFS_YELLOW_LINE);
 		}
 	}
 	return returnCode;
