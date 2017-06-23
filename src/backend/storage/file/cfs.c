@@ -99,6 +99,7 @@ CfsState* cfs_state;
 
 static bool cfs_gc_stop;
 static int  cfs_gc_processed_segments;
+static bool got_SIGHUP = false;
 
 
 /* ----------------------------------------------------------------
@@ -1228,16 +1229,21 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 	}
 	pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
 
-	if (cfs_gc_delay != 0 && performed && background == CFS_BACKGROUND)
+	if (background == CFS_BACKGROUND)
 	{
 		int rc = WaitLatch(MyLatch,
 						   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-						   cfs_gc_delay /* ms */ );
+						   performed ? cfs_gc_delay : 0 /* ms */ );
 		if (rc & WL_POSTMASTER_DEATH)
 			exit(1);
 
 		ResetLatch(MyLatch);
 		CHECK_FOR_INTERRUPTS();
+		if (got_SIGHUP)
+		{
+			got_SIGHUP = false;
+			ProcessConfigFile(PGC_SIGHUP);
+		}
 	}
 	return succeed;
 }
@@ -1295,6 +1301,16 @@ static void cfs_gc_cancel(int sig)
 	cfs_gc_stop = true;
 }
 
+static void cfs_sighup(SIGNAL_ARGS)
+{
+	int			save_errno = errno;
+
+	got_SIGHUP = true;
+	SetLatch(MyLatch);
+
+	errno = save_errno;
+}
+
 /*
  * Now compression can be applied only to the tablespace
  * in general, so gc workers traverse pg_tblspc directory.
@@ -1311,6 +1327,7 @@ static void cfs_gc_bgworker_main(Datum arg)
 	pqsignal(SIGINT, cfs_gc_cancel);
     pqsignal(SIGQUIT, cfs_gc_cancel);
     pqsignal(SIGTERM, cfs_gc_cancel);
+	pqsignal(SIGHUP, cfs_sighup);
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -1338,6 +1355,11 @@ static void cfs_gc_bgworker_main(Datum arg)
 
 		ResetLatch(MyLatch);
 		CHECK_FOR_INTERRUPTS();
+		if (got_SIGHUP)
+		{
+			got_SIGHUP = false;
+			ProcessConfigFile(PGC_SIGHUP);
+		}
 	}
 }
 
