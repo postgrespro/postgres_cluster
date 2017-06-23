@@ -479,7 +479,7 @@ uint32 cfs_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize)
 			elog(ERROR, "CFS: segment file exceed 4Gb limit");
 	} while (!pg_atomic_compare_exchange_u32(&map->hdr.physSize, &oldPhysSize, newPhysSize));
 
-	pg_atomic_fetch_sub_u32(&map->hdr.usedSize, newSize - oldSize);
+	pg_atomic_fetch_add_u32(&map->hdr.usedSize, newSize - oldSize);
 
 	return oldPhysSize;
 }
