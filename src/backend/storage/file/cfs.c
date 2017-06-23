@@ -470,14 +470,16 @@ int cfs_munmap(FileMap* map)
  */
 uint32 cfs_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize)
 {
-	pg_atomic_fetch_add_u32(&map->hdr.usedSize, newSize - oldSize);
-	return pg_atomic_fetch_add_u32(&map->hdr.physSize, newSize);
-}
+	uint32 oldPhysSize = pg_atomic_read_u32(&map->hdr.physSize);
+	uint32 newPhysSize;
 
-void cfs_undo_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize)
-{
-	pg_atomic_fetch_sub_u32(&map->hdr.usedSize, newSize - oldSize);
-	pg_atomic_fetch_sub_u32(&map->hdr.physSize, newSize);
+	do {
+		newPhysSize = oldPhysSize + newSize;
+		if (oldPhysSize > newPhysSize)
+			elog(ERROR, "CFS: segment file exceed 4Gb limit");
+	} while (!pg_atomic_compare_exchange_u32(&map->hdr.physSize, &oldPhysSize, newPhysSize));
+
+	return oldPhysSize;
 }
 
 /*

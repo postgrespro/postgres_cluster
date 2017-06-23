@@ -6,7 +6,7 @@
 #include "port/atomics.h"
 #include "storage/rijndael.h"
 
-#define CFS_VERSION "0.43"
+#define CFS_VERSION "0.45"
 
 #define CFS_GC_LOCK  0x10000000
 
@@ -52,8 +52,7 @@ typedef uint64 inode_t;
 #define CFS_INODE(size,offs)  (((inode_t)(size) << 32) | (offs))
 
 #define CFS_IMPLICIT_GC_THRESHOLD 0x80000000U /* 2Gb */
-#define CFS_YELLOW_LINE           0xC0000000U /* 3Gb */
-#define CFS_RED_LINE              0xFFF00000U /* 4Gb - page_size*100 */
+#define CFS_RED_LINE              0xC0000000U /* 3Gb */
 
 size_t cfs_compress(void* dst, size_t dst_size, void const* src, size_t src_size);
 size_t cfs_decompress(void* dst, size_t dst_size, void const* src, size_t src_size);
@@ -125,7 +124,6 @@ typedef struct
 void     cfs_lock_file(FileMap* map, char const* path);
 void     cfs_unlock_file(FileMap* map);
 uint32   cfs_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize);
-void     cfs_undo_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize);
 void     cfs_extend(FileMap* map, uint32 pos);
 bool     cfs_control_gc(bool enabled);
 int      cfs_msync(FileMap* map);
