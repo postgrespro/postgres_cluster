@@ -47,9 +47,10 @@
  * with compression size of compressed file can become larger than 1Gb if GC id disabled for long time */
 typedef uint64 inode_t;
 
-#define CFS_INODE_SIZE(inode) ((uint32)((inode) >> 32))
+#define CFS_INODE_SIZE(inode) ((uint32)((inode) >> 32) & 0xffff)
 #define CFS_INODE_OFFS(inode) ((uint32)(inode))
 #define CFS_INODE(size,offs)  (((inode_t)(size) << 32) | (offs))
+#define CFS_INODE_CLEAN_FLAG  ((inode_t)1 << 63)
 
 #define CFS_IMPLICIT_GC_THRESHOLD 0x80000000U /* 2Gb */
 #define CFS_RED_LINE              0xC0000000U /* 3Gb */
@@ -121,7 +122,7 @@ typedef struct
 	inode_t          inodes[RELSEG_SIZE];
 } FileMap;
 
-void     cfs_lock_file(FileMap* map, char const* path);
+void     cfs_lock_file(FileMap* map, int fd, char const* path);
 void     cfs_unlock_file(FileMap* map);
 uint32   cfs_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize);
 void     cfs_extend(FileMap* map, uint32 pos);

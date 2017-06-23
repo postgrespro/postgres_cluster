@@ -1777,7 +1777,7 @@ FileLock(File file)
 	uint64 map_generation;
 
 	 /* protect file from GC */
-	cfs_lock_file(vfdP->map, vfdP->fileName);
+	cfs_lock_file(vfdP->map, vfdP->md, vfdP->fileName);
 
 	map_generation = vfdP->map->generation;
 	pg_read_barrier();
@@ -3565,6 +3565,12 @@ fsync_fname_ext(const char *fname, bool isdir, bool ignore_perm, int elevel)
 	(void) CloseTransientFile(fd);
 
 	return 0;
+}
+
+int
+pg_fsync_parent_path(const char *fname, int elevel)
+{
+	return fsync_parent_path(fname, elevel);
 }
 
 /*
