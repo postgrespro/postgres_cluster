@@ -1681,9 +1681,10 @@ Datum cfs_gc_relation(PG_FUNCTION_ARGS)
 }
 
 
-void cfs_gc_segment(char const* fileName, bool optional)
+void cfs_gc_segment(char const* fileName, uint32 pos)
 {
 	char* mapFileName;
+	bool optional = pos < CFS_RED_LINE;
 
 	if (optional)
 	{
@@ -1693,6 +1694,8 @@ void cfs_gc_segment(char const* fileName, bool optional)
     else
 		LWLockAcquire(CfsGcLock, LW_EXCLUSIVE); /* Prevent interaction with background GC */
 
+	elog(LOG, "CFS: backend %d forced to perform GC on file %s because it's size exceed %u bytes",
+		 MyProcPid, fileName, pos);
 	mapFileName = psprintf("%s.cfm", fileName);
 
 	cfs_gc_file(mapFileName, optional ? CFS_IMPLICIT : CFS_EXPLICIT);

@@ -2155,9 +2155,7 @@ retry:
 		 */
 		if (pos + amount > CFS_IMPLICIT_GC_THRESHOLD)
 		{
-			elog(LOG, "CFS: backend %d forced to perform GC on file %s block %u because it's size exceed %u bytes",
-				 MyProcPid, VfdCache[file].fileName, (uint32)(VfdCache[file].seekPos / BLCKSZ),  pos);
-			cfs_gc_segment(VfdCache[file].fileName, pos + amount < CFS_RED_LINE);
+			cfs_gc_segment(VfdCache[file].fileName, pos + amount);
 		}
 	}
 	return returnCode;
