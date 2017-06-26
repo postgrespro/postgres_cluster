@@ -430,6 +430,8 @@ void cfs_initialize()
 }
 int cfs_msync(FileMap* map)
 {
+	if (!enableFsync)
+		return 0;
 #ifdef WIN32
 	return FlushViewOfFile(map, sizeof(FileMap)) ? 0 : -1;
 #else
