@@ -1200,11 +1200,18 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		memcpy(map->inodes, newMap->inodes, n_pages * sizeof(inode_t));
 		pg_atomic_write_u32(&map->hdr.usedSize, newUsed);
 		pg_atomic_write_u32(&map->hdr.physSize, newSize);
-		pg_atomic_write_u32(&map->gc_active, false);
 		map->generation += 1; /* force all backends to reopen the file */
 
 		/* Before removing backup files and releasing locks
 		 * we need to flush updated map file */
+		if (cfs_msync(map) < 0)
+		{
+			elog(WARNING, "CFS failed to sync map %s: %m", map_path);
+			goto Cleanup;
+		}
+		/* now we can safely set gc completion */
+		pg_atomic_write_u32(&map->gc_active, false);
+		/* and need to sync it again */
 		if (cfs_msync(map) < 0)
 		{
 			elog(WARNING, "CFS failed to sync map %s: %m", map_path);
