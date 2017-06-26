@@ -628,13 +628,12 @@ cfs_get_lock(char const* file_path)
 static void
 cfs_gc_lock(pg_atomic_uint32* lock)
 {
-	uint32 count = pg_atomic_fetch_or_u32(lock, CFS_GC_LOCK);
+	uint32 count = pg_atomic_fetch_add_u32(lock, CFS_GC_LOCK);
 	long delay = CFS_LOCK_MIN_TIMEOUT;
 
-	while ((count & ~CFS_GC_LOCK) != 1)
+	while ((count & (CFS_GC_LOCK-1)) != 1)
 	{
 		pg_usleep(delay);
-		CHECK_FOR_INTERRUPTS();
 		count = pg_atomic_read_u32(lock);
 		if (delay < CFS_LOCK_MAX_TIMEOUT)
 		{
@@ -650,7 +649,7 @@ cfs_gc_lock(pg_atomic_uint32* lock)
 static void cfs_gc_unlock(pg_atomic_uint32* lock)
 {
 	pg_write_barrier();
-	pg_atomic_fetch_and_u32(lock, ~CFS_GC_LOCK);
+	pg_atomic_fetch_sub_u32(lock, CFS_GC_LOCK);
 }
 
 /*
@@ -813,6 +812,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 				exit(1);
 
 			ResetLatch(MyLatch);
+			CHECK_FOR_INTERRUPTS();
 
 			pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
 		}
@@ -1106,8 +1106,6 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		pg_atomic_write_u32(&newMap->hdr.physSize, newSize);
 		pg_atomic_write_u32(&newMap->hdr.virtSize, virtSize);
 
-		pg_atomic_write_u32(&newMap->gc_active, true); /* Indicate start of GC */
-
 		/* Persist copy of map file */
 		if (!cfs_write_file(md2, &newMap->hdr, sizeof(newMap->hdr)))
 		{
@@ -1132,9 +1130,11 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		md2 = -1;
 
 		/*
-		 * Persist map with CFS_GC_LOCK set:
+		 * Persist map with gc_active set:
 		 * in case of crash we will know that map may be changed by GC
 		 */
+		pg_atomic_write_u32(&map->gc_active, true); /* Indicate start of GC */
+
 		if (cfs_msync(map) < 0)
 		{
 			elog(WARNING, "CFS failed to sync map %s: %m", map_path);
