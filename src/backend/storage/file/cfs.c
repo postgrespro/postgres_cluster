@@ -768,15 +768,6 @@ typedef enum {
 	CFS_IMPLICIT
 } GC_CALL_KIND;
 
-/* spend 1% for more inplace updates on second pass */
-static inline uint32
-cfs_room_gc_chunk(uint32 size)
-{
-	if (size < CFS_MIN_COMPRESSED_SIZE(BLCKSZ))
-		size += size/128;
-	return size;
-}
-
 /*
  * Perform garbage collection (if required) on the file
  * @param map_path - path to the map file (*.cfm).
@@ -882,8 +873,6 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		uint32 second_pass = 0;
 		inode_t** inodes = (inode_t**)palloc(RELSEG_SIZE*sizeof(inode_t*));
 		bool remove_backups = true;
-		uint32 inplace = 0;
-		bool prev_seek = false;
 		int n_pages;
 		TimestampTz startTime, secondTime, endTime;
 		long secs, secs2;
@@ -955,10 +944,8 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		cfs_state->gc_stat.processedFiles += 1;
 		cfs_gc_processed_segments += 1;
 
-		newUsed = 0;
 		for (i = 0; i < n_pages; i++)
 		{
-			int room;
 			size = CFS_INODE_SIZE(*inodes[i]);
 			if (size != 0)
 			{
@@ -974,8 +961,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 					goto Cleanup;
 				}
 
-				room = cfs_room_gc_chunk(size);
-				if (!cfs_write_file(fd2, block, room))
+				if (!cfs_write_file(fd2, block, size))
 				{
 					elog(WARNING, "CFS failed to write file %s: %m", file_bck_path);
 					goto Cleanup;
@@ -984,8 +970,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 				cfs_state->gc_stat.processedPages += 1;
 
 				offs = newSize;
-				newUsed += size;
-				newSize += room;
+				newSize += size;
 				*inodes[i] = CFS_INODE(size, offs);
 
 				/* xfs doesn't like if writeback performed closer than 128k to
@@ -1002,6 +987,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 				*inodes[i] = CFS_INODE(0, 0);
 			}
 		}
+		newUsed = newSize;
 
 		/* Persist bigger part of copy to not do it under lock */
 		/* and persist previous file, cause it will be fsynced in durable rename */
@@ -1041,12 +1027,11 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 				map->inodes[i] &= ~CFS_INODE_CLEAN_FLAG;
 				continue;
 			}
-			second_pass++;
 			newUsed -= CFS_INODE_SIZE(nnode);
 			newUsed += size;
 			if (size != 0)
 			{
-				int room;
+				second_pass++;
 				offs = CFS_INODE_OFFS(onode);
 
 				rc = lseek(fd, offs, SEEK_SET);
@@ -1060,29 +1045,8 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 				}
 
 				/* copy it without sorting */
-				room = cfs_room_gc_chunk(CFS_INODE_SIZE(nnode));
-				if (size <= room)
-				{
-					/* certainly need for uncompressable blocks.
-					 * could be useful for other too */
-					prev_seek = true;
-					offs = CFS_INODE_OFFS(nnode);
-					rc = lseek(fd2, offs, SEEK_SET);
-					Assert(rc == (off_t)offs);
-					inplace++;
-				}
-				else
-				{
-					if (prev_seek)
-					{
-						prev_seek = false;
-						rc = lseek(fd2, 0, SEEK_END);
-						Assert(rc > 0);
-						Assert(rc == newSize);
-					}
-					offs = newSize;
-					newSize += size;
-				}
+				offs = newSize;
+				newSize += size;
 				if (!cfs_write_file(fd2, block, size))
 				{
 					elog(WARNING, "CFS failed to write file %s: %m", file_bck_path);
@@ -1092,7 +1056,6 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 			}
 			else
 			{
-				newUsed -= CFS_INODE_SIZE(newMap->inodes[i]);
 				newMap->inodes[i] = CFS_INODE(0, 0);
 			}
 			cfs_state->gc_stat.processedBytes += size;
@@ -1268,10 +1231,10 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 
 		if (succeed)
 		{
-			elog(LOG, "CFS GC worker %d: defragment file %s: old size %u, new size %u, logical size %u, used %u, compression ratio %f, time %ld usec; second pass: pages %u, inplace %u, time %ld"
+			elog(LOG, "CFS GC worker %d: defragment file %s: old size %u, new size %u, logical size %u, used %u, compression ratio %f, time %ld usec; second pass: pages %u, time %ld"
 					,
 				 MyProcPid, file_path, physSize, newSize, virtSize, usedSize, (double)virtSize/newSize,
-				 secs*USECS_PER_SEC + usecs, second_pass, inplace,
+				 secs*USECS_PER_SEC + usecs, second_pass,
 				 secs2*USECS_PER_SEC + usecs2);
 		}
 
