@@ -631,7 +631,7 @@ cfs_gc_lock(pg_atomic_uint32* lock)
 	uint32 count = pg_atomic_fetch_add_u32(lock, CFS_GC_LOCK);
 	long delay = CFS_LOCK_MIN_TIMEOUT;
 
-	while ((count & (CFS_GC_LOCK-1)) != 1)
+	while ((count & (CFS_GC_LOCK-1)) != 0)
 	{
 		pg_usleep(delay);
 		count = pg_atomic_read_u32(lock);
