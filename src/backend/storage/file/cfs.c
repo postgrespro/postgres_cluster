@@ -990,13 +990,6 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		newUsed = newSize;
 
 		/* Persist bigger part of copy to not do it under lock */
-		/* and persist previous file, cause it will be fsynced in durable rename */
-		if (pg_fsync(fd) < 0)
-		{
-			elog(WARNING, "CFS failed to sync file %s: %m", file_bck_path);
-			goto Cleanup;
-		}
-
 		if (pg_fsync(fd2) < 0)
 		{
 			elog(WARNING, "CFS failed to sync file %s: %m", file_bck_path);
