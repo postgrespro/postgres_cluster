@@ -8,7 +8,7 @@
 
 #define CFS_VERSION "0.45"
 
-#define CFS_GC_LOCK  0x10000000
+#define CFS_GC_LOCK  (MAX_BACKENDS+1)
 
 #define CFS_LOCK_MIN_TIMEOUT 100    /* microseconds: initial timeout of GC lock acquisition */
 #define CFS_LOCK_MAX_TIMEOUT 10000  /* microseconds */

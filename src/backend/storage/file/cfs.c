@@ -45,6 +45,8 @@
 #include "port/atomics.h"
 #include "pgstat.h"
 #include "portability/mem.h"
+#include "postmaster/bgworker.h"
+#include "postmaster/postmaster.h"
 #include "storage/fd.h"
 #include "storage/cfs.h"
 #include "storage/ipc.h"
@@ -53,7 +55,6 @@
 #include "utils/rel.h"
 #include "utils/builtins.h"
 #include "utils/resowner_private.h"
-#include "postmaster/bgworker.h"
 
 
 /*
@@ -398,6 +399,12 @@ int cfs_shmem_size()
 void cfs_initialize()
 {
 	bool found;
+
+	StaticAssertStmt((CFS_GC_LOCK & (CFS_GC_LOCK-1)) == 0,
+			"CFS_GC_LOCK should be single bit");
+	StaticAssertStmt(CFS_GC_LOCK > MAX_BACKENDS,
+			"CFS_GC_LOCK should be larger than MAX_BACKENDS");
+
 	cfs_state = (CfsState*)ShmemInitStruct("CFS Control",
 			sizeof(CfsState) + sizeof(pg_atomic_uint32)*MaxBackends, &found);
 	if (!found)
