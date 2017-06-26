@@ -1109,23 +1109,6 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		}
 		md2 = -1;
 
-		/*
-		 * Persist map with gc_active set:
-		 * in case of crash we will know that map may be changed by GC
-		 */
-		pg_atomic_write_u32(&map->gc_active, true); /* Indicate start of GC */
-
-		if (cfs_msync(map) < 0)
-		{
-			elog(WARNING, "CFS failed to sync map %s: %m", map_path);
-			goto Cleanup;
-		}
-		if (pg_fsync(md) < 0)
-		{
-			elog(WARNING, "CFS failed to sync file %s: %m", map_path);
-			goto Cleanup;
-		}
-
 		if (cfs_gc_verify_file)
 		{
 			fd = open(file_bck_path, O_RDONLY|PG_BINARY, 0);
@@ -1158,6 +1141,23 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 				}
 			}
 			close(fd);
+		}
+
+		/*
+		 * Persist map with gc_active set:
+		 * in case of crash we will know that map may be changed by GC
+		 */
+		pg_atomic_write_u32(&map->gc_active, true); /* Indicate start of GC */
+
+		if (cfs_msync(map) < 0)
+		{
+			elog(WARNING, "CFS failed to sync map %s: %m", map_path);
+			goto Cleanup;
+		}
+		if (pg_fsync(md) < 0)
+		{
+			elog(WARNING, "CFS failed to sync file %s: %m", map_path);
+			goto Cleanup;
 		}
 
 		/*
