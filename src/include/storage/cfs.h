@@ -6,7 +6,7 @@
 #include "port/atomics.h"
 #include "storage/rijndael.h"
 
-#define CFS_VERSION "0.42"
+#define CFS_VERSION "0.45"
 
 #define CFS_GC_LOCK  0x10000000
 
@@ -51,6 +51,9 @@ typedef uint64 inode_t;
 #define CFS_INODE_OFFS(inode) ((uint32)(inode))
 #define CFS_INODE(size,offs)  (((inode_t)(size) << 32) | (offs))
 
+#define CFS_IMPLICIT_GC_THRESHOLD 0x80000000U /* 2Gb */
+#define CFS_RED_LINE              0xC0000000U /* 3Gb */
+
 size_t cfs_compress(void* dst, size_t dst_size, void const* src, size_t src_size);
 size_t cfs_decompress(void* dst, size_t dst_size, void const* src, size_t src_size);
 char const* cfs_algorithm(void);
@@ -83,9 +86,9 @@ typedef struct
 	 * Manually started GC performs just one iteration. */
 	int64          max_iterations;
 	/* Flag for temporary disabling GC */
-	bool           gc_enabled;
+	volatile bool  gc_enabled;
 	/* Flag for controlling background GC */
-	bool           background_gc_enabled;
+	volatile bool  background_gc_enabled;
 	/* CFS GC statatistic */
 	CfsStatistic   gc_stat;
 	rijndael_ctx   aes_context;
@@ -132,7 +135,8 @@ int      cfs_shmem_size(void);
 void     cfs_encrypt(const char* fname, void* block, uint32 offs, uint32 size);
 void     cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size);
 
-void     cfs_gc_segment(char const* name);
+void     cfs_gc_segment(char const* name, bool optional);
+void     cfs_recover_map(FileMap* map);
 
 extern CfsState* cfs_state;
 

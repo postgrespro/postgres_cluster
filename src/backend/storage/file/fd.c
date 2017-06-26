@@ -984,10 +984,10 @@ LruDelete(File file)
 	if (vfdP->fileFlags & PG_COMPRESSION)
 	{
 		if (cfs_munmap(vfdP->map))
-			elog(ERROR, "could not unmap file \"%s.cfm\": %m", vfdP->fileName);
+			elog(ERROR, "CFS: could not unmap file \"%s.cfm\": %m", vfdP->fileName);
 
 		if (close(vfdP->md))
-			elog(ERROR, "could not close map file \"%s.cfm\": %m", vfdP->fileName);
+			elog(ERROR, "CFS: could not close map file \"%s.cfm\": %m", vfdP->fileName);
 
 		vfdP->md = VFD_CLOSED;
 		nfile -= 2;
@@ -1075,13 +1075,13 @@ LruInsert(File file)
 			pfree(mapFileName);
 			if (vfdP->md < 0)
 			{
-				elog(LOG, "RE_OPEN MAP FAILED: %d", errno);
+				elog(LOG, "CFS: reopen map failed: %d", errno);
 				return -1;
 			}
 			vfdP->map = cfs_mmap(vfdP->md);
 			if (vfdP->map == MAP_FAILED)
 			{
-				elog(LOG, "RE_MAP FAILED: %d", errno);
+				elog(LOG, "CFS: remap failed: %d", errno);
 				close(vfdP->md);
 				return -1;
 			}
@@ -1093,7 +1093,7 @@ LruInsert(File file)
 									 vfdP->fileMode);
 			if (vfdP->fd < 0)
 			{
-				DO_DB(elog(LOG, "re-open failed: %m"));
+				DO_DB(elog(LOG, "CFS: reopen failed: %m"));
 				cfs_munmap(vfdP->map);
 				close(vfdP->md);
 				vfdP->md = VFD_CLOSED;
@@ -1347,14 +1347,14 @@ PathNameOpenFile(FileName fileName, int fileFlags, int fileMode)
 		if (vfdP->md < 0)
 		{
 			save_errno = errno;
-			elog(LOG, "RE_OPEN MAP FAILED: %d", errno);
+			elog(LOG, "CFS: open map failed: %d", errno);
 			goto io_error;
 		}
 		vfdP->map = cfs_mmap(vfdP->md);
 		if (vfdP->map == MAP_FAILED)
 		{
 			save_errno = errno;
-			elog(LOG, "RE_MAP FAILED: %d", errno);
+			elog(LOG, "CFS: map failed: %d", errno);
 			close(vfdP->md);
 			goto io_error;
 		}
@@ -1362,11 +1362,16 @@ PathNameOpenFile(FileName fileName, int fileFlags, int fileMode)
 		vfdP->generation = vfdP->map->generation;
 		pg_read_barrier();
 
+		if (InRecovery)
+		{
+			cfs_recover_map(vfdP->map);
+		}
+
 		vfdP->fd = BasicOpenFile(fileName, fileFlags, fileMode);
 		if (vfdP->fd < 0)
 		{
 			save_errno = errno;
-			DO_DB(elog(LOG, "re-open failed: %m"));
+			DO_DB(elog(LOG, "CFS: open failed: %m"));
 			cfs_munmap(vfdP->map);
 			close(vfdP->md);
 			vfdP->md = VFD_CLOSED;
@@ -1562,10 +1567,10 @@ FileClose(File file)
 		if (vfdP->fileFlags & PG_COMPRESSION)
 		{
 			if (cfs_munmap(vfdP->map))
-				elog(ERROR, "could not unmap file \"%s.cfm\": %m", vfdP->fileName);
+				elog(ERROR, "CFS: could not unmap file \"%s.cfm\": %m", vfdP->fileName);
 
 			if (close(vfdP->md))
-				elog(ERROR, "could not close map file \"%s.cfm\": %m", vfdP->fileName);
+				elog(ERROR, "CFS: could not close map file \"%s.cfm\": %m", vfdP->fileName);
 			vfdP->md = VFD_CLOSED;
 			--nfile;
 		}
@@ -1610,7 +1615,7 @@ FileClose(File file)
 		if (vfdP->fileFlags & PG_COMPRESSION) {
 			char* mapFileName = psprintf("%s.cfm", vfdP->fileName);
 			if (unlink(mapFileName))
-				elog(LOG, "could not unlink file \"%s\": %m", mapFileName);
+				elog(LOG, "CFS: could not unlink file \"%s\": %m", mapFileName);
 			pfree(mapFileName);
 		}
 
@@ -1684,10 +1689,13 @@ FilePrefetch(File file, off_t offset, int amount)
 #endif
 }
 
+static bool FileLock(File file);
+
 void
 FileWriteback(File file, off_t offset, off_t nbytes)
 {
 	int			returnCode;
+	FileMap		*map = NULL;
 
 	Assert(FileIsValid(file));
 
@@ -1706,7 +1714,55 @@ FileWriteback(File file, off_t offset, off_t nbytes)
 	if (returnCode < 0)
 		return;
 
+	if (VfdCache[file].fileFlags & PG_COMPRESSION)
+	{
+		inode_t inode;
+		uint32 i = (uint32)(offset / BLCKSZ);
+		uint32 end = (uint32)((offset + nbytes + (BLCKSZ-1)) / BLCKSZ);
+		uint32 max = 0;
+		uint32 min = UINT32_MAX;
+		uint32 virtSize;
+		uint32 physSize;
+
+		/* if GC is in progress, no need to flush this file */
+		if (!FileLock(file))
+			return;
+		map = VfdCache[file].map;
+		virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
+		/* in fact, we should not be here. Should it be Assert? */
+		if (virtSize / BLCKSZ < end)
+			end = virtSize / BLCKSZ;
+		for (; i <= end; i++)
+		{
+			uint32_t offs, size;
+			inode = map->inodes[i];
+			offs = CFS_INODE_SIZE(inode);
+			size = CFS_INODE_OFFS(inode);
+			if (offs < min)
+				min = offs;
+			if (offs + size > max)
+				max = offs + size;
+		}
+		physSize = pg_atomic_read_u32(&map->hdr.physSize);
+		if (min > physSize)
+			min = physSize;
+		if (max > physSize)
+			max = physSize;
+		if (max <= min)
+		{
+			cfs_unlock_file(map);
+			return;
+		}
+		offset = min;
+		nbytes = max - min;
+		/* if off_t == int32, we will fail in many other places,
+		 * so don't check off_t overflow here */
+	}
 	pg_flush_data(VfdCache[file].fd, offset, nbytes);
+	if (VfdCache[file].fileFlags & PG_COMPRESSION)
+	{
+		cfs_unlock_file(map);
+	}
 }
 
 /*
@@ -1975,9 +2031,6 @@ FileWrite(File file, char *buffer, int amount)
 			 * because we want to write all updated pages sequentially
 			 */
 			pos = cfs_alloc_page(map, CFS_INODE_SIZE(inode), compressedSize);
-			if (pos > pos + compressedSize) {
-				elog(ERROR, "CFS segment file exceeed 4Gb limit");
-			}
 
 			inode = CFS_INODE(compressedSize, pos);
 			buffer = compressedBuffer;
@@ -2037,7 +2090,7 @@ retry:
 			}
 			else
 			{
-				elog(LOG, "Write to file %s block %u position %u size %u failed with code %d: %m",
+				elog(LOG, "CFS: write to file %s block %u position %u size %u failed with code %d: %m",
 					 VfdCache[file].fileName, (uint32)(VfdCache[file].seekPos / BLCKSZ),
 					 (uint32)seekPos, amount, returnCode);
 				returnCode = 0;
@@ -2097,14 +2150,14 @@ retry:
 		cfs_unlock_file(VfdCache[file].map);
 		/*
 		 * If GC is disabled for a long time, then file can unlimited grow.
-		 * To avoid wrap aound of 32-bit offsets we force GC on this file when destination position
+		 * To avoid wrap around of 32-bit offsets we force GC on this file when destination position
 		 * cross 2Gb boundary.
 		 */
-		if ((int32)pos >= 0 && (int32)(pos + amount) < 0)
+		if (pos + amount > CFS_IMPLICIT_GC_THRESHOLD)
 		{
 			elog(LOG, "CFS: backend %d forced to perform GC on file %s block %u because it's size exceed %u bytes",
 				 MyProcPid, VfdCache[file].fileName, (uint32)(VfdCache[file].seekPos / BLCKSZ),  pos);
-			cfs_gc_segment(VfdCache[file].fileName);
+			cfs_gc_segment(VfdCache[file].fileName, pos + amount < CFS_RED_LINE);
 		}
 	}
 	return returnCode;

@@ -470,8 +470,18 @@ int cfs_munmap(FileMap* map)
  */
 uint32 cfs_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize)
 {
+	uint32 oldPhysSize = pg_atomic_read_u32(&map->hdr.physSize);
+	uint32 newPhysSize;
+
+	do {
+		newPhysSize = oldPhysSize + newSize;
+		if (oldPhysSize > newPhysSize)
+			elog(ERROR, "CFS: segment file exceed 4Gb limit");
+	} while (!pg_atomic_compare_exchange_u32(&map->hdr.physSize, &oldPhysSize, newPhysSize));
+
 	pg_atomic_fetch_add_u32(&map->hdr.usedSize, newSize - oldSize);
-	return pg_atomic_fetch_add_u32(&map->hdr.physSize, newSize);
+
+	return oldPhysSize;
 }
 
 /*
@@ -643,12 +653,18 @@ static int cfs_cmp_page_offs(void const* p1, void const* p2)
 	return o1 < o2 ? -1 : o1 == o2 ? 0 : 1;
 }
 
+typedef enum {
+	CFS_BACKGROUND,
+	CFS_EXPLICIT,
+	CFS_IMPLICIT
+} GC_CALL_KIND;
+
 /*
  * Perform garbage collection (if required) on the file
  * @param map_path - path to the map file (*.cfm).
  * @param bacground - GC is performed in background by BGW: surpress error message and set CfsGcLock
  */
-static bool cfs_gc_file(char* map_path, bool background)
+static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 {
 	int md;
 	FileMap* map;
@@ -660,27 +676,37 @@ static bool cfs_gc_file(char* map_path, bool background)
 	int fd2 = -1;
 	int md2 = -1;
 	bool succeed = false;
+	bool performed = false;
 	int rc;
 
-
 	pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
-
-	while (!(background ? (cfs_state->gc_enabled & cfs_state->background_gc_enabled) : cfs_state->gc_enabled))
+	if (background == CFS_IMPLICIT)
 	{
-		pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
-
-		rc = WaitLatch(MyLatch,
-					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-					   CFS_DISABLE_TIMEOUT /* ms */);
-		if (cfs_gc_stop || (rc & WL_POSTMASTER_DEATH))
-			exit(1);
-
-		ResetLatch(MyLatch);
-		CHECK_FOR_INTERRUPTS();
-
-		pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
+		if (!cfs_state->gc_enabled)
+		{
+			pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
+			return false;
+		}
 	}
-	if (background)
+	else
+	{
+		while (!cfs_state->gc_enabled || (background == CFS_BACKGROUND && !cfs_state->background_gc_enabled))
+		{
+			pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
+
+			rc = WaitLatch(MyLatch,
+						   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+						   CFS_DISABLE_TIMEOUT /* ms */);
+			if (cfs_gc_stop || (rc & WL_POSTMASTER_DEATH))
+				exit(1);
+
+			ResetLatch(MyLatch);
+			CHECK_FOR_INTERRUPTS();
+
+			pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
+		}
+	}
+	if (background == CFS_BACKGROUND)
 	{
 		LWLockAcquire(CfsGcLock, LW_SHARED); /* avoid race condition with cfs_file_lock */
 	}
@@ -708,7 +734,7 @@ static bool cfs_gc_file(char* map_path, bool background)
 	cfs_state->gc_stat.scannedFiles += 1;
 
 	/* do we need to perform defragmentation? */
-	if ((uint64)(physSize - usedSize)*100 > (uint64)physSize*cfs_gc_threshold)
+	if (physSize > CFS_IMPLICIT_GC_THRESHOLD || (uint64)(physSize - usedSize)*100 > (uint64)physSize*cfs_gc_threshold)
 	{
 		long delay = CFS_LOCK_MIN_TIMEOUT;
 		char* file_path = (char*)palloc(suf+1);
@@ -1030,17 +1056,7 @@ static bool cfs_gc_file(char* map_path, bool background)
 		pfree(inodes);
 		pfree(newMap);
 
-		if (cfs_gc_delay != 0)
-		{
-			int rc = WaitLatch(MyLatch,
-							   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-							   cfs_gc_delay /* ms */ );
-			if (rc & WL_POSTMASTER_DEATH)
-				exit(1);
-
-			ResetLatch(MyLatch);
-			CHECK_FOR_INTERRUPTS();
-		}
+		performed = true;
 	}
 	else if (cfs_state->max_iterations == 1)
 		elog(LOG, "CFS GC worker %d: file %.*s: physical size %u, logical size %u, used %u, compression ratio %f",
@@ -1058,12 +1074,23 @@ static bool cfs_gc_file(char* map_path, bool background)
 	}
 
   FinishGC:
-	if (background)
+	if (background == CFS_BACKGROUND)
 	{
 		LWLockRelease(CfsGcLock);
 	}
 	pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
 
+	if (cfs_gc_delay != 0 && performed && background == CFS_BACKGROUND)
+	{
+		int rc = WaitLatch(MyLatch,
+						   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+						   cfs_gc_delay /* ms */ );
+		if (rc & WL_POSTMASTER_DEATH)
+			exit(1);
+
+		ResetLatch(MyLatch);
+		CHECK_FOR_INTERRUPTS();
+	}
 	return succeed;
 }
 
@@ -1097,7 +1124,7 @@ static bool cfs_gc_directory(int worker_id, char const* path)
 				strcmp(file_path + len - 4, ".cfm") == 0)
 			{
 				if (entry->d_ino % cfs_state->n_workers == worker_id
-					&& !cfs_gc_file(file_path, true))
+					&& !cfs_gc_file(file_path, CFS_BACKGROUND))
 				{
 					success = false;
 					break;
@@ -1195,6 +1222,7 @@ bool cfs_control_gc(bool enabled)
 {
 	bool was_enabled = cfs_state->gc_enabled;
 	cfs_state->gc_enabled = enabled;
+	pg_memory_barrier();
 	if (was_enabled && !enabled)
 	{
 		/* Wait until there are no active GC workers */
@@ -1238,9 +1266,7 @@ Datum cfs_start_gc(PG_FUNCTION_ARGS)
 		int j;
 		BackgroundWorkerHandle** handles;
 
-		cfs_gc_stop = true; /* do just one iteration */
-
-		cfs_state->max_iterations = 1;
+		cfs_state->max_iterations = 1; /* do just one iteration */
 		cfs_state->n_workers = PG_GETARG_INT32(0);
 		handles = (BackgroundWorkerHandle**)palloc(cfs_state->n_workers*sizeof(BackgroundWorkerHandle*));
 
@@ -1460,8 +1486,7 @@ Datum cfs_gc_relation(PG_FUNCTION_ARGS)
 		char* path;
 		char* map_path;
 		int i = 0;
-
-		LWLockAcquire(CfsGcLock, LW_EXCLUSIVE); /* Prevent interaction with background GC */
+		bool stop = false;
 
 		processed_segments = cfs_gc_processed_segments;
 
@@ -1469,33 +1494,84 @@ Datum cfs_gc_relation(PG_FUNCTION_ARGS)
 		map_path = (char*)palloc(strlen(path) + 16);
 		sprintf(map_path, "%s.cfm", path);
 
-		while (cfs_gc_file(map_path, false))
+		do
 		{
+			LWLockAcquire(CfsGcLock, LW_EXCLUSIVE); /* Prevent interaction with background GC */
+			stop = !cfs_gc_file(map_path, CFS_EXPLICIT);
+			LWLockRelease(CfsGcLock);
 			sprintf(map_path, "%s.%u.cfm", path, ++i);
-		}
+		} while(!stop);
 		pfree(path);
 		pfree(map_path);
 		relation_close(rel, AccessShareLock);
 
 		processed_segments = cfs_gc_processed_segments - processed_segments;
-
-		LWLockRelease(CfsGcLock);
 	}
 	PG_RETURN_INT32(processed_segments);
 }
 
 
-void cfs_gc_segment(char const* fileName)
+void cfs_gc_segment(char const* fileName, bool optional)
 {
-	char* mapFileName = psprintf("%s.cfm", fileName);
+	char* mapFileName;
 
-	LWLockAcquire(CfsGcLock, LW_EXCLUSIVE); /* Prevent interaction with background GC */
+	if (optional)
+	{
+		if (!LWLockConditionalAcquire(CfsGcLock, LW_EXCLUSIVE))	/* Prevent interaction with background GC */
+			return;
+	}
+    else
+		LWLockAcquire(CfsGcLock, LW_EXCLUSIVE); /* Prevent interaction with background GC */
 
-	cfs_gc_file(mapFileName, false);
+	mapFileName = psprintf("%s.cfm", fileName);
 
+	cfs_gc_file(mapFileName, optional ? CFS_IMPLICIT : CFS_EXPLICIT);
 	LWLockRelease(CfsGcLock);
 
 	pfree(mapFileName);
+}
+
+
+void cfs_recover_map(FileMap* map)
+{
+	int i;
+	uint32 physSize;
+	uint32 virtSize;
+	uint32 usedSize = 0;
+
+	physSize = pg_atomic_read_u32(&map->hdr.physSize);
+	virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
+
+	for (i = 0; i < RELSEG_SIZE; i++)
+	{
+		inode_t inode = map->inodes[i];
+		int size = CFS_INODE_SIZE(inode);
+		if (size != 0)
+		{
+			uint32 offs = CFS_INODE_OFFS(inode);
+			if (offs + size > physSize)
+			{
+				physSize = offs + size;
+			}
+			if ((i+1)*BLCKSZ > virtSize)
+			{
+				virtSize = (i+1)*BLCKSZ;
+			}
+			usedSize += size;
+		}
+		if (usedSize != pg_atomic_read_u32(&map->hdr.usedSize))
+		{
+			pg_atomic_write_u32(&map->hdr.usedSize, usedSize);
+		}
+		if (physSize != pg_atomic_read_u32(&map->hdr.physSize))
+		{
+			pg_atomic_write_u32(&map->hdr.physSize, physSize);
+		}
+		if (virtSize != pg_atomic_read_u32(&map->hdr.virtSize))
+		{
+			pg_atomic_write_u32(&map->hdr.virtSize, virtSize);
+		}
+	}
 }
 
 
