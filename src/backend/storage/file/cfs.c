@@ -391,9 +391,9 @@ void cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size)
  *	Section 3: Compression implementation.
  * ----------------------------------------------------------------
  */
-int cfs_shmem_size()
+size_t cfs_shmem_size()
 {
-	return sizeof(CfsState) + sizeof(pg_atomic_uint32)*MaxBackends;
+	return add_size(sizeof(CfsState), mul_size(sizeof(pg_atomic_uint32), MaxBackends));
 }
 
 void cfs_initialize()
@@ -405,8 +405,7 @@ void cfs_initialize()
 	StaticAssertStmt(CFS_GC_LOCK > MAX_BACKENDS,
 			"CFS_GC_LOCK should be larger than MAX_BACKENDS");
 
-	cfs_state = (CfsState*)ShmemInitStruct("CFS Control",
-			sizeof(CfsState) + sizeof(pg_atomic_uint32)*MaxBackends, &found);
+	cfs_state = (CfsState*)ShmemInitStruct("CFS Control", cfs_shmem_size(), &found);
 	if (!found)
 	{
 		int i;
