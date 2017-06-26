@@ -6,7 +6,7 @@
 #include "port/atomics.h"
 #include "storage/rijndael.h"
 
-#define CFS_VERSION "0.25"
+#define CFS_VERSION "0.42"
 
 #define CFS_GC_LOCK  0x10000000
 
@@ -22,7 +22,7 @@
 #define CFS_MAX_COMPRESSED_SIZE(size) ((size)*2)
 
 /* Minimal compression ratio when compression is expected to be reasonable.
- * Right now it is hardcoded and equal to 2/3 of original size. If compressed image is larger than 2/3 of original image, 
+ * Right now it is hardcoded and equal to 2/3 of original size. If compressed image is larger than 2/3 of original image,
  * then uncompressed version of the page is stored.
  */
 #define CFS_MIN_COMPRESSED_SIZE(size) ((size)*2/3)
@@ -32,14 +32,14 @@
 #define ZLIB_COMPRESSOR   2
 #define LZ4_COMPRESSOR    3
 #define SNAPPY_COMPRESSOR 4
-#define LCFSE_COMPRESSOR  5
+#define LZFSE_COMPRESSOR  5
 #define ZSTD_COMPRESSOR   6
 
 /*
  * Set CFS_COMPRESSOR to one of the names above
  * to compile postgres with chosen compression algorithm
  */
-#ifndef CFS_COMPRESSOR 
+#ifndef CFS_COMPRESSOR
 #define CFS_COMPRESSOR ZLIB_COMPRESSOR
 #endif
 
@@ -79,19 +79,19 @@ typedef struct
 	/* Max number of garbage collection background workers.
 	 * Duplicates 'cfs_gc_workers' global variable. */
 	int            n_workers;
-	/* Maximal number of iterations with GC should perform. Automatically started GC performs infinite number of iterations. 
+	/* Maximal number of iterations with GC should perform. Automatically started GC performs infinite number of iterations.
 	 * Manually started GC performs just one iteration. */
-	int            max_iterations;
-	/* Flag for temporary didsabling GC */
+	int64          max_iterations;
+	/* Flag for temporary disabling GC */
 	bool           gc_enabled;
+	/* Flag for controlling background GC */
+	bool           background_gc_enabled;
 	/* CFS GC statatistic */
 	CfsStatistic   gc_stat;
 	rijndael_ctx   aes_context;
 } CfsState;
 
-
-/* Map file format (mmap in memory and shared by all backends) */ 
-typedef struct
+typedef struct FileHeader
 {
 	/* Physical size of the file (size of the file on disk) */
 	pg_atomic_uint32 physSize;
@@ -99,9 +99,17 @@ typedef struct
 	pg_atomic_uint32 virtSize;
 	/* Total size of used pages. File may contain multiple versions of the same page, this is why physSize can be larger than usedSize */
 	pg_atomic_uint32 usedSize;
+} FileHeader;
+
+
+
+/* Map file format (mmap in memory and shared by all backends) */
+typedef struct
+{
+	FileHeader hdr;
 	/* Lock used to synchronize access to the file */
 	pg_atomic_uint32 lock;
-	/* PID (process identifier) of postmaster. We check it at open time to revoke lock in case when postgres is restarted. 
+	/* PID (process identifier) of postmaster. We check it at open time to revoke lock in case when postgres is restarted.
 	 * TODO: not so reliable because it can happen that occasionally postmaster will be given the same PID */
 	pid_t            postmasterPid;
 	/* Each pass of GC updates generation of the map */
@@ -123,6 +131,8 @@ int      cfs_shmem_size(void);
 
 void     cfs_encrypt(const char* fname, void* block, uint32 offs, uint32 size);
 void     cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size);
+
+void     cfs_gc_segment(char const* name);
 
 extern CfsState* cfs_state;
 

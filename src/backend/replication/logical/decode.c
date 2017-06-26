@@ -579,7 +579,7 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	}
 
 	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
-					   parsed->nsubxacts, parsed->subxacts, true);
+					   parsed->nsubxacts, parsed->subxacts, true, parsed->nmsgs > 0);
 
 	/* ----
 	 * Check whether we are interested in this specific transaction, and tell
@@ -645,6 +645,8 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		 */
 		strcpy(ctx->reorder->gid, parsed->twophase_gid);
 		*ctx->reorder->state_3pc = '\0';
+		SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
+						   parsed->nsubxacts, parsed->subxacts, true, false);
 		ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
 							commit_time, origin_id, origin_lsn);
 	} else {
@@ -698,9 +700,6 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 									  parsed->nmsgs, parsed->msgs);
 		ReorderBufferXidSetCatalogChanges(rb, xid, buf->origptr);
 	}
-
-	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
-					   parsed->nsubxacts, parsed->subxacts, false);
 
 	if (SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr) ||
 		(parsed->dbId != InvalidOid && parsed->dbId != ctx->slot->data.database) ||
@@ -777,6 +776,8 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 			strcpy(ctx->reorder->gid, parsed->twophase_gid);
 			*ctx->reorder->state_3pc = '\0';
 			
+			SnapBuildAbortTxn(ctx->snapshot_builder, buf->record->EndRecPtr, xid,
+							  parsed->nsubxacts, parsed->subxacts);
 			ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
 										commit_time, origin_id, origin_lsn);
 		}

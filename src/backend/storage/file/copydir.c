@@ -24,6 +24,7 @@
 
 #include "storage/copydir.h"
 #include "storage/fd.h"
+#include "storage/cfs.h"
 #include "access/transam.h"
 #include "miscadmin.h"
 
@@ -40,6 +41,7 @@ copydir(char *fromdir, char *todir, bool recurse)
 	struct dirent *xlde;
 	char		fromfile[MAXPGPATH];
 	char		tofile[MAXPGPATH];
+	bool        savedGCState = false;
 
 	if (mkdir(todir, S_IRWXU) != 0)
 		ereport(ERROR,
@@ -52,36 +54,49 @@ copydir(char *fromdir, char *todir, bool recurse)
 				(errcode_for_file_access(),
 				 errmsg("could not open directory \"%s\": %m", fromdir)));
 
-	while ((xlde = ReadDir(xldir, fromdir)) != NULL)
+
+	savedGCState = cfs_control_gc(false); /* disable GC during copy */
+
+	PG_TRY();
 	{
-		struct stat fst;
-
-		/* If we got a cancel signal during the copy of the directory, quit */
-		CHECK_FOR_INTERRUPTS();
-
-		if (strcmp(xlde->d_name, ".") == 0 ||
-			strcmp(xlde->d_name, "..") == 0)
-			continue;
-
-		snprintf(fromfile, MAXPGPATH, "%s/%s", fromdir, xlde->d_name);
-		snprintf(tofile, MAXPGPATH, "%s/%s", todir, xlde->d_name);
-
-		if (lstat(fromfile, &fst) < 0)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not stat file \"%s\": %m", fromfile)));
-
-		if (S_ISDIR(fst.st_mode))
+		while ((xlde = ReadDir(xldir, fromdir)) != NULL)
 		{
-			/* recurse to handle subdirectories */
-			if (recurse)
-				copydir(fromfile, tofile, true);
+			struct stat fst;
+			
+			/* If we got a cancel signal during the copy of the directory, quit */
+			CHECK_FOR_INTERRUPTS();
+			
+			if (strcmp(xlde->d_name, ".") == 0 ||
+				strcmp(xlde->d_name, "..") == 0)
+				continue;
+			
+			snprintf(fromfile, MAXPGPATH, "%s/%s", fromdir, xlde->d_name);
+			snprintf(tofile, MAXPGPATH, "%s/%s", todir, xlde->d_name);
+			
+			if (lstat(fromfile, &fst) < 0)
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not stat file \"%s\": %m", fromfile)));
+			
+			if (S_ISDIR(fst.st_mode))
+			{
+				/* recurse to handle subdirectories */
+				if (recurse)
+					copydir(fromfile, tofile, true);
+			}
+			else if (S_ISREG(fst.st_mode))
+				copy_file(fromfile, tofile);
 		}
-		else if (S_ISREG(fst.st_mode))
-			copy_file(fromfile, tofile);
+		FreeDir(xldir);
 	}
-	FreeDir(xldir);
-
+	PG_CATCH();
+	{
+		cfs_control_gc(savedGCState);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	cfs_control_gc(savedGCState);
+	
 	/*
 	 * Be paranoid here and fsync all files to ensure the copy is really done.
 	 * But if fsync is disabled, we're done.
@@ -139,6 +154,7 @@ copyzipdir(char *fromdir, bool from_compressed,
 	struct dirent *xlde;
 	char		fromfile[MAXPGPATH];
 	char		tofile[MAXPGPATH];
+	bool        savedGCState;
 
 	if (mkdir(todir, S_IRWXU) != 0)
 		ereport(ERROR,
@@ -151,31 +167,43 @@ copyzipdir(char *fromdir, bool from_compressed,
 				(errcode_for_file_access(),
 				 errmsg("could not open directory \"%s\": %m", fromdir)));
 
-	while ((xlde = ReadDir(xldir, fromdir)) != NULL)
+	savedGCState = cfs_control_gc(false); /* disable GC during copy */
+
+	PG_TRY();
 	{
-		struct stat fst;
-
-		/* If we got a cancel signal during the copy of the directory, quit */
-		CHECK_FOR_INTERRUPTS();
-
-		if (strcmp(xlde->d_name, ".") == 0
-			|| strcmp(xlde->d_name, "..") == 0
-			|| (strlen(xlde->d_name) > 4
-			&& strcmp(xlde->d_name + strlen(xlde->d_name) - 4, ".cfm") == 0))
-			continue;
-
-		snprintf(fromfile, MAXPGPATH, "%s/%s", fromdir, xlde->d_name);
-		snprintf(tofile, MAXPGPATH, "%s/%s", todir, xlde->d_name);
-
-		if (lstat(fromfile, &fst) < 0)
-			ereport(ERROR,
-					(errcode_for_file_access(),
-					 errmsg("could not stat file \"%s\": %m", fromfile)));
-
-		if (S_ISREG(fst.st_mode))
-			copy_zip_file(fromfile, from_compressed, tofile, to_compressed);
+		while ((xlde = ReadDir(xldir, fromdir)) != NULL)
+		{
+			struct stat fst;
+			
+			/* If we got a cancel signal during the copy of the directory, quit */
+			CHECK_FOR_INTERRUPTS();
+			
+			if (strcmp(xlde->d_name, ".") == 0
+				|| strcmp(xlde->d_name, "..") == 0
+				|| (strlen(xlde->d_name) > 4
+					&& strcmp(xlde->d_name + strlen(xlde->d_name) - 4, ".cfm") == 0))
+				continue;
+			
+			snprintf(fromfile, MAXPGPATH, "%s/%s", fromdir, xlde->d_name);
+			snprintf(tofile, MAXPGPATH, "%s/%s", todir, xlde->d_name);
+			
+			if (lstat(fromfile, &fst) < 0)
+				ereport(ERROR,
+						(errcode_for_file_access(),
+						 errmsg("could not stat file \"%s\": %m", fromfile)));
+			
+			if (S_ISREG(fst.st_mode))
+				copy_zip_file(fromfile, from_compressed, tofile, to_compressed);
+		}
+		FreeDir(xldir);
 	}
-	FreeDir(xldir);
+	PG_CATCH();
+	{
+		cfs_control_gc(savedGCState);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
+	cfs_control_gc(savedGCState);
 
 	/*
 	 * Be paranoid here and fsync all files to ensure the copy is really done.
