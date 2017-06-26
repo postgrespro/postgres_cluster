@@ -1053,6 +1053,13 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 					goto Cleanup;
 				}
 				newMap->inodes[i] = CFS_INODE(size, offs);
+
+				if (writeback + 16*1024*1024 < newSize)
+				{
+					uint32 newwb = (newSize - 128*1024) & ~(128*1024-1);
+					pg_flush_data(fd2, writeback, newwb - writeback);
+					writeback = newwb;
+				}
 			}
 			else
 			{
@@ -1061,6 +1068,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 			cfs_state->gc_stat.processedBytes += size;
 			cfs_state->gc_stat.processedPages += 1;
 		}
+		pg_flush_data(fd2, writeback, newSize);
 
 		if (close(fd) < 0)
 		{
