@@ -398,7 +398,8 @@ int cfs_shmem_size()
 void cfs_initialize()
 {
 	bool found;
-	cfs_state = (CfsState*)ShmemInitStruct("CFS Control", sizeof(CfsState), &found);
+	cfs_state = (CfsState*)ShmemInitStruct("CFS Control",
+			sizeof(CfsState) + sizeof(pg_atomic_uint32)*MaxBackends, &found);
 	if (!found)
 	{
 		int i;
