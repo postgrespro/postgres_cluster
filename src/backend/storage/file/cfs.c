@@ -607,7 +607,10 @@ static bool cfs_recover(FileMap* map, int md,
 		unlink(map_bck_path);
 	}
 	if (ok)
+	{
+		pg_write_barrier();
 		pg_atomic_write_u32(&map->gc_active, false); /* clear the GC flag */
+	}
 	return ok;
 }
 
