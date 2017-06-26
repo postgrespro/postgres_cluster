@@ -392,7 +392,7 @@ void cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size)
  */
 int cfs_shmem_size()
 {
-	return sizeof(CfsState);
+	return sizeof(CfsState) + sizeof(pg_atomic_uint32)*MaxBackends;
 }
 
 void cfs_initialize()
@@ -401,6 +401,8 @@ void cfs_initialize()
 	cfs_state = (CfsState*)ShmemInitStruct("CFS Control", sizeof(CfsState), &found);
 	if (!found)
 	{
+		int i;
+
 		memset(&cfs_state->gc_stat, 0, sizeof cfs_state->gc_stat);
 		pg_atomic_init_flag(&cfs_state->gc_started);
 		pg_atomic_init_u32(&cfs_state->n_active_gc, 0);
@@ -408,6 +410,9 @@ void cfs_initialize()
 		cfs_state->background_gc_enabled = cfs_gc_enabled;
 		cfs_state->gc_enabled = true;
 		cfs_state->max_iterations = 0;
+
+		for (i = 0; i < MaxBackends; i++)
+			pg_atomic_init_u32(&cfs_state->locks[i], 0);
 
 		if (cfs_encryption)
 			cfs_crypto_init();
@@ -449,11 +454,6 @@ FileMap* cfs_mmap(int md)
 #else
 	map = (FileMap*)mmap(NULL, sizeof(FileMap), PROT_WRITE | PROT_READ, MAP_SHARED, md, 0);
 #endif
-	if (map != MAP_FAILED && map->postmasterPid != PostmasterPid)
-	{
-		map->postmasterPid = PostmasterPid;
-		pg_atomic_write_u32(&map->lock, 0);
-	}
 	return map;
 }
 
@@ -606,65 +606,126 @@ static bool cfs_recover(FileMap* map, int md,
 		unlink(file_bck_path);
 		unlink(map_bck_path);
 	}
+	if (ok)
+		pg_atomic_write_u32(&map->gc_active, false); /* clear the GC flag */
 	return ok;
 }
 
 /*
- * Protects file from GC
+ * Get lock entry for this file.
+ * Size of array of locks is equal to maximal number of backends, because there are cann't be more than MaxBackens active locks.
  */
-void cfs_lock_file(FileMap* map, int md, char const* file_path)
+static pg_atomic_uint32*
+cfs_get_lock(char const* file_path)
 {
+	uint32 hash = string_hash(file_path, 0);
+	return &cfs_state->locks[hash % MaxBackends];
+}
+
+/*
+ * Set GC exclusive lock preventing all backends from accessing this file
+ */
+static void
+cfs_gc_lock(pg_atomic_uint32* lock)
+{
+	uint32 count = pg_atomic_fetch_or_u32(lock, CFS_GC_LOCK);
 	long delay = CFS_LOCK_MIN_TIMEOUT;
 
-	while (true)
+	while ((count & ~CFS_GC_LOCK) != 1)
 	{
-		uint32 count = pg_atomic_fetch_add_u32(&map->lock, 1);
-
-		if (count < CFS_GC_LOCK)
-		{
-			/* No GC is active for this segment */
-			break;
-		}
-
-		if (pg_atomic_read_u32(&cfs_state->n_active_gc) == 0)
-		{
-			/* There is no active GC, so lock is set by crashed GC */
-
-			LWLockAcquire(CfsGcLock, LW_EXCLUSIVE); /* Prevent race condition with GC */
-
-			/* Recheck under CfsGcLock that map->lock was not released */
-			if (pg_atomic_read_u32(&map->lock) >= CFS_GC_LOCK)
-			{
-				/* Uhhh... looks like last GC was interrupted.
-				 * Try to recover the file.
-				 */
-				char* map_path = psprintf("%s.cfm", file_path);
-				char* map_bck_path = psprintf("%s.cfm.bck", file_path);
-				char* file_bck_path = psprintf("%s.bck", file_path);
-
-				if (!cfs_recover(map, md, file_path, map_path, file_bck_path, map_bck_path))
-				{
-					pg_atomic_fetch_sub_u32(&map->lock, 1);
-					LWLockRelease(CfsGcLock);
-					elog(ERROR, "CFS found that file %s is completely destroyed", file_path);
-				}
-
-				count = pg_atomic_fetch_sub_u32(&map->lock, CFS_GC_LOCK); /* revoke GC lock */
-				Assert((int)count > 0);
-				pfree(file_bck_path);
-				pfree(map_bck_path);
-				pfree(map_path);
-			}
-			LWLockRelease(CfsGcLock);
-		}
-		/* Wait until GC of segment is completed */
-		pg_atomic_fetch_sub_u32(&map->lock, 1);
 		pg_usleep(delay);
+		CHECK_FOR_INTERRUPTS();
+		count = pg_atomic_read_u32(lock);
 		if (delay < CFS_LOCK_MAX_TIMEOUT)
 		{
 			delay *= 2;
 		}
 	}
+	pg_memory_barrier();
+}
+
+/*
+ * Release CFS GC lock
+ */
+static void cfs_gc_unlock(pg_atomic_uint32* lock)
+{
+	pg_write_barrier();
+	pg_atomic_fetch_and_u32(lock, ~CFS_GC_LOCK);
+}
+
+/*
+ * Set shared acess lock, preventing GC of this file
+ */
+static void
+cfs_access_lock(char const* file_path)
+{
+	pg_atomic_uint32* lock = cfs_get_lock(file_path);
+	long delay = CFS_LOCK_MIN_TIMEOUT;
+
+	/* Increment number of locks and wait until there is no active GC for this segment */
+	while (true)
+	{
+		uint32 count = pg_atomic_fetch_add_u32(lock, 1);
+
+		if (count < CFS_GC_LOCK)
+		{
+			/* No GC is active for this segment */
+			return;
+		}
+		/* Wait until GC of segment is completed */
+		pg_atomic_fetch_sub_u32(lock, 1);
+		pg_usleep(delay);
+		CHECK_FOR_INTERRUPTS();
+		if (delay < CFS_LOCK_MAX_TIMEOUT)
+		{
+			delay *= 2;
+		}
+	}
+}
+
+/*
+ * Protects file from GC and checks whether recovery of the file is needed
+ */
+void cfs_lock_file(FileMap* map, int md, char const* file_path)
+{
+	cfs_access_lock(file_path);
+
+	if (pg_atomic_read_u32(&map->gc_active)) /* Non-zero value of map->gc_active indicates that GC was not successfully completed during previous Postges session */
+	{
+		LWLockAcquire(CfsGcLock, LW_EXCLUSIVE); /* Prevent race condition with GC */
+
+		/* Recheck under CfsGcLock that map->gc_active was not released */
+		if (pg_atomic_read_u32(&map->gc_active))
+		{
+			/* Uhhh... looks like last GC was interrupted.
+			 * Try to recover the file.
+			 */
+			char* map_path = psprintf("%s.cfm", file_path);
+			char* map_bck_path = psprintf("%s.cfm.bck", file_path);
+			char* file_bck_path = psprintf("%s.bck", file_path);
+
+			if (!cfs_recover(map, md, file_path, map_path, file_bck_path, map_bck_path))
+			{
+				cfs_unlock_file(map, file_path);
+				LWLockRelease(CfsGcLock);
+				elog(ERROR, "CFS found that file %s is completely destroyed", file_path);
+			}
+
+			pfree(file_bck_path);
+			pfree(map_bck_path);
+			pfree(map_path);
+		}
+		LWLockRelease(CfsGcLock);
+	}
+}
+
+/*
+ * Start background GC workers if not start yet.
+ * It is done lazily on forst data file access.
+ * Is there some better place to start background workers?
+ */
+void cfs_start_background_workers(void)
+{
 
 	if (IsUnderPostmaster && cfs_gc_workers != 0
 		&& pg_atomic_test_set_flag(&cfs_state->gc_started))
@@ -676,9 +737,10 @@ void cfs_lock_file(FileMap* map, int md, char const* file_path)
 /*
  * Release file lock
  */
-void cfs_unlock_file(FileMap* map)
+void cfs_unlock_file(FileMap* map, char const* file_path)
 {
-	pg_atomic_fetch_sub_u32(&map->lock, 1);
+	pg_atomic_uint32* lock = cfs_get_lock(file_path);
+	pg_atomic_fetch_sub_u32(lock, 1);
 }
 
 /*
@@ -727,7 +789,6 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 	char* file_path = (char*)palloc(suf+1);
 	char* map_bck_path = (char*)palloc(suf+10);
 	char* file_bck_path = (char*)palloc(suf+5);
-	uint32 count;
 	int rc;
 
 	pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
@@ -752,7 +813,6 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 				exit(1);
 
 			ResetLatch(MyLatch);
-			CHECK_FOR_INTERRUPTS();
 
 			pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
 		}
@@ -784,8 +844,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 	strcat(strcpy(file_bck_path, file_path), ".bck");
 
 	/* mostly same as for cfs_lock_file */
-	count = pg_atomic_fetch_add_u32(&map->lock, 1);
-	if (count >= CFS_GC_LOCK)
+	if (pg_atomic_read_u32(&map->gc_active)) /* Check if GC was not normally completed at previous Postgres run */
 	{
 		/* there could not be concurrent GC for this file here, so recover */
 		if (!cfs_recover(map, md, file_path, map_path, file_bck_path, map_bck_path))
@@ -821,10 +880,13 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		int usecs, usecs2;
 		int i, size;
 		uint32 offs;
+		pg_atomic_uint32* lock;
 		off_t rc PG_USED_FOR_ASSERTS_ONLY;
 
 		startTime = GetCurrentTimestamp();
 		secondTime = startTime;
+
+		lock = cfs_get_lock(file_path);
 
 		fd2 = open(file_bck_path, O_CREAT|O_RDWR|PG_BINARY|O_TRUNC, 0600);
 		if (fd2 < 0)
@@ -855,13 +917,8 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		}
 
 		/* temporary lock file for fetching map snapshot */
-		count = pg_atomic_fetch_or_u32(&map->lock, CFS_GC_LOCK);
-		while ((count & ~CFS_GC_LOCK) != 1)
-		{
-			pg_usleep(10);
-			count = pg_atomic_read_u32(&map->lock);
-		}
-		pg_memory_barrier();
+		cfs_gc_lock(lock);
+
 		/* Reread variables after locking file */
 		virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
 		n_pages = virtSize / BLCKSZ;
@@ -873,7 +930,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		    inodes[i] = &newMap->inodes[i];
 		}
 		/* may unlock until second phase */
-		pg_atomic_fetch_and_u32(&map->lock, ~CFS_GC_LOCK);
+		cfs_gc_unlock(lock);
 
 		/* sort inodes by offset to improve read locality */
 		qsort(inodes, n_pages, sizeof(inode_t*), cfs_cmp_page_offs);
@@ -950,13 +1007,8 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 
 		secondTime = GetCurrentTimestamp();
 
-		count = pg_atomic_fetch_or_u32(&map->lock, CFS_GC_LOCK);
-		while ((count & ~CFS_GC_LOCK) != 1)
-		{
-			pg_usleep(10);
-			count = pg_atomic_read_u32(&map->lock);
-		}
-		pg_memory_barrier();
+		cfs_gc_lock(lock);
+
 		/* Reread variables after locking file */
 		virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
 		n_pages = virtSize / BLCKSZ;
@@ -1054,6 +1106,8 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		pg_atomic_write_u32(&newMap->hdr.physSize, newSize);
 		pg_atomic_write_u32(&newMap->hdr.virtSize, virtSize);
 
+		pg_atomic_write_u32(&newMap->gc_active, true); /* Indicate start of GC */
+
 		/* Persist copy of map file */
 		if (!cfs_write_file(md2, &newMap->hdr, sizeof(newMap->hdr)))
 		{
@@ -1116,7 +1170,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 
 					if (res != BLCKSZ)
 					{
-						pg_atomic_fetch_sub_u32(&map->lock, CFS_GC_LOCK + 1); /* release lock */
+						pg_atomic_fetch_sub_u32(lock, CFS_GC_LOCK); /* release lock */
 						pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
 						elog(ERROR, "CFS: verification failed for block %u position %u size %u of relation %s: error code %d",
 							 i, (int)CFS_INODE_OFFS(inode), size, file_bck_path, (int)res);
@@ -1146,6 +1200,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		memcpy(map->inodes, newMap->inodes, n_pages * sizeof(inode_t));
 		pg_atomic_write_u32(&map->hdr.usedSize, newUsed);
 		pg_atomic_write_u32(&map->hdr.physSize, newSize);
+		pg_atomic_write_u32(&map->gc_active, false);
 		map->generation += 1; /* force all backends to reopen the file */
 
 		/* Before removing backup files and releasing locks
@@ -1159,7 +1214,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		{
 			elog(WARNING, "CFS failed to sync file %s: %m", map_path);
 
-			Cleanup:
+		Cleanup:
 			if (fd >= 0) close(fd);
 			if (fd2 >= 0) close(fd2);
 			if (md2 >= 0) close(md2);
@@ -1174,8 +1229,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		else
 			remove_backups = true; /* we don't need backups anymore */
 
-		pg_write_barrier();
-		pg_atomic_fetch_and_u32(&map->lock, ~CFS_GC_LOCK); /* release gc lock */
+		cfs_gc_unlock(lock);
 
 		/* remove map backup file */
 		if (remove_backups && unlink(map_bck_path))
@@ -1210,7 +1264,6 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 			 MyProcPid, suf, map_path, physSize, virtSize, usedSize, (double)virtSize/physSize);
 
   FinUnmap:
-	pg_atomic_fetch_sub_u32(&map->lock, 1); /* release read lock */
 	if (cfs_munmap(map) < 0)
 	{
 		elog(WARNING, "CFS failed to unmap file %s: %m", map_path);

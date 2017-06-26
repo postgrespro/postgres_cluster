@@ -93,6 +93,7 @@ typedef struct
 	/* CFS GC statatistic */
 	CfsStatistic   gc_stat;
 	rijndael_ctx   aes_context;
+	pg_atomic_uint32 locks[1]; /* MaxBackends locks */
 } CfsState;
 
 typedef struct FileHeader
@@ -111,10 +112,10 @@ typedef struct FileHeader
 typedef struct
 {
 	FileHeader hdr;
-	/* Lock used to synchronize access to the file */
-	pg_atomic_uint32 lock;
+	/* Indicator that GC was started fot this file. Used to perform recovery of the file in case of abnormal Postgres termination */
+	pg_atomic_uint32 gc_active;
 	/* PID (process identifier) of postmaster. We check it at open time to revoke lock in case when postgres is restarted.
-	 * TODO: not so reliable because it can happen that occasionally postmaster will be given the same PID */
+	 * Deteriorated: right now it is not used and is left only for backward compatibility */
 	pid_t            postmasterPid;
 	/* Each pass of GC updates generation of the map */
 	uint64           generation;
@@ -122,8 +123,9 @@ typedef struct
 	inode_t          inodes[RELSEG_SIZE];
 } FileMap;
 
+void     cfs_start_background_workers(void);
 void     cfs_lock_file(FileMap* map, int fd, char const* path);
-void     cfs_unlock_file(FileMap* map);
+void     cfs_unlock_file(FileMap* map, char const* path);
 uint32   cfs_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize);
 void     cfs_extend(FileMap* map, uint32 pos);
 bool     cfs_control_gc(bool enabled);
