@@ -87,7 +87,7 @@ typedef struct
 	 * Manually started GC performs just one iteration. */
 	int64          max_iterations;
 	/* Flag for temporary disabling GC */
-	volatile bool  gc_enabled;
+	pg_atomic_uint32 gc_disabled;
 	/* Flag for controlling background GC */
 	volatile bool  background_gc_enabled;
 	/* CFS GC statatistic */
@@ -128,7 +128,8 @@ void     cfs_lock_file(FileMap* map, int fd, char const* path);
 void     cfs_unlock_file(FileMap* map, char const* path);
 uint32   cfs_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize);
 void     cfs_extend(FileMap* map, uint32 pos);
-bool     cfs_control_gc(bool enabled);
+void     cfs_control_gc_lock(void);
+void     cfs_control_gc_unlock(void);
 int      cfs_msync(FileMap* map);
 FileMap* cfs_mmap(int md);
 int      cfs_munmap(FileMap* map);

@@ -415,7 +415,7 @@ void cfs_initialize()
 		pg_atomic_init_u32(&cfs_state->n_active_gc, 0);
 		cfs_state->n_workers = 0;
 		cfs_state->background_gc_enabled = cfs_gc_enabled;
-		cfs_state->gc_enabled = true;
+		pg_atomic_init_u32(&cfs_state->gc_disabled, 0);
 		cfs_state->max_iterations = 0;
 
 		for (i = 0; i < MaxBackends; i++)
@@ -796,7 +796,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 	pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
 	if (background == CFS_IMPLICIT)
 	{
-		if (!cfs_state->gc_enabled)
+		if (pg_atomic_read_u32(&cfs_state->gc_disabled) != 0)
 		{
 			pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
 			return false;
@@ -804,7 +804,8 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 	}
 	else
 	{
-		while (!cfs_state->gc_enabled || (background == CFS_BACKGROUND && !cfs_state->background_gc_enabled))
+		while (pg_atomic_read_u32(&cfs_state->gc_disabled) != 0 ||
+				(background == CFS_BACKGROUND && !cfs_state->background_gc_enabled))
 		{
 			pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
 
@@ -1430,13 +1431,11 @@ void cfs_gc_start_bgworkers()
 	elog(LOG, "Start %d background garbage collection workers for CFS", i);
 }
 
-/* Enable/disable garbage collection. */
-bool cfs_control_gc(bool enabled)
+/* Disable garbage collection. */
+void cfs_control_gc_lock(void)
 {
-	bool was_enabled = cfs_state->gc_enabled;
-	cfs_state->gc_enabled = enabled;
-	pg_memory_barrier();
-	if (was_enabled && !enabled)
+	uint32 was_disabled = pg_atomic_fetch_add_u32(&cfs_state->gc_disabled, 1);
+	if (!was_disabled)
 	{
 		/* Wait until there are no active GC workers */
 		while (pg_atomic_read_u32(&cfs_state->n_active_gc) != 0)
@@ -1451,7 +1450,12 @@ bool cfs_control_gc(bool enabled)
 			CHECK_FOR_INTERRUPTS();
 		}
 	}
-	return was_enabled;
+}
+
+/* Enable garbage collection. */
+void cfs_control_gc_unlock(void)
+{
+	pg_atomic_fetch_sub_u32(&cfs_state->gc_disabled, 1);
 }
 
 /* ----------------------------------------------------------------
