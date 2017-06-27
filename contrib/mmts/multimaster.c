@@ -2751,7 +2751,7 @@ _PG_init(void)
 		1,
 	    INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -2795,7 +2795,7 @@ _PG_init(void)
 		1,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -2866,7 +2866,7 @@ _PG_init(void)
 		&MtmUseDtm,
 		true,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -2879,7 +2879,7 @@ _PG_init(void)
 		&MtmPreserveCommitOrder,
 		true,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -2892,7 +2892,7 @@ _PG_init(void)
 		&MtmVolksWagenMode,
 		false,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -2907,7 +2907,7 @@ _PG_init(void)
 		1,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -2937,7 +2937,7 @@ _PG_init(void)
 		1,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -2952,7 +2952,7 @@ _PG_init(void)
 		1,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -2968,7 +2968,7 @@ _PG_init(void)
 		1,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
