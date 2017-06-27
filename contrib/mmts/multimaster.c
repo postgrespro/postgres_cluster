@@ -370,6 +370,11 @@ void MtmLockNode(int nodeId, LWLockMode mode)
 	LWLockAcquire((LWLockId)&Mtm->locks[nodeId], mode);
 }
 
+bool MtmTryLockNode(int nodeId, LWLockMode mode)
+{
+	return LWLockConditionalAcquire((LWLockId)&Mtm->locks[nodeId], mode);
+}
+
 void MtmUnlockNode(int nodeId)
 {
 	Assert(nodeId > 0 && nodeId <= MtmMaxNodes*2);
@@ -1683,7 +1688,14 @@ static void MtmStartRecovery()
 
 static void MtmDropSlot(int nodeId)
 {
-	ReplicationSlotDrop(psprintf(MULTIMASTER_SLOT_PATTERN, nodeId));
+	if (MtmTryLockNode(nodeId, LW_EXCLUSIVE))
+	{
+		MTM_ELOG(INFO, "Drop replication slot for node %d", nodeId);
+		ReplicationSlotDrop(psprintf(MULTIMASTER_SLOT_PATTERN, nodeId));
+		MtmUnlockNode(nodeId);
+	} else {
+		MTM_ELOG(WARNING, "Failed to drop replication slot for node %d", nodeId);
+	}
 	MtmLock(LW_EXCLUSIVE);
 	BIT_SET(Mtm->stalledNodeMask, nodeId-1);
 	BIT_SET(Mtm->stoppedNodeMask, nodeId-1); /* stalled node can not be automatically recovered */
@@ -2765,7 +2777,7 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 	} else {
 		conn->arbiterPort = MULTIMASTER_DEFAULT_ARBITER_PORT;
 	}
-	MTM_ELOG(WARNING, "Using arbiter port: %d", conn->arbiterPort);
+	MTM_ELOG(INFO, "Using arbiter port: %d", conn->arbiterPort);
 
 	port = strstr(connStr, " port=");
 	if (port == NULL && strncmp(connStr, "port=", 5) == 0) {
@@ -3033,7 +3045,7 @@ _PG_init(void)
 		1,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3077,7 +3089,7 @@ _PG_init(void)
 		1,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3173,7 +3185,7 @@ _PG_init(void)
 		&MtmUseDtm,
 		true,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3199,7 +3211,7 @@ _PG_init(void)
 		&MtmPreserveCommitOrder,
 		true,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3212,7 +3224,7 @@ _PG_init(void)
 		&MtmVolksWagenMode,
 		false,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3227,7 +3239,7 @@ _PG_init(void)
 		1,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3257,7 +3269,7 @@ _PG_init(void)
 		1,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3272,7 +3284,7 @@ _PG_init(void)
 		0,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3288,7 +3300,7 @@ _PG_init(void)
 		1,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3303,7 +3315,7 @@ _PG_init(void)
 		1024*1024,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3408,7 +3420,7 @@ _PG_init(void)
 	PreviousProcessUtilityHook = ProcessUtility_hook;
 	ProcessUtility_hook = MtmProcessUtility;
 
-	PreviousSeqNextvalHook = SeqNextvalHook; 
+	PreviousSeqNextvalHook = SeqNextvalHook;
 	SeqNextvalHook = MtmSeqNextvalHook;
 }
 
@@ -5366,7 +5378,7 @@ static void MtmSeqNextvalHook(Oid seqid, int64 next)
 		MtmSeqPosition pos;
 		pos.seqid = seqid;
 		pos.next = next;
-		LogLogicalMessage("N", (char*)&pos, sizeof(pos), true);		
+		LogLogicalMessage("N", (char*)&pos, sizeof(pos), true);
 	}
 }
 
@@ -5553,4 +5565,3 @@ Datum mtm_referee_poll(PG_FUNCTION_ARGS)
 
 	PG_RETURN_INT64(recoveredNodeMask);
 }
-
