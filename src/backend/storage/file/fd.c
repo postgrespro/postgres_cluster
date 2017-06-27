@@ -2325,7 +2325,7 @@ FileTruncate(File file, off_t offset)
 		for (i = offset / BLCKSZ; i < RELSEG_SIZE; i++)
 		{
 			released += CFS_INODE_SIZE(map->inodes[i]);
-			map->inodes[i] = 0;
+			map->inodes[i] = CFS_INODE(0, 0);
 		}
 
 		pg_atomic_write_u32(&map->hdr.virtSize, offset);

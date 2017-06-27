@@ -770,6 +770,65 @@ typedef enum {
 	CFS_IMPLICIT
 } GC_CALL_KIND;
 
+static bool cfs_copy_inodes(inode_t **inodes, int n_nodes, int fd, int fd2, uint32 *writeback, uint32 *offset, const char *file_path, const char *file_bck_path)
+{
+	char block[BLCKSZ];
+	uint32 size, offs;
+	int i;
+	off_t soff = -1;
+
+	/* sort inodes by offset to improve read locality */
+	qsort(inodes, n_nodes, sizeof(inode_t*), cfs_cmp_page_offs);
+	for (i = 0; i < n_nodes; i++)
+	{
+		size = CFS_INODE_SIZE(*inodes[i]);
+		if (size != 0)
+		{
+			offs = CFS_INODE_OFFS(*inodes[i]);
+			Assert(size <= BLCKSZ);
+			if (soff != (off_t)offs)
+			{
+				soff = lseek(fd, offs, SEEK_SET);
+				Assert(soff == offs);
+			}
+
+			if (!cfs_read_file(fd, block, size))
+			{
+				elog(WARNING, "CFS GC failed to read block %u of file %s at position %u size %u: %m",
+						   i, file_path, offs, size);
+				return false;
+			}
+			soff += size;
+
+			if (!cfs_write_file(fd2, block, size))
+			{
+				elog(WARNING, "CFS failed to write file %s: %m", file_bck_path);
+				return false;
+			}
+			cfs_state->gc_stat.processedBytes += size;
+			cfs_state->gc_stat.processedPages += 1;
+
+			offs = *offset;
+			*offset += size;
+			*inodes[i] = CFS_INODE(size, offs);
+
+			/* xfs doesn't like if writeback performed closer than 128k to
+			 * file end */
+			if (*writeback + 16*1024*1024 < *offset)
+			{
+				uint32 newwb = (*offset - 128*1024) & ~(128*1024-1);
+				pg_flush_data(fd2, *writeback, newwb - *writeback);
+				*writeback = newwb;
+			}
+		}
+		else
+		{
+			*inodes[i] = CFS_INODE(0, 0);
+		}
+	}
+	return true;
+}
+
 /*
  * Perform garbage collection (if required) on the file
  * @param map_path - path to the map file (*.cfm).
@@ -868,20 +927,20 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 	/* do we need to perform defragmentation? */
 	if (physSize > CFS_IMPLICIT_GC_THRESHOLD || (uint64)(physSize - usedSize)*100 > (uint64)physSize*cfs_gc_threshold)
 	{
-		char block[BLCKSZ];
 		FileMap* newMap = (FileMap*)palloc0(sizeof(FileMap));
 		uint32 newSize = 0;
 		uint32 writeback = 0;
 		uint32 newUsed = 0;
 		uint32 second_pass = 0;
+		uint32 second_pass_bytes = 0;
 		inode_t** inodes = (inode_t**)palloc(RELSEG_SIZE*sizeof(inode_t*));
 		bool remove_backups = true;
-		int n_pages;
+		bool second_pass_whole = false;
+		int n_pages, n_pages1;
 		TimestampTz startTime, secondTime, endTime;
 		long secs, secs2;
 		int usecs, usecs2;
 		int i, size;
-		uint32 offs;
 		pg_atomic_uint32* lock;
 		off_t rc PG_USED_FOR_ASSERTS_ONLY;
 
@@ -918,6 +977,13 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 			goto Cleanup;
 		}
 
+		fd = open(file_path, O_RDONLY|PG_BINARY, 0);
+		if (fd < 0)
+		{
+			elog(WARNING, "CFS failed to open file %s: %m", map_bck_path);
+			goto Cleanup;
+		}
+
 		/* temporary lock file for fetching map snapshot */
 		cfs_gc_lock(lock);
 
@@ -934,62 +1000,12 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		/* may unlock until second phase */
 		cfs_gc_unlock(lock);
 
-		/* sort inodes by offset to improve read locality */
-		qsort(inodes, n_pages, sizeof(inode_t*), cfs_cmp_page_offs);
-
-		fd = open(file_path, O_RDONLY|PG_BINARY, 0);
-		if (fd < 0)
-		{
-			elog(WARNING, "CFS failed to open file %s: %m", map_bck_path);
-			goto Cleanup;
-		}
-
 		cfs_state->gc_stat.processedFiles += 1;
 		cfs_gc_processed_segments += 1;
 
-		for (i = 0; i < n_pages; i++)
-		{
-			size = CFS_INODE_SIZE(*inodes[i]);
-			if (size != 0)
-			{
-				offs = CFS_INODE_OFFS(*inodes[i]);
-				Assert(size <= BLCKSZ);
-				rc = lseek(fd, offs, SEEK_SET);
-				Assert(rc == offs);
-
-				if (!cfs_read_file(fd, block, size))
-				{
-					elog(WARNING, "CFS GC failed to read block %u of file %s at position %u size %u: %m",
-							   i, file_path, offs, size);
-					goto Cleanup;
-				}
-
-				if (!cfs_write_file(fd2, block, size))
-				{
-					elog(WARNING, "CFS failed to write file %s: %m", file_bck_path);
-					goto Cleanup;
-				}
-				cfs_state->gc_stat.processedBytes += size;
-				cfs_state->gc_stat.processedPages += 1;
-
-				offs = newSize;
-				newSize += size;
-				*inodes[i] = CFS_INODE(size, offs);
-
-				/* xfs doesn't like if writeback performed closer than 128k to
-				 * file end */
-				if (writeback + 16*1024*1024 < newSize)
-				{
-					uint32 newwb = (newSize - 128*1024) & ~(128*1024-1);
-					pg_flush_data(fd2, writeback, newwb - writeback);
-					writeback = newwb;
-				}
-			}
-			else
-			{
-				*inodes[i] = CFS_INODE(0, 0);
-			}
-		}
+		if (!cfs_copy_inodes(inodes, n_pages, fd, fd2, &writeback, &newSize,
+							file_path, file_bck_path))
+			goto Cleanup;
 		newUsed = newSize;
 
 		/* Persist bigger part of copy to not do it under lock */
@@ -1009,6 +1025,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		cfs_gc_lock(lock);
 
 		/* Reread variables after locking file */
+		n_pages1 = n_pages;
 		virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
 		n_pages = virtSize / BLCKSZ;
 
@@ -1025,46 +1042,60 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 			}
 			newUsed -= CFS_INODE_SIZE(nnode);
 			newUsed += size;
-			if (size != 0)
-			{
-				second_pass++;
-				offs = CFS_INODE_OFFS(onode);
-
-				rc = lseek(fd, offs, SEEK_SET);
-				Assert(rc == (off_t)offs);
-
-				if (!cfs_read_file(fd, block, size))
-				{
-					elog(WARNING, "CFS GC failed to read block %u of file %s at position %u size %u: %m",
-							   i, file_path, offs, size);
-					goto Cleanup;
-				}
-
-				/* copy it without sorting */
-				offs = newSize;
-				newSize += size;
-				if (!cfs_write_file(fd2, block, size))
-				{
-					elog(WARNING, "CFS failed to write file %s: %m", file_bck_path);
-					goto Cleanup;
-				}
-				newMap->inodes[i] = CFS_INODE(size, offs);
-
-				if (writeback + 16*1024*1024 < newSize)
-				{
-					uint32 newwb = (newSize - 128*1024) & ~(128*1024-1);
-					pg_flush_data(fd2, writeback, newwb - writeback);
-					writeback = newwb;
-				}
-			}
-			else
-			{
-				newMap->inodes[i] = CFS_INODE(0, 0);
-			}
-			cfs_state->gc_stat.processedBytes += size;
-			cfs_state->gc_stat.processedPages += 1;
+			newMap->inodes[i] = onode;
+			inodes[second_pass] = &newMap->inodes[i];
+			second_pass_bytes += size;
+			second_pass++;
 		}
+
+		if (n_pages1 > n_pages)
+		{
+			/* if file were truncated (vacuum???), clean a bit */
+			for (i = n_pages; i < n_pages1; i++)
+			{
+				inode_t nnode = newMap->inodes[i];
+				if (CFS_INODE_SIZE(nnode) != 0) {
+					newUsed -= CFS_INODE_SIZE(nnode);
+					newMap->inodes[i] = CFS_INODE(0, 0);
+				}
+			}
+		}
+
+		if ((uint64)(newSize + second_pass_bytes - newUsed) * 100 >
+				(uint64)(newSize + second_pass_bytes) * cfs_gc_threshold)
+		{
+			/* there were too many modified pages between passes, so it is
+			 * better to do whole copy again */
+			newUsed = 0;
+			newSize = 0;
+			writeback = 0;
+			second_pass_whole = true;
+			memset(newMap->inodes, 0, sizeof(newMap->inodes));
+			for (i = 0; i < n_pages; i++)
+			{
+				newMap->inodes[i] = map->inodes[i];
+				newUsed += CFS_INODE_SIZE(map->inodes[i]);
+				inodes[i] = &newMap->inodes[i];
+			}
+			second_pass = n_pages;
+			second_pass_bytes = newUsed;
+		}
+
+		if (!cfs_copy_inodes(inodes, second_pass, fd, fd2, &writeback, &newSize,
+							file_path, file_bck_path))
+			goto Cleanup;
+
 		pg_flush_data(fd2, writeback, newSize);
+
+		if (second_pass_whole)
+		{
+			/* truncate file to copied size */
+			if (ftruncate(fd2, newSize))
+			{
+				elog(WARNING, "CFS failed to truncate file %s: %m", file_bck_path);
+				goto Cleanup;
+			}
+		}
 
 		if (close(fd) < 0)
 		{
@@ -1235,10 +1266,10 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 
 		if (succeed)
 		{
-			elog(LOG, "CFS GC worker %d: defragment file %s: old size %u, new size %u, logical size %u, used %u, compression ratio %f, time %ld usec; second pass: pages %u, time %ld"
+			elog(LOG, "CFS GC worker %d: defragment file %s: old size %u, new size %u, logical size %u, used %u, compression ratio %f, time %ld usec; second pass: pages %u, bytes %u, time %ld"
 					,
 				 MyProcPid, file_path, physSize, newSize, virtSize, usedSize, (double)virtSize/newSize,
-				 secs*USECS_PER_SEC + usecs, second_pass,
+				 secs*USECS_PER_SEC + usecs, second_pass, second_pass_bytes,
 				 secs2*USECS_PER_SEC + usecs2);
 		}
 
