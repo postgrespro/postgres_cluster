@@ -1070,6 +1070,8 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 			newSize = 0;
 			writeback = 0;
 			second_pass_whole = true;
+			rc = lseek(fd2, 0, SEEK_SET);
+			Assert(rc == 0);
 			memset(newMap->inodes, 0, sizeof(newMap->inodes));
 			for (i = 0; i < n_pages; i++)
 			{
