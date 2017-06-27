@@ -10473,6 +10473,8 @@ do_pg_stop_backup(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 	/* Clean up session-level lock */
 	sessionBackupState = SESSION_BACKUP_NONE;
 
+	cfs_control_gc(SavedGCState); /* Restore CFS GC activity */
+
 	/*
 	 * Read and parse the START WAL LOCATION line (this code is pretty crude,
 	 * but we are not expecting any variability in the file format).
@@ -10681,8 +10683,6 @@ do_pg_stop_backup(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 	else if (waitforarchive)
 		ereport(NOTICE,
 				(errmsg("WAL archiving is not enabled; you must ensure that all required WAL segments are copied through other means to complete the backup")));
-
-	cfs_control_gc(SavedGCState); /* Restore CFS GC activity */
 
 	/*
 	 * We're done.  As a convenience, return the ending WAL location.
