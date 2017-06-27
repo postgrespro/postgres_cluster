@@ -2838,7 +2838,7 @@ static struct config_int ConfigureNamesInt[] =
     },
 
 	{
-		{"cfs_gc_threshold", PGC_SIGHUP, UNGROUPED,
+		{"cfs_gc_threshold", PGC_USERSET, UNGROUPED,
 		 gettext_noop("Minimum percent of garbage blocks in the file prior to garbage collection"),
 		 NULL,
 		 0
