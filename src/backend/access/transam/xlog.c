@@ -10717,6 +10717,8 @@ do_pg_abort_backup(void)
 		XLogCtl->Insert.forcePageWrites = false;
 	}
 	WALInsertLockRelease();
+
+	cfs_control_gc(SavedGCState); /* Restore CFS GC activity */
 }
 
 /*
