@@ -323,7 +323,7 @@ static timestamp_t MtmLockElapsedWaitTime;
 static timestamp_t MtmLockMaxWaitTime;
 static size_t      MtmLockHitCount;
 
-#define DEBUG_MTM_LOCK 1
+//#define DEBUG_MTM_LOCK 1
 
 void MtmLock(LWLockMode mode)
 {
