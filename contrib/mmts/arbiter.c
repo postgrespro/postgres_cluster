@@ -469,8 +469,12 @@ static int MtmConnectSocket(int node, int port)
 				MTM_ELOG(WARNING, "Arbiter trying to connect to %s:%d: %s", host, port, strerror(errcode));
 				goto Error;
 			}
-		} else {
-			MTM_ELOG(WARNING, "Arbiter waiting socket to %s:%d: %s", host, port, strerror(errno));
+		} else if (rc == 0) {
+			MTM_ELOG(WARNING, "Arbiter failed to connect to socket to %s:%d within specified timeout", host, port);
+			goto Error;
+		} else { 
+			MTM_ELOG(WARNING, "Arbiter failed to wait socket to %s:%d: %s", host, port, strerror(errno));
+			goto Error;
 		}
 	}
 	else if (rc != 0) {

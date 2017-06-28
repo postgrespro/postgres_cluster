@@ -1,4 +1,83 @@
 <!-- doc/src/sgml/release-proee-9.6.sgml -->
+<sect1 id="release-proee-9-6-3-2">
+  <title>&productname; 9.6.3.2</title>
+  <note>
+    <title>Release Date</title>
+    <simpara>2017-05-28</simpara>
+  </note>
+  <sect2>
+    <title>Overview</title>
+    <para>This release is based on <productname>Postgres Pro Enterprise</productname>
+      <link linkend="release-proee-9-6-3-1">9.6.3.1</link>.</para>
+    <para>Major enhancements over <productname>Postgres Pro Enterprise</productname>
+      9.6.3.1 include:</para>
+    <itemizedlist>
+      <listitem>
+        <para>Updated RUM index to  version 1.1 (See <xref linkend="rum">.)</para>
+      </listitem>
+      <listitem>
+        <para>
+          In Compressed File System (CFS), fixed a bug caused by invalid merge,
+          as well as included many other fixes.
+        </para>
+      </listitem>
+      <listitem>
+        <para>Improved <application>multimaster</application> extension:</para>
+        <itemizedlist>
+          <listitem>
+            <para>
+              Fixed replication issues and other issues caused by running the
+              <function>mtm.make_table_local</function> function.
+            </para>
+          </listitem>
+          <listitem>
+            <para>
+              Added the <varname>multimaster.major_node</varname> variable.
+              With this variable set to <literal>true</literal> the cluster
+              node can continue working even if connection to the majority
+              of the nodes is lost.
+            </para>
+          </listitem>
+        </itemizedlist>
+      </listitem>
+      <listitem>
+        <para>Fixed an issue with <application>pgpro_scheduler</application> background worker
+          hanging at the scheduled job startup for cases when one of the critical tables is locked.</para>
+      </listitem>
+      <listitem>
+        <para>Fixed an issue with deleting functions declared in languages that do not have the
+        <literal>validate</literal> method (for example, in <literal>PL/TCL</literal>).</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Migration to Version &productname; 9.6.3.2</title>
+
+    <para>A dump/restore using <xref linkend="app-pg-dumpall">, or
+        use of <xref linkend="pgupgrade">, is required for those
+          wishing to migrate data from any previous major release.</para>
+
+    <para>Dump/restore is necessary when migrating from <productname>PostgreSQL</productname>,
+      <productname>Postgres Pro Standard</productname>, or <productname>Postgres Pro Enterprise</productname> edition.</para>
+
+    <para>For upgrades from previous releases of <productname>Postgres Pro Enterprise</productname>, <productname>Postgres Pro Standard</productname>, or
+      PostgreSQL 9.6.x, some catalog changes should be applied.</para>
+    
+    <para>If you use binary packages, and your database is in the default
+      location, this upgrade should be performed automatically. If you've
+      created your database in
+      a non-default location, running <literal>initdb</literal> manually, you
+      should run the <literal>pgpro_upgrade</literal> script provided in this
+      distribution.
+    </para>
+
+    <para>Before running the script, you should stop the <literal>postgres</literal> service.
+      The script should be run on behalf of the user owning the database
+      (typically <literal>postgres</literal>), and the <envar>PGDATA</envar> environment variable should be
+      set to the directory where the database resides.
+    </para>
+  </sect2>
+</sect1>
 <sect1 id="release-proee-9-6-3-1">
   <title>&productname; 9.6.3.1</title>
   <note>

@@ -14,6 +14,7 @@
 #include "catalog/catversion.h"
 #include "catalog/dependency.h"
 #include "catalog/index.h"
+#include "catalog/heap.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
 
@@ -21,6 +22,7 @@
 #include "commands/vacuum.h"
 #include "commands/tablespace.h"
 #include "commands/defrem.h"
+#include "commands/sequence.h"
 #include "parser/parse_utilcmd.h"
 
 #include "libpq/pqformat.h"
@@ -860,7 +862,7 @@ process_remote_insert(StringInfo s, Relation rel)
 	if (strcmp(RelationGetRelationName(rel), MULTIMASTER_LOCAL_TABLES_TABLE) == 0 &&
 		strcmp(get_namespace_name(RelationGetNamespace(rel)), MULTIMASTER_SCHEMA_NAME) == 0)
 	{
-		MtmMakeRelationLocal(RelationGetRelid(rel));
+		MtmMakeTableLocal(TextDatumGetCString(new_tuple.values[0]), TextDatumGetCString(new_tuple.values[1]));
 	}
 		
     ExecResetTupleTable(estate->es_tupleTable, true);
@@ -1156,6 +1158,22 @@ void MtmExecutor(void* work, size_t size)
 				s.len = save_len;
 				break;
 			}
+ 		    case 'N':
+			{
+				int64 next;
+				Oid relid;
+			    Assert(rel != NULL);
+				relid = RelationGetRelid(rel);
+  			    close_rel(rel);
+				rel = NULL;
+				next = pq_getmsgint64(&s); 
+				AdjustSequence(relid, next);
+				break;
+			}			   
+		    case '0':
+			    Assert(rel != NULL);
+			    heap_truncate_one_rel(rel);
+				break;
 			case 'M':
 			{
   			    close_rel(rel);

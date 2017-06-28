@@ -360,6 +360,10 @@ where <replaceable>datadir</> is the directory containing the database cluster. 
       <programlisting>
 shared_preload_libraries = 'multimaster'
 </programlisting>
+<tip>
+<para>If the <varname>shared_preload_libaries</varname> variable is already defined in <filename>postgresql.auto.conf</filename>, you will need to modify its value using the <literal>ALTER SYSTEM</literal> command. For details, see <xref linkend="config-setting-configuration-file">.
+</para>
+</tip>
 </listitem>
           <listitem><para>Specify the transaction isolation level for your cluster. <filename>multimaster</filename> currently supports <link linkend="xact-read-committed">read committed</link> and <link linkend="xact-repeatable-read">repeatable read</link> isolation levels. 
           <programlisting>
@@ -426,15 +430,19 @@ multimaster.conn_strings = 'dbname=mydb user=myuser host=node1, dbname=mydb user
                            # of connection strings 
                            # to neighbor nodes
 </programlisting>
-<para>The <literal>max_nodes</literal> variable defines the cluster size. In most cases, three cluster nodes are enough to ensure high availability. Since the data on all cluster nodes is the same, you do not typically need more than five cluster nodes.</para>
+<para>The <literal>multimaster.max_nodes</literal> variable defines the maximum cluster size. If you plan to add new nodes to your cluster, the <literal>multimaster.max_nodes</literal> value should exceed the initial number of nodes. In this case, you can add new nodes without restarting <productname>&productname;</productname> until the specified number of nodes is reached.
+</para>
+<para>In most cases, three cluster nodes are enough to ensure high availability. Since the data on all cluster nodes is the same, you do not typically need more than five cluster nodes.
+</para>
+<para>If you would like to change the default connection settings for a cluster node, you can add other <link linkend="libpq-paramkeywords"> connection parameters</link> to the corresponding connection string in the <varname>multimaster.conn_strings</varname> variable. If you change the default port on which the arbiter process listens for connections, you must specify this port in the <literal>arbiter_port</literal> parameter. For details, see <xref linkend="multimaster-arbiter-port"> and <xref linkend="multimaster-conn-strings">.</para>
                 <important><para>The
-                <literal>node_id</literal> variable takes natural
+                <literal>multimaster.node_id</literal> variable takes natural
                 numbers starting from 1, without any gaps in numbering.
                 For example, for a cluster of five nodes, set node IDs
                 to 1, 2, 3, 4, and 5. In the
-                <literal>conn_strings</literal> variable, make sure to
+                <literal>multimaster.conn_strings</literal> variable, make sure to
                 list the nodes in the order of their IDs. The
-                <literal>conn_strings</literal> variable must be the
+                <literal>multimaster.conn_strings</literal> variable must be the
                 same on all nodes.</para></important>
 
           </listitem>
@@ -472,7 +480,7 @@ CREATE EXTENSION multimaster;</programlisting></para>
       the <structname>mtm.get_cluster_state()</structname> view:
     </para>
     <programlisting>
-SELECT * FROM mtm.get_cluster_state();
+mtm.get_cluster_state();
 </programlisting>
     <para>
       If <literal>liveNodes</literal> is equal to
@@ -535,18 +543,10 @@ SELECT * FROM mtm.get_cluster_state();
       <itemizedlist>
         <listitem>
           <para>
-            <varname>multimaster.max_recovery_lag</varname> &mdash; sets the
-            maximum size of WAL. Upon reaching the
-            <varname>multimaster.max_recovery_lag</varname> threshold,
-            WAL for the disconnected node is overwritten. At this
-            point, automatic recovery is no longer possible. In this case, you can <link linkend="multimaster-restoring-a-node-manually">restore the node manually</link> by cloning the data from one of the alive nodes using <application>pg_basebackup</application>.
-          </para>
-        </listitem>
-        <listitem>
-          <para>
             <varname>multimaster.min_recovery_lag</varname> &mdash; sets the
-            minimal WAL lag between the node to be restored and the current cluster state. When the
-            disconnected node is fast-forwarded up to the
+            minimal WAL lag between the node to be restored and the current cluster state. 
+            By default,  <varname>multimaster.min_recovery_lag</varname> is set to 100KB.
+            When the disconnected node is fast-forwarded up to the
             <varname>multimaster.min_recovery_lag</varname> threshold,
             <filename>multimaster</filename> stops all new commits to the
             alive nodes until the node fully catches up with the
@@ -555,10 +555,19 @@ SELECT * FROM mtm.get_cluster_state();
             the cluster resumes its work.
           </para>
         </listitem>
+        <listitem>
+          <para>
+            <varname>multimaster.max_recovery_lag</varname> &mdash; sets the
+            maximum size of WAL. Upon reaching the
+            <varname>multimaster.max_recovery_lag</varname> threshold,
+            WAL for the disconnected node is overwritten. At this
+            point, automatic recovery is no longer possible. In this case, you can <link linkend="multimaster-restoring-a-node-manually">restore the node manually</link> by cloning the data from one of the alive nodes using <application>pg_basebackup</application>.
+          </para>
+        </listitem>
       </itemizedlist>
       <para>
         By default, <varname>multimaster.max_recovery_lag</varname> is
-        set to 1GB. Setting
+        set to 100MB. Setting
         <varname>multimaster.max_recovery_lag</varname> to a larger
         value increases the timeframe for automatic recovery, but
         requires more disk space for WAL collection.
@@ -602,22 +611,24 @@ SELECT * FROM mtm.get_cluster_state();
       To check node-specific information, use <literal>mtm.get_nodes_state()</literal>:
     </para>
     <programlisting>
-SELECT * FROM mtm.get_nodes_state();
+mtm.get_nodes_state();
 </programlisting>
       <para>To check the status of the whole cluster, use the
       <literal>mtm.get_cluster_state()</literal> view:
     </para>
     <programlisting>
-SELECT * FROM mtm.get_cluster_state();
+mtm.get_cluster_state();
 </programlisting>
       <para>For details on all the returned information, see <xref linkend="multimaster-functions">.
     </para>
   </sect3>
   <sect3 id="multimaster-adding-new-nodes-to-the-cluster">
     <title>Adding New Nodes to the Cluster</title>
+    <para>With the <filename>multimaster</filename> extension, you can add or drop cluster nodes without
+      stopping the database service.
+    </para>
     <para>
-      With multimaster, you can add or drop cluster nodes without a
-      restart. To add a new node, you need to change the cluster
+      To add a new node, you need to change the cluster
       configuration on alive nodes, load all the data to the new node using
       <application>pg_basebackup</application>, and start the node.
     </para>
@@ -629,12 +640,21 @@ SELECT * FROM mtm.get_cluster_state();
     </para>
     <orderedlist>
       <listitem>
+        <para>Check whether the current number of cluster nodes has reached the value specified in the
+        <varname>multimaster.max_nodes</varname> variable. If this value is reached, increase
+        the <varname>multimaster.max_nodes</varname> value on each node and restart all nodes.
+        You can restart the nodes one by one, without stopping the database.
+        If the maximum number of nodes is not reached, proceed to the next step. 
+        </para>
+      </listitem>
+      <listitem>
         <para>
           Figure out the required connection string to
           access the new node. For example, for the database
           <literal>mydb</literal>, user <literal>myuser</literal>, and
           the new node <literal>node4</literal>, the connection string
-          is <literal>&quot;dbname=mydb user=myuser host=node4&quot;</literal>.
+          can be <literal>&quot;dbname=mydb user=myuser host=node4&quot;</literal>.
+          For details, see <xref linkend="multimaster-conn-strings">.
         </para>
       </listitem>
       <listitem>
@@ -642,7 +662,7 @@ SELECT * FROM mtm.get_cluster_state();
           In <literal>psql</literal> connected to any alive node, run:
         </para>
         <programlisting>
-SELECT * FROM mtm.add_node('dbname=mydb user=myuser host=node4');
+mtm.add_node('dbname=mydb user=myuser host=node4');
 </programlisting>
         <para>
           This command changes the cluster configuration on all nodes
@@ -670,7 +690,8 @@ pg_basebackup -D <replaceable>datadir</replaceable> -h node1 -x
         <programlisting>
 multimaster.max_nodes = 4
 multimaster.node_id = 4
-multimaster.conn_strings = 'dbname=mydb user=myuser host=node1, dbname=mydb user=myuser host=node2, dbname=mydb user=myuser host=node3, dbname=mydb user=myuser host=node4'
+multimaster.conn_strings = 'dbname=mydb user=myuser host=node1, dbname=mydb user=myuser host=node2,
+                            dbname=mydb user=myuser host=node3, dbname=mydb user=myuser host=node4'
 </programlisting>
       </listitem>
       <listitem>
@@ -690,14 +711,18 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
       <orderedlist>
       <listitem>
         <para>
-          Change <literal>multimaster.conn_strings</literal> and
-          <literal>multimaster.max_nodes</literal> to include the new node.
+          Change <literal>multimaster.conn_strings</literal> and <literal>multimaster.max_nodes</literal> to include the new node.
         </para>
       </listitem>
       <listitem>
         <para>
           Make sure the <filename>pg_hba.conf</filename> file allows
           replication to the new node.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          Restart all cluster nodes.
         </para>
       </listitem>
     </orderedlist>
@@ -743,7 +768,7 @@ SELECT mtm.stop_node(3);
           In <literal>psql</literal> connected to any alive node, create a new replication slot for the disconnected node with the following command:
         </para>
         <programlisting>
-SELECT * FROM mtm.recover_node(2);
+mtm.recover_node(2);
 </programlisting>
 <para>where 2 is the ID of the disconnected node specified in the <varname>multimaster.node_id</varname> variable.</para>
       </listitem>
@@ -790,25 +815,29 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
     For example, for a cluster of five nodes, set node IDs to 1, 2, 3,
     4, and 5.
   </para></listitem></varlistentry>
-  <varlistentry><term><varname>multimaster.conn_strings</varname><indexterm><primary><varname>multimaster.conn_strings</varname></primary></indexterm></term><listitem><para>
-    Connection strings for
-    each node of a multi-master cluster, separated by commas. Each
-    connection string must include the name of the database to replicate
+  <varlistentry id="multimaster-conn-strings"><term><varname>multimaster.conn_strings</varname><indexterm><primary><varname>multimaster.conn_strings</varname></primary></indexterm></term><listitem><para>
+    Connection strings for each node of a multi-master cluster, separated by commas. 
+    The <varname>multimaster.conn_strings</varname> parameter must be identical on all nodes.
+    Each connection string must include the name of the database to replicate
     and the cluster node domain name. For example, 'dbname=mydb
     host=node1, dbname=mydb host=node2, dbname=mydb host=node3'.
+    Optionally, you can add other <link linkend="libpq-paramkeywords">connection parameters</link> to change the default connection settings.
     Connection strings must appear in the order of the node IDs
     specified in the <varname>multimaster.node_id</varname> variable.
     Connection string for the i-th node must be on the i-th position.
-    This parameter must be identical on all nodes. You can also specify a
-    custom port for all connection strings using the
-    <varname>multimaster.arbiter_port</varname> variable.
+    If you specify a custom port in the <varname>multimaster.arbiter_port</varname>, 
+    you must provide this value in the <literal>arbiter_port</literal>
+    parameter in the connection string for the corresponding node.
   </para></listitem></varlistentry>
   <varlistentry><term><varname>multimaster.max_nodes</varname><indexterm><primary><varname>multimaster.max_nodes</varname></primary></indexterm></term><listitem><para>
-    The maximum number of nodes allowed in the cluster. In most cases, three cluster nodes are enough to ensure high availability. Since the data on all cluster nodes is the same, you do not typically need more than five cluster nodes. The maximum possible number of nodes is limited to 64.</para><para>Default: the number of nodes specified in the <varname>multimaster.conn_strings</varname> variable
+    The maximum number of nodes allowed in the cluster. If you plan to add new nodes to your cluster, the <literal>multimaster.max_nodes</literal> value should exceed the initial number of nodes. In this case, you can add new nodes without restarting <productname>&productname;</productname> until the specified number of nodes is reached. In most cases, three cluster nodes are enough to ensure high availability. Since the data on all cluster nodes is the same, you do not typically need more than five cluster nodes. The maximum possible number of nodes is limited to 64.</para>
+    <para>Default: the number of nodes specified in the <varname>multimaster.conn_strings</varname> variable
   </para></listitem></varlistentry>
-  <varlistentry><term><varname>multimaster.arbiter_port</varname><indexterm><primary><varname>multimaster.arbiter_port</varname></primary></indexterm></term><listitem><para>
-    Port for the arbiter
-    process to listen on. </para><para>Default: 5433
+  <varlistentry id="multimaster-arbiter-port">
+  <term><varname>multimaster.arbiter_port</varname><indexterm><primary><varname>multimaster.arbiter_port</varname></primary></indexterm></term><listitem><para>
+    Port for the arbiter process to listen on. If you change the default value, you must specify this value in the <literal>arbiter_port</literal>
+    parameter in the connection string for the corresponding node.</para>
+    <para>Default: 5433
   </para></listitem></varlistentry>
   <varlistentry><term><varname>multimaster.heartbeat_send_timeout</varname><indexterm><primary><varname>multimaster.heartbeat_send_timeout</varname></primary></indexterm></term><listitem><para>
     Time interval
@@ -841,7 +870,7 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
     the data from one of the alive nodes using
     <application>pg_basebackup</application> or a similar tool. If you set this
     variable to zero, replication slot will not be dropped. </para><para>Default:
-    10000000
+    100000000
   </para></listitem></varlistentry>
   <varlistentry><term><varname>multimaster.ignore_tables_without_pk</varname><indexterm><primary><varname>multimaster.ignore_tables_without_pk</varname></primary></indexterm></term><listitem><para>
     Boolean.
@@ -854,9 +883,69 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
   </para></listitem></varlistentry>
   <varlistentry><term><varname>multimaster.cluster_name</varname><indexterm><primary><varname>multimaster.cluster_name</varname></primary></indexterm></term><listitem><para>
     Name of the cluster. If
-    you set this variable, <filename>multimaster</filename> checks that
+    you define this variable when setting up the cluster, <filename>multimaster</filename> checks that
     the cluster name is the same for all the cluster nodes.
   </para></listitem></varlistentry>
+  <varlistentry>
+    <term><varname>multimaster.break_connection</varname>
+      <indexterm><primary><varname>multimaster.break_connection</varname></primary>
+      </indexterm>
+    </term>
+    <listitem>
+      <para>Break connection with clients connected to the node if this node disconnects
+      from the cluster. If this variable is set to <literal>false</literal>, the client stays
+      connected to the node but receives an error that the node is in minority.
+      </para>
+      <para>Default: <literal>false</literal>
+      </para>
+    </listitem>
+  </varlistentry>
+  <varlistentry>
+    <term><varname>multimaster.major_node</varname>
+      <indexterm><primary><varname>multimaster.major_node</varname></primary>
+      </indexterm>
+    </term>
+    <listitem>
+      <para>Node with this flag continues working even if it cannot access the majority of other nodes.
+      This is needed to break the symmetry if there is an even number of alive nodes in the cluster.
+      For example, a cluster with three nodes continues working if one of the nodes has crashed.
+      If connection between the remaining nodes is lost, the node with <varname>multimaster.major_node</varname> = <literal>true</literal> will continue working.
+      </para>
+      <important>
+        <para>This parameter should be used with caution. Only one node in the cluster
+        can have this parameter set to true. When set to <literal>true</literal> on several
+        nodes, this parameter can cause the split-brain problem.
+        </para>
+      </important>
+    </listitem>
+  </varlistentry>
+  <varlistentry>
+    <term><varname>multimaster.max_workers</varname>
+      <indexterm><primary><varname>multimaster.max_workers</varname></primary>
+      </indexterm>
+    </term>
+    <listitem>
+      <para>The maximum number of <literal>walreceiver</literal> workers on this server.
+      </para>
+      <important>
+      <para>This parameter should be used with caution. If the number of simultaneous transactions
+      in the whole cluster is bigger than the provided value, it can lead to undetected deadlocks.
+      </para>
+      </important>
+    </listitem>
+  </varlistentry>
+  <varlistentry>
+    <term><varname>multimaster.trans_spill_threshold</varname>
+      <indexterm><primary><varname>multimaster.trans_spill_threshold</varname></primary>
+      </indexterm>
+    </term>
+    <listitem>
+      <para>The maximal size of transaction, in MB. When this threshold is reached, the transaction is written to the disk.
+      </para>
+      <para>Default: 100
+      </para>
+    </listitem>
+  </varlistentry>
 </variablelist>
 </sect3>
   <sect3 id="multimaster-functions"><title>Functions</title>
