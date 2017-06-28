@@ -1050,16 +1050,13 @@ retry:
 			second_pass++;
 		}
 
-		if (n_pages1 > n_pages)
+		/* if file were truncated (vacuum???), clean a bit */
+		for (i = n_pages; i < n_pages1; i++)
 		{
-			/* if file were truncated (vacuum???), clean a bit */
-			for (i = n_pages; i < n_pages1; i++)
-			{
-				inode_t nnode = newMap->inodes[i];
-				if (CFS_INODE_SIZE(nnode) != 0) {
-					newUsed -= CFS_INODE_SIZE(nnode);
-					newMap->inodes[i] = CFS_INODE(0, 0);
-				}
+			inode_t nnode = newMap->inodes[i];
+			if (CFS_INODE_SIZE(nnode) != 0) {
+				newUsed -= CFS_INODE_SIZE(nnode);
+				newMap->inodes[i] = CFS_INODE(0, 0);
 			}
 		}
 
