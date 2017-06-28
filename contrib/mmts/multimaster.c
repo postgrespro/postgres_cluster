@@ -317,6 +317,13 @@ void MtmReleaseLocks(void)
  * locks[N+1..2*N] are used to synchronize access to distributed lock graph at each node
  * -------------------------------------------
  */
+static timestamp_t MtmLockLastReportTime;
+static timestamp_t MtmLockElapsedWaitTime;
+static timestamp_t MtmLockMaxWaitTime;
+static size_t      MtmLockHitCount;
+
+//#define DEBUG_MTM_LOCK 1
+
 void MtmLock(LWLockMode mode)
 {
 	if (!MtmAtExitHookRegistered) {
@@ -329,7 +336,7 @@ void MtmLock(LWLockMode mode)
 	}
 	else
 	{
-#if DEBUG_LEVEL > 1
+#if DEBUG_MTM_LOCK
 		timestamp_t start, stop;
 		start = MtmGetSystemTime();
 #endif
@@ -337,10 +344,20 @@ void MtmLock(LWLockMode mode)
 			return;
 		}
 		LWLockAcquire((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID], mode);
-#if DEBUG_LEVEL > 1
+#if DEBUG_MTM_LOCK
 		stop = MtmGetSystemTime();
-		if (stop > start + MSEC_TO_USEC(MtmHeartbeatSendTimeout)) {
-			MTM_LOG1("%d: obtaining %s lock takes %lld microseconds", MyProcPid, (mode == LW_EXCLUSIVE ? "exclusive" : "shared"), stop - start);
+		MtmLockElapsedWaitTime += stop - start;
+		if (stop - start > MtmLockMaxWaitTime) {
+			MtmLockMaxWaitTime = stop - start;
+		}
+		MtmLockHitCount += 1;
+		if (stop - MtmLockLastReportTime > USECS_PER_SEC) {
+			MTM_LOG1("%d: average lock wait time %lld usec, maximal lock wait time: %lld usec",
+					 MyProcPid, MtmLockElapsedWaitTime/MtmLockHitCount, MtmLockMaxWaitTime);
+			MtmLockLastReportTime = stop;
+			MtmLockMaxWaitTime = 0;
+			MtmLockElapsedWaitTime = 0;
+			MtmLockHitCount = 0;
 		}
 #endif
 		if (mode == LW_EXCLUSIVE) {
@@ -2868,7 +2885,7 @@ static void MtmSplitConnStrs(void)
 			}
 			for (i = 0; i < MtmNodes; i++) {
 				MTM_LOG3("Node %d, host %s, port=%d, my port %d", i, MtmConnections[i].hostName, MtmConnections[i].postmasterPort, PostPortNumber);
-				if ((strcmp(MtmConnections[i].hostName, buf) == 0 || strcmp(MtmConnections[i].hostName, "localhost") == 0)
+				if ((strcmp(MtmConnections[i].hostName, buf) == 0 || strcmp(MtmConnections[i].hostName, "localhost") == 0 || strcmp(MtmConnections[i].hostName, "127.0.0.1") == 0)
 					&& MtmConnections[i].postmasterPort == PostPortNumber)
 				{
 					if (MtmNodeId == INT_MAX) {
@@ -2879,7 +2896,7 @@ static void MtmSplitConnStrs(void)
 				}
 			}
 			if (MtmNodeId == INT_MAX) {
-				MTM_ELOG(ERROR, "multimaster.node_id and host name %s can not be located in connection strings list", buf);
+				MTM_ELOG(ERROR, "multimaster.node_id is not specified and host name %s can not be located in connection strings list", buf);
 			}
 		} else if (MtmNodeId > i) {
 			MTM_ELOG(ERROR, "Multimaster node id %d is out of range [%d..%d]", MtmNodeId, 1, MtmNodes);
@@ -4582,7 +4599,7 @@ MtmNoticeReceiver(void *i, const PGresult *res)
 	if ( (*(int *)i) != MtmNodeId - 1)
 		return;
 
-	stripped_notice = palloc0(len);
+	stripped_notice = palloc0(len + 1);
 
 	if (*notice == 'N')
 	{
@@ -4598,7 +4615,7 @@ MtmNoticeReceiver(void *i, const PGresult *res)
 	}
 	else
 	{
-		stripped_notice = notice;
+		strncpy(stripped_notice, notice, len + 1);
 		MTM_ELOG(WARNING, "%s", stripped_notice);
 	}
 
