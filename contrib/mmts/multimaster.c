@@ -4751,7 +4751,7 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 				Assert(x->isActive);
 				if (x->status == TRANSACTION_STATUS_ABORTED) {
 					FinishPreparedTransaction(x->gid, false);
-					MTM_ELOG(ERROR, "Transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
+					MTM_ELOG(ERROR, "Transaction %s (%llu) is aborted on neighbour node. Check neighbour nodes log to see error details.", x->gid, (long64)x->xid);
 				} else {
 					FinishPreparedTransaction(x->gid, true);
 					MTM_LOG2("Distributed transaction %s (%lld) is committed at %lld with LSN=%lld", x->gid, (long64)x->xid, MtmGetCurrentTime(), (long64)GetXLogInsertRecPtr());
