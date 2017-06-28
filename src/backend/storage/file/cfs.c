@@ -992,8 +992,11 @@ retry:
 		cfs_gc_lock(lock);
 
 		/* Reread variables after locking file */
+		physSize = pg_atomic_read_u32(&map->hdr.physSize);
 		virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
 		n_pages = virtSize / BLCKSZ;
+		if (physSize >= CFS_RED_LINE)
+			goto forceWhole;
 		for (i = 0; i < n_pages; i++)
 		{
 			newMap->inodes[i] = map->inodes[i];
@@ -1073,7 +1076,7 @@ retry:
 			memset(newMap->inodes, 0, sizeof(newMap->inodes));
 			elog(LOG, "CFS: retry %d whole gc file %s", second_pass_whole,
 					file_path);
-			if (second_pass_whole == 1 && physSize < CFS_IMPLICIT_GC_THRESHOLD)
+			if (second_pass_whole == 1 && physSize < CFS_RETRY_GC_THRESHOLD)
 			{
 				cfs_gc_unlock(lock);
 				/* sleep, cause there is possibly checkpoint is on a way */
@@ -1082,6 +1085,7 @@ retry:
 				second_pass_bytes = 0;
 				goto retry;
 			}
+		forceWhole:
 			for (i = 0; i < n_pages; i++)
 			{
 				newMap->inodes[i] = map->inodes[i];

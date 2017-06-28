@@ -53,6 +53,7 @@ typedef uint64 inode_t;
 #define CFS_INODE_CLEAN_FLAG  ((inode_t)1 << 63)
 
 #define CFS_IMPLICIT_GC_THRESHOLD 0x80000000U /* 2Gb */
+#define CFS_RETRY_GC_THRESHOLD    0x60000000U /* 1.5Gb */
 #define CFS_RED_LINE              0xC0000000U /* 3Gb */
 
 size_t cfs_compress(void* dst, size_t dst_size, void const* src, size_t src_size);
