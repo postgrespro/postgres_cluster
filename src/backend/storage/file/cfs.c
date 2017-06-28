@@ -935,7 +935,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		uint32 second_pass_bytes = 0;
 		inode_t** inodes = (inode_t**)palloc(RELSEG_SIZE*sizeof(inode_t*));
 		bool remove_backups = true;
-		bool second_pass_whole = false;
+		int second_pass_whole = 0;
 		int n_pages, n_pages1;
 		TimestampTz startTime, secondTime, endTime;
 		long secs, secs2;
@@ -984,13 +984,16 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 			goto Cleanup;
 		}
 
+		cfs_state->gc_stat.processedFiles += 1;
+		cfs_gc_processed_segments += 1;
+
 		/* temporary lock file for fetching map snapshot */
 		cfs_gc_lock(lock);
 
 		/* Reread variables after locking file */
 		virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
 		n_pages = virtSize / BLCKSZ;
-
+retry:
 		for (i = 0; i < n_pages; i++)
 		{
 			newMap->inodes[i] = map->inodes[i];
@@ -999,9 +1002,6 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		}
 		/* may unlock until second phase */
 		cfs_gc_unlock(lock);
-
-		cfs_state->gc_stat.processedFiles += 1;
-		cfs_gc_processed_segments += 1;
 
 		if (!cfs_copy_inodes(inodes, n_pages, fd, fd2, &writeback, &newSize,
 							file_path, file_bck_path))
@@ -1028,6 +1028,8 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		n_pages1 = n_pages;
 		virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
 		n_pages = virtSize / BLCKSZ;
+		second_pass = 0;
+		second_pass_bytes = 0;
 
 		for (i = 0; i < n_pages; i++)
 		{
@@ -1048,16 +1050,13 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 			second_pass++;
 		}
 
-		if (n_pages1 > n_pages)
+		/* if file were truncated (vacuum???), clean a bit */
+		for (i = n_pages; i < n_pages1; i++)
 		{
-			/* if file were truncated (vacuum???), clean a bit */
-			for (i = n_pages; i < n_pages1; i++)
-			{
-				inode_t nnode = newMap->inodes[i];
-				if (CFS_INODE_SIZE(nnode) != 0) {
-					newUsed -= CFS_INODE_SIZE(nnode);
-					newMap->inodes[i] = CFS_INODE(0, 0);
-				}
+			inode_t nnode = newMap->inodes[i];
+			if (CFS_INODE_SIZE(nnode) != 0) {
+				newUsed -= CFS_INODE_SIZE(nnode);
+				newMap->inodes[i] = CFS_INODE(0, 0);
 			}
 		}
 
@@ -1069,10 +1068,16 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 			newUsed = 0;
 			newSize = 0;
 			writeback = 0;
-			second_pass_whole = true;
+			second_pass_whole++;
 			rc = lseek(fd2, 0, SEEK_SET);
 			Assert(rc == 0);
 			memset(newMap->inodes, 0, sizeof(newMap->inodes));
+			elog(LOG, "CFS: retry %d whole gc file %s", second_pass_whole,
+					file_path);
+			if (second_pass_whole == 1)
+			{
+				goto retry;
+			}
 			for (i = 0; i < n_pages; i++)
 			{
 				newMap->inodes[i] = map->inodes[i];
@@ -1089,7 +1094,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 
 		pg_flush_data(fd2, writeback, newSize);
 
-		if (second_pass_whole)
+		if (second_pass_whole != 0)
 		{
 			/* truncate file to copied size */
 			if (ftruncate(fd2, newSize))
