@@ -477,6 +477,7 @@ mdunlink(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 				mdunlinkfork(rnode, forkNum, isRedo);
 		}
 		else
+		{
 			mdunlinkfork(rnode, forkNum, isRedo);
 		}
 	}
