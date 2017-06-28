@@ -13,38 +13,40 @@
       9.6.3.1 include:</para>
     <itemizedlist>
       <listitem>
-        <para>RUM index</para>
+        <para>Updated RUM index to  version 1.1 (See <xref linkend="rum">.)</para>
+      </listitem>
+      <listitem>
         <para>
-          Updated to version 1.1 (See <xref linkend="rum">.)
+          In Compressed File System (CFS), fixed a bug caused by invalid merge,
+          as well as included many other fixes.
         </para>
       </listitem>
       <listitem>
-        <para>Compressed File System (CFS)</para>
-        <para>
-          Fixed a bug caused by invalid merge, as well as included many other fixes.
-        </para>
+        <para>Improved <application>multimaster</application> extension:</para>
+        <itemizedlist>
+          <listitem>
+            <para>
+              Fixed replication issues and other issues caused by running the
+              <function>mtm.make_table_local</function> function.
+            </para>
+          </listitem>
+          <listitem>
+            <para>
+              Added the <varname>multimaster.major_node</varname> variable.
+              With this variable set to <literal>true</literal> the cluster
+              node can continue working even if connection to the majority
+              of the nodes is lost.
+            </para>
+          </listitem>
+        </itemizedlist>
       </listitem>
       <listitem>
-        <para><application>multimaster</application></para>
-        <para>
-          Fixed replication issues and other issues caused by running the
-          <function>mtm.make_table_local</function> function.
-        </para>
-        <para>
-          Added the <varname>multimaster.major_node</varname> variable.
-          With this variable set to <literal>true</literal> the cluster
-          node can continue working even if connection to the majority
-          of the nodes is lost.
-        </para>
+        <para>Fixed an issue with <application>pgpro_scheduler</application> background worker
+          hanging at the scheduled job startup for cases when one of the critical tables is locked.</para>
       </listitem>
       <listitem>
-        <para><application>pgpro_scheduler</application></para>
-        <para>Fixed background worker blocking at the scheduled job
-          startup for cases when one of the critical tables is locked.</para>
-      </listitem>
-      <listitem>
-        <para>PL/TCL</para>
-        <para>Fixed pltcl function drop.</para>
+        <para>Fixed an issue with deleting functions declared in languages that do not have the
+        <literal>validate</literal> method (for example, in <literal>PL/TCL</literal>).</para>
       </listitem>
     </itemizedlist>
   </sect2>
