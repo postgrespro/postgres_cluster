@@ -987,13 +987,16 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		cfs_state->gc_stat.processedFiles += 1;
 		cfs_gc_processed_segments += 1;
 
+retry:
 		/* temporary lock file for fetching map snapshot */
 		cfs_gc_lock(lock);
 
 		/* Reread variables after locking file */
+		physSize = pg_atomic_read_u32(&map->hdr.physSize);
 		virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
 		n_pages = virtSize / BLCKSZ;
-retry:
+		if (physSize >= CFS_RED_LINE)
+			goto forceWhole;
 		for (i = 0; i < n_pages; i++)
 		{
 			newMap->inodes[i] = map->inodes[i];
@@ -1026,10 +1029,9 @@ retry:
 
 		/* Reread variables after locking file */
 		n_pages1 = n_pages;
+		physSize = pg_atomic_read_u32(&map->hdr.physSize);
 		virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
 		n_pages = virtSize / BLCKSZ;
-		second_pass = 0;
-		second_pass_bytes = 0;
 
 		for (i = 0; i < n_pages; i++)
 		{
@@ -1074,10 +1076,16 @@ retry:
 			memset(newMap->inodes, 0, sizeof(newMap->inodes));
 			elog(LOG, "CFS: retry %d whole gc file %s", second_pass_whole,
 					file_path);
-			if (second_pass_whole == 1)
+			if (second_pass_whole == 1 && physSize < CFS_RETRY_GC_THRESHOLD)
 			{
+				cfs_gc_unlock(lock);
+				/* sleep, cause there is possibly checkpoint is on a way */
+				pg_usleep(CFS_LOCK_MAX_TIMEOUT);
+				second_pass = 0;
+				second_pass_bytes = 0;
 				goto retry;
 			}
+		forceWhole:
 			for (i = 0; i < n_pages; i++)
 			{
 				newMap->inodes[i] = map->inodes[i];
@@ -1275,7 +1283,7 @@ retry:
 		{
 			elog(LOG, "CFS GC worker %d: defragment file %s: old size %u, new size %u, logical size %u, used %u, compression ratio %f, time %ld usec; second pass: pages %u, bytes %u, time %ld"
 					,
-				 MyProcPid, file_path, physSize, newSize, virtSize, usedSize, (double)virtSize/newSize,
+				 MyProcPid, file_path, physSize, newSize, virtSize, newUsed, (double)virtSize/newSize,
 				 secs*USECS_PER_SEC + usecs, second_pass, second_pass_bytes,
 				 secs2*USECS_PER_SEC + usecs2);
 		}
