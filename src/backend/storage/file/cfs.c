@@ -1275,7 +1275,7 @@ retry:
 		{
 			elog(LOG, "CFS GC worker %d: defragment file %s: old size %u, new size %u, logical size %u, used %u, compression ratio %f, time %ld usec; second pass: pages %u, bytes %u, time %ld"
 					,
-				 MyProcPid, file_path, physSize, newSize, virtSize, usedSize, (double)virtSize/newSize,
+				 MyProcPid, file_path, physSize, newSize, virtSize, newUsed, (double)virtSize/newSize,
 				 secs*USECS_PER_SEC + usecs, second_pass, second_pass_bytes,
 				 secs2*USECS_PER_SEC + usecs2);
 		}
