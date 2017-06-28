@@ -3062,7 +3062,7 @@ _PG_init(void)
 		1,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3106,7 +3106,7 @@ _PG_init(void)
 		1,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3202,7 +3202,7 @@ _PG_init(void)
 		&MtmUseDtm,
 		true,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3228,7 +3228,7 @@ _PG_init(void)
 		&MtmPreserveCommitOrder,
 		true,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3241,7 +3241,7 @@ _PG_init(void)
 		&MtmVolksWagenMode,
 		false,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3256,7 +3256,7 @@ _PG_init(void)
 		1,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3286,7 +3286,7 @@ _PG_init(void)
 		1,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3301,7 +3301,7 @@ _PG_init(void)
 		0,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3317,7 +3317,7 @@ _PG_init(void)
 		1,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -3332,7 +3332,7 @@ _PG_init(void)
 		1024*1024,
 		INT_MAX,
 		PGC_BACKEND,
-		0,
+		GUC_NO_SHOW_ALL,
 		NULL,
 		NULL,
 		NULL
@@ -4599,7 +4599,7 @@ MtmNoticeReceiver(void *i, const PGresult *res)
 	if ( (*(int *)i) != MtmNodeId - 1)
 		return;
 
-	stripped_notice = palloc0(len);
+	stripped_notice = palloc0(len + 1);
 
 	if (*notice == 'N')
 	{
@@ -4615,7 +4615,7 @@ MtmNoticeReceiver(void *i, const PGresult *res)
 	}
 	else
 	{
-		stripped_notice = notice;
+		strncpy(stripped_notice, notice, len + 1);
 		MTM_ELOG(WARNING, "%s", stripped_notice);
 	}
 
