@@ -4596,7 +4596,7 @@ MtmNoticeReceiver(void *i, const PGresult *res)
 	if ( (*(int *)i) != MtmNodeId - 1)
 		return;
 
-	stripped_notice = palloc0(len);
+	stripped_notice = palloc0(len + 1);
 
 	if (*notice == 'N')
 	{
@@ -4612,7 +4612,7 @@ MtmNoticeReceiver(void *i, const PGresult *res)
 	}
 	else
 	{
-		stripped_notice = notice;
+		strncpy(stripped_notice, notice, len + 1);
 		MTM_ELOG(WARNING, "%s", stripped_notice);
 	}
 
