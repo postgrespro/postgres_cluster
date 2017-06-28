@@ -956,12 +956,12 @@ Delete(File file)
 	Vfd		   *vfdP;
 
 	Assert(file != 0);
+	vfdP = &VfdCache[file];
 
 	DO_DB(elog(LOG, "Delete %d (%s)",
-			   file, VfdCache[file].fileName));
+			   file, vfdP->fileName));
 	DO_DB(_dump_lru());
 
-	vfdP = &VfdCache[file];
 
 	VfdCache[vfdP->lruLessRecently].lruMoreRecently = vfdP->lruMoreRecently;
 	VfdCache[vfdP->lruMoreRecently].lruLessRecently = vfdP->lruLessRecently;
@@ -975,11 +975,11 @@ LruDelete(File file)
 	Vfd		   *vfdP;
 
 	Assert(file != 0);
+	vfdP = &VfdCache[file];
 
 	DO_DB(elog(LOG, "LruDelete %d (%s)",
 			   file, VfdCache[file].fileName));
 
-	vfdP = &VfdCache[file];
 
 	if (vfdP->fileFlags & PG_COMPRESSION)
 	{
@@ -1030,12 +1030,12 @@ Insert(File file)
 	Vfd		   *vfdP;
 
 	Assert(file != 0);
+	vfdP = &VfdCache[file];
 
 	DO_DB(elog(LOG, "Insert %d (%s)",
-			   file, VfdCache[file].fileName));
+			   file, vfdP->fileName));
 	DO_DB(_dump_lru());
 
-	vfdP = &VfdCache[file];
 
 	vfdP->lruMoreRecently = 0;
 	vfdP->lruLessRecently = VfdCache[0].lruLessRecently;
@@ -1052,11 +1052,10 @@ LruInsert(File file)
 	Vfd		   *vfdP;
 
 	Assert(file != 0);
+	vfdP = &VfdCache[file];
 
 	DO_DB(elog(LOG, "LruInsert %d (%s)",
-			   file, VfdCache[file].fileName));
-
-	vfdP = &VfdCache[file];
+			   file, vfdP->fileName));
 
 	if (FileIsNotOpen(file))
 	{
@@ -1339,6 +1338,8 @@ PathNameOpenFile(FileName fileName, int fileFlags, int fileMode)
 	/* Close excess kernel FDs. */
 	ReleaseLruFiles();
 
+	cfs_start_background_workers(); /* Start background workers if not started yet */
+
 	if (fileFlags & PG_COMPRESSION)
 	{
 		char* mapFileName = psprintf("%s.cfm", fileName);
@@ -1552,11 +1553,11 @@ FileClose(File file)
 	Vfd		   *vfdP;
 
 	Assert(FileIsValid(file));
+	vfdP = &VfdCache[file];
 
 	DO_DB(elog(LOG, "FileClose: %d (%s)",
-			   file, VfdCache[file].fileName));
+			   file, vfdP->fileName));
 
-	vfdP = &VfdCache[file];
 
 	if (!FileIsNotOpen(file))
 	{
@@ -1696,11 +1697,13 @@ FileWriteback(File file, off_t offset, off_t nbytes)
 {
 	int			returnCode;
 	FileMap		*map = NULL;
+	Vfd		    *vfdP;
 
 	Assert(FileIsValid(file));
+	vfdP = &VfdCache[file];
 
 	DO_DB(elog(LOG, "FileWriteback: %d (%s) " INT64_FORMAT " " INT64_FORMAT,
-			   file, VfdCache[file].fileName,
+			   file, vfdP->fileName,
 			   (int64) offset, (int64) nbytes));
 
 	/*
@@ -1714,7 +1717,7 @@ FileWriteback(File file, off_t offset, off_t nbytes)
 	if (returnCode < 0)
 		return;
 
-	if (VfdCache[file].fileFlags & PG_COMPRESSION)
+	if (vfdP->fileFlags & PG_COMPRESSION)
 	{
 		inode_t inode;
 		uint32 i = (uint32)(offset / BLCKSZ);
@@ -1727,7 +1730,7 @@ FileWriteback(File file, off_t offset, off_t nbytes)
 		/* if GC is in progress, no need to flush this file */
 		if (!FileLock(file))
 			return;
-		map = VfdCache[file].map;
+		map = vfdP->map;
 		virtSize = pg_atomic_read_u32(&map->hdr.virtSize);
 		/* in fact, we should not be here. Should it be Assert? */
 		if (virtSize / BLCKSZ < end)
@@ -1750,7 +1753,7 @@ FileWriteback(File file, off_t offset, off_t nbytes)
 			max = physSize;
 		if (max <= min)
 		{
-			cfs_unlock_file(map);
+			cfs_unlock_file(map, vfdP->fileName);
 			return;
 		}
 		offset = min;
@@ -1758,10 +1761,10 @@ FileWriteback(File file, off_t offset, off_t nbytes)
 		/* if off_t == int32, we will fail in many other places,
 		 * so don't check off_t overflow here */
 	}
-	pg_flush_data(VfdCache[file].fd, offset, nbytes);
-	if (VfdCache[file].fileFlags & PG_COMPRESSION)
+	pg_flush_data(vfdP->fd, offset, nbytes);
+	if (vfdP->fileFlags & PG_COMPRESSION)
 	{
-		cfs_unlock_file(map);
+		cfs_unlock_file(map, vfdP->fileName);
 	}
 }
 
@@ -1777,7 +1780,7 @@ FileLock(File file)
 	uint64 map_generation;
 
 	 /* protect file from GC */
-	cfs_lock_file(vfdP->map, vfdP->fileName);
+	cfs_lock_file(vfdP->map, vfdP->md, vfdP->fileName);
 
 	map_generation = vfdP->map->generation;
 	pg_read_barrier();
@@ -1801,48 +1804,50 @@ int
 FileRead(File file, char *buffer, int amount)
 {
 	int			returnCode;
+	Vfd		   *vfdP;
 
 	Assert(FileIsValid(file));
+	vfdP = &VfdCache[file];
 
 	DO_DB(elog(LOG, "FileRead: %d (%s) " INT64_FORMAT " %d %p",
-			   file, VfdCache[file].fileName,
-			   (int64) VfdCache[file].seekPos,
+			   file, vfdP->fileName,
+			   (int64) vfdP->seekPos,
 			   amount, buffer));
 
 	returnCode = FileAccess(file);
 	if (returnCode < 0)
 		return returnCode;
 
-	if (VfdCache[file].fileFlags & PG_COMPRESSION)
+	if (vfdP->fileFlags & PG_COMPRESSION)
 	{
 		off_t seekPos PG_USED_FOR_ASSERTS_ONLY;
-		FileMap* map = VfdCache[file].map;
+		FileMap* map = vfdP->map;
 		inode_t inode;
 		Assert(amount == BLCKSZ);
-		Assert((VfdCache[file].seekPos & (BLCKSZ-1)) == 0);
+		Assert((vfdP->seekPos & (BLCKSZ-1)) == 0);
 
-		if (VfdCache[file].seekPos / BLCKSZ >= RELSEG_SIZE)
+		if (vfdP->seekPos / BLCKSZ >= RELSEG_SIZE)
 			return 0;
 
 		if (!FileLock(file))
 			return -1;
 
-		inode = map->inodes[VfdCache[file].seekPos / BLCKSZ];
+		inode = map->inodes[vfdP->seekPos / BLCKSZ];
 		amount = CFS_INODE_SIZE(inode);
 		if (amount == 0)
 		{
 			uint32 fileSize = pg_atomic_read_u32(&map->hdr.virtSize);
-			if (VfdCache[file].seekPos + BLCKSZ <= fileSize)
+			if (vfdP->seekPos + BLCKSZ <= fileSize)
 			{
 				amount = BLCKSZ;
-				VfdCache[file].seekPos += BLCKSZ;
+				vfdP->seekPos += BLCKSZ;
 				MemSet(buffer, 0, BLCKSZ);
 			}
-			cfs_unlock_file(map);
+			cfs_unlock_file(map, vfdP->fileName);
 			return amount;
 		}
 
-		seekPos = lseek(VfdCache[file].fd, CFS_INODE_OFFS(inode), SEEK_SET);
+		seekPos = lseek(vfdP->fd, CFS_INODE_OFFS(inode), SEEK_SET);
 		Assert(seekPos == (off_t)CFS_INODE_OFFS(inode));
 
 		if (amount < BLCKSZ)
@@ -1852,7 +1857,7 @@ FileRead(File file, char *buffer, int amount)
 			uint32 size = amount;
 			do
 			{
-				returnCode = read(VfdCache[file].fd, dst, size);
+				returnCode = read(vfdP->fd, dst, size);
 				if (returnCode > 0)
 				{
 					dst += returnCode;
@@ -1864,17 +1869,17 @@ FileRead(File file, char *buffer, int amount)
 					{
 						if (returnCode == 0)
 							elog(LOG, "Block %u position %u size %u is beyond end of compressed file %s",
-								 (uint32)(VfdCache[file].seekPos / BLCKSZ), (uint32)seekPos, size, VfdCache[file].fileName);
+								 (uint32)(vfdP->seekPos / BLCKSZ), (uint32)seekPos, size, vfdP->fileName);
 						else
 							elog(LOG, "Failed to read block %u position %u size %u from compressed file %s: %m",
-								 (uint32)(VfdCache[file].seekPos / BLCKSZ), (uint32)seekPos, size, VfdCache[file].fileName);
-						cfs_unlock_file(map);
+								 (uint32)(vfdP->seekPos / BLCKSZ), (uint32)seekPos, size, vfdP->fileName);
+						cfs_unlock_file(map, vfdP->fileName);
 						return returnCode;
 					}
 				}
 			} while (size != 0);
 
-			cfs_decrypt(VfdCache[file].fileName, compressedBuffer, VfdCache[file].seekPos, amount);
+			cfs_decrypt(vfdP->fileName, compressedBuffer, vfdP->seekPos, amount);
 
 			returnCode = cfs_decompress(buffer, BLCKSZ, compressedBuffer, amount);
 			if (returnCode != BLCKSZ)
@@ -1884,29 +1889,29 @@ FileRead(File file, char *buffer, int amount)
 				COMP_TRADITIONAL_CRC32(crc, compressedBuffer, amount);
 				FIN_TRADITIONAL_CRC32(crc);
 				elog(LOG, "CFS: decompress error: %d for file %s block %u position %u compressed size %u crc %x",
-					 returnCode, VfdCache[file].fileName, (uint32)(VfdCache[file].seekPos / BLCKSZ), (uint32)seekPos, amount, crc);
-				VfdCache[file].seekPos = FileUnknownPos;
+					 returnCode, vfdP->fileName, (uint32)(vfdP->seekPos / BLCKSZ), (uint32)seekPos, amount, crc);
+				vfdP->seekPos = FileUnknownPos;
 				returnCode = -1;
 				errno = EIO;
 			}
 			else
-				VfdCache[file].seekPos += BLCKSZ;
+				vfdP->seekPos += BLCKSZ;
 
-			cfs_unlock_file(map);
+			cfs_unlock_file(map, vfdP->fileName);
 			return returnCode;
 		}
 	}
   retry:
-	returnCode = read(VfdCache[file].fd, buffer, amount);
+	returnCode = read(vfdP->fd, buffer, amount);
 	if (returnCode >= 0)
 	{
-		if (VfdCache[file].fileFlags & PG_COMPRESSION)
+		if (vfdP->fileFlags & PG_COMPRESSION)
 		{
-			cfs_decrypt(VfdCache[file].fileName, buffer, VfdCache[file].seekPos, amount);
+			cfs_decrypt(vfdP->fileName, buffer, vfdP->seekPos, amount);
 		}
 		/* if seekPos is unknown, leave it that way */
-		if (!FilePosIsUnknown(VfdCache[file].seekPos))
-			VfdCache[file].seekPos += returnCode;
+		if (!FilePosIsUnknown(vfdP->seekPos))
+			vfdP->seekPos += returnCode;
 	}
 	else
 	{
@@ -1936,12 +1941,12 @@ FileRead(File file, char *buffer, int amount)
 			goto retry;
 
 		/* Trouble, so assume we don't know the file position anymore */
-		VfdCache[file].seekPos = FileUnknownPos;
+		vfdP->seekPos = FileUnknownPos;
 	}
 
-	if (VfdCache[file].fileFlags & PG_COMPRESSION)
+	if (vfdP->fileFlags & PG_COMPRESSION)
 	{
-		cfs_unlock_file(VfdCache[file].map);
+		cfs_unlock_file(vfdP->map, vfdP->fileName);
 	}
 	return returnCode;
 }
@@ -1958,17 +1963,17 @@ FileWrite(File file, char *buffer, int amount)
 	Vfd		   *vfdP;
 
 	Assert(FileIsValid(file));
+	vfdP = &VfdCache[file];
 
 	DO_DB(elog(LOG, "FileWrite: %d (%s) " INT64_FORMAT " %d %p",
-			   file, VfdCache[file].fileName,
-			   (int64) VfdCache[file].seekPos,
+			   file, vfdP->fileName,
+			   (int64) vfdP->seekPos,
 			   amount, buffer));
 
 	returnCode = FileAccess(file);
 	if (returnCode < 0)
 		return returnCode;
 
-	vfdP = &VfdCache[file];
 
 	/*
 	 * If enforcing temp_file_limit and it's a temp file, check to see if the
@@ -2008,9 +2013,9 @@ FileWrite(File file, char *buffer, int amount)
 		}
 	}
 
-	if (VfdCache[file].fileFlags & PG_COMPRESSION)
+	if (vfdP->fileFlags & PG_COMPRESSION)
 	{
-		FileMap* map = VfdCache[file].map;
+		FileMap* map = vfdP->map;
 		uint32   compressedSize;
 		Assert(amount == BLCKSZ);
 
@@ -2021,11 +2026,11 @@ FileWrite(File file, char *buffer, int amount)
 		if (!FileLock(file))
 			return -1;
 
-		inode = map->inodes[VfdCache[file].seekPos / BLCKSZ];
+		inode = map->inodes[vfdP->seekPos / BLCKSZ];
 
 		if (compressedSize > 0 && compressedSize < CFS_MIN_COMPRESSED_SIZE(BLCKSZ))
 		{
-			Assert((VfdCache[file].seekPos & (BLCKSZ-1)) == 0);
+			Assert((vfdP->seekPos & (BLCKSZ-1)) == 0);
 			/*
 			 * Do not check that new image of compressed page fits into old space
 			 * because we want to write all updated pages sequentially
@@ -2037,7 +2042,7 @@ FileWrite(File file, char *buffer, int amount)
 			amount = compressedSize;
 
 			/* cfs_encrypt will check if encryption is actually needed */
-			cfs_encrypt(VfdCache[file].fileName, buffer, VfdCache[file].seekPos, amount);
+			cfs_encrypt(vfdP->fileName, buffer, vfdP->seekPos, amount);
 		}
 		else
 		{
@@ -2045,7 +2050,7 @@ FileWrite(File file, char *buffer, int amount)
 			{
 				memcpy(compressedBuffer, buffer, BLCKSZ);
 				buffer = compressedBuffer;
-				cfs_encrypt(VfdCache[file].fileName, buffer, VfdCache[file].seekPos, amount);
+				cfs_encrypt(vfdP->fileName, buffer, vfdP->seekPos, amount);
 			}
 
 			if (CFS_INODE_SIZE(inode) != BLCKSZ)
@@ -2062,11 +2067,11 @@ FileWrite(File file, char *buffer, int amount)
 				pos = CFS_INODE_OFFS(inode);
 			}
 		}
-		seekPos = lseek(VfdCache[file].fd, pos, SEEK_SET);
+		seekPos = lseek(vfdP->fd, pos, SEEK_SET);
 		Assert(seekPos == (off_t)pos);
 	}
 	else
-		seekPos = VfdCache[file].seekPos;
+		seekPos = vfdP->seekPos;
 
 retry:
 	errno = 0;
@@ -2078,20 +2083,20 @@ retry:
 
 	if (returnCode >= 0)
 	{
-		if (VfdCache[file].fileFlags & PG_COMPRESSION)
+		if (vfdP->fileFlags & PG_COMPRESSION)
 		{
 			if (returnCode == amount)
 			{
-				VfdCache[file].map->inodes[VfdCache[file].seekPos / BLCKSZ] = inode;
-				VfdCache[file].seekPos += BLCKSZ;
-				cfs_extend(VfdCache[file].map, VfdCache[file].seekPos);
+				vfdP->map->inodes[vfdP->seekPos / BLCKSZ] = inode;
+				vfdP->seekPos += BLCKSZ;
+				cfs_extend(vfdP->map, vfdP->seekPos);
 				returnCode = BLCKSZ;
 				Assert(vfdP->generation == vfdP->map->generation);
 			}
 			else
 			{
 				elog(LOG, "CFS: write to file %s block %u position %u size %u failed with code %d: %m",
-					 VfdCache[file].fileName, (uint32)(VfdCache[file].seekPos / BLCKSZ),
+					 vfdP->fileName, (uint32)(vfdP->seekPos / BLCKSZ),
 					 (uint32)seekPos, amount, returnCode);
 				returnCode = 0;
 			}
@@ -2145,9 +2150,9 @@ retry:
 		vfdP->seekPos = FileUnknownPos;
 	}
 
-	if (VfdCache[file].fileFlags & PG_COMPRESSION)
+	if (vfdP->fileFlags & PG_COMPRESSION)
 	{
-		cfs_unlock_file(VfdCache[file].map);
+		cfs_unlock_file(vfdP->map, vfdP->fileName);
 		/*
 		 * If GC is disabled for a long time, then file can unlimited grow.
 		 * To avoid wrap around of 32-bit offsets we force GC on this file when destination position
@@ -2155,9 +2160,7 @@ retry:
 		 */
 		if (pos + amount > CFS_IMPLICIT_GC_THRESHOLD)
 		{
-			elog(LOG, "CFS: backend %d forced to perform GC on file %s block %u because it's size exceed %u bytes",
-				 MyProcPid, VfdCache[file].fileName, (uint32)(VfdCache[file].seekPos / BLCKSZ),  pos);
-			cfs_gc_segment(VfdCache[file].fileName, pos + amount < CFS_RED_LINE);
+			cfs_gc_segment(vfdP->fileName, pos + amount);
 		}
 	}
 	return returnCode;
@@ -2166,24 +2169,26 @@ retry:
 int
 FileSync(File file)
 {
+	Vfd		   *vfdP;
 	int			returnCode;
 
 	Assert(FileIsValid(file));
+	vfdP = &VfdCache[file];
 
 	DO_DB(elog(LOG, "FileSync: %d (%s)",
-			   file, VfdCache[file].fileName));
+			   file, vfdP->fileName));
 
 	returnCode = FileAccess(file);
 	if (returnCode < 0)
 		return returnCode;
 
-	returnCode = pg_fsync(VfdCache[file].fd);
+	returnCode = pg_fsync(vfdP->fd);
 
-	if (returnCode == 0 && (VfdCache[file].fileFlags & PG_COMPRESSION))
+	if (returnCode == 0 && (vfdP->fileFlags & PG_COMPRESSION))
 	{
-		returnCode = cfs_msync(VfdCache[file].map);
+		returnCode = cfs_msync(vfdP->map);
 		if (returnCode == 0)
-			returnCode = pg_fsync(VfdCache[file].md);
+			returnCode = pg_fsync(vfdP->md);
 
 	}
 	return returnCode;
@@ -2196,14 +2201,14 @@ FileSeek(File file, off_t offset, int whence)
 	off_t 		returnCode;
 
 	Assert(FileIsValid(file));
+	vfdP = &VfdCache[file];
 
 	DO_DB(elog(LOG, "FileSeek: %d (%s) " INT64_FORMAT " " INT64_FORMAT " %d",
-			   file, VfdCache[file].fileName,
-			   (int64) VfdCache[file].seekPos,
+			   file, vfdP->fileName,
+			   (int64) vfdP->seekPos,
 			   (int64) offset, whence));
 
-	vfdP = &VfdCache[file];
-	if (FileIsNotOpen(file) || (VfdCache[file].fileFlags & PG_COMPRESSION))
+	if (FileIsNotOpen(file) || (vfdP->fileFlags & PG_COMPRESSION))
 	{
 		switch (whence)
 		{
@@ -2229,15 +2234,15 @@ FileSeek(File file, off_t offset, int whence)
 			    if (returnCode < 0)
 				  return returnCode;
 
-				if (VfdCache[file].fileFlags & PG_COMPRESSION)
+				if (vfdP->fileFlags & PG_COMPRESSION)
 				{
-					FileMap* map = VfdCache[file].map;
+					FileMap* map = vfdP->map;
 					uint32 fileSize = pg_atomic_read_u32(&map->hdr.virtSize);
 
 					if (offset > 0 && offset > fileSize)
 						offset = fileSize;
 
-					VfdCache[file].seekPos = fileSize - offset;
+					vfdP->seekPos = fileSize - offset;
 			    }
 			    else
 					vfdP->seekPos = lseek(vfdP->fd, offset, whence);
@@ -2295,20 +2300,22 @@ int
 FileTruncate(File file, off_t offset)
 {
 	int			returnCode;
+	Vfd		   *vfdP;
 
 	Assert(FileIsValid(file));
+	vfdP = &VfdCache[file];
 
 	DO_DB(elog(LOG, "FileTruncate %d (%s)",
-			   file, VfdCache[file].fileName));
+			   file, vfdP->fileName));
 
 	returnCode = FileAccess(file);
 	if (returnCode < 0)
 		return returnCode;
 
-	if (VfdCache[file].fileFlags & PG_COMPRESSION)
+	if (vfdP->fileFlags & PG_COMPRESSION)
 	{
 		int i;
-		FileMap* map = VfdCache[file].map;
+		FileMap* map = vfdP->map;
 		uint32 released = 0;
 		Assert((offset & (BLCKSZ-1)) == 0);
 
@@ -2318,7 +2325,7 @@ FileTruncate(File file, off_t offset)
 		for (i = offset / BLCKSZ; i < RELSEG_SIZE; i++)
 		{
 			released += CFS_INODE_SIZE(map->inodes[i]);
-			map->inodes[i] = 0;
+			map->inodes[i] = CFS_INODE(0, 0);
 		}
 
 		pg_atomic_write_u32(&map->hdr.virtSize, offset);
@@ -2328,19 +2335,19 @@ FileTruncate(File file, off_t offset)
 		{
 			/* We can truncate compressed file only with zero offset */
 			pg_atomic_write_u32(&map->hdr.physSize, 0);
-			returnCode = ftruncate(VfdCache[file].fd, 0);
+			returnCode = ftruncate(vfdP->fd, 0);
 		}
-		cfs_unlock_file(map);
+		cfs_unlock_file(map, vfdP->fileName);
 	}
 	else
-		returnCode = ftruncate(VfdCache[file].fd, offset);
+		returnCode = ftruncate(vfdP->fd, offset);
 
-	if (returnCode == 0 && VfdCache[file].fileSize > offset)
+	if (returnCode == 0 && vfdP->fileSize > offset)
 	{
 		/* adjust our state for truncation of a temp file */
-		Assert(VfdCache[file].fdstate & FD_TEMPORARY);
-		temporary_files_size -= VfdCache[file].fileSize - offset;
-		VfdCache[file].fileSize = offset;
+		Assert(vfdP->fdstate & FD_TEMPORARY);
+		temporary_files_size -= vfdP->fileSize - offset;
+		vfdP->fileSize = offset;
 	}
 	return returnCode;
 }
@@ -3565,6 +3572,12 @@ fsync_fname_ext(const char *fname, bool isdir, bool ignore_perm, int elevel)
 	(void) CloseTransientFile(fd);
 
 	return 0;
+}
+
+int
+pg_fsync_parent_path(const char *fname, int elevel)
+{
+	return fsync_parent_path(fname, elevel);
 }
 
 /*

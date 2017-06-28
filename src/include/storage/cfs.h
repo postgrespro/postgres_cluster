@@ -8,7 +8,7 @@
 
 #define CFS_VERSION "0.45"
 
-#define CFS_GC_LOCK  0x10000000
+#define CFS_GC_LOCK  (MAX_BACKENDS+1)
 
 #define CFS_LOCK_MIN_TIMEOUT 100    /* microseconds: initial timeout of GC lock acquisition */
 #define CFS_LOCK_MAX_TIMEOUT 10000  /* microseconds */
@@ -47,9 +47,10 @@
  * with compression size of compressed file can become larger than 1Gb if GC id disabled for long time */
 typedef uint64 inode_t;
 
-#define CFS_INODE_SIZE(inode) ((uint32)((inode) >> 32))
+#define CFS_INODE_SIZE(inode) ((uint32)((inode) >> 32) & 0xffff)
 #define CFS_INODE_OFFS(inode) ((uint32)(inode))
 #define CFS_INODE(size,offs)  (((inode_t)(size) << 32) | (offs))
+#define CFS_INODE_CLEAN_FLAG  ((inode_t)1 << 63)
 
 #define CFS_IMPLICIT_GC_THRESHOLD 0x80000000U /* 2Gb */
 #define CFS_RED_LINE              0xC0000000U /* 3Gb */
@@ -86,12 +87,13 @@ typedef struct
 	 * Manually started GC performs just one iteration. */
 	int64          max_iterations;
 	/* Flag for temporary disabling GC */
-	volatile bool  gc_enabled;
+	pg_atomic_uint32 gc_disabled;
 	/* Flag for controlling background GC */
 	volatile bool  background_gc_enabled;
 	/* CFS GC statatistic */
 	CfsStatistic   gc_stat;
 	rijndael_ctx   aes_context;
+	pg_atomic_uint32 locks[1]; /* MaxBackends locks */
 } CfsState;
 
 typedef struct FileHeader
@@ -110,10 +112,10 @@ typedef struct FileHeader
 typedef struct
 {
 	FileHeader hdr;
-	/* Lock used to synchronize access to the file */
-	pg_atomic_uint32 lock;
+	/* Indicator that GC was started fot this file. Used to perform recovery of the file in case of abnormal Postgres termination */
+	pg_atomic_uint32 gc_active;
 	/* PID (process identifier) of postmaster. We check it at open time to revoke lock in case when postgres is restarted.
-	 * TODO: not so reliable because it can happen that occasionally postmaster will be given the same PID */
+	 * Deteriorated: right now it is not used and is left only for backward compatibility */
 	pid_t            postmasterPid;
 	/* Each pass of GC updates generation of the map */
 	uint64           generation;
@@ -121,21 +123,23 @@ typedef struct
 	inode_t          inodes[RELSEG_SIZE];
 } FileMap;
 
-void     cfs_lock_file(FileMap* map, char const* path);
-void     cfs_unlock_file(FileMap* map);
+void     cfs_start_background_workers(void);
+void     cfs_lock_file(FileMap* map, int fd, char const* path);
+void     cfs_unlock_file(FileMap* map, char const* path);
 uint32   cfs_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize);
 void     cfs_extend(FileMap* map, uint32 pos);
-bool     cfs_control_gc(bool enabled);
+void     cfs_control_gc_lock(void);
+void     cfs_control_gc_unlock(void);
 int      cfs_msync(FileMap* map);
 FileMap* cfs_mmap(int md);
 int      cfs_munmap(FileMap* map);
 void     cfs_initialize(void);
-int      cfs_shmem_size(void);
+size_t   cfs_shmem_size(void);
 
 void     cfs_encrypt(const char* fname, void* block, uint32 offs, uint32 size);
 void     cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size);
 
-void     cfs_gc_segment(char const* name, bool optional);
+void     cfs_gc_segment(char const* name, uint32 pos);
 void     cfs_recover_map(FileMap* map);
 
 extern CfsState* cfs_state;
