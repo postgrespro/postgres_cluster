@@ -41,7 +41,6 @@ copydir(char *fromdir, char *todir, bool recurse)
 	struct dirent *xlde;
 	char		fromfile[MAXPGPATH];
 	char		tofile[MAXPGPATH];
-	bool        savedGCState = false;
 
 	if (mkdir(todir, S_IRWXU) != 0)
 		ereport(ERROR,
@@ -55,7 +54,7 @@ copydir(char *fromdir, char *todir, bool recurse)
 				 errmsg("could not open directory \"%s\": %m", fromdir)));
 
 
-	savedGCState = cfs_control_gc(false); /* disable GC during copy */
+	cfs_control_gc_lock(); /* disable GC during copy */
 
 	PG_TRY();
 	{
@@ -91,11 +90,11 @@ copydir(char *fromdir, char *todir, bool recurse)
 	}
 	PG_CATCH();
 	{
-		cfs_control_gc(savedGCState);
+		cfs_control_gc_unlock();
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-	cfs_control_gc(savedGCState);
+	cfs_control_gc_unlock();
 	
 	/*
 	 * Be paranoid here and fsync all files to ensure the copy is really done.
@@ -154,7 +153,6 @@ copyzipdir(char *fromdir, bool from_compressed,
 	struct dirent *xlde;
 	char		fromfile[MAXPGPATH];
 	char		tofile[MAXPGPATH];
-	bool        savedGCState;
 
 	if (mkdir(todir, S_IRWXU) != 0)
 		ereport(ERROR,
@@ -167,7 +165,7 @@ copyzipdir(char *fromdir, bool from_compressed,
 				(errcode_for_file_access(),
 				 errmsg("could not open directory \"%s\": %m", fromdir)));
 
-	savedGCState = cfs_control_gc(false); /* disable GC during copy */
+	cfs_control_gc_lock(); /* disable GC during copy */
 
 	PG_TRY();
 	{
@@ -199,11 +197,11 @@ copyzipdir(char *fromdir, bool from_compressed,
 	}
 	PG_CATCH();
 	{
-		cfs_control_gc(savedGCState);
+		cfs_control_gc_unlock();
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-	cfs_control_gc(savedGCState);
+	cfs_control_gc_unlock();
 
 	/*
 	 * Be paranoid here and fsync all files to ensure the copy is really done.
