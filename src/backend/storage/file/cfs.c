@@ -1481,20 +1481,17 @@ void cfs_gc_start_bgworkers()
 void cfs_control_gc_lock(void)
 {
 	uint32 was_disabled = pg_atomic_fetch_add_u32(&cfs_state->gc_disabled, 1);
-	if (!was_disabled)
+	/* Wait until there are no active GC workers */
+	while (pg_atomic_read_u32(&cfs_state->n_active_gc) != 0)
 	{
-		/* Wait until there are no active GC workers */
-		while (pg_atomic_read_u32(&cfs_state->n_active_gc) != 0)
-		{
-			int rc = WaitLatch(MyLatch,
-							   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-							   CFS_DISABLE_TIMEOUT /* ms */);
-			if (rc & WL_POSTMASTER_DEATH)
-				exit(1);
+		int rc = WaitLatch(MyLatch,
+						   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+						   CFS_DISABLE_TIMEOUT /* ms */);
+		if (rc & WL_POSTMASTER_DEATH)
+			exit(1);
 
-			ResetLatch(MyLatch);
-			CHECK_FOR_INTERRUPTS();
-		}
+		ResetLatch(MyLatch);
+		CHECK_FOR_INTERRUPTS();
 	}
 }
 
