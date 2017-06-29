@@ -317,12 +317,15 @@ void MtmReleaseLocks(void)
  * locks[N+1..2*N] are used to synchronize access to distributed lock graph at each node
  * -------------------------------------------
  */
+
+//#define DEBUG_MTM_LOCK 1
+
+#if DEBUG_MTM_LOCK
 static timestamp_t MtmLockLastReportTime;
 static timestamp_t MtmLockElapsedWaitTime;
 static timestamp_t MtmLockMaxWaitTime;
 static size_t      MtmLockHitCount;
-
-//#define DEBUG_MTM_LOCK 1
+#endif
 
 void MtmLock(LWLockMode mode)
 {
