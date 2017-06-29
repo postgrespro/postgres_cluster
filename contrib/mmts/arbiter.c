@@ -1075,6 +1075,7 @@ static void MtmReceiver(Datum arg)
 							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
 								MTM_LOG1("Arbiter receive abort message for transaction %s (%llu) from node %d", ts->gid, (long64)ts->xid, node);
 								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+								ts->aborted_by_node = node;
 								MtmAbortTransaction(ts);
 							}
 							if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
