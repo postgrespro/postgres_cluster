@@ -688,7 +688,6 @@ pg_basebackup -D <replaceable>datadir</replaceable> -h node1 -x
           <literal>node4</literal>:
         </para>
         <programlisting>
-multimaster.max_nodes = 4
 multimaster.node_id = 4
 multimaster.conn_strings = 'dbname=mydb user=myuser host=node1, dbname=mydb user=myuser host=node2,
                             dbname=mydb user=myuser host=node3, dbname=mydb user=myuser host=node4'
@@ -711,18 +710,13 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
       <orderedlist>
       <listitem>
         <para>
-          Change <literal>multimaster.conn_strings</literal> and <literal>multimaster.max_nodes</literal> to include the new node.
+          Change <literal>multimaster.conn_strings</literal> to include the new node.
         </para>
       </listitem>
       <listitem>
         <para>
           Make sure the <filename>pg_hba.conf</filename> file allows
           replication to the new node.
-        </para>
-      </listitem>
-      <listitem>
-        <para>
-          Restart all cluster nodes.
         </para>
       </listitem>
     </orderedlist>
