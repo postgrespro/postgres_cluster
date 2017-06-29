@@ -17,7 +17,7 @@ typedef enum {
 
 typedef struct {
 	task_type_t type;
-	int cron_id;
+	int64 cron_id;
 	TimestampTz start_at;
 	TimestampTz started;
 	char *node;
@@ -52,7 +52,7 @@ job_t *set_job_error(MemoryContext mem, job_t *j, const char *fmt, ...) pg_attri
 int move_job_to_log(job_t *j, bool status, bool processed);
 void copy_job(MemoryContext mem, job_t *dst, job_t *src);
 void destroy_job(job_t *j, int selfdestroy);
-job_t *get_at_job(int cron_id, char *nodename, char **perror);
+job_t *get_at_job(int64 cron_id, char *nodename, char **perror);
 job_t *get_cron_job(int cron_id, TimestampTz start_at, char *nodename, char **perror);
 int _cron_move_job_to_log(job_t *j, bool status);
 int _at_move_job_to_log(job_t *j, bool status, bool processed);

@@ -24,7 +24,7 @@ typedef struct {
 	char nodename[PGPRO_SCHEDULER_NODENAME_MAX];
 	char user[NAMEDATALEN];
 
-	int cron_id;
+	int64 cron_id;
 	task_type_t type;
 	TimestampTz start_at;
 
@@ -67,7 +67,7 @@ int set_session_authorization(char *username, char **error);
 int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status);
 int read_worker_job_limit(void);
 void at_executor_worker_main(Datum arg);
-int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t *status);
+int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t *status, Oid subm_rel_oid);
 Oid set_session_authorization_by_name(char *rolename, char **error);
 
 extern Datum get_self_id(PG_FUNCTION_ARGS);
