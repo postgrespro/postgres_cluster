@@ -26,13 +26,13 @@ my $dsn = "dbi:Pg:dbname=$dbname";
 
 if($host)
 {
-	$adm_dsn += ";host=".$host;
-	$dsn += ";host=".$host;
+	$adm_dsn .= ";host=".$host;
+	$dsn .= ";host=".$host;
 }
 if($port)
 {
-	$adm_dsn += ";port=".$port;
-	$dsn += ";port=".$port;
+	$adm_dsn .= ";port=".$port;
+	$dsn .= ";port=".$port;
 }
 
 print "Prepare test enviroment\n";
@@ -60,7 +60,7 @@ if($dbh->err != 0){
 
 my @sql2 = (
 	"CREATE EXTENSION pgpro_scheduler",
-	"ALTER DATABASE $dbname SET schedule.max_workers = 1",
+	"ALTER DATABASE $dbname SET schedule.max_workers = 2",
 	"ALTER SYSTEM SET schedule.database = '$dbname'",
 	"ALTER SYSTEM SET schedule.enabled = on",
 	"SELECT pg_reload_conf();",
