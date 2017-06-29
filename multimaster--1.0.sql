@@ -103,7 +103,7 @@ CREATE FUNCTION mtm.referee_poll(xid bigint) RETURNS bigint
 AS 'MODULE_PATHNAME','mtm_referee_poll'
 LANGUAGE C;
 
-CREATE TABLE IF NOT EXISTS mtm.local_tables(rel_schema text, rel_name text, primary key(rel_schema, rel_name));
+CREATE TABLE IF NOT EXISTS mtm.local_tables(rel_schema name, rel_name name, primary key(rel_schema, rel_name));
 
 CREATE OR REPLACE FUNCTION mtm.alter_sequences() RETURNS boolean AS 
 $$
