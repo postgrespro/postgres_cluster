@@ -267,6 +267,7 @@ typedef struct MtmTransState
 	nodemask_t     participantsMask;   /* Mask of nodes involved in transaction */
 	nodemask_t     votedMask;          /* Mask of voted nodes */
 	TransactionId  xids[1];            /* [Mtm->nAllNodes]: transaction ID at replicas */
+	int			   aborted_by_node;    /* Store info about node on which this tx was aborted */
 } MtmTransState;
 
 typedef struct {
