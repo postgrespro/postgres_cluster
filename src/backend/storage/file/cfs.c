@@ -1491,7 +1491,7 @@ void cfs_gc_start_bgworkers()
 /* Disable garbage collection. */
 void cfs_control_gc_lock(void)
 {
-	uint32 was_disabled = pg_atomic_fetch_add_u32(&cfs_state->gc_disabled, 1);
+	pg_atomic_fetch_add_u32(&cfs_state->gc_disabled, 1);
 	/* Wait until there are no active GC workers */
 	while (pg_atomic_read_u32(&cfs_state->n_active_gc) != 0)
 	{
