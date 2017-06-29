@@ -1161,12 +1161,19 @@ retry:
 
 		if (cfs_gc_verify_file)
 		{
+			off_t soff = -1;
 			fd = open(file_bck_path, O_RDONLY|PG_BINARY, 0);
 			Assert(fd >= 0);
 
 			for (i = 0; i < n_pages; i++)
 			{
-				inode_t inode = newMap->inodes[i];
+				inodes[i] = &newMap->inodes[i];
+			}
+			qsort(inodes, n_pages, sizeof(inode_t*), cfs_cmp_page_offs);
+
+			for (i = 0; i < n_pages; i++)
+			{
+				inode_t inode = *inodes[i];
 				int size = CFS_INODE_SIZE(inode);
 				if (size != 0 && size < BLCKSZ)
 				{
@@ -1174,10 +1181,14 @@ retry:
 					char decomressedBlock[BLCKSZ];
 					off_t res PG_USED_FOR_ASSERTS_ONLY;
 					bool rc PG_USED_FOR_ASSERTS_ONLY;
-					res = lseek(fd, CFS_INODE_OFFS(inode), SEEK_SET);
-					Assert(res == (off_t)CFS_INODE_OFFS(inode));
+					if (soff != CFS_INODE_OFFS(inode))
+					{
+						soff = lseek(fd, CFS_INODE_OFFS(inode), SEEK_SET);
+						Assert(soff == (off_t)CFS_INODE_OFFS(inode));
+					}
 					rc = cfs_read_file(fd, block, size);
 					Assert(rc);
+					soff += size;
 					cfs_decrypt(file_bck_path, block, (off_t)i*BLCKSZ, size);
 					res = cfs_decompress(decomressedBlock, BLCKSZ, block, size);
 
