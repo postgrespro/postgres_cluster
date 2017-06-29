@@ -913,7 +913,7 @@ MtmResetTransaction()
 	x->gid[0] = '\0';
 }
 
-
+#if 0
 static const char* const isoLevelStr[] =
 {
 	"read uncommitted",
@@ -921,6 +921,7 @@ static const char* const isoLevelStr[] =
 	"repeatable read",
 	"serializable"
 };
+#endif
 
 bool MtmTransIsActive(void)
 {
@@ -2588,8 +2589,8 @@ void MtmMakeTableLocal(char const* schema, char const* name)
 
 
 typedef struct {
-	text schema;
-	text name;
+	NameData schema;
+	NameData name;
 } MtmLocalTablesTuple;
 
 static void MtmLoadLocalTables(void)
@@ -2609,7 +2610,7 @@ static void MtmLoadLocalTables(void)
 		while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 		{
 			MtmLocalTablesTuple	*t = (MtmLocalTablesTuple*) GETSTRUCT(tuple);
-			MtmMakeTableLocal(text_to_cstring(&t->schema), text_to_cstring(&t->name));
+			MtmMakeTableLocal(NameStr(t->schema), NameStr(t->name));
 		}
 
 		systable_endscan(scan);
