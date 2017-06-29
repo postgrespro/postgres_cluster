@@ -424,8 +424,9 @@ void cfs_initialize()
 		if (cfs_encryption)
 			cfs_crypto_init();
 
-		elog(LOG, "Start CFS version %s compression algorithm %s encryption %s GC %s",
-			 CFS_VERSION, cfs_algorithm(), cfs_encryption ? "enabled" : "disabled", cfs_gc_enabled ? "enabled" : "disabled");
+		if (IsPostmasterEnvironment)
+			elog(LOG, "Start CFS version %s compression algorithm %s encryption %s GC %s",
+				 CFS_VERSION, cfs_algorithm(), cfs_encryption ? "enabled" : "disabled", cfs_gc_enabled ? "enabled" : "disabled");
 	}
 }
 int cfs_msync(FileMap* map)
