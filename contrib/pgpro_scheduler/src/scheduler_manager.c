@@ -44,6 +44,7 @@
 
 extern volatile sig_atomic_t got_sighup;
 extern volatile sig_atomic_t got_sigterm;
+extern Oid scheduler_atjob_id_OID;
 
 int checkSchedulerNamespace(void)
 {
@@ -719,10 +720,11 @@ int set_at_job_started(job_t *job)
 {
 	const char *sql = "WITH moved_rows AS (DELETE from ONLY at_jobs_submitted a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_process SELECT * FROM moved_rows";
 	Datum values[1];
-	Oid argtypes[1] = {INT4OID};
+	Oid argtypes[1] = {scheduler_atjob_id_OID};
 	int ret;
 
-	values[0] = Int32GetDatum(job->cron_id);
+	values[0] = scheduler_atjob_id_OID == INT8OID ?
+		Int64GetDatum(job->cron_id): Int32GetDatum(job->cron_id);
 	ret = SPI_execute_with_args(sql, 1, argtypes, values, NULL, false, 0);
 	return ret > 0 ? 1: 0;
 }
@@ -891,7 +893,7 @@ int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_
 	old = MemoryContextSwitchTo(ctx->mem_ctx);
 	if(!RegisterDynamicBackgroundWorker(&worker, &(item->handler)))
 	{
-		elog(LOG, "Cannot register executor worker for db: %s, cron: %d",
+		elog(LOG, "Cannot register executor worker for db: %s, cron: %ld",
 									shm_data->database, item->job->cron_id);
 		dsm_detach(item->shared);
 		MemoryContextSwitchTo(old);
@@ -901,7 +903,7 @@ int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_
 	status = WaitForBackgroundWorkerStartup(item->handler, &(item->pid));
 	if(status != BGWH_STARTED)
 	{
-		elog(LOG, "Cannot start executor worker for db: %s, cron: %d, status: %d",
+		elog(LOG, "Cannot start executor worker for db: %s, cron: %ld, status: %d",
 							shm_data->database, item->job->cron_id, status);
 		dsm_detach(item->shared);
 		return 0;
@@ -1014,16 +1016,16 @@ int scheduler_start_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
 					{
 						ts = make_date_from_timestamp(jobs[i].start_at, false);
 						set_job_error(ctx->mem_ctx, &jobs[i],
-								"Cannot set job %d@%s:00 to worker",
+								"Cannot set job %ld@%s:00 to worker",
 								 			jobs[i].cron_id, ts);
 						pfree(ts);
 					}
 					else
 					{
 						set_job_error(ctx->mem_ctx, &jobs[i],
-								"Cannot set at job %d to worker",
+								"Cannot set at job %ld to worker",
 								 			jobs[i].cron_id);
-						elog(ERROR, "Cannot set job to free slot type=%d, id=%d", 
+						elog(ERROR, "Cannot set job to free slot type=%d, id=%ld", 
 									jobs[i].type, jobs[i].cron_id);
 					}
 					START_SPI_SNAP();
@@ -1413,7 +1415,7 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type
 			if(type == CronJob)
 			{
 				set_job_error(ctx->mem_ctx, &expired[i],
-					"job cron = %d start time (%s:00) expired",
+					"job cron = %ld start time (%s:00) expired",
 					expired[i].cron_id, ts);
 			}
 			else
@@ -1424,7 +1426,7 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type
 			move_ret  = move_job_to_log(&expired[i], 0, false);
 			if(move_ret < 0)
 			{
-				elog(LOG, "Scheduler manager %s: cannot move %s job %d@%s%s to log",
+				elog(LOG, "Scheduler manager %s: cannot move %s job %ld@%s%s to log",
 						ctx->database, (type == CronJob ? "cron": "at"),
 						expired[i].cron_id, ts, (ts_hires ? "": ":00"));
 				ret--;

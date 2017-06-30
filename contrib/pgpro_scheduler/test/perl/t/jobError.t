@@ -5,16 +5,7 @@ use Test::More;
 use DBI;
 use Getopt::Long;
 
-my $dbname;
-my $username;
-my $password;
-my $host;
-GetOptions ( "--host=s" => \$host,
-    "--dbname=s" => \$dbname,
-    "--username=s" => \$username,
-    "--password=s" => \$password);
-my $dbh = DBI->connect("dbi:Pg:dbname=$dbname; host=$host", "$username", "$password",
-    {PrintError => 0});
+my $dbh = require 't/_connect.pl';
 ok($dbh->err == 0) or (print $DBI::errstr and BAIL_OUT);
 
 my $query = "SELECT schedule.clean_log();";
