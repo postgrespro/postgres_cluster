@@ -65,9 +65,9 @@ my @sql2 = (
 	"ALTER SYSTEM SET schedule.enabled = on",
 	"SELECT pg_reload_conf();",
 	"CREATE TABLE test_results( time_mark timestamp, commentary text )",
-	"DROP ROLE IF EXISTS tester",
-	"CREATE ROLE tester",
-	"GRANT INSERT ON test_results TO tester",
+	"DROP ROLE IF EXISTS _pgpro_tester",
+	"CREATE ROLE _pgpro_tester",
+	"GRANT INSERT ON test_results TO _pgpro_tester",
 );
 map { __do_sql($dbh, $_) } @sql2;
 $dbh->disconnect();
@@ -86,6 +86,7 @@ my %args = (
 );
 my $harness = TAP::Harness->new( \%args );
 my @tests = glob( 't/*.t' );
+### @tests = ('t/jobMaxRunTime.t');
 $harness->runtests(@tests );
 
 
