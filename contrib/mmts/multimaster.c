@@ -2774,6 +2774,10 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 		MTM_ELOG(ERROR, "Too long (%d) connection string '%s': limit is %d",
 			 connStrLen, connStr, MULTIMASTER_MAX_CONN_STR_SIZE-1);
 	}
+
+	while(isspace(*connStr))
+		connStr++;
+
 	strcpy(conn->connStr, connStr);
 
 	host = strstr(connStr, "host=");
