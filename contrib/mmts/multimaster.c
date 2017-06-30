@@ -318,12 +318,15 @@ void MtmReleaseLocks(void)
  * locks[N+1..2*N] are used to synchronize access to distributed lock graph at each node
  * -------------------------------------------
  */
+
+//#define DEBUG_MTM_LOCK 1
+
+#if DEBUG_MTM_LOCK
 static timestamp_t MtmLockLastReportTime;
 static timestamp_t MtmLockElapsedWaitTime;
 static timestamp_t MtmLockMaxWaitTime;
 static size_t      MtmLockHitCount;
-
-//#define DEBUG_MTM_LOCK 1
+#endif
 
 void MtmLock(LWLockMode mode)
 {
@@ -911,7 +914,7 @@ MtmResetTransaction()
 	x->gid[0] = '\0';
 }
 
-
+#if 0
 static const char* const isoLevelStr[] =
 {
 	"read uncommitted",
@@ -919,6 +922,7 @@ static const char* const isoLevelStr[] =
 	"repeatable read",
 	"serializable"
 };
+#endif
 
 bool MtmTransIsActive(void)
 {
@@ -2586,8 +2590,8 @@ void MtmMakeTableLocal(char const* schema, char const* name)
 
 
 typedef struct {
-	text schema;
-	text name;
+	NameData schema;
+	NameData name;
 } MtmLocalTablesTuple;
 
 static void MtmLoadLocalTables(void)
@@ -2607,7 +2611,7 @@ static void MtmLoadLocalTables(void)
 		while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 		{
 			MtmLocalTablesTuple	*t = (MtmLocalTablesTuple*) GETSTRUCT(tuple);
-			MtmMakeTableLocal(text_to_cstring(&t->schema), text_to_cstring(&t->name));
+			MtmMakeTableLocal(NameStr(t->schema), NameStr(t->name));
 		}
 
 		systable_endscan(scan);
@@ -2771,6 +2775,10 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 		MTM_ELOG(ERROR, "Too long (%d) connection string '%s': limit is %d",
 			 connStrLen, connStr, MULTIMASTER_MAX_CONN_STR_SIZE-1);
 	}
+
+	while(isspace(*connStr))
+		connStr++;
+
 	strcpy(conn->connStr, connStr);
 
 	host = strstr(connStr, "host=");
@@ -4795,8 +4803,12 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 			} else {
 				Assert(x->isActive);
 				if (x->status == TRANSACTION_STATUS_ABORTED) {
+					MtmTransState* ts;
+					ts = (MtmTransState*) hash_search(MtmXid2State, &(x->xid), HASH_FIND, NULL);
+					Assert(ts);
+
 					FinishPreparedTransaction(x->gid, false);
-					MTM_ELOG(ERROR, "Transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
+					MTM_ELOG(ERROR, "Transaction %s (%llu) is aborted on node %d. Check its log to see error details.", x->gid, (long64)x->xid, ts->aborted_by_node);
 				} else {
 					FinishPreparedTransaction(x->gid, true);
 					MTM_LOG2("Distributed transaction %s (%lld) is committed at %lld with LSN=%lld", x->gid, (long64)x->xid, MtmGetCurrentTime(), (long64)GetXLogInsertRecPtr());
