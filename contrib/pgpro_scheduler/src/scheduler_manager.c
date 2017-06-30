@@ -25,6 +25,8 @@
 #include "utils/builtins.h"
 #include "utils/timestamp.h"
 #include <sys/time.h>
+#include "utils/lsyscache.h"
+#include "catalog/namespace.h"
 
 #include "char_array.h"
 #include "sched_manager_poll.h"
@@ -1376,7 +1378,7 @@ int update_cron_texttime(scheduler_manager_ctx_t *ctx, int cron_id, TimestampTz 
 	return ret;
 }
 
-int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type)
+int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type, Oid at_reloid)
 { 
 	job_t *expired;
 	int nexpired  = 0;
@@ -1396,10 +1398,14 @@ int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type
 	pgstat_report_activity(STATE_RUNNING, "vanish expired tasks");
 
 	START_SPI_SNAP();
+	if(type == AtJob)
+	{
+		ts_hires = true;
+		scheduler_atjob_id_OID = get_atttype(at_reloid, 1);
+	}
 	expired = type == CronJob ? 
 		get_expired_cron_jobs(ctx->nodename, &nexpired, &is_error):
 		get_expired_at_jobs(ctx->nodename, &nexpired, &is_error);
-	if(type == AtJob) ts_hires = true;
 
 	if(is_error)
 	{
@@ -1760,6 +1766,7 @@ void manager_worker_main(Datum arg)
 	schd_manager_share_t *parent_shared;
 	MemoryContext old = NULL;
 	MemoryContext longTerm;
+	Oid reloid;
 
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
@@ -1814,6 +1821,17 @@ void manager_worker_main(Datum arg)
 	longTerm = init_mem_ctx("long term context for slots");
 	ctx = initialize_scheduler_manager_context(longTerm, database, seg);
 
+	START_SPI_SNAP();
+	reloid = RangeVarGetRelid(makeRangeVarFromNameList(
+		stringToQualifiedNameList("schedule.at_jobs_submitted")), NoLock, true);
+	STOP_SPI_SNAP();
+	if(reloid == InvalidOid)
+	{
+		 ereport(ERROR,
+		 	(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+			 errmsg("scheduler manager cannot find jobs table")));
+	}
+
 	start_at_workers(ctx, shared);
 	clean_at_table(ctx);
 	set_slots_stat_report(ctx);
@@ -1850,8 +1868,8 @@ void manager_worker_main(Datum arg)
 				set_slots_stat_report(ctx); 
 				/* if there are any expired jobs to get rid of */
 
-				scheduler_vanish_expired_jobs(ctx, AtJob);
-				scheduler_vanish_expired_jobs(ctx, CronJob);
+				scheduler_vanish_expired_jobs(ctx, AtJob, reloid);
+				scheduler_vanish_expired_jobs(ctx, CronJob, reloid);
 			}
 		}
 
