@@ -117,6 +117,7 @@ PG_FUNCTION_INFO_V1(mtm_stop_node);
 PG_FUNCTION_INFO_V1(mtm_add_node);
 PG_FUNCTION_INFO_V1(mtm_poll_node);
 PG_FUNCTION_INFO_V1(mtm_recover_node);
+PG_FUNCTION_INFO_V1(mtm_resume_node);
 PG_FUNCTION_INFO_V1(mtm_get_snapshot);
 PG_FUNCTION_INFO_V1(mtm_get_csn);
 PG_FUNCTION_INFO_V1(mtm_get_trans_by_gid);
@@ -1997,7 +1998,7 @@ static void MtmDisableNode(int nodeId)
  */
 static void MtmEnableNode(int nodeId)
 {
-	if (BIT_SET(Mtm->disabledNodeMask, nodeId-1)) {
+	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
 		BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
 		BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
 		BIT_SET(Mtm->recoveredNodeMask, nodeId-1);
@@ -3656,7 +3657,7 @@ void MtmRecoverNode(int nodeId)
 		MTM_ELOG(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nAllNodes);
 	}
 	MtmLock(LW_EXCLUSIVE);
-	if (BIT_SET(Mtm->stoppedNodeMask, nodeId-1))
+	if (BIT_CHECK(Mtm->stoppedNodeMask, nodeId-1))
 	{
 		Assert(BIT_CHECK(Mtm->disabledNodeMask, nodeId-1));
 		BIT_CLEAR(Mtm->stoppedNodeMask, nodeId-1);
@@ -3668,6 +3669,36 @@ void MtmRecoverNode(int nodeId)
 	{
 		MtmBroadcastUtilityStmt(psprintf("select pg_create_logical_replication_slot('" MULTIMASTER_SLOT_PATTERN "', '" MULTIMASTER_NAME "')", nodeId), true);
 		MtmBroadcastUtilityStmt(psprintf("select mtm.recover_node(%d)", nodeId), true);
+	}
+}
+
+/*
+ * Resume previosly stopped node.
+ * This function creates logical replication slot for the node which will collect
+ * all changes which should be sent to this node from this moment.
+ */
+void MtmResumeNode(int nodeId)
+{
+	if (nodeId <= 0 || nodeId > Mtm->nAllNodes)
+	{
+		MTM_ELOG(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nAllNodes);
+	}
+	MtmLock(LW_EXCLUSIVE);
+	if (BIT_CHECK(Mtm->stalledNodeMask, nodeId-1))
+	{
+		MtmUnlock();
+		MTM_ELOG(ERROR, "Node %d can not be resumed because it's replication slot is dropped", nodeId);
+	}
+	if (BIT_CHECK(Mtm->stoppedNodeMask, nodeId-1))
+	{
+		Assert(BIT_CHECK(Mtm->disabledNodeMask, nodeId-1));
+		BIT_CLEAR(Mtm->stoppedNodeMask, nodeId-1);
+	}
+	MtmUnlock();
+
+	if (!MtmIsBroadcast())
+	{
+		MtmBroadcastUtilityStmt(psprintf("select mtm.resume_node(%d)", nodeId), true);
 	}
 }
 
@@ -3763,6 +3794,12 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	}
 	MTM_LOG1("Startup of logical replication to node %d", MtmReplicationNodeId);
 	MtmLock(LW_EXCLUSIVE);
+
+	if (BIT_CHECK(Mtm->stalledNodeMask, MtmReplicationNodeId-1)) {
+		MtmUnlock();
+		MTM_ELOG(ERROR, "Stalled node %d tries to initiate recovery", MtmReplicationNodeId);
+	}
+
 	if (BIT_CHECK(Mtm->stoppedNodeMask, MtmReplicationNodeId-1)) {
 		MTM_ELOG(WARNING, "Stopped node %d tries to initiate recovery", MtmReplicationNodeId);
 		do {
@@ -4146,6 +4183,14 @@ mtm_recover_node(PG_FUNCTION_ARGS)
 {
 	int nodeId = PG_GETARG_INT32(0);
 	MtmRecoverNode(nodeId);
+	PG_RETURN_VOID();
+}
+
+Datum
+mtm_resume_node(PG_FUNCTION_ARGS)
+{
+	int nodeId = PG_GETARG_INT32(0);
+	MtmResumeNode(nodeId);
 	PG_RETURN_VOID();
 }
 

@@ -398,6 +398,7 @@ extern void  MtmUnlockNode(int nodeId);
 extern void  MtmStopNode(int nodeId, bool dropSlot);
 extern void  MtmReconnectNode(int nodeId);
 extern void  MtmRecoverNode(int nodeId);
+extern void  MtmResumeNode(int nodeId);
 extern void  MtmOnNodeDisconnect(int nodeId);
 extern void  MtmOnNodeConnect(int nodeId);
 extern void  MtmWakeUpBackend(MtmTransState* ts);
