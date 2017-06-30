@@ -31,7 +31,7 @@ $sth = $dbh->prepare($query);
 ok($sth->execute()) or (print $DBI::errstr . "\n" and $dbh->disconnect() and BAIL_OUT);
 
 my $result = $sth->fetchrow_array() and $sth->finish();
-ok ($result == 0) or print "Count != 0\n";
+ok ($result == 0) or print "Count $result != 0\n";
 
 $query = "SELECT schedule.deactivate_job(?)";
 $sth = $dbh->prepare($query);
