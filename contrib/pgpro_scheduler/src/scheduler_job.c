@@ -12,6 +12,8 @@
 #include "memutils.h"
 #include "port.h"
 
+extern Oid scheduler_atjob_id_OID;
+
 job_t *init_scheduler_job(MemoryContext mem, job_t *j, unsigned char type)
 {
 	if(j == NULL) j = MemoryContextAlloc(mem, sizeof(job_t));
@@ -22,11 +24,11 @@ job_t *init_scheduler_job(MemoryContext mem, job_t *j, unsigned char type)
 	return j;
 }
 
-job_t *get_at_job(int cron_id, char *nodename, char **perror)
+job_t *get_at_job(int64 cron_id, char *nodename, char **perror)
 {
 	job_t *j;
 	const char *sql = "select last_start_available, array_append('{}'::text[], do_sql)::text[], executor, postpone, max_run_time as time_limit, at, params, depends_on, attempt, resubmit_limit from ONLY at_jobs_process where node = $1 and id = $2";
-	Oid argtypes[2] = { TEXTOID, INT4OID};
+	Oid argtypes[2] = { TEXTOID, scheduler_atjob_id_OID};
 	Datum args[2];
 	spi_response_t *r;
 	char buffer[PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX];
@@ -54,7 +56,7 @@ job_t *get_at_job(int cron_id, char *nodename, char **perror)
 			STOP_SPI_SNAP();
 			snprintf(buffer,
 				PGPRO_SCHEDULER_EXECUTOR_MESSAGE_MAX,
-				"cannot find at job: %d [%s]",
+				"cannot find at job: %ld [%s]",
 				cron_id,  nodename);
 			*perror = _mcopy_string(mem, buffer);
 			destroy_spi_data(r);
@@ -169,7 +171,8 @@ job_t *get_at_job_for_process(MemoryContext mem, char *nodename, char **error)
 	int i;
 	char *oldpath;
 
-	const char *get_job_sql = "select * from at_jobs_submitted s where ((not exists ( select * from at_jobs_submitted s2 where s2.id = any(s.depends_on)) AND not exists ( select * from at_jobs_process p where p.id = any(s.depends_on)) AND s.depends_on is NOT NULL and s.at IS NULL) OR ( s.at IS NOT NULL AND  at <= 'now' and (last_start_available is NULL OR last_start_available > 'now'))) and node = $1 and not canceled order by at,  submit_time limit 1 FOR UPDATE SKIP LOCKED";  
+	/* const char *get_job_sql = "select * from at_jobs_submitted s where ((not exists ( select * from at_jobs_submitted s2 where s2.id = any(s.depends_on)) AND not exists ( select * from at_jobs_process p where p.id = any(s.depends_on)) AND s.depends_on is NOT NULL and s.at IS NULL) OR ( s.at IS NOT NULL AND  at <= 'now' and (last_start_available is NULL OR last_start_available > 'now'))) and node = $1 and not canceled order by at,  submit_time limit 1 FOR UPDATE SKIP LOCKED";  */
+	const char *get_job_sql = "select * from schedule.at_jobs_submitted s where ((not exists ( select * from schedule.at_jobs_submitted s2 where s2.id = any(s.depends_on)) AND not exists ( select * from schedule.at_jobs_process p where p.id = any(s.depends_on)) AND s.depends_on is NOT NULL and s.at IS NULL AND not exists ( select * from schedule.at_jobs_done d where d.id = any(s.depends_on) and d.status=false)) OR ( s.at IS NOT NULL AND  at <= 'now' and (last_start_available is NULL OR last_start_available > 'now'))) and node = $1 and not canceled order by at,  submit_time limit 1 FOR UPDATE SKIP LOCKED ";
 	const char *insert_sql = "insert into at_jobs_process values($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)";
 	spi_response_t *r;
 	spi_response_t *r2;
@@ -200,7 +203,8 @@ job_t *get_at_job_for_process(MemoryContext mem, char *nodename, char **error)
 	init_scheduler_job(mem, job, AtJob);
 	job->dosql = MemoryContextAlloc(mem, sizeof(char *) * 1);
 
-	job->cron_id = get_int_from_spi(r, 0, 1, 0);
+	job->cron_id = scheduler_atjob_id_OID == INT8OID ? 
+		get_int64_from_spi(r, 0, 1, 0): get_int_from_spi(r, 0, 1, 0);
 	job->start_at = get_timestamp_from_spi(r, 0, 5, 0);
 	job->dosql[0] = get_text_from_spi(mem, r, 0, 6);
 	job->sql_params = get_textarray_from_spi(mem, r, 0, 7, &job->sql_params_n);
@@ -233,8 +237,9 @@ job_t *get_at_job_for_process(MemoryContext mem, char *nodename, char **error)
 	destroy_spi_data(r);
 	destroy_spi_data(r2);
 
-	argtypes[0] = INT4OID;
-	values[0] = Int32GetDatum(job->cron_id);
+	argtypes[0] = scheduler_atjob_id_OID;
+	values[0] = scheduler_atjob_id_OID == INT8OID ?
+		Int64GetDatum(job->cron_id): Int32GetDatum(job->cron_id);
 	r = execute_spi_sql_with_args(
 				mem,
 				"delete from at_jobs_submitted where id = $1", 1,
@@ -280,7 +285,8 @@ job_t *get_next_at_job_with_lock(char *nodename, char **error)
 			job = MemoryContextAlloc(mem, sizeof(job_t));
 			init_scheduler_job(mem, job, AtJob);
 
-			job->cron_id = get_int_from_spi(r, 0, 1, 0);
+			job->cron_id = scheduler_atjob_id_OID == INT8OID ? 
+				get_int64_from_spi(r, 0, 1, 0): get_int_from_spi(r, 0, 1, 0);
 			job->start_at = get_timestamp_from_spi(r, 0, 2, 0);
 			job->dosql = get_textarray_from_spi(mem, r, 0, 3, &job->dosql_n);
 			job->sql_params = get_textarray_from_spi(mem, r, 0, 4, &job->sql_params_n);
@@ -321,7 +327,8 @@ job_t *_at_get_jobs_to_do(MemoryContext mem, char *nodename, int *n, int *is_err
 			for(i=0; i < got; i++)
 			{
 				init_scheduler_job(mem, &(jobs[i]), AtJob);
-				jobs[i].cron_id = get_int_from_spi(NULL, i, 1, 0);
+				jobs[i].cron_id = scheduler_atjob_id_OID == INT8OID ? 
+					get_int64_from_spi(NULL, i, 1, 0): get_int_from_spi(NULL, i, 1, 0);
 				jobs[i].start_at = get_timestamp_from_spi(NULL, i, 2, 0);
 				jobs[i].last_start_avail = get_timestamp_from_spi(NULL, i, 3, 0);
 				jobs[i].timelimit = get_interval_seconds_from_spi(NULL, i, 4, 0);
@@ -404,7 +411,8 @@ job_t *get_expired_at_jobs(char *nodename, int *n, int *is_error)
 				init_scheduler_job(CurrentMemoryContext, &(jobs[i]), 2);
 				jobs[i].start_at = get_timestamp_from_spi(NULL, i, 1, 0);
 				jobs[i].last_start_avail = get_timestamp_from_spi(NULL, i, 2, 0);
-				jobs[i].cron_id = get_int_from_spi(NULL, i, 3, 0);
+				jobs[i].cron_id = scheduler_atjob_id_OID == INT8OID ?
+					get_int64_from_spi(NULL, i, 3, 0): get_int_from_spi(NULL, i, 3, 0);
 				jobs[i].node = my_copy_string(nodename);
 			}
 		}
@@ -477,7 +485,7 @@ int _at_move_job_to_log(job_t *j, bool status, bool process)
 {
 	Datum values[3];	
 	char  nulls[3] = { ' ', ' ', ' ' };	
-	Oid argtypes[3] = { INT4OID, BOOLOID, TEXTOID };
+	Oid argtypes[3] = { scheduler_atjob_id_OID, BOOLOID, TEXTOID };
 	int ret;
 	const char *sql_process = "WITH moved_rows AS (DELETE from ONLY at_jobs_process a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_done SELECT *, $2 as status, $3 as reason FROM moved_rows";
 	const char *sql_submitted = "WITH moved_rows AS (DELETE from ONLY at_jobs_submitted a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_done SELECT *, NULL as start_time, $2 as status, $3 as reason FROM moved_rows";
@@ -485,7 +493,8 @@ int _at_move_job_to_log(job_t *j, bool status, bool process)
 
 	sql = process ? sql_process: sql_submitted;
 
-	values[0] = Int32GetDatum(j->cron_id);
+	values[0] = scheduler_atjob_id_OID == INT8OID ?
+		Int64GetDatum(j->cron_id): Int32GetDatum(j->cron_id);
 	values[1] = BoolGetDatum(status);
 	if(j->error)
 	{
@@ -504,11 +513,11 @@ int move_at_job_process(int job_id)
 {
 	const char *sql = "WITH moved_rows AS (DELETE from ONLY at_jobs_submitted a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_process SELECT * FROM moved_rows";
 	Datum values[1];	
-	Oid argtypes[1] = { INT4OID };
+	Oid argtypes[1] = { scheduler_atjob_id_OID };
 	int ret;
 	char *oldpath;
 	
-	values[0] = Int32GetDatum(job_id);
+	values[0] = Int64GetDatum(job_id);
 	oldpath = set_schema(NULL, true);
 	ret = SPI_execute_with_args(sql, 1, argtypes, values, NULL, false, 0);
 	set_schema(oldpath, false);
@@ -522,7 +531,7 @@ int set_at_job_done(job_t *job, char *error, int64 resubmit, char **set_error)
 	char *this_error = NULL;
 	Datum values[21];	
 	char  nulls[21];
-	Oid argtypes[21] = { INT4OID };
+	Oid argtypes[21] = { scheduler_atjob_id_OID };
 	bool canceled = false;
 	int i;
 	char *oldpath;
@@ -539,7 +548,9 @@ int set_at_job_done(job_t *job, char *error, int64 resubmit, char **set_error)
 
 	oldpath = set_schema(NULL, true);
 
-	values[0] = Int32GetDatum(job->cron_id);
+	values[0] = scheduler_atjob_id_OID == INT8OID ?
+		Int64GetDatum(job->cron_id): Int32GetDatum(job->cron_id);
+
 	r = execute_spi_sql_with_args(CurrentMemoryContext, get_sql, 1, argtypes, values, NULL);
 	if(r->retval != SPI_OK_SELECT)
 	{
@@ -551,7 +562,7 @@ int set_at_job_done(job_t *job, char *error, int64 resubmit, char **set_error)
 	}
 	if(r->n_rows <= 0)
 	{
-		snprintf(buff, 200, "Cannot find job to move: %d", job->cron_id);
+		snprintf(buff, 200, "Cannot find job to move: %ld", job->cron_id);
 		*set_error = _mcopy_string(CurrentMemoryContext, buff);
 		set_schema(oldpath, false);
 		pfree(oldpath);
@@ -653,7 +664,7 @@ int _v1_set_at_job_done(job_t *job, char *error, int64 resubmit)
 	char *this_error = NULL;
 	Datum values[3];	
 	char  nulls[3] = { ' ', ' ', ' ' };	
-	Oid argtypes[3] = { INT4OID, BOOLOID, TEXTOID };
+	Oid argtypes[3] = { scheduler_atjob_id_OID, BOOLOID, TEXTOID };
 	int ret;
 	char *oldpath;
 	const char *sql;
@@ -663,7 +674,8 @@ int _v1_set_at_job_done(job_t *job, char *error, int64 resubmit)
 	/* const char *resubmit_sql = "update ONLY at_jobs_submitted SET attempt = attempt + 1, at = $2 WHERE id = $1"; */
 	const char *resubmit_sql = "WITH moved_rows AS (DELETE from ONLY at_jobs_process a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_submitted SELECT id, node, name, comments, $2, do_sql, params, depends_on, executor, owner, last_start_available, attempt +1 , resubmit_limit, postpone, max_run_time, canceled, submit_time FROM moved_rows";
 
-	values[0] = Int32GetDatum(job->cron_id);
+	values[0] = scheduler_atjob_id_OID == INT8OID ?
+		Int64GetDatum(job->cron_id): Int32GetDatum(job->cron_id);
 
 	if(resubmit)
 	{
@@ -713,12 +725,13 @@ int _v1_set_at_job_done(job_t *job, char *error, int64 resubmit)
 int resubmit_at_job(job_t *j, TimestampTz next)
 {
 	Datum values[2];	
-	Oid argtypes[2] = { INT4OID, TIMESTAMPTZOID };
+	Oid argtypes[2] = { scheduler_atjob_id_OID, TIMESTAMPTZOID };
 	int ret;
 	const char *sql = "WITH moved_rows AS (DELETE from ONLY at_jobs_process a WHERE a.id = $1 RETURNING a.*) INSERT INTO at_jobs_submitted SELECT id, node, name, comments, $2, do_sql, params, depends_on, executor, owner, last_start_available, attempt +1 , resubmit_limit, postpone, max_run_time, submit_time FROM moved_rows";
 
 
-	values[0] = Int32GetDatum(j->cron_id);
+	values[0] = scheduler_atjob_id_OID == INT8OID ?
+		Int64GetDatum(j->cron_id): Int32GetDatum(j->cron_id);
 	values[1] = TimestampTzGetDatum(next);
 	if(select_count_with_args("SELECT count(*) FROM at_jobs_process WHERE NOT canceled and id = $1", 1, argtypes, values, NULL))
 	{
