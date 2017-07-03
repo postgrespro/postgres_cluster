@@ -2348,15 +2348,15 @@ doLog(TState *thread, CState *st, instr_time *now,
 		while (agg->start_time + agg_interval < INSTR_TIME_GET_DOUBLE(*now))
 		{
 			/* print aggregated report to logfile */
-			fprintf(logfile, "%ld " INT64_FORMAT " " INT64_FORMAT " " INT64_FORMAT " %.0f %.0f %.0f %.0f",
+			fprintf(logfile, "%ld " INT64_FORMAT " %.0f %.0f %.0f %.0f " INT64_FORMAT " " INT64_FORMAT,
 					agg->start_time,
 					agg->cnt,
-					agg->serialization_failures,
-					agg->deadlock_failures,
 					agg->latency.sum,
 					agg->latency.sum2,
 					agg->latency.min,
-					agg->latency.max);
+					agg->latency.max,
+					agg->serialization_failures,
+					agg->deadlock_failures);
 			if (throttle_delay)
 			{
 				fprintf(logfile, " %.0f %.0f %.0f %.0f",
@@ -2386,9 +2386,9 @@ doLog(TState *thread, CState *st, instr_time *now,
 			snprintf(transaction_label, sizeof(transaction_label), "skipped");
 		else if (st->serialization_failure && st->deadlock_failure)
 			snprintf(transaction_label, sizeof(transaction_label),
-					 "serialization and deadlock failures");
+					 "serialization_and_deadlock_failures");
 		else if (st->serialization_failure || st->deadlock_failure)
-			snprintf(transaction_label, sizeof(transaction_label), "%s failure",
+			snprintf(transaction_label, sizeof(transaction_label), "%s_failure",
 					 st->serialization_failure ? "serialization" : "deadlock");
 
 #ifndef WIN32
@@ -4685,14 +4685,14 @@ threadRun(void *arg)
 					sprintf(tbuf, "%.1f s", total_run);
 
 				fprintf(stderr,
-						"progress: %s, %.1f tps, " INT64_FORMAT " serialization failures transactions, " INT64_FORMAT " deadlock failures transactions, lat %.3f ms stddev %.3f",
+						"progress: %s, %.1f tps, lat %.3f ms stddev %.3f, failed trx: " INT64_FORMAT " (serialization), " INT64_FORMAT " (deadlocks)",
 						tbuf,
 						tps,
+						latency,
+						stdev,
 						(cur.serialization_failures -
 						 last.serialization_failures),
-						(cur.deadlock_failures - last.deadlock_failures),
-						latency,
-						stdev);
+						(cur.deadlock_failures - last.deadlock_failures));
 
 				if (throttle_delay)
 				{
