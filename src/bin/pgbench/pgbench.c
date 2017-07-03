@@ -769,7 +769,7 @@ accumStats(StatsData *stats, bool skipped, bool serialization_failure,
 {
 	stats->cnt++;
 
-	if (skipped || serialization_failure || deadlock_failure)
+	if (skipped)
 	{
 		/* no latency to record on such transactions */
 		if (skipped)
@@ -778,6 +778,18 @@ accumStats(StatsData *stats, bool skipped, bool serialization_failure,
 			stats->serialization_failures++;
 		if (deadlock_failure)
 			stats->deadlock_failures++;
+		/* no latency to record on skipped transactions */
+		stats->skipped++;
+	}
+	else if (serialization_failure)
+	{
+		/* no latency to record on transactions with serialization failures */
+		stats->serialization_failures++;
+	}
+	else if (deadlock_failure)
+	{
+		/* no latency to record on transactions with deadlock failures */
+		stats->deadlock_failures++;
 	}
 	else
 	{
