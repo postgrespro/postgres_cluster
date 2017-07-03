@@ -82,13 +82,12 @@
       </listitem>
       <listitem>
         <para>
-          The replicated tables must have primary keys or replica identity. Otherwise, 
-          <filename>multimaster</filename> will not allow replication 
-          because of the logical replication restrictions. Unlogged tables are not replicated, as in the standard <productname>PostgreSQL</productname>.
+          The replicated tables must have primary keys or replica identity because of logical replication restrictions.
+          Although tables without primary keys can be replicated, <filename>multimaster</filename> does not allow 
+          <literal>UPDATE</literal> and <literal>DELETE</literal> operations on such tables. For details, see
+          <xref linkend="ignore-tables-without-pk">.
+          Unlogged tables are not replicated, as in the standard <productname>PostgreSQL</productname>.
         </para>
-        <note><para>You can enable replication
-of tables without primary keys by setting the <varname>multimaster.ignore_tables_without_pk</varname> variable to <literal>false</literal>. However, take into account that
-<filename>multimaster</filename> does not allow update operations on such tables.</para></note>
       </listitem>
       <listitem>
         <para>
@@ -425,7 +424,7 @@ max_worker_processes = 250
 multimaster.max_nodes = 3  # cluster size
 multimaster.node_id = 1    # the 1-based index of this node 
                            # in the cluster
-multimaster.conn_strings = 'dbname=mydb user=myuser host=node1, dbname=mydb user=myuser host=node2, dbname=mydb user=myuser host=node3'
+multimaster.conn_strings = 'dbname=mydb user=myuser host=node1,dbname=mydb user=myuser host=node2,dbname=mydb user=myuser host=node3'
                            # comma-separated list 
                            # of connection strings 
                            # to neighbor nodes
@@ -545,7 +544,7 @@ mtm.get_cluster_state();
           <para>
             <varname>multimaster.min_recovery_lag</varname> &mdash; sets the
             minimal WAL lag between the node to be restored and the current cluster state. 
-            By default,  <varname>multimaster.min_recovery_lag</varname> is set to 100KB.
+            By default, <varname>multimaster.min_recovery_lag</varname> is set to 100KB.
             When the disconnected node is fast-forwarded up to the
             <varname>multimaster.min_recovery_lag</varname> threshold,
             <filename>multimaster</filename> stops all new commits to the
@@ -689,8 +688,8 @@ pg_basebackup -D <replaceable>datadir</replaceable> -h node1 -x
         </para>
         <programlisting>
 multimaster.node_id = 4
-multimaster.conn_strings = 'dbname=mydb user=myuser host=node1, dbname=mydb user=myuser host=node2,
-                            dbname=mydb user=myuser host=node3, dbname=mydb user=myuser host=node4'
+multimaster.conn_strings = 'dbname=mydb user=myuser host=node1,dbname=mydb user=myuser host=node2,
+                            dbname=mydb user=myuser host=node3,dbname=mydb user=myuser host=node4'
 </programlisting>
       </listitem>
       <listitem>
@@ -751,7 +750,7 @@ SELECT mtm.stop_node(3);
   <sect3 id="multimaster-restoring-a-node-manually">
     <title>Restoring a Cluster Node</title>
     <para>
-      The <filename>multimaster</filename> extension can <link linkend="multimaster-failure-detection-and-recovery">automatically restore</link> a failed node if the WAL is available for the time when the node was disconnected from the cluster. However, if the data updates on the alive nodes exceed the allowed WAL size specified in the <literal>multimaster.max_recovery_lag</literal> variable. In this case, you can manually restore the failed node.
+      The <filename>multimaster</filename> extension can <link linkend="multimaster-failure-detection-and-recovery">automatically restore</link> a failed node if the WAL is available for the time when the node was disconnected from the cluster. However, if the data updates on the alive nodes exceed the allowed WAL size specified in the <literal>multimaster.max_recovery_lag</literal> variable, automatic recovery is impossible. In this case, you can manually restore the failed node.
       </para>
     <para>
       Suppose <literal>node2</literal> got disconnected from your three-node cluster and needs to be manually restored. The typical workflow is as follows:
@@ -814,7 +813,7 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
     The <varname>multimaster.conn_strings</varname> parameter must be identical on all nodes.
     Each connection string must include the name of the database to replicate
     and the cluster node domain name. For example, 'dbname=mydb
-    host=node1, dbname=mydb host=node2, dbname=mydb host=node3'.
+    host=node1,dbname=mydb host=node2,dbname=mydb host=node3'.
     Optionally, you can add other <link linkend="libpq-paramkeywords">connection parameters</link> to change the default connection settings.
     Connection strings must appear in the order of the node IDs
     specified in the <varname>multimaster.node_id</varname> variable.
@@ -866,14 +865,17 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
     variable to zero, replication slot will not be dropped. </para><para>Default:
     100000000
   </para></listitem></varlistentry>
-  <varlistentry><term><varname>multimaster.ignore_tables_without_pk</varname><indexterm><primary><varname>multimaster.ignore_tables_without_pk</varname></primary></indexterm></term><listitem><para>
+  <varlistentry id="ignore-tables-without-pk"><term><varname>multimaster.ignore_tables_without_pk</varname><indexterm><primary><varname>multimaster.ignore_tables_without_pk</varname></primary></indexterm></term><listitem><para>
     Boolean.
-    This variable enables/disables replication of tables without primary
-    keys. By default, such replication is
-    disabled because of the logical replication restrictions. To enable
-    replication of tables without primary keys, you can set this variable to <literal>false</literal>. However, take into
-    account that <varname>multimaster</varname> does not allow update
-    operations on such tables. </para><para>Default: true
+     This variable enables/disables replication of <literal>INSERT</literal> operations
+     for tables without primary keys. By default, such replication is enabled.
+     Setting this parameter to <literal>on</literal> disables replication
+     of <literal>INSERT</literal> operations for these tables.
+     Regardless of this setting, DDL operations on tables without primary keys are always replicated,
+     while <literal>UPDATE</literal> and <literal>DELETE</literal> operations are not replicated
+     because of the logical replication restrictions.
+    </para>
+    <para>Default: <literal>off</literal>
   </para></listitem></varlistentry>
   <varlistentry><term><varname>multimaster.cluster_name</varname><indexterm><primary><varname>multimaster.cluster_name</varname></primary></indexterm></term><listitem><para>
     Name of the cluster. If
@@ -1072,9 +1074,9 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
 
     <varlistentry>
      <term>
-      <function>mtm.collect_cluster_state()</function>
+      <function>mtm.collect_cluster_state_info()</function>
       <indexterm>
-       <primary><function>mtm.collect_cluster_state</></primary>
+       <primary><function>mtm.collect_cluster_state_info</></primary>
       </indexterm>
      </term>
      <listitem>
@@ -1094,6 +1096,12 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
       <para>Shows the status of the <filename>multimaster</filename> extension. Returns a tuple of the following values:
       </para>
        <itemizedlist>
+          <listitem>
+            <para>
+              <parameter>id</parameter>, <type>integer</type>
+            </para>
+            <para>Node ID.</para>
+          </listitem>
           <listitem>
             <para>
               <parameter>status</parameter>, <type>text</type>
@@ -1245,9 +1253,9 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
     </varlistentry>
         <varlistentry>
      <term>
-      <function>mtm.drop_node(<parameter>node</parameter> <type>integer</type>, <parameter>drop_slot</parameter> <type>bool</type> default false)</function>
+      <function>mtm.stop_node(<parameter>node</parameter> <type>integer</type>, <parameter>drop_slot</parameter> <type>bool</type> default false)</function>
       <indexterm>
-       <primary><function>mtm.drop_node</></primary>
+       <primary><function>mtm.stop_node</></primary>
       </indexterm>
      </term>
      <listitem>
@@ -1304,7 +1312,7 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
     </varlistentry>
         <varlistentry>
      <term>
-      <function>mtm.make_table_local(<parameter>relation</parameter> <type>regclass</type>)</function>
+      <function>mtm.make_table_local(<parameter>'table_name'</parameter> <type>regclass</type>)</function>
       <indexterm>
        <primary><function>mtm.make_table_local</></primary>
       </indexterm>
@@ -1317,7 +1325,7 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
        <itemizedlist>
         <listitem>
          <para>
-         <parameter>relation</parameter> &mdash; The table you would like to
+         <parameter>table_name</parameter> &mdash; The table you would like to
               exclude from the replication scheme.</para>
               <para>Type: <literal>regclass</literal></para>
         </listitem>
@@ -1333,8 +1341,10 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
   <sect2 id="multimaster-compatibility">
     <title>Compatibility</title>
     <para>
-      The <filename>multimaster</filename> extension currently passes 162
-      of 166 <productname>PostgreSQL</productname> regression tests. We are working right now on
+      The <filename>multimaster</filename> extension currently passes almost all
+      <productname>PostgreSQL</productname> regression tests, except for a few tests for
+      edge cases related to working with temporary tables and updating <literal>enum</literal>, which are not always
+      transactional in <productname>PostgreSQL</productname>. We are working right now on
       providing full compatibility with the standard <productname>PostgreSQL</productname>.
     </para>
   </sect2>
