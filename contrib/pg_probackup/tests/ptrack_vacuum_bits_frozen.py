@@ -1,26 +1,26 @@
+import os
 import unittest
-from sys import exit
-from testgres import get_new_node, stop_all
-from os import path, open, lseek, read, close, O_RDONLY
-from .ptrack_helpers import ProbackupTest, idx_ptrack
+from .helpers.ptrack_helpers import ProbackupTest, idx_ptrack
 
 
 class SimpleTest(ProbackupTest, unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(SimpleTest, self).__init__(*args, **kwargs)
+        self.module_name = 'ptrack_vacuum_bits_frozen'
 
-    def teardown(self):
-        # clean_all()
-        stop_all()
-
+    # @unittest.skip("skip")
+    # @unittest.expectedFailure
     def test_ptrack_vacuum_bits_frozen(self):
-        print 'test_ptrack_vacuum_bits_frozen started'
-        node = self.make_simple_node(base_dir="tmp_dirs/ptrack/test_ptrack_vacuum_bits_frozen",
+        fname = self.id().split('.')[3]
+        node = self.make_simple_node(base_dir="{0}/{1}/node".format(self.module_name, fname),
             set_replication=True,
-            initdb_params=['--data-checksums', '-A trust'],
+            initdb_params=['--data-checksums'],
             pg_options={'ptrack_enable': 'on', 'wal_level': 'replica', 'max_wal_senders': '2'})
-
+        backup_dir = os.path.join(self.tmp_path, self.module_name, fname, 'backup')
+        self.init_pb(backup_dir)
+        self.add_instance(backup_dir, 'node', node)
         node.start()
+
         self.create_tblspace_in_node(node, 'somedata')
 
         # Create table and indexes
@@ -44,8 +44,7 @@ class SimpleTest(ProbackupTest, unittest.TestCase):
             idx_ptrack[i]['old_pages'] = self.get_md5_per_page_for_fork(
                 idx_ptrack[i]['path'], idx_ptrack[i]['old_size'])
 
-        self.init_pb(node)
-        self.backup_pb(node, backup_type='full', options=['-j100', '--stream'])
+        self.backup_node(backup_dir, 'node', node, options=['-j100', '--stream'])
 
         node.psql('postgres', 'vacuum freeze t_heap')
         node.psql('postgres', 'checkpoint')
@@ -60,13 +59,10 @@ class SimpleTest(ProbackupTest, unittest.TestCase):
                 idx_ptrack[i]['path'], idx_ptrack[i]['new_size'])
             # get ptrack for every idx
             idx_ptrack[i]['ptrack'] = self.get_ptrack_bits_per_page_for_fork(
-                idx_ptrack[i]['path'], idx_ptrack[i]['new_size'])
+                node, idx_ptrack[i]['path'], idx_ptrack[i]['new_size'])
 
             # compare pages and check ptrack sanity
             self.check_ptrack_sanity(idx_ptrack[i])
 
-        self.clean_pb(node)
-        node.stop()
-
-if __name__ == '__main__':
-    unittest.main()
+        # Clean after yourself
+        self.del_test_dir(self.module_name, fname)

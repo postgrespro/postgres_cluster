@@ -1,29 +1,26 @@
-import unittest
-from sys import exit
-from testgres import get_new_node, stop_all
 import os
-from signal import SIGTERM
-from .ptrack_helpers import ProbackupTest, idx_ptrack
-from time import sleep
+import unittest
+from .helpers.ptrack_helpers import ProbackupTest, idx_ptrack
 
 
 class SimpleTest(ProbackupTest, unittest.TestCase):
     def __init__(self, *args, **kwargs):
         super(SimpleTest, self).__init__(*args, **kwargs)
+        self.module_name = 'ptrack_move_to_tablespace'
 
-    def teardown(self):
-        # clean_all()
-        stop_all()
-
+    # @unittest.skip("skip")
+    # @unittest.expectedFailure
     def test_ptrack_recovery(self):
-        fname = self.id().split(".")[3]
-        print '{0} started'.format(fname)
-        node = self.make_simple_node(base_dir="tmp_dirs/ptrack/{0}".format(fname),
+        fname = self.id().split('.')[3]
+        node = self.make_simple_node(base_dir="{0}/{1}/node".format(self.module_name, fname),
             set_replication=True,
-            initdb_params=['--data-checksums', '-A trust'],
+            initdb_params=['--data-checksums'],
             pg_options={'ptrack_enable': 'on', 'wal_level': 'replica', 'max_wal_senders': '2'})
-
+        backup_dir = os.path.join(self.tmp_path, self.module_name, fname, 'backup')
+        self.init_pb(backup_dir)
+        self.add_instance(backup_dir, 'node', node)
         node.start()
+
         self.create_tblspace_in_node(node, 'somedata')
 
         # Create table and indexes
@@ -49,12 +46,9 @@ class SimpleTest(ProbackupTest, unittest.TestCase):
             idx_ptrack[i]['path'] = self.get_fork_path(node, i)
             # get ptrack for every idx
             idx_ptrack[i]['ptrack'] = self.get_ptrack_bits_per_page_for_fork(
-                idx_ptrack[i]['path'], idx_ptrack[i]['size'])
+                node, idx_ptrack[i]['path'], idx_ptrack[i]['size'])
             # check that ptrack has correct bits after recovery
             self.check_ptrack_recovery(idx_ptrack[i])
 
-        self.clean_pb(node)
-        node.stop()
-
-if __name__ == '__main__':
-    unittest.main()
+        # Clean after yourself
+        self.del_test_dir(self.module_name, fname)
