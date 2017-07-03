@@ -13,86 +13,92 @@
 #include "postgres_fe.h"
 
 #include <limits.h>
-#include "libpq-fe.h"
-
-#include "pgut/pgut.h"
-#include "access/xlogdefs.h"
-#include "access/xlog_internal.h"
-#include "catalog/pg_control.h"
-#include "utils/pg_crc.h"
-#include "parray.h"
-#include "datapagemap.h"
-#include "storage/bufpage.h"
-#include "storage/block.h"
-#include "storage/checksum.h"
+#include <libpq-fe.h>
 
 #ifndef WIN32
 #include <sys/mman.h>
 #endif
 
-/* Query to fetch current transaction ID */
-#define TXID_CURRENT_SQL	"SELECT txid_current();"
-#define TXID_CURRENT_IF_SQL	"SELECT txid_snapshot_xmax(txid_current_snapshot());"
+#include "access/timeline.h"
+#include "access/xlogdefs.h"
+#include "access/xlog_internal.h"
+#include "catalog/pg_control.h"
+#include "storage/block.h"
+#include "storage/bufpage.h"
+#include "storage/checksum.h"
+#include "utils/pg_crc.h"
+
+#include "utils/parray.h"
+#include "utils/pgut.h"
+
+#include "datapagemap.h"
+
+# define PG_STOP_BACKUP_TIMEOUT 300
+/*
+ * Macro needed to parse ptrack.
+ * NOTE Keep those values syncronised with definitions in ptrack.h
+ */
+#define PTRACK_BITS_PER_HEAPBLOCK 1
+#define HEAPBLOCKS_PER_BYTE (BITS_PER_BYTE / PTRACK_BITS_PER_HEAPBLOCK)
 
 /* Directory/File names */
 #define DATABASE_DIR			"database"
 #define BACKUPS_DIR				"backups"
 #define PG_XLOG_DIR				"pg_xlog"
 #define PG_TBLSPC_DIR			"pg_tblspc"
-#define BACKUP_CONF_FILE		"backup.conf"
+#define BACKUP_CONTROL_FILE		"backup.control"
 #define BACKUP_CATALOG_CONF_FILE	"pg_probackup.conf"
 #define BACKUP_CATALOG_PID		"pg_probackup.pid"
-#define MKDIRS_SH_FILE			"mkdirs.sh"
-#define DATABASE_FILE_LIST		"file_database.txt"
+#define DATABASE_FILE_LIST		"backup_content.control"
 #define PG_BACKUP_LABEL_FILE	"backup_label"
 #define PG_BLACK_LIST			"black_list"
+#define PG_TABLESPACE_MAP_FILE "tablespace_map"
 
 /* Direcotry/File permission */
 #define DIR_PERMISSION		(0700)
 #define FILE_PERMISSION		(0600)
 
+/* 64-bit xid support for PGPRO_EE */
 #ifndef PGPRO_EE
 #define XID_FMT "%u"
 #endif
 
-/* backup mode file */
+typedef enum CompressAlg
+{
+	NOT_DEFINED_COMPRESS = 0,
+	NONE_COMPRESS,
+	PGLZ_COMPRESS,
+	ZLIB_COMPRESS,
+} CompressAlg;
+
+/* Information about single file (or dir) in backup */
 typedef struct pgFile
 {
-	time_t	mtime;			/* time of last modification */
 	mode_t	mode;			/* protection (file type and permission) */
 	size_t	size;			/* size of the file */
 	size_t	read_size;		/* size of the portion read (if only some pages are
-							   backed up partially, it's different from size) */
+							   backed up, it's different from size) */
 	size_t	write_size;		/* size of the backed-up file. BYTES_INVALID means
 							   that the file existed but was not backed up
 							   because not modified since last backup. */
 	pg_crc32 crc;			/* CRC value of the file, regular file only */
-	char	*linked;			/* path of the linked file */
+	char	*linked;		/* path of the linked file */
 	bool	is_datafile;	/* true if the file is PostgreSQL data file */
 	char	*path;			/* path of the file */
-	char	*ptrack_path;
+	char	*ptrack_path;	/* path of the ptrack fork of the relation */
 	int		segno;			/* Segment number for ptrack */
-	uint64	generation;		/* Generation of compressed file.
-							 * -1 for non-compressed files */
-	int		is_partial_copy; /* for compressed files.
-							  * 1 if backed up via copy_file_partly()  */
-	volatile uint32 lock;
-	datapagemap_t pagemap;
+	bool	is_cfs;			/* Flag to distinguish files compressed by CFS*/
+	uint64	generation;		/* Generation of the compressed file.If generation
+							 * has changed, we cannot backup compressed file
+							 * partially. Has no sense if (is_cfs == false). */
+	bool	is_partial_copy; /* If the file was backed up via copy_file_partly().
+							  * Only applies to is_cfs files. */
+	CompressAlg compress_alg; /* compression algorithm applied to the file */
+	volatile uint32 lock;	/* lock for synchronization of parallel threads  */
+	datapagemap_t pagemap;	/* bitmap of pages updated since previous backup */
 } pgFile;
 
-#define IsValidTime(tm)	\
-	((tm.tm_sec >= 0 && tm.tm_sec <= 60) && 	/* range check for tm_sec (0-60)  */ \
-	 (tm.tm_min >= 0 && tm.tm_min <= 59) && 	/* range check for tm_min (0-59)  */ \
-	 (tm.tm_hour >= 0 && tm.tm_hour <= 23) && 	/* range check for tm_hour(0-23)  */ \
-	 (tm.tm_mday >= 1 && tm.tm_mday <= 31) && 	/* range check for tm_mday(1-31)  */ \
-	 (tm.tm_mon >= 0 && tm.tm_mon <= 11) && 	/* range check for tm_mon (0-23)  */ \
-	 (tm.tm_year + 1900 >= 1900)) 			/* range check for tm_year(70-)    */
-
-/* Effective data size */
-#define MAPSIZE (BLCKSZ - MAXALIGN(SizeOfPageHeaderData))
-
-/* Backup status */
-/* XXX re-order ? */
+/* Current state of backup */
 typedef enum BackupStatus
 {
 	BACKUP_STATUS_INVALID,		/* the pgBackup is invalid */
@@ -108,59 +114,104 @@ typedef enum BackupStatus
 typedef enum BackupMode
 {
 	BACKUP_MODE_INVALID = 0,
-	BACKUP_MODE_DIFF_PAGE,		/* differential page backup */
-	BACKUP_MODE_DIFF_PTRACK,	/* differential page backup with ptrack system*/
+	BACKUP_MODE_DIFF_PAGE,		/* incremental page backup */
+	BACKUP_MODE_DIFF_PTRACK,	/* incremental page backup with ptrack system*/
 	BACKUP_MODE_FULL			/* full backup */
 } BackupMode;
 
-/*
- * pg_probackup takes backup into the directroy $BACKUP_PATH/<date>/<time>.
- *
- * status == -1 indicates the pgBackup is invalid.
- */
+typedef enum ProbackupSubcmd
+{
+	INIT = 0,
+	ARCHIVE_PUSH,
+	ARCHIVE_GET,
+	ADD_INSTANCE,
+	DELETE_INSTANCE,
+	BACKUP,
+	RESTORE,
+	VALIDATE,
+	SHOW,
+	DELETE,
+	SET_CONFIG,
+	SHOW_CONFIG
+} ProbackupSubcmd;
+
+
+/* special values of pgBackup fields */
+#define INVALID_BACKUP_ID	 0
+#define BYTES_INVALID		(-1)
+
+typedef struct pgBackupConfig
+{
+	uint64		system_identifier;
+	char		*pgdata;
+	const char	*pgdatabase;
+	const char	*pghost;
+	const char	*pgport;
+	const char	*pguser;
+
+	const char *master_host;
+	const char *master_port;
+	const char *master_db;
+	const char *master_user;
+	int			replica_timeout;
+
+	int			log_level;
+	char	   *log_filename;
+	char	   *error_log_filename;
+	char	   *log_directory;
+	int			log_rotation_size;
+	int			log_rotation_age;
+
+	uint32		retention_redundancy;
+	uint32		retention_window;
+
+	CompressAlg	compress_alg;
+	int			compress_level;
+} pgBackupConfig;
+
+/* Information about single backup stored in backup.conf */
 typedef struct pgBackup
 {
-	/* Backup Level */
-	BackupMode		backup_mode;
-
-	/* Status - one of BACKUP_STATUS_xxx */
-	BackupStatus	status;
-
-	/* Timestamp, etc. */
-	TimeLineID		tli;
-	XLogRecPtr		start_lsn;
-	XLogRecPtr		stop_lsn;
-	time_t			start_time;
-	time_t			end_time;
-	time_t			recovery_time;
-	TransactionId	recovery_xid;
-
-	/* Different sizes (-1 means nothing was backed up) */
+	BackupMode		backup_mode; /* Mode - one of BACKUP_MODE_xxx above*/
+	time_t			backup_id;	 /* Identifier of the backup.
+								  * Currently it's the same as start_time */
+	BackupStatus	status;		/* Status - one of BACKUP_STATUS_xxx above*/
+	TimeLineID		tli; 		/* timeline of start and stop baskup lsns */
+	XLogRecPtr		start_lsn;	/* backup's starting transaction log location */
+	XLogRecPtr		stop_lsn;	/* backup's finishing transaction log location */
+	time_t			start_time;	/* since this moment backup has status
+								 * BACKUP_STATUS_RUNNING */
+	time_t			end_time;	/* the moment when backup was finished, or the moment
+								 * when we realized that backup is broken */
+	time_t			recovery_time;	/* Earliest moment for which you can restore
+									 * the state of the database cluster using
+									 * this backup */
+	TransactionId	recovery_xid;	/* Earliest xid for which you can restore
+									 * the state of the database cluster using
+									 * this backup */
 	/*
 	 * Amount of raw data. For a full backup, this is the total amount of
 	 * data while for a differential backup this is just the difference
 	 * of data taken.
+	 * BYTES_INVALID means nothing was backed up.
 	 */
 	int64			data_bytes;
+	/* Size of WAL files in archive needed to restore this backup */
+	int64			wal_bytes;
 
-	/* data/wal block size for compatibility check */
+	/* Fields needed for compatibility check */
 	uint32			block_size;
 	uint32			wal_block_size;
 	uint32			checksum_version;
-	bool			stream;
-	time_t			parent_backup;
+
+	bool			stream; 		/* Was this backup taken in stream mode?
+									 * i.e. does it include all needed WAL files? */
+	time_t			parent_backup; 	/* Identifier of the previous backup.
+									 * Which is basic backup for this
+									 * incremental backup. */
 } pgBackup;
 
-/* special values of pgBackup */
-#define KEEP_INFINITE			(INT_MAX)
-#define BYTES_INVALID			(-1)
-
-typedef struct pgTimeLine
-{
-	TimeLineID	tli;
-	XLogRecPtr	end;
-} pgTimeLine;
-
+/* Recovery target for restore and validate subcommands */
 typedef struct pgRecoveryTarget
 {
 	bool			time_specified;
@@ -170,17 +221,16 @@ typedef struct pgRecoveryTarget
 	bool			recovery_target_inclusive;
 } pgRecoveryTarget;
 
+/* Union to ease operations on relation pages */
 typedef union DataPage
 {
 	PageHeaderData	page_data;
 	char			data[BLCKSZ];
 } DataPage;
 
-
 /*
- * This struct definition mirrors one from cfs.h,
- * but doesn't use atomic variables, since they are not allowed in
- * frontend code.
+ * This struct and function definitions mirror ones from cfs.h, but doesn't use
+ * atomic variables, since they are not allowed in frontend code.
  */
 typedef struct
 {
@@ -200,7 +250,7 @@ extern int cfs_munmap(FileMap* map);
  * return pointer that exceeds the length of prefix from character string.
  * ex. str="/xxx/yyy/zzz", prefix="/xxx/yyy", return="zzz".
  */
-#define JoinPathEnd(str, prefix) \
+#define GetRelativePath(str, prefix) \
 	((strlen(str) <= strlen(prefix)) ? "" : str + strlen(prefix) + 1)
 
 /*
@@ -210,54 +260,77 @@ extern int cfs_munmap(FileMap* map);
 #define XLogDataFromLSN(data, xlogid, xrecoff)		\
 	sscanf(data, "%X/%X", xlogid, xrecoff)
 
-/* path configuration */
+/* directory options */
 extern char *backup_path;
+extern char backup_instance_path[MAXPGPATH];
 extern char *pgdata;
 extern char arclog_path[MAXPGPATH];
 
-/* common configuration */
-extern bool check;
-
-/* current settings */
-extern pgBackup current;
-
-/* exclude directory list for $PGDATA file listing */
-extern const char *pgdata_exclude_dir[];
-
+/* common options */
 extern int num_threads;
 extern bool stream_wal;
-extern bool from_replica;
 extern bool progress;
+
+/* backup options */
+extern bool	smooth_checkpoint;
+extern uint32 archive_timeout;
+extern bool from_replica;
+extern const char *master_db;
+extern const char *master_host;
+extern const char *master_port;
+extern const char *master_user;
+extern uint32 replica_timeout;
+
+/* delete options */
 extern bool delete_wal;
+extern bool	delete_expired;
+extern bool	apply_to_all;
+extern bool	force_delete;
 
-extern uint64 system_identifier;
-
-/* retention configuration */
+/* retention options */
 extern uint32 retention_redundancy;
 extern uint32 retention_window;
 
+/* compression options */
+extern CompressAlg compress_alg;
+extern int    compress_level;
+extern bool		compress_shortcut;
+
+#define DEFAULT_COMPRESS_LEVEL 6
+
+extern CompressAlg parse_compress_alg(const char *arg);
+extern const char* deparse_compress_alg(int alg);
+/* other options */
+extern char *instance_name;
+extern uint64 system_identifier;
+
+/* current settings */
+extern pgBackup current;
+extern ProbackupSubcmd	backup_subcmd;
+
+/* in dir.c */
+/* exclude directory list for $PGDATA file listing */
+extern const char *pgdata_exclude_dir[];
+
 /* in backup.c */
-extern int do_backup(bool smooth_checkpoint);
+extern int do_backup(void);
 extern BackupMode parse_backup_mode(const char *value);
-extern void check_server_version(void);
 extern bool fileExists(const char *path);
 extern void process_block_change(ForkNumber forknum, RelFileNode rnode,
 								 BlockNumber blkno);
 
 /* in restore.c */
-extern int do_restore(time_t backup_id,
+extern int do_restore_or_validate(time_t target_backup_id,
 					  const char *target_time,
 					  const char *target_xid,
 					  const char *target_inclusive,
-					  TimeLineID target_tli);
+					  TimeLineID target_tli,
+					  bool is_restore);
 extern bool satisfy_timeline(const parray *timelines, const pgBackup *backup);
 extern bool satisfy_recovery_target(const pgBackup *backup,
 									const pgRecoveryTarget *rt);
-extern TimeLineID get_fullbackup_timeline(parray *backups,
-										  const pgRecoveryTarget *rt);
-extern TimeLineID findNewestTimeLine(TimeLineID startTLI);
-extern parray * readTimeLineHistory(TimeLineID targetTLI);
-extern pgRecoveryTarget *checkIfCreateRecoveryConf(
+extern parray * readTimeLineHistory_probackup(TimeLineID targetTLI);
+extern pgRecoveryTarget *parseRecoveryTargetOptions(
 	const char *target_time,
 	const char *target_xid,
 	const char *target_inclusive);
@@ -266,15 +339,27 @@ extern void opt_tablespace_map(pgut_option *opt, const char *arg);
 
 /* in init.c */
 extern int do_init(void);
+extern int do_add_instance(void);
+
+/* in archive.c */
+extern int do_archive_push(char *wal_file_path, char *wal_file_name);
+extern int do_archive_get(char *wal_file_path, char *wal_file_name);
+
+
+/* in configure.c */
+extern int do_configure(bool show_only);
+extern void pgBackupConfigInit(pgBackupConfig *config);
+extern void writeBackupCatalogConfig(FILE *out, pgBackupConfig *config);
+extern void writeBackupCatalogConfigFile(pgBackupConfig *config);
+extern pgBackupConfig* readBackupCatalogConfigFile(void);
 
 /* in show.c */
-extern int do_show(time_t backup_id);
-extern int do_retention_show(void);
+extern int do_show(time_t requested_backup_id);
 
 /* in delete.c */
 extern int do_delete(time_t backup_id);
-extern int do_deletewal(time_t backup_id, bool strict, bool need_catalog_lock);
 extern int do_retention_purge(void);
+extern int do_delete_instance(void);
 
 /* in fetch.c */
 extern char *slurpFile(const char *datadir,
@@ -282,30 +367,27 @@ extern char *slurpFile(const char *datadir,
 					   size_t *filesize,
 					   bool safe);
 
+/* in help.c */
+extern void help_pg_probackup(void);
+extern void help_command(char *command);
+
 /* in validate.c */
-extern int do_validate(time_t backup_id,
-					   const char *target_time,
-					   const char *target_xid,
-					   const char *target_inclusive,
-					   TimeLineID target_tli);
-extern void do_validate_last(void);
-extern bool pgBackupValidate(pgBackup *backup,
-							 bool size_only,
-							 bool for_get_timeline);
+extern void pgBackupValidate(pgBackup* backup);
+extern int do_validate_all(void);
 
+/* in catalog.c */
 extern pgBackup *read_backup(time_t timestamp);
-extern void init_backup(pgBackup *backup);
+extern const char *pgBackupGetBackupMode(pgBackup *backup);
 
-extern parray *catalog_get_backup_list(time_t backup_id);
+extern parray *catalog_get_backup_list(time_t requested_backup_id);
 extern pgBackup *catalog_get_last_data_backup(parray *backup_list,
 											  TimeLineID tli);
-
-extern void catalog_lock(bool check_catalog);
-
-extern void pgBackupWriteConfigSection(FILE *out, pgBackup *backup);
-extern void pgBackupWriteResultSection(FILE *out, pgBackup *backup);
-extern void pgBackupWriteIni(pgBackup *backup);
+extern void catalog_lock(void);
+extern void pgBackupWriteControl(FILE *out, pgBackup *backup);
+extern void pgBackupWriteBackupControlFile(pgBackup *backup);
 extern void pgBackupGetPath(const pgBackup *backup, char *path, size_t len, const char *subdir);
+extern void pgBackupGetPath2(const pgBackup *backup, char *path, size_t len,
+							 const char *subdir1, const char *subdir2);
 extern int pgBackupCreateDir(pgBackup *backup);
 extern void pgBackupFree(void *backup);
 extern int pgBackupCompareId(const void *f1, const void *f2);
@@ -326,6 +408,7 @@ extern int dir_create_dir(const char *path, mode_t mode);
 extern bool dir_is_empty(const char *path);
 
 extern pgFile *pgFileNew(const char *path, bool omit_symlink);
+extern pgFile *pgFileInit(const char *path);
 extern void pgFileDelete(pgFile *file);
 extern void pgFileFree(void *file);
 extern pg_crc32 pgFileGetCRC(pgFile *file);
@@ -333,35 +416,41 @@ extern int pgFileComparePath(const void *f1, const void *f2);
 extern int pgFileComparePathDesc(const void *f1, const void *f2);
 extern int pgFileCompareLinked(const void *f1, const void *f2);
 extern int pgFileCompareSize(const void *f1, const void *f2);
-extern int pgFileCompareMtime(const void *f1, const void *f2);
-extern int pgFileCompareMtimeDesc(const void *f1, const void *f2);
 
 /* in data.c */
 extern bool backup_data_file(const char *from_root, const char *to_root,
-							 pgFile *file, const XLogRecPtr *lsn);
+							 pgFile *file, XLogRecPtr prev_backup_start_lsn);
 extern void restore_data_file(const char *from_root, const char *to_root,
 							  pgFile *file, pgBackup *backup);
-extern bool is_compressed_data_file(pgFile *file);
+extern void restore_compressed_file(const char *from_root,
+									const char *to_root, pgFile *file);
 extern bool backup_compressed_file_partially(pgFile *file,
 											 void *arg,
 											 size_t *skip_size);
 extern bool copy_file(const char *from_root, const char *to_root,
 					  pgFile *file);
+extern void copy_wal_file(const char *from_root, const char *to_root);
 extern bool copy_file_partly(const char *from_root, const char *to_root,
 				 pgFile *file, size_t skip_size);
 
-extern bool calc_file(pgFile *file);
+extern bool calc_file_checksum(pgFile *file);
 
 /* parsexlog.c */
 extern void extractPageMap(const char *datadir,
 						   XLogRecPtr startpoint,
 						   TimeLineID tli,
-						   XLogRecPtr endpoint);
+						   XLogRecPtr endpoint, bool prev_segno);
 extern void validate_wal(pgBackup *backup,
 						 const char *archivedir,
 						 time_t target_time,
 						 TransactionId target_xid,
 						 TimeLineID tli);
+extern bool read_recovery_info(const char *archivedir, TimeLineID tli,
+							   XLogRecPtr start_lsn, XLogRecPtr stop_lsn,
+							   time_t *recovery_time,
+							   TransactionId *recovery_xid);
+extern bool wal_contains_lsn(const char *archivedir, XLogRecPtr target_lsn,
+							 TimeLineID target_tli);
 
 /* in util.c */
 extern TimeLineID get_current_timeline(bool safe);
@@ -374,52 +463,11 @@ extern XLogRecPtr get_last_ptrack_lsn(void);
 extern uint32 get_data_checksum_version(bool safe);
 extern char *base36enc(long unsigned int value);
 extern long unsigned int base36dec(const char *text);
-extern uint64 get_system_identifier(bool safe);
+extern uint64 get_system_identifier(char *pgdata);
 extern pg_time_t timestamptz_to_time_t(TimestampTz t);
+extern void pgBackup_init(pgBackup *backup);
 
 /* in status.c */
 extern bool is_pg_running(void);
-
-/* some from access/xact.h */
-/*
- * XLOG allows to store some information in high 4 bits of log record xl_info
- * field. We use 3 for the opcode, and one about an optional flag variable.
- */
-#define XLOG_XACT_COMMIT			0x00
-#define XLOG_XACT_PREPARE			0x10
-#define XLOG_XACT_ABORT				0x20
-#define XLOG_XACT_COMMIT_PREPARED	0x30
-#define XLOG_XACT_ABORT_PREPARED	0x40
-#define XLOG_XACT_ASSIGNMENT		0x50
-/* free opcode 0x60 */
-/* free opcode 0x70 */
-
-/* mask for filtering opcodes out of xl_info */
-#define XLOG_XACT_OPMASK			0x70
-
-typedef struct xl_xact_commit
-{
-	TimestampTz xact_time;		/* time of commit */
-
-	/* xl_xact_xinfo follows if XLOG_XACT_HAS_INFO */
-	/* xl_xact_dbinfo follows if XINFO_HAS_DBINFO */
-	/* xl_xact_subxacts follows if XINFO_HAS_SUBXACT */
-	/* xl_xact_relfilenodes follows if XINFO_HAS_RELFILENODES */
-	/* xl_xact_invals follows if XINFO_HAS_INVALS */
-	/* xl_xact_twophase follows if XINFO_HAS_TWOPHASE */
-	/* xl_xact_origin follows if XINFO_HAS_ORIGIN, stored unaligned! */
-} xl_xact_commit;
-
-typedef struct xl_xact_abort
-{
-	TimestampTz xact_time;		/* time of abort */
-
-	/* xl_xact_xinfo follows if XLOG_XACT_HAS_INFO */
-	/* No db_info required */
-	/* xl_xact_subxacts follows if HAS_SUBXACT */
-	/* xl_xact_relfilenodes follows if HAS_RELFILENODES */
-	/* No invalidation messages needed. */
-	/* xl_xact_twophase follows if XINFO_HAS_TWOPHASE */
-} xl_xact_abort;
 
 #endif /* PG_PROBACKUP_H */

@@ -2,7 +2,8 @@
  *
  * pgut.c
  *
- * Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2017-2017, Postgres Professional
  *
  *-------------------------------------------------------------------------
  */
@@ -10,11 +11,12 @@
 #include "postgres_fe.h"
 #include "libpq/pqsignal.h"
 
-#include "getopt.h"
+#include "getopt_long.h"
 #include <limits.h>
 #include <time.h>
 #include <unistd.h>
 
+#include "logger.h"
 #include "pgut.h"
 
 /* old gcc doesn't have LLONG_MAX. */
@@ -33,15 +35,9 @@ const char	   *host = NULL;
 const char	   *port = NULL;
 const char	   *username = NULL;
 char		   *password = NULL;
-bool			verbose = false;
-bool			quiet = false;
-
-#ifndef PGUT_NO_PROMPT
-YesNo	prompt_password = DEFAULT;
-#endif
+bool			prompt_password = true;
 
 /* Database connections */
-PGconn	   *connection = NULL;
 static PGcancel *volatile cancel_conn = NULL;
 
 /* Interrupted by SIGINT (Ctrl+C) ? */
@@ -49,16 +45,6 @@ bool			interrupted = false;
 static bool		in_cleanup = false;
 
 static bool parse_pair(const char buffer[], char key[], char value[]);
-
-typedef enum
-{
-	PG_DEBUG,
-	PG_PROGRESS,
-	PG_WARNING,
-	PG_FATAL
-} eLogType;
-
-void pg_log(eLogType type, const char *fmt,...) pg_attribute_printf(2, 3);
 
 /* Connection routines */
 static void init_cancel_handler(void);
@@ -69,19 +55,73 @@ static void on_cleanup(void);
 static void exit_or_abort(int exitcode);
 static const char *get_username(void);
 
-static pgut_option default_options[] =
+/*
+ * Unit conversion tables.
+ *
+ * Copied from guc.c.
+ */
+#define MAX_UNIT_LEN		3	/* length of longest recognized unit string */
+
+typedef struct
 {
-	{ 's', 'd', "dbname"	, &pgut_dbname, SOURCE_CMDLINE },
-	{ 's', 'h', "host"		, &host, SOURCE_CMDLINE },
-	{ 's', 'p', "port"		, &port, SOURCE_CMDLINE },
-	{ 'b', 'q', "quiet"		, &quiet, SOURCE_CMDLINE },
-	{ 's', 'U', "username"	, &username, SOURCE_CMDLINE },
-	{ 'b', 'v', "verbose"	, &verbose, SOURCE_CMDLINE },
-#ifndef PGUT_NO_PROMPT
-	{ 'Y', 'w', "no-password"	, &prompt_password, SOURCE_CMDLINE },
-	{ 'y', 'W', "password"		, &prompt_password, SOURCE_CMDLINE },
-#endif
-	{ 0 }
+	char		unit[MAX_UNIT_LEN + 1]; /* unit, as a string, like "kB" or
+										 * "min" */
+	int			base_unit;		/* OPTION_UNIT_XXX */
+	int			multiplier;		/* If positive, multiply the value with this
+								 * for unit -> base_unit conversion.  If
+								 * negative, divide (with the absolute value) */
+} unit_conversion;
+
+static const char *memory_units_hint = "Valid units for this parameter are \"kB\", \"MB\", \"GB\", and \"TB\".";
+
+static const unit_conversion memory_unit_conversion_table[] =
+{
+	{"TB", OPTION_UNIT_KB, 1024 * 1024 * 1024},
+	{"GB", OPTION_UNIT_KB, 1024 * 1024},
+	{"MB", OPTION_UNIT_KB, 1024},
+	{"kB", OPTION_UNIT_KB, 1},
+
+	{"TB", OPTION_UNIT_BLOCKS, (1024 * 1024 * 1024) / (BLCKSZ / 1024)},
+	{"GB", OPTION_UNIT_BLOCKS, (1024 * 1024) / (BLCKSZ / 1024)},
+	{"MB", OPTION_UNIT_BLOCKS, 1024 / (BLCKSZ / 1024)},
+	{"kB", OPTION_UNIT_BLOCKS, -(BLCKSZ / 1024)},
+
+	{"TB", OPTION_UNIT_XBLOCKS, (1024 * 1024 * 1024) / (XLOG_BLCKSZ / 1024)},
+	{"GB", OPTION_UNIT_XBLOCKS, (1024 * 1024) / (XLOG_BLCKSZ / 1024)},
+	{"MB", OPTION_UNIT_XBLOCKS, 1024 / (XLOG_BLCKSZ / 1024)},
+	{"kB", OPTION_UNIT_XBLOCKS, -(XLOG_BLCKSZ / 1024)},
+
+	{"TB", OPTION_UNIT_XSEGS, (1024 * 1024 * 1024) / (XLOG_SEG_SIZE / 1024)},
+	{"GB", OPTION_UNIT_XSEGS, (1024 * 1024) / (XLOG_SEG_SIZE / 1024)},
+	{"MB", OPTION_UNIT_XSEGS, -(XLOG_SEG_SIZE / (1024 * 1024))},
+	{"kB", OPTION_UNIT_XSEGS, -(XLOG_SEG_SIZE / 1024)},
+
+	{""}						/* end of table marker */
+};
+
+static const char *time_units_hint = "Valid units for this parameter are \"ms\", \"s\", \"min\", \"h\", and \"d\".";
+
+static const unit_conversion time_unit_conversion_table[] =
+{
+	{"d", OPTION_UNIT_MS, 1000 * 60 * 60 * 24},
+	{"h", OPTION_UNIT_MS, 1000 * 60 * 60},
+	{"min", OPTION_UNIT_MS, 1000 * 60},
+	{"s", OPTION_UNIT_MS, 1000},
+	{"ms", OPTION_UNIT_MS, 1},
+
+	{"d", OPTION_UNIT_S, 60 * 60 * 24},
+	{"h", OPTION_UNIT_S, 60 * 60},
+	{"min", OPTION_UNIT_S, 60},
+	{"s", OPTION_UNIT_S, 1},
+	{"ms", OPTION_UNIT_S, -1000},
+
+	{"d", OPTION_UNIT_MIN, 60 * 24},
+	{"h", OPTION_UNIT_MIN, 60},
+	{"min", OPTION_UNIT_MIN, 1},
+	{"s", OPTION_UNIT_MIN, -60},
+	{"ms", OPTION_UNIT_MIN, -1000 * 60},
+
+	{""}						/* end of table marker */
 };
 
 static size_t
@@ -99,8 +139,6 @@ option_has_arg(char type)
 	{
 		case 'b':
 		case 'B':
-		case 'y':
-		case 'Y':
 			return no_argument;
 		default:
 			return required_argument;
@@ -121,33 +159,14 @@ option_copy(struct option dst[], const pgut_option opts[], size_t len)
 	}
 }
 
-static struct option *
-option_merge(const pgut_option opts1[], const pgut_option opts2[])
-{
-	struct option *result;
-	size_t	len1 = option_length(opts1);
-	size_t	len2 = option_length(opts2);
-	size_t	n = len1 + len2;
-
-	result = pgut_newarray(struct option, n + 1);
-	option_copy(result, opts1, len1);
-	option_copy(result + len1, opts2, len2);
-	memset(&result[n], 0, sizeof(pgut_option));
-
-	return result;
-}
-
 static pgut_option *
-option_find(int c, pgut_option opts1[], pgut_option opts2[])
+option_find(int c, pgut_option opts1[])
 {
 	size_t	i;
 
 	for (i = 0; opts1 && opts1[i].type; i++)
 		if (opts1[i].sname == c)
 			return &opts1[i];
-	for (i = 0; opts2 && opts2[i].type; i++)
-		if (opts2[i].sname == c)
-			return &opts2[i];
 
 	return NULL;	/* not found */
 }
@@ -155,7 +174,7 @@ option_find(int c, pgut_option opts1[], pgut_option opts2[])
 static void
 assign_option(pgut_option *opt, const char *optarg, pgut_optsrc src)
 {
-	const char	  *message;
+	const char *message;
 
 	if (opt == NULL)
 	{
@@ -175,6 +194,8 @@ assign_option(pgut_option *opt, const char *optarg, pgut_optsrc src)
 	}
 	else
 	{
+		pgut_optsrc	orig_source = opt->source;
+
 		/* can be overwritten if non-command line source */
 		opt->source = src;
 
@@ -217,32 +238,17 @@ assign_option(pgut_option *opt, const char *optarg, pgut_optsrc src)
 				message = "a 64bit unsigned integer";
 				break;
 			case 's':
-				if (opt->source != SOURCE_DEFAULT)
+				if (orig_source != SOURCE_DEFAULT)
 					free(*(char **) opt->var);
 				*(char **) opt->var = pgut_strdup(optarg);
-				return;
+				if (strcmp(optarg,"") != 0)
+					return;
+				message = "a valid string. But provided: ";
+				break;
 			case 't':
 				if (parse_time(optarg, opt->var))
 					return;
 				message = "a time";
-				break;
-			case 'y':
-			case 'Y':
-				if (optarg == NULL)
-				{
-					*(YesNo *) opt->var = (opt->type == 'y' ? YES : NO);
-					return;
-				}
-				else
-				{
-					bool	value;
-					if (parse_bool(optarg, &value))
-					{
-						*(YesNo *) opt->var = (value ? YES : NO);
-						return;
-					}
-				}
-				message = "a boolean";
 				break;
 			default:
 				elog(ERROR, "invalid option type: %c", opt->type);
@@ -539,6 +545,129 @@ parse_time(const char *value, time_t *time)
 	return true;
 }
 
+/*
+ * Convert a value from one of the human-friendly units ("kB", "min" etc.)
+ * to the given base unit.  'value' and 'unit' are the input value and unit
+ * to convert from.  The converted value is stored in *base_value.
+ *
+ * Returns true on success, false if the input unit is not recognized.
+ */
+static bool
+convert_to_base_unit(int64 value, const char *unit,
+					 int base_unit, int64 *base_value)
+{
+	const unit_conversion *table;
+	int			i;
+
+	if (base_unit & OPTION_UNIT_MEMORY)
+		table = memory_unit_conversion_table;
+	else
+		table = time_unit_conversion_table;
+
+	for (i = 0; *table[i].unit; i++)
+	{
+		if (base_unit == table[i].base_unit &&
+			strcmp(unit, table[i].unit) == 0)
+		{
+			if (table[i].multiplier < 0)
+				*base_value = value / (-table[i].multiplier);
+			else
+				*base_value = value * table[i].multiplier;
+			return true;
+		}
+	}
+	return false;
+}
+
+/*
+ * Try to parse value as an integer.  The accepted formats are the
+ * usual decimal, octal, or hexadecimal formats, optionally followed by
+ * a unit name if "flags" indicates a unit is allowed.
+ *
+ * If the string parses okay, return true, else false.
+ * If okay and result is not NULL, return the value in *result.
+ * If not okay and hintmsg is not NULL, *hintmsg is set to a suitable
+ *	HINT message, or NULL if no hint provided.
+ */
+bool
+parse_int(const char *value, int *result, int flags, const char **hintmsg)
+{
+	int64		val;
+	char	   *endptr;
+
+	/* To suppress compiler warnings, always set output params */
+	if (result)
+		*result = 0;
+	if (hintmsg)
+		*hintmsg = NULL;
+
+	/* We assume here that int64 is at least as wide as long */
+	errno = 0;
+	val = strtol(value, &endptr, 0);
+
+	if (endptr == value)
+		return false;			/* no HINT for integer syntax error */
+
+	if (errno == ERANGE || val != (int64) ((int32) val))
+	{
+		if (hintmsg)
+			*hintmsg = "Value exceeds integer range.";
+		return false;
+	}
+
+	/* allow whitespace between integer and unit */
+	while (isspace((unsigned char) *endptr))
+		endptr++;
+
+	/* Handle possible unit */
+	if (*endptr != '\0')
+	{
+		char		unit[MAX_UNIT_LEN + 1];
+		int			unitlen;
+		bool		converted = false;
+
+		if ((flags & OPTION_UNIT) == 0)
+			return false;		/* this setting does not accept a unit */
+
+		unitlen = 0;
+		while (*endptr != '\0' && !isspace((unsigned char) *endptr) &&
+			   unitlen < MAX_UNIT_LEN)
+			unit[unitlen++] = *(endptr++);
+		unit[unitlen] = '\0';
+		/* allow whitespace after unit */
+		while (isspace((unsigned char) *endptr))
+			endptr++;
+
+		if (*endptr == '\0')
+			converted = convert_to_base_unit(val, unit, (flags & OPTION_UNIT),
+											 &val);
+		if (!converted)
+		{
+			/* invalid unit, or garbage after the unit; set hint and fail. */
+			if (hintmsg)
+			{
+				if (flags & OPTION_UNIT_MEMORY)
+					*hintmsg = memory_units_hint;
+				else
+					*hintmsg = time_units_hint;
+			}
+			return false;
+		}
+
+		/* Check for overflow due to units conversion */
+		if (val != (int64) ((int32) val))
+		{
+			if (hintmsg)
+				*hintmsg = "Value exceeds integer range.";
+			return false;
+		}
+	}
+
+	if (result)
+		*result = (int) val;
+	return true;
+}
+
 static char *
 longopts_to_optstring(const struct option opts[])
 {
@@ -563,32 +692,38 @@ longopts_to_optstring(const struct option opts[])
 	return result;
 }
 
-static void
-option_from_env(pgut_option options[])
+void
+pgut_getopt_env(pgut_option options[])
 {
 	size_t	i;
 
 	for (i = 0; options && options[i].type; i++)
 	{
 		pgut_option	   *opt = &options[i];
-		char			name[256];
-		size_t			j;
-		const char	   *s;
-		const char	   *value;
+		const char	   *value = NULL;
 
+		/* If option was already set do not check env */
 		if (opt->source > SOURCE_ENV || opt->allowed < SOURCE_ENV)
 			continue;
 
-		for (s = opt->lname, j = 0; *s && j < lengthof(name) - 1; s++, j++)
+		if (strcmp(opt->lname, "pgdata") == 0)
+			value = getenv("PGDATA");
+		if (strcmp(opt->lname, "port") == 0)
+			value = getenv("PGPORT");
+		if (strcmp(opt->lname, "host") == 0)
+			value = getenv("PGHOST");
+		if (strcmp(opt->lname, "username") == 0)
+			value = getenv("PGUSER");
+		if (strcmp(opt->lname, "pgdatabase") == 0)
 		{
-			if (strchr("-_ ", *s))
-				name[j] = '_';	/* - to _ */
-			else
-				name[j] = toupper(*s);
+			value = getenv("PGDATABASE");
+			if (value == NULL)
+				value = getenv("PGUSER");
+			if (value == NULL)
+				value = get_username();
 		}
-		name[j] = '\0';
 
-		if ((value = getenv(name)) != NULL)
+		if (value)
 			assign_option(opt, value, SOURCE_ENV);
 	}
 }
@@ -599,51 +734,26 @@ pgut_getopt(int argc, char **argv, pgut_option options[])
 	int					c;
 	int					optindex = 0;
 	char			   *optstring;
-	struct option	   *longopts;
 	pgut_option		   *opt;
+	struct option *longopts;
+	size_t	len1;
 
-	if (PROGRAM_NAME == NULL)
-	{
-		PROGRAM_NAME = get_progname(argv[0]);
-		set_pglocale_pgservice(argv[0], "pgscripts");
-	}
+	len1 = option_length(options);
+	longopts = pgut_newarray(struct option, len1 + 1);
+	option_copy(longopts, options, len1);
 
-	/* Help message and version are handled at first. */
-	if (argc > 1)
-	{
-		if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-?") == 0)
-		{
-			help(true);
-			exit_or_abort(0);
-		}
-		if (strcmp(argv[1], "--version") == 0 || strcmp(argv[1], "-V") == 0)
-		{
-			fprintf(stderr, "%s %s\n", PROGRAM_NAME, PROGRAM_VERSION);
-			exit_or_abort(0);
-		}
-	}
-
-	/* Merge default and user options. */
-	longopts = option_merge(default_options, options);
 	optstring = longopts_to_optstring(longopts);
 
 	/* Assign named options */
 	while ((c = getopt_long(argc, argv, optstring, longopts, &optindex)) != -1)
 	{
-		opt = option_find(c, default_options, options);
+		opt = option_find(c, options);
 		if (opt && opt->allowed < SOURCE_CMDLINE)
 			elog(ERROR, "option %s cannot be specified in command line",
 				 opt->lname);
 		/* Check 'opt == NULL' is performed in assign_option() */
 		assign_option(opt, optarg, SOURCE_CMDLINE);
 	}
-
-	/* Read environment variables */
-	option_from_env(options);
-	(void) (pgut_dbname ||
-	(pgut_dbname = getenv("PGDATABASE")) ||
-	(pgut_dbname = getenv("PGUSER")) ||
-	(pgut_dbname = get_username()));
 
 	init_cancel_handler();
 	atexit(on_cleanup);
@@ -868,7 +978,6 @@ parse_pair(const char buffer[], char key[], char value[])
 	return true;
 }
 
-#ifndef PGUT_NO_PROMPT
 /*
  * Ask the user for a password; 'username' is the username the
  * password is for, if one has been explicitly specified.
@@ -903,38 +1012,40 @@ prompt_for_password(const char *username)
 	}
 #endif
 }
-#endif
 
 PGconn *
-pgut_connect(int elevel)
+pgut_connect(const char *dbname)
+{
+	return pgut_connect_extended(host, port, dbname, username, password);
+}
+
+PGconn *
+pgut_connect_extended(const char *pghost, const char *pgport,
+					  const char *dbname, const char *login, const char *pwd)
 {
 	PGconn	   *conn;
 
 	if (interrupted && !in_cleanup)
 		elog(ERROR, "interrupted");
 
-#ifndef PGUT_NO_PROMPT
-	if (prompt_password == YES)
-		prompt_for_password(username);
-#endif
-
 	/* Start the connection. Loop until we have a password if requested by backend. */
 	for (;;)
 	{
-		conn = PQsetdbLogin(host, port, NULL, NULL, pgut_dbname, username, password);
+		conn = PQsetdbLogin(pghost, pgport, NULL, NULL,
+							dbname, login, pwd);
 
 		if (PQstatus(conn) == CONNECTION_OK)
 			return conn;
 
-#ifndef PGUT_NO_PROMPT
-		if (conn && PQconnectionNeedsPassword(conn) && prompt_password != NO)
+		if (conn && PQconnectionNeedsPassword(conn) && prompt_password)
 		{
 			PQfinish(conn);
 			prompt_for_password(username);
 			continue;
 		}
-#endif
-		elog(elevel, "could not connect to database %s: %s", pgut_dbname, PQerrorMessage(conn));
+		elog(ERROR, "could not connect to database %s: %s",
+			 dbname, PQerrorMessage(conn));
+
 		PQfinish(conn);
 		return NULL;
 	}
@@ -944,37 +1055,7 @@ void
 pgut_disconnect(PGconn *conn)
 {
 	if (conn)
-	{
 		PQfinish(conn);
-		if (conn == connection)
-			connection = NULL;
-	}
-}
-
-/*
- * the result is also available with the global variable 'connection'.
- */
-PGconn *
-reconnect_elevel(int elevel)
-{
-	disconnect();
-	return connection = pgut_connect(elevel);
-}
-
-void
-reconnect(void)
-{
-	reconnect_elevel(ERROR);
-}
-
-void
-disconnect(void)
-{
-	if (connection)
-	{
-		PQfinish(connection);
-		connection = NULL;
-	}
 }
 
 /*  set/get host and port for connecting standby server */
@@ -1003,7 +1084,7 @@ pgut_set_port(const char *new_port)
 }
 
 PGresult *
-pgut_execute(PGconn* conn, const char *query, int nParams, const char **params, int elevel)
+pgut_execute(PGconn* conn, const char *query, int nParams, const char **params)
 {
 	PGresult   *res;
 
@@ -1011,7 +1092,7 @@ pgut_execute(PGconn* conn, const char *query, int nParams, const char **params, 
 		elog(ERROR, "interrupted");
 
 	/* write query to elog if verbose */
-	if (verbose)
+	if (log_level <= LOG)
 	{
 		int		i;
 
@@ -1025,7 +1106,7 @@ pgut_execute(PGconn* conn, const char *query, int nParams, const char **params, 
 
 	if (conn == NULL)
 	{
-		elog(elevel, "not connected");
+		elog(ERROR, "not connected");
 		return NULL;
 	}
 
@@ -1043,18 +1124,12 @@ pgut_execute(PGconn* conn, const char *query, int nParams, const char **params, 
 		case PGRES_COPY_IN:
 			break;
 		default:
-			elog(elevel, "query failed: %squery was: %s",
-				PQerrorMessage(conn), query);
+			elog(ERROR, "query failed: %squery was: %s",
+				 PQerrorMessage(conn), query);
 			break;
 	}
 
 	return res;
-}
-
-void
-pgut_command(PGconn* conn, const char *query, int nParams, const char **params, int elevel)
-{
-	PQclear(pgut_execute(conn, query, nParams, params, elevel));
 }
 
 bool
@@ -1066,7 +1141,7 @@ pgut_send(PGconn* conn, const char *query, int nParams, const char **params, int
 		elog(ERROR, "interrupted");
 
 	/* write query to elog if verbose */
-	if (verbose)
+	if (log_level <= LOG)
 	{
 		int		i;
 
@@ -1097,6 +1172,24 @@ pgut_send(PGconn* conn, const char *query, int nParams, const char **params, int
 	}
 
 	return true;
+}
+
+void
+pgut_cancel(PGconn* conn)
+{
+	PGcancel *cancel_conn = PQgetCancel(conn);
+	char		errbuf[256];
+
+	if (cancel_conn != NULL)
+	{
+		if (PQcancel(cancel_conn, errbuf, sizeof(errbuf)))
+			elog(WARNING, "Cancel request sent");
+		else
+			elog(WARNING, "Cancel request failed");
+	}
+
+	if (cancel_conn)
+		PQfreeCancel(cancel_conn);
 }
 
 int
@@ -1151,118 +1244,6 @@ pgut_wait(int num, PGconn *connections[], struct timeval *timeout)
 
 	errno = EINTR;
 	return -1;
-}
-
-PGresult *
-execute_elevel(const char *query, int nParams, const char **params, int elevel)
-{
-	return pgut_execute(connection, query, nParams, params, elevel);
-}
-
-/*
- * execute - Execute a SQL and return the result, or exit_or_abort() if failed.
- */
-PGresult *
-execute(const char *query, int nParams, const char **params)
-{
-	return execute_elevel(query, nParams, params, ERROR);
-}
-
-/*
- * command - Execute a SQL and discard the result, or exit_or_abort() if failed.
- */
-void
-command(const char *query, int nParams, const char **params)
-{
-	PQclear(execute(query, nParams, params));
-}
-
-/*
- * elog - log to stderr and exit if ERROR or FATAL
- */
-void
-elog(int elevel, const char *fmt, ...)
-{
-	va_list		args;
-
-	if (!verbose && elevel <= LOG)
-		return;
-	if (quiet && elevel < WARNING)
-		return;
-
-	switch (elevel)
-	{
-	case LOG:
-		fputs("LOG: ", stderr);
-		break;
-	case INFO:
-		fputs("INFO: ", stderr);
-		break;
-	case NOTICE:
-		fputs("NOTICE: ", stderr);
-		break;
-	case WARNING:
-		fputs("WARNING: ", stderr);
-		break;
-	case FATAL:
-		fputs("FATAL: ", stderr);
-		break;
-	case PANIC:
-		fputs("PANIC: ", stderr);
-		break;
-	default:
-		if (elevel >= ERROR)
-			fputs("ERROR: ", stderr);
-		break;
-	}
-
-	va_start(args, fmt);
-	vfprintf(stderr, fmt, args);
-	fputc('\n', stderr);
-	fflush(stderr);
-	va_end(args);
-
-	if (elevel > 0)
-		exit_or_abort(elevel);
-}
-
-void pg_log(eLogType type, const char *fmt, ...)
-{
-	va_list		args;
-
-	if (!verbose && type <= PG_PROGRESS)
-		return;
-	if (quiet && type < PG_WARNING)
-		return;
-
-	switch (type)
-	{
-	case PG_DEBUG:
-		fputs("DEBUG: ", stderr);
-		break;
-	case PG_PROGRESS:
-		fputs("PROGRESS: ", stderr);
-		break;
-	case PG_WARNING:
-		fputs("WARNING: ", stderr);
-		break;
-	case PG_FATAL:
-		fputs("FATAL: ", stderr);
-		break;
-	default:
-		if (type >= PG_FATAL)
-			fputs("ERROR: ", stderr);
-		break;
-	}
-
-	va_start(args, fmt);
-	vfprintf(stderr, fmt, args);
-	fputc('\n', stderr);
-	fflush(stderr);
-	va_end(args);
-
-	if (type > 0)
-		exit_or_abort(type);
 }
 
 #ifdef WIN32
@@ -1413,7 +1394,6 @@ on_cleanup(void)
 	in_cleanup = true;
 	interrupted = false;
 	call_atexit_callbacks(false);
-	disconnect();
 }
 
 static void
@@ -1429,43 +1409,6 @@ exit_or_abort(int exitcode)
 	{
 		/* normal exit */
 		exit(exitcode);
-	}
-}
-
-void
-help(bool details)
-{
-	pgut_help(details);
-
-	if (details)
-	{
-		printf("\nConnection options:\n");
-		printf("  -d, --dbname=DBNAME       database to connect\n");
-		printf("  -h, --host=HOSTNAME       database server host or socket directory\n");
-		printf("  -p, --port=PORT           database server port\n");
-		printf("  -U, --username=USERNAME   user name to connect as\n");
-#ifndef PGUT_NO_PROMPT
-		printf("  -w, --no-password         never prompt for password\n");
-		printf("  -W, --password            force password prompt\n");
-#endif
-	}
-
-	printf("\nGeneric options:\n");
-	if (details)
-	{
-		printf("  -q, --quiet               don't write any messages\n");
-		printf("  -v, --verbose             verbose mode\n");
-	}
-		printf("      --help                show this help, then exit\n");
-		printf("      --version             output version information and exit\n");
-
-	if (details && (PROGRAM_URL || PROGRAM_EMAIL))
-	{
-		printf("\n");
-		if (PROGRAM_URL)
-			printf("Read the website for details. <%s>\n", PROGRAM_URL);
-		if (PROGRAM_EMAIL)
-			printf("Report bugs to <%s>.\n", PROGRAM_EMAIL);
 	}
 }
 

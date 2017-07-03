@@ -2,7 +2,8 @@
  *
  * pgut.h
  *
- * Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2009-2013, NIPPON TELEGRAPH AND TELEPHONE CORPORATION
+ * Portions Copyright (c) 2017-2017, Postgres Professional
  *
  *-------------------------------------------------------------------------
  */
@@ -15,6 +16,8 @@
 
 #include <assert.h>
 #include <sys/time.h>
+
+#include "logger.h"
 
 #if !defined(C_H) && !defined(__cplusplus)
 #ifndef bool
@@ -29,13 +32,6 @@ typedef char bool;
 #endif
 
 #define INFINITE_STR		"INFINITE"
-
-typedef enum YesNo
-{
-	DEFAULT,
-	NO,
-	YES
-} YesNo;
 
 typedef enum pgut_optsrc
 {
@@ -58,8 +54,6 @@ typedef enum pgut_optsrc
  *	U: 64bit unsigned integer
  *	s: string
  *  t: time_t
- *	y: YesNo (YES)
- *	Y: YesNo (NO)
  */
 typedef struct pgut_option
 {
@@ -73,6 +67,22 @@ typedef struct pgut_option
 
 typedef void (*pgut_optfn) (pgut_option *opt, const char *arg);
 typedef void (*pgut_atexit_callback)(bool fatal, void *userdata);
+
+/*
+ * bit values in "flags" of an option
+ */
+#define OPTION_UNIT_KB				0x1000	/* value is in kilobytes */
+#define OPTION_UNIT_BLOCKS			0x2000	/* value is in blocks */
+#define OPTION_UNIT_XBLOCKS			0x3000	/* value is in xlog blocks */
+#define OPTION_UNIT_XSEGS			0x4000	/* value is in xlog segments */
+#define OPTION_UNIT_MEMORY			0xF000	/* mask for size-related units */
+
+#define OPTION_UNIT_MS				0x10000	/* value is in milliseconds */
+#define OPTION_UNIT_S				0x20000	/* value is in seconds */
+#define OPTION_UNIT_MIN				0x30000	/* value is in minutes */
+#define OPTION_UNIT_TIME			0xF0000	/* mask for time-related units */
+
+#define OPTION_UNIT					(OPTION_UNIT_MEMORY | OPTION_UNIT_TIME)
 
 /*
  * pgut client variables and functions
@@ -92,45 +102,33 @@ extern const char  *host;
 extern const char  *port;
 extern const char  *username;
 extern char		   *password;
-extern bool			verbose;
-extern bool			quiet;
+extern bool			prompt_password;
 
-#ifndef PGUT_NO_PROMPT
-extern YesNo	prompt_password;
-#endif
-
-extern PGconn	   *connection;
 extern bool			interrupted;
 
-extern void help(bool details);
 extern int pgut_getopt(int argc, char **argv, pgut_option options[]);
 extern void pgut_readopt(const char *path, pgut_option options[], int elevel);
+extern void pgut_getopt_env(pgut_option options[]);
 extern void pgut_atexit_push(pgut_atexit_callback callback, void *userdata);
 extern void pgut_atexit_pop(pgut_atexit_callback callback, void *userdata);
 
 /*
  * Database connections
  */
-extern PGconn *pgut_connect(int elevel);
+extern PGconn *pgut_connect(const char *dbname);
+extern PGconn *pgut_connect_extended(const char *pghost, const char *pgport,
+									 const char *dbname, const char *login,
+									 const char *pwd);
 extern void pgut_disconnect(PGconn *conn);
-extern PGresult *pgut_execute(PGconn* conn, const char *query, int nParams, const char **params, int elevel);
-extern void pgut_command(PGconn* conn, const char *query, int nParams, const char **params, int elevel);
+extern PGresult *pgut_execute(PGconn* conn, const char *query, int nParams, const char **params);
 extern bool pgut_send(PGconn* conn, const char *query, int nParams, const char **params, int elevel);
+extern void pgut_cancel(PGconn* conn);
 extern int pgut_wait(int num, PGconn *connections[], struct timeval *timeout);
-
-extern PGconn *reconnect_elevel(int elevel);
-extern void reconnect(void);
-extern void disconnect(void);
 
 extern const char *pgut_get_host(void);
 extern const char *pgut_get_port(void);
 extern void pgut_set_host(const char *new_host);
 extern void pgut_set_port(const char *new_port);
-
-
-extern PGresult *execute_elevel(const char *query, int nParams, const char **params, int elevel);
-extern PGresult *execute(const char *query, int nParams, const char **params);
-extern void command(const char *query, int nParams, const char **params);
 
 /*
  * memory allocators
@@ -148,22 +146,6 @@ extern char *strdup_trim(const char *str);
  * file operations
  */
 extern FILE *pgut_fopen(const char *path, const char *mode, bool missing_ok);
-
-/*
- * elog
- */
-#define LOG			(-4)
-#define INFO		(-3)
-#define NOTICE		(-2)
-#define WARNING		(-1)
-#define ERROR		1
-#define FATAL		2
-#define PANIC		3
-
-#undef elog
-extern void
-elog(int elevel, const char *fmt, ...)
-__attribute__((format(printf, 2, 3)));
 
 /*
  * Assert
@@ -211,6 +193,8 @@ extern bool parse_uint32(const char *value, uint32 *result);
 extern bool parse_int64(const char *value, int64 *result);
 extern bool parse_uint64(const char *value, uint64 *result);
 extern bool parse_time(const char *value, time_t *time);
+extern bool parse_int(const char *value, int *result, int flags,
+					  const char **hintmsg);
 
 #define IsSpace(c)		(isspace((unsigned char)(c)))
 #define IsAlpha(c)		(isalpha((unsigned char)(c)))

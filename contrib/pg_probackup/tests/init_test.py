@@ -1,41 +1,75 @@
-import unittest
 import os
-from os import path
-import six
-from .pb_lib import dir_files, ProbackupTest
+import unittest
+from .helpers.ptrack_helpers import dir_files, ProbackupTest, ProbackupException
 
 
 class InitTest(ProbackupTest, unittest.TestCase):
 
-	def __init__(self, *args, **kwargs):
-		super(InitTest, self).__init__(*args, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super(InitTest, self).__init__(*args, **kwargs)
+        self.module_name = 'init'
 
-	def test_success_1(self):
-		"""Success normal init"""
-		node = self.make_bnode('test_success_1', base_dir="tmp_dirs/init/success_1")
-		self.assertEqual(self.init_pb(node), six.b(""))
-		self.assertEqual(
-			dir_files(self.backup_dir(node)),
-			['backups', 'pg_probackup.conf', 'wal']
-		)
+    # @unittest.skip("skip")
+    # @unittest.expectedFailure
+    def test_success(self):
+        """Success normal init"""
+        fname = self.id().split(".")[3]
+        backup_dir = os.path.join(self.tmp_path, self.module_name, fname, 'backup')
+        node = self.make_simple_node(base_dir="{0}/{1}/node".format(self.module_name, fname))
+        self.init_pb(backup_dir)
+        self.assertEqual(
+            dir_files(backup_dir),
+            ['backups', 'wal']
+        )
+        self.add_instance(backup_dir, 'node', node)
+        self.assertEqual("INFO: Instance 'node' successfully deleted\n", self.del_instance(backup_dir, 'node', node),
+            '\n Unexpected Error Message: {0}\n CMD: {1}'.format(repr(self.output), self.cmd))
 
-	def test_already_exist_2(self):
-		"""Failure with backup catalog already existed"""
-		node = self.make_bnode('test_already_exist_2', base_dir="tmp_dirs/init/already_exist_2")
-		self.init_pb(node)
-		self.assertEqual(
-			self.init_pb(node),
-			six.b("ERROR: backup catalog already exist and it's not empty\n")
-		)
+        try:
+            self.show_pb(backup_dir, 'node')
+            self.assertEqual(1, 0, 'Expecting Error due to show of non-existing instance. Output: {0} \n CMD: {1}'.format(
+                repr(self.output), self.cmd))
+        except ProbackupException as e:
+            self.assertEqual(e.message,
+                "ERROR: Instance 'node' does not exist in this backup catalog\n",
+                '\n Unexpected Error Message: {0}\n CMD: {1}'.format(e.message, self.cmd))
 
-	def test_abs_path_3(self):
-		"""failure with backup catalog should be given as absolute path"""
-		node = self.make_bnode('test_abs_path_3', base_dir="tmp_dirs/init/abs_path_3")
-		self.assertEqual(
-			self.run_pb(["init", "-B", path.relpath("%s/backup" % node.base_dir, self.dir_path)]),
-			six.b("ERROR: -B, --backup-path must be an absolute path\n")
-		)
+        # Clean after yourself
+        self.del_test_dir(self.module_name, fname)
 
+    # @unittest.skip("skip")
+    def test_already_exist(self):
+        """Failure with backup catalog already existed"""
+        fname = self.id().split(".")[3]
+        backup_dir = os.path.join(self.tmp_path, self.module_name, fname, 'backup')
+        node = self.make_simple_node(base_dir="{0}/{1}/node".format(self.module_name, fname))
+        self.init_pb(backup_dir)
+        try:
+            self.show_pb(backup_dir, 'node')
+            self.assertEqual(1, 0, 'Expecting Error due to initialization in non-empty directory. Output: {0} \n CMD: {1}'.format(
+                repr(self.output), self.cmd))
+        except ProbackupException as e:
+            self.assertEqual(e.message,
+                "ERROR: Instance 'node' does not exist in this backup catalog\n",
+                '\n Unexpected Error Message: {0}\n CMD: {1}'.format(repr(e.message), self.cmd))
 
-if __name__ == '__main__':
-	unittest.main()
+        # Clean after yourself
+        self.del_test_dir(self.module_name, fname)
+
+    # @unittest.skip("skip")
+    def test_abs_path(self):
+        """failure with backup catalog should be given as absolute path"""
+        fname = self.id().split(".")[3]
+        backup_dir = os.path.join(self.tmp_path, self.module_name, fname, 'backup')
+        node = self.make_simple_node(base_dir="{0}/{1}/node".format(self.module_name, fname))
+        try:
+            self.run_pb(["init", "-B", os.path.relpath("%s/backup" % node.base_dir, self.dir_path)])
+            self.assertEqual(1, 0, 'Expecting Error due to initialization with non-absolute path in --backup-path. Output: {0} \n CMD: {1}'.format(
+                repr(self.output), self.cmd))
+        except ProbackupException as e:
+            self.assertEqual(e.message,
+                "ERROR: -B, --backup-path must be an absolute path\n",
+                '\n Unexpected Error Message: {0}\n CMD: {1}'.format(repr(e.message), self.cmd))
+
+        # Clean after yourself
+        self.del_test_dir(self.module_name, fname)

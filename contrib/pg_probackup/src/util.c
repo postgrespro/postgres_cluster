@@ -14,11 +14,12 @@
 
 #include "storage/bufpage.h"
 
-char *base36enc(long unsigned int value)
+char *
+base36enc(long unsigned int value)
 {
-	char base36[36] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	char		base36[36] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 	/* log(2**64) / log(36) = 12.38 => max 13 char + '\0' */
-	char buffer[14];
+	char		buffer[14];
 	unsigned int offset = sizeof(buffer);
 
 	buffer[--offset] = '\0';
@@ -26,10 +27,11 @@ char *base36enc(long unsigned int value)
 		buffer[--offset] = base36[value % 36];
 	} while (value /= 36);
 
-	return strdup(&buffer[offset]); // warning: this must be free-d by the user
+	return strdup(&buffer[offset]); /* warning: this must be free-d by the user */
 }
 
-long unsigned int base36dec(const char *text)
+long unsigned int
+base36dec(const char *text)
 {
 	return strtoul(text, NULL, 36);
 }
@@ -73,6 +75,9 @@ digestControlFile(ControlFileData *ControlFile, char *src, size_t size)
 	checkControlFile(ControlFile);
 }
 
+/*
+ * Get lsn of the moment when ptrack was enabled the last time.
+ */
 XLogRecPtr
 get_last_ptrack_lsn(void)
 {
@@ -111,14 +116,14 @@ get_current_timeline(bool safe)
 }
 
 uint64
-get_system_identifier(bool safe)
+get_system_identifier(char *pgdata_path)
 {
 	ControlFileData ControlFile;
-	char       *buffer;
-	size_t      size;
+	char	   *buffer;
+	size_t		size;
 
 	/* First fetch file... */
-	buffer = slurpFile(pgdata, "global/pg_control", &size, safe);
+	buffer = slurpFile(pgdata_path, "global/pg_control", &size, false);
 	if (buffer == NULL)
 		return 0;
 	digestControlFile(&ControlFile, buffer, size);
@@ -229,4 +234,25 @@ remove_not_digit(char *buf, size_t len, const char *str)
 		buf[j++] = str[i];
 	}
 	buf[j] = '\0';
+}
+
+/* Fill pgBackup struct with default values */
+void
+pgBackup_init(pgBackup *backup)
+{
+	backup->backup_id = INVALID_BACKUP_ID;
+	backup->backup_mode = BACKUP_MODE_INVALID;
+	backup->status = BACKUP_STATUS_INVALID;
+	backup->tli = 0;
+	backup->start_lsn = 0;
+	backup->stop_lsn = 0;
+	backup->start_time = (time_t) 0;
+	backup->end_time = (time_t) 0;
+	backup->recovery_xid = 0;
+	backup->recovery_time = (time_t) 0;
+	backup->data_bytes = BYTES_INVALID;
+	backup->block_size = BLCKSZ;
+	backup->wal_block_size = XLOG_BLCKSZ;
+	backup->stream = false;
+	backup->parent_backup = 0;
 }

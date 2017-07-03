@@ -1,132 +1,207 @@
 import unittest
-from os import path
-import six
-from .pb_lib import ProbackupTest
-from testgres import stop_all
+import os
+from .helpers.ptrack_helpers import ProbackupTest, ProbackupException
 
 
 class OptionTest(ProbackupTest, unittest.TestCase):
 
-	def __init__(self, *args, **kwargs):
-		super(OptionTest, self).__init__(*args, **kwargs)
+    def __init__(self, *args, **kwargs):
+        super(OptionTest, self).__init__(*args, **kwargs)
+        self.module_name = 'option'
 
-	@classmethod
-	def tearDownClass(cls):
-		stop_all()
+    # @unittest.skip("skip")
+    # @unittest.expectedFailure
+    def test_help_1(self):
+        """help options"""
+        fname = self.id().split(".")[3]
+        backup_dir = os.path.join(self.tmp_path, self.module_name, fname, 'backup')
+        with open(os.path.join(self.dir_path, "expected/option_help.out"), "rb") as help_out:
+            self.assertEqual(
+                self.run_pb(["--help"]),
+                help_out.read().decode("utf-8")
+            )
 
-	def test_help_1(self):
-		"""help options"""
-		with open(path.join(self.dir_path, "expected/option_help.out"), "rb") as help_out:
-			self.assertEqual(
-				self.run_pb(["--help"]),
-				help_out.read()
-			)
+    # @unittest.skip("skip")
+    def test_version_2(self):
+        """help options"""
+        fname = self.id().split(".")[3]
+        backup_dir = os.path.join(self.tmp_path, self.module_name, fname, 'backup')
+        with open(os.path.join(self.dir_path, "expected/option_version.out"), "rb") as version_out:
+            self.assertEqual(
+                self.run_pb(["--version"]),
+                version_out.read().decode("utf-8")
+            )
 
-	def test_version_2(self):
-		"""help options"""
-		with open(path.join(self.dir_path, "expected/option_version.out"), "rb") as version_out:
-			self.assertEqual(
-				self.run_pb(["--version"]),
-				version_out.read()
-			)
+    # @unittest.skip("skip")
+    def test_without_backup_path_3(self):
+        """backup command failure without backup mode option"""
+        fname = self.id().split(".")[3]
+        backup_dir = os.path.join(self.tmp_path, self.module_name, fname, 'backup')
+        try:
+            self.run_pb(["backup", "-b", "full"])
+            self.assertEqual(1, 0, "Expecting Error because '-B' parameter is not specified.\n Output: {0} \n CMD: {1}".format(
+                repr(self.output), self.cmd))
+        except ProbackupException as e:
+            self.assertEqual(e.message, 'ERROR: required parameter not specified: BACKUP_PATH (-B, --backup-path)\n',
+                '\n Unexpected Error Message: {0}\n CMD: {1}'.format(repr(e.message), self.cmd))
 
-	def test_without_backup_path_3(self):
-		"""backup command failure without backup mode option"""
-		self.assertEqual(
-			self.run_pb(["backup", "-b", "full"]),
-			six.b("ERROR: required parameter not specified: BACKUP_PATH (-B, --backup-path)\n")
-		)
 
-	def test_options_4(self):
-		node = self.make_bnode('test_options_4', base_dir="tmp_dirs/option/option_common")
-		try:
-			node.stop()
-		except:
-			pass
-		self.assertEqual(self.init_pb(node), six.b(""))
+    # @unittest.skip("skip")
+    def test_options_4(self):
+        """check options test"""
+        fname = self.id().split(".")[3]
+        backup_dir = os.path.join(self.tmp_path, self.module_name, fname, 'backup')
+        node = self.make_simple_node(base_dir="{0}/{1}/node".format(self.module_name, fname),
+            pg_options={'wal_level': 'replica', 'max_wal_senders': '2'})
+        try:
+            node.stop()
+        except:
+            pass
 
-		# backup command failure without backup mode option
-		self.assertEqual(
-			self.run_pb(["backup", "-B", self.backup_dir(node), "-D", node.data_dir]),
-			six.b("ERROR: Required parameter not specified: BACKUP_MODE (-b, --backup-mode)\n")
-		)
+        self.init_pb(backup_dir)
+        self.add_instance(backup_dir, 'node', node)
 
-		# backup command failure with invalid backup mode option
-		self.assertEqual(
-			self.run_pb(["backup", "-b", "bad", "-B", self.backup_dir(node)]),
-			six.b('ERROR: invalid backup-mode "bad"\n')
-		)
+        # backup command failure without instance option
+        try:
+            self.run_pb(["backup", "-B", backup_dir, "-D", node.data_dir, "-b", "full"])
+            self.assertEqual(1, 0, "Expecting Error because 'instance' parameter is not specified.\n Output: {0} \n CMD: {1}".format(
+                repr(self.output), self.cmd))
+        except ProbackupException as e:
+            self.assertEqual(e.message,
+                'ERROR: required parameter not specified: --instance\n',
+                '\n Unexpected Error Message: {0}\n CMD: {1}'.format(repr(e.message), self.cmd))
 
-		# delete failure without ID
-		self.assertEqual(
-			self.run_pb(["delete", "-B", self.backup_dir(node)]),
-			six.b("ERROR: required backup ID not specified\n")
-		)
+        # backup command failure without backup mode option
+        try:
+            self.run_pb(["backup", "-B", backup_dir, "--instance=node", "-D", node.data_dir])
+            self.assertEqual(1, 0, "Expecting Error because '-b' parameter is not specified.\n Output: {0} \n CMD: {1}".format(
+                repr(self.output), self.cmd))
+        except ProbackupException as e:
+            self.assertEqual(e.message,
+                'ERROR: required parameter not specified: BACKUP_MODE (-b, --backup-mode)\n',
+                '\n Unexpected Error Message: {0}\n CMD: {1}'.format(repr(e.message), self.cmd))
 
-		node.start()
+        # backup command failure with invalid backup mode option
+        try:
+            self.run_pb(["backup", "-B", backup_dir, "--instance=node", "-b", "bad"])
+            self.assertEqual(1, 0, "Expecting Error because backup-mode parameter is invalid.\n Output: {0} \n CMD: {1}".format(
+                repr(self.output), self.cmd))
+        except ProbackupException as e:
+            self.assertEqual(e.message,
+                'ERROR: invalid backup-mode "bad"\n',
+                '\n Unexpected Error Message: {0}\n CMD: {1}'.format(repr(e.message), self.cmd))
 
-		# syntax error in pg_probackup.conf
-		with open(path.join(self.backup_dir(node), "pg_probackup.conf"), "a") as conf:
-			conf.write(" = INFINITE\n")
+        # delete failure without ID
+        try:
+            self.run_pb(["delete", "-B", backup_dir, "--instance=node"])
+            # we should die here because exception is what we expect to happen
+            self.assertEqual(1, 0, "Expecting Error because backup ID is omitted.\n Output: {0} \n CMD: {1}".format(
+                repr(self.output), self.cmd))
+        except ProbackupException as e:
+            self.assertEqual(e.message,
+                'ERROR: required backup ID not specified\n',
+                '\n Unexpected Error Message: {0}\n CMD: {1}'.format(repr(e.message), self.cmd))
 
-		self.assertEqual(
-			self.backup_pb(node),
-			six.b('ERROR: syntax error in " = INFINITE"\n')
-		)
+        # Clean after yourself
+        self.del_test_dir(self.module_name, fname)
 
-		self.clean_pb(node)
-		self.assertEqual(self.init_pb(node), six.b(""))
+    #@unittest.skip("skip")
+    def test_options_5(self):
+        """check options test"""
+        fname = self.id().split(".")[3]
+        backup_dir = os.path.join(self.tmp_path, self.module_name, fname, 'backup')
+        node = self.make_simple_node(base_dir="{0}/{1}/node".format(self.module_name, fname),
+            pg_options={'wal_level': 'replica', 'max_wal_senders': '2'})
 
-		# invalid value in pg_probackup.conf
-		with open(path.join(self.backup_dir(node), "pg_probackup.conf"), "a") as conf:
-			conf.write("BACKUP_MODE=\n")
+        self.assertEqual("INFO: Backup catalog '{0}' successfully inited\n".format(backup_dir),
+            self.init_pb(backup_dir))
+        self.add_instance(backup_dir, 'node', node)
 
-		self.assertEqual(
-			self.backup_pb(node, backup_type=None),
-			six.b('ERROR: invalid backup-mode ""\n')
-		)
+        node.start()
 
-		self.clean_pb(node)
-		self.assertEqual(self.init_pb(node), six.b(""))
+        # syntax error in pg_probackup.conf
+        with open(os.path.join(backup_dir, "backups", "node", "pg_probackup.conf"), "a") as conf:
+            conf.write(" = INFINITE\n")
+        try:
+            self.backup_node(backup_dir, 'node', node)
+            # we should die here because exception is what we expect to happen
+            self.assertEqual(1, 0, "Expecting Error because of garbage in pg_probackup.conf.\n Output: {0} \n CMD: {1}".format(
+                repr(self.output), self.cmd))
+        except ProbackupException as e:
+            self.assertEqual(e.message,
+                'ERROR: syntax error in " = INFINITE"\n',
+                '\n Unexpected Error Message: {0}\n CMD: {1}'.format(repr(e.message), self.cmd))
 
-		# Command line parameters should override file values
-		self.init_pb(node)
-		with open(path.join(self.backup_dir(node), "pg_probackup.conf"), "a") as conf:
-			conf.write("REDUNDANCY=1\n")
+        self.clean_pb(backup_dir)
+        self.init_pb(backup_dir)
+        self.add_instance(backup_dir, 'node', node)
 
-		self.assertEqual(
-			self.retention_show(node, ["--redundancy", "2"]),
-			six.b("# retention policy\nREDUNDANCY=2\n")
-		)
+        # invalid value in pg_probackup.conf
+        with open(os.path.join(backup_dir, "backups", "node", "pg_probackup.conf"), "a") as conf:
+            conf.write("BACKUP_MODE=\n")
 
-		# User cannot send --system-identifier parameter via command line
-		self.assertEqual(
-			self.backup_pb(node, options=["--system-identifier", "123"]),
-			six.b("ERROR: option system-identifier cannot be specified in command line\n")
-		)
+        try:
+            self.backup_node(backup_dir, 'node', node, backup_type=None),
+            # we should die here because exception is what we expect to happen
+            self.assertEqual(1, 0, "Expecting Error because of invalid backup-mode in pg_probackup.conf.\n Output: {0} \n CMD: {1}".format(
+                repr(self.output), self.cmd))
+        except ProbackupException as e:
+            self.assertEqual(e.message,
+                'ERROR: invalid backup-mode ""\n',
+                '\n Unexpected Error Message: {0}\n CMD: {1}'.format(repr(e.message), self.cmd))
 
-		# invalid value in pg_probackup.conf
-		with open(path.join(self.backup_dir(node), "pg_probackup.conf"), "a") as conf:
-			conf.write("SMOOTH_CHECKPOINT=FOO\n")
+        self.clean_pb(backup_dir)
+        self.init_pb(backup_dir)
+        self.add_instance(backup_dir, 'node', node)
 
-		self.assertEqual(
-			self.backup_pb(node),
-			six.b("ERROR: option -C, --smooth-checkpoint should be a boolean: 'FOO'\n")
-		)
+        # Command line parameters should override file values
+        with open(os.path.join(backup_dir, "backups", "node", "pg_probackup.conf"), "a") as conf:
+            conf.write("retention-redundancy=1\n")
 
-		self.clean_pb(node)
-		self.assertEqual(self.init_pb(node), six.b(""))
+        self.assertEqual(self.show_config(backup_dir, 'node')['retention-redundancy'], '1')
 
-		# invalid option in pg_probackup.conf
-		with open(path.join(self.backup_dir(node), "pg_probackup.conf"), "a") as conf:
-			conf.write("TIMELINEID=1\n")
+        # User cannot send --system-identifier parameter via command line
+        try:
+            self.backup_node(backup_dir, 'node', node, options=["--system-identifier", "123"]),
+            # we should die here because exception is what we expect to happen
+            self.assertEqual(1, 0, "Expecting Error because option system-identifier cannot be specified in command line.\n Output: {0} \n CMD: {1}".format(
+                repr(self.output), self.cmd))
+        except ProbackupException as e:
+            self.assertEqual(e.message,
+                'ERROR: option system-identifier cannot be specified in command line\n',
+                '\n Unexpected Error Message: {0}\n CMD: {1}'.format(repr(e.message), self.cmd))
 
-		self.assertEqual(
-			self.backup_pb(node),
-			six.b('ERROR: invalid option "TIMELINEID"\n')
-		)
+        # invalid value in pg_probackup.conf
+        with open(os.path.join(backup_dir, "backups", "node", "pg_probackup.conf"), "a") as conf:
+            conf.write("SMOOTH_CHECKPOINT=FOO\n")
 
-		self.clean_pb(node)
-		self.assertEqual(self.init_pb(node), six.b(""))
+        try:
+            self.backup_node(backup_dir, 'node', node)
+            # we should die here because exception is what we expect to happen
+            self.assertEqual(1, 0, "Expecting Error because option -C should be boolean.\n Output: {0} \n CMD: {1}".format(
+                repr(self.output), self.cmd))
+        except ProbackupException as e:
+            self.assertEqual(e.message,
+                "ERROR: option -C, --smooth-checkpoint should be a boolean: 'FOO'\n",
+                '\n Unexpected Error Message: {0}\n CMD: {1}'.format(repr(e.message), self.cmd))
 
-		node.stop()
+        self.clean_pb(backup_dir)
+        self.init_pb(backup_dir)
+        self.add_instance(backup_dir, 'node', node)
+
+        # invalid option in pg_probackup.conf
+        with open(os.path.join(backup_dir, "backups", "node", "pg_probackup.conf"), "a") as conf:
+            conf.write("TIMELINEID=1\n")
+
+        try:
+            self.backup_node(backup_dir, 'node', node)
+            # we should die here because exception is what we expect to happen
+            self.assertEqual(1, 0, 'Expecting Error because of invalid option "TIMELINEID".\n Output: {0} \n CMD: {1}'.format(
+                repr(self.output), self.cmd))
+        except ProbackupException as e:
+            self.assertEqual(e.message,
+                'ERROR: invalid option "TIMELINEID"\n',
+                '\n Unexpected Error Message: {0}\n CMD: {1}'.format(repr(e.message), self.cmd))
+
+        # Clean after yourself
+        self.del_test_dir(self.module_name, fname)
