@@ -173,10 +173,9 @@ bool		progress_timestamp = false; /* progress report with Unix time */
 int			nclients = 1;		/* number of clients */
 int			nthreads = 1;		/* number of threads */
 bool		is_connect;			/* establish connection for each transaction */
-bool		is_latencies;		/* report per-command latencies */
+bool		report_per_command = false;	/* report per-command latencies and
+										 * failures */
 int			main_pid;			/* main process id used in log filename */
-bool		report_failures = false;	/* whether to report serialization and
-										 * deadlock failures per command */
 
 char	   *pghost = "";
 char	   *pgport = "";
@@ -470,7 +469,7 @@ usage(void)
 		   "                           protocol for submitting queries (default: simple)\n"
 		   "  -n, --no-vacuum          do not run VACUUM before tests\n"
 		   "  -P, --progress=NUM       show thread progress report every NUM seconds\n"
-		   "  -r, --report-latencies   report average latency per command\n"
+		   "  -r, --report-per-command report average latency and failures per command\n"
 		"  -R, --rate=NUM           target rate in transactions per second\n"
 		   "  -s, --scale=NUM          report this scale factor in output\n"
 		   "  -t, --transactions=NUM   number of transactions each client runs (default: 10)\n"
@@ -478,7 +477,6 @@ usage(void)
 		   "  -v, --vacuum-all         vacuum all four standard tables before tests\n"
 		   "  --aggregate-interval=NUM aggregate data over NUM seconds\n"
 		"  --progress-timestamp     use Unix epoch timestamps for progress\n"
-		"  --report-failures        report serialization and deadlock failures per command\n"
 		   "  --sampling-rate=NUM      fraction of transactions to log (e.g., 0.01 for 1%%)\n"
 		   "\nCommon options:\n"
 		   "  -d, --debug              print debugging output\n"
@@ -1977,7 +1975,7 @@ top:
 		 * accumulate per-command execution times in thread-local data
 		 * structure, if per-command latencies are requested
 		 */
-		if (is_latencies && !serialization_failure && !deadlock_failure)
+		if (report_per_command && !serialization_failure && !deadlock_failure)
 		{
 			if (INSTR_TIME_IS_ZERO(now))
 				INSTR_TIME_SET_CURRENT(now);
@@ -2134,7 +2132,7 @@ top:
 	}
 
 	/* Record statement start time if per-command latencies are requested */
-	if (is_latencies)
+	if (report_per_command)
 		INSTR_TIME_SET_CURRENT(st->stmt_begin);
 
 	if (commands[st->state]->type == SQL_COMMAND)
@@ -3490,7 +3488,7 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 	printf("tps = %f (excluding connections establishing)\n", tps_exclude);
 
 	/* Report per-script/command statistics */
-	if (per_script_stats || latency_limit || is_latencies)
+	if (per_script_stats || latency_limit || report_per_command)
 	{
 		int			i;
 
@@ -3529,41 +3527,24 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 				printSimpleStats(" - latency", &sql_script[i].stats.latency);
 
 			/*
-			 * Report per-command serialization / deadlock failures and
-			 * latencies */
-			if (report_failures || is_latencies)
+			 * Report per-command statistics: latencies, serialization &
+			 * deadlock failures.
+			 */
+			if (report_per_command)
 			{
 				Command   **commands;
 
-				if (report_failures && is_latencies)
-					printf(" - statement serialization, deadlock failures and latencies in milliseconds:\n");
-				else if (report_failures)
-					printf(" - statement serialization and deadlock failures:\n");
-				else
-					printf(" - statement latencies in milliseconds:\n");
+				printf(" - statement latencies in milliseconds, serialization & deadlock failures:\n");
 
 				for (commands = sql_script[i].commands;
 					 *commands != NULL;
 					 commands++)
-				{
-					if (report_failures && is_latencies)
-						printf("   %25" INT64_MODIFIER "d  %25" INT64_MODIFIER "d  %11.3f  %s\n",
-							   (*commands)->serialization_failures,
-							   (*commands)->deadlock_failures,
-							   1000.0 * (*commands)->stats.sum /
-							   (*commands)->stats.count,
-							   (*commands)->line);
-					else if (report_failures)
-						printf("   %25" INT64_MODIFIER "d  %25" INT64_MODIFIER "d  %s\n",
-							   (*commands)->serialization_failures,
-							   (*commands)->deadlock_failures,
-							   (*commands)->line);
-					else
-						printf("   %11.3f  %s\n",
-							   1000.0 * (*commands)->stats.sum /
-							   (*commands)->stats.count,
-							   (*commands)->line);
-				}
+					printf("   %11.3f  %25" INT64_MODIFIER "d  %25" INT64_MODIFIER "d  %s\n",
+						   1000.0 * (*commands)->stats.sum /
+						   (*commands)->stats.count,
+						   (*commands)->serialization_failures,
+						   (*commands)->deadlock_failures,
+						   (*commands)->line);
 			}
 		}
 	}
@@ -3593,7 +3574,7 @@ main(int argc, char **argv)
 		{"progress", required_argument, NULL, 'P'},
 		{"protocol", required_argument, NULL, 'M'},
 		{"quiet", no_argument, NULL, 'q'},
-		{"report-latencies", no_argument, NULL, 'r'},
+		{"report-per-command", no_argument, NULL, 'r'},
 		{"rate", required_argument, NULL, 'R'},
 		{"scale", required_argument, NULL, 's'},
 		{"select-only", no_argument, NULL, 'S'},
@@ -3613,7 +3594,6 @@ main(int argc, char **argv)
 #ifdef WITH_RSOCKET
 		{"with-rsocket", no_argument, NULL, 7},
 #endif
-		{"report-failures", no_argument, NULL, 8},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -3756,7 +3736,7 @@ main(int argc, char **argv)
 			case 'r':
 				benchmarking_option_set = true;
 				per_script_stats = true;
-				is_latencies = true;
+				report_per_command = true;
 				break;
 			case 's':
 				scale_given = true;
@@ -3985,11 +3965,6 @@ main(int argc, char **argv)
 				isRsocket = true;
 				break;
 #endif
-			case 8:
-				benchmarking_option_set = true;
-				per_script_stats = true;
-				report_failures = true;
-				break;
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 				exit(1);
