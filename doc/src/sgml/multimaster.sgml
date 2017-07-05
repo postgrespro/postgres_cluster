@@ -77,7 +77,8 @@
       <listitem>
         <para>
           <filename>multimaster</filename> can only replicate one database
-          per cluster, which is specified in the <varname>multimaster.conn_strings</varname> variable. If you try to connect to a different database, <filename>multimaster</filename> will return a corresponding error message.
+          per cluster, which is specified in the <varname>multimaster.conn_strings</varname> variable. If you connect to a different database,
+          all operations will fail with the corresponding error message.
         </para>
       </listitem>
       <listitem>
@@ -126,7 +127,7 @@
       </listitem>
     </itemizedlist>
 <para>If you have any data that must be present on one of the nodes only, you can exclude a particular table from replication, as follows:
-    <programlisting>SELECT * FROM <function>mtm.make_table_local</function>('table_name') </programlisting> 
+    <programlisting><function>mtm.make_table_local</function>('table_name') </programlisting> 
     </para>
   </sect2>
     
@@ -252,10 +253,23 @@
     <para>
       In case of a partial network split when different nodes have
       different connectivity, <filename>multimaster</filename> finds a
-      fully connected subset of nodes and switches off other nodes. For
+      fully connected subset of nodes and disconnects other nodes. For
       example, in a three-node cluster, if node A can access both B and
       C, but node B cannot access node C, <filename>multimaster</filename>
       isolates node C to ensure data consistency on nodes A and B.
+    </para>
+    <note>
+        <para>
+          If you try to access a disconnected node, <filename>multimaster</filename> returns an error
+          message indicating the current status of the node. To prevent stale reads, read-only queries are also forbidden.
+          Additionally, you can break connections between the disconnected node and the clients using the
+          <link linkend="mtm-break-connection">multimaster.break_connection</link> variable.
+        </para>
+    </note>
+    <para>
+      If required, you can override this behavior for one of the nodes using the
+      <link linkend="mtm-major-node">multimaster.major_node</link> variable.
+      In this case, the node will continue working even if it is isolated.
     </para>
     <para>
       Each node maintains a data structure that keeps the information about the state of all
@@ -700,7 +714,8 @@ multimaster.conn_strings = 'dbname=mydb user=myuser host=node1,dbname=mydb user=
 pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable> start
 </programlisting>
         <para>
-          All the cluster nodes get locked for write transactions until the new node retrieves all the updates that happened after you started making a base backup.
+          When the node gets synchronized up to the minimum recovery lag,
+          all the cluster nodes get locked for write transactions until the new node retrieves all the updates.
           When data recovery is complete, <filename>multimaster</filename> promotes the new node to the online state and includes it into the replication scheme.
         </para>
       </listitem>
@@ -737,14 +752,32 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
 SELECT mtm.stop_node(3);
 </programlisting>
     <para>
-      This disables replication slots for node 3 on all cluster nodes and stops replication to
-      this node.
+      This excludes node 3 from the cluster and stops replication to
+      this node. While the WAL lag between the node and the current cluster state 
+      is less than the <varname>multimaster.max_recovery_lag</varname> value,
+      you can restore the node using the <function>mtm.recover_node</function> function.
+      For details, see <xref linkend="multimaster-restoring-a-node-manually">.
     </para>
+    <note>
     <para>
-      If you simply shutdown a node, it will be excluded
+      If you simply shut down a node, it will be excluded
       from the cluster as well. However, all transactions in the cluster
       will be frozen until other nodes detect the offline state of the node.
       This time interval is defined by the <literal>multimaster.heartbeat_recv_timeout</literal> parameter.
+    </para>
+    </note>
+    <para>
+      If you would like to permanently remove the node from the cluster, run the
+      <literal>mtm.stop_node()</literal> function with the <literal>drop_slot</literal> parameter
+      set to <literal>true</literal>:
+    </para>
+    <programlisting>
+SELECT mtm.stop_node(3, drop_slot true);
+</programlisting>
+    <para>
+      This disables replication slots for node 3 on all cluster nodes and stops replication to
+      this node. If you would like to return the node to the cluster, you will have to add it
+      as a new node. For details, see <xref linkend="multimaster-adding-new-nodes-to-the-cluster">.
     </para>
   </sect3>
   <sect3 id="multimaster-restoring-a-node-manually">
@@ -786,7 +819,8 @@ pg_basebackup -D <replaceable>datadir</replaceable> -h node1 -x
 pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable> start
 </programlisting>
         <para>
-          All the cluster nodes get locked for write transactions until the restored node retrieves all the updates that happened after you started making a base backup.
+          When the node gets synchronized up to the minimum recovery lag,
+          all the cluster nodes get locked for write transactions until the restored node retrieves all the updates.
           When data recovery is complete, <filename>multimaster</filename> promotes the new node to the online state and includes it into the replication scheme.
         </para>
       </listitem>
@@ -882,7 +916,7 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
     you define this variable when setting up the cluster, <filename>multimaster</filename> checks that
     the cluster name is the same for all the cluster nodes.
   </para></listitem></varlistentry>
-  <varlistentry>
+  <varlistentry id="mtm-break-connection">
     <term><varname>multimaster.break_connection</varname>
       <indexterm><primary><varname>multimaster.break_connection</varname></primary>
       </indexterm>
@@ -896,7 +930,7 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
       </para>
     </listitem>
   </varlistentry>
-  <varlistentry>
+  <varlistentry id="mtm-major-node">
     <term><varname>multimaster.major_node</varname>
       <indexterm><primary><varname>multimaster.major_node</varname></primary>
       </indexterm>
@@ -909,7 +943,7 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
       </para>
       <important>
         <para>This parameter should be used with caution. Only one node in the cluster
-        can have this parameter set to true. When set to <literal>true</literal> on several
+        can have this parameter set to <literal>true</literal>. When set to <literal>true</literal> on several
         nodes, this parameter can cause the split-brain problem.
         </para>
       </important>
@@ -1080,12 +1114,12 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
       </indexterm>
      </term>
      <listitem>
-      <para>Collects the data returned by the <function>mtm.get_cluster_state()</function> function from all available nodes. For this function to work, in addition to replication connections, <filename>pg_hba.conf</filename> must allow ordinary connections to the node with the specified connection string.
+      <para>Collects the data returned by the <link linkend="mtm-get-cluster-state"><function>mtm.get_cluster_state()</function></link> function from all available nodes. For this function to work, in addition to replication connections, <filename>pg_hba.conf</filename> must allow ordinary connections to the node with the specified connection string.
       </para>
      </listitem>
     </varlistentry>
 
-        <varlistentry>
+        <varlistentry id="mtm-get-cluster-state">
      <term>
       <function>mtm.get_cluster_state()</function>
       <indexterm>
@@ -1287,7 +1321,7 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
       </para>
      </listitem>
     </varlistentry>
-        <varlistentry>
+        <varlistentry id="mtm-recover-node">
      <term>
       <function>mtm.recover_node(<parameter>node</parameter> <type>integer</type>)</function>
       <indexterm>
