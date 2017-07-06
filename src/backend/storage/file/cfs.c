@@ -603,7 +603,10 @@ static bool cfs_recover(FileMap* map, int md,
 		else if (pg_fsync(md) < 0)
 			elog(WARNING, "CFS failed to sync map %s: %m", map_path);
 		else
+		{
 			ok = true;
+			map->generation += 1; /* it is here just for pg_probackup */
+		}
 		close(md2);
 	}
 	else
