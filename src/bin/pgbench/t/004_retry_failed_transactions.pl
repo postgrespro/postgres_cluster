@@ -4,7 +4,7 @@ use warnings;
 use Config;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 37;
+use Test::More tests => 38;
 
 use constant
 {
@@ -35,18 +35,16 @@ append_to_file($script,
 my $script1 = $node->basedir . '/pgbench_script1';
 append_to_file($script1,
 		"BEGIN;\n"
-	  . "SELECT pg_sleep(10);\n"
 	  . "\\set delta1 random(-5000, 5000)\n"
 	  . "\\set delta2 random(-5000, 5000)\n"
 	  . "UPDATE xy SET y = y + :delta1 WHERE x = 1;\n"
-	  . "SELECT pg_sleep(40);\n"
+	  . "SELECT pg_sleep(20);\n"
 	  . "UPDATE xy SET y = y + :delta2 WHERE x = 2;\n"
 	  . "END;");
 
 my $script2 = $node->basedir . '/pgbench_script2';
 append_to_file($script2,
 		"BEGIN;\n"
-	  . "SELECT pg_sleep(10);\n"
 	  . "\\set delta1 random(-5000, 5000)\n"
 	  . "\\set delta2 random(-5000, 5000)\n"
 	  . "UPDATE xy SET y = y + :delta2 WHERE x = 2;\n"
@@ -182,9 +180,8 @@ sub test_pgbench_deadlock_failures
 	print "# Running: " . join(" ", @command1) . "\n";
 	$h1 = IPC::Run::start \@command1, \$in1, \$out1, \$err1;
 
-	# Let pgbench sleep 10 seconds and run first update command in the
-	# transaction:
-	sleep 20;
+	# Let pgbench run first update command in the transaction:
+	sleep 10;
 
 	# Run second pgbench
 	my @command2 = (
@@ -258,34 +255,40 @@ sub test_pgbench_deadlock_failures
 	  . ": pgbench 2: check deadlock failures");
 
 	# First or second pgbench should get a deadlock error
-	my $pattern =
-		"client 0 sending UPDATE xy SET y = y \\+ (-?\\d+) WHERE x = (\\d);\n"
-	  . "client 0 receiving\n"
-	  . "(|client 0 sending SELECT pg_sleep\\(40\\);\n"
-	  . "client 0 receiving\n)"
-	  . "client 0 sending UPDATE xy SET y = y \\+ (-?\\d+) WHERE x = (\\d);\n"
-	  . "client 0 receiving\n"
-	  . "client 0 got a deadlock failure \\(attempt 1/2\\)\n"
-	  . "client 0 sending END;\n"
-	  . "client 0 receiving\n"
-	  . "client 0 repeats the failed transaction \\(attempt 2/2\\)\n"
-	  . "client 0 sending BEGIN;\n"
-	  . "client 0 receiving\n"
-	  . "client 0 sending SELECT pg_sleep\\(10\\);\n"
-	  . "client 0 receiving\n"
-	  . "client 0 executing \\\\set delta1\n"
-	  . "client 0 executing \\\\set delta2\n"
-	  . "client 0 sending UPDATE xy SET y = y \\+ \\g1 WHERE x = \\g2;\n"
-	  . "client 0 receiving\n"
-	  . "\\g3"
-	  . "client 0 sending UPDATE xy SET y = y \\+ \\g4 WHERE x = \\g5;\n";
-
 	like($err1 . $err2,
-		qr{$pattern},
+		qr{client 0 got a deadlock failure},
 		"concurrent deadlock update with retrying: "
 	  . $isolation_level_sql
-	  . ": check the retried transaction");
+	  . ": check deadlock failure in debug logs");
 
+	if ($isolation_level == READ_COMMITTED)
+	{
+		my $pattern =
+			"client 0 sending UPDATE xy SET y = y \\+ (-?\\d+) WHERE x = (\\d);\n"
+		  . "client 0 receiving\n"
+		  . "(|client 0 sending SELECT pg_sleep\\(20\\);\n"
+		  . "client 0 receiving\n)"
+		  . "client 0 sending UPDATE xy SET y = y \\+ (-?\\d+) WHERE x = (\\d);\n"
+		  . "client 0 receiving\n"
+		  . "client 0 got a deadlock failure \\(attempt 1/2\\)\n"
+		  . "client 0 sending END;\n"
+		  . "client 0 receiving\n"
+		  . "client 0 repeats the failed transaction \\(attempt 2/2\\)\n"
+		  . "client 0 sending BEGIN;\n"
+		  . "client 0 receiving\n"
+		  . "client 0 executing \\\\set delta1\n"
+		  . "client 0 executing \\\\set delta2\n"
+		  . "client 0 sending UPDATE xy SET y = y \\+ \\g1 WHERE x = \\g2;\n"
+		  . "client 0 receiving\n"
+		  . "\\g3"
+		  . "client 0 sending UPDATE xy SET y = y \\+ \\g4 WHERE x = \\g5;\n";
+
+		like($err1 . $err2,
+			qr{$pattern},
+			"concurrent deadlock update with retrying: "
+		  . $isolation_level_sql
+		  . ": check the retried transaction");
+	}
 }
 
 test_pgbench_serialization_failures(REPEATABLE_READ);
