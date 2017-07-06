@@ -264,13 +264,13 @@ typedef struct
 	instr_time	stmt_begin;		/* used for measuring statement latencies */
 	int			use_file;		/* index in sql_scripts for this client */
 	bool		prepared[MAX_SCRIPTS];	/* whether client prepared the script */
-
-	/* per client collected stats */
-	int64		cnt;			/* transaction count */
 	bool		serialization_failure;	/* if there was serialization failure
 										 * during script execution */
 	bool		deadlock_failure;	/* if there was deadlock failure during
 									 * script execution */
+
+	/* per client collected stats */
+	int64		cnt;			/* transaction count */
 	int			ecnt;			/* error count */
 } CState;
 
@@ -769,13 +769,6 @@ accumStats(StatsData *stats, bool skipped, bool serialization_failure,
 
 	if (skipped)
 	{
-		/* no latency to record on such transactions */
-		if (skipped)
-			stats->skipped++;
-		if (serialization_failure)
-			stats->serialization_failures++;
-		if (deadlock_failure)
-			stats->deadlock_failures++;
 		/* no latency to record on skipped transactions */
 		stats->skipped++;
 	}
@@ -3497,25 +3490,23 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 			if (num_scripts > 1)
 				printf("SQL script %d: %s\n"
 					   " - weight: %d (targets %.1f%% of total)\n"
-					   " - " INT64_FORMAT " transactions (%.1f%% of total, tps = %f)\n",
+					   " - " INT64_FORMAT " transactions (%.1f%% of total, tps = %f)\n"
+					   " - number of transactions with serialization failures: " INT64_FORMAT " (%.3f%%)\n"
+					   " - number of transactions with deadlock failures: " INT64_FORMAT " (%.3f%%)\n",
 					   i + 1, sql_script[i].desc,
 					   sql_script[i].weight,
 					   100.0 * sql_script[i].weight / total_weight,
 					   sql_script[i].stats.cnt,
 					   100.0 * sql_script[i].stats.cnt / total->cnt,
-					   sql_script[i].stats.cnt / time_include);
+					   sql_script[i].stats.cnt / time_include,
+					   sql_script[i].stats.serialization_failures,
+					   (100.0 * sql_script[i].stats.serialization_failures /
+						sql_script[i].stats.cnt),
+					   sql_script[i].stats.deadlock_failures,
+					   (100.0 * sql_script[i].stats.deadlock_failures /
+						sql_script[i].stats.cnt));
 			else
 				printf("script statistics:\n");
-
-			printf(" - number of transactions with serialization failures: " INT64_FORMAT " (%.3f%%)\n",
-				   sql_script[i].stats.serialization_failures,
-				   (100.0 * sql_script[i].stats.serialization_failures /
-					sql_script[i].stats.cnt));
-
-			printf(" - number of transactions with deadlock failures: " INT64_FORMAT " (%.3f%%)\n",
-				   sql_script[i].stats.deadlock_failures,
-				   (100.0 * sql_script[i].stats.deadlock_failures /
-					sql_script[i].stats.cnt));
 
 			if (latency_limit)
 				printf(" - number of transactions skipped: " INT64_FORMAT " (%.3f%%)\n",
