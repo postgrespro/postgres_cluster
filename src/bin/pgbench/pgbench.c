@@ -2178,6 +2178,7 @@ top:
 					thread->stats.serialization_failures++;
 				if (st->deadlock_failure)
 					thread->stats.deadlock_failures++;
+				mergeSimpleStats(&thread->stats.attempts, &st->attempts);
 			}
 		}
 
@@ -2701,6 +2702,7 @@ processXactStats(TState *thread, CState *st, instr_time *now,
 			thread->stats.serialization_failures++;
 		if (st->deadlock_failure)
 			thread->stats.deadlock_failures++;
+		mergeSimpleStats(&thread->stats.attempts, &st->attempts);
 	}
 
 	if (use_log)
