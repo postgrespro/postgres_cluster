@@ -54,7 +54,6 @@
 
 #include "pgbench.h"
 
-#define ERRCODE_IN_FAILED_SQL_TRANSACTION  "25P02"
 #define ERRCODE_T_R_SERIALIZATION_FAILURE  "40001"
 #define ERRCODE_T_R_DEADLOCK_DETECTED  "40P01"
 #define ERRCODE_UNDEFINED_TABLE  "42P01"
@@ -176,6 +175,9 @@ bool		is_connect;			/* establish connection for each transaction */
 bool		report_per_command = false;	/* report per-command latencies and
 										 * failures */
 int			main_pid;			/* main process id used in log filename */
+int			max_attempts_number = 1;	/* maximum number of attempts to run the
+										 * transaction with serialization or
+										 * deadlock failures */
 
 char	   *pghost = "";
 char	   *pgport = "";
@@ -239,9 +241,26 @@ typedef struct StatsData
 										 * serialization failures */
 	int64		deadlock_failures; /* number of transactions with deadlock
 									* failures */
+	SimpleStats attempts;
 	SimpleStats latency;
 	SimpleStats lag;
 } StatsData;
+
+/*
+ * Data structure for repeating a transaction from the beginnning with the same
+ * parameters.
+ */
+typedef struct LastBeginState
+{
+	int			state;			/* state No. */
+	int			attempts_number;	/* how many times have we tried to run the
+									 * transaction without serialization or
+									 * deadlock failures */
+	unsigned short random_state[3];	/* random seed */
+	Variable   *variables;		/* array of variable definitions */
+	int			nvariables;		/* number of variables */
+	bool		vars_sorted;	/* are variables sorted by name? */
+} LastBeginState;
 
 /*
  * Connection state
@@ -264,10 +283,18 @@ typedef struct
 	instr_time	stmt_begin;		/* used for measuring statement latencies */
 	int			use_file;		/* index in sql_scripts for this client */
 	bool		prepared[MAX_SCRIPTS];	/* whether client prepared the script */
+	unsigned short random_state[3];	/* separate randomness for each client */
 	bool		serialization_failure;	/* if there was serialization failure
 										 * during script execution */
 	bool		deadlock_failure;	/* if there was deadlock failure during
 									 * script execution */
+
+	/* for repeating transactions with serialization or deadlock failures: */
+	LastBeginState *last_begin_state;
+	bool		end_failed_transaction; /* are we ending the failed transaction
+										 * (and, perhaps, are trying to repeat
+										 * it)?*/
+	SimpleStats attempts;
 
 	/* per client collected stats */
 	int64		cnt;			/* transaction count */
@@ -283,7 +310,6 @@ typedef struct
 	pthread_t	thread;			/* thread handle */
 	CState	   *state;			/* array of CState */
 	int			nstate;			/* length of state[] */
-	unsigned short random_state[3];		/* separate randomness for each thread */
 	int64		throttle_trigger;		/* previous/next throttling (us) */
 	FILE	   *logfile;		/* where to log, or NULL */
 
@@ -327,6 +353,17 @@ typedef struct
 										 * this command */
 	int64		deadlock_failures;	/* number of deadlock failures in this
 									 * command */
+	SimpleStats attempts;		/* is valid if command starts a transaction */
+
+	/* for repeating transactions with serialization and deadlock failures: */
+
+	bool		is_transaction_begin;	/* do we start a transaction? */
+
+	/*
+	 * Command number to complete transaction starting in this command. -1 if it
+	 * is the sql command outside the transaction block.
+	 */
+	int			transaction_end_num;
 } Command;
 
 typedef struct ParsedScript
@@ -469,13 +506,15 @@ usage(void)
 		   "                           protocol for submitting queries (default: simple)\n"
 		   "  -n, --no-vacuum          do not run VACUUM before tests\n"
 		   "  -P, --progress=NUM       show thread progress report every NUM seconds\n"
-		   "  -r, --report-per-command report average latency and failures per command\n"
+		   "  -r, --report-per-command report latencies, failures and attempts per command\n"
 		"  -R, --rate=NUM           target rate in transactions per second\n"
 		   "  -s, --scale=NUM          report this scale factor in output\n"
 		   "  -t, --transactions=NUM   number of transactions each client runs (default: 10)\n"
 		 "  -T, --time=NUM           duration of benchmark test in seconds\n"
 		   "  -v, --vacuum-all         vacuum all four standard tables before tests\n"
 		   "  --aggregate-interval=NUM aggregate data over NUM seconds\n"
+		   "  --max-attempts-number=NUM\n"
+	  "                           max number of tries to run transaction (default: 1)\n"
 		"  --progress-timestamp     use Unix epoch timestamps for progress\n"
 		   "  --sampling-rate=NUM      fraction of transactions to log (e.g., 0.01 for 1%%)\n"
 		   "\nCommon options:\n"
@@ -590,7 +629,7 @@ gotdigits:
 
 /* random number generator: uniform distribution from min to max inclusive */
 static int64
-getrand(TState *thread, int64 min, int64 max)
+getrand(CState *st, int64 min, int64 max)
 {
 	/*
 	 * Odd coding is so that min and max have approximately the same chance of
@@ -601,7 +640,7 @@ getrand(TState *thread, int64 min, int64 max)
 	 * protected by a mutex, and therefore a bottleneck on machines with many
 	 * CPUs.
 	 */
-	return min + (int64) ((max - min + 1) * pg_erand48(thread->random_state));
+	return min + (int64) ((max - min + 1) * pg_erand48(st->random_state));
 }
 
 /*
@@ -610,7 +649,7 @@ getrand(TState *thread, int64 min, int64 max)
  * value is exp(-parameter).
  */
 static int64
-getExponentialRand(TState *thread, int64 min, int64 max, double parameter)
+getExponentialRand(CState *st, int64 min, int64 max, double parameter)
 {
 	double		cut,
 				uniform,
@@ -620,7 +659,7 @@ getExponentialRand(TState *thread, int64 min, int64 max, double parameter)
 	Assert(parameter > 0.0);
 	cut = exp(-parameter);
 	/* erand in [0, 1), uniform in (0, 1] */
-	uniform = 1.0 - pg_erand48(thread->random_state);
+	uniform = 1.0 - pg_erand48(st->random_state);
 
 	/*
 	 * inner expression in (cut, 1] (if parameter > 0), rand in [0, 1)
@@ -633,7 +672,7 @@ getExponentialRand(TState *thread, int64 min, int64 max, double parameter)
 
 /* random number generator: gaussian distribution from min to max inclusive */
 static int64
-getGaussianRand(TState *thread, int64 min, int64 max, double parameter)
+getGaussianRand(CState *st, int64 min, int64 max, double parameter)
 {
 	double		stdev;
 	double		rand;
@@ -661,8 +700,8 @@ getGaussianRand(TState *thread, int64 min, int64 max, double parameter)
 		 * are expected in (0, 1] (see
 		 * http://en.wikipedia.org/wiki/Box_muller)
 		 */
-		double		rand1 = 1.0 - pg_erand48(thread->random_state);
-		double		rand2 = 1.0 - pg_erand48(thread->random_state);
+		double		rand1 = 1.0 - pg_erand48(st->random_state);
+		double		rand2 = 1.0 - pg_erand48(st->random_state);
 
 		/* Box-Muller basic form transform */
 		double		var_sqrt = sqrt(-2.0 * log(rand1));
@@ -689,7 +728,7 @@ getGaussianRand(TState *thread, int64 min, int64 max, double parameter)
  * will approximate a Poisson distribution centered on the given value.
  */
 static int64
-getPoissonRand(TState *thread, int64 center)
+getPoissonRand(CState *st, int64 center)
 {
 	/*
 	 * Use inverse transform sampling to generate a value > 0, such that the
@@ -698,7 +737,7 @@ getPoissonRand(TState *thread, int64 center)
 	double		uniform;
 
 	/* erand in [0, 1), uniform in (0, 1] */
-	uniform = 1.0 - pg_erand48(thread->random_state);
+	uniform = 1.0 - pg_erand48(st->random_state);
 
 	return (int64) (-log(uniform) * ((double) center) + 0.5);
 }
@@ -754,6 +793,7 @@ initStats(StatsData *sd, double start_time)
 	sd->skipped = 0;
 	sd->serialization_failures = 0;
 	sd->deadlock_failures = 0;
+	initSimpleStats(&sd->attempts);
 	initSimpleStats(&sd->latency);
 	initSimpleStats(&sd->lag);
 }
@@ -763,9 +803,10 @@ initStats(StatsData *sd, double start_time)
  */
 static void
 accumStats(StatsData *stats, bool skipped, bool serialization_failure,
-		   bool deadlock_failure, double lat, double lag)
+		   bool deadlock_failure, double lat, double lag, SimpleStats *attempts)
 {
 	stats->cnt++;
+	mergeSimpleStats(&stats->attempts, attempts);
 
 	if (skipped)
 	{
@@ -1587,7 +1628,7 @@ evalFunc(TState *thread, CState *st,
 				if (func == PGBENCH_RANDOM)
 				{
 					Assert(nargs == 2);
-					setIntValue(retval, getrand(thread, imin, imax));
+					setIntValue(retval, getrand(st, imin, imax));
 				}
 				else	/* gaussian & exponential */
 				{
@@ -1609,7 +1650,7 @@ evalFunc(TState *thread, CState *st,
 						}
 
 						setIntValue(retval,
-								 getGaussianRand(thread, imin, imax, param));
+								 getGaussianRand(st, imin, imax, param));
 					}
 					else	/* exponential */
 					{
@@ -1622,7 +1663,7 @@ evalFunc(TState *thread, CState *st,
 						}
 
 						setIntValue(retval,
-							  getExponentialRand(thread, imin, imax, param));
+							  getExponentialRand(st, imin, imax, param));
 					}
 				}
 
@@ -1814,7 +1855,7 @@ clientDone(CState *st)
 
 /* return a script number with a weighted choice. */
 static int
-chooseScript(TState *thread)
+chooseScript(CState *st)
 {
 	int			i = 0;
 	int64		w;
@@ -1822,13 +1863,47 @@ chooseScript(TState *thread)
 	if (num_scripts == 1)
 		return 0;
 
-	w = getrand(thread, 0, total_weight - 1);
+	w = getrand(st, 0, total_weight - 1);
 	do
 	{
 		w -= sql_script[i++].weight;
 	} while (w >= 0);
 
 	return i - 1;
+}
+
+/* return a deep copy of variables array */
+static Variable *
+copy_variables(Variable *destination, int destination_nvariables,
+			   const Variable *source, int source_nvariables)
+{
+	Variable   *current_destination;
+	const Variable *current_source;
+
+	/* free pointers in destination variables */
+	for (current_destination = destination;
+		 current_destination - destination < destination_nvariables;
+		 ++current_destination)
+	{
+		pg_free(current_destination->name);
+		pg_free(current_destination->value);
+	}
+
+	destination = pg_realloc(destination, sizeof(Variable) * source_nvariables);
+	for (current_source = source, current_destination = destination;
+		 current_source - source < source_nvariables;
+		 ++current_source, ++current_destination)
+	{
+		current_destination->name = pg_strdup(current_source->name);
+		if (current_source->value)
+			current_destination->value = pg_strdup(current_source->value);
+		else
+			current_destination->value = NULL;
+		current_destination->is_numeric = current_source->is_numeric;
+		current_destination->num_value = current_source->num_value;
+	}
+
+	return destination;
 }
 
 /* return false iff client should be disconnected */
@@ -1867,7 +1942,7 @@ top:
 		 * If transactions are too slow or a given wait is shorter than a
 		 * transaction, the next transaction will start right away.
 		 */
-		int64		wait = getPoissonRand(thread, throttle_delay);
+		int64		wait = getPoissonRand(st, throttle_delay);
 
 		thread->throttle_trigger += wait;
 		st->txn_scheduled = thread->throttle_trigger;
@@ -1893,7 +1968,7 @@ top:
 			{
 				processXactStats(thread, st, &now, true, agg);
 				/* next rendez-vous */
-				wait = getPoissonRand(thread, throttle_delay);
+				wait = getPoissonRand(st, throttle_delay);
 				thread->throttle_trigger += wait;
 				st->txn_scheduled = thread->throttle_trigger;
 			}
@@ -1924,7 +1999,6 @@ top:
 		ExecStatusType result_status;
 		bool		serialization_failure = false;
 		bool		deadlock_failure = false;
-		bool		in_failed_transaction = false;
 
 		/* are we receiver? */
 		if (commands[st->state]->type == SQL_COMMAND)
@@ -1954,13 +2028,15 @@ top:
 					strcmp(sqlState, ERRCODE_T_R_SERIALIZATION_FAILURE) == 0;
 				deadlock_failure =
 					strcmp(sqlState, ERRCODE_T_R_DEADLOCK_DETECTED) == 0;
-				in_failed_transaction =
-					strcmp(sqlState, ERRCODE_IN_FAILED_SQL_TRANSACTION) == 0;
 
-				if (serialization_failure)
-					st->serialization_failure = true;
-				else if (deadlock_failure)
-					st->deadlock_failure = true;
+				if (debug && (serialization_failure || deadlock_failure))
+					fprintf(stderr, "client %d got a %s failure (attempt %d/%d)\n",
+							st->id,
+							(serialization_failure ?
+							 "serialization" :
+							 "deadlock"),
+							st->last_begin_state->attempts_number,
+							max_attempts_number);
 			}
 		}
 
@@ -1988,8 +2064,107 @@ top:
 		if (deadlock_failure)
 			commands[st->state]->deadlock_failures++;
 
+		if (st->last_begin_state)
+		{
+			int			transaction_block_end_state =
+				commands[st->last_begin_state->state]->transaction_end_num;
+
+			if (((!st->end_failed_transaction &&
+				  !serialization_failure &&
+				  !deadlock_failure) ||
+				 st->last_begin_state->attempts_number == max_attempts_number) &&
+				((commands[st->state]->is_transaction_begin &&
+				  transaction_block_end_state == -1) ||
+				 st->state == transaction_block_end_state))
+			{
+				/*
+				 * It is the end of transaction and:
+				 * 1) this transaction was successful;
+				 * 2) or this transaction has failed and we will not be able to
+				 * repeat it.
+				 *
+				 * So let's record its number of attempts in statistics
+				 * per-command and for current script execution.
+				 */
+				int attempts_number = st->last_begin_state->attempts_number;
+
+				if (debug)
+				{
+					char		buffer[256];
+
+					if (serialization_failure ||
+						deadlock_failure ||
+						st->end_failed_transaction)
+						snprintf(buffer, sizeof(buffer), "failure");
+					else
+						snprintf(buffer, sizeof(buffer), "successful");
+
+					fprintf(stderr, "client %d ends transaction with %d attempts (%s)\n",
+							st->id, attempts_number, buffer);
+				}
+
+				addToSimpleStats(
+					&commands[st->last_begin_state->state]->attempts,
+					attempts_number);
+				addToSimpleStats(&st->attempts, attempts_number);
+			}
+
+			if (serialization_failure ||
+				deadlock_failure ||
+				st->end_failed_transaction)
+			{
+				/*
+				 * 1) If there was a failure - go to the command for ending the
+				 * failed transaction block (if needed).
+				 * 2) Run the transaction again from the beginning (if number of
+				 * previous attempts haven't reached maximum).
+				 *
+				 * st->end_failed_transaction is true until we end all these
+				 * jumps between states.
+				 */
+				if ((serialization_failure || deadlock_failure) &&
+					transaction_block_end_state != -1 &&
+					st->state != transaction_block_end_state)
+				{
+					/* end the failed transaction block */
+					st->end_failed_transaction = true;
+					st->state = transaction_block_end_state;
+				}
+				else
+				{
+					/*
+					 * We are not in transaction block.  So let's try to repeat
+					 * the failed transaction.
+					 */
+					if (st->last_begin_state->attempts_number < max_attempts_number)
+					{
+						st->end_failed_transaction = true;
+						st->state = st->last_begin_state->state;
+					}
+					else
+					{
+						st->end_failed_transaction = false;
+					}
+				}
+
+				if (st->last_begin_state->attempts_number ==
+					max_attempts_number)
+				{
+					/*
+					 * We will not be able to repeat the failed transaction so
+					 * let's record this failure in the stats for current script
+					 * execution.
+					 */
+					if (serialization_failure)
+						st->serialization_failure = true;
+					else if (deadlock_failure)
+						st->deadlock_failure = true;
+				}
+			}
+		}
+
 		/* transaction finished: calculate latency and log the transaction */
-		if (commands[st->state + 1] == NULL)
+		if (commands[st->state + 1] == NULL && !st->end_failed_transaction)
 		{
 			if (progress || throttle_delay || latency_limit ||
 				per_script_stats || use_log)
@@ -2015,8 +2190,7 @@ top:
 			if (!(result_status == PGRES_COMMAND_OK ||
 				  result_status == PGRES_TUPLES_OK ||
 				  serialization_failure ||
-				  deadlock_failure ||
-				  in_failed_transaction))
+				  deadlock_failure))
 			{
 				fprintf(stderr, "client %d aborted in state %d: %s",
 						st->id, st->state, PQerrorMessage(st->con));
@@ -2027,7 +2201,7 @@ top:
 			discard_response(st);
 		}
 
-		if (commands[st->state + 1] == NULL)
+		if (commands[st->state + 1] == NULL && !st->end_failed_transaction)
 		{
 			if (is_connect)
 			{
@@ -2041,11 +2215,12 @@ top:
 		}
 
 		/* increment state counter */
-		st->state++;
-		if (commands[st->state] == NULL)
+		if (!st->end_failed_transaction)
+			st->state++;
+		if (commands[st->state] == NULL && !st->end_failed_transaction)
 		{
 			st->state = 0;
-			st->use_file = chooseScript(thread);
+			st->use_file = chooseScript(st);
 			commands = sql_script[st->use_file].commands;
 			if (debug)
 				fprintf(stderr, "client %d executing script \"%s\"\n", st->id,
@@ -2053,6 +2228,7 @@ top:
 			st->is_throttled = false;
 			st->serialization_failure = false;
 			st->deadlock_failure = false;
+			initSimpleStats(&st->attempts);
 
 			/*
 			 * No transaction is underway anymore, which means there is
@@ -2088,6 +2264,7 @@ top:
 		st->throttling = false;
 		st->serialization_failure = false;
 		st->deadlock_failure = false;
+		initSimpleStats(&st->attempts);
 		memset(st->prepared, 0, sizeof(st->prepared));
 
 		/* set default isolation level */
@@ -2112,7 +2289,7 @@ top:
 
 	/* Record transaction start time under logging, progress or throttling */
 	if ((use_log || progress || throttle_delay || latency_limit ||
-		 per_script_stats) && st->state == 0)
+		 per_script_stats) && st->state == 0 && !st->end_failed_transaction)
 	{
 		INSTR_TIME_SET_CURRENT(st->txn_begin);
 
@@ -2125,13 +2302,75 @@ top:
 	}
 
 	/* Record statement start time if per-command latencies are requested */
-	if (report_per_command)
+	if (report_per_command && !st->end_failed_transaction)
 		INSTR_TIME_SET_CURRENT(st->stmt_begin);
 
 	if (commands[st->state]->type == SQL_COMMAND)
 	{
 		const Command *command = commands[st->state];
 		int			r;
+
+		if (command->is_transaction_begin)
+		{
+			/* check last begin state */
+
+			if (st->end_failed_transaction)
+			{
+				/*
+				 * It is a repetion of transaction which begins in current
+				 * state, so we should use the same parameters as in the
+				 * previous attempts.
+				 *
+				 * We assume that transaction attempts number (which should be
+				 * limited by max_attempts_number) was checked earlier.
+				 */
+				if (debug)
+					fprintf(stderr, "client %d repeats the failed transaction (attempt %d/%d)\n",
+							st->id,
+							st->last_begin_state->attempts_number + 1,
+							max_attempts_number);
+
+				st->last_begin_state->attempts_number++;
+				memcpy(st->random_state, st->last_begin_state->random_state,
+					   sizeof(unsigned short) * 3);
+
+				st->variables = copy_variables(
+											st->variables,
+											st->nvariables,
+											st->last_begin_state->variables,
+											st->last_begin_state->nvariables);
+				st->nvariables = st->last_begin_state->nvariables;
+				st->vars_sorted = st->last_begin_state->vars_sorted;
+
+				st->end_failed_transaction = false;
+			}
+			else
+			{
+				/*
+				 * It is a first attempt to run the transaction which begins in
+				 * current state.  Remember its parameters just in case we
+				 * should repeat it in future.
+				 */
+				if (!st->last_begin_state)
+				{
+					st->last_begin_state = (LastBeginState *)
+						pg_malloc0(sizeof(LastBeginState));
+					memset(st->last_begin_state, 0, sizeof(LastBeginState));
+				}
+				st->last_begin_state->state = st->state;
+				st->last_begin_state->attempts_number = 1;
+				memcpy(st->last_begin_state->random_state, st->random_state,
+					   sizeof(unsigned short) * 3);
+
+				st->last_begin_state->variables = copy_variables(
+											st->last_begin_state->variables,
+											st->last_begin_state->nvariables,
+											st->variables,
+											st->nvariables);
+				st->last_begin_state->nvariables = st->nvariables;
+				st->last_begin_state->vars_sorted = st->vars_sorted;
+			}
+		}
 
 		if (querymode == QUERY_SIMPLE)
 		{
@@ -2310,6 +2549,15 @@ top:
 }
 
 /*
+ * return zero if there is no statistics data because of skipped transactions.
+ */
+static double
+get_average_attempts(const SimpleStats *attempts)
+{
+	return (attempts->count == 0 ? 0 : attempts->sum / attempts->count);
+}
+
+/*
  * print log entry after completing one transaction.
  */
 static void
@@ -2325,7 +2573,7 @@ doLog(TState *thread, CState *st, instr_time *now,
 	 * to the random sample.
 	 */
 	if (sample_rate != 0.0 &&
-		pg_erand48(thread->random_state) > sample_rate)
+		pg_erand48(st->random_state) > sample_rate)
 		return;
 
 	/* should we aggregate the results or not? */
@@ -2339,7 +2587,7 @@ doLog(TState *thread, CState *st, instr_time *now,
 		while (agg->start_time + agg_interval < INSTR_TIME_GET_DOUBLE(*now))
 		{
 			/* print aggregated report to logfile */
-			fprintf(logfile, "%ld " INT64_FORMAT " %.0f %.0f %.0f %.0f " INT64_FORMAT " " INT64_FORMAT,
+			fprintf(logfile, "%ld " INT64_FORMAT " %.0f %.0f %.0f %.0f " INT64_FORMAT " " INT64_FORMAT " %.0f %.0f %.0f %.0f",
 					agg->start_time,
 					agg->cnt,
 					agg->latency.sum,
@@ -2347,7 +2595,11 @@ doLog(TState *thread, CState *st, instr_time *now,
 					agg->latency.min,
 					agg->latency.max,
 					agg->serialization_failures,
-					agg->deadlock_failures);
+					agg->deadlock_failures,
+					agg->attempts.sum,
+					agg->attempts.sum2,
+					agg->attempts.min,
+					agg->attempts.max);
 			if (throttle_delay)
 			{
 				fprintf(logfile, " %.0f %.0f %.0f %.0f",
@@ -2366,12 +2618,13 @@ doLog(TState *thread, CState *st, instr_time *now,
 
 		/* accumulate the current transaction */
 		accumStats(agg, skipped, st->serialization_failure,
-				   st->deadlock_failure, latency, lag);
+				   st->deadlock_failure, latency, lag, &st->attempts);
 	}
 	else
 	{
 		/* no, print raw transactions */
 		char		transaction_label[256];
+		double		attempts_avg = get_average_attempts(&st->attempts);
 
 		if (skipped)
 			snprintf(transaction_label, sizeof(transaction_label), "skipped");
@@ -2386,22 +2639,23 @@ doLog(TState *thread, CState *st, instr_time *now,
 
 		/* This is more than we really ought to know about instr_time */
 		if (skipped || st->serialization_failure || st->deadlock_failure)
-			fprintf(logfile, "%d " INT64_FORMAT " %s %d %ld %ld",
+			fprintf(logfile, "%d " INT64_FORMAT " %s %d %ld %ld %.0f",
 					st->id, st->cnt, transaction_label, st->use_file,
-					(long) now->tv_sec, (long) now->tv_usec);
+					(long) now->tv_sec, (long) now->tv_usec, attempts_avg);
 		else
-			fprintf(logfile, "%d " INT64_FORMAT " %.0f %d %ld %ld",
+			fprintf(logfile, "%d " INT64_FORMAT " %.0f %d %ld %ld %.0f",
 					st->id, st->cnt, latency, st->use_file,
-					(long) now->tv_sec, (long) now->tv_usec);
+					(long) now->tv_sec, (long) now->tv_usec, attempts_avg);
 #else
 
 		/* On Windows, instr_time doesn't provide a timestamp anyway */
 		if (skipped || st->serialization_failure || st->deadlock_failure)
-			fprintf(logfile, "%d " INT64_FORMAT " %s %d 0 0",
-					st->id, st->cnt, transaction_label, st->use_file);
+			fprintf(logfile, "%d " INT64_FORMAT " %s %d 0 0 %.0f",
+					st->id, st->cnt, transaction_label, st->use_file,
+					attempts_avg);
 		else
-			fprintf(logfile, "%d " INT64_FORMAT " %.0f %d 0 0",
-					st->id, st->cnt, latency, st->use_file);
+			fprintf(logfile, "%d " INT64_FORMAT " %.0f %d 0 0 %.0f",
+					st->id, st->cnt, latency, st->use_file, attempts_avg);
 #endif
 		if (throttle_delay)
 			fprintf(logfile, " %.0f", lag);
@@ -2434,7 +2688,7 @@ processXactStats(TState *thread, CState *st, instr_time *now,
 	if (progress || throttle_delay || latency_limit)
 	{
 		accumStats(&thread->stats, skipped, st->serialization_failure,
-				   st->deadlock_failure, latency, lag);
+				   st->deadlock_failure, latency, lag, &st->attempts);
 
 		/* count transactions over the latency limit, if needed */
 		if (latency_limit && latency > latency_limit)
@@ -2456,7 +2710,7 @@ processXactStats(TState *thread, CState *st, instr_time *now,
 	if (per_script_stats)
 		accumStats(&sql_script[st->use_file].stats, skipped,
 				   st->serialization_failure, st->deadlock_failure, latency,
-				   lag);
+				   lag, &st->attempts);
 }
 
 
@@ -2897,6 +3151,7 @@ process_sql_command(PQExpBuffer buf, const char *source)
 	initSimpleStats(&my_command->stats);
 	my_command->serialization_failures = 0;
 	my_command->deadlock_failures = 0;
+	initSimpleStats(&my_command->attempts);
 
 	/*
 	 * If SQL command is multi-line, we only want to save the first line as
@@ -2968,6 +3223,7 @@ process_backslash_command(PsqlScanState sstate, const char *source)
 	initSimpleStats(&my_command->stats);
 	my_command->serialization_failures = 0;
 	my_command->deadlock_failures = 0;
+	initSimpleStats(&my_command->attempts);
 
 	/* Save first word (command name) */
 	j = 0;
@@ -3099,6 +3355,56 @@ process_backslash_command(PsqlScanState sstate, const char *source)
 }
 
 /*
+ * Returns the same command where all сontinuous blocks of whitespaces are
+ * replaced by one space symbol.
+ *
+ * Returns a malloc'd string.
+ */
+static char *
+normalize_whitespaces(const char *command)
+{
+	const char *ptr = command;
+	char	   *buffer = pg_malloc(strlen(command) + 1);
+	int			length = 0;
+
+	while (*ptr)
+	{
+		while (*ptr && !isspace((unsigned char) *ptr))
+			buffer[length++] = *(ptr++);
+		if (isspace((unsigned char) *ptr))
+		{
+			buffer[length++] = ' ';
+			while (isspace((unsigned char) *ptr))
+				ptr++;
+		}
+	}
+	buffer[length] = '\0';
+
+	return buffer;
+}
+
+static bool
+is_transaction_block_end(const char *command_text)
+{
+	bool		result = false;
+	char	   *command = normalize_whitespaces(command_text);
+
+	if (pg_strncasecmp(command, "end", 3) == 0 ||
+		(pg_strncasecmp(command, "commit", 6) == 0 &&
+		 pg_strncasecmp(command, "commit prepared", 15) != 0) ||
+		(pg_strncasecmp(command, "rollback", 8) == 0 &&
+		 pg_strncasecmp(command, "rollback prepared", 17) != 0 &&
+		 pg_strncasecmp(command, "rollback to", 11) != 0) ||
+		(pg_strncasecmp(command, "prepare transaction ", 20) == 0 &&
+		 pg_strncasecmp(command, "prepare transaction (", 21) != 0 &&
+		 pg_strncasecmp(command, "prepare transaction as ", 23) != 0))
+		result = true;
+
+	pg_free(command);
+	return result;
+}
+
+/*
  * Parse a script (either the contents of a file, or a built-in script)
  * and add it to the list of scripts.
  */
@@ -3110,6 +3416,8 @@ ParseScript(const char *script, const char *desc, int weight)
 	PQExpBufferData line_buf;
 	int			alloc_num;
 	int			index;
+	int			last_transaction_block_begin = -1;
+	bool		transaction_block_completed = true;
 
 #define COMMANDS_ALLOC_NUM 128
 	alloc_num = COMMANDS_ALLOC_NUM;
@@ -3152,6 +3460,8 @@ ParseScript(const char *script, const char *desc, int weight)
 		command = process_sql_command(&line_buf, desc);
 		if (command)
 		{
+			char	   *command_text = command->argv[0];
+
 			ps.commands[index] = command;
 			index++;
 
@@ -3160,6 +3470,36 @@ ParseScript(const char *script, const char *desc, int weight)
 				alloc_num += COMMANDS_ALLOC_NUM;
 				ps.commands = (Command **)
 					pg_realloc(ps.commands, sizeof(Command *) * alloc_num);
+			}
+
+			/* check if there's the begin of new transaction */
+			if (transaction_block_completed)
+			{
+				/*
+				 * Each sql command outside of transaction block either starts a
+				 * new transaction block or is run as separate transaction.
+				 */
+				command->is_transaction_begin = true;
+
+				if (pg_strncasecmp(command_text, "begin", 5) == 0 ||
+					pg_strncasecmp(command_text, "start", 5) == 0)
+				{
+					last_transaction_block_begin = index - 1;
+					transaction_block_completed = false;
+				}
+				else
+				{
+					command->transaction_end_num = -1;
+				}
+			}
+
+			/* check if command ends the transaction block */
+			if (!transaction_block_completed &&
+				is_transaction_block_end(command_text))
+			{
+				ps.commands[last_transaction_block_begin]->transaction_end_num =
+					index - 1;
+				transaction_block_completed = true;
 			}
 		}
 
@@ -3184,6 +3524,13 @@ ParseScript(const char *script, const char *desc, int weight)
 		/* Done if we reached EOF */
 		if (sr == PSCAN_INCOMPLETE || sr == PSCAN_EOL)
 			break;
+	}
+
+	if (!transaction_block_completed)
+	{
+		fprintf(stderr, "script \"%s\": last transaction block is not completed\n",
+				desc);
+		exit(1);
 	}
 
 	ps.commands[index] = NULL;
@@ -3388,14 +3735,34 @@ addScript(ParsedScript script)
 }
 
 static void
-printSimpleStats(char *prefix, SimpleStats *ss)
+printSimpleStats(char *prefix, SimpleStats *ss, bool print_zeros, double factor,
+				 unsigned int decimals_number, char *unit_of_measure)
 {
-	/* print NaN if no transactions where executed */
-	double		latency = ss->sum / ss->count;
-	double		stddev = sqrt(ss->sum2 / ss->count - latency * latency);
+	double		average;
+	double		stddev;
+	char		buffer[256];
 
-	printf("%s average = %.3f ms\n", prefix, 0.001 * latency);
-	printf("%s stddev = %.3f ms\n", prefix, 0.001 * stddev);
+	if (print_zeros && ss->count == 0)
+	{
+		average = 0;
+		stddev = 0;
+	}
+	else
+	{
+		/* print NaN if no transactions where executed */
+		average = ss->sum / ss->count;
+		stddev = sqrt(ss->sum2 / ss->count - average * average);
+	}
+
+	if (strlen(unit_of_measure) == 0)
+		snprintf(buffer, sizeof(buffer), "%s %%s = %%.%df\n",
+				 prefix, decimals_number);
+	else
+		snprintf(buffer, sizeof(buffer), "%s %%s = %%.%df %s\n",
+				 prefix, decimals_number, unit_of_measure);
+
+	printf(buffer, "average", factor * average);
+	printf(buffer, "stddev", factor * stddev);
 }
 
 /* print out results */
@@ -3446,6 +3813,8 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 		   total->deadlock_failures,
 		   (100.0 * total->deadlock_failures / total->cnt));
 
+	printSimpleStats("attempts number", &total->attempts, true, 1, 2, "");
+
 	if (throttle_delay && latency_limit)
 		printf("number of transactions skipped: " INT64_FORMAT " (%.3f %%)\n",
 			   total->skipped,
@@ -3457,7 +3826,7 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 			   100.0 * latency_late / (total->skipped + total->cnt));
 
 	if (throttle_delay || progress || latency_limit)
-		printSimpleStats("latency", &total->latency);
+		printSimpleStats("latency", &total->latency, false, 0.001, 3, "ms");
 	else
 	{
 		/* no measurement, show average latency computed from run time */
@@ -3488,6 +3857,7 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 		for (i = 0; i < num_scripts; i++)
 		{
 			if (num_scripts > 1)
+			{
 				printf("SQL script %d: %s\n"
 					   " - weight: %d (targets %.1f%% of total)\n"
 					   " - " INT64_FORMAT " transactions (%.1f%% of total, tps = %f)\n"
@@ -3505,6 +3875,9 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 					   sql_script[i].stats.deadlock_failures,
 					   (100.0 * sql_script[i].stats.deadlock_failures /
 						sql_script[i].stats.cnt));
+				printSimpleStats(" - attempts number", &total->attempts, true,
+								 1, 2, "");
+			}
 			else
 				printf("script statistics:\n");
 
@@ -3515,7 +3888,8 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 					(sql_script[i].stats.skipped + sql_script[i].stats.cnt));
 
 			if (num_scripts > 1)
-				printSimpleStats(" - latency", &sql_script[i].stats.latency);
+				printSimpleStats(" - latency", &sql_script[i].stats.latency,
+								 false, 0.001, 3, "ms");
 
 			/*
 			 * Report per-command statistics: latencies, serialization &
@@ -3525,17 +3899,28 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 			{
 				Command   **commands;
 
-				printf(" - statement latencies in milliseconds, serialization & deadlock failures:\n");
+				printf(" - statement latencies in milliseconds, serialization & deadlock failures, numbers of transactions attempts:\n");
 
 				for (commands = sql_script[i].commands;
 					 *commands != NULL;
 					 commands++)
-					printf("   %11.3f  %25" INT64_MODIFIER "d  %25" INT64_MODIFIER "d  %s\n",
+				{
+					char		buffer[256];
+
+					if ((*commands)->is_transaction_begin)
+						snprintf(buffer, sizeof(buffer), "%8.2f",
+								 get_average_attempts(&(*commands)->attempts));
+					else
+						snprintf(buffer, sizeof(buffer), "     -  ");
+
+					printf("   %11.3f  %25" INT64_MODIFIER "d  %25" INT64_MODIFIER "d  %s  %s\n",
 						   1000.0 * (*commands)->stats.sum /
 						   (*commands)->stats.count,
 						   (*commands)->serialization_failures,
 						   (*commands)->deadlock_failures,
+						   buffer,
 						   (*commands)->line);
+				}
 			}
 		}
 	}
@@ -3585,6 +3970,7 @@ main(int argc, char **argv)
 #ifdef WITH_RSOCKET
 		{"with-rsocket", no_argument, NULL, 7},
 #endif
+		{"max-attempts-number", required_argument, NULL, 8},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -3956,6 +4342,16 @@ main(int argc, char **argv)
 				isRsocket = true;
 				break;
 #endif
+			case 8:
+				benchmarking_option_set = true;
+				max_attempts_number = atoi(optarg);
+				if (max_attempts_number <= 0)
+				{
+					fprintf(stderr, "invalid number of maximum attempts: \"%s\"\n",
+							optarg);
+					exit(1);
+				}
+				break;
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 				exit(1);
@@ -4218,9 +4614,6 @@ main(int argc, char **argv)
 		thread->state = &state[nclients_dealt];
 		thread->nstate =
 			(nclients - nclients_dealt + nthreads - i - 1) / (nthreads - i);
-		thread->random_state[0] = random();
-		thread->random_state[1] = random();
-		thread->random_state[2] = random();
 		thread->logfile = NULL; /* filled in later */
 		thread->latency_late = 0;
 		initStats(&thread->stats, 0.0);
@@ -4301,6 +4694,7 @@ main(int argc, char **argv)
 		stats.skipped += thread->stats.skipped;
 		stats.serialization_failures += thread->stats.serialization_failures;
 		stats.deadlock_failures += thread->stats.deadlock_failures;
+		mergeSimpleStats(&stats.attempts, &thread->stats.attempts);
 		latency_late += thread->latency_late;
 		INSTR_TIME_ADD(conn_total_time, thread->conn_time);
 	}
@@ -4381,6 +4775,11 @@ threadRun(void *arg)
 			if ((state[i].con = doConnect()) == NULL)
 				goto done;
 
+			/* set random state */
+			state[i].random_state[0] = random();
+			state[i].random_state[1] = random();
+			state[i].random_state[2] = random();
+
 			/* set default isolation level */
 			snprintf(buffer, sizeof(buffer),
 				"set session characteristics as transaction isolation level %s",
@@ -4406,7 +4805,7 @@ threadRun(void *arg)
 		int			prev_ecnt = st->ecnt;
 		Command   **commands;
 
-		st->use_file = chooseScript(thread);
+		st->use_file = chooseScript(st);
 		commands = sql_script[st->use_file].commands;
 		if (debug)
 			fprintf(stderr, "client %d executing script \"%s\"\n", st->id,
@@ -4456,6 +4855,7 @@ threadRun(void *arg)
 					st->throttling = false;
 					st->serialization_failure = false;
 					st->deadlock_failure = false;
+					initSimpleStats(&st->attempts);
 					PQfinish(st->con);
 					st->con = NULL;
 					continue;
@@ -4608,7 +5008,10 @@ threadRun(void *arg)
 							latency,
 							sqlat,
 							lag,
-							stdev;
+							latency_stdev,
+							attempts_count,
+							attempts_average,
+							attempts_stddev;
 				char		tbuf[64];
 
 				/*
@@ -4632,6 +5035,7 @@ threadRun(void *arg)
 					cur.serialization_failures +=
 						thread[i].stats.serialization_failures;
 					cur.deadlock_failures += thread[i].stats.deadlock_failures;
+					mergeSimpleStats(&cur.attempts, &thread[i].stats.attempts);
 				}
 
 				total_run = (now - thread_start) / 1000000.0;
@@ -4640,9 +5044,25 @@ threadRun(void *arg)
 					(cur.cnt - last.cnt);
 				sqlat = 1.0 * (cur.latency.sum2 - last.latency.sum2)
 					/ (cur.cnt - last.cnt);
-				stdev = 0.001 * sqrt(sqlat - 1000000.0 * latency * latency);
+				latency_stdev = 0.001 *
+					sqrt(sqlat - 1000000.0 * latency * latency);
 				lag = 0.001 * (cur.lag.sum - last.lag.sum) /
 					(cur.cnt - last.cnt);
+
+				attempts_count = cur.attempts.count - last.attempts.count;
+				if (attempts_count == 0)
+				{
+					attempts_average = 0;
+					attempts_stddev = 0;
+				}
+				else
+				{
+					attempts_average = (cur.attempts.sum - last.attempts.sum) /
+						attempts_count;
+					attempts_stddev = sqrt(
+						(cur.attempts.sum2 - last.attempts.sum2) /
+						attempts_count - attempts_average * attempts_average);
+				}
 
 				if (progress_timestamp)
 					sprintf(tbuf, "%.03f s",
@@ -4651,14 +5071,16 @@ threadRun(void *arg)
 					sprintf(tbuf, "%.1f s", total_run);
 
 				fprintf(stderr,
-						"progress: %s, %.1f tps, lat %.3f ms stddev %.3f, failed trx: " INT64_FORMAT " (serialization), " INT64_FORMAT " (deadlocks)",
+						"progress: %s, %.1f tps, lat %.3f ms stddev %.3f, failed trx: " INT64_FORMAT " (serialization), " INT64_FORMAT " (deadlocks), attempts avg %.2f stddev %.2f",
 						tbuf,
 						tps,
 						latency,
-						stdev,
+						latency_stdev,
 						(cur.serialization_failures -
 						 last.serialization_failures),
-						(cur.deadlock_failures - last.deadlock_failures));
+						(cur.deadlock_failures - last.deadlock_failures),
+						attempts_average,
+						attempts_stddev);
 
 				if (throttle_delay)
 				{
