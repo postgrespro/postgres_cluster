@@ -35,16 +35,18 @@ append_to_file($script,
 my $script1 = $node->basedir . '/pgbench_script1';
 append_to_file($script1,
 		"BEGIN;\n"
+	  . "SELECT pg_sleep(10);\n"
 	  . "\\set delta1 random(-5000, 5000)\n"
 	  . "\\set delta2 random(-5000, 5000)\n"
 	  . "UPDATE xy SET y = y + :delta1 WHERE x = 1;\n"
-	  . "SELECT pg_sleep(20);\n"
+	  . "SELECT pg_sleep(40);\n"
 	  . "UPDATE xy SET y = y + :delta2 WHERE x = 2;\n"
 	  . "END;");
 
 my $script2 = $node->basedir . '/pgbench_script2';
 append_to_file($script2,
 		"BEGIN;\n"
+	  . "SELECT pg_sleep(10);\n"
 	  . "\\set delta1 random(-5000, 5000)\n"
 	  . "\\set delta2 random(-5000, 5000)\n"
 	  . "UPDATE xy SET y = y + :delta2 WHERE x = 2;\n"
@@ -180,8 +182,9 @@ sub test_pgbench_deadlock_failures
 	print "# Running: " . join(" ", @command1) . "\n";
 	$h1 = IPC::Run::start \@command1, \$in1, \$out1, \$err1;
 
-	# Let pgbench run first update command in the transaction:
-	sleep 10;
+	# Let pgbench sleep 10 seconds and run first update command in the
+	# transaction:
+	sleep 20;
 
 	# Run second pgbench
 	my @command2 = (
@@ -258,7 +261,7 @@ sub test_pgbench_deadlock_failures
 	my $pattern =
 		"client 0 sending UPDATE xy SET y = y \\+ (-?\\d+) WHERE x = (\\d);\n"
 	  . "client 0 receiving\n"
-	  . "(|client 0 sending SELECT pg_sleep\\(20\\);\n"
+	  . "(|client 0 sending SELECT pg_sleep\\(40\\);\n"
 	  . "client 0 receiving\n)"
 	  . "client 0 sending UPDATE xy SET y = y \\+ (-?\\d+) WHERE x = (\\d);\n"
 	  . "client 0 receiving\n"
@@ -267,6 +270,8 @@ sub test_pgbench_deadlock_failures
 	  . "client 0 receiving\n"
 	  . "client 0 repeats the failed transaction \\(attempt 2/2\\)\n"
 	  . "client 0 sending BEGIN;\n"
+	  . "client 0 receiving\n"
+	  . "client 0 sending SELECT pg_sleep\\(10\\);\n"
 	  . "client 0 receiving\n"
 	  . "client 0 executing \\\\set delta1\n"
 	  . "client 0 executing \\\\set delta2\n"
