@@ -130,7 +130,7 @@ void     cfs_unlock_file(FileMap* map, char const* path);
 uint32   cfs_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize);
 void     cfs_extend(FileMap* map, uint32 pos);
 void     cfs_control_gc_lock(void);
-void     cfs_control_gc_unlock(void);
+void     cfs_control_gc_unlock(); /* argument could be given by PG_ENSURE_ERROR_CLEANUP */
 int      cfs_msync(FileMap* map);
 FileMap* cfs_mmap(int md);
 int      cfs_munmap(FileMap* map);

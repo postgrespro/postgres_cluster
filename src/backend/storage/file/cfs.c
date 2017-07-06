@@ -1508,7 +1508,7 @@ void cfs_control_gc_lock(void)
 }
 
 /* Enable garbage collection. */
-void cfs_control_gc_unlock(void)
+void cfs_control_gc_unlock() /* argument could be given by PG_ENSURE_ERROR_CLEANUP */
 {
 	pg_atomic_fetch_sub_u32(&cfs_state->gc_disabled, 1);
 }

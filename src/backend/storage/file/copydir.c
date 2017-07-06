@@ -25,6 +25,7 @@
 #include "storage/copydir.h"
 #include "storage/fd.h"
 #include "storage/cfs.h"
+#include "storage/ipc.h"
 #include "access/transam.h"
 #include "miscadmin.h"
 
@@ -56,7 +57,7 @@ copydir(char *fromdir, char *todir, bool recurse)
 
 	cfs_control_gc_lock(); /* disable GC during copy */
 
-	PG_TRY();
+	PG_ENSURE_ERROR_CLEANUP(cfs_control_gc_unlock, (Datum)NULL);
 	{
 		while ((xlde = ReadDir(xldir, fromdir)) != NULL)
 		{
@@ -88,12 +89,7 @@ copydir(char *fromdir, char *todir, bool recurse)
 		}
 		FreeDir(xldir);
 	}
-	PG_CATCH();
-	{
-		cfs_control_gc_unlock();
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
+	PG_END_ENSURE_ERROR_CLEANUP(cfs_control_gc_unlock, (Datum)NULL);
 	cfs_control_gc_unlock();
 	
 	/*
@@ -167,7 +163,7 @@ copyzipdir(char *fromdir, bool from_compressed,
 
 	cfs_control_gc_lock(); /* disable GC during copy */
 
-	PG_TRY();
+	PG_ENSURE_ERROR_CLEANUP(cfs_control_gc_unlock, (Datum)NULL);
 	{
 		while ((xlde = ReadDir(xldir, fromdir)) != NULL)
 		{
@@ -195,12 +191,7 @@ copyzipdir(char *fromdir, bool from_compressed,
 		}
 		FreeDir(xldir);
 	}
-	PG_CATCH();
-	{
-		cfs_control_gc_unlock();
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
+	PG_END_ENSURE_ERROR_CLEANUP(cfs_control_gc_unlock, (Datum)NULL);
 	cfs_control_gc_unlock();
 
 	/*
