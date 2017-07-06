@@ -916,7 +916,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		/* there could not be concurrent GC for this file here, so recover */
 		if (!cfs_recover(map, md, file_path, map_path, file_bck_path, map_bck_path))
 		{
-			elog(ERROR, "CFS found that file %s is completely destroyed", file_path);
+			elog(WARNING, "CFS found that file %s is completely destroyed", file_path);
 			goto FinUnmap;
 		}
 	}
