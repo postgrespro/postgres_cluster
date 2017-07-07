@@ -1837,18 +1837,18 @@ void cfs_recover_map(FileMap* map)
 			}
 			usedSize += size;
 		}
-		if (usedSize != pg_atomic_read_u32(&map->hdr.usedSize))
-		{
-			pg_atomic_write_u32(&map->hdr.usedSize, usedSize);
-		}
-		if (physSize != pg_atomic_read_u32(&map->hdr.physSize))
-		{
-			pg_atomic_write_u32(&map->hdr.physSize, physSize);
-		}
-		if (virtSize != pg_atomic_read_u32(&map->hdr.virtSize))
-		{
-			pg_atomic_write_u32(&map->hdr.virtSize, virtSize);
-		}
+	}
+	if (usedSize != pg_atomic_read_u32(&map->hdr.usedSize))
+	{
+		pg_atomic_write_u32(&map->hdr.usedSize, usedSize);
+	}
+	if (physSize != pg_atomic_read_u32(&map->hdr.physSize))
+	{
+		pg_atomic_write_u32(&map->hdr.physSize, physSize);
+	}
+	if (virtSize != pg_atomic_read_u32(&map->hdr.virtSize))
+	{
+		pg_atomic_write_u32(&map->hdr.virtSize, virtSize);
 	}
 }
 
