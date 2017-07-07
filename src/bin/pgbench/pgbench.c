@@ -799,31 +799,34 @@ initStats(StatsData *sd, double start_time)
 }
 
 /*
+ * Accumulate statistics regardless of whether there was a failure / transaction
+ * was skipped or not.
+ */
+static void
+accumMainStats(StatsData *stats, bool skipped, bool serialization_failure,
+			   bool deadlock_failure, SimpleStats *attempts)
+{
+	stats->cnt++;
+	if (skipped)
+		stats->skipped++;
+	else if (serialization_failure)
+		stats->serialization_failures++;
+	else if (deadlock_failure)
+		stats->deadlock_failures++;
+	mergeSimpleStats(&stats->attempts, attempts);
+}
+
+/*
  * Accumulate one additional item into the given stats object.
  */
 static void
 accumStats(StatsData *stats, bool skipped, bool serialization_failure,
 		   bool deadlock_failure, double lat, double lag, SimpleStats *attempts)
 {
-	stats->cnt++;
-	mergeSimpleStats(&stats->attempts, attempts);
+	accumMainStats(stats, skipped, serialization_failure, deadlock_failure,
+				   attempts);
 
-	if (skipped)
-	{
-		/* no latency to record on skipped transactions */
-		stats->skipped++;
-	}
-	else if (serialization_failure)
-	{
-		/* no latency to record on transactions with serialization failures */
-		stats->serialization_failures++;
-	}
-	else if (deadlock_failure)
-	{
-		/* no latency to record on transactions with deadlock failures */
-		stats->deadlock_failures++;
-	}
-	else
+	if (!skipped && !serialization_failure && !deadlock_failure)
 	{
 		addToSimpleStats(&stats->latency, lat);
 
@@ -2168,18 +2171,11 @@ top:
 		{
 			if (progress || throttle_delay || latency_limit ||
 				per_script_stats || use_log)
-			{
 				processXactStats(thread, st, &now, false, agg);
-			}
 			else
-			{
-				thread->stats.cnt++;
-				if (st->serialization_failure)
-					thread->stats.serialization_failures++;
-				if (st->deadlock_failure)
-					thread->stats.deadlock_failures++;
-				mergeSimpleStats(&thread->stats.attempts, &st->attempts);
-			}
+				accumMainStats(&thread->stats, false,
+							   st->serialization_failure, st->deadlock_failure,
+							   &st->attempts);
 		}
 
 		if (commands[st->state]->type == SQL_COMMAND)
@@ -2696,14 +2692,8 @@ processXactStats(TState *thread, CState *st, instr_time *now,
 			thread->latency_late++;
 	}
 	else
-	{
-		thread->stats.cnt++;
-		if (st->serialization_failure)
-			thread->stats.serialization_failures++;
-		if (st->deadlock_failure)
-			thread->stats.deadlock_failures++;
-		mergeSimpleStats(&thread->stats.attempts, &st->attempts);
-	}
+		accumMainStats(&thread->stats, skipped, st->serialization_failure,
+					   st->deadlock_failure, &st->attempts);
 
 	if (use_log)
 		doLog(thread, st, now, agg, skipped, latency, lag);
