@@ -33,6 +33,31 @@ static const char *modulename = gettext_noop("archiver (db)");
 static void _check_database_version(ArchiveHandle *AH);
 static PGconn *_connectDB(ArchiveHandle *AH, const char *newdbname, const char *newUser);
 static void notice_processor(void *arg, const char *message);
+static void get_pgpro_version(ArchiveHandle *AH);
+
+static void
+get_pgpro_version(ArchiveHandle *AH)
+{
+	char	   *query = "SELECT pgpro_version()";
+	PGresult   *res;
+	const char *pgpro_remoteversion_str;
+
+	res = PQexec(AH->connection, query);
+	/* If the query failed, it means that remote cluster is not PgPro. */
+	if (PQresultStatus(res) != PGRES_TUPLES_OK)
+	{
+		AH->public.pgproremoteVersion = 0;
+		fprintf(stdout, "pgpro server version: 0; %s version: %s\n", progname, PG_VERSION);
+	}
+	else
+	{
+		pgpro_remoteversion_str = pg_strdup(PQgetvalue(res, 0, 0));
+		AH->public.pgproremoteVersion = 1;
+		fprintf(stdout, "pgpro server version: %s; %s version: %s\n",
+				  pgpro_remoteversion_str, progname, PG_VERSION);
+	}
+	PQclear(res);
+}
 
 static void
 _check_database_version(ArchiveHandle *AH)
@@ -47,6 +72,7 @@ _check_database_version(ArchiveHandle *AH)
 		exit_horribly(modulename, "could not get server_version from libpq\n");
 
 	/* TODO select pgpro_version, pgpro_edition */
+	get_pgpro_version(AH);
 
 	AH->public.remoteVersionStr = pg_strdup(remoteversion_str);
 	AH->public.remoteVersion = remoteversion;

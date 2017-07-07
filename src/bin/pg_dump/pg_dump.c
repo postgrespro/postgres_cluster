@@ -6281,7 +6281,7 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 		 */
 		resetPQExpBuffer(query);
 		/* TODO check pgpro_version instead of just remoteVersion */
-		if (fout->remoteVersion >= 90600)
+		if (fout->remoteVersion >= 90600 && fout->pgproremoteVersion > 0)
 		{
 			/*
 			 * In 9.6 we add INCLUDING columns functionality
