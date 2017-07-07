@@ -3777,6 +3777,7 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 		   num_scripts == 1 ? sql_script[0].desc : "multiple scripts");
 	printf("default transaction isolation level: %s\n",
 		   DEFAULT_ISOLATION_LEVEL_SQL[default_isolation_level]);
+	printf("transaction maximum attempts number: %d\n", max_attempts_number);
 	printf("scaling factor: %d\n", scale);
 	printf("query mode: %s\n", QUERYMODE[querymode]);
 	printf("number of clients: %d\n", nclients);
