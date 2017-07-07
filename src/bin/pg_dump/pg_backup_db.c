@@ -46,6 +46,8 @@ _check_database_version(ArchiveHandle *AH)
 	if (remoteversion == 0 || !remoteversion_str)
 		exit_horribly(modulename, "could not get server_version from libpq\n");
 
+	/* TODO select pgpro_version, pgpro_edition */
+
 	AH->public.remoteVersionStr = pg_strdup(remoteversion_str);
 	AH->public.remoteVersion = remoteversion;
 	if (!AH->archiveRemoteVersion)
