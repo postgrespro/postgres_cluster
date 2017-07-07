@@ -2584,7 +2584,7 @@ doLog(TState *thread, CState *st, instr_time *now,
 		while (agg->start_time + agg_interval < INSTR_TIME_GET_DOUBLE(*now))
 		{
 			/* print aggregated report to logfile */
-			fprintf(logfile, "%ld " INT64_FORMAT " %.0f %.0f %.0f %.0f " INT64_FORMAT " " INT64_FORMAT " %.0f %.0f %.0f %.0f",
+			fprintf(logfile, "%ld " INT64_FORMAT " %.0f %.0f %.0f %.0f " INT64_FORMAT " " INT64_FORMAT " " INT64_FORMAT " %.0f %.0f %.0f %.0f",
 					agg->start_time,
 					agg->cnt,
 					agg->latency.sum,
@@ -2593,6 +2593,7 @@ doLog(TState *thread, CState *st, instr_time *now,
 					agg->latency.max,
 					agg->serialization_failures,
 					agg->deadlock_failures,
+					agg->attempts.count,
 					agg->attempts.sum,
 					agg->attempts.sum2,
 					agg->attempts.min,
