@@ -491,9 +491,7 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
         finishes: the average per-statement latency (execution time from the
         perspective of the client), the number of serialization and deadlock
         failures, and the average number of transactions attempts (only for
-        commands that start transactions).
-        For details, see <xref linkend="per-statement-report"
-        endterm="per-statement-report-title">
+        commands that start transactions).  See below for details.
        </para>
       </listitem>
      </varlistentry>
@@ -1360,8 +1358,8 @@ END;
 
  </refsect2>
 
- <refsect2 id="per-statement-report">
-  <title id="per-statement-report-title">Per-Statement Report</title>
+ <refsect2>
+  <title>Per-Statement Report</title>
 
   <para>
    With the <option>-r</> option, <application>pgbench</> collects the following
