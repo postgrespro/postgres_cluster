@@ -140,13 +140,13 @@ sub test_pgbench_serialization_failures
 
 	my $pattern =
 		"client 0 sending UPDATE xy SET y = y \\+ (-?\\d+) WHERE x = 1;\n"
-	  . "client 0 receiving\n"
+	  . "(client 0 receiving\n)+"
 	  . "client 0 got a serialization failure \\(attempt 1/2\\)\n"
 	  . "client 0 sending END;\n"
-	  . "client 0 receiving\n"
+	  . "\\g2+"
 	  . "client 0 repeats the failed transaction \\(attempt 2/2\\)\n"
 	  . "client 0 sending BEGIN;\n"
-	  . "client 0 receiving\n"
+	  . "\\g2+"
 	  . "client 0 executing \\\\set delta\n"
 	  . "client 0 sending UPDATE xy SET y = y \\+ \\g1 WHERE x = 1;";
 
@@ -265,23 +265,24 @@ sub test_pgbench_deadlock_failures
 	{
 		my $pattern =
 			"client 0 sending UPDATE xy SET y = y \\+ (-?\\d+) WHERE x = (\\d);\n"
-		  . "client 0 receiving\n"
-		  . "(|client 0 sending SELECT pg_sleep\\(20\\);\n"
-		  . "client 0 receiving\n)"
+		  . "(client 0 receiving\n)+"
+		  . "(|client 0 sending SELECT pg_sleep\\(20\\);\n)"
+		  . "\\g3*"
 		  . "client 0 sending UPDATE xy SET y = y \\+ (-?\\d+) WHERE x = (\\d);\n"
-		  . "client 0 receiving\n"
+		  . "\\g3+"
 		  . "client 0 got a deadlock failure \\(attempt 1/2\\)\n"
 		  . "client 0 sending END;\n"
-		  . "client 0 receiving\n"
+		  . "\\g3+"
 		  . "client 0 repeats the failed transaction \\(attempt 2/2\\)\n"
 		  . "client 0 sending BEGIN;\n"
-		  . "client 0 receiving\n"
+		  . "\\g3+"
 		  . "client 0 executing \\\\set delta1\n"
 		  . "client 0 executing \\\\set delta2\n"
 		  . "client 0 sending UPDATE xy SET y = y \\+ \\g1 WHERE x = \\g2;\n"
-		  . "client 0 receiving\n"
-		  . "\\g3"
-		  . "client 0 sending UPDATE xy SET y = y \\+ \\g4 WHERE x = \\g5;\n";
+		  . "\\g3+"
+		  . "\\g4"
+		  . "\\g3*"
+		  . "client 0 sending UPDATE xy SET y = y \\+ \\g5 WHERE x = \\g6;\n";
 
 		like($err1 . $err2,
 			qr{$pattern},
