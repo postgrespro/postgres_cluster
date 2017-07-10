@@ -172,8 +172,8 @@ bool		progress_timestamp = false; /* progress report with Unix time */
 int			nclients = 1;		/* number of clients */
 int			nthreads = 1;		/* number of threads */
 bool		is_connect;			/* establish connection for each transaction */
-bool		report_per_command = false;	/* report per-command latencies and
-										 * failures */
+bool		report_per_command = false;	/* report per-command latencies,
+										 * failures and attempts */
 int			main_pid;			/* main process id used in log filename */
 int			max_attempts_number = 1;	/* maximum number of attempts to run the
 										 * transaction with serialization or
@@ -4997,13 +4997,13 @@ threadRun(void *arg)
 				/* generate and show report */
 				StatsData	cur;
 				int64		run = now - last_report;
+				int64		attempts_count;
 				double		tps,
 							total_run,
 							latency,
 							sqlat,
 							lag,
 							latency_stdev,
-							attempts_count,
 							attempts_average,
 							attempts_stddev;
 				char		tbuf[64];
