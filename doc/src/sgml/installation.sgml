@@ -2006,7 +2006,7 @@ kill `cat /usr/local/pgsql/data/postmaster.pid`
 
   <para>
    A platform (that is, a CPU architecture and operating system combination)
-   is considered supported by the <productname>&productname;</> development
+   is considered supported by the PostgreSQL development
    community if the code contains provisions to work on that platform and
    it has recently been verified to build and pass its regression tests
    on that platform.  Currently, most testing of platform compatibility
