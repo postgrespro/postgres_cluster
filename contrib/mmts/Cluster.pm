@@ -10,6 +10,8 @@ use Cwd;
 
 use Socket;
 
+use IPC::Run;
+
 sub check_port
 {
 	my ($host, $port) = @_;
@@ -27,7 +29,6 @@ sub check_port
 	}
 
 	close(SOCK);
-	diag("checking for port $port = $available\n");
 	return $available;
 }
 
@@ -148,6 +149,7 @@ sub start
 	foreach my $node (@$nodes)
 	{
 		$node->start();
+		diag "Starting node with connstr 'dbname=postgres port=@{[ $node->port() ]} host=@{[ $node->host() ]}'";
 	}
 }
 
@@ -270,6 +272,39 @@ sub poll
 		sleep($delay);
 	}
 	return 0;
+}
+
+sub pgbench()
+{
+	my ($self, $node, @args) = @_;
+	my $pgbench_handle = $self->pgbench_async($node, @args);
+	$self->pgbench_await($pgbench_handle);
+}
+
+sub pgbench_async()
+{
+	my ($self, $node, @args) = @_;
+
+	my ($in, $out, $err, $rc);
+	$in = '';
+	$out = '';
+
+	my @pgbench_command = (
+		'pgbench',
+		@args,
+		-h => $self->{nodes}->[$node]->host(),
+		-p => $self->{nodes}->[$node]->port(),
+		'postgres',
+	);
+	# diag("running pgbench init");
+	my $handle = IPC::Run::start(\@pgbench_command, $in, $out);
+	return $handle;
+}
+
+sub pgbench_await()
+{
+	my ($self, $pgbench_handle) = @_;
+	IPC::Run::finish($pgbench_handle) || BAIL_OUT("pgbench exited with $?");
 }
 
 1;
