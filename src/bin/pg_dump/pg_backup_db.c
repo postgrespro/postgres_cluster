@@ -100,7 +100,6 @@ get_pgpro_edition(ArchiveHandle *AH)
 		}
 	}
 	PQclear(res);
-	exit_horribly(NULL, "aborting because of unrecognized pgpro edition\n");
 }
 
 static void
