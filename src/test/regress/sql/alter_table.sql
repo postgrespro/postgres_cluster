@@ -1912,3 +1912,18 @@ ALTER TABLE test_add_column
 	ADD COLUMN c4 integer;
 \d test_add_column
 DROP TABLE test_add_column;
+
+-- test CHANGE COLUMN SIZE WITH BTREE INDEX
+CREATE TABLE test (test_column CHARACTER VARYING(128));
+CREATE INDEX test_index ON test USING btree(upper(test_column);
+ALTER TABLE test ALTER COLUMN test_column TYPE VARCHAR(2048);
+DROP TABLE test;
+
+-- test CHANGE COLUMN SIZE WITH HASH INDEX
+CREATE TABLE test (test_column CHARACTER VARYING(128));
+CREATE INDEX test_index ON test USING HASH(upper(test_column));
+ALTER TABLE test ALTER COLUMN test_column TYPE VARCHAR(2048);
+DROP TABLE test;
+
+
+
