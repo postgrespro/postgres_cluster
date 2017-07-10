@@ -2011,7 +2011,7 @@ kill `cat /usr/local/pgsql/data/postmaster.pid`
    it has recently been verified to build and pass its regression tests
    on that platform.  Currently, most testing of platform compatibility
    is done automatically by test machines in the
-   <ulink url="http://buildfarm.postgresql.org/">PostgreSQL Build Farm</ulink>.
+   <ulink url="https://buildfarm.postgresql.org/">PostgreSQL Build Farm</ulink>.
    If you are interested in using <productname>&productname;</> on a platform
    that is not represented in the build farm, but on which the code works
    or can be made to work, you are strongly encouraged to set up a build
