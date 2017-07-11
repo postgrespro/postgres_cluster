@@ -343,18 +343,18 @@ su - postgres
   <para>
    The <productname>&productname;</> &version; sources can be obtained from the
    download section of our
-   website: <ulink url="http://www.postgresql.org/download/"></ulink>.  You
-   should get a file named <filename>postgresql-&version;.tar.gz</filename>
-   or <filename>postgresql-&version;.tar.bz2</filename>. After
+   website: <ulink url="https://postgrespro.com/products/download"></ulink>.  You
+   should get a file named <filename>postgrepro-&version;.tar.gz</filename>
+   or <filename>postgrespro-&version;.tar.bz2</filename>. After
    you have obtained the file, unpack it:
 <screen>
-<userinput>gunzip postgresql-&version;.tar.gz</userinput>
-<userinput>tar xf postgresql-&version;.tar</userinput>
+<userinput>gunzip postgrepro-&version;.tar.gz</userinput>
+<userinput>tar xf postgrepro-&version;.tar</userinput>
 </screen>
    (Use <command>bunzip2</command> instead of <command>gunzip</command> if you
    have the <filename>.bz2</filename> file.)
    This will create a directory
-   <filename>postgresql-&version;</filename> under the current directory
+   <filename>postgrepro-&version;</filename> under the current directory
    with the <productname>&productname;</> sources.
    Change into that directory for the rest
    of the installation procedure.
@@ -2003,20 +2003,6 @@ kill `cat /usr/local/pgsql/data/postmaster.pid`
 
  <sect1 id="supported-platforms">
   <title>Supported Platforms</title>
-
-  <para>
-   A platform (that is, a CPU architecture and operating system combination)
-   is considered supported by the PostgreSQL development
-   community if the code contains provisions to work on that platform and
-   it has recently been verified to build and pass its regression tests
-   on that platform.  Currently, most testing of platform compatibility
-   is done automatically by test machines in the
-   <ulink url="https://buildfarm.postgresql.org/">PostgreSQL Build Farm</ulink>.
-   If you are interested in using <productname>&productname;</> on a platform
-   that is not represented in the build farm, but on which the code works
-   or can be made to work, you are strongly encouraged to set up a build
-   farm member machine so that continued compatibility can be assured.
-  </para>
 
   <para>
    In general, <productname>&productname;</> can be expected to work on
