@@ -340,7 +340,7 @@ doc/src/sgml/pgprobackup.sgml
     </listitem>
     <listitem>
       <para>
-        <link linkend="adding-new-backup-instance">Add a new backup instance to the backup catalog.</link>.
+        <link linkend="adding-new-backup-instance">Add a new backup instance to the backup catalog</link>.
       </para>
     </listitem>
     <listitem>
@@ -494,7 +494,7 @@ GRANT EXECUTE ON FUNCTION txid_snapshot_xmax(txid_snapshot) TO backup;
       <orderedlist numeration="arabic">
         <listitem>
           <para>
-            Grant the <link linkend="role-attributes"><literal>REPLICATION</literal> privileges</link>
+            Grant the <link linkend="role-attributes"><literal>REPLICATION</literal> privilege</link>
             to the <literal>backup</literal> role:
           </para>
           <programlisting>
@@ -762,7 +762,7 @@ pg_probackup show-config -B <replaceable>backupdir</replaceable> --instance <rep
 </programlisting>
        <para>
        Displays the contents of the <filename>pg_probackup.conf</filename>
-       configuration file located in the <filename>backupdir/<replaceable>instance_name</replaceable></filename> directory.
+       configuration file located in the <filename><replaceable>backupdir</replaceable>/backups/<replaceable>instance_name</replaceable></filename> directory.
        To edit <filename>pg_probackup.conf</filename>, use the <xref linkend="pg-probackup-set-config"> command.
        It is not allowed to edit <filename>pg_probackup.conf</filename> directly.
        </para>
@@ -801,7 +801,7 @@ pg_probackup backup -B <replaceable>backupdir</replaceable> -b <replaceable>back
        <programlisting>
 pg_probackup restore -B <replaceable>backupdir</replaceable> --instance <replaceable>instance_name</replaceable>
 [-D <replaceable>datadir</replaceable>]
-[ -i <replaceable>backup_id</replaceable> | [{--time=<replaceable>time</replaceable> | --xid=<replaceable>xid</replaceable> } [--inclusive=<replaceable>boolean</replaceable>]]][--timeline=<replaceable>timeline</replaceable>] [-T OLDDIR=<replaceable>NEWDIR</replaceable>]
+[ -i <replaceable>backup_id</replaceable> | [{--time=<replaceable>time</replaceable> | --xid=<replaceable>xid</replaceable> } [--inclusive=<replaceable>boolean</replaceable>]]][--timeline=<replaceable>timeline</replaceable>] [-T <replaceable class="parameter">OLDDIR=NEWDIR</replaceable>]
 [-j <replaceable>num_threads</replaceable>] [--progress] [-q] [-v]
 </programlisting>
        <para>
@@ -905,9 +905,9 @@ pg_probackup archive-push -B <replaceable>backupdir</replaceable> --instance <re
       Stores <acronym>WAL</acronym> files in the corresponding subdirectory of the backup catalog.
       Can be set as <varname>archive_command</varname> in <filename>postgresql.conf</filename> to perform
       archive backups. In addition to copying files, this command also validates the instance by
-      <replaceable>instance_name</replaceable>, <literal>systemd ID</literal> and <literal>PGDATA</literal>.
+      <replaceable>instance_name</replaceable>, <literal>system-identifier</literal> and <literal>PGDATA</literal>.
       If parameters of the backup instance and the cluster do not match, this command will fail with the following error message:
-      <quote>Refuse to push <acronym>WAL</acronym> segment <replaceable>segment_name</replaceable> into archive. Instance parameters mismatch</quote>
+      <quote>Refuse to push <acronym>WAL</acronym> segment <replaceable>segment_name</replaceable> into archive. Instance parameters mismatch.</quote>
       For each <acronym>WAL</acronym> file moved to the backup catalog, you will see the following message in <productname>&productname;</productname> logfile:
       <quote>pg_probackup archive-push completed successfully</quote>.
        </para>
@@ -1463,7 +1463,7 @@ pg_probackup help [<replaceable>command</replaceable>]
       <term><option>--master-db=<replaceable>dbname</replaceable></></term>
       <listitem>
       <para>
-       Specifies the name of the database to connect to from the master server. The connection is used
+       Specifies the name of the database on the master server to connect to. The connection is used
        only for managing the backup process, so you can connect to any existing database.
        Can be set in the <filename>pg_probackup.conf</filename> using the <command>set-config</command> command.
        Default: <literal>postgres</literal>, the default <productname>&productname;</productname> <literal>dbname</literal>.
@@ -1471,7 +1471,7 @@ pg_probackup help [<replaceable>command</replaceable>]
       </listitem>
      </varlistentry>
      <varlistentry>
-      <term><option>--master-host= <replaceable>host</replaceable></></term>
+      <term><option>--master-host=<replaceable>host</replaceable></></term>
       <listitem>
       <para>
        Specifies the host name of the system on which the master server is running.
@@ -1778,7 +1778,7 @@ pg_probackup backup -B <replaceable>backupdir</replaceable> --instance <replacea
   <title>Configuring pg_probackup</title>
   <para>Once the backup catalog is initialized and a new backup instance is added,
   you can use the <filename>pg_probackup.conf</filename> configuration file located
-  in the <filename>backup/<replaceable>instance_name</replaceable></filename> directory
+  in the <filename>backups/<replaceable>instance_name</replaceable></filename> directory
   to fine-tune <application>pg_probackup</application> configuration.
   </para>
   <para>
