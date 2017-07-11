@@ -9009,6 +9009,7 @@ TryReuseIndex(Oid oldId, IndexStmt *stmt)
 	if (CheckIndexCompatible(oldId,
 							 stmt->accessMethod,
 							 stmt->indexParams,
+							 stmt->indexIncludingParams,
 							 stmt->excludeOpNames))
 	{
 		Relation	irel = index_open(oldId, NoLock);

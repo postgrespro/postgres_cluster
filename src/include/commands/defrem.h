@@ -40,6 +40,7 @@ extern char *ChooseRelationName(const char *name1, const char *name2,
 extern bool CheckIndexCompatible(Oid oldId,
 					 char *accessMethodName,
 					 List *attributeList,
+					 List *includingattributeList,
 					 List *exclusionOpNames);
 extern Oid	GetDefaultOpClass(Oid type_id, Oid am_id);
 
