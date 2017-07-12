@@ -52,8 +52,7 @@
      To begin using the Git repository, make a clone of the official mirror:
 
 <programlisting>
-git clone https://github.com/postgrespro/postgrespro.git
-
+git clone git://github.com/postgrespro/postgrespro.git
 </programlisting>
 
      This will copy the full repository to your local machine, so it may take
@@ -68,7 +67,7 @@ git clone https://github.com/postgrespro/postgrespro.git
      prefix to <literal>https</>, as in:
 
 <programlisting>
-git clone https://git.postgresql.org/git/postgresql.git
+git clone https://github.com/postgrespro/postgrespro.git
 </programlisting>
 
      The HTTP protocol is less efficient than the Git protocol, so it will be
