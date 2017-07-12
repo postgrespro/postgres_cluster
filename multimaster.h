@@ -235,6 +235,9 @@ typedef struct
 	int         lockGraphAllocated;
 	int         lockGraphUsed;
 	uint64      nHeartbeats;
+	bool		slotDeleted;			/* Signalizes that node is already deleted our slot and
+										 * recovery from that node isn't possible.
+										 */
 } MtmNodeInfo;
 
 typedef struct MtmL2List

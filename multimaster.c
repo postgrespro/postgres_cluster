@@ -773,6 +773,11 @@ MtmAdjustOldestXid(TransactionId xid)
 			Mtm->transListHead = prev;
 		}
 	}
+
+	if (!MyReplicationSlot) {
+		MtmCheckSlots();
+	}
+
 	return xid;
 }
 
@@ -1552,9 +1557,6 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 	MtmUnlock();
 
 	MtmResetTransaction();
-	if (!MyReplicationSlot) {
-		MtmCheckSlots();
-	}
 	if (MtmClusterLocked) {
 		MtmUnlockCluster();
 	}
@@ -2729,6 +2731,7 @@ static void MtmInitialize()
 			Mtm->nodes[i].originId = InvalidRepOriginId;
 			Mtm->nodes[i].timeline = 0;
 			Mtm->nodes[i].nHeartbeats = 0;
+			Mtm->nodes[i].slotDeleted = false;
 		}
 		Mtm->nodes[MtmNodeId-1].originId = DoNotReplicateId;
 		/* All transaction originated from the current node should be ignored during recovery */
@@ -3805,8 +3808,8 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 				if (Mtm->nodes[MtmReplicationNodeId-1].restartLSN < recoveredLSN) {
 					MTM_LOG1("Advance restartLSN for node %d from %llx to %llx (MtmReplicationStartupHook)",
 							 MtmReplicationNodeId, Mtm->nodes[MtmReplicationNodeId-1].restartLSN, recoveredLSN);
-					Assert(Mtm->nodes[MtmReplicationNodeId-1].restartLSN == INVALID_LSN
-						   || recoveredLSN < Mtm->nodes[MtmReplicationNodeId-1].restartLSN + MtmMaxRecoveryLag);
+					// Assert(Mtm->nodes[MtmReplicationNodeId-1].restartLSN == INVALID_LSN
+					// 	   || recoveredLSN < Mtm->nodes[MtmReplicationNodeId-1].restartLSN + MtmMaxRecoveryLag);
 					Mtm->nodes[MtmReplicationNodeId-1].restartLSN = recoveredLSN;
 				}
 			} else {
