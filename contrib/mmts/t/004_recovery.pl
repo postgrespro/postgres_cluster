@@ -14,18 +14,18 @@ $cluster->psql(0, 'postgres', "create extension multimaster");
 $cluster->pgbench(0, ('-i', -s => '10') );
 
 # kill node while neighbour is under load
-my $pgb_handle = $cluster->pgbench_async(0, ('-N', -T => '10') );
+my $pgb_handle = $cluster->pgbench_async(1, ('-N', -T => '10') );
 sleep(5);
 $cluster->{nodes}->[2]->stop('fast');
 $cluster->pgbench_await($pgb_handle);
 
 # start node while neighbour is under load
-$pgb_handle = $cluster->pgbench_async(0, ('-N', -T => '10') );
-sleep(5);
+$pgb_handle = $cluster->pgbench_async(0, ('-N', -T => '50') );
+sleep(10);
 $cluster->{nodes}->[2]->start;
 $cluster->pgbench_await($pgb_handle);
 
-# give it 10s to recover
+# give it extra 10s to recover
 sleep(10);
 
 # check data identity
