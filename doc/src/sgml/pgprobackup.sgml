@@ -737,7 +737,7 @@ pg_probackup set-config -B <replaceable>backupdir</replaceable> --instance <repl
 [--error-log-filename=<replaceable>error_log_filename</replaceable>] [--log-directory=<replaceable>log_directory</replaceable>]
 [--log-rotation-size=<replaceable>log_rotation_size</replaceable>] [--log-rotation-age=<replaceable>log_rotation_age</replaceable>]
 [-d <replaceable>dbname</replaceable>] [-h <replaceable>host</replaceable>] [-p <replaceable>port</replaceable>] [-U <replaceable>username</replaceable>]
-[--master-db=<replaceable>dbname</replaceable>] [--master-host= <replaceable>host</replaceable>]
+[--master-db=<replaceable>dbname</replaceable>] [--master-host=<replaceable>host</replaceable>]
 [--master-port=<replaceable>port</replaceable>] [--master-user=<replaceable>username</replaceable>]
 [--retention-redundancy=<replaceable>redundancy</replaceable>][--retention-window=<replaceable>window</replaceable>]
 [--replica-timeout=<replaceable>timeout</replaceable>]
@@ -780,7 +780,7 @@ pg_probackup backup -B <replaceable>backupdir</replaceable> -b <replaceable>back
 [-C] [--stream [-S <replaceable>slot_name</replaceable>]] [--backup-pg-log]
 [-archive-timeout=<replaceable>timeout</replaceable>] [--delete-expired]
 [-d <replaceable>dbname</replaceable>] [-h <replaceable>host</replaceable>] [-p <replaceable>port</replaceable>] [-U <replaceable>username</replaceable>] [-w]
-[--master-db=<replaceable>dbname</replaceable>] [--master-host= <replaceable>host</replaceable>]
+[--master-db=<replaceable>dbname</replaceable>] [--master-host=<replaceable>host</replaceable>]
 [--master-port=<replaceable>port</replaceable>] [--master-user=<replaceable>username</replaceable>]
 [-j <replaceable>num_threads</replaceable>][--progress] [-q] [-v]
 </programlisting>
