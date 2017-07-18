@@ -314,7 +314,8 @@ static void MtmCheckResponse(MtmArbiterMessage* resp)
 	} else { 
 		BIT_CLEAR(Mtm->currentLockNodeMask, resp->node-1);
 	}
-	if (BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1) 
+	if (
+		( BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1) || Mtm->status == MTM_IN_MINORITY )
 		&& !BIT_CHECK(Mtm->disabledNodeMask, resp->node-1)
 		&& Mtm->status != MTM_RECOVERY
 		&& Mtm->status != MTM_RECOVERED
