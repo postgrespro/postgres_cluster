@@ -735,7 +735,14 @@ process_remote_commit(StringInfo in)
 		case PGLOGICAL_COMMIT_PREPARED:
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
-			csn = pq_getmsgint64(in); 
+			csn = pq_getmsgint64(in);
+			/*
+			 * Since our recovery method allows undershoot of csn, we can receive
+			 * some already committed transactions. And in case of donor node reboot
+			 * xid<->csn mapping for them will be lost. However we must filter such
+			 * transactions in walreceiver before this code. --sk
+			 */
+			Assert(csn);
 			strncpy(gid, pq_getmsgstring(in), sizeof gid);
 			MTM_LOG2("PGLOGICAL_COMMIT_PREPARED commit: csn=%lld, gid=%s, lsn=%llx", csn, gid, end_lsn);
 			MtmResetTransaction();
