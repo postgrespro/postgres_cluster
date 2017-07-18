@@ -1849,8 +1849,7 @@ csn_t MtmGetTransactionCSN(TransactionId xid)
 	csn_t csn;
 	MtmLock(LW_SHARED);
 	ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
-	Assert(ts != NULL);
-	csn = ts->csn;
+	csn = ts ? ts->csn : INVALID_CSN;
 	MtmUnlock();
 	return csn;
 }
