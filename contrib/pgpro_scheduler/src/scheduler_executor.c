@@ -14,8 +14,10 @@
 #include "catalog/pg_type.h"
 #include "catalog/pg_authid.h"
 #include "utils/syscache.h"
+#include "utils/lsyscache.h"
 #include "access/htup_details.h"
 #include "utils/timeout.h"
+#include "catalog/namespace.h"
 
 #include "pgstat.h"
 #include "fmgr.h"
@@ -41,6 +43,8 @@ extern volatile sig_atomic_t got_sigterm;
 
 static int64 current_job_id = -1;
 static int64 resubmit_current_job = 0;
+
+extern Oid scheduler_atjob_id_OID;
 
 static void handle_sigterm(SIGNAL_ARGS);
 
@@ -85,6 +89,13 @@ void executor_worker_main(Datum arg)
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_executor");
 	init_worker_mem_ctx("ExecutorMemoryContext");
+	pqsignal(SIGTERM, handle_sigterm);
+	pqsignal(SIGHUP, worker_spi_sighup);
+	/* must be called before connection initialization otherwise infint wait
+	 * could happend if bgworker starts while one of 7th critical tables
+	 * being locked 
+	 */
+	BackgroundWorkerUnblockSignals();
 
 	seg = dsm_attach(DatumGetInt32(arg));
 	if(seg == NULL)
@@ -92,7 +103,6 @@ void executor_worker_main(Datum arg)
 			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			 errmsg("executor unable to map dynamic shared memory segment")));
 	shared = dsm_segment_address(seg);
-	parent = BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid);
 
 	if(shared->status != SchdExecutorInit)
 	{
@@ -100,14 +110,11 @@ void executor_worker_main(Datum arg)
 			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 			 errmsg("executor corrupted dynamic shared memory segment")));
 	}
-
-	SetConfigOption("application_name", "pgp-s executor", PGC_USERSET, PGC_S_SESSION);
-	pgstat_report_activity(STATE_RUNNING, "initialize");
 	BackgroundWorkerInitializeConnection(shared->database, NULL);
 
-	pqsignal(SIGTERM, handle_sigterm);
-	pqsignal(SIGHUP, worker_spi_sighup);
-	BackgroundWorkerUnblockSignals();
+	parent = BackendPidGetProc(MyBgworkerEntry->bgw_notify_pid);
+	SetConfigOption("application_name", "pgp-s executor", PGC_USERSET, PGC_S_SESSION);
+	pgstat_report_activity(STATE_RUNNING, "initialize");
 
 	worker_jobs_limit = read_worker_job_limit();
 
@@ -557,7 +564,7 @@ job_t *initializeExecutorJob(schd_executor_share_t *data)
 	SetConfigOption("search_path", schema, PGC_USERSET, PGC_S_SESSION);
 
 	J = data->type == CronJob ?
-		get_cron_job(data->cron_id, data->start_at, data->nodename, &error):
+		get_cron_job((int)data->cron_id, data->start_at, data->nodename, &error):
 		get_at_job(data->cron_id, data->nodename, &error);
 
 	SetConfigOption("search_path", old_path, PGC_USERSET, PGC_S_SESSION);
@@ -663,10 +670,15 @@ void at_executor_worker_main(Datum arg)
 	int rc = 0;
 	schd_executor_status_t status;
 	bool lets_sleep = false;
+	Oid reloid;
 	/* PGPROC *parent; */
 
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler_at_executor");
 	init_worker_mem_ctx("ExecutorMemoryContext");
+	pqsignal(SIGTERM, handle_sigterm);
+	pqsignal(SIGHUP, worker_spi_sighup);
+	BackgroundWorkerUnblockSignals();
+
 	seg = dsm_attach(DatumGetInt32(arg));
 	if(seg == NULL)
 		ereport(ERROR,
@@ -683,14 +695,20 @@ void at_executor_worker_main(Datum arg)
 	}
 	shared->start_at = GetCurrentTimestamp();
 
+	BackgroundWorkerInitializeConnection(shared->database, NULL);
 	SetConfigOption("application_name", "pgp-s at executor", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "initialize");
-	BackgroundWorkerInitializeConnection(shared->database, NULL);
 
-	pqsignal(SIGTERM, handle_sigterm);
-	pqsignal(SIGHUP, worker_spi_sighup);
-	BackgroundWorkerUnblockSignals();
-
+	START_SPI_SNAP();
+	reloid = RangeVarGetRelid(makeRangeVarFromNameList(
+	                            stringToQualifiedNameList("schedule.at_jobs_submitted")), NoLock, true);
+	STOP_SPI_SNAP();
+	if(reloid == InvalidOid)
+	{
+		ereport(ERROR,
+			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+			 errmsg("executor cannot find jobs table")));
+	}
 
 	while(1)
 	{
@@ -701,7 +719,7 @@ void at_executor_worker_main(Datum arg)
 			ProcessConfigFile(PGC_SIGHUP);
 		}
 		CHECK_FOR_INTERRUPTS();
-		result = process_one_job(shared, &status);
+		result = process_one_job(shared, &status, reloid);
 
 		if(result == 0)
 		{
@@ -736,7 +754,7 @@ void at_executor_worker_main(Datum arg)
 	proc_exit(0);
 }
 
-int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t *status)
+int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t *status, Oid subm_rel_oid)
 {
 	char *error = NULL;
 	char *set_error = NULL;
@@ -753,6 +771,9 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 	pgstat_report_activity(STATE_RUNNING, "initialize at job");
 	START_SPI_SNAP();
 
+	scheduler_atjob_id_OID = get_atttype(subm_rel_oid, 1);
+
+
 	job = get_at_job_for_process(mem, shared->nodename, &error);
 	if(!job)
 	{
@@ -768,6 +789,8 @@ int process_one_job(schd_executor_share_state_t *shared, schd_executor_status_t 
 		shared->status = SchdExecutorIdling;
 		return 0;
 	}
+	if(scheduler_atjob_id_OID != INT8OID)
+		elog(WARNING, "Upgrade extension version");
 	current_job_id = job->cron_id;
 /*	if(!move_at_job_process(job->cron_id))
 	{

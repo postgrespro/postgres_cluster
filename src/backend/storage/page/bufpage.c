@@ -486,6 +486,17 @@ compactify_tuples(itemIdSort itemidbase, int nitems, Page page)
 }
 
 /*
+ * Clean up space between pd_lower and pd_upper for better page compression.
+ */
+static void
+memset_hole(Page page)
+{
+	PageHeader	phdr = (PageHeader) page;
+	if (phdr->pd_upper > phdr->pd_lower)
+		memset((char *)page + phdr->pd_lower, 0, phdr->pd_upper-phdr->pd_lower);
+}
+
+/*
  * PageRepairFragmentation
  *
  * Frees fragmented space on a page.
@@ -582,6 +593,7 @@ PageRepairFragmentation(Page page)
 
 		compactify_tuples(itemidbase, nstorage, page);
 	}
+	memset_hole(page);
 
 	/* Set hint bit for PageAddItem */
 	if (nunused > 0)
@@ -931,6 +943,7 @@ PageIndexMultiDelete(Page page, OffsetNumber *itemnos, int nitems)
 
 	/* and compactify the tuple data */
 	compactify_tuples(itemidbase, nused, page);
+	memset_hole(page);
 }
 
 /*
@@ -1083,6 +1096,7 @@ PageIndexDeleteNoCompact(Page page, OffsetNumber *itemnos, int nitems)
 		 */
 		compactify_tuples(itemidbase, nline, page);
 	}
+	memset_hole(page);
 }
 
 /*

@@ -11,8 +11,8 @@
  </para>
 
  <para>
-  Our wiki, <ulink
-  url="http://wiki.postgresql.org/wiki/Working_with_Git"></ulink>,
+  PostgreSQL wiki, <ulink
+  url="https://wiki.postgresql.org/wiki/Working_with_Git"></ulink>,
   has some discussion on working with Git.
  </para>
 
@@ -52,7 +52,8 @@
      To begin using the Git repository, make a clone of the official mirror:
 
 <programlisting>
-git clone git://git.postgresql.org/git/postgresql.git
+git clone https://github.com/postgrespro/postgrespro.git
+
 </programlisting>
 
      This will copy the full repository to your local machine, so it may take

@@ -128,7 +128,6 @@ int			CheckPointSegments;
 /* Estimated distance between checkpoints, in bytes */
 static double CheckPointDistanceEstimate = 0;
 static double PrevCheckPointDistance = 0;
-static bool SavedGCState = false;
 
 /*
  * GUC support
@@ -9894,7 +9893,7 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 	XLogCtl->Insert.forcePageWrites = true;
 	WALInsertLockRelease();
 
-	SavedGCState = cfs_control_gc(false); /* disable GC during backup */
+	cfs_control_gc_lock(); /* disable GC during backup */
 
 	/* Ensure we release forcePageWrites if fail below */
 	PG_ENSURE_ERROR_CLEANUP(pg_start_backup_callback, (Datum) BoolGetDatum(exclusive));
@@ -10273,7 +10272,7 @@ pg_start_backup_callback(int code, Datum arg)
 	}
 	WALInsertLockRelease();
 	
-	cfs_control_gc(SavedGCState); /* Restore CFS GC activity */
+	cfs_control_gc_unlock(); /* Restore CFS GC activity */
 }
 
 /*
@@ -10472,6 +10471,8 @@ do_pg_stop_backup(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 
 	/* Clean up session-level lock */
 	sessionBackupState = SESSION_BACKUP_NONE;
+
+	cfs_control_gc_unlock(); /* Restore CFS GC activity */
 
 	/*
 	 * Read and parse the START WAL LOCATION line (this code is pretty crude,
@@ -10682,8 +10683,6 @@ do_pg_stop_backup(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 		ereport(NOTICE,
 				(errmsg("WAL archiving is not enabled; you must ensure that all required WAL segments are copied through other means to complete the backup")));
 
-	cfs_control_gc(SavedGCState); /* Restore CFS GC activity */
-
 	/*
 	 * We're done.  As a convenience, return the ending WAL location.
 	 */
@@ -10717,6 +10716,8 @@ do_pg_abort_backup(void)
 		XLogCtl->Insert.forcePageWrites = false;
 	}
 	WALInsertLockRelease();
+
+	cfs_control_gc_unlock(); /* Restore CFS GC activity */
 }
 
 /*

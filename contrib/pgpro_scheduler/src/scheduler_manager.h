@@ -104,7 +104,7 @@ void fill_cron_array_from_rule(Jsonb *J, const char *name, bit_array_t *ce, int 
 bool is_cron_fit_timestamp(bit_array_t *cron, TimestampTz timestamp);
 char **get_dates_array_from_rule(scheduler_task_t *task, int *num);
 int get_integer_from_jsonbval(JsonbValue *ai, int def);
-int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type);
+int scheduler_vanish_expired_jobs(scheduler_manager_ctx_t *ctx, task_type_t type, Oid at_reloid);
 int how_many_instances_on_work(scheduler_manager_ctx_t *ctx, job_t *job);
 int insert_at_record(char *nodename, int cron_id, TimestampTz start_at, TimestampTz postpone, char **error);
 int set_job_on_free_slot(scheduler_manager_ctx_t *ctx, job_t *job);

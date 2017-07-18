@@ -1148,7 +1148,10 @@ RemoveFunctionById(Oid funcOid)
 	languageTuple = SearchSysCache1(LANGOID, language_oid);
 	languageStruct = (Form_pg_language) GETSTRUCT(languageTuple);
 	languageValidator = languageStruct->lanvalidator;
-	OidFunctionCall1(languageValidator, ObjectIdGetDatum(funcOid));
+	if OidIsValid(languageValidator) {
+		/* Language validator is optional feature of language */
+		OidFunctionCall1(languageValidator, ObjectIdGetDatum(funcOid));
+	}
 	ReleaseSysCache(languageTuple);
 	check_function_bodies = save_check_function_bodies;
 
