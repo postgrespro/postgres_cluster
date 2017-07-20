@@ -1,11 +1,8 @@
 \echo Use "CREATE EXTENSION pgpro_scheduler" to load this file. \quit
 
-CREATE SCHEMA IF NOT EXISTS schedule;
-SET search_path TO schedule;
-
 CREATE TYPE job_status_t AS ENUM ('working', 'done', 'error');
 CREATE TYPE job_at_status_t AS ENUM ('submitted', 'processing', 'done');
-CREATE SEQUENCE schedule.at_jobs_submitted_id_seq;
+CREATE SEQUENCE @extschema@.at_jobs_submitted_id_seq;
 
 CREATE TABLE at_jobs_submitted(
    id bigint PRIMARY KEY,
@@ -38,8 +35,7 @@ ALTER TABLE at_jobs_done ADD status boolean;
 ALTER TABLE at_jobs_done ADD reason text;
 ALTER TABLE at_jobs_done ADD done_time timestamp with time zone default now();
 
-ALTER TABLE at_jobs_submitted ALTER id SET default nextval('schedule.at_jobs_submitted_id_seq');
-
+ALTER TABLE at_jobs_submitted ALTER id SET default nextval('@extschema@.at_jobs_submitted_id_seq');
 
 CREATE TABLE cron(
    id SERIAL PRIMARY KEY,
@@ -64,7 +60,10 @@ CREATE TABLE cron(
    reason text,
    _next_exec_time timestamp with time zone
 );
-create index on cron (node);
+
+CREATE INDEX ON cron (node);
+CREATE INDEX ON cron (owner);
+CREATE INDEX ON cron (executor);
 
 CREATE TABLE at(
    start_at timestamp with time zone,
@@ -73,9 +72,9 @@ CREATE TABLE at(
    cron integer REFERENCES cron (id),
    node text,
    started timestamp with time zone,
-   active boolean
+   active boolean,
+   PRIMARY KEY (start_at, cron)
 );
-CREATE INDEX at_cron_start_at_idx on at (cron, start_at);
 
 CREATE TABLE log(
    start_at timestamp with time zone,
@@ -86,7 +85,8 @@ CREATE TABLE log(
    started timestamp with time zone,
    finished timestamp with time zone,
    status boolean,
-   message text
+   message text,
+   PRIMARY KEY (start_at, cron)
 );
 CREATE INDEX log_cron_idx on log (cron);
 CREATE INDEX log_cron_start_at_idx on log (cron, node, start_at);
@@ -158,6 +158,135 @@ select pg_extension_config_dump('cron_id_seq'::regclass, '');
 select pg_extension_config_dump('at'::regclass, '');
 select pg_extension_config_dump('log'::regclass, '');
 
+----------
+-- VIEW --
+----------
+
+--
+-- show all scheduled jobs 
+--
+CREATE VIEW all_jobs_log AS 
+	SELECT 
+		coalesce(c.id, l.cron) as cron,
+		c.node as node,
+		l.start_at as scheduled_at,
+		coalesce(c.name, '--DELETED--') as name,
+		c.comments as comments,
+		c.do_sql as commands,
+		c.executor as run_as,
+		c.owner as owner,
+		c.same_transaction as use_same_transaction,
+		l.started as started,
+		l.last_start_available as last_start_available,
+		l.finished as finished,
+		c.max_run_time as max_run_time,
+		c.onrollback_statement as onrollback,
+		c.next_time_statement as next_time_statement,
+		c.max_instances as max_instances,
+		CASE WHEN l.status THEN
+			'done'::@extschema@.job_status_t
+		ELSE
+			'error'::@extschema@.job_status_t
+		END as status,
+		l.message as message
+
+	FROM @extschema@.log as l LEFT OUTER JOIN @extschema@.cron as c ON c.id = l.cron;
+
+--
+-- show scheduled jobs of session user
+--
+
+CREATE VIEW jobs_log AS 
+	SELECT
+		coalesce(c.id, l.cron) as cron,
+		c.node as node,
+		l.start_at as scheduled_at,
+		coalesce(c.name, '--DELETED--') as name,
+		c.comments as comments,
+		c.do_sql as commands,
+		c.executor as run_as,
+		c.owner as owner,
+		c.same_transaction as use_same_transaction,
+		l.started as started,
+		l.last_start_available as last_start_available,
+		l.finished as finished,
+		c.max_run_time as max_run_time,
+		c.onrollback_statement as onrollback,
+		c.next_time_statement as next_time_statement,
+		c.max_instances as max_instances,
+		CASE WHEN l.status THEN
+			'done'::@extschema@.job_status_t
+		ELSE
+			'error'::@extschema@.job_status_t
+		END as status,
+		l.message as message
+	FROM log as l, cron as c WHERE c.executor = session_user AND c.id = l.cron;
+
+--
+-- show parallel jobs of session_user
+--
+
+CREATE VIEW job_status AS 
+	SELECT 
+		id, node, name, comments, at as run_after,
+		do_sql as query, params, depends_on, executor as run_as, attempt, 
+		resubmit_limit, postpone as max_wait_interval,
+		max_run_time as max_duration, submit_time, canceled,
+		start_time, status as is_success, reason as error, done_time,
+		'done'::job_at_status_t status
+	FROM @extschema@.at_jobs_done where owner = session_user
+		UNION 
+	SELECT
+		id, node, name, comments, at as run_after,
+		do_sql as query, params, depends_on, executor as run_as, attempt, 
+		resubmit_limit, postpone as max_wait_interval,
+		max_run_time as max_duration, submit_time, canceled, start_time, 
+		NULL as is_success, NULL as error, NULL as done_time,
+		'processing'::job_at_status_t status
+	FROM ONLY @extschema@.at_jobs_process where owner = session_user
+		UNION
+	SELECT
+		id, node, name, comments, at as run_after,
+		do_sql as query, params, depends_on, executor as run_as, attempt, 
+		resubmit_limit, postpone as max_wait_interval,
+		max_run_time as max_duration, submit_time, canceled, 
+		NULL as start_time, NULL as is_success, NULL as error,
+		NULL as done_time,
+		'submitted'::job_at_status_t status
+	FROM ONLY @extschema@.at_jobs_submitted where owner = session_user;
+
+--
+-- show all parallel jobs 
+--
+
+CREATE VIEW all_job_status AS 
+	SELECT 
+		id, node, name, comments, at as run_after,
+		do_sql as query, params, depends_on, executor as run_as, owner,
+		attempt, resubmit_limit, postpone as max_wait_interval,
+		max_run_time as max_duration, submit_time, canceled,
+		start_time, status as is_success, reason as error, done_time,
+		'done'::job_at_status_t status
+	FROM @extschema@.at_jobs_done 
+		UNION 
+	SELECT
+		id, node, name, comments, at as run_after,
+		do_sql as query, params, depends_on, executor as run_as, owner,
+		attempt, resubmit_limit, postpone as max_wait_interval,
+		max_run_time as max_duration, submit_time, canceled, start_time,
+		NULL as is_success, NULL as error, NULL as done_time,
+		'processing'::job_at_status_t status
+	FROM ONLY @extschema@.at_jobs_process 
+		UNION
+	SELECT
+		id, node, name, comments, at as run_after,
+		do_sql as query, params, depends_on, executor as run_as, owner,
+		attempt, resubmit_limit, postpone as max_wait_interval,
+		max_run_time as max_duration, submit_time, canceled,
+		NULL as start_time, NULL as is_success, NULL as error,
+		NULL as done_time,
+		'submitted'::job_at_status_t status
+	FROM ONLY @extschema@.at_jobs_submitted;
 
 ---------------
 -- FUNCTIONS --
@@ -199,7 +328,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 
 CREATE FUNCTION submit_job(
@@ -272,7 +401,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 ------------------------------------
 -- -- SHEDULER EXECUTOR FUNCTIONS --
@@ -290,7 +419,7 @@ BEGIN
 	END IF;
 	RETURN TRUE;
 END
-$BODY$  LANGUAGE plpgsql set search_path FROM CURRENT;
+$BODY$  LANGUAGE plpgsql set search_path TO @extschema@;
 
 CREATE FUNCTION on_cron_update() RETURNS TRIGGER
 AS $BODY$
@@ -308,7 +437,7 @@ BEGIN
   END IF;
   RETURN OLD;
 END
-$BODY$  LANGUAGE plpgsql set search_path FROM CURRENT;
+$BODY$  LANGUAGE plpgsql set search_path TO @extschema@;
 
 CREATE FUNCTION on_cron_delete() RETURNS TRIGGER
 AS $BODY$
@@ -319,7 +448,7 @@ BEGIN
   DELETE FROM at WHERE cron = cron_id;
   RETURN OLD;
 END
-$BODY$  LANGUAGE plpgsql set search_path FROM CURRENT;
+$BODY$  LANGUAGE plpgsql set search_path TO @extschema@;
 
 CREATE FUNCTION _is_job_editable(jobId integer) RETURNS boolean AS
 $BODY$
@@ -347,7 +476,7 @@ BEGIN
    RETURN false;
 END
 $BODY$
-LANGUAGE plpgsql set search_path FROM CURRENT;
+LANGUAGE plpgsql set search_path TO @extschema@;
 
 CREATE FUNCTION _possible_args() RETURNS jsonb AS
 $BODY$
@@ -374,7 +503,7 @@ BEGIN
    );
 END
 $BODY$
-LANGUAGE plpgsql set search_path FROM CURRENT;
+LANGUAGE plpgsql set search_path TO @extschema@;
 
 
 CREATE FUNCTION _get_excess_keys(params jsonb) RETURNS text[] AS
@@ -397,7 +526,7 @@ BEGIN
    RETURN excess;
 END
 $BODY$
-LANGUAGE plpgsql set search_path FROM CURRENT;
+LANGUAGE plpgsql set search_path TO @extschema@;
 
 CREATE FUNCTION _string_or_null(str text) RETURNS text AS
 $BODY$
@@ -408,7 +537,7 @@ BEGIN
    RETURN quote_literal(str);
 END
 $BODY$
-LANGUAGE plpgsql set search_path FROM CURRENT;
+LANGUAGE plpgsql set search_path TO @extschema@;
 
 CREATE FUNCTION _get_cron_from_attrs(params jsonb, prev jsonb) RETURNS jsonb AS
 $BODY$
@@ -477,7 +606,7 @@ BEGIN
 	RETURN clean_cron;
 END
 $BODY$
-LANGUAGE plpgsql set search_path FROM CURRENT;
+LANGUAGE plpgsql set search_path TO @extschema@;
 
 CREATE FUNCTION _get_array_from_jsonb(dst text[], value jsonb) RETURNS text[] AS
 $BODY$
@@ -507,7 +636,7 @@ BEGIN
 	RETURN dst;
 END
 $BODY$
-LANGUAGE plpgsql set search_path FROM CURRENT;
+LANGUAGE plpgsql set search_path TO @extschema@;
 
 CREATE FUNCTION _get_commands_from_attrs(params jsonb) RETURNS text[] AS
 $BODY$
@@ -533,7 +662,7 @@ BEGIN
    RETURN commands;
 END
 $BODY$
-LANGUAGE plpgsql set search_path FROM CURRENT;
+LANGUAGE plpgsql set search_path TO @extschema@;
 
 
 CREATE FUNCTION _get_executor_from_attrs(params jsonb) RETURNS text AS
@@ -559,7 +688,7 @@ BEGIN
    RETURN executor;
 END
 $BODY$
-LANGUAGE plpgsql set search_path FROM CURRENT;
+LANGUAGE plpgsql set search_path TO @extschema@;
    
 
 CREATE FUNCTION create_job(params jsonb) RETURNS integer AS
@@ -657,7 +786,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION create_job(cron text, command text, node text DEFAULT NULL) RETURNS integer AS
 $BODY$
@@ -666,7 +795,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION create_job(dt timestamp with time zone, command text, node text DEFAULT NULL) RETURNS integer AS
 $BODY$
@@ -675,7 +804,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-	SECURITY DEFINER set search_path FROM CURRENT;
+	SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION create_job(dts timestamp with time zone[], command text, node text DEFAULT NULL) RETURNS integer AS
 $BODY$
@@ -684,7 +813,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-	SECURITY DEFINER set search_path FROM CURRENT;
+	SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION create_job(cron text, commands text[], node text DEFAULT NULL) RETURNS integer AS
 $BODY$
@@ -693,7 +822,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION create_job(dt timestamp with time zone, commands text[], node text DEFAULT NULL) RETURNS integer AS
 $BODY$
@@ -702,7 +831,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-	SECURITY DEFINER set search_path FROM CURRENT;
+	SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION create_job(dts timestamp with time zone[], commands text[], node text DEFAULT NULL) RETURNS integer AS
 $BODY$
@@ -711,7 +840,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-	SECURITY DEFINER set search_path FROM CURRENT;
+	SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION set_job_attributes(jobId integer, attrs jsonb) RETURNS boolean AS
 $BODY$
@@ -821,7 +950,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION set_job_attribute(jobId integer, name text, value jsonb) RETURNS boolean AS
 $BODY$
@@ -834,7 +963,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION set_job_attribute(jobId integer, name text, value anyarray) RETURNS boolean AS
 $BODY$
@@ -847,7 +976,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION set_job_attribute(jobId integer, name text, value text) RETURNS boolean AS
 $BODY$
@@ -865,7 +994,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION drop_job(jobId integer) RETURNS boolean AS
 $BODY$
@@ -880,7 +1009,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION deactivate_job(jobId integer) RETURNS boolean AS
 $BODY$
@@ -895,7 +1024,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION activate_job(jobId integer) RETURNS boolean AS
 $BODY$
@@ -910,7 +1039,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION _make_cron_job(ii cron) RETURNS cron_job AS
 $BODY$
@@ -923,7 +1052,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-	SECURITY DEFINER set search_path FROM CURRENT;
+	SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION _make_cron_rec(ii cron) RETURNS cron_rec AS
 $BODY$
@@ -952,7 +1081,7 @@ BEGIN
 	RETURN oo;
 END
 $BODY$
-LANGUAGE plpgsql set search_path FROM CURRENT;
+LANGUAGE plpgsql set search_path TO @extschema@;
 
 CREATE FUNCTION clean_log() RETURNS INT  AS
 $BODY$
@@ -967,7 +1096,7 @@ BEGIN
 	RETURN cnt;
 END
 $BODY$
-LANGUAGE plpgsql set search_path FROM CURRENT;
+LANGUAGE plpgsql set search_path TO @extschema@;
 
 create FUNCTION get_job(jobId int) RETURNS cron_rec AS
 $BODY$
@@ -984,7 +1113,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION get_cron() RETURNS SETOF cron_rec AS
 $BODY$
@@ -1002,7 +1131,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION get_owned_cron() RETURNS SETOF cron_rec AS
 $BODY$
@@ -1018,7 +1147,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 
 CREATE FUNCTION get_owned_cron(usename text) RETURNS SETOF cron_rec AS
@@ -1039,7 +1168,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION get_user_owned_cron() RETURNS SETOF cron_rec AS
 $BODY$
@@ -1048,7 +1177,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION get_user_owned_cron(usename text) RETURNS SETOF cron_rec AS
 $BODY$
@@ -1057,7 +1186,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 
 
@@ -1075,7 +1204,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION get_user_cron(usename text) RETURNS SETOF cron_rec AS
 $BODY$
@@ -1095,7 +1224,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION get_user_active_jobs() RETURNS SETOF cron_job AS
 $BODY$
@@ -1129,7 +1258,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION get_active_jobs(usename text) RETURNS SETOF cron_job AS
 $BODY$
@@ -1139,7 +1268,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION get_active_jobs() RETURNS SETOF cron_job AS
 $BODY$
@@ -1174,7 +1303,7 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
 CREATE FUNCTION get_user_active_jobs(usename text) RETURNS SETOF cron_job AS
 $BODY$
@@ -1212,124 +1341,91 @@ BEGIN
 END
 $BODY$
 LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+   SECURITY DEFINER set search_path TO @extschema@;
 
-CREATE FUNCTION get_log(usename text) RETURNS SETOF cron_job AS
+CREATE FUNCTION get_log(usename text) RETURNS 
+	table(
+		cron int,
+		node text,
+		scheduled_at timestamp with time zone,
+		name text,
+		comments text,
+		commands text[],
+		run_as text,
+		owner text,
+		use_same_transaction boolean,
+		started timestamp with time zone,
+		last_start_available timestamp with time zone,
+		finished timestamp with time zone,
+		max_run_time interval,
+		onrollback text,
+		next_time_statement text,
+		max_instances integer,
+		status @extschema@.job_status_t,
+		message text
+	)
+AS
 $BODY$
-BEGIN
- 	RETURN QUERY SELECT * FROM get_user_log(usename);
-END
+ 	SELECT * FROM @extschema@.all_jobs_log where owner = usename;
 $BODY$
-LANGUAGE plpgsql
-	SECURITY DEFINER set search_path FROM CURRENT;
+LANGUAGE sql STABLE; 
 
-CREATE FUNCTION get_log() RETURNS SETOF cron_job AS
-$BODY$
-BEGIN
- 	RETURN QUERY SELECT * FROM get_user_log('___all___');
-END
-$BODY$
-LANGUAGE plpgsql
-	SECURITY DEFINER set search_path FROM CURRENT;
 
-CREATE FUNCTION get_user_log() RETURNS SETOF cron_job AS
+
+CREATE FUNCTION get_log() RETURNS 
+	table(
+		cron int,
+		node text,
+		scheduled_at timestamp with time zone,
+		name text,
+		comments text,
+		commands text[],
+		run_as text,
+		owner text,
+		use_same_transaction boolean,
+		started timestamp with time zone,
+		last_start_available timestamp with time zone,
+		finished timestamp with time zone,
+		max_run_time interval,
+		onrollback text,
+		next_time_statement text,
+		max_instances integer,
+		status @extschema@.job_status_t,
+		message text
+	)
+AS
 $BODY$
-BEGIN
- 	RETURN QUERY SELECT * FROM get_user_log(session_user);
-END
+ 	SELECT * FROM @extschema@.all_jobs_log;
 $BODY$
-LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
+LANGUAGE sql STABLE; 
 
-CREATE FUNCTION get_user_log(usename text) RETURNS SETOF cron_job AS
+
+CREATE FUNCTION get_user_log() RETURNS 
+	table(
+		cron int,
+		node text,
+		scheduled_at timestamp with time zone,
+		name text,
+		comments text,
+		commands text[],
+		run_as text,
+		owner text,
+		use_same_transaction boolean,
+		started timestamp with time zone,
+		last_start_available timestamp with time zone,
+		finished timestamp with time zone,
+		max_run_time interval,
+		onrollback text,
+		next_time_statement text,
+		max_instances integer,
+		status @extschema@.job_status_t,
+		message text
+	)
+AS
 $BODY$
-DECLARE
-	ii record;
-	oo cron_job;
-	sql_cmd text;
-BEGIN
-	IF usename <> session_user THEN
-    	PERFORM onlySuperUser();
-	END IF;
-
-	IF usename = '___all___' THEN
-		sql_cmd := 'SELECT * FROM log as l LEFT OUTER JOIN cron ON cron.id = l.cron';
-	ELSE
-		sql_cmd := 'SELECT * FROM log as l LEFT OUTER JOIN cron ON cron.executor = ''' || usename || ''' AND cron.id = l.cron';
-	END IF;
-
-	FOR ii IN EXECUTE sql_cmd LOOP
-		IF ii.id IS NOT NULL THEN
-			oo.cron = ii.id;
-			oo.name = ii.name;
-			oo.node = ii.node;
-			oo.comments= ii.comments;
-			oo.commands = ii.do_sql;
-			oo.run_as = ii.executor;
-			oo.owner = ii.owner;
-			oo.use_same_transaction = ii.same_transaction;
-			oo.max_instances = ii.max_instances;
-			oo.max_run_time = ii.max_run_time;
-			oo.onrollback = ii.onrollback_statement;
-			oo.next_time_statement = ii.next_time_statement;
-		ELSE
-			oo.cron = ii.cron;
-			oo.name = '-- DELETED --';
-		END IF;
-		oo.scheduled_at = ii.start_at;
-		oo.started = ii.started;
-		oo.last_start_available = ii.last_start_available;
-		oo.finished = ii.finished;
-		oo.message = ii.message;
-		IF ii.status THEN
-			oo.status = 'done';
-		ELSE
-			oo.status = 'error';
-		END IF;
-
-		RETURN NEXT oo;
-	END LOOP;
-	RETURN;
-END
+ 	SELECT * FROM @extschema@.jobs_log;
 $BODY$
-LANGUAGE plpgsql
-   SECURITY DEFINER set search_path FROM CURRENT;
-
--- CREATE FUNCTION enable() RETURNS boolean AS 
--- $BODY$
--- DECLARE
--- 	value text;
--- BEGIN
--- 	EXECUTE 'show enabled' INTO value; 
--- 	IF value = 'on' THEN
--- 		RAISE NOTICE 'Scheduler already enabled';
--- 		RETURN false;
--- 	ELSE 
--- 		ALTER SYSTEM SET enabled = true;
--- 		SELECT pg_reload_conf();
--- 	END IF;
--- 	RETURN true;
--- END
--- $BODY$
--- LANGUAGE plpgsql;
--- 
--- CREATE FUNCTION disable() RETURNS boolean AS 
--- $BODY$
--- DECLARE
--- 	value text;
--- BEGIN
--- 	EXECUTE 'show enabled' INTO value; 
--- 	IF value = 'off' THEN
--- 		RAISE NOTICE 'Scheduler already disabled';
--- 		RETURN false;
--- 	ELSE 
--- 		ALTER SYSTEM SET enabled = false;
--- 		SELECT pg_reload_conf();
--- 	END IF;
--- 	RETURN true;
--- END
--- $BODY$
--- LANGUAGE plpgsql;
+LANGUAGE sql STABLE; 
 
 CREATE FUNCTION cron2jsontext(CSTRING)
   RETURNS text 
@@ -1348,74 +1444,11 @@ CREATE TRIGGER cron_update_trigger
 AFTER UPDATE ON cron 
    FOR EACH ROW EXECUTE PROCEDURE on_cron_update();
  
-----------
--- VIEW --
-----------
-
-CREATE VIEW job_status AS 
-	SELECT 
-		id, node, name, comments, at as run_after,
-		do_sql as query, params, depends_on, executor as run_as, attempt, 
-		resubmit_limit, postpone as max_wait_interval,
-		max_run_time as max_duration, submit_time, canceled,
-		start_time, status as is_success, reason as error, done_time,
-		'done'::job_at_status_t status
-	FROM schedule.at_jobs_done where owner = session_user
-		UNION 
-	SELECT
-		id, node, name, comments, at as run_after,
-		do_sql as query, params, depends_on, executor as run_as, attempt, 
-		resubmit_limit, postpone as max_wait_interval,
-		max_run_time as max_duration, submit_time, canceled, start_time, 
-		NULL as is_success, NULL as error, NULL as done_time,
-		'processing'::job_at_status_t status
-	FROM ONLY schedule.at_jobs_process where owner = session_user
-		UNION
-	SELECT
-		id, node, name, comments, at as run_after,
-		do_sql as query, params, depends_on, executor as run_as, attempt, 
-		resubmit_limit, postpone as max_wait_interval,
-		max_run_time as max_duration, submit_time, canceled, 
-		NULL as start_time, NULL as is_success, NULL as error,
-		NULL as done_time,
-		'submitted'::job_at_status_t status
-	FROM ONLY schedule.at_jobs_submitted where owner = session_user;
-
-CREATE VIEW all_job_status AS 
-	SELECT 
-		id, node, name, comments, at as run_after,
-		do_sql as query, params, depends_on, executor as run_as, owner,
-		attempt, resubmit_limit, postpone as max_wait_interval,
-		max_run_time as max_duration, submit_time, canceled,
-		start_time, status as is_success, reason as error, done_time,
-		'done'::job_at_status_t status
-	FROM schedule.at_jobs_done 
-		UNION 
-	SELECT
-		id, node, name, comments, at as run_after,
-		do_sql as query, params, depends_on, executor as run_as, owner,
-		attempt, resubmit_limit, postpone as max_wait_interval,
-		max_run_time as max_duration, submit_time, canceled, start_time,
-		NULL as is_success, NULL as error, NULL as done_time,
-		'processing'::job_at_status_t status
-	FROM ONLY schedule.at_jobs_process 
-		UNION
-	SELECT
-		id, node, name, comments, at as run_after,
-		do_sql as query, params, depends_on, executor as run_as, owner,
-		attempt, resubmit_limit, postpone as max_wait_interval,
-		max_run_time as max_duration, submit_time, canceled,
-		NULL as start_time, NULL as is_success, NULL as error,
-		NULL as done_time,
-		'submitted'::job_at_status_t status
-	FROM ONLY schedule.at_jobs_submitted;
-
 -----------
 -- GRANT --
 -----------
 
-GRANT USAGE ON SCHEMA schedule TO public;
-GRANT SELECT ON schedule.job_status TO public;
+GRANT USAGE ON SCHEMA @extschema@ TO public;
+GRANT SELECT ON @extschema@.job_status TO public;
+GRANT SELECT ON @extschema@.jobs_log TO public;
 
-
-RESET search_path;
