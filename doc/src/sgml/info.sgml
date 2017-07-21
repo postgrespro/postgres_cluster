@@ -27,8 +27,8 @@
     <term>Web Site</term>
     <listitem>
      <para>
-      The <productname>&productname;</productname>
-      <ulink url="http://www.postgresql.org">web site</ulink>
+      The Postgres Professional
+      <ulink url="https://www.postgrespro.com">web site</ulink>
       carries details on the latest release and other
       information to make your work or play with
       <productname>&productname;</productname> more productive.
@@ -42,7 +42,7 @@
      <para>
       The mailing lists are a good place to have your questions
       answered, to share experiences with other users, and to contact
-      the developers.  Consult the <productname>&productname;</> web site
+      the developers.  Consult the <productname>PostgreSQL</> web site
       for details.
      </para>
     </listitem>

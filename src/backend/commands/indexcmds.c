@@ -118,6 +118,7 @@ bool
 CheckIndexCompatible(Oid oldId,
 					 char *accessMethodName,
 					 List *attributeList,
+					 List *includingattributeList,
 					 List *exclusionOpNames)
 {
 	bool		isconstraint;
@@ -134,6 +135,7 @@ CheckIndexCompatible(Oid oldId,
 	int16	   *coloptions;
 	IndexInfo  *indexInfo;
 	int			numberOfAttributes;
+	int			numberOfKeyAttributes;
 	int			old_natts;
 	bool		isnull;
 	bool		ret = true;
@@ -153,6 +155,9 @@ CheckIndexCompatible(Oid oldId,
 	isconstraint = false;
 
 	numberOfAttributes = list_length(attributeList);
+	numberOfKeyAttributes = numberOfAttributes;
+	if (includingattributeList != NULL)
+		numberOfKeyAttributes = list_length(attributeList) - list_length(includingattributeList);
 	Assert(numberOfAttributes > 0);
 	Assert(numberOfAttributes <= INDEX_MAX_KEYS);
 
@@ -178,6 +183,8 @@ CheckIndexCompatible(Oid oldId,
 	 * later on, and it would have failed then anyway.
 	 */
 	indexInfo = makeNode(IndexInfo);
+	indexInfo->ii_NumIndexKeyAttrs = numberOfKeyAttributes;
+	indexInfo->ii_NumIndexAttrs = numberOfAttributes;
 	indexInfo->ii_Expressions = NIL;
 	indexInfo->ii_ExpressionsState = NIL;
 	indexInfo->ii_PredicateState = NIL;

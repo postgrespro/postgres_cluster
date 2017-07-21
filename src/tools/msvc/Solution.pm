@@ -508,6 +508,7 @@ EOF
 	if ( -d ".git" ) {
 		open P,"git log -1 --format='%h' |";
 		my $commit_id = <P>;
+		chomp($commit_id);
 		if (close(P)) {
 			open(O, ">src/include/commit_id.h");
 			print O "#define COMMIT_ID \"$commit_id\"\n";
