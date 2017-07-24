@@ -40,6 +40,7 @@
 
 #include "multimaster.h"
 #include "spill.h"
+#include "state.h"
 
 #define ERRCODE_DUPLICATE_OBJECT_STR  "42710"
 #define RECEIVER_SUSPEND_TIMEOUT (1*USECS_PER_SEC)
@@ -367,7 +368,7 @@ pglogical_receiver_main(Datum main_arg)
 		PQclear(res);
 		resetPQExpBuffer(query);
 
-		MtmReceiverStarted(nodeId);
+		MtmStateProcessNeighborEvent(nodeId, MTM_NEIGHBOR_RECEIVER_START);
 
 		while (!got_sigterm)
 		{

@@ -57,6 +57,7 @@
 #include "multimaster.h"
 #include "pglogical_relid_map.h"
 #include "spill.h"
+#include "state.h"
 
 typedef struct TupleData
 {
@@ -1190,7 +1191,8 @@ void MtmExecutor(void* work, size_t size)
 			}
 			case 'Z':
 			{
-				MtmRecoveryCompleted();
+				// MtmRecoveryCompleted();
+				MtmStateProcessEvent(MTM_RECOVERY_FINISH2);
 				inside_transaction = false;
 				break;
 			}

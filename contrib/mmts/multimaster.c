@@ -75,6 +75,7 @@
 
 #include "multimaster.h"
 #include "ddd.h"
+#include "state.h"
 
 typedef struct {
 	TransactionId xid;	  /* local transaction ID	*/
@@ -250,6 +251,7 @@ int	  MtmMax2PCRatio;
 bool  MtmUseDtm;
 bool  MtmPreserveCommitOrder;
 bool  MtmVolksWagenMode; /* Pretend to be normal postgres. This means skip some NOTICE's and use local sequences */
+bool  MtmMajorNode;
 
 TransactionId  MtmUtilityProcessedInXid;
 
@@ -263,7 +265,6 @@ static int	 MtmMaxRecoveryLag;
 static int	 MtmGcPeriod;
 static bool	 MtmIgnoreTablesWithoutPk;
 static int	 MtmLockCount;
-static bool	 MtmMajorNode;
 static bool	 MtmBreakConnection;
 static bool	 MtmClusterLocked;
 static bool	 MtmInsideTransaction;
@@ -319,7 +320,7 @@ void MtmReleaseLocks(void)
  * -------------------------------------------
  */
 
-//#define DEBUG_MTM_LOCK 1
+#define DEBUG_MTM_LOCK 1
 
 #if DEBUG_MTM_LOCK
 static timestamp_t MtmLockLastReportTime;
@@ -1700,16 +1701,6 @@ static void	MtmLoadPreparedTransactions(void)
 	}
 }
 
-static void MtmStartRecovery()
-{
-	MtmLock(LW_EXCLUSIVE);
-	BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
-	Mtm->nConfigChanges += 1;
-	MtmSwitchClusterMode(MTM_RECOVERY);
-	Mtm->recoveredLSN = INVALID_LSN;
-	MtmUnlock();
-}
-
 static void MtmDropSlot(int nodeId)
 {
 	if (MtmTryLockNode(nodeId, LW_EXCLUSIVE))
@@ -1766,15 +1757,15 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot, nodemas
 	} else {
 		globalSnapshot = MtmTx.snapshot;
 	}
-	if (!TransactionIdIsValid(gtid->xid)) {
+	if (!TransactionIdIsValid(gtid->xid) && Mtm->status != MTM_RECOVERY)
+	{
 		/* In case of recovery InvalidTransactionId is passed */
-		if (Mtm->status != MTM_RECOVERY) {
-			MTM_ELOG(WARNING, "Node %d tries to recover node %d which is in %s mode", gtid->node, MtmNodeId,  MtmNodeStatusMnem[Mtm->status]);
-			MtmStartRecovery();
-		}
-	} else if (Mtm->status == MTM_RECOVERY) {
+		MtmStateProcessEvent(MTM_RECOVERY_START1);
+	}
+	else if (Mtm->status == MTM_RECOVERY)
+	{
 		/* When recovery is completed we get normal transaction ID and switch to normal mode */
-		MtmRecoveryCompleted();
+		MtmStateProcessEvent(MTM_RECOVERY_FINISH1);
 	}
 }
 
@@ -1910,11 +1901,7 @@ void MtmHandleApplyError(void)
 		case ERRCODE_INTERNAL_ERROR:
 		case ERRCODE_OUT_OF_MEMORY:
 		  */
-			MTM_ELOG(WARNING, "Node is excluded from cluster because of non-recoverable error %d, %s, pid=%u",
-				edata->sqlerrcode, edata->message, getpid());
-			MtmSwitchClusterMode(MTM_OUT_OF_SERVICE);
-			kill(PostmasterPid, SIGQUIT);
-			break;
+			MtmStateProcessEvent(MTM_NONRECOVERABLE_ERROR);
 	}
 	FreeErrorData(edata);
 }
@@ -1926,7 +1913,7 @@ void MtmHandleApplyError(void)
  * The reason is that we want to avoid extra polling to obtain maximum CSN from all nodes to assign it to committed transaction.
  * Called only from MtmDisableNode in critical section.
  */
-static void MtmPollStatusOfPreparedTransactionsForDisabledNode(int disabledNodeId)
+void MtmPollStatusOfPreparedTransactionsForDisabledNode(int disabledNodeId)
 {
 	MtmTransState *ts;
 	for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) {
@@ -1971,91 +1958,6 @@ static void MtmPollStatusOfPreparedTransactions()
 					 ts->gid, (long64)ts->xid, MtmTxnStatusMnem[ts->status], ts->gtid.node, (long64)ts->gtid.xid, ts->votedMask);
 		}
 	}
-}
-
-/*
- * Node is disabled if it is not part of clique built using connectivity masks of all nodes.
- * There is no warranty that all nodes will make the same decision about clique, but as far as we want to avoid
- * some global coordinator (which will be SPOF), we have to rely on Bron–Kerbosch algorithm locating maximum clique in graph
- */
-static void MtmDisableNode(int nodeId)
-{
-	timestamp_t now = MtmGetSystemTime();
-	MTM_ELOG(WARNING, "Disable node %d at xlog position %llx, last status change time %d msec ago", nodeId, (long64)GetXLogInsertRecPtr(),
-		 (int)USEC_TO_MSEC(now - Mtm->nodes[nodeId-1].lastStatusChangeTime));
-	BIT_SET(Mtm->disabledNodeMask, nodeId-1);
-	Mtm->nConfigChanges += 1;
-	Mtm->nodes[nodeId-1].timeline += 1;
-	Mtm->nodes[nodeId-1].lastStatusChangeTime = now;
-	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
-	if (nodeId != MtmNodeId) {
-		Mtm->nLiveNodes -= 1;
-	}
-	if (Mtm->nLiveNodes >= Mtm->nAllNodes/2+1) {
-		/* Make decision about prepared transaction status only in quorum */
-		MtmPollStatusOfPreparedTransactionsForDisabledNode(nodeId);
-	}
-}
-
-/*
- * Node is enabled when it's recovery is completed.
- * This why node is mostly marked as recovered when logical sender/receiver to this node is (re)started.
- */
-static void MtmEnableNode(int nodeId)
-{
-	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
-		BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
-		BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
-		BIT_SET(Mtm->recoveredNodeMask, nodeId-1);
-		Mtm->nConfigChanges += 1;
-		Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
-		Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
-		if (nodeId != MtmNodeId) {
-			Mtm->nLiveNodes += 1;
-		}
-		MTM_ELOG(WARNING, "Enable node %d at xlog position %llx", nodeId, (long64)GetXLogInsertRecPtr());
-	}
-}
-
-/*
- * Function call when recovery of node is completed
- */
-void MtmRecoveryCompleted(void)
-{
-	int i;
-	MTM_LOG1("Recovery of node %d is completed, disabled mask=%llx, connectivity mask=%llx, endLSN=%llx, live nodes=%d",
-			 MtmNodeId, Mtm->disabledNodeMask,
-			 SELF_CONNECTIVITY_MASK, (long64)GetXLogInsertRecPtr(), Mtm->nLiveNodes);
-	if (Mtm->nAllNodes >= 3) {
-		MTM_ELOG(WARNING, "restartLSNs at the end of recovery: {%llx, %llx, %llx}",
-			 Mtm->nodes[0].restartLSN, Mtm->nodes[1].restartLSN, Mtm->nodes[2].restartLSN);
-	}
-	MtmLock(LW_EXCLUSIVE);
-	Mtm->recoverySlot = 0;
-	Mtm->recoveredLSN = GetXLogInsertRecPtr();
-	BIT_CLEAR(Mtm->disabledNodeMask, MtmNodeId-1);
-	Mtm->nConfigChanges += 1;
-	Mtm->reconnectMask |= SELF_CONNECTIVITY_MASK; /* try to reestablish all connections */
-	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
-	for (i = 0; i < Mtm->nAllNodes; i++) {
-		Mtm->nodes[i].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
-	}
-	/* Mode will be changed to online once all logical receiver are connected */
-	MTM_ELOG(LOG, "Recovery completed with %d active receivers and %d started senders from %d", Mtm->nReceivers, Mtm->nSenders, Mtm->nLiveNodes-1);
-	if (Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1)
-	{
-		MtmSwitchClusterMode(MTM_ONLINE);
-	} else {
-		/* Delay switching mode to online mode and keep cluster lock to make it possible to all other nodes reestablish
-		 * logical replication connections with this node.
-		 * Under the intensive workload start of logical replication can be delayed for unpredictable amount of time
-		 */
-		BIT_SET(Mtm->originLockNodeMask, MtmNodeId-1); /* it is trick: this mask was originally used by WAL senders performing recovery, but here we are in opposite (recovered) side:
-											   * if this mask is not zero loadReq will be broadcasted to all other nodes by heartbeat, suspending their activity
-											   */
-		MtmSwitchClusterMode(MTM_RECOVERED);
-	}
-	MtmUnlock();
 }
 
 
@@ -2171,13 +2073,7 @@ bool MtmRecoveryCaughtUp(int nodeId, lsn_t walEndPtr)
 	MtmLock(LW_EXCLUSIVE);
 	if (MtmIsRecoveredNode(nodeId) && Mtm->nActiveTransactions == 0) {
 		if (BIT_CHECK(Mtm->originLockNodeMask, nodeId-1)) {
-			MTM_LOG1("Node %d is caught-up at WAL position %llx", nodeId, walEndPtr);
-			Assert(BIT_CHECK(Mtm->disabledNodeMask, nodeId-1));
-			BIT_CLEAR(Mtm->originLockNodeMask, nodeId-1);
-			BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
-			BIT_SET(Mtm->recoveredNodeMask, nodeId-1);
-			Mtm->nLiveNodes += 1;
-			MtmCheckQuorum();
+			MtmStateProcessNeighborEvent(nodeId-1, MTM_NEIGHBOR_RECOVERY_CAUGHTUP);
 		} else {
 			MTM_LOG1("Node %d is caught-up at WAL position %llx without locking cluster", nodeId, walEndPtr);
 			/* We are lucky: caught-up without locking cluster! */
@@ -2187,17 +2083,6 @@ bool MtmRecoveryCaughtUp(int nodeId, lsn_t walEndPtr)
 	}
 	MtmUnlock();
 	return caughtUp;
-}
-
-/*
- * This function is called inside critical section
- */
-void MtmSwitchClusterMode(MtmNodeStatus mode)
-{
-	Mtm->status = mode;
-	Mtm->nodes[MtmNodeId-1].lastStatusChangeTime = MtmGetSystemTime();
-	MTM_LOG1("Switch to %s mode", MtmNodeStatusMnem[mode]);
-	/* ??? Something else to do here? */
 }
 
 /*
@@ -2315,7 +2200,7 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix)
 }
 
 
-static int MtmGetNumberOfVotingNodes()
+int MtmGetNumberOfVotingNodes()
 {
 	int i;
 	int nVotingNodes = Mtm->nAllNodes;
@@ -2389,67 +2274,27 @@ void MtmRefreshClusterStatus()
 		disabled = ~newClique & (((nodemask_t)1 << Mtm->nAllNodes)-1) & ~Mtm->disabledNodeMask; /* new disabled nodes mask */
 
 		if (disabled) {
-			timestamp_t now = MtmGetSystemTime();
+			// timestamp_t now = MtmGetSystemTime();
 			for (i = 0, mask = disabled; mask != 0; i++, mask >>= 1) {
 				if (mask & 1) {
-					if ((i+1 != MtmNodeId || Mtm->status == MTM_ONLINE)
-						&& Mtm->nodes[i].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < now)
-					{
-						MtmDisableNode(i+1);
-					}
-				}
-			}
-			MtmCheckQuorum();
-		}
-#if 0
-		if (disabled) {
-			MtmTransState *ts;
-			/* Interrupt voting for active transaction and abort them */
-			for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) {
-				MTM_LOG3("Active transaction gid='%s', coordinator=%d, xid=%d, status=%s, gtid.xid=%d",
-						 ts->gid, ts->gtid.node, ts->xid, MtmTxnStatusMnen[ts->status], ts->gtid.xid);
-				if (MtmIsCoordinator(ts) && !ts->votingCompleted && ts->status != TRANSACTION_STATUS_ABORTED) {
-					MtmAbortTransaction(ts);
-					MtmWakeUpBackend(ts);
+					if ( i+1 == MtmNodeId )
+						MtmStateProcessEvent(MTM_CLIQUE_DISABLE);
+					else
+						MtmStateProcessNeighborEvent(i+1, MTM_NEIGHBOR_CLIQUE_DISABLE);
 				}
 			}
 		}
-#endif
 		MtmUnlock();
-		if (BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId-1)) {
-			if (Mtm->status == MTM_ONLINE) {
-				/* I was excluded from cluster:( */
-				MtmSwitchClusterMode(MTM_OFFLINE);
-			}
-		} else if (Mtm->status == MTM_OFFLINE) {
-			/* Should we somehow restart logical receivers? */
-			MtmStartRecovery();
+
+		if (!BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId-1) && (Mtm->status == MTM_OFFLINE))
+		{
+			MtmStateProcessEvent(MTM_RECOVERY_START2);
 		}
 	} else {
-		MTM_LOG1("Clique %llx has no quorum", newClique);
-		MtmSwitchClusterMode(MTM_IN_MINORITY);
+		MtmStateProcessEvent(MTM_CLIQUE_MINORITY);
 	}
 }
 
-/*
- * Check if there is quorum: current node see more than half of all nodes
- */
-void MtmCheckQuorum(void)
-{
-	int nVotingNodes = MtmGetNumberOfVotingNodes();
-
-	if (Mtm->nLiveNodes >= nVotingNodes/2+1 || (Mtm->nLiveNodes == (nVotingNodes+1)/2 && MtmMajorNode)) { /* have quorum */
-		if (Mtm->status == MTM_IN_MINORITY) {
-			MTM_LOG1("Node is in majority: disabled mask %llx", Mtm->disabledNodeMask);
-			MtmSwitchClusterMode(MTM_ONLINE);
-		}
-	} else {
-		if (Mtm->status == MTM_ONLINE) { /* out of quorum */
-			MTM_ELOG(WARNING, "Node is in minority: disabled mask %llx", Mtm->disabledNodeMask);
-			MtmSwitchClusterMode(MTM_IN_MINORITY);
-		}
-	}
-}
 
 /*
  * This function is called in case of non-recoverable connection failure with this node.
@@ -3466,31 +3311,6 @@ _PG_fini(void)
 
 
 /*
- * This functions is called by pglogical receiver main function when receiver background worker is started.
- * We switch to ONLINE mode when all receivers are connected.
- * As far as background worker can be restarted multiple times, use node bitmask.
- */
-void MtmReceiverStarted(int nodeId)
-{
-	MtmLock(LW_EXCLUSIVE);
-	if (!BIT_CHECK(Mtm->pglogicalReceiverMask, nodeId-1)) {
-		BIT_SET(Mtm->pglogicalReceiverMask, nodeId-1);
-		if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
-			MtmEnableNode(nodeId);
-			MtmCheckQuorum();
-		}
-		MTM_ELOG(LOG, "Start %d receivers and %d senders from %d cluster status %s", Mtm->nReceivers+1, Mtm->nSenders, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
-		if (++Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1
-			&& (Mtm->status == MTM_RECOVERED || Mtm->status == MTM_CONNECTED))
-		{
-			BIT_CLEAR(Mtm->originLockNodeMask, MtmNodeId-1); /* recovery is completed: release cluster lock */
-			MtmSwitchClusterMode(MTM_ONLINE);
-		}
-	}
-	MtmUnlock();
-}
-
-/*
  * Recovery slot is node ID from which new or crash node is performing recovery.
  * This function is called in case of logical receiver error to make it possible to try to perform
  * recovery from some other node
@@ -3730,7 +3550,6 @@ void MtmStopNode(int nodeId, bool dropSlot)
 	if (!BIT_CHECK(Mtm->disabledNodeMask, nodeId-1))
 	{
 		MtmDisableNode(nodeId);
-		MtmCheckQuorum();
 	}
 	MtmUnlock();
 
@@ -3826,13 +3645,11 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 		}
 		if (!BIT_CHECK(Mtm->disabledNodeMask,  MtmReplicationNodeId-1)) {
 			MtmDisableNode(MtmReplicationNodeId);
-			MtmCheckQuorum();
 		}
 	} else if (BIT_CHECK(Mtm->disabledNodeMask,	 MtmReplicationNodeId-1)) {
 		if (recoveryCompleted) {
 			MTM_LOG1("Node %d consider that recovery of node %d is completed: start normal replication", MtmNodeId, MtmReplicationNodeId);
 			MtmEnableNode(MtmReplicationNodeId);
-			MtmCheckQuorum();
 		} else {
 			/* Force arbiter to reestablish connection with this node, send heartbeat to inform this node that it was disabled and should perform recovery */
 			BIT_SET(Mtm->reconnectMask, MtmReplicationNodeId-1);
@@ -3845,13 +3662,7 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	if (!BIT_CHECK(Mtm->pglogicalSenderMask, MtmReplicationNodeId-1)) {
 		MTM_ELOG(LOG, "Start %d senders and %d receivers from %d cluster status %s", Mtm->nSenders+1, Mtm->nReceivers, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
 		BIT_SET(Mtm->pglogicalSenderMask, MtmReplicationNodeId-1);
-		if (++Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->nReceivers == Mtm->nLiveNodes-1
-			&& (Mtm->status == MTM_RECOVERED || Mtm->status == MTM_CONNECTED))
-		{
-			/* All logical replication connections from and to this node are established, so we can switch cluster to online mode */
-			BIT_CLEAR(Mtm->originLockNodeMask, MtmNodeId-1); /* recovery is completed: release cluster lock */
-			MtmSwitchClusterMode(MTM_ONLINE);
-		}
+		MtmStateProcessEvent(MTM_WAL_SENDER_START);
 	}
 	BIT_SET(Mtm->reconnectMask, MtmReplicationNodeId-1); /* arbiter should try to reestablish connection with this node */
 	MtmUnlock();
@@ -5636,7 +5447,8 @@ Datum mtm_referee_poll(PG_FUNCTION_ARGS)
 	recoveredNodeMask = Mtm->recoveredNodeMask;
 	Mtm->deadNodeMask = PG_GETARG_INT64(0);
 	Mtm->recoveredNodeMask &= ~Mtm->deadNodeMask;
-	MtmCheckQuorum();
+	// XXXX: FIXME: put some event here
+	// MtmCheckQuorum();
 	MtmUnlock();
 
 	PG_RETURN_INT64(recoveredNodeMask);

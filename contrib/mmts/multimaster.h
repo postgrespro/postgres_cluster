@@ -378,6 +378,7 @@ extern MemoryContext MtmApplyContext;
 extern lsn_t MtmSenderWalEnd;
 extern timestamp_t MtmRefreshClusterStatusSchedule;
 extern MtmConnectionInfo* MtmConnections;
+extern bool  MtmMajorNode;
 
 
 extern void  MtmArbiterInitialize(void);
@@ -416,10 +417,8 @@ extern XidStatus MtmGetCurrentTransactionStatus(void);
 extern XidStatus MtmExchangeGlobalTransactionStatus(char const* gid, XidStatus status);
 extern bool  MtmIsRecoveredNode(int nodeId);
 extern void  MtmRefreshClusterStatus(void);
-extern void  MtmSwitchClusterMode(MtmNodeStatus mode);
 extern void  MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr);
 extern void  MtmSetupReplicationHooks(struct PGLogicalHooks* hooks);
-extern void  MtmCheckQuorum(void);
 extern bool  MtmRecoveryCaughtUp(int nodeId, lsn_t walEndPtr);
 extern void  MtmCheckRecoveryCaughtUp(int nodeId, lsn_t slotLSN);
 extern void  MtmRecoveryCompleted(void);
@@ -446,5 +445,7 @@ extern void MtmReleaseLocks(void);
 extern void MtmInitMessage(MtmArbiterMessage* msg, MtmMessageCode code);
 extern void MtmSetSnapshot(csn_t snapshot);
 extern void MtmRefereeInitialize(void);
+extern void MtmPollStatusOfPreparedTransactionsForDisabledNode(int disabledNodeId);
+extern int MtmGetNumberOfVotingNodes(void);
 
 #endif
