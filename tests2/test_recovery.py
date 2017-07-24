@@ -97,7 +97,7 @@ class RecoveryTest(unittest.TestCase, TestHelper):
             
 
         # XXX: check nodes data identity here
-#        subprocess.check_call(['docker-compose','down'])
+        subprocess.check_call(['docker-compose','down'])
 
     def setUp(self):
         warnings.simplefilter("ignore", ResourceWarning)

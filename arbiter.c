@@ -76,6 +76,7 @@
 
 
 #include "multimaster.h"
+#include "state.h"
 
 #define MAX_ROUTES       16
 #define INIT_BUFFER_SIZE 1024
@@ -316,25 +317,22 @@ static void MtmCheckResponse(MtmArbiterMessage* resp)
 	} else { 
 		BIT_CLEAR(Mtm->currentLockNodeMask, resp->node-1);
 	}
-	if (
-		( BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1) || Mtm->status == MTM_IN_MINORITY )
-		&& !BIT_CHECK(Mtm->disabledNodeMask, resp->node-1)
-		&& Mtm->status != MTM_RECOVERY
-		&& Mtm->status != MTM_RECOVERED
-		&& Mtm->nodes[MtmNodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < MtmGetSystemTime()) 
-	{ 
-		MTM_ELOG(WARNING, "Node %d thinks that I'm dead, while I'm %s (message %s)", resp->node, MtmNodeStatusMnem[Mtm->status], MtmMessageKindMnem[resp->code]);
-		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
-		Mtm->nConfigChanges += 1;
-		MtmSwitchClusterMode(MTM_RECOVERY);
-	} else if (BIT_CHECK(Mtm->disabledNodeMask, resp->node-1) && sockets[resp->node-1] < 0) { 
-		/* We receive heartbeat from disabled node.
+
+	if (BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1))
+	{
+		MtmStateProcessEvent(MTM_REMOTE_DISABLE);
+	}
+
+	if (BIT_CHECK(Mtm->disabledNodeMask, resp->node-1) &&
+		sockets[resp->node-1] < 0)
+	{
+		/* We've received heartbeat from disabled node.
 		 * Looks like it is restarted.
 		 * Try to reconnect to it.
 		 */
 		MTM_ELOG(WARNING, "Receive heartbeat from disabled node %d", resp->node);		
 		BIT_SET(Mtm->reconnectMask, resp->node-1);
-	}	
+	}
 }
 
 static void MtmScheduleHeartbeat()
@@ -548,12 +546,7 @@ static void MtmOpenConnections()
 			} 
 		}
 	}
-	if (Mtm->nLiveNodes < Mtm->nAllNodes/2+1) { /* no quorum */
-		MTM_ELOG(WARNING, "Node is out of quorum: only %d nodes of %d are accessible", Mtm->nLiveNodes, Mtm->nAllNodes);
-		MtmSwitchClusterMode(MTM_IN_MINORITY);
-	} else if (Mtm->status == MTM_INITIALIZATION) { 
-		MtmSwitchClusterMode(MTM_CONNECTED);
-	}
+	MtmStateProcessEvent(MTM_ARBITER_RECEIVER_START);
 }
 
 
