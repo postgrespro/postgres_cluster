@@ -6,7 +6,9 @@
 char const* const MtmNeighborEventMnem[] =
 {
 	"MTM_NEIGHBOR_CLIQUE_DISABLE",
-	"MTM_NEIGHBOR_RECEIVER_START",
+	"MTM_NEIGHBOR_WAL_RECEIVER_START",
+	"MTM_NEIGHBOR_WAL_SENDER_START",
+	"MTM_NEIGHBOR_HEARTBEAT_TIMEOUT",
 	"MTM_NEIGHBOR_RECOVERY_CAUGHTUP"
 };
 
@@ -23,9 +25,6 @@ char const* const MtmEventMnem[] =
 	"MTM_RECOVERY_FINISH1",
 	"MTM_RECOVERY_FINISH2",
 
-	"MTM_WAL_RECEIVER_START",
-	"MTM_WAL_SENDER_START",
-
 	"MTM_NONRECOVERABLE_ERROR"
 };
 
@@ -37,7 +36,7 @@ static void MtmSwitchClusterMode(MtmNodeStatus mode);
 void
 MtmStateProcessNeighborEvent(int node_id, MtmNeighborEvent ev)
 {
-	MTM_LOG1("[STATE] Processing %s", MtmNeighborEventMnem[ev]);
+	MTM_LOG1("[STATE] Processing %s for node %u", MtmNeighborEventMnem[ev], node_id);
 
 	switch(ev)
 	{
@@ -45,31 +44,53 @@ MtmStateProcessNeighborEvent(int node_id, MtmNeighborEvent ev)
 			MtmDisableNode(node_id);
 			break;
 
-		case MTM_NEIGHBOR_RECEIVER_START:
-			/*
-			* This functions is called by pglogical receiver main function when receiver background worker is started.
-			* We switch to ONLINE mode when all receivers are connected.
-			* As far as background worker can be restarted multiple times, use node bitmask.
-			*/
+		case MTM_NEIGHBOR_HEARTBEAT_TIMEOUT:
 			MtmLock(LW_EXCLUSIVE);
-			if (!BIT_CHECK(Mtm->pglogicalReceiverMask, node_id)) {
-				BIT_SET(Mtm->pglogicalReceiverMask, node_id);
-				if (BIT_CHECK(Mtm->disabledNodeMask, node_id)) {
+			BIT_SET(SELF_CONNECTIVITY_MASK, node_id - 1);
+			BIT_SET(Mtm->reconnectMask, node_id - 1);
+			MtmUnlock();
+			break;
+
+		case MTM_NEIGHBOR_WAL_RECEIVER_START:
+			MtmLock(LW_EXCLUSIVE);
+			if (!BIT_CHECK(Mtm->pglogicalReceiverMask, node_id - 1)) {
+				BIT_SET(Mtm->pglogicalReceiverMask, node_id - 1);
+				if (BIT_CHECK(Mtm->disabledNodeMask, node_id - 1)) {
 					MtmEnableNode(node_id);
 				}
-				MtmStateProcessEvent(MTM_WAL_RECEIVER_START);
+
+				if (++Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1
+					&& (Mtm->status == MTM_RECOVERED || Mtm->status == MTM_CONNECTED))
+				{
+					BIT_CLEAR(Mtm->originLockNodeMask, MtmNodeId-1); /* recovery is completed: release cluster lock */
+					MtmSwitchClusterMode(MTM_ONLINE);
+				}
 			}
 			MtmUnlock();
 			break;
 
+		case MTM_NEIGHBOR_WAL_SENDER_START:
+			if (!BIT_CHECK(Mtm->pglogicalSenderMask, node_id - 1)) {
+				BIT_SET(Mtm->pglogicalSenderMask, node_id - 1);
+				if (++Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->nReceivers == Mtm->nLiveNodes-1
+						&& (Mtm->status == MTM_RECOVERED || Mtm->status == MTM_CONNECTED))
+					{
+						/* All logical replication connections from and to this node are established, so we can switch cluster to online mode */
+						BIT_CLEAR(Mtm->originLockNodeMask, MtmNodeId-1); /* recovery is completed: release cluster lock */
+						MtmSwitchClusterMode(MTM_ONLINE);
+					}
+			}
+			break;
+
 		case MTM_NEIGHBOR_RECOVERY_CAUGHTUP:
-			Assert(BIT_CHECK(Mtm->disabledNodeMask, node_id));
-			BIT_CLEAR(Mtm->originLockNodeMask, node_id);
-			BIT_CLEAR(Mtm->disabledNodeMask, node_id);
-			BIT_SET(Mtm->recoveredNodeMask, node_id);
+			Assert(BIT_CHECK(Mtm->disabledNodeMask, node_id - 1));
+			BIT_CLEAR(Mtm->originLockNodeMask, node_id - 1);
+			BIT_CLEAR(Mtm->disabledNodeMask, node_id - 1);
+			BIT_SET(Mtm->recoveredNodeMask, node_id - 1);
 			Mtm->nLiveNodes += 1;
 			MtmCheckQuorum();
 			break;
+
 	}
 }
 
@@ -114,7 +135,7 @@ MtmStateProcessEvent(MtmEvent ev)
 			if (Mtm->nLiveNodes < Mtm->nAllNodes/2+1)
 			{
 				/* no quorum */
-				MTM_ELOG(WARNING, "Node is out of quorum: only %d nodes of %d are accessible", Mtm->nLiveNodes, Mtm->nAllNodes);
+				// MTM_ELOG(WARNING, "Node is out of quorum: only %d nodes of %d are accessible", Mtm->nLiveNodes, Mtm->nAllNodes);
 				MtmSwitchClusterMode(MTM_IN_MINORITY);
 			}
 			else if (Mtm->status == MTM_INITIALIZATION)
@@ -185,28 +206,6 @@ MtmStateProcessEvent(MtmEvent ev)
 			break;
 
 
-		case MTM_WAL_RECEIVER_START:
-			MTM_ELOG(LOG, "[STATE] Start %d receivers and %d senders from %d cluster status %s", Mtm->nReceivers+1, Mtm->nSenders, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
-			if (++Mtm->nReceivers == Mtm->nLiveNodes-1 && Mtm->nSenders == Mtm->nLiveNodes-1
-				&& (Mtm->status == MTM_RECOVERED || Mtm->status == MTM_CONNECTED))
-			{
-				BIT_CLEAR(Mtm->originLockNodeMask, MtmNodeId-1); /* recovery is completed: release cluster lock */
-				MtmSwitchClusterMode(MTM_ONLINE);
-			}
-			break;
-
-
-		case MTM_WAL_SENDER_START:
-			if (++Mtm->nSenders == Mtm->nLiveNodes-1 && Mtm->nReceivers == Mtm->nLiveNodes-1
-				&& (Mtm->status == MTM_RECOVERED || Mtm->status == MTM_CONNECTED))
-			{
-				/* All logical replication connections from and to this node are established, so we can switch cluster to online mode */
-				BIT_CLEAR(Mtm->originLockNodeMask, MtmNodeId-1); /* recovery is completed: release cluster lock */
-				MtmSwitchClusterMode(MTM_ONLINE);
-			}
-			break;
-
-
 		case MTM_NONRECOVERABLE_ERROR:
 			// MTM_ELOG(WARNING, "Node is excluded from cluster because of non-recoverable error %d, %s, pid=%u",
 				// edata->sqlerrcode, edata->message, getpid());
@@ -234,13 +233,10 @@ MtmSwitchClusterMode(MtmNodeStatus mode)
  */
 void MtmDisableNode(int nodeId)
 {
-	timestamp_t now = MtmGetSystemTime();
-	MTM_ELOG(WARNING, "Disable node %d at xlog position %llx, last status change time %d msec ago", nodeId, (long64)GetXLogInsertRecPtr(),
-		 (int)USEC_TO_MSEC(now - Mtm->nodes[nodeId-1].lastStatusChangeTime));
 	BIT_SET(Mtm->disabledNodeMask, nodeId-1);
 	Mtm->nConfigChanges += 1;
 	Mtm->nodes[nodeId-1].timeline += 1;
-	Mtm->nodes[nodeId-1].lastStatusChangeTime = now;
+	Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
 	if (nodeId != MtmNodeId) {
 		Mtm->nLiveNodes -= 1;
@@ -269,7 +265,6 @@ void MtmEnableNode(int nodeId)
 		if (nodeId != MtmNodeId) {
 			Mtm->nLiveNodes += 1;
 		}
-		// MTM_ELOG(WARNING, "Enable node %d at xlog position %llx", nodeId, (long64)GetXLogInsertRecPtr());
 	}
 	MtmCheckQuorum();
 }
@@ -282,15 +277,49 @@ static void MtmCheckQuorum(void)
 {
 	int nVotingNodes = MtmGetNumberOfVotingNodes();
 
-	if (Mtm->nLiveNodes >= nVotingNodes/2+1 || (Mtm->nLiveNodes == (nVotingNodes+1)/2 && MtmMajorNode)) { /* have quorum */
-		if (Mtm->status == MTM_IN_MINORITY) {
-			// MTM_LOG1("Node is in majority: disabled mask %llx", Mtm->disabledNodeMask);
+	if (Mtm->nLiveNodes >= nVotingNodes/2+1 || (Mtm->nLiveNodes == (nVotingNodes+1)/2 && MtmMajorNode))
+	{
+		if (Mtm->status == MTM_IN_MINORITY)
 			MtmSwitchClusterMode(MTM_ONLINE);
-		}
-	} else {
-		if (Mtm->status == MTM_ONLINE) { /* out of quorum */
-			// MTM_ELOG(WARNING, "Node is in minority: disabled mask %llx", Mtm->disabledNodeMask);
+	}
+	else
+	{
+		if (Mtm->status == MTM_ONLINE)
 			MtmSwitchClusterMode(MTM_IN_MINORITY);
-		}
 	}
 }
+
+void MtmOnNodeDisconnect(int nodeId)
+{
+	if (BIT_CHECK(SELF_CONNECTIVITY_MASK, nodeId-1))
+		return;
+
+	MTM_LOG1("[STATE] NodeDisconnect for node %u", nodeId);
+
+	MtmLock(LW_EXCLUSIVE);
+	BIT_SET(SELF_CONNECTIVITY_MASK, nodeId-1);
+	BIT_SET(Mtm->reconnectMask, nodeId-1);
+	MtmUnlock();
+}
+
+void MtmOnNodeConnect(int nodeId)
+{
+	if (!BIT_CHECK(SELF_CONNECTIVITY_MASK, nodeId-1))
+		return;
+
+	MTM_LOG1("[STATE] NodeConnect for node %u", nodeId);
+
+	MtmLock(LW_EXCLUSIVE);
+	BIT_CLEAR(SELF_CONNECTIVITY_MASK, nodeId-1);
+	BIT_SET(Mtm->reconnectMask, nodeId-1);
+	MtmUnlock();
+}
+
+void MtmReconnectNode(int nodeId)
+{
+	MTM_LOG1("[STATE] ReconnectNode for node %u", nodeId);
+	MtmLock(LW_EXCLUSIVE);
+	BIT_SET(Mtm->reconnectMask, nodeId-1);
+	MtmUnlock();
+}
+

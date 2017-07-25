@@ -1146,7 +1146,7 @@ bool MtmWatchdog(timestamp_t now)
 			{
 				MTM_ELOG(WARNING, "Heartbeat is not received from node %d during %d msec",
 					 i+1, (int)USEC_TO_MSEC(now - Mtm->nodes[i].lastHeartbeat));
-				MtmOnNodeDisconnect(i+1);
+				MtmStateProcessNeighborEvent(i+1, MTM_NEIGHBOR_HEARTBEAT_TIMEOUT);
 				allAlive = false;
 			}
 		}
@@ -1757,16 +1757,18 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot, nodemas
 	} else {
 		globalSnapshot = MtmTx.snapshot;
 	}
-	if (!TransactionIdIsValid(gtid->xid) && Mtm->status != MTM_RECOVERY)
-	{
-		/* In case of recovery InvalidTransactionId is passed */
-		MtmStateProcessEvent(MTM_RECOVERY_START1);
-	}
-	else if (Mtm->status == MTM_RECOVERY)
-	{
-		/* When recovery is completed we get normal transaction ID and switch to normal mode */
-		MtmStateProcessEvent(MTM_RECOVERY_FINISH1);
-	}
+
+
+	// if (!TransactionIdIsValid(gtid->xid) && Mtm->status != MTM_RECOVERY)
+	// {
+	// 	/* In case of recovery InvalidTransactionId is passed */
+	// 	MtmStateProcessEvent(MTM_RECOVERY_START1);
+	// }
+	// else if (Mtm->status == MTM_RECOVERY)
+	// {
+	// 	/* When recovery is completed we get normal transaction ID and switch to normal mode */
+	// 	MtmStateProcessEvent(MTM_RECOVERY_FINISH1);
+	// }
 }
 
 void  MtmSetCurrentTransactionGID(char const* gid)
@@ -2073,7 +2075,7 @@ bool MtmRecoveryCaughtUp(int nodeId, lsn_t walEndPtr)
 	MtmLock(LW_EXCLUSIVE);
 	if (MtmIsRecoveredNode(nodeId) && Mtm->nActiveTransactions == 0) {
 		if (BIT_CHECK(Mtm->originLockNodeMask, nodeId-1)) {
-			MtmStateProcessNeighborEvent(nodeId-1, MTM_NEIGHBOR_RECOVERY_CAUGHTUP);
+			MtmStateProcessNeighborEvent(nodeId, MTM_NEIGHBOR_RECOVERY_CAUGHTUP);
 		} else {
 			MTM_LOG1("Node %d is caught-up at WAL position %llx without locking cluster", nodeId, walEndPtr);
 			/* We are lucky: caught-up without locking cluster! */
@@ -2274,7 +2276,6 @@ void MtmRefreshClusterStatus()
 		disabled = ~newClique & (((nodemask_t)1 << Mtm->nAllNodes)-1) & ~Mtm->disabledNodeMask; /* new disabled nodes mask */
 
 		if (disabled) {
-			// timestamp_t now = MtmGetSystemTime();
 			for (i = 0, mask = disabled; mask != 0; i++, mask >>= 1) {
 				if (mask & 1) {
 					if ( i+1 == MtmNodeId )
@@ -2293,58 +2294,6 @@ void MtmRefreshClusterStatus()
 	} else {
 		MtmStateProcessEvent(MTM_CLIQUE_MINORITY);
 	}
-}
-
-
-/*
- * This function is called in case of non-recoverable connection failure with this node.
- * Non-recoverable means that connections can not be reestablish using specified number of attempts.
- * It sets bit in connectivity mask and register delayed refresh of cluster status which build connectivity matrix
- * and determine clique of connected nodes. Timeout here is needed to allow all nodes to exchanges their connectivity masks (them
- * are sent together with any arbiter message, including heartbeats.
- */
-void MtmOnNodeDisconnect(int nodeId)
-{
-	timestamp_t now = MtmGetSystemTime();
-	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1))
-	{
-		/* Node is already disabled */
-		return;
-	}
-	if (Mtm->nodes[nodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) > now)
-	{
-		/* Avoid false detection of node failure and prevent node status blinking */
-		return;
-	}
-	MtmLock(LW_EXCLUSIVE);
-	BIT_SET(SELF_CONNECTIVITY_MASK, nodeId-1);
-	BIT_SET(Mtm->reconnectMask, nodeId-1);
-	MTM_ELOG(LOG, "Disconnect node %d connectivity mask %llx",
-		 nodeId, SELF_CONNECTIVITY_MASK);
-	MtmUnlock();
-}
-
-/*
- * This method is called when connection with node is reestablished
- */
-void MtmOnNodeConnect(int nodeId)
-{
-	MtmLock(LW_EXCLUSIVE);
-	MTM_ELOG(LOG, "Connect node %d connectivity mask %llx", nodeId, SELF_CONNECTIVITY_MASK);
-	BIT_CLEAR(SELF_CONNECTIVITY_MASK, nodeId-1);
-	BIT_SET(Mtm->reconnectMask, nodeId-1); /* force sender to reestablish connection and send heartbeat */
-	MtmUnlock();
-}
-
-/*
- * Set reconnect mask to force reconnection attempt to the node
- */
-void MtmReconnectNode(int nodeId)
-{
-	MtmLock(LW_EXCLUSIVE);
-	MTM_ELOG(LOG, "Reconnect node %d connectivity mask %llx", nodeId, SELF_CONNECTIVITY_MASK);
-	BIT_SET(Mtm->reconnectMask, nodeId-1);
-	MtmUnlock();
 }
 
 /*
@@ -3659,11 +3608,9 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	} else {
 		MTM_LOG1("Node %d start logical replication to node %d in normal mode", MtmNodeId, MtmReplicationNodeId);
 	}
-	if (!BIT_CHECK(Mtm->pglogicalSenderMask, MtmReplicationNodeId-1)) {
-		MTM_ELOG(LOG, "Start %d senders and %d receivers from %d cluster status %s", Mtm->nSenders+1, Mtm->nReceivers, Mtm->nLiveNodes-1, MtmNodeStatusMnem[Mtm->status]);
-		BIT_SET(Mtm->pglogicalSenderMask, MtmReplicationNodeId-1);
-		MtmStateProcessEvent(MTM_WAL_SENDER_START);
-	}
+
+	MtmStateProcessNeighborEvent(MtmReplicationNodeId, MTM_NEIGHBOR_WAL_SENDER_START);
+
 	BIT_SET(Mtm->reconnectMask, MtmReplicationNodeId-1); /* arbiter should try to reestablish connection with this node */
 	MtmUnlock();
 	on_shmem_exit(MtmOnProcExit, 0);
