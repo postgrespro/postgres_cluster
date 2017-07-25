@@ -2,7 +2,9 @@
 typedef enum
 {
 	MTM_NEIGHBOR_CLIQUE_DISABLE,
-	MTM_NEIGHBOR_RECEIVER_START,
+	MTM_NEIGHBOR_WAL_RECEIVER_START,
+	MTM_NEIGHBOR_WAL_SENDER_START,
+	MTM_NEIGHBOR_HEARTBEAT_TIMEOUT,
 	MTM_NEIGHBOR_RECOVERY_CAUGHTUP
 } MtmNeighborEvent;
 
@@ -16,8 +18,6 @@ typedef enum
 	MTM_RECOVERY_START2,
 	MTM_RECOVERY_FINISH1,
 	MTM_RECOVERY_FINISH2,
-	MTM_WAL_RECEIVER_START,
-	MTM_WAL_SENDER_START,
 	MTM_NONRECOVERABLE_ERROR
 } MtmEvent;
 
@@ -25,4 +25,8 @@ extern void MtmStateProcessNeighborEvent(int node_id, MtmNeighborEvent ev);
 extern void MtmStateProcessEvent(MtmEvent ev);
 extern void MtmDisableNode(int nodeId);
 extern void MtmEnableNode(int nodeId);
+
+extern void MtmOnNodeDisconnect(int nodeId);
+extern void MtmOnNodeConnect(int nodeId);
+extern void MtmReconnectNode(int nodeId);
 

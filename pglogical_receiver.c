@@ -370,7 +370,7 @@ pglogical_receiver_main(Datum main_arg)
 		PQclear(res);
 		resetPQExpBuffer(query);
 
-		MtmStateProcessNeighborEvent(nodeId, MTM_NEIGHBOR_RECEIVER_START);
+		MtmStateProcessNeighborEvent(nodeId, MTM_NEIGHBOR_WAL_RECEIVER_START);
 
 		while (!got_sigterm)
 		{
