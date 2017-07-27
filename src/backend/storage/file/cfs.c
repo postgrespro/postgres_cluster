@@ -54,6 +54,7 @@
 #include "utils/guc.h"
 #include "utils/rel.h"
 #include "utils/builtins.h"
+#include "utils/memutils.h"
 #include "utils/resowner_private.h"
 
 
@@ -1427,6 +1428,7 @@ static bool cfs_gc_scan_tablespace(int worker_id)
 
 static void cfs_gc_bgworker_main(Datum arg)
 {
+	MemoryContext MemCxt;
 	int worker_id = DatumGetInt32(arg);
 
 	pqsignal(SIGINT, cfs_gc_cancel);
@@ -1439,6 +1441,9 @@ static void cfs_gc_bgworker_main(Datum arg)
 
 	elog(INFO, "Start CFS garbage collector %d (enabled=%d)", MyProcPid, cfs_state->background_gc_enabled);
 
+	MemCxt = AllocSetContextCreate(TopMemoryContext, "CFS worker ctx",
+									ALLOCSET_DEFAULT_SIZES);
+	MemoryContextSwitchTo(MemCxt);
 	while (true)
 	{
 		int timeout = cfs_gc_period;
@@ -1448,6 +1453,7 @@ static void cfs_gc_bgworker_main(Datum arg)
 		{
 			timeout = CFS_RETRY_TIMEOUT;
 		}
+		MemoryContextReset(MemCxt);
 		if (cfs_gc_stop || --cfs_state->max_iterations <= 0)
 		{
 			break;
