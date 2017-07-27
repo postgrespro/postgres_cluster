@@ -1303,9 +1303,6 @@ retry:
 				 secs2*USECS_PER_SEC + usecs2);
 		}
 
-		pfree(file_path);
-		pfree(file_bck_path);
-		pfree(map_bck_path);
 		pfree(inodes);
 		pfree(newMap);
 
@@ -1328,6 +1325,9 @@ retry:
 	}
 
   FinishGC:
+	pfree(file_path);
+	pfree(file_bck_path);
+	pfree(map_bck_path);
 	if (background == CFS_BACKGROUND)
 	{
 		LWLockRelease(CfsGcLock);
