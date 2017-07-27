@@ -223,3 +223,29 @@ GRANT SELECT ON @extschema@.jobs_log TO public;
 ALTER TABLE @extschema@.at ADD PRIMARY KEY (start_at, cron);
 ALTER TABLE @extschema@.log ADD PRIMARY KEY (start_at, cron);
 
+
+DROP FUNCTION _get_array_from_jsonb(text[], jsonb);
+
+CREATE FUNCTION _get_array_from_jsonb(dst text[], src jsonb) RETURNS text[] AS
+$BODY$
+DECLARE
+	vtype text;
+BEGIN
+	IF src IS NULL THEN
+		RETURN dst;
+	END IF;
+
+	SELECT INTO vtype jsonb_typeof(src);
+
+	IF vtype = 'string' THEN
+		SELECT INTO dst array_append(dst, src->>0);
+	ELSIF vtype = 'array' THEN
+		SELECT INTO dst dst || array_agg(value)::text[] from jsonb_array_elements_text(src);
+	ELSE
+		RAISE EXCEPTION 'The value could be only ''string'' or ''array'' type';
+	END IF;
+
+	RETURN dst;
+END
+$BODY$
+LANGUAGE plpgsql set search_path TO @extschema@;

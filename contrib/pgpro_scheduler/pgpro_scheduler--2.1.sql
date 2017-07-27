@@ -233,7 +233,7 @@ CREATE VIEW job_status AS
 		resubmit_limit, postpone as max_wait_interval,
 		max_run_time as max_duration, submit_time, canceled,
 		start_time, status as is_success, reason as error, done_time,
-		'done'::job_at_status_t status
+		'done'::@extschema@.job_at_status_t status
 	FROM @extschema@.at_jobs_done where owner = session_user
 		UNION 
 	SELECT
@@ -242,7 +242,7 @@ CREATE VIEW job_status AS
 		resubmit_limit, postpone as max_wait_interval,
 		max_run_time as max_duration, submit_time, canceled, start_time, 
 		NULL as is_success, NULL as error, NULL as done_time,
-		'processing'::job_at_status_t status
+		'processing'::@extschema@.job_at_status_t status
 	FROM ONLY @extschema@.at_jobs_process where owner = session_user
 		UNION
 	SELECT
@@ -252,7 +252,7 @@ CREATE VIEW job_status AS
 		max_run_time as max_duration, submit_time, canceled, 
 		NULL as start_time, NULL as is_success, NULL as error,
 		NULL as done_time,
-		'submitted'::job_at_status_t status
+		'submitted'::@extschema@.job_at_status_t status
 	FROM ONLY @extschema@.at_jobs_submitted where owner = session_user;
 
 --
@@ -266,7 +266,7 @@ CREATE VIEW all_job_status AS
 		attempt, resubmit_limit, postpone as max_wait_interval,
 		max_run_time as max_duration, submit_time, canceled,
 		start_time, status as is_success, reason as error, done_time,
-		'done'::job_at_status_t status
+		'done'::@extschema@.job_at_status_t status
 	FROM @extschema@.at_jobs_done 
 		UNION 
 	SELECT
@@ -275,7 +275,7 @@ CREATE VIEW all_job_status AS
 		attempt, resubmit_limit, postpone as max_wait_interval,
 		max_run_time as max_duration, submit_time, canceled, start_time,
 		NULL as is_success, NULL as error, NULL as done_time,
-		'processing'::job_at_status_t status
+		'processing'::@extschema@.job_at_status_t status
 	FROM ONLY @extschema@.at_jobs_process 
 		UNION
 	SELECT
@@ -285,7 +285,7 @@ CREATE VIEW all_job_status AS
 		max_run_time as max_duration, submit_time, canceled,
 		NULL as start_time, NULL as is_success, NULL as error,
 		NULL as done_time,
-		'submitted'::job_at_status_t status
+		'submitted'::@extschema@.job_at_status_t status
 	FROM ONLY @extschema@.at_jobs_submitted;
 
 ---------------
@@ -608,27 +608,21 @@ END
 $BODY$
 LANGUAGE plpgsql set search_path TO @extschema@;
 
-CREATE FUNCTION _get_array_from_jsonb(dst text[], value jsonb) RETURNS text[] AS
+CREATE FUNCTION _get_array_from_jsonb(dst text[], src jsonb) RETURNS text[] AS
 $BODY$
 DECLARE
 	vtype text;
 BEGIN
-	IF value IS NULL THEN
+	IF src IS NULL THEN
 		RETURN dst;
 	END IF;
 
-	EXECUTE 'SELECT jsonb_typeof($1)'
-		INTO vtype
-		USING value;
+	SELECT INTO vtype jsonb_typeof(src);
+
 	IF vtype = 'string' THEN
-		-- EXECUTE 'SELECT array_append($1, jsonb_set(''{"a":""}''::jsonb, ''{a}'', $2)->>''a'')'
-		EXECUTE 'SELECT array_append($1, $2->>0)'
-			INTO dst
-			USING dst, value;
+		SELECT INTO dst array_append(dst, src->>0);
 	ELSIF vtype = 'array' THEN
-		EXECUTE 'SELECT $1 || array_agg(value)::text[] from jsonb_array_elements_text($2)'
-			INTO dst
-			USING dst, value;
+		SELECT INTO dst dst || array_agg(value)::text[] from jsonb_array_elements_text(src);
 	ELSE
 		RAISE EXCEPTION 'The value could be only ''string'' or ''array'' type';
 	END IF;
