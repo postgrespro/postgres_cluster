@@ -42,6 +42,29 @@ if($dbh->err != 0){
     exit(-1);
 }
 
+my $data = $dbh->selectall_arrayref('show shared_preload_libraries', { Slice => {} });
+if($data)
+{
+	my $v = $data->[0]->{shared_preload_libraries};
+	unless($v =~ /pgpro_scheduler/)
+	{
+		my $cdata  =  $dbh->selectall_arrayref('show config_file', { Slice => {} });
+		if($cdata)
+		{
+			print STDERR "Put 'pgpro_scheduler' into 'shared_preload_libraries' $cdata->[0]->{config_file}.\n";
+			exit 1;
+		}
+		print STDERR "Put 'pgpro_scheduler' into 'shared_preload_libraries'.\n";
+		exit 1;
+		
+	}
+}
+else
+{
+	print STDERR "Cannot get information about 'shared_preload_libraries' check config.\n";
+	exit 2;
+}
+
 my @sqls = ( 
 	"ALTER SYSTEM SET schedule.enabled=off",
 	"SELECT pg_reload_conf()",
@@ -86,7 +109,7 @@ my %args = (
 );
 my $harness = TAP::Harness->new( \%args );
 my @tests = glob( 't/*.t' );
-### @tests = ('t/jobMaxRunTime.t');
+## @tests = ('t/jobNextTime.t'); - PGPROEE10 тут валится
 $harness->runtests(@tests);
 
 

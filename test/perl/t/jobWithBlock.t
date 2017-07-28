@@ -45,13 +45,13 @@ $query = "VACUUM FULL ANALYZE;";
 my $sth = $dbh->prepare($query);
 $sth->execute();
 
-sleep 60;
+sleep 120;
 $query = "SELECT count(*) FROM test_results";
 $sth = $dbh->prepare($query);
 ok($sth->execute()) or (print $DBI::errstr and $dbh->disconnect() and BAIL_OUT);
 
 my $result = $sth->fetchrow_array() and $sth->finish();
-ok ($result > 1) or print "Count <= 1\n";
+ok ($result > 1) or print "Count $result <= 1\n";
 
 my $query = "DELETE FROM test_results;";
 $dbh->do($query);

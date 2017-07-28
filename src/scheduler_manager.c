@@ -24,6 +24,7 @@
 #include "utils/snapmgr.h"
 #include "utils/builtins.h"
 #include "utils/timestamp.h"
+#include "utils/regproc.h"
 #include <sys/time.h>
 #include "utils/lsyscache.h"
 #include "catalog/namespace.h"
@@ -304,7 +305,12 @@ int refresh_scheduler_manager_context(scheduler_manager_ctx_t *ctx)
 			if(got_sighup) return 0;   /* need to refresh it again */
 		}
 		rc = WaitLatch(MyLatch,
+#if PG_VERSION_NUM < 100000
 				WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 500L);
+#else
+				WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 500L, 
+				PG_WAIT_EXTENSION);
+#endif
 		ResetLatch(MyLatch);
 	}
 
@@ -883,7 +889,9 @@ int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_
 					BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_restart_time = BGW_NEVER_RESTART;
+#if PG_VERSION_NUM < 100000
 	worker.bgw_main = NULL;
+#endif
 	worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
 	sprintf(worker.bgw_library_name, "pgpro_scheduler");
 	sprintf(worker.bgw_function_name, "executor_worker_main");
@@ -1705,7 +1713,9 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 					BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_restart_time = BGW_NEVER_RESTART;
+#if PG_VERSION_NUM < 100000
 	worker.bgw_main = NULL;
+#endif
 	worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
 	sprintf(worker.bgw_library_name, "pgpro_scheduler");
 	sprintf(worker.bgw_function_name, "at_executor_worker_main");
@@ -1882,7 +1892,12 @@ void manager_worker_main(Datum arg)
 
 		delete_worker_mem_ctx(old);
 		rc = WaitLatch(MyLatch,
+#if PG_VERSION_NUM < 100000
 			WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1500L);
+#else
+			WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1500L, 
+			PG_WAIT_EXTENSION);
+#endif
 		ResetLatch(MyLatch);
 	}
 	scheduler_manager_stop(ctx);

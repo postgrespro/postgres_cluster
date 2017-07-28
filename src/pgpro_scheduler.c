@@ -392,7 +392,12 @@ void parent_scheduler_main(Datum arg)
 			}
 		}
 		rc = WaitLatch(MyLatch,
+#if PG_VERSION_NUM < 100000
 			WL_LATCH_SET | WL_POSTMASTER_DEATH, 0);
+#else
+			WL_LATCH_SET | WL_POSTMASTER_DEATH, 0, 
+			PG_WAIT_EXTENSION);
+#endif
 		CHECK_FOR_INTERRUPTS();
 		ResetLatch(MyLatch);
 	}
@@ -411,7 +416,9 @@ pg_scheduler_startup(void)
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_restart_time = 10;
+#if PG_VERSION_NUM < 100000
 	worker.bgw_main = NULL;
+#endif
 	worker.bgw_notify_pid = 0;
 	worker.bgw_main_arg = Int32GetDatum(0);
 	worker.bgw_extra[0] = 0;
