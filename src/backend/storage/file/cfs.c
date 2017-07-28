@@ -863,6 +863,9 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		if (pg_atomic_read_u32(&cfs_state->gc_disabled) != 0)
 		{
 			pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
+			pfree(file_path);
+			pfree(map_bck_path);
+			pfree(file_bck_path);
 			return false;
 		}
 	}
