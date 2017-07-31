@@ -14,7 +14,7 @@ ok($dbh->err == 0, $dbh->errstr) or (print $DBI::errstr . "\n" and $dbh->disconn
 
 $query = "SELECT schedule.create_job(ARRAY[(now() + interval \'1 minute\')::timestamp with time zone,
             (now() + interval \'2 minute\')::timestamp with time zone],
-            \'INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''createSimpleJobWithDate'')\');";
+            \'INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''createSimpleJobWithDates'')\');";
 my $sth = $dbh->prepare($query);
 ok($sth->execute(), $dbh->errstr) or (print $DBI::errstr . "\n" and $dbh->disconnect() and BAIL_OUT);
 my $job_id = $sth->fetchrow_array() and $sth->finish();

@@ -34,8 +34,8 @@ $sth->finish();
 
 $query = "SELECT schedule.set_job_attributes(?, \'{ \"name\": \"Test\",
     \"cron\": \"* * * * *\",
-    \"commands\": [\"INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''createJob'')\",
-                    \"INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''createJob'')\"],
+    \"commands\": [\"INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''jobExecuteWindow'')\",
+                    \"INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''jobExecuteWindow'')\"],
     \"run_as\": \"tester\",
     \"use_same_transaction\": \"true\"
     }\')";
