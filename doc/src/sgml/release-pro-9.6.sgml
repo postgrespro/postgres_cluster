@@ -20,7 +20,7 @@
     module</para>
     </listitem>
     <listitem>
-    <para>Module <link linkend="pg-pathman"><application>pg_pathman</application> updated to version 1.4.2</para>
+    <para>Module <link linkend="pg-pathman"><application>pg_pathman</application></link> updated to version 1.4.2</para>
     </listitem>
     </itemizedlist>
   </sect2>
