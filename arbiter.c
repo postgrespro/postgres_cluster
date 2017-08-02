@@ -318,10 +318,10 @@ static void MtmCheckResponse(MtmArbiterMessage* resp)
 		BIT_CLEAR(Mtm->currentLockNodeMask, resp->node-1);
 	}
 
-	if (BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1))
-	{
-		MtmStateProcessEvent(MTM_REMOTE_DISABLE);
-	}
+	// if (BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1))
+	// {
+	// 	MtmStateProcessEvent(MTM_REMOTE_DISABLE);
+	// }
 
 	if (BIT_CHECK(Mtm->disabledNodeMask, resp->node-1) &&
 		sockets[resp->node-1] < 0)

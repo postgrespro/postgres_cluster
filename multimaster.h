@@ -44,12 +44,12 @@
 #define MTM_LOG4(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__)
 #endif
 
-#if MTM_TRACE == 0
-#define MTM_TXTRACE(tx, event)
-#else
+// #if MTM_TRACE == 0
+// #define MTM_TXTRACE(tx, event)
+// #else
 #define MTM_TXTRACE(tx, event) \
 		fprintf(stderr, MTM_TAG "%s, %lld, %s, %d\n", tx->gid, (long long)MtmGetSystemTime(), event, MyProcPid)
-#endif
+// #endif
 
 #define MULTIMASTER_NAME                "multimaster"
 #define MULTIMASTER_SCHEMA_NAME         "mtm"
@@ -414,7 +414,6 @@ extern TransactionId MtmGetCurrentTransactionId(void);
 extern XidStatus MtmGetCurrentTransactionStatus(void);
 extern XidStatus MtmExchangeGlobalTransactionStatus(char const* gid, XidStatus status);
 extern bool  MtmIsRecoveredNode(int nodeId);
-extern void  MtmRefreshClusterStatus(void);
 extern void  MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr);
 extern void  MtmSetupReplicationHooks(struct PGLogicalHooks* hooks);
 extern bool  MtmRecoveryCaughtUp(int nodeId, lsn_t walEndPtr);
