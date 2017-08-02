@@ -39,7 +39,7 @@ sleep(5);
 
 $cluster->psql(0, 'postgres', "select sum(v) from t;", stdout => \$sum0);
 $cluster->psql(1, 'postgres', "select sum(v) from t;", stdout => \$sum1);
-$cluster->psql(1, 'postgres', "select sum(v) from t;", stdout => \$sum2);
+$cluster->psql(2, 'postgres', "select sum(v) from t;", stdout => \$sum2);
 is( (($sum0 == 60) and ($sum1 == $sum0) and ($sum2 == $sum0)) , 1, "Check that nodes are working and sync");
 
 ########################################################

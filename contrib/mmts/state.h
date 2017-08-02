@@ -3,8 +3,10 @@ typedef enum
 {
 	MTM_NEIGHBOR_CLIQUE_DISABLE,
 	MTM_NEIGHBOR_WAL_RECEIVER_START,
-	MTM_NEIGHBOR_WAL_SENDER_START,
-	MTM_NEIGHBOR_HEARTBEAT_TIMEOUT,
+	MTM_NEIGHBOR_WAL_SENDER_START_RECOVERY,
+	MTM_NEIGHBOR_WAL_SENDER_START_RECOVERED,
+	MTM_NEIGHBOR_WAL_SENDER_START_NORMAL,
+	// MTM_NEIGHBOR_HEARTBEAT_TIMEOUT,
 	MTM_NEIGHBOR_RECOVERY_CAUGHTUP
 } MtmNeighborEvent;
 
@@ -30,3 +32,4 @@ extern void MtmOnNodeDisconnect(int nodeId);
 extern void MtmOnNodeConnect(int nodeId);
 extern void MtmReconnectNode(int nodeId);
 
+extern void MtmRefreshClusterStatus(void);

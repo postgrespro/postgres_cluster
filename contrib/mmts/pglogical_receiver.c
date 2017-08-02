@@ -282,6 +282,8 @@ pglogical_receiver_main(Datum main_arg)
 		 * Slots at other nodes should be removed
 		 */
 		mode = MtmGetReplicationMode(nodeId, &got_sigterm);
+		MTM_LOG1("[STATE] Node %i: wal_receiver starts in %s mode", nodeId, MtmReplicationModeName[mode]);
+
 		if (mode == REPLMODE_EXIT)
 		{
 			break;
