@@ -224,6 +224,8 @@ pglogical_receiver_main(Datum main_arg)
 	char* connString = psprintf("replication=database %s", Mtm->nodes[nodeId-1].con.connStr);
 	static PortalData fakePortal;
 
+	MtmBackgroundWorker = true;
+
 	ByteBufferAlloc(&buf);
 
 	slotName = psprintf(MULTIMASTER_SLOT_PATTERN, MtmNodeId);

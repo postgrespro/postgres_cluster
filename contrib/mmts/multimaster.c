@@ -235,6 +235,7 @@ bool  MtmDoReplication;
 char* MtmDatabaseName;
 char* MtmDatabaseUser;
 Oid	  MtmDatabaseId;
+bool  MtmBackgroundWorker;
 
 int	  MtmNodes;
 int	  MtmNodeId;
@@ -898,7 +899,7 @@ MtmIsUserTransaction()
 		IsNormalProcessingMode() &&
 		MtmDoReplication &&
 		!am_walsender &&
-		!IsBackgroundWorker &&
+		!MtmBackgroundWorker &&
 		!IsAutoVacuumWorkerProcess();
 }
 
@@ -4865,7 +4866,7 @@ static void MtmGucInit(void)
 	 */
 	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 	current_role = GetConfigOptionByName("session_authorization", NULL, false);
-	if (strcmp(MtmDatabaseUser, current_role) != 0)
+	if (current_role && *current_role && strcmp(MtmDatabaseUser, current_role) != 0)
 		MtmGucUpdate("session_authorization", current_role);
 	MemoryContextSwitchTo(oldcontext);
 }
@@ -4959,12 +4960,19 @@ char* MtmGucSerialize(void)
 {
 	StringInfo serialized_gucs;
 	dlist_iter iter;
-	int nvars = 0;
+	const char *search_path;
 
 	if (!MtmGucHash)
 		MtmGucInit();
 
 	serialized_gucs = makeStringInfo();
+
+	/*
+	 * Crutch for scheduler. It sets search_path through SetConfigOption()
+	 * so our callback do not react on that.
+	 */
+	search_path = GetConfigOption("search_path", false, true);
+	appendStringInfo(serialized_gucs, "SET search_path TO %s; ", search_path);
 
 	dlist_foreach(iter, &MtmGucList)
 	{
@@ -4986,7 +4994,6 @@ char* MtmGucSerialize(void)
 			appendStringInfoString(serialized_gucs, cur_entry->value);
 		}
 		appendStringInfoString(serialized_gucs, "; ");
-		nvars++;
 	}
 
 	return serialized_gucs->data;
@@ -5007,7 +5014,7 @@ static void MtmProcessDDLCommand(char const* queryString, bool transactional)
 	{
 		char *gucCtx = MtmGucSerialize();
 		if (*gucCtx)
-			queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s; %s", gucCtx, queryString);
+			queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s %s", gucCtx, queryString);
 		else
 			queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s", queryString);
 
@@ -5318,7 +5325,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	if (!skipCommand && !MtmTx.isReplicated && (context == PROCESS_UTILITY_TOPLEVEL || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
 	{
 		MtmUtilityProcessedInXid = GetCurrentTransactionId();
-		if (context == PROCESS_UTILITY_TOPLEVEL) {
+		if (context == PROCESS_UTILITY_TOPLEVEL || !ActivePortal) {
 			MtmProcessDDLCommand(queryString, true);
 		} else {
 			MtmProcessDDLCommand(ActivePortal->sourceText, true);
