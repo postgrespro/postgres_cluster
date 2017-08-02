@@ -37,7 +37,8 @@ my @contrib_uselibpgcommon = ('oid2name', 'pg_standby', 'vacuumlo');
 my $contrib_extralibs      = undef;
 my $contrib_extraincludes =
   { 'tsearch2' => ['contrib/tsearch2'], 'dblink' => ['src/backend'],
-  	'jsquery' => ['contrib/jsquery' ] };
+  	'jsquery' => ['contrib/jsquery' ],
+	'pg_pathman' => ['contrib/pg_pathman/src/include']};
 my $contrib_extrasource = {
 	'cube' => [ 'contrib/cube/cubescan.l', 'contrib/cube/cubeparse.y' ],
 	'seg'  => [ 'contrib/seg/segscan.l',   'contrib/seg/segparse.y' ],
