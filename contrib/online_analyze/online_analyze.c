@@ -847,13 +847,36 @@ onlineAnalyzeHookerUtility(
 		{
 			VacuumStmt	*vac = (VacuumStmt*)parsetree;
 
-			tblnames = list_make1(vac->relation);
-
+			if (vac->relation) 
+				tblnames = list_make1(vac->relation);
 			if (vac->options & (VACOPT_VACUUM | VACOPT_FULL | VACOPT_FREEZE))
+			{
 				/* optionally with analyze */
 				op = CK_VACUUM;
+
+				/* drop all collected stat */
+				if (tblnames == NIL)
+					relstatsInit();
+			}		
 			else if (vac->options & VACOPT_ANALYZE)
+			{
 				op = CK_ANALYZE;
+				
+				/* should reset all counters */
+				if (tblnames == NIL)
+				{
+					HASH_SEQ_STATUS  hs;
+					OnlineAnalyzeTableStat *rstat;
+					TimestampTz	     now = GetCurrentTimestamp();
+
+					hash_seq_init(&hs, relstats);
+					while ((rstat = hash_seq_search(&hs)) != NULL)
+					{
+						rstat->changes_since_analyze = 0;
+						rstat->analyze_timestamp = now;
+					}
+				}
+			}
 			else
 				tblnames = NIL;
 		}
