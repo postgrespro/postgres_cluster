@@ -11,10 +11,18 @@
     <para>This release is based on <productname>Postgres Pro</productname>
       <link linkend="release-pro-9-6-3-2">9.6.3.2</link> and
       <productname>PostgreSQL</productname> <link linkend="release-9-6-3">9.6.3</link>.</para>
+     
     <para>Major enhancements over <productname>Postgres Pro</productname>
       9.6.3.2 include:</para>
+    <itemizedlist>
+    <listitem>
     <para>Fix potential data corruption in the online_analyze contrib
     module</para>
+    </listitem>
+    <listitem>
+    <para>Module <link linkend="pg-pathman"><application>pg_pathman</application> updated to version 1.4.2</para>
+    </listitem>
+    </itemizedlist>
   </sect2>
 </sect1>
 <sect1 id="release-pro-9-6-3-2">
