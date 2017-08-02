@@ -710,6 +710,8 @@ static void MtmSender(Datum arg)
 	int nNodes = MtmMaxNodes;
 	int i;
 
+	MtmBackgroundWorker = true;
+
 	MtmBuffer* txBuffer = (MtmBuffer*)palloc0(sizeof(MtmBuffer)*nNodes);
 	MTM_ELOG(LOG, "Start arbiter sender %d", MyProcPid);
 	InitializeTimeouts();
@@ -797,6 +799,8 @@ static void MtmMonitor(Datum arg)
 	pqsignal(SIGQUIT, SetStop);
 	pqsignal(SIGTERM, SetStop);
 	
+	MtmBackgroundWorker = true;
+
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
 
@@ -833,7 +837,9 @@ static void MtmReceiver(Datum arg)
 	pqsignal(SIGINT, SetStop);
 	pqsignal(SIGQUIT, SetStop);
 	pqsignal(SIGTERM, SetStop);
-	
+
+	MtmBackgroundWorker = true;
+
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
 

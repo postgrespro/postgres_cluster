@@ -379,7 +379,8 @@ extern MemoryContext MtmApplyContext;
 extern lsn_t MtmSenderWalEnd;
 extern timestamp_t MtmRefreshClusterStatusSchedule;
 extern MtmConnectionInfo* MtmConnections;
-extern bool  MtmMajorNode;
+extern bool MtmMajorNode;
+extern bool MtmBackgroundWorker;
 
 
 extern void  MtmArbiterInitialize(void);
