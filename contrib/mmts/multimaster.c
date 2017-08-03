@@ -5114,6 +5114,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_CheckPointStmt:
 		case T_ReindexStmt:
 		case T_ExplainStmt:
+		case T_AlterSystemStmt:
 			skipCommand = true;
 			break;
 
