@@ -103,6 +103,7 @@ int			wal_level = WAL_LEVEL_MINIMAL;
 int			CommitDelay = 0;	/* precommit delay in microseconds */
 int			CommitSiblings = 5; /* # concurrent xacts needed to sleep */
 int			wal_retrieve_retry_interval = 5000;
+bool		cfs_lock_taken = false;
 
 TransactionId		start_xid = 0;
 MultiXactId			start_mx_id = 0;
@@ -9894,6 +9895,7 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 	WALInsertLockRelease();
 
 	cfs_control_gc_lock(); /* disable GC during backup */
+	cfs_lock_taken = true;
 
 	/* Ensure we release forcePageWrites if fail below */
 	PG_ENSURE_ERROR_CLEANUP(pg_start_backup_callback, (Datum) BoolGetDatum(exclusive));
@@ -10272,7 +10274,11 @@ pg_start_backup_callback(int code, Datum arg)
 	}
 	WALInsertLockRelease();
 	
-	cfs_control_gc_unlock(); /* Restore CFS GC activity */
+	if (cfs_lock_taken)
+	{
+		cfs_lock_taken = false;
+		cfs_control_gc_unlock(); /* Restore CFS GC activity */
+	}
 }
 
 /*
@@ -10472,6 +10478,7 @@ do_pg_stop_backup(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 	/* Clean up session-level lock */
 	sessionBackupState = SESSION_BACKUP_NONE;
 
+	cfs_lock_taken = false;
 	cfs_control_gc_unlock(); /* Restore CFS GC activity */
 
 	/*
@@ -10717,7 +10724,11 @@ do_pg_abort_backup(void)
 	}
 	WALInsertLockRelease();
 
-	cfs_control_gc_unlock(); /* Restore CFS GC activity */
+	if (cfs_lock_taken)
+	{
+		cfs_lock_taken = false;
+		cfs_control_gc_unlock(); /* Restore CFS GC activity */
+	}
 }
 
 /*

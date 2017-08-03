@@ -38,6 +38,7 @@ my $contrib_extralibs      = undef;
 my $contrib_extraincludes =
   { 'tsearch2' => ['contrib/tsearch2'], 'dblink' => ['src/backend'],
 	'jsquery' => ['contrib/jsquery' ],
+	'pg_pathman' => ['contrib/pg_pathman/src/include'],
 	'pg_hint_plan' => ['src/pl/plpgsql/src']
  };
 my $contrib_extrasource = {
