@@ -1418,7 +1418,7 @@ latency stddev = 2.715 ms
 tps = 618.764555 (including connections establishing)
 tps = 622.977698 (excluding connections establishing)
 script statistics:
- - statement latencies in milliseconds, serialization & deadlock failures,
+ - statement latencies in milliseconds, serialization &amp; deadlock failures,
    numbers of transactions attempts:
   0.002  0  0   -    \set aid random(1, 100000 * :scale)
   0.005  0  0   -    \set bid random(1, 1 * :scale)
