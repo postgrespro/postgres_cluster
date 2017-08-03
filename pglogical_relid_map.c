@@ -20,29 +20,19 @@ static void
 pglogical_relid_map_init(void)
 {
 	HASHCTL	ctl;
-	int hash_flags = HASH_ELEM;
-
 	Assert(relid_map == NULL);
 
 	MemSet(&ctl, 0, sizeof(ctl));
 	ctl.keysize = sizeof(Oid);
 	ctl.entrysize = sizeof(PGLRelidMapEntry);
-
-#if PG_VERSION_NUM >= 90500
-	hash_flags |= HASH_BLOBS;
-#else
-	ctl.hash = tag_hash;
-	hash_flags |= HASH_FUNCTION;
-#endif
-
-	relid_map = hash_create("pglogical_relid_map", PGL_INIT_RELID_MAP_SIZE, &ctl, hash_flags);
+	relid_map = hash_create("pglogical_relid_map", PGL_INIT_RELID_MAP_SIZE, &ctl, HASH_ELEM | HASH_BLOBS);
 
 	Assert(relid_map != NULL);
 }
 
 Oid pglogical_relid_map_get(Oid relid)
 {
-	if (relid_map != NULL) { 
+	if (relid_map != NULL) {
 		PGLRelidMapEntry* entry = (PGLRelidMapEntry*)hash_search(relid_map, &relid, HASH_FIND, NULL);
 		return entry ? entry->local_relid : InvalidOid;
 	}
@@ -51,15 +41,15 @@ Oid pglogical_relid_map_get(Oid relid)
 
 bool pglogical_relid_map_put(Oid remote_relid, Oid local_relid)
 {
-	bool found;	
+	bool found;
     PGLRelidMapEntry* entry;
-    if (relid_map == NULL) { 
+    if (relid_map == NULL) {
         pglogical_relid_map_init();
     }
     entry = hash_search(relid_map, &remote_relid, HASH_ENTER, &found);
   	if (found) {
 	    entry->local_relid = local_relid;
-		return false;	    
+		return false;
     }
     entry->local_relid = local_relid;
 	return true;
@@ -67,7 +57,7 @@ bool pglogical_relid_map_put(Oid remote_relid, Oid local_relid)
 
 void pglogical_relid_map_reset(void)
 {
-	if (relid_map != NULL) { 
+	if (relid_map != NULL) {
 		hash_destroy(relid_map);
 		relid_map = NULL;
 	}

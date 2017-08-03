@@ -485,8 +485,8 @@ pglogical_receiver_main(Datum main_arg)
 					{
 						int64 now = feGetCurrentTimestamp();
 
-						/* Leave is feedback is not sent properly */
 						MtmUpdateLsnMapping(nodeId, walEnd);
+						/* Leave if feedback is not sent properly */
 						if (!sendFeedback(conn, now, nodeId)) {
 							goto OnError;
 						}
@@ -635,7 +635,6 @@ pglogical_receiver_main(Datum main_arg)
 				{
 					int64 now = feGetCurrentTimestamp();
 
-					/* Leave is feedback is not sent properly */
 					MtmUpdateLsnMapping(nodeId, INVALID_LSN);
 					sendFeedback(conn, now, nodeId);
 				}
@@ -731,4 +730,3 @@ void MtmStartReceivers(void)
 		}
 	}
 }
-

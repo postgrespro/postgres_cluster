@@ -68,6 +68,7 @@
 #include "parser/analyze.h"
 #include "parser/parse_relation.h"
 #include "parser/parse_type.h"
+#include "parser/parse_func.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_type.h"
 #include "tcop/pquery.h"
@@ -158,6 +159,7 @@ static void	  MtmInitializeSequence(int64* start, int64* step);
 static void*  MtmCreateSavepointContext(void);
 static void	  MtmRestoreSavepointContext(void* ctx);
 static void	  MtmReleaseSavepointContext(void* ctx);
+static void   MtmSetRemoteFunction(char const* list, void* extra);
 
 static void MtmCheckClusterLock(void);
 static void MtmCheckSlots(void);
@@ -184,6 +186,7 @@ MtmConnectionInfo* MtmConnections;
 
 HTAB* MtmXid2State;
 HTAB* MtmGid2State;
+static HTAB* MtmRemoteFunctions;
 static HTAB* MtmLocalTables;
 
 static bool MtmIsRecoverySession;
@@ -258,6 +261,7 @@ bool  MtmMajorNode;
 TransactionId  MtmUtilityProcessedInXid;
 
 static char* MtmConnStrs;
+static char* MtmRemoteFunctionsList;
 static char* MtmClusterName;
 static int	 MtmQueueSize;
 static int	 MtmWorkers;
@@ -2229,7 +2233,7 @@ MtmCreateLocalTableMap(void)
 		"MtmLocalTables",
 		MULTIMASTER_MAX_LOCAL_TABLES, MULTIMASTER_MAX_LOCAL_TABLES,
 		&info,
-		HASH_ELEM
+		HASH_ELEM | HASH_BLOBS
 	);
 	return htab;
 }
@@ -2421,6 +2425,48 @@ MtmShmemStartup(void)
 		PreviousShmemStartupHook();
 	}
 	MtmInitialize();
+}
+
+static void MtmSetRemoteFunction(char const* list, void* extra)
+{
+	if (MtmRemoteFunctions) {
+		hash_destroy(MtmRemoteFunctions);
+		MtmRemoteFunctions = NULL;
+	}
+}
+
+static void MtmInitializeRemoteFunctionsMap()
+{
+	HASHCTL info;
+	char* p, *q;
+	int n_funcs = 1;
+	FuncCandidateList clist;
+
+	for (p = MtmRemoteFunctionsList; (q = strchr(p, ',')) != NULL; p = q + 1, n_funcs++);
+
+	Assert(MtmRemoteFunctions == NULL);
+
+	memset(&info, 0, sizeof(info));
+	info.entrysize = info.keysize = sizeof(Oid);
+	info.hcxt = TopMemoryContext;
+	MtmRemoteFunctions = hash_create("MtmRemoteFunctions", n_funcs, &info,
+									 HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+
+	p = pstrdup(MtmRemoteFunctionsList);
+	do {
+		q = strchr(p, ',');
+		if (q != NULL) {
+			*q++ = '\0';
+		}
+		clist = FuncnameGetCandidates(stringToQualifiedNameList(p), -1, NIL, false, false, true);
+		if (clist == NULL) {
+			MTM_ELOG(ERROR, "Failed to lookup function %s", p);
+		} else if (clist->next != NULL) {
+			MTM_ELOG(ERROR, "Ambigious function %s", p);
+		}
+		hash_search(MtmRemoteFunctions, &clist->oid, HASH_ENTER, NULL);
+		p = q;
+	} while (p != NULL);
 }
 
 /*
@@ -3053,6 +3099,19 @@ _PG_init(void)
 	);
 
 	DefineCustomStringVariable(
+		"multimaster.remote_functions",
+		"List of fnuction names which should be executed remotely at all multimaster nodes instead of executing them at master and replicating result of their work",
+		NULL,
+		&MtmRemoteFunctionsList,
+		"lo_create,lo_unlink",
+		PGC_USERSET, /* context */
+		0,			 /* flags */
+		NULL,		 /* GucStringCheckHook check_hook */
+		MtmSetRemoteFunction,		 /* GucStringAssignHook assign_hook */
+		NULL		 /* GucShowHook show_hook */
+	);
+
+	DefineCustomStringVariable(
 		"multimaster.cluster_name",
 		"Name of the cluster",
 		NULL,
@@ -3541,7 +3600,7 @@ lsn_t MtmGetFlushPosition(int nodeId)
  * Keep track of progress of WAL writer.
  * We need to notify WAL senders at other nodes which logical records
  * are flushed to the disk and so can survive failure. In asynchronous commit mode
- * WAL is flushed by WAL writer. Current flish position can be obtained by GetFlushRecPtr().
+ * WAL is flushed by WAL writer. Current flush position can be obtained by GetFlushRecPtr().
  * So on applying new logical record we insert it in the MtmLsnMapping and compare
  * their poistions in local WAL log with current flush position.
  * The records which are flushed to the disk by WAL writer are removed from the list
@@ -4656,7 +4715,7 @@ char* MtmGucSerialize(void)
 		appendStringInfoString(serialized_gucs, " TO ");
 
 		/* quite a crutch */
-		if (strstr(cur_entry->key, "_mem") != NULL || *(cur_entry->value) == '\0')
+		if (strstr(cur_entry->key, "_mem") != NULL || *(cur_entry->value) == '\0' || strchr(cur_entry->value, ',') != NULL)
 		{
 			appendStringInfoString(serialized_gucs, "'");
 			appendStringInfoString(serialized_gucs, cur_entry->value);
@@ -4686,10 +4745,7 @@ static void MtmProcessDDLCommand(char const* queryString, bool transactional)
 	if (transactional)
 	{
 		char *gucCtx = MtmGucSerialize();
-		if (*gucCtx)
-			queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s %s", gucCtx, queryString);
-		else
-			queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s", queryString);
+		queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s %s", gucCtx, queryString);
 
 		/* Transactional DDL */
 		MTM_LOG3("Sending DDL: %s", queryString);
@@ -5058,29 +5114,28 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 static void
 MtmExecutorStart(QueryDesc *queryDesc, int eflags)
 {
-	bool ddl_generating_call = false;
-	ListCell   *tlist;
-
-	foreach(tlist, queryDesc->plannedstmt->planTree->targetlist)
+	if (!MtmTx.isReplicated && ActivePortal)
 	{
-		TargetEntry *tle = (TargetEntry *) lfirst(tlist);
+		ListCell   *tlist;
 
-		if (tle->resname && strcmp(tle->resname, "lo_create") == 0)
+		if (!MtmRemoteFunctions)
 		{
-			ddl_generating_call = true;
-			break;
+			MtmInitializeRemoteFunctionsMap();
 		}
 
-		if (tle->resname && strcmp(tle->resname, "lo_unlink") == 0)
+		foreach(tlist, queryDesc->plannedstmt->planTree->targetlist)
 		{
-			ddl_generating_call = true;
-			break;
+			TargetEntry *tle = (TargetEntry *) lfirst(tlist);
+			if (tle->expr && IsA(tle->expr, FuncExpr))
+			{
+				if (hash_search(MtmRemoteFunctions, &((FuncExpr*)tle->expr)->funcid, HASH_FIND, NULL))
+				{
+					MtmProcessDDLCommand(ActivePortal->sourceText, true);
+					break;
+				}
+			}
 		}
 	}
-
-	if (ddl_generating_call && !MtmTx.isReplicated)
-		MtmProcessDDLCommand(ActivePortal->sourceText, true);
-
 	if (PreviousExecutorStartHook != NULL)
 		PreviousExecutorStartHook(queryDesc, eflags);
 	else
