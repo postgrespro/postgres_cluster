@@ -252,8 +252,8 @@ protocol to make nodes agree on a serializable transactional order.
     </para>
 
     <para>
-     <productname>&productname;</> does not offer this type of replication,
-     though <productname>&productname;</> two-phase commit (<xref
+     <productname>PostgreSQL</> does not offer this type of replication,
+     though <productname>PostgreSQL</> two-phase commit (<xref
      linkend="sql-prepare-transaction"> and <xref
      linkend="sql-commit-prepared">)
      can be used to implement this in application code or middleware.
@@ -266,8 +266,8 @@ protocol to make nodes agree on a serializable transactional order.
    <listitem>
 
     <para>
-     Because <productname>&productname;</> is open source and easily
-     extended, a number of companies have taken <productname>&productname;</>
+     Because <productname>PostgreSQL</> is open source and easily
+     extended, a number of companies have taken <productname>PostgreSQL</>
      and created commercial closed-source solutions with unique
      failover, replication, and load balancing capabilities.
     </para>
