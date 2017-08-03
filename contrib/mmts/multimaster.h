@@ -51,22 +51,22 @@
 		fprintf(stderr, MTM_TAG "%s, %lld, %s, %d\n", tx->gid, (long long)MtmGetSystemTime(), event, MyProcPid)
 #endif
 
-#define MULTIMASTER_NAME                "multimaster"
-#define MULTIMASTER_SCHEMA_NAME         "mtm"
-#define MULTIMASTER_LOCAL_TABLES_TABLE  "local_tables"
-#define MULTIMASTER_SLOT_PATTERN        "mtm_slot_%d"
-#define MULTIMASTER_MIN_PROTO_VERSION   1
-#define MULTIMASTER_MAX_PROTO_VERSION   1
-#define MULTIMASTER_MAX_GID_SIZE        32
-#define MULTIMASTER_MAX_SLOT_NAME_SIZE  16
-#define MULTIMASTER_MAX_CONN_STR_SIZE   128
-#define MULTIMASTER_MAX_HOST_NAME_SIZE  64
-#define MULTIMASTER_MAX_LOCAL_TABLES    256
-#define MULTIMASTER_MAX_CTL_STR_SIZE    256
-#define MULTIMASTER_LOCK_BUF_INIT_SIZE  4096
-#define MULTIMASTER_BROADCAST_SERVICE   "mtm_broadcast"
-#define MULTIMASTER_ADMIN               "mtm_admin"
-#define MULTIMASTER_PRECOMMITTED        "precommitted"
+#define MULTIMASTER_NAME                 "multimaster"
+#define MULTIMASTER_SCHEMA_NAME          "mtm"
+#define MULTIMASTER_LOCAL_TABLES_TABLE   "local_tables"
+#define MULTIMASTER_SLOT_PATTERN         "mtm_slot_%d"
+#define MULTIMASTER_MIN_PROTO_VERSION    1
+#define MULTIMASTER_MAX_PROTO_VERSION    1
+#define MULTIMASTER_MAX_GID_SIZE         32
+#define MULTIMASTER_MAX_SLOT_NAME_SIZE   16
+#define MULTIMASTER_MAX_CONN_STR_SIZE    128
+#define MULTIMASTER_MAX_HOST_NAME_SIZE   64
+#define MULTIMASTER_MAX_LOCAL_TABLES     256
+#define MULTIMASTER_MAX_CTL_STR_SIZE     256
+#define MULTIMASTER_LOCK_BUF_INIT_SIZE   4096
+#define MULTIMASTER_BROADCAST_SERVICE    "mtm_broadcast"
+#define MULTIMASTER_ADMIN                "mtm_admin"
+#define MULTIMASTER_PRECOMMITTED         "precommitted"
 
 #define MULTIMASTER_DEFAULT_ARBITER_PORT 5433
 
