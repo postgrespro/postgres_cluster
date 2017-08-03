@@ -27,7 +27,9 @@
 #include "utils/builtins.h"
 #include "utils/timestamp.h"
 #include "utils/memutils.h"
+#if PG_VERSION_NUM >= 100000
 #include "utils/regproc.h"
+#endif
 #include "utils/guc.h"
 
 #include "pgpro_scheduler.h"

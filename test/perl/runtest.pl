@@ -109,7 +109,7 @@ my %args = (
 );
 my $harness = TAP::Harness->new( \%args );
 my @tests = glob( 't/*.t' );
-@tests = ('t/jobMaxRunTime.t'); 
+#@tests = ('t/jobMaxRunTime.t'); 
 $harness->runtests(@tests);
 
 

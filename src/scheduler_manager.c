@@ -24,7 +24,9 @@
 #include "utils/snapmgr.h"
 #include "utils/builtins.h"
 #include "utils/timestamp.h"
+#if PG_VERSION_NUM >= 100000
 #include "utils/regproc.h"
+#endif
 #include <sys/time.h>
 #include "utils/lsyscache.h"
 #include "catalog/namespace.h"
