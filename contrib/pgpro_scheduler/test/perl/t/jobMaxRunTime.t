@@ -5,16 +5,7 @@ use Test::More;
 use DBI;
 use Getopt::Long;
 
-my $dbname;
-my $username;
-my $password;
-my $host;
-GetOptions ( "--host=s" => \$host,
-    "--dbname=s" => \$dbname,
-    "--username=s" => \$username,
-    "--password=s" => \$password);
-my $dbh = DBI->connect("dbi:Pg:dbname=$dbname; host=$host", "$username", "$password",
-    {PrintError => 0});
+my $dbh = require 't/_connect.pl';
 ok($dbh->err == 0) or (print $DBI::errstr and BAIL_OUT);
 
 my $query = "DELETE FROM test_results;";
@@ -40,7 +31,7 @@ $sth = $dbh->prepare($query);
 ok($sth->execute()) or (print $DBI::errstr . "\n" and $dbh->disconnect() and BAIL_OUT);
 
 my $result = $sth->fetchrow_array() and $sth->finish();
-ok ($result == 0) or print "Count != 0\n";
+ok ($result == 0) or print "Count $result != 0\n";
 
 $query = "SELECT schedule.deactivate_job(?)";
 $sth = $dbh->prepare($query);

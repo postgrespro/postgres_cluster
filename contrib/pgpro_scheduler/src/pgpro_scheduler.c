@@ -52,6 +52,8 @@ bool scheduler_service_enabled = false;
 char *scheduler_schema = NULL;
 /* Custom GUC done */
 
+Oid scheduler_atjob_id_OID = InvalidOid;
+
 extern void
 worker_spi_sighup(SIGNAL_ARGS)
 {

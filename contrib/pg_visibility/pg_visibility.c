@@ -794,9 +794,9 @@ pg_cfm(PG_FUNCTION_ARGS)
 	tupdesc = BlessTupleDesc(tupdesc);
 
 	MemSet(nulls, 0, sizeof(nulls));
-	values[0] = UInt32GetDatum(pg_atomic_read_u32(&map->physSize));
-	values[1] = UInt32GetDatum(pg_atomic_read_u32(&map->virtSize));
-	values[2] = UInt32GetDatum(pg_atomic_read_u32(&map->usedSize));
+	values[0] = UInt32GetDatum(pg_atomic_read_u32(&map->hdr.physSize));
+	values[1] = UInt32GetDatum(pg_atomic_read_u32(&map->hdr.virtSize));
+	values[2] = UInt32GetDatum(pg_atomic_read_u32(&map->hdr.usedSize));
 	values[3] = UInt64GetDatum(map->generation);
 
 

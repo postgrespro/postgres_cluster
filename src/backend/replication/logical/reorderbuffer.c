@@ -1728,6 +1728,10 @@ ReorderBufferCommitBareXact(ReorderBuffer *rb, TransactionId xid,
 	txn = ReorderBufferTXNByXid(rb, xid, true, NULL, commit_lsn,
 								true);
 
+	if (rb->xact_action == XLOG_XACT_ABORT_PREPARED) {
+		ReorderBufferCleanupTXN(rb, txn);
+	}
+
 	txn->final_lsn = commit_lsn;
 	txn->end_lsn = end_lsn;
 	txn->commit_time = commit_time;
