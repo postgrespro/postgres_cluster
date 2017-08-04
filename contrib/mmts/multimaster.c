@@ -270,6 +270,7 @@ static bool	 MtmIgnoreTablesWithoutPk;
 static int	 MtmLockCount;
 static bool	 MtmMajorNode;
 static bool	 MtmBreakConnection;
+static bool  MtmBypass;
 static bool	 MtmClusterLocked;
 static bool	 MtmInsideTransaction;
 static bool  MtmReferee;
@@ -960,7 +961,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		x->isTwoPhase = false;
 		x->isTransactionBlock = IsTransactionBlock();
 		/* Application name can be changed using PGAPPNAME environment variable */
-		if (x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0) {
+		if (x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0 && !MtmBypass) {
 			/* Reject all user's transactions at offline cluster.
 			 * Allow execution of transaction by bg-workers to make it possible to perform recovery.
 			 */
@@ -979,7 +980,8 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		 */
 		if (x->isDistributed
 			&& !MtmClusterLocked /* do not lock myself */
-			&& strcmp(application_name, MULTIMASTER_ADMIN) != 0)
+			&& strcmp(application_name, MULTIMASTER_ADMIN) != 0
+			&& !MtmBypass)
 		{
 			MtmCheckClusterLock();
 		}
@@ -3214,6 +3216,20 @@ _PG_init(void)
 		NULL,
 		NULL
 	);
+
+	DefineCustomBoolVariable(
+		"multimaster.bypass",
+		"Allow access to offline multimaster node",
+		NULL,
+		&MtmBypass,
+		false,
+		PGC_USERSET, /* context */
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
 	DefineCustomBoolVariable(
 		"multimaster.major_node",
 		"Node which forms a majority in case of partitioning in cliques with equal number of nodes",
