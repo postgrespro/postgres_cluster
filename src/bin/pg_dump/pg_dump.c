@@ -6285,10 +6285,10 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 		 * is not.
 		 */
 		resetPQExpBuffer(query);
-		if (fout->remoteVersion >= 90600)
+		if (fout->remoteVersion >= 90600 && fout->pgproremoteVersion > 0)
 		{
 			/*
-			 * In 9.6 we add INCLUDING columns functionality
+			 * In PGPRO9_6 we add INCLUDING columns functionality
 			 * that requires new fields to be added.
 			 * i.indnkeyattrs is new, and besides we should use
 			 * i.indnatts instead of t.relnatts for index relations.

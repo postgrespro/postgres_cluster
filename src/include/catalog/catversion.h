@@ -50,9 +50,10 @@
  * YYYYMMDD are the date of the change, and N is the number of the change
  * on that day.  (Hopefully we'll never commit ten independent sets of
  * catalog changes on the same day...)
+ * For PGPRO we added also P - the number of the PGPRO specific catalog change.
  */
 
-/*							yyyymmddN */
-#define CATALOG_VERSION_NO	201608131
+/*							yyyymmddNP */
+#define CATALOG_VERSION_NO	2016081311
 
 #endif
