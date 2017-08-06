@@ -1179,9 +1179,7 @@ void MtmPrecommitTransaction(char const* gid)
 				ts->status = TRANSACTION_STATUS_UNKNOWN;
 				ts->csn = MtmAssignCSN();
 				MtmAdjustSubtransactions(ts);
-				if (Mtm->status != MTM_RECOVERY) {
-					MtmSend2PCMessage(ts, MSG_PRECOMMITTED);
-				}
+				MtmSend2PCMessage(ts, MSG_PRECOMMITTED);
 				MtmUnlock();
 				Assert(replorigin_session_origin != InvalidRepOriginId);
 				if (!IsTransactionState()) {
@@ -1625,12 +1623,10 @@ void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 	memcpy(msg.gid, ts->gid, MULTIMASTER_MAX_GID_SIZE);
 
 	Assert(!MtmIsCoordinator(ts));	/* All broadcasts are now done through logical decoding */
-	if (!BIT_CHECK(Mtm->disabledNodeMask, ts->gtid.node-1)) {
-		MTM_LOG2("Send %s message to node %d xid=%d gid=%s", MtmMessageKindMnem[cmd], ts->gtid.node, ts->gtid.xid, ts->gid);
-		msg.node = ts->gtid.node;
-		msg.dxid = ts->gtid.xid;
-		MtmSendMessage(&msg);
-	}
+	MTM_TXTRACE(ts, "MtmSend2PCMessage sending %s message to node %d", MtmMessageKindMnem[cmd], ts->gtid.node);
+	msg.node = ts->gtid.node;
+	msg.dxid = ts->gtid.xid;
+	MtmSendMessage(&msg);
 }
 
 /*

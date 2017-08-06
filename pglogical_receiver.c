@@ -519,14 +519,6 @@ pglogical_receiver_main(Datum main_arg)
 				{
 					int msg_len = rc - hdr_len;
 					stmt = copybuf + hdr_len;
-					if (mode == REPLMODE_RECOVERED) {
-						/* Ingore all incompleted transactions from recovered node */
-						if (stmt[0] != 'B') {
-							output_written_lsn = Max(walEnd, output_written_lsn);
-							continue;
-						}
-						mode = REPLMODE_OPEN_EXISTED;
-					}
 					MTM_LOG3("Receive message %c from node %d", stmt[0], nodeId);
 					if (buf.used + msg_len + 1 >= MtmTransSpillThreshold*MB) {
 						if (spill_file < 0) {
