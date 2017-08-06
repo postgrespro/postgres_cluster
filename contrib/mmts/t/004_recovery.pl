@@ -74,3 +74,7 @@ $cluster->psql(2, 'postgres', "select sum(abalance) from pgbench_accounts;", std
 diag("Sums: $sum0, $sum1, $sum2");
 is($sum2, $sum0, "Check that sum_2 == sum_0");
 is($sum2, $sum1, "Check that sum_2 == sum_1");
+
+$cluster->{nodes}->[0]->stop('fast');
+$cluster->{nodes}->[1]->stop('fast');
+$cluster->{nodes}->[2]->stop('fast');

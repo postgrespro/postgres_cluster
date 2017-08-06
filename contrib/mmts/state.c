@@ -112,7 +112,7 @@ MtmCheckState(void)
 		case MTM_RECOVERY:
 			if (!BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId-1))
 			{
-				// BIT_SET(Mtm->originLockNodeMask, MtmNodeId-1); // kk trick
+				BIT_SET(Mtm->originLockNodeMask, MtmNodeId-1); // kk trick
 				MtmSetClusterStatus(MTM_RECOVERED);
 				return;
 			}
@@ -148,6 +148,7 @@ MtmStateProcessNeighborEvent(int node_id, MtmNeighborEvent ev)
 			break;
 
 		case MTM_NEIGHBOR_WAL_RECEIVER_START:
+			BIT_CLEAR(Mtm->originLockNodeMask, MtmNodeId-1);
 			if (!BIT_CHECK(Mtm->pglogicalReceiverMask, node_id - 1))
 				BIT_SET(Mtm->pglogicalReceiverMask, node_id - 1);
 			break;

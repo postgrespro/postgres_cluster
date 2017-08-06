@@ -684,7 +684,7 @@ process_remote_commit(StringInfo in)
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			strncpy(gid, pq_getmsgstring(in), sizeof gid);
-			MTM_LOG2("%d: PGLOGICAL_PRECOMMIT_PREPARED %s", MyProcPid, gid);
+			MTM_LOG2("%d: PGLOGICAL_PRECOMMIT_PREPARED %s, (%llx,%llx,%llx)", MyProcPid, gid, commit_lsn, end_lsn, origin_lsn);
 			MtmBeginSession(origin_node);
 			MtmPrecommitTransaction(gid);
 			MtmEndSession(origin_node, true);
@@ -692,7 +692,7 @@ process_remote_commit(StringInfo in)
 		}
 		case PGLOGICAL_COMMIT:
 		{
-			MTM_LOG2("%d: PGLOGICAL_COMMIT commit", MyProcPid);
+			MTM_LOG2("%d: PGLOGICAL_COMMIT %s, (%llx,%llx,%llx)", MyProcPid, gid, commit_lsn, end_lsn, origin_lsn);
 			if (IsTransactionState()) {
 				Assert(TransactionIdIsValid(MtmGetCurrentTransactionId()));
 				MtmBeginSession(origin_node);
@@ -705,12 +705,12 @@ process_remote_commit(StringInfo in)
 		{
 			Assert(IsTransactionState() && TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			strncpy(gid, pq_getmsgstring(in), sizeof gid);
+			MTM_LOG2("%d: PGLOGICAL_PREPARE %s, (%llx,%llx,%llx)", MyProcPid, gid, commit_lsn, end_lsn, origin_lsn);
 			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_IN_PROGRESS) == TRANSACTION_STATUS_ABORTED) { 
 				MTM_LOG1("Avoid prepare of previously aborted global transaction %s", gid);	
 				AbortCurrentTransaction();
 			} else { 				
 				/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
-				MTM_LOG2("PGLOGICAL_PREPARE commit: gid=%s", gid);
 				BeginTransactionBlock(false);
 				CommitTransactionCommand();
 				StartTransactionCommand();
@@ -745,7 +745,7 @@ process_remote_commit(StringInfo in)
 			 */
 			Assert(csn);
 			strncpy(gid, pq_getmsgstring(in), sizeof gid);
-			MTM_LOG2("PGLOGICAL_COMMIT_PREPARED commit: csn=%lld, gid=%s, lsn=%llx", csn, gid, end_lsn);
+			MTM_LOG2("%d: PGLOGICAL_COMMIT_PREPARED %s, (%llx,%llx,%llx)", MyProcPid, gid, commit_lsn, end_lsn, origin_lsn);
 			MtmResetTransaction();
 			StartTransactionCommand();
 			MtmBeginSession(origin_node);

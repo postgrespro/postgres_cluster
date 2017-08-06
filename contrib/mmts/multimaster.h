@@ -14,9 +14,6 @@
 #define DEBUG_LEVEL 0
 #endif
 
-#ifndef MTM_TRACE
-#define MTM_TRACE   0
-#endif
 
 #define MTM_TAG "[MTM] "
 #define MTM_ELOG(level,fmt,...) elog(level, MTM_TAG fmt, ## __VA_ARGS__)
@@ -44,12 +41,14 @@
 #define MTM_LOG4(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__)
 #endif
 
-// #if MTM_TRACE == 0
-// #define MTM_TXTRACE(tx, event)
-// #else
-#define MTM_TXTRACE(tx, event) \
-		fprintf(stderr, MTM_TAG "%s, %lld, %s, %d\n", tx->gid, (long long)MtmGetSystemTime(), event, MyProcPid)
-// #endif
+// #define MTM_TRACE 1
+
+#ifndef MTM_TRACE
+#define MTM_TXTRACE(tx, event, ...)
+#else
+#define MTM_TXTRACE(tx, event, ...) \
+		fprintf(stderr, MTM_TAG "%s, %lld, %u " event "\n", tx->gid, (long long)MtmGetSystemTime(), MyProcPid, ## __VA_ARGS__)
+#endif
 
 #define MULTIMASTER_NAME                "multimaster"
 #define MULTIMASTER_SCHEMA_NAME         "mtm"
@@ -388,7 +387,6 @@ extern csn_t MtmDistributedTransactionSnapshot(TransactionId xid, int nodeId, no
 extern csn_t MtmAssignCSN(void);
 extern csn_t MtmSyncClock(csn_t csn);
 extern void  MtmJoinTransaction(GlobalTransactionId* gtid, csn_t snapshot, nodemask_t participantsMask);
-extern void  MtmReceiverStarted(int nodeId);
 extern MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shutdown);
 extern void  MtmExecute(void* work, int size);
 extern void  MtmExecutor(void* work, size_t size);
