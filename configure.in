@@ -38,7 +38,7 @@ AC_DEFINE_UNQUOTED(PG_MAJORVERSION, "$PG_MAJORVERSION", [PostgreSQL major versio
 PGAC_ARG_REQ(with, extra-version, [STRING], [append STRING to version],
              [PG_VERSION="$PACKAGE_VERSION$withval"],
              [PG_VERSION="$PACKAGE_VERSION"])
-PGPRO_VERSION="$PACKAGE_VERSION.2"
+PGPRO_VERSION="$PACKAGE_VERSION.3"
 PGPRO_PACKAGE_NAME="PostgresPro"
 PGPRO_EDITION="enterprise"
 AC_SUBST(PGPRO_PACKAGE_NAME)
@@ -959,6 +959,7 @@ You might have to rebuild your Perl installation.  Refer to the
 documentation for details.  Use --without-perl to disable building
 PL/Perl.])
   fi
+  PGAC_CHECK_PERL_EMBED_CCFLAGS
   PGAC_CHECK_PERL_EMBED_LDFLAGS
 fi
 
