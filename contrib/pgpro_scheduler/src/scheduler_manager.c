@@ -1617,16 +1617,23 @@ int scheduler_make_atcron_record(scheduler_manager_ctx_t *ctx)
 void clean_at_table(scheduler_manager_ctx_t *ctx)
 {
 	spi_response_t *r;
+	Oid argtypes[1] = {TEXTOID};
+	Datum args[1];
 	MemoryContext mem = init_mem_ctx("clean ctx");
 
+	args[0] = PointerGetDatum(cstring_to_text(ctx->nodename));
+
 	START_SPI_SNAP();
-	r = execute_spi(mem, "truncate at");
+	r = execute_spi_sql_with_args(mem,
+		"delete from at where node = $1", 1, argtypes, args, NULL);
 	if(r->retval < 0)
 	{
 		manager_fatal_error(ctx, 0, "Cannot clean 'at' table: %s", r->error);
 	}
 	destroy_spi_data(r);
-	r = execute_spi(mem, "update cron set _next_exec_time = NULL where _next_exec_time is not NULL");
+	r = execute_spi_sql_with_args(mem,
+		"update cron set _next_exec_time = NULL where _next_exec_time is not NULL and node = $1",
+		1, argtypes, args, NULL);
 	if(r->retval  < 0)
 	{
 		manager_fatal_error(ctx, 0, "Cannot clean cron _next time: %s",
