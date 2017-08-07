@@ -224,6 +224,8 @@ pglogical_receiver_main(Datum main_arg)
 	char* connString = psprintf("replication=database %s", Mtm->nodes[nodeId-1].con.connStr);
 	static PortalData fakePortal;
 
+	MtmBackgroundWorker = true;
+
 	ByteBufferAlloc(&buf);
 
 	slotName = psprintf(MULTIMASTER_SLOT_PATTERN, MtmNodeId);
@@ -299,23 +301,16 @@ pglogical_receiver_main(Datum main_arg)
 		}
 
 		query = createPQExpBuffer();
-		if ((mode == REPLMODE_OPEN_EXISTED && timeline != Mtm->nodes[nodeId-1].timeline)
-			|| mode == REPLMODE_CREATE_NEW)
-		{ /* recreate slot */
-			timestamp_t start = MtmGetSystemTime();
-			appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", slotName);
-			res = PQexec(conn, query->data);
-			elog(LOG, "Drop replication slot %s: %ld milliseconds", slotName, (long)USEC_TO_MSEC(MtmGetSystemTime() - start));
-			PQclear(res);
-			resetPQExpBuffer(query);
-			timeline = Mtm->nodes[nodeId-1].timeline;
-		}
-		/* My original assumption was that we can perfrom recovery only from existed slot,
-		 * but unfortunately looks like slots can "disapear" together with WAL-sender.
-		 * So let's try to recreate slot always. */
-		/* if (mode != REPLMODE_REPLICATION) */
-		{
-			timestamp_t start = MtmGetSystemTime();
+
+		/* Start logical replication at specified position */
+		originStartPos = replorigin_get_progress(originId, false);
+		if (originStartPos == INVALID_LSN) {
+			/*
+			 * We are just creating new replication slot.
+			 * It is assumed that state of local and remote nodes is the same at this moment.
+			 * They are either empty, either new node is synchronized using base_backup.
+			 * So we assume that LSNs are the same for local and remote node
+			 */
 			appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", slotName, MULTIMASTER_NAME);
 			res = PQexec(conn, query->data);
 			if (PQresultStatus(res) != PGRES_TUPLES_OK)
@@ -329,30 +324,14 @@ pglogical_receiver_main(Datum main_arg)
 					goto OnError;
 				}
 			}
-			elog(LOG, "Recreate replication slot %s: %ld milliseconds", slotName, (long)USEC_TO_MSEC(MtmGetSystemTime() - start));
 			PQclear(res);
 			resetPQExpBuffer(query);
-		}
-
-		/* Start logical replication at specified position */
-		if (originStartPos == INVALID_LSN) {
-			originStartPos = replorigin_get_progress(originId, false);
-			if (originStartPos == INVALID_LSN) {
-				/*
-				 * We are just creating new replication slot.
-				 * It is assumed that state of local and remote nodes is the same at this moment.
-				 * Them are either empty, either new node is synchronized using base_backup.
-				 * So we assume that LSNs are the same for local and remote node
-				 */
-				originStartPos = INVALID_LSN;
-				MTM_LOG1("Start logical receiver at position %llx from node %d", originStartPos, nodeId);
-			} else {
-				if (Mtm->nodes[nodeId-1].restartLSN < originStartPos) {
-					MTM_LOG1("Advance restartLSN for node %d: from %llx to %llx (pglogical_receiver_main)", nodeId, Mtm->nodes[nodeId-1].restartLSN, originStartPos);
-					Mtm->nodes[nodeId-1].restartLSN = originStartPos;
-				}
-				MTM_LOG1("Restart logical receiver at position %llx with origin=%d from node %d", originStartPos, originId, nodeId);
+		} else {
+			if (Mtm->nodes[nodeId-1].restartLSN < originStartPos) {
+				MTM_LOG1("Advance restartLSN for node %d: from %llx to %llx (pglogical_receiver_main)", nodeId, Mtm->nodes[nodeId-1].restartLSN, originStartPos);
+				Mtm->nodes[nodeId-1].restartLSN = originStartPos;
 			}
+			MTM_LOG1("Restart logical receiver at position %llx with origin=%d from node %d", originStartPos, originId, nodeId);
 		}
 
 		MTM_LOG1("Start replication on slot %s from node %d at position %llx, mode %s, recovered lsn %llx",
@@ -371,10 +350,21 @@ pglogical_receiver_main(Datum main_arg)
 		res = PQexec(conn, query->data);
 		if (PQresultStatus(res) != PGRES_COPY_BOTH)
 		{
-			PQclear(res);
-			ereport(WARNING, (MTM_ERRMSG("%s: Could not start logical replication",
-								 worker_proc)));
-			goto OnError;
+			int i, n_deleted_slots = 0;
+
+			elog(WARNING, "Can't find slot on node%d. Shutting down receiver.", nodeId);
+			Mtm->nodes[nodeId-1].slotDeleted = true;
+			for (i = 0; i < Mtm->nAllNodes; i++)
+			{
+				if (Mtm->nodes[i].slotDeleted)
+					n_deleted_slots++;
+			}
+			if (n_deleted_slots == Mtm->nAllNodes - 1)
+			{
+				elog(WARNING, "All neighbour nopes have no replication slot for us. Exiting.");
+				kill(PostmasterPid, SIGTERM);
+			}
+			proc_exit(1);
 		}
 		PQclear(res);
 		resetPQExpBuffer(query);
@@ -490,8 +480,8 @@ pglogical_receiver_main(Datum main_arg)
 					{
 						int64 now = feGetCurrentTimestamp();
 
-						/* Leave is feedback is not sent properly */
 						MtmUpdateLsnMapping(nodeId, walEnd);
+						/* Leave if feedback is not sent properly */
 						if (!sendFeedback(conn, now, nodeId)) {
 							goto OnError;
 						}
@@ -640,7 +630,6 @@ pglogical_receiver_main(Datum main_arg)
 				{
 					int64 now = feGetCurrentTimestamp();
 
-					/* Leave is feedback is not sent properly */
 					MtmUpdateLsnMapping(nodeId, INVALID_LSN);
 					sendFeedback(conn, now, nodeId);
 				}
@@ -736,4 +725,3 @@ void MtmStartReceivers(void)
 		}
 	}
 }
-

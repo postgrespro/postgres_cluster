@@ -68,6 +68,7 @@
 #include "parser/analyze.h"
 #include "parser/parse_relation.h"
 #include "parser/parse_type.h"
+#include "parser/parse_func.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_type.h"
 #include "tcop/pquery.h"
@@ -117,6 +118,7 @@ PG_FUNCTION_INFO_V1(mtm_stop_node);
 PG_FUNCTION_INFO_V1(mtm_add_node);
 PG_FUNCTION_INFO_V1(mtm_poll_node);
 PG_FUNCTION_INFO_V1(mtm_recover_node);
+PG_FUNCTION_INFO_V1(mtm_resume_node);
 PG_FUNCTION_INFO_V1(mtm_get_snapshot);
 PG_FUNCTION_INFO_V1(mtm_get_csn);
 PG_FUNCTION_INFO_V1(mtm_get_trans_by_gid);
@@ -156,6 +158,7 @@ static void	  MtmInitializeSequence(int64* start, int64* step);
 static void*  MtmCreateSavepointContext(void);
 static void	  MtmRestoreSavepointContext(void* ctx);
 static void	  MtmReleaseSavepointContext(void* ctx);
+static void   MtmSetRemoteFunction(char const* list, void* extra);
 
 static void MtmCheckClusterLock(void);
 static void MtmCheckSlots(void);
@@ -182,6 +185,7 @@ MtmConnectionInfo* MtmConnections;
 
 HTAB* MtmXid2State;
 HTAB* MtmGid2State;
+static HTAB* MtmRemoteFunctions;
 static HTAB* MtmLocalTables;
 
 static bool MtmIsRecoverySession;
@@ -234,6 +238,7 @@ bool  MtmDoReplication;
 char* MtmDatabaseName;
 char* MtmDatabaseUser;
 Oid	  MtmDatabaseId;
+bool  MtmBackgroundWorker;
 
 int	  MtmNodes;
 int	  MtmNodeId;
@@ -253,6 +258,7 @@ bool  MtmVolksWagenMode; /* Pretend to be normal postgres. This means skip some 
 TransactionId  MtmUtilityProcessedInXid;
 
 static char* MtmConnStrs;
+static char* MtmRemoteFunctionsList;
 static char* MtmClusterName;
 static int	 MtmQueueSize;
 static int	 MtmWorkers;
@@ -264,6 +270,7 @@ static bool	 MtmIgnoreTablesWithoutPk;
 static int	 MtmLockCount;
 static bool	 MtmMajorNode;
 static bool	 MtmBreakConnection;
+static bool  MtmBypass;
 static bool	 MtmClusterLocked;
 static bool	 MtmInsideTransaction;
 static bool  MtmReferee;
@@ -317,12 +324,15 @@ void MtmReleaseLocks(void)
  * locks[N+1..2*N] are used to synchronize access to distributed lock graph at each node
  * -------------------------------------------
  */
+
+//#define DEBUG_MTM_LOCK 1
+
+#if DEBUG_MTM_LOCK
 static timestamp_t MtmLockLastReportTime;
 static timestamp_t MtmLockElapsedWaitTime;
 static timestamp_t MtmLockMaxWaitTime;
 static size_t      MtmLockHitCount;
-
-//#define DEBUG_MTM_LOCK 1
+#endif
 
 void MtmLock(LWLockMode mode)
 {
@@ -768,6 +778,11 @@ MtmAdjustOldestXid(TransactionId xid)
 			Mtm->transListHead = prev;
 		}
 	}
+
+	if (!MyReplicationSlot) {
+		MtmCheckSlots();
+	}
+
 	return xid;
 }
 
@@ -889,7 +904,7 @@ MtmIsUserTransaction()
 		IsNormalProcessingMode() &&
 		MtmDoReplication &&
 		!am_walsender &&
-		!IsBackgroundWorker &&
+		!MtmBackgroundWorker &&
 		!IsAutoVacuumWorkerProcess();
 }
 
@@ -910,7 +925,7 @@ MtmResetTransaction()
 	x->gid[0] = '\0';
 }
 
-
+#if 0
 static const char* const isoLevelStr[] =
 {
 	"read uncommitted",
@@ -918,6 +933,7 @@ static const char* const isoLevelStr[] =
 	"repeatable read",
 	"serializable"
 };
+#endif
 
 bool MtmTransIsActive(void)
 {
@@ -945,7 +961,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		x->isTwoPhase = false;
 		x->isTransactionBlock = IsTransactionBlock();
 		/* Application name can be changed using PGAPPNAME environment variable */
-		if (x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0) {
+		if (x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0 && !MtmBypass) {
 			/* Reject all user's transactions at offline cluster.
 			 * Allow execution of transaction by bg-workers to make it possible to perform recovery.
 			 */
@@ -964,7 +980,8 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		 */
 		if (x->isDistributed
 			&& !MtmClusterLocked /* do not lock myself */
-			&& strcmp(application_name, MULTIMASTER_ADMIN) != 0)
+			&& strcmp(application_name, MULTIMASTER_ADMIN) != 0
+			&& !MtmBypass)
 		{
 			MtmCheckClusterLock();
 		}
@@ -1546,9 +1563,6 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 	MtmUnlock();
 
 	MtmResetTransaction();
-	if (!MyReplicationSlot) {
-		MtmCheckSlots();
-	}
 	if (MtmClusterLocked) {
 		MtmUnlockCluster();
 	}
@@ -1841,8 +1855,7 @@ csn_t MtmGetTransactionCSN(TransactionId xid)
 	csn_t csn;
 	MtmLock(LW_SHARED);
 	ts = (MtmTransState*)hash_search(MtmXid2State, &xid, HASH_FIND, NULL);
-	Assert(ts != NULL);
-	csn = ts->csn;
+	csn = ts ? ts->csn : INVALID_CSN;
 	MtmUnlock();
 	return csn;
 }
@@ -1997,7 +2010,7 @@ static void MtmDisableNode(int nodeId)
  */
 static void MtmEnableNode(int nodeId)
 {
-	if (BIT_SET(Mtm->disabledNodeMask, nodeId-1)) {
+	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
 		BIT_CLEAR(Mtm->disabledNodeMask, nodeId-1);
 		BIT_CLEAR(Mtm->reconnectMask, nodeId-1);
 		BIT_SET(Mtm->recoveredNodeMask, nodeId-1);
@@ -2561,7 +2574,7 @@ MtmCreateLocalTableMap(void)
 		"MtmLocalTables",
 		MULTIMASTER_MAX_LOCAL_TABLES, MULTIMASTER_MAX_LOCAL_TABLES,
 		&info,
-		HASH_ELEM
+		HASH_ELEM | HASH_BLOBS
 	);
 	return htab;
 }
@@ -2585,8 +2598,8 @@ void MtmMakeTableLocal(char const* schema, char const* name)
 
 
 typedef struct {
-	text schema;
-	text name;
+	NameData schema;
+	NameData name;
 } MtmLocalTablesTuple;
 
 static void MtmLoadLocalTables(void)
@@ -2606,7 +2619,7 @@ static void MtmLoadLocalTables(void)
 		while (HeapTupleIsValid(tuple = systable_getnext(scan)))
 		{
 			MtmLocalTablesTuple	*t = (MtmLocalTablesTuple*) GETSTRUCT(tuple);
-			MtmMakeTableLocal(text_to_cstring(&t->schema), text_to_cstring(&t->name));
+			MtmMakeTableLocal(NameStr(t->schema), NameStr(t->name));
 		}
 
 		systable_endscan(scan);
@@ -2723,6 +2736,7 @@ static void MtmInitialize()
 			Mtm->nodes[i].originId = InvalidRepOriginId;
 			Mtm->nodes[i].timeline = 0;
 			Mtm->nodes[i].nHeartbeats = 0;
+			Mtm->nodes[i].slotDeleted = false;
 		}
 		Mtm->nodes[MtmNodeId-1].originId = DoNotReplicateId;
 		/* All transaction originated from the current node should be ignored during recovery */
@@ -2754,6 +2768,48 @@ MtmShmemStartup(void)
 	MtmInitialize();
 }
 
+static void MtmSetRemoteFunction(char const* list, void* extra)
+{
+	if (MtmRemoteFunctions) {
+		hash_destroy(MtmRemoteFunctions);
+		MtmRemoteFunctions = NULL;
+	}
+}
+
+static void MtmInitializeRemoteFunctionsMap()
+{
+	HASHCTL info;
+	char* p, *q;
+	int n_funcs = 1;
+	FuncCandidateList clist;
+
+	for (p = MtmRemoteFunctionsList; (q = strchr(p, ',')) != NULL; p = q + 1, n_funcs++);
+
+	Assert(MtmRemoteFunctions == NULL);
+
+	memset(&info, 0, sizeof(info));
+	info.entrysize = info.keysize = sizeof(Oid);
+	info.hcxt = TopMemoryContext;
+	MtmRemoteFunctions = hash_create("MtmRemoteFunctions", n_funcs, &info,
+									 HASH_ELEM | HASH_BLOBS | HASH_CONTEXT);
+
+	p = pstrdup(MtmRemoteFunctionsList);
+	do {
+		q = strchr(p, ',');
+		if (q != NULL) {
+			*q++ = '\0';
+		}
+		clist = FuncnameGetCandidates(stringToQualifiedNameList(p), -1, NIL, false, false, true);
+		if (clist == NULL) {
+			MTM_ELOG(ERROR, "Failed to lookup function %s", p);
+		} else if (clist->next != NULL) {
+			MTM_ELOG(ERROR, "Ambigious function %s", p);
+		}
+		hash_search(MtmRemoteFunctions, &clist->oid, HASH_ENTER, NULL);
+		p = q;
+	} while (p != NULL);
+}
+
 /*
  * Parse node connection string.
  * This function is called at cluster startup and while adding new cluster node
@@ -2770,6 +2826,10 @@ void MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr)
 		MTM_ELOG(ERROR, "Too long (%d) connection string '%s': limit is %d",
 			 connStrLen, connStr, MULTIMASTER_MAX_CONN_STR_SIZE-1);
 	}
+
+	while(isspace(*connStr))
+		connStr++;
+
 	strcpy(conn->connStr, connStr);
 
 	host = strstr(connStr, "host=");
@@ -3156,6 +3216,20 @@ _PG_init(void)
 		NULL,
 		NULL
 	);
+
+	DefineCustomBoolVariable(
+		"multimaster.bypass",
+		"Allow access to offline multimaster node",
+		NULL,
+		&MtmBypass,
+		false,
+		PGC_USERSET, /* context */
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
 	DefineCustomBoolVariable(
 		"multimaster.major_node",
 		"Node which forms a majority in case of partitioning in cliques with equal number of nodes",
@@ -3363,6 +3437,19 @@ _PG_init(void)
 		0,			 /* flags */
 		NULL,		 /* GucStringCheckHook check_hook */
 		NULL,		 /* GucStringAssignHook assign_hook */
+		NULL		 /* GucShowHook show_hook */
+	);
+
+	DefineCustomStringVariable(
+		"multimaster.remote_functions",
+		"List of fnuction names which should be executed remotely at all multimaster nodes instead of executing them at master and replicating result of their work",
+		NULL,
+		&MtmRemoteFunctionsList,
+		"lo_create,lo_unlink",
+		PGC_USERSET, /* context */
+		0,			 /* flags */
+		NULL,		 /* GucStringCheckHook check_hook */
+		MtmSetRemoteFunction,		 /* GucStringAssignHook assign_hook */
 		NULL		 /* GucShowHook show_hook */
 	);
 
@@ -3656,7 +3743,7 @@ void MtmRecoverNode(int nodeId)
 		MTM_ELOG(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nAllNodes);
 	}
 	MtmLock(LW_EXCLUSIVE);
-	if (BIT_SET(Mtm->stoppedNodeMask, nodeId-1))
+	if (BIT_CHECK(Mtm->stoppedNodeMask, nodeId-1))
 	{
 		Assert(BIT_CHECK(Mtm->disabledNodeMask, nodeId-1));
 		BIT_CLEAR(Mtm->stoppedNodeMask, nodeId-1);
@@ -3668,6 +3755,36 @@ void MtmRecoverNode(int nodeId)
 	{
 		MtmBroadcastUtilityStmt(psprintf("select pg_create_logical_replication_slot('" MULTIMASTER_SLOT_PATTERN "', '" MULTIMASTER_NAME "')", nodeId), true);
 		MtmBroadcastUtilityStmt(psprintf("select mtm.recover_node(%d)", nodeId), true);
+	}
+}
+
+/*
+ * Resume previosly stopped node.
+ * This function creates logical replication slot for the node which will collect
+ * all changes which should be sent to this node from this moment.
+ */
+void MtmResumeNode(int nodeId)
+{
+	if (nodeId <= 0 || nodeId > Mtm->nAllNodes)
+	{
+		MTM_ELOG(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nAllNodes);
+	}
+	MtmLock(LW_EXCLUSIVE);
+	if (BIT_CHECK(Mtm->stalledNodeMask, nodeId-1))
+	{
+		MtmUnlock();
+		MTM_ELOG(ERROR, "Node %d can not be resumed because it's replication slot is dropped", nodeId);
+	}
+	if (BIT_CHECK(Mtm->stoppedNodeMask, nodeId-1))
+	{
+		Assert(BIT_CHECK(Mtm->disabledNodeMask, nodeId-1));
+		BIT_CLEAR(Mtm->stoppedNodeMask, nodeId-1);
+	}
+	MtmUnlock();
+
+	if (!MtmIsBroadcast())
+	{
+		MtmBroadcastUtilityStmt(psprintf("select mtm.resume_node(%d)", nodeId), true);
 	}
 }
 
@@ -3752,8 +3869,8 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 				if (Mtm->nodes[MtmReplicationNodeId-1].restartLSN < recoveredLSN) {
 					MTM_LOG1("Advance restartLSN for node %d from %llx to %llx (MtmReplicationStartupHook)",
 							 MtmReplicationNodeId, Mtm->nodes[MtmReplicationNodeId-1].restartLSN, recoveredLSN);
-					Assert(Mtm->nodes[MtmReplicationNodeId-1].restartLSN == INVALID_LSN
-						   || recoveredLSN < Mtm->nodes[MtmReplicationNodeId-1].restartLSN + MtmMaxRecoveryLag);
+					// Assert(Mtm->nodes[MtmReplicationNodeId-1].restartLSN == INVALID_LSN
+					// 	   || recoveredLSN < Mtm->nodes[MtmReplicationNodeId-1].restartLSN + MtmMaxRecoveryLag);
 					Mtm->nodes[MtmReplicationNodeId-1].restartLSN = recoveredLSN;
 				}
 			} else {
@@ -3763,6 +3880,12 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	}
 	MTM_LOG1("Startup of logical replication to node %d", MtmReplicationNodeId);
 	MtmLock(LW_EXCLUSIVE);
+
+	if (BIT_CHECK(Mtm->stalledNodeMask, MtmReplicationNodeId-1)) {
+		MtmUnlock();
+		MTM_ELOG(ERROR, "Stalled node %d tries to initiate recovery", MtmReplicationNodeId);
+	}
+
 	if (BIT_CHECK(Mtm->stoppedNodeMask, MtmReplicationNodeId-1)) {
 		MTM_ELOG(WARNING, "Stopped node %d tries to initiate recovery", MtmReplicationNodeId);
 		do {
@@ -3820,7 +3943,7 @@ lsn_t MtmGetFlushPosition(int nodeId)
  * Keep track of progress of WAL writer.
  * We need to notify WAL senders at other nodes which logical records
  * are flushed to the disk and so can survive failure. In asynchronous commit mode
- * WAL is flushed by WAL writer. Current flish position can be obtained by GetFlushRecPtr().
+ * WAL is flushed by WAL writer. Current flush position can be obtained by GetFlushRecPtr().
  * So on applying new logical record we insert it in the MtmLsnMapping and compare
  * their poistions in local WAL log with current flush position.
  * The records which are flushed to the disk by WAL writer are removed from the list
@@ -4146,6 +4269,14 @@ mtm_recover_node(PG_FUNCTION_ARGS)
 {
 	int nodeId = PG_GETARG_INT32(0);
 	MtmRecoverNode(nodeId);
+	PG_RETURN_VOID();
+}
+
+Datum
+mtm_resume_node(PG_FUNCTION_ARGS)
+{
+	int nodeId = PG_GETARG_INT32(0);
+	MtmResumeNode(nodeId);
 	PG_RETURN_VOID();
 }
 
@@ -4750,8 +4881,12 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 			} else {
 				Assert(x->isActive);
 				if (x->status == TRANSACTION_STATUS_ABORTED) {
+					MtmTransState* ts;
+					ts = (MtmTransState*) hash_search(MtmXid2State, &(x->xid), HASH_FIND, NULL);
+					Assert(ts);
+
 					FinishPreparedTransaction(x->gid, false);
-					MTM_ELOG(ERROR, "Transaction %s (%llu) is aborted by DTM", x->gid, (long64)x->xid);
+					MTM_ELOG(ERROR, "Transaction %s (%llu) is aborted on node %d. Check its log to see error details.", x->gid, (long64)x->xid, ts->aborted_by_node);
 				} else {
 					FinishPreparedTransaction(x->gid, true);
 					MTM_LOG2("Distributed transaction %s (%lld) is committed at %lld with LSN=%lld", x->gid, (long64)x->xid, MtmGetCurrentTime(), (long64)GetXLogInsertRecPtr());
@@ -4806,7 +4941,7 @@ static void MtmGucInit(void)
 	 */
 	oldcontext = MemoryContextSwitchTo(TopMemoryContext);
 	current_role = GetConfigOptionByName("session_authorization", NULL, false);
-	if (strcmp(MtmDatabaseUser, current_role) != 0)
+	if (current_role && *current_role && strcmp(MtmDatabaseUser, current_role) != 0)
 		MtmGucUpdate("session_authorization", current_role);
 	MemoryContextSwitchTo(oldcontext);
 }
@@ -4900,12 +5035,19 @@ char* MtmGucSerialize(void)
 {
 	StringInfo serialized_gucs;
 	dlist_iter iter;
-	int nvars = 0;
+	const char *search_path;
 
 	if (!MtmGucHash)
 		MtmGucInit();
 
 	serialized_gucs = makeStringInfo();
+
+	/*
+	 * Crutch for scheduler. It sets search_path through SetConfigOption()
+	 * so our callback do not react on that.
+	 */
+	search_path = GetConfigOption("search_path", false, true);
+	appendStringInfo(serialized_gucs, "SET search_path TO %s; ", search_path);
 
 	dlist_foreach(iter, &MtmGucList)
 	{
@@ -4916,7 +5058,7 @@ char* MtmGucSerialize(void)
 		appendStringInfoString(serialized_gucs, " TO ");
 
 		/* quite a crutch */
-		if (strstr(cur_entry->key, "_mem") != NULL || *(cur_entry->value) == '\0')
+		if (strstr(cur_entry->key, "_mem") != NULL || *(cur_entry->value) == '\0' || strchr(cur_entry->value, ',') != NULL)
 		{
 			appendStringInfoString(serialized_gucs, "'");
 			appendStringInfoString(serialized_gucs, cur_entry->value);
@@ -4927,7 +5069,6 @@ char* MtmGucSerialize(void)
 			appendStringInfoString(serialized_gucs, cur_entry->value);
 		}
 		appendStringInfoString(serialized_gucs, "; ");
-		nvars++;
 	}
 
 	return serialized_gucs->data;
@@ -4947,10 +5088,7 @@ static void MtmProcessDDLCommand(char const* queryString, bool transactional)
 	if (transactional)
 	{
 		char *gucCtx = MtmGucSerialize();
-		if (*gucCtx)
-			queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s; %s", gucCtx, queryString);
-		else
-			queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s", queryString);
+		queryString = psprintf("RESET SESSION AUTHORIZATION; reset all; %s %s", gucCtx, queryString);
 
 		/* Transactional DDL */
 		MTM_LOG3("Sending DDL: %s", queryString);
@@ -5048,6 +5186,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		case T_CheckPointStmt:
 		case T_ReindexStmt:
 		case T_ExplainStmt:
+		case T_AlterSystemStmt:
 			skipCommand = true;
 			break;
 
@@ -5259,7 +5398,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	if (!skipCommand && !MtmTx.isReplicated && (context == PROCESS_UTILITY_TOPLEVEL || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
 	{
 		MtmUtilityProcessedInXid = GetCurrentTransactionId();
-		if (context == PROCESS_UTILITY_TOPLEVEL) {
+		if (context == PROCESS_UTILITY_TOPLEVEL || !ActivePortal) {
 			MtmProcessDDLCommand(queryString, true);
 		} else {
 			MtmProcessDDLCommand(ActivePortal->sourceText, true);
@@ -5318,29 +5457,28 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 static void
 MtmExecutorStart(QueryDesc *queryDesc, int eflags)
 {
-	bool ddl_generating_call = false;
-	ListCell   *tlist;
-
-	foreach(tlist, queryDesc->plannedstmt->planTree->targetlist)
+	if (!MtmTx.isReplicated && ActivePortal)
 	{
-		TargetEntry *tle = (TargetEntry *) lfirst(tlist);
+		ListCell   *tlist;
 
-		if (tle->resname && strcmp(tle->resname, "lo_create") == 0)
+		if (!MtmRemoteFunctions)
 		{
-			ddl_generating_call = true;
-			break;
+			MtmInitializeRemoteFunctionsMap();
 		}
 
-		if (tle->resname && strcmp(tle->resname, "lo_unlink") == 0)
+		foreach(tlist, queryDesc->plannedstmt->planTree->targetlist)
 		{
-			ddl_generating_call = true;
-			break;
+			TargetEntry *tle = (TargetEntry *) lfirst(tlist);
+			if (tle->expr && IsA(tle->expr, FuncExpr))
+			{
+				if (hash_search(MtmRemoteFunctions, &((FuncExpr*)tle->expr)->funcid, HASH_FIND, NULL))
+				{
+					MtmProcessDDLCommand(ActivePortal->sourceText, true);
+					break;
+				}
+			}
 		}
 	}
-
-	if (ddl_generating_call && !MtmTx.isReplicated)
-		MtmProcessDDLCommand(ActivePortal->sourceText, true);
-
 	if (PreviousExecutorStartHook != NULL)
 		PreviousExecutorStartHook(queryDesc, eflags);
 	else

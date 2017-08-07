@@ -314,7 +314,8 @@ static void MtmCheckResponse(MtmArbiterMessage* resp)
 	} else { 
 		BIT_CLEAR(Mtm->currentLockNodeMask, resp->node-1);
 	}
-	if (BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1) 
+	if (
+		( BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1) || Mtm->status == MTM_IN_MINORITY )
 		&& !BIT_CHECK(Mtm->disabledNodeMask, resp->node-1)
 		&& Mtm->status != MTM_RECOVERY
 		&& Mtm->status != MTM_RECOVERED
@@ -714,6 +715,8 @@ static void MtmSender(Datum arg)
 	int nNodes = MtmMaxNodes;
 	int i;
 
+	MtmBackgroundWorker = true;
+
 	MtmBuffer* txBuffer = (MtmBuffer*)palloc0(sizeof(MtmBuffer)*nNodes);
 	MTM_ELOG(LOG, "Start arbiter sender %d", MyProcPid);
 	InitializeTimeouts();
@@ -801,6 +804,8 @@ static void MtmMonitor(Datum arg)
 	pqsignal(SIGQUIT, SetStop);
 	pqsignal(SIGTERM, SetStop);
 	
+	MtmBackgroundWorker = true;
+
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
 
@@ -837,7 +842,9 @@ static void MtmReceiver(Datum arg)
 	pqsignal(SIGINT, SetStop);
 	pqsignal(SIGQUIT, SetStop);
 	pqsignal(SIGTERM, SetStop);
-	
+
+	MtmBackgroundWorker = true;
+
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
 
@@ -1075,6 +1082,7 @@ static void MtmReceiver(Datum arg)
 							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
 								MTM_LOG1("Arbiter receive abort message for transaction %s (%llu) from node %d", ts->gid, (long64)ts->xid, node);
 								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+								ts->aborted_by_node = node;
 								MtmAbortTransaction(ts);
 							}
 							if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
