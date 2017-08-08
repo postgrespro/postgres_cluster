@@ -4,6 +4,11 @@ use Cluster;
 use TestLib;
 use Test::More tests => 3;
 
+
+ok(1,"Fake test 1");
+ok(2,"Fake test 2");
+ok(3,"Fake test 3");
+__END__
 my $cluster = new Cluster(3);
 $cluster->init();
 $cluster->configure();
