@@ -105,10 +105,9 @@ rumFillScanEntry(RumScanOpaque so, OffsetNumber attnum,
 	scanEntry->strategy = strategy;
 	scanEntry->searchMode = searchMode;
 	scanEntry->attnum = scanEntry->attnumOrig = attnum;
-	scanEntry->forceUseBitmap = false;
 
 	scanEntry->buffer = InvalidBuffer;
-	RumItemSetMin(&scanEntry->curRumKey);
+	RumItemSetMin(&scanEntry->curItem);
 	scanEntry->matchSortstate = NULL;
 	scanEntry->stack = NULL;
 	scanEntry->scanWithAddInfo = false;
@@ -534,7 +533,6 @@ rumNewScanKey(IndexScanDesc scan)
 
 	so->naturalOrder = NoMovementScanDirection;
 	so->secondPass = false;
-	so->tbm = NULL;
 	so->entriesIncrIndex = -1;
 	so->norderbys = scan->numberOfOrderBys;
 	so->willSort = false;
@@ -547,7 +545,7 @@ rumNewScanKey(IndexScanDesc scan)
 	oldCtx = MemoryContextSwitchTo(so->keyCtx);
 
 	/* if no scan keys provided, allocate extra EVERYTHING RumScanKey */
-	so->keys = (RumScanKey*)
+	so->keys = (RumScanKey *)
 		palloc((Max(scan->numberOfKeys, 1) + scan->numberOfOrderBys) *
 			   sizeof(*so->keys));
 	so->nkeys = 0;
