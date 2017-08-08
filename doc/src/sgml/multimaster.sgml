@@ -104,7 +104,23 @@
       </listitem>
       <listitem>
         <para>
-          Sequence generation. To avoid conflicts between unique identifiers on different nodes, <filename>multimaster</filename> modifies the default behavior of sequence generators. For each node, ID generation is started with the node number and is incremented by the number of nodes. For example, in a three-node cluster, 1, 4, and 7 IDs are allocated to the objects written onto the first node, while 2, 5, and 8 IDs are reserved for the second node. If you change the number of nodes in the cluster, the incrementation interval for new IDs is adjusted accordingly. Thus, the generated sequence values are not monotonic.
+          In a multi-master cluster, the <literal>ALTER SYSTEM</literal> command only affects the configuration of the current node.
+          If you would like to change configuration parameters across the whole database cluster, you need to run this command on
+          each node.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          Sequence generation. To avoid conflicts between unique identifiers on different nodes,
+          <filename>multimaster</filename> modifies the default behavior of sequence generators.
+          By default, ID generation on each node is started with this node number and is
+          incremented by the number of nodes. For example, in a three-node cluster, 1, 4, and 7
+          IDs are allocated to the objects written onto the first node, while 2, 5, and 8 IDs are reserved
+          for the second node. If you change the number of nodes in the cluster, the incrementation
+          interval for new IDs is adjusted accordingly. Thus, the generated sequence values are not
+          monotonic. If it is cricital to get a monotonically increasing sequence cluster-wide, you can
+          set the <link linkend="mtm-monotonic-sequences"><varname>multimaster.monotonic_sequences</varname></link>
+          to <literal>true</literal>.
         </para>
       </listitem>
       <listitem>
@@ -228,8 +244,8 @@
       heartbeats to the node are lost in a row, this node is kicked out
       of the cluster to allow writes to the remaining alive nodes. You
       can configure the heartbeat frequency and the response timeout in
-      the <literal>multimaster.heartbeat_send_timeout</literal> and
-      <literal>multimaster.heartbeat_recv_timeout</literal> parameters,
+      the <varname>multimaster.heartbeat_send_timeout</varname> and
+      <varname>multimaster.heartbeat_recv_timeout</varname> parameters,
       respectively.
     </para>
     <para>
@@ -263,12 +279,12 @@
           If you try to access a disconnected node, <filename>multimaster</filename> returns an error
           message indicating the current status of the node. To prevent stale reads, read-only queries are also forbidden.
           Additionally, you can break connections between the disconnected node and the clients using the
-          <link linkend="mtm-break-connection">multimaster.break_connection</link> variable.
+          <link linkend="mtm-break-connection"><varname>multimaster.break_connection</varname></link> variable.
         </para>
     </note>
     <para>
       If required, you can override this behavior for one of the nodes using the
-      <link linkend="mtm-major-node">multimaster.major_node</link> variable.
+      <link linkend="mtm-major-node"><varname>multimaster.major_node</varname></link> variable.
       In this case, the node will continue working even if it is isolated.
     </para>
     <para>
@@ -374,7 +390,8 @@ where <replaceable>datadir</> is the directory containing the database cluster. 
 shared_preload_libraries = 'multimaster'
 </programlisting>
 <tip>
-<para>If the <varname>shared_preload_libaries</varname> variable is already defined in <filename>postgresql.auto.conf</filename>, you will need to modify its value using the <literal>ALTER SYSTEM</literal> command. For details, see <xref linkend="config-setting-configuration-file">.
+<para>If the <varname>shared_preload_libaries</varname> variable is already defined in <filename>postgresql.auto.conf</filename>, you will need to modify its value using the <xref linkend="sql-altersystem"> command. For details, see <xref linkend="config-setting-configuration-file">. 
+Note that in a multi-master cluster, the <literal>ALTER SYSTEM</literal> command only affects the configuration of the node from which it was run.
 </para>
 </tip>
 </listitem>
@@ -493,7 +510,7 @@ CREATE EXTENSION multimaster;</programlisting></para>
       the <structname>mtm.get_cluster_state()</structname> view:
     </para>
     <programlisting>
-mtm.get_cluster_state();
+SELECT mtm.get_cluster_state();
 </programlisting>
     <para>
       If <literal>liveNodes</literal> is equal to
@@ -604,7 +621,7 @@ mtm.get_cluster_state();
     </listitem>
     <listitem>
       <para>
-        <link linkend="multimaster-excluding-nodes-from-the-cluster">Excluding Nodes
+        <link linkend="multimaster-removing-nodes-from-the-cluster">Removing Nodes
         from the Cluster</link>
       </para>
     </listitem>
@@ -624,13 +641,13 @@ mtm.get_cluster_state();
       To check node-specific information, use <literal>mtm.get_nodes_state()</literal>:
     </para>
     <programlisting>
-mtm.get_nodes_state();
+SELECT mtm.get_nodes_state();
 </programlisting>
       <para>To check the status of the whole cluster, use the
       <literal>mtm.get_cluster_state()</literal> view:
     </para>
     <programlisting>
-mtm.get_cluster_state();
+SELECT mtm.get_cluster_state();
 </programlisting>
       <para>For details on all the returned information, see <xref linkend="multimaster-functions">.
     </para>
@@ -675,7 +692,7 @@ mtm.get_cluster_state();
           In <literal>psql</literal> connected to any alive node, run:
         </para>
         <programlisting>
-mtm.add_node('dbname=mydb user=myuser host=node4');
+SELECT mtm.add_node('dbname=mydb user=myuser host=node4');
 </programlisting>
         <para>
           This command changes the cluster configuration on all nodes
@@ -702,8 +719,10 @@ pg_basebackup -D <replaceable>datadir</replaceable> -h node1 -x
         </para>
         <programlisting>
 multimaster.node_id = 4
-multimaster.conn_strings = 'dbname=mydb user=myuser host=node1,dbname=mydb user=myuser host=node2,
-                            dbname=mydb user=myuser host=node3,dbname=mydb user=myuser host=node4'
+multimaster.conn_strings = 'dbname=mydb user=myuser host=node1,
+                            dbname=mydb user=myuser host=node2,
+                            dbname=mydb user=myuser host=node3,
+                            dbname=mydb user=myuser host=node4'
 </programlisting>
       </listitem>
       <listitem>
@@ -741,18 +760,22 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
       <para><link linkend="multimaster-monitoring-cluster-status">Monitoring Cluster
       Status</link></para>
   </sect3>
-  <sect3 id="multimaster-excluding-nodes-from-the-cluster">
-    <title>Excluding Nodes from the Cluster</title>
+  <sect3 id="multimaster-removing-nodes-from-the-cluster">
+    <title>Removing Nodes from the Cluster</title>
     <para>
-      To exclude a node from the cluster, use the
-      <literal>mtm.stop_node()</literal> function. For example, to
-      exclude node 3, run the following command on any other node:
+      <filename>multimaster</filename> provides the <literal>mtm.stop_node()</literal>
+      function that can temporarily or permanently remove nodes from the cluster.
+    </para>
+    <para>
+      To temporarily exclude a node from the cluster, run the
+      <literal>mtm.stop_node()</literal> function specifying the node ID. For example, to
+      exclude node 3, run the following command on any other node of the cluster:
     </para>
     <programlisting>
 SELECT mtm.stop_node(3);
 </programlisting>
     <para>
-      This excludes node 3 from the cluster and stops replication to
+      This command excludes node 3 from the cluster and stops replication to
       this node. While the WAL lag between the node and the current cluster state 
       is less than the <varname>multimaster.max_recovery_lag</varname> value,
       you can restore the node using the <function>mtm.recover_node</function> function.
@@ -767,7 +790,7 @@ SELECT mtm.stop_node(3);
     </para>
     </note>
     <para>
-      If you would like to permanently remove the node from the cluster, run the
+      To permanently drop the node from the cluster, run the
       <literal>mtm.stop_node()</literal> function with the <literal>drop_slot</literal> parameter
       set to <literal>true</literal>:
     </para>
@@ -794,7 +817,7 @@ SELECT mtm.stop_node(3, drop_slot true);
           In <literal>psql</literal> connected to any alive node, create a new replication slot for the disconnected node with the following command:
         </para>
         <programlisting>
-mtm.recover_node(2);
+SELECT mtm.recover_node(2);
 </programlisting>
 <para>where 2 is the ID of the disconnected node specified in the <varname>multimaster.node_id</varname> variable.</para>
       </listitem>
@@ -938,8 +961,8 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
     <listitem>
       <para>Node with this flag continues working even if it cannot access the majority of other nodes.
       This is needed to break the symmetry if there is an even number of alive nodes in the cluster.
-      For example, a cluster with three nodes continues working if one of the nodes has crashed.
-      If connection between the remaining nodes is lost, the node with <varname>multimaster.major_node</varname> = <literal>true</literal> will continue working.
+      For example, in a cluster of three nodes, if one of the nodes has crashed and
+      the connection between the remaining nodes is lost, the node with <varname>multimaster.major_node</varname> = <literal>true</literal> will continue working.
       </para>
       <important>
         <para>This parameter should be used with caution. Only one node in the cluster
@@ -973,6 +996,40 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
       <para>The maximal size of transaction, in MB. When this threshold is reached, the transaction is written to the disk.
       </para>
       <para>Default: 100
+      </para>
+    </listitem>
+  </varlistentry>
+  <varlistentry id="mtm-monotonic-sequences">
+    <term><varname>multimaster.monotonic_sequences</varname>
+      <indexterm><primary><varname>multimaster.monotonic_sequences</varname></primary>
+      </indexterm>
+    </term>
+    <listitem>
+      <para>Defines the sequence generation mode for unique identifiers. This variable can
+      take the following values:
+      <itemizedlist>
+      <listitem>
+      <para>
+      <literal>false</literal> (default) &mdash;
+      ID generation on each node is started with this node number and is incremented by
+      the number of nodes. For example, in a three-node cluster, 1, 4, and 7 IDs are allocated to the objects written onto
+      the first node, while 2, 5, and 8 IDs are reserved for the second node. If you
+      change the number of nodes in the cluster, the incrementation interval for new IDs is adjusted accordingly.
+      </para>
+      </listitem>
+      <listitem>
+      <para>
+      <literal>true</literal> &mdash;
+      the generated sequence increases monotonically cluster-wide.
+      ID generation on each node is started with this node number and is incremented by
+      the number of nodes, but the values are omitted if they are smaller than the already generated IDs on another node.
+      For example, in a three-node cluster, if 1, 4 and 7 IDs are already allocated to the objects on
+      the first node, 2 and 5 IDs will be omitted on the second node. In this case, the first ID on the second node is 8.
+      Thus, the next generated ID is always higher than the previous one, regardless of the cluster node.
+      </para>
+      </listitem>
+      </itemizedlist>
+      <para>Default: <literal>false</literal>
       </para>
     </listitem>
   </varlistentry>
@@ -1108,9 +1165,9 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
 
     <varlistentry>
      <term>
-      <function>mtm.collect_cluster_state_info()</function>
+      <function>mtm.collect_cluster_info()</function>
       <indexterm>
-       <primary><function>mtm.collect_cluster_state_info</></primary>
+       <primary><function>mtm.collect_cluster_info</></primary>
       </indexterm>
      </term>
      <listitem>
@@ -1359,9 +1416,40 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
        <itemizedlist>
         <listitem>
          <para>
-         <parameter>table_name</parameter> &mdash; The table you would like to
+         <parameter>table_name</parameter> &mdash; the table you would like to
               exclude from the replication scheme.</para>
               <para>Type: <literal>regclass</literal></para>
+        </listitem>
+        </itemizedlist>
+      </para>
+      <para>
+      </para>
+     </listitem>
+    </varlistentry>
+        <varlistentry>
+     <term>
+      <function>mtm.copy_table(<parameter>table_name</parameter> <type>regclass</type>, <parameter>node_id</parameter> <type>integer</type>)</function>
+      <indexterm>
+       <primary><function>mtm.copy_table</></primary>
+      </indexterm>
+     </term>
+     <listitem>
+      <para>Copies the specified table to another node. You can use this function to restore the corrupted data
+      on one or more nodes of the cluster. This function must be called on the node from which the table is copied.
+      </para>
+      <para>
+       Arguments:
+       <itemizedlist>
+        <listitem>
+         <para>
+         <parameter>table_name</parameter> &mdash; the table you would like to
+              copy.</para>
+              <para>Type: <literal>regclass</literal></para>
+        </listitem>
+        <listitem>
+         <para>
+         <parameter>node_id</parameter> &mdash; the node to copy the table to.</para>
+              <para>Type: <literal>integer</literal></para>
         </listitem>
         </itemizedlist>
       </para>
