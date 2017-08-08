@@ -635,6 +635,21 @@ include_dir 'conf.d'
       </listitem>
      </varlistentry>
 
+     <varlistentry id="listen-rdma-addresses" xreflabel="listen_rdma_addresses">
+      <term><varname>listen_rdma_addresses</varname> (<type>string</type>)
+      <indexterm>
+       <primary><varname>listen_rdma_addresses</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Specifies the TCP/IP address(es) on which the server is to listen for new remote direct memory access (<literal>RDMA</literal>) connections via <literal>rsocket</literal> from client applications. The value takes the form of a comma-separated list of host names
+         and/or numeric IP addresses. The special entry <literal>*</>
+         corresponds to all available IP interfaces.
+       </para>
+      </listitem>
+     </varlistentry>
+
      <varlistentry id="guc-port" xreflabel="port">
       <term><varname>port</varname> (<type>integer</type>)
       <indexterm>

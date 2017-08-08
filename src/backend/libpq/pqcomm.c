@@ -73,7 +73,6 @@
 #include <grp.h>
 #include <unistd.h>
 #include <sys/file.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <netdb.h>
@@ -92,6 +91,7 @@
 #include "libpq/ip.h"
 #include "libpq/libpq.h"
 #include "miscadmin.h"
+#include "pg_socket.h"
 #include "storage/ipc.h"
 #include "utils/guc.h"
 #include "utils/memutils.h"
@@ -216,12 +216,55 @@ pq_init(void)
 	 * infinite recursion.
 	 */
 #ifndef WIN32
-	if (!pg_set_noblock(MyProcPort->sock))
+	if (!pg_set_noblock(MyProcPort->sock, MyProcPort->isRsocket))
 		ereport(COMMERROR,
 				(errmsg("could not set socket to nonblocking mode: %m")));
 #endif
 
-	FeBeWaitSet = CreateWaitEventSet(TopMemoryContext, 3);
+#ifdef WITH_RSOCKET
+	if (MyProcPort->isRsocket)
+		FeBeWaitSet = CreateWaitEventSetForRsocket(TopMemoryContext, 3);
+	else
+#endif
+		FeBeWaitSet = CreateWaitEventSet(TopMemoryContext, 3);
+	AddWaitEventToSet(FeBeWaitSet, WL_SOCKET_WRITEABLE, MyProcPort->sock,
+					  NULL, NULL);
+	AddWaitEventToSet(FeBeWaitSet, WL_LATCH_SET, -1, MyLatch, NULL);
+	AddWaitEventToSet(FeBeWaitSet, WL_POSTMASTER_DEATH, -1, NULL, NULL);
+}
+
+/* --------------------------------
+ *		pq_free - re-initialize libpq at backend startup
+ * --------------------------------
+ */
+void
+pq_reinit(void)
+{
+	/* Free common socket event set */
+	FreeWaitEventSet(FeBeWaitSet);
+
+	/*
+	 * In backends (as soon as forked) we operate the underlying socket in
+	 * nonblocking mode and use latches to implement blocking semantics if
+	 * needed. That allows us to provide safely interruptible reads and
+	 * writes.
+	 *
+	 * Use COMMERROR on failure, because ERROR would try to send the error to
+	 * the client, which might require changing the mode again, leading to
+	 * infinite recursion.
+	 */
+#ifndef WIN32
+	if (!pg_set_noblock(MyProcPort->sock, MyProcPort->isRsocket))
+		ereport(COMMERROR,
+				(errmsg("could not set socket to nonblocking mode: %m")));
+#endif
+
+#ifdef WITH_RSOCKET
+	if (MyProcPort->isRsocket)
+		FeBeWaitSet = CreateWaitEventSetForRsocket(TopMemoryContext, 3);
+	else
+#endif
+		FeBeWaitSet = CreateWaitEventSet(TopMemoryContext, 3);
 	AddWaitEventToSet(FeBeWaitSet, WL_SOCKET_WRITEABLE, MyProcPort->sock,
 					  NULL, NULL);
 	AddWaitEventToSet(FeBeWaitSet, WL_LATCH_SET, -1, MyLatch, NULL);
@@ -300,6 +343,7 @@ socket_close(int code, Datum arg)
 		 * though.
 		 */
 		MyProcPort->sock = PGINVALID_SOCKET;
+		MyProcPort->isRsocket = false;
 	}
 }
 
@@ -330,7 +374,8 @@ socket_close(int code, Datum arg)
 int
 StreamServerPort(int family, char *hostName, unsigned short portNumber,
 				 char *unixSocketDir,
-				 pgsocket ListenSocket[], int MaxListen)
+				 pgsocket ListenSocket[], bool *ListenRdma, int MaxListen,
+				 bool isRsocket)
 {
 	pgsocket	fd;
 	int			err;
@@ -560,6 +605,8 @@ StreamServerPort(int family, char *hostName, unsigned short portNumber,
 			continue;
 		}
 		ListenSocket[listen_index] = fd;
+		if (ListenRdma)
+			ListenRdma[listen_index] = isRsocket;
 		added++;
 	}
 
@@ -1684,13 +1731,23 @@ pq_getkeepalivesidle(Port *port)
 #ifndef WIN32
 		ACCEPT_TYPE_ARG3 size = sizeof(port->default_keepalives_idle);
 
-		if (getsockopt(port->sock, IPPROTO_TCP, PG_TCP_KEEPALIVE_IDLE,
-					   (char *) &port->default_keepalives_idle,
-					   &size) < 0)
+#ifdef TCP_KEEPIDLE
+		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPIDLE,
+						  (char *) &port->default_keepalives_idle,
+						  &size, port->isRsocket) < 0)
+		{
+			elog(LOG, "getsockopt(TCP_KEEPIDLE) failed: %m");
+			port->default_keepalives_idle = -1; /* don't know */
+		}
+#else
+		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPALIVE,
+						  (char *) &port->default_keepalives_idle,
+						  &size, port->isRsocket) < 0)
 		{
 			elog(LOG, "getsockopt(%s) failed: %m", PG_TCP_KEEPALIVE_IDLE_STR);
 			port->default_keepalives_idle = -1; /* don't know */
 		}
+#endif
 #else							/* WIN32 */
 		/* We can't get the defaults on Windows, so return "don't know" */
 		port->default_keepalives_idle = -1;
@@ -1729,12 +1786,21 @@ pq_setkeepalivesidle(int idle, Port *port)
 	if (idle == 0)
 		idle = port->default_keepalives_idle;
 
-	if (setsockopt(port->sock, IPPROTO_TCP, PG_TCP_KEEPALIVE_IDLE,
-				   (char *) &idle, sizeof(idle)) < 0)
+#ifdef TCP_KEEPIDLE
+	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPIDLE,
+					  (char *) &idle, sizeof(idle), port->isRsocket) < 0)
 	{
 		elog(LOG, "setsockopt(%s) failed: %m", PG_TCP_KEEPALIVE_IDLE_STR);
 		return STATUS_ERROR;
 	}
+#else
+	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPALIVE,
+					  (char *) &idle, sizeof(idle), port->isRsocket) < 0)
+	{
+		elog(LOG, "setsockopt(TCP_KEEPALIVE) failed: %m");
+		return STATUS_ERROR;
+	}
+#endif
 
 	port->keepalives_idle = idle;
 #else							/* WIN32 */
@@ -1766,9 +1832,9 @@ pq_getkeepalivesinterval(Port *port)
 #ifndef WIN32
 		ACCEPT_TYPE_ARG3 size = sizeof(port->default_keepalives_interval);
 
-		if (getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPINTVL,
-					   (char *) &port->default_keepalives_interval,
-					   &size) < 0)
+		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPINTVL,
+						  (char *) &port->default_keepalives_interval,
+						  &size, port->isRsocket) < 0)
 		{
 			elog(LOG, "getsockopt(%s) failed: %m", "TCP_KEEPINTVL");
 			port->default_keepalives_interval = -1;		/* don't know */
@@ -1810,8 +1876,8 @@ pq_setkeepalivesinterval(int interval, Port *port)
 	if (interval == 0)
 		interval = port->default_keepalives_interval;
 
-	if (setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPINTVL,
-				   (char *) &interval, sizeof(interval)) < 0)
+	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPINTVL,
+					  (char *) &interval, sizeof(interval), port->isRsocket) < 0)
 	{
 		elog(LOG, "setsockopt(%s) failed: %m", "TCP_KEEPINTVL");
 		return STATUS_ERROR;
@@ -1846,9 +1912,9 @@ pq_getkeepalivescount(Port *port)
 	{
 		ACCEPT_TYPE_ARG3 size = sizeof(port->default_keepalives_count);
 
-		if (getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPCNT,
-					   (char *) &port->default_keepalives_count,
-					   &size) < 0)
+		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPCNT,
+						  (char *) &port->default_keepalives_count,
+						  &size, port->isRsocket) < 0)
 		{
 			elog(LOG, "getsockopt(%s) failed: %m", "TCP_KEEPCNT");
 			port->default_keepalives_count = -1;		/* don't know */
@@ -1885,8 +1951,8 @@ pq_setkeepalivescount(int count, Port *port)
 	if (count == 0)
 		count = port->default_keepalives_count;
 
-	if (setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPCNT,
-				   (char *) &count, sizeof(count)) < 0)
+	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPCNT,
+					  (char *) &count, sizeof(count), port->isRsocket) < 0)
 	{
 		elog(LOG, "setsockopt(%s) failed: %m", "TCP_KEEPCNT");
 		return STATUS_ERROR;

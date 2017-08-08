@@ -42,7 +42,6 @@
 #include <mstcpip.h>
 #endif
 #else
-#include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #ifdef HAVE_NETINET_TCP_H
@@ -74,6 +73,7 @@ static int ldapServiceLookup(const char *purl, PQconninfoOption *options,
 
 #include "libpq/ip.h"
 #include "mb/pg_wchar.h"
+#include "pg_socket.h"
 
 #ifndef FD_CLOEXEC
 #define FD_CLOEXEC 1
@@ -328,6 +328,13 @@ static const internalPQconninfoOption PQconninfoOptions[] = {
 	{"failover_timeout", NULL, NULL, NULL,
 		"Failover Timeout", "", 10,
 	offsetof(struct pg_conn, failover_timeout)},
+
+#ifdef WITH_RSOCKET
+	{"with_rsocket", "WITH_RSOCKET", NULL, NULL,
+		"WithRsocket", "D", 5,
+	offsetof(struct pg_conn, with_rsocket)},
+#endif
+
 	/* Terminating entry --- MUST BE LAST */
 	{NULL, NULL, NULL, NULL,
 	NULL, NULL, 0}
@@ -434,7 +441,7 @@ pqDropConnection(PGconn *conn, bool flushInput)
 
 	/* Close the socket itself */
 	if (conn->sock != PGINVALID_SOCKET)
-		closesocket(conn->sock);
+		pg_closesocket(conn->sock, conn->isRsocket);
 	conn->sock = PGINVALID_SOCKET;
 
 	/* Optionally discard any unread data */
@@ -612,6 +619,95 @@ PQping(const char *conninfo)
 	return ret;
 }
 
+#ifdef WITH_RSOCKET
+/*
+ * Copy of parse_bool_with_len() from src/backend/utils/adt/bool.c
+ */
+static bool
+parse_bool(const char *value, bool *result)
+{
+	size_t		len = strlen(value);
+
+	switch (*value)
+	{
+		case 't':
+		case 'T':
+			if (pg_strncasecmp(value, "true", len) == 0)
+			{
+				if (result)
+					*result = true;
+				return true;
+			}
+			break;
+		case 'f':
+		case 'F':
+			if (pg_strncasecmp(value, "false", len) == 0)
+			{
+				if (result)
+					*result = false;
+				return true;
+			}
+			break;
+		case 'y':
+		case 'Y':
+			if (pg_strncasecmp(value, "yes", len) == 0)
+			{
+				if (result)
+					*result = true;
+				return true;
+			}
+			break;
+		case 'n':
+		case 'N':
+			if (pg_strncasecmp(value, "no", len) == 0)
+			{
+				if (result)
+					*result = false;
+				return true;
+			}
+			break;
+		case 'o':
+		case 'O':
+			/* 'o' is not unique enough */
+			if (pg_strncasecmp(value, "on", (len > 2 ? len : 2)) == 0)
+			{
+				if (result)
+					*result = true;
+				return true;
+			}
+			else if (pg_strncasecmp(value, "off", (len > 2 ? len : 2)) == 0)
+			{
+				if (result)
+					*result = false;
+				return true;
+			}
+			break;
+		case '1':
+			if (len == 1)
+			{
+				if (result)
+					*result = true;
+				return true;
+			}
+			break;
+		case '0':
+			if (len == 1)
+			{
+				if (result)
+					*result = false;
+				return true;
+			}
+			break;
+		default:
+			break;
+	}
+
+	if (result)
+		*result = false;		/* suppress compiler warning */
+	return false;
+}
+#endif
+
 /*
  *		PQconnectStartParams
  *
@@ -679,6 +775,24 @@ PQconnectStartParams(const char *const * keywords,
 	if (!connectOptions2(conn))
 		return conn;
 
+#ifdef WITH_RSOCKET
+	if (conn->with_rsocket && conn->with_rsocket[0] != '\0')
+	{
+		bool		with_rsocket;
+
+		if (!parse_bool(conn->with_rsocket, &with_rsocket))
+		{
+			printfPQExpBuffer(&conn->errorMessage,
+							  libpq_gettext("invalid value for parameter \"%s\": \"%s\""),
+							  "with_rsocket",
+							  conn->with_rsocket);
+			conn->status = CONNECTION_BAD;
+			return conn;
+		}
+
+		conn->rsocket_negotiate = with_rsocket;
+	}
+#endif
 	/*
 	 * Connect to the database
 	 */
@@ -1183,9 +1297,9 @@ connectNoDelay(PGconn *conn)
 #ifdef	TCP_NODELAY
 	int			on = 1;
 
-	if (setsockopt(conn->sock, IPPROTO_TCP, TCP_NODELAY,
-				   (char *) &on,
-				   sizeof(on)) < 0)
+	if (pg_setsockopt(conn->sock, IPPROTO_TCP, TCP_NODELAY,
+					  (char *) &on,
+					  sizeof(on), conn->isRsocket) < 0)
 	{
 		char		sebuf[256];
 
@@ -1331,8 +1445,8 @@ setKeepalivesIdle(PGconn *conn)
 		idle = 0;
 
 #ifdef PG_TCP_KEEPALIVE_IDLE
-	if (setsockopt(conn->sock, IPPROTO_TCP, PG_TCP_KEEPALIVE_IDLE,
-				   (char *) &idle, sizeof(idle)) < 0)
+	if (pg_setsockopt(conn->sock, IPPROTO_TCP, TCP_KEEPIDLE,
+					  (char *) &idle, sizeof(idle), conn->isRsocket) < 0)
 	{
 		char		sebuf[256];
 
@@ -1342,6 +1456,20 @@ setKeepalivesIdle(PGconn *conn)
 						  SOCK_STRERROR(SOCK_ERRNO, sebuf, sizeof(sebuf)));
 		return 0;
 	}
+#else
+#ifdef TCP_KEEPALIVE
+	/* Darwin uses TCP_KEEPALIVE rather than TCP_KEEPIDLE */
+	if (pg_setsockopt(conn->sock, IPPROTO_TCP, TCP_KEEPALIVE,
+					  (char *) &idle, sizeof(idle), conn->isRsocket) < 0)
+	{
+		char		sebuf[256];
+
+		appendPQExpBuffer(&conn->errorMessage,
+					 libpq_gettext("setsockopt(TCP_KEEPALIVE) failed: %s\n"),
+						  SOCK_STRERROR(SOCK_ERRNO, sebuf, sizeof(sebuf)));
+		return 0;
+	}
+#endif
 #endif
 
 	return 1;
@@ -1363,8 +1491,8 @@ setKeepalivesInterval(PGconn *conn)
 		interval = 0;
 
 #ifdef TCP_KEEPINTVL
-	if (setsockopt(conn->sock, IPPROTO_TCP, TCP_KEEPINTVL,
-				   (char *) &interval, sizeof(interval)) < 0)
+	if (pg_setsockopt(conn->sock, IPPROTO_TCP, TCP_KEEPINTVL,
+					  (char *) &interval, sizeof(interval), conn->isRsocket) < 0)
 	{
 		char		sebuf[256];
 
@@ -1396,8 +1524,8 @@ setKeepalivesCount(PGconn *conn)
 		count = 0;
 
 #ifdef TCP_KEEPCNT
-	if (setsockopt(conn->sock, IPPROTO_TCP, TCP_KEEPCNT,
-				   (char *) &count, sizeof(count)) < 0)
+	if (pg_setsockopt(conn->sock, IPPROTO_TCP, TCP_KEEPCNT,
+					  (char *) &count, sizeof(count), conn->isRsocket) < 0)
 	{
 		char		sebuf[256];
 
@@ -1815,10 +1943,16 @@ connectDBStart(PGconn *conn)
 		conn->options_valid = false;
 		goto connect_errReturn;
 	}
+
 #ifdef USE_SSL
 	/* setup values based on SSL mode */
 	if (conn->sslmode[0] == 'd')	/* "disable" */
 		conn->allow_ssl_try = false;
+#ifdef WITH_RSOCKET
+	else if (conn->rsocket_negotiate)	/* disable if client wants rsocket
+										   connection */
+		conn->allow_ssl_try = false;
+#endif
 	else if (conn->sslmode[0] == 'a')	/* "allow" */
 		conn->wait_ssl_try = true;
 #endif
@@ -2108,6 +2242,9 @@ PQconnectPoll(PGconn *conn)
 	PGresult   *res;
 	char		sebuf[256];
 	int			optval;
+#ifdef WITH_RSOCKET
+	struct addrinfo *raddrs = NULL;
+#endif
 
 	if (conn == NULL)
 		return PGRES_POLLING_FAILED;
@@ -2127,6 +2264,7 @@ PQconnectPoll(PGconn *conn)
 			/* These are reading states */
 		case CONNECTION_AWAITING_RESPONSE:
 		case CONNECTION_AUTH_OK:
+		case CONNECTION_RSOCKET_STARTUP:
 			{
 				/* Load waiting data */
 				int			n = pqReadData(conn);
@@ -2142,6 +2280,7 @@ PQconnectPoll(PGconn *conn)
 			/* These are writing states, so we just proceed. */
 		case CONNECTION_STARTED:
 		case CONNECTION_MADE:
+		case CONNECTION_RSOCKET_NEEDED:
 			break;
 
 			/* We allow pqSetenvPoll to decide whether to proceed. */
@@ -2172,6 +2311,14 @@ keep_going:						/* We will come back to here until there is
 	{
 		case CONNECTION_NEEDED:
 			{
+#ifdef WITH_RSOCKET
+				/*
+				 * It is necessary to dynamically load librdmacm at first call
+				 */
+				if (conn->isRsocket)
+					initialize_rsocket();
+#endif
+
 				/*
 				 * Try to initiate a connection to one of the addresses
 				 * returned by pg_getaddrinfo_all().  conn->addr_cur is the
@@ -2186,7 +2333,8 @@ keep_going:						/* We will come back to here until there is
 						   addr_cur->ai_addrlen);
 					conn->raddr.salen = addr_cur->ai_addrlen;
 
-					conn->sock = socket(addr_cur->ai_family, SOCK_STREAM, 0);
+					conn->sock = pg_socket(addr_cur->ai_family, SOCK_STREAM, 0,
+										   conn->isRsocket);
 					if (conn->sock == PGINVALID_SOCKET)
 					{
 						/*
@@ -2218,7 +2366,8 @@ keep_going:						/* We will come back to here until there is
 							continue;
 						}
 					}
-					if (!pg_set_noblock(conn->sock))
+					/* Set noblock mode for rsocket connection after connect() */
+					if (!conn->isRsocket && !pg_set_noblock(conn->sock, conn->isRsocket))
 					{
 						appendPQExpBuffer(&conn->errorMessage,
 										  libpq_gettext("could not set socket to nonblocking mode: %s\n"),
@@ -2229,7 +2378,7 @@ keep_going:						/* We will come back to here until there is
 					}
 
 #ifdef F_SETFD
-					if (fcntl(conn->sock, F_SETFD, FD_CLOEXEC) == -1)
+					if (!conn->isRsocket && fcntl(conn->sock, F_SETFD, FD_CLOEXEC) == -1)
 					{
 						appendPQExpBuffer(&conn->errorMessage,
 										  libpq_gettext("could not set socket to close-on-exec mode: %s\n"),
@@ -2259,9 +2408,10 @@ keep_going:						/* We will come back to here until there is
 							/* Do nothing */
 						}
 #ifndef WIN32
-						else if (setsockopt(conn->sock,
-											SOL_SOCKET, SO_KEEPALIVE,
-											(char *) &on, sizeof(on)) < 0)
+						else if (pg_setsockopt(conn->sock,
+											   SOL_SOCKET, SO_KEEPALIVE,
+											   (char *) &on, sizeof(on),
+											   conn->isRsocket) < 0)
 						{
 							appendPQExpBuffer(&conn->errorMessage,
 											  libpq_gettext("setsockopt(%s) failed: %s\n"),
@@ -2320,8 +2470,9 @@ keep_going:						/* We will come back to here until there is
 
 #ifdef SO_NOSIGPIPE
 					optval = 1;
-					if (setsockopt(conn->sock, SOL_SOCKET, SO_NOSIGPIPE,
-								   (char *) &optval, sizeof(optval)) == 0)
+					if (pg_setsockopt(conn->sock, SOL_SOCKET, SO_NOSIGPIPE,
+									  (char *) &optval, sizeof(optval),
+									  conn->isRsocket) == 0)
 					{
 						conn->sigpipe_so = true;
 						conn->sigpipe_flag = false;
@@ -2332,8 +2483,8 @@ keep_going:						/* We will come back to here until there is
 					 * Start/make connection.  This should not block, since we
 					 * are in nonblock mode.  If it does, well, too bad.
 					 */
-					if (connect(conn->sock, addr_cur->ai_addr,
-								addr_cur->ai_addrlen) < 0)
+					if (pg_connect(conn->sock, addr_cur->ai_addr,
+								   addr_cur->ai_addrlen, conn->isRsocket) < 0)
 					{
 						if (SOCK_ERRNO == EINPROGRESS ||
 #ifdef WIN32
@@ -2353,6 +2504,35 @@ keep_going:						/* We will come back to here until there is
 					}
 					else
 					{
+#ifdef WITH_RSOCKET
+						/*
+						 * All steps for rsocket connection done already.
+						 * Skip them if we got here after
+						 * CONNECTION_RSOCKET_STARTUP step.
+						 */
+						if (conn->isRsocket)
+						{
+							/* Set nonblock mode for rsocket connection */
+							if (!pg_set_noblock(conn->sock, conn->isRsocket))
+							{
+								appendPQExpBuffer(&conn->errorMessage,
+												  libpq_gettext("could not set socket to nonblocking mode: %s\n"),
+									SOCK_STRERROR(SOCK_ERRNO, sebuf, sizeof(sebuf)));
+								pqDropConnection(conn, true);
+								try_next_address(conn);
+								continue;
+							}
+
+							pg_freeaddrinfo_all(conn->addrlist_family,
+												conn->addrlist);
+							conn->addrlist = NULL;
+							conn->addr_cur = NULL;
+
+							conn->status = CONNECTION_OK;
+							return PGRES_POLLING_OK;
+						}
+#endif
+
 						/*
 						 * Hm, we're connected already --- seems the "nonblock
 						 * connection" wasn't.  Advance the state machine and
@@ -2402,8 +2582,9 @@ keep_going:						/* We will come back to here until there is
 				 * state waiting for us on the socket.
 				 */
 
-				if (getsockopt(conn->sock, SOL_SOCKET, SO_ERROR,
-							   (char *) &optval, &optlen) == -1)
+				if (pg_getsockopt(conn->sock, SOL_SOCKET, SO_ERROR,
+								  (char *) &optval, &optlen,
+								  conn->isRsocket) == -1)
 				{
 					appendPQExpBuffer(&conn->errorMessage,
 					libpq_gettext("could not get socket error status: %s\n"),
@@ -2434,9 +2615,9 @@ keep_going:						/* We will come back to here until there is
 
 				/* Fill in the client address */
 				conn->laddr.salen = sizeof(conn->laddr.addr);
-				if (getsockname(conn->sock,
-								(struct sockaddr *) & conn->laddr.addr,
-								&conn->laddr.salen) < 0)
+				if (pg_getsockname(conn->sock,
+								   (struct sockaddr *) & conn->laddr.addr,
+								   &conn->laddr.salen, conn->isRsocket) < 0)
 				{
 					appendPQExpBuffer(&conn->errorMessage,
 									  libpq_gettext("could not get client address from socket: %s\n"),
@@ -2529,6 +2710,15 @@ keep_going:						/* We will come back to here until there is
 					!conn->ssl_in_use)
 				{
 					ProtocolVersion pv;
+
+#ifdef WITH_RSOCKET
+					if (conn->rsocket_negotiate)
+					{
+						appendPQExpBuffer(&conn->errorMessage,
+										  libpq_gettext("SSL connection through rsocket is not supported\n"));
+						goto error_return;
+					}
+#endif
 
 					/*
 					 * Send the SSL request packet.
@@ -3134,7 +3324,6 @@ keep_going:						/* We will come back to here until there is
 					goto error_return;
 				}
 
-
 				/* Fire up post-connection housekeeping if needed */
 				if (PG_PROTOCOL_MAJOR(conn->pversion) < 3)
 				{
@@ -3212,6 +3401,14 @@ keep_going:						/* We will come back to here until there is
 				pg_freeaddrinfo_all(conn->addrlist_family, conn->addrlist);
 				conn->addrlist = NULL;
 				conn->addr_cur = NULL;
+
+#ifdef WITH_RSOCKET
+				if (conn->rsocket_negotiate)
+				{
+					conn->status = CONNECTION_RSOCKET_NEEDED;
+					return PGRES_POLLING_WRITING;
+				}
+#endif
 
 				conn->status = CONNECTION_OK;
 				return PGRES_POLLING_OK;
@@ -3309,7 +3506,150 @@ keep_going:						/* We will come back to here until there is
 				pg_freeaddrinfo_all(conn->addrlist_family, conn->addrlist);
 				conn->addrlist = NULL;
 				conn->addr_cur = NULL;
+
+#ifdef WITH_RSOCKET
+				if (conn->rsocket_negotiate)
+				{
+					conn->status = CONNECTION_RSOCKET_NEEDED;
+					return PGRES_POLLING_WRITING;
+				}
+#endif
+
 				return PGRES_POLLING_OK;
+			}
+
+		case CONNECTION_RSOCKET_NEEDED:
+			{
+#ifdef WITH_RSOCKET
+				/* In rsocket connection only v3 protocol is supported */
+				if (PG_PROTOCOL_MAJOR(conn->pversion) < 3)
+				{
+					appendPQExpBuffer(&conn->errorMessage,
+									  libpq_gettext("rsocket connection requires at least protocol version 3.0\n"));
+					goto error_return;
+				}
+
+				/* Try to send "rsocket connection" message to backend */
+				if (pqPutMsgStart('R', false, conn) < 0 ||
+					pqPutMsgEnd(conn) < 0 ||
+					pqFlush(conn) < 0)
+				{
+					appendPQExpBuffer(&conn->errorMessage,
+						libpq_gettext("could not send rsocket connection message: %s\n"),
+							SOCK_STRERROR(SOCK_ERRNO, sebuf, sizeof(sebuf)));
+					goto error_return;
+				}
+
+				conn->status = CONNECTION_RSOCKET_STARTUP;
+				return PGRES_POLLING_READING;
+#endif   /* WITH_RSOCKET */
+			}
+
+		case CONNECTION_RSOCKET_STARTUP:
+			{
+#ifdef WITH_RSOCKET
+				char		Rsocketok;
+				int			msgLength;
+				const char *host = NULL;
+				struct addrinfo hint;
+				int			ret;
+
+				if (pqGetc(&Rsocketok, conn) < 0)
+				{
+					/* should not happen really */
+					return PGRES_POLLING_READING;
+				}
+				if (Rsocketok == 'E')
+				{
+					/*
+					 * Server failure of some sort, such as failure to
+					 * fork a backend process.  We need to process and
+					 * report the error message, which might be formatted
+					 * according to either protocol 2 or protocol 3.
+					 * Rather than duplicate the code for that, we flip
+					 * into AWAITING_RESPONSE state and let the code there
+					 * deal with it.  Note we have *not* consumed the "E"
+					 * byte here.
+					 */
+					conn->status = CONNECTION_AWAITING_RESPONSE;
+					goto keep_going;
+				}
+				else if (Rsocketok != 'S')
+				{
+					appendPQExpBuffer(&conn->errorMessage,
+									  libpq_gettext("received invalid response to rsocket connection message: %c\n"),
+									  Rsocketok);
+					goto error_return;
+				}
+
+				/*
+				 * We checked protocol version at
+				 * CONNECTION_RSOCKET_NEEDED state.
+				 */
+				if (pqGetInt(&msgLength, 4, conn))
+				{
+					/* should not happen really */
+					return PGRES_POLLING_READING;
+				}
+				/* Get rsocket connection port */
+				if (pqGets(&conn->workBuffer, conn) < 0)
+				{
+					/* should not happen really */
+					return PGRES_POLLING_READING;
+				}
+
+				if (conn->workBuffer.len == 0)
+				{
+					appendPQExpBuffer(&conn->errorMessage,
+									  libpq_gettext("rsocket port got from backend is empty\n"));
+					goto error_return;
+				}
+
+				/* OK, we read the port; mark data consumed */
+				conn->inStart = conn->inCursor;
+
+				/* Initialize hint structure */
+				MemSet(&hint, 0, sizeof(hint));
+				hint.ai_socktype = SOCK_STREAM;
+				hint.ai_family = conn->addrlist_family;
+
+				host = PQhost(conn);
+
+				ret = pg_getaddrinfo_all(host, conn->workBuffer.data,
+										 &hint, &raddrs);
+				if (ret || !raddrs)
+				{
+					appendPQExpBuffer(&conn->errorMessage,
+									  libpq_gettext("could not translate host name \"%s\" to address: %s\n"),
+									  host, gai_strerror(ret));
+					goto error_return;
+				}
+
+				/* Close socket connection */
+				pqDropConnection(conn, true);
+
+				/*
+				 * Make rsocket connection.
+				 * We go CONNECTION_NEEDED step to not copy a lot of code.
+				 *
+				 * conn->addr_cur stores rsocket addrinfo. It is necessary to
+				 * free it after connection.
+				 *
+				 * conn->addrlist should be freed in previous step.
+				 */
+				Assert(!conn->addrlist);
+				Assert(!conn->addr_cur);
+
+				conn->addrlist = raddrs;
+				conn->addr_cur = raddrs;
+				conn->isRsocket = true;
+				conn->status = CONNECTION_NEEDED;
+				goto keep_going;
+
+#else							/* !WITH_RSOCKET */
+				/* can't get here */
+				goto error_return;
+#endif   /* WITH_RSOCKET */
 			}
 
 		default:
@@ -3453,6 +3793,10 @@ makeEmptyPGconn(void)
 	conn->verbosity = PQERRORS_DEFAULT;
 	conn->show_context = PQSHOW_CONTEXT_ERRORS;
 	conn->sock = PGINVALID_SOCKET;
+	conn->isRsocket = false;
+#ifdef WITH_RSOCKET
+	conn->rsocket_negotiate = false;
+#endif
 	conn->auth_req_received = false;
 	conn->password_needed = false;
 	conn->dot_pgpass_used = false;
@@ -6306,6 +6650,59 @@ PQsocket(const PGconn *conn)
 	if (!conn)
 		return -1;
 	return (conn->sock != PGINVALID_SOCKET) ? conn->sock : -1;
+}
+
+int
+PQisRsocket(const PGconn *conn)
+{
+#ifdef WITH_RSOCKET
+	if (!conn)
+		return (int) false;
+	return (int)((conn->sock != PGINVALID_SOCKET) ? conn->isRsocket : false);
+#else
+	return (int) false;
+#endif
+}
+
+int
+PQselect(pgsocket nfds, fd_set *readfds, fd_set *writefds,
+		 fd_set *exceptfds, struct timeval *timeout, int isRsocket)
+{
+	return pg_select(nfds, readfds, writefds, exceptfds, timeout, isRsocket);
+}
+
+int
+PQselectExtended(const PGconn *conn, int timeout_ms)
+{
+	/* We use poll(2) if available, otherwise select(2) */
+#ifdef HAVE_POLL
+	struct pollfd input_fd;
+
+	input_fd.fd = PQsocket(conn);
+	input_fd.events = POLLIN | POLLERR;
+	input_fd.revents = 0;
+
+	return pg_poll(&input_fd, 1, timeout_ms, PQisRsocket(conn));
+#else    /* !HAVE_POLL */
+	fd_set		input_mask;
+	struct timeval timeout;
+	struct timeval *ptr_timeout;
+
+	FD_ZERO(&input_mask);
+	FD_SET(PQsocket(conn), &input_mask);
+
+	if (timeout_ms < 0)
+		ptr_timeout = NULL;
+	else
+	{
+		timeout.tv_sec = timeout_ms / 1000;
+		timeout.tv_usec = (timeout_ms % 1000) * 1000;
+		ptr_timeout = &timeout;
+	}
+
+	return pg_select(PQsocket(conn) + 1, &input_mask,
+					 NULL, NULL, ptr_timeout, PQisRsocket(conn));
+#endif   /* HAVE_POLL */
 }
 
 int

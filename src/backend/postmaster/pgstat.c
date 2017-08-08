@@ -546,7 +546,7 @@ retry2:
 	 * falls behind, statistics messages will be discarded; backends won't
 	 * block waiting to send messages to the collector.
 	 */
-	if (!pg_set_noblock(pgStatSock))
+	if (!pg_set_noblock(pgStatSock, false))
 	{
 		ereport(LOG,
 				(errcode_for_socket_access(),
@@ -3768,7 +3768,7 @@ PgstatCollectorMain(int argc, char *argv[])
 #ifndef WIN32
 		wr = WaitLatchOrSocket(MyLatch,
 					 WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_READABLE,
-							   pgStatSock,
+							   pgStatSock, false,
 							   -1L);
 #else
 
@@ -3784,7 +3784,7 @@ PgstatCollectorMain(int argc, char *argv[])
 		 */
 		wr = WaitLatchOrSocket(MyLatch,
 		WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_SOCKET_READABLE | WL_TIMEOUT,
-							   pgStatSock,
+							   pgStatSock, false,
 							   2 * 1000L /* msec */ );
 #endif
 
