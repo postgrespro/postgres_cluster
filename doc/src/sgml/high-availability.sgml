@@ -259,6 +259,7 @@ protocol to make nodes agree on a serializable transactional order.
      Online Transaction Processing (<acronym>OLTP</acronym>) scalability
      for read transactions, as well as ensures high availability with
      automatic disaster recovery.
+     For details, see <xref linkend="multimaster">.
     </para>
    </listitem>
   </varlistentry>
