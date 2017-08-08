@@ -1445,7 +1445,7 @@ setKeepalivesIdle(PGconn *conn)
 		idle = 0;
 
 #ifdef PG_TCP_KEEPALIVE_IDLE
-	if (pg_setsockopt(conn->sock, IPPROTO_TCP, TCP_KEEPIDLE,
+	if (pg_setsockopt(conn->sock, IPPROTO_TCP, PG_TCP_KEEPALIVE_IDLE,
 					  (char *) &idle, sizeof(idle), conn->isRsocket) < 0)
 	{
 		char		sebuf[256];
@@ -1456,20 +1456,6 @@ setKeepalivesIdle(PGconn *conn)
 						  SOCK_STRERROR(SOCK_ERRNO, sebuf, sizeof(sebuf)));
 		return 0;
 	}
-#else
-#ifdef TCP_KEEPALIVE
-	/* Darwin uses TCP_KEEPALIVE rather than TCP_KEEPIDLE */
-	if (pg_setsockopt(conn->sock, IPPROTO_TCP, TCP_KEEPALIVE,
-					  (char *) &idle, sizeof(idle), conn->isRsocket) < 0)
-	{
-		char		sebuf[256];
-
-		appendPQExpBuffer(&conn->errorMessage,
-					 libpq_gettext("setsockopt(TCP_KEEPALIVE) failed: %s\n"),
-						  SOCK_STRERROR(SOCK_ERRNO, sebuf, sizeof(sebuf)));
-		return 0;
-	}
-#endif
 #endif
 
 	return 1;
