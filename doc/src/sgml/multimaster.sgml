@@ -1029,6 +1029,7 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
       </para>
       </listitem>
       </itemizedlist>
+      </para>
       <para>Default: <literal>false</literal>
       </para>
     </listitem>
