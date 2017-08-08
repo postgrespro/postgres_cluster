@@ -252,11 +252,13 @@ protocol to make nodes agree on a serializable transactional order.
     </para>
 
     <para>
-     <productname>PostgreSQL</> does not offer this type of replication,
-     though <productname>PostgreSQL</> two-phase commit (<xref
-     linkend="sql-prepare-transaction"> and <xref
-     linkend="sql-commit-prepared">)
-     can be used to implement this in application code or middleware.
+     <productname>Postgres Pro Enterprise</productname> provides
+     <filename>multimaster</filename> extension that implements this
+     type of replication. Using <filename>multimaster</filename>, you
+     can configure a synchronous shared-nothing cluster that provides
+     Online Transaction Processing (<acronym>OLTP</acronym>) scalability
+     for read transactions, as well as ensures high availability with
+     automatic disaster recovery.
     </para>
    </listitem>
   </varlistentry>
@@ -307,7 +309,7 @@ protocol to make nodes agree on a serializable transactional order.
      <entry align="center">Slony</entry>
      <entry align="center">pgpool-II</entry>
      <entry align="center">Bucardo</entry>
-     <entry align="center"></entry>
+     <entry align="center"><filename>multimaster</filename> extension of <productname>Postgres Pro Enterprise</productname></entry>
     </row>
 
     <row>
