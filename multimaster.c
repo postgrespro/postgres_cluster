@@ -4808,12 +4808,60 @@ void MtmUpdateLockGraph(int nodeId, void const* messageBody, int messageSize)
 	MTM_LOG1("Update deadlock graph for node %d size %d", nodeId, messageSize);
 }
 
+static bool MtmIsTempType(TypeName* typeName)
+{
+	bool isTemp = false;
+
+	if (typeName != NULL)
+	{
+		Type typeTuple = LookupTypeName(NULL, typeName, NULL, false);
+		if (typeTuple != NULL)
+		{
+			Form_pg_type typeStruct = (Form_pg_type) GETSTRUCT(typeTuple);
+		    Oid relid = typeStruct->typrelid;
+		    ReleaseSysCache(typeTuple);
+
+			if (relid != InvalidOid)
+			{
+				HeapTuple classTuple = SearchSysCache1(RELOID, relid);
+				Form_pg_class classStruct = (Form_pg_class) GETSTRUCT(classTuple);
+				if (classStruct->relpersistence == 't')
+					isTemp = true;
+				ReleaseSysCache(classTuple);
+			}
+		}
+	}
+	return isTemp;
+}
+
+static bool MtmFunctionProfileDependsOnTempTable(CreateFunctionStmt* func)
+{
+	ListCell* elem;
+
+	if (MtmIsTempType(func->returnType))
+	{
+		return true;
+	}
+	foreach (elem, func->parameters)
+	{
+		FunctionParameter* param = (FunctionParameter*) lfirst(elem);
+		if (MtmIsTempType(param->argType))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+
+
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							  ProcessUtilityContext context, ParamListInfo params,
 							  DestReceiver *dest, char *completionTag)
 {
 	bool skipCommand = false;
 	bool executed = false;
+	bool prevMyXactAccessedTempRel;
 
 	MTM_LOG2("%d: Process utility statement tag=%d, context=%d, issubtrans=%d, creating_extension=%d, query=%s",
 			 MyProcPid, nodeTag(parsetree), context, IsSubTransaction(), creating_extension, queryString);
@@ -4895,19 +4943,24 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			break;
 
 		case T_VacuumStmt:
-		  skipCommand = true;
-		  if (context == PROCESS_UTILITY_TOPLEVEL) {
-			  MtmProcessDDLCommand(queryString, false);
-			  MtmTx.isDistributed = false;
-		  } else if (MtmApplyContext != NULL) {
-			  MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
-			  Assert(oldContext != MtmApplyContext);
-			  MtmVacuumStmt = (VacuumStmt*)copyObject(parsetree);
-			  MemoryContextSwitchTo(oldContext);
-			  return;
-		  }
-		  break;
-
+		{
+			VacuumStmt* vacuum = (VacuumStmt*)parsetree;
+			skipCommand = true;
+			if ((vacuum->options & VACOPT_LOCAL) == 0 && !MtmVolksWagenMode)
+			{
+				if (context == PROCESS_UTILITY_TOPLEVEL) {
+					MtmProcessDDLCommand(queryString, false);
+					MtmTx.isDistributed = false;
+				} else if (MtmApplyContext != NULL) {
+					MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
+					Assert(oldContext != MtmApplyContext);
+					MtmVacuumStmt = (VacuumStmt*)copyObject(parsetree);
+					MemoryContextSwitchTo(oldContext);
+					return;
+				}
+			}
+			break;
+		}
 		case T_CreateDomainStmt:
 			/* Detect temp tables access */
 			{
@@ -5072,6 +5125,14 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 					}
 				}
 			}
+		    case T_CreateFunctionStmt:
+		    {
+				if (MtmTx.isReplicated)
+				{
+					// disable functiob body cehck at replica
+					check_function_bodies = false;
+				}
+			}
 			break;
 		}
 
@@ -5089,6 +5150,8 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	}
 	else MTM_LOG3("Skip utility statement '%s': skip=%d, insideDDL=%d", queryString, skipCommand, MtmDDLStatement != NULL);
 
+	prevMyXactAccessedTempRel = MyXactAccessedTempRel;
+
 	if (PreviousProcessUtilityHook != NULL)
 	{
 		PreviousProcessUtilityHook(parsetree, queryString, context,
@@ -5104,6 +5167,19 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		MTM_ELOG(ERROR, "Isolation level %s is not supported by multimaster", isoLevelStr[XactIsoLevel]);
 	}
 #endif
+	/* Allow replication of functions operating on temporary tables.
+	 * Even through temporary table doesn't exist at replica, diasabling functoin body check makes it possible to create such function at replica.
+	 * And it can be accessed later at replica if correspondent temporary table will be created.
+	 * But disable replication of functions returning temporary tables: such functions can not be created at replica in any case.
+	 */
+	if (IsA(parsetree, CreateFunctionStmt))
+	{
+		if (MtmFunctionProfileDependsOnTempTable((CreateFunctionStmt*)parsetree))
+		{
+			prevMyXactAccessedTempRel = true;
+		}
+		MyXactAccessedTempRel = prevMyXactAccessedTempRel;
+	}
 	if (MyXactAccessedTempRel)
 	{
 		MTM_LOG1("Xact accessed temp table, stopping replication of statement '%s'", queryString);
