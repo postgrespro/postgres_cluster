@@ -1731,23 +1731,13 @@ pq_getkeepalivesidle(Port *port)
 #ifndef WIN32
 		ACCEPT_TYPE_ARG3 size = sizeof(port->default_keepalives_idle);
 
-#ifdef TCP_KEEPIDLE
-		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPIDLE,
-						  (char *) &port->default_keepalives_idle,
-						  &size, port->isRsocket) < 0)
-		{
-			elog(LOG, "getsockopt(TCP_KEEPIDLE) failed: %m");
-			port->default_keepalives_idle = -1; /* don't know */
-		}
-#else
-		if (pg_getsockopt(port->sock, IPPROTO_TCP, TCP_KEEPALIVE,
+		if (pg_getsockopt(port->sock, IPPROTO_TCP, PG_TCP_KEEPALIVE_IDLE,
 						  (char *) &port->default_keepalives_idle,
 						  &size, port->isRsocket) < 0)
 		{
 			elog(LOG, "getsockopt(%s) failed: %m", PG_TCP_KEEPALIVE_IDLE_STR);
 			port->default_keepalives_idle = -1; /* don't know */
 		}
-#endif
 #else							/* WIN32 */
 		/* We can't get the defaults on Windows, so return "don't know" */
 		port->default_keepalives_idle = -1;
@@ -1786,21 +1776,12 @@ pq_setkeepalivesidle(int idle, Port *port)
 	if (idle == 0)
 		idle = port->default_keepalives_idle;
 
-#ifdef TCP_KEEPIDLE
-	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPIDLE,
+	if (pg_setsockopt(port->sock, IPPROTO_TCP, PG_TCP_KEEPALIVE_IDLE,
 					  (char *) &idle, sizeof(idle), port->isRsocket) < 0)
 	{
 		elog(LOG, "setsockopt(%s) failed: %m", PG_TCP_KEEPALIVE_IDLE_STR);
 		return STATUS_ERROR;
 	}
-#else
-	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_KEEPALIVE,
-					  (char *) &idle, sizeof(idle), port->isRsocket) < 0)
-	{
-		elog(LOG, "setsockopt(TCP_KEEPALIVE) failed: %m");
-		return STATUS_ERROR;
-	}
-#endif
 
 	port->keepalives_idle = idle;
 #else							/* WIN32 */
