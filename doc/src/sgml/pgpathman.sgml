@@ -118,6 +118,11 @@ SET pg_pathman.enable = t;</programlisting>
     </sect2>
   <sect2 id="pg-pathman-usage">
     <title>Usage</title>
+    <para><emphasis role="strong">Contents</emphasis></para>
+      <para><link linkend="pg-pathman-choosing-partitioning-strategies">Choosing Partitioning Strategies</link></para>
+      <para><link linkend="pg-pathman-running-non-blocking-data-migration">Running Non-Blocking Data Migration</link></para>
+      <para><link linkend="pg-pathman-partitioning-by-expression">Partitioning by Expression</link></para>
+      <para><link linkend="pg-pathman-partitioning-by-comp-key">Partitioning by Composite Key</link></para>
     <para>
       As your database grows, indexing mechanisms may become inefficient
       and cause high latency as you run queries. To improve performance,
@@ -218,24 +223,15 @@ replace_hash_partition(old_partition       REGCLASS,
       <sect4 id="pg-pathman-setting-up-range-partitioning">
         <title>Setting up Range Partitioning</title>
         <para>
-          The <filename>pg_pathman</filename> module provides the following functions for
-          range partitioning:</para>
-          <itemizedlist>
-          <listitem><para><function>create_range_partitions()</function> &mdash; creates
+          The <filename>pg_pathman</filename> module provides the 
+          <function>create_range_partitions()</function> for range partitioning. 
+          This function creates
           partitions based on the specified interval and the initial
           partitioning key. New partitions are created automatically
-          when you insert data outside of the initial range. </para></listitem>
-          <listitem><para><function>create_partitions_from_range()</function> &mdash; creates
-          partitions within the specified range. If required, you can
-          add new partitions manually using partition management functions. For details, see <xref linkend="pg-pathman-partition-management">.</para></listitem></itemizedlist>
-        <para>
-          If you are going to add new data outside of the existing
-          range, run the <function>create_range_partitions()</function>
-          function:
-        </para>
+          when you insert data outside of the already covered range.</para>
         <programlisting>
 create_range_partitions(relation       REGCLASS,
-                        attribute      TEXT,
+                        expression      TEXT,
                         start_value    ANYELEMENT,
                         p_interval     ANYELEMENT | INTERVAL,
                         p_count        INTEGER DEFAULT NULL,
@@ -253,19 +249,21 @@ create_range_partitions(relation       REGCLASS,
           ensures that all partitions are of the same size, which can
           improve query performance and facilitate database management.
         </para>
-        <para>
-          If your current data range is unlikely to change, run the
-          <function>create_partitions_from_range()</function> function:
-        </para>
+
+        <para>Alternatively, you can specify an array defining the bounds
+        of partitions to be created using the <literal>bounds</literal> parameter:
         <programlisting>
-create_partitions_from_range(relation       REGCLASS,
-                             attribute      TEXT,
-                             start_value    ANYELEMENT,
-                             end_value      ANYELEMENT,
-                             p_interval     ANYELEMENT | INTERVAL,
-                             partition_data BOOLEAN DEFAULT TRUE)
+create_range_partitions(relation        REGCLASS,
+                        expression      TEXT,
+                        bounds          ANYARRAY,
+                        partition_names TEXT[] DEFAULT NULL,
+                        tablespaces     TEXT[] DEFAULT NULL,
+                        partition_data  BOOLEAN DEFAULT TRUE)
 </programlisting>
-        <para>In this case, <filename>pg_pathman</filename> does not create new partitions automatically, but you can use <link linkend="pg-pathman-partition-management">partition management functions</link> to add partitions manually, if required.</para>
+        </para>
+        <para>If required, you can also use <link linkend="pg-pathman-partition-management">partition management functions</link> 
+        to add partitions manually. For example, if there is a gap between the created partitions, <filename>pg_pathman</filename>
+        cannot fill it with a new partition in an automated mode.</para>
         <para>
           By default, all the data from the parent table gets migrated
           to the specified number of partitions. The <filename>pg_pathman</filename> module
@@ -342,6 +340,176 @@ SELECT stop_concurrent_part_task(relation REGCLASS);
         query plan. See the <function>set_enable_parent()</function>
         function description for details.
       </para></tip>
+      </sect3>
+      <sect3 id="pg-pathman-partitioning-by-expression">
+        <title>Partitioning by Expression</title>
+        <para>
+          For both range and hash partitioning strategies, <filename>pg_pathman</filename>
+          supports partitioning by expression that returns a single scalar value. The partitioning expression
+          can reference a table column, as well as calculate the partitioning key
+          based on one or more column values.
+          </para>
+          <tip>
+            <para>If you would like to partition a table by a tuple, see <xref linkend="pg-pathman-partitioning-by-comp-key">.
+            </para>
+          </tip>
+          <para>
+          To partition a table by expression, use <filename>pg_pathman</filename>
+          <link linkend="pg-pathman-partition-creation">partitioning functions</link>.
+          The partitioning expression must satisfy the following conditions:
+          <itemizedlist spacing="compact">
+            <listitem>
+              <para>
+                Expression must reference at least one column of the partitioned table.
+              </para>
+            </listitem>
+            <listitem>
+              <para>
+                All referenced columns must be marked as <literal>NOT NULL</literal>.
+              </para>
+            </listitem>
+            <listitem>
+              <para>
+                Expression cannot reference system attributes, such as <literal>oid</literal>, <literal>xmin</literal>, <literal>xmax</literal>, etc.
+              </para>
+            </listitem>
+            <listitem>
+              <para>
+                Expression cannot include subqueries.
+              </para>
+            </listitem>
+            <listitem>
+              <para>
+                All functions used by expression must be marked as <literal>IMMUTABLE</literal>.
+              </para>
+            </listitem>
+          </itemizedlist>
+        </para>
+        <para>
+          As the expression can return a value of virtually any type, make sure to convert
+          it to the type you need for partitioning.
+        </para>
+        <para>
+          To access a partition, you must use the exact expression used for partitioning. Otherwise,
+          <filename>pg_pathman</filename> cannot optimize the query. You can view the partitioning
+          expression for each partitioned table in the <structname>pathman_config</structname> table.
+        </para>
+        <sect4><title>Examples</title>
+        <para>
+          Suppose you have the <structname>test</structname> table that stores
+          some <literal>jsonb</literal> data:
+          <programlisting>
+CREATE TABLE test(col jsonb not null);
+INSERT INTO test
+SELECT format('{"key": %s, "date": "%s", "value": "%s"}',
+              i, current_date, md5(i::text))::jsonb
+FROM generate_series(1, 10000 * 10) as g(i);
+</programlisting>
+        </para>
+        <para>To partition this data by range of the <literal>key</literal> value, you need to extract
+        this value from the <literal>jsonb</literal> object and convert it to a numeric type, such as <literal>bigint</literal>:
+        </para>
+        <programlisting>
+SELECT create_range_partitions('test', '(col->>''key'')::bigint', 1, 10000, 10);
+</programlisting>
+        <para>
+          <filename>pg_pathman</filename> splits the parent table into ten partitions,
+          with each partition storing 10000 rows:
+        </para>
+<programlisting>
+SELECT * FROM pathman_partition_list;
+ parent | partition | parttype |              expr               | range_min | range_max
+--------+-----------+----------+---------------------------------+-----------+-----------
+ test   | test_1    |        2 | ((col ->> 'key'::text))::bigint | 1         | 10001
+ test   | test_2    |        2 | ((col ->> 'key'::text))::bigint | 10001     | 20001
+ test   | test_3    |        2 | ((col ->> 'key'::text))::bigint | 20001     | 30001
+ test   | test_4    |        2 | ((col ->> 'key'::text))::bigint | 30001     | 40001
+ test   | test_5    |        2 | ((col ->> 'key'::text))::bigint | 40001     | 50001
+ test   | test_6    |        2 | ((col ->> 'key'::text))::bigint | 50001     | 60001
+ test   | test_7    |        2 | ((col ->> 'key'::text))::bigint | 60001     | 70001
+ test   | test_8    |        2 | ((col ->> 'key'::text))::bigint | 70001     | 80001
+ test   | test_9    |        2 | ((col ->> 'key'::text))::bigint | 80001     | 90001
+ test   | test_10   |        2 | ((col ->> 'key'::text))::bigint | 90001     | 100001
+(10 rows)
+</programlisting>
+      </sect4>
+      </sect3>
+      <sect3 id="pg-pathman-partitioning-by-comp-key">
+        <title>Partitioning by Composite Key</title>
+        <para>
+          Using <filename>pg_pathman</filename>, you can also perform range partitioning by composite key.
+          A composite key consists of two or more comma-separated values, which can be columns or
+          expressions extracting the values from the table. The expressions
+          defining the composite key must satisfy the conditions described in <xref linkend="pg-pathman-partitioning-by-expression">.
+        </para>
+        <para>Although <filename>pg_pathman</filename> does not support automatic partition creation by
+          composite key, you can add partitions using the <function>add_range_partition()</function> function.
+          A typical workflow is as follows:
+          <orderedlist>
+            <listitem>
+              <para>
+                Enable automatic partition naming for your table by running the <function>create_naming_sequence()</function> function.
+              </para>
+            </listitem>
+            <listitem>
+              <para>
+               Create a composite partitioning key.
+              </para>
+            </listitem>
+            <listitem>
+              <para>
+               Register a table you are going to partition with <filename>pg_pathman</filename>
+               using the <function>add_to_pathman_config()</function> function.
+              </para>
+            </listitem>
+            <listitem>
+              <para>
+                Add a partition based on the defined composite partitioning key
+                using the <function>add_range_partition()</function> function.
+              </para>
+            </listitem>
+          </orderedlist>
+        </para>
+        <sect4>
+        <title>Examples</title>
+          <para>Suppose you have the <structname>test</structname> table that stores some
+          temporal data:
+          <programlisting>
+create table test (logdate date not null, comment text);
+</programlisting>
+          </para>
+          <para>
+            To partition this data by month and year, you have to create a composite key:
+          <programlisting>
+create type test_key as (year float8, month float8);
+</programlisting>
+          </para>
+          <para>
+            To enable automatic partition naming, run the <literal>create_naming_sequence()</literal>
+            function passing the table name as an argument:
+            <programlisting>
+select create_naming_sequence('test');
+</programlisting>
+          </para>
+          <para>
+          Register the <structname>test</structname> table with
+          <filename>pg_pathman</filename>, specifying the partitioning key you are going to use:
+          <programlisting>
+select add_to_pathman_config('test',
+                             '( extract(year from logdate),
+                                extract(month from logdate) )::test_key',
+                             NULL);
+</programlisting>
+          </para>
+          <para>Create a partition that includes all the data in the range of ten years,
+          starting from January of the current year:
+          <programlisting>
+select add_range_partition('test',
+                           (extract(year from current_date), 1)::test_key,
+                           (extract(year from current_date + '10 years'::interval), 1)::test_key);
+</programlisting>
+          </para>
+        </sect4>
       </sect3>
       <sect3 id="pg-pathman-managing-partitions">
         <title>Managing Partitions</title>
@@ -606,7 +774,7 @@ SELECT attach_range_partition('journal', 'journal_archive', '2014-01-01'::date, 
         </para>
       </important>
       <para>
-        To merge to adjacent partitions, use the
+        To merge two adjacent partitions, use the
         <literal>merge_range_partitions()</literal> function:
       </para>
       <programlisting>
@@ -910,6 +1078,13 @@ WHERE id = any (SELECT * FROM some_table limit 4);
         </listitem>
         <listitem>
           <para>
+            <literal>pg_pathman.enable_bounds_cache</literal> &mdash; toggle bounds
+            cache on/off.
+          </para>
+          <para>Default: <literal>on</literal></para>
+        </listitem>
+        <listitem>
+          <para>
             <literal>pg_pathman.insert_into_fdw</literal> &mdash; allow
             <command>INSERT</command> operations into various foreign-data wrappers.
             Possible values: <literal>disabled</literal>, <literal>postgres</literal>, and <literal>any_fdw</literal>.
@@ -1030,22 +1205,29 @@ create_hash_partitions(relation         REGCLASS,
       </para>
       <programlisting>
 create_range_partitions(relation       REGCLASS,
-                        attribute      TEXT,
+                        expression     TEXT,
                         start_value    ANYELEMENT,
                         p_interval     ANYELEMENT,
                         p_count        INTEGER DEFAULT NULL,
                         partition_data BOOLEAN DEFAULT TRUE)
 
 create_range_partitions(relation       REGCLASS,
-                        attribute      TEXT,
+                        expression     TEXT,
                         start_value    ANYELEMENT,
                         p_interval     INTERVAL,
                         p_count        INTEGER DEFAULT NULL,
                         partition_data BOOLEAN DEFAULT TRUE)
+
+create_range_partitions(relation        REGCLASS,
+                        expression      TEXT,
+                        bounds          ANYARRAY,
+                        partition_names TEXT[] DEFAULT NULL,
+                        tablespaces     TEXT[] DEFAULT NULL,
+                        partition_data  BOOLEAN DEFAULT TRUE)
 </programlisting>
       <para>
         Performs range partitioning for <literal>relation</literal> by
-        partitioning key <literal>attribute</literal>. The
+        partitioning key defined by <literal>expression</literal>. The
         <literal>start_value</literal> argument specifies the initial value,
         <literal>p_interval</literal> sets the default range for automatically created partitions or partitions created with
         <function>append_range_partition()</function> or
@@ -1054,29 +1236,11 @@ create_range_partitions(relation       REGCLASS,
         is disabled. <literal>p_count</literal> is the
         number of premade partitions. If <literal>p_count</literal> is not set, than
         <filename>pg_pathman</filename> tries to determine the number of partitions based
-        on the <literal>attribute</literal> value. Partition creation callback is invoked
+        on the <literal>expression</literal> value.
+        The <literal>bounds</literal> array defines the bounds for partitions to be created.
+        You can build this array using the <function>generate_range_bounds()</function> function.
+        Partition creation callback is invoked
         for each partition if set beforehand.
-      </para>
-      <programlisting>
-create_partitions_from_range(relation       REGCLASS,
-                             attribute      TEXT,
-                             start_value    ANYELEMENT,
-                             end_value      ANYELEMENT,
-                             p_interval     ANYELEMENT,
-                             partition_data BOOLEAN DEFAULT TRUE)
-
-create_partitions_from_range(relation       REGCLASS,
-                             attribute      TEXT,
-                             start_value    ANYELEMENT,
-                             end_value      ANYELEMENT,
-                             p_interval     INTERVAL,
-                             partition_data BOOLEAN DEFAULT TRUE)
-</programlisting>
-      <para>
-        Performs range partitioning from specified range for
-        <literal>relation</literal> by partitioning key
-        <literal>attribute</literal>. Partition creation callback is
-        invoked for each partition if set beforehand.
       </para>
     </sect4>
     <sect4 id="pg-pathman-data-migration">
@@ -1155,7 +1319,7 @@ merge_range_partitions(partitions REGCLASS[])
         Merge several adjacent range partitions (partitions must be specified
         in ascending or descending order). All the data will be accumulated in
         the first partition.
-      </para>      
+      </para>
       <programlisting>
 append_range_partition(p_relation     REGCLASS,
                        partition_name TEXT DEFAULT NULL,
@@ -1182,9 +1346,9 @@ add_range_partition(relation       REGCLASS,
                     tablespace     TEXT DEFAULT NULL)
 </programlisting>
       <para>
-        Create new range partition for <literal>relation</literal> with
-        specified range bounds. If <literal>start_value</literal>
-        or <literal>end_value</literal> are NULL, than the corresponding
+        Create a new range partition for <literal>relation</literal> with
+        the specified range bounds. If the <literal>start_value</literal>
+        or the <literal>end_value</literal> is NULL, than the corresponding
         range bound will be infinite.
       </para>
       <programlisting>
@@ -1304,6 +1468,44 @@ set_spawn_using_bgw(relation REGCLASS, value BOOLEAN)
         When inserting new data beyond the partitioning range,
         use SpawnPartitionsWorker to create new partitions in a
         separate transaction.
+      </para>
+<programlisting>
+create_naming_sequence(relation REGCLASS)
+      </programlisting>
+      <para>
+        Enable automatic partition naming
+        for the specified <literal>relation</literal> table.
+        You must run this function when partitioning this
+        table by composite key.
+      </para>
+<programlisting>
+add_to_pathman_config(relation         REGCLASS,
+                      expression       TEXT,
+                      range_interval   TEXT)
+add_to_pathman_config(relation        REGCLASS,
+                      expression      TEXT)
+      </programlisting>
+      <para>
+        Register the specified <literal>relation</literal> table with
+        <filename>pg_pathman</filename> to enable partitioning by the
+        provided <literal>expression</literal>.
+        For range partitioning, the <literal>range_interval</literal>
+        argument is mandatory. You can set it to <literal>NULL</literal>
+        if you are going to add partition manually.
+      </para>
+<programlisting>
+generate_range_bounds(p_start     ANYELEMENT,
+                      p_interval  INTERVAL,
+                      p_count     INTEGER)
+
+generate_range_bounds(p_start     ANYELEMENT,
+                      p_interval  ANYELEMENT,
+                      p_count     INTEGER)
+</programlisting>
+      <para>
+        Build the <literal>bounds</literal> array that defines the bounds for
+        partitions to be created. You can pass this array as an argument to
+        the <function>create_range_partitions()</function> function.
       </para>
     </sect4>
     </sect3>
