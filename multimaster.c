@@ -5110,6 +5110,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			CopyStmt *copyStatement = (CopyStmt *) parsetree;
 			skipCommand = true;
 			if (copyStatement->is_from) {
+				ListCell *opt;
 				RangeVar *relation = copyStatement->relation;
 
 				if (relation != NULL)
@@ -5122,6 +5123,17 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							MtmTx.containsDML = true;
 						}
 						heap_close(rel, ShareLock);
+					}
+				}
+
+				foreach(opt, copyStatement->options)
+				{
+					DefElem	*elem = lfirst(opt);
+					if (strcmp("local", elem->defname) == 0) {
+						MtmTx.isDistributed = false; /* Skip */
+						MtmTx.snapshot = INVALID_CSN;
+						MtmTx.containsDML = false;
+						break;
 					}
 				}
 			}
