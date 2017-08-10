@@ -2856,6 +2856,10 @@ copy_opt_item:
 				{
 					$$ = makeDefElem("format", (Node *)makeString("csv"));
 				}
+			| LOCAL
+				{
+					$$ = makeDefElem("local", (Node *)makeInteger(TRUE));
+				}
 			| HEADER_P
 				{
 					$$ = makeDefElem("header", (Node *)makeInteger(TRUE));
