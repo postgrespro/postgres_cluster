@@ -1114,17 +1114,13 @@ CreateFunction(CreateFunctionStmt *stmt, const char *queryString)
  * Note: this is also used for aggregate deletion, since the OIDs of
  * both functions and aggregates point to pg_proc.
  */
+extern bool MyXactAccessedTempRel;
 void
 RemoveFunctionById(Oid funcOid)
 {
 	Relation	relation;
 	HeapTuple	tup;
 	bool		isagg;
-	Oid language_oid;
-	HeapTuple languageTuple;
-	Form_pg_language languageStruct;
-	Oid	languageValidator;
-	bool save_check_function_bodies;
 
 	/*
 	 * Delete the pg_proc tuple.
@@ -1136,24 +1132,6 @@ RemoveFunctionById(Oid funcOid)
 		elog(ERROR, "cache lookup failed for function %u", funcOid);
 
 	isagg = ((Form_pg_proc) GETSTRUCT(tup))->proisagg;
-
-	/*
-	 * MTM-CRUTCH: We need to know wheteher our function had
-	 * accessed temp relation or not. So validate function body
-	 * again -- that will set MyXactAccessedTempRel.
-	 */
-	save_check_function_bodies = check_function_bodies;
-	check_function_bodies = false;
-	language_oid = ((Form_pg_proc) GETSTRUCT(tup))->prolang;
-	languageTuple = SearchSysCache1(LANGOID, language_oid);
-	languageStruct = (Form_pg_language) GETSTRUCT(languageTuple);
-	languageValidator = languageStruct->lanvalidator;
-	if OidIsValid(languageValidator) {
-		/* Language validator is optional feature of language */
-		OidFunctionCall1(languageValidator, ObjectIdGetDatum(funcOid));
-	}
-	ReleaseSysCache(languageTuple);
-	check_function_bodies = save_check_function_bodies;
 
 	simple_heap_delete(relation, &tup->t_self);
 

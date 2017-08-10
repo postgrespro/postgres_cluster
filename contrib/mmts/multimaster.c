@@ -64,6 +64,7 @@
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_constraint_fn.h"
+#include "catalog/pg_proc.h"
 #include "pglogical_output/hooks.h"
 #include "parser/analyze.h"
 #include "parser/parse_relation.h"
@@ -256,8 +257,6 @@ bool  MtmUseRDMA;
 bool  MtmPreserveCommitOrder;
 bool  MtmVolksWagenMode; /* Pretend to be normal postgres. This means skip some NOTICE's and use local sequences */
 
-TransactionId  MtmUtilityProcessedInXid;
-
 static char* MtmConnStrs;
 static char* MtmRemoteFunctionsList;
 static char* MtmClusterName;
@@ -276,6 +275,7 @@ static bool	 MtmClusterLocked;
 static bool	 MtmInsideTransaction;
 static bool  MtmReferee;
 static bool  MtmMonotonicSequences;
+static void const* MtmDDLStatement;
 
 static ExecutorStart_hook_type PreviousExecutorStartHook;
 static ExecutorFinish_hook_type PreviousExecutorFinishHook;
@@ -924,6 +924,7 @@ MtmResetTransaction()
 	x->csn = INVALID_CSN;
 	x->status = TRANSACTION_STATUS_UNKNOWN;
 	x->gid[0] = '\0';
+	MtmDDLStatement = NULL;
 }
 
 #if 0
@@ -987,6 +988,7 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 			MtmCheckClusterLock();
 		}
 		MtmInsideTransaction = true;
+		MtmDDLStatement = NULL;
 		Mtm->nRunningTransactions += 1;
 
 		x->snapshot = MtmAssignCSN();
@@ -3461,7 +3463,7 @@ _PG_init(void)
 		&MtmRemoteFunctionsList,
 		"lo_create,lo_unlink",
 		PGC_USERSET, /* context */
-		0,			 /* flags */
+		GUC_LIST_INPUT | GUC_LIST_QUOTE, /* flags */
 		NULL,		 /* GucStringCheckHook check_hook */
 		MtmSetRemoteFunction,		 /* GucStringAssignHook assign_hook */
 		NULL		 /* GucShowHook show_hook */
@@ -4975,13 +4977,16 @@ static void MtmGucDiscard()
 	dlist_init(&MtmGucList);
 
 	hash_destroy(MtmGucHash);
-	MtmGucInit();
+	MtmGucHash = NULL;
 }
 
 static inline void MtmGucUpdate(const char *key, char *value)
 {
 	MtmGucEntry *hentry;
 	bool found;
+
+	if (!MtmGucHash)
+		MtmGucInit();
 
 	hentry = (MtmGucEntry*)hash_search(MtmGucHash, key, HASH_ENTER, &found);
 	if (found)
@@ -4997,6 +5002,9 @@ static inline void MtmGucRemove(const char *key)
 {
 	MtmGucEntry *hentry;
 	bool found;
+
+	if (!MtmGucHash)
+		MtmGucInit();
 
 	hentry = (MtmGucEntry*)hash_search(MtmGucHash, key, HASH_FIND, &found);
 	if (found)
@@ -5056,23 +5064,19 @@ char* MtmGucSerialize(void)
 
 	serialized_gucs = makeStringInfo();
 
-	/*
-	 * Crutch for scheduler. It sets search_path through SetConfigOption()
-	 * so our callback do not react on that.
-	 */
-	search_path = GetConfigOption("search_path", false, true);
-	appendStringInfo(serialized_gucs, "SET search_path TO %s; ", search_path);
-
 	dlist_foreach(iter, &MtmGucList)
 	{
 		MtmGucEntry *cur_entry = dlist_container(MtmGucEntry, list_node, iter.cur);
+
+		if (strcmp(cur_entry->key, "search_path") == 0)
+			continue;
 
 		appendStringInfoString(serialized_gucs, "SET ");
 		appendStringInfoString(serialized_gucs, cur_entry->key);
 		appendStringInfoString(serialized_gucs, " TO ");
 
 		/* quite a crutch */
-		if (strstr(cur_entry->key, "_mem") != NULL || *(cur_entry->value) == '\0' || strchr(cur_entry->value, ',') != NULL)
+		if (strstr(cur_entry->key, "_mem") != NULL || *(cur_entry->value) == '\0')
 		{
 			appendStringInfoString(serialized_gucs, "'");
 			appendStringInfoString(serialized_gucs, cur_entry->value);
@@ -5084,6 +5088,13 @@ char* MtmGucSerialize(void)
 		}
 		appendStringInfoString(serialized_gucs, "; ");
 	}
+
+	/*
+	 * Crutch for scheduler. It sets search_path through SetConfigOption()
+	 * so our callback do not react on that.
+	 */
+	search_path = GetConfigOption("search_path", false, true);
+	appendStringInfo(serialized_gucs, "SET search_path TO %s; ", search_path);
 
 	return serialized_gucs->data;
 }
@@ -5142,12 +5153,60 @@ void MtmUpdateLockGraph(int nodeId, void const* messageBody, int messageSize)
 	MTM_LOG1("Update deadlock graph for node %d size %d", nodeId, messageSize);
 }
 
+static bool MtmIsTempType(TypeName* typeName)
+{
+	bool isTemp = false;
+
+	if (typeName != NULL)
+	{
+		Type typeTuple = LookupTypeName(NULL, typeName, NULL, false);
+		if (typeTuple != NULL)
+		{
+			Form_pg_type typeStruct = (Form_pg_type) GETSTRUCT(typeTuple);
+		    Oid relid = typeStruct->typrelid;
+		    ReleaseSysCache(typeTuple);
+
+			if (relid != InvalidOid)
+			{
+				HeapTuple classTuple = SearchSysCache1(RELOID, relid);
+				Form_pg_class classStruct = (Form_pg_class) GETSTRUCT(classTuple);
+				if (classStruct->relpersistence == 't')
+					isTemp = true;
+				ReleaseSysCache(classTuple);
+			}
+		}
+	}
+	return isTemp;
+}
+
+static bool MtmFunctionProfileDependsOnTempTable(CreateFunctionStmt* func)
+{
+	ListCell* elem;
+
+	if (MtmIsTempType(func->returnType))
+	{
+		return true;
+	}
+	foreach (elem, func->parameters)
+	{
+		FunctionParameter* param = (FunctionParameter*) lfirst(elem);
+		if (MtmIsTempType(param->argType))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+
+
 static void MtmProcessUtility(Node *parsetree, const char *queryString,
 							  ProcessUtilityContext context, ParamListInfo params,
 							  DestReceiver *dest, char *completionTag)
 {
 	bool skipCommand = false;
 	bool executed = false;
+	bool prevMyXactAccessedTempRel;
 
 	MTM_LOG2("%d: Process utility statement tag=%d, context=%d, issubtrans=%d, creating_extension=%d, query=%s",
 			 MyProcPid, nodeTag(parsetree), context, IsSubTransaction(), creating_extension, queryString);
@@ -5229,19 +5288,24 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			break;
 
 		case T_VacuumStmt:
-		  skipCommand = true;
-		  if (context == PROCESS_UTILITY_TOPLEVEL) {
-			  MtmProcessDDLCommand(queryString, false);
-			  MtmTx.isDistributed = false;
-		  } else if (MtmApplyContext != NULL) {
-			  MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
-			  Assert(oldContext != MtmApplyContext);
-			  MtmVacuumStmt = (VacuumStmt*)copyObject(parsetree);
-			  MemoryContextSwitchTo(oldContext);
-			  return;
-		  }
-		  break;
-
+		{
+			VacuumStmt* vacuum = (VacuumStmt*)parsetree;
+			skipCommand = true;
+			if ((vacuum->options & VACOPT_LOCAL) == 0 && !MtmVolksWagenMode)
+			{
+				if (context == PROCESS_UTILITY_TOPLEVEL) {
+					MtmProcessDDLCommand(queryString, false);
+					MtmTx.isDistributed = false;
+				} else if (MtmApplyContext != NULL) {
+					MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
+					Assert(oldContext != MtmApplyContext);
+					MtmVacuumStmt = (VacuumStmt*)copyObject(parsetree);
+					MemoryContextSwitchTo(oldContext);
+					return;
+				}
+			}
+			break;
+		}
 		case T_CreateDomainStmt:
 			/* Detect temp tables access */
 			{
@@ -5377,6 +5441,11 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 						 return;
 					}
 				}
+				else if (stmt->removeType == OBJECT_FUNCTION && MtmTx.isReplicated)
+				{
+					/* Make it possible to drop functions which were not replicated */
+					stmt->missing_ok = true;
+				}
 			}
 			break;
 
@@ -5386,6 +5455,7 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			CopyStmt *copyStatement = (CopyStmt *) parsetree;
 			skipCommand = true;
 			if (copyStatement->is_from) {
+				ListCell *opt;
 				RangeVar *relation = copyStatement->relation;
 
 				if (relation != NULL)
@@ -5400,6 +5470,25 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 						heap_close(rel, ShareLock);
 					}
 				}
+
+				foreach(opt, copyStatement->options)
+				{
+					DefElem	*elem = lfirst(opt);
+					if (strcmp("local", elem->defname) == 0) {
+						MtmTx.isDistributed = false; /* Skip */
+						MtmTx.snapshot = INVALID_CSN;
+						MtmTx.containsDML = false;
+						break;
+					}
+				}
+			}
+		    case T_CreateFunctionStmt:
+		    {
+				if (MtmTx.isReplicated)
+				{
+					// disable functiob body cehck at replica
+					check_function_bodies = false;
+				}
 			}
 			break;
 		}
@@ -5409,16 +5498,16 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			break;
 	}
 
-	if (!skipCommand && !MtmTx.isReplicated && (context == PROCESS_UTILITY_TOPLEVEL || MtmUtilityProcessedInXid != GetCurrentTransactionId()))
+	if (!skipCommand && !MtmTx.isReplicated && !MtmDDLStatement)
 	{
-		MtmUtilityProcessedInXid = GetCurrentTransactionId();
-		if (context == PROCESS_UTILITY_TOPLEVEL || !ActivePortal) {
-			MtmProcessDDLCommand(queryString, true);
-		} else {
-			MtmProcessDDLCommand(ActivePortal->sourceText, true);
-		}
+		MTM_LOG3("Process DDL statement '%s', MtmTx.isReplicated=%d, MtmIsLogicalReceiver=%d", queryString, MtmTx.isReplicated, MtmIsLogicalReceiver);
+		MtmProcessDDLCommand(queryString, true);
 		executed = true;
+		MtmDDLStatement = queryString;
 	}
+	else MTM_LOG3("Skip utility statement '%s': skip=%d, insideDDL=%d", queryString, skipCommand, MtmDDLStatement != NULL);
+
+	prevMyXactAccessedTempRel = MyXactAccessedTempRel;
 
 	if (PreviousProcessUtilityHook != NULL)
 	{
@@ -5435,9 +5524,22 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 		MTM_ELOG(ERROR, "Isolation level %s is not supported by multimaster", isoLevelStr[XactIsoLevel]);
 	}
 #endif
+	/* Allow replication of functions operating on temporary tables.
+	 * Even through temporary table doesn't exist at replica, diasabling functoin body check makes it possible to create such function at replica.
+	 * And it can be accessed later at replica if correspondent temporary table will be created.
+	 * But disable replication of functions returning temporary tables: such functions can not be created at replica in any case.
+	 */
+	if (IsA(parsetree, CreateFunctionStmt))
+	{
+		if (MtmFunctionProfileDependsOnTempTable((CreateFunctionStmt*)parsetree))
+		{
+			prevMyXactAccessedTempRel = true;
+		}
+		MyXactAccessedTempRel = prevMyXactAccessedTempRel;
+	}
 	if (MyXactAccessedTempRel)
 	{
-		MTM_LOG1("Xact accessed temp table, stopping replication");
+		MTM_LOG1("Xact accessed temp table, stopping replication of statement '%s'", queryString);
 		MtmTx.isDistributed = false; /* Skip */
 		MtmTx.snapshot = INVALID_CSN;
 	}
@@ -5445,8 +5547,9 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 	if (executed)
 	{
 		MtmFinishDDLCommand();
+		MtmDDLStatement = NULL;
 	}
-	if (nodeTag(parsetree) == T_CreateStmt)
+	if (IsA(parsetree, CreateStmt))
 	{
 		CreateStmt* create = (CreateStmt*)parsetree;
 		Oid relid = RangeVarGetRelid(create->relation, NoLock, true);
@@ -5463,15 +5566,12 @@ static void MtmProcessUtility(Node *parsetree, const char *queryString,
 			}
 		}
 	}
-	if (context == PROCESS_UTILITY_TOPLEVEL) {
-		MtmUtilityProcessedInXid = InvalidTransactionId;
-	}
 }
 
 static void
 MtmExecutorStart(QueryDesc *queryDesc, int eflags)
 {
-	if (!MtmTx.isReplicated && ActivePortal)
+	if (!MtmTx.isReplicated && !MtmDDLStatement)
 	{
 		ListCell   *tlist;
 
@@ -5485,11 +5585,32 @@ MtmExecutorStart(QueryDesc *queryDesc, int eflags)
 			TargetEntry *tle = (TargetEntry *) lfirst(tlist);
 			if (tle->expr && IsA(tle->expr, FuncExpr))
 			{
-				if (hash_search(MtmRemoteFunctions, &((FuncExpr*)tle->expr)->funcid, HASH_FIND, NULL))
+				Oid func_oid = ((FuncExpr*)tle->expr)->funcid;
+				if (!hash_search(MtmRemoteFunctions, &func_oid, HASH_FIND, NULL))
 				{
-					MtmProcessDDLCommand(ActivePortal->sourceText, true);
-					break;
+					Form_pg_proc funcform;
+					bool is_sec_def;
+					HeapTuple func_tuple = SearchSysCache1(PROCOID, ObjectIdGetDatum(func_oid));
+					if (!HeapTupleIsValid(func_tuple))
+						elog(ERROR, "cache lookup failed for function %u", func_oid);
+					funcform = (Form_pg_proc) GETSTRUCT(func_tuple);
+					is_sec_def = funcform->prosecdef;
+					ReleaseSysCache(func_tuple);
+					elog(LOG, "Function %s security defined=%d", tle->resname, is_sec_def);
+					if (!is_sec_def)
+					{
+						continue;
+					}
 				}
+				/*
+				 * Execute security defined functions or functions marked as remote at replicated nodes.
+				 * Them are executed as DDL statements.
+				 * All data modifications done inside this function are not replicated.
+				 * As a result generated content can vary at different nodes.
+				 */
+				MtmProcessDDLCommand(queryDesc->sourceText, true);
+				MtmDDLStatement = queryDesc;
+				break;
 			}
 		}
 	}
@@ -5537,6 +5658,12 @@ MtmExecutorFinish(QueryDesc *queryDesc)
 	else
 	{
 		standard_ExecutorFinish(queryDesc);
+	}
+
+	if (MtmDDLStatement == queryDesc)
+	{
+		MtmFinishDDLCommand();
+		MtmDDLStatement = NULL;
 	}
 }
 
