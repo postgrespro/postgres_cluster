@@ -2475,8 +2475,17 @@ XLogSendLogical(void)
 		 * If the record we just wanted read is at or beyond the flushed
 		 * point, then we're caught up.
 		 */
-		if (logical_decoding_ctx->reader->EndRecPtr >= GetFlushRecPtr()) {
+		if (logical_decoding_ctx->reader->EndRecPtr >= GetFlushRecPtr())
+		{
 			WalSndCaughtUp = true;
+
+			/*
+			 * Have WalSndLoop() terminate the connection in an orderly
+			 * manner, after writing out all the pending data.
+			 */
+			if (got_STOPPING)
+				got_SIGUSR2 = true;
+
 			LogicalDecodingCaughtUp(logical_decoding_ctx);
 		}
 	}
