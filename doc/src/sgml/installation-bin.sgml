@@ -208,8 +208,8 @@
       </para>
       <para>
         By default, all files are installed into the
-        <literal>/usr/pgsql-9.6</literal> directory. Make sure
-        <literal>/usr/pgsql-9.6/bin</literal> is added to your
+        <literal>/usr/pgpro-9.6</literal> directory. Make sure
+        <literal>/usr/pgpro-9.6/bin</literal> is added to your
         <literal>PATH</literal> environment variable.
       </para>
     </sect3>
