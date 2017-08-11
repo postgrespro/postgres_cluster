@@ -150,6 +150,7 @@
    </para>
   </partintro>
 
+  &installation-bin;
   &runtime;
   &config;
   &client-auth;
