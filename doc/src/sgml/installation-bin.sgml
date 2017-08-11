@@ -75,7 +75,7 @@
           <tbody>
             <row>
               <entry>
-                <filename>postgrespro96</filename>
+                <filename>postgrespro-enterprise96</filename>
               </entry>
               <entry>
                 Standard client applications such as
@@ -85,7 +85,7 @@
             </row>
             <row>
               <entry>
-                <filename>postgrespro96-libs</filename>
+                <filename>postgrespro-enterprise96-libs</filename>
               </entry>
               <entry>
                 Shared libraries, required to deploy client
@@ -94,7 +94,7 @@
             </row>
             <row>
               <entry>
-                <filename>postgrespro96-server</filename>
+                <filename>postgrespro-enterprise96-server</filename>
               </entry>
               <entry>
                 <productname>&productname;</productname> server and PL/pgsql server-side programming
@@ -103,7 +103,7 @@
             </row>
             <row>
               <entry>
-                <filename>postgrespro96-contrib</filename>
+                <filename>postgrespro-enterprise96-contrib</filename>
               </entry>
               <entry>
                 Additional extensions and programs deployable on
@@ -112,7 +112,7 @@
             </row>
             <row>
               <entry>
-                <filename>postgrespro96-pg_probackup</filename>
+                <filename>postgrespro-enterprise96-pg_probackup</filename>
               </entry>
               <entry>
                 <filename>pg_probackup</filename> utility
@@ -128,7 +128,7 @@
             </row>
             <row>
               <entry>
-                <filename>postgrespro96-devel</filename>
+                <filename>postgrespro-enterprise96-devel</filename>
               </entry>
               <entry>
                 Development headers and libraries both for development
@@ -137,7 +137,7 @@
             </row>
             <row>
               <entry>
-                <filename>postgrespro96-plperl</filename>
+                <filename>postgrespro-enterprise96-plperl</filename>
               </entry>
               <entry>
                 Server-side programming language based on Perl
@@ -145,7 +145,7 @@
             </row>
             <row>
               <entry>
-                <filename>postgrespro96-plpython</filename>
+                <filename>postgrespro-enterprise96-plpython</filename>
               </entry>
               <entry>
                 Server-side programming language based on Python
@@ -153,7 +153,7 @@
             </row>
             <row>
               <entry>
-                <filename>postgrespro96-pltcl</filename>
+                <filename>postgrespro-enterprise96-pltcl</filename>
               </entry>
               <entry>
                 Server-side programming language based on Tcl
@@ -161,7 +161,7 @@
             </row>
             <row>
               <entry>
-                <filename>postgrespro96-docs</filename>
+                <filename>postgrespro-enterprise96-docs</filename>
               </entry>
               <entry>
                 Documentation (English)
@@ -169,7 +169,7 @@
             </row>
             <row>
               <entry>
-                <filename>postgrespro96-docs-ru</filename>
+                <filename>postgrespro-enterprise96-docs-ru</filename>
               </entry>
               <entry>
                 Documentation (Russian)
@@ -177,7 +177,7 @@
             </row>
             <row>
               <entry>
-                <filename>postgrespro96-test</filename>
+                <filename>postgrespro-enterprise96-test</filename>
               </entry>
               <entry>
                 Test scripts for the server
@@ -191,7 +191,7 @@
         packages:
         <itemizedlist>
           <listitem>
-            <para><filename>postgrespro96-server</filename> 
+            <para><filename>postgrespro-enterprise96-server</filename> 
             </para>
           </listitem>
           <listitem>
@@ -199,17 +199,17 @@
             </para>
           </listitem>
           <listitem>
-            <para><filename>postgrespro96-libs</filename>
+            <para><filename>postgrespro-enterprise96-libs</filename>
             </para>
           </listitem>
         </itemizedlist>
         To use additional <productname>&productname;</productname> extensions, you must also install
-        the <filename>postgrespro96-contrib</filename> package.
+        the <filename>postgrespro-enterprise96-contrib</filename> package.
       </para>
       <para>
         By default, all files are installed into the
-        <literal>/usr/pgsql-9.6</literal> directory. Make sure
-        <literal>/usr/pgsql-9.6/bin</literal> is added to your
+        <literal>/usr/pgproee-9.6</literal> directory. Make sure
+        <literal>/usr/pgproee-9.6/bin</literal> is added to your
         <literal>PATH</literal> environment variable.
       </para>
     </sect3>
@@ -217,7 +217,7 @@
       <title>Creating the Default Database</title>
       <para>
         Installation of the
-        <filename>postgrespro96-server</filename> package
+        <filename>postgrespro-enterprise96-server</filename> package
         does not create the default database. It only creates the
         <literal>postgres</literal> system user that
         owns database files and server processes.
@@ -615,7 +615,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-9.6
+                postgrespro-enterprise9.6
               </entry>
               <entry>
                 Standard client programs, such as <literal>psql</literal>, and man pages for SQL commands
@@ -623,7 +623,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-9.6-contrib
+                postgrespro-enterprise9.6-contrib
               </entry>
               <entry>
                  Extensions loadable into <productname>&productname;</productname> server
@@ -631,7 +631,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-9.6-devel
+                postgrespro-enterprise9.6-devel
               </entry>
               <entry>
                  Files to compile server extensions using PGXS framework
@@ -639,7 +639,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                 postgrespro-9.6-devel-static
+                 postgrespro-enterprise9.6-devel-static
               </entry>
               <entry>
                  Static libraries needed to compile extensions
@@ -647,7 +647,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                 postgrespro-9.6-docs
+                 postgrespro-enterprise9.6-docs
               </entry>
               <entry>
                  Documentation (English)
@@ -655,7 +655,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-               postgrespro-9.6-docs-ru
+               postgrespro-enterprise99.6-docs-ru
               </entry>
               <entry>
                Documentation (Russian)
@@ -663,7 +663,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-              postgrespro-9.6-perl
+              postgrespro-enterprise9.6-perl
               </entry>
               <entry>
                PL/Perl programming language
@@ -671,7 +671,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-              postgrespro-9.6-pg_probackup
+              postgrespro-enterprise9.6-pg_probackup
               </entry>
               <entry>
                <filename>pg_probackup</filename> utility
@@ -679,7 +679,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-               postgrespro-9.6-python
+               postgrespro-enterprise9.6-python
               </entry>
               <entry>
                PL/Python programming language
@@ -687,7 +687,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-              postgrespro-9.6-server
+              postgrespro-enterprise9.6-server
               </entry>
               <entry>
                PostgresPro Enterprise server
@@ -695,7 +695,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-              postgrespro-9.6-tcl
+              postgrespro-enterprise9.6-tcl
               </entry>
               <entry>
                PL/Tcl programming language
@@ -710,15 +710,15 @@ service postgresql initdb
       </para>
       <para>
         For server installations, you need
-        <literal>postgrespro-9.6-server</literal>. for server
+        <literal>postgrespro-enterprise9.6-server</literal>. for server
         installations For a minimal client installation, only the
         <literal>libpq5.9</literal> package is required.
-        <literal>postgrespro-9.6</literal> is typically needeed on
+        <literal>postgrespro-enterprise9.6</literal> is typically needeed on
         clients.
       </para>
       <para>
         <filename>pg_config</filename> utility is only
-        shipped as part of <literal>postgrespro-9.6-devel</literal>
+        shipped as part of <literal>postgrespro-enterprise9.6-devel</literal>
         package, so you need to install this package if you are going to
         compile client programs that use <literal>pg_config</literal> in
         the build process.
@@ -781,7 +781,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-96
+                postgrespro-enterprise96
               </entry>
               <entry>
                 Standard clients and man pages for SQL commands
@@ -789,7 +789,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-96-contrib
+                postgrespro-enterprise96-contrib
                 
               </entry>
               <entry>
@@ -798,7 +798,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-96-devel
+                postgrespro-enterprise96-devel
               </entry>
               <entry>
                 Development files for both client programs
@@ -807,7 +807,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-96-docs
+                postgrespro-enterprise96-docs
               </entry>
               <entry>
                 Documentation (English)
@@ -815,7 +815,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-96-docs-ru
+                postgrespro-enterprise96-docs-ru
               </entry>
               <entry>
                 Documentation (Russian)
@@ -823,7 +823,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-96-pg_probackup
+                postgrespro-enterprise96-pg_probackup
               </entry>
               <entry>
                 pg_probackup utility
@@ -831,7 +831,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-96-plperl
+                postgrespro-enterprise96-plperl
               </entry>
               <entry>
                 PL/Perl server programming language
@@ -839,7 +839,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-96-plpython
+                postgrespro-enterprise96-plpython
               </entry>
               <entry>
                 PL/Python server programming language
@@ -847,7 +847,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-96-pltcl
+                postgrespro-enterprise96-pltcl
               </entry>
               <entry>
                 PL/Tcl server programming language
@@ -855,7 +855,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-96-server
+                postgrespro-enterprise96-server
               </entry>
               <entry>
                 <productname>&productname;</productname>
@@ -864,7 +864,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-96-test
+                postgrespro-enterprise96-test
               </entry>
               <entry>
                 Regression test suite for <productname>&productname;</productname> server
@@ -875,11 +875,11 @@ service postgresql initdb
       </informaltable>
       <para>
         Server installations require
-        <filename>postgrespro96-server</filename>,
-        <filename>postgespro96</filename>, and
-        <filename>postgrespro96-libs</filename> packages.
+        <filename>postgrespro-enterprise96-server</filename>,
+        <filename>postgespro-enterprise96</filename>, and
+        <filename>postgrespro-enterprise96-libs</filename> packages.
         To use additional <productname>&productname;</productname> extensions, you must also install
-        the <filename>postgrespro96-contrib</filename>
+        the <filename>postgrespro-enterprise96-contrib</filename>
         package.
       </para>
     </sect3>
