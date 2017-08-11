@@ -1175,8 +1175,10 @@ void MtmPrecommitTransaction(char const* gid)
 			MTM_ELOG(WARNING, "MtmPrecommitTransaction: transaction '%s' is not found", gid);
 		} else {
 			MtmTransState* ts = tm->state;
-			Assert(ts != NULL);
-			if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
+			if (ts == NULL) {
+				MTM_ELOG(WARNING, "MtmPrecommitTransaction: transaction '%s' is not yet prepared, status %s", gid, MtmTxnStatusMnem[tm->status]);
+				MtmUnlock();
+			} else if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
 				ts->status = TRANSACTION_STATUS_UNKNOWN;
 				ts->csn = MtmAssignCSN();
 				MtmAdjustSubtransactions(ts);
