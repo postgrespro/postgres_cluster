@@ -74,7 +74,7 @@ int			DefaultXactIsoLevel = XACT_READ_COMMITTED;
 int			XactIsoLevel;
 
 bool		DefaultXactReadOnly = false;
-/* 
+/*
  * We need initialization because only initialized vars appear in
  * postges.def  and accssible from loadable extension
  */
@@ -119,6 +119,10 @@ TransactionId *ParallelCurrentXids;
  */
 bool		MyXactAccessedTempRel = false;
 
+/*
+ * Number of logical changes (insert,delte,update,lgical message) performed by transaction
+ */
+int64       MyXactLogicalChanges = 0;
 
 /*
  *	transaction states - transaction state from server perspective
@@ -1916,6 +1920,8 @@ StartTransaction(void)
 	XactIsoLevel = DefaultXactIsoLevel;
 	forceSyncCommit = false;
 	MyXactAccessedTempRel = false;
+	MyXactLogicalChanges = 0;
+
 
 	/*
 	 * reinitialize within-transaction counters
@@ -2181,7 +2187,7 @@ CommitTransaction(void)
 	 * waiting for lock on a relation we've modified, we want them to know
 	 * about the catalog change before they start using the relation).
 	 */
-	xactHasCatcacheInvalidationMessages = HasCatcacheInvalidationMessages(); 
+	xactHasCatcacheInvalidationMessages = HasCatcacheInvalidationMessages();
 	xactHasRelcacheInvalidationMessages = HasRelcacheInvalidationMessages();
 	AtEOXact_Inval(true);
 
@@ -2196,7 +2202,7 @@ CommitTransaction(void)
 						 RESOURCE_RELEASE_AFTER_LOCKS,
 						 true, true);
 
-	if (!is_autonomous_transaction) 
+	if (!is_autonomous_transaction)
 	{
 		/*
 		 * Likewise, dropping of files deleted during the transaction is best done
@@ -2215,13 +2221,13 @@ CommitTransaction(void)
 
 	AtCommit_Notify();
 	AtEOXact_GUC(true, s->gucNestLevel);
-	if (!is_autonomous_transaction) 
+	if (!is_autonomous_transaction)
 	{
 		AtEOXact_SPI(true);
 	}
 	AtEOXact_on_commit_actions(true);
 	AtEOXact_Namespace(true, is_parallel_worker);
-	if (!is_autonomous_transaction) 
+	if (!is_autonomous_transaction)
 	{
 		AtEOXact_SMgr();
 		AtEOXact_Files();
@@ -2689,7 +2695,7 @@ AbortTransaction(void)
 			AtEOXact_Buffers(false);
 		}
 		AtEOXact_RelationCache(false);
-		xactHasCatcacheInvalidationMessages = HasCatcacheInvalidationMessages(); 
+		xactHasCatcacheInvalidationMessages = HasCatcacheInvalidationMessages();
 		xactHasRelcacheInvalidationMessages = HasRelcacheInvalidationMessages();
 		AtEOXact_Inval(false);
 		AtEOXact_MultiXact();
@@ -3537,14 +3543,14 @@ void SuspendTransaction(void)
 		sus->TopTransactionStateData = TopTransactionStateData;
 
 		sus->SnapshotState = SuspendSnapshot(); /* only before the resource-owner stuff */
-		
-		if (HasCatcacheInvalidationMessages()) 
+
+		if (HasCatcacheInvalidationMessages())
 		{
 			ResetCatalogCaches();
 		}
-		if (HasRelcacheInvalidationMessages()) 
+		if (HasRelcacheInvalidationMessages())
 		{
-			RelationCacheInvalidate();			
+			RelationCacheInvalidate();
 		}
 		sus->InvalidationInfo = SuspendInvalidationInfo();
 		xactHasCatcacheInvalidationMessages = false;
@@ -3601,7 +3607,7 @@ void SuspendTransaction(void)
 
 		sus->PgStatState = PgStatSuspend();
 		sus->TriggerState = TriggerSuspend();
-		sus->SPIState = SuspendSPI();	  
+		sus->SPIState = SuspendSPI();
 	}
 
 	AtStart_Memory();
@@ -3660,13 +3666,13 @@ bool ResumeTransaction(void)
 
 		ResumeSnapshot(sus->SnapshotState); /* only after the resource-owner stuff */
 		ResumeInvalidationInfo(sus->InvalidationInfo);
-		if (xactHasCatcacheInvalidationMessages) 
+		if (xactHasCatcacheInvalidationMessages)
 		{
 			ResetCatalogCaches();
 		}
-		if (xactHasRelcacheInvalidationMessages) 
+		if (xactHasRelcacheInvalidationMessages)
 		{
-			RelationCacheInvalidate();			
+			RelationCacheInvalidate();
 		}
 
 		MyProc->backendId = sus->vxid.backendId;
@@ -3864,7 +3870,7 @@ EndTransactionBlock(bool autonomous)
 			 * to COMMIT.
 			 */
 		case TBLOCK_INPROGRESS:
-		    if (autonomous && getNestLevelATX() == 0) { 
+		    if (autonomous && getNestLevelATX() == 0) {
 				ereport(WARNING,
 						(errcode(ERRCODE_NO_ACTIVE_SQL_TRANSACTION),
 						 errmsg("there is no autonomous transaction in progress")));
@@ -3993,7 +3999,7 @@ UserAbortTransactionBlock(bool autonomous)
 			 * exit the transaction block.
 			 */
 		case TBLOCK_INPROGRESS:
-		    if (autonomous && getNestLevelATX() == 0) { 
+		    if (autonomous && getNestLevelATX() == 0) {
 				ereport(WARNING,
 						(errcode(ERRCODE_NO_ACTIVE_SQL_TRANSACTION),
 						 errmsg("there is no autonomous transaction in progress")));
@@ -5173,7 +5179,7 @@ EstimateTransactionStateSpace(void)
 		nxids = add_size(nxids, s->nChildXids);
 	}
 
-	nxids = add_size(nxids, nParallelCurrentXids);	
+	nxids = add_size(nxids, nParallelCurrentXids);
 	nxids = mul_size(nxids, sizeof(TransactionId));
 	return add_size(nxids, TM->GetTransactionStateSize());
 }
@@ -5489,6 +5495,7 @@ XactLogCommitRecord(TimestampTz commit_time,
 	/* First figure out and collect all the information needed */
 
 	xlrec.xact_time = commit_time;
+	xlrec.n_changes = MyXactLogicalChanges;
 
 	if (relcacheInval)
 		xl_xinfo.xinfo |= XACT_COMPLETION_UPDATE_RELCACHE_FILE;
@@ -5890,7 +5897,7 @@ xact_redo_commit(xl_xact_parsed_commit *parsed,
  * because subtransaction commit is never WAL logged.
  */
 static void
-xact_redo_abort(xl_xact_parsed_abort *parsed, 
+xact_redo_abort(xl_xact_parsed_abort *parsed,
 				TransactionId xid,
 				XLogRecPtr lsn,
 				RepOriginId origin_id)
@@ -6036,9 +6043,9 @@ xact_redo(XLogReaderState *record)
 		RecreateTwoPhaseFile(XLogRecGetXid(record),
 							 XLogRecGetData(record), XLogRecGetDataLen(record));
 
-		if (originId != InvalidRepOriginId && originId != DoNotReplicateId) 
+		if (originId != InvalidRepOriginId && originId != DoNotReplicateId)
 		{
-			xl_xact_parsed_prepare parsed;		
+			xl_xact_parsed_prepare parsed;
 			ParsePrepareRecord(XLogRecGetXid(record), XLogRecGetData(record), &parsed);
 			Assert(parsed.origin_lsn != InvalidXLogRecPtr);
 			/* recover apply progress */
@@ -6059,17 +6066,17 @@ xact_redo(XLogReaderState *record)
 }
 
 Datum pg_current_tx_nest_level(PG_FUNCTION_ARGS)
-{	
+{
 	PG_RETURN_INT64(GetCurrentTransactionNestLevel());
 }
 
 Datum pg_current_atx_nest_level(PG_FUNCTION_ARGS)
-{	
+{
 	PG_RETURN_INT64(getNestLevelATX());
 }
 
 Datum pg_current_atx_has_ancestor(PG_FUNCTION_ARGS)
-{	
+{
 	int64 xid = PG_GETARG_INT64(0);
 	PG_RETURN_BOOL(TransactionIdIsAncestorOfCurrentATX(xid));
 }

@@ -42,6 +42,7 @@ ParseCommitRecord(uint8 info, xl_xact_commit *xlrec, xl_xact_parsed_commit *pars
 								 * present */
 
 	parsed->xact_time = xlrec->xact_time;
+	parsed->n_changes = xlrec->n_changes;
 
 	if (info & XLOG_XACT_HAS_INFO)
 	{

@@ -1354,7 +1354,8 @@ void
 ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 					TimestampTz commit_time,
-					RepOriginId origin_id, XLogRecPtr origin_lsn)
+					RepOriginId origin_id, XLogRecPtr origin_lsn,
+	                int64 n_changes)
 {
 	ReorderBufferTXN *txn;
 	volatile Snapshot snapshot_now;
@@ -1377,6 +1378,13 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 	txn->xact_action = rb->xact_action;
 	strcpy(txn->gid, rb->gid);
 	strcpy(txn->state_3pc, rb->state_3pc);
+
+	if (txn->n_changes != n_changes)
+	{
+		elog(ERROR, "Incomplete transaction %lld: decode %lld changes from %lld",
+				 (long long)xid, (long long)txn->n_changes, (long long)n_changes);
+	}
+
 
 	/*
 	 * If this transaction didn't have any real changes in our database, it's
@@ -1447,7 +1455,6 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 				case REORDER_BUFFER_CHANGE_UPDATE:
 				case REORDER_BUFFER_CHANGE_DELETE:
 					Assert(snapshot_now);
-
 					reloid = RelidByRelfilenode(change->data.tp.relnode.spcNode,
 											change->data.tp.relnode.relNode);
 
@@ -1898,11 +1905,17 @@ ReorderBufferImmediateInvalidation(ReorderBuffer *rb, uint32 ninvalidations,
  * logical decoding, they do not necessarily pass though here.
  */
 void
-ReorderBufferProcessXid(ReorderBuffer *rb, TransactionId xid, XLogRecPtr lsn)
+ReorderBufferProcessXid(ReorderBuffer *rb, TransactionId xid, XLogRecPtr lsn, bool logicalOp)
 {
 	/* many records won't have an xid assigned, centralize check here */
 	if (xid != InvalidTransactionId)
-		ReorderBufferTXNByXid(rb, xid, true, NULL, lsn, true);
+	{
+		ReorderBufferTXN *txn = ReorderBufferTXNByXid(rb, xid, true, NULL, lsn, true);
+		if (logicalOp)
+		{
+			txn->n_changes += 1;
+		}
+	}
 }
 
 /*

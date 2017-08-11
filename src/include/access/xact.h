@@ -85,6 +85,9 @@ extern int	synchronous_commit;
 /* Kluge for 2PC support */
 extern bool MyXactAccessedTempRel;
 
+/* Number of logical changes (update,delete,insert,logical message) performed by current transaction */
+extern int64 MyXactLogicalChanges;
+
 /*
  *	start- and end-of-transaction callbacks for dynamically loaded modules
  */
@@ -261,6 +264,7 @@ typedef struct xl_xact_origin
 typedef struct xl_xact_commit
 {
 	TimestampTz xact_time;		/* time of commit */
+	int64       n_changes;      /* number of changes done by transaction */
 
 	/* xl_xact_xinfo follows if XLOG_XACT_HAS_INFO */
 	/* xl_xact_dbinfo follows if XINFO_HAS_DBINFO */
@@ -270,7 +274,7 @@ typedef struct xl_xact_commit
 	/* xl_xact_invals follows if XINFO_HAS_INVALS */
 	/* xl_xact_origin follows if XINFO_HAS_ORIGIN, stored unaligned! */
 } xl_xact_commit;
-#define MinSizeOfXactCommit (offsetof(xl_xact_commit, xact_time) + sizeof(TimestampTz))
+#define MinSizeOfXactCommit sizeof(xl_xact_commit)
 
 typedef struct xl_xact_abort
 {
@@ -308,6 +312,8 @@ typedef struct xl_xact_parsed_commit
 	int			nmsgs;
 	SharedInvalidationMessage *msgs;
 
+	int64       n_changes;
+
 	TransactionId twophase_xid; /* only for 2PC */
 	char 		twophase_gid[GIDSIZE]; // GIDSIZE
 
@@ -329,6 +335,8 @@ typedef struct xl_xact_parsed_prepare
 
 	int			nmsgs;
 	SharedInvalidationMessage *msgs;
+
+	int64       n_changes;
 
 	TransactionId twophase_xid;
 	char 		twophase_gid[GIDSIZE];
