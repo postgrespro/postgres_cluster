@@ -784,7 +784,6 @@ service postgresql initdb
             <row>
               <entry>
                 postgrespro-enterprise96-contrib
-                
               </entry>
               <entry>
                 Loadable modules and extensions for server

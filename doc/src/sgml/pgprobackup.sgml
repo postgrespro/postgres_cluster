@@ -37,7 +37,6 @@ doc/src/sgml/pgprobackup.sgml
    <command>pg_probackup</command>
    <arg choice="plain"><option>del-instance</option></arg>
    <arg choice="plain"><option>-B</option> <replaceable>backupdir</replaceable></arg>
-   <arg choice="plain"><option>-D</option> <replaceable>datadir</replaceable></arg>
    <arg choice="plain"><option>--instance</option> <replaceable>instance_name</replaceable></arg>
   </cmdsynopsis>
   <cmdsynopsis>

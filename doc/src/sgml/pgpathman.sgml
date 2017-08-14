@@ -121,7 +121,7 @@ SET pg_pathman.enable = t;</programlisting>
     <para><emphasis role="strong">Contents</emphasis></para>
       <para><link linkend="pg-pathman-choosing-partitioning-strategies">Choosing Partitioning Strategies</link></para>
       <para><link linkend="pg-pathman-running-non-blocking-data-migration">Running Non-Blocking Data Migration</link></para>
-      <para><link linkend="pg-pathman-partitioning-by-expression">Partitioning by Expression</link></para>
+      <para><link linkend="pg-pathman-partitioning-by-expression">Partitioning by a Single Expression</link></para>
       <para><link linkend="pg-pathman-partitioning-by-comp-key">Partitioning by Composite Key</link></para>
     <para>
       As your database grows, indexing mechanisms may become inefficient
@@ -231,7 +231,7 @@ replace_hash_partition(old_partition       REGCLASS,
           when you insert data outside of the already covered range.</para>
         <programlisting>
 create_range_partitions(relation       REGCLASS,
-                        expression      TEXT,
+                        expression     TEXT,
                         start_value    ANYELEMENT,
                         p_interval     ANYELEMENT | INTERVAL,
                         p_count        INTEGER DEFAULT NULL,
@@ -342,10 +342,11 @@ SELECT stop_concurrent_part_task(relation REGCLASS);
       </para></tip>
       </sect3>
       <sect3 id="pg-pathman-partitioning-by-expression">
-        <title>Partitioning by Expression</title>
+        <title>Partitioning by a Single Expression</title>
         <para>
           For both range and hash partitioning strategies, <filename>pg_pathman</filename>
-          supports partitioning by expression that returns a single scalar value. The partitioning expression
+          supports partitioning by expression that returns a single scalar value.
+          The partitioning expression
           can reference a table column, as well as calculate the partitioning key
           based on one or more column values.
           </para>
@@ -488,14 +489,14 @@ create type test_key as (year float8, month float8);
             To enable automatic partition naming, run the <literal>create_naming_sequence()</literal>
             function passing the table name as an argument:
             <programlisting>
-select create_naming_sequence('test');
+SELECT create_naming_sequence('test');
 </programlisting>
           </para>
           <para>
           Register the <structname>test</structname> table with
           <filename>pg_pathman</filename>, specifying the partitioning key you are going to use:
           <programlisting>
-select add_to_pathman_config('test',
+SELECT add_to_pathman_config('test',
                              '( extract(year from logdate),
                                 extract(month from logdate) )::test_key',
                              NULL);
@@ -504,7 +505,7 @@ select add_to_pathman_config('test',
           <para>Create a partition that includes all the data in the range of ten years,
           starting from January of the current year:
           <programlisting>
-select add_range_partition('test',
+SELECT add_range_partition('test',
                            (extract(year from current_date), 1)::test_key,
                            (extract(year from current_date + '10 years'::interval), 1)::test_key);
 </programlisting>
