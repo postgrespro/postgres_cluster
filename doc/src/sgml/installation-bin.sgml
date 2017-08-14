@@ -80,7 +80,7 @@
               <entry>
                 Standard client applications such as
                 <literal>psql</literal>, <literal>pg_dump</literal>, and
-                so on.
+                so on
               </entry>
             </row>
             <row>
@@ -89,7 +89,7 @@
               </entry>
               <entry>
                 Shared libraries, required to deploy client
-                applications.
+                applications
               </entry>
             </row>
             <row>
@@ -97,7 +97,7 @@
                 <filename>postgrespro96-server</filename>
               </entry>
               <entry>
-                <productname>&productname;</productname> server and PL/pgsql server-side programming
+                <productname>&productname;</productname> server and PL/pgSQL server-side programming
                 language
               </entry>
             </row>
@@ -115,7 +115,7 @@
                 <filename>postgrespro96-pg_probackup</filename>
               </entry>
               <entry>
-                <filename>pg_probackup</filename> utility
+                <application>pg_probackup</application> utility
               </entry>
             </row>
             <row>
@@ -208,8 +208,8 @@
       </para>
       <para>
         By default, all files are installed into the
-        <literal>/usr/pgpro-9.6</literal> directory. Make sure
-        <literal>/usr/pgpro-9.6/bin</literal> is added to your
+        <literal>/usr/pgpro-&majorversion;</literal> directory. Make sure
+        <literal>/usr/pgpro-&majorversion;/bin</literal> is added to your
         <literal>PATH</literal> environment variable.
       </para>
     </sect3>
@@ -236,16 +236,16 @@ service postgresql initdb
           <para>
             On systemd-based systems, such as Red Hat Enterprise Linux 7
             or CentOS 7, run the helper script
-            <filename>/usr/pgpro-9.6/bin/pg-setup</filename>.
+            <filename>/usr/pgpro-&majorversion;/bin/pg-setup</filename>.
           </para>
         </listitem>
       </itemizedlist>
       </para>
       <para>
         The default database is created in the
-        <filename>/var/lib/pgsql/9.6/data</filename> directory. To change
+        <filename>/var/lib/pgsql/&majorversion;/data</filename> directory. To change
         the default directory, modify the corresponding setting in the
-        <filename>/etc/sysconfig/pgsq/postgrespro-9.6</filename> file.
+        <filename>/etc/sysconfig/pgsq/postgrespro-&majorversion;</filename> file.
       </para>
     </sect3>
     <sect3>
@@ -255,7 +255,7 @@ service postgresql initdb
         data directories, create a copy or a symlink of
         <literal>/etc/init.d/postgresql</literal> with a different name,
         create the corresponding <literal>/etc/sysconfig</literal> files
-        and symlinks in <literal>runlevel</literal> directories.
+        and symlinks in runlevel directories.
       </para>
       <para>
         If required, you can install vanilla <productname>PostgreSQL</productname>,
@@ -324,7 +324,7 @@ service postgresql initdb
                  libpq5
               </entry>
               <entry>
-                Runtime libraries for postgresql client programs
+                Runtime libraries for Postgres client programs
               </entry>
             </row>
             <row>
@@ -337,7 +337,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                 postgrespro-9.6
+                 postgrespro-&majorversion;
               </entry>
               <entry>
         <productname>&productname;</productname> server
@@ -345,7 +345,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                  postgrespro-9.6-dbg
+                  postgrespro-&majorversion;-dbg
               </entry>
               <entry>
                 Debug information for <productname>&productname;</productname> server
@@ -353,7 +353,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                 postgrespro-client-9.6
+                 postgrespro-client-&majorversion;
               </entry>
               <entry>
                 Client programs for interaction with <productname>&productname;</productname> server
@@ -361,7 +361,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                 postgrespro-contrib-9.6
+                 postgrespro-contrib-&majorversion;
               </entry>
               <entry>
                  Additional modules and extensions
@@ -369,7 +369,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                  postgrespro-doc-9.6
+                  postgrespro-doc-&majorversion;
               </entry>
               <entry>
                 Documentation (English)
@@ -377,7 +377,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-doc-ru-9.6
+                postgrespro-doc-ru-&majorversion;
               </entry>
               <entry>
                  Documentation (Russian)
@@ -385,15 +385,15 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                 postgrespro-pg-probackup-9.6
+                 postgrespro-pg-probackup-&majorversion;
               </entry>
               <entry>
-                 pg_probackup utility
+                 <application>pg_probackup</application> utility
               </entry>
             </row>
             <row>
               <entry>
-                postgrespro-plperl-9.6
+                postgrespro-plperl-&majorversion;
               </entry>
               <entry>
                  Server-side PL/Perl language
@@ -401,7 +401,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-plpython3-9.6
+                postgrespro-plpython3-&majorversion;
               </entry>
               <entry>
                  Server-side PL/Python language based on Python 3
@@ -409,7 +409,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-plpython-9.6
+                postgrespro-plpython-&majorversion;
               </entry>
               <entry>
                  Server-side PL/Python language based on Python 2
@@ -417,7 +417,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                 postgrespro-pltcl-9.6
+                 postgrespro-pltcl-&majorversion;
               </entry>
               <entry>
                  Server-side PL/Tcl language
@@ -425,7 +425,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-server-dev-9.6
+                postgrespro-server-dev-&majorversion;
               </entry>
               <entry>
                 Development files to compile server extensions using PGXS framework
@@ -435,14 +435,14 @@ service postgresql initdb
         </tgroup>
       </informaltable>
       <para>
-        Server installations require postgrespro-9.6 package (which
-        depends on postgrespro-contrib-9.6). Other server-related
+        Server installations require postgrespro-&majorversion; package (which
+        depends on postgrespro-contrib-&majorversion;). Other server-related
         packages such as PL languages, and
         <literal>pg_probackup</literal> utilites are optional.
       </para>
       <para>
         Client installations need only <literal>libpq5</literal> and
-        <literal>postgrespro-client-9.6</literal> packages. If you use
+        <literal>postgrespro-client-&majorversion;</literal> packages. If you use
         custom applications and do not need standard clients such as
         <literal>psql</literal>, you can install the
         <literal>libpq5</literal> package only.
@@ -462,7 +462,7 @@ service postgresql initdb
             </para>
           </listitem>
           <listitem>
-            <para><literal>postgrespro-server-dev-9.6</literal> &mdash; development package 
+            <para><literal>postgrespro-server-dev-&majorversion;</literal> &mdash; development package 
             for compiling server extensions.
             </para>
           </listitem>
@@ -510,7 +510,7 @@ service postgresql initdb
         The <literal>postgrespro-common</literal> and
         <literal>postgrespro-client-common</literal> packages provide a
         complex infrastructure that allows running several versions of
-        <productname>PostgreSQL</productname>, <productname>Postgres Pro</productname>and <productname>Postgres Pro Enterprise</productname>
+        <productname>PostgreSQL</productname>, <productname>Postgres Pro</productname> and <productname>Postgres Pro Enterprise</productname>
         servers simultaneously, thus enabling smooth database upgrades.
       </para>
       <para>
@@ -527,15 +527,15 @@ service postgresql initdb
         Debian provides the script
         <literal>pg_wrapper(1)</literal> to invoke
         client binaries for correct version of your <productname>PostgreSQL</productname>-based product. It is linked as
-        <filename>/usr/bin/psql</filename>, <filename>/usr/bin/pg_dump</filename>, etc. If serveral <productname>PostgreSQL</productname>-based
+        <filename>/usr/bin/psql</filename>, <filename>/usr/bin/pg_dump</filename>, etc. If several <productname>PostgreSQL</productname>-based
         products are installed, it invokes the most recent binaries unless
         explicitely configured to do the opposite.
       </para>
       <note>
        <para>
         Debian packaging of <productname>&productname;</productname> programs contains two
-        copies of the <filename>pg_config</filename> utility, one in the
-        <filename>libpq-dev</filename> package and the other in <filename>postgrespro-server-dev-9.6</filename> package.
+        copies of the <application>pg_config</application> utility, one in the
+        <filename>libpq-dev</filename> package and the other in <filename>postgrespro-server-dev-&majorversion;</filename> package.
         It is because both client programs and server extensions use
         this utility to determine location of postgres development
         files. So, if you are planning to develop both client
@@ -570,7 +570,7 @@ service postgresql initdb
                 libecpg6.8
               </entry>
               <entry>
-                 Runtime library for programs using ECPG
+                 Runtime libraries for programs using ECPG
               </entry>
             </row>
             <row>
@@ -615,15 +615,15 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-9.6
+                postgrespro-&majorversion;
               </entry>
               <entry>
-                Standard client programs, such as <literal>psql</literal>, and man pages for SQL commands
+                Standard client programs, such as <application>psql</application>, and man pages for SQL commands
               </entry>
             </row>
             <row>
               <entry>
-                postgrespro-9.6-contrib
+                postgrespro-&majorversion;-contrib
               </entry>
               <entry>
                  Extensions loadable into <productname>&productname;</productname> server
@@ -631,7 +631,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                postgrespro-9.6-devel
+                postgrespro-&majorversion;-devel
               </entry>
               <entry>
                  Files to compile server extensions using PGXS framework
@@ -639,7 +639,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                 postgrespro-9.6-devel-static
+                 postgrespro-&majorversion;-devel-static
               </entry>
               <entry>
                  Static libraries needed to compile extensions
@@ -647,7 +647,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-                 postgrespro-9.6-docs
+                 postgrespro-&majorversion;-docs
               </entry>
               <entry>
                  Documentation (English)
@@ -655,7 +655,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-               postgrespro-9.6-docs-ru
+               postgrespro-&majorversion;-docs-ru
               </entry>
               <entry>
                Documentation (Russian)
@@ -663,7 +663,7 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-              postgrespro-9.6-perl
+              postgrespro-&majorversion;-perl
               </entry>
               <entry>
                PL/Perl programming language
@@ -671,15 +671,15 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-              postgrespro-9.6-pg_probackup
+              postgrespro-&majorversion;-pg_probackup
               </entry>
               <entry>
-               <filename>pg_probackup</filename> utility
+               <application>pg_probackup</application> utility
               </entry>
             </row>
             <row>
               <entry>
-               postgrespro-9.6-python
+               postgrespro-&majorversion;-python
               </entry>
               <entry>
                PL/Python programming language
@@ -687,15 +687,15 @@ service postgresql initdb
             </row>
             <row>
               <entry>
-              postgrespro-9.6-server
+              postgrespro-&majorversion;-server
               </entry>
               <entry>
-               PostgresPro Enterprise server
+               Postgres Pro Enterprise server
               </entry>
             </row>
             <row>
               <entry>
-              postgrespro-9.6-tcl
+              postgrespro-&majorversion;-tcl
               </entry>
               <entry>
                PL/Tcl programming language
@@ -710,17 +710,17 @@ service postgresql initdb
       </para>
       <para>
         For server installations, you need
-        <literal>postgrespro-9.6-server</literal>. for server
-        installations For a minimal client installation, only the
+        <literal>postgrespro-&majorversion;-server</literal>.
+        For a minimal client installation, only the
         <literal>libpq5.9</literal> package is required.
-        <literal>postgrespro-9.6</literal> is typically needeed on
+        <literal>postgrespro-&majorversion;</literal> is typically needed on
         clients.
       </para>
       <para>
-        <filename>pg_config</filename> utility is only
-        shipped as part of <literal>postgrespro-9.6-devel</literal>
+        <application>pg_config</application> utility is only
+        shipped as part of <literal>postgrespro-&majorversion;-devel</literal>
         package, so you need to install this package if you are going to
-        compile client programs that use <literal>pg_config</literal> in
+        compile client programs that use <application>pg_config</application> in
         the build process.
       </para>
     </sect3>
@@ -736,7 +736,7 @@ service postgresql initdb
         executable files. So, preinstallation script copies the existing
         <literal>postgres</literal> binary and
         <literal>libpq</literal> shared library into
-        <filename>/usr/lib64/pgsql/9.6/backup</filename>. Use this
+        <filename>/usr/lib64/pgsql/&majorversion;/backup</filename>. Use this
         directory name as an argument of the
         <filename>pg_upgrade</filename>
         <literal>-b</literal> option.
@@ -776,7 +776,7 @@ service postgresql initdb
                 libpq5
               </entry>
               <entry>
-                Runtime libraries for client programs
+                Runtime libraries for Postgres client programs
               </entry>
             </row>
             <row>
@@ -784,7 +784,7 @@ service postgresql initdb
                 postgrespro-96
               </entry>
               <entry>
-                Standard clients and man pages for SQL commands
+                Standard client programs, such as <application>psql</application>, and man pages for SQL commands
               </entry>
             </row>
             <row>
@@ -826,7 +826,7 @@ service postgresql initdb
                 postgrespro-96-pg_probackup
               </entry>
               <entry>
-                pg_probackup utility
+                <application>pg_probackup</application> utility
               </entry>
             </row>
             <row>
@@ -834,7 +834,7 @@ service postgresql initdb
                 postgrespro-96-plperl
               </entry>
               <entry>
-                PL/Perl server programming language
+                PL/Perl programming language
               </entry>
             </row>
             <row>
@@ -842,7 +842,7 @@ service postgresql initdb
                 postgrespro-96-plpython
               </entry>
               <entry>
-                PL/Python server programming language
+                PL/Python programming language
               </entry>
             </row>
             <row>
@@ -850,7 +850,7 @@ service postgresql initdb
                 postgrespro-96-pltcl
               </entry>
               <entry>
-                PL/Tcl server programming language
+                PL/Tcl programming language
               </entry>
             </row>
             <row>
@@ -942,7 +942,7 @@ service postgrespro start
     <itemizedlist spacing="compact">
       <listitem>
         <para>
-          distribution for Windows 7, Windows Server 2008R2 or higher
+          distribution for Windows 7, Windows Server 2008 R2 or higher
         </para>
       </listitem>
       <listitem>
@@ -957,8 +957,8 @@ service postgrespro start
   <sect2 id="procedural-languages">
     <title>Procedural Languages</title>
     <para>
-      The procedural languages <literal>pl/Perl</literal>,
-      <literal>pl/Python</literal> are included in this distribution of
+      The procedural languages <literal>PL/Perl</literal>,
+      <literal>PL/Python</literal> are included in this distribution of
       <productname>&productname;</productname>. The server has been built using the LanguagePack
       community distributions of those language interpreters. To use any
       of the these languages from within <productname>&productname;</productname>, download and
@@ -969,20 +969,20 @@ service postgrespro start
       minor (bugfix) releases may also work, but have not been tested. -->
     </para>
     <para>
-      The current version of <literal>pl/Python</literal> is dynamically
+      The current version of <literal>PL/Python</literal> is dynamically
       linked with Python shared library in the LanguagePack installers.
       Some distributions of Python interpreters (including ActivePython)
       on Linux do not include a dynamic library of Python. Such
       interpreters would no longer be functional with
-      <literal>pl/Python</literal>. You are recommended to use
-      LanguagePack installers for <literal>pl/Perl</literal> and
-      <literal>pl/Python</literal> instead.
+      <literal>PL/Python</literal>. You are recommended to use
+      LanguagePack installers for <literal>PL/Perl</literal> and
+      <literal>PL/Python</literal> instead.
     </para>
   </sect2>
   <sect2 id="windows-service-account">
     <title>Windows Service Account</title>
     <para>
-      A special <literal>'NT AUTHORITY\\NetworkService'</literal>
+      A special <literal>NT AUTHORITY\\NetworkService</literal>
       account is used.
     </para>
   </sect2>
@@ -992,7 +992,7 @@ service postgrespro start
       Installation directory path:
     </para>
     <programlisting>
-/D=Path
+/D=<replaceable>path</replaceable>
 </programlisting>
     <para>
       Silent install:
@@ -1004,7 +1004,7 @@ service postgrespro start
       <literal>*.ini</literal> file with instalation options:
     </para>
     <programlisting>
-/init=File\_name.ini
+/init=<replaceable>ini_file_name</replaceable>
 </programlisting>
   </sect2>
   <sect2 id="ini-file-format">
@@ -1015,7 +1015,7 @@ service postgrespro start
     <itemizedlist spacing="compact">
       <listitem>
         <para>
-          <literal>InstallDir</literal> = path where to install server
+          <literal>InstallDir</literal> &mdash; path where to install server
         </para>
       </listitem>
       <listitem>
@@ -1060,14 +1060,14 @@ service postgrespro start
       </listitem>
       <listitem>
         <para>
-          <literal>Vcredist= no</literal> &mdash; do not install Visual C
+          <literal>Vcredist = no</literal> &mdash; do not install Visual C
           redistributable libraries (use it only if these libraries are
           already installed on your system)
         </para>
       </listitem>
       <listitem>
         <para>
-          <literal>envvar=1</literal> &mdash; set up environment variables
+          <literal>envvar = 1</literal> &mdash; set up environment variables
           helpful for <productname>&productname;</productname>: <literal>PGDATA</literal>,
           <literal>PGDATABASE</literal>, <literal>PGUSER</literal>,
           <literal>PGPORT</literal>, <literal>PGLOCALEDIR</literal>
@@ -1098,7 +1098,7 @@ CREATE EXTENSION <replaceable>module_name</replaceable>
     To get the list of extensions available in your <productname>&productname;</productname>
     installation, view the
     <link linkend="view-pg-available-extensions"><structname>pg_available_extensions</structname></link>
-    system catalog table.
+    system catalog.
   </para>
   <para>
     <xref linkend="contrib"> contains documentation
