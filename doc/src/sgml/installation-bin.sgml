@@ -2,12 +2,6 @@
 
 <chapter id="installation-bin">
 <title>Binary Installation</title>
-<para><emphasis role="strong">Contents</emphasis></para>
-<para><link linkend="binary-installation-on-linux">Installing
-<productname>&productname;</productname> on Linux</link></para>
-<para><link linkend="binary-installation-on-windows">Installing
-<productname>&productname;</productname> on Windows</link></para>
-<para><link linkend="installing-additional-modules">Installing Additional Supplied Modules</link></para>
 <sect1 id="binary-installation-on-linux">
   <title>Installing <productname>&productname;</productname> on Linux</title>
   <para>
