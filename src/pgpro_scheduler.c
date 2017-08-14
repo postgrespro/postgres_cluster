@@ -23,6 +23,13 @@
 #include "utils/builtins.h"
 #include "catalog/pg_db_role_setting.h"
 #include "commands/dbcommands.h"
+#include "utils/lsyscache.h"
+#include "catalog/pg_extension.h"
+#include "catalog/indexing.h"
+#include "commands/extension.h"
+#include "access/sysattr.h"
+#include "access/htup_details.h"
+#include "utils/fmgroids.h"
 
 
 #include "char_array.h"
@@ -52,6 +59,7 @@ bool scheduler_service_enabled = false;
 char *scheduler_schema = NULL;
 /* Custom GUC done */
 
+Oid scheduler_schema_oid = InvalidOid;
 Oid scheduler_atjob_id_OID = InvalidOid;
 
 extern void
@@ -166,11 +174,59 @@ bool is_scheduler_enabled(void)
 	return false;
 }
 
+char *get_scheduler_schema_name(void)
+{
+	Oid ns_oid;
+	Oid ext_oid;
+
+	Relation rel;
+	SysScanDesc scandesc;
+	HeapTuple tuple;
+	ScanKeyData entry[1];
+	LOCKMODE heap_lock =  AccessShareLock;
+
+
+	if(scheduler_schema_oid == InvalidOid)
+	{
+		if (!IsTransactionState())
+			elog(ERROR, "pgpro_scheduler: cannot get extension scheme (1)");
+		ext_oid = get_extension_oid("pgpro_scheduler", true);
+		if(ext_oid == InvalidOid) 
+			elog(ERROR, "pgpro_scheduler: cannot get extension id");
+
+		ScanKeyInit(&entry[0],
+					ObjectIdAttributeNumber,
+					BTEqualStrategyNumber,
+					F_OIDEQ,
+					ObjectIdGetDatum(ext_oid));
+		rel = heap_open(ExtensionRelationId, heap_lock);
+		scandesc = systable_beginscan(rel, ExtensionOidIndexId, true,
+										NULL, 1, entry);
+		tuple = systable_getnext(scandesc);
+		if (HeapTupleIsValid(tuple))
+			ns_oid = ((Form_pg_extension) GETSTRUCT(tuple))->extnamespace;
+		else
+			ns_oid =  InvalidOid;
+		systable_endscan(scandesc);
+		heap_close(rel, heap_lock);
+
+		if(ns_oid == InvalidOid) 
+			elog(ERROR, "pgpro_scheduler: cannot get extension schema oid");
+
+		scheduler_schema_oid = ns_oid;
+	}
+	else
+	{
+		ns_oid = scheduler_schema_oid;
+	}
+
+	return get_namespace_name(ns_oid);
+}
+
 char *set_schema(const char *name, bool get_old)
 {
 	char *schema_name = NULL;
 	char *current = NULL;
-	bool free_name = false;
 
 	if(get_old)
 		current = _mcopy_string(NULL, (char *)GetConfigOption("search_path", true, false));
@@ -180,11 +236,9 @@ char *set_schema(const char *name, bool get_old)
 	}
 	else
 	{
-		schema_name = _mcopy_string(NULL, (char *)GetConfigOption("schedule.schema", true, false));	
-		free_name = true;
+		schema_name = get_scheduler_schema_name();
 	}
 	SetConfigOption("search_path", schema_name,  PGC_USERSET, PGC_S_SESSION);
-	if(free_name) pfree(schema_name);
 
 	return current;
 }
