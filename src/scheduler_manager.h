@@ -84,7 +84,7 @@ typedef struct {
 	dsm_segment *seg;
 } scheduler_manager_ctx_t;
 
-int checkSchedulerNamespace(void);
+bool checkSchedulerExtension(void);
 extern PGDLLEXPORT void manager_worker_main(Datum arg);
 int get_scheduler_maxworkers(void);
 int get_scheduler_at_max_workers(void);

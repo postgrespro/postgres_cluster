@@ -11,6 +11,8 @@
 #include "storage/procarray.h"
 #include "storage/shm_toc.h"
 #include "catalog/pg_type.h"
+#include "commands/extension.h"
+#include "nodes/makefuncs.h"
 
 #include "pg_config.h"
 #include "fmgr.h"
@@ -50,54 +52,22 @@
 extern volatile sig_atomic_t got_sighup;
 extern volatile sig_atomic_t got_sigterm;
 extern Oid scheduler_atjob_id_OID;
+extern Oid scheduler_schema_oid;
 
-int checkSchedulerNamespace(void)
+bool checkSchedulerExtension(void)
 {
-	const char *sql = "select count(*) from pg_catalog.pg_namespace where nspname = $1";
-	int count  = 0;
-	const char *schema;
-	Oid argtypes[1] = { TEXTOID };
-	Datum values[1];
-
-	SetCurrentStatementStartTimestamp();
-	pgstat_report_activity(STATE_RUNNING, "initialize: check namespace");
-
-	schema = GetConfigOption("schedule.schema", false, true);
-
-	START_SPI_SNAP(); 
-
-	values[0] = CStringGetTextDatum(schema);
-	count = select_count_with_args(sql, 1, argtypes, values, NULL);
-
-	if(count == -1)
+	Oid extoid;
+	bool use_transaction = false;
+	if (!IsTransactionState())
 	{
-		STOP_SPI_SNAP();
-		elog(ERROR, "Scheduler manager: %s: cannot check namespace: sql error",
-													MyBgworkerEntry->bgw_name); 
+		StartTransactionCommand();
+		use_transaction = true;
 	}
-	else if(count > 1 || count == 0 )
-	{
-		elog(LOG, "Scheduler manager: %s: cannot check namespace: "
-				  "found %d namespaces", MyBgworkerEntry->bgw_name, count);
-	}
-	else if(count == -2)
-	{
-		elog(LOG, "Scheduler manager: %s: cannot check namespace: "
-				  "count return null", MyBgworkerEntry->bgw_name);
-	}
-	else if(count != 1)
-	{
-		STOP_SPI_SNAP();
-		elog(ERROR, "Scheduler manager: %s: cannot check namespace: "
-					"unknown error %d", MyBgworkerEntry->bgw_name, count); 
-	}
-	STOP_SPI_SNAP();
+	
+	extoid = get_extension_oid("pgpro_scheduler", true);
+	if(use_transaction) CommitTransactionCommand();
 
-	if(count) {
-		SetConfigOption("search_path", schema, PGC_USERSET, PGC_S_SESSION);
-	}
-
-	return count;
+	return extoid != InvalidOid ? true: false;
 }
 
 int get_scheduler_maxworkers(void)
@@ -1822,14 +1792,15 @@ void manager_worker_main(Datum arg)
 	elog(LOG, "Started scheduler manager for '%s'", database);
 	SetConfigOption("application_name", buffer, PGC_USERSET, PGC_S_SESSION);
 
-	if(!checkSchedulerNamespace())
+	if(!checkSchedulerExtension())
 	{
-		elog(LOG, "cannot start scheduler for %s - there is no namespace", database);
+		elog(LOG, "cannot start scheduler for %s - there is no extention", database);
 		changeChildBgwState(shared, SchdManagerQuit);
 		dsm_detach(seg);
 		delete_worker_mem_ctx(NULL);
 		proc_exit(0); 
 	}
+	set_schema(NULL, false);
 	SetCurrentStatementStartTimestamp();
 	pgstat_report_activity(STATE_RUNNING, "initialize.");
 
@@ -1841,8 +1812,9 @@ void manager_worker_main(Datum arg)
 	ctx = initialize_scheduler_manager_context(longTerm, database, seg);
 
 	START_SPI_SNAP();
-	reloid = RangeVarGetRelid(makeRangeVarFromNameList(
-		stringToQualifiedNameList("schedule.at_jobs_submitted")), NoLock, true);
+	reloid = RangeVarGetRelid(
+		makeRangeVar(get_scheduler_schema_name(), "at_jobs_submitted", -1)
+		, NoLock, true);
 	STOP_SPI_SNAP();
 	if(reloid == InvalidOid)
 	{
@@ -1854,7 +1826,6 @@ void manager_worker_main(Datum arg)
 	start_at_workers(ctx, shared);
 	clean_at_table(ctx);
 	set_slots_stat_report(ctx);
-	/* SetConfigOption("enable_seqscan", "off", PGC_USERSET, PGC_S_SESSION); */
 
 	while(!got_sigterm)
 	{
@@ -1867,9 +1838,13 @@ void manager_worker_main(Datum arg)
 			if(got_sighup)
 			{
 				got_sighup = false;
+				/* make read extension schema again */
+				scheduler_schema_oid = InvalidOid; 
+				set_schema(NULL, false);
+
 				ProcessConfigFile(PGC_SIGHUP);
 				reload_db_role_config(database); 
-				refresh_scheduler_manager_context(ctx); /* TODO */
+				refresh_scheduler_manager_context(ctx); 
 				set_slots_stat_report(ctx);
 			}
 			if(!got_sigterm)

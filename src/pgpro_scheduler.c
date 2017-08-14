@@ -178,18 +178,23 @@ char *get_scheduler_schema_name(void)
 {
 	Oid ns_oid;
 	Oid ext_oid;
+	char *name = NULL;
 
 	Relation rel;
 	SysScanDesc scandesc;
 	HeapTuple tuple;
 	ScanKeyData entry[1];
 	LOCKMODE heap_lock =  AccessShareLock;
+	bool use_transaction = false;
 
+	if (!IsTransactionState())
+	{
+		StartTransactionCommand();
+		use_transaction = true;
+	}
 
 	if(scheduler_schema_oid == InvalidOid)
 	{
-		if (!IsTransactionState())
-			elog(ERROR, "pgpro_scheduler: cannot get extension scheme (1)");
 		ext_oid = get_extension_oid("pgpro_scheduler", true);
 		if(ext_oid == InvalidOid) 
 			elog(ERROR, "pgpro_scheduler: cannot get extension id");
@@ -210,6 +215,7 @@ char *get_scheduler_schema_name(void)
 		systable_endscan(scandesc);
 		heap_close(rel, heap_lock);
 
+
 		if(ns_oid == InvalidOid) 
 			elog(ERROR, "pgpro_scheduler: cannot get extension schema oid");
 
@@ -220,7 +226,10 @@ char *get_scheduler_schema_name(void)
 		ns_oid = scheduler_schema_oid;
 	}
 
-	return get_namespace_name(ns_oid);
+	name =  get_namespace_name(ns_oid);
+	if(use_transaction) CommitTransactionCommand();
+
+	return name;
 }
 
 char *set_schema(const char *name, bool get_old)
