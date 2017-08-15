@@ -23,7 +23,7 @@
       </listitem>
       <listitem>
         <para>
-          In Compressed File System (CFS), fixed a memory leak.
+          In Compressed File System implementation, fixed a memory leak.
         </para>
       </listitem>
       <listitem>
@@ -31,6 +31,12 @@
           Fixed potential data corruption in the online_analyze contrib module.
         </para>
       </listitem>
+      <listitem>
+        <para>
+          Fixed <command>ALTER COLUMN</command> operation for columns with an
+          index. <!-- PGPRO-818 -->
+        </para>
+      </listitem>      
       <listitem>
         <para>Improved <application>multimaster</application> extension:</para>
         <itemizedlist>
@@ -58,9 +64,6 @@
           <application>pgpro_scheduler</application>. <!-- PGPRO-837 -->
         </para>
       </listitem>
-      
-      <!-- PGPRO-813 (pgpro_upgrade fixes)  Std(9.6.4.1) EE (9.6.4.1) -->
-      
     </itemizedlist>    
   </sect2>
   <sect2>
@@ -69,6 +72,11 @@
     <para>A dump/restore using <xref linkend="app-pg-dumpall">, or
         use of <xref linkend="pgupgrade">, is required for those
           wishing to migrate data from any previous major release.</para>
+
+    <para>A dump/restore is required for those running
+      <productname>&productname;</productname> 9.6.3.2, because
+      catalog number format has been changed for better <productname>&productname;</productname>
+      identification.</para>
 
     <para>Dump/restore is necessary when migrating from <productname>PostgreSQL</productname>,
       <productname>Postgres Pro Standard</productname>, or <productname>Postgres Pro Enterprise</productname> edition.</para>
