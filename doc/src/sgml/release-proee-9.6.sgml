@@ -32,11 +32,9 @@
         </para>
       </listitem>
       <listitem>
-        <para>
-          Fixed <command>ALTER COLUMN</command> operation for columns with an
-          index. <!-- PGPRO-818 -->
-        </para>
-      </listitem>      
+        <para>Fixed <command>ALTER COLUMN</command> operation for tables with
+        indexes.</para>  <!-- PGPRO-818 -->
+      </listitem>
       <listitem>
         <para>Improved <application>multimaster</application> extension:</para>
         <itemizedlist>
