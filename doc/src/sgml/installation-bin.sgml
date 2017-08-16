@@ -189,7 +189,7 @@
             </para>
           </listitem>
           <listitem>
-            <para><filename>postgespro96</filename>
+            <para><filename>postgrespro96</filename>
             </para>
           </listitem>
           <listitem>
@@ -222,7 +222,7 @@
         <listitem>
          <para>On SysVinit systems, such as Red Hat Enterprise Linux 6 and its derivatives, run:
       <programlisting>
-service postgresql initdb
+service postgrespro-&majorversion; initdb
 </programlisting>
          </para>
         </listitem>
@@ -237,7 +237,7 @@ service postgresql initdb
       </para>
       <para>
         The default database is created in the
-        <filename>/var/lib/pgsql/&majorversion;/data</filename> directory. To change
+        <filename>/var/lib/pgpro/&majorversion;/data</filename> directory. To change
         the default directory, modify the corresponding setting in the
         <filename>/etc/sysconfig/pgsq/postgrespro-&majorversion;</filename> file.
       </para>
@@ -870,7 +870,7 @@ service postgresql initdb
       <para>
         Server installations require
         <filename>postgrespro96-server</filename>,
-        <filename>postgespro96</filename>, and
+        <filename>postgrespro96</filename>, and
         <filename>postgrespro96-libs</filename> packages.
         To use additional <productname>&productname;</productname> extensions, you must also install
         the <filename>postgrespro96-contrib</filename>
