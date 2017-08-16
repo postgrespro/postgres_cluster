@@ -20,7 +20,7 @@
    <para>
     If you are installing <productname>&productname;</productname>
     yourself, then see
-    instructions on installation <xref linkend="installation-bin">, and return to
+    instructions on installation (<xref linkend="installation-bin">), and return to
     this guide when the installation is complete.  Be sure to follow
     closely the section about setting up the appropriate environment
     variables.
