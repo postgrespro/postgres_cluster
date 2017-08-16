@@ -95,6 +95,7 @@ MtmCheckState(void)
 	/* ANY -> MTM_IN_MINORITY */
 	if (nConnected < Mtm->nAllNodes/2+1)
 	{
+		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
 		MtmSetClusterStatus(MTM_IN_MINORITY);
 		return;
 	}
@@ -119,7 +120,7 @@ MtmCheckState(void)
 			break;
 
 		case MTM_RECOVERED:
-			if (nReceivers == nEnabled-1 && nSenders == nEnabled-1)
+			if (nReceivers == nEnabled-1 && nSenders == nEnabled-1 && nEnabled == nConnected)
 			{
 				MtmSetClusterStatus(MTM_ONLINE);
 				return;
@@ -250,7 +251,9 @@ void MtmDisableNode(int nodeId)
 
 	if (Mtm->nLiveNodes >= Mtm->nAllNodes/2+1) {
 		/* Make decision about prepared transaction status only in quorum */
+		MtmLock(LW_EXCLUSIVE);
 		MtmPollStatusOfPreparedTransactionsForDisabledNode(nodeId);
+		MtmUnlock();
 	}
 }
 
