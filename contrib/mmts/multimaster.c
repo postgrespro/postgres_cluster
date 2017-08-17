@@ -1171,7 +1171,8 @@ void MtmPrecommitTransaction(char const* gid)
 				ts->status = TRANSACTION_STATUS_UNKNOWN;
 				ts->csn = MtmAssignCSN();
 				MtmAdjustSubtransactions(ts);
-				MtmSend2PCMessage(ts, MSG_PRECOMMITTED);
+				if (Mtm->status != MTM_RECOVERY) // XXXX why?
+					MtmSend2PCMessage(ts, MSG_PRECOMMITTED);
 				MtmUnlock();
 				Assert(replorigin_session_origin != InvalidRepOriginId);
 				if (!IsTransactionState()) {
@@ -1615,10 +1616,13 @@ void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 	memcpy(msg.gid, ts->gid, MULTIMASTER_MAX_GID_SIZE);
 
 	Assert(!MtmIsCoordinator(ts));	/* All broadcasts are now done through logical decoding */
-	MTM_TXTRACE(ts, "MtmSend2PCMessage sending %s message to node %d", MtmMessageKindMnem[cmd], ts->gtid.node);
-	msg.node = ts->gtid.node;
-	msg.dxid = ts->gtid.xid;
-	MtmSendMessage(&msg);
+	if (!BIT_CHECK(Mtm->disabledNodeMask, ts->gtid.node-1))
+	{
+		MTM_TXTRACE(ts, "MtmSend2PCMessage sending %s message to node %d", MtmMessageKindMnem[cmd], ts->gtid.node);
+		msg.node = ts->gtid.node;
+		msg.dxid = ts->gtid.xid;
+		MtmSendMessage(&msg);
+	}
 }
 
 /*
@@ -1728,11 +1732,6 @@ void MtmJoinTransaction(GlobalTransactionId* gtid, csn_t globalSnapshot, nodemas
 
 	if (globalSnapshot != INVALID_CSN) {
 		MtmLock(LW_EXCLUSIVE);
-
-		if (BIT_CHECK(Mtm->disabledNodeMask, gtid->node-1)) {
-			MtmUnlock();
-			MTM_ELOG(ERROR, "Ignore transaction %llu from disabled node %d", (long64)gtid->xid, gtid->node);
-		}
 
 		liveMask = (((nodemask_t)1 << Mtm->nAllNodes) - 1) & ~Mtm->disabledNodeMask;
 		BIT_SET(participantsMask, gtid->node-1);
