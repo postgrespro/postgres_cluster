@@ -296,7 +296,7 @@ sub pgbench_async()
 		-p => $self->{nodes}->[$node]->port(),
 		'postgres',
 	);
-	# diag("running pgbench init");
+	diag("running pgbench: " . join(" ", @pgbench_command));
 	my $handle = IPC::Run::start(\@pgbench_command, $in, $out);
 	return $handle;
 }
