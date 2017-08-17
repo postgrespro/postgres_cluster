@@ -239,7 +239,7 @@ service postgrespro-&majorversion; initdb
         The default database is created in the
         <filename>/var/lib/pgpro/&majorversion;/data</filename> directory. To change
         the default directory, modify the corresponding setting in the
-        <filename>/etc/sysconfig/pgsq/postgrespro-&majorversion;</filename> file.
+        <filename>/etc/sysconfig/pgsql/postgrespro-&majorversion;</filename> file.
       </para>
     </sect3>
     <sect3>
