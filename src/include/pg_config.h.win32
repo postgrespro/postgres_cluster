@@ -574,9 +574,9 @@
 
 #define PGPRO_EDITION "standard"
 
-#define PGPRO_VERSION "9.6.4.1"
+#define PGPRO_VERSION "9.6.4.2"
 
-#define PGPRO_PACKAGE_STR "PostgresPro 9.6.4.1"
+#define PGPRO_PACKAGE_STR "PostgresPro 9.6.4.2"
 
 #define PG_VERSION_NUM 90604
 
