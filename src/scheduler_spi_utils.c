@@ -153,36 +153,6 @@ spi_response_t *__copy_spi_data(MemoryContext ctx, int ret, int  n)
 	return r;
 }
 
-char *_mcopy_string(MemoryContext ctx, char *str)
-{
-	int len = strlen(str);
-	char *cpy;
-
-	if(!ctx) ctx = SchedulerWorkerContext;
-
-	cpy = MemoryContextAlloc(ctx, sizeof(char) * (len+1));
-	if(!cpy) return NULL;
-
-	memcpy(cpy, str, len);
-	cpy[len] = 0;
-
-	return cpy;
-}
-
-char *my_copy_string(char *str)
-{
-	int len = strlen(str);
-	char *cpy;
-
-	cpy = palloc(sizeof(char) * (len+1));
-	if(!cpy) return NULL;
-
-	memcpy(cpy, str, len);
-	cpy[len] = 0;
-
-	return cpy;
-}
-
 Oid get_oid_from_spi(spi_response_t *r, int row_n, int pos, Oid def)
 {
 	Datum datum;

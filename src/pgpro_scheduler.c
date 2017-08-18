@@ -21,6 +21,8 @@
 #include "utils/snapmgr.h"
 #include "utils/datetime.h"
 #include "utils/builtins.h"
+#include "utils/guc.h"
+#include "utils/guc_tables.h"
 #include "catalog/pg_db_role_setting.h"
 #include "commands/dbcommands.h"
 #include "utils/lsyscache.h"
@@ -85,6 +87,43 @@ worker_spi_sigterm(SIGNAL_ARGS)
 }
 
 /** Some utils **/
+
+static int _var_name_cmp(const void *a, const void *b)
+{
+	const struct config_generic *confa = *(struct config_generic * const *) a;
+	const struct config_generic *confb = *(struct config_generic * const *) b;
+
+	return strcmp(confa->name, confb->name);
+}
+
+bool is_guc_in_default_state(const char *name)
+{
+	int num;
+	struct config_generic **vars;
+	const char **key = &name;
+	struct config_generic **res;
+	struct config_generic *conf;
+
+	num = GetNumConfigOptions();
+	vars = get_guc_variables();
+
+	res = (struct config_generic **) bsearch((void *) &key,
+										(void *) vars,
+										num, sizeof(struct config_generic *),
+										_var_name_cmp);
+	if(res)
+	{
+		conf = *res;
+		if(conf->source == PGC_S_DEFAULT || conf->source == PGC_S_DYNAMIC_DEFAULT || conf->source == PGC_S_OVERRIDE)
+		{
+			return true;
+		}
+		return false;
+	}
+
+	return true;
+
+}
 
 void reload_db_role_config(char *dbname)
 {
@@ -226,7 +265,9 @@ char *get_scheduler_schema_name(void)
 		ns_oid = scheduler_schema_oid;
 	}
 
-	name =  get_namespace_name(ns_oid);
+	/* need a copy due to after CommitTransactionCommand memory released */
+	name =  _mcopy_string(NULL, get_namespace_name(ns_oid));
+
 	if(use_transaction) CommitTransactionCommand();
 
 	return name;
@@ -236,6 +277,7 @@ char *set_schema(const char *name, bool get_old)
 {
 	char *schema_name = NULL;
 	char *current = NULL;
+	bool free_name = false;
 
 	if(get_old)
 		current = _mcopy_string(NULL, (char *)GetConfigOption("search_path", true, false));
@@ -246,11 +288,37 @@ char *set_schema(const char *name, bool get_old)
 	else
 	{
 		schema_name = get_scheduler_schema_name();
+		free_name = true;
 	}
 	SetConfigOption("search_path", schema_name,  PGC_USERSET, PGC_S_SESSION);
 
+	if(free_name) pfree(schema_name);
+
 	return current;
 }
+
+char *get_scheduler_nodename(MemoryContext mem)
+{
+	const char *opt;
+	const char *mtm_node_id;
+	char buffer[50];
+
+
+	if(!is_guc_in_default_state("schedule.nodename"))
+	{
+		opt = GetConfigOption("schedule.nodename", true, false);
+		return _mcopy_string(mem, (char *)(opt == NULL || strlen(opt) == 0 ? "master": opt));
+	}
+	mtm_node_id = GetConfigOption("multimaster.node_id", true, false);
+	if(mtm_node_id)
+	{
+		snprintf(buffer, 50, "mtm-node-%s", mtm_node_id);
+		return _mcopy_string(mem, buffer);
+	}
+	opt = GetConfigOption("schedule.nodename", true, false);
+	return _mcopy_string(mem, (char *)(opt == NULL || strlen(opt) == 0 ? "master": opt));
+}
+
 
 
 /** END of SOME UTILS **/
@@ -605,6 +673,24 @@ void _PG_init(void)
 	pg_scheduler_startup();
 }
 
+PG_FUNCTION_INFO_V1(nodename);
+Datum
+nodename(PG_FUNCTION_ARGS)
+{
+	text *text_p;
+	int len;
+	char *nname;
+
+	nname = get_scheduler_nodename(CurrentMemoryContext);
+
+	len = strlen(nname);
+	text_p = (text *) palloc(sizeof(char)*len + VARHDRSZ);
+	memcpy((void *)VARDATA(text_p), nname, len);
+	SET_VARSIZE(text_p, sizeof(char)*len + VARHDRSZ);
+	pfree(nname);
+	PG_RETURN_TEXT_P(text_p);
+}
+
 PG_FUNCTION_INFO_V1(cron_string_to_json_text);
 Datum
 cron_string_to_json_text(PG_FUNCTION_ARGS)
@@ -628,7 +714,7 @@ cron_string_to_json_text(PG_FUNCTION_ARGS)
 		text_p = (text *) palloc(sizeof(char)*len + VARHDRSZ);
 		memcpy((void *)VARDATA(text_p), jsonText, len);
 		SET_VARSIZE(text_p, sizeof(char)*len + VARHDRSZ);
-		free(jsonText);
+		pfree(jsonText);
 		PG_RETURN_TEXT_P(text_p);
 	}
 	else

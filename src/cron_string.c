@@ -50,7 +50,7 @@ char *_cps_append_string(char *str, char *to_add)
 	int end = str ? strlen(str): 0;
 	int len = strlen(to_add);
 	
-	str = realloc(str, end + len + 1);
+	str = str? repalloc(str, end + len + 1): palloc(end + len + 1);
 	memcpy(str+end, to_add, len);
 	str[end+len] = 0;
 
@@ -99,9 +99,9 @@ void _cps_clean_charchar(char **data, int len)
 
 	for(i=0; i < len; i++)
 	{
-		free(data[i]);
+		pfree(data[i]);
 	}
-	free(data);
+	pfree(data);
 }
 
 char **_cps_split_by(char sep, char *src, int *N)
@@ -115,7 +115,7 @@ char **_cps_split_by(char sep, char *src, int *N)
 	{
 		if(src[i] == sep) n++;
 	}
-	res = malloc(sizeof(char *)*n);
+	res = palloc(sizeof(char *)*n);
 	*N = n;
 	
 	for(i=0; i < len; i++)
@@ -123,7 +123,7 @@ char **_cps_split_by(char sep, char *src, int *N)
 		if(src[i] == sep)
 		{
 			tmp[ti++] = 0;
-			res[ri] = (char *)malloc(sizeof(char)*(ti));
+			res[ri] = (char *)palloc(sizeof(char)*(ti));
 			memcpy(res[ri++], tmp, ti);
 			ti = 0;
 		}
@@ -133,7 +133,7 @@ char **_cps_split_by(char sep, char *src, int *N)
 		}
 	}
 	tmp[ti++] = 0;
-	res[ri] = malloc(sizeof(char)*(ti+1));
+	res[ri] = palloc(sizeof(char)*(ti+1));
 	memcpy(res[ri], tmp, ti+1);
 
 	return res;
@@ -154,7 +154,7 @@ int *_cps_parse_range(char *src, int start, int end, int *len)
 
 	*len = 0;
 
-	values = malloc(sizeof(char)*range_len);
+	values = palloc(sizeof(char)*range_len);
 	memset(values, 0, sizeof(char)*range_len);
 
 	parts = _cps_split_by(',', src, &nparts);
@@ -284,7 +284,7 @@ int *_cps_parse_range(char *src, int start, int end, int *len)
 			
 		if(*len > 0)
 		{
-			ptr = malloc(sizeof(int)*(*len));
+			ptr = palloc(sizeof(int)*(*len));
 		}
 		else
 		{
@@ -301,7 +301,7 @@ int *_cps_parse_range(char *src, int start, int end, int *len)
 		ptr = NULL;
 		ni = 0;
 	}
-	free(values);
+	pfree(values);
 	_cps_clean_charchar(parts, nparts);
 
 	return ptr;
@@ -311,8 +311,8 @@ char *_cps_subst_str(char *str, char **subst_array, int subst_len, int step)
 {
 	int len = strlen(str);
 	char *new_str =  NULL;
-	int *candidats = (int *)malloc(sizeof(int)*subst_len);
-	int *new_cands = (int *)malloc(sizeof(int)*subst_len);
+	int *candidats = (int *)palloc(sizeof(int)*subst_len);
+	int *new_cands = (int *)palloc(sizeof(int)*subst_len);
 	int cands_num = 0;
 	int new_cands_num = 0;
 	int this_clen;
@@ -359,12 +359,15 @@ char *_cps_subst_str(char *str, char **subst_array, int subst_len, int step)
 				candidats[j] = j;
 			}
 			matches_count++;
-			matches = realloc(matches, (sizeof(match_ent_t) * matches_count));
+			matches = 
+				matches ? 
+					repalloc(matches, (sizeof(match_ent_t) * matches_count)):
+					palloc(sizeof(match_ent_t) * matches_count);
 			matches[matches_count-1].start = i - cand_step;
 			matches[matches_count-1].end = i;
 
 			matches[matches_count-1].subst_len = sprintf(buff, "%d", has_match + step);
-			matches[matches_count-1].subst = malloc(sizeof(matches[matches_count-1].subst_len));
+			matches[matches_count-1].subst = palloc(sizeof(matches[matches_count-1].subst_len));
 			memcpy(matches[matches_count-1].subst, buff, matches[matches_count-1].subst_len);
 
 			cands_num = subst_len;
@@ -394,8 +397,8 @@ char *_cps_subst_str(char *str, char **subst_array, int subst_len, int step)
 			new_cands_num = 0;
 		}
 	}
-	free(candidats);
-	free(new_cands);
+	pfree(candidats);
+	pfree(new_cands);
 
 	if(matches_count > 0)
 	{
@@ -404,7 +407,7 @@ char *_cps_subst_str(char *str, char **subst_array, int subst_len, int step)
 			new_len += (matches[i].end - matches[i].start + 1) - matches[i].subst_len ;
 		}
 		new_len = len - new_len;
-		new_str = malloc(sizeof(char) * new_len+1);
+		new_str = palloc(sizeof(char) * new_len+1);
 
 		for(i=0; i < matches_count; i++)
 		{
@@ -415,7 +418,7 @@ char *_cps_subst_str(char *str, char **subst_array, int subst_len, int step)
 			new_curr += matches[i].subst_len;
 			curr = matches[i].end+1;
 
-			free(matches[i].subst);
+			pfree(matches[i].subst);
 		}
 		if(curr < (len-1))
 		{
@@ -423,8 +426,8 @@ char *_cps_subst_str(char *str, char **subst_array, int subst_len, int step)
 			new_curr += (len - curr);
 		}
 		new_str[new_curr] = 0;
-		free(matches);
-		free(str);
+		pfree(matches);
+		pfree(str);
 		return new_str;
 	}
 
@@ -433,13 +436,13 @@ char *_cps_subst_str(char *str, char **subst_array, int subst_len, int step)
 
 void destroyCronEnt(cron_ent_t *e)
 {
-	if(e->mins) free(e->mins);
-	if(e->hour) free(e->hour);
-	if(e->day) free(e->day);
-	if(e->month) free(e->month);
-	if(e->wdays) free(e->wdays);
+	if(e->mins) pfree(e->mins);
+	if(e->hour) pfree(e->hour);
+	if(e->day) pfree(e->day);
+	if(e->month) pfree(e->month);
+	if(e->wdays) pfree(e->wdays);
 
-	free(e);
+	pfree(e);
 }
 
 cron_ent_t *parse_crontab(char *cron_str)
@@ -453,7 +456,7 @@ cron_ent_t *parse_crontab(char *cron_str)
 	
 	if(N == 7 && strcmp(cron_str, "@reboot") == 0)
 	{
-		CE = (cron_ent_t *)malloc(sizeof(cron_ent_t));
+		CE = (cron_ent_t *)palloc(sizeof(cron_ent_t));
 		memset((void *)CE, 0, sizeof(cron_ent_t)); 
 		CE->onstart = 1;
 
@@ -469,7 +472,7 @@ cron_ent_t *parse_crontab(char *cron_str)
 		else
 		{
 			tmp[ti++] = 0;
-			entrs[en] = malloc(sizeof(char) * ti);
+			entrs[en] = palloc(sizeof(char) * ti);
 			memcpy(entrs[en], tmp, ti);
 			ti = 0;
 			en++;
@@ -478,7 +481,7 @@ cron_ent_t *parse_crontab(char *cron_str)
 	if(ti)
 	{
 		tmp[ti++] = 0;
-		entrs[en] = malloc(sizeof(char) * ti);
+		entrs[en] = palloc(sizeof(char) * ti);
 		memcpy(entrs[en], tmp, ti);
 	}
 	if(en != 4)
@@ -486,12 +489,12 @@ cron_ent_t *parse_crontab(char *cron_str)
 		_cps_set_error(55, "cron string wrong format");
 		for(i=0; i < 5; i++)
 		{
-			if(entrs[i]) free(entrs[i]);
+			if(entrs[i]) pfree(entrs[i]);
 		}
 		return NULL;
 	}
 
-	CE = (cron_ent_t *)malloc(sizeof(cron_ent_t));
+	CE = (cron_ent_t *)palloc(sizeof(cron_ent_t));
 	memset((void *)CE, 0, sizeof(cron_ent_t)); 
 
 
@@ -506,7 +509,7 @@ cron_ent_t *parse_crontab(char *cron_str)
 
 	for(i=0; i < 5; i++)
 	{
-		if(entrs[i]) free(entrs[i]);
+		if(entrs[i]) pfree(entrs[i]);
 	}
 
 	if(CE->wdays) return CE;
@@ -537,31 +540,31 @@ char *parse_crontab_to_json_text(char *cron_str)
 			out = _cps_append_string(out, "\"minutes\": ");
 			tmp_out = _cps_make_array(cron->mins, cron->mins_len);
 			out = _cps_append_string(out, tmp_out);
-			free(tmp_out);
+			pfree(tmp_out);
 			out = _cps_append_string(out, ", ");
 
 			out = _cps_append_string(out, "\"hours\": ");
 			tmp_out = _cps_make_array(cron->hour, cron->hour_len);
 			out = _cps_append_string(out, tmp_out);
-			free(tmp_out);
+			pfree(tmp_out);
 			out = _cps_append_string(out, ", ");
 
 			out = _cps_append_string(out, "\"days\": ");
 			tmp_out = _cps_make_array(cron->day, cron->day_len);
 			out = _cps_append_string(out, tmp_out);
-			free(tmp_out);
+			pfree(tmp_out);
 			out = _cps_append_string(out, ", ");
 
 			out = _cps_append_string(out, "\"months\": ");
 			tmp_out = _cps_make_array(cron->month, cron->month_len);
 			out = _cps_append_string(out, tmp_out);
-			free(tmp_out);
+			pfree(tmp_out);
 			out = _cps_append_string(out, ", ");
 
 			out = _cps_append_string(out, "\"wdays\": ");
 			tmp_out = _cps_make_array(cron->wdays, cron->wdays_len);
 			out = _cps_append_string(out, tmp_out);
-			free(tmp_out);
+			pfree(tmp_out);
 		}
 		out = _cps_append_string(out, "}");
 

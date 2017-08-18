@@ -88,7 +88,6 @@ bool checkSchedulerExtension(void);
 extern PGDLLEXPORT void manager_worker_main(Datum arg);
 int get_scheduler_maxworkers(void);
 int get_scheduler_at_max_workers(void);
-char *get_scheduler_nodename(MemoryContext mem);
 scheduler_manager_ctx_t *initialize_scheduler_manager_context(MemoryContext mem,char *dbname, dsm_segment *seg);
 int refresh_scheduler_manager_context(scheduler_manager_ctx_t *ctx);
 void destroy_scheduler_manager_context(scheduler_manager_ctx_t *ctx);

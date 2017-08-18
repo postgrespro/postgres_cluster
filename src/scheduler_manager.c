@@ -100,14 +100,6 @@ int get_scheduler_at_max_workers(void)
 	return var;
 }
 
-char *get_scheduler_nodename(MemoryContext mem)
-{
-	const char *opt;
-	opt = GetConfigOption("schedule.nodename", true, false);
-
-	return _mcopy_string(mem, (char *)(opt == NULL || strlen(opt) == 0 ? "master": opt));
-}
-
 int init_manager_pool(MemoryContext mem, scheduler_manager_pool_t *p, int N)
 {
 	int i;

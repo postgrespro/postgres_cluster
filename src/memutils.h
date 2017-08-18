@@ -12,4 +12,7 @@ MemoryContext switch_to_worker_context(void);
 void *worker_alloc(Size size);
 void delete_worker_mem_ctx(MemoryContext toswitch);
 
+char *_mcopy_string(MemoryContext ctx, char *str);
+char *my_copy_string(char *str);
+
 #endif

@@ -43,3 +43,35 @@ void delete_worker_mem_ctx(MemoryContext old)
 	MemoryContextDelete(SchedulerWorkerContext);
 	SchedulerWorkerContext = NULL;
 }
+
+char *_mcopy_string(MemoryContext ctx, char *str)
+{
+	int len = strlen(str);
+	char *cpy;
+
+	if(!ctx) ctx = SchedulerWorkerContext;
+
+	cpy = MemoryContextAlloc(ctx, sizeof(char) * (len+1));
+	if(!cpy) return NULL;
+
+	memcpy(cpy, str, len);
+	cpy[len] = 0;
+
+	return cpy;
+}
+
+char *my_copy_string(char *str)
+{
+	int len = strlen(str);
+	char *cpy;
+
+	cpy = palloc(sizeof(char) * (len+1));
+	if(!cpy) return NULL;
+
+	memcpy(cpy, str, len);
+	cpy[len] = 0;
+
+	return cpy;
+}
+
+
