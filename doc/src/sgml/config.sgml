@@ -7490,7 +7490,7 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
    </sect1>
 
    <sect1 id="runtime-config-cfs">
-    <title>Date Compression</title>
+    <title>Data Compression</title>
 
     <variablelist>
 
