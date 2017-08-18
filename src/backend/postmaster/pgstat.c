@@ -5649,7 +5649,7 @@ typedef struct {
 void *
 PgStatSuspend(void)
 {
-	SuspendedPgStat *sus = malloc(sizeof(SuspendedPgStat));
+	SuspendedPgStat *sus = (SuspendedPgStat*)MemoryContextAlloc(TopMemoryContext, sizeof(SuspendedPgStat));
 
 	MOVELEFT(sus->pgStatXactStack, pgStatXactStack, NULL);
 	MOVELEFT(sus->pgStatXactCommit, pgStatXactCommit, 0);
@@ -5671,5 +5671,5 @@ PgStatResume(void *src)
 	pgStatBlockReadTime = sus->pgStatBlockReadTime;
 	pgStatBlockWriteTime = sus->pgStatBlockWriteTime;
 
-	free(src);
+	pfree(src);
 }

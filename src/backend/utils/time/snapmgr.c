@@ -2162,7 +2162,7 @@ void *SuspendSnapshot(void)
 {
 	SnapshotData mvcc = {HeapTupleSatisfiesMVCC};
 	pairingheap fresh_regsnap = {&xmin_cmp, NULL, NULL};
-	SuspendedSnapshotState *s = malloc(sizeof(SuspendedSnapshotState));
+	SuspendedSnapshotState *s = (SuspendedSnapshotState*)MemoryContextAlloc(TopMemoryContext, sizeof(SuspendedSnapshotState));
 
 	MOVELEFT(s->CurrentSnapshotData, CurrentSnapshotData, mvcc);
 	MOVELEFT(s->SecondarySnapshotData, SecondarySnapshotData, mvcc);
@@ -2215,5 +2215,5 @@ void ResumeSnapshot(void *data)
 	ActiveSnapshot = s->ActiveSnapshot;
 	OldestActiveSnapshot = s->OldestActiveSnapshot;
 
-	free(s);
+	pfree(s);
 }

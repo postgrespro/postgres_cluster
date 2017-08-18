@@ -1881,3 +1881,8 @@ Datum cfs_gc_activity_scanned_files(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT64(cfs_state->gc_stat.scannedFiles);
 }
+
+void cfs_on_exit_callback(int code, Datum arg)
+{
+	cfs_control_gc_unlock();
+}

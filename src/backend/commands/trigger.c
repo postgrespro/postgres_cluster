@@ -5017,7 +5017,7 @@ AfterTriggerSaveEvent(EState *estate, ResultRelInfo *relinfo,
 void *
 TriggerSuspend(void)
 {
-	AfterTriggersData *state = malloc(sizeof(AfterTriggersData));
+	AfterTriggersData *state = (AfterTriggersData*)MemoryContextAlloc(TopMemoryContext, sizeof(AfterTriggersData));
 	*state = afterTriggers;
 	memset(&afterTriggers, 0, sizeof(afterTriggers));
 	AfterTriggerBeginXact();
@@ -5028,7 +5028,7 @@ void
 TriggerResume(void *state)
 {
 	afterTriggers = *(AfterTriggersData *)state;
-	free(state);
+	pfree(state);
 }
 
 Datum

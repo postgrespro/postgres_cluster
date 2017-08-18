@@ -57,27 +57,27 @@ copydir(char *fromdir, char *todir, bool recurse)
 
 	cfs_control_gc_lock(); /* disable GC during copy */
 
-	PG_ENSURE_ERROR_CLEANUP(cfs_control_gc_unlock, (Datum)NULL);
+	PG_ENSURE_ERROR_CLEANUP(cfs_on_exit_callback, (Datum)NULL);
 	{
 		while ((xlde = ReadDir(xldir, fromdir)) != NULL)
 		{
 			struct stat fst;
-			
+
 			/* If we got a cancel signal during the copy of the directory, quit */
 			CHECK_FOR_INTERRUPTS();
-			
+
 			if (strcmp(xlde->d_name, ".") == 0 ||
 				strcmp(xlde->d_name, "..") == 0)
 				continue;
-			
+
 			snprintf(fromfile, MAXPGPATH, "%s/%s", fromdir, xlde->d_name);
 			snprintf(tofile, MAXPGPATH, "%s/%s", todir, xlde->d_name);
-			
+
 			if (lstat(fromfile, &fst) < 0)
 				ereport(ERROR,
 						(errcode_for_file_access(),
 						 errmsg("could not stat file \"%s\": %m", fromfile)));
-			
+
 			if (S_ISDIR(fst.st_mode))
 			{
 				/* recurse to handle subdirectories */
@@ -89,9 +89,9 @@ copydir(char *fromdir, char *todir, bool recurse)
 		}
 		FreeDir(xldir);
 	}
-	PG_END_ENSURE_ERROR_CLEANUP(cfs_control_gc_unlock, (Datum)NULL);
+	PG_END_ENSURE_ERROR_CLEANUP(cfs_on_exit_callback, (Datum)NULL);
 	cfs_control_gc_unlock();
-	
+
 	/*
 	 * Be paranoid here and fsync all files to ensure the copy is really done.
 	 * But if fsync is disabled, we're done.
@@ -164,35 +164,35 @@ copyzipdir(char *fromdir, bool from_compressed,
 
 	cfs_control_gc_lock(); /* disable GC during copy */
 
-	PG_ENSURE_ERROR_CLEANUP(cfs_control_gc_unlock, (Datum)NULL);
+	PG_ENSURE_ERROR_CLEANUP(cfs_on_exit_callback, (Datum)NULL);
 	{
 		while ((xlde = ReadDir(xldir, fromdir)) != NULL)
 		{
 			struct stat fst;
-			
+
 			/* If we got a cancel signal during the copy of the directory, quit */
 			CHECK_FOR_INTERRUPTS();
-			
+
 			if (strcmp(xlde->d_name, ".") == 0
 				|| strcmp(xlde->d_name, "..") == 0
 				|| (strlen(xlde->d_name) > 4
 					&& strcmp(xlde->d_name + strlen(xlde->d_name) - 4, ".cfm") == 0))
 				continue;
-			
+
 			snprintf(fromfile, MAXPGPATH, "%s/%s", fromdir, xlde->d_name);
 			snprintf(tofile, MAXPGPATH, "%s/%s", todir, xlde->d_name);
-			
+
 			if (lstat(fromfile, &fst) < 0)
 				ereport(ERROR,
 						(errcode_for_file_access(),
 						 errmsg("could not stat file \"%s\": %m", fromfile)));
-			
+
 			if (S_ISREG(fst.st_mode))
 				copy_zip_file(fromfile, from_compressed, tofile, to_compressed);
 		}
 		FreeDir(xldir);
 	}
-	PG_END_ENSURE_ERROR_CLEANUP(cfs_control_gc_unlock, (Datum)NULL);
+	PG_END_ENSURE_ERROR_CLEANUP(cfs_on_exit_callback, (Datum)NULL);
 	cfs_control_gc_unlock();
 
 	/*
