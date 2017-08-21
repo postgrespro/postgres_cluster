@@ -423,12 +423,6 @@ XLogInsert(RmgrId rmid, uint8 info)
 
 	TRACE_POSTGRESQL_XLOG_INSERT(rmid, info);
 
-	if (rmid == RM_LOGICALMSG_ID || rmid == RM_HEAP_ID)
-	{
-		MyXactLogicalChanges += 1;
-	}
-
-
 	/*
 	 * In bootstrap mode, we don't actually log anything but XLOG resources;
 	 * return a phony record pointer.

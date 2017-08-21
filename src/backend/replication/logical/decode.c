@@ -158,7 +158,7 @@ LogicalDecodingProcessRecord(LogicalDecodingContext *ctx, XLogReaderState *recor
 		case RM_GENERIC_ID:
 			/* just deal with xid, and done */
 			ReorderBufferProcessXid(ctx->reorder, XLogRecGetXid(record),
-									buf.origptr, false);
+									buf.origptr);
 			break;
 		case RM_NEXT_ID:
 			elog(ERROR, "unexpected RM_NEXT_ID rmgr_id: %u", (RmgrIds) XLogRecGetRmid(buf.record));
@@ -175,7 +175,7 @@ DecodeXLogOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	uint8		info = XLogRecGetInfo(buf->record) & ~XLR_INFO_MASK;
 
 	ReorderBufferProcessXid(ctx->reorder, XLogRecGetXid(buf->record),
-							buf->origptr, false);
+							buf->origptr);
 
 	switch (info)
 	{
@@ -318,7 +318,7 @@ DecodeStandbyOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	XLogReaderState *r = buf->record;
 	uint8		info = XLogRecGetInfo(r) & ~XLR_INFO_MASK;
 
-	ReorderBufferProcessXid(ctx->reorder, XLogRecGetXid(r), buf->origptr, false);
+	ReorderBufferProcessXid(ctx->reorder, XLogRecGetXid(r), buf->origptr);
 
 	switch (info)
 	{
@@ -366,7 +366,7 @@ DecodeHeap2Op(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	TransactionId xid = XLogRecGetXid(buf->record);
 	SnapBuild  *builder = ctx->snapshot_builder;
 
-	ReorderBufferProcessXid(ctx->reorder, xid, buf->origptr, false);
+	ReorderBufferProcessXid(ctx->reorder, xid, buf->origptr);
 
 	/* no point in doing anything yet */
 	if (SnapBuildCurrentState(builder) < SNAPBUILD_FULL_SNAPSHOT)
@@ -421,7 +421,7 @@ DecodeHeapOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	TransactionId xid = XLogRecGetXid(buf->record);
 	SnapBuild  *builder = ctx->snapshot_builder;
 
-	ReorderBufferProcessXid(ctx->reorder, xid, buf->origptr, true);
+	ReorderBufferProcessXid(ctx->reorder, xid, buf->origptr);
 
 	/* no point in doing anything yet */
 	if (SnapBuildCurrentState(builder) < SNAPBUILD_FULL_SNAPSHOT)
@@ -518,7 +518,7 @@ DecodeLogicalMsgOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	if (info != XLOG_LOGICAL_MESSAGE)
 		elog(ERROR, "unexpected RM_LOGICALMSG_ID record type: %u", info);
 
-	ReorderBufferProcessXid(ctx->reorder, XLogRecGetXid(r), buf->origptr, true);
+	ReorderBufferProcessXid(ctx->reorder, XLogRecGetXid(r), buf->origptr);
 
 	/* No point in doing anything yet. */
 	if (SnapBuildCurrentState(builder) < SNAPBUILD_FULL_SNAPSHOT)
@@ -611,15 +611,15 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		FilterByOrigin(ctx, origin_id))
 	{
 		if (SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr)) {
-			elog(DEBUG1, "Skip transaction %ld at %lx because it's origptr %lx is not in snapshot",
+			elog(DEBUG1, "Skip transaction %ld at %lx because it's origptr %lx is not in snapshot", 
 				 xid, buf->endptr, buf->origptr);
 		}
 		if (parsed->dbId != InvalidOid && parsed->dbId != ctx->slot->data.database) {
-			elog(DEBUG1, "Skip transaction %ld at %lx because database id is not matched",
+			elog(DEBUG1, "Skip transaction %ld at %lx because database id is not matched", 
 				 xid, buf->endptr);
 		}
-		if (FilterByOrigin(ctx, origin_id)) {
-			elog(DEBUG1, "Skip transaction %ld at %lx is filtered by origin_id %d",
+		if (FilterByOrigin(ctx, origin_id)) { 
+			elog(DEBUG1, "Skip transaction %ld at %lx is filtered by origin_id %d", 
 				 xid, buf->endptr, origin_id);
 		}
 		for (i = 0; i < parsed->nsubxacts; i++)
@@ -654,7 +654,7 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		*ctx->reorder->state_3pc = '\0';
 		/* replay actions of all transaction + subtransactions in order */
 		ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
-							commit_time, origin_id, origin_lsn, parsed->n_changes);
+							commit_time, origin_id, origin_lsn);
 	}
 }
 
@@ -682,7 +682,7 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	{
 		origin_lsn = parsed->origin_lsn;
 		commit_time = parsed->origin_timestamp;
-	} else {
+	} else { 
 		Assert(origin_id == InvalidRepOriginId);
 	}
 
@@ -714,7 +714,7 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		return;
 	}
 
-	if (*parsed->state_3pc != '\0') {
+	if (*parsed->state_3pc != '\0') { 
 		ReorderBufferTXN txn;
 		txn.xid = xid;
 		txn.first_lsn = buf->origptr;
@@ -725,19 +725,19 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		txn.origin_lsn = origin_lsn;
 		txn.xact_action = rb->xact_action;
 		strcpy(txn.gid, rb->gid);
-		strcpy(txn.state_3pc, rb->state_3pc);
+		strcpy(txn.state_3pc, rb->state_3pc);		
 		rb->commit(rb, &txn, buf->origptr);
-	} else {
+	} else { 
 		/* tell the reorderbuffer about the surviving subtransactions */
 		for (i = 0; i < parsed->nsubxacts; i++)
 		{
 			ReorderBufferCommitChild(ctx->reorder, xid, parsed->subxacts[i],
 									 buf->origptr, buf->endptr);
 		}
-
+		
 		/* replay actions of all transaction + subtransactions in order */
 		ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
-							commit_time, origin_id, origin_lsn, parsed->n_changes);
+							commit_time, origin_id, origin_lsn);
 	}
 }
 
@@ -772,10 +772,10 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 				ReorderBufferForget(ctx->reorder, parsed->subxacts[i], buf->record->EndRecPtr);
 			}
 			ReorderBufferForget(ctx->reorder, xid, buf->record->EndRecPtr);
-		} else {
+		} else { 
 			strcpy(ctx->reorder->gid, parsed->twophase_gid);
 			*ctx->reorder->state_3pc = '\0';
-
+			
 			SnapBuildAbortTxn(ctx->snapshot_builder, buf->record->EndRecPtr, xid,
 							  parsed->nsubxacts, parsed->subxacts);
 			ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
@@ -874,7 +874,7 @@ DecodeUpdate(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 
 	/* only interested in our database */
 	XLogRecGetBlockTag(r, 0, &target_node, NULL, NULL);
-	if (target_node.dbNode != ctx->slot->data.database)
+	if (target_node.dbNode != ctx->slot->data.database) 
 		return;
 
 	/* output plugin doesn't look for this origin, no need to queue */

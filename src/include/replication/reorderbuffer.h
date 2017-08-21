@@ -223,11 +223,6 @@ typedef struct ReorderBufferTXN
 	uint64		nentries_mem;
 
 	/*
-	 * Number of logical changes done by transaction: it include heap_op and logical_op
-	 */
-	int64       n_changes;
-
-	/*
 	 * List of ReorderBufferChange structs, including new Snapshots and new
 	 * CommandIds
 	 */
@@ -394,7 +389,7 @@ void ReorderBufferQueueMessage(ReorderBuffer *, TransactionId, Snapshot snapshot
 						  Size message_size, const char *message);
 void ReorderBufferCommit(ReorderBuffer *, TransactionId,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
-						 TimestampTz commit_time, RepOriginId origin_id, XLogRecPtr origin_lsn, int64 n_changes);
+	  TimestampTz commit_time, RepOriginId origin_id, XLogRecPtr origin_lsn);
 void ReorderBufferCommitBareXact(ReorderBuffer *rb, TransactionId xid,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 					TimestampTz commit_time,
@@ -417,7 +412,7 @@ void ReorderBufferAddInvalidations(ReorderBuffer *, TransactionId, XLogRecPtr ls
 							  Size nmsgs, SharedInvalidationMessage *msgs);
 void ReorderBufferImmediateInvalidation(ReorderBuffer *, uint32 ninvalidations,
 								   SharedInvalidationMessage *invalidations);
-void		ReorderBufferProcessXid(ReorderBuffer *, TransactionId xid, XLogRecPtr lsn, bool logicalOp);
+void		ReorderBufferProcessXid(ReorderBuffer *, TransactionId xid, XLogRecPtr lsn);
 void		ReorderBufferXidSetCatalogChanges(ReorderBuffer *, TransactionId xid, XLogRecPtr lsn);
 bool		ReorderBufferXidHasCatalogChanges(ReorderBuffer *, TransactionId xid);
 bool		ReorderBufferXidHasBaseSnapshot(ReorderBuffer *, TransactionId xid);

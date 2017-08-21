@@ -210,7 +210,6 @@ typedef struct TwoPhaseFileHeader
 	int32		ncommitrels;	/* number of delete-on-commit rels */
 	int32		nabortrels;		/* number of delete-on-abort rels */
 	int32		ninvalmsgs;		/* number of cache invalidation messages */
-	int64       n_changes;      /* number of changes done by transaction */
 	bool		initfileinval;	/* does relcache init file need invalidation? */
 	uint16		gidlen;			/* length of the GID - GID follows the header */
 	xl_xact_origin xl_origin;   /* replication origin information */
@@ -331,7 +330,7 @@ TwoPhaseShmemInit(void)
 			((char *) TwoPhaseState +
 			 MAXALIGN(offsetof(TwoPhaseStateData, prepXacts) +
 					  sizeof(GlobalTransaction) * 2 * max_prepared_xacts));
-
+		
 		TwoPhaseState->hashTable = &TwoPhaseState->prepXacts[max_prepared_xacts];
 
 		for (i = 0; i < max_prepared_xacts; i++)
@@ -531,10 +530,10 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 	proc->lwWaitMode = 0;
 	proc->waitLock = NULL;
 	proc->waitProcLock = NULL;
-
+	
 	cached_xid = xid;
 	cached_gxact = gxact;
-
+		
 	for (i = 0; i < NUM_LOCK_PARTITIONS; i++)
 		SHMQueueInit(&(proc->myProcLocks[i]));
 	/* subxid data must be filled later by GXactLoadSubxactData */
@@ -548,7 +547,7 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 	gxact->owner = owner;
 	gxact->locking_pid = MyProcPid;
 	gxact->valid = false;
-	gxact->ondisk = false;
+	gxact->ondisk = false;	
 	gxact->prep_index = TwoPhaseState->numPrepXacts;
 	strcpy(gxact->gid, gid);
 	*gxact->state_3pc = '\0';
@@ -556,7 +555,7 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 	/* And insert it into the active array */
 	Assert(TwoPhaseState->numPrepXacts < max_prepared_xacts);
 	TwoPhaseState->prepXacts[TwoPhaseState->numPrepXacts++] = gxact;
-
+	
 	/*
 	 * Remember that we have this GlobalTransaction entry locked for us. If we
 	 * abort after this, we must release it.
@@ -656,7 +655,7 @@ LockGXact(const char *gid, Oid user)
 			LWLockRelease(TwoPhaseStateLock);
 
 			if (MyLockedGxact != gxact) {
-				if (MyLockedGxact != NULL) {
+				if (MyLockedGxact != NULL) { 
 					SpinLockRelease(&MyLockedGxact->spinlock);
 				}
 				MyLockedGxact = gxact;
@@ -671,13 +670,13 @@ LockGXact(const char *gid, Oid user)
 						 errmsg("prepared transaction with identifier \"%s\" is not valid",
 								gid)));
 			}
-
+			
 			if (user != gxact->owner && !superuser_arg(user)) {
 				ereport(ERROR,
 						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 						 errmsg("permission denied to finish prepared transaction"),
 						 errhint("Must be superuser or the user that prepared the transaction.")));
-			}
+			}	
 
 			/*
 			 * Note: it probably would be possible to allow committing from
@@ -698,11 +697,11 @@ LockGXact(const char *gid, Oid user)
 			gxact->locking_pid = MyProcPid;
 
 			return gxact;
-		}
+		}		
 	}
 
 	LWLockRelease(TwoPhaseStateLock);
-	if (MyLockedGxact != NULL) {
+	if (MyLockedGxact != NULL) { 
 		SpinLockRelease(&MyLockedGxact->spinlock);
 		MyLockedGxact = NULL;
 	}
@@ -830,13 +829,13 @@ bool GetPreparedTransactionState(char const* gid, char* state)
  * Alter 3PC state of prepared transaction
  */
 void SetPreparedTransactionState(char const* gid, char const* state)
-{
+{	
 	GlobalTransaction gxact;
 	PGXACT	   *pgxact;
 	TwoPhaseFileHeader *hdr;
 	char* buf;
     bool replorigin;
-
+	
 
 	if (strlen(state) >= MAX_3PC_STATE_SIZE)
 		ereport(ERROR,
@@ -847,7 +846,7 @@ void SetPreparedTransactionState(char const* gid, char const* state)
     replorigin = (replorigin_session_origin != InvalidRepOriginId &&
 				  replorigin_session_origin != DoNotReplicateId);
 
-	gxact = LockGXact(gid, GetUserId());
+	gxact = LockGXact(gid, GetUserId());	
 	pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
 	strcpy(gxact->state_3pc, state);
 
@@ -905,7 +904,7 @@ pg_precommit_prepared(PG_FUNCTION_ARGS)
     char const* state = PG_GETARG_CSTRING(1);
 	SetPreparedTransactionState(gid, state);
 	PG_RETURN_VOID();
-}
+}    	
 
 /*
  * pg_prepared_xact
@@ -1153,7 +1152,6 @@ StartPrepare(GlobalTransaction gxact)
 	hdr.nabortrels = smgrGetPendingDeletes(false, &abortrels);
 	hdr.ninvalmsgs = xactGetCommittedInvalidationMessages(&invalmsgs,
 														  &hdr.initfileinval);
-	hdr.n_changes = MyXactLogicalChanges;
 	hdr.gidlen = strlen(gxact->gid) + 1;		/* Include '\0' */
 	*hdr.state_3pc = '\0';
 
@@ -1211,7 +1209,7 @@ EndPrepare(GlobalTransaction gxact)
 	Assert(hdr->magic == TWOPHASE_MAGIC);
 	hdr->total_len = records.total_len + sizeof(pg_crc32c);
 
-	if (replorigin) {
+	if (replorigin) { 
 		Assert(replorigin_session_origin_lsn != InvalidXLogRecPtr);
 		hdr->xl_origin.origin_lsn = replorigin_session_origin_lsn;
 		hdr->xl_origin.origin_timestamp = replorigin_session_origin_timestamp;
@@ -1447,7 +1445,7 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 
 	hdr = (TwoPhaseFileHeader *) xlrec;
 	bufptr = xlrec + MAXALIGN(sizeof(TwoPhaseFileHeader));
-
+	
 	parsed->origin_lsn = hdr->xl_origin.origin_lsn;
 	parsed->origin_timestamp = hdr->xl_origin.origin_timestamp;
 	parsed->xinfo = hdr->xl_origin.origin_lsn != InvalidXLogRecPtr ? XACT_XINFO_HAS_ORIGIN : 0;
@@ -1461,8 +1459,7 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 	parsed->nsubxacts = hdr->nsubxacts;
 	parsed->nrels = hdr->ncommitrels;
 	parsed->nmsgs = hdr->ninvalmsgs;
-	parsed->n_changes = hdr->n_changes;
-
+	
 	parsed->subxacts = (TransactionId *) bufptr;
 	bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
 
@@ -1578,10 +1575,10 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	int			i;
 
 
-	if (isCommit)
-	{
+	if (isCommit) 
+	{ 
 		CallXactCallbacks(XACT_EVENT_PRE_COMMIT_PREPARED);
-	}
+	}		
 
 	/*
 	 * Validate the GID, and lock the GXACT to ensure that two backends do not
@@ -1647,7 +1644,7 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 									   gid);
 		CallXactCallbacks(XACT_EVENT_ABORT_PREPARED);
 	}
-
+									   
 
 	ProcArrayRemove(proc, latestXid);
 
