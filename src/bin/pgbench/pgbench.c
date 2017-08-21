@@ -2150,7 +2150,8 @@ top:
 					}
 				}
 
-				if (st->last_begin_state->attempts_number ==
+				if ((serialization_failure || deadlock_failure) &&
+					st->last_begin_state->attempts_number ==
 					max_attempts_number)
 				{
 					/*
