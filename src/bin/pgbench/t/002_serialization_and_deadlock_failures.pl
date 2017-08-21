@@ -4,7 +4,7 @@ use warnings;
 use Config;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 38;
+use Test::More tests => 66;
 
 use constant
 {
@@ -25,15 +25,15 @@ $node->safe_psql('postgres',
     'CREATE UNLOGGED TABLE xy (x integer, y integer); '
   . 'INSERT INTO xy VALUES (1, 2), (2, 3);');
 
-my $script = $node->basedir . '/pgbench_script';
-append_to_file($script,
+my $script_serialization = $node->basedir . '/pgbench_script_serialization';
+append_to_file($script_serialization,
 		"BEGIN;\n"
 	  . "\\set delta random(-5000, 5000)\n"
 	  . "UPDATE xy SET y = y + :delta WHERE x = 1;\n"
 	  . "END;");
 
-my $script1 = $node->basedir . '/pgbench_script1';
-append_to_file($script1,
+my $script_deadlocks1 = $node->basedir . '/pgbench_script_deadlocks1';
+append_to_file($script_deadlocks1,
 		"BEGIN;\n"
 	  . "\\set delta1 random(-5000, 5000)\n"
 	  . "\\set delta2 random(-5000, 5000)\n"
@@ -42,8 +42,8 @@ append_to_file($script1,
 	  . "UPDATE xy SET y = y + :delta2 WHERE x = 2;\n"
 	  . "END;");
 
-my $script2 = $node->basedir . '/pgbench_script2';
-append_to_file($script2,
+my $script_deadlocks2 = $node->basedir . '/pgbench_script_deadlocks2';
+append_to_file($script_deadlocks2,
 		"BEGIN;\n"
 	  . "\\set delta1 random(-5000, 5000)\n"
 	  . "\\set delta2 random(-5000, 5000)\n"
@@ -51,7 +51,7 @@ append_to_file($script2,
 	  . "UPDATE xy SET y = y + :delta1 WHERE x = 1;\n"
 	  . "END;");
 
-sub test_pgbench_serialization_failures
+sub test_pgbench_default_transaction_isolation_level_and_serialization_failures
 {
 	my ($isolation_level) = @_;
 
@@ -78,11 +78,10 @@ sub test_pgbench_serialization_failures
 
 	# Start pgbench:
 	my @command = (
-		qw(pgbench --no-vacuum --max-attempts-number 2 --debug),
-		"--default-isolation-level",
+		qw(pgbench --no-vacuum --default-isolation-level),
 		$isolation_level_abbreviation,
 		"--file",
-		$script);
+		$script_serialization);
 	print "# Running: " . join(" ", @command) . "\n";
 	$h_pgbench = IPC::Run::start \@command, \$in_pgbench, \$out_pgbench,
 	  \$stderr;
@@ -119,12 +118,94 @@ sub test_pgbench_serialization_failures
 
 	# Check pgbench results
 	ok(!$result, "@command exit code 0");
+	is($stderr,  '', "@command no stderr");
 
 	like($out_pgbench,
 		qr{default transaction isolation level: $isolation_level_sql},
-		"concurrent update with retrying: "
-	  . $isolation_level_sql
-	  . ": check default isolation level");
+		"concurrent update: $isolation_level_sql: check default isolation level");
+
+	like($out_pgbench,
+		qr{processed: 10/10},
+		"concurrent update: $isolation_level_sql: check processed transactions");
+
+	my $regex =
+		($isolation_level == READ_COMMITTED)
+	  ? qr{serialization failures: 0 \(0\.000 %\)}
+	  : qr{serialization failures: [1-9]\d* \([1-9]\d*\.\d* %\)};
+
+	like($out_pgbench,
+		$regex,
+		"concurrent update: $isolation_level_sql: check serialization failures");
+}
+
+sub test_pgbench_serialization_failures_retry
+{
+	my ($isolation_level) = @_;
+
+	my $isolation_level_sql = $isolation_level_sql[$isolation_level];
+	my $isolation_level_abbreviation =
+	  $isolation_level_abbreviations[$isolation_level];
+
+	local $ENV{PGPORT} = $node->port;
+	my ($h_psql, $in_psql, $out_psql);
+	my ($h_pgbench, $in_pgbench, $out_pgbench, $stderr);
+
+	# Open the psql session and run the parallel transaction:
+	print "# Starting psql\n";
+	$h_psql = IPC::Run::start [ 'psql' ], \$in_psql, \$out_psql;
+
+	$in_psql =
+	  "begin transaction isolation level " . $isolation_level_sql . ";\n";
+	print "# Running in psql: " . join(" ", $in_psql);
+	$h_psql->pump() until $out_psql =~ /BEGIN/;
+
+	$in_psql = "update xy set y = y + 1 where x = 1;\n";
+	print "# Running in psql: " . join(" ", $in_psql);
+	$h_psql->pump() until $out_psql =~ /UPDATE 1/;
+
+	# Start pgbench:
+	my @command = (
+		qw(pgbench --no-vacuum --max-attempts 2 --debug),
+		"--default-isolation-level",
+		$isolation_level_abbreviation,
+		"--file",
+		$script_serialization);
+	print "# Running: " . join(" ", @command) . "\n";
+	$h_pgbench = IPC::Run::start \@command, \$in_pgbench, \$out_pgbench,
+	  \$stderr;
+
+	# Let pgbench run the update command in the transaction:
+	sleep 10;
+
+	# In psql, commit the transaction and end the session:
+	$in_psql = "end;\n";
+	print "# Running in psql: " . join(" ", $in_psql);
+	$h_psql->pump() until $out_psql =~ /COMMIT/;
+
+	$in_psql = "\\q\n";
+	print "# Running in psql: " . join(" ", $in_psql);
+	$h_psql->pump() while length $in_psql;
+
+	$h_psql->finish();
+
+	# Get pgbench results
+	$h_pgbench->pump() until length $out_pgbench;
+	$h_pgbench->finish();
+
+	# On Windows, the exit status of the process is returned directly as the
+	# process's exit code, while on Unix, it's returned in the high bits
+	# of the exit code (see WEXITSTATUS macro in the standard <sys/wait.h>
+	# header file). IPC::Run's result function always returns exit code >> 8,
+	# assuming the Unix convention, which will always return 0 on Windows as
+	# long as the process was not terminated by an exception. To work around
+	# that, use $h->full_result on Windows instead.
+	my $result =
+	    ($Config{osname} eq "MSWin32")
+	  ? ($h_pgbench->full_results)[0]
+	  : $h_pgbench->result(0);
+
+	# Check pgbench results
+	ok(!$result, "@command exit code 0");
 
 	like($out_pgbench,
 		qr{processed: 10/10},
@@ -166,17 +247,15 @@ sub test_pgbench_deadlock_failures
 	  $isolation_level_abbreviations[$isolation_level];
 
 	local $ENV{PGPORT} = $node->port;
-
 	my ($h1, $in1, $out1, $err1);
 	my ($h2, $in2, $out2, $err2);
 
 	# Run first pgbench
 	my @command1 = (
-		qw(pgbench --no-vacuum --transactions=1 --max-attempts-number=2),
-		qw(--debug --default-isolation-level),
+		qw(pgbench --no-vacuum --transactions 1 --default-isolation-level),
 		$isolation_level_abbreviation,
 		"--file",
-		$script1);
+		$script_deadlocks1);
 	print "# Running: " . join(" ", @command1) . "\n";
 	$h1 = IPC::Run::start \@command1, \$in1, \$out1, \$err1;
 
@@ -185,11 +264,95 @@ sub test_pgbench_deadlock_failures
 
 	# Run second pgbench
 	my @command2 = (
-		qw(pgbench --no-vacuum --transactions=1 --max-attempts-number=2),
-		qw(--debug --default-isolation-level),
+		qw(pgbench --no-vacuum --transactions 1 --default-isolation-level),
 		$isolation_level_abbreviation,
 		"--file",
-		$script2);
+		$script_deadlocks2);
+	print "# Running: " . join(" ", @command2) . "\n";
+	$h2 = IPC::Run::start \@command2, \$in2, \$out2, \$err2;
+
+	# Get all pgbench results
+	$h1->pump() until length $out1;
+	$h1->finish();
+
+	$h2->pump() until length $out2;
+	$h2->finish();
+
+	# On Windows, the exit status of the process is returned directly as the
+	# process's exit code, while on Unix, it's returned in the high bits
+	# of the exit code (see WEXITSTATUS macro in the standard <sys/wait.h>
+	# header file). IPC::Run's result function always returns exit code >> 8,
+	# assuming the Unix convention, which will always return 0 on Windows as
+	# long as the process was not terminated by an exception. To work around
+	# that, use $h->full_result on Windows instead.
+	my $result1 =
+	    ($Config{osname} eq "MSWin32")
+	  ? ($h1->full_results)[0]
+	  : $h1->result(0);
+
+	my $result2 =
+	    ($Config{osname} eq "MSWin32")
+	  ? ($h2->full_results)[0]
+	  : $h2->result(0);
+
+	# Check all pgbench results
+	ok(!$result1, "@command1 exit code 0");
+	ok(!$result2, "@command2 exit code 0");
+
+	is($err1,  '', "@command1 no stderr");
+	is($err2,  '', "@command2 no stderr");
+
+	like($out1,
+		qr{processed: 1/1},
+		"concurrent deadlock update: "
+	  . $isolation_level_sql
+	  . ": pgbench 1: check processed transactions");
+	like($out2,
+		qr{processed: 1/1},
+		"concurrent deadlock update: "
+	  . $isolation_level_sql
+	  . ": pgbench 2: check processed transactions");
+
+	# First or second pgbench should get a deadlock error
+	like($out1 . $out2,
+		qr{deadlock failures: 1 \(100\.000 %\)},
+		"concurrent deadlock update: "
+	  . $isolation_level_sql
+	  . ": check deadlock failures");
+}
+
+sub test_pgbench_deadlock_failures_retry
+{
+	my ($isolation_level) = @_;
+
+	my $isolation_level_sql = $isolation_level_sql[$isolation_level];
+	my $isolation_level_abbreviation =
+	  $isolation_level_abbreviations[$isolation_level];
+
+	local $ENV{PGPORT} = $node->port;
+	my ($h1, $in1, $out1, $err1);
+	my ($h2, $in2, $out2, $err2);
+
+	# Run first pgbench
+	my @command1 = (
+		qw(pgbench --no-vacuum --transactions 1 --max-attempts 2 --debug),
+		"--default-isolation-level",
+		$isolation_level_abbreviation,
+		"--file",
+		$script_deadlocks1);
+	print "# Running: " . join(" ", @command1) . "\n";
+	$h1 = IPC::Run::start \@command1, \$in1, \$out1, \$err1;
+
+	# Let pgbench run first update command in the transaction:
+	sleep 10;
+
+	# Run second pgbench
+	my @command2 = (
+		qw(pgbench --no-vacuum --transactions 1 --max-attempts 2 --debug),
+		"--default-isolation-level",
+		$isolation_level_abbreviation,
+		"--file",
+		$script_deadlocks2);
 	print "# Running: " . join(" ", @command2) . "\n";
 	$h2 = IPC::Run::start \@command2, \$in2, \$out2, \$err2;
 
@@ -222,17 +385,6 @@ sub test_pgbench_deadlock_failures
 	ok(!$result2, "@command2 exit code 0");
 
 	like($out1,
-		qr{default transaction isolation level: $isolation_level_sql},
-		"concurrent deadlock update with retrying: "
-	  . $isolation_level_sql
-	  . ": pgbench 1: check default isolation level");
-	like($out2,
-		qr{default transaction isolation level: $isolation_level_sql},
-		"concurrent deadlock update with retrying: "
-	  . $isolation_level_sql
-	  . ": pgbench 2: check default isolation level");
-
-	like($out1,
 		qr{processed: 1/1},
 		"concurrent deadlock update with retrying: "
 	  . $isolation_level_sql
@@ -256,10 +408,10 @@ sub test_pgbench_deadlock_failures
 
 	# First or second pgbench should get a deadlock error
 	like($err1 . $err2,
-		qr{client 0 got a deadlock failure},
+		qr{client 0 got a deadlock failure \(attempt 1/2\)},
 		"concurrent deadlock update with retrying: "
 	  . $isolation_level_sql
-	  . ": check deadlock failure in debug logs");
+	  . ": check deadlock failure");
 
 	if ($isolation_level == READ_COMMITTED)
 	{
@@ -292,9 +444,20 @@ sub test_pgbench_deadlock_failures
 	}
 }
 
-test_pgbench_serialization_failures(REPEATABLE_READ);
-test_pgbench_serialization_failures(SERIALIZABLE);
+test_pgbench_default_transaction_isolation_level_and_serialization_failures(
+	READ_COMMITTED);
+test_pgbench_default_transaction_isolation_level_and_serialization_failures(
+	REPEATABLE_READ);
+test_pgbench_default_transaction_isolation_level_and_serialization_failures(
+	SERIALIZABLE);
+
+test_pgbench_serialization_failures_retry(REPEATABLE_READ);
+test_pgbench_serialization_failures_retry(SERIALIZABLE);
 
 test_pgbench_deadlock_failures(READ_COMMITTED);
 test_pgbench_deadlock_failures(REPEATABLE_READ);
 test_pgbench_deadlock_failures(SERIALIZABLE);
+
+test_pgbench_deadlock_failures_retry(READ_COMMITTED);
+test_pgbench_deadlock_failures_retry(REPEATABLE_READ);
+test_pgbench_deadlock_failures_retry(SERIALIZABLE);

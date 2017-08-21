@@ -247,20 +247,29 @@ typedef struct StatsData
 } StatsData;
 
 /*
+ * Data structure for client variables.
+ */
+typedef struct Variables
+{
+	Variable   *array;			/* array of variable definitions */
+	int			nvariables;		/* number of variables */
+	bool		vars_sorted;	/* are variables sorted by name? */
+} Variables;
+
+/*
  * Data structure for repeating a transaction from the beginnning with the same
  * parameters.
  */
-typedef struct LastBeginState
+typedef struct RetryState
 {
-	int			state;			/* state No. */
+	int			state;			/* state No.; -1 if there were not any
+								 * transactions yet */
 	int			attempts_number;	/* how many times have we tried to run the
 									 * transaction without serialization or
 									 * deadlock failures */
 	unsigned short random_state[3];	/* random seed */
-	Variable   *variables;		/* array of variable definitions */
-	int			nvariables;		/* number of variables */
-	bool		vars_sorted;	/* are variables sorted by name? */
-} LastBeginState;
+	Variables   variables;		/* client variables */
+} RetryState;
 
 /*
  * Connection state
@@ -274,9 +283,7 @@ typedef struct
 	bool		sleeping;		/* whether the client is napping */
 	bool		throttling;		/* whether nap is for throttling */
 	bool		is_throttled;	/* whether transaction throttling is done */
-	Variable   *variables;		/* array of variable definitions */
-	int			nvariables;		/* number of variables */
-	bool		vars_sorted;	/* are variables sorted by name? */
+	Variables   variables;		/* client variables */
 	int64		txn_scheduled;	/* scheduled start time of transaction (usec) */
 	int64		sleep_until;	/* scheduled start time of next cmd (usec) */
 	instr_time	txn_begin;		/* used for measuring schedule lag times */
@@ -290,10 +297,10 @@ typedef struct
 									 * script execution */
 
 	/* for repeating transactions with serialization or deadlock failures: */
-	LastBeginState *last_begin_state;
+	RetryState  retry_state;
 	bool		end_failed_transaction; /* are we ending the failed transaction
 										 * (and, perhaps, are trying to repeat
-										 * it)?*/
+										 * it)? */
 	SimpleStats attempts;
 
 	/* per client collected stats */
@@ -444,6 +451,16 @@ static const char *DEFAULT_ISOLATION_LEVEL_SQL[] = {
 	"repeatable read",
 	"serializable"
 };
+
+/*
+ * For the failures during script execution.
+ */
+typedef enum FailureStatus
+{
+	SERIALIZATION_FAILURE,
+	DEADLOCK_FAILURE,
+	FAILURE_STATUS_ANOTHER		/* another failure or no failure */
+} FailureStatus;
 
 
 /* Function prototypes */
@@ -974,39 +991,39 @@ compareVariableNames(const void *v1, const void *v2)
 
 /* Locate a variable by name; returns NULL if unknown */
 static Variable *
-lookupVariable(CState *st, char *name)
+lookupVariable(Variables *variables, char *name)
 {
 	Variable	key;
 
 	/* On some versions of Solaris, bsearch of zero items dumps core */
-	if (st->nvariables <= 0)
+	if (variables->nvariables <= 0)
 		return NULL;
 
 	/* Sort if we have to */
-	if (!st->vars_sorted)
+	if (!variables->vars_sorted)
 	{
-		qsort((void *) st->variables, st->nvariables, sizeof(Variable),
-			  compareVariableNames);
-		st->vars_sorted = true;
+		qsort((void *) variables->array, variables->nvariables,
+			  sizeof(Variable), compareVariableNames);
+		variables->vars_sorted = true;
 	}
 
 	/* Now we can search */
 	key.name = name;
 	return (Variable *) bsearch((void *) &key,
-								(void *) st->variables,
-								st->nvariables,
+								(void *) variables->array,
+								variables->nvariables,
 								sizeof(Variable),
 								compareVariableNames);
 }
 
 /* Get the value of a variable, in string form; returns NULL if unknown */
 static char *
-getVariable(CState *st, char *name)
+getVariable(Variables *variables, char *name)
 {
 	Variable   *var;
 	char		stringform[64];
 
-	var = lookupVariable(st, name);
+	var = lookupVariable(variables, name);
 	if (var == NULL)
 		return NULL;			/* not found */
 
@@ -1079,11 +1096,11 @@ isLegalVariableName(const char *name)
  * Returns NULL on failure (bad name).
  */
 static Variable *
-lookupCreateVariable(CState *st, const char *context, char *name)
+lookupCreateVariable(Variables *variables, const char *context, char *name)
 {
 	Variable   *var;
 
-	var = lookupVariable(st, name);
+	var = lookupVariable(variables, name);
 	if (var == NULL)
 	{
 		Variable   *newvars;
@@ -1100,23 +1117,23 @@ lookupCreateVariable(CState *st, const char *context, char *name)
 		}
 
 		/* Create variable at the end of the array */
-		if (st->variables)
-			newvars = (Variable *) pg_realloc(st->variables,
-									(st->nvariables + 1) * sizeof(Variable));
+		if (variables->array)
+			newvars = (Variable *) pg_realloc(variables->array,
+								(variables->nvariables + 1) * sizeof(Variable));
 		else
 			newvars = (Variable *) pg_malloc(sizeof(Variable));
 
-		st->variables = newvars;
+		variables->array = newvars;
 
-		var = &newvars[st->nvariables];
+		var = &newvars[variables->nvariables];
 
 		var->name = pg_strdup(name);
 		var->value = NULL;
 		/* caller is expected to initialize remaining fields */
 
-		st->nvariables++;
+		variables->nvariables++;
 		/* we don't re-sort the array till we have to */
-		st->vars_sorted = false;
+		variables->vars_sorted = false;
 	}
 
 	return var;
@@ -1125,12 +1142,13 @@ lookupCreateVariable(CState *st, const char *context, char *name)
 /* Assign a string value to a variable, creating it if need be */
 /* Returns false on failure (bad name) */
 static bool
-putVariable(CState *st, const char *context, char *name, const char *value)
+putVariable(Variables *variables, const char *context, char *name,
+			const char *value)
 {
 	Variable   *var;
 	char	   *val;
 
-	var = lookupCreateVariable(st, context, name);
+	var = lookupCreateVariable(variables, context, name);
 	if (!var)
 		return false;
 
@@ -1148,12 +1166,12 @@ putVariable(CState *st, const char *context, char *name, const char *value)
 /* Assign a numeric value to a variable, creating it if need be */
 /* Returns false on failure (bad name) */
 static bool
-putVariableNumber(CState *st, const char *context, char *name,
+putVariableNumber(Variables *variables, const char *context, char *name,
 				  const PgBenchValue *value)
 {
 	Variable   *var;
 
-	var = lookupCreateVariable(st, context, name);
+	var = lookupCreateVariable(variables, context, name);
 	if (!var)
 		return false;
 
@@ -1169,12 +1187,13 @@ putVariableNumber(CState *st, const char *context, char *name,
 /* Assign an integer value to a variable, creating it if need be */
 /* Returns false on failure (bad name) */
 static bool
-putVariableInt(CState *st, const char *context, char *name, int64 value)
+putVariableInt(Variables *variables, const char *context, char *name,
+			   int64 value)
 {
 	PgBenchValue val;
 
 	setIntValue(&val, value);
-	return putVariableNumber(st, context, name, &val);
+	return putVariableNumber(variables, context, name, &val);
 }
 
 static char *
@@ -1219,7 +1238,7 @@ replaceVariable(char **sql, char *param, int len, char *value)
 }
 
 static char *
-assignVariables(CState *st, char *sql)
+assignVariables(Variables *variables, char *sql)
 {
 	char	   *p,
 			   *name,
@@ -1240,7 +1259,7 @@ assignVariables(CState *st, char *sql)
 			continue;
 		}
 
-		val = getVariable(st, name);
+		val = getVariable(variables, name);
 		free(name);
 		if (val == NULL)
 		{
@@ -1255,12 +1274,13 @@ assignVariables(CState *st, char *sql)
 }
 
 static void
-getQueryParams(CState *st, const Command *command, const char **params)
+getQueryParams(Variables *variables, const Command *command,
+			   const char **params)
 {
 	int			i;
 
 	for (i = 0; i < command->argc - 1; i++)
-		params[i] = getVariable(st, command->argv[i + 1]);
+		params[i] = getVariable(variables, command->argv[i + 1]);
 }
 
 /* get a value as an int, tell if there is a problem */
@@ -1702,7 +1722,7 @@ evaluateExpr(TState *thread, CState *st, PgBenchExpr *expr, PgBenchValue *retval
 			{
 				Variable   *var;
 
-				if ((var = lookupVariable(st, expr->u.variable.varname)) == NULL)
+				if ((var = lookupVariable(&st->variables, expr->u.variable.varname)) == NULL)
 				{
 					fprintf(stderr, "undefined variable \"%s\"\n",
 							expr->u.variable.varname);
@@ -1735,7 +1755,7 @@ evaluateExpr(TState *thread, CState *st, PgBenchExpr *expr, PgBenchValue *retval
  * Return true if succeeded, or false on error.
  */
 static bool
-runShellCommand(CState *st, char *variable, char **argv, int argc)
+runShellCommand(Variables *variables, char *variable, char **argv, int argc)
 {
 	char		command[SHELL_COMMAND_SIZE];
 	int			i,
@@ -1766,7 +1786,7 @@ runShellCommand(CState *st, char *variable, char **argv, int argc)
 		{
 			arg = argv[i] + 1;	/* a string literal starting with colons */
 		}
-		else if ((arg = getVariable(st, argv[i] + 1)) == NULL)
+		else if ((arg = getVariable(variables, argv[i] + 1)) == NULL)
 		{
 			fprintf(stderr, "%s: undefined variable \"%s\"\n",
 					argv[0], argv[i]);
@@ -1829,7 +1849,7 @@ runShellCommand(CState *st, char *variable, char **argv, int argc)
 				argv[0], res);
 		return false;
 	}
-	if (!putVariableInt(st, "setshell", variable, retval))
+	if (!putVariableInt(variables, "setshell", variable, retval))
 		return false;
 
 #ifdef DEBUG
@@ -1875,26 +1895,30 @@ chooseScript(CState *st)
 	return i - 1;
 }
 
-/* return a deep copy of variables array */
-static Variable *
-copy_variables(Variable *destination, int destination_nvariables,
-			   const Variable *source, int source_nvariables)
+/* make a deep copy of variables array */
+static void
+copyVariables(Variables *destination_vars, const Variables *source_vars)
 {
+	Variable   *destination = destination_vars->array;
 	Variable   *current_destination;
+	const Variable *source = source_vars->array;
 	const Variable *current_source;
+	int			nvariables = source_vars->nvariables;
 
-	/* free pointers in destination variables */
 	for (current_destination = destination;
-		 current_destination - destination < destination_nvariables;
+		 current_destination - destination < destination_vars->nvariables;
 		 ++current_destination)
 	{
 		pg_free(current_destination->name);
 		pg_free(current_destination->value);
 	}
 
-	destination = pg_realloc(destination, sizeof(Variable) * source_nvariables);
+	destination_vars->array = pg_realloc(destination_vars->array,
+										 sizeof(Variable) * nvariables);
+	destination = destination_vars->array;
+
 	for (current_source = source, current_destination = destination;
-		 current_source - source < source_nvariables;
+		 current_source - source < nvariables;
 		 ++current_source, ++current_destination)
 	{
 		current_destination->name = pg_strdup(current_source->name);
@@ -1906,7 +1930,17 @@ copy_variables(Variable *destination, int destination_nvariables,
 		current_destination->num_value = current_source->num_value;
 	}
 
-	return destination;
+	destination_vars->nvariables = nvariables;
+	destination_vars->vars_sorted = source_vars->vars_sorted;
+}
+
+/*
+ * Returns true if there's a serialization/deadlock failure.
+ */
+static bool
+anyFailure(FailureStatus status)
+{
+	return status == SERIALIZATION_FAILURE || status == DEADLOCK_FAILURE;
 }
 
 /* return false iff client should be disconnected */
@@ -2000,8 +2034,7 @@ top:
 	if (st->listen)
 	{
 		ExecStatusType result_status;
-		bool		serialization_failure = false;
-		bool		deadlock_failure = false;
+		FailureStatus failure_status = FAILURE_STATUS_ANOTHER;
 
 		/* are we receiver? */
 		if (commands[st->state]->type == SQL_COMMAND)
@@ -2027,18 +2060,18 @@ top:
 			result_status = PQresultStatus(res);
 			sqlState = PQresultErrorField(res, PG_DIAG_SQLSTATE);
 			if (sqlState) {
-				serialization_failure =
-					strcmp(sqlState, ERRCODE_T_R_SERIALIZATION_FAILURE) == 0;
-				deadlock_failure =
-					strcmp(sqlState, ERRCODE_T_R_DEADLOCK_DETECTED) == 0;
+				if(strcmp(sqlState, ERRCODE_T_R_SERIALIZATION_FAILURE) == 0)
+					failure_status = SERIALIZATION_FAILURE;
+				else if (strcmp(sqlState, ERRCODE_T_R_DEADLOCK_DETECTED) == 0)
+					failure_status = DEADLOCK_FAILURE;
 
-				if (debug && (serialization_failure || deadlock_failure))
+				if (debug && anyFailure(failure_status))
 					fprintf(stderr, "client %d got a %s failure (attempt %d/%d)\n",
 							st->id,
-							(serialization_failure ?
+							(failure_status == SERIALIZATION_FAILURE ?
 							 "serialization" :
 							 "deadlock"),
-							st->last_begin_state->attempts_number,
+							st->retry_state.attempts_number,
 							max_attempts_number);
 			}
 		}
@@ -2047,7 +2080,7 @@ top:
 		 * accumulate per-command execution times in thread-local data
 		 * structure, if per-command latencies are requested
 		 */
-		if (report_per_command && !serialization_failure && !deadlock_failure)
+		if (report_per_command && !anyFailure(failure_status))
 		{
 			if (INSTR_TIME_IS_ZERO(now))
 				INSTR_TIME_SET_CURRENT(now);
@@ -2062,20 +2095,18 @@ top:
 		 * accumulate per-command serialization / deadlock failures count in
 		 * thread-local data structure
 		 */
-		if (serialization_failure)
+		if (failure_status == SERIALIZATION_FAILURE)
 			commands[st->state]->serialization_failures++;
-		if (deadlock_failure)
+		else if (failure_status == DEADLOCK_FAILURE)
 			commands[st->state]->deadlock_failures++;
 
-		if (st->last_begin_state)
+		if (st->retry_state.state >= 0)
 		{
 			int			transaction_block_end_state =
-				commands[st->last_begin_state->state]->transaction_end_num;
+				commands[st->retry_state.state]->transaction_end_num;
 
-			if (((!st->end_failed_transaction &&
-				  !serialization_failure &&
-				  !deadlock_failure) ||
-				 st->last_begin_state->attempts_number == max_attempts_number) &&
+			if (((!st->end_failed_transaction && !anyFailure(failure_status)) ||
+				 st->retry_state.attempts_number == max_attempts_number) &&
 				((commands[st->state]->is_transaction_begin &&
 				  transaction_block_end_state == -1) ||
 				 st->state == transaction_block_end_state))
@@ -2089,14 +2120,13 @@ top:
 				 * So let's record its number of attempts in statistics
 				 * per-command and for current script execution.
 				 */
-				int attempts_number = st->last_begin_state->attempts_number;
+				int attempts_number = st->retry_state.attempts_number;
 
 				if (debug)
 				{
 					char		buffer[256];
 
-					if (serialization_failure ||
-						deadlock_failure ||
+					if (anyFailure(failure_status) ||
 						st->end_failed_transaction)
 						snprintf(buffer, sizeof(buffer), "failure");
 					else
@@ -2106,15 +2136,12 @@ top:
 							st->id, attempts_number, buffer);
 				}
 
-				addToSimpleStats(
-					&commands[st->last_begin_state->state]->attempts,
-					attempts_number);
+				addToSimpleStats(&commands[st->retry_state.state]->attempts,
+								 attempts_number);
 				addToSimpleStats(&st->attempts, attempts_number);
 			}
 
-			if (serialization_failure ||
-				deadlock_failure ||
-				st->end_failed_transaction)
+			if (anyFailure(failure_status) || st->end_failed_transaction)
 			{
 				/*
 				 * 1) If there was a failure - go to the command for ending the
@@ -2125,7 +2152,7 @@ top:
 				 * st->end_failed_transaction is true until we end all these
 				 * jumps between states.
 				 */
-				if ((serialization_failure || deadlock_failure) &&
+				if (anyFailure(failure_status) &&
 					transaction_block_end_state != -1 &&
 					st->state != transaction_block_end_state)
 				{
@@ -2139,10 +2166,10 @@ top:
 					 * We are not in transaction block.  So let's try to repeat
 					 * the failed transaction.
 					 */
-					if (st->last_begin_state->attempts_number < max_attempts_number)
+					if (st->retry_state.attempts_number < max_attempts_number)
 					{
 						st->end_failed_transaction = true;
-						st->state = st->last_begin_state->state;
+						st->state = st->retry_state.state;
 					}
 					else
 					{
@@ -2150,18 +2177,17 @@ top:
 					}
 				}
 
-				if ((serialization_failure || deadlock_failure) &&
-					st->last_begin_state->attempts_number ==
-					max_attempts_number)
+				if (anyFailure(failure_status) &&
+					st->retry_state.attempts_number == max_attempts_number)
 				{
 					/*
 					 * We will not be able to repeat the failed transaction so
 					 * let's record this failure in the stats for current script
 					 * execution.
 					 */
-					if (serialization_failure)
+					if (failure_status == SERIALIZATION_FAILURE)
 						st->serialization_failure = true;
-					else if (deadlock_failure)
+					else if (failure_status == DEADLOCK_FAILURE)
 						st->deadlock_failure = true;
 				}
 			}
@@ -2187,8 +2213,7 @@ top:
 			 */
 			if (!(result_status == PGRES_COMMAND_OK ||
 				  result_status == PGRES_TUPLES_OK ||
-				  serialization_failure ||
-				  deadlock_failure))
+				  anyFailure(failure_status)))
 			{
 				fprintf(stderr, "client %d aborted in state %d: %s",
 						st->id, st->state, PQerrorMessage(st->con));
@@ -2310,7 +2335,7 @@ top:
 
 		if (command->is_transaction_begin)
 		{
-			/* check last begin state */
+			/* check retry state */
 
 			if (st->end_failed_transaction)
 			{
@@ -2325,20 +2350,13 @@ top:
 				if (debug)
 					fprintf(stderr, "client %d repeats the failed transaction (attempt %d/%d)\n",
 							st->id,
-							st->last_begin_state->attempts_number + 1,
+							st->retry_state.attempts_number + 1,
 							max_attempts_number);
 
-				st->last_begin_state->attempts_number++;
-				memcpy(st->random_state, st->last_begin_state->random_state,
+				st->retry_state.attempts_number++;
+				memcpy(st->random_state, st->retry_state.random_state,
 					   sizeof(unsigned short) * 3);
-
-				st->variables = copy_variables(
-											st->variables,
-											st->nvariables,
-											st->last_begin_state->variables,
-											st->last_begin_state->nvariables);
-				st->nvariables = st->last_begin_state->nvariables;
-				st->vars_sorted = st->last_begin_state->vars_sorted;
+				copyVariables(&st->variables, &st->retry_state.variables);
 
 				st->end_failed_transaction = false;
 			}
@@ -2349,24 +2367,11 @@ top:
 				 * current state.  Remember its parameters just in case we
 				 * should repeat it in future.
 				 */
-				if (!st->last_begin_state)
-				{
-					st->last_begin_state = (LastBeginState *)
-						pg_malloc0(sizeof(LastBeginState));
-					memset(st->last_begin_state, 0, sizeof(LastBeginState));
-				}
-				st->last_begin_state->state = st->state;
-				st->last_begin_state->attempts_number = 1;
-				memcpy(st->last_begin_state->random_state, st->random_state,
+				st->retry_state.state = st->state;
+				st->retry_state.attempts_number = 1;
+				memcpy(st->retry_state.random_state, st->random_state,
 					   sizeof(unsigned short) * 3);
-
-				st->last_begin_state->variables = copy_variables(
-											st->last_begin_state->variables,
-											st->last_begin_state->nvariables,
-											st->variables,
-											st->nvariables);
-				st->last_begin_state->nvariables = st->nvariables;
-				st->last_begin_state->vars_sorted = st->vars_sorted;
+				copyVariables(&st->retry_state.variables, &st->variables);
 			}
 		}
 
@@ -2375,7 +2380,7 @@ top:
 			char	   *sql;
 
 			sql = pg_strdup(command->argv[0]);
-			sql = assignVariables(st, sql);
+			sql = assignVariables(&st->variables, sql);
 
 			if (debug)
 				fprintf(stderr, "client %d sending %s\n", st->id, sql);
@@ -2387,7 +2392,7 @@ top:
 			const char *sql = command->argv[0];
 			const char *params[MAX_ARGS];
 
-			getQueryParams(st, command, params);
+			getQueryParams(&st->variables, command, params);
 
 			if (debug)
 				fprintf(stderr, "client %d sending %s\n", st->id, sql);
@@ -2420,7 +2425,7 @@ top:
 				st->prepared[st->use_file] = true;
 			}
 
-			getQueryParams(st, command, params);
+			getQueryParams(&st->variables, command, params);
 			preparedStatementName(name, st->use_file, st->state);
 
 			if (debug)
@@ -2466,7 +2471,7 @@ top:
 				return true;
 			}
 
-			if (!putVariableNumber(st, argv[0], argv[1], &result))
+			if (!putVariableNumber(&st->variables, argv[0], argv[1], &result))
 			{
 				st->ecnt++;
 				return true;
@@ -2482,7 +2487,7 @@ top:
 
 			if (*argv[1] == ':')
 			{
-				if ((var = getVariable(st, argv[1] + 1)) == NULL)
+				if ((var = getVariable(&st->variables, argv[1] + 1)) == NULL)
 				{
 					fprintf(stderr, "%s: undefined variable \"%s\"\n",
 							argv[0], argv[1]);
@@ -2512,7 +2517,8 @@ top:
 		}
 		else if (pg_strcasecmp(argv[0], "setshell") == 0)
 		{
-			bool		ret = runShellCommand(st, argv[1], argv + 2, argc - 2);
+			bool		ret = runShellCommand(&st->variables, argv[1], argv + 2,
+											  argc - 2);
 
 			if (timer_exceeded) /* timeout */
 				return clientDone(st);
@@ -2526,7 +2532,8 @@ top:
 		}
 		else if (pg_strcasecmp(argv[0], "shell") == 0)
 		{
-			bool		ret = runShellCommand(st, NULL, argv + 1, argc - 1);
+			bool		ret = runShellCommand(&st->variables, NULL, argv + 1,
+											  argc - 1);
 
 			if (timer_exceeded) /* timeout */
 				return clientDone(st);
@@ -3143,8 +3150,6 @@ process_sql_command(PQExpBuffer buf, const char *source)
 	my_command->type = SQL_COMMAND;
 	my_command->argc = 0;
 	initSimpleStats(&my_command->stats);
-	my_command->serialization_failures = 0;
-	my_command->deadlock_failures = 0;
 	initSimpleStats(&my_command->attempts);
 
 	/*
@@ -3215,8 +3220,6 @@ process_backslash_command(PsqlScanState sstate, const char *source)
 	my_command->type = META_COMMAND;
 	my_command->argc = 0;
 	initSimpleStats(&my_command->stats);
-	my_command->serialization_failures = 0;
-	my_command->deadlock_failures = 0;
 	initSimpleStats(&my_command->attempts);
 
 	/* Save first word (command name) */
@@ -3349,7 +3352,7 @@ process_backslash_command(PsqlScanState sstate, const char *source)
 }
 
 /*
- * Returns the same command where all сontinuous blocks of whitespaces are
+ * Returns the same command where all continuous blocks of whitespaces are
  * replaced by one space symbol.
  *
  * Returns a malloc'd string.
@@ -3377,6 +3380,10 @@ normalize_whitespaces(const char *command)
 	return buffer;
 }
 
+/*
+ * Returns true if given command generally ends a transaction block (we don't
+ * check here if the last transaction block is already completed).
+ */
 static bool
 is_transaction_block_end(const char *command_text)
 {
@@ -3874,7 +3881,9 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 								 1, 2, "");
 			}
 			else
+			{
 				printf("script statistics:\n");
+			}
 
 			if (latency_limit)
 				printf(" - number of transactions skipped: " INT64_FORMAT " (%.3f%%)\n",
@@ -4031,6 +4040,7 @@ main(int argc, char **argv)
 
 	state = (CState *) pg_malloc(sizeof(CState));
 	memset(state, 0, sizeof(CState));
+	state->retry_state.state = -1;
 
 	while ((c = getopt_long(argc, argv, "ih:nvp:dqb:SNc:j:Crs:t:T:U:lf:D:F:M:P:R:L:I:", long_options, &optindex)) != -1)
 	{
@@ -4202,7 +4212,7 @@ main(int argc, char **argv)
 					}
 
 					*p++ = '\0';
-					if (!putVariable(&state[0], "option", optarg, p))
+					if (!putVariable(&state[0].variables, "option", optarg, p))
 						exit(1);
 				}
 				break;
@@ -4473,24 +4483,36 @@ main(int argc, char **argv)
 			int			j;
 
 			state[i].id = i;
-			for (j = 0; j < state[0].nvariables; j++)
+			for (j = 0; j < state[0].variables.nvariables; j++)
 			{
-				Variable   *var = &state[0].variables[j];
+				Variable   *var = &state[0].variables.array[j];
 
 				if (var->is_numeric)
 				{
-					if (!putVariableNumber(&state[i], "startup",
+					if (!putVariableNumber(&state[i].variables, "startup",
 										   var->name, &var->num_value))
 						exit(1);
 				}
 				else
 				{
-					if (!putVariable(&state[i], "startup",
+					if (!putVariable(&state[i].variables, "startup",
 									 var->name, var->value))
 						exit(1);
 				}
 			}
 		}
+	}
+
+	/* set random seed */
+	INSTR_TIME_SET_CURRENT(start_time);
+	srandom((unsigned int) INSTR_TIME_GET_MICROSEC(start_time));
+
+	/* set random states for clients */
+	for (i = 0; i < nclients; i++)
+	{
+		state[i].random_state[0] = random();
+		state[i].random_state[1] = random();
+		state[i].random_state[2] = random();
 	}
 
 	if (debug)
@@ -4554,11 +4576,11 @@ main(int argc, char **argv)
 	 * :scale variables normally get -s or database scale, but don't override
 	 * an explicit -D switch
 	 */
-	if (lookupVariable(&state[0], "scale") == NULL)
+	if (lookupVariable(&state[0].variables, "scale") == NULL)
 	{
 		for (i = 0; i < nclients; i++)
 		{
-			if (!putVariableInt(&state[i], "startup", "scale", scale))
+			if (!putVariableInt(&state[i].variables, "startup", "scale", scale))
 				exit(1);
 		}
 	}
@@ -4567,11 +4589,11 @@ main(int argc, char **argv)
 	 * Define a :client_id variable that is unique per connection. But don't
 	 * override an explicit -D switch.
 	 */
-	if (lookupVariable(&state[0], "client_id") == NULL)
+	if (lookupVariable(&state[0].variables, "client_id") == NULL)
 	{
 		for (i = 0; i < nclients; i++)
 		{
-			if (!putVariableInt(&state[i], "startup", "client_id", i))
+			if (!putVariableInt(&state[i].variables, "startup", "client_id", i))
 				exit(1);
 		}
 	}
@@ -4592,10 +4614,6 @@ main(int argc, char **argv)
 		}
 	}
 	PQfinish(con);
-
-	/* set random seed */
-	INSTR_TIME_SET_CURRENT(start_time);
-	srandom((unsigned int) INSTR_TIME_GET_MICROSEC(start_time));
 
 	/* set up thread data structures */
 	threads = (TState *) pg_malloc(sizeof(TState) * nthreads);
@@ -4770,11 +4788,6 @@ threadRun(void *arg)
 			if ((state[i].con = doConnect()) == NULL)
 				goto done;
 
-			/* set random state */
-			state[i].random_state[0] = random();
-			state[i].random_state[1] = random();
-			state[i].random_state[2] = random();
-
 			/* set default isolation level */
 			snprintf(buffer, sizeof(buffer),
 				"set session characteristics as transaction isolation level %s",
@@ -4848,9 +4861,6 @@ threadRun(void *arg)
 					remains--;
 					st->sleeping = false;
 					st->throttling = false;
-					st->serialization_failure = false;
-					st->deadlock_failure = false;
-					initSimpleStats(&st->attempts);
 					PQfinish(st->con);
 					st->con = NULL;
 					continue;
