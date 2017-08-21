@@ -172,12 +172,12 @@ bool		progress_timestamp = false; /* progress report with Unix time */
 int			nclients = 1;		/* number of clients */
 int			nthreads = 1;		/* number of threads */
 bool		is_connect;			/* establish connection for each transaction */
-bool		report_per_command = false;	/* report per-command latencies,
-										 * failures and attempts */
+bool		report_per_command = false;	/* report per-command latencies, retries
+										 * and failures without retrying */
 int			main_pid;			/* main process id used in log filename */
-int			max_attempts_number = 1;	/* maximum number of attempts to run the
-										 * transaction with serialization or
-										 * deadlock failures */
+int			max_tries = 1;		/* maximum number of tries to run the
+								 * transaction with serialization or deadlock
+								 * failures */
 
 char	   *pghost = "";
 char	   *pgport = "";
@@ -228,6 +228,16 @@ typedef struct SimpleStats
 } SimpleStats;
 
 /*
+ * Data structure to hold retries after failures.
+ */
+typedef struct Retries
+{
+	int64		serialization;	/* number of retries after serialization
+								 * failures */
+	int64		deadlocks;		/* number of retries after deadlock failures */
+} Retries;
+
+/*
  * Data structure to hold various statistics: per-thread and per-script stats
  * are maintained and merged together.
  */
@@ -237,11 +247,13 @@ typedef struct StatsData
 	int64		cnt;			/* number of transactions */
 	int64		skipped;		/* number of transactions skipped under --rate
 								 * and --latency-limit */
-	int64		serialization_failures;	/* number of transactions with
-										 * serialization failures */
-	int64		deadlock_failures; /* number of transactions with deadlock
-									* failures */
-	SimpleStats attempts;
+	Retries		retries;
+	int64		retried;		/* number of transactions that were retried
+								 * after a serialization or a deadlock
+								 * failure */
+	int64		failures;		/* number of transactions that were not retried
+								 * after a serialization or a deadlock
+								 * failure */
 	SimpleStats latency;
 	SimpleStats lag;
 } StatsData;
@@ -264,9 +276,8 @@ typedef struct RetryState
 {
 	int			state;			/* state No.; -1 if there were not any
 								 * transactions yet */
-	int			attempts_number;	/* how many times have we tried to run the
-									 * transaction without serialization or
-									 * deadlock failures */
+	int			retries;
+
 	unsigned short random_state[3];	/* random seed */
 	Variables   variables;		/* client variables */
 } RetryState;
@@ -291,17 +302,15 @@ typedef struct
 	int			use_file;		/* index in sql_scripts for this client */
 	bool		prepared[MAX_SCRIPTS];	/* whether client prepared the script */
 	unsigned short random_state[3];	/* separate randomness for each client */
-	bool		serialization_failure;	/* if there was serialization failure
-										 * during script execution */
-	bool		deadlock_failure;	/* if there was deadlock failure during
-									 * script execution */
 
 	/* for repeating transactions with serialization or deadlock failures: */
 	RetryState  retry_state;
 	bool		end_failed_transaction; /* are we ending the failed transaction
 										 * (and, perhaps, are trying to repeat
 										 * it)? */
-	SimpleStats attempts;
+	Retries		retries;
+	bool		failure;		/* if there was a serialization or a deadlock
+								 * failure without retrying */
 
 	/* per client collected stats */
 	int64		cnt;			/* transaction count */
@@ -356,11 +365,11 @@ typedef struct
 	char	   *argv[MAX_ARGS]; /* command word list */
 	PgBenchExpr *expr;			/* parsed expression, if needed */
 	SimpleStats stats;			/* time spent in this command */
-	int64		serialization_failures;	/* number of serialization failures in
-										 * this command */
-	int64		deadlock_failures;	/* number of deadlock failures in this
-									 * command */
-	SimpleStats attempts;		/* is valid if command starts a transaction */
+	Retries		retries;
+	int64		serialization_failures;	/* number of serialization failures that
+										 * were not retried */
+	int64		deadlock_failures;	/* number of deadlock failures that were not
+									 * retried */
 
 	/* for repeating transactions with serialization and deadlock failures: */
 
@@ -523,15 +532,14 @@ usage(void)
 		   "                           protocol for submitting queries (default: simple)\n"
 		   "  -n, --no-vacuum          do not run VACUUM before tests\n"
 		   "  -P, --progress=NUM       show thread progress report every NUM seconds\n"
-		   "  -r, --report-per-command report latencies, failures and attempts per command\n"
+		   "  -r, --report-per-command report latencies, failures and retries per command\n"
 		"  -R, --rate=NUM           target rate in transactions per second\n"
 		   "  -s, --scale=NUM          report this scale factor in output\n"
 		   "  -t, --transactions=NUM   number of transactions each client runs (default: 10)\n"
 		 "  -T, --time=NUM           duration of benchmark test in seconds\n"
 		   "  -v, --vacuum-all         vacuum all four standard tables before tests\n"
 		   "  --aggregate-interval=NUM aggregate data over NUM seconds\n"
-		   "  --max-attempts-number=NUM\n"
-	  "                           max number of tries to run transaction (default: 1)\n"
+		   "  --max-tries=NUM          max number of tries to run transaction (default: 1)\n"
 		"  --progress-timestamp     use Unix epoch timestamps for progress\n"
 		   "  --sampling-rate=NUM      fraction of transactions to log (e.g., 0.01 for 1%%)\n"
 		   "\nCommon options:\n"
@@ -799,6 +807,25 @@ mergeSimpleStats(SimpleStats *acc, SimpleStats *ss)
 }
 
 /*
+ * Initialize the given Retries struct to all zeroes
+ */
+static void
+initRetries(Retries *retries)
+{
+	memset(retries, 0, sizeof(Retries));
+}
+
+/*
+ * Merge two Retries objects
+ */
+static void
+mergeRetries(Retries *acc, Retries *retries)
+{
+	acc->serialization += retries->serialization;
+	acc->deadlocks += retries->deadlocks;
+}
+
+/*
  * Initialize a StatsData struct to mostly zeroes, with its start time set to
  * the given value.
  */
@@ -808,11 +835,20 @@ initStats(StatsData *sd, double start_time)
 	sd->start_time = start_time;
 	sd->cnt = 0;
 	sd->skipped = 0;
-	sd->serialization_failures = 0;
-	sd->deadlock_failures = 0;
-	initSimpleStats(&sd->attempts);
+	initRetries(&sd->retries);
+	sd->retried = 0;
+	sd->failures = 0;
 	initSimpleStats(&sd->latency);
 	initSimpleStats(&sd->lag);
+}
+
+/*
+ * Return the sum of all retries.
+ */
+static int64
+getAllRetries(Retries *retries)
+{
+	return retries->serialization + retries->deadlocks;
 }
 
 /*
@@ -820,30 +856,29 @@ initStats(StatsData *sd, double start_time)
  * was skipped or not.
  */
 static void
-accumMainStats(StatsData *stats, bool skipped, bool serialization_failure,
-			   bool deadlock_failure, SimpleStats *attempts)
+accumMainStats(StatsData *stats, bool skipped, bool failure, Retries *retries)
 {
 	stats->cnt++;
 	if (skipped)
 		stats->skipped++;
-	else if (serialization_failure)
-		stats->serialization_failures++;
-	else if (deadlock_failure)
-		stats->deadlock_failures++;
-	mergeSimpleStats(&stats->attempts, attempts);
+	else if (failure)
+		stats->failures++;
+
+	if (getAllRetries(retries) > 0)
+		stats->retried++;
+	mergeRetries(&stats->retries, retries);
 }
 
 /*
  * Accumulate one additional item into the given stats object.
  */
 static void
-accumStats(StatsData *stats, bool skipped, bool serialization_failure,
-		   bool deadlock_failure, double lat, double lag, SimpleStats *attempts)
+accumStats(StatsData *stats, bool skipped, bool failure, double lat, double lag,
+		   Retries *retries)
 {
-	accumMainStats(stats, skipped, serialization_failure, deadlock_failure,
-				   attempts);
+	accumMainStats(stats, skipped, failure, retries);
 
-	if (!skipped && !serialization_failure && !deadlock_failure)
+	if (!skipped && !failure)
 	{
 		addToSimpleStats(&stats->latency, lat);
 
@@ -2066,13 +2101,13 @@ top:
 					failure_status = DEADLOCK_FAILURE;
 
 				if (debug && anyFailure(failure_status))
-					fprintf(stderr, "client %d got a %s failure (attempt %d/%d)\n",
+					fprintf(stderr, "client %d got a %s failure (try %d/%d)\n",
 							st->id,
 							(failure_status == SERIALIZATION_FAILURE ?
 							 "serialization" :
 							 "deadlock"),
-							st->retry_state.attempts_number,
-							max_attempts_number);
+							st->retry_state.retries + 1,
+							max_tries);
 			}
 		}
 
@@ -2091,54 +2126,49 @@ top:
 							 INSTR_TIME_GET_DOUBLE(st->stmt_begin));
 		}
 
-		/*
-		 * accumulate per-command serialization / deadlock failures count in
-		 * thread-local data structure
-		 */
-		if (failure_status == SERIALIZATION_FAILURE)
-			commands[st->state]->serialization_failures++;
-		else if (failure_status == DEADLOCK_FAILURE)
-			commands[st->state]->deadlock_failures++;
-
 		if (st->retry_state.state >= 0)
 		{
 			int			transaction_block_end_state =
 				commands[st->retry_state.state]->transaction_end_num;
 
-			if (((!st->end_failed_transaction && !anyFailure(failure_status)) ||
-				 st->retry_state.attempts_number == max_attempts_number) &&
-				((commands[st->state]->is_transaction_begin &&
-				  transaction_block_end_state == -1) ||
-				 st->state == transaction_block_end_state))
+			if (anyFailure(failure_status))
 			{
-				/*
-				 * It is the end of transaction and:
-				 * 1) this transaction was successful;
-				 * 2) or this transaction has failed and we will not be able to
-				 * repeat it.
-				 *
-				 * So let's record its number of attempts in statistics
-				 * per-command and for current script execution.
-				 */
-				int attempts_number = st->retry_state.attempts_number;
-
-				if (debug)
+				if (st->retry_state.retries + 1 < max_tries)
 				{
-					char		buffer[256];
-
-					if (anyFailure(failure_status) ||
-						st->end_failed_transaction)
-						snprintf(buffer, sizeof(buffer), "failure");
+					/*
+					 * The failed transaction will be retried. So accumulate
+					 * the retry for the command and for the current script
+					 * execution.
+					 */
+					if (failure_status == SERIALIZATION_FAILURE)
+					{
+						st->retries.serialization++;
+						if (report_per_command)
+							commands[st->state]->retries.serialization++;
+					}
 					else
-						snprintf(buffer, sizeof(buffer), "successful");
-
-					fprintf(stderr, "client %d ends transaction with %d attempts (%s)\n",
-							st->id, attempts_number, buffer);
+					{
+						st->retries.deadlocks++;
+						if (report_per_command)
+							commands[st->state]->retries.deadlocks++;
+					}
 				}
-
-				addToSimpleStats(&commands[st->retry_state.state]->attempts,
-								 attempts_number);
-				addToSimpleStats(&st->attempts, attempts_number);
+				else
+				{
+					/*
+					 * We will not be able to retry this failed transaction.
+					 * So accumulate the failure for the command and for the
+					 * current script execution.
+					 */
+					st->failure = true;
+					if (report_per_command)
+					{
+						if (failure_status == SERIALIZATION_FAILURE)
+							commands[st->state]->serialization_failures++;
+						else
+							commands[st->state]->deadlock_failures++;
+					}
+				}
 			}
 
 			if (anyFailure(failure_status) || st->end_failed_transaction)
@@ -2147,7 +2177,7 @@ top:
 				 * 1) If there was a failure - go to the command for ending the
 				 * failed transaction block (if needed).
 				 * 2) Run the transaction again from the beginning (if number of
-				 * previous attempts haven't reached maximum).
+				 * previous tries haven't reached maximum).
 				 *
 				 * st->end_failed_transaction is true until we end all these
 				 * jumps between states.
@@ -2166,7 +2196,7 @@ top:
 					 * We are not in transaction block.  So let's try to repeat
 					 * the failed transaction.
 					 */
-					if (st->retry_state.attempts_number < max_attempts_number)
+					if (st->retry_state.retries + 1 < max_tries)
 					{
 						st->end_failed_transaction = true;
 						st->state = st->retry_state.state;
@@ -2175,20 +2205,6 @@ top:
 					{
 						st->end_failed_transaction = false;
 					}
-				}
-
-				if (anyFailure(failure_status) &&
-					st->retry_state.attempts_number == max_attempts_number)
-				{
-					/*
-					 * We will not be able to repeat the failed transaction so
-					 * let's record this failure in the stats for current script
-					 * execution.
-					 */
-					if (failure_status == SERIALIZATION_FAILURE)
-						st->serialization_failure = true;
-					else if (failure_status == DEADLOCK_FAILURE)
-						st->deadlock_failure = true;
 				}
 			}
 		}
@@ -2200,9 +2216,8 @@ top:
 				per_script_stats || use_log)
 				processXactStats(thread, st, &now, false, agg);
 			else
-				accumMainStats(&thread->stats, false,
-							   st->serialization_failure, st->deadlock_failure,
-							   &st->attempts);
+				accumMainStats(&thread->stats, false, st->failure,
+							   &st->retries);
 		}
 
 		if (commands[st->state]->type == SQL_COMMAND)
@@ -2249,9 +2264,9 @@ top:
 				fprintf(stderr, "client %d executing script \"%s\"\n", st->id,
 						sql_script[st->use_file].desc);
 			st->is_throttled = false;
-			st->serialization_failure = false;
-			st->deadlock_failure = false;
-			initSimpleStats(&st->attempts);
+			st->retry_state.state = -1;
+			initRetries(&st->retries);
+			st->failure = false;
 
 			/*
 			 * No transaction is underway anymore, which means there is
@@ -2285,9 +2300,9 @@ top:
 		st->listen = false;
 		st->sleeping = false;
 		st->throttling = false;
-		st->serialization_failure = false;
-		st->deadlock_failure = false;
-		initSimpleStats(&st->attempts);
+		st->retry_state.state = -1;
+		initRetries(&st->retries);
+		st->failure = false;
 		memset(st->prepared, 0, sizeof(st->prepared));
 
 		/* set default isolation level */
@@ -2342,18 +2357,18 @@ top:
 				/*
 				 * It is a repetion of transaction which begins in current
 				 * state, so we should use the same parameters as in the
-				 * previous attempts.
+				 * previous tries.
 				 *
-				 * We assume that transaction attempts number (which should be
-				 * limited by max_attempts_number) was checked earlier.
+				 * We assume that transaction tries number (which should be
+				 * limited by max_tries) was checked earlier.
 				 */
+				st->retry_state.retries++;
 				if (debug)
-					fprintf(stderr, "client %d repeats the failed transaction (attempt %d/%d)\n",
+					fprintf(stderr, "client %d repeats the failed transaction (try %d/%d)\n",
 							st->id,
-							st->retry_state.attempts_number + 1,
-							max_attempts_number);
+							st->retry_state.retries + 1,
+							max_tries);
 
-				st->retry_state.attempts_number++;
 				memcpy(st->random_state, st->retry_state.random_state,
 					   sizeof(unsigned short) * 3);
 				copyVariables(&st->variables, &st->retry_state.variables);
@@ -2363,12 +2378,12 @@ top:
 			else
 			{
 				/*
-				 * It is a first attempt to run the transaction which begins in
+				 * It is a first try to run the transaction which begins in
 				 * current state.  Remember its parameters just in case we
 				 * should repeat it in future.
 				 */
 				st->retry_state.state = st->state;
-				st->retry_state.attempts_number = 1;
+				st->retry_state.retries = 0;
 				memcpy(st->retry_state.random_state, st->random_state,
 					   sizeof(unsigned short) * 3);
 				copyVariables(&st->retry_state.variables, &st->variables);
@@ -2554,15 +2569,6 @@ top:
 }
 
 /*
- * return zero if there is no statistics data because of skipped transactions.
- */
-static double
-get_average_attempts(const SimpleStats *attempts)
-{
-	return (attempts->count == 0 ? 0 : attempts->sum / attempts->count);
-}
-
-/*
  * print log entry after completing one transaction.
  */
 static void
@@ -2592,20 +2598,14 @@ doLog(TState *thread, CState *st, instr_time *now,
 		while (agg->start_time + agg_interval < INSTR_TIME_GET_DOUBLE(*now))
 		{
 			/* print aggregated report to logfile */
-			fprintf(logfile, "%ld " INT64_FORMAT " %.0f %.0f %.0f %.0f " INT64_FORMAT " " INT64_FORMAT " " INT64_FORMAT " %.0f %.0f %.0f %.0f",
+			fprintf(logfile, "%ld " INT64_FORMAT " %.0f %.0f %.0f %.0f " INT64_FORMAT,
 					agg->start_time,
 					agg->cnt,
 					agg->latency.sum,
 					agg->latency.sum2,
 					agg->latency.min,
 					agg->latency.max,
-					agg->serialization_failures,
-					agg->deadlock_failures,
-					agg->attempts.count,
-					agg->attempts.sum,
-					agg->attempts.sum2,
-					agg->attempts.min,
-					agg->attempts.max);
+					agg->failures);
 			if (throttle_delay)
 			{
 				fprintf(logfile, " %.0f %.0f %.0f %.0f",
@@ -2616,6 +2616,11 @@ doLog(TState *thread, CState *st, instr_time *now,
 				if (latency_limit)
 					fprintf(logfile, " " INT64_FORMAT, agg->skipped);
 			}
+			if (max_tries > 1)
+				fprintf(logfile, " " INT64_FORMAT " " INT64_FORMAT " " INT64_FORMAT,
+						agg->retried,
+						agg->retries.serialization,
+						agg->retries.deadlocks);
 			fputc('\n', logfile);
 
 			/* reset data and move to next interval */
@@ -2623,48 +2628,45 @@ doLog(TState *thread, CState *st, instr_time *now,
 		}
 
 		/* accumulate the current transaction */
-		accumStats(agg, skipped, st->serialization_failure,
-				   st->deadlock_failure, latency, lag, &st->attempts);
+		accumStats(agg, skipped, st->failure, latency, lag, &st->retries);
 	}
 	else
 	{
 		/* no, print raw transactions */
-		char		transaction_label[256];
-		double		attempts_avg = get_average_attempts(&st->attempts);
-
-		if (skipped)
-			snprintf(transaction_label, sizeof(transaction_label), "skipped");
-		else if (st->serialization_failure && st->deadlock_failure)
-			snprintf(transaction_label, sizeof(transaction_label),
-					 "serialization_and_deadlock_failures");
-		else if (st->serialization_failure || st->deadlock_failure)
-			snprintf(transaction_label, sizeof(transaction_label), "%s_failure",
-					 st->serialization_failure ? "serialization" : "deadlock");
-
 #ifndef WIN32
 
 		/* This is more than we really ought to know about instr_time */
-		if (skipped || st->serialization_failure || st->deadlock_failure)
-			fprintf(logfile, "%d " INT64_FORMAT " %s %d %ld %ld %.0f",
-					st->id, st->cnt, transaction_label, st->use_file,
-					(long) now->tv_sec, (long) now->tv_usec, attempts_avg);
+		if (skipped)
+			fprintf(logfile, "%d " INT64_FORMAT " skipped %d %ld %ld",
+					st->id, st->cnt, st->use_file,
+					(long) now->tv_sec, (long) now->tv_usec);
+		else if (skipped || st->failure)
+			fprintf(logfile, "%d " INT64_FORMAT " failed %d %ld %ld",
+					st->id, st->cnt, st->use_file,
+					(long) now->tv_sec, (long) now->tv_usec);
 		else
-			fprintf(logfile, "%d " INT64_FORMAT " %.0f %d %ld %ld %.0f",
+			fprintf(logfile, "%d " INT64_FORMAT " %.0f %d %ld %ld",
 					st->id, st->cnt, latency, st->use_file,
-					(long) now->tv_sec, (long) now->tv_usec, attempts_avg);
+					(long) now->tv_sec, (long) now->tv_usec);
 #else
 
 		/* On Windows, instr_time doesn't provide a timestamp anyway */
-		if (skipped || st->serialization_failure || st->deadlock_failure)
-			fprintf(logfile, "%d " INT64_FORMAT " %s %d 0 0 %.0f",
-					st->id, st->cnt, transaction_label, st->use_file,
-					attempts_avg);
+		if (skipped)
+			fprintf(logfile, "%d " INT64_FORMAT " skipped %d 0 0",
+					st->id, st->cnt, st->use_file);
+		else if (st->serialization_failure)
+			fprintf(logfile, "%d " INT64_FORMAT " failed %d 0 0",
+					st->id, st->cnt, st->use_file);
 		else
-			fprintf(logfile, "%d " INT64_FORMAT " %.0f %d 0 0 %.0f",
-					st->id, st->cnt, latency, st->use_file, attempts_avg);
+			fprintf(logfile, "%d " INT64_FORMAT " %.0f %d 0 0",
+					st->id, st->cnt, latency, st->use_file);
 #endif
 		if (throttle_delay)
 			fprintf(logfile, " %.0f", lag);
+		if (max_tries > 1)
+				fprintf(logfile, " " INT64_FORMAT " " INT64_FORMAT,
+						st->retries.serialization,
+						st->retries.deadlocks);
 		fputc('\n', logfile);
 	}
 }
@@ -2684,7 +2686,7 @@ processXactStats(TState *thread, CState *st, instr_time *now,
 	if ((!skipped || agg_interval) && INSTR_TIME_IS_ZERO(*now))
 		INSTR_TIME_SET_CURRENT(*now);
 
-	if (!skipped && !st->serialization_failure && !st->deadlock_failure)
+	if (!skipped && !st->failure)
 	{
 		/* compute latency & lag */
 		latency = INSTR_TIME_GET_MICROSEC(*now) - st->txn_scheduled;
@@ -2693,25 +2695,23 @@ processXactStats(TState *thread, CState *st, instr_time *now,
 
 	if (progress || throttle_delay || latency_limit)
 	{
-		accumStats(&thread->stats, skipped, st->serialization_failure,
-				   st->deadlock_failure, latency, lag, &st->attempts);
+		accumStats(&thread->stats, skipped, st->failure, latency, lag,
+				   &st->retries);
 
 		/* count transactions over the latency limit, if needed */
 		if (latency_limit && latency > latency_limit)
 			thread->latency_late++;
 	}
 	else
-		accumMainStats(&thread->stats, skipped, st->serialization_failure,
-					   st->deadlock_failure, &st->attempts);
+		accumMainStats(&thread->stats, skipped, st->failure, &st->retries);
 
 	if (use_log)
 		doLog(thread, st, now, agg, skipped, latency, lag);
 
 	/* XXX could use a mutex here, but we choose not to */
 	if (per_script_stats)
-		accumStats(&sql_script[st->use_file].stats, skipped,
-				   st->serialization_failure, st->deadlock_failure, latency,
-				   lag, &st->attempts);
+		accumStats(&sql_script[st->use_file].stats, skipped, st->failure,
+				   latency, lag, &st->retries);
 }
 
 
@@ -3150,7 +3150,7 @@ process_sql_command(PQExpBuffer buf, const char *source)
 	my_command->type = SQL_COMMAND;
 	my_command->argc = 0;
 	initSimpleStats(&my_command->stats);
-	initSimpleStats(&my_command->attempts);
+	initRetries(&my_command->retries);
 
 	/*
 	 * If SQL command is multi-line, we only want to save the first line as
@@ -3220,7 +3220,7 @@ process_backslash_command(PsqlScanState sstate, const char *source)
 	my_command->type = META_COMMAND;
 	my_command->argc = 0;
 	initSimpleStats(&my_command->stats);
-	initSimpleStats(&my_command->attempts);
+	initRetries(&my_command->retries);
 
 	/* Save first word (command name) */
 	j = 0;
@@ -3736,34 +3736,14 @@ addScript(ParsedScript script)
 }
 
 static void
-printSimpleStats(char *prefix, SimpleStats *ss, bool print_zeros, double factor,
-				 unsigned int decimals_number, char *unit_of_measure)
+printSimpleStats(char *prefix, SimpleStats *ss)
 {
-	double		average;
-	double		stddev;
-	char		buffer[256];
+	/* print NaN if no transactions where executed */
+	double		latency = ss->sum / ss->count;
+	double		stddev = sqrt(ss->sum2 / ss->count - latency * latency);
 
-	if (print_zeros && ss->count == 0)
-	{
-		average = 0;
-		stddev = 0;
-	}
-	else
-	{
-		/* print NaN if no transactions where executed */
-		average = ss->sum / ss->count;
-		stddev = sqrt(ss->sum2 / ss->count - average * average);
-	}
-
-	if (strlen(unit_of_measure) == 0)
-		snprintf(buffer, sizeof(buffer), "%s %%s = %%.%df\n",
-				 prefix, decimals_number);
-	else
-		snprintf(buffer, sizeof(buffer), "%s %%s = %%.%df %s\n",
-				 prefix, decimals_number, unit_of_measure);
-
-	printf(buffer, "average", factor * average);
-	printf(buffer, "stddev", factor * stddev);
+	printf("%s average = %.3f ms\n", prefix, 0.001 * latency);
+	printf("%s stddev = %.3f ms\n", prefix, 0.001 * stddev);
 }
 
 /* print out results */
@@ -3785,7 +3765,7 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 		   num_scripts == 1 ? sql_script[0].desc : "multiple scripts");
 	printf("default transaction isolation level: %s\n",
 		   DEFAULT_ISOLATION_LEVEL_SQL[default_isolation_level]);
-	printf("transaction maximum attempts number: %d\n", max_attempts_number);
+	printf("transaction maximum tries number: %d\n", max_tries);
 	printf("scaling factor: %d\n", scale);
 	printf("query mode: %s\n", QUERYMODE[querymode]);
 	printf("number of clients: %d\n", nclients);
@@ -3807,15 +3787,19 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 	if (total->cnt <= 0)
 		return;
 
-	printf("number of transactions with serialization failures: " INT64_FORMAT " (%.3f %%)\n",
-		   total->serialization_failures,
-		   (100.0 * total->serialization_failures / total->cnt));
+	if (total->failures > 0)
+		printf("number of failures: " INT64_FORMAT " (%.3f %%)\n",
+			   total->failures, 100.0 * total->failures / total->cnt);
 
-	printf("number of transactions with deadlock failures: " INT64_FORMAT " (%.3f %%)\n",
-		   total->deadlock_failures,
-		   (100.0 * total->deadlock_failures / total->cnt));
-
-	printSimpleStats("attempts number", &total->attempts, true, 1, 2, "");
+	if (total->retried > 0)
+	{
+		printf("number of transactions retried: " INT64_FORMAT " (%.3f %%)\n",
+			   total->retried, 100.0 * total->retried / total->cnt);
+		printf("number of retries: " INT64_FORMAT " (serialization: " INT64_FORMAT ", deadlocks: " INT64_FORMAT ")\n",
+			   getAllRetries(&total->retries),
+			   total->retries.serialization,
+			   total->retries.deadlocks);
+	}
 
 	if (throttle_delay && latency_limit)
 		printf("number of transactions skipped: " INT64_FORMAT " (%.3f %%)\n",
@@ -3828,7 +3812,7 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 			   100.0 * latency_late / (total->skipped + total->cnt));
 
 	if (throttle_delay || progress || latency_limit)
-		printSimpleStats("latency", &total->latency, false, 0.001, 3, "ms");
+		printSimpleStats("latency", &total->latency);
 	else
 	{
 		/* no measurement, show average latency computed from run time */
@@ -3862,23 +3846,31 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 			{
 				printf("SQL script %d: %s\n"
 					   " - weight: %d (targets %.1f%% of total)\n"
-					   " - " INT64_FORMAT " transactions (%.1f%% of total, tps = %f)\n"
-					   " - number of transactions with serialization failures: " INT64_FORMAT " (%.3f%%)\n"
-					   " - number of transactions with deadlock failures: " INT64_FORMAT " (%.3f%%)\n",
+					   " - " INT64_FORMAT " transactions (%.1f%% of total, tps = %f)\n",
 					   i + 1, sql_script[i].desc,
 					   sql_script[i].weight,
 					   100.0 * sql_script[i].weight / total_weight,
 					   sql_script[i].stats.cnt,
 					   100.0 * sql_script[i].stats.cnt / total->cnt,
-					   sql_script[i].stats.cnt / time_include,
-					   sql_script[i].stats.serialization_failures,
-					   (100.0 * sql_script[i].stats.serialization_failures /
-						sql_script[i].stats.cnt),
-					   sql_script[i].stats.deadlock_failures,
-					   (100.0 * sql_script[i].stats.deadlock_failures /
-						sql_script[i].stats.cnt));
-				printSimpleStats(" - attempts number", &total->attempts, true,
-								 1, 2, "");
+					   sql_script[i].stats.cnt / time_include);
+
+				if (total->failures > 0)
+					printf(" - number of failures: " INT64_FORMAT " (%.3f %%)\n",
+						   sql_script[i].stats.failures,
+						   (100.0 * sql_script[i].stats.failures /
+							sql_script[i].stats.cnt));
+
+				if (total->retried > 0)
+				{
+					printf(" - number of transactions retried: " INT64_FORMAT " (%.3f %%)\n",
+						   sql_script[i].stats.retried,
+						   (100.0 * sql_script[i].stats.retried /
+							sql_script[i].stats.cnt));
+					printf(" - number of retries: " INT64_FORMAT " (serialization: " INT64_FORMAT ", deadlocks: " INT64_FORMAT ")\n",
+						   getAllRetries(&sql_script[i].stats.retries),
+						   sql_script[i].stats.retries.serialization,
+						   sql_script[i].stats.retries.deadlocks);
+				}
 			}
 			else
 			{
@@ -3892,38 +3884,46 @@ printResults(TState *threads, StatsData *total, instr_time total_time,
 					(sql_script[i].stats.skipped + sql_script[i].stats.cnt));
 
 			if (num_scripts > 1)
-				printSimpleStats(" - latency", &sql_script[i].stats.latency,
-								 false, 0.001, 3, "ms");
+				printSimpleStats(" - latency", &sql_script[i].stats.latency);
 
 			/*
-			 * Report per-command statistics: latencies, serialization &
-			 * deadlock failures.
+			 * Report per-command statistics: latencies, retries after failures,
+			 * failures without retrying
 			 */
 			if (report_per_command)
 			{
 				Command   **commands;
 
-				printf(" - statement latencies in milliseconds, serialization & deadlock failures, numbers of transactions attempts:\n");
+				printf(" - statement latencies in milliseconds");
+				if (total->failures > 0 && total->retried > 0)
+					printf(", serialization failures and retries, deadlock failures and retries");
+				else if (total->failures > 0 || total->retried > 0)
+					printf(", serialization and deadlock %s",
+						   (total->failures > 0 ? "failures" : "retries"));
+				printf(":\n");
 
 				for (commands = sql_script[i].commands;
 					 *commands != NULL;
 					 commands++)
 				{
-					char		buffer[256];
-
-					if ((*commands)->is_transaction_begin)
-						snprintf(buffer, sizeof(buffer), "%8.2f",
-								 get_average_attempts(&(*commands)->attempts));
-					else
-						snprintf(buffer, sizeof(buffer), "     -  ");
-
-					printf("   %11.3f  %25" INT64_MODIFIER "d  %25" INT64_MODIFIER "d  %s  %s\n",
+					printf("   %11.3f",
 						   1000.0 * (*commands)->stats.sum /
-						   (*commands)->stats.count,
-						   (*commands)->serialization_failures,
-						   (*commands)->deadlock_failures,
-						   buffer,
-						   (*commands)->line);
+						   (*commands)->stats.count);
+					if (total->failures > 0 && total->retried > 0)
+						printf("  %25" INT64_MODIFIER "d  %25" INT64_MODIFIER "d  %25" INT64_MODIFIER "d  %25" INT64_MODIFIER "d",
+							   (*commands)->serialization_failures,
+							   (*commands)->retries.serialization,
+							   (*commands)->deadlock_failures,
+							   (*commands)->retries.deadlocks);
+					else if (total->failures > 0 || total->retried > 0)
+						printf("  %25" INT64_MODIFIER "d  %25" INT64_MODIFIER "d",
+							   (total->failures > 0 ?
+								(*commands)->serialization_failures :
+								(*commands)->retries.serialization),
+							   (total->failures > 0 ?
+								(*commands)->deadlock_failures :
+								(*commands)->retries.deadlocks));
+					printf("  %s\n", (*commands)->line);
 				}
 			}
 		}
@@ -3974,7 +3974,7 @@ main(int argc, char **argv)
 #ifdef WITH_RSOCKET
 		{"with-rsocket", no_argument, NULL, 7},
 #endif
-		{"max-attempts-number", required_argument, NULL, 8},
+		{"max-tries", required_argument, NULL, 8},
 		{NULL, 0, NULL, 0}
 	};
 
@@ -4349,10 +4349,10 @@ main(int argc, char **argv)
 #endif
 			case 8:
 				benchmarking_option_set = true;
-				max_attempts_number = atoi(optarg);
-				if (max_attempts_number <= 0)
+				max_tries = atoi(optarg);
+				if (max_tries <= 0)
 				{
-					fprintf(stderr, "invalid number of maximum attempts: \"%s\"\n",
+					fprintf(stderr, "invalid number of maximum tries: \"%s\"\n",
 							optarg);
 					exit(1);
 				}
@@ -4705,9 +4705,9 @@ main(int argc, char **argv)
 		mergeSimpleStats(&stats.lag, &thread->stats.lag);
 		stats.cnt += thread->stats.cnt;
 		stats.skipped += thread->stats.skipped;
-		stats.serialization_failures += thread->stats.serialization_failures;
-		stats.deadlock_failures += thread->stats.deadlock_failures;
-		mergeSimpleStats(&stats.attempts, &thread->stats.attempts);
+		mergeRetries(&stats.retries, &thread->stats.retries);
+		stats.retried += thread->stats.retried;
+		stats.failures += thread->stats.failures;
 		latency_late += thread->latency_late;
 		INSTR_TIME_ADD(conn_total_time, thread->conn_time);
 	}
@@ -5008,15 +5008,15 @@ threadRun(void *arg)
 				/* generate and show report */
 				StatsData	cur;
 				int64		run = now - last_report;
-				int64		attempts_count;
+				int64		retries,
+							retried,
+							failures;
 				double		tps,
 							total_run,
 							latency,
 							sqlat,
 							lag,
-							latency_stdev,
-							attempts_average,
-							attempts_stddev;
+							stdev;
 				char		tbuf[64];
 
 				/*
@@ -5037,10 +5037,9 @@ threadRun(void *arg)
 					mergeSimpleStats(&cur.lag, &thread[i].stats.lag);
 					cur.cnt += thread[i].stats.cnt;
 					cur.skipped += thread[i].stats.skipped;
-					cur.serialization_failures +=
-						thread[i].stats.serialization_failures;
-					cur.deadlock_failures += thread[i].stats.deadlock_failures;
-					mergeSimpleStats(&cur.attempts, &thread[i].stats.attempts);
+					mergeRetries(&cur.retries, &thread[i].stats.retries);
+					cur.retried += thread[i].stats.retried;
+					cur.failures += thread[i].stats.failures;
 				}
 
 				total_run = (now - thread_start) / 1000000.0;
@@ -5049,25 +5048,13 @@ threadRun(void *arg)
 					(cur.cnt - last.cnt);
 				sqlat = 1.0 * (cur.latency.sum2 - last.latency.sum2)
 					/ (cur.cnt - last.cnt);
-				latency_stdev = 0.001 *
-					sqrt(sqlat - 1000000.0 * latency * latency);
+				stdev = 0.001 * sqrt(sqlat - 1000000.0 * latency * latency);
 				lag = 0.001 * (cur.lag.sum - last.lag.sum) /
 					(cur.cnt - last.cnt);
-
-				attempts_count = cur.attempts.count - last.attempts.count;
-				if (attempts_count == 0)
-				{
-					attempts_average = 0;
-					attempts_stddev = 0;
-				}
-				else
-				{
-					attempts_average = (cur.attempts.sum - last.attempts.sum) /
-						attempts_count;
-					attempts_stddev = sqrt(
-						(cur.attempts.sum2 - last.attempts.sum2) /
-						attempts_count - attempts_average * attempts_average);
-				}
+				retries = getAllRetries(&cur.retries) -
+					getAllRetries(&last.retries);
+				retried = cur.retried - last.retried;
+				failures = cur.failures - last.failures;
 
 				if (progress_timestamp)
 					sprintf(tbuf, "%.03f s",
@@ -5076,16 +5063,11 @@ threadRun(void *arg)
 					sprintf(tbuf, "%.1f s", total_run);
 
 				fprintf(stderr,
-						"progress: %s, %.1f tps, lat %.3f ms stddev %.3f, failed trx: " INT64_FORMAT " (serialization), " INT64_FORMAT " (deadlocks), attempts avg %.2f stddev %.2f",
-						tbuf,
-						tps,
-						latency,
-						latency_stdev,
-						(cur.serialization_failures -
-						 last.serialization_failures),
-						(cur.deadlock_failures - last.deadlock_failures),
-						attempts_average,
-						attempts_stddev);
+						"progress: %s, %.1f tps, lat %.3f ms stddev %.3f",
+						tbuf, tps, latency, stdev);
+
+				if (failures > 0)
+					fprintf(stderr, ", " INT64_FORMAT " failed" , failures);
 
 				if (throttle_delay)
 				{
@@ -5094,6 +5076,12 @@ threadRun(void *arg)
 						fprintf(stderr, ", " INT64_FORMAT " skipped",
 								cur.skipped - last.skipped);
 				}
+
+				/* it can be non-zero only if max_tries is greater than one */
+				if (retried > 0)
+					fprintf(stderr, ", " INT64_FORMAT " retried, " INT64_FORMAT " retries",
+							retried, retries);
+
 				fprintf(stderr, "\n");
 
 				last = cur;

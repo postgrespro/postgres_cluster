@@ -4,7 +4,7 @@ use warnings;
 use Config;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 66;
+use Test::More tests => 58;
 
 use constant
 {
@@ -61,7 +61,7 @@ sub test_pgbench_default_transaction_isolation_level_and_serialization_failures
 
 	local $ENV{PGPORT} = $node->port;
 	my ($h_psql, $in_psql, $out_psql);
-	my ($h_pgbench, $in_pgbench, $out_pgbench, $stderr);
+	my ($h_pgbench, $in_pgbench, $out_pgbench, $err_pgbench);
 
 	# Open the psql session and run the parallel transaction:
 	print "# Starting psql\n";
@@ -78,13 +78,13 @@ sub test_pgbench_default_transaction_isolation_level_and_serialization_failures
 
 	# Start pgbench:
 	my @command = (
-		qw(pgbench --no-vacuum --default-isolation-level),
+		qw(pgbench --no-vacuum --debug --default-isolation-level),
 		$isolation_level_abbreviation,
 		"--file",
 		$script_serialization);
 	print "# Running: " . join(" ", @command) . "\n";
 	$h_pgbench = IPC::Run::start \@command, \$in_pgbench, \$out_pgbench,
-	  \$stderr;
+	  \$err_pgbench;
 
 	# Let pgbench run the update command in the transaction:
 	sleep 10;
@@ -118,7 +118,6 @@ sub test_pgbench_default_transaction_isolation_level_and_serialization_failures
 
 	# Check pgbench results
 	ok(!$result, "@command exit code 0");
-	is($stderr,  '', "@command no stderr");
 
 	like($out_pgbench,
 		qr{default transaction isolation level: $isolation_level_sql},
@@ -130,12 +129,21 @@ sub test_pgbench_default_transaction_isolation_level_and_serialization_failures
 
 	my $regex =
 		($isolation_level == READ_COMMITTED)
-	  ? qr{serialization failures: 0 \(0\.000 %\)}
-	  : qr{serialization failures: [1-9]\d* \([1-9]\d*\.\d* %\)};
+	  ? qr{^((?!number of failures)(.|\n))*$}
+	  : qr{number of failures: [1-9]\d* \([1-9]\d*\.\d* %\)};
 
 	like($out_pgbench,
 		$regex,
-		"concurrent update: $isolation_level_sql: check serialization failures");
+		"concurrent update: $isolation_level_sql: check failures");
+
+	$regex =
+		($isolation_level == READ_COMMITTED)
+	  ? qr{^((?!client 0 got a serialization failure \(try 1/1\))(.|\n))*$}
+	  : qr{client 0 got a serialization failure \(try 1/1\)};
+
+	like($err_pgbench,
+		$regex,
+		"concurrent update: $isolation_level_sql: check serialization failure");
 }
 
 sub test_pgbench_serialization_failures_retry
@@ -165,7 +173,7 @@ sub test_pgbench_serialization_failures_retry
 
 	# Start pgbench:
 	my @command = (
-		qw(pgbench --no-vacuum --max-attempts 2 --debug),
+		qw(pgbench --no-vacuum --max-tries 2 --debug),
 		"--default-isolation-level",
 		$isolation_level_abbreviation,
 		"--file",
@@ -214,18 +222,18 @@ sub test_pgbench_serialization_failures_retry
 	  . ": check processed transactions");
 
 	like($out_pgbench,
-		qr{serialization failures: 0 \(0\.000 %\)},
+		qr{^((?!number of failures)(.|\n))*$},
 		"concurrent update with retrying: "
 	  . $isolation_level_sql
-	  . ": check serialization failures");
+	  . ": check failures");
 
 	my $pattern =
 		"client 0 sending UPDATE xy SET y = y \\+ (-?\\d+) WHERE x = 1;\n"
 	  . "(client 0 receiving\n)+"
-	  . "client 0 got a serialization failure \\(attempt 1/2\\)\n"
+	  . "client 0 got a serialization failure \\(try 1/2\\)\n"
 	  . "client 0 sending END;\n"
 	  . "\\g2+"
-	  . "client 0 repeats the failed transaction \\(attempt 2/2\\)\n"
+	  . "client 0 repeats the failed transaction \\(try 2/2\\)\n"
 	  . "client 0 sending BEGIN;\n"
 	  . "\\g2+"
 	  . "client 0 executing \\\\set delta\n"
@@ -252,7 +260,8 @@ sub test_pgbench_deadlock_failures
 
 	# Run first pgbench
 	my @command1 = (
-		qw(pgbench --no-vacuum --transactions 1 --default-isolation-level),
+		qw(pgbench --no-vacuum --debug --transactions 1),
+		"--default-isolation-level",
 		$isolation_level_abbreviation,
 		"--file",
 		$script_deadlocks1);
@@ -264,7 +273,8 @@ sub test_pgbench_deadlock_failures
 
 	# Run second pgbench
 	my @command2 = (
-		qw(pgbench --no-vacuum --transactions 1 --default-isolation-level),
+		qw(pgbench --no-vacuum --transactions 1 --debug --transactions 1),
+		"--default-isolation-level",
 		$isolation_level_abbreviation,
 		"--file",
 		$script_deadlocks2);
@@ -299,9 +309,6 @@ sub test_pgbench_deadlock_failures
 	ok(!$result1, "@command1 exit code 0");
 	ok(!$result2, "@command2 exit code 0");
 
-	is($err1,  '', "@command1 no stderr");
-	is($err2,  '', "@command2 no stderr");
-
 	like($out1,
 		qr{processed: 1/1},
 		"concurrent deadlock update: "
@@ -315,10 +322,16 @@ sub test_pgbench_deadlock_failures
 
 	# First or second pgbench should get a deadlock error
 	like($out1 . $out2,
-		qr{deadlock failures: 1 \(100\.000 %\)},
+		qr{number of failures: 1 \(100\.000 %\)},
 		"concurrent deadlock update: "
 	  . $isolation_level_sql
-	  . ": check deadlock failures");
+	  . ": check failures");
+
+	like($err1 . $err2,
+		qr{client 0 got a deadlock failure \(try 1/1\)},
+		"concurrent deadlock update: "
+	  . $isolation_level_sql
+	  . ": check deadlock failure");
 }
 
 sub test_pgbench_deadlock_failures_retry
@@ -335,7 +348,7 @@ sub test_pgbench_deadlock_failures_retry
 
 	# Run first pgbench
 	my @command1 = (
-		qw(pgbench --no-vacuum --transactions 1 --max-attempts 2 --debug),
+		qw(pgbench --no-vacuum --transactions 1 --max-tries 2 --debug),
 		"--default-isolation-level",
 		$isolation_level_abbreviation,
 		"--file",
@@ -348,7 +361,7 @@ sub test_pgbench_deadlock_failures_retry
 
 	# Run second pgbench
 	my @command2 = (
-		qw(pgbench --no-vacuum --transactions 1 --max-attempts 2 --debug),
+		qw(pgbench --no-vacuum --transactions 1 --max-tries 2 --debug),
 		"--default-isolation-level",
 		$isolation_level_abbreviation,
 		"--file",
@@ -395,26 +408,22 @@ sub test_pgbench_deadlock_failures_retry
 	  . $isolation_level_sql
 	  . ": pgbench 2: check processed transactions");
 
-	like($out1,
-		qr{deadlock failures: 0 \(0\.000 %\)},
-		"concurrent deadlock update with retrying: "
-	  . $isolation_level_sql
-	  . ": pgbench 1: check deadlock failures");
-	like($out2,
-		qr{deadlock failures: 0 \(0\.000 %\)},
-		"concurrent deadlock update with retrying: "
-	  . $isolation_level_sql
-	  . ": pgbench 2: check deadlock failures");
-
 	# First or second pgbench should get a deadlock error
 	like($err1 . $err2,
-		qr{client 0 got a deadlock failure \(attempt 1/2\)},
+		qr{client 0 got a deadlock failure \(try 1/2\)},
 		"concurrent deadlock update with retrying: "
 	  . $isolation_level_sql
 	  . ": check deadlock failure");
 
 	if ($isolation_level == READ_COMMITTED)
 	{
+		# At other isolation levels, there may be serialization failures
+		like($out1 . $out2,
+			qr{^((?!number of failures)(.|\n))*$},
+			"concurrent deadlock update with retrying: "
+		  . $isolation_level_sql
+		  . ": check failures");
+
 		my $pattern =
 			"client 0 sending UPDATE xy SET y = y \\+ (-?\\d+) WHERE x = (\\d);\n"
 		  . "(client 0 receiving\n)+"
@@ -422,10 +431,10 @@ sub test_pgbench_deadlock_failures_retry
 		  . "\\g3*"
 		  . "client 0 sending UPDATE xy SET y = y \\+ (-?\\d+) WHERE x = (\\d);\n"
 		  . "\\g3+"
-		  . "client 0 got a deadlock failure \\(attempt 1/2\\)\n"
+		  . "client 0 got a deadlock failure \\(try 1/2\\)\n"
 		  . "client 0 sending END;\n"
 		  . "\\g3+"
-		  . "client 0 repeats the failed transaction \\(attempt 2/2\\)\n"
+		  . "client 0 repeats the failed transaction \\(try 2/2\\)\n"
 		  . "client 0 sending BEGIN;\n"
 		  . "\\g3+"
 		  . "client 0 executing \\\\set delta1\n"
