@@ -323,48 +323,103 @@ char *get_scheduler_nodename(MemoryContext mem)
 
 /** END of SOME UTILS **/
 
-
-
-char_array_t *readBasesToCheck(void)
+const char *check_multimaster_database(void)
 {
-	const char *value;
-	int value_len = 0;
-	int nnames = 0;
-	char_array_t *names;
-	char_array_t *result;
-	char *clean_value;
-	int i;
-	int cv_len = 0;
-	StringInfoData sql;
-	int ret;
-	int start_pos = 0;
-	int processed;
-	char *ptr = NULL;
+	char_array_t *split_libs, *conns;
+	const char *libs = NULL;
+	bool mtm_present = false;
+	static char buffer[256];
+	char *dbbeg;
+	int mtm_id, i, j = 0;
+	const char *mtm_id_str, *mtm_cstring;
 
-
-	pgstat_report_activity(STATE_RUNNING, "read configuration");
-	result = makeCharArray();
-
-	value = GetConfigOption("schedule.database", true, false);
-	if(!value || strlen(value) == 0)
+	/* at first need to parse shared_preload_libraries */
+	libs = GetConfigOption("shared_preload_libraries", true, false);
+	if(!libs) return NULL;
+	split_libs  = _split_string_to_char_array((char *)libs);
+	if(split_libs->n == 0)
 	{
-		return result;
+		destroyCharArray(split_libs);
+		return NULL;
 	}
-	value_len = strlen(value);
-	clean_value = worker_alloc(sizeof(char)*(value_len+1));
-	nnames = 1;
-	for(i=0; i < value_len; i++)
+	for(i=0; i< split_libs->n; i++)
 	{
-		if(value[i] != ' ')
+		if(strcmp(split_libs->data[i], "multimaster") == 0)
 		{
-			if(value[i] == ',')
+			mtm_present = true;
+			break;
+		}
+	}
+	destroyCharArray(split_libs);
+	if(0 && !mtm_present) return NULL;
+
+	/* now check id multimaster.node_id set */
+	mtm_id_str = GetConfigOption("multimaster.node_id", true, false);
+	if(!mtm_id_str) return NULL;
+	mtm_id = atoi(mtm_id_str);
+	if(mtm_id == 0) return NULL;
+	elog(LOG, "got mtm_id %d", mtm_id);
+
+	/* find proper connection string from mtm_id */
+	mtm_cstring = GetConfigOption("multimaster.conn_strings", true, false);
+	if(!mtm_cstring) return NULL;
+	elog(LOG, "got mtm_connstring");
+
+	conns = _split_string_to_char_array((char *)mtm_cstring);
+	if(conns->n < mtm_id)
+	{
+		destroyCharArray(conns);
+		return NULL;
+	}
+	dbbeg = strstr(conns->data[mtm_id-1], "dbname=");
+	if(dbbeg == NULL)
+	{
+		destroyCharArray(conns);
+		return NULL;
+	}
+	elog(LOG, "GOT BEGIN");
+
+	memset(buffer, 0, 256);
+	for(i=7; dbbeg[i] != 0 || i < 249; i++)
+	{
+		if(dbbeg[i] != ' ')
+		{
+			buffer[j++] = dbbeg[i];
+		}
+		else
+		{
+			break;
+		}
+	}
+	destroyCharArray(conns);
+	elog(LOG, "Almost ready %s", buffer);
+	if(j > 0) return buffer;
+	return NULL;
+}
+
+char_array_t *_split_string_to_char_array(char *str)
+{
+	int str_len, cv_len=0, i;
+	char *clean_value;
+	char_array_t *names;
+	int start_pos = 0;
+	char *ptr = NULL;
+	int nnames = 1;
+
+	str_len = strlen(str);
+	clean_value = worker_alloc(sizeof(char)*(str_len+1));
+	for(i=0; i < str_len; i++)
+	{
+		if(str[i] != ' ')
+		{
+			if(str[i] == ',')
 			{
 				nnames++;
 				clean_value[cv_len++] = 0;
 			}
 			else
 			{
-				clean_value[cv_len++] = value[i];
+				clean_value[cv_len++] = str[i];
 			}
 		}
 	}
@@ -372,7 +427,7 @@ char_array_t *readBasesToCheck(void)
 	if(cv_len == 0 || nnames == cv_len)
 	{
 		pfree(clean_value);
-		return result;
+		return NULL;
 	}
 	names = makeCharArray();
 	for(i=0; i < cv_len + 1; i++)
@@ -385,6 +440,39 @@ char_array_t *readBasesToCheck(void)
 		}
 	}
 	pfree(clean_value);
+
+	return names;
+}
+
+
+
+char_array_t *readBasesToCheck(void)
+{
+	const char *value = NULL;
+	char_array_t *names;
+	char_array_t *result;
+	char *clean_value = NULL;
+	int i;
+	StringInfoData sql;
+	int ret;
+	int processed;
+
+
+	pgstat_report_activity(STATE_RUNNING, "read configuration");
+	result = makeCharArray();
+
+	value = check_multimaster_database();
+	elog(LOG, "From mm: %s", value);
+
+	if(!value)
+		value = GetConfigOption("schedule.database", true, false);
+
+	if(!value || strlen(value) == 0)
+	{
+		return result;
+	}
+
+	names = _split_string_to_char_array((char *)value);
 	if(names->n == 0)
 	{
 		destroyCharArray(names);
