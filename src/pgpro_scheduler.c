@@ -336,7 +336,7 @@ const char *check_multimaster_database(void)
 	/* at first need to parse shared_preload_libraries */
 	libs = GetConfigOption("shared_preload_libraries", true, false);
 	if(!libs) return NULL;
-	split_libs  = _split_string_to_char_array((char *)libs);
+	split_libs  = _split_string_to_char_array((char *)libs, true);
 	if(split_libs->n == 0)
 	{
 		destroyCharArray(split_libs);
@@ -351,21 +351,19 @@ const char *check_multimaster_database(void)
 		}
 	}
 	destroyCharArray(split_libs);
-	if(0 && !mtm_present) return NULL;
+	if(!mtm_present) return NULL;
 
 	/* now check id multimaster.node_id set */
 	mtm_id_str = GetConfigOption("multimaster.node_id", true, false);
 	if(!mtm_id_str) return NULL;
 	mtm_id = atoi(mtm_id_str);
 	if(mtm_id == 0) return NULL;
-	elog(LOG, "got mtm_id %d", mtm_id);
 
 	/* find proper connection string from mtm_id */
 	mtm_cstring = GetConfigOption("multimaster.conn_strings", true, false);
 	if(!mtm_cstring) return NULL;
-	elog(LOG, "got mtm_connstring");
 
-	conns = _split_string_to_char_array((char *)mtm_cstring);
+	conns = _split_string_to_char_array((char *)mtm_cstring, false);
 	if(conns->n < mtm_id)
 	{
 		destroyCharArray(conns);
@@ -377,10 +375,8 @@ const char *check_multimaster_database(void)
 		destroyCharArray(conns);
 		return NULL;
 	}
-	elog(LOG, "GOT BEGIN");
 
-	memset(buffer, 0, 256);
-	for(i=7; dbbeg[i] != 0 || i < 249; i++)
+	for(i=7; dbbeg[i] != 0 && i < 256; i++)
 	{
 		if(dbbeg[i] != ' ')
 		{
@@ -391,13 +387,13 @@ const char *check_multimaster_database(void)
 			break;
 		}
 	}
+	buffer[j] = 0;
 	destroyCharArray(conns);
-	elog(LOG, "Almost ready %s", buffer);
 	if(j > 0) return buffer;
 	return NULL;
 }
 
-char_array_t *_split_string_to_char_array(char *str)
+char_array_t *_split_string_to_char_array(char *str, bool do_clean)
 {
 	int str_len, cv_len=0, i;
 	char *clean_value;
@@ -410,17 +406,15 @@ char_array_t *_split_string_to_char_array(char *str)
 	clean_value = worker_alloc(sizeof(char)*(str_len+1));
 	for(i=0; i < str_len; i++)
 	{
-		if(str[i] != ' ')
+		if(do_clean && str[i] == ' ') continue;
+		if(str[i] == ',')
 		{
-			if(str[i] == ',')
-			{
-				nnames++;
-				clean_value[cv_len++] = 0;
-			}
-			else
-			{
-				clean_value[cv_len++] = str[i];
-			}
+			nnames++;
+			clean_value[cv_len++] = 0;
+		}
+		else
+		{
+			clean_value[cv_len++] = str[i];
 		}
 	}
 	clean_value[cv_len] = 0;
@@ -462,7 +456,6 @@ char_array_t *readBasesToCheck(void)
 	result = makeCharArray();
 
 	value = check_multimaster_database();
-	elog(LOG, "From mm: %s", value);
 
 	if(!value)
 		value = GetConfigOption("schedule.database", true, false);
@@ -472,8 +465,8 @@ char_array_t *readBasesToCheck(void)
 		return result;
 	}
 
-	names = _split_string_to_char_array((char *)value);
-	if(names->n == 0)
+	names = _split_string_to_char_array((char *)value, true);
+	if(names == NULL || names->n == 0)
 	{
 		destroyCharArray(names);
 		return result;
@@ -525,7 +518,6 @@ void parent_scheduler_main(Datum arg)
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
 
 	init_worker_mem_ctx("Parent scheduler context");
-	elog(LOG, "Start PostgresPro scheduler."); 
 
 	SetConfigOption("application_name", "pgp-s supervisor", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "Initialize");

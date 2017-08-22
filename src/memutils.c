@@ -29,6 +29,18 @@ MemoryContext switch_to_worker_context(void)
 	return MemoryContextSwitchTo(SchedulerWorkerContext);
 }
 
+void check_scheduler_context(void)
+{
+	if(MemoryContextIsValid(SchedulerWorkerContext))
+	{
+		elog(LOG, "scheduler context: ok");
+	}
+	else
+	{
+		elog(LOG, "scheduler context: broken");
+	}
+}
+
 void *worker_alloc(Size size)
 {
 	AssertState(SchedulerWorkerContext != NULL);

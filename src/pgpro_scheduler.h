@@ -47,7 +47,7 @@ bool is_scheduler_enabled(void);
 char *set_schema(const char *name, bool get_old);
 char *get_scheduler_schema_name(void);
 char *get_scheduler_nodename(MemoryContext mem);
-char_array_t *_split_string_to_char_array(char *str);
+char_array_t *_split_string_to_char_array(char *str, bool doclean);
 const char *check_multimaster_database(void);
 
 #endif
