@@ -883,7 +883,7 @@ service postgrespro-&majorversion; initdb
         package, run the following command:
       </para>
       <programlisting>
-service postgrespro start
+service postgresql start
 </programlisting>
       <para>
         The default database in SUSE is created upon the first start of
