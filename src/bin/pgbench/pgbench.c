@@ -54,6 +54,7 @@
 
 #include "pgbench.h"
 
+#define ERRCODE_IN_FAILED_SQL_TRANSACTION  "25P02"
 #define ERRCODE_T_R_SERIALIZATION_FAILURE  "40001"
 #define ERRCODE_T_R_DEADLOCK_DETECTED  "40P01"
 #define ERRCODE_UNDEFINED_TABLE  "42P01"
@@ -274,8 +275,12 @@ typedef struct Variables
  */
 typedef struct RetryState
 {
-	int			state;			/* state No.; -1 if there were not any
-								 * transactions yet */
+	/*
+	 * State No.; -1 if there were not any transactions yet or we continue the
+	 * transaction block from the previous scripts
+	 */
+	int			state;
+
 	int			retries;
 
 	unsigned short random_state[3];	/* random seed */
@@ -304,6 +309,8 @@ typedef struct
 	unsigned short random_state[3];	/* separate randomness for each client */
 
 	/* for repeating transactions with serialization or deadlock failures: */
+	bool		in_transaction_block;	/* are we in transaction block? */
+
 	RetryState  retry_state;
 	bool		end_failed_transaction; /* are we ending the failed transaction
 										 * (and, perhaps, are trying to repeat
@@ -372,14 +379,10 @@ typedef struct
 									 * retried */
 
 	/* for repeating transactions with serialization and deadlock failures: */
-
-	bool		is_transaction_begin;	/* do we start a transaction? */
-
-	/*
-	 * Command number to complete transaction starting in this command. -1 if it
-	 * is the sql command outside the transaction block.
-	 */
-	int			transaction_end_num;
+	bool		is_transaction_block_begin;	/* if command syntactically start a
+											 * a transaction block */
+	int			transaction_block_end;	/* nearest command number to complete
+										 * the transaction block or -1 */
 } Command;
 
 typedef struct ParsedScript
@@ -468,6 +471,7 @@ typedef enum FailureStatus
 {
 	SERIALIZATION_FAILURE,
 	DEADLOCK_FAILURE,
+	IN_FAILED_TRANSACTION,
 	FAILURE_STATUS_ANOTHER		/* another failure or no failure */
 } FailureStatus;
 
@@ -1978,6 +1982,28 @@ anyFailure(FailureStatus status)
 	return status == SERIALIZATION_FAILURE || status == DEADLOCK_FAILURE;
 }
 
+/*
+ * Returns true if failure can not be retried regardless of the number of tries.
+ */
+static bool
+inOnShotTransaction(CState *st)
+{
+	Command    *command = sql_script[st->use_file].commands[st->state];
+
+	return ((st->in_transaction_block && command->transaction_block_end < 0) ||
+			st->retry_state.state < 0);
+}
+
+/*
+ * Returns true if the failure can be retried.
+ */
+static bool
+canRetry(CState *st)
+{
+	return (!inOnShotTransaction(st) &&
+			st->retry_state.retries + 1 < max_tries);
+}
+
 /* return false iff client should be disconnected */
 static bool
 doCustom(TState *thread, CState *st, StatsData *agg)
@@ -2099,15 +2125,24 @@ top:
 					failure_status = SERIALIZATION_FAILURE;
 				else if (strcmp(sqlState, ERRCODE_T_R_DEADLOCK_DETECTED) == 0)
 					failure_status = DEADLOCK_FAILURE;
+				else if (strcmp(sqlState, ERRCODE_IN_FAILED_SQL_TRANSACTION) ==
+						 0)
+					failure_status = IN_FAILED_TRANSACTION;
 
-				if (debug && anyFailure(failure_status))
-					fprintf(stderr, "client %d got a %s failure (try %d/%d)\n",
-							st->id,
-							(failure_status == SERIALIZATION_FAILURE ?
-							 "serialization" :
-							 "deadlock"),
-							st->retry_state.retries + 1,
-							max_tries);
+				if (debug)
+				{
+					if (anyFailure(failure_status))
+						fprintf(stderr, "client %d got a %s failure (try %d/%d)\n",
+								st->id,
+								(failure_status == SERIALIZATION_FAILURE ?
+								 "serialization" :
+								 "deadlock"),
+								st->retry_state.retries + 1,
+								inOnShotTransaction(st) ? 1 : max_tries);
+					else if (failure_status == IN_FAILED_TRANSACTION)
+						fprintf(stderr, "client %d in the failed transaction\n",
+								st->id);
+				}
 			}
 		}
 
@@ -2115,7 +2150,7 @@ top:
 		 * accumulate per-command execution times in thread-local data
 		 * structure, if per-command latencies are requested
 		 */
-		if (report_per_command && !anyFailure(failure_status))
+		if (report_per_command && failure_status == FAILURE_STATUS_ANOTHER)
 		{
 			if (INSTR_TIME_IS_ZERO(now))
 				INSTR_TIME_SET_CURRENT(now);
@@ -2126,86 +2161,91 @@ top:
 							 INSTR_TIME_GET_DOUBLE(st->stmt_begin));
 		}
 
-		if (st->retry_state.state >= 0)
+		if (st->in_transaction_block &&
+			commands[st->state]->transaction_block_end == st->state)
+			st->in_transaction_block = false;
+
+		if (anyFailure(failure_status))
 		{
-			int			transaction_block_end_state =
-				commands[st->retry_state.state]->transaction_end_num;
-
-			if (anyFailure(failure_status))
-			{
-				if (st->retry_state.retries + 1 < max_tries)
-				{
-					/*
-					 * The failed transaction will be retried. So accumulate
-					 * the retry for the command and for the current script
-					 * execution.
-					 */
-					if (failure_status == SERIALIZATION_FAILURE)
-					{
-						st->retries.serialization++;
-						if (report_per_command)
-							commands[st->state]->retries.serialization++;
-					}
-					else
-					{
-						st->retries.deadlocks++;
-						if (report_per_command)
-							commands[st->state]->retries.deadlocks++;
-					}
-				}
-				else
-				{
-					/*
-					 * We will not be able to retry this failed transaction.
-					 * So accumulate the failure for the command and for the
-					 * current script execution.
-					 */
-					st->failure = true;
-					if (report_per_command)
-					{
-						if (failure_status == SERIALIZATION_FAILURE)
-							commands[st->state]->serialization_failures++;
-						else
-							commands[st->state]->deadlock_failures++;
-					}
-				}
-			}
-
-			if (anyFailure(failure_status) || st->end_failed_transaction)
+			if (canRetry(st))
 			{
 				/*
-				 * 1) If there was a failure - go to the command for ending the
-				 * failed transaction block (if needed).
-				 * 2) Run the transaction again from the beginning (if number of
-				 * previous tries haven't reached maximum).
-				 *
-				 * st->end_failed_transaction is true until we end all these
-				 * jumps between states.
+				 * The failed transaction will be retried. So accumulate
+				 * the retry for the command and for the current script
+				 * execution.
 				 */
-				if (anyFailure(failure_status) &&
-					transaction_block_end_state != -1 &&
-					st->state != transaction_block_end_state)
+				if (failure_status == SERIALIZATION_FAILURE)
 				{
-					/* end the failed transaction block */
-					st->end_failed_transaction = true;
-					st->state = transaction_block_end_state;
+					st->retries.serialization++;
+					if (report_per_command)
+						commands[st->state]->retries.serialization++;
 				}
 				else
 				{
-					/*
-					 * We are not in transaction block.  So let's try to repeat
-					 * the failed transaction.
-					 */
-					if (st->retry_state.retries + 1 < max_tries)
-					{
-						st->end_failed_transaction = true;
-						st->state = st->retry_state.state;
-					}
-					else
-					{
-						st->end_failed_transaction = false;
-					}
+					st->retries.deadlocks++;
+					if (report_per_command)
+						commands[st->state]->retries.deadlocks++;
 				}
+			}
+			else
+			{
+				/*
+				 * We will not be able to retry this failed transaction.
+				 * So accumulate the failure for the command and for the
+				 * current script execution.
+				 */
+				st->failure = true;
+				if (report_per_command)
+				{
+					if (failure_status == SERIALIZATION_FAILURE)
+						commands[st->state]->serialization_failures++;
+					else
+						commands[st->state]->deadlock_failures++;
+				}
+			}
+		}
+
+		if (anyFailure(failure_status) || st->end_failed_transaction)
+		{
+			/*
+			 * 1) If a failure occurs - go to the command to complete the failed
+			 * transaction block (if necessarily, and there's a corresponding
+			 * command later in this script).
+			 * 2) Start the transaction from the very beginning (if the failed
+			 * transaction started in the current script, and the number of its
+			 * previous tries did not reach the maximum).
+			 *
+			 * st->end_failed_transaction is true until we end all these
+			 * jumps between states.
+			 */
+			int			transaction_block_end =
+				commands[st->state]->transaction_block_end;
+
+			if (st->in_transaction_block &&
+				transaction_block_end >= 0)
+			{
+				/* end the failed transaction block */
+				st->end_failed_transaction = true;
+				st->state = transaction_block_end;
+			}
+			else if (!st->in_transaction_block &&
+					 st->retry_state.state >= 0 &&
+					 st->retry_state.retries + 1 < max_tries)
+			{
+				/* repeat the failed transaction */
+				st->end_failed_transaction = true;
+				st->state = st->retry_state.state;
+			}
+			else
+			{
+				/*
+				 * We are in the failed transaction block and there's no
+				 * corresponding command to end it later in this script. Or we
+				 * are not in a transaction block and we cannot repeat the
+				 * failed transaction from the very beginning. So go to the next
+				 * command.
+				 */
+				st->end_failed_transaction = false;
 			}
 		}
 
@@ -2228,7 +2268,7 @@ top:
 			 */
 			if (!(result_status == PGRES_COMMAND_OK ||
 				  result_status == PGRES_TUPLES_OK ||
-				  anyFailure(failure_status)))
+				  failure_status != FAILURE_STATUS_ANOTHER))
 			{
 				fprintf(stderr, "client %d aborted in state %d: %s",
 						st->id, st->state, PQerrorMessage(st->con));
@@ -2339,6 +2379,10 @@ top:
 			st->txn_scheduled = INSTR_TIME_GET_MICROSEC(st->txn_begin);
 	}
 
+	if (commands[st->state]->is_transaction_block_begin &&
+		!st->in_transaction_block)
+		st->in_transaction_block = true;
+
 	/* Record statement start time if per-command latencies are requested */
 	if (report_per_command && !st->end_failed_transaction)
 		INSTR_TIME_SET_CURRENT(st->stmt_begin);
@@ -2348,7 +2392,7 @@ top:
 		const Command *command = commands[st->state];
 		int			r;
 
-		if (command->is_transaction_begin)
+		if (command->is_transaction_block_begin || !st->in_transaction_block)
 		{
 			/* check retry state */
 
@@ -3151,6 +3195,7 @@ process_sql_command(PQExpBuffer buf, const char *source)
 	my_command->argc = 0;
 	initSimpleStats(&my_command->stats);
 	initRetries(&my_command->retries);
+	my_command->transaction_block_end = -1;
 
 	/*
 	 * If SQL command is multi-line, we only want to save the first line as
@@ -3221,6 +3266,7 @@ process_backslash_command(PsqlScanState sstate, const char *source)
 	my_command->argc = 0;
 	initSimpleStats(&my_command->stats);
 	initRetries(&my_command->retries);
+	my_command->transaction_block_end = -1;
 
 	/* Save first word (command name) */
 	j = 0;
@@ -3417,8 +3463,7 @@ ParseScript(const char *script, const char *desc, int weight)
 	PQExpBufferData line_buf;
 	int			alloc_num;
 	int			index;
-	int			last_transaction_block_begin = -1;
-	bool		transaction_block_completed = true;
+	int			last_transaction_block_end = -1;
 
 #define COMMANDS_ALLOC_NUM 128
 	alloc_num = COMMANDS_ALLOC_NUM;
@@ -3462,6 +3507,7 @@ ParseScript(const char *script, const char *desc, int weight)
 		if (command)
 		{
 			char	   *command_text = command->argv[0];
+			int			cur_index;
 
 			ps.commands[index] = command;
 			index++;
@@ -3473,34 +3519,23 @@ ParseScript(const char *script, const char *desc, int weight)
 					pg_realloc(ps.commands, sizeof(Command *) * alloc_num);
 			}
 
-			/* check if there's the begin of new transaction */
-			if (transaction_block_completed)
+			/* check if the command syntactically starts a transaction block */
+			if (pg_strncasecmp(command_text, "begin", 5) == 0 ||
+				pg_strncasecmp(command_text, "start", 5) == 0)
+				command->is_transaction_block_begin = true;
+
+			/* check if the command syntactically ends a transaction block */
+			if (is_transaction_block_end(command_text))
 			{
 				/*
-				 * Each sql command outside of transaction block either starts a
-				 * new transaction block or is run as separate transaction.
+				 * Remember it for commands that can fail a transaction block
+				 * earlier.
 				 */
-				command->is_transaction_begin = true;
-
-				if (pg_strncasecmp(command_text, "begin", 5) == 0 ||
-					pg_strncasecmp(command_text, "start", 5) == 0)
-				{
-					last_transaction_block_begin = index - 1;
-					transaction_block_completed = false;
-				}
-				else
-				{
-					command->transaction_end_num = -1;
-				}
-			}
-
-			/* check if command ends the transaction block */
-			if (!transaction_block_completed &&
-				is_transaction_block_end(command_text))
-			{
-				ps.commands[last_transaction_block_begin]->transaction_end_num =
-					index - 1;
-				transaction_block_completed = true;
+				for (cur_index = last_transaction_block_end + 1;
+					 cur_index < index;
+					 cur_index++)
+					ps.commands[cur_index]->transaction_block_end = index - 1;
+				last_transaction_block_end = index - 1;
 			}
 		}
 
@@ -3525,13 +3560,6 @@ ParseScript(const char *script, const char *desc, int weight)
 		/* Done if we reached EOF */
 		if (sr == PSCAN_INCOMPLETE || sr == PSCAN_EOL)
 			break;
-	}
-
-	if (!transaction_block_completed)
-	{
-		fprintf(stderr, "script \"%s\": last transaction block is not completed\n",
-				desc);
-		exit(1);
 	}
 
 	ps.commands[index] = NULL;
