@@ -340,8 +340,7 @@ void MtmLock(LWLockMode mode)
 		atexit(MtmReleaseLocks);
 		MtmAtExitHookRegistered = true;
 	}
-	if (MtmLockCount != 0) {
-		Assert(Mtm->lastLockHolder == MyProcPid);
+	if (MtmLockCount != 0 && Mtm->lastLockHolder == MyProcPid) {
 		MtmLockCount += 1;
 	}
 	else
@@ -372,8 +371,11 @@ void MtmLock(LWLockMode mode)
 #endif
 		if (mode == LW_EXCLUSIVE) {
 			Assert(MtmLockCount == 0);
+			Assert(MyProcPid != 0);
 			Mtm->lastLockHolder = MyProcPid;
 			MtmLockCount = 1;
+		} else {
+			MtmLockCount = 0;
 		}
 	}
 }
