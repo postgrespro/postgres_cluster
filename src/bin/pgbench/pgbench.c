@@ -2684,7 +2684,7 @@ doLog(TState *thread, CState *st, instr_time *now,
 			fprintf(logfile, "%d " INT64_FORMAT " skipped %d %ld %ld",
 					st->id, st->cnt, st->use_file,
 					(long) now->tv_sec, (long) now->tv_usec);
-		else if (skipped || st->failure)
+		else if (st->failure)
 			fprintf(logfile, "%d " INT64_FORMAT " failed %d %ld %ld",
 					st->id, st->cnt, st->use_file,
 					(long) now->tv_sec, (long) now->tv_usec);
