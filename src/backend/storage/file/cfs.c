@@ -1361,7 +1361,7 @@ retry:
  * Perform garbage collection on each compressed file
  * in the pg_tblspc directory.
  */
-static bool cfs_gc_directory(int worker_id, char const* path)
+static bool cfs_gc_directory(int worker_id, char const* path, int depth)
 {
 	DIR* dir = AllocateDir(path);
 	bool success = true;
@@ -1393,7 +1393,7 @@ static bool cfs_gc_directory(int worker_id, char const* path)
 					break;
 				}
 			}
-			else if (!cfs_gc_directory(worker_id, file_path))
+			else if ((depth != 1 || strcmp(entry->d_name, TABLESPACE_VERSION_DIRECTORY) == 0) && !cfs_gc_directory(worker_id, file_path, depth+1))
 			{
 				success = false;
 				break;
@@ -1426,7 +1426,7 @@ static void cfs_sighup(SIGNAL_ARGS)
  */
 static bool cfs_gc_scan_tablespace(int worker_id)
 {
-	return cfs_gc_directory(worker_id, "pg_tblspc");
+	return cfs_gc_directory(worker_id, "pg_tblspc", 0);
 }
 
 static void cfs_gc_bgworker_main(Datum arg)
