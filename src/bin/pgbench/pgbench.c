@@ -2698,7 +2698,7 @@ doLog(TState *thread, CState *st, instr_time *now,
 		if (skipped)
 			fprintf(logfile, "%d " INT64_FORMAT " skipped %d 0 0",
 					st->id, st->cnt, st->use_file);
-		else if (st->serialization_failure)
+		else if (st->failure)
 			fprintf(logfile, "%d " INT64_FORMAT " failed %d 0 0",
 					st->id, st->cnt, st->use_file);
 		else
