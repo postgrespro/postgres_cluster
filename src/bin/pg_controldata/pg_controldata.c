@@ -25,7 +25,10 @@
 #include "catalog/pg_control.h"
 #include "common/controldata_utils.h"
 #include "pg_getopt.h"
+#include "catalog/catversion.h"
 
+static void
+WriteControlFile(ControlFileData ControlFile, const char *progname, const char *DataDir);
 
 static void
 usage(const char *progname)
@@ -35,6 +38,7 @@ usage(const char *progname)
 	printf(_("  %s [OPTION] [DATADIR]\n"), progname);
 	printf(_("\nOptions:\n"));
 	printf(_(" [-D] DATADIR    data directory\n"));
+	printf(_(" [-c]			   update catversion in pg_control to the verision of the current binary\n"));
 	printf(_("  -V, --version  output version information, then exit\n"));
 	printf(_("  -?, --help     show this help, then exit\n"));
 	printf(_("\nIf no data directory (DATADIR) is specified, "
@@ -96,6 +100,7 @@ main(int argc, char *argv[])
 	XLogSegNo	segno;
 	char		xlogfilename[MAXFNAMELEN];
 	int			c;
+	bool		reset_catversion = false;
 
 	set_pglocale_pgservice(argv[0], PG_TEXTDOMAIN("pg_controldata"));
 
@@ -115,12 +120,15 @@ main(int argc, char *argv[])
 		}
 	}
 
-	while ((c = getopt(argc, argv, "D:")) != -1)
+	while ((c = getopt(argc, argv, "D:c")) != -1)
 	{
 		switch (c)
 		{
 			case 'D':
 				DataDir = optarg;
+				break;
+			case 'c':
+				reset_catversion = true;
 				break;
 
 			default:
@@ -156,6 +164,14 @@ main(int argc, char *argv[])
 
 	/* get a copy of the control file */
 	ControlFile = get_controlfile(DataDir, progname);
+
+	if (reset_catversion)
+	{
+		ControlFile->catalog_version_no = CATALOG_VERSION_NO;
+		WriteControlFile(*ControlFile, progname, DataDir);
+		printf(_("Catalog version updated\n"));
+		return 0;
+	}
 
 	/*
 	 * This slightly-chintzy coding will work as long as the control file
@@ -297,4 +313,70 @@ main(int argc, char *argv[])
 	printf(_("Data page checksum version:           %u\n"),
 		   ControlFile->data_checksum_version);
 	return 0;
+}
+
+static void
+WriteControlFile(ControlFileData ControlFile, const char *progname, const char *DataDir)
+{
+	int			fd;
+	char		buffer[PG_CONTROL_SIZE];		/* need not be aligned */
+	char		ControlFilePath[MAXPGPATH];
+
+	snprintf(ControlFilePath, MAXPGPATH, "%s/global/pg_control", DataDir);
+
+	/* Contents are protected with a CRC */
+	INIT_CRC32C(ControlFile.crc);
+	COMP_CRC32C(ControlFile.crc,
+				(char *) &ControlFile,
+				offsetof(ControlFileData, crc));
+	FIN_CRC32C(ControlFile.crc);
+
+	/*
+	 * We write out PG_CONTROL_SIZE bytes into pg_control, zero-padding the
+	 * excess over sizeof(ControlFileData).  This reduces the odds of
+	 * premature-EOF errors when reading pg_control.  We'll still fail when we
+	 * check the contents of the file, but hopefully with a more specific
+	 * error than "couldn't read pg_control".
+	 */
+	if (sizeof(ControlFileData) > PG_CONTROL_SIZE)
+	{
+		fprintf(stderr,
+				_("%s: internal error -- sizeof(ControlFileData) is too large ... fix PG_CONTROL_SIZE\n"),
+				progname);
+		exit(1);
+	}
+
+	memset(buffer, 0, PG_CONTROL_SIZE);
+	memcpy(buffer, &ControlFile, sizeof(ControlFileData));
+
+	unlink(ControlFilePath);
+
+	fd = open(ControlFilePath,
+			  O_RDWR | O_CREAT | O_EXCL | PG_BINARY,
+			  S_IRUSR | S_IWUSR);
+	if (fd < 0)
+	{
+		fprintf(stderr, _("%s: could not create pg_control file: %s\n"),
+				progname, strerror(errno));
+		exit(1);
+	}
+
+	errno = 0;
+	if (write(fd, buffer, PG_CONTROL_SIZE) != PG_CONTROL_SIZE)
+	{
+		/* if write didn't set errno, assume problem is no disk space */
+		if (errno == 0)
+			errno = ENOSPC;
+		fprintf(stderr, _("%s: could not write pg_control file: %s\n"),
+				progname, strerror(errno));
+		exit(1);
+	}
+
+	if (fsync(fd) != 0)
+	{
+		fprintf(stderr, _("%s: fsync error: %s\n"), progname, strerror(errno));
+		exit(1);
+	}
+
+	close(fd);
 }
