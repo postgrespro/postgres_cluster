@@ -222,7 +222,7 @@
         <listitem>
          <para>On SysVinit systems, such as Red Hat Enterprise Linux 6 and its derivatives, run:
       <programlisting>
-service postgrespro-9.6 initdb
+service postgrespro-&majorversion; initdb
 </programlisting>
          </para>
         </listitem>
@@ -883,7 +883,7 @@ service postgrespro-9.6 initdb
         package, run the following command:
       </para>
       <programlisting>
-service postgrespro start
+service postgresql start
 </programlisting>
       <para>
         The default database in SUSE is created upon the first start of
