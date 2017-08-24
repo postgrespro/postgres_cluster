@@ -4,7 +4,7 @@ use warnings;
 use Config;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 58;
+use Test::More tests => 63;
 
 use constant
 {
@@ -38,7 +38,7 @@ append_to_file($script_deadlocks1,
 	  . "\\set delta1 random(-5000, 5000)\n"
 	  . "\\set delta2 random(-5000, 5000)\n"
 	  . "UPDATE xy SET y = y + :delta1 WHERE x = 1;\n"
-	  . "SELECT pg_sleep(20);\n"
+	  . "SELECT pg_sleep(60);\n"
 	  . "UPDATE xy SET y = y + :delta2 WHERE x = 2;\n"
 	  . "END;");
 
@@ -87,7 +87,7 @@ sub test_pgbench_default_transaction_isolation_level_and_serialization_failures
 	  \$err_pgbench;
 
 	# Let pgbench run the update command in the transaction:
-	sleep 10;
+	sleep 30;
 
 	# In psql, commit the transaction and end the session:
 	$in_psql = "end;\n";
@@ -183,7 +183,7 @@ sub test_pgbench_serialization_failures_retry
 	  \$stderr;
 
 	# Let pgbench run the update command in the transaction:
-	sleep 10;
+	sleep 30;
 
 	# In psql, commit the transaction and end the session:
 	$in_psql = "end;\n";
@@ -269,7 +269,7 @@ sub test_pgbench_deadlock_failures
 	$h1 = IPC::Run::start \@command1, \$in1, \$out1, \$err1;
 
 	# Let pgbench run first update command in the transaction:
-	sleep 10;
+	sleep 30;
 
 	# Run second pgbench
 	my @command2 = (
@@ -357,7 +357,7 @@ sub test_pgbench_deadlock_failures_retry
 	$h1 = IPC::Run::start \@command1, \$in1, \$out1, \$err1;
 
 	# Let pgbench run first update command in the transaction:
-	sleep 10;
+	sleep 30;
 
 	# Run second pgbench
 	my @command2 = (
@@ -408,26 +408,33 @@ sub test_pgbench_deadlock_failures_retry
 	  . $isolation_level_sql
 	  . ": pgbench 2: check processed transactions");
 
-	# First or second pgbench should get a deadlock error
+	# First or second pgbench should get a deadlock error which was retried
 	like($err1 . $err2,
 		qr{client 0 got a deadlock failure \(try 1/2\)},
 		"concurrent deadlock update with retrying: "
 	  . $isolation_level_sql
 	  . ": check deadlock failure");
 
+	like($out1 . $out2,
+		qr{number of transactions retried: 1 \(100.000 %\)},
+		"concurrent deadlock update with retrying: "
+	  . $isolation_level_sql
+	  . ": check retried transactions");
+
+	like($out1 . $out2,
+		qr{number of retries: 1 \(serialization: 0, deadlocks: 1\)},
+		"concurrent deadlock update with retrying: "
+	  . $isolation_level_sql
+	  . ": check retries");
+
 	if ($isolation_level == READ_COMMITTED)
 	{
 		# At other isolation levels, there may be serialization failures
-		like($out1 . $out2,
-			qr{^((?!number of failures)(.|\n))*$},
-			"concurrent deadlock update with retrying: "
-		  . $isolation_level_sql
-		  . ": check failures");
 
 		my $pattern =
 			"client 0 sending UPDATE xy SET y = y \\+ (-?\\d+) WHERE x = (\\d);\n"
 		  . "(client 0 receiving\n)+"
-		  . "(|client 0 sending SELECT pg_sleep\\(20\\);\n)"
+		  . "(|client 0 sending SELECT pg_sleep\\(60\\);\n)"
 		  . "\\g3*"
 		  . "client 0 sending UPDATE xy SET y = y \\+ (-?\\d+) WHERE x = (\\d);\n"
 		  . "\\g3+"
