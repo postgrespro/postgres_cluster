@@ -349,14 +349,13 @@ WriteControlFile(ControlFileData ControlFile, const char *progname, const char *
 	memset(buffer, 0, PG_CONTROL_SIZE);
 	memcpy(buffer, &ControlFile, sizeof(ControlFileData));
 
-	unlink(ControlFilePath);
-
 	fd = open(ControlFilePath,
-			  O_RDWR | O_CREAT | O_EXCL | PG_BINARY,
+			  O_RDWR | PG_BINARY,
 			  S_IRUSR | S_IWUSR);
+
 	if (fd < 0)
 	{
-		fprintf(stderr, _("%s: could not create pg_control file: %s\n"),
+		fprintf(stderr, _("%s: could not open pg_control file: %s\n"),
 				progname, strerror(errno));
 		exit(1);
 	}
