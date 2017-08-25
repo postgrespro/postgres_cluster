@@ -1184,7 +1184,7 @@ include_dir 'conf.d'
         aliases for <literal>md5</> and <literal>plain</>, respectively.  Setting
         this parameter to <literal>scram</> will encrypt the password with
         SCRAM-SHA-256.
-       </para>       
+       </para>
       </listitem>
      </varlistentry>
 
@@ -7487,6 +7487,105 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
 
      </variablelist>
     </sect2>
+   </sect1>
+
+   <sect1 id="runtime-config-cfs">
+    <title>Data Compression</title>
+
+    <variablelist>
+
+     <varlistentry id="guc-cfs-gc" xreflabel="cfs-gc">
+      <term><varname>cfs_gc</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>cfs_gc</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Control background garbage collection of compressed pages.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-encryption" xreflabel="cfs-encryption">
+      <term><varname>cfs_encryption</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>cfs_encryption</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Control encryption of compressed pages.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-gc-workers" xreflabel="cfs-gc-workers">
+      <term><varname>cfs_gc_workers</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cfs_gc_workers</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Number of CFS background garbage collection workers.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-level" xreflabel="cfs-level">
+      <term><varname>cfs_gc_workers</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cfs_level</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        CFS compression level: 0 - no compression, 1 - maximal speed,
+		other possible values depend on the specific algorithm.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-gc-threshold" xreflabel="cfs-gc-threshold">
+      <term><varname>cfs_gc_threshold</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cfs_gc_threshold</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Minimum percent of garbage blocks in the file prior to garbage collection.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-gc-period" xreflabel="cfs-gc-period">
+      <term><varname>cfs_gc_period</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cfs_gc_period</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Time to sleep between GC runs in milliseconds.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-gc-delay" xreflabel="cfs-gc-delay">
+      <term><varname>cfs_gc_delay</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cfs_gc_delay</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Delay in milliseconds between files defragmentation.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
    </sect1>
 
    <sect1 id="runtime-config-error-handling">

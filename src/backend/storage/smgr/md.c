@@ -220,7 +220,7 @@ static bool md_use_compression(RelFileNodeBackend rnode, ForkNumber forknum)
 
 	/* Do not compress system (catalog) relations created during bootstrap */
 	if (forknum != MAIN_FORKNUM
-		|| rnode.node.spcNode == DEFAULTTABLESPACE_OID 
+		|| rnode.node.spcNode == DEFAULTTABLESPACE_OID
 		|| rnode.node.spcNode == GLOBALTABLESPACE_OID
 		|| rnode.node.relNode < FirstNormalObjectId)
 		return false;
@@ -249,7 +249,7 @@ static bool md_use_compression(RelFileNodeBackend rnode, ForkNumber forknum)
 				elog(ERROR, "Failed to read compression info file %s: %m", compressionFilePath);
 
 			if (strcmp(algorithm, cfs_algorithm()) != 0)
-				elog(ERROR, "Tablespace was compressed using %s algorithm, but %s is currently used", 
+				elog(ERROR, "Tablespace was compressed using %s algorithm, but %s is currently used",
 					 algorithm, cfs_algorithm());
 
 			fclose(compressionFile);
@@ -480,11 +480,11 @@ mdunlink(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 	else
 	{
 		cfs_control_gc_lock();
-		PG_ENSURE_ERROR_CLEANUP(cfs_control_gc_unlock, BoolGetDatum(false));
+		PG_ENSURE_ERROR_CLEANUP(cfs_on_exit_callback, BoolGetDatum(false));
 		{
 			do_mdunlink(rnode, forkNum, isRedo);
 		}
-		PG_END_ENSURE_ERROR_CLEANUP(cfs_control_gc_unlock, BoolGetDatum(false));
+		PG_END_ENSURE_ERROR_CLEANUP(cfs_on_exit_callback, BoolGetDatum(false));
 		cfs_control_gc_unlock();
 	}
 }

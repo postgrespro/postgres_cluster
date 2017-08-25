@@ -220,8 +220,15 @@ transfer_relfile(FileNameMap *map, const char *type_suffix, bool vm_must_add_fro
 	char		old_file[MAXPGPATH];
 	char		new_file[MAXPGPATH];
 	int			segno;
-	char		extent_suffix[65];
+	char		segno_text[65];
+	char const* extent_prefix = "";
+	char const* extent_suffix = "";
 	struct stat statbuf;
+
+	if (strcmp(type_suffix, ".cfm") == 0)
+		extent_prefix = segno_text;
+	else
+		extent_suffix = segno_text;
 
 	/*
 	 * Now copy/link any related segments as well. Remember, PG breaks large
@@ -231,22 +238,24 @@ transfer_relfile(FileNameMap *map, const char *type_suffix, bool vm_must_add_fro
 	for (segno = 0;; segno++)
 	{
 		if (segno == 0)
-			extent_suffix[0] = '\0';
+			segno_text[0] = '\0';
 		else
-			snprintf(extent_suffix, sizeof(extent_suffix), ".%d", segno);
+			snprintf(segno_text, sizeof(segno_text), ".%d", segno);
 
-		snprintf(old_file, sizeof(old_file), "%s%s/%u/%u%s%s",
+		snprintf(old_file, sizeof(old_file), "%s%s/%u/%u%s%s%s",
 				 map->old_tablespace,
 				 map->old_tablespace_suffix,
 				 map->old_db_oid,
 				 map->old_relfilenode,
+				 extent_prefix,
 				 type_suffix,
 				 extent_suffix);
-		snprintf(new_file, sizeof(new_file), "%s%s/%u/%u%s%s",
+		snprintf(new_file, sizeof(new_file), "%s%s/%u/%u%s%s%s",
 				 map->new_tablespace,
 				 map->new_tablespace_suffix,
 				 map->new_db_oid,
 				 map->new_relfilenode,
+				 extent_prefix,
 				 type_suffix,
 				 extent_suffix);
 

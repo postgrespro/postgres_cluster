@@ -2746,7 +2746,7 @@ _SPI_save_plan(SPIPlanPtr plan)
 void *
 SuspendSPI(void)
 {
-	SuspendedSPI *s = malloc(sizeof(SuspendedSPI));
+	SuspendedSPI *s = (SuspendedSPI*)MemoryContextAlloc(TopMemoryContext, sizeof(SuspendedSPI));
 
 	MOVELEFT(s->_SPI_stack, _SPI_stack, NULL);
 	MOVELEFT(s->_SPI_current, _SPI_current, NULL);
@@ -2768,5 +2768,5 @@ ResumeSPI(void *state)
 	_SPI_connected = s->_SPI_connected;
 	_SPI_curid = s->_SPI_curid;
 
-	free(state);
+	pfree(state);
 }
