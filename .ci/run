@@ -1,0 +1,8 @@
+#!/bin/sh
+#
+# Universal CI hook
+#
+
+set -e
+
+./.ci/build_and_test_world
