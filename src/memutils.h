@@ -16,4 +16,7 @@ char *_mcopy_string(MemoryContext ctx, char *str);
 char *my_copy_string(char *str);
 void check_scheduler_context(void);
 
+bool is_worker_context_initialized(void);
+void drop_worker_context(void);
+
 #endif

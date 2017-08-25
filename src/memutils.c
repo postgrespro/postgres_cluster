@@ -12,6 +12,11 @@ MemoryContext init_mem_ctx(const char *name)
 								 ALLOCSET_DEFAULT_MAXSIZE);
 }
 
+bool is_worker_context_initialized(void)
+{
+	return SchedulerWorkerContext == NULL ? false: true;
+}
+
 MemoryContext init_worker_mem_ctx(const char *name)
 {
 	AssertState(SchedulerWorkerContext == NULL);
@@ -45,6 +50,15 @@ void *worker_alloc(Size size)
 {
 	AssertState(SchedulerWorkerContext != NULL);
 	return MemoryContextAlloc(SchedulerWorkerContext, size);
+}
+
+void drop_worker_context(void)
+{
+	if(SchedulerWorkerContext)
+	{
+		MemoryContextDelete(SchedulerWorkerContext);
+		SchedulerWorkerContext = NULL;
+	}
 }
 
 void delete_worker_mem_ctx(MemoryContext old)

@@ -47,6 +47,9 @@
 PG_MODULE_MAGIC;
 #endif
 
+static const char *show_scheduler_nodename(void);
+static const char *show_scheduler_database(void);
+
 volatile sig_atomic_t got_sighup = false;
 volatile sig_atomic_t got_sigterm = false;
 
@@ -295,6 +298,41 @@ char *set_schema(const char *name, bool get_old)
 	if(free_name) pfree(schema_name);
 
 	return current;
+}
+
+static const char *
+show_scheduler_nodename(void)
+{
+	static char nbuf[256];
+	char *nname;
+
+	nname = get_scheduler_nodename(CurrentMemoryContext);
+	snprintf(nbuf, sizeof(nbuf), "%s", nname);
+	pfree(nname);
+	return nbuf;
+}
+
+static const char *
+show_scheduler_database(void)
+{
+	static char nbuf[256];
+	const char *value;
+	bool drop_context = false;
+
+	if(!is_worker_context_initialized())
+	{
+		init_worker_mem_ctx("temp for functions");
+		drop_context = true;
+	}
+
+	value = check_multimaster_database();
+
+	if(!value)
+		value = GetConfigOption("schedule.database", true, false);
+	snprintf(nbuf, sizeof(nbuf), "%s", value);
+
+	if(drop_context) drop_worker_context();
+	return nbuf;
 }
 
 char *get_scheduler_nodename(MemoryContext mem)
@@ -670,7 +708,7 @@ void _PG_init(void)
 		0,
 		NULL,
 		NULL,
-		NULL
+		show_scheduler_database
 	);
 	DefineCustomStringVariable(
 		"schedule.nodename",
@@ -682,7 +720,7 @@ void _PG_init(void)
 		0,
 		NULL,
 		NULL,
-		NULL
+		show_scheduler_nodename
 	);
 	DefineCustomStringVariable(
 		"schedule.transaction_state",
