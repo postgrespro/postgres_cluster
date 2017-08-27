@@ -658,6 +658,7 @@ process_remote_commit(StringInfo in)
 	csn_t       csn;
 	lsn_t       end_lsn;
 	lsn_t       origin_lsn;
+	lsn_t       commit_lsn;
 	int         origin_node;
 	char        gid[MULTIMASTER_MAX_GID_SIZE];
 
@@ -668,7 +669,7 @@ process_remote_commit(StringInfo in)
 	MtmReplicationNodeId = pq_getmsgbyte(in);
 
 	/* read fields */
-	pq_getmsgint64(in); /* commit_lsn */
+	commit_lsn = pq_getmsgint64(in); /* commit_lsn */
 	end_lsn = pq_getmsgint64(in); /* end_lsn */
 	replorigin_session_origin_timestamp = pq_getmsgint64(in); /* commit_time */
 
@@ -692,7 +693,7 @@ process_remote_commit(StringInfo in)
 		}
 		case PGLOGICAL_COMMIT:
 		{
-			MTM_LOG2("%d: PGLOGICAL_COMMIT %s, (%llx,%llx,%llx)", MyProcPid, gid, commit_lsn, end_lsn, origin_lsn);
+			MTM_LOG1("%d: PGLOGICAL_COMMIT %s, (%llx,%llx,%llx)", MyProcPid, gid, commit_lsn, end_lsn, origin_lsn);
 			if (IsTransactionState()) {
 				Assert(TransactionIdIsValid(MtmGetCurrentTransactionId()));
 				MtmBeginSession(origin_node);
@@ -969,10 +970,10 @@ process_remote_update(StringInfo s, Relation rel)
 		{
 			StringInfoData o;
 			initStringInfo(&o);
-			tuple_to_stringinfo(&o, RelationGetDescr(rel), oldslot->tts_tuple);
+			tuple_to_stringinfo(&o, RelationGetDescr(rel), oldslot->tts_tuple, false);
 			appendStringInfo(&o, " to");
-			tuple_to_stringinfo(&o, RelationGetDescr(rel), remote_tuple);
-			MTM_LOG1(DEBUG1, "UPDATE:%s", o.data);
+			tuple_to_stringinfo(&o, RelationGetDescr(rel), remote_tuple, false);
+			MTM_LOG1("%lu: UPDATE: %s", GetCurrentTransactionId(), o.data);
 			resetStringInfo(&o);
 		}
 #endif
@@ -1191,7 +1192,6 @@ void MtmExecutor(void* work, size_t size)
 			}
 			case 'Z':
 			{
-				// MtmRecoveryCompleted();
 				MtmStateProcessEvent(MTM_RECOVERY_FINISH2);
 				inside_transaction = false;
 				break;

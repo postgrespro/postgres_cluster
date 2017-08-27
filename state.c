@@ -9,8 +9,6 @@ char const* const MtmNeighborEventMnem[] =
 	"MTM_NEIGHBOR_WAL_RECEIVER_START",
 	"MTM_NEIGHBOR_WAL_SENDER_START_RECOVERY",
 	"MTM_NEIGHBOR_WAL_SENDER_START_RECOVERED",
-	"MTM_NEIGHBOR_WAL_SENDER_START_NORMAL",
-	// "MTM_NEIGHBOR_HEARTBEAT_TIMEOUT",
 	"MTM_NEIGHBOR_RECOVERY_CAUGHTUP"
 };
 
@@ -19,14 +17,11 @@ char const* const MtmEventMnem[] =
 	"MTM_REMOTE_DISABLE",
 	"MTM_CLIQUE_DISABLE",
 	"MTM_CLIQUE_MINORITY",
-
 	"MTM_ARBITER_RECEIVER_START",
-
 	"MTM_RECOVERY_START1",
 	"MTM_RECOVERY_START2",
 	"MTM_RECOVERY_FINISH1",
 	"MTM_RECOVERY_FINISH2",
-
 	"MTM_NONRECOVERABLE_ERROR"
 };
 
@@ -85,9 +80,10 @@ MtmCheckState(void)
 	int nReceivers = Mtm->nAllNodes - countZeroBits(Mtm->pglogicalReceiverMask, Mtm->nAllNodes);
 	int nSenders   = Mtm->nAllNodes - countZeroBits(Mtm->pglogicalSenderMask, Mtm->nAllNodes);
 
-	MTM_LOG1("[STATE]   Status = (disabled=%s, visible=%s, receivers=%s, senders=%s, total=%i)",
+	MTM_LOG1("[STATE]   Status = (disabled=%s, unaccessible=%s, clique=%s, receivers=%s, senders=%s, total=%i)",
 		maskToString(Mtm->disabledNodeMask, Mtm->nAllNodes),
 		maskToString(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes),
+		maskToString(Mtm->clique, Mtm->nAllNodes),
 		maskToString(Mtm->pglogicalReceiverMask, Mtm->nAllNodes),
 		maskToString(Mtm->pglogicalSenderMask, Mtm->nAllNodes),
 		Mtm->nAllNodes);
@@ -100,10 +96,21 @@ MtmCheckState(void)
 		return;
 	}
 
+	/* ANY -> CLIQUE_DISABLE */
+	if (!BIT_CHECK(Mtm->clique, MtmNodeId-1))
+	{
+		/* Should be already disabled by clique detector */
+		// Assert(BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId-1));
+		MtmSetClusterStatus(MTM_OUT_OF_CLIQUE);
+		return;
+	}
+
 	switch (Mtm->status)
 	{
 		case MTM_IN_MINORITY:
-			if (nConnected >= Mtm->nAllNodes/2+1)
+		case MTM_OUT_OF_CLIQUE:
+			if ( (nConnected >= Mtm->nAllNodes/2+1) && /* majority */
+				 BIT_CHECK(Mtm->clique, MtmNodeId-1) ) /* in clique */
 			{
 				MtmSetClusterStatus(MTM_RECOVERY);
 				return;
@@ -113,12 +120,19 @@ MtmCheckState(void)
 		case MTM_RECOVERY:
 			if (!BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId-1))
 			{
-				BIT_SET(Mtm->originLockNodeMask, MtmNodeId-1); // kk trick
+				BIT_SET(Mtm->originLockNodeMask, MtmNodeId-1); // kk trick, XXXX: log that
 				MtmSetClusterStatus(MTM_RECOVERED);
 				return;
 			}
 			break;
 
+		/*
+		 * Switching from MTM_RECOVERY to MTM_ONLINE requires two state
+		 * re-checks. If by the time of MTM_RECOVERY -> MTM_RECOVERED all
+		 * senders/receiveirs already atarted we can stuck in MTM_RECOVERED
+		 * state. Hence call MtmCheckState() from periodic status check while
+		 * in MTM_RECOVERED state.
+		 */
 		case MTM_RECOVERED:
 			if (nReceivers == nEnabled-1 && nSenders == nEnabled-1 && nEnabled == nConnected)
 			{
@@ -149,33 +163,21 @@ MtmStateProcessNeighborEvent(int node_id, MtmNeighborEvent ev)
 			break;
 
 		case MTM_NEIGHBOR_WAL_RECEIVER_START:
+			BIT_SET(Mtm->pglogicalReceiverMask, node_id - 1);
 			BIT_CLEAR(Mtm->originLockNodeMask, MtmNodeId-1);
-			if (!BIT_CHECK(Mtm->pglogicalReceiverMask, node_id - 1))
-				BIT_SET(Mtm->pglogicalReceiverMask, node_id - 1);
 			break;
 
 		case MTM_NEIGHBOR_WAL_SENDER_START_RECOVERY:
-			if (!BIT_CHECK(Mtm->pglogicalSenderMask, node_id - 1))
-				BIT_SET(Mtm->pglogicalSenderMask, node_id - 1);
+			// BIT_SET(Mtm->pglogicalSenderMask, node_id - 1);
 			break;
 
 		case MTM_NEIGHBOR_WAL_SENDER_START_RECOVERED:
+			BIT_SET(Mtm->pglogicalSenderMask, node_id - 1);
 			MtmEnableNode(node_id);
-			if (!BIT_CHECK(Mtm->pglogicalSenderMask, node_id - 1))
-				BIT_SET(Mtm->pglogicalSenderMask, node_id - 1);
-			break;
-
-		case MTM_NEIGHBOR_WAL_SENDER_START_NORMAL:
-			if (!BIT_CHECK(Mtm->pglogicalSenderMask, node_id - 1))
-				BIT_SET(Mtm->pglogicalSenderMask, node_id - 1);
 			break;
 
 		case MTM_NEIGHBOR_RECOVERY_CAUGHTUP:
-			if (BIT_CHECK(Mtm->originLockNodeMask, node_id-1))
-			{
-				Assert(BIT_CHECK(Mtm->disabledNodeMask, node_id - 1));
-				BIT_CLEAR(Mtm->originLockNodeMask, node_id - 1);
-			}
+			BIT_CLEAR(Mtm->originLockNodeMask, node_id - 1);
 			MtmEnableNode(node_id);
 			break;
 
@@ -193,15 +195,18 @@ MtmStateProcessEvent(MtmEvent ev)
 	MtmLock(LW_EXCLUSIVE);
 	switch (ev)
 	{
-		case MTM_REMOTE_DISABLE:
 		case MTM_CLIQUE_DISABLE:
+			BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
+			Mtm->recoveryCount++; /* this will restart replication connection */
+			break;
+
+		case MTM_REMOTE_DISABLE:
 		case MTM_CLIQUE_MINORITY:
 			break;
 
 		case MTM_ARBITER_RECEIVER_START:
 			MtmOnNodeConnect(MtmNodeId);
 			break;
-
 
 		case MTM_RECOVERY_START1:
 		case MTM_RECOVERY_START2:
@@ -249,7 +254,7 @@ void MtmDisableNode(int nodeId)
 	Mtm->nodes[nodeId-1].lastStatusChangeTime = MtmGetSystemTime();
 	Mtm->nodes[nodeId-1].lastHeartbeat = 0; /* defuse watchdog until first heartbeat is received */
 
-	if (Mtm->nLiveNodes >= Mtm->nAllNodes/2+1) {
+	if (Mtm->status == MTM_ONLINE) {
 		/* Make decision about prepared transaction status only in quorum */
 		MtmLock(LW_EXCLUSIVE);
 		MtmPollStatusOfPreparedTransactionsForDisabledNode(nodeId);
@@ -298,6 +303,8 @@ void MtmOnNodeDisconnect(int nodeId)
 
 	MtmCheckState();
 	MtmUnlock();
+
+	// MtmRefreshClusterStatus();
 }
 
 void MtmOnNodeConnect(int nodeId)
@@ -313,6 +320,8 @@ void MtmOnNodeConnect(int nodeId)
 
 	MtmCheckState();
 	MtmUnlock();
+
+	// MtmRefreshClusterStatus();
 }
 
 void MtmReconnectNode(int nodeId)
@@ -354,93 +363,73 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix)
 void
 MtmRefreshClusterStatus()
 {
-	nodemask_t mask, newClique, disabled;
+	nodemask_t mask, newClique, oldClique, disabled;
 	nodemask_t matrix[MAX_NODES];
 	int cliqueSize;
-	nodemask_t oldClique = ~Mtm->disabledNodeMask & (((nodemask_t)1 << Mtm->nAllNodes)-1);
-	int i; //, nVotingNodes;
+	nodemask_t trivialClique = ~SELF_CONNECTIVITY_MASK & (((nodemask_t)1 << Mtm->nAllNodes)-1);
+	int i;
 
-
-	// if (SELF_CONNECTIVITY_MASK != Mtm->disabledNodeMask)
-	// 	MtmStateProcessEvent(MTM_RECOVERY_START2);
-	MtmCheckState();
-
-	return;
-
-
-
-
-
+	/*
+	 * Periodical check that we are still in RECOVERED state.
+	 * See comment to MTM_RECOVERED -> MTM_ONLINE transition in MtmCheckState()
+	 */
+	if (Mtm->status == MTM_RECOVERED)
+		MtmCheckState();
 
 	MtmBuildConnectivityMatrix(matrix);
 	newClique = MtmFindMaxClique(matrix, Mtm->nAllNodes, &cliqueSize);
 
-	if (newClique == oldClique) {
-		/* Nothing is changed */
+	if (newClique == Mtm->clique)
 		return;
-	}
 
+	MTM_LOG1("[STATE] Old clique: %s", maskToString(Mtm->clique, Mtm->nAllNodes));
+
+	/*
+	 * Otherwise make sure that all nodes have a chance to replicate their connectivity
+	 * mask and we have the "consistent" picture. Obviously we can not get true consistent
+	 * snapshot, but at least try to wait heartbeat send timeout is expired and
+	 * connectivity graph is stabilized.
+	 */
 	do {
-		/* Otherwise make sure that all nodes have a chance to replicate their connectivity mask and we have the "consistent" picture.
-		 * Obviously we can not get true consistent snapshot, but at least try to wait heartbeat send timeout is expired and
-		 * connectivity graph is stabilized.
-		 */
 		oldClique = newClique;
-		MtmSleep(MSEC_TO_USEC(MtmHeartbeatRecvTimeout)*2); /* double timeout to consider the worst case when heartbeat receive interval is added with refresh cluster status interval */
+		/*
+		 * Double timeout to consider the worst case when heartbeat receive interval is added
+		 * with refresh cluster status interval.
+		 */
+		MtmSleep(MSEC_TO_USEC(MtmHeartbeatRecvTimeout)*2);
 		MtmBuildConnectivityMatrix(matrix);
 		newClique = MtmFindMaxClique(matrix, Mtm->nAllNodes, &cliqueSize);
 	} while (newClique != oldClique);
 
-	// if (newClique & Mtm->deadNodeMask) {
-	// 	Assert(cliqueSize == 1);
-	// 	newClique = 0;
-	// 	if (!BIT_CHECK(Mtm->deadNodeMask, MtmNodeId-1)) {
-	// 		BIT_SET(newClique, MtmNodeId-1);
-	// 		cliqueSize = 1;
-	// 	} else {
-	// 		cliqueSize = 0;
-	// 	}
-	// }
+	MTM_LOG1("[STATE] New clique: %s", maskToString(oldClique, Mtm->nAllNodes));
 
-	// nVotingNodes = MtmGetNumberOfVotingNodes();
-	// if (cliqueSize >= nVotingNodes/2+1 || (cliqueSize == (nVotingNodes+1)/2 && MtmMajorNode)) { /* have quorum */
-		// fprintf(stderr, "Old mask: ");
-		// for (i = 0; i <	 Mtm->nAllNodes; i++) {
-		// 	putc(BIT_CHECK(Mtm->disabledNodeMask, i) ? '-' : '+', stderr);
-		// }
-		// putc('\n', stderr);
-		// fprintf(stderr, "New mask: ");
-		// for (i = 0; i <	 Mtm->nAllNodes; i++) {
-		// 	putc(BIT_CHECK(newClique, i) ? '+' : '-', stderr);
-		// }
-		// putc('\n', stderr);
+	if (newClique != trivialClique)
+	{
+		MTM_LOG1("[STATE] NONTRIVIAL CLIQUE!");
+	}
 
-		MTM_LOG1("[STATE] Find clique %llx, disabledNodeMask %llx", newClique, Mtm->disabledNodeMask);
-		MtmLock(LW_EXCLUSIVE);
+	/*
+	 * We are using clique only to disable nodes.
+	 * So find out what node should be disabled and disable them.
+	 */
+	MtmLock(LW_EXCLUSIVE);
 
+	Mtm->clique = newClique;
 
-		// XXXX: compare to old?
-		disabled = ~newClique & (((nodemask_t)1 << Mtm->nAllNodes)-1) & ~Mtm->disabledNodeMask; /* new disabled nodes mask */
+	for (i = 0; i < Mtm->nAllNodes; i++)
+	{
+		bool old_status = BIT_CHECK(Mtm->disabledNodeMask, i);
+		bool new_status = BIT_CHECK(~newClique, i);
 
-		if (disabled) {
-			for (i = 0, mask = disabled; mask != 0; i++, mask >>= 1) {
-				if (mask & 1) {
-					if ( i+1 == MtmNodeId )
-						MtmStateProcessEvent(MTM_CLIQUE_DISABLE);
-					else
-						MtmStateProcessNeighborEvent(i+1, MTM_NEIGHBOR_CLIQUE_DISABLE);
-				}
-			}
+		if (new_status && new_status != old_status)
+		{
+			if ( i+1 == MtmNodeId )
+				MtmStateProcessEvent(MTM_CLIQUE_DISABLE);
+			else
+				MtmStateProcessNeighborEvent(i+1, MTM_NEIGHBOR_CLIQUE_DISABLE);
 		}
-		MtmUnlock();
+	}
 
-		// MtmStateProcessEvent(MTM_ARBITER_RECEIVER_START);
-
-	// 	if (!BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId-1) && (Mtm->status == MTM_OFFLINE))
-	// 	{
-	// 		MtmStateProcessEvent(MTM_RECOVERY_START2);
-	// 	}
-	// } else {
-	// 	MtmStateProcessEvent(MTM_CLIQUE_MINORITY);
-	// }
+	MtmCheckState();
+	MtmUnlock();
 }
