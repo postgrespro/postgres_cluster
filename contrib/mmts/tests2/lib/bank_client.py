@@ -127,6 +127,20 @@ class MtmClient(object):
         print(hashes)
         return (len(hashes) == 1)
 
+    def no_prepared_tx(self):
+        n_prepared = 0
+
+        for dsn in self.dsns:
+            con = psycopg2.connect(dsn)
+            cur = con.cursor()
+            cur.execute("select count(*) from pg_prepared_xacts;")
+            n_prepared += int(cur.fetchone()[0])
+            cur.close()
+            con.close()
+
+        print("n_prepared = %d" % (n_prepared))
+        return (n_prepared)
+
     @asyncio.coroutine
     def status(self):
         while self.running:
@@ -223,8 +237,8 @@ class MtmClient(object):
         total = yield from cur.fetchone()
         if total[0] != 0:
             agg.isolation += 1
-            print(self.oops)
-            print('Isolation error, total = ', total[0])
+            # print(self.oops)s
+            # print('Isolation error, total = ', total[0])
             # yield from cur.execute('select * from mtm.get_nodes_state()')
             # nodes_state = yield from cur.fetchall()
             # for i, col in enumerate(self.nodes_state_fields):

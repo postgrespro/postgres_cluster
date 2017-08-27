@@ -991,7 +991,7 @@ static void MtmReceiver(Datum arg)
 					  default:
 						break;
 					}
-					if (BIT_CHECK(msg->disabledNodeMask, node-1)) {
+					if (BIT_CHECK(msg->disabledNodeMask, node-1) || BIT_CHECK(Mtm->disabledNodeMask, node-1)) {
 						MTM_ELOG(WARNING, "Ignore message from dead node %d\n", node);
 						continue;
 					}

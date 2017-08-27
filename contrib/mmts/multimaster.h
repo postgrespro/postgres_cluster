@@ -108,7 +108,7 @@ typedef enum
 /* Identifier of global transaction */
 typedef struct
 {
-	int node;          /* Zero based index of node initiating transaction */
+	int node;          /* One based id of node initiating transaction */
 	TransactionId xid; /* Transaction ID at this node */
 } GlobalTransactionId;
 
@@ -137,6 +137,7 @@ typedef enum
 	MTM_RECOVERY,       /* Node is in recovery process */
 	MTM_RECOVERED,      /* Node is recovered by is not yet switched to ONLINE because not all sender/receivers are restarted */
 	MTM_IN_MINORITY,    /* Node is out of quorum */
+	MTM_OUT_OF_CLIQUE,  /* Node is out of cluster by clique detector */
 	MTM_OUT_OF_SERVICE  /* Node is not available to to critical, non-recoverable error */
 } MtmNodeStatus;
 
@@ -288,6 +289,7 @@ typedef struct
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* Bitmask of disabled nodes */
+	nodemask_t clique;                 /* Bitmask of nodes that are connected and we allowed to connect/send wal/receive wal with them */
 	nodemask_t deadNodeMask;           /* Bitmask of nodes considered as dead by referee */
 	nodemask_t recoveredNodeMask;      /* Bitmask of nodes recoverd after been reported as dead by referee */
 	nodemask_t stalledNodeMask;        /* Bitmask of stalled nodes (node with dropped replication slot which makes it not possible automatic recovery of such node) */
@@ -415,7 +417,6 @@ extern void  MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* co
 extern void  MtmSetupReplicationHooks(struct PGLogicalHooks* hooks);
 extern bool  MtmRecoveryCaughtUp(int nodeId, lsn_t walEndPtr);
 extern void  MtmCheckRecoveryCaughtUp(int nodeId, lsn_t slotLSN);
-extern void  MtmRecoveryCompleted(void);
 extern void  MtmMakeTableLocal(char const* schema, char const* name);
 extern void  MtmHandleApplyError(void);
 extern void  MtmUpdateLsnMapping(int nodeId, lsn_t endLsn);

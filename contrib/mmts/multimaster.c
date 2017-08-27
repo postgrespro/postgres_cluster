@@ -221,6 +221,7 @@ char const* const MtmNodeStatusMnem[] =
 	"Recovery",
 	"Recovered",
 	"InMinor",
+	"OutOfClique",
 	"OutOfService"
 };
 
@@ -366,6 +367,7 @@ void MtmLock(LWLockMode mode)
 		if (mode == LW_EXCLUSIVE) {
 			Assert(MtmLockCount == 0);
 			Mtm->lastLockHolder = MyProcPid;
+			Assert(MyProcPid);
 			MtmLockCount = 1;
 		}
 	}
@@ -1145,7 +1147,6 @@ bool MtmWatchdog(timestamp_t now)
 				MTM_LOG1("[STATE] Node %i: Disconnect due to heartbeat timeout (%d msec)",
 					 i+1, (int)USEC_TO_MSEC(now - Mtm->nodes[i].lastHeartbeat));
 				MtmOnNodeDisconnect(i+1);
-				MtmDisableNode(i+1);
 				allAlive = false;
 			}
 		}
@@ -1166,8 +1167,11 @@ void MtmPrecommitTransaction(char const* gid)
 			MTM_ELOG(WARNING, "MtmPrecommitTransaction: transaction '%s' is not found", gid);
 		} else {
 			MtmTransState* ts = tm->state;
-			Assert(ts != NULL);
-			if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
+			// Assert(ts != NULL);
+			if (ts == NULL) {
+				MTM_ELOG(WARNING, "MtmPrecommitTransaction: transaction '%s' is not yet prepared, status %s", gid, MtmTxnStatusMnem[tm->status]);
+				MtmUnlock();
+			} else if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
 				ts->status = TRANSACTION_STATUS_UNKNOWN;
 				ts->csn = MtmAssignCSN();
 				MtmAdjustSubtransactions(ts);
@@ -1489,6 +1493,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				if (!(ts->status == TRANSACTION_STATUS_UNKNOWN
 					  || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status == MTM_RECOVERY)))
 				{
+					MtmUnlock();
 					MTM_ELOG(ERROR, "Attempt to commit %s transaction %s (%llu)",
 						 MtmTxnStatusMnem[ts->status], ts->gid, (long64)ts->xid);
 				}
@@ -2014,15 +2019,19 @@ static int64 MtmGetSlotLag(int nodeId)
  */
 bool MtmIsRecoveredNode(int nodeId)
 {
-	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
-		if (!MtmIsRecoverySession) {
-			MTM_ELOG(ERROR, "Node %d is marked as disabled but is not in recovery mode", nodeId);
-		}
-		return true;
-	} else {
-		MtmIsRecoverySession = false; /* recovery is completed */
-		return false;
-	}
+	if (!BIT_CHECK(Mtm->disabledNodeMask, nodeId-1))
+		Assert(!MtmIsRecoverySession);
+
+	return BIT_CHECK(Mtm->disabledNodeMask, nodeId-1) && MtmIsRecoverySession;
+	// if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
+	// 	if (!MtmIsRecoverySession) {
+	// 		MTM_ELOG(WARNING, "Node %d is marked as disabled but is not in recovery mode", nodeId);
+	// 	}
+	// 	return true;
+	// } else {
+	// 	MtmIsRecoverySession = false; /* recovery is completed */
+	// 	return false;
+	// }
 }
 
 /*
@@ -2048,7 +2057,7 @@ void MtmCheckRecoveryCaughtUp(int nodeId, lsn_t slotLSN)
 			 */
 			MTM_LOG1("Node %d is almost caught-up: slot position %llx, WAL position %llx, active transactions %d",
 				 nodeId, slotLSN, walLSN, Mtm->nActiveTransactions);
-			BIT_SET(Mtm->originLockNodeMask, nodeId-1);
+			BIT_SET(Mtm->originLockNodeMask, nodeId-1); // XXXX: log that
 		} else {
 			MTM_LOG2("Continue recovery of node %d, slot position %llx, WAL position %llx,"
 					 " WAL sender position %llx, lockers %llx, active transactions %d", nodeId, slotLSN,
@@ -2070,6 +2079,7 @@ bool MtmRecoveryCaughtUp(int nodeId, lsn_t walEndPtr)
 	if (MtmIsRecoveredNode(nodeId) && Mtm->nActiveTransactions == 0) {
 		MtmStateProcessNeighborEvent(nodeId, MTM_NEIGHBOR_RECOVERY_CAUGHTUP);
 		caughtUp = true;
+		MtmIsRecoverySession = false;
 	}
 	MtmUnlock();
 	return caughtUp;
@@ -2087,6 +2097,7 @@ MtmLockCluster(void)
 	}
 	MtmLock(LW_EXCLUSIVE);
 	if (BIT_CHECK(Mtm->originLockNodeMask, MtmNodeId-1)) {
+		MtmUnlock();
 		elog(ERROR, "There is already pending exclusive lock");
 	}
 	BIT_SET(Mtm->originLockNodeMask, MtmNodeId-1);
@@ -2339,6 +2350,7 @@ static void MtmInitialize()
 		Mtm->nLiveNodes = 0; //MtmNodes;
 		Mtm->nAllNodes = MtmNodes;
 		Mtm->disabledNodeMask = 7; //XXXX
+		Mtm->clique = 7; // XXXX
 		Mtm->stalledNodeMask = 0;
 		Mtm->stoppedNodeMask = 0;
 		Mtm->deadNodeMask = 0;
@@ -2371,7 +2383,7 @@ static void MtmInitialize()
 		for (i = 0; i < MtmNodes; i++) {
 			Mtm->nodes[i].oldestSnapshot = 0;
 			Mtm->nodes[i].disabledNodeMask = 0;
-			Mtm->nodes[i].connectivityMask = 7;
+			Mtm->nodes[i].connectivityMask = 7; // XXXX
 			Mtm->nodes[i].lockGraphUsed = 0;
 			Mtm->nodes[i].lockGraphAllocated = 0;
 			Mtm->nodes[i].lockGraphData = NULL;
@@ -3214,17 +3226,56 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 		Mtm->preparedTransactionsLoaded = true;
 	}
 
-	while (BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId - 1) ||
-			BIT_CHECK(SELF_CONNECTIVITY_MASK, nodeId - 1))
-	{
-		if (*shutdown)
-		{
-			MtmUnlock();
-			return REPLMODE_EXIT;
-		}
+	// while (BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId - 1) ||
+	// 		 BIT_CHECK(SELF_CONNECTIVITY_MASK, nodeId - 1) ||
+	// 		!BIT_CHECK(Mtm->clique, nodeId - 1) ||
+	// 		!BIT_CHECK(Mtm->clique, MtmNodeId - 1) )
+	// {
+	// 	if (*shutdown)
+	// 	{
+	// 		MtmUnlock();
+	// 		return REPLMODE_EXIT;
+	// 	}
 
-		if ((Mtm->recoverySlot == 0 || Mtm->recoverySlot == nodeId) &&
-			(!BIT_CHECK(SELF_CONNECTIVITY_MASK, nodeId - 1)))
+	// 	if ((Mtm->recoverySlot == 0 || Mtm->recoverySlot == nodeId) &&
+	// 		(!BIT_CHECK(SELF_CONNECTIVITY_MASK, nodeId - 1)))
+	// 	{
+	// 		/* Lock on us */
+	// 		Mtm->recoverySlot = nodeId;
+	// 		MtmPollStatusOfPreparedTransactions();
+	// 		MtmUnlock();
+	// 		return REPLMODE_RECOVERY;
+	// 	}
+
+	// 	MTM_LOG1("Replication to node %d is pending: recovery node=%d, donor node=%d, connectivity mask=%llx, disabled mask=%llx",
+	// 			nodeId, Mtm->recoverySlot, Mtm->donorNodeId, SELF_CONNECTIVITY_MASK, Mtm->disabledNodeMask);
+
+	// 	MtmUnlock();
+	// 	/* delay opening of other slots until recovery is completed */
+	// 	MtmSleep(STATUS_POLL_DELAY);
+	// 	MtmLock(LW_EXCLUSIVE);
+	// }
+
+	// MtmUnlock();
+
+	// return REPLMODE_RECOVERED;
+
+	/* Await until node is connected and both receiver and sender are in clique */
+	while (BIT_CHECK(SELF_CONNECTIVITY_MASK, nodeId - 1) ||
+			!BIT_CHECK(Mtm->clique, nodeId - 1) ||
+			!BIT_CHECK(Mtm->clique, MtmNodeId - 1) )
+	{
+		MtmUnlock();
+		if (*shutdown)
+			return REPLMODE_EXIT;
+		MtmSleep(STATUS_POLL_DELAY);
+		MtmLock(LW_EXCLUSIVE);
+	}
+
+	if (BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId - 1))
+	{
+		/* Ok, then start recovery by luckiest walreceiver */
+		if (Mtm->recoverySlot == 0 || Mtm->recoverySlot == nodeId)
 		{
 			/* Lock on us */
 			Mtm->recoverySlot = nodeId;
@@ -3233,87 +3284,19 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 			return REPLMODE_RECOVERY;
 		}
 
-		MTM_LOG1("Replication to node %d is pending: recovery node=%d, donor node=%d, connectivity mask=%llx, disabled mask=%llx",
-				nodeId, Mtm->recoverySlot, Mtm->donorNodeId, SELF_CONNECTIVITY_MASK, Mtm->disabledNodeMask);
-
-		MtmUnlock();
-		/* delay opening of other slots until recovery is completed */
-		MtmSleep(STATUS_POLL_DELAY);
-		MtmLock(LW_EXCLUSIVE);
+		/* And force less lucky walreceivers wait until recovery is completed */
+		while (BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId - 1))
+		{
+			MtmUnlock();
+			if (*shutdown)
+				return REPLMODE_EXIT;
+			MtmSleep(STATUS_POLL_DELAY);
+			MtmLock(LW_EXCLUSIVE);
+		}
 	}
 
 	MtmUnlock();
-
 	return REPLMODE_RECOVERED;
-
-
-
-
-
-	// while ((Mtm->status != MTM_CONNECTED && Mtm->status != MTM_RECOVERED && Mtm->status != MTM_ONLINE)
-	// 	   || BIT_CHECK(Mtm->disabledNodeMask, nodeId-1))
-	// // while (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1))
-	// {
-	// 	if (*shutdown)
-	// 	{
-	// 		MtmUnlock();
-	// 		return REPLMODE_EXIT;
-	// 	}
-	// 	// /* We are not interested in receiving any deteriorated logical messages from recovered node, so recreate slot */
-	// 	// if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
-	// 	// 	mode = REPLMODE_CREATE_NEW;
-	// 	// }
-	// 	// MTM_LOG2("%d: receiver slot mode %s", MyProcPid, MtmNodeStatusMnem[Mtm->status]);
-
-	// 	if (Mtm->status == MTM_RECOVERY) {
-	// 		mode = REPLMODE_RECOVERED;
-	// 		/* Choose node for recovery if
-	// 		 * 1. It is not chosen yet or the same node was chosen before
-	// 		 * 2. It is donor node or there is no donor node
-	// 		 * 3. Connections with all other live nodes were established
-	// 		 */
-	// 		if ((Mtm->recoverySlot == 0 || Mtm->recoverySlot == nodeId)
-	// 			&& (Mtm->donorNodeId == MtmNodeId || Mtm->donorNodeId == nodeId)
-	// 			&& (SELF_CONNECTIVITY_MASK & ~Mtm->disabledNodeMask) == 0)
-	// 		{
-	// 			/* Choose for recovery first available slot or slot of donor node (if any) */
-	// 			if (Mtm->nAllNodes >= 3) {
-	// 				MTM_ELOG(WARNING, "Process %d starts recovery from node %d restartLSNs={%llx, %llx, %llx}",
-	// 					 MyProcPid, nodeId, Mtm->nodes[0].restartLSN, Mtm->nodes[1].restartLSN, Mtm->nodes[2].restartLSN);
-	// 			} else {
-	// 				MTM_ELOG(WARNING, "Process %d starts recovery from node %d", MyProcPid, nodeId);
-	// 			}
-	// 			Mtm->recoverySlot = nodeId;
-	// 			// Mtm->nReceivers = 0;
-	// 			// Mtm->nSenders = 0;
-	// 			// Mtm->recoveryCount += 1;
-	// 			// Mtm->pglogicalReceiverMask = 0;
-	// 			// Mtm->pglogicalSenderMask = 0;
-	// 			MtmPollStatusOfPreparedTransactions();
-	// 			MtmUnlock();
-	// 			return REPLMODE_RECOVERY;
-	// 		}
-	// 	}
-	// 	MTM_LOG1("Replication to node %d is pending: recovery node=%d, donor node=%d, connectivity mask=%llx, disabled mask=%llx",
-	// 			 nodeId, Mtm->recoverySlot, Mtm->donorNodeId, SELF_CONNECTIVITY_MASK, Mtm->disabledNodeMask);
-	// 	MtmUnlock();
-	// 	/* delay opening of other slots until recovery is completed */
-	// 	MtmSleep(STATUS_POLL_DELAY);
-	// 	MtmLock(LW_EXCLUSIVE);
-	// }
-	// if (Mtm->status == MTM_RECOVERED) {
-	// 	mode = REPLMODE_RECOVERED;
-	// }
-	// // if (mode == REPLMODE_RECOVERED) {
-	// // 	MTM_LOG1("%d: Restart replication from node %d after end of recovery", MyProcPid, nodeId);
-	// // } else if (mode == REPLMODE_CREATE_NEW) {
-	// // 	MTM_LOG1("%d: Start replication from recovered node %d", MyProcPid, nodeId);
-	// // } else {
-	// // 	MTM_LOG1("%d: Continue replication from node %d", MyProcPid, nodeId);
-	// // }
-	// BIT_SET(Mtm->reconnectMask, nodeId-1); /* arbiter should try to reestablish connection with this node */
-	// MtmUnlock();
-	// return mode;
 }
 
 static bool MtmIsBroadcast()
