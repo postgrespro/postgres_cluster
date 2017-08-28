@@ -2029,19 +2029,15 @@ static int64 MtmGetSlotLag(int nodeId)
  */
 bool MtmIsRecoveredNode(int nodeId)
 {
-	if (!BIT_CHECK(Mtm->disabledNodeMask, nodeId-1))
-		Assert(!MtmIsRecoverySession);
-
-	return BIT_CHECK(Mtm->disabledNodeMask, nodeId-1) && MtmIsRecoverySession;
-	// if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
-	// 	if (!MtmIsRecoverySession) {
-	// 		MTM_ELOG(WARNING, "Node %d is marked as disabled but is not in recovery mode", nodeId);
-	// 	}
-	// 	return true;
-	// } else {
-	// 	MtmIsRecoverySession = false; /* recovery is completed */
-	// 	return false;
-	// }
+	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
+		if (!MtmIsRecoverySession) {
+			MTM_ELOG(WARNING, "Node %d is marked as disabled but is not in recovery mode", nodeId);
+		}
+		return true;
+	} else {
+		MtmIsRecoverySession = false; /* recovery is completed */
+		return false;
+	}
 }
 
 /*
