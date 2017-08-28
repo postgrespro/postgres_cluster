@@ -38,7 +38,8 @@ usage(const char *progname)
 	printf(_("  %s [OPTION] [DATADIR]\n"), progname);
 	printf(_("\nOptions:\n"));
 	printf(_(" [-D] DATADIR    data directory\n"));
-	printf(_(" [-c]			   update catversion in pg_control to the verision of the current binary\n"));
+	printf(_(" [-c]            update catversion in pg_control to the verision of the current binary\n"));
+	printf(_(" [-m]            check if catversion in pg_control matches catverision of the current binary. Return 0 on match, 1 otherwise.\n"));
 	printf(_("  -V, --version  output version information, then exit\n"));
 	printf(_("  -?, --help     show this help, then exit\n"));
 	printf(_("\nIf no data directory (DATADIR) is specified, "
@@ -101,6 +102,7 @@ main(int argc, char *argv[])
 	char		xlogfilename[MAXFNAMELEN];
 	int			c;
 	bool		reset_catversion = false;
+	bool		check_catversion_match = false;
 
 	set_pglocale_pgservice(argv[0], PG_TEXTDOMAIN("pg_controldata"));
 
@@ -120,7 +122,7 @@ main(int argc, char *argv[])
 		}
 	}
 
-	while ((c = getopt(argc, argv, "D:c")) != -1)
+	while ((c = getopt(argc, argv, "D:c:m")) != -1)
 	{
 		switch (c)
 		{
@@ -130,7 +132,9 @@ main(int argc, char *argv[])
 			case 'c':
 				reset_catversion = true;
 				break;
-
+			case 'm':
+				check_catversion_match = true;
+				break;
 			default:
 				fprintf(stderr, _("Try \"%s --help\" for more information.\n"), progname);
 				exit(1);
@@ -164,6 +168,14 @@ main(int argc, char *argv[])
 
 	/* get a copy of the control file */
 	ControlFile = get_controlfile(DataDir, progname);
+
+	if (check_catversion_match)
+	{
+		if (ControlFile->catalog_version_no == CATALOG_VERSION_NO)
+			return 0;
+		else
+			return 1;
+	}
 
 	if (reset_catversion)
 	{
