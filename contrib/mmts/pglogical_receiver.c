@@ -225,6 +225,8 @@ pglogical_receiver_main(Datum main_arg)
 	char* connString = psprintf("replication=database %s", Mtm->nodes[nodeId-1].con.connStr);
 	static PortalData fakePortal;
 
+	MtmBackgroundWorker = true;
+
 	ByteBufferAlloc(&buf);
 
 	slotName = psprintf(MULTIMASTER_SLOT_PATTERN, MtmNodeId);
@@ -481,8 +483,8 @@ pglogical_receiver_main(Datum main_arg)
 					{
 						int64 now = feGetCurrentTimestamp();
 
-						/* Leave is feedback is not sent properly */
 						MtmUpdateLsnMapping(nodeId, walEnd);
+						/* Leave if feedback is not sent properly */
 						if (!sendFeedback(conn, now, nodeId)) {
 							goto OnError;
 						}
@@ -623,7 +625,6 @@ pglogical_receiver_main(Datum main_arg)
 				{
 					int64 now = feGetCurrentTimestamp();
 
-					/* Leave is feedback is not sent properly */
 					MtmUpdateLsnMapping(nodeId, INVALID_LSN);
 					sendFeedback(conn, now, nodeId);
 				}
@@ -719,4 +720,3 @@ void MtmStartReceivers(void)
 		}
 	}
 }
-

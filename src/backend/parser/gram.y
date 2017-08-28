@@ -413,7 +413,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
 
 %type <boolean> opt_autonomous
 %type <boolean> opt_instead
-%type <boolean> opt_unique opt_concurrently opt_verbose opt_full
+%type <boolean> opt_unique opt_concurrently opt_verbose opt_full opt_local
 %type <boolean> opt_freeze opt_default opt_recheck
 %type <defelt>	opt_binary opt_oids copy_delimiter
 
@@ -2855,6 +2855,10 @@ copy_opt_item:
 			| CSV
 				{
 					$$ = makeDefElem("format", (Node *)makeString("csv"));
+				}
+			| LOCAL
+				{
+					$$ = makeDefElem("local", (Node *)makeInteger(TRUE));
 				}
 			| HEADER_P
 				{
@@ -9650,7 +9654,7 @@ cluster_index_specification:
  *
  *****************************************************************************/
 
-VacuumStmt: VACUUM opt_full opt_freeze opt_verbose
+VacuumStmt: VACUUM opt_full opt_freeze opt_verbose opt_local
 				{
 					VacuumStmt *n = makeNode(VacuumStmt);
 					n->options = VACOPT_VACUUM;
@@ -9660,11 +9664,13 @@ VacuumStmt: VACUUM opt_full opt_freeze opt_verbose
 						n->options |= VACOPT_FREEZE;
 					if ($4)
 						n->options |= VACOPT_VERBOSE;
+					if ($5)
+						n->options |= VACOPT_LOCAL;
 					n->relation = NULL;
 					n->va_cols = NIL;
 					$$ = (Node *)n;
 				}
-			| VACUUM opt_full opt_freeze opt_verbose qualified_name
+			| VACUUM opt_full opt_freeze opt_verbose opt_local qualified_name
 				{
 					VacuumStmt *n = makeNode(VacuumStmt);
 					n->options = VACOPT_VACUUM;
@@ -9674,13 +9680,15 @@ VacuumStmt: VACUUM opt_full opt_freeze opt_verbose
 						n->options |= VACOPT_FREEZE;
 					if ($4)
 						n->options |= VACOPT_VERBOSE;
-					n->relation = $5;
+					if ($5)
+						n->options |= VACOPT_LOCAL;
+					n->relation = $6;
 					n->va_cols = NIL;
 					$$ = (Node *)n;
 				}
-			| VACUUM opt_full opt_freeze opt_verbose AnalyzeStmt
+			| VACUUM opt_full opt_freeze opt_verbose opt_local AnalyzeStmt
 				{
-					VacuumStmt *n = (VacuumStmt *) $5;
+					VacuumStmt *n = (VacuumStmt *) $6;
 					n->options |= VACOPT_VACUUM;
 					if ($2)
 						n->options |= VACOPT_FULL;
@@ -9688,6 +9696,8 @@ VacuumStmt: VACUUM opt_full opt_freeze opt_verbose
 						n->options |= VACOPT_FREEZE;
 					if ($4)
 						n->options |= VACOPT_VERBOSE;
+					if ($5)
+						n->options |= VACOPT_LOCAL;
 					$$ = (Node *)n;
 				}
 			| VACUUM '(' vacuum_option_list ')'
@@ -9770,6 +9780,10 @@ opt_full:	FULL									{ $$ = TRUE; }
 		;
 
 opt_freeze: FREEZE									{ $$ = TRUE; }
+			| /*EMPTY*/								{ $$ = FALSE; }
+		;
+
+opt_local: ONLY	LOCAL						        { $$ = TRUE; }
 			| /*EMPTY*/								{ $$ = FALSE; }
 		;
 

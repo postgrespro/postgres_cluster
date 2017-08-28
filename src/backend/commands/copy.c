@@ -1191,7 +1191,7 @@ ProcessCopyOptions(CopyState cstate,
 						 errmsg("argument to option \"%s\" must be a valid encoding name",
 								defel->defname)));
 		}
-		else
+		else if (strcmp(defel->defname, "local") != 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("option \"%s\" not recognized",
