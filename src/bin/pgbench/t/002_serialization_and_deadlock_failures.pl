@@ -649,7 +649,7 @@ sub test_pgbench_deadlock_failures_retry
 	my $pattern =
 		"client 0 sending SELECT pg_advisory_lock\\((\\d)\\);\n"
 	  . "(client 0 receiving\n)+"
-	  . "(|SELECT pg_advisory_lock\\(" . WAIT_PGBENCH_2 . "\\);\n)"
+	  . "(|client 0 sending SELECT pg_advisory_lock\\(" . WAIT_PGBENCH_2 . "\\);\n)"
 	  . "\\g2*"
 	  . "client 0 sending SELECT pg_advisory_lock\\((\\d)\\);\n"
 	  . "\\g2+"
