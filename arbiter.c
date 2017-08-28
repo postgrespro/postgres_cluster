@@ -709,10 +709,11 @@ static void MtmSender(Datum arg)
 {
 	int nNodes = MtmMaxNodes;
 	int i;
+	MtmBuffer* txBuffer;
 
 	MtmBackgroundWorker = true;
 
-	MtmBuffer* txBuffer = (MtmBuffer*)palloc0(sizeof(MtmBuffer)*nNodes);
+	txBuffer = (MtmBuffer*)palloc0(sizeof(MtmBuffer)*nNodes);
 	MTM_ELOG(LOG, "Start arbiter sender %d", MyProcPid);
 	InitializeTimeouts();
 
@@ -1154,4 +1155,3 @@ static void MtmReceiver(Datum arg)
 	}
 	proc_exit(1); /* force restart of this bgwroker */
 }
-
