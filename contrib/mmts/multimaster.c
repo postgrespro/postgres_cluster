@@ -1500,6 +1500,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 				if (!(ts->status == TRANSACTION_STATUS_UNKNOWN
 					  || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status == MTM_RECOVERY)))
 				{
+					MtmUnlock();
 					MTM_ELOG(ERROR, "Attempt to commit %s transaction %s (%llu)",
 						 MtmTxnStatusMnem[ts->status], ts->gid, (long64)ts->xid);
 				}
@@ -2128,7 +2129,7 @@ bool MtmIsRecoveredNode(int nodeId)
 {
 	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
 		if (!MtmIsRecoverySession) {
-			MTM_ELOG(ERROR, "Node %d is marked as disabled but is not in recovery mode", nodeId);
+			MTM_ELOG(WARNING, "Node %d is marked as disabled but is not in recovery mode", nodeId);
 		}
 		return true;
 	} else {
@@ -2222,6 +2223,7 @@ MtmLockCluster(void)
 	}
 	MtmLock(LW_EXCLUSIVE);
 	if (BIT_CHECK(Mtm->originLockNodeMask, MtmNodeId-1)) {
+		MtmUnlock();
 		elog(ERROR, "There is already pending exclusive lock");
 	}
 	BIT_SET(Mtm->originLockNodeMask, MtmNodeId-1);
