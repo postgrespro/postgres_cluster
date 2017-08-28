@@ -11,8 +11,8 @@
  </para>
 
  <para>
-  Our wiki, <ulink
-  url="http://wiki.postgresql.org/wiki/Working_with_Git"></ulink>,
+  PostgreSQL wiki, <ulink
+  url="https://wiki.postgresql.org/wiki/Working_with_Git"></ulink>,
   has some discussion on working with Git.
  </para>
 
@@ -20,9 +20,9 @@
    Note that building <productname>&productname;</productname> from the source
    repository requires reasonably up-to-date versions of <application>bison</>,
    <application>flex</>, and <application>Perl</>. These tools are not needed
-   to build from a distribution tarball since the files they are used to build
-   are included in the tarball.  Other tool requirements are the same as shown
-   in <xref linkend="installation">.
+   to build from a distribution tarball, because the files that these tools
+   are used to build are included in the tarball.  Other tool requirements
+   are the same as shown in <xref linkend="install-requirements">.
   </para>
 
  <sect1 id="git">
@@ -52,22 +52,22 @@
      To begin using the Git repository, make a clone of the official mirror:
 
 <programlisting>
-git clone git://git.postgresql.org/git/postgresql.git
+git clone git://github.com/postgrespro/postgrespro.git
 </programlisting>
 
      This will copy the full repository to your local machine, so it may take
      a while to complete, especially if you have a slow Internet connection.
-     The files will be placed in a new subdirectory <filename>postgresql</> of
+     The files will be placed in a new subdirectory <filename>postgrepro</> of
      your current directory.
     </para>
 
     <para>
      The Git mirror can also be reached via the HTTP protocol, if for example
      a firewall is blocking access to the Git protocol. Just change the URL
-     prefix to <literal>http</>, as in:
+     prefix to <literal>https</>, as in:
 
 <programlisting>
-git clone http://git.postgresql.org/git/postgresql.git
+git clone https://github.com/postgrespro/postgrespro.git
 </programlisting>
 
      The HTTP protocol is less efficient than the Git protocol, so it will be

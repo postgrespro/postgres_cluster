@@ -1,38 +1,278 @@
 <!-- doc/src/sgml/release-pro-9.6.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
+<sect1 id="release-pro-9-6-4-1">
+  <title>Postgres Pro 9.6.4.1</title>
+  <note>
+    <title>Release Date</title>
+    <simpara>2017-08-14</simpara>
+  </note>
+  <sect2>
+    <title>Overview</title>
+    <para>This release is based on <productname>Postgres Pro</productname>
+      <link linkend="release-pro-9-6-3-3">9.6.3.3</link> and
+      <productname>PostgreSQL</productname> <link linkend="release-9-6-4">9.6.4</link>.</para>
+    <para>Major enhancements over <productname>Postgres Pro</productname>
+      9.6.3.3 include:</para>
+    <itemizedlist>
+      <listitem>
+        <para>Fixed an incorrect catalog check in <literal>pg_dump</literal>
+          that has been added with the previous release.</para>
+      </listitem>
+      <listitem>
+        <para>Added distribution for Ubuntu 17.10.</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Migration to Version 9.6.4.1</title>
+    <para>A dump/restore using <xref linkend="app-pg-dumpall">, or
+        use of <xref linkend="pgupgrade">, is required for those
+        wishing to migrate data from any previous major release.
+    </para>
+    <para>A dump/restore is required for those running 9.6.3.3, because
+      catalog number format has been changed for better <productname>Postgres Pro</productname>
+      identification.</para>
+    <para>If you are upgrading from vanilla PostgreSQL 9.6.x, some
+      catalog changes should be applied.</para>    
+    <para>If you use binary packages, and your database is in the default
+      location, this upgrade should be performed automatically. If you've
+      compiled Postgres Pro from source or create your database in a
+      non-default location, running <literal>initdb</literal> manually, you
+      should run <literal>pgpro_upgrade</literal> script provided in this
+      distribution.
+    </para>
+    <para>Before running the script, you should stop postgres service.
+      Script should be run on behalf of the user owning the database
+      (typically postgres) and PGDATA environment variable should be
+      set to the directory where database resides.
+    </para>
+  </sect2>
+</sect1>
+<sect1 id="release-pro-9-6-3-3">
+  <title>Postgres Pro 9.6.3.3</title>
+  <note>
+    <title>Release Date</title>
+    <simpara>2017-07-27</simpara>
+  </note>
+  <sect2>
+  <title>Overview</title>
+    <para>This release is based on <productname>Postgres Pro</productname>
+      <link linkend="release-pro-9-6-3-2">9.6.3.2</link> and
+      <productname>PostgreSQL</productname> <link linkend="release-9-6-3">9.6.3</link>.</para>
+     
+    <para>Major enhancements over <productname>Postgres Pro</productname>
+      9.6.3.2 include:</para>
+    <itemizedlist>
+    <listitem>
+    <para>Fix potential data corruption in the online_analyze contrib
+    module</para>
+    </listitem>
+    <listitem>
+    <para>Module <link linkend="pg-pathman"><application>pg_pathman</application></link> updated to version 1.4.2</para>
+    </listitem>
+    </itemizedlist>
+  </sect2>
+</sect1>
+<sect1 id="release-pro-9-6-3-2">
+  <title>Postgres Pro 9.6.3.2</title>
+  <note>
+    <title>Release Date</title>
+    <simpara>2017-07-12</simpara>
+  </note>
+  <sect2>
+    <title>Overview</title>
+    <para>This release is based on <productname>Postgres Pro</productname>
+      <link linkend="release-pro-9-6-3-1">9.6.3.1</link> and
+      <productname>PostgreSQL</productname> <link linkend="release-9-6-3">9.6.3</link>.</para>
+    <para>Major enhancements over <productname>Postgres Pro</productname>
+      9.6.3.1 include:</para>
+    <itemizedlist>
+      <listitem>
+        <para>Updated the <link linkend="app-pgprobackup"><application>pg_probackup</application></link> backup manager to version 2.0 that includes the following new features:</para>
+        <itemizedlist>
+          <listitem>
+            <para>
+              Saving backups for different databases in a single backup catalog
+            </para>
+            <para>              
+              Storing backup data in a compressed state to save disk space
+            </para>
+            <para>
+              Extended logging settings
+            </para>
+          </listitem>
+        </itemizedlist>
+      </listitem>
+      <listitem>
+        <para>Added distribution for Debian 9.</para>
+      </listitem>
+      <listitem>
+        <para>Added upstream patches that fix potential data corruption during freeze.</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Migration to Version 9.6.3.2</title>
+    <para>A dump/restore using <xref linkend="app-pg-dumpall">, or
+        use of <xref linkend="pgupgrade">, is required for those
+        wishing to migrate data from any previous major release.
+    </para>
+    <para>A dump/restore is not required for those running 9.6.3.1.</para>
+    <para>However, if you are upgrading from vanilla PostgreSQL 9.6.x, some
+      catalog changes should be applied.
+    </para>
+    <para>If you use binary packages, and your database is in the default
+      location, this upgrade should be performed automatically. If you've
+      compiled Postgres Pro from source or create your database in a
+      non-default location, running <literal>initdb</literal> manually, you
+      should run <literal>pgpro_upgrade</literal> script provided in this
+      distribution.
+    </para>
+    <para>Before running the script, you should stop postgres service.
+      Script should be run on behalf of the user owning the database
+      (typically postgres) and PGDATA environment variable should be
+      set to the directory where database resides.
+    </para>
+  </sect2>
+</sect1>
+<sect1 id="release-pro-9-6-3-1">
+  <title>Postgres Pro 9.6.3.1</title>
+  <note>
+    <title>Release Date</title>
+    <simpara>2017-05-15</simpara>
+  </note>
+  <sect2>
+    <title>Overview</title>
+    <para>This release is based on <productname>Postgres Pro</productname>
+      <link linkend="release-pro-9-6-2-1">9.6.2.1</link> and
+      <productname>PostgreSQL</productname> <link linkend="release-9-6-3">9.6.3</link>.</para>
+    <para>Major enhancements over <productname>Postgres Pro</productname>
+      9.6.2.1 include:</para>
+    <itemizedlist>
+      <listitem>
+        <para>Added <link linkend="pg-tsparser"><application>pg_tsparser</application></link> extension for text search.</para>
+        <para>In addition to separate word parts returned by default, <application>pg_tsparser</application> also returns the whole word if this word includes:</para>
+        <itemizedlist>
+          <listitem>
+            <para>underscores</para>
+          </listitem>
+          <listitem>
+            <para>numbers and letters separated by the hyphen character</para>
+          </listitem>
+        </itemizedlist>
+      </listitem>
+      <listitem>
+        <para>Updated the <link linkend="pg-pathman"><application>pg_pathman</application></link> module to
+          version 1.3.2. This version provides compatibility fixes for this release.</para>
+      </listitem>
+      <listitem>
+        <para>The <link linkend="sr-plan"><application>sr_plan</application></link> module
+          is now working with non-default <literal>search_path</literal> variable.</para>
+      </listitem>
+      <listitem>
+        <para>Fixed WAL inconsistency bug in covering indexes.</para>
+      </listitem>
+      <listitem>
+        <para>Added distribution for SUSE Linux Enterprise Server 12 SP1 and Ubuntu 17.04.</para>
+      </listitem>
+      <listitem>
+        <para>Applied patches to optimize inheritance.</para>
+      </listitem>
+      <listitem>
+        <para>Updated PTRACK patch to version 1.2.</para>
+      </listitem>
+      <listitem>
+        <para>Provided performance improvements for queries typical for 1C solutions.</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Migration to Version 9.6.3.1</title>
+    <para>A dump/restore using <xref linkend="app-pg-dumpall">, or
+        use of <xref linkend="pgupgrade">, is required for those
+        wishing to migrate data from any previous major release.
+    </para>
+    <para>A dump/restore is not required for those running 9.6.2.1.</para>
+    <para>However, if you are upgrading from vanilla PostgreSQL 9.6.x, some
+      catalog changes should be applied.
+    </para>
+    <para>If you use binary packages, and your database is in the default
+      location, this upgrade should be performed automatically. If you've
+      compiled Postgres Pro from source or create your database in a
+      non-default location, running <literal>initdb</literal> manually, you
+      should run <literal>pgpro_upgrade</literal> script provided in this
+      distribution.
+    </para>
+    <para>Before running the script, you should stop postgres service.
+      Script should be run on behalf of the user owning the database
+      (typically postgres) and PGDATA environment variable should be
+      set to the directory where database resides.
+    </para>
+  </sect2>
+</sect1>
 <sect1 id="release-pro-9-6-2-1">
   <title>Postgres Pro 9.6.2.1</title>
   <note>
     <title>Release Date</title>
-    <simpara>2017-02-__</simpara>
+    <simpara>2017-02-22</simpara>
   </note>
   <sect2>
     <title>Overview</title>
-    <para>This release is based on <productname>PostgresPro</productname>
-      9.6.1.2 and <productname>PostgreSQL</productname> 9.6.2.</para>
+    <para>This release is based on <productname>Postgres Pro</productname>
+      <link linkend="release-pro-9-6-1-2">9.6.1.2</link> and
+      <productname>PostgreSQL</productname> <link linkend="release-9-6-2">9.6.2</link>.</para>
     <para>Major enhancements over <productname>Postgres Pro</productname>
       9.6.1.2 include:</para>
-    
+
     <itemizedlist>
       <listitem>
-        <para>Module <application>pg_pathman</application> has been updated to
-        version 1.3 (See <xref linkend="pg-pathman"> and <xref linkend="pg-pathman-how-to-update">).</para>
+        <para>Module <link linkend="pg-pathman"><application>pg_pathman</application></link> has been updated to
+        version 1.3 (see <xref linkend="pg-pathman-how-to-update">).</para>
       </listitem>
       <listitem>
-        <para>The <application>sr_plan</application> module is now initialized independently for each database instance (See <xref linkend="sr-plan">).</para>
+        <para>The <link linkend="sr-plan"><application>sr_plan</application></link> module
+        is now initialized independently for each database instance.</para>
       </listitem>
       <listitem>
-        <para>Applied fixes for including indexes.</para>
+        <para>Syntax for covering indexes has been changed. Now the keyword <literal>INCLUDING</literal> is
+          replaced by <literal>INCLUDE</literal>. The previous syntax still works, but is deprecated
+          (see <xref linkend="indexes-unique">).</para>
       </listitem>
       <listitem>
         <para>RHEL-based distributions are installed in a separate location,
-          so the product can be installed in parallel with an existing
-          <productname>PostgreSQL</productname>.</para>
+          so the <productname>Postgres Pro</productname> database can be installed in parallel with an existing
+          <productname>PostgreSQL</productname> database.</para>
       </listitem>
       <listitem>
         <para>Improved the algorithm of automatic TCP-port selection for the case
           of parallel installation of different versions of the product on
           Windows systems.</para>
+      </listitem>
+      <listitem>
+        <para>Updated the <link linkend="app-pgprobackup"><application>pg_probackup</application></link> backup manager:</para>
+        <itemizedlist>
+          <listitem>
+            <para>
+              Added <command>retention show</command> and
+              <command>retention purge</command> commands to
+              implement retention policy.
+            </para>
+          </listitem>
+          <listitem>
+            <para>
+              Added support for incremental backup of compressed page
+              files. Compressed files are the feature of the
+              <productname>Postgres Pro Enterprise</productname>.
+            </para>
+          </listitem>
+          <listitem>
+            <para>
+              Fixed <command>validate</command> command.
+              The <replaceable>backup_id</replaceable> parameter is
+              optional now.
+            </para>
+          </listitem>
+        </itemizedlist>
       </listitem>
     </itemizedlist>
 
@@ -69,8 +309,9 @@
   </note>
   <sect2>
     <title>Overview</title>
-    <para>This release is based on <productname>PostgresPro</productname>
-      9.6.1.1 and upstream PostgreSQL patches.</para>
+    <para>This release is based on <productname>Postgres Pro</productname>
+      <link linkend="release-pro-9-6-1-1">9.6.1.1</link> and upstream PostgreSQL patches.
+    </para>
     <para>Major enhancements over <productname>Postgres Pro</productname>
       9.6.1.1 include:</para>
 
@@ -107,7 +348,7 @@
     <itemizedlist>
       <listitem><para><application>pg_pathman</application> to version 1.2.2 (See <xref linkend="pg-pathman">)</para></listitem>
     </itemizedlist>
-    
+
     <para>
       Backup manager <application>pg_arman</application> has been replaced
       to <application>pg_probackup</application> (Version 1.0).
@@ -122,7 +363,7 @@
     <para>A dump/restore is not required for those running 9.6.1.1.</para>
     <para>However, if you are upgrading from vanilla PostgreSQL 9.6.x, some
       catalog changes should be applied.
-    </para>    
+    </para>
     <para>If you use binary packages, and your database is in the default
       location, this upgrade should be performed automatically. If you've
       compiled Postgres Pro from source or create your database in
@@ -146,9 +387,9 @@
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>PostgreSQL</productname>
-      9.6.1</para>
+      <link linkend="release-9-6-1">9.6.1</link>.</para>
     <para>Major enhancements over <productname>Postgres Pro</productname>
-      9.6.0.1 include:</para>
+      <link linkend="release-pro-9-6-0-1">9.6.0.1</link> include:</para>
     <para>Added fix for <application>pg_buffercache</application> module,
       which improves database response in the case of connected
       monitoring tools.</para>
@@ -166,7 +407,7 @@
     <para>A dump/restore is not required for those running 9.6.0.1.</para>
     <para>However, if you are upgrading from vanilla PostgreSQL 9.6.x, some
       catalog changes should be applied.
-    </para>    
+    </para>
     <para>If you use binary packages, and your database is in the default
       location, this upgrade should be performed automatically. If you've
       compiled Postgres Pro from source or create your database in
@@ -190,7 +431,7 @@
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>PostgreSQL</productname>
-      9.6.0</para>
+      <link linkend="release-9-6">9.6.0</link>.</para>
     <para>Major enhancements over <productname>PostgreSQL</productname>
       9.6.0 include:</para>
     <para>Core patches from Postgres Pro 9.5 has been applied:</para>
@@ -222,7 +463,7 @@
       <listitem>
         <para><application>pg_arman</application></para>
       </listitem>
-    </itemizedlist>    
+    </itemizedlist>
   </sect2>
   <sect2>
     <title>Migration to Version 9.6.0.1</title>
@@ -231,12 +472,12 @@
         use of <xref linkend="pgupgrade">, is required for those
           wishing to migrate data from any previous release.</para>
 
-    <para>Dump/restore is not neccessary when migrating from PostgreSQL 9.6.x to
+    <para>Dump/restore is not necessary when migrating from PostgreSQL 9.6.x to
       Postgres Pro 9.6.x.y.</para>
 
     <para>When upgrading from previous releases of Postgres Pro or from
       vanilla PostgreSQL 9.6.x, some catalog changes should be applied.</para>
-    
+
     <para>If you use binary packages, and your database is in the default
       location, this upgrade should be performed automatically. If you've
       compiled Postgres Pro from source or create your database in
@@ -244,7 +485,7 @@
       should run <literal>pgpro_upgrade</literal> script provided in this
       distribution.
     </para>
-    
+
     <para>Before running script, you should stop postgres service. Script
       should be run as user, owning the database (typically postgres) and
       PGDATA environment variable should be set to the directory where

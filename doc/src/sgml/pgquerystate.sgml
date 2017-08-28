@@ -8,7 +8,7 @@
     <title>Overview</title>
     <para>
       Each nonutility query statement (SELECT/INSERT/UPDATE/DELETE) after
-      optimization/planning stage is translated into plan tree wich is kind of
+      optimization/planning stage is translated into plan tree, which is kind of
       imperative representation of declarative SQL query. EXPLAIN ANALYZE
       request allows to demonstrate execution statistics gathered from each
       node of plan tree (full time of execution, number of rows emitted to upper
@@ -138,7 +138,7 @@
       </listitem>
       <listitem>
         <para>
-          format - EXPLAIN format to be used for plans printing, posible values:
+          format - EXPLAIN format to be used for plans printing, possible values:
           text, xml, json, yaml.
         </para>
       </listitem>
@@ -150,7 +150,7 @@
     </para>
     <para>
       Calling role have to be superuser or member of the role whose backend is
-      being called. Othrewise function prints ERROR message
+      being called. Otherwise function prints ERROR message
       <literal>permission denied</literal>.
     </para>
   </sect2>

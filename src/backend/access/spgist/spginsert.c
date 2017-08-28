@@ -20,6 +20,7 @@
 #include "access/spgist_private.h"
 #include "access/xlog.h"
 #include "access/xloginsert.h"
+#include "access/ptrack.h"
 #include "catalog/index.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
@@ -90,6 +91,9 @@ spgbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	Assert(BufferGetBlockNumber(rootbuffer) == SPGIST_ROOT_BLKNO);
 	Assert(BufferGetBlockNumber(nullbuffer) == SPGIST_NULL_BLKNO);
 
+	ptrack_add_block(index, BufferGetBlockNumber(metabuffer));
+	ptrack_add_block(index, BufferGetBlockNumber(rootbuffer));
+	ptrack_add_block(index, BufferGetBlockNumber(nullbuffer));
 	START_CRIT_SECTION();
 
 	SpGistInitMetapage(BufferGetPage(metabuffer));
@@ -192,6 +196,13 @@ spgbuildempty(Relation index)
 	log_newpage(&index->rd_smgr->smgr_rnode.node, INIT_FORKNUM,
 				SPGIST_NULL_BLKNO, page, true);
 
+	/* Don't forget to set ptrack bit even if we're skipping bufmgr stage */
+	ptrack_add_block_redo(index->rd_smgr->smgr_rnode.node, SPGIST_METAPAGE_BLKNO);
+	ptrack_add_block_redo(index->rd_smgr->smgr_rnode.node, SPGIST_ROOT_BLKNO);
+	ptrack_add_block_redo(index->rd_smgr->smgr_rnode.node, SPGIST_NULL_BLKNO);
+
+	/* Ensure rd_smgr is open (could have been closed by relcache flush!) */
+	RelationOpenSmgr(index);
 	/*
 	 * An immediate sync is required even if we xlog'd the pages, because the
 	 * writes did not go through shared buffers and therefore a concurrent

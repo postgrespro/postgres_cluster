@@ -118,6 +118,7 @@ bool
 CheckIndexCompatible(Oid oldId,
 					 char *accessMethodName,
 					 List *attributeList,
+					 List *includingattributeList,
 					 List *exclusionOpNames)
 {
 	bool		isconstraint;
@@ -134,6 +135,7 @@ CheckIndexCompatible(Oid oldId,
 	int16	   *coloptions;
 	IndexInfo  *indexInfo;
 	int			numberOfAttributes;
+	int			numberOfKeyAttributes;
 	int			old_natts;
 	bool		isnull;
 	bool		ret = true;
@@ -153,6 +155,9 @@ CheckIndexCompatible(Oid oldId,
 	isconstraint = false;
 
 	numberOfAttributes = list_length(attributeList);
+	numberOfKeyAttributes = numberOfAttributes;
+	if (includingattributeList != NULL)
+		numberOfKeyAttributes = list_length(attributeList) - list_length(includingattributeList);
 	Assert(numberOfAttributes > 0);
 	Assert(numberOfAttributes <= INDEX_MAX_KEYS);
 
@@ -178,6 +183,8 @@ CheckIndexCompatible(Oid oldId,
 	 * later on, and it would have failed then anyway.
 	 */
 	indexInfo = makeNode(IndexInfo);
+	indexInfo->ii_NumIndexKeyAttrs = numberOfKeyAttributes;
+	indexInfo->ii_NumIndexAttrs = numberOfAttributes;
 	indexInfo->ii_Expressions = NIL;
 	indexInfo->ii_ExpressionsState = NIL;
 	indexInfo->ii_PredicateState = NIL;
@@ -292,8 +299,8 @@ CheckIndexCompatible(Oid oldId,
  * 'indexRelationId': normally InvalidOid, but during bootstrap can be
  *		nonzero to specify a preselected OID for the index.
  * 'is_alter_table': this is due to an ALTER rather than a CREATE operation.
- * 'check_rights': check for CREATE rights in the namespace.  (This should
- *		be true except when ALTER is deleting/recreating an index.)
+ * 'check_rights': check for CREATE rights in namespace and tablespace.  (This
+ *		should be true except when ALTER is deleting/recreating an index.)
  * 'skip_build': make the catalog entries but leave the index file empty;
  *		it will be filled later.
  * 'quiet': suppress the NOTICE chatter ordinarily provided for constraints.
@@ -443,8 +450,9 @@ DefineIndex(Oid relationId,
 		/* note InvalidOid is OK in this case */
 	}
 
-	/* Check permissions except when using database's default */
-	if (OidIsValid(tablespaceId) && tablespaceId != MyDatabaseTableSpace)
+	/* Check tablespace permissions */
+	if (check_rights &&
+		OidIsValid(tablespaceId) && tablespaceId != MyDatabaseTableSpace)
 	{
 		AclResult	aclresult;
 

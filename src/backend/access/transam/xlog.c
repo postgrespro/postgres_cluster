@@ -35,6 +35,7 @@
 #include "access/xloginsert.h"
 #include "access/xlogreader.h"
 #include "access/xlogutils.h"
+#include "access/ptrack.h"
 #include "catalog/catversion.h"
 #include "catalog/pg_control.h"
 #include "catalog/pg_database.h"
@@ -484,6 +485,12 @@ typedef enum ExclusiveBackupState
 } ExclusiveBackupState;
 
 /*
+ * Session status of running backup, used for sanity checks in SQL-callable
+ * functions to start and stop backups.
+ */
+static SessionBackupState sessionBackupState = SESSION_BACKUP_NONE;
+
+/*
  * Shared state data for WAL insertion.
  */
 typedef struct XLogCtlInsert
@@ -839,7 +846,7 @@ static bool InstallXLogFileSegment(XLogSegNo *segno, char *tmppath,
 					   bool find_free, XLogSegNo max_segno,
 					   bool use_lock);
 static int XLogFileRead(XLogSegNo segno, int emode, TimeLineID tli,
-			 int source, bool notexistOk);
+			 int source, bool notfoundOk);
 static int	XLogFileReadAnyTLI(XLogSegNo segno, int emode, int source);
 static int XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr,
 			 int reqLen, XLogRecPtr targetRecPtr, char *readBuf,
@@ -3806,7 +3813,7 @@ RemoveXlogFile(const char *segname, XLogRecPtr PriorRedoPtr, XLogRecPtr endptr)
 	/*
 	 * Initialize info about where to try to recycle to.
 	 */
-	XLByteToPrevSeg(endptr, endlogSegNo);
+	XLByteToSeg(endptr, endlogSegNo);
 	if (PriorRedoPtr == InvalidXLogRecPtr)
 		recycleSegNo = endlogSegNo + 10;
 	else
@@ -3936,7 +3943,7 @@ CleanupBackupHistory(void)
 {
 	DIR		   *xldir;
 	struct dirent *xlde;
-	char		path[MAXPGPATH];
+	char		path[MAXPGPATH + sizeof(XLOGDIR)];
 
 	xldir = AllocateDir(XLOGDIR);
 	if (xldir == NULL)
@@ -3954,7 +3961,7 @@ CleanupBackupHistory(void)
 				ereport(DEBUG2,
 				(errmsg("removing transaction log backup history file \"%s\"",
 						xlde->d_name)));
-				snprintf(path, MAXPGPATH, XLOGDIR "/%s", xlde->d_name);
+				snprintf(path, sizeof(path), XLOGDIR "/%s", xlde->d_name);
 				unlink(path);
 				XLogArchiveCleanup(xlde->d_name);
 			}
@@ -3967,7 +3974,7 @@ CleanupBackupHistory(void)
 /*
  * Attempt to read an XLOG record.
  *
- * If RecPtr is not NULL, try to read a record at that position.  Otherwise
+ * If RecPtr is valid, try to read a record at that position.  Otherwise
  * try to read a record just after the last one previously read.
  *
  * If no valid record is available, returns NULL, or fails if emode is PANIC.
@@ -4873,7 +4880,7 @@ BootStrapXLOG(void)
 	record->xl_rmid = RM_XLOG_ID;
 	recptr += SizeOfXLogRecord;
 	/* fill the XLogRecordDataHeaderShort struct */
-	*(recptr++) = XLR_BLOCK_ID_DATA_SHORT;
+	*(recptr++) = (char) XLR_BLOCK_ID_DATA_SHORT;
 	*(recptr++) = sizeof(checkPoint);
 	memcpy(recptr, &checkPoint, sizeof(checkPoint));
 	recptr += sizeof(checkPoint);
@@ -6760,7 +6767,6 @@ StartupXLOG(void)
 			do
 			{
 				bool		switchedTLI = false;
-				int nblock;
 
 #ifdef WAL_DEBUG
 				if (XLOG_DEBUG ||
@@ -6913,17 +6919,6 @@ StartupXLOG(void)
 
 				/* Pop the error context stack */
 				error_context_stack = errcallback.previous;
-
-				if (ptrack_enable)
-					for(nblock = 0; nblock < xlogreader->max_block_id; nblock++)
-					{
-						if(xlogreader->blocks[nblock].forknum == MAIN_FORKNUM)
-						{
-							ptrack_add_block(xlogreader->blocks[nblock].blkno,
-											xlogreader->blocks[nblock].rnode);
-							ptrack_save();
-						}
-					}
 
 				/*
 				 * Update lastReplayedEndRecPtr after this record has been
@@ -8018,6 +8013,17 @@ ShutdownXLOG(int code, Datum arg)
 	ereport(IsPostmasterEnvironment ? LOG : NOTICE,
 			(errmsg("shutting down")));
 
+	/*
+	 * Signal walsenders to move to stopping state.
+	 */
+	WalSndInitStopping();
+
+	/*
+	 * Wait for WAL senders to be in stopping state.  This prevents commands
+	 * from writing new WAL.
+	 */
+	WalSndWaitStopping();
+
 	if (RecoveryInProgress())
 		CreateRestartPoint(CHECKPOINT_IS_SHUTDOWN | CHECKPOINT_IMMEDIATE);
 	else
@@ -9030,7 +9036,7 @@ KeepLogSeg(XLogRecPtr recptr, XLogSegNo *logSegNo)
 	/* then check whether slots limit removal further */
 	if (max_replication_slots > 0 && keep != InvalidXLogRecPtr)
 	{
-		XLogRecPtr	slotSegNo;
+		XLogSegNo	slotSegNo;
 
 		XLByteToSeg(keep, slotSegNo);
 
@@ -9485,6 +9491,11 @@ xlog_redo(XLogReaderState *record)
 	else if (info == XLOG_FPI || info == XLOG_FPI_FOR_HINT)
 	{
 		Buffer		buffer;
+		RelFileNode rnode;
+		BlockNumber blkno;
+
+		XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
+		ptrack_add_block_redo(rnode, blkno);
 
 		/*
 		 * Full-page image (FPI) records contain nothing else but a backup
@@ -10073,7 +10084,7 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 		/* Collect information about all tablespaces */
 		while ((de = ReadDir(tblspcdir, "pg_tblspc")) != NULL)
 		{
-			char		fullpath[MAXPGPATH];
+			char		fullpath[MAXPGPATH + 10];
 			char		linkpath[MAXPGPATH];
 			char	   *relpath = NULL;
 			int			rllen;
@@ -10267,13 +10278,17 @@ do_pg_start_backup(const char *backupidstr, bool fast, TimeLineID *starttli_p,
 
 	/*
 	 * Mark that start phase has correctly finished for an exclusive backup.
+	 * Session-level locks are updated as well to reflect that state.
 	 */
 	if (exclusive)
 	{
 		WALInsertLockAcquireExclusive();
 		XLogCtl->Insert.exclusiveBackupState = EXCLUSIVE_BACKUP_IN_PROGRESS;
 		WALInsertLockRelease();
+		sessionBackupState = SESSION_BACKUP_EXCLUSIVE;
 	}
+	else
+		sessionBackupState = SESSION_BACKUP_NON_EXCLUSIVE;
 
 	/*
 	 * We're done.  As a convenience, return the starting WAL location.
@@ -10326,6 +10341,15 @@ pg_stop_backup_callback(int code, Datum arg)
 		XLogCtl->Insert.exclusiveBackupState = EXCLUSIVE_BACKUP_IN_PROGRESS;
 	}
 	WALInsertLockRelease();
+}
+
+/*
+ * Utility routine to fetch the session-level status of a backup running.
+ */
+SessionBackupState
+get_backup_status(void)
+{
+	return sessionBackupState;
 }
 
 /*
@@ -10494,6 +10518,9 @@ do_pg_stop_backup(char *labelfile, bool waitforarchive, TimeLineID *stoptli_p)
 		XLogCtl->Insert.forcePageWrites = false;
 	}
 	WALInsertLockRelease();
+
+	/* Clean up session-level lock */
+	sessionBackupState = SESSION_BACKUP_NONE;
 
 	/*
 	 * Read and parse the START WAL LOCATION line (this code is pretty crude,

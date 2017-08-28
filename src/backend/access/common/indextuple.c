@@ -449,7 +449,7 @@ CopyIndexTuple(IndexTuple source)
 IndexTuple
 index_truncate_tuple(Relation idxrel, IndexTuple olditup)
 {
-	TupleDesc   itupdesc = RelationGetDescr(idxrel);
+	TupleDesc   itupdesc = CreateTupleDescCopyConstr(RelationGetDescr(idxrel));
 	Datum       values[INDEX_MAX_KEYS];
 	bool        isnull[INDEX_MAX_KEYS];
 	IndexTuple	newitup;
@@ -467,8 +467,7 @@ index_truncate_tuple(Relation idxrel, IndexTuple olditup)
 	newitup = index_form_tuple(itupdesc, values, isnull);
 	newitup->t_tid = olditup->t_tid;
 
-	itupdesc->natts = indnatts;
-
+	FreeTupleDesc(itupdesc);
 	Assert(IndexTupleSize(newitup) <= IndexTupleSize(olditup));
 	return newitup;
 }

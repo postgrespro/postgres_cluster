@@ -4,6 +4,8 @@
  *		definitions of various support functions
  *
  * Copyright (c) 2016, Postgres Professional
+ * Portions Copyright (c) 1996-2016, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1994, Regents of the University of California
  *
  * ------------------------------------------------------------------------
  */
@@ -14,14 +16,15 @@
 #include "access/nbtree.h"
 #include "access/sysattr.h"
 #include "access/xact.h"
-#include "catalog/heap.h"
-#include "catalog/pg_type.h"
+#include "catalog/indexing.h"
+#include "catalog/namespace.h"
+#include "catalog/pg_class.h"
 #include "catalog/pg_extension.h"
 #include "catalog/pg_operator.h"
-#include "catalog/pg_inherits.h"
+#include "catalog/pg_type.h"
 #include "commands/extension.h"
 #include "miscadmin.h"
-#include "optimizer/var.h"
+#include "nodes/nodeFuncs.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_oper.h"
 #include "utils/builtins.h"
@@ -30,12 +33,26 @@
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 
+#if PG_VERSION_NUM >= 100000
+#include "utils/regproc.h"
+#endif
 
-static bool clause_contains_params_walker(Node *node, void *context);
+static bool
+clause_contains_params_walker(Node *node, void *context)
+{
+	if (node == NULL)
+		return false;
 
+	if (IsA(node, Param))
+		return true;
+
+	return expression_tree_walker(node,
+								  clause_contains_params_walker,
+								  context);
+}
 
 /*
- * Check whether clause contains PARAMs or not
+ * Check whether clause contains PARAMs or not.
  */
 bool
 clause_contains_params(Node *clause)
@@ -43,18 +60,6 @@ clause_contains_params(Node *clause)
 	return expression_tree_walker(clause,
 								  clause_contains_params_walker,
 								  NULL);
-}
-
-static bool
-clause_contains_params_walker(Node *node, void *context)
-{
-	if (node == NULL)
-		return false;
-	if (IsA(node, Param))
-		return true;
-	return expression_tree_walker(node,
-								  clause_contains_params_walker,
-								  context);
 }
 
 /*
@@ -103,6 +108,20 @@ check_security_policy_internal(Oid relid, Oid role)
 	return true;
 }
 
+/* Compare clause operand with expression */
+bool
+match_expr_to_operand(Node *expr, Node *operand)
+{
+	/* Strip relabeling for both operand and expr */
+	if (operand && IsA(operand, RelabelType))
+		operand = (Node *) ((RelabelType *) operand)->arg;
+
+	if (expr && IsA(expr, RelabelType))
+		expr = (Node *) ((RelabelType *) expr)->arg;
+
+	/* compare expressions and return result right away */
+	return equal(expr, operand);
+}
 
 
 /*
@@ -164,7 +183,6 @@ list_reverse(List *l)
 }
 
 
-
 /*
  * Get relation owner.
  */
@@ -197,63 +215,19 @@ get_rel_name_or_relid(Oid relid)
 	char *relname = get_rel_name(relid);
 
 	if (!relname)
-		return DatumGetCString(DirectFunctionCall1(oidout,
-												   ObjectIdGetDatum(relid)));
+		return DatumGetCString(DirectFunctionCall1(oidout, ObjectIdGetDatum(relid)));
+
 	return relname;
 }
 
-/*
- * Get type of column by its name.
- */
-Oid
-get_attribute_type(Oid relid, const char *attname, bool missing_ok)
+RangeVar *
+makeRangeVarFromRelid(Oid relid)
 {
-	Oid			result;
-	HeapTuple	tp;
+	char *relname = get_rel_name(relid);
+	char *nspname = get_namespace_name(get_rel_namespace(relid));
 
-	/* NOTE: for now it's the most efficient way */
-	tp = SearchSysCacheAttName(relid, attname);
-	if (HeapTupleIsValid(tp))
-	{
-		Form_pg_attribute att_tup = (Form_pg_attribute) GETSTRUCT(tp);
-		result = att_tup->atttypid;
-		ReleaseSysCache(tp);
-
-		return result;
-	}
-
-	if (!missing_ok)
-		elog(ERROR, "cannot find type name for attribute \"%s\" "
-					"of relation \"%s\"",
-			 attname, get_rel_name_or_relid(relid));
-
-	return InvalidOid;
+	return makeRangeVar(nspname, relname, -1);
 }
-
-#if PG_VERSION_NUM < 90600
-/*
- * Returns the relpersistence associated with a given relation.
- *
- * NOTE: this function is implemented in 9.6
- */
-char
-get_rel_persistence(Oid relid)
-{
-	HeapTuple		tp;
-	Form_pg_class	reltup;
-	char 			result;
-
-	tp = SearchSysCache1(RELOID, ObjectIdGetDatum(relid));
-	if (!HeapTupleIsValid(tp))
-		elog(ERROR, "cache lookup failed for relation %u", relid);
-
-	reltup = (Form_pg_class) GETSTRUCT(tp);
-	result = reltup->relpersistence;
-	ReleaseSysCache(tp);
-
-	return result;
-}
-#endif
 
 
 
@@ -271,7 +245,10 @@ get_binary_operator(char *oprname, Oid arg1, Oid arg2)
 						 arg1, arg2, true, -1);
 
 	if (!op)
-		elog(ERROR, "Cannot find operator \"%s\"(%u, %u)", oprname, arg1, arg2);
+		elog(ERROR, "cannot find operator %s(%s, %s)",
+			 oprname,
+			 format_type_be(arg1),
+			 format_type_be(arg2));
 
 	return op;
 }
@@ -326,16 +303,14 @@ fill_type_cmp_fmgr_info_error:
 void
 extract_op_func_and_ret_type(char *opname,
 							 Oid type1, Oid type2,
-							 Oid *op_func,		/* returned value #1 */
-							 Oid *op_ret_type)	/* returned value #2 */
+							 Oid *op_func,		/* ret value #1 */
+							 Oid *op_ret_type)	/* ret value #2 */
 {
 	Operator op;
 
 	/* Get "move bound operator" descriptor */
 	op = get_binary_operator(opname, type1, type2);
-	if (!op)
-		elog(ERROR, "missing %s operator for types %s and %s",
-			 opname, format_type_be(type1), format_type_be(type2));
+	Assert(op);
 
 	*op_func = oprfuncid(op);
 	*op_ret_type = ((Form_pg_operator) GETSTRUCT(op))->oprresult;
@@ -436,12 +411,12 @@ perform_type_cast(Datum value, Oid in_type, Oid out_type, bool *success)
 }
 
 /*
- * Convert interval from TEXT to binary form using partitioned column's type.
+ * Convert interval from TEXT to binary form using partitioninig expresssion type.
  */
 Datum
 extract_binary_interval_from_text(Datum interval_text,	/* interval as TEXT */
-								  Oid part_atttype,		/* partitioned column's type */
-								  Oid *interval_type)	/* returned value */
+								  Oid part_atttype,		/* expression type */
+								  Oid *interval_type)	/* ret value #1 */
 {
 	Datum		interval_binary;
 	const char *interval_cstring;
@@ -477,7 +452,7 @@ extract_binary_interval_from_text(Datum interval_text,	/* interval as TEXT */
 			elog(ERROR, "cannot find input function for type %u", part_atttype);
 
 		/*
-		 * Convert interval from CSTRING to 'prel->atttype'.
+		 * Convert interval from CSTRING to 'prel->ev_type'.
 		 *
 		 * Note: We pass 3 arguments in case
 		 * 'typein_proc' also takes Oid & typmod.
@@ -491,4 +466,85 @@ extract_binary_interval_from_text(Datum interval_text,	/* interval as TEXT */
 	}
 
 	return interval_binary;
+}
+
+/* Convert Datum into CSTRING array */
+char **
+deconstruct_text_array(Datum array, int *array_size)
+{
+	ArrayType  *array_ptr = DatumGetArrayTypeP(array);
+	int16		elemlen;
+	bool		elembyval;
+	char		elemalign;
+
+	Datum	   *elem_values;
+	bool	   *elem_nulls;
+
+	int			arr_size = 0;
+
+	/* Check type invariant */
+	Assert(ARR_ELEMTYPE(array_ptr) == TEXTOID);
+
+	/* Check number of dimensions */
+	if (ARR_NDIM(array_ptr) > 1)
+		ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						errmsg("array should contain only 1 dimension")));
+
+	get_typlenbyvalalign(ARR_ELEMTYPE(array_ptr),
+						 &elemlen, &elembyval, &elemalign);
+
+	deconstruct_array(array_ptr,
+					  ARR_ELEMTYPE(array_ptr),
+					  elemlen, elembyval, elemalign,
+					  &elem_values, &elem_nulls, &arr_size);
+
+	/* If there are actual values, convert them into CSTRINGs */
+	if (arr_size > 0)
+	{
+		char  **strings = palloc(arr_size * sizeof(char *));
+		int		i;
+
+		for (i = 0; i < arr_size; i++)
+		{
+			if (elem_nulls[i])
+				ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+								errmsg("array should not contain NULLs")));
+
+			strings[i] = TextDatumGetCString(elem_values[i]);
+		}
+
+		/* Return an array and it's size */
+		*array_size = arr_size;
+		return strings;
+	}
+	/* Else emit ERROR */
+	else ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("array should not be empty")));
+
+	/* Keep compiler happy */
+	return NULL;
+}
+
+/*
+ * Convert schema qualified relation names array to RangeVars array
+ */
+RangeVar **
+qualified_relnames_to_rangevars(char **relnames, size_t nrelnames)
+{
+	RangeVar  **rangevars = NULL;
+	int			i;
+
+	/* Convert partition names into RangeVars */
+	if (relnames)
+	{
+		rangevars = palloc(sizeof(RangeVar) * nrelnames);
+		for (i = 0; i < nrelnames; i++)
+		{
+			List *nl = stringToQualifiedNameList(relnames[i]);
+
+			rangevars[i] = makeRangeVarFromNameList(nl);
+		}
+	}
+
+	return rangevars;
 }

@@ -9,7 +9,7 @@ PostgresNode - class representing PostgreSQL server instance
 
   use PostgresNode;
 
-  my $node = get_new_node('mynode');
+  my $node = PostgresNode->get_new_node('mynode');
 
   # Create a data directory with initdb
   $node->init();
@@ -100,6 +100,15 @@ our @EXPORT = qw(
 );
 
 our ($test_localhost, $test_pghost, $last_port_assigned, @all_nodes);
+
+# Windows path to virtual file system root
+
+our $vfs_path = '';
+if ($Config{osname} eq 'msys')
+{
+	$vfs_path = `cd / && pwd -W`;
+	chomp $vfs_path;
+}
 
 INIT
 {
@@ -402,7 +411,9 @@ sub init
 	open my $conf, ">>$pgdata/postgresql.conf";
 	print $conf "\n# Added by PostgresNode.pm\n";
 	print $conf "fsync = off\n";
+	print $conf "restart_after_crash = off\n";
 	print $conf "log_statement = all\n";
+	print $conf "wal_retrieve_retry_interval = '500ms'\n";
 	print $conf "port = $port\n";
 
 	if ($params{allows_streaming})
@@ -441,7 +452,7 @@ A shortcut method to append to files like pg_hba.conf and postgresql.conf.
 Does no validation or sanity checking. Does not reload the configuration
 after writing.
 
-A newline is NOT automatically appended to the string.
+A newline is automatically appended to the string.
 
 =cut
 
@@ -451,7 +462,7 @@ sub append_conf
 
 	my $conffile = $self->data_dir . '/' . $filename;
 
-	TestLib::append_to_file($conffile, $str);
+	TestLib::append_to_file($conffile, $str . "\n");
 }
 
 =pod
@@ -636,18 +647,19 @@ sub start
 	my $port   = $self->port;
 	my $pgdata = $self->data_dir;
 	my $name   = $self->name;
+	BAIL_OUT("node \"$name\" is already running") if defined $self->{_pid};
 	print("### Starting node \"$name\"\n");
 	my $ret = TestLib::system_log('pg_ctl', '-w', '-D', $self->data_dir, '-l',
 		$self->logfile, 'start');
 
 	if ($ret != 0)
 	{
-		print "# pg_ctl failed; logfile:\n";
+		print "# pg_ctl start failed; logfile:\n";
 		print TestLib::slurp_file($self->logfile);
-		BAIL_OUT("pg_ctl failed");
+		BAIL_OUT("pg_ctl start failed");
 	}
 
-	$self->_update_pid;
+	$self->_update_pid(1);
 }
 
 =pod
@@ -655,6 +667,10 @@ sub start
 =item $node->stop(mode)
 
 Stop the node using pg_ctl -m $mode and wait for it to stop.
+
+Note: if the node is already known stopped, this does nothing.
+However, if we think it's running and it's not, it's important for
+this to fail.  Otherwise, tests might fail to detect server crashes.
 
 =cut
 
@@ -667,9 +683,8 @@ sub stop
 	$mode = 'fast' unless defined $mode;
 	return unless defined $self->{_pid};
 	print "### Stopping node \"$name\" using mode $mode\n";
-	TestLib::system_log('pg_ctl', '-D', $pgdata, '-m', $mode, 'stop');
-	$self->{_pid} = undef;
-	$self->_update_pid;
+	TestLib::system_or_bail('pg_ctl', '-D', $pgdata, '-m', $mode, 'stop');
+	$self->_update_pid(0);
 }
 
 =pod
@@ -687,7 +702,7 @@ sub reload
 	my $pgdata = $self->data_dir;
 	my $name   = $self->name;
 	print "### Reloading node \"$name\"\n";
-	TestLib::system_log('pg_ctl', '-D', $pgdata, 'reload');
+	TestLib::system_or_bail('pg_ctl', '-D', $pgdata, 'reload');
 }
 
 =pod
@@ -706,9 +721,9 @@ sub restart
 	my $logfile = $self->logfile;
 	my $name    = $self->name;
 	print "### Restarting node \"$name\"\n";
-	TestLib::system_log('pg_ctl', '-D', $pgdata, '-w', '-l', $logfile,
-		'restart');
-	$self->_update_pid;
+	TestLib::system_or_bail('pg_ctl', '-D', $pgdata, '-w', '-l', $logfile,
+							'restart');
+	$self->_update_pid(1);
 }
 
 =pod
@@ -727,7 +742,8 @@ sub promote
 	my $logfile = $self->logfile;
 	my $name    = $self->name;
 	print "### Promoting node \"$name\"\n";
-	TestLib::system_log('pg_ctl', '-D', $pgdata, '-l', $logfile, 'promote');
+	TestLib::system_or_bail('pg_ctl', '-D', $pgdata, '-l', $logfile,
+							'promote');
 }
 
 # Internal routine to enable streaming replication on a standby node.
@@ -749,7 +765,7 @@ standby_mode=on
 sub enable_restoring
 {
 	my ($self, $root_node) = @_;
-	my $path = $root_node->archive_dir;
+	my $path = $vfs_path . $root_node->archive_dir;
 	my $name = $self->name;
 
 	print "### Enabling WAL restore for node \"$name\"\n";
@@ -777,7 +793,7 @@ standby_mode = on
 sub enable_archiving
 {
 	my ($self) = @_;
-	my $path   = $self->archive_dir;
+	my $path   = $vfs_path. $self->archive_dir;
 	my $name   = $self->name;
 
 	print "### Enabling WAL archiving for node \"$name\"\n";
@@ -805,40 +821,48 @@ archive_command = '$copy_command'
 # Internal method
 sub _update_pid
 {
-	my $self = shift;
+	my ($self, $is_running) = @_;
 	my $name = $self->name;
 
 	# If we can open the PID file, read its first line and that's the PID we
-	# want.  If the file cannot be opened, presumably the server is not
-	# running; don't be noisy in that case.
-	if (open my $pidfile, $self->data_dir . "/postmaster.pid")
+	# want.
+	if (open my $pidfile, '<', $self->data_dir . "/postmaster.pid")
 	{
 		chomp($self->{_pid} = <$pidfile>);
 		print "# Postmaster PID for node \"$name\" is $self->{_pid}\n";
 		close $pidfile;
+
+		# If we found a pidfile when there shouldn't be one, complain.
+		BAIL_OUT("postmaster.pid unexpectedly present") unless $is_running;
 		return;
 	}
 
 	$self->{_pid} = undef;
-	print "# No postmaster PID\n";
+	print "# No postmaster PID for node \"$name\"\n";
+	# Complain if we expected to find a pidfile.
+	BAIL_OUT("postmaster.pid unexpectedly not present") if $is_running;
 }
 
 =pod
 
-=item get_new_node(node_name)
+=item PostgresNode->get_new_node(node_name)
 
-Build a new PostgresNode object, assigning a free port number. Standalone
-function that's automatically imported.
+Build a new object of class C<PostgresNode> (or of a subclass, if you have
+one), assigning a free port number.  Remembers the node, to prevent its port
+number from being reused for another node, and to ensure that it gets
+shut down when the test script exits.
 
-Remembers the node, to prevent its port number from being reused for another
-node, and to ensure that it gets shut down when the test script exits.
+You should generally use this instead of C<PostgresNode::new(...)>.
 
-You should generally use this instead of PostgresNode::new(...).
+For backwards compatibility, it is also exported as a standalone function,
+which can only create objects of class C<PostgresNode>.
 
 =cut
 
 sub get_new_node
 {
+	my $class = 'PostgresNode';
+	$class = shift if 1 < scalar @_;
 	my $name  = shift;
 	my $found = 0;
 	my $port  = $last_port_assigned;
@@ -883,7 +907,7 @@ sub get_new_node
 	print "# Found free port $port\n";
 
 	# Lock port number found by creating a new node
-	my $node = new PostgresNode($name, $test_pghost, $port);
+	my $node = $class->new($name, $test_pghost, $port);
 
 	# Add node to list of nodes
 	push(@all_nodes, $node);
@@ -961,6 +985,7 @@ sub safe_psql
 		print "\n#### End standard error\n";
 	}
 
+	$stdout =~ s/\r//g if $TestLib::windows_os;
 	return $stdout;
 }
 
@@ -1116,7 +1141,7 @@ sub psql
 			# IPC::Run::run threw an exception. re-throw unless it's a
 			# timeout, which we'll handle by testing is_expired
 			die $exc_save
-			  if (blessed($exc_save) || $exc_save ne $timeout_exception);
+			  if (blessed($exc_save) || $exc_save !~ /^\Q$timeout_exception\E/);
 
 			$ret = undef;
 

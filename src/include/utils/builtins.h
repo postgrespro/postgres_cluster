@@ -893,6 +893,7 @@ extern Datum text_format_nv(PG_FUNCTION_ARGS);
 extern Datum pgsql_version(PG_FUNCTION_ARGS);
 extern Datum pgpro_version(PG_FUNCTION_ARGS);
 extern Datum pgpro_edition(PG_FUNCTION_ARGS);
+extern Datum pgpro_build(PG_FUNCTION_ARGS);
 
 /* xid.c */
 extern Datum xidin(PG_FUNCTION_ARGS);

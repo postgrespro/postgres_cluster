@@ -95,7 +95,7 @@ $(distdir).tar: distdir
 distdir-location:
 	@echo $(distdir)
 
-distdir:
+distdir: src/include/commit_id.h
 	rm -rf $(distdir)* $(dummy)
 	for x in `cd $(top_srcdir) && find . \( -name CVS -prune \) -o \( -name .git -prune \) -o -print`; do \
 	  file=`expr X$$x : 'X\./\(.*\)'`; \

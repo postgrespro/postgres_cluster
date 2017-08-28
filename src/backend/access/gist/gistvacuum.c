@@ -16,6 +16,7 @@
 
 #include "access/genam.h"
 #include "access/gist_private.h"
+#include "access/ptrack.h"
 #include "commands/vacuum.h"
 #include "miscadmin.h"
 #include "storage/indexfsm.h"
@@ -212,6 +213,7 @@ gistbulkdelete(IndexVacuumInfo *info, IndexBulkDeleteResult *stats,
 
 			if (ntodelete)
 			{
+				ptrack_add_block(rel, BufferGetBlockNumber(buffer));
 				START_CRIT_SECTION();
 
 				MarkBufferDirty(buffer);

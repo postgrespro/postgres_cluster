@@ -16,6 +16,7 @@
 #include "access/gist_private.h"
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
+#include "access/ptrack.h"
 #include "utils/memutils.h"
 
 static MemoryContext opCtx;		/* working memory for operations */
@@ -38,6 +39,11 @@ gistRedoClearFollowRight(XLogReaderState *record, uint8 block_id)
 	Buffer		buffer;
 	Page		page;
 	XLogRedoAction action;
+	RelFileNode rnode;
+	BlockNumber blkno;
+
+	XLogRecGetBlockTag(record, block_id, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
 
 	/*
 	 * Note that we still update the page even if it was restored from a full
@@ -68,6 +74,11 @@ gistRedoPageUpdateRecord(XLogReaderState *record)
 	gistxlogPageUpdate *xldata = (gistxlogPageUpdate *) XLogRecGetData(record);
 	Buffer		buffer;
 	Page		page;
+	RelFileNode rnode;
+	BlockNumber blkno;
+
+	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
 
 	if (XLogReadBufferForRedo(record, 0, &buffer) == BLK_NEEDS_REDO)
 	{
@@ -173,6 +184,7 @@ gistRedoPageSplitRecord(XLogReaderState *record)
 	int			i;
 	bool		isrootsplit = false;
 
+
 	/*
 	 * We must hold lock on the first-listed page throughout the action,
 	 * including while updating the left child page (if any).  We can unlock
@@ -190,8 +202,11 @@ gistRedoPageSplitRecord(XLogReaderState *record)
 		int			num;
 		BlockNumber blkno;
 		IndexTuple *tuples;
+		RelFileNode rnode;
 
-		XLogRecGetBlockTag(record, i + 1, NULL, NULL, &blkno);
+		XLogRecGetBlockTag(record, i + 1, &rnode, NULL, &blkno);
+		ptrack_add_block_redo(rnode, blkno);
+
 		if (blkno == GIST_ROOT_BLKNO)
 		{
 			Assert(i == 0);
@@ -262,6 +277,11 @@ gistRedoCreateIndex(XLogReaderState *record)
 	XLogRecPtr	lsn = record->EndRecPtr;
 	Buffer		buffer;
 	Page		page;
+	RelFileNode rnode;
+	BlockNumber blkno;
+
+	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
 
 	buffer = XLogInitBufferForRedo(record, 0);
 	Assert(BufferGetBlockNumber(buffer) == GIST_ROOT_BLKNO);

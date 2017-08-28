@@ -11,6 +11,11 @@
  <title>Legal Notice</title>
 
  <para>
+  <productname>Postgres Pro</productname> is Copyright &copy; 2016-2017
+  by the Postgres Professional.
+ </para>
+
+ <para>
   <productname>PostgreSQL</productname> is Copyright &copy; 1996-2017
   by the PostgreSQL Global Development Group.
  </para>

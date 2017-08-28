@@ -37,7 +37,8 @@ my @contrib_uselibpgcommon = ('oid2name', 'pg_standby', 'vacuumlo');
 my $contrib_extralibs      = undef;
 my $contrib_extraincludes =
   { 'tsearch2' => ['contrib/tsearch2'], 'dblink' => ['src/backend'],
-  	'jsquery' => ['contrib/jsquery' ] };
+  	'jsquery' => ['contrib/jsquery' ],
+	'pg_pathman' => ['contrib/pg_pathman/src/include']};
 my $contrib_extrasource = {
 	'cube' => [ 'contrib/cube/cubescan.l', 'contrib/cube/cubeparse.y' ],
 	'seg'  => [ 'contrib/seg/segscan.l',   'contrib/seg/segparse.y' ],
@@ -198,20 +199,24 @@ sub mkvcbuild
 
 	if ($solution->{options}->{tcl})
 	{
+		my $found = 0;
 		my $pltcl =
 		  $solution->AddProject('pltcl', 'dll', 'PLs', 'src/pl/tcl');
 		$pltcl->AddIncludeDir($solution->{options}->{tcl} . '/include');
 		$pltcl->AddReference($postgres);
-		if (-e $solution->{options}->{tcl} . '/lib/tcl85.lib')
+
+		for my $tclver (qw(86t 86 85 84))
 		{
-			$pltcl->AddLibrary(
-				$solution->{options}->{tcl} . '/lib/tcl85.lib');
+			my $tcllib = $solution->{options}->{tcl} . "/lib/tcl$tclver.lib";
+			if (-e $tcllib)
+			{
+				$pltcl->AddLibrary($tcllib);
+				$found = 1;
+				last;
+			}
 		}
-		else
-		{
-			$pltcl->AddLibrary(
-				$solution->{options}->{tcl} . '/lib/tcl84.lib');
-		}
+		die "Unable to find $solution->{options}->{tcl}/lib/tcl<version>.lib"
+			unless $found;
 	}
 
 	$libpq = $solution->AddProject('libpq', 'dll', 'interfaces',
@@ -520,7 +525,39 @@ sub mkvcbuild
 		my $plperl =
 		  $solution->AddProject('plperl', 'dll', 'PLs', 'src/pl/plperl');
 		$plperl->AddIncludeDir($solution->{options}->{perl} . '/lib/CORE');
-		$plperl->AddDefine('PLPERL_HAVE_UID_GID');
+
+		# Add defines from Perl's ccflags; see PGAC_CHECK_PERL_EMBED_CCFLAGS
+		my @perl_embed_ccflags;
+		foreach my $f (split(" ",$Config{ccflags}))
+		{
+			if ($f =~ /^-D[^_]/ ||
+			    $f =~ /^-D_USE_32BIT_TIME_T/)
+			{
+				$f =~ s/\-D//;
+				push(@perl_embed_ccflags, $f);
+			}
+		}
+
+		# Perl versions before 5.13.4 don't provide -D_USE_32BIT_TIME_T
+		# regardless of how they were built.  On 32-bit Windows, assume
+		# such a version was built with a pre-MSVC-2005 compiler, and
+		# define the symbol anyway, so that we are compatible if we're
+		# being built with a later MSVC version.
+		push(@perl_embed_ccflags, '_USE_32BIT_TIME_T')
+		  if $solution->{platform} eq 'Win32'
+			  && $Config{PERL_REVISION} == 5
+			  && ($Config{PERL_VERSION} < 13
+				  || (   $Config{PERL_VERSION} == 13
+					  && $Config{PERL_SUBVERSION} < 4));
+
+		# Also, a hack to prevent duplicate definitions of uid_t/gid_t
+		push(@perl_embed_ccflags, 'PLPERL_HAVE_UID_GID');
+
+		foreach my $f (@perl_embed_ccflags)
+		{
+			$plperl->AddDefine($f);
+		}
+
 		foreach my $xs ('SPI.xs', 'Util.xs')
 		{
 			(my $xsc = $xs) =~ s/\.xs/.c/;
@@ -603,7 +640,11 @@ sub mkvcbuild
 			'hstore_plperl', 'contrib/hstore_plperl',
 			'plperl',        'src/pl/plperl',
 			'hstore',        'contrib/hstore');
-		$hstore_plperl->AddDefine('PLPERL_HAVE_UID_GID');
+
+		foreach my $f (@perl_embed_ccflags)
+		{
+			$hstore_plperl->AddDefine($f);
+		}
 	}
 
 	$mf =

@@ -499,6 +499,23 @@ EOF
 			last;
 		}
 	}
+	# Generate commit_id file
+	# If there is .git rewrite file whenever gitlog succeeds
+	if ( -d ".git" ) {
+		open P,"git log -1 --format='%h' |";
+		my $commit_id = <P>;
+		chomp($commit_id);
+		if (close(P)) {
+			open(O, ">src/include/commit_id.h");
+			print O "#define COMMIT_ID \"$commit_id\"\n";
+			close O;
+		}	
+	} elsif (! -f "src/include/commit_id.h" ) {
+		# Otheriwse write file only if it not exists
+		open(O, ">src/include/commit_id.h");
+		print O "#define COMMIT_ID \"00000000\"\n";
+		close O;
+	}
 
 	open(O, ">doc/src/sgml/version.sgml")
 	  || croak "Could not write to version.sgml\n";
@@ -547,10 +564,20 @@ sub AddProject
 	if ($self->{options}->{openssl})
 	{
 		$proj->AddIncludeDir($self->{options}->{openssl} . '\include');
-		$proj->AddLibrary(
-			$self->{options}->{openssl} . '\lib\VC\ssleay32.lib', 1);
-		$proj->AddLibrary(
-			$self->{options}->{openssl} . '\lib\VC\libeay32.lib', 1);
+		if (-e "$self->{options}->{openssl}/lib/VC/ssleay32MD.lib")
+		{
+			$proj->AddLibrary(
+				$self->{options}->{openssl} . '\lib\VC\ssleay32.lib', 1);
+			$proj->AddLibrary(
+				$self->{options}->{openssl} . '\lib\VC\libeay32.lib', 1);
+		}
+		else
+		{
+			$proj->AddLibrary(
+				$self->{options}->{openssl} . '\lib\ssleay32.lib', 1);
+			$proj->AddLibrary(
+				$self->{options}->{openssl} . '\lib\libeay32.lib', 1);
+		}
 	}
 	if ($self->{options}->{nls})
 	{
@@ -572,6 +599,7 @@ sub AddProject
 	if ($self->{options}->{xml})
 	{
 		$proj->AddIncludeDir($self->{options}->{xml} . '\include');
+		$proj->AddIncludeDir($self->{options}->{xml} . '\include\libxml2');
 		$proj->AddLibrary($self->{options}->{xml} . '\lib\libxml2.lib');
 	}
 	if ($self->{options}->{xslt})

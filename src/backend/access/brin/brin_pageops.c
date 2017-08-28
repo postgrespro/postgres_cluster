@@ -15,6 +15,7 @@
 #include "access/brin_revmap.h"
 #include "access/brin_xlog.h"
 #include "access/xloginsert.h"
+#include "access/ptrack.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
 #include "storage/freespace.h"
@@ -73,10 +74,8 @@ brin_doupdate(Relation idxrel, BlockNumber pagesPerRange,
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-			errmsg("index row size %lu exceeds maximum %lu for index \"%s\"",
-				   (unsigned long) newsz,
-				   (unsigned long) BrinMaxItemSize,
-				   RelationGetRelationName(idxrel))));
+			errmsg("index row size %zu exceeds maximum %zu for index \"%s\"",
+				   newsz, BrinMaxItemSize, RelationGetRelationName(idxrel))));
 		return false;			/* keep compiler quiet */
 	}
 
@@ -177,6 +176,7 @@ brin_doupdate(Relation idxrel, BlockNumber pagesPerRange,
 			UnlockReleaseBuffer(newbuf);
 		}
 
+		ptrack_add_block(idxrel, BufferGetBlockNumber(oldbuf));
 		START_CRIT_SECTION();
 		PageIndexDeleteNoCompact(oldpage, &oldoff, 1);
 		if (PageAddItemExtended(oldpage, (Item) newtup, newsz, oldoff,
@@ -237,6 +237,9 @@ brin_doupdate(Relation idxrel, BlockNumber pagesPerRange,
 
 		revmapbuf = brinLockRevmapPageForUpdate(revmap, heapBlk);
 
+		ptrack_add_block(idxrel, BufferGetBlockNumber(newbuf));
+		ptrack_add_block(idxrel, BufferGetBlockNumber(oldbuf));
+		ptrack_add_block(idxrel, BufferGetBlockNumber(revmapbuf));
 		START_CRIT_SECTION();
 
 		/*
@@ -359,10 +362,8 @@ brin_doinsert(Relation idxrel, BlockNumber pagesPerRange,
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-			errmsg("index row size %lu exceeds maximum %lu for index \"%s\"",
-				   (unsigned long) itemsz,
-				   (unsigned long) BrinMaxItemSize,
-				   RelationGetRelationName(idxrel))));
+			errmsg("index row size %zu exceeds maximum %zu for index \"%s\"",
+				   itemsz, BrinMaxItemSize, RelationGetRelationName(idxrel))));
 		return InvalidOffsetNumber;		/* keep compiler quiet */
 	}
 
@@ -408,6 +409,8 @@ brin_doinsert(Relation idxrel, BlockNumber pagesPerRange,
 	blk = BufferGetBlockNumber(*buffer);
 
 	/* Execute the actual insertion */
+	ptrack_add_block(idxrel, BufferGetBlockNumber(*buffer));
+	ptrack_add_block(idxrel, BufferGetBlockNumber(revmapbuf));
 	START_CRIT_SECTION();
 	if (extended)
 		brin_page_init(BufferGetPage(*buffer), BRIN_PAGETYPE_REGULAR);
@@ -669,7 +672,7 @@ brin_getinsertbuffer(Relation irel, Buffer oldbuf, Size itemsz,
 	BlockNumber oldblk;
 	BlockNumber newblk;
 	Page		page;
-	int			freespace;
+	Size		freespace;
 
 	/* callers must have checked */
 	Assert(itemsz <= BrinMaxItemSize);
@@ -825,10 +828,8 @@ brin_getinsertbuffer(Relation irel, Buffer oldbuf, Size itemsz,
 
 			ereport(ERROR,
 					(errcode(ERRCODE_PROGRAM_LIMIT_EXCEEDED),
-			errmsg("index row size %lu exceeds maximum %lu for index \"%s\"",
-				   (unsigned long) itemsz,
-				   (unsigned long) freespace,
-				   RelationGetRelationName(irel))));
+			errmsg("index row size %zu exceeds maximum %zu for index \"%s\"",
+				   itemsz, freespace, RelationGetRelationName(irel))));
 			return InvalidBuffer;		/* keep compiler quiet */
 		}
 
@@ -861,6 +862,7 @@ brin_initialize_empty_new_buffer(Relation idxrel, Buffer buffer)
 			   "brin_initialize_empty_new_buffer: initializing blank page %u",
 			   BufferGetBlockNumber(buffer)));
 
+	ptrack_add_block(idxrel, BufferGetBlockNumber(buffer));
 	START_CRIT_SECTION();
 	page = BufferGetPage(buffer);
 	brin_page_init(page, BRIN_PAGETYPE_REGULAR);

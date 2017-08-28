@@ -1,6 +1,6 @@
 <!--
 doc/src/sgml/ref/waitlsn.sgml
-PostgreSQL documentation
+&productname; documentation
 -->
 
 <refentry id="SQL-WAITLSN">
@@ -37,7 +37,7 @@ WAITLSN <replaceable class="PARAMETER">'LSN'</replaceable> [ , <replaceable clas
   <para>
    <command>WAITLSN</command> provides a simple
    interprocess <acronym>LSN</> wait mechanism for a backends on slave
-   in master-slave replication scheme on <productname>PostgreSQL</productname> database.
+   in master-slave replication scheme on <productname>&productname;</productname> database.
   </para>
  </refsect1>
 
@@ -57,7 +57,7 @@ WAITLSN <replaceable class="PARAMETER">'LSN'</replaceable> [ , <replaceable clas
     <term><replaceable class="PARAMETER">delay</replaceable></term>
     <listitem>
      <para>
-      Time in miliseconds to waiting for LSN to be replayed.
+      Time to wait for LSN to be replayed, in milliseconds.
      </para>
     </listitem>
    </varlistentry>
@@ -69,7 +69,7 @@ WAITLSN <replaceable class="PARAMETER">'LSN'</replaceable> [ , <replaceable clas
 
   <para>
    Delay time to waiting for LSN to be replayed must be integer. For
-   default it is infinity. Waiting can be interupped using Ctl+C, or
+   default it is infinity. Waiting can be interrupted using Ctl+C, or
    by Postmaster death.
   </para>
  </refsect1>

@@ -762,7 +762,15 @@ main(int argc, char **argv)
 			getTableDataFKConstraints();
 	}
 
-	if (dopt.outputBlobs)
+	/*
+	 * In binary-upgrade mode, we do not have to worry about the actual blob
+	 * data or the associated metadata that resides in the pg_largeobject and
+	 * pg_largeobject_metadata tables, respectivly.
+	 *
+	 * However, we do need to collect blob information as there may be
+	 * comments or other information on blobs that we do need to dump out.
+	 */
+	if (dopt.outputBlobs || dopt.binary_upgrade)
 		getBlobs(fout);
 
 	/*
@@ -845,6 +853,7 @@ main(int argc, char **argv)
 	ropt->lockWaitTimeout = dopt.lockWaitTimeout;
 	ropt->include_everything = dopt.include_everything;
 	ropt->enable_row_security = dopt.enable_row_security;
+	ropt->binary_upgrade = dopt.binary_upgrade;
 
 	if (compressLevel == -1)
 		ropt->compression = 0;
@@ -2938,6 +2947,20 @@ getBlobs(Archive *fout)
 			PQgetisnull(res, i, i_initlomacl) &&
 			PQgetisnull(res, i, i_initrlomacl))
 			binfo[i].dobj.dump &= ~DUMP_COMPONENT_ACL;
+
+		/*
+		 * In binary-upgrade mode for blobs, we do *not* dump out the data or
+		 * the ACLs, should any exist.  The data and ACL (if any) will be
+		 * copied by pg_upgrade, which simply copies the pg_largeobject and
+		 * pg_largeobject_metadata tables.
+		 *
+		 * We *do* dump out the definition of the blob because we need that to
+		 * make the restoration of the comments, and anything else, work since
+		 * pg_upgrade copies the files behind pg_largeobject and
+		 * pg_largeobject_metadata after the dump is restored.
+		 */
+		if (dopt->binary_upgrade)
+			binfo[i].dobj.dump &= ~(DUMP_COMPONENT_DATA | DUMP_COMPONENT_ACL);
 	}
 
 	/*
@@ -3615,12 +3638,37 @@ getNamespaces(Archive *fout, int *numNamespaces)
 						  "LEFT JOIN pg_init_privs pip "
 						  "ON (n.oid = pip.objoid "
 						  "AND pip.classoid = 'pg_namespace'::regclass "
-						  "AND pip.objsubid = 0) ",
+						  "AND pip.objsubid = 0",
 						  username_subquery,
 						  acl_subquery->data,
 						  racl_subquery->data,
 						  init_acl_subquery->data,
 						  init_racl_subquery->data);
+
+		/*
+		 * When we are doing a 'clean' run, we will be dropping and recreating
+		 * the 'public' schema (the only object which has that kind of
+		 * treatment in the backend and which has an entry in pg_init_privs)
+		 * and therefore we should not consider any initial privileges in
+		 * pg_init_privs in that case.
+		 *
+		 * See pg_backup_archiver.c:_printTocEntry() for the details on why
+		 * the public schema is special in this regard.
+		 *
+		 * Note that if the public schema is dropped and re-created, this is
+		 * essentially a no-op because the new public schema won't have an
+		 * entry in pg_init_privs anyway, as the entry will be removed when
+		 * the public schema is dropped.
+		 *
+		 * Further, we have to handle the case where the public schema does
+		 * not exist at all.
+		 */
+		if (dopt->outputClean)
+			appendPQExpBuffer(query," AND pip.objoid <> "
+									"coalesce((select oid from pg_namespace "
+									"where nspname = 'public'),0)");
+
+		appendPQExpBuffer(query,") ");
 
 		destroyPQExpBuffer(acl_subquery);
 		destroyPQExpBuffer(racl_subquery);
@@ -6237,10 +6285,10 @@ getIndexes(Archive *fout, TableInfo tblinfo[], int numTables)
 		 * is not.
 		 */
 		resetPQExpBuffer(query);
-		if (fout->remoteVersion >= 90600)
+		if (fout->remoteVersion >= 90600 && fout->pgproremoteVersion > 0)
 		{
 			/*
-			 * In 9.6 we add INCLUDING columns functionality
+			 * In PGPRO9_6 we add INCLUDING columns functionality
 			 * that requires new fields to be added.
 			 * i.indnkeyattrs is new, and besides we should use
 			 * i.indnatts instead of t.relnatts for index relations.
@@ -7312,7 +7360,7 @@ getProcLangs(Archive *fout, int *numProcLangs)
 						  "FROM pg_language l "
 						  "LEFT JOIN pg_init_privs pip ON "
 						  "(l.oid = pip.objoid "
-						  "AND pip.classoid = 'pg_type'::regclass "
+						  "AND pip.classoid = 'pg_language'::regclass "
 						  "AND pip.objsubid = 0) "
 						  "WHERE l.lanispl "
 						  "ORDER BY l.oid",
@@ -9155,7 +9203,8 @@ dumpComment(Archive *fout, const char *target,
 	}
 	else
 	{
-		if (dopt->schemaOnly)
+		/* We do dump blob comments in binary-upgrade mode */
+		if (dopt->schemaOnly && !dopt->binary_upgrade)
 			return;
 	}
 
@@ -11265,12 +11314,12 @@ dumpProcLang(Archive *fout, ProcLangInfo *plang)
 	/* Dump Proc Lang Comments and Security Labels */
 	if (plang->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, "",
+					lanschema, plang->lanowner,
 					plang->dobj.catId, 0, plang->dobj.dumpId);
 
 	if (plang->dobj.dump & DUMP_COMPONENT_SECLABEL)
 		dumpSecLabel(fout, labelq->data,
-					 NULL, "",
+					 lanschema, plang->lanowner,
 					 plang->dobj.catId, 0, plang->dobj.dumpId);
 
 	if (plang->lanpltrusted && plang->dobj.dump & DUMP_COMPONENT_ACL)
@@ -12072,7 +12121,7 @@ dumpCast(Archive *fout, CastInfo *cast)
 	/* Dump Cast Comments */
 	if (cast->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, "",
+					"pg_catalog", "",
 					cast->dobj.catId, 0, cast->dobj.dumpId);
 
 	free(sourceType);
@@ -12196,7 +12245,7 @@ dumpTransform(Archive *fout, TransformInfo *transform)
 	/* Dump Transform Comments */
 	if (transform->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, "",
+					"pg_catalog", "",
 					transform->dobj.catId, 0, transform->dobj.dumpId);
 
 	free(lanname);
@@ -12779,7 +12828,8 @@ dumpOpclass(Archive *fout, OpclassInfo *opcinfo)
 	i_opcfamilynsp = PQfnumber(res, "opcfamilynsp");
 	i_amname = PQfnumber(res, "amname");
 
-	opcintype = PQgetvalue(res, 0, i_opcintype);
+	/* opcintype may still be needed after we PQclear res */
+	opcintype = pg_strdup(PQgetvalue(res, 0, i_opcintype));
 	opckeytype = PQgetvalue(res, 0, i_opckeytype);
 	opcdefault = PQgetvalue(res, 0, i_opcdefault);
 	/* opcfamily will still be needed after we PQclear res */
@@ -13013,6 +13063,15 @@ dumpOpclass(Archive *fout, OpclassInfo *opcinfo)
 
 	PQclear(res);
 
+	/*
+	 * If needComma is still false it means we haven't added anything after
+	 * the AS keyword.  To avoid printing broken SQL, append a dummy STORAGE
+	 * clause with the same datatype.  This isn't sanctioned by the
+	 * documentation, but actually DefineOpClass will treat it as a no-op.
+	 */
+	if (!needComma)
+		appendPQExpBuffer(q, "STORAGE %s", opcintype);
+
 	appendPQExpBufferStr(q, ";\n");
 
 	appendPQExpBuffer(labelq, "OPERATOR CLASS %s",
@@ -13037,9 +13096,11 @@ dumpOpclass(Archive *fout, OpclassInfo *opcinfo)
 	/* Dump Operator Class Comments */
 	if (opcinfo->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, opcinfo->rolname,
+					opcinfo->dobj.namespace->dobj.name, opcinfo->rolname,
 					opcinfo->dobj.catId, 0, opcinfo->dobj.dumpId);
 
+	free(opcintype);
+	free(opcfamily);
 	free(amname);
 	destroyPQExpBuffer(query);
 	destroyPQExpBuffer(q);
@@ -13310,7 +13371,7 @@ dumpOpfamily(Archive *fout, OpfamilyInfo *opfinfo)
 	/* Dump Operator Family Comments */
 	if (opfinfo->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, opfinfo->rolname,
+					opfinfo->dobj.namespace->dobj.name, opfinfo->rolname,
 					opfinfo->dobj.catId, 0, opfinfo->dobj.dumpId);
 
 	free(amname);
@@ -14082,7 +14143,7 @@ dumpTSParser(Archive *fout, TSParserInfo *prsinfo)
 	/* Dump Parser Comments */
 	if (prsinfo->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, "",
+					prsinfo->dobj.namespace->dobj.name, "",
 					prsinfo->dobj.catId, 0, prsinfo->dobj.dumpId);
 
 	destroyPQExpBuffer(q);
@@ -14172,7 +14233,7 @@ dumpTSDictionary(Archive *fout, TSDictInfo *dictinfo)
 	/* Dump Dictionary Comments */
 	if (dictinfo->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, dictinfo->rolname,
+					dictinfo->dobj.namespace->dobj.name, dictinfo->rolname,
 					dictinfo->dobj.catId, 0, dictinfo->dobj.dumpId);
 
 	destroyPQExpBuffer(q);
@@ -14241,7 +14302,7 @@ dumpTSTemplate(Archive *fout, TSTemplateInfo *tmplinfo)
 	/* Dump Template Comments */
 	if (tmplinfo->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, "",
+					tmplinfo->dobj.namespace->dobj.name, "",
 					tmplinfo->dobj.catId, 0, tmplinfo->dobj.dumpId);
 
 	destroyPQExpBuffer(q);
@@ -14372,7 +14433,7 @@ dumpTSConfig(Archive *fout, TSConfigInfo *cfginfo)
 	/* Dump Configuration Comments */
 	if (cfginfo->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
-					NULL, cfginfo->rolname,
+					cfginfo->dobj.namespace->dobj.name, cfginfo->rolname,
 					cfginfo->dobj.catId, 0, cfginfo->dobj.dumpId);
 
 	destroyPQExpBuffer(q);
@@ -14750,10 +14811,20 @@ dumpDefaultACL(Archive *fout, DefaultACLInfo *daclinfo)
  * 'tag' is the tag for the archive entry (typ. unquoted name of object).
  * 'nspname' is the namespace the object is in (NULL if none).
  * 'owner' is the owner, NULL if there is no owner (for languages).
- * 'acls' is the string read out of the fooacl system catalog field;
- *		it will be parsed here.
- * 'racls' contains any initial ACLs that the object had which have now been
- *		revoked by the user, it will also be parsed here.
+ * 'acls' contains the ACL string of the object from the appropriate system
+ * 		catalog field; it will be passed to buildACLCommands for building the
+ * 		appropriate GRANT commands.
+ * 'racls' contains the ACL string of any initial-but-now-revoked ACLs of the
+ * 		object; it will be passed to buildACLCommands for building the
+ * 		appropriate REVOKE commands.
+ * 'initacls' In binary-upgrade mode, ACL string of the object's initial
+ * 		privileges, to be recorded into pg_init_privs
+ * 'initracls' In binary-upgrade mode, ACL string of the object's
+ * 		revoked-from-default privileges, to be recorded into pg_init_privs
+ *
+ * NB: initacls/initracls are needed because extensions can set privileges on
+ * an object during the extension's script file and we record those into
+ * pg_init_privs as that object's initial privileges.
  *----------
  */
 static void
@@ -14855,7 +14926,8 @@ dumpSecLabel(Archive *fout, const char *target,
 	}
 	else
 	{
-		if (dopt->schemaOnly)
+		/* We do dump blob security labels in binary-upgrade mode */
+		if (dopt->schemaOnly && !dopt->binary_upgrade)
 			return;
 	}
 
@@ -16985,6 +17057,7 @@ dumpEventTrigger(Archive *fout, EventTriggerInfo *evtinfo)
 {
 	DumpOptions *dopt = fout->dopt;
 	PQExpBuffer query;
+	PQExpBuffer delqry;
 	PQExpBuffer labelq;
 
 	/* Skip if not to be dumped */
@@ -16992,6 +17065,7 @@ dumpEventTrigger(Archive *fout, EventTriggerInfo *evtinfo)
 		return;
 
 	query = createPQExpBuffer();
+	delqry = createPQExpBuffer();
 	labelq = createPQExpBuffer();
 
 	appendPQExpBufferStr(query, "CREATE EVENT TRIGGER ");
@@ -17031,14 +17105,21 @@ dumpEventTrigger(Archive *fout, EventTriggerInfo *evtinfo)
 		}
 		appendPQExpBufferStr(query, ";\n");
 	}
+
+	appendPQExpBuffer(delqry, "DROP EVENT TRIGGER %s;\n",
+					  fmtId(evtinfo->dobj.name));
+
 	appendPQExpBuffer(labelq, "EVENT TRIGGER %s",
 					  fmtId(evtinfo->dobj.name));
 
 	if (evtinfo->dobj.dump & DUMP_COMPONENT_DEFINITION)
 		ArchiveEntry(fout, evtinfo->dobj.catId, evtinfo->dobj.dumpId,
-					 evtinfo->dobj.name, NULL, NULL, evtinfo->evtowner, false,
+					 evtinfo->dobj.name, NULL, NULL,
+					 evtinfo->evtowner, false,
 					 "EVENT TRIGGER", SECTION_POST_DATA,
-					 query->data, "", NULL, NULL, 0, NULL, NULL);
+					 query->data, delqry->data, NULL,
+					 NULL, 0,
+					 NULL, NULL);
 
 	if (evtinfo->dobj.dump & DUMP_COMPONENT_COMMENT)
 		dumpComment(fout, labelq->data,
@@ -17046,6 +17127,7 @@ dumpEventTrigger(Archive *fout, EventTriggerInfo *evtinfo)
 					evtinfo->dobj.catId, 0, evtinfo->dobj.dumpId);
 
 	destroyPQExpBuffer(query);
+	destroyPQExpBuffer(delqry);
 	destroyPQExpBuffer(labelq);
 }
 

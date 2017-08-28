@@ -114,6 +114,7 @@
 #include "access/tuptoaster.h"
 #include "access/xact.h"
 #include "access/xloginsert.h"
+#include "access/ptrack.h"
 
 #include "catalog/catalog.h"
 
@@ -330,11 +331,15 @@ end_heap_rewrite(RewriteState state)
 	if (state->rs_buffer_valid)
 	{
 		if (state->rs_use_wal)
+		{
+			/* Don't forget to set ptrack bit even if we're skipping bufmgr stage */
+			ptrack_add_block_redo(state->rs_new_rel->rd_node, state->rs_blockno);
 			log_newpage(&state->rs_new_rel->rd_node,
 						MAIN_FORKNUM,
 						state->rs_blockno,
 						state->rs_buffer,
 						true);
+		}
 		RelationOpenSmgr(state->rs_new_rel);
 
 		PageSetChecksumInplace(state->rs_buffer, state->rs_blockno);
@@ -679,11 +684,15 @@ raw_heap_insert(RewriteState state, HeapTuple tup)
 
 			/* XLOG stuff */
 			if (state->rs_use_wal)
+			{
+				/* Don't forget to set ptrack bit even if we're skipping bufmgr stage */
+				ptrack_add_block_redo(state->rs_new_rel->rd_node, state->rs_blockno);
 				log_newpage(&state->rs_new_rel->rd_node,
 							MAIN_FORKNUM,
 							state->rs_blockno,
 							page,
 							true);
+			}
 
 			/*
 			 * Now write the page. We say isTemp = true even if it's not a
@@ -1194,7 +1203,7 @@ CheckPointLogicalRewriteHeap(void)
 	XLogRecPtr	redo;
 	DIR		   *mappings_dir;
 	struct dirent *mapping_de;
-	char		path[MAXPGPATH];
+	char		path[MAXPGPATH + 20];
 
 	/*
 	 * We start of with a minimum of the last redo pointer. No new decoding
@@ -1225,7 +1234,7 @@ CheckPointLogicalRewriteHeap(void)
 			strcmp(mapping_de->d_name, "..") == 0)
 			continue;
 
-		snprintf(path, MAXPGPATH, "pg_logical/mappings/%s", mapping_de->d_name);
+		snprintf(path, sizeof(path), "pg_logical/mappings/%s", mapping_de->d_name);
 		if (lstat(path, &statbuf) == 0 && !S_ISREG(statbuf.st_mode))
 			continue;
 

@@ -19,6 +19,7 @@
 #include "access/transam.h"
 #include "access/htup_details.h"
 #include "access/xlog.h"
+#include "access/ptrack.h"
 #include "catalog/catalog.h"
 #include "miscadmin.h"
 #include "pgstat.h"
@@ -228,6 +229,7 @@ heap_page_prune(Relation relation, Buffer buffer, TransactionId OldestXmin,
 	}
 
 	/* Any error while applying the changes is critical */
+	ptrack_add_block(relation, BufferGetBlockNumber(buffer));
 	START_CRIT_SECTION();
 
 	/* Have we found any prunable items? */

@@ -311,7 +311,6 @@ ConstructTupleDescriptor(Relation heapRelation,
 		Form_pg_attribute to = indexTupDesc->attrs[i];
 		HeapTuple	tuple;
 		Form_pg_type typeTup;
-		Form_pg_opclass opclassTup;
 		Oid			keyType;
 
 		if (atnum != 0)
@@ -425,43 +424,62 @@ ConstructTupleDescriptor(Relation heapRelation,
 		colnames_item = lnext(colnames_item);
 
 		/*
+		 * Check the opclass and index AM to see if either provides a keytype
+		 * (overriding the attribute type).  Opclass (if exists) takes precedence.
+		 */
+		keyType = amroutine->amkeytype;
+
+		/*
 		 * Code below is concerned to the opclasses which are not used
 		 * with the included columns.
 		 */
-		if (i >= indexInfo->ii_NumIndexKeyAttrs)
-			continue;
-
-		/*
-		 * Check the opclass and index AM to see if either provides a keytype
-		 * (overriding the attribute type).  Opclass takes precedence.
-		 */
-		tuple = SearchSysCache1(CLAOID, ObjectIdGetDatum(classObjectId[i]));
-		if (!HeapTupleIsValid(tuple))
-			elog(ERROR, "cache lookup failed for opclass %u",
-				 classObjectId[i]);
-		opclassTup = (Form_pg_opclass) GETSTRUCT(tuple);
-		if (OidIsValid(opclassTup->opckeytype))
-			keyType = opclassTup->opckeytype;
-		else
-			keyType = amroutine->amkeytype;
-		ReleaseSysCache(tuple);
-
-		if (OidIsValid(keyType) && keyType != to->atttypid)
+		if (i < indexInfo->ii_NumIndexKeyAttrs)
 		{
-			/* index value and heap value have different types */
-			tuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(keyType));
-			if (!HeapTupleIsValid(tuple))
-				elog(ERROR, "cache lookup failed for type %u", keyType);
-			typeTup = (Form_pg_type) GETSTRUCT(tuple);
+			Form_pg_opclass opclassTup;
 
-			to->atttypid = keyType;
-			to->atttypmod = -1;
-			to->attlen = typeTup->typlen;
-			to->attbyval = typeTup->typbyval;
-			to->attalign = typeTup->typalign;
-			to->attstorage = typeTup->typstorage;
+			tuple = SearchSysCache1(CLAOID, ObjectIdGetDatum(classObjectId[i]));
+			if (!HeapTupleIsValid(tuple))
+				elog(ERROR, "cache lookup failed for opclass %u",
+					 classObjectId[i]);
+			opclassTup = (Form_pg_opclass) GETSTRUCT(tuple);
+			if (OidIsValid(opclassTup->opckeytype))
+				keyType = opclassTup->opckeytype;
 
 			ReleaseSysCache(tuple);
+
+			/*
+			* If keytype is specified as ANYELEMENT, and opcintype is ANYARRAY,
+			* then the attribute type must be an array (else it'd not have
+			* matched this opclass); use its element type.
+			*/
+			if (keyType == ANYELEMENTOID && opclassTup->opcintype == ANYARRAYOID)
+			{
+				keyType = get_base_element_type(to->atttypid);
+				if (!OidIsValid(keyType))
+					elog(ERROR, "could not get element type of array type %u",
+						to->atttypid);
+			}
+
+			/*
+			* If a key type different from the heap value is specified, update
+			* the type-related fields in the index tupdesc.
+			*/
+			if (OidIsValid(keyType) && keyType != to->atttypid)
+			{
+				tuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(keyType));
+				if (!HeapTupleIsValid(tuple))
+					elog(ERROR, "cache lookup failed for type %u", keyType);
+				typeTup = (Form_pg_type) GETSTRUCT(tuple);
+
+				to->atttypid = keyType;
+				to->atttypmod = -1;
+				to->attlen = typeTup->typlen;
+				to->attbyval = typeTup->typbyval;
+				to->attalign = typeTup->typalign;
+				to->attstorage = typeTup->typstorage;
+
+				ReleaseSysCache(tuple);
+			}
 		}
 	}
 
@@ -3470,7 +3488,7 @@ reindex_index(Oid indexId, bool skip_constraint_checks, char persistence,
 		ereport(INFO,
 				(errmsg("index \"%s\" was reindexed",
 						get_rel_name(indexId)),
-				 errdetail("%s.",
+				 errdetail_internal("%s",
 						   pg_rusage_show(&ru0))));
 
 	/* Close rels, but keep locks */

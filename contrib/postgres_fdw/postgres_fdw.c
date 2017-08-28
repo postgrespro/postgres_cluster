@@ -3990,6 +3990,15 @@ foreign_join_ok(PlannerInfo *root, RelOptInfo *joinrel, JoinType jointype,
 		joinclauses = NIL;
 	}
 
+	/* Get foreign server */
+	fpinfo->server = fpinfo_o->server;
+
+	/*
+	 * Copy shippable_extensions before checking whether the foreign join is
+	 * OK, so that we know which quals can be evaluated on the foreign server.
+	 */
+	fpinfo->shippable_extensions = fpinfo_o->shippable_extensions;
+
 	/* Join quals must be safe to push down. */
 	foreach(lc, joinclauses)
 	{
@@ -4133,9 +4142,6 @@ foreign_join_ok(PlannerInfo *root, RelOptInfo *joinrel, JoinType jointype,
 	else
 		fpinfo->user = NULL;
 
-	/* Get foreign server */
-	fpinfo->server = fpinfo_o->server;
-
 	/*
 	 * Since both the joining relations come from the same server, the server
 	 * level options should have same value for both the relations. Pick from
@@ -4255,7 +4261,6 @@ postgresGetForeignJoinPaths(PlannerInfo *root,
 	 * the path list of the joinrel, if one exists.  We must be careful to
 	 * call it before adding any ForeignPath, since the ForeignPath might
 	 * dominate the only suitable local path available.  We also do it before
-	 * reconstruct the row for EvalPlanQual(). Find an alternative local path
 	 * calling foreign_join_ok(), since that function updates fpinfo and marks
 	 * it as pushable if the join is found to be pushable.
 	 */

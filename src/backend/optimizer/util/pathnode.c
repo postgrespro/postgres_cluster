@@ -1685,16 +1685,17 @@ create_gather_path(PlannerInfo *root, RelOptInfo *rel, Path *subpath,
 														  required_outer);
 	pathnode->path.parallel_aware = false;
 	pathnode->path.parallel_safe = false;
-	pathnode->path.parallel_workers = subpath->parallel_workers;
+	pathnode->path.parallel_workers = 0;
 	pathnode->path.pathkeys = NIL;		/* Gather has unordered result */
 
 	pathnode->subpath = subpath;
+	pathnode->num_workers = subpath->parallel_workers;
 	pathnode->single_copy = false;
 
-	if (pathnode->path.parallel_workers == 0)
+	if (pathnode->num_workers == 0)
 	{
-		pathnode->path.parallel_workers = 1;
 		pathnode->path.pathkeys = subpath->pathkeys;
+		pathnode->num_workers = 1;
 		pathnode->single_copy = true;
 	}
 
@@ -1939,8 +1940,7 @@ calc_non_nestloop_required_outer(Path *outer_path, Path *inner_path)
  * 'joinrel' is the join relation.
  * 'jointype' is the type of join required
  * 'workspace' is the result from initial_cost_nestloop
- * 'sjinfo' is extra info about the join for selectivity estimation
- * 'semifactors' contains valid data if jointype is SEMI or ANTI
+ * 'extra' contains various information about the join
  * 'outer_path' is the outer path
  * 'inner_path' is the inner path
  * 'restrict_clauses' are the RestrictInfo nodes to apply at the join
@@ -1954,8 +1954,7 @@ create_nestloop_path(PlannerInfo *root,
 					 RelOptInfo *joinrel,
 					 JoinType jointype,
 					 JoinCostWorkspace *workspace,
-					 SpecialJoinInfo *sjinfo,
-					 SemiAntiJoinFactors *semifactors,
+					 JoinPathExtraData *extra,
 					 Path *outer_path,
 					 Path *inner_path,
 					 List *restrict_clauses,
@@ -1999,7 +1998,7 @@ create_nestloop_path(PlannerInfo *root,
 								  joinrel,
 								  outer_path,
 								  inner_path,
-								  sjinfo,
+								  extra->sjinfo,
 								  required_outer,
 								  &restrict_clauses);
 	pathnode->path.parallel_aware = false;
@@ -2009,11 +2008,12 @@ create_nestloop_path(PlannerInfo *root,
 	pathnode->path.parallel_workers = outer_path->parallel_workers;
 	pathnode->path.pathkeys = pathkeys;
 	pathnode->jointype = jointype;
+	pathnode->inner_unique = extra->inner_unique;
 	pathnode->outerjoinpath = outer_path;
 	pathnode->innerjoinpath = inner_path;
 	pathnode->joinrestrictinfo = restrict_clauses;
 
-	final_cost_nestloop(root, pathnode, workspace, sjinfo, semifactors);
+	final_cost_nestloop(root, pathnode, workspace, extra);
 
 	return pathnode;
 }
@@ -2026,7 +2026,7 @@ create_nestloop_path(PlannerInfo *root,
  * 'joinrel' is the join relation
  * 'jointype' is the type of join required
  * 'workspace' is the result from initial_cost_mergejoin
- * 'sjinfo' is extra info about the join for selectivity estimation
+ * 'extra' contains various information about the join
  * 'outer_path' is the outer path
  * 'inner_path' is the inner path
  * 'restrict_clauses' are the RestrictInfo nodes to apply at the join
@@ -2042,7 +2042,7 @@ create_mergejoin_path(PlannerInfo *root,
 					  RelOptInfo *joinrel,
 					  JoinType jointype,
 					  JoinCostWorkspace *workspace,
-					  SpecialJoinInfo *sjinfo,
+					  JoinPathExtraData *extra,
 					  Path *outer_path,
 					  Path *inner_path,
 					  List *restrict_clauses,
@@ -2062,7 +2062,7 @@ create_mergejoin_path(PlannerInfo *root,
 								  joinrel,
 								  outer_path,
 								  inner_path,
-								  sjinfo,
+								  extra->sjinfo,
 								  required_outer,
 								  &restrict_clauses);
 	pathnode->jpath.path.parallel_aware = false;
@@ -2072,15 +2072,17 @@ create_mergejoin_path(PlannerInfo *root,
 	pathnode->jpath.path.parallel_workers = outer_path->parallel_workers;
 	pathnode->jpath.path.pathkeys = pathkeys;
 	pathnode->jpath.jointype = jointype;
+	pathnode->jpath.inner_unique = extra->inner_unique;
 	pathnode->jpath.outerjoinpath = outer_path;
 	pathnode->jpath.innerjoinpath = inner_path;
 	pathnode->jpath.joinrestrictinfo = restrict_clauses;
 	pathnode->path_mergeclauses = mergeclauses;
 	pathnode->outersortkeys = outersortkeys;
 	pathnode->innersortkeys = innersortkeys;
+	/* pathnode->skip_mark_restore will be set by final_cost_mergejoin */
 	/* pathnode->materialize_inner will be set by final_cost_mergejoin */
 
-	final_cost_mergejoin(root, pathnode, workspace, sjinfo);
+	final_cost_mergejoin(root, pathnode, workspace, extra);
 
 	return pathnode;
 }
@@ -2092,8 +2094,7 @@ create_mergejoin_path(PlannerInfo *root,
  * 'joinrel' is the join relation
  * 'jointype' is the type of join required
  * 'workspace' is the result from initial_cost_hashjoin
- * 'sjinfo' is extra info about the join for selectivity estimation
- * 'semifactors' contains valid data if jointype is SEMI or ANTI
+ * 'extra' contains various information about the join
  * 'outer_path' is the cheapest outer path
  * 'inner_path' is the cheapest inner path
  * 'restrict_clauses' are the RestrictInfo nodes to apply at the join
@@ -2106,8 +2107,7 @@ create_hashjoin_path(PlannerInfo *root,
 					 RelOptInfo *joinrel,
 					 JoinType jointype,
 					 JoinCostWorkspace *workspace,
-					 SpecialJoinInfo *sjinfo,
-					 SemiAntiJoinFactors *semifactors,
+					 JoinPathExtraData *extra,
 					 Path *outer_path,
 					 Path *inner_path,
 					 List *restrict_clauses,
@@ -2124,7 +2124,7 @@ create_hashjoin_path(PlannerInfo *root,
 								  joinrel,
 								  outer_path,
 								  inner_path,
-								  sjinfo,
+								  extra->sjinfo,
 								  required_outer,
 								  &restrict_clauses);
 	pathnode->jpath.path.parallel_aware = false;
@@ -2146,13 +2146,14 @@ create_hashjoin_path(PlannerInfo *root,
 	 */
 	pathnode->jpath.path.pathkeys = NIL;
 	pathnode->jpath.jointype = jointype;
+	pathnode->jpath.inner_unique = extra->inner_unique;
 	pathnode->jpath.outerjoinpath = outer_path;
 	pathnode->jpath.innerjoinpath = inner_path;
 	pathnode->jpath.joinrestrictinfo = restrict_clauses;
 	pathnode->path_hashclauses = hashclauses;
 	/* final_cost_hashjoin will fill in pathnode->num_batches */
 
-	final_cost_hashjoin(root, pathnode, workspace, sjinfo, semifactors);
+	final_cost_hashjoin(root, pathnode, workspace, extra);
 
 	return pathnode;
 }

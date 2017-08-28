@@ -260,7 +260,7 @@ INSERT INTO mytab (complex_col.r, complex_col.i) VALUES(1.1, 2.2);
   </para>
 
   <para>
-   In <productname>PostgreSQL</>, a reference to a table name (or alias)
+   In <productname>&productname;</>, a reference to a table name (or alias)
    in a query is effectively a reference to the composite value of the
    table's current row.  For example, if we had a table
    <structname>inventory_item</> as shown
@@ -306,7 +306,7 @@ SELECT c.* FROM inventory_item c;
 <programlisting>
 SELECT c.name, c.supplier_id, c.price FROM inventory_item c;
 </programlisting>
-   <productname>PostgreSQL</> will apply this expansion behavior to
+   <productname>&productname;</> will apply this expansion behavior to
    any composite-valued expression, although as shown <link
    linkend="rowtypes-accessing">above</link>, you need to write parentheses
    around the value that <literal>.*</> is applied to whenever it's not a
@@ -322,7 +322,7 @@ SELECT (myfunc(x)).a, (myfunc(x)).b, (myfunc(x)).c FROM some_table;
 
   <tip>
    <para>
-    <productname>PostgreSQL</> handles column expansion by
+    <productname>&productname;</> handles column expansion by
     actually transforming the first form into the second.  So, in this
     example, <function>myfunc()</> would get invoked three times per row
     with either syntax.  If it's an expensive function you may wish to

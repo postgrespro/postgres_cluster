@@ -17,7 +17,7 @@ DROP ROLE IF EXISTS regress_user4;
 DROP ROLE IF EXISTS regress_user5;
 DROP ROLE IF EXISTS regress_user6;
 
-SELECT lo_unlink(oid) FROM pg_largeobject_metadata;
+SELECT lo_unlink(oid) FROM pg_largeobject_metadata WHERE oid >= 1000 AND oid < 3000 ORDER BY oid;
 
 RESET client_min_messages;
 
@@ -125,6 +125,67 @@ COPY atest2 FROM stdin; -- ok
 bar	true
 \.
 SELECT * FROM atest1; -- ok
+
+
+-- test leaky-function protections in selfuncs
+
+-- regress_user1 will own a table and provide a view for it.
+SET SESSION AUTHORIZATION regress_user1;
+
+CREATE TABLE atest12 as
+  SELECT x AS a, 10001 - x AS b FROM generate_series(1,10000) x;
+CREATE INDEX ON atest12 (a);
+CREATE INDEX ON atest12 (abs(a));
+VACUUM ANALYZE atest12;
+
+CREATE FUNCTION leak(integer,integer) RETURNS boolean
+  AS $$begin return $1 < $2; end$$
+  LANGUAGE plpgsql immutable;
+CREATE OPERATOR <<< (procedure = leak, leftarg = integer, rightarg = integer,
+                     restrict = scalarltsel);
+
+-- view with leaky operator
+CREATE VIEW atest12v AS
+  SELECT * FROM atest12 WHERE b <<< 5;
+GRANT SELECT ON atest12v TO PUBLIC;
+
+-- This plan should use nestloop, knowing that few rows will be selected.
+EXPLAIN (COSTS OFF) SELECT * FROM atest12v x, atest12v y WHERE x.a = y.b;
+
+-- And this one.
+EXPLAIN (COSTS OFF) SELECT * FROM atest12 x, atest12 y
+  WHERE x.a = y.b and abs(y.a) <<< 5;
+
+-- Check if regress_user2 can break security.
+SET SESSION AUTHORIZATION regress_user2;
+
+CREATE FUNCTION leak2(integer,integer) RETURNS boolean
+  AS $$begin raise notice 'leak % %', $1, $2; return $1 > $2; end$$
+  LANGUAGE plpgsql immutable;
+CREATE OPERATOR >>> (procedure = leak2, leftarg = integer, rightarg = integer,
+                     restrict = scalargtsel);
+
+-- This should not show any "leak" notices before failing.
+EXPLAIN (COSTS OFF) SELECT * FROM atest12 WHERE a >>> 0;
+
+-- This plan should use hashjoin, as it will expect many rows to be selected.
+EXPLAIN (COSTS OFF) SELECT * FROM atest12v x, atest12v y WHERE x.a = y.b;
+
+-- Now regress_user1 grants sufficient access to regress_user2.
+SET SESSION AUTHORIZATION regress_user1;
+GRANT SELECT (a, b) ON atest12 TO PUBLIC;
+SET SESSION AUTHORIZATION regress_user2;
+
+-- Now regress_user2 will also get a good row estimate.
+EXPLAIN (COSTS OFF) SELECT * FROM atest12v x, atest12v y WHERE x.a = y.b;
+
+-- But not for this, due to lack of table-wide permissions needed
+-- to make use of the expression index's statistics.
+EXPLAIN (COSTS OFF) SELECT * FROM atest12 x, atest12 y
+  WHERE x.a = y.b and abs(y.a) <<< 5;
+
+-- clean up (regress_user1's objects are all dropped later)
+DROP FUNCTION leak2(integer, integer) CASCADE;
 
 
 -- groups
@@ -709,6 +770,9 @@ SET SESSION AUTHORIZATION regress_user2;
 SELECT lo_create(2001);
 SELECT lo_create(2002);
 
+SELECT loread(lo_open(1001, x'20000'::int), 32);	-- allowed, for now
+SELECT lowrite(lo_open(1001, x'40000'::int), 'abcd');	-- fail, wrong mode
+
 SELECT loread(lo_open(1001, x'40000'::int), 32);
 SELECT loread(lo_open(1002, x'40000'::int), 32);	-- to be denied
 SELECT loread(lo_open(1003, x'40000'::int), 32);
@@ -729,7 +793,7 @@ SELECT lo_unlink(2002);
 
 \c -
 -- confirm ACL setting
-SELECT oid, pg_get_userbyid(lomowner) ownername, lomacl FROM pg_largeobject_metadata;
+SELECT oid, pg_get_userbyid(lomowner) ownername, lomacl FROM pg_largeobject_metadata WHERE oid >= 1000 AND oid < 3000 ORDER BY oid;
 
 SET SESSION AUTHORIZATION regress_user3;
 
@@ -748,6 +812,7 @@ SET SESSION AUTHORIZATION regress_user4;
 SELECT loread(lo_open(1002, x'40000'::int), 32);	-- to be denied
 SELECT lowrite(lo_open(1002, x'20000'::int), 'abcd');	-- to be denied
 SELECT lo_truncate(lo_open(1002, x'20000'::int), 10);	-- to be denied
+SELECT lo_put(1002, 1, 'abcd');				-- to be denied
 SELECT lo_unlink(1002);					-- to be denied
 SELECT lo_export(1001, '/dev/null');			-- to be denied
 
@@ -960,7 +1025,7 @@ DROP TABLE atestc;
 DROP TABLE atestp1;
 DROP TABLE atestp2;
 
-SELECT lo_unlink(oid) FROM pg_largeobject_metadata;
+SELECT lo_unlink(oid) FROM pg_largeobject_metadata WHERE oid >= 1000 AND oid < 3000 ORDER BY oid;
 
 DROP GROUP regress_group1;
 DROP GROUP regress_group2;

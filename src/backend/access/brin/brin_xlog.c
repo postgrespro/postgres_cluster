@@ -14,6 +14,7 @@
 #include "access/brin_pageops.h"
 #include "access/brin_xlog.h"
 #include "access/xlogutils.h"
+#include "access/ptrack.h"
 
 
 /*
@@ -26,6 +27,11 @@ brin_xlog_createidx(XLogReaderState *record)
 	xl_brin_createidx *xlrec = (xl_brin_createidx *) XLogRecGetData(record);
 	Buffer		buf;
 	Page		page;
+	RelFileNode rnode;
+	BlockNumber blkno;
+
+	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
 
 	/* create the index' metapage */
 	buf = XLogInitBufferForRedo(record, 0);
@@ -50,6 +56,13 @@ brin_xlog_insert_update(XLogReaderState *record,
 	BlockNumber regpgno;
 	Page		page;
 	XLogRedoAction action;
+	RelFileNode rnode;
+	BlockNumber blkno;
+
+	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
+	XLogRecGetBlockTag(record, 1, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
 
 	/*
 	 * If we inserted the first and only tuple on the page, re-initialize the
@@ -137,9 +150,15 @@ brin_xlog_update(XLogReaderState *record)
 	xl_brin_update *xlrec = (xl_brin_update *) XLogRecGetData(record);
 	Buffer		buffer;
 	XLogRedoAction action;
+	RelFileNode rnode;
+	BlockNumber blkno;
+
+	XLogRecGetBlockTag(record, 2, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
 
 	/* First remove the old tuple */
 	action = XLogReadBufferForRedo(record, 2, &buffer);
+
 	if (action == BLK_NEEDS_REDO)
 	{
 		Page		page;
@@ -174,9 +193,15 @@ brin_xlog_samepage_update(XLogReaderState *record)
 	xl_brin_samepage_update *xlrec;
 	Buffer		buffer;
 	XLogRedoAction action;
+	RelFileNode rnode;
+	BlockNumber blkno;
+
+	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
 
 	xlrec = (xl_brin_samepage_update *) XLogRecGetData(record);
 	action = XLogReadBufferForRedo(record, 0, &buffer);
+
 	if (action == BLK_NEEDS_REDO)
 	{
 		Size		tuplen;
@@ -220,14 +245,21 @@ brin_xlog_revmap_extend(XLogReaderState *record)
 	Page		page;
 	BlockNumber targetBlk;
 	XLogRedoAction action;
+	RelFileNode rnode;
+	BlockNumber blkno;
 
 	xlrec = (xl_brin_revmap_extend *) XLogRecGetData(record);
 
-	XLogRecGetBlockTag(record, 1, NULL, NULL, &targetBlk);
+	XLogRecGetBlockTag(record, 0, &rnode, NULL, &blkno);
+	ptrack_add_block_redo(rnode, blkno);
+	XLogRecGetBlockTag(record, 1, &rnode, NULL, &targetBlk);
+	ptrack_add_block_redo(rnode, targetBlk);
+
 	Assert(xlrec->targetBlk == targetBlk);
 
 	/* Update the metapage */
 	action = XLogReadBufferForRedo(record, 0, &metabuf);
+
 	if (action == BLK_NEEDS_REDO)
 	{
 		Page		metapg;

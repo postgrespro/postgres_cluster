@@ -204,12 +204,12 @@ static BitmapOr *make_bitmap_or(List *bitmapplans);
 static NestLoop *make_nestloop(List *tlist,
 			  List *joinclauses, List *otherclauses, List *nestParams,
 			  Plan *lefttree, Plan *righttree,
-			  JoinType jointype);
+			  JoinType jointype, bool inner_unique);
 static HashJoin *make_hashjoin(List *tlist,
 			  List *joinclauses, List *otherclauses,
 			  List *hashclauses,
 			  Plan *lefttree, Plan *righttree,
-			  JoinType jointype);
+			  JoinType jointype, bool inner_unique);
 static Hash *make_hash(Plan *lefttree,
 		  Oid skewTable,
 		  AttrNumber skewColumn,
@@ -224,7 +224,8 @@ static MergeJoin *make_mergejoin(List *tlist,
 			   int *mergestrategies,
 			   bool *mergenullsfirst,
 			   Plan *lefttree, Plan *righttree,
-			   JoinType jointype);
+			   JoinType jointype, bool inner_unique,
+			   bool skip_mark_restore);
 static Sort *make_sort(Plan *lefttree, int numCols,
 		  AttrNumber *sortColIdx, Oid *sortOperators,
 		  Oid *collations, bool *nullsFirst);
@@ -758,6 +759,15 @@ use_physical_tlist(PlannerInfo *root, Path *path, int flags)
 	 * create_append_plan instructs its children to return an exact tlist).
 	 */
 	if (rel->reloptkind != RELOPT_BASEREL)
+		return false;
+
+	/*
+	 * Also, don't do it to a CustomPath; the premise that we're extracting
+	 * columns from a simple physical tuple is unlikely to hold for those.
+	 * (When it does make sense, the custom path creator can set up the path's
+	 * pathtarget that way.)
+	 */
+	if (IsA(path, CustomPath))
 		return false;
 
 	/*
@@ -1400,7 +1410,7 @@ create_gather_plan(PlannerInfo *root, GatherPath *best_path)
 
 	gather_plan = make_gather(tlist,
 							  NIL,
-							  best_path->path.parallel_workers,
+							  best_path->num_workers,
 							  best_path->single_copy,
 							  subplan);
 
@@ -3499,7 +3509,8 @@ create_nestloop_plan(PlannerInfo *root,
 							  nestParams,
 							  outer_plan,
 							  inner_plan,
-							  best_path->jointype);
+							  best_path->jointype,
+							  best_path->inner_unique);
 
 	copy_generic_path_info(&join_plan->join.plan, &best_path->path);
 
@@ -3802,7 +3813,9 @@ create_mergejoin_plan(PlannerInfo *root,
 							   mergenullsfirst,
 							   outer_plan,
 							   inner_plan,
-							   best_path->jpath.jointype);
+							   best_path->jpath.jointype,
+							   best_path->jpath.inner_unique,
+							   best_path->skip_mark_restore);
 
 	/* Costs of sort and material steps are included in path cost already */
 	copy_generic_path_info(&join_plan->join.plan, &best_path->jpath.path);
@@ -3942,7 +3955,8 @@ create_hashjoin_plan(PlannerInfo *root,
 							  hashclauses,
 							  outer_plan,
 							  (Plan *) hash_plan,
-							  best_path->jpath.jointype);
+							  best_path->jpath.jointype,
+							  best_path->jpath.inner_unique);
 
 	copy_generic_path_info(&join_plan->join.plan, &best_path->jpath.path);
 
@@ -5042,7 +5056,8 @@ make_nestloop(List *tlist,
 			  List *nestParams,
 			  Plan *lefttree,
 			  Plan *righttree,
-			  JoinType jointype)
+			  JoinType jointype,
+			  bool inner_unique)
 {
 	NestLoop   *node = makeNode(NestLoop);
 	Plan	   *plan = &node->join.plan;
@@ -5052,6 +5067,7 @@ make_nestloop(List *tlist,
 	plan->lefttree = lefttree;
 	plan->righttree = righttree;
 	node->join.jointype = jointype;
+	node->join.inner_unique = inner_unique;
 	node->join.joinqual = joinclauses;
 	node->nestParams = nestParams;
 
@@ -5065,7 +5081,8 @@ make_hashjoin(List *tlist,
 			  List *hashclauses,
 			  Plan *lefttree,
 			  Plan *righttree,
-			  JoinType jointype)
+			  JoinType jointype,
+			  bool inner_unique)
 {
 	HashJoin   *node = makeNode(HashJoin);
 	Plan	   *plan = &node->join.plan;
@@ -5076,6 +5093,7 @@ make_hashjoin(List *tlist,
 	plan->righttree = righttree;
 	node->hashclauses = hashclauses;
 	node->join.jointype = jointype;
+	node->join.inner_unique = inner_unique;
 	node->join.joinqual = joinclauses;
 
 	return node;
@@ -5117,7 +5135,9 @@ make_mergejoin(List *tlist,
 			   bool *mergenullsfirst,
 			   Plan *lefttree,
 			   Plan *righttree,
-			   JoinType jointype)
+			   JoinType jointype,
+			   bool inner_unique,
+			   bool skip_mark_restore)
 {
 	MergeJoin  *node = makeNode(MergeJoin);
 	Plan	   *plan = &node->join.plan;
@@ -5126,12 +5146,14 @@ make_mergejoin(List *tlist,
 	plan->qual = otherclauses;
 	plan->lefttree = lefttree;
 	plan->righttree = righttree;
+	node->skip_mark_restore = skip_mark_restore;
 	node->mergeclauses = mergeclauses;
 	node->mergeFamilies = mergefamilies;
 	node->mergeCollations = mergecollations;
 	node->mergeStrategies = mergestrategies;
 	node->mergeNullsFirst = mergenullsfirst;
 	node->join.jointype = jointype;
+	node->join.inner_unique = inner_unique;
 	node->join.joinqual = joinclauses;
 
 	return node;
@@ -6141,8 +6163,10 @@ make_modifytable(PlannerInfo *root,
 		}
 
 		/*
-		 * If the target foreign table has any row-level triggers, we can't
-		 * modify the foreign table directly.
+		 * Try to modify the foreign table directly if (1) the FDW provides
+		 * callback functions needed for that, (2) there are no row-level
+		 * triggers on the foreign table, and (3) there are no WITH CHECK
+		 * OPTIONs from parent views.
 		 */
 		direct_modify = false;
 		if (fdwroutine != NULL &&
@@ -6150,6 +6174,7 @@ make_modifytable(PlannerInfo *root,
 			fdwroutine->BeginDirectModify != NULL &&
 			fdwroutine->IterateDirectModify != NULL &&
 			fdwroutine->EndDirectModify != NULL &&
+			withCheckOptionLists == NIL &&
 			!has_row_triggers(root, rti, operation))
 			direct_modify = fdwroutine->PlanDirectModify(root, node, rti, i);
 		if (direct_modify)

@@ -12,7 +12,7 @@
     <para>
       The <productname>&productname;</productname> equivalence operator is
       defined to return NULL when both operands are NULLs. However, the Microsoft
-      SQL Servers family traditionaly defines other semantic for equivalence
+      SQL Servers family traditionally defines other semantic for equivalence
       operator, where operator returns TRUE in the case of both nulled operands.
       This module provides such operator with MSSQL semantic.
     </para>

@@ -223,7 +223,10 @@
     </listitem>
     <listitem>
      <simpara><application>plantuner</application> module provides hits for planner, which can do disable or enable indexes for query execution.</simpara>
-    </listitem>    
+    </listitem>
+    <listitem>
+     <simpara><application>pg_tsparser</application> module is an alternative text search parser.</simpara>
+    </listitem>
    </itemizedlist>
   </para>
 

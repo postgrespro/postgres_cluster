@@ -76,9 +76,7 @@
 
  <para>
   The remainder of this section outlines various failover, replication,
-  and load balancing solutions.  A <ulink
-  url="http://www.postgres-r.org/documentation/terms">glossary</ulink> is
-  also available.
+  and load balancing solutions.
  </para>
 
  <sect1 id="different-replication-solutions">
@@ -209,7 +207,7 @@ protocol to make nodes agree on a serializable transactional order.
      middleware.  Care must also be taken that all
      transactions either commit or abort on all servers, perhaps
      using two-phase commit (<xref linkend="sql-prepare-transaction">
-     and <xref linkend="sql-commit-prepared">.
+     and <xref linkend="sql-commit-prepared">).
      <productname>Pgpool-II</> and <productname>Continuent Tungsten</>
      are examples of this type of replication.
     </para>
@@ -254,11 +252,13 @@ protocol to make nodes agree on a serializable transactional order.
     </para>
 
     <para>
-     <productname>&productname;</> does not offer this type of replication,
-     though <productname>&productname;</> two-phase commit (<xref
-     linkend="sql-prepare-transaction"> and <xref
-     linkend="sql-commit-prepared">)
-     can be used to implement this in application code or middleware.
+     <productname>Postgres Pro Enterprise</productname> provides
+     <filename>multimaster</filename> extension that implements this
+     type of replication. Using <filename>multimaster</filename>, you
+     can configure a synchronous shared-nothing cluster that provides
+     Online Transaction Processing (<acronym>OLTP</acronym>) scalability
+     for read transactions, as well as ensures high availability with
+     automatic disaster recovery.
     </para>
    </listitem>
   </varlistentry>
@@ -268,8 +268,8 @@ protocol to make nodes agree on a serializable transactional order.
    <listitem>
 
     <para>
-     Because <productname>&productname;</> is open source and easily
-     extended, a number of companies have taken <productname>&productname;</>
+     Because <productname>PostgreSQL</> is open source and easily
+     extended, a number of companies have taken <productname>PostgreSQL</>
      and created commercial closed-source solutions with unique
      failover, replication, and load balancing capabilities.
     </para>
@@ -309,7 +309,7 @@ protocol to make nodes agree on a serializable transactional order.
      <entry align="center">Slony</entry>
      <entry align="center">pgpool-II</entry>
      <entry align="center">Bucardo</entry>
-     <entry align="center"></entry>
+     <entry align="center"><filename>multimaster</filename> extension of <productname>Postgres Pro Enterprise</productname></entry>
     </row>
 
     <row>
@@ -1785,7 +1785,7 @@ if (!triggered)
 
    <para>
     In normal operation, <quote>read-only</> transactions are allowed to
-    update sequences and to use <command>LISTEN</>, <command>UNLISTEN</>, and
+    use <command>LISTEN</>, <command>UNLISTEN</>, and
     <command>NOTIFY</>, so Hot Standby sessions operate under slightly tighter
     restrictions than ordinary read-only sessions.  It is possible that some
     of these restrictions might be loosened in a future release.

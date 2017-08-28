@@ -390,30 +390,6 @@ UnlockRelationForExtension(Relation relation, LOCKMODE lockmode)
 	LockRelease(&tag, lockmode, false);
 }
 
-void
-LockSmgrForExtension(SMgrRelation smgr, LOCKMODE lockmode)
-{
-	LOCKTAG		tag;
-
-	SET_LOCKTAG_SMGR(tag, smgr->smgr_rnode.node.relNode);
-
-	(void) LockAcquire(&tag, lockmode, false, false);
-}
-
-/*
- *		UnlockRelationForExtension
- */
-void
-UnlockSmgrForExtension(SMgrRelation smgr, LOCKMODE lockmode)
-{
-	LOCKTAG		tag;
-
-	SET_LOCKTAG_SMGR(tag ,smgr->smgr_rnode.node.relNode);
-
-	LockRelease(&tag, lockmode, false);
-}
-
-
 /*
  *		LockPage
  *
@@ -1045,11 +1021,6 @@ DescribeLockTag(StringInfo buf, const LOCKTAG *tag)
 							 tag->locktag_field2,
 							 tag->locktag_field3,
 							 tag->locktag_field4);
-			break;
-		case LOCKTAG_SMGR:
-			appendStringInfo(buf,
-							 _("smgr lock %u"),
-							 tag->locktag_field1);
 			break;
 		default:
 			appendStringInfo(buf,

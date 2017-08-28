@@ -697,6 +697,20 @@ recv_password_packet(Port *port)
 				(errcode(ERRCODE_PROTOCOL_VIOLATION),
 				 errmsg("invalid password packet size")));
 
+	/*
+	 * Don't allow an empty password. Libpq treats an empty password the same
+	 * as no password at all, and won't even try to authenticate. But other
+	 * clients might, so allowing it would be confusing.
+	 *
+	 * Note that this only catches an empty password sent by the client in
+	 * plaintext. There's another check in md5_crypt_verify to prevent an
+	 * empty password from being used with MD5 authentication.
+	 */
+	if (buf.data[0] == '\0')
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PASSWORD),
+				 errmsg("empty password returned by client")));
+
 	/* Do not echo password to logs, for security. */
 	elog(DEBUG5, "received password packet");
 
@@ -1820,12 +1834,6 @@ pam_passwd_conv_proc(int num_msg, const struct pam_message ** msg,
 						 */
 						goto fail;
 					}
-					if (strlen(passwd) == 0)
-					{
-						ereport(LOG,
-							  (errmsg("empty password returned by client")));
-						goto fail;
-					}
 				}
 				if ((reply[i].resp = strdup(passwd)) == NULL)
 					goto fail;
@@ -2146,16 +2154,11 @@ CheckLDAPAuth(Port *port)
 	if (passwd == NULL)
 		return STATUS_EOF;		/* client wouldn't send password */
 
-	if (strlen(passwd) == 0)
-	{
-		ereport(LOG,
-				(errmsg("empty password returned by client")));
-		return STATUS_ERROR;
-	}
-
 	if (InitializeLDAPConnection(port, &ldap) == STATUS_ERROR)
+	{
 		/* Error message already sent */
 		return STATUS_ERROR;
+	}
 
 	if (port->hba->ldapbasedn)
 	{
@@ -2355,13 +2358,15 @@ CheckCertAuth(Port *port)
  */
 
 /*
- * RADIUS authentication is described in RFC2865 (and several
- * others).
+ * RADIUS authentication is described in RFC2865 (and several others).
  */
 
 #define RADIUS_VECTOR_LENGTH 16
 #define RADIUS_HEADER_LENGTH 20
 #define RADIUS_MAX_PASSWORD_LENGTH 128
+
+/* Maximum size of a RADIUS packet we will create or accept */
+#define RADIUS_BUFFER_SIZE 1024
 
 typedef struct
 {
@@ -2376,6 +2381,8 @@ typedef struct
 	uint8		id;
 	uint16		length;
 	uint8		vector[RADIUS_VECTOR_LENGTH];
+	/* this is a bit longer than strictly necessary: */
+	char		pad[RADIUS_BUFFER_SIZE - RADIUS_VECTOR_LENGTH];
 } radius_packet;
 
 /* RADIUS packet types */
@@ -2391,9 +2398,6 @@ typedef struct
 
 /* RADIUS service types */
 #define RADIUS_AUTHENTICATE_ONLY	8
-
-/* Maximum size of a RADIUS packet we will create or accept */
-#define RADIUS_BUFFER_SIZE 1024
 
 /* Seconds to wait - XXX: should be in a config variable! */
 #define RADIUS_TIMEOUT 3
@@ -2429,10 +2433,12 @@ CheckRADIUSAuth(Port *port)
 {
 	char	   *passwd;
 	char	   *identifier = "postgresql";
-	char		radius_buffer[RADIUS_BUFFER_SIZE];
-	char		receive_buffer[RADIUS_BUFFER_SIZE];
-	radius_packet *packet = (radius_packet *) radius_buffer;
-	radius_packet *receivepacket = (radius_packet *) receive_buffer;
+	radius_packet radius_send_pack;
+	radius_packet radius_recv_pack;
+	radius_packet *packet = &radius_send_pack;
+	radius_packet *receivepacket = &radius_recv_pack;
+	char	   *radius_buffer = (char *) &radius_send_pack;
+	char	   *receive_buffer = (char *) &radius_recv_pack;
 	int32		service = htonl(RADIUS_AUTHENTICATE_ONLY);
 	uint8	   *cryptvector;
 	int			encryptedpasswordlen;
@@ -2505,13 +2511,6 @@ CheckRADIUSAuth(Port *port)
 	passwd = recv_password_packet(port);
 	if (passwd == NULL)
 		return STATUS_EOF;		/* client wouldn't send password */
-
-	if (strlen(passwd) == 0)
-	{
-		ereport(LOG,
-				(errmsg("empty password returned by client")));
-		return STATUS_ERROR;
-	}
 
 	if (strlen(passwd) > RADIUS_MAX_PASSWORD_LENGTH)
 	{

@@ -21,6 +21,7 @@
 #include "optimizer/cost.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
+#include "optimizer/planmain.h"
 
 /* Hook for plugins to get control in add_paths_to_joinrel() */
 set_join_pathlist_hook_type set_join_pathlist_hook = NULL;
@@ -94,6 +95,49 @@ add_paths_to_joinrel(PlannerInfo *root,
 	extra.param_source_rels = NULL;
 
 	/*
+	 * See if the inner relation is provably unique for this outer rel.
+	 *
+	 * We have some special cases: for JOIN_SEMI and JOIN_ANTI, it doesn't
+	 * matter since the executor can make the equivalent optimization anyway;
+	 * we need not expend planner cycles on proofs.  For JOIN_UNIQUE_INNER, we
+	 * must be considering a semijoin whose inner side is not provably unique
+	 * (else reduce_unique_semijoins would've simplified it), so there's no
+	 * point in calling innerrel_is_unique.  However, if the LHS covers all of
+	 * the semijoin's min_lefthand, then it's appropriate to set inner_unique
+	 * because the path produced by create_unique_path will be unique relative
+	 * to the LHS.  (If we have an LHS that's only part of the min_lefthand,
+	 * that is *not* true.)  For JOIN_UNIQUE_OUTER, pass JOIN_INNER to avoid
+	 * letting that value escape this module.
+	 */
+	switch (jointype)
+	{
+		case JOIN_SEMI:
+		case JOIN_ANTI:
+			extra.inner_unique = false; /* well, unproven */
+			break;
+		case JOIN_UNIQUE_INNER:
+			extra.inner_unique = bms_is_subset(sjinfo->min_lefthand,
+											   outerrel->relids);
+			break;
+		case JOIN_UNIQUE_OUTER:
+			extra.inner_unique = innerrel_is_unique(root,
+													outerrel->relids,
+													innerrel,
+													JOIN_INNER,
+													restrictlist,
+													false);
+			break;
+		default:
+			extra.inner_unique = innerrel_is_unique(root,
+													outerrel->relids,
+													innerrel,
+													jointype,
+													restrictlist,
+													false);
+			break;
+	}
+
+	/*
 	 * Find potential mergejoin clauses.  We can skip this if we are not
 	 * interested in doing a mergejoin.  However, mergejoin may be our only
 	 * way of implementing a full outer join, so override enable_mergejoin if
@@ -109,10 +153,10 @@ add_paths_to_joinrel(PlannerInfo *root,
 														  &mergejoin_allowed);
 
 	/*
-	 * If it's SEMI or ANTI join, compute correction factors for cost
-	 * estimation.  These will be the same for all paths.
+	 * If it's SEMI, ANTI, or inner_unique join, compute correction factors
+	 * for cost estimation.  These will be the same for all paths.
 	 */
-	if (jointype == JOIN_SEMI || jointype == JOIN_ANTI)
+	if (jointype == JOIN_SEMI || jointype == JOIN_ANTI || extra.inner_unique)
 		compute_semi_anti_join_factors(root, outerrel, innerrel,
 									   jointype, sjinfo, restrictlist,
 									   &extra.semifactors);
@@ -309,8 +353,7 @@ try_nestloop_path(PlannerInfo *root,
 	 * methodology worthwhile.
 	 */
 	initial_cost_nestloop(root, &workspace, jointype,
-						  outer_path, inner_path,
-						  extra->sjinfo, &extra->semifactors);
+						  outer_path, inner_path, extra);
 
 	if (add_path_precheck(joinrel,
 						  workspace.startup_cost, workspace.total_cost,
@@ -321,8 +364,7 @@ try_nestloop_path(PlannerInfo *root,
 									  joinrel,
 									  jointype,
 									  &workspace,
-									  extra->sjinfo,
-									  &extra->semifactors,
+									  extra,
 									  outer_path,
 									  inner_path,
 									  extra->restrictlist,
@@ -372,8 +414,7 @@ try_partial_nestloop_path(PlannerInfo *root,
 	 * cost.  Bail out right away if it looks terrible.
 	 */
 	initial_cost_nestloop(root, &workspace, jointype,
-						  outer_path, inner_path,
-						  extra->sjinfo, &extra->semifactors);
+						  outer_path, inner_path, extra);
 	if (!add_partial_path_precheck(joinrel, workspace.total_cost, pathkeys))
 		return;
 
@@ -383,8 +424,7 @@ try_partial_nestloop_path(PlannerInfo *root,
 										  joinrel,
 										  jointype,
 										  &workspace,
-										  extra->sjinfo,
-										  &extra->semifactors,
+										  extra,
 										  outer_path,
 										  inner_path,
 										  extra->restrictlist,
@@ -443,7 +483,7 @@ try_mergejoin_path(PlannerInfo *root,
 	initial_cost_mergejoin(root, &workspace, jointype, mergeclauses,
 						   outer_path, inner_path,
 						   outersortkeys, innersortkeys,
-						   extra->sjinfo);
+						   extra);
 
 	if (add_path_precheck(joinrel,
 						  workspace.startup_cost, workspace.total_cost,
@@ -454,7 +494,7 @@ try_mergejoin_path(PlannerInfo *root,
 									   joinrel,
 									   jointype,
 									   &workspace,
-									   extra->sjinfo,
+									   extra,
 									   outer_path,
 									   inner_path,
 									   extra->restrictlist,
@@ -507,8 +547,7 @@ try_hashjoin_path(PlannerInfo *root,
 	 * never have any output pathkeys, per comments in create_hashjoin_path.
 	 */
 	initial_cost_hashjoin(root, &workspace, jointype, hashclauses,
-						  outer_path, inner_path,
-						  extra->sjinfo, &extra->semifactors);
+						  outer_path, inner_path, extra);
 
 	if (add_path_precheck(joinrel,
 						  workspace.startup_cost, workspace.total_cost,
@@ -519,8 +558,7 @@ try_hashjoin_path(PlannerInfo *root,
 									  joinrel,
 									  jointype,
 									  &workspace,
-									  extra->sjinfo,
-									  &extra->semifactors,
+									  extra,
 									  outer_path,
 									  inner_path,
 									  extra->restrictlist,
@@ -570,8 +608,7 @@ try_partial_hashjoin_path(PlannerInfo *root,
 	 * cost.  Bail out right away if it looks terrible.
 	 */
 	initial_cost_hashjoin(root, &workspace, jointype, hashclauses,
-						  outer_path, inner_path,
-						  extra->sjinfo, &extra->semifactors);
+						  outer_path, inner_path, extra);
 	if (!add_partial_path_precheck(joinrel, workspace.total_cost, NIL))
 		return;
 
@@ -581,8 +618,7 @@ try_partial_hashjoin_path(PlannerInfo *root,
 										  joinrel,
 										  jointype,
 										  &workspace,
-										  extra->sjinfo,
-										  &extra->semifactors,
+										  extra,
 										  outer_path,
 										  inner_path,
 										  extra->restrictlist,

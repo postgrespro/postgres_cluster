@@ -39,7 +39,7 @@ typedef enum ForkNumber
 
 #define MAX_FORKNUM		PAGESTRACK_FORKNUM
 
-#define FORKNAMECHARS	6		/* max chars for a fork name */
+#define FORKNAMECHARS	5		/* max chars for a fork name */
 
 extern const char *const forkNames[];
 

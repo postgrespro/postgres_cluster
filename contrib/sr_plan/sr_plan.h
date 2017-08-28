@@ -30,6 +30,9 @@
 #include "utils/syscache.h"
 #include "funcapi.h"
 
+#define SR_PLANS_TABLE_NAME	"sr_plans"
+#define SR_PLANS_TABLE_QUERY_INDEX_NAME	"sr_plans_query_hash_idx"
+
 Jsonb *node_tree_to_jsonb(const void *obj, Oid fake_func, bool skip_location_from_node);
 void *jsonb_to_node_tree(Jsonb *json, void *(*hookPtr) (void *));
 void common_walker(const void *obj, void (*callback) (void *));

@@ -22,6 +22,7 @@
 #include "access/reloptions.h"
 #include "access/relscan.h"
 #include "access/xloginsert.h"
+#include "access/ptrack.h"
 #include "catalog/index.h"
 #include "catalog/pg_am.h"
 #include "miscadmin.h"
@@ -685,6 +686,7 @@ brinbuildempty(Relation index)
 	LockBuffer(metabuf, BUFFER_LOCK_EXCLUSIVE);
 
 	/* Initialize and xlog metabuffer. */
+	ptrack_add_block(index, BufferGetBlockNumber(metabuf));
 	START_CRIT_SECTION();
 	brin_metapage_init(BufferGetPage(metabuf), BrinGetPagesPerRange(index),
 					   BRIN_CURRENT_VERSION);

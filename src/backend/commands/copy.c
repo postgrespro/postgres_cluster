@@ -938,7 +938,8 @@ DoCopy(const CopyStmt *stmt, const char *queryString, uint64 *processed)
 			 * relation which we have opened and locked.
 			 */
 			from = makeRangeVar(get_namespace_name(RelationGetNamespace(rel)),
-								RelationGetRelationName(rel), -1);
+								pstrdup(RelationGetRelationName(rel)),
+								-1);
 
 			/* Build query */
 			select = makeNode(SelectStmt);
@@ -1490,7 +1491,7 @@ BeginCopy(bool is_from,
 		}
 
 		/* plan the query */
-		plan = pg_plan_query(query, 0, NULL);
+		plan = pg_plan_query(query, CURSOR_OPT_PARALLEL_OK, NULL);
 
 		/*
 		 * With row level security and a user using "COPY relation TO", we

@@ -13,7 +13,7 @@
         <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>
         table. The <function>dump_statistic</> function generates <literal>INSERT</>
         statements which can later be applied to a compatible database. The extension
-        should be installed on the recipient server in order to successfuly restore
+        should be installed on the recipient server in order to successfully restore
         statistical data since these statements heavily rely on the provided functions.
     </para>
     

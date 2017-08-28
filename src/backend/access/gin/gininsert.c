@@ -16,6 +16,7 @@
 
 #include "access/gin_private.h"
 #include "access/xloginsert.h"
+#include "access/ptrack.h"
 #include "catalog/index.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
@@ -335,6 +336,8 @@ ginbuild(Relation heap, Relation index, IndexInfo *indexInfo)
 	/* initialize the root page */
 	RootBuffer = GinNewBuffer(index);
 
+	ptrack_add_block(index, BufferGetBlockNumber(MetaBuffer));
+	ptrack_add_block(index, BufferGetBlockNumber(RootBuffer));
 	START_CRIT_SECTION();
 	GinInitMetabuffer(MetaBuffer);
 	MarkBufferDirty(MetaBuffer);
@@ -443,6 +446,8 @@ ginbuildempty(Relation index)
 	LockBuffer(RootBuffer, BUFFER_LOCK_EXCLUSIVE);
 
 	/* Initialize and xlog metabuffer and root buffer. */
+	ptrack_add_block(index, BufferGetBlockNumber(MetaBuffer));
+	ptrack_add_block(index, BufferGetBlockNumber(RootBuffer));
 	START_CRIT_SECTION();
 	GinInitMetabuffer(MetaBuffer);
 	MarkBufferDirty(MetaBuffer);

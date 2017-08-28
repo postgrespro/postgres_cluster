@@ -513,7 +513,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
       index on the column or group of columns used in the constraint.
       Optional clause <literal>INCLUDE</literal> allows to add into the index
       a portion of columns on which the uniqueness is not enforced upon.
-      Note, that althogh constraint is not enforced upon included columns, it still
+      Note, that although constraint is not enforced upon included columns, it still
       depends on them. Consequently, some operations on these columns (e.g. <literal>DROP COLUMN</literal>)
       can cause cascade constraint and index deletion.
       See paragraph about <literal>INCLUDE</literal> in
@@ -555,7 +555,7 @@ CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED ] TABLE [ IF NOT EXI
       index on the column or group of columns used in the constraint.
       An optional clause <literal>INCLUDE</literal> allows to add into the index
       a portion of columns on which the constraint is not enforced upon.
-      Note, that althogh constraint is not enforced upon included columns, it still
+      Note, that although constraint is not enforced upon included columns, it still
       depends on them. Consequently, some operations on these columns (e.g. <literal>DROP COLUMN</literal>)
       can cause cascade constraint and index deletion.
       See paragraph about <literal>INCLUDE</literal> in

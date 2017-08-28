@@ -516,18 +516,19 @@ my %tests = (
 			only_dump_test_table   => 1,
 			test_schema_plus_blobs => 1, }, },
 
-	# catch-all for ALTER ... OWNER (except LARGE OBJECTs)
-	'ALTER ... OWNER commands (except LARGE OBJECTs)' => {
-		regexp => qr/^ALTER (?!LARGE OBJECT)(.*) OWNER TO .*;/m,
+	# catch-all for ALTER ... OWNER (except post-data objects)
+	'ALTER ... OWNER commands (except post-data objects)' => {
+		regexp => qr/^ALTER (?!EVENT TRIGGER|LARGE OBJECT)(.*) OWNER TO .*;/m,
 		like   => {},    # use more-specific options above
 		unlike => {
 			column_inserts => 1,
 			data_only      => 1,
-			section_data   => 1, }, },
+			section_data   => 1,
+			section_post_data => 1, }, },
 
-	# catch-all for ALTER TABLE ...
+	# catch-all for ALTER TABLE ... (except OWNER TO)
 	'ALTER TABLE ... commands' => {
-		regexp => qr/^ALTER TABLE .*;/m,
+		regexp => qr/^ALTER TABLE .* (?!OWNER TO)(.*);/m,
 		like   => {},                      # use more-specific options above
 		unlike => {
 			column_inserts           => 1,
@@ -543,8 +544,7 @@ my %tests = (
 		unlike => {
 			no_owner                 => 1,
 			pg_dumpall_globals       => 1,
-			pg_dumpall_globals_clean => 1,
-			section_post_data        => 1, }, },
+			pg_dumpall_globals_clean => 1, }, },
 
 	#	'BLOB load (contents are of test_table)' => {
 	#		create_order => 14,
@@ -2443,6 +2443,28 @@ qr/^GRANT SELECT ON TABLE test_third_table TO regress_dump_test_role;/m,
 			only_dump_test_schema  => 1,
 			only_dump_test_table   => 1,
 			test_schema_plus_blobs => 1, }, },
+	'GRANT USAGE ON SCHEMA public TO public' => {
+		regexp       => qr/^
+			\Q--\E\n\n
+			\QGRANT USAGE ON SCHEMA public TO PUBLIC;\E
+			/xm,
+		like => {
+			clean                    => 1,
+			clean_if_exists          => 1, },
+		unlike => {
+			binary_upgrade           => 1,
+			createdb                 => 1,
+			defaults                 => 1,
+			exclude_dump_test_schema => 1,
+			exclude_test_table       => 1,
+			exclude_test_table_data  => 1,
+			no_owner                 => 1,
+			pg_dumpall_dbprivs       => 1,
+			schema_only              => 1,
+			section_pre_data         => 1,
+			only_dump_test_schema    => 1,
+			only_dump_test_table     => 1,
+			test_schema_plus_blobs   => 1, }, },
 	'GRANT commands' => {    # catch-all for GRANT commands
 		regexp => qr/^GRANT /m,
 		like   => {},             # use more-specific options above
@@ -2576,8 +2598,6 @@ qr/^GRANT SELECT ON TABLE test_third_table TO regress_dump_test_role;/m,
 			/xm,
 		like => {
 			binary_upgrade           => 1,
-			clean                    => 1,
-			clean_if_exists          => 1,
 			createdb                 => 1,
 			defaults                 => 1,
 			exclude_dump_test_schema => 1,
@@ -2588,6 +2608,8 @@ qr/^GRANT SELECT ON TABLE test_third_table TO regress_dump_test_role;/m,
 			schema_only              => 1,
 			section_pre_data         => 1, },
 		unlike => {
+			clean                  => 1,
+			clean_if_exists        => 1,
 			only_dump_test_schema  => 1,
 			only_dump_test_table   => 1,
 			test_schema_plus_blobs => 1, }, },

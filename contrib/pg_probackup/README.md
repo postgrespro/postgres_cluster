@@ -1,163 +1,72 @@
-pg_probackup fork of pg_arman by Postgres Professional
-========================================
+# pg_probackup
 
-pg_probackup is a backup and recovery manager for PostgreSQL servers able to do
-differential and full backup as well as restore a cluster to a
-state defined by a given recovery target. It is designed to perform
-periodic backups of an existing PostgreSQL server, combined with WAL
-archives to provide a way to recover a server in case of failure of
-server because of a reason or another. Its differential backup
-facility reduces the amount of data necessary to be taken between
-two consecutive backups.
+`pg_probackup` is a utility to manage backup and recovery of PostgreSQL database clusters. It is designed to perform periodic backups of the PostgreSQL instance that enable you to restore the server in case of a failure.
 
-Main features:
-* incremental backup from WAL and PTRACK
-* backup from replica
-* multithreaded backup and restore
-* autonomous backup without archive command (will need slot replication)
+The extension is compatible with:
+* PostgreSQL 9.5, 9.6, 10;
 
-Requirements:
-* >=PostgreSQL 9.5
-* >=gcc 4.4 or >=clang 3.6 or >= XLC 12.1
-* pthread
+`PTRACK` backup requires:
+* Postgres Pro Standard 9.5, 9.6;
+or
+* Postgres Pro Enterprise;
 
-Download
---------
+As compared to other backup solutions, `pg_probackup` offers the following benefits that can help you implement different backup strategies and deal with large amounts of data:
+* Choosing between full and page-level incremental backups to speed up backup and recovery
+* Implementing a single backup strategy for multi-server PostgreSQL clusters
+* Automatic data consistency checks and on-demand backup validation without actual data recovery
+* Managing backups in accordance with retention policy
+* Running backup, restore, and validation processes on multiple parallel threads
+* Storing backup data in a compressed state to save disk space
+* Taking backups from a standby server to avoid extra load on the master server
+* Extended logging settings
+* Custom commands to simplify WAL log archiving
 
-The latest version of this software can be found on the project website at
-https://github.com/postgrespro/pg_probackup.  Original fork of pg_probackup can be
-found at https://github.com/michaelpq/pg_arman.
+To manage backup data, `pg_probackup` creates a backup catalog. This directory stores all backup files with additional meta information, as well as WAL archives required for [point-in-time recovery](https://postgrespro.com/docs/postgresql/current/continuous-archiving.html). You can store backups for different instances in separate subdirectories of a single backup catalog.
 
-Installation
-------------
+Using `pg_probackup`, you can take full or incremental backups:
+* `Full` backups contain all the data files required to restore the database cluster from scratch.
+* `Incremental` backups only store the data that has changed since the previous backup. It allows to decrease the backup size and speed up backup operations. `pg_probackup` supports the following modes of incremental backups:
+  * `PAGE` backup. In this mode, `pg_probackup` scans all WAL files in the archive from the moment the previous full or incremental backup was taken. Newly created backups contain only the pages that were mentioned in WAL records. This requires all the WAL files since the previous backup to be present in the WAL archive. If the size of these files is comparable to the total size of the database cluster files, speedup is smaller, but the backup still takes less space.
+  * `PTRACK` backup. In this mode, PostgreSQL tracks page changes on the fly. Continuous archiving is not necessary for it to operate. Each time a relation page is updated, this page is marked in a special `PTRACK` bitmap for this relation. As one page requires just one bit in the `PTRACK` fork, such bitmaps are quite small. Tracking implies some minor overhead on the database server operation, but speeds up incremental backups significantly.
 
-Compiling pg_probackup requires a PostgreSQL installation to be in place
-as well as a raw source tree. Pass the path to the PostgreSQL source tree
-to make, in the top_srcdir variable:
+Regardless of the chosen backup type, all backups taken with `pg_probackup` support the following archiving strategies:
+* `Autonomous backups` include all the files required to restore the cluster to a consistent state at the time the backup was taken. Even if continuous archiving is not set up, the required WAL segments are included into the backup.
+* `Archive backups` rely on continuous archiving. Such backups enable cluster recovery to an arbitrary point after the backup was taken (point-in-time recovery).
 
-    make USE_PGXS=1 top_srcdir=<path to PostgreSQL source tree>
+## Limitations
 
-In addition, you must have pg_config in $PATH.
+`pg_probackup` currently has the following limitations:
+* Creating backups from a remote server is currently not supported.
+* The server from which the backup was taken and the restored server must be compatible by the [block_size](https://postgrespro.com/docs/postgresql/current/runtime-config-preset#guc-block-size) and [wal_block_size](https://postgrespro.com/docs/postgresql/current/runtime-config-preset#guc-wal-block-size) parameters and have the same major release number.
+* Microsoft Windows operating system is not supported.
+* Configuration files outside of PostgreSQL data directory are not included into the backup and should be backed up separately.
 
-The current version of pg_probackup is compatible with PostgreSQL 9.5 and
-upper versions.
+## Installation and Setup
 
-Platforms
----------
+To compile `pg_probackup`, you must have a PostgreSQL installation and raw source tree. To install `pg_probackup`, execute this in the module's directory:
 
-pg_probackup has been tested on Linux and Unix-based platforms.
-
-Documentation
--------------
-
-All the documentation you can find [here](doc/pg_probackup.md).
-
-Regression tests
-----------------
-
-The test suite of pg_probackup is available in the code tree and can be
-launched in a way similar to common PostgreSQL extensions and modules:
-
-    make installcheck
-
-Block level incremental backup
-------------------------------
-
-Idea of block level incremental backup is that you may backup only blocks
-changed since last full backup.  It gives two major benefits: taking backups
-faster and making backups smaller.
-
-The major question here is how to get the list of changed blocks.  Since
-each block contains LSN number, changed blocks could be retrieved by full scan
-of all the blocks.  But this approach consumes as much server IO as full
-backup.
-
-This is why we implemented alternative approaches to retrieve
-list of changed blocks.
-
-1. Scan WAL archive and extract changed blocks from it.  However, shortcoming
-of these approach is requirement to have WAL archive.
-
-2. Track bitmap of changes blocks inside PostgreSQL (ptrack).  It introduces
-some overhead to PostgreSQL performance.  On our experiments it appears to be
-less than 3%.
-
-These two approaches were implemented in this fork of pg_probackup.  The second
-approach requires [patch for PostgreSQL 9.5](https://gist.github.com/stalkerg/44703dbcbac1da08f448b7e6966646c0) or
-[patch for PostgreSQL 10](https://gist.github.com/stalkerg/ab833d94e2f64df241f1835651e06e4b).
-
-Testing block level incremental backup
---------------------------------------
-
-You need build and install [PGPRO9_5 or PGPRO9_6 branch of PostgreSQL](https://github.com/postgrespro/postgrespro) or apply this patch to
-[PostgreSQL 9.5](https://gist.github.com/stalkerg/44703dbcbac1da08f448b7e6966646c0) or [PostgreSQL 10](https://gist.github.com/stalkerg/ab833d94e2f64df241f1835651e06e4b).
-
-### Retrieving changed blocks from WAL archive
-
-You need to enable WAL archive by adding following lines to postgresql.conf:
-
-```
-wal_level = archive
-archive_command = 'test ! -f /home/postgres/backup/wal/%f && cp %p /home/postgres/backup/wal/%f'
+```shell
+make USE_PGXS=1 PG_CONFIG=<path_to_pg_config> top_srcdir=<path_to_PostgreSQL_source_tree>
 ```
 
-Example backup (assuming PostgreSQL is running):
-```bash
-# Init pg_aramn backup folder
-pg_probackup init -B /home/postgres/backup
-# Make full backup with 2 thread and verbose mode.
-pg_probackup backup -B /home/postgres/backup -D /home/postgres/pgdata -b full -v -j 2
-# Show backups information
-pg_probackup show -B /home/postgres/backup
+Once you have `pg_probackup` installed, complete [the setup](https://postgrespro.com/docs/postgrespro/current/app-pgprobackup.html#pg-probackup-install-and-setup).
 
-# Now you can insert or update some data in your database
+## Documentation
 
-# Then start the incremental backup.
-pg_probackup backup -B /home/postgres/backup -D /home/postgres/pgdata -b page -v -j 2
-# You should see that increment is really small
-pg_probackup show -B /home/postgres/backup
-```
+Currently the latest documentation can be found at [Postgres Pro Enterprise documentation](https://postgrespro.com/docs/postgrespro/current/app-pgprobackup).
 
-For restore after remove your pgdata you can use:
-```
-pg_probackup restore -B /home/postgres/backup -D /home/postgres/pgdata -j 4 --verbose
-```
+## Licence
 
-### Retrieving changed blocks from ptrack
+This module available under the same license as [PostgreSQL](https://www.postgresql.org/about/licence/).
 
-The advantage of this approach is that you don't have to save WAL archive.  You will need to enable ptrack in postgresql.conf (restart required).
+## Feedback
 
-```
-ptrack_enable = on
-```
+Do not hesitate to post your issues, questions and new ideas at the [issues](https://github.com/postgrespro/pg_probackup/issues) page.
 
-Also, some WALs still need to be fetched in order to get consistent backup.  pg_probackup can fetch them trough the streaming replication protocol.  Thus, you also need to [enable streaming replication connection](https://wiki.postgresql.org/wiki/Streaming_Replication).
+## Authors
 
-Example backup (assuming PostgreSQL is running):
-```bash
-# Init pg_aramn backup folder
-pg_probackup init -B /home/postgres/backup
-# Make full backup with 2 thread and verbose mode.
-pg_probackup backup -B /home/postgres/backup -D /home/postgres/pgdata -b full -v -j 2 --stream
-# Show backups information
-pg_probackup show -B /home/postgres/backup
+Postgres Professional, Moscow, Russia.
 
-# Now you can insert or update some data in your database
+## Credits
 
-# Then start the incremental backup.
-pg_probackup backup -B /home/postgres/backup -D /home/postgres/pgdata -b ptrack -v -j 2 --stream
-# You should see that increment is really small
-pg_probackup show -B /home/postgres/backup
-```
-
-For restore after remove your pgdata you can use:
-```
-pg_probackup restore -B /home/postgres/backup -D /home/postgres/pgdata -j 4 --verbose --stream
-```
-
-License
--------
-
-pg_probackup can be distributed under the PostgreSQL license. See COPYRIGHT
-file for more information. pg_arman is a fork of the existing project
-pg_rman, initially created and maintained by NTT and Itagaki Takahiro.
+`pg_probackup` utility is based on `pg_arman`, that was originally written by NTT and then developed and maintained by Michael Paquier.
