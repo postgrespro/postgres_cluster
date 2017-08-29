@@ -29,7 +29,7 @@ esac
 
 # Check the catalog version
 CATALOG_VERSION_NO=2016081311
-MAJORVER=$9.6
+MAJORVER=9.6
 CATVER=`${PGBIN}pg_controldata|sed -n '/Catalog version number:/s/^.*: *//p'`
 if [ "$CATVER" != $CATALOG_VERSION_NO ]; then
 	if [ ! -f "${PGDATA}/global/pg_control" ]; then
@@ -39,8 +39,12 @@ if [ "$CATVER" != $CATALOG_VERSION_NO ]; then
 		s/'.*$//
 		p}" /etc/postgresql/9.6/main/postgresql.conf`
 		if [ -z "$PGDATA" -o ! -f "${PGDATA}/global/pg_control" ]; then
-			echo "Cannot find valid database in $PGDATA" 2>&1;
+			echo "Cannot find valid database in $PGDATA" 1>&2;
 			exit 1
+		fi
+		if [ -f "$PGDATA/postmaster.pid" ]; then
+			echo "postmaster.pid exists. Is another backend running on $PGDATA" 1>&2; 
+			exit 1;
 		fi
 	fi
 	# Fix pg_control file
@@ -52,7 +56,7 @@ if [ "$CATVER" != $CATALOG_VERSION_NO ]; then
 		(cd $i; mv PG_${MAJORVER}_$CATVER PG_${MAJORVER}_$CATALOG_VERSION_NO)
 	 done
 	)
-	if [ -n "$SAVE_PGDATA" ] then
+	if [ -n "$SAVE_PGDATA" ]; then
 		PGDATA="$SAVE_PGDATA"
 	fi
 fi
