@@ -23,6 +23,9 @@
 #include "storage/lmgr.h"
 #include "utils/syscache.h"
 
+#ifdef DELETE
+#undef DELETE
+#endif
 
 /* for assign_rel_parenthood_status() */
 #define PARENTHOOD_TAG CppAsString(PARENTHOOD)
