@@ -1020,13 +1020,13 @@ service postgresql start
       </listitem>
       <listitem>
         <para>
-          <literal>Port</literal> &mdash; TCP/IP port to listen (5432)
+          <literal>Port</literal> &mdash; TCP/IP port to listen. Default: 5432.
         </para>
       </listitem>
       <listitem>
         <para>
           <literal>SuperUser</literal> &mdash; name of the database user who
-          has admin rights in the database
+          will have admin rights in the database
         </para>
       </listitem>
       <listitem>

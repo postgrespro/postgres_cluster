@@ -239,7 +239,7 @@ replace_hash_partition(old_partition       REGCLASS,
           <function>create_range_partitions()</function> for range partitioning. 
           This function creates
           partitions based on the specified interval and the initial
-          partitioning key. New partitions are created automatically
+          partitioning key value. New partitions are created automatically
           when you insert data outside of the already covered range.</para>
         <programlisting>
 create_range_partitions(relation       REGCLASS,
@@ -488,13 +488,13 @@ SELECT * FROM pathman_partition_list;
           <para>Suppose you have the <structname>test</structname> table that stores some
           temporal data:
           <programlisting>
-create table test (logdate date not null, comment text);
+CREATE TABLE test (logdate date not null, comment text);
 </programlisting>
           </para>
           <para>
             To partition this data by month and year, you have to create a composite key:
           <programlisting>
-create type test_key as (year float8, month float8);
+CREATE TYPE test_key AS (year float8, month float8);
 </programlisting>
           </para>
           <para>
@@ -1187,7 +1187,7 @@ create_range_partitions(relation        REGCLASS,
         <literal>start_value</literal> argument specifies the initial value,
         <literal>p_interval</literal> sets the default range for automatically created partitions or partitions created with
         <function>append_range_partition()</function> or
-        <function>prepend_range_partition()</function>
+        <function>prepend_range_partition()</function>.
         If <literal>p_interval</literal> is set to <literal>NULL</literal>, automatic partition creation
         is disabled. <literal>p_count</literal> is the
         number of premade partitions. If <literal>p_count</literal> is not set, than

@@ -438,7 +438,7 @@
     <itemizedlist>
       <listitem>
         <para>Covering indices patch by Anastasia Lubennikova (Commit: 91b4e25614247833d7960c49d783f69b90c0c149)
-          (Details: http://www.postgresql.org/message-id/f90aa60a-b67f-95b5-d9f5-f5d8ced178c6@postgrespro.ru/)</para>
+          (Details: <ulink url="http://www.postgresql.org/message-id/f90aa60a-b67f-95b5-d9f5-f5d8ced178c6@postgrespro.ru/"></></para>
         <para>ICU patch (Commit: ee711324f31cc039e656ea45c54abd0cf8ea3e41)</para>
         <para>Fixes to win32 build system (Commit: 84fa653ee00ebe54f591b18e3664fa6d5889224f)</para>
         <para>Added pgpro_version SQL function and appropriate defines into
