@@ -2463,6 +2463,7 @@ ssh -L 63333:db.foo.com:5432 joe@shell.foo.com
 
  </sect1>
 
+
  <sect1 id="event-log-registration">
   <title>Registering <application>Event Log</> on <systemitem
   class="osname">Windows</></title>

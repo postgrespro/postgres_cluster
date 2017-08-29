@@ -46,6 +46,14 @@ escape_string_warning = off
     </listitem>
 
     <listitem>
+      <para>
+        Set the <varname>effective_cache_size</varname> parameter to at least half of <acronym>RAM</acronym>
+        available on the system. <productname>&productname;</productname> query optimizer performance
+        depends on the amount of allocated <acronym>RAM</acronym>.
+      </para>
+    </listitem>
+
+    <listitem>
      <para>Optimize query planning using <link linkend="online-analyze"><filename>online_analyze</filename></link> and <link linkend="plantuner"><filename>plantuner</filename></link> extensions, as follows:
      </para>
 
@@ -86,4 +94,15 @@ online_analyze.verbose = 'off'
     </listitem>
 
    </orderedlist>
+
+   <tip>
+    <para>
+      To improve performance, you can also use redundant array of independent disks (<acronym>RAID</acronym>) technology
+      based on non-volatile cache <acronym>RAID</acronym> controllers with uninterruptible power supply (<acronym>UPS</acronym>).
+      Since this technology ensures data consistency in case of hardware failure, you can speed up disk writes by
+      disabling the <varname>fsync</varname> parameter. Additionally, increasing the <acronym>RAID</acronym> controller cache
+      volume and the number of disks in the <acronym>RAID</acronym> array can improve performance even with
+      enabled <varname>fsync</varname>.
+    </para>
+   </tip>
  </appendix>

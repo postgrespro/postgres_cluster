@@ -2064,7 +2064,7 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
 
     <varlistentry>
      <term>
-      <function>schedule.get_user_log()
+      <function>schedule.get_user_log(<parameter>username</parameter> <type>text</type>)
       </function>
      <indexterm>
        <primary><function>schedule.get_user_log</></primary>

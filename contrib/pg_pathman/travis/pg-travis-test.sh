@@ -6,16 +6,16 @@ sudo apt-get update
 
 
 # required packages
-apt_packages="postgresql-$PGVERSION postgresql-server-dev-$PGVERSION postgresql-common python-pip python-dev build-essential"
+apt_packages="postgresql-$PG_VER postgresql-server-dev-$PG_VER postgresql-common python-pip python-dev build-essential"
 pip_packages="testgres"
 
 # exit code
 status=0
 
 # pg_config path
-pg_ctl_path=/usr/lib/postgresql/$PGVERSION/bin/pg_ctl
-initdb_path=/usr/lib/postgresql/$PGVERSION/bin/initdb
-config_path=/usr/lib/postgresql/$PGVERSION/bin/pg_config
+pg_ctl_path=/usr/lib/postgresql/$PG_VER/bin/pg_ctl
+initdb_path=/usr/lib/postgresql/$PG_VER/bin/initdb
+config_path=/usr/lib/postgresql/$PG_VER/bin/pg_config
 
 
 # bug: http://www.postgresql.org/message-id/20130508192711.GA9243@msgid.df7cb.de
@@ -30,18 +30,14 @@ sudo chmod a+x /etc/init.d/postgresql
 # install required packages
 sudo apt-get -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" -y install -qq $apt_packages
 
-# create cluster 'test'
-CLUSTER_PATH=$(pwd)/test_cluster
-$initdb_path -D $CLUSTER_PATH -U $USER -A trust
-
 
 # perform code analysis if necessary
 if [ $CHECK_CODE = "true" ]; then
 
 	if [ "$CC" = "clang" ]; then
-		sudo apt-get -y install -qq clang-3.5
+		sudo apt-get -y install -qq clang-$LLVM_VER
 
-		scan-build-3.5 --status-bugs make USE_PGXS=1 PG_CONFIG=$config_path || status=$?
+		scan-build-$LLVM_VER --status-bugs make USE_PGXS=1 PG_CONFIG=$config_path || status=$?
 		exit $status
 
 	elif [ "$CC" = "gcc" ]; then
@@ -66,16 +62,21 @@ if [ $CHECK_CODE = "true" ]; then
 	make clean USE_PGXS=1 PG_CONFIG=$config_path
 fi
 
+
+# create cluster 'test'
+CLUSTER_PATH=$(pwd)/test_cluster
+$initdb_path -D $CLUSTER_PATH -U $USER -A trust
+
 # build pg_pathman (using CFLAGS_SL for gcov)
 make USE_PGXS=1 PG_CONFIG=$config_path CFLAGS_SL="$($config_path --cflags_sl) -coverage"
 sudo make install USE_PGXS=1 PG_CONFIG=$config_path
 
-# set permission to write postgres locks
-sudo chown $USER /var/run/postgresql/
-
 # check build
 status=$?
 if [ $status -ne 0 ]; then exit $status; fi
+
+# set permission to write postgres locks
+sudo chown $USER /var/run/postgresql/
 
 # add pg_pathman to shared_preload_libraries and restart cluster 'test'
 echo "shared_preload_libraries = 'pg_pathman'" >> $CLUSTER_PATH/postgresql.conf
@@ -88,25 +89,51 @@ PGPORT=55435 PGUSER=$USER PG_CONFIG=$config_path make installcheck USE_PGXS=1 ||
 # show diff if it exists
 if test -f regression.diffs; then cat regression.diffs; fi
 
+
 set +u
 
-# create a virtual environment and activate it
+# create virtual environment and activate it
 virtualenv /tmp/envs/pg_pathman
 source /tmp/envs/pg_pathman/bin/activate
 
 # install pip packages
-pip install $pip_packages
+pip3 install $pip_packages
 
 # run python tests
-cd tests/python
-PG_CONFIG=$config_path python -m unittest partitioning_test || status=$?
-cd ../..
+make USE_PGXS=1 PG_CONFIG=$config_path python_tests || status=$?
+
+# deactivate virtual environment
+deactivate
 
 set -u
 
 
+# install cmake for cmocka
+sudo apt-get -y install -qq cmake
+
+# build & install cmocka
+CMOCKA_VER=1.1.1
+cd tests/cmocka
+tar xf cmocka-$CMOCKA_VER.tar.xz
+cd cmocka-$CMOCKA_VER
+mkdir build && cd build
+cmake ..
+make && sudo make install
+cd ../../../..
+
+# export path to libcmocka.so
+LD_LIBRARY_PATH=/usr/local/lib
+export LD_LIBRARY_PATH
+
+# run cmocka tests (using CFLAGS_SL for gcov)
+make USE_PGXS=1 PG_CONFIG=$config_path PG_CPPFLAGS="-coverage" cmocka_tests || status=$?
+
+# remove useless gcov files
+rm -f tests/cmocka/*.gcno
+rm -f tests/cmocka/*.gcda
+
 #generate *.gcov files
-gcov src/*.c src/*.h
+gcov src/*.c src/compat/*.c src/include/*.h src/include/compat/*.h
 
 
 exit $status

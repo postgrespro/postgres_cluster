@@ -4,6 +4,7 @@ use Cluster;
 use TestLib;
 use Test::More tests => 3;
 
+
 my $cluster = new Cluster(3);
 $cluster->init();
 $cluster->configure();

@@ -1569,7 +1569,7 @@ XactHasExportedSnapshots(void)
 void
 DeleteAllExportedSnapshotFiles(void)
 {
-	char		buf[MAXPGPATH];
+	char		buf[MAXPGPATH + sizeof(SNAPSHOT_EXPORT_DIR)];
 	DIR		   *s_dir;
 	struct dirent *s_de;
 
@@ -1590,7 +1590,7 @@ DeleteAllExportedSnapshotFiles(void)
 			strcmp(s_de->d_name, "..") == 0)
 			continue;
 
-		snprintf(buf, MAXPGPATH, SNAPSHOT_EXPORT_DIR "/%s", s_de->d_name);
+		snprintf(buf, sizeof(buf), SNAPSHOT_EXPORT_DIR "/%s", s_de->d_name);
 		/* Again, unlink failure is not worthy of FATAL */
 		if (unlink(buf))
 			elog(LOG, "could not unlink file \"%s\": %m", buf);
@@ -2162,7 +2162,7 @@ void *SuspendSnapshot(void)
 {
 	SnapshotData mvcc = {HeapTupleSatisfiesMVCC};
 	pairingheap fresh_regsnap = {&xmin_cmp, NULL, NULL};
-	SuspendedSnapshotState *s = malloc(sizeof(SuspendedSnapshotState));
+	SuspendedSnapshotState *s = (SuspendedSnapshotState*)MemoryContextAlloc(TopMemoryContext, sizeof(SuspendedSnapshotState));
 
 	MOVELEFT(s->CurrentSnapshotData, CurrentSnapshotData, mvcc);
 	MOVELEFT(s->SecondarySnapshotData, SecondarySnapshotData, mvcc);
@@ -2215,5 +2215,5 @@ void ResumeSnapshot(void *data)
 	ActiveSnapshot = s->ActiveSnapshot;
 	OldestActiveSnapshot = s->OldestActiveSnapshot;
 
-	free(s);
+	pfree(s);
 }

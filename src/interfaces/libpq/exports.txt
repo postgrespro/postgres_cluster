@@ -171,3 +171,6 @@ PQsslAttributeNames       168
 PQsslAttribute            169
 PQsetErrorContextVisibility 170
 PQresultVerboseErrorMessage 171
+PQisRsocket               172
+PQselect                  173
+PQselectExtended          174

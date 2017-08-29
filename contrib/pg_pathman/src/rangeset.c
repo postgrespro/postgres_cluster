@@ -20,31 +20,6 @@ static IndexRange irange_union_internal(IndexRange first,
 										List **new_iranges);
 
 
-/* Check if two ranges intersect */
-bool
-iranges_intersect(IndexRange a, IndexRange b)
-{
-	return (irange_lower(a) <= irange_upper(b)) &&
-		   (irange_lower(b) <= irange_upper(a));
-}
-
-/* Check if two ranges adjoin */
-bool
-iranges_adjoin(IndexRange a, IndexRange b)
-{
-	return (irange_upper(a) == irb_pred(irange_lower(b))) ||
-		   (irange_upper(b) == irb_pred(irange_lower(a)));
-}
-
-/* Check if two ranges cover the same area */
-bool
-irange_eq_bounds(IndexRange a, IndexRange b)
-{
-	return (irange_lower(a) == irange_lower(b)) &&
-		   (irange_upper(a) == irange_upper(b));
-}
-
-
 /* Make union of two conjuncted ranges */
 IndexRange
 irange_union_simple(IndexRange a, IndexRange b)
@@ -162,7 +137,7 @@ irange_union_internal(IndexRange first,
 	/* IndexRanges intersect */
 	if (iranges_intersect(first, second))
 	{
-		/* Calculate the intersection of 'first' and 'second' */
+		/* Calculate the union of 'first' and 'second' */
 		IndexRange ir_union = irange_union_simple(first, second);
 
 		/* if lossiness is the same, unite them and skip */
@@ -371,6 +346,29 @@ irange_list_intersection(List *a, List *b)
 	return result;
 }
 
+/* Set lossiness of rangeset */
+List *
+irange_list_set_lossiness(List *ranges, bool lossy)
+{
+	List	   *result = NIL;
+	ListCell   *lc;
+
+	if (ranges == NIL)
+		return NIL;
+
+	foreach (lc, ranges)
+	{
+		IndexRange ir = lfirst_irange(lc);
+
+		result = lappend_irange(result, make_irange(irange_lower(ir),
+													irange_upper(ir),
+													lossy));
+	}
+
+	/* Unite adjacent and overlapping IndexRanges */
+	return irange_list_union(result, NIL);
+}
+
 /* Get total number of elements in range list */
 int
 irange_list_length(List *rangeset)
@@ -400,12 +398,15 @@ irange_list_find(List *rangeset, int index, bool *lossy)
 	foreach (lc, rangeset)
 	{
 		IndexRange irange = lfirst_irange(lc);
+
 		if (index >= irange_lower(irange) && index <= irange_upper(irange))
 		{
 			if (lossy)
 				*lossy = is_irange_lossy(irange);
+
 			return true;
 		}
 	}
+
 	return false;
 }

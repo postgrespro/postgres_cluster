@@ -8,6 +8,8 @@
  * ------------------------------------------------------------------------
  */
 
+#include "compat/pg_compat.h"
+
 #include "relation_info.h"
 #include "init.h"
 #include "utils.h"
@@ -17,17 +19,51 @@
 #include "access/xact.h"
 #include "catalog/catalog.h"
 #include "catalog/indexing.h"
+#include "catalog/pg_constraint.h"
 #include "catalog/pg_inherits.h"
+#include "catalog/pg_type.h"
 #include "miscadmin.h"
+#include "nodes/nodeFuncs.h"
+#include "optimizer/clauses.h"
+#include "optimizer/var.h"
+#include "parser/analyze.h"
+#include "parser/parser.h"
 #include "storage/lmgr.h"
+#include "tcop/tcopprot.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/hsearch.h"
 #include "utils/memutils.h"
-#include "utils/snapmgr.h"
+#include "utils/ruleutils.h"
 #include "utils/syscache.h"
 #include "utils/lsyscache.h"
 #include "utils/typcache.h"
+
+#if PG_VERSION_NUM < 90600
+#include "optimizer/planmain.h"
+#endif
+
+#if PG_VERSION_NUM >= 90600
+#include "catalog/pg_constraint_fn.h"
+#endif
+
+
+/* Error messages for partitioning expression */
+#define PARSE_PART_EXPR_ERROR	"failed to parse partitioning expression \"%s\""
+#define COOK_PART_EXPR_ERROR	"failed to analyze partitioning expression \"%s\""
+
+
+/* Comparison function info */
+typedef struct cmp_func_info
+{
+	FmgrInfo	flinfo;
+	Oid			collid;
+} cmp_func_info;
+
+/*
+ * For pg_pathman.enable_bounds_cache GUC.
+ */
+bool			pg_pathman_enable_bounds_cache = true;
 
 
 /*
@@ -38,10 +74,10 @@ static List	   *delayed_invalidation_vague_rels = NIL;
 static bool		delayed_shutdown = false; /* pathman was dropped */
 
 
-/* Add unique Oid to list, allocate in TopMemoryContext */
+/* Add unique Oid to list, allocate in TopPathmanContext */
 #define list_add_unique(list, oid) \
 	do { \
-		MemoryContext old_mcxt = MemoryContextSwitchTo(TopMemoryContext); \
+		MemoryContext old_mcxt = MemoryContextSwitchTo(TopPathmanContext); \
 		list = list_append_unique_oid(list, ObjectIdGetDatum(oid)); \
 		MemoryContextSwitchTo(old_mcxt); \
 	} while (0)
@@ -52,23 +88,54 @@ static bool		delayed_shutdown = false; /* pathman was dropped */
 		list = NIL; \
 	} while (0)
 
+/* Handy wrappers for Oids */
+#define bsearch_oid(key, array, array_size) \
+	bsearch((const void *) &(key), (array), (array_size), sizeof(Oid), oid_cmp)
 
-static bool try_perform_parent_refresh(Oid parent);
-static Oid try_syscache_parent_search(Oid partition, PartParentSearch *status);
+
+static bool try_invalidate_parent(Oid relid, Oid *parents, int parents_count);
+static Oid try_catalog_parent_search(Oid partition, PartParentSearch *status);
 static Oid get_parent_of_partition_internal(Oid partition,
 											PartParentSearch *status,
 											HASHACTION action);
 
+static Expr *get_partition_constraint_expr(Oid partition);
+
+static void fill_prel_with_partitions(PartRelationInfo *prel,
+									  const Oid *partitions,
+									  const uint32 parts_count);
+
+static void fill_pbin_with_bounds(PartBoundInfo *pbin,
+								  const PartRelationInfo *prel,
+								  const Expr *constraint_expr);
+
+static int cmp_range_entries(const void *p1, const void *p2, void *arg);
+
+static bool query_contains_subqueries(Node *node, void *context);
+
+
+void
+init_relation_info_static_data(void)
+{
+	DefineCustomBoolVariable("pg_pathman.enable_bounds_cache",
+							 "Make updates of partition dispatch cache faster",
+							 NULL,
+							 &pg_pathman_enable_bounds_cache,
+							 true,
+							 PGC_USERSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+}
 
 /*
  * refresh\invalidate\get\remove PartRelationInfo functions.
  */
 
-/* Create or update PartRelationInfo in local cache. Might emit ERROR. */
 const PartRelationInfo *
 refresh_pathman_relation_info(Oid relid,
-							  PartType partitioning_type,
-							  const char *part_column_name,
+							  Datum *values,
 							  bool allow_incomplete)
 {
 	const LOCKMODE			lockmode = AccessShareLock;
@@ -76,36 +143,15 @@ refresh_pathman_relation_info(Oid relid,
 	Oid					   *prel_children;
 	uint32					prel_children_count = 0,
 							i;
-	bool					found_entry;
 	PartRelationInfo	   *prel;
 	Datum					param_values[Natts_pathman_config_params];
 	bool					param_isnull[Natts_pathman_config_params];
+	char				   *expr;
+	MemoryContext			old_mcxt;
 
-	prel = (PartRelationInfo *) pathman_cache_search_relid(partitioned_rels,
-														   relid, HASH_ENTER,
-														   &found_entry);
-	elog(DEBUG2,
-		 found_entry ?
-			 "Refreshing record for relation %u in pg_pathman's cache [%u]" :
-			 "Creating new record for relation %u in pg_pathman's cache [%u]",
-		 relid, MyProcPid);
-
-	/*
-	 * NOTE: Trick clang analyzer (first access without NULL pointer check).
-	 * Access to field 'valid' results in a dereference of a null pointer.
-	 */
-	prel->cmp_proc	= InvalidOid;
-
-	/* Clear outdated resources */
-	if (found_entry && PrelIsValid(prel))
-	{
-		/* Free these arrays iff they're not NULL */
-		FreeChildrenArray(prel);
-		FreeRangesArray(prel);
-	}
-
-	/* First we assume that this entry is invalid */
-	prel->valid		= false;
+	AssertTemporaryContext();
+	prel = invalidate_pathman_relation_info(relid, NULL);
+	Assert(prel);
 
 	/* Try locking parent, exit fast if 'allow_incomplete' */
 	if (allow_incomplete)
@@ -129,27 +175,44 @@ refresh_pathman_relation_info(Oid relid,
 	prel->ranges	= NULL;
 
 	/* Set partitioning type */
-	prel->parttype	= partitioning_type;
+	prel->parttype	= DatumGetPartType(values[Anum_pathman_config_parttype - 1]);
 
-	/* Initialize PartRelationInfo using syscache & typcache */
-	prel->attnum	= get_attnum(relid, part_column_name);
+	/* Fetch cooked partitioning expression */
+	expr = TextDatumGetCString(values[Anum_pathman_config_cooked_expr - 1]);
 
-	/* Attribute number sanity check */
-	if (prel->attnum == InvalidAttrNumber)
-		elog(ERROR, "Relation \"%s\" has no column \"%s\"",
-			 get_rel_name_or_relid(relid), part_column_name);
+	/* Create a new memory context to store expression tree etc */
+	prel->mcxt = AllocSetContextCreate(PathmanRelationCacheContext,
+									   CppAsString(refresh_pathman_relation_info),
+									   ALLOCSET_SMALL_SIZES);
 
-	/* Fetch atttypid, atttypmod, and attcollation in a single cache lookup */
-	get_atttypetypmodcoll(relid, prel->attnum,
-						  &prel->atttype, &prel->atttypmod, &prel->attcollid);
+	/* Switch to persistent memory context */
+	old_mcxt = MemoryContextSwitchTo(prel->mcxt);
+
+	/* Build partitioning expression tree */
+	prel->expr_cstr = TextDatumGetCString(values[Anum_pathman_config_expr - 1]);
+	prel->expr = (Node *) stringToNode(expr);
+	fix_opfuncids(prel->expr);
+
+	/* Extract Vars and varattnos of partitioning expression */
+	prel->expr_vars = NIL;
+	prel->expr_atts = NULL;
+	prel->expr_vars = pull_var_clause_compat(prel->expr, 0, 0);
+	pull_varattnos((Node *) prel->expr_vars, PART_EXPR_VARNO, &prel->expr_atts);
+
+	MemoryContextSwitchTo(old_mcxt);
+
+	/* First, fetch type of partitioning expression */
+	prel->ev_type	= exprType(prel->expr);
+	prel->ev_typmod	= exprTypmod(prel->expr);
+	prel->ev_collid = exprCollation(prel->expr);
 
 	/* Fetch HASH & CMP fuctions and other stuff from type cache */
-	typcache = lookup_type_cache(prel->atttype,
+	typcache = lookup_type_cache(prel->ev_type,
 								 TYPECACHE_CMP_PROC | TYPECACHE_HASH_PROC);
 
-	prel->attbyval	= typcache->typbyval;
-	prel->attlen	= typcache->typlen;
-	prel->attalign	= typcache->typalign;
+	prel->ev_byval	= typcache->typbyval;
+	prel->ev_len	= typcache->typlen;
+	prel->ev_align	= typcache->typalign;
 
 	prel->cmp_proc	= typcache->cmp_proc;
 	prel->hash_proc	= typcache->hash_proc;
@@ -197,9 +260,26 @@ refresh_pathman_relation_info(Oid relid,
 	 * will try to refresh it again (and again), until the error is fixed
 	 * by user manually (i.e. invalid check constraints etc).
 	 */
-	fill_prel_with_partitions(prel_children,
-							  prel_children_count,
-							  part_column_name, prel);
+	PG_TRY();
+	{
+		fill_prel_with_partitions(prel, prel_children, prel_children_count);
+	}
+	PG_CATCH();
+	{
+		/* Remove this parent from parents cache */
+		ForgetParent(prel);
+
+		/* Delete unused 'prel_mcxt' */
+		MemoryContextDelete(prel->mcxt);
+
+		prel->children	= NULL;
+		prel->ranges	= NULL;
+		prel->mcxt		= NULL;
+
+		/* Rethrow ERROR further */
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
 
 	/* Peform some actions for each child */
 	for (i = 0; i < prel_children_count; i++)
@@ -214,7 +294,7 @@ refresh_pathman_relation_info(Oid relid,
 	if (prel_children)
 		pfree(prel_children);
 
-	/* Read additional parameters ('enable_parent' and 'auto' at the moment) */
+	/* Read additional parameters ('enable_parent' at the moment) */
 	if (read_pathman_params(relid, param_values, param_isnull))
 	{
 		prel->enable_parent = param_values[Anum_pathman_config_params_enable_parent - 1];
@@ -222,7 +302,7 @@ refresh_pathman_relation_info(Oid relid,
 	/* Else set default values if they cannot be found */
 	else
 	{
-		prel->enable_parent = DEFAULT_ENABLE_PARENT;
+		prel->enable_parent = DEFAULT_PATHMAN_ENABLE_PARENT;
 	}
 
 	/* We've successfully built a cache entry */
@@ -232,7 +312,7 @@ refresh_pathman_relation_info(Oid relid,
 }
 
 /* Invalidate PartRelationInfo cache entry. Create new entry if 'found' is NULL. */
-void
+PartRelationInfo *
 invalidate_pathman_relation_info(Oid relid, bool *found)
 {
 	bool				prel_found;
@@ -243,21 +323,25 @@ invalidate_pathman_relation_info(Oid relid, bool *found)
 									  relid, action,
 									  &prel_found);
 
+	/* Handle valid PartRelationInfo */
 	if ((action == HASH_FIND ||
 		(action == HASH_ENTER && prel_found)) && PrelIsValid(prel))
 	{
-		FreeChildrenArray(prel);
-		FreeRangesArray(prel);
+		/* Remove this parent from parents cache */
+		ForgetParent(prel);
 
-		prel->valid = false; /* now cache entry is invalid */
+		/* Drop cached bounds etc */
+		MemoryContextDelete(prel->mcxt);
 	}
-	/* Handle invalid PartRelationInfo */
-	else if (prel)
-	{
-		prel->children = NULL;
-		prel->ranges = NULL;
 
-		prel->valid = false; /* now cache entry is invalid */
+	/* Set important default values */
+	if (prel)
+	{
+		prel->children	= NULL;
+		prel->ranges	= NULL;
+		prel->mcxt		= NULL;
+
+		prel->valid	= false; /* now cache entry is invalid */
 	}
 
 	/* Set 'found' if necessary */
@@ -266,6 +350,8 @@ invalidate_pathman_relation_info(Oid relid, bool *found)
 	elog(DEBUG2,
 		 "Invalidating record for relation %u in pg_pathman's cache [%u]",
 		 relid, MyProcPid);
+
+	return prel;
 }
 
 /* Get PartRelationInfo from local cache. */
@@ -278,22 +364,19 @@ get_pathman_relation_info(Oid relid)
 	/* Refresh PartRelationInfo if needed */
 	if (prel && !PrelIsValid(prel))
 	{
-		Datum	values[Natts_pathman_config];
-		bool	isnull[Natts_pathman_config];
+		ItemPointerData		iptr;
+		Datum				values[Natts_pathman_config];
+		bool				isnull[Natts_pathman_config];
 
 		/* Check that PATHMAN_CONFIG table contains this relation */
-		if (pathman_config_contains_relation(relid, values, isnull, NULL))
+		if (pathman_config_contains_relation(relid, values, isnull, NULL, &iptr))
 		{
-			PartType		part_type;
-			const char	   *attname;
-
-			/* We can't use 'part_type' & 'attname' from invalid prel */
-			part_type = DatumGetPartType(values[Anum_pathman_config_parttype - 1]);
-			attname = TextDatumGetCString(values[Anum_pathman_config_attname - 1]);
+			bool upd_expr = isnull[Anum_pathman_config_cooked_expr - 1];
+			if (upd_expr)
+				pathman_config_refresh_parsed_expression(relid, values, isnull, &iptr);
 
 			/* Refresh partitioned table cache entry (might turn NULL) */
-			/* TODO: possible refactoring, pass found 'prel' instead of searching */
-			prel = refresh_pathman_relation_info(relid, part_type, attname, false);
+			prel = refresh_pathman_relation_info(relid, values, false);
 		}
 
 		/* Else clear remaining cache entry */
@@ -324,7 +407,7 @@ get_pathman_relation_info_after_lock(Oid relid,
 	LockAcquireResult		acquire_result;
 
 	/* Restrict concurrent partition creation (it's dangerous) */
-	acquire_result = xact_lock_partitioned_rel(relid, false);
+	acquire_result = xact_lock_rel(relid, ShareUpdateExclusiveLock, false);
 
 	/* Invalidate cache entry (see AcceptInvalidationMessages()) */
 	invalidate_pathman_relation_info(relid, NULL);
@@ -335,7 +418,7 @@ get_pathman_relation_info_after_lock(Oid relid,
 
 	prel = get_pathman_relation_info(relid);
 	if (!prel && unlock_if_not_found)
-		xact_unlock_partitioned_rel(relid);
+		UnlockRelationOid(relid, ShareUpdateExclusiveLock);
 
 	return prel;
 }
@@ -344,23 +427,419 @@ get_pathman_relation_info_after_lock(Oid relid,
 void
 remove_pathman_relation_info(Oid relid)
 {
-	PartRelationInfo *prel = pathman_cache_search_relid(partitioned_rels,
-														relid, HASH_FIND,
-														NULL);
-	if (PrelIsValid(prel))
-	{
-		/* Free these arrays iff they're not NULL */
-		FreeChildrenArray(prel);
-		FreeRangesArray(prel);
-	}
+	bool found;
+
+	/* Free resources */
+	invalidate_pathman_relation_info(relid, &found);
 
 	/* Now let's remove the entry completely */
-	pathman_cache_search_relid(partitioned_rels, relid,
-							   HASH_REMOVE, NULL);
+	if (found)
+		pathman_cache_search_relid(partitioned_rels, relid, HASH_REMOVE, NULL);
 
 	elog(DEBUG2,
 		 "Removing record for relation %u in pg_pathman's cache [%u]",
 		 relid, MyProcPid);
+}
+
+/* Fill PartRelationInfo with partition-related info */
+static void
+fill_prel_with_partitions(PartRelationInfo *prel,
+						  const Oid *partitions,
+						  const uint32 parts_count)
+{
+/* Allocate array if partitioning type matches 'prel' (or "ANY") */
+#define AllocZeroArray(part_type, context, elem_num, elem_type) \
+	( \
+		((part_type) == PT_ANY || (part_type) == prel->parttype) ? \
+			MemoryContextAllocZero((context), (elem_num) * sizeof(elem_type)) : \
+			NULL \
+	)
+
+	uint32			i;
+	MemoryContext	temp_mcxt,	/* reference temporary mcxt */
+					old_mcxt;	/* reference current mcxt */
+
+	AssertTemporaryContext();
+
+	/* Allocate memory for 'prel->children' & 'prel->ranges' (if needed) */
+	prel->children	= AllocZeroArray(PT_ANY,   prel->mcxt, parts_count, Oid);
+	prel->ranges	= AllocZeroArray(PT_RANGE, prel->mcxt, parts_count, RangeEntry);
+
+	/* Set number of children */
+	PrelChildrenCount(prel) = parts_count;
+
+	/* Create temporary memory context for loop */
+	temp_mcxt = AllocSetContextCreate(CurrentMemoryContext,
+									  CppAsString(fill_prel_with_partitions),
+									  ALLOCSET_DEFAULT_SIZES);
+
+	/* Initialize bounds of partitions */
+	for (i = 0; i < PrelChildrenCount(prel); i++)
+	{
+		PartBoundInfo *pbin;
+
+		/* Clear all previous allocations */
+		MemoryContextReset(temp_mcxt);
+
+		/* Switch to the temporary memory context */
+		old_mcxt = MemoryContextSwitchTo(temp_mcxt);
+		{
+			/* Fetch constraint's expression tree */
+			pbin = get_bounds_of_partition(partitions[i], prel);
+		}
+		MemoryContextSwitchTo(old_mcxt);
+
+		/* Copy bounds from bound cache */
+		switch (prel->parttype)
+		{
+			case PT_HASH:
+				prel->children[pbin->part_idx] = pbin->child_rel;
+				break;
+
+			case PT_RANGE:
+				{
+					/* Copy child's Oid */
+					prel->ranges[i].child_oid = pbin->child_rel;
+
+					/* Copy all min & max Datums to the persistent mcxt */
+					old_mcxt = MemoryContextSwitchTo(prel->mcxt);
+					{
+						prel->ranges[i].min = CopyBound(&pbin->range_min,
+														prel->ev_byval,
+														prel->ev_len);
+
+						prel->ranges[i].max = CopyBound(&pbin->range_max,
+														prel->ev_byval,
+														prel->ev_len);
+					}
+					MemoryContextSwitchTo(old_mcxt);
+				}
+				break;
+
+			default:
+				{
+					DisablePathman(); /* disable pg_pathman since config is broken */
+					WrongPartType(prel->parttype);
+				}
+				break;
+		}
+	}
+
+	/* Drop temporary memory context */
+	MemoryContextDelete(temp_mcxt);
+
+	/* Finalize 'prel' for a RANGE-partitioned table */
+	if (prel->parttype == PT_RANGE)
+	{
+		cmp_func_info	cmp_info;
+
+		/* Prepare function info */
+		fmgr_info(prel->cmp_proc, &cmp_info.flinfo);
+		cmp_info.collid = prel->ev_collid;
+
+		/* Sort partitions by RangeEntry->min asc */
+		qsort_arg((void *) prel->ranges, PrelChildrenCount(prel),
+				  sizeof(RangeEntry), cmp_range_entries,
+				  (void *) &cmp_info);
+
+		/* Initialize 'prel->children' array */
+		for (i = 0; i < PrelChildrenCount(prel); i++)
+			prel->children[i] = prel->ranges[i].child_oid;
+	}
+
+#ifdef USE_ASSERT_CHECKING
+	/* Check that each partition Oid has been assigned properly */
+	if (prel->parttype == PT_HASH)
+		for (i = 0; i < PrelChildrenCount(prel); i++)
+		{
+			if (!OidIsValid(prel->children[i]))
+			{
+				DisablePathman(); /* disable pg_pathman since config is broken */
+				elog(ERROR, "pg_pathman's cache for relation \"%s\" "
+							"has not been properly initialized",
+					 get_rel_name_or_relid(PrelParentRelid(prel)));
+			}
+		}
+#endif
+}
+
+/* qsort comparison function for RangeEntries */
+static int
+cmp_range_entries(const void *p1, const void *p2, void *arg)
+{
+	const RangeEntry   *v1 = (const RangeEntry *) p1;
+	const RangeEntry   *v2 = (const RangeEntry *) p2;
+	cmp_func_info	   *info = (cmp_func_info *) arg;
+
+	return cmp_bounds(&info->flinfo, info->collid, &v1->min, &v2->min);
+}
+
+
+/*
+ * Partitioning expression routines.
+ */
+
+/* Wraps expression in SELECT query and returns parse tree */
+Node *
+parse_partitioning_expression(const Oid relid,
+							  const char *expr_cstr,
+							  char **query_string_out,	/* ret value #1 */
+							  Node **parsetree_out)		/* ret value #2 */
+{
+	SelectStmt		   *select_stmt;
+	List			   *parsetree_list;
+	MemoryContext		old_mcxt;
+
+	const char *sql = "SELECT (%s) FROM ONLY %s.%s";
+	char	   *relname = get_rel_name(relid),
+			   *nspname = get_namespace_name(get_rel_namespace(relid));
+	char	   *query_string = psprintf(sql, expr_cstr,
+										quote_identifier(nspname),
+										quote_identifier(relname));
+
+	old_mcxt = CurrentMemoryContext;
+
+	PG_TRY();
+	{
+		parsetree_list = raw_parser(query_string);
+	}
+	PG_CATCH();
+	{
+		ErrorData  *error;
+
+		/* Switch to the original context & copy edata */
+		MemoryContextSwitchTo(old_mcxt);
+		error = CopyErrorData();
+		FlushErrorState();
+
+		/* Adjust error message */
+		error->detail		= error->message;
+		error->message		= psprintf(PARSE_PART_EXPR_ERROR, expr_cstr);
+		error->sqlerrcode	= ERRCODE_INVALID_PARAMETER_VALUE;
+		error->cursorpos	= 0;
+		error->internalpos	= 0;
+
+		ReThrowError(error);
+	}
+	PG_END_TRY();
+
+	if (list_length(parsetree_list) != 1)
+		elog(ERROR, "expression \"%s\" produced more than one query", expr_cstr);
+
+#if PG_VERSION_NUM >= 100000
+	select_stmt = (SelectStmt *) ((RawStmt *) linitial(parsetree_list))->stmt;
+#else
+	select_stmt = (SelectStmt *) linitial(parsetree_list);
+#endif
+
+	if (query_string_out)
+		*query_string_out = query_string;
+
+	if (parsetree_out)
+		*parsetree_out = (Node *) linitial(parsetree_list);
+
+	return ((ResTarget *) linitial(select_stmt->targetList))->val;
+}
+
+/* Parse partitioning expression and return its type and nodeToString() as TEXT */
+Datum
+cook_partitioning_expression(const Oid relid,
+							 const char *expr_cstr,
+							 Oid *expr_type_out) /* ret value #1 */
+{
+	Node		   *parse_tree;
+	List		   *query_tree_list;
+
+	char		   *query_string,
+				   *expr_serialized = ""; /* keep compiler happy */
+
+	Datum			expr_datum;
+
+	MemoryContext	parse_mcxt,
+					old_mcxt;
+
+	AssertTemporaryContext();
+
+	/*
+	 * We use separate memory context here, just to make sure we won't
+	 * leave anything behind after parsing, rewriting and planning.
+	 */
+	parse_mcxt = AllocSetContextCreate(CurrentMemoryContext,
+									   CppAsString(cook_partitioning_expression),
+									   ALLOCSET_DEFAULT_SIZES);
+
+	/* Switch to mcxt for cooking :) */
+	old_mcxt = MemoryContextSwitchTo(parse_mcxt);
+
+	/* First we have to build a raw AST */
+	(void) parse_partitioning_expression(relid, expr_cstr,
+										 &query_string, &parse_tree);
+
+	/* We don't need pg_pathman's magic here */
+	pathman_hooks_enabled = false;
+
+	PG_TRY();
+	{
+		Query	   *query;
+		Node	   *expr;
+		int			expr_attr;
+		Relids		expr_varnos;
+		Bitmapset  *expr_varattnos = NULL;
+
+		/* This will fail with ERROR in case of wrong expression */
+		query_tree_list = pg_analyze_and_rewrite_compat(parse_tree, query_string,
+														NULL, 0, NULL);
+
+		/* Sanity check #1 */
+		if (list_length(query_tree_list) != 1)
+			elog(ERROR, "partitioning expression produced more than 1 query");
+
+		query = (Query *) linitial(query_tree_list);
+
+		/* Sanity check #2 */
+		if (list_length(query->targetList) != 1)
+			elog(ERROR, "there should be exactly 1 partitioning expression");
+
+		/* Sanity check #3 */
+		if (query_tree_walker(query, query_contains_subqueries, NULL, 0))
+			elog(ERROR, "subqueries are not allowed in partitioning expression");
+
+		expr = (Node *) ((TargetEntry *) linitial(query->targetList))->expr;
+		expr = eval_const_expressions(NULL, expr);
+
+		/* Sanity check #4 */
+		if (contain_mutable_functions(expr))
+			ereport(ERROR,
+					(errcode(ERRCODE_INVALID_OBJECT_DEFINITION),
+					 errmsg("functions in partitioning expression"
+							" must be marked IMMUTABLE")));
+
+		/* Sanity check #5 */
+		expr_varnos = pull_varnos(expr);
+		if (bms_num_members(expr_varnos) != 1 ||
+			relid != ((RangeTblEntry *) linitial(query->rtable))->relid)
+		{
+			elog(ERROR, "partitioning expression should reference table \"%s\"",
+				 get_rel_name(relid));
+		}
+
+		/* Sanity check #6 */
+		pull_varattnos(expr, bms_singleton_member(expr_varnos), &expr_varattnos);
+		expr_attr = -1;
+		while ((expr_attr = bms_next_member(expr_varattnos, expr_attr)) >= 0)
+		{
+			AttrNumber	attnum = expr_attr + FirstLowInvalidHeapAttributeNumber;
+			HeapTuple	htup;
+
+			/* Check that there's no system attributes in expression */
+			if (attnum < InvalidAttrNumber)
+				ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+								errmsg("system attributes are not supported")));
+
+			htup = SearchSysCache2(ATTNUM,
+								   ObjectIdGetDatum(relid),
+								   Int16GetDatum(attnum));
+			if (HeapTupleIsValid(htup))
+			{
+				bool nullable;
+
+				/* Fetch 'nullable' and free syscache tuple */
+				nullable = !((Form_pg_attribute) GETSTRUCT(htup))->attnotnull;
+				ReleaseSysCache(htup);
+
+				if (nullable)
+					ereport(ERROR, (errcode(ERRCODE_NOT_NULL_VIOLATION),
+									errmsg("column \"%s\" should be marked NOT NULL",
+										   get_attname(relid, attnum))));
+			}
+		}
+
+		/* Free sets */
+		bms_free(expr_varnos);
+		bms_free(expr_varattnos);
+
+		Assert(expr);
+		expr_serialized = nodeToString(expr);
+
+		/* Set 'expr_type_out' if needed */
+		if (expr_type_out)
+			*expr_type_out = exprType(expr);
+	}
+	PG_CATCH();
+	{
+		ErrorData  *error;
+
+		/* Don't forget to enable pg_pathman's hooks */
+		pathman_hooks_enabled = true;
+
+		/* Switch to the original context & copy edata */
+		MemoryContextSwitchTo(old_mcxt);
+		error = CopyErrorData();
+		FlushErrorState();
+
+		/* Adjust error message */
+		error->detail		= error->message;
+		error->message		= psprintf(COOK_PART_EXPR_ERROR, expr_cstr);
+		error->sqlerrcode	= ERRCODE_INVALID_PARAMETER_VALUE;
+		error->cursorpos	= 0;
+		error->internalpos	= 0;
+
+		ReThrowError(error);
+	}
+	PG_END_TRY();
+
+	/* Don't forget to enable pg_pathman's hooks */
+	pathman_hooks_enabled = true;
+
+	/* Switch to previous mcxt */
+	MemoryContextSwitchTo(old_mcxt);
+
+	/* Get Datum of serialized expression (right mcxt) */
+	expr_datum = CStringGetTextDatum(expr_serialized);
+
+	/* Free memory */
+	MemoryContextDelete(parse_mcxt);
+
+	return expr_datum;
+}
+
+/* Canonicalize user's expression (trim whitespaces etc) */
+char *
+canonicalize_partitioning_expression(const Oid relid,
+									 const char *expr_cstr)
+{
+	Node		   *parse_tree;
+	Expr		   *expr;
+	char		   *query_string;
+	Query		   *query;
+
+	AssertTemporaryContext();
+
+	/* First we have to build a raw AST */
+	(void) parse_partitioning_expression(relid, expr_cstr,
+										 &query_string, &parse_tree);
+
+	query = parse_analyze_compat(parse_tree, query_string, NULL, 0, NULL);
+	expr = ((TargetEntry *) linitial(query->targetList))->expr;
+
+	/* We don't care about memory efficiency here */
+	return deparse_expression((Node *) expr,
+							  deparse_context_for(get_rel_name(relid), relid),
+							  false, false);
+}
+
+/* Check if query has subqueries */
+static bool
+query_contains_subqueries(Node *node, void *context)
+{
+	if (node == NULL)
+		return false;
+
+	/* We've met a subquery */
+	if (IsA(node, Query))
+		return true;
+
+	return expression_tree_walker(node, query_contains_subqueries, NULL);
 }
 
 
@@ -404,6 +883,9 @@ finish_delayed_invalidation(void)
 	/* Check that current state is transactional */
 	if (IsTransactionState())
 	{
+		Oid		   *parents = NULL;
+		int			parents_count;
+		bool		parents_fetched = false;
 		ListCell   *lc;
 
 		/* Handle the probable 'DROP EXTENSION' case */
@@ -443,11 +925,19 @@ finish_delayed_invalidation(void)
 			if (IsToastNamespace(get_rel_namespace(parent)))
 				continue;
 
-			if (!pathman_config_contains_relation(parent, NULL, NULL, NULL))
-				remove_pathman_relation_info(parent);
-			else
+			/* Fetch all partitioned tables */
+			if (!parents_fetched)
+			{
+				parents = read_parent_oids(&parents_count);
+				parents_fetched = true;
+			}
+
+			/* Check if parent still exists */
+			if (bsearch_oid(parent, parents, parents_count))
 				/* get_pathman_relation_info() will refresh this entry */
 				invalidate_pathman_relation_info(parent, NULL);
+			else
+				remove_pathman_relation_info(parent);
 		}
 
 		/* Process all other vague cases */
@@ -459,24 +949,36 @@ finish_delayed_invalidation(void)
 			if (IsToastNamespace(get_rel_namespace(vague_rel)))
 				continue;
 
+			/* Fetch all partitioned tables */
+			if (!parents_fetched)
+			{
+				parents = read_parent_oids(&parents_count);
+				parents_fetched = true;
+			}
+
 			/* It might be a partitioned table or a partition */
-			if (!try_perform_parent_refresh(vague_rel))
+			if (!try_invalidate_parent(vague_rel, parents, parents_count))
 			{
 				PartParentSearch	search;
 				Oid					parent;
+				List			   *fresh_rels = delayed_invalidation_parent_rels;
 
 				parent = get_parent_of_partition(vague_rel, &search);
 
 				switch (search)
 				{
-					/* It's still parent */
+					/*
+					 * Two main cases:
+					 *	- It's *still* parent (in PATHMAN_CONFIG)
+					 *	- It *might have been* parent before (not in PATHMAN_CONFIG)
+					 */
 					case PPS_ENTRY_PART_PARENT:
-						try_perform_parent_refresh(parent);
-						break;
-
-					/* It *might have been* parent before (not in PATHMAN_CONFIG) */
 					case PPS_ENTRY_PARENT:
-						remove_pathman_relation_info(parent);
+						{
+							/* Skip if we've already refreshed this parent */
+							if (!list_member_oid(fresh_rels, parent))
+								try_invalidate_parent(parent, parents, parents_count);
+						}
 						break;
 
 					/* How come we still don't know?? */
@@ -492,6 +994,9 @@ finish_delayed_invalidation(void)
 
 		free_invalidation_list(delayed_invalidation_parent_rels);
 		free_invalidation_list(delayed_invalidation_vague_rels);
+
+		if (parents)
+			pfree(parents);
 	}
 }
 
@@ -584,16 +1089,16 @@ get_parent_of_partition_internal(Oid partition,
 	}
 	/* Try fetching parent from syscache if 'status' is provided */
 	else if (status)
-		parent = try_syscache_parent_search(partition, status);
+		parent = try_catalog_parent_search(partition, status);
 	else
 		parent = InvalidOid; /* we don't have to set status */
 
 	return parent;
 }
 
-/* Try to find parent of a partition using syscache & PATHMAN_CONFIG */
+/* Try to find parent of a partition using catalog & PATHMAN_CONFIG */
 static Oid
-try_syscache_parent_search(Oid partition, PartParentSearch *status)
+try_catalog_parent_search(Oid partition, PartParentSearch *status)
 {
 	if (!IsTransactionState())
 	{
@@ -605,7 +1110,6 @@ try_syscache_parent_search(Oid partition, PartParentSearch *status)
 	else
 	{
 		Relation		relation;
-		Snapshot		snapshot;
 		ScanKeyData		key[1];
 		SysScanDesc		scan;
 		HeapTuple		inheritsTuple;
@@ -621,7 +1125,6 @@ try_syscache_parent_search(Oid partition, PartParentSearch *status)
 					BTEqualStrategyNumber, F_OIDEQ,
 					ObjectIdGetDatum(partition));
 
-		snapshot = RegisterSnapshot(GetLatestSnapshot());
 		scan = systable_beginscan(relation, InheritsRelidSeqnoIndexId,
 								  true, NULL, 1, key);
 
@@ -637,7 +1140,7 @@ try_syscache_parent_search(Oid partition, PartParentSearch *status)
 			if (status) *status = PPS_ENTRY_PARENT;
 
 			/* Check that PATHMAN_CONFIG contains this table */
-			if (pathman_config_contains_relation(parent, NULL, NULL, NULL))
+			if (pathman_config_contains_relation(parent, NULL, NULL, NULL, NULL))
 			{
 				/* We've found the entry, update status */
 				if (status) *status = PPS_ENTRY_PART_PARENT;
@@ -647,84 +1150,259 @@ try_syscache_parent_search(Oid partition, PartParentSearch *status)
 		}
 
 		systable_endscan(scan);
-		UnregisterSnapshot(snapshot);
 		heap_close(relation, AccessShareLock);
 
 		return parent;
 	}
 }
 
-/*
- * Try to refresh cache entry for relation 'parent'.
- *
- * Return true on success.
- */
+/* Try to invalidate cache entry for relation 'parent' */
 static bool
-try_perform_parent_refresh(Oid parent)
+try_invalidate_parent(Oid relid, Oid *parents, int parents_count)
 {
-	Datum	values[Natts_pathman_config];
-	bool	isnull[Natts_pathman_config];
-
-	if (pathman_config_contains_relation(parent, values, isnull, NULL))
+	/* Check if this is a partitioned table */
+	if (bsearch_oid(relid, parents, parents_count))
 	{
-		text	   *attname;
-		PartType	parttype;
+		/* get_pathman_relation_info() will refresh this entry */
+		invalidate_pathman_relation_info(relid, NULL);
 
-		parttype = DatumGetPartType(values[Anum_pathman_config_parttype - 1]);
-		attname = DatumGetTextP(values[Anum_pathman_config_attname - 1]);
-
-		/* If anything went wrong, return false (actually, it might emit ERROR) */
-		refresh_pathman_relation_info(parent, parttype,
-									  text_to_cstring(attname),
-									  true); /* allow lazy */
+		/* Success */
+		return true;
 	}
-	/* Not a partitioned relation */
-	else return false;
 
-	return true;
+	/* Clear remaining cache entry */
+	remove_pathman_relation_info(relid);
+
+	/* Not a partitioned relation */
+	return false;
+}
+
+
+/*
+ * forget\get constraint functions.
+ */
+
+/* Remove partition's constraint from cache */
+void
+forget_bounds_of_partition(Oid partition)
+{
+	PartBoundInfo *pbin;
+
+	/* Should we search in bounds cache? */
+	pbin = pg_pathman_enable_bounds_cache ?
+				pathman_cache_search_relid(bound_cache,
+										   partition,
+										   HASH_FIND,
+										   NULL) :
+				NULL; /* don't even bother */
+
+	/* Free this entry */
+	if (pbin)
+	{
+		/* Call pfree() if it's RANGE bounds */
+		if (pbin->parttype == PT_RANGE)
+		{
+			FreeBound(&pbin->range_min, pbin->byval);
+			FreeBound(&pbin->range_max, pbin->byval);
+		}
+
+		/* Finally remove this entry from cache */
+		pathman_cache_search_relid(bound_cache,
+								   partition,
+								   HASH_REMOVE,
+								   NULL);
+	}
+}
+
+/* Return partition's constraint as expression tree */
+PartBoundInfo *
+get_bounds_of_partition(Oid partition, const PartRelationInfo *prel)
+{
+	PartBoundInfo *pbin;
+
+	/*
+	 * We might end up building the constraint
+	 * tree that we wouldn't want to keep.
+	 */
+	AssertTemporaryContext();
+
+	/* Should we search in bounds cache? */
+	pbin = pg_pathman_enable_bounds_cache ?
+				pathman_cache_search_relid(bound_cache,
+										   partition,
+										   HASH_FIND,
+										   NULL) :
+				NULL; /* don't even bother */
+
+	/* Build new entry */
+	if (!pbin)
+	{
+		PartBoundInfo	pbin_local;
+		Expr		   *con_expr;
+
+		/* Initialize other fields */
+		pbin_local.child_rel = partition;
+		pbin_local.byval = prel->ev_byval;
+
+		/* Try to build constraint's expression tree (may emit ERROR) */
+		con_expr = get_partition_constraint_expr(partition);
+
+		/* Grab bounds/hash and fill in 'pbin_local' (may emit ERROR) */
+		fill_pbin_with_bounds(&pbin_local, prel, con_expr);
+
+		/* We strive to delay the creation of cache's entry */
+		pbin = pg_pathman_enable_bounds_cache ?
+					pathman_cache_search_relid(bound_cache,
+											   partition,
+											   HASH_ENTER,
+											   NULL) :
+					palloc(sizeof(PartBoundInfo));
+
+		/* Copy data from 'pbin_local' */
+		memcpy(pbin, &pbin_local, sizeof(PartBoundInfo));
+	}
+
+	return pbin;
 }
 
 /*
- * Safe PartType wrapper.
+ * Get constraint expression tree of a partition.
+ *
+ * build_check_constraint_name_internal() is used to build conname.
  */
-PartType
-DatumGetPartType(Datum datum)
+static Expr *
+get_partition_constraint_expr(Oid partition)
 {
-	uint32 val = DatumGetUInt32(datum);
+	Oid			conid;			/* constraint Oid */
+	char	   *conname;		/* constraint name */
+	HeapTuple	con_tuple;
+	Datum		conbin_datum;
+	bool		conbin_isnull;
+	Expr	   *expr;			/* expression tree for constraint */
 
-	if (val < 1 || val > 2)
-		elog(ERROR, "Unknown partitioning type %u", val);
+	conname = build_check_constraint_name_relid_internal(partition);
+	conid = get_relation_constraint_oid(partition, conname, true);
 
-	return (PartType) val;
+	if (!OidIsValid(conid))
+	{
+		DisablePathman(); /* disable pg_pathman since config is broken */
+		ereport(ERROR,
+				(errmsg("constraint \"%s\" of partition \"%s\" does not exist",
+						conname, get_rel_name_or_relid(partition)),
+				 errhint(INIT_ERROR_HINT)));
+	}
+
+	con_tuple = SearchSysCache1(CONSTROID, ObjectIdGetDatum(conid));
+	conbin_datum = SysCacheGetAttr(CONSTROID, con_tuple,
+								   Anum_pg_constraint_conbin,
+								   &conbin_isnull);
+	if (conbin_isnull)
+	{
+		DisablePathman(); /* disable pg_pathman since config is broken */
+		ereport(WARNING,
+				(errmsg("constraint \"%s\" of partition \"%s\" has NULL conbin",
+						conname, get_rel_name_or_relid(partition)),
+				 errhint(INIT_ERROR_HINT)));
+		pfree(conname);
+
+		return NULL; /* could not parse */
+	}
+	pfree(conname);
+
+	/* Finally we get a constraint expression tree */
+	expr = (Expr *) stringToNode(TextDatumGetCString(conbin_datum));
+
+	/* Don't foreget to release syscache tuple */
+	ReleaseSysCache(con_tuple);
+
+	return expr;
 }
 
-char *
-PartTypeToCString(PartType parttype)
+/* Fill PartBoundInfo with bounds/hash */
+static void
+fill_pbin_with_bounds(PartBoundInfo *pbin,
+					  const PartRelationInfo *prel,
+					  const Expr *constraint_expr)
 {
-	static char *hash_str	= "1",
-				*range_str	= "2";
+	AssertTemporaryContext();
 
-	switch (parttype)
+	/* Copy partitioning type to 'pbin' */
+	pbin->parttype = prel->parttype;
+
+	/* Perform a partitioning_type-dependent task */
+	switch (prel->parttype)
 	{
 		case PT_HASH:
-			return hash_str;
+			{
+				if (!validate_hash_constraint(constraint_expr,
+											  prel, &pbin->part_idx))
+				{
+					DisablePathman(); /* disable pg_pathman since config is broken */
+					ereport(ERROR,
+							(errmsg("wrong constraint format for HASH partition \"%s\"",
+									get_rel_name_or_relid(pbin->child_rel)),
+							 errhint(INIT_ERROR_HINT)));
+				}
+			}
+			break;
 
 		case PT_RANGE:
-			return range_str;
+			{
+				Datum	lower, upper;
+				bool	lower_null, upper_null;
+
+				if (validate_range_constraint(constraint_expr,
+											  prel, &lower, &upper,
+											  &lower_null, &upper_null))
+				{
+					MemoryContext old_mcxt;
+
+					/* Switch to the persistent memory context */
+					old_mcxt = MemoryContextSwitchTo(PathmanBoundCacheContext);
+
+					pbin->range_min = lower_null ?
+											MakeBoundInf(MINUS_INFINITY) :
+											MakeBound(datumCopy(lower,
+																prel->ev_byval,
+																prel->ev_len));
+
+					pbin->range_max = upper_null ?
+											MakeBoundInf(PLUS_INFINITY) :
+											MakeBound(datumCopy(upper,
+																prel->ev_byval,
+																prel->ev_len));
+
+					/* Switch back */
+					MemoryContextSwitchTo(old_mcxt);
+				}
+				else
+				{
+					DisablePathman(); /* disable pg_pathman since config is broken */
+					ereport(ERROR,
+							(errmsg("wrong constraint format for RANGE partition \"%s\"",
+									get_rel_name_or_relid(pbin->child_rel)),
+							 errhint(INIT_ERROR_HINT)));
+				}
+			}
+			break;
 
 		default:
-			elog(ERROR, "Unknown partitioning type %u", parttype);
-			return NULL; /* keep compiler happy */
+			{
+				DisablePathman(); /* disable pg_pathman since config is broken */
+				WrongPartType(prel->parttype);
+			}
+			break;
 	}
 }
+
 
 /*
  * Common PartRelationInfo checks. Emit ERROR if anything is wrong.
  */
 void
-shout_if_prel_is_invalid(Oid parent_oid,
+shout_if_prel_is_invalid(const Oid parent_oid,
 						 const PartRelationInfo *prel,
-						 PartType expected_part_type)
+						 const PartType expected_part_type)
 {
 	if (!prel)
 		elog(ERROR, "relation \"%s\" has no partitions",
@@ -736,8 +1414,8 @@ shout_if_prel_is_invalid(Oid parent_oid,
 			 get_rel_name_or_relid(parent_oid),
 			 MyProcPid);
 
-	/* Check partitioning type unless it's "indifferent" */
-	if (expected_part_type != PT_INDIFFERENT &&
+	/* Check partitioning type unless it's "ANY" */
+	if (expected_part_type != PT_ANY &&
 		expected_part_type != prel->parttype)
 	{
 		char *expected_str;
@@ -753,9 +1431,8 @@ shout_if_prel_is_invalid(Oid parent_oid,
 				break;
 
 			default:
-				elog(ERROR,
-					 "expected_str selection not implemented for type %d",
-					 expected_part_type);
+				WrongPartType(expected_part_type);
+				expected_str = NULL; /* keep compiler happy */
 		}
 
 		elog(ERROR, "relation \"%s\" is not partitioned by %s",

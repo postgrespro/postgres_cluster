@@ -315,6 +315,9 @@ struct pg_conn
 	char	   *fbappname;		/* fallback application name */
 	char	   *dbName;			/* database name */
 	char	   *replication;	/* connect as the replication standby? */
+#ifdef WITH_RSOCKET
+	char	   *with_rsocket;	/* connect using rsocket? */
+#endif
 	char	   *pguser;			/* Postgres username and password, if any */
 	char	   *pgpass;
 	char	   *keepalives;		/* use TCP keepalives? */
@@ -372,6 +375,10 @@ struct pg_conn
 	/* See PQconnectPoll() for how we use 'int' and not 'pgsocket'. */
 	pgsocket	sock;			/* FD for socket, PGINVALID_SOCKET if
 								 * unconnected */
+	bool		isRsocket;		/* Is sock rsocket */
+#ifdef WITH_RSOCKET
+	bool		rsocket_negotiate;	/* Is auxiliary socket for rsocket connection */
+#endif
 	SockAddr	laddr;			/* Local address */
 	SockAddr	raddr;			/* Remote address */
 	ProtocolVersion pversion;	/* FE/BE protocol version in use */

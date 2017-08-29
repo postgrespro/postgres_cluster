@@ -483,6 +483,7 @@ doc/src/sgml/ref/pg_basebackup.sgml
       </listitem>
      </varlistentry>
 
+
      <varlistentry>
       <term><option>-s <replaceable class="parameter">interval</replaceable></option></term>
       <term><option>--status-interval=<replaceable class="parameter">interval</replaceable></option></term>

@@ -6,36 +6,48 @@ OBJS = src/init.o src/relation_info.o src/utils.o src/partition_filter.o \
 	src/runtimeappend.o src/runtime_merge_append.o src/pg_pathman.o src/rangeset.o \
 	src/pl_funcs.o src/pl_range_funcs.o src/pl_hash_funcs.o src/pathman_workers.o \
 	src/hooks.o src/nodes_common.o src/xact_handling.o src/utility_stmt_hooking.o \
-	src/planner_tree_modification.o src/debug_print.o src/pg_compat.o \
-	src/partition_creation.o $(WIN32RES)
+	src/planner_tree_modification.o src/debug_print.o src/partition_creation.o \
+	src/compat/pg_compat.o src/compat/relation_tags.o src/compat/rowmarks_fix.o \
+	$(WIN32RES)
+
+override PG_CPPFLAGS += -I$(top_srcdir)/$(subdir)/src/include
 
 EXTENSION = pg_pathman
 
-EXTVERSION = 1.3
+EXTVERSION = 1.4
 
 DATA_built = pg_pathman--$(EXTVERSION).sql
 
 DATA = pg_pathman--1.0--1.1.sql \
 	   pg_pathman--1.1--1.2.sql \
-	   pg_pathman--1.2--1.3.sql
+	   pg_pathman--1.2--1.3.sql \
+	   pg_pathman--1.3--1.4.sql
 
-PGFILEDESC = "pg_pathman - partitioning tool"
+PGFILEDESC = "pg_pathman - partitioning tool for PostgreSQL"
 
-REGRESS = pathman_basic \
-		  pathman_cte \
+REGRESS = pathman_array_qual \
+		  pathman_basic \
 		  pathman_bgw \
-		  pathman_inserts \
-		  pathman_updates \
-		  pathman_domains \
-		  pathman_interval \
+		  pathman_calamity \
 		  pathman_callbacks \
+		  pathman_column_type \
+		  pathman_cte \
+		  pathman_domains \
+		  pathman_expressions \
 		  pathman_foreign_keys \
+		  pathman_inserts \
+		  pathman_interval \
+		  pathman_join_clause \
+		  pathman_lateral \
+		  pathman_mergejoin \
+		  pathman_only \
+		  pathman_param_upd_del \
 		  pathman_permissions \
+		  pathman_rebuild_updates \
 		  pathman_rowmarks \
 		  pathman_runtime_nodes \
-		  pathman_utility_stmt_hooking \
-		  pathman_calamity \
-		  pathman_join_clause
+		  pathman_update_trigger \
+		  pathman_utility_stmt
 
 EXTRA_REGRESS_OPTS=--temp-config=$(top_srcdir)/$(subdir)/conf.add
 
@@ -66,3 +78,9 @@ isolationcheck: | submake-isolation
 		--temp-config=$(top_srcdir)/$(subdir)/conf.add \
 		--outputdir=./isolation_output \
 		$(ISOLATIONCHECKS)
+
+python_tests:
+	$(MAKE) -C tests/python partitioning_tests
+
+cmocka_tests:
+	$(MAKE) -C tests/cmocka check
