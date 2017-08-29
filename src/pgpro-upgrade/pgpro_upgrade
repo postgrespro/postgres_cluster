@@ -28,7 +28,7 @@ case "$PGBIN" in
 esac
 
 # Check the catalog version
-CATALOG_VERSION_NO=2016081311
+CATALOG_VERSION_NO=2016081315
 MAJORVER=9.6
 CATVER=`${PGBIN}pg_controldata|sed -n '/Catalog version number:/s/^.*: *//p'`
 if [ "$CATVER" != $CATALOG_VERSION_NO ]; then
