@@ -2,6 +2,8 @@
 # Utilities needed
 # 1. sh
 # 3. sed 
+LC_MESSAGES=C
+export LC_MESSAGES
 if [ -z "$PGDATA" ]; then
 	echo "PGDATA environment variable is not set. Stop." 1>&2
 	exit 2
