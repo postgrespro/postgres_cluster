@@ -395,6 +395,20 @@ void MtmUnlock(void)
 	LWLockRelease((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID]);
 }
 
+void MtmDeepUnlock(void)
+{
+	if (MtmLockCount > 0)
+		Assert(Mtm->lastLockHolder == MyProcPid);
+
+	/* If we have no PGPROC, then lock was not obtained. */
+	if (MyProc == NULL)
+		return;
+
+	MtmLockCount = 0;
+	Mtm->lastLockHolder = 0;
+	LWLockRelease((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID]);
+}
+
 void MtmLockNode(int nodeId, LWLockMode mode)
 {
 	Assert(nodeId > 0 && nodeId <= MtmMaxNodes*2);
@@ -2033,7 +2047,8 @@ bool MtmIsRecoveredNode(int nodeId)
 {
 	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
 		if (!MtmIsRecoverySession) {
-			MTM_ELOG(WARNING, "Node %d is marked as disabled but is not in recovery mode", nodeId);
+			MtmDeepUnlock();
+			MTM_ELOG(ERROR, "Node %d is marked as disabled but is not in recovery mode", nodeId);
 		}
 		return true;
 	} else {

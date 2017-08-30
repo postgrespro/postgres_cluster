@@ -399,6 +399,7 @@ extern void  MtmSendMessage(MtmArbiterMessage* msg);
 extern void  MtmAdjustSubtransactions(MtmTransState* ts);
 extern void  MtmLock(LWLockMode mode);
 extern void  MtmUnlock(void);
+extern void  MtmDeepUnlock(void);
 extern void  MtmLockNode(int nodeId, LWLockMode mode);
 extern bool  MtmTryLockNode(int nodeId, LWLockMode mode);
 extern void  MtmUnlockNode(int nodeId);
