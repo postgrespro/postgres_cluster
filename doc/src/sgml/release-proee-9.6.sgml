@@ -1,4 +1,91 @@
 <!-- doc/src/sgml/release-proee-9.6.sgml -->
+<sect1 id="release-proee-9-6-5-1">
+<title>&productname; 9.6.5.1</title>
+  <note>
+    <title>Release Date</title>
+    <simpara>2017-08-31</simpara>
+  </note>
+<sect2>
+    <title>Overview</title>
+    <para>This release is based on <productname>Postgres Pro Enterprise</productname>
+      <link linkend="release-proee-9-6-4-1">9.6.4.1</link> and
+      <productname>Postgres Pro Standard</productname> <link linkend="release-pro-9-6-5-1">9.6.5.1</link>.</para>
+    <para>Major enhancements over <productname>Postgres Pro Enterprise</productname>
+      9.6.4.1 include:</para>
+    <itemizedlist>
+      <listitem>
+      <para>Updated <application>pg_pathman</application> module to
+        version 1.4.3. (See <xref linkend="pg-pathman"> and <xref linkend="pg-pathman-how-to-update">.)
+        As compared to version 1.4.2, the following enhancements were introduced:</para>
+          <itemizedlist spacing="compact">
+            <listitem>
+              <para>Disabled dangerous optimizations for <command>UPDATE</command> and <command>DELETE</command> on <productname>PostgreSQL</productname> 9.5.
+              </para>
+            </listitem>
+            <listitem>
+              <para>Fixed the following type of query: <command>DELETE FROM single_table USING partitioned_table</command>.
+              </para>
+            </listitem>
+            <listitem>
+              <para>Fixed the output of the <command>EXPLAIN INSERT INTO partitioned_table</command> command when verbose mode is activated.
+              </para>
+            </listitem>
+          </itemizedlist>
+              <para>For a full list of changes,
+                see <ulink url="https://github.com/postgrespro/pg_pathman/releases/"><application>pg_pathman</application> Wiki</ulink>.
+              </para>
+      </listitem>
+      <listitem>
+        <para>Enhanced the <xref linkend="app-pgcontroldata"> utility
+        to enable automatic <productname>Postgres Pro</productname> upgrades
+        using the <literal>pgpro_upgrade</literal> script.
+        </para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Migration to Version &productname; 9.6.5.1</title>
+    <para>Depending on your current installation, the upgrade procedure will differ.
+    </para>
+    <para>To upgrade from a <productname>Postgres Pro Enterprise</productname> version based on
+      any previous <productname>PostgreSQL</productname> major release, you can perform a dump/restore using
+      <xref linkend="app-pg-dumpall">, or use the <xref linkend="pgupgrade"> utility.
+      The first option is safer, while the second is faster and can significantly
+      speed up the upgrade process for large databases.
+    </para>
+    <para>To upgrade from a <productname>Postgres Pro Enterprise</productname> version
+      based on the same <productname>PostgreSQL</productname> major release,
+      a dump/restore is not required. Instead of the <literal>pg_upgrade</literal>,
+      you must use the <literal>pgpro_upgrade</literal> script provided
+      in this distribution. This script updates metadata information to
+      handle catalog number format change introduced in 
+      <productname>Postgres Pro Enterprise</productname> 9.6.4.1. If you are upgrading your
+      <productname>Postgres Pro Enterprise</productname> installation from a binary package, the
+      <literal>pgpro_upgrade</literal> script is run automatically, or you
+      are prompted to run it manually.
+      </para>
+      <important>
+        <para>
+      If you run <literal>pgpro_upgrade</literal> manually,
+      you must stop postgres service.
+      The script must be run on behalf of the user owning the database
+      (typically postgres) and PGDATA environment variable should be
+      set to the directory where database resides. Running <literal>pgpro_upgrade</literal>
+      as root will result in an error.
+        </para>
+      </important>
+      <note>
+        <para>On RPM-based Linux distributions, if you are upgrading from
+        version 9.6.1.2, make sure to move the data directory from
+        <filename>pgsql</filename> to the <filename>pgproee</filename>
+        directory before running the <literal>pgpro_upgrade</literal> script.
+        </para>
+      </note>
+    <para>To migrate from vanilla PostgreSQL 9.6.x or <productname>Postgres Pro</productname>,
+    perform a dump/restore using <xref linkend="app-pg-dumpall">.
+    </para>
+  </sect2>
+</sect1>
 <sect1 id="release-proee-9-6-4-1">
   <title>&productname; 9.6.4.1</title>
   <note>
