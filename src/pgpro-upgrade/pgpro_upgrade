@@ -27,6 +27,41 @@ case "$PGBIN" in
 ;;
 esac
 
+# Check the catalog version
+CATALOG_VERSION_NO=2016081311
+MAJORVER=9.6
+CATVER=`${PGBIN}pg_controldata|sed -n '/Catalog version number:/s/^.*: *//p'`
+if [ "$CATVER" != $CATALOG_VERSION_NO ]; then
+	if [ ! -f "${PGDATA}/global/pg_control" ]; then
+		# looks like we have Debian with separate directory for configs
+		SAVE_PGDATA="$PGDATA"
+		PGDATA=`sed -n "/data_directory/{s/^data_directory = '//
+		s/'.*$//
+		p}" /etc/postgresql/9.6/main/postgresql.conf`
+		if [ -z "$PGDATA" -o ! -f "${PGDATA}/global/pg_control" ]; then
+			echo "Cannot find valid database in $PGDATA" 1>&2;
+			exit 1
+		fi
+		if [ -f "$PGDATA/postmaster.pid" ]; then
+			echo "postmaster.pid exists. Is another backend running on $PGDATA" 1>&2; 
+			exit 1;
+		fi
+	fi
+	# Fix pg_control file
+	"${PGBIN}pg_controldata" -c
+	# Fix tablespace directories
+	(cd "$PGDATA/pg_tblspc"
+	 for i in *; do
+	 	[ "$i" = "*" ] && break # Glob pattern not expanded
+		(cd $i; mv PG_${MAJORVER}_$CATVER PG_${MAJORVER}_$CATALOG_VERSION_NO)
+	 done
+	)
+	if [ -n "$SAVE_PGDATA" ]; then
+		PGDATA="$SAVE_PGDATA"
+	fi
+fi
+
+
 for dir in "$PGSHARE" /usr/pgsql-9.6/share /usr/share/postgresql/9.6 /usr/pgsql/9.6/share /usr/share/pgsql /usr/share/postgrespro96  ; do
 	if [ -d "$dir/pgpro-upgrade" ]; then
 		DIR="$dir/pgpro-upgrade"

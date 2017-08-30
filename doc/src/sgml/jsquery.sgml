@@ -396,7 +396,7 @@ CREATE EXTENSION jsquery;
       <listitem>
         <para>
           <literal># &gt;= 10 AND # &lt;= 20</literal> - there is an element
-          great than or equal to 10 and another element less than or equal
+          greater than or equal to 10 and another element less than or equal
           to 20. The query can be satisfied by an array with no elements
           between 10 and 20, for instance [0,30].
         </para>
