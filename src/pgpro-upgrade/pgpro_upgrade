@@ -32,6 +32,10 @@ CATALOG_VERSION_NO=2016081311
 MAJORVER=9.6
 CATVER=`${PGBIN}pg_controldata|sed -n '/Catalog version number:/s/^.*: *//p'`
 if [ "$CATVER" != $CATALOG_VERSION_NO ]; then
+    if [ -n "$check" ]; then
+        echo "Database needs upgrade"
+        exit 1
+    fi
 	if [ ! -f "${PGDATA}/global/pg_control" ]; then
 		# looks like we have Debian with separate directory for configs
 		SAVE_PGDATA="$PGDATA"
