@@ -72,6 +72,8 @@
       (typically postgres) and PGDATA environment variable should be
       set to the directory where database resides. Running <literal>pgpro_upgrade</literal>
       as root will result in an error.
+      </para>
+      </important>
       If you have compiled <productname>Postgres Pro</productname>
       from source code or created your database in a non-default location,
       you must run the <literal>pgpro_upgrade</literal> script manually.
