@@ -18,7 +18,10 @@
 
 #include "postgres.h"
 
+#include <sys/stat.h>
+#include <sys/time.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "access/xlog.h"
 #include "access/xlog_internal.h"
