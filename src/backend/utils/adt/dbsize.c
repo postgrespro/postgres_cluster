@@ -42,7 +42,7 @@ db_dir_size(const char *path)
 	int64		dirsize = 0;
 	struct dirent *direntry;
 	DIR		   *dirdesc;
-	char		filename[MAXPGPATH];
+	char		filename[MAXPGPATH * 2];
 
 	dirdesc = AllocateDir(path);
 
@@ -59,7 +59,7 @@ db_dir_size(const char *path)
 			strcmp(direntry->d_name, "..") == 0)
 			continue;
 
-		snprintf(filename, MAXPGPATH, "%s/%s", path, direntry->d_name);
+		snprintf(filename, sizeof(filename), "%s/%s", path, direntry->d_name);
 
 		if (stat(filename, &fst) < 0)
 		{
@@ -87,7 +87,7 @@ calculate_database_size(Oid dbOid)
 	DIR		   *dirdesc;
 	struct dirent *direntry;
 	char		dirpath[MAXPGPATH];
-	char		pathname[MAXPGPATH];
+	char		pathname[MAXPGPATH + 12 + sizeof(TABLESPACE_VERSION_DIRECTORY)];
 	AclResult	aclresult;
 
 	/* User must have connect privilege for target database */
@@ -99,7 +99,7 @@ calculate_database_size(Oid dbOid)
 	/* Shared storage in pg_global is not counted */
 
 	/* Include pg_default storage */
-	snprintf(pathname, MAXPGPATH, "base/%u", dbOid);
+	snprintf(pathname, sizeof(pathname), "base/%u", dbOid);
 	totalsize = db_dir_size(pathname);
 
 	/* Scan the non-default tablespaces */
@@ -119,7 +119,7 @@ calculate_database_size(Oid dbOid)
 			strcmp(direntry->d_name, "..") == 0)
 			continue;
 
-		snprintf(pathname, MAXPGPATH, "pg_tblspc/%s/%s/%u",
+		snprintf(pathname, sizeof(pathname), "pg_tblspc/%s/%s/%u",
 				 direntry->d_name, TABLESPACE_VERSION_DIRECTORY, dbOid);
 		totalsize += db_dir_size(pathname);
 	}
@@ -167,7 +167,7 @@ static int64
 calculate_tablespace_size(Oid tblspcOid)
 {
 	char		tblspcPath[MAXPGPATH];
-	char		pathname[MAXPGPATH];
+	char		pathname[MAXPGPATH * 2];
 	int64		totalsize = 0;
 	DIR		   *dirdesc;
 	struct dirent *direntry;
@@ -209,7 +209,7 @@ calculate_tablespace_size(Oid tblspcOid)
 			strcmp(direntry->d_name, "..") == 0)
 			continue;
 
-		snprintf(pathname, MAXPGPATH, "%s/%s", tblspcPath, direntry->d_name);
+		snprintf(pathname, sizeof(pathname), "%s/%s", tblspcPath, direntry->d_name);
 
 		if (stat(pathname, &fst) < 0)
 		{

@@ -36,6 +36,33 @@ SELECT count(*) FROM calamity.part_test;
 DELETE FROM calamity.part_test;
 
 
+/* test function create_single_range_partition() */
+SELECT create_single_range_partition(NULL, NULL::INT4, NULL);					/* not ok */
+SELECT create_single_range_partition('pg_class', NULL::INT4, NULL);				/* not ok */
+
+SELECT add_to_pathman_config('calamity.part_test', 'val');
+SELECT create_single_range_partition('calamity.part_test', NULL::INT4, NULL);	/* not ok */
+DELETE FROM pathman_config WHERE partrel = 'calamity.part_test'::REGCLASS;
+
+
+/* test function create_range_partitions_internal() */
+SELECT create_range_partitions_internal(NULL, '{}'::INT[], NULL, NULL);		/* not ok */
+
+SELECT create_range_partitions_internal('calamity.part_test',
+										NULL::INT[], NULL, NULL);			/* not ok */
+
+SELECT create_range_partitions_internal('calamity.part_test', '{1}'::INT[],
+										'{part_1}'::TEXT[], NULL);			/* not ok */
+
+SELECT create_range_partitions_internal('calamity.part_test', '{1}'::INT[],
+										NULL, '{tblspc_1}'::TEXT[]);		/* not ok */
+
+SELECT create_range_partitions_internal('calamity.part_test',
+										'{1, NULL}'::INT[], NULL, NULL);	/* not ok */
+
+SELECT create_range_partitions_internal('calamity.part_test',
+										'{2, 1}'::INT[], NULL, NULL);		/* not ok */
+
 /* test function create_hash_partitions() */
 SELECT create_hash_partitions('calamity.part_test', 'val', 2,
 							  partition_names := ARRAY[]::TEXT[]); /* not ok */
@@ -89,7 +116,6 @@ SELECT set_interval('calamity.part_test', 'abc'::text);		/* not ok */
 SELECT drop_partitions('calamity.part_test', true);
 DELETE FROM calamity.part_test;
 
-
 /* check function build_hash_condition() */
 SELECT build_hash_condition('int4', 'val', 10, 1);
 SELECT build_hash_condition('text', 'val', 10, 1);
@@ -99,14 +125,35 @@ SELECT build_hash_condition('text', 'val', 10, NULL) IS NULL;
 SELECT build_hash_condition('calamity.part_test', 'val', 10, 1);
 
 /* check function build_range_condition() */
-SELECT build_range_condition('calamity.part_test', 'val', 10, 20);
-SELECT build_range_condition('calamity.part_test', 'val', 10, NULL);
-SELECT build_range_condition('calamity.part_test', 'val', NULL, 10);
+SELECT build_range_condition(NULL, 'val', 10, 20);						/* not ok */
+SELECT build_range_condition('calamity.part_test', NULL, 10, 20);		/* not ok */
+SELECT build_range_condition('calamity.part_test', 'val', 10, 20);		/* OK */
+SELECT build_range_condition('calamity.part_test', 'val', 10, NULL);	/* OK */
+SELECT build_range_condition('calamity.part_test', 'val', NULL, 10);	/* OK */
+
+/* check function validate_interval_value() */
+SELECT validate_interval_value(1::REGCLASS, 'expr', 2, '1 mon', 'cooked_expr');			/* not ok */
+SELECT validate_interval_value(NULL, 'expr', 2, '1 mon', 'cooked_expr');				/* not ok */
+SELECT validate_interval_value('pg_class', NULL, 2, '1 mon', 'cooked_expr');			/* not ok */
+SELECT validate_interval_value('pg_class', 'relname', NULL, '1 mon', 'cooked_expr');	/* not ok */
+SELECT validate_interval_value('pg_class', 'relname', 1, 'HASH', NULL);					/* not ok */
+SELECT validate_interval_value('pg_class', 'expr', 2, '1 mon', NULL);					/* not ok */
+SELECT validate_interval_value('pg_class', 'expr', 2, NULL, 'cooked_expr');				/* not ok */
+SELECT validate_interval_value('pg_class', 'EXPR', 1, 'HASH', NULL);					/* not ok */
 
 /* check function validate_relname() */
 SELECT validate_relname('calamity.part_test');
 SELECT validate_relname(1::REGCLASS);
 SELECT validate_relname(NULL);
+
+/* check function validate_expression() */
+SELECT validate_expression(1::regclass, NULL);					/* not ok */
+SELECT validate_expression(NULL::regclass, NULL);				/* not ok */
+SELECT validate_expression('calamity.part_test', NULL);			/* not ok */
+SELECT validate_expression('calamity.part_test', 'valval');		/* not ok */
+SELECT validate_expression('calamity.part_test', 'random()');	/* not ok */
+SELECT validate_expression('calamity.part_test', 'val');		/* OK */
+SELECT validate_expression('calamity.part_test', 'VaL');		/* OK */
 
 /* check function get_number_of_partitions() */
 SELECT get_number_of_partitions('calamity.part_test');
@@ -127,33 +174,56 @@ SELECT get_partition_key_type('calamity.part_test');
 SELECT get_partition_key_type(0::regclass);
 SELECT get_partition_key_type(NULL) IS NULL;
 
-/* check function build_check_constraint_name_attnum() */
-SELECT build_check_constraint_name('calamity.part_test', 1::int2);
-SELECT build_check_constraint_name('calamity.part_test', NULL::int2) IS NULL;
-SELECT build_check_constraint_name(NULL, 1::int2) IS NULL;
-SELECT build_check_constraint_name(NULL, NULL::int2) IS NULL;
-
-/* check function build_check_constraint_name_attname() */
-SELECT build_check_constraint_name('calamity.part_test', 'val');
-SELECT build_check_constraint_name('calamity.part_test', NULL::text) IS NULL;
-SELECT build_check_constraint_name(NULL, 'val') IS NULL;
-SELECT build_check_constraint_name(NULL, NULL::text) IS NULL;
+/* check function build_check_constraint_name() */
+SELECT build_check_constraint_name('calamity.part_test');		/* OK */
+SELECT build_check_constraint_name(0::REGCLASS);				/* not ok */
+SELECT build_check_constraint_name(NULL) IS NULL;
 
 /* check function build_update_trigger_name() */
-SELECT build_update_trigger_name('calamity.part_test');
+SELECT build_update_trigger_name('calamity.part_test');			/* OK */
+SELECT build_update_trigger_name(0::REGCLASS);					/* not ok */
 SELECT build_update_trigger_name(NULL) IS NULL;
 
 /* check function build_update_trigger_func_name() */
-SELECT build_update_trigger_func_name('calamity.part_test');
+SELECT build_update_trigger_func_name('calamity.part_test');	/* OK */
+SELECT build_update_trigger_func_name(0::REGCLASS);				/* not ok */
 SELECT build_update_trigger_func_name(NULL) IS NULL;
 
+/* check function build_sequence_name() */
+SELECT build_sequence_name('calamity.part_test');				/* OK */
+SELECT build_sequence_name(1::REGCLASS);						/* not ok */
+SELECT build_sequence_name(NULL) IS NULL;
+
+/* check function partition_table_concurrently() */
+SELECT partition_table_concurrently(1::REGCLASS);				/* not ok */
+SELECT partition_table_concurrently('pg_class', 0);				/* not ok */
+SELECT partition_table_concurrently('pg_class', 1, 1E-5);		/* not ok */
+SELECT partition_table_concurrently('pg_class');				/* not ok */
+
 /* check function stop_concurrent_part_task() */
-SELECT stop_concurrent_part_task(1::regclass);
+SELECT stop_concurrent_part_task(1::REGCLASS);					/* not ok */
 
 /* check function drop_range_partition_expand_next() */
-SELECT drop_range_partition_expand_next('pg_class');
+SELECT drop_range_partition_expand_next('pg_class');			/* not ok */
 SELECT drop_range_partition_expand_next(NULL) IS NULL;
 
+/* check function generate_range_bounds() */
+SELECT generate_range_bounds(NULL, 100, 10) IS NULL;
+SELECT generate_range_bounds(0, NULL::INT4, 10) IS NULL;
+SELECT generate_range_bounds(0, 100, NULL) IS NULL;
+SELECT generate_range_bounds(0, 100, 0);							/* not ok */
+SELECT generate_range_bounds('a'::TEXT, 'test'::TEXT, 10);			/* not ok */
+SELECT generate_range_bounds('a'::TEXT, '1 mon'::INTERVAL, 10);		/* not ok */
+SELECT generate_range_bounds(0::NUMERIC, 1::NUMERIC, 10);			/* OK */
+SELECT generate_range_bounds('1-jan-2017'::DATE,
+							 '1 day'::INTERVAL,
+							 4);									/* OK */
+
+SELECT check_range_available(NULL, NULL::INT4, NULL);	/* not ok */
+SELECT check_range_available('pg_class', 1, 10);		/* OK (not partitioned) */
+
+SELECT has_update_trigger(NULL);
+SELECT has_update_trigger(0::REGCLASS); /* not ok */
 
 /* check invoke_on_partition_created_callback() */
 CREATE FUNCTION calamity.dummy_cb(arg jsonb) RETURNS void AS $$
@@ -183,8 +253,9 @@ DROP FUNCTION calamity.dummy_cb(arg jsonb);
 
 /* check function add_to_pathman_config() -- PHASE #1 */
 SELECT add_to_pathman_config(NULL, 'val');						/* no table */
-SELECT add_to_pathman_config('calamity.part_test', NULL);		/* no column */
-SELECT add_to_pathman_config('calamity.part_test', 'V_A_L');	/* wrong column */
+SELECT add_to_pathman_config(0::REGCLASS, 'val');				/* no table (oid) */
+SELECT add_to_pathman_config('calamity.part_test', NULL);		/* no expr */
+SELECT add_to_pathman_config('calamity.part_test', 'V_A_L');	/* wrong expr */
 SELECT add_to_pathman_config('calamity.part_test', 'val');		/* OK */
 SELECT disable_pathman_for('calamity.part_test');
 SELECT add_to_pathman_config('calamity.part_test', 'val', '10'); /* OK */
@@ -204,18 +275,18 @@ SELECT add_to_pathman_config('calamity.part_test', 'val', '10');
 EXPLAIN (COSTS OFF) SELECT * FROM calamity.part_ok; /* check that pathman is enabled */
 
 ALTER TABLE calamity.wrong_partition
-ADD CONSTRAINT pathman_wrong_partition_1_check
+ADD CONSTRAINT pathman_wrong_partition_check
 CHECK (val = 1 OR val = 2); /* wrong constraint */
 SELECT add_to_pathman_config('calamity.part_test', 'val', '10');
 EXPLAIN (COSTS OFF) SELECT * FROM calamity.part_ok; /* check that pathman is enabled */
-ALTER TABLE calamity.wrong_partition DROP CONSTRAINT pathman_wrong_partition_1_check;
+ALTER TABLE calamity.wrong_partition DROP CONSTRAINT pathman_wrong_partition_check;
 
 ALTER TABLE calamity.wrong_partition
-ADD CONSTRAINT pathman_wrong_partition_1_check
+ADD CONSTRAINT pathman_wrong_partition_check
 CHECK (val >= 10 AND val = 2); /* wrong constraint */
 SELECT add_to_pathman_config('calamity.part_test', 'val', '10');
 EXPLAIN (COSTS OFF) SELECT * FROM calamity.part_ok; /* check that pathman is enabled */
-ALTER TABLE calamity.wrong_partition DROP CONSTRAINT pathman_wrong_partition_1_check;
+ALTER TABLE calamity.wrong_partition DROP CONSTRAINT pathman_wrong_partition_check;
 
 /* check GUC variable */
 SHOW pg_pathman.enable;
@@ -260,6 +331,91 @@ SELECT get_part_range('calamity.test_range_oid_1', NULL::INT4);		/* OK */
 
 DROP TABLE calamity.test_range_oid CASCADE;
 
+
+/* check function merge_range_partitions() */
+SELECT merge_range_partitions('{pg_class}');						/* not ok */
+SELECT merge_range_partitions('{pg_class, pg_inherits}');			/* not ok */
+
+CREATE TABLE calamity.merge_test_a(val INT4 NOT NULL);
+CREATE TABLE calamity.merge_test_b(val INT4 NOT NULL);
+
+SELECT create_range_partitions('calamity.merge_test_a', 'val', 1, 10, 2);
+SELECT create_range_partitions('calamity.merge_test_b', 'val', 1, 10, 2);
+
+SELECT merge_range_partitions('{calamity.merge_test_a_1,
+								calamity.merge_test_b_1}');			/* not ok */
+
+DROP TABLE calamity.merge_test_a,calamity.merge_test_b CASCADE;
+
+
+/* check function drop_triggers() */
+CREATE TABLE calamity.trig_test_tbl(val INT4 NOT NULL);
+SELECT create_hash_partitions('calamity.trig_test_tbl', 'val', 2);
+SELECT create_update_triggers('calamity.trig_test_tbl');
+
+SELECT count(*) FROM pg_trigger WHERE tgrelid = 'calamity.trig_test_tbl'::REGCLASS;
+SELECT count(*) FROM pg_trigger WHERE tgrelid = 'calamity.trig_test_tbl_1'::REGCLASS;
+
+SELECT drop_triggers('calamity.trig_test_tbl');						/* OK */
+
+SELECT count(*) FROM pg_trigger WHERE tgrelid = 'calamity.trig_test_tbl'::REGCLASS;
+SELECT count(*) FROM pg_trigger WHERE tgrelid = 'calamity.trig_test_tbl_1'::REGCLASS;
+
+DROP TABLE calamity.trig_test_tbl CASCADE;
+
+
+DROP SCHEMA calamity CASCADE;
+DROP EXTENSION pg_pathman;
+
+
+
+/*
+ * -------------------------------------
+ *  Special tests (pathman_cache_stats)
+ * -------------------------------------
+ */
+
+CREATE SCHEMA calamity;
+CREATE EXTENSION pg_pathman;
+
+/* check that cache loading is lazy */
+CREATE TABLE calamity.test_pathman_cache_stats(val NUMERIC NOT NULL);
+SELECT create_range_partitions('calamity.test_pathman_cache_stats', 'val', 1, 10, 10);
+SELECT context, entries FROM pathman_cache_stats ORDER BY context;	/* OK */
+DROP TABLE calamity.test_pathman_cache_stats CASCADE;
+SELECT context, entries FROM pathman_cache_stats ORDER BY context;	/* OK */
+
+/* Change this setting for code coverage */
+SET pg_pathman.enable_bounds_cache = false;
+
+/* check view pathman_cache_stats (bounds cache disabled) */
+CREATE TABLE calamity.test_pathman_cache_stats(val NUMERIC NOT NULL);
+SELECT create_range_partitions('calamity.test_pathman_cache_stats', 'val', 1, 10, 10);
+EXPLAIN (COSTS OFF) SELECT * FROM calamity.test_pathman_cache_stats;
+SELECT context, entries FROM pathman_cache_stats ORDER BY context;	/* OK */
+DROP TABLE calamity.test_pathman_cache_stats CASCADE;
+SELECT context, entries FROM pathman_cache_stats ORDER BY context;	/* OK */
+
+/* Restore this GUC */
+SET pg_pathman.enable_bounds_cache = true;
+
+/* check view pathman_cache_stats (bounds cache enabled) */
+CREATE TABLE calamity.test_pathman_cache_stats(val NUMERIC NOT NULL);
+SELECT create_range_partitions('calamity.test_pathman_cache_stats', 'val', 1, 10, 10);
+EXPLAIN (COSTS OFF) SELECT * FROM calamity.test_pathman_cache_stats;
+SELECT context, entries FROM pathman_cache_stats ORDER BY context;	/* OK */
+DROP TABLE calamity.test_pathman_cache_stats CASCADE;
+SELECT context, entries FROM pathman_cache_stats ORDER BY context;	/* OK */
+
+/* check that parents cache has been flushed after partition was dropped */
+CREATE TABLE calamity.test_pathman_cache_stats(val NUMERIC NOT NULL);
+SELECT create_range_partitions('calamity.test_pathman_cache_stats', 'val', 1, 10, 10);
+EXPLAIN (COSTS OFF) SELECT * FROM calamity.test_pathman_cache_stats;
+SELECT context, entries FROM pathman_cache_stats ORDER BY context;	/* OK */
+SELECT drop_range_partition('calamity.test_pathman_cache_stats_1');
+SELECT context, entries FROM pathman_cache_stats ORDER BY context;	/* OK */
+DROP TABLE calamity.test_pathman_cache_stats CASCADE;
+SELECT context, entries FROM pathman_cache_stats ORDER BY context;	/* OK */
 
 DROP SCHEMA calamity CASCADE;
 DROP EXTENSION pg_pathman;

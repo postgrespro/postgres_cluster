@@ -15,9 +15,6 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#ifdef HAVE_SYS_SELECT_H
-#include <sys/select.h>
-#endif
 
 /* local includes */
 #include "streamutil.h"
@@ -408,7 +405,8 @@ StreamLogicalLog(void)
 				timeoutptr = &timeout;
 			}
 
-			r = select(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr);
+			r = PQselect(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr,
+						 PQisRsocket(conn));
 			if (r == 0 || (r < 0 && errno == EINTR))
 			{
 				/*

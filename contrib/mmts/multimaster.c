@@ -254,6 +254,7 @@ int	  MtmHeartbeatRecvTimeout;
 int	  MtmMin2PCTimeout;
 int	  MtmMax2PCRatio;
 bool  MtmUseDtm;
+bool  MtmUseRDMA;
 bool  MtmPreserveCommitOrder;
 bool  MtmVolksWagenMode; /* Pretend to be normal postgres. This means skip some NOTICE's and use local sequences */
 bool  MtmMajorNode;
@@ -388,6 +389,20 @@ void MtmUnlock(void)
 	if (MyProc == NULL) { /* If we have no PGPROC, then lock was not obtained. */
 		return;
 	}
+	Mtm->lastLockHolder = 0;
+	LWLockRelease((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID]);
+}
+
+void MtmDeepUnlock(void)
+{
+	if (MtmLockCount > 0)
+		Assert(Mtm->lastLockHolder == MyProcPid);
+
+	/* If we have no PGPROC, then lock was not obtained. */
+	if (MyProc == NULL)
+		return;
+
+	MtmLockCount = 0;
 	Mtm->lastLockHolder = 0;
 	LWLockRelease((LWLockId)&Mtm->locks[MTM_STATE_LOCK_ID]);
 }
@@ -2030,7 +2045,8 @@ bool MtmIsRecoveredNode(int nodeId)
 {
 	if (BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)) {
 		if (!MtmIsRecoverySession) {
-			MTM_ELOG(WARNING, "Node %d is marked as disabled but is not in recovery mode", nodeId);
+			MtmDeepUnlock();
+			MTM_ELOG(ERROR, "Node %d is marked as disabled but is not in recovery mode", nodeId);
 		}
 		return true;
 	} else {
@@ -2950,6 +2966,19 @@ _PG_init(void)
 		"This instance of Postgres contains no data and peforms role of referee for other nodes",
 		NULL,
 		&MtmReferee,
+		false,
+		PGC_POSTMASTER,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
+	DefineCustomBoolVariable(
+		"multimaster.use_rdma",
+		"Use RDMA sockets",
+		NULL,
+		&MtmUseRDMA,
 		false,
 		PGC_POSTMASTER,
 		0,

@@ -635,6 +635,7 @@ include_dir 'conf.d'
       </listitem>
      </varlistentry>
 
+
      <varlistentry id="guc-port" xreflabel="port">
       <term><varname>port</varname> (<type>integer</type>)
       <indexterm>
@@ -856,8 +857,8 @@ include_dir 'conf.d'
         Specifies the number of seconds of inactivity after which TCP
         should send a keepalive message to the client.  A value of 0 uses
         the system default.
-        This parameter is supported only on systems that support the
-        <symbol>TCP_KEEPIDLE</> or <symbol>TCP_KEEPALIVE</> symbols, and on
+        This parameter is supported only on systems that support
+        <symbol>TCP_KEEPIDLE</> or an equivalent socket option, and on
         Windows; on other systems, it must be zero.
         In sessions connected via a Unix-domain socket, this parameter is
         ignored and always reads as zero.
@@ -882,9 +883,9 @@ include_dir 'conf.d'
         Specifies the number of seconds after which a TCP keepalive message
         that is not acknowledged by the client should be retransmitted.
         A value of 0 uses the system default.
-        This parameter is supported only on systems that support the
-        <symbol>TCP_KEEPINTVL</> symbol, and on Windows; on other systems, it
-        must be zero.
+        This parameter is supported only on systems that support
+        <symbol>TCP_KEEPINTVL</> or an equivalent socket option, and on
+        Windows; on other systems, it must be zero.
         In sessions connected via a Unix-domain socket, this parameter is
         ignored and always reads as zero.
        </para>
@@ -906,10 +907,11 @@ include_dir 'conf.d'
       <listitem>
        <para>
         Specifies the number of TCP keepalives that can be lost before
-        the server's connection to the client is considered dead.  A value of 0
-        uses the system default.  This parameter is
-        supported only on systems that support the <symbol>TCP_KEEPCNT</>
-        symbol; on other systems, it must be zero.
+        the server's connection to the client is considered dead.
+        A value of 0 uses the system default.
+        This parameter is supported only on systems that support
+        <symbol>TCP_KEEPCNT</> or an equivalent socket option;
+        on other systems, it must be zero.
         In sessions connected via a Unix-domain socket, this parameter is
         ignored and always reads as zero.
        </para>
@@ -1182,7 +1184,7 @@ include_dir 'conf.d'
         aliases for <literal>md5</> and <literal>plain</>, respectively.  Setting
         this parameter to <literal>scram</> will encrypt the password with
         SCRAM-SHA-256.
-       </para>       
+       </para>
       </listitem>
      </varlistentry>
 
@@ -5165,6 +5167,7 @@ FROM pg_stat_activity;
         longer than <xref linkend="guc-deadlock-timeout"> to acquire a
         lock.  This is useful in determining if lock waits are causing
         poor performance.  The default is <literal>off</>.
+        Only superusers can change this setting.
        </para>
       </listitem>
      </varlistentry>
@@ -7484,6 +7487,105 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
 
      </variablelist>
     </sect2>
+   </sect1>
+
+   <sect1 id="runtime-config-cfs">
+    <title>Data Compression</title>
+
+    <variablelist>
+
+     <varlistentry id="guc-cfs-gc" xreflabel="cfs-gc">
+      <term><varname>cfs_gc</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>cfs_gc</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Control background garbage collection of compressed pages.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-encryption" xreflabel="cfs-encryption">
+      <term><varname>cfs_encryption</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>cfs_encryption</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Control encryption of compressed pages.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-gc-workers" xreflabel="cfs-gc-workers">
+      <term><varname>cfs_gc_workers</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cfs_gc_workers</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Number of CFS background garbage collection workers.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-level" xreflabel="cfs-level">
+      <term><varname>cfs_gc_workers</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cfs_level</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        CFS compression level: 0 - no compression, 1 - maximal speed,
+		other possible values depend on the specific algorithm.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-gc-threshold" xreflabel="cfs-gc-threshold">
+      <term><varname>cfs_gc_threshold</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cfs_gc_threshold</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Minimum percent of garbage blocks in the file prior to garbage collection.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-gc-period" xreflabel="cfs-gc-period">
+      <term><varname>cfs_gc_period</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cfs_gc_period</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Time to sleep between GC runs in milliseconds.
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-gc-delay" xreflabel="cfs-gc-delay">
+      <term><varname>cfs_gc_delay</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cfs_gc_delay</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Delay in milliseconds between files defragmentation.
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
    </sect1>
 
    <sect1 id="runtime-config-error-handling">

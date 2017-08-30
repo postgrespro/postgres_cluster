@@ -71,7 +71,6 @@
 #include <sys/wait.h>
 #include <ctype.h>
 #include <sys/stat.h>
-#include <sys/socket.h>
 #include <fcntl.h>
 #include <sys/param.h>
 #include <netinet/in.h>
@@ -197,6 +196,12 @@ char	   *Unix_socket_directories;
 
 /* The TCP listen address(es) */
 char	   *ListenAddresses;
+#ifdef WITH_RSOCKET
+char	   *ListenRdmaAddresses;
+
+/* Port counter for rdma connections */
+static int	RsocketPortCounter = PGINVALID_SOCKET;
+#endif
 
 /*
  * ReservedBackends is the number of backends reserved for superuser use.
@@ -212,6 +217,9 @@ int			ReservedBackends;
 /* The socket(s) we're listening to. */
 #define MAXLISTEN	64
 static pgsocket ListenSocket[MAXLISTEN];
+#ifdef WITH_RSOCKET
+static bool	ListenRdma[MAXLISTEN];
+#endif
 
 /*
  * Set by the -o option
@@ -355,6 +363,9 @@ static volatile sig_atomic_t start_autovac_launcher = false;
 /* the launcher needs to be signalled to communicate some condition */
 static volatile bool avlauncher_needs_signal = false;
 
+/* received START_WALRECEIVER signal */
+static volatile sig_atomic_t WalReceiverRequested = false;
+
 /* set when there's a worker that needs to be started up */
 static volatile bool StartWorkerNeeded = true;
 static volatile bool HaveCrashedWorker = false;
@@ -408,6 +419,7 @@ static void maybe_start_bgworkers(void);
 static bool CreateOptsFile(int argc, char *argv[], char *fullprogname);
 static pid_t StartChildProcess(AuxProcType type);
 static void StartAutovacuumWorker(void);
+static void MaybeStartWalReceiver(void);
 static void InitPostmasterDeathWatchHandle(void);
 
 /*
@@ -463,6 +475,9 @@ typedef struct
 	InheritableSocket portsocket;
 	char		DataDir[MAXPGPATH];
 	pgsocket	ListenSocket[MAXLISTEN];
+#ifdef WITH_RSOCKET
+	bool		ListenRdma[MAXLISTEN];
+#endif
 	long		MyCancelKey;
 	int			MyPMChildSlot;
 #ifndef WIN32
@@ -958,9 +973,19 @@ PostmasterMain(int argc, char *argv[])
 	 * charged with closing the sockets again at postmaster shutdown.
 	 */
 	for (i = 0; i < MAXLISTEN; i++)
+	{
 		ListenSocket[i] = PGINVALID_SOCKET;
+#ifdef WITH_RSOCKET
+		ListenRdma[i] = false;
+#endif
+	}
 
 	on_proc_exit(CloseServerPorts, 0);
+
+#ifdef WITH_RSOCKET
+	/* Rsocket ports start from PostPortNumber + 1 */
+	RsocketPortCounter = PostPortNumber;
+#endif
 
 	if (ListenAddresses)
 	{
@@ -990,12 +1015,14 @@ PostmasterMain(int argc, char *argv[])
 				status = StreamServerPort(AF_UNSPEC, NULL,
 										  (unsigned short) PostPortNumber,
 										  NULL,
-										  ListenSocket, MAXLISTEN);
+										  ListenSocket, NULL, MAXLISTEN,
+										  false);
 			else
 				status = StreamServerPort(AF_UNSPEC, curhost,
 										  (unsigned short) PostPortNumber,
 										  NULL,
-										  ListenSocket, MAXLISTEN);
+										  ListenSocket, NULL, MAXLISTEN,
+										  false);
 
 			if (status == STATUS_OK)
 			{
@@ -1020,6 +1047,62 @@ PostmasterMain(int argc, char *argv[])
 		list_free(elemlist);
 		pfree(rawstring);
 	}
+
+#ifdef WITH_RSOCKET
+	if (ListenRdmaAddresses)
+	{
+		char	   *rawstring;
+		List	   *elemlist;
+		ListCell   *l;
+		int			success = 0;
+
+		/* Need a modifiable copy of ListenRdma */
+		rawstring = pstrdup(ListenRdmaAddresses);
+
+		/* Parse string into list of hostnames */
+		if (!SplitIdentifierString(rawstring, ',', &elemlist))
+		{
+			/* syntax error in list */
+			ereport(FATAL,
+					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					 errmsg("invalid list syntax in parameter \"%s\"",
+							"listen_rdma")));
+		}
+
+		foreach(l, elemlist)
+		{
+			char	   *curhost = (char *) lfirst(l);
+
+			status = StreamServerPort(AF_UNSPEC, curhost,
+									  (unsigned short) PostPortNumber,
+									  NULL,
+									  ListenSocket, ListenRdma, MAXLISTEN,
+									  true);
+
+			if (status == STATUS_OK)
+			{
+				success++;
+				/* record the first successful host addr in lockfile */
+				if (!listen_addr_saved)
+				{
+					AddToDataDirLockFile(LOCK_FILE_LINE_LISTEN_ADDR, curhost);
+					listen_addr_saved = true;
+				}
+			}
+			else
+				ereport(WARNING,
+						(errmsg("could not create listen socket for \"%s\"",
+								curhost)));
+		}
+
+		if (!success && elemlist != NIL)
+			ereport(FATAL,
+					(errmsg("could not create any TCP/IP sockets")));
+
+		list_free(elemlist);
+		pfree(rawstring);
+	}
+#endif
 
 #ifdef USE_BONJOUR
 	/* Register for Bonjour only if we opened TCP socket(s) */
@@ -1087,7 +1170,8 @@ PostmasterMain(int argc, char *argv[])
 			status = StreamServerPort(AF_UNIX, NULL,
 									  (unsigned short) PostPortNumber,
 									  socketdir,
-									  ListenSocket, MAXLISTEN);
+									  ListenSocket, NULL, MAXLISTEN,
+									  false);
 
 			if (status == STATUS_OK)
 			{
@@ -1348,6 +1432,9 @@ CloseServerPorts(int status, Datum arg)
 		{
 			StreamClose(ListenSocket[i]);
 			ListenSocket[i] = PGINVALID_SOCKET;
+#ifdef WITH_RSOCKET
+			ListenRdma[i] = false;
+#endif
 		}
 	}
 
@@ -1709,6 +1796,9 @@ ServerLoop(void)
 					port = ConnCreate(ListenSocket[i]);
 					if (port)
 					{
+#ifdef WITH_RSOCKET
+						port->with_rsocket = ListenRdma[i];
+#endif
 						BackendStartup(port);
 
 						/*
@@ -1779,6 +1869,10 @@ ServerLoop(void)
 			if (AutoVacPID != 0)
 				kill(AutoVacPID, SIGUSR2);
 		}
+
+		/* If we need to start a WAL receiver, try to do that now */
+		if (WalReceiverRequested)
+			MaybeStartWalReceiver();
 
 		/* Get other worker processes running, if needed */
 		if (StartWorkerNeeded || HaveCrashedWorker)
@@ -2347,6 +2441,11 @@ ConnCreate(int serverFd)
 		ExitPostmaster(1);
 	}
 
+	port->isRsocket = false;
+#ifdef WITH_RSOCKET
+	port->with_rsocket = false;
+#endif
+
 	if (StreamConnection(serverFd, port) != STATUS_OK)
 	{
 		if (port->sock != PGINVALID_SOCKET)
@@ -2426,6 +2525,9 @@ ClosePostmasterPorts(bool am_syslogger)
 		{
 			StreamClose(ListenSocket[i]);
 			ListenSocket[i] = PGINVALID_SOCKET;
+#ifdef WITH_RSOCKET
+			ListenRdma[i] = false;
+#endif
 		}
 	}
 
@@ -2911,7 +3013,8 @@ reaper(SIGNAL_ARGS)
 		/*
 		 * Was it the wal receiver?  If exit status is zero (normal) or one
 		 * (FATAL exit), we assume everything is all right just like normal
-		 * backends.
+		 * backends.  (If we need a new wal receiver, we'll start one at the
+		 * next iteration of the postmaster's main loop.)
 		 */
 		if (pid == WalReceiverPID)
 		{
@@ -3974,6 +4077,11 @@ BackendStartup(Port *port)
 			(errmsg_internal("forked new backend, pid=%d socket=%d",
 							 (int) pid, (int) port->sock)));
 
+#ifdef WITH_RSOCKET
+	/* Increment rsocket port number for next connection */
+	RsocketPortCounter++;
+#endif
+
 	/*
 	 * Everything's been successful, it's safe to add this backend to our list
 	 * of backends.
@@ -4010,7 +4118,7 @@ report_fork_failure_to_client(Port *port, int errnum)
 			 strerror(errnum));
 
 	/* Set port to non-blocking.  Don't do send() if this fails */
-	if (!pg_set_noblock(port->sock))
+	if (!pg_set_noblock(port->sock, port->isRsocket))
 		return;
 
 	/* We'll retry after EINTR, but ignore all other failures */
@@ -4425,6 +4533,7 @@ internal_forkexec(int argc, char *argv[], Port *port)
 static pid_t
 internal_forkexec(int argc, char *argv[], Port *port)
 {
+	int			retry_count = 0;
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
 	int			i;
@@ -4441,6 +4550,9 @@ internal_forkexec(int argc, char *argv[], Port *port)
 	Assert(argv[argc] == NULL);
 	Assert(strncmp(argv[1], "--fork", 6) == 0);
 	Assert(argv[2] == NULL);
+
+	/* Resume here if we need to retry */
+retry:
 
 	/* Set up shared memory for parameter passing */
 	ZeroMemory(&sa, sizeof(sa));
@@ -4533,22 +4645,26 @@ internal_forkexec(int argc, char *argv[], Port *port)
 
 	/*
 	 * Reserve the memory region used by our main shared memory segment before
-	 * we resume the child process.
+	 * we resume the child process.  Normally this should succeed, but if ASLR
+	 * is active then it might sometimes fail due to the stack or heap having
+	 * gotten mapped into that range.  In that case, just terminate the
+	 * process and retry.
 	 */
 	if (!pgwin32_ReserveSharedMemoryRegion(pi.hProcess))
 	{
-		/*
-		 * Failed to reserve the memory, so terminate the newly created
-		 * process and give up.
-		 */
+		/* pgwin32_ReserveSharedMemoryRegion already made a log entry */
 		if (!TerminateProcess(pi.hProcess, 255))
 			ereport(LOG,
 					(errmsg_internal("could not terminate process that failed to reserve memory: error code %lu",
 									 GetLastError())));
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
-		return -1;				/* logging done made by
-								 * pgwin32_ReserveSharedMemoryRegion() */
+		if (++retry_count < 100)
+			goto retry;
+		ereport(LOG,
+				(errmsg("giving up after too many tries to reserve shared memory"),
+				 errhint("This might be caused by ASLR or antivirus software.")));
+		return -1;
 	}
 
 	/*
@@ -4747,7 +4863,7 @@ SubPostmasterMain(int argc, char *argv[])
 		 * PGPROC slots, we have already initialized libpq and are able to
 		 * report the error to the client.
 		 */
-		BackendInitialize(&port);
+		BackendInitialize(&port, false);
 
 		/* Restore basic shared memory pointers */
 		InitShmemAccess(UsedShmemSegAddr);
@@ -4998,14 +5114,12 @@ sigusr1_handler(SIGNAL_ARGS)
 		StartAutovacuumWorker();
 	}
 
-	if (CheckPostmasterSignal(PMSIGNAL_START_WALRECEIVER) &&
-		WalReceiverPID == 0 &&
-		(pmState == PM_STARTUP || pmState == PM_RECOVERY ||
-		 pmState == PM_HOT_STANDBY || pmState == PM_WAIT_READONLY) &&
-		Shutdown == NoShutdown)
+	if (CheckPostmasterSignal(PMSIGNAL_START_WALRECEIVER))
 	{
 		/* Startup Process wants us to start the walreceiver process. */
-		WalReceiverPID = StartWalReceiver();
+		/* Start immediately if possible, else remember request for later. */
+		WalReceiverRequested = true;
+		MaybeStartWalReceiver();
 	}
 
 	if (CheckPostmasterSignal(PMSIGNAL_ADVANCE_STATE_MACHINE) &&
@@ -5298,6 +5412,24 @@ StartAutovacuumWorker(void)
 		avlauncher_needs_signal = true;
 	}
 }
+
+/*
+ * MaybeStartWalReceiver
+ *		Start the WAL receiver process, if not running and our state allows.
+ */
+static void
+MaybeStartWalReceiver(void)
+{
+	if (WalReceiverPID == 0 &&
+		(pmState == PM_STARTUP || pmState == PM_RECOVERY ||
+		 pmState == PM_HOT_STANDBY || pmState == PM_WAIT_READONLY) &&
+		Shutdown == NoShutdown)
+	{
+		WalReceiverPID = StartWalReceiver();
+		WalReceiverRequested = false;
+	}
+}
+
 
 /*
  * Create the opts file
@@ -5793,6 +5925,9 @@ save_backend_variables(BackendParameters *param, Port *port,
 	strlcpy(param->DataDir, DataDir, MAXPGPATH);
 
 	memcpy(&param->ListenSocket, &ListenSocket, sizeof(ListenSocket));
+#ifdef WITH_RSOCKET
+	memcpy(&param->ListenRdma, &ListenRdma, sizeof(ListenRdma));
+#endif
 
 	param->MyCancelKey = MyCancelKey;
 	param->MyPMChildSlot = MyPMChildSlot;
@@ -6028,6 +6163,9 @@ restore_backend_variables(BackendParameters *param, Port *port)
 	SetDataDir(param->DataDir);
 
 	memcpy(&ListenSocket, &param->ListenSocket, sizeof(ListenSocket));
+#ifdef WITH_RSOCKET
+	memcpy(&ListenRdma, &param->ListenRdma, sizeof(ListenRdma));
+#endif
 
 	MyCancelKey = param->MyCancelKey;
 	MyPMChildSlot = param->MyPMChildSlot;

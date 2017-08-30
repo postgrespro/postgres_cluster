@@ -41,6 +41,7 @@ char	   *dbport = NULL;
 char	   *replication_slot = NULL;
 char	   *dbname = NULL;
 int			dbgetpassword = 0;	/* 0=auto, -1=never, 1=always */
+bool		isRsocket = false;
 static char *dbpassword = NULL;
 PGconn	   *conn = NULL;
 
@@ -139,6 +140,15 @@ GetConnection(void)
 		values[i] = dbport;
 		i++;
 	}
+
+#ifdef WITH_RSOCKET
+	if (isRsocket)
+	{
+		keywords[i] = "with_rsocket";
+		values[i] = "true";
+		i++;
+	}
+#endif
 
 	/* If -W was given, force prompt for password, but only the first time */
 	need_password = (dbgetpassword == 1 && dbpassword == NULL);

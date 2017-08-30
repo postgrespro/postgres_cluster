@@ -106,7 +106,7 @@ CREATE EXTENSION pg_wait_sampling;
         <literal>pg_wait_sampling_current</literal> view:
       </para>
       <programlisting>
-SELECT * FROM pg_wait_sampling_get_current;
+SELECT * FROM pg_wait_sampling_current;
 </programlisting>
       <para>
         The returned statistics covers all the active processes,

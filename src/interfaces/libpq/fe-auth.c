@@ -42,6 +42,7 @@
 #include "fe-auth.h"
 #include "libpq/scram.h"
 #include "libpq/md5.h"
+#include "pg_socket.h"
 
 
 #ifdef ENABLE_GSS
@@ -373,7 +374,12 @@ pg_SSPI_startup(PGconn *conn, int use_negotiate)
 	SECURITY_STATUS r;
 	TimeStamp	expire;
 
-	conn->sspictx = NULL;
+	if (conn->sspictx)
+	{
+		printfPQExpBuffer(&conn->errorMessage,
+					libpq_gettext("duplicate SSPI authentication request\n"));
+		return STATUS_ERROR;
+	}
 
 	/*
 	 * Retrieve credentials handle
@@ -553,7 +559,7 @@ pg_local_sendauth(PGconn *conn)
 	cmsg->cmsg_level = SOL_SOCKET;
 	cmsg->cmsg_type = SCM_CREDS;
 
-	if (sendmsg(conn->sock, &msg, 0) == -1)
+	if (pg_sendmsg(conn->sock, &msg, 0, conn->isRsocket) == -1)
 	{
 		char		sebuf[256];
 
