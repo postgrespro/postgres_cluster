@@ -1191,7 +1191,7 @@ ProcessCopyOptions(CopyState cstate,
 						 errmsg("argument to option \"%s\" must be a valid encoding name",
 								defel->defname)));
 		}
-		else
+		else if (strcmp(defel->defname, "local") != 0)
 			ereport(ERROR,
 					(errcode(ERRCODE_SYNTAX_ERROR),
 					 errmsg("option \"%s\" not recognized",
@@ -1491,7 +1491,7 @@ BeginCopy(bool is_from,
 		}
 
 		/* plan the query */
-		plan = pg_plan_query(query, 0, NULL);
+		plan = pg_plan_query(query, CURSOR_OPT_PARALLEL_OK, NULL);
 
 		/*
 		 * With row level security and a user using "COPY relation TO", we

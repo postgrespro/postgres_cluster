@@ -554,10 +554,10 @@
 #define PACKAGE_NAME "PostgreSQL"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "PostgreSQL 9.6.3"
+#define PACKAGE_STRING "PostgreSQL 9.6.5"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "9.6.3"
+#define PACKAGE_VERSION "9.6.5"
 
 /* Define to the name of a signed 128-bit integer type. */
 #undef PG_INT128_TYPE
@@ -566,21 +566,23 @@
 #define PG_INT64_TYPE long long int
 
 /* PostgreSQL version as a string */
-#define PG_VERSION "9.6.3"
+#define PG_VERSION "9.6.5"
 
 /* PostgreSQL version as a number */
-#define PG_VERSION_NUM 90603
+#define PG_VERSION_NUM 90605
+
 #define PGPRO_PACKAGE_NAME "PostgresPro"
 
 #define PGPRO_EDITION "enterprise"
 
-#define PGPRO_VERSION "9.6.3.1"
+#define PGPRO_VERSION "9.6.5.1"
 
 #define PGPRO_EE
 
 #define XID_IS_64BIT
 
-#define PGPRO_PACKAGE_STR "PostgresPro 9.6.3.1"
+#define PGPRO_PACKAGE_STR "PostgresPro 9.6.5.1"
+
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "postgresql"
@@ -623,6 +625,9 @@
 
 /* Define to 1 to build with assertion checks. (--enable-cassert) */
 /* #undef USE_ASSERT_CHECKING */
+
+/* Define to 1 to build with rsocket instead socket. (--with-rsocket) */
+/* #undef WITH_RSOCKET */
 
 /* Define to 1 to build with Bonjour support. (--with-bonjour) */
 /* #undef USE_BONJOUR */

@@ -36,6 +36,7 @@ static void BgwPoolMainLoop(BgwPool* pool)
 
 	MTM_ELOG(LOG, "Start background worker %d, shutdown=%d", MyProcPid, pool->shutdown);
 
+	MtmBackgroundWorker = true;
 	MtmIsLogicalReceiver = true;
 	MtmPool = pool;
 

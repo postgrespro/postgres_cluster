@@ -14,11 +14,12 @@
  */
 
 /* Some general headers for custom bgworker facility */
+
 #include <unistd.h>
 #include "postgres.h"
 #include "fmgr.h"
 #include "miscadmin.h"
-#include "libpq-fe.h"
+#include "pg_socket.h"
 #include "pqexpbuffer.h"
 #include "access/xact.h"
 #include "access/clog.h"
@@ -37,6 +38,7 @@
 #include "replication/origin.h"
 #include "utils/portal.h"
 #include "tcop/pquery.h"
+#include "libpq-int.h"
 
 #include "multimaster.h"
 #include "spill.h"
@@ -224,6 +226,8 @@ pglogical_receiver_main(Datum main_arg)
 	char *slotName;
 	char* connString = psprintf("replication=database %s", Mtm->nodes[nodeId-1].con.connStr);
 	static PortalData fakePortal;
+
+	MtmBackgroundWorker = true;
 
 	ByteBufferAlloc(&buf);
 
@@ -481,8 +485,8 @@ pglogical_receiver_main(Datum main_arg)
 					{
 						int64 now = feGetCurrentTimestamp();
 
-						/* Leave is feedback is not sent properly */
 						MtmUpdateLsnMapping(nodeId, walEnd);
+						/* Leave if feedback is not sent properly */
 						if (!sendFeedback(conn, now, nodeId)) {
 							goto OnError;
 						}
@@ -618,12 +622,11 @@ pglogical_receiver_main(Datum main_arg)
 				timeout.tv_usec = usecs;
 				timeoutptr = &timeout;
 
-				r = select(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr);
+				r = pg_select(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr, conn->isRsocket);
 				if (r == 0)
 				{
 					int64 now = feGetCurrentTimestamp();
 
-					/* Leave is feedback is not sent properly */
 					MtmUpdateLsnMapping(nodeId, INVALID_LSN);
 					sendFeedback(conn, now, nodeId);
 				}
@@ -719,4 +722,3 @@ void MtmStartReceivers(void)
 		}
 	}
 }
-

@@ -22,6 +22,12 @@ extern		"C"
 
 #include <stdio.h>
 
+#ifndef WIN32
+#include <sys/time.h>
+#else
+#include <winsock2.h>
+#endif
+
 /*
  * postgres_ext.h defines the backend's externally visible types,
  * such as Oid.
@@ -67,6 +73,8 @@ typedef enum
 								 * connection acceptable */
 	CONNECTION_CHECK_RW,		/* Internal state: waiting that server replies
 								 * if it is in recovery */
+	CONNECTION_RSOCKET_NEEDED,	/* rsocket connection needed */
+	CONNECTION_RSOCKET_STARTUP	/* Negotiating rsocket with backend */
 } ConnStatusType;
 
 typedef enum
@@ -323,6 +331,10 @@ extern int	PQprotocolVersion(const PGconn *conn);
 extern int	PQserverVersion(const PGconn *conn);
 extern char *PQerrorMessage(const PGconn *conn);
 extern int	PQsocket(const PGconn *conn);
+extern int	PQisRsocket(const PGconn *conn);
+extern int	PQselect(int nfds, fd_set *readfds, fd_set *writefds,
+					 fd_set *exceptfds, struct timeval *timeout, int isRsocket);
+extern int	PQselectExtended(const PGconn *conn, int timeout_ms);
 extern int	PQbackendPID(const PGconn *conn);
 extern int	PQconnectionNeedsPassword(const PGconn *conn);
 extern int	PQconnectionUsedPassword(const PGconn *conn);

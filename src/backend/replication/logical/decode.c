@@ -776,16 +776,11 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 			strcpy(ctx->reorder->gid, parsed->twophase_gid);
 			*ctx->reorder->state_3pc = '\0';
 			
-			SnapBuildAbortTxn(ctx->snapshot_builder, buf->record->EndRecPtr, xid,
-							  parsed->nsubxacts, parsed->subxacts);
 			ReorderBufferCommitBareXact(ctx->reorder, xid, buf->origptr, buf->endptr,
 										commit_time, origin_id, origin_lsn);
 		}
 		return;
 	}
-
-	SnapBuildAbortTxn(ctx->snapshot_builder, buf->record->EndRecPtr, xid,
-					  parsed->nsubxacts, parsed->subxacts);
 
 	for (i = 0; i < parsed->nsubxacts; i++)
 	{

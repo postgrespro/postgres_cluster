@@ -37,6 +37,76 @@ static const char *modulename = gettext_noop("archiver (db)");
 static void _check_database_version(ArchiveHandle *AH);
 static PGconn *_connectDB(ArchiveHandle *AH, const char *newdbname, const char *newUser);
 static void notice_processor(void *arg, const char *message);
+static void get_pgpro_version(ArchiveHandle *AH);
+static void get_pgpro_edition(ArchiveHandle *AH);
+
+static void
+get_pgpro_version(ArchiveHandle *AH)
+{
+	char	   *query = "SELECT pgpro_version()";
+	PGresult   *res;
+	const char *pgpro_remoteversion_str;
+
+	res = PQexec(AH->connection, query);
+	/* If the query failed, it means that remote cluster is not PgPro. */
+	if (PQresultStatus(res) != PGRES_TUPLES_OK)
+	{
+		AH->public.pgproremoteVersion = 0;
+		fprintf(stdout, "pgpro server version: 0; %s version: %s\n", progname, PG_VERSION);
+	}
+	else
+	{
+		pgpro_remoteversion_str = pg_strdup(PQgetvalue(res, 0, 0));
+		AH->public.pgproremoteVersion = 1;
+		fprintf(stdout, "pgpro server version: %s; %s version: %s\n",
+				  pgpro_remoteversion_str, progname, PG_VERSION);
+	}
+	PQclear(res);
+}
+
+static void
+get_pgpro_edition(ArchiveHandle *AH)
+{
+	char	   *query = "SELECT pgpro_edition()";
+	PGresult   *res;
+	const char *pgpro_remoteEdition_str;
+
+	res = PQexec(AH->connection, query);
+	/* If the query failed, it means that remote cluster is not PgPro. */
+	if (PQresultStatus(res) != PGRES_TUPLES_OK)
+	{
+		AH->public.pgproremoteEdition = NONE;
+		fprintf(stdout, "pgpro server edition: 0; %s version: %s\n", progname, PG_VERSION);
+	}
+	else
+	{
+		pgpro_remoteEdition_str = pg_strdup(PQgetvalue(res, 0, 0));
+
+		fprintf(stdout, "pgpro server edition: %s; %s version: %s\n",
+				  pgpro_remoteEdition_str, progname, PG_VERSION);
+
+		if (strcmp(pgpro_remoteEdition_str, "standard") == 0)
+			AH->public.pgproremoteEdition = STANDART;
+		else if (strcmp(pgpro_remoteEdition_str, "standard-certified") == 0)
+			AH->public.pgproremoteEdition = STANDART_CERTIFIED;
+		else if (strcmp(pgpro_remoteEdition_str, "enterprise") == 0)
+		{
+			AH->public.pgproremoteEdition = ENTERPRISE;
+#ifndef PGPRO_EE
+			if (AH->public.remoteVersion >= 90600)
+				exit_horribly(NULL, "pg_upgrade for 64bit-xid is not implemented yet"
+									"Use pg_dump/pg_restore instead.\n");
+#endif			
+		}
+		else
+		{
+			write_msg(NULL, "Unrecognized pgpro edition: %s\n",
+					  pgpro_remoteEdition_str);
+			exit_horribly(NULL, "aborting because of unrecognized pgpro edition\n");
+		}
+	}
+	PQclear(res);
+}
 
 static void
 _check_database_version(ArchiveHandle *AH)
@@ -63,6 +133,9 @@ _check_database_version(ArchiveHandle *AH)
 				  remoteversion_str, progname, PG_VERSION);
 		exit_horribly(NULL, "aborting because of server version mismatch\n");
 	}
+
+	get_pgpro_version(AH);
+	get_pgpro_edition(AH);
 
 	/*
 	 * When running against 9.0 or later, check if we are in recovery mode,
