@@ -64,6 +64,7 @@
       <productname>Postgres Pro</productname> installation from a binary package, the
       <literal>pgpro_upgrade</literal> script is run automatically, or you
       are prompted to run it manually.
+      </para>
       <important>
         <para>
       If you run <literal>pgpro_upgrade</literal> manually,
@@ -72,9 +73,9 @@
       (typically postgres) and PGDATA environment variable should be
       set to the directory where database resides. Running <literal>pgpro_upgrade</literal>
       as root will result in an error.
-      </para>
+        </para>
       </important>
-      If you have compiled <productname>Postgres Pro</productname>
+      <para>If you have compiled <productname>Postgres Pro</productname>
       from source code or created your database in a non-default location,
       you must run the <literal>pgpro_upgrade</literal> script manually.
       </para>
@@ -85,7 +86,6 @@
         directory before running the <literal>pgpro_upgrade</literal> script.
         </para>
       </note>
-    </para>
     <para>To migrate from vanilla PostgreSQL 9.6.x, perform a dump/restore using
       <xref linkend="app-pg-dumpall">.
     </para>
