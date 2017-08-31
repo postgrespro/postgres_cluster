@@ -43,14 +43,21 @@
       </listitem>
       <listitem>
         <para>
-          pg_upgrade creates several directories in tablespace which
-          corresponds to different postgres instances. CFS GC now
-          traverse only directory of self instance and ignore other.
-        </para>
-      </listitem>
-      <listitem>
-        <para>transfer_compression_files now correctly append suffix to *.cfm
-          files.
+          Fixed the following CFS issues:
+        <itemizedlist>
+          <listitem>
+            <para>
+              CFS garbage collector now traverses only the tablespace directory
+              corresponding to the current postgres instance. Subdirectories for
+              other postgres instances are ignored.
+            </para>
+          </listitem>
+          <listitem>
+            <para>
+              *.cfm files are now copied by <application>pg_upgrade</application>.
+            </para>
+          </listitem>
+        </itemizedlist>
         </para>
       </listitem>
     </itemizedlist>
