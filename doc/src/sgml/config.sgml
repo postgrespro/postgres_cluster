@@ -7489,6 +7489,114 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
     </sect2>
    </sect1>
 
+   <sect1 id="runtime-config-cfs">
+    <title>Data Compression</title>
+
+    <variablelist>
+
+     <varlistentry id="guc-cfs-gc" xreflabel="cfs-gc">
+      <term><varname>cfs_gc</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>cfs_gc</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Enables/disables background garbage collection of compressed pages.
+        Default: <literal>on</literal>
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-encryption" xreflabel="cfs-encryption">
+      <term><varname>cfs_encryption</varname> (<type>boolean</type>)
+      <indexterm>
+       <primary><varname>cfs_encryption</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Enables/disables encryption of compressed pages.
+        Default: <literal>off</literal>
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-gc-workers" xreflabel="cfs-gc-workers">
+      <term><varname>cfs_gc_workers</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cfs_gc_workers</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Number of CFS background garbage collection workers.
+        Default: 1
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-level" xreflabel="cfs-level">
+      <term><varname>cfs_level</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cfs_level</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        CFS compression level: 0 &mdash; no compression, 1 &mdash; maximal speed.
+        Other possible values depend on the specific compression algorithm used.
+        For example, 9 for <literal>zlib</literal> or 19 for <literal>zstd</literal>.
+        Default: 1
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-gc-threshold" xreflabel="cfs-gc-threshold">
+      <term><varname>cfs_gc_threshold</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cfs_gc_threshold</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Minimum percent of garbage blocks in the file required to start garbage collection.
+        Default: 50%
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-gc-period" xreflabel="cfs-gc-period">
+      <term><varname>cfs_gc_period</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cfs_gc_period</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Time interval between CFS garbage collection iterations, in milliseconds.
+        Default: 5 seconds
+       </para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-cfs-gc-delay" xreflabel="cfs-gc-delay">
+      <term><varname>cfs_gc_delay</varname> (<type>integer</type>)
+      <indexterm>
+       <primary><varname>cfs_gc_delay</> configuration parameter</primary>
+      </indexterm>
+      </term>
+      <listitem>
+       <para>
+        Time interval for which garbage collection is paused after
+        each file defragmentation, in milliseconds.
+        Default: 0
+       </para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </sect1>
+
    <sect1 id="runtime-config-error-handling">
     <title>Error Handling</title>
 

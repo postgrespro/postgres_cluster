@@ -19641,7 +19641,151 @@ SELECT (pg_stat_file('filename')).modification;
    </para>
 
   </sect2>
+  <sect2 id="functions-compression-control">
+   <title>Compression Control Functions</title>
 
+   <indexterm>
+    <primary>cfs_start_gc</primary>
+   </indexterm>
+   <indexterm>
+    <primary>cfs_enable_gc</primary>
+   </indexterm>
+   <indexterm>
+    <primary>cfs_gc_relation</primary>
+   </indexterm>
+   <indexterm>
+    <primary>cfs_version</primary>
+   </indexterm>
+   <indexterm>
+    <primary>cfs_estimate</primary>
+   </indexterm>
+   <indexterm>
+    <primary>cfs_compression_ratio</primary>
+   </indexterm>
+   <indexterm>
+    <primary>cfs_fragmentation</primary>
+   </indexterm>
+   <indexterm>
+    <primary>cfs_gc_activity_processed_bytes</primary>
+   </indexterm>
+   <indexterm>
+    <primary>cfs_gc_activity_processed_pages</primary>
+   </indexterm>
+   <indexterm>
+    <primary>cfs_gc_activity_processed_files</primary>
+   </indexterm>
+   <indexterm>
+    <primary>cfs_gc_activity_scanned_files</primary>
+   </indexterm>
+
+   <para>
+    The functions shown in <xref linkend="functions-cfs-table"> provide information
+    about CFS state and activity and control CFS garbage collection.
+   </para>
+
+   <table id="functions-cfs-table">
+    <title>Compression Control Functions</title>
+    <tgroup cols="3">
+     <thead>
+      <row><entry>Name</entry> <entry>Return Type</entry> <entry>Description</entry>
+      </row>
+     </thead>
+
+     <tbody>
+      <row>
+       <entry>
+        <literal><function>cfs_start_gc(n_workers integer)</function></literal>
+        </entry>
+       <entry><type>integer</type></entry>
+       <entry>Starts garbage collection using the specified number of workers.
+       You can only run this function to start the garbage collection manually
+       if background garbage collection is disabled.
+       </entry>
+      </row>
+      <row>
+       <entry>
+        <literal><function>cfs_enable_gc(enabled boolean)</function></literal>
+        </entry>
+       <entry><type>boolean</type></entry>
+       <entry>Enables/disables background garbage collection. Alternatively, you can use the <xref linkend="guc-cfs-gc"> configuration variable.
+       </entry>
+      </row>
+      <row>
+       <entry>
+        <literal><function>cfs_gc_relation(rel regclass)</function></literal>
+        </entry>
+       <entry><type>integer</type></entry>
+       <entry>Performs garbage collection for a particular table. This function returns the number of processed segments.
+       </entry>
+      </row>
+      <row>
+       <entry>
+        <literal><function>cfs_version()</function></literal>
+        </entry>
+       <entry><type>text</type></entry>
+       <entry>Displays the CFS version and the specific compression algorithm used.
+       </entry>
+      </row>
+      <row>
+       <entry>
+        <literal><function>cfs_estimate(rel regclass)</function></literal>
+        </entry>
+       <entry><type>float8</type></entry>
+       <entry>Estimates the effect of table compression. Returns the average compression ratio for the first ten blocks of the relation.
+       </entry>
+      </row>
+      <row>
+       <entry>
+        <literal><function>cfs_compression_ratio(rel regclass)</function></literal>
+        </entry>
+       <entry><type>float8</type></entry>
+       <entry>Returns the actual compression ratio for all segments of the compressed relation.
+       </entry>
+      </row>
+      <row>
+       <entry>
+        <literal><function>cfs_fragmentation(rel regclass)</function></literal>
+        </entry>
+       <entry><type>float8</type></entry>
+       <entry>Returns the average fragmentation ratio of the relation files.
+       </entry>
+      </row>
+      <row>
+       <entry>
+        <literal><function>cfs_gc_activity_processed_bytes()</function></literal>
+        </entry>
+       <entry><type>int64</type></entry>
+       <entry>Returns the total size of pages processed by CFS during garbage collection.
+       </entry>
+      </row>
+      <row>
+       <entry>
+        <literal><function>cfs_gc_activity_processed_pages()</function></literal>
+        </entry>
+       <entry><type>int64</type></entry>
+       <entry>Returns the number of pages processed by CFS during garbage collection.
+       </entry>
+      </row>
+      <row>
+       <entry>
+        <literal><function>cfs_gc_activity_processed_files()</function></literal>
+        </entry>
+       <entry><type>int64</type></entry>
+       <entry>Returns the number of files compacted by CFS during garbage collection.
+       </entry>
+      </row>
+      <row>
+       <entry>
+        <literal><function>cfs_gc_activity_scanned_files()</function></literal>
+        </entry>
+       <entry><type>int64</type></entry>
+       <entry>Returns the number of files scanned by CFS during garbage collection.
+       </entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+  </sect2>
   </sect1>
 
   <sect1 id="functions-trigger">
