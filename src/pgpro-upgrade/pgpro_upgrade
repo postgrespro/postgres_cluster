@@ -45,7 +45,7 @@ if [ ! -f "${PGDATA}/global/pg_control" -a -f "${PGDATA}/postgresql.conf" ]; the
 		exit 1
 	fi
 fi
-CATVER=`${PGBIN}pg_controldata|sed -n '/Catalog version number:/s/^.*: *//p'`
+CATVER=`"${PGBIN}pg_controldata"|sed -n '/Catalog version number:/s/^.*: *//p'`
 if [ "$CATVER" != $CATALOG_VERSION_NO ]; then
 	for v in $UPGRADABLE_CATVER; do
 		if [ "$CATVER" = "$v" ]; then
