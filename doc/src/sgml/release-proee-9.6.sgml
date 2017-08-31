@@ -41,6 +41,18 @@
         using the <literal>pgpro_upgrade</literal> script.
         </para>
       </listitem>
+      <listitem>
+        <para>
+          pg_upgrade creates several directories in tablespace which
+          corresponds to different postgres instances. CFS GC now
+          traverse only directory of self instance and ignore other.
+        </para>
+      </listitem>
+      <listitem>
+        <para>transfer_compression_files now correctly append suffix to *.cfm
+          files.
+        </para>
+      </listitem>
     </itemizedlist>
   </sect2>
   <sect2>
