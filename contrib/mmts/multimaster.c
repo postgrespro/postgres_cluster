@@ -1033,6 +1033,7 @@ MtmCreateTransState(MtmCurrentTrans* x)
 	ts->isTwoPhase = x->isTwoPhase;
 	ts->isPinned = false;
 	ts->votingCompleted = false;
+	ts->abortedByNode = 0;
 	if (!found) {
 		ts->isEnqueued = false;
 		ts->isActive = false;
@@ -4556,7 +4557,7 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 					Assert(ts);
 
 					FinishPreparedTransaction(x->gid, false);
-					MTM_ELOG(ERROR, "Transaction %s (%llu) is aborted on node %d. Check its log to see error details.", x->gid, (long64)x->xid, ts->aborted_by_node);
+					MTM_ELOG(ERROR, "Transaction %s (%llu) is aborted on node %d. Check its log to see error details.", x->gid, (long64)x->xid, ts->abortedByNode);
 				} else {
 					FinishPreparedTransaction(x->gid, true);
 					MTM_LOG2("Distributed transaction %s (%lld) is committed at %lld with LSN=%lld", x->gid, (long64)x->xid, MtmGetCurrentTime(), (long64)GetXLogInsertRecPtr());
