@@ -1573,12 +1573,10 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	int			ndelrels;
 	SharedInvalidationMessage *invalmsgs;
 	int			i;
+	XactEvent	finish_event;
 
-
-	if (isCommit) 
-	{ 
+	if (isCommit)
 		CallXactCallbacks(XACT_EVENT_PRE_COMMIT_PREPARED);
-	}		
 
 	/*
 	 * Validate the GID, and lock the GXACT to ensure that two backends do not
@@ -1634,7 +1632,7 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 										hdr->ncommitrels, commitrels,
 										hdr->ninvalmsgs, invalmsgs,
 										hdr->initfileinval, gid);
-		CallXactCallbacks(XACT_EVENT_COMMIT_PREPARED);
+		finish_event = XACT_EVENT_COMMIT_PREPARED;
 	}
 	else
 	{
@@ -1642,9 +1640,9 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 									   hdr->nsubxacts, children,
 									   hdr->nabortrels, abortrels,
 									   gid);
-		CallXactCallbacks(XACT_EVENT_ABORT_PREPARED);
+		finish_event = XACT_EVENT_ABORT_PREPARED;
 	}
-									   
+
 
 	ProcArrayRemove(proc, latestXid);
 
@@ -1716,6 +1714,8 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	MyLockedGxact = NULL;
 
 	pfree(buf);
+
+	CallXactCallbacks(finish_event);
 }
 
 /*
