@@ -11,6 +11,7 @@ import copy
 import aioprocessing
 import multiprocessing
 import logging
+import re
 
 class MtmTxAggregate(object):
 
@@ -26,16 +27,19 @@ class MtmTxAggregate(object):
     def start_tx(self):
         self.start_time = datetime.datetime.now()
 
-    def finish_tx(self, name):
+    def finish_tx(self, status):
         latency = (datetime.datetime.now() - self.start_time).total_seconds()
+
+        if "is aborted on node" in status:
+            status = re.sub(r'MTM-.+\)', '<censored>', status)
 
         if latency > self.max_latency:
             self.max_latency = latency
 
-        if name not in self.finish:
-            self.finish[name] = 1
+        if status not in self.finish:
+            self.finish[status] = 1
         else:
-            self.finish[name] += 1
+            self.finish[status] += 1
 
     def as_dict(self):
         return {
@@ -62,6 +66,7 @@ class MtmClient(object):
         # logging.basicConfig(level=logging.DEBUG)
         self.n_accounts = n_accounts
         self.dsns = dsns
+        self.total = 0
         self.aggregates = {}
         keep_trying(40, 1, self.initdb, 'self.initdb')
         self.running = True
@@ -176,11 +181,11 @@ class MtmClient(object):
                         # enable_hstore tries to perform select from database
                         # which in case of select's failure will lead to exception
                         # and stale connection to the database
-                        conn = yield from aiopg.connect(dsn, enable_hstore=False, timeout=3600)
-                        print("reconnected")
+                        conn = yield from aiopg.connect(dsn, enable_hstore=False, timeout=1)
+                        print('Connected %s, %d' % (aggname_prefix, conn_i + 1) )
 
                 if (not cur) or cur.closed:
-                        cur = yield from conn.cursor()
+                        cur = yield from conn.cursor(timeout=10)
 
                 # ROLLBACK tx after previous exception.
                 # Doing this here instead of except handler to stay inside try
@@ -198,17 +203,17 @@ class MtmClient(object):
                 # Give evloop some free time.
                 # In case of continuous excetions we can loop here without returning
                 # back to event loop and block it
-                if "Multimaster node is not online" in msg:
-                    yield from asyncio.sleep(1.00)
-                else:
-                    yield from asyncio.sleep(0.01)
+                yield from asyncio.sleep(0.5)
+
             except BaseException as e:
-                print('Catch exception ', type(e))
-                agg.finish_tx(str(e).strip())
+                msg = str(e).strip()
+                agg.finish_tx(msg)
+                print('Caught exception %s, %s, %d, %s' % (type(e), aggname_prefix, conn_i + 1, msg) )
+
                 # Give evloop some free time.
                 # In case of continuous excetions we can loop here without returning
                 # back to event loop and block it
-                yield from asyncio.sleep(0.01)                
+                yield from asyncio.sleep(0.5)
 
         print("We've count to infinity!")
 
@@ -235,10 +240,11 @@ class MtmClient(object):
     def total_tx(self, conn, cur, agg):
         yield from cur.execute('select sum(amount) from bank_test')
         total = yield from cur.fetchone()
-        if total[0] != 0:
+        if total[0] != self.total:
             agg.isolation += 1
-            # print(self.oops)s
-            # print('Isolation error, total = ', total[0])
+            self.total = total[0]
+            print(self.oops)
+            print('Isolation error, total = ', total[0])
             # yield from cur.execute('select * from mtm.get_nodes_state()')
             # nodes_state = yield from cur.fetchall()
             # for i, col in enumerate(self.nodes_state_fields):
