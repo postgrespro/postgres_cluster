@@ -33,7 +33,7 @@ class TestHelper(object):
             commits = commits and 'commit' in agg['transfer']['finish']
         if not commits:
             print('No commits during aggregation interval')
-            # time.sleep(100000)
+            time.sleep(100000)
             raise AssertionError('No commits during aggregation interval')
 
     def assertNoCommits(self, aggs):
@@ -133,17 +133,17 @@ class RecoveryTest(unittest.TestCase, TestHelper):
         self.assertCommits(aggs)
         self.assertIsolation(aggs)
 
-    # def test_edge_partition(self):
-    #     print('### test_edge_partition ###')
+    def test_edge_partition(self):
+        print('### test_edge_partition ###')
 
-    #     aggs_failure, aggs = self.performFailure(EdgePartition('node2', 'node3'))
+        aggs_failure, aggs = self.performFailure(EdgePartition('node2', 'node3'))
 
-    #     self.assertTrue( ('commit' in aggs_failure[1]['transfer']['finish']) or ('commit' in aggs_failure[2]['transfer']['finish']) )
-    #     self.assertCommits(aggs_failure[0:1]) # first node
-    #     self.assertIsolation(aggs_failure)
+        self.assertTrue( ('commit' in aggs_failure[1]['transfer']['finish']) or ('commit' in aggs_failure[2]['transfer']['finish']) )
+        self.assertCommits(aggs_failure[0:1]) # first node
+        self.assertIsolation(aggs_failure)
 
-    #     self.assertCommits(aggs)
-    #     self.assertIsolation(aggs)
+        self.assertCommits(aggs)
+        self.assertIsolation(aggs)
 
     def test_node_restart(self):
         print('### test_node_restart ###')
