@@ -3723,7 +3723,7 @@ bool MtmFilterTransaction(char* record, int size)
 	switch (event)
 	{
 	  case PGLOGICAL_PREPARE:
-		return false;
+		// return false;
 	  case PGLOGICAL_PRECOMMIT_PREPARED:
 	  case PGLOGICAL_ABORT_PREPARED:
 		gid = pq_getmsgstring(&s);
