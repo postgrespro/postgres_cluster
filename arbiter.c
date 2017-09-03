@@ -190,7 +190,6 @@ static void MtmDisconnect(int node)
 	MtmUnregisterSocket(sockets[node]);
 	pg_closesocket(sockets[node], MtmUseRDMA);
 	sockets[node] = -1;
-	MtmOnNodeDisconnect(node+1);
 }
 
 static int MtmWaitSocket(int sd, bool forWrite, timestamp_t timeoutMsec)
@@ -541,9 +540,6 @@ static void MtmOpenConnections()
 	for (i = 0; i < nNodes; i++) {
 		if (i+1 != MtmNodeId && i < Mtm->nAllNodes) { 
 			sockets[i] = MtmConnectSocket(i, Mtm->nodes[i].con.arbiterPort);
-			if (sockets[i] < 0) { 
-				MtmOnNodeDisconnect(i+1);
-			} 
 		}
 	}
 	MtmStateProcessEvent(MTM_ARBITER_RECEIVER_START);
@@ -579,7 +575,6 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 			}
 			sockets[node] = MtmConnectSocket(node, Mtm->nodes[node].con.arbiterPort);
 			if (sockets[node] < 0) { 
-				MtmOnNodeDisconnect(node+1);
 				result = false;
 				break;
 			}

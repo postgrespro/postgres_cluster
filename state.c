@@ -60,14 +60,6 @@ MtmSetClusterStatus(MtmNodeStatus status)
 	MTM_LOG1("[STATE]   Switching status from %s to %s status",
 		MtmNodeStatusMnem[Mtm->status], MtmNodeStatusMnem[status]);
 
-	/* Do some actions on specific status transitions */
-	if (status == MTM_IN_MINORITY)
-	{
-		Mtm->recoverySlot = 0;
-		Mtm->pglogicalReceiverMask = 0;
-		Mtm->pglogicalSenderMask = 0;
-	}
-
 	Mtm->status = status;
 }
 
@@ -88,27 +80,21 @@ MtmCheckState(void)
 		maskToString(Mtm->pglogicalSenderMask, Mtm->nAllNodes),
 		Mtm->nAllNodes);
 
-	/* ANY -> MTM_IN_MINORITY */
-	if (nConnected < Mtm->nAllNodes/2+1)
+	/* ANY -> MTM_DISABLED */
+	if ( nConnected < Mtm->nAllNodes/2+1 ||
+		!BIT_CHECK(Mtm->clique, MtmNodeId-1) )
 	{
 		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
-		MtmSetClusterStatus(MTM_IN_MINORITY);
-		return;
-	}
-
-	/* ANY -> CLIQUE_DISABLE */
-	if (!BIT_CHECK(Mtm->clique, MtmNodeId-1))
-	{
-		/* Should be already disabled by clique detector */
-		// Assert(BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId-1));
-		MtmSetClusterStatus(MTM_OUT_OF_CLIQUE);
+		Mtm->recoverySlot = 0;
+		Mtm->pglogicalReceiverMask = 0;
+		Mtm->pglogicalSenderMask = 0;
+		MtmSetClusterStatus(MTM_DISABLED);
 		return;
 	}
 
 	switch (Mtm->status)
 	{
-		case MTM_IN_MINORITY:
-		case MTM_OUT_OF_CLIQUE:
+		case MTM_DISABLED:
 			if ( (nConnected >= Mtm->nAllNodes/2+1) && /* majority */
 				 BIT_CHECK(Mtm->clique, MtmNodeId-1) ) /* in clique */
 			{
@@ -173,7 +159,7 @@ MtmStateProcessNeighborEvent(int node_id, MtmNeighborEvent ev)
 
 		case MTM_NEIGHBOR_WAL_SENDER_START_RECOVERED:
 			BIT_SET(Mtm->pglogicalSenderMask, node_id - 1);
-			MtmEnableNode(node_id);
+			MtmEnableNode(node_id); /// XXXX ?
 			break;
 
 		case MTM_NEIGHBOR_RECOVERY_CAUGHTUP:
@@ -293,14 +279,12 @@ void MtmOnNodeDisconnect(int nodeId)
 	if (BIT_CHECK(SELF_CONNECTIVITY_MASK, nodeId-1))
 		return;
 
-	MtmDisableNode(nodeId);
-
 	MTM_LOG1("[STATE] Node %i: disconnected", nodeId);
 
 	MtmLock(LW_EXCLUSIVE);
 	BIT_SET(SELF_CONNECTIVITY_MASK, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
-
+	// MtmDisableNode(nodeId);
 	MtmCheckState();
 	MtmUnlock();
 
