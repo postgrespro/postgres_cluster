@@ -3338,40 +3338,6 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 		Mtm->preparedTransactionsLoaded = true;
 	}
 
-	// while (BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId - 1) ||
-	// 		 BIT_CHECK(SELF_CONNECTIVITY_MASK, nodeId - 1) ||
-	// 		!BIT_CHECK(Mtm->clique, nodeId - 1) ||
-	// 		!BIT_CHECK(Mtm->clique, MtmNodeId - 1) )
-	// {
-	// 	if (*shutdown)
-	// 	{
-	// 		MtmUnlock();
-	// 		return REPLMODE_EXIT;
-	// 	}
-
-	// 	if ((Mtm->recoverySlot == 0 || Mtm->recoverySlot == nodeId) &&
-	// 		(!BIT_CHECK(SELF_CONNECTIVITY_MASK, nodeId - 1)))
-	// 	{
-	// 		/* Lock on us */
-	// 		Mtm->recoverySlot = nodeId;
-	// 		MtmPollStatusOfPreparedTransactions();
-	// 		MtmUnlock();
-	// 		return REPLMODE_RECOVERY;
-	// 	}
-
-	// 	MTM_LOG1("Replication to node %d is pending: recovery node=%d, donor node=%d, connectivity mask=%llx, disabled mask=%llx",
-	// 			nodeId, Mtm->recoverySlot, Mtm->donorNodeId, SELF_CONNECTIVITY_MASK, Mtm->disabledNodeMask);
-
-	// 	MtmUnlock();
-	// 	/* delay opening of other slots until recovery is completed */
-	// 	MtmSleep(STATUS_POLL_DELAY);
-	// 	MtmLock(LW_EXCLUSIVE);
-	// }
-
-	// MtmUnlock();
-
-	// return REPLMODE_RECOVERED;
-
 	/* Await until node is connected and both receiver and sender are in clique */
 	while (BIT_CHECK(SELF_CONNECTIVITY_MASK, nodeId - 1) ||
 			!BIT_CHECK(Mtm->clique, nodeId - 1) ||
