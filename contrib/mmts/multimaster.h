@@ -130,15 +130,12 @@ typedef enum
 
 typedef enum
 {
-	MTM_INITIALIZATION, /* Initial status */
-	MTM_OFFLINE,        /* Node is excluded from cluster */
-	MTM_CONNECTED,      /* Arbiter is established connections with other nodes */
-	MTM_ONLINE,         /* Ready to receive client's queries */
+	MTM_DISABLED,       /* Node disabled */
 	MTM_RECOVERY,       /* Node is in recovery process */
-	MTM_RECOVERED,      /* Node is recovered by is not yet switched to ONLINE because not all sender/receivers are restarted */
-	MTM_IN_MINORITY,    /* Node is out of quorum */
-	MTM_OUT_OF_CLIQUE,  /* Node is out of cluster by clique detector */
-	MTM_OUT_OF_SERVICE  /* Node is not available to to critical, non-recoverable error */
+	MTM_RECOVERED,      /* Node is recovered by is not yet switched to ONLINE because
+						 * not all sender/receivers are restarted
+						 */
+	MTM_ONLINE          /* Ready to receive client's queries */
 } MtmNodeStatus;
 
 typedef enum

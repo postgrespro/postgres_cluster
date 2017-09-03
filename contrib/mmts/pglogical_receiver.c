@@ -404,7 +404,7 @@ pglogical_receiver_main(Datum main_arg)
 			if (rc & WL_POSTMASTER_DEATH)
 				proc_exit(1);
 
-			if (Mtm->status == MTM_OFFLINE || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != nodeId))
+			if (Mtm->status == MTM_DISABLED || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != nodeId))
 			{
 				ereport(LOG, (MTM_ERRMSG("%s: restart WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
 				break;

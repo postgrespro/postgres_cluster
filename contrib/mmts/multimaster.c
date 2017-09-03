@@ -218,15 +218,10 @@ static TransactionManager MtmTM =
 
 char const* const MtmNodeStatusMnem[] =
 {
-	"Initialization",
-	"Offline",
-	"Connecting",
-	"Online",
+	"Disabled",
 	"Recovery",
 	"Recovered",
-	"InMinor",
-	"OutOfClique",
-	"OutOfService"
+	"Online"
 };
 
 char const* const MtmTxnStatusMnem[] =
@@ -1960,7 +1955,7 @@ void MtmPollStatusOfPreparedTransactionsForDisabledNode(int disabledNodeId)
 				MtmBroadcastPollMessage(ts);
 			}
 		} else {
-			MTM_LOG1("Skip transaction %s (%llu) with status %s gtid.node=%d gtid.xid=%llu votedMask=%llx",
+			MTM_LOG2("Skip transaction %s (%llu) with status %s gtid.node=%d gtid.xid=%llu votedMask=%llx",
 					 ts->gid, (long64)ts->xid, MtmTxnStatusMnem[ts->status], ts->gtid.node, (long64)ts->gtid.xid, ts->votedMask);
 		}
 	}
@@ -2371,7 +2366,7 @@ static void MtmInitialize()
 	if (!found)
 	{
 		MemSet(Mtm, 0, sizeof(MtmState) + sizeof(MtmNodeInfo)*(MtmMaxNodes-1));
-		Mtm->status = MTM_IN_MINORITY; //MTM_INITIALIZATION;
+		Mtm->status = MTM_DISABLED; //MTM_INITIALIZATION;
 		Mtm->recoverySlot = 0;
 		Mtm->locks = GetNamedLWLockTranche(MULTIMASTER_NAME);
 		Mtm->csn = MtmGetCurrentTime();
@@ -2778,7 +2773,7 @@ _PG_init(void)
 		"Timeout in milliseconds of sending heartbeat messages",
 		"Period of broadcasting heartbeat messages by arbiter to all nodes",
 		&MtmHeartbeatSendTimeout,
-		1000,
+		200,
 		1,
 		INT_MAX,
 		PGC_BACKEND,
@@ -2793,7 +2788,7 @@ _PG_init(void)
 		"Timeout in milliseconds of receiving heartbeat messages",
 		"If no heartbeat message is received from node within this period, it assumed to be dead",
 		&MtmHeartbeatRecvTimeout,
-		10000,
+		1000,
 		1,
 		INT_MAX,
 		PGC_BACKEND,
