@@ -3727,7 +3727,6 @@ bool MtmFilterTransaction(char* record, int size)
 	switch (event)
 	{
 	  case PGLOGICAL_PREPARE:
-		// return false;
 	  case PGLOGICAL_PRECOMMIT_PREPARED:
 	  case PGLOGICAL_ABORT_PREPARED:
 		gid = pq_getmsgstring(&s);
@@ -3742,7 +3741,10 @@ bool MtmFilterTransaction(char* record, int size)
 	restart_lsn = origin_node == MtmReplicationNodeId ? end_lsn : origin_lsn;
 	if (Mtm->nodes[origin_node-1].restartLSN < restart_lsn) {
 		MTM_LOG2("[restartlsn] node %d: %llx -> %llx (MtmFilterTransaction)", MtmReplicationNodeId, Mtm->nodes[MtmReplicationNodeId-1].restartLSN, restart_lsn);
-		Mtm->nodes[origin_node-1].restartLSN = restart_lsn;
+		if (event != PGLOGICAL_PREPARE) {
+			/* Transactions can be prepared in different order, so to avoid loosing transactions we should not update restartLsn for them */
+			Mtm->nodes[origin_node-1].restartLSN = restart_lsn;
+		}
 	} else {
 		duplicate = true;
 	}
