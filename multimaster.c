@@ -2050,7 +2050,6 @@ bool MtmIsRecoveredNode(int nodeId)
 		}
 		return true;
 	} else {
-		MtmIsRecoverySession = false; /* recovery is completed */
 		return false;
 	}
 }
