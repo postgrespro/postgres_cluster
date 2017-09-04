@@ -143,7 +143,7 @@ MtmCheckState(void)
 
 
 void
-MtmStateProcessNeighborEvent(int node_id, MtmNeighborEvent ev)
+MtmStateProcessNeighborEvent(int node_id, MtmNeighborEvent ev) // XXXX camelcase node_id
 {
 	MTM_LOG1("[STATE] Node %i: %s", node_id, MtmNeighborEventMnem[ev]);
 
@@ -402,7 +402,7 @@ MtmRefreshClusterStatus()
 
 	if (newClique != trivialClique)
 	{
-		MTM_LOG1("[STATE] NONTRIVIAL CLIQUE!");
+		MTM_LOG1("[STATE] NONTRIVIAL CLIQUE! (trivial: %s)", maskToString(trivialClique, Mtm->nAllNodes)); // XXXX some false-positives, fixme
 	}
 
 	/*

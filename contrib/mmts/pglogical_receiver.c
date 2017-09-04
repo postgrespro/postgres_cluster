@@ -366,8 +366,7 @@ pglogical_receiver_main(Datum main_arg)
 			}
 			if (n_deleted_slots == Mtm->nAllNodes - 1)
 			{
-				elog(WARNING, "All neighbour nopes have no replication slot for us. Exiting.");
-				kill(PostmasterPid, SIGTERM);
+				elog(FATAL, "All neighbour nopes have no replication slot for us. Exiting.");
 			}
 			proc_exit(1);
 		}
