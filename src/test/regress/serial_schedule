@@ -119,7 +119,6 @@ test: tablesample
 test: groupingsets
 test: drop_operator
 test: atx
-test: large_object
 test: alter_generic
 test: alter_operator
 test: misc

@@ -54,6 +54,7 @@
 #include "utils/guc.h"
 #include "utils/rel.h"
 #include "utils/builtins.h"
+#include "utils/memutils.h"
 #include "utils/resowner_private.h"
 
 
@@ -603,7 +604,10 @@ static bool cfs_recover(FileMap* map, int md,
 		else if (pg_fsync(md) < 0)
 			elog(WARNING, "CFS failed to sync map %s: %m", map_path);
 		else
+		{
 			ok = true;
+			map->generation += 1; /* it is here just for pg_probackup */
+		}
 		close(md2);
 	}
 	else
@@ -859,6 +863,9 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		if (pg_atomic_read_u32(&cfs_state->gc_disabled) != 0)
 		{
 			pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
+			pfree(file_path);
+			pfree(map_bck_path);
+			pfree(file_bck_path);
 			return false;
 		}
 	}
@@ -913,7 +920,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		/* there could not be concurrent GC for this file here, so recover */
 		if (!cfs_recover(map, md, file_path, map_path, file_bck_path, map_bck_path))
 		{
-			elog(ERROR, "CFS found that file %s is completely destroyed", file_path);
+			elog(WARNING, "CFS found that file %s is completely destroyed", file_path);
 			goto FinUnmap;
 		}
 	}
@@ -1300,9 +1307,6 @@ retry:
 				 secs2*USECS_PER_SEC + usecs2);
 		}
 
-		pfree(file_path);
-		pfree(file_bck_path);
-		pfree(map_bck_path);
 		pfree(inodes);
 		pfree(newMap);
 
@@ -1325,6 +1329,9 @@ retry:
 	}
 
   FinishGC:
+	pfree(file_path);
+	pfree(file_bck_path);
+	pfree(map_bck_path);
 	if (background == CFS_BACKGROUND)
 	{
 		LWLockRelease(CfsGcLock);
@@ -1354,7 +1361,7 @@ retry:
  * Perform garbage collection on each compressed file
  * in the pg_tblspc directory.
  */
-static bool cfs_gc_directory(int worker_id, char const* path)
+static bool cfs_gc_directory(int worker_id, char const* path, int depth)
 {
 	DIR* dir = AllocateDir(path);
 	bool success = true;
@@ -1386,7 +1393,7 @@ static bool cfs_gc_directory(int worker_id, char const* path)
 					break;
 				}
 			}
-			else if (!cfs_gc_directory(worker_id, file_path))
+			else if ((depth != 1 || strcmp(entry->d_name, TABLESPACE_VERSION_DIRECTORY) == 0) && !cfs_gc_directory(worker_id, file_path, depth+1))
 			{
 				success = false;
 				break;
@@ -1419,11 +1426,12 @@ static void cfs_sighup(SIGNAL_ARGS)
  */
 static bool cfs_gc_scan_tablespace(int worker_id)
 {
-	return cfs_gc_directory(worker_id, "pg_tblspc");
+	return cfs_gc_directory(worker_id, "pg_tblspc", 0);
 }
 
 static void cfs_gc_bgworker_main(Datum arg)
 {
+	MemoryContext MemCxt;
 	int worker_id = DatumGetInt32(arg);
 
 	pqsignal(SIGINT, cfs_gc_cancel);
@@ -1436,6 +1444,9 @@ static void cfs_gc_bgworker_main(Datum arg)
 
 	elog(INFO, "Start CFS garbage collector %d (enabled=%d)", MyProcPid, cfs_state->background_gc_enabled);
 
+	MemCxt = AllocSetContextCreate(TopMemoryContext, "CFS worker ctx",
+									ALLOCSET_DEFAULT_SIZES);
+	MemoryContextSwitchTo(MemCxt);
 	while (true)
 	{
 		int timeout = cfs_gc_period;
@@ -1445,6 +1456,7 @@ static void cfs_gc_bgworker_main(Datum arg)
 		{
 			timeout = CFS_RETRY_TIMEOUT;
 		}
+		MemoryContextReset(MemCxt);
 		if (cfs_gc_stop || --cfs_state->max_iterations <= 0)
 		{
 			break;
@@ -1508,7 +1520,7 @@ void cfs_control_gc_lock(void)
 }
 
 /* Enable garbage collection. */
-void cfs_control_gc_unlock(void)
+void cfs_control_gc_unlock() /* argument could be given by PG_ENSURE_ERROR_CLEANUP */
 {
 	pg_atomic_fetch_sub_u32(&cfs_state->gc_disabled, 1);
 }
@@ -1834,18 +1846,18 @@ void cfs_recover_map(FileMap* map)
 			}
 			usedSize += size;
 		}
-		if (usedSize != pg_atomic_read_u32(&map->hdr.usedSize))
-		{
-			pg_atomic_write_u32(&map->hdr.usedSize, usedSize);
-		}
-		if (physSize != pg_atomic_read_u32(&map->hdr.physSize))
-		{
-			pg_atomic_write_u32(&map->hdr.physSize, physSize);
-		}
-		if (virtSize != pg_atomic_read_u32(&map->hdr.virtSize))
-		{
-			pg_atomic_write_u32(&map->hdr.virtSize, virtSize);
-		}
+	}
+	if (usedSize != pg_atomic_read_u32(&map->hdr.usedSize))
+	{
+		pg_atomic_write_u32(&map->hdr.usedSize, usedSize);
+	}
+	if (physSize != pg_atomic_read_u32(&map->hdr.physSize))
+	{
+		pg_atomic_write_u32(&map->hdr.physSize, physSize);
+	}
+	if (virtSize != pg_atomic_read_u32(&map->hdr.virtSize))
+	{
+		pg_atomic_write_u32(&map->hdr.virtSize, virtSize);
 	}
 }
 
@@ -1868,4 +1880,9 @@ Datum cfs_gc_activity_processed_files(PG_FUNCTION_ARGS)
 Datum cfs_gc_activity_scanned_files(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT64(cfs_state->gc_stat.scannedFiles);
+}
+
+void cfs_on_exit_callback(int code, Datum arg)
+{
+	cfs_control_gc_unlock();
 }

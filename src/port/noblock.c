@@ -16,21 +16,23 @@
 
 #include <fcntl.h>
 
+#include "pg_socket.h"
+
 
 /*
  * Put socket into nonblock mode.
  * Returns true on success, false on failure.
  */
 bool
-pg_set_noblock(pgsocket sock)
+pg_set_noblock(pgsocket sock, bool isRsocket)
 {
 #if !defined(WIN32)
 	int			flags;
 
-	flags = fcntl(sock, F_GETFL);
+	flags = pg_fcntl(sock, F_GETFL, 0, isRsocket);
 	if (flags < 0)
 		return false;
-	if (fcntl(sock, F_SETFL, (flags | O_NONBLOCK)) == -1)
+	if (pg_fcntl(sock, F_SETFL, (flags | O_NONBLOCK), isRsocket) == -1)
 		return false;
 	return true;
 #else
@@ -46,15 +48,15 @@ pg_set_noblock(pgsocket sock)
  * Returns true on success, false on failure.
  */
 bool
-pg_set_block(pgsocket sock)
+pg_set_block(pgsocket sock, bool isRsocket)
 {
 #if !defined(WIN32)
 	int			flags;
 
-	flags = fcntl(sock, F_GETFL);
+	flags = pg_fcntl(sock, F_GETFL, 0, isRsocket);
 	if (flags < 0)
 		return false;
-	if (fcntl(sock, F_SETFL, (flags & ~O_NONBLOCK)) == -1)
+	if (pg_fcntl(sock, F_SETFL, (flags & ~O_NONBLOCK), isRsocket) == -1)
 		return false;
 	return true;
 #else

@@ -115,9 +115,7 @@ INSERT INTO test_inserts.storage VALUES(121, 'query_2')
 RETURNING (SELECT generate_series(1, 10) LIMIT 1);
 
 INSERT INTO test_inserts.storage VALUES(121, 'query_3')
-RETURNING (SELECT attname
-		   FROM pathman_config
-		   WHERE partrel = 'test_inserts.storage'::regclass);
+RETURNING (SELECT get_partition_key('test_inserts.storage'));
 
 INSERT INTO test_inserts.storage VALUES(121, 'query_4')
 RETURNING 1, 2, 3, 4;
@@ -164,6 +162,14 @@ INSERT INTO test_inserts.storage (b, d, e) SELECT i, i, i
 FROM generate_series(-2, 130, 5) i
 RETURNING e * 2, b, tableoid::regclass;
 
+
+/* test gap case (missing partition in between) */
+CREATE TABLE test_inserts.test_gap(val INT NOT NULL);
+INSERT INTO test_inserts.test_gap SELECT generate_series(1, 30);
+SELECT create_range_partitions('test_inserts.test_gap', 'val', 1, 10);
+DROP TABLE test_inserts.test_gap_2; /* make a gap */
+INSERT INTO test_inserts.test_gap VALUES(15); /* not ok */
+DROP TABLE test_inserts.test_gap CASCADE;
 
 
 DROP SCHEMA test_inserts CASCADE;

@@ -71,6 +71,7 @@ create or replace function test.pathman_test_2() returns text as $$
 declare
 	plan jsonb;
 	num int;
+	c text;
 begin
 	plan = test.pathman_test('select * from test.runtime_test_1 where id = any (select * from test.run_values limit 4)');
 
@@ -89,11 +90,15 @@ begin
 	select count(*) from jsonb_array_elements_text(plan->0->'Plan'->'Plans'->1->'Plans') into num;
 	perform test.pathman_equal(num::text, '4', 'expected 4 child plans for custom scan');
 
-	for i in 0..3 loop
-		perform test.pathman_equal((plan->0->'Plan'->'Plans'->1->'Plans'->i->'Relation Name')::text,
-								   format('"runtime_test_1_%s"', pathman.get_hash_part_idx(hashint4(i + 1), 6)),
-								   'wrong partition');
+	execute 'select string_agg(y.z, '','') from
+				(select (x->''Relation Name'')::text as z from
+					jsonb_array_elements($1->0->''Plan''->''Plans''->1->''Plans'') x
+				 order by x->''Relation Name'') y'
+		into c using plan;
+	perform test.pathman_equal(c, '"runtime_test_1_2","runtime_test_1_3","runtime_test_1_4","runtime_test_1_5"',
+								'wrong partitions');
 
+	for i in 0..3 loop
 		num = plan->0->'Plan'->'Plans'->1->'Plans'->i->'Actual Loops';
 		perform test.pathman_equal(num::text, '1', 'expected 1 loop');
 	end loop;
@@ -190,9 +195,21 @@ begin
 	into res; /* test empty tlist */
 
 
+	select id * 2, id, 17
+	from test.runtime_test_3
+	where id = (select * from test.vals order by val limit 1)
+	limit 1
+	into res; /* test computations */
+
+
+	select test.vals.* from test.vals, lateral (select from test.runtime_test_3
+												where id = test.vals.val) as q
+	into res; /* test lateral */
+
+
 	select id, generate_series(1, 2) gen, val
 	from test.runtime_test_3
-	where id = any (select * from test.vals order by val limit 5)
+	where id = (select * from test.vals order by val limit 1)
 	order by id, gen, val
 	offset 1 limit 1
 	into res; /* without IndexOnlyScan */
@@ -249,12 +266,13 @@ select pathman.create_hash_partitions('test.runtime_test_3', 'id', 4);
 create index on test.runtime_test_3 (id);
 create index on test.runtime_test_3_0 (id);
 
+create table test.runtime_test_4(val text, id int not null);
+insert into test.runtime_test_4(id, val) select * from generate_series(1, 10000) k, md5(k::text);
+select pathman.create_range_partitions('test.runtime_test_4', 'id', 1, 2000);
 
-analyze test.run_values;
-analyze test.runtime_test_1;
-analyze test.runtime_test_2;
-analyze test.runtime_test_3;
-analyze test.runtime_test_3_0;
+
+VACUUM ANALYZE;
+
 
 set pg_pathman.enable_runtimeappend = on;
 set pg_pathman.enable_runtimemergeappend = on;
@@ -264,6 +282,53 @@ select test.pathman_test_2(); /* RuntimeAppend (select ... where id = any(subque
 select test.pathman_test_3(); /* RuntimeAppend (a join b on a.id = b.val) */
 select test.pathman_test_4(); /* RuntimeMergeAppend (lateral) */
 select test.pathman_test_5(); /* projection tests for RuntimeXXX nodes */
+
+
+/* RuntimeAppend (join, enabled parent) */
+select pathman.set_enable_parent('test.runtime_test_1', true);
+
+explain (costs off)
+select from test.runtime_test_1 as t1
+join (select * from test.run_values limit 4) as t2 on t1.id = t2.val;
+
+select from test.runtime_test_1 as t1
+join (select * from test.run_values limit 4) as t2 on t1.id = t2.val;
+
+/* RuntimeAppend (join, disabled parent) */
+select pathman.set_enable_parent('test.runtime_test_1', false);
+
+explain (costs off)
+select from test.runtime_test_1 as t1
+join (select * from test.run_values limit 4) as t2 on t1.id = t2.val;
+
+select from test.runtime_test_1 as t1
+join (select * from test.run_values limit 4) as t2 on t1.id = t2.val;
+
+/* RuntimeAppend (join, additional projections) */
+select generate_series(1, 2) from test.runtime_test_1 as t1
+join (select * from test.run_values limit 4) as t2 on t1.id = t2.val;
+
+/* RuntimeAppend (select ... where id = ANY (subquery), missing partitions) */
+select count(*) = 0 from pathman.pathman_partition_list
+where parent = 'test.runtime_test_4'::regclass and coalesce(range_min::int, 1) < 0;
+
+/* RuntimeAppend (check that dropped columns don't break tlists) */
+create table test.dropped_cols(val int4 not null);
+select pathman.create_hash_partitions('test.dropped_cols', 'val', 4);
+insert into test.dropped_cols select generate_series(1, 100);
+alter table test.dropped_cols add column new_col text;	/* add column */
+alter table test.dropped_cols drop column new_col;		/* drop column! */
+explain (costs off) select * from generate_series(1, 10) f(id), lateral (select count(1) FILTER (WHERE true) from test.dropped_cols where val = f.id) c;
+drop table test.dropped_cols cascade;
+
+set enable_hashjoin = off;
+set enable_mergejoin = off;
+
+select from test.runtime_test_4
+where id = any (select generate_series(-10, -1)); /* should be empty */
+
+set enable_hashjoin = on;
+set enable_mergejoin = on;
 
 
 DROP SCHEMA test CASCADE;

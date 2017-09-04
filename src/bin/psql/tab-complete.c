@@ -921,7 +921,7 @@ static const pgsql_thing_t words_after_create[] = {
 	{"UNIQUE", NULL, NULL, THING_NO_DROP},		/* for CREATE UNIQUE INDEX ... */
 	{"UNLOGGED", NULL, NULL, THING_NO_DROP},	/* for CREATE UNLOGGED TABLE
 												 * ... */
-	{"USER", Query_for_list_of_roles},
+	{"USER", Query_for_list_of_roles " UNION SELECT 'MAPPING FOR'"},
 	{"USER MAPPING FOR", NULL, NULL},
 	{"VIEW", NULL, &Query_for_list_of_views},
 	{NULL}						/* end of list */
@@ -3081,19 +3081,17 @@ psql_completion(const char *text, int start, int end)
 		}
 		else if (TailMatchesCS1("linestyle"))
 			COMPLETE_WITH_LIST_CS3("ascii", "old-ascii", "unicode");
+		else if (TailMatchesCS1("pager"))
+			COMPLETE_WITH_LIST_CS3("on", "off", "always");
 		else if (TailMatchesCS1("unicode_border_linestyle|"
 								"unicode_column_linestyle|"
 								"unicode_header_linestyle"))
 			COMPLETE_WITH_LIST_CS2("single", "double");
 	}
 	else if (TailMatchesCS1("\\unset"))
-	{
 		matches = complete_from_variables(text, "", "", true);
-	}
 	else if (TailMatchesCS1("\\set"))
-	{
 		matches = complete_from_variables(text, "", "", false);
-	}
 	else if (TailMatchesCS2("\\set", MatchAny))
 	{
 		if (TailMatchesCS1("AUTOCOMMIT|ON_ERROR_STOP|QUIET|"

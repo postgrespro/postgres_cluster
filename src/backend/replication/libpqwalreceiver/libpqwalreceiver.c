@@ -26,16 +26,6 @@
 #include "replication/walreceiver.h"
 #include "utils/builtins.h"
 
-#ifdef HAVE_POLL_H
-#include <poll.h>
-#endif
-#ifdef HAVE_SYS_POLL_H
-#include <sys/poll.h>
-#endif
-#ifdef HAVE_SYS_SELECT_H
-#include <sys/select.h>
-#endif
-
 PG_MODULE_MAGIC;
 
 void		_PG_init(void);
@@ -54,7 +44,7 @@ static void libpqrcv_readtimelinehistoryfile(TimeLineID tli, char **filename, ch
 static bool libpqrcv_startstreaming(TimeLineID tli, XLogRecPtr startpoint,
 						char *slotname);
 static void libpqrcv_endstreaming(TimeLineID *next_tli);
-static int	libpqrcv_receive(char **buffer, pgsocket *wait_fd);
+static int	libpqrcv_receive(char **buffer, pgsocket *wait_fd, bool *isRsocket);
 static void libpqrcv_send(const char *buffer, int nbytes);
 static void libpqrcv_disconnect(void);
 
@@ -385,38 +375,7 @@ libpq_select(int timeout_ms)
 				(errcode_for_socket_access(),
 				 errmsg("invalid socket: %s", PQerrorMessage(streamConn))));
 
-	/* We use poll(2) if available, otherwise select(2) */
-	{
-#ifdef HAVE_POLL
-		struct pollfd input_fd;
-
-		input_fd.fd = PQsocket(streamConn);
-		input_fd.events = POLLIN | POLLERR;
-		input_fd.revents = 0;
-
-		ret = poll(&input_fd, 1, timeout_ms);
-#else							/* !HAVE_POLL */
-
-		fd_set		input_mask;
-		struct timeval timeout;
-		struct timeval *ptr_timeout;
-
-		FD_ZERO(&input_mask);
-		FD_SET(PQsocket(streamConn), &input_mask);
-
-		if (timeout_ms < 0)
-			ptr_timeout = NULL;
-		else
-		{
-			timeout.tv_sec = timeout_ms / 1000;
-			timeout.tv_usec = (timeout_ms % 1000) * 1000;
-			ptr_timeout = &timeout;
-		}
-
-		ret = select(PQsocket(streamConn) + 1, &input_mask,
-					 NULL, NULL, ptr_timeout);
-#endif   /* HAVE_POLL */
-	}
+	ret = PQselectExtended(streamConn, timeout_ms);
 
 	if (ret == 0 || (ret < 0 && errno == EINTR))
 		return false;
@@ -478,14 +437,20 @@ libpqrcv_PQexec(const char *query)
 			 */
 			if (!libpq_select(-1))
 				continue;		/* interrupted */
+
+			/* Consume whatever data is available from the socket */
 			if (PQconsumeInput(streamConn) == 0)
-				return NULL;	/* trouble */
+			{
+				/* trouble; drop whatever we had and return NULL */
+				PQclear(lastResult);
+				return NULL;
+			}
 		}
 
 		/*
-		 * Emulate the PQexec()'s behavior of returning the last result when
-		 * there are many. Since walsender will never generate multiple
-		 * results, we skip the concatenation of error messages.
+		 * Emulate PQexec()'s behavior of returning the last result when there
+		 * are many.  Since walsender will never generate multiple results, we
+		 * skip the concatenation of error messages.
 		 */
 		result = PQgetResult(streamConn);
 		if (result == NULL)
@@ -531,7 +496,7 @@ libpqrcv_disconnect(void)
  * ereports on error.
  */
 static int
-libpqrcv_receive(char **buffer, pgsocket *wait_fd)
+libpqrcv_receive(char **buffer, pgsocket *wait_fd, bool *isRsocket)
 {
 	int			rawlen;
 
@@ -555,6 +520,7 @@ libpqrcv_receive(char **buffer, pgsocket *wait_fd)
 		{
 			/* Tell caller to try again when our socket is ready. */
 			*wait_fd = PQsocket(streamConn);
+			*isRsocket = PQisRsocket(streamConn);
 			return 0;
 		}
 	}
