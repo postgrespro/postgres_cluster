@@ -289,10 +289,15 @@ void MtmOnNodeDisconnect(int nodeId)
 
 	MTM_LOG1("[STATE] Node %i: disconnected", nodeId);
 
+	/*
+	 * We should disable it, as clique detector will not necessarily
+	 * do that. For example it will anyway find clique with one node.
+	 */
+	MtmDisableNode(nodeId);
+
 	MtmLock(LW_EXCLUSIVE);
 	BIT_SET(SELF_CONNECTIVITY_MASK, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
-	// MtmDisableNode(nodeId);
 	MtmCheckState();
 	MtmUnlock();
 
