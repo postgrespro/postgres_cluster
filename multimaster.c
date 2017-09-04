@@ -2370,7 +2370,7 @@ static void MtmInitialize()
 		Mtm->nLiveNodes = 0; //MtmNodes;
 		Mtm->nAllNodes = MtmNodes;
 		Mtm->disabledNodeMask = 7; //XXXX
-		Mtm->clique = 7; // XXXX
+		Mtm->clique = 7; // XXXX ! should be inverted !
 		Mtm->stalledNodeMask = 0;
 		Mtm->stoppedNodeMask = 0;
 		Mtm->deadNodeMask = 0;
