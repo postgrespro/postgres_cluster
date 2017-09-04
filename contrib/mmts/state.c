@@ -360,10 +360,10 @@ MtmBuildConnectivityMatrix(nodemask_t* matrix)
 void
 MtmRefreshClusterStatus()
 {
-	nodemask_t mask, newClique, oldClique, disabled;
+	nodemask_t newClique, oldClique;
 	nodemask_t matrix[MAX_NODES];
-	int cliqueSize;
 	nodemask_t trivialClique = ~SELF_CONNECTIVITY_MASK & (((nodemask_t)1 << Mtm->nAllNodes)-1);
+	int cliqueSize;
 	int i;
 
 	/*
