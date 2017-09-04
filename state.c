@@ -60,6 +60,17 @@ MtmSetClusterStatus(MtmNodeStatus status)
 	MTM_LOG1("[STATE]   Switching status from %s to %s status",
 		MtmNodeStatusMnem[Mtm->status], MtmNodeStatusMnem[status]);
 
+	/*
+	 * Do some actions on specific status transitions.
+	 * This will be executed only once because of preceeding if stmt.
+	 */
+	if (status == MTM_DISABLED)
+	{
+		Mtm->recoverySlot = 0;
+		Mtm->pglogicalReceiverMask = 0;
+		Mtm->pglogicalSenderMask = 0;
+	}
+
 	Mtm->status = status;
 }
 
@@ -85,9 +96,6 @@ MtmCheckState(void)
 		!BIT_CHECK(Mtm->clique, MtmNodeId-1) )
 	{
 		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
-		Mtm->recoverySlot = 0;
-		Mtm->pglogicalReceiverMask = 0;
-		Mtm->pglogicalSenderMask = 0;
 		MtmSetClusterStatus(MTM_DISABLED);
 		return;
 	}
