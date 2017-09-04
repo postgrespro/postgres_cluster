@@ -159,7 +159,7 @@ class MtmClient(object):
                         serialized_aggs[conn_id][aggname] = agg.as_dict()
                         agg.clear_values()
 
-                self.child_pipe.send(serialized_aggs)
+                yield from self.child_pipe.coro_send(serialized_aggs)
             else:
                 print('evloop: unknown message')
 
@@ -185,7 +185,11 @@ class MtmClient(object):
                         print('Connected %s, %d' % (aggname_prefix, conn_i + 1) )
 
                 if (not cur) or cur.closed:
-                        cur = yield from conn.cursor(timeout=10)
+                        # big timeout here is important because on timeout
+                        # expiration psycopg tries to call PQcancel() which
+                        # tries to create blocking connection to postgres and
+                        # blocks evloop
+                        cur = yield from conn.cursor(timeout=3600)
 
                 # ROLLBACK tx after previous exception.
                 # Doing this here instead of except handler to stay inside try
