@@ -2764,7 +2764,7 @@ else
 fi
 
 
-PGPRO_VERSION="$PACKAGE_VERSION.1"
+PGPRO_VERSION="$PACKAGE_VERSION.2"
 PGPRO_PACKAGE_NAME="PostgresPro"
 PGPRO_EDITION="standard"
 
@@ -15953,24 +15953,6 @@ fi
 cat >>confdefs.h <<_ACEOF
 #define PG_INT64_TYPE $pg_int64_type
 _ACEOF
-
-
-
-if test x"$HAVE_LONG_LONG_INT_64" = xyes ; then
-  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-#define INT64CONST(x)  x##LL
-long long int foo = INT64CONST(0x1234567890123456);
-
-_ACEOF
-if ac_fn_c_try_compile "$LINENO"; then :
-
-$as_echo "#define HAVE_LL_CONSTANTS 1" >>confdefs.h
-
-fi
-rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
-fi
 
 
 # If we found "long int" is 64 bits, assume snprintf handles it.  If
