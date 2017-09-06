@@ -5,4 +5,16 @@
 
 set -e
 
-./.ci/build_and_test_world
+if [ "`id`" = "root" ]; then
+    if [ -d ".ci" ]; then
+	groupadd ci
+	useradd -g ci ci
+	chown -R ci:ci .
+	su  -c ./.ci/build_and_test_world ci
+    else
+	echo "Error: .ci not found"
+	exit 1
+    fi
+else
+    ./.ci/build_and_test_world
+fi
