@@ -5,7 +5,7 @@
 
 set -e
 
-if [ "`id`" = "root" ]; then
+if [ "`id -un`" = "root" ]; then
     if [ -d ".ci" ]; then
 	groupadd ci
 	useradd -g ci ci
