@@ -78,22 +78,28 @@ static void
 MtmCheckState(void)
 {
 	// int nVotingNodes = MtmGetNumberOfVotingNodes();
+	bool isEnabledState;
 	int nEnabled   = countZeroBits(Mtm->disabledNodeMask, Mtm->nAllNodes);
 	int nConnected = countZeroBits(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes);
 	int nReceivers = Mtm->nAllNodes - countZeroBits(Mtm->pglogicalReceiverMask, Mtm->nAllNodes);
 	int nSenders   = Mtm->nAllNodes - countZeroBits(Mtm->pglogicalSenderMask, Mtm->nAllNodes);
 
-	MTM_LOG1("[STATE]   Status = (disabled=%s, unaccessible=%s, clique=%s, receivers=%s, senders=%s, total=%i)",
+	MTM_LOG1("[STATE]   Status = (disabled=%s, unaccessible=%s, clique=%s, receivers=%s, senders=%s, total=%i, major=%d)",
 		maskToString(Mtm->disabledNodeMask, Mtm->nAllNodes),
 		maskToString(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes),
 		maskToString(Mtm->clique, Mtm->nAllNodes),
 		maskToString(Mtm->pglogicalReceiverMask, Mtm->nAllNodes),
 		maskToString(Mtm->pglogicalSenderMask, Mtm->nAllNodes),
-		Mtm->nAllNodes);
+		Mtm->nAllNodes,
+		MtmMajorNode);
+
+	isEnabledState =
+		( (nConnected >= Mtm->nAllNodes/2+1)						/* majority */
+			|| (nConnected == Mtm->nAllNodes/2 && MtmMajorNode) )	/* or half + major node */
+		&& BIT_CHECK(Mtm->clique, MtmNodeId-1);						/* in clique */
 
 	/* ANY -> MTM_DISABLED */
-	if ( nConnected < Mtm->nAllNodes/2+1 ||
-		!BIT_CHECK(Mtm->clique, MtmNodeId-1) )
+	if (!isEnabledState)
 	{
 		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
 		MtmSetClusterStatus(MTM_DISABLED);
@@ -103,8 +109,7 @@ MtmCheckState(void)
 	switch (Mtm->status)
 	{
 		case MTM_DISABLED:
-			if ( (nConnected >= Mtm->nAllNodes/2+1) && /* majority */
-				 BIT_CHECK(Mtm->clique, MtmNodeId-1) ) /* in clique */
+			if (isEnabledState)
 			{
 				MtmSetClusterStatus(MTM_RECOVERY);
 				return;
@@ -298,6 +303,7 @@ void MtmOnNodeDisconnect(int nodeId)
 	MtmLock(LW_EXCLUSIVE);
 	BIT_SET(SELF_CONNECTIVITY_MASK, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
+	Mtm->nConfigChanges += 1;
 	MtmCheckState();
 	MtmUnlock();
 

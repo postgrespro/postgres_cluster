@@ -67,9 +67,9 @@ if [ "$1" = 'postgres' ]; then
 			multimaster.ignore_tables_without_pk = 1
 			multimaster.node_id = $NODE_ID
 			multimaster.conn_strings = '$CONNSTRS'
+			multimaster.major_node = $MAJOR
 			multimaster.heartbeat_recv_timeout = 1100
 			multimaster.heartbeat_send_timeout = 250
-			multimaster.min_2pc_timeout = 100000000
 		EOF
 
 		cat $PGDATA/postgresql.conf
