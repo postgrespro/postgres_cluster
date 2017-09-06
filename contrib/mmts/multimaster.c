@@ -1128,12 +1128,12 @@ MtmPrePrepareTransaction(MtmCurrentTrans* x)
 	/*
 	 * Invalid CSN prevent replication of transaction by logical replication
 	 */
-	ts->isLocal = x->isReplicated || !x->containsDML;
 	ts->snapshot = x->snapshot;
 	ts->csn = MtmAssignCSN();
 	ts->procno = MyProc->pgprocno;
 	ts->votingCompleted = false;
 	ts->participantsMask = (((nodemask_t)1 << Mtm->nAllNodes) - 1) & ~Mtm->disabledNodeMask & ~((nodemask_t)1 << (MtmNodeId-1));
+    ts->isLocal = x->isReplicated || !x->containsDML || (ts->participantsMask == 0);
 	ts->nConfigChanges = Mtm->nConfigChanges;
 	ts->votedMask = 0;
 	ts->nSubxids = xactGetCommittedChildren(&subxids);
@@ -1384,6 +1384,7 @@ MtmPostPrepareTransaction(MtmCurrentTrans* x)
 		if (!ts->isLocal)  {
 			Mtm2PCVoting(x, ts);
 		} else {
+			ts->status = TRANSACTION_STATUS_UNKNOWN;
 			ts->votingCompleted = true;
 		}
 		if (x->isTwoPhase) {
@@ -2373,8 +2374,8 @@ static void MtmInitialize()
 		Mtm->oldestXid = FirstNormalTransactionId;
 		Mtm->nLiveNodes = 0; //MtmNodes;
 		Mtm->nAllNodes = MtmNodes;
-		Mtm->disabledNodeMask = 7; //XXXX
-		Mtm->clique = 7; // XXXX ! should be inverted !
+		Mtm->disabledNodeMask =  (((nodemask_t)1 << MtmNodes) - 1);
+		Mtm->clique = 0;
 		Mtm->stalledNodeMask = 0;
 		Mtm->stoppedNodeMask = 0;
 		Mtm->deadNodeMask = 0;
