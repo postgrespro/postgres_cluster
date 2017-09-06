@@ -2916,7 +2916,7 @@ _PG_init(void)
 		NULL,
 		&MtmMajorNode,
 		false,
-		PGC_BACKEND,
+		PGC_SUSET,
 		0,
 		NULL,
 		NULL,

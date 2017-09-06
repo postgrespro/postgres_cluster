@@ -58,12 +58,29 @@ class MajorTest(unittest.TestCase, TestHelper):
     def tearDown(self):
         print('Finish test at ',datetime.datetime.utcnow())
 
-    def test_node_partition(self):
-        print('### test_node_partition ###')
+    # def test_partition(self):
+    #     print('### test_node_partition ###')
+
+    #     aggs_failure, aggs = self.performFailure(SingleNodePartition('node2'))
+
+    #     self.assertNoCommits(aggs_failure)
+    #     self.assertIsolation(aggs_failure)
+
+    #     self.assertCommits(aggs)
+    #     self.assertIsolation(aggs)
+
+    def test_partition_major(self):
+        print('### test_partition_major ###')
+
+        # MajorTest.client.execute(0, [
+        #     'alter system set multimaster.major_node to true',
+        #     'select pg_reload_conf();'
+        # ])
 
         aggs_failure, aggs = self.performFailure(SingleNodePartition('node2'))
 
-        self.assertNoCommits(aggs_failure)
+        self.assertCommits(aggs_failure[:1])
+        self.assertNoCommits(aggs_failure[1:])
         self.assertIsolation(aggs_failure)
 
         self.assertCommits(aggs)

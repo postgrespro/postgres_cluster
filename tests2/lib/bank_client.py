@@ -114,6 +114,15 @@ class MtmClient(object):
         cur.close()
         conn.close()
 
+    def execute(self, node_id, statements):
+        con = psycopg2.connect(self.dsns[node_id])
+        con.autocommit = True
+        cur = con.cursor()
+        for statement in statements:
+            cur.execute(statement)
+        cur.close()
+        con.close()
+
     def is_data_identic(self):
         hashes = set()
 
