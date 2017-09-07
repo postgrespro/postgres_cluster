@@ -3347,10 +3347,8 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 
 	if (BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId - 1))
 	{
-		/* Ok, then start recovery by luckiest walreceiver (if there is no donor node).
-		 * If this node was populated using basebackup, then donorNodeId is not zero and we should choose this node for recovery */
-		if ((Mtm->recoverySlot == 0 || Mtm->recoverySlot == nodeId)
-			&& (Mtm->donorNodeId == MtmNodeId || Mtm->donorNodeId == nodeId))
+		/* Ok, then start recovery by luckiest walreceiver */
+		if (Mtm->recoverySlot == 0 || Mtm->recoverySlot == nodeId)
 		{
 			/* Lock on us */
 			Mtm->recoverySlot = nodeId;
@@ -4267,8 +4265,8 @@ Datum mtm_make_table_local(PG_FUNCTION_ARGS)
 		/* Form a tuple. */
 		memset(nulls, false, sizeof(nulls));
 
-		values[Anum_mtm_local_tables_rel_schema - 1] = CStringGetDatum(schemaName);
-		values[Anum_mtm_local_tables_rel_name - 1] = CStringGetDatum(tableName);
+		values[Anum_mtm_local_tables_rel_schema - 1] = CStringGetTextDatum(schemaName);
+		values[Anum_mtm_local_tables_rel_name - 1] = CStringGetTextDatum(tableName);
 
 		tup = heap_form_tuple(tupDesc, values, nulls);
 
