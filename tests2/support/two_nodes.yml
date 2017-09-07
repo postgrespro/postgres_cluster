@@ -12,7 +12,7 @@ services:
       POSTGRES_USER: 'pg'
       POSTGRES_DB: 'regression'
       NODE_ID: 1
-      MAJOR: 'on'
+      MAJOR: 'off'
       CONNSTRS: >-
         dbname=regression user=pg host=node1,
         dbname=regression user=pg host=node2
