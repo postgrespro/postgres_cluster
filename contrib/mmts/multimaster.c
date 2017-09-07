@@ -3347,8 +3347,10 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 
 	if (BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId - 1))
 	{
-		/* Ok, then start recovery by luckiest walreceiver */
-		if (Mtm->recoverySlot == 0 || Mtm->recoverySlot == nodeId)
+		/* Ok, then start recovery by luckiest walreceiver (if there is no donor node).
+		 * If this node was populated using basebackup, then donorNodeId is not zero and we should choose this node for recovery */
+		if ((Mtm->recoverySlot == 0 || Mtm->recoverySlot == nodeId)
+			&& (Mtm->donorNodeId == MtmNodeId || Mtm->donorNodeId == nodeId))
 		{
 			/* Lock on us */
 			Mtm->recoverySlot = nodeId;
