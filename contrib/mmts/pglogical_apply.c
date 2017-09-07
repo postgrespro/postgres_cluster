@@ -871,7 +871,7 @@ process_remote_insert(StringInfo s, Relation rel)
 	if (strcmp(RelationGetRelationName(rel), MULTIMASTER_LOCAL_TABLES_TABLE) == 0 &&
 		strcmp(get_namespace_name(RelationGetNamespace(rel)), MULTIMASTER_SCHEMA_NAME) == 0)
 	{
-		MtmMakeTableLocal(TextDatumGetCString(new_tuple.values[0]), TextDatumGetCString(new_tuple.values[1]));
+		MtmMakeTableLocal((char*)DatumGetPointer(new_tuple.values[0]), (char*)DatumGetPointer(new_tuple.values[1]));
 	}
 		
     ExecResetTupleTable(estate->es_tupleTable, true);

@@ -4265,8 +4265,8 @@ Datum mtm_make_table_local(PG_FUNCTION_ARGS)
 		/* Form a tuple. */
 		memset(nulls, false, sizeof(nulls));
 
-		values[Anum_mtm_local_tables_rel_schema - 1] = CStringGetTextDatum(schemaName);
-		values[Anum_mtm_local_tables_rel_name - 1] = CStringGetTextDatum(tableName);
+		values[Anum_mtm_local_tables_rel_schema - 1] = CStringGetDatum(schemaName);
+		values[Anum_mtm_local_tables_rel_name - 1] = CStringGetDatum(tableName);
 
 		tup = heap_form_tuple(tupDesc, values, nulls);
 
