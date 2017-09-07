@@ -344,16 +344,16 @@ process_remote_begin(StringInfo s)
 	nodemask_t participantsMask;
 	int rc;
 
-	gtid.node = pq_getmsgint(s, 4);
-	gtid.xid = pq_getmsgint64(s);
-	snapshot = pq_getmsgint64(s);
+	gtid.node = pq_getmsgint(s, 4); 
+	gtid.xid = pq_getmsgint64(s); 
+	snapshot = pq_getmsgint64(s);    
 	participantsMask = pq_getmsgint64(s);
 	Assert(gtid.node > 0);
 
 	MTM_LOG2("REMOTE begin node=%d xid=%llu snapshot=%lld participantsMask=%llx", gtid.node, (long64)gtid.xid, snapshot, participantsMask);
-	MtmResetTransaction();
+	MtmResetTransaction();		
 
-    SetCurrentStatementStartTimestamp();
+    SetCurrentStatementStartTimestamp();     
 	StartTransactionCommand();
     MtmJoinTransaction(&gtid, snapshot, participantsMask);
 
@@ -362,7 +362,7 @@ process_remote_begin(StringInfo s)
 		GucAltered = false;
 		rc = SPI_execute("RESET SESSION AUTHORIZATION; reset all;", false, 0);
 		SPI_finish();
-		if (rc < 0) {
+		if (rc < 0) { 
 			MTM_ELOG(ERROR, "Failed to set reset context: %d", rc);
 		}
 	}
@@ -403,13 +403,13 @@ process_remote_message(StringInfo s)
 
 			rc = SPI_execute(messageBody, false, 0);
 			SPI_finish();
-			if (rc < 0) {
+			if (rc < 0) { 
 				MTM_ELOG(ERROR, "Failed to execute utility statement %s", messageBody);
-			} else {
+			} else { 
 				MemoryContextSwitchTo(MtmApplyContext);
 				PushActiveSnapshot(GetTransactionSnapshot());
 
-				if (MtmVacuumStmt != NULL) {
+				if (MtmVacuumStmt != NULL) { 
 					ExecVacuum(MtmVacuumStmt, 1);
 				} else if (MtmIndexStmt != NULL) {
 					Oid relid =	RangeVarGetRelidExtended(MtmIndexStmt->relation, ShareUpdateExclusiveLock,
@@ -426,7 +426,7 @@ process_remote_message(StringInfo s)
 								true,		/* check_rights */
 								false,		/* skip_build */
 								false);		/* quiet */
-
+					
 				}
 				else if (MtmDropStmt != NULL)
 				{
@@ -449,7 +449,7 @@ process_remote_message(StringInfo s)
 				if (ActiveSnapshotSet())
 					PopActiveSnapshot();
 			}
-			if (standalone) {
+			if (standalone) { 
 				CommitTransactionCommand();
 			}
 			break;
@@ -462,18 +462,18 @@ process_remote_message(StringInfo s)
 			/* This function is called directly by receiver, so there is no race condition and we can update
 			 * restartLSN without locks
 			 */
-			if (origin_node == MtmReplicationNodeId) {
+			if (origin_node == MtmReplicationNodeId) { 
 				Assert(msg->origin_lsn == INVALID_LSN);
 				msg->origin_lsn = MtmSenderWalEnd;
 			}
-			if (Mtm->nodes[origin_node-1].restartLSN < msg->origin_lsn) {
+			if (Mtm->nodes[origin_node-1].restartLSN < msg->origin_lsn) { 
 				MTM_LOG1("Receive logical abort message for transaction %s from node %d: %llx < %llx", msg->gid, origin_node, Mtm->nodes[origin_node-1].restartLSN, msg->origin_lsn);
 				Mtm->nodes[origin_node-1].restartLSN = msg->origin_lsn;
-				replorigin_session_origin_lsn = msg->origin_lsn;
+				replorigin_session_origin_lsn = msg->origin_lsn; 				
 				MtmRollbackPreparedTransaction(origin_node, msg->gid);
-			} else {
-				if (msg->origin_lsn != INVALID_LSN) {
-					MTM_LOG1("Ignore rollback of transaction %s from node %d because it's LSN %llx <= %llx",
+			} else { 
+				if (msg->origin_lsn != INVALID_LSN) { 
+					MTM_LOG1("Ignore rollback of transaction %s from node %d because it's LSN %llx <= %llx", 
 							 msg->gid, origin_node, msg->origin_lsn, Mtm->nodes[origin_node-1].restartLSN);
 				}
 			}
@@ -498,7 +498,7 @@ process_remote_message(StringInfo s)
  	}
 	return standalone;
 }
-
+	
 static void
 read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 {
@@ -529,7 +529,7 @@ read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 		const char *data;
 		int			len;
 
-		if (att->atttypid == InvalidOid) {
+		if (att->atttypid == InvalidOid) { 
 			continue;
 		}
 
@@ -612,13 +612,13 @@ read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 static void
 close_rel(Relation rel)
 {
-	if (rel != NULL)
+	if (rel != NULL) 
 	{
-		heap_close(rel, NoLock);
-	}
+		heap_close(rel, NoLock);	   
+	} 		
 }
 
-static Relation
+static Relation 
 read_rel(StringInfo s, LOCKMODE mode)
 {
 	int			relnamelen;
@@ -629,20 +629,20 @@ read_rel(StringInfo s, LOCKMODE mode)
 	MemoryContext old_context;
 
 	local_relid = pglogical_relid_map_get(remote_relid);
-	if (local_relid == InvalidOid) {
+	if (local_relid == InvalidOid) { 
 		rv = makeNode(RangeVar);
 
 		nspnamelen = pq_getmsgbyte(s);
 		rv->schemaname = (char *) pq_getmsgbytes(s, nspnamelen);
-
+		
 		relnamelen = pq_getmsgbyte(s);
 		rv->relname = (char *) pq_getmsgbytes(s, relnamelen);
-
+		
 		local_relid = RangeVarGetRelidExtended(rv, mode, false, false, NULL, NULL);
 		old_context = MemoryContextSwitchTo(TopMemoryContext);
 		pglogical_relid_map_put(remote_relid, local_relid);
 		MemoryContextSwitchTo(old_context);
-	} else {
+	} else { 
 		nspnamelen = pq_getmsgbyte(s);
 		s->cursor += nspnamelen;
 		relnamelen = pq_getmsgbyte(s);
@@ -707,29 +707,29 @@ process_remote_commit(StringInfo in)
 			Assert(IsTransactionState() && TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			strncpy(gid, pq_getmsgstring(in), sizeof gid);
 			MTM_LOG2("%d: PGLOGICAL_PREPARE %s, (%llx,%llx,%llx)", MyProcPid, gid, commit_lsn, end_lsn, origin_lsn);
-			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_IN_PROGRESS) == TRANSACTION_STATUS_ABORTED) {
-				MTM_LOG1("Avoid prepare of previously aborted global transaction %s", gid);
+			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_IN_PROGRESS) == TRANSACTION_STATUS_ABORTED) { 
+				MTM_LOG1("Avoid prepare of previously aborted global transaction %s", gid);	
 				AbortCurrentTransaction();
-			} else {
+			} else { 				
 				/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
 				BeginTransactionBlock(false);
 				CommitTransactionCommand();
 				StartTransactionCommand();
-
+				
 				MtmBeginSession(origin_node);
 				/* PREPARE itself */
 				MtmSetCurrentTransactionGID(gid);
 				PrepareTransactionBlock(gid);
 				CommitTransactionCommand();
 
-				if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_UNKNOWN) == TRANSACTION_STATUS_ABORTED) {
-					MTM_LOG1("Perform delayed rollback of prepared global transaction %s", gid);
+				if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_UNKNOWN) == TRANSACTION_STATUS_ABORTED) { 
+					MTM_LOG1("Perform delayed rollback of prepared global transaction %s", gid);	
 					StartTransactionCommand();
 					MtmSetCurrentTransactionGID(gid);
 					FinishPreparedTransaction(gid, false);
-					CommitTransactionCommand();
+					CommitTransactionCommand();					
 					Assert(!MtmTransIsActive());
-				}
+				}	
 				MtmEndSession(origin_node, true);
 			}
 			break;
@@ -771,7 +771,7 @@ process_remote_commit(StringInfo in)
 		default:
 			Assert(false);
 	}
-	if (Mtm->status == MTM_RECOVERY) {
+	if (Mtm->status == MTM_RECOVERY) { 
 		MTM_LOG1("Recover transaction %s event=%d", gid,  event);
 	}
 	MtmUpdateLsnMapping(MtmReplicationNodeId, end_lsn);
@@ -871,12 +871,12 @@ process_remote_insert(StringInfo s, Relation rel)
 	if (strcmp(RelationGetRelationName(rel), MULTIMASTER_LOCAL_TABLES_TABLE) == 0 &&
 		strcmp(get_namespace_name(RelationGetNamespace(rel)), MULTIMASTER_SCHEMA_NAME) == 0)
 	{
-		MtmMakeTableLocal((char*)DatumGetPointer(new_tuple.values[0]), (char*)DatumGetPointer(new_tuple.values[1]));
+		MtmMakeTableLocal(TextDatumGetCString(new_tuple.values[0]), TextDatumGetCString(new_tuple.values[1]));
 	}
-
+		
     ExecResetTupleTable(estate->es_tupleTable, true);
     FreeExecutorState(estate);
-
+	   
 	CommandCounterIncrement();
 }
 
@@ -989,12 +989,12 @@ process_remote_update(StringInfo s, Relation rel)
                  errdetail("Most likely we have DELETE-UPDATE conflict")));
 
 	}
-
+    
 	PopActiveSnapshot();
-
+    
 	/* release locks upon commit */
 	index_close(idxrel, NoLock);
-
+    
 	ExecResetTupleTable(estate->es_tupleTable, true);
 	FreeExecutorState(estate);
 
@@ -1089,7 +1089,7 @@ void MtmExecutor(void* work, size_t size)
     s.len = size;
     s.maxlen = -1;
 	s.cursor = 0;
-
+	
     if (MtmApplyContext == NULL) {
         MtmApplyContext = AllocSetContextCreate(TopMemoryContext,
 												"ApplyContext",
@@ -1100,15 +1100,15 @@ void MtmExecutor(void* work, size_t size)
 	top_context = MemoryContextSwitchTo(MtmApplyContext);
 	replorigin_session_origin = InvalidRepOriginId;
     PG_TRY();
-    {
+    {    
 		bool inside_transaction = true;
-        do {
+        do { 
             char action = pq_getmsgbyte(&s);
 			old_context = MemoryContextSwitchTo(MtmApplyContext);
-
+	
             MTM_LOG2("%d: REMOTE process action %c", MyProcPid, action);
 #if 0
-			if (Mtm->status == MTM_RECOVERY) {
+			if (Mtm->status == MTM_RECOVERY) { 
 				MTM_LOG1("Replay action %c[%x]",   action, s.data[s.cursor]);
 			}
 #endif
@@ -1150,7 +1150,7 @@ void MtmExecutor(void* work, size_t size)
 			}
  		    case '(':
 			{
-			    size_t size = pq_getmsgint(&s, 4);
+			    size_t size = pq_getmsgint(&s, 4);    
 				s.data = MemoryContextAlloc(TopMemoryContext, size);
 				save_cursor = s.cursor;
 				save_len = s.len;
@@ -1175,10 +1175,10 @@ void MtmExecutor(void* work, size_t size)
 				relid = RelationGetRelid(rel);
   			    close_rel(rel);
 				rel = NULL;
-				next = pq_getmsgint64(&s);
+				next = pq_getmsgint64(&s); 
 				AdjustSequence(relid, next);
 				break;
-			}
+			}			   
 		    case '0':
 			    Assert(rel != NULL);
 			    heap_truncate_one_rel(rel);
@@ -1198,7 +1198,7 @@ void MtmExecutor(void* work, size_t size)
 			}
             default:
                 MTM_ELOG(ERROR, "unknown action of type %c", action);
-            }
+            }        
 			MemoryContextSwitchTo(old_context);
 			MemoryContextResetAndDeleteChildren(MtmApplyContext);
         } while (inside_transaction);
@@ -1217,11 +1217,11 @@ void MtmExecutor(void* work, size_t size)
 		MTM_LOG2("%d: REMOTE end abort transaction %llu", MyProcPid, (long64)MtmGetCurrentTransactionId());
     }
     PG_END_TRY();
-	if (s.data != work) {
+	if (s.data != work) { 
 		pfree(s.data);
 	}
 #if 0 /* spill file is expecrted to be closed by tranaction commit or rollback */
-	if (spill_file >= 0) {
+	if (spill_file >= 0) { 
 		MtmCloseSpillFile(spill_file);
 	}
 #endif
@@ -1229,3 +1229,4 @@ void MtmExecutor(void* work, size_t size)
     MemoryContextResetAndDeleteChildren(MtmApplyContext);
 	MtmReleaseLocks();
 }
+    
