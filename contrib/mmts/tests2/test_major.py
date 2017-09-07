@@ -72,10 +72,10 @@ class MajorTest(unittest.TestCase, TestHelper):
     def test_partition_major(self):
         print('### test_partition_major ###')
 
-        # MajorTest.client.execute(0, [
-        #     'alter system set multimaster.major_node to true',
-        #     'select pg_reload_conf();'
-        # ])
+        MajorTest.client.execute(0, [
+            'alter system set multimaster.major_node to true',
+            'select pg_reload_conf()'
+        ])
 
         aggs_failure, aggs = self.performFailure(SingleNodePartition('node2'))
 

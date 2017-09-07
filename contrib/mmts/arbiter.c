@@ -715,6 +715,7 @@ static void MtmSender(Datum arg)
 	pqsignal(SIGINT, SetStop);
 	pqsignal(SIGQUIT, SetStop);
 	pqsignal(SIGTERM, SetStop);
+	pqsignal(SIGHUP, PostgresSigHupHandler);
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -732,6 +733,12 @@ static void MtmSender(Datum arg)
 		MtmMessageQueue *curr, *next;		
 		PGSemaphoreLock(&Mtm->sendSemaphore);
 		CHECK_FOR_INTERRUPTS();
+
+		if (ConfigReloadPending)
+		{
+			ConfigReloadPending = false;
+			ProcessConfigFile(PGC_SIGHUP);
+		}
 
 		MtmCheckHeartbeat();
 		/* 
@@ -794,6 +801,7 @@ static void MtmMonitor(Datum arg)
 	pqsignal(SIGINT, SetStop);
 	pqsignal(SIGQUIT, SetStop);
 	pqsignal(SIGTERM, SetStop);
+	pqsignal(SIGHUP, PostgresSigHupHandler);
 	
 	MtmBackgroundWorker = true;
 
@@ -808,6 +816,13 @@ static void MtmMonitor(Datum arg)
 		if (rc & WL_POSTMASTER_DEATH) { 
 			break;
 		}
+
+		if (ConfigReloadPending)
+		{
+			ConfigReloadPending = false;
+			ProcessConfigFile(PGC_SIGHUP);
+		}
+
 		MtmRefreshClusterStatus();
 	}
 }
@@ -833,6 +848,7 @@ static void MtmReceiver(Datum arg)
 	pqsignal(SIGINT, SetStop);
 	pqsignal(SIGQUIT, SetStop);
 	pqsignal(SIGTERM, SetStop);
+	pqsignal(SIGHUP, PostgresSigHupHandler);
 
 	MtmBackgroundWorker = true;
 
@@ -868,7 +884,14 @@ static void MtmReceiver(Datum arg)
 		for (j = 0; j < n; j++) {
 			if (events[j].events & EPOLLIN)  
 #else
-        fd_set events;
+		fd_set events;
+
+		if (ConfigReloadPending)
+		{
+			ConfigReloadPending = false;
+			ProcessConfigFile(PGC_SIGHUP);
+		}
+
 		do { 
 			struct timeval tv;
 			events = inset;
