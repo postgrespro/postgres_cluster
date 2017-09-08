@@ -8,7 +8,7 @@ set -e
 if [ "`id -un`" = "root" ]; then
     if [ -d ".ci" ]; then
 	if [ "`uname`" = "Darwin" ]; then
-	    if ! [ -f /Users/ci ]; then
+	    if ! [ -e /Users/ci ]; then
 		echo "Error: User ci not found."
 		exit 1
 	    fi
