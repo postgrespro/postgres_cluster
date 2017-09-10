@@ -151,3 +151,27 @@ $$
 LANGUAGE plpgsql;
 
 -- select mtm.alter_sequences();
+
+-- referee stuff
+CREATE TABLE IF NOT EXISTS mtm.referee_decision(key text primary key not null, node_id int);
+
+CREATE OR REPLACE FUNCTION mtm.referee_get_winner(applicant_id int) RETURNS int AS
+$$
+DECLARE
+    winner_id int;
+BEGIN
+    insert into mtm.referee_decision values ('winner', applicant_id);
+    select node_id into winner_id from mtm.referee_decision where key = 'winner';
+    return winner_id;
+EXCEPTION WHEN others THEN
+    select node_id into winner_id from mtm.referee_decision where key = 'winner';
+    return winner_id;
+END
+$$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION mtm.referee_clean() RETURNS void AS
+$$
+    delete from mtm.referee_decision where key = 'winner';
+$$
+LANGUAGE sql;

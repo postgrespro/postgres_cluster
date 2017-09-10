@@ -34,6 +34,9 @@ class MajorTest(unittest.TestCase, TestHelper):
         ], n_accounts=1000)
         cls.client.bgrun()
 
+        # create extension on referee
+        cls.nodeExecute("dbname=regression user=postgres host=127.0.0.1 port=15435", ['create extension multimaster'])
+
     @classmethod
     def tearDownClass(cls):
         print('tearDown')
@@ -58,17 +61,6 @@ class MajorTest(unittest.TestCase, TestHelper):
     def tearDown(self):
         print('Finish test at ',datetime.datetime.utcnow())
 
-    # def test_partition(self):
-    #     print('### test_node_partition ###')
-
-    #     aggs_failure, aggs = self.performFailure(SingleNodePartition('node2'))
-
-    #     self.assertNoCommits(aggs_failure)
-    #     self.assertIsolation(aggs_failure)
-
-    #     self.assertCommits(aggs)
-    #     self.assertIsolation(aggs)
-
     def test_partition_major(self):
         print('### test_partition_major ###')
 
@@ -76,6 +68,23 @@ class MajorTest(unittest.TestCase, TestHelper):
             'alter system set multimaster.major_node to true',
             'select pg_reload_conf()'
         ])
+
+        aggs_failure, aggs = self.performFailure(SingleNodePartition('node2'))
+
+        self.assertCommits(aggs_failure[:1])
+        self.assertNoCommits(aggs_failure[1:])
+        self.assertIsolation(aggs_failure)
+
+        self.assertCommits(aggs)
+        self.assertIsolation(aggs)
+
+        MajorTest.client.execute(0, [
+            'alter system set multimaster.major_node to false',
+            'select pg_reload_conf()'
+        ])
+
+    def test_partition_referee(self):
+        print('### test_partition_referee ###')
 
         aggs_failure, aggs = self.performFailure(SingleNodePartition('node2'))
 
