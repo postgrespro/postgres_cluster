@@ -1,6 +1,7 @@
 import unittest
 import time
 import datetime
+import psycopg2
 
 TEST_WARMING_TIME = 5
 TEST_DURATION = 10
@@ -50,6 +51,7 @@ class TestHelper(object):
         aggs_failure = self.client.get_aggregates()
 
 
+        # time.sleep(10000)
         failure.stop()
 
         print('Eliminate failure at ',datetime.datetime.utcnow())
@@ -59,3 +61,12 @@ class TestHelper(object):
         aggs = self.client.get_aggregates()
 
         return (aggs_failure, aggs)
+
+    def nodeExecute(dsn, statements):
+        con = psycopg2.connect(dsn)
+        con.autocommit = True
+        cur = con.cursor()
+        for statement in statements:
+            cur.execute(statement)
+        cur.close()
+        con.close()

@@ -254,6 +254,7 @@ bool  MtmUseRDMA;
 bool  MtmPreserveCommitOrder;
 bool  MtmVolksWagenMode; /* Pretend to be normal postgres. This means skip some NOTICE's and use local sequences */
 bool  MtmMajorNode;
+char* MtmRefereeConnStr;
 
 static char* MtmConnStrs;
 static char* MtmRemoteFunctionsList;
@@ -2376,6 +2377,7 @@ static void MtmInitialize()
 		Mtm->nAllNodes = MtmNodes;
 		Mtm->disabledNodeMask =  (((nodemask_t)1 << MtmNodes) - 1);
 		Mtm->clique = 0;
+		Mtm->refereeGrant = false;
 		Mtm->stalledNodeMask = 0;
 		Mtm->stoppedNodeMask = 0;
 		Mtm->deadNodeMask = 0;
@@ -2622,8 +2624,7 @@ static void MtmSplitConnStrs(void)
 		}
 		pfree(copy);
 	}
-	if (!MtmReferee)
-	{
+
 		if (MtmNodeId == INT_MAX) {
 			if (gethostname(buf, sizeof buf) != 0) {
 				MTM_ELOG(ERROR, "Failed to get host name: %m");
@@ -2683,7 +2684,6 @@ static void MtmSplitConnStrs(void)
 			len = end - dbName;
 			MtmDatabaseName = pnstrdup(dbName, len);
 		}
-	}
 	MemoryContextSwitchTo(old_context);
 }
 
@@ -2980,6 +2980,19 @@ _PG_init(void)
 		NULL
 	);
 
+	DefineCustomStringVariable(
+		"multimaster.referee_connstring",
+		"Referee connection string",
+		NULL,
+		&MtmRefereeConnStr,
+		"",
+		PGC_POSTMASTER,
+		0,
+		NULL,
+		NULL,
+		NULL
+	);
+
 	DefineCustomBoolVariable(
 		"multimaster.use_rdma",
 		"Use RDMA sockets",
@@ -3181,8 +3194,6 @@ _PG_init(void)
 
 	if (MtmReferee)
 	{
-		MtmSplitConnStrs();
-		MtmRefereeInitialize();
 		return;
 	}
 

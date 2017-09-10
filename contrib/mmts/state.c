@@ -25,6 +25,7 @@ char const* const MtmEventMnem[] =
 	"MTM_NONRECOVERABLE_ERROR"
 };
 
+static int MtmGetRefereeWinner(void);
 
 // XXXX: allocate in context and clean it
 static char *
@@ -91,12 +92,14 @@ MtmCheckState(void)
 		maskToString(Mtm->pglogicalReceiverMask, Mtm->nAllNodes),
 		maskToString(Mtm->pglogicalSenderMask, Mtm->nAllNodes),
 		Mtm->nAllNodes,
-		MtmMajorNode);
+		(MtmMajorNode || Mtm->refereeGrant) );
 
 	isEnabledState =
-		( (nConnected >= Mtm->nAllNodes/2+1)						/* majority */
-			|| (nConnected == Mtm->nAllNodes/2 && MtmMajorNode) )	/* or half + major node */
-		&& BIT_CHECK(Mtm->clique, MtmNodeId-1);						/* in clique */
+		( (nConnected >= Mtm->nAllNodes/2+1)							/* majority */
+			// XXXX: should we restrict major with two nodes setup?
+			|| (nConnected == Mtm->nAllNodes/2 && MtmMajorNode)			/* or half + major node */
+			|| (nConnected == Mtm->nAllNodes/2 && Mtm->refereeGrant) )  /* or half + referee */
+		&& BIT_CHECK(Mtm->clique, MtmNodeId-1);							/* in clique */
 
 	/* ANY -> MTM_DISABLED */
 	if (!isEnabledState)
@@ -135,6 +138,12 @@ MtmCheckState(void)
 		case MTM_RECOVERED:
 			if (nReceivers == nEnabled-1 && nSenders == nEnabled-1 && nEnabled == nConnected)
 			{
+				/*
+				 * It should be already cleaned by RECOVERY_CAUGHTUP, but
+				 * in major mode or with referee we can be working alone
+				 * so nobody will clean it.
+				 */
+				BIT_CLEAR(Mtm->originLockNodeMask, MtmNodeId-1);
 				MtmSetClusterStatus(MTM_ONLINE);
 				return;
 			}
@@ -376,9 +385,35 @@ MtmRefreshClusterStatus()
 	 * Periodical check that we are still in RECOVERED state.
 	 * See comment to MTM_RECOVERED -> MTM_ONLINE transition in MtmCheckState()
 	 */
-	if (Mtm->status == MTM_RECOVERED)
-		MtmCheckState();
+	MtmCheckState();
 
+	/*
+	 * Check for referee decidion when pnly half of nodes are visible.
+	 */
+	if (MtmRefereeConnStr && *MtmRefereeConnStr && !Mtm->refereeGrant &&
+		// XXXX visibility & ~clique?
+		countZeroBits(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes) == Mtm->nAllNodes/2)
+	{
+		int winner_node_id = MtmGetRefereeWinner();
+		if (winner_node_id != -1 &&
+			// XXXX visibility & ~clique?
+			!BIT_CHECK(SELF_CONNECTIVITY_MASK, winner_node_id - 1))
+		{
+			MTM_LOG1("[STATE] Referee allowed to proceed with half of the nodes (winner_id = %d)",
+						winner_node_id);
+			Mtm->refereeGrant = true;
+
+			MtmLock(LW_EXCLUSIVE);
+			MtmEnableNode(MtmNodeId);
+			MtmCheckState();
+			MtmUnlock();
+		}
+	}
+
+
+	/*
+	 * Check for clique.
+	 */
 	MtmBuildConnectivityMatrix(matrix);
 	newClique = MtmFindMaxClique(matrix, Mtm->nAllNodes, &cliqueSize);
 
@@ -436,3 +471,70 @@ MtmRefreshClusterStatus()
 	MtmCheckState();
 	MtmUnlock();
 }
+
+static int
+MtmGetRefereeWinner(void)
+{
+	int socket_fd;
+	PGconn* conn;
+	PGresult *res;
+	struct timeval timeout = { 5, 0 };
+	char sql[128];
+	int  winner_node_id;
+
+	conn = PQconnectdb_safe(MtmRefereeConnStr);
+	if (PQstatus(conn) != CONNECTION_OK)
+	{
+		MTM_ELOG(WARNING, "Could not connect to referee (%s): %s",
+					MtmRefereeConnStr, PQerrorMessage(conn));
+		PQfinish(conn);
+		return -1;
+	}
+
+	socket_fd = PQsocket(conn);
+	if (socket_fd < 0)
+	{
+		MTM_ELOG(WARNING, "Referee socket is invalid");
+		PQfinish(conn);
+		return -1;
+	}
+
+	if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO,
+								(char *)&timeout, sizeof(timeout)) < 0)
+	{
+		MTM_ELOG(WARNING, "Could not set referee socket timeout: %s",
+					strerror(errno));
+		PQfinish(conn);
+		return -1;
+	}
+
+	sprintf(sql, "select mtm.referee_get_winner(%d)", MtmNodeId);
+	res = PQexec(conn, sql);
+	if (PQresultStatus(res) != PGRES_TUPLES_OK ||
+		PQntuples(res) != 1 ||
+		PQnfields(res) != 1)
+	{
+		MTM_ELOG(WARNING, "Refusing unexpected result (r=%d, n=%d, w=%d, k=%s) from referee.",
+			PQresultStatus(res), PQntuples(res), PQnfields(res), PQgetvalue(res, 0, 0));
+		PQclear(res);
+		PQfinish(conn);
+		return -1;
+	}
+
+	winner_node_id = atoi(PQgetvalue(res, 0, 0));
+
+	if (winner_node_id < 1 || winner_node_id > Mtm->nAllNodes)
+	{
+		MTM_ELOG(WARNING,
+			"Referee responded with node_id=%d, it's out of our node range",
+			winner_node_id);
+		PQclear(res);
+		PQfinish(conn);
+		return -1;
+	}
+
+	MTM_LOG1("Got referee response, winner node_id=%d.", winner_node_id);
+	/* Ok, we finally got it! */
+	return winner_node_id;
+}
+

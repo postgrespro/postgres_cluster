@@ -287,6 +287,7 @@ typedef struct
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* Bitmask of disabled nodes */
 	nodemask_t clique;                 /* Bitmask of nodes that are connected and we allowed to connect/send wal/receive wal with them */
+	bool refereeGrant;                 /* Referee allowed us to work with half of the nodes */
 	nodemask_t deadNodeMask;           /* Bitmask of nodes considered as dead by referee */
 	nodemask_t recoveredNodeMask;      /* Bitmask of nodes recoverd after been reported as dead by referee */
 	nodemask_t stalledNodeMask;        /* Bitmask of stalled nodes (node with dropped replication slot which makes it not possible automatic recovery of such node) */
@@ -379,6 +380,7 @@ extern timestamp_t MtmRefreshClusterStatusSchedule;
 extern MtmConnectionInfo* MtmConnections;
 extern bool MtmMajorNode;
 extern bool MtmBackgroundWorker;
+extern char* MtmRefereeConnStr;
 
 
 extern void  MtmArbiterInitialize(void);
