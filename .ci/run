@@ -13,6 +13,7 @@ if [ "`id -un`" = "root" ]; then
 		exit 1
 	    fi
 	    chown -R ci .
+	    [ -e ~/.ci.env ] && source ~/.ci.env
 	else
 	    groupadd ci
 	    useradd -g ci ci
