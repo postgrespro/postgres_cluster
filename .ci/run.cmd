@@ -4,7 +4,10 @@ PATH=C:\Windows\system32;C:\Perl64\bin;C:\msys64\usr\bin
 IF "%ARCH%"==""	   SET ARCH=X86
 IF "%ARCH%"=="x86" SET ARCH=X86
 IF "%ARCH%"=="x64" SET ARCH=X64
-IF "%SDK%"=="" 	   SET SDK=SDK71  
+IF "%SDK%"=="" 	   SET SDK=SDK71
+
+echo ARCH=%ARCH%
+echo SDK=%SDK%
 
 SET DEPENDENCIES_BIN_DIR=C:\pgfarm\deps_%ARCH%_%SDK%
 SET PERL32_PATH=C:\Perl
@@ -17,7 +20,7 @@ IF %SDK% == SDK71 (
   ECHO ON
 )
 
-IF %SDK% == msvc2013 (
+IF %SDK% == MSVC2013 (
   IF %ARCH% == X86 CALL "C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\vcvarsall" x86 || GOTO :ERROR
   ECHO ON
   IF %ARCH% == X64 CALL "C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\vcvarsall" amd64 || GOTO :ERROR
