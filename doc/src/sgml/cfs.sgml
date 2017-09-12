@@ -189,91 +189,9 @@
   </para>
     
   <para>
-    CFS provides the following configuration parameters:
+    You can configure CFS using data compression configuration parameters.
+    For details, see <xref linkend="runtime-config-cfs">.
   </para>
-
-    <variablelist>
-
-     <varlistentry id="cfs-encryption" xreflabel="cfs_encryption">
-      <term><varname>cfs_encryption</varname> (<type>boolean</type>)
-      <indexterm>
-       <primary><varname>cfs_encryption</> configuration parameter</primary>
-      </indexterm>
-      </term>
-      <listitem>
-       <para>
-        Enables encryption of compressed pages. Switched off by default.
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="cfs-gc-workers" xreflabel="cfs_gc_workers">
-      <term><varname>cfs_gc_workers</varname> (<type>integer</type>)
-      <indexterm>
-       <primary><varname>cfs_gc_workers</> configuration parameter</primary>
-      </indexterm>
-      </term>
-      <listitem>
-       <para>
-        Number of CFS background garbage collection workers (default: 1).
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="cfs-gc-threshold" xreflabel="cfs_gc_threshold">
-      <term><varname>cfs_gc_threshold</varname> (<type>integer</type>)
-      <indexterm>
-       <primary><varname>cfs_gc_threshold</> configuration parameter</primary>
-      </indexterm>
-      </term>
-      <listitem>
-       <para>
-        Percent of garbage in file after which file should be compactified (default: 50%).
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="cfs-gc-period" xreflabel="cfs_gc_period">
-      <term><varname>cfs_gc_period</varname> (<type>integer</type>)
-      <indexterm>
-       <primary><varname>cfs_gc_period</> configuration parameter</primary>
-      </indexterm>
-      </term>
-      <listitem>
-       <para>
-        Interval in milliseconds between CFS garbage collection iterations (default: 5 seconds)
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="cfs-gc-delay" xreflabel="cfs_gc_delay">
-      <term><varname>cfs_gc_delay</varname> (<type>integer</type>)
-      <indexterm>
-       <primary><varname>cfs_gc_delay</> configuration parameter</primary>
-      </indexterm>
-      </term>
-      <listitem>
-       <para>
-        Delay in milliseconds between files defragmentation (default: 0)
-       </para>
-      </listitem>
-     </varlistentry>
-
-     <varlistentry id="cfs-level" xreflabel="cfs_level">
-      <term><varname>cfs_level</varname> (<type>integer</type>)
-      <indexterm>
-       <primary><varname>cfs_level</> configuration parameter</primary>
-      </indexterm>
-      </term>
-      <listitem>
-       <para>
-        CFS compression level (default: 1). 0 is no compression, 1 is fastest compression. 
-        Maximal compression level depends on particular compression algorithm: 9 for zlib, 19 for zstd...
-       </para>
-      </listitem>
-     </varlistentry>
-
-    </variablelist>
 
     <para>
       By default CFS is configured with one background worker performing garbage collection. 

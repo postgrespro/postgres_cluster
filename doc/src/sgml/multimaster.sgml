@@ -12,7 +12,7 @@
     <filename>multimaster</filename> is a <productname>&productname;</productname> extension with a set
     of patches that turns <productname>&productname;</productname> into a synchronous shared-nothing
     cluster to provide Online Transaction Processing (<acronym>OLTP</acronym>) scalability for read transactions and high availability with automatic disaster recovery.</para>
-    <para> As compared to a standard <productname>PostgreSQL</productname> master-slave cluster, a cluster configured with the <filename>multimaster</filename> extension offers the following benefits:</para>
+    <para> As compared to a standard <productname>PostgreSQL</productname> master-standby cluster, a cluster configured with the <filename>multimaster</filename> extension offers the following benefits:</para>
     <itemizedlist>
       <listitem>
         <para>

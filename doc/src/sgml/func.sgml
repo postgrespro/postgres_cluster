@@ -4302,20 +4302,20 @@ regexp_replace('foobarbaz', 'b(..)', E'X\\1Y', 'g')
     Some examples:
 <programlisting>
 SELECT regexp_matches('foobarbequebaz', '(bar)(beque)');
- regexp_matches
+ regexp_matches 
 ----------------
  {bar,beque}
 (1 row)
 
 SELECT regexp_matches('foobarbequebazilbarfbonk', '(b[^b]+)(b[^b]+)', 'g');
- regexp_matches
+ regexp_matches 
 ----------------
  {bar,beque}
  {bazil,barf}
 (2 rows)
 
 SELECT regexp_matches('foobarbequebaz', 'barbeque');
- regexp_matches
+ regexp_matches 
 ----------------
  {barbeque}
 (1 row)
@@ -4362,44 +4362,44 @@ SELECT col1, (SELECT regexp_matches(col2, '(bar)(beque)')) FROM tab;
 <programlisting>
 
 SELECT foo FROM regexp_split_to_table('the quick brown fox jumps over the lazy dog', E'\\s+') AS foo;
-  foo
+  foo   
 -------
- the
- quick
- brown
- fox
- jumps
- over
- the
- lazy
- dog
+ the    
+ quick  
+ brown  
+ fox    
+ jumps 
+ over   
+ the    
+ lazy   
+ dog    
 (9 rows)
 
 SELECT regexp_split_to_array('the quick brown fox jumps over the lazy dog', E'\\s+');
-              regexp_split_to_array
+              regexp_split_to_array             
 -----------------------------------------------
  {the,quick,brown,fox,jumps,over,the,lazy,dog}
 (1 row)
 
 SELECT foo FROM regexp_split_to_table('the quick brown fox', E'\\s*') AS foo;
- foo
+ foo 
 -----
- t
- h
- e
- q
- u
- i
- c
- k
- b
- r
- o
- w
- n
- f
- o
- x
+ t         
+ h         
+ e         
+ q         
+ u         
+ i         
+ c         
+ k         
+ b         
+ r         
+ o         
+ w         
+ n         
+ f         
+ o         
+ x         
 (16 rows)
 </programlisting>
    </para>
@@ -10214,32 +10214,32 @@ SELECT xmlexists('//town[text() = ''Toronto'']' PASSING BY REF '<towns><town>Tor
 <screen><![CDATA[
 SET xmloption TO DOCUMENT;
 SELECT xml_is_well_formed('<>');
- xml_is_well_formed
+ xml_is_well_formed 
 --------------------
  f
 (1 row)
 
 SELECT xml_is_well_formed('<abc/>');
- xml_is_well_formed
+ xml_is_well_formed 
 --------------------
  t
 (1 row)
 
 SET xmloption TO CONTENT;
 SELECT xml_is_well_formed('abc');
- xml_is_well_formed
+ xml_is_well_formed 
 --------------------
  t
 (1 row)
 
 SELECT xml_is_well_formed_document('<pg:foo xmlns:pg="http://postgresql.org/stuff">bar</pg:foo>');
- xml_is_well_formed_document
+ xml_is_well_formed_document 
 -----------------------------
  t
 (1 row)
 
 SELECT xml_is_well_formed_document('<pg:foo xmlns:pg="http://postgresql.org/stuff">bar</my:foo>');
- xml_is_well_formed_document
+ xml_is_well_formed_document 
 -----------------------------
  f
 (1 row)
@@ -10302,7 +10302,7 @@ SELECT xml_is_well_formed_document('<pg:foo xmlns:pg="http://postgresql.org/stuf
 SELECT xpath('/my:a/text()', '<my:a xmlns:my="http://example.com">test</my:a>',
              ARRAY[ARRAY['my', 'http://example.com']]);
 
- xpath
+ xpath  
 --------
  {test}
 (1 row)
@@ -10345,7 +10345,7 @@ SELECT xpath('//mydefns:b/text()', '<a xmlns="http://example.com"><b>test</b></a
 SELECT xpath_exists('/my:a/text()', '<my:a xmlns:my="http://example.com">test</my:a>',
                      ARRAY[ARRAY['my', 'http://example.com']]);
 
- xpath_exists
+ xpath_exists  
 --------------
  t
 (1 row)
@@ -15095,7 +15095,7 @@ SELECT * FROM generate_series(4,3);
 (0 rows)
 
 SELECT generate_series(1.1, 4, 1.3);
- generate_series
+ generate_series 
 -----------------
              1.1
              2.4
@@ -15113,7 +15113,7 @@ SELECT current_date + s.a AS dates FROM generate_series(0,14,7) AS s(a);
 
 SELECT * FROM generate_series('2008-03-01 00:00'::timestamp,
                               '2008-03-04 12:00', '10 hours');
-   generate_series
+   generate_series   
 ---------------------
  2008-03-01 00:00:00
  2008-03-01 10:00:00
@@ -15176,7 +15176,7 @@ SELECT * FROM generate_series('2008-03-01 00:00'::timestamp,
 <programlisting>
 -- basic usage
 SELECT generate_subscripts('{NULL,1,NULL,2}'::int[], 1) AS s;
- s
+ s 
 ---
  1
  2
@@ -15187,7 +15187,7 @@ SELECT generate_subscripts('{NULL,1,NULL,2}'::int[], 1) AS s;
 -- presenting an array, the subscript and the subscripted
 -- value requires a subquery
 SELECT * FROM arrays;
-         a
+         a          
 --------------------
  {-1,-2}
  {100,200,300}
@@ -15213,7 +15213,7 @@ select $1[i][j]
 $$ LANGUAGE sql IMMUTABLE;
 CREATE FUNCTION
 SELECT * FROM unnest2(ARRAY[[1,2],[3,4]]);
- unnest2
+ unnest2 
 ---------
        1
        2
@@ -16884,13 +16884,13 @@ SELECT pg_type_is_visible('myschema.widget'::regtype);
 <programlisting>
 SELECT pg_typeof(33);
 
- pg_typeof
+ pg_typeof 
 -----------
  integer
 (1 row)
 
 SELECT typlen FROM pg_type WHERE oid = pg_typeof(33);
- typlen
+ typlen 
 --------
       4
 (1 row)
@@ -16902,13 +16902,13 @@ SELECT typlen FROM pg_type WHERE oid = pg_typeof(33);
    value that is passed to it.  Example:
 <programlisting>
 SELECT collation for (description) FROM pg_description LIMIT 1;
- pg_collation_for
+ pg_collation_for 
 ------------------
  "default"
 (1 row)
 
 SELECT collation for ('foo' COLLATE "de_DE");
- pg_collation_for
+ pg_collation_for 
 ------------------
  "de_DE"
 (1 row)
@@ -18120,7 +18120,7 @@ postgres=# select pg_start_backup('label_goes_here');
     above functions.  For example:
 <programlisting>
 postgres=# SELECT * FROM pg_xlogfile_name_offset(pg_stop_backup());
-        file_name         | file_offset
+        file_name         | file_offset 
 --------------------------+-------------
  00000001000000000000000D |     4039624
 (1 row)
@@ -19641,7 +19641,6 @@ SELECT (pg_stat_file('filename')).modification;
    </para>
 
   </sect2>
-
   <sect2 id="functions-compression-control">
    <title>Compression Control Functions</title>
 
@@ -19698,7 +19697,9 @@ SELECT (pg_stat_file('filename')).modification;
         <literal><function>cfs_start_gc(n_workers integer)</function></literal>
         </entry>
        <entry><type>integer</type></entry>
-       <entry>Manually initiate GC using specified number of workers (only if background GC is disabled).
+       <entry>Starts garbage collection using the specified number of workers.
+       You can only run this function to start the garbage collection manually
+       if background garbage collection is disabled.
        </entry>
       </row>
       <row>
@@ -19706,7 +19707,7 @@ SELECT (pg_stat_file('filename')).modification;
         <literal><function>cfs_enable_gc(enabled boolean)</function></literal>
         </entry>
        <entry><type>boolean</type></entry>
-       <entry>Enable or disable background GC (also can be done using <xref linkend="guc-cfs-gc"> configuation variable).
+       <entry>Enables/disables background garbage collection. Alternatively, you can use the <xref linkend="guc-cfs-gc"> configuration variable.
        </entry>
       </row>
       <row>
@@ -19714,7 +19715,7 @@ SELECT (pg_stat_file('filename')).modification;
         <literal><function>cfs_gc_relation(rel regclass)</function></literal>
         </entry>
        <entry><type>integer</type></entry>
-       <entry>Perform garbage collection of particular table. Returns number of processed segments.
+       <entry>Performs garbage collection for a particular table. This function returns the number of processed segments.
        </entry>
       </row>
       <row>
@@ -19722,7 +19723,7 @@ SELECT (pg_stat_file('filename')).modification;
         <literal><function>cfs_version()</function></literal>
         </entry>
        <entry><type>text</type></entry>
-       <entry>CFS version and used compression algorithm.
+       <entry>Displays the CFS version and the specific compression algorithm used.
        </entry>
       </row>
       <row>
@@ -19730,7 +19731,7 @@ SELECT (pg_stat_file('filename')).modification;
         <literal><function>cfs_estimate(rel regclass)</function></literal>
         </entry>
        <entry><type>float8</type></entry>
-       <entry>Estimate effect of table compression. Returns average compress ratio for first ten blocks of the relation.
+       <entry>Estimates the effect of table compression. Returns the average compression ratio for the first ten blocks of the relation.
        </entry>
       </row>
       <row>
@@ -19738,7 +19739,7 @@ SELECT (pg_stat_file('filename')).modification;
         <literal><function>cfs_compression_ratio(rel regclass)</function></literal>
         </entry>
        <entry><type>float8</type></entry>
-       <entry>Returns real compression ration for all segments of the compressed relation.
+       <entry>Returns the actual compression ratio for all segments of the compressed relation.
        </entry>
       </row>
       <row>
@@ -19746,7 +19747,7 @@ SELECT (pg_stat_file('filename')).modification;
         <literal><function>cfs_fragmentation(rel regclass)</function></literal>
         </entry>
        <entry><type>float8</type></entry>
-       <entry>Returns average fragmentation of the relation files.
+       <entry>Returns the average fragmentation ratio of the relation files.
        </entry>
       </row>
       <row>
@@ -19754,7 +19755,7 @@ SELECT (pg_stat_file('filename')).modification;
         <literal><function>cfs_gc_activity_processed_bytes()</function></literal>
         </entry>
        <entry><type>int64</type></entry>
-       <entry>Returns total size of pages transferred by CFS during garbage collection.
+       <entry>Returns the total size of pages processed by CFS during garbage collection.
        </entry>
       </row>
       <row>
@@ -19762,7 +19763,7 @@ SELECT (pg_stat_file('filename')).modification;
         <literal><function>cfs_gc_activity_processed_pages()</function></literal>
         </entry>
        <entry><type>int64</type></entry>
-       <entry>Returns number of pages transferred by CFS during garbage collection.
+       <entry>Returns the number of pages processed by CFS during garbage collection.
        </entry>
       </row>
       <row>
@@ -19770,7 +19771,7 @@ SELECT (pg_stat_file('filename')).modification;
         <literal><function>cfs_gc_activity_processed_files()</function></literal>
         </entry>
        <entry><type>int64</type></entry>
-       <entry>Returns number of files compacted by CFS during garbage collection.
+       <entry>Returns the number of files compacted by CFS during garbage collection.
        </entry>
       </row>
       <row>
@@ -19778,7 +19779,7 @@ SELECT (pg_stat_file('filename')).modification;
         <literal><function>cfs_gc_activity_scanned_files()</function></literal>
         </entry>
        <entry><type>int64</type></entry>
-       <entry>Returns number of files scanned by CFS during garbage collection.
+       <entry>Returns the number of files scanned by CFS during garbage collection.
        </entry>
       </row>
      </tbody>

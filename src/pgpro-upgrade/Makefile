@@ -14,10 +14,11 @@ include $(top_builddir)/src/Makefile.global
 srcdir=$(top_srcdir)/$(subdir)
 
 all:
-	true
+	$(PERL) $(srcdir)/setver.pl $(top_srcdir) $(top_builddir)
+	chmod 0755 pgpro_upgrade
 
-install: installdirs
-	$(INSTALL_PROGRAM) $(srcdir)/pgpro_upgrade '$(DESTDIR)$(bindir)/pgpro_upgrade'
+install: installdirs 
+	$(INSTALL_PROGRAM) pgpro_upgrade '$(DESTDIR)$(bindir)/pgpro_upgrade'
 	$(INSTALL_DATA) $(srcdir)/*.sql $(srcdir)/*.test '$(DESTDIR)$(datadir)/pgpro-upgrade'
 installdirs:
 	$(MKDIR_P) '$(DESTDIR)$(bindir)'

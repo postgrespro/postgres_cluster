@@ -1,37 +1,96 @@
 <!-- doc/src/sgml/release-pro-9.6.sgml -->
 <!-- See header comment in release.sgml about typical markup -->
-<sect1 id="release-pro-9-6-4-2">
-  <title>Postgres Pro 9.6.4.2</title>
+<sect1 id="release-pro-9-6-5-1">
+  <title>Postgres Pro 9.6.5.1</title>
   <note>
     <title>Release Date</title>
-    <simpara>2017-08-27</simpara>
+    <simpara>2017-08-31</simpara>
   </note>
   <sect2>
     <title>Overview</title>
-    <para>
-    This release is based on <productname>PostgreSQL</productname>
-    release <link linkend="release-9-6-4">9.6.4</link>.
-    </para>
-    <para>
-    Major improvements over <productname>&productname;</productname> 
-    <link linkend="release-pro-9-6-4-1">9.6.4.1</link> include:</para>
+    <para>This release is based on <productname>Postgres Pro</productname>
+      <link linkend="release-pro-9-6-4-1">9.6.4.1</link> and
+      <productname>PostgreSQL</productname> <link linkend="release-9-6-5">9.6.5</link>.</para>
+    <para>Major enhancements over <productname>Postgres Pro</productname>
+      9.6.4.1 include:</para>
     <itemizedlist>
     <listitem>
-        <para>
-        pg_upgrade creates several directories in tablespace which
-        corresponds to different postgres instances. CFS GC now
-        traverse only directory of self instance and ignore other.
+      <para>Updated <application>pg_pathman</application> module to
+        version 1.4.3. (See <xref linkend="pg-pathman"> and <xref linkend="pg-pathman-how-to-update">.)
+        As compared to version 1.4.2, the following enhancements were introduced:</para>
+          <itemizedlist spacing="compact">
+            <listitem>
+              <para>Disabled dangerous optimizations for <command>UPDATE</command> and <command>DELETE</command> on <productname>PostgreSQL</productname> 9.5.
+              </para>
+            </listitem>
+            <listitem>
+              <para>Fixed the following type of query: <command>DELETE FROM single_table USING partitioned_table</command>.
+              </para>
+            </listitem>
+            <listitem>
+              <para>Fixed the output of the <command>EXPLAIN INSERT INTO partitioned_table</command> command when verbose mode is activated.
+              </para>
+            </listitem>
+          </itemizedlist>
+              <para>For a full list of changes,
+                see <ulink url="https://github.com/postgrespro/pg_pathman/releases/"><application>pg_pathman</application> Wiki</ulink>.
+              </para>
+      </listitem>
+      <listitem>
+        <para>Enhanced the <xref linkend="app-pgcontroldata"> utility
+        to enable automatic <productname>Postgres Pro</productname> upgrades
+        using the <literal>pgpro_upgrade</literal> script.
         </para>
-    </listitem>
-    <listitem>
-    <para>transfer_compression_files now correctly append suffix to *.cfm
-    files.
-    </para>
-    </listitem>
+      </listitem>
     </itemizedlist>
-    </sect2>
-</sect1>    
-
+  </sect2>
+  <sect2>
+    <title>Migration to Version 9.6.5.1</title>
+    <para>Depending on your current installation, the upgrade procedure will differ.
+    </para>
+    <para>To upgrade from a <productname>Postgres Pro</productname> version based on
+      any previous <productname>PostgreSQL</productname> major release, you can perform a dump/restore using
+      <xref linkend="app-pg-dumpall">, or use the <xref linkend="pgupgrade"> utility.
+      The first option is safer, while the second is faster and can significantly
+      speed up the upgrade process for large databases.
+    </para>
+    <para>To upgrade from a <productname>Postgres Pro</productname> version
+      based on the same <productname>PostgreSQL</productname> major release,
+      a dump/restore is not required. Instead of the <literal>pg_upgrade</literal>,
+      you must use the <literal>pgpro_upgrade</literal> script provided
+      in this distribution. This script updates metadata information to
+      handle catalog number format change introduced in 
+      <productname>Postgres Pro</productname> 9.6.4.1. If you are upgrading your
+      <productname>Postgres Pro</productname> installation from a binary package, the
+      <literal>pgpro_upgrade</literal> script is run automatically, or you
+      are prompted to run it manually.
+      </para>
+      <important>
+        <para>
+      If you run <literal>pgpro_upgrade</literal> manually,
+      you must stop postgres service.
+      The script must be run on behalf of the user owning the database
+      (typically postgres) and PGDATA environment variable should be
+      set to the directory where database resides. Running <literal>pgpro_upgrade</literal>
+      as root will result in an error.
+        </para>
+      </important>
+      <para>If you have compiled <productname>Postgres Pro</productname>
+      from source code or created your database in a non-default location,
+      you must run the <literal>pgpro_upgrade</literal> script manually.
+      </para>
+      <note>
+        <para>On RPM-based Linux distributions, if you are upgrading from
+        version 9.6.2.1 or lower, make sure to move the data directory from
+        <filename>pgsql</filename> to the <filename>pgpro</filename>
+        directory before running the <literal>pgpro_upgrade</literal> script.
+        </para>
+      </note>
+    <para>To migrate from vanilla PostgreSQL 9.6.x, perform a dump/restore using
+      <xref linkend="app-pg-dumpall">.
+    </para>
+  </sect2>
+</sect1>
 <sect1 id="release-pro-9-6-4-1">
   <title>Postgres Pro 9.6.4.1</title>
   <note>
@@ -470,7 +529,7 @@
     <itemizedlist>
       <listitem>
         <para>Covering indices patch by Anastasia Lubennikova (Commit: 91b4e25614247833d7960c49d783f69b90c0c149)
-          (Details: http://www.postgresql.org/message-id/f90aa60a-b67f-95b5-d9f5-f5d8ced178c6@postgrespro.ru/)</para>
+          (Details: <ulink url="http://www.postgresql.org/message-id/f90aa60a-b67f-95b5-d9f5-f5d8ced178c6@postgrespro.ru/"></></para>
         <para>ICU patch (Commit: ee711324f31cc039e656ea45c54abd0cf8ea3e41)</para>
         <para>Fixes to win32 build system (Commit: 84fa653ee00ebe54f591b18e3664fa6d5889224f)</para>
         <para>Added pgpro_version SQL function and appropriate defines into
