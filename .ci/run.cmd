@@ -1,5 +1,5 @@
 @echo off
-PATH=C:\Windows\system32;C:\Perl64\bin;C:\Program Files\Git\cmd
+PATH=C:\Windows\system32;C:\Perl64\bin;C:\Program Files\Git\cmd;C:\msys64\usr\bin
 
 IF "%ARCH%"==""	     SET ARCH=X86
 IF "%ARCH%"=="x86"   SET ARCH=X86
