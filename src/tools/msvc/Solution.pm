@@ -510,7 +510,7 @@ EOF
 	# If there is .git rewrite file whenever gitlog succeeds
 	if ( -d ".git" ) {
 		my $cmd = "git log -1 --format='%h'";
-		open P,"$cmd |" || confess "Could not open: $cmd\n";;
+		open P,"$cmd |" || confess "Could not open: $cmd\n";
 		my $commit_id = <P>;
 		chomp($commit_id);
 		if (close(P)) {
