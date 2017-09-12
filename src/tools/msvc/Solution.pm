@@ -509,7 +509,8 @@ EOF
 	# Generate commit_id file
 	# If there is .git rewrite file whenever gitlog succeeds
 	if ( -d ".git" ) {
-		open P,"git log -1 --format='%h' |";
+		my $cmd = "git log -1 --format='%h'";
+		open P,"$cmd |" || confess "Could not open: $cmd\n";;
 		my $commit_id = <P>;
 		chomp($commit_id);
 		if (close(P)) {
