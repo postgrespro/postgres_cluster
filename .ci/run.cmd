@@ -1,10 +1,11 @@
 @echo off
 PATH=C:\Windows\system32;C:\Perl64\bin;C:\Program Files\Git\cmd
 
-IF "%ARCH%"==""	   SET ARCH=X86
-IF "%ARCH%"=="x86" SET ARCH=X86
-IF "%ARCH%"=="x64" SET ARCH=X64
-IF "%SDK%"=="" 	   SET SDK=SDK71
+IF "%ARCH%"==""	     SET ARCH=X86
+IF "%ARCH%"=="x86"   SET ARCH=X86
+IF "%ARCH%"=="x64"   SET ARCH=X64
+IF "%ARCH%"=="amd64" SET ARCH=X64
+IF "%SDK%"=="" 	     SET SDK=SDK71
 
 echo ARCH=%ARCH%
 echo SDK=%SDK%
