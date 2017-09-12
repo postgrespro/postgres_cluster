@@ -7,6 +7,8 @@ IF "%ARCH%"=="x64"   SET ARCH=X64
 IF "%ARCH%"=="amd64" SET ARCH=X64
 IF "%SDK%"=="" 	     SET SDK=SDK71
 
+echo BUILD_ID=%BUILD_ID%
+echo BUILD_NAME=%BUILD_NAME%
 echo ARCH=%ARCH%
 echo SDK=%SDK%
 
