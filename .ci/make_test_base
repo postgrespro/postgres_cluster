@@ -27,7 +27,7 @@ if exitcode:
     sys.exit(exitcode)
 # Collect extra config option
 addopts={}
-for module in glob.glob("contrib/*"):
+for module in sorted(glob.glob("contrib/*"), cmp = lambda a,b: 1 if a=="pg_pathman" else -1):
     if not os.path.isdir(module):
         continue
     if not os.access(module+"/Makefile",os.R_OK):
@@ -56,7 +56,7 @@ for module in glob.glob("contrib/*"):
                         else:
                             addopts[opt]=value
                                 
-if addopts:                     
+if addopts:
     with open(datadir+"/postgresql.conf","a") as f:
         for opt,value in addopts.items():
             print >> f,"%s=%s"%(opt,value)
