@@ -1,0 +1,2210 @@
+<tbody>
+ <row>
+  <entry>B012</entry>
+  <entry/>
+  <entry>Встроенный C</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B021</entry>
+  <entry/>
+  <entry>Непосредственный SQL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E011</entry>
+  <entry>Ядро</entry>
+  <entry>Числовые типы данных</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E011-01</entry>
+  <entry>Ядро</entry>
+  <entry>Типы данных INTEGER и SMALLINT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E011-02</entry>
+  <entry>Ядро</entry>
+  <entry>Типы данных REAL, DOUBLE PRECISION и FLOAT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E011-03</entry>
+  <entry>Ядро</entry>
+  <entry>Типы данных DECIMAL и NUMERIC</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E011-04</entry>
+  <entry>Ядро</entry>
+  <entry>Арифметические операторы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E011-05</entry>
+  <entry>Ядро</entry>
+  <entry>Числовые сравнения</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E011-06</entry>
+  <entry>Ядро</entry>
+  <entry>Неявные преобразования между числовыми типами данных</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E021</entry>
+  <entry>Ядро</entry>
+  <entry>Символьные типы данных</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E021-01</entry>
+  <entry>Ядро</entry>
+  <entry>Тип данных CHARACTER</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E021-02</entry>
+  <entry>Ядро</entry>
+  <entry>Тип данных CHARACTER VARYING</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E021-03</entry>
+  <entry>Ядро</entry>
+  <entry>Символьные строки</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E021-04</entry>
+  <entry>Ядро</entry>
+  <entry>Функция CHARACTER_LENGTH</entry>
+  <entry>убирает завершающие пробелы из значений CHARACTER перед подсчётом символов</entry>
+ </row>
+ <row>
+  <entry>E021-05</entry>
+  <entry>Ядро</entry>
+  <entry>Функция OCTET_LENGTH</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E021-06</entry>
+  <entry>Ядро</entry>
+  <entry>Функция SUBSTRING</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E021-07</entry>
+  <entry>Ядро</entry>
+  <entry>Конкатенация символьных строк</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E021-08</entry>
+  <entry>Ядро</entry>
+  <entry>Функции UPPER и LOWER</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E021-09</entry>
+  <entry>Ядро</entry>
+  <entry>Функция TRIM</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E021-10</entry>
+  <entry>Ядро</entry>
+  <entry>Неявные преобразования между типами символьных строк</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E021-11</entry>
+  <entry>Ядро</entry>
+  <entry>Функция POSITION</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E021-12</entry>
+  <entry>Ядро</entry>
+  <entry>Сравнения символов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E031</entry>
+  <entry>Ядро</entry>
+  <entry>Идентификаторы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E031-01</entry>
+  <entry>Ядро</entry>
+  <entry>Идентификаторы с разделителями</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E031-02</entry>
+  <entry>Ядро</entry>
+  <entry>Идентификаторы в нижнем регистре</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E031-03</entry>
+  <entry>Ядро</entry>
+  <entry>Завершающее подчёркивание</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E051</entry>
+  <entry>Ядро</entry>
+  <entry>Базовое определение запросов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E051-01</entry>
+  <entry>Ядро</entry>
+  <entry>SELECT DISTINCT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E051-02</entry>
+  <entry>Ядро</entry>
+  <entry>Предложение GROUP BY</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E051-04</entry>
+  <entry>Ядро</entry>
+  <entry>GROUP BY может содержать столбцы не из &lt;списка выборки&gt;</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E051-05</entry>
+  <entry>Ядро</entry>
+  <entry>Элементы списка выборки могут переименовываться</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E051-06</entry>
+  <entry>Ядро</entry>
+  <entry>Предложение HAVING</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E051-07</entry>
+  <entry>Ядро</entry>
+  <entry>Дополнение * в списке выборки</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E051-08</entry>
+  <entry>Ядро</entry>
+  <entry>Корреляционные имена в предложении FROM</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E051-09</entry>
+  <entry>Ядро</entry>
+  <entry>Переименование столбцов в предложении FROM</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E061</entry>
+  <entry>Ядро</entry>
+  <entry>Базовые предикаты и условия поиска</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E061-01</entry>
+  <entry>Ядро</entry>
+  <entry>Предикат сравнения</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E061-02</entry>
+  <entry>Ядро</entry>
+  <entry>Предикат BETWEEN</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E061-03</entry>
+  <entry>Ядро</entry>
+  <entry>Предикат IN со списком значений</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E061-04</entry>
+  <entry>Ядро</entry>
+  <entry>Предикат LIKE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E061-05</entry>
+  <entry>Ядро</entry>
+  <entry>Предложение ESCAPE в предикате LIKE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E061-06</entry>
+  <entry>Ядро</entry>
+  <entry>Предикат NULL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E061-07</entry>
+  <entry>Ядро</entry>
+  <entry>Предикаты количественного сравнения</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E061-08</entry>
+  <entry>Ядро</entry>
+  <entry>Предикат EXISTS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E061-09</entry>
+  <entry>Ядро</entry>
+  <entry>Подзапросы в предикате сравнения</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E061-11</entry>
+  <entry>Ядро</entry>
+  <entry>Подзапросы в предикате IN</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E061-12</entry>
+  <entry>Ядро</entry>
+  <entry>Подзапросы в предикате количественного сравнения</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E061-13</entry>
+  <entry>Ядро</entry>
+  <entry>Коррелирующие подзапросы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E061-14</entry>
+  <entry>Ядро</entry>
+  <entry>Условие поиска</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E071</entry>
+  <entry>Ядро</entry>
+  <entry>Простые выражения с запросами</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E071-01</entry>
+  <entry>Ядро</entry>
+  <entry>Табличный оператор UNION DISTINCT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E071-02</entry>
+  <entry>Ядро</entry>
+  <entry>Табличный оператор UNION ALL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E071-03</entry>
+  <entry>Ядро</entry>
+  <entry>Табличный оператор EXCEPT DISTINCT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E071-05</entry>
+  <entry>Ядро</entry>
+  <entry>Столбцы, объединяемые табличными операторами, могут иметь разные типы данных</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E071-06</entry>
+  <entry>Ядро</entry>
+  <entry>Табличные операторы в подзапросах</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E081</entry>
+  <entry>Ядро</entry>
+  <entry>Основные права доступа</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E081-01</entry>
+  <entry>Ядро</entry>
+  <entry>Право на SELECT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E081-02</entry>
+  <entry>Ядро</entry>
+  <entry>Право на DELETE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E081-03</entry>
+  <entry>Ядро</entry>
+  <entry>Право на INSERT на уровне таблицы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E081-04</entry>
+  <entry>Ядро</entry>
+  <entry>Право на UPDATE на уровне таблицы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E081-05</entry>
+  <entry>Ядро</entry>
+  <entry>Право на UPDATE на уровне столбцов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E081-06</entry>
+  <entry>Ядро</entry>
+  <entry>Право REFERENCES на уровне таблицы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E081-07</entry>
+  <entry>Ядро</entry>
+  <entry>Право REFERENCES на уровне столбцов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E081-08</entry>
+  <entry>Ядро</entry>
+  <entry>Предложение WITH GRANT OPTION</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E081-09</entry>
+  <entry>Ядро</entry>
+  <entry>Право USAGE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E081-10</entry>
+  <entry>Ядро</entry>
+  <entry>Право на EXECUTE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E091</entry>
+  <entry>Ядро</entry>
+  <entry>Функции множеств</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E091-01</entry>
+  <entry>Ядро</entry>
+  <entry>AVG</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E091-02</entry>
+  <entry>Ядро</entry>
+  <entry>COUNT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E091-03</entry>
+  <entry>Ядро</entry>
+  <entry>MAX</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E091-04</entry>
+  <entry>Ядро</entry>
+  <entry>MIN</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E091-05</entry>
+  <entry>Ядро</entry>
+  <entry>SUM</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E091-06</entry>
+  <entry>Ядро</entry>
+  <entry>Дополнение ALL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E091-07</entry>
+  <entry>Ядро</entry>
+  <entry>Дополнение DISTINCT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E101</entry>
+  <entry>Ядро</entry>
+  <entry>Базовая обработка данных</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E101-01</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор INSERT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E101-03</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор UPDATE с критерием отбора</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E101-04</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор DELETE с критерием отбора</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E111</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор SELECT, возвращающий одну строку</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E121</entry>
+  <entry>Ядро</entry>
+  <entry>Базовая поддержка курсоров</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E121-01</entry>
+  <entry>Ядро</entry>
+  <entry>DECLARE CURSOR</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E121-02</entry>
+  <entry>Ядро</entry>
+  <entry>Столбцы ORDER BY, отсутствующие в списке выборки</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E121-03</entry>
+  <entry>Ядро</entry>
+  <entry>Выражения значений в предложении ORDER BY</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E121-04</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор OPEN</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E121-06</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор UPDATE с позиционированием</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E121-07</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор DELETE с позиционированием</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E121-08</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор CLOSE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E121-10</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор FETCH с неявным NEXT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E121-17</entry>
+  <entry>Ядро</entry>
+  <entry>Курсоры WITH HOLD</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E131</entry>
+  <entry>Ядро</entry>
+  <entry>Поддержка NULL (NULL вместо значений)</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E141</entry>
+  <entry>Ядро</entry>
+  <entry>Основные ограничения целостности</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E141-01</entry>
+  <entry>Ядро</entry>
+  <entry>Ограничения NOT NULL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E141-02</entry>
+  <entry>Ядро</entry>
+  <entry>Ограничения UNIQUE столбцов NOT NULL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E141-03</entry>
+  <entry>Ядро</entry>
+  <entry>Ограничения PRIMARY KEY</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E141-04</entry>
+  <entry>Ядро</entry>
+  <entry>Базовое ограничение FOREIGN KEY без действия (NO ACTION) по умолчанию и для операций удаления со ссылками, и для операций изменения со ссылками</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E141-06</entry>
+  <entry>Ядро</entry>
+  <entry>Ограничения CHECK</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E141-07</entry>
+  <entry>Ядро</entry>
+  <entry>Значения столбцов по умолчанию</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E141-08</entry>
+  <entry>Ядро</entry>
+  <entry>NOT NULL распространяется на PRIMARY KEY</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E141-10</entry>
+  <entry>Ядро</entry>
+  <entry>Имена во внешнем ключе могут указываться в любом порядке</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E151</entry>
+  <entry>Ядро</entry>
+  <entry>Поддержка транзакций</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E151-01</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор COMMIT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E151-02</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор ROLLBACK</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E152</entry>
+  <entry>Ядро</entry>
+  <entry>Базовый оператор SET TRANSACTION</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E152-01</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор SET TRANSACTION: предложение ISOLATION LEVEL SERIALIZABLE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E152-02</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор SET TRANSACTION: предложения READ ONLY и READ WRITE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E153</entry>
+  <entry>Ядро</entry>
+  <entry>Запросы, изменяющие данные, с подзапросами</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E161</entry>
+  <entry>Ядро</entry>
+  <entry>Комментарии SQL, начинающиеся с двух минусов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E171</entry>
+  <entry>Ядро</entry>
+  <entry>Поддержка SQLSTATE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F021</entry>
+  <entry>Ядро</entry>
+  <entry>Основная информационная схема</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F021-01</entry>
+  <entry>Ядро</entry>
+  <entry>Представление COLUMNS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F021-02</entry>
+  <entry>Ядро</entry>
+  <entry>Представление TABLES</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F021-03</entry>
+  <entry>Ядро</entry>
+  <entry>Представление VIEWS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F021-04</entry>
+  <entry>Ядро</entry>
+  <entry>Представление TABLE_CONSTRAINTS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F021-05</entry>
+  <entry>Ядро</entry>
+  <entry>Представление REFERENTIAL_CONSTRAINTS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F021-06</entry>
+  <entry>Ядро</entry>
+  <entry>Представление CHECK_CONSTRAINTS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F031</entry>
+  <entry>Ядро</entry>
+  <entry>Базовые манипуляции со схемой</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F031-01</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор CREATE TABLE создаёт хранимые основные таблицы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F031-02</entry>
+  <entry>Ядро</entry>
+  <entry>Представление CREATE VIEW</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F031-03</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор GRANT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F031-04</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор ALTER TABLE: предложение ADD COLUMN</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F031-13</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор DROP TABLE: предложение RESTRICT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F031-16</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор DROP VIEW: предложение RESTRICT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F031-19</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор REVOKE: предложение RESTRICT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F032</entry>
+  <entry/>
+  <entry>Каскадное удаление (CASCADE)</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F033</entry>
+  <entry/>
+  <entry>Оператор ALTER TABLE: предложение DROP COLUMN</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F034</entry>
+  <entry/>
+  <entry>Расширенный оператор REVOKE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F034-01</entry>
+  <entry/>
+  <entry>Оператор REVOKE может выполняться не только владельцем объекта схемы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F034-02</entry>
+  <entry/>
+  <entry>Оператор REVOKE: предложение GRANT OPTION FOR</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F034-03</entry>
+  <entry/>
+  <entry>Оператор REVOKE отзывает право, данное субъекту с указанием WITH GRANT OPTION</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F041</entry>
+  <entry>Ядро</entry>
+  <entry>Базовое соединение таблиц</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F041-01</entry>
+  <entry>Ядро</entry>
+  <entry>Внутреннее соединение (но не обязательно с ключевым словом INNER)</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F041-02</entry>
+  <entry>Ядро</entry>
+  <entry>Ключевое слово INNER</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F041-03</entry>
+  <entry>Ядро</entry>
+  <entry>LEFT OUTER JOIN</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F041-04</entry>
+  <entry>Ядро</entry>
+  <entry>RIGHT OUTER JOIN</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F041-05</entry>
+  <entry>Ядро</entry>
+  <entry>Внешние соединения могут быть вложенными</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F041-07</entry>
+  <entry>Ядро</entry>
+  <entry>Внутренняя таблица с левой или правой стороны внешнего соединения может также участвовать во внутреннем соединении</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F041-08</entry>
+  <entry>Ядро</entry>
+  <entry>Поддерживаются все операторы сравнения (а не только =)</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F051</entry>
+  <entry>Ядро</entry>
+  <entry>Базовая поддержка даты и времени</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F051-01</entry>
+  <entry>Ядро</entry>
+  <entry>Тип данных DATE (включая поддержку строк DATE)</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F051-02</entry>
+  <entry>Ядро</entry>
+  <entry>Тип данных TIME (включая поддержку строк TIME) с точностью до секунд как минимум с 0 знаков после запятой</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F051-03</entry>
+  <entry>Ядро</entry>
+  <entry>Тип данных TIMESTAMP (включая поддержку строк TIMESTAMP) с точностью до секунд как минимум с 0 и 6 знаками после запятой</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F051-04</entry>
+  <entry>Ядро</entry>
+  <entry>Предикаты сравнения с типами данных DATE, TIME и TIMESTAMP</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F051-05</entry>
+  <entry>Ядро</entry>
+  <entry>Явное приведение (CAST) между типами даты/времени и типами символьных строк</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F051-06</entry>
+  <entry>Ядро</entry>
+  <entry>CURRENT_DATE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F051-07</entry>
+  <entry>Ядро</entry>
+  <entry>LOCALTIME</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F051-08</entry>
+  <entry>Ядро</entry>
+  <entry>LOCALTIMESTAMP</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F052</entry>
+  <entry>Расширенные средства работы с датами/временем</entry>
+  <entry>Арифметика с интервалами и датами/временем</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F053</entry>
+  <entry/>
+  <entry>Предикат OVERLAPS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F081</entry>
+  <entry>Ядро</entry>
+  <entry>UNION и EXCEPT в представлениях</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F111</entry>
+  <entry/>
+  <entry>Уровни изоляции, отличные от SERIALIZABLE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F111-01</entry>
+  <entry/>
+  <entry>Уровень изоляции READ UNCOMMITTED</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F111-02</entry>
+  <entry/>
+  <entry>Уровень изоляции READ COMMITTED</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F111-03</entry>
+  <entry/>
+  <entry>Уровень изоляции REPEATABLE READ</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F131</entry>
+  <entry>Ядро</entry>
+  <entry>Операции группировки</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F131-01</entry>
+  <entry>Ядро</entry>
+  <entry>Предложения WHERE, GROUP BY и HAVING, поддерживаемые в запросах со сгруппированными представлениями</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F131-02</entry>
+  <entry>Ядро</entry>
+  <entry>Поддержка нескольких таблиц в запросах со сгруппированными представлениями</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F131-03</entry>
+  <entry>Ядро</entry>
+  <entry>Поддержка функций множеств в запросах со сгруппированными представлениями</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F131-04</entry>
+  <entry>Ядро</entry>
+  <entry>Подзапросы с предложениями GROUP BY и HAVING и сгруппированные представления</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F131-05</entry>
+  <entry>Ядро</entry>
+  <entry>SELECT, возвращающий одну строку, с предложениями GROUP BY и HAVING и сгруппированными представлениями</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F171</entry>
+  <entry/>
+  <entry>Несколько схем для одного пользователя</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F191</entry>
+  <entry>Расширенное управление целостностью</entry>
+  <entry>Действия при удалении со ссылками</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F200</entry>
+  <entry/>
+  <entry>Оператор TRUNCATE TABLE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F201</entry>
+  <entry>Ядро</entry>
+  <entry>Функция CAST</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F221</entry>
+  <entry>Ядро</entry>
+  <entry>Явные значения по умолчанию</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F222</entry>
+  <entry/>
+  <entry>Оператор INSERT: предложение DEFAULT VALUES</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F231</entry>
+  <entry/>
+  <entry>Таблицы прав</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F231-01</entry>
+  <entry/>
+  <entry>Представление TABLE_PRIVILEGES</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F231-02</entry>
+  <entry/>
+  <entry>Представление COLUMN_PRIVILEGES</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F231-03</entry>
+  <entry/>
+  <entry>Представление USAGE_PRIVILEGES</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F251</entry>
+  <entry/>
+  <entry>Поддержка доменов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F261</entry>
+  <entry>Ядро</entry>
+  <entry>Выражение CASE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F261-01</entry>
+  <entry>Ядро</entry>
+  <entry>Простой оператор CASE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F261-02</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор CASE с условиями</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F261-03</entry>
+  <entry>Ядро</entry>
+  <entry>NULLIF</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F261-04</entry>
+  <entry>Ядро</entry>
+  <entry>COALESCE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F262</entry>
+  <entry/>
+  <entry>Расширенные выражения CASE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F271</entry>
+  <entry/>
+  <entry>Составные строки символов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F281</entry>
+  <entry/>
+  <entry>Улучшенный оператор LIKE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F302</entry>
+  <entry/>
+  <entry>Табличный оператор INTERSECT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F302-01</entry>
+  <entry/>
+  <entry>Табличный оператор INTERSECT DISTINCT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F302-02</entry>
+  <entry/>
+  <entry>Табличный оператор INTERSECT ALL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F304</entry>
+  <entry/>
+  <entry>Табличный оператор EXCEPT ALL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F311-01</entry>
+  <entry>Ядро</entry>
+  <entry>CREATE SCHEMA</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F311-02</entry>
+  <entry>Ядро</entry>
+  <entry>CREATE TABLE для хранимых основных таблиц</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F311-03</entry>
+  <entry>Ядро</entry>
+  <entry>CREATE VIEW</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F311-04</entry>
+  <entry>Ядро</entry>
+  <entry>CREATE VIEW: WITH CHECK OPTION</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F311-05</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор GRANT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F321</entry>
+  <entry/>
+  <entry>Авторизация пользователей</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F361</entry>
+  <entry/>
+  <entry>Поддержка подпрограмм</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F381</entry>
+  <entry/>
+  <entry>Расширенные манипуляции со схемой</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F381-01</entry>
+  <entry/>
+  <entry>Оператор ALTER TABLE: предложение ALTER COLUMN</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F381-02</entry>
+  <entry/>
+  <entry>Оператор ALTER TABLE: предложение ADD CONSTRAINT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F381-03</entry>
+  <entry/>
+  <entry>Оператор ALTER TABLE: предложение DROP CONSTRAINT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F382</entry>
+  <entry/>
+  <entry>Изменение типа данных столбцов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F383</entry>
+  <entry/>
+  <entry>Предложение, устанавливающее NOT NULL для столбца</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F391</entry>
+  <entry/>
+  <entry>Длинные идентификаторы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F392</entry>
+  <entry/>
+  <entry>Спецсимволы Unicode в идентификаторах</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F393</entry>
+  <entry/>
+  <entry>Спецсимволы Unicode в текстовых строках</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F401</entry>
+  <entry/>
+  <entry>Расширенное соединение таблиц</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F401-01</entry>
+  <entry/>
+  <entry>NATURAL JOIN</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F401-02</entry>
+  <entry/>
+  <entry>FULL OUTER JOIN</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F401-04</entry>
+  <entry/>
+  <entry>CROSS JOIN</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F402</entry>
+  <entry/>
+  <entry>Соединения по именам столбцов для больших объектов, массивов и мультимножеств</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F411</entry>
+  <entry>Расширенные средства работы с датами/временем</entry>
+  <entry>Указание часового пояса</entry>
+  <entry>отличия в интерпретации строкового представления</entry>
+ </row>
+ <row>
+  <entry>F421</entry>
+  <entry/>
+  <entry>Национальные символы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F431</entry>
+  <entry/>
+  <entry>Прокручиваемые курсоры только для чтения</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F431-01</entry>
+  <entry/>
+  <entry>FETCH с явным NEXT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F431-02</entry>
+  <entry/>
+  <entry>FETCH FIRST</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F431-03</entry>
+  <entry/>
+  <entry>FETCH LAST</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F431-04</entry>
+  <entry/>
+  <entry>FETCH PRIOR</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F431-05</entry>
+  <entry/>
+  <entry>FETCH ABSOLUTE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F431-06</entry>
+  <entry/>
+  <entry>FETCH RELATIVE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F441</entry>
+  <entry/>
+  <entry>Расширенная поддержка функций множеств</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F442</entry>
+  <entry/>
+  <entry>Смешанные ссылки на столбцы в функциях множеств</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F471</entry>
+  <entry>Ядро</entry>
+  <entry>Скалярные значения подзапросов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F481</entry>
+  <entry>Ядро</entry>
+  <entry>Расширенный предикат NULL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F491</entry>
+  <entry>Расширенное управление целостностью</entry>
+  <entry>Управление ограничениями</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F501</entry>
+  <entry>Ядро</entry>
+  <entry>Представления возможностей и совместимости</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F501-01</entry>
+  <entry>Ядро</entry>
+  <entry>Представление SQL_FEATURES</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F501-02</entry>
+  <entry>Ядро</entry>
+  <entry>Представление SQL_SIZING</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F501-03</entry>
+  <entry>Ядро</entry>
+  <entry>Представление SQL_LANGUAGES</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F502</entry>
+  <entry/>
+  <entry>Таблицы расширенной документации</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F502-01</entry>
+  <entry/>
+  <entry>Представление SQL_SIZING_PROFILES</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F502-02</entry>
+  <entry/>
+  <entry>Представление SQL_IMPLEMENTATION_INFO</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F502-03</entry>
+  <entry/>
+  <entry>Представление SQL_PACKAGES</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F531</entry>
+  <entry/>
+  <entry>Временные таблицы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F555</entry>
+  <entry>Расширенные средства работы с датами/временем</entry>
+  <entry>Дополнительная точность в секундах</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F561</entry>
+  <entry/>
+  <entry>Полные выражения значений</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F571</entry>
+  <entry/>
+  <entry>Проверки значений истинности</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F591</entry>
+  <entry/>
+  <entry>Производные таблицы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F611</entry>
+  <entry/>
+  <entry>Типы данных для индикаторов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F641</entry>
+  <entry/>
+  <entry>Конструкторы строк и таблиц</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F651</entry>
+  <entry/>
+  <entry>Дополнения имён каталогов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F661</entry>
+  <entry/>
+  <entry>Простые таблицы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F672</entry>
+  <entry/>
+  <entry>Ограничения-проверки с текущим временем</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F690</entry>
+  <entry/>
+  <entry>Поддержка правил сортировки</entry>
+  <entry>но без поддержки наборов символов</entry>
+ </row>
+ <row>
+  <entry>F692</entry>
+  <entry/>
+  <entry>Расширенная поддержка правил сортировки</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F701</entry>
+  <entry>Расширенное управление целостностью</entry>
+  <entry>Действия при обновлении со ссылками</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F711</entry>
+  <entry/>
+  <entry>ALTER для домена</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F731</entry>
+  <entry/>
+  <entry>Права на INSERT для столбцов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F751</entry>
+  <entry/>
+  <entry>Усовершенствования CHECK для представлений</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F761</entry>
+  <entry/>
+  <entry>Управление сеансом</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F762</entry>
+  <entry/>
+  <entry>CURRENT_CATALOG</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F763</entry>
+  <entry/>
+  <entry>CURRENT_SCHEMA</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F771</entry>
+  <entry/>
+  <entry>Управление соединением</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F781</entry>
+  <entry/>
+  <entry>Самоссылающиеся операции</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F791</entry>
+  <entry/>
+  <entry>Нечувствительные курсоры</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F801</entry>
+  <entry/>
+  <entry>Полные функции множеств</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F850</entry>
+  <entry/>
+  <entry>&lt;Предложение order by &gt; на верхнем уровне в &lt;выражении запроса&gt;</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F851</entry>
+  <entry/>
+  <entry>&lt;Предложение order by&gt; в подзапросах</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F852</entry>
+  <entry/>
+  <entry>&lt;Предложение order by&gt; на верхнем уровне в представлениях</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F855</entry>
+  <entry/>
+  <entry>Вложенное &lt;предложение order by&gt; в &lt;выражении запроса&gt;</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F856</entry>
+  <entry/>
+  <entry>Вложенное &lt;предложение fetch first&gt; в &lt;предложении запроса&gt;</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F857</entry>
+  <entry/>
+  <entry>&lt;Предложение fetch first&gt; на верхнем уровне в &lt;выражении запроса&gt;</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F858</entry>
+  <entry/>
+  <entry>&lt;Предложение fetch first&gt; в подзапросах</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F859</entry>
+  <entry/>
+  <entry>&lt;Предложение fetch first&gt; на верхнем уровне в представлениях</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F860</entry>
+  <entry/>
+  <entry>&lt;Указание числа строк&gt; в &lt;предложении fetch first&gt;</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F861</entry>
+  <entry/>
+  <entry>&lt;Предложение offset для результата&gt; на верхнем уровне в &lt;выражении запроса&gt;</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F862</entry>
+  <entry/>
+  <entry>&lt;Предложение offset для результата&gt; в подзапросах</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F863</entry>
+  <entry/>
+  <entry>Вложенное &lt;предложение offset для результата&gt; в &lt;выражении запроса&gt;</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F864</entry>
+  <entry/>
+  <entry>&lt;Предложение offset для результата&gt; на верхнем уровне в представлениях</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F865</entry>
+  <entry/>
+  <entry>&lt;Указание числа строк&gt; с &lt;предложением offset для результата&gt;</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S071</entry>
+  <entry>Расширенная поддержка объектов</entry>
+  <entry>SQL-пути при разрешении имён функций и типов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S092</entry>
+  <entry/>
+  <entry>Массивы пользовательских типов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S095</entry>
+  <entry/>
+  <entry>Конструкторы массива из запроса</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S096</entry>
+  <entry/>
+  <entry>Необязательное указание границ массива</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S098</entry>
+  <entry/>
+  <entry>ARRAY_AGG</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S111</entry>
+  <entry>Расширенная поддержка объектов</entry>
+  <entry>ONLY в выражениях запросов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S201</entry>
+  <entry/>
+  <entry>Вызываемые из SQL подпрограммы, работающие с массивами</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S201-01</entry>
+  <entry/>
+  <entry>Массивы в параметрах</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S201-02</entry>
+  <entry/>
+  <entry>Массивы в качестве типа результата функций</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S211</entry>
+  <entry>Расширенная поддержка объектов</entry>
+  <entry>Пользовательские функции приведений</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S301</entry>
+  <entry/>
+  <entry>Расширенный UNNEST</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T031</entry>
+  <entry/>
+  <entry>Тип данных BOOLEAN</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T071</entry>
+  <entry/>
+  <entry>Тип данных BIGINT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T121</entry>
+  <entry/>
+  <entry>WITH (без RECURSIVE) в выражении запроса</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T122</entry>
+  <entry/>
+  <entry>WITH (с RECURSIVE) в подзапросе</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T131</entry>
+  <entry/>
+  <entry>Рекурсивный запрос</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T132</entry>
+  <entry/>
+  <entry>Рекурсивный запрос в подзапросе</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T141</entry>
+  <entry/>
+  <entry>Предикат SIMILAR</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T151</entry>
+  <entry/>
+  <entry>Предикат DISTINCT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T152</entry>
+  <entry/>
+  <entry>Предикат DISTINCT с отрицанием</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T171</entry>
+  <entry/>
+  <entry>Предложение LIKE в определении таблицы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T172</entry>
+  <entry/>
+  <entry>Предложение подзапроса AS в определении таблицы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T173</entry>
+  <entry/>
+  <entry>Расширенное предложение LIKE в определении таблицы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T191</entry>
+  <entry>Расширенное управление целостностью</entry>
+  <entry>Действие RESTRICT при нарушении ссылок</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T201</entry>
+  <entry>Расширенное управление целостностью</entry>
+  <entry>Сравнимые типы данных для ссылочных ограничений</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T211-01</entry>
+  <entry>Активная база данных, улучшенное управление целостностью</entry>
+  <entry>Триггеры, активируемые при UPDATE, INSERT или DELETE в одной базовой таблице</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T211-02</entry>
+  <entry>Активная база данных, улучшенное управление целостностью</entry>
+  <entry>Триггеры BEFORE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T211-03</entry>
+  <entry>Активная база данных, улучшенное управление целостностью</entry>
+  <entry>Триггеры AFTER</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T211-04</entry>
+  <entry>Активная база данных, улучшенное управление целостностью</entry>
+  <entry>Триггеры FOR EACH ROW</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T211-05</entry>
+  <entry>Активная база данных, улучшенное управление целостностью</entry>
+  <entry>Возможность задать условие поиска, которое должно быть истинным перед вызовом триггера</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T211-07</entry>
+  <entry>Активная база данных, улучшенное управление целостностью</entry>
+  <entry>Право TRIGGER</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T212</entry>
+  <entry>Расширенное управление целостностью</entry>
+  <entry>Расширенные возможности триггеров</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T213</entry>
+  <entry/>
+  <entry>Триггеры INSTEAD OF</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T231</entry>
+  <entry/>
+  <entry>Чувствительные курсоры</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T241</entry>
+  <entry/>
+  <entry>Оператор START TRANSACTION</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T271</entry>
+  <entry/>
+  <entry>Точки сохранения</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T281</entry>
+  <entry/>
+  <entry>Право SELECT на уровне столбцов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T312</entry>
+  <entry/>
+  <entry>Функция OVERLAY</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T321-01</entry>
+  <entry>Ядро</entry>
+  <entry>Пользовательские функции без перегрузки</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T321-03</entry>
+  <entry>Ядро</entry>
+  <entry>Вызов функций</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T321-06</entry>
+  <entry>Ядро</entry>
+  <entry>Представление ROUTINES</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T321-07</entry>
+  <entry>Ядро</entry>
+  <entry>Представление PARAMETERS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T323</entry>
+  <entry/>
+  <entry>Явное управление безопасностью внешних подпрограмм</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T325</entry>
+  <entry/>
+  <entry>Дополненные указания параметров SQL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T331</entry>
+  <entry/>
+  <entry>Базовые роли</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T341</entry>
+  <entry/>
+  <entry>Перегрузка вызываемых из SQL функций и процедур</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T351</entry>
+  <entry/>
+  <entry>Блочные комментарии SQL (комментарии /*...*/)</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T431</entry>
+  <entry>OLAP</entry>
+  <entry>Расширенные возможности группирования</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T432</entry>
+  <entry/>
+  <entry>Вложения и конкатенация GROUPING SETS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T433</entry>
+  <entry/>
+  <entry>Функция GROUPING с несколькими аргументами</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T441</entry>
+  <entry/>
+  <entry>Функции ABS и MOD</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T461</entry>
+  <entry/>
+  <entry>Симметричный предикат BETWEEN</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T491</entry>
+  <entry/>
+  <entry>Производная таблица LATERAL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T501</entry>
+  <entry/>
+  <entry>Улучшенный предикат EXISTS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T551</entry>
+  <entry/>
+  <entry>Необязательные ключевые слова, подразумеваемые синтаксисом по умолчанию</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T581</entry>
+  <entry/>
+  <entry>Функция подстроки по регулярному выражению</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T591</entry>
+  <entry/>
+  <entry>Ограничения UNIQUE для столбцов, принимающих NULL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T611</entry>
+  <entry>OLAP</entry>
+  <entry>Элементарные операции OLAP</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T613</entry>
+  <entry/>
+  <entry>Получение выборки</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T614</entry>
+  <entry/>
+  <entry>Функция NTILE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T615</entry>
+  <entry/>
+  <entry>Функции LEAD и LAG</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T617</entry>
+  <entry/>
+  <entry>Функции FIRST_VALUE и LAST_VALUE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T621</entry>
+  <entry/>
+  <entry>Дополнительные численные функции</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T631</entry>
+  <entry>Ядро</entry>
+  <entry>Предикат IN с одним элементом списка</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T651</entry>
+  <entry/>
+  <entry>Операторы модификации схемы SQL в SQL-подпрограммах</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T655</entry>
+  <entry/>
+  <entry>Циклически зависимые подпрограммы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X010</entry>
+  <entry/>
+  <entry>Тип XML</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X011</entry>
+  <entry/>
+  <entry>Массивы типа XML</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X016</entry>
+  <entry/>
+  <entry>Хранимые значения XML</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X020</entry>
+  <entry/>
+  <entry>XMLConcat</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X031</entry>
+  <entry/>
+  <entry>XMLElement</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X032</entry>
+  <entry/>
+  <entry>XMLForest</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X034</entry>
+  <entry/>
+  <entry>XMLAgg</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X035</entry>
+  <entry/>
+  <entry>XMLAgg: параметр ORDER BY</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X036</entry>
+  <entry/>
+  <entry>XMLComment</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X037</entry>
+  <entry/>
+  <entry>XMLPI</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X040</entry>
+  <entry/>
+  <entry>Базовое отображение таблиц</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X041</entry>
+  <entry/>
+  <entry>Базовое отображение таблиц: значения NULL отсутствуют</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X042</entry>
+  <entry/>
+  <entry>Базовое отображение таблиц: NULL в виде nil</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X043</entry>
+  <entry/>
+  <entry>Базовое отображение таблиц: таблица в виде леса элементов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X044</entry>
+  <entry/>
+  <entry>Базовое отображение таблиц: таблица в виде элемента</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X045</entry>
+  <entry/>
+  <entry>Базовое отображение таблиц: с целевым пространством имён</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X046</entry>
+  <entry/>
+  <entry>Базовое отображение таблиц: отображение данных</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X047</entry>
+  <entry/>
+  <entry>Базовое отображение таблиц: отображение метаданных</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X048</entry>
+  <entry/>
+  <entry>Базовое отображение таблиц: кодирование двоичных строк в base64</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X049</entry>
+  <entry/>
+  <entry>Базовое отображение таблиц: кодирование двоичных строк в шестнадцатеричном виде</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X050</entry>
+  <entry/>
+  <entry>Расширенное отображение таблиц</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X051</entry>
+  <entry/>
+  <entry>Расширенное отображение таблиц: значения NULL отсутствуют</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X052</entry>
+  <entry/>
+  <entry>Расширенное отображение таблиц: NULL в виде nil</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X053</entry>
+  <entry/>
+  <entry>Расширенное отображение таблиц: таблица в виде леса элементов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X054</entry>
+  <entry/>
+  <entry>Расширенное отображение таблиц: таблица в виде элемента</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X055</entry>
+  <entry/>
+  <entry>Расширенное отображение таблиц: с целевым пространством имён</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X056</entry>
+  <entry/>
+  <entry>Расширенное отображение таблиц: отображение данных</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X057</entry>
+  <entry/>
+  <entry>Расширенное отображение таблиц: отображение метаданных</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X058</entry>
+  <entry/>
+  <entry>Расширенное отображение таблиц: кодирование двоичных строк в base64</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X059</entry>
+  <entry/>
+  <entry>Расширенное отображение таблиц: кодирование двоичных строк в шестнадцатеричном виде</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X060</entry>
+  <entry/>
+  <entry>XMLParse: ввод символьных строк и вариант CONTENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X061</entry>
+  <entry/>
+  <entry>XMLParse: ввод символьных строк и вариант DOCUMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X070</entry>
+  <entry/>
+  <entry>XMLSerialize: сериализация символьных строк и вариант CONTENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X071</entry>
+  <entry/>
+  <entry>XMLSerialize: сериализация символьных строк и вариант DOCUMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X072</entry>
+  <entry/>
+  <entry>XMLSerialize: сериализация символьных строк</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X090</entry>
+  <entry/>
+  <entry>Предикат XML-документа</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X120</entry>
+  <entry/>
+  <entry>XML в параметрах SQL-подпрограмм</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X121</entry>
+  <entry/>
+  <entry>XML в параметрах внешних подпрограмм</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X400</entry>
+  <entry/>
+  <entry>Сопоставление имён и идентификаторов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X410</entry>
+  <entry/>
+  <entry>Изменение типа данных столбца: поддержка типа XML</entry>
+  <entry/>
+ </row>
+</tbody>

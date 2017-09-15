@@ -1,0 +1,80 @@
+<!--
+doc/src/xml/ref/execute.xml
+&productname; documentation
+-->
+
+<refentry id="sql-execute">
+ <indexterm zone="sql-execute"><primary>EXECUTE</primary></indexterm>
+
+ <indexterm zone="sql-execute"><primary>подготовленные операторы</primary> <secondary>выполнение</secondary></indexterm>
+
+ <refmeta>
+  <refentrytitle>EXECUTE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>EXECUTE</refname>
+  <refpurpose>выполнить подготовленный оператор</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>EXECUTE <replaceable class="parameter">имя</replaceable> [ ( <replaceable class="parameter">параметр</replaceable> [, ...] ) ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>EXECUTE</command> выполняет подготовленный ранее оператор. Так как подготовленные операторы существуют только в рамках сеанса, они должны создаваться командой <command>PREPARE</command>, выполненной в текущем сеансе ранее.</para>
+
+  <para>Если команда <command>PREPARE</command>, создающая оператор, определяет некоторый набор параметров, команде <command>EXECUTE</command> должны быть переданы подходящие значения этих параметров; в противном случае возникнет ошибка. Заметьте, что подготовленные операторы (в отличие от функций) не перегружаются в зависимости от типа или числа параметров; имя подготовленного оператора должно быть уникальным в рамках текущего сеанса.</para>
+
+  <para>Чтобы узнать больше о создании и использовании подготовленных операторов, обратитесь к <xref remap="3" linkend="sql-prepare"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя подготовленного оператора, который будет выполнен.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">параметр</replaceable></term>
+    <listitem>
+     <para>Фактическое значение параметра подготовленного оператора. Это может быть выражение, выдающее значение, совместимое с типом данных этого параметра, который был определён при создании подготовленного оператора.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Выводимая информация</title>
+   <para>Метка команды, возвращаемая <command>EXECUTE</command>, соответствует подготовленному оператору, а не оператору <literal>EXECUTE</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+  <para>Примеры приведены в разделе <xref linkend="sql-prepare-examples" endterm="sql-prepare-examples-title"/> документации по оператору <xref linkend="sql-prepare"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>В стандарте SQL есть оператор <command>EXECUTE</command>, но он предназначен только для применения во встраиваемом SQL. Эта версия оператора <command>EXECUTE</command> имеет также несколько другой синтаксис.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-deallocate"/></member>
+   <member><xref linkend="sql-prepare"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

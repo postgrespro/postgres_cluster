@@ -1,0 +1,148 @@
+<!--
+doc/src/xml/ref/create_rule.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createrule">
+ <indexterm zone="sql-createrule"><primary>CREATE RULE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE RULE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE RULE</refname>
+  <refpurpose>создать правило перезаписи</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE [ OR REPLACE ] RULE <replaceable class="parameter">имя</replaceable> AS ON <replaceable class="parameter">событие</replaceable>
+    TO <replaceable class="parameter">имя_таблицы</replaceable> [ WHERE <replaceable class="parameter">условие</replaceable> ]
+    DO [ ALSO | INSTEAD ] { NOTHING | <replaceable class="parameter">команда</replaceable> | ( <replaceable class="parameter">команда</replaceable> ; <replaceable class="parameter">команда</replaceable> ... ) }
+
+<phrase>Здесь допускается <replaceable class="parameter">событие</replaceable>:</phrase>
+
+    SELECT | INSERT | UPDATE | DELETE</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE RULE</command> создаёт правило, применяемое к указанной таблице или представлению. <command>CREATE OR REPLACE RULE</command> либо создаёт новое правило, либо заменяет существующее с тем же именем для той же таблицы.</para>
+
+  <para>Система правил <productname>&productname;</productname> позволяет определить альтернативное действие, заменяющее операции добавления, изменения или удаления данных в таблицах базы данных. Грубо говоря, правило описывает дополнительные команды, которые будут выполняться при вызове определённой команды для определённой таблицы. Кроме того, правило <literal>INSTEAD</literal> может заменить заданную команду другой, либо сделать, чтобы она не выполнялась вовсе. Правила также применяются для реализации SQL-запросов. Важно понимать, что правило это фактически механизм преобразования команд (макрос). Заданное преобразование имеет место до начала выполнения команды. Когда требуется выполнить некоторую операцию независимо для каждой физической строки, скорее всего, для этого нужно применять триггер, а не правило. Более подробно о системе правил можно узнать в <xref remap="6" linkend="rules"/>.</para>
+
+  <para>В настоящее время правила <literal>ON SELECT</literal> должны быть безусловными, с характеристикой <literal>INSTEAD</literal> (вместо исходного), и их действия должны состоять из единственной команды <command>SELECT</command>. Таким образом, правило <literal>ON SELECT</literal> по сути превращает таблицу в представление, чьим видимым содержимым являются строки, возвращаемые командой <command>SELECT</command>, заданной в правиле, а не данные, хранящиеся в таблице (если они есть). Вообще же для этой цели лучшим стилем считается пользоваться командой <command>CREATE VIEW</command>, а не создавать реальную таблицу и определять затем правило <literal>ON SELECT</literal> для неё.</para>
+
+  <para>С помощью правил можно создать иллюзию изменяемого представления, определив правила <literal>ON INSERT</literal>, <literal>ON UPDATE</literal> и <literal>ON DELETE</literal> (либо только те, которых достаточно для решения поставленной задачи) и заменив операции изменения данных в представлении соответствующими действиями с другими таблицами. Если требуется поддерживать оператор <command>INSERT RETURNING</command> и подобные ему, в каждое из этих правило обязательно нужно поместить подходящее предложение <literal>RETURNING</literal>.</para>
+
+  <para>Использование правил с условиями для сложных изменений представлений связано с одним ограничением: для каждого действия, которое вы хотите разрешить для представления, <emphasis>необходимо</emphasis> определить безусловное правило <literal>INSTEAD</literal>. Если определено только условное правило, или правило не типа <literal>INSTEAD</literal>, система отвергнет попытки выполнить изменения, предполагая, что в некоторых случаях изменения могут свестись к операциям с фиктивной нижележащей таблицей. При желании обработать все полезные случаи изменений в условных правилах, добавьте безусловное правило <literal>DO INSTEAD NOTHING</literal>, чтобы система понимала, что ей никогда не придётся изменять нижележащую таблицу. Затем создайте условные правила без свойства <literal>INSTEAD</literal>; в тех случаях, когда они будут применяться, их действия будут добавлены к действию по умолчанию <literal>INSTEAD NOTHING</literal>. (Однако, этот способ в настоящее время не подходит для реализации запросов <literal>RETURNING</literal>.)</para>
+
+  <note>
+   <para>Представления, достаточно простые для реализации автоматического обновления (см. <xref remap="4" linkend="sql-createview"/>), могут быть изменяемыми без пользовательских правил. Хотя вы, тем не менее, можете создать явное правило, обычно автоматическое преобразование будет работать лучше такого правила.</para>
+
+   <para>Другая, заслуживающая рассмотрения, альтернатива правилам — триггеры <literal>INSTEAD OF</literal> (см. <xref remap="4" linkend="sql-createtrigger"/>).</para>
+  </note>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя создаваемого правила. Оно должно отличаться от имён любых других правил для той же таблицы. При наличии нескольких правил для одной таблицы и одного типа события они применяются в алфавитном порядке.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">событие</replaceable></term>
+    <listitem>
+     <para>Тип события: <literal>SELECT</literal>, <literal>INSERT</literal>, <literal>UPDATE</literal> или <literal>DELETE</literal>. Заметьте, что команду <command>INSERT</command> с предложением <literal>ON CONFLICT</literal> нельзя использовать с таблицами, для которых определены правила <literal>INSERT</literal> или <literal>UPDATE</literal>. В этом случае подумайте о применении изменяемых представлений.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующей таблицы (или представления), к которой применяется это правило.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">условие</replaceable></term>
+    <listitem>
+     <para>Любое выражение условия <acronym>SQL</acronym> (возвращающее <type>boolean</type>). Это выражение не может ссылаться на какие-либо таблицы, кроме как на <literal>NEW</literal> и <literal>OLD</literal>, и не может содержать агрегатные функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>INSTEAD</option></term>
+    <listitem>
+     <para><literal>INSTEAD</literal> указывает, что заданные команды должны выполняться <emphasis>вместо</emphasis> исходной команды.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>ALSO</option></term>
+    <listitem>
+     <para><literal>ALSO</literal> указывает, что заданные команды должны выполняться <emphasis>в дополнение к</emphasis> исходной команде.</para>
+
+     <para>Если ни <literal>ALSO</literal>, ни <literal>INSTEAD</literal> не указано, по умолчанию подразумевается <literal>ALSO</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">команда</replaceable></term>
+    <listitem>
+     <para>Команда или команды, составляющие действие правила. Здесь допустимы команды: <command>SELECT</command>, <command>INSERT</command>, <command>UPDATE</command>, <command>DELETE</command> и <command>NOTIFY</command>.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>В параметрах <replaceable class="parameter">условие</replaceable> и <replaceable class="parameter">команда</replaceable> можно использовать имена специальных таблиц <literal>NEW</literal> и <literal>OLD</literal> для обращения к значениям в соответствующей таблице. <literal>NEW</literal> (новая) принимается в правилах <literal>ON INSERT</literal> и <literal>ON UPDATE</literal> и обозначает ссылку на новую строку, добавляемую или изменяемую. <literal>OLD</literal> (старая) принимается в правилах <literal>ON UPDATE</literal> и <literal>ON DELETE</literal> и обозначает ссылку на существующую строку, изменяемую или удаляемую.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Чтобы создать или изменить правила для таблицы, нужно быть её владельцем.</para>
+
+  <para>В правило для <literal>INSERT</literal>, <literal>UPDATE</literal> или <literal>DELETE</literal> для представления можно добавить предложение <literal>RETURNING</literal>, выдающее столбцы представления. Это предложение будет генерировать результат, если правило сработает при выполнении команды <command>INSERT RETURNING</command>, <command>UPDATE RETURNING</command> или <command>DELETE RETURNING</command>. Когда правило срабатывает при выполнении команды без <literal>RETURNING</literal>, предложение <literal>RETURNING</literal> этого правила игнорируется. В текущей реализации только безусловные правила <literal>INSTEAD</literal> могут содержать <literal>RETURNING</literal>; более того, допускается максимум одно предложение <literal>RETURNING</literal> среди всех правил для некоторого события. (Благодаря этому ограничению, только одно предложение <literal>RETURNING</literal> может быть выбрано для вычисления результатов.) Запросы с <literal>RETURNING</literal> к данному представлению не будут выполняться, если ни одно из определённых для него правил не содержит предложение <literal>RETURNING</literal>.</para>
+
+  <para>Очень важно следить за тем, чтобы правила не зацикливались. Например, два следующих определения правил будут приняты <productname>&productname;</productname>, но при попытке выполнить команду <command>SELECT</command> <productname>&productname;</productname> сообщит об ошибке из-за рекурсивного расширения правила: <programlisting>CREATE RULE "_RETURN" AS
+    ON SELECT TO t1
+    DO INSTEAD
+        SELECT * FROM t2;
+
+CREATE RULE "_RETURN" AS
+    ON SELECT TO t2
+    DO INSTEAD
+        SELECT * FROM t1;
+
+SELECT * FROM t1;</programlisting></para>
+
+  <para>В настоящее время, если действие правила содержит команду <command>NOTIFY</command>, эта команда будет выполняться безусловно, то есть, <command>NOTIFY</command> будет выдаваться, даже если не найдётся никаких строк, к которым бы применялось правило. Например, в следующем примере: <programlisting>CREATE RULE notify_me AS ON UPDATE TO mytable DO ALSO NOTIFY mytable;
+
+UPDATE mytable SET name = 'foo' WHERE id = 42;</programlisting> одно событие <command>NOTIFY</command> будет отправлено при выполнении команды <command>UPDATE</command>, даже если никакие строки не соответствуют условию <literal>id = 42</literal>. Это недостаток текущей реализации, который может быть исправлен в будущих версиях.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>CREATE RULE</command> является языковым расширением <productname>&productname;</productname>, как и вся система перезаписи запросов.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterrule"/></member>
+   <member><xref linkend="sql-droprule"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

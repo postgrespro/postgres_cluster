@@ -1,0 +1,764 @@
+<!-- doc/src/xml/plperl.xml -->
+
+ <chapter id="plperl">
+  <title>PL/Perl — процедурный язык Perl</title>
+
+  <indexterm zone="plperl"><primary>PL/Perl</primary></indexterm>
+
+  <indexterm zone="plperl"><primary>Perl</primary></indexterm>
+
+  <para>PL/Perl — это загружаемый процедурный язык, позволяющий реализовывать функции <productname>&productname;</productname> на <ulink url="http://www.perl.org">языке программирования Perl</ulink>.</para>
+
+  <para>Основным преимуществом PL/Perl является то, что он позволяет применять в сохранённых функциях множество функций и операторов <quote>перемалывания строк</quote>, имеющихся в Perl. Разобрать сложные строки на языке Perl может быть гораздо проще, чем используя строковые функции и управляющие структуры в PL/pgSQL.</para>
+
+  <para>Чтобы установить PL/Perl в определённую базу данных, выполните команду <literal>CREATE EXTENSION plperl</literal>, либо запустите в оболочке системы <literal>createlang plperl <replaceable>имя_базы</replaceable></literal>.</para>
+
+  <tip>
+   <para>Если язык устанавливается в <literal>template1</literal>, он будет автоматически установлен во все создаваемые впоследствии базы данных.</para>
+  </tip>
+
+  <note>
+   <para>Пользователи, имеющие дело с исходным кодом, должны явно включить сборку PL/Perl в процессе установки. Пользователи двоичных пакетов могут найти PL/Perl в отдельном модуле.</para>
+  </note>
+
+ <sect1 id="plperl-funcs">
+  <title>Функции на PL/Perl и их аргументы</title>
+
+  <para>Чтобы создать функцию на языке PL/Perl, используйте стандартный синтаксис <xref linkend="sql-createfunction"/>: <programlisting>CREATE FUNCTION <replaceable>имя_функции</replaceable> (<replaceable>типы-аргументов</replaceable>) RETURNS <replaceable>тип-результата</replaceable> AS $$
+    # Тело функции на PL/Perl
+$$ LANGUAGE plperl;</programlisting> Тело функции содержит обычный код Perl. Фактически, код обвязки PL/Perl помещает этот код в подпрограмму Perl. Функция PL/Perl вызывается в скалярном контексте, так что она не может вернуть список. Не скалярные значения (массивы, записи и множества) можно вернуть по ссылке, как описывается ниже.</para>
+
+  <para>PL/Perl также поддерживает анонимные блоки кода, которые выполняются оператором <xref linkend="sql-do"/>: <programlisting>DO $$
+    # Код PL/Perl
+$$ LANGUAGE plperl;</programlisting> Анонимный блок кода не принимает аргументы, а любое значение, которое он мог бы вернуть, отбрасывается. В остальном он работает подобно коду функции.</para>
+
+  <note>
+   <para>Использовать вложенные именованные подпрограммы в Perl опасно, особенно если они обращаются к лексическим переменным в окружающей области. Так как функция PL/Perl оборачивается в подпрограмму, любая именованная функция внутри неё будет вложенной. Вообще гораздо безопаснее создавать анонимные подпрограммы и вызывать их по ссылке на код. Дополнительную информацию вы можете получить на странице руководства man <citerefentry><refentrytitle>perldiag</refentrytitle></citerefentry>, в описании ошибок <literal>Variable "%s" will not stay shared</literal> (Переменная "%s" не останется разделяемой) и <literal>Variable "%s" is not available</literal> (Переменная "%s" недоступна), либо найти в Интернете по ключевым словам <quote>perl nested named subroutine</quote> (perl вложенная именованная подпрограмма).</para>
+  </note>
+
+  <para>Синтаксис команды <command>CREATE FUNCTION</command> требует, чтобы тело функции было записано как строковая константа. Обычно для этого удобнее всего заключать строковую константу в доллары (см. <xref remap="4" linkend="sql-syntax-dollar-quoting"/>). Если вы решите применять синтаксис спецпоследовательностей <literal>E''</literal>, вам придётся дублировать апострофы (<literal>'</literal>) и обратную косую черту (<literal>\</literal>) в теле функции (см. <xref remap="4" linkend="sql-syntax-strings"/>).</para>
+
+  <para>Аргументы и результат обрабатываются как и в любой другой подпрограмме на Perl: аргументы передаются в <varname>@_</varname>, а результирующим значением будет указанное в <literal>return</literal> или полученное в последнем выражении, вычисленном в функции.</para>
+
+  <para>Например, функцию, возвращающую большее из двух целых чисел, можно определить так: <programlisting>CREATE FUNCTION perl_max (integer, integer) RETURNS integer AS $$
+    if ($_[0] &gt; $_[1]) { return $_[0]; }
+    return $_[1];
+$$ LANGUAGE plperl;</programlisting></para>
+
+  <note>
+    <para>Аргументы будут преобразованы из кодировки базы данных в UTF-8 для использования в PL/Perl, а при выходе снова будут преобразованы из UTF-8 в кодировку базы данных.</para>
+  </note>
+
+  <para>Если функции передаётся NULL-значение SQL<indexterm><primary>NULL-значение</primary> <secondary sortas="PL/Perl">в PL/Perl</secondary></indexterm>, значением аргумента в Perl станет <quote>undefined</quote>. Показанное выше определение функции будет не очень хорошо обрабатывать значения NULL (в действительности они будут восприняты как нули). Мы могли бы добавить указание <literal>STRICT</literal> в это определение, чтобы <productname>&productname;</productname> поступал немного разумнее: при передаче значения NULL функция вовсе не будет вызываться, будет сразу возвращён результат NULL. С другой стороны, мы могли бы проверить значения undefined в теле функции. Например, предположим, что нам нужна функция <function>perl_max</function>, которая с одним аргументом NULL и вторым аргументом не NULL должна возвращать не NULL, а второй аргумент: <programlisting>CREATE FUNCTION perl_max (integer, integer) RETURNS integer AS $$
+    my ($x, $y) = @_;
+    if (not defined $x) {
+        return undef if not defined $y;
+        return $y;
+    }
+    return $x if not defined $y;
+    return $x if $x &gt; $y;
+    return $y;
+$$ LANGUAGE plperl;</programlisting> Как показано выше, чтобы выдать значение SQL NULL, нужно вернуть значение undefined. Это можно сделать и в строгой, и в нестрогой функции.</para>
+
+  <para>Всё в аргументах функции, что не является ссылкой, является строкой, то есть стандартным для <productname>&productname;</productname> внешним текстовым представлением соответствующего типа данных. В случае с обычными числовыми или текстовыми типами, Perl просто воспринимает их должным образом, и программист, как правило, может об этом не думать. Однако в более сложных случаях может потребоваться преобразовать аргумент в форму, подходящую для использования в Perl. Например, для преобразования типа <type>bytea</type> в двоичное значение можно использовать функцию <function>decode_bytea</function>.</para>
+
+  <para>Аналогично, значения, передаваемые в <productname>&productname;</productname>, должны быть в формате внешнего текстового представления. Например, для подготовки двоичных данных к возврату в значении <type>bytea</type> можно воспользоваться функцией <function>encode_bytea</function>.</para>
+
+  <para>Perl может возвращать массивы <productname>&productname;</productname> как ссылки на массивы Perl. Например, так: <programlisting>CREATE OR REPLACE function returns_array()
+RETURNS text[][] AS $$
+    return [['a"b','c,d'],['e\\f','g']];
+$$ LANGUAGE plperl;
+
+select returns_array();</programlisting></para>
+
+  <para>Perl передаёт массивы <productname>&productname;</productname> как объект, сопоставленный с <type>PostgreSQL::InServer::ARRAY</type>. С этим объектом можно работать как со ссылкой на массив или строкой, что допускает обратную совместимость с кодом Perl, написанным для <productname>PostgreSQL</productname> версии до 9.1. Например: <programlisting>CREATE OR REPLACE FUNCTION concat_array_elements(text[]) RETURNS TEXT AS $$
+    my $arg = shift;
+    my $result = "";
+    return undef if (!defined $arg);
+
+    # в качестве ссылки на массив
+    for (@$arg) {
+        $result .= $_;
+    }
+
+    # также работает со строкой
+    $result .= $arg;
+
+    return $result;
+$$ LANGUAGE plperl;
+
+SELECT concat_array_elements(ARRAY['PL','/','Perl']);</programlisting> <note>
+   <para>Многомерные массивы представляются как ссылки на массивы меньшей размерности со ссылками — этот способ хорошо знаком каждому программисту на Perl.</para>
+  </note></para>
+
+  <para>Аргументы составного типа передаются функции как ссылки на хеши. Ключами хеша являются имена атрибутов составного типа. Например: <programlisting>CREATE TABLE employee (
+    name text,
+    basesalary integer,
+    bonus integer
+);
+
+CREATE FUNCTION empcomp(employee) RETURNS integer AS $$
+    my ($emp) = @_;
+    return $emp-&gt;{basesalary} + $emp-&gt;{bonus};
+$$ LANGUAGE plperl;
+
+SELECT name, empcomp(employee.*) FROM employee;</programlisting></para>
+
+  <para>Функция на PL/Perl может вернуть результат составного типа, применяя тот же подход: возвратить ссылку на хеш с требуемыми атрибутами. Например, так: <programlisting>CREATE TYPE testrowperl AS (f1 integer, f2 text, f3 text);
+
+CREATE OR REPLACE FUNCTION perl_row() RETURNS testrowperl AS $$
+    return {f2 =&gt; 'hello', f1 =&gt; 1, f3 =&gt; 'world'};
+$$ LANGUAGE plperl;
+
+SELECT * FROM perl_row();</programlisting> Столбцы объявленного типа результата, отсутствующие в хеше, будут возвращены как значения NULL.</para>
+
+  <para>Функции на PL/Perl могут также возвращать множества со скалярными или составными типами. Обычно желательно возвращать результат по одной строке, чтобы сократить время подготовки с одной стороны, и чтобы не потребовалось накапливать весь набор данных в памяти, с другой. Это можно реализовать с помощью функции <function>return_next</function>, как показано ниже. Заметьте, что после последнего вызова <function>return_next</function>, нужно поместить <literal>return</literal> или (что лучше) <literal>return undef</literal>. <programlisting>CREATE OR REPLACE FUNCTION perl_set_int(int)
+RETURNS SETOF INTEGER AS $$
+    foreach (0..$_[0]) {
+        return_next($_);
+    }
+    return undef;
+$$ LANGUAGE plperl;
+
+SELECT * FROM perl_set_int(5);
+
+CREATE OR REPLACE FUNCTION perl_set()
+RETURNS SETOF testrowperl AS $$
+    return_next({ f1 =&gt; 1, f2 =&gt; 'Hello', f3 =&gt; 'World' });
+    return_next({ f1 =&gt; 2, f2 =&gt; 'Hello', f3 =&gt; '&productname;' });
+    return_next({ f1 =&gt; 3, f2 =&gt; 'Hello', f3 =&gt; 'PL/Perl' });
+    return undef;
+$$ LANGUAGE plperl;</programlisting> Для небольших наборов данных можно также вернуть ссылку на массив, содержащий скаляры, ссылки на массивы, либо ссылки на хеши для простых типов, типов массивов и составных типов, соответственно. Ниже приведена пара простых примеров, показывающих, как возвратить весь набор данных в виде ссылки на массив: <programlisting>CREATE OR REPLACE FUNCTION perl_set_int(int) RETURNS SETOF INTEGER AS $$
+    return [0..$_[0]];
+$$ LANGUAGE plperl;
+
+SELECT * FROM perl_set_int(5);
+
+CREATE OR REPLACE FUNCTION perl_set() RETURNS SETOF testrowperl AS $$
+    return [
+        { f1 =&gt; 1, f2 =&gt; 'Hello', f3 =&gt; 'World' },
+        { f1 =&gt; 2, f2 =&gt; 'Hello', f3 =&gt; '&productname;' },
+        { f1 =&gt; 3, f2 =&gt; 'Hello', f3 =&gt; 'PL/Perl' }
+    ];
+$$ LANGUAGE plperl;
+
+SELECT * FROM perl_set();</programlisting></para>
+
+  <para>Если вы хотите использовать в своём коде <literal>strict</literal>, у вас есть несколько вариантов. Для временного глобального использования вы можете задать для <literal>plperl.use_strict</literal> значение true командой <command>SET</command>. Это повлияет на компилируемые впоследствии функции <application>PL/Perl</application>, но не на функции, уже скомпилированные в текущем сеансе. Для постоянного глобального использования вы можете присвоить параметру <literal>plperl.use_strict</literal> значение true в файле <filename>postgresql.conf</filename>.</para>
+
+  <para>Для постоянного использования strict в опредёлённых функциях вы можете просто написать: <programlisting>use strict;</programlisting> в начале тела этих функций.</para>
+
+  <para>Вы также можете использовать указания <literal>feature</literal> в <function>use</function>, если используете Perl версии 5.10.0 или новее.</para>
+
+ </sect1>
+
+ <sect1 id="plperl-data">
+  <title>Значения в PL/Perl</title>
+
+  <para>Значения аргументов, передаваемые в код функции PL/Perl, представляют собой просто входные аргументы, преобразованные в текстовый вид (так же, как при выводе оператором <command>SELECT</command>). И наоборот, команды <function>return</function> и <function>return_next</function> могут принять любую строку, соответствующую формату ввода для объявленного типа результата функции.</para>
+ </sect1>
+
+ <sect1 id="plperl-builtins">
+  <title>Встроенные функции</title>
+
+ <sect2 id="plperl-database">
+  <title>Обращение к базе данных из PL/Perl</title>
+
+  <para>Обращаться к самой базе данных из кода Perl можно, используя следующие функции:</para>
+
+   <variablelist>
+    <varlistentry>
+     <term>
+      <literal><function>spi_exec_query</function>(<replaceable>запрос</replaceable> [, <replaceable>макс-строк</replaceable>])</literal>
+      <indexterm><primary>spi_exec_query</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <listitem>
+      <para><literal>spi_exec_query</literal> выполняет команду SQL и возвращает весь набор строк в виде ссылки на массив хешей. <emphasis>Эту функцию следует использовать, только если вы знаете, что набор будет относительно небольшим.</emphasis> Так выглядит пример запроса (<command>SELECT</command>) с дополнительно заданным максимальным числом строк: <programlisting>$rv = spi_exec_query('SELECT * FROM my_table', 5);</programlisting> Этот запрос возвращает не больше 5 строк из таблицы <literal>my_table</literal>. Если в <literal>my_table</literal> есть столбец <literal>my_column</literal>, получить его значение из строки <literal>$i</literal> результата можно следующим образом: <programlisting>$foo = $rv-&gt;{rows}[$i]-&gt;{my_column};</programlisting> Общее число строк, возвращённых запросом <command>SELECT</command>, можно получить так: <programlisting>$nrows = $rv-&gt;{processed}</programlisting></para>
+
+      <para>Так можно выполнить команду другого типа: <programlisting>$query = "INSERT INTO my_table VALUES (1, 'test')";
+$rv = spi_exec_query($query);</programlisting> Затем можно получить статус команды (например, <literal>SPI_OK_INSERT</literal>) следующим образом: <programlisting>$res = $rv-&gt;{status};</programlisting> Чтобы получить число затронутых строк, выполните: <programlisting>$nrows = $rv-&gt;{processed};</programlisting></para>
+
+      <para>Полный пример: <programlisting>CREATE TABLE test (
+    i int,
+    v varchar
+);
+
+INSERT INTO test (i, v) VALUES (1, 'first line');
+INSERT INTO test (i, v) VALUES (2, 'second line');
+INSERT INTO test (i, v) VALUES (3, 'third line');
+INSERT INTO test (i, v) VALUES (4, 'immortal');
+
+CREATE OR REPLACE FUNCTION test_munge() RETURNS SETOF test AS $$
+    my $rv = spi_exec_query('select i, v from test;');
+    my $status = $rv-&gt;{status};
+    my $nrows = $rv-&gt;{processed};
+    foreach my $rn (0 .. $nrows - 1) {
+        my $row = $rv-&gt;{rows}[$rn];
+        $row-&gt;{i} += 200 if defined($row-&gt;{i});
+        $row-&gt;{v} =~ tr/A-Za-z/a-zA-Z/ if (defined($row-&gt;{v}));
+        return_next($row);
+    }
+    return undef;
+$$ LANGUAGE plperl;
+
+SELECT * FROM test_munge();</programlisting></para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <literal><function>spi_query(<replaceable>команда</replaceable>)</function></literal>
+      <indexterm><primary>spi_query</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <term>
+      <literal><function>spi_fetchrow(<replaceable>cursor</replaceable>)</function></literal>
+      <indexterm><primary>spi_fetchrow</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <term>
+      <literal><function>spi_cursor_close(<replaceable>cursor</replaceable>)</function></literal>
+      <indexterm><primary>spi_cursor_close</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+
+    <listitem>
+    <para>Функции <literal>spi_query</literal> и <literal>spi_fetchrow</literal> применяются в паре, когда набор строк может быть очень большим или когда нужно возвращать строки по мере их поступления. Функция <literal>spi_fetchrow</literal> работает <emphasis>только</emphasis> с <literal>spi_query</literal>. Следующий пример показывает, как использовать их вместе: <programlisting>CREATE TYPE foo_type AS (the_num INTEGER, the_text TEXT);
+
+CREATE OR REPLACE FUNCTION lotsa_md5 (INTEGER) RETURNS SETOF foo_type AS $$
+    use Digest::MD5 qw(md5_hex);
+    my $file = '/usr/share/dict/words';
+    my $t = localtime;
+    elog(NOTICE, "opening file $file at $t" );
+    open my $fh, '&lt;', $file # здесь мы обращаемся к файлу!
+        or elog(ERROR, "cannot open $file for reading: $!");
+    my @words = &lt;$fh&gt;;
+    close $fh;
+    $t = localtime;
+    elog(NOTICE, "closed file $file at $t");
+    chomp(@words);
+    my $row;
+    my $sth = spi_query("SELECT * FROM generate_series(1,$_[0]) AS b(a)");
+    while (defined ($row = spi_fetchrow($sth))) {
+        return_next({
+            the_num =&gt; $row-&gt;{a},
+            the_text =&gt; md5_hex($words[rand @words])
+        });
+    }
+    return;
+$$ LANGUAGE plperlu;
+
+SELECT * from lotsa_md5(500);</programlisting></para>
+
+    <para>Обычно вызов <function>spi_fetchrow</function> нужно повторять, пока не будет получен результат <literal>undef</literal>, показывающий, что все строки уже прочитаны. Курсор, возвращаемый функцией <literal>spi_query</literal>, автоматически освобождается, когда <function>spi_fetchrow</function> возвращает <literal>undef</literal>. Если вы не хотите читать все строки, освободите курсор, выполнив <function>spi_cursor_close</function>, чтобы не допустить утечки памяти.</para>
+
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <literal><function>spi_prepare(<replaceable>команда</replaceable>, <replaceable>типы аргументов</replaceable>)</function></literal>
+      <indexterm><primary>spi_prepare</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <term>
+      <literal><function>spi_query_prepared(<replaceable>план</replaceable>, <replaceable>аргументы</replaceable>)</function></literal>
+      <indexterm><primary>spi_query_prepared</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <term>
+      <literal><function>spi_exec_prepared(<replaceable>план</replaceable> [, <replaceable>атрибуты</replaceable>], <replaceable>аргументы</replaceable>)</function></literal>
+      <indexterm><primary>spi_exec_prepared</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <term>
+      <literal><function>spi_freeplan(<replaceable>план</replaceable>)</function></literal>
+      <indexterm><primary>spi_freeplan</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+
+    <listitem>
+    <para>Функции <literal>spi_prepare</literal>, <literal>spi_query_prepared</literal>, <literal>spi_exec_prepared</literal> и <literal>spi_freeplan</literal> реализуют ту же функциональность, но для подготовленных запросов. Функция <literal>spi_prepare</literal> принимает строку запроса с нумерованными местозаполнителями аргументов ($1, $2 и т. д.) и список строк с типами аргументов: <programlisting>$plan = spi_prepare('SELECT * FROM test WHERE id &gt; $1 AND name = $2',
+                                                     'INTEGER', 'TEXT');</programlisting> План запроса, подготовленный вызовом <literal>spi_prepare</literal>, можно использовать вместо строки запроса либо в <literal>spi_exec_prepared</literal>, возвращающей тот же результат, что и <literal>spi_exec_query</literal>, либо в <literal>spi_query_prepared</literal>, возвращающей курсор так же, как <literal>spi_query</literal>, который затем можно передать в <literal>spi_fetchrow</literal>. В необязательном втором параметре <literal>spi_exec_prepared</literal> можно передать хеш с атрибутами; в настоящее время поддерживается только атрибут <literal>limit</literal>, задающий максимальное число строк, которое может вернуть запрос.</para>
+
+    <para>Подготовленные запросы хороши тем, что позволяют использовать единожды подготовленный план для неоднократного выполнения запроса. Когда план оказывается не нужен, его можно освободить, вызвав <literal>spi_freeplan</literal>: <programlisting>CREATE OR REPLACE FUNCTION init() RETURNS VOID AS $$
+        $_SHARED{my_plan} = spi_prepare('SELECT (now() + $1)::date AS now',
+                                        'INTERVAL');
+$$ LANGUAGE plperl;
+
+CREATE OR REPLACE FUNCTION add_time( INTERVAL ) RETURNS TEXT AS $$
+        return spi_exec_prepared(
+                $_SHARED{my_plan},
+                $_[0]
+        )-&gt;{rows}-&gt;[0]-&gt;{now};
+$$ LANGUAGE plperl;
+
+CREATE OR REPLACE FUNCTION done() RETURNS VOID AS $$
+        spi_freeplan( $_SHARED{my_plan});
+        undef $_SHARED{my_plan};
+$$ LANGUAGE plperl;
+
+SELECT init();
+SELECT add_time('1 day'), add_time('2 days'), add_time('3 days');
+SELECT done();
+
+  add_time  |  add_time  |  add_time
+------------+------------+------------
+ 2005-12-10 | 2005-12-11 | 2005-12-12</programlisting> Заметьте, что параметры для <literal>spi_prepare</literal> обозначаются как $1, $2, $3 и т. д., так что по возможности не записывайте строки запросов в двойных кавычках, чтобы не спровоцировать трудноуловимые ошибки.</para>
+
+    <para>Ещё один пример, иллюстрирующий использование необязательного параметра <literal>spi_exec_prepared</literal>: <programlisting>CREATE TABLE hosts AS SELECT id, ('192.168.1.'||id)::inet AS address
+                      FROM generate_series(1,3) AS id;
+
+CREATE OR REPLACE FUNCTION init_hosts_query() RETURNS VOID AS $$
+        $_SHARED{plan} = spi_prepare('SELECT * FROM hosts
+                                      WHERE address &lt;&lt; $1', 'inet');
+$$ LANGUAGE plperl;
+
+CREATE OR REPLACE FUNCTION query_hosts(inet) RETURNS SETOF hosts AS $$
+        return spi_exec_prepared(
+                $_SHARED{plan},
+                {limit =&gt; 2},
+                $_[0]
+        )-&gt;{rows};
+$$ LANGUAGE plperl;
+
+CREATE OR REPLACE FUNCTION release_hosts_query() RETURNS VOID AS $$
+        spi_freeplan($_SHARED{plan});
+        undef $_SHARED{plan};
+$$ LANGUAGE plperl;
+
+SELECT init_hosts_query();
+SELECT query_hosts('192.168.1.0/30');
+SELECT release_hosts_query();
+
+    query_hosts    
+-----------------
+ (1,192.168.1.1)
+ (2,192.168.1.2)
+(2 rows)</programlisting></para>
+    </listitem>
+    </varlistentry>
+   </variablelist>
+ </sect2>
+
+ <sect2 id="plperl-utility-functions">
+  <title>Вспомогательные функции в PL/Perl</title>
+
+   <variablelist>
+    <varlistentry>
+     <term>
+      <literal><function>elog(<replaceable>уровень</replaceable>, <replaceable>сообщение</replaceable>)</function></literal>
+      <indexterm><primary>elog</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <listitem>
+      <para>Выдаёт служебное сообщение или сообщение об ошибке. Возможные уровни сообщений: <literal>DEBUG</literal> (ОТЛАДКА), <literal>LOG</literal> (СООБЩЕНИЕ), <literal>INFO</literal> (ИНФОРМАЦИЯ), <literal>NOTICE</literal> (ЗАМЕЧАНИЕ), <literal>WARNING</literal> (ПРЕДУПРЕЖДЕНИЕ) и <literal>ERROR</literal> (ОШИБКА). С уровнем <literal>ERROR</literal> выдаётся ошибка; если она не перехватывается окружающим кодом Perl, она распространяется в вызывающий запрос, что приводит к прерыванию текущей транзакции или подтранзакции. По сути то же самое делает команда <literal>die</literal> языка Perl. При использовании других уровней происходит просто вывод сообщения с заданным уровнем важности. Будут ли сообщения определённого уровня передаваться клиенту и/или записываться в журнал, определяется конфигурационными параметрами <xref linkend="guc-log-min-messages"/> и <xref linkend="guc-client-min-messages"/>. За дополнительными сведениями обратитесь к <xref remap="3" linkend="runtime-config"/>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <literal><function>quote_literal(<replaceable>строка</replaceable>)</function></literal>
+      <indexterm><primary>quote_literal</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <listitem>
+      <para>Оформляет переданную строку для использования в качестве текстовой строки в SQL-операторе. Включённые в неё апострофы и обратная косая черта при этом дублируются. Заметьте, что <function>quote_literal</function> возвращает undef, когда получает аргумент undef; если такие аргументы возможны, часто лучше использовать <function>quote_nullable</function>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <literal><function>quote_nullable(<replaceable>строка</replaceable>)</function></literal>
+      <indexterm><primary>quote_nullable</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <listitem>
+      <para>Оформляет переданную строку для использования в качестве текстовой строки в SQL-операторе; либо, если поступает аргумент undef, возвращает строку "NULL" (без кавычек). Символы апостроф и обратная косая черта дублируются должным образом.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <literal><function>quote_ident(<replaceable>строка</replaceable>)</function></literal>
+      <indexterm><primary>quote_ident</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <listitem>
+      <para>Оформляет переданную строку для использования в качестве идентификатора в SQL-операторе. При необходимости идентификатор заключается в кавычки (например, если он содержит символы, недопустимые в открытом виде, или буквы в разном регистре). Если переданная строка содержит кавычки, они дублируются.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <literal><function>decode_bytea(<replaceable>строка</replaceable>)</function></literal>
+      <indexterm><primary>decode_bytea</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <listitem>
+      <para>Возвращает неформатированные двоичные данные, представленные содержимым заданной строки, которая должна быть закодирована как <type>bytea</type>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <literal><function>encode_bytea(<replaceable>строка</replaceable>)</function></literal>
+      <indexterm><primary>encode_bytea</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <listitem>
+      <para>Возвращает закодированные в виде <type>bytea</type> двоичные данные, содержащиеся в переданной строке.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <literal><function>encode_array_literal(<replaceable>массив</replaceable>)</function></literal>
+      <indexterm><primary>encode_array_literal</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <term>
+      <literal><function>encode_array_literal(<replaceable>массив</replaceable>, <replaceable>разделитель</replaceable>)</function></literal>
+     </term>
+     <listitem>
+      <para>Возвращает содержимое указанного массива в виде строки в формате массива (см. <xref remap="4" linkend="arrays-input"/>). Возвращает значение аргумента неизменённым, если это не ссылка не массив. Разделитель элементов в строке массива по умолчанию — "<literal>, </literal>" (если разделитель не определён или undef).</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <literal><function>encode_typed_literal(<replaceable>значение</replaceable>, <replaceable>имя_типа</replaceable>)</function></literal>
+      <indexterm><primary>encode_typed_literal</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+      <listitem>
+       <para>Преобразует переменную Perl в значение типа данных, указанного во втором аргументе, и возвращает строковое представление этого значения. Корректно обрабатывает вложенные массивы и значения составных типов.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <literal><function>encode_array_constructor(<replaceable>массив</replaceable>)</function></literal>
+      <indexterm><primary>encode_array_constructor</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <listitem>
+      <para>Возвращает содержимое переданного массива в виде строки в формате конструктора массива (см. <xref remap="4" linkend="sql-syntax-array-constructors"/>). Отдельные значения заключаются в кавычки функцией <function>quote_nullable</function>. Возвращает значение аргумента, заключённое в кавычки функцией <function>quote_nullable</function>, если аргумент — не ссылка на массив.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <literal><function>looks_like_number(<replaceable>строка</replaceable>)</function></literal>
+      <indexterm><primary>looks_like_number</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <listitem>
+      <para>Возвращает значение true, если содержимое переданной строки похоже на число, по правилам Perl, и false в обратном случае. Возвращает undef для аргумента undef. Ведущие и замыкающие пробелы игнорируются. Строки <literal>Inf</literal> и <literal>Infinity</literal> считаются представляющими число (бесконечность).</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <literal><function>is_array_ref(<replaceable>аргумент</replaceable>)</function></literal>
+      <indexterm><primary>is_array_ref</primary> <secondary>в PL/Perl</secondary></indexterm>
+     </term>
+     <listitem>
+      <para>Возвращает значение true, если переданный аргумент можно воспринять как ссылку на массив, то есть это ссылка на <literal>ARRAY</literal> или <literal>&productname;::InServer::ARRAY</literal>. В противном случае возвращает false.</para>
+     </listitem>
+    </varlistentry>
+
+   </variablelist>
+  </sect2>
+ </sect1>
+
+ <sect1 id="plperl-global">
+  <title>Глобальные значения в PL/Perl</title>
+
+  <para>Вы можете использовать для хранения данных, включая ссылки на код, глобальный хеш <varname>%_SHARED</varname>. Эти данные будут сохраняться между вызовами функции на протяжении всего текущего сеанса.</para>
+
+  <para>Простой пример работы с разделяемыми данными: <programlisting>CREATE OR REPLACE FUNCTION set_var(name text, val text) RETURNS text AS $$
+    if ($_SHARED{$_[0]} = $_[1]) {
+        return 'ok';
+    } else {
+        return "cannot set shared variable $_[0] to $_[1]";
+    }
+$$ LANGUAGE plperl;
+
+CREATE OR REPLACE FUNCTION get_var(name text) RETURNS text AS $$
+    return $_SHARED{$_[0]};
+$$ LANGUAGE plperl;
+
+SELECT set_var('sample', 'Hello, PL/Perl!  How''s tricks?');
+SELECT get_var('sample');</programlisting></para>
+
+  <para>Это чуть более сложный пример, в котором используется ссылка на код: <programlisting>CREATE OR REPLACE FUNCTION myfuncs() RETURNS void AS $$
+    $_SHARED{myquote} = sub {
+        my $arg = shift;
+        $arg =~ s/(['\\])/\\$1/g;
+        return "'$arg'";
+    };
+$$ LANGUAGE plperl;
+
+SELECT myfuncs(); /* инициализация функции */
+
+/* Определение функции, использующей функцию заключения в кавычки */
+
+CREATE OR REPLACE FUNCTION use_quote(TEXT) RETURNS text AS $$
+    my $text_to_quote = shift;
+    my $qfunc = $_SHARED{myquote};
+    return &amp;$qfunc($text_to_quote);
+$$ LANGUAGE plperl;</programlisting> (Код выше можно было бы упростить до однострочной команды <literal>return $_SHARED{myquote}-&gt;($_[0]);</literal> в ущерб читаемости.)</para>
+
+  <para>По соображениям безопасности, PL/Perl выполняет функции, вызываемые некоторой ролью SQL, в отдельном интерпретаторе Perl, выделенном для этой роли. Это предотвращает случайное или злонамеренное влияние одного пользователя на поведение функций PL/Perl другого пользователя. В каждом интерпретаторе будет своё значение переменной <varname>%_SHARED</varname> и собственное глобальное состояние. Таким образом, две функции PL/Perl будут разделять одно значение <varname>%_SHARED</varname>, только если они выполняются одной ролью SQL. В приложении, выполняющем код в одном сеансе с разными ролями SQL (вызывающем функции <literal>SECURITY DEFINER</literal>, использующем команду <command>SET ROLE</command> и т. д.) может понадобиться явно предпринять дополнительные меры, чтобы функции на PL/Perl могли разделять данные через <varname>%_SHARED</varname>. Для этого сначала установите для функций, которые должны взаимодействовать, одного владельца, а затем задайте для них свойство <literal>SECURITY DEFINER</literal>. Разумеется, при этом нужно позаботиться о том, чтобы эти функции не могли сделать ничего непредусмотренного.</para>
+ </sect1>
+
+ <sect1 id="plperl-trusted">
+  <title>Доверенный и недоверенный PL/Perl</title>
+
+  <indexterm zone="plperl-trusted"><primary>доверенный</primary> <secondary>PL/Perl</secondary></indexterm>
+
+  <para>Обычно PL/Perl устанавливается в базу данных как <quote>доверенный</quote> язык программирования с именем <literal>plperl</literal>. При этом в целях безопасности определённые операции в Perl запрещаются. Вообще говоря, запрещаются все операции, взаимодействующие с окружением. В том числе, это операции с файлами, <literal>require</literal> и <literal>use</literal> (для внешних модулей). Поэтому функции на PL/Perl, в отличие от функций на C, никаким образом не могут взаимодействовать с внутренними механизмами сервера баз данных или обращаться к операционной системе с правами серверного процесса. Вследствие этого, использовать этот язык можно разрешить любому непривилегированному пользователю баз данных.</para>
+
+  <para>В следующем примере показана функция, которая не будет работать, потому что операции с файловой системы запрещены по соображениям безопасности: <programlisting>CREATE FUNCTION badfunc() RETURNS integer AS $$
+    my $tmpfile = "/tmp/badfile";
+    open my $fh, '&gt;', $tmpfile
+        or elog(ERROR, qq{could not open the file "$tmpfile": $!});
+    print $fh "Testing writing to a file\n";
+    close $fh or elog(ERROR, qq{could not close the file "$tmpfile": $!});
+    return 1;
+$$ LANGUAGE plperl;</programlisting> Создать эту функцию не удастся, так как при проверке её правильности будет обнаружено использование запрещённого оператора.</para>
+
+  <para>Иногда возникает желание написать на Perl код, функциональность которого не будет ограничиваться. Например, может потребоваться функция на Perl, которая будет посылать почту. Для таких потребностей PL/Perl также можно установить как <quote>недоверенный</quote> язык (обычно его называют <application>PL/PerlU</application><indexterm><primary>PL/PerlU</primary></indexterm>). В этом случае будут доступны все возможности языка Perl. Устанавливая язык, укажите имя <literal>plperlu</literal>, чтобы выбрать недоверенную вариацию PL/Perl.</para>
+
+  <para>Автор функции на <application>PL/PerlU</application> должен позаботиться о том, чтобы эту функцию нельзя было использовать не по назначению, так как она может делать всё, что может пользователь с правами администратора баз данных. Заметьте, что СУБД позволяет создавать функции на недоверенных языках только суперпользователям базы данных.</para>
+
+  <para>Если показанная выше функция будет создана суперпользователем, и при этом будет выбран язык <literal>plperlu</literal>, она выполнится успешно.</para>
+
+  <para>Таким же образом, в анонимном блоке кода на Perl разрешены абсолютно любые операции, если в качестве языка вместо <literal>plperl</literal> выбирается <literal>plperlu</literal>, но выполнять этот код должен суперпользователь.</para>
+
+  <note>
+   <para>Тогда как функции на <application>PL/Perl</application> исполняются отдельными интерпретаторами Perl для каждой роли SQL, все функции на <application>PL/PerlU</application>, вызываемые в рамках сеанса, исполняются в одном интерпретаторе Perl (отличном от тех, что исполняют функции <application>PL/Perl</application>). Благодаря этому, функции <application>PL/PerlU</application> могут свободно разделять общие данные, но между функциями <application>PL/Perl</application> и <application>PL/PerlU</application> взаимодействие невозможно.</para>
+  </note>
+
+  <note>
+   <para>Perl поддерживает работу нескольких интерпретаторов в одном процессе, только если он был собран с нужными флагами, а именно, с флагом <literal>usemultiplicity</literal> или с флагом <literal>useithreads</literal>. (В отсутствие веских причин использовать потоки предпочтительным является вариант <literal>usemultiplicity</literal>. Дополнительную информацию вы можете получить на странице man <citerefentry><refentrytitle>perlembed</refentrytitle></citerefentry>.) При использовании <application>PL/Perl</application> с версией Perl, собранной без этих флагов, в рамках сеанса можно будет запустить только один интерпретатор Perl, так что в сеансе будет возможно выполнять либо функции <application>PL/PerlU</application>, либо функции <application>PL/Perl</application> (и вызывать их должна одна роль SQL).</para>
+  </note>
+
+ </sect1>
+
+ <sect1 id="plperl-triggers">
+  <title>Триггеры на PL/Perl</title>
+
+  <para>PL/Perl можно использовать для написания триггерных функций. В триггерной функции хеш-массив <varname>$_TD</varname> содержит информацию о произошедшем событии триггера. <varname>$_TD</varname> — глобальная переменная, которая получает нужное локальное значение при каждом вызове триггера. Хеш-массив <varname>$_TD</varname> содержит следующие поля: <variablelist>
+    <varlistentry>
+     <term><literal>$_TD-&gt;{new}{foo}</literal></term>
+     <listitem>
+      <para>Новое значение столбца <literal>foo</literal></para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>$_TD-&gt;{old}{foo}</literal></term>
+     <listitem>
+      <para>Старое значение столбца <literal>foo</literal></para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>$_TD-&gt;{name}</literal></term>
+     <listitem>
+      <para>Имя вызываемого триггера</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>$_TD-&gt;{event}</literal></term>
+     <listitem>
+      <para>Событие триггера: <literal>INSERT</literal>, <literal>UPDATE</literal>, <literal>DELETE</literal>, <literal>TRUNCATE</literal> или <literal>UNKNOWN</literal></para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>$_TD-&gt;{when}</literal></term>
+     <listitem>
+      <para>Когда вызывается триггер: <literal>BEFORE</literal> (ДО), <literal>AFTER</literal> (ПОСЛЕ), <literal>INSTEAD OF</literal> (ВМЕСТО) или <literal>UNKNOWN</literal> (НЕИЗВЕСТНО)</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>$_TD-&gt;{level}</literal></term>
+     <listitem>
+      <para>Уровень триггера: <literal>ROW</literal> (СТРОКА), <literal>STATEMENT</literal> (ОПЕРАТОР) или <literal>UNKNOWN</literal> (НЕИЗВЕСТНЫЙ)</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>$_TD-&gt;{relid}</literal></term>
+     <listitem>
+      <para>OID таблицы, для которой сработал триггер</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>$_TD-&gt;{table_name}</literal></term>
+     <listitem>
+      <para>Имя таблицы, для которой сработал триггер</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>$_TD-&gt;{relname}</literal></term>
+     <listitem>
+      <para>Имя таблицы, для которой сработал триггер. Это обращение устарело и может быть ликвидировано в будущем выпуске. Используйте вместо него $_TD-&gt;{table_name}.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>$_TD-&gt;{table_schema}</literal></term>
+     <listitem>
+      <para>Имя схемы, содержащей таблицу, для которой сработал триггер</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>$_TD-&gt;{argc}</literal></term>
+     <listitem>
+      <para>Число аргументов в триггерной функции</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>@{$_TD-&gt;{args}}</literal></term>
+     <listitem>
+      <para>Аргументы триггерной функции. Не определено, если <literal>$_TD-&gt;{argc}</literal> равно 0.</para>
+     </listitem>
+    </varlistentry>
+
+   </variablelist></para>
+
+  <para>В триггерах уровня строки возможны следующие варианты возврата: <variablelist>
+    <varlistentry>
+     <term><literal>return;</literal></term>
+     <listitem>
+      <para>Выполнить операцию</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>"SKIP"</literal></term>
+     <listitem>
+      <para>Не выполнять операцию</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>"MODIFY"</literal></term>
+     <listitem>
+      <para>Указывает, что строка <literal>NEW</literal> была изменена триггерной функцией</para>
+     </listitem>
+    </varlistentry>
+   </variablelist></para>
+
+  <para>Следующий пример триггерной функции иллюстрирует описанные выше варианты: <programlisting>CREATE TABLE test (
+    i int,
+    v varchar
+);
+
+CREATE OR REPLACE FUNCTION valid_id() RETURNS trigger AS $$
+    if (($_TD-&gt;{new}{i} &gt;= 100) || ($_TD-&gt;{new}{i} &lt;= 0)) {
+        return "SKIP";    # пропустить команду INSERT/UPDATE
+    } elsif ($_TD-&gt;{new}{v} ne "immortal") {
+        $_TD-&gt;{new}{v} .= "(modified by trigger)";
+        return "MODIFY";  # изменить строку и выполнить команду INSERT/UPDATE
+    } else {
+        return;           # выполнить команду INSERT/UPDATE
+    }
+$$ LANGUAGE plperl;
+
+CREATE TRIGGER test_valid_id_trig
+    BEFORE INSERT OR UPDATE ON test
+    FOR EACH ROW EXECUTE PROCEDURE valid_id();</programlisting></para>
+ </sect1>
+
+ <sect1 id="plperl-event-triggers">
+  <title>Событийные триггеры на PL/Perl</title>
+
+  <para>PL/Perl можно использовать для написания функций событийных триггеров. В функции событийного триггера хеш-массив <varname>$_TD</varname> содержит информацию о произошедшем событии триггера. <varname>$_TD</varname> — глобальная переменная, которая получает нужное локальное значение при каждом вызове триггера. Хеш-массив <varname>$_TD</varname> содержит следующие поля: <variablelist>
+    <varlistentry>
+     <term><literal>$_TD-&gt;{event}</literal></term>
+     <listitem>
+      <para>Имя события, при котором срабатывает этот триггер.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>$_TD-&gt;{tag}</literal></term>
+     <listitem>
+      <para>Тег команды, для которой срабатывает этот триггер.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist></para>
+
+  <para>Возвращаемое значение триггерной процедуры игнорируется.</para>
+
+  <para>Следующий пример функции событийного триггера иллюстрирует описанное выше: <programlisting>CREATE OR REPLACE FUNCTION perlsnitch() RETURNS event_trigger AS $$
+  elog(NOTICE, "perlsnitch: " . $_TD-&gt;{event} . " " . $_TD-&gt;{tag} . " ");
+$$ LANGUAGE plperl;
+
+CREATE EVENT TRIGGER perl_a_snitch
+    ON ddl_command_start
+    EXECUTE PROCEDURE perlsnitch();</programlisting></para>
+ </sect1>
+
+ <sect1 id="plperl-under-the-hood">
+  <title>Внутренние особенности PL/Perl</title>
+
+ <sect2 id="plperl-config">
+  <title>Конфигурирование</title>
+
+  <para>В этом разделе описываются параметры конфигурации, влияющие на работу <application>PL/Perl</application>.</para>
+
+  <variablelist>
+
+     <varlistentry id="guc-plperl-on-init" xreflabel="plperl.on_init">
+      <term><varname>plperl.on_init</varname> (<type>string</type>) <indexterm><primary>параметр конфигурации <varname>plperl.on_init</varname></primary></indexterm></term>
+      <listitem>
+       <para>Задаёт код Perl, который будет выполняться при первой инициализации интерпретатора Perl, до того, как он получает специализацию <literal>plperl</literal> или <literal>plperlu</literal>. Когда этот код выполняется, функции SPI ещё не доступны. Если выполнение кода завершается ошибкой, инициализация интерпретатора прерывается и ошибка распространяется в вызывающий запрос, в результате чего текущая транзакция или подтранзакция прерывается.</para>
+       <para>Размер этого кода ограничивается одной строкой. Более объёмный код можно поместить в модуль и загрузить этот модуль в строке <literal>on_init</literal>. Например: <programlisting>plperl.on_init = 'require "plperlinit.pl"'
+plperl.on_init = 'use lib "/my/app"; use MyApp::PgInit;'</programlisting></para>
+       <para>Любые модули, загруженные в <literal>plperl.on_init</literal>, явно или неявно, будут доступны для использования в коде на языке <literal>plperl</literal>. Это может создать угрозу безопасности. Чтобы определить, какие модули были загружены, можно выполнить: <programlisting>DO 'elog(WARNING, join ", ", sort keys %INC)' LANGUAGE plperl;</programlisting></para>
+       <para>Если библиотека plperl включена в <xref linkend="guc-shared-preload-libraries"/>, инициализация произойдёт в главном процессе (postmaster) и в этом случае необходимо очень серьёзно оценить риск нарушения работоспособности этого процесса. Основной смысл использовать эту возможность в том, чтобы модули Perl, подключаемые в <literal>plperl.on_init</literal>, загружались только при запуске главного процесса, и это исключало бы издержки загрузки для отдельных сеансов. Однако, имейте в виду, что эти издержки исключаются только при загрузке в сеансе первого интерпретатора Perl &mdash; будь то PL/PerlU или PL/Perl для первой SQL-роли, вызывающей функцию на PL/Perl. Любые дополнительные интерпретаторы Perl, создаваемые в сеансе базы данных, должны будут выполнять <literal>plperl.on_init</literal> заново. Также учтите, что в Windows предварительная загрузка не даёт никакого выигрыша, так как интерпретатор Perl, созданный в главном процессе, не передаётся дочерним процессам.</para>
+       <para>Задать этот параметр можно только в <filename>postgresql.conf</filename> или в командной строке при запуске сервера.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-plperl-on-plperl-init" xreflabel="plperl.on_plperl_init">
+      <term><varname>plperl.on_plperl_init</varname> (<type>string</type>) <indexterm><primary>параметр конфигурации <varname>plperl.on_plperl_init</varname></primary></indexterm></term>
+      <term><varname>plperl.on_plperlu_init</varname> (<type>string</type>) <indexterm><primary>параметр конфигурации <varname>plperl.on_plperlu_init</varname></primary></indexterm></term>
+      <listitem>
+       <para>В этих параметрах задаётся код Perl, который будет выполняться в момент, когда интерпретатор Perl получает специализацию <literal>plperl</literal> или <literal>plperlu</literal>, соответственно. Это произойдёт, когда в рамках сеанса будет первый раз вызвана функция на PL/Perl или PL/PerlU, либо когда потребуется дополнительный интерпретатор при использовании другого языка или при вызове функции PL/Perl новой SQL-ролью. Этот код выполняется после инициализации, произведённой в <literal>plperl.on_init</literal>. Однако функции SPI в момент исполнения этого кода ещё не доступны. Код в <literal>plperl.on_plperl_init</literal> запускается после того, как интерпретатор <quote>помещается под замок</quote>, так что в нём разрешаются только доверенные операции.</para>
+       <para>Если этот код завершается ошибкой, инициализация прерывается и ошибка распространяется в вызывающий запрос, что приводит к прерыванию текущей транзакции или подтранзакции. При этом любые действия, уже произведённые в Perl, не будут отменены; однако использоваться этот интерпретатор больше не будет. При следующей попытке использовать этот язык система попытается заново инициализировать свежий интерпретатор Perl.</para>
+       <para>Изменять эти параметры разрешено только суперпользователям. Хотя изменить их можно в рамках сеанса, такие изменения не повлияют на работу интерпретаторов Perl, задействованных для выполнения функций ранее.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="guc-plperl-use-strict" xreflabel="plperl.use_strict">
+      <term><varname>plperl.use_strict</varname> (<type>boolean</type>) <indexterm><primary>параметр конфигурации <varname>plperl.use_strict</varname></primary></indexterm></term>
+      <listitem>
+       <para>При значении, равном true, последующая компиляция функций PL/Perl будет выполняться с включённым указанием <literal>strict</literal>. Этот параметр не влияет на функции, уже скомпилированные в текущем сеансе.</para>
+      </listitem>
+     </varlistentry>
+
+  </variablelist>
+</sect2>
+
+ <sect2 id="plperl-missing">
+  <title>Ограничения и недостающие возможности</title>
+
+  <para>Следующие возможности в настоящее время в PL/Perl отсутствуют, но их реализация будет желанной доработкой. <itemizedlist>
+    <listitem>
+     <para>Функции на PL/Perl не могут напрямую вызывать друг друга.</para>
+    </listitem>
+
+    <listitem>
+     <para>SPI ещё не полностью реализован.</para>
+    </listitem>
+
+    <listitem>
+     <para>Если вы выбираете очень большие наборы данных, используя <literal>spi_exec_query</literal>, вы должны понимать, что все эти данные загружаются в память. Вы можете избежать этого, используя пару функций <literal>spi_query</literal>/<literal>spi_fetchrow</literal>, как показано ранее.</para>
+     <para>Похожая проблема возникает, если функция, возвращающая множество, передаёт в &productname; большое число строк, выполняя <literal>return</literal>. Этой проблемы так же можно избежать, выполняя для каждой возвращаемой строки <literal>return_next</literal>, как показано ранее.</para>
+    </listitem>
+
+     <listitem>
+      <para>Когда сеанс завершается штатно, не по причине критической ошибки, в Perl выполняются все блоки <literal>END</literal>, которые были определены. Никакие другие действия в настоящее время не выполняются. В частности, буферы файлов автоматически не сбрасываются и объекты автоматически не уничтожаются.</para>
+     </listitem>
+   </itemizedlist></para>
+ </sect2>
+
+ </sect1>
+
+</chapter>

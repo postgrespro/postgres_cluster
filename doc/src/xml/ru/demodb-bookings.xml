@@ -1,0 +1,831 @@
+<!-- doc/src/xml/demodb-bookings.xml -->
+
+<appendix id="demodb-bookings">
+ <title>Демонстрационная база данных <quote>Авиаперевозки</quote></title>
+
+ <para>Представляем вам демонстрационную базу данных для <productname>PostgreSQL</productname>. В этом приложении к документации описана схема данных, состоящая из восьми таблиц и нескольких представлений. В качестве предметной области выбраны авиаперевозки по России. Базу данных можно загрузить c <ulink url="https://postgrespro.ru">нашего сайта</ulink>, см. <xref remap="4" linkend="demodb-bookings-installation"/>.</para>
+
+ <para>
+   <figure>
+    <title>Воздушное сообщение в России</title>
+    <graphic scalefit="1" width="95%" fileref="demodb-bookings-airlines.png"/>
+   </figure>
+ </para>
+
+ <para>База данных может использоваться, например: <itemizedlist>
+   <listitem>
+    <para>для самостоятельного изучения языка запросов <acronym>SQL</acronym>;</para>
+   </listitem>
+   <listitem>
+    <para>для подготовки книг, пособий и учебных курсов по языку <acronym>SQL</acronym>;</para>
+   </listitem>
+   <listitem>
+    <para>для демонстрации возможностей <productname>&productname;</productname> в статьях и заметках.</para>
+   </listitem>
+  </itemizedlist></para>
+
+ <para>При разработке демонстрационной базы данных мы преследовали несколько целей: <itemizedlist>
+   <listitem>
+    <para>схема данных должна быть достаточно простой, чтобы быть понятной без особых пояснений;</para>
+   </listitem>
+   <listitem>
+    <para>в то же время схема данных должна быть достаточно сложной, чтобы позволять строить осмысленные запросы;</para>
+   </listitem>
+   <listitem>
+    <para>база данных должна быть наполнена данными, напоминающими реальные, с которыми будет интересно работать.</para>
+   </listitem>
+  </itemizedlist></para>
+
+ <para>Демонстрационная база данных распространяется под <ulink url="https://www.postgresql.org/about/licence/">лицензией PostgreSQL</ulink>.</para>
+
+ <para>Свои замечания и пожелания направляйте нам по адресу <ulink url="mailto:edu@postgrespro.ru">edu@postgrespro.ru</ulink>.</para>
+
+ <sect1 id="demodb-bookings-installation">
+  <title>Установка</title>
+
+  <para>Демонстрационная база данных доступна на <ulink url="https://edu.postgrespro.ru">edu.postgrespro.ru</ulink> в трёх версиях, которые отличаются только объёмом данных: <itemizedlist>
+   <listitem>
+    <para><ulink url="https://edu.postgrespro.ru/demo_small.zip">demo_small.zip</ulink> (21 МБ) &mdash; данные по полётам за один месяц (размер БД 265 МБ);</para>
+   </listitem>
+   <listitem>
+    <para><ulink url="https://edu.postgrespro.ru/demo_medium.zip">demo_medium.zip</ulink> (62 МБ) &mdash; данные по полётам за три месяца (размер БД 666 МБ);</para>
+   </listitem>
+   <listitem>
+    <para><ulink url="https://edu.postgrespro.ru/demo_big.zip">demo_big.zip</ulink> (232 МБ) &mdash; данные по полётам за год (размер БД 2502 МБ).</para>
+   </listitem>
+  </itemizedlist></para>
+
+  <para>Небольшая база годится для того, чтобы писать запросы, и при этом не займёт много места на диске. База большого размера позволит почувствовать, как ведут себя запросы на больших объёмах данных, и задуматься об оптимизации.</para>
+
+  <para>Файлы содержат <acronym>SQL</acronym>-скрипт, создающий базу данных <literal>demo</literal> и наполняющий её данными (фактически, это резервная копия, созданная утилитой <application>pg_dump</application>). Обратите внимание, что при установке существующая база данных <literal>demo</literal> будет удалена и создана заново! Владельцем базы данных <literal>demo</literal> станет пользователь СУБД, выполнявший скрипт.</para>
+ </sect1>
+
+ <sect1>
+  <title>Диаграмма схемы данных</title>
+
+  <para>
+   <figure>
+    <title>Диаграмма схемы Bookings</title>
+    <graphic scalefit="1" width="95%" fileref="demodb-bookings-schema.svg"/>
+   </figure>
+  </para>
+ </sect1>
+
+ <sect1>
+  <title>Описание схемы</title>
+
+  <para>Основной сущностью является бронирование (<structname>bookings</structname>).</para>
+
+  <para>В одно бронирование можно включить несколько пассажиров, каждому из которых выписывается отдельный билет (<structname>tickets</structname>). Билет имеет уникальный номер и содержит информацию о пассажире. Как таковой пассажир не является отдельной сущностью. Как имя, так и номер документа пассажира могут меняться с течением времени, так что невозможно однозначно найти все билеты одного человека; для простоты можно считать, что все пассажиры уникальны.</para>
+
+  <para>Билет включает один или несколько перелетов (<structname>ticket_flights</structname>). Несколько перелетов могут включаться в билет в случаях, когда нет прямого рейса, соединяющего пункты отправления и назначения (полет с пересадками), либо когда билет взят «туда и обратно». В схеме данных нет жёсткого ограничения, но предполагается, что все билеты в одном бронировании имеют одинаковый набор перелетов.</para>
+
+  <para>Каждый рейс (<structname>flights</structname>) следует из одного аэропорта (<structname>airports</structname>) в другой. Рейсы с одним номером имеют одинаковые пункты вылета и назначения, но будут отличаться датой отправления.</para>
+
+  <para>При регистрации на рейс пассажиру выдаётся посадочный талон (<structname>boarding_passes</structname>), в котором указано место в самолете. Пассажир может зарегистрироваться только на тот рейс, который есть у него в билете. Комбинация рейса и места в самолете должна быть уникальной, чтобы не допустить выдачу двух посадочных талонов на одно место.</para>
+
+  <para>Количество мест (<structname>seats</structname>) в самолете и их распределение по классам обслуживания зависит от модели самолета (<structname>aircrafts</structname>), выполняющего рейс. Предполагается, что каждая модель самолета имеет только одну компоновку салона. Схема данных не контролирует, что места в посадочных талонах соответствуют имеющимся в самолете (такая проверка может быть сделана с использованием табличных триггеров или в приложении).</para>
+
+ </sect1>
+
+
+ <sect1>
+  <title>Объекты схемы</title>
+
+  <sect2>
+   <title>Список отношений</title>
+
+   <para>
+    <screen>       Имя       |      Тип      |  Small | Medium |   Big  |     Описание
+-----------------+---------------+--------+--------+--------+-------------------
+ aircrafts       | таблица       |  16 kB |  16 kB |  16 kB | Самолеты
+ airports        | таблица       |  48 kB |  48 kB |  48 kB | Аэропорты
+ boarding_passes | таблица       |  31 MB | 102 MB | 427 MB | Посадочные талоны
+ bookings        | таблица       |  13 MB |  30 MB | 105 MB | Бронирования
+ flights         | таблица       |   3 MB |   6 MB |  19 MB | Рейсы
+ flights_v       | представление |   0 kb |   0 kB |   0 kB | Рейсы
+ routes          | мат. предст.  | 136 kB | 136 kB | 136 kB | Маршруты
+ seats           | таблица       |  88 kB |  88 kB |  88 kB | Места
+ ticket_flights  | таблица       |  64 MB | 145 MB | 516 MB | Перелеты
+ tickets         | таблица       |  47 MB | 107 MB | 381 MB | Билеты
+    </screen>
+   </para>
+  </sect2>
+
+  <sect2>
+   <title>Таблица <structname>bookings.aircrafts</structname></title>
+
+   <para>Каждая модель воздушного судна идентифицируется своим трёхзначным кодом (<structfield>aircraft_code</structfield>). Указывается также название модели (<structfield>model</structfield>) и максимальная дальность полета в километрах (<structfield>range</structfield>).</para>
+
+   <para>
+    <screen>    Столбец    |   Тип   | Модификаторы |             Описание
+---------------+---------+--------------+-----------------------------------
+ aircraft_code | char(3) | NOT NULL     | Код самолета, IATA
+ model         | text    | NOT NULL     | Модель самолета
+ range         | integer | NOT NULL     | Максимальная дальность полета, км
+Индексы:
+    PRIMARY KEY, btree (aircraft_code)
+Ограничения-проверки:
+    CHECK (range &gt; 0)
+Ссылки извне:
+    TABLE "flights" FOREIGN KEY (aircraft_code)
+        REFERENCES aircrafts(aircraft_code)
+    TABLE "seats" FOREIGN KEY (aircraft_code)
+        REFERENCES aircrafts(aircraft_code) ON DELETE CASCADE
+    </screen>
+   </para>
+  </sect2>
+
+  <sect2>
+   <title>Таблица <structname>bookings.airports</structname></title>
+
+   <para>Аэропорт идентифицируется трехбуквенным кодом (<structfield>airport_code</structfield>) и имеет своё имя (<structfield>airport_name</structfield>).</para>
+
+   <para>Для города не предусмотрено отдельной сущности, но название (<structfield>city</structfield>) указывается и может служить для того, чтобы определить аэропорты одного города. Также указывается широта (<structfield>latitude</structfield>), долгота (<structfield>longitude</structfield>) и часовой пояс (<structfield>timezone</structfield>).</para>
+
+   <para>
+    <screen>   Столбец    |   Тип   | Модификаторы |           Описание
+--------------+---------+--------------+-------------------------------
+ airport_code | char(3) | NOT NULL     | Код аэропорта
+ airport_name | text    | NOT NULL     | Название аэропорта
+ city         | text    | NOT NULL     | Город
+ longitude    | float   | NOT NULL     | Координаты аэропорта: долгота
+ latitude     | float   | NOT NULL     | Координаты аэропорта: широта
+ timezone     | text    | NOT NULL     | Часовой пояс аэропорта
+Индексы:
+    PRIMARY KEY, btree (airport_code)
+Ссылки извне:
+    TABLE "flights" FOREIGN KEY (arrival_airport)
+        REFERENCES airports(airport_code)
+    TABLE "flights" FOREIGN KEY (departure_airport)
+        REFERENCES airports(airport_code)
+    </screen>
+   </para>
+  </sect2>
+
+
+  <sect2>
+   <title>Таблица <structname>bookings.boarding_passes</structname></title>
+
+   <para>При регистрации на рейс, которая возможна за сутки до плановой даты отправления, пассажиру выдаётся посадочный талон. Он идентифицируется также, как и перелёт — номером билета и номером рейса.</para>
+
+   <para>Посадочным талонам присваиваются последовательные номера (<structfield>boarding_no</structfield>) в порядке регистрации пассажиров на рейс (этот номер будет уникальным только в пределах данного рейса). В посадочном талоне указывается номер места (<structfield>seat_no</structfield>).</para>
+
+   <para>
+    <screen>   Столбец   |    Тип     | Модификаторы |         Описание
+-------------+------------+--------------+--------------------------
+ ticket_no   | char(13)   | NOT NULL     | Номер билета
+ flight_id   | integer    | NOT NULL     | Идентификатор рейса
+ boarding_no | integer    | NOT NULL     | Номер посадочного талона
+ seat_no     | varchar(4) | NOT NULL     | Номер места
+Индексы:
+    PRIMARY KEY, btree (ticket_no, flight_id)
+    UNIQUE CONSTRAINT, btree (flight_id, boarding_no)
+    UNIQUE CONSTRAINT, btree (flight_id, seat_no)
+Ограничения внешнего ключа:
+    FOREIGN KEY (ticket_no, flight_id)
+        REFERENCES ticket_flights(ticket_no, flight_id)
+    </screen>
+   </para>
+  </sect2>
+
+  <sect2>
+   <title>Таблица <structname>bookings.bookings</structname></title>
+
+   <para>Пассажир заранее (<structfield>book_date</structfield>, максимум за месяц до рейса) бронирует билет себе и, возможно, нескольким другим пассажирам. Бронирование идентифицируется номером (<structfield>book_ref</structfield>, шестизначная комбинация букв и цифр).</para>
+
+   <para>Поле <structfield>total_amount</structfield> хранит общую стоимость включённых в бронирование перелетов всех пассажиров.</para>
+
+   <para>
+    <screen>   Столбец    |      Тип      | Модификаторы |         Описание
+--------------+---------------+--------------+---------------------------
+ book_ref     | char(6)       | NOT NULL     | Номер бронирования
+ book_date    | timestamptz   | NOT NULL     | Дата бронирования
+ total_amount | numeric(10,2) | NOT NULL     | Полная сумма бронирования
+Индексы:
+    PRIMARY KEY, btree (book_ref)
+Ссылки извне:
+    TABLE "tickets" FOREIGN KEY (book_ref) REFERENCES bookings(book_ref)
+    </screen>
+   </para>
+  </sect2>
+
+  <sect2>
+   <title>Таблица <structname>bookings.flights</structname></title>
+
+   <para>Естественный ключ таблицы рейсов состоит из двух полей — номера рейса (<structfield>flight_no</structfield>) и даты отправления (<structfield>scheduled_departure</structfield>). Чтобы сделать внешние ключи на эту таблицу компактнее, в качестве первичного используется суррогатный ключ (<structfield>flight_id</structfield>).</para>
+
+   <para>Рейс всегда соединяет две точки — аэропорты вылета (<structfield>departure_airport</structfield>) и прибытия (<structfield>arrival_airport</structfield>). Такое понятие, как «рейс с пересадками» отсутствует: если из одного аэропорта до другого нет прямого рейса, в билет просто включаются несколько необходимых рейсов.</para>
+
+   <para>У каждого рейса есть запланированные дата и время вылета (<structfield>scheduled_departure</structfield>) и прибытия (<structfield>scheduled_arrival</structfield>). Реальные время вылета (<structfield>actual_departure</structfield>) и прибытия (<structfield>actual_arrival</structfield>) могут отличаться: обычно не сильно, но иногда и на несколько часов, если рейс задержан.</para>
+
+   <para>Статус рейса (<structfield>status</structfield>) может принимать одно из следующих значений: <variablelist>
+      <varlistentry>
+       <term>
+        <literal>Scheduled</literal>
+       </term>
+       <listitem>
+        <para>Рейс доступен для бронирования. Это происходит за месяц до плановой даты вылета; до этого запись о рейсе не существует в базе данных.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term>
+        <literal>On Time</literal>
+       </term>
+       <listitem>
+        <para>Рейс доступен для регистрации (за сутки до плановой даты вылета) и не задержан.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term>
+        <literal>Delayed</literal>
+       </term>
+       <listitem>
+        <para>Рейс доступен для регистрации (за сутки до плановой даты вылета), но задержан.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term>
+        <literal>Departed</literal>
+       </term>
+       <listitem>
+        <para>Самолет уже вылетел и находится в воздухе.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term>
+        <literal>Arrived</literal>
+       </term>
+       <listitem>
+        <para>Самолет прибыл в пункт назначения.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term>
+        <literal>Cancelled</literal>
+       </term>
+       <listitem>
+        <para>Рейс отменён.</para>
+       </listitem>
+      </varlistentry>
+     </variablelist></para>
+
+   <para>
+    <screen>       Столбец       |     Тип     | Модификаторы |          Описание
+---------------------+-------------+--------------+-----------------------------
+ flight_id           | serial      | NOT NULL     | Идентификатор рейса
+ flight_no           | char(6)     | NOT NULL     | Номер рейса
+ scheduled_departure | timestamptz | NOT NULL     | Время вылета по расписанию
+ scheduled_arrival   | timestamptz | NOT NULL     | Время прилёта по расписанию
+ departure_airport   | char(3)     | NOT NULL     | Аэропорт отправления
+ arrival_airport     | char(3)     | NOT NULL     | Аэропорт прибытия
+ status              | varchar(20) | NOT NULL     | Статус рейса
+ aircraft_code       | char(3)     | NOT NULL     | Код самолета, IATA
+ actual_departure    | timestamptz |              | Фактическое время вылета
+ actual_arrival      | timestamptz |              | Фактическое время прилёта
+Индексы:
+    PRIMARY KEY, btree (flight_id)
+    UNIQUE CONSTRAINT, btree (flight_no, scheduled_departure)
+Ограничения-проверки:
+    CHECK (scheduled_arrival &gt; scheduled_departure)
+    CHECK ((actual_arrival IS NULL)
+       OR  ((actual_departure IS NOT NULL AND actual_arrival IS NOT NULL)
+            AND (actual_arrival &gt; actual_departure)))
+    CHECK (status IN ('On Time', 'Delayed', 'Departed',
+                       'Arrived', 'Scheduled', 'Cancelled'))
+Ограничения внешнего ключа:
+    FOREIGN KEY (aircraft_code)
+        REFERENCES aircrafts(aircraft_code)
+    FOREIGN KEY (arrival_airport)
+        REFERENCES airports(airport_code)
+    FOREIGN KEY (departure_airport)
+        REFERENCES airports(airport_code)
+Ссылки извне:
+    TABLE "ticket_flights" FOREIGN KEY (flight_id)
+    </screen>
+   </para>
+  </sect2>
+
+  <sect2>
+   <title>Таблица <structname>bookings.seats</structname></title>
+
+   <para>Места определяют схему салона каждой модели. Каждое место определяется своим номером (<structfield>seat_no</structfield>) и имеет закреплённый за ним класс обслуживания (<structfield>fare_conditions</structfield>) — <literal>Economy</literal>, <literal>Comfort</literal> или <literal>Business</literal>.</para>
+
+   <para>
+    <screen>     Столбец     |     Тип     | Модификаторы |      Описание
+-----------------+-------------+--------------+--------------------
+ aircraft_code   | char(3)     | NOT NULL     | Код самолета, IATA
+ seat_no         | varchar(4)  | NOT NULL     | Номер места
+ fare_conditions | varchar(10) | NOT NULL     | Класс обслуживания
+Индексы:
+    PRIMARY KEY, btree (aircraft_code, seat_no)
+Ограничения-проверки:
+    CHECK (fare_conditions IN ('Economy', 'Comfort', 'Business'))
+Ограничения внешнего ключа:
+    FOREIGN KEY (aircraft_code)
+        REFERENCES aircrafts(aircraft_code) ON DELETE CASCADE
+    </screen>
+   </para>
+  </sect2>
+
+  <sect2>
+   <title>Таблица <structname>bookings.ticket_flights</structname></title>
+
+   <para>Перелёт соединяет билет с рейсом и идентифицируется их номерами.</para>
+
+   <para>Для каждого перелета указываются его стоимость (<structfield>amount</structfield>) и класс обслуживания (<structfield>fare_conditions</structfield>).</para>
+
+   <para>
+    <screen>     Столбец     |      Тип      | Модификаторы |      Описание
+-----------------+---------------+--------------+---------------------
+ ticket_no       | char(13)      | NOT NULL     | Номер билета
+ flight_id       | integer       | NOT NULL     | Идентификатор рейса
+ fare_conditions | varchar(10)   | NOT NULL     | Класс обслуживания
+ amount          | numeric(10,2) | NOT NULL     | Стоимость перелета
+Индексы:
+    PRIMARY KEY, btree (ticket_no, flight_id)
+Ограничения-проверки:
+    CHECK (amount &gt;= 0)
+    CHECK (fare_conditions IN ('Economy', 'Comfort', 'Business'))
+Ограничения внешнего ключа:
+    FOREIGN KEY (flight_id) REFERENCES flights(flight_id)
+    FOREIGN KEY (ticket_no) REFERENCES tickets(ticket_no)
+Ссылки извне:
+    TABLE "boarding_passes" FOREIGN KEY (ticket_no, flight_id)
+        REFERENCES ticket_flights(ticket_no, flight_id)
+    </screen>
+   </para>
+  </sect2>
+
+  <sect2>
+   <title>Таблица <structname>bookings.tickets</structname></title>
+
+   <para>Билет имеет уникальный номер (<structfield>ticket_no</structfield>), состоящий из 13 цифр.</para>
+
+   <para>Билет содержит идентификатор пассажира (<structfield>passenger_id</structfield>) — номер документа, удостоверяющего личность, — его фамилию и имя (<structfield>passenger_name</structfield>) и контактную информацию (<structfield>contact_data</structfield>).</para>
+
+   <para>Ни идентификатор пассажира, ни имя не являются постоянными (можно поменять паспорт, можно сменить фамилию), поэтому однозначно найти все билеты одного и того же пассажира невозможно.</para>
+
+   <para>
+    <screen>    Столбец     |     Тип     | Модификаторы |          Описание
+----------------+-------------+--------------+-----------------------------
+ ticket_no      | char(13)    | NOT NULL     | Номер билета
+ book_ref       | char(6)     | NOT NULL     | Номер бронирования
+ passenger_id   | varchar(20) | NOT NULL     | Идентификатор пассажира
+ passenger_name | text        | NOT NULL     | Имя пассажира
+ contact_data   | jsonb       |              | Контактные данные пассажира
+Индексы:
+    PRIMARY KEY, btree (ticket_no)
+Ограничения внешнего ключа:
+    FOREIGN KEY (book_ref) REFERENCES bookings(book_ref)
+Ссылки извне:
+    TABLE "ticket_flights" FOREIGN KEY (ticket_no) REFERENCES tickets(ticket_no)
+     </screen>
+   </para>
+  </sect2>
+
+  <sect2>
+   <title>Представление <structname>bookings.flights_v</structname></title>
+
+   <para>Над таблицей <structname>flights_v</structname> создано представление <structname>flights</structname>, содержащее дополнительную информацию: <itemizedlist>
+     <listitem>
+      <para>расшифровку данных об аэропорте вылета &mdash; <structfield>departure_airport</structfield>, <structfield>departure_airport_name</structfield>, <structfield>departure_city</structfield></para>
+     </listitem>
+     <listitem>
+      <para>расшифровку данных об аэропорте прибытия &mdash; <structfield>arrival_airport</structfield>, <structfield>arrival_airport_name</structfield>, <structfield>arrival_city</structfield></para>
+     </listitem>
+     <listitem>
+      <para>местное время вылета &mdash; <structfield>scheduled_departure_local</structfield>, <structfield>actual_departure_local</structfield></para>
+     </listitem>
+     <listitem>
+      <para>местное время прибытия &mdash; <structfield>scheduled_arrival_local</structfield>, <structfield>actual_arrival_local</structfield></para>
+     </listitem>
+     <listitem>
+      <para>продолжительность полета &mdash; <structfield>scheduled_duration</structfield>, <structfield>actual_duration</structfield>.</para>
+     </listitem>
+    </itemizedlist></para>
+
+   <para>
+    <screen>          Столбец          |     Тип     |              Описание
+---------------------------+-------------+--------------------------------------
+ flight_id                 | integer     | Идентификатор рейса
+ flight_no                 | char(6)     | Номер рейса
+ scheduled_departure       | timestamptz | Время вылета по расписанию
+ scheduled_departure_local | timestamp   | Время вылета по расписанию,
+                           |             | местное время в пункте отправления
+ scheduled_arrival         | timestamptz | Время прилёта по расписанию
+ scheduled_arrival_local   | timestamp   | Время прилёта по расписанию,
+                           |             | местное время в пункте прибытия
+ scheduled_duration        | interval    | Планируемая продолжительность полета
+ departure_airport         | char(3)     | Код аэропорта отправления
+ departure_airport_name    | text        | Название аэропорта отправления
+ departure_city            | text        | Город отправления
+ arrival_airport           | char(3)     | Код аэропорта прибытия
+ arrival_airport_name      | text        | Название аэропорта прибытия
+ arrival_city              | text        | Город прибытия
+ status                    | varchar(20) | Статус рейса
+ aircraft_code             | char(3)     | Код самолета, IATA
+ actual_departure          | timestamptz | Фактическое время вылета
+ actual_departure_local    | timestamp   | Фактическое время вылета,
+                           |             | местное время в пункте отправления
+ actual_arrival            | timestamptz | Фактическое время прилёта
+ actual_arrival_local      | timestamp   | Фактическое время прилёта,
+                           |             | местное время в пункте прибытия
+ actual_duration           | interval    | Фактическая продолжительность полета
+    </screen>
+   </para>
+  </sect2>
+
+  <sect2>
+   <title>Материализованное представление <structname>bookings.routes</structname></title>
+
+   <para>Таблица рейсов (<structname>bookings.flights</structname>) содержит избыточность: из неё можно было бы выделить информацию о маршруте (номер рейса, аэропорты отправления и назначения), которая не зависит от конкретных дат рейсов.</para>
+
+   <para>
+   </para>
+
+   <para>Именно такая информация и составляет материализованное представление <structname>routes</structname>.</para>
+
+   <para>
+    <screen>        Столбец         |    Тип    |              Описание
+------------------------+-----------+-------------------------------------
+ flight_no              | char(6)   | Номер рейса
+ departure_airport      | char(3)   | Код аэропорта отправления
+ departure_airport_name | text      | Название аэропорта отправления
+ departure_city         | text      | Город отправления
+ arrival_airport        | char(3)   | Код аэропорта прибытия
+ arrival_airport_name   | text      | Название аэропорта прибытия
+ arrival_city           | text      | Город прибытия
+ aircraft_code          | char(3)   | Код самолета, IATA
+ duration               | interval  | Продолжительность полёта
+ days_of_week           | integer[] | Дни недели, когда выполняются рейсы
+    </screen>
+   </para>
+  </sect2>
+
+  <sect2>
+   <title>Функция <function>now</function></title>
+
+   <para>Демонстрационная база содержит временной <quote>срез» </quote> данных &mdash; так, как будто в некоторый момент была сделана резервная копия реальной системы. Например, если некоторый рейс имеет статус <literal>Departed</literal>, это означает, что в момент резервного копирования самолет вылетел и находился в воздухе.</para>
+
+   <para>Позиция <quote>среза</quote> сохранена в функции <function>bookings.now()</function> function. Ей можно пользоваться в запросах там, где в обычной жизни использовалась бы функция <function>now()</function>.</para>
+
+   <para>Кроме того, значение этой функции определяет версию демонстрационной базы данных. Актуальная версия на текущий момент — от 13.10.2016.</para>
+  </sect2>
+ </sect1>
+
+ <sect1>
+  <title>Использование</title>
+
+  <sect2>
+   <title>Схема <structname>bookings</structname></title>
+
+   <para>Все объекты демонстрационной базы данных находятся в схеме <structname>bookings</structname>. Это означает, что при обращении к объектам вам необходимо либо явно указывать имя схемы (например: <structname>bookings.flights</structname>), либо предварительно изменить конфигурационный параметр <varname>search_path</varname> (например: <literal>SET search_path = bookings, public;</literal>).</para>
+
+   <para>Однако для функции <function>bookings.now</function> в любом случае необходимо явно указывать схему, чтобы отличать её от стандартной функции <function>now</function>.</para>
+  </sect2>
+
+
+  <sect2>
+   <title>Примеры запросов</title>
+
+   <para>Чтобы лучше познакомиться с содержимым демонстрационной базы данных, посмотрим на результаты нескольких простых запросов.</para>
+
+   <para>Результаты, представленные ниже, были получены для версии с небольшой базой данных (demo_small) от 13 октября 2016. Если в вашей системе запросы выдают другие данные, проверьте версию демонстрационной базы (функция <function>bookings.now</function>). Незначительные отклонения могут быть связаны с местным временем, отличным от московского, и настройками локализации.</para>
+
+   <para>Все рейсы выполняются несколькими типами самолетов: <programlisting>SELECT * FROM aircrafts;
+    </programlisting> <screen>
+ aircraft_code |        model        | range
+---------------+---------------------+-------
+ 773           | Boeing 777-300      | 11100
+ 763           | Boeing 767-300      |  7900
+ SU9           | Sukhoi SuperJet-100 |  3000
+ 320           | Airbus A320-200     |  5700
+ 321           | Airbus A321-200     |  5600
+ 319           | Airbus A319-100     |  6700
+ 733           | Boeing 737-300      |  4200
+ CN1           | Cessna 208 Caravan  |  1200
+ CR2           | Bombardier CRJ-200  |  2700
+(9 rows)
+    </screen></para>
+
+   <para>Для каждого типа самолета поддерживается список мест в салоне. Например, вот где можно разместиться в небольшом самолете Cessna 208 Caravan: <programlisting>SELECT   a.aircraft_code,
+         a.model,
+         s.seat_no,
+         s.fare_conditions
+FROM     aircrafts a
+         JOIN seats s ON a.aircraft_code = s.aircraft_code
+WHERE    a.model = 'Cessna 208 Caravan'
+ORDER BY s.seat_no;
+    </programlisting> <screen>
+ aircraft_code |       model        | seat_no | fare_conditions
+---------------+--------------------+---------+-----------------
+ CN1           | Cessna 208 Caravan | 1A      | Economy
+ CN1           | Cessna 208 Caravan | 1B      | Economy
+ CN1           | Cessna 208 Caravan | 2A      | Economy
+ CN1           | Cessna 208 Caravan | 2B      | Economy
+ CN1           | Cessna 208 Caravan | 3A      | Economy
+ CN1           | Cessna 208 Caravan | 3B      | Economy
+ CN1           | Cessna 208 Caravan | 4A      | Economy
+ CN1           | Cessna 208 Caravan | 4B      | Economy
+ CN1           | Cessna 208 Caravan | 5A      | Economy
+ CN1           | Cessna 208 Caravan | 5B      | Economy
+ CN1           | Cessna 208 Caravan | 6A      | Economy
+ CN1           | Cessna 208 Caravan | 6B      | Economy
+(12 rows)
+    </screen></para>
+
+   <para>Самолеты большего размера имеют больше посадочных мест с разными классами обслуживания: <programlisting>SELECT   s2.aircraft_code,
+         string_agg (s2.fare_conditions || '(' || s2.num::text || ')',
+                     ', ') as fare_conditions
+FROM     (
+          SELECT   s.aircraft_code, s.fare_conditions, count(*) as num
+          FROM     seats s
+          GROUP BY s.aircraft_code, s.fare_conditions
+          ORDER BY s.aircraft_code, s.fare_conditions
+         ) s2
+GROUP BY s2.aircraft_code
+ORDER BY s2.aircraft_code;
+    </programlisting> <screen>
+ aircraft_code |             fare_conditions
+---------------+-----------------------------------------
+ 319           | Business(20), Economy(96)
+ 320           | Business(20), Economy(120)
+ 321           | Business(28), Economy(142)
+ 733           | Business(12), Economy(118)
+ 763           | Business(30), Economy(192)
+ 773           | Business(30), Comfort(48), Economy(324)
+ CN1           | Economy(12)
+ CR2           | Economy(50)
+ SU9           | Business(12), Economy(85)
+(9 rows)
+    </screen></para>
+
+   <para>База данных содержит список аэропортов практически всех крупных городов России. В большинстве городов есть только один аэропорт. Исключение составляют: <programlisting>SELECT   a.airport_code as code,
+         a.airport_name,
+         a.city,
+         a.longitude,
+         a.latitude,
+         a.timezone
+FROM     airports a
+WHERE    a.city IN (
+            SELECT   aa.city
+            FROM     airports aa
+            GROUP BY aa.city
+            HAVING   COUNT(*) &gt; 1
+         )
+ORDER BY a.city, a.airport_code;
+    </programlisting> <screen>
+ code |    airport_name     |   city    | longitude | latitude  |   timezone
+------+---------------------+-----------+-----------+-----------+---------------
+ DME  | Домодедово          | Москва    | 37.906111 | 55.408611 | Europe/Moscow
+ SVO  | Шереметьево         | Москва    | 37.414589 | 55.972642 | Europe/Moscow
+ VKO  | Внуково             | Москва    | 37.261486 | 55.591531 | Europe/Moscow
+ ULV  | Баратаевка          | Ульяновск |   48.2267 | 54.268299 | Europe/Samara
+ ULY  | Ульяновск-Восточный | Ульяновск |   48.8027 |    54.401 | Europe/Samara
+(5 rows)
+    </screen></para>
+
+   <para>Чтобы понять, откуда и куда можно улететь, удобно использовать материализованное представление <structname>routes</structname>, в котором агрегируется информация о всех рейсах. Вот, например, куда, в какие дни недели и за какое время можно долететь из Волгограда: <programlisting>SELECT r.arrival_city as city,
+       r.arrival_airport as airport_code,
+       r.arrival_airport_name as airport_name,
+       r.days_of_week,
+       r.duration
+FROM   routes r
+WHERE  r.departure_city = 'Волгоград';
+    </programlisting> <screen>
+      city      | airport_code |  airport_name  |  days_of_week   | duration
+----------------+--------------+----------------+-----------------+----------
+ Москва         | SVO          | Шереметьево    | {1,2,3,4,5,6,7} | 01:15:00
+ Челябинск      | CEK          | Челябинск      | {1,2,3,4,5,6,7} | 01:50:00
+ Ростов-на-Дону | ROV          | Ростов-на-Дону | {1,2,3,4,5,6,7} | 00:30:00
+ Москва         | VKO          | Внуково        | {1,2,3,4,5,6,7} | 01:10:00
+ Чебоксары      | CSY          | Чебоксары      | {1,2,3,4,5,6,7} | 02:45:00
+ Томск          | TOF          | Богашёво       | {3}             | 03:50:00
+(6 rows)
+    </screen></para>
+
+   <para>База данных была сформирована на момент времени, возвращаемый функцией <function>bookings.now()</function>: <programlisting>SELECT bookings.now() as now;
+    </programlisting> <screen>
+          now
+------------------------
+ 2016-10-13 17:00:00+03
+    </screen></para>
+
+   <para>Относительно именно этого момента времени все рейсы делятся на прошедшие и будущие: <programlisting>SELECT   status,
+         count(*) as count,
+         min(scheduled_departure) as min_scheduled_departure,
+         max(scheduled_departure) as max_scheduled_departure
+FROM     flights
+GROUP BY status 
+ORDER BY min_scheduled_departure;
+    </programlisting> <screen>
+  status   | count | min_scheduled_departure | max_scheduled_departure
+-----------+-------+-------------------------+-------------------------
+ Arrived   | 16707 | 2016-09-13 00:50:00+03  | 2016-10-13 16:25:00+03
+ Cancelled |   414 | 2016-09-16 10:35:00+03  | 2016-11-12 19:55:00+03
+ Departed  |    58 | 2016-10-13 08:55:00+03  | 2016-10-13 16:50:00+03
+ Delayed   |    41 | 2016-10-13 14:15:00+03  | 2016-10-14 16:25:00+03
+ On Time   |   518 | 2016-10-13 16:55:00+03  | 2016-10-14 17:00:00+03
+ Scheduled | 15383 | 2016-10-14 17:05:00+03  | 2016-11-12 19:40:00+03
+(6 rows)
+    </screen></para>
+
+   <para>Найдем ближайший рейс, вылетающий из Екатеринбурга в Москву. Использовать для такого запроса таблицу <structname>flight</structname> не очень удобно, так как в ней нет информации о городах отправления и прибытия. Поэтому воспользуемся представлением <structname>flights_v</structname>: <programlisting>\x
+SELECT   f.*
+FROM     flights_v f
+WHERE    f.departure_city = 'Екатеринбург'
+AND      f.arrival_city = 'Москва'
+AND      f.scheduled_departure &gt; bookings.now()
+ORDER BY f.scheduled_departure 
+LIMIT    1;
+    </programlisting> <screen>
+-[ RECORD 1 ]-------------+-----------------------
+flight_id                 | 10927
+flight_no                 | PG0226
+scheduled_departure       | 2016-10-14 07:10:00+03
+scheduled_departure_local | 2016-10-14 09:10:00
+scheduled_arrival         | 2016-10-14 08:55:00+03
+scheduled_arrival_local   | 2016-10-14 08:55:00
+scheduled_duration        | 01:45:00
+departure_airport         | SVX
+departure_airport_name    | Кольцово
+departure_city            | Екатеринбург
+arrival_airport           | SVO
+arrival_airport_name      | Шереметьево
+arrival_city              | Москва
+status                    | On Time
+aircraft_code             | 773
+actual_departure          |
+actual_departure_local    |
+actual_arrival            |
+actual_arrival_local      |
+actual_duration           |
+    </screen> Обратите внимание, что в представлении <structname>flights_v</structname> указано не только московское время, но и местное время в аэропортах вылета и прилета.</para>
+  </sect2>
+
+  <sect2>
+   <title>Бронирования</title>
+
+   <para>Каждое бронирование может включать несколько билетов, по одному на каждого пассажира. Билет, в свою очередь, может включать несколько перелетов. Полная информация о бронировании находится в трёх таблицах: <structname>bookings</structname>, <structname>tickets</structname> и <structname>ticket_flights</structname>.</para>
+
+   <para>Найдём несколько бронирований с самой высокой стоимостью: <programlisting>SELECT   *
+FROM     bookings
+ORDER BY total_amount desc
+LIMIT    10;
+    </programlisting> <screen>
+ book_ref |       book_date        | total_amount
+----------+------------------------+--------------
+ 3B54BB   | 2016-09-02 16:08:00+03 |   1204500.00
+ 3AC131   | 2016-09-28 00:06:00+03 |   1087100.00
+ 65A6EA   | 2016-08-31 05:28:00+03 |   1065600.00
+ D7E9AA   | 2016-10-06 04:29:00+03 |   1062800.00
+ EF479E   | 2016-09-30 14:58:00+03 |   1035100.00
+ 521C53   | 2016-09-05 08:25:00+03 |    985500.00
+ 514CA6   | 2016-09-24 04:07:00+03 |    955000.00
+ D70BD9   | 2016-09-02 11:47:00+03 |    947500.00
+ EC7EDA   | 2016-08-30 15:13:00+03 |    946800.00
+ 8E4370   | 2016-09-25 01:04:00+03 |    945700.00
+(10 rows)
+    </screen></para>
+
+   <para>Посмотрим, из каких билетов состоит бронирование с кодом <literal>521C53</literal>: <programlisting>SELECT ticket_no,
+       passenger_id,
+       passenger_name
+FROM   tickets
+WHERE  book_ref = '521C53';
+    </programlisting> <screen>
+   ticket_no   | passenger_id |   passenger_name
+---------------+--------------+--------------------
+ 0005432661914 | 8234 547529  | IVAN IVANOV
+ 0005432661915 | 2034 201228  | ANTONINA KUZNECOVA
+(2 rows)
+    </screen></para>
+
+   <para>Если нас интересует, какие перелеты включены в билет Антонины Кузнецовой, то это можно узнать запросом: <programlisting>SELECT   to_char(f.scheduled_departure, 'DD.MM.YYYY') as when,
+         f.departure_city || '(' || f.departure_airport || ')' as departure,
+         f.arrival_city || '(' || f.arrival_airport || ')' as arrival,
+         tf.fare_conditions as class,
+         tf.amount
+FROM     ticket_flights tf
+         JOIN flights_v f ON tf.flight_id = f.flight_id
+WHERE    tf.ticket_no = '0005432661915'
+ORDER BY f.scheduled_departure;
+    </programlisting> <screen>
+    when    |     departure     |      arrival      |  class   |  amount
+------------+-------------------+-------------------+----------+-----------
+ 26.09.2016 | Москва(SVO)       | Анадырь(DYR)      | Business | 185300.00
+ 30.09.2016 | Анадырь(DYR)      | Хабаровск(KHV)    | Business |  92200.00
+ 01.10.2016 | Хабаровск(KHV)    | Благовещенск(BQS) | Business |  18000.00
+ 06.10.2016 | Благовещенск(BQS) | Хабаровск(KHV)    | Business |  18000.00
+ 10.10.2016 | Хабаровск(KHV)    | Анадырь(DYR)      | Economy  |  30700.00
+ 15.10.2016 | Анадырь(DYR)      | Москва(SVO)       | Business | 185300.00
+(6 rows)
+    </screen> Как видим, высокая стоимость бронирования объясняется большим количеством перелётов на дальние расстояния бизнес-классом.</para>
+
+   <para>Часть перелётов в этом билете имеет более ранние даты, чем значение <function>bookings.now()</function>: это значит, что они уже выполнены. А последний полет ещё предстоит. После регистрации на рейс выписывается посадочный талон с указанием места в самолете. Мы можем посмотреть какие именно места занимала Антонина (обратите внимание на внешнее левое соединение с таблицей <structname>boarding_passes</structname>): <programlisting>SELECT   to_char(f.scheduled_departure, 'DD.MM.YYYY') as when,
+         f.departure_city || '(' || f.departure_airport || ')' as departure,
+         f.arrival_city || '(' || f.arrival_airport || ')' as arrival,
+         f.status,
+         bp.seat_no
+FROM     ticket_flights tf
+         JOIN flights_v f ON tf.flight_id = f.flight_id
+         LEFT JOIN boarding_passes bp ON tf.flight_id = bp.flight_id 
+                                     AND tf.ticket_no = bp.ticket_no
+WHERE    tf.ticket_no = '0005432661915'
+ORDER BY f.scheduled_departure;
+    </programlisting> <screen>
+    when    |     departure     |      arrival      |  status   | seat_no
+------------+-------------------+-------------------+-----------+---------
+ 26.09.2016 | Москва(SVO)       | Анадырь(DYR)      | Arrived   | 5C
+ 30.09.2016 | Анадырь(DYR)      | Хабаровск(KHV)    | Arrived   | 1D
+ 01.10.2016 | Хабаровск(KHV)    | Благовещенск(BQS) | Arrived   | 2C
+ 06.10.2016 | Благовещенск(BQS) | Хабаровск(KHV)    | Arrived   | 2D
+ 10.10.2016 | Хабаровск(KHV)    | Анадырь(DYR)      | Arrived   | 20B
+ 15.10.2016 | Анадырь(DYR)      | Москва(SVO)       | Scheduled |
+(6 rows)
+    </screen></para>
+  </sect2>
+
+  <sect2>
+   <title>Новое бронирование</title>
+
+   <para>Попробуем отправить Александра Николаевича Радищева по маршруту, который принес ему известность. Разумеется бесплатно и бизнес-классом. Предварительно найдем «завтрашний» рейс, а также позаботимся о возвращении через неделю. <programlisting>BEGIN;
+
+INSERT INTO bookings (book_ref, book_date, total_amount)
+VALUES      ('_QWE12', bookings.now(), 0);
+
+INSERT INTO tickets (ticket_no, book_ref, passenger_id, passenger_name)
+VALUES      ('_000000000001', '_QWE12', '1749 051790', 'ALEKSANDR RADISHCHEV');
+
+INSERT INTO ticket_flights (ticket_no, flight_id, fare_conditions, amount)
+VALUES      ('_000000000001', 9720, 'Business', 0),
+            ('_000000000001', 6662, 'Business', 0);
+
+COMMIT;
+    </programlisting></para>
+
+   <para>Мы начинаем идентификаторы с подчёркивания, чтобы не пересекаться с диапазоном значений, присутствующих в базе.</para>
+
+   <para>Сразу зарегистрируемся на завтрашний рейс: <programlisting>INSERT INTO boarding_passes (ticket_no, flight_id, boarding_no, seat_no)
+VALUES      ('_000000000001', 9720, 1, '1A');
+    </programlisting></para>
+
+   <para>Проверим информацию о созданном бронировании: <programlisting>SELECT   b.book_ref,
+         t.ticket_no,
+         t.passenger_id,
+         t.passenger_name,
+         tf.fare_conditions,
+         tf.amount,
+         f.scheduled_departure_local,
+         f.scheduled_arrival_local,
+         f.departure_city || '(' || f.departure_airport || ')' as departure,
+         f.arrival_city || '(' || f.arrival_airport || ')' as arrival,
+         f.status,
+         bp.seat_no
+FROM     bookings b
+         JOIN tickets t ON b.book_ref = t.book_ref
+         JOIN ticket_flights tf ON tf.ticket_no = t.ticket_no
+         JOIN flights_v f ON tf.flight_id = f.flight_id
+         LEFT JOIN boarding_passes bp ON tf.flight_id = bp.flight_id
+                                     AND tf.ticket_no = bp.ticket_no
+WHERE    b.book_ref = '_QWE12'
+ORDER BY t.ticket_no, f.scheduled_departure;
+    </programlisting> <screen>
+-[ RECORD 1 ]-------------+---------------------
+book_ref                  | _QWE12
+ticket_no                 | _000000000001
+passenger_id              | 1749 051790
+passenger_name            | ALEKSANDR RADISHCHEV
+fare_conditions           | Business
+amount                    | 0.00
+scheduled_departure_local | 2016-10-14 08:45:00
+scheduled_arrival_local   | 2016-10-14 09:35:00
+departure                 | Санкт-Петербург(LED)
+arrival                   | Москва(SVO)
+status                    | On Time
+seat_no                   | 1A
+-[ RECORD 2 ]-------------+---------------------
+book_ref                  | _QWE12
+ticket_no                 | _000000000001
+passenger_id              | 1749 051790
+passenger_name            | ALEKSANDR RADISHCHEV
+fare_conditions           | Business
+amount                    | 0.00
+scheduled_departure_local | 2016-10-21 09:20:00
+scheduled_arrival_local   | 2016-10-21 10:10:00
+departure                 | Москва(SVO)
+arrival                   | Санкт-Петербург(LED)
+status                    | Scheduled
+seat_no                   |
+    </screen></para>
+
+   <para>Надеемся, что эти несколько простых примеров помогли составить представление о содержимом демонстрационной базы данных.</para>
+  </sect2>
+ </sect1>
+</appendix>

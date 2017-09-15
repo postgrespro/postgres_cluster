@@ -1,0 +1,126 @@
+<!--
+doc/src/xml/ref/create_extension.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createextension">
+ <indexterm zone="sql-createextension"><primary>CREATE EXTENSION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE EXTENSION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE EXTENSION</refname>
+  <refpurpose>установить расширение</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE EXTENSION [ IF NOT EXISTS ] <replaceable class="parameter">имя_расширения</replaceable>
+    [ WITH ] [ SCHEMA <replaceable class="parameter">имя_схемы</replaceable> ]
+             [ VERSION <replaceable class="parameter">версия</replaceable> ]
+             [ FROM <replaceable class="parameter">старая_версия</replaceable> ]
+             [ CASCADE ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE EXTENSION</command> загружает в текущую базу данных новое расширение. Расширение с таким именем не должно быть уже загружено.</para>
+
+  <para>Загрузка расширения по сути сводится к запуску скрипта расширения. Этот скрипт обычно создаёт новые <acronym>SQL</acronym>-объекты, такие как функции, типы данных, операторы и методы поддержки индексов. <command>CREATE EXTENSION</command> дополнительно записывает идентификаторы всех добавляемых объектов, так что впоследствии их можно удалить, выполнив команду <command>DROP EXTENSION</command>.</para>
+
+  <para>Для загрузки расширения требуются те же права, что необходимы для создания составляющих его объектов. Для большинства расширений это означает, что необходимы права владельца базы данных или суперпользователя. Пользователь, запускающий <command>CREATE EXTENSION</command>, становится владельцем самого расширения (это требуется для последующих проверок доступа), а также владельцем всех объектов, созданных скриптом расширения.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><literal>IF NOT EXISTS</literal></term>
+      <listitem>
+       <para>Не считать ошибкой, если расширение с таким именем уже существует. В этом случае будет выдано замечание. Заметьте, что нет никакой гарантии, что существующее расширение как-то соотносится с тем, которое могло бы быть создано из указанного скрипта.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_расширения</replaceable></term>
+      <listitem>
+       <para>Имя устанавливаемого расширения. <productname>&productname;</productname> создаст расширение, используя инструкции из файла <literal>SHAREDIR/extension/</literal><replaceable class="parameter">имя_расширения</replaceable><literal>.control</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_схемы</replaceable></term>
+      <listitem>
+       <para>Имя схемы, в которую будут установлены объекты расширения (подразумевается, что расширение позволяет управлять размещением своих объектов). Указанная схема должна уже существовать. Если имя не указано и в управляющем файле расширения оно так же не задано, для создания объектов используется текущая схема.</para>
+
+       <para>Если в управляющем файле расширения задаётся параметр <literal>schema</literal>, заданную схему нельзя переопределить предложением <literal>SCHEMA</literal>. Обычно при указании предложения <literal>SCHEMA</literal> возникает ошибка, если эта схема конфликтует с параметром <literal>schema</literal> данного расширения. Однако, если также задаётся предложение <literal>CASCADE</literal>, в случае конфликта <replaceable class="parameter">имя_схемы</replaceable> игнорируется. Заданное <replaceable class="parameter">имя_схемы</replaceable> будет использоваться для установки всех необходимых расширений, в управляющих файлах которых не задаётся <literal>schema</literal>.</para>
+
+       <para>Помните, что само расширение не считается принадлежащим какой-либо схеме; имена расширений не дополняются схемой и потому должны быть уникальными во всей базе данных. Однако объекты, принадлежащие расширениям, могут относиться к схемам.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">версия</replaceable></term>
+      <listitem>
+       <para>Версия устанавливаемого расширения. Её можно записать в виде идентификатора или строкового значения. По умолчанию версия считывается из управляющего файла расширения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">старая_версия</replaceable></term>
+      <listitem>
+       <para>Указание <literal>FROM</literal> <replaceable class="parameter">старая_версия</replaceable> может быть добавлено тогда и только тогда, когда устанавливаемое расширение заменяет модуль <quote>старого стиля</quote>, представляющий собой просто набор объектов, не упакованный в расширение. С этим указанием <command>CREATE EXTENSION</command> запускает альтернативный установочный скрипт, собирающий все существующие объекты в расширение, а не создающий новые. Учтите, что <literal>SCHEMA</literal> при этом определяет схему, содержащую эти существующие объекты.</para>
+
+       <para>Значение, задаваемое в качестве <replaceable class="parameter">старой_версии</replaceable>, определяется автором расширения и может меняться, если в расширение нужно преобразовать не одну версию модуля в старом стиле. Для стандартных дополнительных модулей, поставляемых в <productname>PostgreSQL</productname> до версии 9.1, при преобразовании модуля в расширение <replaceable class="parameter">старая_версия</replaceable> должна содержать значение <literal>unpackaged</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>CASCADE</literal></term>
+      <listitem>
+       <para>Автоматически устанавливать все расширения, от которого зависит данное, если они ещё не установлены. Их зависимости подобным образом рекурсивно устанавливаются автоматически. Предложение <literal>SCHEMA</literal>, если задано, применяется ко всем расширениям, устанавливаемым таким способом. Другие параметры оператора к автоматически устанавливаемым расширениям не применяются; в частности, всегда выбираются их версии по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Прежде чем вы сможете выполнить <command>CREATE EXTENSION</command> и загрузить расширение в базу данных, необходимо правильно установить сопутствующие файлы расширения. Информацию об установке расширений, поставляемых в составе <productname>&productname;</productname>, можно найти по ссылке <link linkend="contrib">Дополнительные поставляемые модули</link>.</para>
+
+  <para>Расширения, доступные для установки в данный момент, можно найти в системном представлении <link linkend="view-pg-available-extensions"><structname>pg_available_extensions</structname></link> или <link linkend="view-pg-available-extension-versions"><structname>pg_available_extension_versions</structname></link>.</para>
+
+  <para>За информацией для разработчиков расширений обратитесь к <xref remap="3" linkend="extend-extensions"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Установка расширения <link linkend="hstore">hstore</link> в текущую базу данных: <programlisting>CREATE EXTENSION hstore;</programlisting></para>
+
+  <para>Преобразование установленного до версии 9.1 модуля <literal>hstore</literal> в расширение: <programlisting>CREATE EXTENSION hstore SCHEMA public FROM unpackaged;</programlisting> Будьте внимательны — здесь нужно указать схему, в которую ранее были установлены существующие объекты <literal>hstore</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>CREATE EXTENSION</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterextension"/></member>
+   <member><xref linkend="sql-dropextension"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

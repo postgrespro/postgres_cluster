@@ -1,0 +1,540 @@
+<sect1 id="pg-hint-plan">
+  <title>pg_hint_plan</title>
+  <sect2 id="pg-hint-plan-name">
+    <title>Имя</title>
+    <para>pg_hint_plan — управление планом выполнения с указаниями, записываемыми в комментариях особого вида.</para>
+  </sect2>
+  <sect2 id="pg-hint-plan-synopsis">
+    <title>Синтаксис</title>
+    <para>В &productname; используется оптимизатор запросов, учитывающий стоимость их выполнения, и при этом он использует статистику данных, а не жёсткие правила. Планировщик (оптимизатор) оценивает стоимость всех возможных планов выполнения оператора SQL, и в итоге выбирает для выполнения план с наименьшей стоимостью. Планировщик делает всё возможное, чтобы выбрать лучший план выполнения, но он не идеален, так как он не учитывает некоторые свойства данных, например корреляции между столбцами.</para>
+    <para>Модуль pg_hint_plan позволяет корректировать планы выполнения, применяя так называемые <quote>указания</quote>, записываемые в виде простых описаний в SQL-комментариях особого вида.</para>
+  </sect2>
+  <sect2 id="pg-hint-plan-description">
+    <title>Описание</title>
+    <sect3 id="pg-hint-plan-hint-rule">
+      <title>Простое использование</title>
+      <para>Модуль pg_hint_plan считывает фразы-указания в комментариях особого вида, записанных в теле целевого оператора SQL. Эта особая запись начинается с последовательности символов <quote>/*+</quote> и заканчивается последовательностью <quote>*/</quote>. Фразы указаний состоят из имени указания и последующих параметров, которые заключаются в скобки и разделяются пробелами. Такие указания могут размещаться в нескольких строках для улучшения читаемости.</para>
+      <para>В следующем примере в качестве метода соединения выбирается соединение по хешу, а pgbench_accounts сканируется последовательным способом.</para>
+      <programlisting>postgres=# /*+
+postgres*#    HashJoin(a b)
+postgres*#    SeqScan(a)
+postgres*#  */
+postgres-# EXPLAIN SELECT *
+postgres-#    FROM pgbench_branches b
+postgres-#    JOIN pgbench_accounts a ON b.bid = a.bid
+postgres-#   ORDER BY a.aid;
+                                      QUERY PLAN
+---------------------------------------------------------------------------------------
+ Sort  (cost=31465.84..31715.84 rows=100000 width=197)
+   Sort Key: a.aid
+   -&gt;  Hash Join  (cost=1.02..4016.02 rows=100000 width=197)
+         Hash Cond: (a.bid = b.bid)
+         -&gt;  Seq Scan on pgbench_accounts a  (cost=0.00..2640.00 rows=100000 width=97)
+         -&gt;  Hash  (cost=1.01..1.01 rows=1 width=100)
+               -&gt;  Seq Scan on pgbench_branches b  (cost=0.00..1.01 rows=1 width=100)
+(7 rows)
+
+postgres=# </programlisting>
+    </sect3>
+    <sect3 id="pg-hint-plan-hint-group">
+      <title>Типы указаний</title>
+      <para>Фразы указаний подразделяются на пять типов по видам объектов, на которые они могут воздействовать: методы сканирования, методы соединения, порядок соединения, корректировка количества строк и параметры GUC. Списки фраз указаний для каждого типа приведены в <xref remap="6" linkend="pg-hint-plan-hint-list"/>.</para>
+      <sect4>
+        <title>Указания для методов сканирования</title>
+        <para>Указания для методов сканирования принудительно устанавливают метод сканирования таблицы, заданной в качестве параметра. В качестве имени целевой таблицы обработчик pg_hint_plan может распознать и её псевдоним, если он определён. К указаниям этого типа относятся <quote>SeqScan</quote>, <quote>IndexScan</quote> и т. д.</para>
+        <para>Такие указания применимы к обычным таблицам, таблицам с наследованием, нежурналируемым таблицам и системным каталогам. Их нельзя применять к внешним (сторонним) таблицам, табличным функциям, результатам команды VALUES, CTE, представлениям и вложенным подзапросам.</para>
+      </sect4>
+      <sect4>
+        <title>Указания для методов соединения</title>
+        <para>Указания для методов соединения принудительно устанавливают метод соединения таблиц, указанных в параметрах.</para>
+        <para>В списке параметров допускаются обычные таблицы, таблицы с наследованием, нежурналируемые таблицы, временные таблицы, внешние (сторонние) таблицы, системные каталоги, табличные функции, результаты команды VALUES и CTE, но не представления или подзапросы.</para>
+      </sect4>
+      <sect4>
+        <title>Указание для порядка соединения</title>
+        <para>Соединение в определённом порядке можно принудительно выбрать, воспользовавшись указанием <quote>Leading</quote>. В результате объекты будут соединяться в порядке, заданном в списке параметров.</para>
+      </sect4>
+      <sect4>
+        <title>Указание для корректировки числа строк</title>
+        <para>Ввиду ограничений планировщика, он может неправильно оценивать количество результатов при некоторых условиях. Это можно исправить с помощью указания этого типа.</para>
+      </sect4>
+      <sect4>
+        <title>Временное переопределение параметров GUC</title>
+        <para>Указание <quote>Set</quote> меняет параметры GUC только на время планирования. Желаемое влияние на планирование могут оказывать параметры GUC, показанные в <xref remap="6" linkend="runtime-config-query-constants"/>, если только какое-либо другое указание не конфликтует с заданными параметрами метода планирования. Если для одного параметра GUC задано несколько указаний, в силу вступает последнее. Это указание позволяет поменять и параметры GUC для pg_hint_plan, но результат может не соответствовать вашим ожиданиям. Подробнее ограничения описаны в <xref remap="6" linkend="pg-hint-plan-restrictions"/>.</para>
+      </sect4>
+    </sect3>
+    <sect3 id="pg-hint-plan-hint-GUC">
+      <title>Параметры GUC для настройки pg_hint_plan</title>
+      <para>На поведение pg_hint_plan влияют следующие описанные ниже параметры GUC.</para>
+
+      <table id="pg-hint-plan-hint-GUC-table">
+       <title>Параметры GUC</title>
+       <tgroup cols="3">
+        <thead>
+         <row>
+          <entry>Имя параметра</entry>
+          <entry>Описание</entry>
+          <entry>Значение по умолчанию</entry>
+         </row>
+        </thead>
+
+        <tbody>
+         <row>
+          <entry>pg_hint_plan.enable_hint</entry>
+          <entry>Включает или отключает функции pg_hint_plan.</entry>
+          <entry>on (вкл.)</entry>
+         </row>
+
+         <row>
+          <entry>pg_hint_plan.debug_print</entry>
+          <entry>Включает отладочный вывод pg_hint_plan и выбирает уровень детализации. Допустимые значения: off (выкл.), on (вкл.), detailed (подробный) и verbose (многословный),</entry>
+          <entry>off (выкл.)</entry>
+         </row>
+
+         <row>
+          <entry>pg_hint_plan.message_level</entry>
+          <entry>Задаёт уровень выводимых отладочных сообщений: <literal>error</literal> (ошибки), <literal>warning</literal> (предупреждения), <literal>notice</literal> (уведомления), <literal>info</literal> (информация), <literal>log</literal> (протоколирование), <literal>debug</literal> (отладка). Уровни <literal>fatal</literal> (критичные) и <literal>panic</literal> (паника) использовать нельзя.</entry>
+          <entry>info</entry>
+         </row>
+        </tbody>
+       </tgroup>
+      </table>
+
+      <para>Для этих параметров в PostgreSQL 9.1 должен быть определён нестандартный класс переменных. За подробностями обратитесь к <xref remap="3" linkend="runtime-config-custom"/>.</para>
+    </sect3>
+  </sect2>
+  <sect2 id="pg-hint-plan-install">
+    <title>Установка</title>
+      <para>В принципе для загрузки pg_hint_plan не требуется выполнять CREATE EXTENSION. Этот модуль активируется, если загрузить его просто командой LOAD, и разумеется, его можно загрузить глобально, установив параметр shared_preload_libraries в postgresql.conf. Также вы можете воспользоваться командами ALTER USER SET/ALTER DATABASE SET, чтобы автоматически загружать его в определённых сеансах.</para>
+      <programlisting>postgres=# LOAD 'pg_hint_plan';
+LOAD
+postgres=# </programlisting>
+      <para>Если вы намерены использовать таблицу указаний, выполните CREATE EXTENSION и задайте для pg_hint_plan.enable_hint_table значение <literal>on</literal>.</para>
+  </sect2>
+  <sect2 id="pg-hint-plan-examples">
+    <title>Описания указаний</title>
+    <para>В этом разделе показывается, как записываются все типы указаний.</para>
+    <sect3>
+      <title>Указания по методам сканирования</title>
+      <para>В указаниях по сканированию обычно задаётся один параметр, определяющий целевой объект. В дополнительном параметре для сканирования с индексом может задаваться имя индекса. Если у целевого объекта есть псевдоним, он также допускается в этом указании. В следующем примере таблица table1 сканируется последовательно, а table2 — по индексу первичного ключа.</para>
+      <programlisting>postgres=# /*+
+postgres*#     SeqScan(t1)
+postgres*#     IndexScan(t2 t2_pkey)
+postgres*#  */
+postgres-# SELECT * FROM table1 t1 JOIN table table2 t2 ON (t1.key = t2.key);</programlisting>
+    </sect3>
+    <sect3>
+      <title>Указания по методам соединений</title>
+      <para>Указания по соединениям принимают в качестве параметров два или более объектов, образующих соединение. Если задаются три объекта, это указание будет применяться, когда для двух любых объектов, соединённых ранее, нужно выполнить соединение с оставшимся объектом. В следующем примере сначала соединяются таблицы table1 и table2 с применением вложенного цикла, а затем результат соединяется с table3 с применением соединения слиянием.</para>
+      <programlisting>postgres=# /*+
+postgres*#     NestLoop(t1 t2)
+postgres*#     MergeJoin(t1 t2 t3)
+postgres*#     Leading(t1 t2 t3)
+postgres*#  */
+postgres-# SELECT * FROM table1 t1
+postgres-#     JOIN table table2 t2 ON (t1.key = t2.key)
+postgres-#     JOIN table table3 t3 ON (t2.key = t3.key);</programlisting>
+    </sect3>
+    <sect3>
+      <title>Указания по порядку соединений</title>
+      <para>Хотя возможен случай, когда таблицы table2 и table3 будут соединяться сначала, а table1 потом, так что указание NestLoop никак не подействует. В таких случаях можно задать порядок соединений с помощью указания <quote>Leading</quote>. В данном примере указание Leading устанавливает порядок соединений table1, table2, table3, так что своё влияние окажут оба указания по методу соединения.</para>
+      <para>В показанном выше виде указание Leading принудительно устанавливает порядок соединений, но выбор направления (внутреннее/внешнее или ведущий/ведомый объект) остаётся за планировщиком. Если же вы хотите задать и направление, вам пригодится вторая форма этого указания.</para>
+      <programlisting>postgres=# /*+ Leading((t1 (t2 t3))) */ SELECT...</programlisting>
+      <para>Каждая пара скобок заключает в себе два элемента — это могут быть объекты или вложенные скобки. Первый элемент в паре скобок становится ведущим или внешним, а второй — ведомым или внутренним.</para>
+    </sect3>
+    <sect3>
+      <title>Указания по корректировке числа строк</title>
+      <para>В некоторых случаях планировщик может неправильно оценивать количество записей в соединениях. Это указание позволяет скорректировать эту оценку разными способами, в частности, задать абсолютное значение либо применить сложение/вычитание или умножение. В параметрах задаётся сначала список объектов, составляющих целевое соединение, а затем операция. В следующем примере показываются варианты указаний, корректирующие число записей в соединении <literal>a</literal> и <literal>b</literal> четырьмя способами.</para>
+      <programlisting>postgres=# /*+ Rows(a b #10) */ SELECT... ; Устанавливает число строк результата соединения, равным 10
+postgres=# /*+ Rows(a b +10) */ SELECT... ; Увеличивает число строк на 10
+postgres=# /*+ Rows(a b -10) */ SELECT... ; Вычитает 10 из числа строк
+postgres=# /*+ Rows(a b *10) */ SELECT... ; Увеличивает число строк в 10 раз</programlisting>
+    </sect3>
+    <sect3>
+      <title>Временное переопределение GUC</title>
+      <para>Указание <quote>Set</quote> задаёт значения для параметров GUC на время планирования целевого оператора. В следующем примере планирование запроса выполняется с параметром random_page_cost, равным 2.0.</para>
+      <programlisting>postgres=# /*+
+postgres*#     Set(random_page_cost 2.0)
+postgres*#  */
+postgres-# SELECT * FROM table1 t1 WHERE key = 'value';
+...</programlisting>
+    </sect3>
+  </sect2>
+  <sect2 id="pg-hint-plan-hint-syntax">
+    <title>Синтаксис указаний</title>
+    <sect3>
+      <title>Размещение комментария с указанием</title>
+      <para>Обработчик pg_hint_plan считывает указания только из первого блочного комментария и не принимает никакие символы, кроме букв, цифр, пробелов, подчёркиваний и скобок. В следующем примере HashJoin(a b) и SeqScan(a) распознаются в качестве указаний, а IndexScan(a) и MergeJoin(a b) — нет.</para>
+      <programlisting>postgres=# /*+
+postgres*#    HashJoin(a b)
+postgres*#    SeqScan(a)
+postgres*#  */
+postgres-# /*+ IndexScan(a) */
+postgres-# EXPLAIN SELECT /*+ MergeJoin(a b) */ *
+postgres-#    FROM pgbench_branches b
+postgres-#    JOIN pgbench_accounts a ON b.bid = a.bid
+postgres-#   ORDER BY a.aid;
+                                      QUERY PLAN
+---------------------------------------------------------------------------------------
+ Sort  (cost=31465.84..31715.84 rows=100000 width=197)
+   Sort Key: a.aid
+   -&gt;  Hash Join  (cost=1.02..4016.02 rows=100000 width=197)
+         Hash Cond: (a.bid = b.bid)
+         -&gt;  Seq Scan on pgbench_accounts a  (cost=0.00..2640.00 rows=100000 width=97)
+         -&gt;  Hash  (cost=1.01..1.01 rows=1 width=100)
+               -&gt;  Seq Scan on pgbench_branches b  (cost=0.00..1.01 rows=1 width=100)
+(7 rows)
+
+postgres=# </programlisting>
+    </sect3>
+    <sect3>
+      <title>Экранирование спецсимволов в именах объектов</title>
+      <para>Если имя объекта включает в себя скобки, кавычки или пробелы, оно должно заключаться в кавычки. При этом действуют те же правила экранирования, что и в <productname>&productname;</productname>.</para>
+    </sect3>
+    <sect3>
+      <title>Решение проблемы обращения к нескольким таблицам с одним именем</title>
+      <para>Дублирования имён, возникающего когда в запросе несколько раз фигурирует один объект или одноимённые объекты из разных пространств имён, можно избежать, назначив псевдонимы для каждого вхождения в целевом запросе, с тем, чтобы использовать эти псевдонимы в нужных местах указаний. В следующем примере первый SQL-оператор оказывается ошибочным, так как в целевом запросе дважды фигурирует одно имя, а второй работает, так как каждому вхождению таблицы t1 назначается отдельный псевдоним, который и задаётся в указании HashJoin.</para>
+      <programlisting>postgres=# /*+ HashJoin(t1 t1)*/
+postgres-# EXPLAIN SELECT * FROM s1.t1
+postgres-# JOIN public.t1 ON (s1.t1.id=public.t1.id);
+INFO:  hint syntax error at or near "HashJoin(t1 t1)"
+DETAIL:  Relation name "t1" is ambiguous.
+                            QUERY PLAN
+------------------------------------------------------------------
+ Merge Join  (cost=337.49..781.49 rows=28800 width=8)
+   Merge Cond: (s1.t1.id = public.t1.id)
+   -&gt;  Sort  (cost=168.75..174.75 rows=2400 width=4)
+         Sort Key: s1.t1.id
+         -&gt;  Seq Scan on t1  (cost=0.00..34.00 rows=2400 width=4)
+   -&gt;  Sort  (cost=168.75..174.75 rows=2400 width=4)
+         Sort Key: public.t1.id
+         -&gt;  Seq Scan on t1  (cost=0.00..34.00 rows=2400 width=4)
+(8 rows)
+
+postgres=# /*+ HashJoin(pt st) */
+postgres-# EXPLAIN SELECT * FROM s1.t1 st
+postgres-# JOIN public.t1 pt ON (st.id=pt.id);
+                             QUERY PLAN
+---------------------------------------------------------------------
+ Hash Join  (cost=64.00..1112.00 rows=28800 width=8)
+   Hash Cond: (st.id = pt.id)
+   -&gt;  Seq Scan on t1 st  (cost=0.00..34.00 rows=2400 width=4)
+   -&gt;  Hash  (cost=34.00..34.00 rows=2400 width=4)
+         -&gt;  Seq Scan on t1 pt  (cost=0.00..34.00 rows=2400 width=4)
+(5 rows)
+
+postgres=#</programlisting>
+    </sect3>
+  </sect2>
+  <sect2 id="pg-hint-plan-restrictions">
+    <title>Ограничения</title>
+    <sect3>
+      <title>Невозможность добавления указаний с несколькими списками VALUES в предложениях FROM</title>
+      <para>Вхождения списков VALUES в предложениях FROM в запросе имеют одно имя <quote>*VALUES*</quote> независимо от того, какие псевдонимы даны им в записи запроса или отображаются при анализе плана. Поэтому если такие списки фигурируют в целевом запросе неоднократно, в указаниях обращаться к ним нельзя вовсе.</para>
+    </sect3>
+    <sect3>
+      <title>Указания с потомками в иерархии наследования</title>
+      <para>В указаниях нельзя обращаться к отдельным потомкам в иерархии наследования. На них действуют те указания, что определены для их родителя.</para>
+    </sect3>
+    <sect3>
+      <title>Установка параметров pg_hint_plan в указаниях Set</title>
+      <para>Параметры pg_hint_plan меняют поведение самого обработчика указаний, поэтому некоторые параметры работают не так, как можно ожидать.</para>
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>Указания, изменяющие enable_hint и enable_hint_table игнорируются, но отмечаются как <quote>использованные указания</quote> в отладочном выводе.</para>
+        </listitem>
+        <listitem>
+          <para>Изменение debug_print и message_level начинает действовать с середины процедуры обработки целевого запроса.</para>
+        </listitem>
+      </itemizedlist>
+    </sect3>
+  </sect2>
+  <sect2 id="pg-hint-plan-technics">
+    <title>Приёмы обращения к определённым объектам</title>
+    <sect3>
+      <title>Обращение к объектам, неявно задействованным в целевом запросе</title>
+      <para>Указания распространяются на все объекты с определённым именем, даже если они явно не фигурируют в запросе, в частности, если это объекты в представлениях. Поэтому если необходимо написать разные указания, обращающиеся к объектам в представлении, нужно создать разные представления, в которых целевые объекты будут иметь разные имена.</para>
+      <para>В следующем примере в первом запросе одно имя <quote>t1</quote> назначено двум вхождениям таблицы table1, и поэтому указание SeqScan(t1) воздействует на оба сканирования. Во втором же запросе одному из вхождений дано другое имя (<quote>t3</quote>), так что это указание воздействует только на первое.</para>
+      <para>Этот механизм также применяется к запросам, переписываемым правилами.</para>
+      <programlisting>postgres=# CREATE VIEW view1 AS SELECT * FROM table1 t1;
+CREATE TABLE
+postgres=# /*+ SeqScan(t1) */
+postgres=# EXPLAIN SELECT * FROM table1 t1 JOIN view1 t2 ON (t1.key = t2.key) WHERE t2.key = 1;
+                           QUERY PLAN
+-----------------------------------------------------------------
+ Nested Loop  (cost=0.00..358.01 rows=1 width=16)
+   -&gt;  Seq Scan on table1 t1  (cost=0.00..179.00 rows=1 width=8)
+         Filter: (key = 1)
+   -&gt;  Seq Scan on table1 t1  (cost=0.00..179.00 rows=1 width=8)
+         Filter: (key = 1)
+(5 rows)
+
+postgres=# /*+ SeqScan(t3) */
+postgres=# EXPLAIN SELECT * FROM table1 t3 JOIN view1 t2 ON (t1.key = t2.key) WHERE t2.key = 1;
+                                   QUERY PLAN
+--------------------------------------------------------------------------------
+ Nested Loop  (cost=0.00..187.29 rows=1 width=16)
+   -&gt;  Seq Scan on table1 t3  (cost=0.00..179.00 rows=1 width=8)
+         Filter: (key = 1)
+   -&gt;  Index Scan using foo_pkey on table1 t1  (cost=0.00..8.28 rows=1 width=8)
+         Index Cond: (key = 1)
+(5 rows)</programlisting>
+    </sect3>
+    <sect3>
+      <title>Указания для потомков в иерархии наследования</title>
+      <para>Указания, заданные для родителей в иерархии наследования, автоматически распространяются на все их потомки. Задать отдельные указания для дочерних таблиц нельзя.</para>
+    </sect3>
+    <sect3>
+      <title>Область действия указаний с составными операторами</title>
+      <para>Для одного описания составного оператора может задаваться только один комментарий, и записанные в нём указания будут распространяться на все отдельные операторы внутри этого составного. Заметьте: то, что выглядит в интерактивном интерфейсе psql как составной оператор, внутри представляется как последовательность одиночных операторов, так что указания в комментарии перед операторами действуют только на первый из них. Если же для каждого отдельного оператора задать свой комментарий с указаниями, они будут действовать только на него.</para>
+    </sect3>
+    <sect3>
+      <title>Подзапросы в некоторых контекстах</title>
+      <para>Также в указаниях можно обращаться к подзапросам в следующих контекстах:</para>
+      <programlisting>IN (SELECT ... {LIMIT | OFFSET ...} ...)
+= ANY (SELECT ... {LIMIT | OFFSET ...} ...)
+= SOME (SELECT ... {LIMIT | OFFSET ...} ...)</programlisting>
+      <para>С этими конструкциями планировщик внутри даёт имя <quote>ANY_subquery</quote> подзапросу, планируя соединения с ним, так что в указаниях соединений можно обращаться к нему по этому неявному имени.</para>
+      <programlisting>postgres=# /*+HashJoin(a1 ANY_subquery)*/
+postgres=# EXPLAIN SELECT *
+postgres=#    FROM pgbench_accounts a1
+postgres=#   WHERE aid IN (SELECT bid FROM pgbench_accounts a2 LIMIT 10);
+                                         QUERY PLAN
+
+---------------------------------------------------------------------------------------------
+ Hash Semi Join  (cost=0.49..2903.00 rows=1 width=97)
+   Hash Cond: (a1.aid = a2.bid)
+   -&gt;  Seq Scan on pgbench_accounts a1  (cost=0.00..2640.00 rows=100000 width=97)
+   -&gt;  Hash  (cost=0.36..0.36 rows=10 width=4)
+         -&gt;  Limit  (cost=0.00..0.26 rows=10 width=4)
+               -&gt;  Seq Scan on pgbench_accounts a2  (cost=0.00..2640.00 rows=100000 width=4)
+(6 rows)</programlisting>
+    </sect3>
+    <sect3>
+      <title>Использование указания IndexOnlyScan (в PostgreSQL 9.2 и новее)</title>
+      <para>В указании IndexOnlyScan следует явно задавать подходящий индекс, если в целевой таблице есть и другие индексы, непригодные для сканирования по индексу. В противном случае pg_hint_plan может выбрать их.</para>
+    </sect3>
+    <sect3>
+      <title>Предупреждение об указании NoIndexScan (PostgreSQL 9.2 и новее)</title>
+      <para>Указание NoIndexScan подразумевает NoIndexOnlyScan.</para>
+    </sect3>
+  </sect2>
+  <sect2 id="pg-hint-plan-errors">
+    <title>Ошибки в указаниях</title>
+    <para>Обработчик pg_hint_plan останавливает разбор в случае ошибки и в большинстве случаев применяет указания, уже разобранные к этому моменту. Ниже перечислены типичные ошибки.</para>
+    <sect3>
+      <title>Синтаксические ошибки</title>
+      <para>Любые ошибки в записи или неправильные имена указаний считаются ошибками синтаксиса. Эти ошибки выводятся в журнал сообщений сервера с уровнем, заданным в параметре pg_hint_plan.message_level, если параметр pg_hint_plan.debug_print имеет значение, отличное от <literal>off</literal>.</para>
+    </sect3>
+    <sect3>
+      <title>Неправильные обращения к объектам</title>
+      <para>Указания с неправильными обращениями к объектам просто игнорируются. Ошибки такого типа отмечаются в журнале как <quote>неиспользованные указания</quote> при тех же условиях, что и синтаксические ошибки.</para>
+    </sect3>
+    <sect3>
+      <title>Избыточные или конфликтующие указания</title>
+      <para>Когда указания избыточны или одно указание конфликтует с другим, действовать будет последнее указание. Ошибки такого типа отмечаются как <quote>дублирующиеся указания</quote> в журнале сообщений сервера при тех же условиях, что и синтаксические ошибки.</para>
+    </sect3>
+    <sect3>
+      <title>Вложенные комментарии</title>
+      <para>Комментарий с указаниями не может содержать в себе другой блочный комментарий. Если pg_hint_plan сталкивается с такой ситуацией, то, в отличие от случаев других ошибок, он прекращает разбор и отбрасывает все уже разобранные указания.</para>
+    </sect3>
+  </sect2>
+  <sect2 id="pg-hint-plan-func-limits">
+    <title>Функциональные ограничения</title>
+    <sect3>
+      <title>Влияние некоторых параметров GUC на планирование</title>
+      <para>Планировщик не будет рассматривать порядок соединения для предложений FROM, в которых больше чем from_collapse_limit элементов. В таких случаях pg_hint_plan не может повлиять на порядок соединения ожидаемым образом.</para>
+    </sect3>
+    <sect3>
+      <title>Ситуации, в которых pg_hint_plan по сути не действует</title>
+      <para>По своей природе, pg_hint_plan не может повлиять на ситуации вне сферы влияния планировщика, например следующие:</para>
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>Использовать для FULL OUTER JOIN вложенный цикл</para>
+        </listitem>
+        <listitem>
+          <para>Использовать индексы, столбцы которых не задействуются в условиях</para>
+        </listitem>
+        <listitem>
+          <para>Выполнять сканирования TID для запросов без условий с ctid</para>
+        </listitem>
+      </itemizedlist>
+    </sect3>
+    <sect3>
+      <title>Запросы в ECPG</title>
+      <para>ECPG убирает комментарии из запросов, записанных в виде встраиваемого SQL, так что указания с такими запросами передать нельзя. Единственным исключением является команда EXECUTE, которая передаёт данную строку неизменённой. В таком случае могут быть полезны таблицы с указаниями.</para>
+    </sect3>
+    <sect3>
+      <title>Влияние на отпечатки запросов</title>
+      <para>В PostgreSQL 9.2 и новее для одинаковых запросов с разными комментариями функция pg_stat_statements формирует одинаковые отпечатки, но в более ранних версиях отпечатки оказываются разными. Поэтому в ранних версиях одинаковые запросы с разными указаниями после обобщения остаются разными.</para>
+    </sect3>
+  </sect2>
+  <sect2 id="pg-hint-plan-requirement">
+    <title>Требования</title>
+    <variablelist>
+      <varlistentry>
+        <term>Проверенные версии PostgreSQL</term>
+        <listitem>
+          <para>Версии 9.1, 9.2, 9.3, 9.4</para>
+        </listitem>
+      </varlistentry>
+      <varlistentry>
+        <term>Проверенные версии ОС</term>
+        <listitem>
+          <para>RHEL 6.5, 7.0</para>
+        </listitem>
+      </varlistentry>
+    </variablelist>
+  </sect2>
+  <sect2 id="pg-hint-plan-hint-list">
+    <title>Поддерживаемые указания</title>
+
+    <para>Ниже перечислены все поддерживаемые указания.</para>
+
+    <table id="pg-hint-plan-hint-list-table">
+     <title>Список указаний</title>
+
+     <tgroup cols="3">
+      <thead>
+       <row>
+        <entry>Группа</entry>
+        <entry>Формат</entry>
+        <entry>Описание</entry>
+       </row>
+      </thead>
+
+      <tbody>
+       <row>
+        <entry>Метод сканирования</entry>
+        <entry>SeqScan(<replaceable>таблица</replaceable>)</entry>
+        <entry>Принудительно выбирает последовательное сканирование таблицы.</entry>
+       </row>
+
+       <row>
+        <entry/>
+        <entry>TidScan(<replaceable>таблица</replaceable>)</entry>
+        <entry>Принудительно выбирает сканирование таблицы по TID.</entry>
+       </row>
+
+       <row>
+        <entry/>
+        <entry>IndexScan(<replaceable>таблица</replaceable> [ <replaceable>индекс</replaceable>...])</entry>
+        <entry>Принудительно выбирает сканирование таблицы по индексу (при добавлении индексов сканирование ограничивается ими).</entry>
+       </row>
+
+       <row>
+        <entry/>
+        <entry>IndexOnlyScan(<replaceable>таблица</replaceable> [ <replaceable>индекс</replaceable>...])</entry>
+        <entry>Принудительно выбирает сканирование таблицы только по индексу (при добавлении индексов сканирование ограничивается ими). Если сканирование только по индексу невозможно, может использоваться обычное сканирование по индексу. Поддерживается с PostgreSQL версии 9.2 и новее.</entry>
+       </row>
+
+       <row>
+        <entry/>
+        <entry>BitmapScan(<replaceable>таблица</replaceable>[ <replaceable>индекс</replaceable>...])</entry>
+        <entry>Принудительно выбирает сканирование таблицы по битовой карте (при добавлении индексов сканирование ограничивается ими).</entry>
+       </row>
+
+       <row>
+        <entry/>
+        <entry>NoSeqScan(<replaceable>таблица</replaceable>)</entry>
+        <entry>Отключает выбор последовательного сканирование таблицы.</entry>
+       </row>
+
+       <row>
+        <entry/>
+        <entry>NoTidScan(<replaceable>таблица</replaceable>)</entry>
+        <entry>Отключает выбор сканирования таблицы по TID.</entry>
+       </row>
+
+       <row>
+        <entry/>
+        <entry>NoIndexScan(<replaceable>таблица</replaceable>)</entry>
+        <entry>Отключает выбор сканирования по индексу и сканирования только по индексу (с PostgreSQL версии 9.2 и новее) для заданной таблицы.</entry>
+       </row>
+
+       <row>
+        <entry/>
+        <entry>NoIndexOnlyScan(<replaceable>таблица</replaceable>)</entry>
+        <entry>Отключает выбор сканирования только по индексу для заданной таблицы. Поддерживается только с PostgreSQL версии 9.2 и новее.</entry>
+       </row>
+
+       <row>
+        <entry/>
+        <entry>NoBitmapScan(<replaceable>таблица</replaceable>)</entry>
+        <entry>Отключает выбор сканирования по битовой карте для таблицы.</entry>
+       </row>
+
+       <row>
+        <entry>Метод соединения</entry>
+        <entry>NestLoop(<replaceable>таблица</replaceable> <replaceable>таблица</replaceable>[ <replaceable>таблица</replaceable>...])</entry>
+        <entry>Принудительно выбирает вложенный цикл для соединений с заданными таблицами.</entry>
+       </row>
+
+       <row>
+        <entry/>
+        <entry>HashJoin(<replaceable>таблица</replaceable> <replaceable>таблица</replaceable>[ <replaceable>таблица</replaceable>...])</entry>
+        <entry>Принудительно выбирает соединение по хешу для соединений с заданными таблицами.</entry>
+       </row>
+
+       <row>
+        <entry/>
+        <entry>MergeJoin(<replaceable>таблица</replaceable> <replaceable>таблица</replaceable>[ <replaceable>таблица</replaceable>...])</entry>
+        <entry>Принудительно выбирает соединение слиянием для соединений с заданными таблицами.</entry>
+       </row>
+
+       <row>
+        <entry/>
+        <entry>NoNestLoop(<replaceable>таблица</replaceable> <replaceable>таблица</replaceable>[ <replaceable>таблица</replaceable>...])</entry>
+        <entry>Отключает выбор вложенного цикла для соединений с заданными таблицами.</entry>
+       </row>
+
+       <row>
+        <entry/>
+        <entry>NoHashJoin(<replaceable>таблица</replaceable> <replaceable>таблица</replaceable>[ <replaceable>таблица</replaceable>...])</entry>
+        <entry>Отключает выбор соединения по хешу для соединений с заданными таблицами.</entry>
+       </row>
+
+       <row>
+        <entry/>
+        <entry>NoMergeJoin(<replaceable>таблица</replaceable> <replaceable>таблица</replaceable>[ <replaceable>таблица</replaceable>...])</entry>
+        <entry>Отключает выбор соединения слиянием для соединений с заданными таблицами.</entry>
+       </row>
+
+       <row>
+        <entry>Порядок соединения</entry>
+        <entry>Leading(<replaceable>таблица</replaceable> <replaceable>таблица</replaceable>[ <replaceable>таблица</replaceable>...])</entry>
+        <entry>Принудительно выбирает заданный порядок соединения.</entry>
+       </row>
+
+       <row>
+        <entry/>
+        <entry>Leading(<replaceable>&lt;соединяемая пара&gt;</replaceable>)</entry>
+        <entry>Принудительно выбирает заданный порядок и направления соединения. Соединяемая пара в данном случае — это пара таблица и/или других соединяемых пар, заключённая в скобки, что позволяет образовывать вложенные структуры.</entry>
+       </row>
+
+       <row>
+        <entry>Корректировка числа строк</entry>
+        <entry>Rows(<replaceable>таблица</replaceable> <replaceable>таблица</replaceable>[ <replaceable>таблица</replaceable>...] <replaceable>корректировка</replaceable>)</entry>
+        <entry>Корректирует число строк, получаемых в результате соединения указанных таблиц. Для корректировки можно задать абсолютное значение (#&lt;n&gt;) или использовать сложение (+&lt;n&gt;), вычитание (-&lt;n&gt;) и умножение (*&lt;n&gt;). Здесь &lt;n&gt; — это строка, которую сможет воспринять функция strtod().</entry>
+       </row>
+
+       <row>
+        <entry>GUC</entry>
+        <entry>Set(<replaceable>параметр-GUC</replaceable> <replaceable>значение</replaceable>)</entry>
+        <entry>Устанавливает значение для параметра GUC на время планирования запроса.</entry>
+       </row>
+      </tbody>
+     </tgroup>
+    </table>
+
+
+  </sect2>
+  <sect2 id="pg-hint-plan-seealso">
+   <title>См. также</title>
+
+   <simplelist type="inline">
+    <member><xref linkend="sql-explain"/></member>
+    <member><xref linkend="sql-set"/></member>
+    <member><xref linkend="runtime-config"/></member>
+   </simplelist>
+  </sect2>
+</sect1>

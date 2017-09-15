@@ -1,0 +1,101 @@
+<!--
+doc/src/xml/ref/create_tsdictionary.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createtsdictionary">
+ <indexterm zone="sql-createtsdictionary"><primary>CREATE TEXT SEARCH DICTIONARY</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE TEXT SEARCH DICTIONARY</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE TEXT SEARCH DICTIONARY</refname>
+  <refpurpose>создать словарь текстового поиска</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE TEXT SEARCH DICTIONARY <replaceable class="parameter">имя</replaceable> (
+    TEMPLATE = <replaceable class="parameter">шаблон</replaceable>
+    [, <replaceable class="parameter">параметр</replaceable> = <replaceable class="parameter">значение</replaceable> [, ... ]]
+)</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE TEXT SEARCH DICTIONARY</command> создаёт словарь текстового поиска. Словарь текстового поиска определяет способ выделения слов, представляющих или не представляющих интерес для поиска. Работа словаря зависит от шаблона текстового поиска, в котором определяются функции, собственно выполняющие действия. Обычно словарь задаёт некоторые параметры, управляющие частным поведением функций шаблона.</para>
+
+  <para>Если указывается имя схемы, словарь текстового поиска создаётся в указанной схеме. В противном случае он создаётся в текущей схеме.</para>
+
+  <para>Владельцем словаря текстового поиска становится пользователь его создавший.</para>
+
+  <para>За дополнительными сведениями обратитесь к <xref remap="3" linkend="textsearch"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя создаваемого словаря текстового поиска, возможно, дополненное схемой.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">шаблон</replaceable></term>
+    <listitem>
+     <para>Имя шаблона текстового поиска, который будет определять общее поведение этого словаря.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">параметр</replaceable></term>
+    <listitem>
+     <para>Имя параметра шаблона, устанавливаемого для данного словаря.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">значение</replaceable></term>
+    <listitem>
+     <para>Значение для параметра, связанного с шаблоном. Если это не простой идентификатор или число, его следует заключить в кавычки (при желании его можно заключать в кавычки всегда).</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Параметры могут перечисляться в любом порядке.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Команда в следующем примере создаёт словарь на базе Snowball с нестандартным списком стоп-слов.</para>
+
+<programlisting>CREATE TEXT SEARCH DICTIONARY my_russian (
+    template = snowball,
+    language = russian,
+    stopwords = myrussian
+);</programlisting>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>CREATE TEXT SEARCH DICTIONARY</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altertsdictionary"/></member>
+   <member><xref linkend="sql-droptsdictionary"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

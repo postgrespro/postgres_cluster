@@ -1,0 +1,146 @@
+<!-- doc/src/xml/pgbuffercache.xml -->
+
+<sect1 id="pgbuffercache" xreflabel="pg_buffercache">
+ <title>pg_buffercache</title>
+
+ <indexterm zone="pgbuffercache"><primary>pg_buffercache</primary></indexterm>
+
+ <para>Модуль <filename>pg_buffercache</filename> даёт возможность понять, что происходит в общем кеше буферов в реальном времени.</para>
+
+ <indexterm><primary>pg_buffercache_pages</primary></indexterm>
+
+ <para>Этот модуль предоставляет функцию на C <function>pg_buffercache_pages</function>, возвращающую набор записей, плюс представление <structname>pg_buffercache</structname>, которое является удобной обёрткой этой функции.</para>
+
+ <para>По умолчанию, роли public на всякий случай, во избежание угрозы безопасности, запрещён любой доступ к этим объектам.</para>
+
+ <sect2>
+  <title>Представление <structname>pg_buffercache</structname></title>
+
+  <para>Определения столбцов, содержащихся в представлении, показаны в <xref remap="6" linkend="pgbuffercache-columns"/>.</para>
+
+  <table id="pgbuffercache-columns">
+   <title>Столбцы <structname>pg_buffercache</structname></title>
+
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry>Имя</entry>
+      <entry>Тип</entry>
+      <entry>Ссылки</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+    <tbody>
+
+     <row>
+      <entry><structfield>bufferid</structfield></entry>
+      <entry><type>integer</type></entry>
+      <entry/>
+      <entry>ID, в диапазоне 1..<varname>shared_buffers</varname></entry>
+     </row>
+
+     <row>
+      <entry><structfield>relfilenode</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal>pg_class.relfilenode</literal></entry>
+      <entry>Номер файлового узла для отношения</entry>
+     </row>
+
+     <row>
+      <entry><structfield>reltablespace</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal>pg_tablespace.oid</literal></entry>
+      <entry>OID табличного пространства, содержащего отношение</entry>
+     </row>
+
+     <row>
+      <entry><structfield>reldatabase</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal>pg_database.oid</literal></entry>
+      <entry>OID базы данных, содержащей отношение</entry>
+     </row>
+
+     <row>
+      <entry><structfield>relforknumber</structfield></entry>
+      <entry><type>smallint</type></entry>
+      <entry/>
+      <entry>Номер слоя в отношении; см. <filename>include/common/relpath.h</filename></entry>
+     </row>
+
+     <row>
+      <entry><structfield>relblocknumber</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry/>
+      <entry>Номер страницы в отношении</entry>
+     </row>
+
+     <row>
+      <entry><structfield>isdirty</structfield></entry>
+      <entry><type>boolean</type></entry>
+      <entry/>
+      <entry>Страница загрязнена?</entry>
+     </row>
+
+     <row>
+      <entry><structfield>usagecount</structfield></entry>
+      <entry><type>smallint</type></entry>
+      <entry/>
+      <entry>Счётчик обращений по часовой стрелке</entry>
+     </row>
+
+     <row>
+      <entry><structfield>pinning_backends</structfield></entry>
+      <entry><type>integer</type></entry>
+      <entry/>
+      <entry>Число обслуживающих процессов, закрепивших этот буфер</entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>Для каждого буфера в общем кеше выдаётся одна строка. Для неиспользуемых буферов все поля равны NULL, за исключением <structfield>bufferid</structfield>. Общие системные каталоги показываются как относящиеся к базе данных под номером 0.</para>
+
+  <para>Так как кеш используется совместно всеми базами данных, обычно в нём находятся и страницы из отношений, не принадлежащих текущей базе данных. Это означает, что для некоторых строк при соединении с <structname>pg_class</structname> не найдутся соответствующие строки, либо соединение будет некорректным. Если вы хотите выполнить соединение с <structname>pg_class</structname>, будет правильным ограничить соединение строками, в которых <structfield>reldatabase</structfield> содержит OID текущей базы данных или ноль.</para>
+
+  <para>При обращении к представлению <structname>pg_buffercache</structname> устанавливаются блокировки менеджера внутренних буферов на время, достаточное для копирования всех данных состояния буферов, которые будут выводиться в представлении. Благодаря этому представление выдаёт согласованный набор результатов, не блокируя при этом обычные операции с буфером дольше, чем необходимо. Тем не менее, это может повлиять на производительность базы данных, если обращаться к этому представлению часто.</para>
+ </sect2>
+
+ <sect2>
+  <title>Пример вывода</title>
+
+<screen>regression=# SELECT c.relname, count(*) AS buffers
+             FROM pg_buffercache b INNER JOIN pg_class c
+             ON b.relfilenode = pg_relation_filenode(c.oid) AND
+                b.reldatabase IN (0, (SELECT oid FROM pg_database
+                                      WHERE datname = current_database()))
+             GROUP BY c.relname
+             ORDER BY 2 DESC
+             LIMIT 10;
+
+             relname             | buffers
+---------------------------------+---------
+ tenk2                           |     345
+ tenk1                           |     141
+ pg_proc                         |      46
+ pg_class                        |      45
+ pg_attribute                    |      43
+ pg_class_relname_nsp_index      |      30
+ pg_proc_proname_args_nsp_index  |      28
+ pg_attribute_relid_attnam_index |      26
+ pg_depend                       |      22
+ pg_depend_reference_index       |      20
+(10 rows)</screen>
+ </sect2>
+
+ <sect2>
+  <title>Авторы</title>
+
+  <para>Марк Кирквуд <email>markir@paradise.net.nz</email></para>
+
+  <para>Предложения по конструкции: Нейл Конвей <email>neilc@samurai.com</email></para>
+
+  <para>Советы по отладке: Том Лейн <email>tgl@sss.pgh.pa.us</email></para>
+ </sect2>
+
+</sect1>

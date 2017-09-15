@@ -1,0 +1,115 @@
+<!--
+doc/src/xml/ref/alter_tsdictionary.xml
+&productname; documentation
+-->
+
+<refentry id="sql-altertsdictionary">
+ <indexterm zone="sql-altertsdictionary"><primary>ALTER TEXT SEARCH DICTIONARY</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER TEXT SEARCH DICTIONARY</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER TEXT SEARCH DICTIONARY</refname>
+  <refpurpose>изменить определение словаря текстового поиска</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER TEXT SEARCH DICTIONARY <replaceable>имя</replaceable> (
+    <replaceable class="parameter">параметр</replaceable> [ = <replaceable class="parameter">значение</replaceable> ] [, ... ]
+)
+ALTER TEXT SEARCH DICTIONARY <replaceable>имя</replaceable> RENAME TO <replaceable>новое_имя</replaceable>
+ALTER TEXT SEARCH DICTIONARY <replaceable>имя</replaceable> OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+ALTER TEXT SEARCH DICTIONARY <replaceable>имя</replaceable> SET SCHEMA <replaceable>новая_схема</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER TEXT SEARCH DICTIONARY</command> изменяет определение словаря текстового поиска. Эта команда позволяет изменить параметры словаря, связанные с шаблонами, или сменить владельца или имя словаря.</para>
+
+  <para>Выполнить <command>ALTER TEXT SEARCH DICTIONARY</command> может только владелец словаря.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующего словаря текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">параметр</replaceable></term>
+    <listitem>
+     <para>Имя параметра шаблона, устанавливаемого для данного словаря.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">значение</replaceable></term>
+    <listitem>
+     <para>Новое значение для параметра настройки шаблонов. Если знак равно и значение опущено, предыдущее значение параметра удаляется из словаря, что позволяет вернутся к значению по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя словаря текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Новый владелец словаря текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_схема</replaceable></term>
+    <listitem>
+     <para>Новая схема словаря текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+ </variablelist>
+
+  <para>Параметры настройки шаблонов могут перечисляться в любом порядке.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Команда в следующем примере меняет список стоп-слов словаря на базе Snowball. Другие параметры остаются неизменными.</para>
+
+<programlisting>ALTER TEXT SEARCH DICTIONARY my_dict ( StopWords = newrussian );</programlisting>
+
+  <para>Команда в следующем примере меняет параметр, определяющий язык, на <literal>dutch</literal>, и удаляет параметр, задающий список стоп-слов.</para>
+
+<programlisting>ALTER TEXT SEARCH DICTIONARY my_dict ( language = dutch, StopWords );</programlisting>
+
+  <para>Следующая команда <quote>изменяет</quote> определение словаря, на самом деле не меняя ничего. <programlisting>ALTER TEXT SEARCH DICTIONARY my_dict ( dummy );</programlisting> (Это работает потому, что код удаления параметра не считает ошибкой отсутствие такого параметра.) Этот трюк может быть полезен при изменении файлов конфигурации словаря; <command>ALTER</command> принудит все существующие сеансы перечитать файлы конфигурации, что в противном случае они не сделают никогда, если прочитали конфигурацию ранее.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER TEXT SEARCH DICTIONARY</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createtsdictionary"/></member>
+   <member><xref linkend="sql-droptsdictionary"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

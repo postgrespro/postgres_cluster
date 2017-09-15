@@ -1,0 +1,312 @@
+<!-- doc/src/xml/mamonsu.xml -->
+
+<refentry id="mamonsu">
+ <indexterm zone="mamonsu"><primary>mamonsu</primary></indexterm>
+
+<refmeta>
+  <refentrytitle><application>mamonsu</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+</refmeta>
+
+<refnamediv>
+  <refname>mamonsu</refname>
+  <refpurpose>агент мониторинга для сбора метрик операционной системы и <productname>&productname;</productname>.</refpurpose>
+</refnamediv>
+
+<refsynopsisdiv>
+  <cmdsynopsis>
+   <command>mamonsu</command>
+   <arg choice="req"><option>report</option> | <option>tune</option></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>mamonsu</command>
+   <arg choice="plain">agent</arg>
+   <arg choice="plain"><replaceable>действие</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>mamonsu</command>
+   <arg choice="plain">zabbix</arg>
+   <arg choice="req"><option>template</option> | <option>host</option> | <option>hostgroup</option></arg>
+   <arg choice="plain"><replaceable>zabbix-action</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+<refsect1><title>Описание</title>
+  <para><filename>mamonsu</filename> — это активный агент мониторинга для <productname>&productname;</productname>. Исполненный на базе <filename>zabbix</filename>, <filename>mamonsu</filename> реализует расширяемое кросс-платформенное решение для сбора и визуализации множества метрик <productname>&productname;</productname> и операционной системы.</para>
+  <para>Агент <filename>mamonsu</filename> включает следующие компоненты:</para>
+  <itemizedlist>
+    <listitem>
+      <para>Руководящий процесс, контролирующий все выполняющиеся потоки.</para>
+    </listitem>
+    <listitem>
+      <para>Модули, определяющие какие метрики собирать и как представлять собранные данные.</para>
+    </listitem>
+  </itemizedlist>
+  <para>Чтобы обеспечить стабильное подключение к наблюдаемой системе, модули <filename>mamonsu</filename> используют пул соединений <productname>&productname;</productname>. При необходимости вы можете добавить собственные дополнительные модули для наблюдения за метриками, важными в вашей системе.</para>
+  <refsect2 id="installation-and-setup">
+    <title>Установка и подготовка</title>
+    <para>Для использования <filename>mamonsu</filename> вам потребуется настроенный сервер и учётная запись <filename>zabbix</filename>.</para>
+      <para>Предварительно собранный пакет <filename>mamonsu</filename> распространяется вместе с <productname>&productname;</productname>, но устанавливается отдельным инсталлятором. Завершив установку <productname>&productname;</productname> и <filename>mamonsu</filename>, выполните следующие действия, чтобы начать сбор метрик:</para>
+    <orderedlist>
+      <listitem>
+        <para>Если вы начинаете с нуля, настройте ваш сервер <productname>&productname;</productname> и подготовьте пустую базу данных. За подробностями обратитесь к <xref remap="3" linkend="creating-cluster"/>.</para>
+      </listitem>
+      <listitem>
+        <para>Выполните начальный запуск <filename>mamonsu</filename>. Вы должны указать IP-адрес сервера, за которым будете наблюдать, а также имя базы данных, имя и пароль пользователя <productname>&productname;</productname>, используя которые <filename>mamonsu</filename> будет подключаться к серверу. Если пароль не требуется, параметр <literal>-W</literal> можно опустить.</para>
+        <programlisting>mamonsu bootstrap --host <replaceable>ip_сервера</replaceable> --dbname <replaceable>имя_базы_данных</replaceable> --username <replaceable>имя_пользователя</replaceable> -W <replaceable>пароль</replaceable></programlisting>
+        <para>В результате <filename>mamonsu</filename> создаёт в указанной базе данных несколько таблиц с префиксом <filename>mamonsu</filename>. Не удаляйте эти таблицы, так как они нужны для работы <filename>mamonsu</filename>.</para>
+      </listitem>
+      <listitem>
+        <para><filename>mamonsu</filename> позволяет управлять некоторой функциональностью <filename>zabbix</filename> из командной строки. Вы можете создавать и удалять узлы и группы узлов <filename>zabbix</filename>, а также создавать, удалять или импортировать шаблоны <filename>zabbix</filename>. Если вы будете выполнять команды, связанные с <filename>zabbix</filename>, настройте следующие переменные окружения для вашего сервера <filename>zabbix</filename>:</para>
+        <itemizedlist>
+        <listitem>
+        <para>Задайте в переменных <varname>ZABBIX_USER</varname> и <varname>ZABBIX_PASSWD</varname> имя и пароль вашей учётной записи <filename>zabbix</filename>, соответственно.</para>
+        </listitem>
+        <listitem>
+        <para>Задайте в переменной <varname>ZABBIX_URL</varname> адрес <literal>http://zabbix/</literal></para>
+        </listitem>
+        </itemizedlist>
+        <para>Если вы установите указанные переменные, вы можете опустить эти параметры в последующих командах:</para>
+        <programlisting>--url=http://zabbix/ --user=<replaceable>имя_пользователя_zabbix</replaceable> --password=<replaceable>пароль_пользователя_zabbix</replaceable></programlisting>
+      </listitem>
+      <listitem><para>Если у вас ещё нет узла <filename>zabbix</filename>, создайте группу узлов <filename>zabbix</filename> и узел, на котором будут собираться метрики:</para>
+      <programlisting>mamonsu zabbix hostgroup create <replaceable>ид_группы_узлов</replaceable>
+mamonsu zabbix host create <replaceable>имя_узла</replaceable> <replaceable>ид_группы_узлов</replaceable> <replaceable>ид_шаблона</replaceable> <replaceable>IP_адрес</replaceable>
+      </programlisting></listitem>
+      <listitem>
+        <para>Отредактируйте конфигурационный файл <filename>agent.conf</filename>, предоставляемый в составе <filename>mamonsu</filename>. По умолчанию <filename>agent.conf</filename> размещается в каталоге установки <filename>mamonsu</filename>.</para>
+    <itemizedlist>
+      <listitem>
+        <para>Настройте параметры, связанные с <filename>zabbix</filename>. Вы должны указать в поле <varname>address</varname> адрес сервера <filename>zabbix</filename> и имя узла <filename>zabbix</filename>, который будет получать собираемые метрики. Узлы, доступные для вашей учётной записи, вы можете увидеть в веб-интерфейсе <filename>zabbix</filename> на странице <emphasis role="strong"><guimenu>Configuration</guimenu></emphasis> (Конфигурация) &gt; <emphasis role="srong"><guimenu>Hosts</guimenu></emphasis> (Узлы).</para>
+    <programlisting>[zabbix]
+; включён по умолчанию
+enabled = <literal>True</literal>
+client = <replaceable>имя_узла_zabbix</replaceable>
+address = <replaceable>ip_сервера_zabbix</replaceable></programlisting>
+</listitem>
+      <listitem>
+        <para>Укажите базу данных и имя пользователя <productname>&productname;</productname> для установления подключения. В следующем примере мы подключаемся к базе данных <literal>postgres</literal> с именем пользователя <literal>postgres</literal>. Если пароль не требуется, задайте в поле <literal>password</literal> значение <literal>None</literal>. <filename>mamonsu</filename> начнёт собирать метрики, начиная с этой базы данных, и попытается подключиться к другим базам данных, существующим в системе. По умолчанию <filename>mamonsu</filename> считывает метрики каждые 10 мс. Вы можете изменить этот интервал, скорректировав параметр <literal>query_timeout</literal>. Если ваш сервер <productname>&productname;</productname> работает с нестандартным портом, не забудьте указать его номер в параметре <literal>port</literal>.</para>
+        <programlisting>[postgres]
+; включён по умолчанию
+enabled = True
+user = postgres
+database = postgres
+; пустой пароль
+password = None
+port = 5432
+query_timeout = 10</programlisting>
+      </listitem>
+      <listitem>
+        <para>По умолчанию <filename>mamonsu</filename> будет собирать метрики как <productname>&productname;</productname>, так и системы. Если требуется, вы можете запретить сбор метрик того или иного типа, установив для параметра <literal>enabled</literal> значение <literal>False</literal> в соответствующем разделе файла <filename>agent.conf</filename>.</para>
+        <programlisting>[system]
+; включён по умолчанию
+enabled = True</programlisting>
+</listitem></itemizedlist>
+    </listitem>
+      <listitem>
+        <para>Экспортируйте шаблон для системы <filename>zabbix</filename>:</para>
+        <programlisting>mamonsu export template template.xml</programlisting>
+        <para><filename>mamonsu</filename> генерирует файл <literal>template.xml</literal> в текущем каталоге.</para>
+      </listitem>
+      <listitem>
+        <para>Импортируйте <literal>template.xml</literal> в <filename>zabbix</filename>:</para>
+        <programlisting>mamonsu zabbix template export template.xml --url=http://zabbix/ --user=<replaceable>имя_пользователя_zabbix</replaceable> --password=<replaceable>пароль_пользователя_zabbix</replaceable></programlisting>
+        <para>Чтобы загрузить шаблон через веб-интерфейс <filename>zabbix</filename>, воспользуйтесь своей учётной записью <filename>zabbix</filename> и перейдите на страницу <emphasis role="strong">Templates</emphasis> (Шаблоны) &gt; <emphasis role="strong">Import</emphasis> (Импорт).</para>
+      </listitem>
+      <listitem>
+        <para>Добавьте шаблон к целевому узлу. Для этого в веб-интерфейсе выберите ваш узел, перейдите на страницу <emphasis role="strong">Templates</emphasis> (Шаблоны), щёлкните <emphasis role="strong">Add</emphasis> (Добавить), выберите шаблон <literal>PostgresPro-Linux</literal> и затем щёлкните <emphasis role="strong">Update</emphasis> (Обновить).</para>
+      </listitem>
+    </orderedlist>
+    <para>Завершив настройку, запустите <filename>mamonsu</filename>:</para>
+    <programlisting>service mamonsu start</programlisting>
+    <para><filename>mamonsu</filename> считывает параметры из файла конфигурации и начинает мониторинг вашей системы.</para>
+  </refsect2>
+  </refsect1>
+  <refsect1><title>Параметры</title>
+  <para><filename>mamonsu</filename> позволяет вам управлять сбором метрик и некоторыми параметрами <filename>zabbix</filename> непосредственно из командной строки. Программа <command>mamonsu</command> может принимать следующие параметры.</para>
+
+<variablelist>
+
+     <varlistentry>
+      <term><option>report</option></term>
+      <listitem>
+       <para>Вывести подробную информацию об используемом оборудовании и параметрах <productname>&productname;</productname>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>tune</option></term>
+      <listitem>
+       <para>Оптимизировать конфигурацию системы с учётом собранной информации об используемом оборудовании и параметрах <productname>&productname;</productname>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>agent</option></term>
+      <listitem>
+       <para>Команда <filename>mamonsu</filename> <command>agent</command> предоставляет доступ ко всем доступным метрикам из командной строки. Вы можете задать одно из следующих действий:</para>
+<variablelist>
+
+     <varlistentry>
+      <term><option>version</option></term>
+      <listitem>
+       <para>Вывести версию <filename>mamonsu</filename>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>metric-list</option></term>
+      <listitem>
+       <para>Вывести список доступных метрик.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>metric-get <replaceable>имя_метрики</replaceable></option></term>
+      <listitem>
+       <para>Получить указанную метрику. Список доступных метрик можно получить, воспользовавшись командой <option>metric-list</option>.</para>
+      </listitem>
+     </varlistentry>
+
+</variablelist>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>zabbix template</option></term>
+      <listitem>
+       <para>Управляет шаблонами <filename>zabbix</filename>, выполняя одно из действий, описанных в <xref remap="6" linkend="mamonsu-zabbix-actions"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>zabbix host</option></term>
+      <listitem>
+       <para>Управляет узлами <filename>zabbix</filename>, выполняя одно из действий, описанных в <xref remap="6" linkend="mamonsu-zabbix-actions"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>zabbix hostgroup</option></term>
+      <listitem>
+       <para>Управляет группой узлов <filename>zabbix</filename>, выполняя одно из действий, описанных в <xref remap="6" linkend="mamonsu-zabbix-actions"/>.</para>
+      </listitem>
+     </varlistentry>
+
+</variablelist>
+
+  <refsect2 id="mamonsu-zabbix-actions"><title>Действия zabbix</title>
+  <para>Используя <filename>mamonsu</filename>, вы можете управлять некоторой функциональностью сервера <filename>zabbix</filename> из командной строки. А именно, вы можете создавать или удалять узлы и группы узлов <filename>zabbix</filename>, а также генерировать, импортировать и удалять шаблоны <filename>zabbix</filename> с помощью описанных ниже команд. В них <replaceable>имя_объекта</replaceable> должно соответствовать типу объекта <filename>zabbix</filename> в команде: template (шаблон), host (узел) или hostgroup (группа узлов).</para>
+<variablelist>
+     <varlistentry>
+      <term><option>list</option></term>
+      <listitem>
+       <para>Вывести список доступных шаблонов, узлов или групп узлов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>show</option> <replaceable>имя_объекта</replaceable></term>
+      <listitem>
+       <para>Вывести информацию об указанном шаблоне, узле или группе узлов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>id</option> <replaceable>имя_объекта</replaceable></term>
+      <listitem>
+       <para>Вывести идентификатор указанного объекта.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>delete</option> <replaceable>ид_объекта</replaceable></term>
+      <listitem>
+       <para>Удалить указанный объект.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>create</option> <replaceable>имя_группы_узлов</replaceable></term>
+      <term><option>create</option> <replaceable>имя_узла</replaceable> <replaceable>ид_группы_узлов</replaceable> 
+      <replaceable>ид_шаблона</replaceable> <replaceable>ip_адрес</replaceable></term>
+      <listitem>
+       <para>Создать новый узел или группу узлов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>export</option> <replaceable>имя_шаблона</replaceable></term>
+      <listitem>
+       <para>Сгенерировать шаблон <filename>zabbix</filename>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>info</option></term>
+      <listitem>
+       <para>Вывести подробную информацию об указанном узле в зависимости от следующих параметров:</para>
+       <variablelist>
+
+     <varlistentry>
+      <term><option>templates</option> <replaceable>ид_узла</replaceable></term>
+      <listitem>
+       <para>Вывести список шаблонов, доступных для заданного узла.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>hostgroups</option> <replaceable>ид_узла</replaceable></term>
+      <listitem>
+       <para>Показать группы узлов, к которым относится указанный узел.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>graphs</option> <replaceable>ид_узла</replaceable></term>
+      <listitem>
+       <para>Показать, какие графики доступны для указанного узла.</para>
+      </listitem>
+     </varlistentry>
+
+</variablelist>
+      </listitem>
+     </varlistentry>
+
+</variablelist>
+  </refsect2>
+  </refsect1>
+  <refsect1><title>Использование</title>
+  <refsect2 id="collecting-metrics-data">
+    <title>Сбор показателей</title>
+    <para>Чтобы просмотреть список доступных метрик, выполните следующую команду:</para>
+    <programlisting>mamonsu agent metric-list</programlisting>
+    <para>Чтобы просмотреть определённую метрику, выполните:</para>
+    <programlisting>mamonsu agent metric-get <replaceable>имя_метрики</replaceable></programlisting>
+    <para>где <replaceable>имя_метрики</replaceable> — имя метрики, представляющей интерес. Вы можете просмотреть графики по собранным метрикам в веб-интерфейсе <filename>zabbix</filename>, в меню <emphasis role="strong"><guimenu>Graphs</guimenu></emphasis> (Графики).</para>
+    <para>Чтобы создать отчёт по используемому оборудованию и конфигурации <productname>&productname;</productname>, выполните:</para>
+    <programlisting>mamonsu report</programlisting>
+    <para>Проанализировав аппаратную конфигурацию, <filename>mamonsu</filename> может помочь вам произвести общую оптимизацию вашей системы и сервера <productname>&productname;</productname>:</para>
+    <programlisting>mamonsu tune</programlisting>
+</refsect2>
+
+<refsect2 id="mamonsu-adding-custom-plugins">
+<title>Добавление дополнительных модулей</title>
+<para>Для добавления дополнительного модуля в <filename>mamonsu</filename> выполните следующие действия:</para>
+
+<orderedlist>
+<listitem><para>Установите путь к каталогу модулей в файле конфигурации и поместите файлы модулей в указанный каталог.</para>
+<programlisting>[plugins]
+directory = /etc/mamonsu/plugins</programlisting>
+</listitem>
+<listitem><para>Повторите экспорт шаблона <filename>zabbix</filename>:</para>
+<programlisting>mamonsu -c agent.conf -e template.xml</programlisting>
+</listitem>
+      <listitem>
+        <para>Загрузите обновлённый <filename>template.xml</filename> на сервер <filename>zabbix</filename>.</para>
+      </listitem>
+    </orderedlist>
+  </refsect2>
+  </refsect1>
+</refentry>

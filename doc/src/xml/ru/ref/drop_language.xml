@@ -1,0 +1,91 @@
+<!--
+doc/src/xml/ref/drop_language.xml
+&productname; documentation
+-->
+
+<refentry id="sql-droplanguage">
+ <indexterm zone="sql-droplanguage"><primary>DROP LANGUAGE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP LANGUAGE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP LANGUAGE</refname>
+  <refpurpose>удалить процедурный язык</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP [ PROCEDURAL ] LANGUAGE [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP LANGUAGE</command> удаляет определение ранее зарегистрированного процедурного языка. Выполнить <command>DROP LANGUAGE</command> может только владелец языка или суперпользователь.</para>
+
+  <note>
+   <para>Начиная с <productname>PostgreSQL</productname> 9.1, большинство процедурных языков были преобразованы в <quote>расширения</quote>, так что теперь их следует удалять командами <xref linkend="sql-dropextension"/>, а не <command>DROP LANGUAGE</command>.</para>
+  </note>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если язык не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя существующего процедурного языка. В целях обратной совместимости имя можно заключить в апострофы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данного языка (например, функции на этом языке), и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении языка, если от него зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Эта команда удаляет процедурный язык <literal>plsample</literal>: <programlisting>DROP LANGUAGE plsample;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>DROP LANGUAGE</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterlanguage"/></member>
+   <member><xref linkend="sql-createlanguage"/></member>
+   <member><xref linkend="app-droplang"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

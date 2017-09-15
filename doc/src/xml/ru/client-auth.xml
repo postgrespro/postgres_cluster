@@ -1,0 +1,787 @@
+<!-- doc/src/xml/client-auth.xml -->
+
+<chapter id="client-authentication">
+ <title>Аутентификация клиентского приложения</title>
+
+ <indexterm zone="client-authentication"><primary>аутентификация клиентского приложения</primary></indexterm>
+
+ <para>При подключении к серверу базы данных, клиентское приложение указывает имя пользователя <productname>&productname;</productname>, так же как и при обычном входе пользователя на компьютер с ОС Unix. При работе в среде SQL по имени пользователя определяется, какие у него есть права доступа к объектам базы данных (подробнее это описывается в <xref remap="6" linkend="user-manag"/>). Следовательно, важно указать на этом этапе, к каким базам пользователь имеет право подключиться.</para>
+
+ <note>
+  <para>Как можно узнать из <xref remap="2" linkend="user-manag"/>, <productname>&productname;</productname> управляет правами и привилегиями, используя так называемые <quote>роли</quote>. В этой главе под <firstterm>пользователем</firstterm> мы подразумеваем <quote>роль с привилегией <literal>LOGIN</literal></quote>.</para>
+ </note>
+
+ <para><firstterm>Аутентификация</firstterm> это процесс идентификации клиента сервером базы данных, а также определение того, может ли клиентское приложение (или пользователь запустивший приложение) подключиться с указанным именем пользователя.</para>
+
+ <para><productname>&productname;</productname> предлагает несколько различных методов аутентификации клиентов. Метод аутентификации конкретного клиентского соединения может основываться на адресе компьютера клиента, имени базы данных, имени пользователя.</para>
+
+ <para>Имена пользователей базы данных <productname>&productname;</productname> не имеют прямой связи с пользователями операционной системы на которой запущен сервер. Если у всех пользователей базы данных заведена учётная запись в операционной системе сервера, то имеет смысл назначить им точно такие же имена для входа в <productname>&productname;</productname>. Однако, сервер, принимающий удалённые подключения, может иметь большое количество пользователей базы данных, у которых нет учётной записи в ОС. В таких случаях не требуется соответствие между именами пользователей базы данных и именами пользователей операционной системы.</para>
+
+ <sect1 id="auth-pg-hba-conf">
+  <title>Файл <filename>pg_hba.conf</filename></title>
+
+  <indexterm zone="auth-pg-hba-conf"><primary>pg_hba.conf</primary></indexterm>
+
+  <para>Аутентификация клиентов управляется конфигурационным файлом, который традиционно называется <filename>pg_hba.conf</filename> и расположен в каталоге с данными кластера базы данных. (<acronym>HBA</acronym> расшифровывается как host-based authentication &mdash; аутентификации по имени узла.) Файл <filename>pg_hba.conf</filename>, со стандартным содержимым, создаётся командой <command>initdb</command> при инициализации каталога с данными. Однако его можно разместить в любом другом месте; см. конфигурационный параметр <xref linkend="guc-hba-file"/>.</para>
+
+  <para>Обычный формат файла <filename>pg_hba.conf</filename> представляет собой набор записей, по одной в строке. Пустые строки игнорируются, как и любой текст комментария после знака <literal>#</literal>. Записи не продолжаются на следующей строке. Записи состоят из некоторого количества полей, разделённых между собой пробелом и/или tabs. В полях могут быть использованы пробелы, если они взяты в кавычки. Если в кавычки берётся какое-либо зарезервированное слово в поле базы данных, пользователя или адресации (например, <literal>all</literal> или <literal>replication</literal>), то слово теряет своё особое значение и просто обозначает базу данных, пользователя или сервер с данным именем.</para>
+
+  <para>Каждая запись обозначает тип соединения, диапазон IP-адресов клиента (если он соотносится с типом соединения), имя базы данных, имя пользователя, и способ аутентификации, который будет использован для соединения в соответствии с этими параметрами. Первая запись с соответствующим типом соединения, адресом клиента, указанной базой данных и именем пользователя применяется для аутентификации. Процедур <quote>fall-through</quote> или <quote>backup</quote> не предусмотрено: если выбрана запись и аутентификация не прошла, последующие записи не рассматриваются. Если же ни одна из записей не подошла, в доступе будет отказано.</para>
+
+  <para>Запись  может быть сделана в одном из семи форматов: <synopsis>
+local      <replaceable>database</replaceable>  <replaceable>user</replaceable>  <replaceable>auth-method</replaceable>  <optional><replaceable>auth-options</replaceable></optional>
+host       <replaceable>database</replaceable>  <replaceable>user</replaceable>  <replaceable>address</replaceable>  <replaceable>auth-method</replaceable>  <optional><replaceable>auth-options</replaceable></optional>
+hostssl    <replaceable>database</replaceable>  <replaceable>user</replaceable>  <replaceable>address</replaceable>  <replaceable>auth-method</replaceable>  <optional><replaceable>auth-options</replaceable></optional>
+hostnossl  <replaceable>database</replaceable>  <replaceable>user</replaceable>  <replaceable>address</replaceable>  <replaceable>auth-method</replaceable>  <optional><replaceable>auth-options</replaceable></optional>
+host       <replaceable>database</replaceable>  <replaceable>user</replaceable>  <replaceable>IP-address</replaceable>  <replaceable>IP-mask</replaceable>  <replaceable>auth-method</replaceable>  <optional><replaceable>auth-options</replaceable></optional>
+hostssl    <replaceable>database</replaceable>  <replaceable>user</replaceable>  <replaceable>IP-address</replaceable>  <replaceable>IP-mask</replaceable>  <replaceable>auth-method</replaceable>  <optional><replaceable>auth-options</replaceable></optional>
+hostnossl  <replaceable>database</replaceable>  <replaceable>user</replaceable>  <replaceable>IP-address</replaceable>  <replaceable>IP-mask</replaceable>  <replaceable>auth-method</replaceable>  <optional><replaceable>auth-options</replaceable></optional>
+</synopsis> Значения полей описаны ниже: <variablelist>
+    <varlistentry>
+     <term><literal>local</literal></term>
+     <listitem>
+      <para>Управляет подключениями через доменные сокеты Unix. Без подобной записи подключения через доменные сокеты Unix невозможны.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>host</literal></term>
+     <listitem>
+      <para>Управляет подключениями, устанавливаемыми по TCP/IP. Записи <literal>host</literal> соответствуют подключениям с <acronym>SSL</acronym> и без <acronym>SSL</acronym>.</para>
+     <note>
+      <para>Удалённое соединение по TCP/IP невозможно, если сервер запущен без определения соответствующих значений для параметра конфигурации <xref linkend="guc-listen-addresses"/>, поскольку по умолчанию система принимает подключения по TCP/IP только для локального адреса замыкания <literal>localhost</literal>.</para>
+     </note>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>hostssl</literal></term>
+     <listitem>
+      <para>Управляет подключениями, устанавливаемыми по TCP/IP с применением шифрования <acronym>SSL</acronym>.</para>
+
+      <para>Чтобы использовать эту возможность, сервер изначально должен быть построен с поддержкой <acronym>SSL</acronym>. Более того, <acronym>SSL</acronym> должен быть включён на момент запуска сервера, для чего необходимо установить параметр конфигурации <xref linkend="guc-ssl"/> (подробнее это описано в <xref remap="6" linkend="ssl-tcp"/>).</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>hostnossl</literal></term>
+     <listitem>
+      <para>Этот тип записей противоположен <literal>hostssl</literal>, ему соответствуют только подключения по TCP/IP без шифрования <acronym>SSL</acronym>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>база_данных</replaceable></term>
+     <listitem>
+      <para>Определяет, каким именам баз данных соответствует эта запись. Значение <literal>all</literal> определяет, что подходят все базы данных. Значение <literal>sameuser</literal> определяет, что данная запись соответствует только, если имя запрашиваемой базы данных совпадает с именем запрашиваемого пользователя. Значение <literal>samerole</literal> определяет, что запрашиваемый пользователь должен быть членом роли с таким же именем, как и у запрашиваемой базы данных. (<literal>samegroup</literal> - это устаревший, но допустимый вариант значения <literal>samerole</literal>.) Суперпользователи не становятся членами роли автоматически из-за <literal>samerole</literal>, а только если они являются явными членами роли, прямо или косвенно, и не только из-за того, что они суперпользователи. Значение <literal>replication</literal> показывает, что запись соответствует, если запрашивается подключение репликации (имейте в виду, что подключения репликации не определяют какую-то конкретную базу данных). В противном случае, это имя определённой базы данных <productname>&productname;</productname>. Несколько имён баз данных можно указать, разделяя их запятыми. Файл, содержащий имена баз данных, можно указать, поставив знак <literal>@</literal> в начале его имени.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>пользователь</replaceable></term>
+     <listitem>
+      <para>Указывает, какому имени (или именам) пользователя базы данных соответствует эта запись. Значение <literal>all</literal> показывает, что это подходит всем пользователям. В противном случае, это либо имя конкретного пользователя базы данных, или имя группы, в начале которого стоит знак <literal>+</literal>. (Напомним, что в <productname>&productname;</productname> нет никакой разницы между пользователем и группой; знак <literal>+</literal> означает <quote> совпадение любых ролей, которые прямо или косвенно являются членами роли</quote>, тогда как имя без знака <literal>+</literal> является подходящей только для этой конкретной роли.) В связи с этим, суперпользователь рассматривается как член роли, только если он явно является членом этой роли, прямо или косвенно, а не только потому, что он является суперпользователем. Несколько имён пользователей можно указать, разделяя их запятыми. Файл, содержащий имена пользователей, можно указать, поставив знак <literal>@</literal> в начале его имени.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>адрес</replaceable></term>
+     <listitem>
+      <para>Указывает адрес (или адреса) клиентской машины, которым соответствует данная запись. Это поле может содержать или имя компьютера, или диапазон IP-адресов, или одно из нижеупомянутых ключевых слов.</para>
+
+      <para>Диапазон IP-адресов указывается в виде начального адреса диапазона, дополненного косой чертой (<literal>/</literal>) и длиной маски <acronym>CIDR</acronym>. Длина маски задаёт количество старших битов клиентского IP-адреса, которые должны совпадать с битами IP-адреса диапазона. Биты, находящиеся правее, в указанном IP-адресе должны быть нулевыми. Между IP-адресом, знаком <literal>/</literal> и длиной маски CIDR не должно быть пробельных символов.</para>
+
+      <para>Типичные примеры диапазонов адресов IPv4, указанных таким образом: <literal>172.20.143.89/32</literal> для одного компьютера, <literal>172.20.143.0/24</literal> для небольшой и <literal>10.6.0.0/16</literal> для крупной сети. Диапазон адресов IPv6 может выглядеть как <literal>::1/128</literal> для одного компьютера (это адрес замыкания IPv6) или как <literal>fe80::7a31:c1ff:0000:0000/96</literal> для небольшой сети. <literal>0.0.0.0/0</literal> представляет все адреса IPv4, а <literal>::0/0</literal> — все адреса IPv6. Чтобы указать один компьютер, используйте длину маски 32 для IPv4 или 128 для IPv6. Опускать замыкающие нули в сетевом адресе нельзя.</para>
+
+      <para>Запись, сделанная в формате IPv4, подойдёт только для подключений по IPv4, а запись в формате IPv6 подойдёт только для подключений по IPv6, даже если представленный адрес находится в диапазоне IPv4-в-IPv6. Имейте в виду, что записи в формате IPv6 не будут приниматься, если системная библиотека С не поддерживает адреса IPv6.</para>
+
+      <para>Вы также можете прописать значение <literal>all</literal>, чтобы указать любой IP-адрес, <literal>samehost</literal>, чтобы указать любые IP-адреса данного сервера, или <literal>samenet</literal>, чтобы указать любой адрес любой подсети, к которой сервер подключён напрямую.</para>
+
+      <para>Если определено имя компьютера (всё, что не является диапазоном IP-адресов или специальным ключевым словом, воспринимается как имя компьютера), то оно сравнивается с результатом обратного преобразования IP-адреса клиента (например, обратного DNS-запроса, если используется DNS). При сравнении имён компьютеров регистр не учитывается. Если имена совпали, выполняется прямое преобразование имени (например, прямой DNS-запрос) для проверки, относится ли клиентский IP-адрес к адресам, соответствующим имени. Если двусторонняя проверка пройдена, запись считается соответствующей компьютеру. (В качестве имени узла в файле <filename>pg_hba.conf</filename> должно указываться то, что возвращается при преобразовании IP-адреса клиента в имя, иначе строка не будет соответствовать узлу. Некоторые базы данных имён позволяют связать с одним IP-адресом несколько имён узлов, но операционная система при попытке разрешить IP-адрес возвращает только одно имя.)</para>
+
+      <para>Указание имени, начинающееся с точки (<literal>.</literal>), соответствует суффиксу актуального имени узла. Так, <literal>.example.com</literal> будет соответствовать <literal>foo.example.com</literal> (а не только <literal>example.com</literal>).</para>
+
+      <para>Когда в <filename>pg_hba.conf</filename> указываются имена узлов, следует добиться, чтобы разрешение имён выполнялось достаточно быстро. Для этого может быть полезен локальный кеш разрешения имён, например, <command>nscd</command>. Вы также можете включить конфигурационный параметр <varname>log_hostname</varname>, чтобы видеть в журналах имя компьютера клиента вместо IP-адреса.</para>
+
+      <para>Это поле применимо только к записям <literal>host</literal>, <literal>hostssl</literal> и <literal>hostnossl</literal>.</para>
+
+      <sidebar>
+       <para>Пользователи часто задаются вопросом, почему имена серверов обрабатываются таким сложным, на первый взгляд, способом, с разрешением двух имён, включая обратный запрос клиентского IP-адреса. Это усложняет процесс в случае, если обратная DNS-запись клиента не установлена или включает в себя нежелательное имя узла. Такой способ избран, в первую очередь, для повышения эффективности: в этом случае соединение требует максимум два запроса разрешения, один прямой и один обратный. Если есть проблема разрешения с каким-то адресом, то она остаётся проблемой этого клиента. Гипотетически, могла бы быть реализована возможность во время каждой попытки соединения выполнять только прямой запрос для разрешения каждого имени сервера, упомянутого в <filename>pg_hba.conf</filename>. Но если список имён велик, процесс был бы довольно медленным, а в случае наличия проблемы разрешения у одного имени сервера, это стало бы общей проблемой.</para>
+
+       <para>Также обратный запрос необходим для того, чтобы реализовать возможность соответствия суффиксов, поскольку для сопоставления с шаблоном требуется знать фактическое имя компьютера клиента.</para>
+
+       <para>Обратите внимание, что такое поведение согласуется с другими популярными реализациями контроля доступа на основе имён, такими как Apache HTTP Server и TCP Wrappers.</para>
+      </sidebar>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>IP-адрес</replaceable></term>
+     <term><replaceable>IP-маска</replaceable></term>
+     <listitem>
+      <para>Эти два поля могут быть использованы как альтернатива записи <replaceable>IP-адрес</replaceable><literal>/</literal><replaceable>длина-маски</replaceable>. Вместо того, чтобы указывать длину маски, в отдельном столбце указывается сама маска. Например, <literal>255.0.0.0</literal> представляет собой маску CIDR для IPv4 длиной 8 бит, а <literal>255.255.255.255</literal> представляет маску CIDR длиной 32 бита.</para>
+
+      <para>Эти поля применимы только к записям <literal>host</literal>, <literal>hostssl</literal> и <literal>hostnossl</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>метод-аутентификации</replaceable></term>
+     <listitem>
+      <para>Указывает метод аутентификации, когда подключение соответствует этой записи. Варианты выбора приводятся ниже; подробности в <xref remap="6" linkend="auth-methods"/>. <variablelist>
+        <varlistentry>
+         <term><literal>trust</literal></term>
+         <listitem>
+         <para>Разрешает безусловное подключение. Этот метод позволяет тому, кто может подключиться к серверу с базой данных <productname>&productname;</productname>, войти под любым желаемым пользователем <productname>&productname;</productname> без введения пароля и без какой-либо другой аутентификации. За подробностями обратитесь к <xref remap="3" linkend="auth-trust"/>.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>reject</literal></term>
+        <listitem>
+         <para>Отклоняет подключение безусловно. Эта возможность полезна для <quote>фильтрации</quote> некоторых серверов группы, например, строка <literal>reject</literal> может отклонить попытку подключения одного компьютера, при этом следующая строка позволяет подключиться остальным компьютерам в той же сети.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>md5</literal></term>
+        <listitem>
+         <para>Требует от клиента предоставить для аутентификации пароль, дважды хешированный алгоритмом MD5. За подробностями обратитесь к <xref remap="3" linkend="auth-password"/>.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>scram</literal></term>
+        <listitem>
+         <para>Требует от клиента предоставить для аутентификации пароль, зашифрованный алгоритмом SCRAM-SHA-256. За подробностями обратитесь к <xref remap="3" linkend="auth-password"/>.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>password</literal></term>
+        <listitem>
+         <para>Требует для аутентификации введения клиентом незашифрованного пароля. Поскольку пароль посылается простым текстом через сеть, такой способ не стоит использовать, если сеть не вызывает доверия. За подробностями обратитесь к <xref remap="3" linkend="auth-password"/>.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>gss</literal></term>
+        <listitem>
+         <para>Для аутентификации пользователя использует GSSAPI. Этот способ доступен только для подключений по TCP/IP. За подробностями обратитесь к <xref remap="3" linkend="gssapi-auth"/>.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>sspi</literal></term>
+        <listitem>
+         <para>Для аутентификации пользователя использует SSPI. Способ доступен только для Windows. За подробностями обратитесь к <xref remap="3" linkend="sspi-auth"/>.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>ident</literal></term>
+        <listitem>
+         <para>Получает имя пользователя операционной системы клиента, связываясь с сервером Ident, и проверяет, соответствует ли оно имени пользователя базы данных. Аутентификация ident может использоваться только для подключений по TCP/IP. Для локальных подключений применяется аутентификация peer. За подробностями обратитесь к <xref remap="3" linkend="auth-ident"/>.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>peer</literal></term>
+        <listitem>
+         <para>Получает имя пользователя операционной системы клиента из операционной системы и проверяет, соответствует ли оно имени пользователя запрашиваемой базы данных. Доступно только для локальных подключений. За подробностями обратитесь к <xref remap="3" linkend="auth-peer"/>.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>ldap</literal></term>
+        <listitem>
+         <para>Проводит аутентификацию, используя сервер <acronym>LDAP</acronym>. За подробностями обратитесь к <xref remap="3" linkend="auth-ldap"/>.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>radius</literal></term>
+        <listitem>
+         <para>Проводит аутентификацию, используя сервер RADIUS. За подробностями обратитесь к <xref remap="3" linkend="auth-radius"/></para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>cert</literal></term>
+        <listitem>
+         <para>Проводит аутентификацию, используя клиентский сертификат SSL. За подробностями обратитесь к <xref remap="3" linkend="auth-cert"/></para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>pam</literal></term>
+        <listitem>
+         <para>Проводит аутентификацию, используя службу подключаемых модулей аутентификации (PAM), предоставляемую операционной системой. За подробностями обратитесь к <xref remap="3" linkend="auth-pam"/>.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>bsd</literal></term>
+        <listitem>
+         <para>Проводит аутентификацию, используя службу аутентификации BSD, предоставляемую операционной системой. За подробностями обратитесь к <xref remap="3" linkend="auth-bsd"/>.</para>
+        </listitem>
+       </varlistentry>
+      </variablelist>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>параметры-аутентификации</replaceable></term>
+     <listitem>
+      <para>После поля <replaceable>auth-method</replaceable> может идти поле (поля) вида <replaceable>name</replaceable><literal>=</literal><replaceable>value</replaceable>, определяющее параметры метода аутентификации. Подробнее о параметрах, доступных для различных методов аутентификации, рассказывается ниже.</para>
+
+      <para>Помимо описанных далее параметров, относящихся к различным методам, есть один общий параметр аутентификации <literal>clientcert</literal>, который можно задать в любой записи <literal>hostssl</literal>. Если он равен <literal>1</literal>, клиент должен представить подходящий (доверенный) сертификат SSL, в дополнение к другим требованиям метода проверки подлинности.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist></para>
+
+  <para>Файлы, включённые в конструкции, начинающиеся с <literal>@</literal>, читаются, как список имён, разделённых запятыми или пробелами. Комментарии предваряются знаком <literal>#</literal>, как и в файле <filename>pg_hba.conf</filename>, и вложенные <literal>@</literal> конструкции допустимы. Если только имя файла, начинающегося с <literal>@</literal> не является абсолютным путём.</para>
+
+  <para>Поскольку записи файла <filename>pg_hba.conf</filename> рассматриваются последовательно для каждого подключения, порядок записей имеет большое значение. Обычно, более ранние записи определяют чёткие критерии для соответствия параметров подключения, но для методов аутентификации допускают послабления. Напротив, записи более поздние смягчают требования к соответствию параметров подключения, но усиливают их в отношении методов аутентификации. Например, некто желает использовать <literal>trust</literal> аутентификацию для локального подключения по TCP/IP, но при этом запрашивать пароль для удалённых подключений по TCP/IP. В этом случае, запись, указывающая <literal>trust</literal> аутентификацию для подключения адреса 127.0.0.1 должна появиться до записи, определяющей аутентификацию через пароль для более широкого диапазона клиентских IP-адресов.</para>
+
+  <para>Файл <filename>pg_hba.conf</filename> прочитывается во время запуска и в момент получения основным процессом сервера сигнала <systemitem>SIGHUP</systemitem><indexterm><primary>SIGHUP</primary></indexterm>. Если вы редактируете файл во время работы системы, необходимо послать сигнал процессу postmaster (используя <literal>pg_ctl reload</literal> или <literal>kill -HUP</literal>), чтобы он прочел обновленный файл.</para>
+
+  <tip>
+   <para>Чтобы подключиться к конкретной базе данных, пользователь не только должен пройти все проверки файла <filename>pg_hba.conf</filename>, но должен иметь привилегию <literal>CONNECT</literal> для подключения к базе данных. Если вы хотите ограничить доступ к базам данных для определённых пользователей, проще предоставить/отозвать привилегию <literal>CONNECT</literal>, нежели устанавливать правила в записях файла <filename>pg_hba.conf</filename>.</para>
+  </tip>
+
+  <para>Примеры записей файла <filename>pg_hba.conf</filename> показаны в <xref remap="6" linkend="example-pg-hba.conf"/>. Обратитесь к следующему разделу за более подробной информацией по методам аутентификации.</para>
+
+   <example id="example-pg-hba.conf">
+    <title>Примеры записей <filename>pg_hba.conf</filename></title>
+<programlisting># Позволяет любому пользователю локальной системы подключаться
+# к любой базе данных, используя любое пользователя баз данных, через
+# доменные сокеты Unix (по умолчанию для локальных подключений).
+#
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+local   all             all                                     trust
+
+# То же, но для локальных подключений по TCP/IP.
+#
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+host    all             all             127.0.0.1/32            trust
+
+# То же, что и в предыдущей строке, но с указанием
+# сетевой маски в отдельном столбце
+#
+# TYPE  DATABASE        USER            IP-ADDRESS      IP-MASK             METHOD
+host    all             all             127.0.0.1       255.255.255.255     trust
+
+# То же для IPv6.
+#
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+host    all             all             ::1/128                 trust
+
+# То же самое, но с использованием имени компьютера
+# (обычно покрывает и IPv4, и IPv6).
+#
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+host    all             all             localhost               trust
+
+# Позволяет любому пользователю любого компьютера с IP-адресом
+# 192.168.93.x подключаться к базе данных "postgres"
+# с именем, которое сообщает для данного подключения ident
+# (как правило, имя пользователя операционной системы).
+#
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+host    postgres        all             192.168.93.0/24         ident
+
+# Позволяет любому пользователю компьютера 192.168.12.10 подключаться
+# к базе данных "postgres" если пользователь передал правильный пароль,
+# используя заданный метод.
+#
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+host    postgres        all             192.168.12.10/32        md5
+host    postgres        all             192.168.12.10/32        scram
+
+# Позволяет пользователям с компьютеров в домене example.com подключаться
+# к любой базе данных при условии передачи правильного пароля, защищённого
+# с применением MD5.
+#
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+host    all             all             .example.com            md5
+
+# То же, что и в предыдущей строке, но пароль должен быть защищён
+# с применением SCRAM-SHA-256.
+host    all             all             .example.com            scram
+
+# В случае отсутствия предшествующих строчек с "host", следующие две строки
+# откажут в подключении с 192.168.54.1 (поскольку данная запись будет
+# сопоставляться первой), но разрешат подключения GSSAPI с любых других
+# адресов. С нулевой маской ни один бит из IP-адреса компьютера
+# не учитывается, так что этой строке соответствует любой компьютер.
+#
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+host    all             all             192.168.54.1/32         reject
+host    all             all             0.0.0.0/0               gss
+
+# Позволяет пользователям с любого компьютера 192.168.x.x подключаться
+# к любой базе данных, если они проходят проверку ident.  Если же ident
+# говорит, например, что это пользователь "bryanh" и он запрашивает
+# подключение как пользователь PostgreSQL "guest1", подключение
+# будет разрешено, если в файле pg_ident.conf есть сопоставление для
+# "omicron", позволяющее пользователю "bryanh" подключаться как "guest1".
+#
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+host    all             all             192.168.0.0/16          ident map=omicron
+
+# Если для локальных подключений предусмотрены только эти три строки,
+# они позволят локальным пользователям подключаться только к своим
+# базам данных (базам данных с именами, совпадающими с
+# именами пользователей баз данных), кроме администраторов
+# или членов роли "support", которые могут подключиться к любой БД.
+# Файл $PGDATA/admins содержит список имён администраторов.
+# Пароли запрашиваются в любом случае.
+#
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+local   sameuser        all                                     md5
+local   all             @admins                                 md5
+local   all             +support                                md5
+
+# Последние две строчки выше могут быть объединены в одну:
+local   all             @admins,+support                        md5
+
+# В столбце DATABASE также могут указываться списки и имена файлов:
+local   db1,db2,@demodbs  all                                   md5</programlisting>
+   </example>
+ </sect1>
+
+ <sect1 id="auth-username-maps">
+  <title>Файл сопоставления имён пользователей</title>
+
+  <indexterm zone="auth-username-maps"><primary>Файл сопоставления имён пользователей</primary></indexterm>
+
+  <para>Когда используется внешняя система аутентификации, например Ident или GSSAPI, имя пользователя операционной системы, устанавливающего подключение, может не совпадать с именем целевого пользователя (роли) базы данных. В этом случае можно применить сопоставление имён пользователей, чтобы сменить имя пользователя операционной системы на имя пользователя БД. Чтобы задействовать сопоставление имён, укажите <literal>map</literal>=<replaceable>имя-сопоставления</replaceable> в поле параметров в <filename>pg_hba.conf</filename>. Этот параметр поддерживается для всех методов аутентификации, которые принимают внешние имена пользователей. Так как для разных подключений могут требоваться разные сопоставления, сопоставление определяется параметром <replaceable>имя-сопоставления</replaceable> в <filename>pg_hba.conf</filename> для каждого отдельного подключения.</para>
+
+  <para>Сопоставления имён пользователя определяются в файле сопоставления ident, который по умолчанию называется <filename>pg_ident.conf</filename><indexterm><primary>pg_ident.conf</primary></indexterm> и хранится в каталоге данных кластера. (Файл сопоставления может быть помещён и в другое место, обратитесь к информации о настройке параметра <xref linkend="guc-ident-file"/>.) Файл сопоставления ident содержит строки общей формы: <synopsis>
+<replaceable>map-name</replaceable> <replaceable>system-username</replaceable> <replaceable>database-username</replaceable>
+</synopsis> Комментарии и пробелы применяются так же, как и в файле <filename>pg_hba.conf</filename>. <replaceable>map-name</replaceable> является произвольным именем, на которое будет ссылаться файл сопоставления файла <filename>pg_hba.conf</filename>. Два других поля указывают имя пользователя операционной системы и соответствующее имя пользователя базы данных. Имя <replaceable>map-name</replaceable> может быть использовано неоднократно, чтобы указывать множественные сопоставления пользовательских имён в рамках одного файла сопоставления.</para>
+  <para>Нет никаких ограничений по количеству пользователей баз данных, на которые может ссылаться пользователь операционной системы, и наоборот. Тем не менее, записи в файле скорее подразумевают, что <quote> пользователь этой операционной системы может подключиться как пользователь этой базы данных</quote>, нежели показывают, что эти имена пользователей эквивалентны. Подключение разрешается, если существует запись в файле сопоставления, соединяющая имя, полученное от внешней системы аутентификации, с именем пользователя базы данных, под которым пользователь хочет подключиться.</para>
+  <para>Если поле <replaceable>system-username</replaceable> начинается со знака (<literal>/</literal>), оставшаяся его часть рассматривается как регулярное выражение. (Подробнее синтаксис регулярных выражений <productname>&productname;</productname> описан в <xref remap="6" linkend="posix-syntax-details"/>.) Регулярное выражение может включать в себя одну группу, или заключённое в скобки подвыражение, на которое можно сослаться в поле <replaceable>database-username</replaceable>, написав <literal>\1</literal> (с одной обратной косой). Это позволяет сопоставить несколько имён пользователя с одной строкой, что особенно удобно для простых замен. Например, эти строки <programlisting>mymap   /^(.*)@mydomain\.com$      \1
+mymap   /^(.*)@otherdomain\.com$   guest</programlisting> удалят часть домена для имён пользователей, которые заканчиваются на <literal>@mydomain.com</literal>, и позволят пользователям, чьё имя пользователя системы заканчивается на <literal>@otherdomain.com</literal>, подключиться как <literal>guest</literal>.</para>
+
+  <tip>
+   <para>Помните, что по умолчанию, регулярное выражение может совпасть только с частью строки. Разумным выходом будет использование символов <literal>^</literal> и <literal>$</literal>, как показано в примере выше, для принудительного совпадения со всем именем пользователя операционной системы</para>
+  </tip>
+
+  <para>Файл <filename>pg_ident.conf</filename> читается при запуске системы, а также в тот момент, когда основной сервер получает сигнал <systemitem>SIGHUP</systemitem><indexterm><primary>SIGHUP</primary></indexterm>. Если вы редактируете файл во время работы системы, необходимо послать сигнал процессу postmaster (используя <literal>pg_ctl reload</literal> или <literal>kill -HUP</literal>), чтобы он прочел обновленный файл.</para>
+
+  <para>Файл <filename>pg_ident.conf</filename>, который может быть использован в сочетании с файлом <filename>pg_hba.conf</filename> (см. <xref remap="4" linkend="example-pg-hba.conf"/>), показан в <xref remap="6" linkend="example-pg-ident.conf"/>. В этом примере любым пользователям компьютеров в сети 192.168 с именами, отличными от <literal>bryanh</literal>, <literal>ann</literal> или <literal>robert</literal>, будет отказано в доступе. Пользователь системы <literal>robert</literal> получит доступ только тогда, когда подключается как пользователь <productname>&productname;</productname> <literal>bob</literal>, а не как <literal>robert</literal>, или какой-либо другой пользователь. Пользователь <literal>ann</literal> сможет подключиться только как <literal>ann</literal>. Пользователь <literal>bryanh</literal> сможет подключиться как <literal>bryanh</literal> или как <literal>guest1</literal>.</para>
+
+  <example id="example-pg-ident.conf">
+   <title>Пример файла <filename>pg_ident.conf</filename></title>
+<programlisting># MAPNAME       SYSTEM-USERNAME         PG-USERNAME
+
+omicron         bryanh                  bryanh
+omicron         ann                     ann
+# на этих машинах bob может подключаться как robert  
+omicron         robert                  bob
+# bryanh также может подключаться как guest1
+omicron         bryanh                  guest1</programlisting>
+  </example>
+ </sect1>
+
+ <sect1 id="auth-methods">
+  <title>Методы аутентификации</title>
+  <para>Следующие подразделы содержат более детальную информацию о методах аутентификации.</para>
+
+  <sect2 id="auth-trust">
+   <title>Аутентификация trust</title>
+
+   <para>Когда указан способ аутентификации <literal>trust</literal>, <productname>&productname;</productname> предполагает, что любой подключающийся к серверу авторизован для доступа к базе данных вне зависимости от указанного имени пользователя базы данных (даже если это имя суперпользователя). Конечно, ограничения, прописанные в столбцах <literal>database</literal> и <literal>user</literal>, продолжают работать. Этот метод должен применяться только в том случае, когда на уровне операционной системы обеспечена адекватная защита от подключений к серверу.</para>
+
+   <para>Аутентификация <literal>trust</literal> очень удобна для локальных подключений на однопользовательской рабочей станции. Но сам по себе этот метод обычно <emphasis>не</emphasis> подходит для машин с несколькими пользователями. Однако вы можете использовать <literal>trust</literal> даже на многопользовательской машине, если ограничите доступ к файлу Unix-сокета сервера, используя систему разрешения файлов. Для этого установите конфигурационные параметры <varname>unix_socket_permissions</varname> (и, возможно, <varname>unix_socket_group</varname>) как описано в <xref remap="6" linkend="runtime-config-connection"/>. Вы также можете установить конфигурационные параметры <varname>unix_socket_directories</varname>, чтобы поместить файл сокета в подходящим образом защищённый каталог.</para>
+
+   <para>Установка разрешений у файловой системы помогает только в случае подключений через Unix-сокеты. Локальные соединения по TCP/IP не ограничены разрешениями файловой системы. Поэтому, если вы хотите использовать разрешения файловой системы для обеспечения локальной безопасности, уберите строку <literal>host ... 127.0.0.1 ...</literal> из <filename>pg_hba.conf</filename> или смените метод аутентификации.</para>
+
+   <para>Метод аутентификации <literal>trust</literal> для подключений по TCP/IP допустим только в случае, если вы доверяете каждому пользователю компьютера, получившему разрешение на подключение к серверу строками файла <filename>pg_hba.conf</filename>, указывающими метод <literal>trust</literal>. Не стоит использовать <literal>trust</literal> для любых подключений по TCP/IP, отличных от <systemitem>localhost</systemitem> (127.0.0.1).</para>
+
+  </sect2>
+
+  <sect2 id="auth-password">
+   <title>Аутентификация password</title>
+
+   <indexterm><primary>MD5</primary></indexterm>
+   <indexterm><primary>password</primary> <secondary>Аутентификация</secondary></indexterm>
+
+   <para>Методы аутентификации с помощью пароля — <literal>md5</literal>, <literal>scram</literal> и <literal>password</literal>. Эти методы действуют похожим образом; отличие состоит только в том, как передаётся пароль по каналу связи, а именно: в виде хеша MD5, SCRAM-SHA-256 или открытым текстом, соответственно.</para>
+
+   <para>Если вас беспокоит возможность перехвата трафика, предпочтительнее использовать метод <literal>md5</literal>. Простого метода <literal>password</literal> следует избегать всегда, если возможно. Однако, <literal>md5</literal> не может быть использован с параметром <xref linkend="guc-db-user-namespace"/>. Если подключение зашифровано по SSL, тогда <literal>password</literal> тоже может быть использован без опасений (хотя аутентификация через SSL сертификат будет наилучшим выбором для тех, кто зависит от использования SSL).</para>
+
+   <para>Метод <literal>scram</literal> имеет дополнительные преимущества по сравнению с <literal>md5</literal>, так как он защищает и от похищения хешированных паролей непосредственно из <structname>pg_authid</structname>. В таких случаях <literal>md5</literal> позволяет подключаться к серверу, используя только украденный хеш, не зная защищённого им пароля. Метод <literal>scram</literal> также защищает от перехвата пароля, когда он передаётся по сети или в случае атаки посредника (MITM). Поэтому в среде, где применяется аутентификация по паролю, настоятельно рекомендуется применять этот метод, а не <literal>md5</literal>.</para>
+
+   <para>База данных паролей <productname>&productname;</productname> отделена от паролей пользователей операционной системы. Пароль для каждого пользователя базы данных хранится в системном каталоге <literal>pg_authid</literal>. Работать с паролями можно через команды SQL <xref linkend="sql-createuser"/> и <xref linkend="sql-alterrole"/>, например, <userinput>CREATE USER foo WITH PASSWORD 'secret'</userinput>. Если для пользователя не было установлено пароля, пароль сохраняется как null, и аутентификация через пароль для данного пользователя будет невозможна.</para>
+
+  </sect2>
+
+  <sect2 id="gssapi-auth">
+   <title>Аутентификация GSSAPI</title>
+
+   <indexterm zone="gssapi-auth"><primary>GSSAPI</primary></indexterm>
+
+   <para><productname>GSSAPI</productname> является протоколом отраслевого стандарта для безопасной авторизации, определённым в RFC 2743. <productname>&productname;</productname> поддерживает <productname>GSSAPI</productname> с <productname>Kerberos</productname> аутентификацией с соответствии с RFC 1964. <productname>GSSAPI</productname> обеспечивает автоматическую аутентификацию (single sign-on), для систем, которые её поддерживают. Сама по себе аутентификация безопасна, но данные, отсылаемые в ходе подключения к базе данных, не защищены, если не используется <acronym>SSL</acronym>.</para>
+
+   <para>Поддержка GSSAPI должна быть включена при сборке <productname>&productname;</productname>.</para>
+
+   <para>При работе с <productname>Kerberos</productname> <productname>GSSAPI</productname> использует стандартные учётные записи в формате <literal><replaceable>servicename</replaceable>/<replaceable>hostname</replaceable>@<replaceable>realm</replaceable></literal>. Сервер &productname; примет любого принципала, включённого в используемый сервером файл таблицы ключей, но необходимо проявить осторожность в указании корректных деталей принципала в ходе соединения с клиентом, применяющим параметр подключения <literal>krbsrvname</literal>. (См. также <xref linkend="libpq-paramkeywords"/>.) Значение имени сервиса по умолчанию <literal>postgres</literal> может быть изменено во время сборки с помощью <literal>./configure --with-krb-srvnam=</literal><replaceable>whatever</replaceable>. В большинстве сред изменять данный параметр не требуется. Однако некоторые реализации Kerberos могут потребовать иного имени сервиса, например, Microsoft Active Directory требует, чтобы имя сервиса было набрано заглавными буквами (<literal>POSTGRES</literal>).</para>
+   <para><replaceable>hostname</replaceable> здесь — это полное доменное имя компьютера, где работает сервер. Областью субъекта-службы является предпочитаемая область данного компьютера.</para>
+
+   <para>Принципалы клиентов могут быть сопоставлены с различными именами пользователей баз данных <productname>&productname;</productname> в <filename>pg_ident.conf</filename>. Например, принципалу <literal>pgusername@realm</literal> может быть сопоставлено просто <literal>pgusername</literal>. Так же возможно использовать в качестве имени роли в <productname>&productname;</productname> полное имя принципала <literal>username@realm</literal> без какого-либо сопоставления.</para>
+
+   <para><productname>&productname;</productname> также поддерживает возможность убирать область из имени принципала. Эта возможность оставлена для обратной совместимости и использовать её крайне нежелательно, так как при этом оказывается невозможно различить разных пользователей, имеющих одинаковые имена, но приходящих из разных областей. Чтобы включить её, установите для <literal>include_realm</literal> значение 0. В простых конфигурациях с одной областью исключение области в сочетании с параметром <literal>krb_realm</literal> (который позволяет ограничить область пользователя одним значением, заданным в <literal>krb_realm</literal> parameter) будет безопасным, но менее гибким вариантом по сравнению с явным описанием сопоставлений в <filename>pg_ident.conf</filename>.</para>
+
+   <para>Убедитесь, что файл ключей вашего сервера доступен для чтения (и желательно недоступен для записи) учётной записи сервера <productname>&productname;</productname>. (См. также <xref remap="4" linkend="postgres-user"/>.) Расположение этого файла ключей указывается параметром <xref linkend="guc-krb-server-keyfile"/>. По умолчанию это <filename>/usr/local/pgsql/etc/krb5.keytab</filename> (каталог может быть другим, в зависимости от значения <varname>sysconfdir</varname> при сборке). Из соображений безопасности рекомендуется использовать отдельный файл keytab для сервера <productname>&productname;</productname>, а не открывать доступ к общесистемному файлу.</para>
+   <para>Файл таблицы ключей генерируется программным обеспечением Kerberos; подробнее это описано в документации Kerberos. Следующий пример для MIT-совместимых реализаций Kerberos 5: <screen>
+<prompt>kadmin% </prompt><userinput>ank -randkey postgres/server.my.domain.org</userinput>
+<prompt>kadmin% </prompt><userinput>ktadd -k krb5.keytab postgres/server.my.domain.org</userinput>
+</screen></para>
+
+   <para>При подключении к базе данных убедитесь, что у вас есть разрешение на сопоставление принципала с именем пользователя базы данных. Например, для имени пользователя базы данных <literal>fred</literal>, принципал <literal>fred@EXAMPLE.COM</literal> сможет подключиться. Чтобы дать разрешение на подключение принципалу <literal>fred/users.example.com@EXAMPLE.COM</literal>, используйте файл сопоставления имён пользователей, как описано в <xref remap="6" linkend="auth-username-maps"/>.</para>
+
+   <para>Для метода <productname>GSSAPI</productname> доступны следующие параметры конфигурации: <variablelist>
+     <varlistentry>
+      <term><literal>include_realm</literal></term>
+      <listitem>
+       <para>Когда этот параметр равен 0, из принципала аутентифицированного пользователя убирается область, и оставшееся имя проходит сопоставление имён (см. <xref remap="4" linkend="auth-username-maps"/>). Этот вариант не рекомендуется и поддерживается в основном для обратной совместимости, так как он небезопасен в окружениях с несколькими областями, если только дополнительно не задаётся <literal>krb_realm</literal>. Более предпочтительный вариант — оставить значение <literal>include_realm</literal> по умолчанию (1) и задать в <filename>pg_ident.conf</filename> явное сопоставление для преобразования имён принципалов в имена пользователей <productname>&productname;</productname>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>map</literal></term>
+      <listitem>
+       <para>Разрешает сопоставление имён пользователей системы и пользователей баз данных. За подробностями обратитесь к <xref remap="3" linkend="auth-username-maps"/>. Для принципала GSSAPI/Kerberos, такого как <literal>username@EXAMPLE.COM</literal> (или более редкого <literal>username/hostbased@EXAMPLE.COM</literal>), именем пользователя в сопоставлении будет <literal>username@EXAMPLE.COM</literal> (или <literal>username/hostbased@EXAMPLE.COM</literal>, соответственно), если <literal>include_realm</literal> не равно 0; в противном случае именем системного пользователя в сопоставлении будет <literal>username</literal> (или <literal>username/hostbased</literal>).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>krb_realm</literal></term>
+      <listitem>
+       <para>Устанавливает область, с которой будут сверяться имена принципалов пользователей. Если этот параметр задан, подключаться смогут только пользователи из этой области. Если не задан, подключаться смогут пользователи из любой области, в зависимости от установленного сопоставления имён пользователей.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+  </sect2>
+
+  <sect2 id="sspi-auth">
+   <title>Аутентификация SSPI</title>
+
+   <indexterm zone="sspi-auth"><primary>SSPI</primary></indexterm>
+
+   <para><productname>SSPI</productname> — технология <productname>Windows</productname> для защищённой аутентификации с единственным входом. <productname>&productname;</productname> использует SSPI в режиме <literal>negotiate</literal>, который применяет <productname>Kerberos</productname>, когда это возможно, и автоматически возвращается к <productname>NTLM</productname> в других случаях. Аутентификация <productname>SSPI</productname> работает только, когда и сервер, и клиент работают на платформе <productname>Windows</productname>, или, на не-Windows платформах, если доступен <productname>GSSAPI</productname>.</para>
+
+   <para>Если используется аутентификация <productname>Kerberos</productname>, <productname>SSPI</productname> работает так же, как <productname>GSSAPI</productname>; подробнее об этом рассказывается в <xref remap="6" linkend="gssapi-auth"/>.</para>
+
+   <para>Для <productname>SSPI</productname> доступны следующие параметры конфигурации: <variablelist>
+
+     <varlistentry>
+      <term><literal>include_realm</literal></term>
+      <listitem>
+       <para>Когда этот параметр равен 0, из принципала аутентифицированного пользователя убирается область, и оставшееся имя проходит сопоставление имён (см. <xref remap="4" linkend="auth-username-maps"/>). Этот вариант не рекомендуется и поддерживается в основном для обратной совместимости, так как он небезопасен в окружениях с несколькими областями, если только дополнительно не задаётся <literal>krb_realm</literal>. Более предпочтительный вариант — оставить значение <literal>include_realm</literal> по умолчанию (1) и задать в <filename>pg_ident.conf</filename> явное сопоставление для преобразования имён принципалов в имена пользователей <productname>&productname;</productname>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>compat_realm</literal></term>
+      <listitem>
+       <para>Если равен 1, для параметра <literal>include_realm</literal> применяется имя домена, совместимое с SAM (также известное как имя NetBIOS). Это вариант по умолчанию. Если он равен 0, для имени принципала Kerberos применяется действительное имя области.</para>
+       <para>Этот параметр можно отключить, только если ваш сервер работает под именем доменного пользователя (в том числе, виртуального пользователя службы на компьютере, включённом в домен) и все клиенты, проходящие проверку подлинности через SSPI, также используют доменные учётные записи; в противном случае аутентификация не будет выполнена.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>upn_username</literal></term>
+      <listitem>
+       <para>Если этот параметр включён вместе с <literal>compat_realm</literal>, для аутентификации применяется имя Kerberos UPN. Если он отключён (по умолчанию), применяется SAM-совместимое имя пользователя. По умолчанию у новых учётных записей эти два имени совпадают.</para>
+       <para>Заметьте, что <application>libpq</application> использует имя, совместимое с SAM, если имя не задано явно. Если вы применяете <application>libpq</application> или драйвер на его базе, этот параметр следует оставить отключённым, либо явно задавать имя пользователя в строке подключения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>map</literal></term>
+      <listitem>
+       <para>Позволяет сопоставить пользователей системы с пользователями баз данных. За подробностями обратитесь к <xref remap="3" linkend="auth-username-maps"/>. Для принципала SSPI/Kerberos, такого как <literal>username@EXAMPLE.COM</literal> (или более редкого <literal>username/hostbased@EXAMPLE.COM</literal>), именем пользователя в сопоставлении будет <literal>username@EXAMPLE.COM</literal> (или <literal>username/hostbased@EXAMPLE.COM</literal>, соответственно), если <literal>include_realm</literal> не равно 0; в противном случае именем системного пользователя в сопоставлении будет <literal>username</literal> (или <literal>username/hostbased</literal>).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>krb_realm</literal></term>
+      <listitem>
+       <para>Устанавливает область, с которой будут сверяться имена принципалов пользователей. Если этот параметр задан, подключаться смогут только пользователи из этой области. Если не задан, подключаться смогут пользователи из любой области, в зависимости от установленного сопоставления имён пользователей.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+  </sect2>
+
+  <sect2 id="auth-ident">
+   <title>Аутентификация Ident</title>
+
+   <indexterm><primary>ident</primary></indexterm>
+
+   <para>Метод аутентификации ident работает, получая имя пользователя операционной системы клиента от сервера Ident и используя его в качестве разрешённого имени пользователя базы данных (с возможным сопоставлением имён пользователя). Способ доступен только для подключений по TCP/IP.</para>
+
+   <note>
+    <para>Когда для локального подключения (не TCP/IP) указан ident, вместо него используется метод аутентификации peer (см. <xref remap="4" linkend="auth-peer"/>).</para>
+   </note>
+
+   <para>Для метода <productname>ident</productname> доступны следующие параметры конфигурации: <variablelist>
+     <varlistentry>
+      <term><literal>map</literal></term>
+      <listitem>
+       <para>Позволяет сопоставить имена пользователей системы и базы данных. За подробностями обратитесь к <xref remap="3" linkend="auth-username-maps"/>.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+   <para>Протокол <quote>Identification</quote> (Ident) описан в RFC 1413. Практически каждая Unix-подобная операционная система поставляется с сервером Ident, по умолчанию слушающим TCP-порт 113. Базовая функция этого сервера — отвечать на вопросы, вроде <quote>Какой пользователь инициировал подключение, которое идет через твой порт <replaceable>X</replaceable> и подключается к моему порту <replaceable>Y</replaceable>?</quote>. Поскольку после установления физического подключения <productname>&productname;</productname> знает и <replaceable>X</replaceable>, и <replaceable>Y</replaceable>, он может опрашивать сервер Ident на компьютере клиента и теоретически может определять пользователя операционной системы при каждом подключении.</para>
+
+   <para>Недостатком этой процедуры является то, что она зависит от интеграции с клиентом: если клиентская машина не вызывает доверия или скомпрометирована, злоумышленник может запустить любую программу на порту 113 и вернуть любое имя пользователя на свой выбор. Поэтому этот метод аутентификации подходит только для закрытых сетей, где каждая клиентская машина находится под жёстким контролем и где администраторы операционных систем и баз данных работают в тесном контакте. Другими словами, вы должны доверять машине, на которой работает сервер Ident. Помните предупреждение: <blockquote><attribution>RFC 1413</attribution> <para>Протокол Ident не предназначен для использования как протокол авторизации и контроля доступа.</para></blockquote></para>
+
+   <para>У некоторых серверов Ident есть нестандартная возможность, позволяющая зашифровать возвращаемое имя пользователя, используя ключ, который известен только администратору исходного компьютера. Эту возможность <emphasis>нельзя</emphasis> использовать с <productname>&productname;</productname>, поскольку <productname>&productname;</productname> не сможет расшифровать возвращаемую строку и получить фактическое имя пользователя.</para>
+  </sect2>
+
+  <sect2 id="auth-peer">
+   <title>Аутентификация peer</title>
+
+   <indexterm><primary>peer</primary></indexterm>
+
+   <para>Метод аутентификации peer работает, получая имя пользователя операционной системы клиента из ядра и используя его в качестве разрешённого имени пользователя базы данных (с возможностью сопоставления имён пользователя). Этот метод поддерживается только для локальных подключений.</para>
+
+   <para>Для метода <productname>peer</productname> доступны следующие параметры конфигурации: <variablelist>
+     <varlistentry>
+      <term><literal>map</literal></term>
+      <listitem>
+       <para>Позволяет сопоставить имена пользователей системы и базы данных. За подробностями обратитесь к <xref remap="3" linkend="auth-username-maps"/>.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+   <para>Аутентификация peer доступна только на операционных системах, поддерживающих функцию <function>getpeereid()</function>, параметр сокета <symbol>SO_PEERCRED</symbol> или сходные механизмы. В настоящее время это <systemitem class="osname">Linux</systemitem>, большая часть разновидностей <systemitem class="osname">BSD</systemitem>, включая <systemitem class="osname">OS X</systemitem>, и <systemitem class="osname">Solaris</systemitem>.</para>
+
+  </sect2>
+
+  <sect2 id="auth-ldap">
+   <title>Аутентификация LDAP</title>
+
+   <indexterm zone="auth-ldap"><primary>LDAP</primary></indexterm>
+
+   <para>Данный метод аутентификации работает сходным с методом <literal>password</literal> образом, за исключением того, что он использует LDAP как метод подтверждения пароля. LDAP используется только для подтверждения пары "имя пользователя/пароль". Поэтому пользователь должен уже существовать в базе данных до того, как для аутентификации будет использован LDAP.</para>
+
+   <para>Аутентификация LDAP может работать в двух режимах. Первый режим называется простое связывание. В ходе аутентификации сервер связывается с характерным именем, составленным следующим образом: <replaceable>prefix</replaceable> <replaceable>username</replaceable> <replaceable>suffix</replaceable>. Обычно, параметр <replaceable>prefix</replaceable> используется для указания <literal>cn=</literal> или <replaceable>DOMAIN</replaceable><literal>\</literal> в среде Active Directory. <replaceable>suffix</replaceable> используется для указания оставшейся части DN или в среде, отличной от Active Directory.</para>
+
+   <para>Во втором режиме, который мы называем поиск+связывание, сервер сначала связывается с каталогом LDAP с предопределённым именем пользователя и паролем, указанным в <replaceable>ldapbinddn</replaceable> и <replaceable>ldapbindpasswd</replaceable>, и выполняет поиск пользователя, пытающегося подключиться к базе данных. Если имя пользователя и пароль не определены, сервер пытается связаться с каталогом анонимно. Поиск выполняется в поддереве <replaceable>ldapbasedn</replaceable>, при этом проверятся точное соответствие имени пользователя атрибуту <replaceable>ldapsearchattribute</replaceable>. Как только при поиске находится пользователь, сервер отключается и заново связывается с каталогом уже как этот пользователь, с паролем, переданным клиентом, чтобы удостовериться, что учётная запись корректна. Этот же режим используется в схемах LDAP-аутентификации в другом программном обеспечении, например, в pam_ldap и mod_authnz_ldap в Apache. Данный вариант даёт больше гибкости в выборе расположения объектов пользователей, но при этом требует дважды подключаться к серверу LDAP.</para>
+
+   <para>Следующие параметры конфигурации доступны при аутентификации в обоих режимах: <variablelist>
+     <varlistentry>
+      <term><literal>ldapserver</literal></term>
+      <listitem>
+       <para>Имена и IP-адреса LDAP-серверов для связи. Можно указать несколько серверов, разделяя их пробелами.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal>ldapport</literal></term>
+      <listitem>
+       <para>Номер порта для связи с LDAP-сервером. Если порт не указан, используется установленный по умолчанию порт библиотеки LDAP.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal>ldaptls</literal></term>
+      <listitem>
+       <para>Равен 1 для установки соединения между &productname; и LDAP-сервером с использованием TLS-шифрования. Имейте в виду, что так шифруется только обмен данными с LDAP-сервером, а клиентское подключение остаётся незашифрованным, если только не применяется SSL.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist> Следующие параметры конфигурации доступны только при аутентификации в режиме простого связывания: <variablelist>
+     <varlistentry>
+      <term><literal>ldapprefix</literal></term>
+      <listitem>
+       <para>Эта строка подставляется перед именем пользователя во время формирования DN для связывания при аутентификации в режиме простого связывания.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal>ldapsuffix</literal></term>
+      <listitem>
+       <para>Эта строка размещается после имени пользователя во время формирования DN для связывания, при аутентификации в режиме простого связывания.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist> Следующие параметры конфигурации доступны только при аутентификации поиск+связывание: <variablelist>
+     <varlistentry>
+      <term><literal>ldapbasedn</literal></term>
+      <listitem>
+       <para>Корневая папка DN для начала поиска пользователя при аутентификации в режиме поиск+связывание.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal>ldapbinddn</literal></term>
+      <listitem>
+       <para>DN пользователя для связи с каталогом при выполнении поиска в ходе аутентификации в режиме поиск+связывание.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal>ldapbindpasswd</literal></term>
+      <listitem>
+       <para>Пароль пользователя для связывания с каталогом при выполнении поиска в ходе аутентификации в режиме поиск+связывание.</para>
+      </listitem>
+      </varlistentry>
+      <varlistentry>
+       <term><literal>ldapsearchattribute</literal></term>
+       <listitem>
+        <para>Атрибут для соотнесения с именем пользователя в ходе аутентификации поиск+связывание. Если атрибут не указан, будет использован атрибут <literal>uid</literal>.</para>
+       </listitem>
+      </varlistentry>
+      <varlistentry>
+       <term><literal>ldapurl</literal></term>
+       <listitem>
+        <para>Адрес RFC 4516 LDAP. Это альтернативный путь для написания некоторых функций LDAP в более компактной и стандартной форме. Формат записи таков: <synopsis>
+ldap://<replaceable>host</replaceable>[:<replaceable>port</replaceable>]/<replaceable>basedn</replaceable>[?[<replaceable>attribute</replaceable>][?[<replaceable>scope</replaceable>]]]
+</synopsis> <replaceable>scope</replaceable> должен быть представлен или <literal>base</literal>, или <literal>one</literal>, или <literal>sub</literal>, обычно последним. Используется один атрибут, некоторые компоненты стандартных LDAP-адресов, такие, как фильтры и расширения, не поддерживаются.</para>
+
+        <para>Для неанонимного связывания <literal>ldapbinddn</literal> и <literal>ldapbindpasswd</literal> должны быть указаны как раздельные параметры.</para>
+
+        <para>Для применения зашифрованных LDAP-подключений, в дополнение к параметру <literal>ldapurl</literal> необходимо использовать параметр <literal>ldaptls</literal>. URL-схема <literal>ldaps</literal> (прямое SSL-подключение) не поддерживается.</para>
+
+        <para>В настоящее время URL-адреса LDAP поддерживаются только с OpenLDAP, не в Windows.</para>
+       </listitem>
+      </varlistentry>
+    </variablelist></para>
+
+   <para>Нельзя путать параметры конфигурации для режима простого связывания с параметрами для режима поиск+связывание, это ошибка.</para>
+
+   <para>Это пример конфигурации LDAP для простого связывания: <programlisting>host ... ldap ldapserver=ldap.example.net ldapprefix="cn=" ldapsuffix=", dc=example, dc=net"</programlisting> Когда запрашивается подключение к серверу базы данных в качестве пользователя базы данных <literal>someuser</literal>, &productname; пытается связаться с LDAP-сервером, используя DN <literal>cn=someuser, dc=example, dc=net</literal> и пароль, предоставленный клиентом. Если это подключение удалось, то доступ к базе данных будет открыт.</para>
+
+   <para>Пример конфигурации для режима поиск+связывание: <programlisting>host ... ldap ldapserver=ldap.example.net ldapbasedn="dc=example, dc=net" ldapsearchattribute=uid</programlisting> Когда запрашивается подключение к серверу базы данных в качестве пользователя базы данных <literal>someuser</literal>, &productname; пытается связаться с сервером LDAP анонимно (поскольку <literal>ldapbinddn</literal> не был указан), выполняет поиск для <literal>(uid=someuser)</literal> под указанной базой DN. Если запись найдена, проводится попытка связывание с использованием найденной информации и паролем, предоставленным клиентом. Если вторая попытка подключения проходит успешно, предоставляется доступ к базе данных.</para>
+
+   <para>Пример той же конфигурации для режима поиск+связывание, но записанной в виде URL: <programlisting>host ... ldap ldapurl="ldap://ldap.example.net/dc=example,dc=net?uid?sub"</programlisting> Такой URL-формат используется и другим программным обеспечением, поддерживающим аутентификацию по протоколу LDAP, поэтому распространять такую конфигурацию будет легче.</para>
+
+   <tip>
+    <para>Поскольку LDAP часто применяет запятые и пробелы для разделения различных частей DN, необходимо использовать кавычки при определении значения параметров, как показано в наших примерах.</para>
+   </tip>
+
+  </sect2>
+
+  <sect2 id="auth-radius">
+   <title>Аутентификация RADIUS</title>
+
+   <indexterm zone="auth-radius"><primary>RADIUS</primary></indexterm>
+
+   <para>Данный метод аутентификации работает сходным с методом <literal>password</literal> образом, за исключением того, что он использует RADIUS как метод проверки пароля. RADIUS используется только для подтверждения пары имя пользователя/пароль. Поэтому пользователь должен уже существовать в базе данных до того, как для аутентификации будет использован RADIUS.</para>
+
+   <para>В ходе аутентификации RADIUS настроенному RADIUS-серверу посылается запрос доступа. Это сообщение типа <literal>Только Аутентификация</literal>, которое включает в себя параметры <literal>имя пользователя</literal>, <literal>пароль</literal> (зашифрованный) и <literal>идентификатор NAS</literal>. Запрос зашифровывается с использованием общего с сервером секрета. RADIUS-сервер отвечает на запрос сервера либо <literal>Доступ принят</literal>, либо <literal>Доступ отклонён</literal>. Система ведения учёта RADIUS не поддерживается.</para>
+
+   <para>Для метода RADIUS доступны следующие параметры конфигурации: <variablelist>
+      <varlistentry>
+       <term><literal>radiusserver</literal></term>
+       <listitem>
+        <para>Имя или IP-адрес сервера RADIUS, с которым будет проходить соединение. Это обязательный параметр.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><literal>radiussecret</literal></term>
+       <listitem>
+        <para>Общий секрет, используемый при контактах с сервером RADIUS. Он должен иметь одинаковое значение на серверах &productname; и RADIUS. Рекомендуется использовать строку как минимум из 16 символов. Это обязательный параметр. <note>
+         <para>Шифровальный вектор будет достаточно эффективен только в том случае, если <productname>&productname;</productname> собран с поддержкой <productname>OpenSSL</productname>. В противном случае, передача данных серверу RADIUS будет лишь замаскированной, но не защищённой, поэтому необходимо принять дополнительные меры безопасности.</para>
+         </note></para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><literal>radiusport</literal></term>
+       <listitem>
+        <para>Номер порта для связи с сервером RADIUS. Если порт не указан, по умолчанию используется порт <literal>1812</literal>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><literal>radiusidentifier</literal></term>
+       <listitem>
+        <para>Строка, используемая в запросах сервера RADIUS как <literal>Идентификатор NAS</literal>. Этот параметр может использоваться как второй параметр, выявляющий, например, какой пользователь пытается подключиться под каким пользователем базы данных, что может быть использовано для формирования соответствий на сервере RADIUS. Если не указан идентификатор, по умолчанию используется <literal>postgresql</literal>.</para>
+       </listitem>
+      </varlistentry>
+
+     </variablelist></para>
+  </sect2>
+
+  <sect2 id="auth-cert">
+   <title>Аутентификация по сертификату</title>
+
+   <indexterm zone="auth-cert"><primary>Certificate</primary></indexterm>
+
+   <para>Для аутентификации в рамках этого метода используется клиентский сертификат SSL, поэтому данный способ применим только для SSL-подключений. Когда используется этот метод, сервер потребует от клиента предъявления действительного и доверенного сертификата. Пароль у клиента не запрашивается. Атрибут <literal>cn</literal> (Обычное имя) сертификата сравнивается с запрашиваемым именем пользователя базы данных, и если они соответствуют, вход разрешается. Если <literal>cn</literal> отличается от имени пользователя базы данных, то может быть использовано сопоставление имён пользователей.</para>
+
+   <para>Для аутентификации по SSL сертификату доступны следующие параметры конфигурации: <variablelist>
+     <varlistentry>
+      <term><literal>map</literal></term>
+      <listitem>
+       <para>Позволяет сопоставить имена пользователей системы и базы данных. За подробностями обратитесь к <xref remap="3" linkend="auth-username-maps"/>.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+   <para>В записи <filename>pg_hba.conf</filename>, описывающей аутентификацию по сертификату, параметр <literal>clientcert</literal> предполагается равным <literal>1</literal>, и его нельзя отключить, так как для этого метода клиентский сертификат является обязательным. Метод <literal>cert</literal> отличается от простой проверки пригодности сертификата <literal>clientcert</literal> только тем, что также проверяет, соответствует ли атрибут <literal>cn</literal> имени пользователя базы данных.</para>
+  </sect2>
+
+  <sect2 id="auth-pam">
+   <title>Аутентификация PAM</title>
+
+   <indexterm zone="auth-pam"><primary>PAM</primary></indexterm>
+
+   <para>Данный метод аутентификации работает подобно методу <literal>password</literal>, но использует в качестве механизма проверки подлинности PAM (Pluggable Authentication Modules, Подключаемые модули аутентификации). По умолчанию имя службы PAM — <literal>postgresql</literal>. PAM используется только для проверки пар "имя пользователя/пароль" и может дополнительно проверять имя или IP-адрес удалённого компьютера. Поэтому пользователь должен уже существовать в базе данных, чтобы PAM можно было использовать для аутентификации. За дополнительной информацией о PAM обратитесь к <ulink url="http://www.kernel.org/pub/linux/libs/pam/">Странице описания <productname>Linux-PAM</productname></ulink>.</para>
+
+   <para>Для аутентификации PAM доступны следующие параметры конфигурации:<variablelist>
+     <varlistentry>
+      <term><literal>pamservice</literal></term>
+      <listitem>
+       <para>Имя службы PAM</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><literal>pam_use_hostname</literal></term>
+      <listitem>
+       <para>Указывает, предоставляется ли модулям PAM через поле <symbol>PAM_RHOST</symbol> IP-адрес либо имя удалённого компьютера. По умолчанию выдаётся IP-адрес. Установите в этом параметре 1, чтобы использовать имя узла. Разрешение имени узла может приводить к задержкам при подключении. (Обычно конфигурации PAM не задействуют эту информацию, так что этот параметр следует учитывать, только если создана специальная конфигурация, в которой он используется.)</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+   <note>
+    <para>Если PAM настроен для чтения <filename>/etc/shadow</filename>, произойдёт сбой аутентификации, потому что сервер &productname; запущен не пользователем root. Однако это не имеет значения, когда PAM настроен для использования LDAP или других методов аутентификации.</para>
+   </note>
+  </sect2>
+
+  <sect2 id="auth-bsd">
+   <title>Аутентификация BSD</title>
+
+   <indexterm zone="auth-bsd"><primary>аутентификация BSD</primary></indexterm>
+
+   <para>Данный метод аутентификации работает подобно методу <literal>password</literal>, но использует для проверки пароля механизм аутентификации BSD. Аутентификация BSD используется только для проверки пар "имя пользователя/пароль". Поэтому роль пользователя должна уже существовать в базе данных, чтобы эта аутентификация была успешной. Механизм аутентификации BSD в настоящее время может применяться только в OpenBSD.</para>
+
+   <para>Для аутентификации BSD в <productname>&productname;</productname> применяется тип входа <literal>auth-postgresql</literal> и класс <literal>postgresql</literal>, если он определён в <filename>login.conf</filename>. По умолчанию этот класс входа не существует и <productname>&productname;</productname> использует класс входа по умолчанию.</para>
+
+   <note>
+    <para>Для использования аутентификации BSD необходимо сначала добавить учётную запись пользователя &productname; (то есть, пользователя ОС, запускающего сервер) в группу <literal>auth</literal>. Группа <literal>auth</literal> существует в системах OpenBSD по умолчанию.</para>
+   </note>
+  </sect2>
+ </sect1>
+
+  <sect1 id="client-authentication-problems">
+   <title>Проблемы аутентификации</title>
+
+   <para>Сбои и другие проблемы с аутентификацией обычно дают о себе знать через сообщения об ошибках, например:</para>
+
+   <para><programlisting>FATAL:  no pg_hba.conf entry for host "123.123.123.123", user "andym", database "testdb"</programlisting> Это сообщение вы, скорее всего, получите, если сможете связаться с сервером, но он не захочет с вами общаться. В сообщении содержится предположение, что сервер отказывает вам в подключении, поскольку не может найти подходящую запись в файле <filename>pg_hba.conf</filename>.</para>
+
+   <para><programlisting>FATAL:  password authentication failed for user "andym"</programlisting> Такое сообщение показывает, что вы связались с сервером, он готов общаться с вами, но только после того, как вы прошли авторизацию по методу, указанному в файле <filename>pg_hba.conf</filename>. Проверьте пароль, который вы вводите, и как настроен Kerberos или ident, если в сообщении упоминается один из этих типов аутентификации.</para>
+
+   <para><programlisting>FATAL:  user "andym" does not exist</programlisting> Указанное имя пользователя базы данных не найдено.</para>
+
+   <para><programlisting>FATAL:  database "testdb" does not exist</programlisting> База данных, к которой вы пытаетесь подключиться, не существует. Имейте в виду, что если вы не указали имя базы данных, по умолчанию берётся имя пользователя базы данных, что может приводить к ошибкам.</para>
+
+   <tip>
+   <para>В журнале сервера может содержаться больше информации, чем в выдаваемых клиенту сообщениях об ошибке аутентификации, поэтому, если вас интересуют причины сбоя, проверьте журнал сервера.</para>
+   </tip>
+  </sect1>
+
+ </chapter>

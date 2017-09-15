@@ -1,0 +1,63 @@
+<!--
+doc/src/xml/ref/create_user.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createuser">
+ <indexterm zone="sql-createuser"><primary>CREATE USER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE USER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE USER</refname>
+  <refpurpose>создать роль в базе данных</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE USER <replaceable class="parameter">имя</replaceable> [ [ WITH ] <replaceable class="parameter">параметр</replaceable> [ ... ] ]
+
+<phrase>Здесь <replaceable class="parameter">параметр</replaceable>:</phrase>
+
+      SUPERUSER | NOSUPERUSER
+    | CREATEDB | NOCREATEDB
+    | CREATEROLE | NOCREATEROLE
+    | INHERIT | NOINHERIT
+    | LOGIN | NOLOGIN
+    | REPLICATION | NOREPLICATION
+    | BYPASSRLS | NOBYPASSRLS
+    | CONNECTION LIMIT <replaceable class="parameter">предел_подключений</replaceable>
+    | [ ENCRYPTED | UNENCRYPTED ] PASSWORD '<replaceable class="parameter">пароль</replaceable>'
+    | PASSWORD ( '<replaceable class="parameter">пароль</replaceable>' USING '<replaceable class="parameter">метод</replaceable>' )
+    | VALID UNTIL '<replaceable class="parameter">дата_время</replaceable>'
+    | IN ROLE <replaceable class="parameter">имя_роли</replaceable> [, ...]
+    | IN GROUP <replaceable class="parameter">имя_роли</replaceable> [, ...]
+    | ROLE <replaceable class="parameter">имя_роли</replaceable> [, ...]
+    | ADMIN <replaceable class="parameter">имя_роли</replaceable> [, ...]
+    | USER <replaceable class="parameter">имя_роли</replaceable> [, ...]
+    | SYSID <replaceable class="parameter">uid</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Команда <command>CREATE USER</command> теперь является просто синонимом <xref linkend="sql-createrole"/>. Единственное отличие в том, что для команды, записанной в виде <command>CREATE USER</command>, по умолчанию подразумевается <literal>LOGIN</literal>, а в виде <command>CREATE ROLE</command> подразумевается <literal>NOLOGIN</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>CREATE USER</command> является расширением <productname>&productname;</productname>. В стандарте SQL определение пользователей считается зависимым от реализации.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createrole"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

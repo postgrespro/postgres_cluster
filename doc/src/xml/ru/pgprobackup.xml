@@ -1,0 +1,1203 @@
+<!--
+doc/src/xml/pgprobackup.xml
+&productname; documentation
+-->
+
+<refentry id="app-pgprobackup">
+ <indexterm zone="app-pgprobackup"><primary>pg_probackup</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>pg_probackup</refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_probackup</refname>
+  <refpurpose>управление резервным копированием и восстановлением кластеров баз данных <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg choice="plain"><option>init</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>каталог_копий</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg choice="plain"><option>add-instance</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>каталог_копий</replaceable></arg>
+   <arg choice="plain"><option>-D</option> <replaceable>каталог_данных</replaceable></arg>
+   <arg choice="plain"><option>--instance</option> <replaceable>имя_экземпляра</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg choice="plain"><option>del-instance</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>каталог_копий</replaceable></arg>
+   <arg choice="plain"><option>--instance</option> <replaceable>имя_экземпляра</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg choice="plain"><option>set-config</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>каталог_копий</replaceable></arg>
+   <arg choice="plain"><option>--instance</option> <replaceable>имя_экземпляра</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg choice="plain"><option>show-config</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>каталог_копий</replaceable></arg>
+   <arg choice="plain"><option>--instance</option> <replaceable>имя_экземпляра</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg choice="plain"><option>backup</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>каталог_копий</replaceable></arg>
+   <arg choice="plain"><option>--instance</option> <replaceable>имя_экземпляра</replaceable></arg>
+   <arg choice="plain"><option>-b</option> <replaceable>режим_копирования</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg choice="plain"><option>restore</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>каталог_копий</replaceable></arg>
+   <arg choice="plain"><option>--instance</option> <replaceable>имя_экземпляра</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg choice="plain"><option>validate</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>каталог_копий</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg choice="plain"><option>show</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>каталог_копий</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg choice="plain"><option>delete</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>каталог_копий</replaceable></arg>
+   <arg choice="plain"><option>--instance</option> <replaceable>имя_экземпляра</replaceable></arg>
+   <group choice="req">
+   <arg choice="plain"><option>-i</option> <replaceable>ид_резервной_копии</replaceable></arg>
+   <arg choice="plain"><option>--wal</option></arg>
+   <arg choice="plain"><option>--expired</option></arg>
+   </group>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg choice="plain"><option>archive-push</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>каталог_копий</replaceable></arg>
+   <arg choice="plain"><option>--instance</option> <replaceable>имя_экземпляра</replaceable></arg>
+   <arg choice="plain"><option>--wal-file-path</option> <option>%p</option></arg>
+   <arg choice="plain"><option>--wal-file-name</option> <option>%f</option></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg choice="plain"><option>archive-get</option></arg>
+   <arg choice="plain"><option>-B</option> <replaceable>каталог_копий</replaceable></arg>
+   <arg choice="plain"><option>--instance</option> <replaceable>имя_экземпляра</replaceable></arg>
+   <arg choice="plain"><option>--wal-file-path</option> <option>%p</option></arg>
+   <arg choice="plain"><option>--wal-file-name</option> <option>%f</option></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg choice="plain"><option>version</option></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pg_probackup</command>
+   <arg choice="plain"><option>help</option></arg>
+   <arg choice="opt"><replaceable>команда</replaceable></arg>
+  </cmdsynopsis>
+
+  </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+  <para><emphasis role="strong">Содержание</emphasis></para>
+  <para><link linkend="pg-probackup-install-and-setup">Установка и подготовка</link></para>
+  <para><link linkend="pg-probackup-reference">Справка по командной строке</link></para>
+  <para><link linkend="pg-probackup-usage">Использование</link></para>
+  <itemizedlist spacing="compact">
+  <listitem>
+  <para><link linkend="pg-probackup-creating-backup">Создание резервных копий</link></para>
+  </listitem>
+  <listitem>
+  <para><link linkend="pg-probackup-validating-backups">Проверка резервных копий</link></para>
+  </listitem>
+  <listitem>
+  <para><link linkend="restoring-a-cluster">Восстановление кластера</link></para>
+  </listitem>
+  <listitem>
+  <para><link linkend="configuring-pg-probackup">Настройка pg_probackup</link></para>
+  </listitem>
+  <listitem>
+  <para><link linkend="managing-backup-catalog">Управление каталогом резервных копий</link></para>
+  </listitem>
+  </itemizedlist>
+  <para><application>pg_probackup</application> — это утилита для управления резервным копированием и восстановлением кластеров баз данных <productname>&productname;</productname>. Она предназначена для регулярного создания резервных копий экземпляра <productname>&productname;</productname>, позволяющих восстанавливать сервер в случае необходимости. <application>pg_probackup</application> поддерживает <productname>&productname;</productname> версии 9.5 и новее.</para>
+
+  <para>По сравнению с другими средствами резервного копирования <application>pg_probackup</application> имеет следующие преимущества, полезные для реализации различных стратегий резервного копирования и работы с базами данных большого объёма:</para>
+  <itemizedlist spacing="compact">
+    <listitem>
+      <para>Выбор между полным резервным копированием и инкрементальным, на уровне страниц, позволяющим ускорить процесс копирования и восстановления</para>
+    </listitem>
+    <listitem>
+      <para>Реализация единой стратегии резервного копирования для кластеров <productname>&productname;</productname> с несколькими серверами</para>
+    </listitem>
+    <listitem>
+      <para>Автоматический контроль целостности данных и проверка резервных копий без восстановления данных кластера</para>
+    </listitem>
+    <listitem>
+      <para>Управление резервными копиями в соответствии с политикой их сохранения</para>
+    </listitem>
+    <listitem>
+      <para>Выполнение резервного копирования, восстановления и проверки в параллельных потоках</para>
+    </listitem>
+    <listitem>
+      <para>Хранение копируемых данных в сжатом состоянии для экономии дискового пространства</para>
+    </listitem>
+    <listitem>
+      <para>Снятие резервной копии с дежурного сервера с целью избежать дополнительной нагрузки на ведущий сервер</para>
+    </listitem>
+    <listitem>
+      <para>Расширенные параметры ведения журнала</para>
+    </listitem>
+    <listitem>
+      <para>Дополнительные команды для упрощения архивации журнала <acronym>WAL</acronym></para>
+    </listitem>
+  </itemizedlist>
+  <para>Для управления резервными копиями <application>pg_probackup</application> создаёт <firstterm>каталог резервных копий</firstterm>. В этом каталоге сохраняются все файлы резервных копий с дополнительной метаинформацией, а также архивы <acronym>WAL</acronym>, необходимые для <link linkend="continuous-archiving">восстановления на момент времени</link>. Вы можете хранить резервные копии разных экземпляров в отдельных подкаталогах одного каталога копий.</para>
+  <para>Используя <application>pg_probackup</application>, вы можете выполнять <emphasis>полное</emphasis> или <emphasis>инкрементальное</emphasis> резервное копирование:</para>
+  <itemizedlist spacing="compact">
+    <listitem>
+      <para>Полные резервные копии содержат все файлы данных, необходимые для восстановления кластера баз данных с нуля.</para>
+    </listitem>
+    <listitem>
+      <para>Инкрементальные резервные копии сохраняют только те данные, которые изменились со времени последнего копирования. Это позволяет уменьшить размер резервной копии и ускорить операции копирования данных. <application>pg_probackup</application> поддерживает следующие режимы инкрементального копирования:</para>
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>Режим <literal>PAGE</literal>. В этом режиме <application>pg_probackup</application> сканирует все файлы <acronym>WAL</acronym> в архиве с момента создания предыдущей полной или инкрементальной копии. Новая резервная копия будет содержать только страницы, фигурирующие в записях <acronym>WAL</acronym>. При этом необходимо, чтобы в архиве <acronym>WAL</acronym> сохранялись все файлы <acronym>WAL</acronym>, записанные после предыдущей копии. Если размер этих файлов сравним с общим размером файлов базы данных, ускорение будет менее значительным, но размер копии будет всё же меньше.</para>
+        </listitem>
+        <listitem>
+          <para>Режим <literal>PTRACK</literal>. В этом режиме <productname>&productname;</productname> отслеживает изменения страниц на лету. Чтобы он работал, не требуется производить непрерывное архивирование <acronym>WAL</acronym>. При каждом изменении страницы отношения она помечается в специальной карте <literal>PTRACK</literal> этого отношения. Так как для одной страницы в слое <literal>PTRACK</literal> требуется всего один бит, такие карты довольно малы. Это отслеживание привносит небольшие издержки в работу сервера, но значительно ускоряет инкрементальное резервное копирование.</para>
+        </listitem>
+      </itemizedlist>
+    </listitem>
+  </itemizedlist>
+
+  <para>Вне зависимости от выбранного типа резервного копирования <application>pg_probackup</application> поддерживает следующие стратегии архивирования:</para>
+  <itemizedlist spacing="compact">
+    <listitem>
+      <para><emphasis>Автономные резервные копии</emphasis> включают все файлы, необходимые для восстановления согласованного состояния кластера на момент создания копии. Даже если непрерывное архивирование не производится, в эту копию включаются только необходимые сегменты <acronym>WAL</acronym>.</para>
+    </listitem>
+    <listitem>
+      <para><emphasis>Архивные резервные копии</emphasis> основаны на непрерывном архивировании. Такие копии позволяют восстановить кластер на произвольный момент времени после момента создания копии (производить <emphasis>восстановление на момент времени</emphasis>).</para>
+    </listitem>
+  </itemizedlist>
+  <para><emphasis role="strong">См. также</emphasis></para>
+<para><link linkend="pg-probackup-creating-backup">Создание резервных копий</link></para>
+
+  <refsect2 id="pg-probackup-limitations">
+  <title>Ограничения</title>
+  <para>В настоящее время <application>pg_probackup</application> имеет следующие ограничения: <itemizedlist spacing="compact">
+    <listitem>
+      <para>Создание копий с удалённого сервера в настоящее время не поддерживается.</para>
+    </listitem>
+
+     <listitem>
+      <para>На сервере, где была сделана копия, и на сервере, где она будет восстанавливаться, должны быть одинаковые значения параметров <xref linkend="guc-block-size"/> и <xref linkend="guc-wal-block-size"/> и одинаковая основная версия.</para>
+     </listitem>
+
+     <listitem>
+      <para>Операционная система <productname>Microsoft Windows</productname> не поддерживается.</para>
+     </listitem>
+
+     <listitem>
+      <para>Конфигурационные файлы, расположенные вне каталога данных <productname>&productname;</productname>, не попадают в резервную копию и должны копироваться отдельно.</para>
+     </listitem>
+
+    </itemizedlist></para>
+ </refsect2>
+</refsect1>
+
+<refsect1 id="pg-probackup-install-and-setup">
+  <title>Установка и подготовка</title>
+  <para>Пакет <application>pg_probackup</application> входит в состав дистрибутивного набора <productname>&productname;</productname>. Установив <application>pg_probackup</application>, выполните следующие действия:</para>
+  <orderedlist spacing="compact">
+    <listitem>
+      <para><link linkend="initializing-the-backup-catalog">Инициализируйте каталог резервных копий</link>.</para>
+    </listitem>
+    <listitem>
+      <para><link linkend="adding-new-backup-instance">Определите копируемый экземпляр в каталоге копий</link>.</para>
+    </listitem>
+    <listitem>
+      <para><link linkend="configuring-database-cluster">Настройте кластер баз данных для использования <application>pg_probackup</application></link>.</para>
+    </listitem>
+  </orderedlist>
+  <refsect2 id="initializing-the-backup-catalog">
+    <title>Инициализация каталога резервных копий</title>
+    <para><application>pg_probackup</application> сохраняет все файлы копируемых данных и <acronym>WAL</acronym> в соответствущих подкаталогах каталога резервных копий.</para>
+    <para>Для инициализации каталога резервных копий выполните команду:</para>
+    <programlisting>pg_probackup init -B <replaceable>каталог_копий</replaceable></programlisting>
+    <para>где: <itemizedlist spacing="compact">
+      <listitem>
+        <para><replaceable>каталог_копий</replaceable> — это каталог, предназначенный для резервных копий. Если <replaceable>каталог_копий</replaceable> уже существует, он должен быть пустым. В противном случае <application>pg_probackup</application> выдаст ошибку.</para>
+      </listitem>
+    </itemizedlist></para>
+    <para><application>pg_probackup</application> создаёт <replaceable>каталог_копий</replaceable> со следующими подкаталогами:</para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para><literal>wal/</literal> &mdash; каталог для файлов <acronym>WAL</acronym>.</para>
+      </listitem>
+      <listitem>
+        <para><literal>backups/</literal> &mdash; каталог для файлов резервных копий.</para>
+      </listitem>
+    </itemizedlist>
+    <para>Проинициализировав каталог резервных копий, вы можете <link linkend="adding-new-backup-instance">определить копируемый экземпляр</link>.</para>
+    </refsect2>
+    <refsect2 id="adding-new-backup-instance">
+    <title>Определение копируемого экземпляра</title>
+    <para><application>pg_probackup</application> может сохранять резервные копии разных кластеров баз данных в одном каталоге резервных копий. Для создания необходимых подкаталогов вы должны определить копируемый экземпляр в каталоге копий для каждого кластера баз данных, копию которого вы будете делать.</para>
+    <para>Для определения копируемого экземпляра выполните команду:</para>
+<programlisting>pg_probackup add-instance -B <replaceable>каталог_копий</replaceable> -D <replaceable>каталог_данных</replaceable> --instance <replaceable>имя_экземпляра</replaceable></programlisting>
+    <para>где: <itemizedlist spacing="compact">
+      <listitem>
+        <para><replaceable>каталог_данных</replaceable> — каталог, содержащий данные кластера, копию которого вы хотите сделать. Для подготовки и использования <application>pg_probackup</application> необходимо иметь право записи в этот каталог.</para>
+        <para><replaceable>имя_экземпляра</replaceable> — это имя подкаталогов, в которых будут храниться файлы копируемых данных и <acronym>WAL</acronym> для этого кластера.</para>
+      </listitem>
+    </itemizedlist></para>
+
+    <para><application>pg_probackup</application> создаёт подкаталоги <replaceable>имя_экземпляра</replaceable> в каталогах <literal>backups/</literal> и <literal>wal/</literal> каталога резервных копий. Каталог <filename>backups/<replaceable>имя_экземпляра</replaceable></filename> содержит файл конфигурации <filename>pg_probackup.conf</filename>, управляющий параметрами копирования и восстановления для данного экземпляра копии. Подробнее тонкая настройка конфигурации <application>pg_probackup</application> описана в <xref remap="6" linkend="configuring-pg-probackup"/>.</para>
+      <para>Каталог резервных копий должен находиться в файловой системе сервера БД. Пользователь, запускающий <application>pg_probackup</application>, должен иметь полный доступ к содержимому этого каталога. Если вы зададите путь к этому каталогу в переменной окружения <envar>BACKUP_PATH</envar>, соответствующий параметр в командах <application>pg_probackup</application> можно не указывать.</para>
+    <para>Та как <application>pg_probackup</application> использует обычное подключение к <productname>PostgreSQL</productname> и стандартный протокол репликации, для команд <application>pg_probackup</application> необходимо задавать <link linkend="pg-probackup-connection-opts">параметры подключения</link>. Чтобы каждый раз не задавать эти параметры в командной строке, вы можете определить их в файле конфигурации <filename>pg_probackup.conf</filename> с помощью команды <xref linkend="pg-probackup-set-config"/>. За подробностями обратитесь к <xref remap="3" linkend="configuring-pg-probackup"/>.</para>
+  </refsect2>
+  <refsect2 id="configuring-database-cluster">
+    <title>Настройка кластера баз данных</title>
+    <para>Хотя <application>pg_probackup</application> можно использовать от имени суперпользователя, рекомендуется создать отдельного пользователя или роль с минимальными правами, необходимыми для выбранной стратегии копирования. В этих инструкциях по настройке такой ролью служит роль <literal>backup</literal>.</para>
+    <para>Для выполнения резервного копирования требуются следующие права:</para>
+<programlisting>CREATE ROLE backup WITH LOGIN;
+GRANT USAGE ON SCHEMA pg_catalog TO backup;
+GRANT EXECUTE ON FUNCTION current_setting(text) TO backup;
+GRANT EXECUTE ON FUNCTION pg_is_in_recovery() TO backup;
+GRANT EXECUTE ON FUNCTION pg_start_backup(text, boolean, boolean) TO backup;
+GRANT EXECUTE ON FUNCTION pg_stop_backup() TO backup;
+GRANT EXECUTE ON FUNCTION pg_stop_backup(boolean) TO backup;
+GRANT EXECUTE ON FUNCTION pg_create_restore_point(text) TO backup;
+GRANT EXECUTE ON FUNCTION pg_switch_xlog() TO backup;
+GRANT EXECUTE ON FUNCTION txid_current() TO backup;
+GRANT EXECUTE ON FUNCTION txid_current_snapshot() TO backup;
+GRANT EXECUTE ON FUNCTION txid_snapshot_xmax(txid_snapshot) TO backup;</programlisting>
+
+    <para>В зависимости от того, будете ли вы применять автономное или архивное резервное копирование, конфигурация кластера <productname>&productname;</productname> будет разной (об особенностях рассказывается ниже). Чтобы получить копию кластера баз данных с резервного сервера или создать резервную копию <literal>PTRACK</literal>, требуется дополнительная настройка, За подробностями обратитесь к <xref remap="3" linkend="ptrack-backup"/> и <xref remap="3" linkend="backup-from-standby"/>.</para>
+
+    <refsect3 id="autonomous-backups">
+      <title>Настройка автономного резервного копирования</title>
+      <para>Чтобы настроить кластер для автономного резервного копирования, выполните следующие действия:</para>
+      <orderedlist numeration="arabic">
+        <listitem>
+          <para>Дайте <link linkend="role-attributes">право <literal>REPLICATION</literal></link> роли <literal>backup</literal>:</para>
+          <programlisting>ALTER ROLE backup WITH REPLICATION;</programlisting>
+        </listitem>
+        <listitem>
+          <para>В файле <filename>pg_hba.conf</filename> разрешите выполнение репликации для роли <literal>backup</literal>.</para>
+        </listitem>
+        <listitem>
+          <para>Измените файл конфигурации <filename>postgresql.conf</filename> сервера <productname>&productname;</productname> следующим образом:</para>
+          <itemizedlist spacing="compact">
+            <listitem>
+              <para>Установите для параметра <varname>max_wal_senders</varname> достаточно большое значение, предусматривающее минимум одно подключение для процесса резервного копирования.</para>
+            </listitem>
+            <listitem>
+              <para>Установите в параметре <varname>wal_level</varname> уровень <literal>replica</literal> или выше.</para>
+            </listitem>
+          </itemizedlist>
+          </listitem>
+      </orderedlist>
+    </refsect3>
+    <refsect3 id="setting-up-archive-backups">
+      <title>Настройка архивного резервного копирования</title>
+      <para>Чтобы настроить кластер для архивного резервного копирования, выполните следующие действия:</para>
+      <orderedlist spacing="compact">
+        <listitem>
+          <para>Настройте следующие параметры в <filename>postgresql.conf</filename> для включения постоянного архивирования на сервере <productname>&productname;</productname>:</para>
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>Убедитесь, что в параметре <varname>wal_level</varname> установлен уровень <literal>replica</literal> или выше.</para>
+        </listitem>
+        <listitem>
+          <para>Установите для <literal>archive_mode</literal> значение <literal>on</literal>.</para>
+        </listitem>
+        <listitem>
+          <para>Задайте в переменной <varname>archive_command</varname>: <programlisting>archive_command = 'pg_probackup archive-push -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable> --wal-file-path %p --wal-file-name %f'</programlisting> Параметры <replaceable>каталог_данных</replaceable> и <replaceable>имя_экземпляра</replaceable> должны указывать на уже проинициализированный экземпляр для этого кластера баз данных.</para>
+        </listitem>
+      </itemizedlist>
+      </listitem>
+      </orderedlist>
+    </refsect3>
+    <refsect3 id="backup-from-standby">
+      <title>Копирование данных с резервного сервера</title>
+      <para>С <productname>&productname;</productname> 9.6 или новее <application>pg_probackup</application> может копировать данные с резервного сервера. Для этого требуется дополнительная настройка:</para>
+      <orderedlist spacing="compact">
+        <listitem>
+          <para>Разрешите подключения для репликации на резервном сервере:</para>
+          <itemizedlist spacing="compact">
+            <listitem>
+              <para>Установите в файле <filename>postgresql.conf</filename> параметры <varname>max_wal_senders</varname> и <varname>hot_standby</varname>.</para>
+            </listitem>
+            <listitem>
+              <para>Настройте аутентификацию по сетевым узлам в <filename>pg_hba.conf</filename>.</para>
+            </listitem>
+          </itemizedlist>
+        </listitem>
+        <listitem>
+          <para>Включите параметр <varname>full_page_writes</varname> в <filename>postgresql.conf</filename> на ведущем сервере.</para>
+        </listitem>
+      </orderedlist>
+      <note>
+        <para>Архивное копирование с резервного сервера имеет следующие ограничения:</para> 
+        <itemizedlist spacing="compact">
+          <listitem>
+            <para>Если резервный сервер переводится в роль ведущего во время архивного копирования, копирование прерывается с ошибкой.</para>
+          </listitem>
+          <listitem>
+            <para>Все необходимые для резервной копии записи <acronym>WAL</acronym> должны содержать полные страницы. Это требует включения режима <literal>full_page_writes</literal> на ведущем сервере и отказа от использования в <varname>archive_command</varname> утилит, удаляющих полные страницы из файлов <acronym>WAL</acronym>, как например <application>pg_compresslog</application>.</para>
+          </listitem>
+        </itemizedlist>
+      </note>
+    </refsect3>
+    <refsect3 id="ptrack-backup">
+      <title>Копирование в режиме <literal>PTRACK</literal></title>
+      <para>Если вы хотите копировать данные в режиме <literal>PTRACK</literal>, выполните следующие дополнительные действия:</para>
+      <orderedlist numeration="arabic" spacing="compact">
+        <listitem>
+          <para>Задайте в <filename>postgresql.conf</filename> для параметра <varname>ptrack_enable</varname> значение <literal>on</literal>.</para>
+        </listitem>
+        <listitem>
+          <para>Дайте права на выполнения функций <literal>ptrack</literal> роли <literal>backup</literal>:</para>
+        </listitem>
+      </orderedlist>
+      <programlisting>GRANT EXECUTE ON FUNCTION pg_ptrack_clear() TO backup;
+GRANT EXECUTE ON FUNCTION pg_ptrack_get_and_clear(oid, oid) TO backup;</programlisting>
+      <para>Роль <literal>backup</literal> должна иметь доступ ко всем базам данных в кластере.</para>
+    </refsect3>
+  </refsect2>
+</refsect1>
+
+<refsect1 id="pg-probackup-reference">
+<title>Справка по командной строке</title>
+ <refsect2 id="pg-probackup-commands">
+  <title>Команды</title>
+    <para>В этом разделе описываются команды <application>pg_probackup</application>. У этих команд могут быть как обязательные, так и дополнительные параметры, За подробным описанием обратитесь к <xref remap="3" linkend="pg-probackup-options"/>.</para>
+
+    <variablelist>
+
+     <varlistentry id="pg-probackup-init">
+      <term><option>init</option></term>
+      <listitem>
+       <para>Синтаксис:</para>
+<programlisting>pg_probackup init -B <replaceable>каталог_копий</replaceable></programlisting>
+    <para>Инициализирует <replaceable>каталог_копий</replaceable>, в котором будут храниться резервные копии, архив <acronym>WAL</acronym> и метаинформация о скопированных кластерах баз данных. Если заданный <replaceable>каталог_копий</replaceable> уже существует, он должен быть пустым. В противном случае <application>pg_probackup</application> выдаст соответствующее сообщение об ошибке.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="pg-probackup-add-instance">
+      <term><option>add-instance</option></term>
+      <listitem>
+       <para>Синтаксис:</para>
+<programlisting>pg_probackup add-instance -B <replaceable>каталог_копий</replaceable> -D <replaceable>каталог_данных</replaceable> --instance <replaceable>имя_экземпляра</replaceable></programlisting>
+        <para>Инициализирует новый копируемый экземпляр в каталоге <replaceable>каталог_копий</replaceable> и создаёт файл конфигурации <filename>pg_probackup.conf</filename>, управляющий параметрами копирования и восстановления для кластера, использующего указанный <replaceable>каталог_данных</replaceable>. За подробностями обратитесь к <xref remap="3" linkend="adding-new-backup-instance"/>.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry id="pg-probackup-del-instance">
+      <term><option>del-instance</option></term>
+      <listitem>
+       <para>Синтаксис:</para>
+<programlisting>pg_probackup del-instance -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable></programlisting>
+        <para>Удаляет все файлы скопированных данных и <acronym>WAL</acronym>, связанные с указанным экземпляром.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry id="pg-probackup-set-config">
+      <term><option>set-config</option></term>
+      <listitem>
+       <para>Синтаксис:</para>
+       <programlisting>pg_probackup set-config -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable>
+[--log-level=<replaceable>уровень_сообщений</replaceable>] [--log-filename=<replaceable>файл_журнала</replaceable>]
+[--error-log-filename=<replaceable>файл_журнала_ошибок</replaceable>] [--log-directory=<replaceable>каталог_журнала</replaceable>]
+[--log-rotation-size=<replaceable>размер_журнала_для_ротации</replaceable>] [--log-rotation-age=<replaceable>возраст_журнала_для_ротации</replaceable>]
+[-d <replaceable>имя_базы</replaceable>] [-h <replaceable>сервер</replaceable>] [-p <replaceable>порт</replaceable>] [-U <replaceable>имя_пользователя</replaceable>]
+[--master-db=<replaceable>имя_базы</replaceable>] [--master-host=<replaceable>сервер</replaceable>]
+[--master-port=<replaceable>порт</replaceable>] [--master-user=<replaceable>имя_пользователя</replaceable>]
+[--retention-redundancy=<replaceable>избыточность</replaceable>][--retention-window=<replaceable>окно</replaceable>]
+[--replica-timeout=<replaceable>тайм-аут</replaceable>]</programlisting>
+       <para>Добавляет заданные параметры <link linkend="pg-probackup-connection-opts">соединения</link>, <link linkend="pg-probackup-retention-opts">сохранения</link>, <link linkend="pg-probackup-logging-opts">ведения журнала</link> и <link linkend="pg-probackup-replica-opts">подключения к реплике</link> в конфигурационный файл <filename>pg_probackup.conf</filename> либо изменяет ранее определённые значения.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry id="pg-probackup-show-config">
+      <term><option>show-config</option></term>
+      <listitem>
+       <para>Синтаксис:</para>
+       <programlisting>pg_probackup show-config -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable></programlisting>
+       <para>Выводит содержимое файла <filename>pg_probackup.conf</filename>, размещённого в каталоге <filename><replaceable>каталог_копий</replaceable>/backups/<replaceable>имя_экземпляра</replaceable></filename>. Для изменения параметров в <filename>pg_probackup.conf</filename> воспользуйтесь командой <xref linkend="pg-probackup-set-config"/>. Непосредственно редактировать <filename>pg_probackup.conf</filename> нельзя.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry id="pg-probackup-backup">
+      <term><option>backup</option></term>
+      <listitem>
+       <para>Синтаксис:</para>
+       <programlisting>pg_probackup backup -B <replaceable>каталог_копий</replaceable> -b <replaceable>режим_копирования</replaceable> --instance <replaceable>имя_экземпляра</replaceable>
+[-C] [--stream [-S <replaceable>имя_слота</replaceable>]] [--backup-pg-log]
+[-archive-timeout=<replaceable>тайм-аут</replaceable>] [--delete-expired]
+[-d <replaceable>имя_базы</replaceable>] [-h <replaceable>сервер</replaceable>] [-p <replaceable>порт</replaceable>] [-U <replaceable>имя_пользователя</replaceable>] [-w]
+[--master-db=<replaceable>имя_базы</replaceable>] [--master-host=<replaceable>сервер</replaceable>]
+[--master-port=<replaceable>порт</replaceable>] [--master-user=<replaceable>имя_пользователя</replaceable>]
+[-j <replaceable>число_потоков</replaceable>][--progress] [-q] [-v]</programlisting>
+       <para>Создаёт резервную копию экземпляра <productname>&productname;</productname>. Какой именно режим копирования будет использоваться, устанавливает параметр <link linkend="pg-probackup-backup-mode"><replaceable>режим_копирования</replaceable></link>. За подробностями обратитесь к <xref remap="3" linkend="pg-probackup-creating-backup"/>.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry id="pg-probackup-restore">
+      <term><option>restore</option></term>
+      <listitem>
+       <para>Синтаксис:</para>
+       <programlisting>pg_probackup restore -B <replaceable>каталог_копий</replaceable> --instance <replaceable>instance_name</replaceable>
+[-D <replaceable>имя_экземпляра</replaceable>]
+[ -i <replaceable>ид_резервной_копии</replaceable> | [{--time=<replaceable>время</replaceable> | --xid=<replaceable>ид_транзакции</replaceable> } [--inclusive=<replaceable>логическое_значение</replaceable>]]][--timeline=<replaceable>линия_времени</replaceable>] [-T <replaceable class="parameter">СТАРЫЙ_КАТАЛОГ=НОВЫЙ_КАТАЛОГ</replaceable>]
+[-j <replaceable>число_потоков</replaceable>] [--progress] [-q] [-v]</programlisting>
+       <para>Восстанавливает экземпляр <productname>&productname;</productname> из резервной копии, расположенной в каталоге <replaceable>каталог_копий</replaceable>. Если вы укажете <link linkend="pg-probackup-recovery-target-opts">параметр точки восстановления</link>, <application>pg_probackup</application> восстановит кластер до заданной точки. В противном случае будет восстановлена самая последняя копия.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry id="pg-probackup-validate">
+      <term><option>validate</option></term>
+      <listitem>
+       <para>Синтаксис:</para>
+       <programlisting>pg_probackup validate -B <replaceable>каталог_копий</replaceable>
+[--instance <replaceable>имя_экземпляра</replaceable>
+[ -i <replaceable>ид_резервной_копии</replaceable> | [{--time=<replaceable>время</replaceable> | --xid=<replaceable>ид_транзакции</replaceable> }
+[--inclusive=<replaceable>логическое_значение</replaceable>]]]]
+[--timeline=<replaceable>линия_времени</replaceable>]
+[-j <replaceable>число_потоков</replaceable>] [--progress] [-q] [-v]</programlisting>
+       <para>Проверяет наличие и целостность всех файлов, необходимых для восстановления кластера. Если вы зададите <replaceable>имя_экземпляра</replaceable> без дополнительных параметров, <application>pg_probackup</application> проверит самую последнюю копию, которая имеется для этого экземпляра. Если вы зададите <replaceable>имя_экземпляра</replaceable> с <link linkend="pg-probackup-recovery-target-opts">параметром точки восстановления</link> или <replaceable>ид_резервной_копии</replaceable>, <application>pg_probackup</application> проверит, возможно ли восстановить кластер с этими параметрами. Если <replaceable>имя_экземпляра</replaceable> не задано, <application>pg_probackup</application> проверяет все резервные копии, имеющиеся в каталоге копий.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry id="pg-probackup-show">
+      <term><option>show</option></term>
+      <listitem>
+       <para>Синтаксис:</para>
+       <programlisting>pg_probackup show -B <replaceable>каталог_копий</replaceable>
+[--instance <replaceable>имя_экземпляра</replaceable> [-i <replaceable>ид_резервной_копии</replaceable>]]</programlisting>
+       <para>Показывает содержимое каталога копий. Если указывается <replaceable>имя_экземпляра</replaceable> и <replaceable>ид_резервной_копии</replaceable>, также выводится подробная информация об этой копии.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry id="pg-probackup-delete">
+      <term><option>delete</option></term>
+      <listitem>
+       <para>Синтаксис:</para>
+       <programlisting>pg_probackup delete -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable>
+{-i <replaceable>ид_резервной_копии</replaceable> | --wal | --expired}</programlisting>
+       <para>Удаляет файлы скопированных данных или <acronym>WAL</acronym> для указанного экземпляра копии из каталога <replaceable>каталог_копий</replaceable>: <itemizedlist spacing="compact">
+          <listitem>
+            <para>При указании ключа <option>-i</option> удаляется только заданная резервная копия.</para>
+          </listitem>
+          <listitem>
+            <para>С параметром <option>wal</option> удаляются файлы <acronym>WAL</acronym>, которые не являются необходимыми для восстановления кластера из имеющихся резервных копий.</para>
+          </listitem>
+          <listitem>
+            <para>С параметром <option>expired</option> удаляются резервные копии, которые считаются ненужными согласно текущей <link linkend="pg-probackup-retention-policy">политике сохранения копий</link>.</para>
+          </listitem>
+        </itemizedlist></para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry id="pg-probackup-archive-push">
+      <term><option>archive-push</option></term>
+      <listitem>
+       <para>Синтаксис:</para>
+       <programlisting>pg_probackup archive-push -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable>
+--wal-file-path %p --wal-file-name %f'</programlisting>
+       <para>Сохраняет файлы <acronym>WAL</acronym> в соответствующем подкаталоге каталога копий. Эту команду можно использовать в качестве <varname>archive_command</varname> в <filename>postgresql.conf</filename> для выполнения архивного копирования. Помимо копирования файлов, эта команда также проверяет экземпляр по имени <replaceable>имя_экземпляра</replaceable>, <literal>system-identifier</literal> и <literal>PGDATA</literal>. Если параметры копируемого экземпляра не соответствуют параметрам кластера, выдаётся следующее сообщение об ошибке: <quote>Refuse to push <acronym>WAL</acronym> segment <replaceable>segment_name</replaceable> into archive. Instance parameters mismatch.</quote> Для каждого файла <acronym>WAL</acronym>, перемещаемого в каталог копий, вы увидите такое сообщение в журнале <productname>&productname;</productname>: <quote>pg_probackup archive-push completed successfully</quote>.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry id="pg-probackup-archive-get">
+      <term><option>archive-get</option></term>
+      <listitem>
+       <para>Синтаксис:</para>
+       <programlisting>pg_probackup archive-get -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable>
+--wal-file-path %p --wal-file-name %f'</programlisting>
+       <para>Перемещает файлы <acronym>WAL</acronym> из соответствующего подкаталога каталога резервной копии в каталог xlog кластера. Эта команда автоматически устанавливается программой <application>pg_probackup</application> в качестве <varname>archive_command</varname> в <filename>recovery.conf</filename> при восстановлении архивных копий. Устанавливать её вручную не нужно.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry id="pg-probackup-version">
+      <term><option>version</option></term>
+      <listitem>
+      <para>Синтаксис:</para>
+       <programlisting>pg_probackup version</programlisting>
+       <para>Выводит версию <application>pg_probackup</application>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="pg-probackup-help">
+      <term><option>help</option></term>
+      <listitem>
+       <para>Синтаксис:</para>
+       <programlisting>pg_probackup help [<replaceable>команда</replaceable>]</programlisting>
+       <para>Выдаёт справку по командам <application>pg_probackup</application>. Если в параметрах задаётся одна из команд <application>pg_probackup</application>, выводит подробную информацию по параметрам, которые принимает эта команда.</para>
+       </listitem>
+     </varlistentry>
+    </variablelist>
+
+
+ </refsect2>
+
+ <refsect2 id="pg-probackup-options">
+  <title>Параметры</title>
+
+   <para>В этом разделе описываются все параметры командной строки для команд <application>pg_probackup</application>. Если какое-либо значение параметра может быть получено из переменной окружения, имя этой переменной указывается в верхнем регистре ниже параметра командной строки. Некоторые значения могут быть получены из файла конфигурации <filename>pg_probackup.conf</filename>, находящегося в каталоге копий. За подробностями обратитесь к <xref remap="3" linkend="configuring-pg-probackup"/>.</para>
+   <para>Если некоторый параметр задаётся несколькими способами, значение в командной строке имеет наивысший приоритет, а значение в <filename>pg_probackup.conf</filename> — наименьший.</para>
+
+   <refsect3>
+    <title>Общие параметры</title>
+
+    <variablelist>
+     <varlistentry id="pg-probackup-backup-dir">
+      <term><option>-B <replaceable class="parameter">каталог</replaceable></option></term>
+      <term><option>--backup-path=<replaceable class="parameter">каталог</replaceable></option></term>
+      <term><envar>BACKUP_PATH</envar></term>
+      <listitem>
+       <para>Задаёт абсолютный путь к каталогу копий. Каталог копий — это каталог, в котором хранятся все файлы резервных копий и метаинформация. Поскольку это расположение необходимо задавать почти для всех команд <application>pg_probackup</application>, имеет смысл указать его один раз в переменной окружения <envar>BACKUP_PATH</envar>. В этом случае каждый раз указывать этот путь в командной строке не нужно.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="pg-probackup-pgdata-dir">
+      <term><option>-D <replaceable class="parameter">каталог</replaceable></option></term>
+      <term><option>--pgdata=<replaceable class="parameter">каталог</replaceable></option></term>
+      <term><envar>PGDATA</envar></term>
+      <listitem>
+       <para>Задаёт абсолютный путь к каталогу данных кластера. Этот параметр является обязательным только для команды <xref linkend="pg-probackup-init"/>. Другие команды могут получать этот путь из переменной окружения <envar>PGDATA</envar> или из файла конфигурации <filename>pg_probackup.conf</filename>.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-i <replaceable>ид_резервной_копии</replaceable></option></term>
+      <term><option>-backup-id=<replaceable>ид_резервной_копии</replaceable></option></term>
+      <listitem>
+       <para>Задаёт уникальный идентификатор резервной копии.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-j <replaceable class="parameter">число_потоков</replaceable></option></term>
+      <term><option>--threads=<replaceable class="parameter">число_потоков</replaceable></option></term>
+      <listitem>
+       <para>Задаёт число параллельных потоков для процессов резервного копирования, восстановления и проверки резервных копий.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--progress</option></term>
+      <listitem>
+       <para>Включает вывод прогресса выполнения операций.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-q</option></term>
+      <term><option>--quiet</option></term>
+      <listitem>
+       <para>Включает режим подавления сообщений о текущем процессе.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-v</option></term>
+      <term><option>--verbose</option></term>
+      <listitem>
+       <para>Включает вывод подробной информации о текущем процессе.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+   </refsect3>
+
+   <refsect3>
+    <title>Параметры резервного копирования</title>
+
+    <para>С командой <command>backup</command> могут задаваться следующие параметры.</para>
+
+    <variablelist>
+     <varlistentry id="pg-probackup-backup-mode">
+      <term><option>-b <replaceable class="parameter">режим</replaceable></option></term>
+      <term><option>--backup-mode=<replaceable class="parameter">режим</replaceable></option></term>
+      <listitem>
+       <para>Выбирает режим резервного копирования. Поддерживаются следующие режимы: <itemizedlist>
+    <listitem>
+      <para><literal>FULL</literal> &mdash; создаётся полная резервная копия, содержащая все файлы данных кластера, необходимые для его восстановления.</para>
+    </listitem>
+    <listitem>
+      <para><literal>PAGE</literal> &mdash; создаётся инкрементальная резервная копия с файлами <acronym>WAL</acronym>, которые были изменены со времени последней полной или инкрементальной копии.</para>
+    </listitem>
+    <listitem>
+      <para><literal>PTRACK</literal> &mdash; создаётся инкрементальная резервная копия со страницами, изменения в которых отслеживались на лету.</para>
+    </listitem>
+         </itemizedlist> За подробностями обратитесь к <xref remap="3" linkend="pg-probackup-creating-backup"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-C</option></term>
+      <term><option>--smooth-checkpoint</option></term>
+      <term><envar>SMOOTH_CHECKPOINT</envar></term>
+      <listitem>
+       <para>Растягивает выполнение контрольной точки во времени. По умолчанию <application>pg_probackup</application> пытается произвести контрольную точку максимально быстро.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--stream</option></term>
+      <listitem>
+       <para>Создаёт автономную резервную копию, включающую все необходимые файлы <acronym>WAL</acronym>, которые передаёт сервер баз данных по протоколу репликации.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-S <replaceable class="parameter">имя_слота</replaceable></option></term>
+      <term><option>--slot=<replaceable class="parameter">имя_слота</replaceable></option></term>
+      <listitem>
+       <para>Задаёт слот репликации для передачи <acronym>WAL</acronym>. Этот параметр можно указать только вместе с <option>--stream</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--backup-pg-log</option></term>
+      <listitem>
+       <para>Включает в резервную копию каталог <filename>pg_log</filename>. Этот каталог обычно содержит журналы сообщений сервера. По умолчанию каталог <filename>pg_log</filename> в копию не включается.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--archive-timeout=<replaceable>время_ожидания</replaceable></option></term>
+      <listitem>
+       <para>Задаёт таймаут для архивирования сегментов <acronym>WAL</acronym> (в секундах). По умолчанию <application>pg_probackup</application> ждёт архивирования 300 секунд.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--delete-expired</option></term>
+      <listitem>
+       <para>После того, как резервная копия будет успешно создана, удаляет резервные копии, ставшие ненужными согласно текущей политике сохранения. Вы также можете удалить ненужные копии, запустив команду <command>delete</command> с параметром <option>expired</option>. За подробностями обратитесь к <xref remap="3" linkend="pg-probackup-retention-policy"/>.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+   </refsect3>
+
+   <refsect3 id="pg-probackup-recovery-target-opts">
+    <title>Параметры точки восстановления</title>
+      <para>Если настроена стратегия архивного копирования, эти параметры можно использовать с командами <command>restore</command> и <command>validate</command> для указания момента, на который требуется восстановить кластер баз данных.</para>
+
+    <variablelist>
+
+     <varlistentry>
+      <term><option>--time=<replaceable class="parameter">время</replaceable></option></term>
+      <listitem>
+       <para>Указывает точку времени, вплоть до которой будет производиться восстановление. Этот параметр нельзя использовать вместе с <option>xid</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--xid=<replaceable class="parameter">ид_транзакции</replaceable></option></term>
+      <listitem>
+       <para>Указывает идентификатор транзакции, вплоть до которой будет производиться восстановление. Этот параметр нельзя использовать вместе с <option>time</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--inclusive=<replaceable class="parameter">логическое_значение</replaceable></option></term>
+      <listitem>
+       <para>Указывает на необходимость остановки сразу после (<literal>true</literal>), либо до (<literal>false</literal>) достижения целевой точки. Значение по умолчанию берётся из переменной <xref linkend="recovery-target-inclusive"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--timeline=<replaceable class="parameter">линия_времени</replaceable></option></term>
+      <listitem>
+       <para>Выбирает определённую линию времени для восстановления кластера. По умолчанию выбирается последняя доступная линия времени.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+   </refsect3>
+
+   <refsect3>
+    <title>Параметры восстановления</title>
+      <variablelist>
+
+      <varlistentry id="pg-probackup-tablespace-mapping">
+      <term><option>-T <replaceable class="parameter">СТАРЫЙ_КАТАЛОГ=НОВЫЙ_КАТАЛОГ</replaceable></option></term>
+      <term><option>--tablespace-mapping=<replaceable class="parameter">СТАРЫЙ_КАТАЛОГ=НОВЫЙ_КАТАЛОГ</replaceable></option></term>
+      <listitem>
+       <para>Перемещает табличное пространство из каталога <replaceable>СТАРЫЙ_КАТАЛОГ</replaceable> в <replaceable>НОВЫЙ_КАТАЛОГ</replaceable> во время восстановления. И <replaceable>СТАРЫЙ_КАТАЛОГ</replaceable>, и <replaceable>НОВЫЙ_КАТАЛОГ</replaceable> должны задаваться абсолютными путями. Если путь содержит знак равно (<literal>=</literal>), экранируйте этот знак обратной косой чертой. Данный параметр может указываться неоднократно для перемещения нескольких табличных пространств.</para>
+      </listitem>
+     </varlistentry>
+
+      </variablelist>
+   </refsect3>
+
+   <refsect3>
+    <title>Параметры удаления</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><option>--wal</option></term>
+      <listitem>
+       <para>Удаляет файлы <acronym>WAL</acronym>, которые не являются необходимыми для восстановления кластера из имеющихся резервных копий.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--expired</option></term>
+      <listitem>
+       <para>Удаляет резервные копии, не удовлетворяющие политике сохранения, определённой в файле конфигурации <filename>pg_probackup.conf</filename>. За подробностями обратитесь к <xref remap="3" linkend="pg-probackup-retention-policy"/>.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </refsect3>
+
+   <refsect3 id="pg-probackup-retention-opts">
+    <title>Параметры сохранения</title>
+<para>Параметры сохранения могут задаваться только с командой <xref linkend="pg-probackup-set-config"/>. За подробностями обратитесь к <xref remap="3" linkend="pg-probackup-retention-policy"/>.</para>
+    <variablelist>
+     <varlistentry>
+      <term><option>--retention-redundancy=<replaceable>избыточность</replaceable></option></term>
+      <listitem>
+       <para>Указывает, сколько полных резервных копий должно сохраняться в каталоге данных. Должно быть положительным целым числом.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><option>--retention-window=<replaceable>окно</replaceable></option></term>
+      <listitem>
+       <para>Количество дней, в течение которого возможно восстановление.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </refsect3>
+
+   <refsect3 id="pg-probackup-logging-opts">
+    <title>Параметры ведения журнала</title>
+    <variablelist>
+     <varlistentry>
+      <term><option>--log-level=<replaceable>уровень_сообщений</replaceable></option></term>
+      <listitem>
+       <para>Управляет уровнем сообщений, которые будут выводиться в журнал. Допустимые уровни: <literal>VERBOSE</literal>, <literal>LOG</literal>, <literal>INFO</literal>, <literal>NOTICE</literal>, <literal>WARNING</literal>, <literal>ERROR</literal>, <literal>FATAL</literal> и <literal>PANIC</literal>. Значение по умолчанию: <literal>INFO</literal>. Каждый уровень включает все последующие. По мере перехода от первых к последним уровням объём сообщений уменьшается. Сообщения уровня &gt;= <literal>ERROR</literal> выводятся в <literal>stderr</literal> всегда.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+   <term><option>--log-filename=<replaceable>файл_журнала</replaceable></option></term>
+      <listitem>
+       <para>Определяет имена для файлов журналов. Имена файлов обрабатываются по шаблону <literal>strftime</literal>, так что вы можете использовать спецкоды с % для выбора имён файлов, зависящих от времени. Если параметр <option>log-filename</option> не задан, <application>pg_probackup</application> пишет все сообщения в <literal>stderr</literal>.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+   <term><option>--error-log-filename=<replaceable>файл_журнала_событий</replaceable></option></term>
+      <listitem>
+       <para>Если в параметре <option>log-level</option> выбран уровень <literal>ERROR</literal> или выше, данный параметр определяет имена для файлов журналов ошибок. Имена файлов обрабатываются по шаблону <literal>strftime</literal>, так что вы можете использовать спецкоды с % для выбора имён файлов, зависящих от времени. Если параметр <option>error-log-filename</option> не задан, <application>pg_probackup</application> пишет все сообщения в <literal>stderr</literal>.</para>
+      </listitem>
+     </varlistentry>
+ <varlistentry>
+   <term><option>--log-directory=<replaceable>каталог_журнала</replaceable></option></term>
+      <listitem>
+       <para>Определяет каталог, в котором будут создаваться файлы журналов. Вы должны задать в этом параметре абсолютный путь. Этот каталог создаётся только при необходимости, когда в журнал выводится первое сообщение. По умолчанию файлы журналов сохраняются в <filename>$BACKUP_PATH/log/</filename>.</para>
+      </listitem>
+     </varlistentry>
+
+ <varlistentry>
+   <term><option>--log-rotation-size=<replaceable>размер_журнала_для_ротации</replaceable></option></term>
+      <listitem>
+       <para>Максимальный размер отдельного файла журнала, в килобайтах.</para>
+       <para><application>pg_probackup</application> использует одно правило ротации журналов для <option>logfile</option> и для <option>error_logfile</option>. Ротация производится при выполнении любой команды <application>pg_probackup</application>, кроме <option>help</option> и <option>version</option>. Время создания последнего файла журнала записывается в <filename>$BACKUP_PATH/log/log_rotation</filename>.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+   <term><option>--log-rotation-age=<replaceable>возраст_журнала_для_ротации</replaceable></option></term>
+      <listitem>
+       <para>Максимальное время жизни отдельного файла журнала, в минутах.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </refsect3>
+
+   <refsect3 id="pg-probackup-connection-opts">
+    <title>Параметры подключения</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><option>-d <replaceable class="parameter">имя_бд</replaceable></option></term>
+      <term><option>--dbname=<replaceable class="parameter">имя_бд</replaceable></option></term>
+      <term><envar>PGDATABASE</envar></term>
+      <listitem>
+      <para>Задаёт имя базы данных для подключения. Это подключение используется только для управления процессом резервного копирования, так что вы можете подключиться к любой существующей базе. Если этот параметр не задаётся в командной строке, переменной окружения <envar>PGDATABASE</envar> или в конфигурационном файле <filename>pg_probackup.conf</filename>, <application>pg_probackup</application> принимает в качестве имени базы значение переменной окружения <envar>PGUSER</envar> или имя текущего пользователя, если переменная <envar>PGUSER</envar> не задана.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-h <replaceable class="parameter">сервер</replaceable></option></term>
+      <term><option>--host=<replaceable class="parameter">сервер</replaceable></option></term>
+      <term><envar>PGHOST</envar></term>
+      <listitem>
+       <para>Указывает имя компьютера, на котором запущен сервер. Если значение начинается с косой черты, оно интерпретируется как имя каталога с доменным сокетом Unix.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">порт</replaceable></option></term>
+      <term><option>--port=<replaceable class="parameter">порт</replaceable></option></term>
+      <term><envar>PGPORT</envar></term>
+      <listitem>
+       <para>Указывает <acronym>TCP</acronym>-порт или расширение файла Unix-сокета, через который сервер принимает подключения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <term><option>--username=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <term><envar>PGUSER</envar></term>
+      <listitem>
+       <para>Имя пользователя для подключения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</option></term>
+      <term><option>--no-password</option></term>
+      <listitem>
+       <para>Не выдавать запрос на ввод пароля. Если сервер требует аутентификацию по паролю и пароль не доступен с помощью других средств, таких как файл <filename>.pgpass</filename>, попытка соединения не удастся. Этот параметр может быть полезен в пакетных заданиях и скриптах, где нет пользователя, который вводит пароль.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+    </refsect3>
+
+  <refsect3 id="pg-probackup-replica-opts">
+    <title>Репликационные параметры</title>
+    <para>В этом разделе описаны параметры, требующиеся для снятия резервной копии с реплики. Параметры подключения необходимы для создания точки восстановления (это можно сделать только на ведущем сервере), которая будет использоваться для определения <firstterm>времени восстановления</firstterm> &mdash; самого раннего момента, на который вы сможете восстановить согласованное состояние кластера баз данных.</para>
+    <variablelist>
+     <varlistentry>
+      <term><option>--master-db=<replaceable>имя_бд</replaceable></option></term>
+      <listitem>
+      <para>Указывает имя базы данных на ведущем сервере, к которой нужно подключиться. Это подключение будет использоваться только для управления процессом копирования, так что вы можете подключиться к любой существующей базе данных. Это имя может быть задано в <filename>pg_probackup.conf</filename> с помощью команды <command>set-config</command>. Если оно не указано, подразумевается <literal>postgres</literal>, база данных по умолчанию в <productname>&productname;</productname>.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><option>--master-host=<replaceable>сервер</replaceable></option></term>
+      <listitem>
+      <para>Указывает имя компьютера, на котором запущен ведущий сервер.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><option>--master-port=<replaceable>порт</replaceable></option></term>
+      <listitem>
+      <para>Указывает <acronym>TCP</acronym>-порт или расширение файла доменного сокета Unix, через который сервер принимает подключения. Если не указано, подразумевается <literal>5432</literal>, порт по умолчанию в <productname>&productname;</productname>.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><option>--master-user=<replaceable>имя_пользователя</replaceable></option></term>
+      <listitem>
+      <para>Имя пользователя для подключения. Если не задано, подразумевается <literal>postgres</literal>, имя пользователя по умолчанию в <productname>&productname;</productname>.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><option>--replica-timeout=<replaceable>тайм-аут</replaceable></option></term>
+      <listitem>
+       <para>Время ожидания передачи сегментов <acronym>WAL</acronym> средствами репликации (в секундах). По умолчанию <application>pg_probackup</application> ожидает 300 секунд. Вы также можете определить этот параметр в файле конфигурации <filename>pg_probackup.conf</filename> с помощью команды <command>set-config</command>.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+    </refsect3>
+
+  <refsect3 id="pg-probackup-archive-opts">
+    <title>Параметры архивации</title>
+    <variablelist>
+     <varlistentry>
+      <term><option>--wal-file-path=<replaceable>путь_файла_wal</replaceable> %p</option></term>
+      <listitem>
+      <para>Задаёт путь файла <acronym>WAL</acronym> для <command>archive_command</command> и <command>restore_command</command>, используемых в <application>pg_probackup</application>. Переменная <literal>%p</literal> требуется для правильной обработки.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><option>--wal-file-name=<replaceable>имя_файла_wal</replaceable> %f</option></term>
+      <listitem>
+      <para>Задаёт имя файла <acronym>WAL</acronym> для <command>archive_command</command> и <command>restore_command</command>, используемых в <application>pg_probackup</application>. Переменная <literal>%f</literal> требуется для правильной обработки.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+    </refsect3>
+ </refsect2>
+ </refsect1>
+
+ <refsect1 id="pg-probackup-usage">
+  <title>Использование</title>
+
+  <refsect2 id="pg-probackup-creating-backup">
+    <title>Создание резервной копии</title>
+    <para>Чтобы создать резервную копию, выполните следующую команду: <programlisting>pg_probackup backup -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable> -b <replaceable>режим_копирования</replaceable></programlisting> Здесь <replaceable>режим_копирования</replaceable> может быть следующим:</para>
+  <itemizedlist spacing="compact">
+    <listitem>
+      <para><literal>FULL</literal> &mdash; создаётся полная резервная копия, содержащая все файлы данных кластера, необходимые для его восстановления.</para>
+    </listitem>
+    <listitem>
+      <para><literal>PAGE</literal> &mdash; создаётся инкрементальная резервная копия с файлами <acronym>WAL</acronym>, которые были изменены со времени последней полной или инкрементальной копии.</para>
+    </listitem>
+    <listitem>
+      <para><literal>PTRACK</literal> &mdash; создаётся инкрементальная резервная копия со страницами, изменения в которых отслеживались на лету.</para>
+    </listitem>
+  </itemizedlist>
+<para>При восстановлении кластера из инкрементальной копии <application>pg_probackup</application> сначала использует предыдущую полную копию для восстановления всех файлов данных. Таким образом, прежде чем делать инкрементальные копии, необходимо сделать как минимум одну полную.</para>
+<para>Если вы настроили резервное копирование <literal>PTRACK</literal>, <application>pg_probackup</application> будет очищать карту <literal>PTRACK</literal> обрабатываемого отношения при каждом выполнении полного или инкрементального резервного копирования. Таким образом, в следующую инкрементальную копию <literal>PTRACK</literal> войдут только страницы, изменённые со времени предыдущей копии. Если при резервном копировании произойдёт ошибка или оно будет прервано, для некоторых отношений карты <literal>PTRACK</literal> могут оказаться очищенными, так что следующая инкрементальная копия будет неполной. Это справедливо и тогда, когда на время выключается режим <literal>ptrack_enable</literal>. В этом случае вы должны сделать полную резервную копию, прежде чем пытаться сделать следующую инкрементальную копию <literal>PTRACK</literal>.</para>
+
+  <para>Чтобы сделать резервную копию автономной, добавьте к предыдущей команде параметр <option>--stream</option>. Например, чтобы создать полную автономную копию, выполните:</para>
+    <programlisting>pg_probackup backup -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable> -b FULL --stream</programlisting>
+
+   <para>Автономные резервные копии включают все сегменты <acronym>WAL</acronym>, необходимые для приведения кластера в согласованное состояние на момент создания копии. Для восстановления кластера из инкрементальной автономной копии для <application>pg_probackup</application> в любом случае необходима полная копия и все инкрементальные копии, от которых зависит целевая.</para>
+
+  <para>Даже если вы используете <link linkend="continuous-archiving">непрерывное архивирование</link>, автономное резервное копирование может быть полезно по следующим причинам:</para>
+  <itemizedlist spacing="compact">
+    <listitem>
+      <para>Автономные копии могут быть восстановлены на сервере, не имеющем файлового доступа к архиву <acronym>WAL</acronym>.</para>
+    </listitem>
+    <listitem>
+      <para>Автономное резервное копирование позволяет восстановить состояние кластера на тот момент времени, для которого уже нет файлов <acronym>WAL</acronym>.</para>
+    </listitem>
+  </itemizedlist>
+  </refsect2>
+
+  <refsect2 id="pg-probackup-validating-backups">
+  <title>Проверка резервных копий</title>
+  <para>Когда в кластере база данных включены контрольные суммы, <application>pg_probackup</application> использует их для проверки целостности файлов данных. При чтении каждой страницы <application>pg_probackup</application> проверяет, совпадает ли вычисленная сумма с контрольной суммой, хранящийся в странице. Это гарантирует, что в резервной копии не окажется испорченных страниц. Заметьте, что <application>pg_probackup</application> читает файлы баз данных с диска, поэтому при активной записи на диск во время резервного копирования возможны ложные выявления некорректных контрольных сумм из-за частичной записи.</para>
+  <para>Даже когда контрольные суммы страниц отключены, <application>pg_probackup</application> вычисляет контрольные суммы для всех файлов резервной копии. Эти контрольные суммы проверяются непосредственно после создания резервной копии и перед восстановлением для выявления возможных повреждений резервных копий.</para>
+  <para>Чтобы убедиться, что все необходимые файлы резервных копий имеются в наличии и что, используя их, можно восстановить кластер баз данных, вы можете выполнить команду <option>validate</option> с именно теми параметрами <link linkend="pg-probackup-recovery-target-opts">точки восстановления</link>, с которыми вы будете производить восстановление. При выполнении этой команды без параметров будут проверены все имеющиеся копии.</para>
+  <para>Например, чтобы убедиться, что вы можете восстановить кластер баз данных из резервной копии до транзакции с указанным <replaceable>xid</replaceable>, выполните команду:</para>
+  <programlisting>pg_probackup validate -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable> --xid=<replaceable>ид_транзакции</replaceable></programlisting>
+  <para>Если проверка проходит успешно, <application>pg_probackup</application> выдаёт сообщение об этом. В случае же неудачи вы получите сообщение об ошибке с указанием точного времени и идентификатора транзакции, до которой возможно восстановление.</para>
+</refsect2>
+
+<refsect2 id="restoring-a-cluster">
+  <title>Восстановление кластера</title>
+  <para>Чтобы восстановить кластер баз данных из резервной копии, воспользуйтесь командой <literal>restore</literal>:</para>
+  <programlisting>pg_probackup restore -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable> -D <replaceable>каталог_данных</replaceable> -i <replaceable>ид_резервной_копии</replaceable></programlisting>
+  <para>Здесь:</para>
+  <itemizedlist spacing="compact">
+    <listitem>
+      <para><replaceable>каталог_данных</replaceable> задаёт расположение восстанавливаемого каталога данных кластера. Если параметр <literal>-D</literal> опущен, <replaceable>каталог_данных</replaceable> берётся из файла конфигурации <filename>pg_probackup.conf</filename> и кластер будет восстановлен в изначальном расположении.</para>
+    </listitem>
+    <listitem>
+      <para><replaceable>ид_резервной_копии</replaceable> определяет, из какой резервной копии будет восстановлен кластер. Если этот параметр опускается, <application>pg_probackup</application> использует последнюю имеющуюся резервную копию для заданного экземпляра.</para>
+    </listitem>
+  </itemizedlist>
+  <note>
+   <para>Если вы выбираете восстановление инкрементальной копии, <application>pg_probackup</application> автоматически восстанавливает предыдущую полную копию, а затем последовательно применяет все необходимые инкрементальные копии.</para>
+  </note>
+  <para>Если вы настраивали архивное резервное копирование, вы можете восстановить состояние кластера на любой момент времени (<emphasis>точку восстановления</emphasis>), используя <link linkend="pg-probackup-recovery-target-opts">параметры точки восстановления</link>. <application>pg_probackup</application> автоматически выбирает копию, ближайшую к заданной точке восстановления, и запускает процесс восстановления. По умолчанию параметр <xref linkend="recovery-target-inclusive"/> определяет, будет ли точка восстановления включаться в достигаемое при восстановлении состояние. Вы можете явно включить или исключить точку восстановления, воспользовавшись параметром <option>--inclusive=<replaceable>логическое_значение</replaceable></option>.</para>
+  <para>Чтобы восстановить состояние кластера на определённое время, укажите это время в параметре <option>time</option>, в формате <literal>timestamp</literal>. Например:</para>
+  <programlisting>pg_probackup restore -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable> --time='2017-05-18 14:18:11'</programlisting>
+  <para>Чтобы восстановить состояние кластера до определённой транзакции, воспользуйтесь ключом <option>xid</option>:</para>
+  <programlisting>pg_probackup restore -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable> --xid=687</programlisting>
+  <para>Если кластер, подлежащий восстановлению, содержит табличные пространства, <application>pg_probackup</application> по умолчанию восстанавливает их в исходные расположения. Чтобы сменить расположения табличных пространств, воспользуйтесь параметром <link linkend="pg-probackup-tablespace-mapping"><literal>--tablespace-mapping</literal></link>. В противном случае при восстановлении кластера на том же сервере произойдёт ошибка, если эти табличные пространства будут использоваться, так как восстанавливаемые данные нужно будет записать в те же каталоги.</para>
+    <para>Используя параметр <option>--tablespace-mapping</option>, вы должны задать абсолютные пути к старому и новому каталогу табличного пространства. Если путь содержит знак равно (<literal>=</literal>), экранируйте его обратной косой чертой. Данный параметр может указываться неоднократно для перемещения нескольких табличных пространств. Например:</para>
+  <programlisting>pg_probackup restore -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable> -D <replaceable>каталог_данных</replaceable> -j 4 -i <replaceable>ид_резервной_копии</replaceable> -T <replaceable>каталог_табл_пространства1</replaceable>=<replaceable>новый_каталог_табл_пространства1</replaceable> -T <replaceable>каталог_табл_пространства2</replaceable>=<replaceable>новый_каталог_табл_пространства2</replaceable></programlisting>
+  <para>Когда команда <literal>restore</literal> завершит работу, запустить службу баз данных. <productname>&productname;</productname> восстановит согласованное состояние, воспроизведя файлы <acronym>WAL</acronym> и будет готов принимать подключения.</para>
+</refsect2>
+
+  <refsect2>
+   <title>Запуск pg_probackup в параллельных потоках</title>
+
+   <para>Процессы резервного копирования, восстановления и проверки могут выполняться в несколько параллельных потоков. Это может существенно ускорять работу <application>pg_probackup</application> при наличии достаточных ресурсов (ядер процессора, пропускной способности дисковой подсистемы и сети).</para>
+
+   <para>Параллельным выполнением управляет ключ командной строки <option>-j</option>/<option>--threads</option>. Например, запустить резервное копирование в четыре параллельных потока можно, выполнив: <programlisting>pg_probackup backup -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable> -b FULL -j 4</programlisting></para>
+
+   <note>
+   <para>Восстановление происходит в параллельном режиме только на этапе копирования данных из каталога копий в каталог данных кластера. При запуске сервера <productname>&productname;</productname> он должен будет воспроизвести записи из <acronym>WAL</acronym>, а это может происходить только последовательно.</para>
+   </note>
+  </refsect2>
+</refsect1>
+
+  <refsect1 id="configuring-pg-probackup">
+  <title>Настройка pg_probackup</title>
+  <para>Проинициализировав каталог резервных копий и определив копируемый экземпляр, вы можете использовать файл <filename>pg_probackup.conf</filename> в каталоге <filename>backups/<replaceable>имя_экземпляра</replaceable></filename> для тонкой настройки конфигурации <application>pg_probackup</application>.</para>
+  <para>Изначально <filename>pg_probackup.conf</filename> содержит следующие параметры:</para>
+    <itemizedlist spacing="compact">
+        <listitem>
+        <para><literal>PGDATA</literal> &mdash; путь к каталогу данных кластера, который будет копироваться.</para>
+        </listitem>
+
+          <listitem>
+            <para><literal>system-identifier</literal> &mdash; уникальный идентификатор экземпляра <productname>&productname;</productname>.</para>
+          </listitem>
+    </itemizedlist>
+    <para>Вы можете дополнительно установить параметры <link linkend="pg-probackup-connection-opts">соединения</link>, <link linkend="pg-probackup-retention-opts">сохранения</link>, <link linkend="pg-probackup-logging-opts">ведения журнала</link> и <link linkend="pg-probackup-replica-opts">подключения к реплике</link>, используя команду <xref linkend="pg-probackup-set-config"/>:</para>
+<programlisting>pg_probackup set-config -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable> [<replaceable>параметры_соединения</replaceable>] [<replaceable>параметры_сохранения</replaceable>] [<replaceable>параметры_журнала</replaceable>] [<replaceable>репликационные_параметры</replaceable>]</programlisting>
+
+  <para>Чтобы просмотреть текущие параметры, выполните эту команду:</para>
+  <programlisting>pg_probackup show-config -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable></programlisting>
+  <refsect2>
+
+  <title>Указание параметров подключения</title>
+  <para>Если вы определите свойства соединения в файле конфигурации <filename>pg_probackup.conf</filename>, вы можете не указывать параметры соединения во всех последующих командах <application>pg_probackup</application>. Однако, если установлены соответствующие переменные окружения, они имеют больший приоритет. Параметры, заданные в командной строке, переопределяют как переменные окружения, так и свойства в файле конфигурации.</para>
+   <para>Если не задано ничего, используются значения по умолчанию. <application>pg_probackup</application> пытается подключиться к локальному серверу, а в качестве имени базы данных и имени пользователя выбирает значение переменной окружения <envar>PGUSER</envar>, либо имя текущего пользователя <acronym>ОС</acronym>.</para>
+  </refsect2>
+  <refsect2 id="pg-probackup-retention-policy">
+   <title>Настройка политики сохранения резервных копий</title>
+   <para>По умолчанию все резервные копии, которые создаёт <application>pg_probackup</application>, сохраняются в предназначенном для них каталоге. Для экономии дискового пространства вы можете настроить политику сохранения копий и в соответствии с ней периодически удалять ненужные резервные копии.</para>
+  <para>Чтобы настроить эту политику, задайте одну или несколько следующих переменных в файле <filename>pg_probackup.conf</filename>:</para>
+    <itemizedlist spacing="compact">
+    <listitem><para><option>retention-redundancy</option> &mdash; определяет, сколько полных резервных копий будет сохраняться в каталоге данных.</para>
+    </listitem>
+    <listitem><para><option>retention-window</option> &mdash; определяет самый ранний момент времени, на который <application>pg_probackup</application> может выполнить восстановление. Этот параметр задаётся в числе дней от текущего момента. Например, если <option>retention-window</option>=7, программа <application>pg_probackup</application> должна сохранять минимум одну полную резервную копию старее семи дней со всеми соответствующими файлами <acronym>WAL</acronym>.</para></listitem>
+    </itemizedlist>
+    <para>Если установлены параметры <option>retention-redundancy</option> и <option>retention-window</option>, <application>pg_probackup</application> оставляет только те резервные копии, которые удовлетворяют обоим условиям. Например, если задать параметры <option>retention-redundancy</option>=2 и <option>retention-window</option>=7, <application>pg_probackup</application> очищает каталог копий, чтобы в нём оставалось только две полных резервных копии, если минимум одна из них старее семи дней.</para>
+  <para>Чтобы очистить каталог резервных копий в соответствии с политикой их сохранения, запустите:</para>
+  <programlisting>pg_probackup delete -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable> --expired</programlisting>
+  <para><application>pg_probackup</application> удалит все резервные копии, не удовлетворяющие установленной политике сохранения.</para>
+    <para>Вы также можете определить политику сохранения и использовать ключ <literal>--delete-expired</literal> с командой <literal>backup</literal>, чтобы устаревшие резервные копии удалялись сразу после создания новой.</para>
+  </refsect2>
+  </refsect1>
+
+<refsect1 id="managing-backup-catalog">
+  <title>Управление каталогом резервных копий</title>
+  <para>С помощью <application>pg_probackup</application> вы можете управлять резервными копиями в командной строке:</para>
+    <itemizedlist>
+      <listitem>
+        <para><link linkend="viewing-backup-info">Просматривать имеющиеся резервные копии</link></para>
+      </listitem>
+      <listitem>
+        <para><link linkend="pg-probackup-creating-backup">Удалять резервные копии</link></para>
+      </listitem>
+    </itemizedlist>
+
+  <refsect2 id="viewing-backup-info">
+    <title>Просмотр информации о резервных копиях</title>
+    <para>Чтобы просмотреть список существующих копий, выполните команду:</para>
+    <programlisting>pg_probackup show -B <replaceable>каталог_копий</replaceable></programlisting>
+
+<para><application>pg_probackup</application> выдаёт список всех имеющихся резервных копий. Например, вы можете получить следующую информацию:</para>
+<programlisting>BACKUP INSTANCE 'two'
+===============================================================================================================================
+ Instance    ID      Recovery time        Mode    WAL      Current/Parent TLI    Time    Data    Start LSN    Stop LSN   Status
+===============================================================================================================================
+ two         ORHG08  2017-06-13 14:02:33  FULL    STREAM     1 / 0                 9s    55MB   0/5000028    0/50001B8   OK
+
+BACKUP INSTANCE 'one'
+===============================================================================================================================
+ Instance    ID      Recovery time        Mode    WAL      Current/Parent TLI    Time    Data    Start LSN    Stop LSN   Status
+===============================================================================================================================
+ one         ORHFY4  2017-06-13 14:01:18  FULL    ARCHIVE    1 / 0                 3s    22MB   0/2000028    0/30000C8   OK
+===============================================================================================================================</programlisting>
+
+    <para>Для каждой копии выдаются следующие сведения:</para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>Instance &mdash; имя экземпляра.</para>
+      </listitem>
+      <listitem>
+        <para>ID &mdash; идентификатор резервной копии.</para>
+      </listitem>
+      <listitem>
+        <para>Recovery time &mdash; самое ранее время, на которое можно восстановить кластер из данной копии.</para>
+      </listitem>
+      <listitem>
+        <para>Mode &mdash; режим, в котором была сделана копия. Возможные значения: <literal>FULL</literal>, <literal>PAGE</literal>, <literal>PTRACK</literal>.</para>
+      </listitem>
+      <listitem>
+        <para><acronym>WAL</acronym> &mdash; вариант обработки журнала <acronym>WAL</acronym>. Возможные значения: <literal>STREAM</literal> (для автономных копий) и <literal>ARCHIVE</literal> (для архивных копий).</para>
+      </listitem>
+      <listitem>
+        <para>Current/Parent <acronym>TLI</acronym> &mdash; текущая и родительская линии времени кластера.</para>
+      </listitem>
+      <listitem>
+        <para>Time &mdash; время, за которое была выполнена данная копия.</para>
+      </listitem>
+      <listitem>
+        <para>Data &mdash; объём файлов данных в этой копии. Это значение не включает в себя объём файлов <acronym>WAL</acronym>.</para>
+      </listitem>
+      <listitem>
+        <para>Start <acronym>LSN</acronym> &mdash; последовательный номер в журнале <acronym>WAL</acronym>, соответствующий началу процесса копирования.</para>
+      </listitem>
+      <listitem>
+        <para>Stop <acronym>LSN</acronym> &mdash; последовательный номер в журнале <acronym>WAL</acronym>, соответствующий окончанию процесса копирования.</para>
+      </listitem>
+      <listitem>
+        <para>Status &mdash; состояние резервной копии. Возможные значения: <itemizedlist spacing="compact">
+         <listitem>
+         <para><literal>OK</literal> &mdash; резервная копия сделана и пригодна к использованию.</para></listitem>
+         <listitem><para><literal>CORRUPT</literal> &mdash; некоторые файлы резервной копии повреждены.</para></listitem>
+         <listitem><para><literal>DONE</literal> &mdash; резервная копия сделана, но не проверена.</para></listitem>
+         <listitem><para><literal>ERROR</literal> &mdash; резервное копирование было прервано из-за неожиданной ошибки.</para></listitem>
+         <listitem><para><literal>RUNNING</literal> &mdash; резервное копирование выполняется.</para></listitem>
+         <listitem><para><literal>DELETING</literal> &mdash; файлы резервной копии удаляются.</para></listitem>
+         </itemizedlist> Восстановить кластер из копии можно только для копий с состоянием <literal>OK</literal>.</para>
+      </listitem>
+    </itemizedlist>
+    <para>Чтобы получить более подробную информацию о копии, укажите в команде <command>show</command> её идентификатор:</para>
+    <programlisting>pg_probackup show -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable> -i <replaceable>ид_резервной_копии</replaceable></programlisting>
+    <para>Пример вывода:</para>
+    <programlisting>#Configuration
+backup-mode = FULL
+stream = false
+
+#Compatibility
+block-size = 8192
+xlog-block-size = 8192
+checksum-version = 0
+
+#Result backup info
+timelineid = 1
+start-lsn = 0/04000028
+stop-lsn = 0/040000f8
+start-time = '2017-05-16 12:57:29'
+end-time = '2017-05-16 12:57:31'
+recovery-xid = 597
+recovery-time = '2017-05-16 12:57:31'
+data-bytes = 22288792
+status = OK</programlisting>
+  </refsect2>
+
+  <refsect2 id="pg-probackup-deleting-backups">
+    <title>Удаление резервных копий</title>
+    <para>Для удаления резервной копии, ставшей ненужной, выполните команду:</para>
+    <programlisting>pg_probackup delete -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable> -i <replaceable>ид_резервной_копии</replaceable></programlisting>
+    <para>Эта команда удалит резервную копию с заданным <replaceable>ид_резервной_копии</replaceable> вместе со всеми инкрементальными копиями, следующими за ней (если таковые найдутся). Таким образом вы можете удалить некоторые последние инкрементальные копии, сохранив предыдущую полную копию и некоторые следующие за ней инкрементальные копии.</para>
+    <note>
+      <para>В этом случае следующая резервная копия в режиме <literal>PTRACK</literal> окажется неполной, так как не будет содержать часть изменений с момента создания последней оставшейся копии. Поэтому в таких случаях необходимо создать либо полную резервную копию, либо инкрементальную в режиме <literal>PAGE</literal> (если все необходимые файлы <acronym>WAL</acronym> сохранились в архиве).</para>
+    </note>
+    <para>Для удаления старых файлов <acronym>WAL</acronym>, которые не нужны для восстановления никаких из оставшихся резервных копий, воспользуйтесь ключом <literal>--wal</literal>:</para>
+    <programlisting>pg_probackup delete -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable> --wal</programlisting>
+    <para>Чтобы удалить резервные копии, считающиеся ненужными согласно текущей <link linkend="pg-probackup-retention-policy">политике сохранения</link>, воспользуйтесь ключом <literal>--expired</literal>:</para>
+    <programlisting>pg_probackup delete -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable> --expired</programlisting>
+  </refsect2>
+</refsect1>
+
+ <refsect1>
+  <title>Авторы</title>
+
+  <para>Postgres Professional, Москва, Россия.</para>
+
+ <refsect2>
+  <title>Благодарности</title>
+  <para>Программа <application>pg_probackup</application> основана на <application>pg_arman</application>, которая изначально была написана в NTT, а затем её развивал и поддерживал Мишель Пакье.</para>
+  </refsect2>
+
+ </refsect1>
+
+
+</refentry>

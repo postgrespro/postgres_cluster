@@ -1,0 +1,224 @@
+<!--
+doc/src/xml/ref/pg_receivexlog.xml
+&productname; documentation
+-->
+
+<refentry id="app-pgreceivexlog">
+ <indexterm zone="app-pgreceivexlog"><primary>pg_receivexlog</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>pg_receivexlog</refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_receivexlog</refname>
+  <refpurpose>приём журналов транзакций с сервера <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_receivexlog</command>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+  <para>Утилита <application>pg_receivexlog</application> предназначена для приёма журнала транзакций от работающего кластера <productname>&productname;</productname>. Журнал транзакций передаётся по протоколу потоковой репликации и записывается в локальный каталог. Затем этот каталог можно использовать в качестве архива для восстановления состояния на момент времени (см. <xref remap="4" linkend="continuous-archiving"/>).</para>
+
+  <para><application>pg_receivexlog</application> принимает журнал транзакций в реальном времени по мере того, как он генерируется на сервере, и не ждёт завершения сегментов, как это делает <xref linkend="guc-archive-command"/>. Поэтому <application>pg_receivexlog</application> можно использовать, не устанавливая <xref linkend="guc-archive-timeout"/>.</para>
+
+  <para>В отличие от приёмника WAL, работающего на резервном сервере &productname;, <application>pg_receivexlog</application> по умолчанию сохраняет на диск данные WAL, только когда файл WAL закрывается. Чтобы сохранять данные в реальном времени, нужно указать параметр <option>--synchronous</option>.</para>
+
+  <para>Журнал транзакций передаётся через обычное подключение к <productname>&productname;</productname>, с использованием протокола репликации. Подключение должен устанавливать суперпользователь или пользователь с правом <literal>REPLICATION</literal> (см. <xref remap="4" linkend="role-attributes"/>), а на сервере в <filename>pg_hba.conf</filename> должно разрешаться подключение для репликации. Кроме того, параметр <xref linkend="guc-max-wal-senders"/> на сервере должен быть достаточно большим, чтобы можно было создать ещё один сеанс для передачи потока.</para>
+
+  <para>Если подключение разорвалось или его c самого начала не удаётся установить с некритической ошибкой, <application>pg_receivexlog</application> будет бесконечно повторять попытки подключения и восстановит передачу, как только сможет. Чтобы отменить это поведение, воспользуйтесь параметром <literal>-n</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><option>-D <replaceable class="parameter">каталог</replaceable></option></term>
+      <term><option>--directory=<replaceable class="parameter">каталог</replaceable></option></term>
+      <listitem>
+       <para>Каталог, в который будут записываться данные.</para>
+       <para>Этот параметр является обязательным.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--if-not-exists</option></term>
+      <listitem>
+       <para>Не выдавать ошибку, когда указан параметр <option>--create-slot</option> и слот с заданным именем уже существует.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-n</option></term>
+      <term><option>--no-loop</option></term>
+      <listitem>
+       <para>Не повторять цикл при ошибках подключения, а сразу завершать работу, возвращая ошибку.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s <replaceable class="parameter">interval</replaceable></option></term>
+      <term><option>--status-interval=<replaceable class="parameter">interval</replaceable></option></term>
+      <listitem>
+       <para>Указывает интервал в секундах между отправкой пакетов статуса, отправляемых на сервер. Это позволяет упростить мониторинг прогресса. Чтобы выключить периодическое обновление статуса, необходимо установить значение в ноль. При этом обновление будет отправляться по запросу сервера для избежания отсоединения по истечению времени. Значение по умолчанию составляет 10 секунд.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-S <replaceable>имя_слота</replaceable></option></term>
+      <term><option>--slot=<replaceable class="parameter">имя_слота</replaceable></option></term>
+      <listitem>
+        <para>Указать <application>pg_receivexlog</application> использовать существующий слот репликации (см. <xref remap="4" linkend="streaming-replication-slots"/>). Когда задан этот параметр, <application>pg_receivexlog</application> будет сообщать серверу текущую позицию, отмечая, какой сегмент был сохранён на диске, чтобы сервер мог удалить этот сегмент, если он больше не нужен.</para>
+
+        <para>Когда клиент репликации <application>pg_receivexlog</application> настроен на сервере как синхронный резервный сервер, для используемого слота репликации серверу будет передаваться позиция сохранённых данных, но только когда файл WAL закрывается. Таким образом, в такой конфигурации транзакции на главном сервере будут ожидать завершения продолжительное время и по сути будут работать неудовлетворительно. Чтобы эта конфигурация работала корректно, нужно дополнительно указать параметр <literal>--synchronous</literal> (см. ниже).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--synchronous</option></term>
+      <listitem>
+       <para>Сохранять данные WAL на диск сразу после того, как они были получены. Также передавать пакет состояния сразу после сохранения, вне зависимости от <literal>--status-interval</literal>.</para>
+
+       <para>Этот параметр следует указывать, если клиент репликации <application>pg_receivexlog</application> настроен на сервере как синхронный резервный, чтобы обеспечить своевременную передачу ответа серверу.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-v</option></term>
+      <term><option>--verbose</option></term>
+      <listitem>
+       <para>Включает режим подробных сообщений.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+
+   <para>Далее описаны параметры управления подключением. <variablelist>
+     <varlistentry>
+      <term><option>-d <replaceable class="parameter">строка_подключения</replaceable></option></term>
+      <term><option>--dbname=<replaceable class="parameter">строка_подключения</replaceable></option></term>
+      <listitem>
+       <para>Указывает параметры подключения к серверу в формате строки подключения. См. <xref remap="4" linkend="libpq-connstring"/> для более подробной информации.</para>
+       <para>Параметр называется <literal>--dbname</literal> для согласованности с другими клиентскими приложениями, но так как <application>pg_receivexlog</application> не подключается к какой-либо конкретной базе, это имя в строке подключения игнорируется.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-h <replaceable class="parameter">сервер</replaceable></option></term>
+      <term><option>--host=<replaceable class="parameter">сервер</replaceable></option></term>
+      <listitem>
+       <para>Указывает имя компьютера, на котором запущен сервер. Если значение начинается с косой черты, оно интерпретируется как имя каталога с доменным сокетом Unix. Значение по умолчанию берётся из переменной окружения <envar>PGHOST</envar>, если она установлена. В противном случае выполняется подключение к доменному сокету.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">порт</replaceable></option></term>
+      <term><option>--port=<replaceable class="parameter">порт</replaceable></option></term>
+      <listitem>
+       <para>Указывает TCP-порт или расширение локального файла Unix-сокета, на котором сервер слушает подключения. По умолчанию берётся значение переменной окружения <envar>PGPORT</envar>, если оно установлено, либо значение времени компиляции.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable>имя_пользователя</replaceable></option></term>
+      <term><option>--username=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <listitem>
+       <para>Имя пользователя, под которым производится подключение.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</option></term>
+      <term><option>--no-password</option></term>
+      <listitem>
+       <para>Не выдавать запрос на ввод пароля. Если сервер требует аутентификацию по паролю и пароль не доступен с помощью других средств, таких как файл <filename>.pgpass</filename>, попытка соединения не удастся. Этот параметр может быть полезен в пакетных заданиях и скриптах, где нет пользователя, который вводит пароль.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option></term>
+      <term><option>--password</option></term>
+      <listitem>
+       <para>Принудительно запрашивать пароль перед подключением к базе данных.</para>
+
+       <para>Это несущественный параметр, так как <application>pg_receivexlog</application> запрашивает пароль автоматически, если сервер проверяет подлинность по паролю. Однако, чтобы понять это, <application>pg_receivexlog</application> лишний раз подключается к серверу. Поэтому иногда имеет смысл ввести <option>-W</option>, чтобы исключить эту ненужную попытку подключения.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+   <para><application>pg_restore</application> может выполнить одно из двух действий в отношении слотов физической репликации: <variablelist>
+     <varlistentry>
+      <term><option>--create-slot</option></term>
+      <listitem>
+       <para>Создать слот физической репликации с именем, заданным аргументом <option>--slot</option>, и завершиться.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--drop-slot</option></term>
+      <listitem>
+       <para>Удалить слот репликации с именем, заданным аргументом <option>--slot</option>, и завершиться.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+   <para>Другие флаги: <variablelist>
+     <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>--version</option></term>
+       <listitem>
+       <para>Сообщить версию <application>pg_receivexlog</application> и завершиться.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-?</option></term>
+       <term><option>--help</option></term>
+       <listitem>
+       <para>Показать справку по аргументам командной строки <application>pg_receivexlog</application> и завершиться.</para>
+       </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <para>Как и большинство других утилит <productname>&productname;</productname>, приложение также использует переменные окружения, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>).</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Применяя <application>pg_receivexlog</application> вместо <xref linkend="guc-archive-command"/> в качестве основного способа резервного копирования WAL, настоятельно рекомендуется использовать слоты репликации. В противном случае сервер вполне может переписать или удалить файлы журнала транзакций, прежде чем они будут скопированы, так как он не получает никакой информации, через <xref linkend="guc-archive-command"/> или слоты репликации, о том, как проходит архивация потока WAL. Учтите, однако, что при использовании слота репликации может заполниться всё место на диске, если принимающая сторона не будет успевать принимать данные WAL.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Следующая команда принимает журнал транзакций с сервера <literal>mydbserver</literal> и сохраняет его в локальном каталоге <filename>/usr/local/pgsql/archive</filename>: <screen>
+<prompt>$</prompt> <userinput>pg_receivexlog -h mydbserver -D /usr/local/pgsql/archive</userinput>
+</screen></para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-pgbasebackup"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

@@ -1,0 +1,44 @@
+<!--
+doc/src/xml/ref/drop_user.xml
+&productname; documentation
+-->
+
+<refentry id="sql-dropuser">
+ <indexterm zone="sql-dropuser"><primary>DROP USER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP USER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP USER</refname>
+  <refpurpose>удалить роль в базе данных</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP USER [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [, ...]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP USER</command> — просто альтернативное написание команды <xref linkend="sql-droprole"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>DROP USER</command> является расширением <productname>&productname;</productname>. В стандарте SQL определение пользователей считается зависимым от реализации.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-droprole"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

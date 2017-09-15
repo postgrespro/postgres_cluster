@@ -1,0 +1,890 @@
+<!-- doc/src/xml/pgcrypto.xml -->
+
+<sect1 id="pgcrypto" xreflabel="pgcrypto">
+ <title>pgcrypto</title>
+
+ <indexterm zone="pgcrypto"><primary>pgcrypto</primary></indexterm>
+
+ <indexterm zone="pgcrypto"><primary>шифрование</primary> <secondary>избранных столбцов</secondary></indexterm>
+
+ <para>Модуль <filename>pgcrypto</filename> предоставляет криптографические функции для <productname>&productname;</productname>.</para>
+
+ <sect2>
+  <title>Стандартные функции хеширования</title>
+
+  <sect3>
+   <title><function>digest()</function></title>
+
+   <indexterm><primary>digest</primary></indexterm>
+
+<synopsis>digest(data text, type text) returns bytea
+digest(data bytea, type text) returns bytea</synopsis>
+
+   <para>Вычисляет двоичный хеш данных (<parameter>data</parameter>). Параметр <parameter>type</parameter> выбирает используемый алгоритм. Поддерживаются стандартные алгоритмы: <literal>md5</literal>, <literal>sha1</literal>, <literal>sha224</literal>, <literal>sha256</literal>, <literal>sha384</literal> и <literal>sha512</literal>. Если модуль <filename>pgcrypto</filename> собирался с OpenSSL, становятся доступны и другие алгоритмы, как описано в <xref remap="6" linkend="pgcrypto-with-without-openssl"/>.</para>
+
+   <para>Если вы хотите получить дайджест в виде шестнадцатеричной строки, примените <function>encode()</function> к результату. Например: <programlisting>CREATE OR REPLACE FUNCTION sha1(bytea) returns text AS $$
+    SELECT encode(digest($1, 'sha1'), 'hex')
+$$ LANGUAGE SQL STRICT IMMUTABLE;</programlisting></para>
+  </sect3>
+
+  <sect3>
+   <title><function>hmac()</function></title>
+
+   <indexterm><primary>hmac</primary></indexterm>
+
+<synopsis>hmac(data text, key text, type text) returns bytea
+hmac(data bytea, key text, type text) returns bytea</synopsis>
+
+   <para>Вычисляет имитовставку на основе хеша для данных <parameter>data</parameter> с ключом <parameter>key</parameter>. Параметр <parameter>type</parameter> имеет то же значение, что и для <function>digest()</function>.</para>
+
+   <para>Эта функция похожа на <function>digest()</function>, но вычислить хеш с ней можно, только зная ключ. Это защищает от сценария подмены данных и хеша вместе с ними.</para>
+
+   <para>Если размер ключа больше размера блока хеша, он сначала хешируется, а затем используется в качестве ключа хеширования данных.</para>
+  </sect3>
+ </sect2>
+
+ <sect2>
+  <title>Функции хеширования пароля</title>
+
+  <para>Функции <function>crypt()</function> и <function>gen_salt()</function> разработаны специально для хеширования паролей. Функция <function>crypt()</function> выполняет хеширование, а <function>gen_salt()</function> подготавливает параметры алгоритма для неё.</para>
+
+  <para>Алгоритмы в <function>crypt()</function> отличаются от обычных алгоритмов хеширования MD5 и SHA1 в следующих аспектах:</para>
+
+  <orderedlist>
+   <listitem>
+    <para>Они медленные. Так как объём данных невелик, это единственный способ усложнить перебор паролей.</para>
+   </listitem>
+   <listitem>
+    <para>Они используют случайное значение, называемое <firstterm>солью</firstterm>, чтобы у пользователей с одинаковыми паролями зашифрованные пароли оказывались разными. Это также обеспечивает дополнительную защиту от получения обратного алгоритма.</para>
+   </listitem>
+   <listitem>
+    <para>Они включают в результат тип алгоритма, что допускает сосуществование паролей, хешированных разными алгоритмами.</para>
+   </listitem>
+   <listitem>
+    <para>Некоторые из них являются адаптируемыми &mdash; то есть с ростом производительности компьютеров эти алгоритмы можно настроить так, чтобы они стали медленнее, при этом сохраняя совместимость с существующими паролями.</para>
+   </listitem>
+  </orderedlist>
+
+  <para>В <xref remap="6" linkend="pgcrypto-crypt-algorithms"/> перечислены алгоритмы, поддерживаемые функцией <function>crypt()</function>.</para>
+
+  <table id="pgcrypto-crypt-algorithms">
+   <title>Алгоритмы, которые поддерживает <function>crypt()</function></title>
+   <tgroup cols="6">
+    <thead>
+     <row>
+      <entry>Алгоритм</entry>
+      <entry>Макс. длина пароля</entry>
+      <entry>Адаптивный?</entry>
+      <entry>Размер соли (бит)</entry>
+      <entry>Размер результата</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><literal>bf</literal></entry>
+      <entry>72</entry>
+      <entry>да</entry>
+      <entry>128</entry>
+      <entry>60</entry>
+      <entry>На базе Blowfish, вариация 2a</entry>
+     </row>
+     <row>
+      <entry><literal>md5</literal></entry>
+      <entry>без ограничений</entry>
+      <entry>нет</entry>
+      <entry>48</entry>
+      <entry>34</entry>
+      <entry>crypt на базе MD5</entry>
+     </row>
+     <row>
+      <entry><literal>xdes</literal></entry>
+      <entry>8</entry>
+      <entry>да</entry>
+      <entry>24</entry>
+      <entry>20</entry>
+      <entry>Расширенный DES</entry>
+     </row>
+     <row>
+      <entry><literal>des</literal></entry>
+      <entry>8</entry>
+      <entry>нет</entry>
+      <entry>12</entry>
+      <entry>13</entry>
+      <entry>Изначальный crypt из UNIX</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <sect3>
+   <title><function>crypt()</function></title>
+
+   <indexterm><primary>crypt</primary></indexterm>
+
+<synopsis>crypt(password text, salt text) returns text</synopsis>
+
+   <para>Вычисляет хеш пароля (<parameter>password</parameter>) в стиле crypt(3). Для сохранения нового пароля необходимо вызвать <function>gen_salt()</function>, чтобы сгенерировать новое значение соли (<parameter>salt</parameter>). Для проверки пароля нужно передать сохранённое значение хеша в параметре <parameter>salt</parameter> и проверить, соответствует ли результат сохранённому значению.</para>
+   <para>Пример установки нового пароля: <programlisting>UPDATE ... SET pswhash = crypt('new password', gen_salt('md5'));</programlisting></para>
+   <para>Пример проверки пароля: <programlisting>SELECT (pswhash = crypt('entered password', pswhash)) AS pswmatch FROM ... ;</programlisting> Этот запрос возвращает <literal>true</literal>, если введённый пароль правильный.</para>
+  </sect3>
+
+  <sect3>
+   <title><function>gen_salt()</function></title>
+
+  <indexterm><primary>gen_salt</primary></indexterm>
+
+<synopsis>gen_salt(type text [, iter_count integer ]) returns text</synopsis>
+
+   <para>Вычисляет новое случайное значение соли для функции <function>crypt()</function>. Строка соли также говорит <function>crypt()</function>, какой алгоритм использовать.</para>
+
+   <para>Параметр <parameter>type</parameter> задаёт алгоритм хеширования. Принимаются следующие варианты: <literal>des</literal>, <literal>xdes</literal>, <literal>md5</literal> и <literal>bf</literal>.</para>
+
+   <para>Параметр <parameter>iter_count</parameter> позволяет пользователю указать счётчик итераций для алгоритма, который его принимает. Чем больше это число, тем больше времени уйдёт на вычисление хеша пароля, а значит, тем больше времени понадобится, чтобы взломать его. Хотя со слишком большим значением время вычисления хеша может вырасти до нескольких лет &mdash; это вряд ли практично. Когда параметр <parameter>iter_count</parameter> опускается, применяется количество итераций по умолчанию. Множество допустимых значений для <parameter>iter_count</parameter> зависит от алгоритма, как показано в <xref remap="6" linkend="pgcrypto-icfc-table"/>.</para>
+
+   <table id="pgcrypto-icfc-table">
+    <title>Счётчики итераций для <function>crypt()</function></title>
+    <tgroup cols="4">
+     <thead>
+      <row>
+       <entry>Алгоритм</entry>
+       <entry>По умолчанию</entry>
+       <entry>Мин.</entry>
+       <entry>Макс.</entry>
+      </row>
+     </thead>
+     <tbody>
+      <row>
+       <entry><literal>xdes</literal></entry>
+       <entry>725</entry>
+       <entry>1</entry>
+       <entry>16777215</entry>
+      </row>
+      <row>
+       <entry><literal>bf</literal></entry>
+       <entry>6</entry>
+       <entry>4</entry>
+       <entry>31</entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+
+   <para>Для <literal>xdes</literal> есть дополнительное ограничение: счётчик итераций должен быть нечётным.</para>
+
+   <para>При выборе подходящего числа итераций учтите, что оригинальный алгоритм DES crypt был рассчитан так, чтобы выдавать 4 хеша в секунду на компьютерах того времени. Если за секунду будет вычисляться меньше 4 хешей, скорее всего, возникнут определённые неудобства при пользовании. С другой стороны, скорость больше, чем 100 хешей в секунду, вероятно, будет слишком высокой.</para>
+
+   <para>В <xref remap="6" linkend="pgcrypto-hash-speed-table"/> дана сводка относительной скорости различных алгоритмов хеширования. В таблице показано, сколько времени уйдёт на перебор всех комбинацией символов в восьмисимвольном пароле, в предположении, что пароль содержит только буквы в нижнем регистре, либо буквы в верхнем и нижнем регистре, а также цифры. В строках <literal>crypt-bf</literal> числа после косой черты показывают значение параметра <parameter>iter_count</parameter> функции <function>gen_salt</function>.</para>
+
+   <table id="pgcrypto-hash-speed-table">
+    <title>Скорости алгоритмов хеширования</title>
+    <tgroup cols="5">
+     <thead>
+      <row>
+       <entry>Алгоритм</entry>
+       <entry>Хешей/сек.</entry>
+       <entry>Для <literal>[a-z]</literal></entry>
+       <entry>Для <literal>[A-Za-z0-9]</literal></entry>
+       <entry>Длительность относительно <literal>md5</literal></entry>
+      </row>
+     </thead>
+     <tbody>
+      <row>
+       <entry><literal>crypt-bf/8</literal></entry>
+       <entry>1792</entry>
+       <entry>4 года</entry>
+       <entry>3927 лет</entry>
+       <entry>100k</entry>
+      </row>
+      <row>
+       <entry><literal>crypt-bf/7</literal></entry>
+       <entry>3648</entry>
+       <entry>2 года</entry>
+       <entry>1929 лет</entry>
+       <entry>50k</entry>
+      </row>
+      <row>
+       <entry><literal>crypt-bf/6</literal></entry>
+       <entry>7168</entry>
+       <entry>1 год</entry>
+       <entry>982 лет</entry>
+       <entry>25k</entry>
+      </row>
+      <row>
+       <entry><literal>crypt-bf/5</literal></entry>
+       <entry>13504</entry>
+       <entry>188 дней</entry>
+       <entry>521 лет</entry>
+       <entry>12.5k</entry>
+      </row>
+      <row>
+       <entry><literal>crypt-md5</literal></entry>
+       <entry>171584</entry>
+       <entry>15 дней</entry>
+       <entry>41 год</entry>
+       <entry>1k</entry>
+      </row>
+      <row>
+       <entry><literal>crypt-des</literal></entry>
+       <entry>23221568</entry>
+       <entry>157.5 минут</entry>
+       <entry>108 дней</entry>
+       <entry>7</entry>
+      </row>
+      <row>
+       <entry><literal>sha1</literal></entry>
+       <entry>37774272</entry>
+       <entry>90 минут</entry>
+       <entry>68 дней</entry>
+       <entry>4</entry>
+      </row>
+      <row>
+       <entry><literal>md5</literal> (хеш)</entry>
+       <entry>150085504</entry>
+       <entry>22.5 минут</entry>
+       <entry>17 дней</entry>
+       <entry>1</entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+
+   <para>Замечания:</para>
+
+   <itemizedlist>
+    <listitem>
+     <para>Для расчётов использовался процессор Intel Mobile Core i3.</para>
+    </listitem>
+    <listitem>
+     <para>Показатели алгоритмов <literal>crypt-des</literal> и <literal>crypt-md5</literal> взяты из вывода теста программы John the Ripper v1.6.38.</para>
+    </listitem>
+    <listitem>
+     <para>Показатели <literal>md5</literal> получены программой mdcrack 1.2.</para>
+    </listitem>
+    <listitem>
+     <para>Показатели <literal>sha1</literal> получены программой lcrack-20031130-beta.</para>
+    </listitem>
+    <listitem>
+     <para>Показатели <literal>crypt-bf</literal> получены простой программой, обрабатывающей в цикле 1000 паролей из 8-символов. Таким способом можно показать скорость с разным числом итераций. Для справки: <literal>john -test</literal> показывает 13506 циклов/с для <literal>crypt-bf/5</literal>. (Это очень небольшое различие в результатах согласуется с тем фактом, что реализация <literal>crypt-bf</literal> в <filename>pgcrypto</filename> не отличается от применяемой в программе John the Ripper.)</para>
+    </listitem>
+   </itemizedlist>
+
+   <para>Заметьте, что вариант <quote>перепробовать все комбинации</quote> не вполне реалистичен. Обычно перебор паролей производится с применением словарей, которые содержат и обычные слова, и их различные видоизменения. Поэтому даже похожие на слова пароли обычно можно подобрать быстрее, чем за указанное время, тогда как 6-символьный несловесный пароль может избежать взлома. А может и не избежать.</para>
+  </sect3>
+ </sect2>
+
+ <sect2>
+  <title>Функции шифрования на базе PGP</title>
+
+  <para>Функции, описанные здесь, реализуют часть стандарта OpenPGP (RFC 4880), относящуюся к шифрованию. Они поддерживают шифрование как с симметричным, так и с закрытым ключом.</para>
+
+  <para>Зашифрованное PGP сообщение состоит из 2 частей или <firstterm>пакетов</firstterm>:</para>
+  <itemizedlist>
+   <listitem>
+    <para>Пакет, содержащий сеансовый ключ &mdash; либо симметричный, либо открытый (в зашифрованном виде).</para>
+   </listitem>
+   <listitem>
+    <para>Пакет, содержащий данные, зашифрованные сеансовым ключом.</para>
+   </listitem>
+  </itemizedlist>
+
+  <para>При шифровании с симметричным ключом (то есть, паролем):</para>
+  <orderedlist>
+   <listitem>
+    <para>Заданный пароль хешируется по алгоритму String2Key (S2K). Этот алгоритм подобен алгоритмам <function>crypt()</function> &mdash; специально замедлен и добавляет случайную соль &mdash; но на выход выдаёт двоичный ключ полной длины.</para>
+   </listitem>
+   <listitem>
+    <para>Если требуется отдельный сеансовый ключ, генерируется новый случайный ключ. В противном случае в качестве сеансового будет использоваться непосредственно ключ S2K.</para>
+   </listitem>
+   <listitem>
+    <para>Когда используется непосредственно ключ S2K, в пакет сеансового ключа помещаются только параметры S2K. В противном случае сеансовый ключ шифруется ключом S2K и результат помещается в пакет сеансового ключа.</para>
+   </listitem>
+  </orderedlist>
+
+  <para>При шифровании с открытым ключом:</para>
+  <orderedlist>
+   <listitem>
+    <para>Генерируется новый случайный сеансовый ключ.</para>
+   </listitem>
+   <listitem>
+    <para>Он зашифровывается открытым ключом и помещается в пакет сеансового ключа.</para>
+   </listitem>
+  </orderedlist>
+
+  <para>В любом случае данные, которые должны быть зашифрованы, обрабатываются так:</para>
+  <orderedlist>
+   <listitem>
+    <para>Необязательная подготовка данных: сжатие, перекодировка в UTF-8 и/или преобразование концов строк.</para>
+   </listitem>
+   <listitem>
+    <para>Перед данными добавляется блок случайных байт. Это равносильно использованию случайного вектора инициализации.</para>
+   </listitem>
+   <listitem>
+    <para>В конце добавляется хеш SHA1 случайного префикса и данных.</para>
+   </listitem>
+   <listitem>
+    <para>Всё это шифруется сеансовым ключом и помещается в пакет данных.</para>
+   </listitem>
+  </orderedlist>
+
+  <sect3>
+   <title><function>pgp_sym_encrypt()</function></title>
+
+   <indexterm><primary>pgp_sym_encrypt</primary></indexterm>
+
+   <indexterm><primary>pgp_sym_encrypt_bytea</primary></indexterm>
+
+<synopsis>pgp_sym_encrypt(data text, psw text [, options text ]) returns bytea
+pgp_sym_encrypt_bytea(data bytea, psw text [, options text ]) returns bytea</synopsis>
+   <para>Шифрует данные (<parameter>data</parameter>) симметричным ключом PGP <parameter>psw</parameter>. В <parameter>options</parameter> могут передаваться криптографические параметры, описанные ниже.</para>
+  </sect3>
+
+  <sect3>
+   <title><function>pgp_sym_decrypt()</function></title>
+
+   <indexterm><primary>pgp_sym_decrypt</primary></indexterm>
+
+   <indexterm><primary>pgp_sym_decrypt_bytea</primary></indexterm>
+
+<synopsis>pgp_sym_decrypt(msg bytea, psw text [, options text ]) returns text
+pgp_sym_decrypt_bytea(msg bytea, psw text [, options text ]) returns bytea</synopsis>
+   <para>Расшифровывает сообщение, зашифрованное симметричным ключом PGP.</para>
+   <para>Расшифровывать данные <type>bytea</type> функцией <function>pgp_sym_decrypt</function> запрещено. Это ограничение введено, чтобы не допустить вывода некорректных символьных данных. Расшифровывать изначально текстовые данные с помощью <function>pgp_sym_decrypt_bytea</function> можно без ограничений.</para>
+   <para>Аргумент <parameter>options</parameter> может содержать криптографические параметры, описанные ниже.</para>
+  </sect3>
+
+  <sect3>
+   <title><function>pgp_pub_encrypt()</function></title>
+
+   <indexterm><primary>pgp_pub_encrypt</primary></indexterm>
+
+   <indexterm><primary>pgp_pub_encrypt_bytea</primary></indexterm>
+
+<synopsis>pgp_pub_encrypt(data text, key bytea [, options text ]) returns bytea
+pgp_pub_encrypt_bytea(data bytea, key bytea [, options text ]) returns bytea</synopsis>
+   <para>Зашифровывает данные (<parameter>data</parameter>) открытым ключом PGP (<parameter>key</parameter>). Если передать этой функции закрытый ключ, она выдаст ошибку.</para>
+   <para>Аргумент <parameter>options</parameter> может содержать криптографические параметры, описанные ниже.</para>
+  </sect3>
+
+  <sect3>
+   <title><function>pgp_pub_decrypt()</function></title>
+
+   <indexterm><primary>pgp_pub_decrypt</primary></indexterm>
+
+   <indexterm><primary>pgp_pub_decrypt_bytea</primary></indexterm>
+
+<synopsis>pgp_pub_decrypt(msg bytea, key bytea [, psw text [, options text ]]) returns text
+pgp_pub_decrypt_bytea(msg bytea, key bytea [, psw text [, options text ]]) returns bytea</synopsis>
+   <para>Расшифровывает сообщение, зашифрованное открытым ключом. В <parameter>key</parameter> должен передаваться закрытый ключ, соответствующий открытому ключу, применяющемуся при шифровании. Если секретный ключ защищён паролем, этот пароль нужно передать в параметре <parameter>psw</parameter>. Если пароля нет, но необходимо передать криптографические параметры, вы должны передать пустой пароль.</para>
+   <para>Расшифровывать данные <type>bytea</type> функцией <function>pgp_pub_decrypt</function> запрещено. Это ограничение введено, чтобы не допустить вывода недопустимых символьных данных. Расшифровывать изначально текстовые данные с помощью <function>pgp_pub_decrypt_bytea</function> можно без ограничений.</para>
+   <para>Аргумент <parameter>options</parameter> может содержать криптографические параметры, описанные ниже.</para>
+  </sect3>
+
+  <sect3>
+   <title><function>pgp_key_id()</function></title>
+
+   <indexterm><primary>pgp_key_id</primary></indexterm>
+
+<synopsis>pgp_key_id(bytea) returns text</synopsis>
+   <para><function>pgp_key_id</function> извлекает идентификатор ключа из открытого или закрытого ключа PGP. Она также может выдать идентификатор ключа, которым были зашифрованы данные, если ей передаётся зашифрованное сообщение.</para>
+   <para>Она может выдать два специальных идентификатора ключа:</para>
+   <itemizedlist>
+    <listitem>
+     <para>
+      <literal>SYMKEY</literal>
+     </para>
+     <para>Сообщение зашифровано симметричным ключом.</para>
+    </listitem>
+    <listitem>
+     <para>
+      <literal>ANYKEY</literal>
+     </para>
+     <para>Сообщение зашифровано открытом ключом, но идентификатор ключа был удалён. Это означает, что вам надо будет перепробовать ключи, чтобы подобрать подходящий. Сама библиотека <filename>pgcrypto</filename> не генерирует такие сообщения.</para>
+    </listitem>
+   </itemizedlist>
+   <para>Заметьте, что разные ключи могут иметь одинаковый идентификатор. Это редкое, но не невероятное явление. В таком случае клиентское приложение должно пытаться расшифровать данные с каждым ключом, пока не найдёт подходящий &mdash; примерно так же, как и с <literal>ANYKEY</literal>.</para>
+  </sect3>
+
+  <sect3>
+   <title><function>armor()</function>, <function>dearmor()</function></title>
+
+   <indexterm><primary>armor</primary></indexterm>
+
+   <indexterm><primary>dearmor</primary></indexterm>
+
+<synopsis>armor(data bytea [ , keys text[], values text[] ]) returns text
+dearmor(data text) returns bytea</synopsis>
+   <para>Эти функции переводят двоичные данные в/из формата PGP &laquo;ASCII Armor&raquo;, по сути представляющий собой кодировку Base64 с контрольными суммами и дополнительным форматированием.</para>
+
+   <para>Если задаются массивы <parameter>keys</parameter> и <parameter>values</parameter>, для каждой пары ключ/значения в формат Armor добавляется <firstterm>заголовок Armor</firstterm>. Оба массива должны быть одномерными и иметь одинаковую длину. Задаваемые ключи и значения могут содержать только символы ASCII.</para>
+  </sect3>
+
+  <sect3>
+   <title><function>pgp_armor_headers</function></title>
+
+   <indexterm><primary>pgp_armor_headers</primary></indexterm>
+
+<synopsis>pgp_armor_headers(data text, key out text, value out text) returns setof record</synopsis>
+   <para>Функция <function>pgp_armor_headers()</function> извлекает заголовки Armor из параметра <parameter>data</parameter>. Она возвращает набор строк с двумя столбцами, key и value. Если в ключах или значениях оказываются символы не ASCII, они воспринимаются как UTF-8.</para>
+  </sect3>
+
+  <sect3>
+   <title>Параметры функций PGP</title>
+
+   <para>Имена параметров подобны принятым в GnuPG. Значение параметра должно задаваться после знака равно; друг от друга параметры отделяются запятыми. Например: <programlisting>pgp_sym_encrypt(data, psw, 'compress-algo=1, cipher-algo=aes256')</programlisting></para>
+
+   <para>Все эти параметры, кроме <literal>convert-crlf</literal>, применяются только к функциям шифрования. Функции расшифровывания получают параметры из данных PGP.</para>
+
+   <para>Вероятно, самые интересные параметры — это <literal>compress-algo</literal> и <literal>unicode-mode</literal>. Остальные должны иметь достаточно адекватные значения по умолчанию.</para>
+
+  <sect4>
+   <title>cipher-algo</title>
+
+   <para>Выбирает алгоритм шифрования.</para>
+<literallayout>Значения: bf, aes128, aes192, aes256 (только OpenSSL: <literal>3des</literal>, <literal>cast5</literal>)
+По умолчанию: aes128
+Применим к: pgp_sym_encrypt, pgp_pub_encrypt</literallayout>
+  </sect4>
+
+  <sect4>
+   <title>compress-algo</title>
+
+   <para>Выбирает алгоритм сжатия. Принимается, только если <productname>&productname;</productname> собран с zlib.</para>
+<literallayout>Значения:
+  0 — без сжатия
+  1 — сжатие ZIP
+  2 — сжатие ZLIB (= ZIP плюс метаданные и CRC блоков)
+По умолчанию: 0
+Применим к: pgp_sym_encrypt, pgp_pub_encrypt</literallayout>
+  </sect4>
+
+  <sect4>
+   <title>compress-level</title>
+
+   <para>Определяет уровень сжатия. Чем больше уровень, тем меньшего объёма результат, но длительнее процесс. Значение 0 отключает сжатие.</para>
+<literallayout>Значения: 0, 1-9
+По умолчанию: 6
+Применим к: pgp_sym_encrypt, pgp_pub_encrypt</literallayout>
+  </sect4>
+
+  <sect4>
+   <title>convert-crlf</title>
+
+   <para>Определяет, преобразовывать ли <literal>\n</literal> в <literal>\r\n</literal> при шифровании и <literal>\r\n</literal> в <literal>\n</literal> при дешифровании. В RFC 4880 требуется, чтобы текстовые данные хранились с переводами строк в виде <literal>\r\n</literal>. Воспользуйтесь этим параметром, чтобы поведение полностью соответствовало RFC.</para>
+<literallayout>Значения: 0, 1
+По умолчанию: 0
+Применим к: pgp_sym_encrypt, pgp_pub_encrypt, pgp_sym_decrypt, pgp_pub_decrypt</literallayout>
+  </sect4>
+
+  <sect4>
+   <title>disable-mdc</title>
+
+   <para>Не защищать данные хешем SHA-1. Единственная разумная причина использовать этот параметр — добиться совместимости с древними программами PGP, вышедшими до того, как в RFC 4880 была предусмотрена защита пакетов с SHA-1. Все последние реализации с gnupg.org и pgp.com прекрасно поддерживают это.</para>
+<literallayout>Значения: 0, 1
+По умолчанию: 0
+Применим к: pgp_sym_encrypt, pgp_pub_encrypt</literallayout>
+  </sect4>
+
+  <sect4>
+   <title>sess-key</title>
+
+   <para>Использовать отдельный сеансовый ключ. Для шифрования с открытым ключом всегда используется отдельный сеансовый ключ; этот параметр предназначен для шифрования с симметричным ключом, которое по умолчанию использует непосредственно ключ S2K.</para>
+<literallayout>Значения: 0, 1
+По умолчанию: 0
+Применим к: pgp_sym_encrypt</literallayout>
+  </sect4>
+
+  <sect4>
+   <title>s2k-mode</title>
+
+   <para>Режим алгоритма S2K.</para>
+<literallayout>Значения:
+  0 — Без соли. Опасно!
+  1 — С солью, но с фиксированным числом итераций.
+  3 — С переменным числом итераций.
+По умолчанию: 3
+Применим к: pgp_sym_encrypt</literallayout>
+  </sect4>
+
+  <sect4>
+   <title>s2k-count</title>
+
+   <para>Число итераций для алгоритма S2K. Оно должно быть не меньше 1024 и не больше 65011712.</para>
+<literallayout>По умолчанию: случайное значение между 65536 и 253952
+Применим к: pgp_sym_encrypt, только с s2k-mode=3</literallayout>
+  </sect4>
+
+  <sect4>
+   <title>s2k-digest-algo</title>
+
+   <para>Выбирает алгоритм хеширования, который будет использоваться для вычисления S2K.</para>
+<literallayout>Значения: md5, sha1
+По умолчанию: sha1
+Применим к: pgp_sym_encrypt</literallayout>
+  </sect4>
+
+  <sect4>
+   <title>s2k-cipher-algo</title>
+
+   <para>Выбирает шифр, который будет использоваться для шифрования отдельного сеансового ключа.</para>
+<literallayout>Значения: bf, aes, aes128, aes192, aes256
+По умолчанию: используется cipher-algo
+Применим к: pgp_sym_encrypt</literallayout>
+  </sect4>
+
+  <sect4>
+   <title>unicode-mode</title>
+
+   <para>Определяет, преобразовывать ли текстовые данные из внутренней кодировки базы данных в UTF-8 и обратно. Если кодировка базы уже UTF-8, перекодировка не производится, но сообщение помечается как UTF-8. Без данного параметра этого не происходит.</para>
+<literallayout>Значения: 0, 1
+По умолчанию: 0
+Применим к: pgp_sym_encrypt, pgp_pub_encrypt</literallayout>
+  </sect4>
+  </sect3>
+
+ <sect3>
+  <title>Формирование ключей PGP с применением GnuPG</title>
+
+  <para>Формирование нового ключа: <programlisting>gpg --gen-key</programlisting></para>
+  <para>Предпочитаемый тип ключей: <quote>DSA and Elgamal</quote>.</para>
+  <para>Для шифрования RSA вы должны создать главный ключ либо DSA, либо RSA только для подписания, а затем добавить подключ для шифрования, выполнив команду <literal>gpg --edit-key</literal>.</para>
+  <para>Просмотр списка ключей: <programlisting>gpg --list-secret-keys</programlisting></para>
+  <para>Экспорт открытого ключа в формате &laquo;ASCII Armor&raquo;: <programlisting>gpg -a --export KEYID &gt; public.key</programlisting></para>
+  <para>Экспорт закрытого ключа в формате &laquo;ASCII Armor&raquo;: <programlisting>gpg -a --export-secret-keys KEYID &gt; secret.key</programlisting></para>
+  <para>Прежде чем передавать эти ключи функциям PGP, вы должны применить функцию <function>dearmor()</function> к этим ключам. Либо, если вы можете обработать двоичные данные, уберите <literal>-a</literal> из команды.</para>
+  <para>Дополнительную информацию вы можете получить в руководстве <literal>man gpg</literal>, <ulink url="http://www.gnupg.org/gph/en/manual.html">The GNU Privacy Handbook</ulink> (Руководство GNU по обеспечению конфиденциальности) и другой документации на сайте <ulink url="http://www.gnupg.org"/>.</para>
+ </sect3>
+
+ <sect3>
+  <title>Ограничения кода PGP</title>
+
+  <itemizedlist>
+   <listitem>
+    <para>Не поддерживается подписывание. Это также означает, что принадлежность подключа шифрования главному ключу не проверяется.</para>
+   </listitem>
+   <listitem>
+    <para>Не поддерживается использование ключа шифрования в качестве главного ключа. Так как подобная практика обычно не приветствуется, это не должно быть проблемой.</para>
+   </listitem>
+   <listitem>
+    <para>Нет поддержки нескольких подключей. Это может представляться проблемой, так как такие ключи не редкость. С другой стороны, вы всё равно не должны использовать обычные ключи GPG/PGP с <filename>pgcrypto</filename>, а должны создать новые, учитывая, что это другой сценарий использования.</para>
+   </listitem>
+  </itemizedlist>
+  </sect3>
+ </sect2>
+
+ <sect2>
+  <title>Низкоуровневые функции шифрования</title>
+
+  <para>Эти функции выполняют только шифрование данных; они не предоставляют расширенные возможности шифрования PGP. Таким образом, с ними связаны следующие проблемы:</para>
+  <orderedlist>
+   <listitem>
+    <para>Они используют ключ пользователя непосредственно в качестве ключа шифрования.</para>
+   </listitem>
+   <listitem>
+    <para>Они не обеспечивают проверку целостности, которая должна выявлять модификацию зашифрованных данных.</para>
+   </listitem>
+   <listitem>
+    <para>Они рассчитаны на то, что пользователи будут управлять всеми параметрами шифрования самостоятельно, даже вектором инициализации.</para>
+   </listitem>
+   <listitem>
+    <para>Они не рассчитаны на текст.</para>
+   </listitem>
+  </orderedlist>
+  <para>Поэтому с появлением поддержки шифрования PGP использовать низкоуровневые функции шифрования не рекомендуется.</para>
+
+  <indexterm><primary>encrypt</primary></indexterm>
+
+  <indexterm><primary>decrypt</primary></indexterm>
+
+  <indexterm><primary>encrypt_iv</primary></indexterm>
+
+  <indexterm><primary>decrypt_iv</primary></indexterm>
+
+<synopsis>encrypt(data bytea, key bytea, type text) returns bytea
+decrypt(data bytea, key bytea, type text) returns bytea
+
+encrypt_iv(data bytea, key bytea, iv bytea, type text) returns bytea
+decrypt_iv(data bytea, key bytea, iv bytea, type text) returns bytea</synopsis>
+
+  <para>Эти функции зашифровывают/расшифровывают данные, применяя метод шифрования, заданный параметром <parameter>type</parameter>. Строка <parameter>type</parameter> имеет следующий формат: <synopsis>
+<replaceable>алгоритм</replaceable> <optional> <literal>-</literal> <replaceable>режим</replaceable> </optional> <optional> <literal>/pad:</literal> <replaceable>дозаполнение</replaceable> </optional>
+</synopsis> где допустимый <replaceable>алгоритм</replaceable>: <itemizedlist>
+   <listitem><para><literal>bf</literal> &mdash; Blowfish</para></listitem>
+   <listitem><para><literal>aes</literal> &mdash; AES (Rijndael-128)</para></listitem>
+  </itemizedlist> допустимый <replaceable>режим</replaceable>: <itemizedlist>
+   <listitem>
+    <para><literal>cbc</literal> &mdash; следующий блок зависит от предыдущего (по умолчанию)</para>
+   </listitem>
+   <listitem>
+    <para><literal>ecb</literal> &mdash; каждый блок шифруется отдельно (только для тестирования)</para>
+   </listitem>
+  </itemizedlist> и допустимое <replaceable>дозаполнение</replaceable>: <itemizedlist>
+   <listitem>
+    <para><literal>pkcs</literal> &mdash; данные могут быть любой длины (по умолчанию)</para>
+   </listitem>
+   <listitem>
+    <para><literal>none</literal> &mdash; размер данных должен быть кратен размеру блока шифра</para>
+   </listitem>
+  </itemizedlist></para>
+  <para>Так что, например, эти вызовы равнозначны: <programlisting>encrypt(data, 'fooz', 'bf')
+encrypt(data, 'fooz', 'bf-cbc/pad:pkcs')</programlisting></para>
+  <para>Для функций <function>encrypt_iv</function> и <function>decrypt_iv</function> параметр <parameter>iv</parameter> задаёт начальное значение для режима CBC; для ECB он игнорируется. Оно обрезается или дополняется нулями, если его размер не равен ровно размеру блока. В функциях без этого параметра оно по умолчанию заполняется нулями.</para>
+ </sect2>
+
+ <sect2>
+  <title>Функции получения случайных данных</title>
+
+  <indexterm><primary>gen_random_bytes</primary></indexterm>
+
+<synopsis>gen_random_bytes(count integer) returns bytea</synopsis>
+  <para>Возвращает криптографически стойкие случайные байты в количестве <parameter>count</parameter>. За один вызов можно получить максимум 1024 байт. Это ограничение предотвращает исчерпание пула энтропии.</para>
+
+  <indexterm><primary>gen_random_uuid</primary></indexterm>
+
+<synopsis>gen_random_uuid() returns uuid</synopsis>
+  <para>Возвращает UUID версии 4 (случайный).</para>
+ </sect2>
+
+ <sect2>
+  <title>Замечания</title>
+
+  <sect3>
+   <title>Конфигурирование</title>
+
+   <para>Модуль <filename>pgcrypto</filename> настраивается согласно установкам, полученным в главном скрипте <literal>configure</literal> &productname;. На его конфигурацию влияют аргументы <literal>--with-zlib</literal> и <literal>--with-openssl</literal>.</para>
+
+   <para>При компиляции с zlib шифрующие функции PGP могут сжимать данные перед шифрованием.</para>
+
+   <para>При компиляции с OpenSSL будут доступны дополнительные алгоритмы. Кроме того, функции шифрования с открытым ключом будут быстрее, так как OpenSSL содержит оптимизированные функции для работы с большими числами (BIGNUM).</para>
+
+   <table id="pgcrypto-with-without-openssl">
+    <title>Обзор функциональности с и без OpenSSL</title>
+    <tgroup cols="3">
+     <thead>
+      <row>
+       <entry>Функциональность</entry>
+       <entry>Встроенная</entry>
+       <entry>С OpenSSL</entry>
+      </row>
+     </thead>
+     <tbody>
+      <row>
+       <entry>MD5</entry>
+       <entry>да</entry>
+       <entry>да</entry>
+      </row>
+      <row>
+       <entry>SHA1</entry>
+       <entry>да</entry>
+       <entry>да</entry>
+      </row>
+      <row>
+       <entry>SHA224/256/384/512</entry>
+       <entry>да</entry>
+       <entry>да (Примечание 1)</entry>
+      </row>
+      <row>
+       <entry>Другие алгоритмы кеширования</entry>
+       <entry>нет</entry>
+       <entry>да (Примечание 2)</entry>
+      </row>
+      <row>
+       <entry>Blowfish</entry>
+       <entry>да</entry>
+       <entry>да</entry>
+      </row>
+      <row>
+       <entry>AES</entry>
+       <entry>да</entry>
+       <entry>да (Примечание 3)</entry>
+      </row>
+      <row>
+       <entry>DES/3DES/CAST5</entry>
+       <entry>нет</entry>
+       <entry>да</entry>
+      </row>
+      <row>
+       <entry>Низкоуровневое шифрование</entry>
+       <entry>да</entry>
+       <entry>да</entry>
+      </row>
+      <row>
+       <entry>Симметричное шифрование PGP</entry>
+       <entry>да</entry>
+       <entry>да</entry>
+      </row>
+      <row>
+       <entry>Шифрование PGP с открытым ключом</entry>
+       <entry>да</entry>
+       <entry>да</entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+
+   <para>Замечания:</para>
+
+   <orderedlist>
+    <listitem>
+     <para>Алгоритмы SHA2 были добавлены в OpenSSL в версии 0.9.8. С более старыми версиями <filename>pgcrypto</filename> использует встроенный код.</para>
+    </listitem>
+    <listitem>
+     <para>Автоматически выбирается любой алгоритм кеширования, который поддерживает OpenSSL. Это невозможно с шифрами, они должны поддерживаться явно.</para>
+    </listitem>
+    <listitem>
+     <para>AES включён в OpenSSL, начиная с версии 0.9.7. С более старыми версиями <filename>pgcrypto</filename> использует встроенный код.</para>
+    </listitem>
+   </orderedlist>
+  </sect3>
+
+  <sect3>
+   <title>Обработка NULL</title>
+
+   <para>Как и положено по стандарту SQL, все эти функции возвращают NULL, если один из аргументов — NULL. Это может угрожать безопасности при неаккуратном использовании.</para>
+  </sect3>
+
+  <sect3>
+   <title>Ограничения безопасности</title>
+
+   <para>Все функции <filename>pgcrypto</filename> выполняются внутри сервера баз данных. Это означает, что все данные и пароли передаются между функциями <filename>pgcrypto</filename> и клиентскими приложениями открытым текстом. Поэтому вы должны:</para>
+
+   <orderedlist>
+    <listitem>
+     <para>Подключаться локально или использовать подключения SSL.</para>
+    </listitem>
+    <listitem>
+     <para>Доверять и системе, и администратору баз данных.</para>
+    </listitem>
+   </orderedlist>
+
+   <para>Если это невозможно, лучше произвести шифрование в клиентском приложении.</para>
+
+   <para>Эта реализация не противостоит <ulink url="http://en.wikipedia.org/wiki/Side-channel_attack">атакам по сторонним каналам</ulink>. Например, время, требующееся для выполнения функции дешифрования <filename>pgcrypto</filename>, будет разным для разного шифротекста заданного размера.</para>
+  </sect3>
+
+  <sect3>
+   <title>Полезное чтение</title>
+
+   <itemizedlist>
+    <listitem>
+     <para><ulink url="http://www.gnupg.org/gph/en/manual.html"/></para>
+     <para>The GNU Privacy Handbook (Руководство GNU по обеспечению конфиденциальности)</para>
+    </listitem>
+    <listitem>
+     <para><ulink url="http://www.openwall.com/crypt/"/></para>
+     <para>Описывает алгоритм crypt-blowfish.</para>
+    </listitem>
+    <listitem>
+     <para><ulink url="http://www.stack.nl/~galactus/remailers/passphrase-faq.html"/></para>
+     <para>Как выбрать хороший пароль.</para>
+    </listitem>
+    <listitem>
+     <para><ulink url="http://world.std.com/~reinhold/diceware.html"/></para>
+     <para>Интересный способ выбора пароля.</para>
+    </listitem>
+    <listitem>
+     <para><ulink url="http://www.interhack.net/people/cmcurtin/snake-oil-faq.html"/></para>
+     <para>Описывает хорошую и плохую криптографию.</para>
+    </listitem>
+   </itemizedlist>
+  </sect3>
+
+  <sect3>
+   <title>Техническая информация</title>
+
+   <itemizedlist>
+    <listitem>
+     <para><ulink url="http://www.ietf.org/rfc/rfc4880.txt"/></para>
+     <para>Формат сообщений OpenPGP.</para>
+    </listitem>
+    <listitem>
+     <para><ulink url="http://www.ietf.org/rfc/rfc1321.txt"/></para>
+     <para>Алгоритм вычисления дайджеста сообщения MD5.</para>
+    </listitem>
+    <listitem>
+     <para><ulink url="http://www.ietf.org/rfc/rfc2104.txt"/></para>
+     <para>HMAC: Хеширование по ключу для аутентификации сообщений.</para>
+    </listitem>
+    <listitem>
+     <para><ulink url="http://www.usenix.org/events/usenix99/provos.html"/></para>
+     <para>Сравнение алгоритмов crypt-des, crypt-md5 и bcrypt.</para>
+    </listitem>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Fortuna_(PRNG)"/></para>
+     <para>Описание Fortuna CSPRNG.</para>
+    </listitem>
+    <listitem>
+     <para><ulink url="http://jlcooke.ca/random/"/></para>
+     <para>Драйвер <filename>/dev/random</filename> для Linux на базе Fortuna, написанный Жан-Люком Куком.</para>
+    </listitem>
+    <listitem>
+     <para><ulink url="http://kodu.ut.ee/~lipmaa/crypto/"/></para>
+     <para>Коллекция ссылок по криптологии.</para>
+    </listitem>
+   </itemizedlist>
+  </sect3>
+ </sect2>
+
+ <sect2>
+  <title>Автор</title>
+
+  <para>Марко Крин <email>markokr@gmail.com</email></para>
+
+  <para>Модуль <filename>pgcrypto</filename> заимствует код из следующих источников:</para>
+
+  <informaltable>
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Алгоритм</entry>
+      <entry>Автор</entry>
+      <entry>Источник исходного кода</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry>Шифрование DES</entry>
+      <entry>Дэвид Буррен и другие</entry>
+      <entry>FreeBSD, libcrypt</entry>
+     </row>
+     <row>
+      <entry>Хеширование MD5</entry>
+      <entry>Пол-Хеннинг Камп</entry>
+      <entry>FreeBSD, libcrypt</entry>
+     </row>
+     <row>
+      <entry>Шифрование Blowfish</entry>
+      <entry>Solar Designer</entry>
+      <entry>www.openwall.com</entry>
+     </row>
+     <row>
+      <entry>Шифр Blowfish</entry>
+      <entry>Саймон Тэтем</entry>
+      <entry>PuTTY</entry>
+     </row>
+     <row>
+      <entry>Шифр Rijndael</entry>
+      <entry>Брайан Глэдмен</entry>
+      <entry>OpenBSD, sys/crypto</entry>
+     </row>
+     <row>
+      <entry>Хеш MD5 и SHA1</entry>
+      <entry>Проект WIDE</entry>
+      <entry>KAME, kame/sys/crypto</entry>
+     </row>
+     <row>
+      <entry>SHA256/384/512</entry>
+      <entry>Аарон Д. Гиффорд</entry>
+      <entry>OpenBSD, sys/crypto</entry>
+     </row>
+     <row>
+      <entry>Математика BIGNUM</entry>
+      <entry>Майкл Дж. Фромбергер</entry>
+      <entry>dartmouth.edu/~sting/sw/imath</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </informaltable>
+ </sect2>
+
+</sect1>

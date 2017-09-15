@@ -1,0 +1,139 @@
+<!-- doc/src/xml/dfunc.xml -->
+
+<sect2 id="dfunc">
+ <title>Компиляция и компоновка динамически загружаемых функций</title>
+
+ <para>Прежде чем вы сможете использовать ваши написанные на C функции, расширяющие возможности <productname>&productname;</productname>, их необходимо скомпилировать и скомпоновать особым образом, чтобы сервер мог динамически загрузить полученный файл. Точнее говоря, вам необходимо создать <firstterm>разделяемую библиотеку</firstterm>.<indexterm><primary>разделяемая библиотека</primary></indexterm></para>
+
+ <para>За подробной информацией, дополняющей и поясняющей то, что описано в этом разделе, вам следует обратиться к документации вашей операционной системы, в частности, к страницам руководства компилятора C, <command>cc</command>, и компоновщика, <command>ld</command>. Кроме того, ряд рабочих примеров можно найти в каталоге <filename>contrib</filename> исходного кода <productname>&productname;</productname>. Однако, если вы непосредственно воспользуйтесь этими примерами, ваши модули окажутся зависимыми от наличия исходного кода <productname>&productname;</productname>.</para>
+
+ <para>Создание разделяемых библиотек в принципе не отличается от сборки исполняемых файлов: сначала исходные файлы компилируются в объектные, а затем объектные связываются вместе. Объектные файлы должны создаваться так, чтобы они содержали <firstterm>позиционно-независимый</firstterm> код (<acronym>PIC</acronym>, position-independent code)<indexterm><primary>PIC</primary></indexterm>, что означает, что при загрузке для выполнения этот код может быть помещён в любое место в памяти. (Объектные файлы, предназначенные для сборки непосредственно исполняемых файлов, обычно собираются не так.) Команда для компоновки разделяемой библиотеки принимает специальные флаги, что отличают её от компоновки исполняемого файла (по крайней мере в теории &mdash; в некоторых системах реальность не так прекрасна).</para>
+
+ <para>В следующих примерах предполагается, что исходный код находится в файле <filename>foo.c</filename> и мы будем создавать разделяемую библиотеку <filename>foo.so</filename>. Промежуточный объектный файл будет называться <filename>foo.o</filename>, если не отмечено другое. Разделяемая библиотека может включать больше одного объектного файла, но здесь мы ограничимся одним.</para>
+
+<!--
+  Note: Reading GNU Libtool sources is generally a good way of
+  figuring out this information.  The methods used within &productname;
+  source code are not necessarily ideal.
+-->
+
+  <variablelist>
+   <varlistentry>
+    <term>
+     <systemitem class="osname">FreeBSD</systemitem>
+     <indexterm><primary>FreeBSD</primary> <secondary>разделяемая библиотека</secondary></indexterm>
+    </term>
+    <listitem>
+     <para>Для создания кода <acronym>PIC</acronym> компилятору передаётся флаг <option>-fPIC</option>. Чтобы создать разделяемую библиотеку, используется флаг компилятора <option>-shared</option>. <programlisting>gcc -fPIC -c foo.c
+gcc -shared -o foo.so foo.o</programlisting> Это применимо как минимум к <systemitem class="osname">FreeBSD</systemitem> версии 3.0.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <systemitem class="osname">HP-UX</systemitem>
+     <indexterm><primary>HP-UX</primary> <secondary>разделяемая библиотека</secondary></indexterm>
+    </term>
+    <listitem>
+     <para>Для создания кода <acronym>PIC</acronym> системному компилятору передаётся флаг <option>+z</option>, а компилятору <application>GCC</application> — флаг <option>-fPIC</option>. Чтобы создать разделяемые библиотеки, используется флаг компоновщика <option>-b</option>. Таким образом, нужно выполнить: <programlisting>cc +z -c foo.c</programlisting> или: <programlisting>gcc -fPIC -c foo.c</programlisting> а затем: <programlisting>ld -b -o foo.sl foo.o</programlisting> В <systemitem class="osname">HP-UX</systemitem>, в отличие от многих других систем, для разделяемых библиотек выбрано расширение <filename>.sl</filename>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <systemitem class="osname">Linux</systemitem>
+     <indexterm><primary>Linux</primary> <secondary>разделяемая библиотека</secondary></indexterm>
+    </term>
+    <listitem>
+     <para>Для создания кода <acronym>PIC</acronym> компилятору передаётся флаг <option>-fPIC</option>. Для создания разделяемой библиотеки компилятору передаётся флаг <option>-shared</option>. Полный пример будет выглядеть так: <programlisting>cc -fPIC -c foo.c
+cc -shared -o foo.so foo.o</programlisting></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <systemitem class="osname">OS X</systemitem>
+     <indexterm><primary>OS X</primary> <secondary>разделяемая библиотека</secondary></indexterm>
+    </term>
+    <listitem>
+     <para>Следующий пример показывает нужные команды, в предположении, что установлены инструменты разработчика. <programlisting>cc -c foo.c
+cc -bundle -flat_namespace -undefined suppress -o foo.so foo.o</programlisting></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <systemitem class="osname">NetBSD</systemitem>
+     <indexterm><primary>NetBSD</primary> <secondary>разделяемая библиотека</secondary></indexterm>
+    </term>
+    <listitem>
+     <para>Для создания кода <acronym>PIC</acronym> компилятору передаётся флаг <option>-fPIC</option>. Для компоновки разделяемых библиотек в системах <acronym>ELF</acronym> компилятору передаётся флаг <option>-shared</option>, а в старых системах, не поддерживающих ELF, применяется команда <literal>ld -Bshareable</literal>. <programlisting>gcc -fPIC -c foo.c
+gcc -shared -o foo.so foo.o</programlisting></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <systemitem class="osname">OpenBSD</systemitem>
+     <indexterm><primary>OpenBSD</primary> <secondary>разделяемая библиотека</secondary></indexterm>
+    </term>
+    <listitem>
+     <para>Для создания кода <acronym>PIC</acronym> компилятору передаётся флаг <option>-fPIC</option>, а для компоновки разделяемых библиотек применяется команда <literal>ld -Bshareable</literal>. <programlisting>gcc -fPIC -c foo.c
+ld -Bshareable -o foo.so foo.o</programlisting></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <systemitem class="osname">Solaris</systemitem>
+     <indexterm><primary>Solaris</primary> <secondary>разделяемая библиотека</secondary></indexterm>
+    </term>
+    <listitem>
+     <para>Для создания кода <acronym>PIC</acronym> компилятору Sun передаётся флаг <option>-KPIC</option>, а компилятору <application>GCC</application> — флаг <option>-fPIC</option>. Для компоновки разделяемой библиотеки можно передать обоим компиляторам флаг <option>-G</option> либо передать флаг <option>-shared</option> компилятору <application>GCC</application>. <programlisting>cc -KPIC -c foo.c
+cc -G -o foo.so foo.o</programlisting> или <programlisting>gcc -fPIC -c foo.c
+gcc -G -o foo.so foo.o</programlisting></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <systemitem class="osname">UnixWare</systemitem>
+     <indexterm><primary>UnixWare</primary> <secondary>разделяемая библиотека</secondary></indexterm>
+    </term>
+    <listitem>
+     <para>Для создания кода <acronym>PIC</acronym> компилятору SCO передаётся флаг <option>-K PIC</option>, а компилятору <productname>GCC</productname> — флаг <option>-fpic</option>. Для компоновки разделяемой библиотеки нужно передать параметр <option>-G</option> компилятору SCO или <option>-shared</option> компилятору <productname>GCC</productname>. <programlisting>cc -K PIC -c foo.c
+cc -G -o foo.so foo.o</programlisting> или <programlisting>gcc -fpic -c foo.c
+gcc -shared -o foo.so foo.o</programlisting></para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+
+ <tip>
+  <para>Если это слишком сложно для вас, попробуйте использовать средство <ulink url="http://www.gnu.org/software/libtool/"><productname>GNU Libtool</productname></ulink>, которое скрывает различия платформ за единым интерфейсом.</para>
+ </tip>
+
+ <para>Полученную разделяемую библиотеку можно будет затем загрузить в <productname>&productname;</productname>. Когда команде <command>CREATE FUNCTION</command> передаётся имя файла, это должно быть имя файла разделяемой библиотеки, а не промежуточного объектного файла. Заметьте, что принятое в системе расширение файлов библиотек (как правило, <literal>.so</literal> или <literal>.sl</literal>) в команде <command>CREATE FUNCTION</command> можно опустить, и так обычно следует делать для лучшей портируемости.</para>
+
+ <para>Чтобы уточнить, где сервер будет искать файлы разделяемых библиотек, вернитесь к <xref remap="3" linkend="xfunc-c-dynload"/>.</para>
+
+<!--
+Under AIX, object files are compiled normally but building the shared
+library requires a couple of steps.  First, create the object file:
+.nf
+cc <other flags> -c foo.c
+.fi
+You must then create a symbol \*(lqexports\*(rq file for the object
+file:
+.nf
+mkldexport foo.o `pwd` &gt; foo.exp
+.fi
+Finally, you can create the shared library:
+.nf
+ld <other flags> -H512 -T512 -o foo.so -e _nostart \e
+   -bI:.../lib/postgres.exp -bE:foo.exp foo.o \e
+   -lm -lc 2>/dev/null
+.fi
+  -->
+
+</sect2>

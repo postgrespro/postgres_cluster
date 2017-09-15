@@ -1,0 +1,99 @@
+<!--
+doc/src/xml/ref/alter_server.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterserver">
+ <indexterm zone="sql-alterserver"><primary>ALTER SERVER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER SERVER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER SERVER</refname>
+  <refpurpose>изменить определение стороннего сервера</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER SERVER <replaceable class="parameter">имя</replaceable> [ VERSION '<replaceable class="parameter">новая_версия</replaceable>' ]
+    [ OPTIONS ( [ ADD | SET | DROP ] <replaceable class="parameter">параметр</replaceable> ['<replaceable class="parameter">значение</replaceable>'] [, ... ] ) ]
+ALTER SERVER <replaceable class="parameter">имя</replaceable> OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+ALTER SERVER <replaceable class="parameter">имя</replaceable> RENAME TO <replaceable>новое_имя</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER SERVER</command> изменяет определение стороннего сервера. Первая форма меняет строку версии сервера или общие параметры сервера (требуется минимум одно предложение). Вторая форма меняет владельца сервера.</para>
+
+  <para>Изменить свойства сервера может только его владелец. Чтобы изменить владельца, необходимо быть его владельцем, а также непосредственным или опосредованным членом новой роли-владельца, и кроме того, иметь право <literal>USAGE</literal> для обёртки сторонних данных сервера. (Суперпользователи удовлетворяют всем этим условиям автоматически.)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя существующего сервера.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_версия</replaceable></term>
+    <listitem>
+     <para>Новая версия сервера.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>OPTIONS ( [ ADD | SET | DROP ] <replaceable class="parameter">параметр</replaceable> ['<replaceable class="parameter">значение</replaceable>'] [, ... ] )</literal></term>
+    <listitem>
+     <para>Эти формы изменяют параметры сервера. Указания <literal>ADD</literal>, <literal>SET</literal> и <literal>DROP</literal> определяют выполняемое действие (добавление, установка и удаление, соответственно). Если действие не задано явно, подразумевается <literal>ADD</literal>. Имена параметров должны быть уникальными, они вместе со значениями также проверяются библиотекой обёртки сторонних данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Имя пользователя, назначаемого новым владельцем стороннего сервера.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя стороннего сервера.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Изменение свойств сервера <literal>foo</literal>, добавление параметров подключения: <programlisting>ALTER SERVER foo OPTIONS (host 'foo', dbname 'foodb');</programlisting></para>
+
+  <para>Изменение свойств сервера <literal>foo</literal>: смена версии, изменение параметра <literal>host</literal>: <programlisting>ALTER SERVER foo VERSION '8.4' OPTIONS (SET host 'baz');</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>ALTER SERVER</command> соответствует стандарту ISO/IEC 9075-9 (SQL/MED). Формы <literal>OWNER TO</literal> и <literal>RENAME</literal> являются расширениями &productname;.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createserver"/></member>
+   <member><xref linkend="sql-dropserver"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

@@ -1,0 +1,97 @@
+<!--
+doc/src/xml/ref/move.xml
+&productname; documentation
+-->
+
+<refentry id="sql-move">
+ <indexterm zone="sql-move"><primary>MOVE</primary></indexterm>
+
+ <indexterm zone="sql-move"><primary>курсор</primary> <secondary>MOVE</secondary></indexterm>
+
+ <refmeta>
+  <refentrytitle>MOVE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>MOVE</refname>
+  <refpurpose>переместить курсор</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<!-- Note the "direction" bit is also in ref/fetch.sgml -->
+<synopsis>MOVE [ <replaceable class="parameter">direction</replaceable> [ FROM | IN ] ] <replaceable class="parameter">имя_курсора</replaceable>
+
+<phrase>Здесь <replaceable class="parameter">direction</replaceable> может быть пустым или принимать следующее значение:</phrase>
+
+    NEXT
+    PRIOR
+    FIRST
+    LAST
+    ABSOLUTE <replaceable class="parameter">число</replaceable>
+    RELATIVE <replaceable class="parameter">число</replaceable>
+    <replaceable class="parameter">число</replaceable>
+    ALL
+    FORWARD
+    FORWARD <replaceable class="parameter">число</replaceable>
+    FORWARD ALL
+    BACKWARD
+    BACKWARD <replaceable class="parameter">число</replaceable>
+    BACKWARD ALL</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>MOVE</command> перемещает курсор, не получая данные. Команда <command>MOVE</command> работает точно так же, как <command>FETCH</command>, но она не возвращает данные строк, а только перемещает курсор.</para>
+
+  <para>Команда <command>MOVE</command> поддерживает те же параметры, что и <command>FETCH</command>; за подробным описанием её синтаксиса и использования обратитесь к <xref remap="3" linkend="sql-fetch"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Выводимая информация</title>
+
+  <para>В случае успешного завершения, <command>MOVE</command> возвращает метку команды в виде <screen>
+MOVE <replaceable class="parameter">число</replaceable>
+</screen> Здесь <replaceable class="parameter">число</replaceable> показывает количество строк, которое бы выдала команда <command>FETCH</command> с такими же параметрами (оно может быть нулевым).</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+<programlisting>BEGIN WORK;
+DECLARE liahona CURSOR FOR SELECT * FROM films;
+
+-- Пропустить первые 5 строк:
+MOVE FORWARD 5 IN liahona;
+MOVE 5
+
+-- Выбрать 6-ую строку из курсора liahona:
+FETCH 1 FROM liahona;
+ code  | title  | did | date_prod  |  kind  |  len
+-------+--------+-----+------------+--------+-------
+ P_303 | 48 Hrs | 103 | 1982-10-22 | Action | 01:37
+(1 row)
+
+-- Закрыть курсор liahona и завершить транзакцию:
+CLOSE liahona;
+COMMIT WORK;</programlisting>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>MOVE</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-close"/></member>
+   <member><xref linkend="sql-declare"/></member>
+   <member><xref linkend="sql-fetch"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

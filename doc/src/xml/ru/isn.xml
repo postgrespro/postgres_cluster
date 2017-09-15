@@ -1,0 +1,254 @@
+<!-- doc/src/xml/isn.xml -->
+
+<sect1 id="isn" xreflabel="isn">
+ <title>isn</title>
+
+ <indexterm zone="isn"><primary>isn</primary></indexterm>
+
+ <para>Модуль <filename>isn</filename> предоставляет типы данных для следующих международных стандартов нумерации товаров: EAN13, UPC, ISBN (книги), ISMN (музыка) и ISSN (серийные номера). Номера проверяются на входе согласно жёстко заданному списку префиксов: этот список префиксов также применяется для группирования цифр при выводе. Так как время от времени появляются новые префиксы, этот список префиксов может устаревать. Ожидается, что будущая версия этого модуля будет получать список префиксов из одной или нескольких таблиц, благодаря чему его при необходимости смогут легко обновлять пользователи; однако в настоящее время этот список можно изменить, только модифицировав исходный код и перекомпилировав его. Также есть вероятность, что в будущем этот модуль лишится функций проверки префиксов и группирования цифр.</para>
+
+ <sect2>
+  <title>Типы данных</title>
+
+  <para>В <xref remap="6" linkend="isn-datatypes"/> перечислены типы данных, реализованные модулем <filename>isn</filename>.</para>
+
+  <table id="isn-datatypes">
+   <title>Типы данных <filename>isn</filename></title>
+   <tgroup cols="2">
+    <thead>
+     <row>
+      <entry>Тип данных</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><type>EAN13</type></entry>
+      <entry>European Article Number (Европейский номер товара), всегда выводится в формате EAN13</entry>
+     </row>
+
+     <row>
+      <entry><type>ISBN13</type></entry>
+      <entry>International Standard Book Number (Международный стандартный книжный номер), выводимый в новом формате EAN13</entry>
+     </row>
+
+     <row>
+      <entry><type>ISMN13</type></entry>
+      <entry>International Standard Music Number (Международный стандартный музыкальный номер), выводимый в новом формате EAN13</entry>
+     </row>
+     <row>
+      <entry><type>ISSN13</type></entry>
+      <entry>International Standard Serial Number (Международный стандартный серийный номер), выводимый в новом формате EAN13</entry>
+     </row>
+     <row>
+      <entry><type>ISBN</type></entry>
+      <entry>Международный стандартный книжный номер, выводимый в старом коротком формате</entry>
+     </row>
+     <row>
+      <entry><type>ISMN</type></entry>
+      <entry>Международный стандартный музыкальный номер, выводимый в старом коротком формате</entry>
+     </row>
+     <row>
+      <entry><type>ISSN</type></entry>
+      <entry>Международный стандартный серийный номер, выводимый в старом коротком формате</entry>
+     </row>
+     <row>
+      <entry><type>UPC</type></entry>
+      <entry>Universal Product Code (Универсальный код товара)</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>Замечания:</para>
+
+  <orderedlist>
+   <listitem>
+    <para>Номера ISBN13, ISMN13, ISSN13 являются номерами EAN13.</para>
+   </listitem>
+   <listitem>
+    <para>Не все номера EAN13 (только их подмножество) представляют ISBN13, ISMN13 или ISSN13.</para>
+   </listitem>
+   <listitem>
+    <para>Некоторые номера ISBN13 можно вывести в формате ISBN.</para>
+   </listitem>
+   <listitem>
+    <para>Некоторые номера ISMN13 можно вывести в формате ISMN.</para>
+   </listitem>
+   <listitem>
+    <para>Некоторые номера ISSN13 можно вывести в формате ISSN.</para>
+   </listitem>
+   <listitem>
+    <para>Номера UPC являются подмножеством номеров EAN13 (по сути они являются номерами EAN13 без первой цифры <literal>0</literal>).</para>
+   </listitem>
+   <listitem>
+    <para>Любые номера UPC, ISBN, ISMN и ISSN можно представить как номера EAN13.</para>
+   </listitem>
+  </orderedlist>
+
+  <para>Внутри все эти типы представляются одинаково (64-битными целыми числами) и все они взаимозаменяемы. Различные типы введены для управления форматированием при выводе и для строгой проверки правильности ввода, что и определяет конкретный тип номера.</para>
+
+  <para>Типы <type>ISBN</type>, <type>ISMN</type> и <type>ISSN</type> выводят короткую версию числа (ISxN 10), когда это возможно, либо выбирают формат ISxN 13 для чисел, не умещающихся в короткую версию. Типы <type>EAN13</type>, <type>ISBN13</type>, <type>ISMN13</type> и <type>ISSN13</type> всегда выводят длинную версию ISxN (EAN13).</para>
+ </sect2>
+
+ <sect2>
+  <title>Приведения</title>
+
+  <para>Модуль <filename>isn</filename> предоставляет следующие пары приведений типов:</para>
+
+  <itemizedlist>
+   <listitem>
+    <para>ISBN13 &lt;=&gt; EAN13</para>
+   </listitem>
+   <listitem>
+    <para>ISMN13 &lt;=&gt; EAN13</para>
+   </listitem>
+   <listitem>
+    <para>ISSN13 &lt;=&gt; EAN13</para>
+   </listitem>
+   <listitem>
+    <para>ISBN &lt;=&gt; EAN13</para>
+   </listitem>
+   <listitem>
+    <para>ISMN &lt;=&gt; EAN13</para>
+   </listitem>
+   <listitem>
+    <para>ISSN &lt;=&gt; EAN13</para>
+   </listitem>
+   <listitem>
+    <para>UPC &lt;=&gt; EAN13</para>
+   </listitem>
+   <listitem>
+    <para>ISBN &lt;=&gt; ISBN13</para>
+   </listitem>
+   <listitem>
+    <para>ISMN &lt;=&gt; ISMN13</para>
+   </listitem>
+   <listitem>
+    <para>ISSN &lt;=&gt; ISSN13</para>
+   </listitem>
+  </itemizedlist>
+
+  <para>При приведении <type>EAN13</type> к другому типу выполняется проверка времени выполнения, соответствует ли исходное значение целевому типу, и если это не так, выдаётся ошибка. При других приведениях значения просто перемечаются, так что они успешно выполняются всегда.</para>
+ </sect2>
+
+ <sect2>
+  <title>Функции и операторы</title>
+
+  <para>Модуль <filename>isn</filename> предоставляет стандартные операторы сравнения плюс поддержку индексов по хешу и B-деревьев для этих типов данных. Кроме того, он реализует ряд специализированных функций; они перечислены в <xref remap="6" linkend="isn-functions"/>. В этой таблице под <type>isn</type> понимается один из типов данных модуля.</para>
+
+  <table id="isn-functions">
+   <title>Функции <filename>isn</filename></title>
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Функция</entry>
+      <entry>Возвращает</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><function>isn_weak(boolean)</function><indexterm><primary>isn_weak</primary></indexterm></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Устанавливает ослабленный режим проверки ввода (возвращает новое состояние)</entry>
+     </row>
+     <row>
+      <entry><function>isn_weak()</function></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Выдаёт текущее состояние ослабленного режима</entry>
+     </row>
+     <row>
+      <entry><function>make_valid(isn)</function><indexterm><primary>make_valid</primary></indexterm></entry>
+      <entry><type>isn</type></entry>
+      <entry>Делает неверный номер верным (сбрасывает флаг ошибки)</entry>
+     </row>
+     <row>
+      <entry><function>is_valid(isn)</function><indexterm><primary>is_valid</primary></indexterm></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Проверяет присутствие флага ошибки</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para><firstterm>Ослабленный</firstterm> режим позволяет вставлять в таблицу неверные значения. Под неверным значением понимается номер, в котором не сходится проверочная цифра, а не номер отсутствует вовсе.</para>
+
+  <para>Зачем может понадобиться ослабленный режим? Ну например, у вас может быть большой набор номеров ISBN, и очень многие из них по каким-то странным причинам содержат неверную контрольную цифру (возможно, номера были отсканированы с печатного листа и были распознаны неправильно, или они вводились вручную, кто знает...). В любом случае, суть в том, что вы хотите с этим разобраться, но вам нужно загрузить все эти номера в базу данных, а затем, возможно, использовать дополнительное средство поиска неверных номеров в базе данных с тем, чтобы проверить и исправить данные; так что, например, вам нужно будет выбрать все неверные номера в таблице.</para>
+
+  <para>Если попытаться вставить в таблицу неверный номер в ослабленном режиме проверки, номер будет вставлен с исправленной проверочной цифрой, но выводиться будет с восклицательным знаком (<literal>!</literal>) в конце, например <literal>0-11-000322-5!</literal>. Этот маркер ошибки можно проверить с помощью функции <function>is_valid</function> и очистить функцией <function>make_valid</function>.</para>
+
+  <para>Вы также можете принудительно вставить числа даже не в ослабленном режиме, добавив символ <literal>!</literal> в конце номера.</para>
+
+  <para>Есть ещё одна особенность — во вводимом номере вместо проверочной цифры можно указать <literal>?</literal> и нужная проверочная цифра будет вставлена автоматически.</para>
+ </sect2>
+
+ <sect2>
+  <title>Примеры</title>
+
+<programlisting>-- Использование типов напрямую:
+SELECT isbn('978-0-393-04002-9');
+SELECT isbn13('0901690546');
+SELECT issn('1436-4522');
+
+-- Приведение типов:
+--  заметьте, что номер ean13 можно привести к другому типу, только когда
+--  этот номер будет допустимым для целевого типа;
+--  таким образом, это НЕ будет работать: select isbn(ean13('0220356483481'));
+--  а это будет:
+SELECT upc(ean13('0220356483481'));
+SELECT ean13(upc('220356483481'));
+
+-- Создание таблицы с одним столбцом, который будет содержать номера ISBN:
+CREATE TABLE test (id isbn);
+INSERT INTO test VALUES('9780393040029');
+
+-- Автоматическое вычисление проверочных цифр (обратите внимание на '?'):
+INSERT INTO test VALUES('220500896?');
+INSERT INTO test VALUES('978055215372?');
+
+SELECT issn('3251231?');
+SELECT ismn('979047213542?');
+
+-- Использование ослабленного режима:
+SELECT isn_weak(true);
+INSERT INTO test VALUES('978-0-11-000533-4');
+INSERT INTO test VALUES('9780141219307');
+INSERT INTO test VALUES('2-205-00876-X');
+SELECT isn_weak(false);
+
+SELECT id FROM test WHERE NOT is_valid(id);
+UPDATE test SET id = make_valid(id) WHERE id = '2-205-00876-X!';
+
+SELECT * FROM test;
+
+SELECT isbn13(id) FROM test;</programlisting>
+ </sect2>
+
+ <sect2>
+  <title>Библиография</title>
+
+  <para>Информация, на основе которой реализован этот модуль, была собрана с нескольких сайтов, включая: <itemizedlist>
+    <listitem><para><ulink url="http://www.isbn-international.org/"/></para></listitem>
+    <listitem><para><ulink url="http://www.issn.org/"/></para></listitem>
+    <listitem><para><ulink url="http://www.ismn-international.org/"/></para></listitem>
+    <listitem><para><ulink url="http://www.wikipedia.org/"/></para></listitem>
+   </itemizedlist> Префиксы, используемые для группирования цифр, были также взяты с: <itemizedlist>
+    <listitem><para><ulink url="http://www.gs1.org/productssolutions/idkeys/support/prefix_list.html"/></para></listitem>
+    <listitem><para><ulink url="http://en.wikipedia.org/wiki/List_of_ISBN_identifier_groups"/></para></listitem>
+    <listitem><para><ulink url="https://www.isbn-international.org/content/isbn-users-manual"/></para></listitem>
+    <listitem><para><ulink url="http://en.wikipedia.org/wiki/International_Standard_Music_Number"/></para></listitem>
+    <listitem><para><ulink url="http://www.ismn-international.org/ranges.html"/></para></listitem>
+   </itemizedlist> Алгоритмы реализованы со всей тщательностью и скрупулёзно сверены с алгоритмами, предлагаемыми в официальных руководствах ISBN, ISMN, ISSN.</para>
+ </sect2>
+
+ <sect2>
+  <title>Автор</title>
+  <para>Герман Мендез Браво (Kronuz), 2004 — 2006</para>
+
+  <para>Этот модуль написан под влиянием кода <filename>isbn_issn</filename> Гаретта А. Уоллмена.</para>
+ </sect2>
+
+</sect1>

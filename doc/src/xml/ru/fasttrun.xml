@@ -1,0 +1,31 @@
+<sect1 id="fasttrun">
+  <title>fasttrun</title>
+  <para>Модуль <literal>fasttrun</literal> предоставляет транзакционно-небезопасную функцию для усечения временных таблиц, предотвращающую разрастание каталога pg_class.</para>
+  <para>Этот модуль требуется для поддержки системы 1С:Предприятие.</para>
+  <para>Операция быстрого усечения не является транзакционной, так что её действие нельзя отменить и оно немедленно становится видимым во всех сеансах независимо от уровня изоляции.</para>
+  <sect2 id="fasttrun-function">
+    <title>Функция</title>
+    <para>Пример вызова функции: <programlisting>        select fasttruncate('TABLE_NAME');
+      </programlisting></para>
+  </sect2>
+
+  <sect2 id="fasttrun-test">
+    <title>Тестовый пример</title>
+    <para>Для тестирования вы можете использовать этот пример: <programlisting>create or replace function f() returns void as $$
+begin
+  for i in 1..1000
+    loop
+      PERFORM fasttruncate('tt1');
+    end loop;
+  end;
+$$ language plpgsql;
+      </programlisting></para>
+  </sect2>
+
+  <sect2 id="fasttrun-authors">
+    <title>Авторы</title>
+    <literallayout>      Фёдор Сигаев <email>teodor@sigaev.ru</email>
+    </literallayout>
+  </sect2>
+
+</sect1>

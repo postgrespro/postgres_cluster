@@ -1,0 +1,75 @@
+<!--
+doc/src/xml/ref/deallocate.xml
+&productname; documentation
+-->
+
+<refentry id="sql-deallocate">
+ <indexterm zone="sql-deallocate"><primary>DEALLOCATE</primary></indexterm>
+
+ <indexterm zone="sql-deallocate"><primary>подготовленные операторы</primary> <secondary>освобождение</secondary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DEALLOCATE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DEALLOCATE</refname>
+  <refpurpose>освободить подготовленный оператор</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DEALLOCATE [ PREPARE ] { <replaceable class="parameter">имя</replaceable> | ALL }</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DEALLOCATE</command> применяется для освобождения ранее подготовленного оператора SQL. Если не освободить подготовленный оператор явно, он будет освобождён при завершении сеанса.</para>
+
+  <para>За дополнительными сведениями о подготовленных операторах обратитесь к <xref remap="3" linkend="sql-prepare"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>PREPARE</literal></term>
+    <listitem>
+     <para>Это ключевое слово игнорируется.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя подготовленного оператора, подлежащего освобождению.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ALL</literal></term>
+    <listitem>
+     <para>Освобождает все подготовленные операторы.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>В стандарте SQL есть оператор <command>DEALLOCATE</command>, но он предназначен только для применения во встраиваемом SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-execute"/></member>
+   <member><xref linkend="sql-prepare"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

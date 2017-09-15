@@ -1,0 +1,88 @@
+<!--
+doc/src/xml/ref/release_savepoint.xml
+&productname; documentation
+-->
+
+<refentry id="sql-release-savepoint">
+ <indexterm zone="sql-release-savepoint"><primary>RELEASE SAVEPOINT</primary></indexterm>
+
+ <indexterm zone="sql-release-savepoint"><primary>точки сохранения</primary> <secondary>освобождение</secondary></indexterm>
+
+ <refmeta>
+  <refentrytitle>RELEASE SAVEPOINT</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>RELEASE SAVEPOINT</refname>
+  <refpurpose>высвободить ранее определённую точку сохранения</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>RELEASE [ SAVEPOINT ] <replaceable>имя_точки_сохранения</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>RELEASE SAVEPOINT</command> уничтожает точку сохранения, определённую ранее в текущей транзакции.</para>
+
+  <para>После уничтожения точка сохранения становится неприменимой в качестве точки возврата, но никаких других проявлений, видимых для пользователя, эта команда не имеет. Она не отменяет эффекта команд, выполненных после установки точки сохранения. (Для этого предназначена команда <xref linkend="sql-rollback-to"/>.) Уничтожение точки сохранения, когда она становится не нужна, позволяет системе освобождать некоторые ресурсы раньше, чем завершается транзакция.</para>
+
+  <para><command>RELEASE SAVEPOINT</command> также уничтожает все точки сохранения, установленные после заданной точки.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable>имя_точки_сохранения</replaceable></term>
+    <listitem>
+     <para>Имя точки сохранения, подлежащей уничтожению.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Указание имени точки сохранения, не определённой ранее, считается ошибкой.</para>
+
+  <para>Освободить точку сохранения в транзакции, находящейся в прерванном состоянии, нельзя.</para>
+
+  <para>Если одно имя дано нескольким точкам сохранения, освобождена будет только последняя из них.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Этот пример показывает, как установить и затем уничтожить точку сохранения: <programlisting>BEGIN;
+    INSERT INTO table1 VALUES (3);
+    SAVEPOINT my_savepoint;
+    INSERT INTO table1 VALUES (4);
+    RELEASE SAVEPOINT my_savepoint;
+COMMIT;</programlisting> Данная транзакция вставит значения 3 и 4.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Эта команда соответствует стандарту <acronym>SQL</acronym>. В стандарте говорится, что ключевое слово <literal>SAVEPOINT</literal> является обязательным, но <productname>&productname;</productname> позволяет опускать его.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-begin"/></member>
+   <member><xref linkend="sql-commit"/></member>
+   <member><xref linkend="sql-rollback"/></member>
+   <member><xref linkend="sql-rollback-to"/></member>
+   <member><xref linkend="sql-savepoint"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

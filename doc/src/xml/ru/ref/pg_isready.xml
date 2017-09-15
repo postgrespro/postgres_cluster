@@ -1,0 +1,150 @@
+<!--
+doc/src/xml/ref/pg_isready.xml
+&productname; documentation
+-->
+
+<refentry id="app-pg-isready">
+ <indexterm zone="app-pg-isready"><primary>pg_isready</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>pg_isready</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_isready</refname>
+  <refpurpose>проверить соединение с сервером <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_isready</command>
+   <arg rep="repeat"><replaceable>параметр-подключения</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+
+ <refsect1 id="app-pg-isready-description">
+  <title>Описание</title>
+  <para>Утилита <application>pg_isready</application> предназначена для проверки соединения с сервером баз данных <productname>&productname;</productname>. Результат проверки передаётся в коде завершения.</para>
+ </refsect1>
+
+ <refsect1 id="app-pg-isready-options">
+  <title>Параметры</title>
+
+    <variablelist>
+
+    <varlistentry>
+      <term><option>-d <replaceable class="parameter">имя_бд</replaceable></option></term>
+      <term><option>--dbname=<replaceable class="parameter">имя_бд</replaceable></option></term>
+      <listitem>
+      <para>Задаёт имя базы данных, к которой нужно подключиться.</para>
+      <para>Если этот параметр содержит знак <symbol>=</symbol> или начинается с допустимого префикса <acronym>URI</acronym> (<literal>postgresql://</literal> или <literal>postgres://</literal>), он воспринимается как строка <parameter>conninfo</parameter>. За дополнительными сведениями обратитесь к <xref remap="3" linkend="libpq-connstring"/>.</para>
+      </listitem>
+    </varlistentry>
+
+     <varlistentry>
+       <term><option>-h <replaceable class="parameter">компьютер</replaceable></option></term>
+       <term><option>--host=<replaceable class="parameter">компьютер</replaceable></option></term>
+       <listitem>
+       <para>Указывает имя компьютера, на котором запущен сервер. Если значение начинается с косой черты, оно интерпретируется как имя каталога с доменным сокетом Unix.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-p <replaceable class="parameter">порт</replaceable></option></term>
+       <term><option>--port=<replaceable class="parameter">порт</replaceable></option></term>
+       <listitem>
+       <para>Задаёт TCP-порт или файл локального доменного сокета Unix, через который сервер принимает подключения. Значение по умолчанию определяется переменной среды <envar>PGPORT</envar>, а если она не установлена, выбирается порт, указанный при компиляции, обычно 5432.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-q</option></term>
+      <term><option>--quiet</option></term>
+      <listitem>
+       <para>Не выводить сообщение о состоянии. Это полезно в скриптах.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-t <replaceable class="parameter">секунды</replaceable></option></term>
+       <term><option>--timeout=<replaceable class="parameter">секунды</replaceable></option></term>
+       <listitem>
+       <para>Максимальное время ожидания (в секундах) при попытке подключения, по истечении которого констатируется, что сервер не отвечает. Значение по умолчанию — 3 секунды.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-U <replaceable class="parameter">имя_пользователя</replaceable></option></term>
+       <term><option>--username=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+       <listitem>
+       <para>Подключиться к базе данных с заданным именем пользователя вместо подразумеваемого по умолчанию.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-V</option></term>
+      <term><option>--version</option></term>
+       <listitem>
+        <para>Сообщить версию <application>pg_isready</application> и завершиться.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-?</option></term>
+      <term><option>--help</option></term>
+      <listitem>
+       <para>Показать справку по аргументам командной строки <application>pg_isready</application> и завершиться.</para>
+      </listitem>
+     </varlistentry>
+   </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Код завершения</title>
+
+  <para>Утилита <application>pg_isready</application> возвращает в оболочку <literal>0</literal>, если сервер принимает подключения, <literal>1</literal>, если он сбрасывает подключения (например, во время загрузки), <literal>2</literal>, если при попытке подключения не получен ответ, и <literal>3</literal>, если попытки подключения не было (например, из-за некорректных параметров).</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <para>Как и большинство других утилит <productname>&productname;</productname>, <command>pg_isready</command> также использует переменные среды, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>).</para>
+ </refsect1>
+
+ <refsect1 id="app-pg-isready-notes">
+  <title>Замечания</title>
+
+  <para>Чтобы получить состояние сервера, передавать имя пользователя, пароль и имя базы данных не требуется; но если передать некорректные значения, сервер выведет в журнал сообщение о неудачной попытке подключения.</para>
+ </refsect1>
+
+ <refsect1 id="app-pg-isready-examples">
+  <title>Примеры</title>
+
+  <para>Обычное использование: <screen>
+<prompt>$</prompt> <userinput>pg_isready</userinput>
+<computeroutput>/tmp:5432 - accepting connections</computeroutput>
+<prompt>$</prompt> <userinput>echo $?</userinput>
+<computeroutput>0</computeroutput>
+</screen></para>
+
+  <para>Запуск с параметрами подключения, во время загрузки кластера <productname>&productname;</productname>: <screen>
+<prompt>$ </prompt><userinput>pg_isready -h localhost -p 5433</userinput>
+<computeroutput>localhost:5433 - rejecting connections</computeroutput>
+<prompt>$</prompt> <userinput>echo $?</userinput>
+<computeroutput>1</computeroutput>
+</screen></para>
+
+  <para>Запуск с параметрами подключения, в случае, когда кластер <productname>&productname;</productname> недоступен: <screen>
+<prompt>$ </prompt><userinput>pg_isready -h someremotehost</userinput>
+<computeroutput>someremotehost:5432 - no response</computeroutput>
+<prompt>$</prompt> <userinput>echo $?</userinput>
+<computeroutput>2</computeroutput>
+</screen></para>
+
+ </refsect1>
+
+</refentry>

@@ -1,0 +1,271 @@
+<sect1 id="pg-query-state">
+  <title>pg_query_state</title>
+  <para>Модуль <literal>pg_query_state</literal> даёт возможность узнавать текущее состояние выполнения запросов в работающем обслуживающем процессе.</para>
+  <sect2 id="pg-query-state-overview">
+    <title>Обзор</title>
+    <para>Каждый обычный (не служебный) оператор запроса (SELECT/INSERT/UPDATE/DELETE) после этапа оптимизации/планирования переводится в дерево плана, представляющего собой своего рода императивное представление SQL-запроса. Команда EXPLAIN ANALYZE позволяет просмотреть статистику выполнения, собранную с каждого узла этого дерева плана (общее время выполнения, число строк, выданных верхних узлам и т. д.). Но эта статистика собирается только после выполнения запроса. Данный модель позволяет просмотреть актуальную статистику запроса, работающего во внешнем обслуживающем процессе. При этом формат результирующего вывода практически идентичен выводу обычной команды EXPLAIN ANALYZE. Таким образом, пользователи могут отслеживать собственно процесс выполнения запросов. В действительности, этот модуль может исследовать внешний обслуживающий процесс и определять его фактическое состояние. В частности, это полезно, когда обслуживающий процесс выполняет очень сложный запрос или &laquo;завис&raquo;.</para>
+  </sect2>
+  <sect2 id="use-cases">
+    <title>Сценарии использования</title>
+    <itemizedlist spacing="compact">
+      <para>С помощью этого модуля возможно:</para>
+      <listitem>
+        <para>выявлять сложные запросы (в совокупности с другими средствами мониторинга);</para>
+      </listitem>
+      <listitem>
+        <para>наблюдать за выполнением запросов.</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2 id="pg-query-state-installation">
+    <title>Установка</title>
+    <para>Чтобы установить <literal>pg_query_state</literal>, выполните в psql:</para>
+    <programlisting>      CREATE EXTENSION pg_query_state;
+    </programlisting>
+    <para>Затем модифицируйте параметр shared_preload_libraries в конфигурационном файле postgres.conf:</para>
+    <programlisting>      shared_preload_libraries = 'pg_query_state'
+    </programlisting>
+    <para>Для вступления изменений в силу потребуется перезапустить экземпляр <productname>&productname;</productname>.</para>
+  </sect2>
+  <sect2 id="pg-query-state-function">
+    <title>Функция pg_query_state</title>
+    <programlisting>      pg_query_state(integer  pid,
+                     verbose  boolean DEFAULT FALSE,
+                     costs    boolean DEFAULT FALSE,
+                     timing   boolean DEFAULT FALSE,
+                     buffers  boolean DEFAULT FALSE,
+                     triggers boolean DEFAULT FALSE,
+                     format   text    DEFAULT 'text')
+        returns TABLE (pid integer,
+                       frame_number integer,
+                       query_text text,
+                       plan text,
+                       leader_pid integer)
+    </programlisting>
+    <para>Получает от обслуживающего процесса с заданным <literal>pid</literal> состояние текущего запроса. При выполнении параллельного запроса может порождаться множество параллельных запросов, а при вызовах функций образуются вложенные подзапросы, так что состояние выполнения может представляться в виде стека запросов, поэтому данная функция возвращает результат типа <literal>TABLE (pid integer, frame_number integer, query_text text, plan text, leader_pid integer)</literal>. Он представляет структуру дерева, состоящего ведущий процесс и порождённые им рабочие процессы, идентифицируемые по <literal>pid</literal>. Каждый рабочий процесс ссылается на свой ведущий по столбцу <literal>leader_pid</literal>. Для ведущего процесса значение этого столбца — <literal>NULL</literal>. Состояние каждого процесса представляется в виде стека вызовов функций. Для каждого кадра этого стека устанавливается соответствие по столбцам <literal>frame_number</literal> (номер кадра, начиная с нуля), <literal>query_text</literal> (текст запроса) и <literal>plan</literal> (план) со столбцами текущей статистики.</para>
+    <para>Таким образом, пользователь может видеть состояние основного запроса и запросов, порождённых вызовами функции, для ведущего процесса и всех рабочих процессов, порождённых им.</para>
+    <para>В процессе выполнения некоторые узлы плана могут представлять циклы. Поэтому статистика по такому узлу состоит из двух частей: средняя статистика по предыдущим циклам, как в выводе EXPLAIN ANALYZE, и статистика для текущего, ещё не законченного цикла.</para>
+    <itemizedlist spacing="compact">
+      <para>Необязательные аргументы:</para>
+      <listitem>
+        <para>verbose — использовать EXPLAIN VERBOSE для вывода плана;</para>
+      </listitem>
+      <listitem>
+        <para>costs — стоимости каждого узла;</para>
+      </listitem>
+      <listitem>
+        <para>timing — выводить время исполнения для каждого узла; если сбор временной статистики на вызываемой стороне отключён, в результате будет выдаваться ПРЕДУПРЕЖДЕНИЕ <literal>timing statistics disabled</literal>;</para>
+      </listitem>
+      <listitem>
+        <para>buffers — выводить использование буферов; если сбор статистики буферов на вызываемой стороне отключён, в результате будет выдаваться ПРЕДУПРЕЖДЕНИЕ <literal>buffers statistics disabled</literal>;</para>
+      </listitem>
+      <listitem>
+        <para>triggers — включать в деревья планов статистику выполнения триггеров;</para>
+      </listitem>
+      <listitem>
+        <para>format — задаёт формат EXPLAIN для вывода планов; возможные значения: text, xml, json и yaml.</para>
+      </listitem>
+    </itemizedlist>
+    <para>Если вызываемый обслуживающий процесс не выполняет запросы, данная функция выводит сообщение о его состоянии, полученном из представления <literal>pg_stat_activity</literal>, если там есть информация о нём.</para>
+    <para>Вызывать эту функцию разрешено только суперпользователям или членам роли, которой принадлежит обслуживающий процесс. В противном случае функция печатает сообщение <literal>permission denied</literal>.</para>
+  </sect2>
+  <sect2 id="pg-query-state-guc">
+    <title>Конфигурационные параметры</title>
+    <itemizedlist spacing="compact">
+      <para>Для управления всем модулем и сбора определённых статистических показателей в процессе выполнения запроса доступен также набор доступных пользователю переменных GUC:</para>
+      <listitem>
+        <para>pg_query_state.enable — отключить (или включить) pg_query_state полностью, значение по умолчанию: <literal>true</literal></para>
+      </listitem>
+      <listitem>
+        <para>pg_query_state.enable_timing — собирать статистику времени по каждому узлу, значение по умолчанию: <literal>false</literal></para>
+      </listitem>
+      <listitem>
+        <para>pg_query_state.enable_buffers — собирать статистику по использованию буферов; значение по умолчанию: <literal>false</literal></para>
+      </listitem>
+    </itemizedlist>
+    <para>Эти параметры должны устанавливаться на вызываемой стороне до выполнения запросов, статистика которых представляет интерес. Если параметр pg_query_state.enable_timing отключён, вызывающая сторона не может получать статистику по времени и выдаётся <literal>ПРЕДУПРЕЖДЕНИЕ</literal>; аналогично с параметром pg_query_state.enable_buffers.</para>
+  </sect2>
+  <sect2 id="pg-query-state-examples">
+    <title>Примеры</title>
+    <para>Установить максимальное число параллельных исполнителей для узла <literal>Gather</literal> равным 2:</para>
+    <programlisting>      postgres=# set max_parallel_workers_per_gather = 2;
+    </programlisting>
+    <para>Предположим, что один обслуживающий процесс с <literal>pid</literal> = 49265 выполняет простой запрос:</para>
+    <programlisting>postgres=# select pg_backend_pid();
+pg_backend_pid
+----------------
+    49265
+(1 row)
+postgres=# select count(*) from foo join bar on foo.c1=bar.c1;
+    </programlisting>
+    <para>Другие обслуживающие процессы могут извлекать промежуточное состояние о выполнении этого запроса:</para>
+    <programlisting>postgres=# \x
+postgres=# select * from pg_query_state(49265);
+-[ RECORD 1 ]+-------------------------------------------------------------------------------------------------------------------------
+pid          | 49265
+frame_number | 0
+query_text   | select count(*) from foo join bar on foo.c1=bar.c1;
+plan         | Finalize Aggregate (Current loop: actual rows=0, loop number=1)                                                         +
+             |   -&gt;  Gather (Current loop: actual rows=0, loop number=1)                                                               +
+             |         Workers Planned: 2                                                                                              +
+             |         Workers Launched: 2                                                                                             +
+             |         -&gt;  Partial Aggregate (Current loop: actual rows=0, loop number=1)                                              +
+             |               -&gt;  Nested Loop (Current loop: actual rows=12, loop number=1)                                             +
+             |                     Join Filter: (foo.c1 = bar.c1)                                                                      +
+             |                     Rows Removed by Join Filter: 5673232                                                                +
+             |                     -&gt;  Parallel Seq Scan on foo (Current loop: actual rows=12, loop number=1)                          +
+             |                     -&gt;  Seq Scan on bar (actual rows=500000 loops=11) (Current loop: actual rows=173244, loop number=12)
+leader_pid   | (null)
+-[ RECORD 2 ]+-------------------------------------------------------------------------------------------------------------------------
+pid          | 49324
+frame_number | 0
+query_text   | &lt;parallel query&gt;
+plan         | Partial Aggregate (Current loop: actual rows=0, loop number=1)                                                          +
+             |   -&gt;  Nested Loop (Current loop: actual rows=10, loop number=1)                                                         +
+             |         Join Filter: (foo.c1 = bar.c1)                                                                                  +
+             |         Rows Removed by Join Filter: 4896779                                                                            +
+             |         -&gt;  Parallel Seq Scan on foo (Current loop: actual rows=10, loop number=1)                                      +
+             |         -&gt;  Seq Scan on bar (actual rows=500000 loops=9) (Current loop: actual rows=396789, loop number=10)
+leader_pid   | 49265
+-[ RECORD 3 ]+-------------------------------------------------------------------------------------------------------------------------
+pid          | 49323
+frame_number | 0
+query_text   | &lt;parallel query&gt;
+plan         | Partial Aggregate (Current loop: actual rows=0, loop number=1)                                                          +
+             |   -&gt;  Nested Loop (Current loop: actual rows=11, loop number=1)                                                         +
+             |         Join Filter: (foo.c1 = bar.c1)                                                                                  +
+             |         Rows Removed by Join Filter: 5268783                                                                            +
+             |         -&gt;  Parallel Seq Scan on foo (Current loop: actual rows=11, loop number=1)                                      +
+             |         -&gt;  Seq Scan on bar (actual rows=500000 loops=10) (Current loop: actual rows=268794, loop number=11)
+leader_pid   | 49265
+    </programlisting>
+    <para>В показанном выше примере обслуживающий процесс порождает два параллельных рабочих процесса с PID 49324 и 49323. Их значения столбца <literal>leader_pid</literal> показывают, что эти рабочие процессы относятся к основном ведущему. Узел <literal>Seq Scan</literal> показывает статистику по выполненным циклам (показывается среднее число строк, переданное узлу <literal>Nested Loop</literal>, и число выполненных циклов) и статистику по текущему узлу. Другие узлы показывают статистику только по текущему циклу, так как это первая итерация (номер цикла = 1).</para>
+    <para>Предположим, что первый обслуживающий процесс выполняет некоторую функцию:</para>
+    <programlisting>postgres=# select n_join_foo_bar();
+    </programlisting>
+    <para>Другой процесс может получить такую информацию:</para>
+    <programlisting>postgres=# select * from pg_query_state(49265);
+-[ RECORD 1 ]+------------------------------------------------------------------------------------------------------------------
+pid          | 49265
+frame_number | 0
+query_text   | select n_join_foo_bar();
+plan         | Result (Current loop: actual rows=0, loop number=1)
+leader_pid   | (null)
+-[ RECORD 2 ]+------------------------------------------------------------------------------------------------------------------
+pid          | 49265
+frame_number | 1
+query_text   | SELECT (select count(*) from foo join bar on foo.c1=bar.c1)
+plan         | Result (Current loop: actual rows=0, loop number=1)                                                              +
+             |   InitPlan 1 (returns $0)                                                                                        +
+             |     -&gt;  Aggregate (Current loop: actual rows=0, loop number=1)                                                   +
+             |           -&gt;  Nested Loop (Current loop: actual rows=51, loop number=1)                                          +
+             |                 Join Filter: (foo.c1 = bar.c1)                                                                   +
+             |                 Rows Removed by Join Filter: 51636304                                                            +
+             |                 -&gt;  Seq Scan on bar (Current loop: actual rows=52, loop number=1)                                +
+             |                 -&gt;  Materialize (actual rows=1000000 loops=51) (Current loop: actual rows=636355, loop number=52)+
+             |                       -&gt;  Seq Scan on foo (Current loop: actual rows=1000000, loop number=1)
+leader_pid   | (null)
+    </programlisting>
+    <para>Первая строка соответствует вызову функции, вторая — запросу, содержащемуся в теле этой функции.</para>
+    <para>Мы можем получать результирующие планы в различных форматах (например, в json):</para>
+    <programlisting>postgres=# select * from pg_query_state(pid := 49265, format := 'json');
+-[ RECORD 1 ]+------------------------------------------------------------
+pid          | 49265
+frame_number | 0
+query_text   | select * from n_join_foo_bar();
+plan         | {                                                          +
+             |   "Plan": {                                                +
+             |     "Node Type": "Function Scan",                          +
+             |     "Parallel Aware": false,                               +
+             |     "Function Name": "n_join_foo_bar",                     +
+             |     "Alias": "n_join_foo_bar",                             +
+             |     "Current loop": {                                      +
+             |       "Actual Loop Number": 1,                             +
+             |       "Actual Rows": 0                                     +
+             |     }                                                      +
+             |   }                                                        +
+             | }
+leader_pid   | (null)
+-[ RECORD 2 ]+------------------------------------------------------------
+pid          | 49265
+frame_number | 1
+query_text   | SELECT (select count(*) from foo join bar on foo.c1=bar.c1)
+plan         | {                                                          +
+             |   "Plan": {                                                +
+             |     "Node Type": "Result",                                 +
+             |     "Parallel Aware": false,                               +
+             |     "Current loop": {                                      +
+             |       "Actual Loop Number": 1,                             +
+             |       "Actual Rows": 0                                     +
+             |     },                                                     +
+             |     "Plans": [                                             +
+             |       {                                                    +
+             |         "Node Type": "Aggregate",                          +
+             |         "Strategy": "Plain",                               +
+             |         "Partial Mode": "Simple",                          +
+             |         "Parent Relationship": "InitPlan",                 +
+             |         "Subplan Name": "InitPlan 1 (returns $0)",         +
+             |         "Parallel Aware": false,                           +
+             |         "Current loop": {                                  +
+             |           "Actual Loop Number": 1,                         +
+             |           "Actual Rows": 0                                 +
+             |         },                                                 +
+             |         "Plans": [                                         +
+             |           {                                                +
+             |             "Node Type": "Nested Loop",                    +
+             |             "Parent Relationship": "Outer",                +
+             |             "Parallel Aware": false,                       +
+             |             "Join Type": "Inner",                          +
+             |             "Current loop": {                              +
+             |               "Actual Loop Number": 1,                     +
+             |               "Actual Rows": 610                           +
+             |             },                                             +
+             |             "Join Filter": "(foo.c1 = bar.c1)",            +
+             |             "Rows Removed by Join Filter": 610072944,      +
+             |             "Plans": [                                     +
+             |               {                                            +
+             |                 "Node Type": "Seq Scan",                   +
+             |                 "Parent Relationship": "Outer",            +
+             |                 "Parallel Aware": false,                   +
+             |                 "Relation Name": "bar",                    +
+             |                 "Alias": "bar",                            +
+             |                 "Current loop": {                          +
+             |                   "Actual Loop Number": 1,                 +
+             |                   "Actual Rows": 611                       +
+             |                 }                                          +
+             |               },                                           +
+             |               {                                            +
+             |                 "Node Type": "Materialize",                +
+             |                 "Parent Relationship": "Inner",            +
+             |                 "Parallel Aware": false,                   +
+             |                 "Actual Rows": 1000000,                    +
+             |                 "Actual Loops": 610,                       +
+             |                 "Current loop": {                          +
+             |                   "Actual Loop Number": 611,               +
+             |                   "Actual Rows": 73554                     +
+             |                 },                                         +
+             |                 "Plans": [                                 +
+             |                   {                                        +
+             |                     "Node Type": "Seq Scan",               +
+             |                     "Parent Relationship": "Outer",        +
+             |                     "Parallel Aware": false,               +
+             |                     "Relation Name": "foo",                +
+             |                     "Alias": "foo",                        +
+             |                     "Current loop": {                      +
+             |                       "Actual Loop Number": 1,             +
+             |                       "Actual Rows": 1000000               +
+             |                     }                                      +
+             |                   }                                        +
+             |                 ]                                          +
+             |               }                                            +
+             |             ]                                              +
+             |           }                                                +
+             |         ]                                                  +
+             |       }                                                    +
+             |     ]                                                      +
+             |   }                                                        +
+             | }
+leader_pid   | (null)
+    </programlisting>
+  </sect2>
+</sect1>

@@ -1,0 +1,102 @@
+<!-- doc/src/xml/pgrowlocks.xml -->
+
+<sect1 id="pgrowlocks" xreflabel="pgrowlocks">
+ <title>pgrowlocks</title>
+
+ <indexterm zone="pgrowlocks"><primary>pgrowlocks</primary></indexterm>
+
+ <para>Модуль <filename>pgrowlocks</filename> предоставляет функцию, показывающую информацию о блокировке строк для заданной таблицы.</para>
+
+ <sect2>
+  <title>Обзор</title>
+
+  <indexterm><primary>pgrowlocks</primary></indexterm>
+
+<synopsis>pgrowlocks(text) returns setof record</synopsis>
+
+  <para>В параметре передаётся имя таблицы. В результате возвращается набор записей, в котором строка соответствует строке, заблокированной в таблице. Столбцы результата показаны в <xref remap="6" linkend="pgrowlocks-columns"/>.</para>
+
+  <table id="pgrowlocks-columns">
+   <title>Столбцы результата <function>pgrowlocks</function></title>
+
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Имя</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+    <tbody>
+
+     <row>
+      <entry><structfield>locked_row</structfield></entry>
+      <entry><type>tid</type></entry>
+      <entry>Идентификатор кортежа (TID) блокированной строки</entry>
+     </row>
+     <row>
+      <entry><structfield>locker</structfield></entry>
+      <entry><type>xid</type></entry>
+      <entry>Идентификатор блокирующей транзакции или идентификатор мультитранзакции, если это мультитранзакция</entry>
+     </row>
+     <row>
+      <entry><structfield>multi</structfield></entry>
+      <entry><type>boolean</type></entry>
+      <entry>True, если блокирующий субъект — мультитранзакция</entry>
+     </row>
+     <row>
+      <entry><structfield>xids</structfield></entry>
+      <entry><type>xid[]</type></entry>
+      <entry>Идентификаторы блокирующих транзакций (больше одной для мультитранзакции)</entry>
+     </row>
+     <row>
+      <entry><structfield>lock_type</structfield></entry>
+      <entry><type>text[]</type></entry>
+      <entry>Режим блокирования (больше одного для мультитранзакции), массив со значениями <literal>Key Share</literal>, <literal>Share</literal>, <literal>For No Key Update</literal>, <literal>No Key Update</literal>, <literal>For Update</literal>, <literal>Update</literal>.</entry>
+     </row>
+
+     <row>
+      <entry><structfield>pids</structfield></entry>
+      <entry><type>integer[]</type></entry>
+      <entry>Идентификаторы блокирующих обслуживающих процессов (больше одного для мультитранзакции)</entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>Функция <function>pgrowlocks</function> запрашивает блокировку <literal>AccessShareLock</literal> для целевой таблицы и считывает строку за строкой для сбора информации о блокировке строк. Это происходит небыстро для большой таблицы. Заметьте, что:</para>
+
+  <orderedlist>
+   <listitem>
+    <para>Если таблица в целом заблокирована кем-то ещё, функция <function>pgrowlocks</function> будет блокироваться.</para>
+   </listitem>
+   <listitem>
+    <para>Функция <function>pgrowlocks</function> не гарантирует внутреннюю согласованность результатов. В ходе её выполнения могут быть установлены новые блокировки строк, либо освобождены старые.</para>
+   </listitem>
+  </orderedlist>
+
+  <para>Функция <function>pgrowlocks</function> не показывает содержимое заблокированных строк. Если вы хотите параллельно взглянуть на содержимое строк, можно проделать примерно следующее: <programlisting>SELECT * FROM accounts AS a, pgrowlocks('accounts') AS p
+  WHERE p.locked_row = a.ctid;</programlisting> Однако учтите, что такой запрос будет очень неэффективным.</para>
+ </sect2>
+
+ <sect2>
+  <title>Пример вывода</title>
+
+<screen>test=# SELECT * FROM pgrowlocks('t1');
+ locked_row | lock_type | locker | multi |   xids    |     pids
+------------+-----------+--------+-------+-----------+---------------
+      (0,1) | Shared    |     19 | t     | {804,805} | {29066,29068}
+      (0,2) | Shared    |     19 | t     | {804,805} | {29066,29068}
+      (0,3) | Exclusive |    804 | f     | {804}     | {29066}
+      (0,4) | Exclusive |    804 | f     | {804}     | {29066}
+(4 rows)</screen>
+ </sect2>
+
+ <sect2>
+  <title>Автор</title>
+
+  <para>Тацуо Исии</para>
+ </sect2>
+
+</sect1>

@@ -1,0 +1,119 @@
+<!-- doc/src/xml/shared-ispell.xml -->
+
+<sect1 id="shared-ispell" xreflabel="shared_ispell">
+ <title>shared_ispell</title>
+
+ <indexterm zone="shared-ispell"><primary>shared_ispell</primary></indexterm>
+
+ <para>Модуль <filename>shared_ispell</filename> предоставляет разделяемый словарь ispell, то есть словарь, расположенный в общем сегменте памяти. В традиционной реализации ispell каждый сеанс инициализирует и загружает собственный экземпляр словаря, и на это уходит много ресурсов процессора и памяти.</para>
+
+ <para>Это расширение выделяет область памяти в разделяемом сегменте (вы должны выбрать его размер заранее) и загружает в неё словарь при первом использовании.</para>
+
+ <sect2>
+  <title>Функции</title>
+
+  <para>Реализованные в модуле <filename>shared_ispell</filename> функции перечислены в <xref remap="6" linkend="shared-ispell-func-table"/>.</para>
+
+  <table id="shared-ispell-func-table">
+   <title>Функции <filename>shared_ispell</filename></title>
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Функция</entry>
+      <entry>Возвращает</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><function>shared_ispell_reset()</function><indexterm><primary>shared_ispell_reset</primary></indexterm></entry>
+      <entry><type>void</type></entry>
+      <entry>Сбрасывает словари (например, для повторной загрузки изменённых файлов с диска). Сеансы, в которых словари уже использовались, будут должны переинициализировать их.</entry>
+     </row>
+     <row>
+      <entry><function>shared_ispell_mem_used()</function><indexterm><primary>shared_ispell_mem_used</primary></indexterm></entry>
+      <entry><type>int</type></entry>
+      <entry>Возвращает объём памяти, используемой загруженными словарями в разделяемом сегменте (в байтах).</entry>
+     </row>
+     <row>
+      <entry><function>shared_ispell_mem_available()</function><indexterm><primary>shared_ispell_mem_available</primary></indexterm></entry>
+      <entry><type>int</type></entry>
+      <entry>Возвращает объём доступной памяти в разделяемом сегменте.</entry>
+     </row>
+     <row>
+      <entry><function>shared_ispell_dicts()</function><indexterm><primary>shared_ispell_dicts</primary></indexterm></entry>
+      <entry><type>setof(dict_name varchar, affix_name varchar, words int, affixes int, bytes int)</type></entry>
+      <entry>Возвращает список словарей, загруженных в разделяемый сегмент.</entry>
+     </row>
+     <row>
+      <entry><function>shared_ispell_stoplists()</function><indexterm><primary>shared_ispell_stoplists</primary></indexterm></entry>
+      <entry><type>setof(stop_name varchar, words int, bytes int)</type></entry>
+      <entry>Возвращает список наборов стоп-слов, загруженных в разделяемый сегмент.</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+ </sect2>
+
+ <sect2>
+  <title>Параметры GUC</title>
+
+  <variablelist>
+   <varlistentry id="guc-shared-ispell-max-size" xreflabel="shared_ispell.max_size">
+    <term><varname>shared_ispell.max_size</varname> (<type>int</type>) <indexterm><primary>параметр конфигурации <varname>shared_ispell.max_size</varname></primary></indexterm></term>
+    <listitem>
+     <para>Определяет максимальный размер разделяемого сегмента. Это жёсткий предел; разделяемый сегмент нельзя расширить, поэтому нужно установить такой размер, чтобы в этом сегменте уместились все словари и при этом он не занимал лишний объём.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </sect2>
+
+ <sect2>
+  <title>Использование словаря</title>
+
+  <para>Этот модуль должен выделить область памяти в разделяемом сегменте. Поэтому добавьте в файл конфигурации следующие параметры (или отредактируйте текущие значения): <programlisting># загружаемые библиотеки
+shared_preload_libraries = 'shared_ispell'
+
+# объём разделяемой памяти
+shared_ispell.max_size = 32MB</programlisting></para>
+
+  <para>Чтобы понять, сколько памяти вам действительно нужно, задайте сначала большое значение (например, 200 МБ) и загрузите все нужные вам словари. Затем воспользуйтесь функцией <function>shared_ispell_mem_used()</function> и определите, сколько памяти на самом деле используется (и скорректируйте соответствующую переменную GUC <varname>shared_ispell.max_size</varname>).</para>
+
+  <para>Не задавайте в точности полученное значение, оставьте небольшой резерв, чтобы вы могли перезагружать словари, не изменяя предел GUC max_size (что потребует перезапуска БД). Объёма в районе 512 КБ будет вполне достаточно.</para>
+
+  <para>Это расширение определяет шаблон <literal>shared_ispell</literal>, используя который можно определять собственные словари текстового поиска. Например, вы можете сделать следующее: <programlisting>CREATE TEXT SEARCH DICTIONARY english_shared (
+    TEMPLATE = shared_ispell,
+    DictFile = en_us,
+    AffFile = en_us,
+    StopWords = english
+);
+
+CREATE TEXT SEARCH CONFIGURATION public.english_shared
+    ( COPY = pg_catalog.simple );
+
+ALTER TEXT SEARCH CONFIGURATION english_shared
+    ALTER MAPPING FOR asciiword, asciihword, hword_asciipart,
+                    word, hword, hword_part
+    WITH english_shared, english_stem;</programlisting></para>
+
+  <para>Проверить полученную конфигурацию можно так: <programlisting>SELECT * FROM ts_debug('english_shared', 'abilities');
+   alias   |   description   |   token   |         dictionaries          |   dictionary   |  lexemes  
+-----------+-----------------+-----------+-------------------------------+----------------+-----------
+ asciiword | Word, all ASCII | abilities | {english_shared,english_stem} | english_shared | {ability}
+(1 row)</programlisting></para>
+
+  <para>Вы также можете изменить существующую конфигурацию текстового поиска. Например, если у вас есть конфигурация <literal>public.english</literal>, вы можете подключить к ней шаблон <literal>shared_ispell</literal>: <programlisting>ALTER TEXT SEARCH CONFIGURATION public.english
+    ALTER MAPPING FOR asciiword, asciihword, hword_asciipart,
+                    word, hword, hword_part
+    WITH english_shared, english_stem;</programlisting></para>
+
+ </sect2>
+
+ <sect2>
+  <title>Автор</title>
+
+  <para>Томас Вондра <email>tomas.vondra@2ndquadrant.com</email>, Прага, Чешская республика</para>
+ </sect2>
+
+</sect1>

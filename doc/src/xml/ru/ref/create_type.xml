@@ -1,0 +1,419 @@
+<!--
+doc/src/xml/ref/create_type.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createtype">
+ <indexterm zone="sql-createtype"><primary>CREATE TYPE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE TYPE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE TYPE</refname>
+  <refpurpose>создать новый тип данных</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE TYPE <replaceable class="parameter">имя</replaceable> AS
+    ( [ <replaceable class="parameter">имя_атрибута</replaceable> <replaceable class="parameter">тип_данных</replaceable> [ COLLATE <replaceable>правило_сортировки</replaceable> ] [, ... ] ] )
+
+CREATE TYPE <replaceable class="parameter">имя</replaceable> AS ENUM
+    ( [ '<replaceable class="parameter">метка</replaceable>' [, ... ] ] )
+
+CREATE TYPE <replaceable class="parameter">имя</replaceable> AS RANGE (
+    SUBTYPE = <replaceable class="parameter">подтип</replaceable>
+    [ , SUBTYPE_OPCLASS = <replaceable class="parameter">класс_оператора_подтипа</replaceable> ]
+    [ , COLLATION = <replaceable class="parameter">правило_сортировки</replaceable> ]
+    [ , CANONICAL = <replaceable class="parameter">каноническая_функция</replaceable> ]
+    [ , SUBTYPE_DIFF = <replaceable class="parameter">функция_разницы_подтипа</replaceable> ]
+)
+
+CREATE TYPE <replaceable class="parameter">имя</replaceable> (
+    INPUT = <replaceable class="parameter">функция_ввода</replaceable>,
+    OUTPUT = <replaceable class="parameter">функция_вывода</replaceable>
+    [ , RECEIVE = <replaceable class="parameter">функция_получения</replaceable> ]
+    [ , SEND = <replaceable class="parameter">функция_отправки</replaceable> ]
+    [ , TYPMOD_IN = <replaceable class="parameter">функция_ввода_модификатора_типа</replaceable> ]
+    [ , TYPMOD_OUT = <replaceable class="parameter">функция_вывода_модификатора_типа</replaceable> ]
+    [ , ANALYZE = <replaceable class="parameter">функция_анализа</replaceable> ]
+    [ , INTERNALLENGTH = { <replaceable class="parameter">внутр_длина</replaceable> | VARIABLE } ]
+    [ , PASSEDBYVALUE ]
+    [ , ALIGNMENT = <replaceable class="parameter">выравнивание</replaceable> ]
+    [ , STORAGE = <replaceable class="parameter">хранение</replaceable> ]
+    [ , LIKE = <replaceable class="parameter">тип_образец</replaceable> ]
+    [ , CATEGORY = <replaceable class="parameter">категория</replaceable> ]
+    [ , PREFERRED = <replaceable class="parameter">предпочитаемый</replaceable> ]
+    [ , DEFAULT = <replaceable class="parameter">по_умолчанию</replaceable> ]
+    [ , ELEMENT = <replaceable class="parameter">элемент</replaceable> ]
+    [ , DELIMITER = <replaceable class="parameter">разделитель</replaceable> ]
+    [ , COLLATABLE = <replaceable class="parameter">сортируемый</replaceable> ]
+)
+
+CREATE TYPE <replaceable class="parameter">имя</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE TYPE</command> регистрирует новый тип данных для использования в текущей базе данных. Владельцем типа становится создавший его пользователь.</para>
+
+  <para>Если указано имя схемы, тип создаётся в указанной схеме. В противном случае, он создаётся в текущей схеме. Имя типа должно отличаться от имён любых других существующих типов или доменов в той же схеме. (А так как с таблицами связываются типы данных, имя типа должно также отличаться и от имён существующих таблиц в этой схеме.)</para>
+
+  <para>Команда <command>CREATE TYPE</command> имеет пять форм, показанных выше в сводке синтаксиса. Они создают соответственно <firstterm>составной тип</firstterm>, <firstterm>перечисление</firstterm>, <firstterm>диапазон</firstterm>, <firstterm>базовый тип</firstterm> или <firstterm>тип-пустышку</firstterm>. Первые четыре эти типа рассматриваются по порядку ниже. Тип-пустышка представляет собой просто заготовку для типа, который будет определён позже; он создаётся командой <command>CREATE TYPE</command> с одним именем, без параметров. Типы-пустышки необходимы для определения прямых ссылок при создании базовых типов и типов-диапазонов, как описывается в соответствующих разделах.</para>
+
+  <refsect2>
+   <title>Составные типы</title>
+
+  <para>Первая форма <command>CREATE TYPE</command> создаёт составной тип. Составной тип задаётся списком имён и типами данных атрибутов. Если тип данных является сортируемым, то для атрибута можно также задать правило сортировки. Составной тип по сути не отличается от типа строки таблицы, но <command>CREATE TYPE</command> избавляет от необходимости создавать таблицу, когда всё, что нужно, это создать тип. Отдельный составной тип может быть полезен, например, для передачи аргументов или результатов функции.</para>
+
+  <para>Чтобы создать составной тип, необходимо иметь право <literal>USAGE</literal> для типов всех его атрибутов.</para>
+  </refsect2>
+
+  <refsect2 id="sql-createtype-enum">
+   <title>Типы перечислений</title>
+
+   <para>Вторая форма <command>CREATE TYPE</command> создаёт тип-перечисление (такие типы описываются в <xref remap="6" linkend="datatype-enum"/>). Перечисления принимают список из одной или нескольких меток в кавычках, каждая не длиннее <symbol>NAMEDATALEN</symbol> байт (64 байта в стандартной сборке <productname>&productname;</productname>).</para>
+  </refsect2>
+
+  <refsect2 id="sql-createtype-range">
+   <title>Диапазонные типы</title>
+
+   <para>Третья форма <command>CREATE TYPE</command> создаёт тип-диапазон (такие типы описываются в <xref remap="6" linkend="rangetypes"/>).</para>
+
+   <para>Задаваемый для диапазона <replaceable class="parameter">подтип</replaceable> может быть любым типом со связанным классом операторов B-дерева (что позволяет определить порядок значений в диапазоне). Обычно порядок элементов определяет класс операторов B-дерева по умолчанию, но его можно изменить, задав имя другого класса в параметре <replaceable class="parameter">класс_операторов_подтипа</replaceable>. Если подтип поддерживает сортировку и требуется, чтобы значения упорядочивались с нестандартным правилом сортировки, его имя можно задать в параметре <replaceable class="parameter">правило_сортировки</replaceable>.</para>
+
+   <para>Необязательная <replaceable class="parameter">каноническая_функция</replaceable> должна принимать один аргумент определяемого типа диапазона и возвращать значение того же типа. Это используется для преобразования значений диапазона в каноническую форму, когда это уместно. За дополнительными сведениями обратитесь к <xref remap="3" linkend="rangetypes-defining"/>. Создаётся <replaceable class="parameter">каноническая_функция</replaceable> несколько нетривиально, так как она должна быть уже определена, прежде чем можно будет объявить тип-диапазон. Для этого нужно сначала создать тип-пустышку, который будет заготовкой типа, не имеющей никаких свойств, кроме имени и владельца. Это можно сделать, выполнив команду <literal>CREATE TYPE <replaceable>имя</replaceable></literal> без дополнительных параметров. Затем можно объявить функцию, для которой тип-пустышка будет типом аргумента и результата, и, наконец, объявить тип-диапазон с тем же именем. При этом тип-пустышка автоматически заменится полноценным типом-диапазоном.</para>
+
+   <para>Необязательная <replaceable class="parameter">функция_разницы_подтипа</replaceable> должна принимать в аргументах два значения типа <replaceable class="parameter">подтип</replaceable> и возвращать значение <type>double precision</type>, представляющее разницу между двумя данными значениями. Хотя эту функцию можно не использовать, она позволяет кардинально увеличить эффективность индексов GiST для столбцов с типом-диапазоном. За дополнительными сведениями обратитесь к <xref remap="3" linkend="rangetypes-defining"/>.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Базовые типы</title>
+
+  <para>Четвёртая форма <command>CREATE TYPE</command> создаёт новый базовый тип (скалярный тип). Чтобы создать новый базовый тип, нужно быть суперпользователем. (Это ограничение введено потому, что ошибочное определение типа может вызвать нарушения или даже сбой в работе сервера.)</para>
+
+  <para>Эти параметры могут перечисляться в любом порядке, не только в показанном выше, и большинство из них необязательные. Прежде чем создавать тип, необходимо зарегистрировать две или более функций (с помощью <command>CREATE FUNCTION</command>). Обязательными являются функции <replaceable class="parameter">функция_ввода</replaceable> и <replaceable class="parameter">функция_вывода</replaceable>, тогда как <replaceable class="parameter">функция_получения</replaceable>, <replaceable class="parameter">функция_отправки</replaceable>, <replaceable class="parameter">функция_модификатора_типа</replaceable>, <replaceable class="parameter">функция_вывода_модификатора_типа</replaceable> и <replaceable class="parameter">функция_анализа</replaceable> могут отсутствовать. Обычно эти функции разрабатываются на C или другом низкоуровневом языке.</para>
+
+  <para><replaceable class="parameter">Функция_ввода</replaceable> преобразует внешнее текстовое представление типа во внутреннее, с которым работают операторы и функции, определённые для этого типа. <replaceable class="parameter">Функция_вывода</replaceable> выполняет обратное преобразование. Функцию ввода можно объявить как принимающую один аргумент типа <type>cstring</type>, либо как принимающую три аргумента типов <type>cstring</type>, <type>oid</type> и <type>integer</type>. В первом аргументе передаётся вводимый текст в виде строки в стиле C, во втором аргументе — собственный OID типа (кроме типов массивов, для которых передаётся OID типа элемента), а в третьем — <literal>модификатор_типа</literal> для целевого столбца, если он определён (или -1 в противном случае). Функция ввода должна возвращать значение нового типа данных. Обычно функция ввода должна быть строгой (STRICT); если это не так, при получении на вход значения NULL она будет вызываться с первым параметром NULL. Функция может в этом случае сама вернуть NULL или вызвать ошибку. (Это полезно в основном для поддержки функций ввода доменных типов, которые не должны принимать данные NULL.) Функция вывода должна принимать один аргумент нового типа данных, а возвращать она должна <type>cstring</type>. Для значений NULL функции вывода не вызываются.</para>
+
+  <para>Необязательная <replaceable class="parameter">функция_получения</replaceable> преобразует двоичное внешнее представление типа во внутреннее представление. Если эта функция отсутствует, новый тип не сможет участвовать в двоичном вводе. Двоичное представление следует выбирать таким, чтобы оно легко переводилось во внутреннюю форму и при этом было переносимым до разумной степени. (Например, для стандартных целочисленных типов данных во внешнем двоичном представлении выбран сетевой порядок байтов, тогда как внутреннее представление определяется порядком байтов в процессоре.) Функция получения должна выполнить проверку вводимого значения на допустимость. Функция получения может быть объявлена как принимающая один аргумент типа <type>internal</type>, либо как принимающая три аргумента типов <type>internal</type>, <type>oid</type> и <type>integer</type>. В первом аргументе передаётся указатель на буфер <type>StringInfo</type>, содержащий полученную байтовую строку, а дополнительные аргументы такие же, как и для функции ввода текста. Функция получения должна возвращать значение нового типа данных. Обычно функция получения должна быть строгой (STRICT); если это не так, при получении на вход значения NULL, она будет вызываться с первым параметром NULL. Функция может в этом случае сама вернуть NULL или вызывать ошибку. (Это полезно в основном для поддержки функций получения доменных типов, которые не должны принимать значения NULL.) Подобным образом, необязательная <replaceable class="parameter">функция_отправки</replaceable> преобразует данные из внутреннего во внешнее двоичное представление. Если эта функция не определена, новый тип не может участвовать в двоичном выводе. Функция отправки должна принимать один аргумент нового типа данных, а возвращать она должна <type>bytea</type>. Для значений NULL функции отправки не вызываются.</para>
+
+  <para>Здесь у вас может возникнуть вопрос, как функции ввода и вывода могут быть объявлены принимающими или возвращающими значения нового типа, если они должны быть созданы до объявления нового типа. Ответ довольно прост: сначала нужно создать <firstterm>тип-пустышку</firstterm>, который будет заготовкой типа, не имеющей никаких свойств, кроме имени и владельца. Это можно сделать, выполнив команду <literal>CREATE TYPE <replaceable>имя</replaceable></literal> без дополнительных параметров. Затем можно будет определить функции ввода/вывода на C, ссылающиеся на этот тип. И наконец, команда <command>CREATE TYPE</command> с полным определением заменит тип-пустышку окончательным и полноценным определением, после чего новый тип можно будет использовать как обычно.</para>
+
+  <para>Необязательные <replaceable class="parameter">функция_ввода_модификатора_типа</replaceable> и <replaceable class="parameter">функция_вывода_модификатора_типа</replaceable> требуются, только если типы поддерживают модификаторы, или, другими словами, дополнительные ограничения, связываемые с объявлением типа, например <literal>char(5)</literal> или <literal>numeric(30,2)</literal>. В <productname>&productname;</productname> типы могут принимать в качестве модификаторов одну или несколько простых констант или идентификаторов. Однако эти данные должны упаковываться в единственное неотрицательное целочисленное значение, которое и будет храниться в системных каталогах. <replaceable class="parameter">Функция_ввода_модификатора_типа</replaceable> получает объявленные модификаторы в виде строки <type>cstring</type>. Она должна проверить значения на допустимость (и вызвать ошибку, если они неверны), а затем выдать неотрицательное значение <type>integer</type>, которое будет сохранено в столбце <quote>typmod</quote>. Если для типа не определена <replaceable class="parameter">функция_ввода_модификатора_типа</replaceable>, модификаторы типа приниматься не будут. <replaceable class="parameter">Функция_вывода_модификатора_типа</replaceable> преобразует внутреннее целочисленное значение typmod обратно, в форму, понятную пользователю. Она должна вернуть значение <type>cstring</type>, которое именно в этом виде будет добавлено к имени типа; например, функция для <type>numeric</type> должна вернуть <literal>(30,2)</literal>. <replaceable class="parameter">Функция_вывода_модификатора_типа</replaceable> может быть опущена, в этом случае сохранённое целочисленное значение typmod по умолчанию будет выводиться просто в виде числа, заключённого в скобки.</para>
+
+  <para>Необязательная <replaceable class="parameter">функция_анализа</replaceable> выполняет сбор специфической для этого типа статистики в столбцах с таким типом данных. По умолчанию <command>ANALYZE</command> пытается собрать статистику, используя операторы <quote>равно</quote> и <quote>меньше</quote>, если для этого типа определён класс операторов B-дерева по умолчанию. Для нескалярных типов это поведение скорее всего не подойдёт, поэтому его можно переопределить, задав собственную функцию анализа. Эта функция должна принимать единственный аргумент типа <type>internal</type> и возвращать результат <type>boolean</type>. Более глубоко API функций анализа описан в <filename>src/include/commands/vacuum.h</filename>.</para>
+
+  <para>Если особенности внутреннего представления нового типа известны функциям ввода/вывода и другим функциям, созданным специально для работы с этим типом, необходимо определить ряд характеристик внутреннего представления, о которых должен знать <productname>&productname;</productname>. В первую очередь это <replaceable class="parameter">internallength</replaceable> (внутренняя длина). Если базовый тип данных имеет фиксированную длину, в <replaceable class="parameter">internallength</replaceable> указывается эта длина в виде положительного числа, а если длина переменная, в <replaceable class="parameter">internallength</replaceable> задаётся значение <literal>VARIABLE</literal>. (Внутри при этом <literal>typlen</literal> принимает значение -1.) Внутреннее представление всех типов переменной длины должно начинаться с 4-байтового целого, задающего общую длину значения этого типа. (Заметьте, что поле длины часто кодируется, как описано в <xref remap="6" linkend="storage-toast"/>; обращаться к нему напрямую неразумно.)</para>
+
+  <para>Необязательный флаг <literal>PASSEDBYVALUE</literal> указывает, что значения этого типа данных передаются по значению, а не по ссылке. Типы, передаваемые по значению, должны быть фиксированной длины и их внутреннее представление не может быть больше размера типа <type>Datum</type> (4 байта на одних машинах, 8 — на других).</para>
+
+  <para>Параметр <replaceable class="parameter">выравнивание</replaceable> определяет, как требуется выравнивать данные этого типа. Допускается выравнивание по границам 1, 2, 4 или 8 байт. Заметьте, что типы переменной длины должны быть выровнены как минимум по границе 4 байт, так как их первым компонентом обязательно должен быть <type>int4</type>.</para>
+
+  <para>Параметр <replaceable class="parameter">хранение</replaceable> позволяет выбрать стратегию хранения для типов данных переменной длины. (Для типов с фиксированной длиной поддерживается только вариант <literal>plain</literal>.) Если выбрана стратегия <literal>plain</literal>, данные этого типа всегда хранятся внутри, без сжатия. Со стратегией <literal>extended</literal> система сначала попытается сжать большое значение, а затем выносит его из строки основной таблицы, если оно всё же окажется слишком большим. С <literal>external</literal> значение может быть вынесено из основной таблицы, но система не будет пытаться сжать его. Стратегия <literal>main</literal> позволяет сжать данные, но не стремится вынести их из основной таблицы. (Элементы данных с этой стратегией хранения, тем не менее, могут быть вынесены из основной таблицы, если другого способа уместить их в строке нет, но всё же она отдаёт большее предпочтение основной таблице, по сравнению со стратегиями <literal>extended</literal> и <literal>external</literal>.)</para>
+
+  <para>Значения <replaceable class="parameter">storage</replaceable>, отличные от <literal>plain</literal>, подразумевают, что функции типа данных могут принимать значения в формате <firstterm>toast</firstterm>, описанном в <xref remap="6" linkend="storage-toast"/> и <xref remap="6" linkend="xtypes-toast"/>. Эти значения просто определяют стратегию хранения TOAST по умолчанию для столбцов отделяемого в TOAST типа данных; пользователи могут выбирать другие стратегии для отдельных столбцов, применяя команду <literal>ALTER TABLE SET STORAGE</literal>.</para>
+
+  <para>Параметр <replaceable class="parameter">тип_образец</replaceable> позволяет задать основные свойства представления типа другим способом: скопировать их из существующего типа. В частности, из указанного типа будут скопированы свойства <replaceable class="parameter">internallength</replaceable>, <replaceable class="parameter">passedbyvalue</replaceable>, <replaceable class="parameter">alignment</replaceable> и <replaceable class="parameter">storage</replaceable>. (Также возможно, хотя обычно это не требуется, переопределить некоторые из этих значений, указав их вместе с предложением <literal>LIKE</literal>.) Определять представление типа таким образом особенно удобно, когда низкоуровневая реализация нового типа некоторым образом опирается на существующий тип.</para>
+
+  <para>Параметры <replaceable class="parameter">категория</replaceable> и <replaceable class="parameter">предпочитаемый</replaceable> позволяют определять, какое неявное приведение будет применяться в неоднозначных ситуациях. Каждый тип данных принадлежит к некоторой категории, обозначаемой одним символом ASCII, при этом он может быть, либо не быть <quote>предпочитаемым</quote> в этой категории. Анализатор запроса по возможности выберет приведение к предпочитаемому типу (но только среди других типов той же категории), когда это может помочь разрешить имя перегруженной функции или оператора. За дополнительными подробностями обратитесь к <xref remap="3" linkend="typeconv"/>. Если для типа не определено неявное приведение к какому-либо другому типу или обратное, для этих параметров достаточно оставить значения по умолчанию. Однако если есть группа связанных типов, для которых определены неявные приведения, часто бывает полезно пометить их все как принадлежащие некоторой категории и назначить один или два <quote>наиболее общих</quote> предпочитаемыми в этой категории. Параметр <replaceable class="parameter">категория</replaceable> особенно полезен при добавлении типа, определённого пользователем, в существующую встроенную категорию, например, в категорию числовых или строковых типов. Однако так же возможно создать категории типов, полностью определённые пользователем. В качестве имени такой категории можно выбрать любой ASCII-символ, кроме латинской заглавной буквы.</para>
+
+  <para>Если пользователь хочет назначить столбцам с этим типом данных значение по умолчанию, отличное от NULL, он может задать его в этой команде, указав его после ключевого слова <literal>DEFAULT</literal>. (Такое значение по умолчанию можно переопределить явным предложением <literal>DEFAULT</literal>, добавленным при создании столбца.)</para>
+
+  <para>Чтобы обозначить, что тип является массивом, укажите тип элементов массива, добавив ключевое слово <literal>ELEMENT</literal>. Например, чтобы определить массив из четырёхбайтовых целых (<type>int4</type>), укажите <literal>ELEMENT = int4</literal>. Дополнительные сведения о типах массивов приведены ниже.</para>
+
+  <para>Параметр <replaceable class="parameter">delimiter</replaceable> позволяет задать разделитель, который будет вставляться между значениями во внешнем представлении массива с элементами этого типа. По умолчанию разделителем является запятая (<literal>,</literal>). Заметьте, что разделитель связывается с типом элементов массива, а не с типом самого массива.</para>
+
+  <para>Если необязательный логический параметр <replaceable class="parameter">сортируемый</replaceable> равен true, определения столбцов и выражения с этим типом могут включать указания о порядке сортировки, в предложении <literal>COLLATE</literal>. Как именно будут использоваться эти указания, зависит от реализации функций, работающих с этим типом; эти указания не действуют автоматически просто от того, что тип помечен как сортируемый.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Типы массивов</title>
+
+   <para>При создании любого нового типа <productname>&productname;</productname> автоматически создаёт соответствующий тип массива, имя которого он получает, добавляя подчёркивание перед именем типа элементов. Если полученное имя оказывается не короче <symbol>NAMEDATALEN</symbol> байт, оно усекается. (Если полученное таким образом имя конфликтует с именем уже существующего типа, процесс повторяется, пока не будет получено уникальное имя.) Этот неявно создаваемый тип массива имеет переменную длину и использует встроенные функции ввода и вывода <literal>array_in</literal> и <literal>array_out</literal>. Тип массива отражает любые изменения владельца или схемы связанного типа элемента и удаляется сам при удалении типа элемента.</para>
+
+   <para>Вы можете вполне резонно спросить, зачем нужен параметр <option>ELEMENT</option>, если система создаёт правильный тип массива автоматически. Единственный случай, когда параметр <option>ELEMENT</option> может быть полезен, это когда вы создаёте тип фиксированной длины, который внутри оказывается массивом одинаковых элементов, и вы хотите, чтобы к этим элементам можно было обращаться по индексу, помимо того, что вы можете реализовать какие угодно операции с типом в целом. Например, тип <type>point</type> представлен просто как два числа с плавающей точкой, к которым можно обратиться так: <literal>point[0]</literal> и <literal>point[1]</literal>. Заметьте, что это работает только с типами фиксированной длины, которые представляют собой в точности последовательность одинаковых полей фиксированной длины. Тип массива переменной длины должен иметь обобщённое внутреннее представление, с которым умеют работать <literal>array_in</literal> и <literal>array_out</literal>. По историческим причинам (т. е. это определённо некорректно, но менять уже слишком поздно), индексы в массивах фиксированной длины начинаются с нуля, а не с 1, как в массивах переменной длины.</para>
+  </refsect2>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) создаваемого типа.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_атрибута</replaceable></term>
+    <listitem>
+     <para>Имя атрибута (столбца) составного типа.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_данных</replaceable></term>
+    <listitem>
+     <para>Имя существующего типа данных, который станет типом столбца составного типа.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">правило_сортировки</replaceable></term>
+    <listitem>
+     <para>Имя существующего правила сортировки, связываемого со столбцом составного типа или с типом-диапазоном.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">метка</replaceable></term>
+    <listitem>
+     <para>Строковая константа, представляющая текстовую метку, связанную с отдельным значением типа-перечисления.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">подтип</replaceable></term>
+    <listitem>
+     <para>Имя типа элемента, множество значений которого будет представлять тип-диапазон.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">класс_оператора_подтипа</replaceable></term>
+    <listitem>
+     <para>Имя класса операторов B-дерева для подтипа.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">каноническая_функция</replaceable></term>
+    <listitem>
+     <para>Имя функции канонизации для типа-диапазона.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_разницы_подтипа</replaceable></term>
+    <listitem>
+     <para>Имя функции разницы для значений подтипа.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_ввода</replaceable></term>
+    <listitem>
+     <para>Имя функции, преобразующей данные из внешнего текстового представления типа во внутреннюю форму.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_вывода</replaceable></term>
+    <listitem>
+     <para>Имя функции, преобразующей данные из внутренней формы во внешнее текстовое представление типа.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_получения</replaceable></term>
+    <listitem>
+     <para>Имя функции, преобразующей данные из внешнего двоичного представления типа во внутреннюю форму.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_отправки</replaceable></term>
+    <listitem>
+     <para>Имя функции, преобразующей данные из внутренней формы во внешнее двоичное представление типа.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_ввода_модификатора_типа</replaceable></term>
+    <listitem>
+     <para>Имя функции, преобразующей массив модификаторов типа во внутреннюю форму.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_вывода_модификатора_типа</replaceable></term>
+    <listitem>
+     <para>Имя функции, преобразующей внутреннюю форму модификаторов типа во внешнее текстовое представление.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_анализа</replaceable></term>
+    <listitem>
+     <para>Имя функции, производящей статистический анализ типа данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">внутр_длина</replaceable></term>
+    <listitem>
+     <para>Числовая константа, задающая размер внутреннего представления нового типа в байтах. По умолчанию предполагается, что тип имеет переменную длину.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">выравнивание</replaceable></term>
+    <listitem>
+     <para>Требуемое выравнивание для типа данных. Допустимые значения этого параметра, если он указывается: <literal>char</literal>, <literal>int2</literal>, <literal>int4</literal> или <literal>double</literal>; по умолчанию подразумевается <literal>int4</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">хранение</replaceable></term>
+    <listitem>
+     <para>Стратегия хранения для типа данных. Допустимые значения этого параметра, если он указывается: <literal>plain</literal>, <literal>external</literal>, <literal>extended</literal> или <literal>main</literal>; по умолчанию подразумевается <literal>plain</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_образец</replaceable></term>
+    <listitem>
+     <para>Имя существующего типа данных, от которого новый тип получит свойства представления. Из этого типа будут скопированы значения параметров <replaceable class="parameter">internallength</replaceable>, <replaceable class="parameter">passedbyvalue</replaceable>, <replaceable class="parameter">alignment</replaceable> и <replaceable class="parameter">storage</replaceable>, если их не переопределят явные указания, заданные дополнительно в этой команде <command>CREATE TYPE</command>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">категория</replaceable></term>
+    <listitem>
+     <para>Код категории (один символ ASCII) для этого типа. По умолчанию подразумевается <literal>'U'</literal> (что означает пользовательский тип, <quote>User-defined</quote>). Коды других стандартных категорий можно найти в <xref remap="6" linkend="catalog-typcategory-table"/>. Для нестандартных категорий можно выбрать другие ASCII-символы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">предпочитаемый</replaceable></term>
+    <listitem>
+     <para>Если значение этого параметра равно true, создаваемый тип будет предпочитаемым в своей категории. По умолчанию подразумевается false. Будьте очень осторожны, создавая новый предпочитаемый тип в существующей категории, так как это может поменять поведение выражений неожиданным образом.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">по_умолчанию</replaceable></term>
+    <listitem>
+     <para>Значение по умолчанию для создаваемого типа данных. Если не указано, значением по умолчанию будет NULL.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">элемент</replaceable></term>
+    <listitem>
+     <para>Создаваемый тип будет массивом; этот параметр определяет тип элементов массива.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">разделитель</replaceable></term>
+    <listitem>
+     <para>Символ, разделяющий значения в массивах, образованных из значений создаваемого типа.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">сортируемый</replaceable></term>
+    <listitem>
+     <para>Если значение этого параметра равно true, в операциях с создаваемым типом может учитываться информация о правилах сортировки. По умолчанию подразумевается false.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1 id="sql-createtype-notes">
+  <title>Замечания</title>
+
+  <para>Так как на использование типа данных после создания не накладываются ограничения, объявление базового типа или типа-диапазона по сути даёт всем право на выполнение функций, упомянутых в определении типа. Обычно это не проблема для таких функций, какие бывают полезны в определении типов. Но прежде чем создать тип, преобразование которого во внешнюю форму и обратно будет использовать <quote>секретную</quote> информацию, стоит подумать дважды.</para>
+
+  <para>В <productname>PostgreSQL</productname> до версии 8.3 имя генерируемого типа-массива всегда образовалось из имени типа элемента и добавленного спереди символа подчёркивания (<literal>_</literal>). (Таким образом, допустимая максимальная длина имени типа была на символ меньше, чем длины других имён.) Хотя и сейчас имя типа массива чаще всего образуется таким образом, оно может быть и другим в случае достижения максимальной длины или конфликтов с именами пользовательских типов, начинающихся с подчёркивания. Поэтому полагаться на это соглашение в коде не рекомендуется. Вместо этого, имя типа массива, связанного с данным типом, следует определять по значению <structname>pg_type</structname>.<structfield>typarray</structfield>.</para>
+
+  <para>Вообще же можно посоветовать не использовать имена типов и таблиц, начинающиеся с подчёркивания. Хотя сервер сможет сгенерировать другое имя, не конфликтующее с пользовательским, некоторая путаница всё же возможна, особенно со старыми клиентскими приложениями, которые могут полагать, что имя типа, начинающееся с подчёркивания, всегда относится к типу массива.</para>
+
+  <para>В <productname>PostgreSQL</productname> до версии 8.2 у <literal>CREATE TYPE <replaceable>name</replaceable></literal> отсутствовала форма для создания типа-пустышки. Поэтому для создания нового базового типа требовалось сначала создать функцию ввода. При таком подходе <productname>PostgreSQL</productname> воспринимал тип возврата функции ввода как имя нового типа данных и неявно создавал тип-пустышку, на который затем можно было ссылаться в определениях остальных функций ввода/вывода. Этот подход по-прежнему работает, но считается устаревшим и может быть запрещён в будущих версиях. Кроме того, во избежание непреднамеренного заполнения каталогов типами-пустышками, появляющимися в результате простых опечаток в определении функций, тип-пустышка будет создаваться таким образом, только если функция ввода написана на C.</para>
+
+  <para>В <productname>PostgreSQL</productname> до версии 7.3 было принято вовсе не создавать тип-пустышку, заменяя в определении функций ссылки на ещё не созданный тип именем псевдотипа <type>opaque</type>. Аргументы <type>cstring</type> и результаты так же должны были объявляться как <type>opaque</type> до версии 7.3. Для поддержки загрузки старых файлов экспорта БД, <command>CREATE TYPE</command> примет ссылки на функции ввода/вывода, объявленные с типом <type>opaque</type>, но при этом выдаст замечание и изменит в объявлении функции псевдотип на правильный.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>В этом примере создаётся составной тип, а затем он используется в определении функции: <programlisting>CREATE TYPE compfoo AS (f1 int, f2 text);
+
+CREATE FUNCTION getfoo() RETURNS SETOF compfoo AS $$
+    SELECT fooid, fooname FROM foo
+$$ LANGUAGE SQL;</programlisting></para>
+
+  <para>В этом примере создаётся тип-перечисление, а затем он используется в определении таблицы: <programlisting>CREATE TYPE bug_status AS ENUM ('new', 'open', 'closed');
+
+CREATE TABLE bug (
+    id serial,
+    description text,
+    status bug_status
+);</programlisting></para>
+
+  <para>В этом примере создаётся тип-диапазон: <programlisting>CREATE TYPE float8_range AS RANGE (subtype = float8, subtype_diff = float8mi);</programlisting></para>
+
+  <para>В следующем примере создаётся базовый тип данных <type>box</type>, а затем он используется в определении таблицы: <programlisting>CREATE TYPE box;
+
+CREATE FUNCTION my_box_in_function(cstring) RETURNS box AS ... ;
+CREATE FUNCTION my_box_out_function(box) RETURNS cstring AS ... ;
+
+CREATE TYPE box (
+    INTERNALLENGTH = 16,
+    INPUT = my_box_in_function,
+    OUTPUT = my_box_out_function
+);
+
+CREATE TABLE myboxes (
+    id integer,
+    description box
+);</programlisting></para>
+
+  <para>Если бы внутренней структурой <type>box</type> был массив из четырёх элементов <type>float4</type>, вместо этого можно было бы использовать определение: <programlisting>CREATE TYPE box (
+    INTERNALLENGTH = 16,
+    INPUT = my_box_in_function,
+    OUTPUT = my_box_out_function,
+    ELEMENT = float4
+);</programlisting> В таком случае к числам, составляющим значение этого типа, можно было бы обращаться по индексу. В остальном поведение этого типа будет таким же.</para>
+
+  <para>В этом примере создаётся тип большого объекта, а затем он используется в определении таблицы: <programlisting>CREATE TYPE bigobj (
+    INPUT = lo_filein, OUTPUT = lo_fileout,
+    INTERNALLENGTH = VARIABLE
+);
+CREATE TABLE big_objs (
+    id integer,
+    obj bigobj
+);</programlisting></para>
+
+  <para>Другие примеры, в том числе демонстрирующие подходящие функции ввода/вывода, можно найти в <xref remap="6" linkend="xtypes"/>.</para>
+ </refsect1>
+
+ <refsect1 id="sql-createtype-compatibility">
+  <title>Совместимость</title>
+
+  <para>Первая форма команды <command>CREATE TYPE</command>, создающая составной тип, соответствует стандарту <acronym>SQL</acronym>. Другие формы являются расширениями <productname>&productname;</productname>. Для оператора <command>CREATE TYPE</command> в стандарте <acronym>SQL</acronym> также определены другие формы, не реализованные в <productname>&productname;</productname>.</para>
+
+  <para>Возможность создавать составной тип без атрибутов — специфическое отклонение <productname>&productname;</productname> от стандарта (как и аналогичная особенность команды <command>CREATE TABLE</command>).</para>
+ </refsect1>
+
+ <refsect1 id="sql-createtype-see-also">
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altertype"/></member>
+   <member><xref linkend="sql-createdomain"/></member>
+   <member><xref linkend="sql-createfunction"/></member>
+   <member><xref linkend="sql-droptype"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

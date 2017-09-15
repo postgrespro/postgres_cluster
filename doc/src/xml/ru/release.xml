@@ -1,0 +1,61 @@
+<!-- doc/src/xml/release.xml -->
+<!--
+
+Typical markup:
+
+&<>                             use & escapes
+&productname;                      <productname>
+postgresql.conf, pg_hba.conf,
+        recovery.conf           <filename>
+[A-Z][A-Z_ ]+[A-Z_]             <command>, <literal>, <envar>, <acronym>
+[A-Za-z_][A-Za-z0-9_]+()        <function>
+-[-A-Za-z_]+                    <option>
+[A-Za-z_]+/[A-Za-z_]+           <filename>
+psql                            <application>
+pg_[A-Za-z0-9_]+                <application>, <structname>
+[A-Z][A-Z][A-Z_ ]*              <type>
+[a-z]+_[a-z_]+                  <varname>
+
+non-ASCII characters            find using grep -P '[\x80-\xFF]'
+                                convert to HTML4 named entity (&) escapes
+
+        official:      http://www.w3.org/TR/html4/sgml/entities.html
+        one page:      http://www.zipcon.net/~swhite/docs/computers/browsers/entities_page.html
+        other lists:   http://www.zipcon.net/~swhite/docs/computers/browsers/entities.html
+                       http://www.zipcon.net/~swhite/docs/computers/browsers/entities_page.html
+                       http://en.wikipedia.org/wiki/List_of_XML_and_HTML_character_entity_references
+
+        we cannot use UTF8 because SGML Docbook does not support it
+
+        do not use numeric _UTF_ numeric character escapes (&#nnn;),
+        we can only use Latin1
+
+        Example: Alvaro Herrera is &Aacute;lvaro Herrera
+
+wrap long lines
+
+For new features, add links to the documentation sections.
+
+-->
+
+<appendix id="release">
+ <title>Замечания к выпуску</title>
+
+  <para>В замечаниях к выпуску отмечаются значительные изменения, имевшие место в каждом выпуске <productname>&productname;</productname>, при этом ключевые изменения и вопросы миграции освещаются в самом начале. В эти замечания не включаются изменения, затрагивающие лишь нескольких пользователей, как и изменения внутренние и поэтому пользователям не заметные. Например, оптимизатор усовершенствуется почти в каждом выпуске, но для пользователей эти улучшения проявляются обычно просто в ускорении запросов.</para>
+
+  <para>Полный список изменений каждого выпуска можно получить, просмотрев журналы Git для этого выпуска. Также все изменения в исходном коде отражаются в <ulink url="https://archives.postgresql.org/pgsql-committers/">списке рассылки <literal moreinfo="none">pgsql-committers</literal></ulink>. Кроме того, имеется <ulink url="https://git.postgresql.org/gitweb?p=postgresql.git;a=summary">веб-интерфейс</ulink>, в котором можно просмотреть изменения в разрезе файлов.</para>
+
+  <para>Имя, указанное рядом с каждым пунктом, показывает, кто был основным разработчиком этого изменения. Но, конечно, с каждым из изменений связано обсуждение в сообществе и анализ предлагаемой правки, так что на самом деле каждый из этих пунктов — плод работы сообщества.</para>
+
+<!--
+  To add a new major-release series, add an entry here and in filelist.sgml.
+
+  The reason for splitting the release notes this way is so that appropriate
+  subsets can easily be copied into back branches.
+ -->
+&release-proee-9.6;
+&release-pro-9.6;
+&release-9.6;
+&release-9.5;
+
+</appendix>

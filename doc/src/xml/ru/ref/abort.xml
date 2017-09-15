@@ -1,0 +1,73 @@
+<!--
+doc/src/xml/ref/abort.xml
+&productname; documentation
+-->
+
+<refentry id="sql-abort">
+ <indexterm zone="sql-abort"><primary>ABORT</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ABORT</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ABORT</refname>
+  <refpurpose>прервать текущую транзакцию</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ABORT [ WORK | TRANSACTION ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ABORT</command> откатывает текущую транзакцию и приводит к отмене всех изменений, внесённых транзакцией. Эта команда ведёт себя так же, как и стандартная <acronym>SQL</acronym>-команда <xref linkend="sql-rollback"/>, и существует только по историческим причинам.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>WORK</literal></term>
+    <term><literal>TRANSACTION</literal></term>
+    <listitem>
+     <para>Необязательные ключевые слова, не оказывают никакого влияния.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Чтобы завершить и зафиксировать транзакцию, используйте <xref linkend="sql-commit"/>.</para>
+
+  <para>При выполнении команды <command>ABORT</command> вне блока транзакции выдаётся предупреждение и больше ничего не происходит.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Чтобы прервать все операции: <programlisting>ABORT;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Эта команда является расширением <productname>&productname;</productname> и существует по историческим причинам. Ей равнозначна стандартная SQL-команда <command>ROLLBACK</command>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-begin"/></member>
+   <member><xref linkend="sql-commit"/></member>
+   <member><xref linkend="sql-rollback"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

@@ -1,0 +1,104 @@
+<!--
+doc/src/xml/ref/begin.xml
+&productname; documentation
+-->
+
+<refentry id="sql-begin">
+ <indexterm zone="sql-begin"><primary>BEGIN</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>BEGIN</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>BEGIN</refname>
+  <refpurpose>начать блок транзакции</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>BEGIN [ AUTONOMOUS ] [ WORK | TRANSACTION ] [ <replaceable class="parameter">режим_транзакции</replaceable> [, ...] ]
+
+<phrase>Где <replaceable class="parameter">режим_транзакции</replaceable> может быть следующим:</phrase>
+
+    ISOLATION LEVEL { SERIALIZABLE | REPEATABLE READ | READ COMMITTED | READ UNCOMMITTED }
+    READ WRITE | READ ONLY
+    [ NOT ] DEFERRABLE</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>BEGIN</command> начинает блок транзакции, то есть обозначает, что все операторы после команды <command>BEGIN</command> и до явной команды <xref linkend="sql-commit"/> или <xref linkend="sql-rollback"/> будут выполняться в одной транзакции. По умолчанию (без <command>BEGIN</command>) <productname>&productname;</productname> выполняет транзакции в режиме <quote>autocommit</quote> (автофиксация), то есть каждый оператор выполняется в своей отдельной транзакции, которая неявно фиксируется в конце оператора (если оператор был выполнен успешно; в противном случае, транзакция откатывается).</para>
+
+  <para>В блоке транзакции операторы выполняются быстрее, так как для запуска/фиксации транзакции производится масса операций, нагружающих процессор и диск. Кроме того, выполнение нескольких операторов в одной транзакции позволяет обеспечить целостность при внесении серии связанных изменений; другие сеансы не видят промежуточное состояние, когда произошли ещё не все связанные изменения.</para>
+
+  <para>Если указан уровень изоляции, режим чтения/записи или устанавливается отложенный режим, новая транзакция получает те же характеристики, что и после выполнения <xref linkend="sql-set-transaction"/>.</para>
+
+  <para>В случае указания необязательного ключевого слова <command>AUTONOMOUS</command> начинается автономная транзакция. Автономная транзакция может выполняться только внутри какой-либо другой транзакции. Подробнее об автономных транзакциях рассказывается в <xref remap="6" linkend="atx"/>.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>WORK</literal></term>
+    <term><literal>TRANSACTION</literal></term>
+    <listitem>
+     <para>Необязательные ключевые слова, не оказывают никакого влияния.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>AUTONOMOUS</literal></term>
+    <listitem>
+     <para>Необязательное ключевое слово. Обозначает начало автономной подтранзакции. Автономную транзакцию можно начать только внутри какой-либо другой транзакции. Подробнее об автономных транзакциях рассказывается в <xref remap="6" linkend="atx"/>.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>За описанием других параметров обратитесь к <xref remap="3" linkend="sql-set-transaction"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para><xref linkend="sql-start-transaction"/> делает то же, что и <command>BEGIN</command>.</para>
+
+  <para>Для завершения блока транзакции используйте <xref linkend="sql-commit"/> или <xref linkend="sql-rollback"/>.</para>
+
+  <para>При попытке выполнить <command>BEGIN</command> внутри уже начатого блока транзакции будет выдано предупреждение, а состояние транзакции не изменится. Для вложения подтранзакций внутри блока транзакций используйте точки сохранения (см. <xref remap="4" linkend="sql-savepoint"/>).</para>
+
+  <para>Для сохранения обратной совместимости допускается перечисление <replaceable class="parameter">режимов_транзакции</replaceable> без запятых.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Начало блока транзакции: <programlisting>BEGIN;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>BEGIN</command> — это языковое расширение <productname>&productname;</productname>. Эта команда равнозначна соответствующей стандарту SQL команде <xref linkend="sql-start-transaction"/>, на справочной странице которой можно найти дополнительные сведения о совместимости.</para>
+
+  <para>Значение <literal>DEFERRABLE</literal> параметра <replaceable class="parameter">режим_транзакции</replaceable> является языковым расширением <productname>&productname;</productname>.</para>
+
+  <para>По стечению обстоятельств ключевое слово <literal>BEGIN</literal> имеет другое значение во встраиваемом SQL, поэтому при портировании приложений баз данных рекомендуется внимательно сверить семантику транзакций.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-commit"/></member>
+   <member><xref linkend="sql-rollback"/></member>
+   <member><xref linkend="sql-start-transaction"/></member>
+   <member><xref linkend="sql-savepoint"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

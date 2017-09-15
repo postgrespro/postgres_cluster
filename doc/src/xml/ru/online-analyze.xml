@@ -1,0 +1,61 @@
+<sect1 id="online-analyze">
+  <title>online-analyze</title>
+  <para>Модуль <literal>online_analyze</literal> предоставляет набор функций, которые немедленно обновляют статистику в целевых таблицах после операций INSERT, UPDATE, DELETE или SELECT INTO в них.</para>
+
+  <sect2 id="online-analyze-loading">
+    <title>Загрузка модуля</title>
+    <para>Чтобы использовать модуль <literal>online_analyze</literal>, необходимо сначала загрузить разделяемую библиотеку: <programlisting>        LOAD 'online_analyze';
+      </programlisting></para>
+  </sect2>
+
+  <sect2 id="online-analyze-configuration">
+    <title>Настройка модуля</title>
+
+    <para>Дополнительные переменные (показаны значения по умолчанию): <itemizedlist>
+        <listitem>
+          <para>online_analyze.enable = on</para>
+          <para>Включает немедленный анализ</para>
+        </listitem>
+        <listitem>
+          <para>online_analyze.verbose = on</para>
+          <para>Выполняет ANALYZE VERBOSE</para>
+        </listitem>
+        <listitem>
+          <para>online_analyze.scale_factor = 0.1</para>
+          <para>Процент от размера таблицы, при котором начинается немедленный анализ (этот параметр подобен autovacuum_analyze_scale_factor)</para>
+        </listitem>
+
+        <listitem>
+          <para>online_analyze.threshold = 50</para>
+          <para>Минимальное число изменений строк, после которого может начаться немедленный анализ (этот параметр подобен autovacuum_analyze_threshold)</para>
+        </listitem>
+
+        <listitem>
+          <para>online_analyze.min_interval = 10000</para>
+          <para>Минимальный интервал времени между вызовами ANALYZE для отдельной таблицы (в миллисекундах)</para>
+        </listitem>
+
+        <listitem>
+          <para>online_analyze.table_type = "all"</para>
+          <para>Типы таблиц, для которых выполняется немедленный анализ: all (все), persistent (постоянные), temporary (временные), none (никакие)</para>
+        </listitem>
+
+        <listitem>
+          <para>online_analyze.exclude_tables = ""</para>
+          <para>Список таблиц, исключаемых из немедленного анализа</para>
+        </listitem>
+
+        <listitem>
+          <para>online_analyze.include_tables = ""</para>
+          <para>Список таблиц, подвергаемых немедленному анализу (параметр online_analyze.include_tables переопределяет online_analyze.exclude_tables).</para>
+        </listitem>
+      </itemizedlist></para>
+  </sect2>
+
+  <sect2 id="online-analyze-authors">
+    <title>Авторы</title>
+    <literallayout>      Фёдор Сигаев <email>teodor@sigaev.ru</email>
+    </literallayout>
+  </sect2>
+
+</sect1>

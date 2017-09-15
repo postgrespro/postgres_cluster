@@ -1,0 +1,839 @@
+<!-- doc/src/xml/charset.xml -->
+
+<chapter id="charset">
+ <title>Локализация</title>
+
+ <para>Данная глава описывает доступные возможности локализации с точки зрения администратора. <productname>&productname;</productname> поддерживает два средства локализации: <itemizedlist>
+    <listitem>
+     <para>Использование средств локализации операционной системы для обеспечения определяемых локалью порядка правил сортировки, форматирования чисел, перевода сообщений и прочих аспектов. Это рассматривается в <xref remap="6" linkend="locale"/> и <xref remap="6" linkend="collation"/>.</para>
+    </listitem>
+
+    <listitem>
+     <para>Обеспечение возможностей использования различных кодировок для хранения текста на разных языках и перевода кодировок между клиентом и сервером. Это рассматривается в <xref remap="6" linkend="multibyte"/>.</para>
+    </listitem>
+   </itemizedlist></para>
+
+
+ <sect1 id="locale">
+  <title>Поддержка языковых стандартов</title>
+
+  <indexterm zone="locale"><primary>локаль</primary></indexterm>
+
+  <para>Поддержка <firstterm>языковых стандартов</firstterm> в приложениях относится к культурным предпочтениям, которые касаются алфавита, порядка сортировки, форматирования чисел и т. п. <productname>&productname;</productname> использует соответствующие стандартам ISO C и <acronym>POSIX</acronym> возможности локали, предоставляемые операционной системой сервера. За дополнительной информацией обращайтесь к документации вашей системы.</para>
+
+  <sect2>
+   <title>Обзор</title>
+
+   <para>Поддержка локали автоматически инициализируется, когда кластер базы данных создаётся при помощи <command>initdb</command>. <command>initdb</command> инициализирует кластер баз данных по умолчанию с локалью из окружения выполнения. Поэтому, если ваша система уже использует локаль, которую вы хотите выбрать для вашего кластера баз данных, вам не требуется дополнительно совершать никаких действий. Если вы хотите использовать другую локаль (или вы точно не знаете, какая локаль используется в вашей системе), вы можете указать для <command>initdb</command> какую именно локаль использовать через задание параметра <option>--locale</option>. Например: <screen>
+initdb --locale=ru_RU
+</screen></para>
+
+   <para>Данный пример для Unix-систем задаёт русский язык (<literal>ru</literal>), на котором говорят в России (<literal>RU</literal>). Другими вариантами могут быть <literal>en_US</literal> (американский английский) и <literal>fr_CA</literal> (канадский французский). Если в языковом окружении может использоваться более одного набора символов, значение может принимать вид <replaceable>language_territory.codeset</replaceable>. Например, <literal>fr_BE.UTF-8</literal> обозначает французский язык (fr), на котором говорят в Бельгии (BE), с кодировкой <acronym>UTF-8</acronym>.</para>
+
+   <para>То, какие локали и под какими именами доступны на вашей системе, зависит от того, что было включено в операционную систему производителем и что из этого было установлено. В большинстве Unix-систем команда <literal>locale -a</literal> выведет список доступных локалей. Windows использует более развёрнутые имена локалей, такие как <literal>German_Germany</literal> или <literal>Russian_Russia.1251</literal>, но принципы остаются теми же.</para>
+
+   <para>Иногда целесообразно объединить правила из различных локалей, например, использовать английские правила сравнения и испанские сообщения. Для этой цели существует набор категорий локали, каждая из которых управляет только определёнными аспектами правил локализации: <informaltable>
+     <tgroup cols="2">
+      <tbody>
+       <row>
+        <entry><envar>LC_COLLATE</envar></entry>
+        <entry>Порядок сортировки строк</entry>
+       </row>
+       <row>
+        <entry><envar>LC_CTYPE</envar></entry>
+        <entry>Классификация символов (Что представляет собой буква? Каков её эквивалент в верхнем регистре?)</entry>
+       </row>
+       <row>
+        <entry><envar>LC_MESSAGES</envar></entry>
+        <entry>Язык сообщений</entry>
+       </row>
+       <row>
+        <entry><envar>LC_MONETARY</envar></entry>
+        <entry>Форматирование валютных сумм</entry>
+       </row>
+       <row>
+        <entry><envar>LC_NUMERIC</envar></entry>
+        <entry>Форматирование чисел</entry>
+       </row>
+       <row>
+        <entry><envar>LC_TIME</envar></entry>
+        <entry>Форматирование даты и времени</entry>
+       </row>
+      </tbody>
+     </tgroup>
+    </informaltable> Эти имена категорий <command>initdb</command> принимает в качестве имён соответствующих параметров, позволяющих переопределить выбор локали в определённой категории. Например, чтобы настроить локаль на канадский французский, но при этом использовать американские правила форматирования денежных сумм, используйте <literal>initdb --locale=fr_CA --lc-monetary=en_US</literal>.</para>
+
+   <para>Если вы хотите, чтобы система работала без языковой поддержки, используйте специальное имя локали <literal>C</literal> либо эквивалентное ему <literal>POSIX</literal>.</para>
+
+   <para>Значения некоторых категорий локали должны быть заданы при создании базы данных. Вы можете использовать различные параметры локали для различных баз данных, но после создания базы вы уже не сможете изменить их для этой базы данных. <literal>LC_COLLATE</literal> и <literal>LC_CTYPE</literal> являются этими категориями. Они влияют на порядок сортировки в индексах, поэтому они должны быть зафиксированы, иначе индексы на текстовых столбцах могут повредиться. (Однако, можно смягчить эти ограничения через задание правил сравнения, как это описано в разделе <xref linkend="collation"/>.) Значения по умолчанию для этих категорий определяются при запуске <command>initdb</command>, и эти значения используются при создании новых баз данных, если другие значения не указаны явно в команде <command>CREATE DATABASE</command>.</para>
+
+   <para>Прочие категории локали вы можете изменить в любое время, настроив параметры конфигурации сервера, которые имеют такое же имя как и категории локали (подробнее см. <xref remap="4" linkend="runtime-config-client-format"/>). Значения, выбранные через <command>initdb</command>, фактически записываются лишь в файл конфигурации <filename>postgresql.conf</filename>, чтобы использоваться по умолчанию при запуске сервера. Если вы удалите эти значения из <filename>postgresql.conf</filename>, сервер получит соответствующие значения из своей среды выполнения.</para>
+
+   <para>Обратите внимание на то, что поведение локали сервера определяется переменными среды, установленными на стороне сервера, а не средой клиента. Таким образом, необходимо правильно сконфигурировать локаль перед запуском сервера. Если же клиент и сервер работают с разными локалями, то сообщения, возможно, будут появляться на разных языках в зависимости от того, где они возникают.</para>
+
+   <note>
+    <para>Когда мы говорим о наследовании локали от среды выполнения, это означает следующее для большинства операционных систем: для определённой категории локали, к примеру, для правил сортировки, следующие переменные среды анализируются в приведённом ниже порядке до тех пор, пока одна из них не окажется заданной: <envar>LC_ALL</envar>, <envar>LC_COLLATE</envar> (или переменная, относящаяся к соответствующей категории), <envar>LANG</envar>. Если ни одна их этих переменных среды не задана, значение локали устанавливается по умолчанию в <literal>C</literal>.</para>
+
+    <para>Некоторые библиотеки локализации сообщений также обращаются к переменной среды <envar>LANGUAGE</envar>, которая заменяет все прочие параметры локализации при выборе языка сообщений. В случае затруднений, пожалуйста, воспользуйтесь документацией по вашей операционной системе, в частности, справкой по <application>gettext</application>.</para>
+   </note>
+
+   <para>Для того чтобы стал возможен перевод сообщений на язык, выбранный пользователем, <acronym>NLS</acronym> должен быть выбран на момент сборки (<literal>configure --enable-nls</literal>). В остальном поддержка локализации осуществляется автоматически.</para>
+  </sect2>
+
+  <sect2>
+   <title>Поведение</title>
+
+   <para>Локаль влияет на следующий функционал SQL: <itemizedlist>
+     <listitem>
+      <para>Порядок сортировки в запросах с использованием <literal>ORDER BY</literal> или стандартных операторах сравнения текстовых данных <indexterm><primary>ORDER BY</primary> <secondary>и локали</secondary></indexterm></para>
+     </listitem>
+
+     <listitem>
+      <para>Функции <function>upper</function>, <function>lower</function>, и <function>initcap</function> <indexterm><primary>upper</primary> <secondary> и локали</secondary></indexterm> <indexterm><primary>lower</primary> <secondary>и локали</secondary></indexterm></para>
+     </listitem>
+
+     <listitem>
+      <para>Операторы поиска по шаблону (<literal>LIKE</literal>, <literal>SIMILAR TO</literal>, и регулярные выражения в стиле POSIX); локаль влияет как на поиск без учёта регистра, так и на классификацию знаков по классам символов регулярных выражений <indexterm><primary>LIKE</primary> <secondary>и локали</secondary></indexterm><indexterm><primary>регулярные выражения</primary> <secondary>и локали</secondary></indexterm></para>
+     </listitem>
+
+     <listitem>
+      <para>семейство функций <function>to_char</function> <indexterm><primary>to_char</primary> <secondary>и локали</secondary></indexterm></para>
+     </listitem>
+
+     <listitem>
+      <para>Возможность использовать индексы с предложениями <literal>LIKE</literal></para>
+     </listitem>
+    </itemizedlist></para>
+
+   <para>Недостатком использования отличающихся от <literal>C</literal> или <literal>POSIX</literal> локалей в <productname>&productname;</productname> является влияние на производительность. Это замедляет обработку символов и мешает <literal>LIKE</literal> использовать обычные индексы. По этой причине используйте локали только в том случае, если они действительно вам нужны.</para>
+
+   <para>В качестве обходного решения, которое позволит <productname>&productname;</productname> пользоваться индексами с предложениями <literal>LIKE</literal> с использованием локали, отличной от С, существует несколько классов пользовательских операторов. Они позволяют создать индекс, который выполняет строгое посимвольное сравнение, игнорируя правила сравнения, соответствующие локали. За дополнительными сведениями обратитесь к <xref remap="3" linkend="indexes-opclass"/>. Ещё один подход заключается в создании индексов с помощью правил сортировки <literal>C</literal>, как было сказано в <xref remap="6" linkend="collation"/>.</para>
+  </sect2>
+
+  <sect2>
+   <title>Проблемы</title>
+
+   <para>Если поддержка локализации не работает в соответствии с объяснением, данным выше, проверьте, насколько корректна конфигурация поддержки локализации в вашей операционной системе. Чтобы проверить, какие локали установлены на вашей системе, вы можете использовать команду <literal>locale -a</literal>, если ваша операционная система поддерживает это.</para>
+
+   <para>Проверьте, действительно ли <productname>&productname;</productname> использует локаль, которую вы подразумеваете. Параметры <envar>LC_COLLATE</envar> и <envar>LC_CTYPE</envar> определяются при создании базы данных, и не могут быть изменены, за исключением случаев, когда создаётся новая база данных. Прочие параметры локали, включая <envar>LC_MESSAGES</envar> и <envar>LC_MONETARY</envar> первоначально определены средой, в которой запускается сервер, но могут быть оперативно изменены. Вы можете проверить текущие параметры локали с помощью команды <command>SHOW</command>.</para>
+
+   <para>Каталог <filename>src/test/locale</filename> в комплекте файлов исходного кода содержит набор тестов для поддержки локализации <productname>&productname;</productname>.</para>
+
+   <para>Клиентские приложения, которые обрабатывают ошибки сервера, разбирая текст сообщения об ошибке, очевидно, столкнутся с проблемами, когда сообщения сервера будут на другом языке. Авторам таких приложений рекомендуется пользоваться системой кодов ошибок в качестве альтернативы.</para>
+  </sect2>
+ </sect1>
+
+
+ <sect1 id="collation">
+  <title>Поддержка правил сортировки</title>
+
+  <indexterm zone="collation"><primary>правила сортировки</primary></indexterm>
+
+  <para>Правила сортировки позволяют устанавливать порядок сортировки и особенности классификации символов в отдельных столбцах или даже при выполнении отдельных операций. Это смягчает последствия того, что параметры базы данных <symbol>LC_COLLATE</symbol> и <symbol>LC_CTYPE</symbol> невозможно изменить после её создания.</para>
+
+  <sect2>
+   <title>Основные понятия</title>
+
+   <para>Концептуально, каждое выражение с типом данных, к которому применяется сортировка, имеет правила сортировки. (Встроенными сортируемыми типами данных являются <type>text</type>, <type>varchar</type>, и <type>char</type>. Типы, определяемые в базе пользователем, могут также быть отмечены как сортируемые, и, конечно, домен на основе сортируемого типа данных является сортируемым.) Если выражение содержит ссылку на столбец, правила сортировки выражения определяются правилами сортировки столбца. Если выражение — константа, правилами сортировки являются стандартные правила для типа данных константы. Правила сортировки более сложных выражений являются производной от правил сортировки входящих в него частей, как описано ниже.</para>
+
+   <para>Правилами сортировки выражения могут быть правила сортировки <quote>по умолчанию</quote>, что означает использование параметров локали, установленных для базы данных. Также возможно, что правила сортировки выражения могут не определиться. В таких случаях операции упорядочивания и другие операции, для которых необходимы правила сортировки, завершатся с ошибкой.</para>
+
+   <para>Когда база данных должна выполнить упорядочивание или классификацию символов, она использует правила сортировки выполняемого выражения. Это происходит, к примеру, с предложениями <literal>ORDER BY</literal> и такими вызовами функций или операторов как <literal>&lt;</literal>. Правила сортировки, которые применяются в предложении <literal>ORDER BY</literal>, это просто правила ключа сортировки. Правила сортировки, применяемые к вызову функции или оператора, определяются их параметрами, как описано ниже. В дополнение к операциям сравнения, правила сортировки учитываются функциями, преобразующими регистр символов, такими как <function>lower</function>, <function>upper</function>, и <function>initcap</function>; операторами поиска по шаблону; и функцией <function>to_char</function> и связанными с ней.</para>
+
+   <para>При вызове функции или оператора правило сортировки определяется в зависимости от того, какие правила заданы для аргументов во время выполнения данной операции. Если результатом вызова функции или оператора является сортируемый тип данных, правила сортировки также используются во время разбора как определяемые правила сортировки функции или выражения оператора, в случае, если для внешнего выражения требуется знание правил сортировки.</para>
+
+   <para><firstterm>Определение правил сортировки </firstterm> выражения может быть неявным или явным. Это отличие влияет на то, как комбинируются правила сортировки, когда несколько разных правил появляются в выражении. Явное определение правил сортировки возникает, когда используется предложение <literal>COLLATE</literal>; все прочие варианты являются неявными. Когда необходимо объединить несколько правил сортировки, например, в вызове функции, используются следующие правила: <orderedlist>
+     <listitem>
+      <para>Если для одного из выражений-аргументов правило сортировки определено явно, то и для других аргументов явно задаваемое правило должно быть тем же, иначе возникнет ошибка. В случае присутствия явного определения правила сортировки, оно становится результирующим для всей операции.</para>
+     </listitem>
+
+     <listitem>
+      <para>В противном случае все входные выражения должны иметь одни и те же неявно определяемые правила сортировки или правила сортировки по умолчанию. Если присутствуют какие- либо правила сортировки, отличные от заданных по умолчанию, получаем результат комбинации правил сортировки. Иначе результатом станут правила сортировки, заданные по умолчанию.</para>
+     </listitem>
+
+     <listitem>
+      <para>Если среди входных выражений есть конфликтующие неявные правила сортировки, отличные от заданных по умолчанию, тогда комбинация рассматривается как имеющая неопределённые правила сортировки. Это не является условием возникновения ошибки, если вызываемой конкретной функции не требуются данные о правилах сортировки, которые ей следует применить. Если же такие данные требуются, это приведёт к ошибке во время выполнения.</para>
+     </listitem>
+    </orderedlist> В качестве примера рассмотрим данное определение таблицы: <programlisting>CREATE TABLE test1 (
+    a text COLLATE "de_DE",
+    b text COLLATE "es_ES",
+    ...
+);</programlisting> Затем в <programlisting>SELECT a &lt; 'foo' FROM test1;</programlisting> выполняется оператор сравнения <literal>&lt;</literal> согласно правилам <literal>de_DE</literal>, так как выражение объединяет неявно определяемые правила сортировки с правилами, заданными по умолчанию. Но в <programlisting>SELECT a &lt; ('foo' COLLATE "fr_FR") FROM test1;</programlisting> сравнение выполняется с помощью правил <literal>fr_FR</literal>, так как явное определение правил сортировки переопределяет неявное. Кроме того, получив <programlisting>SELECT a &lt; b FROM test1;</programlisting>, анализатор запросов не может определить, какое правило сортировки использовать, поскольку столбцы <structfield>a</structfield> и <structfield>b</structfield> имеют конфликтующие неявные правила сортировки. Так как оператору <literal>&lt;</literal> требуется знать, какое правило использовать, это приведёт к ошибке. Ошибку можно устранить, применив явное указание правил сортировки к любому из двух входных выражений. Например: <programlisting>SELECT a &lt; b COLLATE "de_DE" FROM test1;</programlisting> либо эквивалентное ему <programlisting>SELECT a COLLATE "de_DE" &lt; b FROM test1;</programlisting> С другой стороны, следующее выражение схожей структуры <programlisting>SELECT a || b FROM test1;</programlisting> не приводит к ошибке, поскольку для оператора <literal>||</literal> правила сортировки не имеют значения, так как результат не зависит от сортировки.</para>
+
+   <para>Правила сортировки, назначенные функции или комбинации входных выражений оператора, также могут быть применены к функции или результату оператора, если функция или оператор возвращают результат сортируемого типа данных. Так, в <programlisting>SELECT * FROM test1 ORDER BY a || 'foo';</programlisting> упорядочение будет происходить согласно правилам <literal>de_DE</literal>. Но данный запрос: <programlisting>SELECT * FROM test1 ORDER BY a || b;</programlisting> приводит к ошибке, потому что, даже если оператору <literal>||</literal> не нужно знать правила сортировки, предложению <literal>ORDER BY</literal> это требуется. Как было сказано выше, конфликт может быть разрешён при помощи явного указания правил сортировки: <programlisting>SELECT * FROM test1 ORDER BY a || b COLLATE "fr_FR";</programlisting></para>
+  </sect2>
+
+  <sect2>
+   <title>Управление правилами сортировки</title>
+
+   <para>Правила сортировки представляют собой объект схемы SQL, который сопоставляет SQL-имя с локалью операционной системы. В частности, оно преобразуется в комбинацию <symbol>LC_COLLATE</symbol> и <symbol>LC_CTYPE</symbol>. (Как видно из названия, основная цель правил сортировки — настроить параметр <symbol>LC_COLLATE</symbol>, который контролирует порядок сортировки. Однако на практике редко возникает необходимость иметь <symbol>LC_CTYPE</symbol>, отличный от <symbol>LC_COLLATE</symbol>, поэтому удобнее объединить их в одно целое, чем создавать ещё один элемент инфраструктуры для указания <symbol>LC_CTYPE</symbol> на уровне выражения.) Также, правила сортировки связаны с кодировкой набора символов (см. <xref remap="4" linkend="multibyte"/>). Одно и то же имя правил сортировки может существовать для разных кодировок.</para>
+
+   <para>На всех платформах доступны правила сортировки под названием <literal>default</literal>, <literal>C</literal>, и <literal>POSIX</literal>. Дополнительные правила сортировки могут быть доступны в зависимости от поддержки операционной системы. Правило сортировки <literal>default</literal> использует значения <symbol>LC_COLLATE</symbol> и <symbol>LC_CTYPE</symbol>, заданные при создании базы данных. Правила сортировки <literal>C</literal> и <literal>POSIX</literal> определяют поведение, характерное для <quote>традиционного C </quote>, в котором только знаки кодировки ASCII от <quote><literal>A</literal></quote> до <quote><literal>Z</literal></quote> рассматриваются как буквы, и сортировка осуществляется строго по символьному коду байтов.</para>
+
+   <para>Если операционная система обеспечивает использование нескольких локалей внутри одной программы (<function>newlocale</function> и аналогичные функции), тогда при создании кластера баз данных <command>initdb</command> заполняет системный каталог <literal>pg_collation</literal> правилами сортировки на основе всех локалей, найденных в операционной системе на текущий момент. Допустим, операционная система может предоставить локаль с именем <literal>de_DE.utf8</literal>. Тогда <command>initdb</command> создаст правила сортировки под именем <literal>de_DE.utf8</literal> для кодировки <literal>UTF8</literal>, которые имеют как <symbol>LC_COLLATE</symbol>, так и <symbol>LC_CTYPE</symbol>, установленные в <literal>de_DE.utf8</literal>. Также будут созданы правила сортировки без <literal>.utf8</literal> в окончании имени. Таким образом, вы также могли бы использовать правила сортировки под именем <literal>de_DE</literal>, которое не так громоздко при написании и менее зависимо от кодировки. Однако, необходимо отметить, что исходный набор имён правил сортировки зависит от платформы.</para>
+
+   <para>В случае если необходимы правила сортировки, имеющие разные значения для <symbol>LC_COLLATE</symbol> и <symbol>LC_CTYPE</symbol>, могут быть созданы новые правила сортировки с помощью команды <xref linkend="sql-createcollation"/>. Эта команда может быть использована для создания новых правил сортировки из уже существующих, что может быть полезно при использовании в приложениях имён правил сортировки, не зависящих от операционной системы.</para>
+
+   <para>В любой базе данных имеют значение только те правила сортировки, которые используют кодировку этой базы данных. Прочие записи в <literal>pg_collation</literal> игнорируются. Таким образом, усечённое имя правил сортировки, такое как <literal>de_DE</literal>, может считаться уникальным внутри данной базы данных, даже если бы оно не было уникальным глобально. Использование усечённого имени сортировки рекомендуется, так как при переходе на другую кодировку базы данных придётся выполнить на одно изменение меньше. Однако, следует помнить, что правила сортировки <literal>default</literal>, <literal>C</literal> и <literal>POSIX</literal> можно использовать независимо от кодировки базы данных.</para>
+
+   <para>В <productname>&productname;</productname> предполагается, что отдельные объекты правил сортировки несовместимы, даже когда они имеют идентичные свойства. Так, например, <programlisting>SELECT a COLLATE "C" &lt; b COLLATE "POSIX" FROM test1;</programlisting> выведет сообщение об ошибке, несмотря на то, что поведение правил сортировки <literal>C</literal> и <literal>POSIX</literal> идентично. По этой причине смешивать усечённые и полные имена правил сортировки не рекомендуется.</para>
+  </sect2>
+ </sect1>
+
+ <sect1 id="multibyte">
+  <title>Поддержка кодировок</title>
+
+  <indexterm zone="multibyte"><primary>набор символов</primary></indexterm>
+
+  <para>Поддержка кодировок в <productname>&productname;</productname> позволяет хранить текст в различных кодировках, включая однобайтовые кодировки, такие как входящие в семейство ISO 8859 и многобайтовые кодировки, такие как <acronym>EUC</acronym> (Extended Unix Code), UTF-8 и внутренний код Mule. Все поддерживаемые кодировки могут прозрачно использоваться клиентами, но некоторые не поддерживаются сервером (в качестве серверной кодировки). Кодировка по умолчанию выбирается при инициализации кластера базы данных <productname>&productname;</productname> при помощи <command>initdb</command>. Она может быть переопределена при создании базы данных, что позволяет иметь несколько баз данных с разными кодировками.</para>
+
+  <para>Важным ограничением, однако, является то, что кодировка каждой базы данных должна быть совместима с параметрами локали базы данных <envar>LC_CTYPE</envar> (классификация символов) и <envar>LC_COLLATE</envar> (порядок сортировки строк). Для локали <literal>C</literal> или <literal>POSIX</literal> подойдёт любой набор символов, но для других локалей есть только одна кодировка, которая будет работать правильно. (Однако, в среде Windows кодировка UTF-8 может использоваться с любой локалью.)</para>
+
+   <sect2 id="multibyte-charset-supported">
+    <title>Поддерживаемые кодировки</title>
+
+    <para><xref linkend="charset-table"/> показывает кодировки, доступные для использования в <productname>&productname;</productname>.</para>
+
+     <table id="charset-table">
+      <title>Кодировки <productname>&productname;</productname></title>
+      <tgroup cols="6">
+       <thead>
+        <row>
+         <entry>Имя</entry>
+         <entry>Описание</entry>
+         <entry>Язык</entry>
+         <entry>Поддержка на сервере</entry>
+         <!--
+          The Bytes/Char field is populated by looking at the values returned
+          by pg_wchar_table.mblen function for each encoding.
+         -->
+         <entry>Байтов на символ</entry>
+         <entry>Псевдонимы</entry>
+        </row>
+       </thead>
+       <tbody>
+        <row>
+         <entry><literal>BIG5</literal></entry>
+         <entry>Big Five</entry>
+         <entry>Традиционные китайские иероглифы</entry>
+         <entry>Нет</entry>
+         <entry>1-2</entry>
+         <entry><literal>WIN950</literal>, <literal>Windows950</literal></entry>
+        </row>
+        <row>
+         <entry><literal>EUC_CN</literal></entry>
+         <entry>Extended UNIX Code-CN</entry>
+         <entry>Упрощённые китайские иероглифы</entry>
+         <entry>Да</entry>
+         <entry>1-3</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>EUC_JP</literal></entry>
+         <entry>Extended UNIX Code-JP</entry>
+         <entry>Японский</entry>
+         <entry>Да</entry>
+         <entry>1-3</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>EUC_JIS_2004</literal></entry>
+         <entry>Extended UNIX Code-JP, JIS X 0213</entry>
+         <entry>Японский</entry>
+         <entry>Да</entry>
+         <entry>1-3</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>EUC_KR</literal></entry>
+         <entry>Extended UNIX Code-KR</entry>
+         <entry>Корейский</entry>
+         <entry>Да</entry>
+         <entry>1-3</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>EUC_TW</literal></entry>
+         <entry>Extended UNIX Code-TW</entry>
+         <entry>Традиционные китайские иероглифы, тайваньский</entry>
+         <entry>Да</entry>
+         <entry>1-3</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>GB18030</literal></entry>
+         <entry>Национальный стандарт</entry>
+         <entry>Китайский</entry>
+         <entry>Нет</entry>
+         <entry>1-4</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>GBK</literal></entry>
+         <entry>Расширенный национальный стандарт</entry>
+         <entry>Упрощённые китайские иероглифы</entry>
+         <entry>Нет</entry>
+         <entry>1-2</entry>
+         <entry><literal>WIN936</literal>, <literal>Windows936</literal></entry>
+        </row>
+        <row>
+         <entry><literal>ISO_8859_5</literal></entry>
+         <entry>ISO 8859-5, <acronym>ECMA</acronym> 113</entry>
+         <entry>Латинский/Кириллица</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>ISO_8859_6</literal></entry>
+         <entry>ISO 8859-6, <acronym>ECMA</acronym> 114</entry>
+         <entry>Латинский/Арабский</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>ISO_8859_7</literal></entry>
+         <entry>ISO 8859-7, <acronym>ECMA</acronym> 118</entry>
+         <entry>Латинский/Греческий</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>ISO_8859_8</literal></entry>
+         <entry>ISO 8859-8, <acronym>ECMA</acronym> 121</entry>
+         <entry>Латинский/Иврит</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>JOHAB</literal></entry>
+         <entry><acronym>JOHAB</acronym></entry>
+         <entry>Корейский (Хангыль)</entry>
+         <entry>Нет</entry>
+         <entry>1-3</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>KOI8R</literal></entry>
+         <entry><acronym>KOI</acronym>8-R</entry>
+         <entry>Кириллица (Русский)</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry><literal>KOI8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>KOI8U</literal></entry>
+         <entry><acronym>KOI</acronym>8-U</entry>
+         <entry>Кириллица (Украинский)</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>LATIN1</literal></entry>
+         <entry>ISO 8859-1, <acronym>ECMA</acronym> 94</entry>
+         <entry>Западноевропейские</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry><literal>ISO88591</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN2</literal></entry>
+         <entry>ISO 8859-2, <acronym>ECMA</acronym> 94</entry>
+         <entry>Центральноевропейские</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry><literal>ISO88592</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN3</literal></entry>
+         <entry>ISO 8859-3, <acronym>ECMA</acronym> 94</entry>
+         <entry>Южноевропейские</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry><literal>ISO88593</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN4</literal></entry>
+         <entry>ISO 8859-4, <acronym>ECMA</acronym> 94</entry>
+         <entry>Североевропейские</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry><literal>ISO88594</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN5</literal></entry>
+         <entry>ISO 8859-9, <acronym>ECMA</acronym> 128</entry>
+         <entry>Турецкий</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry><literal>ISO88599</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN6</literal></entry>
+         <entry>ISO 8859-10, <acronym>ECMA</acronym> 144</entry>
+         <entry>Скандинавские</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry><literal>ISO885910</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN7</literal></entry>
+         <entry>ISO 8859-13</entry>
+         <entry>Балтийские</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry><literal>ISO885913</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN8</literal></entry>
+         <entry>ISO 8859-14</entry>
+         <entry>Кельтские</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry><literal>ISO885914</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN9</literal></entry>
+         <entry>ISO 8859-15</entry>
+         <entry>LATIN1 c европейскими языками и диалектами</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry><literal>ISO885915</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN10</literal></entry>
+         <entry>ISO 8859-16, <acronym>ASRO</acronym> SR 14111</entry>
+         <entry>Румынский</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry><literal>ISO885916</literal></entry>
+        </row>
+        <row>
+         <entry><literal>MULE_INTERNAL</literal></entry>
+         <entry>Внутренний код Mule</entry>
+         <entry>Мультиязычный редактор Emacs</entry>
+         <entry>Да</entry>
+         <entry>1-4</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>SJIS</literal></entry>
+         <entry>Shift JIS</entry>
+         <entry>Японский</entry>
+         <entry>Нет</entry>
+         <entry>1-2</entry>
+         <entry><literal>Mskanji</literal>, <literal>ShiftJIS</literal>, <literal>WIN932</literal>, <literal>Windows932</literal></entry>
+        </row>
+        <row>
+         <entry><literal>SHIFT_JIS_2004</literal></entry>
+         <entry>Shift JIS, JIS X 0213</entry>
+         <entry>Японский</entry>
+         <entry>Нет</entry>
+         <entry>1-2</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>SQL_ASCII</literal></entry>
+         <entry>не указан (см. текст)</entry>
+         <entry><emphasis>any</emphasis></entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>UHC</literal></entry>
+         <entry>Унифицированный код Хангыль</entry>
+         <entry>Корейский</entry>
+         <entry>Нет</entry>
+         <entry>1-2</entry>
+         <entry><literal>WIN949</literal>, <literal>Windows949</literal></entry>
+        </row>
+        <row>
+         <entry><literal>UTF8</literal></entry>
+         <entry>Unicode, 8-bit</entry>
+         <entry><emphasis>все</emphasis></entry>
+         <entry>Да</entry>
+         <entry>1-4</entry>
+         <entry><literal>Unicode</literal></entry>
+        </row>
+        <row>
+         <entry><literal>WIN866</literal></entry>
+         <entry>Windows CP866</entry>
+         <entry>Кириллица</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry><literal>ALT</literal></entry>
+        </row>
+        <row>
+         <entry><literal>WIN874</literal></entry>
+         <entry>Windows CP874</entry>
+         <entry>Тайский</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>WIN1250</literal></entry>
+         <entry>Windows CP1250</entry>
+         <entry>Центральноевропейские</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>WIN1251</literal></entry>
+         <entry>Windows CP1251</entry>
+         <entry>Кириллица</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry><literal>WIN</literal></entry>
+        </row>
+        <row>
+         <entry><literal>WIN1252</literal></entry>
+         <entry>Windows CP1252</entry>
+         <entry>Западноевропейские</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>WIN1253</literal></entry>
+         <entry>Windows CP1253</entry>
+         <entry>Греческий</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>WIN1254</literal></entry>
+         <entry>Windows CP1254</entry>
+         <entry>Турецкий</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>WIN1255</literal></entry>
+         <entry>Windows CP1255</entry>
+         <entry>Иврит</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>WIN1256</literal></entry>
+         <entry>Windows CP1256</entry>
+         <entry>Арабский</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>WIN1257</literal></entry>
+         <entry>Windows CP1257</entry>
+         <entry>Балтийские</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry/>
+        </row>
+        <row>
+         <entry><literal>WIN1258</literal></entry>
+         <entry>Windows CP1258</entry>
+         <entry>Вьетнамский</entry>
+         <entry>Да</entry>
+         <entry>1</entry>
+         <entry><literal>ABC</literal>, <literal>TCVN</literal>, <literal>TCVN5712</literal>, <literal>VSCII</literal></entry>
+        </row>
+       </tbody>
+      </tgroup>
+     </table>
+
+     <para>Не все клиентские <acronym>API</acronym> поддерживают все перечисленные кодировки. Например, драйвер интерфейса JDBC <productname>&productname;</productname> не поддерживает <literal>MULE_INTERNAL</literal>, <literal>LATIN6</literal>, <literal>LATIN8</literal> и <literal>LATIN10</literal>.</para>
+
+     <para>Поведение кодировки <literal>SQL_ASCII</literal> существенно отличается от других. Когда набором символов сервера является <literal>SQL_ASCII</literal>, сервер интерпретирует значения от 0 до 127 байт согласно кодировке ASCII, тогда как значения от 128 до 255 воспринимаются как незначимые. Перекодировка не будет выполнена при выборе <literal>SQL_ASCII</literal>. Таким образом, этот вариант является не столько объявлением того, что используется определённая кодировка, сколько объявлением того, что кодировка игнорируется. В большинстве случаев, если вы работаете с любыми данными, отличными от ASCII, не стоит использовать <literal>SQL_ASCII</literal>, так как <productname>&productname;</productname> не сможет преобразовать или проверить символы, отличные от ASCII.</para>
+    </sect2>
+
+   <sect2>
+    <title>Настройка кодировки</title>
+
+    <para><command>initdb</command> определяет кодировку по умолчанию для кластера <productname>&productname;</productname>. Например, <screen>
+initdb -E EUC_JP
+</screen> настраивает кодировку по умолчанию на <literal>EUC_JP</literal> (Расширенная система кодирования для японского языка). Можно использовать <option>--encoding</option> вместо <option>-E</option> в случае предпочтения более длинных имён параметров. Если параметр <option>-E</option> или <option>--encoding</option> не задан, <command>initdb</command> пытается определить подходящую кодировку в зависимости от указанной или заданной по умолчанию локали.</para>
+
+    <para>При создании базы данных можно указать кодировку, отличную от заданной по умолчанию, если эта кодировка совместима с выбранной локалью: <screen>
+createdb -E EUC_KR -T template0 --lc-collate=ko_KR.euckr --lc-ctype=ko_KR.euckr korean
+</screen> Это создаст базу данных с именем <literal>korean</literal>, которая использует кодировку <literal>EUC_KR</literal> и локаль <literal>ko_KR</literal>. Также, получить желаемый результат можно с помощью данной SQL-команды: <programlisting>CREATE DATABASE korean WITH ENCODING 'EUC_KR' LC_COLLATE='ko_KR.euckr' LC_CTYPE='ko_KR.euckr' TEMPLATE=template0;</programlisting> Заметьте, что приведённые выше команды задают копирование базы данных <literal>template0</literal>. При копировании любой другой базы данных, параметры локали и кодировку исходной базы изменить нельзя, так как это может привести к искажению данных. Более подробное описание приведено в <xref remap="6" linkend="manage-ag-templatedbs"/>.</para>
+
+    <para>Кодировка базы данных хранится в системном каталоге <literal>pg_database</literal>. Её можно увидеть при помощи параметра <command>psql</command> <option>-l</option> или команды <command>\l</command>. <screen>
+$ <userinput>psql -l</userinput>
+                                         List of databases
+   Name    |  Owner   | Encoding  |  Collation  |    Ctype    |          Access Privileges          
+-----------+----------+-----------+-------------+-------------+-------------------------------------
+ clocaledb | hlinnaka | SQL_ASCII | C           | C           | 
+ englishdb | hlinnaka | UTF8      | en_GB.UTF8  | en_GB.UTF8  | 
+ japanese  | hlinnaka | UTF8      | ja_JP.UTF8  | ja_JP.UTF8  | 
+ korean    | hlinnaka | EUC_KR    | ko_KR.euckr | ko_KR.euckr | 
+ postgres  | hlinnaka | UTF8      | fi_FI.UTF8  | fi_FI.UTF8  | 
+ template0 | hlinnaka | UTF8      | fi_FI.UTF8  | fi_FI.UTF8  | {=c/hlinnaka,hlinnaka=CTc/hlinnaka}
+ template1 | hlinnaka | UTF8      | fi_FI.UTF8  | fi_FI.UTF8  | {=c/hlinnaka,hlinnaka=CTc/hlinnaka}
+(7 rows)
+</screen></para>
+
+    <important>
+     <para>На большинстве современных операционных систем <productname>&productname;</productname> может определить, какая кодировка подразумевается параметром <envar>LC_CTYPE</envar>, что обеспечит использование только соответствующей кодировки базы данных. На более старых системах необходимо самостоятельно следить за тем, чтобы использовалась кодировка, соответствующая выбранной языковой среде. Ошибка в этой области, скорее всего, приведёт к странному поведению зависимых от локали операций, таких как сортировка.</para>
+
+     <para><productname>&productname;</productname> позволит суперпользователям создавать базы данных с кодировкой <literal>SQL_ASCII</literal>, даже когда значение <envar>LC_CTYPE</envar> не установлено в <literal>C</literal> или <literal>POSIX</literal>. Как было сказано выше, <literal>SQL_ASCII</literal> не гарантирует, что данные, хранящиеся в базе, имеют определённую кодировку, и таким образом, этот выбор чреват сбоями, связанными с локалью. Использование данной комбинации устарело и, возможно, будет полностью запрещено.</para>
+    </important>
+   </sect2>
+
+   <sect2>
+    <title>Автоматическая перекодировка между сервером и клиентом</title>
+
+    <para><productname>&productname;</productname> поддерживает автоматическую перекодировку между сервером и клиентом для определённых комбинаций кодировок. Информация, касающаяся перекодировки, хранится в системном каталоге <literal>pg_conversion</literal>. <productname>&productname;</productname> включает в себя некоторые предопределённые кодировки, как показано в <xref remap="6" linkend="multibyte-translation-table"/>. Есть возможность создать новую перекодировку при помощи SQL-команды <command>CREATE CONVERSION</command>.</para>
+
+     <table id="multibyte-translation-table">
+      <title>Клиент-серверные перекодировки наборов символов</title>
+      <tgroup cols="2">
+       <thead>
+        <row>
+         <entry>Серверная кодировка</entry>
+         <entry>Доступные клиентские кодировки</entry>
+        </row>
+       </thead>
+       <tbody>
+        <row>
+         <entry><literal>BIG5</literal></entry>
+         <entry><emphasis>не поддерживается как серверная кодировка</emphasis>
+         </entry>
+        </row>
+        <row>
+         <entry><literal>EUC_CN</literal></entry>
+         <entry><emphasis>EUC_CN</emphasis>, <literal>MULE_INTERNAL</literal>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>EUC_JP</literal></entry>
+         <entry><emphasis>EUC_JP</emphasis>, <literal>MULE_INTERNAL</literal>, <literal>SJIS</literal>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>EUC_KR</literal></entry>
+         <entry><emphasis>EUC_KR</emphasis>, <literal>MULE_INTERNAL</literal>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>EUC_TW</literal></entry>
+         <entry><emphasis>EUC_TW</emphasis>, <literal>BIG5</literal>, <literal>MULE_INTERNAL</literal>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>GB18030</literal></entry>
+         <entry><emphasis>не поддерживается как серверная кодировка</emphasis>
+         </entry>
+        </row>
+        <row>
+         <entry><literal>GBK</literal></entry>
+         <entry><emphasis>не поддерживается как серверная кодировка</emphasis>
+         </entry>
+        </row>
+        <row>
+         <entry><literal>ISO_8859_5</literal></entry>
+         <entry><emphasis>ISO_8859_5</emphasis>, <literal>KOI8R</literal>, <literal>MULE_INTERNAL</literal>, <literal>UTF8</literal>, <literal>WIN866</literal>, <literal>WIN1251</literal></entry>
+        </row>
+        <row>
+         <entry><literal>ISO_8859_6</literal></entry>
+         <entry><emphasis>ISO_8859_6</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>ISO_8859_7</literal></entry>
+         <entry><emphasis>ISO_8859_7</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>ISO_8859_8</literal></entry>
+         <entry><emphasis>ISO_8859_8</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>JOHAB</literal></entry>
+         <entry><emphasis>JOHAB</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>KOI8R</literal></entry>
+         <entry><emphasis>KOI8R</emphasis>, <literal>ISO_8859_5</literal>, <literal>MULE_INTERNAL</literal>, <literal>UTF8</literal>, <literal>WIN866</literal>, <literal>WIN1251</literal></entry>
+        </row>
+        <row>
+         <entry><literal>KOI8U</literal></entry>
+         <entry><emphasis>KOI8U</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN1</literal></entry>
+         <entry><emphasis>LATIN1</emphasis>, <literal>MULE_INTERNAL</literal>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN2</literal></entry>
+         <entry><emphasis>LATIN2</emphasis>, <literal>MULE_INTERNAL</literal>, <literal>UTF8</literal>, <literal>WIN1250</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN3</literal></entry>
+         <entry><emphasis>LATIN3</emphasis>, <literal>MULE_INTERNAL</literal>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN4</literal></entry>
+         <entry><emphasis>LATIN4</emphasis>, <literal>MULE_INTERNAL</literal>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN5</literal></entry>
+         <entry><emphasis>LATIN5</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN6</literal></entry>
+         <entry><emphasis>LATIN6</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN7</literal></entry>
+         <entry><emphasis>LATIN7</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN8</literal></entry>
+         <entry><emphasis>LATIN8</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN9</literal></entry>
+         <entry><emphasis>LATIN9</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>LATIN10</literal></entry>
+         <entry><emphasis>LATIN10</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>MULE_INTERNAL</literal></entry>
+         <entry><emphasis>MULE_INTERNAL</emphasis>, <literal>BIG5</literal>, <literal>EUC_CN</literal>, <literal>EUC_JP</literal>, <literal>EUC_KR</literal>, <literal>EUC_TW</literal>, <literal>ISO_8859_5</literal>, <literal>KOI8R</literal>, <literal>LATIN1</literal> to <literal>LATIN4</literal>, <literal>SJIS</literal>, <literal>WIN866</literal>, <literal>WIN1250</literal>, <literal>WIN1251</literal></entry>
+        </row>
+        <row>
+         <entry><literal>SJIS</literal></entry>
+         <entry><emphasis>не поддерживается как серверная кодировка</emphasis>
+         </entry>
+        </row>
+        <row>
+         <entry><literal>SQL_ASCII</literal></entry>
+         <entry><emphasis>любая (перекодировка не будет выполнена)</emphasis>
+         </entry>
+        </row>
+        <row>
+         <entry><literal>UHC</literal></entry>
+         <entry><emphasis>не поддерживается как серверная кодировка</emphasis>
+         </entry>
+        </row>
+        <row>
+         <entry><literal>UTF8</literal></entry>
+         <entry><emphasis>все поддерживаемые кодировки</emphasis>
+         </entry>
+        </row>
+        <row>
+         <entry><literal>WIN866</literal></entry>
+         <entry><emphasis>WIN866</emphasis>, <literal>ISO_8859_5</literal>, <literal>KOI8R</literal>, <literal>MULE_INTERNAL</literal>, <literal>UTF8</literal>, <literal>WIN1251</literal></entry>
+        </row>
+        <row>
+         <entry><literal>WIN874</literal></entry>
+         <entry><emphasis>WIN874</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>WIN1250</literal></entry>
+         <entry><emphasis>WIN1250</emphasis>, <literal>LATIN2</literal>, <literal>MULE_INTERNAL</literal>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>WIN1251</literal></entry>
+         <entry><emphasis>WIN1251</emphasis>, <literal>ISO_8859_5</literal>, <literal>KOI8R</literal>, <literal>MULE_INTERNAL</literal>, <literal>UTF8</literal>, <literal>WIN866</literal></entry>
+        </row>
+        <row>
+         <entry><literal>WIN1252</literal></entry>
+         <entry><emphasis>WIN1252</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>WIN1253</literal></entry>
+         <entry><emphasis>WIN1253</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>WIN1254</literal></entry>
+         <entry><emphasis>WIN1254</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>WIN1255</literal></entry>
+         <entry><emphasis>WIN1255</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>WIN1256</literal></entry>
+         <entry><emphasis>WIN1256</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>WIN1257</literal></entry>
+         <entry><emphasis>WIN1257</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+        <row>
+         <entry><literal>WIN1258</literal></entry>
+         <entry><emphasis>WIN1258</emphasis>, <literal>UTF8</literal></entry>
+        </row>
+       </tbody>
+      </tgroup>
+     </table>
+
+    <para>Чтобы включить автоматическую перекодировку символов, необходимо сообщить <productname>&productname;</productname> кодировку, которую вы хотели бы использовать на стороне клиента. Это можно выполнить несколькими способами: <itemizedlist>
+      <listitem>
+       <para>Использование команды <command>\encoding</command> в <application>psql</application>. <command>\encoding</command> позволяет оперативно изменять клиентскую кодировку. Например, чтобы изменить кодировку на <literal>SJIS</literal>, введите: <programlisting>\encoding SJIS</programlisting></para>
+      </listitem>
+
+      <listitem>
+       <para><application>libpq</application> (<xref linkend="libpq-control"/>) имеет функции, для управления клиентской кодировкой.</para>
+      </listitem>
+
+      <listitem>
+       <para>Использование <command>SET client_encoding TO</command>. Клиентская кодировка устанавливается следующей SQL-командой: <programlisting>SET CLIENT_ENCODING TO '<replaceable>value</replaceable>';</programlisting> Также, для этой цели можно использовать стандартный синтаксис SQL <literal>SET NAMES</literal>: <programlisting>SET NAMES '<replaceable>value</replaceable>';</programlisting> Получить текущую клиентскую кодировку: <programlisting>SHOW client_encoding;</programlisting> Вернуть кодировку по умолчанию: <programlisting>RESET client_encoding;</programlisting></para>
+      </listitem>
+
+      <listitem>
+       <para>Использование <envar>PGCLIENTENCODING</envar>. Если установлена переменная окружения <envar>PGCLIENTENCODING</envar>, то эта клиентская кодировка выбирается автоматически при подключении к серверу. (В дальнейшем это может быть переопределено при помощи любого из методов, указанных выше.)</para>
+      </listitem>
+
+      <listitem>
+      <para>Использование переменной конфигурации <xref linkend="guc-client-encoding"/>. Если задана переменная <varname>client_encoding</varname>, указанная клиентская кодировка выбирается автоматически при подключении к серверу. (В дальнейшем это может быть переопределено при помощи любого из методов, указанных выше.)</para>
+      </listitem>
+
+     </itemizedlist></para>
+
+    <para>Если перекодировка определённого символа невозможна (предположим, выбраны <literal>EUC_JP</literal> для сервера и <literal>LATIN1</literal> для клиента, и передаются некоторые японские иероглифы, не представленные в <literal>LATIN1</literal>), возникает ошибка.</para>
+
+    <para>Если клиентская кодировка определена как <literal>SQL_ASCII</literal>, перекодировка отключается вне зависимости от кодировки сервера. Что же касается сервера, не стоит использовать <literal>SQL_ASCII</literal>, если только вы не работаете с данными, которые полностью соответствуют ASCII.</para>
+   </sect2>
+
+   <sect2>
+    <title>Дополнительные источники информации</title>
+
+    <para>Рекомендуемые источники для начала изучения различных видов систем кодирования. <variablelist>
+      <varlistentry>
+       <term><citetitle>Обработка информации на китайском, японском, корейском &amp; вьетнамском языках.</citetitle></term>
+
+       <listitem>
+        <para>Содержит подробные объяснения по <literal>EUC_JP</literal>, <literal>EUC_CN</literal>, <literal>EUC_KR</literal>, <literal>EUC_TW</literal>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><ulink url="http://www.unicode.org/"/></term>
+
+       <listitem>
+        <para>Сайт Unicode Consortium.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term>RFC 3629</term>
+
+       <listitem>
+        <para><acronym>UTF</acronym>-8 (формат преобразования 8-битного UCS/Unicode) определён здесь.</para>
+       </listitem>
+      </varlistentry>
+     </variablelist></para>
+   </sect2>
+
+  </sect1>
+
+</chapter>

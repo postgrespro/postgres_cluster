@@ -1,0 +1,183 @@
+<!--
+doc/src/xml/ref/alter_sequence.xml
+&productname; documentation
+-->
+
+<refentry id="sql-altersequence">
+ <indexterm zone="sql-altersequence"><primary>ALTER SEQUENCE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER SEQUENCE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER SEQUENCE</refname>
+  <refpurpose>изменить определение генератора последовательности</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER SEQUENCE [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [ INCREMENT [ BY ] <replaceable class="parameter">шаг</replaceable> ]
+    [ MINVALUE <replaceable class="parameter">мин_значение</replaceable> | NO MINVALUE ] [ MAXVALUE <replaceable class="parameter">макс_значение</replaceable> | NO MAXVALUE ]
+    [ START [ WITH ] <replaceable class="parameter">начало</replaceable> ]
+    [ RESTART [ [ WITH ] <replaceable class="parameter">перезапуск</replaceable> ] ]
+    [ CACHE <replaceable class="parameter">кеш</replaceable> ] [ [ NO ] CYCLE ]
+    [ OWNED BY { <replaceable class="parameter">имя_таблицы</replaceable>.<replaceable class="parameter">имя_столбца</replaceable> | NONE } ]
+ALTER SEQUENCE [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> OWNER TO { <replaceable class="parameter">новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+ALTER SEQUENCE [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> RENAME TO <replaceable class="parameter">новое_имя</replaceable>
+ALTER SEQUENCE [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> SET SCHEMA <replaceable class="parameter">новая_схема</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER SEQUENCE</command> меняет параметры существующего генератора последовательности. Параметры, не определяемые явно в команде <command>ALTER SEQUENCE</command>, сохраняют свои предыдущие значения.</para>
+
+  <para>Выполнить <command>ALTER SEQUENCE</command> может только владелец соответствующей последовательности. Чтобы сменить схему последовательности, необходимо также иметь право <literal>CREATE</literal> в новой схеме. Чтобы сменить владельца, необходимо быть непосредственным или опосредованным членом новой роли-владельца, а эта роль должна иметь право <literal>CREATE</literal> в схеме последовательности. (С такими ограничениями при смене владельца не происходит ничего такого, что нельзя было бы сделать, имея право удалить и вновь создать последовательность. Однако суперпользователь может сменить владельца последовательности в любом случае.)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <para>
+    <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">имя</replaceable></term>
+      <listitem>
+       <para>Имя (возможно, дополненное схемой) последовательности, подлежащей изменению.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>IF EXISTS</literal></term>
+      <listitem>
+       <para>Не считать ошибкой, если последовательность не существует. В этом случае будет выдано замечание.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">шаг</replaceable></term>
+      <listitem>
+       <para>Предложение <literal>INCREMENT BY <replaceable class="parameter">шаг</replaceable></literal> является необязательным. При положительном значении шага генерируется возрастающая последовательность, при отрицательном ­­­— убывающая; если шаг не указан, сохраняется предыдущее значение.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">мин_значение</replaceable></term>
+      <term><literal>NO MINVALUE</literal></term>
+      <listitem>
+       <para>Необязательное предложение <literal>MINVALUE <replaceable class="parameter">мин_значение</replaceable></literal> определяет минимальное значение, которое будет генерировать данная последовательность. Если указано <literal>NO MINVALUE</literal>, для возрастающей последовательности этим значением будет 1, а для убывающей — -2<superscript>63</superscript>-1. В отсутствие этих указаний будет сохранено текущее минимальное значение.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">макс_значение</replaceable></term>
+      <term><literal>NO MAXVALUE</literal></term>
+      <listitem>
+       <para>Необязательное предложение <literal>MAXVALUE <replaceable class="parameter">макс_значение</replaceable></literal> определяет максимальное значение, которое будет генерировать данная последовательность. Если указано <literal>NO MAXVALUE</literal>, для возрастающей последовательности этим значением будет 2<superscript>63</superscript>-1, а для убывающей — -1. В отсутствие этих указаний будет сохранено текущее максимальное значение.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">начало</replaceable></term>
+      <listitem>
+       <para>Необязательное предложение <literal>START WITH <replaceable class="parameter">начало</replaceable></literal> меняет записанное начальное значение последовательности. При этом <emphasis>текущее</emphasis> значение последовательности не меняется, а только устанавливается значение, которое будет применено будущими командами <command>ALTER SEQUENCE RESTART</command>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">перезапуск</replaceable></term>
+      <listitem>
+       <para>Необязательное предложение <literal>RESTART [ WITH <replaceable class="parameter">перезапуск</replaceable> ]</literal> меняет текущее значение последовательности. Оно равнозначно вызову функции <function>setval</function> с параметром <literal>is_called</literal> = <literal>false</literal>: указанное значение перезапуска будет возвращено при <emphasis>следующем</emphasis> вызове функции <function>nextval</function>. Отсутствие в <literal>RESTART</literal> значения <replaceable class="parameter">перезапуск</replaceable> равносильно передаче стартового значения, записанного командой <command>CREATE SEQUENCE</command> или последнего установленного командой <command>ALTER SEQUENCE START WITH</command>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">кеш</replaceable></term>
+      <listitem>
+       <para>Предложение <literal>CACHE <replaceable class="parameter">кеш</replaceable></literal> разрешает предварительно выделять и сохранять в памяти числа последовательности для ускорения доступа к ним. Минимальное значение равно 1 (т. е. за один раз генерируется только одно значение, кеширования нет). Если это предложение отсутствует, сохраняется старое значение размера кеша.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>CYCLE</literal></term>
+      <listitem>
+       <para>Необязательное ключевое слово <literal>CYCLE</literal> позволяет зациклить последовательность при достижении <replaceable class="parameter">макс_значения</replaceable> или <replaceable class="parameter">мин_значения</replaceable> для возрастающей и убывающей последовательности, соответственно. Когда этот предел достигается, следующим числом этих последовательностей будет соответственно <replaceable class="parameter">мин_значение</replaceable> или <replaceable class="parameter">макс_значение</replaceable>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>NO CYCLE</literal></term>
+      <listitem>
+       <para>Если добавляется необязательное указание <literal>NO CYCLE</literal>, при каждом вызове <function>nextval</function> после достижения предельного значения будет возникать ошибка. Если же указания <literal>CYCLE</literal> и <literal>NO CYCLE</literal> отсутствуют, сохраняется предыдущее поведение зацикливания.</para>
+      </listitem>
+     </varlistentry>
+
+   <varlistentry>
+    <term><literal>OWNED BY</literal> <replaceable class="parameter">имя_таблицы</replaceable>.<replaceable class="parameter">имя_столбца</replaceable></term>
+    <term><literal>OWNED BY NONE</literal></term>
+    <listitem>
+     <para>Указание <literal>OWNED BY</literal> связывает последовательность с определённым столбцом таблицы, с тем чтобы при удалении этого столбца (или всей таблицы) автоматически удалилась и последовательность. Это указание заменяет любую ранее установленную связь данной последовательности. Целевая таблица должна иметь того же владельца и находиться в той же схеме, что и последовательность. Указание <literal>OWNED BY NONE</literal> убирает все существующие связи, обозначая последовательность <quote>независимой</quote>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Имя пользователя, назначаемого новым владельцем последовательности.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя последовательности.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_схема</replaceable></term>
+    <listitem>
+     <para>Новая схема последовательности.</para>
+    </listitem>
+   </varlistentry>
+
+    </variablelist>
+   </para>
+  </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Во избежание блокировки параллельных транзакций, получающих числа из одной последовательности, воздействие <command>ALTER SEQUENCE</command> на параметры генерирования последовательности никогда не отменяется, эти изменения необратимы и вступают в силу немедленно. Однако предложения <literal>OWNED BY</literal>, <literal>OWNER TO</literal>, <literal>RENAME TO</literal> и <literal>SET SCHEMA</literal> приводят к обычным изменениям каталога и могут быть отменены как часть транзакции.</para>
+
+  <para><command>ALTER SEQUENCE</command> не оказывает немедленного влияния на результаты <function>nextval</function> в серверных процессах, кроме текущего, которые могли предварительно сгенерировать (кешировать) значения последовательности. Эти процессы заметят изменения только после того, как будут израсходованы все кешированные значения. Текущий серверный процесс реагирует на изменения сразу.</para>
+
+  <para><command>ALTER SEQUENCE</command> не влияет на значение <function>currval</function> последовательности. (В <productname>PostgreSQL</productname> до версии 8.3 это могло происходить.)</para>
+
+  <para>По историческим причинам <command>ALTER TABLE</command> тоже может работать с последовательностями, но все разновидности <command>ALTER TABLE</command>, допустимые для управления последовательностями, равнозначны вышеперечисленным формам.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Перезапуск последовательности <literal>serial</literal> с числа 105: <programlisting>ALTER SEQUENCE serial RESTART WITH 105;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER SEQUENCE</command> соответствует стандарту <acronym>SQL</acronym>, за исключением предложений <literal>START WITH</literal>, <literal>OWNED BY</literal>, <literal>OWNER TO</literal>, <literal>RENAME TO</literal> и <literal>SET SCHEMA</literal>, являющихся расширениями <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createsequence"/></member>
+   <member><xref linkend="sql-dropsequence"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

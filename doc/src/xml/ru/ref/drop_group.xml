@@ -1,0 +1,44 @@
+<!--
+doc/src/xml/ref/drop_group.xml
+&productname; documentation
+-->
+
+<refentry id="sql-dropgroup">
+ <indexterm zone="sql-dropgroup"><primary>DROP GROUP</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP GROUP</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP GROUP</refname>
+  <refpurpose>удалить роль в базе данных</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP GROUP [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [, ...]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP GROUP</command> теперь является синонимом оператора <xref linkend="sql-droprole"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>DROP GROUP</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-droprole"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

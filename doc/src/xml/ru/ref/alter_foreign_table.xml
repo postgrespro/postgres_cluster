@@ -1,0 +1,365 @@
+<!--
+doc/src/xml/rel/alter_foreign_table.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterforeigntable">
+ <indexterm zone="sql-alterforeigntable"><primary>ALTER FOREIGN TABLE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER FOREIGN TABLE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER FOREIGN TABLE</refname>
+  <refpurpose>изменить определение сторонней таблицы</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER FOREIGN TABLE [ IF EXISTS ] [ ONLY ] <replaceable class="parameter">имя</replaceable> [ * ]
+    <replaceable class="parameter">действие</replaceable> [, ... ]
+ALTER FOREIGN TABLE [ IF EXISTS ] [ ONLY ] <replaceable class="parameter">имя</replaceable> [ * ]
+    RENAME [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> TO <replaceable class="parameter">новое_имя_столбца</replaceable>
+ALTER FOREIGN TABLE [ IF EXISTS ] <replaceable class="parameter">имя</replaceable>
+    RENAME TO <replaceable class="parameter">новое_имя</replaceable>
+ALTER FOREIGN TABLE [ IF EXISTS ] <replaceable class="parameter">имя</replaceable>
+    SET SCHEMA <replaceable class="parameter">новая_схема</replaceable>
+
+<phrase>Где <replaceable class="parameter">действие</replaceable> может быть следующим:</phrase>
+
+    ADD [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> <replaceable class="parameter">тип_данных</replaceable> [ COLLATE <replaceable class="parameter">правило_сортировки</replaceable> ] [ <replaceable class="parameter">ограничение_столбца</replaceable> [ ... ] ]
+    DROP [ COLUMN ] [ IF EXISTS ] <replaceable class="parameter">имя_столбца</replaceable> [ RESTRICT | CASCADE ]
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> [ SET DATA ] TYPE <replaceable class="parameter">тип_данных</replaceable> [ COLLATE <replaceable class="parameter">правило_сортировки</replaceable> ]
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> SET DEFAULT <replaceable class="parameter">выражение</replaceable>
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> DROP DEFAULT
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> { SET | DROP } NOT NULL
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> SET STATISTICS <replaceable class="parameter">integer</replaceable>
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> SET ( <replaceable class="parameter">атрибут</replaceable> = <replaceable class="parameter">значение</replaceable> [, ... ] )
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> RESET ( <replaceable class="parameter">атрибут</replaceable> [, ... ] )
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> SET STORAGE { PLAIN | EXTERNAL | EXTENDED | MAIN }
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> OPTIONS ( [ ADD | SET | DROP ] <replaceable class="parameter">параметр</replaceable> ['<replaceable class="parameter">значение</replaceable>'] [, ... ])
+    ADD <replaceable class="parameter">ограничение_таблицы</replaceable> [ NOT VALID ]
+    VALIDATE CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable>
+    DROP CONSTRAINT [ IF EXISTS ]  <replaceable class="parameter">имя_ограничения</replaceable> [ RESTRICT | CASCADE ]
+    DISABLE TRIGGER [ <replaceable class="parameter">имя_триггера</replaceable> | ALL | USER ]
+    ENABLE TRIGGER [ <replaceable class="parameter">имя_триггера</replaceable> | ALL | USER ]
+    ENABLE REPLICA TRIGGER <replaceable class="parameter">имя_триггера</replaceable>
+    ENABLE ALWAYS TRIGGER <replaceable class="parameter">имя_триггера</replaceable>
+    SET WITH OIDS
+    SET WITHOUT OIDS
+    INHERIT <replaceable class="parameter">таблица_родитель</replaceable>
+    NO INHERIT <replaceable class="parameter">таблица_родитель</replaceable>
+    OWNER TO { <replaceable class="parameter">новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+    OPTIONS ( [ ADD | SET | DROP ] <replaceable class="parameter">параметр</replaceable> ['<replaceable class="parameter">значение</replaceable>'] [, ... ])</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER FOREIGN TABLE</command> меняет определение существующей сторонней таблицы. Эта команда имеет несколько разновидностей: <variablelist>
+   <varlistentry>
+    <term><literal>ADD COLUMN</literal></term>
+    <listitem>
+     <para>Эта форма добавляет в стороннюю таблицу новый столбец, следуя тому же синтаксису, что и <xref linkend="sql-createforeigntable"/>. В отличие от добавления столбца в обычную таблицу, при данной операции в базовом хранилище ничего не меняется; эта команда просто объявляет о доступности нового столбца через данную стороннюю таблицу.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DROP COLUMN [ IF EXISTS ]</literal></term>
+    <listitem>
+     <para>Эта форма удаляет столбец из сторонней таблицы. Если что-либо зависит от этого столбца, например, представление, для успешного результата потребуется добавить <literal>CASCADE</literal>. Если указано <literal>IF EXISTS</literal> и этот столбец не существует, ошибка не происходит, вместо этого выдаётся замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET DATA TYPE</literal></term>
+    <listitem>
+     <para>Эта форма меняет тип столбца сторонней таблицы. И это не влияет на нижележащее хранилище: данная операция просто меняет тип, который по мнению <productname>&productname;</productname> будет иметь этот столбец.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET</literal>/<literal>DROP DEFAULT</literal></term>
+    <listitem>
+     <para>Эти формы задают или удаляют значение по умолчанию для столбцов. Значения по умолчанию применяются только при последующих командах <command>INSERT</command> или <command>UPDATE</command>; их изменения не отражаются в строках, уже существующих в таблице.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET</literal>/<literal>DROP NOT NULL</literal></term>
+    <listitem>
+     <para>Устанавливает, будет ли столбец принимать значения NULL или нет.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET STATISTICS</literal></term>
+    <listitem>
+     <para>Эта форма задаёт цель сбора статистики по столбцам для последующих операций <xref linkend="sql-analyze"/>. За подробностями обратитесь к описанию подобной формы <xref linkend="sql-altertable"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET ( <replaceable class="parameter">атрибут</replaceable> = <replaceable class="parameter">значение</replaceable> [, ... ] )</literal></term>
+    <term><literal>RESET ( <replaceable class="parameter">атрибут</replaceable> [, ... ] )</literal></term>
+    <listitem>
+     <para>Эта форма задаёт или сбрасывает значения атрибутов. За подробностями обратитесь к описанию подобной формы <xref linkend="sql-altertable"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <literal>SET STORAGE</literal>
+    </term>
+    <listitem>
+     <para>Эта форма задаёт режим хранения для столбца. За подробностями обратитесь к описанию подобной формы <xref linkend="sql-altertable"/>. Заметьте, что режим хранения не имеет значения, если обёртка сторонних данных для этой таблицы будет игнорировать его.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ADD <replaceable class="parameter">ограничение_таблицы</replaceable> [ NOT VALID ]</literal></term>
+    <listitem>
+     <para>Эта форма добавляет новое ограничение в стороннюю таблицу с применением того же синтаксиса, что и <xref linkend="sql-createforeigntable"/>. В настоящее время поддерживаются только ограничения <literal>CHECK</literal>.</para>
+
+     <para>В отличие от ограничения, добавляемого для обычной таблицы, ограничение сторонней таблицы фактически никак не проверяется; эта команда сводится просто к заявлению о том, что все строки в сторонней таблице предположительно удовлетворяют новому условию. (Подробнее это рассматривается в описании <xref linkend="sql-createforeigntable"/>.) Если ограничение помечено как <literal>NOT VALID</literal> (непроверенное), сервер не будет полагать, что оно выполняется; такая запись делается только на случай использования в будущем.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>VALIDATE CONSTRAINT</literal></term>
+    <listitem>
+     <para>Эта форма отмечает ограничение, которая ранее было помечено <literal>NOT VALID</literal>, как проверенное. Собственно для проверки этого ограничения ничего не делается, но последующие запросы будут полагать, что оно действует.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DROP CONSTRAINT [ IF EXISTS ]</literal></term>
+    <listitem>
+     <para>Эта форма удаляет указанное ограничение сторонней таблицы. Если указано <literal>IF EXISTS</literal> и заданное ограничение не существует, это не считается ошибкой. В этом случае выдаётся только замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DISABLE</literal>/<literal>ENABLE [ REPLICA | ALWAYS ] TRIGGER</literal></term>
+    <listitem>
+     <para>Эти формы управляют триггерами, принадлежащими сторонней таблице. За подробностями обратитесь к описанию подобной формы <xref linkend="sql-altertable"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET WITH OIDS</literal></term>
+    <listitem>
+     <para>Эта форма добавляет в таблицу системный столбец <literal>oid</literal> (см. <xref remap="4" linkend="ddl-system-columns"/>). Если в таблице уже есть такой столбец, она не делает ничего. Обёртка сторонних данных должна поддерживать OID, иначе из этого столбца будут читаться просто нулевые значения.</para>
+
+     <para>Заметьте, что это не равнозначно команде <literal>ADD COLUMN oid oid</literal> (эта команда добавит не системный, а обычный столбец с подходящим именем <literal>oid</literal>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET WITHOUT OIDS</literal></term>
+    <listitem>
+     <para>Эта форма удаляет из таблицы системный столбец <literal>oid</literal>. Это в точности равнозначно <literal>DROP COLUMN oid RESTRICT</literal>, за исключением того, что в случае отсутствия столбца <literal>oid</literal> ошибки не будет.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>INHERIT <replaceable class="parameter">таблица_родитель</replaceable></literal></term>
+    <listitem>
+     <para>Эта форма делает целевую стороннюю таблицу потомком указанной родительской таблицы. За подробностями обратитесь к описанию подобной формы <xref linkend="sql-altertable"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>NO INHERIT <replaceable class="parameter">таблица_родитель</replaceable></literal></term>
+    <listitem>
+     <para>Эта форма удаляет целевую стороннюю таблицу из списка потомков указанной родительской таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>OWNER</literal></term>
+    <listitem>
+     <para>Эта форма меняет владельца сторонней таблицы на заданного пользователя.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>OPTIONS ( [ ADD | SET | DROP ] <replaceable class="parameter">параметр</replaceable> ['<replaceable class="parameter">значение</replaceable>'] [, ... ] )</literal></term>
+    <listitem>
+     <para>Эта форма настраивает параметры сторонней таблицы или одного из её столбцов. <literal>ADD</literal>, <literal>SET</literal> и <literal>DROP</literal> определяют, какое действие будет выполнено (добавление, установка и удаление, соответственно). Если действие не задано явно, подразумевается <literal>ADD</literal>. Имена параметров не должны повторяться (хотя параметр таблицы и параметр столбца вполне могут иметь одно имя). Имена и значения параметров также проверяются библиотекой обёртки сторонних данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RENAME</literal></term>
+    <listitem>
+     <para>Формы <literal>RENAME</literal> меняют имя сторонней таблицы или имя столбца в сторонней таблице.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET SCHEMA</literal></term>
+    <listitem>
+     <para>Эта форма переносит стороннюю таблицу в другую схему.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist></para>
+
+  <para>Все действия, кроме <literal>RENAME</literal> и <literal>SET SCHEMA</literal>, можно объединить в один список изменений и выполнить одновременно. Например, можно добавить несколько столбцов и/или изменить тип столбцов одной командой.</para>
+
+  <para>Если команда записана в виде <literal>ALTER FOREIGN TABLE IF EXISTS ...</literal> и сторонняя таблица не существует, это не считается ошибкой. В этом случае выдаётся только замечание.</para>
+
+  <para>Выполнить <command>ALTER FOREIGN TABLE</command> может только владелец соответствующей таблицы. Чтобы сменить схему сторонней таблицы, необходимо также иметь право <literal>CREATE</literal> в новой схеме. Чтобы сменить владельца, необходимо быть непосредственным или опосредованным членом новой роли-владельца, а эта роль должна иметь право <literal>CREATE</literal> в схеме таблицы. (С такими ограничениями при смене владельца не происходит ничего такого, что нельзя было бы сделать, имея право удалить и вновь создать таблицу. Однако суперпользователь может сменить владельца таблицы в любом случае.) Чтобы добавить столбец или изменить тип столбец, ещё требуется иметь право <literal>USAGE</literal> для его типа данных.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+    <variablelist>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя</replaceable></term>
+      <listitem>
+       <para>Имя (возможно, дополненное схемой) существующей сторонней таблицы, подлежащей изменению. Если перед именем таблицы указано <literal>ONLY</literal>, изменяется только заданная таблица. Без <literal>ONLY</literal> изменяется и заданная таблица, и все её потомки (если таковые есть). После имени таблицы можно также добавить необязательное указание <literal>*</literal>, чтобы явно обозначить, что изменению подлежат все дочерние таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_столбца</replaceable></term>
+      <listitem>
+       <para>Имя нового или существующего столбца.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">новое_имя_столбца</replaceable></term>
+      <listitem>
+       <para>Новое имя существующего столбца.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">новое_имя</replaceable></term>
+      <listitem>
+       <para>Новое имя таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">тип_данных</replaceable></term>
+      <listitem>
+       <para>Тип данных нового столбца или новый тип данных существующего столбца.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">ограничение_таблицы</replaceable></term>
+      <listitem>
+       <para>Новое ограничение уровня таблицы для сторонней таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_ограничения</replaceable></term>
+      <listitem>
+       <para>Имя существующего ограничения, подлежащего удалению.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>CASCADE</literal></term>
+      <listitem>
+       <para>Автоматически удалять объекты, зависящие от удаляемого столбца или ограничения (например, представления, содержащие этот столбец), и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>RESTRICT</literal></term>
+      <listitem>
+       <para>Отказать в удалении столбца или ограничения, если существуют зависящие от них объекты. Это поведение по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_триггера</replaceable></term>
+      <listitem>
+       <para>Имя включаемого или отключаемого триггера.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>ALL</literal></term>
+      <listitem>
+       <para>Отключает или включает все триггеры, принадлежащие сторонней таблице. (Если какие-либо из триггеров являются внутрисистемными, для этого требуются права суперпользователя. Сама система не добавляет такие триггеры в сторонние таблицы, но дополнительный код может сделать это.)</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>USER</literal></term>
+      <listitem>
+       <para>Отключает или включает все триггеры, принадлежащие сторонней таблице, кроме сгенерированных внутрисистемных.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">таблица_родитель</replaceable></term>
+      <listitem>
+       <para>Родительская таблица, с которой будет установлена или разорвана связь данной сторонней таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">новый_владелец</replaceable></term>
+      <listitem>
+       <para>Имя пользователя, назначаемого новым владельцем таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">новая_схема</replaceable></term>
+      <listitem>
+       <para>Имя схемы, в которую будет перемещена таблица.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para>Ключевое слово <literal>COLUMN</literal> не несёт смысловой нагрузки и может быть опущено.</para>
+
+   <para>При добавлении или удалении столбцов (<literal>ADD COLUMN</literal>/<literal>DROP COLUMN</literal>), добавлении ограничений <literal>NOT NULL</literal> или <literal>CHECK</literal> или изменении типа данных (<literal>SET DATA TYPE</literal>) согласованность этих определений с внешним сервером не гарантируется. Ответственность за соответствие определений таблицы удалённой стороне лежит на пользователе.</para>
+
+   <para>За более полным описанием параметров обратитесь к <xref remap="3" linkend="sql-createforeigntable"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Установление ограничения NOT NULL для столбца: <programlisting>ALTER FOREIGN TABLE distributors ALTER COLUMN street SET NOT NULL;</programlisting></para>
+
+  <para>Изменение параметров сторонней таблицы: <programlisting>ALTER FOREIGN TABLE myschema.distributors OPTIONS (ADD opt1 'value', SET opt2 'value2', DROP opt3 'value3');</programlisting></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Формы <literal>ADD</literal>, <literal>DROP</literal> и <literal>SET DATA TYPE</literal> соответствуют стандарту SQL. Другие формы являются собственными расширениями <productname>&productname;</productname>. Кроме того, возможность указать в одной команде <command>ALTER FOREIGN TABLE</command> несколько операций так же является расширением.</para>
+
+  <para><command>ALTER FOREIGN TABLE DROP COLUMN</command> позволяет удалить единственный столбец сторонней таблицы и оставить таблицу без столбцов. Это является расширением стандарта SQL, который не допускает существование сторонних таблиц с нулём столбцов.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createforeigntable"/></member>
+   <member><xref linkend="sql-dropforeigntable"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

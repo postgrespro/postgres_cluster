@@ -1,0 +1,141 @@
+<!--
+doc/src/xml/ref/delete.xml
+&productname; documentation
+-->
+
+<refentry id="sql-delete">
+ <indexterm zone="sql-delete"><primary>DELETE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DELETE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DELETE</refname>
+  <refpurpose>удалить записи таблицы</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>[ WITH [ RECURSIVE ] <replaceable class="parameter">запрос_WITH</replaceable> [, ...] ]
+DELETE FROM [ ONLY ] <replaceable class="parameter">имя_таблицы</replaceable> [ * ] [ [ AS ] <replaceable class="parameter">псевдоним</replaceable> ]
+    [ USING <replaceable class="parameter">список_USING</replaceable> ]
+    [ WHERE <replaceable class="parameter">условие</replaceable> | WHERE CURRENT OF <replaceable class="parameter">имя_курсора</replaceable> ]
+    [ RETURNING * | <replaceable class="parameter">выражение_результата</replaceable> [ [ AS ] <replaceable class="parameter">имя_результата</replaceable> ] [, ...] ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Команда <command>DELETE</command> удаляет из указанной таблицы строки, удовлетворяющие условию <literal>WHERE</literal>. Если предложение <literal>WHERE</literal> отсутствует, она удаляет из таблицы все строки, в результате будет получена рабочая, но пустая таблица.</para>
+
+   <tip>
+    <para><xref linkend="sql-truncate"/> — расширение <productname>&productname;</productname>, реализующее более быстрый механизм удаления всех строк из таблицы.</para>
+   </tip>
+
+  <para>Удалить строки в таблице, используя информацию из других таблиц в базе данных, можно двумя способами: применяя вложенные запросы или указав дополнительные таблицы в предложении <literal>USING</literal>. Выбор предпочитаемого варианта зависит от конкретных обстоятельств.</para>
+
+  <para>Предложение <literal>RETURNING</literal> указывает, что команда <command>DELETE</command> должна вычислить и возвратить значения для каждой фактически удалённой строки. Вычислить в нём можно любое выражение со столбцами целевой таблицы и/или столбцами других таблиц, упомянутых в <literal>USING</literal>. Список <literal>RETURNING</literal> имеет тот же синтаксис, что и список результатов <command>SELECT</command>.</para>
+
+  <para>Чтобы удалять данные из таблицы, необходимо иметь право <literal>DELETE</literal> для неё, а также право <literal>SELECT</literal> для всех таблиц, перечисленных в предложении <literal>USING</literal>, и таблиц, данные которых считываются в <replaceable class="parameter">условии</replaceable>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">запрос_WITH</replaceable></term>
+    <listitem>
+     <para>Предложение <literal>WITH</literal> позволяет задать один или несколько подзапросов, на которые затем можно ссылаться по имени в запросе <command>DELETE</command>. Подробнее об этом см. <xref remap="4" linkend="queries-with"/> и <xref remap="4" linkend="sql-select"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) таблицы, из которой будут удалены строки. Если перед именем таблицы добавлено <literal>ONLY</literal>, соответствующие строки удаляются только из указанной таблицы. Без <literal>ONLY</literal> строки будут также удалены из всех таблиц, унаследованных от указанной. При желании, после имени таблицы можно указать <literal>*</literal>, чтобы явно обозначить, что операция затрагивает все дочерние таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">псевдоним</replaceable></term>
+    <listitem>
+     <para>Альтернативное имя целевой таблицы. Когда указывается это имя, оно полностью скрывает фактическое имя таблицы. Например, в запросе <literal>DELETE FROM foo AS f</literal> дополнительные компоненты оператора <command>DELETE</command> должны обращаться к целевой таблице по имени <literal>f</literal>, а не <literal>foo</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">список_USING</replaceable></term>
+    <listitem>
+     <para>Список табличных выражений, позволяющий добавлять в условие <literal>WHERE</literal> столбцы из других таблиц. Он подобен списку таблиц, который можно задать в предложении <xref linkend="sql-from" endterm="sql-from-title"/> оператора <command>SELECT</command>; например, в нём можно определить псевдоним для таблицы. Целевую таблицу повторять в <replaceable class="parameter">списке_USING</replaceable> нужно, только если требуется определить замкнутое соединение.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">условие</replaceable></term>
+    <listitem>
+     <para>Выражение, возвращающее значение типа <type>boolean</type>. Удалены будут только те строки, для которых это выражение возвращает <literal>true</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_курсора</replaceable></term>
+    <listitem>
+     <para>Имя курсора, который будет использоваться в условии <literal>WHERE CURRENT OF</literal>. С таким условием будет удалена строка, выбранная из этого курсора последней. Курсор должен образовываться запросом, не применяющим группировку, к целевой таблице команды <command>DELETE</command>. Заметьте, что <literal>WHERE CURRENT OF</literal> нельзя задать вместе с булевским условием. За дополнительными сведениями об использовании курсоров с <literal>WHERE CURRENT OF</literal> обратитесь к <xref remap="3" linkend="sql-declare"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">выражение_результата</replaceable></term>
+    <listitem>
+     <para>Выражение, которое будет вычисляться и возвращаться командой <command>DELETE</command> после удаления каждой строки. В этом выражении можно использовать имена любых столбцов таблицы <replaceable class="parameter">имя_таблицы</replaceable> или таблиц, перечисленных в списке <literal>USING</literal>. Чтобы получить все столбцы, достаточно написать <literal>*</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_результата</replaceable></term>
+    <listitem>
+     <para>Имя, назначаемое возвращаемому столбцу.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Выводимая информация</title>
+
+  <para>В случае успешного завершения, <command>DELETE</command> возвращает метку команды в виде <screen>
+DELETE <replaceable class="parameter">число</replaceable>
+</screen> Здесь <replaceable class="parameter">число</replaceable> — количество удалённых строк. Заметьте, что это число может быть меньше числа строк, соответствующих <replaceable class="parameter">условию</replaceable>, если удаления были подавлены триггером <literal>BEFORE DELETE</literal>. Если <replaceable class="parameter">число</replaceable> равно 0, это означает, что запрос не удалил ни одной строки (это не считается ошибкой).</para>
+
+  <para>Если команда <command>DELETE</command> содержит предложение <literal>RETURNING</literal>, её результат будет похож на результат оператора <command>SELECT</command> (с теми же столбцами и значениями, что содержатся в списке <literal>RETURNING</literal>), полученный для строк, удалённых этой командой.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para><productname>&productname;</productname> позволяет ссылаться на столбцы других таблиц в условии <literal>WHERE</literal>, когда эти таблицы перечисляются в предложении <literal>USING</literal>. Например, удалить все фильмы определённого продюсера можно так: <programlisting>DELETE FROM films USING producers
+  WHERE producer_id = producers.id AND producers.name = 'foo';</programlisting> По сути в этом запросе выполняется соединение таблиц <structname>films</structname> и <structname>producers</structname>, и все успешно включённые в соединение строки в <structname>films</structname> помечаются для удаления. Этот синтаксис не соответствует стандарту. Следуя стандарту, эту задачу можно решить так: <programlisting>DELETE FROM films
+  WHERE producer_id IN (SELECT id FROM producers WHERE name = 'foo');</programlisting> В ряде случаев запрос в стиле соединения легче написать и он может работать быстрее, чем в стиле вложенного запроса.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление всех фильмов, кроме мюзиклов: <programlisting>DELETE FROM films WHERE kind &lt;&gt; 'Musical';</programlisting></para>
+
+  <para>Очистка таблицы <literal>films</literal>: <programlisting>DELETE FROM films;</programlisting></para>
+
+  <para>Удаление завершённых задач с получением всех данных удалённых строк: <programlisting>DELETE FROM tasks WHERE status = 'DONE' RETURNING *;</programlisting></para>
+
+   <para>Удаление из <structname>tasks</structname> строки, на которой в текущий момент располагается курсор <literal>c_tasks</literal>: <programlisting>DELETE FROM tasks WHERE CURRENT OF c_tasks;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Эта команда соответствует стандарту <acronym>SQL</acronym>, но предложения <literal>USING</literal> и <literal>RETURNING</literal> являются расширениями <productname>&productname;</productname>, как и возможность использовать <literal>WITH</literal> с <command>DELETE</command>.</para>
+ </refsect1>
+</refentry>

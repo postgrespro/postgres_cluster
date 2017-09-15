@@ -1,0 +1,2010 @@
+<!--
+doc/src/xml/ref/psql-ref.xml
+&productname; documentation
+-->
+
+<refentry id="app-psql">
+ <indexterm zone="app-psql"><primary>psql</primary></indexterm>
+
+  <refmeta>
+    <refentrytitle><application>psql</application></refentrytitle>
+    <manvolnum>1</manvolnum>
+    <refmiscinfo>Приложение</refmiscinfo>
+  </refmeta>
+
+  <refnamediv>
+    <refname><application>psql</application></refname>
+    <refpurpose>Интерактивный терминал <productname>&productname;</productname></refpurpose>
+  </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>psql</command>
+   <arg rep="repeat"><replaceable class="parameter">параметр</replaceable></arg>
+   <arg choice="opt"><replaceable class="parameter">имя_бд</replaceable>
+   <arg choice="opt"><replaceable class="parameter">имя_пользователя</replaceable></arg></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+    <para>Программа <application>psql</application> — это терминальный клиент для работы с <productname>&productname;</productname>. Она позволяет интерактивно вводить запросы, передавать их в <productname>&productname;</productname> и видеть результаты. Также запросы могут быть получены из файла или из аргументов командной строки. Кроме того, <application>psql</application> предоставляет ряд метакоманд и различные возможности, подобные тем, что имеются у командных оболочек, для облегчения написания скриптов и автоматизации широкого спектра задач.</para>
+ </refsect1>
+
+ <refsect1 id="r1-app-psql-3">
+  <title>Параметры</title>
+
+  <variablelist>
+    <varlistentry>
+      <term><option>-a</option></term>
+      <term><option>--echo-all</option></term>
+      <listitem>
+      <para>Отправляет на стандартный вывод все непустые входные строки по мере их чтения. (Это не относится к строкам, считанным в интерактивном режиме.) Эквивалентно установке переменной <varname>ECHO</varname> в значение <literal>all</literal>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-A</option></term>
+      <term><option>--no-align</option></term>
+      <listitem>
+      <para>Переключение на невыровненный режим вывода. (По умолчанию, наоборот, используется выровненный режим вывода.)</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-b</option></term>
+      <term><option>--echo-errors</option></term>
+      <listitem>
+      <para>Посылает все команды SQL с ошибками на стандартный вывод. Равнозначно присвоению переменной <varname>ECHO</varname> значения <literal>errors</literal>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-c <replaceable class="parameter">команда</replaceable></option></term>
+      <term><option>--command=<replaceable class="parameter">команда</replaceable></option></term>
+      <listitem>
+      <para>Передаёт <application>psql</application> <replaceable class="parameter">команду</replaceable> для выполнения. Этот ключ можно повторять и комбинировать в любом порядке с ключом <option>-f</option>. Когда указывается <option>-c</option> или <option>-f</option>, <application>psql</application> не читает команды со стандартного ввода; вместо этого она завершается сразу после обработки всех ключей <option>-c</option> и <option>-f</option> по порядку.</para>
+      <para>Заданная <replaceable class="parameter">команда</replaceable> должна быть либо командной строкой, которая полностью интерпретируется сервером (т. е. не использует специфические функции <application>psql</application>), либо одиночной командой с обратной косой чертой. Таким образом, используя <option>-c</option>, нельзя смешивать метакоманды <acronym>SQL</acronym> и <application>psql</application>. Но это можно сделать, передав несколько ключей <option>-c</option> или передав строку в <application>psql</application> через канал: <programlisting>psql -c '\x' -c 'SELECT * FROM foo;'</programlisting> или <programlisting>echo '\x \\ SELECT * FROM foo;' | psql</programlisting> (<literal>\\</literal> — разделитель метакоманд.)</para>
+      <para>Каждая строка <acronym>SQL</acronym>-команд, заданная ключом <option>-c</option>, передаётся на сервер как один запрос. Поэтому сервер выполняет её в одной транзакции, даже когда эта строка содержит несколько команд <acronym>SQL</acronym>, если только в ней не содержатся явные команды <command>BEGIN</command>/<command>COMMIT</command>, разделяющие её на несколько транзакций. Кроме того, <application>psql</application> печатает результат только последней <acronym>SQL</acronym>-команды в строке. Это отличается от того поведения, когда та же строка считывается из файла или подаётся на стандартный ввод <application>psql</application>, так как в последнем случае <application>psql</application> передаёт каждую команду <acronym>SQL</acronym> отдельно.</para>
+      <para>Из-за такого поведения указание нескольких команд в одной строке <option>-c</option> часто приводит к неожиданным результатам. Поэтому лучше использовать несколько ключей <option>-c</option> или подавать команды на стандартный ввод <application>psql</application>, применяя либо <application>echo</application>, как показано выше, либо создаваемый прямо в оболочке документ, например: <programlisting>psql &lt;&lt;EOF
+\x
+SELECT * FROM foo;
+EOF</programlisting></para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-d <replaceable class="parameter">имя_бд</replaceable></option></term>
+      <term><option>--dbname=<replaceable class="parameter">имя_бд</replaceable></option></term>
+      <listitem>
+      <para>Указывает имя базы данных для подключения. Эквивалентно указанию <replaceable class="parameter">dbname</replaceable> в качестве первого аргумента, не являющегося параметром в командной строке.</para>
+      <para>Если этот параметр содержит знак <symbol>=</symbol> или начинается с допустимого префикса <acronym>URI</acronym> (<literal>postgresql://</literal> или <literal>postgres://</literal>), он воспринимается как строка <parameter>conninfo</parameter>. За дополнительными сведениями обратитесь к <xref remap="3" linkend="libpq-connstring"/>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-e</option></term>
+      <term><option>--echo-queries</option></term>
+      <listitem>
+      <para>Посылает все команды SQL, отправленные на сервер, ещё и на стандартный вывод. Эквивалентно установке переменной <varname>ECHO</varname> в значение <literal>queries</literal>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-E</option></term>
+      <term><option>--echo-hidden</option></term>
+      <listitem>
+      <para>Отображает фактические запросы, генерируемые <command>\d</command> и другими командами, начинающимися с \. Это можно использовать для изучения внутренних операций в <application>psql</application>. Эквивалентно установке переменной <varname>ECHO_HIDDEN</varname> значения <literal>on</literal>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-f <replaceable class="parameter">имя_файла</replaceable></option></term>
+      <term><option>--file=<replaceable class="parameter">имя_файла</replaceable></option></term>
+      <listitem>
+      <para>Читает команды из файла <replaceable class="parameter">имя_файла</replaceable>, а не из стандартного ввода. Этот ключ можно повторять и комбинировать в любом порядке с ключом <option>-c</option>. Если указан ключ <option>-c</option> или <option>-f</option>, программа <application>psql</application> не читает команды со стандартного ввода; вместо этого она завершается после обработки всех ключей <option>-c</option> и <option>-f</option> по очереди. Не считая этого, данный ключ по большому счёту равнозначен метакоманде <command>\i</command>.</para>
+
+      <para>Если <replaceable>имя_файла</replaceable> задано символом <literal>-</literal> (минус), считывается стандартный ввод до признака конца файла или до метакоманды <command>\q</command>. Это позволяет перемежать интерактивный ввод с вводом из файлов. Однако заметьте, что Readline в этом случае не применяется (так же, как и с ключом <option>-n</option>).</para>
+
+      <para>Использование этого параметра немного отличается от <literal>psql &lt; <replaceable class="parameter">filename</replaceable></literal>. В основном, оба варианта будут делать то, что вы ожидаете, но с <literal>-f</literal> доступны некоторые полезные свойства, такие как сообщения об ошибках с номерами строк. Также есть небольшая вероятность, что запуск в таком режиме будет быстрее. С другой стороны, вариант с перенаправлением ввода из командного интерпретатора (в теории) гарантирует получение точно такого же вывода, какой вы получили бы, если бы ввели всё вручную.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-F <replaceable class="parameter">separator</replaceable></option></term>
+      <term><option>--field-separator=<replaceable class="parameter">separator</replaceable></option></term>
+      <listitem>
+      <para>Использование <replaceable class="parameter">separator</replaceable> в качестве разделителя полей при невыровненном режиме вывода. Эквивалентно <command>\pset fieldsep</command> или <command>\f</command>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-h <replaceable class="parameter">компьютер</replaceable></option></term>
+      <term><option>--host=<replaceable class="parameter">компьютер</replaceable></option></term>
+      <listitem>
+      <para>Указывает имя компьютера, на котором запущен сервер. Если значение начинается с косой черты, оно интерпретируется как имя каталога с доменным сокетом Unix.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-H</option></term>
+      <term><option>--html</option></term>
+      <listitem>
+      <para>Включает табличный вывод в формате <acronym>HTML</acronym>. Эквивалентно <literal>\pset format html</literal> или команде <command>\H</command>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-l</option></term>
+      <term><option>--list</option></term>
+      <listitem>
+      <para>Выводит список всех доступных баз данных и завершает работу. Другие параметры, не связанные с соединением, игнорируются. Это похоже на метакоманду <command>\list</command>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-L <replaceable class="parameter">имя_файла</replaceable></option></term>
+      <term><option>--log-file=<replaceable class="parameter">имя_файла</replaceable></option></term>
+      <listitem>
+      <para>В дополнение к обычному выводу, записывает вывод результатов всех запросов в файл <replaceable class="parameter">filename</replaceable>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-n</option></term>
+      <term><option>--no-readline</option></term>
+      <listitem>
+      <para>Отключает использование <application>Readline</application> для редактирования командной строки и использования истории команд. Может быть полезно для выключения расширенных действий клавиши табуляции при вырезании и вставке.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-o <replaceable class="parameter">имя_файла</replaceable></option></term>
+      <term><option>--output=<replaceable class="parameter">имя_файла</replaceable></option></term>
+      <listitem>
+      <para>Записывает вывод результатов всех запросов в файл <replaceable class="parameter">filename</replaceable>. Эквивалентно команде <command>\o</command>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-p <replaceable class="parameter">порт</replaceable></option></term>
+      <term><option>--port=<replaceable class="parameter">порт</replaceable></option></term>
+      <listitem>
+      <para>Задаёт TCP-порт или файл локального доменного сокета Unix, через который сервер принимает подключения. Значение по умолчанию определяется переменной среды <envar>PGPORT</envar>, а если она не установлена, выбирается порт, указанный при компиляции, обычно 5432.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-P <replaceable class="parameter">assignment</replaceable></option></term>
+      <term><option>--pset=<replaceable class="parameter">assignment</replaceable></option></term>
+      <listitem>
+      <para>Задаёт параметры печати, в стиле команды <command>\pset</command>. Обратите внимание, что имя параметра и значение разделяются знаком равенства, а не пробела. Например, чтобы установить формат вывода в <application>LaTeX</application>, нужно написать <literal>-P format=latex</literal>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-q</option></term>
+      <term><option>--quiet</option></term>
+      <listitem>
+      <para>Указывает, что <application>psql</application> должен работать без вывода дополнительных сообщений. По умолчанию, выводятся приветствия и различные информационные сообщения. Этого не произойдёт с использованием данного параметра. Полезно вместе с параметром <option>-c</option>. Этот же эффект можно получить, установив для переменной <varname>QUIET</varname> значение <literal>on</literal>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-R <replaceable class="parameter">separator</replaceable></option></term>
+      <term><option>--record-separator=<replaceable class="parameter">separator</replaceable></option></term>
+      <listitem>
+      <para>Использует <replaceable class="parameter">separator</replaceable> как разделитель записей при невыровненном режиме вывода. Эквивалентно команде <command>\pset recordsep</command>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-s</option></term>
+      <term><option>--single-step</option></term>
+      <listitem>
+      <para>Запуск в пошаговом режиме. Это означает, что пользователь будет подтверждать выполнение каждой команды, отправляемой на сервер, с возможностью отменить выполнение. Используется для отладки скриптов.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-S</option></term>
+      <term><option>--single-line</option></term>
+      <listitem>
+      <para>Запуск в однострочном режиме, при котором символ новой строки завершает SQL-команды, также как это делает точка с запятой.</para>
+
+      <note>
+      <para>Этот режим реализован для тех, кому он нужен, но это не обязательно означает, что и вам нужно его использовать. В частности, если смешивать в одной строке команды <acronym>SQL</acronym> и метакоманды, порядок их выполнения может быть не всегда понятен для неопытного пользователя.</para>
+      </note>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-t</option></term>
+      <term><option>--tuples-only</option></term>
+      <listitem>
+      <para>Отключает вывод имён столбцов и результирующей строки с количеством выбранных записей. Эквивалентно команде <command>\t</command>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-T <replaceable class="parameter">table_options</replaceable></option></term>
+      <term><option>--table-attr=<replaceable class="parameter">table_options</replaceable></option></term>
+      <listitem>
+      <para>Задаёт атрибуты, которые будут вставлены в тег <acronym>HTML</acronym> <sgmltag>table</sgmltag>. За подробностями обратитесь к описанию <command>\pset</command>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-U <replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <term><option>--username=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <listitem>
+      <para>Подключение к базе данных под пользователем <replaceable class="parameter">username</replaceable> вместо используемого по умолчанию. (Разумеется, при наличии прав на это.)</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-v <replaceable class="parameter">assignment</replaceable></option></term>
+      <term><option>--set=<replaceable class="parameter">assignment</replaceable></option></term>
+      <term><option>--variable=<replaceable class="parameter">assignment</replaceable></option></term>
+      <listitem>
+      <para>Выполняет присвоение значения переменной, как метакоманда <command>\set</command>. Обратите внимание на то, что необходимо разделить имя переменной и значение (при наличии) знаком равенства в командной строке. Чтобы сбросить переменную, опустите знак равенства. Чтобы установить пустое значение, поставьте знак равенства, но опустите значение. Присваивания выполняются на очень ранней стадии запуска, поэтому если переменные зарезервированы для внутренних целей, то позже они могут быть перезаписаны.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-V</option></term>
+      <term><option>--version</option></term>
+      <listitem>
+      <para>Выводит версию <application>psql</application> и завершает работу.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-w</option></term>
+     <term><option>--no-password</option></term>
+     <listitem>
+      <para>Не выдавать запрос на ввод пароля. Если сервер требует аутентификацию по паролю и пароль не доступен с помощью других средств, таких как файл <filename>.pgpass</filename>, попытка соединения не удастся. Этот параметр может быть полезен в пакетных заданиях и скриптах, где нет пользователя, который вводит пароль.</para>
+
+      <para>Обратите внимание, что этот параметр действует на протяжении всей сессии и, таким образом, влияет на метакоманду <command>\connect</command>, также как и на первую попытку соединения.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-W</option></term>
+      <term><option>--password</option></term>
+      <listitem>
+      <para>Принудительно запрашивать пароль перед подключением к базе данных.</para>
+
+      <para>Это несущественный параметр, так как <application>psql</application> запрашивает пароль автоматически, если сервер проверяет подлинность по паролю. Однако, чтобы понять это, <application>psql</application> лишний раз подключается к серверу. Поэтому иногда имеет смысл ввести <option>-W</option>, чтобы исключить эту ненужную попытку подключения.</para>
+
+      <para>Обратите внимание, что этот параметр действует на протяжении всей сессии и, таким образом, влияет на метакоманду <command>\connect</command>, также как и на первую попытку соединения.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-x</option></term>
+      <term><option>--expanded</option></term>
+      <listitem>
+      <para>Включает режим развёрнутого вывода таблицы. Эквивалентно команде <command>\x</command>.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-X,</option></term>
+      <term><option>--no-psqlrc</option></term>
+      <listitem>
+      <para>Не читать стартовые файлы (ни общесистемный файл <filename>psqlrc</filename>, ни пользовательский файл <filename>~/.psqlrc</filename>).</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-z</option></term>
+      <term><option>--field-separator-zero</option></term>
+      <listitem>
+      <para>Установить нулевой байт в качестве разделителя полей для невыровненного режима вывода.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-0</option></term>
+      <term><option>--record-separator-zero</option></term>
+      <listitem>
+      <para>Установить нулевой байт в качестве разделителя записей для невыровненного режима вывода. Это полезно при взаимодействии с другими программами, например, с <literal>xargs -0</literal>.</para>
+      </listitem>
+    </varlistentry>
+
+     <varlistentry>
+      <term><option>-1</option></term>
+      <term><option>--single-transaction</option></term>
+      <listitem>
+       <para>Этот параметр может применяться только в сочетании с одним или несколькими параметрами <option>-c</option> и/или <option>-f</option>. С ним <application>psql</application> выполняет команду <command>BEGIN</command> перед обработкой первого такого параметра и <command>COMMIT</command> после последнего, заворачивая таким образом все команды в одну транзакцию. Это гарантирует, что либо все команды завершатся успешно, либо никакие изменения не сохранятся.</para>
+
+       <para>Если в самих этих командах содержатся операторы <command>BEGIN</command>, <command>COMMIT</command> или <command>ROLLBACK</command>, этот параметр не даст желаемого эффекта. Кроме того, если какая-либо отдельная команда не может выполняться внутри блока транзакции, с этим параметром вся транзакция прервётся с ошибкой.</para>
+      </listitem>
+     </varlistentry>
+
+    <varlistentry>
+      <term><option>-?</option></term>
+      <term><option>--help[=<replaceable class="parameter">тема</replaceable>]</option></term>
+      <listitem>
+      <para>Показать справку по <application>psql</application> и завершиться. Необязательный параметр <replaceable class="parameter">тема</replaceable> (по умолчанию <literal>options</literal>) выбирает описание интересующей части <application>psql</application>: <literal>commands</literal> описывает команды <application>psql</application> с обратной косой чертой; <literal>options</literal> описывает параметры командной строки, которые можно передать <application>psql</application>; а <literal>variables</literal> выдаёт справку по переменным конфигурации <application>psql</application>.</para>
+      </listitem>
+    </varlistentry>
+
+  </variablelist>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Код завершения</title>
+
+  <para>При нормальном завершении <application>psql</application> возвращает 0 в командную оболочку ОС, 1 — если произошла фатальная ошибка в самом <application>psql</application> (например, нехватка памяти, файл не найден), 2 — при неудачном соединении с сервером неинтерактивного сеанса, 3 — при ошибке в скрипте и установленной переменной <varname>ON_ERROR_STOP</varname>.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Использование</title>
+
+  <refsect2 id="r2-app-psql-connecting">
+    <title>Подключение к базе данных</title>
+
+    <para><application>psql</application> это клиент для <productname>&productname;</productname>. Для подключения к базе данных нужно знать имя базы данных, имя сервера, номер порта сервера и имя пользователя, под которым вы хотите подключиться. Эти свойства можно задать через аргументы командной строки, а именно <option>-d</option>, <option>-h</option>, <option>-p</option> и <option>-U</option> соответственно. Если в командной строке есть аргумент, который не относится к параметрам <application>psql</application>, то он используется в качестве имени базы данных (или имени пользователя, если база данных уже задана). Задавать все эти аргументы необязательно, у них есть разумные значения по умолчанию. Если опустить имя сервера, <application>psql</application> будет подключаться через доменный сокет Unix к локальному серверу, либо подключаться к <literal>localhost</literal> по TCP/IP в системах, не поддерживающих UNIX-сокеты. Номер порта по умолчанию определяется во время компиляции. Поскольку сервер базы данных использует то же значение по умолчанию, чаще всего указывать номер порта не нужно. Имя пользователя по умолчанию, как и имя базы данных по умолчанию, совпадает с именем пользователя в операционной системе. Заметьте, что просто так подключаться к любой базе данных под любым именем пользователя вы не сможете. Узнать о ваших правах можно у администратора баз данных.</para>
+
+    <para>Если значения по умолчанию не подходят, можно сэкономить на вводе параметров подключения, установив переменные среды <envar>PGDATABASE</envar>, <envar>PGHOST</envar>, <envar>PGPORT</envar> и/или <envar>PGUSER</envar>. (Другие переменные среды описаны в <xref remap="6" linkend="libpq-envars"/>.) Также удобно иметь файл <filename>~/.pgpass</filename>, чтобы не вводить пароли снова и снова. За дополнительными сведениями обратитесь к <xref remap="3" linkend="libpq-pgpass"/>.</para>
+
+    <para>Альтернативный способ указать параметры подключения это использование строки <parameter>conninfo</parameter> или <acronym>URI</acronym> вместо имени базы данных. Этот механизм даёт широкие возможности по управлению параметрами подключения. Например: <programlisting>$ <userinput>psql "service=myservice sslmode=require"</userinput>
+$ <userinput>psql postgresql://dbmaster:5433/mydb?sslmode=require</userinput></programlisting> Этот способ также позволяет использовать <acronym>LDAP</acronym> для получения параметров подключения, как описано в <xref remap="6" linkend="libpq-ldap"/>. Более полно все имеющиеся параметры соединения описаны в <xref remap="6" linkend="libpq-paramkeywords"/>.</para>
+
+    <para>Если соединение не может быть установлено по любой причине (например, нет прав, сервер не работает и т. д.), <application>psql</application> вернёт ошибку и прекратит работу.</para>
+
+    <para>Если и стандартный ввод, и стандартный вывод являются терминалом, то <application>psql</application> установит кодировку клиента в <quote>auto</quote>, и подходящая клиентская кодировка будет определяться из локальных установок (переменная окружения <envar>LC_CTYPE</envar> в Unix). Если это работает не так, как ожидалось, кодировку клиента можно изменить, установив переменную окружения <envar>PGCLIENTENCODING</envar>.</para>
+  </refsect2>
+
+  <refsect2 id="r2-app-psql-4">
+    <title>Ввод SQL-команд</title>
+
+    <para>Как правило, приглашение <application>psql</application> состоит из имени базы данных, к которой <application>psql</application> в данный момент подключён, а затем строки <literal>=&gt;</literal>. Например: <programlisting>$ <userinput>psql testdb</userinput>
+psql (&version;)
+Type "help" for help.
+
+testdb=&gt;</programlisting></para>
+
+    <para>В командной строке пользователь может вводить команды <acronym>SQL</acronym>. Обычно введённые строки отправляются на сервер, когда встречается точка с запятой, завершающая команду. Конец строки не завершает команду. Это позволяет разбивать команды на несколько строк для лучшего понимания. Если команда была отправлена и выполнена без ошибок, то результат команды выводится на экран.</para>
+
+    <para>При каждом выполнении команды <application>psql</application> также проверяет асинхронные уведомления о событиях, генерируемые командами <xref linkend="sql-listen"/> и <xref linkend="sql-notify"/>.</para>
+
+    <para>Комментарии в стиле C передаются для обработки на сервер, в то время как комментарии в стандарте SQL <application>psql</application> удаляет перед отправкой.</para>
+  </refsect2>
+
+  <refsect2 id="app-psql-meta-commands">
+    <title>Метакоманды</title>
+
+    <para>Всё, что вводится в <application>psql</application> не взятое в кавычки и начинающееся с обратной косой черты, является метакомандой <application>psql</application> и обрабатывается самим <application>psql</application>. Эти команды делают <application>psql</application> полезным для задач администрирования и разработки скриптов.</para>
+
+    <para>Формат команды <application>psql</application> следующий: обратная косая черта, сразу за ней команда, затем аргументы. Аргументы отделяются от команды и друг от друга любым количеством пробелов.</para>
+
+    <para>Чтобы включить пробел в значение аргумента, нужно заключить его в одинарные кавычки. Чтобы включить одинарную кавычку в значение аргумента, нужно написать две одинарные кавычки внутри текста в одинарных кавычках. Всё, что содержится в одинарных кавычках подлежит заменам, принятым в языке C: <literal>\n</literal> (новая строка), <literal>\t</literal> (табуляция), <literal>\b</literal> (backspace), <literal>\r</literal> (возврат каретки), <literal>\f</literal> (подача страницы), <literal>\</literal><replaceable>цифры</replaceable> (восьмеричное число), и <literal>\x</literal><replaceable>цифры</replaceable> (шестнадцатеричное число). Если внутри текста в одинарных кавычках встречается обратная косая перед любым другим символом, то она экранирует этот символ.</para>
+
+    <para>Текст аргумента, заключённый в обратные кавычки (<literal>`</literal>), считается командной строкой, которая передаётся в командную оболочку ОС. Вывод от этой команды (с удалёнными в конце символами новой строки) заменяет текст в обратных кавычках.</para>
+
+    <para>Если внутри аргумента не в кавычках встречается имя переменной <application>psql</application> с предшествующим двоеточием (<literal>:</literal>), оно заменяется значением переменной, как описано в <xref remap="6" linkend="app-psql-interpolation" endterm="app-psql-interpolation-title"/>.</para>
+
+    <para>Некоторые команды принимают идентификатор <acronym>SQL</acronym> (например, имя таблицы) в качестве аргумента. Такие аргументы следуют правилам синтаксиса <acronym>SQL</acronym>: буквы, не взятые в кавычки, преобразуются в нижний регистр, буквы, взятые в двойные кавычки (<literal>"</literal>) предотвращают преобразование регистра и позволяют включать пробелы в идентификатор. Внутри двойных кавычек две двойные кавычки сокращаются до одной. Например, <literal>FOO"BAR"BAZ</literal> интерпретируется как <literal>fooBARbaz</literal>, а <literal>"A weird"" name"</literal> становится <literal>A weird" name</literal>.</para>
+
+    <para>Разбор аргументов останавливается в конце строки или когда встречается другая обратная косая черта, не внутри кавычек. Обратная косая не внутри кавычек рассматривается как начало новой метакоманды. Специальная последовательность <literal>\\</literal> (две обратных косых черты) обозначает окончание аргументов, далее продолжается разбор команд <acronym>SQL</acronym>, если таковые имеются. Таким образом, команды <acronym>SQL</acronym> и <application>psql</application> можно свободно смешивать на одной строке. Но в любом случае, аргументы метакоманды не могут выходить за пределы текущей строки.</para>
+
+    <para>Определены следующие метакоманды: <variablelist>
+      <varlistentry>
+        <term><literal>\a</literal></term>
+        <listitem>
+        <para>Если текущий режим вывода таблицы невыровненный, то он переключается на выровненный режим. Если текущий режим выровненный, то устанавливается невыровненный. Эта команда поддерживается для обратной совместимости. См. <command>\pset</command> для более общего решения.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\c</literal> или <literal>\connect [ -reuse-previous=<replaceable class="parameter">on|off</replaceable> ] [ <replaceable class="parameter">имя_базы</replaceable> [ <replaceable class="parameter">имя_пользователя</replaceable> ] [ <replaceable class="parameter">компьютер</replaceable> ] [ <replaceable class="parameter">порт</replaceable> ] | <replaceable class="parameter">строка_подключения</replaceable> ]</literal></term>
+        <listitem>
+        <para>Устанавливает новое подключение к серверу <productname>&productname;</productname>. Параметры подключения можно указывать как позиционно (в показанном порядке), так и передавая аргумент <replaceable>строка_подключения</replaceable> (подробнее о строках подключения рассказывается в <xref remap="6" linkend="libpq-connstring"/>).</para>
+
+        <para>Когда в команде опускается имя базы данных, пользователь, компьютер или порт, для нового подключения могут использоваться значения от предыдущего. По умолчанию значения от предыдущего подключения используются повторно, если только не указывается строка подключения (<replaceable>строка_подключения</replaceable>). Если передать в первом аргументе <literal>-reuse-previous=on</literal> или <literal moreinfo="none">-reuse-previous=off</literal>, это поведение переопределяется. Когда в команде не задаётся или не используется повторно некоторый параметр, применяется значение по умолчанию, принятое в <application>libpq</application>. Указание в параметре <replaceable class="parameter">имя_базы</replaceable>, <replaceable class="parameter">имя_пользователя</replaceable>, <replaceable class="parameter">компьютер</replaceable> или <replaceable class="parameter">порт</replaceable> значения <literal>-</literal> равносильно опущению этого параметра.</para>
+
+        <para>Если новое подключение успешно установлено, предыдущее подключение закрывается. Если попытка подключения не удалась (неверное имя пользователя, доступ запрещён и т. д.), то предыдущее соединение останется активным, только если <application>psql</application> находится в интерактивном режиме. Если скрипт выполняется неинтерактивно, обработка немедленно останавливается с сообщением об ошибке. Различное поведение выбрано для удобства пользователя в качестве защиты от опечаток с одной стороны и в качестве меры безопасности, не позволяющей случайно запустить скрипты в неправильной базе, с другой.</para>
+
+        <para>Примеры:</para>
+<programlisting>=&gt; \c mydb myuser host.dom 6432
+=&gt; \c service=foo
+=&gt; \c "host=localhost port=5432 dbname=mydb connect_timeout=10 sslmode=disable"
+=&gt; \c postgresql://tom@localhost/mydb?application_name=myapp</programlisting>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\C [ <replaceable class="parameter">заголовок</replaceable> ]</literal></term>
+        <listitem>
+        <para>Задаёт заголовок, который будет выводиться для результатов любых запросов или отменяет установленный ранее заголовок. Эта команда эквивалентна <literal>\pset title <replaceable class="parameter">title</replaceable></literal>. (Название этой команды происходит от <quote>caption</quote>, так как ранее это использовалось только для задания заголовков <acronym>HTML</acronym> таблиц.)</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><literal>\cd [ <replaceable>каталог</replaceable> ]</literal></term>
+       <listitem>
+        <para>Заменяет текущий рабочий каталог на <replaceable>directory</replaceable>. Без аргумента устанавливается домашний каталог текущего пользователя.</para>
+
+        <tip>
+         <para>для печати текущего рабочего каталога используйте <literal>\! pwd</literal>.</para>
+        </tip>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\conninfo</literal></term>
+        <listitem>
+        <para>Выводит информацию о текущем подключении к базе данных.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry id="app-psql-meta-commands-copy">
+        <term><literal>\copy { <replaceable class="parameter">таблица</replaceable> [ ( <replaceable class="parameter">список_столбцов</replaceable> ) ] | ( <replaceable class="parameter">запрос</replaceable> ) } { <literal>from</literal> | <literal>to</literal> } { <replaceable class="parameter">'имя_файла'</replaceable> | program <replaceable class="parameter">'команда'</replaceable> | stdin | stdout | pstdin | pstdout } [ [ with ] ( <replaceable class="parameter">параметр</replaceable> [, ...] ) ]</literal></term>
+
+        <listitem>
+        <para>Производит копирование данных с участием клиента. При этом выполняется <acronym>SQL</acronym>-команда <xref linkend="sql-copy"/>, но вместо чтения или записи в файл на сервере, <application>psql</application> читает или записывает файл и пересылает данные между сервером и локальной файловой системой. Это означает, что для доступа к файлам используются привилегии локального пользователя, а не сервера, и не требуются привилегии суперпользователя SQL.</para>
+
+        <para>Когда указана <literal>program</literal>, <application>psql</application> выполняет <replaceable class="parameter">command</replaceable> и данные из/в <replaceable class="parameter">command</replaceable> передаются между сервером и клиентом. Это опять же означает, что для выполнения программ используются привилегии локального пользователя, а не сервера, и не требуются привилегии суперпользователя SQL.</para>
+
+        <para>При выполнении <literal>\copy ... from stdin</literal> строки с данными считываются из источника, выполнившего команду, и считываются до тех пор, пока не встретится <literal>\.</literal> или не будет достигнут конец файла. Этот параметр полезен для заполнения таблиц прямо в SQL-скриптах. При выполнении <literal>\copy ... to stdout</literal> вывод направляется в то же место, что и вывод <application>psql</application> команд. Статус команды <literal>COPY <replaceable>count</replaceable></literal> не отображается, чтобы не перепутать со строкой данных. Для чтения/записи стандартного ввода/вывода <application>psql</application>, вне зависимости от источника текущей команды или параметра <literal>\o</literal>, используйте <literal>from pstdin</literal> или <literal>to pstdout</literal>.</para>
+
+        <para>Синтаксис команды похож на синтаксис <acronym>SQL</acronym>-команды <xref linkend="sql-copy"/>. Все параметры, кроме источника и получателя данных, соответствуют параметрам <xref linkend="sql-copy"/>. Поэтому к команде <command>\copy</command> применяются специальные правила разбора. В частности, не применяются правила подстановки переменных и экранирование с обратной косой чертой.</para>
+
+        <tip>
+        <para>Эта операция не так эффективна, как <acronym>SQL</acronym>-команда <command>COPY</command>, потому что все данные перемещаются между клиентом и сервером. Для больших объёмов данных <acronym>SQL</acronym>-команда может быть предпочтительнее.</para>
+        </tip>
+
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\copyright</literal></term>
+        <listitem>
+        <para>Показывает информацию об авторских правах и условиях распространения <productname>&productname;</productname>.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry id="app-psql-meta-commands-crosstabview">
+        <term><literal>\crosstabview [ <replaceable class="parameter">столбВ</replaceable> [ <replaceable class="parameter">столбГ</replaceable> [ <replaceable class="parameter">столбТ</replaceable> [ <replaceable class="parameter">столбсортГ</replaceable> ] ] ] ]</literal></term>
+        <listitem>
+        <para>Выполняет содержимое буфера текущего запроса (как <literal>\g</literal>) и показывает результат в виде перекрёстной таблицы. Заданный запрос должен возвращать минимум три столбца. Столбец результата, заданный параметром <replaceable class="parameter">столбВ</replaceable>, будет образовывать вертикальные заголовки, а столбец, заданный параметром <replaceable class="parameter">столбГ</replaceable>, — горизонтальные. Заданный параметром <replaceable class="parameter">столбТ</replaceable> столбец будет поставлять данные для отображения внутри таблицы. Столбец, выбранный параметром <replaceable class="parameter">столбсортГ</replaceable>, будет необязательным столбцом сортировки горизонтальных заголовков.</para>
+
+        <para>Каждое указание столбца может представлять собой имя или номер столбца (начиная с 1). К именам применяются обычные принятые в SQL правила учёта регистра и кавычек. По умолчанию в качестве <replaceable class="parameter">столбВ</replaceable> подразумевается столбец 1, а в качестве <replaceable class="parameter">столбГ</replaceable> — столбец 2. Если <replaceable class="parameter">столбВ</replaceable> и <replaceable class="parameter">столбГ</replaceable> задаются явно, они должны различаться. Если <replaceable class="parameter">столбТ</replaceable> не задан, в результате запроса должно быть ровно три столбца, и в качестве <replaceable class="parameter">столбТ</replaceable> выбирается столбец, отличный от <replaceable class="parameter">столбВ</replaceable> и <replaceable class="parameter">столбГ</replaceable>.</para>
+
+        <para>Вертикальный заголовок, выводимый в самом левом столбце, содержит значения из столбца <replaceable class="parameter">столбВ</replaceable>, в том же порядке, в каком их возвращает запрос, но без дубликатов.</para>
+
+        <para>Горизонтальный заголовок, выводимый в первой строке, содержит значения из столбца <replaceable class="parameter">столбГ</replaceable>, без дубликатов. По умолчанию они располагаются в том порядке, в каком их возвращает запрос. Но если задан необязательный аргумент <replaceable class="parameter">столбсортГ</replaceable>, он определяет столбец, который должен содержать целые числа, и тогда значения из <replaceable class="parameter">столбГ</replaceable> будут располагаться в горизонтальном заголовке по порядку значений в <replaceable class="parameter">столбсортГ</replaceable>.</para>
+
+        <para>Внутри перекрёстной таблицы для каждого уникального значения <literal>x</literal> в <replaceable class="parameter">столбГ</replaceable> и каждого уникального значения <literal>y</literal> в <replaceable class="parameter">столбВ</replaceable>, ячейка, размещённая на пересечении <literal>(x,y)</literal> содержит значение <literal>столбТ</literal> в строке результата запроса, в которой значение <replaceable class="parameter">столбГ</replaceable> равно <literal>x</literal>, а значение <replaceable class="parameter">столбВ</replaceable> — <literal>y</literal>. Если такой строки не находится, ячейка остаётся пустой. Если же находится несколько таких строк, выдаётся ошибка.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\d[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+
+        <listitem>
+        <para>Для каждого отношения (таблицы, представления, материализованного представления, индекса, последовательности, внешней таблицы) или составного типа, соответствующих <replaceable class="parameter">шаблону</replaceable>, показывает все столбцы, их типы, табличное пространство (если оно изменено) и любые специальные атрибуты, такие как <literal>NOT NULL</literal> или значения по умолчанию. Также показываются связанные индексы, ограничения, правила и триггеры. Для сторонних таблиц также показывается связанный сторонний сервер. (<quote>Соответствие шаблону</quote> определяется ниже в <xref remap="6" linkend="app-psql-patterns" endterm="app-psql-patterns-title"/>.)</para>
+
+        <para>Для некоторых типов отношений <literal>\d</literal> показывает дополнительную информацию по каждому столбцу: значения столбца для последовательностей, индексируемые выражения для индексов и параметры обёртки сторонних данных для сторонних таблиц.</para>
+
+        <para>Вариант команды <literal>\d+</literal> похож на <literal>\d</literal>, но выводит больше информации: комментарии к столбцам таблицы, наличие в таблице OID, для представления показывается его определение, отличные от значений по умолчанию установки <link linkend="sql-createtable-replica-identity">replica identity</link>.</para>
+
+        <para>По умолчанию отображаются только объекты, созданные пользователем. Для включения системных объектов нужно задать шаблон или добавить модификатор <literal>S</literal>.</para>
+
+        <note>
+        <para>Если <command>\d</command> используется без аргумента <replaceable class="parameter">шаблон</replaceable>, эта команда удобства ради воспринимается как <command moreinfo="none">\dtvmsE</command> и выдаёт список всех видимых таблиц, представлений, мат. представлений, последовательностей и сторонних таблиц.</para>
+        </note>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\da[S] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+
+        <listitem>
+        <para>Выводит список агрегатных функций вместе с типом возвращаемого значения и типами данных, которыми они оперируют. Если указан <replaceable class="parameter">шаблон</replaceable>, показываются только те агрегатные функции, имена которых соответствуют ему. По умолчанию показываются только объекты, созданные пользователями. Для включения системных объектов нужно задать шаблон или добавить модификатор <literal>S</literal>.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\dA[+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+
+        <listitem>
+        <para>Выводит список методов доступа. Если указан <replaceable class="parameter">шаблон</replaceable>, показываются только те методы доступа, имена которых соответствуют ему. При добавлении <literal>+</literal> к имени команды для каждого метода доступа показывается его описание и связанная функция-обработчик.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\db[+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+
+        <listitem>
+        <para>Выводит список табличных пространств. Если указан <replaceable class="parameter">шаблон</replaceable>, показываются только те табличные пространства, имена которых соответствуют ему. При добавлении <literal>+</literal> к имени команды для каждого объекта дополнительно выводятся параметры, объём на диске, права доступа и описание.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\dc[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список преобразований между кодировками наборов символов. Если указан <replaceable class="parameter">шаблон</replaceable>, показываются только те преобразования кодировок, имена которых соответствуют ему. По умолчанию показываются только объекты, созданные пользователями. Для включения системных объектов нужно задать шаблон или добавить модификатор <literal>S</literal>. При добавлении <literal>+</literal> к имени команды для каждого объекта дополнительно будет выводиться описание.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\dC[+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список приведений типов. Если указан <replaceable class="parameter">шаблон</replaceable>, показываются только те приведения типов, имена которых соответствуют ему. При добавлении <literal>+</literal> к имени команды для каждого объекта дополнительно будет выводиться описание.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\dd[S] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Показывает описания объектов следующих видов: <literal>ограничение</literal>, <literal>класс операторов</literal>, <literal>семейство операторов</literal>, <literal>правило</literal> и <literal>триггер</literal>. Описания остальных объектов можно посмотреть соответствующими метакомандами для этих типов объектов.</para>
+
+        <para><literal>\dd</literal> показывает описания для объектов, соответствующих <replaceable class="parameter">шаблону</replaceable>, или для доступных объектов указанных типов, если аргументы не заданы. Но в любом случае выводятся только те объекты, которые имеют описание. По умолчанию показываются только объекты, созданные пользователями. Для включения системных объектов нужно задать шаблон или добавить модификатор <literal>S</literal>.</para>
+
+        <para>Описания объектов создаются <acronym>SQL</acronym>-командой <xref linkend="sql-comment"/>.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\ddp [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список прав доступа по умолчанию. Выводится строка для каждой роли (и схемы, если применимо), для которой права доступа по умолчанию отличаются от встроенных. Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся строки только для тех ролей и схем, чьи имена соответствуют ему.</para>
+
+        <para>Права доступа по умолчанию устанавливаются командой <xref linkend="sql-alterdefaultprivileges"/>. Смысл отображаемых привилегий объясняется в описании <xref linkend="sql-grant"/>.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\dD[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список доменов. Если указан <replaceable class="parameter">шаблон</replaceable>, показываются только те домены, имена которых соответствуют ему. По умолчанию показываются только объекты, созданные пользователями. Для включения системных объектов нужно задать шаблон или добавить модификатор <literal>S</literal>. При добавлении <literal>+</literal> к имени команды для каждого объекта дополнительно будут выводиться права доступа и описание.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\dE[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <term><literal>\di[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <term><literal>\dm[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <term><literal>\ds[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <term><literal>\dt[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <term><literal>\dv[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+
+        <listitem>
+        <para>В этой группе команд буквы <literal>E</literal>, <literal>i</literal>, <literal>m</literal>, <literal>s</literal>, <literal>t</literal> и <literal>v</literal> обозначают соответственно: внешнюю таблицу, индекс, материализованное представление, последовательность, таблицу и представление. Можно указывать все или часть этих букв, в произвольном порядке, чтобы получить список объектов этих типов. Например, <literal>\dit</literal> выводит список индексов и таблиц. При добавлении <literal>+</literal> к имени команды для каждого объекта дополнительно будут выводиться физический размер на диске и описание, при наличии. Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся только объекты, имена которых соответствуют ему. По умолчанию показываются только объекты, созданные пользователями. Для включения системных объектов нужно задать шаблон или добавить модификатор <literal>S</literal>.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\des[+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список сторонних серверов (мнемоника: <quote>external servers</quote>). Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся только те серверы, имена которых соответствуют ему. Если используется форма <literal>\des+</literal>, то выводится полное описание каждого сервера, включая права доступа, тип, версию, параметры и описание.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\det[+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список сторонних таблиц (мнемоника: <quote>external tables</quote>). Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся только те записи, имя таблицы или схемы которых соответствуют ему. Если используется форма <literal>\det+</literal>, то дополнительно выводятся общие параметры и описание сторонней таблицы.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\deu[+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список сопоставлений пользователей (мнемоника: <quote>external users</quote>). Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся только сопоставления, в которых имена пользователей соответствуют ему. Если используется форма <literal>\deu+</literal>, то выводится дополнительная информация о каждом сопоставлении пользователей.</para>
+
+        <caution>
+        <para><literal>\deu+</literal> также может отображать имя и пароль удалённого пользователя, поэтому следует позаботиться о том, чтобы не раскрывать их.</para>
+        </caution>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\dew[+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список обёрток сторонних данных (мнемоника: <quote>external wrappers</quote>). Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся только те обёртки сторонних данных, имена которых соответствуют ему. Если используется форма <literal>\dew+</literal>, то дополнительно выводятся права доступа, параметры и описание обёртки.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\df[antwS+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+
+        <listitem>
+        <para>Выводит список функций с типами данных их результатов, аргументов и классификацией: <quote>agg</quote> (агрегатная), <quote>normal</quote> (обычная), <quote>trigger</quote> (триггерная) или <quote>window</quote> (оконная). Чтобы получить функции только определённого вида (видов), добавьте в команду соответствующие буквы <literal>a</literal>, <literal>n</literal>, <literal>t</literal> или <literal>w</literal>. Если задан <replaceable class="parameter">шаблон</replaceable>, показываются только те функции, имена которых соответствуют ему. По умолчанию показываются только функции, созданные пользователями; для включения системных объектов нужно задать шаблон или добавить модификатор <literal>S</literal>. Если используется форма <literal>\df+</literal>, то дополнительно выводятся характеристики каждой функции: изменчивость, допустимость распараллеливания, владелец, классификация по безопасности, права доступа, язык, исходный код и описание.</para>
+
+        <tip>
+        <para>Чтобы найти функции с аргументами или возвращаемыми значениями определённого типа данных, воспользуйтесь имеющейся в постраничнике возможностью поиска в выводе <literal>\df</literal>.</para>
+        </tip>
+
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\dF[+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список конфигураций текстового поиска. Если указан <replaceable class="parameter">шаблон</replaceable>, показываются только те конфигурации, имена которых соответствуют ему. Если используется форма <literal>\dF+</literal>, то выводится полное описание для каждой конфигурации, включая базовый синтаксический анализатор и используемые словари для каждого типа фрагментов.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\dFd[+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список словарей текстового поиска. Если указан <replaceable class="parameter">шаблон</replaceable>, показываются только словари, имена которых соответствуют ему. Если используется форма <literal>\dFd+</literal>, то выводится дополнительная информация о каждом словаре, включая базовый шаблон текстового поиска и параметры инициализации.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\dFp[+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список анализаторов текстового поиска. Если указан <replaceable class="parameter">шаблон</replaceable>, показываются только те анализаторы, имена которых соответствуют ему. Если используется форма <literal>\dFp+</literal>, то выводится полное описание для каждого анализатора, включая базовые функции и список типов фрагментов.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\dFt[+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список шаблонов текстового поиска. Если указан <replaceable class="parameter">шаблон</replaceable>, показываются только шаблоны, имена которых соответствуют ему. Если используется форма <literal>\dFt+</literal>, то выводится дополнительная информация о каждом шаблоне, включая имена основных функций.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\dg[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список ролей базы данных. (Так как понятия <quote>пользователи</quote> и <quote>группы</quote> были объединены в <quote>роли</quote>, эта команда теперь эквивалентна <literal>\du</literal>.) По умолчанию выводятся только роли, созданные пользователями: чтобы увидеть и системные роли, добавьте модификатор <literal>S</literal>. Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся только те роли, имена которых соответствуют ему. Если используется форма <literal>\dg+</literal>, то выводится дополнительная информация о каждой роли; в настоящее время это комментарий роли.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\dl</literal></term>
+        <listitem>
+        <para>Это псевдоним для <command>\lo_list</command>, показывает список больших объектов.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\dL[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список процедурных языков. Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся только те языки, имена которых соответствуют ему. По умолчанию показываются только языки, созданные пользователями. Для включения системных объектов нужно задать шаблон или добавить модификатор <literal>S</literal>. При добавлении <literal>+</literal> к имени команды для каждого языка дополнительно будут выводиться: обработчик вызова, функция проверки, права доступа и является ли язык системным объектом.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\dn[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+
+        <listitem>
+        <para>Выводит список схем (пространств имён). Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся только те схемы, имена которых соответствуют ему. По умолчанию показываются только объекты, созданные пользователями. Для включения системных объектов нужно задать шаблон или добавить модификатор <literal>S</literal>. При добавлении <literal>+</literal> к имени команды для каждого объекта дополнительно будут выводиться права доступа и описание, при наличии.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\do[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список операторов, их операндов и типы результата. Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся только те операторы, имена которых соответствуют ему. По умолчанию показываются только объекты, созданные пользователями. Для включения системных объектов нужно задать шаблон или добавить модификатор <literal>S</literal>. При добавлении <literal>+</literal> к имени команды для каждого оператора будет выводиться дополнительная информация, сейчас это имя функции, на которой основан оператор.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\dO[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список правил сортировки. Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся только те правила, имена которых соответствуют ему. По умолчанию показываются только объекты, созданные пользователями. Для включения системных объектов нужно задать шаблон или добавить модификатор <literal>S</literal>. При добавлении <literal>+</literal> к имени команды для каждого объекта дополнительно будет выводиться описание, при наличии. Обратите внимание, что отображаются только правила сортировки, применимые к кодировке текущей базы данных, поэтому результат команды может отличаться для различных баз данных этой же установки <productname>PostgreSQL</productname>.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\dp [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список таблиц, представлений и последовательностей с их правами доступа. Если указан <replaceable class="parameter">шаблон</replaceable>, отображаются только таблицы, представления и последовательности, имена которых соответствуют ему.</para>
+
+        <para>Для установки прав доступа используются команды <xref linkend="sql-grant"/> и <xref linkend="sql-revoke"/>. Смысл отображаемых привилегий объясняется в описании <xref linkend="sql-grant"/>.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\drds [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон-ролей</replaceable></link> [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон-баз</replaceable></link> ] ]</literal></term>
+        <listitem>
+        <para>Выводит список специфических параметров конфигурации. Эти параметры могут быть специфическими для роли, специфическими для базы данных, или обеих. Параметры <replaceable>шаблон-ролей</replaceable> и <replaceable>шаблон-баз</replaceable> используются для отбора определённых ролей и баз данных, соответственно. Если они опущены, или указано <literal>*</literal>, выводятся все параметры конфигурации, в том числе не относящиеся к ролям или базам данных.</para>
+
+        <para>Команды <xref linkend="sql-alterrole"/> и <xref linkend="sql-alterdatabase"/> используются для определения параметров конфигурации, специфических для роли или базы данных.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\dT[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список типов данных. Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся только те типы, имена которых соответствуют ему. При добавлении <literal>+</literal> к имени команды для каждого типа данных дополнительно будет выводиться: внутреннее имя типа, размер, допустимые значения для типа <type>enum</type> и права доступа. По умолчанию показываются только объекты, созданные пользователями. Для включения системных объектов нужно задать шаблон или добавить модификатор <literal>S</literal>.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\du[S+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список ролей базы данных. (Так как понятия <quote>пользователи</quote> и <quote>группы</quote> были объединены в <quote>роли</quote>, эта команда теперь равнозначна <literal>\dg</literal>.) По умолчанию выводятся только роли, созданные пользователями: чтобы увидеть и системные роли, добавьте модификатор <literal>S</literal>. Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся только те роли, имена которых соответствуют ему. Если используется форма <literal>\du+</literal>, то выводится дополнительная информация о каждой роли; в настоящее время это комментарий роли.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\dx[+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список установленных расширений. Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся только расширения, имена которых соответствуют ему. Если используется форма <literal>\dx+</literal>, то для каждого расширения выводятся все принадлежащие ему объекты.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\dy[+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список событийных триггеров. Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся только те событийные триггеры, имена которых соответствуют ему. При добавлении <literal>+</literal> к имени команды для каждого объекта дополнительно будет выводиться описание.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\e</literal> или <literal>\edit</literal> <literal><optional><replaceable class="parameter">имя_файла</replaceable></optional> <optional><replaceable class="parameter">номер_строки</replaceable></optional></literal></term>
+
+        <listitem>
+        <para>Если указано имя файла <replaceable class="parameter">filename</replaceable>, файл открывается для редактирования. После выхода из редактора его содержимое копируется в буфер запроса. Если не указано имя файла, буфер текущего запроса копируется во временный файл и открывается в редакторе.</para>
+
+        <para>Затем новый буфер запроса повторно анализируется согласно обычным правилам <application>psql</application>, при этом весь буфер рассматривается как одна строка. (Таким образом, это не подходит для создания скриптов. Для скриптов используйте <command>\i</command>.) Если запрос заканчивается (или содержит) точкой с запятой, он немедленно выполняется. В противном случае он просто будет ждать в буфере запроса. Введите точку с запятой или <literal>\g</literal> для отправки на выполнение или <literal>\r</literal> для отмены.</para>
+
+        <para>Если указан номер строки, <application>psql</application> будет позиционировать курсор на указанную строку файла или буфера запроса. Обратите внимание, что если указан один аргумент и он числовой, <application>psql</application> предполагает, что это номер строки, а не имя файла.</para>
+
+        <tip>
+        <para>Как настроить редактор и изменить его поведение, рассказывается в разделе <xref linkend="app-psql-environment" endterm="app-psql-environment-title"/>.</para>
+        </tip>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\echo <replaceable class="parameter">текст</replaceable> [ ... ]</literal></term>
+        <listitem>
+        <para>Выводит аргументы на стандартный вывод, разделяя их одним пробелом, в конце следует перевод строки. Команда полезна для формирования вывода из скриптов. Например: <programlisting>=&gt; <userinput>\echo `date`</userinput>
+Tue Oct 26 21:40:57 CEST 1999</programlisting> Если первый аргумент <literal>-n</literal> без кавычек, то перевод строки в конце не ставится.</para>
+
+        <tip>
+        <para>Если используется команда <command>\o</command> для перенаправления вывода запросов, возможно, следует применять команду <command>\qecho</command> вместо этой.</para>
+        </tip>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\ef <optional><replaceable class="parameter">описание_функции</replaceable> <optional><replaceable class="parameter">номер_строки</replaceable></optional></optional></literal></term>
+
+        <listitem>
+        <para>Эта команда извлекает из базы данных определение заданной функции в форме <command>CREATE OR REPLACE FUNCTION</command> и отправляет его на редактирование. Редактирование осуществляется таким же образом, как и для <literal>\edit</literal>. После выхода из редактора изменённая команда будет находиться в буфере запроса. Введите точку с запятой или <literal>\g</literal> для выполнения или <literal>\r</literal> для отмены.</para>
+
+        <para>Для функции может быть задано только имя или имя и аргументы, например <literal>foo(integer, text)</literal>. Типы аргументов необходимы, если существует более чем одна функция с тем же именем.</para>
+
+        <para>Если функция не указана, для редактирования открывается пустая заготовка <command>CREATE FUNCTION</command>.</para>
+
+        <para>Если указан номер строки, <application>psql</application> будет позиционировать курсор на указанную строку тела функции. (Обратите внимание, что тело функции обычно не начинается на первой строке файла).</para>
+
+        <tip>
+        <para>Как настроить редактор и изменить его поведение, рассказывается в разделе <xref linkend="app-psql-environment" endterm="app-psql-environment-title"/>.</para>
+        </tip>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\encoding [ <replaceable class="parameter">кодировка</replaceable> ]</literal></term>
+
+        <listitem>
+        <para>Устанавливает кодировку набора символов на клиенте. Без аргумента команда показывает текущую кодировку.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\errverbose</literal></term>
+
+        <listitem>
+        <para>Повторяет последнее серверное сообщение об ошибке с максимальным уровнем детализации, как если бы переменная <varname>VERBOSITY</varname> имела значение <literal>verbose</literal>, а <varname>SHOW_CONTEXT</varname> — <literal>always</literal>.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\ev <optional><replaceable class="parameter">имя_представления</replaceable> <optional><replaceable class="parameter">номер_строки</replaceable></optional></optional></literal></term>
+
+        <listitem>
+        <para>Эта команда извлекает и открывает на редактирование определение указанного представления в форме команды <command>CREATE OR REPLACE VIEW</command>. Редактирование осуществляется так же, как и с <literal>\edit</literal>. После выхода из редактора изменённая команда остаётся в буфере запроса; введите точку с запятой или <literal>\g</literal>, чтобы выполнить её, либо <literal>\r</literal>, чтобы её сбросить.</para>
+
+        <para>Если представление не указано, для редактирования открывается пустая заготовка <command>CREATE VIEW</command>.</para>
+
+        <para>Если указан номер строки, <application>psql</application> установит курсор на заданную строку в определении представления.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\f [ <replaceable class="parameter">строка</replaceable> ]</literal></term>
+
+        <listitem>
+        <para>Устанавливает разделитель полей для невыровненного режима вывода запросов. По умолчанию используется вертикальная черта (<literal>|</literal>). См. также <command>\pset</command> для универсального способа настройки параметров вывода.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\g [ <replaceable class="parameter">имя_файла</replaceable> ]</literal></term>
+        <term><literal>\g [ |<replaceable class="parameter">команда</replaceable> ]</literal></term>
+        <listitem>
+        <para>Отправляет содержимое буфера текущего запроса на сервер для выполнения, с возможностью сохранения результата запроса в файле <replaceable class="parameter">имя_файла</replaceable> или перенаправления вывода в команду оболочки ОС <replaceable class="parameter">команда</replaceable>. Вывод направляется в файл или команду, только если запрос успешно вернул 0 или более строк. Этого не происходит, если запрос завершился неудачно или выполнялась команда, не возвращающая данные.</para>
+        <para><literal>\g</literal> без аргументов, по сути, эквивалентен точке с запятой. <literal>\g</literal> с аргументом является разовой альтернативой команде <command>\o</command>.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\gexec</literal></term>
+
+        <listitem>
+        <para>Отправляет буфер ввода текущего запроса на сервер, а затем обрабатывает содержимое каждого столбца каждой строки результата запроса (если он непустой) как SQL-оператор, то есть исполняет его. Например, следующая команда создаст индексы по каждому столбцу <structname>my_table</structname>: <programlisting>=&gt; <userinput>SELECT format('create index on my_table(%I)', attname)</userinput>
+-&gt; <userinput>FROM pg_attribute</userinput>
+-&gt; <userinput>WHERE attrelid = 'my_table'::regclass AND attnum &gt; 0</userinput>
+-&gt; <userinput>ORDER BY attnum</userinput>
+-&gt; <userinput>\gexec</userinput>
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX</programlisting></para>
+
+        <para>Генерируемые запросы выполняются в том порядке, в каком возвращаются строки, слева направо, если возвращается несколько столбцов. Поля NULL игнорируются. Эти запросы передаются для обработки на сервер буквально, так что это не могут быть метакоманды <application>psql</application> или запросы, использующие переменные <application>psql</application>. В случае сбоя в одном из запросов, выполнение оставшихся запросов продолжается, если только не установлена переменная <varname>ON_ERROR_STOP</varname>. На выполнение каждого запроса оказывает влияние параметр <varname>ECHO</varname>. (Применяя команду <command>\gexec</command>, рекомендуется устанавливать в <varname>ECHO</varname> режим <literal>all</literal> или <literal>queries</literal>.) Такие расширенные средства, как протоколирование запросов, пошаговый режим, замер времени и т. п., так же действуют при выполнении каждого генерируемого запроса.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\gset [ <replaceable class="parameter">префикс</replaceable> ]</literal></term>
+
+        <listitem>
+        <para>Отправляет буфер текущего запроса на сервер для выполнения и сохраняет результат запроса в переменных <application>psql</application> (см. <xref remap="4" linkend="app-psql-variables" endterm="app-psql-variables-title"/>). Выполняемый запрос должен возвращать ровно одну строку. Каждый столбец строки результата сохраняется в отдельной переменной, которая называется так же, как и столбец. Например: <programlisting>=&gt; <userinput>SELECT 'hello' AS var1, 10 AS var2</userinput>
+-&gt; <userinput>\gset</userinput>
+=&gt; <userinput>\echo :var1 :var2</userinput>
+hello 10</programlisting></para>
+        <para>Если указан <replaceable class="parameter">prefix</replaceable>, то он добавляется в начале к именам переменных: <programlisting>=&gt; <userinput>SELECT 'hello' AS var1, 10 AS var2</userinput>
+-&gt; <userinput>\gset result_</userinput>
+=&gt; <userinput>\echo :result_var1 :result_var2</userinput>
+hello 10</programlisting></para>
+        <para>Если значение столбца NULL, то вместо присвоения значения соответствующая переменная удаляется.</para>
+        <para>Если запрос завершается ошибкой или не возвращает одну строку, то никакие переменные не меняются.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\h</literal> или <literal>\help</literal> <literal>[ <replaceable class="parameter">command</replaceable> ]</literal></term>
+        <listitem>
+        <para>Выводит подсказку по синтаксису указанной команды <acronym>SQL</acronym>. Если <replaceable class="parameter">command</replaceable> не указана, то <application>psql</application> выводит список всех команд, для которых доступна справка. Если в качестве command указана звёздочка (<literal>*</literal>), то выводится справка по всем командам <acronym>SQL</acronym>.</para>
+
+        <note>
+        <para>Для упрощения ввода команды, состоящие из нескольких слов, можно не заключать в кавычки. Таким образом, можно просто писать <userinput>\help alter table</userinput>.</para>
+        </note>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\H</literal> или <literal>\html</literal></term>
+        <listitem>
+        <para>Включает вывод запросов в формате <acronym>HTML</acronym>. Если формат <acronym>HTML</acronym> уже включён, происходит переключение обратно на выровненный формат. Эта команда используется для совместимости и удобства, но в описании <command>\pset</command> вы можете узнать о других вариантах вывода.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\i</literal> или <literal>\include</literal> <replaceable class="parameter">имя_файла</replaceable></term>
+        <listitem>
+        <para>Читает ввод из файла <replaceable class="parameter">имя_файла</replaceable> и выполняет его, как будто он был набран на клавиатуре.</para>
+        <para>Если <replaceable>имя_файла</replaceable> задано как <literal>-</literal> (минус), читается стандартный ввод до признака конца файла или до метакоманды <command>\q</command>. Это может быть полезно для совмещения интерактивного ввода со вводом команд из файлов. Заметьте, что при этом поведение Readline будет применяться, только если оно активно на внешнем уровне.</para>
+        <note>
+        <para>Если вы хотите видеть строки файла на экране по мере их чтения, необходимо установить для переменной <varname>ECHO</varname> значение <literal>all</literal>.</para>
+        </note>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\ir</literal> или <literal>\include_relative</literal> <replaceable class="parameter">filename</replaceable></term>
+        <listitem>
+        <para>Команда <literal>\ir</literal> похожа на <literal>\i</literal>, но по-разному интерпретирует относительные имена файлов. При выполнении в интерактивном режиме две команды ведут себя одинаково. Однако, при вызове из скрипта <literal>\ir</literal> интерпретирует имена файлов относительно каталога, в котором расположен скрипт, а не текущего рабочего каталога.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\l[+]</literal> или <literal>\list[+] [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список баз данных на сервере и показывает их имена, владельцев, кодировку набора символов и права доступа. Если указан <replaceable class="parameter">шаблон</replaceable>, выводятся только базы данных, имена которых соответствуют ему. При добавлении <literal>+</literal> к имени команды также отображаются: размер базы данных, табличное пространство по умолчанию и описание. (Информация о размере доступна только для баз данных, к которым текущий пользователь может подключиться.)</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\lo_export <replaceable class="parameter">oid_БО</replaceable> <replaceable class="parameter">имя_файла</replaceable></literal></term>
+
+        <listitem>
+        <para>Читает большой объект с <acronym>OID</acronym> <replaceable class="parameter">loid</replaceable> из базы данных и записывает его в файл <replaceable class="parameter">имя_файла</replaceable>. Обратите внимание, что это несколько отличается от функции сервера <function>lo_export</function>, которая действует с правами пользователя, от имени которого работает сервер базы данных, и в файловой системе сервера.</para>
+        <tip>
+        <para>Используйте <command>\lo_list</command> для получения <acronym>OID</acronym> больших объектов.</para>
+        </tip>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\lo_import <replaceable class="parameter">имя_файла</replaceable> [ <replaceable class="parameter">комментарий</replaceable> ]</literal></term>
+
+        <listitem>
+        <para>Сохраняет файл в большом объекте <productname>&productname;</productname>. При этом с объектом может быть связан указанный комментарий. Пример: <programlisting>foo=&gt; <userinput>\lo_import '/home/peter/pictures/photo.xcf' 'a picture of me'</userinput>
+lo_import 152801</programlisting> Ответ указывает на то, что большой объект получил OID 152801, который может быть использован для доступа к вновь созданному объекту в будущем. Для удобства чтения рекомендуется всегда связывать объекты с понятными комментариями. OID и комментарии можно посмотреть с помощью команды <command>\lo_list</command>.</para>
+
+        <para>Обратите внимание, что это немного отличается от функции сервера <function>lo_import</function>, так как действует от имени локального пользователя в локальной файловой системе, а не пользователя сервера в файловой системе сервера.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\lo_list</literal></term>
+        <listitem>
+        <para>Показывает список всех больших объектов <productname>&productname;</productname>, хранящихся в базе данных, вместе с предоставленными комментариями.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\lo_unlink <replaceable class="parameter">oid_БО</replaceable></literal></term>
+
+        <listitem>
+        <para>Удаляет большой объект с <acronym>OID</acronym> <replaceable class="parameter">loid</replaceable> из базы данных.</para>
+
+        <tip>
+        <para>Используйте <command>\lo_list</command> для получения <acronym>OID</acronym> больших объектов.</para>
+        </tip>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\o</literal> или <literal>\out [ <replaceable class="parameter">имя_файла</replaceable> ]</literal></term>
+        <term><literal>\o</literal> или <literal>\out [ |<replaceable class="parameter">команда</replaceable> ]</literal></term>
+        <listitem>
+        <para>Результаты запросов будут сохраняться в файле <replaceable class="parameter">имя_файла</replaceable> или перенаправляться команде оболочки (заданной аргументом <replaceable class="parameter">команда</replaceable>). Если аргумент не указан, результаты запросов перенаправляются на стандартный вывод.</para>
+
+        <para><quote>Результаты запросов</quote> включают в себя все таблицы, ответы команд, уведомления, полученные от сервера базы данных, а также вывод от метакоманд, запрашивающих базу данных (таких как <command>\d</command>), но не сообщения об ошибках.</para>
+
+        <tip>
+        <para>Чтобы вставить текст между результатами запросов, используйте <command>\qecho</command>.</para>
+        </tip>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\p</literal> или <literal>\print</literal></term>
+        <listitem>
+        <para>Печатает содержимое буфера текущего запроса на стандартный вывод.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\password [ <replaceable class="parameter">имя_пользователя</replaceable> ]</literal></term>
+        <listitem>
+        <para>Изменяет пароль указанного пользователя (по умолчанию, текущего пользователя). Эта команда запрашивает новый пароль, шифрует и отправляет его на сервер в виде команды <command>ALTER ROLE</command>. Это гарантирует, что новый пароль не отображается в открытом виде в истории команд, журнале сервера или в другом месте.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\prompt [ <replaceable class="parameter">текст</replaceable> ] <replaceable class="parameter">имя</replaceable></literal></term>
+        <listitem>
+        <para>Предлагает пользователю ввести значение, которое будет присвоено переменной <replaceable class="parameter">имя</replaceable>. Дополнительно можно указать подсказку <replaceable class="parameter">text</replaceable>. (Если подсказка состоит из нескольких слов, то её текст нужно взять в одинарные кавычки).</para>
+
+        <para>По умолчанию, <literal>\prompt</literal> использует терминал для ввода и вывода. Однако, если используется параметр командной строки <option>-f</option>, <literal>\prompt</literal> использует стандартный ввод и стандартный вывод.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\pset [ <replaceable class="parameter">параметр</replaceable> [ <replaceable class="parameter">значение</replaceable> ] ]</literal></term>
+
+        <listitem>
+        <para>Эта команда устанавливает параметры, влияющие на вывод результатов запросов. <replaceable class="parameter">option</replaceable> указывает, какой параметр необходимо установить. Семантика <replaceable class="parameter">value</replaceable> меняется в зависимости от выбранного параметра. Для некоторых параметров, отсутствие <replaceable class="parameter">value</replaceable> означает переключение значения, либо сброс значения, как описано ниже в разделе конкретного параметра. Если такое поведение не упоминается, то пропуск <replaceable class="parameter">value</replaceable> приводит к отображению текущего значения параметра.</para>
+
+        <para><command>\pset</command> без аргументов выводит текущий статус всех параметров команды.</para>
+
+        <para>Имеются следующие параметры: <variablelist>
+          <varlistentry>
+          <term><literal>border</literal></term>
+          <listitem>
+          <para>Здесь <replaceable class="parameter">значение</replaceable> должно быть числом. В целом, чем больше это число, тем больше границ и линий будет в таблицах, но детали зависят от формата. В формате <acronym>HTML</acronym> заданное значение напрямую отображается в атрибут <literal>border=...</literal>. Для большинства других форматов имеют смысл только значения 0 (нет границы), 1 (внутренние разделительные линии) и 2 (граница таблицы), а значения больше 2 воспринимаются как <literal>border = 2</literal>. Форматы <literal>latex</literal> и <literal>latex-longtable</literal> дополнительно поддерживают значение 3, добавляющее разделительные линии между строками данных.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>columns</literal></term>
+          <listitem>
+          <para>Устанавливает максимальную ширину для формата <literal>wrapped</literal>, а также ограничение по ширине, свыше которого будет требоваться постраничник или произойдёт переключение в вертикальное отображение при режиме <literal>expanded auto</literal>. При значении 0 (по умолчанию) максимальная ширина управляется переменной среды <envar>COLUMNS</envar> или шириной экрана, если <envar>COLUMNS</envar> не установлена. Кроме того, если <literal>columns</literal> равно нулю, то формат <literal>wrapped</literal> влияет только на вывод на экран. Если <literal>columns</literal> не равно 0, то это также влияет на вывод в файл или в другую команду через канал.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>expanded</literal> (или <literal>x</literal>)</term>
+          <listitem>
+          <para>Указанное <replaceable class="parameter">значение</replaceable> допускает варианты <literal>on</literal> или <literal>off</literal>, которые включают или отключают развёрнутый режим, либо <literal>auto</literal>. Если <replaceable class="parameter">значение</replaceable> опущено, команда включает/отключает режим. Когда развёрнутый режим включён, результаты запроса выводятся в две колонки: имя столбца в левой, данные в правой. Этот режим полезен, если данные не помещаются на экране в обычном <quote>горизонтальном</quote> режиме. При выборе <literal>auto</literal> развёрнутый режим используется, когда результат запроса содержит несколько столбцов и по ширине не умещается на экране; в противном случае используется обычный режим. Режим <literal>auto</literal> распространяется только на форматы <literal>aligned</literal> и <literal>wrapped</literal>. С другими форматами он всегда равнозначен отключённому состоянию.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>fieldsep</literal></term>
+          <listitem>
+          <para>Устанавливает разделитель полей для невыровненного режима вывода запросов. Таким образом, можно формировать вывод, в котором значения будут разделены табуляцией или запятыми. Это может быть предпочтительным для использования в других программах. Для установки символа табуляции в качестве разделителя полей, введите <literal>\pset fieldsep '\t'</literal>. По умолчанию используется вертикальная черта (<literal>'|'</literal>).</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>fieldsep_zero</literal></term>
+          <listitem>
+          <para>Устанавливает разделитель полей для невыровненного режима вывода в нулевой байт.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>footer</literal></term>
+          <listitem>
+          <para>Для <replaceable class="parameter">value</replaceable> возможны два значения: <literal>on</literal> или <literal>off</literal>, которые включают или отключают вывод результирующей строки с количеством выбранных записей <literal>(<replaceable>n</replaceable> строк)</literal>. Если <replaceable class="parameter">value</replaceable> не указано, то команда переключает текущее значение в <literal>on</literal> или <literal>off</literal>.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>format</literal></term>
+          <listitem>
+          <para>Устанавливает один из следующих форматов вывода: <literal>unaligned</literal>, <literal>aligned</literal>, <literal>wrapped</literal>, <literal>html</literal>, <literal>asciidoc</literal>, <literal>latex</literal> (использует <literal>tabular</literal>), <literal>latex-longtable</literal> или <literal>troff-ms</literal>. Допускается сокращение слова до уникального значения. (Это значит, что одной буквы будет достаточно.)</para>
+
+          <para>В формате <literal>unaligned</literal> все столбцы размещаются на одной строке и отделяются друг от друга разделителем полей. Это полезно для создания вывода, который будет читаться другими программами (например, формат с выводом значений, разделённых запятыми или табуляцией).</para>
+
+          <para>Формат <literal>aligned</literal> это стандартный, удобочитаемый, хорошо отформатированный текстовый вывод. Используется по умолчанию.</para>
+
+          <para>Формат <literal>wrapped</literal> похож на <literal>aligned</literal>, но переносит длинные значения столбцов на новые строки, чтобы общий вывод поместился в заданную ширину. Задание ширины вывода описано в параметре <literal>columns</literal>. Обратите внимание, что <application>psql</application> не будет пытаться переносить на новые строки заголовки столбцов. Поэтому формат <literal>wrapped</literal> работает так же, как <literal>aligned</literal> если общая ширина, требуемая для всех заголовков столбцов, превышает установленную максимальную ширину.</para>
+
+          <para>Форматы <literal>html</literal>, <literal>asciidoc</literal>, <literal>latex</literal>, <literal>latex-longtable</literal> и <literal>troff-ms</literal> выводят таблицы, которые предназначены для включения в документы с помощью соответствующего языка разметки. Они не являются полноценными документами! Возможно это необязательно в <acronym>HTML</acronym>, но в <application>LaTeX</application> необходимо иметь полный упаковщик документа. <literal>latex-longtable</literal> также требует наличия пакетов <application>LaTeX</application> <literal>longtable</literal> и <literal>booktabs</literal>.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>linestyle</literal></term>
+          <listitem>
+          <para>Задаёт стиль отрисовки линий границы: <literal>ascii</literal>, <literal>old-ascii</literal> или <literal>unicode</literal>. Допускается сокращение слова до уникального значения. (Это значит, что одной буквы будет достаточно.) Значение по умолчанию: <literal>ascii</literal>. Этот параметр действует только в форматах <literal>aligned</literal> и <literal>wrapped</literal>.</para>
+
+          <para>Стиль <literal>ascii</literal> использует обычные символы <acronym>ASCII</acronym>. Символы новой строки в данных показываются с использованием символа <literal>+</literal> в правом поле. Когда при формате <literal>wrapped</literal> происходит перенос данных на новую строку (без символа новой строки), ставится точка (<literal>.</literal>) в правом поле первой строки и точка в левом поле следующей строки.</para>
+
+          <para>Стиль <literal>old-ascii</literal> использует обычные символы <acronym>ASCII</acronym> в стиле <productname>PostgreSQL</productname> 8.4 и раньше. Символы новой строки в данных отображаются, используя символ <literal>:</literal> вместо левого разделителя полей. Когда происходит перенос данных на новую строку без символа новой строки, символ <literal>;</literal> используется вместо левого разделителя полей.</para>
+
+          <para>Стиль <literal>unicode</literal> использует символы Юникода для рисования линий. Символы новой строки в данных показываются с использованием символа возврата каретки в правом поле. Когда при формате <literal>wrapped</literal> происходит перенос данных на новую строку (без символа новой строки), ставится символ многоточия в правом поле первой строки и в левом поле следующей строки.</para>
+
+          <para>Когда значение <literal>border</literal> больше нуля, параметр <literal>linestyle</literal> также определяет символы, которыми будут рисоваться границы. Обычные символы <acronym>ASCII</acronym> работают везде, но символы Юникода смотрятся лучше на терминалах, распознающих их.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>null</literal></term>
+          <listitem>
+          <para>Устанавливает строку, которая будет напечатана вместо значения null. По умолчанию не печатается ничего, что можно ошибочно принять за пустую строку. Например, можно было бы предпочесть <literal>\pset null '(null)'</literal>.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>numericlocale</literal></term>
+          <listitem>
+          <para>Если задаётся <replaceable class="parameter">значение</replaceable>, возможны два варианта: <literal>on</literal> или <literal>off</literal>, которые включают или отключают отображение специфичного для локали символа, разделяющего группы цифр левее десятичной точки. Если <replaceable class="parameter">значение</replaceable> не указано, то команда переключает вывод чисел с локализованного на обычный и обратно.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>pager</literal></term>
+          <listitem>
+          <para>Управляет использованием постраничника для просмотра результатов запросов и справочной информации <application>psql</application>. Если переменная среды <envar>PAGER</envar> установлена, то данные передаются в указанную программу. В противном случае используется платформозависимая программа по умолчанию (например, <filename>more</filename>).</para>
+
+          <para>Если <literal>pager</literal> имеет значение <literal>off</literal>, программа постраничного просмотра (постраничник) не используется. Если <literal>pager</literal> имеет значение <literal>on</literal>, эта программа используется при необходимости, т. е. когда вывод на терминал не помещается на экране. Параметр pager также может иметь значение <literal>always</literal>, при этом постраничник будет использоваться всегда, независимо от того, помещается вывод на экран терминала или нет. Команда <literal>\pset pager</literal> без указания <replaceable class="parameter">значения</replaceable> переключает варианты <literal>on</literal> и <literal>off</literal>.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>pager_min_lines</literal></term>
+          <listitem>
+          <para>Если в <literal>pager_min_lines</literal> задаётся число, превышающее высоту страницы, программа постраничного вывода не будет вызываться, пока не наберётся заданное число строк для вывода. Значение по умолчанию — 0.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>recordsep</literal></term>
+          <listitem>
+          <para>Устанавливает разделитель записей (строк) для невыровненного режима вывода. По умолчанию используется символ новой строки.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>recordsep_zero</literal></term>
+          <listitem>
+          <para>Устанавливает разделитель записей для невыровненного режима вывода в нулевой байт.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>tableattr</literal> (или <literal>T</literal>)</term>
+          <listitem>
+          <para>Устанавливает атрибуты, которые будут помещены в тег <sgmltag>table</sgmltag>, при формате вывода <acronym>HTML</acronym>. Например, это может быть <literal>cellpadding</literal> или <literal>border</literal>. Заметьте, что, вероятно, не нужно здесь задавать <literal>border</literal>, так как для этого уже есть <literal>\pset border</literal>. Если <replaceable class="parameter">value</replaceable> не задано, атрибуты таблицы удаляются.</para>
+          <para>В формате <literal>latex-longtable</literal> этот параметр контролирует пропорциональную ширину каждого столбца, данные которого выровнены по левому краю. Он указывается как список разделённых пробелами значений, например <literal>'0.2 0.2 0.6'</literal>. Для неуказанных столбцов используется последнее из заданных значений.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>title</literal> (или <literal>C</literal>)</term>
+          <listitem>
+          <para>Устанавливает заголовок таблицы для любых впоследствии выводимых таблиц. Это можно использовать для задания описательных тегов при формировании вывода. Если <replaceable class="parameter">value</replaceable> не задано, заголовок таблицы удаляется.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>tuples_only</literal> (или <literal>t</literal>)</term>
+          <listitem>
+          <para>Для <replaceable class="parameter">value</replaceable> возможны два значения: <literal>on</literal> или <literal>off</literal>, которые включают или отключают режим вывода только кортежей. Если <replaceable class="parameter">value</replaceable> не указано, то команда переключает с режима вывода только кортежей на обычный режим и обратно. Обычный вывод включает в себя дополнительную информацию, такую как заголовки столбцов и различные колонтитулы. В режиме вывода только кортежей отображаются только фактические табличные данные.</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>unicode_border_linestyle</literal></term>
+          <listitem>
+          <para>Устанавливает стиль рисования границ для стиля линий <literal>unicode</literal>: <literal>single</literal> (одинарный) или <literal>double</literal> (двойной).</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>unicode_column_linestyle</literal></term>
+          <listitem>
+          <para>Устанавливает стиль рисования колонок для стиля линий <literal>unicode</literal>: <literal>single</literal> (одинарный) или <literal>double</literal> (двойной).</para>
+          </listitem>
+          </varlistentry>
+
+          <varlistentry>
+          <term><literal>unicode_header_linestyle</literal></term>
+          <listitem>
+          <para>Устанавливает стиль рисования заголовка для стиля линий <literal>unicode</literal>: <literal>single</literal> (одинарный) или <literal>double</literal> (двойной).</para>
+          </listitem>
+          </varlistentry>
+        </variablelist></para>
+
+        <para>Иллюстрацию того, как могут выглядеть различные форматы, можно увидеть в разделе <xref linkend="app-psql-examples" endterm="app-psql-examples-title"/>.</para>
+
+        <tip>
+        <para>Для некоторых параметров <command>\pset</command> есть короткие команды. См. <command>\a</command>, <command>\C</command>, <command>\H</command>, <command>\t</command>, <command>\T</command> и <command>\x</command>.</para>
+        </tip>
+
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\q</literal> или <literal>\quit</literal></term>
+        <listitem>
+        <para>Выход из <application>psql</application>. При использовании в скрипте прекращается только выполнение этого скрипта.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\qecho <replaceable class="parameter">текст</replaceable> [ ... ]</literal></term>
+        <listitem>
+        <para>Эта команда идентична <command>\echo</command> за исключением того, что вывод будет записываться в канал вывода запросов, установленный <command>\o</command>.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\r</literal> или <literal>\reset</literal></term>
+        <listitem>
+        <para>Сбрасывает (очищает) буфер запроса.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\s [ <replaceable class="parameter">имя_файла</replaceable> ]</literal></term>
+        <listitem>
+        <para>Записывает историю команд <application>psql</application> в файл <replaceable class="parameter">имя_файла</replaceable>. Если <replaceable class="parameter">имя_файла</replaceable> не указано, то история команд выводится на стандартный вывод (с использованием постраничника, когда уместно). Этот параметр недоступен, если <application>psql</application> был собран без поддержки <application>Readline</application>.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\set [ <replaceable class="parameter">имя</replaceable> [ <replaceable class="parameter">значение</replaceable> [ ... ] ] ]</literal></term>
+
+        <listitem>
+        <para>Задаёт <application>psql</application> переменной <replaceable class="parameter">name</replaceable> значение <replaceable class="parameter">value</replaceable> или, если задано более одного значения, их конкатенацию. Если задан только один аргумент, то переменной с этим именем присваивается пустое значение. Для удаления переменной используйте команду <command>\unset</command>.</para>
+
+        <para><command>\set</command> без аргументов выводит имена и значения всех <application>psql</application> переменных, установленных в настоящее время.</para>
+
+        <para>Имена переменных могут содержать буквы, цифры и знаки подчёркивания. Подробнее см. раздел <xref linkend="app-psql-variables" endterm="app-psql-variables-title"/> ниже. Имена переменных чувствительны к регистру.</para>
+
+        <para>Хотя вы можете задать любой переменной любое значение, <application>psql</application> рассматривает несколько переменных особым образом. Они документированы в разделе о переменных.</para>
+
+        <note>
+        <para>Эта команда не имеет отношения к <acronym>SQL</acronym>-команде <xref linkend="sql-set"/>.</para>
+        </note>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\setenv <replaceable class="parameter">имя</replaceable> [ <replaceable class="parameter">значение</replaceable> ]</literal></term>
+
+        <listitem>
+        <para>Задаёт для переменной среды <replaceable class="parameter">name</replaceable> значение <replaceable class="parameter">value</replaceable> или, если <replaceable class="parameter">value</replaceable> не задано, удаляет переменную среды. Пример: <programlisting>testdb=&gt; <userinput>\setenv PAGER less</userinput>
+testdb=&gt; <userinput>\setenv LESS -imx4F</userinput></programlisting></para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>\sf[+] <replaceable class="parameter">описание_функции</replaceable></literal></term>
+
+        <listitem>
+        <para>Извлекает из базы данных и выводит определение заданной функции в форме команды <command>CREATE OR REPLACE FUNCTION</command>. Определение печатается в текущий канал вывода запросов, установленный <command>\o</command>.</para>
+
+        <para>Для функции может быть задано только имя или имя и аргументы, например <literal>foo(integer, text)</literal>. Типы аргументов необходимы, если существует более чем одна функция с тем же именем.</para>
+
+        <para>При добавлении <literal>+</literal> к имени команды строки вывода нумеруются, первая строка тела функции получит номер 1.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\sv[+] <replaceable class="parameter">имя_представления</replaceable></literal></term>
+
+        <listitem>
+         <para>Извлекает из базы данных и выводит определение указанного представления в форме команды <command>CREATE OR REPLACE VIEW</command>. Определение выводится в текущий канал вывода запросов, установленный <command>\o</command>.</para>
+
+         <para>При добавлении <literal>+</literal> к имени команды строки вывода нумеруются, начиная с 1.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\t</literal></term>
+        <listitem>
+        <para>Включает/выключает отображение имён столбцов и результирующей строки с количеством выбранных записей для запросов. Эта команда эквивалентна <literal>\pset tuples_only</literal> и предоставлена для удобства.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\T <replaceable class="parameter">table_options</replaceable></literal></term>
+        <listitem>
+        <para>Устанавливает атрибуты, которые будут помещены в тег <sgmltag>table</sgmltag> при формате вывода <acronym>HTML</acronym>. Эта команда эквивалентна <literal>\pset tableattr <replaceable class="parameter">table_options</replaceable></literal>.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+       <term><literal>\timing [ <replaceable class="parameter">on</replaceable> | <replaceable class="parameter">off</replaceable> ]</literal></term>
+        <listitem>
+        <para>Включает/отключает отображение времени выполнения команд SQL в миллисекундах. Без параметра переключает текущий режим отображения времени выполнения.</para>
+       </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\unset <replaceable class="parameter">имя</replaceable></literal></term>
+
+        <listitem>
+        <para>Удаляет <application>psql</application> переменную <replaceable class="parameter">name</replaceable>.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\w</literal> или <literal>\write</literal> <replaceable class="parameter">filename</replaceable></term>
+        <term><literal>\w</literal> или <literal>\write</literal> <literal>|</literal><replaceable class="parameter">command</replaceable></term>
+        <listitem>
+        <para>Выводит буфер текущего запроса в файл <replaceable class="parameter">имя_файла</replaceable> или передаёт в команду ОС <replaceable class="parameter">команда</replaceable>.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\watch [ <replaceable class="parameter">секунды</replaceable> ]</literal></term>
+        <listitem>
+        <para>Эта команда многократно выполняет текущий запрос в буфере (как <literal>\g</literal>), пока не будет прервана или не возникнет ошибка. Аргумент задаёт количество секунд ожидания между выполнениями запроса (по умолчанию 2). Результат каждого запроса выводится с заголовком, включающим строку <literal>\pset title</literal> (если она задана), время запуска запроса и интервал задержки.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\x [ <replaceable class="parameter">on</replaceable> | <replaceable class="parameter">off</replaceable> | <replaceable class="parameter">auto</replaceable> ]</literal></term>
+        <listitem>
+        <para>Устанавливает или переключает режим развёрнутого вывода таблицы. Это эквивалентно <literal>\pset expanded</literal>.</para>
+       </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\z [ <link linkend="app-psql-patterns"><replaceable class="parameter">шаблон</replaceable></link> ]</literal></term>
+        <listitem>
+        <para>Выводит список таблиц, представлений и последовательностей с их правами доступа. Если указан <replaceable class="parameter">шаблон</replaceable>, отображаются только таблицы, представления и последовательности, имена которых соответствуют ему.</para>
+
+        <para>Это псевдоним для <command>\dp</command> (<quote>показать права доступа</quote>).</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\! [ <replaceable class="parameter">команда</replaceable> ]</literal></term>
+        <listitem>
+        <para>Выполняет команду ОС <replaceable class="parameter">command</replaceable>. Без указания <replaceable class="parameter">command</replaceable> запускает отдельную командную оболочку ОС. Последующие аргументы не интерпретируются, командная оболочка ОС увидит их как есть. В частности, не применяются правила подстановки переменных и экранирование с обратной косой чертой.</para>
+        </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+        <term><literal>\? [ <replaceable class="parameter">тема</replaceable> ]</literal></term>
+        <listitem>
+        <para>Показывает справочную информацию. Необязательный параметр <replaceable class="parameter">тема</replaceable> (по умолчанию <literal>commands</literal>) выбирает описание интересующей части <application>psql</application>: <literal>commands</literal> описывает команды <application>psql</application> с обратной косой чертой; <literal>options</literal> описывает параметры командной строки, которые можно передать <application>psql</application>; а <literal>variables</literal> выдаёт справку по переменным конфигурации <application>psql</application>.</para>
+        </listitem>
+      </varlistentry>
+
+    </variablelist></para>
+
+  <refsect3 id="app-psql-patterns">
+   <title id="app-psql-patterns-title">Шаблоны поиска</title>
+
+   <indexterm><primary>шаблоны</primary> <secondary>в psql и pg_dump</secondary></indexterm>
+
+  <para>Различные <literal>\d</literal> команды принимают параметр <replaceable class="parameter">pattern</replaceable> для указания имени (имён) объектов для отображения. В простейшем случае шаблон - это точное имя объекта. Символы внутри шаблона обычно приводятся к нижнему регистру, как и для имён SQL-объектов; к примеру <literal>\dt FOO</literal> выводит таблицу с именем <literal>foo</literal>. Как и для SQL имён, двойные кавычки вокруг шаблона предотвращают перевод в нижний регистр. Для включения символа двойной кавычки в шаблон используются два символа двойных кавычек подряд внутри шаблона в двойных кавычках. Опять же, это соответствует правилам для SQL-идентификаторов. Например <literal>\dt "FOO""BAR"</literal> будет выводить таблицу с именем <literal>FOO"BAR</literal> (но не <literal>foo"bar</literal>). В отличие от обычных правил для SQL-имён, можно взять в двойные кавычки только часть шаблона, например <literal>\dt FOO"FOO"BAR</literal> будет выводить таблицу с именем <literal>fooFOObar</literal>.</para>
+
+  <para>Если <replaceable class="parameter">pattern</replaceable> вообще не указан, <literal>\d</literal> команды выводят все объекты, видимые для текущей схемы. Это эквивалентно указанию <literal>*</literal> в качестве шаблона. (Объект считается <firstterm>видимым</firstterm>, если схема, в которой он находится, лежит на пути поиска, и объект с таким типом и именем на пути поиска ещё не появлялся. Это эквивалентно утверждению, что на объект можно ссылаться по имени, без явного указания схемы.) Чтобы увидеть все объекты в базе данных, независимо от видимости, в качестве шаблона используется <literal>*.*</literal>.</para>
+
+  <para>Внутри шаблона <literal>*</literal> обозначает любое количество символов, включая отсутствие символов. <literal>?</literal> соответствует любому одному символу. (Это соответствует шаблонам имён файлов в Unix.) Например, <literal>\dt int*</literal> отображает все таблицы, чьи имена начинаются на <literal>int</literal>. Однако внутри двойных кавычек <literal>*</literal> и <literal>?</literal> теряют своё специальное значение и становятся обычными символами.</para>
+
+  <para>Шаблон, содержащий точку (<literal>.</literal>), интерпретируется как шаблон имени схемы, за которым следует шаблон имени объекта. Например, <literal>\dt foo*.*bar*</literal> отображает все таблицы, имена которых включают <literal>bar</literal>, и расположенные в схемах, имена которых начинаются с <literal>foo</literal>. Шаблону, не содержащему точку, могут соответствовать только объекты текущей схемы. Опять же, точка внутри двойных кавычек теряет своё специальное значение.</para>
+
+  <para>Опытные пользователи могут использовать возможности регулярных выражений, такие как классы символов. Например <literal>[0-9]</literal> соответствует любой цифре. Все специальные символы регулярных выражений работают как описано в <xref remap="6" linkend="functions-posix-regexp"/>, за исключением: <literal>.</literal> используется в качестве разделителя, как говорилось выше; <literal>*</literal> соответствует регулярному выражению <literal>.*</literal>; <literal>?</literal> соответствует <literal>.</literal>, а также символ <literal>$</literal>, который не имеет специального значения. При необходимости эти символы можно эмулировать указывая <literal>?</literal> для эмуляции <literal>.</literal>, <literal>(<replaceable class="parameter">R</replaceable>+|)</literal> для <literal><replaceable class="parameter">R</replaceable>*</literal>, <literal>(<replaceable class="parameter">R</replaceable>|)</literal> для <literal><replaceable class="parameter">R</replaceable>?</literal>. <literal>$</literal> не требуется, как символ регулярного выражения, потому что шаблон должен соответствовать имени целиком, в отличие от обычной интерпретации регулярных выражений (другими словами, <literal>$</literal> автоматически добавляется в шаблон). Используйте <literal>*</literal> в начале и/или в конце, если не хотите, чтобы шаблон закреплялся. Обратите внимание, что внутри двойных кавычек, все специальные символы регулярных выражений теряют своё специальное значение и соответствуют сами себе. Также, специальные символы регулярных выражений не действуют в шаблонах для имён операторов (т. е. в аргументе команды <literal>\do</literal>).</para>
+  </refsect3>
+ </refsect2>
+
+ <refsect2>
+  <title>Расширенные возможности</title>
+
+   <refsect3 id="app-psql-variables">
+    <title id="app-psql-variables-title">Переменные</title>
+
+    <para><application>psql</application> предоставляет возможности подстановки переменных подобные тем, что используются в командных оболочках Unix. Переменные представляют собой пары имя/значение, где значением может быть любая строка любой длины. Имя должно состоять из букв (включая нелатинские буквы), цифр и знаков подчёркивания.</para>
+
+    <para>Чтобы установить переменную, используется метакоманда <application>psql</application> <command>\set</command>. Например: <programlisting>testdb=&gt; <userinput>\set foo bar</userinput></programlisting> присваивает переменной <literal>foo</literal> значение <literal>bar</literal>. Чтобы получить значение переменной, нужно поставить двоеточие перед её именем, например: <programlisting>testdb=&gt; <userinput>\echo :foo</userinput>
+bar</programlisting> Это работает как в обычных SQL-командах, так и в метакомандах; подробности в разделе <xref linkend="app-psql-interpolation" endterm="app-psql-interpolation-title"/> ниже.</para>
+
+    <para>При вызове <command>\set</command> без второго аргумента переменной присваивается пустая строка. Для удаления переменной используется команда <command>\unset</command>. Чтобы посмотреть значения всех переменных, нужно вызвать <command>\set</command> без аргументов.</para>
+
+    <note>
+    <para>На аргументы <command>\set</command> распространяются те же правила подстановки, что и для других команд. Таким образом можно создавать интересные ссылки, например <literal>\set :foo 'something'</literal>, получая <quote>мягкие ссылки</quote> в <productname>Perl</productname> или <quote>переменные переменных</quote> в <productname><acronym>PHP</acronym></productname>. К сожалению (или к счастью?), с этими конструкциями нельзя сделать ничего полезного. С другой стороны, <literal>\set bar :foo</literal> является прекрасным способом копирования переменной.</para>
+    </note>
+
+    <para>Некоторые переменные обрабатываются в <application>psql</application> особым образом. Они представляют собой определённые параметры, которые могут быть изменены во время выполнения путём присваивания нового значения, а в некоторых переменных содержится изменяемое состояние <application>psql</application>. Хотя эти переменные можно использовать и для других целей, делать это не рекомендуется, так как поведение программы может быстро стать очень странным. По соглашению, имена специальных переменных состоят из всех заглавных ASCII букв (и, возможно, цифр и знаков подчёркивания). Для максимальной совместимости в будущем старайтесь не использовать такие имена для собственных переменных. Далее идет список переменных, обрабатываемых особым образом.</para>
+
+    <variablelist>
+      <varlistentry>
+      <term>
+       <varname>AUTOCOMMIT</varname>
+       <indexterm><primary>autocommit</primary> <secondary>psql</secondary></indexterm>
+      </term>
+        <listitem>
+        <para>При значении <literal>on</literal> (по умолчанию) после каждой успешно выполненной команды выполняется фиксация изменений. Чтобы отложить фиксацию изменений в этом режиме, нужно выполнить SQL-команду <command>BEGIN</command> или <command>START TRANSACTION</command>. При значении <literal>off</literal> или если переменная не определена, фиксация изменений не происходит до тех пор, пока явно не выполнена команда <command>COMMIT</command> или <command>END</command>. При значении <literal>off</literal> неявно выполняется <command>BEGIN</command> непосредственно перед любой командой, за исключением случаев когда: команда уже в транзакционном блоке; перед самой командой <command>BEGIN</command> или другой командой управления транзакциями; перед командой, которая не может выполняться внутри транзакционного блока (например <command>VACUUM</command>).</para>
+
+        <note>
+        <para>Если режим <literal>autocommit</literal> отключён, необходимо явно откатывать изменения в неуспешных транзакциях, выполняя команду <command>ABORT</command> или <command>ROLLBACK</command>. Также имейте в виду, что при выходе из сессии без фиксации изменений несохранённые изменения будут потеряны.</para>
+        </note>
+
+        <note>
+        <para>Включённый режим <literal>autocommit</literal> является традиционным для <productname>&productname;</productname>, а выключенный режим ближе к спецификации SQL. Если вы предпочитаете отключить режим <literal>autocommit</literal>, это можно сделать в общесистемном файле <filename>psqlrc</filename> или в персональном файле <filename>~/.psqlrc</filename>.</para>
+        </note>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>COMP_KEYWORD_CASE</varname></term>
+        <listitem>
+        <para>Определяет, какой регистр букв будет использован при автоматическом завершении ключевых слов SQL. Если установлено в <literal>lower</literal> или <literal>upper</literal>, будет использоваться нижний или верхний регистр соответственно. Если установлено в <literal>preserve-lower</literal> или <literal>preserve-upper</literal> (по умолчанию), то завершаемое слово будет в том же регистре, что и уже введённое начало слова, но последующие слова, завершаемые полностью, будут в нижнем или верхнем регистре соответственно.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>DBNAME</varname></term>
+        <listitem>
+        <para>Имя базы данных, к которой вы сейчас подключены. Устанавливается всякий раз при подключении к базе данных (в том числе при старте программы), но эту переменную можно удалить.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>ECHO</varname></term>
+        <listitem>
+        <para>Со значением <literal>all</literal> все непустые входящие строки выводятся на стандартный вывод по мере их чтения. (Это не относится к строкам, считываемым интерактивно.) Чтобы выбрать такое поведение при запуске программы, добавьте ключ <option>-a</option>. Со значением <literal>queries</literal>, <application>psql</application> выводит каждый запрос, отправленный серверу, на стандартный вывод. Этому значению соответствует ключ <option>-e</option>. Со значением <literal>errors</literal> в стандартный канал ошибок выдаются только запросы, вызвавшие ошибки. Ему соответствует ключ <option>-b</option>. В случае отсутствия значения и с вариантом <literal>none</literal> (либо другим вариантом, кроме перечисленных) запросы не выводятся.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>ECHO_HIDDEN</varname></term>
+        <listitem>
+        <para>Если эта переменная установлена в значение <literal>on</literal>, то при выполнении метакоманд, запрашивающих базу данных, сначала будет выводиться текст запроса. Это позволяет изучать внутреннее устройство <productname>&productname;</productname> и реализовывать похожую функциональность в своих программах. (Чтобы включить такое поведение при старте <application>psql</application>, используйте параметр <option>-E</option>.) При установке переменной в значение <literal>noexec</literal> запросы просто отображаются, но не отправляются на сервер и не выполняются.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>ENCODING</varname></term>
+        <listitem>
+        <para>Содержит текущую кодировку набора символов клиента.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>FETCH_COUNT</varname></term>
+        <listitem>
+        <para>Если переменная установлена в целое значение &gt; 0, результаты запросов <command>SELECT</command> извлекаются из базы данных и отображаются группами с таким количеством строк, в отличие от поведения по умолчанию, когда перед отображением результирующий набор накапливается целиком. Это позволяет использовать ограниченный размер памяти независимо от размера выборки. При включении этой функциональности обычно используются значения от 100 до 1000. Имейте в виду, что запрос может завершиться ошибкой после отображения некоторого количества строк.</para>
+        <tip>
+        <para>Хотя можно использовать любой формат вывода, формат по умолчанию <literal>aligned</literal> как правило выглядит хуже, потому что каждая группа по <varname>FETCH_COUNT</varname> строк форматируется отдельно, что может привести к разной ширине столбцов в разных группах. Остальные форматы вывода работают лучше.</para>
+        </tip>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>HISTCONTROL</varname></term>
+        <listitem>
+        <para>Если переменная имеет значение <literal>ignorespace</literal>, строки, начинающиеся с пробела, не сохраняются в истории. Если она имеет значение <literal>ignoredups</literal>, в историю не добавляются строки, которые в ней уже есть. Значение <literal>ignoreboth</literal> объединяет эти два варианта. В случае отсутствия значения и с вариантом <literal>none</literal> (либо другим вариантом, кроме перечисленных) в истории сохраняются все строки, считываемые в интерактивном режиме.</para>
+        <note>
+        <para>Эта функциональность была бессовестно списана с <application>Bash</application>.</para>
+        </note>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>HISTFILE</varname></term>
+        <listitem>
+        <para>Имя файла для хранения истории команд. Значение по умолчанию <filename>~/.psql_history</filename>. Например, установив: <programlisting>\set HISTFILE ~/.psql_history- :DBNAME</programlisting> в <filename>~/.psqlrc</filename>, <application>psql</application> будет поддерживать отдельную историю для каждой базы данных.</para>
+        <note>
+        <para>Эта функциональность была бессовестно списана с <application>Bash</application>.</para>
+        </note>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>HISTSIZE</varname></term>
+        <listitem>
+        <para>Количество команд для хранения в истории. Значение по умолчанию 500.</para>
+        <note>
+        <para>Эта функциональность была бессовестно списана с <application>Bash</application>.</para>
+        </note>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>HOST</varname></term>
+        <listitem>
+        <para>Имя компьютера, где работает сервер базы данных, к которому вы сейчас подключены. Устанавливается всякий раз при подключении к базе данных (в том числе при старте программы), но эту переменную можно удалить.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>IGNOREEOF</varname></term>
+        <listitem>
+        <para>Если не установлена, символ конца файла (<acronym>EOF</acronym>, обычно <keycombo action="simul"><keycap>Control</keycap><keycap>D</keycap></keycombo>), переданный в интерактивном сеансе <application>psql</application>, завершит приложение. Если задано числовое значение, то именно такое количество символов <acronym>EOF</acronym> будет проигнорировано, прежде чем приложение завершит работу. Если переменная установлена, но имеет не числовое значение, подразумевается 10.</para>
+        <note>
+        <para>Эта функциональность была бессовестно списана с <application>Bash</application>.</para>
+        </note>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>LASTOID</varname></term>
+        <listitem>
+        <para>Содержит значение последнего OID, полученного командой <command>INSERT</command> или <command>\lo_import</command>. Корректное значение переменной гарантируется до тех пор, пока не будет отображён результат следующей <acronym>SQL</acronym>-команды.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+      <term>
+       <varname>ON_ERROR_ROLLBACK</varname>
+       <indexterm><primary>rollback</primary> <secondary>psql</secondary></indexterm>
+      </term>
+        <listitem>
+        <para>При значении <literal>on</literal>, если команда в транзакционном блоке выдаёт ошибку, ошибка игнорируется и транзакция продолжается. При значении <literal>interactive</literal> такие ошибки игнорируются только в интерактивных сессиях, но не в скриптах. Если переменная не установлена или при значении <literal>off</literal> команда, вызвавшая ошибку в транзакционном блоке, отменяет всю транзакцию. Режим отката транзакции при возникновении ошибки обеспечивается выполнением неявных команд <command>SAVEPOINT</command> перед каждой командой в транзакционном блоке и откатом к точке сохранения в случае ошибки.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>ON_ERROR_STOP</varname></term>
+        <listitem>
+        <para>По умолчанию, после возникновения ошибки обработка команд продолжается. Если эта переменная установлена в значение <literal>on</literal>, обработка команд будет немедленно прекращена. В интерактивном режиме <application>psql</application> вернётся в командную строку; иначе <application>psql</application> прекратит работу с кодом возврата 3, чтобы отличить этот случай от фатальных ошибок, для которых используется код возврата 1. В любом случае, выполнение всех запущенных скриптов (высокоуровневый скрипт и любые другие, которые он мог запустить) будет немедленно прекращено. Если высокоуровневая командная строка содержит несколько SQL-команд, выполнение завершится на текущей команде.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>PORT</varname></term>
+        <listitem>
+        <para>Содержит порт сервера базы данных, к которому вы сейчас подключены. Устанавливается всякий раз при подключении к базе данных (в том числе при старте программы), но эту переменную можно удалить.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>PROMPT1</varname></term>
+        <term><varname>PROMPT2</varname></term>
+        <term><varname>PROMPT3</varname></term>
+        <listitem>
+        <para>Указывают, как должны выглядеть приглашения <application>psql</application>. См. <xref remap="4" linkend="app-psql-prompting" endterm="app-psql-prompting-title"/>.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>QUIET</varname></term>
+        <listitem>
+        <para>Установка значения <literal>on</literal> эквивалента параметру командной строки <option>-q</option>. Это, вероятно, не слишком полезно в интерактивном режиме.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>SHOW_CONTEXT</varname></term>
+        <listitem>
+        <para>Этой переменной можно присвоить значения <literal>never</literal> (никогда), <literal>errors</literal> (ошибки) или <literal>always</literal> (всегда), определяющие, когда в сообщениях с сервера будут выводиться поля <literal>КОНТЕКСТ</literal>. По умолчанию выбран вариант <literal>errors</literal> (что означает, что контекст будет выводиться в сообщениях об ошибках, но не в предупреждениях и уведомлениях). Этот параметр не действует, когда установлен уровень <varname>VERBOSITY</varname> <literal>terse</literal>. (Когда вам потребуется подробная версия только что выданной ошибки, может быть полезна команда <command>\errverbose</command>.)</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>SINGLELINE</varname></term>
+        <listitem>
+        <para>Установка значения <literal>on</literal> эквивалентна параметру командной строки <option>-S</option>.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>SINGLESTEP</varname></term>
+        <listitem>
+        <para>Эта переменная эквивалентна параметру командной строки <option>-s</option>.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>USER</varname></term>
+        <listitem>
+        <para>Содержит имя пользователя базы данных, который сейчас подключён. Устанавливается всякий раз при подключении к базе данных (в том числе при старте программы), но эту переменную можно удалить.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><varname>VERBOSITY</varname></term>
+        <listitem>
+        <para>Этой переменной можно присвоить значения <literal>default</literal>, <literal>verbose</literal> или <literal>terse</literal> для изменения уровня детализации в сообщениях об ошибках. (См. также команду <command>\errverbose</command>, полезную, когда требуется подробная версия только что выданной ошибки.)</para>
+        </listitem>
+      </varlistentry>
+
+    </variablelist>
+
+   </refsect3>
+
+   <refsect3 id="app-psql-interpolation">
+    <title id="app-psql-interpolation-title">Интерполяция <acronym>SQL</acronym></title>
+
+    <para>Ключевой особенностью переменных <application>psql</application> является возможность подставлять (<quote>интерполировать</quote>) их в команды <acronym>SQL</acronym>, также как и в аргументы метакоманд. Кроме того, <application>psql</application> предоставляет средства для корректного использования кавычек для значений переменных, которые используются как литералы или идентификаторы SQL. Чтобы подставить значение без кавычек, нужно добавить перед именем переменной двоеточие (<literal>:</literal>). Например: <programlisting>testdb=&gt; <userinput>\set foo 'my_table'</userinput>
+testdb=&gt; <userinput>SELECT * FROM :foo;</userinput></programlisting> будет запрашивать таблицу <literal>my_table</literal>. Обратите внимание, что это может быть небезопасным: значение переменной копируется буквально, поэтому оно может содержать непарные кавычки или даже метакоманды. При применении необходимо убедиться, что это имеет смысл.</para>
+
+    <para>Когда значение будет использоваться в качестве SQL литерала или идентификатора, безопаснее заключить его в кавычки. Если значение переменной используется как SQL литерал, то после двоеточия нужно написать имя переменной в одинарных кавычках. Если значение переменной используется как SQL идентификатор, то после двоеточия нужно написать имя переменной в двойных кавычках. Эти конструкции корректно работают с кавычками и другими специальными символами, которые могут содержаться в значении переменной. Предыдущий пример более безопасно выглядит так: <programlisting>testdb=&gt; <userinput>\set foo 'my_table'</userinput>
+testdb=&gt; <userinput>SELECT * FROM :"foo";</userinput></programlisting></para>
+
+    <para>Подстановка переменных не будет выполняться, если <acronym>SQL</acronym> литералы или идентификаторы заключены в кавычки. Поэтому конструкция <literal>':foo'</literal> не превратится во взятое в кавычки значение переменной (и это было бы небезопасно, если бы работало, так как обработка кавычек внутри значения переменной была бы некорректной).</para>
+
+    <para>Один из примеров использования данного механизма — это копирование содержимого файла в столбец таблицы. Сначала загрузим содержимое файла в переменную, затем подставим значение переменной как строку в кавычках: <programlisting>testdb=&gt; <userinput>\set content `cat my_file.txt`</userinput>
+testdb=&gt; <userinput>INSERT INTO my_table VALUES (:'content');</userinput></programlisting> (Отметим, что это пока не будет работать, если <filename>my_file.txt</filename> содержит байт NUL. <application>psql</application> не поддерживает NUL в значениях переменных.)</para>
+
+    <para>Так как двоеточие может легально присутствовать в SQL-командах, попытка подстановки (например для <literal>:name</literal>, <literal>:'name'</literal> или <literal>:"name"</literal>) не выполняется, если переменная не установлена. В любом случае, можно экранировать двоеточие с помощью обратной косой черты, чтобы предотвратить подстановку.</para>
+
+    <para>Использование двоеточия для переменных является стандартом <acronym>SQL</acronym> для встраиваемых языков запросов, таких как <application>ECPG</application>. Использование двоеточия для срезов массивов и приведения типов является расширениями <productname>&productname;</productname>, что иногда может конфликтовать со стандартным использованием. Использование двоеточия и кавычек для экранирования значения переменной при подстановке в качестве SQL литерала или идентификатора — это расширение <application>psql</application>.</para>
+
+   </refsect3>
+
+   <refsect3 id="app-psql-prompting">
+    <title id="app-psql-prompting-title">Настройка приглашений</title>
+
+    <para>Приглашения, выдаваемые <application>psql</application>, можно настроить по своему вкусу. Три переменные <varname>PROMPT1</varname>, <varname>PROMPT2</varname> и <varname>PROMPT3</varname> содержат строки и спецпоследовательности, задающие внешний вид приглашения. Приглашение 1 (<varname>PROMPT1</varname>) — это обычное приглашение, которое выдаётся, когда <application>psql</application> ожидает ввода новой команды. Приглашение 2 (<varname>PROMPT2</varname>) выдаётся, когда при вводе команды ожидается дополнительные строки, например потому что команда не была завершена точкой с запятой или не закрыты кавычки. Приглашение 3 (<varname>PROMPT3</varname>) выдаётся при выполнении <acronym>SQL</acronym>-команды <command>COPY FROM STDIN</command>, когда в терминале нужно ввести значение новой строки.</para>
+
+    <para>Значения этих переменных выводятся буквально, за исключением случаев, когда в них встречается знак процента (<literal>%</literal>). В зависимости от следующего символа будет подставляться определённый текст. Существуют следующие подстановки: <variablelist>
+      <varlistentry>
+        <term><literal>%M</literal></term>
+        <listitem>
+         <para>Полное имя компьютера (с именем домена) сервера базы данных или <literal>[local]</literal>, если подключение выполнено через доменный сокет Unix, либо <literal>[local:<replaceable>/dir/name</replaceable>]</literal>, если при компиляции был изменён путь доменного сокета Unix по умолчанию.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>%m</literal></term>
+        <listitem>
+         <para>Имя компьютера, где работает сервер баз данных, усечённое до первой точки или <literal>[local]</literal>, если подключение выполнено через доменный сокет Unix.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>%&gt;</literal></term>
+        <listitem><para>Номер порта, который прослушивает сервер базы данных.</para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>%n</literal></term>
+        <listitem>
+         <para>Имя пользователя базы данных для текущей сессии. (Это значение может меняться в течение сессии в результате выполнения команды <command>SET SESSION AUTHORIZATION</command>.)</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>%/</literal></term>
+        <listitem><para>Имя текущей базы данных.</para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>%~</literal></term>
+        <listitem><para>Похоже на <literal>%/</literal>, но выводит тильду <literal>~</literal>, если текущая база данных совпадает с базой данных по умолчанию.</para></listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>%#</literal></term>
+        <listitem>
+         <para>Если пользователь текущей сессии является суперпользователем базы данных, то выводит <literal>#</literal>, иначе <literal>&gt;</literal>. (Это значение может меняться в течение сессии в результате выполнения команды <command>SET SESSION AUTHORIZATION</command>.)</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>%p</literal></term>
+        <listitem>
+         <para>PID обслуживающего процесса для текущего подключения.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>%R</literal></term>
+        <listitem>
+        <para>В приглашении 1 это обычно символ <literal>=</literal>, но <literal>^</literal> в однострочном режиме, либо <literal>!</literal>, если сеанс не подключён к базе данных (что возможно при ошибке <command>\connect</command>). В приглашении 2 <literal>%R</literal> заменяется символом, показывающим, почему <application>psql</application> ожидает дополнительный ввод: <literal>-</literal>, если команда просто ещё не была завершена, но <literal>*</literal>, если не завершён комментарий <literal>/* ... */</literal>; апостроф, если не завершена строка в апострофах; кавычки, если не завершён идентификатор в кавычках; знак доллара, если не завершена строка в долларах; либо <literal>(</literal>, если после открывающей скобки не хватает закрывающей. В приглашении 3 <literal>%R</literal> не выдаёт ничего.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>%x</literal></term>
+        <listitem>
+        <para>Состояние транзакции: пустая строка, если не в транзакционном блоке; <literal>*</literal>, когда в транзакционном блоке; <literal>!</literal>, когда в транзакционном блоке, в котором произошла ошибка и <literal>?</literal>, когда состояние транзакции не определено (например, нет подключения к базе данных).</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>%l</literal></term>
+        <listitem>
+         <para>Номер строки в текущем операторе, начиная с <literal>1</literal>.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>%</literal><replaceable class="parameter">цифры</replaceable></term>
+        <listitem>
+        <para>Подставляется символ с указанным восьмеричным кодом.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>%:</literal><replaceable class="parameter">имя</replaceable><literal>:</literal></term>
+        <listitem>
+        <para>Значение переменной <application>psql</application> <replaceable class="parameter">имя</replaceable>. За подробностями обратитесь к разделу <xref linkend="app-psql-variables" endterm="app-psql-variables-title"/>.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>%`</literal><replaceable class="parameter">команда</replaceable><literal>`</literal></term>
+        <listitem>
+        <para>Подставляется вывод команды <replaceable class="parameter">command</replaceable>, как и в обычной подстановке с обратными апострофами.</para>
+        </listitem>
+      </varlistentry>
+
+      <varlistentry>
+        <term><literal>%[</literal> ... <literal>%]</literal></term>
+        <listitem>
+         <para>Приглашения могут содержать управляющие символы терминала, которые, например, изменяют цвет, фон и стиль текста приглашения или изменяют заголовок окна терминала. Для того, чтобы возможности редактирования <application>Readline</application> работали правильно, непечатаемые символы нужно расположить между <literal>%[</literal> и <literal>%]</literal>, чтобы сделать невидимыми. Можно делать несколько таких включений в приглашение. Например: <programlisting>testdb=&gt; \set PROMPT1 '%[%033[1;33;40m%]%n@%/%R%[%033[0m%]%# '</programlisting> выдаст жирное (<literal>1;</literal>), желтое на черном (<literal>33;40</literal>) приглашение для VT100 совместимых цветных терминалов.</para>
+        </listitem>
+      </varlistentry>
+
+    </variablelist> Чтобы вставить знак процента, нужно написать <literal>%%</literal>. По умолчанию используются значения <literal>'%/%R%# '</literal> для <varname>PROMPT1</varname> и <varname>PROMPT2</varname> и <literal>'&gt;&gt; '</literal> для <varname>PROMPT3</varname>.</para>
+
+    <note>
+    <para>Эта функциональность была бессовестно списана с <application>tcsh</application>.</para>
+    </note>
+
+   </refsect3>
+
+   <refsect3>
+    <title>Редактирование командной строки</title>
+
+    <para><application>psql</application> поддерживает библиотеку <application>Readline</application> для удобного редактирования командной строки. История команд автоматически сохраняется при выходе из <application>psql</application> и загружается при запуске. Завершение клавишей <literal>TAB</literal> также поддерживается, хотя логика завершения не претендует на роль анализатора <acronym>SQL</acronym>. Запросы, генерируемые завершением по <literal>TAB</literal>, также могут конфликтовать с другими командами SQL, например <literal>SET TRANSACTION ISOLATION LEVEL</literal>. Если по какой-либо причине вам не нравится завершение по клавише <literal>TAB</literal>, его можно отключить в файле <filename>.inputrc</filename> в вашем домашнем каталоге: <programlisting>$if psql
+set disable-completion on
+$endif</programlisting> (Это возможность не <application>psql</application>, а <application>Readline</application>. Читайте документацию к <application>Readline</application> для дополнительной информации.)</para>
+   </refsect3>
+  </refsect2>
+ </refsect1>
+
+
+ <refsect1 id="app-psql-environment">
+  <title id="app-psql-environment-title">Переменные окружения</title>
+
+  <variablelist>
+
+   <varlistentry>
+    <term><envar>COLUMNS</envar></term>
+
+    <listitem>
+     <para>Если <literal>\pset columns</literal> равно нулю, управляет шириной формата вывода <literal>wrapped</literal>, а также определяет, нужно ли использовать постраничник и нужно ли переключаться в вертикальный формат в режиме <literal>expanded auto</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><envar>PAGER</envar></term>
+
+    <listitem>
+     <para>Если результат запроса не помещается на экране, он пропускается через эту программу. Обычно это <literal>more</literal> или <literal>less</literal>. Значение по умолчанию зависит от платформы. От использования постраничника можно отказаться, очистив переменную <envar>PAGER</envar> или установив соответствующие параметры с помощью команды <command>\pset</command>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><envar>PGDATABASE</envar></term>
+    <term><envar>PGHOST</envar></term>
+    <term><envar>PGPORT</envar></term>
+    <term><envar>PGUSER</envar></term>
+
+    <listitem>
+     <para>Параметры подключения по умолчанию (см. <xref remap="4" linkend="libpq-envars"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><envar>PSQL_EDITOR</envar></term>
+    <term><envar>EDITOR</envar></term>
+    <term><envar>VISUAL</envar></term>
+
+    <listitem>
+     <para>Редактор, используемый командами <command>\e</command>, <command>\ef</command> и <command>\ev</command>. Эти переменные рассматриваются в этом же порядке; в силу вступает значение, установленное первым.</para>
+
+     <para>По умолчанию в Unix-подобных системах используется <filename>vi</filename>, а в Windows — <filename>notepad.exe</filename>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><envar>PSQL_EDITOR_LINENUMBER_ARG</envar></term>
+
+    <listitem>
+     <para>Если в командах <command>\e</command>, <command>\ef</command> или <command>\ev</command> указан номер строки, эта переменная задаёт аргумент командной строки, с которым номер строки может быть передан в редактор. Например, для редакторов <productname>Emacs</productname> и <productname>vi</productname> это знак плюс. Добавьте в конец значения пробел, если он требуется для отделения имени аргумента от номера строки. Примеры: <programlisting>PSQL_EDITOR_LINENUMBER_ARG='+'
+PSQL_EDITOR_LINENUMBER_ARG='--line '</programlisting></para>
+
+     <para>Значение по умолчанию <literal>+</literal> в Unix-подобных системах (соответствует редактору по умолчанию <filename>vi</filename> и многим другим распространённым редакторам). На платформе Windows нет значения по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><envar>PSQL_HISTORY</envar></term>
+
+    <listitem>
+     <para>Альтернативное расположение файла с историей команд. Допускается использование тильды (<literal>~</literal>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><envar>PSQLRC</envar></term>
+
+    <listitem>
+     <para>Альтернативное расположение пользовательского файла <filename>.psqlrc</filename>. Допускается использование тильды (<literal>~</literal>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><envar>SHELL</envar></term>
+
+    <listitem>
+     <para>Команда операционной системы, выполняемая метакомандой <command>\!</command>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><envar>TMPDIR</envar></term>
+
+    <listitem>
+     <para>Каталог для хранения временных файлов. По умолчанию <filename>/tmp</filename>.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Эта утилита, как и большинство других утилит <productname>&productname;</productname>, также использует переменные среды, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>).</para>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Файлы</title>
+
+ <variablelist>
+  <varlistentry>
+   <term><filename>psqlrc</filename> и <filename>~/.psqlrc</filename></term>
+   <listitem>
+    <para>При запуске без параметра <option>-X</option> программа <application>psql</application> пытается считать и выполнить команды из общесистемного стартового файла (<filename>psqlrc</filename>), а затем из персонального стартового файла пользователя (<filename>~/.psqlrc</filename>), после подключения к базе данных, но перед получением обычных команд. Этими файлами можно воспользоваться для настройки клиента и/или сервера, как правило, с помощью команд <command>\set</command> и <command>SET</command>.</para>
+    <para>Общесистемный стартовый файл называется <filename>psqlrc</filename>, он будет искаться в каталоге установки <quote>конфигурация системы</quote>. Для того чтобы узнать этот каталог, надёжнее всего выполнить команду <literal>pg_config --sysconfdir</literal>. По умолчанию он расположен в <filename>../etc/</filename> относительно каталога, содержащего исполняемые файлы <productname>&productname;</productname>. Имя этого каталога можно задать явно через переменную окружения <envar>PGSYSCONFDIR</envar>.</para>
+    <para>Персональный стартовый файл пользователя называется <filename>.psqlrc</filename>, он будет искаться в домашнем каталоге вызывающего пользователя. В Windows, где отсутствует такое понятие, персональный стартовый файл называется <filename>%APPDATA%\postgresql\psqlrc.conf</filename>. Расположение персонального стартового файла пользователя можно задать явно через переменную окружения <envar>PSQLRC</envar>.</para>
+    <para>Оба стартовых файла, общесистемный и персональный, можно привязать к конкретной версии <application>psql</application>. Для этого в конце имени файла нужно добавить номер основного или корректирующего релиза <productname>&productname;</productname>, например <filename>~/.psqlrc-9.2</filename> или <filename>~/.psqlrc-9.2.5</filename>. При наличии нескольких файлов, файл с более детальным номером версии будет иметь предпочтение.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><filename>.psql_history</filename></term>
+   <listitem>
+    <para>История командной строки хранится в файле <filename>~/.psql_history</filename> или <filename>%APPDATA%\postgresql\psql_history</filename> на Windows.</para>
+    <para>Расположение файла истории можно задать явно через переменную окружения <envar>PSQL_HISTORY</envar>.</para>
+   </listitem>
+  </varlistentry>
+ </variablelist>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Замечания</title>
+
+    <itemizedlist>
+      <listitem>
+      <para><application>psql</application> лучше всего работает с серверами той же или более старой основной версии. Сбой метакоманды наиболее вероятен, если версия сервера новее, чем версия <application>psql</application>. Однако, команды семейства <literal>\d</literal> должны работать с версиями сервера до 7.4, хотя и необязательно с серверами новее, чем сам <application>psql</application>. Общая функциональность запуска SQL-команд и отображения результатов запросов также должна работать на серверах с более новой основной версией, но это не гарантируется во всех случаях.</para>
+      <para>Если вы хотите, применяя <application>psql</application>, подключаться к нескольким серверам с различными основными версиями, рекомендуется использовать последнюю версию <application>psql</application>. Также можно собрать копии <application>psql</application> от каждой основной версии и использовать ту, которая соответствует версии сервера. Но на практике в этих дополнительных сложностях нет необходимости.</para>
+      </listitem>
+
+      <listitem>
+      <para>В <productname>&productname;</productname> до версии 9.6 параметр <option>-c</option> подразумевал <option>-X</option> (<option>--no-psqlrc</option>); теперь это не так.</para>
+      </listitem>
+
+      <listitem>
+      <para>В <productname>PostgreSQL</productname> до 8.4 программа <application>psql</application> могла принять первый аргумент однобуквенной команды с обратной косой чертой сразу после команды, без промежуточного пробела. Теперь разделительный пробельный символ обязателен.</para>
+      </listitem>
+    </itemizedlist>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Замечания для пользователей Windows</title>
+
+ <para><application>psql</application> создан как <quote>консольное приложение</quote>. Поскольку в Windows консольные окна используют кодировку символов отличную от той, что используется для остальной системы, нужно проявить особую осторожность при использовании 8-битных символов. Если <application>psql</application> обнаружит проблемную кодовую страницу консоли, он предупредит вас при запуске. Чтобы изменить кодовую страницу консоли, необходимы две вещи: <itemizedlist>
+    <listitem>
+     <para>Задать кодовую страницу, выполнив <userinput>cmd.exe /c chcp 1251</userinput>. (1251 это кодовая страница для России, замените на ваше значение.) При использовании Cygwin, эту команду можно записать в <filename>/etc/profile</filename>.</para>
+    </listitem>
+
+    <listitem>
+     <para>Установите консольный шрифт в <literal>Lucida Console</literal>, потому что растровый шрифт не работает с кодовой страницей ANSI.</para>
+    </listitem>
+   </itemizedlist></para>
+
+ </refsect1>
+
+
+ <refsect1 id="app-psql-examples">
+  <title id="app-psql-examples-title">Примеры</title>
+
+  <para>Первый пример показывает, что для ввода одной команды может потребоваться несколько строк. Обратите внимание, как меняется приглашение: <programlisting>testdb=&gt; <userinput>CREATE TABLE my_table (</userinput>
+testdb(&gt; <userinput> first integer not null default 0,</userinput>
+testdb(&gt; <userinput> second text)</userinput>
+testdb-&gt; <userinput>;</userinput>
+CREATE TABLE</programlisting> Теперь посмотрим на определение таблицы: <programlisting>testdb=&gt; <userinput>\d my_table</userinput>
+             Таблица "my_table"
+ Атрибут |  Тип    |    Модификаторы
+---------+---------+--------------------
+ first   | integer | NOT NULL DEFAULT 0
+ second  | text    |</programlisting> Теперь изменим приглашение на что-то более интересное: <programlisting>testdb=&gt; <userinput>\set PROMPT1 '%n@%m %~%R%# '</userinput>
+peter@localhost testdb=&gt;</programlisting> Предположим, что вы внесли данные в таблицу и хотите на них посмотреть: <programlisting>peter@localhost testdb=&gt; SELECT * FROM my_table;
+ first | second
+-------+--------
+     1 | Один
+     2 | Два
+     3 | Три  
+     4 | Четыре
+(4 строки)</programlisting> Таблицу можно вывести разными способами при помощи команды <command>\pset</command>: <programlisting>peter@localhost testdb=&gt; <userinput>\pset border 2</userinput>
+Установлен стиль границ: 2.
+peter@localhost testdb=&gt; <userinput>SELECT * FROM my_table;</userinput>
++-------+--------+
+| first | second |
++-------+--------+
+|     1 | Один   |
+|     2 | Два    |
+|     3 | Три    |
+|     4 | Четыре |
++-------+--------+
+(4 строки)
+
+peter@localhost testdb=&gt; <userinput>\pset border 0</userinput>
+Установлен стиль границ: 0.
+peter@localhost testdb=&gt; <userinput>SELECT * FROM my_table;</userinput>
+first second
+----- ------
+    1 Один
+    2 Два
+    3 Три  
+    4 Четыре
+(4 строки)
+
+peter@localhost testdb=&gt; <userinput>\pset border 1</userinput>
+Установлен стиль границ: 1.
+peter@localhost testdb=&gt; <userinput>\pset format unaligned</userinput>
+Формат вывода: unaligned.
+peter@localhost testdb=&gt; <userinput>\pset fieldsep ','</userinput>
+Разделитель полей: ",".
+peter@localhost testdb=&gt; <userinput>\pset tuples_only</userinput>
+Выводятся только кортежи.
+peter@localhost testdb=&gt; <userinput>SELECT second, first FROM my_table;</userinput>
+Один,1
+Два,2
+Три,3
+Четыре,4</programlisting> Также можно использовать короткие команды: <programlisting>peter@localhost testdb=&gt; <userinput>\a \t \x</userinput>
+Формат вывода: aligned.
+Режим вывода только кортежей выключен.
+Расширенный вывод включён.
+peter@localhost testdb=&gt; <userinput>SELECT * FROM my_table;</userinput>
+-[ RECORD 1 ]-
+first  | 1
+second | Один
+-[ RECORD 2 ]-
+first  | 2
+second | Два
+-[ RECORD 3 ]-
+first  | 3
+second | Три  
+-[ RECORD 4 ]-
+first  | 4
+second | Четыре</programlisting></para>
+
+<para>Когда это уместно, результаты запроса можно просмотреть в виде перекрёстной таблицы с помощью команды <command>\crosstabview</command>: <programlisting>testdb=&gt; <userinput>SELECT first, second, first &gt; 2 AS gt2 FROM my_table;</userinput>
+ first | second | gt2 
+-------+--------+-----
+     1 | one    | f
+     2 | two    | f
+     3 | three  | t
+     4 | four   | t
+(4 rows)
+
+testdb=&gt; <userinput>\crosstabview first second</userinput>
+ first | one | two | three | four 
+-------+-----+-----+-------+------
+     1 | f   |     |       | 
+     2 |     | f   |       | 
+     3 |     |     | t     | 
+     4 |     |     |       | t
+(4 rows)</programlisting> Второй пример показывает таблицу умножения, строки в которой отсортированы в обратном числовом порядке, а столбцы — независимо, по возрастанию числовых значений. <programlisting>testdb=&gt; <userinput>SELECT t1.first as "A", t2.first+100 AS "B", t1.first*(t2.first+100) as "AxB",</userinput>
+testdb(&gt; <userinput>row_number() over(order by t2.first) AS ord</userinput>
+testdb(&gt; <userinput>FROM my_table t1 CROSS JOIN my_table t2 ORDER BY 1 DESC</userinput>
+testdb(&gt; <userinput>\crosstabview "A" "B" "AxB" ord</userinput>
+ A | 101 | 102 | 103 | 104 
+---+-----+-----+-----+-----
+ 4 | 404 | 408 | 412 | 416
+ 3 | 303 | 306 | 309 | 312
+ 2 | 202 | 204 | 206 | 208
+ 1 | 101 | 102 | 103 | 104
+(4 rows)</programlisting></para>
+
+ </refsect1>
+
+</refentry>

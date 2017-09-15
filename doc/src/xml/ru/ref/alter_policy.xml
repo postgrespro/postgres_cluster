@@ -1,0 +1,103 @@
+<!--
+doc/src/xml/ref/alter_policy.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterpolicy">
+ <indexterm zone="sql-alterpolicy"><primary>ALTER POLICY</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER POLICY</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER POLICY</refname>
+  <refpurpose>изменить определение политики защиты на уровне строк</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER POLICY <replaceable class="parameter">имя</replaceable> ON <replaceable class="parameter">имя_таблицы</replaceable> RENAME TO <replaceable class="parameter">новое_имя</replaceable>
+
+ALTER POLICY <replaceable class="parameter">имя</replaceable> ON <replaceable class="parameter">имя_таблицы</replaceable>
+    [ TO { <replaceable class="parameter">имя_роли</replaceable> | PUBLIC | CURRENT_USER | SESSION_USER } [, ...] ]
+    [ USING ( <replaceable class="parameter">выражение_использования</replaceable> ) ]
+    [ WITH CHECK ( <replaceable class="parameter">выражение_проверки</replaceable> ) ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER POLICY</command> изменяет определение существующей политики на уровне строк.</para>
+
+  <para>Использовать <command>ALTER POLICY</command> может только владелец таблицы (или представления), к которой применяется эта политика.</para>
+
+  <para>Во второй форме <command>ALTER POLICY</command> список ролей, <replaceable class="parameter">выражение_использования</replaceable> и <replaceable class="parameter">выражение_проверки</replaceable> заменяются независимо, если они указаны. Когда одно из этих предложений опущено, соответствующая часть политики остаётся неизменной.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя существующей политики, подлежащей изменению.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) таблицы, к которой применяется эта политика.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя политики.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_роли</replaceable></term>
+    <listitem>
+     <para>Роль (роли), на которую действует политика. В одной команде можно указать несколько ролей. Чтобы применить политику ко всем ролям, укажите <literal>PUBLIC</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">выражение_использования</replaceable></term>
+    <listitem>
+     <para>Выражение <literal>USING</literal> для политики. За подробностями обратитесь к <xref remap="3" linkend="sql-createpolicy"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">выражение_проверки</replaceable></term>
+    <listitem>
+     <para>Выражение <literal>WITH CHECK</literal> для политики. За подробностями обратитесь к <xref remap="3" linkend="sql-createpolicy"/>.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>ALTER POLICY</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createpolicy"/></member>
+   <member><xref linkend="sql-droppolicy"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

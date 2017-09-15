@@ -1,0 +1,82 @@
+<!-- doc/src/xml/ref/drop_foreign_table.xml -->
+
+<refentry id="sql-dropforeigntable">
+ <indexterm zone="sql-dropforeigntable"><primary>DROP FOREIGN TABLE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP FOREIGN TABLE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP FOREIGN TABLE</refname>
+  <refpurpose>удалить стороннюю таблицу</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP FOREIGN TABLE [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [, ...] [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP FOREIGN TABLE</command> удаляет стороннюю таблицу. Удалить стороннюю таблицу может только её владелец.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если сторонняя таблица не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) сторонней таблицы, подлежащей удалению.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данной сторонней таблицы (например, представления), и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении сторонней таблицы, если от неё зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление двух сторонних таблиц, <literal>films</literal> и <literal>distributors</literal>: <programlisting>DROP FOREIGN TABLE films, distributors;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Эта команда соответствует ISO/IEC 9075-9 (SQL/MED), но возможность удалять в одной команде несколько таблиц и указание <literal>IF EXISTS</literal> являются расширениями <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterforeigntable"/></member>
+   <member><xref linkend="sql-createforeigntable"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

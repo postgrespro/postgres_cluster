@@ -1,0 +1,72 @@
+<!--
+doc/src/xml/ref/commit.xml
+&productname; documentation
+-->
+
+<refentry id="sql-commit">
+ <indexterm zone="sql-commit"><primary>COMMIT</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>COMMIT</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>COMMIT</refname>
+  <refpurpose>зафиксировать текущую транзакцию</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>COMMIT [ WORK | TRANSACTION ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>COMMIT</command> фиксирует текущую транзакцию. Все изменения, произведённые транзакцией, становятся видимыми для других и гарантированно сохранятся в случае сбоя.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>WORK</literal></term>
+    <term><literal>TRANSACTION</literal></term>
+    <listitem>
+     <para>Необязательные ключевые слова, не оказывают никакого влияния.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Для прерывания транзакции используйте <xref linkend="sql-rollback"/>.</para>
+
+  <para>При попытке выполнить <command>COMMIT</command> вне транзакции ничего не произойдёт, но будет выдано предупреждение.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Следующая команда фиксирует текущую транзакцию и сохраняет все изменения: <programlisting>COMMIT;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>В стандарте SQL описаны только две формы: <literal>COMMIT</literal> и <literal>COMMIT WORK</literal>. В остальном эта команда полностью соответствует стандарту.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-begin"/></member>
+   <member><xref linkend="sql-rollback"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

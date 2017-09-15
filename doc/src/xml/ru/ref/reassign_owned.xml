@@ -1,0 +1,82 @@
+<!--
+doc/src/xml/ref/reassign_owned.xml
+&productname; documentation
+-->
+
+<refentry id="sql-reassign-owned">
+ <indexterm zone="sql-reassign-owned"><primary>REASSIGN OWNED</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>REASSIGN OWNED</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>REASSIGN OWNED</refname>
+  <refpurpose>сменить владельца объектов базы данных, принадлежащих заданной роли</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>REASSIGN OWNED BY { <replaceable class="parameter">старая_роль</replaceable> | CURRENT_USER | SESSION_USER } [, ...]
+               TO { <replaceable class="parameter">новая_роль</replaceable> | CURRENT_USER | SESSION_USER }</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>REASSIGN OWNED</command> указывает системе сменить владельца объектов баз данных, принадлежащих одной из <replaceable class="parameter">старых_ролей</replaceable>, на <replaceable class="parameter">новую_роль</replaceable>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">старая_роль</replaceable></term>
+    <listitem>
+     <para>Имя роли. Все объекты в текущей базе данных и все общие объекты (базы данных, табличные пространства), принадлежащие этой роли, станут принадлежать <replaceable class="parameter">новой_роли</replaceable>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_роль</replaceable></term>
+    <listitem>
+     <para>Имя роли, которая станет новым владельцем затронутых объектов.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para><command>REASSIGN OWNED</command> часто применяется при подготовке к удалению одной или нескольких ролей. Так как команда <command>REASSIGN OWNED</command> затрагивает объекты только в текущей базе данных, обычно её нужно выполнять в каждой базе данных, которая содержит объекты, принадлежащие удаляемой роли.</para>
+
+  <para>Для выполнения <command>REASSIGN OWNED</command> требуются права и для исходной, и для целевой роли.</para>
+
+  <para>Команда <xref linkend="sql-drop-owned"/> предлагает альтернативное решение, просто удаляя все объекты в базе данных, принадлежащие одной или нескольким заданным ролям.</para>
+
+  <para>Команда <command>REASSIGN OWNED</command> не затрагивает никакие права, которые даны <replaceable class="parameter">старым_ролям</replaceable> для объектов, им не принадлежащим. Отозвать эти права можно, воспользовавшись командой <command>DROP OWNED</command>.</para>
+
+  <para>За подробностями обратитесь к <xref remap="3" linkend="role-removal"/>.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>REASSIGN OWNED</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-drop-owned"/></member>
+   <member><xref linkend="sql-droprole"/></member>
+   <member><xref linkend="sql-alterdatabase"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

@@ -1,0 +1,38 @@
+<!-- doc/src/xml/dict-int.xml -->
+
+<sect1 id="dict-int" xreflabel="dict_int">
+ <title>dict_int</title>
+
+ <indexterm zone="dict-int"><primary>dict_int</primary></indexterm>
+
+ <para>Модуль <filename>dict_int</filename> представляет собой пример дополнительного шаблона словаря для полнотекстового поиска. Этот словарь был создан для управляемой индексации целых чисел (со знаком и без); он позволяет индексировать такие числа и при этом избежать чрезмерного разрастания списка уникальных слов, и тем самым значительно увеличивает скорость поиска.</para>
+
+ <sect2>
+  <title>Конфигурирование</title>
+
+  <para>Этот словарь принимает два параметра:</para>
+
+  <itemizedlist>
+   <listitem>
+    <para>Параметр <literal>maxlen</literal> задаёт максимальное число цифр, из которого может состоять целое число. Значение по умолчанию — 6.</para>
+   </listitem>
+   <listitem>
+    <para>Параметр <literal>rejectlong</literal> определяет, должны ли чрезмерно длинные числа усекаться или игнорироваться. Если <literal>rejectlong</literal> имеет значение <literal>false</literal> (по умолчанию), этот словарь возвращает первые <literal>maxlen</literal> цифр целого числа. Если <literal>rejectlong</literal> равен <literal>true</literal>, чрезмерное длинное целое воспринимается как стоп-слово, и в результате не индексируется. Заметьте, это означает, что такое целое нельзя будет найти.</para>
+   </listitem>
+  </itemizedlist>
+ </sect2>
+
+ <sect2>
+  <title>Использование</title>
+
+  <para>При установке расширения <literal>dict_int</literal> в базе создаётся шаблон текстового поиска <literal>intdict_template</literal> и словарь <literal>intdict</literal> на его базе, с параметрами по умолчанию. Вы можете изменить параметры словаря, например так: <programlisting>mydb# ALTER TEXT SEARCH DICTIONARY intdict (MAXLEN = 4, REJECTLONG = true);
+ALTER TEXT SEARCH DICTIONARY</programlisting> или создать новые словари на базе этого шаблона.</para>
+
+  <para>Протестировать этот словарь можно так: <programlisting>mydb# select ts_lexize('intdict', '12345678');
+ ts_lexize
+-----------
+ {123456}</programlisting> Но для практического применения его нужно включить в конфигурацию текстового поиска, как описано в <xref remap="6" linkend="textsearch"/>. Это может выглядеть примерно так: <programlisting>ALTER TEXT SEARCH CONFIGURATION english
+    ALTER MAPPING FOR int, uint WITH intdict;</programlisting></para>
+ </sect2>
+
+</sect1>

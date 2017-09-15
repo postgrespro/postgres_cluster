@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- doc/src/xml/postgres.xml -->
+
+<!DOCTYPE book PUBLIC "-//OASIS//DTD DocBook XML V4.2//EN" "http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd" [
+
+<!ENTITY % version SYSTEM "version.ent">
+%version;
+<!ENTITY % filelist SYSTEM "filelist.xml">
+%filelist;
+<!ENTITY % isoent SYSTEM "http://www.w3.org/2003/entities/2007/isopub.ent"> %isoent;
+<!ENTITY % xhtml1-lat1 SYSTEM "http://www.w3.org/2003/entities/2007/xhtml1-lat1.ent"> %xhtml1-lat1;
+<!ENTITY % isolat2 SYSTEM "http://www.w3.org/2003/entities/2007/isolat2.ent"> %isolat2;
+<!ENTITY % isogrk3 SYSTEM "http://www.w3.org/2003/entities/2007/isogrk3.ent"> %isogrk3;
+
+<!ENTITY reference  SYSTEM "reference.xml">
+
+]>
+<book id="postgres" lang="ru">
+ <title>Документация к &productname; &version;</title>
+
+ <bookinfo>
+  <corpauthor>The PostgreSQL Global Development Group</corpauthor>   
+  <corpauthor>ООО «Постгрес Профессиональный»</corpauthor>
+  <productname>&productname;</productname>
+  <productnumber>&version;</productnumber>
+  &legal;
+  <othercredit role="translator">
+    <affiliation>
+      <orgname>Компания «Постгрес Профессиональный»</orgname>
+    </affiliation>
+    <contrib>Перевод на русский язык, 2015-2017гг.</contrib>
+  </othercredit>
+  <releaseinfo>
+    Официальная страница русскоязычной документации:
+    <ulink url="https://postgrespro.ru/docs/">https://postgrespro.ru/docs/</ulink>.
+  </releaseinfo>
+ </bookinfo>
+
+ &intro;
+
+ <part id="tutorial">
+  <title>Введение</title>
+
+  <partintro>
+   <para>Добро пожаловать на встречу с <productname>&productname;</productname>. В следующих главах вы сможете получить общее представление о <productname>&productname;</productname>, реляционных базах данных и языке SQL, если вы ещё не знакомы с этими темами. Этот материал будет понятен даже тем, кто обладает только общими знаниями о компьютерах. Ни опыт программирования, ни навыки использования Unix-систем не требуются. Основная цель этой части &mdash; познакомить вас на практике с ключевыми аспектами системы <productname>&productname;</productname>, поэтому затрагиваемые в ней темы не будут рассматриваться максимально глубоко и полно.</para>
+
+   <para>Прочитав это введение, вы, возможно, захотите перейти к <xref remap="3" linkend="sql"/>, чтобы получить более формализованное знание языка SQL, или к <xref remap="3" linkend="client-interfaces"/>, посвящённой разработке приложений для <productname class="trade">PostgreSQL</productname>. Для изучения SQL можно воспользоваться демонстрационной базой данных, описанной в <xref remap="6" linkend="demodb-bookings"/>. Тем же, кто устанавливает и администрирует сервер самостоятельно, следует также прочитать <xref remap="4" linkend="admin"/>.</para>
+  </partintro>
+
+  &start;
+  &query;
+  &advanced;
+
+ </part>
+
+ <part id="sql">
+  <title>Язык SQL</title>
+
+  <partintro>
+   <para>В этой части книги описывается использование языка <acronym>SQL</acronym> в <productname>&productname;</productname>. Мы начнём с описания общего синтаксиса <acronym>SQL</acronym>, затем расскажем, как создавать структуры для хранения данных, как наполнять базу данных и как выполнять запросы к ней. В продолжении будут перечислены существующие типы данных и функции, применяемые с командами <acronym>SQL</acronym>. И наконец, закончится эта часть рассмотрением важных аспектов настройки базы данных для оптимальной производительности.</para>
+
+   <para>Материал этой части упорядочен так, чтобы новичок мог прочитать её от начала до конца и полностью понять все темы, не забегая вперёд. При этом главы сделаны самодостаточными, так что опытные пользователи могут читать главы по отдельности. Информация в этой части книги представлена в повествовательном стиле и разделена по темам. Если же вас интересует формальное и полное описание определённой команды, см. <xref remap="4" linkend="reference"/>.</para>
+
+   <para>Читатели этой части книги должны уже знать, как подключаться к базе данных <productname>&productname;</productname> и выполнять команды <acronym>SQL</acronym>. Если вы ещё не знаете этого, рекомендуется сначала прочитать <xref remap="4" linkend="tutorial"/>. Команды <acronym>SQL</acronym> обычно вводятся в <application>psql</application> &mdash; интерактивном терминальном приложении <productname>&productname;</productname>, но можно воспользоваться и другими программами с подобными функциями.</para>
+  </partintro>
+
+  &syntax;
+  &ddl;
+  &dml;
+  &queries;
+  &datatype;
+  &func;
+  &typeconv;
+  &indices;
+  &textsearch;
+  &mvcc;
+  &perform;
+  &parallel;
+  &atx;
+
+ </part>
+
+ <part id="admin">
+  <title>Администрирование сервера</title>
+
+  <partintro>
+   <para>В этой части документации освещаются темы, представляющие интерес для администратора баз данных <productname>&productname;</productname>. В частности, здесь рассматривается установка программного обеспечения, установка и настройка сервера, управление пользователями и базами данных, а также задачи обслуживания. С этими темами следует ознакомиться всем, кто эксплуатирует сервер <productname>&productname;</productname> (даже для личных целей, а тем более в производственной среде).</para>
+
+   <para>Материал этой части даётся примерно в том порядке, в каком его следует читать начинающему пользователю. При этом её главы самодостаточны и при желании могут быть прочитаны по отдельности. Информация в этой части книги представлена в повествовательном стиле и разделена по темам. Если же вас интересует формальное и полное описание определённой команды, см. <xref remap="4" linkend="reference"/>.</para>
+
+   <para>Первые несколько глав написаны так, чтобы их можно было понять без предварительных знаний, так что начинающие пользователи, которым нужно установить свой собственный сервер, могут начать свой путь с них. Остальные главы части посвящены настройке сервера и управлению им; в этом материале подразумевается, что читатель знаком с основными принципами использования СУБД <productname>&productname;</productname>. За дополнительной информацией мы рекомендуем читателям обратиться к <xref remap="3" linkend="tutorial"/> и <xref remap="3" linkend="sql"/>.</para>
+  </partintro>
+
+  &installation-bin;
+  &runtime;
+  &config;
+  &client-auth;
+  &user-manag;
+  &manage-ag;
+  &charset;
+  &maintenance;
+  &backup;
+  &high-availability;
+  &recovery-config;
+  &monitoring;
+  &diskusage;
+  &wal;
+  &regress;
+  &cfs;
+
+ </part>
+
+ <part id="client-interfaces">
+  <title>Клиентские интерфейсы</title>
+
+  <partintro>
+   <para>В этой части документации описываются клиентские программные интерфейсы, включённые в дистрибутив <productname>&productname;</productname>. Все включённые в неё главы можно читать по отдельности. Заметьте, что существует множество других программных интерфейсов, со своей документацией (некоторые наиболее популярные перечислены в <xref remap="6" linkend="external-projects"/>). Для изучения этой части нужно уметь работать с базой данных, используя команды <acronym>SQL</acronym> (см. <xref remap="4" linkend="sql"/>), и, конечно же, знать язык программирования, на который ориентирован определённый интерфейс.</para>
+  </partintro>
+
+  &libpq;
+  &lobj;
+  &ecpg;
+  &infoschema;
+
+ </part>
+
+ <part id="server-programming">
+  <title>Серверное программирование</title>
+
+  <partintro>
+   <para>Эта часть документации посвящена расширению функциональности сервера путём реализации собственных функций, типов данных, триггеров и т. д. Это довольно сложные темы, для освоения которых рекомендуется предварительно изучить и понять всю остальную документацию для пользователей <productname>&productname;</productname>. В последних главах этой части описываются языки программирования на стороне сервера, поддерживаемые дистрибутивом <productname>&productname;</productname>, и рассматриваются общие вопросы, связанные с программированием на стороне сервера. Но прежде чем погружаться в этот материал, важно изучить предыдущие разделы <xref remap="2" linkend="extend"/> (где освещаются функции).</para>
+  </partintro>
+
+  &extend;
+  &trigger;
+  &event-trigger;
+  &rules;
+
+  &xplang;
+  &plsql;
+  &pltcl;
+  &plperl;
+  &plpython;
+
+  &spi;
+  &bgworker;
+  &logicaldecoding;
+  &replication-origins;
+
+ </part>
+
+ &reference;
+
+ <part id="internals">
+  <title>Внутреннее устройство</title>
+
+  <partintro>
+   <para>Содержит разнообразную информацию, полезную для разработчиков <productname>&productname;</productname>.</para>
+  </partintro>
+
+  &arch-dev;
+  &catalogs;
+  &protocol;
+  &plhandler;
+  &fdwhandler;
+  &tablesample-method;
+  &custom-scan;
+  &geqo;
+  &indexam;
+  &generic-wal;
+  &gist;
+  &spgist;
+  &gin;
+  &brin;
+  &storage;
+  &bki;
+  &planstats;
+
+ </part>
+
+ <part id="appendixes">
+  <title>Приложения</title>
+
+  &errcodes;
+  &datetime;
+  &keywords;
+  &features;
+  &release;
+  &contrib;
+  &external-projects;
+  &config-one-c;
+  &demodb-bookings;
+  &acronyms;
+
+ </part>
+
+ &biblio;
+ <index id="bookindex"/>
+
+</book>

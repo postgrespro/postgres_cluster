@@ -1,0 +1,86 @@
+<!--
+doc/src/xml/ref/drop_tsparser.xml
+&productname; documentation
+-->
+
+<refentry id="sql-droptsparser">
+ <indexterm zone="sql-droptsparser"><primary>DROP TEXT SEARCH PARSER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP TEXT SEARCH PARSER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP TEXT SEARCH PARSER</refname>
+  <refpurpose>удалить анализатор текстового поиска</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP TEXT SEARCH PARSER [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP TEXT SEARCH PARSER</command> удаляет существующий анализатор текстового поиска. Выполнить эту команду может только суперпользователь.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если анализатор текстового поиска не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующего анализатора текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данного анализатора текстового поиска, и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении анализатора текстового поиска, если от него зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление анализатора текстового поиска <literal>my_parser</literal>: <programlisting>DROP TEXT SEARCH PARSER my_parser;</programlisting> Эта команда не будет выполнена, если существуют конфигурации текстового поиска, использующие это анализатор. Чтобы удалить такие конфигурации вместе с анализатором, следует добавить указание <literal>CASCADE</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>DROP TEXT SEARCH PARSER</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altertsparser"/></member>
+   <member><xref linkend="sql-createtsparser"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

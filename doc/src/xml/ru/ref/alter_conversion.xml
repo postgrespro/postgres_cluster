@@ -1,0 +1,90 @@
+<!--
+doc/src/xml/ref/alter_conversion.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterconversion">
+ <indexterm zone="sql-alterconversion"><primary>ALTER CONVERSION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER CONVERSION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER CONVERSION</refname>
+  <refpurpose>изменить определение перекодировки</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER CONVERSION <replaceable>имя</replaceable> RENAME TO <replaceable>новое_имя</replaceable>
+ALTER CONVERSION <replaceable>имя</replaceable> OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+ALTER CONVERSION <replaceable>имя</replaceable> SET SCHEMA <replaceable>новая_схема</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER CONVERSION</command> изменяет определение перекодировки.</para>
+
+  <para>Выполнить <command>ALTER CONVERSION</command> может только владелец соответствующей перекодировки. Чтобы сменить владельца, необходимо быть непосредственным или опосредованным членом новой роли-владельца, а эта роль должна иметь право <literal>CREATE</literal> в схеме перекодировки. (С такими ограничениями при смене владельца не происходит ничего такого, что нельзя было бы сделать, имея право удалить и вновь создать перекодировку. Однако суперпользователь может сменить владельца перекодировки в любом случае.)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующей перекодировки.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя перекодировки.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Новый владелец перекодировки.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_схема</replaceable></term>
+    <listitem>
+     <para>Новая схема перекодировки.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Переименование перекодировки <literal>iso_8859_1_to_utf8</literal> в <literal>latin1_to_unicode</literal>: <programlisting>ALTER CONVERSION iso_8859_1_to_utf8 RENAME TO latin1_to_unicode;</programlisting></para>
+
+  <para>Смена владельца перекодировки <literal>iso_8859_1_to_utf8</literal> на <literal>joe</literal>: <programlisting>ALTER CONVERSION iso_8859_1_to_utf8 OWNER TO joe;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER CONVERSION</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createconversion"/></member>
+   <member><xref linkend="sql-dropconversion"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

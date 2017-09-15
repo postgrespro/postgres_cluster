@@ -1,0 +1,111 @@
+<!--
+doc/src/xml/ref/lock.xml
+&productname; documentation
+-->
+
+<refentry id="sql-lock">
+ <indexterm zone="sql-lock"><primary>LOCK</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>LOCK</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>LOCK</refname>
+  <refpurpose>заблокировать таблицу</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>LOCK [ TABLE ] [ ONLY ] <replaceable class="parameter">имя</replaceable> [ * ] [, ...] [ IN <replaceable class="parameter">режим_блокировки</replaceable> MODE ] [ NOWAIT ]
+
+<phrase>Где <replaceable class="parameter">режим_блокировки</replaceable> может быть следующим:</phrase>
+
+    ACCESS SHARE | ROW SHARE | ROW EXCLUSIVE | SHARE UPDATE EXCLUSIVE
+    | SHARE | SHARE ROW EXCLUSIVE | EXCLUSIVE | ACCESS EXCLUSIVE</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>LOCK TABLE</command> получает блокировку на уровне таблицы, при необходимости ожидая освобождения таблицы от других конфликтующих блокировок. Если указано <literal>NOWAIT</literal>, <command>LOCK TABLE</command> не ждёт, пока таблица освободится: если блокировку нельзя получить немедленно, команда прерывается и выдаётся ошибка. Как только блокировка получена, она удерживается до завершения текущей транзакции. (Команды <command>UNLOCK TABLE</command> не существует; блокировки всегда освобождаются в конце транзакции.)</para>
+
+  <para>Запрашивая автоматические блокировки для команд, работающих с таблицами, <productname>&productname;</productname> всегда выбирает наименее ограничивающий режим блокировки из возможных. Оператор <command>LOCK TABLE</command> предназначен для случаев, когда требуется более сильная блокировка. Например, предположим, что приложение выполняет транзакцию на уровне изоляции <literal>READ COMMITTED</literal> и оно должно получать неизменные данные на протяжении всей транзакции. Для достижения этой цели можно получить для таблицы блокировку в режиме <literal>SHARE</literal>, прежде чем обращаться к ней. В результате параллельные изменения данных будут исключены и при последующих чтениях будет получено стабильное представление зафиксированных данных, так как режим блокировки <literal>SHARE</literal> конфликтует с блокировкой <literal>ROW EXCLUSIVE</literal>, запрашиваемой при записи, а <command>LOCK TABLE <replaceable class="parameter">имя</replaceable> IN SHARE MODE</command> будет ждать, пока параллельные транзакции с блокировкой <literal>ROW EXCLUSIVE</literal> не будут зафиксированы или отменены. Таким образом, в момент получения такой блокировки не останется ни одной открытой незафиксированной операции записи; кроме того, никто не сможет записывать в таблицу, пока блокировка не будет снята.</para>
+
+  <para>Чтобы получить похожий эффект в транзакции на уровне изоляции <literal>REPEATABLE READ</literal> или <literal>SERIALIZABLE</literal>, необходимо выполнить оператор <command>LOCK TABLE</command> перед первым <command>SELECT</command> или оператором, изменяющим данные. Представление данных для транзакции уровня <literal>REPEATABLE READ</literal> или <literal>SERIALIZABLE</literal> будет заморожено в момент, когда начнёт выполняться этот запрос. Если команда <command>LOCK TABLE</command> выполняется в транзакции позже, она так же исключает параллельную запись, но не даёт гарантии, что транзакция будет читать последние зафиксированные данные.</para>
+
+  <para>Если в транзакции такого рода требуется изменять данные в таблице, для неё следует использовать режим блокировки <literal>SHARE ROW EXCLUSIVE</literal> вместо <literal>SHARE</literal>. Этот режим гарантирует, что в один момент времени будет выполняться только одна транзакция такого типа. Без этого ограничения возможна взаимоблокировка: две транзакции могут одновременно получить блокировки <literal>SHARE</literal>, после чего они не смогут получить блокировку <literal>ROW EXCLUSIVE</literal>, чтобы собственно выполнить изменения. (Заметьте, что собственные блокировки транзакции никогда не конфликтуют, так что транзакция может получить блокировку <literal>ROW EXCLUSIVE</literal>, когда она владеет блокировкой <literal>SHARE</literal> &mdash; но не тогда, когда блокировку <literal>SHARE</literal> удерживает другая транзакция.) Чтобы не допустить взаимоблокировок, убедитесь, что все транзакции запрашивают блокировки одних объектов в одинаковом порядке, и если для одного объекта запрашиваются блокировки в разных режимах, транзакции всегда должны запрашивать самую строгую блокировку.</para>
+
+  <para>Дополнительно о режимах и стратегиях блокировки можно узнать в <xref remap="6" linkend="explicit-locking"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующей таблицы, для которой запрашивается блокировка. Если перед именем таблицы указано <literal>ONLY</literal>, блокируется только заданная таблица. Без <literal>ONLY</literal> блокируется и заданная таблица, и все её потомки (если таковые есть). После имени таблицы можно также добавить необязательное указание <literal>*</literal>, чтобы явно обозначить, что блокировка затрагивает и все дочерние таблицы.</para>
+
+     <para>Команда <literal>LOCK TABLE a, b;</literal> равнозначна последовательности <literal>LOCK TABLE a; LOCK TABLE b;</literal>. Таблицы блокируются по одной в порядке, заданном в команде <command>LOCK TABLE</command>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">режим_блокировки</replaceable></term>
+    <listitem>
+     <para>Режим блокировки определяет, с какой блокировкой будет конфликтовать данная. Режимы блокировок описаны в <xref remap="6" linkend="explicit-locking"/>.</para>
+
+     <para>Если режим блокировки не указан, применяется самый строгий режим, <literal>ACCESS EXCLUSIVE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>NOWAIT</literal></term>
+    <listitem>
+     <para>Указывает, что <command>LOCK TABLE</command> не должна ожидать освобождения конфликтующих блокировок: если запрошенная блокировка не может быть получена немедленно, транзакция прерывается.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para><literal>LOCK TABLE ... IN ACCESS SHARE MODE</literal> требует наличия права <literal>SELECT</literal> в целевой таблице. <literal>LOCK TABLE ... IN ROW EXCLUSIVE MODE</literal> требует наличия прав <literal>INSERT</literal>, <literal>UPDATE</literal>, <literal>DELETE</literal> или <literal>TRUNCATE</literal> для целевой таблицы. Все другие формы <command>LOCK</command> требуют наличия права <literal>UPDATE</literal>, <literal>DELETE</literal> или <literal>TRUNCATE</literal> на уровне таблицы.</para>
+
+   <para>Вне блока транзакции команда <command>LOCK TABLE</command> бесполезна: блокировка сохранится только до завершения операции. Поэтому <productname>&productname;</productname> выдаёт ошибку при попытке применить <command>LOCK</command> не в блоке транзакции. Чтобы определить блок транзакции, используйте <xref linkend="sql-begin"/> и <xref linkend="sql-commit"/> (или <xref linkend="sql-rollback"/>).</para>
+
+  <para><command>LOCK TABLE</command> может устанавливать только блокировки на уровне таблицы, так что все имена режимов, включающие слово <literal>ROW</literal> (строка), не совсем корректны. Следует воспринимать их так, что в этих режимах пользователь намеревается получать в заблокированной таблице блокировки уровня строк. Также учтите, что в режиме <literal>ROW EXCLUSIVE</literal> устанавливается разделяемая блокировка таблицы. Заметьте, что применительно к <command>LOCK TABLE</command> все режимы блокировки действуют одинаково, отличаются только правила, определяющие, какой режим с каким конфликтует. Чтобы узнать, как получить блокировку именно на уровне строк, обратитесь к <xref remap="3" linkend="locking-rows"/> и <xref remap="3" linkend="sql-for-update-share" endterm="sql-for-update-share-title"/> в справочной документации <command>SELECT</command>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Получение блокировки <literal>SHARE</literal> для первичного ключа таблицы при добавлении записи в подчинённую таблицу: <programlisting>BEGIN WORK;
+LOCK TABLE films IN SHARE MODE;
+SELECT id FROM films
+    WHERE name = 'Star Wars: Episode I - The Phantom Menace';
+-- Если запись не будет возвращена, произойдёт откат транзакции
+INSERT INTO films_user_comments VALUES
+    (_id_, 'GREAT! I was waiting for it for so long!');
+COMMIT WORK;</programlisting></para>
+
+  <para>Установление блокировки <literal>SHARE ROW EXCLUSIVE</literal> в таблице первичного ключа перед выполнением операции удаления: <programlisting>BEGIN WORK;
+LOCK TABLE films IN SHARE ROW EXCLUSIVE MODE;
+DELETE FROM films_user_comments WHERE id IN
+    (SELECT id FROM films WHERE rating &lt; 5);
+DELETE FROM films WHERE rating &lt; 5;
+COMMIT WORK;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Команда <command>LOCK TABLE</command> отсутствует в стандарте SQL, в нём уровни изоляции транзакции определяются командой <command>SET TRANSACTION</command>. <productname>&productname;</productname> поддерживает и этот вариант; подробнее это описано в <xref remap="6" linkend="sql-set-transaction"/>.</para>
+
+  <para>За исключением <literal>ACCESS SHARE</literal>, <literal>ACCESS EXCLUSIVE</literal> и <literal>SHARE UPDATE EXCLUSIVE</literal>, режимы блокировки в <productname>&productname;</productname> и синтаксис <command>LOCK TABLE</command> совместимы с теми, что представлены в СУБД <productname>Oracle</productname>.</para>
+ </refsect1>
+</refentry>

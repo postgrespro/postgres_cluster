@@ -1,0 +1,231 @@
+<!--
+doc/src/xml/ref/alter_extension.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterextension">
+ <indexterm zone="sql-alterextension"><primary>ALTER EXTENSION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER EXTENSION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER EXTENSION</refname>
+  <refpurpose>изменить определение расширения</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER EXTENSION <replaceable class="parameter">имя</replaceable> UPDATE [ TO <replaceable class="parameter">новая_версия</replaceable> ]
+ALTER EXTENSION <replaceable class="parameter">имя</replaceable> SET SCHEMA <replaceable class="parameter">новая_схема</replaceable>
+ALTER EXTENSION <replaceable class="parameter">имя</replaceable> ADD <replaceable class="parameter">элемент_объект</replaceable>
+ALTER EXTENSION <replaceable class="parameter">имя</replaceable> DROP <replaceable class="parameter">элемент_объект</replaceable>
+
+<phrase>Здесь <replaceable class="parameter">элемент_объект</replaceable>:</phrase>
+
+  ACCESS METHOD <replaceable class="parameter">имя_объекта</replaceable> |
+  AGGREGATE <replaceable class="parameter">имя_агрегатной_функции</replaceable> ( <replaceable>сигнатура_агр_функции</replaceable> ) |
+  CAST (<replaceable>исходный_тип</replaceable> AS <replaceable>целевой_тип</replaceable>) |
+  COLLATION <replaceable class="parameter">имя_объекта</replaceable> |
+  CONVERSION <replaceable class="parameter">имя_объекта</replaceable> |
+  DOMAIN <replaceable class="parameter">имя_объекта</replaceable> |
+  EVENT TRIGGER <replaceable class="parameter">имя_объекта</replaceable> |
+  FOREIGN DATA WRAPPER <replaceable class="parameter">имя_объекта</replaceable> |
+  FOREIGN TABLE <replaceable class="parameter">имя_объекта</replaceable> |
+  FUNCTION <replaceable class="parameter">имя_функции</replaceable> ( [ [ <replaceable class="parameter">режим_аргумента</replaceable> ] [ <replaceable class="parameter">имя_аргумента</replaceable> ] <replaceable class="parameter">тип_аргумента</replaceable> [, ...] ] ) |
+  MATERIALIZED VIEW <replaceable class="parameter">имя_объекта</replaceable> |
+  OPERATOR <replaceable class="parameter">имя_оператора</replaceable> (<replaceable class="parameter">тип_слева</replaceable>, <replaceable class="parameter">тип_справа</replaceable>) |
+  OPERATOR CLASS <replaceable class="parameter">имя_объекта</replaceable> USING <replaceable class="parameter">метод_индекса</replaceable> |
+  OPERATOR FAMILY <replaceable class="parameter">имя_объекта</replaceable> USING <replaceable class="parameter">метод_индекса</replaceable> |
+  [ PROCEDURAL ] LANGUAGE <replaceable class="parameter">имя_объекта</replaceable> |
+  SCHEMA <replaceable class="parameter">имя_объекта</replaceable> |
+  SEQUENCE <replaceable class="parameter">имя_объекта</replaceable> |
+  SERVER <replaceable class="parameter">имя_объекта</replaceable> |
+  TABLE <replaceable class="parameter">имя_объекта</replaceable> |
+  TEXT SEARCH CONFIGURATION <replaceable class="parameter">имя_объекта</replaceable> |
+  TEXT SEARCH DICTIONARY <replaceable class="parameter">имя_объекта</replaceable> |
+  TEXT SEARCH PARSER <replaceable class="parameter">имя_объекта</replaceable> |
+  TEXT SEARCH TEMPLATE <replaceable class="parameter">имя_объекта</replaceable> |
+  TRANSFORM FOR <replaceable>имя_типа</replaceable> LANGUAGE <replaceable>имя_языка</replaceable> |
+  TYPE <replaceable class="parameter">имя_объекта</replaceable> |
+  VIEW <replaceable class="parameter">имя_объекта</replaceable>
+
+<phrase>и <replaceable>сигнатура_агр_функции</replaceable>:</phrase>
+
+* |
+[ <replaceable>режим_аргумента</replaceable> ] [ <replaceable>имя_аргумента</replaceable> ] <replaceable>тип_аргумента</replaceable> [ , ... ] |
+[ [ <replaceable>режим_аргумента</replaceable> ] [ <replaceable>имя_аргумента</replaceable> ] <replaceable>тип_аргумента</replaceable> [ , ... ] ] ORDER BY [ <replaceable>режим_аргумента</replaceable> ] [ <replaceable>имя_аргумента</replaceable> ] <replaceable>тип_аргумента</replaceable> [ , ... ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER EXTENSION</command> изменяет определение установленного расширения. Эта команда имеет несколько подвидов: <variablelist>
+   <varlistentry>
+    <term><literal>UPDATE</literal></term>
+    <listitem>
+     <para>Эта форма обновляет версию расширения. Расширение должно предоставлять подходящий скрипт обновления (или набор скриптов), который может сменить текущую установленную версию на требуемую.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET SCHEMA</literal></term>
+    <listitem>
+     <para>Эта форма переносит объекты расширения в другую схему. Чтобы эта команда выполнилась успешно, расширение должно быть <firstterm>перемещаемым</firstterm>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ADD <replaceable class="parameter">элемент_объект</replaceable></literal></term>
+    <listitem>
+     <para>Эта форма добавляет существующий объект в расширение. В основном это применяется в скриптах обновления расширений. Добавленный объект затем будет считаться частью расширения, и удалить его можно будет, только удалив расширение.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DROP <replaceable class="parameter">элемент_объект</replaceable></literal></term>
+    <listitem>
+     <para>Эта форма удаляет из расширения включённый в него объект. В основном это применяется в скриптах обновления расширений. Сам объект при этом не уничтожается, а только отделяется от расширения.</para>
+    </listitem>
+   </varlistentry>
+   </variablelist> Подробнее эти операции описаны в <xref remap="6" linkend="extend-extensions"/>.</para>
+
+  <para>Чтобы выполнить команду <command>ALTER EXTENSION</command>, необходимо быть владельцем данного расширения. Для форм <literal>ADD</literal>/<literal>DROP</literal> требуется также быть владельцем добавляемого/удаляемого объекта.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <para>
+   <variablelist>
+    <varlistentry>
+     <term><replaceable class="parameter">имя</replaceable></term>
+     <listitem>
+      <para>Имя установленного расширения.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">новая_версия</replaceable></term>
+     <listitem>
+      <para>Запрашиваемая новая версия расширения. Её можно записать в виде идентификатора или строкового значения. Если она не указана, <command>ALTER EXTENSION UPDATE</command> пытается выполнить обновление до версии, указанной в качестве версии по умолчанию в управляющем файле расширения.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">новая_схема</replaceable></term>
+     <listitem>
+      <para>Новая схема расширения.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">имя_объекта</replaceable></term>
+     <term><replaceable class="parameter">имя_агрегатной_функции</replaceable></term>
+     <term><replaceable class="parameter">имя_функции</replaceable></term>
+     <term><replaceable class="parameter">имя_оператора</replaceable></term>
+     <listitem>
+      <para>Имя объекта, добавляемого или удаляемого из расширения. Имена таблиц, агрегатных функций, доменов, сторонних таблиц, функций, операторов, классов операторов, семейств операторов, последовательностей, объектов текстового поиска, типов и представлений можно дополнить именем схемы.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>исходный_тип</replaceable></term>
+     <listitem>
+      <para>Имя исходного типа данных для приведения.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>целевой_тип</replaceable></term>
+     <listitem>
+      <para>Имя целевого типа данных для приведения.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">режим_аргумента</replaceable></term>
+
+     <listitem>
+      <para>Режим аргумента обычной или агрегатной функции: <literal>IN</literal>, <literal>OUT</literal>, <literal>INOUT</literal> или <literal>VARIADIC</literal>. По умолчанию подразумевается <literal>IN</literal>. Заметьте, что <command>ALTER EXTENSION</command> на самом деле не учитывает аргументы <literal>OUT</literal>, так как для идентификации функции нужные только типы входных аргументов. Поэтому достаточно перечислить только аргументы <literal>IN</literal>, <literal>INOUT</literal> и <literal>VARIADIC</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">имя_аргумента</replaceable></term>
+
+     <listitem>
+      <para>Имя аргумента обычной или агрегатной функции. Заметьте, что на самом деле <command>ALTER EXTENSION</command> не обращает внимание на имена аргументов, так как для однозначной идентификации функции достаточно только типов аргументов.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">тип_аргумента</replaceable></term>
+
+     <listitem>
+      <para>Тип данных аргумента обычной или агрегатной функции.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">тип_слева</replaceable></term>
+     <term><replaceable class="parameter">тип_справа</replaceable></term>
+     <listitem>
+      <para>Тип данных аргументов оператора (возможно, дополненный именем схемы). В случае отсутствия аргумента префиксного или постфиксного оператора укажите вместо типа <literal>NONE</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>PROCEDURAL</literal></term>
+
+     <listitem>
+      <para>Это слово не несёт смысловой нагрузки.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>имя_типа</replaceable></term>
+
+     <listitem>
+      <para>Имя типа данных, для которого предназначена трансформация.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>имя_языка</replaceable></term>
+
+     <listitem>
+      <para>Имя языка, для которого предназначена трансформация.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Обновление расширения <literal>hstore</literal> до версии 2.0: <programlisting>ALTER EXTENSION hstore UPDATE TO '2.0';</programlisting></para>
+
+  <para>Смена схемы расширения <literal>hstore</literal> на <literal>utils</literal>: <programlisting>ALTER EXTENSION hstore SET SCHEMA utils;</programlisting></para>
+
+  <para>Добавление существующей функции в расширение <literal>hstore</literal>: <programlisting>ALTER EXTENSION hstore ADD FUNCTION populate_record(anyelement, hstore);</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER EXTENSION</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1 id="sql-alterextension-see-also">
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createextension"/></member>
+   <member><xref linkend="sql-dropextension"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

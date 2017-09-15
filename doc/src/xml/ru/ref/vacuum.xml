@@ -1,0 +1,140 @@
+<!--
+doc/src/xml/ref/vacuum.xml
+&productname; documentation
+-->
+
+<refentry id="sql-vacuum">
+ <indexterm zone="sql-vacuum"><primary>VACUUM</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>VACUUM</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>VACUUM</refname>
+  <refpurpose>провести сборку мусора и, возможно, проанализировать базу данных</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>VACUUM [ ( { FULL | FREEZE | VERBOSE | ANALYZE | DISABLE_PAGE_SKIPPING } [, ...] ) ] [ <replaceable class="parameter">имя_таблицы</replaceable> [ (<replaceable class="parameter">имя_столбца</replaceable> [, ...] ) ] ]
+VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] [ <replaceable class="parameter">имя_таблицы</replaceable> ]
+VACUUM [ FULL ] [ FREEZE ] [ VERBOSE ] ANALYZE [ <replaceable class="parameter">имя_таблицы</replaceable> [ (<replaceable class="parameter">имя_столбца</replaceable> [, ...] ) ] ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>VACUUM</command> высвобождает пространство, занимаемое &laquo;мёртвыми&raquo; кортежами. При обычных операциях <productname>&productname;</productname> кортежи, удалённые или устаревшие в результате обновления, физически не удаляются из таблицы; они сохраняются в ней, пока не будет выполнена команда <command>VACUUM</command>. Таким образом, периодически необходимо выполнять <command>VACUUM</command>, особенно для часто изменяемых таблиц.</para>
+
+  <para>Без параметра команда <command>VACUUM</command> обрабатывает все таблицы в текущей базе данных, которые может очистить текущий пользователь. Если в параметре передаётся имя таблицы, <command>VACUUM</command> обрабатывает только эту таблицу.</para>
+
+  <para><command>VACUUM ANALYZE</command> выполняет очистку (<command>VACUUM</command>), а затем анализ (<command>ANALYZE</command>) всех указанных таблиц. Это удобная комбинация для регулярного обслуживания БД. За дополнительной информацией об анализе обратитесь к описанию <xref linkend="sql-analyze"/>.</para>
+
+  <para>Простая команда <command>VACUUM</command> (без <literal>FULL</literal>) только высвобождает пространство и делает его доступным для повторного использования. Эта форма команды может работать параллельно с обычными операциями чтения и записи таблицы, так она не требует исключительной блокировки. Однако освобождённое место не возвращается операционной системе (в большинстве случаев); оно просто остаётся доступным для размещения данных этой же таблицы. <command>VACUUM FULL</command> переписывает всё содержимое таблицы в новый файл на диске, не содержащий ничего лишнего, что позволяет возвратить неиспользованное пространство операционной системе. Эта форма работает намного медленнее и запрашивает исключительную блокировку для каждой обрабатываемой таблицы.</para>
+
+  <para>Когда список параметров заключается в скобки, параметры могут быть записаны в любом порядке. Без скобок параметры должны указываться именно в том порядке, который показан выше. Синтаксис со скобками появился в <productname>PostgreSQL</productname> 9.0; вариант записи без скобок считается устаревшим.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>FULL</literal></term>
+    <listitem>
+     <para>Выбирает режим <quote>полной</quote> очистки, который может освободить больше пространства, но выполняется гораздо дольше и запрашивает исключительную блокировку таблицы. Этот режим также требует дополнительное место на диске, так как он записывает новую копию таблицы и не освобождает старую до завершения операции. Обычно это следует использовать, только когда требуется высвободить значительный объём пространства, выделенного таблице.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>FREEZE</literal></term>
+    <listitem>
+     <para>Выбирает агрессивную <quote>заморозку</quote> кортежей. Добавление указания <literal>FREEZE</literal> равносильно выполнению команды <command>VACUUM</command> с параметрами <xref linkend="guc-vacuum-freeze-min-age"/> и <xref linkend="guc-vacuum-freeze-table-age"/>, равными нулю. Агрессивная заморозка всегда выполняется при перезаписи таблицы, поэтому в режиме <literal>FULL</literal> это указание избыточно.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>VERBOSE</literal></term>
+    <listitem>
+     <para>Выводит подробный отчёт об очистке для каждой таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ANALYZE</literal></term>
+    <listitem>
+     <para>Обновляет статистику, которую использует планировщик для выбора наиболее эффективного способа выполнения запроса.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DISABLE_PAGE_SKIPPING</literal></term>
+    <listitem>
+     <para>Обычно <command>VACUUM</command> пропускает страницы, учитывая <link linkend="vacuum-for-visibility-map">карту видимости</link>. Страницы, на которых, судя по карте, все кортежи заморожены, можно пропускать всегда, а страницы, в которых все кортежи видны всем транзакциям, могут обрабатываться только при агрессивной очистке. Более того, за исключением агрессивной очистки, некоторые страницы можно пропускать, чтобы не ждать, пока другие сеансы закончат их использовать. Этот параметр отключает пропуск страниц и рассчитан для использования только когда целостность карты видимости вызывает подозрения, что возможно при аппаратных или программных сбоях, приводящих к разрушению БД.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) определённой таблицы, подлежащей очистке. По умолчанию очищаются все таблицы в текущей базе данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_столбца</replaceable></term>
+    <listitem>
+     <para>Имя столбца, подлежащего анализу. По умолчанию анализируются все столбцы. Если указан список столбцов, подразумевается операция <literal>ANALYZE</literal>.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Выводимая информация</title>
+
+   <para>С указанием <literal>VERBOSE</literal> команда <command>VACUUM</command> выдаёт сообщения о процессе очистки, отмечая текущую обрабатываемую таблицу. Также она выводит различные статистические сведения о таблицах.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para>Чтобы очистить таблицу, обычно нужно быть владельцем этой таблицы или суперпользователем. Однако владельцам баз данных также разрешено сжимать все таблицы в своих базах, за исключением общих каталогов. (Ограничение в отношении общих каталогов означает, что настоящую глобальную команду <command>VACUUM</command> может выполнить только суперпользователь.) <command>VACUUM</command> при обработке пропускает все таблицы, на очистку которых текущий пользователь не имеет прав.</para>
+
+   <para><command>VACUUM</command> нельзя выполнять внутри блока транзакции.</para>
+
+   <para>Для таблиц с индексами <acronym>GIN</acronym>, <command>VACUUM</command> (в любой форме) также завершает все ожидающие операции добавления в индекс, перемещая записи индекса из очереди в соответствующие места в основной структуре индекса <acronym>GIN</acronym>. За подробностями обратитесь к <xref remap="3" linkend="gin-fast-update"/>.</para>
+
+   <para>Мы рекомендуем очищать активные производственные базы данных достаточно часто (как минимум, каждую ночь), чтобы избавляться от &laquo;мёртвых&raquo; строк. После добавления или удаления большого числа строк может быть хорошей идеей выполнить команду <command>VACUUM ANALYZE</command> для каждой затронутой таблицы. При этом результаты всех последних изменений будут отражены в системных каталогах, что позволит планировщику запросов <productname>&productname;</productname> принимать более эффективные решения при планировании.</para>
+
+   <para>Режим <option>FULL</option> не рекомендуется для обычного применения, но в некоторых случаях он бывает полезен. Например, когда были удалены или изменены почти все строки таблицы, может возникнуть желание физически сжать её, чтобы освободить место на диске и ускорить сканирование этой таблицы. Чаще всего <command>VACUUM FULL</command> сжимает таблицу более эффективно, чем обычный <command>VACUUM</command>.</para>
+
+   <para><command>VACUUM</command> создаёт значительную нагрузку на подсистему ввода/вывода, что может отрицательно сказаться на производительности других активных сеансов. Поэтому иногда полезно использовать возможность задержки очистки с учётом её стоимости. За подробностями обратитесь к <xref remap="3" linkend="runtime-config-resource-vacuum-cost"/>.</para>
+
+   <para><productname>&productname;</productname> включает средство <quote>автоочистки</quote>, которое позволяет автоматизировать регулярную очистку. Чтобы узнать больше об автоматической и ручной очистке, обратитесь к <xref remap="3" linkend="routine-vacuuming"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Очистка одной таблицы <literal>onek</literal>, проведение её анализа для оптимизатора и печать подробного отчёта о действиях операции очистки: <programlisting>VACUUM (VERBOSE, ANALYZE) onek;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>VACUUM</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-vacuumdb"/></member>
+   <member><xref linkend="runtime-config-resource-vacuum-cost"/></member>
+   <member><xref linkend="autovacuum"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

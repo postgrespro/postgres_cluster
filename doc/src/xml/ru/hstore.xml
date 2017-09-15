@@ -1,0 +1,474 @@
+<!-- doc/src/xml/hstore.xml -->
+
+<sect1 id="hstore" xreflabel="hstore">
+ <title>hstore</title>
+
+ <indexterm zone="hstore"><primary>hstore</primary></indexterm>
+
+ <para>Этот модуль реализует тип данных <type>hstore</type> для хранения пар ключ/значение внутри одного значения <productname>&productname;</productname>. Это может быть полезно в самых разных сценариях, например для хранения строк со множеством редко анализируемых атрибутов или частично структурированных данных. Ключи и значения задаются простыми текстовыми строками.</para>
+
+ <sect2>
+  <title>Внешнее представление <type>hstore</type></title>
+
+  <para>Текстовое представление типа <type>hstore</type>, применяемое для ввода и вывода, включает ноль или более пар <replaceable>ключ</replaceable> <literal>=&gt;</literal> <replaceable>значение</replaceable>, разделённых запятыми. Несколько примеров: <synopsis>
+k =&gt; v
+foo =&gt; bar, baz =&gt; whatever
+"1-a" =&gt; "anything at all"
+</synopsis> Порядок пар не имеет значения (и может не воспроизводиться при выводе). Пробелы между парами и вокруг знака <literal>=&gt;</literal> игнорируются. Ключи и значения, содержащие пробелы, запятые и знаки <literal>=</literal> или <literal>&gt;</literal>, нужно заключать в двойные кавычки. Если в ключ или значение нужно вставить символ кавычек или обратную косую черту, добавьте перед ним обратную косую черту.</para>
+
+  <para>Все ключи в <type>hstore</type> уникальны. Если вы объявите тип <type>hstore</type> с дублирующимися ключами, в <type>hstore</type> будет сохранён только один ключ без гарантии определённого выбора: <programlisting>SELECT 'a=&gt;1,a=&gt;2'::hstore;
+  hstore
+----------
+ "a"=&gt;"1"</programlisting></para>
+
+  <para>В качестве значения (но не ключа) может задаваться SQL <literal>NULL</literal>. Например: <programlisting>key =&gt; NULL</programlisting> В ключевом слове <literal>NULL</literal> регистр не имеет значения. Если требуется, чтобы текст <literal>NULL</literal> воспринимался как обычная строка <quote>NULL</quote>, заключите его в кавычки.</para>
+
+  <note>
+  <para>Учтите, что когда текстовый формат <type>hstore</type> используется для ввода данных, он применяется <emphasis>до</emphasis> обработки кавычек или спецсимволов. Таким образом, если значение <type>hstore</type> передаётся в параметре, дополнительная обработка не требуется. Но если вы передаёте его в виде строковой константы, то все символы апострофов и (в зависимости от параметра конфигурации <varname>standard_conforming_strings</varname>) обратной косой черты нужно корректно экранировать. Подробнее о записи строковых констант можно узнать в <xref remap="6" linkend="sql-syntax-strings"/>.</para>
+  </note>
+
+  <para>При выводе значения и ключи всегда заключаются в кавычки, даже когда без этого можно обойтись.</para>
+
+ </sect2>
+
+ <sect2>
+  <title>Операторы и функции <type>hstore</type></title>
+
+  <para>Реализованные в модуле <literal>hstore</literal> операторы перечислены в <xref remap="6" linkend="hstore-op-table"/>, функции — в <xref remap="6" linkend="hstore-func-table"/>.</para>
+
+  <table id="hstore-op-table">
+   <title>Операторы <type>hstore</type></title>
+
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry>Оператор</entry>
+      <entry>Описание</entry>
+      <entry>Пример</entry>
+      <entry>Результат</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><type>hstore</type> <literal>-&gt;</literal> <type>text</type></entry>
+      <entry>выдаёт значение для ключа (или <literal>NULL</literal> при его отсутствии)</entry>
+      <entry><literal>'a=&gt;x, b=&gt;y'::hstore -&gt; 'a'</literal></entry>
+      <entry><literal>x</literal></entry>
+     </row>
+
+     <row>
+      <entry><type>hstore</type> <literal>-&gt;</literal> <type>text[]</type></entry>
+      <entry>выдаёт значения для ключей (или <literal>NULL</literal> при их отсутствии)</entry>
+      <entry><literal>'a=&gt;x, b=&gt;y, c=&gt;z'::hstore -&gt; ARRAY['c','a']</literal></entry>
+      <entry><literal>{"z","x"}</literal></entry>
+     </row>
+
+     <row>
+      <entry><type>hstore</type> <literal>||</literal> <type>hstore</type></entry>
+      <entry>объединяет два набора <type>hstore</type></entry>
+      <entry><literal>'a=&gt;b, c=&gt;d'::hstore || 'c=&gt;x, d=&gt;q'::hstore</literal></entry>
+      <entry><literal>"a"=&gt;"b", "c"=&gt;"x", "d"=&gt;"q"</literal></entry>
+     </row>
+
+     <row>
+      <entry><type>hstore</type> <literal>?</literal> <type>text</type></entry>
+      <entry>набор <type>hstore</type> включает ключ?</entry>
+      <entry><literal>'a=&gt;1'::hstore ? 'a'</literal></entry>
+      <entry><literal>t</literal></entry>
+     </row>
+
+     <row>
+      <entry><type>hstore</type> <literal>?&amp;</literal> <type>text[]</type></entry>
+      <entry>набор <type>hstore</type> включает все указанные ключи?</entry>
+      <entry><literal>'a=&gt;1,b=&gt;2'::hstore ?&amp; ARRAY['a','b']</literal></entry>
+      <entry><literal>t</literal></entry>
+     </row>
+
+     <row>
+      <entry><type>hstore</type> <literal>?|</literal> <type>text[]</type></entry>
+      <entry>набор <type>hstore</type> включает какой-либо из указанных ключей?</entry>
+      <entry><literal>'a=&gt;1,b=&gt;2'::hstore ?| ARRAY['b','c']</literal></entry>
+      <entry><literal>t</literal></entry>
+     </row>
+
+     <row>
+      <entry><type>hstore</type> <literal>@&gt;</literal> <type>hstore</type></entry>
+      <entry>левый операнд включает правый?</entry>
+      <entry><literal>'a=&gt;b, b=&gt;1, c=&gt;NULL'::hstore @&gt; 'b=&gt;1'</literal></entry>
+      <entry><literal>t</literal></entry>
+     </row>
+
+     <row>
+      <entry><type>hstore</type> <literal>&lt;@</literal> <type>hstore</type></entry>
+      <entry>левый операнд включён в правый?</entry>
+      <entry><literal>'a=&gt;c'::hstore &lt;@ 'a=&gt;b, b=&gt;1, c=&gt;NULL'</literal></entry>
+      <entry><literal>f</literal></entry>
+     </row>
+
+     <row>
+      <entry><type>hstore</type> <literal>-</literal> <type>text</type></entry>
+      <entry>удаляет ключ из левого операнда</entry>
+      <entry><literal>'a=&gt;1, b=&gt;2, c=&gt;3'::hstore - 'b'::text</literal></entry>
+      <entry><literal>"a"=&gt;"1", "c"=&gt;"3"</literal></entry>
+     </row>
+
+     <row>
+      <entry><type>hstore</type> <literal>-</literal> <type>text[]</type></entry>
+      <entry>удаляет ключи из левого операнда</entry>
+      <entry><literal>'a=&gt;1, b=&gt;2, c=&gt;3'::hstore - ARRAY['a','b']</literal></entry>
+      <entry><literal>"c"=&gt;"3"</literal></entry>
+     </row>
+
+     <row>
+      <entry><type>hstore</type> <literal>-</literal> <type>hstore</type></entry>
+      <entry>удаляет соответствующие пары из левого операнда</entry>
+      <entry><literal>'a=&gt;1, b=&gt;2, c=&gt;3'::hstore - 'a=&gt;4, b=&gt;2'::hstore</literal></entry>
+      <entry><literal>"a"=&gt;"1", "c"=&gt;"3"</literal></entry>
+     </row>
+
+     <row>
+      <entry><type>record</type> <literal>#=</literal> <type>hstore</type></entry>
+      <entry>заменяет поля в <type>record</type> соответствующими значениями из <type>hstore</type></entry>
+      <entry>см. раздел Примеры</entry>
+      <entry/>
+     </row>
+
+     <row>
+      <entry><literal>%%</literal> <type>hstore</type></entry>
+      <entry>преобразует <type>hstore</type> в массив перемежающихся ключей и значений</entry>
+      <entry><literal>%% 'a=&gt;foo, b=&gt;bar'::hstore</literal></entry>
+      <entry><literal>{a,foo,b,bar}</literal></entry>
+     </row>
+
+     <row>
+      <entry><literal>%#</literal> <type>hstore</type></entry>
+      <entry>преобразует <type>hstore</type> в двумерный массив ключей/значений</entry>
+      <entry><literal>%# 'a=&gt;foo, b=&gt;bar'::hstore</literal></entry>
+      <entry><literal>{{a,foo},{b,bar}}</literal></entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+  <note>
+  <para>До версии PostgreSQL 8.2 операторы включения <literal>@&gt;</literal> и <literal>&lt;@</literal> обозначались соответственно как <literal>@</literal> и <literal>~</literal>. Эти имена по-прежнему действуют, но считаются устаревшими и в конце концов будут упразднены. Заметьте, что старые имена произошли из соглашения, которому раньше следовали геометрические типы данных!</para>
+  </note>
+
+  <table id="hstore-func-table">
+   <title>Функции <type>hstore</type></title>
+
+   <tgroup cols="5">
+    <thead>
+     <row>
+      <entry>Функция</entry>
+      <entry>Тип результата</entry>
+      <entry>Описание</entry>
+      <entry>Пример</entry>
+      <entry>Результат</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><function>hstore(record)</function><indexterm><primary>hstore</primary></indexterm></entry>
+      <entry><type>hstore</type></entry>
+      <entry>формирует <type>hstore</type> из записи или кортежа</entry>
+      <entry><literal>hstore(ROW(1,2))</literal></entry>
+      <entry><literal>f1=&gt;1,f2=&gt;2</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>hstore(text[])</function></entry>
+      <entry><type>hstore</type></entry>
+      <entry>формирует <type>hstore</type> из массива, который может содержать попарно ключи/значения, либо быть двумерным массивом</entry>
+      <entry><literal>hstore(ARRAY['a','1','b','2']) || hstore(ARRAY[['c','3'],['d','4']])</literal></entry>
+      <entry><literal>a=&gt;1, b=&gt;2, c=&gt;3, d=&gt;4</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>hstore(text[], text[])</function></entry>
+      <entry><type>hstore</type></entry>
+      <entry>формирует <type>hstore</type> из отдельных массивов ключей и значений</entry>
+      <entry><literal>hstore(ARRAY['a','b'], ARRAY['1','2'])</literal></entry>
+      <entry><literal>"a"=&gt;"1","b"=&gt;"2"</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>hstore(text, text)</function></entry>
+      <entry><type>hstore</type></entry>
+      <entry>формирует <type>hstore</type> с одним элементом</entry>
+      <entry><literal>hstore('a', 'b')</literal></entry>
+      <entry><literal>"a"=&gt;"b"</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>akeys(hstore)</function><indexterm><primary>akeys</primary></indexterm></entry>
+      <entry><type>text[]</type></entry>
+      <entry>выдаёт ключи <type>hstore</type> в виде массива</entry>
+      <entry><literal>akeys('a=&gt;1,b=&gt;2')</literal></entry>
+      <entry><literal>{a,b}</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>skeys(hstore)</function><indexterm><primary>skeys</primary></indexterm></entry>
+      <entry><type>setof text</type></entry>
+      <entry>выдаёт ключи <type>hstore</type> в виде множества</entry>
+      <entry><literal>skeys('a=&gt;1,b=&gt;2')</literal></entry>
+      <entry>
+<programlisting>a
+b</programlisting></entry>
+     </row>
+
+     <row>
+      <entry><function>avals(hstore)</function><indexterm><primary>avals</primary></indexterm></entry>
+      <entry><type>text[]</type></entry>
+      <entry>выдаёт ключи <type>hstore</type> в виде массива</entry>
+      <entry><literal>avals('a=&gt;1,b=&gt;2')</literal></entry>
+      <entry><literal>{1,2}</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>svals(hstore)</function><indexterm><primary>svals</primary></indexterm></entry>
+      <entry><type>setof text</type></entry>
+      <entry>выдаёт значения <type>hstore</type> в виде множества</entry>
+      <entry><literal>svals('a=&gt;1,b=&gt;2')</literal></entry>
+      <entry>
+<programlisting>1
+2</programlisting></entry>
+     </row>
+
+     <row>
+      <entry><function>hstore_to_array(hstore)</function><indexterm><primary>hstore_to_array</primary></indexterm></entry>
+      <entry><type>text[]</type></entry>
+      <entry>выдаёт ключи и значения <type>hstore</type> в виде массива перемежающихся ключей и значений</entry>
+      <entry><literal>hstore_to_array('a=&gt;1,b=&gt;2')</literal></entry>
+      <entry><literal>{a,1,b,2}</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>hstore_to_matrix(hstore)</function><indexterm><primary>hstore_to_matrix</primary></indexterm></entry>
+      <entry><type>text[]</type></entry>
+      <entry>выдаёт ключи и значения <type>hstore</type> в виде двумерного массива</entry>
+      <entry><literal>hstore_to_matrix('a=&gt;1,b=&gt;2')</literal></entry>
+      <entry><literal>{{a,1},{b,2}}</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>hstore_to_json(hstore)</function><indexterm><primary>hstore_to_json</primary></indexterm></entry>
+      <entry><type>json</type></entry>
+      <entry>выдаёт <type>hstore</type> в виде значения <type>json</type>, преобразуя все отличные от NULL значения в строки JSON</entry>
+      <entry><literal>hstore_to_json('"a key"=&gt;1, b=&gt;t, c=&gt;null, d=&gt;12345, e=&gt;012345, f=&gt;1.234, g=&gt;2.345e+4')</literal></entry>
+      <entry><literal>{"a key": "1", "b": "t", "c": null, "d": "12345", "e": "012345", "f": "1.234", "g": "2.345e+4"}</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>hstore_to_jsonb(hstore)</function><indexterm><primary>hstore_to_jsonb</primary></indexterm></entry>
+      <entry><type>jsonb</type></entry>
+      <entry>выдаёт <type>hstore</type> в виде значения <type>jsonb</type>, преобразуя все отличные от NULL значения в строки JSON</entry>
+      <entry><literal>hstore_to_jsonb('"a key"=&gt;1, b=&gt;t, c=&gt;null, d=&gt;12345, e=&gt;012345, f=&gt;1.234, g=&gt;2.345e+4')</literal></entry>
+      <entry><literal>{"a key": "1", "b": "t", "c": null, "d": "12345", "e": "012345", "f": "1.234", "g": "2.345e+4"}</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>hstore_to_json_loose(hstore)</function><indexterm><primary>hstore_to_json_loose</primary></indexterm></entry>
+      <entry><type>json</type></entry>
+      <entry>выдаёт <type>hstore</type> в виде значения <type>json</type>, по возможности распознавая числовые и логические значения и передавая их в JSON без кавычек</entry>
+      <entry><literal>hstore_to_json_loose('"a key"=&gt;1, b=&gt;t, c=&gt;null, d=&gt;12345, e=&gt;012345, f=&gt;1.234, g=&gt;2.345e+4')</literal></entry>
+      <entry><literal>{"a key": 1, "b": true, "c": null, "d": 12345, "e": "012345", "f": 1.234, "g": 2.345e+4}</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>hstore_to_jsonb_loose(hstore)</function><indexterm><primary>hstore_to_jsonb_loose</primary></indexterm></entry>
+      <entry><type>jsonb</type></entry>
+      <entry>выдаёт <type>hstore</type> в виде значения <type>jsonb</type>, по возможности распознавая числовые и логические значения и передавая их в JSON без кавычек</entry>
+      <entry><literal>hstore_to_jsonb_loose('"a key"=&gt;1, b=&gt;t, c=&gt;null, d=&gt;12345, e=&gt;012345, f=&gt;1.234, g=&gt;2.345e+4')</literal></entry>
+      <entry><literal>{"a key": 1, "b": true, "c": null, "d": 12345, "e": "012345", "f": 1.234, "g": 2.345e+4}</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>slice(hstore, text[])</function><indexterm><primary>slice</primary></indexterm></entry>
+      <entry><type>hstore</type></entry>
+      <entry>извлекает подмножество из <type>hstore</type></entry>
+      <entry><literal>slice('a=&gt;1,b=&gt;2,c=&gt;3'::hstore, ARRAY['b','c','x'])</literal></entry>
+      <entry><literal>"b"=&gt;"2", "c"=&gt;"3"</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>each(hstore)</function><indexterm><primary>each</primary></indexterm></entry>
+      <entry><type>setof(key text, value text)</type></entry>
+      <entry>выдаёт ключи и значения <type>hstore</type> в виде множества</entry>
+      <entry><literal>select * from each('a=&gt;1,b=&gt;2')</literal></entry>
+      <entry>
+<programlisting> key | value
+-----+-------
+ a   | 1
+ b   | 2</programlisting></entry>
+     </row>
+
+     <row>
+      <entry><function>exist(hstore,text)</function><indexterm><primary>exist</primary></indexterm></entry>
+      <entry><type>boolean</type></entry>
+      <entry>набор <type>hstore</type> включает ключ?</entry>
+      <entry><literal>exist('a=&gt;1','a')</literal></entry>
+      <entry><literal>t</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>defined(hstore,text)</function><indexterm><primary>defined</primary></indexterm></entry>
+      <entry><type>boolean</type></entry>
+      <entry>набор <type>hstore</type> включает для ключа значение, отличное от <literal>NULL</literal>?</entry>
+      <entry><literal>defined('a=&gt;NULL','a')</literal></entry>
+      <entry><literal>f</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>delete(hstore,text)</function><indexterm><primary>delete</primary></indexterm></entry>
+      <entry><type>hstore</type></entry>
+      <entry>удаляет пару с соответствующим ключом</entry>
+      <entry><literal>delete('a=&gt;1,b=&gt;2','b')</literal></entry>
+      <entry><literal>"a"=&gt;"1"</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>delete(hstore,text[])</function></entry>
+      <entry><type>hstore</type></entry>
+      <entry>удаляет пары с соответствующими ключами</entry>
+      <entry><literal>delete('a=&gt;1,b=&gt;2,c=&gt;3',ARRAY['a','b'])</literal></entry>
+      <entry><literal>"c"=&gt;"3"</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>delete(hstore,hstore)</function></entry>
+      <entry><type>hstore</type></entry>
+      <entry>удаляет пары, соответствующие парам во втором аргументе</entry>
+      <entry><literal>delete('a=&gt;1,b=&gt;2','a=&gt;4,b=&gt;2'::hstore)</literal></entry>
+      <entry><literal>"a"=&gt;"1"</literal></entry>
+     </row>
+
+     <row>
+      <entry><function>populate_record(record,hstore)</function><indexterm><primary>populate_record</primary></indexterm></entry>
+      <entry><type>record</type></entry>
+      <entry>заменяет поля в <type>record</type> соответствующими значениями из <type>hstore</type></entry>
+      <entry>см. раздел Примеры</entry>
+      <entry/>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+  <note>
+   <para>Функция <function>hstore_to_json</function> применяется, когда значение <type>hstore</type> нужно привести к <type>json</type>. Подобным образом, <function>hstore_to_jsonb</function> применяется, когда значение <type>hstore</type> нужно привести к <type>jsonb</type>.</para>
+  </note>
+
+  <note>
+   <para>Функция <function>populate_record</function> на самом деле объявлена как принимающая в первом аргументе <type>anyelement</type>, а не <type>record</type>, но если ей будет передан не тип записи, она выдаст ошибку.</para>
+  </note>
+ </sect2>
+
+ <sect2>
+  <title>Индексы</title>
+
+  <para>Тип <type>hstore</type> поддерживает индексы GiST и GIN для операторов <literal>@&gt;</literal>, <literal>?</literal>, <literal>?&amp;</literal> и <literal>?|</literal>. Например:</para>
+<programlisting>CREATE INDEX hidx ON testhstore USING GIST (h);
+
+CREATE INDEX hidx ON testhstore USING GIN (h);</programlisting>
+
+  <para>Тип <type>hstore</type> также поддерживает индексы <type>btree</type> и <type>hash</type> для оператора <literal>=</literal>. Это позволяет объявлять столбцы <type>hstore</type> как уникальные (<literal>UNIQUE</literal>) и использовать их в выражениях <literal>GROUP BY</literal>, <literal>ORDER BY</literal> или <literal>DISTINCT</literal>. Порядок сортировки значений <type>hstore</type> не имеет практического смысла, но эти индексы могут быть полезны для поиска по равенству. Индексы для сравнений (с помощью <literal>=</literal>) можно создать так:</para>
+<programlisting>CREATE INDEX hidx ON testhstore USING BTREE (h);
+
+CREATE INDEX hidx ON testhstore USING HASH (h);</programlisting>
+ </sect2>
+
+ <sect2>
+  <title>Примеры</title>
+
+  <para>Добавление ключа или изменение значения для существующего ключа: <programlisting>UPDATE tab SET h = h || hstore('c', '3');</programlisting></para>
+
+  <para>Удаление ключа: <programlisting>UPDATE tab SET h = delete(h, 'k1');</programlisting></para>
+
+  <para>Приведение типа <type>record</type> к типу <type>hstore</type>: <programlisting>CREATE TABLE test (col1 integer, col2 text, col3 text);
+INSERT INTO test VALUES (123, 'foo', 'bar');
+
+SELECT hstore(t) FROM test AS t;
+                   hstore                    
+---------------------------------------------
+ "col1"=&gt;"123", "col2"=&gt;"foo", "col3"=&gt;"bar"
+(1 row)</programlisting></para>
+
+  <para>Приведение типа <type>hstore</type> к предопределённому типу <type>record</type>: <programlisting>CREATE TABLE test (col1 integer, col2 text, col3 text);
+
+SELECT * FROM populate_record(null::test,
+                              '"col1"=&gt;"456", "col2"=&gt;"zzz"');
+ col1 | col2 | col3 
+------+------+------
+  456 | zzz  | 
+(1 row)</programlisting></para>
+
+  <para>Изменение существующей записи по данным из <type>hstore</type>: <programlisting>CREATE TABLE test (col1 integer, col2 text, col3 text);
+INSERT INTO test VALUES (123, 'foo', 'bar');
+
+SELECT (r).* FROM (SELECT t #= '"col3"=&gt;"baz"' AS r FROM test t) s;
+ col1 | col2 | col3 
+------+------+------
+  123 | foo  | baz
+(1 row)</programlisting></para>
+ </sect2>
+
+ <sect2>
+  <title>Статистика</title>
+
+  <para>Тип <type>hstore</type>, вследствие присущей ему либеральности, может содержать множество самых разных ключей. Контроль допустимости ключей является задачей приложения. Следующие примеры демонстрируют несколько приёмов проверки ключей и получения статистики.</para>
+
+  <para>Простой пример: <programlisting>SELECT * FROM each('aaa=&gt;bq, b=&gt;NULL, ""=&gt;1');</programlisting></para>
+
+  <para>С таблицей: <programlisting>SELECT (each(h)).key, (each(h)).value INTO stat FROM testhstore;</programlisting></para>
+
+  <para>Актуальная статистика: <programlisting>SELECT key, count(*) FROM
+  (SELECT (each(h)).key FROM testhstore) AS stat
+  GROUP BY key
+  ORDER BY count DESC, key;
+    key    | count
+-----------+-------
+ line      |   883
+ query     |   207
+ pos       |   203
+ node      |   202
+ space     |   197
+ status    |   195
+ public    |   194
+ title     |   190
+ org       |   189
+...................</programlisting></para>
+ </sect2>
+
+ <sect2>
+  <title>Совместимость</title>
+
+  <para>Начиная с PostgreSQL 9.0, <type>hstore</type> использует внутреннее представление, отличающееся от предыдущих версий. Это не проблема при обновлении путём выгрузки/перезагрузки данных, так как текстовое представление (используемое при выгрузке) не меняется.</para>
+
+  <para>В случае двоичного обновления обратная совместимость поддерживается благодаря тому, что новый код понимает данные в старом формате. При таком обновлении возможно небольшое снижение производительности при обработке данных, которые ещё не были изменены новым кодом. Все значения в столбце таблицы можно обновить принудительно, выполнив следующий оператор <literal>UPDATE</literal>: <programlisting>UPDATE tablename SET hstorecol = hstorecol || '';</programlisting></para>
+
+  <para>Это можно сделать и так: <programlisting>ALTER TABLE tablename ALTER hstorecol TYPE hstore USING hstorecol || '';</programlisting> Вариант с командой <command>ALTER TABLE</command> требует расширенной блокировки таблицы, но не приводит к замусориванию таблицы старыми версиями строк.</para>
+
+ </sect2>
+
+ <sect2>
+  <title>Трансформации</title>
+
+  <para>Также имеются дополнительные расширения, реализующие трансформации типа <type>hstore</type> для языков PL/Perl и PL/Python. Расширения для PL/Perl называются <literal>hstore_plperl</literal> и <literal>hstore_plperlu</literal> для доверенного и недоверенного PL/Perl, соответственно. Если вы установите эти трансформации и укажете их при создании функции, значения <type>hstore</type> будут отображаться в хеши Perl. Расширения для PL/Python называются <literal>hstore_plpythonu</literal>, <literal>hstore_plpython2u</literal> и <literal>hstore_plpython3u</literal> (соглашения об именовании, принятые для интерфейса PL/Python, описаны в <xref remap="6" linkend="plpython-python23"/>). Если вы воспользуетесь ими, значения <type>hstore</type> будут отображаться в словари Python.</para>
+ </sect2>
+
+ <sect2>
+  <title>Авторы</title>
+
+  <para>Олег Бартунов <email>oleg@sai.msu.su</email>, Москва, Московский Государственный Университет, Россия</para>
+
+  <para>Фёдор Сигаев <email>teodor@sigaev.ru</email>, Москва, ООО &laquo;Дельта-Софт&raquo;, Россия</para>
+
+  <para>Дополнительные улучшения внёс Эндрю Гирт <email>andrew@tao11.riddles.org.uk</email>, Великобритания</para>
+ </sect2>
+
+</sect1>

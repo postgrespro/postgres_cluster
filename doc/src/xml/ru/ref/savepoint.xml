@@ -1,0 +1,91 @@
+<!--
+doc/src/xml/ref/savepoint.xml
+&productname; documentation
+-->
+
+<refentry id="sql-savepoint">
+ <indexterm zone="sql-savepoint"><primary>SAVEPOINT</primary></indexterm>
+
+ <indexterm zone="sql-savepoint"><primary>точки сохранения</primary> <secondary>определение</secondary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SAVEPOINT</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SAVEPOINT</refname>
+  <refpurpose>определить новую точку сохранения в текущей транзакции</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>SAVEPOINT <replaceable>имя_точки_сохранения</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>SAVEPOINT</command> устанавливает новую точку сохранения в текущей транзакции.</para>
+
+  <para>Точка сохранения — это специальная отметка внутри транзакции, которая позволяет откатить все команды, выполненные после неё, и восстановить таким образом состояние на момент установки этой точки.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable>имя_точки_сохранения</replaceable></term>
+    <listitem>
+     <para>Имя, назначаемое новой точке сохранения.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Для отката к установленной точке сохранения предназначена команда <xref linkend="sql-rollback-to"/>. Чтобы уничтожить точку сохранения, сохраняя изменения, произведённые после того, как она была установлена, применяется команда <xref linkend="sql-release-savepoint"/>.</para>
+
+  <para>Точки сохранения могут быть установлены только внутри блока транзакции. В одной транзакции можно определить несколько точек сохранения.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Установление точки сохранения и затем отмена действия всех команд, выполненных после установленной точки: <programlisting>BEGIN;
+    INSERT INTO table1 VALUES (1);
+    SAVEPOINT my_savepoint;
+    INSERT INTO table1 VALUES (2);
+    ROLLBACK TO SAVEPOINT my_savepoint;
+    INSERT INTO table1 VALUES (3);
+COMMIT;</programlisting> Показанная транзакция вставит в таблицу значения 1 и 3, но не 2.</para>
+
+  <para>Этот пример показывает, как установить и затем уничтожить точку сохранения: <programlisting>BEGIN;
+    INSERT INTO table1 VALUES (3);
+    SAVEPOINT my_savepoint;
+    INSERT INTO table1 VALUES (4);
+    RELEASE SAVEPOINT my_savepoint;
+COMMIT;</programlisting> Данная транзакция вставит значения 3 и 4.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Стандарт SQL требует, чтобы точка сохранения уничтожалась автоматически, когда устанавливается другая точка сохранения с тем же именем. В <productname>&productname;</productname> старая точка сохранения остаётся, хотя при откате или уничтожении будет выбираться только самая последняя. (После уничтожения последней точки командой <command>RELEASE SAVEPOINT</command> доступной для команд <command>ROLLBACK TO SAVEPOINT</command> и <command>RELEASE SAVEPOINT</command> становится следующая.) В остальном оператор <command>SAVEPOINT</command> полностью соответствует стандарту.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-begin"/></member>
+   <member><xref linkend="sql-commit"/></member>
+   <member><xref linkend="sql-release-savepoint"/></member>
+   <member><xref linkend="sql-rollback"/></member>
+   <member><xref linkend="sql-rollback-to"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

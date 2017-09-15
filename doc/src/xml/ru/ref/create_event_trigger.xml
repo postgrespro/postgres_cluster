@@ -1,0 +1,115 @@
+<!--
+doc/src/xml/ref/create_event_trigger.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createeventtrigger">
+ <indexterm zone="sql-createeventtrigger"><primary>CREATE EVENT TRIGGER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE EVENT TRIGGER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE EVENT TRIGGER</refname>
+  <refpurpose>создать событийный триггер</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE EVENT TRIGGER <replaceable class="parameter">имя</replaceable>
+    ON <replaceable class="parameter">событие</replaceable>
+    [ WHEN <replaceable class="parameter">переменная_фильтра</replaceable> IN (filter_value [, ... ]) [ AND ... ] ]
+    EXECUTE PROCEDURE <replaceable class="parameter">имя_функции</replaceable>()</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE EVENT TRIGGER</command> создаёт новый событийный триггер. Функция триггера выполняется, когда происходит указанное событие и удовлетворяется связанное с триггером условие <literal>WHEN</literal> (если такое имеется). За вводной информацией по триггерам обратитесь к <xref remap="3" linkend="event-triggers"/>. Владельцем триггера становится пользователь его создавший.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя, назначаемое новому триггеру. Это имя должно быть уникальным в базе данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">событие</replaceable></term>
+    <listitem>
+     <para>Имя события, при котором срабатывает триггер и вызывается заданная функция. Подробнее об именах событий можно узнать в <xref remap="6" linkend="event-trigger-definition"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">переменная_фильтра</replaceable></term>
+    <listitem>
+     <para>Имя переменной, применяемой для фильтрования событий. Это указание позволяет ограничить срабатывание триггера подмножеством случаев, в которых он поддерживается. В настоящее время единственно возможное значение параметра <replaceable class="parameter">переменная_фильтра</replaceable> — <literal>TAG</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">значение_фильтра</replaceable></term>
+    <listitem>
+     <para>Список значений связанного параметра <replaceable class="parameter">переменная_фильтра</replaceable>, для которых должен срабатывать триггер. Для переменной <literal>TAG</literal> это список меток команд (например, <literal>'DROP FUNCTION'</literal>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_функции</replaceable></term>
+    <listitem>
+     <para>Заданная пользователем функция, объявленная как функция без аргументов и возвращающая тип <literal>event_trigger</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+ </refsect1>
+
+ <refsect1 id="sql-createeventtrigger-notes">
+  <title>Замечания</title>
+
+  <para>Создавать событийные триггеры могут только суперпользователи.</para>
+
+  <para>Событийные триггеры не вызываются в однопользовательском режиме (см. <xref remap="4" linkend="app-postgres"/>). Если ошибочный событийный триггер заблокировал работу с базой данных так, что даже удалить его нельзя, перезапустите сервер в однопользовательском режиме и это можно будет сделать.</para>
+ </refsect1>
+
+ <refsect1 id="sql-createeventtrigger-examples">
+  <title>Примеры</title>
+
+  <para>Триггер, запрещающий выполнение любой команды <link linkend="ddl">DDL</link>: <programlisting>CREATE OR REPLACE FUNCTION abort_any_command()
+  RETURNS event_trigger
+ LANGUAGE plpgsql
+  AS $$
+BEGIN
+  RAISE EXCEPTION 'команда % отключена', tg_tag;
+END;
+$$;
+
+CREATE EVENT TRIGGER abort_ddl ON ddl_command_start
+   EXECUTE PROCEDURE abort_any_command();</programlisting></para>
+ </refsect1>
+
+ <refsect1 id="sql-createeventtrigger-compatibility">
+  <title>Совместимость</title>
+
+  <para>Оператор <command>CREATE EVENT TRIGGER</command> отсутствует в стандарте SQL.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altereventtrigger"/></member>
+   <member><xref linkend="sql-dropeventtrigger"/></member>
+   <member><xref linkend="sql-createfunction"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

@@ -1,0 +1,368 @@
+<!--
+doc/src/xml/ref/pg_dumpall.xml
+&productname; documentation
+-->
+
+<refentry id="app-pg-dumpall">
+ <indexterm zone="app-pg-dumpall"><primary>pg_dumpall</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>pg_dumpall</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_dumpall</refname>
+  <refpurpose>выгрузить кластер баз данных <productname>&productname;</productname> в файл скрипта</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_dumpall</command>
+   <arg rep="repeat"><replaceable>параметр-подключения</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="app-pg-dumpall-description">
+  <title>Описание</title>
+
+  <para>Утилита <application>pg_dumpall</application> предназначена для записи (<quote>выгрузки</quote>) всех баз данных кластера <productname>&productname;</productname> в один файл в формате скрипта. Этот файл содержит команды <acronym>SQL</acronym>, так что передав его на вход <xref linkend="app-psql"/>, можно восстановить все базы данных. Чтобы его сформировать, <application>pg_dumpall</application> вызывает для каждой базы данных в кластере <xref linkend="app-pgdump"/> и дополнительно выгружает глобальные объекты, общие для всех баз данных. (Утилита <application>pg_dump</application> не сохраняет эти объекты.) В настоящее время, к таким объектам относятся группы, пользователи и табличные пространства, а также такие свойства, как права доступа, которые применяются к базам данных в целом.</para>
+
+  <para>Так как утилита <application>pg_dumpall</application> читает таблицы из всех баз данных, для получения полного содержимого баз запускать её, как правило, нужно от имени суперпользователя. Чтобы впоследствии выполнить сохранённый скрипт, также необходимо иметь права суперпользователя, позволяющие создавать пользователей, группы и собственно базы данных.</para>
+
+  <para>Генерируемый SQL-скрипт записывается в стандартное устройство вывода. Чтобы перенаправить его в файл, воспользуйтесь параметром [-f|file] или операторами оболочки.</para>
+
+  <para>Утилите <application>pg_dumpall</application> требуется подключаться к серверу <productname>&productname;</productname> несколько раз (к каждой базе по отдельности). Если вы проходите проверку подлинности по паролю, вам придётся каждый раз вводить пароль. Чтобы избежать этого, удобно иметь файл <filename>~/.pgpass</filename>. За дополнительными сведениями обратитесь к <xref remap="3" linkend="libpq-pgpass"/>.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <para>Параметры командной строки для управления содержимым и форматом вывода. <variablelist>
+     <varlistentry>
+      <term><option>-a</option></term>
+      <term><option>--data-only</option></term>
+      <listitem>
+       <para>Выгружать только данные, без схемы (определений данных).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-c</option></term>
+      <term><option>--clean</option></term>
+      <listitem>
+       <para>Добавить команды SQL для удаления (DROP) баз данных перед командами, создающими их. В дополнение к ним добавляются команды <command>DROP</command> для ролей и табличных пространств.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-f <replaceable class="parameter">имя_файла</replaceable></option></term>
+      <term><option>--file=<replaceable class="parameter">имя_файла</replaceable></option></term>
+      <listitem>
+       <para>Направить вывод в указанный файл. Если этот параметр опущен, скрипт записывается в стандартный вывод.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-g</option></term>
+      <term><option>--globals-only</option></term>
+      <listitem>
+       <para>Выгружать только глобальные объекты (роли и табличные пространства), без баз данных.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-o</option></term>
+      <term><option>--oids</option></term>
+      <listitem>
+       <para>Выгружать идентификаторы объектов (<acronym>OID</acronym>s) вместе с данными таблиц. Используйте этот параметр, если в приложении есть ссылки на <acronym>OID</acronym>, например во внешних ключах. В противном случае, этот параметр лучше не использовать.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-O</option></term>
+      <term><option>--no-owner</option></term>
+      <listitem>
+       <para>Не генерировать команды, устанавливающие владение объектами, как в исходной базе данных. По умолчанию, <application>pg_dumpall</application> генерирует команды <command>ALTER OWNER</command> или <command>SET SESSION AUTHORIZATION</command>, восстанавливающие исходных владельцев для создаваемых элементов схемы. Однако выполнить эти команды сможет только суперпользователь (или пользователь, владеющий всеми объектами, создаваемыми скриптом). Чтобы получить скрипт, который сможет восстановить любой пользователь (но при этом он станет владельцем всех объектов), используется <option>-O</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-r</option></term>
+      <term><option>--roles-only</option></term>
+      <listitem>
+       <para>Выгружать только роли, без баз данных и табличных пространств.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s</option></term>
+      <term><option>--schema-only</option></term>
+      <listitem>
+       <para>Выгружать только определения объектов (схемы), без данных.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-S <replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <term><option>--superuser=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <listitem>
+       <para>Указать суперпользователя, который будет использоваться для отключения триггеров. Параметр имеет значение только вместе с <option>--disable-triggers</option>. Обычно его лучше не использовать, а запускать полученный скрипт от имени суперпользователя.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-t</option></term>
+      <term><option>--tablespaces-only</option></term>
+      <listitem>
+       <para>Выгружать только табличные пространства, без баз данных и ролей.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-v</option></term>
+      <term><option>--verbose</option></term>
+      <listitem>
+       <para>Включить режим подробных сообщений. В этом режиме <application>pg_dumpall</application> записывает в выходной файл время начала/завершения выгрузки, а в стандартный канал ошибок — сообщения о процессе. При этом подробные сообщения будет также выводить <application>pg_dump</application>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>--version</option></term>
+       <listitem>
+       <para>Сообщить версию <application>pg_dumpall</application> и завершиться.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-x</option></term>
+      <term><option>--no-privileges</option></term>
+      <term><option>--no-acl</option></term>
+      <listitem>
+       <para>Не выгружать права доступа (команды GRANT/REVOKE).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--binary-upgrade</option></term>
+      <listitem>
+       <para>Этот параметр предназначен для утилит обновления сервера. Использование для иных целей не рекомендуется и не поддерживается. Поведение параметра может быть изменено в последующих версиях без предварительного уведомления.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--column-inserts</option></term>
+      <term><option>--attribute-inserts</option></term>
+      <listitem>
+       <para>Выгружать данные в виде команд <command>INSERT</command> с явно задаваемыми именами столбцов (<literal>INSERT INTO <replaceable>таблица</replaceable> (<replaceable>столбец</replaceable>, ...) VALUES ...</literal>). При этом восстановление будет очень медленным; в основном это применяется для выгрузки данных, которые затем будут загружаться не в <productname>&productname;</productname>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--disable-dollar-quoting</option></term>
+      <listitem>
+       <para>Этот параметр запрещает заключать в доллары тело функций, что оставляет возможность только заключать их в кавычки, применяя стандартный синтаксис SQL.</para>
+     </listitem>
+    </varlistentry>
+
+     <varlistentry>
+      <term><option>--disable-triggers</option></term>
+      <listitem>
+       <para>Этот параметр действует только при выгрузке одних данных. С ним <application>pg_dumpall</application> добавляет команды, отключающие триггеры в целевых таблицах на время загрузки данных. Используйте его, если в ваших таблицах определены проверки ссылочной целостности или другие триггеры, которые вы не хотели бы выполнять в процессе загрузки данных.</para>
+
+       <para>В настоящее время команды, генерируемые с параметром <option>--disable-triggers</option>, должны исполняться от имени суперпользователя. Таким образом, необходимо также передавать флаг <option>-S</option>, либо при восстановлении выполнять скрипт от имени суперпользователя.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--if-exists</option></term>
+      <listitem>
+       <para>Использовать условные команды (т. е. добавлять предложение <literal>IF EXISTS</literal>) при очистке базы данных и других объектов. Этот параметр принимается, только если также указан параметр <option>--clean</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--inserts</option></term>
+      <listitem>
+       <para>Выгружать данные в виде команд <command>INSERT</command>, а не <command>COPY</command>. При этом восстановление значительно замедлится; в основном это применяется для выгрузки данных, которые затем будут загружаться не в <productname>&productname;</productname>. Заметьте, что восстановление может вовсе не выполниться при изменении порядка столбцов в таблицах. В этом смысле параметр <option>--column-inserts</option> безопаснее, но восстановление будет ещё медленнее.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--lock-wait-timeout=<replaceable class="parameter">время_ожидания</replaceable></option></term>
+      <listitem>
+       <para>Не ждать бесконечно получения разделяемых блокировок таблиц в начале процедуры выгрузки. Вместо этого выдать ошибку, если не удастся заблокировать таблицы за указанное <replaceable class="parameter">время_ожидания</replaceable>. Это время можно задать в любом из форматов, принимаемых командой <command>SET statement_timeout</command>. Допустимые значения зависят от версии сервера, выгружающего данные, но количество миллисекунд в виде целого числа принимают все версии, начиная с 7.3. Более ранние версии игнорируют этот параметр.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-security-labels</option></term>
+      <listitem>
+       <para>Не выгружать метки безопасности.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-tablespaces</option></term>
+      <listitem>
+       <para>Не выводить команды, создающие или выбирающие табличные пространства для объектов. С этим параметром все объекты будут созданы в пространстве по умолчанию, установленном во время восстановления.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-unlogged-table-data</option></term>
+      <listitem>
+       <para>Не выгружать содержимое нежурналируемых таблиц. Этот параметр не влияет на то, как выгружаются определения этих таблиц (схема); он отключает только выгрузку данных из них.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--quote-all-identifiers</option></term>
+      <listitem>
+       <para>Принудительно экранировать все идентификаторы. Этот параметр рекомендуется при выгрузке базы, когда основная версия сервера <productname>PostgreSQL</productname>, с которого выгружается база, отличается от версии <application>pg_dumpall</application>, или когда выгруженная копия предназначена для загрузки на сервере с другой основной версией. По умолчанию <application>pg_dumpall</application> экранирует только те идентификаторы, которые являются зарезервированными словами в собственной основной версии. Иногда это приводит к проблемам совместимости с серверами других версий, в которых множество зарезервированных слов может быть несколько другим. Применение параметра <option>--quote-all-identifiers</option> предотвращает подобные проблемы, ценой ухудшения читаемости скрипта с выгруженными данными.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--use-set-session-authorization</option></term>
+      <listitem>
+       <para>Выводить команды <command>SET SESSION AUTHORIZATION</command>, соответствующие стандарту, вместо <command>ALTER OWNER</command>, для назначения владельцев объектов. В результате выгруженный скрипт будет более стандартизированным, но может не восстановиться корректно, в зависимости от истории объектов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-?</option></term>
+       <term><option>--help</option></term>
+       <listitem>
+       <para>Показать справку по аргументам командной строки <application>pg_dumpall</application> и завершиться.</para>
+       </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+
+  <para>Далее описаны параметры управления подключением. <variablelist>
+     <varlistentry>
+      <term><option>-d <replaceable class="parameter">строка_подключения</replaceable></option></term>
+      <term><option>--dbname=<replaceable class="parameter">строка_подключения</replaceable></option></term>
+      <listitem>
+       <para>Указывает параметры подключения к серверу в формате строки подключения. См. <xref remap="4" linkend="libpq-connstring"/> для более подробной информации.</para>
+       <para>Этот параметр называется <literal>--dbname</literal> для согласованности с другими клиентскими приложениями, но так как <application>pg_dumpall</application> подключается не к одной базе данных, имя базы в строке подключения игнорируется. Чтобы указать имя базы данных, через подключение к которой будут выгружаться глобальные объекты и находиться другие выгружаемые базы, воспользуйтесь параметром <literal>-l</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-h <replaceable>сервер</replaceable></option></term>
+      <term><option>--host=<replaceable>сервер</replaceable></option></term>
+      <listitem>
+       <para>Указывает имя компьютера, на котором запущен сервер баз данных. Если значение начинается с косой черты, оно интерпретируется как имя каталога с доменным сокетом Unix. Значение по умолчанию берётся из переменной окружения <envar>PGHOST</envar>, если она установлена. В противном случае выполняется подключение к доменному сокету.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-l <replaceable>имя_бд</replaceable></option></term>
+      <term><option>--database=<replaceable>имя_бд</replaceable></option></term>
+      <listitem>
+       <para>Задаёт имя базы данных, через подключение к которой будут выгружаться глобальные объекты и находиться другие выгружаемые базы. По умолчанию используется база <literal>postgres</literal>, а в случае её отсутствия — <literal>template1</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable>порт</replaceable></option></term>
+      <term><option>--port=<replaceable>порт</replaceable></option></term>
+      <listitem>
+       <para>Указывает TCP-порт или расширение локального файла Unix-сокета, на котором сервер слушает подключения. По умолчанию берётся значение переменной окружения <envar>PGPORT</envar>, если оно установлено, либо значение времени компиляции.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable>имя_пользователя</replaceable></option></term>
+      <term><option>--username=<replaceable>имя_пользователя</replaceable></option></term>
+      <listitem>
+       <para>Имя пользователя, под которым производится подключение.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</option></term>
+      <term><option>--no-password</option></term>
+      <listitem>
+       <para>Не выдавать запрос на ввод пароля. Если сервер требует аутентификацию по паролю и пароль не доступен с помощью других средств, таких как файл <filename>.pgpass</filename>, попытка соединения не удастся. Этот параметр может быть полезен в пакетных заданиях и скриптах, где нет пользователя, который вводит пароль.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option></term>
+      <term><option>--password</option></term>
+      <listitem>
+       <para>Принудительно запрашивать пароль перед подключением к базе данных.</para>
+
+       <para>Это несущественный параметр, так как <application>pg_dumpall</application> запрашивает пароль автоматически, если сервер проверяет подлинность по паролю. Однако, чтобы понять это, <application>pg_dumpall</application> лишний раз подключается к серверу. Поэтому иногда имеет смысл ввести <option>-W</option>, чтобы исключить эту ненужную попытку подключения.</para>
+
+       <para>Заметьте, что пароль будет запрашиваться повторно для выгрузки каждой базы данных. Поэтому обычно лучше настроить файл <filename>~/.pgpass</filename>, и не вводить пароль каждый раз вручную.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--role=<replaceable class="parameter">имя роли</replaceable></option></term>
+      <listitem>
+       <para>Задаёт имя роли, которая будет осуществлять выгрузку. Получив это имя, <application>pg_dumpall</application> выполнит <command>SET ROLE</command> <replaceable class="parameter">имя_роли</replaceable> после подключения к базе данных. Это полезно, когда проходящий проверку пользователь (указанный в <option>-U</option>) не имеет прав, необходимых для <application>pg_dumpall</application>, но может переключиться на роль, наделённую этими правами. В некоторых окружениях правила запрещают подключаться к серверу непосредственно суперпользователю, и этот параметр позволяет выполнить выгрузку, не нарушая их.</para>
+      </listitem>
+     </varlistentry>
+   </variablelist></para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><envar>PGHOST</envar></term>
+    <term><envar>PGOPTIONS</envar></term>
+    <term><envar>PGPORT</envar></term>
+    <term><envar>PGUSER</envar></term>
+
+    <listitem>
+     <para>Параметры подключения по умолчанию</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Эта утилита, как и большинство других утилит <productname>&productname;</productname>, также использует переменные среды, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>).</para>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Так как <application>pg_dumpall</application> внутри себя вызывает <application>pg_dump</application>, часть диагностических сообщений будет относиться к <application>pg_dump</application>.</para>
+
+  <para>После восстановления имеет смысл запустить <command>ANALYZE</command> для каждой базы данных, чтобы оптимизатор получил актуальную статистику. Также можно запустить анализ для всех баз данных, выполнив команду <command>vacuumdb -a -z</command>.</para>
+
+  <para>При использовании <application>pg_dumpall</application> требуется, чтобы все необходимые каталоги табличных пространств существовали до восстановления; в противном случае, создание баз данных в нестандартном размещении завершится ошибкой.</para>
+ </refsect1>
+
+
+ <refsect1 id="app-pg-dumpall-ex">
+  <title>Примеры</title>
+  <para>Чтобы выгрузить все базы данных, выполните: <screen>
+<prompt>$</prompt> <userinput>pg_dumpall &gt; db.out</userinput>
+</screen></para>
+
+  <para>Загрузить базы данных из этого файла можно так: <screen>
+<prompt>$</prompt> <userinput>psql -f db.out postgres</userinput>
+</screen> (К какой базе данных вы подключаетесь, здесь не важно, так как скрипт, созданный утилитой <application>pg_dumpall</application>, будет содержать все команды, требующиеся для создания сохранённых баз данных и подключения к ним.)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <para>Обратитесь к описанию <xref remap="3" linkend="app-pgdump"/>, чтобы узнать об условиях, при которых могут возникнуть проблемы.</para>
+ </refsect1>
+
+</refentry>

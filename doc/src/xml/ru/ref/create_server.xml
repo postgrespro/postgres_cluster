@@ -1,0 +1,109 @@
+<!--
+doc/src/xml/ref/create_server.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createserver">
+ <indexterm zone="sql-createserver"><primary>CREATE SERVER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE SERVER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE SERVER</refname>
+  <refpurpose>создать сторонний сервер</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE SERVER <replaceable class="parameter">имя_сервера</replaceable> [ TYPE '<replaceable class="parameter">тип_сервера</replaceable>' ] [ VERSION '<replaceable class="parameter">версия_сервера</replaceable>' ]
+    FOREIGN DATA WRAPPER <replaceable class="parameter">имя_обёртки_сторонних_данных</replaceable>
+    [ OPTIONS ( <replaceable class="parameter">параметр</replaceable> '<replaceable class="parameter">значение</replaceable>' [, ... ] ) ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE SERVER</command> создаёт сторонний сервер. Владельцем сервера становится создавший его пользователь.</para>
+
+  <para>Определение стороннего сервера обычно включает информацию о подключении, которую использует обёртка сторонних данных для доступа к внешнему ресурсу. Определяя сопоставления пользователей, можно установить и другие параметры подключения, связанные с пользователями.</para>
+
+  <para>Имя сервера должно быть уникальным в базе данных.</para>
+
+  <para>Для создания сервера требуется право <literal>USAGE</literal> для обёртки сторонних данных.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя_сервера</replaceable></term>
+    <listitem>
+     <para>Имя создаваемого стороннего сервера.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_сервера</replaceable></term>
+    <listitem>
+     <para>Необязательный тип сервера, может быть полезен для обёрток сторонних данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">версия_сервера</replaceable></term>
+    <listitem>
+     <para>Необязательная версия сервера, может быть полезна для обёрток сторонних данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_обёртки_сторонних_данных</replaceable></term>
+    <listitem>
+     <para>Имя обёртки сторонних данных, управляющей сервером.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>OPTIONS ( <replaceable class="parameter">параметр</replaceable> '<replaceable class="parameter">значение</replaceable>' [, ... ] )</literal></term>
+    <listitem>
+     <para>Это предложение определяет параметры сервера. Эти параметры обычно задают свойства подключения к серверу; их конкретные имена и значения зависят от обёртки сторонних данных.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>При использовании модуля <xref linkend="dblink"/> имя стороннего сервера может служить аргументом функции <xref linkend="contrib-dblink-connect"/>, определяющим параметры подключения. Для такого варианта использования необходимо иметь право <literal>USAGE</literal> для стороннего сервера.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Создание сервера <literal>myserver</literal>, доступного через обёртку <literal>postgres_fdw</literal>: <programlisting>CREATE SERVER myserver FOREIGN DATA WRAPPER postgres_fdw OPTIONS (host 'foo', dbname 'foodb', port '5432');</programlisting> За подробностями обратитесь к <xref remap="3" linkend="postgres-fdw"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>CREATE SERVER</command> соответствует стандарту ISO/IEC 9075-9 (SQL/MED).</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterserver"/></member>
+   <member><xref linkend="sql-dropserver"/></member>
+   <member><xref linkend="sql-createforeigndatawrapper"/></member>
+   <member><xref linkend="sql-createforeigntable"/></member>
+   <member><xref linkend="sql-createusermapping"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

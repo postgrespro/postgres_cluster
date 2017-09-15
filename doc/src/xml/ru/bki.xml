@@ -1,0 +1,175 @@
+<!-- doc/src/xml/bki.xml -->
+
+<chapter id="bki">
+ <title>Внутренний интерфейс <acronym>BKI</acronym></title>
+
+ <para>Файлы внутреннего интерфейса (<acronym>BKI</acronym>, Backend Interface) представляют собой скрипты на специальном языке, который понимает сервер <productname>&productname;</productname> в режиме <quote>первого запуска</quote>. Этот режим позволяет создать системные каталоги и заполнить их с нуля, тогда как для обычных SQL-команд необходимо, чтобы каталоги уже существовали. Таким образом, файлы <acronym>BKI</acronym> могут применяться для изначального создания системы баз данных. (И вряд ли им можно найти другое применение.)</para>
+
+ <para>Программа <application>initdb</application> использует файл <acronym>BKI</acronym> для выполнения части своей работы при создании нового кластера баз данных. Входной файл для <application>initdb</application> создаётся в процессе сборки и установки <productname>&productname;</productname> программой <filename>genbki.pl</filename>, которая считывает для этого специально отформатированные заголовочные файлы C в каталоге <filename>src/include/catalog/</filename> в дереве исходного кода. Созданный файл <acronym>BKI</acronym> называется <filename>postgres.bki</filename> и обычно устанавливается в подкаталог <filename>share</filename> дерева инсталляции.</para>
+
+ <para>Дополнительные сведения можно найти в документации по <application>initdb</application>.</para>
+
+ <sect1 id="bki-format">
+  <title>Формат файла <acronym>BKI</acronym></title>
+
+  <para>В этом разделе описывается, как сервер <productname>&productname;</productname> интерпретирует файлы <acronym>BKI</acronym>. Это описание будет легче понять, если для наглядности вы откроете файл <filename>postgres.bki</filename>.</para>
+
+  <para>Содержимое <acronym>BKI</acronym> состоит из последовательности команд. Команды образуются из нескольких компонентов, в зависимости от синтаксиса конкретной команды. Компоненты команд обычно разделяются пробельными символами, но это не обязательно, если не возникает неоднозначности. Специальный разделитель команд отсутствует; следующий компонент, который не может синтаксически относиться к предыдущей команде, начинает следующую. (Обычно новая команда начинается в отдельной строке, для структурности.) Компонентами команд могут быть определённые ключевые слова, специальные символы (скобки, запятые и т. д.), числа или строки в двойных кавычках. Все буквы в них воспринимаются с учётом регистра.</para>
+
+  <para>Строки, начинающиеся с <literal>#</literal>, игнорируются.</para>
+
+ </sect1>
+
+ <sect1 id="bki-commands">
+  <title>Команды <acronym>BKI</acronym></title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>create</literal> <replaceable class="parameter">имя_таблицы</replaceable> <replaceable class="parameter">oid_таблицы</replaceable> <optional><literal>bootstrap</literal></optional> <optional><literal>shared_relation</literal></optional> <optional><literal>without_oids</literal></optional> <optional><literal>rowtype_oid</literal> <replaceable>oid</replaceable></optional> (<replaceable class="parameter">имя1</replaceable> = <replaceable class="parameter">тип1</replaceable> <optional>FORCE NOT NULL | FORCE NULL </optional> <optional>, <replaceable class="parameter">имя2</replaceable> = <replaceable class="parameter">тип2</replaceable> <optional>FORCE NOT NULL | FORCE NULL </optional>, ...</optional>)</term>
+
+    <listitem>
+     <para>Создать таблицу <replaceable class="parameter">имя_таблицы</replaceable> с заданным <replaceable class="parameter">oid_таблицы</replaceable> и столбцами, указанными в скобках.</para>
+
+     <para>Непосредственно <filename>bootstrap.c</filename> поддерживает следующие типы столбцов: <type>bool</type>, <type>bytea</type>, <type>char</type> (1 байт), <type>name</type>, <type>int2</type>, <type>int4</type>, <type>regproc</type>, <type>regclass</type>, <type>regtype</type>, <type>text</type>, <type>oid</type>, <type>tid</type>, <type>xid</type>, <type>cid</type>, <type>int2vector</type>, <type>oidvector</type>, <type>_int4</type> (массив), <type>_text</type> (массив), <type>_oid</type> (массив), <type>_char</type> (массив), <type>_aclitem</type> (массив). Хотя возможно создать таблицы, содержащие столбцы и других типов, это нельзя сделать, пока не будет создан и заполнен соответствующими записями каталог <structname>pg_type</structname>. (Это по сути означает, что только эти типы столбцов могут быть в таблицах, создаваемых в таком режиме, хотя каталоги, создаваемые позже, могут содержать любые встроенные типы.)</para>
+
+     <para>С указанием <literal>bootstrap</literal> таблица будет создана только на диске; никакие записи о ней не будут добавлены в <structname>pg_class</structname>, <structname>pg_attribute</structname> и т. д. Таким образом, таблица не будет доступна для обычных операций SQL, пока такие записи не будут добавлены явно (командами <literal>insert</literal>). Это указание применяется для создания самой структуры <structname>pg_class</structname> и подобных ей.</para>
+
+     <para>Если добавлено указание <literal>shared_relation</literal>, таблица создаётся как общая. Она будет содержать столбец OID, если отсутствует указание <literal>without_oids</literal>. Дополнительным предложением <literal>rowtype_oid</literal> может быть задан OID типа строки (OID записи в <structname>pg_type</structname>); если он не указан, OID генерируется автоматически. (Предложение <literal>rowtype_oid</literal> бесполезно, если присутствует указание <literal>bootstrap</literal>, но его всё равно можно добавить для документирования.)</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <literal>open</literal> <replaceable class="parameter">имя_таблицы</replaceable>
+    </term>
+
+    <listitem>
+     <para>Открыть таблицу <replaceable class="parameter">имя_таблицы</replaceable> для добавления данных. Любая другая таблица, открытая в данный момент, закрывается.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <literal>close</literal> <optional><replaceable class="parameter">имя_таблицы</replaceable></optional>
+    </term>
+
+    <listitem>
+     <para>Закрыть открытую таблицу. Имя таблицы может задаваться для перепроверки, но это не требуется.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>insert</literal> <optional><literal>OID =</literal> <replaceable class="parameter">значение_oid</replaceable></optional> <literal>(</literal> <replaceable class="parameter">значение1</replaceable> <replaceable class="parameter">значение2</replaceable> ... <literal>)</literal></term>
+
+    <listitem>
+     <para>Вставить новую строку в открытую таблицу, установив <replaceable class="parameter">значение1</replaceable>, <replaceable class="parameter">значение2</replaceable> и т. д. в качестве значений столбцов и <replaceable class="parameter">значение_oid</replaceable> в качестве OID. Если <replaceable class="parameter">значение_oid</replaceable> равно нулю (0) или это указание опущено, а таблица при этом содержит OID, строке назначается следующий свободный OID.</para>
+
+     <para>Значения NULL могут задаваться специальным ключевым словом <literal>_null_</literal>. Значения, содержащие пробелы, должны заключаться в двойные кавычки.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <literal>declare</literal> <optional><literal>unique</literal></optional>
+     <literal>index</literal> <replaceable class="parameter">имя_индекса</replaceable>
+     <replaceable class="parameter">oid_индекса</replaceable>
+     <literal>on</literal> <replaceable class="parameter">имя_таблицы</replaceable>
+     <literal>using</literal> <replaceable class="parameter">имя_метода_доступа</replaceable>
+     <literal>(</literal> <replaceable class="parameter">класс_оп1</replaceable>
+     <replaceable class="parameter">имя1</replaceable>
+     <optional>, ...</optional> <literal>)</literal>
+    </term>
+
+    <listitem>
+     <para>Создать индекс <replaceable class="parameter">имя_индекса</replaceable> с OID, равным <replaceable class="parameter">oid_индекса</replaceable>, в таблице <replaceable class="parameter">имя_таблицы</replaceable>, с методом доступа <replaceable class="parameter">имя_метода_доступа</replaceable>. Индекс строится по полям <replaceable class="parameter">имя1</replaceable>, <replaceable class="parameter">имя2</replaceable> и т. д., и для них используются соответственно классы операторов <replaceable class="parameter">класс_оп1</replaceable>, <replaceable class="parameter">класс_оп2</replaceable> и т. д. Эта команда создаёт файл индекса и добавляет соответствующие записи в каталог, но не инициализирует содержимое индекса.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <literal>declare toast</literal>
+     <replaceable class="parameter">oid_таблицы_toast</replaceable>
+     <replaceable class="parameter">oid_индекса_toast</replaceable>
+     <literal>on</literal> <replaceable class="parameter">имя_таблицы</replaceable>
+    </term>
+
+    <listitem>
+     <para>Создаёт таблицу TOAST для таблицы <replaceable class="parameter">имя_таблицы</replaceable>. Таблице TOAST назначается OID, равный <replaceable class="parameter">oid_таблицы_toast</replaceable>, а её индексу назначается OID, равный <replaceable class="parameter">oid_индекса_toast</replaceable>. Как и с <literal>declare index</literal>, заполнение индекса откладывается.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>build indices</literal></term>
+
+    <listitem>
+     <para>Заполнить индексы, объявленные ранее.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+ </sect1>
+
+ <sect1 id="bki-structure">
+  <title>Структура файла <acronym>BKI</acronym></title>
+
+  <para>Команда <literal>open</literal> может применяться, только когда открываемая ей таблица существует и для неё имеются записи в каталогах. (Минимальный набор этих каталогов образуют <structname>pg_class</structname>, <structname>pg_attribute</structname>, <structname>pg_proc</structname> и <structname>pg_type</structname>.) Чтобы можно было заполнить сами эти таблицы, команда <literal>create</literal> с указанием <literal>bootstrap</literal> неявно открывает создаваемую таблицу для добавления данных.</para>
+
+  <para>Кроме того, команды <literal>declare index</literal> и <literal>declare toast</literal> нельзя применять, пока не будут созданы и заполнены системные каталоги.</para>
+
+  <para>Таким образом, файл <filename>postgres.bki</filename> должен иметь следующую структуру: <orderedlist>
+    <listitem>
+     <para><literal>create bootstrap</literal> (создание) одной из критичных таблиц</para>
+    </listitem>
+    <listitem>
+     <para><literal>insert</literal> (добавление) данных, описывающих как минимум критичные таблицы</para>
+    </listitem>
+    <listitem>
+     <para>
+      <literal>close</literal>
+     </para>
+    </listitem>
+    <listitem>
+     <para>Повторение для других критичных таблиц.</para>
+    </listitem>
+    <listitem>
+     <para><literal>create</literal> (создание) (без <literal>bootstrap</literal>) некритичной таблицы</para>
+    </listitem>
+    <listitem>
+     <para>
+      <literal>open</literal>
+     </para>
+    </listitem>
+    <listitem>
+     <para><literal>insert</literal> (добавление) требуемых данных</para>
+    </listitem>
+    <listitem>
+     <para>
+      <literal>close</literal>
+     </para>
+    </listitem>
+    <listitem>
+     <para>Повторение для других некритичных таблиц.</para>
+    </listitem>
+    <listitem>
+     <para>Определение индексов и таблиц TOAST.</para>
+    </listitem>
+    <listitem>
+     <para>
+      <literal>build indices</literal>
+     </para>
+    </listitem>
+   </orderedlist></para>
+
+  <para>Несомненно есть и другие, недокументированные зависимости, диктующие определённый порядок.</para>
+ </sect1>
+
+ <sect1 id="bki-example">
+  <title>Пример</title>
+
+  <para>Следующая последовательность команд создаст таблицу <literal>test_table</literal> с OID 420, имеющую два столбца <literal>cola</literal> и <literal>colb</literal> типа <type>int4</type> и <type>text</type>, соответственно, и вставит две строки в эту таблицу: <programlisting>create test_table 420 (cola = int4, colb = text)
+open test_table
+insert OID=421 ( 1 "value1" )
+insert OID=422 ( 2 _null_ )
+close test_table</programlisting></para>
+ </sect1>
+</chapter>

@@ -1,0 +1,117 @@
+<!-- doc/src/xml/ref/create_conversion.xml -->
+
+<refentry id="sql-createconversion">
+ <indexterm zone="sql-createconversion"><primary>CREATE CONVERSION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE CONVERSION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE CONVERSION</refname>
+  <refpurpose>создать перекодировку</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE [ DEFAULT ] CONVERSION <replaceable>имя</replaceable>
+    FOR <replaceable>исходная_кодировка</replaceable> TO <replaceable>целевая_кодировка</replaceable> FROM <replaceable>имя_функции</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="sql-createconversion-description">
+  <title>Описание</title>
+
+  <para><command>CREATE CONVERSION</command> определяет новую перекодировку наборов символов. Кроме того, перекодировки, помеченные как <literal>DEFAULT</literal>, могут применяться для автоматического преобразования кодировки между клиентом и сервером. Для такого применения должны быть определены две перекодировки: из кодировки A в B <emphasis>и</emphasis> из кодировки B в A.</para>
+
+  <para>Чтобы создать перекодировку, необходимо иметь право <literal>EXECUTE</literal> для реализующей функции и право <literal>CREATE</literal> в целевой схеме.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><literal>DEFAULT</literal></term>
+
+     <listitem>
+      <para>Предложение <literal>DEFAULT</literal> показывает, что эта перекодировка должна использоваться по умолчанию для преобразования заданной исходной кодировки в целевую. Для каждой пары кодировок может быть только одна перекодировка по умолчанию.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>имя</replaceable></term>
+
+     <listitem>
+      <para>Имя перекодировки, возможно, дополненное схемой. Если схема не указана, перекодировка создаётся в текущей схеме. Имя перекодировки должно быть уникально в этой схеме.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>исходная_кодировка</replaceable></term>
+
+     <listitem>
+      <para>Имя исходной кодировки.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>целевая_кодировка</replaceable></term>
+
+     <listitem>
+      <para>Имя целевой кодировки.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>имя_функции</replaceable></term>
+
+     <listitem>
+      <para>Функция, выполняющая перекодирование. Имя функции может быть дополнено схемой, в противном случае для поиска функции просматривается путь поиска.</para>
+
+      <para>Функция должна иметь следующую сигнатуру: <programlisting>conv_proc(
+    integer,  -- идентификатор исходной кодировки
+    integer,  -- идентификатор целевой кодировки
+    cstring,  -- исходная строка (строка, завершающаяся 0, как в C)
+    internal, -- целевая строка (заполняется строкой, завершающейся 0, как в C)
+    integer   -- длина исходной строки
+) RETURNS void;</programlisting></para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+ </refsect1>
+
+ <refsect1 id="sql-createconversion-notes">
+  <title>Замечания</title>
+
+  <para>Для удаления перекодировок, созданных пользователем, применяется <command>DROP CONVERSION</command>.</para>
+
+  <para>Набор прав, требуемых для создания перекодировки, может измениться в будущих версиях.</para>
+ </refsect1>
+
+ <refsect1 id="sql-createconversion-examples">
+  <title>Примеры</title>
+
+  <para>Создание перекодировки из кодировки <literal>UTF8</literal> в <literal>LATIN1</literal> с использованием функции <function>myfunc</function>: <programlisting>CREATE CONVERSION myconv FOR 'UTF8' TO 'LATIN1' FROM myfunc;</programlisting></para>
+ </refsect1>
+
+
+ <refsect1 id="sql-createconversion-compat">
+  <title>Совместимость</title>
+
+  <para>Оператор <command>CREATE CONVERSION</command> является расширением <productname>&productname;</productname>. В стандарте SQL отсутствует оператор <command>CREATE CONVERSION</command>, но есть очень похожий по предназначению и синтаксису оператор <command>CREATE TRANSLATION</command>.</para>
+ </refsect1>
+
+
+ <refsect1 id="sql-createconversion-seealso">
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterconversion"/></member>
+   <member><xref linkend="sql-createfunction"/></member>
+   <member><xref linkend="sql-dropconversion"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

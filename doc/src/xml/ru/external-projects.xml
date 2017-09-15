@@ -1,0 +1,194 @@
+<!-- doc/src/xml/external-projects.xml -->
+
+ <appendix id="external-projects">
+  <title>Внешние проекты</title>
+
+  <para><productname>&productname;</productname> — сложный программный проект, управлять которым довольно сложно. Поэтому мы пришли к заключению, что многие дополнения и усовершенствования <productname>&productname;</productname> будет эффективнее разрабатывать отдельно от основного проекта.</para>
+
+ <sect1 id="external-interfaces">
+  <title>Клиентские интерфейсы</title>
+
+  <indexterm><primary>интерфейсы</primary> <secondary>поддерживаемые отдельно</secondary></indexterm>
+
+  <para>В базовый дистрибутив <productname>&productname;</productname> включены только два клиентских интерфейса: <itemizedlist>
+    <listitem>
+     <para><link linkend="libpq">libpq</link> включён, потому что это основной интерфейс языка C и многие другие клиентские интерфейсы построены на основе него.</para>
+    </listitem>
+
+    <listitem>
+     <para><link linkend="ecpg">ECPG</link> включён, потому что он зависит от грамматики языка SQL на стороне сервера, и таким образом, очень чувствителен к изменениям в самом <productname>&productname;</productname>.</para>
+    </listitem>
+   </itemizedlist> Все остальные языковые интерфейсы разрабатываются в отдельных проектах и распространяются отдельно. Некоторые из этих проектов перечислены в <xref remap="6" linkend="language-interface-table"/>. Заметьте, что какие-то проекты могут выпускаться под лицензией, отличной от лицензии <productname>&productname;</productname>. За дополнительной информацией о каждом языковом интерфейсе, включая условия лицензии, обратитесь к его сайту и документации.</para>
+
+  <table id="language-interface-table">
+   <title>Отдельно поддерживаемые клиентские интерфейсы</title>
+
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry>Название</entry>
+      <entry>Язык</entry>
+      <entry>Комментарии</entry>
+      <entry>Сайт</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry>DBD::Pg</entry>
+      <entry>Perl</entry>
+      <entry>DBI-драйвер для Perl</entry>
+      <entry><ulink url="http://search.cpan.org/dist/DBD-Pg/"/></entry>
+     </row>
+
+     <row>
+      <entry>JDBC</entry>
+      <entry>Java</entry>
+      <entry>JDBC-драйвер типа 4</entry>
+      <entry><ulink url="https://jdbc.postgresql.org/"/></entry>
+     </row>
+
+     <row>
+      <entry>libpqxx</entry>
+      <entry>C++</entry>
+      <entry>Интерфейс C++ нового стиля</entry>
+      <entry><ulink url="http://pqxx.org/"/></entry>
+     </row>
+
+     <row>
+      <entry>node-postgres</entry>
+      <entry>JavaScript</entry>
+      <entry>Драйвер Node.js</entry>
+      <entry><ulink url="https://node-postgres.com/"/></entry>
+     </row>
+
+     <row>
+      <entry>Npgsql</entry>
+      <entry>.NET</entry>
+      <entry>Провайдер данных для .NET</entry>
+      <entry><ulink url="http://www.npgsql.org/"/></entry>
+     </row>
+
+     <row>
+      <entry>pgtcl</entry>
+      <entry>Tcl</entry>
+      <entry/>
+      <entry><ulink url="https://github.com/flightaware/Pgtcl"/></entry>
+     </row>
+
+     <row>
+      <entry>pgtclng</entry>
+      <entry>Tcl</entry>
+      <entry/>
+      <entry><ulink url="http://sourceforge.net/projects/pgtclng/"/></entry>
+     </row>
+
+     <row>
+      <entry>pq</entry>
+      <entry>Go</entry>
+      <entry>Драйвер на Go для интерфейса database/sql</entry>
+      <entry><ulink url="https://github.com/lib/pq"/></entry>
+     </row>
+
+     <row>
+      <entry>psqlODBC</entry>
+      <entry>ODBC</entry>
+      <entry>ODBC-драйвер</entry>
+      <entry><ulink url="https://odbc.postgresql.org/"/></entry>
+     </row>
+
+     <row>
+      <entry>psycopg</entry>
+      <entry>Python</entry>
+      <entry>Интерфейс, совместимый с DB API 2.0</entry>
+      <entry><ulink url="http://initd.org/psycopg/"/></entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+ </sect1>
+
+ <sect1 id="external-admin-tools">
+ <title>Средства администрирования</title>
+
+  <indexterm><primary>средства администрирования</primary> <secondary>поддерживаемые отдельно</secondary></indexterm>
+
+  <para>Для <productname>&productname;</productname> выпускаются различные инструменты администрирования. Наиболее популярен из них <application><ulink url="http://www.pgadmin.org/">pgAdmin III</ulink></application>, но есть и ряд других, в том числе коммерческих решений.</para>
+ </sect1>
+
+ <sect1 id="external-pl">
+  <title>Процедурные языки</title>
+
+  <indexterm><primary>процедурный язык</primary> <secondary>поддерживаемый отдельно</secondary></indexterm>
+
+  <para>Базовый дистрибутив <productname>&productname;</productname> включает несколько процедурных языков: <link linkend="plpgsql">PL/pgSQL</link>, <link linkend="pltcl">PL/Tcl</link>, <link linkend="plperl">PL/Perl</link> и <link linkend="plpython">PL/Python</link>.</para>
+
+  <para>Кроме того, вне основного дистрибутива <productname>&productname;</productname> разрабатываются и поддерживаются несколько процедурных языков. Проекты некоторых из этих языков перечислены в <xref remap="6" linkend="pl-language-table"/>. Заметьте, что какие-то проекты могут выпускаться под лицензией, отличной от лицензии <productname>&productname;</productname>. За дополнительной информацией о каждом процедурном языке, включая условия лицензии, обратитесь к его сайту и документации.</para>
+
+  <table id="pl-language-table">
+   <title>Поддерживаемые отдельно процедурные языки</title>
+
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Название</entry>
+      <entry>Язык</entry>
+      <entry>Сайт</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry>PL/Java</entry>
+      <entry>Java</entry>
+      <entry><ulink url="https://github.com/tada/pljava"/></entry>
+     </row>
+
+     <row>
+      <entry>PL/PHP</entry>
+      <entry>PHP</entry>
+      <entry><ulink url="https://public.commandprompt.com/projects/plphp"/></entry>
+     </row>
+
+     <row>
+      <entry>PL/Py</entry>
+      <entry>Python</entry>
+      <entry><ulink url="http://python.projects.postgresql.org/backend/"/></entry>
+     </row>
+
+     <row>
+      <entry>PL/R</entry>
+      <entry>R</entry>
+      <entry><ulink url="http://www.joeconway.com/plr.html"/></entry>
+     </row>
+
+     <row>
+      <entry>PL/Ruby</entry>
+      <entry>Ruby</entry>
+      <entry><ulink url="http://raa.ruby-lang.org/project/pl-ruby/"/></entry>
+     </row>
+
+     <row>
+      <entry>PL/Scheme</entry>
+      <entry>Scheme</entry>
+      <entry><ulink url="http://plscheme.projects.postgresql.org/"/></entry>
+     </row>
+
+     <row>
+      <entry>PL/sh</entry>
+      <entry>Оболочка Unix</entry>
+      <entry><ulink url="https://github.com/petere/plsh"/></entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+ </sect1>
+
+ <sect1 id="external-extensions">
+ <title>Расширения</title>
+
+  <indexterm><primary>расширение</primary> <secondary>отдельно поддерживаемое</secondary></indexterm>
+
+  <para><productname>&productname;</productname> проектируется так, чтобы его можно было легко расширять. Как результат, расширения, загружаемые в базу данных, могут функционировать в точности так же, как и встроенные функции. Каталог <filename>contrib/</filename>, включённый в дерево исходного кода, содержит несколько расширений, описанных в <xref remap="6" linkend="contrib"/>. Другие расширения разрабатываются независимо, как например, <application><ulink url="http://postgis.net/">PostGIS</ulink></application>. <productname>&productname;</productname> позволяет разрабатывать независимо даже решения по репликации. Например, <application><ulink url="http://www.slony.info">Slony-I</ulink></application> — популярное средство репликации по схеме главный/резервный, разрабатываемое отдельно от основного проекта.</para>
+ </sect1>
+</appendix>

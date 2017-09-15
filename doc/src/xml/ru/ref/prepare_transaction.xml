@@ -1,0 +1,89 @@
+<!--
+doc/src/xml/ref/prepare_transaction.xml
+&productname; documentation
+-->
+
+<refentry id="sql-prepare-transaction">
+ <indexterm zone="sql-prepare-transaction"><primary>PREPARE TRANSACTION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>PREPARE TRANSACTION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>PREPARE TRANSACTION</refname>
+  <refpurpose>подготовить текущую транзакцию для двухфазной фиксации</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>PREPARE TRANSACTION <replaceable class="parameter">id_транзакции</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>PREPARE TRANSACTION</command> подготавливает текущую транзакцию для двухфазной фиксации. После этой команды транзакция перестаёт быть связанной с текущим сеансом; её состояние полностью сохраняется на диске, и есть очень большая вероятность, что она будет успешно зафиксирована, даже если до этого времени работа базы данных будет прервана аварийно.</para>
+
+  <para>Подготовленную транзакцию затем можно зафиксировать или отменить командами <xref linkend="sql-commit-prepared"/> и <xref linkend="sql-rollback-prepared"/>, соответственно. Эти команды можно вызывать из любого сеанса, не только из того, в котором эта транзакция создавалась.</para>
+
+  <para>С точки зрения сеанса, выполняющего команду, <command>PREPARE TRANSACTION</command> не отличается от <command>ROLLBACK</command>: после её выполнения не активна никакая транзакция, а результат действия подготовленной транзакции становится невидимым (Он окажется видимым снова, если транзакция будет зафиксирована.)</para>
+
+  <para>Если при выполнении команды <command>PREPARE TRANSACTION</command> по какой-то причине происходит сбой, команда действует как <command>ROLLBACK</command>: текущая транзакция откатывается.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">id_транзакции</replaceable></term>
+    <listitem>
+     <para>Произвольный идентификатор, по которому затем на эту транзакцию будут ссылаться команды <command>COMMIT PREPARED</command> или <command>ROLLBACK PREPARED</command>. Идентификатор должен задаваться строковой константой не длиннее 200 байтов и должен отличаться от идентификаторов любых других подготовленных на данный момент транзакций.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para><command>PREPARE TRANSACTION</command> не предназначена для использования в приложениях или интерактивных сеансах. Её задача — дать возможность внешнему менеджеру транзакций выполнять атомарные глобальные транзакции, охватывающие несколько баз данных или другие транзакционные ресурсы. Обычно применять <command>PREPARE TRANSACTION</command> следует только при разработке собственного менеджера транзакций.</para>
+
+  <para>Эта команда должна выполняться внутри блока транзакции. Начинает блок транзакции команда <xref linkend="sql-begin"/>.</para>
+
+  <para>В настоящее время команда <command>PREPARE</command> неспособна подготавливать транзакции, в которых выполнялись какие-либо действия с временными таблицами, создавались курсоры <literal>WITH HOLD</literal> или выполнялись команды <command>LISTEN</command> и <command>UNLISTEN</command>. Эти функции слишком тесно связаны с текущим сеансом, так что в подготовленной транзакции они не были бы полезны.</para>
+
+  <para>Если транзакция меняет какие-либо параметры времени выполнения командой <command>SET</command> (без указания <literal>LOCAL</literal>), их значения сохраняются после <command>PREPARE TRANSACTION</command> и не зависят от последующих команд <command>COMMIT PREPARED</command> и <command>ROLLBACK PREPARED</command>. Так что в этом отношении <command>PREPARE TRANSACTION</command> больше похожа на <command>COMMIT</command>, чем на <command>ROLLBACK</command>.</para>
+
+  <para>Все существующие в текущий момент подготовленные транзакции показываются в системном представлении <link linkend="view-pg-prepared-xacts"><structname>pg_prepared_xacts</structname></link>.</para>
+
+  <caution>
+   <para>Оставлять транзакции в подготовленном состоянии на долгое время не рекомендуется. Это повлияет на способность команды <command>VACUUM</command> высвобождать пространство. Также учтите, что транзакция продолжит удерживать все свои блокировки. Это сделано с расчётом на то, что подготовленная транзакция будет зафиксирована или отменена как только внешний менеджер транзакций убедится, что все другие базы данных так же готовы к фиксации.</para>
+
+   <para>В отсутствие настроенного внешнего менеджера транзакций, который бы отслеживал подготовленные транзакции и своевременно закрывал их, лучше вовсе отключить поддержку подготовленных транзакций, установив <xref linkend="guc-max-prepared-transactions"/> равным нулю. Это не позволит случайно создать подготовленные транзакции, которые могут быть забыты и в конце концов станут причиной проблем.</para>
+  </caution>
+ </refsect1>
+
+ <refsect1 id="sql-prepare-transaction-examples">
+  <title id="sql-prepare-transaction-examples-title">Примеры</title>
+  <para>Текущая транзакция подготавливается для двухфазной фиксации, при этом ей назначается идентификатор <literal>foobar</literal>: <programlisting>PREPARE TRANSACTION 'foobar';</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>PREPARE TRANSACTION</command> является расширением <productname>&productname;</productname>. Он предназначен для использования внешними системами управления транзакциями, некоторые из которых работают по стандартам (например, X/Open XA), но сторона SQL в этих системах не стандартизирована.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-commit-prepared"/></member>
+   <member><xref linkend="sql-rollback-prepared"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

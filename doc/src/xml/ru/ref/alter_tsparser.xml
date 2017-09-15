@@ -1,0 +1,74 @@
+<!--
+doc/src/xml/ref/alter_tsparser.xml
+&productname; documentation
+-->
+
+<refentry id="sql-altertsparser">
+ <indexterm zone="sql-altertsparser"><primary>ALTER TEXT SEARCH PARSER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER TEXT SEARCH PARSER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER TEXT SEARCH PARSER</refname>
+  <refpurpose>изменить определение анализатора текстового поиска</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER TEXT SEARCH PARSER <replaceable>имя</replaceable> RENAME TO <replaceable>новое_имя</replaceable>
+ALTER TEXT SEARCH PARSER <replaceable>имя</replaceable> SET SCHEMA <replaceable>новая_схема</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER TEXT SEARCH PARSER</command> изменяет определение анализатора текстового поиска. В настоящее время эта команда позволяет только сменить его имя.</para>
+
+  <para>Выполнить <command>ALTER TEXT SEARCH PARSER</command> может только суперпользователь.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующего анализатора текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя анализатора текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_схема</replaceable></term>
+    <listitem>
+     <para>Новая схема анализатора текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+ </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER TEXT SEARCH PARSER</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createtsparser"/></member>
+   <member><xref linkend="sql-droptsparser"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

@@ -1,0 +1,128 @@
+<!--
+doc/src/xml/ref/alter_aggregate.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alteraggregate">
+ <indexterm zone="sql-alteraggregate"><primary>ALTER AGGREGATE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER AGGREGATE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER AGGREGATE</refname>
+  <refpurpose>изменить определение агрегатной функции</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER AGGREGATE <replaceable>имя</replaceable> ( <replaceable>сигнатура_агр_функции</replaceable> ) RENAME TO <replaceable>новое_имя</replaceable>
+ALTER AGGREGATE <replaceable>имя</replaceable> ( <replaceable>сигнатура_агр_функции</replaceable> )
+                OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+ALTER AGGREGATE <replaceable>имя</replaceable> ( <replaceable>сигнатура_агр_функции</replaceable> ) SET SCHEMA <replaceable>новая_схема</replaceable>
+
+<phrase>Здесь <replaceable>сигнатура_агр_функции</replaceable>:</phrase>
+
+* |
+[ <replaceable>режим_аргумента</replaceable> ] [ <replaceable>имя_аргумента</replaceable> ] <replaceable>тип_аргумента</replaceable> [ , ... ] |
+[ [ <replaceable>режим_аргумента</replaceable> ] [ <replaceable>имя_аргумента</replaceable> ] <replaceable>тип_аргумента</replaceable> [ , ... ] ] ORDER BY [ <replaceable>режим_аргумента</replaceable> ] [ <replaceable>имя_аргумента</replaceable> ] <replaceable>тип_аргумента</replaceable> [ , ... ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER AGGREGATE</command> изменяет определение агрегатной функции.</para>
+
+  <para>Выполнить <command>ALTER AGGREGATE</command> может только владелец соответствующей агрегатной функции. Чтобы сменить схему агрегатной функции, необходимо также иметь право <literal>CREATE</literal> в новой схеме. Чтобы сменить владельца, требуется также быть непосредственным или опосредованным членом новой роли, а эта роль должна иметь право <literal>CREATE</literal> в схеме агрегатной функции. (С такими ограничениями при смене владельца не происходит ничего такого, что нельзя было бы сделать, имея право удалить и вновь создать агрегатную функцию. Однако суперпользователь может сменить владельца агрегатной функции в любом случае.)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующей агрегатной функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">режим_аргумента</replaceable></term>
+
+    <listitem>
+     <para>Режим аргумента: <literal>IN</literal> или <literal>VARIADIC</literal>. По умолчанию подразумевается <literal>IN</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_аргумента</replaceable></term>
+
+    <listitem>
+     <para>Имя аргумента. Заметьте, что на самом деле <command>ALTER AGGREGATE</command> не обращает внимание на имена аргументов, так как для однозначной идентификации агрегатной функции достаточно только типов аргументов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_аргумента</replaceable></term>
+    <listitem>
+     <para>Тип входных данных, с которыми работает агрегатная функция. Чтобы сослаться на агрегатную функцию без аргументов, укажите вместо списка аргументов <literal>*</literal>, а чтобы сослаться на сортирующую агрегатную функцию, добавьте <literal>ORDER BY</literal> между указаниями непосредственных и агрегируемых аргументов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя агрегатной функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Новый владелец агрегатной функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_схема</replaceable></term>
+    <listitem>
+     <para>Новая схема агрегатной функции.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para>Если вы хотите сослаться на сортирующую агрегатную функцию, рекомендуется добавить <literal>ORDER BY</literal> между непосредственными и агрегируемыми аргументами так же, как и в <xref linkend="sql-createaggregate"/>. Однако, команда сработает и без <literal>ORDER BY</literal>, если непосредственные и агрегирующие аргументы перечислены подряд в одном списке. В такой сокращённой форме, если и в списке непосредственных, и в списке агрегирующих аргументов содержится <literal>VARIADIC "any"</literal>, достаточно написать <literal>VARIADIC "any"</literal> только один раз.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Переименование агрегатной функции <literal>myavg</literal> для типа <type>integer</type> в <literal>my_average</literal>: <programlisting>ALTER AGGREGATE myavg(integer) RENAME TO my_average;</programlisting></para>
+
+  <para>Смена владельца агрегатной функции <literal>myavg</literal> для типа <type>integer</type> на <literal>joe</literal>: <programlisting>ALTER AGGREGATE myavg(integer) OWNER TO joe;</programlisting></para>
+
+  <para>Перемещение сортирующей агрегатной функции <literal>mypercentile</literal> с непосредственным аргументом типа <type>float8</type> и агрегируемым аргументом типа <type>integer</type> в схему <literal>myschema</literal>: <programlisting>ALTER AGGREGATE mypercentile(float8 ORDER BY integer) SET SCHEMA myschema;</programlisting> Это тоже будет работать: <programlisting>ALTER AGGREGATE mypercentile(float8, integer) SET SCHEMA myschema;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER AGGREGATE</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createaggregate"/></member>
+   <member><xref linkend="sql-dropaggregate"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

@@ -1,0 +1,139 @@
+<!--
+doc/src/xml/ref/alter_view.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterview">
+ <indexterm zone="sql-alterview"><primary>ALTER VIEW</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER VIEW</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER VIEW</refname>
+  <refpurpose>изменить определение представления</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER VIEW [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> SET DEFAULT <replaceable class="parameter">выражение</replaceable>
+ALTER VIEW [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> DROP DEFAULT
+ALTER VIEW [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> OWNER TO { <replaceable class="parameter">новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+ALTER VIEW [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> RENAME TO <replaceable class="parameter">новое_имя</replaceable>
+ALTER VIEW [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> SET SCHEMA <replaceable class="parameter">новая_схема</replaceable>
+ALTER VIEW [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> SET ( <replaceable class="parameter">имя_параметра_представления</replaceable> [= <replaceable class="parameter">значение_параметра_представления</replaceable>] [, ... ] )
+ALTER VIEW [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> RESET ( <replaceable class="parameter">имя_параметра_представления</replaceable> [, ... ] )</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER VIEW</command> изменяет различные дополнительные свойства представления. (Для изменения запроса, определяющего представление, используйте команду <command>CREATE OR REPLACE VIEW</command>.)</para>
+
+  <para>Выполнить <command>ALTER VIEW</command> может только владелец представления. Чтобы сменить схему представления, необходимо также иметь право <literal>CREATE</literal> в новой схеме. Чтобы сменить владельца, требуется также быть непосредственным или опосредованным членом новой роли, а эта роль должна иметь право <literal>CREATE</literal> в схеме представления. (С такими ограничениями при смене владельца не происходит ничего такого, что нельзя было бы сделать, имея право удалить и вновь создать представление. Однако суперпользователь может сменить владельца представления в любом случае.)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующего представления.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если представление не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET</literal>/<literal>DROP DEFAULT</literal></term>
+    <listitem>
+     <para>Эти формы устанавливают или удаляют значение по умолчанию в заданном столбце. Значение по умолчанию подставляется в команды <command>INSERT</command> и <command>UPDATE</command>, вносящие данные в представление, до применения каких-либо правил или триггеров в этом представлении. Таким образом, значения по умолчанию в представлении имеют приоритет перед значениями по умолчанию в нижележащих отношениях.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Имя пользователя, назначаемого новым владельцем представления.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя представления.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_схема</replaceable></term>
+    <listitem>
+     <para>Новая схема представления.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET ( <replaceable class="parameter">имя_параметра_представления</replaceable> [= <replaceable class="parameter">значение_параметра_представления</replaceable>] [, ... ] )</literal></term>
+    <term><literal>RESET ( <replaceable class="parameter">имя_параметра_представления</replaceable> [, ... ] )</literal></term>
+    <listitem>
+     <para>Устанавливает или сбрасывает параметры представления. В настоящее время поддерживаются параметры: <variablelist>
+       <varlistentry>
+        <term><literal>check_option</literal> (<type>string</type>)</term>
+        <listitem>
+         <para>Изменяет параметр проверки представления. Допустимые значения: <literal>local</literal> (локальная) или <literal>cascaded</literal> (каскадная).</para>
+        </listitem>
+       </varlistentry>
+       <varlistentry>
+        <term><literal>security_barrier</literal> (<type>boolean</type>)</term>
+        <listitem>
+         <para>Изменяет свойство представления, включающее барьер безопасности. Значение должно быть логическим: <literal>true</literal> или <literal>false</literal>.</para>
+        </listitem>
+       </varlistentry>
+      </variablelist></para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>По историческим причинам команду <command>ALTER TABLE</command> можно использовать и с представлениями; но единственно допустимые для работы с представлениями вариации <command>ALTER TABLE</command> равносильны вышеперечисленным командам.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Переименование представления <literal>foo</literal> в <literal>bar</literal>: <programlisting>ALTER VIEW foo RENAME TO bar;</programlisting></para>
+
+  <para>Добавление значения столбца по умолчанию в изменяемое представление: <programlisting>CREATE TABLE base_table (id int, ts timestamptz);
+CREATE VIEW a_view AS SELECT * FROM base_table;
+ALTER VIEW a_view ALTER COLUMN ts SET DEFAULT now();
+INSERT INTO base_table(id) VALUES(1);  -- в ts окажется значение NULL
+INSERT INTO a_view(id) VALUES(2);  -- в ts окажется текущее время</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>ALTER VIEW</command> — реализованное в <productname>&productname;</productname> расширение стандарта SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createview"/></member>
+   <member><xref linkend="sql-dropview"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

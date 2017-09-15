@@ -1,0 +1,976 @@
+<!-- doc/src/xml/runtime.xml -->
+
+<chapter id="runtime">
+ <title>Подготовка к работе и сопровождение сервера</title>
+
+ <para>В этой главе рассказывается, как организовать работу сервера баз данных и его взаимодействие с операционной системой, а также о некоторых задачах сопровождения.</para>
+
+ <sect1 id="postgres-user">
+  <title>Учётная запись пользователя <productname>&productname;</productname></title>
+
+  <indexterm><primary>пользователь postgres</primary></indexterm>
+
+  <para>Как и любую другую службу, доступную для внешнего мира, <productname>&productname;</productname> рекомендуется запускать под именем отдельного пользователя. Эта учётная запись должна владеть только данными, которыми управляет сервер, и разделять её с другими службами не следует. (Например, не стоит использовать для этого пользователя <literal>nobody</literal>.) Также рекомендуется не устанавливать под именем этого пользователя исполняемые файлы, чтобы их нельзя было подменить в случае компрометации системы.</para>
+
+  <para>Для создания пользователя в Unix-подобной системе следует искать команду <command>useradd</command> или <command>adduser</command>. В качестве имени пользователя часто используется <systemitem>postgres</systemitem>, и именно это имя предполагается в данной документации, но вы можете выбрать и другое, если захотите.</para>
+ </sect1>
+
+ <sect1 id="creating-cluster">
+  <title>Создание кластера баз данных</title>
+
+  <indexterm><primary>кластер баз данных</primary></indexterm>
+
+  <indexterm><primary>область данных</primary> <see>кластер баз данных</see></indexterm>
+
+  <para>Прежде чем вы сможете работать с базами данных, вы должны проинициализировать область хранения баз данных на диске. Мы называем это хранилище <firstterm>кластером баз данных</firstterm>. (В <acronym>SQL</acronym> применяется термин &laquo;кластер каталога&raquo;.) Кластер баз данных представляет собой набор баз, управляемых одним экземпляром работающего сервера. После инициализации кластер будет содержать базу данных с именем <literal>postgres</literal>, предназначенную для использования по умолчанию утилитами, пользователями и сторонними приложениями. Сам сервер баз данных не требует наличия базы <literal>postgres</literal>, но многие внешние вспомогательные программы рассчитывают на её существование. При инициализации в каждом кластере создаётся ещё одна база, с именем <literal>template1</literal>. Как можно понять из имени, она применяется впоследствии в качестве шаблона создаваемых баз данных; использовать её в качестве рабочей не следует. (За информацией о создании новых баз данных в кластере обратитесь к <xref remap="3" linkend="managing-databases"/>.)</para>
+
+  <para>С точки зрения файловой системы, кластер баз данных представляет собой один каталог, в котором будут храниться все данные. Мы называем его <firstterm>каталогом данных</firstterm> или <firstterm>областью данных</firstterm>. Где именно хранить данные, вы абсолютно свободно можете выбирать сами. Какого-либо стандартного пути не существует, но часто данные размещаются в <filename>/usr/local/pgsql/data</filename> или в <filename>/var/lib/pgsql/data</filename>. Для инициализации кластера баз данных применяется команда <xref linkend="app-initdb"/>,<indexterm><primary>initdb</primary></indexterm> которая устанавливается в составе <productname>&productname;</productname>. Расположение кластера базы данных в файловой системе задаётся параметром <option>-D</option>, например: <screen>
+<prompt>$</prompt> <userinput>initdb -D /usr/local/pgsql/data</userinput>
+</screen> Заметьте, что эту команду нужно выполнять от имени учётной записи <productname>&productname;</productname>, о которой говорится в предыдущем разделе.</para>
+
+  <tip>
+   <para>В качестве альтернативы параметра <option>-D</option> можно установить переменную окружения <envar>PGDATA</envar>. <indexterm><primary><envar>PGDATA</envar></primary></indexterm></para>
+  </tip>
+
+  <para>Также можно запустить команду <command>initdb</command>, воспользовавшись программой <xref linkend="app-pg-ctl"/> <indexterm><primary>pg_ctl</primary></indexterm>, примерно так: <screen>
+<prompt>$</prompt> <userinput>pg_ctl -D /usr/local/pgsql/data initdb</userinput>
+</screen> Этот вариант может быть удобнее, если вы используете <command>pg_ctl</command> для запуска и остановки сервера (см. <xref remap="4" linkend="server-start"/>), так как <command>pg_ctl</command> будет единственной командой, с помощью которой вы будете управлять экземпляром сервера баз данных.</para>
+
+  <para>Команда <command>initdb</command> попытается создать указанный вами каталог, если он не существует. Конечно, она не сможет это сделать, если <command>initdb</command> не будет разрешено записывать в родительский каталог. Вообще рекомендуется, чтобы пользователь <productname>&productname;</productname> был владельцем не только каталога данных, но и родительского каталога, так что такой проблемы быть не должно. Если же и нужный родительский каталог не существует, вам нужно будет сначала создать его, используя права root, если вышестоящий каталог защищён от записи. Таким образом, процедура может быть такой: <screen>
+root# <userinput>mkdir /usr/local/pgsql</userinput>
+root# <userinput>chown postgres /usr/local/pgsql</userinput>
+root# <userinput>su postgres</userinput>
+postgres$ <userinput>initdb -D /usr/local/pgsql/data</userinput>
+</screen></para>
+
+  <para>Команда <command>initdb</command> не будет работать, если указанный каталог данных уже существует и содержит файлы; это мера предохранения от случайной перезаписи существующей инсталляции.</para>
+
+  <para>Так как каталог данных содержит все данные базы, очень важно защитить его от неавторизованного доступа. Для этого <command>initdb</command> лишает прав доступа к нему всех пользователей, кроме пользователя <productname>&productname;</productname>.</para>
+
+  <para>Однако, даже когда содержимое каталога защищено, если проверка подлинности клиентов настроена по умолчанию, любой локальный пользователь может подключиться к базе данных и даже стать суперпользователем. Если вы не доверяете другим локальным пользователям, мы рекомендуем использовать один из параметров команды <command>initdb</command>: <option>-W</option>, <option>--pwprompt</option> или <option>--pwfile</option> и назначить пароль суперпользователя баз данных. <indexterm><primary>пароль</primary> <secondary>суперпользователя</secondary></indexterm> Кроме того, воспользуйтесь параметром <option>-A md5</option> или <option>-A password</option> и отключите разрешённый по умолчанию режим аутентификации <literal>trust</literal>; либо измените сгенерированный файл <filename>pg_hba.conf</filename> после выполнения <command>initdb</command>, но <emphasis>перед</emphasis> тем, как запустить сервер в первый раз. (Возможны и другие разумные подходы — применить режим проверки подлинности <literal>peer</literal> или ограничить подключения на уровне файловой системы. За дополнительными сведениями обратитесь к <xref remap="3" linkend="client-authentication"/>.)</para>
+
+  <para>Команда <command>initdb</command> также устанавливает для кластера баз данных локаль <indexterm><primary>локаль</primary></indexterm> по умолчанию. Обычно она просто берёт параметры локали из текущего окружения и применяет их к инициализируемой базе данных. Однако можно выбрать и другую локаль для базы данных; за дополнительной информацией обратитесь к <xref remap="3" linkend="locale"/>. Команда <command>initdb</command> задаёт порядок сортировки по умолчанию для применения в определённом кластере баз данных, и хотя новые базы данных могут создаваться с иным порядком сортировки, порядок в базах-шаблонах, создаваемых initdb, можно изменить, только если удалить и пересоздать их. Также учтите, что при использовании локалей, отличных от <literal>C</literal> и <literal>POSIX</literal>, возможно снижение производительности. Поэтому важно правильно выбрать локаль с самого начала.</para>
+
+  <para>Команда <command>initdb</command> также задаёт кодировку символов по умолчанию для кластера баз данных. Обычно она должна соответствовать кодировке локали. За подробностями обратитесь к <xref remap="3" linkend="multibyte"/>.</para>
+
+  <para>Для локалей, отличных от <literal>C</literal> и <literal>POSIX</literal>, порядок сортировки символов зависит от системной библиотеки локализации, а он, в свою очередь, влияет на порядок ключей в индексах. Поэтому кластер нельзя перевести на несовместимую версию библиотеки ни путём восстановления снимка, ни через двоичную репликацию, ни перейдя на другую операционную систему или обновив её версию.</para>
+
+  <sect2 id="creating-cluster-mount-points">
+   <title>Использование дополнительных файловых систем</title>
+
+   <indexterm zone="creating-cluster-mount-points"><primary>точки монтирования файловых систем</primary></indexterm>
+
+   <para>Во многих инсталляциях кластеры баз данных создаются не в <quote>корневом</quote> томе, а в отдельных файловых системах (томах). Если вы решите сделать так же, то не следует выбирать в качестве каталога данных самый верхний каталог дополнительного тома (точку монтирования). Лучше всего создать внутри каталога точки монтирования каталог, принадлежащий пользователю <productname>&productname;</productname>, а затем создать внутри него каталог данных. Это исключит проблемы с разрешениями, особенно для таких операций, как <application>pg_upgrade</application>, и при этом гарантирует чистое поведение в случае, если дополнительный том окажется отключён.</para>
+
+  </sect2>
+
+  <sect2 id="creating-cluster-nfs">
+   <title>Использование сетевых файловых систем</title>
+
+   <indexterm zone="creating-cluster-nfs"><primary>Сетевые файловые системы</primary></indexterm>
+   <indexterm><primary><acronym>NFS</acronym></primary> <see>Сетевые файловые системы</see></indexterm>
+   <indexterm><primary>Сетевые хранилища (<acronym>NAS</acronym>)</primary> <see>Сетевые файловые системы</see></indexterm>
+
+   <para>Во многих инсталляциях кластеры баз данных создаются в сетевых файловых ресурсах. Иногда это реализуется с применением сетевой файловой системы (<acronym>NFS</acronym>, Network File System) или сетевых хранилищ (<acronym>NAS</acronym>, Network Attached Storage), использующих <acronym>NFS</acronym> внутри. <productname>&productname;</productname> не делает ничего специфического с файловыми системами <acronym>NFS</acronym>, то есть он предполагает, что <acronym>NFS</acronym> работает точно так же, как и локально подключённые диски. Но если реализация клиента или сервера <acronym>NFS</acronym> не обеспечивает стандартное поведение файловой системы, это чревато нестабильной работой (см. <ulink url="http://www.time-travellers.org/shane/papers/NFS_considered_harmful.html"/>). В частности, возможно разрушение данных при отложенной (асинхронной) записи на сервер <acronym>NFS</acronym>. Поэтому, по возможности, во избежание таких проблем монтируйте файловые системы <acronym>NFS</acronym> в синхронном режиме (без кеширования). Кроме того, не рекомендуется применять мягкое монтирование файловой системы <acronym>NFS</acronym>.</para>
+
+   <para>В сетях хранения данных (<acronym>SAN</acronym>, Storage Area Networks) обычно используются собственные протоколы, не <acronym>NFS</acronym>, и они могут быть не подвержены (а могут быть и подвержены) этим рискам. По вопросам гарантии согласованности данных обратитесь к документации производителя. <productname>&productname;</productname> не может быть надёжнее файловой системы, которую он использует.</para>
+
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="server-start">
+  <title>Запуск сервера баз данных</title>
+
+  <para>Чтобы кто-либо смог обратиться к базе данных, необходимо сначала запустить сервер баз данных. Программа сервера называется <command>postgres</command>.<indexterm><primary>postgres</primary></indexterm> Для работы программа <command>postgres</command> должна знать, где найти данные, которые она будет использовать. Указать это местоположение позволяет параметр <option>-D</option>. Таким образом, проще всего запустить сервер, выполнив команду: <screen>
+$ <userinput>postgres -D /usr/local/pgsql/data</userinput>
+</screen> в результате которой сервер продолжит работу в качестве процесса переднего плана. Запускать эту команду следует под именем учётной записи <productname>&productname;</productname>. Без параметра <option>-D</option> сервер попытается использовать каталог данных, указанный в переменной окружения <envar>PGDATA</envar>. Если и эта переменная не определена, сервер не будет запущен.</para>
+
+  <para>Однако обычно лучше запускать <command>postgres</command> в фоновом режиме. Для этого можно применить обычный синтаксис, принятый в оболочке Unix: <screen>
+$ <userinput>postgres -D /usr/local/pgsql/data &gt;logfile 2&gt;&amp;1 &amp;</userinput>
+</screen> Важно где-либо сохранять информацию, которую выводит сервер в каналы <systemitem>stdout</systemitem> и <systemitem>stderr</systemitem>, как показано выше. Это полезно и для целей аудита, и для диагностики проблем. (Более глубоко работа с файлами журналов рассматривается в <xref remap="6" linkend="logfile-maintenance"/>.)</para>
+
+  <para>Программа <command>postgres</command> также принимает несколько других параметров командной строки. За дополнительными сведениями обратитесь к справочной странице <xref linkend="app-postgres"/> и к следующей <xref remap="3" linkend="runtime-config"/>.</para>
+
+  <para>Такой вариант запуска довольно быстро может оказаться неудобным. Поэтому для упрощения подобных задач предлагается вспомогательная программа <xref linkend="app-pg-ctl"/><indexterm><primary>pg_ctl</primary></indexterm>. Например: <programlisting>pg_ctl start -l logfile</programlisting> запустит сервер в фоновом режиме и направит выводимые сообщения сервера в указанный файл журнала. Параметр <option>-D</option> для неё имеет то же значение, что и для программы <command>postgres</command>. С помощью <command>pg_ctl</command> также можно остановить сервер.</para>
+
+  <para>Обычно возникает желание, чтобы сервер баз данных сам запускался при загрузке операционной системы.<indexterm><primary>загрузка системы</primary> <secondary>запуск сервера</secondary></indexterm> Скрипты автозапуска для разных систем разные, но в составе <productname>&productname;</productname> предлагается несколько типовых скриптов в каталоге <filename>contrib/start-scripts</filename>. Для установки такого скрипта в систему требуются права root.</para>
+
+  <para>В различных системах приняты разные соглашения о порядке запуска служб в процессе загрузки. Во многих системах для этого используется файл <filename>/etc/rc.local</filename> или <filename>/etc/rc.d/rc.local</filename>. В других применяются каталоги <filename>init.d</filename> или <filename>rc.d</filename>. Однако при любом варианте запускаться сервер должен от имени пользователя <productname>&productname;</productname>, но <emphasis>не root</emphasis> или какого-либо другого пользователя. Поэтому команду запуска обычно следует записывать в форме <literal>su postgres -c '...'</literal>. Например: <programlisting>su postgres -c 'pg_ctl start -D /usr/local/pgsql/data -l serverlog'</programlisting></para>
+
+  <para>Ниже приведены более конкретные предложения для нескольких основных ОС. (Вместо указанных нами шаблонных значений необходимо подставить правильный путь к каталогу данных и фактическое имя пользователя.) <itemizedlist>
+    <listitem>
+     <para>Для запуска во <productname>FreeBSD</productname> воспользуйтесь файлом <filename>contrib/start-scripts/freebsd</filename> в дереве исходного кода <productname>&productname;</productname>. <indexterm><primary>FreeBSD</primary> <secondary>скрипт запуска</secondary></indexterm></para>
+    </listitem>
+
+    <listitem>
+     <para>В <productname>OpenBSD</productname>, добавьте в файл <filename>/etc/rc.local</filename> следующие строки: <indexterm><primary>OpenBSD</primary> <secondary>скрипт запуска</secondary></indexterm> <programlisting>if [ -x /usr/local/pgsql/bin/pg_ctl -a -x /usr/local/pgsql/bin/postgres ]; then
+    su -l postgres -c '/usr/local/pgsql/bin/pg_ctl start -s -l /var/postgresql/log -D /usr/local/pgsql/data'
+    echo -n ' postgresql'
+fi</programlisting></para>
+    </listitem>
+
+    <listitem>
+     <para>В системах <productname>Linux</productname> вы можете либо добавить <indexterm><primary>Linux</primary> <secondary>скрипт запуска</secondary></indexterm> <programlisting>/usr/local/pgsql/bin/pg_ctl start -l logfile -D /usr/local/pgsql/data</programlisting> в <filename>/etc/rc.d/rc.local</filename> или в <filename>/etc/rc.local</filename>, либо воспользоваться файлом <filename>contrib/start-scripts/linux</filename> в дереве исходного кода <productname>&productname;</productname>.</para>
+
+     <para>Используя <application>systemd</application>, вы можете применить следующий файл описания службы (например, <filename>/etc/systemd/system/postgresql.service</filename>):<indexterm><primary>systemd</primary></indexterm> <programlisting>[Unit]
+Description=&productname; database server
+Documentation=man:postgres(1)
+
+[Service]
+Type=notify
+User=postgres
+ExecStart=/usr/local/pgsql/bin/postgres -D /usr/local/pgsql/data
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+KillSignal=SIGINT
+TimeoutSec=0
+
+[Install]
+WantedBy=multi-user.target</programlisting> Для использования <literal>Type=notify</literal> требуется, чтобы сервер был скомпилирован с указанием <literal>configure --with-systemd</literal>.</para>
+
+     <para>Особого внимания заслуживает значение тайм-аута. На момент написания этой документации по умолчанию в <application>systemd</application> принят тайм-аут 90 секунд, так что процесс, не сообщивший о своей готовности за это время, будет уничтожен. Но серверу <productname>&productname;</productname> при запуске может потребоваться выполнить восстановление после сбоя, так что переход в состояние готовности может занять гораздо больше времени. Предлагаемое значение 0 отключает логику тайм-аута.</para>
+    </listitem>
+
+    <listitem>
+     <para>В <productname>NetBSD</productname> можно использовать скрипт запуска для <productname>FreeBSD</productname> или для <productname>Linux</productname>, в зависимости от предпочтений. <indexterm><primary>NetBSD</primary> <secondary>скрипт запуска</secondary></indexterm></para>
+    </listitem>
+
+    <listitem>
+     <para>В <productname>Solaris</productname>, создайте файл с именем <filename>/etc/init.d/postgresql</filename>, содержащий следующую стоку: <indexterm><primary>Solaris</primary> <secondary>скрипт запуска</secondary></indexterm> <programlisting>su - postgres -c "/usr/local/pgsql/bin/pg_ctl start -l logfile -D /usr/local/pgsql/data"</programlisting> Затем создайте символическую ссылку на него в каталоге <filename>/etc/rc3.d</filename> с именем <filename>S99postgresql</filename>.</para>
+    </listitem>
+   </itemizedlist></para>
+
+   <para>Когда сервер работает, идентификатор его процесса (<acronym>PID</acronym>) сохраняется в файле <filename>postmaster.pid</filename> в каталоге данных. Это позволяет исключить запуск нескольких экземпляров сервера с одним каталогом данных, а также может быть полезно для выключения сервера.</para>
+
+   <sect2 id="server-start-failures">
+    <title>Сбои при запуске сервера</title>
+
+    <para>Есть несколько распространённых причин, по которым сервер может не запуститься. Чтобы понять, чем вызван сбой, просмотрите файл журнала сервера или запустите сервер вручную (не перенаправляя его потоки стандартного вывода и ошибок) и проанализируйте выводимые сообщения. Ниже мы рассмотрим некоторые из наиболее частых сообщений об ошибках более подробно.</para>
+
+    <para><screen>
+LOG:  could not bind IPv4 socket: Address already in use
+HINT:  Is another postmaster already running on port 5432? If not, wait a few seconds and retry.
+FATAL:  could not create TCP/IP listen socket
+</screen> Это обычно означает именно то, что написано: вы пытаетесь запустить сервер на том же порту, на котором уже работает другой. Однако, если сообщение ядра не <computeroutput>Адрес
+     уже используется</computeroutput> или подобное, возможна и другая проблема. Например, при попытке запустить сервер с номером зарезервированного порта будут выданы такие сообщения: <screen>
+$ <userinput>postgres -p 666</userinput>
+LOG:  could not bind IPv4 socket: Permission denied
+HINT:  Is another postmaster already running on port 666? If not, wait a few seconds and retry.
+FATAL:  could not create TCP/IP listen socket
+</screen></para>
+
+    <para>Следующее сообщение: <screen>
+FATAL:  could not create shared memory segment: Invalid argument
+DETAIL:  Failed system call was shmget(key=5440001, size=4011376640, 03600).
+</screen> может означать, что установленный для вашего ядра предельный размер разделяемой памяти слишком мал для рабочей области, которую пытается создать <productname>&productname;</productname> (в данном примере 4011376640 байт). Возможно также, что в вашем ядре вообще отсутствует поддержка разделяемой памяти в стиле System-V. В качестве временного решения можно попытаться запустить сервер с меньшим числом буферов (<xref linkend="guc-shared-buffers"/>), но в итоге вам, скорее всего, придётся переконфигурировать ядро и увеличить допустимый размер разделяемой памяти. Вы также можете увидеть это сообщение при попытке запустить несколько серверов на одном компьютере, если запрошенный ими объём разделяемой памяти в сумме превышает этот предел.</para>
+
+    <para>Сообщение: <screen>
+FATAL:  could not create semaphores: No space left on device
+DETAIL:  Failed system call was semget(5440126, 17, 03600).
+</screen> <emphasis>не</emphasis> означает, что у вас закончилось место на диске. Это значит, что установленное в вашем ядре предельное число семафоров <systemitem class="osname">System V</systemitem> меньше, чем количество семафоров, которое пытается создать <productname>&productname;</productname>. Как и в предыдущем случае, можно попытаться обойти эту проблему, запустив сервер с меньшим числом допустимых подключений (<xref linkend="guc-max-connections"/>), но в конце концов вам придётся увеличить этот предел в ядре.</para>
+
+    <para>Если вы получаете ошибку <quote>illegal system call</quote> (неверный системный вызов), то, вероятнее всего, ваше ядро вовсе не поддерживает разделяемую память или семафоры. В этом случае, вам остаётся только переконфигурировать ядро и включить их поддержку.</para>
+
+    <para>Настройка средств <acronym>IPC</acronym> в стиле <systemitem class="osname">System V</systemitem> описывается в <xref remap="6" linkend="sysvipc"/>.</para>
+   </sect2>
+
+   <sect2 id="client-connection-problems">
+    <title>Проблемы с подключениями клиентов</title>
+
+    <para>Хотя ошибки подключений, возможные на стороне клиента, довольно разнообразны и зависят от приложений, всё же несколько проблем могут быть связаны непосредственно с тем, как был запущен сервер. Описание ошибок, отличных от описанных ниже, следует искать в документации соответствующего клиентского приложения.</para>
+
+    <para><screen>
+psql: could not connect to server: Connection refused
+        Is the server running on host "server.joe.com" and accepting
+        TCP/IP connections on port 5432?
+</screen> Это общая проблема <quote>я не могу найти сервер и начать взаимодействие с ним</quote>. Показанное выше сообщение говорит о попытке установить подключение по TCP/IP. Очень часто объясняется это тем, что сервер просто забыли настроить для работы по протоколу TCP/IP.</para>
+
+    <para>Кроме того, при попытке установить подключение к локальному серверу через доменный сокет Unix можно получить такое сообщение: <screen>
+psql: could not connect to server: No such file or directory
+        Is the server running locally and accepting
+        connections on Unix domain socket "/tmp/.s.PGSQL.5432"?
+</screen></para>
+
+    <para>Путь в последней строке помогает понять, к правильному ли адресу пытается подключиться клиент. Если сервер на самом деле не принимает подключения по этому адресу, обычно выдаётся сообщение ядра <computeroutput>Connection refused</computeroutput> (В соединении отказано) или <computeroutput>No such file or directory</computeroutput> (Нет такого файла или каталога), приведённое выше. (Важно понимать, что <computeroutput>Connection refused</computeroutput> в данном контексте <emphasis>не</emphasis> означает, что сервер получил запрос на подключение и отверг его. В этом случае были бы выданы другие сообщения, например, показанные в <xref remap="6" linkend="client-authentication-problems"/>.) Другие сообщения об ошибках, например <computeroutput>Connection timed out</computeroutput> (Тайм-аут соединения) могут сигнализировать о более фундаментальных проблемах, например, о нарушениях сетевых соединений.</para>
+   </sect2>
+  </sect1>
+
+ <sect1 id="kernel-resources">
+  <title>Управление ресурсами ядра</title>
+
+  <para><productname>&productname;</productname> иногда может исчерпывать некоторые ресурсы операционной системы до предела, особенно при запуске нескольких копий сервера в одной системе или при работе с очень большими базами. В этом разделе описываются ресурсы ядра, которые использует <productname>&productname;</productname>, и подходы к решению проблем, связанных с ограниченностью этих ресурсов.</para>
+
+  <sect2 id="sysvipc">
+   <title>Разделяемая память и семафоры</title>
+
+   <indexterm zone="sysvipc"><primary>разделяемая память</primary></indexterm>
+
+   <indexterm zone="sysvipc"><primary>семафоры</primary></indexterm>
+
+   <para>Разделяемая память и семафоры в совокупности называются средствами межпроцессного взаимодействия (<acronym>IPC</acronym>) в стиле <systemitem class="osname">System V</systemitem> (к этим средствам также относятся очереди сообщений, но они не имеют отношения к <productname>&productname;</productname>). За исключением <systemitem class="osname">Windows</systemitem>, где <productname>&productname;</productname> использует собственную замену этих средств, эти средства необходимы для работы <productname>&productname;</productname>.</para>
+
+   <para>Если эти механизмы полностью отсутствуют в системе, при запуске сервера обычно выдаётся ошибка <errorname>Illegal system call</errorname> (Неверный системный вызов). В этом случае единственный способ решить проблему — переконфигурировать ядро системы. Без них <productname>&productname;</productname> просто не будет работать. Это довольно редкая ситуация, особенно с современными операционными системами.</para>
+
+   <para>Когда <productname>&productname;</productname> превышает один из различных жёстких лимитов <acronym>IPC</acronym>, сервер отказывается запускаться, но выдаёт полезное сообщение, говорящее об ошибке и о том, что с ней делать. (См. также <xref remap="4" linkend="server-start-failures"/>.) Соответствующие параметры ядра в разных системах называются аналогично (они перечислены в <xref remap="6" linkend="sysvipc-parameters"/>), но устанавливаются они по-разному. Ниже предлагаются способы их изменения для некоторых систем.</para>
+
+   <note>
+     <para><productname>PostgreSQL</productname> до версии 9.3 требовал для запуска сервера гораздо больший объём разделяемой памяти System V. Если вы используете более раннюю версию сервера, обратитесь к документации по вашей версии.</para>
+   </note>
+
+   <table id="sysvipc-parameters">
+    <title>Параметры <acronym>IPC</acronym> в стиле <systemitem class="osname">System V</systemitem></title>
+
+    <tgroup cols="3">
+     <thead>
+      <row>
+       <entry>Имя</entry>
+       <entry>Описание</entry>
+       <entry>Разумные значения</entry>
+      </row>
+     </thead>
+
+     <tbody>
+      <row>
+       <entry><varname>SHMMAX</varname></entry>
+       <entry>Максимальный размер сегмента разделяемой памяти (в байтах)</entry>
+       <entry>не меньше 1 КБ (больше, если запускается много копий сервера)</entry>
+      </row>
+
+      <row>
+       <entry><varname>SHMMIN</varname></entry>
+       <entry>Минимальный размер сегмента разделяемой памяти (в байтах)</entry>
+       <entry>1</entry>
+      </row>
+
+      <row>
+       <entry><varname>SHMALL</varname></entry>
+       <entry>Общий объём доступной разделяемой памяти (в байтах или страницах)</entry>
+       <entry>если в байтах, то же, что и <varname>SHMMAX</varname>; если в страницах, то <literal>ceil(SHMMAX/PAGE_SIZE)</literal></entry>
+      </row>
+
+      <row>
+       <entry><varname>SHMSEG</varname></entry>
+       <entry>Максимальное число сегментов разделяемой памяти для процесса</entry>
+       <entry>требуется только 1 сегмент, но значение по умолчанию гораздо больше</entry>
+      </row>
+
+       <row>
+        <entry><varname>SHMMNI</varname></entry>
+        <entry>Максимальное число сегментов разделяемой памяти для всей системы</entry>
+        <entry>как <varname>SHMSEG</varname> плюс потребность других приложений</entry>
+       </row>
+
+       <row>
+        <entry><varname>SEMMNI</varname></entry>
+        <entry>Максимальное число идентификаторов семафоров (т. е., их наборов)</entry>
+        <entry>как минимум <literal>ceil((max_connections + autovacuum_max_workers + max_worker_processes + 5) / 16)</literal></entry>
+       </row>
+
+       <row>
+        <entry><varname>SEMMNS</varname></entry>
+        <entry>Максимальное число семафоров для всей системы</entry>
+        <entry><literal>ceil((max_connections + autovacuum_max_workers + max_worker_processes + 5) / 16) * 17</literal> плюс потребность других приложений</entry>
+       </row>
+
+       <row>
+        <entry><varname>SEMMSL</varname></entry>
+        <entry>Максимальное число семафоров в наборе</entry>
+        <entry>не меньше 17</entry>
+       </row>
+
+       <row>
+        <entry><varname>SEMMAP</varname></entry>
+        <entry>Число записей в карте семафоров</entry>
+        <entry>см. текст</entry>
+       </row>
+
+       <row>
+        <entry><varname>SEMVMX</varname></entry>
+        <entry>Максимальное значение семафора</entry>
+        <entry>не меньше 1000 (по умолчанию оно обычно равно 32767; без необходимости менять его не следует)</entry>
+       </row>
+
+     </tbody>
+    </tgroup>
+   </table>
+
+   <para><productname>&productname;</productname> запрашивает небольшой блок разделяемой памяти System V (обычно 48 байт на 64-битной платформе) для каждой копии сервера. В большинстве современных операционных систем такой объём выделяется без проблем. Однако, если запускать много копий сервера, или разделяемую память System V занимают и другие приложения, может понадобиться увеличить значение <varname>SHMMAX</varname>, максимальный размер сегмента разделяемой памяти (в байтах), либо <varname>SHMALL</varname>, общий объём разделяемой памяти System V, доступный для всей системы. Заметьте, что <varname>SHMALL</varname> во многих системах задаётся в страницах, а не в байтах.</para>
+
+   <para>Менее вероятны проблемы с минимальным размером сегментов разделяемой памяти (<varname>SHMMIN</varname>), который для <productname>&productname;</productname> не должен превышать примерно 32 байт (обычно это всего 1 байт). Максимальное число сегментов для всей системы (<varname>SHMMNI</varname>) или для одного процесса (<varname>SHMSEG</varname>) тоже обычно не влияет на работоспособность сервера, если только это число не равно нулю.</para>
+
+   <para><productname>PostgreSQL</productname> использует по одному семафору на одно разрешённое подключение (<xref linkend="guc-max-connections"/>), на разрешённый рабочий процесс автоочистки (<xref linkend="guc-autovacuum-max-workers"/>) и фоновый процесс (<xref linkend="guc-max-worker-processes"/>), в наборах по 16. В каждом таком наборе есть также 17-ый семафор, содержащий <quote>магическое число</quote>, позволяющий обнаруживать коллизии с наборами семафоров других приложений. Максимальное число семафоров в системе задаётся параметром <varname>SEMMNS</varname>, который, следовательно, должен быть равен как минимум сумме <varname>max_connections</varname>, <varname>autovacuum_max_workers</varname> и <varname>max_worker_processes</varname>, плюс один дополнительный на каждые 16 семафоров подключений и рабочих процессов (см. формулу в <xref remap="6" linkend="sysvipc-parameters"/>). Параметр <varname>SEMMNI</varname> определяет максимальное число наборов семафоров, которые могут существовать в системе в один момент времени. Таким образом, этот параметр должен быть не меньше <literal>ceil((max_connections + autovacuum_max_workers + max_worker_processes + 5) / 16)</literal>. В качестве временного решения проблем, которые вызваны этими ограничениями, но обычно сопровождаются некорректными сообщениями, например, <quote>No space left on device</quote> (На устройстве не осталось места) от функции <function>semget</function>, можно уменьшить число разрешённых соединений.</para>
+
+   <para>В некоторых случаях может потребоваться увеличить <varname>SEMMAP</varname> как минимум до уровня <varname>SEMMNS</varname>. Этот параметр определяет размер карты ресурсов семафоров, в которой выделяется запись для каждого непрерывного блока семафоров. Когда набор семафоров освобождается, эта запись либо добавляется к существующей соседней записи, либо регистрируется как новая запись в карте. Если карта переполняется, освобождаемые семафоры теряются (до перезагрузки). Таким образом, фрагментация пространства семафоров может со времени привести к уменьшению числа доступных семафоров.</para>
+
+   <para>Параметр <varname>SEMMSL</varname>, определяющий, сколько семафоров может быть в одном наборе, для <productname>&productname;</productname> должен равняться как минимум 17.</para>
+
+   <para>Другие параметры, связанные с <quote>аннулированием операций</quote> с семафорами, например, <varname>SEMMNU</varname> и <varname>SEMUME</varname>, на работу <productname>&productname;</productname> не влияют.</para>
+
+
+    <variablelist>
+     <varlistentry>
+      <term><systemitem class="osname">AIX</systemitem>
+      <indexterm><primary>AIX</primary> <secondary>настройка IPC</secondary></indexterm>
+      </term>
+      <listitem>
+       <para>Как минимум с версии 5.1, для таких параметров, как <varname>SHMMAX</varname>, никакая дополнительная настройка не должна требоваться, так как система, похоже, позволяет использовать всю память в качестве разделяемой. Подобная конфигурация требуется обычно и для других баз данных, например, для <application>DB/2</application>.</para>
+
+       <para>Однако может понадобиться изменить глобальные параметры <command>ulimit</command> в <filename>/etc/security/limits</filename>, так как стандартные жёсткие ограничения на размер (<varname>fsize</varname>) и количество файлов (<varname>nofiles</varname>) могут быть недостаточно большими.</para>
+      </listitem>
+     </varlistentry>
+
+
+     <varlistentry>
+      <term><systemitem class="osname">FreeBSD</systemitem>
+      <indexterm><primary>FreeBSD</primary> <secondary>настройка IPC</secondary></indexterm>
+      </term>
+      <listitem>
+       <para>Значения по умолчанию можно изменить, используя возможности <command>sysctl</command> или <command>loader</command>. С помощью <command>sysctl</command> можно задать следующие параметры: <screen>
+<prompt>#</prompt> <userinput>sysctl kern.ipc.shmall=32768</userinput>
+<prompt>#</prompt> <userinput>sysctl kern.ipc.shmmax=134217728</userinput>
+</screen> Чтобы эти изменения сохранялись после перезагрузки, измените <filename>/etc/sysctl.conf</filename>.</para>
+
+       <para>Эти параметры, связанные с семафорами, <command>sysctl</command> менять не позволяет, но их можно задать в <filename>/boot/loader.conf</filename>: <programlisting>kern.ipc.semmni=256
+kern.ipc.semmns=512
+kern.ipc.semmnu=256</programlisting> Чтобы изменённые таким образом параметры вступили в силу, требуется перезагрузить систему. (Заметьте, что во FreeBSD нет параметра <varname>SEMMAP</varname>. В старых версиях значение для <literal>kern.ipc.semmap</literal> принималось, но игнорировалось; новые версии его не принимают.)</para>
+
+       <para>Возможно, вы захотите настроить ядро так, чтобы разделяемая память всегда находилась в ОЗУ и никогда не выгружалась в пространство подкачки. Это можно сделать, установив с помощью <command>sysctl</command> параметр <literal>kern.ipc.shm_use_phys</literal>.</para>
+
+       <para>Если вы используете &laquo;камеры&raquo; FreeBSD, включив в <application>sysctl</application> параметр <literal>security.jail.sysvipc_allowed</literal>, главные процессы <application>postmaster</application>, работающие в разных камерах, должны запускаться разными пользователями операционной системы. Это усиливает защиту, так как не позволяет обычным пользователям обращаться к разделяемой памяти или семафорам в разных камерах, и при этом способствует корректной работе кода очистки IPC в &productname;. (Во FreeBSD 6.0 и более поздних версиях код очистки IPC не может корректно выявить процессы в других камерах, что не позволяет запускать процессы postmaster на одном порту в разных камерах.)</para>
+
+       <para>До версии 4.0 система <systemitem class="osname">FreeBSD</systemitem> работала так же, как сейчас <systemitem class="osname">OpenBSD</systemitem> (см. ниже).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><systemitem class="osname">NetBSD</systemitem>
+      <indexterm><primary>NetBSD</primary> <secondary>настройка IPC</secondary></indexterm>
+      </term>
+      <listitem>
+       <para>В <systemitem class="osname">NetBSD</systemitem>, начиная с версии 5.0, параметры IPC можно изменить, воспользовавшись командой <command>sysctl</command>, например: <screen>
+<prompt>$</prompt> <userinput>sysctl -w kern.ipc.shmmax=16777216</userinput>
+</screen> Чтобы эти параметры сохранялись после перезагрузки, измените <filename>/etc/sysctl.conf</filename>.</para>
+
+       <para>Возможно, вы захотите настроить ядро так, чтобы разделяемая память всегда находилась в ОЗУ и никогда не выгружалась в пространство подкачки. Это можно сделать, установив с помощью <command>sysctl</command> параметр <literal>kern.ipc.shm_use_phys</literal>.</para>
+
+       <para>До версии 5.0 система <systemitem class="osname">NetBSD</systemitem> работала так же, как сейчас <systemitem class="osname">OpenBSD</systemitem> (см. ниже), за исключением того, что параметры устанавливаются с указанием <literal>options</literal>, а не <literal>option</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><systemitem class="osname">OpenBSD</systemitem>
+      <indexterm><primary>OpenBSD</primary> <secondary>настройка IPC</secondary></indexterm>
+      </term>
+      <listitem>
+       <para>При компиляции ядра должны быть включены механизмы <varname>SYSVSHM</varname> и <varname>SYSVSEM</varname>. (По умолчанию они включены.) Максимальный размер разделяемой памяти определяется параметром <varname>SHMMAXPGS</varname> (в страницах). Ниже показан пример, как установить следующие параметры: <programlisting>option        SYSVSHM
+option        SHMMAXPGS=4096
+option        SHMSEG=256
+
+option        SYSVSEM
+option        SEMMNI=256
+option        SEMMNS=512
+option        SEMMNU=256
+option        SEMMAP=256</programlisting></para>
+
+       <para>Возможно, вы захотите настроить ядро так, чтобы разделяемая память всегда находилась в ОЗУ и никогда не выгружалась в пространство подкачки. Это можно сделать, установив с помощью <command>sysctl</command> параметр <literal>kern.ipc.shm_use_phys</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><systemitem class="osname">HP-UX</systemitem>
+      <indexterm><primary>HP-UX</primary> <secondary>настройка IPC</secondary></indexterm>
+      </term>
+      <listitem>
+       <para>Значения по умолчанию обычно вполне удовлетворяют средним потребностям. В <productname>HP-UX</productname> 10 параметр <varname>SEMMNS</varname> по умолчанию имеет значение 128, что может быть недостаточно для больших баз данных.</para>
+       <para>Параметры <acronym>IPC</acronym> можно установить в менеджере системного администрирования (<application>System Administration Manager</application>, <acronym>SAM</acronym>) в разделе <menuchoice><guimenu>Kernel Configuration (Настройка ядра)</guimenu><guimenuitem>Configurable Parameters (Настраиваемые параметры)</guimenuitem></menuchoice>. Установив нужные параметры, выполните операцию <guibutton>Create A New Kernel</guibutton> (Создать ядро).</para>
+      </listitem>
+     </varlistentry>
+
+
+     <varlistentry>
+      <term><systemitem class="osname">Linux</systemitem>
+      <indexterm><primary>Linux</primary> <secondary>настройка IPC</secondary></indexterm>
+      </term>
+      <listitem>
+       <para>По умолчанию максимальный размер сегмента равен 32 МБ, а максимальный общий размер составляет 2097152 страниц. Страница почти всегда содержит 4096 байт, за исключением нестандартных конфигураций ядра с поддержкой <quote>огромных страниц</quote> (точно узнать размер страницы можно, выполнив <literal>getconf PAGE_SIZE</literal>).</para>
+
+       <para>Параметры размера разделяемой памяти можно изменить, воспользовавшись командой <command>sysctl</command>. Например, так можно выделить 16 ГБ для разделяемой памяти: <screen>
+<prompt>$</prompt> <userinput>sysctl -w kernel.shmmax=17179869184</userinput>
+<prompt>$</prompt> <userinput>sysctl -w kernel.shmall=4194304</userinput>
+</screen> Чтобы сохранить эти изменения после перезагрузки, их также можно записать в файл <filename>/etc/sysctl.conf</filename> (это настоятельно рекомендуется).</para>
+
+       <para>В некоторых старых дистрибутивах может не оказаться программы <command>sysctl</command>, но те же изменения можно произвести, обратившись к файловой системе <filename>/proc</filename>: <screen>
+<prompt>$</prompt> <userinput>echo 17179869184 &gt;/proc/sys/kernel/shmmax</userinput>
+<prompt>$</prompt> <userinput>echo 4194304 &gt;/proc/sys/kernel/shmall</userinput>
+</screen></para>
+
+       <para>Остальные параметры имеют вполне подходящие значения, так что их обычно менять не нужно.</para>
+      </listitem>
+     </varlistentry>
+
+
+     <varlistentry>
+      <term><systemitem class="osname">OS X</systemitem>
+      <indexterm><primary>OS X</primary> <secondary>настройка IPC</secondary></indexterm>
+      </term>
+      <listitem>
+       <para>Для настройки разделяемой памяти в OS X рекомендуется создать файл <filename>/etc/sysctl.conf</filename> и записать в него присвоения переменных следующим образом: <programlisting>kern.sysv.shmmax=4194304
+kern.sysv.shmmin=1
+kern.sysv.shmmni=32
+kern.sysv.shmseg=8
+kern.sysv.shmall=1024</programlisting> Заметьте, что в некоторых версиях OS X, <emphasis>все пять</emphasis> параметров разделяемой памяти должны быть установлены в <filename>/etc/sysctl.conf</filename>, иначе их значения будут проигнорированы.</para>
+
+       <para>Имейте в виду, что последние версии OS X игнорируют попытки задать для <varname>SHMMAX</varname> значение, не кратное 4096.</para>
+
+       <para><varname>SHMALL</varname> на этой платформе измеряется в страницах (по 4 КБ).</para>
+
+       <para>В старых версиях OS X, чтобы изменения параметров разделяемой памяти вступили в силу, требовалась перезагрузка. Начиная с версии 10.5, все параметры, кроме <varname>SHMMNI</varname> можно изменить &laquo;на лету&raquo;, воспользовавшись командой <application>sysctl</application>. Но, тем не менее, лучше задавать выбранные вами значения в <filename>/etc/sysctl.conf</filename>, чтобы они сохранялись после перезагрузки.</para>
+
+       <para>Файл <filename>/etc/sysctl.conf</filename> обрабатывается, только начиная с OS X версии 10.3.9. Если вы используете предыдущий выпуск 10.3.x, необходимо отредактировать файл <filename>/etc/rc</filename> и задать значения следующими командами: <programlisting>sysctl -w kern.sysv.shmmax
+sysctl -w kern.sysv.shmmin
+sysctl -w kern.sysv.shmmni
+sysctl -w kern.sysv.shmseg
+sysctl -w kern.sysv.shmall</programlisting> Заметьте, что <filename>/etc/rc</filename> обычно заменяется при обновлении системы OS X, так что следует ожидать, что вам придётся повторять эти изменения после каждого обновления.</para>
+
+       <para>В OS X 10.2 и более ранних версиях вместо этого надо записать эти команды в файле <filename>/System/Library/StartupItems/SystemTuning/SystemTuning</filename>.</para>
+      </listitem>
+     </varlistentry>
+
+
+     <varlistentry>
+      <term><systemitem class="osname">SCO OpenServer</systemitem>
+      <indexterm><primary>SCO OpenServer</primary> <secondary>настройка IPC</secondary></indexterm>
+      </term>
+      <listitem>
+       <para>В стандартной конфигурации размер одного сегмента разделяемой памяти имеет предел в 512 КБ. Чтобы увеличить этот предел, сначала перейдите в каталог <filename>/etc/conf/cf.d</filename>. Затем просмотрите текущее значение <varname>SHMMAX</varname>, выполнив: <programlisting>./configure -y SHMMAX</programlisting> Задайте новое значение <varname>SHMMAX</varname>, выполнив: <programlisting>./configure SHMMAX=<replaceable>значение</replaceable></programlisting> Здесь <replaceable>значение</replaceable> — новый предел, который вы хотите установить (в байтах). Установив <varname>SHMMAX</varname>, пересоберите ядро: <programlisting>./link_unix</programlisting> и перезагрузите систему.</para>
+      </listitem>
+     </varlistentry>
+
+
+     <varlistentry>
+      <term><systemitem class="osname">Solaris</systemitem> версии с 2.6 по 2.9 (Solaris 6 .. Solaris 9) <indexterm><primary>Solaris</primary> <secondary>настройка IPC</secondary></indexterm></term>
+      <listitem>
+       <para>Соответствующие параметры можно изменить в <filename>/etc/system</filename>, например так: <programlisting>set shmsys:shminfo_shmmax=0x2000000
+set shmsys:shminfo_shmmin=1
+set shmsys:shminfo_shmmni=256
+set shmsys:shminfo_shmseg=256
+
+set semsys:seminfo_semmap=256
+set semsys:seminfo_semmni=512
+set semsys:seminfo_semmns=512
+set semsys:seminfo_semmsl=32</programlisting> Чтобы изменения вступили в силу, потребуется перегрузить систему. Информацию о разделяемой памяти в более старых версиях Solaris можно найти по ссылке <ulink url="http://sunsite.uakom.sk/sunworldonline/swol-09-1997/swol-09-insidesolaris.html"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><systemitem class="osname">Solaris</systemitem> 2.10 (Solaris 10) и более поздние версии</term>
+      <term><systemitem class="osname">OpenSolaris</systemitem></term>
+      <listitem>
+       <para>В Solaris 10 и новее, а также в OpenSolaris, стандартные параметры разделяемой памяти и семафоров достаточно хороши для большинства применений <productname>&productname;</productname>. По умолчанию Solaris теперь устанавливает в <varname>SHMMAX</varname> четверть объёма <acronym>ОЗУ</acronym>. Чтобы изменить этот параметр, воспользуйтесь возможностью задать параметр проекта, связанного с пользователем <literal>postgres</literal>. Например, выполните от имени <literal>root</literal> такую команду: <programlisting>projadd -c "&productname; DB User" -K "project.max-shm-memory=(privileged,8GB,deny)" -U postgres -G postgres user.postgres</programlisting></para>
+
+       <para>Эта команда создаёт проект <literal>user.postgres</literal> и устанавливает максимальный объём разделяемой памяти для пользователя <literal>postgres</literal> равным 8 ГБ. Это изменение вступает в силу при следующем входе этого пользователя или при перезапуске <productname>&productname;</productname> (не перезагрузке конфигурации). При этом подразумевается, что <productname>&productname;</productname> выполняется пользователем <literal>postgres</literal> в группе <literal>postgres</literal>. Перезагружать систему после этой команды не нужно.</para>
+
+       <para>Для серверов баз данных, рассчитанных на большое количество подключений, рекомендуется также изменить следующие параметры: <programlisting>project.max-shm-ids=(priv,32768,deny)
+project.max-sem-ids=(priv,4096,deny)
+project.max-msg-ids=(priv,4096,deny)</programlisting></para>
+
+       <para>Кроме того, если <productname>&productname;</productname> у вас выполняется внутри зоны, может понадобиться также увеличить лимиты на использование ресурсов зоны. Получить дополнительную информацию о <literal>проектах</literal> и команде <command>prctl</command> можно в <citetitle>Руководстве системного администратора</citetitle> (System Administrator's Guide), &laquo;Главе 2: Проекты и задачи&raquo; (Chapter2: Projects and Tasks).</para>
+      </listitem>
+     </varlistentry>
+
+
+     <varlistentry>
+      <term><systemitem class="osname">UnixWare</systemitem>
+      <indexterm><primary>UnixWare</primary> <secondary>настройка IPC</secondary></indexterm>
+      </term>
+      <listitem>
+       <para>В <productname>UnixWare</productname> 7 максимальный размер сегментов разделяемой памяти равен 512 КБ в стандартной конфигурации. Чтобы просмотреть текущее значение <varname>SHMMAX</varname>, выполните: <programlisting>/etc/conf/bin/idtune -g SHMMAX</programlisting> В результате вы увидите текущее значение, значение по умолчанию, а также минимальные и максимальные значения. Чтобы задать новое значение <varname>SHMMAX</varname>, выполните: <programlisting>/etc/conf/bin/idtune SHMMAX <replaceable>значение</replaceable></programlisting> Здесь <replaceable>значение</replaceable> — новый предел, который вы хотите установить (в байтах). Изменив значение <varname>SHMMAX</varname>, пересоберите ядро: <programlisting>/etc/conf/bin/idbuild -B</programlisting> и перегрузите систему.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+
+  </sect2>
+
+  <sect2>
+   <title>Ограничения ресурсов</title>
+
+   <para>В Unix-подобных операционных системах существуют различные типы ограничений ресурсов, которые могут влиять на работу сервера <productname>&productname;</productname>. Особенно важны ограничения на число процессов для пользователя, число открытых файлов и объём памяти для каждого процесса. Каждое из этих ограничений имеет <quote>жёсткий</quote> и <quote>мягкий</quote> предел. Мягкий предел действительно ограничивает использование ресурса, но пользователь может увеличить его значение до жёсткого предела. Изменить жёсткий предел может только пользователь root. За изменение этих параметров отвечает системный вызов <function>setrlimit</function>. Управлять этими ресурсами в командной строке позволяет встроенная команда <command>ulimit</command> (в оболочках Bourne) и <command>limit</command> (<application>csh</application>). В системах семейства BSD различными ограничениями ресурсов, устанавливаемыми при входе пользователя, управляет файл <filename>/etc/login.conf</filename>. За подробностями обратитесь к документации операционной системы. Для <productname>&productname;</productname> интерес представляют параметры <varname>maxproc</varname>, <varname>openfiles</varname> и <varname>datasize</varname>. Они могут задаваться, например так: <programlisting>default:\
+...
+        :datasize-cur=256M:\
+        :maxproc-cur=256:\
+        :openfiles-cur=256:\
+...</programlisting> (Здесь <literal>-cur</literal> обозначает мягкий предел. Чтобы задать жёсткий предел, нужно заменить это окончание на <literal>-max</literal>.)</para>
+
+   <para>Ядро также может устанавливать общесистемные ограничения на использование некоторых ресурсов. <itemizedlist>
+     <listitem>
+      <para>В <productname>Linux</productname> максимальное число открытых файлов, которое поддерживает ядро, определяется в спецфайле <filename>/proc/sys/fs/file-max</filename>. Изменить этот предел можно, записав другое число в этот файл, либо добавив присваивание в файл <filename>/etc/sysctl.conf</filename>. Максимальное число файлов для одного процесса задаётся при компиляции ядра; за дополнительными сведения обратитесь к <filename>/usr/src/linux/Documentation/proc.txt</filename>.</para>
+     </listitem>
+    </itemizedlist></para>
+
+   <para>Сервер <productname>&productname;</productname> использует для обслуживания каждого подключения отдельный процесс, так что возможное число процессов должно быть не меньше числа разрешённых соединений плюс число процессов, требуемых для остальной системы. Это обычно не проблема, но когда в одной системе работает множество серверов, предел может быть достигнут.</para>
+
+   <para>В качестве максимального числа открытых файлов по умолчанию обычно выбираются <quote>социально-ориентированные</quote> значения, позволяющие использовать одну систему нескольким пользователям так, чтобы ни один из них не потреблял слишком много системных ресурсов. Если вы запускаете в системе несколько серверов, это должно вполне устраивать, но на выделенных машинах может возникнуть желание увеличить этот предел.</para>
+
+   <para>С другой стороны, некоторые системы позволяют отдельным процессам открывать очень много файлов и если это делают сразу несколько процессов, они могут легко исчерпать общесистемный предел. Если вы столкнётесь с такой ситуацией, но не захотите менять общесистемное ограничение, вы можете ограничить использование открытых файлов сервером <productname>&productname;</productname>, установив параметр конфигурации <xref linkend="guc-max-files-per-process"/>.</para>
+  </sect2>
+
+  <sect2 id="linux-memory-overcommit">
+   <title>Чрезмерное выделение памяти в Linux</title>
+
+   <indexterm><primary>memory overcommit</primary></indexterm>
+
+   <indexterm><primary>OOM</primary></indexterm>
+
+   <indexterm><primary>overcommit</primary></indexterm>
+
+   <para>В Linux 2.4 и новее механизм виртуальной памяти по умолчанию работает не оптимально для <productname>&productname;</productname>. Вследствие того, что ядро выделяет память в чрезмерном объёме, оно может уничтожить главный управляющий процесс <productname>&productname;</productname> (postmaster), если при выделении памяти процессу <productname>&productname;</productname> или другому процессу виртуальная память будет исчерпана.</para>
+
+   <para>Когда это происходит, вы можете получить примерно такое сообщение ядра (где именно искать это сообщение, можно узнать в документации вашей системы): <programlisting>Out of Memory: Killed process 12345 (postgres).</programlisting> Это сообщение говорит о том, что процесс <filename>postgres</filename> был уничтожен из-за нехватки памяти. Хотя существующие подключения к базе данных будут работать по-прежнему, новые подключения приниматься не будут. Чтобы восстановить работу сервера, <productname>&productname;</productname> придётся перезапустить.</para>
+
+   <para>Один из способов обойти эту проблему — запускать <productname>&productname;</productname> на компьютере, где никакие другие процессы не займут всю память. Если физической памяти недостаточно, решить проблему также можно, увеличив объём пространства подкачки, так как уничтожение процессов при нехватке памяти происходит только когда заканчивается и физическая память, и место в пространстве подкачки.</para>
+
+   <para>Если памяти не хватает по вине самого <productname>&productname;</productname>, эту проблему можно решить, изменив конфигурацию сервера. В некоторых случаях может помочь уменьшение конфигурационных параметров, связанных с памятью, а именно <link linkend="guc-shared-buffers"><varname>shared_buffers</varname></link> и <link linkend="guc-work-mem"><varname>work_mem</varname></link>. В других случаях проблема может возникать, потому что разрешено слишком много подключений к самому серверу баз данных. Чаще всего в такой ситуации стоит уменьшить число подключений <link linkend="guc-max-connections"><varname>max_connections</varname></link> и организовать внешний пул соединений.</para>
+
+   <para>В Linux 2.6 и новее <quote>чрезмерное выделение</quote> памяти можно предотвратить, изменив поведение ядра. Хотя при этом <ulink url="http://lwn.net/Articles/104179/">OOM killer</ulink> (уничтожение процессов при нехватке памяти) всё равно может вызываться, вероятность такого уничтожения значительно уменьшается, а значит поведение системы становится более стабильным. Для этого нужно включить режим строгого выделения памяти, воспользовавшись <command>sysctl</command>: <programlisting>sysctl -w vm.overcommit_memory=2</programlisting> либо поместив соответствующую запись в <filename>/etc/sysctl.conf</filename>. Возможно, вы также захотите изменить связанный параметр <varname>vm.overcommit_ratio</varname>. За подробностями обратитесь к документации ядра <ulink url="https://www.kernel.org/doc/Documentation/vm/overcommit-accounting"/>.</para>
+
+   <para>Другой подход, который можно применить (возможно, вместе с изменением <varname>vm.overcommit_memory</varname>), заключается в исключении процесса postmaster из числа возможных жертв при нехватке памяти. Для этого нужно задать для свойства <firstterm>поправка очков OOM</firstterm> этого процесса значение <literal>-1000</literal>. Проще всего это можно сделать, выполнив <programlisting>echo -1000 &gt; /proc/self/oom_score_adj</programlisting> в скрипте запуска управляющего процесса непосредственно перед тем, как запускать postmaster. Заметьте, что делать это надо под именем root, иначе ничего не изменится; поэтому проще всего вставить эту команду в стартовый скрипт, принадлежащий пользователю root. Если вы делаете это, вы также должны установить в данном скрипте эти переменные окружения перед запуском главного процесса: <programlisting>export PG_OOM_ADJUST_FILE=/proc/self/oom_score_adj
+export PG_OOM_ADJUST_VALUE=0</programlisting> С такими параметрами дочерние процессы главного будут запускаться с обычной, нулевой поправкой очков OOM, так что при необходимости механизм OOM сможет уничтожать их. Вы можете задать и другое значение для <envar>PG_OOM_ADJUST_VALUE</envar>, если хотите, чтобы дочерние процессы исполнялись с другой поправкой OOM. (<envar>PG_OOM_ADJUST_VALUE</envar> также можно опустить, в этом случае подразумевается нулевое значение.) Если вы не установите <envar>PG_OOM_ADJUST_FILE</envar>, дочерние процессы будут работать с той же поправкой очков OOM, которая задана для главного процесса, что неразумно, так всё это делается как раз для того, чтобы главный процесс оказался на особом положении.</para>
+
+   <para>В старых ядрах Linux <filename>/proc/self/oom_score_adj</filename> отсутствует, но та же функциональность может быть доступна через <filename>/proc/self/oom_adj</filename>. Эта переменная процесса работает так же, только значение, исключающее уничтожение процесса, равно <literal>-17</literal>, а не <literal>-1000</literal>.</para>
+
+   <note>
+   <para>Некоторые дистрибутивы с ядрами Linux 2.4 содержат предварительную реализацию механизма <command>sysctl</command> overcommit, появившегося официально в 2.6. Однако, если установить для <literal>vm.overcommit_memory</literal> значение 2 в ядре 2.4, ситуация не улучшится, а только ухудшится. Прежде чем модифицировать этот параметр в ядре 2.4, рекомендуется проанализировать исходный код вашего ядра (см. функцию <function>vm_enough_memory</function> в файле <filename>mm/mmap.c</filename>) и убедиться, что ядро поддерживает именно нужный вам режим. Наличие файла документации <filename>overcommit-accounting</filename> <emphasis>не</emphasis> следует считать признаком того, что он действительно поддерживается. В случае сомнений, обратитесь к эксперту по ядру или поставщику вашей системы.</para>
+   </note>
+  </sect2>
+
+  <sect2 id="linux-huge-pages">
+   <title>Огромные страницы в Linux</title>
+
+   <para>Использование огромных страниц снижает накладные расходы при работе с большими непрерывными блоками памяти, что характерно для <productname>&productname;</productname>, особенно при больших значениях <xref linkend="guc-shared-buffers"/>. Чтобы можно было использовать эту возможность в <productname>&productname;</productname>, ядро должно быть собрано с параметрами <varname>CONFIG_HUGETLBFS=y</varname> и <varname>CONFIG_HUGETLB_PAGE=y</varname>. Также вам понадобится настроить параметр ядра <varname>vm.nr_hugepages</varname>. Чтобы оценить требуемое количество огромных страниц, запустите <productname>&productname;</productname> без поддержки огромных страниц и посмотрите на показатель <varname>VmPeak</varname> процесса postmaster, а также узнайте размер огромной страницы, воспользовавшись файловой системой <filename>/proc</filename>. Например, вы можете получить: <programlisting>$ <userinput>head -1 $PGDATA/postmaster.pid</userinput>
+4170
+$ <userinput>grep ^VmPeak /proc/4170/status</userinput>
+VmPeak:  6490428 kB
+$ <userinput>grep ^Hugepagesize /proc/meminfo</userinput>
+Hugepagesize:       2048 kB</programlisting> В данном случае <literal>6490428</literal> / <literal>2048</literal> даёт примерно <literal>3169.154</literal>, так что нам потребуется минимум <literal>3170</literal> огромных страниц, и мы можем задать это значение так: <programlisting>$ <userinput>sysctl -w vm.nr_hugepages=3170</userinput></programlisting> Большее значение стоит указать, если огромные страницы будут использоваться и другими программами в этой системе. Не забудьте добавить этот параметр в <filename>/etc/sysctl.conf</filename>, чтобы он действовал и после перезагрузки.</para>
+
+   <para>Иногда ядро не может выделить запрошенное количество огромных страниц сразу, поэтому может потребоваться повторить эту команду или перезагрузить систему. (Немедленно после перезагрузки должен быть свободен больший объём памяти для преобразования в огромные страницы.) Чтобы проверить текущую ситуацию с размещением огромных страниц, выполните: <programlisting>$ <userinput>grep Huge /proc/meminfo</userinput></programlisting></para>
+
+   <para>Также может потребоваться дать пользователю операционной системы, запускающему сервер БД, право использовать огромные страницы, установив его группу в <varname>vm.hugetlb_shm_group</varname> с помощью <application>sysctl</application>, и/или разрешить блокировать память, выполнив <command>ulimit -l</command>.</para>
+
+   <para>По умолчанию <productname>&productname;</productname> использует огромные страницы, когда считает это возможным, а в противном случае переходит к обычным страницам. Чтобы задействовать огромные страницы принудительно, можно установить для <xref linkend="guc-huge-pages"/> значение <literal>on</literal> в <filename>postgresql.conf</filename>. Заметьте, что с таким значением <productname>&productname;</productname> не сможет запуститься, если не получит достаточного количества огромных страниц.</para>
+
+   <para>Более подробно о механизме огромных страниц в <productname>Linux</productname> можно узнать в документации ядра: <ulink url="https://www.kernel.org/doc/Documentation/vm/hugetlbpage.txt"/>.</para>
+
+  </sect2>
+ </sect1>
+
+
+ <sect1 id="server-shutdown">
+  <title>Выключение сервера</title>
+
+  <indexterm zone="server-shutdown"><primary>выключение</primary></indexterm>
+
+  <para>Сервер баз данных можно отключить несколькими способами. Вы выбираете тот или иной вариант отключения, посылая разные сигналы главному процессу <command>postgres</command>. <variablelist>
+    <varlistentry>
+     <term><systemitem>SIGTERM</systemitem><indexterm><primary>SIGTERM</primary></indexterm></term>
+     <listitem>
+      <para>Запускает так называемое <firstterm>умное выключение</firstterm>. Получив <systemitem>SIGTERM</systemitem>, сервер перестаёт принимать новые подключения, но позволяет всем существующим сеансам закончить работу в штатном режиме. Сервер будет отключён только после завершения всех сеансов. Если сервер находится в режиме архивации, сервер дополнительно ожидает выхода из этого режима. При этом в данном случае сервер позволяет устанавливать новые подключения, но только для суперпользователей (это исключение позволяет суперпользователю подключиться и прервать архивацию). Если получая этот сигнал, сервер находится в процессе восстановления, восстановление и потоковая репликация будут прерваны только после завершения всех обычных сеансов.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><systemitem>SIGINT</systemitem><indexterm><primary>SIGINT</primary></indexterm></term>
+     <listitem>
+      <para>Запускает <firstterm>быстрое выключение</firstterm>. Сервер запрещает новые подключения и посылает всем работающим серверным процессам сигнал <systemitem>SIGTERM</systemitem>, в результате чего их транзакции прерываются и сами процессы завершаются. Управляющий процесс ждёт, пока будут завершены все эти процессы и затем завершается сам. Если сервер находится в режиме архивации, архивация прерывается, так что архив оказывается неполным.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><systemitem>SIGQUIT</systemitem><indexterm><primary>SIGQUIT</primary></indexterm></term>
+     <listitem>
+      <para>Запускает <firstterm>немедленное выключение</firstterm>. Сервер отправляет всем дочерним процессам сигнал <systemitem>SIGQUIT</systemitem> и ждёт их завершения. Если какие-либо из них не завершаются в течение 5 секунд, им посылается <systemitem>SIGKILL</systemitem>. Главный процесс сервера завершается, как только будут завершены все дочерние процессы, не выполняя обычную процедуру остановки БД. В результате при последующем запуске будет запущен процесс восстановления (воспроизведения изменений из журнала). Такой вариант выключения рекомендуется только в экстренных ситуациях.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist></para>
+
+  <para>Удобную возможность отправлять эти сигналы, отключающие сервер, предоставляет программа <xref linkend="app-pg-ctl"/>. Кроме того, в системах, отличных от Windows, соответствующий сигнал можно отправить с помощью команды <command>kill</command>. <acronym>PID</acronym> основного процесса <command>postgres</command> можно узнать, воспользовавшись программой <command>ps</command>, либо прочитав файл <filename>postmaster.pid</filename> в каталоге данных. Например, можно выполнить быстрое выключение так: <screen>
+$ <userinput>kill -INT `head -1 /usr/local/pgsql/data/postmaster.pid`</userinput>
+</screen></para>
+
+  <important>
+   <para>Для выключения сервера не следует использовать сигнал <systemitem>SIGKILL</systemitem>. При таком выключении сервер не сможет освободить разделяемую память и семафоры, и, возможно, это придётся делать вручную, чтобы сервер мог запуститься снова. Кроме того, при уничтожении главного процесса <command>postgres</command> сигналом <systemitem>SIGKILL</systemitem>, он не успеет передать этот сигнал своим дочерним процессам, так что может потребоваться завершать их так же вручную.</para>
+  </important>
+
+  <para>Чтобы завершить отдельный сеанс, не прерывая работу других сеансов, воспользуйтесь функцией <function>pg_terminate_backend()</function> (см. <xref remap="4" linkend="functions-admin-signal-table"/>) или отправьте сигнал <systemitem>SIGTERM</systemitem> дочернему процессу, обслуживающему этот сеанс.</para>
+ </sect1>
+
+ <sect1 id="upgrading">
+  <title>Обновление кластера <productname>&productname;</productname></title>
+
+  <indexterm zone="upgrading"><primary>обновление</primary></indexterm>
+
+  <indexterm zone="upgrading"><primary>версия</primary> <secondary>совместимость</secondary></indexterm>
+
+  <para>В этом разделе рассказывается, как обновить ваш кластер базы данных с одной версии <productname>&productname;</productname> на другую.</para>
+
+  <para>Основные версии <productname>&productname;</productname> представляются первыми двумя группами цифр в полной версии, например, 8.4. Корректирующие выпуски <productname>&productname;</productname> представляются третьей группой цифр, например, 8.4.2 — второй корректирующий выпуск версии 8.4. В корректирующих выпусках никогда не меняется внутренний формат хранения и они всегда совместимы с предыдущими и последующими выпусками той же основной версии, например выпуск 8.4.2 совместим с 8.4, 8.4.1 и 8.4.6. Для обновления версии на совместимую достаточно просто заменить исполняемые файлы при выключенном сервере и затем запустить сервер. Каталог данных при этом не затрагивается, так что обновить корректирующую версию довольно просто.</para>
+
+  <para>При обновлении <emphasis>основных</emphasis> версий <productname>&productname;</productname> внутренний формат данных может меняться, что усложняет процедуру обновления. Традиционный способ переноса данных в новую основную версию — выгрузить данные из старой версии, а затем загрузить их в новую (это не самый быстрый вариант). Выполнить обновление быстрее позволяет <xref linkend="pgupgrade"/>. Также для обновления можно использовать репликацию, как описано ниже.</para>
+
+  <para>Изменения основной версии обычно приносят какие-либо видимые пользователю несовместимости, которые могут требовать доработки приложений. Все подобные изменения описываются в замечаниях к выпуску (<xref linkend="release"/>); обращайте особое внимание на раздел &laquo;Migration&raquo; (Миграция). Если при обновлении вы пропускаете несколько основных версий, обязательно прочитайте замечания к выпуску, в том числе и для каждой пропускаемой версии.</para>
+
+  <para>Осторожные пользователи обычно тестируют свои клиентские приложения с новой версией, прежде чем переходить на неё полностью; поэтому часто имеет смысл установить рядом старую и новую версии. При тестировании обновления основной версии <productname>&productname;</productname> изучите следующие области возможных изменений:</para>
+
+  <variablelist>
+
+   <varlistentry>
+    <term>Администрирование</term>
+    <listitem>
+     <para>Средства и функции, предоставляемые администраторам для наблюдения и управления сервером, часто меняются и совершенствуются в каждой новой версии.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>SQL</term>
+    <listitem>
+     <para>В этой области чаще наблюдается появление новых возможностей команд SQL, чем изменение поведения существующих, если только об этом не говорится в замечаниях к выпуску.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>API библиотек</term>
+    <listitem>
+     <para>Обычно библиотеки типа <application>libpq</application> только расширяют свою функциональность, если об обратном так же не говорится в замечаниях к выпуску.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>Системные каталоги</term>
+    <listitem>
+     <para>Изменения в системных каталогах обычно влияют только на средства управления базами данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>API сервера для кода на C</term>
+    <listitem>
+     <para>Сюда относятся изменения в API серверных функций, которые написаны на языке программирования C. Такие изменения затрагивают код, обращающийся к служебным функциям глубоко внутри сервера.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+
+  <sect2 id="upgrading-via-pgdumpall">
+   <title>Обновление данных с применением <application>pg_dumpall</application></title>
+
+   <para>Один из вариантов обновления заключается в выгрузке данных из одной основной версии <productname>&productname;</productname> и загрузке их в другую &mdash; для этого необходимо использовать средство <emphasis>логического</emphasis> копирования, например <application>pg_dumpall</application>; копирование на уровне файловой системы не подходит. (В самом сервере есть проверки, которые не дадут использовать каталог данных от несовместимой версии <productname>&productname;</productname>, так что если попытаться запустить с существующим каталогом данных неправильную версию сервера, никакого вреда не будет.)</para>
+
+   <para>Для создания копии рекомендуется применять программы <application>pg_dump</application> и <application>pg_dumpall</application> от <emphasis>новой</emphasis> версии <productname>&productname;</productname>, чтобы воспользоваться улучшенными функциями, которые могли в них появиться. Текущие версии этих программ способны читать данные любой версии сервера, начиная с 7.0.</para>
+
+   <para>В следующих указаниях предполагается, что сервер установлен в каталоге <filename>/usr/local/pgsql</filename>, а данные находятся в <filename>/usr/local/pgsql/data</filename>. Вам нужно подставить свои пути.</para>
+
+   <procedure>
+    <step>
+     <para>При запуске резервного копирования убедитесь в том, что в базе данных не производятся изменения. Изменения не повлияют на целостность полученной копии, но изменённые данные, само собой, в неё не попадут. Если потребуется, измените разрешения в файле <filename>/usr/local/pgsql/data/pg_hba.conf</filename> (или подобном), чтобы подключиться к серверу могли только вы. За дополнительными сведениями об управлении доступом обратитесь к <xref remap="3" linkend="client-authentication"/>.</para>
+
+     <para><indexterm><primary>pg_dumpall</primary> <secondary>использование при обновлении</secondary></indexterm> Чтобы получить копию всех ваших данных, введите: <screen>
+<userinput>pg_dumpall &gt; <replaceable>выходной_файл</replaceable></userinput>
+</screen></para>
+
+     <para>Для создания резервной копии вы можете воспользоваться программой <application>pg_dumpall</application> от текущей версии сервера; за подробностями обратитесь к <xref remap="3" linkend="backup-dump-all"/>. Однако для лучшего результата стоит попробовать <application>pg_dumpall</application> из <productname>&productname;</productname> &version;, так как в эту версию вошли исправления ошибок и усовершенствования, по сравнению с предыдущими версиями. Хотя этот совет может показаться абсурдным, ведь новая версия ещё не установлена, ему стоит последовать, если вы планируете установить новую версию рядом со старой. В этом случае вы сможете выполнить установку как обычно, а перенести данные позже. Это также сократит время обновления.</para>
+    </step>
+
+    <step>
+     <para>Остановите старый сервер: <screen>
+<userinput>pg_ctl stop</userinput>
+</screen> В системах, где <productname>&productname;</productname> запускается при загрузке, должен быть скрипт запуска, с которым можно сделать то же самое. Например, в <systemitem class="osname">Red Hat Linux</systemitem> может сработать такой вариант: <screen>
+<userinput>/etc/rc.d/init.d/postgresql stop</userinput>
+</screen> Подробнее запуск и остановка сервера описаны в <xref remap="6" linkend="runtime"/>.</para>
+    </step>
+
+    <step>
+     <para>При восстановлении из резервной копии удалите или переименуйте старый каталог, где был установлен сервер, если его имя не привязано к версии. Разумнее будет переименовать каталог, а не удалять его, чтобы его можно было восстановить в случае проблем. Однако учтите, что этот каталог может занимать много места на диске. Переименовать каталог можно, например так: <screen>
+<userinput>mv /usr/local/pgsql /usr/local/pgsql.old</userinput>
+</screen> (Этот каталог нужно переименовывать (перемещать) как единое целое, чтобы относительные пути в нём не изменились.)</para>
+    </step>
+
+    <step>
+     <para>Установите новую версию <productname class="trade">&productname;</productname>.</para>
+    </step>
+
+    <step>
+     <para>При необходимости создайте новый кластер баз данных. Помните, что следующие команды нужно выполнять под именем специального пользователя БД (вы уже действуете под этим именем, если производите обновление). <programlisting>
+<userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</userinput>
+</programlisting></para>
+    </step>
+
+    <step>
+     <para>Перенесите изменения, внесённые в предыдущие версии <filename>pg_hba.conf</filename> и <filename>postgresql.conf</filename>.</para>
+    </step>
+
+    <step>
+     <para>Запустите сервер баз данных, так же применяя учётную запись специального пользователя БД: <programlisting>
+<userinput>/usr/local/pgsql/bin/postgres -D /usr/local/pgsql/data</userinput>
+</programlisting></para>
+    </step>
+
+    <step>
+     <para>Наконец, восстановите данные из резервной копии, выполнив: <screen>
+<userinput>/usr/local/pgsql/bin/psql -d postgres -f <replaceable>выходной_файл</replaceable></userinput>
+</screen> (При этом будет использоваться <emphasis>новый</emphasis> <application>psql</application>.)</para>
+    </step>
+   </procedure>
+
+   <para>Минимизировать время отключения сервера можно, установив новый сервер в другой каталог и запустив параллельно оба сервера, старый и новый, с разными портами. Затем можно будет перенести данные примерно так: <programlisting>pg_dumpall -p 5432 | psql -d postgres -p 5433</programlisting></para>
+
+  </sect2>
+
+  <sect2 id="upgrading-via-pg-upgrade">
+   <title>Обновление данных с применением <application>pg_upgrade</application></title>
+
+   <para>Модуль <xref linkend="pgupgrade"/> позволяет обновить инсталляцию <productname>&productname;</productname> с одной основной версии на другую непосредственно на месте. Такое обновление может выполняться за считанные минуты, особенно в режиме <option>--link</option>. Для него требуются примерно те же подготовительные действия, что и для варианта с <application>pg_dumpall</application>: запустить/остановить сервер, выполнить <application>initdb</application>. Все эти действия описаны в <link linkend="pgupgrade">документации</link> <application>pg_upgrade</application>.</para>
+
+  </sect2>
+
+  <sect2 id="upgrading-via-replication">
+   <title>Обновление данных с применением репликации</title>
+
+   <para>Также можно использовать некоторые методы репликации, например <productname>Slony</productname>, для создания резервного сервера с обновлённой версией <productname>&productname;</productname>. Это возможно благодаря тому, что Slony поддерживает репликацию между разными основными версиями <productname>&productname;</productname>. Резервный сервер может располагаться как на том же компьютере, так и на другом. Как только синхронизация с главным сервером (где работает старая версия <productname>&productname;</productname>) будет завершена, можно сделать главным новый сервер, а старый экземпляр базы данных просто отключить. При таком переключении обновление можно осуществить, прервав работу сервера всего на несколько секунд.</para>
+
+  </sect2>
+ </sect1>
+
+ <sect1 id="preventing-server-spoofing">
+  <title>Защита от подмены сервера</title>
+
+  <indexterm zone="preventing-server-spoofing"><primary>подмена сервера</primary></indexterm>
+
+  <para>Когда сервер работает, злонамеренный пользователь не может подставить свой сервер вместо него. Однако, если сервер отключён, локальный пользователь может подменить нормальный сервер, запустив свой собственный. Поддельный сервер сможет читать пароли и запросы клиентов, хотя не сможет вернуть никакие данные, так как каталог <varname>PGDATA</varname> будет защищён от чтения посторонними пользователями. Такая подмена возможна потому, что любой пользователь может запустить сервер баз данных; клиент, со своей стороны, не может обнаружить подмену, если его не настроить дополнительно.</para>
+
+  <para>Один из способов предотвратить подмену для <literal>локальных</literal> подключений — использовать каталог доменных сокетов Unix (<xref linkend="guc-unix-socket-directories"/>), в который сможет писать только проверенный локальный пользователь. Это не позволит злонамеренному пользователю создать в этом каталоге свой файл сокета. Если вас беспокоит, что некоторые приложения при этом могут обращаться к файлу сокета в <filename>/tmp</filename> и, таким образом, всё же будут уязвимыми, создайте при загрузке операционной системы символическую ссылку <filename>/tmp/.s.PGSQL.5432</filename>, указывающую на перемещённый файл сокета. Возможно, вам также придётся изменить скрипт очистки <filename>/tmp</filename>, чтобы он не удалял эту ссылку.</para>
+
+  <para>Также клиенты могут защитить <literal>локальные</literal> подключения, установив в параметре <link linkend="libpq-connect-requirepeer"><literal>requirepeer</literal></link> имя пользователя, который должен владеть серверным процессом, подключённым к сокету.</para>
+
+  <para>Лучший способ защиты от подмены для соединений TCP — использовать сертификаты SSL и добиться, чтобы клиенты проверяли сертификат сервера. Для этого надо настроить сервер, чтобы он принимал только подключения <literal>hostssl</literal> (см. <xref remap="4" linkend="auth-pg-hba-conf"/>) и имел ключ и сертификаты SSL (см. <xref remap="4" linkend="ssl-tcp"/>). Тогда TCP-клиент должен будет подключаться к серверу с параметром <literal>sslmode=verify-ca</literal> или <literal>verify-full</literal> и у него должен быть установлен соответствующий корневой сертификат (см. <xref remap="4" linkend="libq-ssl-certificates"/>).</para>
+ </sect1>
+
+ <sect1 id="encryption-options">
+  <title>Возможности шифрования</title>
+
+  <indexterm zone="encryption-options"><primary>шифрование</primary></indexterm>
+
+  <para><productname>&productname;</productname> обеспечивает шифрование на разных уровнях и даёт гибкость в выборе средств защиты данных в случае кражи сервера, от недобросовестных администраторов или в небезопасных сетях. Шифрование может также требоваться для защиты конфиденциальных данных, например, медицинских сведений или финансовых транзакций.</para>
+
+  <variablelist>
+
+  <varlistentry>
+   <term>Шифрование хранимых паролей</term>
+   <listitem>
+
+    <para>По умолчанию, пароли пользователей базы данных хранятся в виде хешей MD5, так что даже администратор не может определить, какой именно пароль имеет пользователь. Если шифрование MD5 также применяется при проверке подлинности, пароли не присутствуют на сервере в открытом виде даже кратковременно, так как клиент вычисляет и передаёт по сети только хеши паролей.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term>Шифрование избранных столбцов</term>
+
+   <listitem>
+    <para>Модуль <xref linkend="pgcrypto"/> позволяет хранить в зашифрованном виде избранные поля. Это полезно, если ценность представляют только некоторые данные. Чтобы прочитать эти поля, клиент передаёт дешифрующий ключ, сервер расшифровывает данные и выдаёт их клиенту.</para>
+
+    <para>Расшифрованные данные и ключ дешифрования находятся на сервере в процессе расшифровывания и передачи данных. Именно в этот момент данные и ключи могут быть перехвачены тем, кто имеет полный доступ к серверу баз данных, например, системным администратором.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term>Шифрование раздела данных</term>
+
+   <listitem>
+    <para>Шифрование хранилища данных можно реализовать на уровне файловой системы или на уровне блоков. В Linux можно воспользоваться шифрованными файловыми системами eCryptfs и EncFS, а во FreeBSD есть PEFS. Шифрование всего диска на блочном уровне в Linux можно организовать, используя dm-crypt + LUKS, а во FreeBSD — модули GEOM, geli и gbde. Подобные возможности есть и во многих других операционных системах, включая Windows.</para>
+
+    <para>Этот механизм не позволяет читать незашифрованные данные с дисков в случае кражи дисков или всего компьютера. При этом он не защищает данные от чтения, когда эта файловая система смонтирована, так как на смонтированном устройстве операционная система видит все данные в незашифрованном виде. Однако, чтобы смонтировать файловую систему, нужно передать операционной системе ключ (иногда он хранится где-то на компьютере, который выполняет монтирование).</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term>Шифрование паролей при передаче по сети</term>
+
+   <listitem>
+     <para>Метод проверки подлинности с <literal>MD5</literal> дважды шифрует пароль на стороне клиента, прежде чем передать его серверу. Сначала вычисляется хеш MD5 пароля вместе с именем пользователя, а затем этот хеш обрабатывается ещё раз с добавлением случайного числа, переданного сервером при попытке подключиться к нему. Затем это дважды хешированное значение передаётся серверу по сети. Двойное хеширование не только позволяет защититься от вычисления исходного пароля, но и не даёт использовать тот же зашифрованный пароль при следующем подключении.</para>
+    </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term>Шифрование данных при передаче по сети</term>
+
+    <listitem>
+     <para>SSL-соединения шифруют все данные, передаваемые по сети: пароль, запросы и возвращаемые данные. Файл <filename>pg_hba.conf</filename> позволяет администраторам указать, для каких узлов будут разрешены незашифрованные соединения (<literal>host</literal>), а для каких будет требоваться SSL (<literal>hostssl</literal>). Кроме того, и на стороне клиента можно разрешить подключения к серверам только с SSL. Для шифрования трафика также можно применять <application>stunnel</application> и <application>SSH</application>.</para>
+    </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term>Проверка подлинности сервера SSL</term>
+
+   <listitem>
+    <para>И клиент, и сервер могут проверять подлинность друг друга по сертификатам SSL. Это требует дополнительной настройки на каждой стороне, но даёт более надёжную гарантию подлинности, чем обычные пароли. С такой защитой подставной компьютер не сможет представлять из себя сервер с целью получить пароли клиентов. Она также предотвращает атаки с посредником (<quote>man in the middle</quote>), когда компьютер между клиентом и сервером представляется сервером и незаметно передаёт все запросы и данные между клиентом и подлинным сервером.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term>Шифрование на стороне клиента</term>
+
+   <listitem>
+    <para>Если системный администратор сервера, где работает база данных, не является доверенным, клиент должен сам шифровать данные; тогда незашифрованные данные никогда не появятся на этом сервере. В этом случае клиент шифрует данные, прежде чем передавать их серверу, а получив из базы данных результаты, он расшифровывает их для использования.</para>
+   </listitem>
+  </varlistentry>
+
+  </variablelist>
+
+ </sect1>
+
+ <sect1 id="ssl-tcp">
+  <title>Защита соединений TCP/IP с применением SSL</title>
+
+  <indexterm zone="ssl-tcp"><primary>SSL</primary></indexterm>
+
+  <para>В <productname>&productname;</productname> встроена поддержка <acronym>SSL</acronym> для шифрования трафика между клиентом и сервером, что повышает уровень безопасности системы. Для использования этой возможности необходимо, чтобы и на сервере, и на клиенте был установлен <productname>OpenSSL</productname>, и поддержка <acronym>SSL</acronym> была включена в <productname>&productname;</productname> при сборке.</para>
+
+  <para>Когда в установленном сервере <productname>&productname;</productname> разрешена поддержка <acronym>SSL</acronym>, его можно запустить с включённым механизмом <acronym>SSL</acronym>, задав в <filename>postgresql.conf</filename> для параметра <xref linkend="guc-ssl"/> значение <literal>on</literal>. Запущенный сервер будет принимать, как обычные, так и <acronym>SSL</acronym>-подключения в одном порту TCP и будет согласовывать использование <acronym>SSL</acronym> с каждым клиентом. По умолчанию клиент выбирает режим подключения сам; как настроить сервер, чтобы он требовал использовать только <acronym>SSL</acronym> для всех или некоторых подключений, вы можете узнать в <xref remap="6" linkend="auth-pg-hba-conf"/>.</para>
+
+  <para><productname>&productname;</productname> читает системный файл конфигурации <productname>OpenSSL</productname>. По умолчанию этот файл называется <filename>openssl.cnf</filename> и находится в каталоге, который сообщает команда <literal>openssl version -d</literal>. Если требуется указать другое расположение файла конфигурации, его можно задать в переменной окружения <envar>OPENSSL_CONF</envar>.</para>
+
+  <para><productname>OpenSSL</productname> предоставляет широкий выбор шифров и алгоритмов аутентификации разной защищённости. Хотя список шифров может быть задан непосредственно в файле конфигурации <productname>OpenSSL</productname>, можно задать отдельные шифры именно для сервера баз данных, указав их в параметре <xref linkend="guc-ssl-ciphers"/> в <filename>postgresql.conf</filename>.</para>
+
+  <note>
+   <para>Накладные расходы, связанные с шифрованием, в принципе можно исключить, ограничившись только проверкой подлинности, то есть применяя шифр <literal>NULL-SHA</literal> или <literal>NULL-MD5</literal>. Однако в этом случае посредник сможет пропускать через себя и читать весь трафик между клиентом и сервером. Кроме того, шифрование привносит минимальную дополнительную нагрузку по сравнению с проверкой подлинности. По этим причинам использовать шифры NULL не рекомендуется.</para>
+  </note>
+
+  <para>Чтобы сервер мог работать в режиме <acronym>SSL</acronym>, ему необходимы файлы с сертификатом сервера и закрытым ключом. По умолчанию это должны быть файлы <filename>server.crt</filename> и <filename>server.key</filename>, соответственно, расположенные в каталоге данных, но можно использовать и другие имена и местоположения файлов, задав их в конфигурационных параметрах <xref linkend="guc-ssl-cert-file"/> и <xref linkend="guc-ssl-key-file"/>.</para>
+
+  <para>В Unix-подобных системах к файлу <filename>server.key</filename> должен быть запрещён любой доступ группы и всех остальных; чтобы установить такое ограничение, выполните <command>chmod 0600 server.key</command>. Возможен и другой вариант, когда этим файлом владеет root, а группа имеет доступ на чтение (то есть, маска разрешений <literal>0640</literal>). Данный вариант предназначен для систем, в которых файлами сертификатов и ключей управляет сама операционная система. В этом случае пользователь, запускающий сервер <productname>&productname;</productname>, должен быть членом группы, имеющей доступ к указанным файлам сертификата и ключа.</para>
+
+  <para>Если закрытый ключ защищён паролем, сервер запросит пароль и не запустится, пока этот пароль не будет введён.</para>
+
+  <para>В некоторых случаях сертификат сервера может подписываться <quote>промежуточным</quote> центром сертификации, сам этот сертификат не обязательно должен быть доверенным для клиентов. Чтобы использовать такой сертификат, нужно добавить к файлу <filename>server.crt</filename> сертификат выдавшего его центра сертификации, затем сертификат вышестоящего центра и так далее, до сертификата <quote>корневого</quote> или <quote>промежуточного</quote> центра, которому доверяют клиенты. Клиенты считают сертификат доверенным, если он подписан сертификатом, содержащимся в их собственном файле <filename>root.crt</filename>.</para>
+
+  <sect2 id="ssl-client-certificates">
+   <title>Использование клиентских сертификатов</title>
+
+  <para>Чтобы клиенты должны были предоставлять серверу доверенные сертификаты, поместите сертификаты центров сертификации (<acronym>ЦС</acronym>), которым вы доверяете, в файл <filename>root.crt</filename> в каталоге данных, укажите в параметре <xref linkend="guc-ssl-ca-file"/> в <filename>postgresql.conf</filename> имя файла <literal>root.crt</literal> и добавьте параметр аутентификации <literal>clientcert=1</literal> в соответствующие строки <literal>hostssl</literal> в <filename>pg_hba.conf</filename>. В результате от клиента в процессе установления SSL-подключения будет затребован сертификат. (Как настроить сертификаты на стороне клиента, описывается в <xref remap="6" linkend="libpq-ssl"/>.) Получив сертификат, сервер будет проверять, был ли этот сертификат подписан одним из доверенным центром сертификации.</para>
+
+  <para>Если в <filename>root.crt</filename> вносятся промежуточные <acronym>ЦС</acronym>, в этом файле также должны содержаться цепочки сертификатов до их корневых <acronym>ЦС</acronym>. Если установлен параметр <xref linkend="guc-ssl-crl-file"/>, также проверяется список отзыва сертификатов (Certificate Revocation List, CRL). (На странице <ulink url="http://h71000.www7.hp.com/doc/83final/ba554_90007/ch04s02.html"/> можно найти наглядные диаграммы, иллюстрирующие применение сертификатов SSL.)</para>
+
+  <para>Параметр аутентификации <literal>clientcert</literal> можно использовать с любым методом проверки подлинности, но только в строках <filename>pg_hba.conf</filename> типа <literal>hostssl</literal>. Когда <literal>clientcert</literal> не задан или равен 0, сервер, тем не менее, будет проверять все представленные клиентские сертификаты по своему файлу со списком ЦС (если он настроен) &mdash; но позволит подключаться клиентам без сертификата.</para>
+
+  <para>Заметьте, что файл <filename>root.crt</filename> на сервере содержит сертификаты центров сертификации верхнего уровня, которые считаются доверенными для подписания клиентских сертификатов. В принципе в нём может отсутствовать сертификат ЦС, подписавшего сертификат сервера, хотя в большинстве случаев этот ЦС также должен быть доверенным для клиентских сертификатов.</para>
+
+  <para>Если вы используете клиентские сертификаты, вы можете также применить метод аутентификации <literal>cert</literal>, чтобы сертификаты обеспечивали не только защиту соединений, но и проверку подлинности пользователей. За подробностями обратитесь к <xref remap="3" linkend="auth-cert"/>. (Устанавливать <literal>clientcert=1</literal> явно при использовании метода аутентификации <literal>cert</literal> не требуется.)</para>
+  </sect2>
+
+  <sect2 id="ssl-server-files">
+   <title>Файлы, используемые SSL-сервером</title>
+
+   <para>В <xref remap="6" linkend="ssl-file-usage"/> кратко описаны все файлы, имеющие отношение к настройке SSL на сервере. (Здесь приведены стандартные или типичные имена файлов. В конкретной системе они могут быть другими.)</para>
+
+  <table id="ssl-file-usage">
+   <title>Файлы, используемые SSL-сервером</title>
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Файл</entry>
+      <entry>Содержимое</entry>
+      <entry>Назначение</entry>
+     </row>
+    </thead>
+
+    <tbody>
+
+     <row>
+      <entry><xref linkend="guc-ssl-cert-file"/> (<filename>$PGDATA/server.crt</filename>)</entry>
+      <entry>сертификат сервера</entry>
+      <entry>отправляется клиенту для идентификации сервера</entry>
+     </row>
+
+     <row>
+      <entry><xref linkend="guc-ssl-key-file"/> (<filename>$PGDATA/server.key</filename>)</entry>
+      <entry>закрытый ключ сервера</entry>
+      <entry>подтверждает, что сертификат сервера был передан его владельцем; не гарантирует, что его владельцу можно доверять</entry>
+     </row>
+
+     <row>
+      <entry><xref linkend="guc-ssl-ca-file"/> (<filename>$PGDATA/root.crt</filename>)</entry>
+      <entry>сертификаты доверенных ЦС</entry>
+      <entry>позволяет проверить, что сертификат клиента подписан доверенным центром сертификации</entry>
+     </row>
+
+     <row>
+      <entry><xref linkend="guc-ssl-crl-file"/> (<filename>$PGDATA/root.crl</filename>)</entry>
+      <entry>сертификаты, отозванные центрами сертификации</entry>
+      <entry>сертификат клиента должен отсутствовать в этом списке</entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+   <para>Файлы <filename>server.key</filename>, <filename>server.crt</filename>, <filename>root.crt</filename> и <filename>root.crl</filename> (или альтернативные файлы, заменяющие их) считываются только при запуске сервера; поэтому сервер необходимо перезапустить, чтобы изменения в них вступили в силу.</para>
+  </sect2>
+
+  <sect2 id="ssl-certificate-creation">
+   <title>Создание самоподписанного сертификата</title>
+
+   <para>Чтобы создать самоподписанный сертификат для сервера быстрым способом, выполните следующую команду <productname>OpenSSL</productname>: <programlisting>openssl req -new -text -out server.req</programlisting> Введите информацию, которую запрашивает <application>openssl</application>. Обязательно укажите правильное имя локального компьютера в поле <quote>Common Name</quote> (Общее имя); пароль запроса можно оставить пустым. Программа сгенерирует ключ, защищённый паролем; она не примет пароль короче четырёх символов. Чтобы удалить пароль (вы должны сделать это, если хотите, чтобы сервер запускался автоматически), выполните такие команды: <programlisting>openssl rsa -in privkey.pem -out server.key
+rm privkey.pem</programlisting> Введите старый пароль, чтобы разблокировать файл ключа. Теперь выполните: <programlisting>openssl req -x509 -in server.req -text -key server.key -out server.crt</programlisting> В результате вы получите самоподписанный сертификат, и затем нужно будет скопировать ключ и сертификат туда, где их будет искать сервер. Наконец, выполните: <programlisting>chmod og-rwx server.key</programlisting> Сервер не примет этот файл, если для него будут заданы более либеральные права доступа. Подробнее узнать о том, как создаётся закрытый ключ и сертификат сервера, можно в документации <productname>OpenSSL</productname>.</para>
+
+   <para>Самоподписанный сертификат можно использовать при тестировании, но для производственной среды необходимо получить сертификат, подписанный центром сертификации (<acronym>ЦС</acronym>) (одним из глобальных <acronym>ЦС</acronym> или локальным), чтобы клиенты могли проверять подлинность сервера. Если все клиенты относятся к одной организации, рекомендуется использовать локальный <acronym>ЦС</acronym>.</para>
+
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="ssh-tunnels">
+  <title>Защита соединений TCP/IP с применением туннелей <application>SSH</application></title>
+
+  <indexterm zone="ssh-tunnels"><primary>ssh</primary></indexterm>
+
+  <para>Для защиты сетевых соединений клиентов с сервером <productname>&productname;</productname> можно применить <application>SSH</application>. При правильном подходе это позволяет обеспечить должный уровень защиты сетевого трафика, даже для клиентов, не поддерживающих SSL.</para>
+
+  <para>Прежде всего, убедитесь, что на компьютере с сервером <productname>&productname;</productname> также работает сервер <application>SSH</application> и вы можете подключиться к нему через <command>ssh</command> каким-нибудь пользователем. Затем вы можете установить защищённый тоннель с клиентской машины следующим образом: <programlisting>ssh -L 63333:localhost:5432 joe@foo.com</programlisting> Первое число в аргументе <option>-L</option>, 63333 — это номер порта с вашей стороны туннеля; это может быть номер любого свободного порта. (IANA резервирует порты с 49152 по 65535 для частного использования.) Второе число, 5432 — порт с удалённой стороны туннеля, порт вашего сервера. Имя или IP-адрес между этими номерами портов идентифицирует целевой компьютер (где работает сервер баз данных, к которому вы будете подключаться), с точки зрения компьютера, с которого выполняется подключение (в данном примере, <literal>foo.com</literal>). Чтобы подключиться к этому серверу через созданный тоннель, вы можете подключиться к порту 63333 на локальном компьютере: <programlisting>psql -h localhost -p 63333 postgres</programlisting> Для сервера баз данных это будет выглядеть так, как будто вы действительно пользователь <literal>joe</literal> компьютера <literal>foo.com</literal>, подключающийся к <literal>localhost</literal> в этом контексте, и он будет применять ту процедуру проверки подлинности, которая установлена для подключений данного пользователя с этого компьютера. Заметьте, что сервер не будет считать такое соединение защищённым SSL, так как на самом деле трафик между сервером <application>SSH</application> и сервером <productname>&productname;</productname> не защищён. Это не должно нести какие-то дополнительные риски, так как эти серверы работают на одном компьютере.</para>
+
+  <para>Чтобы настроенный таким образом туннель работал, вы должны иметь возможность подключаться к компьютеру через <command>ssh</command> под именем <literal>joe@foo.com</literal>, так же, как это происходит при установлении терминального подключения с помощью <command>ssh</command>.</para>
+
+  <para>Вы также можете настроить перенаправление портов примерно так: <programlisting>ssh -L 63333:foo.com:5432 joe@foo.com</programlisting> Но в этом случае для сервера баз данных подключение будет приходить с его интерфейса <literal>foo.com</literal>, а этот интерфейс по умолчанию не прослушивается (вследствие указания <literal>listen_addresses = 'localhost'</literal>). Обычно требуется другое поведение.</para>
+
+  <para>Если вам нужно <quote>перейти</quote> к серверу баз данных через некоторый шлюз, это можно организовать примерно так: <programlisting>ssh -L 63333:db.foo.com:5432 joe@shell.foo.com</programlisting> Заметьте, что в этом случае трафик между <literal>shell.foo.com</literal> и <literal>db.foo.com</literal> не будет защищён туннелем SSH. SSH предлагает довольно много вариантов конфигурации, что позволяет организовывать защиту сети разными способами. За подробностями обратитесь к документации SSH.</para>
+
+  <tip>
+   <para>Существуют и другие приложения, которые могут создавать безопасные туннели, применяя по сути тот же подход, что был описан выше.</para>
+  </tip>
+
+ </sect1>
+
+
+ <sect1 id="event-log-registration">
+  <title>Регистрация <application>журнала событий</application> в <systemitem class="osname">Windows</systemitem></title>
+
+  <indexterm zone="event-log-registration"><primary>журнал событий</primary> <secondary>журнал событий</secondary></indexterm>
+
+  <para>Чтобы зарегистрировать библиотеку <application>журнала событий</application> в <systemitem class="osname">Windows</systemitem>, выполните следующую команду: <screen>
+<userinput>regsvr32 <replaceable>каталог_библиотек_pgsql</replaceable>/pgevent.dll</userinput>
+</screen> При этом в реестре будут созданы необходимые записи для средства просмотра событий, относящиеся к источнику событий по умолчанию с именем <literal>&productname;</literal>.</para>
+
+  <para>Чтобы задать другое имя источника событий (см. <xref remap="4" linkend="guc-event-source"/>), укажите ключи <literal>/n</literal> и <literal>/i</literal>: <screen>
+<userinput>regsvr32 /n /i:<replaceable>имя_источника_событий</replaceable> <replaceable>каталог_библиотек_pgsql</replaceable>/pgevent.dll</userinput>
+</screen></para>
+
+  <para>Чтобы разрегистрировать библиотеку <application>журнала событий</application> в операционной системе, выполните команду: <screen>
+<userinput>regsvr32 /u [/i:<replaceable>имя_источника_событий</replaceable>] <replaceable>каталог_библиотек_pgsql</replaceable>/pgevent.dll</userinput>
+</screen></para>
+
+  <note>
+   <para>Чтобы сервер баз данных записывал сообщения в журнал событий, добавьте <literal>eventlog</literal> в параметр <xref linkend="guc-log-destination"/> в <filename>postgresql.conf</filename>.</para>
+  </note>
+ </sect1>
+
+</chapter>

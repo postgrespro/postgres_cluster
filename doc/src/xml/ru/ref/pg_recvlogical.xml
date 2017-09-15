@@ -1,0 +1,242 @@
+<!--
+doc/src/xml/ref/pg_recvlogical.xml
+&productname; documentation
+-->
+
+<refentry id="app-pgrecvlogical">
+ <indexterm zone="app-pgrecvlogical"><primary>pg_recvlogical</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>pg_recvlogical</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_recvlogical</refname>
+  <refpurpose>управление потоками логического декодирования <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_recvlogical</command>
+   <arg rep="repeat" choice="opt"><replaceable>параметр</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+  <para>Утилита <command>pg_recvlogical</command> управляет слотами логического декодирования и принимает данные из таких слотов репликации.</para>
+
+  <para>Она создаёт соединение в режиме репликации, так что на него распространяются те же ограничения, что и с <xref linkend="app-pgreceivexlog"/>, плюс ограничения логической репликации (см. <xref remap="4" linkend="logicaldecoding"/>).</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <para>Для выбора действия необходимо указать минимум один из этих параметров: <variablelist>
+
+     <varlistentry>
+      <term><option>--create-slot</option></term>
+      <listitem>
+       <para>Создать новый слот логической репликации с именем, заданным аргументом <option>--slot</option>, используя модуль вывода, заданный аргументом <option>--plugin</option>, для базы данных, указанной в <option>--dbname</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--drop-slot</option></term>
+      <listitem>
+       <para>Удалить слот репликации с именем, заданным аргументом <option>--slot</option>, и завершиться.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--start</option></term>
+      <listitem>
+       <para>Начать приём потока изменений из слота логической репликации с именем, заданным аргументом <option>--slot</option>, и продолжать до сигнала прерывания. Если передача потока прерывается на другой стороне из-за выключения или остановки сервера, цикл подключения и передачи повторяется (если не добавлен параметр <option>--no-loop</option>).</para>
+
+       <para>Формат потока определяется модулем вывода, выбранным при создании слота.</para>
+
+       <para>Для получения потока подключаться нужно к той же базе, для которой создавался слот.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+   <para>Параметры <option>--create-slot</option> и <option>--start</option> исключают друг друга. Действие <option>--drop-slot</option> несовместимо с любыми другими действиями.</para>
+
+   <para>Следующие параметры командной строки управляют расположением и форматом выводимых данных, а также другим поведением репликации: <variablelist>
+     <varlistentry>
+      <term><option>-f <replaceable>имя_файла</replaceable></option></term>
+      <term><option>--file=<replaceable>имя_файла</replaceable></option></term>
+      <listitem>
+       <para>Записывать полученные и декодированные данные транзакций в указанный файл. Для вывода в <systemitem>stdout</systemitem> укажите <literal>-</literal> (минус).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-F <replaceable>секунды</replaceable></option></term>
+      <term><option>--fsync-interval=<replaceable>секунды</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает, как часто <application>pg_recvlogical</application> будет вызывать <function>fsync()</function>, чтобы гарантировать, что выходной файл надёжно сохранён на диске.</para>
+
+       <para>Сервер время от времени даёт клиенту команду сохранить данные и сообщить сохранённую позицию, но этот параметр позволяет выполнять сохранение чаще.</para>
+
+       <para>При значении, равном <literal>0</literal>, функция <function>fsync()</function> вообще не вызывается, но серверу сообщается новая позиция. Это может привести к потере данных в случае сбоя.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-I <replaceable>lsn</replaceable></option></term>
+      <term><option>--startpos=<replaceable>lsn</replaceable></option></term>
+      <listitem>
+       <para>В режиме <option>--start</option> репликация начнётся с данного LSN. Как это работает, подробно описывается в <xref remap="6" linkend="logicaldecoding"/> и <xref remap="6" linkend="protocol-replication"/>. В других режимах игнорируется.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--if-not-exists</option></term>
+      <listitem>
+       <para>Не выдавать ошибку, когда указан параметр <option>--create-slot</option> и слот с заданным именем уже существует.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-n</option></term>
+      <term><option>--no-loop</option></term>
+      <listitem>
+       <para>Когда подключение к серверу потеряно, не повторять цикл, просто завершить работу.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-o <replaceable>имя</replaceable>[=<replaceable>значение</replaceable>]</option></term>
+      <term><option>--option=<replaceable>имя</replaceable>[=<replaceable>значение</replaceable>]</option></term>
+      <listitem>
+       <para>Передаёт параметр <replaceable>имя_параметра</replaceable> модулю вывода, при этом может быть передано и его <replaceable>значение</replaceable>. Набор параметров и их действия зависят от выбранного модуля вывода.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-P <replaceable>модуль</replaceable></option></term>
+      <term><option>--plugin=<replaceable>модуль</replaceable></option></term>
+      <listitem>
+       <para>Использовать указанный модуль вывода логического декодирования при создании слота. См. <xref remap="4" linkend="logicaldecoding"/>. Этот параметр не действует, если слот уже существует.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s <replaceable>секунды</replaceable></option></term>
+      <term><option>--status-interval=<replaceable>секунды</replaceable></option></term>
+      <listitem>
+       <para>Этот параметр действует так же, как одноимённый параметр <xref linkend="app-pgreceivexlog"/> (см. его описание там).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-S <replaceable>имя_слота</replaceable></option></term>
+      <term><option>--slot=<replaceable>имя_слота</replaceable></option></term>
+      <listitem>
+       <para>Этот параметр задаёт имя слота логической репликации, который будет использоваться в режиме <option>--start</option>, создаваться в режиме <option>--create-slot</option> или удаляться в режиме <option>--drop-slot</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-v</option></term>
+       <term><option>--verbose</option></term>
+       <listitem>
+       <para>Включает режим подробных сообщений.</para>
+       </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+   <para>Далее описаны параметры управления подключением. <variablelist>
+      <varlistentry>
+       <term><option>-d <replaceable>база_данных</replaceable></option></term>
+       <term><option>--dbname=<replaceable>база_данных</replaceable></option></term>
+       <listitem>
+        <para>Этот параметр выбирает базу данных для подключения. Как именно она используется, можно узнать в описании соответствующих действий. Это может быть строка подключения <application>libpq</application>; за дополнительными сведениями обратитесь к <xref remap="3" linkend="libpq-connstring"/>. По умолчанию имя базы определяется именем пользователя.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-h <replaceable>имя_компьютера-или-ip</replaceable></option></term>
+       <term><option>--host=<replaceable>имя_компьютера-или-ip</replaceable></option></term>
+       <listitem>
+        <para>Указывает имя компьютера, на котором запущен сервер. Если значение начинается с косой черты, оно интерпретируется как имя каталога с доменным сокетом Unix. Значение по умолчанию берётся из переменной окружения <envar>PGHOST</envar>, если она установлена. В противном случае выполняется подключение к доменному сокету.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-p <replaceable>порт</replaceable></option></term>
+       <term><option>--port=<replaceable>порт</replaceable></option></term>
+       <listitem>
+        <para>Указывает TCP-порт или расширение локального файла Unix-сокета, на котором сервер слушает подключения. По умолчанию берётся значение переменной окружения <envar>PGPORT</envar>, если оно установлено, либо значение времени компиляции.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-U <replaceable>user</replaceable></option></term>
+       <term><option>--username=<replaceable>user</replaceable></option></term>
+       <listitem>
+        <para>Имя пользователя для подключения. По умолчанию это имя текущего пользователя операционной системы.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-w</option></term>
+       <term><option>--no-password</option></term>
+       <listitem>
+        <para>Не выдавать запрос на ввод пароля. Если сервер требует аутентификацию по паролю и пароль не доступен с помощью других средств, таких как файл <filename>.pgpass</filename>, попытка соединения не удастся. Этот параметр может быть полезен в пакетных заданиях и скриптах, где нет пользователя, который вводит пароль.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-W</option></term>
+       <term><option>--password</option></term>
+       <listitem>
+        <para>Принудительно запрашивать пароль перед подключением к базе данных.</para>
+
+        <para>Это несущественный параметр, так как <application>pg_recvlogical</application> запрашивает пароль автоматически, если сервер проверяет подлинность по паролю. Однако, чтобы понять это, <application>pg_recvlogical</application> лишний раз подключается к серверу. Поэтому иногда имеет смысл ввести <option>-W</option>, чтобы исключить эту ненужную попытку подключения.</para>
+      </listitem>
+     </varlistentry>
+     </variablelist></para>
+
+   <para>Также есть следующие дополнительные параметры: <variablelist>
+     <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>--version</option></term>
+       <listitem>
+       <para>Сообщить версию <application>pg_recvlogical</application> и завершиться.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-?</option></term>
+      <term><option>--help</option></term>
+       <listitem>
+        <para>Показать справку по аргументам командной строки <application>pg_recvlogical</application> и завершиться.</para>
+       </listitem>
+      </varlistentry>
+    </variablelist></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <para>Как и большинство других утилит <productname>&productname;</productname>, приложение также использует переменные окружения, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>).</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Примеры использования можно найти в <xref remap="6" linkend="logicaldecoding-example"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-pgreceivexlog"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

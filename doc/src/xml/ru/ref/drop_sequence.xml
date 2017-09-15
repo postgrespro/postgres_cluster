@@ -1,0 +1,85 @@
+<!--
+doc/src/xml/ref/drop_sequence.xml
+&productname; documentation
+-->
+
+<refentry id="sql-dropsequence">
+ <indexterm zone="sql-dropsequence"><primary>DROP SEQUENCE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP SEQUENCE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP SEQUENCE</refname>
+  <refpurpose>удалить последовательность</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP SEQUENCE [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [, ...] [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP SEQUENCE</command> удаляет генераторы числовых последовательностей. Удалить последовательность может только её владелец или суперпользователь.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если последовательность не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) последовательности.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данной последовательности, и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении последовательности, если от неё зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление последовательности <literal>serial</literal>: <programlisting>DROP SEQUENCE serial;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>DROP SEQUENCE</command> соответствует стандарту <acronym>SQL</acronym>, но возможность удалять в одной команде несколько последовательностей и указание <literal>IF EXISTS</literal> являются расширениями <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createsequence"/></member>
+   <member><xref linkend="sql-altersequence"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

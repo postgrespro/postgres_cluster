@@ -1,0 +1,123 @@
+<!--
+doc/src/xml/ref/drop_aggregate.xml
+&productname; documentation
+-->
+
+<refentry id="sql-dropaggregate">
+ <indexterm zone="sql-dropaggregate"><primary>DROP AGGREGATE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP AGGREGATE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP AGGREGATE</refname>
+  <refpurpose>удалить агрегатную функцию</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP AGGREGATE [ IF EXISTS ] <replaceable>имя</replaceable> ( <replaceable>сигнатура_агр_функции</replaceable> ) [ CASCADE | RESTRICT ]
+
+<phrase>Здесь <replaceable>сигнатура_агр_функции</replaceable>:</phrase>
+
+* |
+[ <replaceable>режим_аргумента</replaceable> ] [ <replaceable>имя_аргумента</replaceable> ] <replaceable>тип_аргумента</replaceable> [ , ... ] |
+[ [ <replaceable>режим_аргумента</replaceable> ] [ <replaceable>имя_аргумента</replaceable> ] <replaceable>тип_аргумента</replaceable> [ , ... ] ] ORDER BY [ <replaceable>режим_аргумента</replaceable> ] [ <replaceable>имя_аргумента</replaceable> ] <replaceable>тип_аргумента</replaceable> [ , ... ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP AGGREGATE</command> удаляет существующую агрегатную функцию. Пользователь, выполняющий эту команду, должен быть владельцем агрегатной функции.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если агрегатная функция не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующей агрегатной функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">режим_аргумента</replaceable></term>
+
+    <listitem>
+     <para>Режим аргумента: <literal>IN</literal> или <literal>VARIADIC</literal>. По умолчанию подразумевается <literal>IN</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_аргумента</replaceable></term>
+
+    <listitem>
+     <para>Имя аргумента. Заметьте, что на самом деле <command>DROP AGGREGATE</command> не обращает внимание на имена аргументов, так как для однозначной идентификации агрегатной функции достаточно только типов аргументов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_аргумента</replaceable></term>
+    <listitem>
+     <para>Тип входных данных, с которыми работает агрегатная функция. Чтобы сослаться на агрегатную функцию без аргументов, укажите вместо списка аргументов <literal>*</literal>, а чтобы сослаться на сортирующую агрегатную функцию, добавьте <literal>ORDER BY</literal> между указаниями непосредственных и агрегируемых аргументов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данной агрегатной функции (например, использующие её представления), и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении агрегатной функции, если от неё зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para>Альтернативные варианты указания сортирующих агрегатов описаны в <xref remap="6" linkend="sql-alteraggregate"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление агрегатной функции <literal>myavg</literal> для типа <type>integer</type>: <programlisting>DROP AGGREGATE myavg(integer);</programlisting></para>
+
+  <para>Удаление гипотезирующей агрегатной функции <literal>myrank</literal>, которая принимает произвольный список сортируемых столбцов и соответствующий список непосредственных аргументов: <programlisting>DROP AGGREGATE myrank(VARIADIC "any" ORDER BY VARIADIC "any");</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>DROP AGGREGATE</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alteraggregate"/></member>
+   <member><xref linkend="sql-createaggregate"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

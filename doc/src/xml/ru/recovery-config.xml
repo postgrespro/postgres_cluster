@@ -1,0 +1,167 @@
+<!-- doc/src/xml/recovery-config.xml -->
+
+<chapter id="recovery-config">
+  <title>Конфигурация восстановления</title>
+
+  <indexterm><primary>конфигурация</primary> <secondary>восстановления</secondary> <tertiary>резервного сервера</tertiary></indexterm>
+
+   <para>Глава описывает параметры, задаваемые в файле <filename>recovery.conf</filename><indexterm><primary>recovery.conf</primary></indexterm>. Они применяются лишь во время восстановления и должны заново устанавливаться перед каждым последующим восстановлением. После начала процесса они не могут быть изменены.</para>
+
+   <para>Параметры в файле <filename>recovery.conf</filename> указываются в формате <literal>name = 'value'</literal>. Каждый параметр должен располагаться на отдельной строке. Для строчного комментария используется хеш (<literal>#</literal>). Чтобы включить апостроф в значение параметра, продублируйте его (<literal>''</literal>).</para>
+
+   <para>Пример файла <filename>share/recovery.conf.sample</filename>, поставляемый в рамках дистрибутива, размещён в каталоге <filename>share/</filename>.</para>
+
+  <sect1 id="archive-recovery-settings">
+
+    <title>Параметры восстановления из архива</title>
+     <variablelist>
+
+     <varlistentry id="restore-command" xreflabel="restore_command">
+      <term><varname>restore_command</varname> (<type>string</type>) <indexterm><primary><varname>restore_command</varname> параметр восстановления</primary></indexterm></term>
+      <listitem>
+       <para>Это команда оболочки ОС, которая выполняется для извлечения архивного сегмента файлов WAL. Этот параметр требуется для восстановления из архива, но необязателен для потоковой репликации. Любое вхождение <literal>%f</literal> в строке заменяется именем извлекаемого из архива файла, а <literal>%p</literal> заменяется на путь назначения при копировании на сервере. (Путь указывается относительно текущего рабочего каталога, т. е. относительно каталога хранения данных кластера.) Любое вхождение <literal>%r</literal> заменяется на имя файла, в котором содержится последняя действительная точка восстановления. Это самый ранний файл, который необходимо хранить для возможности восстановления, и эту информацию можно использовать для усечения архива в целях его минимизации. <literal>%r</literal> обычно используется при организации тёплого резерва (см. <xref remap="4" linkend="warm-standby"/>). Для того чтобы указать символ <literal>%</literal>, продублируйте его (<literal>%%</literal>).</para>
+
+       <para>Обратите внимание, что команда должна возвращать ноль на выходе лишь в случае успешного выполнения. У команды <emphasis>будет</emphasis> запрошен список имён файлов, которые отсутствуют в архиве; в этом случае она должна возвращать ненулевой статус. Примеры: <programlisting>restore_command = 'cp /mnt/server/archivedir/%f "%p"'
+restore_command = 'copy "C:\\server\\archivedir\\%f" "%p"'  # Windows</programlisting> В случае прерывания команды сигналом (отличным от <systemitem>SIGTERM</systemitem>, который используется для остановки сервера баз данных) или при возникновении ошибки оболочки (например, если команда не найдена), процесс восстановления будет остановлен и сервер не запустится.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="archive-cleanup-command" xreflabel="archive_cleanup_command">
+      <term><varname>archive_cleanup_command</varname> (<type>string</type>) <indexterm><primary><varname>archive_cleanup_command</varname> параметр восстановления</primary></indexterm></term>
+      <listitem>
+       <para>Этот необязательный параметр указывает команду оболочки ОС, которая будет вызываться при каждой точке перезапуска. Назначение команды <varname>archive_cleanup_command</varname> в том, чтобы предоставить механизм очистки от старых архивных файлов WAL, которые более не нужны на резервном сервере. Любое вхождение <literal>%r</literal> заменяется на имя файла, содержащего последнюю действительную точку восстановления. Это самый ранний файл, который необходимо <emphasis>хранить</emphasis> для возможности восстановления, а более старые файлы, чем <literal>%r</literal>, могут быть безболезненно удалены. Эта информация может быть использована для усечения архива с целью его минимизации при сохранении возможности последующего восстановления из заданной точки. Модуль <xref linkend="pgarchivecleanup"/> часто используется в качестве значения параметра <varname>archive_cleanup_command</varname> в конфигурациях с одним резервным сервером, например: <programlisting>archive_cleanup_command = 'pg_archivecleanup /mnt/server/archivedir %r'</programlisting> Стоит обратить внимание, что в конфигурациях с множеством резервных серверов, использующих общий архивный каталог для восстановления, необходимо контролировать удаление файлов WAL, так как для некоторых они ещё могут требоваться. Поэтому <varname>archive_cleanup_command</varname> обычно используется при организации тёплого резерва (см. <xref remap="4" linkend="warm-standby"/>). Для того чтобы указать символ <literal>%</literal> в команде, он пишется дважды <literal>%%</literal>.</para>
+       <para>Если команда вернёт ненулевой статус завершения, то в журнал будет записано предупреждающее сообщение. В ситуации когда команда прерывается сигналом или в случае ошибки оболочки ОС (например, команда не найдена), будет вызвана фатальная ошибка.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="recovery-end-command" xreflabel="recovery_end_command">
+      <term><varname>recovery_end_command</varname> (<type>string</type>) <indexterm><primary><varname>recovery_end_command</varname> параметр восстановления</primary></indexterm></term>
+      <listitem>
+       <para>Этот необязательный параметр указывает команду оболочки, которая будет выполнена единожды в конце процесса восстановления. Назначение параметра <varname>recovery_end_command</varname> в предоставлении механизма очистки, следующего за репликацией или восстановлением. Любое вхождение <literal>%r</literal> заменяется именем файла, содержащим последнюю действительную точку восстановления, например, как в <xref linkend="archive-cleanup-command"/>.</para>
+       <para>Если команда вернёт ненулевой статус завершения, то в журнал будет записано предупреждающее сообщение, но при этом запуск сервера будет продолжен. За исключением случаев, когда команда прервана сигналом или при возникновения ошибки оболочки ОС (например, команда не найдена). В таких случаях база данных не будет запускаться.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+
+  </sect1>
+
+  <sect1 id="recovery-target-settings">
+
+    <title>Параметры управления восстановлением</title>
+
+     <para>По умолчанию процесс восстановления производится вплоть до окончания журнала WAL. Нижеуказанные параметры могут использоваться, чтобы остановить процесс восстановления в более ранней точке. Использоваться может только один из параметров <varname>recovery_target</varname>, <varname>recovery_target_name</varname>, <varname>recovery_target_time</varname> и <varname>recovery_target_xid</varname>; если в конфигурационном файле задано несколько параметров, будет использоваться последний.</para>
+
+     <variablelist>
+     <varlistentry id="recovery-target" xreflabel="recovery_target">
+      <term><varname>recovery_target</varname><literal>= 'immediate'</literal>
+      <indexterm><primary><varname>recovery_target</varname> параметр восстановления</primary></indexterm>
+      </term>
+      <listitem>
+       <para>Данный параметр указывает, что процесс восстановления должен завершиться, как только будет достигнуто целостное состояние, т. е. как можно раньше. При восстановлении из оперативной резервной копии, это будет точкой, в которой завершился процесс резервного копирования.</para>
+       <para>Технически, это строковый параметр, но значение <literal>'immediate'</literal> единственно допустимое в данный момент.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="recovery-target-name" xreflabel="recovery_target_name">
+      <term><varname>recovery_target_name</varname> (<type>string</type>) <indexterm><primary><varname>recovery_target_name</varname> параметр восстановления</primary></indexterm></term>
+      <listitem>
+       <para>Этот параметр указывает именованную точку восстановления (созданную с помощью <function>pg_create_restore_point()</function>), до которой будет производиться восстановление.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="recovery-target-time" xreflabel="recovery_target_time">
+      <term><varname>recovery_target_time</varname> (<type>timestamp</type>) <indexterm><primary><varname>recovery_target_time</varname> параметр восстановления</primary></indexterm></term>
+      <listitem>
+       <para>Данный параметр указывает точку времени, вплоть до которой будет производиться восстановление. Точность этой точки останова также зависит от <xref linkend="recovery-target-inclusive"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="recovery-target-xid" xreflabel="recovery_target_xid">
+      <term><varname>recovery_target_xid</varname> (<type>string</type>) <indexterm><primary><varname>recovery_target_xid</varname> параметр восстановления</primary></indexterm></term>
+      <listitem>
+       <para>Параметр указывает идентификатор транзакции, вплоть до которой необходимо произвести процедуру восстановления. Имейте в виду, что несмотря на то, что при старте идентификаторы транзакций назначаются последовательно, завершаться они могут в ином порядке. Восстанавливаемые транзакции это те, что были зафиксированы до указанной (и, возможно, включая её). Точность точки останова также зависит от <xref linkend="recovery-target-inclusive"/>.</para>
+      </listitem>
+     </varlistentry>
+     </variablelist>
+
+     <para>Следующие параметры уточняют целевую точку восстановления и оказывают влияние на процесс при её достижении:</para>
+
+     <variablelist>
+     <varlistentry id="recovery-target-inclusive" xreflabel="recovery_target_inclusive">
+      <term><varname>recovery_target_inclusive</varname> (<type>boolean</type>) <indexterm><primary><varname>recovery_target_inclusive</varname> параметр восстановления</primary></indexterm></term>
+      <listitem>
+       <para>Указывает на необходимость остановки сразу после (<literal>true</literal>), либо до (<literal>false</literal>) достижения целевой точки. Применяется одновременно с <xref linkend="recovery-target-time"/>, либо <xref linkend="recovery-target-xid"/>. Этот параметр управляет тем, нужно ли восстанавливать транзакции, у которых время фиксации либо идентификатор в точности совпадает со значением соответствующего параметра. Значение по умолчанию — <literal>true</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="recovery-target-timeline" xreflabel="recovery_target_timeline">
+      <term><varname>recovery_target_timeline</varname> (<type>string</type>) <indexterm><primary><varname>recovery_target_timeline</varname> параметр восстановления</primary></indexterm></term>
+      <listitem>
+       <para>Указывает линию времени для восстановления. По умолчанию производится восстановление той же линии времени, которая была текущей в момент создания базовой резервной копии. Со значением <literal>latest</literal> восстанавливаться будет последняя линия времени, найденная в архиве, что полезно для резервного сервера. Иное значение параметра может потребоваться в более сложной ситуации повторного восстановления, когда необходимо вернуться к состоянию, которое само было достигнуто после восстановления на момент времени. Это обсуждается в <xref remap="6" linkend="backup-timelines"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="recovery-target-action" xreflabel="recovery_target_action">
+      <term><varname>recovery_target_action</varname> (<type>enum</type>) <indexterm><primary>параметр восстановления <varname>recovery_target_action</varname></primary></indexterm></term>
+      <listitem>
+       <para>Указывает, какое действие должен предпринять сервер после достижения цели восстановления. Вариант по умолчанию — <literal>pause</literal>, что означает приостановку восстановления. Второй вариант, <literal>promote</literal>, означает, что процесс восстановления завершится и сервер начнёт принимать подключения. Наконец, с вариантом <literal>shutdown</literal> сервер остановится, как только цель восстановления будет достигнута.</para>
+       <para>Вариант <literal>pause</literal> позволяет выполнить запросы к базе данных и убедиться в том, что достигнутая цель оказалась желаемой точкой восстановления. Для снятия с паузы нужно вызвать <function>pg_xlog_replay_resume()</function> (см. <xref remap="4" linkend="functions-recovery-control-table"/>), что в итоге приведёт к завершению восстановления. Если же окажется, что мы ещё не достигли желаемой точки восстановления, нужно остановить сервер, установить более позднюю цель и перезапустить сервер для продолжения восстановления.</para>
+       <para>Вариант <literal>shutdown</literal> полезен для получения готового экземпляра сервера в желаемой точке. При этом данный экземпляр сможет воспроизводить дополнительные записи WAL (и на самом деле ему придётся воспроизводить записи WAL после последней контрольной точки при следующем перезапуске).</para>
+       <para>Заметьте, что так как <filename>recovery.conf</filename> не переименовывается, когда в <varname>recovery_target_action</varname> выбран вариант <literal>shutdown</literal>, при последующем запуске будет происходить немедленная остановка, пока вы не измените конфигурацию или не удалите файл <filename>recovery.conf</filename> вручную.</para>
+       <para>Этот параметр не действует, если цель восстановления не установлена. Если не включён режим <xref linkend="guc-hot-standby"/>, значение <literal>pause</literal> действует так же, как и <literal>shutdown</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+   </sect1>
+
+  <sect1 id="standby-settings">
+
+    <title>Параметры резервного сервера</title>
+     <variablelist>
+
+       <varlistentry id="standby-mode" xreflabel="standby_mode">
+        <term><varname>standby_mode</varname> (<type>boolean</type>) <indexterm><primary><varname>standby_mode</varname> параметр восстановления</primary></indexterm></term>
+        <listitem>
+         <para>Указывает, является ли сервер <productname>&productname;</productname> резервным или нет. Если параметр установлен в <literal>on</literal>, то сервер не прекратит восстановление по окончании последнего архивного файла WAL, а продолжит попытки извлечения новых сегментов WAL посредством команды <varname>restore_command</varname> и/или через подключение к ведущему, как указано в параметре <varname>primary_conninfo</varname>.</para>
+        </listitem>
+       </varlistentry>
+       <varlistentry id="primary-conninfo" xreflabel="primary_conninfo">
+        <term><varname>primary_conninfo</varname> (<type>string</type>) <indexterm><primary><varname>primary_conninfo</varname> параметр восстановления</primary></indexterm></term>
+        <listitem>
+         <para>Указывает строку подключения резервного сервера к ведущему. Строка описана в формате согласно <xref linkend="libpq-connstring"/>. Вместо опущенных параметров подключения используются соответствующие переменные окружения (см. <xref remap="4" linkend="libpq-envars"/>). Если же какие-то переменные не установлены, то используются значения по умолчанию.</para>
+         <para>Строка может содержать имя (или адрес) основного сервера и порт подключения. Также можно указать необходимого пользователя на ведущем сервере с требуемыми привилегиями (см. <xref remap="4" linkend="streaming-replication-authentication"/>). Если настроена аутентификация по паролю, то его также необходимо указать. Пароль можно указать как в строке подключения <varname>primary_conninfo</varname>, так и в файле <filename>~/.pgpass</filename> резервного сервера (в качестве имени базы данных используйте <literal>replication</literal>). Не указывайте имя базы данных среди параметров подключения <varname>primary_conninfo</varname>.</para>
+         <para>Этот параметр не действует, если <varname>standby_mode</varname> имеет значение <literal>off</literal>.</para>
+        </listitem>
+       </varlistentry>
+       <varlistentry id="primary-slot-name" xreflabel="primary_slot_name">
+        <term><varname>primary_slot_name</varname> (<type>string</type>) <indexterm><primary><varname>primary_slot_name</varname> параметр восстановления</primary></indexterm></term>
+        <listitem>
+         <para>Дополнительно указывает заранее созданный слот при потоковой репликации для контроля очистки ресурсов подключённого узла (см. <xref remap="4" linkend="streaming-replication-slots"/>). Этот параметр не действует, если не указана строка подключения <varname>primary_conninfo</varname>.</para>
+        </listitem>
+       </varlistentry>
+       <varlistentry id="trigger-file" xreflabel="trigger_file">
+        <term><varname>trigger_file</varname> (<type>string</type>) <indexterm><primary><varname>trigger_file</varname> параметр восстановления</primary></indexterm></term>
+        <listitem>
+         <para>Указывает триггерный файл, наличие которого завершает работу в режиме резервирования. Даже если это значение не установлено, существует возможность назначить резервный сервер основным с помощью команды <command>pg_ctl promote</command>. Этот параметр не действует, если параметр <varname>standby_mode</varname> имеет значение <literal>off</literal>.</para>
+        </listitem>
+       </varlistentry>
+
+     <varlistentry id="recovery-min-apply-delay" xreflabel="recovery_min_apply_delay">
+      <term><varname>recovery_min_apply_delay</varname> (<type>integer</type>) <indexterm><primary><varname>recovery_min_apply_delay</varname> параметр восстановления</primary></indexterm></term>
+      <listitem>
+       <para>По умолчанию резервный сервер восстанавливает записи WAL ведущего настолько быстро, насколько это возможно. Иногда полезно иметь возможность задать задержку при копировании данных, например, для устранения ошибок, связанных с потерей данных. Параметр позволяет задать эту задержку, указав период времени в миллисекундах (по умолчанию) или иных единицах измерения. Например, если установить значение <literal>5min</literal>, резервный сервер будет воспроизводить фиксацию транзакции не раньше, чем через 5 минут (судя по его системным часам) после времени фиксации, сообщённого главным.</para>
+       <para>Возможна ситуация, когда задержка репликации между серверами превышает значение этого параметра. В этом случае дополнительная задержка не добавляется. Заметьте, что задержка вычисляется как разница между меткой времени, записанной в WAL на ведущем сервере, и текущим временем на резервном. Запаздывание передачи, связанное с задержками в сети или каскадной репликацией, может существенно сократить реальное время ожидания. Если время на главном и резервном сервере не синхронизировано, это может приводить к применению записей ранее ожидаемого, однако это не очень важно, потому что полезные значения этого параметра намного превышают типичное расхождение во времени между двумя серверами.</para>
+       <para>Задержка применяется лишь для записей WAL, представляющих фиксацию транзакций. Остальные записи проигрываются незамедлительно, так как их эффект не будет заметен до применения соответствующей записи о фиксации транзакции, благодаря правилам видимости MVCC.</para>
+       <para>Задержка добавляется, как только восстанавливаемая база данных достигает согласованного состояния, и исключается, когда резервный сервер переключается в режим основного. С момента переключения резервный сервер завершает восстановление незамедлительно.</para>
+       <para>Данный параметр предназначен для применения в конфигурациях с потоковой репликацией; однако, если он задан, он будет учитываться в любых случаях. Задержка, устанавливаемая этим параметром, распространяется и на сообщения <varname>hot_standby_feedback</varname>, что может привести к раздуванию базы на главном сервере; сочетание этих параметров требует осторожности. <warning>
+         <para>Этот параметр влияет на синхронную репликацию, когда <varname>synchronous_commit</varname> имеет значение <literal>remote_apply</literal>; каждый <literal>COMMIT</literal> будет ждать подтверждения применения.</para>
+        </warning></para>
+      </listitem>
+     </varlistentry>
+
+     </variablelist>
+   </sect1>
+
+</chapter>

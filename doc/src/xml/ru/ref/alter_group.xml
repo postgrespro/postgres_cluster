@@ -1,0 +1,91 @@
+<!--
+doc/src/xml/ref/alter_group.xml
+&productname; documentation
+-->
+
+<refentry id="sql-altergroup">
+ <indexterm zone="sql-altergroup"><primary>ALTER GROUP</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER GROUP</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER GROUP</refname>
+  <refpurpose>изменить имя роли или членство</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER GROUP <replaceable class="parameter">указание_роли</replaceable> ADD USER <replaceable class="parameter">имя_пользователя</replaceable> [, ... ]
+ALTER GROUP <replaceable class="parameter">указание_роли</replaceable> DROP USER <replaceable class="parameter">имя_пользователя</replaceable> [, ... ]
+
+<phrase>Здесь <replaceable class="parameter">указание_роли</replaceable>:</phrase>
+
+    <replaceable class="parameter">имя_роли</replaceable>
+  | CURRENT_USER
+  | SESSION_USER
+
+ALTER GROUP <replaceable class="parameter">имя_группы</replaceable> RENAME TO <replaceable>новое_имя</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER GROUP</command> изменяет атрибуты группы пользователей. Эта команда считается устаревшей, хотя и поддерживается для обратной совместимости, так как группы (и пользователи) были заменены более общей концепцией ролей.</para>
+
+  <para>Первые две формы добавляют пользователей в группу или удаляют их из группы. (В данном случае в качестве <quote>пользователя</quote> или <quote>группы</quote> может фигурировать любая роль.) По сути они равнозначны командам разрешающим/запрещающим членство в роли <quote>группа</quote>; поэтому вместо них рекомендуется использовать <xref linkend="sql-grant"/> и <xref linkend="sql-revoke"/>.</para>
+
+  <para>Третья форма меняет имя группы. Она в точности равнозначна команде <xref linkend="sql-alterrole"/>, выполняющей переименование роли.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя_группы</replaceable></term>
+    <listitem>
+     <para>Имя изменяемой группы (роли).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_пользователя</replaceable></term>
+    <listitem>
+     <para>Пользователи (роли), добавляемые или исключаемые из группы. Эти пользователи должны уже существовать; <command>ALTER GROUP</command> не создаёт и не удаляет пользователей.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable>новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя группы.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+  <para>Добавление пользователей в группу: <programlisting>ALTER GROUP staff ADD USER karl, john;</programlisting> Удаление пользователей из группы: <programlisting>ALTER GROUP workers DROP USER beth;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER GROUP</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-grant"/></member>
+   <member><xref linkend="sql-revoke"/></member>
+   <member><xref linkend="sql-alterrole"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

@@ -1,0 +1,134 @@
+<!--
+doc/src/xml/ref/show.xml
+&productname; documentation
+-->
+
+<refentry id="sql-show">
+ <indexterm zone="sql-show"><primary>SHOW</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SHOW</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SHOW</refname>
+  <refpurpose>показать значение параметра времени выполнения</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>SHOW <replaceable class="parameter">имя</replaceable>
+SHOW ALL</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>SHOW</command> выводит текущие значения параметров времени выполнения. Эти переменные можно установить, воспользовавшись оператором <command>SET</command>, отредактировав файл конфигурации <filename>postgresql.conf</filename>, передав в переменной окружения <envar>PGOPTIONS</envar> (при использовании <application>psql</application> или приложения на базе <application>libpq</application>) либо в параметрах командной строки при запуске сервера <command>postgres</command>. За подробностями обратитесь к <xref remap="3" linkend="runtime-config"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя параметра времени выполнения. Доступные параметры описаны в <xref remap="6" linkend="runtime-config"/> и на странице справки <xref linkend="sql-set"/>. Кроме того, есть несколько параметров, которые можно просмотреть, но нельзя изменить: <variablelist>
+       <varlistentry>
+        <term><literal>SERVER_VERSION</literal></term>
+        <listitem>
+         <para>Показывает номер версии сервера.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>SERVER_ENCODING</literal></term>
+        <listitem>
+         <para>Показывает кодировку набора символов на стороне сервера. В настоящее время этот параметр можно узнать, но нельзя изменить, так как кодировка определяется в момент создания базы данных.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>LC_COLLATE</literal></term>
+        <listitem>
+         <para>Показывает параметр локали базы данных, определяющий правило сортировки (порядок текстовых строк). В настоящее время этот параметр можно узнать, но нельзя изменить, так как он определяется в момент создания базы данных.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>LC_CTYPE</literal></term>
+        <listitem>
+         <para>Показывает параметр локали базы данных, определяющий классификацию символов. В настоящее время этот параметр можно узнать, но нельзя изменить, так как он определяется в момент создания базы данных.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>IS_SUPERUSER</literal></term>
+        <listitem>
+         <para>Возвращает true, если текущая роль обладает правами суперпользователя.</para>
+        </listitem>
+       </varlistentry>
+      </variablelist></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ALL</literal></term>
+    <listitem>
+     <para>Показать значения всех конфигурационных параметров с описаниями.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Ту же информацию выдаёт функция <function>current_setting</function>; см. <xref remap="4" linkend="functions-admin"/>. Кроме того, эту информацию можно получить через системное представление <link linkend="view-pg-settings"><structname>pg_settings</structname></link>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Просмотр текущего значения параметра <varname>DateStyle</varname>: <programlisting>SHOW DateStyle;
+ DateStyle
+-----------
+ ISO, MDY
+(1 row)</programlisting></para>
+
+  <para>Просмотр текущего значения параметра <varname>geqo</varname>: <programlisting>SHOW geqo;
+ geqo
+------
+ on
+(1 row)</programlisting></para>
+
+  <para>Просмотр всех параметров: <programlisting>SHOW ALL;
+            name         | setting |                description                                                          
+-------------------------+---------+-------------------------------------------------
+ allow_system_table_mods | off     | Allows modifications of the structure of ...
+    .
+    .
+    .
+ xmloption               | content | Sets whether XML data in implicit parsing ...
+ zero_damaged_pages      | off     | Continues processing past damaged page headers.
+(196 rows)</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Команда <command>SHOW</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-set"/></member>
+   <member><xref linkend="sql-reset"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

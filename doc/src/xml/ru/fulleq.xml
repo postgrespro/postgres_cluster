@@ -1,0 +1,49 @@
+<sect1 id="fulleq">
+  <title>fulleq</title>
+  <para>Модуль <literal>fulleq</literal> предоставляет дополнительный оператор равенства для совместимости с <productname>Microsoft SQL Server</productname>.</para>
+   <para>Этот модуль требуется для поддержки системы 1С:Предприятие.</para>
+   <sect2 id="fulleq-overview">
+    <title>Обзор</title>
+    <para>Оператор равенства в <productname>&productname;</productname> определён так, что результатом сравнения двух NULL оказывается NULL. Однако на серверах семейства <productname>Microsoft SQL</productname> исторически оператор равенства ведёт себя по-другому и возвращает TRUE, когда оба его операнда равны NULL. Данный модуль предоставляет такой оператор с поведением, принятым в MSSQL.</para>
+  </sect2>
+
+  <sect2 id="fulleq-operator">
+    <title>Оператор fulleq</title>
+    <para>Оператор <literal>==</literal> определён для следующих типов данных: <itemizedlist>
+        <listitem><para>bool</para></listitem>
+        <listitem><para>bytea</para></listitem>
+        <listitem><para>char</para></listitem>
+        <listitem><para>name</para></listitem>
+        <listitem><para>int2</para></listitem>
+        <listitem><para>int4</para></listitem>
+        <listitem><para>int8</para></listitem>
+        <listitem><para>int2vector</para></listitem>
+        <listitem><para>text</para></listitem>
+        <listitem><para>oid</para></listitem>
+        <listitem><para>xid</para></listitem>
+        <listitem><para>cid</para></listitem>
+        <listitem><para>oidvector</para></listitem>
+        <listitem><para>float4</para></listitem>
+        <listitem><para>float8</para></listitem>
+        <listitem><para>abstime</para></listitem>
+        <listitem><para>reltime</para></listitem>
+        <listitem><para>macaddr</para></listitem>
+        <listitem><para>inet</para></listitem>
+        <listitem><para>cidr</para></listitem>
+        <listitem><para>varchar</para></listitem>
+        <listitem><para>date</para></listitem>
+        <listitem><para>time</para></listitem>
+        <listitem><para>timestamp</para></listitem>
+        <listitem><para>timestamptz</para></listitem>
+        <listitem><para>interval</para></listitem>
+        <listitem><para>timetz</para></listitem>
+      </itemizedlist></para>
+  </sect2>
+
+  <sect2 id="fulleq-authors">
+    <title>Авторы</title>
+    <literallayout>      Фёдор Сигаев <email>teodor@sigaev.ru</email>
+    </literallayout>
+  </sect2>
+
+</sect1>

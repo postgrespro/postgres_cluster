@@ -1,0 +1,84 @@
+<!-- doc/src/xml/bgworker.xml -->
+
+<chapter id="bgworker">
+ <title>Фоновые рабочие процессы</title>
+
+ <indexterm zone="bgworker"><primary>Фоновые рабочие процессы</primary></indexterm>
+
+ <para>&productname; поддерживает расширенную возможность запускать пользовательский код в отдельных процессах. Такие процессы запускаются, останавливаются и контролируются главным процессом <command>postgres</command>, который позволяет тесно связать их жизненный цикл с состоянием сервера. Эти процессы могут получать доступ к области разделяемой памяти <productname>&productname;</productname> и устанавливать внутренние подключения к базам данных; они также могут последовательно запускать транзакции, как и обычные серверные процессы, обслуживающие клиентов. Кроме того, используя <application>libpq</application>, они могут подключаться к серверу и работать как обычные клиентские приложения.</para>
+
+ <warning>
+  <para>С использованием фоновых рабочих процессов сопряжены угрозы стабильности и безопасности, так как они реализуются на языке <literal>C</literal>, и значит имеют неограниченный доступ к данным. Администраторы, желающие использовать модули, в которых задействованы фоновые рабочие процессы, должны быть крайне осторожными. Запускать рабочие процессы можно разрешать только модулям, прошедшим всесторонний аудит.</para>
+ </warning>
+
+ <para>Рабочие процессы могут инициализироваться во время запуска <productname>&productname;</productname>, если имя соответствующего модуля добавлено в <varname>shared_preload_libraries</varname>. Модуль, желающий запустить фоновый процесс, может зарегистрировать его, вызвав <function>RegisterBackgroundWorker(<type>BackgroundWorker *worker</type>)</function> из своей функции <function>_PG_init()</function>. Рабочие процессы также могут быть запущены после запуска системы с помощью функции <function>RegisterDynamicBackgroundWorker(<type>BackgroundWorker *worker, BackgroundWorkerHandle **handle</type>)</function>. В отличие от функции <function>RegisterBackgroundWorker</function>, которую можно вызывать только из управляющего процесса, <function>RegisterDynamicBackgroundWorker</function> должна вызываться из обычного обслуживающего процесса.</para>
+
+ <para>Структура <structname>BackgroundWorker</structname> определяется так: <programlisting>typedef void (*bgworker_main_type)(Datum main_arg);
+typedef struct BackgroundWorker
+{
+    char        bgw_name[BGW_MAXLEN];
+    int         bgw_flags;
+    BgWorkerStartTime bgw_start_time;
+    int         bgw_restart_time;   /* время в секундах либо BGW_NEVER_RESTART */
+    bgworker_main_type bgw_main;
+    char        bgw_library_name[BGW_MAXLEN];   /* только если bgw_main — NULL */
+    char        bgw_function_name[BGW_MAXLEN];  /* только если bgw_main — NULL */
+    Datum       bgw_main_arg;
+    char        bgw_extra[BGW_EXTRALEN];
+    int         bgw_notify_pid;
+} BackgroundWorker;</programlisting></para>
+
+  <para>Поле <structfield>bgw_name</structfield> содержит строку, выводимую в отладочных сообщениях, списках процессов и подобных контекстах.</para>
+
+  <para>Поле <structfield>bgw_flags</structfield> представляет битовую маску, обозначающую запрашиваемые модулем возможности. Допустимые в нём флаги: <variablelist>
+
+    <varlistentry>
+     <term><literal>BGWORKER_SHMEM_ACCESS</literal></term>
+     <listitem>
+      <para><indexterm><primary>BGWORKER_SHMEM_ACCESS</primary></indexterm> Запрашивается доступ к общей памяти. Рабочие процессы без доступа к общей памяти не могут обращаться к общим структурам данных <productname>&productname;</productname>, в частности, к обычным и лёгким блокировкам, общим буферам, или каким-либо структурам данным, которые рабочий процесс может создавать для собственного пользования.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>BGWORKER_BACKEND_DATABASE_CONNECTION</literal></term>
+     <listitem>
+      <para><indexterm><primary>BGWORKER_BACKEND_DATABASE_CONNECTION</primary></indexterm> Запрашивается возможность устанавливать подключение к базе данных, через которое можно запускать транзакции и запросы. Рабочий процесс, использующий <literal>BGWORKER_BACKEND_DATABASE_CONNECTION</literal> для подключения к базе данных, должен также запросить доступ к разделяемой памяти, установив <literal>BGWORKER_SHMEM_ACCESS</literal>; в противном случае процесс не запустится.</para>
+     </listitem>
+    </varlistentry>
+
+   </variablelist></para>
+
+  <para>В <structfield>bgw_start_time</structfield> определяется состояние сервера, в котором <command>postgres</command> должен запустить этот процесс; возможные варианты: <literal>BgWorkerStart_PostmasterStart</literal> (выполнить запуск сразу после того, как <command>postgres</command> завершит инициализацию; процессы, выбирающие такой режим, не могут подключаться к базам данных), <literal>BgWorkerStart_ConsistentState</literal> (выполнить запуск, когда будет достигнуто согласованное состояние горячего резерва, и когда процессы могут подключаться к базам данных и выполнять запросы на чтение), и <literal>BgWorkerStart_RecoveryFinished</literal> (выполнить запуск, как только система перейдёт в обычный режим чтения-записи). Заметьте, что два последних варианта различаются только для серверов горячего резерва. Заметьте также, что этот параметр указывает только, когда должны запускаться процессы; при переходе в другое состояние они не будут останавливаться.</para>
+
+  <para><structfield>bgw_restart_time</structfield> задаёт паузу (в секундах), которую должен сделать <command>postgres</command>, прежде чем перезапускать процесс в случае его отказа. Это может быть любое положительное значение, либо <literal>BGW_NEVER_RESTART</literal>, указывающее, что процесс не нужно перезапускать в случае сбоя.</para>
+
+  <para>В <structfield>bgw_main</structfield> записывается указатель на функцию, вызываемую при запуске процесса. Этот указатель может безопасно использоваться для вызова функций только из ядра сервера, так как разделяемые библиотеки могут загружаться в разные рабочие процессы по разным адресам. Это происходит на всех платформах, если для загрузки библиотек применяется не механизм <xref linkend="guc-shared-preload-libraries"/>. И даже когда применяется этот механизм, в системе Windows в карте адресного пространства возможны различия и при использовании <literal>EXEC_BACKEND</literal>. Поэтому пользователи этого API обычно должны записывать в это поле NULL. Если его значение отлично от NULL, оно имеет приоритет над <structfield>bgw_library_name</structfield> и <structfield>bgw_function_name</structfield>.</para>
+
+  <para><structfield>bgw_library_name</structfield> определяет имя библиотеки, в которой следует искать точку входа для запуска рабочего процесса. Указанная библиотека будет динамически загружена рабочим процессом, а вызываемая функция будет выбрана по имени <structfield>bgw_function_name</structfield>. Для функции, загружаемой из кода ядра, вместо него следует задать <structfield>bgw_main</structfield>.</para>
+
+  <para><structfield>bgw_function_name</structfield> определяет имя функции в динамически загружаемой библиотеке, которая будет точкой входа в новый рабочий процесс.</para>
+
+  <para>В <structfield>bgw_main_arg</structfield> задаётся аргумент <type>Datum</type>, передаваемый основной функции фонового процесса. Независимо от того, задаётся ли эта функция значением поля <structfield>bgw_main</structfield> или сочетанием полей <function>bgw_library_name</function> и <function>bgw_function_name</function>, она должна принимать один аргумент типа <type>Datum</type> и возвращать <type>void</type>. В качестве этого аргумента ей и передаётся <structfield>bgw_main_arg</structfield>. Кроме того, глобальная переменная <literal>MyBgworkerEntry</literal> указывает на копию структуры <structname>BackgroundWorker</structname>, переданной при регистрации; содержимое этой структуры может быть полезно рабочему процессу.</para>
+
+  <para>В Windows (и везде, где определяется <literal>EXEC_BACKEND</literal>) или в динамических рабочих процессах передавать <type>Datum</type> по ссылке небезопасно, возможна только передача по значению. Поэтому если функции требуется аргумент, наиболее безопасно будет передать int32 или другое небольшое значение, содержащее индекс в массиве, размещённом в разделяемой памяти. Если же попытаться передать значение <type>cstring</type> или <type>text</type>, этот указатель нельзя будет использовать в новом рабочем процессе.</para>
+
+  <para>Поле <structfield>bgw_extra</structfield> может содержать дополнительные данные, передаваемые фоновому рабочему процессу. В отличие от <structfield>bgw_main_arg</structfield>, эти данные не передаются в качестве аргумента основной функции рабочего процесса, но могут быть получены через <literal>MyBgworkerEntry</literal>, как описывалось выше.</para>
+
+  <para>В <structfield>bgw_notify_pid</structfield> задаётся PID обслуживающего процесса &productname;, которому главный процесс должен посылать сигнал <literal>SIGUSR1</literal> при запуске и завершении нового рабочего процесса. Это поле должно содержать 0 для рабочих процессов, регистрируемых при запуске главного процесса, либо когда обслуживающий процесс не желает ждать окончания запуска рабочего процесса. Во всех остальных случаях в нём должно быть значение <literal>MyProcPid</literal>.</para>
+
+  <para>Запущенный процесс может подключиться к базе данных, вызвав <function>BackgroundWorkerInitializeConnection(<parameter>char *dbname</parameter>, <parameter>char *username</parameter>)</function> или <function>BackgroundWorkerInitializeConnectionByOid(<parameter>Oid dboid</parameter>, <parameter>Oid useroid</parameter>)</function>. Через это подключение процесс сможет выполнять транзакции и запросы, используя функции <literal>SPI</literal>. Если в <varname>dbname</varname> передаётся NULL или <varname>dboid</varname> равен <literal>InvalidOid</literal>, сеанс не подключается ни к какой конкретной базе данных, но может обращаться к общим каталогам. Если в <varname>username</varname> передаётся NULL или <varname>useroid</varname> равен <literal>InvalidOid</literal>, процесс будет действовать от имени суперпользователя, созданного во время <command>initdb</command>. Рабочий процесс может вызывать только одну из двух этих функций и только один раз. Переключаться между базами данных он не может.</para>
+
+  <para>Сигналы изначально блокируются при вызове функции <structfield>bgw_main</structfield> и при необходимости должны быть разблокированы ей; это позволяет процессу настроить собственные обработчики событий. Новый процесс может разблокировать сигналы, вызвав <function>BackgroundWorkerUnblockSignals</function>, и заблокировать их, вызвав <function>BackgroundWorkerBlockSignals</function>.</para>
+
+  <para>Если <structfield>bgw_restart_time</structfield> для рабочего процесса имеет значение <literal>BGW_NEVER_RESTART</literal>, либо он завершается с кодом выхода 0, либо если его работа заканчивается вызовом <function>TerminateBackgroundWorker</function>, он автоматически перестаёт контролироваться управляющим процессом при выходе. В противном случае он будет перезапущен через время, заданное в <structfield>bgw_restart_time</structfield>, либо немедленно, если управляющему серверу пришлось переинициализировать кластер из-за сбоя обслуживающего процесса. Обслуживающие процессы, которым нужно только приостановить своё выполнение на время, должны переходить в состояние прерываемого ожидания, а не завершаться; для этого используется функция <function>WaitLatch()</function>. При вызове этой функции обязательно установите флаг <literal>WL_POSTMASTER_DEATH</literal> и проверьте код возврата, чтобы корректно выйти в экстренном случае, когда был завершён сам <command>postgres</command>.</para>
+
+  <para>Когда рабочий процесс регистрируется функцией <function>RegisterDynamicBackgroundWorker</function>, обслуживающий процесс, производящий эту регистрацию, может получить информацию о состоянии порождённого процесса. Обслуживающие процессы, желающие сделать это, должны передать адрес <type>BackgroundWorkerHandle *</type> во втором аргументе <function>RegisterDynamicBackgroundWorker</function>. Если рабочий процесс успешно зарегистрирован, по этому адресу будет записан указатель на скрытую структуру, который можно затем передать функции <function>GetBackgroundWorkerPid(<parameter>BackgroundWorkerHandle *</parameter>, <parameter>pid_t *</parameter>)</function> или <function>TerminateBackgroundWorker(<parameter>BackgroundWorkerHandle *</parameter>)</function>. Вызывая <function>GetBackgroundWorkerPid</function>, можно опрашивать состояние рабочего процесса: значение результата <literal>BGWH_NOT_YET_STARTED</literal> показывает, что рабочий процесс ещё не запущен управляющим; <literal>BGWH_STOPPED</literal> показывает, что он был запущен, но сейчас не работает; и <literal>BGWH_STARTED</literal> показывает, что он работает в данный момент. В последнем случае через второй аргумент также возвращается PID этого процесса. Обрабатывая вызов <function>TerminateBackgroundWorker</function>, управляющий процесс посылает <literal>SIGTERM</literal> рабочему процессу, если он работает, и перестаёт его контролировать сразу по его завершении.</para>
+
+  <para>В некоторых случаях процессу, регистрирующему рабочий процесс, может потребоваться дождаться завершения запуска этого процесса. Это можно реализовать, записав в <structfield>bgw_notify_pid</structfield> значение <literal>MyProcPid</literal>, а затем передав указатель <type>BackgroundWorkerHandle *</type>, полученный во время регистрации, функции <function>WaitForBackgroundWorkerStartup(<parameter>BackgroundWorkerHandle *handle</parameter>, <parameter>pid_t *</parameter>)</function>. Эта функция заблокирует выполнение, пока управляющий процесс не попытается запустить рабочий процесс, либо пока сам управляющий процесс не завершится. Если рабочий процесс запущен, возвращается значение <literal>BGWH_STARTED</literal>, и по переданному адресу записывается его PID. В противном случае возвращается значение <literal>BGWH_STOPPED</literal> или <literal>BGWH_POSTMASTER_DIED</literal>.</para>
+
+  <para>Если фоновый рабочий процесс передаёт асинхронные уведомления, вызывая команду <command>NOTIFY</command> через <acronym>SPI</acronym> (Server Programming Interface, Интерфейс программирования сервера), он должен явно вызвать <function>ProcessCompletedNotifies</function> после фиксации окружающей транзакции, чтобы все эти уведомления были доставлены. Если рабочий процесс зарегистрируется для получения асинхронных уведомлений, вызвав <command>LISTEN</command> через <acronym>SPI</acronym>, уведомления будут выводиться, но перехватить и обработать эти уведомления программным образом нет возможности.</para>
+
+  <para>Рабочий пример, демонстрирующий некоторые полезные приёмы, можно найти в модуле <filename>src/test/modules/worker_spi</filename>.</para>
+
+  <para>Максимальное число рабочих процессов, которые можно зарегистрировать, ограничивается значением <xref linkend="guc-max-worker-processes"/>.</para>
+</chapter>

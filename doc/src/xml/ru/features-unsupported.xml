@@ -1,0 +1,1820 @@
+<tbody>
+ <row>
+  <entry>B011</entry>
+  <entry/>
+  <entry>Встроенный язык Ada</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B013</entry>
+  <entry/>
+  <entry>Встроенный язык COBOL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B014</entry>
+  <entry/>
+  <entry>Встроенный язык Fortran</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B015</entry>
+  <entry/>
+  <entry>Встроенный язык MUMPS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B016</entry>
+  <entry/>
+  <entry>Встроенный язык Pascal</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B017</entry>
+  <entry/>
+  <entry>Встроенный язык PL/I</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B031</entry>
+  <entry/>
+  <entry>Базовый динамический SQL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B032</entry>
+  <entry/>
+  <entry>Расширенный динамический SQL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B032-01</entry>
+  <entry/>
+  <entry>&lt;Оператор describe input&gt;</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B033</entry>
+  <entry/>
+  <entry>Нетипизированные аргументы функции, вызываемой из SQL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B034</entry>
+  <entry/>
+  <entry>Динамическое указание атрибутов курсора</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B035</entry>
+  <entry/>
+  <entry>Нерасширенные имена дескрипторов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B041</entry>
+  <entry/>
+  <entry>Расширения встроенных объявлений исключений SQL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B051</entry>
+  <entry/>
+  <entry>Расширенные права для выполнения</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B111</entry>
+  <entry/>
+  <entry>Язык модулей — Ada</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B112</entry>
+  <entry/>
+  <entry>Язык модулей — C</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B113</entry>
+  <entry/>
+  <entry>Язык модулей — COBOL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B114</entry>
+  <entry/>
+  <entry>Язык модулей — Fortran</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B115</entry>
+  <entry/>
+  <entry>Язык модулей — MUMPS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B116</entry>
+  <entry/>
+  <entry>Язык модулей — Pascal</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B117</entry>
+  <entry/>
+  <entry>Язык модулей — PL/I</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B121</entry>
+  <entry/>
+  <entry>Язык подпрограмм — Ada</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B122</entry>
+  <entry/>
+  <entry>Язык подпрограмм — C</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B123</entry>
+  <entry/>
+  <entry>Язык подпрограмм — COBOL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B124</entry>
+  <entry/>
+  <entry>Язык подпрограмм — Fortran</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B125</entry>
+  <entry/>
+  <entry>Язык подпрограмм — MUMPS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B126</entry>
+  <entry/>
+  <entry>Язык подпрограмм — Pascal</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B127</entry>
+  <entry/>
+  <entry>Язык подпрограмм — PL/I</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B128</entry>
+  <entry/>
+  <entry>Язык подпрограмм — SQL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B211</entry>
+  <entry/>
+  <entry>Язык модулей — Ada: поддержка VARCHAR и NUMERIC</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>B221</entry>
+  <entry/>
+  <entry>Язык подпрограмм — Ada: поддержка VARCHAR и NUMERIC</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>E182</entry>
+  <entry>Ядро</entry>
+  <entry>Язык модулей</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F054</entry>
+  <entry/>
+  <entry>TIMESTAMP в списке приоритетов типа DATE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F121</entry>
+  <entry/>
+  <entry>Базовое управление диагностикой</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F121-01</entry>
+  <entry/>
+  <entry>Оператор GET DIAGNOSTICS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F121-02</entry>
+  <entry/>
+  <entry>Оператор SET TRANSACTION: предложение DIAGNOSTICS SIZE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F122</entry>
+  <entry/>
+  <entry>Расширенное управление диагностикой</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F123</entry>
+  <entry/>
+  <entry>Вся диагностика</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F181</entry>
+  <entry>Ядро</entry>
+  <entry>Поддержка множества модулей</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F202</entry>
+  <entry/>
+  <entry>TRUNCATE TABLE: возможность перезапуска идентифицирующего столбца</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F263</entry>
+  <entry/>
+  <entry>Разделённые запятыми предикаты в простом выражении CASE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F291</entry>
+  <entry/>
+  <entry>Предикат UNIQUE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F301</entry>
+  <entry/>
+  <entry>CORRESPONDING в выражениях запросов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F311</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор определения схемы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F312</entry>
+  <entry/>
+  <entry>Оператор MERGE</entry>
+  <entry>возможная альтернатива — INSERT ... ON CONFLICT DO UPDATE</entry>
+ </row>
+ <row>
+  <entry>F313</entry>
+  <entry/>
+  <entry>Расширенный оператор MERGE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F314</entry>
+  <entry/>
+  <entry>Оператор MERGE с ветвью DELETE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F341</entry>
+  <entry/>
+  <entry>Таблицы использования</entry>
+  <entry>без таблиц ROUTINE_*_USAGE</entry>
+ </row>
+ <row>
+  <entry>F384</entry>
+  <entry/>
+  <entry>Предложение удаления свойства идентифицирующего столбца</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F385</entry>
+  <entry/>
+  <entry>Предложение удаления выражения, генерирующего значения столбца</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F386</entry>
+  <entry/>
+  <entry>Предложение установления генерирования значений идентифицирующего столбца</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F394</entry>
+  <entry/>
+  <entry>Необязательное указание нормальной формы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F403</entry>
+  <entry/>
+  <entry>Секционированные соединённые таблицы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F451</entry>
+  <entry/>
+  <entry>Определение набора символов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F461</entry>
+  <entry/>
+  <entry>Именованные наборы символов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F492</entry>
+  <entry/>
+  <entry>Необязательное указание соблюдения ограничения таблицы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F521</entry>
+  <entry>Расширенное управление целостностью</entry>
+  <entry>Утверждения</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F671</entry>
+  <entry>Расширенное управление целостностью</entry>
+  <entry>Подзапросы в CHECK</entry>
+  <entry>намеренно опущено</entry>
+ </row>
+ <row>
+  <entry>F693</entry>
+  <entry/>
+  <entry>Правила сортировки символов для SQL-сеансов и клиентских модулей</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F695</entry>
+  <entry/>
+  <entry>Поддержка перекодировки</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F696</entry>
+  <entry/>
+  <entry>Дополнительная документация по перекодировке</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F721</entry>
+  <entry/>
+  <entry>Откладываемые ограничения</entry>
+  <entry>только сторонние и уникальные ключи</entry>
+ </row>
+ <row>
+  <entry>F741</entry>
+  <entry/>
+  <entry>Типы ссылочных совпадений MATCH</entry>
+  <entry>пока без частичного совпадения</entry>
+ </row>
+ <row>
+  <entry>F812</entry>
+  <entry>Ядро</entry>
+  <entry>Базовое флагирование</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F813</entry>
+  <entry/>
+  <entry>Расширенное флагирование</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F821</entry>
+  <entry/>
+  <entry>Ссылки на локальные таблицы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F831</entry>
+  <entry/>
+  <entry>Полное изменение курсора</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F831-01</entry>
+  <entry/>
+  <entry>Изменяемые прокручиваемые курсоры</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F831-02</entry>
+  <entry/>
+  <entry>Изменяемые упорядоченные курсоры</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F841</entry>
+  <entry/>
+  <entry>Предикат LIKE_REGEX</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F842</entry>
+  <entry/>
+  <entry>Функция OCCURRENCES_REGEX</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F843</entry>
+  <entry/>
+  <entry>Функция POSITION_REGEX</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F844</entry>
+  <entry/>
+  <entry>Функция SUBSTRING_REGEX</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F845</entry>
+  <entry/>
+  <entry>Функция TRANSLATE_REGEX</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F846</entry>
+  <entry/>
+  <entry>Поддержка октетов в операторах регулярных выражений</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F847</entry>
+  <entry/>
+  <entry>Неконстантные регулярные выражения</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F866</entry>
+  <entry/>
+  <entry>Предложение FETCH FIRST: параметр PERCENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>F867</entry>
+  <entry/>
+  <entry>Предложение FETCH FIRST: параметр WITH TIES</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S011</entry>
+  <entry>Ядро</entry>
+  <entry>Отдельные типы данных</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S011-01</entry>
+  <entry>Ядро</entry>
+  <entry>Представление USER_DEFINED_TYPES</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S023</entry>
+  <entry>Базовая поддержка объектов</entry>
+  <entry>Базовые структурированные типы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S024</entry>
+  <entry>Расширенная поддержка объектов</entry>
+  <entry>Расширенные структурированные типы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S025</entry>
+  <entry/>
+  <entry>Окончательные структурированные типы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S026</entry>
+  <entry/>
+  <entry>Самоссылающиеся структурированные типы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S027</entry>
+  <entry/>
+  <entry>Создание метода по заданному имени метода</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S028</entry>
+  <entry/>
+  <entry>Произвольный порядок параметров UDT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S041</entry>
+  <entry>Базовая поддержка объектов</entry>
+  <entry>Базовые ссылочные типы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S043</entry>
+  <entry>Расширенная поддержка объектов</entry>
+  <entry>Расширенные ссылочные типы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S051</entry>
+  <entry>Базовая поддержка объектов</entry>
+  <entry>Создание таблицы из типа</entry>
+  <entry>частично поддерживается</entry>
+ </row>
+ <row>
+  <entry>S081</entry>
+  <entry>Расширенная поддержка объектов</entry>
+  <entry>Подтаблицы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S091</entry>
+  <entry/>
+  <entry>Базовая поддержка массивов</entry>
+  <entry>частично поддерживается</entry>
+ </row>
+ <row>
+  <entry>S091-01</entry>
+  <entry/>
+  <entry>Массивы встроенных типов данных</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S091-02</entry>
+  <entry/>
+  <entry>Массивы отдельных типов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S091-03</entry>
+  <entry/>
+  <entry>Выражения с массивами</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S094</entry>
+  <entry/>
+  <entry>Массивы ссылочных типов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S097</entry>
+  <entry/>
+  <entry>Присвоение значения элементу массива</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S151</entry>
+  <entry>Базовая поддержка объектов</entry>
+  <entry>Предикат типа</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S161</entry>
+  <entry>Расширенная поддержка объектов</entry>
+  <entry>Приведение подтипов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S162</entry>
+  <entry/>
+  <entry>Приведение подтипов для ссылочных типов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S202</entry>
+  <entry/>
+  <entry>Вызываемые из SQL подпрограммы, работающие с мультимножествами</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S231</entry>
+  <entry>Расширенная поддержка объектов</entry>
+  <entry>Указатели на структурные типы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S232</entry>
+  <entry/>
+  <entry>Указатели на массивы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S233</entry>
+  <entry/>
+  <entry>Указатели на мультимножества</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S241</entry>
+  <entry/>
+  <entry>Функции преобразований</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S242</entry>
+  <entry/>
+  <entry>Оператор изменения преобразования</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S251</entry>
+  <entry/>
+  <entry>Определяемые пользователем упорядочивания</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S261</entry>
+  <entry/>
+  <entry>Метод SPECIFICTYPE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S271</entry>
+  <entry/>
+  <entry>Базовая поддержка мультимножеств</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S272</entry>
+  <entry/>
+  <entry>Мультимножества пользовательских типов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S274</entry>
+  <entry/>
+  <entry>Мультимножества ссылочных типов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S275</entry>
+  <entry/>
+  <entry>Расширенная поддержка мультимножеств</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S281</entry>
+  <entry/>
+  <entry>Типы вложенных коллекций</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S291</entry>
+  <entry/>
+  <entry>Ограничение уникальности для всей строки</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S401</entry>
+  <entry/>
+  <entry>Отдельные типы на базе типов массивов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S402</entry>
+  <entry/>
+  <entry>Отдельные типы на базе отдельных типов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S403</entry>
+  <entry/>
+  <entry>ARRAY_MAX_CARDINALITY</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>S404</entry>
+  <entry/>
+  <entry>TRIM_ARRAY</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T011</entry>
+  <entry/>
+  <entry>Тип TIMESTAMP в информационной схеме</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T021</entry>
+  <entry/>
+  <entry>Типы данных BINARY и VARBINARY</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T022</entry>
+  <entry/>
+  <entry>Расширенная поддержка типов данных BINARY и VARBINARY</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T023</entry>
+  <entry/>
+  <entry>Составные двоичные строки</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T024</entry>
+  <entry/>
+  <entry>Пробелы в двоичных строках</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T041</entry>
+  <entry>Базовая поддержка объектов</entry>
+  <entry>Базовая поддержка типа данных LOB</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T041-01</entry>
+  <entry>Базовая поддержка объектов</entry>
+  <entry>Тип данных BLOB</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T041-02</entry>
+  <entry>Базовая поддержка объектов</entry>
+  <entry>Тип данных CLOB</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T041-03</entry>
+  <entry>Базовая поддержка объектов</entry>
+  <entry>Функции POSITION, LENGTH, LOWER, TRIM, UPPER и SUBSTRING для типов данных LOB</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T041-04</entry>
+  <entry>Базовая поддержка объектов</entry>
+  <entry>Конкатенация типов данных LOB</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T041-05</entry>
+  <entry>Базовая поддержка объектов</entry>
+  <entry>Указатель на LOB: неудерживаемый</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T042</entry>
+  <entry/>
+  <entry>Расширенная поддержка типа данных LOB</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T043</entry>
+  <entry/>
+  <entry>Множитель T</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T044</entry>
+  <entry/>
+  <entry>Множитель P</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T051</entry>
+  <entry/>
+  <entry>Типы кортежей</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T052</entry>
+  <entry/>
+  <entry>MAX и MIN для типов кортежей</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T053</entry>
+  <entry/>
+  <entry>Явные псевдонимы ссылки на все поля</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T061</entry>
+  <entry/>
+  <entry>Поддержка UCS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T101</entry>
+  <entry/>
+  <entry>Улучшенное определение возможности NULL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T111</entry>
+  <entry/>
+  <entry>Изменяемые соединения, объединения и столбцы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T174</entry>
+  <entry/>
+  <entry>Идентифицирующие столбцы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T175</entry>
+  <entry/>
+  <entry>Генерируемые столбцы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T176</entry>
+  <entry/>
+  <entry>Поддержка генераторов последовательностей</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T177</entry>
+  <entry/>
+  <entry>Поддержка генераторов последовательностей: возможность простого перезапуска</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T178</entry>
+  <entry/>
+  <entry>Идентифицирующие столбцы: возможность простого перезапуска</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T180</entry>
+  <entry/>
+  <entry>Системное версионирование таблиц</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T181</entry>
+  <entry/>
+  <entry>Таблицы с периодом времени прикладного уровня</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T211</entry>
+  <entry>Активная база данных, улучшенное управление целостностью</entry>
+  <entry>Базовые возможности триггеров</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T211-06</entry>
+  <entry>Активная база данных, улучшенное управление целостностью</entry>
+  <entry>Поддержка правил времени выполнения для взаимодействия триггеров и ограничений</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T211-08</entry>
+  <entry>Активная база данных, улучшенное управление целостностью</entry>
+  <entry>Несколько триггеров для одного события вызываются в том порядке, в каком они были созданы в каталоге</entry>
+  <entry>намеренно опущено</entry>
+ </row>
+ <row>
+  <entry>T251</entry>
+  <entry/>
+  <entry>Оператор SET TRANSACTION: параметр LOCAL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T261</entry>
+  <entry/>
+  <entry>Сцеплённые транзакции</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T272</entry>
+  <entry/>
+  <entry>Улучшенное управление точками сохранения</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T285</entry>
+  <entry/>
+  <entry>Улучшения имён производных столбцов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T301</entry>
+  <entry/>
+  <entry>Функциональные зависимости</entry>
+  <entry>частично поддерживается</entry>
+ </row>
+ <row>
+  <entry>T321</entry>
+  <entry>Ядро</entry>
+  <entry>Базовые вызываемые из SQL подпрограммы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T321-02</entry>
+  <entry>Ядро</entry>
+  <entry>Пользовательские хранимые процедуры без перегрузки</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T321-04</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор CALL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T321-05</entry>
+  <entry>Ядро</entry>
+  <entry>Оператор RETURN</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T322</entry>
+  <entry>PSM</entry>
+  <entry>Объявляемые атрибуты типа данных</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T324</entry>
+  <entry/>
+  <entry>Явное управление безопасностью подпрограмм SQL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T326</entry>
+  <entry/>
+  <entry>Табличные функции</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T332</entry>
+  <entry/>
+  <entry>Расширенные роли</entry>
+  <entry>в основном поддерживаются</entry>
+ </row>
+ <row>
+  <entry>T434</entry>
+  <entry/>
+  <entry>GROUP BY DISTINCT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T471</entry>
+  <entry/>
+  <entry>Наборы результатов в качестве возвращаемого значения</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T472</entry>
+  <entry/>
+  <entry>DESCRIBE CURSOR</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T495</entry>
+  <entry/>
+  <entry>Совместное изменение и извлечение данных</entry>
+  <entry>другой синтаксис</entry>
+ </row>
+ <row>
+  <entry>T502</entry>
+  <entry/>
+  <entry>Предикаты периодов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T511</entry>
+  <entry/>
+  <entry>Счётчики транзакций</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T521</entry>
+  <entry/>
+  <entry>Именованные аргументы в операторе CALL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T522</entry>
+  <entry/>
+  <entry>Значения по умолчанию для входных параметров процедур, вызываемых из SQL</entry>
+  <entry>поддерживаются, за исключением ключевого слова DEFAULT при вызове</entry>
+ </row>
+ <row>
+  <entry>T561</entry>
+  <entry/>
+  <entry>Удерживаемые указатели</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T571</entry>
+  <entry/>
+  <entry>Внешние вызываемые из SQL функции, возвращающие массивы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T572</entry>
+  <entry/>
+  <entry>Внешние вызываемые из SQL функции, возвращающие мультимножества</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T601</entry>
+  <entry/>
+  <entry>Ссылки на локальные курсоры</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T612</entry>
+  <entry/>
+  <entry>Расширенные операции OLAP</entry>
+  <entry>поддерживаются некоторые формы</entry>
+ </row>
+ <row>
+  <entry>T616</entry>
+  <entry/>
+  <entry>Варианты обработки NULL для функций LEAD и LAG</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T618</entry>
+  <entry/>
+  <entry>Функция NTH_VALUE</entry>
+  <entry>функция существует, но некоторые возможности отсутствуют</entry>
+ </row>
+ <row>
+  <entry>T619</entry>
+  <entry/>
+  <entry>Вложенные оконные функции</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T620</entry>
+  <entry/>
+  <entry>Предложение WINDOW: параметр GROUPS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T641</entry>
+  <entry/>
+  <entry>Присвоение нескольким столбцам</entry>
+  <entry>поддерживаются только некоторые варианты синтаксиса</entry>
+ </row>
+ <row>
+  <entry>T652</entry>
+  <entry/>
+  <entry>Операторы динамического SQL в SQL-подпрограммах</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T653</entry>
+  <entry/>
+  <entry>Операторы модификации схемы SQL во внешних подпрограммах</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>T654</entry>
+  <entry/>
+  <entry>Операторы динамического SQL во внешних подпрограммах</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M001</entry>
+  <entry/>
+  <entry>Связи данных (DATALINK)</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M002</entry>
+  <entry/>
+  <entry>Связи данных через SQL/CLI</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M003</entry>
+  <entry/>
+  <entry>Связи данных через встроенный SQL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M004</entry>
+  <entry/>
+  <entry>Поддержка сторонних данных</entry>
+  <entry>частично поддерживается</entry>
+ </row>
+ <row>
+  <entry>M005</entry>
+  <entry/>
+  <entry>Поддержка сторонних схем</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M006</entry>
+  <entry/>
+  <entry>Подпрограмма GetSQLString</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M007</entry>
+  <entry/>
+  <entry>TransmitRequest</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M009</entry>
+  <entry/>
+  <entry>Подпрограммы GetOpts и GetStatistics</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M010</entry>
+  <entry/>
+  <entry>Поддержка обёрток сторонних данных</entry>
+  <entry>другой API</entry>
+ </row>
+ <row>
+  <entry>M011</entry>
+  <entry/>
+  <entry>Связи данных через Ada</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M012</entry>
+  <entry/>
+  <entry>Связи данных через C</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M013</entry>
+  <entry/>
+  <entry>Связи данных через COBOL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M014</entry>
+  <entry/>
+  <entry>Связи данных через Fortran</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M015</entry>
+  <entry/>
+  <entry>Связи данных через MUMPS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M016</entry>
+  <entry/>
+  <entry>Связи данных через Pascal</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M017</entry>
+  <entry/>
+  <entry>Связи данных через PL/I</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M018</entry>
+  <entry/>
+  <entry>Подпрограммы интерфейса обёртки сторонних данных на языке Ada</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M019</entry>
+  <entry/>
+  <entry>Подпрограммы интерфейса обёртки сторонних данных на языке C</entry>
+  <entry>другой API</entry>
+ </row>
+ <row>
+  <entry>M020</entry>
+  <entry/>
+  <entry>Подпрограммы интерфейса обёртки сторонних данных на языке COBOL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M021</entry>
+  <entry/>
+  <entry>Подпрограммы интерфейса обёртки сторонних данных на языке Fortran</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M022</entry>
+  <entry/>
+  <entry>Подпрограммы интерфейса обёртки сторонних данных на языке MUMPS</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M023</entry>
+  <entry/>
+  <entry>Подпрограммы интерфейса обёртки сторонних данных на языке Pascal</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M024</entry>
+  <entry/>
+  <entry>Подпрограммы интерфейса обёртки сторонних данных на языке PL/I</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M030</entry>
+  <entry/>
+  <entry>Поддержка сторонних данных SQL-сервера</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>M031</entry>
+  <entry/>
+  <entry>Общие подпрограммы обёртки сторонних данных</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X012</entry>
+  <entry/>
+  <entry>Мультимножества типа XML</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X013</entry>
+  <entry/>
+  <entry>Отдельные типы, производные от XML</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X014</entry>
+  <entry/>
+  <entry>Атрибуты типа XML</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X015</entry>
+  <entry/>
+  <entry>Поля типа XML</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X025</entry>
+  <entry/>
+  <entry>XMLCast</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X030</entry>
+  <entry/>
+  <entry>XMLDocument</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X038</entry>
+  <entry/>
+  <entry>XMLText</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X065</entry>
+  <entry/>
+  <entry>XMLParse: ввод BLOB и вариант CONTENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X066</entry>
+  <entry/>
+  <entry>XMLParse: ввод BLOB и вариант DOCUMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X068</entry>
+  <entry/>
+  <entry>XMLSerialize: BOM</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X069</entry>
+  <entry/>
+  <entry>XMLSerialize: INDENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X073</entry>
+  <entry/>
+  <entry>XMLSerialize: сериализация BLOB и вариант CONTENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X074</entry>
+  <entry/>
+  <entry>XMLSerialize: сериализация BLOB и вариант DOCUMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X075</entry>
+  <entry/>
+  <entry>XMLSerialize: сериализация BLOB</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X076</entry>
+  <entry/>
+  <entry>XMLSerialize: VERSION</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X077</entry>
+  <entry/>
+  <entry>XMLSerialize: явное указание ENCODING</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X078</entry>
+  <entry/>
+  <entry>XMLSerialize: явное объявление XML</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X080</entry>
+  <entry/>
+  <entry>Пространства имён при публикации XML</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X081</entry>
+  <entry/>
+  <entry>Объявления пространств имён XML на уровне запроса</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X082</entry>
+  <entry/>
+  <entry>Объявления пространств имён XML в DML</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X083</entry>
+  <entry/>
+  <entry>Объявления пространств имён XML в DDL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X084</entry>
+  <entry/>
+  <entry>Объявления пространств имён XML в составных операторах</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X085</entry>
+  <entry/>
+  <entry>Предопределённые префиксы пространств имён</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X086</entry>
+  <entry/>
+  <entry>Объявления пространств имён XML в XMLTable</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X091</entry>
+  <entry/>
+  <entry>Предикат содержимого XML</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X096</entry>
+  <entry/>
+  <entry>XMLExists</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X100</entry>
+  <entry/>
+  <entry>Поддержка ведущего языка для XML: вариант CONTENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X101</entry>
+  <entry/>
+  <entry>Поддержка ведущего языка для XML: вариант DOCUMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X110</entry>
+  <entry/>
+  <entry>Поддержка ведущего языка для XML: отображение VARCHAR</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X111</entry>
+  <entry/>
+  <entry>Поддержка ведущего языка для XML: отображение CLOB</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X112</entry>
+  <entry/>
+  <entry>Поддержка ведущего языка для XML: отображение BLOB</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X113</entry>
+  <entry/>
+  <entry>Поддержка ведущего языка для XML: указание STRIP WHITESPACE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X114</entry>
+  <entry/>
+  <entry>Поддержка ведущего языка для XML: указание PRESERVE WHITESPACE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X131</entry>
+  <entry/>
+  <entry>Предложение XMLBINARY на уровне запроса</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X132</entry>
+  <entry/>
+  <entry>Предложение XMLBINARY в DML</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X133</entry>
+  <entry/>
+  <entry>Предложение XMLBINARY в DDL</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X134</entry>
+  <entry/>
+  <entry>Предложение XMLBINARY в составных операторах</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X135</entry>
+  <entry/>
+  <entry>Предложение XMLBINARY в подзапросах</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X141</entry>
+  <entry/>
+  <entry>Предикат IS VALID: в зависимости от данных</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X142</entry>
+  <entry/>
+  <entry>Предикат IS VALID: предложение ACCORDING TO</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X143</entry>
+  <entry/>
+  <entry>Предикат IS VALID: предложение ELEMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X144</entry>
+  <entry/>
+  <entry>Предикат IS VALID: расположение схемы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X145</entry>
+  <entry/>
+  <entry>Предикат IS VALID вне ограничений-проверок</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X151</entry>
+  <entry/>
+  <entry>Предикат IS VALID с вариантом DOCUMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X152</entry>
+  <entry/>
+  <entry>Предикат IS VALID с вариантом CONTENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X153</entry>
+  <entry/>
+  <entry>Предикат IS VALID с вариантом SEQUENCE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X155</entry>
+  <entry/>
+  <entry>Предикат IS VALID: NAMESPACE без предложения ELEMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X157</entry>
+  <entry/>
+  <entry>Предикат IS VALID: NO NAMESPACE с предложением ELEMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X160</entry>
+  <entry/>
+  <entry>Базовая информационная схема для зарегистрированных XML-схем</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X161</entry>
+  <entry/>
+  <entry>Расширенная информационная схема для зарегистрированных XML-схем</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X170</entry>
+  <entry/>
+  <entry>Варианты обработки NULL с XML</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X171</entry>
+  <entry/>
+  <entry>Вариант NIL ON NO CONTENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X181</entry>
+  <entry/>
+  <entry>Тип XML(DOCUMENT(UNTYPED))</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X182</entry>
+  <entry/>
+  <entry>Тип XML(DOCUMENT(ANY))</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X190</entry>
+  <entry/>
+  <entry>Тип XML(SEQUENCE)</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X191</entry>
+  <entry/>
+  <entry>Тип XML(DOCUMENT(XMLSCHEMA))</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X192</entry>
+  <entry/>
+  <entry>Тип XML(CONTENT(XMLSCHEMA))</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X200</entry>
+  <entry/>
+  <entry>XMLQuery</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X201</entry>
+  <entry/>
+  <entry>XMLQuery: RETURNING CONTENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X202</entry>
+  <entry/>
+  <entry>XMLQuery: RETURNING SEQUENCE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X203</entry>
+  <entry/>
+  <entry>XMLQuery: передача контекста</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X204</entry>
+  <entry/>
+  <entry>XMLQuery: инициализация переменной XQuery</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X205</entry>
+  <entry/>
+  <entry>XMLQuery: указание EMPTY ON EMPTY</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X206</entry>
+  <entry/>
+  <entry>XMLQuery: указание NULL ON EMPTY</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X211</entry>
+  <entry/>
+  <entry>Поддержка XML 1.1</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X221</entry>
+  <entry/>
+  <entry>Механизм передачи XML BY VALUE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X222</entry>
+  <entry/>
+  <entry>Механизм передачи XML BY REF</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X231</entry>
+  <entry/>
+  <entry>Тип XML(CONTENT(UNTYPED))</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X232</entry>
+  <entry/>
+  <entry>Тип XML(CONTENT(ANY))</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X241</entry>
+  <entry/>
+  <entry>RETURNING CONTENT при публикации XML</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X242</entry>
+  <entry/>
+  <entry>RETURNING SEQUENCE при публикации XML</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X251</entry>
+  <entry/>
+  <entry>Хранимые значения XML типа XML(DOCUMENT(UNTYPED))</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X252</entry>
+  <entry/>
+  <entry>Хранимые значения XML типа XML(DOCUMENT(ANY))</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X253</entry>
+  <entry/>
+  <entry>Хранимые значения XML типа XML(CONTENT(UNTYPED))</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X254</entry>
+  <entry/>
+  <entry>Хранимые значения XML типа XML(CONTENT(ANY))</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X255</entry>
+  <entry/>
+  <entry>Хранимые значения XML типа XML(SEQUENCE)</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X256</entry>
+  <entry/>
+  <entry>Хранимые значения XML типа XML(DOCUMENT(XMLSCHEMA))</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X257</entry>
+  <entry/>
+  <entry>Хранимые значения XML типа XML(CONTENT(XMLSCHEMA))</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X260</entry>
+  <entry/>
+  <entry>Тип XML: предложение ELEMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X261</entry>
+  <entry/>
+  <entry>Тип XML: NAMESPACE без предложения ELEMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X263</entry>
+  <entry/>
+  <entry>Тип XML: NO NAMESPACE с предложением ELEMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X264</entry>
+  <entry/>
+  <entry>Тип XML: расположение схемы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X271</entry>
+  <entry/>
+  <entry>XMLValidate: в зависимости от данных</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X272</entry>
+  <entry/>
+  <entry>XMLValidate: предложение ACCORDING TO</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X273</entry>
+  <entry/>
+  <entry>XMLValidate: предложение ELEMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X274</entry>
+  <entry/>
+  <entry>XMLValidate: расположение схемы</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X281</entry>
+  <entry/>
+  <entry>XMLValidate с вариантом DOCUMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X282</entry>
+  <entry/>
+  <entry>XMLValidate с вариантом CONTENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X283</entry>
+  <entry/>
+  <entry>XMLValidate с вариантом SEQUENCE</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X284</entry>
+  <entry/>
+  <entry>XMLValidate: NAMESPACE без предложения ELEMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X286</entry>
+  <entry/>
+  <entry>XMLValidate: NO NAMESPACE с предложением ELEMENT</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X300</entry>
+  <entry/>
+  <entry>XMLTable</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X301</entry>
+  <entry/>
+  <entry>XMLTable: указание списка производных столбцов</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X302</entry>
+  <entry/>
+  <entry>XMLTable: указание столбца нумерации</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X303</entry>
+  <entry/>
+  <entry>XMLTable: указание значения столбца по умолчанию</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X304</entry>
+  <entry/>
+  <entry>XMLTable: передача контекста</entry>
+  <entry/>
+ </row>
+ <row>
+  <entry>X305</entry>
+  <entry/>
+  <entry>XMLTable: инициализация переменной XQuery</entry>
+  <entry/>
+ </row>
+</tbody>

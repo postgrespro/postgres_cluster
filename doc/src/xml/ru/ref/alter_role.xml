@@ -1,0 +1,194 @@
+<!--
+doc/src/xml/ref/alter_role.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterrole">
+ <indexterm zone="sql-alterrole"><primary>ALTER ROLE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER ROLE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER ROLE</refname>
+  <refpurpose>изменить роль в базе данных</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER ROLE <replaceable class="parameter">указание_роли</replaceable> [ WITH ] <replaceable class="parameter">параметр</replaceable> [ ... ]
+
+<phrase>Здесь <replaceable class="parameter">параметр</replaceable>:</phrase>
+
+      SUPERUSER | NOSUPERUSER
+    | CREATEDB | NOCREATEDB
+    | CREATEROLE | NOCREATEROLE
+    | INHERIT | NOINHERIT
+    | LOGIN | NOLOGIN
+    | REPLICATION | NOREPLICATION
+    | BYPASSRLS | NOBYPASSRLS
+    | CONNECTION LIMIT <replaceable class="parameter">предел_подключений</replaceable>
+    | [ ENCRYPTED | UNENCRYPTED ] PASSWORD '<replaceable class="parameter">пароль</replaceable>'
+    | PASSWORD ( '<replaceable class="parameter">пароль</replaceable>' USING '<replaceable class="parameter">метод</replaceable>' )
+    | VALID UNTIL '<replaceable class="parameter">дата_время</replaceable>'
+
+ALTER ROLE <replaceable class="parameter">имя</replaceable> RENAME TO <replaceable>новое_имя</replaceable>
+
+ALTER ROLE { <replaceable class="parameter">указание_роли</replaceable> | ALL } [ IN DATABASE <replaceable class="parameter">имя_бд</replaceable> ] SET <replaceable>параметр_конфигурации</replaceable> { TO | = } { <replaceable>значение</replaceable> | DEFAULT }
+ALTER ROLE { <replaceable class="parameter">указание_роли</replaceable> | ALL } [ IN DATABASE <replaceable class="parameter">имя_бд</replaceable> ] SET <replaceable>параметр_конфигурации</replaceable> FROM CURRENT
+ALTER ROLE { <replaceable class="parameter">указание_роли</replaceable> | ALL } [ IN DATABASE <replaceable class="parameter">имя_бд</replaceable> ] RESET <replaceable>параметр_конфигурации</replaceable>
+ALTER ROLE { <replaceable class="parameter">указание_роли</replaceable> | ALL } [ IN DATABASE <replaceable class="parameter">имя_бд</replaceable> ] RESET ALL
+
+<phrase>Здесь <replaceable class="parameter">указание_роли</replaceable>:</phrase>
+
+    [ GROUP ] <replaceable class="parameter">имя_роли</replaceable>
+  | CURRENT_USER
+  | SESSION_USER</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER ROLE</command> изменяет атрибуты роли <productname>&productname;</productname>.</para>
+
+  <para>Первая форма команды в этой справке может изменить многие атрибуты роли, которые можно указать в <xref linkend="sql-createrole"/>. (Покрываются все возможные атрибуты, отсутствуют только возможности добавления/удаления членов роли; для этого нужно использовать <xref linkend="sql-grant"/> и <xref linkend="sql-revoke"/>.) Атрибуты, не упомянутые в команде, сохраняют свои предыдущие значения. Суперпользователи базы данных могут изменить любые параметры любой роли, а пользователи с правом <literal>CREATEROLE</literal> могут также менять любые параметры, но только не ролей суперпользователей и репликации. Обычные пользователи (роли) могут менять только свой пароль.</para>
+
+  <para>Вторя форма меняет имя роли. Суперпользователи базы данных могут переименовать любую роль, а пользователи с правом <literal>CREATEROLE</literal> могут переименовывать роли не суперпользователей. Также нельзя переименовать роль текущего пользователя в активном сеансе. (Если вам нужно сделать это, подключитесь другим пользователем.) Так как в паролях с <literal>MD5</literal>-шифрованием имя роли используется в качестве криптосоли, при переименовании роли её пароль очищается, если он был зашифрован <literal>MD5</literal>.</para>
+
+  <para>Оставшиеся формы меняют значение по умолчанию конфигурационной переменной, которое будет распространяться на сеансы роли во всех базах данных, либо, если добавлено предложение <literal>IN DATABASE</literal>, только на сеансы роли в заданной базе. Если вместо имени роли указано <literal>ALL</literal>, это значение переменной распространяется на все роли. Использование <literal>ALL</literal> с <literal>IN DATABASE</literal> по сути равносильно использованию команды <literal>ALTER DATABASE ... SET ...</literal>.</para>
+
+  <para>Когда эта роль впоследствии установит новое подключение, указанное значение станет значением по умолчанию в сеансе, переопределяя значение, заданное в <filename>postgresql.conf</filename> или полученное из командной строки <command>postgres</command>. Это происходит только в момент входа; при выполнении <xref linkend="sql-set-role"/> или <xref linkend="sql-set-session-authorization"/> новые значения не применятся. Набор параметров для всех баз данных переопределяется параметрами уровня БД, установленными для роли. Параметры для конкретной базы данных или конкретной роли переопределяют параметры для всех ролей.</para>
+
+  <para>Суперпользователи могут менять значения переменных по умолчанию для любых ролей, а пользователи с правом <literal>CREATEROLE</literal> могут менять их только для ролей не суперпользователей. Обычные пользователи могут определять переменные только для себя. Некоторые переменные конфигурации нельзя задать таким способом, а некоторые может настроить только суперпользователь. Параметры всех ролей во всех базах данных могут настраивать только суперпользователи.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">имя</replaceable></term>
+      <listitem>
+       <para>Имя роли, атрибуты которой изменяются.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>CURRENT_USER</term>
+      <listitem>
+       <para>Выбирает для изменения текущего пользователя, а не явно задаваемую роль.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>SESSION_USER</term>
+      <listitem>
+       <para>Выбирает для изменения текущего пользователя сеанса, а не явно задаваемую роль.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>SUPERUSER</literal></term>
+      <term><literal>NOSUPERUSER</literal></term>
+      <term><literal>CREATEDB</literal></term>
+      <term><literal>NOCREATEDB</literal></term>
+      <term><literal>CREATEROLE</literal></term>
+      <term><literal>NOCREATEROLE</literal></term>
+      <term><literal>INHERIT</literal></term>
+      <term><literal>NOINHERIT</literal></term>
+      <term><literal>LOGIN</literal></term>
+      <term><literal>NOLOGIN</literal></term>
+      <term><literal>REPLICATION</literal></term>
+      <term><literal>NOREPLICATION</literal></term>
+      <term><literal>BYPASSRLS</literal></term>
+      <term><literal>NOBYPASSRLS</literal></term>
+      <term><literal>CONNECTION LIMIT</literal> <replaceable class="parameter">предел_подключений</replaceable></term>
+      <term><literal>PASSWORD</literal> <replaceable class="parameter">пароль</replaceable></term>
+      <term><literal>PASSWORD</literal> ( '<replaceable class="parameter">параметр</replaceable>' USING '<replaceable class="parameter">метод</replaceable>' )</term>
+      <term><literal>ENCRYPTED</literal></term>
+      <term><literal>UNENCRYPTED</literal></term>
+      <term><literal>VALID UNTIL</literal> '<replaceable class="parameter">дата_время</replaceable>'</term>
+      <listitem>
+       <para>Эти предложения меняют атрибуты, изначально установленные командой <xref linkend="sql-createrole"/>. За дополнительными сведениями обратитесь к странице справки <command>CREATE ROLE</command>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable>новое_имя</replaceable></term>
+      <listitem>
+       <para>Новое имя роли.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><replaceable>имя_бд</replaceable></term>
+       <listitem>
+         <para>Имя базы данных, в которой устанавливается конфигурационная переменная.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable>параметр_конфигурации</replaceable></term>
+      <term><replaceable>значение</replaceable></term>
+      <listitem>
+       <para>Указанный параметр конфигурации принимает заданное значение по умолчанию в сеансах роли. Если <replaceable>значение</replaceable> задано как <literal>DEFAULT</literal> или, что то же самое, применяется операция <literal>RESET</literal>, переопределение этого параметра для роли удаляется и роль будет получать в новых сеансах системное значение параметра. Для очистки значений всех параметров, связанных с ролью, применяется <literal>RESET ALL</literal>. <literal>SET FROM CURRENT</literal> сохраняет текущее значение параметра в активном сеансе в качестве значения для данной роли. Если указано <literal>IN DATABASE</literal>, параметр конфигурации настраивается или удаляется только для данной роли и указанной базы данных.</para>
+
+       <para>Определения переменных для роли применяются только в начале сеанса; команды <xref linkend="sql-set-role"/> и <xref linkend="sql-set-session-authorization"/> эти определения не обрабатывают.</para>
+
+       <para>За подробными сведениями об именах и значениях параметров обратитесь к <xref remap="3" linkend="sql-set"/> и <xref remap="3" linkend="runtime-config"/>.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Для добавления новых ролей используйте команду <xref linkend="sql-createrole"/>, а для удаления роли — <xref linkend="sql-droprole"/>.</para>
+
+  <para><command>ALTER ROLE</command> не может управлять членством роли, для этого применяется <xref linkend="sql-grant"/> и <xref linkend="sql-revoke"/>.</para>
+
+  <para>Указывая в этой команде незашифрованный пароль, следует проявлять осторожность. Пароль будет передаваться на сервер открытым текстом и может также записаться в историю команд клиента или в протокол работы сервера. В <xref linkend="app-psql"/> есть команда <command>\password</command>, с помощью которой можно сменить пароль роли, не рискуя рассекретить пароль.</para>
+
+  <para>Также возможно связать сеансовые значения по умолчанию с определённой базой данных, а не с ролью (см. <xref remap="4" linkend="sql-alterdatabase"/>). В случае конфликта параметры для базы данных и роли переопределяют параметры только для роли, которые, в свою очередь, переопределяют параметры для базы данных.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Изменение пароля роли: <programlisting>ALTER ROLE davide WITH PASSWORD 'hu8jmn3';</programlisting></para>
+
+  <para>Изменение пароля роли с использованием шифрования MD5: <programlisting>ALTER ROLE lionel WITH PASSWORD ('hu8jmn3' USING 'md5');</programlisting></para>
+
+  <para>Удаление пароля роли: <programlisting>ALTER ROLE davide WITH PASSWORD NULL;</programlisting></para>
+
+  <para>Изменение срока действия пароля (в частности, определяется, что пароль должен перестать действовать в полдень 4 мая 2015 г. в часовом поясе <acronym>UTC</acronym>+1): <programlisting>ALTER ROLE chris VALID UNTIL 'May 4 12:00:00 2015 +1';</programlisting></para>
+
+  <para>Установка бесконечного срока действия пароля: <programlisting>ALTER ROLE fred VALID UNTIL 'infinity';</programlisting></para>
+
+  <para>Наделение роли правами на создание других ролей и новых баз данных: <programlisting>ALTER ROLE miriam CREATEROLE CREATEDB;</programlisting></para>
+
+  <para>Определение нестандартного значения параметра <xref linkend="guc-maintenance-work-mem"/> для роли: <programlisting>ALTER ROLE worker_bee SET maintenance_work_mem = 100000;</programlisting></para>
+
+  <para>Определение нестандартного значения параметра <xref linkend="guc-client-min-messages"/> для роли и заданной базы: <programlisting>ALTER ROLE fred IN DATABASE devel SET client_min_messages = DEBUG;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER ROLE</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createrole"/></member>
+   <member><xref linkend="sql-droprole"/></member>
+   <member><xref linkend="sql-alterdatabase"/></member>
+   <member><xref linkend="sql-set"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

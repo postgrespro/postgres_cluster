@@ -1,0 +1,756 @@
+<!-- doc/src/xml/plpython.xml -->
+
+<chapter id="plpython">
+ <title>PL/Python — процедурный язык Python</title>
+
+ <indexterm zone="plpython"><primary>PL/Python</primary></indexterm>
+ <indexterm zone="plpython"><primary>Python</primary></indexterm>
+
+ <para>Процедурный язык <application>PL/Python</application> позволяет писать функции <productname>&productname;</productname> на <ulink url="http://www.python.org">языке Python</ulink>.</para>
+
+ <para>Чтобы установить PL/Python в определённую базу данных, выполните команду <literal>CREATE EXTENSION plpythonu</literal>, либо запустите в оболочке системы <literal>createlang plpythonu <replaceable>имя_данных</replaceable></literal> (но смотрите также <xref remap="4" linkend="plpython-python23"/>).</para>
+
+  <tip>
+   <para>Если язык устанавливается в <literal>template1</literal>, он будет автоматически установлен во все создаваемые впоследствии базы данных.</para>
+  </tip>
+
+ <para>PL/Python представлен только в виде <quote>недоверенного</quote> языка, что означает, что он никаким способом не ограничивает действия пользователей, и поэтому он называется <literal>plpythonu</literal>. Доверенная вариация <literal>plpython</literal> может появиться в будущем, если в Python будет разработан безопасный механизм выполнения. Автор функции на недоверенном языке PL/Python должен позаботиться о том, чтобы эту функцию нельзя было использовать не по назначению, так как она может делать всё, что может пользователь с правами администратора баз данных. Создавать функции на недоверенных языках, таких как <literal>plpythonu</literal>, разрешено только суперпользователям.</para>
+
+ <note>
+  <para>Пользователи, имеющие дело с исходным кодом, должны явно включить сборку PL/Python в процессе установки. (За дополнительными сведениями обратитесь к инструкциям по установке.) Пользователи двоичных пакетов могут найти PL/Python в отдельном модуле.</para>
+ </note>
+
+ <sect1 id="plpython-python23">
+  <title>Python 2 и Python 3</title>
+
+  <para>PL/Python поддерживает две вариации языка: Python 2 и Python 3. (Более точная информация о поддерживаемых второстепенных версиях Python может содержаться в инструкциях по установке &productname;.) Так как языки Python 2 и Python 3 несовместимы в некоторых важных аспектах, во избежание смешения их в PL/Python применяется следующая схема именования: <itemizedlist>
+    <listitem>
+     <para>Язык &productname; с именем <literal>plpython2u</literal> представляет реализацию PL/Python, основанную на вариации языка Python 2.</para>
+    </listitem>
+
+    <listitem>
+     <para>Язык &productname; с именем <literal>plpython3u</literal> представляет реализацию PL/Python, основанную на вариации языка Python 3.</para>
+    </listitem>
+
+    <listitem>
+     <para>Язык с именем <literal>plpythonu</literal> представляет реализацию PL/Python, основанную на версии Python по умолчанию, в данный момент это Python 2. (Этот выбор по умолчанию не зависит от того, какая версия считается локальной версией <quote>по умолчанию</quote>, например, на какую версию указывает <filename>/usr/bin/python</filename>.) Выбор по умолчанию в отдалённом будущем выпуске &productname; может быть сменён на Python 3, в зависимости от того, как будет происходить переход на Python 3 в сообществе Python.</para>
+    </listitem>
+   </itemizedlist> Эта схема аналогична рекомендациям, данным в <ulink url="http://www.python.org/dev/peps/pep-0394/">PEP 394</ulink>, по выбору имени команды <command>python</command> и переходу с версии на версию.</para>
+
+  <para>Будет ли доступен PL/Python для Python 2 или для Python 3, либо сразу для обеих версий, зависит от конфигурации сборки или установленных пакетов.</para>
+
+  <tip>
+   <para>Какая вариация будет собрана, зависит от того, как версия Python будет найдена при установке или будет задана в переменной окружения <envar>PYTHON</envar>. Чтобы в одной инсталляции присутствовали обе вариации PL/Python, необходимо сконфигурировать и настроить дерево исходного кода дважды.</para>
+  </tip>
+
+  <para>В результате формируется такая стратегия использования и смены определённой версии: <itemizedlist>
+    <listitem>
+     <para>Существующие пользователи и пользователи, которым в настоящее время неинтересен Python 3, могут выбрать имя языка <literal>plpythonu</literal> и им не придётся ничего менять в обозримом будущем. Чтобы упростить миграцию на Python 3, которая произойдёт в конце концов, рекомендуется постепенно проверять <quote>готовность к будущему</quote> кода, обновляя его до версий Python 2.6/2.7.</para>
+
+     <para>На практике многие функции PL/Python можно мигрировать на Python 3 с минимальными изменениями или вовсе без изменений.</para>
+    </listitem>
+
+    <listitem>
+     <para>Пользователи, знающие, что их код очень сильно зависит от Python 2, и не планирующие когда-либо менять его, могут использовать имя языка <literal>plpython2u</literal>. Это будет работать ещё очень и очень долго, пока в &productname; не будет полностью ликвидирована поддержка Python 2.</para>
+    </listitem>
+
+    <listitem>
+     <para>Пользователи, желающие погрузиться в Python 3, могут выбрать имя языка <literal>plpython3u</literal>, и их код будет работать всегда, по сегодняшним стандартам. В отдалённом будущем, когда версией по умолчанию может стать Python 3, цифру <quote>3</quote> из имени языка можно будет убрать из эстетических соображений.</para>
+    </listitem>
+
+    <listitem>
+     <para>Смельчаки, желающие уже сегодня получить операционное окружение только с Python 3, могут модифицировать <link linkend="catalog-pg-pltemplate"><structname>pg_pltemplate</structname></link>, чтобы имя <literal>plpythonu</literal> было равнозначно <literal>plpython3u</literal>, отдавая себе отчёт в том, что такая инсталляция будет несовместима с остальным миром.</para>
+    </listitem>
+   </itemizedlist></para>
+
+  <para>Дополнительную информацию о переходе на Python 3 можно также найти в описании <ulink url="http://docs.python.org/py3k/whatsnew/3.0.html">Что нового в Python 3.0</ulink>.</para>
+
+  <para>Использовать PL/Python на базе Python 2 и PL/Python на базе Python 3 в одном сеансе нельзя, так как это приведёт к конфликту символов в динамических модулях, что может повлечь сбой серверного процесса &productname;. В системе есть проверка, предотвращающая смешение основных версий Python в одном сеансе, которая прервёт сеанс при выявлении расхождения. Однако использовать обе вариации в одной базе данных всё же возможно, обращаясь к ним в разных сеансах.</para>
+ </sect1>
+
+ <sect1 id="plpython-funcs">
+  <title>Функции на PL/Python</title>
+
+  <para>Функции на PL/Python объявляются стандартным образом с помощью команды <xref linkend="sql-createfunction"/>: <programlisting>CREATE FUNCTION <replaceable>funcname</replaceable> (<replaceable>argument-list</replaceable>)
+  RETURNS <replaceable>return-type</replaceable>
+AS $$
+  # Тело функции на PL/Python
+$$ LANGUAGE plpythonu;</programlisting></para>
+
+  <para>Тело функции содержит просто скрипт на языке Python. Когда вызывается функция, её аргументы передаются в виде элементов списка <varname>args</varname>; именованные аргументы также передаются скрипту Python как обычные переменные. С применением именованных аргументов скрипт обычно лучше читается. Результат из кода Python возвращается обычным способом, командой <literal>return</literal> или <literal>yield</literal> (в случае функции, возвращающей множество). Если возвращаемое значение не определено, Python возвращает <symbol>None</symbol>. Исполнитель <application>PL/Python</application> преобразует <symbol>None</symbol> языка Python в значение NULL языка SQL.</para>
+
+  <para>Например, функцию, возвращающее большее из двух целых чисел, можно определить так: <programlisting>CREATE FUNCTION pymax (a integer, b integer)
+  RETURNS integer
+AS $$
+  if a &gt; b:
+    return a
+  return b
+$$ LANGUAGE plpythonu;</programlisting> Код на Python, заданный в качестве тела объявляемой функции, становится телом функции Python. Например, для показанного выше объявления получается функция: <programlisting>def __plpython_procedure_pymax_23456():
+  if a &gt; b:
+    return a
+  return b</programlisting> Здесь 23456 — это OID, который <productname>&productname;</productname> присвоил данной функции.</para>
+
+  <para>Значения аргументов задаются в глобальных переменных. Согласно правилам видимости в Python, тонким следствием этого является то, что переменной аргумента нельзя присвоить внутри функции выражение, включающее имя самой этой переменной, если только эта переменная не объявлена глобальной в текущем блоке. Например, следующий код не будет работать: <programlisting>CREATE FUNCTION pystrip(x text)
+  RETURNS text
+AS $$
+  x = x.strip()  # ошибка
+  return x
+$$ LANGUAGE plpythonu;</programlisting> так как присвоение <varname>x</varname> значения делает <varname>x</varname> локальной переменной для всего блока, и при этом <varname>x</varname> в правой части присваивания оказывается ещё не определённой локальной переменной <varname>x</varname>, а не параметром функции PL/Python. Добавив оператор <literal>global</literal>, это можно исправить: <programlisting>CREATE FUNCTION pystrip(x text)
+  RETURNS text
+AS $$
+  global x
+  x = x.strip()  # теперь всё в порядке
+  return x
+$$ LANGUAGE plpythonu;</programlisting> Однако рекомендуется не полагаться на такие особенности реализации PL/Python, а принять, что параметры функции предназначены только для чтения.</para>
+ </sect1>
+
+ <sect1 id="plpython-data">
+  <title>Значения данных</title>
+  <para>Вообще говоря, цель исполнителя PL/Python — обеспечить <quote>естественное</quote> соответствие между мирами &productname; и Python. Этим объясняется выбор правил сопоставления данных, описанных ниже.</para>
+
+  <sect2>
+   <title>Сопоставление типов данных</title>
+   <para>Когда вызывается функция PL/Python, её аргументы преобразуются из типа &productname; в соответствующий тип Python по таким правилам: <itemizedlist>
+     <listitem>
+      <para>Тип &productname; <type>boolean</type> преобразуется в <type>bool</type> языка Python.</para>
+     </listitem>
+
+     <listitem>
+      <para>Типы &productname; <type>smallint</type> и <type>int</type> преобразуются в тип <type>int</type> языка Python. Типы &productname; <type>bigint</type> и <type>oid</type> становятся типами <type>long</type> в Python 2 и <type>int</type> в Python 3.</para>
+     </listitem>
+
+     <listitem>
+      <para>Типы &productname; <type>real</type> и <type>double</type> преобразуются в тип <type>float</type> языка Python.</para>
+     </listitem>
+
+     <listitem>
+      <para>Тип &productname; <type>numeric</type> преобразуется в <type>Decimal</type> среды Python. Этот тип импортируется из пакета <literal>cdecimal</literal>, при его наличии. В противном случае используется <literal>decimal.Decimal</literal> из стандартной библиотеки. Тип <literal>cdecimal</literal> работает значительно быстрее, чем <literal>decimal</literal>. Однако в Python версии 3.3 и выше тип <literal>cdecimal</literal> включается в стандартную библиотеку под именем <literal>decimal</literal>, так что теперь этого различия нет.</para>
+     </listitem>
+
+     <listitem>
+      <para>Тип &productname; <type>bytea</type> становится типом <type>str</type> в Python 2 и <type>bytes</type> в Python 3. В Python 2 такую строку следует воспринимать как последовательность байт без какой-либо определённой кодировки символов.</para>
+     </listitem>
+
+     <listitem>
+      <para>Все другие типы данных, включая типы символьных строк &productname;, преобразуются в тип <type>str</type> языка Python. В Python 2 эта строка будет передаваться в кодировке сервера &productname;; в Python 3 это будет строка в Unicode, как и все строки.</para>
+     </listitem>
+
+     <listitem>
+      <para>Информация о нескалярных типах данных приведена ниже.</para>
+     </listitem>
+    </itemizedlist></para>
+
+   <para>При завершении функции PL/Python её значение результата преобразуется в тип данных, объявленный как тип результата в &productname;, следующим образом: <itemizedlist>
+     <listitem>
+      <para>Когда тип результата функции в &productname; — <type>boolean</type>, возвращаемое значение приводится к логическому типу по правилам, принятым в <emphasis>Python</emphasis>. То есть false будет возвращено для 0 и пустой строки, но, обратите внимание, для <literal>'f'</literal> будет возвращено true.</para>
+     </listitem>
+
+     <listitem>
+      <para>Когда тип результата функции &productname; — <type>bytea</type>, возвращаемое значение будет преобразовано в строку (Python 2) или набор байт (Python 3), используя встроенные средства Python, а затем будет приведено к типу <type>bytea</type>.</para>
+     </listitem>
+
+     <listitem>
+      <para>Для всех других типов результата &productname; возвращаемое значение преобразуется в строку с помощью встроенной в Python функции <literal>str</literal>, и полученная строка передаётся функции ввода типа данных &productname;. (Если значение в Python имеет тип <type>float</type>, оно преобразуется встроенной функцией <literal>repr</literal>, а не <literal>str</literal>, для недопущения потери точности.)</para>
+
+      <para>Из кода Python 2 строки должны передаваться в &productname; в кодировке сервера &productname;. При передаче строки, неприемлемой для текущей кодировки сервера, возникает ошибка, но не все несоответствия кодировки могут быть выявлены, так что с некорректной кодировкой всё же могут быть получены нечитаемые строки. Строки Unicode переводятся в нужную кодировку автоматически, так что использовать их может быть безопаснее и удобнее. В Python 3 все строки имеют кодировку Unicode.</para>
+     </listitem>
+
+     <listitem>
+      <para>Информация о нескалярных типах данных приведена ниже.</para>
+     </listitem>
+    </itemizedlist> Заметьте, что логические несоответствия между объявленным в &productname; типом результата и типом фактически возвращаемого объекта Python игнорируются — значение преобразуется в любом случае.</para>
+  </sect2>
+
+  <sect2>
+   <title>Null, None</title>
+  <para>Если функции передаётся значение SQL NULL<indexterm><primary>NULL-значение</primary> <secondary sortas="PL/Python">в PL/Python</secondary></indexterm>, в Python значением этого аргумента будет <symbol>None</symbol>. Например, функция <function>pymax</function>, определённая как показано в <xref linkend="plpython-funcs"/>, возвратит неверный ответ, получив аргументы NULL. Мы могли бы добавить указание <literal>STRICT</literal> в определение функции, чтобы <productname>&productname;</productname> поступал немного разумнее: при передаче значения NULL функция вовсе не будет вызываться, будет сразу возвращён результат NULL. С другой стороны, мы могли бы проверить аргументы на NULL в теле функции: <programlisting>CREATE FUNCTION pymax (a integer, b integer)
+  RETURNS integer
+AS $$
+  if (a is None) or (b is None):
+    return None
+  if a &gt; b:
+    return a
+  return b
+$$ LANGUAGE plpythonu;</programlisting> Как показано выше, чтобы выдать из функции PL/Python значение SQL NULL, нужно вернуть значение <symbol>None</symbol>. Это можно сделать и в строгой, и в нестрогой функции.</para>
+  </sect2>
+
+  <sect2 id="plpython-arrays">
+   <title>Массивы, списки</title>
+  <para>Значения массивов SQL передаются в PL/Python в виде списка Python. Чтобы вернуть массив SQL из функции PL/Python, возвратите последовательность Python, например, список или кортеж: <programlisting>CREATE FUNCTION return_arr()
+  RETURNS int[]
+AS $$
+return (1, 2, 3, 4, 5)
+$$ LANGUAGE plpythonu;
+
+SELECT return_arr();
+ return_arr  
+-------------
+ {1,2,3,4,5}
+(1 row)</programlisting> Учтите, что в Python и строки являются последовательностями, что может давать неожиданные эффекты, хорошо знакомые тем, кто программирует на Python: <programlisting>CREATE FUNCTION return_str_arr()
+  RETURNS varchar[]
+AS $$
+return "hello"
+$$ LANGUAGE plpythonu;
+
+SELECT return_str_arr();
+ return_str_arr
+----------------
+ {h,e,l,l,o}
+(1 row)</programlisting></para>
+  </sect2>
+
+  <sect2>
+   <title>Составные типы</title>
+  <para>Аргументы составного типа передаются функции в виде сопоставлений Python. Именами элементов сопоставления являются атрибуты составного типа. Если атрибут в переданной строке имеет значение NULL, он передаётся в сопоставлении значением <symbol>None</symbol>. Пример работы с составным типом: <programlisting>CREATE TABLE employee (
+  name text,
+  salary integer,
+  age integer
+);
+
+CREATE FUNCTION overpaid (e employee)
+  RETURNS boolean
+AS $$
+  if e["salary"] &gt; 200000:
+    return True
+  if (e["age"] &lt; 30) and (e["salary"] &gt; 100000):
+    return True
+  return False
+$$ LANGUAGE plpythonu;</programlisting></para>
+
+  <para>Возвратить составной тип или строку таблицы из функции Python можно несколькими способами. В следующих примерах предполагается, что у нас объявлен тип: <programlisting>CREATE TYPE named_value AS (
+  name   text,
+  value  integer
+);</programlisting> Результат этого типа можно вернуть как: <variablelist>
+    <varlistentry>
+     <term>Последовательность (кортеж или список, но не множество, так как оно не индексируется)</term>
+     <listitem>
+      <para>В возвращаемых объектах последовательностей должно быть столько элементов, сколько полей в составном типе результата. Элемент с индексом 0 присваивается первому полю составного типа, с индексом 1 — второму и т. д. Например: <programlisting>CREATE FUNCTION make_pair (name text, value integer)
+  RETURNS named_value
+AS $$
+  return [ name, value ]
+  # или в виде кортежа: return ( name, value )
+$$ LANGUAGE plpythonu;</programlisting> Чтобы выдать SQL NULL для какого-нибудь столбца, вставьте в соответствующую позицию <symbol>None</symbol>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>Сопоставление (словарь)</term>
+     <listitem>
+      <para>Значение столбца результата получается из сопоставления, в котором ключом является имя столбца. Например: <programlisting>CREATE FUNCTION make_pair (name text, value integer)
+  RETURNS named_value
+AS $$
+  return { "name": name, "value": value }
+$$ LANGUAGE plpythonu;</programlisting> Любые дополнительные пары ключ/значение в словаре игнорируются, а отсутствие нужных ключей считается ошибкой. Чтобы выдать SQL NULL для какого-нибудь столбца, вставьте <symbol>None</symbol> с именем соответствующего столбца в качестве ключа.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>Объект (любой объект с методом <literal>__getattr__</literal>)</term>
+     <listitem>
+      <para>Объект передаётся аналогично сопоставлению. Пример: <programlisting>CREATE FUNCTION make_pair (name text, value integer)
+  RETURNS named_value
+AS $$
+  class named_value:
+    def __init__ (self, n, v):
+      self.name = n
+      self.value = v
+  return named_value(name, value)
+
+  # или просто
+  class nv: pass
+  nv.name = name
+  nv.value = value
+  return nv
+$$ LANGUAGE plpythonu;</programlisting></para>
+     </listitem>
+    </varlistentry>
+   </variablelist></para>
+
+   <para>Также поддерживаются функции с параметрами <literal>OUT</literal> (выходными). Например: <programlisting>CREATE FUNCTION multiout_simple(OUT i integer, OUT j integer) AS $$
+return (1, 2)
+$$ LANGUAGE plpythonu;
+
+SELECT * FROM multiout_simple();</programlisting></para>
+  </sect2>
+
+  <sect2>
+   <title>Функции, возвращающие множества</title>
+  <para>Функция <application>PL/Python</application> также может возвращать множества, содержащие скалярные и составные типы. Это можно осуществить разными способами, так как возвращаемый объект внутри превращается в итератор. В следующих примерах предполагается, что у нас есть составной тип: <programlisting>CREATE TYPE greeting AS (
+  how text,
+  who text
+);</programlisting> Множество в качестве результата можно возвратить, применив: <variablelist>
+    <varlistentry>
+     <term>Последовательность (кортеж, список, множество)</term>
+     <listitem>
+      <para>
+<programlisting>CREATE FUNCTION greet (how text)
+  RETURNS SETOF greeting
+AS $$
+  # возвращает кортеж, содержащий списки в качестве составных типов
+  # также будут работать и остальные комбинации
+  return ( [ how, "World" ], [ how, "&productname;" ], [ how, "PL/Python" ] )
+$$ LANGUAGE plpythonu;</programlisting>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>Итератор (любой объект, реализующий методы <symbol>__iter__</symbol> и <symbol>next</symbol>)</term>
+     <listitem>
+      <para>
+<programlisting>CREATE FUNCTION greet (how text)
+  RETURNS SETOF greeting
+AS $$
+  class producer:
+    def __init__ (self, how, who):
+      self.how = how
+      self.who = who
+      self.ndx = -1
+
+    def __iter__ (self):
+      return self
+
+    def next (self):
+      self.ndx += 1
+      if self.ndx == len(self.who):
+        raise StopIteration
+      return ( self.how, self.who[self.ndx] )
+
+  return producer(how, [ "World", "&productname;", "PL/Python" ])
+$$ LANGUAGE plpythonu;</programlisting>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>Генератор (<literal>yield</literal>)</term>
+     <listitem>
+      <para>
+<programlisting>CREATE FUNCTION greet (how text)
+  RETURNS SETOF greeting
+AS $$
+  for who in [ "World", "&productname;", "PL/Python" ]:
+    yield ( how, who )
+$$ LANGUAGE plpythonu;</programlisting>
+
+       <warning>
+        <para>Из-за <ulink url="http://bugs.python.org/issue1483133">ошибки 1483133</ulink> в Python, некоторые отладочные версии Python 2.4 (сконфигурированные и скомпилированные с ключом <literal>--with-pydebug</literal>) выводят из строя сервер <productname>&productname;</productname>, когда итератор возвращает набор результатов. Эта ошибка проявляется в неисправленных версиях Fedora 4, но не в выпускаемых версиях Python и в исправленной Fedora 4.</para>
+       </warning>
+      </para>
+     </listitem>
+    </varlistentry>
+   </variablelist></para>
+
+   <para>Также поддерживаются функции, возвращающие множества, с параметрами <literal>OUT</literal> (объявленные с <literal>RETURNS SETOF record</literal>). Например: <programlisting>CREATE FUNCTION multiout_simple_setof(n integer, OUT integer, OUT integer) RETURNS SETOF record AS $$
+return [(1, 2)] * n
+$$ LANGUAGE plpythonu;
+
+SELECT * FROM multiout_simple_setof(3);</programlisting></para>
+  </sect2>
+ </sect1>
+
+ <sect1 id="plpython-sharing">
+  <title>Совместное использование данных</title>
+  <para>Для хранения данных между вызовами функции предусмотрен глобальный словарь <varname>SD</varname>, объявленный как частный статический. Для размещения публичных данных предназначен глобальный словарь <varname>GD</varname>, доступный всем функциями на Python в сеансе. Обращайтесь с ними осторожно.<indexterm><primary>глобальные данные</primary> <secondary>в PL/Python</secondary></indexterm></para>
+
+  <para>Каждая функция получает собственную среду выполнения в интерпретаторе Python, так что глобальные данные и аргументы функции, например <function>myfunc</function>, не будут доступны в <function>myfunc2</function>. Исключение составляют данные в словаре <varname>GD</varname>, как сказано выше.</para>
+ </sect1>
+
+ <sect1 id="plpython-do">
+  <title>Анонимные блоки кода</title>
+
+  <para>PL/Python также поддерживает анонимные блоки кода, которые выполняются оператором <xref linkend="sql-do"/>: <programlisting>DO $$
+    # Код на PL/Python
+$$ LANGUAGE plpythonu;</programlisting> Анонимный блок кода не принимает аргументы, а любое значение, которое он мог бы вернуть, отбрасывается. В остальном он работает подобно коду функции.</para>
+ </sect1>
+
+ <sect1 id="plpython-trigger">
+  <title>Триггерные функции</title>
+
+  <indexterm zone="plpython-trigger"><primary>триггер</primary> <secondary>в PL/Python</secondary></indexterm>
+
+  <para>Когда функция используется как триггер, словарь <literal>TD</literal> содержит значения, связанные с работой триггера: <variablelist>
+    <varlistentry>
+     <term><literal>TD["event"]</literal></term>
+     <listitem>
+      <para>содержит название события в виде строки: <literal>INSERT</literal>, <literal>UPDATE</literal>, <literal>DELETE</literal> или <literal>TRUNCATE</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>TD["when"]</literal></term>
+     <listitem>
+      <para>содержит одну из строк: <literal>BEFORE</literal>, <literal>AFTER</literal> или <literal>INSTEAD OF</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>TD["level"]</literal></term>
+     <listitem>
+      <para>содержит <literal>ROW</literal> или <literal>STATEMENT</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>TD["new"]</literal></term>
+     <term><literal>TD["old"]</literal></term>
+     <listitem>
+      <para>Для триггера уровня строки одно или оба этих поля содержат соответствующие строки триггера, в зависимости от события триггера.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>TD["name"]</literal></term>
+     <listitem>
+      <para>содержит имя триггера.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>TD["table_name"]</literal></term>
+     <listitem>
+      <para>содержит имя таблицы, для которой сработал триггер.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>TD["table_schema"]</literal></term>
+     <listitem>
+      <para>содержит схему таблицы, для которой сработал триггер.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>TD["relid"]</literal></term>
+     <listitem>
+      <para>содержит OID таблицы, для которой сработал триггер.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>TD["args"]</literal></term>
+     <listitem>
+      <para>Если в команде <command>CREATE TRIGGER</command> задавались аргументы, их можно получить как элементы массива с <literal>TD["args"][0]</literal> по <literal>TD["args"][<replaceable>n</replaceable>-1]</literal>.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist></para>
+
+  <para>Если в <literal>TD["when"]</literal> передано <literal>BEFORE</literal> или <literal>INSTEAD OF</literal>, а в <literal>TD["level"]</literal> — <literal>ROW</literal>, вы можете вернуть значение <literal>None</literal> или <literal>"OK"</literal> из функции Python, чтобы показать, что строка не была изменена, значение <literal>"SKIP"</literal>, чтобы прервать событие, либо, если в <literal>TD["event"]</literal> передана команда <command>INSERT</command> или <command>UPDATE</command>, вы можете вернуть <literal>"MODIFY"</literal>, чтобы показать, что новая строка была изменена. Во всех других случаях возвращаемое значение игнорируется.</para>
+ </sect1>
+
+ <sect1 id="plpython-database">
+  <title>Обращение к базе данных</title>
+
+  <para>Исполнитель языка PL/Python автоматически импортирует модуль Python с именем <literal>plpy</literal>. Вы в своём коде можете использовать функции и константы, объявленные в этом модуле, обращаясь к ним по именам вида <literal>plpy.<replaceable>имя</replaceable></literal>.</para>
+
+  <sect2>
+    <title>Функции обращения к базе данных</title>
+
+  <para>Модуль <literal>plpy</literal> содержит различные функции для выполнения команд в базе данных:</para>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>plpy.<function>execute</function>(<replaceable>запрос</replaceable> [, <replaceable>макс-строк</replaceable>])</literal></term>
+    <listitem>
+     <para>При вызове <function>plpy.execute</function> со строкой запроса и необязательным аргументом, ограничивающим число строк, выполняется заданный запрос, а то, что он выдаёт, возвращается в виде объекта результата.</para>
+
+     <para>Объект результата имитирует список или словарь. Получить из него данные можно по номеру строки и имени столбца. Например, команда: <programlisting>rv = plpy.execute("SELECT * FROM my_table", 5)</programlisting> вернёт не более 5 строк из отношения <literal>my_table</literal>. Если в <literal>my_table</literal> есть столбец <literal>my_column</literal>, к нему можно обратиться так: <programlisting>foo = rv[i]["my_column"]</programlisting> Число возвращённых в этом объекте строк можно получить, воспользовавшись встроенной функцией <function>len</function>.</para>
+
+     <para>Для объекта результата определены следующие дополнительные методы: <variablelist>
+       <varlistentry>
+        <term><literal><function>nrows</function>()</literal></term>
+        <listitem>
+         <para>Возвращает число строк, обработанных командой. Заметьте, что это число не обязательно будет равно числу возвращённых строк. Например, команда <command>UPDATE</command> устанавливает это значение, но не возвращает строк (без указания <literal>RETURNING</literal>).</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal><function>status</function>()</literal></term>
+        <listitem>
+         <para>Значение состояния, возвращённое <function>SPI_execute()</function>.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal><function>colnames</function>()</literal></term>
+        <term><literal><function>coltypes</function>()</literal></term>
+        <term><literal><function>coltypmods</function>()</literal></term>
+        <listitem>
+         <para>Возвращают список имён столбцов, список OID типов столбцов и список модификаторов типа этих столбцов, соответственно.</para>
+
+         <para>Эти методы вызывают исключение, когда им передаётся объект, полученный от команды, не возвращающей результирующий набор, например, <command>UPDATE</command> без <literal>RETURNING</literal>, либо <command>DROP TABLE</command>. Но эти методы вполне можно использовать с результатом, содержащим ноль строк.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal><function>__str__</function>()</literal></term>
+        <listitem>
+         <para>Стандартный метод <literal>__str__</literal> определён так, чтобы можно было, например, вывести отладочное сообщение с результатами запроса, вызвав <literal>plpy.debug(rv)</literal>.</para>
+        </listitem>
+       </varlistentry>
+      </variablelist></para>
+
+     <para>Объект результата может быть изменён.</para>
+
+     <para>Заметьте, что при вызове <literal>plpy.execute</literal> весь набор результатов будет прочитан в память. Эту функцию следует использовать, только если вы знаете, что набор будет относительно небольшим. Если вы хотите исключить риск переполнения памяти при выборке результатов большого объёма, используйте <literal>plpy.cursor</literal> вместо <literal>plpy.execute</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>plpy.<function>prepare</function>(<replaceable>запрос</replaceable> [, <replaceable>типы_аргументов</replaceable>])</literal></term>
+    <term><literal>plpy.<function>execute</function>(<replaceable>план</replaceable> [, <replaceable>аргументы</replaceable> [, <replaceable>макс-строк</replaceable>]])</literal></term>
+    <listitem>
+     <para><indexterm><primary>подготовка запроса</primary> <secondary>в PL/Python</secondary></indexterm> Функция <function>plpy.prepare</function> подготавливает план выполнения для запроса. Она вызывается со строкой запроса и списком типов параметров (если в запросе есть параметры). Например: <programlisting>plan = plpy.prepare("SELECT last_name FROM my_users WHERE first_name = $1", ["text"])</programlisting> Здесь <literal>text</literal> представляет переменную, передаваемую в качестве параметра <literal>$1</literal>. Второй аргумент необязателен, если запросу не нужно передавать никакие параметры.</para>
+     <para>Чтобы запустить подготовленный оператор на выполнение, используйте вариацию функции <function>plpy.execute</function>: <programlisting>rv = plpy.execute(plan, ["name"], 5)</programlisting> Передайте план в первом аргументе (вместо строки запроса), а список значений, которые будут подставлены в запрос, — во втором. Второй аргумент можно опустить, если запрос не принимает никакие параметры. Третий аргумент, как и раньше, задаёт необязательное ограничение максимального числа строк.</para>
+
+     <para>Параметры запросов и поля строк результата преобразуются между типами данных &productname; и Python как описано в <xref remap="6" linkend="plpython-data"/>.</para>
+
+     <para>Когда вы подготавливаете план, используя модуль PL/Python, он сохраняется автоматически. Что это означает, вы можете узнать в документации SPI (<xref linkend="spi"/>). Чтобы эффективно использовать это в нескольких вызовах функции, может потребоваться применить словарь постоянного хранения <literal>SD</literal> или <literal>GD</literal> (см. <xref remap="4" linkend="plpython-sharing"/>). Например: <programlisting>CREATE FUNCTION usesavedplan() RETURNS trigger AS $$
+    if "plan" in SD:
+        plan = SD["plan"]
+    else:
+        plan = plpy.prepare("SELECT 1")
+        SD["plan"] = plan
+    # остальной код функции
+$$ LANGUAGE plpythonu;</programlisting></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>plpy.<function>cursor</function>(<replaceable>запрос</replaceable>)</literal></term>
+    <term><literal>plpy.<function>cursor</function>(<replaceable>план</replaceable> [, <replaceable>аргументы</replaceable>])</literal></term>
+    <listitem>
+     <para>Функция <literal>plpy.cursor</literal> принимает те же аргументы, что и <literal>plpy.execute</literal> (кроме ограничения строк) и возвращает объект курсора, который позволяет обрабатывать объёмные наборы результатов небольшими порциями. Как и <literal>plpy.execute</literal>, этой функции можно передать строку запроса или объект плана со списком аргументов.</para>
+
+     <para>Объект курсора реализует метод <literal>fetch</literal>, который принимает целочисленный параметр и возвращает объект результата. При каждом следующем вызове <literal>fetch</literal> возвращаемый объект будет содержать следующий набор строк, в количестве, не превышающем значение параметра. Когда строки закончатся, <literal>fetch</literal> начнёт возвращать пустой объект результата. Объекты курсора также предоставляют <ulink url="http://docs.python.org/library/stdtypes.html#iterator-types">интерфейс итератора</ulink>, выдающий по строке за один раз, пока не будут выданы все строки. Данные, выбираемые таким образом, возвращаются не как объекты результата, а как словари (одной строке результата соответствует один словарь).</para>
+
+     <para>Следующий пример демонстрирует обработку содержимого большой таблицы двумя способами: <programlisting>CREATE FUNCTION count_odd_iterator() RETURNS integer AS $$
+odd = 0
+for row in plpy.cursor("select num from largetable"):
+    if row['num'] % 2:
+         odd += 1
+return odd
+$$ LANGUAGE plpythonu;
+
+CREATE FUNCTION count_odd_fetch(batch_size integer) RETURNS integer AS $$
+odd = 0
+cursor = plpy.cursor("select num from largetable")
+while True:
+    rows = cursor.fetch(batch_size)
+    if not rows:
+        break
+    for row in rows:
+        if row['num'] % 2:
+            odd += 1
+return odd
+$$ LANGUAGE plpythonu;
+
+CREATE FUNCTION count_odd_prepared() RETURNS integer AS $$
+odd = 0
+plan = plpy.prepare("select num from largetable where num % $1 &lt;&gt; 0", ["integer"])
+rows = list(plpy.cursor(plan, [2]))
+
+return len(rows)
+$$ LANGUAGE plpythonu;</programlisting></para>
+
+     <para>Курсоры ликвидируются автоматически. Но если вы хотите явно освободить все ресурсы, занятые курсором, вызовите метод <literal>close</literal>. Продолжать получать данные через курсор, который был закрыт, нельзя.</para>
+
+     <tip>
+      <para>Не путайте объекты, создаваемые функцией <literal>plpy.cursor</literal>, с курсорами DB-API, определёнными в <ulink url="http://www.python.org/dev/peps/pep-0249/">спецификации API для работы с базами данных в Python</ulink>. Они не имеют ничего общего, кроме имени.</para>
+     </tip>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  </sect2>
+
+  <sect2 id="plpython-trapping">
+   <title>Обработка ошибок</title>
+
+   <para>Функции, обращающиеся к базе данных, могут сталкиваться с ошибками, в результате которых они будут прерываться и вызывать исключение. Обе функции <function>plpy.execute</function> и <function>plpy.prepare</function> могут вызывать экземпляр подкласса исключения <literal>plpy.SPIError</literal>, которое по умолчание прекращает выполнение функции. Эту ошибку можно обработать, как и любое другое исключение в Python, применив конструкцию <literal>try/except</literal>. Например: <programlisting>CREATE FUNCTION try_adding_joe() RETURNS text AS $$
+    try:
+        plpy.execute("INSERT INTO users(username) VALUES ('joe')")
+    except plpy.SPIError:
+        return "something went wrong"
+    else:
+        return "Joe added"
+$$ LANGUAGE plpythonu;</programlisting></para>
+
+   <para>Фактический класс вызываемого исключения соответствует определённому условию возникновения ошибки. Список всех возможных условий приведён в <xref remap="6" linkend="errcodes-table"/>. В модуле <literal>plpy.spiexceptions</literal> определяются классы исключений для каждого условия <productname>&productname;</productname>, с именами, производными от имён условий. Например, имя <literal>division_by_zero</literal> становится именем <literal>DivisionByZero</literal>, <literal>unique_violation</literal> — именем <literal>UniqueViolation</literal>, <literal>fdw_error</literal> — именем <literal>FdwError</literal> и т. д. Все эти классы исключений наследуются от <literal>SPIError</literal>. Такое разделение на классы упрощает обработку определённых ошибок, например: <programlisting>CREATE FUNCTION insert_fraction(numerator int, denominator int) RETURNS text AS $$
+from plpy import spiexceptions
+try:
+    plan = plpy.prepare("INSERT INTO fractions (frac) VALUES ($1 / $2)", ["int", "int"])
+    plpy.execute(plan, [numerator, denominator])
+except spiexceptions.DivisionByZero:
+    return "denominator cannot equal zero"
+except spiexceptions.UniqueViolation:
+    return "already have that fraction"
+except plpy.SPIError, e:
+    return "other error, SQLSTATE %s" % e.sqlstate
+else:
+    return "fraction inserted"
+$$ LANGUAGE plpythonu;</programlisting> Заметьте, что так как все исключения из модуля <literal>plpy.spiexceptions</literal> наследуются от исключения <literal>SPIError</literal>, команда <literal>except</literal>, обрабатывающая это исключение, будет перехватывать все ошибки при обращении к базе данных.</para>
+
+   <para>В качестве другого варианта обработки различных условий ошибок, вы можете перехватывать исключение <literal>SPIError</literal> и определять конкретное условие ошибки внутри блока <literal>except</literal> по значению атрибута <literal>sqlstate</literal> объекта исключения. Этот атрибут содержит строку с кодом ошибки <quote>SQLSTATE</quote>. Конечный результат при таком подходе примерно тот же.</para>
+  </sect2>
+ </sect1>
+
+ <sect1 id="plpython-subtransaction">
+  <title>Неявные подтранзакции</title>
+
+  <para>Перехват ошибок, произошедших при обращении к базе данных, как описано в <xref remap="6" linkend="plpython-trapping"/>, может привести к нежелательной ситуации, когда часть операций будет успешно выполнена, прежде чем произойдёт сбой. Данные останутся в несогласованном состоянии после обработки такой ошибки. PL/Python предлагает решение этой проблемы в форме неявных подтранзакций.</para>
+
+  <sect2>
+   <title>Менеджеры контекста подтранзакций</title>
+
+   <para>Рассмотрим функцию, осуществляющую перевод средств между двумя счетами: <programlisting>CREATE FUNCTION transfer_funds() RETURNS void AS $$
+try:
+    plpy.execute("UPDATE accounts SET balance = balance - 100 WHERE account_name = 'joe'")
+    plpy.execute("UPDATE accounts SET balance = balance + 100 WHERE account_name = 'mary'")
+except plpy.SPIError, e:
+    result = "error transferring funds: %s" % e.args
+else:
+    result = "funds transferred correctly"
+plan = plpy.prepare("INSERT INTO operations (result) VALUES ($1)", ["text"])
+plpy.execute(plan, [result])
+$$ LANGUAGE plpythonu;</programlisting> Если при выполнении второго оператора <literal>UPDATE</literal> произойдёт исключение, эта функция сообщит об ошибке, но результат первого <literal>UPDATE</literal> будет, тем не менее, зафиксирован. Другими словами, средства будут списаны со счёта Джо, но не зачислятся на счёт Мэри.</para>
+
+   <para>Во избежание таких проблем, вы можете завернуть вызовы <literal>plpy.execute</literal> в явную подтранзакцию. Модуль <literal>plpy</literal> предоставляет вспомогательный объект для управления явными подтранзакциями, создаваемый функцией <literal>plpy.subtransaction()</literal>. Объекты, созданные этой функцией, реализуют <ulink url="http://docs.python.org/library/stdtypes.html#context-manager-types">интерфейс менеджера контекста</ulink>. Используя явные подтранзакции, мы можем переписать нашу функцию так: <programlisting>CREATE FUNCTION transfer_funds2() RETURNS void AS $$
+try:
+    with plpy.subtransaction():
+        plpy.execute("UPDATE accounts SET balance = balance - 100 WHERE account_name = 'joe'")
+        plpy.execute("UPDATE accounts SET balance = balance + 100 WHERE account_name = 'mary'")
+except plpy.SPIError, e:
+    result = "error transferring funds: %s" % e.args
+else:
+    result = "funds transferred correctly"
+plan = plpy.prepare("INSERT INTO operations (result) VALUES ($1)", ["text"])
+plpy.execute(plan, [result])
+$$ LANGUAGE plpythonu;</programlisting> Заметьте, что конструкция <literal>try/catch</literal> по-прежнему нужна. Без неё исключение распространится вверх по стеку Python и приведёт к прерыванию всей функции с ошибкой <productname>&productname;</productname>, так что в таблицу <literal>operations</literal> запись не добавится. Менеджер контекста подтранзакции не перехватывает ошибки, он только гарантирует, что все операции с базой данных в его области действия будут атомарно зафиксированы или отменены. Откат блока подтранзакции происходит при исключении любого вида, а не только исключения, вызванного ошибками при обращении к базе данных. Обычное исключение Python, вызванное внутри блока явной подтранзакции, также приведёт к откату этой подтранзакции.</para>
+  </sect2>
+
+  <sect2>
+   <title>Старые версии Python</title>
+
+   <para>Синтаксис использования менеджеров контекста с ключевым словом <literal>with</literal> по умолчанию поддерживается в Python 2.6. В PL/Python с более старой версией Python тоже возможно использовать явные подтранзакции, хотя и не так прозрачно. При этом вы можете вызывать методы <literal>__enter__</literal> и <literal>__exit__</literal> менеджера контекста по удобным псевдонимам <literal>enter</literal> и <literal>exit</literal>. Для такого случая функцию перечисления средств можно переписать так: <programlisting>CREATE FUNCTION transfer_funds_old() RETURNS void AS $$
+try:
+    subxact = plpy.subtransaction()
+    subxact.enter()
+    try:
+        plpy.execute("UPDATE accounts SET balance = balance - 100 WHERE account_name = 'joe'")
+        plpy.execute("UPDATE accounts SET balance = balance + 100 WHERE account_name = 'mary'")
+    except:
+        import sys
+        subxact.exit(*sys.exc_info())
+        raise
+    else:
+        subxact.exit(None, None, None)
+except plpy.SPIError, e:
+    result = "error transferring funds: %s" % e.args
+else:
+    result = "funds transferred correctly"
+
+plan = plpy.prepare("INSERT INTO operations (result) VALUES ($1)", ["text"])
+plpy.execute(plan, [result])
+$$ LANGUAGE plpythonu;</programlisting></para>
+
+   <note>
+    <para>Хотя менеджеры контекста были реализованы в 2.5, для использования синтаксиса <literal>with</literal> в этой версии нужно применить <ulink url="http://docs.python.org/release/2.5/ref/future.html">&laquo;будущий оператор&raquo;</ulink>. Однако по техническим причинам &laquo;будущие операторы&raquo; в функциях PL/Python использовать нельзя.</para>
+   </note>
+  </sect2>
+ </sect1>
+
+ <sect1 id="plpython-util">
+  <title>Вспомогательные функции</title>
+  <para>Модуль <literal>plpy</literal> также предоставляет функции <simplelist>
+    <member><literal>plpy.debug(<replaceable>msg, **kwargs</replaceable>)</literal></member>
+    <member><literal>plpy.log(<replaceable>msg, **kwargs</replaceable>)</literal></member>
+    <member><literal>plpy.info(<replaceable>msg, **kwargs</replaceable>)</literal></member>
+    <member><literal>plpy.notice(<replaceable>msg, **kwargs</replaceable>)</literal></member>
+    <member><literal>plpy.warning(<replaceable>msg, **kwargs</replaceable>)</literal></member>
+    <member><literal>plpy.error(<replaceable>msg, **kwargs</replaceable>)</literal></member>
+    <member><literal>plpy.fatal(<replaceable>msg, **kwargs</replaceable>)</literal></member>
+   </simplelist> <indexterm><primary>elog</primary> <secondary>в PL/Python</secondary></indexterm> Функции <function>plpy.error</function> и <function>plpy.fatal</function> на самом деле выдают исключение Python, которое, если его не перехватить, распространяется в вызывающий запрос, что приводит к прерыванию текущей транзакции или подтранзакции. Команды <literal>raise plpy.Error(<replaceable>msg</replaceable>)</literal> и <literal>raise plpy.Fatal(<replaceable>msg</replaceable>)</literal> равнозначны вызовам <literal>plpy.error(<replaceable>msg</replaceable>)</literal> и <literal>plpy.fatal(<replaceable>msg</replaceable>)</literal>, соответственно, но форма <literal>raise</literal> не позволяет передавать аргументы с ключами. Другие функции просто выдают сообщения разных уровней важности. Будут ли сообщения определённого уровня передаваться клиентам и/или записываться в журнал сервера, определяется конфигурационными переменными <xref linkend="guc-log-min-messages"/> и <xref linkend="guc-client-min-messages"/>. За дополнительными сведениями обратитесь к <xref remap="3" linkend="runtime-config"/>.</para>
+
+  <para>Аргумент <replaceable>msg</replaceable> задаётся как позиционный. Для обратной совместимости может быть передано несколько позиционных аргументов. В этом случае сообщением для клиента становится строковое представление кортежа позиционных аргументов.</para>
+
+  <para>Дополнительно только по ключам принимаются следующие аргументы: <simplelist>
+    <member><literal>detail</literal></member>
+    <member><literal>hint</literal></member>
+    <member><literal>sqlstate</literal></member>
+    <member><literal>schema_name</literal></member>
+    <member><literal>table_name</literal></member>
+    <member><literal>column_name</literal></member>
+    <member><literal>datatype_name</literal></member>
+    <member><literal>constraint_name</literal></member>
+   </simplelist> Строковое представление объектов, передаваемых в аргументах по ключам, позволяет выдать клиенту более богатую информацию. Например: <programlisting>CREATE FUNCTION raise_custom_exception() RETURNS void AS $$
+plpy.error("custom exception message",
+           detail="some info about exception",
+           hint="hint for users")
+$$ LANGUAGE plpythonu;
+
+=# SELECT raise_custom_exception();
+ERROR:  plpy.Error: custom exception message
+DETAIL:  some info about exception
+HINT:  hint for users
+CONTEXT:  Traceback (most recent call last):
+  PL/Python function "raise_custom_exception", line 4, in &lt;module&gt;
+    hint="hint for users")
+PL/Python function "raise_custom_exception"</programlisting></para>
+
+  <para>Ещё один набор вспомогательных функций образуют <literal>plpy.quote_literal(<replaceable>строка</replaceable>)</literal>, <literal>plpy.quote_nullable(<replaceable>строка</replaceable>)</literal> и <literal>plpy.quote_ident(<replaceable>строка</replaceable>)</literal>. Они равнозначны встроенным функциям заключения в кавычки, описанным в <xref remap="6" linkend="functions-string"/>. Они полезны при конструировании свободно составляемых запросов. На PL/Python динамический SQL, показанный в <xref remap="6" linkend="plpgsql-quote-literal-example"/>, формируется так: <programlisting>plpy.execute("UPDATE tbl SET %s = %s WHERE key = %s" % (
+    plpy.quote_ident(colname),
+    plpy.quote_nullable(newvalue),
+    plpy.quote_literal(keyvalue)))</programlisting></para>
+ </sect1>
+
+ <sect1 id="plpython-envar">
+  <title>Переменные окружения</title>
+
+  <para>Некоторые переменные окружения, воспринимаемые интерпретатором Python, тоже могут влиять на поведение PL/Python. При необходимости их нужно установить в среде основного серверного процесса &productname;, например, в скрипте запуска. Множество доступных переменных окружения зависит от версии Python; за подробностями обратитесь к документации Python. На момент написания этой документации, на поведение PL/Python влияли следующие переменные окружения, при наличии подходящей версии Python: <itemizedlist>
+    <listitem>
+     <para><envar>PYTHONHOME</envar></para>
+    </listitem>
+
+    <listitem>
+     <para><envar>PYTHONPATH</envar></para>
+    </listitem>
+
+    <listitem>
+     <para><envar>PYTHONY2K</envar></para>
+    </listitem>
+
+    <listitem>
+     <para><envar>PYTHONOPTIMIZE</envar></para>
+    </listitem>
+
+    <listitem>
+     <para><envar>PYTHONDEBUG</envar></para>
+    </listitem>
+
+    <listitem>
+     <para><envar>PYTHONVERBOSE</envar></para>
+    </listitem>
+
+    <listitem>
+     <para><envar>PYTHONCASEOK</envar></para>
+    </listitem>
+
+    <listitem>
+     <para><envar>PYTHONDONTWRITEBYTECODE</envar></para>
+    </listitem>
+
+    <listitem>
+     <para><envar>PYTHONIOENCODING</envar></para>
+    </listitem>
+
+    <listitem>
+     <para><envar>PYTHONUSERBASE</envar></para>
+    </listitem>
+
+    <listitem>
+     <para><envar>PYTHONHASHSEED</envar></para>
+    </listitem>
+   </itemizedlist> (Похоже, что вследствие тонкостей реализации Python, не зависящих от исполнителя PL/Python, некоторые переменные окружения, перечисленные на странице руководства man <command>python</command>, действуют только в интерпретаторе для командной строки, но не во встраиваемом интерпретаторе Python.)</para>
+ </sect1>
+</chapter>

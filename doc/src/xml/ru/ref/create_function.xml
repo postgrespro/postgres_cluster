@@ -1,0 +1,405 @@
+<!--
+doc/src/xml/ref/create_function.xml
+-->
+
+<refentry id="sql-createfunction">
+ <indexterm zone="sql-createfunction"><primary>CREATE FUNCTION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE FUNCTION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE FUNCTION</refname>
+  <refpurpose>создать функцию</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE [ OR REPLACE ] FUNCTION
+    <replaceable class="parameter">имя</replaceable> ( [ [ <replaceable class="parameter">режим_аргумента</replaceable> ] [ <replaceable class="parameter">имя_аргумента</replaceable> ] <replaceable class="parameter">тип_аргумента</replaceable> [ { DEFAULT | = } <replaceable class="parameter">выражение_по_умолчанию</replaceable> ] [, ...] ] )
+    [ RETURNS <replaceable class="parameter">тип_результата</replaceable>
+      | RETURNS TABLE ( <replaceable class="parameter">имя_столбца</replaceable> <replaceable class="parameter">тип_столбца</replaceable> [, ...] ) ]
+  { LANGUAGE <replaceable class="parameter">имя_языка</replaceable>
+    | TRANSFORM { FOR TYPE <replaceable class="parameter">имя_типа</replaceable> } [, ... ]
+    | WINDOW
+    | IMMUTABLE | STABLE | VOLATILE | [ NOT ] LEAKPROOF
+    | CALLED ON NULL INPUT | RETURNS NULL ON NULL INPUT | STRICT
+    | [ EXTERNAL ] SECURITY INVOKER | [ EXTERNAL ] SECURITY DEFINER
+    | PARALLEL { UNSAFE | RESTRICTED | SAFE }
+    | COST <replaceable class="parameter">стоимость_выполнения</replaceable>
+    | ROWS <replaceable class="parameter">строк_в_результате</replaceable>
+    | SET <replaceable class="parameter">параметр_конфигурации</replaceable> { TO <replaceable class="parameter">значение</replaceable> | = <replaceable class="parameter">значение</replaceable> | FROM CURRENT }
+    | AS '<replaceable class="parameter">определение</replaceable>'
+    | AS '<replaceable class="parameter">объектный_файл</replaceable>', '<replaceable class="parameter">объектный_символ</replaceable>'
+  } ...
+    [ WITH ( <replaceable class="parameter">атрибут</replaceable> [, ...] ) ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="sql-createfunction-description">
+  <title>Описание</title>
+
+  <para>Команда <command>CREATE FUNCTION</command> определяет новую функцию. <command>CREATE OR REPLACE FUNCTION</command> создаёт новую функцию, либо заменяет определение уже существующей. Чтобы определить функцию, необходимо иметь право <literal>USAGE</literal> для соответствующего языка.</para>
+
+  <para>Если указано имя схемы, функция создаётся в заданной схеме, в противном случае — в текущей. Имя новой функции должно отличаться от имён существующих функций с такими же типами аргументов в этой схеме. Однако, функции с аргументами разных типов могут иметь одно имя (это называется <firstterm>перегрузкой</firstterm>).</para>
+
+  <para>Чтобы заменить текущее определение существующей функции, используйте команду <command>CREATE OR REPLACE FUNCTION</command>. Но учтите, что она не позволяет изменить имя или аргументы функции (если попытаться сделать это, на самом деле будет создана новая, независимая функция). Кроме того, <command>CREATE OR REPLACE FUNCTION</command> не позволит изменить тип результата существующей функции. Чтобы сделать это, придётся удалить функцию и создать её заново. (Это означает, что если функция имеет выходные параметры (<literal>OUT</literal>), то изменить типы параметров <literal>OUT</literal> можно, только удалив функцию.)</para>
+
+  <para>Когда команда <command>CREATE OR REPLACE FUNCTION</command> заменяет существующую функцию, владелец и права доступа к этой функции не меняются. Все другие свойства функции получают значения, задаваемые командой явно или по умолчанию. Чтобы заменить функцию, необходимо быть её владельцем (или быть членом роли-владельца).</para>
+
+  <para>Если вы удалите и затем вновь создадите функцию, новая функция станет другой сущностью, отличной от старой; вам потребуется так же удалить существующие правила, представления, триггеры и т. п., ссылающиеся на старую функцию. Поэтому, чтобы изменить определение функции, сохраняя ссылающиеся на неё объекты, следует использовать <command>CREATE OR REPLACE FUNCTION</command>. Кроме того, многие дополнительные свойства существующей функции можно изменить с помощью <command>ALTER FUNCTION</command>.</para>
+
+  <para>Владельцем функции становится пользователь её создавший.</para>
+
+  <para>Чтобы создать функцию, необходимо иметь право <literal>USAGE</literal> для типов её аргументов и возвращаемого типа.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <variablelist>
+
+    <varlistentry>
+     <term><replaceable class="parameter">имя</replaceable></term>
+
+     <listitem>
+      <para>Имя (возможно, дополненное схемой) создаваемой функции.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">режим_аргумента</replaceable></term>
+
+     <listitem>
+      <para>Режим аргумента: <literal>IN</literal> (входной), <literal>OUT</literal> (выходной), <literal>INOUT</literal> (входной и выходной) или <literal>VARIADIC</literal> (переменный). По умолчанию подразумевается <literal>IN</literal>. За единственным аргументом <literal>VARIADIC</literal> могут следовать только аргументы <literal>OUT</literal>. Кроме того, аргументы <literal>OUT</literal> и <literal>INOUT</literal> нельзя использовать с предложением <literal>RETURNS TABLE</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">имя_аргумента</replaceable></term>
+
+     <listitem>
+      <para>Имя аргумента. Некоторые языки (включая SQL и PL/pgSQL) позволяют использовать это имя в теле функции. Для других языков это имя служит просто дополнительным описанием, если говорить о самой функции; однако вы можете указывать имена аргументов при вызове функции для улучшения читаемости (см. <xref remap="4" linkend="sql-syntax-calling-funcs"/>). Имя выходного аргумента в любом случае имеет значение, так как оно определяет имя столбца в типе результата. (Если вы опустите имя выходного аргумента, система выберет для него имя по умолчанию.)</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">тип_аргумента</replaceable></term>
+
+     <listitem>
+      <para>Тип(ы) данных аргументов функции (возможно, дополненный схемой), при наличии аргументов. Тип аргументов может быть базовым, составным или доменным, либо это может быть ссылка на столбец таблицы.</para>
+      <para>В зависимости от языка реализации также может допускаться указание <quote>псевдотипов</quote>, например, <type>cstring</type>. Псевдотипы показывают, что фактический тип аргумента либо определён не полностью, либо существует вне множества обычных типов SQL.</para>
+      <para>Ссылка на тип столбца записывается в виде <literal><replaceable class="parameter">имя_таблицы</replaceable>.<replaceable class="parameter">имя_столбца</replaceable>%TYPE</literal>. Иногда такое указание бывает полезно, так как позволяет создать функцию, независящую от изменений в определении таблицы.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">выражение_по_умолчанию</replaceable></term>
+
+     <listitem>
+      <para>Выражение, используемое для вычисления значения по умолчанию, если параметр не задан явно. Результат выражения должен сводиться к типу соответствующего параметра. Значения по умолчанию могут иметь только входные параметры (включая <literal>INOUT</literal>). Для всех входных параметров, следующих за параметром с определённым значением по умолчанию, также должны быть определены значения по умолчанию.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">тип_результата</replaceable></term>
+
+     <listitem>
+      <para>Тип возвращаемых данных (возможно, дополненный схемой). Это может быть базовый, составной или доменный тип, либо ссылка на тип столбца таблицы. В зависимости от языка реализации здесь также могут допускаться <quote>псевдотипы</quote>, например <type>cstring</type>. Если функция не должна возвращать значение, в качестве типа результата указывается <type>void</type>.</para>
+      <para>В случае наличия параметров <literal>OUT</literal> или <literal>INOUT</literal>, предложение <literal>RETURNS</literal> можно опустить. Если оно присутствует, оно должно согласовываться с типом результата, выводимым из выходных параметров: в качестве возвращаемого типа указывается <literal>RECORD</literal>, если выходных параметров несколько, либо тип единственного выходного параметра.</para>
+      <para>Указание <literal>SETOF</literal> показывает, что функция возвращает множество, а не единственный элемент.</para>
+      <para>Ссылка на тип столбца записывается в виде <literal><replaceable class="parameter">имя_таблицы</replaceable>.<replaceable class="parameter">имя_столбца</replaceable>%TYPE</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">имя_столбца</replaceable></term>
+
+     <listitem>
+      <para>Имя выходного столбца в записи <literal>RETURNS TABLE</literal>. По сути это ещё один способ объявить именованный выходной параметр (<literal>OUT</literal>), но <literal>RETURNS TABLE</literal> также подразумевает и <literal>RETURNS SETOF</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">тип_столбца</replaceable></term>
+
+     <listitem>
+      <para>Тип данных выходного столбца в записи <literal>RETURNS TABLE</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">имя_языка</replaceable></term>
+
+     <listitem>
+      <para>Имя языка, на котором реализована функция. Это может быть <literal>sql</literal>, <literal>c</literal>, <literal>internal</literal>, либо имя процедурного языка, определённого пользователем, например, <literal>plpgsql</literal>. Стиль написания этого имени в апострофах считается устаревшим и требует точного совпадения регистра.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>TRANSFORM { FOR TYPE <replaceable class="parameter">имя_типа</replaceable> } [, ... ] }</literal></term>
+
+     <listitem>
+      <para>Устанавливает список трансформаций, которые должны применяться при вызове функций. Трансформации выполняют преобразования между типами SQL и типами данных, специфичными для языков; см. <xref remap="4" linkend="sql-createtransform"/>. Преобразования встроенных типов обычно жёстко предопределены в реализациях процедурных языков, так что их здесь указывать не нужно. Если реализация процедурного языка не знает, как обработать тип и трансформация для него отсутствует, будет выполнено преобразование типов по умолчанию, но это зависит от реализации.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>WINDOW</literal></term>
+
+     <listitem>
+      <para>Указание <literal>WINDOW</literal> показывает, что создаётся не простая, а <firstterm>оконная функция</firstterm>. В настоящее время это имеет смысл только для функций, написанных на C. Атрибут <literal>WINDOW</literal> нельзя изменить, модифицируя впоследствии определение функции.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>IMMUTABLE</literal></term>
+     <term><literal>STABLE</literal></term>
+     <term><literal>VOLATILE</literal></term>
+
+     <listitem>
+      <para>Эти атрибуты информируют оптимизатор запросов о поведении функции. Одновременно можно указать не более одного атрибута. Если никакой атрибут не задан, по умолчанию подразумевается <literal>VOLATILE</literal>.</para>
+
+      <para>Характеристика <literal>IMMUTABLE</literal> (постоянная) показывает, что функция не может модифицировать базу данных и всегда возвращает один и тот же результат при определённых значениях аргументов; то есть, она не обращается к базе данных и не использует информацию, не переданную ей явно в списке аргументов. Если функция имеет такую характеристику, любой её вызов с аргументами-константами можно немедленно заменить значением функции.</para>
+
+      <para>Характеристика <literal>STABLE</literal> (стабильная) показывает, что функция не может модифицировать базу данных и в рамках одного сканирования таблицы она всегда возвращает один и тот же результат для определённых значений аргументов, но этот результат может быть разным в разных операторах SQL. Это подходящий выбор для функций, результаты которых зависят от содержимого базы данных и настраиваемых параметров (например, текущего часового пояса). (Но этот вариант не подходит для триггеров <literal>AFTER</literal>, желающих прочитать строки, изменённые текущей командой.) Также заметьте, что функции семейства <function>current_timestamp</function> также считаются стабильными, так как их результаты не меняются внутри транзакции.</para>
+
+      <para>Характеристика <literal>VOLATILE</literal> (изменчивая) показывает, что результат функции может меняться даже в рамках одного сканирования таблицы, так что её вызовы нельзя оптимизировать. Изменчивы в этом смысле относительно немногие функции баз данных, например: <literal>random()</literal>, <literal>currval()</literal> и <literal>timeofday()</literal>. Но заметьте, что любая функция с побочными эффектами должна быть классифицирована как изменчивая, даже если её результат вполне предсказуем, чтобы её вызовы не были соптимизированы; пример такой функции: <literal>setval()</literal>.</para>
+
+      <para>За дополнительными подробностями обратитесь к <xref remap="3" linkend="xfunc-volatility"/>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>LEAKPROOF</literal></term>
+     <listitem>
+      <para>Характеристика <literal>LEAKPROOF</literal> (герметичная) показывает, что функция не имеет побочных эффектов. Она не раскрывает информацию о своих аргументах, кроме как возвращая результат. Например, функция, которая выдаёт сообщение об ошибке с некоторыми, но не всеми значениями аргументов, либо выводит значения аргументов в сообщении об ошибке, не является герметичной. Это влияет на то, как система выполняет запросы к представлениям, созданным с барьером безопасности (с указанием <literal>security_barrier</literal>), или к таблицам с включённой защитой строк. Во избежание неконтролируемой утечки данных система будет проверять условия из политик защиты и определений представлений с барьерами безопасности перед любыми условиями, которые задаёт пользователь в самом запросе и в которых задействуются негерметичные функции. Функции и операторы, помеченные как герметичные, считаются доверенными и могут выполняться перед условиями из политик защиты и представлений с барьерами безопасности. При этом функции, которые не имеют аргументов или которым не передаются никакие аргументы из представления с барьером безопасности или таблицы, не требуется помечать как герметичные, чтобы они выполнялись до условий, связанных с безопасностью. См. <xref remap="4" linkend="sql-createview"/> и <xref remap="4" linkend="rules-privileges"/>. Это свойство может установить только суперпользователь.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>CALLED ON NULL INPUT</literal></term>
+     <term><literal>RETURNS NULL ON NULL INPUT</literal></term>
+     <term><literal>STRICT</literal></term>
+
+     <listitem>
+      <para><literal>CALLED ON NULL INPUT</literal> (по умолчанию) показывает, что функция будет вызвана как обычно, если среди её аргументов оказываются значения NULL. В этом случае ответственность за проверку значений NULL и соответствующую их обработку ложится на разработчика функции.</para>
+
+      <para>Указание <literal>RETURNS NULL ON NULL INPUT</literal> или <literal>STRICT</literal> показывает, что функция всегда возвращает NULL, получив NULL в одном из аргументов. Такая функция не будет вызываться с аргументами NULL, вместо этого автоматически будет полагаться результат NULL.</para>
+     </listitem>
+    </varlistentry>
+
+   <varlistentry>
+    <term><literal><optional>EXTERNAL</optional> SECURITY INVOKER</literal></term>
+    <term><literal><optional>EXTERNAL</optional> SECURITY DEFINER</literal></term>
+
+    <listitem>
+     <para>Характеристика <literal>SECURITY INVOKER</literal> (безопасность вызывающего) показывает, что функция будет выполняться с правами пользователя, вызвавшего её. Этот вариант подразумевается по умолчанию. Вариант <literal>SECURITY DEFINER</literal> (безопасность определившего) определяет, что функция выполняется с правами пользователя, создавшего её.</para>
+
+     <para>Ключевое слово <literal>EXTERNAL</literal> (внешняя) допускается для соответствия стандарту SQL, но является необязательным, так как, в отличие от SQL, эта характеристика распространяется на все функции, а не только внешние.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>PARALLEL</literal></term>
+
+    <listitem>
+     <para>Указание <literal>PARALLEL UNSAFE</literal> означает, что эту функцию нельзя выполнять в параллельном режиме и присутствие такой функции в операторе SQL приводит к выбору последовательного плана выполнения. Это характеристика функции по умолчанию. Указание <literal>PARALLEL RESTRICTED</literal> означает, что функцию можно выполнять в параллельном режиме, но только в ведущем процессе группы. <literal>PARALLEL SAFE</literal> показывает, что функция безопасна для выполнения в параллельном режиме без ограничений.</para>
+
+     <para>Функции должны помечаться как небезопасные для параллельного выполнения, если они изменяют состояние базы данных, вносят изменения в транзакции, например, используя подтранзакции, обращаются к последовательностям или пытаются сохранять параметры (например, используя <literal>setval</literal>). Ограниченно параллельными должны помечаться функции, которые обращаются к временным таблицам, состоянию клиентского подключения, курсорам, подготовленным операторам или разнообразному состоянию обслуживающего процесса, которое система не может синхронизировать в параллельном режиме (например, <literal>setseed</literal> может выполнять только ведущий процесс группы, так как изменения, внесённые другим процессом, не передаются ведущему). Вообще, если функция помечена как безопасная, тогда как она является ограниченной или небезопасной, либо если она помечена как ограниченно безопасная, не являясь безопасной, при попытке вызвать её в параллельном запросе она может выдавать ошибки или неверные результаты. Функции на языке C при неправильной пометке теоретически могут проявлять полностью неопределённое поведение, так как система никак не может защититься от произвольного кода на C, но чаще все они будут вести себя не хуже, чем любая другая функция. В случае сомнений функцию следует помечать как небезопасную (<literal>UNSAFE</literal>), что и имеет место по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">стоимость_выполнения</replaceable></term>
+
+     <listitem>
+      <para>Положительное число, задающее примерную стоимость выполнения функции, в единицах <xref linkend="guc-cpu-operator-cost"/>. Если функция возвращает множество, это число задаёт стоимость для одной строки. Если стоимость не указана, для функций на C и внутренних функций она считается равной 1 единице, а для функций на всех других языках — 100 единицам. При больших значениях планировщик будет стараться не вызывать эту функцию чаще, чем это необходимо.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">строк_в_результате</replaceable></term>
+
+     <listitem>
+      <para>Положительное число, задающее примерное число строк, которое будет ожидать планировщик на выходе этой функции. Это указание допустимо, только если функция объявлена как возвращающая множество. Предполагаемое по умолчанию значение — 1000 строк.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>параметр_конфигурации</replaceable></term>
+     <term><replaceable>значение</replaceable></term>
+     <listitem>
+      <para>Предложение <literal>SET</literal> определяет, что при вызове функции указанный параметр конфигурации должен принять заданное значение, а затем восстановить своё предыдущее значение при завершении функции. Предложение <literal>SET FROM CURRENT</literal> сохраняет в качестве значения, которое будет применено при входе в функцию, значение, действующее в момент выполнения <command>CREATE FUNCTION</command>.</para>
+
+      <para>Если в определение функции добавлено <literal>SET</literal>, то действие команды <command>SET LOCAL</command>, выполняемой внутри функции для того же параметра, ограничивается телом функции: предыдущее значение параметра неизменно будет восстановлено при завершении функции. Однако обычная команда <command>SET</command> (без <literal>LOCAL</literal>) переопределяет предложение <literal>SET</literal>, как и предыдущую команду <command>SET LOCAL</command>: действие такой команды будет сохранено и после завершения функции, если только не произойдёт откат транзакции.</para>
+
+      <para>За подробными сведениями об именах и значениях параметров обратитесь к <xref remap="3" linkend="sql-set"/> и <xref remap="3" linkend="runtime-config"/>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">определение</replaceable></term>
+
+     <listitem>
+      <para>Строковая константа, определяющая реализацию функции; её значение зависит от языка. Это может быть имя внутренней функции, путь к объектному файлу, команда SQL или код функции на процедурном языке.</para>
+
+      <para>Часто бывает полезно заключать определение функции в доллары (см. <xref remap="4" linkend="sql-syntax-dollar-quoting"/>), а не в традиционные апострофы. Если не использовать доллары, все апострофы и обратные косые черты в определении функции придётся экранировать, дублируя их.</para>
+
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal><replaceable class="parameter">объектный_файл</replaceable>, <replaceable class="parameter">объектный_символ</replaceable></literal></term>
+
+     <listitem>
+      <para>Эта форма предложения <literal>AS</literal> применяется для динамически загружаемых функций на языке C, когда имя функции в коде C не совпадает с именем функции в SQL. Строка <replaceable class="parameter">объектный_файл</replaceable> задаёт имя файла, содержащего динамически загружаемый объект, а <replaceable class="parameter">объектный_символ</replaceable> — символ скомпонованной функций, то есть имя функции в исходном коде на языке C. Если объектный символ опущен, предполагается, что он совпадает с именем определяемой SQL-функции.</para>
+
+      <para>Если повторные вызовы <command>CREATE FUNCTION</command> ссылаются на один и тот же объектный файл, файл загружается в рамках сеанса только один раз. Чтобы выгрузить и загрузить файл снова (например, в процессе разработки), начните новый сеанс.</para>
+
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">атрибут</replaceable></term>
+
+     <listitem>
+      <para>Исторически сложившийся способ передавать дополнительную информацию о функции. В этой записи могут присутствовать следующие атрибуты: <variablelist>
+       <varlistentry>
+        <term><literal>isStrict</literal></term>
+        <listitem>
+         <para>Равнозначно указанию <literal>STRICT</literal> или <literal>RETURNS NULL ON NULL INPUT</literal>.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>isCachable</literal></term>
+        <listitem>
+         <para>Свойство <literal>isCachable</literal> — устаревший эквивалент <literal>IMMUTABLE</literal>; оно всё ещё поддерживается ради обратной совместимости.</para>
+        </listitem>
+       </varlistentry>
+
+      </variablelist> Имена атрибутов являются регистронезависимыми.</para>
+    </listitem>
+   </varlistentry>
+
+   </variablelist>
+
+   <para>За дополнительной информацией о разработке функций обратитесь к <xref remap="3" linkend="xfunc"/>.</para>
+
+ </refsect1>
+
+ <refsect1 id="sql-createfunction-overloading">
+  <title>Перегрузка</title>
+
+   <para><productname>&productname;</productname> допускает <firstterm>перегрузку</firstterm> функций; то есть, позволяет использовать одно имя для нескольких различных функций, если у них различаются типы входных аргументов. Однако имена функций в коде C должны различаться, так что перегружаемым функциям C нужно давать различные имена в C (например, включить в имя функции на C типы аргументов).</para>
+
+   <para>Две функции считаются совпадающими, если они имеют одинаковые имена и типы <emphasis>входных</emphasis> аргументов, параметры <literal>OUT</literal> игнорируются. Таким образом, например, эти объявления вызовут конфликт: <programlisting>CREATE FUNCTION foo(int) ...
+CREATE FUNCTION foo(int, out text) ...</programlisting></para>
+
+   <para>Функции, имеющие разные типы аргументов, не будут считаться конфликтующими в момент создания, но предоставленные для них значения по умолчанию могут вызвать конфликт в момент использования. Например, рассмотрите следующие определения: <programlisting>CREATE FUNCTION foo(int) ...
+CREATE FUNCTION foo(int, int default 42) ...</programlisting> Вызов <literal>foo(10)</literal> завершится ошибкой из-за неоднозначности в выборе вызываемой функции.</para>
+
+ </refsect1>
+
+ <refsect1 id="sql-createfunction-notes">
+  <title>Замечания</title>
+
+   <para>В объявлении аргументов функции и возвращаемого значения допускается полный синтаксис описания типа <acronym>SQL</acronym>. Однако модификаторы типа в скобках (например, поле точности для типа <type>numeric</type>) команда <command>CREATE FUNCTION</command> не учитывает. Так что, например, <literal>CREATE FUNCTION foo (varchar(10)) ...</literal> создаст такую же функцию, что и <literal>CREATE FUNCTION foo (varchar) ...</literal>.</para>
+
+   <para>При замене существующей функции с помощью <command>CREATE OR REPLACE FUNCTION</command> есть ограничения на изменения имён параметров. В частности, нельзя изменить имя, уже назначенное любому входному параметру (хотя можно добавить имена ранее безымянным параметрам). Также, если у функции более одного выходного параметра, нельзя изменять имена выходных параметров, так как это приведёт к изменению имён столбцов анонимного составного типа, описывающего результат функции. Эти ограничения позволяют гарантировать, что существующие вызовы функции не перестанут работать после её замены.</para>
+
+   <para>Если функция объявлена как <literal>STRICT</literal> с аргументом <literal>VARIADIC</literal>, при оценивании строгости проверяется, что весь переменный массив <emphasis>в целом</emphasis> не NULL. Если же в этом массиве содержатся элементы NULL, функция будет вызываться.</para>
+
+ </refsect1>
+
+ <refsect1 id="sql-createfunction-examples">
+  <title>Примеры</title>
+
+  <para>Ниже приведено несколько простых вводных примеров. За дополнительными сведениями и примерами обратитесь к <xref remap="3" linkend="xfunc"/>. <programlisting>CREATE FUNCTION add(integer, integer) RETURNS integer
+    AS 'select $1 + $2;'
+    LANGUAGE SQL
+    IMMUTABLE
+    RETURNS NULL ON NULL INPUT;</programlisting></para>
+
+  <para>Функция увеличения целого числа на 1, использующая именованный аргумент, на языке <application>PL/pgSQL</application>: <programlisting>CREATE OR REPLACE FUNCTION increment(i integer) RETURNS integer AS $$
+        BEGIN
+                RETURN i + 1;
+        END;
+$$ LANGUAGE plpgsql;</programlisting></para>
+
+  <para>Функция, возвращающая запись с несколькими выходными параметрами: <programlisting>CREATE FUNCTION dup(in int, out f1 int, out f2 text)
+    AS $$ SELECT $1, CAST($1 AS text) || ' is text' $$
+    LANGUAGE SQL;
+
+SELECT * FROM dup(42);</programlisting> То же самое можно сделать более развёрнуто, явно объявив составной тип: <programlisting>CREATE TYPE dup_result AS (f1 int, f2 text);
+
+CREATE FUNCTION dup(int) RETURNS dup_result
+    AS $$ SELECT $1, CAST($1 AS text) || ' is text' $$
+    LANGUAGE SQL;
+
+SELECT * FROM dup(42);</programlisting> Ещё один способ вернуть несколько столбцов — применить функцию <literal>TABLE</literal>: <programlisting>CREATE FUNCTION dup(int) RETURNS TABLE(f1 int, f2 text)
+    AS $$ SELECT $1, CAST($1 AS text) || ' is text' $$
+    LANGUAGE SQL;
+
+SELECT * FROM dup(42);</programlisting> Однако пример с <literal>TABLE</literal> отличается от предыдущих, так как в нём функция на самом деле возвращает не одну, а <emphasis>набор</emphasis> записей.</para>
+ </refsect1>
+
+ <refsect1 id="sql-createfunction-security">
+  <title>Разработка защищённых функций <literal>SECURITY DEFINER</literal></title>
+
+  <indexterm><primary><varname>путь_поиска</varname> параметр конфигурации</primary> <secondary>использование в защищённых функциях</secondary></indexterm>
+
+   <para>Так как функция <literal>SECURITY DEFINER</literal> выполняется с правами пользователя, создавшего её, необходимо позаботиться о том, чтобы её нельзя было использовать не по назначению. В целях безопасности, в пути <xref linkend="guc-search-path"/> следует исключить любые схемы, доступные на запись недоверенным пользователям. Это не позволит злонамеренным пользователям создать свои объекты (например, таблицы, функции и операторы), которые замаскируют объекты, используемые функцией. Особенно важно в этом отношении исключить схему временных таблиц, которая по умолчанию просматривается первой, а право записи в неё по умолчанию имеют все. Соответствующую защиту можно организовать, поместив временную схему в конец списка поиска. Для этого следует сделать <literal>pg_temp</literal><indexterm><primary>pg_temp</primary> <secondary>защищённые функции</secondary></indexterm> последней записью в <varname>search_path</varname>. Безопасное использование демонстрирует следующая функция: <programlisting>CREATE FUNCTION check_password(uname TEXT, pass TEXT)
+RETURNS BOOLEAN AS $$
+DECLARE passed BOOLEAN;
+BEGIN
+        SELECT  (pwd = $2) INTO passed
+        FROM    pwds
+        WHERE   username = $1;
+
+        RETURN passed;
+END;
+$$  LANGUAGE plpgsql
+    SECURITY DEFINER
+    -- Установить безопасный путь поиска: сначала доверенная схема(ы), затем 'pg_temp'.
+    SET search_path = admin, pg_temp;</programlisting> Эта функция должна обращаться к таблице <literal>admin.pwds</literal>, но без предложения <literal>SET</literal> или с предложением <literal>SET</literal>, включающим только <literal>admin</literal>, её можно &laquo;обмануть&raquo;, создав временную таблицу <literal>pwds</literal>.</para>
+
+   <para>До <productname>PostgreSQL</productname> 8.3 предложение <literal>SET</literal> отсутствовало, так что старые функции могут содержать довольно сложную логику для сохранения, изменения и восстановления переменной <varname>search_path</varname>. Существующее теперь предложение <literal>SET</literal> позволяет сделать это намного проще.</para>
+
+   <para>Также следует помнить о том, что по умолчанию право выполнения для создаваемых функций имеет роль <literal>PUBLIC</literal> (за подробностями обратитесь к <xref remap="3" linkend="sql-grant"/>). Однако часто требуется разрешить доступ к функциям, работающим в контексте определившего, только некоторым пользователям. Для этого необходимо отозвать стандартные права <literal>PUBLIC</literal> и затем дать права на выполнение индивидуально. Чтобы не образовалось окно, в котором новая функция будет недоступна совсем, создайте её и назначьте права в одной транзакции. Например, так:</para>
+
+<programlisting>BEGIN;
+CREATE FUNCTION check_password(uname TEXT, pass TEXT) ... SECURITY DEFINER;
+REVOKE ALL ON FUNCTION check_password(uname TEXT, pass TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION check_password(uname TEXT, pass TEXT) TO admins;
+COMMIT;</programlisting>
+
+ </refsect1>
+
+ <refsect1 id="sql-createfunction-compat">
+  <title>Совместимость</title>
+
+  <para>Команда <command>CREATE FUNCTION</command> определена в SQL:1999 и более поздних стандартах. Версия, реализованная в <productname>&productname;</productname>, близка к стандартизированной, но соответствует ей не полностью. В частности, непереносимы атрибуты, а также различные языки реализаций.</para>
+
+  <para>Для совместимости с другими СУБД <replaceable class="parameter">режим_аргумента</replaceable> можно записать после <replaceable class="parameter">имя_аргумента</replaceable> или перед ним, но стандарту соответствует только первый вариант.</para>
+
+  <para>Для определения значений по умолчанию для параметров стандарт SQL поддерживает только синтаксис с ключевым словом <literal>DEFAULT</literal>. Синтаксис со знаком <literal>=</literal> используется в T-SQL и Firebird.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterfunction"/></member>
+   <member><xref linkend="sql-dropfunction"/></member>
+   <member><xref linkend="sql-grant"/></member>
+   <member><xref linkend="sql-load"/></member>
+   <member><xref linkend="sql-revoke"/></member>
+   <member><xref linkend="app-createlang"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

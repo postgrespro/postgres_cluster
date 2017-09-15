@@ -1,0 +1,550 @@
+<!-- doc/src/xml/ref/pg_restore.xml -->
+
+<refentry id="app-pgrestore">
+ <indexterm zone="app-pgrestore"><primary>pg_restore</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>pg_restore</refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_restore</refname>
+
+  <refpurpose>восстановить базу данных <productname>&productname;</productname> из файла архива, созданного командой <application>pg_dump</application></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_restore</command>
+   <arg rep="repeat"><replaceable>параметр-подключения</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+   <arg choice="opt"><replaceable>имя_файла</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+
+ <refsect1 id="app-pgrestore-description">
+  <title>Описание</title>
+
+  <para>Утилита <application>pg_restore</application> предназначена для восстановления базы данных <productname>&productname;</productname> из архива, созданного командой <xref linkend="app-pgdump"/> в любом из не текстовых форматов. Она выполняет команды, необходимые для восстановления того состояния базы данных, в котором база была сохранена. При наличии файлов архивов, <application>pg_restore</application> может восстанавливать данные избирательно или даже переупорядочить объекты перед восстановлением. Заметьте, что разработанный для файлов архива формат не привязан к архитектуре.</para>
+
+  <para>Утилита <application>pg_restore</application> может работать в двух режимах. Если указывается имя базы данных, <application>pg_restore</application> подключается к этой базе данных и восстанавливает содержимое архива непосредственно в неё. В противном случае, создаётся SQL-скрипт с командами, необходимыми для пересоздания базы данных, который затем выводится в файл или в стандартное устройство вывода. Сформированный скрипт будет в точности соответствовать выводу <application>pg_dump</application> в простом текстовом формате. Поэтому некоторые из параметров, управляющих выводом, аналогичны параметрам <application>pg_dump</application>.</para>
+
+  <para>Разумеется, <application>pg_restore</application> может восстановить информацию, только если она присутствует в файле архива, и только в существующем виде. Например, если архив был создан с указанием <quote>выгрузить данные в виде команд <command>INSERT</command></quote>, <application>pg_restore</application> не сможет загрузить эти данные, используя операторы <command>COPY</command>.</para>
+ </refsect1>
+
+ <refsect1 id="app-pgrestore-options">
+  <title>Параметры</title>
+
+   <para>Утилита <application>pg_restore</application> принимает следующие аргументы командной строки. <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">имя_файла</replaceable></term>
+      <listitem>
+       <para>Указывает расположение восстанавливаемого файла архива (или каталога, для архива в формате каталога). По умолчанию используется устройство стандартного ввода.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-a</option></term>
+      <term><option>--data-only</option></term>
+      <listitem>
+       <para>Восстанавливать только данные, без схемы (определений данных). При этом восстанавливаются данные таблиц, большие объекты и значения последовательностей, имеющиеся в архиве.</para>
+
+       <para>Флаг похож на <option>--section=data</option>, но по историческим причинам не равнозначен ему.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-c</option></term>
+      <term><option>--clean</option></term>
+      <listitem>
+       <para>Удалить (DROP) объекты базы данных, прежде чем пересоздавать их. (Без дополнительного указания <option>--if-exists</option> при этом могут выдаваться безвредные сообщения об ошибках, если таких объектов не окажется в целевой базе данных.)</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-C</option></term>
+      <term><option>--create</option></term>
+      <listitem>
+       <para>Создать базу данных, прежде чем восстанавливать данные. Если также указан параметр <option>--clean</option>, удалить и пересоздать целевую базу данных перед подключением к ней.</para>
+
+       <para>С этим параметром база, заданная параметром <option>-d</option>, применяется только для подключения и выполнения начальных команд <command>DROP DATABASE</command> и <command>CREATE DATABASE</command>. Все данные восстанавливаются в базу данных, имя которой записано в архиве.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-d <replaceable class="parameter">имя_бд</replaceable></option></term>
+      <term><option>--dbname=<replaceable class="parameter">имя_бд</replaceable></option></term>
+      <listitem>
+       <para>Подключиться к базе данных <replaceable class="parameter">имя_базы</replaceable> и восстановить данные непосредственно в неё.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-e</option></term>
+      <term><option>--exit-on-error</option></term>
+      <listitem>
+       <para>Завершать работу в случае возникновения ошибки при выполнении команд SQL в базе данных. По умолчанию процесс восстановления продолжается, а по его окончании выдаётся число ошибок.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-f <replaceable>имя_файла</replaceable></option></term>
+      <term><option>--file=<replaceable>имя_файла</replaceable></option></term>
+      <listitem>
+       <para>Задаёт файл для вывода сгенерированного скрипта или списка объектов, полученного с параметром <option>-l</option>. По умолчанию используется стандартный вывод.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-F <replaceable class="parameter">format</replaceable></option></term>
+      <term><option>--format=<replaceable class="parameter">format</replaceable></option></term>
+      <listitem>
+       <para>Задаёт формат архива. Указывать формат необязательно, так как <application>pg_restore</application> определяет формат автоматически. Но если формат задаётся, допускается один из этих вариантов: <variablelist>
+        <varlistentry>
+         <term><literal>c</literal></term>
+         <term><literal>custom</literal></term>
+         <listitem>
+          <para>Архив сохранён в специальном формате <application>pg_dump</application>.</para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry>
+         <term><literal>d</literal></term>
+         <term><literal>directory</literal></term>
+         <listitem>
+          <para>Архив сохранён в каталоге.</para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry>
+         <term><literal>t</literal></term>
+         <term><literal>tar</literal></term>
+         <listitem>
+          <para>Архив сохранён в формате <command>tar</command>.</para>
+         </listitem>
+        </varlistentry>
+       </variablelist></para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-I <replaceable class="parameter">индекс</replaceable></option></term>
+      <term><option>--index=<replaceable class="parameter">индекс</replaceable></option></term>
+      <listitem>
+       <para>Восстановить определение только заданного индекса. Добавив дополнительные ключи <option>-I</option>, можно указать несколько индексов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-j <replaceable class="parameter">число-заданий</replaceable></option></term>
+      <term><option>--jobs=<replaceable class="parameter">число-заданий</replaceable></option></term>
+      <listitem>
+       <para>Запустить наиболее длительные операции <application>pg_restore</application> (в частности, загрузку данных, создание индексов или ограничений) в нескольких параллельных заданиях. Это позволяет кардинально сократить время восстановления большой базы данных, когда сервер работает на многопроцессорном компьютере.</para>
+
+       <para>Каждое задание выполняется в отдельном задании или потоке, в зависимости от операционной системы, и использует отдельное подключение к серверу.</para>
+
+       <para>Оптимальное значение этого параметра зависит от аппаратной конфигурации сервера, клиента и сети. В частности, имеет значение количество процессорных ядер и устройство дискового хранилища. В качестве начального значения можно выбрать число ядер на сервере, но и при увеличении этого значения во многих случаях восстановление будет быстрее. Конечно, при слишком больших значениях производительность упадёт из-за перегрузки.</para>
+
+       <para>Этот параметр поддерживается только с архивом в специальном формате или в каталоге. Входные данные должны поступать из обычного файла или каталога (а не, например из канала ввода). Данный параметр игнорируется, когда генерируется скрипт (нет прямого подключения к базе данных). Кроме того, несколько заданий не могут выполняться в сочетании с параметром <option>--single-transaction</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-l</option></term>
+      <term><option>--list</option></term>
+      <listitem>
+       <para>Вывести содержимое архива. Вывод этой операции можно подать на вход этой же команде с параметром <option>-L</option>. Учтите, что когда вместе с <option>-l</option> применяются параметры фильтрации (например, <option>-n</option> или <option>-t</option>), они сокращают список выводимых объектов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-L <replaceable class="parameter">файл-список</replaceable></option></term>
+      <term><option>--use-list=<replaceable class="parameter">файл-список</replaceable></option></term>
+      <listitem>
+       <para>Восстановить из архива только элементы, перечисленные в <replaceable class="parameter">файле-списке</replaceable>, и в том порядке, в каком они идут в этом файле. Заметьте, что когда вместе с <option>-L</option> применяются параметры фильтрации (например, <option>-n</option> или <option>-t</option>), они дополнительно ограничивают восстанавливаемые объекты.</para>
+       <para>Данный <replaceable class="parameter">файл-список</replaceable> обычно представляет собой отредактированный результат предыдущей операции <option>-l</option>. Строки в нём могут быть переставлены или удалены, а также могут быть закомментированы точкой с запятой (<literal>;</literal>), добавленной в начале строки. См. примеры ниже.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-n <replaceable class="parameter">пространство_имён</replaceable></option></term>
+      <term><option>--schema=<replaceable class="parameter">схема</replaceable></option></term>
+      <listitem>
+       <para>Восстановить только объекты в указанной схеме. Добавив дополнительные ключи <option>-n</option>, можно указать несколько схем. Этот параметр можно сочетать с <option>-t</option>, чтобы восстановить только определённую таблицу.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-O</option></term>
+      <term><option>--no-owner</option></term>
+      <listitem>
+       <para>Не генерировать команды, устанавливающие владение объектами, как в исходной базе данных. По умолчанию, <application>pg_restore</application> генерирует команды <command>ALTER OWNER</command> или <command>SET SESSION AUTHORIZATION</command>, восстанавливающие исходных владельцев создаваемых элементов схемы. Однако эти команды можно будет выполнить, только если к базе данных первоначально подключается суперпользователь (или пользователь, владеющими всеми объектами в скрипте). Чтобы получить скрипт, который сможет восстановить любой подключающийся пользователь (но при этом он станет владельцем всех созданных объектов), используется <option>-O</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-P <replaceable class="parameter">имя-функции(тип-аргумента[, ...])</replaceable></option></term>
+      <term><option>--function=<replaceable class="parameter">имя-функции(тип-аргумента[, ...])</replaceable></option></term>
+      <listitem>
+       <para>Восстановить только указанную функцию. При этом важно записать имя функции и аргументы в точности так, как они фигурируют в оглавлении файла архива. Добавив дополнительные ключи <option>-P</option>, можно указать несколько функций.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-R</option></term>
+      <term><option>--no-reconnect</option></term>
+      <listitem>
+       <para>Параметр является устаревшим, но в целях совместимости ещё работает.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s</option></term>
+      <term><option>--schema-only</option></term>
+      <listitem>
+       <para>Восстановить только схему (определения данных), без данных, в объёме, в котором элементы схемы представлены в архиве.</para>
+       <para>Действие параметра противоположно действию <option>--data-only</option>. Это похоже на указание <option>--section=pre-data --section=post-data</option>, но по историческим причинам не равнозначно ему.</para>
+       <para>(Не путайте этот параметр с <option>--schema</option>, где слово <quote>схема</quote> используется в другом значении.)</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-S <replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <term><option>--superuser=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <listitem>
+       <para>Задаёт имя суперпользователя, полномочия которого будут использоваться для отключения триггеров. Этот параметр применяется только с параметром <option>--disable-triggers</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-t <replaceable class="parameter">таблица</replaceable></option></term>
+      <term><option>--table=<replaceable class="parameter">таблица</replaceable></option></term>
+      <listitem>
+       <para>Восстановить определение и/или данные только указанной таблицы. В этом контексте под <quote>таблицей</quote> подразумеваются также представления, материализованные представления, последовательности и сторонние таблицы. Чтобы выбрать несколько таблиц, ключ <option>-t</option> можно указать несколько раз. Этот параметр можно скомбинировать с <option>-n</option>, чтобы выбрать таблицу(ы) в определённой схеме.</para>
+
+       <note>
+        <para>Когда указывается <option>-t</option>, <application>pg_restore</application> не пытается восстанавливать объекты базы данных, от которых могут зависеть выбранные таблицы. Таким образом, в этом случае не гарантируется, что выгруженные таблицы будут успешно восстановлены в чистой базе данных.</para>
+       </note>
+
+       <note>
+        <para>Этот флаг действует не совсем так, как флаг <option>-t</option> утилиты <application>pg_dump</application>. В настоящее время <application>pg_restore</application> не поддерживает выбор объектов по маске, а также не позволяет указать имя схемы с <option>-t</option>.</para>
+       </note>
+
+       <note>
+        <para>В версиях <productname>&productname;</productname> до 9.6 этот флаг выбирал только таблицы, но не другие типы отношений.</para>
+       </note>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-T <replaceable class="parameter">триггер</replaceable></option></term>
+      <term><option>--trigger=<replaceable class="parameter">триггер</replaceable></option></term>
+      <listitem>
+       <para>Восстановить только указанный триггер. Добавив дополнительные ключи <option>-T</option>, можно указать несколько триггеров.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-v</option></term>
+      <term><option>--verbose</option></term>
+      <listitem>
+       <para>Включает режим подробных сообщений.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>--version</option></term>
+       <listitem>
+       <para>Сообщить версию <application>pg_restore</application> и завершиться.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-x</option></term>
+      <term><option>--no-privileges</option></term>
+      <term><option>--no-acl</option></term>
+      <listitem>
+       <para>Не восстанавливать права доступа (не выполнять команды GRANT/REVOKE).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-1</option></term>
+      <term><option>--single-transaction</option></term>
+      <listitem>
+       <para>Произвести восстановление в одной транзакции (то есть, завернуть выполняемые команды в <command>BEGIN</command>/<command>COMMIT</command>). При этом гарантируется, что либо все команды будут выполнены успешно, либо не будет никаких изменений. Этот режим подразумевает <option>--exit-on-error</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--disable-triggers</option></term>
+      <listitem>
+       <para>Этот параметр действует только при выгрузке одних данных. С ним <application>pg_restore</application> выполняет команды, отключающие триггеры в целевых таблицах на время загрузки данных. Используйте его, если в ваших таблицах определены проверки ссылочной целостности или другие триггеры, которые вы не хотели бы выполнять в процессе загрузки данных.</para>
+
+       <para>В настоящее время команды, генерируемые с <option>--disable-triggers</option>, должны выполнятся суперпользователем. Поэтому необходимо также задать имя суперпользователя в параметре <option>-S</option> или, что предпочтительнее, запускать <application>pg_restore</application> от имени суперпользователя <productname>&productname;</productname>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--enable-row-security</option></term>
+      <listitem>
+       <para>Этот параметр имеет смысл только при восстановлении содержимого таблицы, для которой включена защита строк. По умолчанию <application>pg_restore</application> устанавливает для <xref linkend="guc-row-security"/> значение off для уверенности, что в таблице восстановлены все данные. Если у пользователя недостаточно прав для обхода защиты строк, выдаётся ошибка. Этот параметр указывает <application>pg_restore</application> установить в <xref linkend="guc-row-security"/> значение on, чтобы пользователь мог попытаться восстановить содержимое таблицы с включённой защитой строк. Однако и при этом возможна ошибка, если пользователь не будет иметь права добавлять в эту таблицу выгруженные строки данных.</para>
+
+       <para>Заметьте, что в настоящее время для этого требуется, чтобы выгрузка выполнялась в режиме <command>INSERT</command>, так как <command>COPY FROM</command> не поддерживает защиту строк.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--if-exists</option></term>
+      <listitem>
+       <para>При очистке целевой базы использовать условные команды (добавлять предложение <literal>IF EXISTS</literal>). Применяется только с параметром <option>--clean</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-data-for-failed-tables</option></term>
+      <listitem>
+       <para>По умолчанию данные восстанавливаются даже при ошибке команды создания таблицы (например, когда она уже существует). С этим параметром данные в таком случае не восстанавливаются. Это поведение полезно, если в целевой таблице уже содержатся нужные данные. Например, вспомогательные таблицы для расширений <productname>&productname;</productname> (в частности, <productname>PostGIS</productname>) могут быть уже заполнены; этот параметр позволяет предотвратить дублирование или загрузку устаревших данных в эти таблицы.</para>
+
+       <para>Этот параметр действует только при восстановлении непосредственно в базу данных (не при генерации SQL-скрипта).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-security-labels</option></term>
+      <listitem>
+       <para>Не выводить команды, восстанавливающие метки безопасности, даже если они содержатся в архиве.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-tablespaces</option></term>
+      <listitem>
+       <para>Не формировать команды для указания табличных пространств. Все объекты будут создаваться в табличном пространстве по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>--section=<replaceable class="parameter">имя секции</replaceable></option></term>
+       <listitem>
+         <para>Восстановить только указанный раздел. В качестве имени раздела можно задать <option>pre-data</option>, <option>data</option> или <option>post-data</option>. Указав этот параметр неоднократно, можно выбрать несколько разделов. По умолчанию восстанавливаются все разделы.</para>
+         <para>Раздел &laquo;data&raquo; содержит собственно данные таблиц и определения больших объектов. В разделе &laquo;post-data&raquo; содержатся определения индексов, триггеров, правил и ограничений (кроме отдельно проверяемых). Раздел &laquo;pre-data&raquo; содержит все остальные определения.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--strict-names</option></term>
+      <listitem>
+       <para>Требует, чтобы каждому указанию схемы (<option>-n</option>/<option>--schema</option>) и таблицы (<option>-t</option>/<option>--table</option>) соответствовала минимум одна схема/таблица в файле резервной копии.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--use-set-session-authorization</option></term>
+      <listitem>
+       <para>Выводить команды <command>SET SESSION AUTHORIZATION</command>, соответствующие стандарту, вместо <command>ALTER OWNER</command>, для назначения владельцев объектов. В результате выгруженный скрипт будет более стандартизированным, но может не восстановиться корректно, в зависимости от истории объектов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-?</option></term>
+       <term><option>--help</option></term>
+       <listitem>
+       <para>Показать справку по аргументам командной строки <application>pg_restore</application> и завершиться.</para>
+       </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+
+   <para>Следующие параметры командной строки управляют переносом данных между базами при использовании расширения <xref linkend="pgtransfer"/>. <variablelist>
+     <varlistentry>
+      <term><option>--copy-mode-transfer</option></term>
+      <listitem>
+       <para>Этот параметр применяется для физического копирования файлов, например когда файлы базы данных и каталог, заданный в <option>--transfer-dir</option>, размещаются в разных файловых системах.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--generate-wal</option></term>
+      <listitem>
+       <para>Генерировать записи WAL для всех перемещаемых файлов. При восстановлении на главном сервере без этого указания изменения не будут реплицироваться на резервном.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--transfer-dir</option></term>
+      <listitem>
+       <para>Каталог, из которого будут переноситься файлы данных. Файлы данных включают собственно файл(ы) таблицы, файлы индексов и TOAST. По умолчанию файлы не копируются, а перемещаются.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+   <para><application>pg_restore</application> также принимает в качестве параметров соединения следующие аргументы командной строки: <variablelist>
+     <varlistentry>
+      <term><option>-h <replaceable class="parameter">сервер</replaceable></option></term>
+      <term><option>--host=<replaceable class="parameter">сервер</replaceable></option></term>
+      <listitem>
+       <para>Указывает имя компьютера, на котором запущен сервер. Если значение начинается с косой черты, оно интерпретируется как имя каталога с доменным сокетом Unix. Значение по умолчанию берётся из переменной окружения <envar>PGHOST</envar>, если она установлена. В противном случае выполняется подключение к доменному сокету.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">порт</replaceable></option></term>
+      <term><option>--port=<replaceable class="parameter">порт</replaceable></option></term>
+      <listitem>
+       <para>Указывает TCP-порт или расширение локального файла Unix-сокета, на котором сервер слушает подключения. По умолчанию берётся значение переменной окружения <envar>PGPORT</envar>, если оно установлено, либо значение времени компиляции.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable>имя_пользователя</replaceable></option></term>
+      <term><option>--username=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <listitem>
+       <para>Имя пользователя, под которым производится подключение.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</option></term>
+      <term><option>--no-password</option></term>
+      <listitem>
+       <para>Не выдавать запрос на ввод пароля. Если сервер требует аутентификацию по паролю и пароль не доступен с помощью других средств, таких как файл <filename>.pgpass</filename>, попытка соединения не удастся. Этот параметр может быть полезен в пакетных заданиях и скриптах, где нет пользователя, который вводит пароль.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option></term>
+      <term><option>--password</option></term>
+      <listitem>
+       <para>Принудительно запрашивать пароль перед подключением к базе данных.</para>
+
+       <para>Это несущественный параметр, так как <application>pg_restore</application> запрашивает пароль автоматически, если сервер проверяет подлинность по паролю. Однако, чтобы понять это, <application>pg_restore</application> лишний раз подключается к серверу. Поэтому иногда имеет смысл ввести <option>-W</option>, чтобы исключить эту ненужную попытку подключения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--role=<replaceable class="parameter">имя роли</replaceable></option></term>
+      <listitem>
+       <para>Задаёт имя роли, которая будет осуществлять восстановление. Получив это имя, <application>pg_restore</application> выполнит <command>SET ROLE</command> <replaceable class="parameter">имя_роли</replaceable> после подключения к базе данных. Это полезно, когда проходящий проверку пользователь (указанный в <option>-U</option>) не имеет прав, необходимых для <application>pg_restore</application>, но может переключиться на роль, наделённую этими правами. В некоторых окружениях правила запрещают подключаться к серверу непосредственно суперпользователю, и этот параметр позволяет выполнить восстановление, не нарушая их.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><envar>PGHOST</envar></term>
+    <term><envar>PGOPTIONS</envar></term>
+    <term><envar>PGPORT</envar></term>
+    <term><envar>PGUSER</envar></term>
+
+    <listitem>
+     <para>Параметры подключения по умолчанию</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Как и большинство других утилит <productname>&productname;</productname>, эта утилита также использует переменные среды, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>). Однако она не учитывает <envar>PGDATABASE</envar>, когда имя базы не указано.</para>
+
+ </refsect1>
+
+
+ <refsect1 id="app-pgrestore-diagnostics">
+  <title>Диагностика</title>
+
+  <para>Когда с параметром <option>-d</option> устанавливается прямое подключение к базе данных, <application>pg_restore</application> выполняет обычные операторы <acronym>SQL</acronym>. При этом применяются все свойства подключения по умолчанию и переменные окружения, которые использует клиентская библиотека <application>libpq</application>. Если вы сталкиваетесь с проблемами при запуске <application>pg_restore</application>, убедитесь в том, что вы можете получить информацию из базы данных, используя, например <xref linkend="app-psql"/>.</para>
+ </refsect1>
+
+
+ <refsect1 id="app-pgrestore-notes">
+  <title>Замечания</title>
+
+  <para>Если в вашей инсталляции база данных <literal>template1</literal> содержит какие-либо дополнения, важно убедиться в том, что вывод <application>pg_restore</application> загружается в действительно пустую базу; иначе вы, скорее всего, получите ошибки из-за дублирования определений создаваемых объектов. Чтобы получить пустую базу данных без дополнительных объектов, выберите в качестве шаблона <literal>template0</literal>, а не <literal>template1</literal>, например так: <programlisting>CREATE DATABASE foo WITH TEMPLATE template0;</programlisting></para>
+
+  <para>Ограничения <application>pg_restore</application> описаны ниже. <itemizedlist>
+    <listitem>
+     <para>При восстановлении данных в уже существующие таблицы с параметром <option>--disable-triggers</option>, <application>pg_restore</application> выполняет команды, отключающие триггеры в пользовательских таблицах до добавления данных, а затем, после добавления данных, выполняет команды, снова включающие эти триггеры. Если восстановление прервётся в середине, системные каталоги могут оказаться в некорректном состоянии.</para>
+    </listitem>
+
+    <listitem>
+     <para>Утилита <application>pg_restore</application> не способна восстанавливать большие объекты избирательно; например, только для определённой таблицы. Если архив содержит большие объекты, они будут восстановлены все, либо не будут восстановлены никакие (если они были исключены параметрами <option>-L</option>, <option>-t</option> и т. п.).</para>
+    </listitem>
+
+   </itemizedlist></para>
+
+  <para>Также обратитесь к документации <xref linkend="app-pgdump"/>, чтобы узнать о связанных ограничениях <application>pg_dump</application>.</para>
+
+  <para>После восстановления имеет смысл запустить <command>ANALYZE</command> для каждой восстановленной таблицы, чтобы оптимизатор получил актуальную статистику; за дополнительными сведениями обратитесь к <xref remap="3" linkend="vacuum-for-statistics"/> и <xref remap="3" linkend="autovacuum"/>.</para>
+
+ </refsect1>
+
+
+ <refsect1 id="app-pgrestore-examples">
+  <title>Примеры</title>
+
+  <para>Предположим, что мы выгрузили базу данных <literal>mydb</literal> в файл специального формата: <screen>
+<prompt>$</prompt> <userinput>pg_dump -Fc mydb &gt; db.dump</userinput>
+</screen></para>
+
+  <para>Мы можем удалить базу данных и восстановить её из копии: <screen>
+<prompt>$</prompt> <userinput>dropdb mydb</userinput>
+<prompt>$</prompt> <userinput>pg_restore -C -d postgres db.dump</userinput>
+</screen> В аргументе <option>-d</option> можно указать любую базу данных, существующую в кластере; <application>pg_restore</application> использует её, только чтобы выполнить команду <command>CREATE DATABASE</command> для базы <literal>mydb</literal>. С параметром <option>-C</option> данные всегда восстанавливаются в базу, имя которой записано в файле архива.</para>
+
+  <para>Восстановить данные в новую базу <literal>newdb</literal> можно так: <screen>
+<prompt>$</prompt> <userinput>createdb -T template0 newdb</userinput>
+<prompt>$</prompt> <userinput>pg_restore -d newdb db.dump</userinput>
+</screen> Обратите внимание, мы не используем параметр <option>-C</option>, а вместо этого подключаемся непосредственно к базе, в которую хотим восстановить данные. Также заметьте, что мы создаём базу данных из шаблона <literal>template0</literal>, а не <literal>template1</literal>, чтобы изначально она была гарантированно пустой.</para>
+
+  <para>Чтобы переупорядочить элементы базы данных, сначала необходимо получить оглавление архива: <screen>
+<prompt>$</prompt> <userinput>pg_restore -l db.dump &gt; db.list</userinput>
+</screen> Файл оглавления содержит заголовок и по одной строке для каждого элемента, например: <programlisting>;
+; Archive created at Mon Sep 14 13:55:39 2009
+;     dbname: DBDEMOS
+;     TOC Entries: 81
+;     Compression: 9
+;     Dump Version: 1.10-0
+;     Format: CUSTOM
+;     Integer: 4 bytes
+;     Offset: 8 bytes
+;     Dumped from database version: 8.3.5
+;     Dumped by pg_dump version: 8.3.8
+;
+;
+; Selected TOC Entries:
+;
+3; 2615 2200 SCHEMA - public pasha
+1861; 0 0 COMMENT - SCHEMA public pasha
+1862; 0 0 ACL - public pasha
+317; 1247 17715 TYPE public composite pasha
+319; 1247 25899 DOMAIN public domain0 pasha</programlisting> С точки с запятой начинаются комментарии, а число в начале строки обозначает внутренний идентификатор, назначаемый каждому элементу в архиве.</para>
+
+  <para>Строки в этом файле можно закомментировать, удалить или переместить. Например, список: <programlisting>10; 145433 TABLE map_resolutions postgres
+;2; 145344 TABLE species postgres
+;4; 145359 TABLE nt_header postgres
+6; 145402 TABLE species_records postgres
+;8; 145416 TABLE ss_old postgres</programlisting> можно передать утилите <application>pg_restore</application>, чтобы восстановить только элементы 10 и 6 в указанном порядке: <screen>
+<prompt>$</prompt> <userinput>pg_restore -L db.list db.dump</userinput>
+</screen></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-pgdump"/></member>
+   <member><xref linkend="app-pg-dumpall"/></member>
+   <member><xref linkend="app-psql"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

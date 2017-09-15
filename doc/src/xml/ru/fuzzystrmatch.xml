@@ -1,0 +1,140 @@
+<!-- doc/src/xml/fuzzystrmatch.xml -->
+
+<sect1 id="fuzzystrmatch" xreflabel="fuzzystrmatch">
+ <title>fuzzystrmatch</title>
+
+ <indexterm zone="fuzzystrmatch"><primary>fuzzystrmatch</primary></indexterm>
+
+ <para>Модуль <filename>fuzzystrmatch</filename> содержит несколько функций для вычисления схожести и расстояния между строками.</para>
+
+ <caution>
+  <para>В настоящее время функции <function>soundex</function>, <function>metaphone</function>, <function>dmetaphone</function> и <function>dmetaphone_alt</function> плохо работают с многобайтными кодировками (в частности, с UTF-8).</para>
+ </caution>
+
+ <sect2>
+  <title>Soundex</title>
+
+  <para>Система Soundex позволяет вычислить похожие по звучанию имена, приводя их к одинаковым кодам. Изначально она использовалась для обработки данных переписи населения США в 1880, 1900 и 1910 г. Заметьте, что эта система не очень полезна для неанглоязычных имён.</para>
+
+  <para>Модуль <filename>fuzzystrmatch</filename> предоставляет две функции для работы с кодами Soundex:</para>
+
+  <indexterm><primary>soundex</primary></indexterm>
+
+  <indexterm><primary>difference</primary></indexterm>
+
+<synopsis>soundex(text) returns text
+difference(text, text) returns int</synopsis>
+
+  <para>Функция <function>soundex</function> преобразует строку в код Soundex. Функция <function>difference</function> преобразует две строки в их коды Soundex и затем сообщает количество совпадающих позиций в этих кодах. Так как коды Soundex состоят из четырёх символов, результатом может быть число от нуля до четырёх (0 обозначает полное несоответствие, а 4 — точное совпадение). (Таким образом, имя этой функции не вполне корректное &mdash; лучшим именем для неё было бы <function>similarity</function>.)</para>
+
+  <para>Несколько примеров использования:</para>
+
+<programlisting>SELECT soundex('hello world!');
+
+SELECT soundex('Anne'), soundex('Ann'), difference('Anne', 'Ann');
+SELECT soundex('Anne'), soundex('Andrew'), difference('Anne', 'Andrew');
+SELECT soundex('Anne'), soundex('Margaret'), difference('Anne', 'Margaret');
+
+CREATE TABLE s (nm text);
+
+INSERT INTO s VALUES ('john');
+INSERT INTO s VALUES ('joan');
+INSERT INTO s VALUES ('wobbly');
+INSERT INTO s VALUES ('jack');
+
+SELECT * FROM s WHERE soundex(nm) = soundex('john');
+
+SELECT * FROM s WHERE difference(s.nm, 'john') &gt; 2;</programlisting>
+ </sect2>
+
+ <sect2>
+  <title>Левенштейн</title>
+
+  <para>Эта функция вычисляет расстояние Левенштейна между двумя строками:</para>
+
+  <indexterm><primary>levenshtein</primary></indexterm>
+
+  <indexterm><primary>levenshtein_less_equal</primary></indexterm>
+
+<synopsis>levenshtein(text source, text target, int ins_cost, int del_cost, int sub_cost) returns int
+levenshtein(text source, text target) returns int
+levenshtein_less_equal(text source, text target, int ins_cost, int del_cost, int sub_cost, int max_d) returns int
+levenshtein_less_equal(text source, text target, int max_d) returns int</synopsis>
+
+  <para>И в <literal>source</literal>, и в <literal>target</literal> может быть передана любая строка, отличная от NULL, не длиннее 255 символов. Параметры стоимости (ins_cost, del_cost, sub_cost) определяют цену добавления, удаления или замены символов, соответственно. Эти параметры можно опустить, как во второй версии функции; в этом случае все они по умолчанию равны 1.</para>
+
+  <para>Функция <function>levenshtein_less_equal</function> является ускоренной версией функции Левенштейна, предназначенной для использования, только когда интерес представляют небольшие расстояния. Если фактическое расстояние меньше или равно <literal>max_d</literal>, то <function>levenshtein_less_equal</function> возвращает точное его значение; в противном случае она возвращает значение, большее чем <literal>max_d</literal>. Если значение <literal>max_d</literal> отрицательное, она работает так же, как функция <function>levenshtein</function>.</para>
+
+  <para>Примеры:</para>
+
+<screen>test=# SELECT levenshtein('GUMBO', 'GAMBOL');
+ levenshtein
+-------------
+           2
+(1 row)
+
+test=# SELECT levenshtein('GUMBO', 'GAMBOL', 2,1,1);
+ levenshtein
+-------------
+           3
+(1 row)
+
+test=# SELECT levenshtein_less_equal('extensive', 'exhaustive',2);
+ levenshtein_less_equal
+------------------------
+                      3
+(1 row)
+
+test=# SELECT levenshtein_less_equal('extensive', 'exhaustive',4);
+ levenshtein_less_equal
+------------------------
+                      4
+(1 row)</screen>
+ </sect2>
+
+ <sect2>
+  <title>Metaphone</title>
+
+  <para>Metaphone, как и Soundex, построен на идее составления кода, представляющего входную строку. Две строки признаются похожими, если их коды совпадают.</para>
+
+  <para>Эта функция вычисляет код метафона входной строки:</para>
+
+  <indexterm><primary>metaphone</primary></indexterm>
+
+<synopsis>metaphone(text source, int max_output_length) returns text</synopsis>
+
+  <para>В качестве <literal>source</literal> должна передаваться строка, отличная от NULL, не длиннее 255 символов. Параметр <literal>max_output_length</literal> задаёт максимальную длину выходного кода метафона; если код оказывается длиннее, он обрезается до этой длины.</para>
+
+  <para>Пример:</para>
+
+<screen>test=# SELECT metaphone('GUMBO', 4);
+ metaphone
+-----------
+ KM
+(1 row)</screen>
+ </sect2>
+
+ <sect2>
+  <title>Double Metaphone</title>
+
+  <para>Алгоритм Double Metaphone (Двойной метафон) вычисляет две строки <quote>похожего звучания</quote> для заданной строки &mdash; <quote>первичную</quote> и <quote>альтернативную</quote>. В большинстве случаев они совпадают, но для неанглоязычных имён в особенности они могут быть весьма различными, в зависимости от произношения. Эти функции вычисляют первичный и альтернативный коды:</para>
+
+  <indexterm><primary>dmetaphone</primary></indexterm>
+
+  <indexterm><primary>dmetaphone_alt</primary></indexterm>
+
+<synopsis>dmetaphone(text source) returns text
+dmetaphone_alt(text source) returns text</synopsis>
+
+  <para>Длина входных строк может быть любой.</para>
+
+  <para>Пример:</para>
+
+<screen>test=# select dmetaphone('gumbo');
+ dmetaphone
+------------
+ KMP
+(1 row)</screen>
+ </sect2>
+
+</sect1>

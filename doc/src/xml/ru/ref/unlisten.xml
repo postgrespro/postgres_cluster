@@ -1,0 +1,88 @@
+<!--
+doc/src/xml/ref/unlisten.xml
+&productname; documentation
+-->
+
+<refentry id="sql-unlisten">
+ <indexterm zone="sql-unlisten"><primary>UNLISTEN</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>UNLISTEN</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>UNLISTEN</refname>
+  <refpurpose>прекратить ожидание уведомления</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>UNLISTEN { <replaceable class="parameter">канал</replaceable> | * }</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>UNLISTEN</command> применяется для отмены существующей подписки на получение событий <command>NOTIFY</command>. <command>UNLISTEN</command> отменяет существующую подписку в текущем сеансе <productname>&productname;</productname> на канал уведомлений с именем <replaceable class="parameter">канал</replaceable>. Специальный знак <literal>*</literal> отменяет все подписки в текущем сеансе.</para>
+
+  <para>В описании <xref linkend="sql-notify"/> использование <command>LISTEN</command> и <command>NOTIFY</command> рассматривается более подробно.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">канал</replaceable></term>
+    <listitem>
+     <para>Имя канала уведомлений (любой идентификатор).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>*</literal></term>
+    <listitem>
+     <para>Отменяются все текущие подписки на уведомления для активного сеанса.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Вы можете также попытаться отменить подписку на канал, на который не подписаны; предупреждений или ошибки при этом не будет.</para>
+
+  <para><command>UNLISTEN *</command> автоматически выполняется в конце каждого сеанса.</para>
+
+  <para>Транзакция, выполнившая <command>UNLISTEN</command>, не может быть подготовлена для двухфазной фиксации.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Подписка на получение события: <programlisting>LISTEN virtual;
+NOTIFY virtual;
+Asynchronous notification "virtual" received from server process with PID 8448.</programlisting></para>
+
+  <para>Сразу после выполнения <command>UNLISTEN</command> последующие сообщения <command>NOTIFY</command> игнорируются: <programlisting>UNLISTEN virtual;
+NOTIFY virtual;
+-- событие NOTIFY не поступает</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Команда <command>UNLISTEN</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-listen"/></member>
+   <member><xref linkend="sql-notify"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

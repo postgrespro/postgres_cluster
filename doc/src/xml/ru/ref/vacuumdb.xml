@@ -1,0 +1,298 @@
+<!--
+doc/src/xml/ref/vacuumdb.xml
+&productname; documentation
+-->
+
+<refentry id="app-vacuumdb">
+ <indexterm zone="app-vacuumdb"><primary>vacuumdb</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>vacuumdb</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname id="vacuumdb">vacuumdb</refname>
+  <refpurpose>выполнить очистку и анализ базы данных <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>vacuumdb</command>
+   <arg rep="repeat"><replaceable>параметр-подключения</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+
+   <arg choice="plain" rep="repeat">
+    <arg choice="opt">
+     <group choice="plain">
+      <arg choice="plain"><option>--table</option></arg>
+      <arg choice="plain"><option>-t</option></arg>
+     </group>
+     <replaceable>таблица</replaceable>
+     <arg choice="opt">( <replaceable class="parameter">столбец</replaceable> [,...] )</arg>
+    </arg>
+   </arg>
+
+   <arg choice="opt"><replaceable>имя_бд</replaceable></arg>
+  </cmdsynopsis>
+
+  <cmdsynopsis>
+   <command>vacuumdb</command>
+   <arg rep="repeat"><replaceable>параметр-подключения</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+   <group choice="plain">
+    <arg choice="plain"><option>--all</option></arg>
+    <arg choice="plain"><option>-a</option></arg>
+   </group>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Утилита <application>vacuumdb</application> предназначена для очистки базы данных <productname>&productname;</productname>. Кроме того, <application>vacuumdb</application> генерирует внутреннюю статистику, которую использует оптимизатор запросов <productname>&productname;</productname>.</para>
+
+  <para>Утилита <application>vacuumdb</application> представляют собой обёртку SQL-команды <xref linkend="sql-vacuum"/>. Выполнение очистки и анализа баз данных с её помощью по сути не отличается от выполнения тех же действий при обращении к серверу другими способами.</para>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <para>Утилита <application>vacuumdb</application> принимает следующие аргументы командной строки: <variablelist>
+     <varlistentry>
+      <term><option>-a</option></term>
+      <term><option>--all</option></term>
+      <listitem>
+       <para>Очистить все базы данных.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option><optional>-d</optional> <replaceable class="parameter">имя_бд</replaceable></option></term>
+      <term><option><optional>--dbname=</optional><replaceable class="parameter">имя_бд</replaceable></option></term>
+      <listitem>
+       <para>Задаёт имя базы данных, подлежащей очистке. Если это имя не задано и отсутствует параметр <option>-a</option> (или <option>--all</option>), имя базы данных берётся из переменной окружения <envar>PGDATABASE</envar>. Если и эта переменная не задана, выбирается имя подключающегося пользователя.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-e</option></term>
+      <term><option>--echo</option></term>
+      <listitem>
+       <para>Выводить команды, которые <application>vacuumdb</application> генерирует и передаёт серверу.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-f</option></term>
+      <term><option>--full</option></term>
+      <listitem>
+       <para>Произвести <quote>полную</quote> очистку.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-F</option></term>
+      <term><option>--freeze</option></term>
+      <listitem>
+       <para>Агрессивно <quote>замораживать</quote> версии строк.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-j <replaceable class="parameter">njobs</replaceable></option></term>
+      <term><option>--jobs=<replaceable class="parameter">njobs</replaceable></option></term>
+      <listitem>
+       <para>Выполнять команды VACUUM или ANALYZE в параллельном режиме, запуская одновременно <replaceable class="parameter">njobs</replaceable> команд. Это сокращает время обработки, но увеличивает нагрузку на сервер.</para>
+       <para><application>vacuumdb</application> откроет <replaceable class="parameter">njobs</replaceable> подключений к базе данных, так что убедитесь в том, что значение <xref linkend="guc-max-connections"/> достаточно велико, чтобы все эти подключения были приняты.</para>
+       <para>Заметьте, что использование этого режима с параметром <option>-f</option> (<literal>FULL</literal>) может привести к отказам из-за взаимоблокировок, если параллельно начнут обрабатываться определённые системные каталоги.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-q</option></term>
+      <term><option>--quiet</option></term>
+      <listitem>
+       <para>Подавлять вывод сообщений о прогрессе выполнения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-t <replaceable class="parameter">таблица</replaceable> [ (<replaceable class="parameter">столбец</replaceable> [,...]) ]</option></term>
+      <term><option>--table=<replaceable class="parameter">таблица</replaceable> [ (<replaceable class="parameter">столбец</replaceable> [,...]) ]</option></term>
+      <listitem>
+       <para>Производить очистку или анализ только указанной <replaceable class="parameter">таблицы</replaceable>. Имена столбцов можно указать только в сочетании с параметрами <option>--analyze</option> и <option>--analyze-only</option>. Добавив дополнительные ключи <option>-t</option>, можно обработать несколько таблиц.</para>
+       <tip>
+        <para>Если вы указываете столбцы, вам, вероятно, придётся экранировать скобки в оболочке. (См. примеры ниже.)</para>
+       </tip>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-v</option></term>
+      <term><option>--verbose</option></term>
+      <listitem>
+       <para>Вывести подробную информацию во время процесса.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>--version</option></term>
+       <listitem>
+       <para>Сообщить версию <application>vacuumdb</application> и завершиться.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-z</option></term>
+      <term><option>--analyze</option></term>
+      <listitem>
+       <para>Также вычислить статистику для оптимизатора.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-Z</option></term>
+      <term><option>--analyze-only</option></term>
+      <listitem>
+       <para>Только вычислить статистику для оптимизатора (не производить очистку).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--analyze-in-stages</option></term>
+      <listitem>
+       <para>Только вычислить статистику для оптимизатора (без очистки), подобно <option>--analyze-only</option>. Но для скорейшего получения полезной статистики, выполнить анализ в несколько проходов (в настоящее время, три) с разными параметрами.</para>
+
+       <para>Этот параметр полезен при необходимости провести анализ базы данных, только что наполненной данными из архива или командой <command>pg_upgrade</command>. С этим параметром <application>vacuumdb</application> постарается получить некоторую статистику как можно скорее, чтобы базой можно было пользоваться, а на следующих проходах вычислит полную статистику.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-?</option></term>
+       <term><option>--help</option></term>
+       <listitem>
+       <para>Показать справку по аргументам командной строки <application>vacuumdb</application> и завершиться.</para>
+       </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+
+   <para>Утилита <application>reindexdb</application> также принимает следующие аргументы командной строки в качестве параметров подключения: <variablelist>
+     <varlistentry>
+      <term><option>-h <replaceable class="parameter">сервер</replaceable></option></term>
+      <term><option>--host=<replaceable class="parameter">сервер</replaceable></option></term>
+      <listitem>
+       <para>Указывает имя компьютера, на котором запущен сервер. Если значение начинается с косой черты, оно интерпретируется как имя каталога с доменным сокетом Unix.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">порт</replaceable></option></term>
+      <term><option>--port=<replaceable class="parameter">порт</replaceable></option></term>
+      <listitem>
+       <para>Указывает TCP-порт или расширение файла Unix-сокета, на котором сервер слушает подключения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <term><option>--username=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <listitem>
+       <para>Имя пользователя, под которым производится подключение.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</option></term>
+      <term><option>--no-password</option></term>
+      <listitem>
+       <para>Не выдавать запрос на ввод пароля. Если сервер требует аутентификацию по паролю и пароль не доступен с помощью других средств, таких как файл <filename>.pgpass</filename>, попытка соединения не удастся. Этот параметр может быть полезен в пакетных заданиях и скриптах, где нет пользователя, который вводит пароль.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option></term>
+      <term><option>--password</option></term>
+      <listitem>
+       <para>Принудительно запрашивать пароль перед подключением к базе данных.</para>
+
+       <para>Это несущественный параметр, так как <application>vacuumdb</application> запрашивает пароль автоматически, если сервер проверяет подлинность по паролю. Однако, чтобы понять это, <application>vacuumdb</application> лишний раз подключается к серверу. Поэтому иногда имеет смысл ввести <option>-W</option>, чтобы исключить эту ненужную попытку подключения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--maintenance-db=<replaceable class="parameter">имя_бд</replaceable></option></term>
+      <listitem>
+       <para>Задаёт имя базы данных, через подключение к которой будут находиться другие базы, подлежащие очистке. По умолчанию используется <literal>postgres</literal>, а в случае её отсутствия — <literal>template1</literal>.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><envar>PGDATABASE</envar></term>
+    <term><envar>PGHOST</envar></term>
+    <term><envar>PGPORT</envar></term>
+    <term><envar>PGUSER</envar></term>
+
+    <listitem>
+     <para>Параметры подключения по умолчанию</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Эта утилита, как и большинство других утилит <productname>&productname;</productname>, также использует переменные среды, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>).</para>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Диагностика</title>
+
+  <para>В случае возникновения трудностей, обратитесь к описаниям <xref linkend="sql-vacuum"/> и <xref linkend="app-psql"/>, где обсуждаются потенциальные проблемы и сообщения об ошибках. Учтите, что на целевом компьютере должен работать сервер баз данных. При этом применяются все свойства подключения по умолчанию и переменные окружения, которые использует клиентская библиотека <application>libpq</application>.</para>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Утилите <application>vacuumdb</application> может потребоваться подключаться к серверу <productname>&productname;</productname> несколько раз, и при этом она будет каждый раз запрашивать пароль. В таких случаях удобно иметь файл <filename>~/.pgpass</filename>. За дополнительными сведениями обратитесь к <xref remap="3" linkend="libpq-pgpass"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+   <para>Очистка базы данных <literal>test</literal>: <screen>
+<prompt>$ </prompt><userinput>vacuumdb test</userinput>
+</screen></para>
+
+   <para>Очистка и анализ для оптимизатора базы данных <literal>bigdb</literal>: <screen>
+<prompt>$ </prompt><userinput>vacuumdb --analyze bigdb</userinput>
+</screen></para>
+
+   <para>Очистка одной таблицы <literal>foo</literal> в базе данных <literal>xyzzy</literal> и анализ только столбца <literal>bar</literal> этой таблицы для оптимизатора: <screen>
+<prompt>$ </prompt><userinput>vacuumdb --analyze --verbose --table 'foo(bar)' xyzzy</userinput>
+</screen></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-vacuum"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

@@ -1,0 +1,85 @@
+<!--
+doc/src/xml/ref/create_user_mapping.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createusermapping">
+ <indexterm zone="sql-createusermapping"><primary>CREATE USER MAPPING</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE USER MAPPING</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE USER MAPPING</refname>
+  <refpurpose>создать сопоставление пользователя для стороннего сервера</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE USER MAPPING FOR { <replaceable class="parameter">имя_пользователя</replaceable> | USER | CURRENT_USER | PUBLIC }
+    SERVER <replaceable class="parameter">имя_сервера</replaceable>
+    [ OPTIONS ( <replaceable class="parameter">параметр</replaceable> '<replaceable class="parameter">значение</replaceable>' [ , ... ] ) ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE USER MAPPING</command> создаёт сопоставление пользователя на внешнем сервере. Сопоставление пользователя обычно содержит информацию о подключении, которую будет использовать обёртка сторонних данных вместе с информацией о стороннем сервере для получения доступа к внешнему ресурсу.</para>
+
+  <para>Владелец стороннего сервера может создать сопоставление для любых пользователей на этом сервере. Кроме того, пользователь может создать сопоставление для своего собственного имени пользователя, если он наделён правом <literal>USAGE</literal> на данном сервере.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя_пользователя</replaceable></term>
+    <listitem>
+     <para>Имя существующего пользователя, для которого создаётся сопоставление на стороннем сервере. Ключевые слова <literal>CURRENT_USER</literal> и <literal>USER</literal> обозначают имя текущего пользователя. Если указывается <literal>PUBLIC</literal>, создаётся так называемое общее сопоставление, которое будет использоваться при отсутствии сопоставления для конкретного пользователя.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_сервера</replaceable></term>
+    <listitem>
+     <para>Имя существующего сервера, для которого создаётся сопоставление пользователя.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>OPTIONS ( <replaceable class="parameter">параметр</replaceable> '<replaceable class="parameter">значение</replaceable>' [, ... ] )</literal></term>
+    <listitem>
+     <para>В этом предложении задаются параметры сопоставления. Эти параметры обычно определяют фактическое имя и пароль пользователя на целевом сервере. Имена параметров должны быть уникальными. Набор допустимых имён и значений параметров определяется обёрткой сторонних данных внешнего сервера.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Создание сопоставления для пользователя <literal>bob</literal> на сервере <literal>foo</literal>: <programlisting>CREATE USER MAPPING FOR bob SERVER foo OPTIONS (user 'bob', password 'secret');</programlisting></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>CREATE USER MAPPING</command> соответствует стандарту ISO/IEC 9075-9 (SQL/MED).</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterusermapping"/></member>
+   <member><xref linkend="sql-dropusermapping"/></member>
+   <member><xref linkend="sql-createforeigndatawrapper"/></member>
+   <member><xref linkend="sql-createserver"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

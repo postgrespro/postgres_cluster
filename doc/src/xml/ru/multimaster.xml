@@ -1,0 +1,720 @@
+<sect1 id="multimaster">
+  <title>multimaster</title>
+      <para><emphasis role="strong">Содержание</emphasis></para>
+      <para><link linkend="multimaster-limitations">Ограничения</link></para>
+      <para><link linkend="multimaster-architecture">Архитектура</link></para>
+      <para><link linkend="multimaster-installation">Установка и подготовка</link></para>
+      <para><link linkend="multimaster-administration">Администрирование кластера <application>multimaster</application></link></para>
+      <para><link linkend="multimaster-reference">Справка</link></para>
+      <para><link linkend="multimaster-compatibility">Совместимость</link></para>
+      <para><link linkend="multimaster-authors">Авторы</link></para>
+  <para><filename>multimaster</filename> — это расширение <productname>&productname;</productname>, которое в сочетании с набором доработок ядра превращает <productname>&productname;</productname> в синхронный кластер без разделения ресурсов, который обеспечивает расширяемость <acronym>OLTP</acronym> для читающих транзакций, а также высокую степень доступности с автоматическим восстановлением после сбоев.</para>
+    <para>По сравнению со стандартным кластером <productname>PostgreSQL</productname> конструкции ведущий-ведомый, в кластере, построенном с использованием <filename>multimaster</filename>, все узлы являются ведущими. Это даёт следующие преимущества:</para>
+    <itemizedlist>
+      <listitem>
+        <para>Изоляция транзакций на уровне кластера</para>
+      </listitem>
+      <listitem>
+        <para>Синхронная логическая репликация и репликация DDL</para>
+      </listitem>
+      <listitem>
+        <para>Поддерживается работа с временными таблицами на каждом узле кластера</para>
+      </listitem>
+      <listitem>
+        <para>Устойчивость к сбоям и автоматическое восстановление узлов</para>
+      </listitem>
+      <listitem>
+        <para>Обновление серверов <productname>PostgreSQL</productname> «на ходу»</para>
+      </listitem>
+    </itemizedlist>
+    <para>Расширение <filename>multimaster</filename> реплицирует вашу базу данных на все узлы кластера и разрешает выполнять пишущие транзакции на любом узле. Для согласованности данных в случае одновременных изменений <filename>multimaster</filename> обеспечивает изоляцию транзакций в рамках всего кластера, реализуя <acronym>MVCC</acronym> (Multiversion Concurrency Control, Многоверсионное управление конкурентным доступом) на уровнях изоляции <link linkend="xact-read-committed">Read Committed</link> и <link linkend="xact-repeatable-read">Repeatable Read</link>. Каждая пишущая транзакция синхронно реплицируется на все узлы, что увеличивает задержку фиксации на время, требующееся для синхронизации. Читающие транзакции и запросы выполняются локально, без каких-либо ощутимых издержек.</para>
+    <para>Для обеспечения высокой степени доступности и отказоустойчивости кластера <filename>multimaster</filename> использует протокол трёхфазной фиксации и контроль состояния для обнаружения сбоев. Кластер с <replaceable>N</replaceable> ведущими узлами может продолжать работать, пока функционируют и доступны друг для друга большинство узлов. Чтобы в кластере можно было настроить <filename>multimaster</filename>, он должен включать в себя как минимум два узла. Чаще всего для обеспечения высокой степени доступности достаточно трёх узлов. Так как на всех узлах кластера будут одни и те же данные, обычно нет смысла делать более пяти узлов в кластере.</para>
+      <para>Когда узел снова подключается к кластеру, <filename>multimaster</filename> может автоматически привести его в актуальное состояние и наверстать упущенное, используя данные <acronym>WAL</acronym> из соответствующего слота репликации. Если данные <acronym>WAL</acronym> на момент времени, когда узел был исключён из кластера, оказываются недоступны, этот узел можно <link linkend="multimaster-restoring-a-node-manually">восстановить, воспользовавшись <application>pg_basebackup</application></link>.</para>
+    <important><para>Применяя <filename>multimaster</filename>, необходимо учитывать ограничения, связанные с репликацией. За подробностями обратитесь к <xref remap="3" linkend="multimaster-limitations"/>.</para></important>
+    <para>Чтобы узнать больше о внутреннем устройстве <filename>multimaster</filename>, обратитесь к <xref remap="3" linkend="multimaster-architecture"/>.</para>
+    
+  <sect2 id="multimaster-limitations">
+    <title>Ограничения</title>
+    <para>Расширение <filename>multimaster</filename> осуществляет репликацию данных полностью автоматическим образом. Вы можете одновременно выполнять пишущие транзакции и работать с временными таблицами на любом узле кластера. Однако, при этом нужно учитывать следующие ограничения репликации:</para>
+    <itemizedlist>
+      <listitem>
+        <para><filename>multimaster</filename> может реплицировать только одну базу данных в кластере, заданную в переменной <varname>multimaster.conn_strings</varname>. Если подключиться к другой базе данных, при попытке выполнения всех операций будет выдаваться соответствующее сообщение об ошибке.</para>
+      </listitem>
+      <listitem>
+        <para>Вследствие ограничений логической репликации в реплицируемых таблицах должны быть первичные ключи или репликационные идентификаторы. Хотя таблицы без первичных ключей могут реплицироваться, <filename>multimaster</filename> не разрешает операции <literal>UPDATE</literal> и <literal>DELETE</literal> в таких таблицах. За подробностями обратитесь к <xref remap="3" linkend="ignore-tables-without-pk"/>. Нежурналируемые таблицы не реплицируются, как и в стандартном <productname>PostgreSQL</productname>.</para>
+      </listitem>
+      <listitem>
+        <para>Уровень изоляции. Расширение <filename>multimaster</filename> поддерживает только уровни изоляции <emphasis><literal>read committed</literal></emphasis> и <emphasis><literal>repeatable read</literal></emphasis>. Уровень <emphasis><literal>Serializable</literal></emphasis> в настоящее время не поддерживается.</para>
+        <important>
+        <para>На уровне <literal>repeatable read</literal> более вероятны сбои сериализации в момент фиксации. В отличие от стандартного <productname>PostgreSQL</productname>, в кластере <application>multimaster</application> на уровне <literal>read committed</literal> также могут происходить сбои сериализации.</para>
+          <para>Когда выполняется пишущая транзакция, <filename>multimaster</filename> блокирует задействуемые объекты только на том узле, где она выполняется. Но так как пишущие транзакции могут выполняться на всех узлах, другие транзакции могут попытаться в то же время изменить те же объекты, что и соседние узлы. В этом случае репликация первой транзакции будет невозможна, так как задействованные объекты уже будут заблокированы другой транзакцией. По той же причине и последующую транзакцию нельзя будет реплицировать на первый узел. В этом случае происходит распределённая взаимоблокировка. В результате одна из транзакций автоматически откатывается и её необходимо повторить. Приложение в такой ситуации должно быть готово повторять транзакции.</para>
+    <para>Если у вас при типичной нагрузке происходит слишком много откатов транзакций, рекомендуется использовать уровень изоляции <literal>read committed</literal>. Однако уровень <literal>read committed</literal> всё же не гарантирует отсутствие взаимоблокировок в кластере <application>multimaster</application>. Если использование уровня <literal>read committed</literal> не помогает, попробуйте направить все пишущие транзакции на один узел.</para>
+    </important>
+      </listitem>
+      <listitem>
+        <para>В кластере с несколькими ведущими команда <literal>ALTER SYSTEM</literal> влияет только на конфигурацию текущего узла. Если вы хотите изменить параметры конфигурации во всём кластере, вам нужно выполнить эту команду на каждом узле.</para>
+      </listitem>
+      <listitem>
+        <para>Генерация последовательностей. Во избежание конфликтов уникальных идентификаторов на разных узлах, <filename>multimaster</filename> меняет стандартное поведение генераторов последовательностей. По умолчанию для каждого узла идентификаторы генерируются, начиная с номера узла, и увеличиваются на число узлов. Например, в кластере с тремя узлами идентификаторы 1, 4 и 7 выделяются для объектов, создаваемых на первом узле, а 2, 5 и 8 резервируются для второго узла. Если число узлов в кластере изменяется, величина прироста идентификаторов корректируется соответственно. Таким образом, значения последовательностей будут не монотонными. Если важно, чтобы последовательность во всём кластере увеличивалась монотонно, задайте для параметра <link linkend="mtm-monotonic-sequences"><varname>multimaster.monotonic_sequences</varname></link> значение <literal>true</literal>.</para>
+      </listitem>
+      <listitem>
+        <para>Репликация <acronym>DDL</acronym>. Тогда как <filename>multimaster</filename> реплицирует данные на логическом уровне, <acronym>DDL</acronym> реплицируется на уровне операторов, что приводит к распределённой фиксации одного и того же оператора на разных узлах. В результате сложные сценарии с <acronym>DDL</acronym>, например хранимые процедуры и временные таблицы, могут работать не так, как в стандартном <productname>PostgreSQL</productname>.</para>
+      </listitem>
+      <listitem>
+        <para>Задержка фиксации. В текущей реализации логической репликации <filename>multimaster</filename> передаёт данные узлам-подписчикам только после локальной фиксации, так что приходится ожидать двойной обработки транзакции: сначала на локальном узле, а затем на всех других узлах одновременно. Если транзакция производит запись в большом объёме, задержка может быть весьма ощутимой.</para>
+      </listitem>
+    </itemizedlist>
+<para>Если какие-либо данные должны присутствовать только на одном из узлов кластера, вы можете исключить таблицу с ними из репликации следующим образом: <programlisting><function>mtm.make_table_local</function>('имя_таблицы') </programlisting></para>
+  </sect2>
+    
+    <sect2 id="multimaster-architecture">
+  <title>Архитектура</title>
+  <sect3 id="multimaster-replication">
+    <title>Репликация</title>
+    <para>Так как каждый сервер в кластере <filename>multimaster</filename> может принимать запросы на запись, любой сервер может прервать транзакцию из-за параллельного изменения &mdash; так же как это происходит на одном сервере с несколькими обслуживающими процессами. Чтобы обеспечить высокую степень доступности и согласованность данных на всех узлах кластера, <filename>multimaster</filename> применяет <link linkend="logicaldecoding-synchronous">логическую репликацию</link> и <link linkend="multimaster-credits">протокол трёхфазной фиксации E3PC</link>.</para>
+    <para>Когда <productname>&productname;</productname> загружает разделяемую библиотеку <filename>multimaster</filename>, код <filename>multimaster</filename> создаёт поставщика и потребителя логической репликации для каждого узла и внедряется в процедуру фиксирования транзакций. Типичная последовательность действий при репликации данных включает следующие фазы:</para>
+    <orderedlist>
+      <listitem>
+        <para>Фаза <literal>PREPARE</literal>. Код <filename>multimaster</filename> перехватывает каждый оператор <literal>COMMIT</literal> и преобразует его в оператор <literal>PREPARE</literal>. Все узлы, получающие транзакцию через протокол репликации (<emphasis>узлы когорты</emphasis>), передают свой голос для одобрения или отклонения транзакции процессу-арбитру на исходном узле. Это гарантирует, что вся когорта может принять эту транзакцию и конфликт при записи отсутствует. Подробнее поддержка транзакций с <literal>PREPARE</literal> в <productname>PostgreSQL</productname> рассматривается в описании <link linkend="sql-prepare-transaction">PREPARE TRANSACTION</link>.</para>
+      </listitem>
+      <listitem>
+        <para>Фаза <literal>PRECOMMIT</literal>. Если все узлы когорты одобряют транзакцию, процесс-арбитр отправляет всем этим узлам сообщение <literal>PRECOMMIT</literal>, выражающее намерение зафиксировать эту транзакцию. Узлы когорты отвечают арбитру сообщением <literal>PRECOMMITTED</literal>. В случае сбоя все узлы могут использовать эту информацию для завершения транзакции по правилам кворума.</para>
+      </listitem>
+      <listitem>
+        <para>Фаза <literal>COMMIT</literal>. Если результат <literal>PRECOMMIT</literal> положительный, арбитр фиксирует транзакцию на всех узлах.</para>
+      </listitem>
+    </orderedlist>
+    <important>
+        <para>Расширение <filename>multimaster</filename> в настоящее время поддерживает только уровни изоляции <literal>read committed</literal> и <literal>repeatable read</literal>, с которыми в рабочей нагрузке могут происходить сбои сериализации. За подробностями обратитесь к <xref remap="3" linkend="multimaster-limitations"/>.</para>
+    </important>
+    <para>Если узел отказывает или отключается от кластера между фазами <literal>PREPARE</literal> и <literal>COMMIT</literal>, фаза <literal>PRECOMMIT</literal> даёт гарантию, что оставшиеся в строю узлы имеют достаточно информации для завершения подготовленной транзакции. Сообщения <literal>PRECOMMITTED</literal> помогают избежать ситуации, когда отказавший узел мог бы зафиксировать или прервать транзакцию, но не успел бы уведомить о состоянии транзакции другие узлы. При двухфазной фиксации (2PC, two-phase commit), такая транзакция заблокировала бы ресурсы (удерживала блокировки) до восстановления отказавшего узла. В противном случае была бы возможна несогласованность данных после восстановления отказавшего узла, например, если отказавший узел зафиксировал транзакцию, а оставшийся узел откатил её.</para>
+    <para>Для фиксирования транзакции арбитр должен получить ответ от большинства узлов. Например, в кластере из 2<replaceable>N</replaceable> + 1 узлов необходимо получить минимум <replaceable>N</replaceable>+1 ответов. Таким образом <filename>multimaster</filename> обеспечивает доступность кластера для чтения и записи пока работает большинство узлов и гарантирует согласованность данных при отказе узла или прерывании соединения. Подробнее механизм обнаружения сбоев описан в <xref remap="6" linkend="multimaster-failure-detection-and-recovery"/>.</para>
+  </sect3>
+  <sect3 id="multimaster-failure-detection-and-recovery">
+    <title>Обнаружение сбоя и восстановление</title>
+    <para>Так как <filename>multimaster</filename> допускает запись на всех узлах, он должен ждать ответа с подтверждением транзакции от всех остальных узлов. Если не принять специальных мер, в случае отказа узла для фиксации транзакции пришлось бы ждать пока он не будет восстановлен. Чтобы не допустить этого, <filename>multimaster</filename> периодически опрашивает узлы и проверяет их состояние и соединение между ними. Когда узел не отвечает на несколько контрольных обращений подряд, этот узел убирается из кластера, чтобы оставшиеся в строю узлы могли производить запись. Частоту обращений и таймаут ожидания ответа можно задать в параметрах <varname>multimaster.heartbeat_send_timeout</varname> и <varname>multimaster.heartbeat_recv_timeout</varname>, соответственно.</para>
+    <para>Работающие узлы не имеют возможности отличить отказавший узел, переставший обрабатывать запросы, от узла в недоступной сети, к которому могут обращаться пользователи БД, но не другие узлы. Во избежание конфликтов записи на узлах в разделённых сегментах сети, <filename>multimaster</filename> разрешает выполнять запись только на тех узлах, которые видят большинство.</para>
+    <para>Например, предположим, что кластер с пятью ведущими узлами столкнулся с перебоем в сети, в результате которого сеть разделилась на две изолированные подсети так, что в одной оказалось два, а в другой — три узла кластера. На основе информации о доступности узлов <filename>multimaster</filename> продолжит принимать запросы на запись на всех узлах в большем разделе и запрещать запись в меньшем. Таким образом, кластер, состоящий из 2<replaceable>N</replaceable>+1 узлов может справиться с отказом <replaceable>N</replaceable> узлов и продолжать функционировать пока будут работать и связаны друг с другом <replaceable>N</replaceable>+1 узлов.</para>
+    <para>В случае частичного разделения сети, когда разные узлы связаны с другими по-разному, <filename>multimaster</filename> находит подмножество полностью связанных узлов и отключает другие узлы. Например, в кластере с тремя узлами, если узел A может связаться и с B, и с C, а узел B не может связаться с C, <filename>multimaster</filename> изолирует узел C для обеспечения согласованности данных на узлах A и B.</para>
+    <note>
+        <para>Если вы попытаетесь обратиться к отключённому узлу, <filename>multimaster</filename> возвратит сообщение об ошибке, говорящее о текущем состоянии узла. Для предотвращения чтения неактуальных данных на нём запрещаются и запросы только на чтение. Кроме того, подключения клиентов к отключённому узлу могут разрываться, если установить переменную <link linkend="mtm-break-connection"><varname>multimaster.break_connection</varname></link>.</para>
+    </note>
+    <para>Если требуется, вы можете переопределить это поведение на одном из узлов, воспользовавшись переменной <link linkend="mtm-major-node"><varname>multimaster.major_node</varname></link>. В этом случае узел продолжит работать, даже если он изолирован.</para>
+    <para>Каждый узел поддерживает свою структуру данных, в которой учитывает состояние всех узлов относительно него самого. Вы можете получить эту информацию в представлении <literal>mtm.get_nodes_state()</literal>.</para>
+    <para>Когда ранее отказавший узел возвращается в кластер, <filename>multimaster</filename> начинает автоматическое восстановление:</para>
+    <orderedlist>
+      <listitem>
+        <para>Вновь подключённый узел выбирает случайный узел кластера и начинает навёрстывать текущее состояние кластера, используя WAL.</para>
+      </listitem>
+      <listitem>
+        <para>Когда узел синхронизируется до минимальной задержки восстановления, все узлы кластера блокируются на запись (не допускают пишущие транзакции), чтобы процесс восстановления закончился. По умолчанию минимальная задержка восстановления равняется 100 КБ. Это значение можно изменить в переменной <varname>multimaster.min_recovery_lag</varname>.</para>
+      </listitem>
+      <listitem>
+        <para>По завершении восстановления <filename>multimaster</filename> повышает вновь подключённый узел, переводит его в рабочее состояние и включает в схему репликации.</para>
+      </listitem>
+    </orderedlist>
+    <note><para>Автоматическое восстановление возможно, только если отставание в WAL отказавшего угла от работающих не превышает значения <varname>multimaster.max_recovery_lag</varname>. Если же отставание в WAL оказывается больше значения <varname>multimaster.max_recovery_lag</varname>, этот узел можно восстановить вручную с одного из работающих узлов, используя <application>pg_basebackup</application>.</para></note>
+    <para><emphasis role="strong">См. также</emphasis></para>
+    <para><link linkend="multimaster-restoring-a-node-manually">Восстановление узла кластера</link></para>
+  </sect3>
+</sect2>
+  <sect2 id="multimaster-installation">
+    <title>Установка и подготовка</title>
+      <para>Чтобы использовать <filename>multimaster</filename>, необходимо установить <productname>&productname;</productname> на всех узлах кластера. В состав <productname>&productname;</productname> включены все необходимые зависимости и расширения.</para>
+  <sect3 id="multimaster-setting-up-a-multi-master-cluster">
+    <title>Подготовка кластера <application/></title>
+      <para>Установив <productname>&productname;</productname> на всех узлах, вы должны настроить кластер серверов средствами <filename>multimaster</filename>.</para>
+      <para>Предположим, что вам нужно организовать кластер из трёх узлов с доменными именами <literal>node1</literal>, <literal>node2</literal> и <literal>node3</literal>. Прежде всего разверните базу данных, которая будет реплицироваться, и выберите пользователя с правами суперпользователя для репликации:</para>
+        <itemizedlist>
+          <listitem>
+            <para>Если вы делаете всё с нуля, инициализируйте кластер баз данных, создайте пустую базу данных <literal>mydb</literal> и пользователя <literal>myuser</literal> на каждом узле кластера. Подробнее об этом можно прочитать в <xref remap="6" linkend="creating-cluster"/>.</para>
+          </listitem>
+          <listitem>
+            <para>Если у вас уже есть база данных <literal>mydb</literal> на сервере <literal>node1</literal>, проинициализируйте новые узлы на основе существующего, используя <application>pg_basebackup</application>. От имени <literal>myuser</literal> выполните на каждом узле, который вы будете добавлять, следующую команду: <programlisting>pg_basebackup -D <replaceable>каталог_данных</replaceable> -h node1 mydb</programlisting> Здесь <replaceable>каталог_данных</replaceable> — это каталог, содержащий данные кластера БД. Этот каталог указывается на этапе инициализации кластера или задаётся в переменной окружения <envar>PGDATA</envar>.</para>
+            <para>Более подробно использование <application>pg_basebackup</application> описано в <xref remap="6" linkend="app-pgbasebackup"/>.</para>
+          </listitem>
+        </itemizedlist>
+      <para>Когда база данных будет готова, выполните следующие действия на всех узлах кластера:</para>
+    <orderedlist>
+      <listitem>
+        <para>Измените файл конфигурации <filename>postgresql.conf</filename> следующим образом:</para>
+        <itemizedlist>
+              <listitem><para>Добавьте <literal>multimaster</literal> в переменную <varname>shared_preload_libraries</varname>:</para>
+      <programlisting>shared_preload_libraries = 'multimaster'</programlisting>
+<tip>
+<para>Если переменная <varname>shared_preload_libaries</varname> уже определена в <filename>postgresql.auto.conf</filename>, вам потребуется изменить её значение с помощью команды <xref linkend="sql-altersystem"/>. За подробностями обратитесь к <xref remap="3" linkend="config-setting-configuration-file"/>. Заметьте, что в кластере с несколькими ведущими команда <literal>ALTER SYSTEM</literal> влияет только на конфигурацию того узла, на котором запускается.</para>
+</tip>
+</listitem>
+          <listitem><para>Задайте уровень изоляции транзакций для вашего кластера. В настоящее время <filename>multimaster</filename> поддерживает уровни <link linkend="xact-read-committed">read committed</link> и <link linkend="xact-repeatable-read">repeatable read</link>. <programlisting>default_transaction_isolation = 'read committed'</programlisting></para>
+          <important><para>На уровне <literal>repeatable read</literal> более вероятны сбои сериализации в момент фиксации. Если ваше приложение не обрабатывает такие сбои, рекомендуется использовать уровень <literal>read committed</literal>.</para></important>
+          </listitem>
+          <listitem>
+            <para>Установите параметры <productname>PostgreSQL</productname>, связанные с репликацией.</para>
+            <programlisting>wal_level = logical
+max_connections = 100
+max_prepared_transactions = 300
+max_wal_senders = 10       # не меньше количества узлов
+max_replication_slots = 10 # не меньше количества узлов</programlisting>
+            <para>Вы должны сменить уровень репликации на <literal>logical</literal>, так как работа <filename>multimaster</filename> построена на логической репликации. Для кластера с <replaceable>N</replaceable> узлами разрешите минимум <replaceable>N</replaceable> передающих WAL процессов и слотов репликации. Так как <filename>multimaster</filename> неявно добавляет фазу <literal>PREPARE</literal> к <literal>COMMIT</literal> каждой транзакции, в качестве максимального количества подготовленных транзакций задайте <replaceable>N</replaceable>*<varname>max_connections</varname>. В противном случае подготовленные транзакции могут ждать выполнения в очереди.</para>
+          </listitem>
+          <listitem>
+            <para>Убедитесь в том, что на каждом узле выделено достаточно фоновых рабочих процессов:</para>
+            <programlisting>max_worker_processes = 250</programlisting>
+            <para>Например, для кластера с тремя узлами и ограничением <literal>max_connections</literal> = 100 механизму <filename>multimaster</filename> в пиковые моменты может потребоваться до 206 фоновых рабочих процессов: 200 рабочих процессов для обработки соединений соседних узлов, два — для передатчиков WAL, два — для приёмников WAL и ещё два для процессов-арбитров (передающего и принимающего). При выборе значения этого параметра не забывайте, что фоновые рабочие процессы могут быть нужны и другим модулям.</para>
+          </listitem>
+          <listitem>
+            <para>Добавьте параметры, относящиеся к <filename>multimaster</filename>:</para>
+            <programlisting>multimaster.max_nodes = 3  # размер кластера
+multimaster.node_id = 1    # индекс этого узла в кластере,
+                           # начиная с 1
+multimaster.conn_strings = 'dbname=mydb user=myuser host=node1,dbname=mydb user=myuser host=node2,dbname=mydb user=myuser host=node3'
+                           # разделённый запятыми список строк
+                           # подключения к соседним узлам</programlisting>
+<para>Переменная <varname>multimaster.max_nodes</varname> определяет максимальный размер кластера. Если вы планируете добавлять в кластер новые узлы, значение <varname>multimaster.max_nodes</varname> должно быть больше начального числа узлов. В этом случае вы сможете добавлять новые узлы, не перезапуская <productname>&productname;</productname>, пока не будет достигнут этот максимум.</para>
+<para>В большинстве случаев для обеспечения высокой степени доступности достаточно трёх узлов. Так как на всех узлах кластера будут одни и те же данные, обычно нет смысла делать более пяти узлов в кластере.</para>
+<para>Если вы хотите изменить параметры соединения по умолчанию для узла кластера, вы можете добавить другие <link linkend="libpq-paramkeywords">параметры подключения</link> в соответствующую строку подключения в переменной <varname>multimaster.conn_strings</varname>. Если вы изменили порт по умолчанию, через который процесс-арбитр принимает подключения, вы должны указать этот порт в параметре <literal>arbiter_port</literal>. За подробностями обратитесь к <xref remap="3" linkend="multimaster-arbiter-port"/> и <xref remap="3" linkend="multimaster-conn-strings"/>.</para>
+                <important><para>В переменной <varname>multimaster.node_id</varname> задаются натуральные числа, начиная с 1, без пропусков в нумерации. Например, для кластера с пятью узлами задайте идентификаторы узлов 1, 2, 3, 4 и 5. При этом важно указывать в переменной <varname>multimaster.conn_strings</varname> список узлов по порядку их идентификаторов. Значение переменной <literal>multimaster.conn_strings</literal> должно быть одинаковым на всех узлах.</para></important>
+
+          </listitem>
+        </itemizedlist>
+        <para>В зависимости от вашей схемы использования и конфигурации сети может потребоваться настроить и другие параметры <filename>multimaster</filename>. За подробностями обратитесь к <xref remap="3" linkend="multimaster-tuning-configuration-parameters"/>.</para>
+      </listitem>
+      <listitem>
+        <para>Внесите изменения в файл <filename>pg_hba.conf</filename>, чтобы пользователь <literal>myuser</literal> мог осуществлять репликацию на всех узлах кластера.</para>
+      </listitem>
+      <listitem>
+        <para>Перезапустите <productname>PostgreSQL</productname>:</para>
+        <programlisting>pg_ctl -D <replaceable>каталог_данных</replaceable> -l <replaceable>pg.log</replaceable> start</programlisting>
+      </listitem>
+    </orderedlist>
+          <para>Когда <productname>&productname;</productname> будет запущен на всех узлах, подключитесь к любому зулу и создайте расширение <filename>multimaster</filename>: <programlisting>psql -h node1
+CREATE EXTENSION multimaster;</programlisting></para>
+    <para>Запрос <command>CREATE EXTENSION</command> реплицируется на все узлы кластера.</para>
+    <para>Чтобы убедиться, что расширение <filename>multimaster</filename> активно, прочитайте представление <structname>mtm.get_cluster_state()</structname>:</para>
+    <programlisting>SELECT mtm.get_cluster_state();</programlisting>
+    <para>Если значение <literal>liveNodes</literal> равняется <literal>allNodes</literal>, значит ваш кластер успешно настроен и готов к использованию.</para>
+      <para><emphasis role="strong">См. также</emphasis></para>
+      <para><link linkend="multimaster-tuning-configuration-parameters">Настройка параметров конфигурации</link></para>
+  </sect3>
+    <sect3 id="multimaster-tuning-configuration-parameters">
+    <title>Настройка параметров конфигурации</title>
+    <para>Хотя вы можете использовать <filename>multimaster</filename> и в стандартной конфигурации, для более быстрого обнаружения сбоев и более надёжного автоматического восстановления может быть полезно скорректировать несколько параметров.</para>
+    <sect4 id="multimaster-setting-timeout-for-failure-detection">
+      <title>Установка таймаута для обнаружения сбоев</title>
+      <para>Для проверки доступности соседних узлов <filename>multimaster</filename> периодически опрашивает все узлы. Таймаут для обнаружения сбоев можно регулировать с помощью следующих переменных:</para>
+      <itemizedlist>
+        <listitem>
+          <para>Переменная <literal>multimaster.heartbeat_send_timeout</literal> определяет интервал между опросами. По умолчанию её значение равно 1000ms.</para>
+        </listitem>
+        <listitem>
+          <para>Переменная <literal>multimaster.heartbeat_recv_timeout</literal> определяет интервал для ответа. Если за указанное время ответ от какого-то узла не будет получен, он считается отключённым и исключается из кластера. По умолчанию её значение равно 10000ms.</para>
+        </listitem>
+      </itemizedlist>
+      <para>Значение <literal>multimaster.heartbeat_send_timeout</literal> имеет смысл выбирать, исходя из типичных задержек ping между узлами. С уменьшением отношения значений recv/send сокращается время обнаружения сбоев, но увеличивается вероятность ложных срабатываний. При установке этого параметра учтите также типичный процент потерь пакетов между узлами кластера.</para>
+    </sect4>
+    <sect4 id="multimaster-configuring-automatic-recovery-parameters">
+      <title>Настройка параметров автоматического восстановления</title>
+      <para>Когда узел кластера на время выходит из строя, <filename>multimaster</filename> может автоматически восстановить его состояние, используя WAL, собранный на других узлах кластера. Для управления параметрами восстановления предназначены следующие переменные:</para>
+      <itemizedlist>
+        <listitem>
+          <para><varname>multimaster.min_recovery_lag</varname> &mdash; задаёт минимальное расхождение WAL между восстанавливаемым узлом и текущим состоянием кластера. По умолчанию этот параметр равен 100 КБ. Когда ранее отключённый узел достигает состояния, отстающего от текущего на <varname>multimaster.min_recovery_lag</varname>, <filename>multimaster</filename> прекращает фиксировать любые транзакции на активных узлах, пока данный узел окончательно не достигнет текущего состояния кластера. Когда данные будут полностью синхронизированы, ранее отключённый узел повышается и становится активным, после чего кластер в целом продолжает работу.</para>
+        </listitem>
+        <listitem>
+          <para><varname>multimaster.max_recovery_lag</varname> &mdash; задаёт максимальный размер WAL. По достижении предела <varname>multimaster.max_recovery_lag</varname> WAL для отключённого узла будет перезаписан. После этого автоматическое восстановление будет невозможно. В этом случае вы можете <link linkend="multimaster-restoring-a-node-manually">восстановить узел вручную</link>, скопировав данные с одного из действующих узлов с помощью <application>pg_basebackup</application>.</para>
+        </listitem>
+      </itemizedlist>
+      <para>По умолчанию значение <varname>multimaster.max_recovery_lag</varname> равняется 100 МБ. При увеличении <varname>multimaster.max_recovery_lag</varname> увеличивается окно, в течение которого возможно автоматическое восстановление, но требуется больше места на диске для хранения WAL.</para>
+      <para><emphasis role="strong">См. также</emphasis></para>
+      <para><link linkend="multimaster-guc-variables">Переменные GUC</link></para>
+    </sect4>
+  </sect3>
+  </sect2>
+  <sect2 id="multimaster-administration"><title>Администрирование кластера <application>multimaster</application></title>
+  <itemizedlist>
+    <listitem>
+      <para><link linkend="multimaster-monitoring-cluster-status">Наблюдение за состоянием кластера</link></para>
+    </listitem><listitem>
+      <para><link linkend="multimaster-adding-new-nodes-to-the-cluster">Добавление узлов в кластер</link></para>
+    </listitem>
+    <listitem>
+      <para><link linkend="multimaster-removing-nodes-from-the-cluster">Удаление узлов из кластера</link></para>
+    </listitem>
+    <listitem>
+      <para><link linkend="multimaster-restoring-a-node-manually">Восстановление узла кластера</link></para>
+    </listitem>
+  </itemizedlist>
+  <sect3 id="multimaster-monitoring-cluster-status">
+    <title>Наблюдение за состоянием кластера</title>
+    <para>В составе расширения <filename>multimaster</filename> есть несколько представлений, позволяющих наблюдать за текущим состоянием кластера.</para>
+    <para>Для проверки свойств определённого узла воспользуйтесь представлением <literal>mtm.get_nodes_state()</literal>:</para>
+    <programlisting>SELECT mtm.get_nodes_state();</programlisting>
+      <para>Для проверки состояния кластера в целом воспользуйтесь представлением <literal>mtm.get_cluster_state()</literal>:</para>
+    <programlisting>SELECT mtm.get_cluster_state();</programlisting>
+      <para>Выдаваемая ими информация подробно описана в <xref remap="6" linkend="multimaster-functions"/>.</para>
+  </sect3>
+  <sect3 id="multimaster-adding-new-nodes-to-the-cluster">
+    <title>Добавление узлов в кластер</title>
+    <para>Используя расширение <filename>multimaster</filename>, вы можете добавлять или удалять узлы кластера, не останавливая службу баз данных.</para>
+    <para>Чтобы добавить узел, необходимо изменить конфигурацию кластера на работающих узлах, загрузить все данные на новом узле, используя <application>pg_basebackup</application>, и запустить этот узел.</para>
+    <para>Предположим, что у нас есть работающий кластер с тремя узлами с доменными именами <literal>node1</literal>, <literal>node2</literal> и <literal>node3</literal>. Чтобы добавить <literal>node4</literal>, следуйте этим указаниям:</para>
+    <orderedlist>
+      <listitem>
+        <para>Проверьте, не достигает ли текущее число узлов кластера значения, заданного в переменной <varname>multimaster.max_nodes</varname>. Если это значение достигается, увеличьте <varname>multimaster.max_nodes</varname> на каждом узле и перезапустите все узлы. Вы можете перезапустить узлы по одному, не останавливая работу всей базы данных. Если предельное число узлов не достигнуто, перейдите к следующему шагу.</para>
+      </listitem>
+      <listitem>
+        <para>Определите, какая строка подключения будет использоваться для обращения к новому узлу. Например, для базы данных <literal>mydb</literal>, пользователя <literal>myuser</literal> и нового узла <literal>node4</literal> строка подключения может быть такой: <literal>"dbname=mydb user=myuser host=node4"</literal>. За подробностями обратитесь к <xref remap="3" linkend="multimaster-conn-strings"/>.</para>
+      </listitem>
+      <listitem>
+        <para>В <literal>psql</literal>, подключённом к любому из работающих узлов, выполните:</para>
+        <programlisting>SELECT mtm.add_node('dbname=mydb user=myuser host=node4');</programlisting>
+        <para>Эта команда меняет конфигурацию кластера на всех узлах и запускает слоты репликации для нового узла.</para>
+      </listitem>
+      <listitem>
+        <para>Подключитесь к новому узлу и скопируйте все данные с одного из работающих узлов на новый узел:</para>
+        <programlisting>pg_basebackup -D <replaceable>каталог_данных</replaceable> -h node1 -x</programlisting>
+        <para><application>pg_basebackup</application> копирует весь каталог данных с <literal>node1</literal>, вместе с параметрами конфигурации.</para>
+      </listitem>
+      <listitem>
+        <para>Измените параметры в <filename>postgresql.conf</filename> на <literal>node4</literal>:</para>
+        <programlisting>multimaster.node_id = 4
+multimaster.conn_strings = 'dbname=mydb user=myuser host=node1,
+                            dbname=mydb user=myuser host=node2,
+                            dbname=mydb user=myuser host=node3,
+                            dbname=mydb user=myuser host=node4'</programlisting>
+      </listitem>
+      <listitem>
+        <para>Запустите <productname>PostgreSQL</productname> на новом узле:</para>
+        <programlisting>pg_ctl -D <replaceable>каталог_данных</replaceable> -l <replaceable>pg.log</replaceable> start</programlisting>
+        <para>Когда узел синхронизируется до достижения минимальной задержки восстановления, все узлы кластера блокируются от записи (не выполняют пишущие транзакции), пока новый узел не получит все изменения. По завершении восстановления данных <filename>multimaster</filename> повышает новый узел, переводит его в активное состояние и включает в схему репликации.</para>
+      </listitem>
+      </orderedlist>
+      <para>Чтобы новая конфигурация была загружена в случае перезапуска <productname>PostgreSQL</productname>, обновите параметры конфигурации на всех узлах кластера:</para>
+      <orderedlist>
+      <listitem>
+        <para>Измените параметр <literal>multimaster.conn_strings</literal> с учётом добавления нового узла.</para>
+      </listitem>
+      <listitem>
+        <para>Разрешите в файле <filename>pg_hba.conf</filename> репликацию на новый узел.</para>
+      </listitem>
+    </orderedlist>
+    <para>
+      <emphasis role="strong">См. также</emphasis></para>
+      <para><link linkend="multimaster-setting-up-a-multi-master-cluster">Подготовка кластера <application>multimaster</application></link></para>
+      <para><link linkend="multimaster-monitoring-cluster-status">Наблюдение за состоянием кластера</link></para>
+  </sect3>
+  <sect3 id="multimaster-removing-nodes-from-the-cluster">
+    <title>Удаление узлов из кластера</title>
+    <para>Расширение <filename>multimaster</filename> предоставляет функцию <literal>mtm.stop_node()</literal>, которая может временно или навсегда удалить узлы из кластера.</para>
+    <para>Чтобы временно исключить узел из кластера, вызовите функцию <literal>mtm.stop_node()</literal>, передав ей идентификатор узла. Например, чтобы исключить узел 3, выполните следующую команду на любом другом узле кластера:</para>
+    <programlisting>SELECT mtm.stop_node(3);</programlisting>
+    <para>Эта команда исключает узел 3 из кластера и прекращает репликацию на этот узел. Пока задержка WAL между этим узлом и текущим состоянием кластера меньше значения <varname>multimaster.max_recovery_lag</varname>, вы можете восстановить данный узел, воспользовавшись функцией <function>mtm.recover_node</function>. За подробностями обратитесь к <xref remap="3" linkend="multimaster-restoring-a-node-manually"/>.</para>
+    <note>
+    <para>Если вы просто отключите узел, он тоже будет исключён из кластера. Однако все транзакции в кластере будут заморожены на некоторое время, пока другие узлы не определят, что он отключён. Этот интервал времени определяется параметром <literal>multimaster.heartbeat_recv_timeout</literal>.</para>
+    </note>
+    <para>Чтобы навсегда удалить узел из кластера, вызовите функцию <literal>mtm.stop_node()</literal> с параметром <literal>drop_slot</literal>, равным <literal>true</literal>:</para>
+    <programlisting>SELECT mtm.stop_node(3, drop_slot true);</programlisting>
+    <para>В результате будут отключены слоты репликации для узла 3 на всех узлах кластера и репликация на этот узел будет прекращена. Если вы захотите возвратить узел в кластер, вам придётся добавить его как новый узел. За подробностями обратитесь к <xref remap="3" linkend="multimaster-adding-new-nodes-to-the-cluster"/>.</para>
+  </sect3>
+  <sect3 id="multimaster-restoring-a-node-manually">
+    <title>Восстановление узла кластера</title>
+    <para>Расширение <filename>multimaster</filename> может <link linkend="multimaster-failure-detection-and-recovery">автоматически восстановить</link> отказавший узел при наличии WAL на момент времени, когда узел отключился от кластера. Однако, если объём изменений данных на активных узлах превышает допустимый размер WAL, заданный переменной <literal>multimaster.max_recovery_lag</literal>, автоматическое восстановление невозможно. В этом случае вы можете восстановить отказавший узел вручную.</para>
+    <para>Предположим, что узел <literal>node2</literal> покинул кластер, в котором было три узла, и его нужно восстановить вручную. Типичная процедура восстановления выглядит так:</para>
+    <orderedlist>
+      <listitem>
+        <para>В <literal>psql</literal>, подключённом к любому из работающих узлов, создайте слот репликации для отключённого узла, выполнив следующую команду:</para>
+        <programlisting>SELECT mtm.recover_node(2);</programlisting>
+<para>здесь 2 — идентификатор отключённого узла, заданный в переменной <varname>multimaster.node_id</varname>.</para>
+      </listitem>
+      <listitem>
+        <para>Подключитесь к узлу <literal>node2</literal> и скопируйте все данные с одного из работающих узлов:</para>
+        <programlisting>pg_basebackup -D <replaceable>каталог_данных</replaceable> -h node1 -x</programlisting>
+        <para><application>pg_basebackup</application> копирует весь каталог данных с <literal>node1</literal>, вместе с параметрами конфигурации.</para>
+      </listitem>
+      <listitem>
+        <para>Запустите <productname>PostgreSQL</productname> на восстановленном узле:</para>
+        <programlisting>pg_ctl -D <replaceable>каталог_данных</replaceable> -l <replaceable>pg.log</replaceable> start</programlisting>
+        <para>Когда узел синхронизируется до достижения минимальной задержки восстановления, все узлы кластера блокируются от записи (не выполняют пишущие транзакции), пока восстановленный узел не получит все изменения. По завершении восстановления данных <filename>multimaster</filename> повышает новый узел, переводит его в активное состояние и включает в схему репликации.</para>
+      </listitem>
+    </orderedlist>
+    <para>
+      <emphasis role="strong">См. также</emphasis></para>
+      <para><link linkend="multimaster-failure-detection-and-recovery">Обнаружение сбоя и восстановление</link></para>
+  </sect3>
+  </sect2>
+  <sect2 id="multimaster-reference"><title>Справка</title>
+<sect3 id="multimaster-guc-variables">
+  <title>Переменные GUC</title>
+<variablelist>
+  <varlistentry id="multimaster-node-id"><term><varname>multimaster.node_id</varname>
+  <indexterm><primary><varname>multimaster.node_id</varname></primary></indexterm></term><listitem><para>Идентификатор узла &mdash; натуральное число, однозначно идентифицирующее узел в кластере. Нумерация узлов должна начинаться с 1 и не допускать пропусков. Например, в кластере с пятью узлами они должны иметь идентификаторы 1, 2, 3, 4 и 5.</para></listitem></varlistentry>
+  <varlistentry id="multimaster-conn-strings"><term><varname>multimaster.conn_strings</varname><indexterm><primary><varname>multimaster.conn_strings</varname></primary></indexterm></term><listitem><para>Строки подключения для всех узлов в кластере <application>multimaster</application>, разделённые запятыми. Значение <varname>multimaster.conn_strings</varname> должно быть одинаковым на всех узлах. Каждая строка подключения должна включать имя реплицируемой базы данных и доменное имя узла кластера. Например: 'dbname=mydb host=node1,dbname=mydb host=node2,dbname=mydb host=node3'. Дополнительно вы можете добавить другие <link linkend="libpq-paramkeywords">параметры подключения</link>, переопределяющие параметры по умолчанию. Строки подключения должны указываться в порядке идентификаторов узлов, задаваемых в переменной <varname>multimaster.node_id</varname>. Строка подключения к i-му узлу должна находиться в i-той позиции. Если вы установили нестандартный порт в переменной <varname>multimaster.arbiter_port</varname> на каком-либо узле, вы должны задать его в параметре <literal>arbiter_port</literal> в строке подключения к этому узлу.</para></listitem></varlistentry>
+  <varlistentry><term><varname>multimaster.max_nodes</varname><indexterm><primary><varname>multimaster.max_nodes</varname></primary></indexterm></term><listitem><para>Максимально допустимое число узлов в кластере. Если вы планируете добавлять в кластер новые узлы, значение <literal>multimaster.max_nodes</literal> должно быть больше начального числа узлов. В этом случае вы сможете добавлять новые узлы, не перезапуская <productname>&productname;</productname>, пока не будет достигнут этот максимум. В большинстве случаев для обеспечения высокой степени доступности в кластере достаточно трёх узлов. Так как на всех узлах кластера будут одни и те же данные, обычно нет смысла делать более пяти узлов в кластере. Максимально допустимое число узлов не может превышать 64.</para>
+    <para>По умолчанию число узлов, заданное в переменной <varname>multimaster.conn_strings</varname></para></listitem></varlistentry>
+  <varlistentry id="multimaster-arbiter-port">
+  <term><varname>multimaster.arbiter_port</varname><indexterm><primary><varname>multimaster.arbiter_port</varname></primary></indexterm></term><listitem><para>Порт, через который процесс-арбитр принимает подключения. Если вы меняете значение по умолчанию, вы должны задать его в параметре <literal>arbiter_port</literal> в строке подключения для соответствующего узла.</para>
+    <para>По умолчанию: 5433</para></listitem></varlistentry>
+  <varlistentry><term><varname>multimaster.heartbeat_send_timeout</varname><indexterm><primary><varname>multimaster.heartbeat_send_timeout</varname></primary></indexterm></term><listitem><para>Интервал между контрольными обращениями, в миллисекундах. Процесс-арбитр рассылает широковещательные контрольные сообщения всем узлам для выявления проблем с соединениями.</para><para>По умолчанию: 1000</para></listitem></varlistentry>
+  <varlistentry><term><varname>multimaster.heartbeat_recv_timeout</varname><indexterm><primary><varname>multimaster.heartbeat_recv_timeout</varname></primary></indexterm></term><listitem><para>Таймаут, в миллисекундах. Если за это время не поступит ответ на контрольные сообщения, узел будет исключён из кластера.</para><para>По умолчанию: 10000</para></listitem></varlistentry>
+  <varlistentry><term><varname>multimaster.min_recovery_lag</varname><indexterm><primary><varname>multimaster.min_recovery_lag</varname></primary></indexterm></term><listitem><para>Минимальное отставание в WAL восстанавливаемого узла от текущего состояния кластера, в байтах. Когда достигается такое отставание в процессе восстановления узла, в кластере блокируется запись до завершения восстановления.</para><para>По умолчанию: 100000</para></listitem></varlistentry>
+  <varlistentry><term><varname>multimaster.max_recovery_lag</varname><indexterm><primary><varname>multimaster.max_recovery_lag</varname></primary></indexterm></term><listitem><para>Максимальный размер отставания в WAL, в байтах. Когда узел отключается от кластера, другие узлы копируют записи WAL для всех новых транзакций в слот репликации для этого узла. По достижении значения <varname>multimaster.max_recovery_lag</varname> слот репликации для отключившегося узла удаляется с целью не допустить переполнения. После этого автоматическое восстановление узла становится невозможным. В этом случае вы можете восстановить узел вручную, скопировав данные с одного из работающих узлов, используя <application>pg_basebackup</application> или подобное средство. Если записать в эту переменную ноль, слот не будет удаляться.</para><para>По умолчанию: 100000000</para></listitem></varlistentry>
+  <varlistentry id="ignore-tables-without-pk"><term><varname>multimaster.ignore_tables_without_pk</varname><indexterm><primary><varname>multimaster.ignore_tables_without_pk</varname></primary></indexterm></term><listitem><para>Логическая переменная. Эта переменная разрешает/запрещает репликацию операций <literal>INSERT</literal> для таблиц, не имеющих первичных ключей. По умолчанию такая репликация разрешена. При включении этого параметра операции <literal>INSERT</literal> для таких таблиц не реплицируются. Вне зависимости от этого значения, операции DDL для таблиц без первичных ключей реплицируются всегда, а операции <literal>UPDATE</literal> и <literal>DELETE</literal> не реплицируются из-за ограничений логической репликации.</para>
+    <para>По умолчанию отключено.</para></listitem></varlistentry>
+  <varlistentry><term><varname>multimaster.cluster_name</varname><indexterm><primary><varname>multimaster.cluster_name</varname></primary></indexterm></term><listitem><para>Имя кластера. Если вы определяете эту переменную, настраивая кластер, <filename>multimaster</filename> требует, чтобы это имя было одинаковым на всех узлах кластера.</para></listitem></varlistentry>
+  <varlistentry id="mtm-break-connection">
+    <term><varname>multimaster.break_connection</varname>
+      <indexterm><primary><varname>multimaster.break_connection</varname></primary></indexterm>
+    </term>
+    <listitem>
+      <para>Разрывать соединения клиентов, подключённых к узлу, при отключении данного узла от кластера. Если этот параметр равен <literal>false</literal>, клиенты остаются подключёнными к узлу, но получают ошибку с сообщением о том, что узел оказался в меньшинстве.</para>
+      <para>По умолчанию: <literal>false</literal></para>
+    </listitem>
+  </varlistentry>
+  <varlistentry id="mtm-major-node">
+    <term><varname>multimaster.major_node</varname>
+      <indexterm><primary><varname>multimaster.major_node</varname></primary></indexterm>
+    </term>
+    <listitem>
+      <para>Узел с этим флагом продолжает работать, даже если он не может связаться с большинством узлов. Этот флаг необходим для нарушения симметрии в случае наличия в кластере чётного числа активных узлов. Например, в кластере с тремя узлами, если один из узлов отключается и соединение между оставшимися узлами потеряно, узел со свойством <varname>multimaster.major_node</varname> = <literal>true</literal> продолжит работать.</para>
+      <important>
+        <para>Манипулируя этим параметром, проявляйте осторожность. Установлен этот флаг должен быть только на одном узле. Если он равен <literal>true</literal> на нескольких узлах, это может привести к проблеме «раздвоения» кластера.</para>
+      </important>
+    </listitem>
+  </varlistentry>
+  <varlistentry>
+    <term><varname>multimaster.max_workers</varname>
+      <indexterm><primary><varname>multimaster.max_workers</varname></primary></indexterm>
+    </term>
+    <listitem>
+      <para>Максимальное число рабочих процессов <literal>walreceiver</literal> на этом сервере.</para>
+      <important>
+      <para>Манипулируя этим параметром, проявляйте осторожность. Если число одновременных транзакций во всём кластере превышает заданное значение, это может приводить к необнаруживаемым взаимоблокировкам.</para>
+      </important>
+    </listitem>
+  </varlistentry>
+  <varlistentry>
+    <term><varname>multimaster.trans_spill_threshold</varname>
+      <indexterm><primary><varname>multimaster.trans_spill_threshold</varname></primary></indexterm>
+    </term>
+    <listitem>
+      <para>Максимальный размер транзакции, в МБ. При достижении этого предела транзакция записывается на диск.</para>
+      <para>По умолчанию: 100</para>
+    </listitem>
+  </varlistentry>
+  <varlistentry id="mtm-monotonic-sequences">
+    <term><varname>multimaster.monotonic_sequences</varname>
+      <indexterm><primary><varname>multimaster.monotonic_sequences</varname></primary></indexterm>
+    </term>
+    <listitem>
+      <para>Определяет режим генерирования последовательностей для уникальных идентификаторов. Эта переменная может принимать следующие значения: <itemizedlist>
+      <listitem>
+      <para><literal>false</literal> (по умолчанию) &mdash; идентификаторы на каждом узле генерируются, начиная с номера узла, и увеличиваются на число узлов. Например, в кластере с тремя узлами идентификаторы 1, 4 и 7 выделяются для объектов, создаваемых на первом узле, а 2, 5 и 8 резервируются для второго узла. Если число узлов в кластере изменяется, величина прироста идентификаторов корректируется соответственно.</para>
+      </listitem>
+      <listitem>
+      <para><literal>true</literal> &mdash; генерируемая последовательность увеличивается монотонно во всём кластере. Идентификаторы узлов на каждом узле генерируются, начиная с номера узла, и увеличиваются на число узлов, но если очередное значение меньше идентификатора, уже сгенерированного на другом узле, оно пропускается. Например, в кластере с тремя узлами, если идентификаторы 1, 4 и 7 уже выделены на первом узле, идентификаторы 2 и 5 будут пропущены на втором. В этом случае первым идентификатором на втором узле будет 8. Таким образом следующий сгенерированный идентификатор всегда больше предыдущего, вне зависимости от узла кластера.</para>
+      </listitem>
+      </itemizedlist></para>
+      <para>По умолчанию: <literal>false</literal></para>
+    </listitem>
+  </varlistentry>
+</variablelist>
+</sect3>
+  <sect3 id="multimaster-functions"><title>Функции</title>
+  <variablelist>
+  <varlistentry>
+     <term>
+      <function>mtm.get_nodes_state()</function>
+      <indexterm><primary><function>mtm.get_nodes_state()</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Показывает состояние всех узлов в кластере. Возвращает кортеж со следующими значениями:</para>
+      <para>
+       <itemizedlist>
+          <listitem>
+            <para><parameter>id</parameter>, <type>integer</type></para>
+            <para>Идентификатор узла.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>enabled</parameter>, <type>boolean</type></para>
+            <para>Показывает, не был ли узел исключён из кластера. Узел может быть отключён, если он не откликается на контрольные обращения в течение интервала <varname>heartbeat_recv_timeout</varname>. Когда узел начинает отвечать на контрольные обращения, <filename>multimaster</filename> может автоматически восстановить узел и вернуть его в активное состояние. Автоматическое восстановление узла возможно только если сохраняется его слот репликации. В противном случае вы можете <link linkend="multimaster-restoring-a-node-manually">восстановить узел вручную</link>.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>connected</parameter>, <type>boolean</type></para>
+            <para>Показывает, подключён ли узел к процессу, передающему WAL.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>slot_active</parameter>, <type>boolean</type></para>
+            <para>Показывает, активен ли слот репликации для данного узла. Для отключённого узла слот остаётся активным до достижения значения <varname>max_recovery_lag</varname>.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>stopped</parameter>, <type>boolean</type></para>
+            <para>Показывает, была ли остановлена репликация с этим узлом функцией <function>mtm.stop_node()</function>. Остановленный узел находится в том же состоянии, что и отключённый, но он не восстанавливается автоматически. Чтобы повторно активизировать такой узел, нужно вызвать <function>mtm.recover_node()</function>.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>catchUp</parameter>, <type>boolean</type></para>
+            <para>В процессе восстановления узла показывает, были ли данные восстановлены до значения <varname>min_recovery_lag</varname>.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>slotLag</parameter>, <type>bigint</type></para>
+            <para>Размер данных WAL, которые этот слот репликации сохраняет для отключённого/остановленного узла. Этот слот будет удалён, когда <literal>slotLag</literal> достигнет значения <literal>max_recovery_lag</literal>.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>avgTransDelay</parameter>, <type>bigint</type></para>
+            <para>Средняя задержка фиксации, вызванная этим узлом, в микросекундах.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>lastStatusChange</parameter>, <type>timestamp</type></para>
+            <para>Время, когда этот узел последний раз менял своё состояние (включён/отключён).</para>
+          </listitem>
+          <listitem>
+            <para><parameter>oldestSnapshot</parameter>, <type>bigint</type></para>
+            <para>Старейший глобальный снимок, существующий на этом узле.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>SenderPid</parameter>, <type>integer</type></para>
+            <para>Идентификатор процесса, передающего WAL.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>SenderStartTime</parameter>, <type>timestamp</type></para>
+            <para>Время запуска передатчика WAL.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>ReceiverPid</parameter>, <type>integer</type></para>
+            <para>Идентификатор процесса, принимающего WAL.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>ReceiverStartTime</parameter>, <type>timestamp</type></para>
+            <para>Время запуска приёмника WAL.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>connStr</parameter>, <type>text</type></para>
+            <para>Строка подключения к этому узлу.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>connectivityMask</parameter>, <type>bigint</type></para>
+            <para>Битовая маска, представляющая соединения с соседними узлами. Каждый бит представляет соединение с узлом.</para>
+          </listitem>
+          <listitem>
+          <para><parameter>nHeartbeats</parameter>, <type>integer</type></para>
+          <para>Число откликов, полученных от этого узла.</para>
+          </listitem>
+        </itemizedlist>
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>mtm.collect_cluster_info()</function>
+      <indexterm><primary><function>mtm.collect_cluster_info</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Собирает данные, возвращаемые функцией <link linkend="mtm-get-cluster-state"><function>mtm.get_cluster_state()</function></link>, со всех доступных узлов. Чтобы эта функция работала, помимо соединений для репликации в <filename>pg_hba.conf</filename> должны быть разрешены обычные соединения с узлом с заданной строкой подключения.</para>
+     </listitem>
+    </varlistentry>
+
+        <varlistentry id="mtm-get-cluster-state">
+     <term>
+      <function>mtm.get_cluster_state()</function>
+      <indexterm><primary><function>mtm.get_cluster_state()</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Показывает состояние расширения <filename>multimaster</filename>. Возвращает кортеж со следующими значениями:</para>
+       <itemizedlist>
+          <listitem>
+            <para><parameter>id</parameter>, <type>integer</type></para>
+            <para>Идентификатор узла.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>status</parameter>, <type>text</type></para>
+            <para>Состояние узла. Возможные значения: <literal>Initialization</literal> (инициализация), <literal>Offline</literal> (недоступен), <literal>Connected</literal> (подключён), <literal>Online</literal> (работает), <literal>Recovery</literal> (восстановление), <literal>Recovered</literal> (восстановлен), <literal>InMinor</literal> (в меньшинстве), <literal>OutOfService</literal> (не работает).</para>
+          </listitem>
+          <listitem>
+            <para><parameter>disabledNodeMask</parameter>, <type>bigint</type></para>
+            <para>Битовая маска отключённых узлов.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>disconnectedNodeMask</parameter>, <type>bigint</type></para>
+            <para>Битовая маска недоступных узлов.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>catchUpNodeMask</parameter>, <type>bigint</type></para>
+            <para>Битовая маска узлов, завершивших восстановление.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>liveNodes</parameter>, <type>integer</type></para>
+            <para>Число включённых узлов.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>allNodes</parameter>, <type>integer</type></para>
+            <para>Число узлов в кластере. Количество активных узлов, составляющих большинство, вычисляется, исходя из этого значения.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>nActiveQueries</parameter>, <type>integer</type></para>
+            <para>Число запросов, в настоящее время выполняющихся на этом узле.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>nPendingQueries</parameter>, <type>integer</type></para>
+            <para>Число запросов, ожидающих выполнения на этом узле.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>queueSize</parameter>, <type>bigint</type></para>
+            <para>Размер очереди ожидающих запросов, в байтах.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>transCount</parameter>, <type>bigint</type></para>
+            <para>Общее число реплицированных транзакций, обработанных этим узлом.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>timeShift</parameter>, <type>bigint</type></para>
+            <para>Глобальный сдвиг снимка, вызванный рассинхронизацией часов на узлах, в микросекундах.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>recoverySlot</parameter>, <type>integer</type></para>
+            <para>Узел, с которого отказавший узел получает обновления данных во время автоматического восстановления.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>xidHashSize</parameter>, <type>bigint</type></para>
+            <para>Размер хеша xid2state.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>gidHashSize</parameter>, <type>bigint</type></para>
+            <para>Размер хеша gid2state.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>oldestXid</parameter>, <type>bigint</type></para>
+            <para>Идентификатор старейшей транзакции на этом узле.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>configChanges</parameter>, <type>integer</type></para>
+            <para>Число изменений состояния (включено/отключено) с момента последнего перезапуска.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>stalledNodeMask</parameter>, <type>bigint</type></para>
+            <para>Битовая маска узлов, для которых были удалены слоты репликации.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>stoppedNodeMask</parameter>, <type>bigint</type></para>
+            <para>Битовая маска узлов, остановленных функцией <function>mtm.stop_node()</function>.</para>
+          </listitem>
+          <listitem>
+            <para><parameter>lastStatusChange</parameter>, <type>timestamp</type></para>
+            <para>Время последнего изменения состояния.</para>
+          </listitem>
+        </itemizedlist>
+     </listitem>
+    </varlistentry>
+    <varlistentry>
+     <term>
+      <function>mtm.add_node(<parameter>conn_str</parameter> <type>text</type>)</function>
+      <indexterm><primary><function>mtm.add_node</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Добавляет новый узел в кластер.</para>
+      <para>Аргументы: <itemizedlist>
+        <listitem>
+         <para><parameter>conn_str</parameter> &mdash; строка подключения для нового узла. Например, для базы данных <literal>mydb</literal>, пользователя <literal>myuser</literal> и нового узла <literal>node4</literal> строка подключения будет такой: <literal>"dbname=mydb user=myuser host=node4"</literal>.</para>
+         <para>Тип: <literal>text</literal></para>
+        </listitem>
+        </itemizedlist></para>
+      <para>
+      </para>
+     </listitem>
+    </varlistentry>
+        <varlistentry>
+     <term>
+      <function>mtm.stop_node(<parameter>node</parameter> <type>integer</type>, <parameter>drop_slot</parameter> <type>bool</type> default false)</function>
+      <indexterm><primary><function>mtm.stop_node</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Исключает узел из кластера.</para>
+      <para>Аргументы: <itemizedlist>
+        <listitem>
+         <para><parameter>node</parameter> &mdash; идентификатор узла, который будет удалён (этот идентификатор задавался в переменной <varname>multimaster.node_id</varname>).</para>
+              <para>Тип: <literal>integer</literal></para>
+        </listitem>
+        <listitem>
+         <para><parameter>drop_slot</parameter> &mdash; Необязательный параметр. Определяет, должен ли вместе с узлом удаляться слот репликации. Передайте в этом параметре <literal>true</literal>, если вы не планируете восстанавливать этот узел в будущем.</para>
+              <para>Тип: <literal>boolean</literal></para>
+              <para>По умолчанию: <literal>false</literal></para>
+        </listitem>
+        </itemizedlist></para>
+      <para>
+      </para>
+     </listitem>
+    </varlistentry>
+        <varlistentry id="mtm-recover-node">
+     <term>
+      <function>mtm.recover_node(<parameter>node</parameter> <type>integer</type>)</function>
+      <indexterm><primary><function>mtm.recover_node</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Создаёт слот репликации для узла, который ранее был удалён вместе со своим слотом.</para>
+      <para>Аргументы: <itemizedlist>
+        <listitem>
+         <para><parameter>node</parameter> &mdash; идентификатор узла, который нужно восстановить.</para>
+        </listitem>
+        </itemizedlist></para>
+     </listitem>
+    </varlistentry>
+        <varlistentry>
+     <term>
+      <function>mtm.make_table_local(<parameter>'имя_таблицы'</parameter> <type>regclass</type>)</function>
+      <indexterm><primary><function>mtm.make_table_local</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Останавливает репликацию для указанной таблицы.</para>
+      <para>Аргументы: <itemizedlist>
+        <listitem>
+         <para><parameter>table_name</parameter> &mdash; имя таблицы, которую вы хотите исключить из схемы репликации.</para>
+              <para>Тип: <literal>regclass</literal></para>
+        </listitem>
+        </itemizedlist></para>
+      <para>
+      </para>
+     </listitem>
+    </varlistentry>
+        <varlistentry>
+     <term>
+      <function>mtm.copy_table(<parameter>table_name</parameter> <type>regclass</type>, <parameter>node_id</parameter> <type>integer</type>)</function>
+      <indexterm><primary><function>mtm.copy_table</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Копирует существующую таблицу на другой узел. Вы можете использовать эту функцию для восстановления повреждённых данных на одном или нескольких узлах кластера. Эту функцию нужно вызывать на узле, с которого копируется таблица.</para>
+      <para>Аргументы: <itemizedlist>
+        <listitem>
+         <para><parameter>table_name</parameter> &mdash; имя таблицы, которую вы хотите копировать.</para>
+              <para>Тип: <literal>regclass</literal></para>
+        </listitem>
+        <listitem>
+         <para><parameter>node_id</parameter> &mdash; идентификатор узла, на который будет копироваться таблица.</para>
+              <para>Тип: <literal>integer</literal></para>
+        </listitem>
+        </itemizedlist></para>
+      <para>
+      </para>
+     </listitem>
+    </varlistentry>
+    </variablelist>
+  </sect3>
+  </sect2>
+  <sect2 id="multimaster-compatibility">
+    <title>Совместимость</title>
+    <para>Расширение <filename>multimaster</filename> в настоящее время проходит почти все регрессионные тесты <productname>PostgreSQL</productname>, за исключением нескольких тестов особых случаев, связанных с работой временных таблиц и обновления типа <literal>enum</literal>, что не всегда выполняется в <productname>PostgreSQL</productname> под контролем транзакций. Прямо сейчас мы продолжаем работу с тем, чтобы обеспечить полную совместимость со стандартным <productname>PostgreSQL</productname>.</para>
+  </sect2>
+  <sect2 id="multimaster-authors">
+    <title>Авторы</title>
+    <para>Postgres Professional, Москва, Россия.</para>
+    <sect3 id="multimaster-credits">
+      <title>Благодарности</title>
+      <para>Механизм репликации основан на логическом декодировании и предыдущей версии расширения <filename>pglogical</filename>, которым поделилась с сообществом команда 2ndQuadrant.</para>
+      <para>Протокол трёхфазной фиксации транзакций E3PC основан на следующих работах: <itemizedlist>
+      <listitem>
+      <para>Idit Keidar, Danny Dolev. <ulink url="http://dx.doi.org/10.1006/jcss.1998.1566"><citetitle>Increasing the Resilience of Distributed and Replicated Database Systems.</citetitle></ulink></para>
+      </listitem>
+      <listitem>
+      <para>Tim Kempster, Colin Stirling, Peter Thanisch. <ulink url="http://dx.doi.org/10.1007/BFb0056487"><citetitle>A More Committed Quorum-Based Three Phase Commit Protocol</citetitle></ulink>.</para>
+      </listitem>
+      </itemizedlist></para>
+    </sect3>
+  </sect2>
+</sect1>

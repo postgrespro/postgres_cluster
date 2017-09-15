@@ -1,0 +1,52 @@
+<fop version="1.0">
+<base>.</base>
+<renderers>
+ <renderer mime="application/pdf">
+  <fonts>
+      <directory recursive="true">/usr/share/fonts/truetype/dejavu</directory>
+      <directory recursive="true">/usr/share/fonts/truetype/freefont</directory>
+   </fonts>
+ </renderer>
+</renderers>
+<fonts>
+ <substitutions>
+  <substitution>
+    <from font-family="sans-serif" font-weight="bold"/>
+    <to font-family="DejaVu Sans Bold"/>
+    </substitution>
+    <substitution>
+    <from font-family="sans-serif" font-weight="bold" font-style="italic"/>
+    <to font-family="DejaVu Sans Bold Oblique"/>
+    </substitution>
+
+ <substitution>
+  <from font-family="monospace" />
+  <to font-family="FreeMono"/>
+</substitution>
+<substitution>
+  <from font-family="monospace" font-weight="bold"/>
+  <to font-family="FreeMono Bold"/>
+</substitution>
+<substitution>
+  <from font-family="monospace"  font-style="italic"/>
+  <to font-family="FreeMono Oblique"/>
+</substitution>
+<substitution>
+  <from font-family="monospace" font-weight="bold" font-style="italic"/>
+  <to font-family="FreeMono Bold Oblique"/>
+</substitution>
+    <substitution>
+    <from font-family="serif" />
+    <to font-family="DejaVu Serif"/>
+    </substitution>
+    <substitution>
+    <from font-family="serif" font-weight="bold" />
+    <to font-family="DejaVu Serif Bold"/>
+    </substitution>
+    <substitution>
+    <from font-family="serif" font-style="italic" />
+    <to font-family="DejaVu Serif Italic"/>
+    </substitution>
+</substitutions>
+</fonts>
+</fop>

@@ -1,0 +1,182 @@
+<!--
+doc/src/xml/ref/create_operator.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createoperator">
+ <indexterm zone="sql-createoperator"><primary>CREATE OPERATOR</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE OPERATOR</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE OPERATOR</refname>
+  <refpurpose>создать оператор</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE OPERATOR <replaceable>имя</replaceable> (
+    PROCEDURE = <replaceable class="parameter">имя_функции</replaceable>
+    [, LEFTARG = <replaceable class="parameter">тип_слева</replaceable> ] [, RIGHTARG = <replaceable class="parameter">тип_справа</replaceable> ]
+    [, COMMUTATOR = <replaceable class="parameter">коммут_оператор</replaceable> ] [, NEGATOR = <replaceable class="parameter">обратный_оператор</replaceable> ]
+    [, RESTRICT = <replaceable class="parameter">процедура_ограничения</replaceable> ] [, JOIN = <replaceable class="parameter">процедура_соединения</replaceable> ]
+    [, HASHES ] [, MERGES ]
+)</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE OPERATOR</command> определяет новый оператор, <replaceable class="parameter">имя</replaceable>. Владельцем оператора становится пользователь, его создавший. Если указано имя схемы, оператор создаётся в ней, в противном случае — в текущей схеме.</para>
+
+  <para>Имя оператора образует последовательность из нескольких символов (не более чем <symbol>NAMEDATALEN</symbol>-1, по умолчанию 63) из следующего списка: <literallayout>
++ - * / &lt; &gt; = ~ ! @ # % ^ &amp; | ` ?
+</literallayout> Однако выбор имени ограничен ещё следующими условиями: <itemizedlist>
+    <listitem>
+     <para>Сочетания символов <literal>--</literal> и <literal>/*</literal> не могут присутствовать в имени оператора, так как они будут обозначать начало комментария.</para>
+    </listitem>
+    <listitem>
+     <para>Многосимвольное имя оператора не может заканчиваться знаком <literal>+</literal> или <literal>-</literal>, если только оно не содержит также один из этих символов: <literallayout>
+~ ! @ # % ^ &amp; | ` ?
+</literallayout> Например, <literal>@-</literal> — допустимое имя оператора, а <literal>*-</literal> — нет. Благодаря этому ограничению, <productname>&productname;</productname> может разбирать корректные SQL-запросы без пробелов между компонентами.</para>
+    </listitem>
+    <listitem>
+     <para>Использование <literal>=&gt;</literal> в качестве имени оператора считается устаревшим и может быть вовсе запрещено в будущих выпусках.</para>
+    </listitem>
+   </itemizedlist></para>
+
+  <para>Оператор <literal>!=</literal> отображается в <literal>&lt;&gt;</literal> при вводе, так что эти два имени всегда равнозначны.</para>
+
+  <para>Необходимо определить либо <literal>LEFTARG</literal>, либо <literal>RIGHTARG</literal>, а для бинарных операторов оба аргумента. Для правых унарных операторов должен быть определён только <literal>LEFTARG</literal>, а для левых унарных — только <literal>RIGHTARG</literal>.</para>
+
+  <para>Процедура <replaceable class="parameter">имя_функции</replaceable> должна быть уже определена с помощью <command>CREATE FUNCTION</command> и иметь соответствующее число аргументов (один или два) указанных типов.</para>
+
+  <para>Другие предложения определяют дополнительные характеристики оптимизации. Их значение описано в <xref remap="6" linkend="xoper-optimization"/>.</para>
+
+  <para>Чтобы создать оператор, необходимо иметь право <literal>USAGE</literal> для типов аргументов и результата, а также право <literal>EXECUTE</literal> для нижележащей функции. Если указывается коммутативный или обратный оператор, нужно быть его владельцем.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">имя</replaceable></term>
+      <listitem>
+       <para>Имя определяемого оператора. Допустимые в нём символы перечислены ниже. Указанное имя может быть дополнено схемой, например так: <literal>CREATE OPERATOR myschema.+ (...)</literal>. Если схема не указана, оператор создаётся в текущей схеме. При этом два оператора в одной схеме могут иметь одно имя, если они работают с разными типами данных. Такое определение операторов называется <firstterm>перегрузкой</firstterm>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_функции</replaceable></term>
+      <listitem>
+       <para>Функция, реализующая этот оператор.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">тип_слева</replaceable></term>
+      <listitem>
+       <para>Тип данных левого операнда оператора, если он есть. Этот параметр опускается для левых унарных операторов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">тип_справа</replaceable></term>
+      <listitem>
+       <para>Тип данных правого операнда оператора, если он есть. Этот параметр опускается для правых унарных операторов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">коммут_оператор</replaceable></term>
+      <listitem>
+       <para>Оператор, коммутирующий для данного.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">обратный_оператор</replaceable></term>
+      <listitem>
+       <para>Оператор, обратный для данного.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">процедура_ограничения</replaceable></term>
+      <listitem>
+       <para>Функция оценки избирательности ограничения для данного оператора.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">процедура_соединения</replaceable></term>
+      <listitem>
+       <para>Функция оценки избирательности соединения для этого оператора.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>HASHES</literal></term>
+      <listitem>
+       <para>Показывает, что этот оператор поддерживает соединение по хешу.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>MERGES</literal></term>
+      <listitem>
+       <para>Показывает, что этот оператор поддерживает соединение слиянием.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+
+  <para>Чтобы задать имя оператора с указанием схемы в <replaceable class="parameter">коммут_оператор</replaceable> или другом дополнительном аргументе, применяется синтаксис <literal>OPERATOR()</literal>, например: <programlisting>COMMUTATOR = OPERATOR(myschema.===) ,</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>За дополнительными сведениями обратитесь к <xref remap="3" linkend="xoper"/>.</para>
+
+  <para>Задать лексический приоритет оператора в команде <command>CREATE OPERATOR</command> невозможно, так как обработка приоритетов жёстко зашита в анализаторе. Подробнее приоритеты описаны в <xref remap="6" linkend="sql-precedence"/>.</para>
+
+  <para>Устаревшие параметры <literal>SORT1</literal>, <literal>SORT2</literal>, <literal>LTCMP</literal> и <literal>GTCMP</literal> ранее использовались для определения имён операторов сортировки, связанных с оператором, применяемым при соединении слиянием. Теперь это не требуется, так как информацию о связанных операторах теперь дают семейства операторов B-дерева. Если в команде отсутствует явное указание <literal>MERGES</literal>, все эти параметры игнорируются.</para>
+
+  <para>Для удаления пользовательских операторов из базы данных применяется <xref linkend="sql-dropoperator"/>, а для изменения их свойств — <xref linkend="sql-alteroperator"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Следующая команда определяет новый оператор, проверяющий равенство площадей, для типа <type>box</type>: <programlisting>CREATE OPERATOR === (
+    LEFTARG = box,
+    RIGHTARG = box,
+    PROCEDURE = area_equal_procedure,
+    COMMUTATOR = ===,
+    NEGATOR = !==,
+    RESTRICT = area_restriction_procedure,
+    JOIN = area_join_procedure,
+    HASHES, MERGES
+);</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>CREATE OPERATOR</command> является языковым расширением <productname>&productname;</productname>. Средства определения пользовательских операторов в стандарте SQL не описаны.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alteroperator"/></member>
+   <member><xref linkend="sql-createopclass"/></member>
+   <member><xref linkend="sql-dropoperator"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

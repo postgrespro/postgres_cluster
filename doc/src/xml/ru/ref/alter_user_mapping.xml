@@ -1,0 +1,83 @@
+<!--
+doc/src/xml/ref/alter_user_mapping.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterusermapping">
+ <indexterm zone="sql-alterusermapping"><primary>ALTER USER MAPPING</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER USER MAPPING</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER USER MAPPING</refname>
+  <refpurpose>изменить определение сопоставления пользователей</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER USER MAPPING FOR { <replaceable class="parameter">имя_пользователя</replaceable> | USER | CURRENT_USER | SESSION_USER | PUBLIC }
+    SERVER <replaceable class="parameter">имя_сервера</replaceable>
+    OPTIONS ( [ ADD | SET | DROP ] <replaceable class="parameter">параметр</replaceable> ['<replaceable class="parameter">значение</replaceable>'] [, ... ] )</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER USER MAPPING</command> изменяет определение сопоставления пользователей.</para>
+
+  <para>Владелец стороннего сервера может изменить сопоставление любых пользователей на этом сервере. Кроме того, пользователь может изменить сопоставление для своего собственного имени пользователя, если он наделён правом <literal>USAGE</literal> на данном сервере.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя_пользователя</replaceable></term>
+    <listitem>
+     <para>Имя пользователя для сопоставления. Значения <literal>CURRENT_USER</literal> и <literal>USER</literal> соответствуют имени текущего пользователя. Значение <literal>PUBLIC</literal> соответствует именам всех текущих и будущих пользователей системы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_сервера</replaceable></term>
+    <listitem>
+     <para>Имя сервера, для которого меняется сопоставление пользователей.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>OPTIONS ( [ ADD | SET | DROP ] <replaceable class="parameter">параметр</replaceable> ['<replaceable class="parameter">значение</replaceable>'] [, ... ] )</literal></term>
+    <listitem>
+     <para>Эти формы меняют параметры сопоставления пользователей. Новые параметры переопределяют любые определённые ранее. Возможные операции с параметрами: <literal>ADD</literal> (добавить), <literal>SET</literal> (установить) и <literal>DROP</literal> (удалить). По умолчанию подразумевается <literal>ADD</literal>. Имена параметров должны быть уникальными; кроме того, они проверяются обёрткой сторонних данных.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Изменение пароля в сопоставлении пользователя <literal>bob</literal> на сервере <literal>foo</literal>: <programlisting>ALTER USER MAPPING FOR bob SERVER foo OPTIONS (SET password 'public');</programlisting></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>ALTER USER MAPPING</command> соответствует стандарту ISO/IEC 9075-9 (SQL/MED). Однако есть небольшое синтаксическое различие: в стандарте ключевое слово <literal>FOR</literal> опускается. Но так как и в <literal>CREATE USER MAPPING</literal>, и в <literal>DROP USER MAPPING</literal> слово <literal>FOR</literal> находится в аналогичных позициях, а IBM DB2 (ещё одна популярная реализация SQL/MED) требует его и для <literal>ALTER USER MAPPING</literal>, &productname; в этом аспекте отклоняется от стандарта ради согласованности и совместимости.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createusermapping"/></member>
+   <member><xref linkend="sql-dropusermapping"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

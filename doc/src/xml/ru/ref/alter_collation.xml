@@ -1,0 +1,90 @@
+<!--
+doc/src/xml/ref/alter_collation.xml
+&productname; documentation
+-->
+
+<refentry id="sql-altercollation">
+ <indexterm zone="sql-altercollation"><primary>ALTER COLLATION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER COLLATION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER COLLATION</refname>
+  <refpurpose>изменить определение правила сортировки</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER COLLATION <replaceable>имя</replaceable> RENAME TO <replaceable>новое_имя</replaceable>
+ALTER COLLATION <replaceable>имя</replaceable> OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+ALTER COLLATION <replaceable>имя</replaceable> SET SCHEMA <replaceable>новая_схема</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER COLLATION</command> изменяет определение правила сортировки.</para>
+
+  <para>Выполнить <command>ALTER COLLATION</command> может только владелец соответствующего правила сортировки. Чтобы сменить владельца, необходимо быть непосредственным или опосредованным членом новой роли-владельца, а эта роль должна иметь право <literal>CREATE</literal> в схеме правила сортировки. (С такими ограничениями при смене владельца не происходит ничего такого, что нельзя было бы сделать, имея право удалить и вновь создать правило сортировки. Однако суперпользователь может сменить владельца правила сортировки в любом случае.)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующего правила сортировки.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя правила сортировки.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Новый владелец правила сортировки.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_схема</replaceable></term>
+    <listitem>
+     <para>Новая схема правила сортировки.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Переименование правила сортировки <literal>de_DE</literal> в <literal>german</literal>: <programlisting>ALTER COLLATION "de_DE" RENAME TO german;</programlisting></para>
+
+  <para>Изменение владельца правила сортировки <literal>en_US</literal> на <literal>joe</literal>: <programlisting>ALTER COLLATION "en_US" OWNER TO joe;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER COLLATION</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createcollation"/></member>
+   <member><xref linkend="sql-dropcollation"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

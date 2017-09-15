@@ -1,0 +1,74 @@
+<!--
+doc/src/xml/ref/end.xml
+&productname; documentation
+-->
+
+<refentry id="sql-end">
+ <indexterm zone="sql-end"><primary>END</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>END</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>END</refname>
+  <refpurpose>зафиксировать текущую транзакцию</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>END [ AUTONOMOUS ] [ WORK | TRANSACTION ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>END</command> фиксирует текущую транзакцию. Все изменения, произведённые этой транзакцией, становятся видимыми для других и гарантированно сохранятся в случае сбоя. Эта команда является расширением <productname>&productname;</productname> и равнозначна команде <xref linkend="sql-commit"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>WORK</literal></term>
+    <term><literal>TRANSACTION</literal></term>
+    <term><literal>AUTONOMOUS</literal></term>
+    <listitem>
+     <para>Необязательные ключевые слова, не оказывают никакого влияния.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Для прерывания транзакции используйте <xref linkend="sql-rollback"/>.</para>
+
+  <para>При попытке выполнить <command>END</command> вне транзакции ничего не произойдёт, но будет выдано предупреждение.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Следующая команда фиксирует текущую транзакцию и сохраняет все изменения: <programlisting>END;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>END</command> является расширением <productname>&productname;</productname> и выполняет ту же функцию, что и оператор <xref linkend="sql-commit"/>, описанный в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-begin"/></member>
+   <member><xref linkend="sql-commit"/></member>
+   <member><xref linkend="sql-rollback"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

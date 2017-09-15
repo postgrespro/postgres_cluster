@@ -1,0 +1,161 @@
+<!-- doc/src/xml/bloom.xml -->
+
+<sect1 id="bloom" xreflabel="bloom">
+ <title>bloom</title>
+
+ <indexterm zone="bloom"><primary>bloom</primary></indexterm>
+
+ <para>Модуль <literal>bloom</literal> предоставляет метод доступа индекса, основанный на <ulink url="http://en.wikipedia.org/wiki/Bloom_filter">фильтрах Блума</ulink>.</para>
+
+ <para>Фильтр Блума представляет собой компактную структуру данных, позволяющую проверить, является ли элемент членом множества. В виде метода доступа индекса он позволяет быстро исключать неподходящие кортежи по сигнатурам, размер которых определяется при создании индекса.</para>
+
+ <para>Сигнатура — это неточное представление проиндексированных атрибутов, вследствие чего оно допускает ложные положительные срабатывания; то есть оно может показывать, что элемент содержится в множестве, хотя это не так. Поэтому результаты поиска по такому индексу должны всегда перепроверяться по фактическим значениям атрибутов записи в таблице. Чем больше размер сигнатуры, тем меньше вероятность ложного срабатывания и число напрасных обращений к таблице, но это, разумеется, влечёт увеличение индекса и замедление сканирования.</para>
+
+ <para>Этот тип индекса наиболее полезен, когда в таблице много атрибутов и в запросах проверяются их произвольные сочетания. Традиционный индекс-B-дерево быстрее индекса Блума, но для поддержки всевозможных запросов может потребоваться множество индексов типа B-дерево, при том что индекс Блума нужен всего один. Заметьте, однако, что индексы Блума поддерживают только проверки на равенство, тогда как индексы-B-деревья также полезны при проверке неравенств и поиске в диапазоне.</para>
+
+ <sect2>
+  <title>Параметры</title>
+
+  <para>Индекс <literal>bloom</literal> принимает в своём предложении <literal>WITH</literal> следующие параметры:</para>
+
+   <variablelist>
+   <varlistentry>
+    <term><literal>length</literal></term>
+    <listitem>
+     <para>Длина каждой сигнатуры (элемента индекса) в битах. Значение по умолчанию — <literal>80</literal>, а максимальное значение — <literal>4096</literal>.</para>
+    </listitem>
+   </varlistentry>
+   </variablelist>
+   <variablelist>
+   <varlistentry>
+    <term><literal>col1 &mdash; col32</literal></term>
+    <listitem>
+     <para>Число битов, генерируемых для каждого столбца индекса. В имени параметра отражается номер столбца индекса, для которого это число задаётся. Значение по умолчанию — <literal>2</literal> бита, а максимум — <literal>4095</literal>. Параметры для неиспользуемых столбцов индекса игнорируются.</para>
+    </listitem>
+   </varlistentry>
+   </variablelist>
+ </sect2>
+
+ <sect2>
+  <title>Примеры</title>
+
+  <para>Пример создания индекса bloom:</para>
+
+<programlisting>CREATE INDEX bloomidx ON tbloom USING bloom (i1,i2,i3)
+       WITH (length=80, col1=2, col2=2, col3=4);</programlisting>
+
+  <para>Эта команда создаёт индекс с длиной сигнатуры 80 бит, в которой атрибуты i1 и i2 отображаются в 2 бита, а атрибут i3 — в 4. Мы могли бы опустить указания <literal>length</literal>, <literal>col1</literal> и <literal>col2</literal>, так как в них задаются значения по умолчанию.</para>
+
+  <para>Ниже представлен более полный пример определения и использования индекса Блума, а также приводится сравнение его с равнозначным индексом-B-деревом. Видно, что индекс Блума значительно меньше индекса-B-дерева, и при этом он может работать быстрее.</para>
+
+<programlisting>=# CREATE TABLE tbloom AS
+   SELECT
+     (random() * 1000000)::int as i1,
+     (random() * 1000000)::int as i2,
+     (random() * 1000000)::int as i3,
+     (random() * 1000000)::int as i4,
+     (random() * 1000000)::int as i5,
+     (random() * 1000000)::int as i6
+   FROM
+  generate_series(1,10000000);
+SELECT 10000000
+=# CREATE INDEX bloomidx ON tbloom USING bloom (i1, i2, i3, i4, i5, i6);
+CREATE INDEX
+=# SELECT pg_size_pretty(pg_relation_size('bloomidx'));
+ pg_size_pretty
+----------------
+ 153 MB
+(1 row)
+=# CREATE index btreeidx ON tbloom (i1, i2, i3, i4, i5, i6);
+CREATE INDEX
+=# SELECT pg_size_pretty(pg_relation_size('btreeidx'));
+ pg_size_pretty
+----------------
+ 387 MB
+(1 row)</programlisting>
+
+  <para>Последовательное сканирование по этой большой таблице выполняется долго: <programlisting>=# EXPLAIN ANALYZE SELECT * FROM tbloom WHERE i2 = 898732 AND i5 = 123451;
+                                                 QUERY PLAN
+------------------------------------------------------------------------------------------------------------
+ Seq Scan on tbloom  (cost=0.00..213694.08 rows=1 width=24) (actual time=1445.438..1445.438 rows=0 loops=1)
+   Filter: ((i2 = 898732) AND (i5 = 123451))
+   Rows Removed by Filter: 10000000
+ Planning time: 0.177 ms
+ Execution time: 1445.473 ms
+(5 rows)</programlisting></para>
+
+  <para>Поэтому планировщик обычно предпочтёт сканирование по индексу, если это возможно. Индекс-B-дерево даёт такие результаты: <programlisting>=# EXPLAIN ANALYZE SELECT * FROM tbloom WHERE i2 = 898732 AND i5 = 123451;
+                                                           QUERY PLAN
+--------------------------------------------------------------------------------------------------------------------------------
+ Index Only Scan using btreeidx on tbloom  (cost=0.56..298311.96 rows=1 width=24) (actual time=445.709..445.709 rows=0 loops=1)
+   Index Cond: ((i2 = 898732) AND (i5 = 123451))
+   Heap Fetches: 0
+ Planning time: 0.193 ms
+ Execution time: 445.770 ms
+(5 rows)</programlisting></para>
+
+  <para>При таком поиске Блум оказывается лучше B-дерева: <programlisting>=# EXPLAIN ANALYZE SELECT * FROM tbloom WHERE i2 = 898732 AND i5 = 123451;
+                                                        QUERY PLAN
+---------------------------------------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on tbloom  (cost=178435.39..178439.41 rows=1 width=24) (actual time=76.698..76.698 rows=0 loops=1)
+   Recheck Cond: ((i2 = 898732) AND (i5 = 123451))
+   Rows Removed by Index Recheck: 2439
+   Heap Blocks: exact=2408
+   -&gt;  Bitmap Index Scan on bloomidx  (cost=0.00..178435.39 rows=1 width=0) (actual time=72.455..72.455 rows=2439 loops=1)
+         Index Cond: ((i2 = 898732) AND (i5 = 123451))
+ Planning time: 0.475 ms
+ Execution time: 76.778 ms
+(8 rows)</programlisting> Обратите внимание на относительно большое количество ложных срабатываний: для перепроверки по куче были отобраны 2439 строк, но на самом деле ни одна из них не удовлетворила запросу. Мы можем уменьшить это количество, создав сигнатуру большей длины. В данном примере при создании индекса с <literal>length=200</literal> число ложных срабатываний уменьшилось до 55, но размер индекса удвоился (до 306 Мбайт) и запрос стал выполняться дольше (125 мс).</para>
+
+  <para>При таком подходе основная проблема поиска по B-дереву состоит в том, что B-дерево неэффективно, когда условия поиска не ограничивают ведущие столбцы индекса. Поэтому, применяя индексы типа B-дерево, лучше создавать отдельные индексы для каждого столбца. В этом случае планировщик построит примерно такой план: <programlisting>=# EXPLAIN ANALYZE SELECT * FROM tbloom WHERE i2 = 898732 AND i5 = 123451;
+                                                          QUERY PLAN
+------------------------------------------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on tbloom  (cost=9.29..13.30 rows=1 width=24) (actual time=0.148..0.148 rows=0 loops=1)
+   Recheck Cond: ((i5 = 123451) AND (i2 = 898732))
+   -&gt;  BitmapAnd  (cost=9.29..9.29 rows=1 width=0) (actual time=0.145..0.145 rows=0 loops=1)
+         -&gt;  Bitmap Index Scan on tbloom_i5_idx  (cost=0.00..4.52 rows=11 width=0) (actual time=0.089..0.089 rows=10 loops=1)
+               Index Cond: (i5 = 123451)
+         -&gt;  Bitmap Index Scan on tbloom_i2_idx  (cost=0.00..4.52 rows=11 width=0) (actual time=0.048..0.048 rows=8 loops=1)
+               Index Cond: (i2 = 898732)
+ Planning time: 2.049 ms
+ Execution time: 0.280 ms
+(9 rows)</programlisting> Хотя этот запрос выполняется гораздо быстрее, чем с каким-либо одиночным индексом, мы платим за это увеличением размера индекса. Каждый индекс-B-дерево занимает 214 Мбайт, так что общий объём индексов превышает 1.2 Гбайта, что в 8 раз больше размера индекса Блума.</para>
+ </sect2>
+
+ <sect2>
+  <title>Интерфейс класса операторов</title>
+
+  <para>Класс операторов для индексов Блума требует наличия только хеш-функции для индексируемого типа данных и оператора равенства для поиска. Этот пример демонстрирует соответствующее определение класса операторов для типа <type>text</type>:</para>
+
+<programlisting>CREATE OPERATOR CLASS text_ops
+DEFAULT FOR TYPE text USING bloom AS
+    OPERATOR    1   =(text, text),
+    FUNCTION    1   hashtext(text);</programlisting>
+ </sect2>
+
+ <sect2>
+  <title>Ограничения</title>
+  <para>
+   <itemizedlist>
+    <listitem>
+     <para>В этот модуль включены только классы операторов для <type>int4</type> и <type>text</type>.</para>
+    </listitem>
+
+    <listitem>
+     <para>При поиске поддерживается только оператор <literal>=</literal>. Но в будущем возможно добавление поддержки для массивов с операциями объединения и пересечения.</para>
+    </listitem>
+   </itemizedlist>
+  </para>
+ </sect2>
+
+ <sect2>
+  <title>Авторы</title>
+
+  <para>Фёдор Сигаев <email>teodor@postgrespro.ru</email>, Postgres Professional, Москва, Россия</para>
+
+  <para>Александр Коротков <email>a.korotkov@postgrespro.ru</email>, Postgres Professional, Москва, Россия</para>
+
+  <para>Олег Бартунов <email>obartunov@postgrespro.ru</email>, Postgres Professional, Москва, Россия</para>
+ </sect2>
+
+</sect1>

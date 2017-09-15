@@ -1,0 +1,863 @@
+<!--
+doc/src/xml/ref/create_table.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createtable">
+ <indexterm zone="sql-createtable"><primary>CREATE TABLE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE TABLE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE TABLE</refname>
+  <refpurpose>создать таблицу</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED | CONSTANT ] TABLE [ IF NOT EXISTS ] <replaceable class="parameter">имя_таблицы</replaceable> ( [
+  { <replaceable class="parameter">имя_столбца</replaceable> <replaceable class="parameter">тип_данных</replaceable> [ COLLATE <replaceable>правило_сортировки</replaceable> ] [ <replaceable class="parameter">ограничение_столбца</replaceable> [ ... ] ]
+    | <replaceable>ограничение_таблицы</replaceable>
+    | LIKE <replaceable>исходная_таблица</replaceable> [ <replaceable>вариант_копирования</replaceable> ... ] }
+    [, ... ]
+] )
+[ INHERITS ( <replaceable>таблица_родитель</replaceable> [, ... ] ) ]
+[ WITH ( <replaceable class="parameter">параметр_хранения</replaceable> [= <replaceable class="parameter">значение</replaceable>] [, ... ] ) | WITH OIDS | WITHOUT OIDS ]
+[ ON COMMIT { PRESERVE ROWS | DELETE ROWS | DROP } ]
+[ TABLESPACE <replaceable class="parameter">табл_пространство</replaceable> ]
+[ PARTITION BY <replaceable class="parameter">вариант_секционирования</replaceable> ]
+
+CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED | CONSTANT ] TABLE [ IF NOT EXISTS ] <replaceable class="parameter">имя_таблицы</replaceable>
+    OF <replaceable class="parameter">имя_типа</replaceable> [ (
+  { <replaceable class="parameter">имя_столбца</replaceable> WITH OPTIONS [ <replaceable class="parameter">ограничение_столбца</replaceable> [ ... ] ]
+    | <replaceable>ограничение_таблицы</replaceable> }
+    [, ... ]
+) ]
+[ WITH ( <replaceable class="parameter">параметр_хранения</replaceable> [= <replaceable class="parameter">значение</replaceable>] [, ... ] ) | WITH OIDS | WITHOUT OIDS ]
+[ ON COMMIT { PRESERVE ROWS | DELETE ROWS | DROP } ]
+[ TABLESPACE <replaceable class="parameter">табл_пространство</replaceable> ]
+
+<phrase>Здесь <replaceable class="parameter">ограничение_столбца</replaceable>:</phrase>
+
+[ CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable> ]
+{ NOT NULL |
+  NULL |
+  CHECK ( <replaceable class="parameter">выражение</replaceable> ) [ NO INHERIT ] |
+  DEFAULT <replaceable>выражение_по_умолчанию</replaceable> |
+  UNIQUE <replaceable class="parameter">параметры_индекса</replaceable> |
+  PRIMARY KEY <replaceable class="parameter">параметры_индекса</replaceable> |
+  REFERENCES <replaceable class="parameter">целевая_таблица</replaceable> [ ( <replaceable class="parameter">целевой_столбец</replaceable> ) ] [ MATCH FULL | MATCH PARTIAL | MATCH SIMPLE ]
+    [ ON DELETE <replaceable class="parameter">действие</replaceable> ] [ ON UPDATE <replaceable class="parameter">действие</replaceable> ] }
+[ DEFERRABLE | NOT DEFERRABLE ] [ INITIALLY DEFERRED | INITIALLY IMMEDIATE ]
+
+<phrase>и <replaceable class="parameter">ограничение_таблицы</replaceable>:</phrase>
+
+[ CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable> ]
+{ CHECK ( <replaceable class="parameter">выражение</replaceable> ) [ NO INHERIT ] |
+  UNIQUE ( <replaceable class="parameter">имя_столбца</replaceable> [, ... ] ) <replaceable class="parameter">параметры_индекса</replaceable> <optional>INCLUDE (<replaceable class="parameter">имя_столбца</replaceable> [, ...])</optional> |
+  PRIMARY KEY ( <replaceable class="parameter">имя_столбца</replaceable> [, ... ] ) <replaceable class="parameter">параметры_индекса</replaceable> <optional>INCLUDE (<replaceable class="parameter">имя_столбца</replaceable> [, ...])</optional> |
+  EXCLUDE [ USING <replaceable class="parameter">метод_индекса</replaceable> ] ( <replaceable class="parameter">элемент_исключения</replaceable> WITH <replaceable class="parameter">оператор</replaceable> [, ... ] ) <replaceable class="parameter">параметры_индекса</replaceable> [ WHERE ( <replaceable class="parameter">предикат</replaceable> ) ] |
+  FOREIGN KEY ( <replaceable class="parameter">имя_столбца</replaceable> [, ... ] ) REFERENCES <replaceable class="parameter">целевая_таблица</replaceable> [ ( <replaceable class="parameter">целевой_столбец</replaceable> [, ... ] ) ]
+    [ MATCH FULL | MATCH PARTIAL | MATCH SIMPLE ] [ ON DELETE <replaceable class="parameter">действие</replaceable> ] [ ON UPDATE <replaceable class="parameter">действие</replaceable> ] }
+[ DEFERRABLE | NOT DEFERRABLE ] [ INITIALLY DEFERRED | INITIALLY IMMEDIATE ]
+
+<phrase>и <replaceable class="parameter">вариант_копирования</replaceable>:</phrase>
+
+{ INCLUDING | EXCLUDING } { DEFAULTS | CONSTRAINTS | INDEXES | STORAGE | COMMENTS | ALL }
+
+<phrase><replaceable class="parameter">параметры_индекса</replaceable> в ограничениях <literal>UNIQUE</literal>, <literal>PRIMARY KEY</literal> и <literal>EXCLUDE</literal>:</phrase>
+
+[ WITH ( <replaceable class="parameter">параметр_хранения</replaceable> [= <replaceable class="parameter">значение</replaceable>] [, ... ] ) ]
+[ USING INDEX TABLESPACE <replaceable class="parameter">табл_пространство</replaceable> ]
+
+<phrase><replaceable class="parameter">элемент_исключения</replaceable> в ограничении <literal>EXCLUDE</literal>:</phrase>
+
+{ <replaceable class="parameter">имя_столбца</replaceable> | ( <replaceable class="parameter">выражение</replaceable> ) } [ <replaceable class="parameter">класс_операторов</replaceable> ] [ ASC | DESC ] [ NULLS { FIRST | LAST } ]
+
+<phrase>Здесь <replaceable class="parameter">вариант_секционирования</replaceable> может быть следующим:</phrase>
+
+HASH (<replaceable class="parameter">ключ_разбиения</replaceable>) 
+{ PARTITIONS (<replaceable class="parameter">число_секций</replaceable>) |
+  (
+PARTITION <replaceable class="parameter">имя_секции</replaceable> TABLESPACE <replaceable class="parameter">табл_пространство</replaceable> [, ... ]
+)}
+
+RANGE (<replaceable class="parameter">ключ_разбиения</replaceable>) 
+{ INTERVAL (<replaceable class="parameter">интервал</replaceable>) |
+  (
+PARTITION <replaceable class="parameter">имя_секции</replaceable> VALUES LESS THAN (<replaceable class="parameter">значение</replaceable>) TABLESPACE <replaceable class="parameter">табл_пространство</replaceable> [, ... ]
+)}</synopsis>
+
+ </refsynopsisdiv>
+
+ <refsect1 id="sql-createtable-description">
+  <title>Описание</title>
+
+  <para><command>CREATE TABLE</command> создаёт новую, изначально пустую таблицу в текущей базе данных. Владельцем таблицы будет пользователь, выполнивший эту команду.</para>
+
+  <para>Если задано имя схемы (например, <literal>CREATE TABLE myschema.mytable ...</literal>), таблица создаётся в указанной схеме, в противном случае — в текущей. Временные таблицы существуют в специальной схеме, так что при создании таких таблиц имя схемы задать нельзя. Имя таблицы должно отличаться от имён других таблиц, последовательностей, индексов, представлений или сторонних таблиц в этой схеме.</para>
+
+  <para><command>CREATE TABLE</command> также автоматически создаёт составной тип данных, соответствующий одной строке таблицы. Таким образом, имя таблицы не может совпадать с именем существующего типа в этой же схеме.</para>
+
+  <para>Необязательные предложения ограничений задают ограничения (проверки), которым должны удовлетворять добавляемые или изменяемые строки, чтобы операция добавления или изменения была выполнена успешно. Ограничение представляет собой SQL-объект, помогающий некоторым способом определить множество допустимых значений в таблице.</para>
+
+  <para>Определить ограничения можно двумя способами: в виде ограничений таблицы и в виде ограничений столбца. Ограничение столбца определяется как часть определения столбца, а ограничение таблицы не привязывается к конкретному столбцу и может задействовать несколько столбцов. Любые ограничения столбцов можно также записать в виде ограничения таблицы, они введены просто для удобства записи в случаях, когда ограничение затрагивает только один столбец.</para>
+
+  <para>Чтобы создать таблицу, необходимо иметь право <literal>USAGE</literal> для типов всех столбцов или типа в предложении <literal>OF</literal>, соответственно.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+
+   <varlistentry id="sql-createtable-temporary">
+    <term><literal>TEMPORARY</literal> или <literal>TEMP</literal></term>
+    <listitem>
+     <para>С таким указанием таблица создаётся как временная. Временные таблицы автоматически удаляются в конце сеанса или могут удаляться в конце текущей транзакции (см. описание <literal>ON COMMIT</literal> ниже). Существующая постоянная таблица с тем же именем не будет видна в текущем сеансе, пока существует временная, однако к ней можно обратиться, дополнив имя указанием схемы. Все индексы, создаваемые для временной таблицы, так же автоматически становятся временными.</para>
+
+     <para>В отличие от постоянных таблиц, физический файл временной таблицы расширяется только когда он перестаёт помещаться в кеш <literal>temp_buffers</literal>. Поэтому общий размер временной таблицы может отличаться от её размера на диске. Блоки заранее не выделяются, поэтому при попытке выместить временный буфер из кеша может закончиться свободное место на диске. При этом произойдёт ошибка. Однако это довольно редкая ситуация.</para>
+
+     <para><link linkend="autovacuum">Демон автоочистки</link> не может прочитать и, как следствие, сжимать и анализировать временные таблицы. По этой причине соответствующие операции очистки и анализа следует выполнять, вызывая SQL-команды в рамках сеанса. Например, если временную таблицу планируется использовать в сложных запросах, будет разумным выполнить для неё <command>ANALYZE</command> после того, как она будет наполнена.</para>
+
+     <para>По желанию можно добавить указание <literal>GLOBAL</literal> или <literal>LOCAL</literal> перед <literal>TEMPORARY</literal> или <literal>TEMP</literal>. В настоящее время это не имеет значения для <productname>&productname;</productname> и считается устаревшей возможностью; см. <xref remap="4" linkend="sql-createtable-compatibility" endterm="sql-createtable-compatibility-title"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="sql-createtable-unlogged">
+    <term><literal>UNLOGGED</literal></term>
+    <listitem>
+     <para>С этим указанием таблица создаётся как нежурналируемая. Данные, записываемые в нежурналируемые таблицы, не проходят через журнал упреждающей записи (см. <xref remap="4" linkend="wal"/>), в результате чего такие таблицы работают гораздо быстрее обычных. Однако, они не защищены от сбоя; при сбое или аварийном отключении сервера нежурналируемая таблица автоматически усекается. Кроме того, содержимое нежурналируемой таблицы не реплицируется на резервные серверы. Любые индексы, создаваемые для нежурналируемой таблицы, автоматически становятся нежурналируемыми.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="sql-createtable-constant">
+    <term><literal>CONSTANT</literal></term>
+    <listitem>
+     <para>Если указывается, таблица создаётся в режиме &laquo;только чтение&raquo;. В таких таблицах нельзя изменять или добавлять данные, и они не обрабатываются при <link linkend="autovacuum">автоочистке</link>. Вернуть в режим &laquo;чтение-запись&raquo; такие таблицы невозможно, поэтому нет смысла создавать их с этим указанием. Вместо этого используйте <xref linkend="sql-createtableas"/> или <xref linkend="sql-altertable"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>IF NOT EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если отношение с таким именем уже существует. В этом случае будет выдано замечание. Заметьте, что нет никакой гарантии, что существующее отношение как-то соотносится с тем, которое могло бы быть создано.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) создаваемой таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>OF <replaceable class="parameter">имя_типа</replaceable></literal></term>
+    <listitem>
+     <para>Создаёт <firstterm>типизированную таблицу</firstterm>, структура которой определяется указанным составным типом (его имя может быть дополнено схемой). Типизированная таблица привязана к породившему её типу; например, при удалении типа (командой <literal>DROP TYPE ... CASCADE</literal>) будет удалена и эта таблица.</para>
+
+     <para>Когда создаётся типизированная таблица, типы данных её столбцов определяются нижележащим составным типом, а не задаются командой <literal>CREATE TABLE</literal>. Но <literal>CREATE TABLE</literal> может добавить в таблицу значения по умолчанию и ограничения, а также задать параметры её хранения.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_столбца</replaceable></term>
+    <listitem>
+     <para>Имя столбца, создаваемого в новой таблице.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_данных</replaceable></term>
+    <listitem>
+     <para>Тип данных столбца (может включать определение массива с этим типом). За дополнительными сведениями о типах данных, которые поддерживает <productname>&productname;</productname>, обратитесь к <xref remap="3" linkend="datatype"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>COLLATE <replaceable>правило_сортировки</replaceable></literal></term>
+    <listitem>
+     <para>Предложение <literal>COLLATE</literal> назначает правило сортировки для столбца (который должен иметь тип, поддерживающий сортировку). Если оно отсутствует, используется правило сортировки по умолчанию, установленное для типа данных столбца.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>INHERITS ( <replaceable>таблица_родитель</replaceable> [, ... ] )</literal></term>
+    <listitem>
+     <para>Необязательное предложение <literal>INHERITS</literal> определяет список таблиц, от которых новая таблица будет автоматически наследовать все столбцы. Родительские таблицы могут быть обычными или сторонними таблицами.</para>
+
+     <para>При использовании <literal>INHERITS</literal> создаётся постоянная связь дочерней таблицы с родительскими. Изменения схемы в родительских таблицах обычно также отражаются в дочерних, и по умолчанию при чтении родительских таблиц в результат включаются данные дочерней таблицы.</para>
+
+     <para>Когда в нескольких родительских таблицах оказываются столбцы с одним именем, происходит ошибка, за исключением случая, когда типы данных всех этих столбцов в таблицах совпадают. В этом случае одноимённые столбцы объединяются и формируют один столбец в новой таблице. Если имя столбца новой таблицы совпадает с именем одного из унаследованных столбцов, их типы так же должны совпадать, и в этом случае определения столбцов тоже сливаются в одну. Если в новой таблице явно указывается значение по умолчанию для нового столбца, это значение переопределяет любые значения по умолчанию, унаследованные этим столбцом. В противном случае, если значения по умолчанию определяются в разных родительских таблицах, эти определения должны совпадать, иначе произойдёт ошибка.</para>
+
+     <para>Ограничения <literal>CHECK</literal> объединяются вместе по сути так же, как и столбцы: если несколько родительских таблиц и/или определение новой таблицы содержат одноимённые ограничения <literal>CHECK</literal>, этим ограничениям должны соответствовать одинаковые выражения проверки, в противном случае произойдёт ошибка. В случае совпадения выражения, эти ограничения с данным выражением объединяются в одно. При этом ограничения со свойством <literal>NO INHERIT</literal> в родительской таблице исключаются из рассмотрения. Заметьте, что безымянное ограничение <literal>CHECK</literal> в новой таблице никогда не сливается с другими, так как для него всегда выбирается уникальное имя.</para>
+
+     <para>Параметры <literal>STORAGE</literal> для столбца так же копируются из родительских таблиц.</para>
+
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>LIKE <replaceable>исходная_таблица</replaceable> [ <replaceable>вариант_копирования</replaceable> ... ]</literal></term>
+    <listitem>
+     <para>Предложение <literal>LIKE</literal> определяет таблицу, из которой в новую таблицу будут автоматически скопированы все имена столбцов, их типы данных и их ограничения на NULL.</para>
+     <para>В отличие от <literal>INHERITS</literal>, новая и исходная таблица становятся полностью независимыми после завершения создания. Изменения в исходной таблице не отражаются в новой, а данные новой таблицы не включаются в результат чтения исходной.</para>
+     <para>Выражения значений по умолчанию в определениях копируемых столбцов переносятся в новую таблицу, только если дополнительно указано <literal>INCLUDING DEFAULTS</literal>. Без этого указания выражения по умолчанию не копируются, вследствие чего в новой таблице скопированные столбцы получают значения по умолчанию NULL. Заметьте, что при копировании выражений по умолчанию, которые вызывают функции, модифицирующие БД, как например <function>nextval</function>, может образовываться функциональная связь исходной таблицы с новой.</para>
+     <para>Ограничения NULL копируются в новую таблицу всегда, а ограничения <literal>CHECK</literal> копируются только при явном указании <literal>INCLUDING CONSTRAINTS</literal>. Это в равной мере касается ограничений как таблиц, так и столбцов.</para>
+     <para>Индексы, свойство <literal>PRIMARY KEY</literal>, а также ограничения <literal>UNIQUE</literal> и <literal>EXCLUDE</literal> копируются из исходной таблицы в новую, только если явно указано <literal>INCLUDING INDEXES</literal>. Имена для новых индексов и ограничений выбираются согласно стандартным правилам, независимо от того, как назывались исходные. (Это позволяет избежать ошибок с дублированием имён с новыми индексами.)</para>
+     <para>Параметры <literal>STORAGE</literal> будут перенесены в определение копируемых столбцов, только если явно указывается <literal>INCLUDING STORAGE</literal>. По умолчанию параметры <literal>STORAGE</literal> исключаются, вследствие чего скопированные столбцы в новой таблице получают параметры по умолчанию, определённые соответствующим типом. Подробнее параметры <literal>STORAGE</literal> описаны в <xref remap="6" linkend="storage-toast"/>.</para>
+     <para>Комментарии для скопированных столбцов, ограничений и индексов будут копироваться, только если явно указано <literal>INCLUDING COMMENTS</literal>. По умолчанию комментарии исключаются, вследствие чего скопированные столбцы и ограничения в новой таблице оказываются без комментариев.</para>
+     <para>Предложение <literal>INCLUDING ALL</literal> является сокращённой формой развёрнутого предложения <literal>INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES INCLUDING STORAGE INCLUDING COMMENTS</literal>.</para>
+     <para>Заметьте, что в отличие от <literal>INHERITS</literal>, столбцы и ограничения, копируемые командой <literal>LIKE</literal>, не объединяются с одноимёнными столбцами и ограничениями. Если дублирующееся имя указывается явно или возникает в другом предложении <literal>LIKE</literal>, происходит ошибка.</para>
+     <para>Предложение <literal>LIKE</literal> может также применяться для копирования определений столбцов из представлений, сторонних таблиц и составных типов. Неприменимые параметры (например, <literal>INCLUDING INDEXES</literal> для представления) при этом игнорируются.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable></literal></term>
+    <listitem>
+     <para>Необязательное имя столбца или ограничения таблицы. При нарушении ограничения его имя будет выводиться в сообщении об ошибках, так что имена ограничений вида <literal>столбец должен быть положительным</literal> могут сообщить полезную информацию об ограничении клиентскому приложению. (Имена ограничений, включающие пробелы, необходимо заключать в двойные кавычки.) Если имя ограничения не указано, система генерирует имя автоматически.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>NOT NULL</literal></term>
+    <listitem>
+     <para>Данный столбец не принимает значения NULL.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>NULL</literal></term>
+    <listitem>
+     <para>Данный столбец может содержать значения NULL (по умолчанию).</para>
+
+     <para>Это предложение предназначено только для совместимости с нестандартными базами данных SQL. Использовать его в новых приложениях не рекомендуется.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CHECK ( <replaceable class="parameter">выражение</replaceable> ) [ NO INHERIT ]</literal></term>
+    <listitem>
+     <para>В ограничении <literal>CHECK</literal> задаётся выражение, возвращающее булевский результат, по которому определяется, будет ли успешна операция добавления или изменения для конкретных строк. Операция выполняется успешно, если результат выражения равен TRUE или UNKNOWN. Если же для какой-нибудь строки, задействованной в операции добавления или изменения, будет получен результат FALSE, возникает ошибка, и эта операция не меняет ничего в базе данных. Ограничение-проверка, заданное как ограничение столбца, должно ссылаться только на значение самого столбца, тогда как ограничение на уровне таблицы может ссылаться и на несколько столбцов.</para>
+
+     <para>В настоящее время выражения <literal>CHECK</literal> не могут содержать подзапросы или ссылаться на переменные, кроме как на столбцы текущей строки. Также допустима ссылка на системный столбец <literal>tableoid</literal>, но не на другие системные столбцы.</para>
+
+     <para>Ограничение с пометкой <literal>NO INHERIT</literal> не будет наследоваться дочерними таблицами.</para>
+
+     <para>Когда для таблицы задано несколько ограничений <literal>CHECK</literal>, они будут проверяться для каждой строки в алфавитном порядке имён после проверки ограничений <literal>NOT NULL</literal>. (До версии 9.5 в <productname>PostgreSQL</productname> не было установлено никакого определённого порядка обработки ограничений <literal>CHECK</literal>.)</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DEFAULT <replaceable>выражение_по_умолчанию</replaceable></literal></term>
+    <listitem>
+     <para>Предложение <literal>DEFAULT</literal> задаёт значение по умолчанию для столбца, в определении которого оно присутствует. Значение задаётся выражением без переменных (подзапросы и перекрёстные ссылки на другие столбцы текущей таблицы в нём не допускаются). Тип данных выражения, задающего значение по умолчанию, должен соответствовать типу данных столбца.</para>
+
+     <para>Это выражение будет использоваться во всех операциях добавления данных, в которых не задаётся значение данного столбца. Если значение по умолчанию не определено, таким значением будет NULL.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>UNIQUE</literal> (ограничение столбца)</term>
+    <term><literal>UNIQUE ( <replaceable class="parameter">имя_столбца</replaceable> [, ... ] ) <optional>INCLUDE ( <replaceable class="parameter">имя_столбца</replaceable> [, ...])</optional></literal> (ограничение таблицы)</term>
+    <listitem>
+     <para>Ограничение <literal>UNIQUE</literal> определяет, что группа из одного или нескольких столбцов таблицы может содержать только уникальные значения. Ограничение уникальности для таблицы ведёт себя точно так же, как ограничение для столбца, но может охватывать несколько столбцов.</para>
+
+     <para>При проверке ограничения уникальности значения NULL не считаются равными.</para>
+
+     <para>В каждом ограничении уникальности для таблицы должен задаваться набор столбцов, отличный от набора любого другого ограничения уникальности или первичного ключа в данной таблице. (Иначе это будет одно и то же ограничение, определённое многократно.)</para>
+
+     <para>При добавлении ограничения уникальности будет автоматически создан уникальный индекс-B-дерево для столбца или группы столбцов, перечисленных в ограничении. Необязательное предложение <literal>INCLUDE</literal> позволяет добавить в индекс набор столбцов, для которых уникальность не будет требоваться. Заметьте, что хотя ограничение по столбцам не контролируется, оно всё же зависит от них. Как следствие, некоторые операции с этими столбцами (например, <literal>DROP COLUMN</literal>) могут повлечь каскадное удаление ограничения индекса. Более подробно об этом рассказывается в абзаце об <literal>INCLUDE</literal> в описании <xref linkend="sql-createindex"/>.</para>
+
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>PRIMARY KEY</literal> (ограничение столбца)</term>
+    <term><literal>PRIMARY KEY ( <replaceable class="parameter">имя_столбца</replaceable> [, ... ] ) <optional>INCLUDE ( <replaceable class="parameter">имя_столбца</replaceable> [, ...])</optional></literal> (ограничение_таблицы)</term>
+    <listitem>
+     <para>Ограничение <literal>PRIMARY KEY</literal> определяет, что столбец или столбцы таблицы могут содержать только уникальные (без повторений) значения, отличные от NULL. Для таблицы может быть задан только один первичный ключ, будь то ограничение столбца или ограничение таблицы.</para>
+
+     <para>В определении первичного ключа должен задаваться набор столбцов, отличный от набора любого другого ограничения уникальности, установленного для данной таблицы. (В противном случае уникальное ограничение оказывается избыточным и будет отброшено.)</para>
+
+     <para><literal>PRIMARY KEY</literal> устанавливает для данных те же ограничения, что и сочетание <literal>UNIQUE</literal> и <literal>NOT NULL</literal>, но образование первичного ключа из набора столбцов также добавляет метаданные о конструкции схемы, так как первичный ключ подразумевает, что другие таблицы могут ссылаться на этот набор столбцов, как на уникальный идентификатор строк.</para>
+
+     <para>При добавлении ограничения <literal>PRIMARY KEY</literal> будет автоматически создан уникальный индекс-B-дерево для столбца или группы столбцов, перечисленных в ограничении. Необязательное предложение <literal>INCLUDE</literal> позволяет добавить в индекс набор столбцов, для которых ограничение не будет контролироваться. Заметьте, что хотя ограничение по столбцам не контролируется, оно всё же зависит от них. Как следствие, некоторые операции с этими столбцами (например, <literal>DROP COLUMN</literal>) могут повлечь каскадное удаление ограничения индекса. Более подробно об этом рассказывается в абзаце об <literal>INCLUDE</literal> в описании <xref linkend="sql-createindex"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="sql-createtable-exclude">
+    <term><literal>EXCLUDE [ USING <replaceable class="parameter">метод_индекса</replaceable> ] ( <replaceable class="parameter">элемент_исключения</replaceable> WITH <replaceable class="parameter">оператор</replaceable> [, ... ] ) <replaceable class="parameter">параметры_индекса</replaceable> [ WHERE ( <replaceable class="parameter">предикат</replaceable> ) ]</literal></term>
+    <listitem>
+     <para>Предложение <literal>EXCLUDE</literal> определяет ограничение-исключение, которое гарантирует, что для любых двух строк, сравниваемых по указанным столбцам или выражениям с указанными операторами, результат не будет равен <literal>TRUE</literal> для всех сравнений. Если все указанные операторы проверяют равенство, это ограничение равносильно ограничению <literal>UNIQUE</literal>, хотя обычное ограничение уникальности будет работать быстрее. С другой стороны, в ограничениях-исключениях можно задавать более общие условия, чем простое условие на равенство. Например, можно задать ограничение, требующее, чтобы никакие две строки в таблице не содержали пересекающихся кругов (см. <xref remap="4" linkend="datatype-geometric"/>), применив оператор <literal>&amp;&amp;</literal>.</para>
+
+     <para>Ограничения-исключения реализуются с помощью индексов, так что каждый указанный в них оператор должен быть связан с соответствующим классом операторов (см. <xref remap="4" linkend="indexes-opclass"/>) для <replaceable>метода_индекса</replaceable>. Кроме того, операторы должны быть коммутативными. В каждом <replaceable class="parameter">элементе_исключения</replaceable> можно дополнительно указать класс оператора и/или параметры сортировки, подробно описанные в <xref remap="6" linkend="sql-createindex"/>.</para>
+
+     <para>Метод индекса должен поддерживать <literal>amgettuple</literal> (см. <xref remap="4" linkend="indexam"/>); в настоящее время это означает, что метод <acronym>GIN</acronym> здесь применять нельзя. Хотя в ограничении-исключении можно использовать B-деревья и хеш-индексы, в этом мало смысла, так как такой подход ничем не лучше обычного ограничения уникальности. Так что на практике методом индекса всегда будет <acronym>GiST</acronym> или <acronym>SP-GiST</acronym>.</para>
+
+     <para>Параметр <replaceable class="parameter">предикат</replaceable> позволяет указать ограничение-исключение для подмножества таблицы; внутри при этом создаётся частичный индекс. Заметьте, что предикат необходимо заключить в скобки.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>REFERENCES <replaceable class="parameter">внешняя_таблица</replaceable> [ ( <replaceable class="parameter">внешний_столбец</replaceable> ) ] [ MATCH <replaceable class="parameter">тип_совпадения</replaceable> ] [ ON DELETE <replaceable class="parameter">действие</replaceable> ] [ ON UPDATE <replaceable class="parameter">действие</replaceable> ]</literal> (ограничение столбца)</term>
+
+   <term><literal>FOREIGN KEY ( <replaceable class="parameter">имя_столбца</replaceable> [, ... ] ) REFERENCES <replaceable class="parameter">внешняя_таблица</replaceable> [ ( <replaceable class="parameter">внешний_столбец</replaceable> [, ... ] ) ] [ MATCH <replaceable class="parameter">тип_совпадения</replaceable> ] [ ON DELETE <replaceable class="parameter">действие</replaceable> ] [ ON UPDATE <replaceable class="parameter">действие</replaceable> ]</literal> (ограничение таблицы)</term>
+
+    <listitem>
+     <para>Эти предложения определяют ограничение внешнего ключа, требующее, чтобы указанная группа из одного или нескольких столбцов новой таблицы содержала только такие значения, которым соответствуют значения в заданных внешних столбцах некоторой строки во внешней таблице. Если список <replaceable class="parameter">внешних_столбцов</replaceable> опущен, в качестве него используется первичный ключ <replaceable class="parameter">внешней_таблицы</replaceable>. В качестве внешних столбцов должны указываться столбцы неоткладываемого уникального ограничения или ограничение первичного ключа во внешней таблице. Заметьте, что ограничения внешнего ключа, связывающие временные и постоянные таблицы, определить нельзя.</para>
+
+     <para>Значения, вставляемые в ссылающиеся столбцы, сверяются со значениями во внешних столбцах внешней таблицы с учётом заданного типа совпадения. Возможны три типа совпадения: <literal>MATCH FULL</literal> (полное совпадение), <literal>MATCH PARTIAL</literal> (частичное совпадение) и тип по умолчанию, <literal>MATCH SIMPLE</literal> (простое совпадение). С <literal>MATCH FULL</literal> ни один из столбцов составного внешнего ключа не может содержать NULL, кроме случая, когда все внешние столбцы NULL; в этом случае, строка может не иметь соответствия во внешней таблице. С <literal>MATCH SIMPLE</literal> любой из столбцов внешнего ключа может содержать NULL; при этом строка с NULL в одном из таких столбцов может не иметь соответствия во внешней таблице. Тип <literal>MATCH PARTIAL</literal> ещё не реализован. (Разумеется, чтобы вопросы со сравнением NULL не возникали, к столбцам, ссылающимся на внешние, можно применить ограничения <literal>NOT NULL</literal>.)</para>
+
+     <para>Кроме того, при изменении значений во внешних столбцах с данными в столбцах этой таблицы могут производиться определённые действия. Предложение <literal>ON DELETE</literal> задаёт действие, производимое при удалении некоторой строки во внешней таблице. Предложение <literal>ON UPDATE</literal> подобным образом задаёт действие, производимое при изменении значения в целевых столбцах внешней таблицы. Если строка изменена, но это изменение не затронуло целевые столбцы, никакое действие не производится. Ссылочные действия, кроме <literal>NO ACTION</literal>, нельзя сделать откладываемыми, даже если ограничение объявлено как откладываемое. Для каждого предложения возможные следующие варианты действий: <variablelist>
+       <varlistentry>
+        <term><literal>NO ACTION</literal></term>
+        <listitem>
+         <para>Выдать ошибку, показывающую, что при удалении или изменении записи произойдёт нарушение ограничения внешнего ключа. Для отложенных ограничений ошибка произойдёт в момент проверки ограничения, если строки, ссылающиеся на эту запись, по-прежнему будут существовать. Этот вариант действия подразумевается по умолчанию.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>RESTRICT</literal></term>
+        <listitem>
+         <para>Выдать ошибку, показывающую, что при удалении или изменении записи произойдёт нарушение ограничения внешнего ключа. Этот вариант подобен <literal>NO ACTION</literal>, но эта проверка будет неоткладываемой.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>CASCADE</literal></term>
+        <listitem>
+         <para>Удалить все строки, ссылающиеся на удаляемую запись, либо поменять значения в ссылающихся столбцах на новые значения во внешних столбцах, в соответствии с операцией.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>SET NULL</literal></term>
+        <listitem>
+         <para>Установить ссылающиеся столбцы равными NULL.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>SET DEFAULT</literal></term>
+        <listitem>
+         <para>Установить в ссылающихся столбцах значения по умолчанию. (Если эти значения не равны NULL, во внешней таблице должна быть строка, соответствующая набору значений по умолчанию; в противном случае операция завершится ошибкой.)</para>
+        </listitem>
+       </varlistentry>
+      </variablelist></para>
+
+     <para>Если внешние столбцы меняются часто, будет разумным добавить индекс для ссылающихся столбцов, чтобы действия по обеспечению ссылочной целостности, связанные с ограничением внешнего ключа, выполнялись более эффективно.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DEFERRABLE</literal></term>
+    <term><literal>NOT DEFERRABLE</literal></term>
+    <listitem>
+     <para>Это предложение определяет, может ли ограничение быть отложенным. Неоткладываемое ограничение будет проверяться немедленно после каждой команды. Проверка откладываемых ограничений может быть отложена до завершения транзакции (обычно с помощью команды <xref linkend="sql-set-constraints"/>). По умолчанию подразумевается вариант <literal>NOT DEFERRABLE</literal>. В настоящее время это предложение принимают только ограничения <literal>UNIQUE</literal>, <literal>PRIMARY KEY</literal>, <literal>EXCLUDE</literal> и <literal>REFERENCES</literal> (внешний ключ). Ограничения <literal>NOT NULL</literal> и <literal>CHECK</literal> не могут быть отложенными. Заметьте, что откладываемые ограничения не могут применяться в качестве решающих при конфликте в операторе <command>INSERT</command> с предложением <literal>ON CONFLICT DO UPDATE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>INITIALLY IMMEDIATE</literal></term>
+    <term><literal>INITIALLY DEFERRED</literal></term>
+    <listitem>
+     <para>Для откладываемых ограничений это предложение определяет, когда ограничение должно проверяться по умолчанию. Ограничение с характеристикой <literal>INITIALLY IMMEDIATE</literal> (подразумеваемой по умолчанию) проверяется после каждого оператора. Ограничение <literal>INITIALLY DEFERRED</literal>, напротив, проверяется только в конце транзакции. Время проверки ограничения можно изменить явно с помощью команды <xref linkend="sql-set-constraints"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>WITH ( <replaceable class="parameter">параметр_хранения</replaceable> [= <replaceable class="parameter">значение</replaceable>] [, ... ] )</literal></term>
+    <listitem>
+     <para>Это предложение определяет необязательные параметры хранения для таблицы или индекса (за подробными сведениями о них обратитесь к <xref remap="3" linkend="sql-createtable-storage-parameters" endterm="sql-createtable-storage-parameters-title"/>). Предложение <literal>WITH</literal> для таблицы может также включать указание <literal>OIDS=TRUE</literal> (или просто <literal>OIDS</literal>), устанавливающее, что каждая строка таблицы должна иметь собственный OID (Object IDentifier, идентификатор объекта), или указание <literal>OIDS=FALSE</literal>, устанавливающее, что строки не содержат OID. Если указание <literal>OIDS</literal> отсутствует, значение этого свойства по умолчанию зависит от конфигурационного параметра <xref linkend="guc-default-with-oids"/>. (Если новая таблица унаследована от каких-либо таблиц, имеющих OID, свойство <literal>OIDS=TRUE</literal> задаётся принудительно, даже если в команде явно написано <literal>OIDS=FALSE</literal>.)</para>
+
+     <para>Если явно указано <literal>OIDS=FALSE</literal> или это подразумевается, в новой таблице не будут храниться значения OID и новый OID не будет генерироваться для каждой добавляемой в неё строки. Для обычных таблиц такое поведение предпочтительнее, так как оно сокращает потребление OID и тем самым откладывает наложение 32-битного счётчика OID. Как только происходит наложение, значения OID больше нельзя считать уникальными, что делает их значительно менее полезными. К тому же, исключение столбца OID из таблицы сокращает объём, необходимый для хранения таблицы на диске, на 4 байта для каждой строки (на большинстве платформ), что несколько улучшает производительность.</para>
+
+     <para>Для удаления данных OID из таблицы после её создания воспользуйтесь командой <xref linkend="sql-altertable"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>WITH OIDS</literal></term>
+    <term><literal>WITHOUT OIDS</literal></term>
+    <listitem>
+     <para>Это устаревшее написание указаний <literal>WITH (OIDS)</literal> и <literal>WITH (OIDS=FALSE)</literal>, соответственно. Если требуется определить одновременно свойство <literal>OIDS</literal> и параметры хранения, необходимо использовать синтаксис <literal>WITH ( ... )</literal>; см. ниже.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ON COMMIT</literal></term>
+    <listitem>
+     <para>Поведением временных таблиц в конце блока транзакции позволяет управлять предложение <literal>ON COMMIT</literal>, которое принимает три параметра: <variablelist>
+       <varlistentry>
+        <term><literal>PRESERVE ROWS</literal></term>
+        <listitem>
+         <para>Никакое специальное действие в конце транзакции не выполняется. Это поведение по умолчанию.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>DELETE ROWS</literal></term>
+        <listitem>
+         <para>Все строки в этой временной таблице будут удаляться в конце каждого блока транзакции. По сути, при каждой фиксации транзакции будет автоматически выполняться <xref linkend="sql-truncate"/>.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>DROP</literal></term>
+        <listitem>
+         <para>Эта временная таблица будет удаляться в конце текущего блока транзакции.</para>
+        </listitem>
+       </varlistentry>
+      </variablelist></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>TABLESPACE <replaceable class="parameter">табл_пространство</replaceable></literal></term>
+    <listitem>
+     <para>Здесь <replaceable class="parameter">табл_пространство</replaceable> — имя табличного пространства, в котором будет создаваться новая таблица. Если оно не указано, выбирается <xref linkend="guc-default-tablespace"/> или <xref linkend="guc-temp-tablespaces"/>, если таблица временная.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>USING INDEX TABLESPACE <replaceable class="parameter">табл_пространство</replaceable></literal></term>
+    <listitem>
+     <para>Это предложение позволяет выбрать табличное пространство, в котором будут создаваться индексы, связанные с ограничениями <literal>UNIQUE</literal>, <literal>PRIMARY KEY</literal> или <literal>EXCLUDE</literal>. Если оно не указано, выбирается <xref linkend="guc-default-tablespace"/> или <xref linkend="guc-temp-tablespaces"/>, если таблица временная.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+
+  <para><emphasis role="strong">Варианты секционирования</emphasis></para>
+  <para>Возможность секционирования поддерживается, только если у вас установлен <productname>&productname;</productname> и включено расширение <filename>pg_pathman</filename>. Соответствующие указания несовместимы с формой <literal>INHERIT</literal> и в настоящее время не поддерживаются с временными таблицами.</para>
+
+  <variablelist>
+
+     <varlistentry>
+    <term><literal>PARTITION BY</literal></term>
+    <listitem>
+     <para>Это предложение разделяет созданную таблицу на секции с заданными параметрами. В качестве варианта секционирования можно задать: <variablelist>
+       <varlistentry>
+        <term><literal>HASH</literal></term>
+        <listitem>
+         <para>Разделить таблицу на секции, используя хеш-функцию.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>RANGE</literal></term>
+        <listitem>
+         <para>Разделить таблицу на секции по диапазонам.</para>
+        </listitem>
+       </varlistentry>
+
+      </variablelist></para>
+    </listitem>
+   </varlistentry>
+
+<varlistentry>
+    <term><replaceable class="parameter">ключ_разбиения</replaceable></term>
+    <listitem>
+     <para>Имя столбца, по которому будет разбиваться таблица. В качестве ключа разбиения рекомендуется выбирать столбцы следующих типов:</para>
+      <itemizedlist>
+      <listitem><para>для секционирования по хешу <type>text</type> или <type>integer</type></para></listitem>
+      <listitem><para>для секционирования по диапазонам числовой тип или дата/время</para></listitem>
+      </itemizedlist>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>PARTITIONS <replaceable class="parameter">число_секций</replaceable></literal></term>
+    <listitem>
+     <para>Задаёт число секций, которые будут созданы при разбиении по хешу. Вы также можете явно задать, какие секции должны быть созданы, используя предложение <literal>PARTITION</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>INTERVAL <replaceable class="parameter">интервал</replaceable></literal></term>
+    <listitem>
+     <para>Задаёт интервал для разбиения по диапазонам. Вы можете опустить это предложение, если явно укажете, какие разделы создавать, используя предложение <literal>PARTITION</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+    <term><literal>PARTITION <replaceable class="parameter">имя_секции</replaceable></literal></term>
+    <listitem>
+     <para>Задаёт имена секций, который будут созданы при разбиении по хешу или по диапазонам. Для разбиения по хешу их также можно задать в предложении <literal>PARTITIONS</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>VALUES LESS THAN (<replaceable class="parameter">значение</replaceable>)</literal></term>
+    <listitem>
+     <para>Задаёт диапазон значений, которые должны войти в одну секцию. Указанное значение <literal>value</literal> в созданную секцию не попадает. Это указание должно использоваться вместе с предложением <literal>PARTITION <replaceable class="parameter">имя_секции</replaceable></literal>.</para>
+    </listitem>
+   </varlistentry>
+   
+   <varlistentry>
+    <term><literal>TABLESPACE <replaceable class="parameter">табл_пространство</replaceable></literal></term>
+    <listitem>
+     <para>Указание <replaceable class="parameter">табл_пространство</replaceable> задаёт имя табличного пространства, в которое будет помещена созданная секция. Если оно опущено, выбирается табличное пространство, заданное в <xref linkend="guc-default-tablespace"/>. Это указание должно использоваться вместе с предложением <literal>PARTITION <replaceable class="parameter">имя_секции</replaceable></literal>.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <refsect2 id="sql-createtable-storage-parameters">
+   <title id="sql-createtable-storage-parameters-title">Параметры хранения</title>
+
+ <indexterm zone="sql-createtable-storage-parameters"><primary>параметры хранения</primary></indexterm>
+
+   <para>Предложение <literal>WITH</literal> позволяет установить <firstterm>параметры хранения</firstterm> для таблиц и индексов, связанных с ограничениями <literal>UNIQUE</literal>, <literal>PRIMARY KEY</literal> и <literal>EXCLUDE</literal>. Параметры хранения для индексов документированы в <xref remap="6" linkend="sql-createindex"/>. Поддерживаемые в настоящее время параметры хранения для таблиц перечислены ниже. Как показано, для каждого параметра существует дополнительный параметр с тем же именем и префиксом <literal>toast.</literal>, который управляет поведением вторичной таблицы <acronym>TOAST</acronym>, если она есть (за дополнительными сведениями о TOAST обратитесь к <xref remap="3" linkend="storage-toast"/>). Если значение некоторого параметра задано для таблицы, а значение равнозначного параметра <literal>toast.</literal> не определено, для таблицы TOAST будет применяться значение параметра основной таблицы.</para>
+
+   <variablelist>
+
+   <varlistentry>
+    <term><literal>fillfactor</literal> (<type>integer</type>)</term>
+    <listitem>
+     <para>Фактор заполнения для таблицы, задаваемый в процентах, от 10 до 100. Значение по умолчанию — 100 (плотное заполнение). При меньшем факторе заполнения операции <command>INSERT</command> упаковывают данные в страницы только до заданного процента; оставшееся место резервируется для изменения строк на этой странице. В результате <command>UPDATE</command> получает шанс поместить изменённую копию строки в ту же страницу, что и исходную, что гораздо эффективнее, чем размещать её на другой странице. Для таблиц, записи в которых никогда не меняются, лучшим выбором будет плотное заполнение, но для активно изменяемых таблиц лучше выбрать меньший фактор заполнения. Этот параметр нельзя задать для таблиц TOAST.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>parallel_workers</literal> (<type>integer</type>)</term>
+    <listitem>
+     <para>Данный параметр задаёт число рабочих процессов, которые должны задействоваться при параллельном сканировании таблицы. Если это значение не задано, система будет определять его, исходя из размера отношения. Фактическое число рабочих процессов может быть меньше, например, вследствие ограничения <xref linkend="guc-max-worker-processes"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>autovacuum_enabled</literal>, <literal>toast.autovacuum_enabled</literal> (<type>boolean</type>)</term>
+    <listitem>
+     <para>Включает или отключает демон автоочистки для определённой таблицы. Со значением true демон автоочистки будет автоматически выполнять операции <command>VACUUM</command> и/или <command>ANALYZE</command> в этой таблице, согласно правилам, описанным в <xref remap="6" linkend="autovacuum"/>. Со значением false эта таблица не будет подвергаться автоочистке, если только это не потребуется для сжатия <literal>pg_clog</literal> и <literal>pg_multixact</literal>. Подробнее об этом говорится в <xref remap="6" linkend="vacuum-for-wraparound"/>. Заметьте, что демон автоочистки не будет запускаться вовсе (если только это не потребуется для сжатия <literal>pg_clog</literal> и <literal>pg_multixact</literal>), если параметр <xref linkend="guc-autovacuum"/> имеет значение false; это нельзя переопределить, установив параметры хранения для отдельных таблиц. Таким образом, явно устанавливать для этого параметра значение <literal>true</literal> практически не имеет смысла — полезно только значение <literal>false</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>autovacuum_vacuum_threshold</literal>, <literal>toast.autovacuum_vacuum_threshold</literal> (<type>integer</type>)</term>
+    <listitem>
+     <para>Значение параметра <xref linkend="guc-autovacuum-vacuum-threshold"/> для таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>autovacuum_vacuum_scale_factor</literal>, <literal>toast.autovacuum_vacuum_scale_factor</literal> (<type>float4</type>)</term>
+    <listitem>
+     <para>Значение параметра <xref linkend="guc-autovacuum-vacuum-scale-factor"/> для таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>autovacuum_analyze_threshold</literal> (<type>integer</type>)</term>
+    <listitem>
+     <para>Значение параметра <xref linkend="guc-autovacuum-analyze-threshold"/> для таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>autovacuum_analyze_scale_factor</literal> (<type>float4</type>)</term>
+    <listitem>
+     <para>Значение параметра <xref linkend="guc-autovacuum-analyze-scale-factor"/> для таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>autovacuum_vacuum_cost_delay</literal>, <literal>toast.autovacuum_vacuum_cost_delay</literal> (<type>integer</type>)</term>
+    <listitem>
+     <para>Значение параметра <xref linkend="guc-autovacuum-vacuum-cost-delay"/> для таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>autovacuum_vacuum_cost_limit</literal>, <literal>toast.autovacuum_vacuum_cost_limit</literal> (<type>integer</type>)</term>
+    <listitem>
+     <para>Значение параметра <xref linkend="guc-autovacuum-vacuum-cost-limit"/> для таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>autovacuum_freeze_min_age</literal>, <literal>toast.autovacuum_freeze_min_age</literal> (<type>integer</type>)</term>
+    <listitem>
+     <para>Значение параметра <xref linkend="guc-vacuum-freeze-min-age"/> для таблицы. Учтите, что система будет игнорировать установленные для таблиц значения <literal>autovacuum_freeze_min_age</literal>, превышающие половину системного <xref linkend="guc-autovacuum-freeze-max-age"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>autovacuum_freeze_max_age</literal>, <literal>toast.autovacuum_freeze_max_age</literal> (<type>integer</type>)</term>
+    <listitem>
+     <para>Значение параметра <xref linkend="guc-autovacuum-freeze-max-age"/> для таблицы. Учтите, что система будет игнорировать установленные для таблиц значения <literal>autovacuum_freeze_max_age</literal>, превышающие значение системного параметра (они могут быть только меньше).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>autovacuum_freeze_table_age</literal>, <literal>toast.autovacuum_freeze_table_age</literal> (<type>integer</type>)</term>
+    <listitem>
+     <para>Значение параметра <xref linkend="guc-vacuum-freeze-table-age"/> для таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>autovacuum_multixact_freeze_min_age</literal>, <literal>toast.autovacuum_multixact_freeze_min_age</literal> (<type>integer</type>)</term>
+    <listitem>
+     <para>Значение параметра <xref linkend="guc-vacuum-multixact-freeze-min-age"/> для таблицы. Учтите, что демон автоочистки будет игнорировать установленные для таблиц значения <literal>autovacuum_multixact_freeze_min_age</literal>, превышающие половину значения системного параметра <xref linkend="guc-autovacuum-multixact-freeze-max-age"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>autovacuum_multixact_freeze_max_age</literal>, <literal>toast.autovacuum_multixact_freeze_max_age</literal> (<type>integer</type>)</term>
+    <listitem>
+     <para>Значение параметра <xref linkend="guc-autovacuum-multixact-freeze-max-age"/> для таблицы. Учтите, что система автоочистки будет игнорировать установленные для таблиц параметры <literal>autovacuum_multixact_freeze_max_age</literal>, превышающие системный параметр (они могут быть только меньше).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>autovacuum_multixact_freeze_table_age</literal>, <literal>toast.autovacuum_multixact_freeze_table_age</literal> (<type>integer</type>)</term>
+    <listitem>
+     <para>Значения параметра <xref linkend="guc-vacuum-multixact-freeze-table-age"/> для таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>log_autovacuum_min_duration</literal>, <literal>toast.log_autovacuum_min_duration</literal> (<type>integer</type>)</term>
+    <listitem>
+     <para>Значения параметра <xref linkend="guc-log-autovacuum-min-duration"/> для таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>user_catalog_table</literal> (<type>boolean</type>)</term>
+    <listitem>
+     <para>Объявляет таблицу как дополнительную таблицу каталога, например для целей логической репликации. За подробностями обратитесь к <xref remap="3" linkend="logicaldecoding-capabilities"/>. Для таблиц TOAST этот параметр задать нельзя.</para>
+    </listitem>
+   </varlistentry>
+
+   </variablelist>
+
+  </refsect2>
+ </refsect1>
+
+ <refsect1 id="sql-createtable-notes">
+  <title>Замечания</title>
+
+    <para>Применять OID в новых приложениях не рекомендуется: по возможности лучше использовать в качестве первичного ключа таблицы <literal>SERIAL</literal> или другой генератор последовательности. Однако, если в вашем приложении для идентификации строк применяется OID, рекомендуется создать уникальное ограничение по столбцу <structfield>oid</structfield> в этой таблице, чтобы значения OID в этой таблице на самом деле однозначно идентифицировали строки даже после зацикливания счётчика. Также не стоит полагать, что значения OID уникальны в разных таблицах; если вам требуется идентификатор, уникальный в базе данных, воспользуйтесь для этого комбинацией <structfield>tableoid</structfield> и OID строки.</para>
+
+    <tip>
+     <para>Применять <literal>OIDS=FALSE</literal> не рекомендуется для таблиц без первичного ключа, так как без OID или уникального ключа данных сложно идентифицировать определённые строки.</para>
+    </tip>
+
+    <para><productname>&productname;</productname> автоматически создаёт индекс, гарантирующий уникальность, для каждого ограничения уникальности и ограничения первичного ключа. Поэтому явно создавать индекс для столбцов первичного ключа не требуется. (За дополнительными сведениями обратитесь к <xref remap="3" linkend="sql-createindex"/>.)</para>
+
+    <para>Ограничения уникальности и первичные ключи в текущей реализации не наследуются. Вследствие этого ограничения уникальности довольно плохо сочетаются с наследованием.</para>
+
+    <para>В таблице не может быть больше 1600 столбцов. (На практике фактический предел обычно ниже из-за ограничения на длину записи.)</para>
+
+ </refsect1>
+
+
+ <refsect1 id="sql-createtable-examples">
+  <title>Примеры</title>
+
+  <para>Создание таблицы <structname>films</structname> и таблицы <structname>distributors</structname>: <programlisting>CREATE TABLE films (
+    code        char(5) CONSTRAINT firstkey PRIMARY KEY,
+    title       varchar(40) NOT NULL,
+    did         integer NOT NULL,
+    date_prod   date,
+    kind        varchar(10),
+    len         interval hour to minute
+);
+
+CREATE TABLE distributors (
+     did    integer PRIMARY KEY DEFAULT nextval('serial'),
+     name   varchar(40) NOT NULL CHECK (name &lt;&gt; '')
+);</programlisting></para>
+
+  <para>Создание таблицы с двумерным массивом: <programlisting>CREATE TABLE array_int (
+    vector  int[][]
+);</programlisting></para>
+
+  <para>Определение ограничения уникальности для таблицы <literal>films</literal>. Ограничения уникальности могут быть определены для одного или нескольких столбцов таблицы: <programlisting>CREATE TABLE films (
+    code        char(5),
+    title       varchar(40),
+    did         integer,
+    date_prod   date,
+    kind        varchar(10),
+    len         interval hour to minute,
+    CONSTRAINT production UNIQUE(date_prod)
+);</programlisting></para>
+
+  <para>Определение ограничения-проверки для столбца: <programlisting>CREATE TABLE distributors (
+    did     integer CHECK (did &gt; 100),
+    name    varchar(40)
+);</programlisting></para>
+
+  <para>Определение ограничения-проверки для таблицы: <programlisting>CREATE TABLE distributors (
+    did     integer,
+    name    varchar(40)
+    CONSTRAINT con1 CHECK (did &gt; 100 AND name &lt;&gt; '')
+);</programlisting></para>
+
+  <para>Определение ограничения первичного ключа для таблицы <structname>films</structname>: <programlisting>CREATE TABLE films (
+    code        char(5),
+    title       varchar(40),
+    did         integer,
+    date_prod   date,
+    kind        varchar(10),
+    len         interval hour to minute,
+    CONSTRAINT code_title PRIMARY KEY(code,title)
+);</programlisting></para>
+
+  <para>Определение ограничения первичного ключа для таблицы <structname>distributors</structname>. Следующие два примера равнозначны, но в первом используется синтаксис ограничений для таблицы, а во втором — для столбца: <programlisting>CREATE TABLE distributors (
+    did     integer,
+    name    varchar(40),
+    PRIMARY KEY(did)
+);
+
+CREATE TABLE distributors (
+    did     integer PRIMARY KEY,
+    name    varchar(40)
+);</programlisting></para>
+
+  <para>Определение значений по умолчанию: для столбца <literal>name</literal> значением по умолчанию будет строка, для столбца <literal>did</literal> — следующее значение объекта последовательности, а для <literal>modtime</literal> — время, когда была вставлена запись: <programlisting>CREATE TABLE distributors (
+    name      varchar(40) DEFAULT 'Luso Films',
+    did       integer DEFAULT nextval('distributors_serial'),
+    modtime   timestamp DEFAULT current_timestamp
+);</programlisting></para>
+
+  <para>Определение двух ограничений <literal>NOT NULL</literal> для столбцов таблицы <classname>distributors</classname>, при этом одному ограничению даётся явное имя: <programlisting>CREATE TABLE distributors (
+    did     integer CONSTRAINT no_null NOT NULL,
+    name    varchar(40) NOT NULL
+);</programlisting></para>
+
+    <para>Определение ограничения уникальности для столбца <literal>name</literal>: <programlisting>CREATE TABLE distributors (
+    did     integer,
+    name    varchar(40) UNIQUE
+);</programlisting> То же самое условие, но в виде ограничения таблицы: <programlisting>CREATE TABLE distributors (
+    did     integer,
+    name    varchar(40),
+    UNIQUE(name)
+);</programlisting></para>
+
+  <para>Создание такой же таблицы с фактором заполнения 70% для таблицы и её уникального индекса: <programlisting>CREATE TABLE distributors (
+    did     integer,
+    name    varchar(40),
+    UNIQUE(name) WITH (fillfactor=70)
+)
+WITH (fillfactor=70);</programlisting></para>
+
+  <para>Создание таблицы <structname>circles</structname> с ограничением-исключением, не допускающим пересечения двух кругов: <programlisting>CREATE TABLE circles (
+    c circle,
+    EXCLUDE USING gist (c WITH &amp;&amp;)
+);</programlisting></para>
+
+  <para>Создание таблицы <structname>cinemas</structname> в табличном пространстве <structname>diskvol1</structname>: <programlisting>CREATE TABLE cinemas (
+        id serial,
+        name text,
+        location text
+) TABLESPACE diskvol1;</programlisting></para>
+
+  <para>Создание составного типа и типизированной таблицы: <programlisting>CREATE TYPE employee_type AS (name text, salary numeric);
+
+CREATE TABLE employees OF employee_type (
+    PRIMARY KEY (name),
+    salary WITH OPTIONS DEFAULT 1000
+);</programlisting></para>
+ </refsect1>
+
+ <refsect1 id="sql-createtable-compatibility">
+  <title id="sql-createtable-compatibility-title">Совместимость</title>
+
+  <para>Команда <command>CREATE TABLE</command> соответствует стандарту <acronym>SQL</acronym>, с описанными ниже исключениями.</para>
+
+  <refsect2>
+   <title>Временные таблицы</title>
+
+   <para>Хотя синтаксис <literal>CREATE TEMPORARY TABLE</literal> подобен аналогичному в стандарте SQL, результат получается другим. В стандарте временные таблицы определяются только один раз и существуют (изначально пустые) в каждом сеансе, в котором они используются. <productname>&productname;</productname> вместо этого требует, чтобы каждый сеанс выполнял собственную команду <literal>CREATE TEMPORARY TABLE</literal> для каждой временной таблицы, которая будет использоваться. Это позволяет использовать в разных сеансах таблицы с одинаковыми именами для разных целей, тогда как при подходе, регламентированном стандартом, все экземпляры временной таблицы с одним именем должны иметь одинаковую табличную структуру.</para>
+
+   <para>Поведение временных таблиц, описанное в стандарте, в большинстве своём игнорируют и другие СУБД, так что в этом отношении <productname>&productname;</productname> ведёт себя так же, как и ряд других СУБД.</para>
+
+   <para>В стандарте SQL также разделяются глобальные и локальные временные таблицы — в локальной временной таблице содержится отдельный набор данных для каждого модуля SQL в отдельном сеансе, хотя её определение так же разделяется между ними. Так как в <productname>&productname;</productname> модули SQL не поддерживаются, это различие в <productname>&productname;</productname> не существует.</para>
+
+   <para>Совместимости ради, <productname>&productname;</productname> принимает ключевые слова <literal>GLOBAL</literal> и <literal>LOCAL</literal> в объявлении временной таблицы, но в настоящее время они никак не действуют. Использовать их не рекомендуется, так как в будущих версиях <productname>&productname;</productname> может быть принята их интерпретация, более близкая к стандарту.</para>
+
+   <para>Предложение <literal>ON COMMIT</literal> для временных таблиц тоже подобно описанному в стандарте SQL, но есть некоторые отличия. Если предложение <literal>ON COMMIT</literal> опущено, в SQL подразумевается поведение <literal>ON COMMIT DELETE ROWS</literal>. Однако в <productname>&productname;</productname> по умолчанию действует <literal>ON COMMIT PRESERVE ROWS</literal>. Параметр <literal>ON COMMIT DROP</literal> в стандарте SQL отсутствует.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Неотложенные ограничения уникальности</title>
+
+   <para>Когда ограничение <literal>UNIQUE</literal> или <literal>PRIMARY KEY</literal> не является отложенным, <productname>&productname;</productname> проверяет уникальность непосредственно в момент добавления или изменения строки. Стандарт SQL говорит, что уникальность должна обеспечиваться только в конце оператора; это различие проявляется, например когда одна команда изменяет множество ключевых значений. Чтобы получить поведение, оговоренное стандартом, объявите ограничение как откладываемое (<literal>DEFERRABLE</literal>), но не отложенное (т. е., <literal>INITIALLY IMMEDIATE</literal>). Учтите, что этот вариант может быть значительно медленнее, чем немедленная проверка ограничений.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Ограничения-проверки для столбцов</title>
+
+   <para>Стандарт SQL говорит, что ограничение <literal>CHECK</literal>, определяемое для столбца, может ссылаться только на столбец, с которым оно связано; только ограничения <literal>CHECK</literal> для таблиц могут ссылаться на несколько столбцов. В <productname>&productname;</productname> этого ограничения нет; он воспринимает ограничения-проверки для столбцов и таблиц одинаково.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Ограничение <literal>EXCLUDE</literal></title>
+
+   <para>Ограничения <literal>EXCLUDE</literal> являются расширением <productname>&productname;</productname>.</para>
+  </refsect2>
+
+  <refsect2>
+   <title><literal>NULL</literal> <quote>Ограничение</quote></title>
+
+   <para><quote>Ограничение</quote> <literal>NULL</literal> (на самом деле это не ограничение) является расширением <productname>&productname;</productname> стандарта SQL, которое реализовано для совместимости с некоторыми другими СУБД (и для симметрии с ограничением <literal>NOT NULL</literal>). Так как это поведение по умолчанию для любого столбца, его присутствие не несёт смысловой нагрузки.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Наследование</title>
+
+   <para>Множественное наследование посредством <literal>INHERITS</literal> является языковым расширением <productname>&productname;</productname>. SQL:1999 и более поздние стандарты определяют единичное наследование с другим синтаксисом и смыслом. Наследование в стиле SQL:1999 пока ещё не поддерживается в <productname>&productname;</productname>.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Таблицы с нулём столбцов</title>
+
+   <para><productname>&productname;</productname> позволяет создать таблицу без столбцов (например, <literal>CREATE TABLE foo();</literal>). Это расширение стандарта SQL, который не допускает таблицы с нулём столбцов. Таблицы с нулём столбцов сами по себе не очень полезны, но если их запретить, возникают странные особые ситуации с командой <command>ALTER TABLE DROP COLUMN</command>, так что лучшим вариантом кажется игнорировать это требование стандарта.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Предложение <literal>LIKE</literal></title>
+
+   <para>Хотя предложение <literal>LIKE</literal> описано в стандарте SQL, многие варианты его использования, допустимые в <productname>PostgreSQL</productname>, в стандарте не описаны, а некоторые предусмотренные в стандарте возможности не реализованы в <productname>PostgreSQL</productname>.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Предложение <literal>WITH</literal></title>
+
+   <para>Предложение <literal>WITH</literal> является расширением <productname>&productname;</productname>; в стандарте ни параметры хранения, ни OID не оговариваются.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Табличные пространства</title>
+
+   <para>Концепция табличных пространств в <productname>&productname;</productname> отсутствует в стандарте. Как следствие, предложения <literal>TABLESPACE</literal> и <literal>USING INDEX TABLESPACE</literal> являются расширениями.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Типизированные таблицы</title>
+
+   <para>Типизированные таблицы реализуют подмножество стандарта SQL. Согласно стандарту, типизированная таблица содержит столбцы, соответствующие нижележащему составному типу, и ещё один столбец, ссылающийся на себя. &productname; не поддерживает ссылающиеся на себя столбцы явно, но тот же эффект можно получить, воспользовавшись OID.</para>
+  </refsect2>
+ </refsect1>
+
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altertable"/></member>
+   <member><xref linkend="sql-droptable"/></member>
+   <member><xref linkend="sql-createtableas"/></member>
+   <member><xref linkend="sql-createtablespace"/></member>
+   <member><xref linkend="sql-createtype"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

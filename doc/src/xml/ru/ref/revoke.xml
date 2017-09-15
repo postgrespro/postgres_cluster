@@ -1,0 +1,168 @@
+<!--
+doc/src/xml/ref/revoke.xml
+&productname; documentation
+-->
+
+<refentry id="sql-revoke">
+ <indexterm zone="sql-revoke"><primary>REVOKE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>REVOKE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>REVOKE</refname>
+  <refpurpose>отозвать права доступа</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>REVOKE [ GRANT OPTION FOR ]
+    { { SELECT | INSERT | UPDATE | DELETE | TRUNCATE | REFERENCES | TRIGGER }
+    [, ...] | ALL [ PRIVILEGES ] }
+    ON { [ TABLE ] <replaceable class="parameter">имя_таблицы</replaceable> [, ...]
+         | ALL TABLES IN SCHEMA <replaceable>имя_схемы</replaceable> [, ...] }
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { { SELECT | INSERT | UPDATE | REFERENCES } ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] )
+    [, ...] | ALL [ PRIVILEGES ] ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] ) }
+    ON [ TABLE ] <replaceable class="parameter">имя_таблицы</replaceable> [, ...]
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { { USAGE | SELECT | UPDATE }
+    [, ...] | ALL [ PRIVILEGES ] }
+    ON { SEQUENCE <replaceable class="parameter">имя_последовательности</replaceable> [, ...]
+         | ALL SEQUENCES IN SCHEMA <replaceable>имя_схемы</replaceable> [, ...] }
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { { CREATE | CONNECT | TEMPORARY | TEMP } [, ...] | ALL [ PRIVILEGES ] }
+    ON DATABASE <replaceable>имя_бд</replaceable> [, ...]
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { USAGE | ALL [ PRIVILEGES ] }
+    ON DOMAIN <replaceable>имя_домена</replaceable> [, ...]
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { USAGE | ALL [ PRIVILEGES ] }
+    ON FOREIGN DATA WRAPPER <replaceable>имя_обёртки_сторонних_данных</replaceable> [, ...]
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { USAGE | ALL [ PRIVILEGES ] }
+    ON FOREIGN SERVER <replaceable>имя_сервера</replaceable> [, ...]
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { EXECUTE | ALL [ PRIVILEGES ] }
+    ON { FUNCTION <replaceable>имя_функции</replaceable> ( [ [ <replaceable class="parameter">режим_аргумента</replaceable> ] [ <replaceable class="parameter">имя_аргумента</replaceable> ] <replaceable class="parameter">тип_аргумента</replaceable> [, ...] ] ) [, ...]
+         | ALL FUNCTIONS IN SCHEMA <replaceable>имя_схемы</replaceable> [, ...] }
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { USAGE | ALL [ PRIVILEGES ] }
+    ON LANGUAGE <replaceable>имя_языка</replaceable> [, ...]
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { { SELECT | UPDATE } [, ...] | ALL [ PRIVILEGES ] }
+    ON LARGE OBJECT <replaceable class="parameter">oid_БО</replaceable> [, ...]
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { { CREATE | USAGE } [, ...] | ALL [ PRIVILEGES ] }
+    ON SCHEMA <replaceable>имя_схемы</replaceable> [, ...]
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { CREATE | ALL [ PRIVILEGES ] }
+    ON TABLESPACE <replaceable>табл_пространство</replaceable> [, ...]
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { USAGE | ALL [ PRIVILEGES ] }
+    ON TYPE <replaceable>имя_типа</replaceable> [, ...]
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ ADMIN OPTION FOR ]
+    <replaceable class="parameter">имя_роли</replaceable> [, ...] FROM <replaceable class="parameter">имя_роли</replaceable> [, ...]
+    [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="sql-revoke-description">
+  <title>Описание</title>
+
+  <para>Команда <command>REVOKE</command> лишает одну или несколько ролей прав, назначенных ранее. Ключевое слово <literal>PUBLIC</literal> обозначает неявно определённую группу всех ролей.</para>
+
+  <para>Различные типы прав подробно рассматриваются в описании команды <xref linkend="sql-grant"/>.</para>
+
+  <para>Заметьте, что любая конкретная роль получает в сумме права, данные непосредственно ей, права, данные любой роли, в которую она включена, а также права, данные группе <literal>PUBLIC</literal>. Поэтому, например, лишение <literal>PUBLIC</literal> права <literal>SELECT</literal> не обязательно будет означать, что все роли лишатся права <literal>SELECT</literal> для данного объекта: оно сохранится у тех ролей, которым оно дано непосредственно или косвенно, через другую роль. Подобным образом, лишение права <literal>SELECT</literal> какого-либо пользователя может не повлиять на его возможность пользоваться правом <literal>SELECT</literal>, если это право дано группе <literal>PUBLIC</literal> или другой роли, в которую он включён.</para>
+
+  <para>Если указано <literal>GRANT OPTION FOR</literal>, отзывается только право передачи права, но не само право. Без этого указания отзывается и право, и право распоряжаться им.</para>
+
+  <para>Если пользователь обладает правом с правом передачи и он дал его другим пользователям, последнее право считается зависимым. Когда первый пользователь лишается самого права или права передачи и существуют зависимые права, эти зависимые права также отзываются, если дополнительно указано <literal>CASCADE</literal>; в противном случае операция завершается ошибкой. Это рекурсивное лишение прав затрагивает только права, полученные через цепочку пользователей, которую можно проследить до пользователя, являющегося субъектом команды <literal>REVOKE</literal>. Таким образом, пользователи могут в итоге сохранить это право, если оно было также получено через других пользователей.</para>
+
+  <para>Когда отзывается право доступа к таблице, с ним вместе автоматически отзываются соответствующие права для каждого столбца таблицы (если такие права заданы). С другой стороны, если роли были даны права для таблицы, лишение роли таких же прав на уровне отдельных столбцов ни на что не влияет.</para>
+
+  <para>При лишении пользователя членства в роли <literal>GRANT OPTION</literal> меняется на <literal>ADMIN OPTION</literal>, в остальном поведение команды похожее. Заметьте также, что эта форма команды не принимает избыточное слово <literal>GROUP</literal>.</para>
+ </refsect1>
+
+ <refsect1 id="sql-revoke-notes">
+  <title>Замечания</title>
+
+  <para>Для просмотра прав, назначенных для существующих таблиц и столбцов, можно воспользоваться командой <command>\dp</command> в <xref linkend="app-psql"/>. Формат её вывода рассматривается в описании <xref linkend="sql-grant"/>. Для других, не табличных объектов предусмотрены другие команды <command>\d</command>, которые могут показывать в том числе и назначенные для них права.</para>
+
+  <para>Пользователь может отзывать только те права, которые он дал другому непосредственно. Если, например, пользователь A дал право с правом передачи пользователю B, а пользователь B, в свою очередь, дал это право пользователю C, то пользователь A не сможет лишить этого права непосредственно C. Вместо этого, пользователь A может лишить права передачи права пользователя B и использовать параметр <literal>CASCADE</literal>, чтобы этого права по цепочке лишился пользователь C. Или же, например, если и A, и B дали одно и то же право C, то A сможет отозвать право, которое дал он, но не пользователь B, так что в результате C всё равно будет иметь это право.</para>
+
+   <para>Если отозвать право доступа к объекту (с помощью <command>REVOKE</command>) попытается не владелец объекта, команда завершится ошибкой, если пользователь не имеет никаких прав для этого объекта. Если же пользователь имеет какие-то права, команда будет выполняться, но пользователь сможет отозвать только те права, которые даны ему с правом распоряжения ими. Формы <command>REVOKE ALL PRIVILEGES</command> будут выдавать предупреждение, если у него вовсе нет таких прав, тогда как другие формы будут выдавать предупреждения, если пользователь не имеет права распоряжаться именно правами, указанными в команде. (В принципе, эти утверждения применимы и к владельцу объекта, но ему разрешено распоряжаться всем правами, поэтому такие ситуации невозможны.)</para>
+
+   <para>Если команду <command>GRANT</command> или <command>REVOKE</command> выполняет суперпользователь, эта команда выполняется так, как будто её выполняет владелец затрагиваемого объекта. Так как все права в конце концов исходят от владельца объекта (возможно, косвенно по цепочке или через право распоряжением правом), суперпользователь может отозвать все права, но это может потребовать применения режима <literal>CASCADE</literal>, как описывалось выше.</para>
+
+   <para><command>REVOKE</command> также может быть выполнена ролью, которая не является владельцем заданного объекта, но является членом роли-владельца, либо членом роли, имеющей права <literal>WITH GRANT OPTION</literal> для этого объекта. В этом случае команда будет выполнена, как если бы её выполняла содержащая роль, действительно владеющая объектом или имеющая права <literal>WITH GRANT OPTION</literal>. Например, если таблица <literal>t1</literal> принадлежит роли <literal>g1</literal>, членом которой является роль <literal>u1</literal>, то <literal>u1</literal> может отзывать права на использование <literal>t1</literal>, которые записаны как данные ролью <literal>g1</literal>. В том числе это могут быть права, данные ролью <literal>u1</literal>, а также другими членами роли <literal>g1</literal>.</para>
+
+   <para>Если роль, выполняющая команду <command>REVOKE</command>, получила указанные права косвенно по нескольким путям членства ролей, какая именно роль будет выбрана для выполнения команды, не определено. В таких случаях рекомендуется воспользоваться командой <command>SET ROLE</command> и переключиться на роль, которую хочется видеть в качестве выполняющей <command>REVOKE</command>. Если этого не сделать, могут быть отозваны не те права, что планировалось, либо отозвать права вообще не удастся.</para>
+ </refsect1>
+
+ <refsect1 id="sql-revoke-examples">
+  <title>Примеры</title>
+
+  <para>Лишение группы public права добавлять данные в таблицу <literal>films</literal>: <programlisting>REVOKE INSERT ON films FROM PUBLIC;</programlisting></para>
+
+  <para>Лишение пользователя <literal>manuel</literal> всех прав для представления <literal>kinds</literal>: <programlisting>REVOKE ALL PRIVILEGES ON kinds FROM manuel;</programlisting> Заметьте, что на самом деле это означает <quote>лишить всех прав, которые дал я</quote>.</para>
+
+  <para>Исключение из членов роли <literal>admins</literal> пользователя <literal>joe</literal>: <programlisting>REVOKE admins FROM joe;</programlisting></para>
+ </refsect1>
+
+ <refsect1 id="sql-revoke-compatibility">
+  <title>Совместимость</title>
+
+   <para>Замечания по совместимости, приведённые для команды <xref linkend="sql-grant"/>, справедливы и для <command>REVOKE</command>. Стандарт требует обязательного указания ключевого слова <literal>RESTRICT</literal> или <literal>CASCADE</literal>, но <productname>&productname;</productname> подразумевает <literal>RESTRICT</literal> по умолчанию.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simpara>
+   <xref linkend="sql-grant"/>
+  </simpara>
+ </refsect1>
+
+</refentry>

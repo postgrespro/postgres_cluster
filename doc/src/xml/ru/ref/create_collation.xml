@@ -1,0 +1,115 @@
+<!-- doc/src/xml/ref/create_collation.xml -->
+
+<refentry id="sql-createcollation">
+ <indexterm zone="sql-createcollation"><primary>CREATE COLLATION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE COLLATION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE COLLATION</refname>
+  <refpurpose>создать правило сортировки</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE COLLATION <replaceable>имя</replaceable> (
+    [ LOCALE = <replaceable>локаль</replaceable>, ]
+    [ LC_COLLATE = <replaceable>категория_сортировки</replaceable>, ]
+    [ LC_CTYPE = <replaceable>категория_типов_символов</replaceable> ]
+)
+CREATE COLLATION <replaceable>имя</replaceable> FROM <replaceable>существующее_правило</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="sql-createcollation-description">
+  <title>Описание</title>
+
+  <para><command>CREATE COLLATION</command> определяет новое правило сортировки, используя параметры локали операционной системы, либо копируя существующее правило.</para>
+
+  <para>Чтобы создать правило сортировки, необходимо иметь право <literal>CREATE</literal> в целевой схеме.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><replaceable>имя</replaceable></term>
+
+     <listitem>
+      <para>Имя правила сортировки, возможно, дополненное схемой. Если схема не указана, правило сортировки создаётся в текущей схеме. Заданное имя правила должно быть уникальным в этой схеме. (Системные каталоги могут содержать правила сортировки с одним именем, но предназначенные для разных кодировок, однако они будут игнорироваться, если их кодировка не совпадает с кодировкой базы данных.)</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>локаль</replaceable></term>
+
+     <listitem>
+      <para>Это краткая запись для одновременной установки <symbol>LC_COLLATE</symbol> и <symbol>LC_CTYPE</symbol>. Если указан этот вариант, задать любой из этих параметров отдельно нельзя.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>категория_сортировки</replaceable></term>
+
+     <listitem>
+      <para>Указанная локаль операционной системы устанавливается в качестве категории локали <symbol>LC_COLLATE</symbol>. Эта локаль должна быть применимой к кодировке текущей базы данных. (Точные правила описаны в <xref remap="6" linkend="sql-createdatabase"/>.)</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>категория_типов_символов</replaceable></term>
+
+     <listitem>
+      <para>Указанная локаль операционной системы устанавливается в качестве категории локали <symbol>LC_CTYPE</symbol>. Эта локаль должна быть применимой к кодировке текущей базы данных. (Точные правила описаны в <xref remap="6" linkend="sql-createdatabase"/>.)</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>существующее_правило</replaceable></term>
+
+     <listitem>
+      <para>Имя копируемого существующего правила сортировки. Новое правило сортировки получит те же свойства, что и существующее, но будет независимым объектом.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+ </refsect1>
+
+
+ <refsect1 id="sql-createcollation-notes">
+  <title>Замечания</title>
+
+  <para>Для удаления созданных пользователем правил сортировки применяется команда <command>DROP COLLATION</command>.</para>
+
+  <para>Дополнительные сведения о поддержке правил сортировки можно найти в <xref remap="6" linkend="collation"/>.</para>
+ </refsect1>
+
+ <refsect1 id="sql-createcollation-examples">
+  <title>Примеры</title>
+
+  <para>Создание правила сортировки из локали операционной системы <literal>fr_FR.utf8</literal> (предполагается, что кодировка текущей базы данных — <literal>UTF8</literal>): <programlisting>CREATE COLLATION french (LOCALE = 'fr_FR.utf8');</programlisting></para>
+
+  <para>Создание правила сортировки из уже существующего: <programlisting>CREATE COLLATION german FROM "de_DE";</programlisting> Иногда удобно использовать в приложениях имена правил сортировки, не зависящие от операционной системы.</para>
+ </refsect1>
+
+
+ <refsect1 id="sql-createcollation-compat">
+  <title>Совместимость</title>
+
+  <para>Оператор <command>CREATE COLLATION</command> определён в стандарте SQL, но его действие ограничено копированием существующего правила сортировки. Синтаксис создания нового правила сортировки представляет собой расширение <productname>&productname;</productname>.</para>
+ </refsect1>
+
+
+ <refsect1 id="sql-createcollation-seealso">
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altercollation"/></member>
+   <member><xref linkend="sql-dropcollation"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

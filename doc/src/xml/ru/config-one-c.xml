@@ -1,0 +1,68 @@
+<!-- doc/src/xml/config-one-c.xml -->
+
+<appendix id="config-one-c">
+  <title>Настройка <productname>&productname;</productname> для решений <productname>1С</productname></title>
+   <para>Вы можете установить и использовать <productname>&productname;</productname> с решениями <productname>1С</productname> в клиент/серверной модели. Для оптимальной производительности и стабильности измените следующие параметры в конфигурационном файле <filename>postgresql.conf</filename> сервера <productname>&productname;</productname>:</para>
+
+   <orderedlist>
+     <listitem>
+      <para>Увеличьте максимально возможное число одновременных подключений к серверу баз данных до 1000. Решения <productname>1С</productname> могут открывать большое количество соединений, даже если все они не нужны, так что рекомендуется разрешить на сервере не менее 500 подключений. <programlisting>max_connections = 1000</programlisting></para>
+     </listitem>
+
+    <listitem>
+      <para>Чтобы временные таблицы работали корректно, измените следующие параметры:</para>
+      <itemizedlist>
+       <listitem>
+        <para>Увеличьте размер буфера для временных таблиц: <programlisting>temp_buffers = 32MB</programlisting></para>
+       </listitem>
+
+       <listitem>
+        <para>Увеличьте число допустимых в одной транзакции блокировок таблиц или индексов до 256:</para>
+        <programlisting>max_locks_per_transaction = 256</programlisting>
+        <para>Обычно решения <productname>1C</productname> используют множество временных таблиц. Такие таблицы в большом количестве используются каждым обслуживающим процессом. Закрывая соединение, <productname>&productname;</productname> пытается удалить все временные таблицы в одной транзакции, при этом транзакция может запрашивать множество блокировок. Если число блокировок превысит значение <varname>max_locks_per_transaction</varname>, транзакция прервётся и оставит за собой множество потерянных временных таблиц.</para>
+      </listitem>
+      </itemizedlist>
+    </listitem>
+
+    <listitem>
+     <para>Включите экранирование символом обратной косой черты для всех строк и выключите предупреждение об использовании этого символа: <programlisting>standard_conforming_strings = off
+escape_string_warning = off</programlisting></para>
+    </listitem>
+
+    <listitem>
+      <para>Задайте параметр <varname>effective_cache_size</varname> равным минимум половине объёма <acronym>ОЗУ</acronym>, доступного в системе. Эффективность оптимизатора запросов <productname>&productname;</productname> зависит от выделенного ему объёма <acronym>ОЗУ</acronym>.</para>
+    </listitem>
+
+    <listitem>
+     <para>Оптимизируйте планирование запросов с помощью расширений <link linkend="online-analyze"><filename>online_analyze</filename></link> и <link linkend="plantuner"><filename>plantuner</filename></link>:</para>
+
+        <itemizedlist>
+          <listitem>
+            <para>Добавьте <filename>online_analyze</filename> и <filename>plantuner</filename> в переменную <varname>shared_preload_libraries</varname>.</para>
+                 <programlisting>shared_preload_libraries = 'online_analyze, plantuner'</programlisting>
+          </listitem>
+
+          <listitem>
+            <para>Включите автоматический анализ временных таблиц при их модификации:</para>
+                 <programlisting>online_analyze.table_type = 'temporary'</programlisting>
+          </listitem>
+
+          <listitem>
+            <para>Настройте оптимизатор <productname>&productname;</productname> для улучшенного планирования запросов с недавно созданными пустыми таблицами:</para>
+                 <programlisting>plantuner.fix_empty_table = 'on'</programlisting>
+          </listitem>
+
+          <listitem>
+            <para>Отключите подробные сообщения расширения <filename>online_analyze</filename>:</para>
+                 <programlisting>online_analyze.verbose = 'off'</programlisting>
+          </listitem>
+
+        </itemizedlist>
+    </listitem>
+
+   </orderedlist>
+
+   <tip>
+    <para>Для увеличения производительности также можно использовать технологию <acronym>RAID</acronym>, применяя <acronym>RAID</acronym>-контроллеры с энергонезависимым кешем и бесперебойным блоком питания (<acronym>UPS</acronym>). Так как эта технология обеспечивает согласованность данных при отказе оборудования, вы можете ускорить запись на диск, отключив параметр <varname>fsync</varname>. Но даже с включённым <varname>fsync</varname> производительность может увеличиться с увеличением объёма кеша <acronym>RAID</acronym>-контроллера и количества дисков в <acronym>RAID</acronym>-массиве.</para>
+   </tip>
+ </appendix>

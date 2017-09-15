@@ -1,0 +1,124 @@
+<!-- doc/src/xml/dml.xml -->
+
+<chapter id="dml">
+ <title>Модификация данных</title>
+
+ <remark>Эта глава всё ещё недостаточно полная.</remark>
+
+ <para>В предыдущей главе мы обсуждали, как создавать таблицы и другие структуры для хранения данных. Теперь пришло время заполнить таблицы данными. В этой главе мы расскажем, как добавлять, изменять и удалять данные из таблиц. А из следующей главы вы наконец узнаете, как извлекать нужные вам данные из базы данных.</para>
+
+ <sect1 id="dml-insert">
+  <title>Добавление данных</title>
+
+  <indexterm zone="dml-insert"><primary>добавление</primary></indexterm>
+
+  <indexterm zone="dml-insert"><primary>INSERT</primary></indexterm>
+
+  <para>Сразу после создания таблицы она не содержит никаких данных. Поэтому, чтобы она была полезна, в неё прежде всего нужно добавить данные. По сути данные добавляются в таблицу по одной строке. И хотя вы конечно можете добавить в таблицу несколько строк, добавить в неё меньше, чем строку, невозможно. Даже если вы указываете значения только некоторых столбцов, создаётся полная строка.</para>
+
+  <para>Чтобы создать строку, вы будете использовать команду <xref linkend="sql-insert"/>. В этой команде необходимо указать имя таблицы и значения столбцов. Например, рассмотрим таблицу товаров из <xref remap="2" linkend="ddl"/>: <programlisting>CREATE TABLE products (
+    product_no integer,
+    name text,
+    price numeric
+);</programlisting> Добавить в неё строку можно было бы так: <programlisting>INSERT INTO products VALUES (1, 'Cheese', 9.99);</programlisting> Значения данных перечисляются в порядке столбцов в таблице и разделяются запятыми. Обычно в качестве значений указываются константы, но это могут быть и скалярные выражения.</para>
+
+  <para>Показанная выше запись имеет один недостаток &mdash; вам необходимо знать порядок столбцов в таблице. Чтобы избежать этого, можно перечислить столбцы явно. Например, следующие две команды дадут тот же результат, что и показанная выше: <programlisting>INSERT INTO products (product_no, name, price) VALUES (1, 'Cheese', 9.99);
+INSERT INTO products (name, price, product_no) VALUES ('Cheese', 9.99, 1);</programlisting> Многие считают, что лучше всегда явно указывать имена столбцов.</para>
+
+  <para>Если значения определяются не для всех столбцов, лишние столбцы можно опустить. В таком случае эти столбцы получат значения по умолчанию. Например: <programlisting>INSERT INTO products (product_no, name) VALUES (1, 'Cheese');
+INSERT INTO products VALUES (1, 'Cheese');</programlisting> Вторая форма является расширением <productname>&productname;</productname>. Она заполняет столбцы слева по числу переданных значений, а все остальные столбцы принимают значения по умолчанию.</para>
+
+  <para>Для ясности можно также явно указать значения по умолчанию для отдельных столбцов или всей строки: <programlisting>INSERT INTO products (product_no, name, price) VALUES (1, 'Cheese', DEFAULT);
+INSERT INTO products DEFAULT VALUES;</programlisting></para>
+
+  <para>Одна команда может вставить сразу несколько строк: <programlisting>INSERT INTO products (product_no, name, price) VALUES
+    (1, 'Cheese', 9.99),
+    (2, 'Bread', 1.99),
+    (3, 'Milk', 2.99);</programlisting></para>
+
+  <para>Также возможно вставить результат запроса (который может не содержать строк либо содержать одну или несколько): <programlisting>INSERT INTO products (product_no, name, price)
+  SELECT product_no, name, price FROM new_products
+    WHERE release_date = 'today';</programlisting> Это позволяет использовать все возможности механизма запросов SQL (см. <xref remap="4" linkend="queries"/>) для вычисления вставляемых строк.</para>
+
+  <tip>
+   <para>Когда нужно добавить сразу множество строк, возможно будет лучше использовать команду <xref linkend="sql-copy"/>. Она не такая гибкая, как <xref linkend="sql-insert"/>, но гораздо эффективнее. Дополнительно об ускорении массовой загрузки данных можно узнать в <xref remap="6" linkend="populate"/>.</para>
+  </tip>
+ </sect1>
+
+ <sect1 id="dml-update">
+  <title>Изменение данных</title>
+
+  <indexterm zone="dml-update"><primary>изменение</primary></indexterm>
+
+  <indexterm zone="dml-update"><primary>UPDATE</primary></indexterm>
+
+  <para>Модификация данных, уже сохранённых в БД, называется изменением. Изменить можно все строки таблицы, либо подмножество всех строк, либо только избранные строки. Каждый столбец при этом можно изменять независимо от других.</para>
+
+  <para>Для изменения данных в существующих строках используется команда <xref linkend="sql-update"/>. Ей требуется следующая информация: <orderedlist spacing="compact">
+    <listitem>
+     <para>Имя таблицы и изменяемого столбца</para>
+    </listitem>
+
+    <listitem>
+     <para>Новое значение столбца</para>
+    </listitem>
+
+    <listitem>
+     <para>Критерий отбора изменяемых строк</para>
+    </listitem>
+   </orderedlist></para>
+
+  <para>Если вы помните, в <xref remap="6" linkend="ddl"/> говорилось, что в SQL в принципе нет уникального идентификатора строк. Таким образом, не всегда возможно явно указать на строку, которую требуется изменить. Поэтому необходимо указать условия, каким должны соответствовать требуемая строка. Только если в таблице есть первичный ключ (вне зависимости от того, объявляли вы его или нет), можно однозначно адресовать отдельные строки, определив условие по первичному ключу. Этим пользуются графические инструменты для работы с базой данных, дающие возможность редактировать данные по строкам.</para>
+
+  <para>Например, следующая команда увеличивает цену всех товаров, имевших до этого цену 5, до 10: <programlisting>UPDATE products SET price = 10 WHERE price = 5;</programlisting> В результате может измениться ноль, одна или множество строк. И если этому запросу не будет удовлетворять ни одна строка, это не будет ошибкой.</para>
+
+  <para>Давайте рассмотрим эту команду подробнее. Она начинается с ключевого слова <literal>UPDATE</literal>, за которым идёт имя таблицы. Как обычно, имя таблицы может быть записано в полной форме, в противном случае она будет найдена по пути. Затем идёт ключевое слово <literal>SET</literal>, за которым следует имя столбца, знак равенства и новое значение столбца. Этим значением может быть любое скалярное выражение, а не только константа. Например, если вы захотите поднять цену всех товаров на 10%, это можно сделать так: <programlisting>UPDATE products SET price = price * 1.10;</programlisting> Как видно из этого примера, выражение нового значения может ссылаться на существующие значения столбцов в строке. Мы также опустили в нём предложение <literal>WHERE</literal>. Это означает, что будут изменены все строки в таблице. Если же это предложение присутствует, изменяются только строки, которые соответствуют условию <literal>WHERE</literal>. Заметьте, что хотя знак равенства в предложении <literal>SET</literal> обозначает операцию присваивания, а такой же знак в предложении <literal>WHERE</literal> используется для сравнения, это не приводит к неоднозначности. И конечно, в условии <literal>WHERE</literal> не обязательно должна быть проверка равенства, а могут применяться и другие операторы (см. <xref remap="4" linkend="functions"/>). Необходимо только, чтобы это выражение возвращало логический результат.</para>
+
+  <para>В команде <command>UPDATE</command> можно изменить значения сразу нескольких столбцов, перечислив их в предложении <literal>SET</literal>. Например: <programlisting>UPDATE mytable SET a = 5, b = 3, c = 1 WHERE a &gt; 0;</programlisting></para>
+ </sect1>
+
+ <sect1 id="dml-delete">
+  <title>Удаление данных</title>
+
+  <indexterm zone="dml-delete"><primary>удаление</primary></indexterm>
+
+  <indexterm zone="dml-delete"><primary>DELETE</primary></indexterm>
+
+  <para>Мы рассказали о том, как добавлять данные в таблицы и как изменять их. Теперь вам осталось узнать, как удалить данные, которые оказались не нужны. Так же, как добавлять данные можно только целыми строками, удалять их можно только по строкам. В предыдущем разделе мы отметили, что в SQL нет возможности напрямую адресовать отдельные строки, так что удалить избранные строки можно, только сформулировав для них подходящие условия. Но если в таблице есть первичный ключ, с его помощью можно однозначно выделить определённую строку. При этом можно так же удалить группы строк, соответствующие условию, либо сразу все строки таблицы.</para>
+
+  <para>Для удаления строк используется команда <xref linkend="sql-delete"/>; её синтаксис очень похож на синтаксис команды <command>UPDATE</command>. Например, удалить все строки из таблицы с товарами, имеющими цену 10, можно так: <programlisting>DELETE FROM products WHERE price = 10;</programlisting></para>
+
+  <para>Если вы напишете просто: <programlisting>DELETE FROM products;</programlisting> будут удалены все строки таблицы! Будьте осторожны!</para>
+ </sect1>
+
+ <sect1 id="dml-returning">
+  <title>Возврат данных из изменённых строк</title>
+
+  <indexterm zone="dml-returning"><primary>RETURNING</primary></indexterm>
+
+  <indexterm zone="dml-returning"><primary>INSERT</primary> <secondary>RETURNING</secondary></indexterm>
+
+  <indexterm zone="dml-returning"><primary>UPDATE</primary> <secondary>RETURNING</secondary></indexterm>
+
+  <indexterm zone="dml-returning"><primary>DELETE</primary> <secondary>RETURNING</secondary></indexterm>
+
+  <para>Иногда бывает полезно получать данные из модифицируемых строк в процессе их обработки. Это возможно с использованием предложения <literal>RETURNING</literal>, которое можно задать для команд <command>INSERT</command>, <command>UPDATE</command> и <command>DELETE</command>. Применение <literal>RETURNING</literal> позволяет обойтись без дополнительного запроса к базе для сбора данных и это особенно ценно, когда как-то иначе трудно получить изменённые строки надёжным образом.</para>
+
+  <para>В предложении <literal>RETURNING</literal> допускается то же содержимое, что и в выходном списке команды <command>SELECT</command> (см. <xref remap="4" linkend="queries-select-lists"/>). Оно может содержать имена столбцов целевой таблицы команды или значения выражений с этими столбцами. Также часто применяется краткая запись <literal>RETURNING *</literal>, выбирающая все столбцы целевой таблицы по порядку.</para>
+
+  <para>В команде <command>INSERT</command> данные, выдаваемые в <literal>RETURNING</literal>, образуются из строки в том виде, в каком она была вставлена. Это не очень полезно при простом добавлении, так как в результате будут получены те же данные, что были переданы клиентом. Но это может быть очень удобно при использовании вычисляемых значений по умолчанию. Например, если в таблице есть столбец <link linkend="datatype-serial"><type>serial</type></link>, в котором генерируются уникальные идентификаторы, команда <literal>RETURNING</literal> может возвратить идентификатор, назначенный новой строке: <programlisting>CREATE TABLE users (firstname text, lastname text, id serial primary key);
+
+INSERT INTO users (firstname, lastname) VALUES ('Joe', 'Cool') RETURNING id;</programlisting> Предложение <literal>RETURNING</literal> также очень полезно с <literal>INSERT ... SELECT</literal>.</para>
+
+  <para>В команде <command>UPDATE</command> данные, выдаваемые в <literal>RETURNING</literal>, образуются новым содержимым изменённой строки. Например: <programlisting>UPDATE products SET price = price * 1.10
+  WHERE price &lt;= 99.99
+  RETURNING name, price AS new_price;</programlisting></para>
+
+  <para>В команде <command>DELETE</command> данные, выдаваемые в <literal>RETURNING</literal>, образуются содержимым удалённой строки. Например: <programlisting>DELETE FROM products
+  WHERE obsoletion_date = 'today'
+  RETURNING *;</programlisting></para>
+
+  <para>Если для целевой таблицы заданы триггеры (см. <xref remap="4" linkend="triggers"/>), в <literal>RETURNING</literal> выдаются данные из строки, изменённой триггерами. Таким образом, <literal>RETURNING</literal> часто применяется и для того, чтобы проверить содержимое столбцов, изменяемых триггерами.</para>
+
+ </sect1>
+</chapter>

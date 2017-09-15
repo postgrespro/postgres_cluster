@@ -1,0 +1,374 @@
+<!-- doc/src/xml/release-pro-9.6.xml -->
+<!-- See header comment in release.xml about typical markup -->
+<sect1 id="release-pro-9-6-5-1">
+  <title>Postgres Pro 9.6.5.1</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2017-08-31</simpara>
+  </note>
+  <sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>Postgres Pro</productname> <link linkend="release-pro-9-6-4-1">9.6.4.1</link> и <productname>PostgreSQL</productname> <link linkend="release-9-6-5">9.6.5</link>.</para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro</productname> 9.6.4.1 входят:</para>
+    <itemizedlist>
+    <listitem>
+      <para>Модуль <application>pg_pathman</application> обновлён до версии 1.4.3. (См. <xref remap="4" linkend="pg-pathman"/> и <xref remap="4" linkend="pg-pathman-how-to-update"/>.) Эта версия по сравнению с 1.4.2 включает следующие усовершенствования:</para>
+          <itemizedlist spacing="compact">
+            <listitem>
+              <para>Отключена опасная оптимизация команд <command>UPDATE</command> и <command>DELETE</command> для <productname>PostgreSQL</productname> 9.5.</para>
+            </listitem>
+            <listitem>
+              <para>Исправлено выполнение такого запроса: <command>DELETE FROM single_table USING partitioned_table</command>.</para>
+            </listitem>
+            <listitem>
+              <para>Исправлен вывод <command>EXPLAIN INSERT INTO partitioned_table</command> при включённом режиме подробных сведений.</para>
+            </listitem>
+          </itemizedlist>
+              <para>Полный список изменений можно найти на <ulink url="https://github.com/postgrespro/pg_pathman/releases/">вики-странице <application>pg_pathman</application></ulink>.</para>
+      </listitem>
+      <listitem>
+        <para>Усовершенствована утилита <xref linkend="app-pgcontroldata"/>, чтобы было возможным автоматическое обновление <productname>Postgres Pro</productname> с помощью скрипта <literal>pgpro_upgrade</literal>.</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Миграция на версию 9.6.5.1</title>
+    <para>Процедура установки зависит от версии вашей текущей инсталляции.</para>
+    <para>Для обновления СУБД с версии <productname>Postgres Pro</productname>, основанной на предыдущем основном выпуске <productname>PostgreSQL</productname>, вы можете выполнить выгрузку/восстановление данных, применив <xref linkend="app-pg-dumpall"/>, или воспользоваться утилитой <xref linkend="pgupgrade"/>. Первый вариант безопаснее, а второй быстрее и может значительно ускорить процесс обновления для больших баз данных.</para>
+    <para>Для обновления с версии <productname>Postgres Pro</productname>, основанной на этом же основном выпуске <productname>PostgreSQL</productname>, выгрузка/восстановление данных не требуется. Но вместо <literal>pg_upgrade</literal> вы должны использовать скрипт <literal>pgpro_upgrade</literal>, входящий в состав этого дистрибутивного набора. Этот скрипт обновляет метаданные как требуется в связи с изменением формата номера каталога, произошедшим в <productname>Postgres Pro</productname> 9.6.4.1. Если вы обновляете инсталляцию <productname>Postgres Pro</productname>, используя бинарный пакет, скрипт <literal>pgpro_upgrade</literal> запускается автоматически либо вам предлагается запустить его вручную.</para>
+      <important>
+        <para>Если вы запускаете <literal>pgpro_upgrade</literal> вручную, вы должны остановить службу postgres. Этот скрипт должен запускать пользователь-владелец базы данных (обычно postgres), а переменная окружения PGDATA должна указывать на каталог, где располагается база данных. При попытке запустить <literal>pgpro_upgrade</literal> от имени root произойдёт ошибка.</para>
+      </important>
+      <para>Если вы скомпилировали <productname>Postgres Pro</productname> из исходного кода или создали базу данных в нестандартном расположении, вы должны запустить скрипт <literal>pgpro_upgrade</literal> вручную.</para>
+      <note>
+        <para>В дистрибутивах Linux с системой пакетов RPM при обновлении с версии 9.6.2.1 или более ранней вы должны переименовать каталог данных <filename>pgsql</filename> в <filename>pgpro</filename> до запуска скрипта <literal>pgpro_upgrade</literal>.</para>
+      </note>
+    <para>Для перехода с ванильной версии PostgreSQL 9.6.x выполните выгрузку/восстановление данных, используя <xref linkend="app-pg-dumpall"/>.</para>
+  </sect2>
+</sect1>
+<sect1 id="release-pro-9-6-4-1">
+  <title>Postgres Pro 9.6.4.1</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2017-08-14</simpara>
+  </note>
+  <sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>Postgres Pro</productname> <link linkend="release-pro-9-6-3-3">9.6.3.3</link> и <productname>PostgreSQL</productname> <link linkend="release-9-6-4">9.6.4</link>.</para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro</productname> 9.6.3.3 входят:</para>
+    <itemizedlist>
+      <listitem>
+        <para>Исправлена некорректная проверка каталога в <literal>pg_dump</literal>, привнесённая в предыдущем выпуске.</para>
+      </listitem>
+      <listitem>
+        <para>Добавлены дистрибутивные пакеты для Ubuntu 17.10.</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Миграция на версию 9.6.4.1</title>
+    <para>Тем, кто хочет мигрировать данные из любой предыдущей основной версии, необходимо выполнить выгрузку/загрузку данных с помощью <xref linkend="app-pg-dumpall"/> или воспользоваться <xref linkend="pgupgrade"/>.</para>
+    <para>Если используется версия 9.6.3.3, требуется выполнить выгрузку/восстановление базы, ввиду изменения формата номера каталога для улучшения идентификации <productname>Postgres Pro</productname>.</para>
+    <para>При обновлении c ванильного PostgreSQL 9.6.x требуется произвести некоторые изменения в каталоге.</para>    
+    <para>Если вы используете бинарные пакеты, и ваша база данных расположена в стандартном месте, эти обновления будут выполнены автоматически. Если вы собираете Postgres Pro из исходных текстов или создаёте ваши базы данных в нестандартном месте, самостоятельно вызывая <literal>initdb</literal>, необходимо выполнить для этих баз скрипт <literal>pgpro_upgrade</literal>.</para>
+    <para>Перед запуском скрипта следует остановить сервис postgres. Скрипт должен запускать пользователь-владелец файлов базы (обычно postgres). В момент запуска переменная среды PGDATA должна указывать на обновляемую базу.</para>
+  </sect2>
+</sect1>
+<sect1 id="release-pro-9-6-3-3">
+  <title>Postgres Pro 9.6.3.3</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2017-07-27</simpara>
+  </note>
+  <sect2>
+  <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>Postgres Pro</productname> <link linkend="release-pro-9-6-3-2">9.6.3.2</link> и <productname>PostgreSQL</productname> <link linkend="release-9-6-3">9.6.3</link>.</para>
+     
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro</productname> 9.6.3.2 входят:</para>
+    <itemizedlist>
+    <listitem>
+    <para>Устранение дефекта в дополнительном модуле online_analyze, способного привести к повреждению данных.</para>
+    </listitem>
+    <listitem>
+    <para>Модуль <link linkend="pg-pathman"><application>pg_pathman</application></link> обновлён до версии 1.4.2.</para>
+    </listitem>
+    </itemizedlist>
+  </sect2>
+</sect1>
+<sect1 id="release-pro-9-6-3-2">
+  <title>Postgres Pro 9.6.3.2</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2017-07-12</simpara>
+  </note>
+  <sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>Postgres Pro</productname> <link linkend="release-pro-9-6-3-1">9.6.3.1</link> и <productname>PostgreSQL</productname> <link linkend="release-9-6-2">9.6.3</link>.</para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro</productname> 9.6.3.1 входят:</para>
+    <itemizedlist>
+      <listitem>
+        <para>Менеджер резервного копирования <link linkend="app-pgprobackup"><application>pg_probackup</application></link> обновлён до версии 2.0, в которой появились новые возможности:</para>
+        <itemizedlist>
+          <listitem>
+            <para>Сохранение резервных копий разных баз данных в одном каталоге</para>
+            <para>Хранение копируемых данных в сжатом состоянии для экономии дискового пространства</para>
+            <para>Расширенные параметры ведения журнала</para>
+          </listitem>
+        </itemizedlist>
+      </listitem>
+      <listitem>
+        <para>Добавлены дистрибутивные пакеты для Debian 9.</para>
+      </listitem>
+      <listitem>
+        <para>Добавлены правки из кода PostgreSQL, устраняющие возможность повреждения данных при заморозке.</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Миграция на версию 9.6.3.2</title>
+    <para>Тем, кто хочет мигрировать данные из любой предыдущей основной версии, необходимо выполнить выгрузку/загрузку данных с помощью <xref linkend="app-pg-dumpall"/> или воспользоваться <xref linkend="pgupgrade"/>.</para>
+    <para>Если используется версия 9.6.3.1, выгрузка/восстановление базы не требуется.</para>
+    <para>При обновлении c ванильного PostgreSQL 9.6.x требуется произвести некоторые изменения в каталоге.</para>
+    <para>Если вы используете бинарные пакеты, и ваша база данных расположена в стандартном месте, эти обновления будут выполнены автоматически. Если вы собираете Postgres Pro из исходных текстов или создаёте ваши базы данных в нестандартном месте, самостоятельно вызывая <literal>initdb</literal>, необходимо выполнить для этих баз скрипт <literal>pgpro_upgrade</literal>.</para>
+    <para>Перед запуском скрипта следует остановить сервис postgres. Скрипт должен запускать пользователь-владелец файлов базы (обычно postgres). В момент запуска переменная среды PGDATA должна указывать на обновляемую базу.</para>
+  </sect2>
+</sect1>
+<sect1 id="release-pro-9-6-3-1">
+  <title>Postgres Pro 9.6.3.1</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2017-05-15</simpara>
+  </note>
+  <sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>Postgres Pro</productname> <link linkend="release-pro-9-6-2-1">9.6.2.1</link> и <productname>PostgreSQL</productname> <link linkend="release-9-6-2">9.6.3</link>.</para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro</productname> 9.6.2.1 входят:</para>
+    <itemizedlist>
+      <listitem>
+        <para>Добавлено расширение <link linkend="pg-tsparser"><application>pg_tsparser</application></link> для текстового поиска.</para>
+        <para>В дополнение к отдельным частям слова, возвращаемым по умолчанию, <application>pg_tsparser</application> также возвращает всё слово, если оно содержит:</para>
+        <itemizedlist>
+          <listitem>
+            <para>подчёркивания</para>
+          </listitem>
+          <listitem>
+            <para>цифры и буквы, разделённые знаком минуса</para>
+          </listitem>
+        </itemizedlist>
+      </listitem>
+      <listitem>
+        <para>Модуль <link linkend="pg-pathman"><application>pg_pathman</application></link> обновлён до версии 1.3.2. Данная версия обеспечивает совместимость с текущим выпуском.</para>
+      </listitem>
+      <listitem>
+        <para>Модуль <link linkend="sr-plan"><application>sr_plan</application></link> теперь работает со значением <literal>search_path</literal>, отличным от стандартного.</para>
+      </listitem>
+      <listitem>
+        <para>Устранена ошибка с повреждением покрывающих индексов в WAL.</para>
+      </listitem>
+      <listitem>
+        <para>Добавлены дистрибутивные пакеты для SUSE Linux Enterprise Server 12 SP1 и Ubuntu 17.04.</para>
+      </listitem>
+      <listitem>
+        <para>Добавлены доработки для оптимизации наследования.</para>
+      </listitem>
+      <listitem>
+        <para>Доработка PTRACK обновлена до версии 1.2.</para>
+      </listitem>
+      <listitem>
+        <para>Представлены улучшения производительности для запросов, типичных для решений 1С.</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Миграция на версию 9.6.3.1</title>
+    <para>Тем, кто хочет мигрировать данные из любой предыдущей основной версии, необходимо выполнить выгрузку/загрузку данных с помощью <xref linkend="app-pg-dumpall"/> или воспользоваться <xref linkend="pgupgrade"/>.</para>
+    <para>Если используется версия 9.6.2.1, выгрузка/восстановление базы не требуется.</para>
+    <para>При обновлении c ванильного PostgreSQL 9.6.x требуется произвести некоторые изменения в каталоге.</para>
+    <para>Если вы используете бинарные пакеты, и ваша база данных расположена в стандартном месте, эти обновления будут выполнены автоматически. Если вы собираете Postgres Pro из исходных текстов или создаёте ваши базы данных в нестандартном месте, самостоятельно вызывая <literal>initdb</literal>, необходимо выполнить для этих баз скрипт <literal>pgpro_upgrade</literal>.</para>
+    <para>Перед запуском скрипта следует остановить сервис postgres. Скрипт должен запускать пользователь-владелец файлов базы (обычно postgres). В момент запуска переменная среды PGDATA должна указывать на обновляемую базу.</para>
+  </sect2>
+</sect1>
+<sect1 id="release-pro-9-6-2-1">
+  <title>Postgres Pro 9.6.2.1</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2017-02-22</simpara>
+  </note>
+  <sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>Postgres Pro</productname> <link linkend="release-pro-9-6-1-2">9.6.1.2</link> и <productname>PostgreSQL</productname> <link linkend="release-9-6-2">9.6.2</link>.</para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro</productname> 9.6.1.2 входят:</para>
+
+    <itemizedlist>
+      <listitem>
+        <para>Модуль <link linkend="pg-pathman"><application>pg_pathman</application></link> обновлён до версии 1.3 (см. <xref remap="4" linkend="pg-pathman-how-to-update"/>).</para>
+      </listitem>
+      <listitem>
+        <para>Модуль <link linkend="sr-plan"><application>sr_plan</application></link> теперь инициализируется независимо для каждого экземпляра баз данных.</para>
+      </listitem>
+      <listitem>
+        <para>Изменён синтаксис описания покрывающих индексов. Ключевое слово <literal>INCLUDING</literal> было заменено словом <literal>INCLUDE</literal>. Предыдущий синтаксис по-прежнему поддерживается, но считается устаревшим (см. <xref remap="4" linkend="indexes-unique"/>).</para>
+      </listitem>
+      <listitem>
+        <para>В системах на базе RHEL установка осуществляется в отдельный каталог, так что <productname>Postgres Pro</productname> можно установить одновременно с <productname>PostgreSQL</productname>.</para>
+      </listitem>
+      <listitem>
+        <para>Улучшен алгоритм автоматического выбора TCP-порта в случае с параллельной установкой разных версий нашего продукта в системах Windows.</para>
+      </listitem>
+      <listitem>
+        <para>Обновлён менеджер резервного копирования <link linkend="app-pgprobackup"><application>pg_probackup</application></link>:</para>
+        <itemizedlist>
+          <listitem>
+            <para>Добавлены команды <command>retention show</command> и <command>retention purge</command> для реализации политики сохранения копий.</para>
+          </listitem>
+          <listitem>
+            <para>Добавлена поддержка инкрементального резервного копирования сжатых файлов страниц. Сжатые файлы относятся к отличительным особенностям <productname>Postgres Pro Enterprise</productname>.</para>
+          </listitem>
+          <listitem>
+            <para>Исправлена команда <command>validate</command>. Параметр <replaceable>ид_резервной_копии</replaceable> теперь является необязательным.</para>
+          </listitem>
+        </itemizedlist>
+      </listitem>
+    </itemizedlist>
+
+  </sect2>
+  <sect2>
+    <title>Миграция на версию 9.6.2.1</title>
+    <para>Тем, кто хочет мигрировать данные из любой предыдущей основной версии, необходимо выполнить выгрузку/загрузку данных с помощью <xref linkend="app-pg-dumpall"/> или воспользоваться <xref linkend="pgupgrade"/>.</para>
+    <para>Если используется версия 9.6.1.2, выгрузка/восстановление базы не требуется.</para>
+    <para>При обновлении c ванильного PostgreSQL 9.6.x требуется произвести некоторые изменения в каталоге.</para>
+    <para>Если вы используете бинарные пакеты, и ваша база данных расположена в стандартном месте, эти обновления будут выполнены автоматически. Если вы собираете Postgres Pro из исходных текстов или создаёте ваши базы данных в нестандартном месте, самостоятельно вызывая <literal>initdb</literal>, необходимо выполнить для этих баз скрипт <literal>pgpro_upgrade</literal>.</para>
+    <para>Перед запуском скрипта следует остановить сервис postgres. Скрипт должен запускать пользователь-владелец файлов базы (обычно postgres). В момент запуска переменная среды PGDATA должна указывать на обновляемую базу.</para>
+  </sect2>
+</sect1>
+<sect1 id="release-pro-9-6-1-2">
+  <title>Postgres Pro 9.6.1.2</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2016-12-14</simpara>
+  </note>
+  <sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>Postgres Pro</productname> <link linkend="release-pro-9-6-1-1">9.6.1.1</link> и включает доработки из PostgreSQL.</para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro</productname> 9.6.1.1 входят:</para>
+
+    <para>Добавлено несколько модулей для поддержки системы 1С:Предприятие:</para>
+    <itemizedlist>
+      <listitem>
+        <para><application>mchar</application> (см. <xref remap="4" linkend="mchar"/>)</para>
+      </listitem>
+      <listitem>
+        <para><application>fulleq</application> (см. <xref remap="4" linkend="fulleq"/>)</para>
+      </listitem>
+      <listitem>
+      <para><application>fasttrun</application> (см. <xref remap="4" linkend="fasttrun"/>)</para>
+      </listitem>
+      <listitem>
+        <para><application>online_analyze</application> (см. <xref remap="4" linkend="online-analyze"/>)</para>
+      </listitem>
+      <listitem>
+        <para><application>plantuner</application> (см. <xref remap="4" linkend="plantuner"/>)</para>
+      </listitem>
+    </itemizedlist>
+
+    <para>Также для поддержки 1С в код ядра были внесены следующие доработки:</para>
+    <itemizedlist>
+     <listitem>
+     <para>Блокировки на уровне приложения</para>
+     </listitem>
+     <listitem>
+     <para>Оптимизация условий диапазона в предложении WHERE</para>
+     </listitem>
+    </itemizedlist>
+
+    <para>Обновлённые модули</para>
+    <itemizedlist>
+      <listitem><para><application>pg_pathman</application> (до версии 1.2.2) (см. <xref remap="4" linkend="pg-pathman"/>)</para></listitem>
+    </itemizedlist>
+
+    <para>Менеджер резервного копирования <application>pg_arman</application> заменён на <application>pg_probackup</application> (версии 1.0).</para>
+  </sect2>
+  <sect2>
+    <title>Миграция на версию 9.6.1.2</title>
+    <para>Тем, кто хочет мигрировать данные из любой предыдущей основной версии, необходимо выполнить выгрузку/загрузку данных с помощью <xref linkend="app-pg-dumpall"/> или воспользоваться <xref linkend="pgupgrade"/>.</para>
+    <para>Если используется версия 9.6.1.1, выгрузка/восстановление базы не требуется.</para>
+    <para>При обновлении c ванильного PostgreSQL 9.6.x требуется произвести некоторые изменения в каталоге.</para>
+    <para>Если вы используете бинарные пакеты, и ваша база данных расположена в стандартном месте, эти обновления будут выполнены автоматически. Если вы собираете Postgres Pro из исходных текстов или создаёте ваши базы данных в нестандартном месте, самостоятельно вызывая <literal>initdb</literal>, необходимо выполнить для этих баз скрипт <literal>pgpro_upgrade</literal>, включённый в этот дистрибутив.</para>
+    <para>Перед запуском скрипта следует остановить сервис postgres. Скрипт должен запускать пользователь-владелец файлов базы (обычно postgres). В момент запуска переменная среды PGDATA должна указывать на обновляемую базу.</para>
+  </sect2>
+</sect1>
+<sect1 id="release-pro-9-6-1-1">
+  <title>Postgres Pro 9.6.1.1</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2016-11-01</simpara>
+  </note>
+  <sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>PostgreSQL</productname> <link linkend="release-9-6-1">9.6.1</link>.</para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro</productname> <link linkend="release-pro-9-6-0-1">9.6.0.1</link> входят:</para>
+    <para>Добавлено исправление модуля <application>pg_buffercache</application>, улучшающее поведение базы данных, когда к ней подключены средства мониторинга.</para>
+    <para>Добавлена функция <application>pgpro_edition()</application>, которая возвращает название редакции <productname>Postgres Pro</productname>, <literal>standard</literal> или <literal>enterprise</literal>.</para>
+  </sect2>
+  <sect2>
+    <title>Миграция на версию 9.6.1.1</title>
+    <para>Тем, кто хочет мигрировать данные из любой предыдущей основной версии, необходимо выполнить выгрузку/загрузку данных с помощью <xref linkend="app-pg-dumpall"/> или воспользоваться <xref linkend="pgupgrade"/>.</para>
+    <para>Если используется версия 9.6.0.1, выгрузка/восстановление базы не требуется.</para>
+    <para>При обновлении c ванильного PostgreSQL 9.6.x требуется произвести некоторые изменения в каталоге.</para>
+    <para>Если вы используете бинарные пакеты, и ваша база данных расположена в стандартном месте, эти обновления будут выполнены автоматически. Если вы собираете Postgres Pro из исходных текстов или создаёте ваши базы данных в нестандартном месте, самостоятельно вызывая <literal>initdb</literal>, необходимо выполнить для этих баз скрипт <literal>pgpro_upgrade</literal>, включённый в этот дистрибутив.</para>
+    <para>Перед запуском скрипта следует остановить сервис postgres. Скрипт должен запускать пользователь-владелец файлов базы (обычно postgres). В момент запуска переменная среды PGDATA должна указывать на обновляемую базу.</para>
+  </sect2>
+</sect1>
+<sect1 id="release-pro-9-6-0-1">
+  <title>Postgres Pro 9.6.0.1</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2016-10-12</simpara>
+  </note>
+  <sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>PostgreSQL</productname> <link linkend="release-9-6">9.6.0</link>.</para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>PostgreSQL</productname> 9.6.0 входят:</para>
+    <para>Ключевые доработки, перенесённые из Postgres Pro 9.5:</para>
+    <itemizedlist>
+      <listitem>
+        <para>Реализация покрывающих индексов, которую осуществила Анастасия Лубенникова (правка в git: 91b4e25614247833d7960c49d783f69b90c0c149) (Подробности: <ulink url="http://www.postgresql.org/message-id/f90aa60a-b67f-95b5-d9f5-f5d8ced178c6@postgrespro.ru/"/>)</para>
+        <para>Переход к использованию ICU (правка в git: ee711324f31cc039e656ea45c54abd0cf8ea3e41)</para>
+        <para>Исправления в системе сборки win32 (правка в git: 84fa653ee00ebe54f591b18e3664fa6d5889224f)</para>
+        <para>Добавлена SQL-функция pgpro_version и соответствующие определения в pg_config.h (правка в git: 671a7525541aa3eece366dae4249aa43a56a2168)</para>
+        <para>Внедрение механизма PTRACK (правка в git: cea0987364070600fe640df0050d285b53cafb00)</para>
+        <para>Добавление сортировки в тест index_including для исправления 32-битной сборки для FreeBSD (правка в git: fd9fc27d40b5dd4db611418bb848760154ec9f55)</para>
+      </listitem>
+    </itemizedlist>
+    <para>Модули, перенесённые из Postgres Pro 9.5</para>
+    <itemizedlist>
+      <listitem><para><application>hunspell-dict</application> (см. <xref remap="4" linkend="hunspell-dict"/>)</para></listitem>
+      <listitem><para><application>jsquery</application> (см. <xref remap="4" linkend="jsquery"/>)</para></listitem>
+      <listitem><para><application>pg_variables</application> (см. <xref remap="4" linkend="pg-variables"/>)</para></listitem>
+      <listitem><para><application>pg_pathman</application> (см. <xref remap="4" linkend="pg-pathman"/>)</para></listitem>
+      <listitem><para><application>pg_query_state</application> (см. <xref remap="4" linkend="pg-query-state"/>)</para></listitem>
+      <listitem><para><application>shared-ispell</application> (см. <xref remap="4" linkend="shared-ispell"/>)</para></listitem>
+      <listitem><para><application>sr_plan</application> (см. <xref remap="4" linkend="sr-plan"/>)</para></listitem>
+      <listitem><para><application>dump_stat</application> (см. <xref remap="4" linkend="dump-stat"/>)</para></listitem>
+    </itemizedlist>
+    <para>Инструменты, перенесённые из Postgres Pro 9.5</para>
+    <itemizedlist>
+      <listitem>
+        <para><application>pg_arman</application></para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Миграция на версию 9.6.0.1</title>
+
+    <para>Тем, кто хочет мигрировать данные из любой предыдущей версии, необходимо выполнить выгрузку/загрузку данных с помощью <xref linkend="app-pg-dumpall"/> или воспользоваться <xref linkend="pgupgrade"/>.</para>
+
+    <para>При миграции с PostgreSQL 9.6.x на Postgres Pro 9.6.x.y выгрузка/восстановление базы не требуется.</para>
+
+    <para>При обновлении с предыдущих выпусков Postgres Pro, а также с ванильного PostgreSQL 9.6.x требуется произвести некоторые изменения в каталоге.</para>
+
+    <para>Если вы используете бинарные пакеты, и ваша база данных расположена в стандартном месте, эти обновления будут выполнены автоматически. Если вы собираете Postgres Pro из исходных текстов или создаёте ваши базы данных в нестандартном месте, самостоятельно вызывая <literal>initdb</literal>, необходимо выполнить для этих баз скрипт <literal>pgpro_upgrade</literal>, включённый в этот дистрибутив.</para>
+
+    <para>Перед запуском скрипта следует остановить сервис postgres. Скрипт должен запускать пользователь-владелец файлов базы (обычно postgres). В момент запуска переменная среды PGDATA должна указывать на обновляемую базу.</para>
+  </sect2>
+</sect1>

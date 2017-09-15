@@ -1,0 +1,94 @@
+<!--
+doc/src/xml/ref/alter_trigger.xml
+&productname; documentation
+-->
+
+<refentry id="sql-altertrigger">
+ <indexterm zone="sql-altertrigger"><primary>ALTER TRIGGER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER TRIGGER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER TRIGGER</refname>
+  <refpurpose>изменить определение триггера</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER TRIGGER <replaceable class="parameter">имя</replaceable> ON <replaceable class="parameter">имя_таблицы</replaceable> RENAME TO <replaceable class="parameter">новое_имя</replaceable>
+ALTER TRIGGER <replaceable class="parameter">имя</replaceable> ON <replaceable class="parameter">имя_таблицы</replaceable> DEPENDS ON EXTENSION <replaceable class="parameter">имя_расширения</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER TRIGGER</command> меняет свойства существующего триггера. Предложение <literal>RENAME</literal> переименовывает данный триггер, не затрагивая его определение. Предложение <literal>DEPENDS ON EXTENSION</literal> помечает триггер как зависимый от расширения, так что при удалении расширения будет автоматически удаляться и триггер.</para>
+
+  <para>Изменять свойства триггера может только владелец таблицы, с которой работает триггер.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя существующего триггера, подлежащего изменению.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя таблицы, с которой работает триггер.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя триггера.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_расширения</replaceable></term>
+    <listitem>
+     <para>Имя расширения, от которого будет зависеть триггер.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para>Возможность временно включать или отключать триггер предоставляется командой <xref linkend="sql-altertable"/>, а не <command>ALTER TRIGGER</command>, так как <command>ALTER TRIGGER</command> не позволяет удобным образом выразить указание включить или отключить все триггеры таблицы сразу.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Переименование существующего триггера: <programlisting>ALTER TRIGGER emp_stamp ON emp RENAME TO emp_track_chgs;</programlisting></para>
+
+  <para>Обозначение триггера как зависимого от расширения: <programlisting>ALTER TRIGGER emp_stamp ON emp DEPENDS ON EXTENSION emplib;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>ALTER TRIGGER</command> — реализованное в <productname>&productname;</productname> расширение стандарта SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altertable"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

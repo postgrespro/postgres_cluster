@@ -1,0 +1,2458 @@
+<!-- doc/src/xml/monitoring.xml -->
+
+<chapter id="monitoring">
+ <title>Мониторинг работы СУБД</title>
+
+ <indexterm zone="monitoring"><primary>мониторинг</primary> <secondary>активность базы данных</secondary></indexterm>
+
+ <indexterm zone="monitoring"><primary>активность базы данных</primary> <secondary>мониторинг</secondary></indexterm>
+
+ <para>Администратор базы данных часто задумывается &mdash; <quote>чем в данный момент занята система?</quote> В этой главе рассказывается о том, как это выяснить.</para>
+
+  <para>Для мониторинга работы СУБД и анализа её производительности существуют различные инструменты. Большая часть этой главы посвящена описанию работы сборщика статистики <productname>&productname;</productname>, однако не следует пренебрегать и обычными командами мониторинга Unix, такими как <command>ps</command>, <command>top</command>, <command>iostat</command>, и <command>vmstat</command>. Кроме того, после обнаружения запроса с низкой производительностью может потребоваться дополнительное исследование с использованием <productname>&productname;</productname> команды <xref linkend="sql-explain"/>. В <xref remap="6" linkend="using-explain"/> рассматриваются <command>EXPLAIN</command> и другие методы для изучения поведения отдельного запроса.</para>
+
+ <sect1 id="monitoring-ps">
+  <title>Стандартные инструменты Unix</title>
+
+  <indexterm zone="monitoring-ps"><primary>ps</primary> <secondary>мониторинг активности</secondary></indexterm>
+
+  <para>В большинстве Unix платформ <productname>&productname;</productname> модифицирует заголовок команды, который выводится на экран при выполнении команды <command>ps</command> так, что серверные процессы можно легко различить. Вот пример вывода этой команды: <screen>
+$ ps auxww | grep ^postgres
+postgres  15551  0.0  0.1  57536  7132 pts/0    S    18:02   0:00 postgres -i
+postgres  15554  0.0  0.0  57536  1184 ?        Ss   18:02   0:00 postgres: writer process
+postgres  15555  0.0  0.0  57536   916 ?        Ss   18:02   0:00 postgres: checkpointer process
+postgres  15556  0.0  0.0  57536   916 ?        Ss   18:02   0:00 postgres: wal writer process
+postgres  15557  0.0  0.0  58504  2244 ?        Ss   18:02   0:00 postgres: autovacuum launcher process
+postgres  15558  0.0  0.0  17512  1068 ?        Ss   18:02   0:00 postgres: stats collector process
+postgres  15582  0.0  0.0  58772  3080 ?        Ss   18:04   0:00 postgres: joe runbug 127.0.0.1 idle
+postgres  15606  0.0  0.0  58772  3052 ?        Ss   18:07   0:00 postgres: tgl regression [local] SELECT waiting
+postgres  15610  0.0  0.0  58772  3056 ?        Ss   18:07   0:00 postgres: tgl regression [local] idle in transaction
+</screen> (Формат вызова <command>ps</command>, а так же детали отображаемой информации зависят от платформы. Это пример для одной из последних Linux систем.) Первым здесь перечислен главный процесс сервера. Для этого процесса отображены аргументы команды, которые использовались при его запуске. Следующие пять процессов &mdash; это фоновые рабочие процессы, которые были автоматически запущены процессом сервера. (Процесса <quote>stats collector</quote> в этом списке не будет, если запуск сборщика статистики отключён в системе; аналогично может быть отключён и процесс <quote>autovacuum launcher</quote> &mdash; фоновый процесс автоочистки.) Во всех остальных строках перечислены серверные процессы, каждый из которых обрабатывает одно клиентское подключение. Командная строка каждого такого процесса имеет следующий формат: <screen>
+postgres: <replaceable>user</replaceable> <replaceable>database</replaceable> <replaceable>host</replaceable> <replaceable>activity</replaceable>
+</screen> Пользователь, СУБД и компьютер (клиента) остаются неизменными на протяжении всего клиентского подключения, а индикатор деятельности меняется. Возможные виды деятельности: <literal>idle</literal> (т. е. ожидание команды клиента), <literal>idle in transaction</literal> (ожидание клиента внутри блока <command>BEGIN</command>) или название типа команды, например, <literal>SELECT</literal>. Кроме того, если в настоящий момент серверный процесс ожидает высвобождения блокировки, которую держит другая сессия, то к виду деятельности добавляется <literal>waiting</literal>. В приведённом выше примере мы видим, что процесс 15606 ожидает, когда процесс 15610 завершит свою транзакцию и, следовательно, освободит какую-то блокировку. (Процесс 15610 является блокирующим, поскольку никаких других активных сессий нет. В более сложных случаях может потребоваться обращение к системному представлению <link linkend="view-pg-locks"><structname>pg_locks</structname></link>, для того чтобы определить, кто кого блокирует.)</para>
+
+  <para>Если установлено значение <xref linkend="guc-cluster-name"/>, имя кластера также будет показываться в выводе команды <command>ps</command>: <screen>
+$ psql -c 'SHOW cluster_name'
+ cluster_name
+--------------
+ server1
+(1 row)
+
+$ ps aux|grep server1
+postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: server1: writer process
+...
+</screen></para>
+
+  <para>Если параметр <xref linkend="guc-update-process-title"/> был отключён, то индикатор деятельности не обновляется; название процесса устанавливается только один раз при запуске нового процесса. На некоторых платформах это позволяет значительно сократить накладные расходы при выполнении команды; на других платформах этот выигрыш может быть незначителен.</para>
+
+  <tip>
+  <para>В <productname>Solaris</productname> требуется особый подход. Следует использовать <command>/usr/ucb/ps</command> вместо <command>/bin/ps</command>. Также следует использовать два флага <option>w</option>, а не один. Кроме того, при выводе статусов команд с помощью <command>ps</command> статус для исходной команды <command>postgres</command> должен отображаться в сокращённом формате для каждого серверного процесса. Если вы не сделаете все три вещи, то вывод <command>ps</command> для каждого серверного процесса будет исходной командной строкой <command>postgres</command>.</para>
+  </tip>
+ </sect1>
+
+ <sect1 id="monitoring-stats">
+  <title>Сборщик статистики</title>
+
+  <indexterm zone="monitoring-stats"><primary>статистика</primary></indexterm>
+
+  <para><firstterm>Сборщик статистики</firstterm> в <productname>&productname;</productname> представляет собой подсистему, которая собирает и отображает информацию о работе сервера. В настоящее время сборщик может подсчитывать количество обращений к таблицам и индексам &mdash; в виде количества прочитанных блоков или строк с диска. Кроме того, он отслеживает общее число строк в каждой таблице, информацию о выполнении очистки и сбора статистики для каждой таблицы. Он также может подсчитывать вызовы пользовательских функций и общее время, затраченное на выполнение каждой из них.</para>
+
+  <para>Кроме того, <productname>&productname;</productname> может предоставить динамическую информацию о том, что происходит в системе прямо сейчас, в частности, сообщить, какие именно команды выполняются другими серверными процессами и какие другие соединения существуют в системе. Эта возможность не зависит от процесса сборщика.</para>
+
+ <sect2 id="monitoring-stats-setup">
+  <title>Конфигурация системы сбора статистики</title>
+
+  <para>Поскольку сбор статистики несколько увеличивает накладные расходы при выполнении запроса, есть возможность настроить СУБД так, чтобы выполнять или не выполнять сбор статистической информации. Это контролируется конфигурационными параметрами, которые обычно устанавливаются в файле <filename>postgresql.conf</filename>. (Подробно установка конфигурационных параметров описывается в <xref remap="6" linkend="runtime-config"/>.)</para>
+
+  <para>Параметр <xref linkend="guc-track-activities"/> включает мониторинг текущих команд, выполняемой любым серверным процессом.</para>
+
+  <para>Параметр <xref linkend="guc-track-counts"/> определяет необходимость сбора статистики по обращениям к таблицам и индексам.</para>
+
+  <para>Параметр <xref linkend="guc-track-functions"/> включает отслеживание использования пользовательских функций.</para>
+
+  <para>Параметр <xref linkend="guc-track-io-timing"/> включает мониторинг времени чтения и записи блоков.</para>
+
+  <para>Обычно эти параметры устанавливаются в <filename>postgresql.conf</filename>, поэтому они применяются ко всем серверным процессам, однако, используя команду <xref linkend="sql-set"/>, их можно включать и выключать в отдельных сессиях. (Для того чтобы обычные пользователи не скрывали свою работу от администратора СУБД, изменять эти параметры с помощью команды <command>SET</command> могут только суперпользователи.)</para>
+
+  <para>Сборщик статистики использует временные файлы для передачи собранной информации другим процессам <productname>&productname;</productname>. Имя каталога, в котором хранятся эти файлы, задаётся параметром <xref linkend="guc-stats-temp-directory"/>, по умолчанию он называется <filename>pg_stat_tmp</filename>. Для повышения производительности <varname>stats_temp_directory</varname> может указывать на каталог, расположенный в оперативной памяти, что сокращает время физического ввода/вывода. При остановке сервера постоянная копия статистической информации сохраняется в подкаталоге <filename>pg_stat</filename>, поэтому статистику можно хранить на протяжении нескольких перезапусков сервера. Когда восстановление выполняется при запуске сервера (например, после непосредственного завершения работы, катастрофического отказа сервера, и восстановлении на заданную точку во времени), все статистические данные счётчиков сбрасываются.</para>
+
+ </sect2>
+
+ <sect2 id="monitoring-stats-views">
+  <title>Просмотр статистики</title>
+
+  <para>Для просмотра текущего состояния системы предназначены несколько предопределённых представлений, которые перечислены в <xref remap="6" linkend="monitoring-stats-dynamic-views-table"/>. В дополнение к ним есть несколько других представлений, перечисленных в <xref remap="6" linkend="monitoring-stats-views-table"/>, позволяющих просмотреть результаты сбора статистики. Кроме того, на базе нижележащих статистических функций можно создать собственные представления, как описано в <xref remap="6" linkend="monitoring-stats-functions"/>.</para>
+
+  <para>Наблюдая собранные данные в сборщике статистики, важно понимать, что эта информация обновляется не сразу. Каждый серверный процесс передаёт новые статистические данные сборщику статистики непосредственно перед переходом в режим ожидания; то есть запрос или транзакция в процессе выполнения не влияют на отображаемые данные статистики. К тому же, сам сборщик статистики формирует новый отчёт не чаще, чем раз в <varname>PGSTAT_STAT_INTERVAL</varname> миллисекунд (500 мс, если этот параметр не изменялся при установке сервера). Так что отображаемая информация отстаёт от того, что происходит в настоящий момент. Однако информация о текущем запросе, собираемая с параметром <varname>track_activities</varname>, всегда актуальна.</para>
+
+  <para>Ещё одним важным моментом является то, что когда в серверном процессе запрашивают какую-либо статистику, сначала он получает наиболее свежий моментальный снимок от сборщика статистики и затем до окончания текущей транзакции использует этот снимок для всех статистических представлений и функций. Так что на протяжении одной транзакции статистическая информация меняться не будет. Подобным же образом информация о текущих запросах во всех сессиях собирается в тот момент, когда она впервые запрашивается в рамках транзакции, и эта же самая информация будет отображаться на протяжении всей транзакции. Это не ошибка, а полезное свойство СУБД, поскольку оно позволяет выполнять запросы к статистическим данным и сравнивать результаты, не беспокоясь о том, что статистические данные изменяются. Но если для каждого запроса вам нужны новые результаты, то их следует выполнять вне любых транзакционных блоков. Или же можно вызывать функцию <function>pg_stat_clear_snapshot</function>(), которая сбросит ранее полученный снимок статистики в текущей транзакции (если он был). При следующем обращении к статистической информации будет сформирован новый моментальный снимок.</para>
+
+  <para>Через представления <structname>pg_stat_xact_all_tables</structname>, <structname>pg_stat_xact_sys_tables</structname>, <structname>pg_stat_xact_user_tables</structname>, и <structname>pg_stat_xact_user_functions</structname> транзакции также доступна её собственная статистика (ещё не переданная сборщику статистики). Данные в этих представлениях ведут себя не так, как описано выше; наоборот, в течение транзакции они постоянно обновляются.</para>
+
+  <table id="monitoring-stats-dynamic-views-table">
+   <title>Динамические статистические представления</title>
+
+   <tgroup cols="2">
+    <thead>
+     <row>
+      <entry>Имя представления</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry>
+       <structname>pg_stat_activity</structname>
+       <indexterm><primary>pg_stat_activity</primary></indexterm>
+      </entry>
+      <entry>Одна строка для каждого серверного процесса c информацией по текущей активности процесса, такой как состояние и текущий запрос. За подробностями обратитесь к <xref remap="3" linkend="pg-stat-activity-view"/>.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_replication</structname><indexterm><primary>pg_stat_replication</primary></indexterm></entry>
+      <entry>По одной строке для каждого процесса-передатчика WAL со статистикой по репликации на резервном сервере, к которому подключён этот процесс. За подробностями обратитесь к <xref remap="3" linkend="pg-stat-replication-view"/>.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_wal_receiver</structname><indexterm><primary>pg_stat_wal_receiver</primary></indexterm></entry>
+      <entry>Только одна строка со статистикой приёмника WAL, полученной с сервера, на котором работает приёмник. За подробностями обратитесь к <xref remap="3" linkend="pg-stat-wal-receiver-view"/>.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_ssl</structname><indexterm><primary>pg_stat_ssl</primary></indexterm></entry>
+      <entry>Одна строка для каждого подключения (обычного и реплицирующего), в которой показывается информация об использовании SSL для данного подключения. Подробности описаны в <xref remap="6" linkend="pg-stat-ssl-view"/>.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_progress_vacuum</structname><indexterm><primary>pg_stat_progress_vacuum</primary></indexterm></entry>
+      <entry>По одной строке с текущим состоянием для каждого обслуживающего процесса (включая рабочие процессы автоочистки), в котором работает <command>VACUUM</command>. См. <xref remap="4" linkend="vacuum-progress-reporting"/>.</entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+  <table id="monitoring-stats-views-table">
+   <title>Представления собранной статистики</title>
+
+   <tgroup cols="2">
+    <thead>
+     <row>
+      <entry>Имя представления</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><structname>pg_stat_archiver</structname><indexterm><primary>pg_stat_archiver</primary></indexterm></entry>
+      <entry>Только одна строка со статистикой о работе активности процесса архивации WAL. Более подробно смотрите <xref linkend="pg-stat-archiver-view"/>.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_bgwriter</structname><indexterm><primary>pg_stat_bgwriter</primary></indexterm></entry>
+      <entry>Только одна строка со статистикой о работе фонового процесса записи. Более подробно смотрите <xref linkend="pg-stat-bgwriter-view"/>.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_database</structname><indexterm><primary>pg_stat_database</primary></indexterm></entry>
+      <entry>Одна строка для каждой базы данных со статистикой на уровне базы. Более подробно смотрите <xref linkend="pg-stat-database-view"/>.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_database_conflicts</structname><indexterm><primary>pg_stat_database_conflicts</primary></indexterm></entry>
+      <entry>По одной строке на каждую базу данных со статистикой по отменам запросов, выполненным вследствие конфликта с процессами восстановления на резервных серверах. Более подробно смотрите <xref linkend="pg-stat-database-conflicts-view"/>.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_all_tables</structname><indexterm><primary>pg_stat_all_tables</primary></indexterm></entry>
+      <entry>По одной строке на каждую таблицу в текущей базе данных со статистикой по обращениям к этой таблице. Более подробно смотрите <xref linkend="pg-stat-all-tables-view"/>.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_sys_tables</structname><indexterm><primary>pg_stat_sys_tables</primary></indexterm></entry>
+      <entry>Аналогично <structname>pg_stat_all_tables</structname>, за исключением того, что отображаются только системные таблицы.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_user_tables</structname><indexterm><primary>pg_stat_user_tables</primary></indexterm></entry>
+      <entry>Аналогично <structname>pg_stat_all_tables</structname>, за исключением того, что отображаются только пользовательские таблицы.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_xact_all_tables</structname><indexterm><primary>pg_stat_xact_all_tables</primary></indexterm></entry>
+      <entry>Подобно <structname>pg_stat_all_tables</structname>, но подсчитывает действия, выполненные в текущей транзакции к настоящему моменту (которые ещё <emphasis>не</emphasis> вошли в <structname>pg_stat_all_tables</structname> и связанные представления). Столбцы для числа живых и мёртвых строк, а также количества операций очистки и сбора статистики, в этом представлении отсутствуют.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_xact_sys_tables</structname><indexterm><primary>pg_stat_xact_sys_tables</primary></indexterm></entry>
+      <entry>Аналогично <structname>pg_stat_xact_all_tables</structname>, за исключением того, что отображаются только системные таблицы.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_xact_user_tables</structname><indexterm><primary>pg_stat_xact_user_tables</primary></indexterm></entry>
+      <entry>Аналогично <structname>pg_stat_xact_all_tables</structname>, за исключением того, что отображаются только пользовательские таблицы.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_all_indexes</structname><indexterm><primary>pg_stat_all_indexes</primary></indexterm></entry>
+      <entry>По одной строке для каждого индекса в текущей базе данных со статистикой по обращениям к этому индексу. Более подробно смотрите <xref linkend="pg-stat-all-indexes-view"/>.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_sys_indexes</structname><indexterm><primary>pg_stat_sys_indexes</primary></indexterm></entry>
+      <entry>Аналогично <structname>pg_stat_all_indexes</structname>, за исключением того, что показываются только индексы по системным таблицам.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_user_indexes</structname><indexterm><primary>pg_stat_user_indexes</primary></indexterm></entry>
+      <entry>Аналогично <structname>pg_stat_all_indexes</structname>, за исключением того, что показываются только индексы по пользовательским таблицам.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_statio_all_tables</structname><indexterm><primary>pg_statio_all_tables</primary></indexterm></entry>
+      <entry>По одной строке для каждой таблицы в текущей базе данных со статистикой по операциям ввода/вывода для этой таблицы. Более подробно смотрите <xref linkend="pg-statio-all-tables-view"/>.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_statio_sys_tables</structname><indexterm><primary>pg_statio_sys_tables</primary></indexterm></entry>
+      <entry>Аналогично <structname>pg_statio_all_tables</structname>, за исключением того, что показываются только системные таблицы.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_statio_user_tables</structname><indexterm><primary>pg_statio_user_tables</primary></indexterm></entry>
+      <entry>Аналогично <structname>pg_statio_all_tables</structname>, за исключением того, что показываются только пользовательские таблицы.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_statio_all_indexes</structname><indexterm><primary>pg_statio_all_indexes</primary></indexterm></entry>
+      <entry>По одной строке для каждого индекса в текущей базе данных со статистикой по операциям ввода/вывода для этого индекса. Более подробно смотрите <xref linkend="pg-statio-all-indexes-view"/>.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_statio_sys_indexes</structname><indexterm><primary>pg_statio_sys_indexes</primary></indexterm></entry>
+      <entry>Аналогично <structname>pg_statio_all_indexes</structname>, за исключением того, что показываются только индексы по системным таблицам.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_statio_user_indexes</structname><indexterm><primary>pg_statio_user_indexes</primary></indexterm></entry>
+      <entry>Аналогично <structname>pg_statio_all_indexes</structname>, за исключением того, что показываются только индексы по пользовательским таблицам.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_statio_all_sequences</structname><indexterm><primary>pg_statio_all_sequences</primary></indexterm></entry>
+     <entry>По одной строке для каждой последовательности в текущей базе данных со статистикой по операциям ввода/вывода для этой последовательности. Более подробно смотрите <xref linkend="pg-statio-all-sequences-view"/>.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_statio_sys_sequences</structname><indexterm><primary>pg_statio_sys_sequences</primary></indexterm></entry>
+      <entry>Аналогично <structname>pg_statio_all_sequences</structname>, за исключением того, что показываются только системные последовательности. (В настоящее время системных последовательностей нет, поэтому это представление всегда пусто.)</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_statio_user_sequences</structname><indexterm><primary>pg_statio_user_sequences</primary></indexterm></entry>
+      <entry>Аналогично <structname>pg_statio_all_sequences</structname>, за исключением того, что показываются только пользовательские последовательности.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_user_functions</structname><indexterm><primary>pg_stat_user_functions</primary></indexterm></entry>
+      <entry>По одной строке для каждой отслеживаемой функции со статистикой по выполнениям этой функции. Более подробно смотрите <xref linkend="pg-stat-user-functions-view"/>.</entry>
+     </row>
+
+     <row>
+      <entry><structname>pg_stat_xact_user_functions</structname><indexterm><primary>pg_stat_xact_user_functions</primary></indexterm></entry>
+      <entry>Аналогично <structname>pg_stat_user_functions</structname>, однако подсчитываются только вызовы функций, выполненные в текущей транзакции (которые ещё <emphasis>не</emphasis> были включены в <structname>pg_stat_user_functions</structname>).</entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>Статистика по отдельным индексам особенно полезна для определения того, какие индексы используются и насколько они эффективны.</para>
+
+  <para>Представления <structname>pg_statio_</structname> полезны, прежде всего, для определения эффективности буферного кеша. Если количество фактических дисковых чтений существенно меньше количества чтений из буферного кеша, то это означает, что кеш справляется с большинством запросов на чтение без обращения к ядру. Однако эта статистика не даёт полной картины: <productname>&productname;</productname> обрабатывает дисковый ввод/вывод так, что данные, не находящиеся в буферном кеше <productname>&productname;</productname>, могут все ещё располагаться в кеше ввода/вывода ядра, и, следовательно, для их получения физическое чтение может не использоваться. Для получения более детальной информации о процессе ввода/вывода в <productname>&productname;</productname> рекомендуется использовать сборщик статистики <productname>&productname;</productname> в сочетании с утилитами операционной системы, которые дают более полное представление о том, как ядро осуществляет ввод/вывод.</para>
+
+
+  <table id="pg-stat-activity-view" xreflabel="pg_stat_activity">
+   <title>Представление <structname>pg_stat_activity</structname></title>
+
+   <tgroup cols="3">
+    <thead>
+    <row>
+      <entry>Столбец</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+   <tbody>
+    <row>
+     <entry><structfield>datid</structfield></entry>
+     <entry><type>oid</type></entry>
+     <entry>OID базы данных, к которой подключён этот серверный процесс</entry>
+    </row>
+    <row>
+     <entry><structfield>datname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя базы данных, к которой подключён этот серверный процесс</entry>
+    </row>
+    <row>
+     <entry><structfield>pid</structfield></entry>
+     <entry><type>integer</type></entry>
+     <entry>Идентификатор процесса этого серверного процесса</entry>
+    </row>
+    <row>
+     <entry><structfield>usesysid</structfield></entry>
+     <entry><type>oid</type></entry>
+     <entry>OID пользователя, подключённого к этому серверному процессу</entry>
+    </row>
+    <row>
+     <entry><structfield>usename</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя пользователя, подключённого к этому серверному процессу</entry>
+    </row>
+    <row>
+     <entry><structfield>application_name</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Название приложения, подключённого к этому серверному процессу</entry>
+    </row>
+    <row>
+     <entry><structfield>client_addr</structfield></entry>
+     <entry><type>inet</type></entry>
+     <entry>IP-адрес клиента, подключённого к этому серверному процессу. Значение null в этом поле означает, что клиент подключён через сокет Unix на стороне сервера или что это внутренний процесс, например, автоочистка.</entry>
+    </row>
+    <row>
+     <entry><structfield>client_hostname</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Имя компьютера для подключённого клиента, получаемое в результате обратного поиска в DNS по <structfield>client_addr</structfield>. Это поле будет отлично от null только в случае соединений по IP и только при включённом режиме <xref linkend="guc-log-hostname"/>.</entry>
+    </row>
+    <row>
+     <entry><structfield>client_port</structfield></entry>
+     <entry><type>integer</type></entry>
+     <entry>Номер TCP-порта, который используется клиентом для соединения с этим серверным процессом, или <literal>-1</literal>, если используется сокет Unix</entry>
+    </row>
+    <row>
+     <entry><structfield>backend_start</structfield></entry>
+     <entry><type>timestamp with time zone</type></entry>
+     <entry>Время запуска процесса, т. е. время, когда клиент подсоединился к серверу</entry>
+    </row>
+    <row>
+     <entry><structfield>xact_start</structfield></entry>
+     <entry><type>timestamp with time zone</type></entry>
+     <entry>Время начала текущей транзакции в этом процессе или null при отсутствии активной транзакции. Если текущий запрос был первым в своей транзакции, то значение в этом столбце совпадает со значением столбца <structfield>query_start</structfield>.</entry>
+    </row>
+    <row>
+     <entry><structfield>query_start</structfield></entry>
+     <entry><type>timestamp with time zone</type></entry>
+     <entry>Время начала выполнения активного в данный момент запроса, или, если <structfield>state</structfield> не <literal>active</literal>, то время начала выполнения последнего запроса</entry>
+    </row>
+    <row>
+     <entry><structfield>state_change</structfield></entry>
+     <entry><type>timestamp with time zone</type></entry>
+     <entry>Время последнего изменения состояния (поля <structfield>state</structfield>)</entry>
+    </row>
+     <row>
+      <entry><structfield>wait_event_type</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry>Тип события, которого ждёт обслуживающий процесс, если это имеет место; в противном случае — NULL. Возможные значения: <itemizedlist>
+        <listitem>
+         <para><literal>LWLockNamed</literal>: Обслуживающий процесс ожидает определённую именованную лёгкую блокировку. Такие блокировки защищают определённые структуры данных в разделяемой памяти. Имя блокировки будет показывается в <literal>wait_event</literal>.</para>
+        </listitem>
+        <listitem>
+         <para><literal>LWLockTranche</literal>: Обслуживающий процесс ожидает одну из группы связанных лёгких блокировок. Все блокировки в этой группе выполняют схожие функции; общее предназначение блокировок в этой группе показывается в <literal>wait_event</literal>.</para>
+        </listitem>
+        <listitem>
+         <para><literal>Lock</literal>: Обслуживающий процесс ожидает тяжёлую блокировку. Тяжёлые блокировки, также называемые блокировками менеджера блокировок или просто блокировками, в основном защищают объекты уровня SQL, такие как таблицы. Однако они также применяются для взаимоисключающего выполнения некоторых внутренних операций, например, для расширения отношений. Тип ожидаемой блокировки показывается в <literal>wait_event</literal>.</para>
+        </listitem>
+        <listitem>
+         <para><literal>BufferPin</literal>: Серверный процесс ожидает доступа к буферу данных, когда никакой другой процесс не обращается к этому буферу. Ожидание закрепления буфера может растягиваться, если другой процесс удерживает открытый курсор, который читал данные из нужного буфера.</para>
+        </listitem>
+       </itemizedlist></entry>
+     </row>
+    <row>
+     <entry><structfield>wait_event</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Имя ожидаемого события, если обслуживающий процесс находится в состоянии ожидания, а в противном случае — NULL. За подробностями обратитесь к <xref remap="3" linkend="wait-event-table"/>.</entry>
+    </row>
+    <row>
+     <entry><structfield>state</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Общее текущее состояние этого серверного процесса. Возможные значения: <itemizedlist>
+         <listitem>
+          <para><literal>active</literal>: серверный процесс выполняет запрос.</para>
+         </listitem>
+         <listitem>
+          <para><literal>idle</literal>: серверный процесс ожидает новой команды от клиента.</para>
+         </listitem>
+         <listitem>
+          <para><literal>idle in transaction</literal>: серверный процесс находится внутри транзакции, но в настоящее время не выполняет никакой запрос.</para>
+         </listitem>
+         <listitem>
+          <para><literal>idle in transaction (aborted)</literal>: Это состояние подобно <literal>idle in transaction</literal>, за исключением того, что один из операторов в транзакции вызывал ошибку.</para>
+         </listitem>
+         <listitem>
+          <para><literal>fastpath function call</literal>: серверный процесс выполняет fast-path функцию.</para>
+         </listitem>
+         <listitem>
+           <para><literal>disabled</literal>: Это состояние отображается для серверных процессов, у которых параметр <xref linkend="guc-track-activities"/> отключён.</para>
+         </listitem>
+       </itemizedlist></entry>
+    </row>
+    <row>
+     <entry><structfield>backend_xid</structfield></entry>
+     <entry><type>xid</type></entry>
+     <entry>Идентификатор верхнего уровня транзакции этого серверного процесса или любой другой.</entry>
+    </row>
+    <row>
+     <entry><structfield>backend_xmin</structfield></entry>
+     <entry><type>xid</type></entry>
+     <entry>текущая граница <literal>xmin</literal> для серверного процесса.</entry>
+    </row>
+    <row>
+     <entry><structfield>query</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Текст последнего запроса этого серверного процесса. Если <structfield>state</structfield> имеет значение <literal>active</literal>, то в этом поле отображается запрос, который выполняется в настоящий момент. Если процесс находится в любом другом состоянии, то в этом поле отображается последний выполненный запрос.</entry>
+    </row>
+   </tbody>
+   </tgroup>
+  </table>
+
+  <para>В представлении <structname>pg_stat_activity</structname> для каждого серверного процесса будет присутствовать по одной строке с информацией, относящейся к текущей деятельности этого процесса.</para>
+
+  <note>
+   <para>Значения в столбцах <structfield>wait_event</structfield> и <structfield>state</structfield> не зависят друг от друга. Если обслуживающий процесс находится в состоянии <literal>active</literal> (активен), он может ожидать какое-то событие, или не ожидать никакое. Если состояние <literal>active</literal> и поле <structfield>wait_event</structfield> содержит не NULL, это означает, что запрос выполняется, но заблокирован чем-то в системе.</para>
+  </note>
+
+  <table id="wait-event-table">
+   <title>Описание <structname>wait_event</structname></title>
+
+    <tgroup cols="3">
+      <thead>
+       <row>
+        <entry>Тип события ожидания</entry>
+        <entry>Название события ожидания</entry>
+        <entry>Описание</entry>
+       </row>
+      </thead>
+
+      <tbody>
+       <row>
+        <entry morerows="41"><literal>LWLockNamed</literal></entry>
+        <entry><literal>ShmemIndexLock</literal></entry>
+        <entry>Ожидание при поиске или выделении области в разделяемой памяти.</entry>
+       </row>
+       <row>
+        <entry><literal>OidGenLock</literal></entry>
+        <entry>Ожидание при выделении или назначении OID.</entry>
+       </row>
+        <row>
+         <entry><literal>XidGenLock</literal></entry>
+         <entry>Ожидание при выделении или назначении идентификатора транзакции.</entry>
+        </row>
+        <row>
+         <entry><literal>ProcArrayLock</literal></entry>
+         <entry>Ожидание при получении снимка или очистке идентификатора транзакции в конце транзакции.</entry>
+        </row>
+        <row>
+         <entry><literal>SInvalReadLock</literal></entry>
+         <entry>Ожидание при получении или удалении из общей очереди сообщений аннулирования.</entry>
+        </row>
+        <row>
+         <entry><literal>SInvalWriteLock</literal></entry>
+         <entry>Ожидание при добавлении в общую очередь сообщения аннулирования.</entry>
+        </row>
+        <row>
+         <entry><literal>WALBufMappingLock</literal></entry>
+         <entry>Ожидание при замене страницы в буферах WAL.</entry>
+        </row>
+        <row>
+         <entry><literal>WALWriteLock</literal></entry>
+         <entry>Ожидание при записи буферов WAL на диск.</entry>
+        </row>
+        <row>
+         <entry><literal>ControlFileLock</literal></entry>
+         <entry>Ожидание при чтении или изменении управляющего файла либо при создании нового файла WAL.</entry>
+        </row>
+        <row>
+         <entry><literal>CheckpointLock</literal></entry>
+         <entry>Ожидание при выполнении контрольной точки.</entry>
+        </row>
+        <row>
+         <entry><literal>CLogControlLock</literal></entry>
+         <entry>Ожидание при чтении или изменении состояния транзакции.</entry>
+        </row>
+        <row>
+         <entry><literal>SubtransControlLock</literal></entry>
+         <entry>Ожидание при чтении или изменении информации о подтранзакции.</entry>
+        </row>
+        <row>
+         <entry><literal>MultiXactGenLock</literal></entry>
+         <entry>Ожидание при чтении или изменении общего состояния мультитранзакций.</entry>
+        </row>
+        <row>
+         <entry><literal>MultiXactOffsetControlLock</literal></entry>
+         <entry>Ожидание при чтении или изменении смещений мультитранзакций.</entry>
+        </row>
+        <row>
+         <entry><literal>MultiXactMemberControlLock</literal></entry>
+         <entry>Ожидание при чтении или изменении членов мультитранзакций.</entry>
+        </row>
+        <row>
+         <entry><literal>RelCacheInitLock</literal></entry>
+         <entry>Ожидание при чтении или записи файла инициализации кеша отношения.</entry>
+        </row>
+        <row>
+         <entry><literal>CheckpointerCommLock</literal></entry>
+         <entry>Ожидание при управлении запросами fsync.</entry>
+        </row>
+        <row>
+         <entry><literal>TwoPhaseStateLock</literal></entry>
+         <entry>Ожидание при чтении или изменении состояния подготовленных транзакций.</entry>
+        </row>
+        <row>
+         <entry><literal>TablespaceCreateLock</literal></entry>
+         <entry>Ожидание при создании или удалении табличного пространства.</entry>
+        </row>
+        <row>
+         <entry><literal>BtreeVacuumLock</literal></entry>
+          <entry>Ожидание при чтении или изменении информации, связанной с очисткой, для индекса-B-дерева.</entry>
+        </row>
+        <row>
+         <entry><literal>AddinShmemInitLock</literal></entry>
+         <entry>Ожидание при управлении выделением блоков в общей памяти.</entry>
+        </row>
+        <row>
+         <entry><literal>AutovacuumLock</literal></entry>
+         <entry>Ожидание в рабочем процессе или процедуре запуска автоочистки при изменении или чтении текущего состояния рабочих процессов автоочистки.</entry>
+        </row>
+        <row>
+         <entry><literal>AutovacuumScheduleLock</literal></entry>
+         <entry>Ожидание при подтверждении, что таблица, выбранная для очистки, всё ещё нуждается в очистке.</entry>
+        </row>
+        <row>
+         <entry><literal>SyncScanLock</literal></entry>
+         <entry>Ожидание при получении начального положения сканирования таблицы для синхронизированного сканирования.</entry>
+        </row>
+        <row>
+         <entry><literal>RelationMappingLock</literal></entry>
+         <entry>Ожидание при изменении в файле сопоставления отношений, используемого для хранения связей файловых узлов с каталогом БД.</entry>
+        </row>
+        <row>
+         <entry><literal>AsyncCtlLock</literal></entry>
+         <entry>Ожидание при чтении или изменении общего состояния уведомлений.</entry>
+        </row>
+        <row>
+         <entry><literal>AsyncQueueLock</literal></entry>
+          <entry>Ожидание при чтении или изменении сообщений уведомлений.</entry>
+        </row>
+        <row>
+         <entry><literal>SerializableXactHashLock</literal></entry>
+         <entry>Ожидание при получении или сохранении информации о сериализуемых транзакциях.</entry>
+        </row>
+        <row>
+         <entry><literal>SerializableFinishedListLock</literal></entry>
+         <entry>Ожидание при обращении к списку завершённых сериализуемых транзакций.</entry>
+        </row>
+        <row>
+         <entry><literal>SerializablePredicateLockListLock</literal></entry>
+         <entry>Ожидание при выполнении операции со списком блокировок, удерживаемых сериализуемыми транзакциями.</entry>
+        </row>
+        <row>
+         <entry><literal>OldSerXidLock</literal></entry>
+         <entry>Ожидание при чтении или записи информации о конфликтующих сериализуемых транзакциях.</entry>
+        </row>
+        <row>
+         <entry><literal>SyncRepLock</literal></entry>
+         <entry>Ожидание при чтении или изменении сведений о синхронных репликах.</entry>
+        </row>
+        <row>
+         <entry><literal>BackgroundWorkerLock</literal></entry>
+         <entry>Ожидание при чтении или изменении состояния фонового рабочего процесса.</entry>
+        </row>
+        <row>
+         <entry><literal>DynamicSharedMemoryControlLock</literal></entry>
+         <entry>Ожидание при чтении или изменении состояния динамической общей памяти.</entry>
+        </row>
+        <row>
+         <entry><literal>AutoFileLock</literal></entry>
+         <entry>Ожидание при изменении файла <filename>postgresql.auto.conf</filename>.</entry>
+        </row>
+        <row>
+         <entry><literal>ReplicationSlotAllocationLock</literal></entry>
+         <entry>Ожидание при выделении или освобождении слота репликации.</entry>
+        </row>
+        <row>
+         <entry><literal>ReplicationSlotControlLock</literal></entry>
+         <entry>Ожидание при чтении или изменении состояния слота репликации.</entry>
+        </row>
+        <row>
+         <entry><literal>CommitTsControlLock</literal></entry>
+         <entry>Ожидание при чтении или изменении времени фиксирования транзакции.</entry>
+        </row>
+        <row>
+         <entry><literal>CommitTsLock</literal></entry>
+         <entry>Ожидание при чтении или изменении последнего значения, заданного в качестве времени транзакции.</entry>
+        </row>
+        <row>
+         <entry><literal>ReplicationOriginLock</literal></entry>
+         <entry>Ожидание при подготовке, удалении или использовании источника репликации.</entry>
+        </row>
+        <row>
+         <entry><literal>MultiXactTruncationLock</literal></entry>
+         <entry>Ожидание при чтении или очистке информации мультитранзакций.</entry>
+        </row>
+        <row>
+         <entry><literal>OldSnapshotTimeMapLock</literal></entry>
+         <entry>Ожидание при чтении или изменении информации о старом снимке.</entry>
+        </row>
+        <row>
+         <entry morerows="15"><literal>LWLockTranche</literal></entry>
+         <entry><literal>clog</literal></entry>
+         <entry>Ожидание при вводе/выводе с буфером clog (буфер состояния транзакций).</entry>
+        </row>
+        <row>
+         <entry><literal>commit_timestamp</literal></entry>
+         <entry>Ожидание при вводе/выводе с буфером времени фиксирования транзакций.</entry>
+        </row>
+        <row>
+         <entry><literal>subtrans</literal></entry>
+         <entry>Ожидание при вводе/выводе с буфером подтранзакций.</entry>
+        </row>
+        <row>
+         <entry><literal>multixact_offset</literal></entry>
+         <entry>Ожидание при вводе/выводе с буфером смещений мультитранзакций.</entry>
+        </row>
+        <row>
+         <entry><literal>multixact_member</literal></entry>
+         <entry>Ожидание при вводе/выводе с буфером multixact_member.</entry>
+        </row>
+        <row>
+         <entry><literal>async</literal></entry>
+         <entry>Ожидание при вводе/выводе с буфером асинхронных сообщений (уведомлений).</entry>
+        </row>
+        <row>
+         <entry><literal>oldserxid</literal></entry>
+         <entry>Ожидание при вводе/выводе с буфером oldserxid.</entry>
+        </row>
+        <row>
+         <entry><literal>wal_insert</literal></entry>
+         <entry>Ожидание при добавлении записей WAL в буфер в памяти.</entry>
+        </row>
+        <row>
+         <entry><literal>buffer_content</literal></entry>
+         <entry>Ожидание при чтении или записи страницы данных в памяти.</entry>
+        </row>
+        <row>
+         <entry><literal>buffer_io</literal></entry>
+         <entry>Ожидание при вводе/выводе, связанном со страницей данных.</entry>
+        </row>
+        <row>
+         <entry><literal>replication_origin</literal></entry>
+         <entry>Ожидание при чтении или изменении состояния репликации.</entry>
+        </row>
+        <row>
+         <entry><literal>replication_slot_io</literal></entry>
+         <entry>Ожидание при вводе/выводе со слотом репликации.</entry>
+        </row>
+        <row>
+         <entry><literal>proc</literal></entry>
+         <entry>Ожидание при чтении или изменении информации о блокировках по быстрому пути.</entry>
+        </row>
+        <row>
+         <entry><literal>buffer_mapping</literal></entry>
+         <entry>Ожидание при связывании блока данных с буфером в пуле буферов.</entry>
+        </row>
+        <row>
+         <entry><literal>lock_manager</literal></entry>
+         <entry>Ожидание при добавлении или обращении к блокировкам обслуживающих процессов либо ожидание входа или выхода из группы блокировок (используется в параллельных запросах).</entry>
+        </row>
+        <row>
+         <entry><literal>predicate_lock_manager</literal></entry>
+         <entry>Ожидание при добавлении или обращении к информации о предикатных блокировках.</entry>
+        </row>
+        <row>
+         <entry morerows="9"><literal>Lock</literal></entry>
+         <entry><literal>relation</literal></entry>
+         <entry>Ожидание при запросе блокировки для отношения.</entry>
+        </row>
+        <row>
+         <entry><literal>extend</literal></entry>
+         <entry>Ожидание при расширении отношения.</entry>
+        </row>
+        <row>
+         <entry><literal>page</literal></entry>
+         <entry>Ожидание при запросе блокировки для страницы отношения.</entry>
+        </row>
+        <row>
+         <entry><literal>tuple</literal></entry>
+         <entry>Ожидание при запросе блокировки для кортежа.</entry>
+        </row>
+        <row>
+         <entry><literal>transactionid</literal></entry>
+         <entry>Ожидание завершения транзакции.</entry>
+        </row>
+        <row>
+         <entry><literal>virtualxid</literal></entry>
+         <entry>Ожидание при запросе блокировки виртуального xid.</entry>
+        </row>
+        <row>
+         <entry><literal>speculative token</literal></entry>
+         <entry>Ожидание при запросе блокировки спекулятивного добавления.</entry>
+        </row>
+        <row>
+         <entry><literal>object</literal></entry>
+         <entry>Ожидание при запросе блокировки для нереляционного объекта БД.</entry>
+        </row>
+        <row>
+         <entry><literal>userlock</literal></entry>
+         <entry>Ожидание при запросе пользовательской блокировки.</entry>
+        </row>
+        <row>
+         <entry><literal>advisory</literal></entry>
+         <entry>Ожидание при запросе рекомендательной пользовательской блокировки.</entry>
+        </row>
+        <row>
+         <entry><literal>BufferPin</literal></entry>
+         <entry><literal>BufferPin</literal></entry>
+         <entry>Ожидание при закреплении буфера.</entry>
+        </row>
+      </tbody>
+     </tgroup>
+    </table>
+
+   <note>
+    <para>Для траншей, регистрируемых расширениями, в поле <structfield>wait_event</structfield> выводится имя, указываемое расширением. Пользователь вполне может зарегистрировать транш и в обслуживающем процессе (воспользовавшись динамической общей памятью), в результате чего другие процессы не получат доступа к этой информации; в таких случаях в этом поле выводится <literal>extension</literal>.</para>
+   </note>
+
+   <para>Следующая команда показывает, как можно просмотреть события ожидания: <programlisting>SELECT pid, wait_event_type, wait_event FROM pg_stat_activity WHERE wait_event is NOT NULL;
+ pid  | wait_event_type |  wait_event
+------+-----------------+---------------
+ 2540 | Lock            | relation
+ 6644 | LWLockNamed     | ProcArrayLock
+(2 rows)</programlisting></para>
+
+  <table id="pg-stat-replication-view" xreflabel="pg_stat_replication">
+   <title>Представление <structname>pg_stat_replication</structname></title>
+   <tgroup cols="3">
+    <thead>
+    <row>
+      <entry>Столбец</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+   <tbody>
+    <row>
+     <entry><structfield>pid</structfield></entry>
+     <entry><type>integer</type></entry>
+     <entry>Идентификатор процесса-передатчика WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>usesysid</structfield></entry>
+     <entry><type>oid</type></entry>
+     <entry>OID пользователя, подключённого к этому процессу-передатчику WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>usename</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя пользователя, подключённого к этому процессу-передатчику WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>application_name</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Имя приложения, которое подключено к этому процессу-передатчику WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>client_addr</structfield></entry>
+     <entry><type>inet</type></entry>
+     <entry>IP-адрес клиента, подключённого к этому процессу-передатчику WAL. Значение null в этом поле говорит о том, что клиент подсоединён через сокет Unix на сервере.</entry>
+    </row>
+    <row>
+     <entry><structfield>client_hostname</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Имя компьютера для подключённого клиента, получаемое в результате обратного поиска в DNS по <structfield>client_addr</structfield>. Это поле будет отлично от null только в случае соединений по IP и только при включённом режиме <xref linkend="guc-log-hostname"/>.</entry>
+    </row>
+    <row>
+     <entry><structfield>client_port</structfield></entry>
+     <entry><type>integer</type></entry>
+     <entry>Номер TCP-порта, который используется клиентом для взаимодействия с процессом-передатчиком WAL, или <literal>-1</literal>, если используется сокет Unix</entry>
+    </row>
+    <row>
+     <entry><structfield>backend_start</structfield></entry>
+     <entry><type>timestamp with time zone</type></entry>
+     <entry>Время запуска процесса, т. е. время подключения клиента к этому процессу-передатчику WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>backend_xmin</structfield></entry>
+     <entry><type>xid</type></entry>
+     <entry>Значение <literal>xmin</literal> полученное от резервного сервера при включённом <xref linkend="guc-hot-standby-feedback"/>.</entry>
+    </row>
+    <row>
+     <entry><structfield>state</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Текущее состояние процесса-передатчика WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>sent_location</structfield></entry>
+     <entry><type>pg_lsn</type></entry>
+     <entry>Позиция последней транзакции в журнале транзакций, отправленной по этому соединению</entry>
+    </row>
+    <row>
+     <entry><structfield>write_location</structfield></entry>
+     <entry><type>pg_lsn</type></entry>
+     <entry>Позиция последней транзакции в журнале транзакций, записанной на диск резервным сервером</entry>
+    </row>
+    <row>
+     <entry><structfield>flush_location</structfield></entry>
+     <entry><type>pg_lsn</type></entry>
+     <entry>Позиция последней транзакции в журнале транзакций, сброшенной на диск резервным сервером</entry>
+    </row>
+    <row>
+     <entry><structfield>replay_location</structfield></entry>
+     <entry><type>pg_lsn</type></entry>
+     <entry>Позиция последней транзакции в журнале транзакций, выполненной в этой базе данных на резервном сервере</entry>
+    </row>
+    <row>
+     <entry><structfield>sync_priority</structfield></entry>
+     <entry><type>integer</type></entry>
+     <entry>Приоритет этого резервного сервера для выбора в качестве синхронного резервного</entry>
+    </row>
+    <row>
+     <entry><structfield>sync_state</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Состояние синхронизации для этого резервного сервера</entry>
+    </row>
+   </tbody>
+   </tgroup>
+  </table>
+
+  <para>Представление <structname>pg_stat_replication</structname> для каждого процесса-передатчика WAL будет содержать по одной строке со статистикой о репликации на резервный сервер, к которому подключён этот процесс. В представлении перечисляются только резервные серверы, подключённые напрямую; информация о резервных серверах, подключённых опосредованно, не представлена.</para>
+
+  <table id="pg-stat-wal-receiver-view" xreflabel="pg_stat_wal_receiver">
+   <title>Представление <structname>pg_stat_wal_receiver</structname></title>
+   <tgroup cols="3">
+    <thead>
+    <row>
+      <entry>Столбец</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+   <tbody>
+    <row>
+     <entry><structfield>pid</structfield></entry>
+     <entry><type>integer</type></entry>
+     <entry>Идентификатор процесса WAL-приёмника</entry>
+    </row>
+    <row>
+     <entry><structfield>status</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Состояние активности процесса WAL-приёмника</entry>
+    </row>
+    <row>
+     <entry><structfield>receive_start_lsn</structfield></entry>
+     <entry><type>pg_lsn</type></entry>
+     <entry>Первая позиция в журнале транзакции в момент запуска приёмника WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>receive_start_tli</structfield></entry>
+     <entry><type>integer</type></entry>
+     <entry>Первый номер линии времени в момент запуска приёмника WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>received_lsn</structfield></entry>
+     <entry><type>pg_lsn</type></entry>
+     <entry>Последняя позиция в журнале транзакций, уже полученная и сброшенная на диск; начальным значением этого поля будет первая позиция в журнале в момент запуска приёмника WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>received_tli</structfield></entry>
+     <entry><type>integer</type></entry>
+     <entry>Номер линии времени последней позиции в журнале транзакции, уже полученной и сброшенной на диск; начальным значением этого поля будет линия времени первой позиции в момент запуска приёмника WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>last_msg_send_time</structfield></entry>
+     <entry><type>timestamp with time zone</type></entry>
+     <entry>Время отправки последнего сообщения, полученного от изначального передатчика WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>last_msg_receipt_time</structfield></entry>
+     <entry><type>timestamp with time zone</type></entry>
+     <entry>Время поступления последнего сообщения, полученного от изначального передатчика WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>latest_end_lsn</structfield></entry>
+     <entry><type>pg_lsn</type></entry>
+     <entry>Последняя позиция в журнале транзакций, сообщённая изначальному передатчику WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>latest_end_time</structfield></entry>
+     <entry><type>timestamp with time zone</type></entry>
+     <entry>Время, когда последняя позиция в журнале транзакций была сообщена изначальному передатчику WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>slot_name</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Имя слота репликации, используемого этим приёмником WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>conninfo</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Строка подключения, используемая этим приёмником WAL (секретные поля в ней скрыты).</entry>
+    </row>
+   </tbody>
+   </tgroup>
+  </table>
+
+  <para>Представление <structname>pg_stat_wal_receiver</structname> будет иметь только одну строку со статистикой приёмника WAL от сервера, на котором работает приёмник.</para>
+
+  <table id="pg-stat-ssl-view" xreflabel="pg_stat_ssl">
+   <title>Представление <structname>pg_stat_ssl</structname></title>
+   <tgroup cols="3">
+    <thead>
+    <row>
+      <entry>Столбец</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+   <tbody>
+    <row>
+     <entry><structfield>pid</structfield></entry>
+     <entry><type>integer</type></entry>
+     <entry>Идентификатор обслуживающего процесса или процесса, передающего WAL</entry>
+    </row>
+    <row>
+     <entry><structfield>ssl</structfield></entry>
+     <entry><type>boolean</type></entry>
+     <entry>True, если для этого подключения используется SSL</entry>
+    </row>
+    <row>
+     <entry><structfield>version</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Версия SSL либо NULL, если SSL для этого подключения не используется</entry>
+    </row>
+    <row>
+     <entry><structfield>cipher</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Имя применяемого шифра SSL либо NULL, если SSL для этого подключения не используется</entry>
+    </row>
+    <row>
+     <entry><structfield>bits</structfield></entry>
+     <entry><type>integer</type></entry>
+     <entry>Число бит в применяемом алгоритме шифрования либо NULL, если SSL для этого подключения не используется</entry>
+    </row>
+    <row>
+     <entry><structfield>compression</structfield></entry>
+     <entry><type>boolean</type></entry>
+     <entry>True, если применяется сжатие SSL, false в противном случае, либо NULL, если SSL для этого подключения не используется</entry>
+    </row>
+    <row>
+     <entry><structfield>clientdn</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Поле DN (Distinguished Name, Уникальное имя) из используемого клиентского сертификата либо NULL, если клиент не передал сертификат или SSL для этого подключения не используется. Это значение усекается, если поле DN оказывается длиннее <symbol>NAMEDATALEN</symbol> символов (64 символов в стандартной сборке)</entry>
+    </row>
+   </tbody>
+   </tgroup>
+  </table>
+
+  <para>Представление <structname>pg_stat_ssl</structname> содержит по одной строке для каждого обслуживающего процесса и процесса, передающего WAL, и показывает статистику использования SSL для подключений. Его можно соединить с <structname>pg_stat_activity</structname> или <structname>pg_stat_replication</structname> по столбцу <structfield>pid</structfield> и получить дополнительные сведения о подключении.</para>
+
+
+  <table id="pg-stat-archiver-view" xreflabel="pg_stat_archiver">
+   <title>Представление <structname>pg_stat_archiver</structname></title>
+
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Столбец</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><structfield>archived_count</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry>Число файлов WAL, которые были успешно архивированы</entry>
+     </row>
+     <row>
+      <entry><structfield>last_archived_wal</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry>Имя последнего файла WAL успешно архивированного</entry>
+     </row>
+     <row>
+      <entry><structfield>last_archived_time</structfield></entry>
+      <entry><type>timestamp with time zone</type></entry>
+      <entry>Время последней успешной архивации</entry>
+     </row>
+     <row>
+      <entry><structfield>failed_count</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry>Число неудачных попыток архивации файлов WAL</entry>
+     </row>
+     <row>
+      <entry><structfield>last_failed_wal</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry>Имя файла WAL последней неудавшейся архивации</entry>
+     </row>
+     <row>
+      <entry><structfield>last_failed_time</structfield></entry>
+      <entry><type>timestamp with time zone</type></entry>
+      <entry>Время последней неудавшейся архивации</entry>
+     </row>
+     <row>
+      <entry><structfield>stats_reset</structfield></entry>
+      <entry><type>timestamp with time zone</type></entry>
+      <entry>Последнее время сброса этих статистических данных</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>Представление <structname>pg_stat_archiver</structname> всегда будет иметь одну строку, содержащую данные о текущем состоянии процесса архивации кластера.</para>
+
+  <table id="pg-stat-bgwriter-view" xreflabel="pg_stat_bgwriter">
+   <title>Представление <structname>pg_stat_bgwriter</structname></title>
+
+   <tgroup cols="3">
+    <thead>
+    <row>
+      <entry>Столбец</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><structfield>checkpoints_timed</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry>Количество запланированных контрольных точек, которые уже были выполнены</entry>
+     </row>
+     <row>
+      <entry><structfield>checkpoints_req</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry>Количество запрошенных контрольных точек, которые уже были выполнены</entry>
+     </row>
+     <row>
+      <entry><structfield>checkpoint_write_time</structfield></entry>
+      <entry><type>double precision</type></entry>
+      <entry>Общее время, которое было затрачено на этап обработки контрольной точки, в котором файлы записываются на диск, в миллисекундах</entry>
+     </row>
+     <row>
+      <entry><structfield>checkpoint_sync_time</structfield></entry>
+      <entry><type>double precision</type></entry>
+      <entry>Общее время, которое было затрачено на этап обработки контрольной точки, в котором файлы синхронизируются с диском, в миллисекундах</entry>
+     </row>
+     <row>
+      <entry><structfield>buffers_checkpoint</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry>Количество буферов, записанных при выполнении контрольных точек</entry>
+     </row>
+     <row>
+      <entry><structfield>buffers_clean</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry>Количество буферов, записанных фоновым процессом записи</entry>
+     </row>
+     <row>
+      <entry><structfield>maxwritten_clean</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry>Сколько раз фоновый процесс записи останавливал сброс грязных страниц на диск из-за того, что записал слишком много буферов</entry>
+     </row>
+     <row>
+      <entry><structfield>buffers_backend</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry>Количество буферов, записанных самим серверным процессом</entry>
+     </row>
+     <row>
+      <entry><structfield>buffers_backend_fsync</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry>Сколько раз серверному процессу пришлось выполнить <function>fsync</function> самостоятельно (обычно фоновый процесс записи сам обрабатывает эти вызовы, даже когда серверный процесс выполняет запись самостоятельно)</entry>
+     </row>
+     <row>
+      <entry><structfield>buffers_alloc</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry>Количество выделенных буферов</entry>
+     </row>
+     <row>
+      <entry><structfield>stats_reset</structfield></entry>
+      <entry><type>timestamp with time zone</type></entry>
+      <entry>Последнее время сброса этих статистических данных</entry>
+     </row>
+    </tbody>
+    </tgroup>
+  </table>
+
+  <para>В представлении <structname>pg_stat_bgwriter</structname> всегда будет только одна строка, в которой будут представлены общие данные по всему кластеру.</para>
+
+  <table id="pg-stat-database-view" xreflabel="pg_stat_database">
+   <title>Представление <structname>pg_stat_database</structname></title>
+   <tgroup cols="3">
+    <thead>
+    <row>
+      <entry>Столбец</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+   <tbody>
+    <row>
+     <entry><structfield>datid</structfield></entry>
+     <entry><type>oid</type></entry>
+     <entry>OID базы данных</entry>
+    </row>
+    <row>
+     <entry><structfield>datname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя базы данных</entry>
+    </row>
+    <row>
+     <entry><structfield>numbackends</structfield></entry>
+     <entry><type>integer</type></entry>
+     <entry>Количество серверных процессов, в настоящее время подключённых к этой базе данных. Это единственный столбец в этом представлении, значение в котором отражает текущее состояние; все другие столбцы возвращают суммарные значения со времени последнего сброса статистики.</entry>
+    </row>
+    <row>
+     <entry><structfield>xact_commit</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество зафиксированных транзакций в этой базе данных</entry>
+    </row>
+    <row>
+     <entry><structfield>xact_rollback</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество транзакций в этой базе данных, для которых был выполнен откат транзакции</entry>
+    </row>
+    <row>
+     <entry><structfield>blks_read</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество прочитанных дисковых блоков в этой базе данных</entry>
+    </row>
+    <row>
+     <entry><structfield>blks_hit</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Сколько раз дисковые блоки обнаруживались в буферном кеше, так что чтение с диска не потребовалось (в значение входят только случаи обнаружения в буферном кеше &productname;, а не в кеше файловой системы ОС)</entry>
+    </row>
+    <row>
+     <entry><structfield>tup_returned</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество строк, возвращённое запросами в этой базе данных</entry>
+    </row>
+    <row>
+     <entry><structfield>tup_fetched</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество строк, извлечённое запросами в этой базе данных</entry>
+    </row>
+    <row>
+     <entry><structfield>tup_inserted</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество строк, вставленное запросами в этой базе данных</entry>
+    </row>
+    <row>
+     <entry><structfield>tup_updated</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество строк, изменённое запросами в этой базе данных</entry>
+    </row>
+    <row>
+     <entry><structfield>tup_deleted</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество строк, удалённое запросами в этой базе данных</entry>
+    </row>
+    <row>
+     <entry><structfield>conflicts</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество запросов, отменённых из-за конфликта с восстановлением в этой базе данных. (Конфликты происходят только на резервных серверах; более подробно смотрите <xref linkend="pg-stat-database-conflicts-view"/>.)</entry>
+    </row>
+    <row>
+     <entry><structfield>temp_files</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество временных файлов, созданных запросами в этой базе данных. Подсчитываются все временные файлы независимо от причины их создания (например, для сортировки или для хеширования) и независимо от установленного значения <xref linkend="guc-log-temp-files"/></entry>
+    </row>
+    <row>
+     <entry><structfield>temp_bytes</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Общий объём данных, записанных во временные файлы запросами в этой базе данных. Учитываются все временные файлы, вне зависимости от того, по какой причине они созданы и вне зависимости от значения <xref linkend="guc-log-temp-files"/>.</entry>
+    </row>
+    <row>
+     <entry><structfield>deadlocks</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество взаимных блокировок, зафиксированное в этой базе данных</entry>
+    </row>
+    <row>
+     <entry><structfield>blk_read_time</structfield></entry>
+     <entry><type>double precision</type></entry>
+     <entry>Время, затраченное серверными процессами в этой базе данных, на чтение блоков из файлов данных, в миллисекундах</entry>
+    </row>
+    <row>
+     <entry><structfield>blk_write_time</structfield></entry>
+     <entry><type>double precision</type></entry>
+     <entry>Время, затраченное серверными процессами в этой базе данных, на запись блоков в файлы данных, в миллисекундах</entry>
+    </row>
+    <row>
+     <entry><structfield>stats_reset</structfield></entry>
+     <entry><type>timestamp with time zone</type></entry>
+     <entry>Последнее время сброса этих статистических данных</entry>
+    </row>
+   </tbody>
+   </tgroup>
+  </table>
+
+  <para>Представление <structname>pg_stat_database</structname> содержит одну строку со статистикой на каждую базу данных кластера.</para>
+
+  <table id="pg-stat-database-conflicts-view" xreflabel="pg_stat_database_conflicts">
+   <title>Представление <structname>pg_stat_database_conflicts</structname></title>
+   <tgroup cols="3">
+    <thead>
+    <row>
+      <entry>Столбец</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+   <tbody>
+    <row>
+     <entry><structfield>datid</structfield></entry>
+     <entry><type>oid</type></entry>
+     <entry>OID базы данных</entry>
+    </row>
+    <row>
+     <entry><structfield>datname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя базы данных</entry>
+    </row>
+    <row>
+     <entry><structfield>confl_tablespace</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество запросов в этой базе данных, отменённых из-за того, что табличные пространства были удалены</entry>
+    </row>
+    <row>
+     <entry><structfield>confl_lock</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество запросов в этой базе данных, отменённых по истечении времени ожидания блокировки</entry>
+    </row>
+    <row>
+     <entry><structfield>confl_snapshot</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество запросов в этой базе данных, отменённых из-за устаревших снимков данных</entry>
+    </row>
+    <row>
+     <entry><structfield>confl_bufferpin</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество запросов в этой базе данных, отменённых из-за прикреплённых страниц буфера</entry>
+    </row>
+    <row>
+     <entry><structfield>confl_deadlock</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество запросов в этой базе данных, отменённых из-за взаимных блокировок</entry>
+    </row>
+   </tbody>
+   </tgroup>
+  </table>
+
+  <para>Представление <structname>pg_stat_database_conflicts</structname> для каждой базы данных будет содержать по одной строке со статистикой на уровне базы по отменам запросов, произошедшим вследствие конфликтов с процессами восстановления на резервных серверах. В этом представлении будет содержаться только информация по резервным серверам, поскольку на главных серверах конфликты не возникают.</para>
+
+  <table id="pg-stat-all-tables-view" xreflabel="pg_stat_all_tables">
+   <title>Представление <structname>pg_stat_all_tables</structname></title>
+   <tgroup cols="3">
+    <thead>
+    <row>
+      <entry>Столбец</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+   <tbody>
+    <row>
+     <entry><structfield>relid</structfield></entry>
+     <entry><type>oid</type></entry>
+     <entry>OID таблицы</entry>
+    </row>
+    <row>
+     <entry><structfield>schemaname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя схемы, в которой расположена эта таблица</entry>
+    </row>
+    <row>
+     <entry><structfield>relname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя таблицы</entry>
+    </row>
+    <row>
+     <entry><structfield>seq_scan</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество последовательных чтений, запущенных по этой таблице</entry>
+    </row>
+    <row>
+     <entry><structfield>seq_tup_read</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество "живых" строк, прочитанных при последовательных чтениях</entry>
+    </row>
+    <row>
+     <entry><structfield>idx_scan</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество сканирований по индексу, запущенных по этой таблице</entry>
+    </row>
+    <row>
+     <entry><structfield>idx_tup_fetch</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество "живых" строк, отобранных при сканированиях по индексу</entry>
+    </row>
+    <row>
+     <entry><structfield>n_tup_ins</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество вставленных строк</entry>
+    </row>
+    <row>
+     <entry><structfield>n_tup_upd</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество изменённых строк (включая изменения по схеме HOT)</entry>
+    </row>
+    <row>
+     <entry><structfield>n_tup_del</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество удалённых строк</entry>
+    </row>
+    <row>
+     <entry><structfield>n_tup_hot_upd</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество строк, обновлённых в режиме HOT (т. е. без отдельного изменения индекса)</entry>
+    </row>
+    <row>
+     <entry><structfield>n_live_tup</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Оценочное количество "живых" строк</entry>
+    </row>
+    <row>
+     <entry><structfield>n_dead_tup</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Оценочное количество "мёртвых" строк</entry>
+    </row>
+    <row>
+     <entry><structfield>n_mod_since_analyze</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Оценочное число строк, изменённых в этой таблице, с момента последнего сбора статистики</entry>
+    </row>
+    <row>
+     <entry><structfield>last_vacuum</structfield></entry>
+     <entry><type>timestamp with time zone</type></entry>
+     <entry>Время последней очистки этой таблицы вручную (<command>VACUUM FULL</command> не учитывается)</entry>
+    </row>
+    <row>
+     <entry><structfield>last_autovacuum</structfield></entry>
+     <entry><type>timestamp with time zone</type></entry>
+     <entry>Время последней очистки таблицы фоновым процессом автоочистки</entry>
+    </row>
+    <row>
+     <entry><structfield>last_analyze</structfield></entry>
+     <entry><type>timestamp with time zone</type></entry>
+     <entry>Время последнего выполнения сбора статистики для этой таблицы вручную</entry>
+    </row>
+    <row>
+     <entry><structfield>last_autoanalyze</structfield></entry>
+     <entry><type>timestamp with time zone</type></entry>
+     <entry>Время последнего выполнения сбора статистики для этой таблицы фоновым процессом автоочистки</entry>
+    </row>
+    <row>
+     <entry><structfield>vacuum_count</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Сколько раз очистка этой таблицы была выполнена вручную (<command>VACUUM FULL</command> не учитывается)</entry>
+    </row>
+    <row>
+     <entry><structfield>autovacuum_count</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Сколько раз очистка этой таблицы была выполнена фоновым процессом автоочистки</entry>
+    </row>
+    <row>
+     <entry><structfield>analyze_count</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Сколько раз сбор статистики для этой таблицы был выполнен вручную</entry>
+    </row>
+    <row>
+     <entry><structfield>autoanalyze_count</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Сколько раз сбор статистики для этой таблицы был выполнен фоновым процессом автоочистки</entry>
+    </row>
+   </tbody>
+   </tgroup>
+  </table>
+
+  <para>Представление <structname>pg_stat_all_tables</structname> будет содержать по одной строке на каждую таблицу в текущей базе данных (включая таблицы TOAST) со статистикой по обращениям к этой таблице. Представления <structname>pg_stat_user_tables</structname> и <structname>pg_stat_sys_tables</structname> содержат ту же самую информацию, но отфильтрованную так, чтобы показывать только пользовательские и системные таблицы соответственно.</para>
+
+  <table id="pg-stat-all-indexes-view" xreflabel="pg_stat_all_indexes">
+   <title>Представление <structname>pg_stat_all_indexes</structname></title>
+   <tgroup cols="3">
+    <thead>
+    <row>
+      <entry>Столбец</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+   <tbody>
+    <row>
+     <entry><structfield>relid</structfield></entry>
+     <entry><type>oid</type></entry>
+     <entry>OID таблицы для индекса</entry>
+    </row>
+    <row>
+     <entry><structfield>indexrelid</structfield></entry>
+     <entry><type>oid</type></entry>
+     <entry>OID индекса</entry>
+    </row>
+    <row>
+     <entry><structfield>schemaname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя схемы, в которой расположен индекс</entry>
+    </row>
+    <row>
+     <entry><structfield>relname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя таблицы для индекса</entry>
+    </row>
+    <row>
+     <entry><structfield>indexrelname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя индекса</entry>
+    </row>
+    <row>
+     <entry><structfield>idx_scan</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество запущенных сканирований по этому индексу</entry>
+    </row>
+    <row>
+     <entry><structfield>idx_tup_read</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество элементов индекса, возвращённых при сканированиях по этому индексу</entry>
+    </row>
+    <row>
+     <entry><structfield>idx_tup_fetch</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество живых строк таблицы, отобранных при простых сканированиях по этому индексу</entry>
+    </row>
+   </tbody>
+   </tgroup>
+  </table>
+
+  <para>Представление <structname>pg_stat_all_indexes</structname> для каждого индекса в текущей базе данных будет содержать по одной строке со статистикой по обращениям к этому индексу. Представления <structname>pg_stat_user_indexes</structname> и <structname>pg_stat_sys_indexes</structname> содержат ту же самую информацию, но отфильтрованную так, чтобы показывать только пользовательские и системные индексы соответственно.</para>
+
+  <para>Индексы могут использоваться при простом сканировании по индексу, при сканировании <quote>битовой карты</quote> индекса и в работе оптимизатора. Результаты сканирования битовых карт разных индексов могут объединяться логическим умножением или сложением, поэтому когда применяются битовые карты, сложно связать выборки отдельных строк с определёнными индексами. Поэтому при сканировании битовых карт увеличиваются счётчики <structname>pg_stat_all_indexes</structname>.<structfield>idx_tup_read</structfield> для задействованных индексов и счётчик <structname>pg_stat_all_tables</structname>.<structfield>idx_tup_fetch</structfield> для каждой таблицы, а <structname>pg_stat_all_indexes</structname>.<structfield>idx_tup_fetch</structfield> не меняется. Оптимизатор тоже обращается к индексам для проверки переданных констант, значения которых оказываются вне диапазона, записанного в статистике оптимизатора, так как эта статистика может быть неактуальной.</para>
+
+  <note>
+   <para>Значения счётчиков <structfield>idx_tup_read</structfield> и <structfield>idx_tup_fetch</structfield> могут различаться, даже если сканирование с использованием битовой карты не используется, поскольку <structfield>idx_tup_read</structfield> подсчитывает полученные из индекса элементы, а <structfield>idx_tup_fetch</structfield> &mdash; количество "живых" строк, выбранных из таблицы. Различие будет меньше, если "мёртвые" или ещё незафиксированные строки будут извлекаться с использованием индекса или если для получения строк таблицы будет использоваться сканирование только по индексу.</para>
+  </note>
+
+  <table id="pg-statio-all-tables-view" xreflabel="pg_statio_all_tables">
+   <title>Представление <structname>pg_statio_all_tables</structname></title>
+   <tgroup cols="3">
+    <thead>
+    <row>
+      <entry>Столбец</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+   <tbody>
+    <row>
+     <entry><structfield>relid</structfield></entry>
+     <entry><type>oid</type></entry>
+     <entry>OID таблицы</entry>
+    </row>
+    <row>
+     <entry><structfield>schemaname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя схемы, в которой расположена эта таблица</entry>
+    </row>
+    <row>
+     <entry><structfield>relname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя таблицы</entry>
+    </row>
+    <row>
+     <entry><structfield>heap_blks_read</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество дисковых блоков, прочитанных из этой таблицы</entry>
+    </row>
+    <row>
+     <entry><structfield>heap_blks_hit</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Число попаданий в буфер для этой таблицы</entry>
+    </row>
+    <row>
+     <entry><structfield>idx_blks_read</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество дисковых блоков, прочитанных из всех индексов этой таблицы</entry>
+    </row>
+    <row>
+     <entry><structfield>idx_blks_hit</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Число попаданий в буфер для всех индексов по этой таблице</entry>
+    </row>
+    <row>
+     <entry><structfield>toast_blks_read</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество прочитанных дисковых блоков TOAST (если есть) для этой таблицы</entry>
+    </row>
+    <row>
+     <entry><structfield>toast_blks_hit</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Число попаданий в буфер в таблице TOAST для этой таблицы (если такие есть)</entry>
+    </row>
+    <row>
+     <entry><structfield>tidx_blks_read</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество прочитанных дисковых блоков из индекса по TOAST (если есть) для этой таблицы</entry>
+    </row>
+    <row>
+     <entry><structfield>tidx_blks_hit</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Число попаданий в буфер для индекса по TOAST (если есть) для этой таблицы</entry>
+    </row>
+   </tbody>
+   </tgroup>
+  </table>
+
+  <para>Представление <structname>pg_statio_all_tables</structname> для каждой таблицы (включая таблицы TOAST) в текущей базе данных будет содержать по одной строке со статистикой по операциям ввода/вывода для этой таблицы. Представления <structname>pg_statio_user_tables</structname> и <structname>pg_statio_sys_tables</structname> содержат ту же самую информацию, но отфильтрованную так, чтобы показывать только пользовательские или системные таблицы соответственно.</para>
+
+  <table id="pg-statio-all-indexes-view" xreflabel="pg_statio_all_indexes">
+   <title>Представление <structname>pg_statio_all_indexes</structname></title>
+   <tgroup cols="3">
+    <thead>
+    <row>
+      <entry>Столбец</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+   <tbody>
+    <row>
+     <entry><structfield>relid</structfield></entry>
+     <entry><type>oid</type></entry>
+     <entry>OID таблицы для индекса</entry>
+    </row>
+    <row>
+     <entry><structfield>indexrelid</structfield></entry>
+     <entry><type>oid</type></entry>
+     <entry>OID индекса</entry>
+    </row>
+    <row>
+     <entry><structfield>schemaname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя схемы, в которой расположен индекс</entry>
+    </row>
+    <row>
+     <entry><structfield>relname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя таблицы для индекса</entry>
+    </row>
+    <row>
+     <entry><structfield>indexrelname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя индекса</entry>
+    </row>
+    <row>
+     <entry><structfield>idx_blks_read</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество дисковых блоков, прочитанных из этого индекса</entry>
+    </row>
+    <row>
+     <entry><structfield>idx_blks_hit</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Число попаданий в буфер для этого индекса</entry>
+    </row>
+   </tbody>
+   </tgroup>
+  </table>
+
+  <para>Представление <structname>pg_statio_all_indexes</structname> для каждого индекса в текущей базе данных будет содержать по одной строке со статистикой по операциям ввода/вывода для этого индекса. Представления <structname>pg_statio_user_indexes</structname> и <structname>pg_statio_sys_indexes</structname> содержат ту же самую информацию, но отфильтрованную так, чтобы показывать только пользовательские или системные индексы соответственно.</para>
+
+  <table id="pg-statio-all-sequences-view" xreflabel="pg_statio_all_sequences">
+   <title>Представление <structname>pg_statio_all_sequences</structname></title>
+   <tgroup cols="3">
+    <thead>
+    <row>
+      <entry>Столбец</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+   <tbody>
+    <row>
+     <entry><structfield>relid</structfield></entry>
+     <entry><type>oid</type></entry>
+     <entry>OID последовательности</entry>
+    </row>
+    <row>
+     <entry><structfield>schemaname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя схемы, в которой расположена эта последовательность</entry>
+    </row>
+    <row>
+     <entry><structfield>relname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя последовательности</entry>
+    </row>
+    <row>
+     <entry><structfield>blks_read</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество дисковых блоков, прочитанных из этой последовательности</entry>
+    </row>
+    <row>
+     <entry><structfield>blks_hit</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Число попаданий в буфер в этой последовательности</entry>
+    </row>
+   </tbody>
+   </tgroup>
+  </table>
+
+  <para>Представление <structname>pg_statio_all_sequences</structname> для каждой последовательности в текущей базе данных будет содержать по одной строке со статистикой по операциям ввода/вывода для этой последовательности.</para>
+
+  <table id="pg-stat-user-functions-view" xreflabel="pg_stat_user_functions">
+   <title>Представление <structname>pg_stat_user_functions</structname></title>
+   <tgroup cols="3">
+    <thead>
+    <row>
+      <entry>Столбец</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+   <tbody>
+    <row>
+     <entry><structfield>funcid</structfield></entry>
+     <entry><type>oid</type></entry>
+     <entry>OID функции</entry>
+    </row>
+    <row>
+     <entry><structfield>schemaname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя схемы, в которой расположена функция</entry>
+    </row>
+    <row>
+     <entry><structfield>funcname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя функции</entry>
+    </row>
+    <row>
+     <entry><structfield>calls</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Сколько раз вызывалась функция</entry>
+    </row>
+    <row>
+     <entry><structfield>total_time</structfield></entry>
+     <entry><type>double precision</type></entry>
+     <entry>Общее время, потраченное на выполнение этой функции и всех других функций, вызванных ею, в миллисекундах</entry>
+    </row>
+    <row>
+     <entry><structfield>self_time</structfield></entry>
+     <entry><type>double precision</type></entry>
+     <entry>Общее время, потраченное на выполнение самой функции, без учёта других функций, которые были ею вызваны, в миллисекундах</entry>
+    </row>
+   </tbody>
+   </tgroup>
+  </table>
+
+  <para>Представление <structname>pg_stat_user_functions</structname> для каждой отслеживаемой функции будет содержать по одной строке со статистикой по выполнениям этой функции. Отслеживаемые функции определяются параметром <xref linkend="guc-track-functions"/>.</para>
+
+ </sect2>
+
+ <sect2 id="monitoring-stats-functions">
+  <title>Статистические функции</title>
+
+  <para>Статистическую информацию можно просматривать и другими способами. Для этого можно написать запросы, использующие те же функции доступа к статистике, что лежат в основе описанных выше стандартных представлений. За более подробной информацией, например, об именах этих функций, обратитесь к определениям этих стандартных представлений. (Например, в <application>psql</application> можно выполнить <literal>\d+ pg_stat_activity</literal>.) В качестве аргумента функции, предоставляющие доступ к статистике на уровне базы, принимают OID базы данных, по которой должна быть выдана информация. Функции, которые работают на уровне таблиц и индексов, принимают в качестве аргумента OID таблицы или индекса. Аргументом для функции, предоставляющей статистику на уровне функций, является OID функции. Обратите внимание, что с помощью этих функций можно получить информацию по таблицам, индексам и функциям исключительно в текущей базе данных.</para>
+
+  <para>Дополнительные функции, связанные со сбором статистики, перечислены в <xref remap="6" linkend="monitoring-stats-funcs-table"/>.</para>
+
+  <table id="monitoring-stats-funcs-table">
+   <title>Дополнительные статистические функции</title>
+
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Функция</entry>
+      <entry>Тип результата</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+    <tbody>
+
+     <row>
+       <!-- See also the entry for this in func.xml -->
+      <entry><literal><function>pg_backend_pid()</function></literal></entry>
+      <entry><type>integer</type></entry>
+      <entry>Идентификатор серверного процесса, выполняющего текущую сессию</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_activity</function>(<type>integer</type>)</literal><indexterm><primary>pg_stat_get_activity</primary></indexterm></entry>
+      <entry><type>setof record</type></entry>
+      <entry>Возвращает запись с информацией о серверном процессе с заданным PID или по одной строке для каждого активного серверного процесса в системе, если был указан <symbol>NULL</symbol>. Возвращаемые поля являются подмножеством столбцов представления <structname>pg_stat_activity</structname>.</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_snapshot_timestamp()</function></literal><indexterm><primary>pg_stat_get_snapshot_timestamp</primary></indexterm></entry>
+      <entry><type>timestamp with time zone</type></entry>
+      <entry>Возвращает время снимка текущей статистики</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_clear_snapshot()</function></literal><indexterm><primary>pg_stat_clear_snapshot</primary></indexterm></entry>
+      <entry><type>void</type></entry>
+      <entry>Сбросить текущий снимок статистики</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_reset()</function></literal><indexterm><primary>pg_stat_reset</primary></indexterm></entry>
+      <entry><type>void</type></entry>
+      <entry>Сбросить в ноль все статистические счётчики в текущей базе данных (по умолчанию разрешено только суперпользователям, но право выполнения (EXECUTE) этой функции можно дать и другим)</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_reset_shared</function>(text)</literal><indexterm><primary>pg_stat_reset_shared</primary></indexterm></entry>
+      <entry><type>void</type></entry>
+      <entry>Сбросить в ноль некоторые статистические счётчики на уровне кластера, в зависимости от заданного аргумента (по умолчанию разрешено только суперпользователям, но право выполнения (EXECUTE) этой функции можно дать и другим). Вызов <literal>pg_stat_reset_shared('bgwriter')</literal> сбросит в ноль все счётчики, которые показываются в представлении <structname>pg_stat_bgwriter</structname>, а вызов <literal>pg_stat_reset_shared('archiver')</literal> — все счётчики в представлении <structname>pg_stat_archiver</structname>.</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_reset_single_table_counters</function>(oid)</literal><indexterm><primary>pg_stat_reset_single_table_counters</primary></indexterm></entry>
+      <entry><type>void</type></entry>
+      <entry>Сбросить в ноль статистику по отдельной таблице или индексу в текущей базе данных (по умолчанию разрешено только суперпользователям, но право выполнения (EXECUTE) этой функции можно дать и другим)</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_reset_single_function_counters</function>(oid)</literal><indexterm><primary>pg_stat_reset_single_function_counters</primary></indexterm></entry>
+      <entry><type>void</type></entry>
+      <entry>Сбросить в ноль статистику по отдельной функции в текущей базе данных (по умолчанию разрешено только суперпользователям, но право выполнения (EXECUTE) этой функции можно дать и другим)</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>Функция <function>pg_stat_get_activity</function>, на которой основано представление <structname>pg_stat_activity</structname>, возвращает набор строк, содержащих всю доступную информацию о каждом серверном процессе. Иногда более удобным оказывается получение только части этой информации. В таких случаях можно использовать набор более старых функций, дающих доступ к статистике на уровне серверных процессов; эти функции описаны в <xref remap="6" linkend="monitoring-stats-backend-funcs-table"/>. Эти функции используют идентификатор серверного процесса, значение которого варьируется от единицы до числа активных в настоящий момент серверных процессов. Функция <function>pg_stat_get_backend_idset</function> генерирует по одной строке для каждого активного серверного процесса, что необходимо для вызова этих функций. Например, для того, чтобы отобразить значения <acronym>PID</acronym> и текущие запросы всех серверных процессов: <programlisting>SELECT pg_stat_get_backend_pid(s.backendid) AS pid,
+       pg_stat_get_backend_activity(s.backendid) AS query
+    FROM (SELECT pg_stat_get_backend_idset() AS backendid) AS s;</programlisting></para>
+
+  <table id="monitoring-stats-backend-funcs-table">
+   <title>Статистические функции на уровне серверных процессов</title>
+
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Функция</entry>
+      <entry>Тип результата</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+    <tbody>
+
+     <row>
+      <entry><literal><function>pg_stat_get_backend_idset()</function></literal></entry>
+      <entry><type>setof integer</type></entry>
+      <entry>Набор значений идентификаторов активных в настоящий момент серверных процессов (от 1 до числа активных серверных процессов)</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_backend_activity(integer)</function></literal></entry>
+      <entry><type>text</type></entry>
+      <entry>Текст последнего запроса этого серверного процесса</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_backend_activity_start(integer)</function></literal></entry>
+      <entry><type>timestamp with time zone</type></entry>
+      <entry>Время запуска последнего запроса</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_backend_client_addr(integer)</function></literal></entry>
+      <entry><type>inet</type></entry>
+      <entry>IP-адрес клиента, подключённого к этому серверному процессу</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_backend_client_port(integer)</function></literal></entry>
+      <entry><type>integer</type></entry>
+      <entry>Номер TCP-порта, который клиент использует для взаимодействия</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_backend_dbid(integer)</function></literal></entry>
+      <entry><type>oid</type></entry>
+      <entry>OID базы данных, к которой подключён этот серверный процесс</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_backend_pid(integer)</function></literal></entry>
+      <entry><type>integer</type></entry>
+      <entry>Идентификатор процесса этого серверного процесса</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_backend_start(integer)</function></literal></entry>
+      <entry><type>timestamp with time zone</type></entry>
+      <entry>Время запуска этого процесса</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_backend_userid(integer)</function></literal></entry>
+      <entry><type>oid</type></entry>
+      <entry>OID пользователя, подключённого к этому серверному процессу</entry>
+     </row>
+
+      <row>
+       <entry><literal><function>pg_stat_get_backend_wait_event_type(integer)</function></literal></entry>
+       <entry><type>text</type></entry>
+        <entry>Имя типа ожидаемого события, если обслуживающий процесс находится в состоянии ожидания, а в противном случае — NULL. За подробностями обратитесь к <xref remap="3" linkend="wait-event-table"/>.</entry>
+      </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_backend_wait_event(integer)</function></literal></entry>
+      <entry><type>text</type></entry>
+       <entry>Имя ожидаемого события, если обслуживающий процесс находится в состоянии ожидания, а в противном случае — NULL. За подробностями обратитесь к <xref remap="3" linkend="wait-event-table"/>.</entry>
+     </row>
+
+     <row>
+      <entry><literal><function>pg_stat_get_backend_xact_start(integer)</function></literal></entry>
+      <entry><type>timestamp with time zone</type></entry>
+      <entry>Время начала текущей транзакции</entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+ </sect2>
+ </sect1>
+
+ <sect1 id="monitoring-locks">
+  <title>Просмотр информации о блокировках</title>
+
+  <indexterm zone="monitoring-locks"><primary>блокировка</primary> <secondary>мониторинг</secondary></indexterm>
+
+  <para>Ещё одним удобным средством для отслеживания работы базы данных является системная таблица <structname>pg_locks</structname>. Она позволяет администратору базы просматривать информацию об имеющихся блокировках в менеджере блокировок. Например, это может использоваться для: <itemizedlist>
+    <listitem>
+     <para>просмотра всех имеющихся на данный момент блокировок, всех блокировок на отношения в определённой базе данных, всех блокировок на определённое отношение или всех блокировок, которые удерживает определённая сессия <productname>&productname;</productname>.</para>
+    </listitem>
+
+    <listitem>
+     <para>определения отношения в текущей базе данных с наибольшим количеством неразрешённых блокировок (оно может быть причиной конкуренции между клиентами базы данных).</para>
+    </listitem>
+
+    <listitem>
+     <para>определения воздействия конкуренции за блокировку на производительность базы данных в целом, а так же то, как меняется конкуренция в зависимости от загруженности базы.</para>
+    </listitem>
+   </itemizedlist> Более детально представление <structname>pg_locks</structname> описано в <xref remap="6" linkend="view-pg-locks"/>. Более подробную информацию о блокировках и управлению параллельным доступом в <productname>&productname;</productname> можно получить в <xref remap="6" linkend="mvcc"/>.</para>
+ </sect1>
+
+ <sect1 id="progress-reporting">
+  <title>Отслеживание выполнения</title>
+
+  <para><productname>&productname;</productname> имеет возможность отслеживать выполнение определённых команд. В настоящее время такое отслеживание поддерживает только команда <command>VACUUM</command>, но в будущем сфера его применения может быть расширена.</para>
+
+ <sect2 id="vacuum-progress-reporting">
+  <title>Отслеживание выполнения VACUUM</title>
+
+  <para>Во время выполнения <command>VACUUM</command> представление <structname>pg_stat_progress_vacuum</structname> будет содержать по одной строке для каждого обслуживающего процесса (включая рабочие процессы автоочистки), производящего очистку. Таблицы ниже показывают, какая информация будет отслеживаться, и рассказывают, как её интерпретировать. В настоящее время отслеживание выполнения не поддерживается для команды <command>VACUUM FULL</command>, так что процессы, выполняющие <command>VACUUM FULL</command>, не будут видны в этом представлении.</para>
+
+  <table id="pg-stat-progress-vacuum-view" xreflabel="pg_stat_progress_vacuum">
+   <title>Представление <structname>pg_stat_progress_vacuum</structname></title>
+   <tgroup cols="3">
+    <thead>
+    <row>
+      <entry>Столбец</entry>
+      <entry>Тип</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+   <tbody>
+    <row>
+     <entry><structfield>pid</structfield></entry>
+     <entry><type>integer</type></entry>
+     <entry>Идентификатор (PID) этого обслуживающего процесса</entry>
+    </row>
+    <row>
+     <entry><structfield>datid</structfield></entry>
+     <entry><type>oid</type></entry>
+     <entry>OID базы данных, к которой подключён этот обслуживающий процесс.</entry>
+    </row>
+    <row>
+     <entry><structfield>datname</structfield></entry>
+     <entry><type>name</type></entry>
+     <entry>Имя базы данных, к которой подключён этот обслуживающий процесс.</entry>
+    </row>
+    <row>
+     <entry><structfield>relid</structfield></entry>
+     <entry><type>oid</type></entry>
+     <entry>OID очищаемой таблицы.</entry>
+    </row>
+    <row>
+     <entry><structfield>phase</structfield></entry>
+     <entry><type>text</type></entry>
+     <entry>Текущая фаза очистки. См. <xref remap="4" linkend="vacuum-phases"/>.</entry>
+    </row>
+    <row>
+     <entry><structfield>heap_blks_total</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Общее число блоков кучи в таблице. Это число отражает состояние в начале сканирования; блоки, добавленные позже, не будут (и не должны) обрабатываться текущей командой <command>VACUUM</command>.</entry>
+    </row>
+    <row>
+     <entry><structfield>heap_blks_scanned</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Число просканированных блоков кучи. Так как для оптимизации сканирования применяется <link linkend="storage-vm">карта видимости</link>, некоторые блоки могут пропускаться без осмотра; пропущенные блоки входят в это общее число, так что по завершении очистки это число станет равно <structfield>heap_blks_total</structfield>. Этот счётчик увеличивается только в фазе <literal>scanning heap</literal>.</entry>
+    </row>
+    <row>
+     <entry><structfield>heap_blks_vacuumed</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Число очищенных блоков кучи. Если в таблице нет индексов, этот счётчик увеличивается только в фазе <literal>vacuuming heap</literal> (очистка кучи). Блоки, не содержащие &laquo;мёртвых&raquo; кортежей, при этом пропускаются, так что этот счётчик иногда может увеличиваться резкими рывками.</entry>
+    </row>
+    <row>
+     <entry><structfield>index_vacuum_count</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Количество завершённых циклов очистки индекса.</entry>
+    </row>
+    <row>
+     <entry><structfield>max_dead_tuples</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Число &laquo;мёртвых&raquo; кортежей, которое мы можем сохранить, прежде чем потребуется выполнить цикл очистки индекса, в зависимости от <xref linkend="guc-maintenance-work-mem"/>.</entry>
+    </row>
+    <row>
+     <entry><structfield>num_dead_tuples</structfield></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Число &laquo;мёртвых&raquo; кортежей, собранных со времени последнего цикла очистки индекса.</entry>
+    </row>
+   </tbody>
+   </tgroup>
+  </table>
+
+  <table id="vacuum-phases">
+   <title>Фазы VACUUM</title>
+   <tgroup cols="2">
+    <thead>
+    <row>
+      <entry>Фаза</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+   <tbody>
+    <row>
+     <entry><literal>initializing</literal></entry>
+     <entry>Инициализация — <command>VACUUM</command> готовится начать сканирование кучи. Эта фаза должна быть очень быстрой.</entry>
+    </row>
+    <row>
+     <entry><literal>scanning heap</literal></entry>
+     <entry>Сканирование кучи — <command>VACUUM</command> в настоящее время сканирует кучу. При этом будет очищена и, если требуется, дефрагментирована каждая страница, а возможно, также будет произведена заморозка. Отслеживать процесс сканирования можно, следя за содержимым столбца <structfield>heap_blks_scanned</structfield>.</entry>
+    </row>
+    <row>
+     <entry><literal>vacuuming indexes</literal></entry>
+     <entry>Очистка индексов — <command>VACUUM</command> в настоящее время очищает индексы. Если у таблицы есть какие-либо индексы, эта фаза будет наблюдаться минимум единожды в процессе очистки, после того, как куча будет просканирована полностью. Она может повторяться несколько раз в процессе очистки, если объёма <xref linkend="guc-maintenance-work-mem"/> оказывается недостаточно для сохранения всех найденных &laquo;мёртвых&raquo; кортежей.</entry>
+    </row>
+    <row>
+     <entry><literal>vacuuming heap</literal></entry>
+     <entry>Очистка кучи — <command>VACUUM</command> в настоящее время очищает кучу. Очистка кучи отличается от сканирования, так как она происходит после каждой операции очистки индексов. Если <structfield>heap_blks_scanned</structfield> меньше чем <structfield>heap_blks_total</structfield>, система вернётся к сканированию кучи после завершения этой фазы; в противном случае она начнёт уборку индексов.</entry>
+    </row>
+    <row>
+     <entry><literal>cleaning up indexes</literal></entry>
+     <entry>Уборка индексов — <command>VACUUM</command> в настоящее время производит уборку в индексах. Это происходит после завершения полного сканирования кучи и очистки индексов и кучи.</entry>
+    </row>
+    <row>
+     <entry><literal>truncating heap</literal></entry>
+     <entry>Усечение кучи — <command>VACUUM</command> в настоящее время усекает кучу, чтобы возвратить операционной системе объём пустых страниц в конце отношения. Это происходит после уборки индексов.</entry>
+    </row>
+    <row>
+     <entry><literal>performing final cleanup</literal></entry>
+     <entry>Выполнение окончательной очистки — <command>VACUUM</command> выполняет окончательную очистку. На этой стадии <command>VACUUM</command> очищает карту свободного пространства, обновляет статистику в <literal>pg_class</literal> и передаёт статистику сборщику статистики, После этой фазы <command>VACUUM</command> завершит свою работу.</entry>
+    </row>
+   </tbody>
+   </tgroup>
+  </table>
+
+ </sect2>
+ </sect1>
+
+ <sect1 id="dynamic-trace">
+  <title>Динамическая трассировка</title>
+
+ <indexterm zone="dynamic-trace"><primary>DTrace</primary></indexterm>
+
+  <para><productname>&productname;</productname> позволяет выполнять динамическую трассировку сервера базы данных. Имеющиеся возможности позволяют вызывать внешнюю утилиту в определённых точках кода и таким образом отслеживать его выполнение.</para>
+
+  <para>Несколько подобных точек сбора метрик, или точек трассировки, уже встроено в исходный код. Предполагается, что эти точки будут использоваться разработчиками и администраторами базы данных. По умолчанию точки трассировки не входят в сборку <productname>&productname;</productname>; пользователь должен явно указать конфигурационному скрипту необходимость включения этих макросов.</para>
+
+  <para>В настоящее время поддерживается только утилита <ulink url="https://en.wikipedia.org/wiki/DTrace">DTrace</ulink>, которая доступна для Solaris, OS X, FreeBSD, NetBSD, и Oracle Linux. Проект <ulink url="http://sourceware.org/systemtap/">SystemTap</ulink> для Linux представляет собой эквивалент DTrace и также может быть использован. Теоретически возможна поддержка и других утилит динамической трассировки, для этого необходимо изменить определения для макроса в <filename>src/include/utils/probes.h</filename>.</para>
+
+  <sect2 id="compiling-for-trace">
+   <title>Компиляция для включения динамической трассировки</title>
+
+  <para>По умолчанию точки трассировки недоступны, поэтому в конфигурационном скрипте <productname>&productname;</productname> требуется явно указать необходимость их подключения. Для поддержки утилиты DTrace укажите <option>--enable-dtrace</option> при конфигурировании.</para>
+  </sect2>
+
+  <sect2 id="trace-points">
+   <title>Встроенные точки трассировки</title>
+
+  <para>В исходный код входит несколько стандартных точек трассировки, которые представлены в <xref remap="6" linkend="dtrace-probe-point-table"/>; в <xref remap="6" linkend="typedefs-table"/> показаны типы данных, которые используются для этих точек. Конечно, для более детального отслеживания работы <productname>&productname;</productname> можно добавлять и другие точки трассировки.</para>
+
+ <table id="dtrace-probe-point-table">
+  <title>Встроенные точки трассировки DTrace</title>
+  <tgroup cols="3">
+   <thead>
+    <row>
+     <entry>Имя</entry>
+     <entry>Параметры</entry>
+     <entry>Описание</entry>
+    </row>
+   </thead>
+
+   <tbody>
+
+    <row>
+     <entry><literal>transaction-start</literal></entry>
+     <entry><literal>(LocalTransactionId)</literal></entry>
+     <entry>Срабатывает в начале новой транзакции. arg0 задаёт идентификатор транзакции.</entry>
+    </row>
+    <row>
+     <entry><literal>transaction-commit</literal></entry>
+     <entry><literal>(LocalTransactionId)</literal></entry>
+     <entry>Срабатывает при успешном завершении транзакции. arg0 задаёт идентификатор транзакции.</entry>
+    </row>
+    <row>
+     <entry><literal>transaction-abort</literal></entry>
+     <entry><literal>(LocalTransactionId)</literal></entry>
+     <entry>Срабатывает, когда транзакция завершается с ошибкой. arg0 задаёт идентификатор транзакции.</entry>
+    </row>
+    <row>
+     <entry><literal>query-start</literal></entry>
+     <entry><literal>(const char *)</literal></entry>
+     <entry>Срабатывает, когда начинается обработка запроса. arg0 задаёт текст запроса.</entry>
+    </row>
+    <row>
+     <entry><literal>query-done</literal></entry>
+     <entry><literal>(const char *)</literal></entry>
+     <entry>Срабатывает по завершении обработки запроса. arg0 задаёт текст запроса.</entry>
+    </row>
+    <row>
+     <entry><literal>query-parse-start</literal></entry>
+     <entry><literal>(const char *)</literal></entry>
+     <entry>Срабатывает, когда начинается разбор запроса. arg0 задаёт текст запроса.</entry>
+    </row>
+    <row>
+     <entry><literal>query-parse-done</literal></entry>
+     <entry><literal>(const char *)</literal></entry>
+     <entry>Срабатывает по завершении разбора (parsing) запроса. arg0 задаёт текст запроса.</entry>
+    </row>
+    <row>
+     <entry><literal>query-rewrite-start</literal></entry>
+     <entry><literal>(const char *)</literal></entry>
+     <entry>Срабатывает, когда начинается модификация запроса. arg0 задаёт текст запроса.</entry>
+    </row>
+    <row>
+     <entry><literal>query-rewrite-done</literal></entry>
+     <entry><literal>(const char *)</literal></entry>
+     <entry>Срабатывает по завершении модификации запроса. arg0 задаёт текст запроса.</entry>
+    </row>
+    <row>
+     <entry><literal>query-plan-start</literal></entry>
+     <entry><literal>()</literal></entry>
+     <entry>Срабатывает, когда начинает работать планировщик выполнения запроса.</entry>
+    </row>
+    <row>
+     <entry><literal>query-plan-done</literal></entry>
+     <entry><literal>()</literal></entry>
+     <entry>Срабатывает по завершении работы планировщика запроса.</entry>
+    </row>
+    <row>
+     <entry><literal>query-execute-start</literal></entry>
+     <entry><literal>()</literal></entry>
+     <entry>Срабатывает, когда начинается выполнение запроса.</entry>
+    </row>
+    <row>
+     <entry><literal>query-execute-done</literal></entry>
+     <entry><literal>()</literal></entry>
+     <entry>Срабатывает по завершении выполнения запроса.</entry>
+    </row>
+    <row>
+     <entry><literal>statement-status</literal></entry>
+     <entry><literal>(const char *)</literal></entry>
+     <entry>Срабатывает каждый раз, когда серверный процесс обновляет свой статус в <structname>pg_stat_activity</structname>.<structfield>status</structfield>. arg0 задаёт новую строку состояния.</entry>
+    </row>
+    <row>
+     <entry><literal>checkpoint-start</literal></entry>
+     <entry><literal>(int)</literal></entry>
+     <entry>Срабатывает в начале контрольной точки. arg0 содержит битовые флаги, с помощью которых задаются разные типы контрольных точек, такие как shutdown, immediate или force.</entry>
+    </row>
+    <row>
+     <entry><literal>checkpoint-done</literal></entry>
+     <entry><literal>(int, int, int, int, int)</literal></entry>
+     <entry>Срабатывает по завершении контрольной точки. (Перечисленные далее точки трассировки срабатывают последовательно при обработке контрольной точки.) arg0 задаёт число записанных буферов. arg1 &mdash; общее число буферов. arg2, arg3 и arg4 задают число файлов WAL, которые были добавлены, удалены или переработаны, соответственно.</entry>
+    </row>
+    <row>
+     <entry><literal>clog-checkpoint-start</literal></entry>
+     <entry><literal>(bool)</literal></entry>
+     <entry>Срабатывает, когда начинается запись контрольной точки в CLOG. arg0 = true для обычных контрольных точек и false для контрольных точек типа shutdown.</entry>
+    </row>
+    <row>
+     <entry><literal>clog-checkpoint-done</literal></entry>
+     <entry><literal>(bool)</literal></entry>
+     <entry>Срабатывает по завершении записи контрольной точки в CLOG. Значение arg0 задаётся аналогично значению для <literal>clog-checkpoint-start</literal>.</entry>
+    </row>
+    <row>
+     <entry><literal>subtrans-checkpoint-start</literal></entry>
+     <entry><literal>(bool)</literal></entry>
+     <entry>Срабатывает, когда начинается запись контрольной точки в SUBTRANS. arg0 = true для обычных контрольных точек и false для контрольных точек типа shutdown.</entry>
+    </row>
+    <row>
+     <entry><literal>subtrans-checkpoint-done</literal></entry>
+     <entry><literal>(bool)</literal></entry>
+     <entry>Срабатывает по завершении записи контрольной точки в SUBTRANS. Значение arg0 задаётся аналогично значению для <literal>subtrans-checkpoint-start</literal>.</entry>
+    </row>
+    <row>
+     <entry><literal>multixact-checkpoint-start</literal></entry>
+     <entry><literal>(bool)</literal></entry>
+     <entry>Срабатывает, когда начинается запись контрольной точки в MultiXact. arg0 = true для обычных контрольных точек и false для контрольных точек типа shutdown.</entry>
+    </row>
+    <row>
+     <entry><literal>multixact-checkpoint-done</literal></entry>
+     <entry><literal>(bool)</literal></entry>
+     <entry>Срабатывает по завершении записи контрольной точки в MultiXact. Значение arg0 задаётся аналогично значению для <literal>multixact-checkpoint-start</literal>.</entry>
+    </row>
+    <row>
+     <entry><literal>buffer-checkpoint-start</literal></entry>
+     <entry><literal>(int)</literal></entry>
+     <entry>Срабатывает, когда начинается запись буферов контрольной точки. arg0 содержит битовые флаги, с помощью которых задаются разные типы контрольных точек, такие как shutdown, immediate или force.</entry>
+    </row>
+    <row>
+     <entry><literal>buffer-sync-start</literal></entry>
+     <entry><literal>(int, int)</literal></entry>
+     <entry>Срабатывает во время контрольной точки, когда начинается запись грязных буферов (после нахождения буферов, которые должны быть записаны). arg0 задаёт общее число буферов. arg1 задаёт число буферов, которые в настоящий момент являются грязными и должны быть записаны.</entry>
+    </row>
+    <row>
+     <entry><literal>buffer-sync-written</literal></entry>
+     <entry><literal>(int)</literal></entry>
+     <entry>Срабатывает после записи каждого буфера при выполнении контрольной точки. arg0 задаёт идентификатор буфера.</entry>
+    </row>
+    <row>
+     <entry><literal>buffer-sync-done</literal></entry>
+     <entry><literal>(int, int, int)</literal></entry>
+     <entry>Срабатывает после записи всех грязных буферов. arg0 задаёт общее число буферов. arg1 задаёт число буферов, которые фактически были записаны процессом выполнения контрольной точки. arg2 задаёт число буферов, которое должно было быть записано (arg1 из <literal>buffer-sync-start</literal>); разные значения говорят о том, что во время выполнения этой контрольной точки буферы сбрасывались другими процессами.</entry>
+    </row>
+    <row>
+     <entry><literal>buffer-checkpoint-sync-start</literal></entry>
+     <entry><literal>()</literal></entry>
+     <entry>Срабатывает после записи грязных буферов в ядро и до начала формирования запросов fsync.</entry>
+    </row>
+    <row>
+     <entry><literal>buffer-checkpoint-done</literal></entry>
+     <entry><literal>()</literal></entry>
+     <entry>Срабатывает по завершении синхронизации буферов с диском.</entry>
+    </row>
+    <row>
+     <entry><literal>twophase-checkpoint-start</literal></entry>
+     <entry><literal>()</literal></entry>
+     <entry>Срабатывает, когда начинается двухфазный этап выполнения контрольной точки.</entry>
+    </row>
+    <row>
+     <entry><literal>twophase-checkpoint-done</literal></entry>
+     <entry><literal>()</literal></entry>
+     <entry>Срабатывает по завершении двухфазного этапа выполнения контрольной точки.</entry>
+    </row>
+    <row>
+     <entry><literal>buffer-read-start</literal></entry>
+     <entry><literal>(ForkNumber, BlockNumber, Oid, Oid, Oid, int, bool)</literal></entry>
+     <entry>Срабатывает, когда начинается чтение из буфера. arg0 и arg1 содержат номер слоя и блока этой страницы (arg1 будет иметь значение -1, если выполняется запрос на расширение места для таблицы). arg2, arg3 и arg4 содержат OID-ы табличного пространства, базы данных и отношения, которые однозначно идентифицируют отношение. arg5 для локального буфера задаёт идентификатор серверного процесса, создавшего временное отношение, или <symbol>InvalidBackendId</symbol> (-1) &mdash; для разделяемого буфера. arg6 = true для запросов на расширение места для таблицы, false &mdash; в случае обычного чтения.</entry>
+    </row>
+    <row>
+     <entry><literal>buffer-read-done</literal></entry>
+     <entry><literal>(ForkNumber, BlockNumber, Oid, Oid, Oid, int, bool, bool)</literal></entry>
+     <entry>Срабатывает по завершении чтения буфера. arg0 и arg1 содержат номер слоя и номер блока этой страницы (arg1 будет содержать номер только что добавленного блока, если выполняется запрос на расширение места для таблицы). arg2, arg3 и arg4 содержат OID-ы табличного пространства, базы данных и отношения, которые однозначно идентифицируют отношение. arg5 для локального буфера задаёт идентификатор серверного процесса, создавшего временное отношение, или <symbol>InvalidBackendId</symbol> (-1) &mdash; для разделяемого буфера. arg6 = true для запросов на расширение места для таблицы, false &mdash; в случае обычного чтения. arg7 = true, если буфер был обнаружен в пуле, false &mdash; если нет.</entry>
+    </row>
+    <row>
+     <entry><literal>buffer-flush-start</literal></entry>
+     <entry><literal>(ForkNumber, BlockNumber, Oid, Oid, Oid)</literal></entry>
+     <entry>Срабатывает перед формированием любого запроса на запись в разделяемый буфер. arg0 и arg1 содержат номер слоя и номер блока этой страницы. arg2, arg3 и arg4 содержат OID-ы табличного пространства, базы данных и отношения, которые однозначно идентифицируют отношение.</entry>
+    </row>
+    <row>
+     <entry><literal>buffer-flush-done</literal></entry>
+     <entry><literal>(ForkNumber, BlockNumber, Oid, Oid, Oid)</literal></entry>
+     <entry>Срабатывает по завершении запроса на запись. (Учтите, что это отражает только момент передачи данных в ядро; обычно на диск они ещё не записаны.) Аргументы аналогичны <literal>buffer-flush-start</literal>.</entry>
+    </row>
+    <row>
+     <entry><literal>buffer-write-dirty-start</literal></entry>
+     <entry><literal>(ForkNumber, BlockNumber, Oid, Oid, Oid)</literal></entry>
+     <entry>Срабатывает, когда серверный процесс начинает запись грязного буфера. (Частое повторение такой пробы означает, что значение <xref linkend="guc-shared-buffers"/> слишком мало или что необходимо откорректировать управляющие параметры процесса фоновой записи.) arg0 и arg1 содержат номер слоя и блока этой страницы. arg2, arg3 и arg4 содержат OID-ы табличного пространства, базы данных и отношения, которые однозначно идентифицируют отношение.</entry>
+    </row>
+    <row>
+     <entry><literal>buffer-write-dirty-done</literal></entry>
+     <entry><literal>(ForkNumber, BlockNumber, Oid, Oid, Oid)</literal></entry>
+     <entry>Срабатывает по завершении записи грязного буфера. Аргументы аналогичны <literal>buffer-write-dirty-start</literal>.</entry>
+    </row>
+    <row>
+     <entry><literal>wal-buffer-write-dirty-start</literal></entry>
+     <entry><literal>()</literal></entry>
+     <entry>Срабатывает, когда серверный процесс начинает запись грязного WAL буфера из-за того, что свободные WAL буферы закончились. (Частое повторение такой ситуации означает, что значение <xref linkend="guc-wal-buffers"/> слишком мало.)</entry>
+    </row>
+    <row>
+     <entry><literal>wal-buffer-write-dirty-done</literal></entry>
+     <entry><literal>()</literal></entry>
+     <entry>Срабатывает по завершении записи грязного WAL буфера.</entry>
+    </row>
+    <row>
+     <entry><literal>xlog-insert</literal></entry>
+     <entry><literal>(unsigned char, unsigned char)</literal></entry>
+     <entry>Срабатывает при добавлении записи в WAL. arg0 задаёт идентификатор менеджера ресурсов (rmid) для этой записи. arg1 задаёт информационные флаги.</entry>
+    </row>
+    <row>
+     <entry><literal>xlog-switch</literal></entry>
+     <entry><literal>()</literal></entry>
+     <entry>Срабатывает при запросе на переключение сегмента WAL.</entry>
+    </row>
+    <row>
+     <entry><literal>smgr-md-read-start</literal></entry>
+     <entry><literal>(ForkNumber, BlockNumber, Oid, Oid, Oid, int)</literal></entry>
+     <entry>Срабатывает, когда начинается чтение блока из отношения. arg0 and arg1 содержат номер слоя и номер блока этой страницы. arg2, arg3 и arg4 содержат OID-ы табличного пространства, базы данных и отношения, которые однозначно идентифицируют отношение. arg5 для локального буфера задаёт идентификатор серверного процесса, создавшего временное отношение, или <symbol>InvalidBackendId</symbol> (-1) для разделяемого буфера.</entry>
+    </row>
+    <row>
+     <entry><literal>smgr-md-read-done</literal></entry>
+     <entry><literal>(ForkNumber, BlockNumber, Oid, Oid, Oid, int, int, int)</literal></entry>
+     <entry>Срабатывает по завершении чтения блока. arg0 и arg1 содержат номер слоя и номер блока страницы. arg2, arg3 и arg4 содержат OID-ы табличного пространства, базы данных и отношения, которые однозначно идентифицируют отношение. arg5 для локального буфера задаёт идентификатор серверного процесса, создавшего временное отношение, или <symbol>InvalidBackendId</symbol> (-1) &mdash; для разделяемого буфера. arg6 задаёт количество фактически прочитанных байтов, тогда как arg7 задаёт количество запрошенных байтов (различия говорят о наличии проблемы).</entry>
+    </row>
+    <row>
+     <entry><literal>smgr-md-write-start</literal></entry>
+     <entry><literal>(ForkNumber, BlockNumber, Oid, Oid, Oid, int)</literal></entry>
+     <entry>Срабатывает, когда начинается запись блока в отношение. arg0 и arg1 содержат номер слоя и номер блока этой страницы. arg2, arg3 и arg4 содержат OID-ы табличного пространства, базы данных и отношения, которые однозначно идентифицируют отношение. arg5 для локального буфера задаёт идентификатор серверного процесса, создавшего временное отношение, или <symbol>InvalidBackendId</symbol> (-1) &mdash; для разделяемого буфера.</entry>
+    </row>
+    <row>
+     <entry><literal>smgr-md-write-done</literal></entry>
+     <entry><literal>(ForkNumber, BlockNumber, Oid, Oid, Oid, int, int, int)</literal></entry>
+     <entry>Срабатывает по завершении записи блока. arg0 и arg1 содержат номер слоя и номер блока этой страницы. arg2, arg3 и arg4 содержат OID-ы табличного пространства, базы данных и отношения, которые однозначно идентифицируют отношение. arg5 для локального буфера задаёт идентификатор серверного процесса, создавшего временное отношение, или <symbol>InvalidBackendId</symbol> (-1) &mdash; для разделяемого буфера. arg6 задаёт количество фактически записанных байтов, тогда как arg7 задаёт количество запрошенных байтов (различия говорят о наличии проблемы).</entry>
+    </row>
+    <row>
+     <entry><literal>sort-start</literal></entry>
+     <entry><literal>(int, bool, int, int, bool)</literal></entry>
+     <entry>Срабатывает, когда начинается операция сортировки. arg0 задаёт сортировку таблицы, индекса или элемента данных. arg1 = true, если данные ожидаются уникальными. arg2 задаёт число ключевых столбцов. arg3 задаёт объём доступной рабочей памяти в килобайтах. arg4 = true, если требуется произвольный доступ к результату сортировки.</entry>
+    </row>
+    <row>
+     <entry><literal>sort-done</literal></entry>
+     <entry><literal>(bool, long)</literal></entry>
+     <entry>Срабатывает по завершении сортировки. arg0 = true для внешней сортировки, false &mdash; для внутренней сортировки. arg1 задаёт число дисковых блоков, использованных для внешней сортировки, или объём памяти, использованной для внутренней сортировки, в килобайтах.</entry>
+    </row>
+    <row>
+     <entry><literal>lwlock-acquire</literal></entry>
+     <entry><literal>(char *, int, LWLockMode)</literal></entry>
+     <entry>Срабатывает, когда накладывается блокировка LWLock. arg0 задаёт идентификатор блокировки. arg1 задаёт смещение LWLOCK в своей части. arg2 задаёт тип запрошенной блокировки: монопольная или разделяемая.</entry>
+    </row>
+    <row>
+     <entry><literal>lwlock-release</literal></entry>
+     <entry><literal>(char *, int)</literal></entry>
+     <entry>Срабатывает, когда блокировка LWLock была снята (однако учтите, что никакие ждущие процессы ещё не были активированы). arg0 задаёт идентификатор блокировки LWLock. arg1 задаёт смещение внутри идентификатора блокировки LWLock.</entry>
+    </row>
+    <row>
+     <entry><literal>lwlock-wait-start</literal></entry>
+     <entry><literal>(char *, int, LWLockMode)</literal></entry>
+     <entry>Срабатывает, когда оказывается, что наложить блокировку LWLock немедленно нельзя, и серверный процесс начинает ожидать освобождения блокировки. arg0 задаёт идентификатор блокировки LWLock. arg1 задаёт смещение внутри идентификатора блокировки LWLock. arg2 задаёт тип запрошенной блокировки, монопольная или разделяемая.</entry>
+    </row>
+    <row>
+     <entry><literal>lwlock-wait-done</literal></entry>
+     <entry><literal>(char *, int, LWLockMode)</literal></entry>
+     <entry>Срабатывает, когда серверный процесс прекращает ожидание блокировки LWLock (но саму блокировку он ещё не получил). arg0 задаёт идентификатор блокировки LWLock. arg1 задаёт смещение внутри идентификатора блокировки LWLock. arg2 задаёт тип запрошенной блокировки, монопольная или разделяемая.</entry>
+    </row>
+    <row>
+     <entry><literal>lwlock-condacquire</literal></entry>
+     <entry><literal>(char *, int, LWLockMode)</literal></entry>
+     <entry>Срабатывает, когда блокировка LWLock была успешно получена процессом, запросившим её в режиме без ожидания. arg0 задаёт идентификатор блокировки LWLock. arg1 задаёт смещение внутри идентификатора блокировки LWLock. arg2 задаёт тип запрошенной блокировки, монопольная или разделяемая.</entry>
+    </row>
+    <row>
+     <entry><literal>lwlock-condacquire-fail</literal></entry>
+     <entry><literal>(char *, int, LWLockMode)</literal></entry>
+     <entry>Срабатывает, когда процесс, запросивший блокировку LWLock в режиме без ожидания, не смог её получить. arg0 задаёт идентификатор блокировки LWLock. arg1 задаёт смещение внутри идентификатора блокировки LWLock. arg2 задаёт тип запрошенной блокировки, монопольная или разделяемая.</entry>
+    </row>
+    <row>
+     <entry><literal>lock-wait-start</literal></entry>
+     <entry><literal>(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, LOCKMODE)</literal></entry>
+     <entry>Срабатывает, когда запрос на тяжёлую блокировку (блокировку lmgr) переходит в состояние ожидания, поскольку блокировка недоступна. Аргументы с arg0 до arg3 задают атрибуты, идентифицирующие объект, на который накладывается блокировка. arg4 задаёт тип объекта, на который накладывается блокировка. arg5 задаёт тип запрошенной блокировки.</entry>
+    </row>
+    <row>
+     <entry><literal>lock-wait-done</literal></entry>
+     <entry><literal>(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, LOCKMODE)</literal></entry>
+     <entry>Срабатывает, когда запрос на тяжёлую блокировку (блокировку lmgr) выходит из состояния ожидания (т. е. получает блокировку). Аргументы аналогичны <literal>lock-wait-start</literal>.</entry>
+    </row>
+    <row>
+     <entry><literal>deadlock-found</literal></entry>
+     <entry><literal>()</literal></entry>
+     <entry>Срабатывает, когда детектор взаимных блокировок обнаруживает такую взаимную блокировку</entry>
+    </row>
+
+   </tbody>
+   </tgroup>
+  </table>
+
+ <table id="typedefs-table">
+  <title>Предопределённые типы, используемые в параметрах точек трассировки</title>
+  <tgroup cols="2">
+   <thead>
+    <row>
+     <entry>Тип</entry>
+     <entry>Определение</entry>
+    </row>
+   </thead>
+
+   <tbody>
+
+    <row>
+     <entry><type>LocalTransactionId</type></entry>
+     <entry><type>unsigned int</type></entry>
+    </row>
+    <row>
+     <entry><type>LWLockMode</type></entry>
+     <entry><type>int</type></entry>
+    </row>
+    <row>
+     <entry><type>LOCKMODE</type></entry>
+     <entry><type>int</type></entry>
+    </row>
+    <row>
+     <entry><type>BlockNumber</type></entry>
+     <entry><type>unsigned int</type></entry>
+    </row>
+    <row>
+     <entry><type>Oid</type></entry>
+     <entry><type>unsigned int</type></entry>
+    </row>
+    <row>
+     <entry><type>ForkNumber</type></entry>
+     <entry><type>int</type></entry>
+    </row>
+    <row>
+     <entry><type>bool</type></entry>
+     <entry><type>char</type></entry>
+    </row>
+
+   </tbody>
+   </tgroup>
+  </table>
+
+
+  </sect2>
+
+  <sect2 id="using-trace-points">
+   <title>Использование точек трассировки</title>
+
+  <para>В приведённом ниже примере показан скрипт DTrace для анализа числа транзакций в системе, который можно использовать в качестве альтернативы созданию снимка данных <structname>pg_stat_database</structname> до и после выполнения теста производительности: <programlisting>#!/usr/sbin/dtrace -qs
+
+postgresql$1:::transaction-start
+{
+      @start["Start"] = count();
+      self-&gt;ts  = timestamp;
+}
+
+postgresql$1:::transaction-abort
+{
+      @abort["Abort"] = count();
+}
+
+postgresql$1:::transaction-commit
+/self-&gt;ts/
+{
+      @commit["Commit"] = count();
+      @time["Total time (ns)"] = sum(timestamp - self-&gt;ts);
+      self-&gt;ts=0;
+}</programlisting> При выполнении этот D-скрипт возвращает результат вида: <screen>
+# ./txn_count.d `pgrep -n postgres` or ./txn_count.d &lt;PID&gt;
+^C
+
+Start                                          71
+Commit                                         70
+Total time (ns)                        2312105013
+</screen></para>
+
+  <note>
+   <para>SystemTap использует отличную от DTrace нотацию для скриптов трассировки, хотя лежащие в их основе точки трассировки совместимы. Стоит отметить, что на момент написания этой главы в скриптах SystemTap имена точек трассировки должны обрамляться двойными подчёркиваниями, а не дефисами. Ожидается, что эта проблема будет решена в следующих версиях SystemTap.</para>
+  </note>
+
+  <para>Необходимо помнить, что скрипты DTrace должны быть аккуратно написаны и отлажены, в противном случае собранная трассировочная информация может оказаться бессмысленной. В большинстве случаев причиной обнаруженных проблем является инструментарий, а не сама система. Отправляя на рассмотрение данные, полученные с использованием динамической трассировки, обязательно прилагайте скрипт, с помощью которого они были получены, для того чтобы его также проверить и обсудить.</para>
+  </sect2>
+
+  <sect2 id="defining-trace-points">
+   <title>Задание новых точек трассировки</title>
+
+  <para>Новые точки трассировки разработчик может определить в любом участке кода, однако это потребует перекомпиляции. Ниже приведены шаги, необходимые для добавления новых точек трассировки:</para>
+
+  <procedure>
+   <step>
+    <para>Определить имена точек трассировки и данные, которые будут доступны в этих точках</para>
+   </step>
+
+   <step>
+    <para>Добавить описание точек трассировки в <filename>src/backend/utils/probes.d</filename></para>
+   </step>
+
+   <step>
+    <para>Включить <filename>pg_trace.h</filename>, если его ещё не использовали в модуле (модулях), содержащих точки трассировки, и вставить <literal>TRACE_POSTGRESQL</literal> отладочные макросы в нужные места исходного кода</para>
+   </step>
+
+   <step>
+    <para>Перекомпилировать и убедиться в доступности новых точек трассировки</para>
+   </step>
+  </procedure>
+
+  <formalpara>
+   <title>Пример:</title>
+   <para>Вот пример того, как можно добавить точку для трассировки всех новых транзакций по их идентификатору.</para>
+  </formalpara>
+
+  <procedure>
+   <step>
+    <para>Устанавливаем, что проба будет называться <literal>transaction-start</literal> и принимать параметр типа <type>LocalTransactionId</type></para>
+   </step>
+
+   <step>
+    <para>Добавляем определение пробы в <filename>src/backend/utils/probes.d</filename>: <programlisting>probe transaction__start(LocalTransactionId);</programlisting> Обратите внимание на использование двойного подчёркивания в имени пробы. В скрипте DTrace, использующем эту точку, двойное подчёркивание нужно будет заменить дефисом, поэтому в документации для пользователей имя этой пробы — <literal>transaction-start</literal>.</para>
+   </step>
+
+   <step>
+    <para>Во время компиляции <literal>transaction__start</literal> преобразуется в макрос <literal>TRACE_POSTGRESQL_TRANSACTION_START</literal> (обратите внимание, что здесь используется одинарное подчёркивание), который доступен в результате включения <filename>pg_trace.h</filename>. Добавим вызов макроса в требуемую точку исходного кода. В данном случае это будет выглядеть приблизительно так: <programlisting>TRACE_POSTGRESQL_TRANSACTION_START(vxid.localTransactionId);</programlisting></para>
+   </step>
+
+   <step>
+    <para>После перекомпиляции и запуска нового бинарного файла используйте следующую команду DTrace, чтобы проверить доступность только что добавленной пробы. Должен получиться результат, подобный этому: <screen>
+# dtrace -ln transaction-start
+   ID    PROVIDER          MODULE           FUNCTION NAME
+18705 postgresql49878     postgres     StartTransactionCommand transaction-start
+18755 postgresql49877     postgres     StartTransactionCommand transaction-start
+18805 postgresql49876     postgres     StartTransactionCommand transaction-start
+18855 postgresql49875     postgres     StartTransactionCommand transaction-start
+18986 postgresql49873     postgres     StartTransactionCommand transaction-start
+</screen></para>
+   </step>
+  </procedure>
+
+  <para>При добавлении макросов трассировки в код, написанный на языке C, необходимо позаботиться о следующем: <itemizedlist>
+    <listitem>
+     <para>Нужно убедиться, что типы данных, определённые в параметрах пробы, совпадают с типами данных переменных, которые используются в макросе. В противном случае компиляция завершится с ошибками.</para>
+    </listitem>
+
+
+    <listitem>
+     <para>В большинстве платформ в случае, если <productname>&productname;</productname> собран с указанием <option>--enable-dtrace</option>, то аргументы макроса трассировки вычисляются каждый раз, когда макрос получает управление, <emphasis>даже если трассировка не выполняется</emphasis>. Об этом не стоит беспокоиться, если вы просто возвращаете значения небольшого числа локальных переменных. Однако избегайте использования ресурсоёмких вызовов функций в аргументах. Если это необходимо, то постарайтесь защитить макрос проверкой, которая будет определять, действительно ли включена трассировка: <programlisting>if (TRACE_POSTGRESQL_TRANSACTION_START_ENABLED())
+    TRACE_POSTGRESQL_TRANSACTION_START(some_function(...));</programlisting> Каждый макрос трассировки имеет соответствующий макрос <literal>ENABLED</literal>.</para>
+    </listitem>
+   </itemizedlist></para>
+
+  </sect2>
+
+ </sect1>
+
+</chapter>

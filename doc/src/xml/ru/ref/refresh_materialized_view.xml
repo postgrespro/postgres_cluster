@@ -1,0 +1,85 @@
+<!--
+doc/src/xml/ref/refresh_materialized_view.xml
+&productname; documentation
+-->
+
+<refentry id="sql-refreshmaterializedview">
+ <indexterm zone="sql-refreshmaterializedview"><primary>REFRESH MATERIALIZED VIEW</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>REFRESH MATERIALIZED VIEW</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>REFRESH MATERIALIZED VIEW</refname>
+  <refpurpose>заменить содержимое материализованного представления</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>REFRESH MATERIALIZED VIEW [ CONCURRENTLY ] <replaceable class="parameter">имя</replaceable>
+    [ WITH [ NO ] DATA ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>REFRESH MATERIALIZED VIEW</command> полностью заменяет содержимое материализованного представления. Старое содержимое при этом аннулируется. Если добавлено указание <literal>WITH DATA</literal> (или нет никакого), нижележащий запрос выполняется и выдаёт новые данные, так что материализованное представление остаётся в сканируемом состоянии. Если указано <literal>WITH NO DATA</literal>, новые данные не выдаются и представление оказывается в несканируемом состоянии.</para>
+  <para>Указать <literal>CONCURRENTLY</literal> вместе с <literal>WITH NO DATA</literal> нельзя.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>CONCURRENTLY</literal></term>
+    <listitem>
+     <para>Обновить материализованное представление, не блокируя параллельные выборки из него. Без данного параметра обновление, затрагивающее много строк, обычно задействует меньше ресурсов и выполнится быстрее, но может препятствовать чтению этого материализованного представления другими сеансами. При этом данный режим может быть быстрее при небольшом количестве строк.</para>
+     <para>Данный параметр допускается, только если в материализованном представлении есть хотя бы один индекс <literal>UNIQUE</literal>, построенный только по именам столбцов и включающий все строки; то есть, в нём не должно быть выражений и предложения <literal>WHERE</literal>.</para>
+     <para>Этот параметр нельзя использовать, когда материализованное представление ещё не наполнено.</para>
+     <para>Даже с этим параметром в один момент времени допускается только одно обновление (<literal>REFRESH</literal>) материализованного представления.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) материализованного представления, подлежащего обновлению.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Тогда как индекс по умолчанию для операций <xref linkend="sql-cluster"/> команда <command>REFRESH MATERIALIZED VIEW</command> сохраняет, она не упорядочивает генерируемые строки по нему. Если генерируемые данные необходимо упорядочить, в определяющем запросе нужно явно указать <literal>ORDER BY</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Эта команда заменяет содержимое материализованного представления <literal>order_summary</literal>, используя запрос из определения материализованного представления, и оставляет его в сканируемом состоянии: <programlisting>REFRESH MATERIALIZED VIEW order_summary;</programlisting></para>
+
+  <para>Эта команда освобождает пространство, связанное с материализованным представлением <literal>annual_statistics_basis</literal>, и оставляет это представление в несканируемом состоянии: <programlisting>REFRESH MATERIALIZED VIEW annual_statistics_basis WITH NO DATA;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>REFRESH MATERIALIZED VIEW</command> — расширение <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-creatematerializedview"/></member>
+   <member><xref linkend="sql-altermaterializedview"/></member>
+   <member><xref linkend="sql-dropmaterializedview"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

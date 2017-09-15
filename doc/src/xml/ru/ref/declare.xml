@@ -1,0 +1,154 @@
+<!--
+doc/src/xml/ref/declare.xml
+&productname; documentation
+-->
+
+<refentry id="sql-declare">
+ <indexterm zone="sql-declare"><primary>DECLARE</primary></indexterm>
+
+ <indexterm zone="sql-declare"><primary>курсор</primary> <secondary>DECLARE</secondary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DECLARE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DECLARE</refname>
+  <refpurpose>определить курсор</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DECLARE <replaceable class="parameter">имя</replaceable> [ BINARY ] [ INSENSITIVE ] [ [ NO ] SCROLL ]
+    CURSOR [ { WITH | WITHOUT } HOLD ] FOR <replaceable class="parameter">запрос</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Оператор <command>DECLARE</command> позволяет пользователю создавать курсоры, с помощью которых можно выбирать по очереди некоторое количество строк из результата большого запроса. Когда курсор создан, через него можно получать строки, применяя команду <xref linkend="sql-fetch"/>.</para>
+
+  <note>
+   <para>На этой странице описывается применение курсоров на уровне команд SQL. Если вы попытаетесь использовать курсоры внутри функции <application>PL/pgSQL</application>, правила будут другими &mdash; см. <xref remap="4" linkend="plpgsql-cursors"/>.</para>
+  </note>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя создаваемого курсора.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>BINARY</literal></term>
+    <listitem>
+     <para>Курсор с таким свойством возвращает данные в двоичном, а не текстовом формате.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>INSENSITIVE</literal></term>
+    <listitem>
+     <para>Указывает, что данные, считываемые из курсора, не должны зависеть от изменений, которые могут происходить в нижележащих таблицах после создания курсора. В <productname>&productname;</productname> это поведение подразумевается по умолчанию, так что это ключевое слово ни на что не влияет и принимается только для совместимости со стандартом SQL.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SCROLL</literal></term>
+    <term><literal>NO SCROLL</literal></term>
+    <listitem>
+     <para>Указание <literal>SCROLL</literal> определяет, что курсор может прокручивать набор данных и получать строки непоследовательно (например, в обратном порядке). В зависимости от сложности плана запроса указание <literal>SCROLL</literal> может отрицательно отразиться на скорости выполнения запроса. Указание <literal>NO SCROLL</literal>, напротив, определяет, что через курсор нельзя будет получать строки в произвольном порядке. По умолчанию прокрутка в некоторых случаях разрешается; но это не равнозначно эффекту указания <literal>SCROLL</literal>. За подробностями обратитесь к <xref remap="3" linkend="sql-declare-notes" endterm="sql-declare-notes-title"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>WITH HOLD</literal></term>
+    <term><literal>WITHOUT HOLD</literal></term>
+    <listitem>
+     <para>Указание <literal>WITH HOLD</literal> определяет, что курсор можно продолжать использовать после успешной фиксации создавшей его транзакции. <literal>WITHOUT HOLD</literal> определяет, что курсор нельзя будет использовать за рамками транзакции, создавшей его. Если не указано ни <literal>WITHOUT HOLD</literal>, ни <literal>WITH HOLD</literal>, по умолчанию подразумевается <literal>WITHOUT HOLD</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">запрос</replaceable></term>
+    <listitem>
+     <para>Команда <xref linkend="sql-select"/> или <xref linkend="sql-values"/>, выдающая строки, которые будут получены через курсор.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Ключевые слова <literal>BINARY</literal>, <literal>INSENSITIVE</literal> и <literal>SCROLL</literal> могут указываться в любом порядке.</para>
+ </refsect1>
+
+ <refsect1 id="sql-declare-notes">
+  <title id="sql-declare-notes-title">Замечания</title>
+
+  <para>Обычный курсор выдаёт данные в текстовом виде, в каком их выдаёт <command>SELECT</command>. Однако с указанием <literal>BINARY</literal> курсор может выдавать их и в двоичном формате. Это упрощает операции преобразования данных для сервера и клиента, за счёт дополнительных усилий, требующихся от программиста для работы с платформозависимыми двоичными форматами. Например, если запрос получает значение 1 из целочисленного столбца, обычный курсор выдаст строку, содержащую <literal>1</literal>, тогда как через двоичный курсор будет получено четырёхбайтовое поле, содержащее внутреннее представление значения (с сетевым порядком байтов).</para>
+
+  <para>Двоичные курсоры должны применяться с осмотрительностью. Многие приложения, в том числе <application>psql</application>, не приспособлены к работе с двоичными курсорами и ожидают, что данные будут поступать в текстовом формате.</para>
+
+  <note>
+   <para>Когда клиентское приложение выполняет команду <command>FETCH</command>, используя протокол <quote>расширенных запросов</quote>, в сообщении Bind этого протокола указывается, в каком формате, текстовом или двоичном, должны быть получены данные. Это указание переопределяет свойство курсора, заданное в его объявлении. Таким образом, концепция курсора, объявляемого двоичным, становится устаревшей при использовании протокола расширенных запросов &mdash; любой курсор может быть прочитан как текстовый или двоичный.</para>
+  </note>
+
+   <para>Если в команде объявления курсора не указано <literal>WITH HOLD</literal>, созданный ей курсор может использоваться только в текущей транзакции. Таким образом, оператор <command>DECLARE</command> без <literal>WITH HOLD</literal> бесполезен вне блока транзакции: курсор будет существовать только до завершения этого оператора. Поэтому <productname>&productname;</productname> сообщает об ошибке, если такая команда выполняется вне блока транзакции. Чтобы определить блок транзакции, примените команды <xref linkend="sql-begin"/> и <xref linkend="sql-commit"/> (или <xref linkend="sql-rollback"/>).</para>
+
+   <para>Если в объявлении курсора указано <literal>WITH HOLD</literal> и транзакция, создавшая курсор, успешно фиксируется, к этому курсору могут продолжать обращаться последующие транзакции в этом сеансе. (Но если создавшая курсор транзакция прерывается, курсор уничтожается.) Курсор со свойством <literal>WITH HOLD</literal> (удерживаемый) может быть закрыт явно, командой <command>CLOSE</command>, либо неявно, по завершении сеанса. В текущей реализации строки, представляемые удерживаемым курсором, копируются во временный файл или в область памяти, так что они остаются доступными для следующих транзакций.</para>
+
+   <para>Объявить курсор со свойством <literal>WITH HOLD</literal> можно, только если запрос не содержит указаний <literal>FOR UPDATE</literal> и <literal>FOR SHARE</literal>.</para>
+
+   <para>Указание <literal>SCROLL</literal> добавляется при определении курсора, который будет выбирать данные в обратном порядке. Это поведение требуется стандартом SQL. Однако для совместимости с предыдущими версиями, <productname>&productname;</productname> допускает выборку в обратном направлении и без указания <literal>SCROLL</literal>, если план запроса курсора достаточно прост, чтобы реализовать прокрутку назад без дополнительных операций. Тем не менее, разработчикам приложений не следует рассчитывать на то, что курсор, созданный без указания <literal>SCROLL</literal>, можно будет прокручивать назад. С указанием <literal>NO SCROLL</literal> прокрутка назад запрещается в любом случае.</para>
+
+   <para>Выборка в обратном направлении также запрещается, если запрос содержит указания <literal>FOR UPDATE</literal> и <literal>FOR SHARE</literal>; в этом случае указание <literal>SCROLL</literal> не принимается.</para>
+
+   <caution>
+    <para>Прокручиваемые и удерживаемые (<literal>WITH HOLD</literal>) курсоры могут выдавать неожиданные результаты, если они вызывают изменчивые функции (см. <xref remap="4" linkend="xfunc-volatility"/>). Когда повторно выбирается ранее прочитанная строка, функции могут вызываться снова и выдавать результаты, отличные от полученных в первый раз. Один из способов обойти эту проблему — объявить курсор с указанием <literal>WITH HOLD</literal> и зафиксировать транзакцию, прежде чем читать из него какие-либо строки. В этом случае весь набор данных курсора будет материализован во временном хранилище, так что изменчивые функции будут выполнены для каждой строки лишь единожды.</para>
+   </caution>
+
+   <para>Если запрос в определении курсора включает указания <literal>FOR UPDATE</literal> или <literal>FOR SHARE</literal>, возвращаемые курсором строки блокируются в момент первой выборки, так же, как это происходит при выполнении <xref linkend="sql-select"/> с этими указаниями. Кроме того, при чтении строк будут возвращаться их наиболее актуальные версии; таким образом, с этими указаниями курсор будет вести себя как <quote>чувствительный курсор</quote>, определённый в стандарте SQL. (Указать <literal>INSENSITIVE</literal> для курсора с запросом <literal>FOR UPDATE</literal> или <literal>FOR SHARE</literal> нельзя.)</para>
+
+   <caution>
+    <para>Обычно рекомендуется использовать <literal>FOR UPDATE</literal>, если курсор предназначается для применения в командах <command>UPDATE ... WHERE CURRENT OF</command> и <command>DELETE ... WHERE CURRENT OF</command>. Указание <literal>FOR UPDATE</literal> предотвращает изменение строк другими сеансами после того, как они были считаны, и до того, как выполнится команда. Без <literal>FOR UPDATE</literal> последующая команда с <literal>WHERE CURRENT OF</literal> не сработает, если строка будет изменена после создания курсора.</para>
+
+    <para>Ещё одна причина использовать указание <literal>FOR UPDATE</literal> в том, что без него последующие команды с <literal>WHERE CURRENT OF</literal> могут выдать ошибку, если запрос курсора не удовлетворяет оговоренному в стандарте SQL критерию <quote>простой изменяемости</quote> (в частности, курсор должен ссылаться только на одну таблицу и не должен использовать группировку и сортировку (<literal>ORDER BY</literal>)). Курсоры, не удовлетворяющие этому критерию, могут работать, либо не работать, в зависимости от конкретного выбранного плана; так что в худшем случае приложение может работать в тестовой, но сломается в производственной среде.</para>
+
+    <para>Не использовать же <literal>FOR UPDATE</literal> для команд с <literal>WHERE CURRENT OF</literal> в основном имеет смысл, только если требуется получить прокручиваемый курсор или курсор, не отражающий последующие изменения (то есть, продолжающий показывать прежние данные). Если это действительно необходимо, обязательно учтите при реализации приведённые выше замечания.</para>
+   </caution>
+
+   <para>В стандарте SQL механизм курсоров предусмотрен только для встраиваемого <acronym>SQL</acronym>. Сервер <productname>&productname;</productname> не реализует для курсоров оператор <command>OPEN</command>; курсор считается открытым при объявлении. Однако <application>ECPG</application>, встраиваемый препроцессор SQL для <productname>&productname;</productname>, следует соглашениям стандарта, в том числе поддерживая для курсоров операторы <command>DECLARE</command> и <command>OPEN</command>.</para>
+
+   <para>Получить список всех доступных курсоров можно, обратившись к системному представлению <link linkend="view-pg-cursors"><structname>pg_cursors</structname></link>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Объявление курсора: <programlisting>DECLARE liahona CURSOR FOR SELECT * FROM films;</programlisting> Другие примеры использования курсора можно найти в <xref remap="6" linkend="sql-fetch"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>В стандарте SQL говорится, что чувствительность курсоров к параллельному обновлению нижележащих данных по умолчанию определяется реализацией. В <productname>&productname;</productname> курсоры по умолчанию нечувствительные, а чувствительными их можно сделать с помощью указания <literal>FOR UPDATE</literal>. Другие СУБД могут работать иначе.</para>
+
+  <para>Стандарт SQL допускает курсоры только во встраиваемом <acronym>SQL</acronym> и в модулях. <productname>&productname;</productname> позволяет использовать курсоры интерактивно.</para>
+
+  <para>Двоичные курсоры являются расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-close"/></member>
+   <member><xref linkend="sql-fetch"/></member>
+   <member><xref linkend="sql-move"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

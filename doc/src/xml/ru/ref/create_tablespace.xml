@@ -1,0 +1,110 @@
+<!--
+doc/src/xml/ref/create_tablespace.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createtablespace">
+ <indexterm zone="sql-createtablespace"><primary>CREATE TABLESPACE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE TABLESPACE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE TABLESPACE</refname>
+  <refpurpose>создать табличное пространство</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE TABLESPACE <replaceable class="parameter">табл_пространство</replaceable>
+    [ OWNER { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER } ]
+    LOCATION '<replaceable class="parameter">каталог</replaceable>'
+    [ WITH ( <replaceable class="parameter">параметр_табличного_пространства</replaceable> = <replaceable class="parameter">значение</replaceable> [, ... ] ) ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE TABLESPACE</command> регистрирует новое табличное пространство на уровне кластера баз данных. Имя табличного пространства должно отличаться от имён уже существующих табличных пространств в кластере.</para>
+
+  <para>Табличные пространства позволяют суперпользователям определять альтернативные расположения в файловой системе, где могут находиться файлы, содержащие объекты базы данных (например, таблицы или индексы).</para>
+
+  <para>Пользователь, имеющий соответствующие права, может передать параметр <replaceable class="parameter">табл_пространство</replaceable> команде <command>CREATE DATABASE</command>, <command>CREATE TABLE</command>, <command>CREATE INDEX</command> или <command>ADD CONSTRAINT</command>, чтобы файлы данных для этих объектов хранились в указанном табличном пространстве.</para>
+
+  <warning>
+   <para>Табличное пространство нельзя использовать отдельно от кластера, в котором оно было определено; см. <xref remap="4" linkend="manage-ag-tablespaces"/>.</para>
+  </warning>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">табл_пространство</replaceable></term>
+      <listitem>
+       <para>Имя создаваемого табличного пространства. Это имя не может начинаться с <literal>pg_</literal>, так как такие имена зарезервированы для системных табличных пространств.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_пользователя</replaceable></term>
+      <listitem>
+       <para>Имя пользователя, который будет владельцем табличного пространства. Если опущено, владельцем по умолчанию станет пользователь, выполняющий команду. Создавать пространства имён могут только суперпользователи, но их владельцами могут быть назначены и обычные пользователи.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">каталог</replaceable></term>
+      <listitem>
+       <para>Каталог, который будет использован для этого табличного пространства. Этот каталог должен быть пустым и должен принадлежать системному пользователю <productname>&productname;</productname>. Задаваться его расположение должно абсолютным путём.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">параметр_табличного_пространства</replaceable></term>
+      <listitem>
+       <para>Устанавливаемый или сбрасываемый параметр табличного пространства. В настоящее время поддерживаются только параметры <varname>seq_page_cost</varname>, <varname>random_page_cost</varname>, <varname>effective_io_concurrency</varname> и <varname>compression</varname>. При установке параметров стоимости для заданного табличного пространства будет переопределена обычная оценка стоимости чтения страниц из таблиц в этом пространстве, настраиваемая одноимённым параметром конфигурации (см. <xref remap="4" linkend="guc-seq-page-cost"/>, <xref remap="4" linkend="guc-random-page-cost"/>, <xref remap="4" linkend="guc-effective-io-concurrency"/>). Это может быть полезно, если одно из табличных пространств размещено на диске, который быстрее или медленнее остальной дисковой системы. Сжатие рассматривается в <xref remap="6" linkend="cfs"/>.</para>
+      </listitem>
+     </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Табличные пространства поддерживаются только на платформах, поддерживающих символические ссылки.</para>
+
+   <para><command>CREATE TABLESPACE</command> не может быть выполнена внутри блока транзакции.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Создание табличного пространства <literal>dbspace</literal> в <literal>/data/dbs</literal>: <programlisting>CREATE TABLESPACE dbspace LOCATION '/data/dbs';</programlisting></para>
+
+  <para>Создание табличного пространства <literal>indexspace</literal> в <literal>/data/indexes</literal> и назначение его владельцем <literal>genevieve</literal>: <programlisting>CREATE TABLESPACE indexspace OWNER genevieve LOCATION '/data/indexes';</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>CREATE TABLESPACE</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createdatabase"/></member>
+   <member><xref linkend="sql-createtable"/></member>
+   <member><xref linkend="sql-createindex"/></member>
+   <member><xref linkend="sql-droptablespace"/></member>
+   <member><xref linkend="sql-altertablespace"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

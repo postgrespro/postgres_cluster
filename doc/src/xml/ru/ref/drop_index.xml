@@ -1,0 +1,92 @@
+<!--
+doc/src/xml/ref/drop_index.xml
+&productname; documentation
+-->
+
+<refentry id="sql-dropindex">
+ <indexterm zone="sql-dropindex"><primary>DROP INDEX</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP INDEX</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP INDEX</refname>
+  <refpurpose>удалить индекс</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP INDEX [ CONCURRENTLY ] [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [, ...] [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP INDEX</command> удаляет существующий индекс из базы данных. Выполнить эту команду может только владелец индекса.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>CONCURRENTLY</literal></term>
+    <listitem>
+     <para>С этим указанием индекс удаляется, не блокируя параллельные операции выборки, добавления, изменения и удаления данных в таблице индекса. Обычный оператор <command>DROP INDEX</command> запрашивает исключительную блокировку для таблицы, запрещая другим обращаться к ней до завершения удаления. Если же добавлено это указание, команда, напротив, будет ждать завершения конфликтующих транзакций.</para>
+     <para>Применяя это указание, надо учитывать несколько особенностей. В частности, при этом можно задать имя только одного индекса, а параметр <literal>CASCADE</literal> не поддерживается. (Таким образом, индекс, поддерживающий ограничение <literal>UNIQUE</literal> или <literal>PRIMARY KEY</literal>, так удалить нельзя.) Кроме того, обычную команду <command>DROP INDEX</command> можно выполнить в блоке транзакции, а <command>DROP INDEX CONCURRENTLY</command> — нет.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если индекс не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) индекса, подлежащего удалению.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данного индекса, и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении индекса, если от него зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Эта команда удалит индекс <literal>title_idx</literal>: <programlisting>DROP INDEX title_idx;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>DROP INDEX</command> является языковым расширением <productname>&productname;</productname>. Средства обеспечения индексов в стандарте SQL не описаны.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createindex"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

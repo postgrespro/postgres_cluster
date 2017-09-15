@@ -1,0 +1,156 @@
+<!-- doc/src/xml/sslinfo.xml -->
+
+<sect1 id="sslinfo" xreflabel="sslinfo">
+ <title>sslinfo</title>
+
+ <indexterm zone="sslinfo"><primary>sslinfo</primary></indexterm>
+
+ <para>Модуль <filename>sslinfo</filename> выдаёт информацию о SSL-сертификате, который был представлен текущим клиентом при подключении к <productname>&productname;</productname>. Это модуль бесполезен (большинство функцию возвратят NULL), если для текущего подключения не задействуется SSL.</para>
+
+ <para>Это расширение не будет собираться, если конфигурация была произведена без ключа <literal>--with-openssl</literal>.</para>
+
+ <sect2>
+  <title>Предоставляемые функции</title>
+
+  <variablelist>
+   <varlistentry>
+    <term>
+     <function>ssl_is_used() returns boolean</function>
+     <indexterm><primary>ssl_is_used</primary></indexterm>
+    </term>
+    <listitem>
+    <para>Возвращает TRUE, если текущее подключение использует SSL, и FALSE в противном случае.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>ssl_version() returns text</function>
+     <indexterm><primary>ssl_version</primary></indexterm>
+    </term>
+    <listitem>
+    <para>Возвращает имя протокола, по которому организовано SSL-подключение (например, SSLv2, SSLv3 или TLSv1).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>ssl_cipher() returns text</function>
+     <indexterm><primary>ssl_cipher</primary></indexterm>
+    </term>
+    <listitem>
+    <para>Возвращает имя шифра, используемого для SSL-подключения (например, DHE-RSA-AES256-SHA).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>ssl_client_cert_present() returns boolean</function>
+     <indexterm><primary>ssl_client_cert_present</primary></indexterm>
+    </term>
+    <listitem>
+    <para>Возвращает TRUE, если текущий клиент предоставил серверу годный клиентский SSL-сертификат, и FALSE в противном случае. (Сервер может быть требовать, а может и не требовать предоставления клиентского сертификата.)</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>ssl_client_serial() returns numeric</function>
+     <indexterm><primary>ssl_client_serial</primary></indexterm>
+    </term>
+    <listitem>
+    <para>Возвращает серийный номер текущего клиентского сертификата. Сочетание серийного номера сертификата с выдавшим его центром сертификации гарантирует однозначную идентификацию сертификата (но не его владелец &mdash; владелец должен регулярно менять свои ключи и получать сертификаты в центре сертификации).</para>
+
+    <para>Поэтому, если вы используете собственный ЦС и настроили сервер, чтобы он принимал сертификаты только от этого ЦС, серийный номер будет наиболее надёжным (хотя не очень запоминающимся) ключом идентификации пользователя.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>ssl_client_dn() returns text</function>
+     <indexterm><primary>ssl_client_dn</primary></indexterm>
+    </term>
+    <listitem>
+    <para>Возвращает полное имя субъекта из текущего клиентского сертификата, преобразуя символьные данные в кодировку текущей базы данных. Предполагается, что если в именах в сертификатах используются символы вне таблицы ASCII, то ваша база данных может представить эти символы. Если в вашей базе используется кодировка SQL_ASCII, символы вне ASCII в имени будут представлены последовательностями UTF-8.</para>
+
+    <para>Результат выглядит примерно так: <literal>/CN=Somebody /C=Some country/O=Some organization</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>ssl_issuer_dn() returns text</function>
+     <indexterm><primary>ssl_issuer_dn</primary></indexterm>
+    </term>
+    <listitem>
+    <para>Возвращает полное имя издателя текущего клиентского сертификата, преобразуя символьные данные в кодировку текущей базы данных. Преобразования кодировки осуществляются так же, как и в <function>ssl_client_dn</function>.</para>
+    <para>Сочетание возвращаемого значения этой функции с серийным номером сертификата однозначно идентифицирует сертификат.</para>
+    <para>Эта функция полезна, только если в файле <filename>root.crt</filename> вашего сервера содержатся сертификаты нескольких ЦС, или если один ЦС выдаёт сертификаты для промежуточных центров сертификации.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>ssl_client_dn_field(fieldname text) returns text</function>
+     <indexterm><primary>ssl_client_dn_field</primary></indexterm>
+    </term>
+    <listitem>
+    <para>Эта функция возвращает значение указанного поля данных субъекта сертификата, либо NULL, если это поле отсутствует. Имена полей задаются строковыми константами, которые затем преобразуются в идентификаторы объектов ASN1, используя базу данных объектов OpenSSL. Принимаются следующие значения:</para>
+<literallayout class="monospaced">commonName (или CN)
+surname (или SN)
+name
+givenName (или GN)
+countryName (или C)
+localityName (или L)
+stateOrProvinceName (или ST)
+organizationName (или O)
+organizationUnitName (или OU)
+title
+description
+initials
+postalCode
+streetAddress
+generationQualifier
+description
+dnQualifier
+x500UniqueIdentifier
+pseudonym
+role
+emailAddress</literallayout>
+    <para>Все эти поля являются необязательными, за исключением <structfield>commonName</structfield>. Какие из них будут включены в сертификат, а какие нет, зависит полностью от политики вашего ЦС. Значение этих полей, однако, строго определено стандартами X.500 и X.509, так что их нельзя интерпретировать произвольным образом.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>ssl_issuer_field(fieldname text) returns text</function>
+     <indexterm><primary>ssl_issuer_field</primary></indexterm>
+    </term>
+    <listitem>
+    <para>То же, что <function>ssl_client_dn_field</function>, но для издателя, а не для субъекта сертификата.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>ssl_extension_info() returns setof record</function>
+     <indexterm><primary>ssl_extension_info</primary></indexterm>
+    </term>
+    <listitem>
+    <para>Предоставляет информацию о расширениях клиентского сертификата: имя расширения, значение расширения и является ли это расширение критическим.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </sect2>
+
+ <sect2>
+  <title>Автор</title>
+
+  <para>Виктор Вагнер <email>vitus@cryptocom.ru</email>, ООО &laquo;Криптоком&raquo;</para>
+
+  <para>Дмитрий Воронин <email>carriingfate92@yandex.ru</email></para>
+
+  <para>Электронный адрес группы разработчиков OpenSSL в Криптокоме: <email>openssl@cryptocom.ru</email></para>
+ </sect2>
+
+</sect1>

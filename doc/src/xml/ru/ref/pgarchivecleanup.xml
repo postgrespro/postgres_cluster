@@ -1,0 +1,115 @@
+<!-- doc/src/xml/ref/pgarchivecleanup.xml -->
+
+<refentry id="pgarchivecleanup">
+ <indexterm zone="pgarchivecleanup"><primary>pg_archivecleanup</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>pg_archivecleanup</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_archivecleanup</refname>
+  <refpurpose>вычистить файлы архивов WAL <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_archivecleanup</command>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+   <arg choice="plain"><replaceable>расположение_архива</replaceable></arg>
+   <arg choice="plain"><replaceable>старейший_сохраняемый_файл</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+ <para>Утилита <application>pg_archivecleanup</application> предназначена для использования в качестве <literal>archive_cleanup_command</literal> для удаления старых файлов WAL на резервном сервере (см. <xref remap="4" linkend="warm-standby"/>). <application>pg_archivecleanup</application> можно использовать и как отдельную программу для выполнения тех же действий.</para>
+
+  <para>Чтобы использовать <application>pg_archivecleanup</application> на резервном сервере, добавьте эту строку в файл конфигурации <filename>recovery.conf</filename>: <programlisting>archive_cleanup_command = 'pg_archivecleanup <replaceable>расположение_архива</replaceable> %r'</programlisting> Здесь <replaceable>расположение_архива</replaceable> определяет каталог, из которого должны удаляться файлы сегментов WAL.</para>
+  <para>Вызываемая в качестве <xref linkend="archive-cleanup-command"/>, эта программа просматривает <replaceable>расположение_архива</replaceable> и удаляет все файлы WAL, логически предшествующие значению аргумента <literal>%r</literal>. Целью этой операции является сокращение числа сохраняемых файлов без потери возможности восстановления при перезапуске. Такой вариант использования уместен, когда <replaceable>расположение_архива</replaceable> указывает на область рабочих файлов конкретного резервного сервера, но <emphasis>не</emphasis> когда <replaceable>расположение_архива</replaceable> — каталог с архивом WAL для долговременного хранения, или когда несколько резервных серверов восстанавливают записи WAL из одного расположения.</para>
+  <para>При отдельном использовании этой программы из каталога <replaceable>расположение_архива</replaceable> будут удалены все файлы WAL, логически предшествующие файлу <replaceable>старейший_сохраняемый_файл</replaceable>. В этом режиме, если вы укажете имя файла с расширением <filename>.partial</filename> или <filename>.backup</filename>, <replaceable>старейший_сохраняемый_файл</replaceable> будет определяться по имени без расширения. Благодаря такой интерпретации расширения <filename>.backup</filename> будут корректно удалены все файлы WAL, заархивированные до определённой базовой копии. Например, следующая команда удалит все файлы старее файла WAL с именем <filename>000000010000003700000010</filename>: <programlisting>pg_archivecleanup -d archive 000000010000003700000010.00000020.backup
+
+pg_archivecleanup:  keep WAL file "archive/000000010000003700000010" and later
+pg_archivecleanup:  removing file "archive/00000001000000370000000F"
+pg_archivecleanup:  removing file "archive/00000001000000370000000E"</programlisting></para>
+  <para><application>pg_archivecleanup</application> рассчитывает на то, что <replaceable>расположение_архива</replaceable> доступно для чтения и записи пользователю, владеющему серверным процессом.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <para><application>pg_archivecleanup</application> принимает следующие аргументы командной строки: <variablelist>
+
+     <varlistentry>
+      <term><option>-d</option></term>
+      <listitem>
+       <para>Выводить подробные отладочные сообщения в <filename>stderr</filename>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-n</option></term>
+      <listitem>
+       <para>Вывести имена файлов, которые должны быть удалены, в <filename>stdout</filename> (не выполняя удаление).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-V</option></term>
+      <term><option>--version</option></term>
+      <listitem>
+       <para>Вывести версию <application>pg_archivecleanup</application> и завершиться.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-x</option> <replaceable>расширение</replaceable></term>
+      <listitem>
+       <para>Установить расширение, которое будет убрано из имён файлов до принятия решения об удалении определённых файлов. Это обычно полезно для очистки файлов архивов, которые сжимаются для хранения и получают расширение, задаваемое программой сжатия. Например: <literal>-x .gz</literal>.</para>
+
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-?</option></term>
+      <term><option>--help</option></term>
+      <listitem>
+       <para>Вывести справку об аргументах командной строки <application>pg_archivecleanup</application> и завершиться.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Программа <application>pg_archivecleanup</application> рассчитана на работу с <productname>PostgreSQL</productname> 8.0 и новее как отдельная утилита, а также с <productname>PostgreSQL</productname> 9.0 и новее как команда очистки архива.</para>
+
+  <para>Программа <application>pg_archivecleanup</application> написана на C; её исходный код легко поддаётся модификации (он содержит секции, предназначенные для изменения при надобности)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>В системах Linux или Unix можно использовать команду: <programlisting>archive_cleanup_command = 'pg_archivecleanup -d /mnt/standby/archive %r 2&gt;&gt;cleanup.log'</programlisting> Предполагается, что каталог архива физически располагается на резервном сервере, так что команда <varname>archive_command</varname> обращается к нему по NFS, но для резервного сервера эти файлы локальные. Эта команда будет:</para>
+  <itemizedlist>
+   <listitem>
+    <para>выводить отладочную информацию в <filename>cleanup.log</filename></para>
+   </listitem>
+   <listitem>
+    <para>удалять ставшие ненужными файлы из каталога архива</para>
+   </listitem>
+  </itemizedlist>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="pgstandby"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

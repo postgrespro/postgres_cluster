@@ -1,0 +1,136 @@
+<!--
+doc/src/xml/ref/alter_materialized_view.xml
+&productname; documentation
+-->
+
+<refentry id="sql-altermaterializedview">
+ <indexterm zone="sql-altermaterializedview"><primary>ALTER MATERIALIZED VIEW</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER MATERIALIZED VIEW</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER MATERIALIZED VIEW</refname>
+  <refpurpose>изменить определение материализованного представления</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER MATERIALIZED VIEW [ IF EXISTS ] <replaceable class="parameter">имя</replaceable>
+    <replaceable class="parameter">действие</replaceable> [, ... ]
+ALTER MATERIALIZED VIEW <replaceable class="parameter">имя</replaceable>
+    DEPENDS ON EXTENSION <replaceable class="parameter">имя_расширения</replaceable>
+ALTER MATERIALIZED VIEW [ IF EXISTS ] <replaceable class="parameter">имя</replaceable>
+    RENAME [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> TO <replaceable class="parameter">новое_имя_столбца</replaceable>
+ALTER MATERIALIZED VIEW [ IF EXISTS ] <replaceable class="parameter">имя</replaceable>
+    RENAME TO <replaceable class="parameter">новое_имя</replaceable>
+ALTER MATERIALIZED VIEW [ IF EXISTS ] <replaceable class="parameter">имя</replaceable>
+    SET SCHEMA <replaceable class="parameter">новая_схема</replaceable>
+ALTER MATERIALIZED VIEW ALL IN TABLESPACE <replaceable class="parameter">имя</replaceable> [ OWNED BY <replaceable class="parameter">имя_роли</replaceable> [, ... ] ]
+    SET TABLESPACE <replaceable class="parameter">новое_табл_пространство</replaceable> [ NOWAIT ]
+
+<phrase>Где <replaceable class="parameter">действие</replaceable> может быть следующим:</phrase>
+
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> SET STATISTICS <replaceable class="parameter">integer</replaceable>
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> SET ( <replaceable class="parameter">атрибут</replaceable> = <replaceable class="parameter">значение</replaceable> [, ... ] )
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> RESET ( <replaceable class="parameter">атрибут</replaceable> [, ... ] )
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> SET STORAGE { PLAIN | EXTERNAL | EXTENDED | MAIN }
+    CLUSTER ON <replaceable class="parameter">имя_индекса</replaceable>
+    SET WITHOUT CLUSTER
+    SET ( <replaceable class="parameter">параметр_хранения</replaceable> = <replaceable class="parameter">значение</replaceable> [, ... ] )
+    RESET ( <replaceable class="parameter">параметр_хранения</replaceable> [, ... ] )
+    OWNER TO { <replaceable class="parameter">новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER MATERIALIZED VIEW</command> изменяет различные расширенные свойства существующего материализованного представления.</para>
+
+  <para>Выполнить <command>ALTER MATERIALIZED VIEW</command> может только владелец материализованного представления. Чтобы сменить схему материализованного представления, необходимо также иметь право <literal>CREATE</literal> в новой схеме. Чтобы сменить владельца, требуется также быть непосредственным или опосредованным членом новой роли, а эта роль должна иметь право <literal>CREATE</literal> в схеме материализованного представления. (С такими ограничениями при смене владельца не происходит ничего такого, что нельзя было бы сделать, имея право удалить и вновь создать материализованное представление. Однако суперпользователь может сменить владельца материализованного представления в любом случае.)</para>
+
+  <para>Форма <literal>DEPENDS ON EXTENSION</literal> помечает материализованное представление как зависимое от расширения, так что матпредставление будет автоматически удаляться при удалении расширения.</para>
+
+  <para>Подвиды и действия оператора <command>ALTER MATERIALIZED VIEW</command> являются подмножеством тех, что относятся к команде <command>ALTER TABLE</command>, и имеют то же значение применительно к материализованным представлениям. За подробностями обратитесь к описанию <xref linkend="sql-altertable"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <variablelist>
+
+    <varlistentry>
+     <term><replaceable class="parameter">имя</replaceable></term>
+     <listitem>
+      <para>Имя (возможно, дополненное схемой) существующего материализованного представления.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">имя_столбца</replaceable></term>
+     <listitem>
+      <para>Имя нового или существующего столбца.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">имя_расширения</replaceable></term>
+     <listitem>
+      <para>Имя расширения, от которого будет зависеть материализованное представление.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">новое_имя_столбца</replaceable></term>
+     <listitem>
+      <para>Новое имя существующего столбца.</para>
+     </listitem>
+    </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Имя пользователя, назначаемого новым владельцем материализованного представления.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя материализованного представления.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_схема</replaceable></term>
+    <listitem>
+     <para>Новая схема материализованного представления.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Переименование материализованного представления <literal>foo</literal> в <literal>bar</literal>: <programlisting>ALTER MATERIALIZED VIEW foo RENAME TO bar;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>ALTER MATERIALIZED VIEW</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-creatematerializedview"/></member>
+   <member><xref linkend="sql-dropmaterializedview"/></member>
+   <member><xref linkend="sql-refreshmaterializedview"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

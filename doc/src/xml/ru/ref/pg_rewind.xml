@@ -1,0 +1,147 @@
+<!--
+doc/src/xml/ref/pg_rewind.xml
+&productname; documentation
+-->
+
+<refentry id="app-pgrewind">
+ <indexterm zone="app-pgrewind"><primary>pg_rewind</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>pg_rewind</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_rewind</refname>
+  <refpurpose>синхронизировать каталог данных <productname>&productname;</productname> с другим каталогом, ответвлённым от него</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_rewind</command>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+   <group choice="plain">
+    <group choice="req">
+     <arg choice="plain"><option>-D</option></arg>
+     <arg choice="plain"><option>--target-pgdata</option></arg>
+    </group>
+    <replaceable>каталог</replaceable>
+    <group choice="req">
+     <arg choice="plain"><option>--source-pgdata=<replaceable>каталог</replaceable></option></arg>
+     <arg choice="plain"><option>--source-server=<replaceable>строка_подключения</replaceable></option></arg>
+    </group>
+   </group>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Утилита <application>pg_rewind</application> представляет собой средство синхронизации кластера &productname; с другой копией того же кластера после расхождения линий времени этих кластеров. Обычный сценарий её использования — вернуть в работу старый главный сервер после переключения на резервный, в качестве резервного для сервера, ставшего главным.</para>
+
+  <para>Её результат равнозначен замене целевого каталога данных исходным. В файлах отношений она копирует только изменённые блоки; все остальные файлы, включая файлы конфигурации, копируются целиком. Преимущество <application>pg_rewind</application> по сравнению с созданием новой базовой копии или такими средствами, как <application>rsync</application>, состоит в том, что <application>pg_rewind</application> не читает неизменённые блоки в кластере. Благодаря этому она действует гораздо быстрее, когда база данных большая, но различия между кластерами ограничиваются лишь небольшим количеством блоков.</para>
+
+  <para>Утилита <application>pg_rewind</application> изучает истории линий времени исходного и целевого кластеров с целью найти точку, в которой они разошлись, и ожидает найти журналы WAL в каталоге <filename>pg_xlog</filename> целевого кластера вплоть до точки расхождения. Точка расхождения может быть найдена на целевой или исходной линии времени либо в их общем предке. В типичном сценарии отработки отказа, когда целевой кластер отключается вскоре после расхождения, это не проблема, но если целевой кластер проработал долгое время после расхождения, старые файлы WAL могут быть уже удалены. В этом случае их можно вручную скопировать из архива WAL в каталог <filename>pg_xlog</filename> либо считать при запуске, настроив <filename>recovery.conf</filename>. Варианты использования <application>pg_rewind</application> не ограничиваются отработкой отказа; например, резервный сервер может быть повышен, выполнить несколько транзакций с записью, а затем, после восстановления синхронизации, вновь стать резервным.</para>
+
+  <para>Когда целевой сервер запускается в первый раз после выполнения <application>pg_rewind</application>, он переходит в режим восстановления и воспроизводит все изменения из WAL с исходного сервера после точки расхождения. Если какие-то сегменты WAL оказались недоступны на исходном сервере, когда выполнялась <application>pg_rewind</application>, и поэтому не могли быть скопированы в ходе работы <application>pg_rewind</application>, их необходимо предоставить, когда сервер будет запускаться. Это можно сделать, создав в целевом каталоге данных файл <filename>recovery.conf</filename> с подходящей командой <varname>restore_command</varname>.</para>
+
+  <para>Утилита <application>pg_rewind</application> требует, чтобы на целевом сервере был либо включён режим <xref linkend="guc-wal-log-hints"/> в <filename>postgresql.conf</filename>, либо включены контрольные суммы, когда кластер был инициализирован командой <application>initdb</application>. Оба эти режима по умолчанию отключены. Также должен быть включён режим <xref linkend="guc-full-page-writes"/>, но он по умолчанию включён.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <para><application>pg_rewind</application> принимает следующие аргументы командной строки: <variablelist>
+     <varlistentry>
+      <term><option>-D <replaceable class="parameter">каталог</replaceable></option></term>
+      <term><option>--target-pgdata=<replaceable class="parameter">каталог</replaceable></option></term>
+      <listitem>
+       <para>Этот параметр задаёт целевой каталог данных, который будет синхронизирован с источником. Целевой сервер должен быть отключён штатным образом до запуска <application>pg_rewind</application></para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--source-pgdata=<replaceable class="parameter">каталог</replaceable></option></term>
+      <listitem>
+       <para>Задаёт путь в файловой системе к каталогу данных исходного сервера, с которым будет синхронизироваться целевой. Для применения этого ключа исходный сервер должен быть остановлен штатным образом.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--source-server=<replaceable class="parameter">строка_подключения</replaceable></option></term>
+      <listitem>
+       <para>Задаёт строку подключения libpq для подключения к исходному серверу <productname>&productname;</productname>, с которым будет синхронизирован целевой. Подключение должно устанавливаться как обычное (не реплицирующее) с правами суперпользователя. Для применения этого параметра исходный сервер должен быть запущен и работать не в режиме восстановления.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-n</option></term>
+      <term><option>--dry-run</option></term>
+      <listitem>
+       <para>Делать всё, кроме внесения изменений в целевой каталог.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-P</option></term>
+      <term><option>--progress</option></term>
+      <listitem>
+       <para>Включает вывод сообщений о прогрессе. При этом в процессе копирования данных из исходного кластера будет выдаваться приблизительный процент выполнения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--debug</option></term>
+      <listitem>
+       <para>Выводить подробные отладочные сообщения, полезные в основном для разработчиков, отлаживающих <application>pg_rewind</application>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-V</option></term>
+      <term><option>--version</option></term>
+      <listitem><para>Показать версию, а затем завершиться.</para></listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-?</option></term>
+      <term><option>--help</option></term>
+      <listitem><para>Показать справку, а затем завершиться.</para></listitem>
+     </varlistentry>
+
+    </variablelist></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <para>Когда используется <option>--source-server</option>, <application>pg_rewind</application> также использует переменные среды, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>).</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <refsect2>
+   <title>Как это работает</title>
+
+   <para>Основная идея состоит в том, чтобы перенести все изменения на уровне файловой системы из исходного кластера в целевой:</para>
+
+   <procedure>
+    <step>
+     <para>Просканировать журнал WAL в целевом кластере, начиная с последней контрольной точки перед моментом, когда история линии времени исходного кластера разошлась с целевым кластером. Для каждой записи WAL отметить, какие блоки данных были затронуты. В результате будет получен список всех блоков данных, которые были изменены в целевом кластере после отделения исходного.</para>
+    </step>
+    <step>
+     <para>Скопировать все эти изменённые блоки из исходного кластера в целевой либо на уровне файловой системы (<option>--source-pgdata</option>), либо на уровне SQL (<option>--source-server</option>).</para>
+    </step>
+    <step>
+     <para>Скопировать все остальные файлы, в частности <filename>pg_clog</filename> и файлы конфигурации, из исходного кластера в целевой (пропуская при этом файлы отношений).</para>
+    </step>
+    <step>
+     <para>Применить WAL из исходного кластера, начиная с контрольной точки, созданной при отработке отказа. (Строго говоря, утилита <application>pg_rewind</application> не применяет WAL, она просто создаёт файл метки резервной копии, обнаружив который, <productname>&productname;</productname> начинает воспроизведение всех записей WAL от этой контрольной точки.)</para>
+    </step>
+   </procedure>
+  </refsect2>
+ </refsect1>
+
+</refentry>

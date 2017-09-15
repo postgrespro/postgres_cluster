@@ -1,0 +1,78 @@
+<!--
+doc/src/xml/ref/waitlsn.xml
+&productname; documentation
+-->
+
+<refentry id="sql-waitlsn">
+ <indexterm zone="sql-waitlsn"><primary>WAITLSN</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>WAITLSN</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>WAITLSN</refname>
+  <refpurpose>ожидать воспроизведения целевого <acronym>LSN</acronym></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>WAITLSN <replaceable class="parameter">'LSN'</replaceable> [ , <replaceable class="parameter">задержка</replaceable> ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Команда <command>WAITLSN</command> будет ждать воспроизведения целевого <acronym>LSN</acronym> в течение указанного времени (задаваемого в необязательном параметре <quote>задержка</quote> в миллисекундах) или без ограничения времени (по умолчанию).</para>
+
+  <para><command>WAITLSN</command> предоставляет простой межпроцессный механизм ожидания <acronym>LSN</acronym> для обслуживающих процессов на ведомых узлах в схеме репликации ведущий-ведомый баз данных <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">LSN</replaceable></term>
+    <listitem>
+     <para>Последовательный номер записи в журнале, воспроизведение которой ожидается.</para>
+    </listitem>
+   </varlistentry>
+   <varlistentry>
+    <term><replaceable class="parameter">задержка</replaceable></term>
+    <listitem>
+     <para>Время ожидания воспроизведения LSN (в миллисекундах).</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Время ожидания воспроизведения LSN должно быть целочисленным. По умолчанию ожидание бесконечно. Ожидание может быть прервано клавишами Ctrl+C или отключением процесса postmaster.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Выполнение WAITLSN из <application>psql</application>: <programlisting>WAITLSN '0/3F07A6B1', 10000;
+NOTICE:  LSN is not reached. Try to make bigger delay.
+WAITLSN
+
+WAITLSN '0/3F07A611';
+WAITLSN
+
+WAITLSN '0/3F0FF791', 500000;
+^CCancel request sent
+NOTICE:  LSN is not reached. Try to make bigger delay.
+ERROR:  canceling statement due to user request</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>WAITLSN</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+</refentry>

@@ -1,0 +1,131 @@
+<!--
+doc/src/xml/ref/values.xml
+&productname; documentation
+-->
+
+<refentry id="sql-values">
+ <indexterm zone="sql-values"><primary>VALUES</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>VALUES</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>VALUES</refname>
+  <refpurpose>вычислить набор строк</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>VALUES ( <replaceable class="parameter">выражение</replaceable> [, ...] ) [, ...]
+    [ ORDER BY <replaceable class="parameter">выражение_сортировки</replaceable> [ ASC | DESC | USING <replaceable class="parameter">оператор</replaceable> ] [, ...] ]
+    [ LIMIT { <replaceable class="parameter">число</replaceable> | ALL } ]
+    [ OFFSET <replaceable class="parameter">начало</replaceable> [ ROW | ROWS ] ]
+    [ FETCH { FIRST | NEXT } [ <replaceable class="parameter">число</replaceable> ] { ROW | ROWS } ONLY ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>VALUES</command> вычисляет значение строки или множество значений строк, заданное выражениями. Чаще всего эта команда используется для формирования <quote>таблицы констант</quote> в большой команде, но её можно использовать и отдельно.</para>
+
+  <para>Когда указывается больше, чем одна строка, все строки должны иметь одинаковое количество элементов. Типы данных результирующих столбцов таблицы определяются в результате совмещения явных и неявных типов выражений, заданных для этих столбцов, по тем же правилам, что и в <literal>UNION</literal> (см. <xref remap="4" linkend="typeconv-union-case"/>).</para>
+
+  <para>В составе других команд синтаксис допускает использование <command>VALUES</command> везде, где допускается <command>SELECT</command>. Так как грамматически она воспринимается как <command>SELECT</command>, с командой <command>VALUES</command> можно использовать предложения <literal>ORDER BY</literal>, <literal>LIMIT</literal> (или равнозначное <literal>FETCH FIRST</literal>) и <literal>OFFSET</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">выражение</replaceable></term>
+    <listitem>
+     <para>Константа или выражение, которое вычисляется и вставляется в указанное место результирующей таблицы (множества строк). В списке <command>VALUES</command>, находящемся на верхнем уровне оператора <command>INSERT</command>, <replaceable class="parameter">выражение</replaceable> может быть заменено словом <literal>DEFAULT</literal>, указывающим, что в целевой столбец должно быть вставлено значение этого столбца по умолчанию. Когда <command>VALUES</command> употребляется в других контекстах, указание <literal>DEFAULT</literal> использовать нельзя.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">выражение_сортировки</replaceable></term>
+    <listitem>
+     <para>Выражение или целочисленная константа, указывающая, как должны сортироваться строки результата. Это выражение может обращаться к столбцам результата <command>VALUES</command> по именам <literal>column1</literal>, <literal>column2</literal> и т. д. За дополнительными подробностями обратитесь к <xref remap="3" linkend="sql-orderby" endterm="sql-orderby-title"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">оператор</replaceable></term>
+    <listitem>
+     <para>Оператор сортировки. За подробностями обратитесь к <xref remap="3" linkend="sql-orderby" endterm="sql-orderby-title"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">число</replaceable></term>
+    <listitem>
+     <para>Максимальное число строк, которое должно быть возвращено. За подробностями обратитесь к <xref remap="3" linkend="sql-limit" endterm="sql-limit-title"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">начало</replaceable></term>
+    <listitem>
+     <para>Число строк, которые должны быть пропущены, прежде чем начнётся выдача строк. За подробностями обратитесь к <xref remap="3" linkend="sql-limit" endterm="sql-limit-title"/>.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Следует избегать составления списков <command>VALUES</command> с очень большим количеством строк, так как при этом можно столкнуться с нехваткой памяти или снижением производительности. Применение <command>VALUES</command> в команде <command>INSERT</command> — особый случай (так как ожидаемые типы столбцов становятся известны из целевой таблицы команды <command>INSERT</command> и их не надо вычислять, сканируя весь список <command>VALUES</command>), так что в этом контексте можно работать с гораздо более объёмными списками, чем в других.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Простейшая команда <command>VALUES</command>: <programlisting>VALUES (1, 'one'), (2, 'two'), (3, 'three');</programlisting> Эта команда выдаст таблицу из двух столбцов и трёх строк. По сути она равнозначна запросу: <programlisting>SELECT 1 AS column1, 'one' AS column2
+UNION ALL
+SELECT 2, 'two'
+UNION ALL
+SELECT 3, 'three';</programlisting></para>
+
+  <para>Более типично использование <command>VALUES</command> в составе большей команды SQL. Чаще всего она применяется в <command>INSERT</command>: <programlisting>INSERT INTO films (code, title, did, date_prod, kind)
+    VALUES ('T_601', 'Yojimbo', 106, '1961-06-16', 'Drama');</programlisting></para>
+
+  <para>В контексте <command>INSERT</command> список <command>VALUES</command> может содержать слово <literal>DEFAULT</literal>, указывающее, что в данном месте вместо некоторого значения должно использоваться значение столбца по умолчанию: <programlisting>INSERT INTO films VALUES
+    ('UA502', 'Bananas', 105, DEFAULT, 'Comedy', '82 minutes'),
+    ('T_601', 'Yojimbo', 106, DEFAULT, 'Drama', DEFAULT);</programlisting></para>
+
+  <para><command>VALUES</command> также может применяться там, где можно написать вложенный <command>SELECT</command>, например в предложении <literal>FROM</literal>: <programlisting>SELECT f.*
+  FROM films f, (VALUES('MGM', 'Horror'), ('UA', 'Sci-Fi')) AS t (studio, kind)
+  WHERE f.studio = t.studio AND f.kind = t.kind;
+
+UPDATE employees SET salary = salary * v.increase
+  FROM (VALUES(1, 200000, 1.2), (2, 400000, 1.4)) AS v (depno, target, increase)
+  WHERE employees.depno = v.depno AND employees.sales &gt;= v.target;</programlisting> Заметьте, что когда <command>VALUES</command> используется в предложении <literal>FROM</literal>, предложение <literal>AS</literal> становится обязательным, так же, как и для <command>SELECT</command>. При этом не требуется указывать в <literal>AS</literal> имена всех столбцов, но это рекомендуется делать. (По умолчанию <productname>&productname;</productname> даёт столбцам <command>VALUES</command> имена <literal>column1</literal>, <literal>column2</literal> и т. д., но в других СУБД имена могут быть другими.)</para>
+
+  <para>Когда <command>VALUES</command> используется в команде <command>INSERT</command>, значения автоматически приводятся к типу данных соответствующего целевого столбца. Когда оно используется в других контекстах, может потребоваться указать нужный тип данных. Если все записи представлены строковыми константами в кавычках, достаточно привести к нужному типу значения в первой строке, чтобы задать тип для всех: <programlisting>SELECT * FROM machines
+WHERE ip_address IN (VALUES('192.168.0.1'::inet), ('192.168.0.10'), ('192.168.1.43'));</programlisting></para>
+
+  <tip>
+   <para>Для простых проверок на включение <literal>IN</literal> лучше полагаться на форму <literal>IN</literal> со <link linkend="functions-comparisons-in-scalar">списком скаляров</link>, чем записывать запрос <command>VALUES</command>, как показано выше. Список скаляров проще записать и обрабатывается он зачастую более эффективно.</para>
+  </tip>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>VALUES</command> соответствует стандарту SQL. Указания <literal>LIMIT</literal> и <literal>OFFSET</literal> являются расширениями <productname>&productname;</productname>; см. также <xref remap="4" linkend="sql-select"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-insert"/></member>
+   <member><xref linkend="sql-select"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

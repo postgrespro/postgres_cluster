@@ -1,0 +1,48 @@
+<!-- doc/src/xml/intagg.xml -->
+
+<sect1 id="intagg" xreflabel="intagg">
+ <title>intagg</title>
+
+ <indexterm zone="intagg"><primary>intagg</primary></indexterm>
+
+ <para>Модуль <filename>intagg</filename> предоставляет агрегатор и нумератор целых чисел. На данный момент имеются встроенные функции, предлагающие более широкие возможности, поэтому <filename>intagg</filename> считается устаревшим. Однако этот модуль продолжает существовать для обратной совместимости, теперь как набор обёрток встроенных функций.</para>
+
+ <sect2>
+  <title>Функции</title>
+
+ <indexterm><primary>int_array_aggregate</primary></indexterm>
+
+ <indexterm><primary>array_agg</primary></indexterm>
+
+ <para>Агрегатор реализуется функцией <function>int_array_aggregate(integer)</function>, которая выдаёт массив целых чисел, содержащий в точности те числа, что переданы ей. Это обёртка встроенной функции <function>array_agg</function>, которая делает то же самое для массива любого типа.</para>
+
+ <indexterm><primary>int_array_enum</primary></indexterm>
+
+ <para>Нумератор реализуется функцией <function>int_array_enum(integer[])</function>, которая возвращает набор целых (<type>setof integer</type>). По сути его действие обратно действие агрегатора: получив массив целых, он разворачивает его в набор строк. Это оболочка функции <function>unnest</function>, которая делает то же самое для массива любого типа.</para>
+
+ </sect2>
+
+ <sect2>
+  <title>Примеры использования</title>
+
+  <para>Во многих СУБД есть понятие таблицы соотношений &laquo;один ко многим&raquo;. Такая таблица обычно находится между двумя индексированными таблицами, например: <programlisting>CREATE TABLE left (id INT PRIMARY KEY, ...);
+CREATE TABLE right (id INT PRIMARY KEY, ...);
+CREATE TABLE one_to_many(left INT REFERENCES left, right INT REFERENCES right);</programlisting> Как правило, она используется так: <programlisting>SELECT right.* from right JOIN one_to_many ON (right.id = one_to_many.right)
+  WHERE one_to_many.left = <replaceable>item</replaceable>;</programlisting> Этот запрос вернёт все элементы из таблицы справа для записи в таблице слева. Это очень распространённая конструкция в SQL.</para>
+
+ <para>Однако этот подход может вызывать затруднения с очень большим количеством записей в таблице <structname>one_to_many</structname>. Часто такое соединение влечёт сканирование индекса и выборку каждой записи в таблице справа для конкретного элемента слева. Если у вас динамическая система, с этим ничего не поделать. Но если какое-то множество данных довольно статическое, вы можете создать сводную таблицу, применив агрегатор. <programlisting>CREATE TABLE summary AS
+  SELECT left, int_array_aggregate(right) AS right
+  FROM one_to_many
+  GROUP BY left;</programlisting> Эта команда создаст таблицу, содержащую одну строку для каждого элемента слева с массивом элементов справа. Она малополезна, пока не найден подходящий способ использования этого массива; именно для этого и нужен нумератор массива. Вы можете выполнить: <programlisting>SELECT left, int_array_enum(right) FROM summary WHERE left = <replaceable>элемент</replaceable>;</programlisting> Приведённый выше запрос с вызовом <function>int_array_enum</function> выдаёт те же результаты, что и <programlisting>SELECT left, right FROM one_to_many WHERE left = <replaceable>элемент</replaceable>;</programlisting> Отличие состоит в том, что запрос к сводной таблице должен выдать только одну строку таблицы, тогда как непосредственный запрос к <structname>one_to_many</structname> потребует сканирования индекса и выборки строки для каждой записи.</para>
+
+ <para>На тестовом компьютере команда <command>EXPLAIN</command> показала, что стоимость запроса снизилась с 8488 до 329. Исходный запрос выполнял соединение с таблицей <structname>one_to_many</structname> и был заменён на: <programlisting>SELECT right, count(right) FROM
+  ( SELECT left, int_array_enum(right) AS right
+    FROM summary JOIN (SELECT left FROM left_table WHERE left = <replaceable>элемент</replaceable>) AS lefts
+         ON (summary.left = lefts.left)
+  ) AS list
+  GROUP BY right
+  ORDER BY count DESC;</programlisting></para>
+
+ </sect2>
+
+</sect1>

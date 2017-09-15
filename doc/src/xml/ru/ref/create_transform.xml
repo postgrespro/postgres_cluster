@@ -1,0 +1,119 @@
+<!-- doc/src/xml/ref/create_transform.xml -->
+
+<refentry id="sql-createtransform">
+ <indexterm zone="sql-createtransform"><primary>CREATE TRANSFORM</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE TRANSFORM</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE TRANSFORM</refname>
+  <refpurpose>создать трансформацию</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE [ OR REPLACE ] TRANSFORM FOR <replaceable>имя_типа</replaceable> LANGUAGE <replaceable>имя_языка</replaceable> (
+    FROM SQL WITH FUNCTION <replaceable>имя_функции_из_sql</replaceable> (<replaceable>тип_аргумента</replaceable> [, ...]),
+    TO SQL WITH FUNCTION <replaceable>имя_функции_в_sql</replaceable> (<replaceable>тип_аргумента</replaceable> [, ...])
+);</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="sql-createtransform-description">
+  <title>Описание</title>
+
+  <para><command>CREATE TRANSFORM</command> определяет новую трансформацию. <command>CREATE OR REPLACE TRANSFORM</command> либо создаёт трансформацию, либо заменяет существующую.</para>
+
+  <para>Трансформация определяет, как преобразовать тип данных для процедурного языка. Например, если написать на языке PL/Python функцию, использующую тип <type>hstore</type>, PL/Python заведомо не знает, как должны представляться значения <type>hstore</type> в среде Python. Обычно реализации языка нисходят к текстовому представлению, но это может быть неудобно, когда более уместен был бы, например, ассоциативный массив или список.</para>
+
+  <para>Трансформация определяет две функции: <itemizedlist>
+    <listitem>
+     <para>Функция <quote>из SQL</quote> преобразует тип из среды SQL в среду языка. Эта функция будет вызываться для аргументов функции, написанной на этом языке.</para>
+    </listitem>
+
+    <listitem>
+     <para>Функция <quote>в SQL</quote> преобразует тип из среды языка в среду SQL. Эта функция будет вызываться для значения, возвращаемого из функции на этом языке.</para>
+    </listitem>
+   </itemizedlist> Предоставлять обе эти функции не требуется, можно ограничиться одной. Если одна из них не указана, при необходимости выбирается поведение, принятое для языка по умолчанию. (Чтобы полностью перекрыть путь трансформации в одну сторону, можно написать функцию, которая будет всегда выдавать ошибку.)</para>
+
+  <para>Чтобы создать трансформацию, необходимо быть владельцем и иметь право <literal>USAGE</literal> для типа, иметь право <literal>USAGE</literal> для языка, а также быть владельцем и иметь право <literal>EXECUTE</literal> для функций из-SQL и в-SQL, если они задаются.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><replaceable>имя_типа</replaceable></term>
+
+     <listitem>
+      <para>Имя типа данных, для которого предназначена трансформация.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>имя_языка</replaceable></term>
+
+     <listitem>
+      <para>Имя языка, для которого предназначена трансформация.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>from_sql_function_name</replaceable>(<replaceable>argument_type</replaceable> [, ...])</term>
+
+     <listitem>
+      <para>Имя функции для преобразования типа из среды SQL в среду языка. Она должна принимать один аргумент типа <type>internal</type> и возвращать тип <type>internal</type>. Фактический аргумент будет иметь тип, заданный для трансформации, и сама функция должна рассчитывать на это. (Но на уровне SQL нельзя объявить функцию, возвращающую тип <type>internal</type>, если она не принимает минимум один аргумент типа <type>internal</type>.) Фактически возвращаемое значение будет определяться реализацией языка.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>to_sql_function_name</replaceable>(<replaceable>argument_type</replaceable> [, ...])</term>
+
+     <listitem>
+      <para>Имя функции для преобразования типа из среды языка в среду SQL. Она должна принимать один аргумент типа <type>internal</type> и возвращать тип, для которого создаётся трансформация. Фактическое значение аргумента будет определяться реализацией языка.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+ </refsect1>
+
+ <refsect1 id="sql-createtransform-notes">
+  <title>Замечания</title>
+
+  <para>Для удаления трансформаций применяется <xref linkend="sql-droptransform"/>.</para>
+ </refsect1>
+
+ <refsect1 id="sql-createtransform-examples">
+  <title>Примеры</title>
+
+  <para>Чтобы создать трансформацию для типа <type>hstore</type> и языка <literal>plpythonu</literal>, сначала нужно создать тип и язык: <programlisting>CREATE TYPE hstore ...;
+
+CREATE LANGUAGE plpythonu ...;</programlisting> Затем создайте необходимые функции: <programlisting>CREATE FUNCTION hstore_to_plpython(val internal) RETURNS internal
+LANGUAGE C STRICT IMMUTABLE
+AS ...;
+
+CREATE FUNCTION plpython_to_hstore(val internal) RETURNS hstore
+LANGUAGE C STRICT IMMUTABLE
+AS ...;</programlisting> И наконец, создайте трансформацию, соединяющую всё это вместе: <programlisting>CREATE TRANSFORM FOR hstore LANGUAGE plpythonu (
+    FROM SQL WITH FUNCTION hstore_to_plpython(internal),
+    TO SQL WITH FUNCTION plpython_to_hstore(internal)
+);</programlisting> На практике эти команды помещаются в расширение.</para>
+
+  <para>В разделе <filename>contrib</filename> представлено несколько расширений, в которых определены трансформации, что может послужить практическим примером реализации.</para>
+ </refsect1>
+
+ <refsect1 id="sql-createtransform-compat">
+  <title>Совместимость</title>
+
+  <para>Первая форма <command>CREATE TRANSFORM</command> является расширением <productname>&productname;</productname>. В стандарте <acronym>SQL</acronym> есть команда <command>CREATE TRANSFORM</command>, но её предназначение — преобразовывать типы для языков на стороне клиента. Этот вариант использования не поддерживается <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1 id="sql-createtransform-seealso">
+  <title>См. также</title>
+
+  <para><xref linkend="sql-createfunction"/>, <xref linkend="sql-createlanguage"/>, <xref linkend="sql-createtype"/>, <xref linkend="sql-droptransform"/></para>
+ </refsect1>
+
+</refentry>

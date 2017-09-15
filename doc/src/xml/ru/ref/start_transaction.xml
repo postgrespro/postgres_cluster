@@ -1,0 +1,65 @@
+<!--
+doc/src/xml/ref/start_transaction.xml
+&productname; documentation
+-->
+
+<refentry id="sql-start-transaction">
+ <indexterm zone="sql-start-transaction"><primary>START TRANSACTION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>START TRANSACTION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>START TRANSACTION</refname>
+  <refpurpose>начать блок транзакции</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>START TRANSACTION [ <replaceable class="parameter">режим_транзакции</replaceable> [, ...] ]
+
+<phrase>Где <replaceable class="parameter">режим_транзакции</replaceable> может быть следующим:</phrase>
+
+    ISOLATION LEVEL { SERIALIZABLE | REPEATABLE READ | READ COMMITTED | READ UNCOMMITTED }
+    READ WRITE | READ ONLY
+    [ NOT ] DEFERRABLE</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Эта команда начинает новый блок транзакции. Если указан уровень изоляции, режим чтения/записи или допустимость откладывания транзакции, новая транзакция получит эти характеристики, как при выполнении команды <xref linkend="sql-set-transaction"/>. Данная команда равнозначна команде <xref linkend="sql-begin"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <para>За описанием параметров этого оператора обратитесь к <xref remap="3" linkend="sql-set-transaction"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Согласно стандарту, выполнять <command>START TRANSACTION</command>, чтобы начать блок транзакции, необязательно: блок неявно начинает любая команда SQL. Поведение <productname>&productname;</productname> можно представить как неявное выполнение <command>COMMIT</command> после каждой команды, которой не предшествует <command>START TRANSACTION</command> (или <command>BEGIN</command>), и поэтому такое поведение часто называется <quote>автофиксацией</quote>. Другие реляционные СУБД тоже могут предлагать автофиксацию как удобную возможность.</para>
+
+  <para>Значение <literal>DEFERRABLE</literal> параметра <replaceable class="parameter">режим_транзакции</replaceable> является языковым расширением <productname>&productname;</productname>.</para>
+
+  <para>Стандарт SQL требует, чтобы последовательные <replaceable class="parameter">режимы_транзакций</replaceable> разделялись запятыми, но по историческим причинам <productname>&productname;</productname> позволяет опустить запятые.</para>
+
+  <para>См. также сведения о совместимости в описании <xref linkend="sql-set-transaction"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-begin"/></member>
+   <member><xref linkend="sql-commit"/></member>
+   <member><xref linkend="sql-rollback"/></member>
+   <member><xref linkend="sql-savepoint"/></member>
+   <member><xref linkend="sql-set-transaction"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

@@ -1,0 +1,380 @@
+<!-- doc/src/xml/spgist.xml -->
+
+<chapter id="spgist">
+<title>Индексы SP-GiST</title>
+
+   <indexterm><primary>индекс</primary> <secondary>SP-GiST</secondary></indexterm>
+
+<sect1 id="spgist-intro">
+ <title>Введение</title>
+
+ <para>Аббревиатура <acronym>SP-GiST</acronym> расшифровывается как <quote>Space-Partitioned <acronym>GiST</acronym></quote> (GiST с разбиением пространства). <acronym>SP-GiST</acronym> поддерживает деревья поиска с разбиением, что облегчает разработку широкого спектра различных несбалансированных структур данных, в том числе деревьев квадрантов, а также k-мерных и префиксных деревьев. Общей характеристикой этих структур является то, что они последовательно разбивают пространство поиска на сегменты, которые не обязательно должны быть равного размера. При этом поиск, хорошо соответствующий правилу разбиения, с таким индексом может быть очень быстрым.</para>
+
+ <para>Эти популярные структуры данных изначально конструировались для работы в памяти. При таком применении они обычно представляются в виде набора динамически выделяемых узлов, связываемых указателями. Однако подобную схему нельзя в таком виде перенести на диск, так как цепочки указателей могут быть довольно длинными, и поэтому потребуется слишком много обращений к диску. Структуры данных для хранения на диске, напротив, должны иметь большую разветвлённость для минимизации объёма ввода/вывода. Для решения этой задачи <acronym>SP-GiST</acronym> сопоставляет узлы дерева поиска со страницами на диске так, чтобы при поиске требовалось обращаться только к нескольким страницам на диске, даже если при этом нужно просмотреть множество узлов.</para>
+
+ <para>Как и <acronym>GiST</acronym>, <acronym>SP-GiST</acronym> призван дать возможность разрабатывать дополнительные типы данных с соответствующими методами доступа экспертам в предметной области типа данных, а не специалистам по СУБД.</para>
+
+ <para>Представленная здесь информация частично позаимствована с <ulink url="http://www.cs.purdue.edu/spgist/">сайта</ulink> Проекта индексации SP-GiST Университета Пердью. Сопровождением реализации <acronym>SP-GiST</acronym> в <productname>&productname;</productname> в основном занимаются Фёдор Сигаев и Олег Бартунов; дополнительные сведения можно получить на их <ulink url="http://www.sai.msu.su/~megera/wiki/spgist_dev">сайте</ulink>.</para>
+
+</sect1>
+
+<sect1 id="spgist-builtin-opclasses">
+ <title>Встроенные классы операторов</title>
+
+ <para>В базовый дистрибутив <productname>&productname;</productname> включены классы операторов <acronym>SP-GiST</acronym>, перечисленные в <xref remap="6" linkend="spgist-builtin-opclasses-table"/>.</para>
+
+  <table id="spgist-builtin-opclasses-table">
+   <title>Встроенные классы операторов <acronym>SP-GiST</acronym></title>
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Имя</entry>
+      <entry>Индексируемый тип данных</entry>
+      <entry>Индексируемые операторы</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><literal>kd_point_ops</literal></entry>
+      <entry><type>point</type></entry>
+      <entry>
+       <literal>&lt;&lt;</literal>
+       <literal>&lt;@</literal>
+       <literal>&lt;^</literal>
+       <literal>&gt;&gt;</literal>
+       <literal>&gt;^</literal>
+       <literal>~=</literal>
+       <literal>&lt;-&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>quad_point_ops</literal></entry>
+      <entry><type>point</type></entry>
+      <entry>
+       <literal>&lt;&lt;</literal>
+       <literal>&lt;@</literal>
+       <literal>&lt;^</literal>
+       <literal>&gt;&gt;</literal>
+       <literal>&gt;^</literal>
+       <literal>~=</literal>
+       <literal>&lt;-&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>range_ops</literal></entry>
+      <entry>любой тип диапазона</entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&amp;&lt;</literal>
+       <literal>&amp;&gt;</literal>
+       <literal>-|-</literal>
+       <literal>&lt;&lt;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>&gt;&gt;</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>box_ops</literal></entry>
+      <entry><type>box</type></entry>
+      <entry>
+       <literal>&lt;&lt;</literal>
+       <literal>&amp;&lt;</literal>
+       <literal>&amp;&amp;</literal>
+       <literal>&amp;&gt;</literal>
+       <literal>&gt;&gt;</literal>
+       <literal>~=</literal>
+       <literal>@&gt;</literal>
+       <literal>&lt;@</literal>
+       <literal>&amp;&lt;|</literal>
+       <literal>&lt;&lt;|</literal>
+       <literal>|&gt;&gt;</literal>
+       <literal>|&amp;&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>text_ops</literal></entry>
+      <entry><type>text</type></entry>
+      <entry>
+       <literal>&lt;</literal>
+       <literal>&lt;=</literal>
+       <literal>=</literal>
+       <literal>&gt;</literal>
+       <literal>&gt;=</literal>
+       <literal>~&lt;=~</literal>
+       <literal>~&lt;~</literal>
+       <literal>~&gt;=~</literal>
+       <literal>~&gt;~</literal>
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+ <para>Из двух классов операторов для типа <type>point</type> классом по умолчанию является <literal>quad_point_ops</literal>. Класс <literal>kd_point_ops</literal> поддерживает те же операторы, но использует другую структуру данных индекса, которая может дать выигрыш в скорости для некоторых приложений.</para>
+ <para>Поддерживая оператор упорядочивания &lt;-&gt;, классы quad_point_ops и kd_point_ops дают пользователю возможность выполнять поиск k ближайших соседей по индексированному набору точек.</para>
+
+</sect1>
+
+<sect1 id="spgist-extensibility">
+ <title>Расширяемость</title>
+
+ <para><acronym>SP-GiST</acronym> предлагает интерфейс с высоким уровнем абстракции и таким образом требует от разработчика метода доступа реализовать только методы, специфичные для конкретного типа данных. Ядро <acronym>SP-GiST</acronym> отвечает за эффективную схему обращений к диску и поиск в структуре дерева, а также берёт на себя заботу о параллельном доступе и поддержке журнала.</para>
+
+ <para>Кортежи в листьях дерева <acronym>SP-GiST</acronym> содержат значения того же типа данных, что и индексируемый столбец. На верхнем уровне эти кортежи содержат всегда исходное индексируемое значение данных, но на более нижних могут содержать только сокращённое представление, например, суффикс. В этом случае опорные функции класса операторов должны уметь восстанавливать исходное значение, собирая его из внутренних кортежей, которые нужно пройти для достижения уровня конкретного листа.</para>
+
+ <para>Внутренние кортежи устроены сложнее, так как они представляют собой точки разветвления в дереве поиска. Каждый внутренний кортеж содержит набор из одного или нескольких <firstterm>узлов</firstterm>, представляющих группы сходных значений листьев. Узел содержит ответвление, приводящее либо к другому, внутреннему кортежу нижнего уровня, либо к короткому списку кортежей в листьях, лежащих в одной странице индекса. Для каждого узла обычно задаётся <firstterm>метка</firstterm>, описывающая его; например, в префиксном дереве меткой может быть очередной символ в строковом значении. (С другой стороны, класс операторов может опускать метки узлов, если он имеет дело с фиксированным набором узлов во всех внутренних кортежах; см. <xref remap="4" linkend="spgist-null-labels"/>.) Дополнительно внутренний кортеж может хранить <firstterm>префикс</firstterm>, описывающий все его члены. В префиксном дереве это может быть общий префикс всех представленных ниже строк. Значением префикса не обязательно должен быть префикс, а могут быть любые данные, требующиеся классу операторов; например, в дереве квадрантов это может быть центральная точка, от которой отмеряются четыре квадранта. В этом случае внутренний кортеж дерева квадрантов будет также содержать четыре узла, соответствующие квадрантам вокруг этой центральной точки.</para>
+
+ <para>Некоторые алгоритмы деревьев требует знания уровня (или глубины) текущего кортежа, так что ядро <acronym>SP-GiST</acronym> даёт возможность классам операторов контролировать число уровней при спуске по дереву. Также имеется поддержка пошагового восстановления представленного значения, когда это требуется, и передачи вниз дополнительных данных (так называемых <firstterm>переходящих значений</firstterm>) при спуске.</para>
+
+ <note>
+  <para>Ядро <acronym>SP-GiST</acronym> берёт на себя заботу о значениях NULL. Хотя в индексах <acronym>SP-GiST</acronym> не хранятся записи для NULL в индексируемых столбцах, это скрыто от кода класса операторов; записи индексов или условия поиска с NULL никогда не передаются методам класса операторов. (Предполагается, что операторы <acronym>SP-GiST</acronym> строгие и не могут возвращать положительный результат для значений NULL.) Поэтому значения NULL здесь больше обсуждаться не будут.</para>
+ </note>
+
+ <para>Класс операторов индекса для <acronym>SP-GiST</acronym> должен предоставить реализации пяти методов. Все пять методов должны по единому соглашению принимать два аргумента <type>internal</type>, первым из которых будет указатель на структуру C, содержащую входные значения для опорного метода, а вторым — указатель на структуру C, в которую должны помещаться выходные значения. Четыре из этих методов должны возвращать просто <type>void</type>, так как их результаты помещаются в выходную структуру; однако <function>leaf_consistent</function> дополнительно возвращает результат <type>boolean</type>. Эти методы не должны менять никакие поля в их входных структурах. Выходная структура всегда обнуляется перед вызовом пользовательского метода.</para>
+
+ <para>Пользователь должен определить следующие пять методов:</para>
+
+ <variablelist>
+    <varlistentry>
+     <term><function>config</function></term>
+     <listitem>
+      <para>Возвращает статическую информацию о реализации индекса, включая OID типов данных префикса и метки узла.</para>
+     <para>В <acronym>SQL</acronym> эта функция должна объявляться так: <programlisting>CREATE FUNCTION my_config(internal, internal) RETURNS void ...</programlisting> В первом аргументе передаётся указатель на структуру <structname>spgConfigIn</structname> языка C, содержащие входные данные для функции. Во втором аргументе передаётся указатель на структуру <structname>spgConfigOut</structname> языка C, в которую функция должна поместить результат. <programlisting>typedef struct spgConfigIn
+{
+    Oid         attType;        /* Индексируемый тип данных */
+} spgConfigIn;
+
+typedef struct spgConfigOut
+{
+    Oid         prefixType;     /* Тип данных префикса во внутренних кортежах */
+    Oid         labelType;      /* Тип данных метки узла во внутренних кортежах */
+    bool        canReturnData;  /* Класс операторов может восстановить исходные данные */
+    bool        longValuesOK;   /* Класс может принимать значения, не умещающиеся на 1 странице */
+} spgConfigOut;</programlisting> Поле <structfield>attType</structfield> передаётся для поддержки полиморфных классов операторов; для обычных классов операторов с фиксированным типом оно будет всегда содержать одно значение и поэтому его можно просто игнорировать.</para>
+
+     <para>Для классов операторов, не использующих префиксы, в <structfield>prefixType</structfield> можно установить <literal>VOIDOID</literal>. Подобным образом, для классов операторов, не использующих метки узлов, в <structfield>labelType</structfield> тоже можно установить <literal>VOIDOID</literal>. Признак <structfield>canReturnData</structfield> следует установить, если класс операторов может восстановить изначально переданное в индекс значение. Признак <structfield>longValuesOK</structfield> должен устанавливаться, только если <structfield>attType</structfield> переменной длины и класс операторов может фрагментировать длинные значения, повторяя суффиксы (см. <xref remap="4" linkend="spgist-limits"/>).</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>choose</function></term>
+     <listitem>
+      <para>Выбирает метод для добавления нового значения во внутренний кортеж.</para>
+
+     <para>В <acronym>SQL</acronym> эта функция должна объявляться так: <programlisting>CREATE FUNCTION my_choose(internal, internal) RETURNS void ...</programlisting> В первом аргументе передаётся указатель на структуру <structname>spgChooseIn</structname> языка C, содержащую входные данные для функции. Во втором аргументе передаётся указатель на структуру <structname>spgChooseOut</structname>, в которую функция должна поместить результат. <programlisting>typedef struct spgChooseIn
+{
+    Datum       datum;          /* исходное значение, которое должно индексироваться */
+    Datum       leafDatum;      /* текущее значение, которое должно сохраниться в листе */
+    int         level;          /* текущий уровень (начиная с нуля) */
+
+    /* Данные из текущего внутреннего кортежа */
+    bool        allTheSame;     /* кортеж с признаком все-равны? */
+    bool        hasPrefix;      /* у кортежа есть префикс? */
+    Datum       prefixDatum;    /* если да, то это значение префикса */
+    int         nNodes;         /* число узлов во внутреннем кортеже */
+    Datum      *nodeLabels;     /* значения меток узлов (NULL, если их нет) */
+} spgChooseIn;
+
+typedef enum spgChooseResultType
+{
+    spgMatchNode = 1,           /* спуститься в существующий узел */
+    spgAddNode,                 /* добавить узел во внутренний кортеж */
+    spgSplitTuple               /* разделить внутренний кортеж (изменить его префикс) */
+} spgChooseResultType;
+
+typedef struct spgChooseOut
+{
+    spgChooseResultType resultType;     /* код действия, см. выше */
+    union
+    {
+        struct                  /* результаты для spgMatchNode */
+        {
+            int         nodeN;      /* спуститься к этому узлу (нумерация с 0) */
+            int         levelAdd;   /* шаг увеличения уровня */
+            Datum       restDatum;  /* новое значение листа */
+        }           matchNode;
+        struct                  /* результаты для spgAddNode */
+        {
+            Datum       nodeLabel;  /* метка нового узла */
+            int         nodeN;      /* куда вставлять её (нумерация с 0) */
+        }           addNode;
+        struct                  /* результаты для spgSplitTuple */
+        {
+            /* Информация для формирования нового внутреннего кортежа с одним узлом */
+            bool        prefixHasPrefix;    /* кортеж должен иметь префикс? */
+            Datum       prefixPrefixDatum;  /* если да, его значение */
+            Datum       nodeLabel;          /* метка узла */
+
+            /* Информация для формирования нового внутреннего кортежа нижнего уровня со всеми старыми узлами */
+            bool        postfixHasPrefix;   /* кортеж должен иметь префикс? */
+            Datum       postfixPrefixDatum; /* если да, его значение */
+        }           splitTuple;
+    }           result;
+} spgChooseOut;</programlisting> В <structfield>datum</structfield> задаётся исходное значение, которое должно быть вставлено в индекс. Значение <structfield>leafDatum</structfield> изначально совпадает с <structfield>datum</structfield>, но может быть другим на низких уровнях дерева, если его изменят методы <function>choose</function> или <function>picksplit</function>. Когда поиск места добавления достигает страницы уровня листа, в создаваемом кортеже листа будет сохранено текущее значение <structfield>leafDatum</structfield>. В <structfield>level</structfield> задаётся текущий уровень внутреннего кортежа, начиная с нуля для уровня корня. Признак <structfield>allTheSame</structfield> устанавливается, если текущий внутренний кортеж содержит несколько равнозначных узлов (см. <xref remap="4" linkend="spgist-all-the-same"/>). Признак <structfield>hasPrefix</structfield> устанавливается, если текущий внутренний кортеж содержит префикс; в этом случае в <structfield>prefixDatum</structfield> задаётся его значение. Поле <structfield>nNodes</structfield> задаёт число дочерних узлов, содержащихся во внутреннем кортеже, а <structfield>nodeLabels</structfield> представляет массив их меток, или NULL, если меток у них нет.</para>
+
+      <para>Функция <function>choose</function> может определить, соответствует ли новое значение одному из существующих дочерних узлов, или что нужно добавить новый дочерний узел, или что новое значение не согласуется с префиксом кортежа и внутренний кортеж нужно разделить, чтобы получить менее ограничивающий префикс.</para>
+
+      <para>Если новое значение соответствует одному из существующих дочерних узлов, установите в <structfield>resultType</structfield> значение <literal>spgMatchNode</literal>. Установите в <structfield>nodeN</structfield> номер этого узла в массиве узлов (нумерация начинается с нуля). Установите в <structfield>levelAdd</structfield> значение, на которое должен увеличиваться уровень (<structfield>level</structfield>) при спуске через этот узел, либо оставьте его нулевым, если класс операторов не отслеживает уровни. Установите <structfield>restDatum</structfield>, равным <structfield>datum</structfield>, если класс операторов не меняет значения данных от уровня к следующему, а в противном случае запишите в него изменённое значение, которое должно использоваться в качестве <structfield>leafDatum</structfield> на следующем уровне.</para>
+
+      <para>Если нужно добавить новый дочерний узел, установите в <structfield>resultType</structfield> значение <literal>spgAddNode</literal>. В <structfield>nodeLabel</structfield> задайте метку для нового узла, а в <structfield>nodeN</structfield> позицию (отсчитываемую от нуля), в которую должен вставляться узел в массиве узлов. После того, как узел будет добавлен, функция <function>choose</function> вызывается снова с изменённым внутренним кортежем; в результате этого вызова должен быть получен результат <literal>spgMatchNode</literal>.</para>
+
+      <para>Если новое значение не согласуется с префиксом кортежа, установите в <structfield>resultType</structfield> значение <literal>spgSplitTuple</literal>. Это действие приводит к перемещению всех существующих узлов в новый внутренний кортеж нижнего уровня и замене существующего внутреннего кортежа кортежем с одним узлом, указывающим на добавленный кортеж под ним. Установите признак <structfield>prefixHasPrefix</structfield>, чтобы указать, должен ли новый верхний кортеж иметь префикс, и если да, задайте в <structfield>prefixPrefixDatum</structfield> значение префикса. Это новое значение префикса должно быть в достаточной степени менее ограничивающим, чем исходное, чтобы было принято новое значение, и оно должно быть не длиннее исходного префикса. Установите в <structfield>nodeLabel</structfield> метку, которая будет назначена узлу, указывающему на новый внутренний кортеж нижнего уровня. Установите признак <structfield>postfixHasPrefix</structfield>, чтобы указать, должен ли новый нижний кортеж иметь префикс, и если да, задайте в <structfield>postfixPrefixDatum</structfield> значение префикса. Сочетание этих двух префиксов и дополнительной метки должно иметь то же значение, что и исходный префикс, так как нет возможности ни изменить метку узлов, перемещённых в новый кортеж нижнего уровня, ни изменить записи дочерних узлов. После того, как узел разделён, функция <function>choose</function> будет вызвана снова с заменяемым внутренним кортежем. Этот вызов обычно должен возвратить результат <literal>spgAddNode</literal>, так как метка узла, добавленная на этапе разделения, предположительно не будет соответствовать новому значению; так что за этим последует третий вызов, который наконец вернёт <literal>spgMatchNode</literal> и позволит операции добавления перейти к уровню листьев.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>picksplit</function></term>
+     <listitem>
+      <para>Выбирает, как создать новый внутренний кортеж по набору кортежей в листьях.</para>
+
+      <para>В <acronym>SQL</acronym> эта функция должна объявляться так: <programlisting>CREATE FUNCTION my_picksplit(internal, internal) RETURNS void ...</programlisting> В первом аргументе передаётся указатель на структуру <structname>spgPickSplitIn</structname> языка C, содержащую входные данные для функции. Во втором аргументе передаётся указатель на структуру <structname>spgPickSplitOut</structname> языка C, в которую функция должна поместить результат. <programlisting>typedef struct spgPickSplitIn
+{
+    int         nTuples;        /* число кортежей в листьях */
+    Datum      *datums;         /* их значения (массив длины nTuples) */
+    int         level;          /* текущий уровень (отсчитывая от 0) */
+} spgPickSplitIn;
+
+typedef struct spgPickSplitOut
+{
+    bool        hasPrefix;      /* новый внутренний кортеж должен иметь префикс? */
+    Datum       prefixDatum;    /* если да, его значение */
+
+    int         nNodes;         /* число узлов для нового внутреннего кортежа */
+    Datum      *nodeLabels;     /* их метки (или NULL, если их нет) */
+
+    int        *mapTuplesToNodes;   /* номер узла для каждого кортежа в листе */
+    Datum      *leafTupleDatums;    /* значения, помещаемые в каждый новый кортеж */
+} spgPickSplitOut;</programlisting> В <structfield>nTuples</structfield> задаётся число предоставленных кортежей уровня листьев, а <structfield>datums</structfield> — массив их значений данных. В <structfield>level</structfield> указывается текущий уровень, который должны разделять все кортежи листьев, и который станет уровнем нового внутреннего кортежа.</para>
+
+      <para>Установите признак <structfield>hasPrefix</structfield>, чтобы указать, должен ли новый внутренний кортеж иметь префикс, и если да, задайте в <structfield>prefixDatum</structfield> значение префикса. Установите в <structfield>nNodes</structfield> количество узлов, которые будут содержаться во внутреннем кортеже, а в <structfield>nodeLabels</structfield> — массив значений их меток либо NULL, если узлам не нужны метки. Поместите в <structfield>mapTuplesToNodes</structfield> указатель на массив, назначающий номера узлов (начиная с нуля) каждому кортежу листа. В <structfield>leafTupleDatums</structfield> передайте массив значений, которые должны быть сохранены в новых кортежах листьев (они будут совпадать со входными значениями (<structfield>datums</structfield>), если класс операторов не изменяет значения от уровня к следующему). Заметьте, что функция <function>picksplit</function> сама должна выделить память, используя palloc, для массивов <structfield>nodeLabels</structfield>, <structfield>mapTuplesToNodes</structfield> и <structfield>leafTupleDatums</structfield>.</para>
+
+      <para>Если передаётся несколько кортежей листьев, ожидается, что функция <function>picksplit</function> классифицирует их и разделит на несколько узлов; иначе нельзя будет разнести кортежи листьев по разным страницам, что является конечной целью этой операции. Таким образом, если <function>picksplit</function> в итоге помещает все кортежи листьев в один узел, ядро SP-GiST меняет это решение и создаёт внутренний кортеж, в котором кортежи листьев связываются случайным образом с несколькими узлами с одинаковыми метками. Такой кортеж помечается флагом <literal>allTheSame</literal>, показывающим, что все узлы равны. Функции <function>choose</function> и <function>inner_consistent</function> должны работать с такими внутренними кортежами особым образом. За дополнительными сведениями обратитесь к <xref remap="3" linkend="spgist-all-the-same"/>.</para>
+
+      <para><function>picksplit</function> может применяться к одному кортежу на уровне листьев, только когда функция <function>config</function> установила в <structfield>longValuesOK</structfield> значение true и было передано входное значение, большее страницы. В этом случае цель операции — отделить префикс и получить новое, более короткое значение для листа. Этот вызов будет повторяться, пока значение уровня листа не уменьшится настолько, чтобы уместиться в странице. За дополнительными сведениями обратитесь к <xref remap="3" linkend="spgist-limits"/>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>inner_consistent</function></term>
+     <listitem>
+      <para>Возвращает набор узлов (ветвей), по которым надо продолжать поиск.</para>
+
+      <para>В <acronym>SQL</acronym> эта функция должна объявляться так: <programlisting>CREATE FUNCTION my_inner_consistent(internal, internal) RETURNS void ...</programlisting> В первом аргументе передаётся указатель на структуру <structname>spgInnerConsistentIn</structname> языка C, содержащую входные данные для функции. Во втором аргументе передаётся указатель на структуру <structname>spgInnerConsistentOut</structname> языка C, в которую функция должна поместить результат. <programlisting>typedef struct spgInnerConsistentIn
+{
+    ScanKey     scankeys;       /* массив операторов и искомых значений */
+    ScanKey     orderbyKeys;    /* массив упорядочивающих операторов и сравниваемых значений */
+    int         nkeys;          /* длина массива */
+    int         norderbys;      /* длина массива */
+
+    Datum       reconstructedValue;     /* значение, восстановленное для родителя */
+
+    void       *traversalValue; /* переходящее значение, специфичное для класса операторов */
+    MemoryContext traversalMemoryContext;   /* переходящие значения нужно помещать сюда */
+    int         level;          /* текущий уровень (отсчитывается от нуля) */
+    bool        returnData;     /* нужно ли возвращать исходные данные? */
+
+    /* Данные из текущего внутреннего кортежа */
+    bool        allTheSame;     /* кортеж с признаком все-равны? */
+    bool        hasPrefix;      /* у кортежа есть префикс? */
+    Datum       prefixDatum;    /* если да, то это значение префикса */
+    int         nNodes;         /* число узлов во внутреннем кортеже */
+    Datum      *nodeLabels;     /* значения меток узлов (NULL, если их нет) */
+} spgInnerConsistentIn;
+
+typedef struct spgInnerConsistentOut
+{
+    int         nNodes;         /* число дочерних узлов, которые нужно посетить */
+    int        *nodeNumbers;    /* их номера в массиве узлов */
+    int        *levelAdds;      /* шаги увеличения уровня для этих узлов */
+    Datum      *reconstructedValues;    /* связанные восстановленные значения */
+    void      **traversalValues;        /* переходящие значения, специфичные для класса операторов */
+    double    **distances;              /* связанные расстояния */
+} spgInnerConsistentOut;</programlisting> Массив <structfield>scankeys</structfield> длины <structfield>nkeys</structfield> описывает условия поиска по индексу. Эти условия объединяются операцией И &mdash; найдены должны быть только те записи, которые удовлетворяют всем условиям. (Заметьте, что с <structfield>nkeys</structfield> = 0 подразумевается, что запросу удовлетворяют все записи в индексе.) Обычно эту функцию интересуют только поля <structfield>sk_strategy</structfield> и <structfield>sk_argument</structfield> в каждой записи массива, в которых определяется соответственно индексируемый оператор и искомое значение. В частности, нет необходимости проверять <structfield>sk_flags</structfield>, чтобы распознать NULL в искомом значении, так как ядро SP-GiST отфильтрует такие условия. Массив <structfield>orderbyKeys</structfield> длины <structfield>norderbys</structfield> подобным образом описывает упорядочивающие операторы (если они есть). В <structfield>reconstructedValue</structfield> передаётся значение, восстановленное для родительского кортежа; это может быть <literal>(Datum) 0</literal> на уровне корня или если функция <function>inner_consistent</function> не установила значение на предыдущем уровне. В <structfield>traversalValue</structfield> передаётся указатель на переходящие данные, полученные из предыдущего вызова <function>inner_consistent</function> для родительского кортежа индекса, либо NULL на уровне корня. Поле <structfield>traversalMemoryContext</structfield> указывает на контекст памяти, в котором нужно сохранить выходные переходящие данные (см. ниже). В <structfield>level</structfield> передаётся уровень текущего внутреннего кортежа (уровень корня считается нулевым). Флаг <structfield>returnData</structfield> устанавливается, когда для этого запроса нужно получить восстановленные данные; это возможно, только если функция <function>config</function> установила признак <structfield>canReturnData</structfield>. Признак <structfield>allTheSame</structfield> устанавливается, если текущий внутренний кортеж имеет пометку <quote>все-равны</quote>; в этом случае все узлы имеют одну метку (если имеют) и значит, либо все они, либо никакой не соответствует запросу (см. <xref remap="4" linkend="spgist-all-the-same"/>). Признак <structfield>hasPrefix</structfield> устанавливается, если текущий внутренний кортеж содержит префикс; в этом случае в <structfield>prefixDatum</structfield> находится его значение. В <structfield>nNodes</structfield> задаётся число дочерних узлов, содержащихся во внутреннем кортеже, а в <structfield>nodeLabels</structfield> — массив их меток либо NULL, если они не имеют меток.</para>
+
+      <para>В <structfield>nNodes</structfield> нужно записать число дочерних узлов, которые потребуется посетить при поиске, а в <structfield>nodeNumbers</structfield> — массив их индексов. Если класс операторов отслеживает уровни, в <structfield>levelAdds</structfield> нужно передать массив с шагами увеличения уровня при посещении каждого узла. (Часто шаг будет одним для всех узлов, но может быть и по-другому, поэтому применяется массив.) Если потребовалось восстановить значения, поместите в <structfield>reconstructedValues</structfield> указатель на массив значений, восстановленных для каждого дочернего узла, который нужно посетить; в противном случае оставьте <structfield>reconstructedValues</structfield> равным NULL. Поле <structfield>distances</structfield> в случае, если выполняется упорядоченный поиск, реализующий код должен заполнить в соответствии с упорядочивающими операторами, переданными в <structfield>orderbyKeys</structfield> (узлы с меньшими расстояниями будут обрабатываться первыми). В противном случае оставьте в этом поле NULL. Если желательно передать дополнительные данные (<quote>переходящие значения</quote>) на нижние уровни при поиске по дереву, поместите в <structfield>traversalValues</structfield> указатель на массив соответствующих переходящих значений, по одному для каждого дочернего узла, который нужно посетить; в противном случае оставьте в <structfield>traversalValues</structfield> значение NULL. Заметьте, что функция <function>inner_consistent</function> сама должна выделять память, используя palloc, для массивов <structfield>nodeNumbers</structfield>, <structfield>levelAdds</structfield>, <structfield>distances</structfield>, <structfield>reconstructedValues</structfield> и <structfield>traversalValues</structfield> в текущем контексте памяти. Однако выходные переходящие значения, на которые указывает массив <structfield>traversalValues</structfield>, должны размещаться в контексте <structfield>traversalMemoryContext</structfield>. При этом каждое переходящее значения должно располагаться в отдельном блоке памяти palloc.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>leaf_consistent</function></term>
+     <listitem>
+      <para>Возвращает true, если кортеж листа удовлетворяет запросу.</para>
+
+      <para>В <acronym>SQL</acronym> эта функция должна объявляться так: <programlisting>CREATE FUNCTION my_leaf_consistent(internal, internal) RETURNS bool ...</programlisting> В первом аргументе передаётся указатель на структуру <structname>spgLeafConsistentIn</structname> языка C, содержащую входные данные для функции. Во втором аргументе передаётся указатель на структуру <structname>spgLeafConsistentOut</structname> языка C, в которую функция должна поместить результат. <programlisting>typedef struct spgLeafConsistentIn
+{
+    ScanKey     scankeys;       /* массив операторов и искомых значений */
+    ScanKey     orderbykeys;    /* массив упорядочивающих операторов и сравниваемых значений */
+    int         nkeys;          /* длина массива */
+    int         norderbys;      /* длина массива */
+
+    void       *traversalValue; /* переходящее значение, специфичное для класса операторов */
+    Datum       reconstructedValue;     /* значение, восстановленное для родителя */
+    int         level;          /* текущий уровень (отсчитывая от нуля) */
+    bool        returnData;     /* нужно ли возвращать исходные данные? */
+
+    Datum       leafDatum;      /* значение в кортеже листа */
+} spgLeafConsistentIn;
+
+typedef struct spgLeafConsistentOut
+{
+    Datum       leafValue;      /* восстановленные исходные данные, при наличии */
+    bool        recheck;        /* true, если оператор нужно перепроверить */
+    double      *distances;     /* связанные расстояния */
+} spgLeafConsistentOut;</programlisting> Массив <structfield>scankeys</structfield> длины <structfield>nkeys</structfield> описывает условия поиска по индексу. Эти условия объединяются операцией И &mdash; запросу удовлетворяют только те записи в индексе, которые удовлетворяют всем этим условиям. (Заметьте, что с <structfield>nkeys</structfield> = 0 подразумевается, что запросу удовлетворяют все записи в индексе.) Обычно эту функцию интересуют только поля <structfield>sk_strategy</structfield> и <structfield>sk_argument</structfield> в каждой записи массива, в которых определяются соответственно индексируемый оператор и искомое значение. В частности, нет необходимости проверять <structfield>sk_flags</structfield>, чтобы распознать NULL в искомом значении, так как ядро SP-GiST отфильтрует такие условия. Массив <structfield>orderbyKeys</structfield> длины <structfield>norderbys</structfield> подобным образом описывает упорядочивающие операторы. В <structfield>reconstructedValue</structfield> передаётся значение, восстановленное для родительского кортежа; это может быть <literal>(Datum) 0</literal> на уровне корня или если функция <function>inner_consistent</function> не установила значение на предыдущем уровне. В <structfield>traversalValue</structfield> передаётся указатель на переходящие данные, полученные из предыдущего вызова <function>inner_consistent</function> для родительского кортежа индекса, либо NULL на уровне корня. В <structfield>level</structfield> передаётся уровень текущего внутреннего кортежа (уровень корня считается нулевым). Флаг <structfield>returnData</structfield> устанавливается, когда для этого запроса нужно получить восстановленные данные; это возможно, только если функция <function>config</function> установила признак <structfield>canReturnData</structfield>. В <structfield>leafDatum</structfield> передаётся значение ключа, записанное в текущем кортеже листа.</para>
+
+      <para>Эта функция должна вернуть <literal>true</literal>, если кортеж листа соответствует запросу, или <literal>false</literal> в противном случае. В случае положительного результата, если в поле <structfield>returnData</structfield> передано <literal>true</literal>, нужно поместить в <structfield>leafValue</structfield> значение, изначальное переданное для индексации в этот кортеж. Кроме того, флагу <structfield>recheck</structfield> можно присвоить <literal>true</literal>, если соответствие неточное, так что для установления точного результата проверки нужно повторно применить оператор(ы) к актуальному кортежу данных. В случаях, когда выполняется упорядоченный поиск, необходимо установить значение <structfield>distances</structfield> в соответствии с заданным оператором упорядочивания, в противном случае в это поле нужно записать NULL.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+
+  <para>Все опорные методы SP-GiST обычно вызываются в кратковременных контекстах памяти; то есть <varname>CurrentMemoryContext</varname> сбрасывается после обработки каждого кортежа. Таким образом, можно не заботиться об освобождении любых блоков памяти, выделенных функцией palloc. (Метод <function>config</function> является исключением: в нём нужно не допускать утечек памяти. Но обычно метод <function>config</function> не делает ничего, кроме как присваивает константы переданной структуре параметров.)</para>
+
+  <para>Если индексируемый столбец имеет сортируемый тип данных, правило сортировки индекса будет передаваться всем опорным методам, используя стандартный механизм <function>PG_GET_COLLATION()</function>.</para>
+
+</sect1>
+
+<sect1 id="spgist-implementation">
+ <title>Реализация</title>
+
+  <para>В этом разделе освещаются тонкости реализации и особенности, о которых полезно знать тем, кто будет реализовывать классы операторов <acronym>SP-GiST</acronym>.</para>
+
+ <sect2 id="spgist-limits">
+  <title>Ограничения SP-GiST</title>
+
+  <para>Отдельные кортежи листьев и внутренние кортежи должны умещаться в одной странице индекса (по умолчанию её размер 8 Кбайт). Таким образом при индексировании значений типов данных переменной длины большие значения могут поддерживаться только такими схемами, как префиксные деревья, в которых каждый уровень дерева включает префикс, достаточно короткий для помещения в страницу, и на конечном уровне листьев содержится суффикс, который также достаточно мал, чтобы поместиться в странице. Класс операторов должен устанавливать признак <structfield>longValuesOK</structfield>, только если он готов организовывать такую структуру. Если этот признак не установлен, ядро <acronym>SP-GiST</acronym> не примет запрос на индексацию значения, которое слишком велико для одной страницы индекса.</para>
+
+  <para>Также класс операторов должен отвечать за то, чтобы внутренние кортежи при расширении не выходили за пределы страницы индекса; это ограничивает число дочерних узлов, которые могут принадлежать одному внутреннему кортежу, а также максимальный размер значения префикса.</para>
+
+  <para>Ещё одно ограничение состоит в том, что когда узел внутреннего кортежа указывает на набор кортежей листьев, все эти кортежи должны находиться в одной странице индекса. (Это конструктивное ограничение введено для оптимизации позиционирования и экономии места на ссылках, связывающих такие кортежи вместе.) Если набор кортежей листьев оказывается слишком большим для одной страницы, выполняется разделение и вставляется промежуточный внутренний кортеж. Чтобы устранить возникшую проблему, новый внутренний кортеж <emphasis>должен</emphasis> разделять набор значений в листе на несколько групп узлов. Если функция <function>picksplit</function> класса операторов не может сделать это, ядро <acronym>SP-GiST</acronym> переходит к чрезвычайным мерам, описанным в <xref remap="6" linkend="spgist-all-the-same"/>.</para>
+ </sect2>
+
+ <sect2 id="spgist-null-labels">
+  <title>SP-GiST без меток узлов</title>
+
+  <para>В некоторых древовидных схемах каждый внутренний кортеж содержит фиксированный набор узлов; например, в дереве квадрантов это всегда четыре узла, соответствующие четырём квадрантам вокруг центральной точки внутреннего кортежа. В таком случае код обычно работает с узлами по номерам и необходимости в явных метках узлов нет. Чтобы убрать метки узлов (и таким образом сэкономить место), функция <function>picksplit</function> может возвратить NULL вместо массива <structfield>nodeLabels</structfield>. В результате при последующих вызовах функций <function>choose</function> и <function>inner_consistent</function> им вместо <structfield>nodeLabels</structfield> будет передаваться NULL. В принципе метки узлов могут применяться для одних внутренних кортежей и опускаться для других в том же индексе.</para>
+
+  <para>Когда внутренний кортеж содержит узлы без меток, функция <function>choose</function> не может выбрать действие <literal>spgAddNode</literal>, так как в этом случае предполагается, что набор узлов фиксированный. Также нельзя сгенерировать узел без метки в действиях <literal>spgSplitTuple</literal>, потому что, как ожидается, при этом потребуется действие <literal>spgAddNode</literal>.</para>
+ </sect2>
+
+ <sect2 id="spgist-all-the-same">
+  <title>Внутренние кортежи <quote>все-равны</quote></title>
+
+  <para>Ядро <acronym>SP-GiST</acronym> может переопределить результаты функции <function>picksplit</function> класса операторов, когда эта функция не может разделить поступившие значения листьев на минимум две категории узлов. Когда это происходит, создаётся новый внутренний кортеж с несколькими узлами, каждый из которых имеет одну метку (если имеет), которую <function>picksplit</function> дала одному узлу, а значения листьев распределяются случайно между этими равнозначными узлами. Для этого внутреннего кортежа устанавливается флаг <literal>allTheSame</literal>, который предупреждает функции <function>choose</function> и <function>inner_consistent</function>, что кортеж не содержит набор узлов, который они обычно ожидают.</para>
+
+  <para>Когда обрабатывается кортеж с флагом <literal>allTheSame</literal>, выбранное функцией <function>choose</function> действие <literal>spgMatchNode</literal> воспринимается как указание, что новое значение можно присвоить одному из равнозначных узлов; код ядра будет игнорировать полученное значение <structfield>nodeN</structfield> и спустится в один из узлов, выбранный случайно (чтобы дерево было сбалансированным). Будет считаться ошибкой, если <function>choose</function> выберет действие <literal>spgAddNode</literal>, так как при этом не все узлы окажутся равны; если добавляемое значение не соответствует существующим узлам, должно выбираться действие <literal>spgSplitTuple</literal>.</para>
+
+  <para>Также, когда обрабатывается кортеж с флагом <literal>allTheSame</literal>, функция <function>inner_consistent</function> должна вернуть все или не возвращать никакие узлы для продолжения поиска по индексу, так как все узлы равнозначны. Для этого может потребоваться, а может и не потребоваться код обработки особого случая, в зависимости от того, как <function>inner_consistent</function> обычно воспринимает узлы.</para>
+ </sect2>
+
+</sect1>
+
+<sect1 id="spgist-examples">
+ <title>Примеры</title>
+
+ <para>Дистрибутив исходного кода <productname>&productname;</productname> содержит несколько примеров классов операторов индекса <acronym>SP-GiST</acronym>, перечисленных в <xref remap="6" linkend="spgist-builtin-opclasses-table"/>. Код их реализации вы можете найти в <filename>src/backend/access/spgist/</filename> и <filename>src/backend/utils/adt/</filename>.</para>
+
+</sect1>
+
+</chapter>

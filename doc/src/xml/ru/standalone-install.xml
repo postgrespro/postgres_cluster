@@ -1,0 +1,25 @@
+<!-- doc/src/xml/standalone-install.xml -->
+
+<!--
+This file helps in generating the INSTALL text file that lives in the
+top level directory of the distribution.
+-->
+
+<!DOCTYPE book PUBLIC "-//OASIS//DTD DocBook XML V4.2//EN" "http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd" [
+
+<!ENTITY % version SYSTEM "version.ent">
+%version;
+<!ENTITY % filelist SYSTEM "filelist.xml">
+%filelist;
+<!ENTITY % isoent SYSTEM "http://www.w3.org/2003/entities/2007/isopub.ent"> %isoent;
+<!ENTITY % xhtml1-lat1 SYSTEM "http://www.w3.org/2003/entities/2007/xhtml1-lat1.ent"> %xhtml1-lat1;
+<!ENTITY % isolat2 SYSTEM "http://www.w3.org/2003/entities/2007/isolat2.ent"> %isolat2;
+<!ENTITY % isogrk3 SYSTEM "http://www.w3.org/2003/entities/2007/isogrk3.ent"> %isogrk3;
+
+<!ENTITY reference  SYSTEM "reference.xml">
+
+]>
+
+<book id="INSTALL" lang="ru">
+&installation;
+</book>

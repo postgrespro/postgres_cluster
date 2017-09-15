@@ -1,0 +1,164 @@
+<!--
+doc/src/xml/ref/ecpg-ref.xml
+&productname; documentation
+-->
+
+<refentry id="app-ecpg">
+ <indexterm zone="app-ecpg"><primary>ecpg</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>ecpg</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname><application>ecpg</application></refname>
+  <refpurpose>встроенный C-препроцессор SQL</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>ecpg</command>
+   <arg choice="opt" rep="repeat"><replaceable>параметр</replaceable></arg>
+   <arg choice="plain" rep="repeat"><replaceable>файл</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+
+ <refsect1 id="app-ecpg-description">
+  <title>Описание</title>
+
+  <para><command>ecpg</command> это встроенный SQL препроцессор для программ, написанных на языке C. Он преобразует программы на C, содержащие SQL-выражения, заменяя их вызовами встроенных функций. Получаемые на выходе файлы можно затем скомпилировать и скомпоновать.</para>
+
+  <para><command>ecpg</command> преобразует каждый файл, переданный в параметрах, в соответствующий файл на C. Входным файлам лучше давать расширения <filename>.pgc</filename>. Это расширение будет автоматически заменяться на <filename>.c</filename>. Имя выходного файла также можно задать в параметре <option>-o</option>.</para>
+
+  <para>Данный раздел не содержит описания встроенного SQL-языка. Для более подробной информации см. <xref remap="4" linkend="ecpg"/>.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <para><command>ecpg</command> принимает в качестве аргументов: <variablelist>
+    <varlistentry>
+     <term><option>-c</option></term>
+     <listitem>
+      <para>Автоматически генерировать код, написанный на языке C, из кода SQL. Сейчас это справедливо для <literal>EXEC SQL TYPE</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-C <replaceable>режим</replaceable></option></term>
+     <listitem>
+      <para>Установить режим совместимости. <replaceable>режим</replaceable> может принимать значение <literal>INFORMIX</literal> или <literal>INFORMIX_SE</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-D <replaceable>символ</replaceable></option></term>
+     <listitem>
+      <para>Определить символ начала команд C-препроцессора.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-i</option></term>
+     <listitem>
+      <para>Также разбирать и системные включения.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-I <replaceable class="parameter">каталог</replaceable></option></term>
+     <listitem>
+      <para>Указать дополнительный путь включаемых файлов, используемый при выполнении <literal>EXEC SQL INCLUDE</literal>. По умолчанию используются <filename>.</filename> (текущий каталог), <filename>/usr/local/include</filename>, каталог, задаваемый при компиляции <productname>&productname;</productname> (обычно — <filename>/usr/local/pgsql/include</filename>), и <filename>/usr/include</filename>, в порядке, как это перечислено.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-o <replaceable>имя_файла</replaceable></option></term>
+     <listitem>
+      <para>Указывает <command>ecpg</command> <replaceable>имя файла</replaceable>, в который будет осуществлен вывод.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-r <replaceable>параметр</replaceable></option></term>
+     <listitem>
+      <para>Определяет поведение времени исполнения. <replaceable>Флаг</replaceable> может принимать следующие значения: <variablelist>
+        <varlistentry>
+         <term><option>no_indicator</option></term>
+         <listitem>
+         <para>Использовать специальные символы для представления значений null. Исторически некоторые базы данных используют такой подход.</para>
+         </listitem>
+        </varlistentry>
+        <varlistentry>
+         <term><option>prepare</option></term>
+         <listitem>
+         <para>Сформировать подготовленные выражения. libecpg сформирует кеш подготовленных выражений и будет использовать их при необходимости повторно. В случае переполнения кеша, libecpg освободит память за счёт вытеснения наименее используемых выражений.</para>
+         </listitem>
+        </varlistentry>
+        <varlistentry>
+         <term><option>questionmarks</option></term>
+         <listitem>
+         <para>Разрешает использовать знак вопроса в качестве аргумента подстановки в целях совместимости. Ранее это было поведением по умолчанию.</para>
+         </listitem>
+        </varlistentry>
+       </variablelist></para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-t</option></term>
+     <listitem>
+      <para>Включить автоматическую фиксацию транзакций. В этом режиме каждая SQL-команда будет автоматически фиксироваться, пока не будет явно включена в блок транзакции. В режиме по умолчанию команды фиксируются лишь при явном вызове <command>EXEC SQL COMMIT</command>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-v</option></term>
+     <listitem>
+      <para>Вывести информацию о версии, а также путях поиска включаемых файлов.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--version</option></term>
+     <listitem>
+      <para>Вывести версию <application>ecpg</application>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-?</option></term>
+     <term><option>--help</option></term>
+     <listitem>
+      <para>Вывести справку по команде <application>ecpg</application>.</para>
+     </listitem>
+    </varlistentry>
+
+   </variablelist></para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>При компиляции полученных файлов, компилятор должен иметь возможность найти заголовочные файлы <application>ECPG</application> в каталоге включений <productname>&productname;</productname>. Для этого можно использовать флаг <option>-I</option> во время компиляции, например, <literal>-I/usr/local/pgsql/include</literal>.</para>
+
+  <para>Программы на C со встроенным SQL необходимо скомпоновать с библиотекой <filename>libecpg</filename>, например, используя флаг компоновщика <literal>-L/usr/local/pgsql/lib -lecpg</literal>.</para>
+
+  <para>Имена каталогов, подходящих для установки, можно найти в разделе <xref linkend="app-pgconfig"/>.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Если имеется исходный файл на C <filename>prog1.pgc</filename> со встроенным SQL, можно создать исполняемую программу, используя следующую последовательность команд: <programlisting>ecpg prog1.pgc
+cc -I/usr/local/pgsql/include -c prog1.c
+cc -o prog1 prog1.o -L/usr/local/pgsql/lib -lecpg</programlisting></para>
+ </refsect1>
+
+</refentry>

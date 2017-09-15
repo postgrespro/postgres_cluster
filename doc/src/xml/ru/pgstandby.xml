@@ -1,0 +1,207 @@
+<!-- doc/src/xml/pgstandby.xml -->
+
+<refentry id="pgstandby">
+ <indexterm zone="pgstandby"><primary>pg_standby</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>pg_standby</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_standby</refname>
+  <refpurpose>поддерживает создание сервера тёплого резерва <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_standby</command>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+   <arg choice="plain"><replaceable>расположение_архива</replaceable></arg>
+   <arg choice="plain"><replaceable>следующий_файл_wal</replaceable></arg>
+   <arg choice="plain"><replaceable>каталог_xlog</replaceable></arg>
+   <arg choice="opt"><replaceable>файл_перезапуска_wal</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+ <para>Программа <application>pg_standby</application> поддерживает создание сервера в режиме <quote>тёплого резерва</quote>. Она предназначена как для непосредственного применения в производственной среде, так и для использования в качестве настраиваемой заготовки, когда требуются специальные модификации.</para>
+
+ <para><application>pg_standby</application> ожидает выполнения команды <varname>restore_command</varname>, которая, в свою очередь, нужна для перехода от стандартного восстановления архива к режиму тёплого резерва. Для этого также требуется другая настройка, которая описывается в основном руководстве сервера (см. <xref remap="4" linkend="warm-standby"/>).</para>
+
+  <para>Чтобы настроить резервный сервер на использование <application>pg_standby</application>, поместите эту строку в файл конфигурации <filename>recovery.conf</filename>: <programlisting>restore_command = 'pg_standby <replaceable>каталог_архива</replaceable> %f %p %r'</programlisting> Здесь <replaceable>каталог_архива</replaceable> — каталог, из которого должны восстанавливаться сегменты WAL.</para>
+  <para>Если указывается <replaceable>файл_перезапуска_wal</replaceable>, обычно с помощью макроса <literal>%r</literal>, тогда все файлы WAL, предшествующие указанному, будут удалены из каталога <replaceable>расположение_архива</replaceable>. Это позволяет сократить число сохраняемых файлов без потери возможности восстановления при перезапуске. Такой вариант использования уместен, когда <replaceable>расположение_архива</replaceable> указывает на область рабочих файлов конкретного резервного сервера, но <emphasis>не</emphasis> когда <replaceable>расположение_архива</replaceable> — каталог с архивом WAL для долговременного хранения.</para>
+  <para><application>pg_standby</application> рассчитывает на то, что <replaceable>расположение_архива</replaceable> доступно для чтения пользователю, владеющему серверным процессом. Если указывается <replaceable>файл_перезапуска_wal</replaceable> (или <literal>-k</literal>), каталог <replaceable>расположение_архива</replaceable> должен быть также доступен для записи.</para>
+  <para>При отказе ведущего сервера переключение на сервер <quote>тёплого резерва</quote> возможно двумя способами: <variablelist>
+    <varlistentry>
+     <term>Умное переключение</term>
+     <listitem>
+      <para>При умном переключении сервер включается в работу, применив изменения из всех файлов WAL, имеющихся в архиве. В результате никакие данные не теряются, даже если данный резервный сервер отстал, но если применить нужно большое количество изменений WAL, подготовка к работе может быть длительной. Чтобы вызвать умное переключение, создайте файл-триггер, содержащий слово <literal>smart</literal>, либо просто пустой файл.</para>
+     </listitem>
+    </varlistentry>
+    <varlistentry>
+     <term>Быстрое переключение</term>
+     <listitem>
+      <para>При быстром переключении сервер включается в работу немедленно. Все ещё не применённые файлы WAL в архиве будут игнорироваться и все транзакции в этих файлах будут потеряны. Чтобы вызвать быстрое переключение, создайте фай-триггер и запишите в него слово <literal>fast</literal>. Программу <application>pg_standby</application> можно также настроить так, чтобы быстрое переключение происходило автоматически, если за определённое время не появляется новый файл WAL.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <para><application>pg_standby</application> принимает следующие аргументы командной строки: <variablelist>
+
+     <varlistentry>
+      <term><option>-c</option></term>
+      <listitem>
+       <para>Применять для восстановления файлов WAL из архива команду <literal>cp</literal> или <literal>copy</literal>. На данный момент поддерживается только это поведение, так что этот параметр бесполезен.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-d</option></term>
+      <listitem>
+       <para>Выводить подробные отладочные сообщения в <filename>stderr</filename>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-k</option></term>
+      <listitem>
+       <para>Удалить файлы из каталога <replaceable>расположение_архива</replaceable>, чтобы в нём осталось не больше заданного числа файлов WAL, предшествующих текущему. Ноль (по умолчанию) означает, что не нужно удалять никакие файлы из каталога <replaceable>расположение_архива</replaceable>. Этот параметр будет просто игнорироваться, если указан <replaceable>файл_перезапуска_wal</replaceable>, так как этот метод более точно определяет правильную точку отсечения архива. Этот параметр считается <emphasis>устаревшим</emphasis> с <productname>PostgreSQL</productname> 8.3; надёжнее и эффективнее использовать параметр <replaceable>файл_перезапуска_wal</replaceable>. При слишком маленьком значении данного параметра могут быть удалены файлы, требующиеся для перезапуска резервного сервера, тогда как при слишком большом будет неэффективно расходоваться место в архиве.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-r</option> <replaceable>макс_повторов</replaceable></term>
+      <listitem>
+       <para>Устанавливает, сколько раз максимум нужно повторять команду copy в случае ошибки (по умолчанию 3). После каждой ошибки программа приостанавливается на <replaceable>время_задержки</replaceable> * <replaceable>число_повторов</replaceable>, так что время ожидания постепенно увеличивается. По умолчанию она ждёт 5, 10, затем 15 секунд, и только потом сообщает резервному серверу об ошибке. Это событие будет воспринято как завершение восстановления, и в результате резервный сервер полностью включится в работу.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s</option> <replaceable>время_задержки</replaceable></term>
+      <listitem>
+       <para>Задаёт количество секунд (до 60, по умолчанию 5) для паузы между проверками наличия файла WAL в архиве. Значение по умолчанию не обязательно наилучшее; за подробностями обратитесь к <xref remap="3" linkend="warm-standby"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-t</option> <replaceable>файл_триггер</replaceable></term>
+      <listitem>
+       <para>Указывает файл-триггер, при появлении которого должна начаться отработка отказа. Имя этого файла рекомендуется выбирать по определённой схеме, позволяющей однозначно понять, для какого сервера вызывается отработка отказа, когда таких серверов в одной системе несколько; например, <filename>/tmp/pgsql.trigger.5432</filename>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-V</option></term>
+      <term><option>--version</option></term>
+      <listitem>
+       <para>Вывести версию <application>pg_standby</application> и завершиться.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</option> <replaceable>макс_время_ожидания</replaceable></term>
+      <listitem>
+       <para>Задаёт максимальное время ожидания (в секундах) следующего файла WAL, по истечении которого будет произведено быстрое переключение. При нуле (значении по умолчанию) ожидание бесконечно. Значение по умолчанию не обязательно наилучшее; за подробностями обратитесь к <xref remap="3" linkend="warm-standby"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-?</option></term>
+      <term><option>--help</option></term>
+      <listitem>
+       <para>Вывести справку об аргументах командной строки <application>pg_standby</application> и завершиться.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Программа <application>pg_standby</application> предназначена для работы с <productname>PostgreSQL</productname> 8.2 и новее.</para>
+  <para>С <productname>PostgreSQL</productname>, начиная с 8.3, можно использовать макрос <literal>%r</literal>, который позволяет <application>pg_standby</application> узнать, какой последний файл нужно сохранять. Для <productname>PostgreSQL</productname> 8.2, если требуется очищать архив, нужно применять параметр <literal>-k</literal>. Этот параметр сохранился и после 8.3, но теперь он считается устаревшим.</para>
+  <para><productname>PostgreSQL</productname>, начиная с 8.4, поддерживает параметр <varname>recovery_end_command</varname>. В нём можно задать команду, удаляющую файл-триггер во избежание ошибок.</para>
+
+  <para>Программа <application>pg_standby</application> написана на C; её исходный код легко поддаётся модификации (он содержит секции, предназначенные для изменения при надобности)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>В системах Linux или Unix можно использовать команды: <programlisting>archive_command = 'cp %p .../archive/%f'
+
+restore_command = 'pg_standby -d -s 2 -t /tmp/pgsql.trigger.5442 .../archive %f %p %r 2&gt;&gt;standby.log'
+
+recovery_end_command = 'rm -f /tmp/pgsql.trigger.5442'</programlisting> Предполагается, что каталог архива физически располагается на резервном сервере, так что команда <varname>archive_command</varname> обращается к нему по NFS, но для резервного сервера эти файлы локальные (для этого применяется <literal>ln</literal>). Эти команды будут: <itemizedlist>
+   <listitem>
+    <para>выводить отладочную информацию в <filename>standby.log</filename></para>
+   </listitem>
+   <listitem>
+    <para>ждать 2 секунды между проверками появления следующего файла WAL</para>
+   </listitem>
+   <listitem>
+    <para>прекращать ожидание, только когда появляется файл-триггер с именем <filename>/tmp/pgsql.trigger.5442</filename>, и выполнить переключение согласно его содержимому</para>
+   </listitem>
+   <listitem>
+    <para>удалять файл-триггер по завершении восстановления</para>
+   </listitem>
+   <listitem>
+    <para>удалять ставшие ненужными файлы из каталога архива</para>
+   </listitem>
+  </itemizedlist></para>
+
+  <para>В Windows можно использовать такие команды: <programlisting>archive_command = 'copy %p ...\\archive\\%f'
+
+restore_command = 'pg_standby -d -s 5 -t C:\pgsql.trigger.5442 ...\archive %f %p %r 2&gt;&gt;standby.log'
+
+recovery_end_command = 'del C:\pgsql.trigger.5442'</programlisting> Заметьте, что обратную косую черту нужно дублировать в <varname>archive_command</varname>, но <emphasis>не</emphasis> в <varname>restore_command</varname> или <varname>recovery_end_command</varname>. Эти команды будут: <itemizedlist>
+   <listitem>
+    <para>применять команду <literal>copy</literal> для восстановления файлов WAL из архива</para>
+   </listitem>
+   <listitem>
+    <para>выводить отладочную информацию в <filename>standby.log</filename></para>
+   </listitem>
+   <listitem>
+    <para>ждать 5 секунд между проверками появления следующего файла WAL</para>
+   </listitem>
+   <listitem>
+    <para>прекращать ожидание, только когда появляется файл-триггер с именем <filename>C:\pgsql.trigger.5442</filename>, и выполнить переключение согласно его содержимому</para>
+   </listitem>
+   <listitem>
+    <para>удалять файл-триггер по завершении восстановления</para>
+   </listitem>
+   <listitem>
+    <para>удалять ставшие ненужными файлы из каталога архива</para>
+   </listitem>
+  </itemizedlist></para>
+
+  <para>Команда <literal>copy</literal> в Windows устанавливает окончательный размер файла до того, как файл будет окончательно скопирован, что обычно сбивает с толку <application>pg_standby</application>. Поэтому <application>pg_standby</application> ждёт <replaceable>время_задержки</replaceable> после того, как увидит подходящий размер файла. Команда <literal>cp</literal> из GNUWin32 устанавливает размер файла, только когда завершает копирование.</para>
+
+  <para>Так как в примере для Windows с обеих сторон применяется <literal>copy</literal>, любой или оба этих сервера могут обращаться к каталогу архива по сети.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Автор</title>
+
+  <para>Саймон Риггс <email>simon@2ndquadrant.com</email></para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="pgarchivecleanup"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

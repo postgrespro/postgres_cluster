@@ -1,0 +1,238 @@
+<!-- doc/src/xml/seg.xml -->
+
+<sect1 id="seg" xreflabel="seg">
+ <title>seg</title>
+
+ <indexterm zone="seg"><primary>seg</primary></indexterm>
+
+ <para>Этот модуль реализует тип данных <type>seg</type> для представления отрезков или интервалов чисел с плавающей точкой. Тип <type>seg</type> может выражать отсутствие уверенности в границах интервала, что позволяет применять его для представления лабораторных измерений.</para>
+
+ <sect2>
+  <title>Обоснование</title>
+
+  <para>Геометрия измерений обычно более сложна, чем точка в числовом континууме. Измерение обычно представляет собой отрезок этого континуума с нечёткими границами. Измеряемые показатели выражаются интервалами вследствие неопределённости и случайности, а также того, что измеряемое значение может отражать некоторое условие, например, диапазон температур стабильности протеина.</para>
+
+  <para>Руководствуясь только здравым смыслом, кажется более удобным хранить такие данные в виде интервалов, а не в виде двух отдельных чисел. На практике это оказывается даже эффективнее в большинстве приложений.</para>
+
+  <para>Более того, вследствие нечёткости границ использование традиционных числовых типов данных приводит к определённой потере информации. Рассмотрим такой пример: ваш инструмент выдаёт 6.50 и вы вводите это значение в базу данных. Что вы получите, прочитав это значение из базы? Смотрите: <screen>
+test=&gt; select 6.50 :: float8 as "pH";
+ pH
+---
+6.5
+(1 row)
+</screen> В мире измерений, 6.50 — не то же самое, что 6.5. И разница между этими измерениями иногда бывает критической. Экспериментаторы обычно записывают (и публикуют) цифры, которые заслуживают доверия. Запись 6.50 на самом деле представляет неточный интервал, содержащийся внутри большего и ещё более неточного интервала, 6.5, и единственное, что у них может быть общего, это их центральные точки. Поэтому мы определённо не хотим, чтобы такие разные элементы данных выглядели одинаково.</para>
+
+  <para>Вывод? Удобно иметь специальный тип данных, в котором можно сохранить границы интервала с произвольной переменной точностью. В данном случае точность переменная в том смысле, что для каждого элемента данных она может записываться индивидуально.</para>
+
+  <para>Проверьте это: <screen>
+test=&gt; select '6.25 .. 6.50'::seg as "pH";
+          pH
+------------
+6.25 .. 6.50
+(1 row)
+</screen></para>
+ </sect2>
+
+ <sect2>
+  <title>Синтаксис</title>
+
+  <para>Внешнее представление интервала образуется одним или двумя числами с плавающей точкой, соединёнными оператором диапазона (<literal>..</literal> или <literal>...</literal>). Кроме того, интервал можно задать центральной точкой плюс/минус отклонение. Также этот тип позволяет сохранить дополнительные индикаторы достоверности (<literal>&lt;</literal>, <literal>&gt;</literal> или <literal>~</literal>). (Однако индикаторы достоверности игнорируются всеми встроенными операторами.) Допустимые представления показаны в <xref remap="6" linkend="seg-repr-table"/>; некоторые примеры приведены в <xref remap="6" linkend="seg-input-examples"/>.</para>
+
+  <para>В <xref remap="6" linkend="seg-repr-table"/> символы <replaceable>x</replaceable>, <replaceable>y</replaceable> и <replaceable>delta</replaceable> обозначают числа с плавающей точкой. Перед значениями <replaceable>x</replaceable> и <replaceable>y</replaceable>, но не <replaceable>delta</replaceable>, может быть добавлен индикатор достоверности.</para>
+
+  <table id="seg-repr-table">
+   <title>Внешнее представление <type>seg</type></title>
+   <tgroup cols="2">
+    <tbody>
+     <row>
+      <entry><literal><replaceable>x</replaceable></literal></entry>
+      <entry>Одно значение (интервал нулевой длины)</entry>
+     </row>
+     <row>
+      <entry><literal><replaceable>x</replaceable> .. <replaceable>y</replaceable></literal></entry>
+      <entry>Интервал от <replaceable>x</replaceable> до <replaceable>y</replaceable></entry>
+     </row>
+     <row>
+      <entry><literal><replaceable>x</replaceable> (+-) <replaceable>delta</replaceable></literal></entry>
+      <entry>Интервал от <replaceable>x</replaceable> - <replaceable>delta</replaceable> до <replaceable>x</replaceable> + <replaceable>delta</replaceable></entry>
+     </row>
+     <row>
+      <entry><literal><replaceable>x</replaceable> ..</literal></entry>
+      <entry>Открытый интервал с нижней границей <replaceable>x</replaceable></entry>
+     </row>
+     <row>
+      <entry><literal>.. <replaceable>x</replaceable></literal></entry>
+      <entry>Открытый интервал с верхней границей <replaceable>x</replaceable></entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <table id="seg-input-examples">
+   <title>Примеры допустимых вводимых значений <type>seg</type></title>
+   <tgroup cols="2">
+    <tbody>
+     <row>
+      <entry><literal>5.0</literal></entry>
+      <entry>Создаёт сегмент нулевой длины (или точку, если хотите)</entry>
+     </row>
+     <row>
+      <entry><literal>~5.0</literal></entry>
+      <entry>Создаёт сегмент нулевой длины и записывает <literal>~</literal> в данные. Знак <literal>~</literal> игнорируется при операциях с <type>seg</type>, но сохраняется как комментарий.</entry>
+     </row>
+     <row>
+      <entry><literal>&lt;5.0</literal></entry>
+      <entry>Создаёт точку с координатой 5.0. Знак <literal>&lt;</literal> игнорируется, но сохраняется как комментарий.</entry>
+     </row>
+     <row>
+      <entry><literal>&gt;5.0</literal></entry>
+      <entry>Создаёт точку с координатой 5.0. Знак <literal>&gt;</literal> игнорируется, но сохраняется как комментарий.</entry>
+     </row>
+     <row>
+      <entry><literal>5(+-)0.3</literal></entry>
+      <entry>Создаёт интервал <literal>4.7 .. 5.3</literal>. Заметьте, что запись <literal>(+-)</literal> не сохраняется.</entry>
+     </row>
+     <row>
+      <entry><literal>50 ..</literal></entry>
+      <entry>Всё, что больше или равно 50</entry>
+     </row>
+     <row>
+      <entry><literal>.. 0</literal></entry>
+      <entry>Всё, что меньше или равно 0</entry>
+     </row>
+     <row>
+      <entry><literal>1.5e-2 .. 2E-2</literal></entry>
+      <entry>Создаёт интервал <literal>0.015 .. 0.02</literal></entry>
+     </row>
+     <row>
+      <entry><literal>1 ... 2</literal></entry>
+      <entry>То же, что и <literal>1...2</literal>, либо <literal>1 .. 2</literal>, либо <literal>1..2</literal> (пробелы вокруг оператора диапазона игнорируются)</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>Так как <literal>...</literal> часто используется в источниках данных, он принимается в качестве альтернативного написания <literal>..</literal>. К сожалению, это порождает неоднозначность при разборе: неясно, какая верхняя граница имеется в виду в записи <literal>0...23</literal> — <literal>23</literal> или <literal>0.23</literal>. Для разрешения этой неоднозначности во входных числах <type>seg</type> перед десятичной точкой всегда должна быть минимум одна цифра.</para>
+
+  <para>В качестве меры предосторожности, <type>seg</type> не принимает интервалы с нижней границей, превышающей верхнюю, например: <literal>5 .. 2</literal>.</para>
+
+ </sect2>
+
+ <sect2>
+  <title>Точность</title>
+
+  <para>Значения <type>seg</type> хранятся внутри как пары 32-битных чисел с плавающей точкой. Это значит, что числа с более чем 7 значащими цифрами будут усекаться.</para>
+
+  <para>Числа, содержащие 7 и меньше значащих цифр, сохраняют изначальную точность. То есть, если запрос возвращает 0.00, вы можете быть уверены, что конечные нули не являются артефактами форматирования: они отражают точность исходных данных. Количество ведущих нулей не влияет на точность: значение 0.0067 будет считаться имеющим только две значащих цифры.</para>
+ </sect2>
+
+ <sect2>
+  <title>Использование</title>
+
+  <para>Модуль <filename>seg</filename> включает класс операторов индекса GiST для значений <type>seg</type>. Операторы, поддерживаемые этим классом операторов, перечислены в <xref remap="6" linkend="seg-gist-operators"/>.</para>
+
+  <table id="seg-gist-operators">
+   <title>Операторы seg для GiST</title>
+   <tgroup cols="2">
+    <thead>
+     <row>
+      <entry>Оператор</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><literal>[a, b] &lt;&lt; [c, d]</literal></entry>
+      <entry>[a, b] полностью находится левее [c, d]. То есть, [a, b] &lt;&lt; [c, d] — true, если b &lt; c, и false в противном случае.</entry>
+     </row>
+
+     <row>
+      <entry><literal>[a, b] &gt;&gt; [c, d]</literal></entry>
+      <entry>[a, b] полностью находится правее [c, d]. То есть, [a, b] &gt;&gt; [c, d] — true, если a &gt; d, и false в противном случае.</entry>
+     </row>
+
+     <row>
+      <entry><literal>[a, b] &amp;&lt; [c, d]</literal></entry>
+      <entry>Пересекает или левее &mdash; Ещё лучше это читается как <quote>не простирается правее</quote>. Результатом будет true, когда b &lt;= d.</entry>
+     </row>
+
+     <row>
+      <entry><literal>[a, b] &amp;&gt; [c, d]</literal></entry>
+      <entry>Пересекает или правее &mdash; Ещё лучше это читается как <quote>не простирается левее</quote>. Результатом будет true, когда a &gt;= c.</entry>
+     </row>
+
+     <row>
+      <entry><literal>[a, b] = [c, d]</literal></entry>
+      <entry>Равенство &mdash; сегменты [a, b] и [c, d] равны, то есть, a = c и b = d.</entry>
+     </row>
+
+     <row>
+      <entry><literal>[a, b] &amp;&amp; [c, d]</literal></entry>
+      <entry>Сегменты [a, b] и [c, d] пересекаются.</entry>
+     </row>
+
+     <row>
+      <entry><literal>[a, b] @&gt; [c, d]</literal></entry>
+      <entry>Сегмент [a, b] содержит сегмент [c, d], то есть, a &lt;= c и b &gt;= d.</entry>
+     </row>
+
+     <row>
+      <entry><literal>[a, b] &lt;@ [c, d]</literal></entry>
+      <entry>Сегмент [a, b] содержится в [c, d], то есть, a &gt;= c и b &lt;= d.</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>(До версии PostgreSQL 8.2 операторы включения <literal>@&gt;</literal> и <literal>&lt;@</literal> обозначались соответственно как <literal>@</literal> и <literal>~</literal>. Эти имена по-прежнему действуют, но считаются устаревшими и в конце концов будут упразднены. Заметьте, что старые имена произошли из соглашения, которому раньше следовали ключевые геометрические типы данных!)</para>
+
+  <para>Также поддерживаются стандартные операторы для B-дерева, например: <informaltable>
+    <tgroup cols="2">
+     <thead>
+      <row>
+       <entry>Оператор</entry>
+       <entry>Описание</entry>
+      </row>
+     </thead>
+
+     <tbody>
+      <row>
+       <entry><literal>[a, b] &lt; [c, d]</literal></entry>
+       <entry>Меньше</entry>
+      </row>
+
+      <row>
+       <entry><literal>[a, b] &gt; [c, d]</literal></entry>
+       <entry>Больше</entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </informaltable> Эти операторы не имеют большого смысла ни для какой практической цели, кроме сортировки. Эти операторы сначала сравнивают (a) с (c), и если они равны, сравнивают (b) с (d). Результат сравнения позволяет упорядочить значения образом, подходящим для большинства случаев, что полезно, если вы хотите применять ORDER BY с этим типом.</para>
+ </sect2>
+
+ <sect2>
+  <title>Замечания</title>
+
+  <para>Примеры использования можно увидеть в регрессионном тесте <filename>sql/seg.sql</filename>.</para>
+
+  <para>Механизм, преобразующий <literal>(+-)</literal> в обычные диапазоны, не вполне точно определяет число значащих цифр для границ. Например, он добавляет дополнительную цифру к нижней границе, если результирующий интервал включает степень десяти: <screen>
+postgres=&gt; select '10(+-)1'::seg as seg;
+      seg
+---------
+9.0 .. 11             -- должно быть: 9 .. 11
+</screen></para>
+
+  <para>Производительность индекса-R-дерева может значительно зависеть от начального порядка вводимых значений. Может быть очень полезно отсортировать входную таблицу по столбцу <type>seg</type>; пример можно найти в скрипте <filename>sort-segments.pl</filename>.</para>
+ </sect2>
+
+ <sect2>
+  <title>Благодарности</title>
+
+  <para>Первый автор: Джин Селков мл. <email>selkovjr@mcs.anl.gov</email>, Аргоннская национальная лаборатория, Отдел математики и компьютерных наук</para>
+
+  <para>Я очень благодарен в первую очередь профессору Джо Геллерштейну (<ulink url="http://dbcsberkeleyedu/jmh/"/>) за пояснение сути GiST (<ulink url="http://gistcsberkeleyedu/"/>). Я также признателен всем разработчикам Postgres в настоящем и прошлом за возможность создать свой собственный мир и спокойно жить в нём. Ещё я хотел бы выразить признательность Аргоннской лаборатории и Министерству энергетики США за годы постоянной поддержки моих исследований в области баз данных.</para>
+
+ </sect2>
+
+</sect1>

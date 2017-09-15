@@ -1,0 +1,254 @@
+<!--
+doc/src/xml/ref/createdb.xml
+&productname; documentation
+-->
+
+<refentry id="app-createdb">
+ <indexterm zone="app-createdb"><primary>createdb</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>createdb</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>createdb</refname>
+  <refpurpose>создать базу данных <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>createdb</command>
+   <arg rep="repeat"><replaceable>параметр-подключения</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+   <arg choice="opt"><replaceable>имя_бд</replaceable>
+   <arg choice="opt"><replaceable>описание</replaceable></arg></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+
+ <refsect1 id="r1-app-createdb-1">
+  <title>Описание</title>
+  <para><application>createdb</application> создаёт базу данных <productname>&productname;</productname>.</para>
+
+  <para>Чаще всего пользователь, выполняющий эту команду, назначается владельцем создаваемой базы данных. Однако можно указать владельца явным образом с помощью флага <option>-O</option>, если у текущего пользователя достаточно привилегий.</para>
+
+  <para><application>createdb</application> это обёртка для <acronym>SQL</acronym>-команды <xref linkend="sql-createdatabase"/>. Создание баз данных с её помощью по сути не отличается от выполнения того же действия при обращении к серверу другими способами.</para>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <para><application>createdb</application> принимает в качестве аргументов: <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">имя_бд</replaceable></term>
+      <listitem>
+       <para>Указывает имя создаваемой базы. Имя должно быть уникальным в рамках кластера <productname>&productname;</productname>. По умолчанию в качестве имени базы данных берётся имя текущего системного пользователя.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">описание</replaceable></term>
+      <listitem>
+       <para>Добавляет комментарий к создаваемой базе.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-D <replaceable class="parameter">табличное_пространство</replaceable></option></term>
+      <term><option>--tablespace=<replaceable class="parameter">табличное_пространство</replaceable></option></term>
+      <listitem>
+       <para>Указывает табличное пространство, используемое по умолчанию. Имя пространства обрабатывается аналогично идентификаторам, заключённым в двойные кавычки.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-e</option></term>
+      <term><option>--echo</option></term>
+      <listitem>
+       <para>Вывести команды к серверу, генерируемые при выполнении <application>createdb</application>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-E <replaceable class="parameter">кодировка</replaceable></option></term>
+      <term><option>--encoding=<replaceable class="parameter">кодировка</replaceable></option></term>
+      <listitem>
+       <para>Указывает кодировку базы данных. Поддерживаемые сервером <productname>&productname;</productname> кодировки описаны в <xref remap="6" linkend="multibyte-charset-supported"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-l <replaceable class="parameter">локаль</replaceable></option></term>
+      <term><option>--locale=<replaceable class="parameter">локаль</replaceable></option></term>
+      <listitem>
+       <para>Указывает локаль базы данных. Имеет эффект одновременно установленных флагов <option>--lc-collate</option> и <option>--lc-ctype</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--lc-collate=<replaceable class="parameter">локаль</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает параметр LC_COLLATE для базы данных.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--lc-ctype=<replaceable class="parameter">локаль</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает параметр LC_CTYPE для базы данных.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-O <replaceable class="parameter">владелец</replaceable></option></term>
+      <term><option>--owner=<replaceable class="parameter">владелец</replaceable></option></term>
+      <listitem>
+       <para>Указывает пользователя в качестве владельца создаваемой базы. Имя пользователя обрабатывается аналогично идентификаторам, заключённым в двойные кавычки.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-T <replaceable class="parameter">шаблон</replaceable></option></term>
+      <term><option>--template=<replaceable class="parameter">шаблон</replaceable></option></term>
+      <listitem>
+       <para>Указывает шаблон, на основе которого будет создана база данных. Имя шаблона обрабатывается аналогично идентификаторам, заключённым в двойные кавычки.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>--version</option></term>
+       <listitem>
+       <para>Вывести версию <application>createdb</application> и прервать дальнейшее исполнение.</para>
+       </listitem>
+     </varlistentry>
+
+    <varlistentry>
+      <term><option>-?</option></term>
+      <term><option>--help</option></term>
+      <listitem>
+      <para>Вывести помощь по команде <application>createdb</application> и прервать выполнение.</para>
+      </listitem>
+    </varlistentry>
+
+    </variablelist></para>
+
+   <para>Флаги <option>-D</option>, <option>-l</option>, <option>-E</option>, <option>-O</option>, и <option>-T</option> по назначению соответствуют флагам SQL-команды <xref linkend="sql-createdatabase"/>.</para>
+
+   <para><application>createdb</application> также принимает из командной строки параметры подключения: <variablelist>
+     <varlistentry>
+      <term><option>-h <replaceable class="parameter">сервер</replaceable></option></term>
+      <term><option>--host=<replaceable class="parameter">сервер</replaceable></option></term>
+      <listitem>
+       <para>Указывает имя компьютера, на котором запущен сервер. Если значение начинается с косой черты, оно интерпретируется как имя каталога с доменным сокетом Unix.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">порт</replaceable></option></term>
+      <term><option>--port=<replaceable class="parameter">порт</replaceable></option></term>
+      <listitem>
+       <para>Указывает порт TCP или расширение файла доменного сокета Unix, через который сервер принимает подключения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <term><option>--username=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <listitem>
+       <para>Имя пользователя, под которым производится подключение.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</option></term>
+      <term><option>--no-password</option></term>
+      <listitem>
+       <para>Не выдавать запрос на ввод пароля. Если сервер требует аутентификацию по паролю и пароль не доступен с помощью других средств, таких как файл <filename>.pgpass</filename>, попытка соединения не удастся. Этот параметр может быть полезен в пакетных заданиях и скриптах, где нет пользователя, который вводит пароль.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option></term>
+      <term><option>--password</option></term>
+      <listitem>
+       <para>Принудительно запрашивать пароль перед подключением к базе данных.</para>
+
+       <para>Это несущественный параметр, так как <application>createdb</application> запрашивает пароль автоматически, если сервер проверяет подлинность по паролю. Однако, чтобы понять это, <application>createdb</application> лишний раз подключается к серверу. Поэтому иногда имеет смысл ввести <option>-W</option>, чтобы исключить эту ненужную попытку подключения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--maintenance-db=<replaceable class="parameter">имя_бд</replaceable></option></term>
+      <listitem>
+       <para>Указывает имя опорной базы данных, к которой при создании новой будет произведено подключение. Если имя не указано, то будет использоваться <literal>postgres</literal>. Если же <literal>postgres</literal> не существует, то будет использоваться <literal>template1</literal>.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><envar>PGDATABASE</envar></term>
+    <listitem>
+     <para>Если установлено и не переопределено в командной строке, задаёт имя создаваемой базы данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><envar>PGHOST</envar></term>
+    <term><envar>PGPORT</envar></term>
+    <term><envar>PGUSER</envar></term>
+
+    <listitem>
+     <para>Параметры подключения по умолчанию. <envar>PGUSER</envar> указывает имя пользователя при создании базы данных, если не указано явно в командной строке или в переменной окружения <envar>PGDATABASE</envar>.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Эта утилита, как и большинство других утилит <productname>&productname;</productname>, также использует переменные среды, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>).</para>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Диагностика</title>
+
+  <para>В случае возникновения трудностей обратитесь к <xref remap="3" linkend="sql-createdatabase"/> и <xref remap="3" linkend="app-psql"/>. При диагностике нужно учитывать, что при запуске утилиты используются значения переменных окружения и параметров подключения по умолчанию <application>libpq</application>.</para>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Примеры</title>
+
+   <para>Создать базу данных <literal>demo</literal> на сервере, используемом по умолчанию, можно так: <screen>
+<prompt>$ </prompt><userinput>createdb demo</userinput>
+</screen></para>
+
+   <para>Создать базу <literal>demo</literal> на сервере <literal>eden</literal>, порт 5000, с кодировкой <literal>LATIN1</literal> можно так: <screen>
+<prompt>$ </prompt><userinput>createdb -p 5000 -h eden -E LATIN1 -e demo</userinput>
+<computeroutput>CREATE DATABASE demo ENCODING 'LATIN1';</computeroutput>
+</screen></para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-dropdb"/></member>
+   <member><xref linkend="sql-createdatabase"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

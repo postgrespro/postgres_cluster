@@ -1,0 +1,78 @@
+<!-- doc/src/xml/ref/drop_conversion.xml -->
+
+<refentry id="sql-dropconversion">
+ <indexterm zone="sql-dropconversion"><primary>DROP CONVERSION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP CONVERSION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP CONVERSION</refname>
+  <refpurpose>удалить преобразование</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP CONVERSION [ IF EXISTS ] <replaceable>имя</replaceable> [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="sql-dropconversion-description">
+  <title>Описание</title>
+
+  <para><command>DROP CONVERSION</command> удаляет ранее определённое преобразование. Чтобы удалить преобразование, необходимые быть его владельцем.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><literal>IF EXISTS</literal></term>
+     <listitem>
+      <para>Не считать ошибкой, если преобразование не существует. В этом случае будет выдано замечание.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>имя</replaceable></term>
+
+     <listitem>
+      <para>Имя преобразования, возможно, дополненное схемой.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>CASCADE</literal></term>
+     <term><literal>RESTRICT</literal></term>
+
+     <listitem>
+      <para>Эти ключевые слова игнорируются, так как от преобразований не зависят никакие объекты.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+ </refsect1>
+
+ <refsect1 id="sql-dropconversion-examples">
+  <title>Примеры</title>
+
+  <para>Удаление преобразования с именем <literal>myname</literal>: <programlisting>DROP CONVERSION myname;</programlisting></para>
+ </refsect1>
+
+ <refsect1 id="sql-dropconversion-compat">
+  <title>Совместимость</title>
+
+  <para>Оператор <command>DROP CONVERSION</command> отсутствует в стандарте SQL, хотя в нём есть оператор <command>DROP TRANSLATION</command>, сопутствующий оператору <command>CREATE TRANSLATION</command>, который, в свою очередь, подобен <command>CREATE CONVERSION</command> в &productname;.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterconversion"/></member>
+   <member><xref linkend="sql-createconversion"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

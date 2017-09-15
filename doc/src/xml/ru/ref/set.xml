@@ -1,0 +1,183 @@
+<!--
+doc/src/xml/ref/set.xml
+&productname; documentation
+-->
+
+<refentry id="sql-set">
+ <indexterm zone="sql-set"><primary>SET</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SET</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SET</refname>
+  <refpurpose>изменить параметр времени выполнения</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>SET [ SESSION | LOCAL ] <replaceable class="parameter">параметр_конфигурации</replaceable> { TO | = } { <replaceable class="parameter">значение</replaceable> | '<replaceable class="parameter">значение</replaceable>' | DEFAULT }
+SET [ SESSION | LOCAL ] TIME ZONE { <replaceable class="parameter">часовой_пояс</replaceable> | LOCAL | DEFAULT }</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Команда <command>SET</command> изменяет конфигурационные параметры времени выполнения. С помощью <command>SET</command> можно &laquo;на лету&raquo; изменить многие из параметров, перечисленных в <xref remap="6" linkend="runtime-config"/>. (Но для изменения некоторых могут потребоваться права суперпользователя, а другие нельзя изменять после запуска сервера или сеанса.) <command>SET</command> влияет на значение параметра только в рамках текущего сеанса.</para>
+
+  <para>Если команда <command>SET</command> (или равнозначная <command>SET SESSION</command>) выполняется внутри транзакции, которая затем прерывается, эффект команды <command>SET</command> пропадает, когда транзакция откатывается. Если же окружающая транзакция фиксируется, этот эффект сохраняется до конца сеанса, если его не переопределит другая команда <command>SET</command>.</para>
+
+  <para>Действие <command>SET LOCAL</command> продолжается только до конца текущей транзакции, независимо от того, фиксируется она или нет. Особый случай представляет использование <command>SET</command> с последующей <command>SET LOCAL</command> в одной транзакции: значение, заданное <command>SET LOCAL</command>, будет сохраняться до конца транзакции, но после этого (если транзакция фиксируется) восстановится значение, заданное командой <command>SET</command>.</para>
+
+  <para>Действия <command>SET</command> или <command>SET LOCAL</command> также отменяются при откате к точке сохранения, установленной до выполнения этих команд.</para>
+
+  <para>Если <command>SET LOCAL</command> применяется в функции, параметр <literal>SET</literal> для которой устанавливает значение той же переменной (см. <xref remap="4" linkend="sql-createfunction"/>), действие команды <command>SET LOCAL</command> прекращается при выходе из функции; то есть, в любом случае восстанавливается значение, существовавшее при вызове функции. Это позволяет использовать <command>SET LOCAL</command> для динамических и неоднократных изменений параметра в рамках функции, и при этом иметь удобную возможность использовать параметр <literal>SET</literal> для сохранения и восстановления значения, полученного извне. Однако обычная команда <command>SET</command> переопределяет любой параметр <literal>SET</literal> окружающей функции; её действие сохраняется, если не происходит откат транзакции.</para>
+
+  <note>
+   <para>В <productname>PostgreSQL</productname> с версии 8.0 до 8.2 действие <command>SET LOCAL</command> могло отменяться при освобождении ранее установленной точки сохранения или при успешном выходе из блока исключения <application>PL/pgSQL</application>. Затем это поведение было признано неинтуитивным, и было изменено.</para>
+  </note>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>SESSION</literal></term>
+    <listitem>
+     <para>Указывает, что команда действует в рамках текущего сеанса. (Это поведение по умолчанию, если не указано ни <literal>SESSION</literal>, ни <literal>LOCAL</literal>.)</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>LOCAL</literal></term>
+    <listitem>
+     <para>Указывает, что команда действует только в рамках текущей транзакции. После <command>COMMIT</command> или <command>ROLLBACK</command> в силу вновь вступает значение, определённое на уровне сеанса. При выполнении такой команды вне блока транзакции выдаётся предупреждение и больше ничего не происходит.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">параметр_конфигурации</replaceable></term>
+    <listitem>
+     <para>Имя устанавливаемого параметра времени выполнения. Доступные параметры описаны в <xref remap="6" linkend="runtime-config"/> и ниже.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">значение</replaceable></term>
+    <listitem>
+     <para>Новое значение параметра. Параметры могут задаваться в виде строковых констант, идентификаторов, чисел или списков перечисленных типов через запятую, в зависимости от конкретного параметра. Указание <literal>DEFAULT</literal> в данном контексте позволяет сбросить параметр к значению по умолчанию (то есть, к тому значению, которое он имел бы, если в текущем сеансе не выполнялись бы команды <command>SET</command>).</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Помимо конфигурационных параметров, описанных в <xref remap="6" linkend="runtime-config"/>, есть ещё несколько параметров, которые можно изменить только командой <command>SET</command> или которые имеют особый синтаксис: <variablelist>
+    <varlistentry>
+     <term><literal>SCHEMA</literal></term>
+     <listitem>
+      <para><literal>SET SCHEMA '<replaceable>значение</replaceable>'</literal> — альтернативное написание команды <literal>SET search_path TO <replaceable>значение</replaceable></literal>. Такой синтаксис позволяет указать только одну схему.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>NAMES</literal></term>
+     <listitem>
+      <para><literal>SET NAMES <replaceable>значение</replaceable></literal> — альтернативное написание команды <literal>SET client_encoding TO <replaceable>значение</replaceable></literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>SEED</literal></term>
+     <listitem>
+      <para>Устанавливает внутреннее начальное значение для генератора случайных чисел (функции <function>random</function>). В качестве значения допускаются числа с плавающей точкой от -1 до 1, для внутреннего применения они затем умножаются на 2<superscript>31</superscript>-1.</para>
+
+      <para>Это начальное значение также можно установить, вызвав функцию <function>setseed</function>: <programlisting>SELECT setseed(<replaceable>значение</replaceable>);</programlisting></para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>TIME ZONE</literal></term>
+     <listitem>
+      <para><literal>SET TIME ZONE <replaceable>значение</replaceable></literal> — альтернативное написание команды <literal>SET timezone TO <replaceable>значение</replaceable></literal>. Синтаксис <literal>SET TIME ZONE</literal> позволяет указывать часовой пояс в специальном формате. Например, допускаются следующие значения: <variablelist>
+        <varlistentry>
+         <term><literal>'PST8PDT'</literal></term>
+         <listitem>
+          <para>Часовой пояс Беркли, штат Калифорния.</para>
+         </listitem>
+        </varlistentry>
+        <varlistentry>
+         <term><literal>'Europe/Rome'</literal></term>
+         <listitem>
+          <para>Часовой пояс Италии.</para>
+         </listitem>
+        </varlistentry>
+        <varlistentry>
+         <term><literal>-7</literal></term>
+         <listitem>
+          <para>Часовой пояс, сдвинутый от UTC на 7 часов к западу (равнозначен PDT). Положительные значения означают сдвиг от UTC к востоку.</para>
+         </listitem>
+        </varlistentry>
+        <varlistentry>
+         <term><literal>INTERVAL '-08:00' HOUR TO MINUTE</literal></term>
+         <listitem>
+          <para>Часовой пояс, сдвинутый от UTC на 8 часов к западу (равнозначен PST).</para>
+         </listitem>
+        </varlistentry>
+        <varlistentry>
+         <term><literal>LOCAL</literal></term>
+         <term><literal>DEFAULT</literal></term>
+         <listitem>
+          <para>Устанавливает в качестве часового пояса местный часовой пояс (то есть, значение серверного параметра <varname>timezone</varname> по умолчанию).</para>
+         </listitem>
+        </varlistentry>
+       </variablelist></para>
+
+      <para>Значения часового пояса, заданные в виде чисел или интервалов, внутри переводятся в формат часовых поясов POSIX. Например, после <literal>SET TIME ZONE -7</literal>, команда <command>SHOW TIME ZONE</command> покажет <literal>&lt;-07&gt;+07</literal>.</para>
+
+      <para>Узнать о часовых поясах подробнее можно в <xref remap="6" linkend="datatype-timezones"/>.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Также изменить значение параметра можно с помощью функции <function>set_config</function>; см. <xref remap="4" linkend="functions-admin"/>. Кроме того, выполнив UPDATE в системном представлении <link linkend="view-pg-settings"><structname>pg_settings</structname></link>, можно произвести то же действие, что выполняет <command>SET</command>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Установка пути поиска схем: <programlisting>SET search_path TO my_schema, public;</programlisting></para>
+
+  <para>Установка традиционного стиля даты <productname>POSTGRES</productname> с форматом ввода <quote>день, месяц, год</quote>: <screen>
+SET datestyle TO postgres, dmy;
+</screen></para>
+
+  <para>Установка часового пояса для Беркли, штат Калифорния: <screen>
+SET TIME ZONE 'PST8PDT';
+</screen></para>
+
+  <para>Установка часового пояса Италии: <screen>
+SET TIME ZONE 'Europe/Rome';
+</screen></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><literal>SET TIME ZONE</literal> расширяет синтаксис, определённый в стандарте SQL. Стандарт допускает только числовые смещения часовых поясов, тогда как <productname>&productname;</productname> позволяет задавать часовой пояс более гибко. Все другие функции <literal>SET</literal> являются расширениями <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-reset"/></member>
+   <member><xref linkend="sql-show"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

@@ -1,0 +1,111 @@
+<!--
+doc/src/xml/ref/create_materialized_view.xml
+&productname; documentation
+-->
+
+<refentry id="sql-creatematerializedview">
+ <indexterm zone="sql-creatematerializedview"><primary>CREATE MATERIALIZED VIEW</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE MATERIALIZED VIEW</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE MATERIALIZED VIEW</refname>
+  <refpurpose>создать материализованное представление</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE MATERIALIZED VIEW [ IF NOT EXISTS ] <replaceable>имя_таблицы</replaceable>
+    [ (<replaceable>имя_столбца</replaceable> [, ...] ) ]
+    [ WITH ( <replaceable class="parameter">параметр_хранения</replaceable> [= <replaceable class="parameter">значение</replaceable>] [, ... ] ) ]
+    [ TABLESPACE <replaceable class="parameter">табл_пространство</replaceable> ]
+    AS <replaceable>запрос</replaceable>
+    [ WITH [ NO ] DATA ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE MATERIALIZED VIEW</command> определяет материализованное представление запроса. Заданный запрос выполняется и наполняет представление в момент вызова команды (если только не указано <command>WITH NO DATA</command>). Обновить представление позже можно, выполнив <command>REFRESH MATERIALIZED VIEW</command>.</para>
+
+  <para>Команда <command>CREATE MATERIALIZED VIEW</command> подобна <command>CREATE TABLE AS</command>, за исключением того, что она запоминает запрос, порождающий представление, так что это представление можно позже обновить по требованию. Материализованные представления сходны с таблицами во многом, но не во всём; например, не поддерживаются временные материализованные представления и автоматическая генерация OID.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>IF NOT EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если материализованное представление с таким именем уже существует. В этом случае будет выдано замечание. Заметьте, что нет никакой гарантии, что существующее материализованное представление как-то соотносится с тем, которое могло бы быть создано.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable>имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) создаваемого материализованного представления.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable>имя_столбца</replaceable></term>
+    <listitem>
+     <para>Имя столбца в создаваемом материализованном представлении. Если имена столбцов не заданы явно, они определяются по именам столбцов результата запроса.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>WITH ( <replaceable class="parameter">параметр_хранения</replaceable> [= <replaceable class="parameter">значение</replaceable>] [, ... ] )</literal></term>
+    <listitem>
+     <para>Это предложение задаёт дополнительные параметры хранения для создаваемого материализованного представления; подробнее о них можно узнать в <xref remap="6" linkend="sql-createtable-storage-parameters" endterm="sql-createtable-storage-parameters-title"/>. Все параметры, которые поддерживает <literal>CREATE TABLE</literal>, поддерживает так же и <literal>CREATE MATERIALIZED VIEW</literal>, за исключением <literal>OIDS</literal>. За дополнительной информацией обратитесь к <xref remap="3" linkend="sql-createtable"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>TABLESPACE <replaceable class="parameter">табл_пространство</replaceable></literal></term>
+    <listitem>
+     <para>Здесь <replaceable class="parameter">табл_пространство</replaceable> — имя табличного пространства, в котором будет создано материализованное представление. Если оно не задано, выбирается <xref linkend="guc-default-tablespace"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable>запрос</replaceable></term>
+    <listitem>
+     <para>Команда <xref linkend="sql-select"/>, <link linkend="sql-table">TABLE</link> или <xref linkend="sql-values"/>. Эта команда будет выполняться в контексте с ограничениями по безопасности; в частности, будут запрещены вызовы функций, которые сами создают временные таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>WITH [ NO ] DATA</literal></term>
+    <listitem>
+     <para>Это предложение указывает, будет ли материализованное представление наполняться в момент создания. Если материализованное представление не наполняется, оно помечается как нечитаемое, так что к нему нельзя будет обращаться до выполнения <command>REFRESH MATERIALIZED VIEW</command>.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>CREATE MATERIALIZED VIEW</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altermaterializedview"/></member>
+   <member><xref linkend="sql-createtableas"/></member>
+   <member><xref linkend="sql-createview"/></member>
+   <member><xref linkend="sql-dropmaterializedview"/></member>
+   <member><xref linkend="sql-refreshmaterializedview"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

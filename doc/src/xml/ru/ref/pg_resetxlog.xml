@@ -1,0 +1,159 @@
+<!--
+doc/src/xml/ref/pg_resetxlog.xml
+&productname; documentation
+-->
+
+<refentry id="app-pgresetxlog">
+ <indexterm zone="app-pgresetxlog"><primary>pg_resetxlog</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>pg_resetxlog</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_resetxlog</refname>
+  <refpurpose>очистка журнала упреждающей записи и другой управляющей информацию кластера <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_resetxlog</command>
+   <arg choice="opt"><option>-f</option></arg>
+   <arg choice="opt"><option>-n</option></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+   <arg choice="req"><arg choice="opt"><option>-D</option></arg> <replaceable class="parameter">каталог_данных</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="r1-app-pgresetxlog-1">
+  <title>Описание</title>
+  <para><command>pg_resetxlog</command> очищает журнал упреждающей записи (WAL) и может сбросить некоторую другую управляющую информацию, хранящуюся в файле <filename>pg_control</filename>. Данная функция может быть востребована при повреждении этих файлов. Использовать её нужно только как крайнюю меру, когда запуск сервера оказывается невозможен из-за этого повреждения.</para>
+
+  <para>После выполнения этой команды запуск сервера, скорее всего, будет возможен, однако стоит учитывать, что база данных может содержать несогласованные данные из-за транзакций, зафиксированных частично. Вы должны немедленно выгрузить данные, выполнить <command>initdb</command>, а затем восстановить данные. После этого проверьте целостность базы и внесите необходимые коррективы.</para>
+
+  <para>Эту утилиту может запускать только пользователь, установивший сервер, так как ей нужны права записи/чтения в каталоге хранения данных кластера. В целях безопасности каталог необходимо указывать в командной строке. <command>pg_resetxlog</command> не поддерживает переменную окружения <envar>PGDATA</envar>.</para>
+
+  <para>Если <command>pg_resetxlog</command> выводит сообщение о невозможности определить данные из <filename>pg_control</filename>, то команду можно запустить принудительно, указав <option>-f</option>. В этом случае будут использованы наиболее вероятные значения. Для большинства полей это нормально, но для некоторых может потребоваться явное указание: следующее значение OID, следующее значение ID транзакции и времени, ID мультитранзакции и смещение, начальный адрес WAL. Эти значения можно указать с помощью далее описанных параметров. Если их невозможно определить, то флаг <option>f</option> позволяет это обойти, однако, достоверность данных восстановленной базы останется под сомнением: незамедлительная выгрузка с последующим восстановлением данных крайне необходимы. <emphasis>Не</emphasis> выполняйте никаких операций модификации до создания дампа данных, так как это может привести к ещё более печальным последствиям.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><option>-f</option></term>
+    <listitem>
+     <para>Принудительно выполнять <command>pg_resetxlog</command>, даже если не удаётся получить приемлемые данные из <filename>pg_control</filename>, как описано выше.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-n</option></term>
+    <listitem>
+     <para>С флагом <option>-n</option> (нет операции) команда <command>pg_resetxlog</command> отображает извлечённые из <filename>pg_control</filename> данные, а также значения, которые можно изменить. Режим полезен для отладки и тестирования предстоящей операции без реального применения изменений.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-V</option></term>
+    <term><option>--version</option></term>
+    <listitem><para>Показать версию, а затем завершиться.</para></listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-?</option></term>
+    <term><option>--help</option></term>
+    <listitem><para>Показать справку, а затем завершиться.</para></listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Следующие параметры необходимы, только когда <command>pg_resetxlog</command> не может определить подходящие значения, прочитав <filename>pg_control</filename>. Безопасные значения можно определить, как описано ниже. Для значений, принимающих числовые аргументы, можно задать шестнадцатеричные значения, добавив префикс <literal>0x</literal>.</para>
+
+  <variablelist>
+   <varlistentry>
+    <term><option>-c</option> <replaceable class="parameter">xid</replaceable>,<replaceable class="parameter">xid</replaceable></term>
+    <listitem>
+     <para>Вручную задать идентификаторы старейшей и новейшей транзакций, для которых можно получить время фиксации.</para>
+
+     <para>Безопасное значение идентификатора старейшей транзакции, для которой можно получить время фиксации (первый компонент), можно определить, найдя наименьшее в числовом виде имя файла в каталоге <filename>pg_commit_ts</filename> внутри каталога данных. Безопасное значение идентификатора новейшей транзакции, для которой можно получить время фиксации (второй компонент), можно определить, найдя, напротив, наибольшее в числовом виде имя файла в том же каталоге. Числа в именах этих файлов представлены в шестнадцатеричном формате.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-e</option> <replaceable class="parameter">xid_epoch</replaceable></term>
+    <listitem>
+     <para>Вручную задать эпоху в ID следующей транзакции.</para>
+
+     <para>Эпоха идентификаторов транзакции не хранится в базе данных нигде, кроме поля, устанавливаемого командой <command>pg_resetxlog</command>, поэтому пока рассматривается сама база, допустимым будет любое значение. Это значение, возможно, понадобится скорректировать для обеспечения правильной работы системы репликации, например, <application>Slony-I</application> и <application>Skytools</application>. В этом случае подходящее значение следует получить из состояния нижележащей реплицированной базы данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-l</option> <replaceable class="parameter">xlogfile</replaceable></term>
+    <listitem>
+     <para>Вручную задать начальный адрес WAL.</para>
+
+     <para>Начальный адрес журнала WAL должен превышать наибольшее значение сегмента в имени файла, расположенного в каталоге <filename>pg_xlog</filename>. Эти имена тоже представлены в шестнадцатеричном формате и состоят из трёх частей. Первая из них — <quote>ID линии времени</quote> и её обычно не следует менять. Например, если <filename>00000001000000320000004A</filename> — наибольшее значение в <filename>pg_xlog</filename>, нужно указать <literal>-l 00000001000000320000004B</literal> или большее число.</para>
+
+     <note>
+      <para><command>pg_resetxlog</command> ищет среди файлов каталога <filename>pg_xlog</filename>, и по умолчанию выбирает значение для флага <option>-l</option>, идущее следующим после найденного. Корректировка значения параметра <option>-l</option> требуется лишь в ситуации, когда известно о существовании других сегментов WAL, отсутствующих на момент в каталоге <filename>pg_xlog</filename>, например, из архивного файла, или при полной потере данных в <filename>pg_xlog</filename>.</para>
+     </note>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-m</option> <replaceable class="parameter">mxid</replaceable>,<replaceable class="parameter">mxid</replaceable></term>
+    <listitem>
+     <para>Вручную задать ID следующей и старейшей мультитранзакции.</para>
+
+     <para>Безопасное значение следующего идентификатора мультитранзакции (первый компонент) можно вычислить, найдя наибольшее числовое значение среди имён файлов, расположенных в каталоге <filename>pg_multixact/offsets</filename>. К найденному значению необходимо прибавить один, затем умножить на 65536 (0x10000). Для вычисления безопасного значения ID старейшей мультитранзакции (второй компонент <option>-m</option>) необходимо найти наименьшее числовое значение среди тех же файлов, и умножить его на 65536. Имена файлов представляются в шестнадцатеричном формате, так что значения проще указывать в нём же, добавив в конце четыре нуля.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-o</option> <replaceable class="parameter">oid</replaceable></term>
+    <listitem>
+     <para>Вручную задать следующий OID.</para>
+
+     <para>Не существует относительно простого способа вычисления следующего за наибольшим из существующих значением OID, однако это некритично.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-O</option> <replaceable class="parameter">mxoff</replaceable></term>
+    <listitem>
+     <para>Вручную задать смещение следующей мультитранзакции.</para>
+
+     <para>Безопасное значение можно определить, найдя наибольшее числовое значение в имени файла в каталоге <filename>pg_multixact/members</filename>, прибавив один и умножив результат на 52352 (0xCC80). Имена файлов представлены в шестнадцатеричном формате. Простого рецепта с прибавлением нулей в конце, как для других параметров, в данном случае нет.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-x</option> <replaceable class="parameter">xid</replaceable></term>
+    <listitem>
+     <para>Вручную задать ID следующей транзакции.</para>
+
+     <para>Безопасное значение можно определить, найдя наибольшее числовое значение в имени файла в подкаталоге <filename>pg_clog</filename> каталога данных, прибавив один и умножив результат на 1048576 (0x100000). Заметьте, что имена файлов представлены в шестнадцатеричном формате. Значение этого параметра обычно также проще задавать в шестнадцатеричном виде. Например, если <filename>0011</filename> — наибольшее значение в <filename>pg_clog</filename>, подходящим значением будет <literal>-x 0x1200000</literal> (нужный множитель дают пять последних нулей).</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Команду нельзя выполнять на работающем сервере. <command>pg_resetxlog</command> отклонит выполнение при обнаруженном блокирующем файле в каталоге хранения данных. Иногда при аварии сервера блокирующий файл может остаться в системе. В этом случае необходимо самостоятельно удалить его, чтобы дать возможность <command>pg_resetxlog</command> отработать. Перед выполнением операции дважды убедитесь, что сервер остановлен.</para>
+
+  <para><command>pg_resetxlog</command> работает только с серверами той же основной версии.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-pgcontroldata"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

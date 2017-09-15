@@ -1,0 +1,82 @@
+<sect1 id="mchar">
+  <title>mchar</title>
+  <para>Модуль <literal>mchar</literal> предоставляет дополнительные типы данных для совместимости с Microsoft SQL Server (MSSQL).</para>
+
+  <sect2 id="mchar-overview">
+    <title>Обзор</title>
+    <para>Этот модуль был разработан для улучшения поддержки системы <application>1С:Предприятие</application>, самой популярной в России CRM и ERP-платформы.</para>
+    <para>Он содержит реализацию типов MCHAR и MVARCHAR, которые с точностью до ошибок совместимы с типами MSSQL CHAR и VARCHAR, соответственно. Эти типы используют libicu для сравнения строк и преобразования регистра, так что они действуют одинаково в разных операционных системах.</para>
+    <para>В &productname; также есть расширение <xref linkend="citext"/>, предоставляющие типы, подобные MCHAR. Но это расширение не воспроизводит поведение MS-SQL в отношении пробельных символов в конце строки.</para>
+    <para>Отличия от стандартных типов &productname; CHAR и VARCHAR:</para>
+    <itemizedlist>
+    <listitem>
+    <para>Сравнение без учёта регистра</para>
+    </listitem>
+    <listitem>
+    <para>Обработка пробельных символов в конце строки</para>
+    </listitem>
+    <listitem>
+    <para>Эти типы всегда хранятся как двухбайтовые строки Unicode вне зависимости от кодировки базы данных.</para>
+    </listitem>
+    </itemizedlist>
+  </sect2>
+
+  <sect2 id="mchar-types">
+    <title>Дополнительные типы</title>
+    <itemizedlist>
+      <listitem>
+        <para><type>mchar</type> &mdash; аналог типа char в MSSQL</para>
+      </listitem>
+      <listitem>
+        <para><type>mvarchar</type> &mdash; аналог типа varchar в MSSQL</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+
+  <sect2 id="mchar-features">
+    <title>Функциональность типов MCHAR и MVARCHAR</title>
+    <itemizedlist>
+      <listitem>
+        <para>Определяется функция <function>length(str)</function></para>
+      </listitem>
+      <listitem>
+        <para>Определяется функция <function>substr(str, pos[, length])</function></para>
+      </listitem>
+      <listitem>
+        <para>Определяется оператор <literal>||</literal>, применяемый для конкатенации любых аргументов mchar и mvarchar</para>
+      </listitem>
+      <listitem>
+        <para>Определяется набор операторов: <literal>&lt;</literal>, <literal>&lt;=</literal> <literal>=</literal>, <literal>&gt;=</literal> и <literal>&gt;</literal> для сравнения символов без учёта регистра (LibICU)</para>
+      </listitem>
+      <listitem>
+        <para>Определяется набор операторов: <literal>&amp;&lt;</literal>, <literal>&amp;&lt;=</literal>, <literal>&amp;=</literal>, <literal>&amp;&gt;=</literal> и <literal>&amp;&gt;</literal> для сравнения с учётом регистра (LibICU)</para>
+      </listitem>
+      <listitem>
+        <para>Неявное приведение между типами <type>mchar</type> и <type>mvarchar</type></para>
+      </listitem>
+      <listitem>
+        <para>Поддержка B-деревьев и хеш-индексов</para>
+      </listitem>
+      <listitem>
+        <para>Поддержка оператора <literal>LIKE [ESCAPE]</literal></para>
+      </listitem>
+      <listitem>
+        <para>Поддержка оператора <literal>SIMILAR TO [ESCAPE]</literal></para>
+      </listitem>
+      <listitem>
+        <para>Поддержка оператора <emphasis>~</emphasis> (регулярные выражения POSIX)</para>
+      </listitem>
+      <listitem>
+        <para>Поддержка индексов для оператора <emphasis>LIKE</emphasis></para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+
+  <sect2 id="mchar-authors">
+    <title>Авторы</title>
+    <literallayout>      Олег Бартунов <email>oleg@sai.msu.ru</email>
+      Фёдор Сигаев <email>teodor@sigaev.ru</email>
+    </literallayout>
+  </sect2>
+
+</sect1>

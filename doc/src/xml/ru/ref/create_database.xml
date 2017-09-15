@@ -1,0 +1,162 @@
+<!--
+doc/src/xml/ref/create_database.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createdatabase">
+ <indexterm zone="sql-createdatabase"><primary>CREATE DATABASE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE DATABASE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE DATABASE</refname>
+  <refpurpose>создать базу данных</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE DATABASE <replaceable class="parameter">имя</replaceable>
+    [ [ WITH ] [ OWNER [=] <replaceable class="parameter">имя_пользователя</replaceable> ]
+           [ TEMPLATE [=] <replaceable class="parameter">шаблон</replaceable> ]
+           [ ENCODING [=] <replaceable class="parameter">кодировка</replaceable> ]
+           [ LC_COLLATE [=] <replaceable class="parameter">категория_сортировки</replaceable> ]
+           [ LC_CTYPE [=] <replaceable class="parameter">категория_типов_символов</replaceable> ]
+           [ TABLESPACE [=] <replaceable class="parameter">табл_пространство</replaceable> ]
+           [ ALLOW_CONNECTIONS [=] <replaceable class="parameter">разр_подключения</replaceable> ]
+           [ CONNECTION LIMIT [=] <replaceable class="parameter">предел_подключений</replaceable> ]
+           [ IS_TEMPLATE [=] <replaceable class="parameter">это_шаблон</replaceable> ] ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Команда <command>CREATE DATABASE</command> создаёт базу данных <productname>&productname;</productname>.</para>
+
+  <para>Чтобы создать базу данных, необходимо быть суперпользователем или иметь специальное право <literal>CREATEDB</literal>. См. <xref remap="4" linkend="sql-createuser"/>.</para>
+
+  <para>По умолчанию новая база данных создаётся копированием стандартной системной базы данных <literal>template1</literal>. Задать другой шаблон можно, добавив указание <literal>TEMPLATE <replaceable class="parameter">имя</replaceable></literal>. В частности, написав <literal>TEMPLATE template0</literal>, можно создать девственно чистую базу данных, содержащую только стандартные объекты, предопределённые установленной версией <productname>&productname;</productname>. Это бывает полезно, когда копировать в новую базу любые дополнительные объекты, добавленные локально в <literal>template1</literal>, нежелательно.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">имя</replaceable></term>
+      <listitem>
+       <para>Имя создаваемой базы данных.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><replaceable class="parameter">имя_пользователя</replaceable></term>
+      <listitem>
+       <para>Имя пользователя (роли), назначаемого владельцем новой базы данных, либо <literal>DEFAULT</literal>, чтобы владельцем стал пользователь по умолчанию (а именно, пользователь, выполняющий команду). Чтобы создать базу данных и сделать её владельцем другую роль, необходимо быть непосредственным или опосредованным членом этой роли, либо суперпользователем.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><replaceable class="parameter">шаблон</replaceable></term>
+      <listitem>
+       <para>Имя шаблона, из которого будет создаваться новая база данных, либо <literal>DEFAULT</literal>, чтобы выбрать шаблон по умолчанию (<literal>template1</literal>).</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><replaceable class="parameter">кодировка</replaceable></term>
+      <listitem>
+       <para>Кодировка символов в новой базе данных. Укажите строковую константу (например, <literal>'SQL_ASCII'</literal>) или целочисленный номер кодировки, либо <literal>DEFAULT</literal>, чтобы выбрать кодировку по умолчанию (а именно, кодировку шаблона). Наборы символов, которые поддерживает <productname>&productname;</productname>, перечислены в <xref remap="6" linkend="multibyte-charset-supported"/>. Дополнительные ограничения описаны ниже.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><replaceable class="parameter">категория_сортировки</replaceable></term>
+      <listitem>
+       <para>Порядок сортировки (<literal>LC_COLLATE</literal>), который будет использоваться в новой базе данных. Этот параметр определяет порядок сортировки строк, например, в запросах с ORDER BY, а также порядок индексов по текстовым столбцам. По умолчанию используется порядок сортировки, установленный в шаблоне. Дополнительные ограничения описаны ниже.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><replaceable class="parameter">категория_типов_символов</replaceable></term>
+      <listitem>
+       <para>Классификация символов (<literal>LC_CTYPE</literal>), которая будет применяться в новой базе данных. Этот параметр определяет принадлежность символов категориям, например: строчные, заглавные, цифры и т. п. По умолчанию используется классификация символов, установленная в шаблоне. Дополнительные ограничения описаны ниже.</para>
+      </listitem>
+     </varlistentry>
+     <varlistentry>
+      <term><replaceable class="parameter">табл_пространство</replaceable></term>
+      <listitem>
+       <para>Имя табличного пространства, связываемого с новой базой данных, или <literal>DEFAULT</literal> для использования табличного пространства шаблона. Это табличное пространство будет использоваться по умолчанию для объектов, создаваемых в этой базе. За подробностями обратитесь к <xref remap="3" linkend="sql-createtablespace"/>.</para>
+      </listitem>
+     </varlistentry>
+
+      <varlistentry>
+       <term><replaceable class="parameter">разр_подключения</replaceable></term>
+       <listitem>
+        <para>Если false, никто не сможет подключаться к этой базе данных. По умолчанию имеет значение true, то есть подключения принимаются (если не ограничиваются другими механизмами, например, <literal>GRANT</literal>/<literal>REVOKE CONNECT</literal>).</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+      <term><replaceable class="parameter">предел_подключений</replaceable></term>
+      <listitem>
+       <para>Максимальное количество одновременных подключений к этой базе данных. Значение -1 (по умолчанию) снимает ограничение.</para>
+      </listitem>
+     </varlistentry>
+
+      <varlistentry>
+       <term><replaceable class="parameter">это_шаблон</replaceable></term>
+       <listitem>
+        <para>Если true, базу данных сможет клонировать любой пользователь с правами <literal>CREATEDB</literal>; в противном случае (по умолчанию), клонировать эту базу смогут только суперпользователи и её владелец.</para>
+       </listitem>
+      </varlistentry>
+    </variablelist>
+
+  <para>Дополнительные параметры могут записываться в любом порядке, не обязательно так, как показано выше.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para><command>CREATE DATABASE</command> нельзя выполнять внутри блока транзакции.</para>
+
+   <para>Ошибки, содержащие сообщение <quote>не удалось инициализировать каталог базы данных</quote>, чаще всего связаны с нехваткой прав в каталоге данных, заполнением диска или другими проблемами в файловой системе.</para>
+
+   <para>Для удаления базы данных применяется <xref linkend="sql-dropdatabase"/>.</para>
+
+   <para>Программа <xref linkend="app-createdb"/> представляет собой оболочку этой команды, созданную ради удобства.</para>
+
+   <para>Конфигурационные параметры уровня базы данных (устанавливаемые командой <xref linkend="sql-alterdatabase"/>) из шаблона в новую базу данных не копируются.</para>
+
+  <para>Хотя с помощью этой команды можно скопировать любую базу данных, а не только <literal>template1</literal>, указав её имя в качестве имени шаблона, она не предназначена (пока) для использования в качестве универсального средства вроде <quote><command>COPY DATABASE</command></quote>. Принципиальным ограничением является невозможность копирования базы данных шаблона, если установлены другие подключения к ней. <command>CREATE DATABASE</command> выдаёт ошибку, если при запуске команды есть другие подключения к этой базе; в противном случае новые подключения к базе блокируются до завершения команды <command>CREATE DATABASE</command>. За дополнительными сведениями обратитесь к <xref remap="3" linkend="manage-ag-templatedbs"/>.</para>
+
+  <para>Кодировка символов, указанная для новой базы данных, должна быть совместима с выбранными параметрами локали (<literal>LC_COLLATE</literal> и <literal>LC_CTYPE</literal>). Если выбрана локаль <literal>C</literal> (или равнозначная ей <literal>POSIX</literal>), допускаются все кодировки, но для других локалей правильно будет работать только одна кодировка. (В Windows, однако, кодировку UTF-8 можно использовать с любой локалью.) <command>CREATE DATABASE</command> позволяет суперпользователям указать кодировку <literal>SQL_ASCII</literal> вне зависимости от локали, но этот вариант считается устаревшим и может привести к ошибочному поведению строковых функций, если в базе хранятся данные в кодировке, несовместимой с заданной локалью.</para>
+
+  <para>Параметры локали и кодировка должны соответствовать тем, что установлены в шаблоне, если только это не <literal>template0</literal>. Это ограничение объясняется тем, что другие базы данных могут содержать данные в кодировке, отличной от заданной, или индексы, порядок сортировки которых определяются параметрами <literal>LC_COLLATE</literal> и <literal>LC_CTYPE</literal>. При копировании таких данных получится база, которая будет испорченной согласно новым параметрам локали. Однако <literal>template0</literal> определённо не содержит какие-либо данные или индексы, зависящие от кодировки или локали.</para>
+
+  <para>Ограничение <literal>CONNECTION LIMIT</literal> действует только приблизительно; если одновременно запускаются два сеанса, тогда как в базе остаётся только одно <quote>свободное место</quote>, может так случиться, что будут отклонены оба подключения. Кроме того, это ограничение не распространяется на суперпользователей и фоновые рабочие процессы.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Создание базы данных: <programlisting>CREATE DATABASE lusiadas;</programlisting></para>
+
+  <para>Создание базы данных <literal>sales</literal>, принадлежащей пользователю <literal>salesapp</literal>, с табличным пространством по умолчанию <literal>salesspace</literal>: <programlisting>CREATE DATABASE sales OWNER salesapp TABLESPACE salesspace;</programlisting></para>
+
+  <para>Создание базы данных <literal>music</literal> с кодировкой ISO-8859-1: <programlisting>CREATE DATABASE music ENCODING 'LATIN1' TEMPLATE template0;</programlisting> В этом примере предложение <literal>TEMPLATE template0</literal> будет необходимым, только если кодировка <literal>template1</literal> отличается от ISO-8859-1. Заметьте, что при смене кодировки может потребоваться также выбрать другие параметры <literal>LC_COLLATE</literal> и <literal>LC_CTYPE</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>CREATE DATABASE</command> отсутствует в стандарте SQL. Базы данных равнозначны каталогам, а их создание в стандарте определяется реализацией.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterdatabase"/></member>
+   <member><xref linkend="sql-dropdatabase"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

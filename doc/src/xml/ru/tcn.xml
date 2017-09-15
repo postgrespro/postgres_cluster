@@ -1,0 +1,45 @@
+<!-- doc/src/xml/tcn.xml -->
+
+<sect1 id="tcn" xreflabel="tcn">
+ <title>tcn</title>
+
+ <indexterm zone="tcn"><primary>tcn</primary></indexterm>
+
+ <indexterm zone="tcn"><primary>triggered_change_notification</primary></indexterm>
+
+ <para>Модуль <filename>tcn</filename> предлагает триггерную функцию, уведомляющую приёмники уведомлений об изменениях в любой таблице, к которой привязан триггер. Она должна использоваться в качестве триггера <literal>AFTER</literal> вида <literal>FOR EACH ROW</literal>.</para>
+
+ <para>Этой функции в операторе <literal>CREATE TRIGGER</literal> передаётся только один параметр, и он не является обязательным. Если этот параметр присутствует, он задаёт имя канала для уведомлений. В случае его отсутствия именем канала будет <literal>tcn</literal>.</para>
+
+ <para>Сообщение уведомления включает имя таблицы, букву, обозначающую тип выполняемой операции и пары имя столбца/значение для столбца первичного ключа. Каждая часть сообщения отделяется от следующей запятой. Для упрощения разбора сообщения регулярными выражениями имена таблицы и столбцов всегда заключаются в двойные кавычки, а значения данных — в апострофы. Внутренние кавычки и апострофы дублируются.</para>
+
+ <para>Далее приведена краткая демонстрация использования расширения. <programlisting>test=# create table tcndata
+test-#   (
+test(#     a int not null,
+test(#     b date not null,
+test(#     c text,
+test(#     primary key (a, b)
+test(#   );
+CREATE TABLE
+test=# create trigger tcndata_tcn_trigger
+test-#   after insert or update or delete on tcndata
+test-#   for each row execute procedure triggered_change_notification();
+CREATE TRIGGER
+test=# listen tcn;
+LISTEN
+test=# insert into tcndata values (1, date '2012-12-22', 'one'),
+test-#                            (1, date '2012-12-23', 'another'),
+test-#                            (2, date '2012-12-23', 'two');
+INSERT 0 3
+Asynchronous notification "tcn" with payload ""tcndata",I,"a"='1',"b"='2012-12-22'" received from server process with PID 22770.
+Asynchronous notification "tcn" with payload ""tcndata",I,"a"='1',"b"='2012-12-23'" received from server process with PID 22770.
+Asynchronous notification "tcn" with payload ""tcndata",I,"a"='2',"b"='2012-12-23'" received from server process with PID 22770.
+test=# update tcndata set c = 'uno' where a = 1;
+UPDATE 2
+Asynchronous notification "tcn" with payload ""tcndata",U,"a"='1',"b"='2012-12-22'" received from server process with PID 22770.
+Asynchronous notification "tcn" with payload ""tcndata",U,"a"='1',"b"='2012-12-23'" received from server process with PID 22770.
+test=# delete from tcndata where a = 1 and b = date '2012-12-22';
+DELETE 1
+Asynchronous notification "tcn" with payload ""tcndata",D,"a"='1',"b"='2012-12-22'" received from server process with PID 22770.</programlisting></para>
+
+</sect1>

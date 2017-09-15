@@ -1,0 +1,38 @@
+<!-- doc/src/xml/sourcerepo.xml -->
+
+<appendix id="sourcerepo">
+ <title>Репозиторий исходного кода</title>
+
+ <para>Исходный код <productname>&productname;</productname> хранится и управляется системой управления версиями <productname>Git</productname>. В Интернете доступно открытое зеркало главного репозитория, которое обновляется в течение минуты после изменения в главном репозитории.</para>
+
+ <para>Работа с Git описывается в PostgreSQL, на странице <ulink url="https://wiki.postgresql.org/wiki/Working_with_Git"/>.</para>
+
+  <para>Заметьте, что для сборки <productname>&productname;</productname> из репозитория исходного кода требуются достаточно современные версии программ <application>bison</application>, <application>flex</application> и <application>Perl</application>. Эти программы не требуются для сборки из дистрибутивного архива, так как в этот архив уже включены файлы, создаваемые указанными программами. Остальные требования к программному обеспечению не отличаются от описанных в <xref remap="6" linkend="install-requirements"/>.</para>
+
+ <sect1 id="git">
+  <title>Получение исходного кода из <productname>Git</productname></title>
+
+  <para>С <productname>Git</productname> вы получаете на своём компьютере копию всего репозитория кода, так что вы будете иметь автономный доступ ко всем ветвям и истории разработки. Это позволяет максимально быстро и гибко разрабатывать или тестировать правки кода.</para>
+
+  <procedure>
+   <title>Git</title>
+
+   <step>
+    <para>Вам потребуется установленная версия <productname>Git</productname> (её можно получить, обратившись к сайту <ulink url="http://git-scm.com"/>). Во многих системах последняя версия <application>Git</application> устанавливается по умолчанию, либо имеется в системе распространения пакетов.</para>
+   </step>
+
+   <step>
+    <para>Чтобы начать работу с репозиторием Git, сделайте копию официального зеркала: <programlisting>git clone https://github.com/postgrespro/postgrespro.git</programlisting> При этом на ваш компьютер будет скопирован весь репозиторий, так что это может занять некоторое время, особенно при медленном подключении к Интернету. Загруженные файлы будут помещены в новый подкаталог <filename>postgrepro</filename> внутри текущего каталога.</para>
+
+    <para>К зеркалу Git также можно обратиться по протоколу HTTP, если, например сетевой фильтр блокирует доступ по протоколу Git. Просто смените префикс в адресе на <literal>https</literal>: <programlisting>git clone https://github.com/postgrespro/postgrespro.git</programlisting> Протокол HTTP не так эффективен, как Git, так что эта операция будет медленнее.</para>
+   </step>
+
+   <step>
+    <para>Когда вы захотите получить последние обновления, перейдите в каталог репозитория (выполнив <command>cd</command>) и запустите: <programlisting>git fetch</programlisting></para>
+   </step>
+  </procedure>
+
+  <para><productname>Git</productname> может гораздо больше, нежели просто получить исходный код. За дополнительными сведениями обратитесь к страницам руководства man <productname>Git</productname> или к сайту <ulink url="http://git-scm.com"/>.</para>
+ </sect1>
+
+</appendix>

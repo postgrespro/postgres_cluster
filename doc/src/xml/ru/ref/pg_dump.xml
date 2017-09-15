@@ -1,0 +1,643 @@
+<!--
+doc/src/xml/ref/pg_dump.xml
+&productname; documentation
+-->
+
+<refentry id="app-pgdump">
+ <indexterm zone="app-pgdump"><primary>pg_dump</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>pg_dump</refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_dump</refname>
+
+  <refpurpose>выгрузить базу данных <productname>&productname;</productname> в формате скрипта в файл или архив</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_dump</command>
+   <arg rep="repeat"><replaceable>параметр-подключения</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+   <arg choice="opt"><replaceable>имя_бд</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+
+ <refsect1 id="pg-dump-description">
+  <title>Описание</title>
+
+  <para><application>pg_dump</application> — это программа для создания резервных копий базы данных <productname>&productname;</productname>. Она создаёт целостные копии, даже если база параллельно используется. Программа <application>pg_dump</application> не препятствует доступу других пользователей к базе данных (ни для чтения, ни для записи).</para>
+
+  <para>Программа <application>pg_dump</application> выгружает только одну базу данных. Чтобы сохранить глобальные объекты, относящиеся ко всем базам данным в кластере, например, роли и табличные пространства, воспользуйтесь программой <xref linkend="app-pg-dumpall"/>.</para>
+
+  <para>Выгружаемые данные могут быть сохранены в виде скрипта, либо в одном из архивных форматов. Скрипты представляют собой текстовые файлы, содержащие SQL-команды, необходимые для воссоздания базы данных до состояния на момент создания скрипта. Для восстановления из скрипта его содержимое можно передать <xref linkend="app-psql"/>. Скрипты можно использовать для восстановления базы на других машинах, в том числе с иной архитектурой, а с некоторыми коррективами даже в других СУБД.</para>
+
+  <para>Для восстановления из архивных форматов файлов используется утилита <xref linkend="app-pgrestore"/>. Эти форматы позволяют указывать <application>pg_restore</application> какие объекты базы данных восстановить, а также позволяют изменить порядок следования восстанавливаемых объектов. Архивные форматы файлов спроектированы так, чтобы их можно были переносить на другие платформы с другой архитектурой.</para>
+
+  <para>Применение архивных форматов в сочетании утилит <application>pg_restore</application> и <application>pg_dump</application> позволяет организовывать эффективный механизм архивации и переноса данных. <application>pg_dump</application> можно использовать для резервирования всей базы данных, а затем при применении <application>pg_restore</application> выбрать нужные объекты для восстановления. Наиболее гибкие форматы резервных файлов это <quote>custom</quote> (<option>-Fc</option>) и <quote>directory</quote> (<option>-Fd</option>). Они позволяют выбрать и изменить порядок объектов, поддерживают восстановление в несколько потоков, а также сжимаются по умолчанию. При этом формат <quote>directory</quote> единственный, позволяющий выгружать данные в несколько потоков.</para>
+
+  <para>Во время работы <application>pg_dump</application> следует обращать внимание на предупреждения, которые печатаются в стандартный поток ошибок, особенно ввиду рассмотренных далее ограничений.</para>
+
+ </refsect1>
+
+ <refsect1 id="pg-dump-options">
+  <title>Параметры</title>
+
+  <para>Параметры командной строки для управления содержимым и форматом вывода. <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">имя_бд</replaceable></term>
+      <listitem>
+       <para>Указывает имя базы данных, из которой будут выгружаться данные. Если имя не задано, то используется значение переменной окружения <envar>PGDATABASE</envar>. Если и переменная не задана, то в качестве имени базы будет взято имя пользователя, под которым осуществляется подключение.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-a</option></term>
+      <term><option>--data-only</option></term>
+      <listitem>
+       <para>Выводить только данные, но не схемы объектов (DDL). Будут копироваться данные таблиц, большие объекты, значения последовательностей.</para>
+
+       <para>Флаг похож на <option>--section=data</option>, но по историческим причинам не равнозначен ему.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-b</option></term>
+      <term><option>--blobs</option></term>
+      <listitem>
+       <para>Включить большие объекты в выгрузку. Это поведение по умолчанию при отсутствии ключей <option>--schema</option>, <option>--table</option> или <option>--schema-only</option>. Таким образом, ключ <option>-b</option> полезен, лишь когда нужно добавить большие объекты при выгрузке только избранной схемы или таблицы. Заметьте, что большие объекты относятся к данным, и поэтому будут выгружаться, когда используется ключ --data-only, но не ключ --schema-only.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-c</option></term>
+      <term><option>--clean</option></term>
+      <listitem>
+       <para>Включить в выходной файл команды удаления (DROP) объектов базы данных перед командами создания (CREATE) этих объектов. Если дополнительно не указать флаг <option>--if-exists</option>, то при восстановлении в базу данных, где некоторые объекты отсутствуют, попытка удаления несуществующего объекта будет приводить к ошибке, которую можно игнорировать.</para>
+
+       <para>Параметр полезен только для вывода файлов в формате <literal>plain</literal>. Для архивных форматов, этот параметр можно указывать при вызове <command>pg_restore</command>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-C</option></term>
+      <term><option>--create</option></term>
+      <listitem>
+       <para>Сформировать в начале вывода команду для создания базы данных и затем подключения к ней. В этом случае не важно, какая база указана в параметрах подключения перед выполнением скрипта. Также, если указан ключ <option>--clean</option>, то скрипт сначала удалит, а затем пересоздаст базу данных перед подключением к ней.</para>
+
+       <para>Параметр полезен только для вывода файлов в формате <literal>plain</literal>. Для архивных форматов, этот параметр можно указывать при вызове <command>pg_restore</command>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-E <replaceable class="parameter">кодировка</replaceable></option></term>
+      <term><option>--encoding=<replaceable class="parameter">кодировка</replaceable></option></term>
+      <listitem>
+       <para>Создать копию в заданной кодировке. По умолчанию копия создаётся в кодировке, используемой базой данных. Другой способ достичь того же результата это установить желаемую кодировку в переменную окружения <envar>PGCLIENTENCODING</envar>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-f <replaceable class="parameter">файл</replaceable></option></term>
+      <term><option>--file=<replaceable class="parameter">файл</replaceable></option></term>
+      <listitem>
+       <para>Отправить вывод в указанный файл. Параметр можно не указывать, если используется формат с выводом в файл. В этом случае будет использован стандартный вывод. Однако для формата с выводом в каталог параметр является обязательным и должен указывать на путь к каталогу. В таком случае каталог будет создан командой <command>pg_dump</command> и не должен существовать заранее.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-F <replaceable class="parameter">format</replaceable></option></term>
+      <term><option>--format=<replaceable class="parameter">format</replaceable></option></term>
+      <listitem>
+       <para>Указывает формат вывода копии. <replaceable>format</replaceable> может принимать следующие значения: <variablelist>
+        <varlistentry>
+         <term><literal>p</literal></term>
+         <term><literal>plain</literal></term>
+         <listitem>
+          <para>Сформировать текстовый <acronym>SQL</acronym>-скрипт. Это поведение по умолчанию.</para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry>
+         <term><literal>c</literal></term>
+         <term><literal>custom</literal></term>
+         <listitem>
+          <para>Вывести копию в архивном формате, пригодном для дальнейшего использования утилитой <application>pg_restore</application>. Наравне с <literal>directory</literal> является наиболее гибким форматом, позволяющим вручную выбирать и сортировать восстанавливаемые объекты. Вывод в этом формате по умолчанию сжимается.</para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry>
+         <term><literal>d</literal></term>
+         <term><literal>directory</literal></term>
+         <listitem>
+          <para>Выгрузить в формате каталога. Этот формат пригоден для дальнейшего использования утилитой <application>pg_restore</application>. При этом будет создан каталог, в котором для каждой таблицы и большого объекта будут созданы отдельные файлы, а также файл оглавления в машинно-читаемом формате, понятном для <application>pg_restore</application>. С полученной резервной копией можно работать штатными средствами Unix, например, несжатую копию можно сжать посредством <application>gzip</application>. Этот формат по умолчанию сжимается, а также поддерживает работу в несколько потоков.</para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry>
+         <term><literal>t</literal></term>
+         <term><literal>tar</literal></term>
+         <listitem>
+          <para>Вывести копию в формате <command>tar</command>, для дальнейшего использования утилитой <application>pg_restore</application>. Этот формат совместим с форматом вывода в каталог: если архив распаковать, получится корректная копия в формате каталога. Однако формат tar не поддерживает сжатие. Также, применяя формат tar, при восстановлении нельзя изменить относительный порядок элементов данных.</para>
+         </listitem>
+        </varlistentry>
+       </variablelist></para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-j <replaceable class="parameter">njobs</replaceable></option></term>
+      <term><option>--jobs=<replaceable class="parameter">njobs</replaceable></option></term>
+      <listitem>
+       <para>Запустить выгрузку в несколько потоков, которые смогут параллельно обрабатывать <replaceable class="parameter">njobs</replaceable> таблиц. Это уменьшает время работы, но увеличивает нагрузку на сервер. Этот параметр можно использовать только с форматом вывода <literal>directory</literal>, так как это единственный формат, позволяющий нескольким процессам одновременно записывать данные.</para>
+       <para><application>pg_dump</application> откроет <replaceable class="parameter">njobs</replaceable> + 1 соединений с базой данных. Таким образом необходимо обеспечить достаточное значение параметра <xref linkend="guc-max-connections"/>.</para>
+       <para>Если во время выгрузки в несколько потоков, параллельно работающие сессии будут запрашивать эксклюзивные блокировки на объекты базы данных, то <application>pg_dump</application> может завершиться аварийно. Дело в том, что головной процесс <application>pg_dump</application> вначале запрашивает разделяемые блокировки на объекты, которые позже будут выгружать рабочие процессы. Это делается для того, чтобы никто не смог удалить объекты на время работы <application>pg_dump</application>. Если же другая сессия запросит эксклюзивную блокировку на объект, то запрос на блокировку будет поставлен в очередь, до тех пор пока разделяемая блокировка головного процесса <application>pg_dump</application> не будет снята. В последующем, любая попытка доступа к этому объекту будет вставать в очередь, вслед за эксклюзивной блокировкой. В том числе в очередь попадет и рабочий процесс <application>pg_dump</application>. Если не принять меры предосторожности, то получим классическую взаимоблокировку. Для предупреждения подобных конфликтов, рабочий процесс <application>pg_dump</application> ещё раз запрашивает разделяемую блокировку на объект с указанием <literal>NOWAIT</literal>. И если он не смог получить блокировку, значит кто-то ещё запросил эксклюзивную блокировку объекта. А это значит, что нет возможности продолжить выгрузку, поэтому <application>pg_dump</application> прерывает дальнейшую работу.</para>
+       <para>Для получения целостной резервной копии серверу баз данных необходимо поддерживать функциональность синхронизированных снимков, которая была введена в версии <productname>PostgreSQL</productname> 9.2. Это позволяет разным клиентам работать с одной и той же версией данных, несмотря на использование разных подключений. <command>pg_dump -j</command> использует множественные подключения. Первое подключение осуществляется головным процессом, а последующие — рабочими процессами. Без функциональности синхронизируемых снимков нет гарантии того, что каждое подключение увидит одни и те же данные, что может привести к несогласованности данных резервной копии.</para>
+       <para>Если необходимо выполнить выгрузку в несколько потоков на сервере версии до 9.2, необходимо быть уверенным, что база данных не будет изменяться с момента подключения головного процесса и до момента, когда последний рабочий процесс подключится к базе данных. Для этого, проще всего перед запуском <application>pg_dump</application> остановить все процессы, модифицирующие данные (DML и DDL). Также, при запуске <command>pg_dump -j</command> на сервере <productname>PostgreSQL</productname> до версии 9.2 нужно указывать параметр <option>--no-synchronized-snapshots</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-n <replaceable class="parameter">схема</replaceable></option></term>
+      <term><option>--schema=<replaceable class="parameter">схема</replaceable></option></term>
+      <listitem>
+       <para>Выгрузить только схемы, соответствующие шаблону <replaceable class="parameter">схема</replaceable>; вместе с этими схемами будут выгружены и все содержащиеся в них объекты. Когда этот параметр отсутствует, выгружаются все несистемные схемы в целевой базе данных. Чтобы выгрузить несколько схем, ключ <option>-n</option> можно указать несколько раз. Кроме того, параметр <replaceable class="parameter">схема</replaceable> интерпретируется как шаблон по тем же правилам, что и с командами <application>psql</application> <literal>\d</literal> (см. <xref remap="4" linkend="app-psql-patterns" endterm="app-psql-patterns-title"/>), так что несколько схем можно выбрать и шаблоном со знаками подстановки. Используя знаки подстановки, при необходимости заключайте шаблон в кавычки, чтобы эти знаки не разворачивала оболочка системы; см. <xref remap="4" linkend="pg-dump-examples" endterm="pg-dump-examples-title"/>.</para>
+
+       <note>
+        <para>При использовании <option>-n</option>, <application>pg_dump</application> не выгружает объекты других схем, от которых выгружаемая схема может зависеть. Таким образом не гарантируется, что выгруженная схема будет успешно восстановлена на чистой базе данных.</para>
+       </note>
+
+       <note>
+        <para>Не принадлежащие схемам объекты (например, большие бинарные объекты), не выгружаются с параметром <option>-n</option>. Однако можно указать <option>--blobs</option>, чтобы они попали в выгрузку.</para>
+       </note>
+
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-N <replaceable class="parameter">схема</replaceable></option></term>
+      <term><option>--exclude-schema=<replaceable class="parameter">схема</replaceable></option></term>
+      <listitem>
+       <para>Не выгружать схемы, соответствующие шаблону <replaceable class="parameter">схема</replaceable>. Шаблон интерпретируется по тем же правилам, что и для параметра <option>-n</option>. Параметр <option>-N</option> можно использовать в команде несколько раз для исключения схем, соответствующих нескольким шаблонам.</para>
+
+       <para>При одновременном использовании параметров <option>-n</option> и <option>-N</option> будут выгружаться схемы, соответствующие шаблону параметра <option>-n</option> и не противоречащие шаблону параметра <option>-N</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-o</option></term>
+      <term><option>--oids</option></term>
+      <listitem>
+       <para>Выгружать идентификаторы объектов (<acronym>OID</acronym>s) вместе с данными таблиц. Используйте этот параметр, если в приложении есть ссылки на <acronym>OID</acronym>, например во внешних ключах. В противном случае, этот параметр лучше не использовать.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-O</option></term>
+      <term><option>--no-owner</option></term>
+      <listitem>
+       <para>Не формировать команды, устанавливающие владельца объектов базы данных. По умолчанию <application>pg_dump</application> генерирует команды <command>ALTER OWNER</command> или <command>SET SESSION AUTHORIZATION</command> для назначения владельцев объектов базы. Эти команды завершатся неудачно, если скрипт будет запущен не суперпользователем или не владельцем объектов. Чтобы создать скрипт, который можно выполнить при восстановлении от лица произвольного пользователя и назначить его в качестве владельца объектов восстанавливаемой базы, необходимо указать флаг <option>-O</option>.</para>
+
+       <para>Параметр полезен только для вывода файлов в формате <literal>plain</literal>. Для архивных форматов, этот параметр можно указывать при вызове <command>pg_restore</command>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-R</option></term>
+      <term><option>--no-reconnect</option></term>
+      <listitem>
+       <para>Параметр является устаревшим, но в целях совместимости ещё работает.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s</option></term>
+      <term><option>--schema-only</option></term>
+      <listitem>
+       <para>Выгружать только определения объектов (схемы), без данных.</para>
+       <para>Действие параметра противоположно действию <option>--data-only</option>. Это похоже на указание <option>--section=pre-data --section=post-data</option>, но по историческим причинам не равнозначно ему.</para>
+       <para>(Не путайте этот параметр с <option>--schema</option>, где слово <quote>схема</quote> используется в другом значении.)</para>
+       <para>Чтобы не выгружать данные отдельных таблиц, используйте параметр <option>--exclude-table-data</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-S <replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <term><option>--superuser=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <listitem>
+       <para>Указать суперпользователя, который будет использоваться для отключения триггеров. Параметр имеет значение только вместе с <option>--disable-triggers</option>. Обычно его лучше не использовать, а запускать полученный скрипт от имени суперпользователя.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-t <replaceable class="parameter">таблица</replaceable></option></term>
+      <term><option>--table=<replaceable class="parameter">таблица</replaceable></option></term>
+      <listitem>
+       <para>Выгрузить только таблицы, соответствующие шаблону <replaceable class="parameter">таблица</replaceable>. В этом контексте под <quote>таблицей</quote> подразумеваются также представления, материализованные представления, последовательности и сторонние таблицы. Чтобы выбрать несколько таблиц, ключ <option>-t</option> можно указать несколько раз. Кроме того, параметр <replaceable class="parameter">таблица</replaceable> интерпретируется как шаблон по тем же правилам, что и с командами <application>psql</application> <literal>\d</literal> (см. <xref remap="4" linkend="app-psql-patterns" endterm="app-psql-patterns-title"/>), так что несколько таблиц можно выбрать и с шаблоном со знаками подстановки. Используя знаки подстановки, при необходимости заключайте шаблон в кавычки, чтобы эти знаки не разворачивала оболочка системы; см. <xref remap="4" linkend="pg-dump-examples" endterm="pg-dump-examples-title"/>.</para>
+
+       <para>Параметры <option>-n</option> и <option>-N</option> не оказывают влияния на параметр <option>-t</option>, так как отобранные с его помощью таблицы всё равно будут выгружены.</para>
+
+       <note>
+        <para>При использовании <option>-t</option>, <application>pg_dump</application> не выгружает прочие объекты, от которых выгружаемые таблицы могут зависеть. Таким образом не гарантируется, что выгруженные таблицы будут успешно восстановлены на чистой базе данных.</para>
+       </note>
+
+       <note>
+        <para>Поведение параметра <option>-t</option> для версий ниже чем <productname>PostgreSQL</productname> 8.2 отличается от более поздних. Прежде, указание <literal>-t таблица</literal> включало все таблицы, соответствующие шаблону <literal>таблица</literal>, а сейчас это приведёт к выгрузке только тех таблиц, которые будут обнаружены в текущем пути поиска. Для получения старого поведения можно использовать конструкцию вида <literal>-t '*.таблица'</literal>. Также, чтобы указать таблицу из конкретной схемы, сейчас лучше использовать <literal>-t схема.таблица</literal>, вместо старой конструкции <literal>-n схема -t таблица</literal>.</para>
+       </note>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-T <replaceable class="parameter">таблица</replaceable></option></term>
+      <term><option>--exclude-table=<replaceable class="parameter">таблица</replaceable></option></term>
+      <listitem>
+       <para>Не выгружать таблицы, соответствующие шаблону <replaceable class="parameter">таблица</replaceable>. Шаблон интерпретируется по тем же правилам, что и для параметра <option>-t</option>. Параметр <option>-T</option> можно использовать в команде несколько раз для исключения таблиц, соответствующих нескольким шаблонам.</para>
+
+       <para>При одновременном использовании параметров <option>-t</option> и <option>-T</option> будут выгружаться таблицы, соответствующие шаблону параметра <option>-t</option> и не противоречащие шаблону параметра <option>-T</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-v</option></term>
+      <term><option>--verbose</option></term>
+      <listitem>
+       <para>Включить подробный режим. <application>pg_dump</application> будет выводить в стандартный поток ошибок подробные комментарии к объектам, включая время начала и окончания выгрузки, а также сообщения о прогрессе выполнения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>--version</option></term>
+       <listitem>
+       <para>Вывести версию <application>pg_dump</application>.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-x</option></term>
+      <term><option>--no-privileges</option></term>
+      <term><option>--no-acl</option></term>
+      <listitem>
+       <para>Не выгружать права доступа (команды GRANT/REVOKE).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-Z <replaceable class="parameter">0..9</replaceable></option></term>
+      <term><option>--compress=<replaceable class="parameter">0..9</replaceable></option></term>
+      <listitem>
+       <para>Установить уровень сжатия данных. Ноль означает, что сжатие выключено. Для архивного формата <literal>custom</literal> будут сжиматься файлы отдельных таблиц. По умолчанию применяется умеренный уровень сжатия. Если указать отличный от нулевого уровень сжатия для формата <literal>plain</literal>, то сжиматься будет весь выходной файл, как это было бы при передаче файла команде <application>gzip</application>. Но по умолчанию для <literal>plain</literal> сжатие данных отключено. Формат <literal>tar</literal> в настоящий момент не поддерживает сжатие.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--binary-upgrade</option></term>
+      <listitem>
+       <para>Этот параметр предназначен для утилит обновления сервера. Использование для иных целей не рекомендуется и не поддерживается. Поведение параметра может быть изменено в последующих версиях без предварительного уведомления.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--column-inserts</option></term>
+      <term><option>--attribute-inserts</option></term>
+      <listitem>
+       <para>Выгружать данные таблиц в виде команд <command>INSERT</command> с явным указанием столбцов (<literal>INSERT INTO <replaceable>table</replaceable> (<replaceable>column</replaceable>, ...) VALUES ...</literal>). В этом случае, скорость восстановления значительно снизится. Полезно в тех случаях, когда загружать данные нужно не в <productname>&productname;</productname>. Также, поскольку для каждой строки генерируется отдельная команда, сбой при последующей загрузке приведёт к потере конкретной строки, а не всей таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--disable-dollar-quoting</option></term>
+      <listitem>
+       <para>Этот параметр запрещает заключать в доллары тело функций, что оставляет возможность только заключать их в кавычки, применяя стандартный синтаксис SQL.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--disable-triggers</option></term>
+      <listitem>
+       <para>Используется при выгрузке одних данных. Указывает <application>pg_dump</application> включать в вывод команды для временного выключения триггеров при восстановлении в целевой базе данных. Применяется в ситуациях, когда существуют проверки ссылочной целостности или другие триггеры, которые необходимо выключить на время восстановления.</para>
+
+       <para>В настоящее время команды, генерируемые с параметром <option>--disable-triggers</option>, должны исполняться от имени суперпользователя. Таким образом, необходимо также передавать флаг <option>-S</option>, либо при восстановлении выполнять скрипт от имени суперпользователя.</para>
+
+       <para>Параметр полезен только для вывода файлов в формате <literal>plain</literal>. Для архивных форматов, этот параметр можно указывать при вызове <command>pg_restore</command>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--enable-row-security</option></term>
+      <listitem>
+       <para>Этот параметр имеет смысл только при выгрузке содержимого таблицы, для которой включена защита строк. По умолчанию <application>pg_dump</application> устанавливает для <xref linkend="guc-row-security"/> значение off, чтобы убедиться, что выгружаются все данные из таблицы. Если пользователь не имеет достаточных прав для обхода защиты строк, выдаётся ошибка. Этот параметр указывает <application>pg_dump</application> включить <xref linkend="guc-row-security"/>, что позволит пользователю выгрузить часть содержимого таблицы, к которой он имеет доступ.</para>
+
+       <para>Заметьте, что в настоящее время для использования этого параметра обычно желательно, чтобы данные были выгружены в формате <command>INSERT</command>, так как команда <command>COPY FROM</command> в процессе восстановления не поддерживает защиту строк.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--exclude-table-data=<replaceable class="parameter">таблица</replaceable></option></term>
+      <listitem>
+       <para>Не выгружать содержимое таблиц, соответствующих шаблону <replaceable class="parameter">таблица</replaceable>. Шаблон таблицы интерпретируется по тем же правилам, что и для параметра <option>-t</option>. Параметр <option>--exclude-table-data</option> можно использовать в команде несколько раз для исключения таблиц, соответствующих нескольким шаблонам. Полезно, когда нужно получить определение таблицы, без содержимого.</para>
+       <para>Чтобы не выгружать содержимое всех таблиц базы, используйте параметр <option>--schema-only</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--if-exists</option></term>
+      <listitem>
+       <para>При очистке целевой базы использовать условные команды (добавлять предложение <literal>IF EXISTS</literal>). Применяется только с параметром <option>--clean</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--inserts</option></term>
+      <listitem>
+       <para>Выгружать данные таблиц в виде команд <command>INSERT</command> вместо <command>COPY</command>. В этом случае, скорость восстановления значительно снизится. Полезно в тех случаях, когда загружать данные нужно не в <productname>&productname;</productname>. Также, поскольку для каждой строки генерируется отдельная команда, сбой при последующей загрузке приведёт к потере конкретной строки, а не всей таблицы. Обратите внимание, что последующая загрузка может завершиться неудачно, если у таблицы изменён порядок столбцов. Можно использовать параметр <option>--column-inserts</option>, для которого порядок столбцов не важен, но он работает ещё медленнее.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--lock-wait-timeout=<replaceable class="parameter">время_ожидания</replaceable></option></term>
+      <listitem>
+       <para>Не ждать бесконечно получения разделяемых блокировок таблиц в начале процедуры выгрузки. Вместо этого выдать ошибку, если не удастся заблокировать таблицы за указанное <replaceable class="parameter">время_ожидания</replaceable>. Это время можно задать в любом из форматов, принимаемых командой <command>SET statement_timeout</command>. (Допустимые значения зависят от версии сервера, выгружающего данные, но количество миллисекунд в виде целого числа принимают все версии, начиная с 7.3. Более ранние версии игнорируют этот параметр.)</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-security-labels</option></term>
+      <listitem>
+       <para>Не выгружать метки безопасности.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-synchronized-snapshots</option></term>
+      <listitem>
+       <para>Позволяет запускать <command>pg_dump -j</command> на серверах с версией ниже чем 9.2. Подробнее в описании параметра <option>-j</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-tablespaces</option></term>
+      <listitem>
+       <para>Не формировать команды для указания табличных пространств. Все объекты будут создаваться в табличном пространстве по умолчанию.</para>
+
+       <para>Параметр полезен только для вывода файлов в формате <literal>plain</literal>. Для архивных форматов, этот параметр можно указывать при вызове <command>pg_restore</command>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-unlogged-table-data</option></term>
+      <listitem>
+       <para>Не выгружать данные нежурналируемых таблиц. Параметр не влияет на выгрузку определения таблиц, он только подавляет вывод содержимого таблиц. При запуске на резервном сервере, содержимое нежурналируемых таблиц никогда не выгружается.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--quote-all-identifiers</option></term>
+      <listitem>
+       <para>Принудительно экранировать все идентификаторы. Этот параметр рекомендуется при выгрузке базы, когда основная версия сервера <productname>PostgreSQL</productname>, с которого выгружается база, отличается от версии <application>pg_dump</application>, или когда выгруженная копия предназначена для загрузки на сервере с другой основной версией. По умолчанию <application>pg_dump</application> экранирует только те идентификаторы, которые являются зарезервированными словами в собственной основной версии. Иногда это приводит к проблемам совместимости с серверами других версий, в которых множество зарезервированных слов может быть несколько другим. Применение параметра <option>--quote-all-identifiers</option> предотвращает подобные проблемы, ценой ухудшения читаемости скрипта с выгруженными данными.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>--section=<replaceable class="parameter">имя секции</replaceable></option></term>
+       <listitem>
+         <para>Выгружать лишь указанную секцию. Имя секции может принимать значения <option>pre-data</option>, <option>data</option> или <option>post-data</option>. Для выгрузки нескольких секций, параметр можно использовать несколько раз в одной команде. По умолчанию резервируются все секции.</para>
+         <para>Секция <option>data</option> содержит непосредственно данные таблиц, больших объектов и значения последовательностей. Секция <option>post-data</option> содержит определения индексов, триггеров, правил и ограничений (кроме ограничений проверки, созданных без <option>NOT VALID</option> ). Секция <option>pre-data</option> включает определения остальных элементов.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--serializable-deferrable</option></term>
+      <listitem>
+       <para>Использовать при выгрузке транзакцию с уровнем изоляции <literal>serializable</literal> для получения снимка, согласованного с последующими состояниями базы. Правда для этого нужно выждать момент, когда в потоке транзакций нет аномалий, и поэтому нет риска, что выгрузка завершится неудачно, и риска отката других транзакций с ошибкой <literal>serialization_failure</literal>. Более подробно изоляция транзакций и управление одновременным доступом описывается в <xref remap="6" linkend="mvcc"/>.</para>
+
+       <para>Параметр не особо полезен в случаях, когда требуется восстановление после сбоя. Он полезен для создания копии базы данных, в которой формируются отчёты и выполняются другие операции чтения, в то время как в основной базе продолжается обычная работа. Без этого параметра выгрузка может содержать не целостное состояние базы данных. Например, если используется пакетная обработка, статус пакета может отражаться как завершённый, в то время как в выгрузке будут не все элементы пакета.</para>
+
+       <para>Параметр не будет влиять на результат, если во время запуска <application>pg_dump</application> нет активных транзакций на чтение-запись. Если же активные транзакции чтения-записи есть, то начало выгрузки может быть отложено на неопределённый период времени. После того как выгрузка началась, производительность с этим ключом или без него будет одинаковой.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>--snapshot=<replaceable class="parameter">имя_снимка</replaceable></option></term>
+       <listitem>
+         <para>Использовать заданный синхронный снимок при выгрузке данных из базы (за подробностями обратитесь к <xref remap="3" linkend="functions-snapshot-synchronization-table"/>).</para>
+         <para>Этот параметр полезен, когда требуется синхронизировать выгружаемые данные со слотом логической репликации (см. <xref remap="4" linkend="logicaldecoding"/>) или с другим одновременным сеансом.</para>
+         <para>В случае с параллельной выгрузкой будет использоваться имя снимка, определённое этим параметром; новый снимок не будет сделан.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--strict-names</option></term>
+      <listitem>
+       <para>Требует, чтобы каждому указанию схемы (<option>-n</option>/<option>--schema</option>) и таблицы (<option>-t</option>/<option>--table</option>) соответствовала минимум одна схема/таблица в выгружаемой базе данных. Заметьте, что если не находится вообще ни одной схемы/таблицы для заданных шаблонов, <application>pg_dump</application> выдаёт ошибку и без ключа <option>--strict-names</option>.</para>
+       <para>Этот параметр не действует на ключи <option>-N</option>/<option>--exclude-schema</option>, <option>-T</option>/<option>--exclude-table</option> или <option>--exclude-table-data</option>. Если не находятся объекты, соответствующие шаблонам исключения, это не считается ошибкой.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--use-set-session-authorization</option></term>
+      <listitem>
+       <para>Выводить команды <command>SET SESSION AUTHORIZATION</command>, соответствующие стандарту, вместо <command>ALTER OWNER</command>, для назначения владельцев объектов. В результате выгруженный скрипт будет более стандартизированным, но может не восстановиться корректно, в зависимости от истории объектов. Кроме того, для использования <command>SET SESSION AUTHORIZATION</command> при восстановлении нужны права суперпользователя, в то время как <command>ALTER OWNER</command> требует меньших привилегий.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-?</option></term>
+       <term><option>--help</option></term>
+       <listitem>
+       <para>Показать справку по аргументам командной строки <application>pg_dump</application> и завершиться.</para>
+       </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+
+  <para>Следующие параметры командной строки управляют переносом данных между базами при использовании расширения <xref linkend="pgtransfer"/>. <variablelist>
+     <varlistentry>
+      <term><option>--copy-mode-transfer</option></term>
+      <listitem>
+       <para>Этот параметр применяется для физического копирования файлов, например когда файлы базы данных и каталог, заданный в <option>--transfer-dir</option>, размещаются в разных файловых системах.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--transfer-dir</option></term>
+      <listitem>
+       <para>Каталог, в который будут переноситься файлы данных. Файлы данных включают собственно файл(ы) таблицы, файлы индексов и TOAST. По умолчанию вместо копирования файлов создаются жёсткие ссылки. Заметьте, что при удалении таблицы командой <command>DROP</command> такие ссылки становятся недействительными.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+   <para>Далее описаны параметры управления подключением. <variablelist>
+     <varlistentry>
+      <term><option>-d <replaceable class="parameter">имя_бд</replaceable></option></term>
+      <term><option>--dbname=<replaceable class="parameter">имя_бд</replaceable></option></term>
+      <listitem>
+      <para>Указывает имя базы данных для подключения. Эквивалентно указанию <replaceable class="parameter">dbname</replaceable> в качестве первого аргумента, не являющегося параметром в командной строке.</para>
+      <para>Если параметр содержит символ <symbol>=</symbol>, или начинается с допустимого префикса <acronym>URI</acronym>, например, <literal>postgresql://</literal> или <literal>postgres://</literal>, то он трактуется аналогично строке подключения <parameter>conninfo</parameter>. За дополнительными сведениями обратитесь к <xref remap="3" linkend="libpq-connect"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-h <replaceable class="parameter">сервер</replaceable></option></term>
+      <term><option>--host=<replaceable class="parameter">сервер</replaceable></option></term>
+      <listitem>
+       <para>Указывает имя компьютера, на котором запущен сервер. Если значение начинается с косой черты, оно интерпретируется как имя каталога с доменным сокетом Unix. Значение по умолчанию берётся из переменной окружения <envar>PGHOST</envar>, если она установлена. В противном случае выполняется подключение к доменному сокету.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">порт</replaceable></option></term>
+      <term><option>--port=<replaceable class="parameter">порт</replaceable></option></term>
+      <listitem>
+       <para>Указывает TCP-порт или расширение локального файла Unix-сокета, на котором сервер слушает подключения. По умолчанию берётся значение переменной окружения <envar>PGPORT</envar>, если оно установлено, либо значение времени компиляции.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable>имя_пользователя</replaceable></option></term>
+      <term><option>--username=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <listitem>
+       <para>Имя пользователя, под которым производится подключение.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</option></term>
+      <term><option>--no-password</option></term>
+      <listitem>
+       <para>Не выдавать запрос на ввод пароля. Если сервер требует аутентификацию по паролю и пароль не доступен с помощью других средств, таких как файл <filename>.pgpass</filename>, попытка соединения не удастся. Этот параметр может быть полезен в пакетных заданиях и скриптах, где нет пользователя, который вводит пароль.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option></term>
+      <term><option>--password</option></term>
+      <listitem>
+       <para>Принудительно запрашивать пароль перед подключением к базе данных.</para>
+
+       <para>Это несущественный параметр, так как <application>pg_dump</application> запрашивает пароль автоматически, если сервер проверяет подлинность по паролю. Однако, чтобы понять это, <application>pg_dump</application> лишний раз подключается к серверу. Поэтому иногда имеет смысл ввести <option>-W</option>, чтобы исключить эту ненужную попытку подключения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--role=<replaceable class="parameter">имя роли</replaceable></option></term>
+      <listitem>
+       <para>Задаёт имя роли, которая будет осуществлять выгрузку. Получив это имя, <application>pg_dump</application> выполнит <command>SET ROLE</command> <replaceable class="parameter">имя_роли</replaceable> после подключения к базе данных. Это полезно, когда проходящий проверку пользователь (указанный в <option>-U</option>) не имеет прав, необходимых для <application>pg_dump</application>, но может переключиться на роль, наделённую этими правами. В некоторых окружениях правила запрещают подключаться к серверу непосредственно суперпользователю, и этот параметр позволяет выполнить выгрузку, не нарушая их.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><envar>PGDATABASE</envar></term>
+    <term><envar>PGHOST</envar></term>
+    <term><envar>PGOPTIONS</envar></term>
+    <term><envar>PGPORT</envar></term>
+
+    <term><envar>PGUSER</envar></term>
+    <listitem>
+     <para>Параметры подключения по умолчанию.</para>
+    </listitem>
+
+   </varlistentry>
+  </variablelist>
+
+  <para>Эта утилита, как и большинство других утилит <productname>&productname;</productname>, также использует переменные среды, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>).</para>
+
+ </refsect1>
+
+ <refsect1 id="app-pgdump-diagnostics">
+  <title>Диагностика</title>
+
+  <para><application>pg_dump</application> на низком уровне выполняет команды <command>SELECT</command>. Если есть проблемы с работой <application>pg_dump</application>, убедитесь, что в базе данных можно выполнить <command>SELECT</command>, например из <xref linkend="app-psql"/>. Также следует учитывать, что при этом применяются все свойства подключения по умолчанию и переменные окружения, которые использует клиентская библиотека <application>libpq</application>.</para>
+
+  <para>Обычно действия <application>pg_dump</application> в базе данных собираются коллектором статистики. Если это нежелательно, то можно установить параметр <varname>track_counts</varname> в false в переменной окружения <envar>PGOPTIONS</envar> или в команде <literal>ALTER USER</literal>.</para>
+
+ </refsect1>
+
+
+ <refsect1 id="pg-dump-notes">
+  <title>Замечания</title>
+
+  <para>Если в базу данных кластера <literal>template1</literal> устанавливались дополнительные объекты, то следует убедиться, что выгрузка <application>pg_dump</application> загружается в пустую базу данных. Иначе существует вероятность возникновения ошибок дублирования создаваемых объектов. Чтобы создать пустую базу данных, копируйте её из шаблона <literal>template0</literal>, вместо <literal>template1</literal>, например: <programlisting>CREATE DATABASE foo WITH TEMPLATE template0;</programlisting></para>
+
+  <para>Если выгружаются только данные с одновременным использованием <option>--disable-triggers</option>, <application>pg_dump</application> сформирует команды для выключения табличных триггеров перед вставкой данных, а после них — команды, включающие триггеры обратно. Если восстановление будет прервано в середине процесса, системный каталог может остаться в неверном состоянии.</para>
+
+  <para>Сформированный <application>pg_dump</application> файл не содержит данных статистики, используемых планировщиком. Поэтому после восстановления следует выполнить <command>ANALYZE</command> для достижения оптимальной производительности; за дополнительной информацией обратитесь к <xref remap="3" linkend="vacuum-for-statistics"/> и <xref remap="3" linkend="autovacuum"/>. Также не выгружаются команды <command>ALTER DATABASE ... SET</command>. Эти свойства, вместе с данными о ролях и прочими глобальными объектами, выгружаются с помощью <xref linkend="app-pg-dumpall"/>.</para>
+
+  <para>Так как <application>pg_dump</application> применяется для переноса данных в новые версии <productname>&productname;</productname>, предполагается, что вывод <application>pg_dump</application> можно загрузить на сервер <productname>&productname;</productname> более новой версии, чем версия <application>pg_dump</application>. <application>pg_dump</application> может также выгружать данные серверов <productname>&productname;</productname> более старых версий, чем его собственная. (В настоящее время поддерживаются версии, начиная с <productname>PostgreSQL</productname> 7.0.) Однако утилита <application>pg_dump</application> не может выгружать данные с серверов <productname>&productname;</productname> более новых основных версий; она не будет даже пытаться делать это, во избежание некорректной выгрузки. Также не гарантируется, что вывод <application>pg_dump</application> может быть загружен на сервере более старой основной версии &mdash; даже если данные были выгружены с сервера той же версии. Для загрузки такого файла на старом сервере может потребоваться вручную исправить в нём синтаксис, не воспринимаемый старой версией. Имея дело с разными версиями, рекомендуется применять параметр <option>--quote-all-identifiers</option>, так как он может предотвратить проблемы, возникающие при изменении множества зарезервированных слов в разных версиях <productname>PostgreSQL</productname>.</para>
+ </refsect1>
+
+ <refsect1 id="pg-dump-examples">
+  <title id="pg-dump-examples-title">Примеры</title>
+
+  <para>Чтобы выгрузить базу данных <literal>mydb</literal> в файл SQL-скрипта: <screen>
+<prompt>$</prompt> <userinput>pg_dump mydb &gt; db.sql</userinput>
+</screen></para>
+
+  <para>Для восстановления из выше полученного скрипта в чистую базу <literal>newdb</literal>: <screen>
+<prompt>$</prompt> <userinput>psql -d newdb -f db.sql</userinput>
+</screen></para>
+
+  <para>Чтобы сформировать выгрузку в формате <literal>custom</literal>: <screen>
+<prompt>$</prompt> <userinput>pg_dump -Fc mydb &gt; db.dump</userinput>
+</screen></para>
+
+  <para>Чтобы сформировать выгрузку в формате <literal>directory</literal>: <screen>
+<prompt>$</prompt> <userinput>pg_dump -Fd mydb -f dumpdir</userinput>
+</screen></para>
+
+  <para>Чтобы сформировать выгрузку в формате <literal>directory</literal> в 5 параллельных потоков: <screen>
+<prompt>$</prompt> <userinput>pg_dump -Fd mydb -j 5 -f dumpdir</userinput>
+</screen></para>
+
+  <para>Для восстановления в чистую базу данных <literal>newdb</literal>: <screen>
+<prompt>$</prompt> <userinput>pg_restore -d newdb db.dump</userinput>
+</screen></para>
+
+  <para>Чтобы выгрузить отдельную таблицу <literal>mytab</literal>: <screen>
+<prompt>$</prompt> <userinput>pg_dump -t mytab mydb &gt; db.sql</userinput>
+</screen></para>
+
+  <para>Чтобы выгрузить все таблицы, имена которых начинаются на <literal>emp</literal> и принадлежат схеме <literal>detroit</literal>, исключая таблицу <literal>employee_log</literal>: <screen>
+<prompt>$</prompt> <userinput>pg_dump -t 'detroit.emp*' -T detroit.employee_log mydb &gt; db.sql</userinput>
+</screen></para>
+
+  <para>Чтобы выгрузить все схемы, имена которых начинаются на <literal>east</literal> или <literal>west</literal> и заканчиваются на <literal>gsm</literal>, исключая те, имена которых содержат <literal>test</literal>: <screen>
+<prompt>$</prompt> <userinput>pg_dump -n 'east*gsm' -n 'west*gsm' -N '*test*' mydb &gt; db.sql</userinput>
+</screen></para>
+
+  <para>То же самое, но с использованием регулярного выражения: <screen>
+<prompt>$</prompt> <userinput>pg_dump -n '(east|west)*gsm' -N '*test*' mydb &gt; db.sql</userinput>
+</screen></para>
+
+  <para>Чтобы выгрузить все объекты базы данных, исключая таблицы, чьи имена начинаются с <literal>ts_</literal>: <screen>
+<prompt>$</prompt> <userinput>pg_dump -T 'ts_*' mydb &gt; db.sql</userinput>
+</screen></para>
+
+  <para>Чтобы указать имя в верхнем или смешанном регистре в ключе <option>-t</option> и связанных с ним, это имя нужно заключить в кавычки; иначе оно будет приведено к нижнему регистру (см. <xref remap="4" linkend="app-psql-patterns" endterm="app-psql-patterns-title"/>). Но кавычки являются спецсимволом для оболочки, так что и их нужно заключать в кавычки. Так, чтобы выгрузить одну таблицу с именем в смешанном регистре, нужно написать примерно следующее: <screen>
+<prompt>$</prompt> <userinput>pg_dump -t "\"MixedCaseName\"" mydb &gt; mytab.sql</userinput>
+</screen></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-pg-dumpall"/></member>
+   <member><xref linkend="app-pgrestore"/></member>
+   <member><xref linkend="app-psql"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

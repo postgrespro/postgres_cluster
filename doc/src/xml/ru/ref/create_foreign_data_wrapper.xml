@@ -1,0 +1,110 @@
+<!--
+doc/src/xml/ref/create_foreign_data_wrapper.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createforeigndatawrapper">
+ <indexterm zone="sql-createforeigndatawrapper"><primary>CREATE FOREIGN DATA WRAPPER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE FOREIGN DATA WRAPPER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE FOREIGN DATA WRAPPER</refname>
+  <refpurpose>создать новую обёртку сторонних данных</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE FOREIGN DATA WRAPPER <replaceable class="parameter">имя</replaceable>
+    [ HANDLER <replaceable class="parameter">функция_обработчик</replaceable> | NO HANDLER ]
+    [ VALIDATOR <replaceable class="parameter">функция_проверки</replaceable> | NO VALIDATOR ]
+    [ OPTIONS ( <replaceable class="parameter">параметр</replaceable> '<replaceable class="parameter">значение</replaceable>' [, ... ] ) ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE FOREIGN DATA WRAPPER</command> создаёт обёртку сторонних данных. Владельцем обёртки становится создавший её пользователь.</para>
+
+  <para>Имя обёртки сторонних данных должно быть уникальным в базе данных.</para>
+
+  <para>Создавать обёртки сторонних данных могут только суперпользователи.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя создаваемой обёртки сторонних данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>HANDLER <replaceable class="parameter">функция_обработчик</replaceable></literal></term>
+    <listitem>
+     <para>В аргументе <replaceable class="parameter">функция_обработчик</replaceable> указывается имя ранее зарегистрированной функции, которая будет вызываться для получения функций, реализующих обращения к сторонним таблицам. Функция-обработчик не принимает аргументы и возвращает результат типа <type>fdw_handler</type>.</para>
+
+     <para>Обёртку сторонних таблиц можно создать и без функции-обработчика, но через такую обёртку нельзя будет использовать сторонние таблицы, хотя объявить их вполне возможно.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>VALIDATOR <replaceable class="parameter">функция_проверки</replaceable></literal></term>
+    <listitem>
+     <para>В аргументе <replaceable class="parameter">функция_проверки</replaceable> указывается имя ранее зарегистрированной функции, которая будет вызываться для проверки общих параметров, передаваемых обёртке сторонних данных, а также параметров сторонних серверов, сопоставлений пользователей и сторонних таблиц, доступных через эту обёртку. Если функция проверки не задана или указано <literal>NO VALIDATOR</literal>, параметры не будут проверяться во время создания объектов. (Обёртка сторонних данных может игнорировать или не принимать неверные указания параметров во время выполнения, в зависимости от реализации.) Функция проверки должна принимать два аргумента: первый типа <type>text[]</type> (в нём содержится массив параметров, хранящихся в системном каталоге), а второй типа <type>oid</type> (в нём указывается OID системного каталога с этими параметрами). Возвращаемое значение игнорируется; функция проверки должна сообщать о неверных параметрах, вызывая системную функцию <function>ereport(ERROR)</function>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>OPTIONS ( <replaceable class="parameter">параметр</replaceable> '<replaceable class="parameter">значение</replaceable>' [, ... ] )</literal></term>
+    <listitem>
+     <para>Это предложение определяет параметры для создаваемой обёртки сторонних данных. Набор допустимых параметров и значений для каждой обёртки свой, контроль их правильности осуществляет функция проверки сторонних данных. Имена параметров должны быть уникальными.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Функциональность <productname>&productname;</productname> по работе со сторонними данными продолжает активно развиваться. На данный момент выполняется только примитивная оптимизация запросов (и по большей части это тоже делает обёртка), так что в этом направлении есть поле для улучшения производительности.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Создание бесполезной обёртки сторонних данных <literal>dummy</literal>: <programlisting>CREATE FOREIGN DATA WRAPPER dummy;</programlisting></para>
+
+  <para>Создание обёртки сторонних данных <literal>file</literal> с функцией-обработчиком <literal>file_fdw_handler</literal>: <programlisting>CREATE FOREIGN DATA WRAPPER file HANDLER file_fdw_handler;</programlisting></para>
+
+  <para>Создание обёртки сторонних данных <literal>mywrapper</literal> с параметрами: <programlisting>CREATE FOREIGN DATA WRAPPER mywrapper
+    OPTIONS (debug 'true');</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>CREATE FOREIGN DATA WRAPPER</command> соответствует стандарту ISO/IEC 9075-9 (SQL/MED), за исключением того, что предложения <literal>HANDLER</literal> и <literal>VALIDATOR</literal> стандартом не предусмотрены, а предложения <literal>LIBRARY</literal> и <literal>LANGUAGE</literal>, напротив, не реализованы в <productname>&productname;</productname>.</para>
+
+  <para>Учтите, однако, что функциональность SQL/MED в целом ещё не обеспечивается.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterforeigndatawrapper"/></member>
+   <member><xref linkend="sql-dropforeigndatawrapper"/></member>
+   <member><xref linkend="sql-createserver"/></member>
+   <member><xref linkend="sql-createusermapping"/></member>
+   <member><xref linkend="sql-createforeigntable"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

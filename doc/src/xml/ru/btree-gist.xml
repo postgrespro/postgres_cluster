@@ -1,0 +1,56 @@
+<!-- doc/src/xml/btree-gist.xml -->
+
+<sect1 id="btree-gist" xreflabel="btree_gist">
+ <title>btree_gist</title>
+
+ <indexterm zone="btree-gist"><primary>btree_gist</primary></indexterm>
+
+ <para>Модуль <filename>btree_gist</filename> предоставляет показательные классы операторов GiST, реализующие поведение, подобное тому, что реализуют обычные классы B-дерева, для типов данных <type>int2</type>, <type>int4</type>, <type>int8</type>, <type>float4</type>, <type>float8</type>, <type>numeric</type>, <type>timestamp with time zone</type>, <type>timestamp without time zone</type>, <type>time with time zone</type>, <type>time without time zone</type>, <type>date</type>, <type>interval</type>, <type>oid</type>, <type>money</type>, <type>char</type>, <type>varchar</type>, <type>text</type>, <type>bytea</type>, <type>bit</type>, <type>varbit</type>, <type>macaddr</type>, <type>inet</type> и <type>cidr</type>.</para>
+
+ <para>Вообще говоря, эти классы операторов не будут работать быстрее аналогичных стандартных методов индекса-B-дерева, и им не хватает одной важной возможности стандартной реализации B-дерева: возможности ограничивать уникальность. Однако они предлагают несколько других возможностей, описанных ниже. Также эти классы операторов полезны, когда требуется составной индекс GiST, в котором некоторые столбцы имеют типы данных, индексируемые только с GiST, а другие — простые типы. Наконец, эти классы операторов можно применять для тестирования GiST или взять за основу для разработки других классов операторов GiST.</para>
+
+ <para>Помимо типичных операторов поиска по B-дереву, <filename>btree_gist</filename> также поддерживает использование индекса для операции <literal>&lt;&gt;</literal> (<quote>не равно</quote>). Это может быть полезно в сочетании с <link linkend="sql-createtable-exclude">ограничением-исключением</link>, как описано ниже.</para>
+
+ <para>Также, для типов данных, имеющих естественную метрику расстояния, <filename>btree_gist</filename> определяет оператор расстояния <literal>&lt;-&gt;</literal> и поддерживает использование индексов GiST для поиска ближайших соседей с применением этого оператора. Операторы расстояния определены для типов <type>int2</type>, <type>int4</type>, <type>int8</type>, <type>float4</type>, <type>float8</type>, <type>timestamp with time zone</type>, <type>timestamp without time zone</type>, <type>time without time zone</type>, <type>date</type>, <type>interval</type>, <type>oid</type> и <type>money</type>.</para>
+
+ <sect2>
+  <title>Пример использования</title>
+
+  <para>Простой пример использования <literal>btree_gist</literal> вместо <literal>btree</literal>:</para>
+
+<programlisting>CREATE TABLE test (a int4);
+-- создать индекс
+CREATE INDEX testidx ON test USING GIST (a);
+-- запрос
+SELECT * FROM test WHERE a &lt; 10;
+-- поиск ближайших соседей: найти десять записей, ближайших к "42"
+SELECT *, a &lt;-&gt; 42 AS dist FROM test ORDER BY a &lt;-&gt; 42 LIMIT 10;</programlisting>
+
+  <para>Так можно использовать <link linkend="sql-createtable-exclude">ограничение-исключение</link>, состоящее в том, что в клетке в зоопарке могут содержаться животные только одного типа:</para>
+
+<programlisting>=&gt; CREATE TABLE zoo (
+  cage   INTEGER,
+  animal TEXT,
+  EXCLUDE USING GIST (cage WITH =, animal WITH &lt;&gt;)
+);
+
+=&gt; INSERT INTO zoo VALUES(123, 'zebra');
+INSERT 0 1
+=&gt; INSERT INTO zoo VALUES(123, 'zebra');
+INSERT 0 1
+=&gt; INSERT INTO zoo VALUES(123, 'lion');
+ERROR:  conflicting key value violates exclusion constraint "zoo_cage_animal_excl"
+DETAIL:  Key (cage, animal)=(123, lion) conflicts with existing key (cage, animal)=(123, zebra).
+=&gt; INSERT INTO zoo VALUES(124, 'lion');
+INSERT 0 1</programlisting>
+
+ </sect2>
+
+ <sect2>
+  <title>Авторы</title>
+
+  <para>Фёдор Сигаев (<email>teodor@stack.net</email>), Олег Бартунов (<email>oleg@sai.msu.su</email>) и Янко Рихтер (<email>jankorichter@yahoo.de</email>). Подробности можно найти на странице <ulink url="http://www.sai.msu.su/~megera/postgres/gist/"/>.</para>
+
+ </sect2>
+
+</sect1>

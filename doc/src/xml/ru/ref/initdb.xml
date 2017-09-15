@@ -1,0 +1,302 @@
+<!--
+doc/src/xml/ref/initdb.xml
+&productname; documentation
+-->
+
+<refentry id="app-initdb">
+ <indexterm zone="app-initdb"><primary>initdb</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>initdb</refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>initdb</refname>
+  <refpurpose>создать кластер баз данных <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>initdb</command>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+   <group choice="plain">
+    <group choice="opt">
+     <arg choice="plain"><option>--pgdata</option></arg>
+     <arg choice="plain"><option>-D</option></arg>
+    </group>
+    <replaceable>каталог</replaceable>
+   </group>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="r1-app-initdb-1">
+  <title>Описание</title>
+  <para>Команда <command>initdb</command> создаёт новый кластер баз данных <productname>&productname;</productname>. Кластер — это коллекция баз данных под управлением единого экземпляра сервера.</para>
+
+  <para>Инициализация кластера базы данных заключается в создании каталогов для хранения данных, формировании общих системных таблиц (относящихся ко всему кластеру, а не к какой-либо базе) и создании баз данных <literal>template1</literal> и <literal>postgres</literal>. Впоследствии все новые базы создаются на основе шаблона <literal>template1</literal> (все дополнения, установленные в <literal>template1</literal> автоматически копируются в каждую новую базу данных). База <literal>postgres</literal> используется пользователями, утилитами и сторонними приложениями по умолчанию.</para>
+
+  <para>При попытке создать каталог для хранения данных <command>initdb</command> может столкнуться с нехваткой прав доступа, если этот каталог принадлежит суперпользователю root. В таком случае необходимо назначить пользователя базы данных владельцем этого каталога при помощи <command>chown</command>. Затем выполнить <command>su</command> для смены пользователя и дальнейшего выполнения <command>initdb</command>.</para>
+
+  <para>Команда <command>initdb</command> должна выполняться от имени пользователя, под которым будет запускаться сервер, так как ему необходим полный доступ к файлам и каталогам, создаваемым <command>initdb</command>. Сервер не может запускаться от имени суперпользователя, поэтому выполнение команды <command>initdb</command> от его лица будет отклонено.</para>
+
+  <para><command>initdb</command> инициализирует локали и кодировки баз данных кластера, которые будут использоваться по умолчанию. Кодировка, порядок сортировки (<literal>LC_COLLATE</literal>), классы наборов символов (<literal>LC_CTYPE</literal>, например, заглавные, строчные буквы, цифры) могут устанавливаться раздельно при создании новой базы данных. <command>initdb</command> определяет параметры локали для шаблона <literal>template1</literal>, которые будут применяться по умолчанию для новых баз.</para>
+
+  <para>Чтобы изменить порядок сортировки по умолчанию или классы наборов символов, используются параметры <option>--lc-collate</option> и <option>--lc-ctype</option>. Порядок сортировки, отличающийся от <literal>C</literal> или <literal>POSIX</literal>, оказывает влияние на производительность. Поэтому необходимо тщательно выбирать необходимую и достаточную локаль при выполнении <command>initdb</command>.</para>
+
+  <para>Другие категории локали можно изменить и после старта сервера. Также можно использовать параметр <option>--locale</option>, чтобы задать локаль для всех категорий одновременно, включая порядок сортировки и классы наборов символов. Значения локалей сервера (<literal>lc_*</literal>) можно вывести командой <command>SHOW ALL</command>. Узнать об этом больше можно в <xref remap="6" linkend="locale"/>.</para>
+
+  <para>Для изменения кодировки по умолчанию используется параметр <option>--encoding</option>. Узнать об этом больше можно в <xref remap="6" linkend="multibyte"/>.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <para>
+    <variablelist>
+     <varlistentry>
+      <term><option>-A <replaceable class="parameter">authmethod</replaceable></option></term>
+      <term><option>--auth=<replaceable class="parameter">authmethod</replaceable></option></term>
+      <listitem>
+       <para>Параметр определяет метод аутентификации для локальных пользователей, указанный в файле <filename>pg_hba.conf</filename> (строки <literal>host</literal> и <literal>local</literal>). Не используйте <literal>trust</literal>, если не можете доверять всем локальным пользователям в вашей системе. Режим <literal>trust</literal> используется по умолчанию для облегчения процесса установки.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--auth-host=<replaceable class="parameter">authmethod</replaceable></option></term>
+      <listitem>
+       <para>Параметр указывает метод аутентификации для локальных пользователей, подключающихся по TCP/IP, используемый в <filename>pg_hba.conf</filename> (строки <literal>host</literal>).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--auth-local=<replaceable class="parameter">authmethod</replaceable></option></term>
+      <listitem>
+       <para>Параметр указывает метод аутентификации локальных пользователей подключающихся по доменным Unix-сокетам, используемый в <filename>pg_hba.conf</filename> (строки <literal>local</literal>).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-D <replaceable class="parameter">каталог</replaceable></option></term>
+      <term><option>--pgdata=<replaceable class="parameter">каталог</replaceable></option></term>
+      <listitem>
+       <para>Параметр указывает каталог хранения данных кластера. Это единственный обязательный параметр для команды <command>initdb</command>. При этом его можно указать в переменной окружения <envar>PGDATA</envar>, что будет удобным при дальнейшем использовании (<command>postgres</command> обращается к этой же переменной).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-E <replaceable class="parameter">кодировка</replaceable></option></term>
+      <term><option>--encoding=<replaceable class="parameter">кодировка</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает кодировку шаблона и новых баз данных по умолчанию, если не указать иное при их создании. По умолчанию устанавливается исходя из указанной локали, и далее, если не удалось определить, выбирается <literal>SQL_ASCII</literal>. Кодировки, поддерживаемые сервером <productname>&productname;</productname>, описаны в <xref remap="6" linkend="multibyte-charset-supported"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="app-initdb-data-checksums" xreflabel="data checksums">
+      <term><option>-k</option></term>
+      <term><option>--data-checksums</option></term>
+      <listitem>
+       <para>Применять контрольные суммы на страницах данных для выявления сбоев при вводе/выводе, которые иначе останутся незамеченными. Расчёт контрольных сумм может значительно повлияет на производительность. Этот режим можно включить только при инициализации и нельзя изменить позже. Когда контрольные суммы включены, они рассчитываются для всех объектов и во всех базах данных.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--locale=<replaceable>локаль</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает локаль кластера по умолчанию. Если флаг не указан, локаль устанавливается согласно окружению, в котором исполняется команда <command>initdb</command>. Поддерживаемые локали описаны в <xref remap="6" linkend="locale"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--lc-collate=<replaceable>локаль</replaceable></option></term>
+      <term><option>--lc-ctype=<replaceable>локаль</replaceable></option></term>
+      <term><option>--lc-messages=<replaceable>локаль</replaceable></option></term>
+      <term><option>--lc-monetary=<replaceable>локаль</replaceable></option></term>
+      <term><option>--lc-numeric=<replaceable>локаль</replaceable></option></term>
+      <term><option>--lc-time=<replaceable>локаль</replaceable></option></term>
+
+      <listitem>
+       <para>Аналогично <option>--locale</option> устанавливает необходимую локаль, но в заданной категории.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-locale</option></term>
+      <listitem>
+       <para>Аналогично флагу <option>--locale=C</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-N</option></term>
+      <term><option>--nosync</option></term>
+      <listitem>
+       <para>По умолчанию <command>initdb</command> ждёт, пока все файлы не будут надёжно записаны на диск. С данным параметром <command>initdb</command> завершается немедленно, то есть выполняется быстрее, но в случае неожиданного сбоя операционной системы каталог данных может оказаться испорченным. Вообще этот параметр предназначен прежде всего для тестирования, для производственной среды он не подходит.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--pwfile=<replaceable>имя_файла</replaceable></option></term>
+      <listitem>
+       <para>Принуждает <command>initdb</command> читать пароль суперпользователя базы данных из файла, первая строка которого используется в качестве пароля.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-S</option></term>
+      <term><option>--sync-only</option></term>
+      <listitem>
+       <para>Безопасно записывает все файлы базы на диск и останавливается. Другие операции <application>initdb</application> при этом не выполняются.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-T <replaceable>CFG</replaceable></option></term>
+      <term><option>--text-search-config=<replaceable>CFG</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает конфигурацию текстового поиска по умолчанию. За дополнительными сведениями обратитесь к <xref remap="3" linkend="guc-default-text-search-config"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <term><option>--username=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает имя суперпользователя базы данных. По умолчанию используется имя пользователя ОС, запустившего <command>initdb</command>. По факту, само по себе имя суперпользователя базы данных не важно, но этот параметр позволяет оставить привычное <systemitem>postgres</systemitem>, если имя пользователя ОС другое.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option></term>
+      <term><option>--pwprompt</option></term>
+      <listitem>
+       <para>Указывает <command>initdb</command> запросить пароль, который будет назначен суперпользователю базы данных. Это не важно, если не планируется использовать аутентификацию по паролю. В ином случае этот режим аутентификации оказывается неприменимым, пока пароль не задан.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-X <replaceable class="parameter">каталог</replaceable></option></term>
+      <term><option>--xlogdir=<replaceable class="parameter">каталог</replaceable></option></term>
+      <listitem>
+       <para>Флаг указывает каталог для хранения журналов транзакций.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+   </para>
+
+   <para>Другие реже используемые параметры описаны здесь: <variablelist>
+     <varlistentry>
+      <term><option>-d</option></term>
+      <term><option>--debug</option></term>
+      <listitem>
+       <para>Выводит отладочные сообщения загрузчика и ряд других сообщений, не очень интересных широкой публике. Загрузчик — это приложение <command>initdb</command>, используемое для создания каталога таблиц. С этим параметром выдаётся очень много крайне скучных сообщений.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-L <replaceable class="parameter">каталог</replaceable></option></term>
+      <listitem>
+       <para>Указывает <command>initdb</command>, где необходимо искать входные файлы для развёртывания кластера. Обычно это не требуется. Приложение само запросит эти данные, если будет необходимо.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-n</option></term>
+      <term><option>--noclean</option></term>
+      <listitem>
+       <para>По умолчанию, при выявлении ошибки на этапе развёртывания кластера, <command>initdb</command> удаляет все файлы, которые к тому моменту были созданы. Параметр предотвращает очистку файлов для целей отладки.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+   <para>Другие параметры для тестирования 64-битных идентификаторов транзакций: <variablelist>
+     <varlistentry>
+      <term><option>-m <replaceable class="parameter">START_MX_ID</replaceable></option></term>
+      <term><option>--multixact-id=<replaceable class="parameter">START_MX_ID</replaceable></option></term>
+      <listitem>
+       <para>Задаёт для нового экземпляра БД начальный идентификатор мультитранзакций в десятичном виде для проверки 64-битных идентификаторов (по умолчанию: <literal>0</literal>).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-o <replaceable class="parameter">START_MX_OFFSET</replaceable></option></term>
+      <term><option>--multixact-offset=<replaceable class="parameter">START_MX_OFFSET</replaceable></option></term>
+      <listitem>
+       <para>Задаёт для нового экземпляра БД начальное смещение мультитранзакций в десятичном виде для проверки 64-битных идентификаторов (по умолчанию: <literal>0</literal>).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-x <replaceable class="parameter">START_XID</replaceable></option></term>
+      <term><option>--xid=<replaceable class="parameter">START_XID</replaceable></option></term>
+      <listitem>
+       <para>Задаёт для нового экземпляра БД начальный идентификатор транзакций в десятичном виде для проверки 64-битных идентификаторов (по умолчанию: <literal>0</literal>).</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+   <para>Прочие параметры: <variablelist>
+     <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>--version</option></term>
+       <listitem>
+       <para>Выводит версию <application>initdb</application> и останавливается.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-?</option></term>
+       <term><option>--help</option></term>
+       <listitem>
+       <para>Показывает помощь по аргументам команды <application>initdb</application> и останавливается.</para>
+       </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><envar>PGDATA</envar></term>
+
+    <listitem>
+     <para>Указывает каталог хранения данных кластера, можно изменить параметром <option>-D</option>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><envar>TZ</envar></term>
+
+    <listitem>
+     <para>Указывает часовой пояс кластера по умолчанию. Значение — это полное имя часового пояса (см. <xref remap="4" linkend="datatype-timezones"/>).</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Эта утилита, как и большинство других утилит <productname>&productname;</productname>, также использует переменные среды, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>).</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para><command>initdb</command> можно выполнить командой <command>pg_ctl initdb</command>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-pg-ctl"/></member>
+   <member><xref linkend="app-postgres"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

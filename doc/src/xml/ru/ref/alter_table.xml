@@ -1,0 +1,770 @@
+<!--
+doc/src/xml/ref/alter_table.xml
+&productname; documentation
+-->
+
+<refentry id="sql-altertable">
+ <indexterm zone="sql-altertable"><primary>ALTER TABLE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER TABLE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER TABLE</refname>
+  <refpurpose>изменить определение таблицы</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER TABLE [ IF EXISTS ] [ ONLY ] <replaceable class="parameter">имя</replaceable> [ * ]
+    <replaceable class="parameter">действие</replaceable> [, ... ] 
+ALTER TABLE [ IF EXISTS ] [ ONLY ] <replaceable class="parameter">имя</replaceable> [ * ]
+    <replaceable class="parameter">действие_секционирования</replaceable>
+ALTER TABLE [ IF EXISTS ] [ ONLY ] <replaceable class="parameter">имя</replaceable> [ * ]
+    RENAME [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> TO <replaceable class="parameter">новое_имя_столбца</replaceable>
+ALTER TABLE [ IF EXISTS ] [ ONLY ] <replaceable class="parameter">имя</replaceable> [ * ]
+    RENAME CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable> TO <replaceable class="parameter">имя_нового_ограничения</replaceable>
+ALTER TABLE [ IF EXISTS ] <replaceable class="parameter">имя</replaceable>
+    RENAME TO <replaceable class="parameter">новое_имя</replaceable>
+ALTER TABLE [ IF EXISTS ] <replaceable class="parameter">имя</replaceable>
+    SET SCHEMA <replaceable class="parameter">новая_схема</replaceable>
+ALTER TABLE ALL IN TABLESPACE <replaceable class="parameter">имя</replaceable> [ OWNED BY <replaceable class="parameter">имя_роли</replaceable> [, ... ] ]
+    SET TABLESPACE <replaceable class="parameter">новое_табл_пространство</replaceable> [ NOWAIT ]
+
+<phrase>Где <replaceable class="parameter">действие</replaceable> может быть следующим:</phrase>
+
+    ADD [ COLUMN ] [ IF NOT EXISTS ] <replaceable class="parameter">имя_столбца</replaceable> <replaceable class="parameter">тип_данных</replaceable> [ COLLATE <replaceable class="parameter">правило_сортировки</replaceable> ] [ <replaceable class="parameter">ограничение_столбца</replaceable> [ ... ] ]
+    DROP [ COLUMN ] [ IF EXISTS ] <replaceable class="parameter">имя_столбца</replaceable> [ RESTRICT | CASCADE ]
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> [ SET DATA ] TYPE <replaceable class="parameter">тип_данных</replaceable> [ COLLATE <replaceable class="parameter">правило_сортировки</replaceable> ] [ USING <replaceable class="parameter">выражение</replaceable> ]
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> SET DEFAULT <replaceable class="parameter">выражение</replaceable>
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> DROP DEFAULT
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> { SET | DROP } NOT NULL
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> SET STATISTICS <replaceable class="parameter">integer</replaceable>
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> SET ( <replaceable class="parameter">атрибут</replaceable> = <replaceable class="parameter">значение</replaceable> [, ... ] )
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> RESET ( <replaceable class="parameter">атрибут</replaceable> [, ... ] )
+    ALTER [ COLUMN ] <replaceable class="parameter">имя_столбца</replaceable> SET STORAGE { PLAIN | EXTERNAL | EXTENDED | MAIN }
+    ADD <replaceable class="parameter">ограничение_таблицы</replaceable> [ NOT VALID ]
+    ADD <replaceable class="parameter">ограничение_таблицы_по_индексу</replaceable>
+    ALTER CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable> [ DEFERRABLE | NOT DEFERRABLE ] [ INITIALLY DEFERRED | INITIALLY IMMEDIATE ]
+    VALIDATE CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable>
+    DROP CONSTRAINT [ IF EXISTS ]  <replaceable class="parameter">имя_ограничения</replaceable> [ RESTRICT | CASCADE ]
+    DISABLE TRIGGER [ <replaceable class="parameter">имя_триггера</replaceable> | ALL | USER ]
+    ENABLE TRIGGER [ <replaceable class="parameter">имя_триггера</replaceable> | ALL | USER ]
+    ENABLE REPLICA TRIGGER <replaceable class="parameter">имя_триггера</replaceable>
+    ENABLE ALWAYS TRIGGER <replaceable class="parameter">имя_триггера</replaceable>
+    DISABLE RULE <replaceable class="parameter">имя_правила_перезаписи</replaceable>
+    ENABLE RULE <replaceable class="parameter">имя_правила_перезаписи</replaceable>
+    ENABLE REPLICA RULE <replaceable class="parameter">имя_правила_перезаписи</replaceable>
+    ENABLE ALWAYS RULE <replaceable class="parameter">имя_правила_перезаписи</replaceable>
+    DISABLE ROW LEVEL SECURITY
+    ENABLE ROW LEVEL SECURITY
+    FORCE ROW LEVEL SECURITY
+    NO FORCE ROW LEVEL SECURITY
+    CLUSTER ON <replaceable class="parameter">имя_индекса</replaceable>
+    SET WITHOUT CLUSTER
+    SET WITH OIDS
+    SET WITHOUT OIDS
+    SET TABLESPACE <replaceable class="parameter">новое_табл_пространство</replaceable>
+    SET { LOGGED | UNLOGGED }
+    SET CONSTANT
+    SET ( <replaceable class="parameter">параметр_хранения</replaceable> = <replaceable class="parameter">значение</replaceable> [, ... ] )
+    RESET ( <replaceable class="parameter">параметр_хранения</replaceable> [, ... ] )
+    INHERIT <replaceable class="parameter">таблица_родитель</replaceable>
+    NO INHERIT <replaceable class="parameter">таблица_родитель</replaceable>
+    OF <replaceable class="parameter">имя_типа</replaceable>
+    NOT OF
+    OWNER TO { <replaceable class="parameter">новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+    REPLICA IDENTITY { DEFAULT | USING INDEX <replaceable class="parameter">имя_индекса</replaceable> | FULL | NOTHING }
+
+<phrase>Следующие действия поддерживаются, только если у вас установлен <productname>&productname;</productname> с включённым расширением <filename>pg_pathman</filename>:</phrase>
+
+    ADD PARTITION <replaceable class="parameter">имя_секции</replaceable> VALUES LESS THAN ( <replaceable class="parameter">значение</replaceable> ) [ TABLESPACE <replaceable class="parameter">табл_пространство</replaceable> ]
+    DROP PARTITION <replaceable class="parameter">имя_секции</replaceable>
+    SPLIT PARTITION <replaceable class="parameter">имя_секции</replaceable> AT ( <replaceable class="parameter">значение</replaceable> ) [ INTO ( PARTITION <replaceable class="parameter">левая_секция</replaceable> [ TABLESPACE <replaceable class="parameter">табл_пространство1</replaceable> ], PARTITION <replaceable class="parameter">правая_секция</replaceable> [ TABLESPACE <replaceable class="parameter">табл_пространство2</replaceable> ] ) ]
+    MERGE PARTITIONS <replaceable class="parameter">имя_секции</replaceable> [, ... ] INTO PARTITION <replaceable class="parameter">имя_секции</replaceable> [ TABLESPACE <replaceable class="parameter">табл_пространство</replaceable> ]
+    RENAME PARTITION <replaceable class="parameter">имя_секции</replaceable> TO <replaceable class="parameter">новое_имя_секции</replaceable>
+    MOVE PARTITION <replaceable class="parameter">имя_секции</replaceable> [ TABLESPACE <replaceable class="parameter">табл_пространство</replaceable> ]
+    SET INTERVAL ( <replaceable class="parameter">значение</replaceable> )
+
+<phrase><replaceable class="parameter">действие_секционирования</replaceable> может быть следующим:</phrase>
+
+    PARTITION BY HASH ( <replaceable class="parameter">ключ_разбиения</replaceable> ) PARTITIONS ( <replaceable class="parameter">число_секций</replaceable> ) [ CONCURRENTLY ]
+    PARTITION BY RANGE ( <replaceable class="parameter">ключ_разбиения</replaceable> ) START FROM ( <replaceable class="parameter">начальное_значение</replaceable> ) INTERVAL ( <replaceable class="parameter">интервал</replaceable> ) [ CONCURRENTLY ]
+
+<phrase>и <replaceable class="parameter">ограничение_таблицы_по_индексу</replaceable>:</phrase>
+
+    [ CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable> ]
+    { UNIQUE | PRIMARY KEY } USING INDEX <replaceable class="parameter">имя_индекса</replaceable>
+    [ DEFERRABLE | NOT DEFERRABLE ] [ INITIALLY DEFERRED | INITIALLY IMMEDIATE ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER TABLE</command> меняет определение существующей таблицы. Несколько её разновидностей описаны ниже. Заметьте, что для разных разновидностей могут требоваться разные уровни блокировок. Если явно не отмечено другое, требуется блокировка <literal>ACCESS EXCLUSIVE</literal>. При перечислении нескольких подкоманд будет запрашиваться самая сильная блокировка из требуемых ими. <variablelist>
+   <varlistentry>
+    <term><literal>ADD COLUMN [ IF NOT EXISTS ]</literal></term>
+    <listitem>
+     <para>Эта форма добавляет в таблицу новый столбец, с тем же синтаксисом, что и <xref linkend="sql-createtable"/>. Если указано <literal>IF NOT EXISTS</literal> и столбец с таким именем уже существует, это не будет ошибкой.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DROP COLUMN [ IF EXISTS ]</literal></term>
+    <listitem>
+     <para>Эта форма удаляет столбец из таблицы. При этом автоматически будут удалены индексы и ограничения таблицы, связанные с этим столбцом. Если от этого столбца зависят какие-либо объекты вне этой таблицы, например, внешние ключи или представления, удалить и их можно, добавив указание <literal>CASCADE</literal>. Если в команде указано <literal>IF EXISTS</literal> и этот столбец не существует, это не считается ошибкой, вместо этого просто выдаётся замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET DATA TYPE</literal></term>
+    <listitem>
+     <para>Эта форма меняет тип столбца таблицы. Индексы и простые табличные ограничения, включающие этот столбец, будут автоматически преобразованы для использования нового типа столбца, для чего будет заново разобрано определяющее их выражение. Необязательное предложение <literal>COLLATE</literal> задаёт правило сортировки для нового столбца; если оно опущено, выбирается правило сортировки по умолчанию для нового типа. Необязательное предложение <literal>USING</literal> определяет, как новое значение столбца будет получено из старого; если оно отсутствует, выполняется приведение типа по умолчанию, как обычное присваивание значения старого типа новому. Предложение <literal>USING</literal> становится обязательным, если неявное приведение или присваивание с приведением старого типа к новому не определено.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET</literal>/<literal>DROP DEFAULT</literal></term>
+    <listitem>
+     <para>Эти формы задают или удаляют значение по умолчанию для столбцов. Значения по умолчанию применяются только при последующих командах <command>INSERT</command> или <command>UPDATE</command>; их изменения не отражаются в строках, уже существующих в таблице.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET</literal>/<literal>DROP NOT NULL</literal></term>
+    <listitem>
+     <para>Эти формы определяют, будет ли столбец принимать значения NULL или нет. Задать <literal>SET NOT NULL</literal> можно, только если столбец не содержит значений NULL.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET STATISTICS</literal></term>
+    <listitem>
+     <para>Эта форма задаёт ориентир сбора статистики по столбцу для последующих операций <xref linkend="sql-analyze"/>. Диапазон допустимых значений ориентира: 0..10000; при -1 применяется системное значение по умолчанию (<xref linkend="guc-default-statistics-target"/>). За дополнительными сведениями об использовании статистики планировщиком запросов <productname>&productname;</productname> обратитесь к <xref remap="3" linkend="planner-stats"/>.</para>
+     <para><literal>SET STATISTICS</literal> запрашивает блокировку <literal>SHARE UPDATE EXCLUSIVE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET ( <replaceable class="parameter">атрибут</replaceable> = <replaceable class="parameter">значение</replaceable> [, ... ] )</literal></term>
+    <term><literal>RESET ( <replaceable class="parameter">атрибут</replaceable> [, ... ] )</literal></term>
+    <listitem>
+     <para>Эта форма устанавливает или сбрасывает параметры атрибутов. В настоящее время единственными параметрами атрибутов являются <literal>n_distinct</literal> и <literal>n_distinct_inherited</literal>, которые переопределяют оценку кол-ва_различных_значений, производимую последующими операциями <xref linkend="sql-analyze"/>. Атрибут <literal>n_distinct</literal> влияет на расчёт статистики по самой таблице, а <literal>n_distinct_inherited</literal> — на статистику по таблице и её потомкам. Если заданное значение положительно, <command>ANALYZE</command> будет считать, что столбец содержит именно это количество различных значений не NULL. Если заданное значение отрицательно (оно должно быть больше или равно -1), <command>ANALYZE</command> будет считать, что количество различных значений не NULL в столбце линейно зависит от размера таблицы; точное число будет получено умножением примерного размера таблицы на абсолютное значение параметра. Например, при -1 будет предполагаться, что различны все значения в столбце, а при -0,5 — что в среднем каждое значение повторяется дважды. Это может быть полезно, когда размер таблицы меняется со временем, так как умножение на число строк в таблице производится только во время планирования запроса. С 0 количество различных значений оценивается как обычно. За дополнительными сведениями об использовании статистики планировщиком запросов <productname>&productname;</productname> обратитесь к <xref remap="3" linkend="planner-stats"/>.</para>
+     <para>Для изменения параметров атрибутов запрашивается блокировка <literal>SHARE UPDATE EXCLUSIVE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <literal>SET STORAGE</literal>
+     <indexterm><primary>TOAST</primary> <secondary>режимы хранения столбцов</secondary></indexterm>
+    </term>
+    <listitem>
+     <para>Эта форма устанавливает режим хранения столбца. Она определяет, хранятся ли данные внутри таблицы или в отдельной таблице <acronym>TOAST</acronym>, а также, сжимаются ли они. Режим <literal>PLAIN</literal> должен применяться для значений фиксированной длины, таких как <type>integer</type>; это вариант хранения внутри, без сжатия. Режим <literal>MAIN</literal> применяется для хранения внутри, но сжатых данных, <literal>EXTERNAL</literal> — для внешнего хранения несжатых данных, а <literal>EXTENDED</literal> — для внешнего хранения сжатых данных. <literal>EXTENDED</literal> используется по умолчанию для большинства типов данных, поддерживающих хранилище не <literal>PLAIN</literal>. Применение <literal>EXTERNAL</literal> позволяет ускорить операции с подстроками на очень больших значениях <type>text</type> и <type>bytea</type>, за счёт проигрыша в объёме хранилища. Заметьте, что предложение <literal>SET STORAGE</literal> само по себе не меняет ничего в таблице, оно только задаёт стратегию, которая будет реализована при будущих изменениях в таблице. За дополнительными сведениями обратитесь к <xref remap="3" linkend="storage-toast"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ADD <replaceable class="parameter">ограничение_таблицы</replaceable> [ NOT VALID ]</literal></term>
+    <listitem>
+     <para>Эта форма добавляет в таблицу новое ограничение, с тем же синтаксисом, что и <xref linkend="sql-createtable"/>, и дополнительным указанием <literal>NOT VALID</literal>, которое в настоящее время разрешено только для ограничений внешнего ключа и ограничений-проверок. Если ограничение помечено как <literal>NOT VALID</literal>, потенциально длительная начальная проверка того, что ему удовлетворяют все строки, пропускается. Тем не менее это ограничение будет действовать при последующих добавлениях или изменениях (то есть, эти операции не будут выполнены, если, в случае с внешним ключом, в главной таблице не найдётся соответствующая строка, либо, в случае с ограничением-проверкой, новая строка нарушит проверочное условие). Но база данных не будет считать, что ограничение выполняется для всех строк таблицы, пока оно не будет проверено с применением указания <literal>VALIDATE CONSTRAINT</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ADD <replaceable class="parameter">ограничение_таблицы_по_индексу</replaceable></literal></term>
+    <listitem>
+     <para>Эта форма добавляет в таблицу новое ограничение <literal>PRIMARY KEY</literal> или <literal>UNIQUE</literal> на базе существующего уникального индекса. В это ограничение будут включены все столбцы данного индекса.</para>
+
+     <para>Индекс не может быть частичным и включать столбцы-выражения. Кроме того, это должен быть индекс-B-дерево с порядком сортировки по умолчанию. С такими ограничениями добавляемые индексы не будут ничем отличаться от индексов, создаваемых обычными командами <literal>ADD PRIMARY KEY</literal> и <literal>ADD UNIQUE</literal>.</para>
+
+     <para>В случае с указанием <literal>PRIMARY KEY</literal>, если столбцы индекса ещё не помечены <literal>NOT NULL</literal>, данная команда попытается выполнить <literal>ALTER COLUMN SET NOT NULL</literal> для каждого столбца. При этом потребуется произвести полное сканирование таблицы, чтобы убедиться, что столбец(ы) не содержит NULL. Во всех остальных случаях это быстрая операция.</para>
+
+     <para>Если задано имя ограничения, индекс будет переименован и получит заданное имя. В противном случае, именем ограничения станет имя индекса.</para>
+
+     <para>После выполнения этой команды индекс становится <quote>принадлежащим</quote> ограничению, так же, как если бы он был создан обычной командой <literal>ADD PRIMARY KEY</literal> или <literal>ADD UNIQUE</literal>. Это значит, в частности, что при удалении ограничения индекс будет удалён вместе с ним.</para>
+
+     <note>
+      <para>Добавление ограничения на базе существующего индекса бывает полезно в ситуациях, когда новое ограничение требуется добавить, не блокируя изменения в таблице на долгое время. Для этого можно создать индекс командой <command>CREATE INDEX CONCURRENTLY</command>, а затем задействовать его как полноценное ограничение, используя эту запись. См. следующий пример.</para>
+     </note>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ALTER CONSTRAINT</literal></term>
+    <listitem>
+     <para>Эта форма меняет атрибуты созданного ранее ограничения. В настоящее время изменять можно только ограничения внешнего ключа.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>VALIDATE CONSTRAINT</literal></term>
+    <listitem>
+     <para>Эта форма проверяет ограничение внешнего ключа или ограничение-проверку, созданное ранее с указанием <literal>NOT VALID</literal>, сканируя всю таблицу с целью убедиться, что ограничению удовлетворяют все строки. Если ограничение уже помечено как верное, ничего не происходит.</para>
+     <para>Проверка больших таблиц может быть довольно длительной. Смысл отделения проверки от собственно создания ограничения состоит в том, что это позволяет отложить проверку на время меньшей активности или провести дополнительную работу с существующими ошибками и при этом не допустить новых. Заметьте также, что во время осуществления проверки сама по себе она не препятствует выполнению обычных команд записи в таблицу.</para>
+     <para>При проверке запрашивается только блокировка <literal>SHARE UPDATE EXCLUSIVE</literal> целевой таблицы. Для ограничений внешнего ключа требуется также блокировка <literal>ROW SHARE</literal> в таблице, на которую ссылается ограничение.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DROP CONSTRAINT [ IF EXISTS ]</literal></term>
+    <listitem>
+     <para>Эта форма удаляет указанное ограничение таблицы. Если указано <literal>IF EXISTS</literal> и заданное ограничение не существует, это не считается ошибкой. В этом случае выдаётся только замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DISABLE</literal>/<literal>ENABLE [ REPLICA | ALWAYS ] TRIGGER</literal></term>
+    <listitem>
+     <para>Эти формы настраивают срабатывание триггера(ов), принадлежащего таблице. Отключённый триггер сохраняется в системе, но не выполняется, когда происходит вызывающего его событие. Для отложенных триггеров состояние включения проверяется при возникновении события, а не когда на самом деле вызывается функция триггера. Эта команда может отключить или включить один триггер по имени, либо все триггеры таблицы, либо только пользовательские триггеры (исключая сгенерированные внутрисистемные триггеры ограничений, например, триггеры, реализующие ограничения внешнего ключа или отложенные ограничения уникальности или исключений). Для отключения или включения сгенерированных внутрисистемных триггеров ограничений требуются права суперпользователя; отключать их следует с осторожностью, так как очевидно, что гарантировать целостность ограничений, если триггеры не работают, невозможно. На механизм срабатывания триггеров также влияет конфигурационная переменная <xref linkend="guc-session-replication-role"/>. Просто включаемые триггеры будут срабатывать, когда роль репликации — <quote>origin</quote> (по умолчанию) или <quote>local</quote>. Триггеры, включённые указанием <literal>ENABLE REPLICA</literal>, будут срабатывать, только если текущий режим сеанса — <quote>replica</quote>, а после указания <literal>ENABLE ALWAYS</literal> триггеры срабатывают вне зависимости от текущего режима репликации.</para>
+     <para>Эта команда запрашивает блокировку <literal>SHARE ROW EXCLUSIVE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DISABLE</literal>/<literal>ENABLE [ REPLICA | ALWAYS ] RULE</literal></term>
+    <listitem>
+     <para>Эти формы настраивают срабатывание правил перезаписи, относящихся к таблице. Отключённое правило сохраняется в системе, но не применяется во время переписывания запроса. По сути эти операции подобны операциям включения/отключения триггеров. Однако это не распространяется на правила <literal>ON SELECT</literal> — они применяются всегда, чтобы представления продолжали работать, даже в сеансах, исполняющих не основную роль репликации.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DISABLE</literal>/<literal>ENABLE ROW LEVEL SECURITY</literal></term>
+    <listitem>
+     <para>Эти формы управляют применением относящихся к таблице политик защиты строк. Если защита включается, но политики для таблицы не определены, применяется политика запрета доступа по умолчанию. Заметьте, что политики могут быть определены для таблицы, даже если защита на уровне строк отключена — в этом случае политики НЕ применяются и их ограничения игнорируются. См. также <xref remap="4" linkend="sql-createpolicy"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>NO FORCE</literal>/<literal>FORCE ROW LEVEL SECURITY</literal></term>
+    <listitem>
+     <para>Эти формы управляют применением относящихся к таблице политик защиты строк, когда пользователь является её владельцем. Если это поведение включается, политики защиты на уровне строк будут действовать и на владельца таблицы. Если оно отключено (по умолчанию), защита на уровне строк не будет действовать на пользователя, являющегося владельцем таблицы. См. также <xref remap="4" linkend="sql-createpolicy"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CLUSTER ON</literal></term>
+    <listitem>
+     <para>Эта форма выбирает индекс по умолчанию для последующих операций <xref linkend="sql-cluster"/>. Собственно кластеризация таблицы при этом не выполняется.</para>
+     <para>Для изменения параметров кластеризации запрашивается блокировка <literal>SHARE UPDATE EXCLUSIVE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET WITHOUT CLUSTER</literal></term>
+    <listitem>
+     <para>Эта форма удаляет последнее заданное указание индекса для <xref linkend="sql-cluster"/>. Её действие отразится на будущих операциях кластеризации, для которых не будет задан индекс.</para>
+     <para>Для изменения параметров кластеризации запрашивается блокировка <literal>SHARE UPDATE EXCLUSIVE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET WITH OIDS</literal></term>
+    <listitem>
+     <para>Эта форма добавляет в таблицу системный столбец <literal>oid</literal> (см. <xref remap="4" linkend="ddl-system-columns"/>). Если в таблице уже есть такой столбец, она не делает ничего.</para>
+
+     <para>Заметьте, что это не равнозначно команде <literal>ADD COLUMN oid oid</literal> (эта команда добавит не системный, а обычный столбец с подходящим именем <literal>oid</literal>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET WITHOUT OIDS</literal></term>
+    <listitem>
+     <para>Эта форма удаляет из таблицы системный столбец <literal>oid</literal>. Это в точности равнозначно <literal>DROP COLUMN oid RESTRICT</literal>, за исключением того, что в случае отсутствия столбца <literal>oid</literal> ошибки не будет.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET TABLESPACE</literal></term>
+    <listitem>
+     <para>Эта форма меняет табличное пространство таблицы на заданное и перемещает файлы данных, связанные с таблицей, в новое пространство. Индексы таблицы, если они имеются, не перемещаются; однако их можно переместить отдельно дополнительными командами <literal>SET TABLESPACE</literal>. Форма <literal>ALL IN TABLESPACE</literal> позволяет перенести в другое табличное пространство все таблицы текущей базы данных, при этом она сначала блокирует все таблицы, а затем переносит каждую из них. Эта форма также поддерживает указание <literal>OWNED BY</literal>, с которым перемещаются только таблицы указанного владельца. Если указан параметр <literal>NOWAIT</literal>, команда завершится ошибкой, если не сможет получить все требуемые блокировки немедленно. Заметьте, что системные каталоги эта форма не перемещает; если требуется переместить их, следует использовать <command>ALTER DATABASE</command> или явные вызовы <command>ALTER TABLE</command>. Отношения <literal>information_schema</literal> не считаются частью системных каталогов и подлежат перемещению. См. также <xref linkend="sql-createtablespace"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET { LOGGED | UNLOGGED }</literal></term>
+    <listitem>
+     <para>Эта форма меняет характеристику журналирования таблицы, делает таблицу журналируемой/нежурналируемой, соответственно (см. <xref remap="4" linkend="sql-createtable-unlogged"/>). К временной таблице она неприменима.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET CONSTANT</literal></term>
+    <listitem>
+     <para>Эта форма переводит таблицу в режим &laquo;только чтение&raquo;. В таких таблицах нельзя изменить или добавить данные, и они не обрабатываются при <link linkend="autovacuum">автоочистке</link>. Вернуть в режим &laquo;чтение-запись&raquo; такие таблицы невозможно.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET ( <replaceable class="parameter">параметр_хранения</replaceable> = <replaceable class="parameter">значение</replaceable> [, ... ] )</literal></term>
+    <listitem>
+     <para>Эта форма меняет один или несколько параметров хранения таблицы. Подробнее допустимые параметры описаны в <xref remap="6" linkend="sql-createtable-storage-parameters" endterm="sql-createtable-storage-parameters-title"/>. Заметьте, что эта команда не меняет содержимое таблицы немедленно; в зависимости от параметра может потребоваться перезаписать таблицы, чтобы получить желаемый эффект. Это можно сделать с помощью команд <link linkend="sql-vacuum">VACUUM FULL</link>, <xref linkend="sql-cluster"/> или одной из форм <command>ALTER TABLE</command>, принудительно перезаписывающих таблицу.</para>
+
+     <para>Для изменения параметров фактора заполнения и автоочистки запрашивается блокировка <literal>SHARE UPDATE EXCLUSIVE</literal>.</para>
+
+     <note>
+      <para>Хотя <command>CREATE TABLE</command> позволяет указать <literal>OIDS</literal> в синтаксисе <literal>WITH (<replaceable class="parameter">параметр_хранения</replaceable>)</literal>, <command>ALTER TABLE</command> не воспринимает <literal>OIDS</literal> как параметр хранения. Поэтому для изменения характеристики OID следует применять формы <literal>SET WITH OIDS</literal> и <literal>SET WITHOUT OIDS</literal>.</para>
+     </note>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESET ( <replaceable class="parameter">параметр_хранения</replaceable> [, ... ] )</literal></term>
+    <listitem>
+     <para>Эта форма сбрасывает один или несколько параметров хранения к значениям по умолчанию. Как и с <literal>SET</literal>, для полного обновления таблицы может потребоваться перезаписать таблицу.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>INHERIT <replaceable class="parameter">таблица_родитель</replaceable></literal></term>
+    <listitem>
+     <para>Эта форма назначает целевую таблицу потомком заданной родительской таблицы. Впоследствии запросы к родительской таблице будут включать записи и целевой таблицы. Чтобы таблица могла стать потомком, она должна содержать те же столбцы, что и родительская (хотя она может включать и дополнительные столбцы). Столбцы должны иметь одинаковые типы данных и, если в родительской таблице какие-то из них имеют ограничение <literal>NOT NULL</literal>, они должны иметь ограничение <literal>NOT NULL</literal> и в таблице-потомке.</para>
+
+     <para>Также в таблице-потомке должны присутствовать все ограничения <literal>CHECK</literal> родительской таблицы, за исключением ненаследуемых (то есть созданных командой <literal>ALTER TABLE ... ADD CONSTRAINT ... NO INHERIT</literal>), которые игнорируются; при этом все соответствующие ограничения в таблице-потомке не должны быть ненаследуемыми. В настоящее время ограничения <literal>UNIQUE</literal>, <literal>PRIMARY KEY</literal> и <literal>FOREIGN KEY</literal> не учитываются, но в будущем это может измениться.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>NO INHERIT <replaceable class="parameter">таблица_родитель</replaceable></literal></term>
+    <listitem>
+     <para>Эта форма удаляет целевую таблицу из списка потомков указанной родительской таблицы. Результаты запросов к родительской таблице после этого не будут включать записи, взятые из целевой таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>OF <replaceable class="parameter">имя_типа</replaceable></literal></term>
+    <listitem>
+     <para>Эта форма связывает таблицу с составным типом, как если бы она была сформирована командой <command>CREATE TABLE OF</command>. При этом список имён и типов столбцов должен точно соответствовать тому, что образует составной тип; отличие возможно в системном столбце <literal>oid</literal>. Кроме того, таблица не должна быть потомком какой-либо другой таблицы. Эти ограничения — залог того, что команда <command>CREATE TABLE OF</command> позволит создать таблицу с таким же определением.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>NOT OF</literal></term>
+    <listitem>
+     <para>Эта форма разрывает связь типизированной таблицы с её типом.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>OWNER</literal></term>
+    <listitem>
+     <para>Эта форма меняет владельца таблицы, последовательности, представления, материализованного представления или сторонней таблицы на заданного пользователя.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry id="sql-createtable-replica-identity">
+    <term><literal>REPLICA IDENTITY</literal></term>
+    <listitem>
+     <para>Эта форма меняет информацию, записываемую в журнал упреждающей записи для идентификации изменяемых или удаляемых строк. Данный параметр действует только при использовании логической репликации. В режиме <literal>DEFAULT</literal> (по умолчанию для не системных таблиц) записывается старые значения столбцов первичного ключа, если он есть. В режиме <literal>USING INDEX</literal> записываются старые значения столбцов, составляющих заданный индекс, который должен быть уникальным, не частичным, не отложенным и включать только столбцы, помеченные <literal>NOT NULL</literal>. В режиме <literal>FULL</literal> записываются старые значения всех столбцов в строке, а в режиме <literal>NOTHING</literal> (по умолчанию для системных таблиц) никакая информация о старой строке не записывается. Во всех случаях старые значения записываются в журнал, только если как минимум в одном столбце из тех, что должны быть записаны, произошли изменения в новой строке.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RENAME</literal></term>
+    <listitem>
+     <para>Формы <literal>RENAME</literal> меняют имя таблицы (или индекса, последовательности, представления, материализованного представления или сторонней таблицы), имя отдельного столбца таблицы или имя ограничения таблицы. На хранимые данные это не влияет.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET SCHEMA</literal></term>
+    <listitem>
+     <para>Эта форма перемещает таблицу в другую схему. Вместе с таблицей перемещаются связанные с ней индексы и ограничения, а также последовательности, принадлежащие столбцам таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ADD PARTITION <replaceable class="parameter">имя_секции</replaceable></literal></term>
+    <listitem><para>Эта форма добавляет новую секцию в таблицу, разбитую по диапазонам.</para>
+    </listitem>
+    </varlistentry>
+
+   <varlistentry>
+    <term><literal>VALUES LESS THAN (<replaceable class="parameter">значение</replaceable>)</literal></term>
+    <listitem>
+     <para>Это предложение задаёт диапазон значений, которые должны войти в одну секцию. Указанное <replaceable>значение</replaceable> в созданную секцию не попадает.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>TABLESPACE <replaceable class="parameter">табл_пространство</replaceable></literal></term>
+    <listitem>
+     <para>Это предложение задаёт имя табличного пространства, к которому будет относиться созданная секция. Если оно не указывается, выбирается табличное пространство, заданное в <xref linkend="guc-default-tablespace"/>.</para>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+    <term><literal>DROP PARTITION <replaceable class="parameter">имя_секции</replaceable></literal></term>
+    <listitem><para>Эта форма удаляет указанную секцию.</para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>SPLIT PARTITION <replaceable class="parameter">имя_секции</replaceable></literal></term>
+    <listitem><para>Эта форма разделяет диапазонную секцию на две по значению, заданному в предложении <literal>AT</literal>.</para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>AT (<replaceable class="parameter">значение</replaceable>)</literal></term>
+    <listitem><para>Это предложение задаёт значение, по которому будет разделяться секция. Указанное значение будет нижней границей правой секции.</para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>INTO</literal></term>
+    <listitem><para>В этом предложении задаются одна или несколько целевых секций. Это предложение указывается при выполнении действий <literal>SPLIT</literal> и <literal>MERGE</literal>. Если вы опустите его при разделении секций, левая секция получит имя родительской секции, а имя правой будет сгенерировано автоматически.</para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>MERGE PARTITIONS <replaceable class="parameter">имя_секции</replaceable> [, ... ]</literal></term>
+    <listitem><para>Эта форма объединяет две или более соседних диапазонных секции в одну.</para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>RENAME PARTITION <replaceable class="parameter">имя_секции</replaceable></literal></term>
+    <listitem><para>Эта форма переименовывает секцию. Новое имя секции должно задаваться в предложении <literal>TO</literal>.</para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>TO <replaceable class="parameter">новое_имя_секции</replaceable></literal></term>
+    <listitem><para>Это предложение задаёт новое имя секции.</para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>MOVE PARTITION <replaceable class="parameter">имя_секции</replaceable></literal></term>
+    <listitem><para>Эта форма перемещает секцию в другое табличное пространство, задаваемое в предложении <literal>TABLESPACE</literal>.</para>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term><literal>SET INTERVAL (<replaceable class="parameter">значение</replaceable>)</literal></term>
+    <listitem><para>Эта форма задаёт интервал разбиения, который будет использоваться при создании новых секций. Она поддерживается только для уже секционированных таблиц.</para>
+    </listitem>
+    </varlistentry>
+
+  </variablelist></para>
+
+  <para><emphasis role="strong">Действия, связанные с секционированием</emphasis></para>
+  <para>Эти команды для создания и изменения секций поддерживаются, только если у вас установлен <productname>&productname;</productname> и включено расширение <filename>pg_pathman</filename>.</para>
+    <variablelist>
+
+   <varlistentry>
+    <term><literal>PARTITION BY</literal></term>
+    <listitem>
+     <para>Эта форма разделяет созданную таблицу на секции с заданными параметрами. В качестве варианта секционирования можно задать:</para>
+
+      <variablelist>
+       <varlistentry>
+        <term><literal>HASH</literal></term>
+        <listitem>
+         <para>Разделить таблицу на секции, используя хеш-функцию.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>RANGE</literal></term>
+        <listitem>
+         <para>Разделить таблицу на секции по диапазонам.</para>
+        </listitem>
+       </varlistentry>
+
+      </variablelist>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+    <term><literal>PARTITIONS <replaceable class="parameter">число_секций</replaceable></literal></term>
+    <listitem>
+     <para>Задаёт число секций, которые будут созданы при разбиении по хешу.</para>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+    <term><literal>START FROM (<replaceable class="parameter">начальное_значение</replaceable>)</literal></term>
+    <listitem>
+    <para>Задаёт нижнюю границу первой создаваемой секции. Указанное <replaceable>начальное_значение</replaceable> должно не превышать наименьшее значение в столбце, служащем ключом разбиения. В противном случае <filename>pg_pathman</filename> выдаст ошибку.</para>
+    </listitem>
+    </varlistentry>
+
+   <varlistentry>
+    <term><literal>INTERVAL <replaceable class="parameter">интервал</replaceable></literal></term>
+    <listitem>
+     <para>Задаёт интервал для секционирования по диапазонам. При добавлении данных вне существующих пределов значений новые секции будут создаваться с таким интервалом. Если указание <literal>INTERVAL</literal> отсутствует, <filename>pg_pathman</filename> не будет создавать новые секции автоматически. Автоматическое создание секций можно включить позднее, воспользовавшись формой <literal>SET INTERVAL</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+    <term><literal>CONCURRENTLY</literal></term>
+    <listitem><para>Создать пустые секции, а затем перенести в них данные порциям по 1000 строк во избежание блокировок.</para>
+    </listitem>
+    </varlistentry>
+
+    </variablelist>
+
+  <para>Все формы ALTER TABLE, действующие на одну таблицу, кроме <literal>RENAME</literal>, <literal>PARTITION BY</literal> и <literal>SET SCHEMA</literal>, можно объединить в список множественных изменений и применить вместе. Например, можно добавить несколько столбцов и/или изменить тип столбцов в одной команде. Это особенно полезно для больших таблиц, так как вся таблица обрабатывается за один проход.</para>
+
+  <para>Выполнить <command>ALTER TABLE</command> может только владелец соответствующей таблицы. Чтобы сменить схему или табличное пространство таблицы, необходимо также иметь право <literal>CREATE</literal> в новой схеме или табличном пространстве. Чтобы сделать таблицу потомком другой таблицы, нужно быть владельцем и родительской таблицы. Чтобы сменить владельца, необходимо быть непосредственным или опосредованным членом новой роли-владельца, а эта роль должна иметь право <literal>CREATE</literal> в схеме таблицы. (С такими ограничениями при смене владельца не происходит ничего такого, что нельзя было бы сделать, имея право удалить и вновь создать таблицу. Однако суперпользователь может сменить владельца таблицы в любом случае.) Чтобы добавить столбец, сменить тип столбца или применить предложение <literal>OF</literal>, необходимо также иметь право <literal>USAGE</literal> для соответствующего типа данных.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+    <variablelist>
+
+     <varlistentry>
+      <term><literal>IF EXISTS</literal></term>
+      <listitem>
+       <para>Не считать ошибкой, если таблица не существует. В этом случае будет выдано замечание.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя</replaceable></term>
+      <listitem>
+       <para>Имя (возможно, дополненное схемой) существующей таблицы, подлежащей изменению. Если перед именем таблицы указано <literal>ONLY</literal>, изменяется только заданная таблица. Без <literal>ONLY</literal> изменяется и заданная таблица, и все её потомки (если таковые есть). После имени таблицы можно также добавить необязательное указание <literal>*</literal>, чтобы явно обозначить, что изменению подлежат все дочерние таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_столбца</replaceable></term>
+      <listitem>
+       <para>Имя нового или существующего столбца.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">новое_имя_столбца</replaceable></term>
+      <listitem>
+       <para>Новое имя существующего столбца.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">новое_имя</replaceable></term>
+      <listitem>
+       <para>Новое имя таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">тип_данных</replaceable></term>
+      <listitem>
+       <para>Тип данных нового столбца или новый тип данных существующего столбца.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">ограничение_таблицы</replaceable></term>
+      <listitem>
+       <para>Новое ограничение таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_ограничения</replaceable></term>
+      <listitem>
+       <para>Имя нового или существующего ограничения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>CASCADE</literal></term>
+      <listitem>
+       <para>Автоматически удалять объекты, зависящие от удаляемого столбца или ограничения (например, представления, содержащие этот столбец), и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>RESTRICT</literal></term>
+      <listitem>
+       <para>Отказать в удалении столбца или ограничения, если существуют зависящие от них объекты. Это поведение по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_триггера</replaceable></term>
+      <listitem>
+       <para>Имя включаемого или отключаемого триггера.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>ALL</literal></term>
+      <listitem>
+       <para>Отключить или включить все триггеры, принадлежащие таблице. (Для этого требуются права суперпользователя, если в числе этих триггеров оказываются сгенерированные внутрисистемные триггеры исключений, например те, что реализуют ограничения внешнего ключа или отложенные ограничения уникальности и исключений.)</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>USER</literal></term>
+      <listitem>
+       <para>Отключить или включить все триггеры, принадлежащие таблице, за исключением сгенерированных внутрисистемных триггеров исключений, например, тех, что реализуют ограничения внешнего ключа или отложенные ограничения уникальности и исключений.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_индекса</replaceable></term>
+      <listitem>
+       <para>Имя существующего индекса.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">параметр_хранения</replaceable></term>
+      <listitem>
+       <para>Имя параметра хранения таблицы</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">значение</replaceable></term>
+      <listitem>
+       <para>Новое значение параметра хранения таблицы. Это может быть число или строка, в зависимости от параметра.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">таблица_родитель</replaceable></term>
+      <listitem>
+       <para>Родительская таблица, с которой будет установлена или разорвана связь данной таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">новый_владелец</replaceable></term>
+      <listitem>
+       <para>Имя пользователя, назначаемого новым владельцем таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">новое_табл_пространство</replaceable></term>
+      <listitem>
+       <para>Имя табличного пространства, в которое будет перемещена таблица.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">новая_схема</replaceable></term>
+      <listitem>
+       <para>Имя схемы, в которую будет перемещена таблица.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para>Ключевое слово <literal>COLUMN</literal> не несёт смысловой нагрузки и может быть опущено.</para>
+
+   <para>Когда столбец добавляется с помощью <literal>ADD COLUMN</literal>, во всех существующих в таблице строках этот столбец инициализируется значением по умолчанию (или NULL, если предложение <literal>DEFAULT</literal> для столбца отсутствует). Если предложение <literal>DEFAULT</literal> отсутствует, это сводится только к изменению метаданных, непосредственного изменения данных таблицы не происходит; добавленные значения NULL выводятся при чтении.</para>
+
+   <para>Добавление столбца с предложением <literal>DEFAULT</literal> или изменение типа существующего столбца влечёт за собой перезапись всей таблицы и её индексов. Но возможно исключение при смене типа существующего столбца: если предложение <literal>USING</literal> не меняет содержимое столбца и старый тип двоично приводится к новому или является неограниченным доменом поверх нового типа, перезапись таблицы не требуется; хотя все индексы с затронутыми столбцами всё же требуется перестроить. При добавлении или удалении системного столбца <literal>oid</literal> также необходима перезапись всей таблицы. Для перестроения больших таблиц и/или их индексов может понадобиться довольно много времени и временно потребуется вдвое больше места на диске.</para>
+
+   <para>Добавление ограничений <literal>CHECK</literal> или <literal>NOT NULL</literal> влечёт за собой необходимость просканировать таблицу, чтобы проверить, что все существующие строки удовлетворяют ограничению, но перезаписывать таблицу при этом не требуется.</para>
+
+   <para>Возможность объединения множества изменений в одну команду <command>ALTER TABLE</command> полезна в основном тем, что позволяет совместить сканирования и перезаписи таблицы, требуемые этим операциям, и выполнить их за один проход.</para>
+
+   <para>Форма <literal>DROP COLUMN</literal> не удаляет столбец физически, а просто делает его невидимым для операций SQL. При последующих операциях добавления или изменения в этот столбец будет записываться значение NULL. Таким образом, удаление столбца выполняется быстро, но при этом размер таблицы на диске не уменьшается, так как пространство, занимаемое удалённым столбцом, не высвобождается. Это пространство будет освобождено со временем, по мере изменения существующих строк. (При удалении системного столбца <literal>oid</literal> это поведение не наблюдается, так как немедленно выполняется перезапись таблицы.)</para>
+
+   <para>Чтобы принудительно высвободить пространство, занимаемое столбцом, который был удалён, можно выполнить одну из форм <command>ALTER TABLE</command>, производящих перезапись всей таблицы. В результате все строки будут воссозданы так, что в удалённом столбце будет содержаться NULL.</para>
+
+   <para>Перезаписывающие формы <command>ALTER TABLE</command> небезопасны с точки зрения MVCC. После перезаписи таблица будет выглядеть пустой для параллельных транзакций, если они работают со снимком, полученным до момента перезаписи. За подробностями обратитесь к <xref remap="3" linkend="mvcc-caveats"/>.</para>
+
+   <para>В указании <literal>USING</literal> предложения <literal>SET DATA TYPE</literal> на самом деле можно записать выражение со старыми значениями строки; то есть, оно может ссылаться как на преобразуемые столбцы, так и на другие. Это позволяет записывать в <literal>SET DATA TYPE</literal> очень общие преобразования данных. Ввиду такой гибкости, выражение <literal>USING</literal> не применяется к значению по умолчанию данного столбца (если таковое есть); результат может быть не константным выражением, что требуется для значения по умолчанию. Это означает, что в случае отсутствия явного приведения или присваивания старого типа новому, <literal>SET DATA TYPE</literal> может не справиться с преобразованием значения по умолчанию, несмотря на то, что применяется предложение <literal>USING</literal>. В этих случаях нужно удалить значение по умолчанию с помощью <literal>DROP DEFAULT</literal>, выполнить <literal>ALTER TYPE</literal>, а затем с помощью <literal>SET DEFAULT</literal> задать новое подходящее значение по умолчанию. Подобные соображения применимы и в отношении индексов и ограничений с этим столбцом.</para>
+
+   <para>Если у таблицы есть дочерние таблицы, добавлять, переименовывать или менять тип столбца, либо переименовывать наследуемое ограничение в родительской таблице, не делая того же самого во всех дочерних таблицах, нельзя. То есть, команда <command>ALTER TABLE ONLY</command> выполнена не будет. Это гарантирует, что дочерние таблицы всегда будут содержать те же столбцы, что и родительская.</para>
+
+   <para>Рекурсивная операция <literal>DROP COLUMN</literal> удалит столбец из дочерней таблицы, только если этот столбец не наследуется от каких-то других родителей и не была определён в дочерней таблице независимо. Нерекурсивная операция <literal>DROP COLUMN</literal> (т. е., <command>ALTER TABLE ONLY ... DROP COLUMN</command>) никогда не удаляет унаследованные столбцы, но вместо этого помечает их как независимо определённые, а не наследуемые.</para>
+
+   <para>Действия <literal>TRIGGER</literal>, <literal>CLUSTER</literal>, <literal>OWNER</literal> и <literal>TABLESPACE</literal> никогда не распространяются рекурсивно на дочерние таблицы; то есть, они всегда выполняются так, как будто указано <literal>ONLY</literal>. Операция добавления ограничения выполняется рекурсивно только для ограничений <literal>CHECK</literal>, не помеченных как <literal>NO INHERIT</literal>.</para>
+
+   <para>Какие-либо изменения таблиц системного каталога не допускаются.</para>
+
+   <para>За более подробным описанием допустимых параметров обратитесь к <xref remap="3" linkend="sql-createtable"/>. Дополнительно о наследовании можно узнать в <xref remap="6" linkend="ddl"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Добавление в таблицу столбца типа <type>varchar</type>: <programlisting>ALTER TABLE distributors ADD COLUMN address varchar(30);</programlisting></para>
+
+  <para>Удаление столбца из таблицы: <programlisting>ALTER TABLE distributors DROP COLUMN address RESTRICT;</programlisting></para>
+
+  <para>Изменение типов двух существующих столбцов в одной операции: <programlisting>ALTER TABLE distributors
+    ALTER COLUMN address TYPE varchar(80),
+    ALTER COLUMN name TYPE varchar(100);</programlisting></para>
+
+  <para>Смена типа целочисленного столбца, содержащего время в стиле Unix, на тип <type>timestamp with time zone</type> с применением предложения <literal>USING</literal>: <programlisting>ALTER TABLE foo
+    ALTER COLUMN foo_timestamp SET DATA TYPE timestamp with time zone
+    USING
+        timestamp with time zone 'epoch' + foo_timestamp * interval '1 second';</programlisting></para>
+
+  <para>То же самое, но в случае, когда у столбца есть значение по умолчанию, не приводимое автоматически к новому типу данных: <programlisting>ALTER TABLE foo
+    ALTER COLUMN foo_timestamp DROP DEFAULT,
+    ALTER COLUMN foo_timestamp TYPE timestamp with time zone
+    USING
+        timestamp with time zone 'epoch' + foo_timestamp * interval '1 second',
+    ALTER COLUMN foo_timestamp SET DEFAULT now();</programlisting></para>
+
+  <para>Переименование существующего столбца: <programlisting>ALTER TABLE distributors RENAME COLUMN address TO city;</programlisting></para>
+
+  <para>Переименование существующей таблицы: <programlisting>ALTER TABLE distributors RENAME TO suppliers;</programlisting></para>
+
+  <para>Переименование существующего ограничения: <programlisting>ALTER TABLE distributors RENAME CONSTRAINT zipchk TO zip_check;</programlisting></para>
+
+  <para>Добавление в столбец ограничения NOT NULL: <programlisting>ALTER TABLE distributors ALTER COLUMN street SET NOT NULL;</programlisting> Удаление ограничения NOT NULL из столбца: <programlisting>ALTER TABLE distributors ALTER COLUMN street DROP NOT NULL;</programlisting></para>
+
+  <para>Добавление ограничения-проверки в таблицу и все её потомки: <programlisting>ALTER TABLE distributors ADD CONSTRAINT zipchk CHECK (char_length(zipcode) = 5);</programlisting></para>
+
+  <para>Добавление ограничения-проверки только в таблицу, но не в её потомки: <programlisting>ALTER TABLE distributors ADD CONSTRAINT zipchk CHECK (char_length(zipcode) = 5) NO INHERIT;</programlisting> (Данное ограничение-проверка не будет наследоваться и будущими потомками тоже.)</para>
+
+  <para>Удаление ограничения-проверки из таблицы и из всех её потомков: <programlisting>ALTER TABLE distributors DROP CONSTRAINT zipchk;</programlisting></para>
+
+  <para>Удаление ограничения-проверки только из самой таблицы: <programlisting>ALTER TABLE ONLY distributors DROP CONSTRAINT zipchk;</programlisting> (Ограничение-проверка остаётся во всех дочерних таблицах.)</para>
+
+  <para>Добавление в таблицу ограничения внешнего ключа: <programlisting>ALTER TABLE distributors ADD CONSTRAINT distfk FOREIGN KEY (address) REFERENCES addresses (address);</programlisting></para>
+
+  <para>Добавление в таблицу ограничения внешнего ключа с наименьшим влиянием на работу других: <programlisting>ALTER TABLE distributors ADD CONSTRAINT distfk FOREIGN KEY (address) REFERENCES addresses (address) NOT VALID;
+ALTER TABLE distributors VALIDATE CONSTRAINT distfk;</programlisting></para>
+
+  <para>Добавление в таблицу ограничения уникальности (по нескольким столбцам): <programlisting>ALTER TABLE distributors ADD CONSTRAINT dist_id_zipcode_key UNIQUE (dist_id, zipcode);</programlisting></para>
+
+  <para>Добавление в таблицу первичного ключа с автоматическим именем (учтите, что в таблице может быть только один первичный ключ): <programlisting>ALTER TABLE distributors ADD PRIMARY KEY (dist_id);</programlisting></para>
+
+  <para>Перемещение таблицы в другое табличное пространство: <programlisting>ALTER TABLE distributors SET TABLESPACE fasttablespace;</programlisting></para>
+
+  <para>Перемещение таблицы в другую схему: <programlisting>ALTER TABLE myschema.distributors SET SCHEMA yourschema;</programlisting></para>
+
+  <para>Пересоздание ограничения первичного ключа без блокировки изменений в процессе перестроения индекса: <programlisting>CREATE UNIQUE INDEX CONCURRENTLY dist_id_temp_idx ON distributors (dist_id);
+ALTER TABLE distributors DROP CONSTRAINT distributors_pkey,
+    ADD CONSTRAINT distributors_pkey PRIMARY KEY USING INDEX dist_id_temp_idx;</programlisting></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Формы <literal>ADD</literal> (без <literal>USING INDEX</literal>), <literal>DROP</literal>, <literal>SET DEFAULT</literal> и <literal>SET DATA TYPE</literal> (без <literal>USING</literal>) соответствуют стандарту SQL. Другие формы являются расширениями стандарта SQL, реализованными в <productname>&productname;</productname>. Кроме того, расширением является возможность указать в одной команде <command>ALTER TABLE</command> несколько операций изменения.</para>
+
+  <para><command>ALTER TABLE DROP COLUMN</command> позволяет удалить единственный столбец таблицы и оставить таблицу без столбцов. Это является расширением стандарта SQL, который не допускает существование таблиц с нулём столбцов.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createtable"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

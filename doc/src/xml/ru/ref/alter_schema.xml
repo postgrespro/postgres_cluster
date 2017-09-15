@@ -1,0 +1,75 @@
+<!--
+doc/src/xml/ref/alter_schema.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterschema">
+ <indexterm zone="sql-alterschema"><primary>ALTER SCHEMA</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER SCHEMA</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER SCHEMA</refname>
+  <refpurpose>изменить определение схемы</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER SCHEMA <replaceable>имя</replaceable> RENAME TO <replaceable>новое_имя</replaceable>
+ALTER SCHEMA <replaceable>имя</replaceable> OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER SCHEMA</command> изменяет определение схемы.</para>
+
+  <para>Выполнить <command>ALTER SCHEMA</command> может только владелец соответствующей схемы. Чтобы переименовать схему, необходимо также иметь право <literal>CREATE</literal> в базе данных схемы. Чтобы сменить владельца необходимо быть непосредственным или опосредованным членом новой роли-владельца и иметь право <literal>CREATE</literal> в базе данных. (Суперпользователи наделяются этими правами автоматически.)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable>имя</replaceable></term>
+    <listitem>
+     <para>Имя существующей схемы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable>новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя схемы. Новое имя не может начинаться с <literal>pg_</literal>, так как такие имена зарезервированы для системных схем.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Новый владелец схемы.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER SCHEMA</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createschema"/></member>
+   <member><xref linkend="sql-dropschema"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

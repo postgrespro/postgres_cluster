@@ -1,0 +1,221 @@
+<!--
+doc/src/xml/ref/pg_xlogdump.xml
+&productname; documentation
+-->
+
+<refentry id="pgxlogdump">
+ <indexterm zone="pgxlogdump"><primary>pg_xlogdump</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>pg_xlogdump</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_xlogdump</refname>
+  <refpurpose>вывести журнал упреждающей записи кластера БД <productname>&productname;</productname> в понятном человеку виде</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_xlogdump</command>
+   <arg rep="repeat" choice="opt"><option>параметр</option></arg>
+   <arg rep="repeat" choice="opt"><option>timestamp-option</option></arg>
+   <arg choice="opt"><option>начальный_сегмент</option>
+    <arg choice="opt"><option>конечный_сегмент</option></arg>
+   </arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="r1-app-pgxlogdump-1">
+  <title>Описание</title>
+  <para>Программа <command>pg_xlogdump</command> показывает содержимое журнала упреждающей записи (WAL) с метками времени. Прежде всего она полезна для отладки и исследовательских целей.</para>
+
+  <para>Эту утилиту может запускать только пользователь, установивший сервер, так как ей требуется доступ на чтение к каталогу данных.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <para>Следующие аргументы командной строки задают расположение данных и формат вывода: <variablelist>
+
+     <varlistentry>
+      <term><replaceable class="parameter">начальный_сегмент</replaceable></term>
+      <listitem>
+       <para>Начать чтение с указанного файла сегмента журнала. Это неявно определяет каталог, в котором будут находиться файлы, и целевую линию времени.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">конечный_сегмент</replaceable></term>
+      <listitem>
+       <para>Остановиться после чтения указанного файла сегмента журнала.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-b</option></term>
+      <term><option>--bkp-details</option></term>
+      <listitem>
+       <para>Выводить подробные сведения о блоках-копиях страниц.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-e <replaceable>конец</replaceable></option></term>
+      <term><option>--end=<replaceable>конец</replaceable></option></term>
+      <listitem>
+       <para>Прекратить чтение в заданной позиции в журнале, а не читать поток до конца.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-f</option></term>
+      <term><option>--follow</option></term>
+      <listitem>
+       <para>Достигнув конца корректного WAL, проверять раз в секунду поступление новых записей WAL.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-n <replaceable>предел</replaceable></option></term>
+      <term><option>--limit=<replaceable>предел</replaceable></option></term>
+      <listitem>
+       <para>Вывести заданное число записей и остановиться.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable>путь</replaceable></option></term>
+      <term><option>--path=<replaceable>путь</replaceable></option></term>
+      <listitem>
+       <para>Задаёт каталог, содержащий файлы сегментов журнала, либо каталог с подкаталогом <literal>pg_xlog</literal>, содержащим такие файлы. По умолчанию в поисках этих файлов просматривается текущий каталог, подкаталог <literal>pg_xlog</literal> текущего каталога и подкаталог <literal>pg_xlog</literal> каталога <envar>PGDATA</envar>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-r <replaceable>менеджер_ресурсов</replaceable></option></term>
+      <term><option>--rmgr=<replaceable>менеджер_ресурсов</replaceable></option></term>
+      <listitem>
+       <para>Выводить только записи, созданные указанным менеджером ресурсов (<literal>rmgr</literal>). Если в качестве этого аргумента передаётся <literal>list</literal>, <application>pg_xlogdump</application> выводит список возможных имён менеджеров ресурсов и завершается.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s <replaceable>начало</replaceable></option></term>
+      <term><option>--start=<replaceable>начало</replaceable></option></term>
+      <listitem>
+       <para>Позиция в журнале, с которой нужно начать чтение. По умолчанию чтение начинается с первой корректной записи журнала в самом первом из найденных файлов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-t <replaceable>линия_времени</replaceable></option></term>
+      <term><option>--timeline=<replaceable>линия_времени</replaceable></option></term>
+      <listitem>
+       <para>Линия времени, из которой будут читаться записи журнала. По умолчанию используется значение, заданное параметром <replaceable>начальный_сегмент</replaceable>, если он присутствует, а иначе — 1.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>--version</option></term>
+       <listitem>
+       <para>Вывести версию <application>pg_xlogdump</application> и завершиться.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-x <replaceable>xid</replaceable></option></term>
+      <term><option>--xid=<replaceable>xid</replaceable></option></term>
+      <listitem>
+       <para>Вывести только записи, относящиеся к указанной транзакции.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-z</option></term>
+      <term><option>--stats[=record]</option></term>
+      <listitem>
+       <para>Вывести общую статистику (число и размер записей и образов полных страниц) вместо отдельных записей. Возможен вариант получения статистики по записям, а не по менеджерам ресурсов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-?</option></term>
+      <term><option>--help</option></term>
+       <listitem>
+        <para>Вывести справку об аргументах командной строки <application>pg_xlogdump</application> и завершиться.</para>
+       </listitem>
+      </varlistentry>
+    </variablelist></para>
+
+   <para>Следующие параметры командной строки включают вывод отметок времени для различных типов записей WAL. Вы можете использовать их вместе с параметрами <replaceable class="parameter">начальный_сегмент</replaceable>, <replaceable class="parameter">конечный_сегмент</replaceable> и ключами <option>-s</option> и <option>-e</option>. <variablelist>
+
+    <varlistentry>
+      <term><option>-E</option></term>
+      <listitem>
+       <para>Вывести отметку времени последней записи WAL указанного типа, найденную в файле сегмента журнала. Для использования этого ключа вы также должны указать ключ <option>-S</option>.</para>
+       <para>По умолчанию <application>pg_xlogdump</application> выводит отметки времени только для записей COMMIT. Включить в рассмотрение другие типы записей вы можете, используя ключ <option>-F</option>.</para>
+      </listitem>
+     </varlistentry>
+
+    <varlistentry>
+      <term><option>-F</option> [<replaceable>аргумент1</replaceable>,<replaceable>аргумент2</replaceable>,...]</term>
+      <listitem>
+       <para>Задаёт типы записей WAL, для которых будут выводиться отметки времени. Для использования этого ключа необходимо также указать ключ <option>-S</option>.</para>
+       <para>Параметр <option>-F</option> может принимать следующие аргументы, разделённые запятыми:</para>
+       <itemizedlist>
+       <listitem>
+       <para><option>XLOG_RESTORE_POINT</option> &mdash; именованные точки восстановления, создаваемые функцией <link linkend="functions-admin-backup">pg_create_restore_point()</link>.</para>
+       </listitem>
+       <listitem>
+       <para><option>XLOG_XACT_COMMIT</option> &mdash; записи фиксации транзакций. Эти записи создаются командой <xref linkend="sql-commit"/>.</para>
+       </listitem>
+       <listitem>
+       <para><option>XLOG_XACT_COMMIT_PREPARED</option> &mdash; записи фиксации транзакций, ранее подготовленных для двухфазной фиксации. Эти записи создаются командой <xref linkend="sql-commit-prepared"/>.</para>
+       </listitem>
+       <listitem>
+       <para><option>XLOG_XACT_ABORT</option> &mdash; записи прерывания транзакций. Эти записи создаются командой <xref linkend="sql-rollback"/>.</para>
+       </listitem>
+       <listitem>
+       <para><option>XLOG_XACT_ABORT_PREPARED</option> &mdash; записи прерывания транзакций, ранее подготовленных для двухфазной фиксации. Эти записи создаются командой <xref linkend="sql-rollback-prepared"/>.</para>
+       </listitem>
+       </itemizedlist>
+        <para>По умолчанию <application>pg_xlogdump</application> выводит отметки времени только для записей COMMIT.</para>
+      </listitem>
+     </varlistentry>
+
+    <varlistentry>
+      <term><option>-S</option></term>
+      <listitem>
+       <para>Выводит отметку времени первой записи указанного типа, найденной в файле сегмента журнала. Этот ключ необходимо указать для применения ключей <option>-E</option> или <option>-F</option>.</para>
+       <para>По умолчанию <application>pg_xlogdump</application> выводит отметки времени только для записей COMMIT. Включить в рассмотрение другие типы записей вы можете, используя ключ <option>-F</option>.</para>
+      </listitem>
+     </varlistentry>
+
+
+    </variablelist></para>
+
+
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+  <para><application>pg_xlogdump</application> может выдавать некорректные результаты, если сервер баз данных работает.</para>
+
+  <para>Выводятся записи только указанной линии времени (или линии времени по умолчанию, если она не задана явно). Записи в других линиях времени игнорируются.</para>
+
+  <para><application>pg_xlogdump</application> не будет читать файлы WAL с расширением <literal>.partial</literal>. Если требуется прочитать такие файлы, уберите расширение <literal>.partial</literal> из их имён.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="wal-internals"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

@@ -1,0 +1,30 @@
+<!-- doc/src/xml/btree-gin.xml -->
+
+<sect1 id="btree-gin" xreflabel="btree_gin">
+ <title>btree_gin</title>
+
+ <indexterm zone="btree-gin"><primary>btree_gin</primary></indexterm>
+
+ <para>Модуль <filename>btree_gin</filename> предоставляет показательные классы операторов GIN, реализующие поведение, подобное тому, что реализуют обычные классы B-дерева, для типов данных <type>int2</type>, <type>int4</type>, <type>int8</type>, <type>float4</type>, <type>float8</type>, <type>timestamp with time zone</type>, <type>timestamp without time zone</type>, <type>time with time zone</type>, <type>time without time zone</type>, <type>date</type>, <type>interval</type>, <type>oid</type>, <type>money</type>, <type>"char"</type>, <type>varchar</type>, <type>text</type>, <type>bytea</type>, <type>bit</type>, <type>varbit</type>, <type>macaddr</type>, <type>inet</type> и <type>cidr</type>.</para>
+
+ <para>Вообще говоря, эти классы операторов не будут работать быстрее аналогичных стандартных методов индекса-B-дерева, и им не хватает одной важной возможности стандартной реализации B-дерева: возможности ограничивать уникальность. Тем не менее, их можно применять для тестирования GIN или взять за основу для разработки других классов операторов GIN. Также, для запросов, где проверяется и столбец с индексом GIN, и столбец с индексом-B-деревом, может быть более эффективным создать составной индекс GIN, который использует один из этих классов операторов, чем использовать два отдельных индекса, выборку из которых придётся объединять, вычисляя AND битовых карт.</para>
+
+ <sect2>
+  <title>Пример использования</title>
+
+<programlisting>CREATE TABLE test (a int4);
+-- создать индекс
+CREATE INDEX testidx ON test USING GIN (a);
+-- запрос
+SELECT * FROM test WHERE a &lt; 10;</programlisting>
+
+ </sect2>
+
+ <sect2>
+  <title>Авторы</title>
+
+  <para>Фёдор Сигаев (<email>teodor@stack.net</email>) и Олег Бартунов (<email>oleg@sai.msu.su</email>). Подробности можно найти на странице <ulink url="http://www.sai.msu.su/~megera/oddmuse/index.cgi/Gin"/>.</para>
+
+ </sect2>
+
+</sect1>

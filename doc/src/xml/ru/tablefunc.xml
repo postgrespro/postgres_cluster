@@ -1,0 +1,488 @@
+<!-- doc/src/xml/tablefunc.xml -->
+
+<sect1 id="tablefunc" xreflabel="tablefunc">
+ <title>tablefunc</title>
+
+ <indexterm zone="tablefunc"><primary>tablefunc</primary></indexterm>
+
+ <para>Модуль <filename>tablefunc</filename> содержит ряд функций, возвращающих таблицы (то есть, множества строк). Эти функции полезны и сами по себе, и как примеры написания на C функций, возвращающих наборы строк.</para>
+
+ <sect2>
+  <title>Предоставляемые функции</title>
+
+  <para>Функции, предоставляемые модулем <filename>tablefunc</filename>, перечислены в <xref remap="6" linkend="tablefunc-functions"/>.</para>
+
+  <table id="tablefunc-functions">
+   <title>Функции <filename>tablefunc</filename></title>
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Функция</entry>
+      <entry>Возвращает</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><function>normal_rand(int numvals, float8 mean, float8 stddev)</function></entry>
+      <entry><type>setof float8</type></entry>
+      <entry>Выдаёт набор случайных значений, имеющих нормальное распределение</entry>
+     </row>
+     <row>
+      <entry><function>crosstab(text sql)</function></entry>
+      <entry><type>setof record</type></entry>
+      <entry>Выдаёт <quote>повёрнутую таблицу</quote>, содержащую имена строк плюс <replaceable>N</replaceable> столбцов значений, где <replaceable>N</replaceable> определяется видом строк, заданным в вызывающем запросе</entry>
+     </row>
+     <row>
+      <entry><function>crosstab<replaceable>N</replaceable>(text sql)</function></entry>
+      <entry><type>setof table_crosstab_<replaceable>N</replaceable></type></entry>
+      <entry>Выдаёт <quote>повёрнутую таблицу</quote>, содержащую имена строк плюс <replaceable>N</replaceable> столбцов значений. Функции <function>crosstab2</function>, <function>crosstab3</function> и <function>crosstab4</function> предопределены, но вы можете создать дополнительные функции <function>crosstab<replaceable>N</replaceable></function>, как описано ниже</entry>
+     </row>
+     <row>
+      <entry><function>crosstab(text source_sql, text category_sql)</function></entry>
+      <entry><type>setof record</type></entry>
+      <entry>Выдаёт <quote>повёрнутую таблицу</quote> со столбцами значений, заданными вторым запросом</entry>
+     </row>
+     <row>
+      <entry><function>crosstab(text sql, int N)</function></entry>
+      <entry><type>setof record</type></entry>
+      <entry>
+       <para>Устаревшая версия <function>crosstab(text)</function>. Параметр <replaceable>N</replaceable> теперь игнорируется, так как число столбцов значений всегда определяется вызывающим запросом</para>
+      </entry>
+     </row>
+     <row>
+      <entry>
+       <function>connectby(text relname, text keyid_fld, text parent_keyid_fld [, text orderby_fld ], text start_with, int max_depth [, text branch_delim ])</function>
+       <indexterm><primary>connectby</primary></indexterm>
+      </entry>
+      <entry><type>setof record</type></entry>
+      <entry>Выдаёт представление иерархической древовидной структуры</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <sect3>
+   <title><function>normal_rand</function></title>
+
+   <indexterm><primary>normal_rand</primary></indexterm>
+
+<synopsis>normal_rand(int numvals, float8 mean, float8 stddev) returns setof float8</synopsis>
+
+    <para>Функция <function>normal_rand</function> выдаёт набор случайных значений, имеющих нормальное распределение (распределение Гаусса).</para>
+
+    <para>Параметр <parameter>numvals</parameter> задаёт количество значений, которое выдаст эта функция. Параметр <parameter>mean</parameter> задаёт медиану нормального распределения, а <parameter>stddev</parameter> — стандартное отклонение.</para>
+
+    <para>Например, этот вызов запрашивает 1000 значений с медианой 5 и стандартным отклонением 3:</para>
+
+<screen>test=# SELECT * FROM normal_rand(1000, 5, 3);
+     normal_rand
+----------------------
+     1.56556322244898
+     9.10040991424657
+     5.36957140345079
+   -0.369151492880995
+    0.283600703686639
+       .
+       .
+       .
+     4.82992125404908
+     9.71308014517282
+     2.49639286969028
+(1000 rows)</screen>
+  </sect3>
+
+  <sect3>
+   <title><function>crosstab(text)</function></title>
+
+   <indexterm><primary>crosstab</primary></indexterm>
+
+<synopsis>crosstab(text sql)
+crosstab(text sql, int N)</synopsis>
+
+   <para>Функция <function>crosstab</function> применяется для формирования <quote>повёрнутых</quote> отображений, в которых данные идут вдоль строк, а не сверху вниз. Например, мы можем иметь такие данные: <programlisting>row1    val11
+row1    val12
+row1    val13
+...
+row2    val21
+row2    val22
+row2    val23
+...</programlisting> и хотим видеть их так: <programlisting>row1    val11   val12   val13   ...
+row2    val21   val22   val23   ...
+...</programlisting> Функция <function>crosstab</function> принимает в текстовом параметре SQL-запрос, выдающий исходные данные первым способом, и выдаёт таблицу, отформатированную вторым способом.</para>
+
+   <para>В параметре <parameter>sql</parameter> передаётся SQL-запрос, выдающий исходный набор данных. Этот запрос должен возвращать один столбец <structfield>row_name</structfield>, один столбец <structfield>category</structfield> и один столбец <structfield>value</structfield>. Параметр <parameter>N</parameter> является устаревшим и игнорируется, если передаётся при вызове (раньше он должен был соответствовать количеству выходных столбцов значений, но теперь это количество определяется вызывающим запросом).</para>
+
+   <para>Например, заданный запрос может выдавать такой результат: <programlisting> row_name    cat    value
+----------+-------+-------
+  row1      cat1    val1
+  row1      cat2    val2
+  row1      cat3    val3
+  row1      cat4    val4
+  row2      cat1    val5
+  row2      cat2    val6
+  row2      cat3    val7
+  row2      cat4    val8</programlisting></para>
+
+   <para>Функция <function>crosstab</function> объявлена как возвращающая <type>setof record</type>, так что фактические имена и типы столбцов должны определяться в предложении <literal>FROM</literal> вызывающего оператора <command>SELECT</command>, например так: <programlisting>SELECT * FROM crosstab('...') AS ct(row_name text, category_1 text, category_2 text);</programlisting> Этот запрос выдаст примерно такой результат: <programlisting>           &lt;== столбцы значений ==&gt;
+ row_name   category_1   category_2
+----------+------------+------------
+  row1        val1         val2
+  row2        val5         val6</programlisting></para>
+
+   <para>Предложение <literal>FROM</literal> должно определять результат со столбцом <structfield>row_name</structfield> (того же типа данных, что у первого результирующего столбца SQL-запроса), за которым следуют N столбцов значений (все того же типа данных, что и третий результирующий столбец SQL-запроса). Количество выходных столбцов значений может быть произвольным и имена выходных столбцов определяете вы сами.</para>
+
+   <para>Функция <function>crosstab</function> выдаёт одну выходную строку для каждой последовательной группы с одним значением <structfield>row_name</structfield>. Она заполняет столбцы значений слева направо полями <structfield>value</structfield> из этих строк. Если в группе оказывается меньше строк, чем выходных столбцов значений, дополнительные столбцы принимают значения NULL; если же строк оказывается больше, лишние строки игнорируются.</para>
+
+   <para>На практике в SQL-запросе всегда должно указываться <literal>ORDER BY 1,2</literal>, чтобы входные строки были отсортированы должным образом, то есть, чтобы данные с одинаковым значением <structfield>row_name</structfield> собирались вместе и корректно упорядочивались в строке. Заметьте, что сама <function>crosstab</function> не учитывает второй столбец результата запроса; он присутствует только для того, чтобы определять порядок, в котором значения третьего столбца будут следовать в строке.</para>
+
+   <para>Полный пример: <programlisting>CREATE TABLE ct(id SERIAL, rowid TEXT, attribute TEXT, value TEXT);
+INSERT INTO ct(rowid, attribute, value) VALUES('test1','att1','val1');
+INSERT INTO ct(rowid, attribute, value) VALUES('test1','att2','val2');
+INSERT INTO ct(rowid, attribute, value) VALUES('test1','att3','val3');
+INSERT INTO ct(rowid, attribute, value) VALUES('test1','att4','val4');
+INSERT INTO ct(rowid, attribute, value) VALUES('test2','att1','val5');
+INSERT INTO ct(rowid, attribute, value) VALUES('test2','att2','val6');
+INSERT INTO ct(rowid, attribute, value) VALUES('test2','att3','val7');
+INSERT INTO ct(rowid, attribute, value) VALUES('test2','att4','val8');
+
+SELECT *
+FROM crosstab(
+  'select rowid, attribute, value
+   from ct
+   where attribute = ''att2'' or attribute = ''att3''
+   order by 1,2')
+AS ct(row_name text, category_1 text, category_2 text, category_3 text);
+
+ row_name | category_1 | category_2 | category_3
+----------+------------+------------+------------
+ test1    | val2       | val3       |
+ test2    | val6       | val7       |
+(2 rows)</programlisting></para>
+
+   <para>Вы можете в любом случае обойтись без написания предложения <literal>FROM</literal>, определяющего выходные столбцы, создав собственную функцию crosstab, в определении которой будет зашит желательный тип выходной строки. Это описывается в следующем разделе. Также имеется возможность включить требуемое предложение <literal>FROM</literal> в определение представления.</para>
+
+   <note>
+    <para>Также изучите команду <command><link linkend="app-psql-meta-commands-crosstabview">\crosstabview</link></command> в <application>psql</application>, реализующую функциональность, подобную <function>crosstab()</function>.</para>
+   </note>
+
+  </sect3>
+
+  <sect3>
+   <title><function>crosstab<replaceable>N</replaceable>(text)</function></title>
+
+   <indexterm><primary>crosstab</primary></indexterm>
+
+<synopsis>crosstab<replaceable>N</replaceable>(text sql)</synopsis>
+
+    <para>Функции <function>crosstab<replaceable>N</replaceable></function> являются примерами того, как можно создать собственные обёртки универсальной функции <function>crosstab</function>, чтобы не приходилось выписывать имена и типы столбцов в вызывающем запросе <command>SELECT</command>. Модуль <filename>tablefunc</filename> включает функции <function>crosstab2</function>, <function>crosstab3</function> и <function>crosstab4</function>, определяющие типы выходных строк так:</para>
+
+<programlisting>CREATE TYPE tablefunc_crosstab_N AS (
+    row_name TEXT,
+    category_1 TEXT,
+    category_2 TEXT,
+        .
+        .
+        .
+    category_N TEXT
+);</programlisting>
+
+    <para>Таким образом, эти функции могут применяться непосредственно, когда входной запрос выдаёт столбцы <structfield>row_name</structfield> и <structfield>value</structfield> типа <type>text</type> и вы хотите получить на выходе 2, 3 или 4 столбца значений. В остальном эти функции ведут себя в точности так же, как и универсальная функция <function>crosstab</function>.</para>
+
+    <para>Так, пример, приведённый в предыдущем разделе, можно переписать и в таком виде: <programlisting>SELECT *
+FROM crosstab3(
+  'select rowid, attribute, value
+   from ct
+   where attribute = ''att2'' or attribute = ''att3''
+   order by 1,2');</programlisting></para>
+
+    <para>Эти функции представлены в основном в демонстрационных целях. Вы можете создать собственные типы возвращаемых данных и реализовать функции на базе нижележащей функции <function>crosstab()</function>. Это можно сделать двумя способами: <itemizedlist>
+     <listitem>
+      <para>Создать составной тип, описывающий желаемые выходные столбцы, примерно как это делается в примерах в <filename>contrib/tablefunc/tablefunc--1.0.sql</filename>. Затем нужно выбрать уникальное имя для функции, принимающей один параметр <type>text</type> и возвращающей <type>setof имя_вашего_типа</type>, и связать его с той же нижележащей функцией <function>crosstab</function> на C. Например, если ваш источник данных выдаёт имена строк типа <type>text</type> и значения типа <type>float8</type>, и вы хотите получить 5 столбцов значений: <programlisting>CREATE TYPE my_crosstab_float8_5_cols AS (
+    my_row_name text,
+    my_category_1 float8,
+    my_category_2 float8,
+    my_category_3 float8,
+    my_category_4 float8,
+    my_category_5 float8
+);
+
+CREATE OR REPLACE FUNCTION crosstab_float8_5_cols(text)
+    RETURNS setof my_crosstab_float8_5_cols
+    AS '$libdir/tablefunc','crosstab' LANGUAGE C STABLE STRICT;</programlisting></para>
+     </listitem>
+
+     <listitem>
+      <para>Использовать выходные параметры (<literal>OUT</literal>), чтобы явно определить возвращаемый тип. Тот же пример можно реализовать и таким способом: <programlisting>CREATE OR REPLACE FUNCTION crosstab_float8_5_cols(
+    IN text,
+    OUT my_row_name text,
+    OUT my_category_1 float8,
+    OUT my_category_2 float8,
+    OUT my_category_3 float8,
+    OUT my_category_4 float8,
+    OUT my_category_5 float8)
+  RETURNS setof record
+  AS '$libdir/tablefunc','crosstab' LANGUAGE C STABLE STRICT;</programlisting></para>
+     </listitem>
+    </itemizedlist></para>
+
+  </sect3>
+
+  <sect3>
+   <title><function>crosstab(text, text)</function></title>
+
+   <indexterm><primary>crosstab</primary></indexterm>
+
+<synopsis>crosstab(text source_sql, text category_sql)</synopsis>
+
+   <para>Основное ограничение формы <function>crosstab</function> с одним параметром состоит в том, что она воспринимает все значения в группе одинаково и вставляет очередное значение в первый свободный столбец. Если вы хотите, чтобы столбцы значений соответствовали определённым категориям данных и некоторые группы могли содержать данные не для всех категорий, этот подход не будет работать. Форма <function>crosstab</function> с двумя параметрами решает эту задачу, принимая явный список категорий, соответствующих выходным столбцам.</para>
+
+   <para>В параметре <parameter>source_sql</parameter> передаётся SQL-оператор, выдающий исходный набор данных. Этот оператор должен выдавать строки со столбцом <structfield>row_name</structfield>, столбцом <structfield>category</structfield> и столбцом <structfield>value</structfield>. Также он может выдать один или несколько <quote>дополнительных</quote> столбцов. Столбец <structfield>row_name</structfield> должен быть первым, а столбцы <structfield>category</structfield> и <structfield>value</structfield> — последними двумя, именно в этом порядке. Все столбцы между <structfield>row_name</structfield> и <structfield>category</structfield> воспринимаются как <quote>дополнительные</quote>. Ожидается, что <quote>дополнительные</quote> столбцы будут содержать одинаковые значения для всех строк с одним значением <structfield>row_name</structfield>.</para>
+
+   <para>Например, <parameter>source_sql</parameter> может выдать такой набор данных: <programlisting>SELECT row_name, extra_col, cat, value FROM foo ORDER BY 1;
+
+ row_name    extra_col   cat    value
+----------+------------+-----+---------
+  row1         extra1    cat1    val1
+  row1         extra1    cat2    val2
+  row1         extra1    cat4    val4
+  row2         extra2    cat1    val5
+  row2         extra2    cat2    val6
+  row2         extra2    cat3    val7
+  row2         extra2    cat4    val8</programlisting></para>
+
+   <para>В параметре <parameter>category_sql</parameter> передаётся оператор SQL, выдающий набор категорий. Этот оператор должен возвращать всего один столбец. Он должен выдать минимум одну строку; в противном случае произойдёт ошибка. Кроме того, выдаваемые им значения не должны повторяться, иначе так же произойдёт ошибка. В качестве <parameter>category_sql</parameter> можно передать, например, такой запрос: <programlisting>SELECT DISTINCT cat FROM foo ORDER BY 1;
+    cat
+  -------
+    cat1
+    cat2
+    cat3
+    cat4</programlisting></para>
+
+   <para>Функция <function>crosstab</function> объявлена как возвращающая тип <type>setof record</type>, так что фактические имена и типы выходных столбцов должны определяться в предложении <literal>FROM</literal> вызывающего оператора <command>SELECT</command>, например так: <programlisting>SELECT * FROM crosstab('...', '...')
+    AS ct(row_name text, extra text, cat1 text, cat2 text, cat3 text, cat4 text);</programlisting></para>
+
+   <para>При этом будет получен примерно такой результат: <programlisting>                  &lt;==  столбцы значений   ==&gt;
+row_name   extra   cat1   cat2   cat3   cat4
+---------+-------+------+------+------+------
+  row1     extra1  val1   val2          val4
+  row2     extra2  val5   val6   val7   val8</programlisting></para>
+
+   <para>В предложении <literal>FROM</literal> должно определяться нужное количество выходных столбцов соответствующих типов данных. Если запрос <parameter>source_sql</parameter> выдаёт <replaceable>N</replaceable> столбцов, первые <replaceable>N</replaceable>-2 из них должны соответствовать первым <replaceable>N</replaceable>-2 выходным столбцам. Оставшиеся выходные столбцы должны иметь тип последнего столбца результата <parameter>source_sql</parameter> и их должно быть столько, сколько строк оказалось в результате запроса <parameter>category_sql</parameter>.</para>
+
+   <para>Функция <function>crosstab</function> выдаёт одну выходную строку для каждой последовательной группы входных строк с одним значением <structfield>row_name</structfield>. Выходной столбец <structfield>row_name</structfield> плюс все <quote>дополнительные</quote> столбцы копируются из первой строки группы. Выходные столбцы значений заполняются содержимым полей <structfield>value</structfield> из строк с соответствующими значениями <structfield>category</structfield>. Если в поле <structfield>category</structfield> оказывается значение, отсутствующее в результате запроса <parameter>category_sql</parameter>, содержимое поля <structfield>value</structfield> в этой строке игнорируется. Выходные столбцы, для которых соответствующая категория не представлена ни в одной из входных строк группы, принимают значения NULL.</para>
+
+   <para>На практике в запросе <parameter>source_sql</parameter> всегда нужно указывать <literal>ORDER BY 1</literal>, чтобы все значения с одним <structfield>row_name</structfield> гарантированно выводились вместе. Порядок же категорий внутри группы не важен. Кроме того, важно, чтобы порядок значений, выдаваемых запросом <parameter>category_sql</parameter>, соответствовал заданному порядку выходных столбцов.</para>
+
+   <para>Два законченных примера: <programlisting>create table sales(year int, month int, qty int);
+insert into sales values(2007, 1, 1000);
+insert into sales values(2007, 2, 1500);
+insert into sales values(2007, 7, 500);
+insert into sales values(2007, 11, 1500);
+insert into sales values(2007, 12, 2000);
+insert into sales values(2008, 1, 1000);
+
+select * from crosstab(
+  'select year, month, qty from sales order by 1',
+  'select m from generate_series(1,12) m'
+) as (
+  year int,
+  "Jan" int,
+  "Feb" int,
+  "Mar" int,
+  "Apr" int,
+  "May" int,
+  "Jun" int,
+  "Jul" int,
+  "Aug" int,
+  "Sep" int,
+  "Oct" int,
+  "Nov" int,
+  "Dec" int
+);
+ year | Jan  | Feb  | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov  | Dec
+------+------+------+-----+-----+-----+-----+-----+-----+-----+-----+------+------
+ 2007 | 1000 | 1500 |     |     |     |     | 500 |     |     |     | 1500 | 2000
+ 2008 | 1000 |      |     |     |     |     |     |     |     |     |      |
+(2 rows)</programlisting> <programlisting>CREATE TABLE cth(rowid text, rowdt timestamp, attribute text, val text);
+INSERT INTO cth VALUES('test1','01 March 2003','temperature','42');
+INSERT INTO cth VALUES('test1','01 March 2003','test_result','PASS');
+INSERT INTO cth VALUES('test1','01 March 2003','volts','2.6987');
+INSERT INTO cth VALUES('test2','02 March 2003','temperature','53');
+INSERT INTO cth VALUES('test2','02 March 2003','test_result','FAIL');
+INSERT INTO cth VALUES('test2','02 March 2003','test_startdate','01 March 2003');
+INSERT INTO cth VALUES('test2','02 March 2003','volts','3.1234');
+
+SELECT * FROM crosstab
+(
+  'SELECT rowid, rowdt, attribute, val FROM cth ORDER BY 1',
+  'SELECT DISTINCT attribute FROM cth ORDER BY 1'
+)
+AS
+(
+       rowid text,
+       rowdt timestamp,
+       temperature int4,
+       test_result text,
+       test_startdate timestamp,
+       volts float8
+);
+ rowid |          rowdt           | temperature | test_result |      test_startdate      | volts
+-------+--------------------------+-------------+-------------+--------------------------+--------
+ test1 | Sat Mar 01 00:00:00 2003 |          42 | PASS        |                          | 2.6987
+ test2 | Sun Mar 02 00:00:00 2003 |          53 | FAIL        | Sat Mar 01 00:00:00 2003 | 3.1234
+(2 rows)</programlisting></para>
+
+   <para>Вы можете создать предопределённые функции, чтобы не выписывать имена и типы результирующих столбцов в каждом запросе. Примеры приведены в предыдущем разделе. Нижележащая функция C для этой формы <function>crosstab</function> называется <literal>crosstab_hash</literal>.</para>
+
+  </sect3>
+
+  <sect3>
+   <title><function>connectby</function></title>
+
+   <indexterm><primary>connectby</primary></indexterm>
+
+<synopsis>connectby(text relname, text keyid_fld, text parent_keyid_fld
+          [, text orderby_fld ], text start_with, int max_depth
+          [, text branch_delim ])</synopsis>
+
+   <para>Функция <function>connectby</function> выдаёт отображение данных, содержащихся в таблице, в иерархическом виде. Таблица должна содержать поле ключа, однозначно идентифицирующее строки, и поле ключа родителя, ссылающееся на родителя строки (если он есть). Функция <function>connectby</function> может вывести вложенное дерево, начиная с любой строки.</para>
+
+   <para>Параметры описаны в <xref remap="6" linkend="tablefunc-connectby-parameters"/>.</para>
+
+   <table id="tablefunc-connectby-parameters">
+    <title>Параметры <function>connectby</function></title>
+    <tgroup cols="2">
+     <thead>
+      <row>
+       <entry>Параметр</entry>
+       <entry>Описание</entry>
+      </row>
+     </thead>
+     <tbody>
+      <row>
+       <entry><parameter>relname</parameter></entry>
+       <entry>Имя исходного отношения</entry>
+      </row>
+      <row>
+       <entry><parameter>keyid_fld</parameter></entry>
+       <entry>Имя поля ключа</entry>
+      </row>
+      <row>
+       <entry><parameter>parent_keyid_fld</parameter></entry>
+       <entry>Имя поля, содержащего ключ родителя</entry>
+      </row>
+      <row>
+       <entry><parameter>orderby_fld</parameter></entry>
+       <entry>Имя поля, по которому сортируются потомки (необязательно)</entry>
+      </row>
+      <row>
+       <entry><parameter>start_with</parameter></entry>
+       <entry>Значение ключа отправной строки</entry>
+      </row>
+      <row>
+       <entry><parameter>max_depth</parameter></entry>
+       <entry>Максимальная глубина, на которую можно погрузиться, либо ноль для неограниченного погружения</entry>
+      </row>
+      <row>
+       <entry><parameter>branch_delim</parameter></entry>
+       <entry>Строка, разделяющая ключи в выводе ветви (необязательно)</entry>
+      </row>
+      </tbody>
+     </tgroup>
+    </table>
+
+    <para>Поля ключа и ключа родителя могут быть любого типа, но должны иметь общий тип. Заметьте, что значение <parameter>start_with</parameter> должно задаваться текстовой строкой, вне зависимости от типа поля ключа.</para>
+
+    <para>Функция <function>connectby</function> объявлена как возвращающая <type>setof record</type>, так что фактические имена и типы выходных столбцов должны определяться в предложении <literal>FROM</literal> вызывающего оператора <command>SELECT</command>, например так:</para>
+
+<programlisting>SELECT * FROM connectby('connectby_tree', 'keyid', 'parent_keyid', 'pos', 'row2', 0, '~')
+    AS t(keyid text, parent_keyid text, level int, branch text, pos int);</programlisting>
+
+    <para>Первые два выходных столбца используются для вывода ключа текущей строки и ключа её родителя; их тип должен соответствовать типу поля ключа. Третий выходной столбец задаёт глубину в дереве и должен иметь тип <type>integer</type>. Если передаётся параметр <parameter>branch_delim</parameter>, в следующем столбце выводятся ветви, и этот столбец должен иметь тип <type>text</type>. Наконец, если передаётся параметр <parameter>orderby_fld</parameter>, в последнем столбце выводятся последовательные числа, и он должен иметь тип <type>integer</type>.</para>
+
+    <para>В столбце <quote>branch</quote> показывается путь по ключам, приведший к текущей строке. Ключи разделяются заданной строкой <parameter>branch_delim</parameter>. Если выводить ветви не требуется, опустите параметр <parameter>branch_delim</parameter> и столбец branch в списке выходных столбцов.</para>
+
+    <para>Если порядок потомков одного родителя имеет значение, добавьте параметр <parameter>orderby_fld</parameter>, указывающий поле для упорядочивания потомков. Это поле может иметь любой тип, допускающий сортировку. Список выходных столбцов должен включать последним столбцом целочисленный столбец с последовательными значениями, если и только если передаётся параметр <parameter>orderby_fld</parameter>.</para>
+
+    <para>Параметры, представляющие имена таблицы и полей, копируются как есть в SQL-запросы, которые <function>connectby</function> генерирует внутри. Таким образом, их нужно заключить в двойные кавычки, если они содержат буквы в разном регистре или специальные символы. Также может понадобиться дополнить имя таблицы схемой.</para>
+
+    <para>С большими таблицами производительность будет неудовлетворительной, если не создать индекс по полю с ключом родителя.</para>
+
+    <para>Важно, чтобы строка <parameter>branch_delim</parameter> не фигурировала в значениях ключа, иначе <function>connectby</function> может некорректно сообщить об ошибке бесконечной вложенности. Заметьте, что если параметр <parameter>branch_delim</parameter> не задаётся, для выявления зацикленности применяется символ <literal>~</literal>.</para>
+
+    <para>Пример: <programlisting>CREATE TABLE connectby_tree(keyid text, parent_keyid text, pos int);
+
+INSERT INTO connectby_tree VALUES('row1',NULL, 0);
+INSERT INTO connectby_tree VALUES('row2','row1', 0);
+INSERT INTO connectby_tree VALUES('row3','row1', 0);
+INSERT INTO connectby_tree VALUES('row4','row2', 1);
+INSERT INTO connectby_tree VALUES('row5','row2', 0);
+INSERT INTO connectby_tree VALUES('row6','row4', 0);
+INSERT INTO connectby_tree VALUES('row7','row3', 0);
+INSERT INTO connectby_tree VALUES('row8','row6', 0);
+INSERT INTO connectby_tree VALUES('row9','row5', 0);
+
+-- с ветвями без orderby_fld (порядок результатов не гарантируется)
+SELECT * FROM connectby('connectby_tree', 'keyid', 'parent_keyid', 'row2', 0, '~')
+ AS t(keyid text, parent_keyid text, level int, branch text);
+ keyid | parent_keyid | level |       branch
+-------+--------------+-------+---------------------
+ row2  |              |     0 | row2
+ row4  | row2         |     1 | row2~row4
+ row6  | row4         |     2 | row2~row4~row6
+ row8  | row6         |     3 | row2~row4~row6~row8
+ row5  | row2         |     1 | row2~row5
+ row9  | row5         |     2 | row2~row5~row9
+(6 rows)
+
+-- без ветвей и без orderby_fld (порядок результатов не гарантируется)
+SELECT * FROM connectby('connectby_tree', 'keyid', 'parent_keyid', 'row2', 0)
+ AS t(keyid text, parent_keyid text, level int);
+ keyid | parent_keyid | level
+-------+--------------+-------
+ row2  |              |     0
+ row4  | row2         |     1
+ row6  | row4         |     2
+ row8  | row6         |     3
+ row5  | row2         |     1
+ row9  | row5         |     2
+(6 rows)
+
+-- с ветвями и с orderby_fld (заметьте, что row5 идёт перед row4)
+SELECT * FROM connectby('connectby_tree', 'keyid', 'parent_keyid', 'pos', 'row2', 0, '~')
+ AS t(keyid text, parent_keyid text, level int, branch text, pos int);
+ keyid | parent_keyid | level |       branch        | pos
+-------+--------------+-------+---------------------+-----
+ row2  |              |     0 | row2                |   1
+ row5  | row2         |     1 | row2~row5           |   2
+ row9  | row5         |     2 | row2~row5~row9      |   3
+ row4  | row2         |     1 | row2~row4           |   4
+ row6  | row4         |     2 | row2~row4~row6      |   5
+ row8  | row6         |     3 | row2~row4~row6~row8 |   6
+(6 rows)
+
+-- без ветвей, с orderby_fld (заметьте, что row5 идёт перед row4)
+SELECT * FROM connectby('connectby_tree', 'keyid', 'parent_keyid', 'pos', 'row2', 0)
+ AS t(keyid text, parent_keyid text, level int, pos int);
+ keyid | parent_keyid | level | pos
+-------+--------------+-------+-----
+ row2  |              |     0 |   1
+ row5  | row2         |     1 |   2
+ row9  | row5         |     2 |   3
+ row4  | row2         |     1 |   4
+ row6  | row4         |     2 |   5
+ row8  | row6         |     3 |   6
+(6 rows)</programlisting></para>
+   </sect3>
+
+ </sect2>
+
+ <sect2>
+  <title>Автор</title>
+
+  <para>Джо Конвей</para>
+
+ </sect2>
+
+</sect1>

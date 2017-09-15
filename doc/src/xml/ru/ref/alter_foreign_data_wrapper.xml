@@ -1,0 +1,125 @@
+<!--
+doc/src/xml/ref/alter_foreign_data_wrapper.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterforeigndatawrapper">
+ <indexterm zone="sql-alterforeigndatawrapper"><primary>ALTER FOREIGN DATA WRAPPER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER FOREIGN DATA WRAPPER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER FOREIGN DATA WRAPPER</refname>
+  <refpurpose>изменить определение обёртки сторонних данных</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER FOREIGN DATA WRAPPER <replaceable class="parameter">имя</replaceable>
+    [ HANDLER <replaceable class="parameter">функция_обработчик</replaceable> | NO HANDLER ]
+    [ VALIDATOR <replaceable class="parameter">функция_проверки</replaceable> | NO VALIDATOR ]
+    [ OPTIONS ( [ ADD | SET | DROP ] <replaceable class="parameter">параметр</replaceable> ['<replaceable class="parameter">значение</replaceable>'] [, ... ]) ]
+ALTER FOREIGN DATA WRAPPER <replaceable class="parameter">имя</replaceable> OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+ALTER FOREIGN DATA WRAPPER <replaceable class="parameter">имя</replaceable> RENAME TO <replaceable>новое_имя</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER FOREIGN DATA WRAPPER</command> изменяет определение обёртки сторонних данных. Первая форма команды меняет вспомогательные функции или общие параметры обёртки (требуется минимум одно предложение), а вторая — владельца обёртки.</para>
+
+  <para>Настраивать обёртки сторонних данных могут только суперпользователи и только суперпользователи могут быть их владельцами.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя существующей обёртки сторонних данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>HANDLER <replaceable class="parameter">функция_обработчик</replaceable></literal></term>
+    <listitem>
+     <para>Задаёт новое имя функции-обработчика для обёртки сторонних данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>NO HANDLER</literal></term>
+    <listitem>
+     <para>Эти ключевые слова указывают, что обёртка сторонних данных теперь не имеет функции-обработчика.</para>
+     <para>Заметьте, что обращаться к сторонним таблицам, если их обёртка сторонних данных не имеет обработчика, нельзя.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>VALIDATOR <replaceable class="parameter">функция_проверки</replaceable></literal></term>
+    <listitem>
+     <para>Задаёт новое имя функции проверки для обёртки сторонних данных.</para>
+
+     <para>Заметьте, что возможна ситуация, что предыдущие параметры обёртки данных, зависимых серверов, сопоставлений пользователей или сторонних таблиц окажутся неприемлемыми для новой функции проверки. <productname>&productname;</productname> не проверяет их, поэтому пользователь сам должен убедиться в правильности этих параметров, прежде чем использовать изменённую обёртку данных. Однако параметры, изменяемые в данной команде <command>ALTER FOREIGN DATA WRAPPER</command>, будут проверены новой функцией проверки.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>NO VALIDATOR</literal></term>
+    <listitem>
+     <para>Эти ключевые слова указывают, что обёртка сторонних данных теперь не имеет функции проверки.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>OPTIONS ( [ ADD | SET | DROP ] <replaceable class="parameter">параметр</replaceable> ['<replaceable class="parameter">значение</replaceable>'] [, ... ] )</literal></term>
+    <listitem>
+     <para>Эта форма настраивает параметры обёртки сторонних данных. <literal>ADD</literal>, <literal>SET</literal> и <literal>DROP</literal> определяют, какое действие будет выполнено (добавление, установка и удаление, соответственно). Если действие не задано явно, подразумевается <literal>ADD</literal>. Имена параметров должны быть уникальными, они вместе со значениями проверяются функцией проверки, если она установлена.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Имя пользователя, назначаемого новым владельцем обёртки сторонних данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя обёртки сторонних данных.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Изменение параметров обёртки сторонних данных <literal>dbi</literal>: добавление параметра <literal>foo</literal>, удаление <literal>bar</literal>: <programlisting>ALTER FOREIGN DATA WRAPPER dbi OPTIONS (ADD foo '1', DROP 'bar');</programlisting></para>
+
+  <para>Установление для обёртки сторонних данных <literal>dbi</literal> новой функции проверки <literal>bob.myvalidator</literal>: <programlisting>ALTER FOREIGN DATA WRAPPER dbi VALIDATOR bob.myvalidator;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>ALTER FOREIGN DATA WRAPPER</command> соответствует стандарту ISO/IEC 9075-9 (SQL/MED), за исключением предложений <literal>HANDLER</literal>, <literal>VALIDATOR</literal>, <literal>OWNER TO</literal> и <literal>RENAME</literal>, являющихся расширениями.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createforeigndatawrapper"/></member>
+   <member><xref linkend="sql-dropforeigndatawrapper"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

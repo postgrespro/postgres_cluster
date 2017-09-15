@@ -1,0 +1,98 @@
+<!--
+doc/src/xml/ref/drop_opfamily.xml
+&productname; documentation
+-->
+
+<refentry id="sql-dropopfamily">
+ <indexterm zone="sql-dropopfamily"><primary>DROP OPERATOR FAMILY</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP OPERATOR FAMILY</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP OPERATOR FAMILY</refname>
+  <refpurpose>удалить семейство операторов</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP OPERATOR FAMILY [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> USING <replaceable class="parameter">метод_индекса</replaceable> [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP OPERATOR FAMILY</command> удаляет существующее семейство операторов. Выполнить эту команду может только владелец семейства операторов.</para>
+
+  <para><command>DROP OPERATOR FAMILY</command> удаляет также все классы операторов, содержащиеся в семействе, но не удаляет связанные с ним операторы или функции. Если от классов операторов, содержащихся в семействе, зависят какие-либо индексы, семейство будет удалено успешно (вместе с классами и индексами), только если добавить указание <literal>CASCADE</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если семейство операторов не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующего семейства операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">метод_индекса</replaceable></term>
+    <listitem>
+     <para>Имя индексного метода, для которого предназначено это семейство операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данного семейства операторов, и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении семейства операторов, если от него зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление семейства операторов B-дерева с именем <literal>float_ops</literal>: <programlisting>DROP OPERATOR FAMILY float_ops USING btree;</programlisting> Эта команда не будет выполнена, если в базе существуют индексы, использующие классы операторов из этого семейства. Чтобы удалить такие индексы вместе с семейством операторов, нужно добавить указание <literal>CASCADE</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Команда <command>DROP OPERATOR FAMILY</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alteropfamily"/></member>
+   <member><xref linkend="sql-createopfamily"/></member>
+   <member><xref linkend="sql-alteropclass"/></member>
+   <member><xref linkend="sql-createopclass"/></member>
+   <member><xref linkend="sql-dropopclass"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

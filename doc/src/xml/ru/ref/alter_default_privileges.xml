@@ -1,0 +1,145 @@
+<!--
+doc/src/xml/ref/alter_default_privileges.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterdefaultprivileges">
+ <indexterm zone="sql-alterdefaultprivileges"><primary>ALTER DEFAULT PRIVILEGES</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER DEFAULT PRIVILEGES</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER DEFAULT PRIVILEGES</refname>
+  <refpurpose>определить права доступа по умолчанию</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER DEFAULT PRIVILEGES
+    [ FOR { ROLE | USER } <replaceable>целевая_роль</replaceable> [, ...] ]
+    [ IN SCHEMA <replaceable>имя_схемы</replaceable> [, ...] ]
+    <replaceable class="parameter">предложение_GRANT_или_REVOKE</replaceable>
+
+<phrase>Где <replaceable class="parameter">предложение_GRANT_или_REVOKE</replaceable> может быть следующим:</phrase>
+
+GRANT { { SELECT | INSERT | UPDATE | DELETE | TRUNCATE | REFERENCES | TRIGGER }
+    [, ...] | ALL [ PRIVILEGES ] }
+    ON TABLES
+    TO { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...] [ WITH GRANT OPTION ]
+
+GRANT { { USAGE | SELECT | UPDATE }
+    [, ...] | ALL [ PRIVILEGES ] }
+    ON SEQUENCES
+    TO { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...] [ WITH GRANT OPTION ]
+
+GRANT { EXECUTE | ALL [ PRIVILEGES ] }
+    ON FUNCTIONS
+    TO { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...] [ WITH GRANT OPTION ]
+
+GRANT { USAGE | ALL [ PRIVILEGES ] }
+    ON TYPES
+    TO { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...] [ WITH GRANT OPTION ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { { SELECT | INSERT | UPDATE | DELETE | TRUNCATE | REFERENCES | TRIGGER }
+    [, ...] | ALL [ PRIVILEGES ] }
+    ON TABLES
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { { USAGE | SELECT | UPDATE }
+    [, ...] | ALL [ PRIVILEGES ] }
+    ON SEQUENCES
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { EXECUTE | ALL [ PRIVILEGES ] }
+    ON FUNCTIONS
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]
+
+REVOKE [ GRANT OPTION FOR ]
+    { USAGE | ALL [ PRIVILEGES ] }
+    ON TYPES
+    FROM { [ GROUP ] <replaceable class="parameter">имя_роли</replaceable> | PUBLIC } [, ...]
+    [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="sql-alterdefaultprivileges-description">
+  <title>Описание</title>
+
+  <para><command>ALTER DEFAULT PRIVILEGES</command> позволяет задавать права, применяемые к объектам, которые будут создаваться в будущем. (Эта команда не затрагивает права, назначенные уже существующим объектам.) В настоящее время можно задавать права только для таблиц (включая представления и сторонние таблицы), последовательностей, функций и типов (включая домены).</para>
+
+  <para>Вы можете изменить права по умолчанию только для объектов, которые будут созданы вами или ролями, членами которых вы являетесь. Права можно задать глобально (т. е. для всех объектов, создаваемых в текущей базе данных) или для определённых схем. Заданные на уровне схемы права по умолчанию добавляются к тем, что определены глобально для конкретного типа объекта.</para>
+
+  <para>Как объясняется в <xref remap="6" linkend="sql-grant"/>, права по умолчанию для объектов любого типа обычно дают все назначаемые разрешения владельцу объекта, а также могут давать некоторые разрешения роли <literal>PUBLIC</literal>. Однако это поведение можно поменять, изменив права по умолчанию командой <command>ALTER DEFAULT PRIVILEGES</command>.</para>
+
+ <refsect2>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable>целевая_роль</replaceable></term>
+    <listitem>
+     <para>Имя существующей роли, членом которой является текущая. Если <literal>FOR ROLE</literal> опущено, подразумевается текущая роль.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable>имя_схемы</replaceable></term>
+    <listitem>
+     <para>Имя существующей схемы. Если указано, права по умолчанию меняются для объектов, которые будут созданы в этой схеме. Если <literal>IN SCHEMA</literal> опущено, меняются глобальные права по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable>имя_роли</replaceable></term>
+    <listitem>
+     <para>Имя существующей роли, для которой даются или отзываются права. Этот и все другие параметры в <replaceable class="parameter">предложении_grant_или_revoke</replaceable> действуют как описано в <xref remap="6" linkend="sql-grant"/> или <xref remap="6" linkend="sql-revoke"/>, за исключением того, что они распространяются не на один конкретный объект, а на целый класс объектов.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect2>
+ </refsect1>
+
+ <refsect1 id="sql-alterdefaultprivileges-notes">
+  <title>Замечания</title>
+
+  <para>Чтобы узнать текущие назначенные права по умолчанию, воспользуйтесь командой <command>\ddp</command> в <xref linkend="app-psql"/>. Интерпретация значений прав приведена в описании команды <command>\dp</command> в <xref remap="6" linkend="sql-grant"/>.</para>
+
+  <para>Если вы желаете удалить роль, права по умолчанию для которой были изменены, необходимо явно отменить изменения прав по умолчанию или воспользоваться командой <command>DROP OWNED BY</command> для избавления от назначенных для этой роли прав по умолчанию.</para>
+ </refsect1>
+
+ <refsect1 id="sql-alterdefaultprivileges-examples">
+  <title>Примеры</title>
+
+  <para>Наделение всех правом SELECT для всех таблиц (и представлений), которые будут созданы в дальнейшем в схеме <literal>myschema</literal>, и наделение роли <literal>webuser</literal> правом INSERT для этих же таблиц: <programlisting>ALTER DEFAULT PRIVILEGES IN SCHEMA myschema GRANT SELECT ON TABLES TO PUBLIC;
+ALTER DEFAULT PRIVILEGES IN SCHEMA myschema GRANT INSERT ON TABLES TO webuser;</programlisting></para>
+
+  <para>Отмена предыдущих изменений с тем, чтобы для таблиц, создаваемых в будущем, были определены только обычные права, без дополнительных: <programlisting>ALTER DEFAULT PRIVILEGES IN SCHEMA myschema REVOKE SELECT ON TABLES FROM PUBLIC;
+ALTER DEFAULT PRIVILEGES IN SCHEMA myschema REVOKE INSERT ON TABLES FROM webuser;</programlisting></para>
+
+  <para>Лишение роли public права на выполнение (EXECUTE), которое обычно даётся для функций (для всех функций, которые будут созданы ролью <literal>admin</literal>): <programlisting>ALTER DEFAULT PRIVILEGES FOR ROLE admin REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER DEFAULT PRIVILEGES</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-grant"/></member>
+   <member><xref linkend="sql-revoke"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

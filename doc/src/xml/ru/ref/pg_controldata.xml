@@ -1,0 +1,48 @@
+<!--
+doc/src/xml/ref/pg_controldata.xml
+&productname; documentation
+-->
+
+<refentry id="app-pgcontroldata">
+ <indexterm zone="app-pgcontroldata"><primary>pg_controldata</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>pg_controldata</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_controldata</refname>
+  <refpurpose>вывести управляющую информацию кластера баз данных <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_controldata</command>
+   <arg choice="opt"><replaceable class="parameter">параметр</replaceable></arg>
+   <arg choice="opt"><arg choice="opt"><option>-D</option></arg> <replaceable class="parameter">datadir</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="r1-app-pgcontroldata-1">
+  <title>Описание</title>
+  <para><command>pg_controldata</command> показывает свойства, установленные командой <command>initdb</command>, например, версию каталога. Она также выводит сведения о работе журнала упреждающей записи и контрольных точках. Эта информация относится ко всему кластеру, а не к отдельной базе данных.</para>
+
+  <para>Утилита запускается от лица пользователя, создавшего кластер, так как требует права на чтение в каталоге хранения данных. Можно указать путь к каталогу из командной строки, либо использовать значение переменной окружения <envar>PGDATA</envar>. Также поддерживаются флаги <option>-V</option> и <option>--version</option>, которые выводят версию <application>pg_controldata</application> и прерывают выполнение. Флаги <option>-?</option> и <option>--help</option> отображают помощь по поддерживаемым командой аргументам.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><envar>PGDATA</envar></term>
+
+    <listitem>
+     <para>Каталог размещения данных кластера по умолчанию</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+</refentry>

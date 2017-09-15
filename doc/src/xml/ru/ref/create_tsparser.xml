@@ -1,0 +1,108 @@
+<!--
+doc/src/xml/ref/create_tsparser.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createtsparser">
+ <indexterm zone="sql-createtsparser"><primary>CREATE TEXT SEARCH PARSER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE TEXT SEARCH PARSER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE TEXT SEARCH PARSER</refname>
+  <refpurpose>создать анализатор текстового поиска</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE TEXT SEARCH PARSER <replaceable class="parameter">имя</replaceable> (
+    START = <replaceable class="parameter">функция_начала</replaceable> ,
+    GETTOKEN = <replaceable class="parameter">функция_выдачи_фрагмента</replaceable> ,
+    END = <replaceable class="parameter">функция_окончания</replaceable> ,
+    LEXTYPES = <replaceable class="parameter">функция_лекс_типов</replaceable>
+    [, HEADLINE = <replaceable class="parameter">функция_выдержек</replaceable> ]
+)</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE TEXT SEARCH PARSER</command> создаёт анализатор текстового поиска. Анализатор текстового поиска определяет способ разделения текстовой строки на фрагменты и назначения типов (категорий) этим фрагментам. Анализатор не очень полезен сам по себе, для осуществления поиска он должен быть подключён к конфигурации текстового поиска вместе с определёнными словарями.</para>
+
+  <para>Если указывается имя схемы, словарь текстового поиска создаётся в указанной схеме. В противном случае он создаётся в текущей схеме.</para>
+
+  <para>Выполнить <command>CREATE TEXT SEARCH PARSER</command> может только суперпользователь. (Это ограничение введено потому, что ошибочное определение анализатора текстового поиска может вызвать нарушения или даже сбой в работе сервера.)</para>
+
+  <para>За дополнительными сведениями обратитесь к <xref remap="3" linkend="textsearch"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя создаваемого анализатора текстового поиска, возможно, дополненное схемой.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_начала</replaceable></term>
+    <listitem>
+     <para>Имя функции, вызываемой в начале обработки.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_выдачи_фрагмента</replaceable></term>
+    <listitem>
+     <para>Имя функции, выдающей следующий фрагмент.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_окончания</replaceable></term>
+    <listitem>
+     <para>Имя функции, вызываемой по окончании обработки.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_лекс_типов</replaceable></term>
+    <listitem>
+     <para>Имя функции перечисления лексических типов (эта функция выдаёт информацию о множестве типов фрагментов, выделяемых анализатором).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_выдержек</replaceable></term>
+    <listitem>
+     <para>Имя функции извлечения выдержек (эта функция выделяет краткое содержание для набора фрагментов).</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Имена функций могут быть дополнены именем схемы, если требуется. Типы аргументов не указываются, так как список аргументов для всех типов функций предопределён. Обязательными являются все функции, кроме функции выдержек.</para>
+
+  <para>Аргументы могут перечисляться в любом порядке, не только в том, что показан выше.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>CREATE TEXT SEARCH PARSER</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altertsparser"/></member>
+   <member><xref linkend="sql-droptsparser"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

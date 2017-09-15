@@ -1,0 +1,1298 @@
+<!-- doc/src/xml/installation.xml -->
+<!--
+
+Use </link> not just </> so INSTALL.html can be created without links
+to the main documentation.  Don't use <xref>; or if you must, wrap it
+in a <phrase condititon="standalone">.
+
+-->
+
+<chapter id="installation">
+ <title>Установка <phrase condition="standalone"><productname>&productname;</productname></phrase> из исходного кода</title>
+
+ <indexterm zone="installation"><primary>установка</primary></indexterm>
+
+ <para>В <phrase condition="standalone">этом документе</phrase> <phrase condition="default">этой главе</phrase> описывается установка <productname>&productname;</productname> из дистрибутивного пакета исходного кода. (Если вы устанавливаете собранный двоичный пакет, например RPM или Debian, вам нужно прочитать инструкции по установке пакета, а не <phrase condition="standalone">этот документ</phrase> <phrase condition="default">эту главу</phrase>.)</para>
+
+ <sect1 id="install-short">
+  <title>Краткий вариант</title>
+
+  <para><synopsis>
+./configure
+make
+su
+make install
+adduser postgres
+mkdir /usr/local/pgsql/data
+chown postgres /usr/local/pgsql/data
+su - postgres
+/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data
+/usr/local/pgsql/bin/postgres -D /usr/local/pgsql/data &gt;logfile 2&gt;&amp;1 &amp;
+/usr/local/pgsql/bin/createdb test
+/usr/local/pgsql/bin/psql test
+</synopsis> Развёрнутый вариант представлен в продолжении <phrase condition="standalone">этого документа.</phrase> <phrase condition="default">этой главы.</phrase></para>
+ </sect1>
+
+
+ <sect1 id="install-requirements">
+  <title>Требования</title>
+
+  <para>В принципе, запустить <productname>&productname;</productname> должно быть возможно на любой современной Unix-совместимой платформе. Платформы, прошедшие специальную проверку на совместимость к моменту выпуска версии, перечислены далее в <xref remap="6" linkend="supported-platforms"/>. В подкаталоге <filename>doc</filename> дистрибутива <productname>&productname;</productname> вы можете найти несколько документов <acronym>FAQ</acronym> по разным платформам, к которым следует обратиться в случае затруднений.</para>
+
+  <para>Для сборки <productname>&productname;</productname> требуются следующие программные пакеты: <itemizedlist>
+    <listitem>
+     <para><indexterm><primary>make</primary></indexterm> Требуется <acronym>GNU</acronym> <application>make</application> версии 3.80 или новее; другие программы <application>make</application> или ранние версии <acronym>GNU</acronym> <application>make</application> работать <emphasis>не</emphasis> будут. (Иногда <acronym>GNU</acronym> <application>make</application> устанавливается под именем <filename>gmake</filename>.) Чтобы проверить наличие и версию <acronym>GNU</acronym> <application>make</application>, введите: <screen>
+<userinput>make --version</userinput>
+</screen></para>
+    </listitem>
+
+    <listitem>
+     <para>Вам потребуется компилятор C, соответствующий <acronym>ISO</acronym>/<acronym>ANSI</acronym> (как минимум, совместимый с C89). Рекомендуется использовать последние версии <productname>GCC</productname>, но известно, что <productname>&productname;</productname> собирается самыми разными компиляторами и других производителей.</para>
+    </listitem>
+
+    <listitem>
+     <para>Для распаковки пакета исходного кода необходим <application>tar</application>, а также <application>gzip</application> или <application>bzip2</application>.</para>
+    </listitem>
+
+    <listitem>
+     <para><indexterm><primary>readline</primary></indexterm> <indexterm><primary>libedit</primary></indexterm> По умолчанию при сборке используется библиотека <acronym>GNU</acronym> <productname>Readline</productname>. Она позволяет запоминать все вводимые команды в <application>psql</application> (SQL-интерпретатор командной строки для &productname;) и затем, пользуясь клавишами-стрелками, возвращаться к ним и редактировать их. Это очень удобно и мы настоятельно рекомендуем пользоваться этим. Если вы не желаете использовать эту возможность, вы должны добавить указание <option>--without-readline</option> для <filename>configure</filename>. В качестве альтернативы часто можно использовать библиотеку <filename>libedit</filename> с лицензией BSD, изначально разработанную для <productname>NetBSD</productname>. Библиотека <filename>libedit</filename> совместима с GNU <productname>Readline</productname> и подключается, если <filename>libreadline</filename> не найдена, или когда <filename>configure</filename> передаётся указание <option>--with-libedit-preferred</option>. Если вы используете систему на базе Linux с пакетами, учтите, что вам потребуются два пакета: <literal>readline</literal> и <literal>readline-devel</literal>, если в вашем дистрибутиве они разделены.</para>
+    </listitem>
+
+    <listitem>
+     <para><indexterm><primary>zlib</primary></indexterm> По умолчанию для сжатия данных используется библиотека <productname>zlib</productname>. Если вы не хотите её использовать, вы должны передать <filename>configure</filename> указание <option>--without-zlib</option>. Это указание отключает поддержку сжатых архивов в <application>pg_dump</application> и <application>pg_restore</application>.</para>
+    </listitem>
+   </itemizedlist></para>
+
+  <para>Следующие пакеты не являются обязательными. Они не требуются в стандартной конфигурации, но они необходимы для определённых вариантов сборки, описанных ниже: <itemizedlist>
+    <listitem>
+     <para>Чтобы собрать поддержку языка программирования <application>PL/Perl</application>, вам потребуется полная инсталляция <productname>Perl</productname>, включая библиотеку <filename>libperl</filename> и заголовочные файлы. Версия <productname>Perl</productname> должна быть не старее 5.8.3. Так как <application>PL/Perl</application> будет разделяемой библиотекой, библиотека <indexterm><primary>libperl</primary></indexterm><filename>libperl</filename> тоже должна быть разделяемой для большинства платформ. В последних версиях <productname>Perl</productname> это вариант по умолчанию, но в ранних версиях это было не так, и в любом случае это выбирает тот, кто устанавливает Perl в вашей системе. Скрипт <filename>configure</filename> выдаст ошибку, если не сможет найти разделяемую <filename>libperl</filename>, когда выбрана сборка <application>PL/Perl</application>. В этом случае, чтобы собрать <application>PL/Perl</application>, вам придётся пересобрать и переустановить <productname>Perl</productname>. В процессе конфигурирования <productname>Perl</productname> выберите сборку разделяемой библиотеки.</para>
+
+     <para>Если вы планируете отвести <application>PL/Perl</application> не второстепенную роль, следует убедиться в том, что инсталляция <productname>Perl</productname> была собрана с флагом <literal>usemultiplicity</literal> (так ли это, может показать команда <literal>perl -V</literal>).</para>
+    </listitem>
+
+    <listitem>
+     <para>Чтобы собрать сервер с поддержкой языка программирования <application>PL/Python</application>, вам потребуется инсталляция <productname>Python</productname> с заголовочными файлами и модулем <application>distutils</application>. Версия <productname>Python</productname> должна быть не меньше 2.3. (Чтобы работать с аргументами функций типа <type>numeric</type>, в инсталляции 2.3.x должен быть включён отдельно устанавливаемый модуль <filename>cdecimal</filename>; заметьте, что регрессионные тесты <application>PL/Python</application> не будут пройдены, если он отсутствует.) <productname>Python 3</productname> поддерживается, начиная с версии 3.1; но используя Python 3, следует учитывать написанное в <phrase condition="standalone">документации <application>PL/Python</application></phrase> <phrase condition="default"><xref remap="6" linkend="plpython-python23"/></phrase>.</para>
+
+     <para>Так как <application>PL/Python</application> будет разделяемой библиотекой, библиотека <indexterm><primary>libpython</primary></indexterm><filename>libpython</filename> тоже должна быть разделяемой для большинства платформ. По умолчанию при сборке инсталляции <productname>Python</productname> из пакета исходного кода это не так, но во многих дистрибутивах имеется нужная разделяемая библиотека. Скрипт <filename>configure</filename> выдаст ошибку, если не сможет найти разделяемую <filename>libpython</filename>, когда выбрана сборка <application>PL/Python</application>. Это может означать, что вам нужно либо установить дополнительные пакеты, либо пересобрать (частично) вашу инсталляцию <productname>Python</productname>, чтобы получить эту библиотеку. При сборке <productname>Python</productname> из исходного кода выполните configure с флагом <literal>--enable-shared</literal>.</para>
+    </listitem>
+
+    <listitem>
+     <para>Чтобы собрать поддержку процедурного языка <application>PL/Tcl</application>, вам конечно потребуется инсталляция <productname>Tcl</productname>. Версия <productname>Tcl</productname> должна быть не старее 8.4.</para>
+    </listitem>
+
+    <listitem>
+     <para>Чтобы включить поддержку национальных языков (<acronym>NLS</acronym>, Native Language Support), то есть возможность выводить сообщения программы не только на английском языке, вам потребуется реализация <acronym>API</acronym> <application>Gettext</application>. В некоторых системах эта реализация встроена (например, в <systemitem class="osname">Linux</systemitem>, <systemitem class="osname">NetBSD</systemitem>, <systemitem class="osname">Solaris</systemitem>), а для других вы можете получить дополнительный пакет по адресу <ulink url="http://www.gnu.org/software/gettext/"/>. Если вы используете реализацию <application>Gettext</application> в библиотеке <acronym>GNU</acronym>, вам понадобится ещё пакет <productname>GNU Gettext</productname> для некоторых утилит. Для любых других реализаций он не требуется.</para>
+    </listitem>
+
+    <listitem>
+     <para>Вам могут понадобиться пакеты <application>Kerberos</application>, <productname>OpenSSL</productname>, <productname>OpenLDAP</productname> и/или <application>PAM</application>, если вам нужна поддержка аутентификации или шифрования, которую они обеспечивают.</para>
+    </listitem>
+
+    <listitem>
+     <para>Для сборки документации <productname>&productname;</productname> предъявляется отдельный набор требований; см. <phrase condition="default"><xref remap="4" linkend="docguide-toolsets"/>.</phrase> <phrase condition="standalone">посвящённое этому приложение к основной документации.</phrase></para>
+    </listitem>
+   </itemizedlist></para>
+
+  <para>Если вы хотите скомпилировать код из дерева <productname>Git</productname>, а не из специального пакета исходного кода, либо вы хотите работать с этим кодом, вам также понадобятся следующие пакеты: <itemizedlist>
+    <listitem>
+     <para><indexterm><primary>flex</primary></indexterm> <indexterm><primary>lex</primary></indexterm> <indexterm><primary>bison</primary></indexterm> <indexterm><primary>yacc</primary></indexterm> GNU <application>Flex</application> и <application>Bison</application> потребуются для сборки из содержимого Git или если вы меняете собственно файлы определений анализа и разбора. Если они вам понадобятся, то версия <application>Flex</application> должна быть не меньше 2.5.31, а <application>Bison</application> — не меньше 1.875. Другие программы <application>lex</application> и <application>yacc</application> работать не будут.</para>
+    </listitem>
+    <listitem>
+     <para><indexterm><primary>perl</primary></indexterm> <application>Perl</application> 5.8.3 или новее потребуется для сборки из содержимого Git, либо если вы меняете исходные файлы этапов сборки, построенных на скриптах Perl. Если вы выполняете сборку в Windows, вам потребуется <application>Perl</application> в любом случае. <application>Perl</application> также требуется для выполнения некоторых комплектов тестов.</para>
+    </listitem>
+   </itemizedlist></para>
+
+  <para>Если вам понадобится какой-либо пакет <acronym>GNU</acronym>, вы можете найти его на вашем локальном зеркале <acronym>GNU</acronym> (список зеркал: <ulink url="http://www.gnu.org/order/ftp.html"/>) или на сайте <ulink url="ftp://ftp.gnu.org/gnu/"/>.</para>
+
+  <para>Также проверьте, достаточно ли места на диске. Вам потребуется около 100 Мб для исходного кода в процессе компиляции и около 20 Мб для каталога инсталляции. Пустой кластер баз данных занимает около 35 Мб; базы данных занимают примерно в пять раз больше места, чем те же данные в обычном текстовом файле. Если вы планируете запускать регрессионные тесты, вам может временно понадобиться ещё около 150 Мб. Проверить наличие свободного места можно с помощью команды <command>df</command>.</para>
+ </sect1>
+
+ <sect1 id="install-getsource" condition="default">
+  <title>Получение исходного кода</title>
+
+  <para>Исходные коды <productname>&productname;</productname> &version; можно загрузить из соответствующего раздела нашего сайта: <ulink url="https://postgrespro.com/products/download"/>. Вам следует выбрать файл <filename>postgrepro-&version;.tar.gz</filename> или <filename>postgrespro-&version;.tar.bz2</filename>. Получив этот файл, распакуйте его: <screen>
+<userinput>gunzip postgrepro-&version;.tar.gz</userinput>
+<userinput>tar xf postgrepro-&version;.tar</userinput>
+</screen> (Если вы выбрали файл <filename>.bz2</filename>, используйте <command>bunzip2</command> вместо <command>gunzip</command>.) При этом в текущем каталоге будет создан подкаталог <filename>postgrepro-&version;</filename> с исходными кодами <productname>&productname;</productname>. Перейдите в этот подкаталог для продолжения процедуры установки.</para>
+
+  <para>Вы также можете получить исходный код непосредственно из репозитория системы управления версиями (см. <xref remap="4" linkend="sourcerepo"/>).</para>
+ </sect1>
+
+ <sect1 id="install-procedure">
+  <title>Процедура установки</title>
+
+  <procedure>
+
+  <step id="configure">
+   <title>Конфигурирование</title>
+
+   <indexterm zone="configure"><primary>configure</primary></indexterm>
+
+   <para>На первом шаге установки требуется сконфигурировать дерево установки для вашей системы и выбрать желаемые параметры сборки. Для этого нужно запустить скрипт <filename>configure</filename>. Чтобы выполнить стандартную сборку, просто введите: <screen>
+<userinput>./configure</userinput>
+</screen> Этот скрипт проведёт несколько проверок с целью определить значения для различных переменных, зависящих от системы, и выявить любые странности вашей ОС, а затем создаст несколько файлов в дереве сборки, в которых отразит полученные результаты. Вы также можете выполнить <filename>configure</filename> вне дерева исходного кода, если хотите сохранить каталог сборки отдельно. Эта процедура также называется сборкой с <indexterm><primary>VPATH</primary></indexterm><firstterm>VPATH</firstterm>. Выполняется она так: <screen>
+<userinput>mkdir build_dir</userinput>
+<userinput>cd build_dir</userinput>
+<userinput>/путь/к/каталогу/исходного/кода/configure [параметры]</userinput>
+<userinput>make</userinput>
+</screen></para>
+
+   <para>В стандартной конфигурации собираются сервер и утилиты, а также клиентские приложения и интерфейсы, которым требуется только компилятор C. Все файлы по умолчанию устанавливаются в <filename>/usr/local/pgsql</filename>.</para>
+
+   <para>Вы можете настроить процесс сборки и установки, передав <filename>configure</filename> один или несколько следующих параметров командной строки: <variablelist>
+      <varlistentry>
+       <term><option>--prefix=<replaceable>ПРЕФИКС</replaceable></option></term>
+       <listitem>
+        <para>Разместить все файлы внутри каталога <replaceable>ПРЕФИКС</replaceable>, а не в <filename>/usr/local/pgsql</filename>. Собственно файлы будут установлены в различные подкаталоги этого каталога; в самом каталоге <replaceable>ПРЕФИКС</replaceable> никакие файлы не размещаются.</para>
+
+        <para>Если у вас есть особые требования, вы также можете изменить отдельные подкаталоги, определив следующие параметры. Однако, если вы оставите для них значения по умолчанию, инсталляция будет перемещаемой, то есть вы сможете переместить каталог после установки. (Это не распространяется на каталоги <literal>man</literal> и <literal>doc</literal>.)</para>
+
+        <para>Для перемещаемых инсталляций можно передать <filename>configure</filename> указание <literal>--disable-rpath</literal>. Кроме того, вы должны будете сказать операционной системе, как найти разделяемые библиотеки.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--exec-prefix=<replaceable>ИСП-ПРЕФИКС</replaceable></option></term>
+       <listitem>
+        <para>Вы можете установить архитектурно-зависимые файлы в размещение с другим префиксом, <replaceable>ИСП-ПРЕФИКС</replaceable>, отличным от <replaceable>ПРЕФИКС</replaceable>. Это бывает полезно для совместного использования таких файлов несколькими системами. По умолчанию <replaceable>ИСП-ПРЕФИКС</replaceable> считается равным <replaceable>ПРЕФИКС</replaceable> и все файлы, архитектурно-зависимые и независимые, устанавливаются в одно дерево каталогов, что вам скорее всего и нужно.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--bindir=<replaceable>КАТАЛОГ</replaceable></option></term>
+       <listitem>
+        <para>Задаёт каталог для исполняемых двоичных программ. По умолчанию это <filename><replaceable>ИСП-ПРЕФИКС</replaceable>/bin</filename>, что обычно означает <filename>/usr/local/pgsql/bin</filename>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--sysconfdir=<replaceable>КАТАЛОГ</replaceable></option></term>
+       <listitem>
+        <para>Задаёт каталог для различных файлов конфигурации, <filename><replaceable>ПРЕФИКС</replaceable>/etc</filename> по умолчанию.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--libdir=<replaceable>КАТАЛОГ</replaceable></option></term>
+       <listitem>
+        <para>Задаёт каталог для установки библиотек и динамически загружаемых модулей. Значение по умолчанию — <filename><replaceable>ИСП-ПРЕФИКС</replaceable>/lib</filename>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--includedir=<replaceable>КАТАЛОГ</replaceable></option></term>
+       <listitem>
+        <para>Задаёт каталог для установки заголовочных файлов C и C++. Значение по умолчанию — <filename><replaceable>ПРЕФИКС</replaceable>/include</filename>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--datarootdir=<replaceable>КАТАЛОГ</replaceable></option></term>
+       <listitem>
+        <para>Задаёт корневой каталог для разного рода статических файлов. Этот параметр определяет только базу для некоторых из следующих параметров. Значение по умолчанию — <filename><replaceable>ПРЕФИКС</replaceable>/share</filename>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--datadir=<replaceable>КАТАЛОГ</replaceable></option></term>
+       <listitem>
+        <para>Задаёт каталог для статических файлов данных, используемых установленными программами. Значение по умолчанию — <filename><replaceable>DATAROOTDIR</replaceable></filename>. Заметьте, что это совсем не тот каталог, в котором будут размещены файлы базы данных.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--localedir=<replaceable>КАТАЛОГ</replaceable></option></term>
+       <listitem>
+        <para>Задаёт каталог для установки данных локализации, в частности, каталогов перевода сообщений. Значение по умолчанию — <filename><replaceable>DATAROOTDIR</replaceable>/locale</filename>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--mandir=<replaceable>КАТАЛОГ</replaceable></option></term>
+       <listitem>
+        <para>Страницы man, поставляемые в составе <productname>&productname;</productname>, будут установлены в этот каталог, в соответствующие подкаталоги <filename>man<replaceable>x</replaceable></filename>. Значение по умолчанию — <filename><replaceable>DATAROOTDIR</replaceable>/man</filename>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--docdir=<replaceable>КАТАЛОГ</replaceable></option></term>
+       <listitem>
+        <para>Задаёт корневой каталог для установки файлов документации, кроме страниц <quote>man</quote>. Этот параметр только определяет базу для следующих параметров. Значение по умолчанию — <filename><replaceable>DATAROOTDIR</replaceable>/doc/postgresql</filename>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--htmldir=<replaceable>КАТАЛОГ</replaceable></option></term>
+       <listitem>
+        <para>В этот каталог будет помещена документация <productname>&productname;</productname> в формате HTML. Значение по умолчанию — <filename><replaceable>DATAROOTDIR</replaceable></filename>.</para>
+       </listitem>
+      </varlistentry>
+     </variablelist> <note>
+      <para>Чтобы <productname>&productname;</productname> можно было установить в стандартные системные размещения (например, в <filename>/usr/local/include</filename>), не затрагивая пространство имён остальной системы, приняты определённые меры. Во-первых, к путям <varname>datadir</varname>, <varname>sysconfdir</varname> и <varname>docdir</varname> автоматически добавляется строка <quote><literal>/postgresql</literal></quote>, если только полный развёрнутый путь каталога уже не содержит строку <quote><literal>postgres</literal></quote> или <quote><literal>pgsql</literal></quote>. Так, если вы выберете в качестве префикса <filename>/usr/local</filename>, документация будет установлена в <filename>/usr/local/doc/postgresql</filename>, но с префиксом <filename>/opt/postgres</filename> она будет помещена в <filename>/opt/postgres/doc</filename>. Внешние заголовочные файлы C для клиентских интерфейсов устанавливаются в <varname>includedir</varname>, не загрязняя пространство имён. Внутренние и серверные заголовочные файлы устанавливаются в частные подкаталоги внутри <varname>includedir</varname>. Чтобы узнать, как обращаться к заголовочным файлам того или иного интерфейса, обратитесь к документации этого интерфейса. Наконец, для динамически загружаемых модулей, если требуется, будет также создан частный подкаталог внутри <varname>libdir</varname>.</para>
+     </note></para>
+
+    <para>
+     <variablelist>
+      <varlistentry>
+       <term><option>--with-extra-version=<replaceable>СТРОКА</replaceable></option></term>
+       <listitem>
+        <para>Заданная <replaceable>СТРОКА</replaceable> добавляется к номеру версии &productname;. Это можно использовать, например, чтобы двоичные файлы, собранные из промежуточных снимков Git или кода с дополнительными правками, отличались от стандартных дополнительной строкой в версии, например, содержащей идентификатор <command>git describe</command> или номер выпуска дистрибутивного пакета.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-includes=<replaceable>КАТАЛОГИ</replaceable></option></term>
+       <listitem>
+        <para>Значение <replaceable>КАТАЛОГИ</replaceable> представляет список каталогов через двоеточие, которые будут просмотрены компилятором при поиске заголовочных файлов. Если дополнительные пакеты (например, GNU <application>Readline</application>) установлены у вас в нестандартное расположение, вам придётся использовать этот параметр и, возможно, также добавить соответствующий параметр <option>--with-libraries</option>.</para>
+        <para>Пример: <literal>--with-includes=/opt/gnu/include:/usr/sup/include</literal>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-libraries=<replaceable>КАТАЛОГИ</replaceable></option></term>
+       <listitem>
+        <para>Значение <replaceable>КАТАЛОГИ</replaceable> представляет список каталогов через двоеточие, в котором следует искать библиотеки. Возможно, вам потребуется использовать этот параметр (и соответствующий <option>--with-includes</option>), если какие-то пакеты установлены у вас в нестандартное размещение.</para>
+        <para>Пример: <literal>--with-libraries=/opt/gnu/lib:/usr/sup/lib</literal>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--enable-nls<optional>=<replaceable>ЯЗЫКИ</replaceable></optional></option></term>
+       <listitem>
+        <para>Включает поддержку национальных языков (<acronym>NLS</acronym>, Native Language Support), то есть возможность выводить сообщения программы не только на английском языке. Значение <replaceable>ЯЗЫКИ</replaceable> представляет необязательный список кодов языков через пробел, поддержка которых вам нужна, например: <literal>--enable-nls='de fr ru'</literal>. (Пересечение заданного вами списка и множества действительно доступных переводов будет вычислено автоматически.) Если список не задаётся, устанавливаются все доступные переводы.</para>
+
+        <para>Для использования этой возможности вам потребуется реализация API <application>Gettext</application>; см. выше.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-pgport=<replaceable>НОМЕР</replaceable></option></term>
+       <listitem>
+        <para>Задаёт <replaceable>НОМЕР</replaceable> порта по умолчанию для сервера и клиентов. Стандартное значение — 5432. Этот порт всегда можно изменить позже, но если вы укажете другой номер здесь, и сервер, и клиенты будут скомпилированы с одним значением, что очень удобно. Обычно менять это значение имеет смысл, только если вы намерены запускать в одной системе несколько серверов <productname>&productname;</productname>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-perl</option></term>
+       <listitem>
+        <para>Включает поддержку языка <application>PL/Perl</application> на стороне сервера.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-python</option></term>
+       <listitem>
+        <para>Включает поддержку языка <application>PL/Python</application> на стороне сервера.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-tcl</option></term>
+       <listitem>
+        <para>Включает поддержку языка <application>PL/Tcl</application> на стороне сервера.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-tclconfig=<replaceable>КАТАЛОГ</replaceable></option></term>
+       <listitem>
+        <para>Tcl устанавливает файл <filename>tclConfig.sh</filename>, содержащий конфигурационные данные, необходимые для сборки модулей, взаимодействующих с Tcl. Этот файл обычно находится автоматически в известном размещении, но если вы хотите использовать другую версию Tcl, вы должны указать каталог, где искать этот файл.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-gssapi</option></term>
+       <listitem>
+        <para>Включает поддержку аутентификации GSSAPI. На многих платформах подсистема GSSAPI (обычно входящая в состав Kerberos) устанавливается не в то размещение, которое просматривается по умолчанию (например, <filename>/usr/include</filename>, <filename>/usr/lib</filename>), так что помимо этого параметра вам придётся задать параметры <option>--with-includes</option> и <option>--with-libraries</option>. Скрипт <filename>configure</filename> проверит наличие необходимых заголовочных файлов и библиотек, чтобы убедиться в целостности инсталляции GSSAPI, прежде чем продолжить.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-krb-srvnam=<replaceable>ИМЯ</replaceable></option></term>
+       <listitem>
+        <para>Задаёт имя по умолчанию для субъекта-службы Kerberos, используемое GSSAPI (по умолчанию это <literal>postgres</literal>). Обычно менять его имеет смысл только в среде Windows, где оно должно быть задано в верхнем регистре (<literal>POSTGRES</literal>).</para>
+       </listitem>
+      </varlistentry>
+
+
+
+      <varlistentry>
+       <term><option>--with-openssl</option>
+       <indexterm><primary>OpenSSL</primary> <seealso>SSL</seealso></indexterm>
+       </term>
+       <listitem>
+        <para>Включает поддержку соединений <acronym>SSL</acronym> (зашифрованных). Для этого необходимо установить пакет <productname>OpenSSL</productname>. Скрипт <filename>configure</filename> проверит наличие необходимых заголовочных файлов и библиотек, чтобы убедиться в целостности инсталляции <productname>OpenSSL</productname>, прежде чем продолжить.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-pam</option></term>
+       <listitem>
+        <para>Включает поддержку <acronym>PAM</acronym><indexterm><primary>PAM</primary></indexterm> (Pluggable Authentication Modules, подключаемых модулей аутентификации).</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-bsd-auth</option></term>
+       <listitem>
+        <para>Включает поддержку аутентификации BSD. (Инфраструктура аутентификации BSD в настоящее время доступна только в OpenBSD.)</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-ldap</option></term>
+       <listitem>
+        <para>Включает поддержку <acronym>LDAP</acronym><indexterm><primary>LDAP</primary></indexterm> для проверки подлинности и получения параметров соединения (за дополнительными сведениями обратитесь к <phrase condition="standalone">описанию проверки подлинности клиентов с libpq</phrase><phrase condition="default"><xref remap="3" linkend="libpq-ldap"/> и <xref remap="3" linkend="auth-ldap"/></phrase>). В Unix для этого нужно установить пакет <productname>OpenLDAP</productname>. В Windows используется стандартная библиотека <productname>WinLDAP</productname>. Скрипт <filename>configure</filename> проверит наличие необходимых заголовочных файлов и библиотек, чтобы убедиться в целостности инсталляции <productname>OpenLDAP</productname>, прежде чем продолжить.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-systemd</option></term>
+       <listitem>
+        <para>Включает поддержку служебных уведомлений для <application>systemd</application><indexterm><primary>systemd</primary></indexterm>. Это улучшает интеграцию с системой, когда процесс сервера запускается под управлением <application>systemd</application>, и не оказывает никакого влияния в противном случае<phrase condition="default">; за дополнительными сведениями обратитесь к <xref remap="3" linkend="server-start"/></phrase>. Для использования этой поддержки в системе должна быть установлена <application>libsystemd</application> с сопутствующими заголовочными файлами.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--without-readline</option></term>
+       <listitem>
+        <para>Запрещает использование библиотеки <application>Readline</application> (а также <application>libedit</application>). При этом отключается редактирование командной строки и история в <application>psql</application>, так что этот вариант не рекомендуется.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-libedit-preferred</option></term>
+       <listitem>
+        <para>Отдаёт предпочтение библиотеке <application>libedit</application> с лицензией BSD, а не <application>Readline</application> (GPL). Этот параметр имеет значение, только если установлены обе библиотеки; по умолчанию в этом случае используется <application>Readline</application>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-bonjour</option></term>
+       <listitem>
+        <para>Включает поддержку Bonjour. Для этого Bonjour должен поддерживаться самой операционной системой. Рекомендуется для OS X.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-uuid=<replaceable>БИБЛИОТЕКА</replaceable></option></term>
+       <listitem>
+        <para>Собрать модуль <phrase condition="standalone">uuid-ossp</phrase> <phrase condition="default"><xref linkend="uuid-ossp"/></phrase> (предоставляющий функции для генерирования UUID.<indexterm><primary>UUID</primary></indexterm> <replaceable>БИБЛИОТЕКА</replaceable> может быть следующей:</para>
+        <itemizedlist>
+         <listitem>
+          <para><option>bsd</option>, чтобы использовались функции получения UUID, имеющиеся во FreeBSD, NetBSD и некоторых других системах на базе BSD</para>
+         </listitem>
+         <listitem>
+          <para><option>e2fs</option>, чтобы использовалась библиотека получения UUID, созданная в рамках проекта <literal>e2fsprogs</literal>; эта библиотека присутствует в большинстве систем Linux и OS X, также её можно найти и для других платформ.</para>
+         </listitem>
+         <listitem>
+          <para><option>ossp</option>, чтобы использовалась библиотека <ulink url="http://www.ossp.org/pkg/lib/uuid/">OSSP UUID</ulink></para>
+         </listitem>
+        </itemizedlist>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-ossp-uuid</option></term>
+       <listitem>
+        <para>Устаревший вариант указания <literal>--with-uuid=ossp</literal>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-libxml</option></term>
+       <listitem>
+        <para>Собрать с libxml (включает поддержку SQL/XML). Для этого требуется libxml версии 2.6.23 или новее.</para>
+
+        <para>В составе libxml устанавливается программа <command>xml2-config</command>, с помощью которой можно получить требуемые параметры компилятора и компоновщика. &productname; будет использовать её автоматически, если найдёт. Чтобы указать нестандартное размещение libxml, вы можете воспользоваться переменной окружения <envar>XML2_CONFIG</envar> и указать в ней путь к программе <command>xml2-config</command> нужной инсталляции, либо задать параметры <option>--with-includes</option> и <option>--with-libraries</option>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-libxslt</option></term>
+       <listitem>
+        <para>Использовать libxslt при сборке модуля <phrase condition="standalone">xml2</phrase> <phrase condition="default"><xref linkend="xml2"/></phrase>. Библиотека <application>xml2</application> задействует её для выполнения XSL-преобразований XML.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--disable-integer-datetimes</option></term>
+       <listitem>
+        <para>Отключает применение 64-битных целых для хранения времени и интервалов, чтобы значения даты/времени хранились в виде чисел с плавающей точкой. Числа с плавающей точкой применялись для хранения дат/времени по умолчанию в <productname>PostgreSQL</productname> до версии 8.4, но сейчас этот вариант считается устаревшим, так как с ним не поддерживается точность до микросекунд во всём диапазоне значений <type>timestamp</type>. Однако для хранения таких значений в целочисленном виде требуется поддержка целочисленного 64-битного типа. Поэтому прежний вариант может использоваться, когда такой тип не поддерживается или для совместимости с приложениями, написанными для предыдущих версий <productname>PostgreSQL</productname>. Подробнее об этом можно узнать в <phrase condition="standalone">документации о типах даты/времени</phrase> <phrase condition="default"><xref remap="6" linkend="datatype-datetime"/></phrase>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--disable-float4-byval</option></term>
+       <listitem>
+        <para>Запрещает передачу типа float4 <quote>по значению</quote>, чтобы он передавался <quote>по ссылке</quote>. Это снижает быстродействие, но может быть необходимо для совместимости со старыми пользовательскими функциями на языке C, которые используют соглашение о вызовах <quote>версии 0</quote>. В качестве более долгосрочного решения лучше модернизировать такие функции, чтобы они использовали соглашение <quote>версии 1</quote>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--disable-float8-byval</option></term>
+       <listitem>
+        <para>Запрещает передачу типа float8 <quote>по значению</quote>, чтобы он передавался <quote>по ссылке</quote>. Это снижает быстродействие, но может быть необходимо для совместимости со старыми пользовательскими функциями на языке C, которые используют соглашение о вызовах <quote>версии 0</quote>. В качестве более долгосрочного решения лучше модернизировать такие функции, чтобы они использовали соглашение <quote>версии 1</quote>. Заметьте, что этот параметр влияет не только на float8, но и на int8, а также некоторые другие типы, например timestamp. На 32-битных платформах параметр <option>--disable-float8-byval</option> действует по умолчанию и задать <option>--enable-float8-byval</option> нельзя.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-segsize=<replaceable>РАЗМЕР_СЕГМЕНТА</replaceable></option></term>
+       <listitem>
+        <para>Задаёт <firstterm>размер сегмента</firstterm> (в гигабайтах). Сервер делит большие таблицы на несколько файлов в файловой системе, ограничивая размер каждого данным размером сегмента. Это позволяет обойти ограничения на размер файлов, существующие на многих платформах. Размер сегмента по умолчанию, 1 гигабайт, безопасен для всех поддерживаемых платформ. Если же ваша операционная система поддерживает <quote>большие файлы</quote> (а сегодня это поддерживают почти все), вы можете установить больший размер сегмента. Это позволит уменьшить число файловых дескрипторов, используемых при работе с очень большими таблицами. Но будьте осторожны, чтобы выбранное значение не превысило максимум, поддерживаемый вашей платформой и файловыми системами, которые вы будете применять. Возможно, допустимый размер файла будет ограничиваться и другими утилитами, которые вы захотите использовать, например <application>tar</application>. Рекомендуется, хотя и не требуется, чтобы это значение было степенью 2. Заметьте, что при изменении значения требуется выполнить initdb.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-blocksize=<replaceable>РАЗМЕР_БЛОКА</replaceable></option></term>
+       <listitem>
+        <para>Задаёт <firstterm>размер блока</firstterm> (в килобайтах). Эта величина будет единицей хранения и ввода/вывода данных таблиц. Значение по умолчанию, 8 килобайт, достаточно универсально; но в особых случаях может быть оправдан другой размер блока. Это значение должно быть степенью 2 от 1 до 32 (в килобайтах). Заметьте, что при изменении значения требуется выполнить initdb.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-wal-segsize=<replaceable>РАЗМЕР_СЕГМЕНТА</replaceable></option></term>
+       <listitem>
+        <para>Задаёт <firstterm>размер сегмента WAL</firstterm> (в мегабайтах). Эта величина определяет размер каждого отдельного файла журнала WAL. Изменять этот размер бывает полезно для оптимизации фрагментации при трансляции журналов. Значение по умолчанию — 16 мегабайт. Значение должно задаваться степенью 2 от 1 до 64 (в мегабайтах). Заметьте, что при изменении значения требуется выполнить initdb.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-wal-blocksize=<replaceable>РАЗМЕР_БЛОКА</replaceable></option></term>
+       <listitem>
+        <para>Задаёт <firstterm>размер блока WAL</firstterm> (в килобайтах) Эта величина будет единицей хранения и ввода/вывода записей WAL. Значение по умолчанию, 8 килобайт, достаточно универсально; но в особых случаях может быть оправдан другой размер блока. Это значение должно быть степенью 2 от 1 до 64 (в килобайтах). Заметьте, что при изменении значения требуется выполнить initdb.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--disable-spinlocks</option></term>
+       <listitem>
+        <para>Позволяет провести сборку, если <productname>&productname;</productname> не может воспользоваться циклическими блокировками CPU на данной платформе. Отсутствие таких блокировок приводит к снижению производительности, поэтому использовать этот вариант следует, только если сборка прерывается и выдаётся сообщение, что ваша платформа эти блокировки не поддерживает. Если вы не можете собрать <productname>&productname;</productname> на вашей платформе без этого указания, сообщите о данной проблеме разработчикам <productname>&productname;</productname>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--disable-thread-safety</option></term>
+       <listitem>
+        <para>Отключает потокобезопасное поведение клиентских библиотек. При этом параллельные потоки программ на базе <application>libpq</application> и <application>ECPG</application> не будут безопасно контролировать собственные дескрипторы соединений.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--with-system-tzdata=<replaceable>КАТАЛОГ</replaceable></option>
+       <indexterm><primary>данные часовых поясов</primary></indexterm>
+       </term>
+       <listitem>
+        <para>В <productname>&productname;</productname> включена собственная база данных часовых поясов, необходимая для операций с датой и временем. На самом деле эта база данных совместима с базой часовых поясов IANA, поставляемой в составе многих операционных систем FreeBSD, Linux, Solaris, поэтому устанавливать её дополнительно может быть излишне. С этим параметром вместо базы данных, включённой в пакет исходного кода &productname;, будет использоваться системная база данных часовых поясов, находящаяся в заданном <replaceable>КАТАЛОГЕ</replaceable>. <replaceable>КАТАЛОГ</replaceable> должен задаваться абсолютным путём (в ряде операционных систем принят путь <filename>/usr/share/zoneinfo</filename>). Заметьте, что процедура установки не будет проверять несоответствия или ошибки в данных часовых поясов. Поэтому, используя этот параметр, рекомендуется выполнить регрессионные тесты, чтобы убедиться, что выбранная вами база данных часовых поясов работает корректно с <productname>&productname;</productname>.</para>
+
+        <indexterm><primary>кросс-компиляция</primary></indexterm>
+
+        <para>Этот параметр в основном предназначен для тех, кто собирает двоичные пакеты для дистрибутивов и хорошо знает свою операционную систему. Основной плюс от использования системных данных в том, что пакет &productname; не придётся обновлять при изменениях местных определений часовых поясов. Ещё один плюс заключается в упрощении кросс-компиляции, так как при инсталляции не требуется собирать базу данных часовых поясов.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--without-zlib</option></term>
+       <listitem>
+        <para><indexterm><primary>zlib</primary></indexterm> Запрещает использование библиотеки <application>Zlib</application>. При этом отключается поддержка сжатых архивов утилитами <application>pg_dump</application> и <application>pg_restore</application>. Этот параметр предназначен только для тех редких систем, в которых нет этой библиотеки.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--enable-debug</option></term>
+       <listitem>
+        <para>Включает компиляцию всех программ и библиотек с отладочными символами. Это значит, что вы сможете запускать программы в отладчике для анализа проблем. При такой компиляции размер установленных исполняемых файлов значительно увеличивается, а компиляторы, кроме GCC, обычно отключают оптимизацию, что снижает быстродействие. Однако, наличие отладочных символов очень полезно при решении возможных проблем любой сложности. В настоящее время рекомендуется использовать этот параметр для производственной среды, только если применяется компилятор GCC. Но если вы занимаетесь разработкой или испытываете бета-версию, его следует использовать всегда.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--enable-coverage</option></term>
+       <listitem>
+        <para>При использовании GCC все программы и библиотеки компилируются с инструментарием, оценивающим покрытие кода тестами. Если его запустить, в каталоге сборки будут сформированы файлы с метриками покрытия кода. <phrase condition="default">За дополнительными сведениями обратитесь к <xref remap="3" linkend="regress-coverage"/>.</phrase> Этот параметр предназначен только для GCC и только для использования в процессе разработки.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--enable-profiling</option></term>
+       <listitem>
+        <para>При использовании GCC все программы и библиотеки компилируются так, чтобы их можно было профилировать. В результате по завершении серверного процесса будет создаваться подкаталог с файлом <filename>gmon.out</filename> для профилирования. Этот параметр предназначен только для GCC и только для тех, кто занимается разработкой.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--enable-cassert</option></term>
+       <listitem>
+        <para>Включает для сервера проверочные <firstterm>утверждения</firstterm>, проверяющие множество условий, которые <quote>не должны происходить</quote>. Это бесценно в процессе разработке кода, но эти проверки могут значительно замедлить работу сервера. Кроме того, включение этих проверок не обязательно увеличит стабильность вашего сервера! Проверочные утверждения не категоризируются по важности, поэтому относительно безвредная ошибка может привести к перезапуску сервера, если утверждение не выполнится. Применять это следует, только если вы занимаетесь разработкой или испытываете бета-версию, но не в производственной среде.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--enable-depend</option></term>
+       <listitem>
+        <para>Включает автоматическое отслеживание зависимостей. С этим параметром скрипты Makefile настраиваются так, чтобы при изменении любого заголовочного файла пересобирались все зависимые объектные файлы. Это полезно в процессе разработки, но если вам нужно только скомпилировать и установить сервер, это будет лишней тратой времени. В настоящее время это работает только с GCC.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--enable-dtrace</option></term>
+       <listitem>
+        <para><indexterm><primary>DTrace</primary></indexterm> Включает при компиляции <productname>&productname;</productname> поддержку средства динамической трассировки DTrace. <phrase condition="default">За дополнительными сведениями обратитесь к <xref remap="3" linkend="dynamic-trace"/>.</phrase></para>
+
+        <para>Задать расположение программы <command>dtrace</command> можно в переменной окружения <envar>DTRACE</envar>. Часто это необходимо, потому что <command>dtrace</command> обычно устанавливается в каталог <filename>/usr/sbin</filename>, который может отсутствовать в пути поиска.</para>
+
+        <para>Дополнительные параметры командной строки для <command>dtrace</command> можно задать в переменной окружения <envar>DTRACEFLAGS</envar>. В Solaris, чтобы включить поддержку DTrace для 64-битной сборки, необходимо передать configure параметр <literal>DTRACEFLAGS="-64"</literal>. Например, с компилятором GCC: <screen>
+./configure CC='gcc -m64' --enable-dtrace DTRACEFLAGS='-64' ...
+</screen> С компилятором Sun: <screen>
+./configure CC='/opt/SUNWspro/bin/cc -xtarget=native64' --enable-dtrace DTRACEFLAGS='-64' ...
+</screen></para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--enable-tap-tests</option></term>
+       <listitem>
+        <para>Включает тесты по технологии Perl TAP. Для этого у вас должен быть установлен Perl и модуль <literal>IPC::Run</literal>. <phrase condition="default">За дополнительными сведениями обратитесь к <xref remap="3" linkend="regress-tap"/>.</phrase></para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
+    </para>
+
+    <para>Если вы предпочитаете компилятор C, отличный от выбираемого скриптом <filename>configure</filename>, укажите его в переменной <envar>CC</envar>. По умолчанию <filename>configure</filename> выбирает <filename>gcc</filename> (если он находится) или стандартный компилятор платформы (обычно <filename>cc</filename>). Подобным образом, при необходимости можно переопределить флаги компилятора по умолчанию с помощью переменной <envar>CFLAGS</envar>.</para>
+
+    <para>Вы можете задать переменные окружения в командной строке <filename>configure</filename>, например, так: <screen>
+<userinput>./configure CC=/opt/bin/gcc CFLAGS='-O2 -pipe'</userinput>
+</screen></para>
+
+    <para>Ниже приведён список значимых переменных, которые можно установить таким образом: <variablelist>
+      <varlistentry>
+       <term><envar>BISON</envar></term>
+       <listitem>
+        <para>Программа Bison</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><envar>CC</envar></term>
+       <listitem>
+        <para>компилятор C</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><envar>CFLAGS</envar></term>
+       <listitem>
+        <para>параметры, передаваемые компилятору C</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><envar>CPP</envar></term>
+       <listitem>
+        <para>препроцессор C</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><envar>CPPFLAGS</envar></term>
+       <listitem>
+        <para>параметры, передаваемые препроцессору C</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><envar>DTRACE</envar></term>
+       <listitem>
+        <para>расположение программы <command>dtrace</command></para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><envar>DTRACEFLAGS</envar></term>
+       <listitem>
+        <para>параметры, передаваемые программе <command>dtrace</command></para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><envar>FLEX</envar></term>
+       <listitem>
+        <para>программа Flex</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><envar>LDFLAGS</envar></term>
+       <listitem>
+        <para>параметры, которые должны использоваться при компоновке исполняемых программ или разделяемых библиотек</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><envar>LDFLAGS_EX</envar></term>
+       <listitem>
+        <para>дополнительные параметры для компоновки только исполняемых программ</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><envar>LDFLAGS_SL</envar></term>
+       <listitem>
+        <para>дополнительные параметры для компоновки только разделяемых библиотек</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><envar>MSGFMT</envar></term>
+       <listitem>
+        <para>расположение программы <command>msgfmt</command> для поддержки национальных языков</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><envar>PERL</envar></term>
+       <listitem>
+        <para>Полный путь к интерпретатору Perl. Он нужен для определения зависимостей при сборке PL/Perl.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><envar>PYTHON</envar></term>
+       <listitem>
+        <para>Полный путь к интерпретатору Python. Он нужен для определения зависимостей при сборке PL/Python. Кроме того, версия Python, 2 или 3, выбранная таким образом (или неявно как-то ещё), определяет вариацию языка PL/Python, которая будет доступна. За дополнительными сведениями обратитесь к <phrase condition="standalone">документации <application>PL/Python</application></phrase> <phrase condition="default"><xref remap="3" linkend="plpython-python23"/></phrase>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><envar>TCLSH</envar></term>
+       <listitem>
+        <para>Полный путь к интерпретатору Tcl. Он нужен для определения зависимостей при сборке PL/Tcl и будет подставляться в скрипты Tcl.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><envar>XML2_CONFIG</envar></term>
+       <listitem>
+        <para>Программа <command>xml2-config</command> помогает найти инсталляцию libxml.</para>
+       </listitem>
+      </varlistentry>
+     </variablelist></para>
+
+    <para>Иногда может быть полезно добавить флаги компилятора к набору флагов, ранее заданному на этапе <filename>configure</filename>. В частности, эта потребность объясняется тем, что параметр <application>gcc</application> <option>-Werror</option> нельзя указать в переменной <envar>CFLAGS</envar>, передаваемой <filename>configure</filename>, так как в результате сломаются многие встроенные тесты <filename>configure</filename>. Чтобы добавить такие флаги, задайте их в переменной среды <envar>COPT</envar> при запуске <filename>make</filename>. Содержимое <envar>COPT</envar> будет добавлено в параметры <envar>CFLAGS</envar> и <envar>LDFLAGS</envar>, заданные скриптом <filename>configure</filename>. Например, вы можете выполнить: <screen>
+<userinput>make COPT='-Werror'</userinput>
+</screen> или <screen>
+<userinput>export COPT='-Werror'</userinput>
+<userinput>make</userinput>
+</screen></para>
+
+    <note>
+     <para>Разрабатывая внутренний код сервера, рекомендуется использовать указания configure <option>--enable-cassert</option> (которое включает множество проверок во время выполнения) и <option>--enable-debug</option> (которое упрощает использование средств отладки).</para>
+
+     <para>Используя GCC, лучше выполнять сборку с уровнем оптимизации не ниже <option>-O1</option>, так как без оптимизации (<option>-O0</option>) отключаются некоторые важные предупреждения компилятора (например, об использовании неинициализированных переменных). Однако оптимизация ненулевого уровня может затруднить отладку, так как при пошаговом выполнении скомпилированный код обычно не соответствует в точности строкам исходного кода. При возникновении сложностей с отладкой оптимизированного кода, перекомпилируйте интересующие вас файлы с ключом <option>-O0</option>. Это можно сделать, просто передав соответствующий параметр <application>make</application>: <command>make PROFILE=-O0 file.o</command>.</para>
+
+     <para>На самом деле переменные окружения <envar>COPT</envar> и <envar>PROFILE</envar> обрабатываются сборочными файлами Makefile <productname>PostgreSQL</productname> одинаково. Поэтому выбор одной из этих переменных — дело вкуса, но обычно разработчики используют <envar>PROFILE</envar> для одноразовых корректив флагов, а содержимое <envar>COPT</envar> сохраняют постоянным.</para>
+    </note>
+   </step>
+
+  <step id="build">
+   <title>Сборка</title>
+
+   <para>Чтобы запустить сборку, введите: <screen>
+<userinput>make</userinput>
+</screen> (Помните, что нужно использовать <acronym>GNU</acronym> <application>make</application>.) Сборка займёт несколько минут, в зависимости от мощности вашего компьютера. В конце должно появиться сообщение: <screen>
+All of &productname; successfully made. Ready to install.
+</screen> (Весь &productname; собран успешно и готов к установке.)</para>
+
+  <para>Если вы хотите собрать всё, что может быть собрано, включая документацию (страницы HTML и man) и дополнительные модули (<filename>contrib</filename>), введите: <screen>
+<userinput>make world</userinput>
+</screen> В конце должно появиться сообщение: <screen>
+&productname;, contrib and documentation successfully made. Ready to install.
+</screen> (&productname;, contrib и документация собраны успешно и готовы к установке.)</para>
+  </step>
+
+  <step>
+   <title>Регрессионные тесты</title>
+
+   <indexterm><primary>регрессионный тест</primary></indexterm>
+
+   <para>Если вы хотите протестировать только что собранный сервер, прежде чем устанавливать его, на этом этапе вы можете запустить регрессионные тесты. Регрессионные тесты — это комплектов тестов, проверяющих, что <productname>&productname;</productname> работает на вашем компьютере так, как задумано разработчиками. Введите: <screen>
+<userinput>make check</userinput>
+</screen> (Это должен выполнять обычный пользователь, не root.) Как интерпретировать результаты проверки, подробно описывается в <phrase condition="standalone">файле <filename>src/test/regress/README</filename> и документации</phrase> <phrase condition="default"><xref remap="6" linkend="regress"/></phrase>. Вы можете повторить эту проверку позже в любой момент, выполнив ту же команду.</para>
+  </step>
+
+  <step id="install">
+   <title>Установка файлов</title>
+
+   <note>
+    <para>Если вы обновляете существующую систему, обязательно прочитайте инструкции по обновлению кластера, приведённые в <phrase condition="standalone">документации</phrase> <phrase condition="default"><xref remap="6" linkend="upgrading"/></phrase>.</para>
+   </note>
+
+   <para>Чтобы установить <productname>&productname;</productname>, введите: <screen>
+<userinput>make install</userinput>
+</screen> При этом файлы будут установлены в каталоги, заданные в <xref remap="6" linkend="configure"/>. Убедитесь в том, что у вас есть соответствующие разрешения для записи туда. Обычно это действие нужно выполнять от имени root. Также возможно заранее создать целевые каталоги и дать требуемый доступ к ним.</para>
+
+   <para>Чтобы установить документацию (HTML и страницы man), введите: <screen>
+<userinput>make install-docs</userinput>
+</screen></para>
+
+   <para>Если вы собирали цель world, введите вместо этого: <screen>
+<userinput>make install-world</userinput>
+</screen> При этом также будет установлена документация.</para>
+
+   <para>Вы можете запустить <literal>make install-strip</literal> вместо <literal>make install</literal>, чтобы убрать лишнее из устанавливаемых исполняемых файлов и библиотек. Это позволит сэкономить немного места. Если вы выполняете сборку для отладки, при этом фактически вырежется поддержка отладки, поэтому этот вариант подходит только если отладка больше не планируется. Процедура <literal>install-strip</literal> пытается оптимизировать объём разумными способами, но не рассчитывайте, что она способна удалить каждый ненужный байт из исполняемого файла. Если вы хотите освободить как можно больше места, вам придётся проделать это вручную.</para>
+
+   <para>При стандартной установке в систему устанавливаются все заголовочные файлы для разработки клиентских приложений, а также программ на стороне сервера, в частности, собственных функций или типов данных, реализованных на C. (До <productname>PostgreSQL</productname> 8.0 для этого требовалось выполнить <literal>make install-all-headers</literal>, но сейчас это включено в стандартную установку.)</para>
+
+   <formalpara>
+    <title>Установка только клиентской части:</title>
+    <para>Если вы хотите установить только клиентские приложения и интерфейсные библиотеки, можно выполнить эти команды: <screen>
+<userinput>make -C src/bin install</userinput>
+<userinput>make -C src/include install</userinput>
+<userinput>make -C src/interfaces install</userinput>
+<userinput>make -C doc install</userinput>
+</screen> В <filename>src/bin</filename> есть несколько программ, применимых только на сервере, но они очень малы.</para>
+   </formalpara>
+  </step>
+  </procedure>
+
+  <formalpara>
+   <title>Удаление:</title>
+   <para>Чтобы отменить установку, воспользуйтесь командой <command>make uninstall</command>. Однако созданные каталоги при этом удалены не будут.</para>
+  </formalpara>
+
+  <formalpara>
+   <title>Очистка:</title>
+
+   <para>После установки вы можете освободить место на диске, удалив файлы сборки из дерева исходного кода, выполнив <command>make clean</command>. При этом файлы, созданные программой <command>configure</command>, будут сохранены, так что позже вы сможете пересобрать всё заново, выполнив <command>make</command>. Чтобы сбросить дерево исходного кода к состоянию, в котором оно распространяется, выполните <command>make distclean</command>. Если вы намерены выполнять сборку одного дерева исходного кода для нескольких платформ, вам придётся делать это и переконфигурировать сборочную среду для каждой. (Также можно использовать отдельное дерево сборки для каждой платформы, чтобы дерево исходного кода оставалось неизменным.)</para>
+  </formalpara>
+
+  <para>Если в процессе сборки вы обнаружите, что заданные вами параметры <command>configure</command> оказались ошибочными, либо вы изменили что-то, от чего зависит работа <command>configure</command> (например, обновили пакеты), стоит выполнить <command>make distclean</command>, прежде чем переконфигурировать и пересобирать всё заново. Если этого не сделать, ваши изменения в конфигурации могут распространиться не везде, где они важны.</para>
+ </sect1>
+
+ <sect1 id="install-post">
+  <title>Действия после установки</title>
+
+  <sect2>
+   <title>Разделяемые библиотеки</title>
+
+   <indexterm><primary>разделяемая библиотека</primary></indexterm>
+
+   <para>В некоторых системах с разделяемыми библиотеками необходимо указать системе, как найти недавно установленные разделяемые библиотеки. К числу систем, где это <emphasis>не</emphasis> требуется, относятся <systemitem class="osname">FreeBSD</systemitem>, <systemitem class="osname">HP-UX</systemitem>, <systemitem class="osname">Linux</systemitem>, <systemitem class="osname">NetBSD</systemitem>, <systemitem class="osname">OpenBSD</systemitem> и <systemitem class="osname">Solaris</systemitem>.</para>
+
+   <para>Путь поиска разделяемых библиотек на разных платформах может устанавливаться по-разному, но наиболее распространённый способ — установить переменную окружения <envar>LD_LIBRARY_PATH</envar>, например так: в оболочках Bourne (<command>sh</command>, <command>ksh</command>, <command>bash</command>, <command>zsh</command>): <programlisting>LD_LIBRARY_PATH=/usr/local/pgsql/lib
+export LD_LIBRARY_PATH</programlisting> или в <command>csh</command>, <command>tcsh</command>: <programlisting>setenv LD_LIBRARY_PATH /usr/local/pgsql/lib</programlisting> Замените <literal>/usr/local/pgsql/lib</literal> значением, переданным <xref linkend="configure"/> в <option><literal>--libdir</literal></option>. Эти команды следует поместить в стартовый файл оболочки, например, в <filename>/etc/profile</filename> или <filename>~/.bash_profile</filename>. Полезные предостережения об использовании этого метода приведены на странице <ulink url="http://xahlee.org/UnixResource_dir/_/ldpath.html"/>.</para>
+
+   <para>В некоторых системах предпочтительнее установить переменную окружения <envar>LD_RUN_PATH</envar> <emphasis>до</emphasis> сборки.</para>
+
+   <para>В <systemitem class="osname">Cygwin</systemitem> добавьте каталог с библиотеками в <envar>PATH</envar> или переместите файлы <filename>.dll</filename> в каталог <filename>bin</filename>.</para>
+
+   <para>В случае сомнений обратитесь к страницам руководства по вашей системе (возможно, к справке по <command>ld.so</command> или <command>rld</command>). Если вы позже получаете сообщение: <screen>
+psql: error in loading shared libraries
+libpq.so.2.1: cannot open shared object file: No such file or directory
+</screen> (psql: ошибка при загрузке разделяемых библиотек
+libpq.so.2.1: не удалось открыть разделяемый объектный файл: Нет такого файла или каталога), значит этот шаг был необходим. Тогда вам просто нужно вернуться к нему.</para>
+
+   <para><indexterm><primary>ldconfig</primary></indexterm> Если вы используете <systemitem class="osname">Linux</systemitem> и имеете права root, вы можете запустить: <programlisting>/sbin/ldconfig /usr/local/pgsql/lib</programlisting> (возможно, с другим каталогом) после установки, чтобы механизм связывания во время выполнения мог найти разделяемые библиотеки быстрее. За дополнительными сведениями обратитесь к странице руководства по <command>ldconfig</command>. Во <systemitem class="osname">FreeBSD</systemitem>, <systemitem class="osname">NetBSD</systemitem> и <systemitem class="osname">OpenBSD</systemitem> команда будет такой: <programlisting>/sbin/ldconfig -m /usr/local/pgsql/lib</programlisting> В других системах подобной команды может не быть.</para>
+  </sect2>
+
+  <sect2>
+   <title>Переменные окружения</title>
+
+   <indexterm><primary><envar>PATH</envar></primary></indexterm>
+
+   <para>Если целевым каталогом был выбран <filename>/usr/local/pgsql</filename> или какой-то другой, по умолчанию отсутствующий в пути поиска, вам следует добавить <filename>/usr/local/pgsql/bin</filename> (или другой путь, переданный <xref linkend="configure"/> в указании <option><literal>--bindir</literal></option>) в вашу переменную <envar>PATH</envar>. Строго говоря, это не обязательно, но при этом использовать <productname>&productname;</productname> будет гораздо удобнее.</para>
+
+   <para>Для этого добавьте в ваш скрипт запуска оболочки, например <filename>~/.bash_profile</filename> (или в <filename>/etc/profile</filename>, если это нужно всем пользователям): <programlisting>PATH=/usr/local/pgsql/bin:$PATH
+export PATH</programlisting> Для оболочек <command>csh</command> или <command>tcsh</command> команда должна быть такой: <programlisting>set path = ( /usr/local/pgsql/bin $path )</programlisting></para>
+
+   <para><indexterm><primary><envar>MANPATH</envar></primary></indexterm> Чтобы ваша система могла найти документацию <application>man</application>, вам нужно добавить в скрипт запуска оболочки примерно следующие строки, если только она не установлена в размещение, просматриваемое по умолчанию: <programlisting>MANPATH=/usr/local/pgsql/share/man:$MANPATH
+export MANPATH</programlisting></para>
+
+   <para>Переменные окружения <envar>PGHOST</envar> и <envar>PGPORT</envar> задают для клиентских приложений адрес компьютера и порт сервера базы данных, переопределяя стандартные значения. Если планируется запускать клиентские приложения удалённо, пользователям, которые будут использовать определённый сервер, будет удобно, если они установят <envar>PGHOST</envar>. Однако это не обязательно, так как большинство клиентских программ могут принять эти параметры через аргументы командной строки.</para>
+  </sect2>
+ </sect1>
+
+
+ <sect1 id="install-getting-started" condition="standalone">
+  <title>Начало</title>
+
+  <para>Далее вкратце рассказывается, как после установки <productname>&productname;</productname> начать с ним работу. Более подробно об этом рассказывается в основной документации.</para>
+
+  <procedure>
+   <step>
+    <para>Создайте в системе пользователя для сервера <productname>&productname;</productname>. Сервер будет запускаться и работать под именем этого пользователя. В производственной среде для этой цели нужно создать отдельную, непривилегированную учётную запись (обычно ей дают имя <quote>postgres</quote>). Если же у вас нет прав администратора или вы хотите просто поэкспериментировать, можно использовать и вашу собственную учётную запись (но учтите, что запуск сервера под именем root угрожает безопасности и поэтому не допускается). <screen>
+<userinput>adduser postgres</userinput>
+</screen></para>
+   </step>
+
+   <step>
+    <para>Подготовьте базы данных с помощью команды <command>initdb</command>. Запускать <command>initdb</command> вы должны с именем пользователя, выбранного для сервера <productname>&productname;</productname>. Под именем root она не запустится. <screen>
+root# <userinput>mkdir /usr/local/pgsql/data</userinput>
+root# <userinput>chown postgres /usr/local/pgsql/data</userinput>
+root# <userinput>su - postgres</userinput>
+postgres$ <userinput>/usr/local/pgsql/bin/initdb -D /usr/local/pgsql/data</userinput>
+</screen></para>
+
+    <para>Параметр <option>-D</option> задаёт место, куда будут помещены данные. Вы можете задать любой путь, это не обязательно должен быть каталог внутри дерева инсталляции. Достаточно убедиться в том, что серверный пользователь имеет право записи в этот каталог, (а если он не существует, создать его) прежде чем запускать <command>initdb</command>, как показано здесь.</para>
+   </step>
+
+   <step>
+    <para>На данном этапе, если вы не применяли параметр <command>initdb</command> <literal>-A</literal>, может понадобиться модифицировать <filename>pg_hba.conf</filename> для разрешения локального доступа к серверу, прежде чем запускать его. По умолчанию он доверяет всем локальным пользователям.</para>
+   </step>
+
+   <step>
+    <para>На предыдущем шаге программа <command>initdb</command> должна была сказать вам, как запускать сервер баз данных. Выполните эти указания сейчас. Например, команда может быть такой: <programlisting>/usr/local/pgsql/bin/postgres -D /usr/local/pgsql/data</programlisting> При этом сервер будет запущен на переднем плане. Запустить его на заднем плане можно примерно так: <programlisting>nohup /usr/local/pgsql/bin/postgres -D /usr/local/pgsql/data \
+    &lt;/dev/null &gt;&gt;server.log 2&gt;&amp;1 &lt;/dev/null &amp;</programlisting></para>
+
+    <para>Чтобы остановить сервер, работающий в фоновом процессе, можно ввести: <programlisting>kill `cat /usr/local/pgsql/data/postmaster.pid`</programlisting></para>
+   </step>
+
+   <step>
+    <para>Создайте базу данных: <screen>
+<userinput>createdb testdb</userinput>
+</screen> Затем введите: <screen>
+<userinput>psql testdb</userinput>
+</screen> для того чтобы подключиться к этой базе. В появившемся приглашении вы сможете вводить команды SQL и приступить к экспериментам.</para>
+   </step>
+  </procedure>
+ </sect1>
+
+ <sect1 id="install-whatnow" condition="standalone">
+  <title>Что теперь?</title>
+
+  <para>
+   <itemizedlist>
+    <listitem>
+     <para>Дистрибутив <productname>&productname;</productname> содержит всеобъемлющую документацию, с которой вам следует со временем ознакомиться. Завершив установку, просмотреть документацию можно, открыв в браузере страницу <filename>/usr/local/pgsql/doc/html/index.html</filename> (если пути инсталляции не были изменены).</para>
+
+     <para>Первые несколько глав основной документации вводные, и если вы совершенно не знакомы с базами данных <acronym>SQL</acronym>, начать следует с них. Если же основы баз данных вам изучать не требуется, вы можете перейти к части, посвящённой администрированию сервера, в которой описывается как настроить сервер, создать пользователей и организовать аутентификацию.</para>
+    </listitem>
+
+    <listitem>
+     <para>Обычно бывает желательно настроить компьютер так, чтобы при его загрузке сервер баз данных запускался автоматически. Как это сделать, вы можете узнать в документации.</para>
+    </listitem>
+
+    <listitem>
+     <para>Ещё раз запустите регрессионные тесты для проверки установленного сервера (выполнив <command>make installcheck</command>). Если вы не запускали тесты до установки, это, определённо, стоит сделать сейчас. Об этом также рассказывается в документации.</para>
+    </listitem>
+
+    <listitem>
+     <para>По умолчанию <productname>&productname;</productname> ориентирован на работу с минимальными аппаратными требованиями. Это позволяет запускать его практически на любом оборудовании. Однако эта конфигурация не оптимизирована для высокой производительности. Чтобы получить наилучшую производительность, потребуется настроить несколько параметров сервера, в том числе <varname>shared_buffers</varname> и <varname>work_mem</varname> (одни из наиболее важных). На быстродействие сервера также влияют и другие параметры, описанные в документации.</para>
+    </listitem>
+   </itemizedlist>
+  </para>
+ </sect1>
+
+
+ <sect1 id="supported-platforms">
+  <title>Поддерживаемые платформы</title>
+
+  <para>Вообще следует ожидать, что <productname>&productname;</productname> будет работать на процессорах следующих архитектур: x86, x86_64, IA64, PowerPC, PowerPC 64, S/390, S/390x, Sparc, Sparc 64, ARM, MIPS, MIPSEL, M68K и PA-RISC. Есть также код для поддержки M32R и VAX, но неизвестно, проверялась ли его работа в последнее время. Часто сервер можно собрать для неподдерживаемого типа процессора, сконфигурировав сборку с указанием <option>--disable-spinlocks</option>, но производительность при этом будет неудовлетворительной.</para>
+
+  <para>Также следует ожидать, что сервер <productname>&productname;</productname> будет работать в следующих операционных системах: Linux (все последние дистрибутивы), Windows (Win2000 SP4 и новее), FreeBSD, OpenBSD, NetBSD, OS X, AIX, HP/UX, Solaris и UnixWare. Возможна также работа в других Unix-подобных системах, но в настоящее время она не проверяется. При этом в большинстве случаев он будет работать на процессорах всех архитектур, поддерживаемых данной операционной системой. Перейдите к <xref remap="3" linkend="installation-platform-notes"/> и проверьте, нет ли там замечаний, относящихся именно к вашей операционной системе, особенно, если вы используете не самую новую систему.</para>
+
+  <para>Если вы столкнулись с проблемами установки на платформе, которая считается поддерживаемой, пожалуйста, сообщите о них по адресу <email>bugs@postgrespro.com</email>. Если вы заинтересованы в переносе <productname>&productname;</productname> на новую платформу, напишите нам по адресу <email>info@postgrespro.com</email>.</para>
+ </sect1>
+
+ <sect1 id="installation-platform-notes">
+  <title>Замечания по отдельным платформам</title>
+
+  <para>В этом разделе приведены дополнительные замечания по отдельным платформам, связанные с установкой и подготовкой к работе &productname;. Обязательно изучите ещё инструкции по установке, в частности <xref remap="4" linkend="install-requirements"/>. Также обратитесь к <phrase condition="standalone"><filename>src/test/regress/README</filename> и документации</phrase> <phrase condition="default"><xref remap="3" linkend="regress"/></phrase>, где рассказывается, как прочитать результаты регрессионных тестов.</para>
+
+  <para>Если какие-то платформы здесь не упоминаются, значит каких-либо известных особенностей установки в них нет.</para>
+
+  <sect2 id="installation-notes-aix">
+   <title>AIX</title>
+
+   <indexterm zone="installation-notes-aix"><primary>AIX</primary> <secondary>установка в</secondary></indexterm>
+
+   <para>&productname; работает в AIX, но установить его правильно может быть непростой задачей. Поддерживаемыми считаются версии AIX с 4.3.3 до 6.1. Для сборки вы можете применить GCC или собственный компилятор IBM <command>xlc</command>. Вообще говоря, полезно использовать последние версии AIX и &productname;. Получить актуальную информацию о версиях AIX, работа в которых проверена на данный момент, можно на сайте фермы сборки.</para>
+
+   <para>Минимальные рекомендуемые уровни исправлений для поддерживаемых версий AIX:</para>
+
+   <variablelist>
+    <varlistentry>
+     <term>AIX 4.3.3</term>
+     <listitem><para>Эксплуатационный уровень (ML) 11 + пакет исправлений после ML11</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>AIX 5.1</term>
+     <listitem><para>Эксплуатационный уровень (ML) 9 + пакет исправлений после ML9</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>AIX 5.2</term>
+     <listitem><para>Технологический уровень (TL) 10, Пакет обновлений (SP) 3</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>AIX 5.3</term>
+     <listitem><para>Технологический уровень (TL) 7</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>AIX 6.1</term>
+     <listitem><para>Базовый уровень</para></listitem>
+    </varlistentry>
+   </variablelist>
+
+   <para>Чтобы проверить ваш текущий уровень исправлений, выполните <command>oslevel -r</command> в AIX версии с 4.3.3 по 5.2 ML 7, либо <command>oslevel -s</command> в более поздних версиях.</para>
+
+   <para>Если Readline или libz у вас установлены не в <literal>/usr/local</literal>, передайте <command>configure</command> следующие ключи в дополнение к вашим: <literal>--with-includes=/usr/local/include --with-libraries=/usr/local/lib</literal>.</para>
+
+   <sect3>
+    <title>Особенности использования GCC</title>
+
+    <para>В AIX 5.3 наблюдались проблемы с компиляцией и запуском &productname; с использованием GCC.</para>
+
+    <para>Для успешной сборки вам потребуется GCC версии новее 3.3.2, особенно, если вы используете версию из системного пакета. Мы добивались успеха с 4.0.1. Проблемы с предыдущими версиями, судя по всему, были связаны больше с тем, как IBM упаковала GCC, а не собственно с GCC, поэтому если вы скомпилируете GCC самостоятельно, положительный исход возможен и с ранней версией GCC.</para>
+   </sect3>
+
+   <sect3>
+    <title>Неработающие доменные сокеты Unix</title>
+
+    <para>В AIX 5.3 была проблема с размером структуры <structname>sockaddr_storage</structname>. В версии 5.3 IBM увеличила размер <structname>sockaddr_un</structname>, структуры адреса для доменных сокетов Unix, но не увеличила соответственно размер <structname>sockaddr_storage</structname>. В итоге при попытке &productname; использовать доменные сокеты Unix происходило переполнение этой структуры в libpq. Подключение через TCP/IP устанавливается корректно, а через доменные сокеты Unix — нет, и в результате регрессионные тесты не проходят.</para>
+
+    <para>Об этой проблеме было сообщено IBM, она зафиксирована в отчёте об ошибке PMR29657. Если вы обновите систему до эксплуатационного уровня 5300-03 или новее, она получит соответствующее исправление. В качестве временного решения можно присвоить <symbol>_SS_MAXSIZE</symbol> значение 1025 в <filename>/usr/include/sys/socket.h</filename>. В любом случае, после исправления этого заголовочного файла перекомпилируйте &productname;.</para>
+   </sect3>
+
+   <sect3>
+    <title>Проблемы с сетевыми адресами</title>
+
+    <para>&productname; пользуется системной функцией <function>getaddrinfo</function> для разбора IP-адресов, указанных в параметре <varname>listen_addresses</varname>, файле <filename>pg_hba.conf</filename> и т. д. В старых версиях AIX эта функция работала некорректно. Если вы столкнулись с проблемами в этой области, обновление до уровня исправлений AIX, обозначенного выше, должно решить их.</para>
+
+    <!-- https://archives.postgresql.org/message-id/6064jt6cfm.fsf_-_@dba2.int.libertyrms.com -->
+
+    <para>Один пользователь сообщает:</para>
+
+    <para>Используя PostgreSQL версии 8.1 в AIX 5.3, мы периодически сталкивались с тем, что сборщик статистики <quote>загадочным образом</quote> не запускается. Кажется, это результат незапланированного поведения реализации IPv6. Похоже, что &productname; и IPv6 не дружат в AIX 5.3.</para>
+
+    <para>Для <quote>решения</quote> проблемы можно выполнить одно из следующих действий. <itemizedlist>
+      <listitem>
+       <para>Удалите адрес IPv6 для localhost: <screen>
+(от имени root)
+# ifconfig lo0 inet6 ::1/0 delete
+</screen></para>
+      </listitem>
+
+      <listitem>
+       <para>Удалите IPv6 из сетевых сервисов. Файл <filename>/etc/netsvc.conf</filename> в AIX примерно соответствует файлу <filename>/etc/nsswitch.conf</filename> в Solaris/Linux. По умолчанию в AIX он выглядит так: <programlisting>hosts=local,bind</programlisting> Чтобы отключить поиск адресов IPv6, замените его содержимое следующим: <programlisting>hosts=local4,bind4</programlisting></para>
+      </listitem>
+     </itemizedlist></para>
+
+    <warning>
+    <para>К этим временным решениям приходилось прибегать из-за проблем, связанных с сырой реализацией IPv6, которая заметно улучшилась в последующих выпусках AIX 5.3. Эти решения работали в AIX версии 5.3, но они конечно далеки от идеальных. Кроме того, сообщалось, что они не только не требуются, но и приводят к другим проблемам в AIX 6.1, где поддержка IPv6 стала более зрелой.</para>
+    </warning>
+
+   </sect3>
+
+   <sect3>
+    <title>Управление памятью</title>
+    <!-- https://archives.postgresql.org/message-id/603bgqmpl9.fsf@dba2.int.libertyrms.com -->
+
+    <para>
+     AIX can be somewhat peculiar with regards to the way it does
+     memory management.  You can have a server with many multiples of
+     gigabytes of RAM free, but still get out of memory or address
+     space errors when running applications.  One example
+     is <command>createlang</command> failing with unusual errors.
+     For example, running as the owner of the &productname; installation:
+<screen>
+-bash-3.00$ createlang plperl template1
+createlang: language installation failed: ERROR:  could not load library "/opt/dbs/pgsql748/lib/plperl.so": A memory address is not in the address space for the process.
+</screen>
+    Running as a non-owner in the group possessing the &productname;
+    installation:
+<screen>
+-bash-3.00$ createlang plperl template1
+createlang: language installation failed: ERROR:  could not load library "/opt/dbs/pgsql748/lib/plperl.so": Bad address
+</screen>
+     Another example is out of memory errors in the &productname; server
+     logs, with every memory allocation near or greater than 256 MB
+     failing.
+    </para>
+
+    <para>Общая причина всех этих проблем связана с битностью и моделью памяти серверного процесса. По умолчанию все исполняемые файлы для AIX собираются как 32-битные, вне зависимости от того, какой тип оборудования или ядра используется. Такие 32-битные процессы ограничиваются общим пространством в 4 ГиБ, разделённым на сегменты по 256 МиБ, по одной из нескольких моделей. По умолчанию в куче можно выделить меньше 256 МиБ, так как она разделяет один сегмент со стеком.</para>
+
+    <para>В ситуации с показанным выше примером <command>createlang</command>, проверьте umask и разрешения, назначенные для двоичных файлов в вашей инсталляции &productname;. Задействованные в данном примере двоичные файлы были 32-битными и установились с режимом 750 вместо 755. Из-за таких разрешений только владелец или член группы-владельца могли загрузить требуемую библиотеку. Так как она недоступна для чтения всеми, загрузчик помещал этот объект в область кучи процесса, а не в сегменты разделяемых библиотек, где он должен находиться.</para>
+
+    <para>В <quote>идеале</quote> эту проблему можно решить, если использовать 64-битную сборку &productname;, но это не всегда практично, так как с 32-битным процессором нельзя будет запустить 64-битный код (можно только собрать).</para>
+
+    <para>При желании использовать 32-битную версию сервера установите в <symbol>LDR_CNTRL</symbol> значение <literal>MAXDATA=0x<replaceable>n</replaceable>0000000</literal>, где 1 &lt;= n &lt;= 8, до запуска &productname;, и попробуйте подобрать подходящее значение и параметры <filename>postgresql.conf</filename>. Переменная окружения <symbol>LDR_CNTRL</symbol> говорит AIX, что вы хотите, чтобы сервер получил <symbol>MAXDATA</symbol> байт для области кучи, в сегментах по 256 МиБ. Подобрав рабочее значение, можно воспользоваться <command>ldedit</command> и модифицировать двоичные файлы, чтобы они использовали такой размер кучи по умолчанию. Тот же эффект можно получить, пересобрав &productname; с указанием <literal>configure LDFLAGS="-Wl,-bmaxdata:0x<replaceable>n</replaceable>0000000"</literal>.</para>
+
+    <para>Для 64-битной сборки определите переменную <envar>OBJECT_MODE</envar> со значением 64 и передайте <command>configure</command> указания <literal>CC="gcc -maix64"</literal> и <literal>LDFLAGS="-Wl,-bbigtoc"</literal>. (Для <command>xlc</command> параметры могут быть другими.) Если нужное значение <envar>OBJECT_MODE</envar> не будет экспортировано, при сборке могут произойти ошибки на стадии компоновки. Когда переменная <envar>OBJECT_MODE</envar> установлена, она говорит сборочным утилитам AIX, таким как <command>ar</command>, <command>as</command> и <command>ld</command>, какие типы объектов обрабатывать по умолчанию.</para>
+
+    <para>По умолчанию система может чрезмерно выделять память в пространстве подкачки. Хотя нам не приходилось с этим сталкиваться, AIX уничтожает процессы при попытке обращения к чрезмерно выделенной памяти, когда её фактически не хватает. Наиболее близкое, что мы наблюдали, была ошибка порождения процесса из-за того, что система решала, что для него не хватает памяти. Как и многие другие компоненты AIX, механизмы распределения пространства подкачки и уничтожения процессов при нехватке памяти можно настроить на уровне системы или процесса, если возникают подобные проблемы.</para>
+
+    <bibliography>
+     <title>Ссылки и ресурсы</title>
+
+     <biblioentry>
+      <biblioset relation="article">
+       <title><ulink url="http://publib.boulder.ibm.com/infocenter/pseries/topic/com.ibm.aix.doc/aixprggd/genprogc/lrg_prg_support.htm">Large Program Support</ulink></title>
+      </biblioset>
+      <biblioset relation="book">
+       <title>Документация AIX: Общие концепции программирования: Написание и отладка программ</title>
+      </biblioset>
+     </biblioentry>
+
+     <biblioentry>
+      <biblioset relation="article">
+       <title><ulink url="http://publib.boulder.ibm.com/infocenter/pseries/topic/com.ibm.aix.doc/aixprggd/genprogc/address_space.htm">Program Address Space Overview</ulink></title>
+      </biblioset>
+      <biblioset relation="book">
+       <title>Документация AIX: Общие концепции программирования: Написание и отладка программ</title>
+      </biblioset>
+     </biblioentry>
+
+     <biblioentry>
+      <biblioset relation="article">
+       <title><ulink url="http://publib.boulder.ibm.com/infocenter/pseries/v5r3/topic/com.ibm.aix.doc/aixbman/prftungd/resmgmt2.htm">Performance Overview of the Virtual Memory Manager (VMM)</ulink></title>
+      </biblioset>
+      <biblioset relation="book">
+       <title>Документация AIX: Руководство по управлению производительностью</title>
+      </biblioset>
+     </biblioentry>
+
+     <biblioentry>
+      <biblioset relation="article">
+       <title><ulink url="http://publib.boulder.ibm.com/infocenter/pseries/v5r3/topic/com.ibm.aix.doc/aixbman/prftungd/memperf7.htm">Page Space Allocation</ulink></title>
+      </biblioset>
+      <biblioset relation="book">
+       <title>Документация AIX: Руководство по управлению производительностью</title>
+      </biblioset>
+     </biblioentry>
+
+     <biblioentry>
+      <biblioset relation="article">
+       <title><ulink url="http://publib.boulder.ibm.com/infocenter/pseries/v5r3/topic/com.ibm.aix.doc/aixbman/prftungd/memperf6.htm">Paging-space thresholds tuning</ulink></title>
+      </biblioset>
+      <biblioset relation="book">
+       <title>Документация AIX: Руководство по управлению производительностью</title>
+      </biblioset>
+     </biblioentry>
+
+     <biblioentry>
+       <title><ulink url="http://www.redbooks.ibm.com/abstracts/sg245674.html?Open">Developing and Porting C and C++ Applications on AIX</ulink></title>
+       <publisher>
+        <publishername>Красная книга IBM</publishername>
+       </publisher>
+     </biblioentry>
+    </bibliography>
+   </sect3>
+  </sect2>
+
+  <sect2 id="installation-notes-cygwin">
+   <title>Cygwin</title>
+
+   <indexterm zone="installation-notes-cygwin"><primary>Cygwin</primary> <secondary>установка в</secondary></indexterm>
+
+   <para>&productname; можно собрать с применением Cygwin, Linux-подобной среды для Windows, но сейчас этому методу предпочитается обычная сборка в Windows <phrase condition="default">(см. <xref remap="4" linkend="install-windows"/>)</phrase>, и запускать сервер в среде Cygwin более не рекомендуется.</para>
+
+   <para>Выполняя сборку, следуйте обычной процедуре установки (т. е., <literal>./configure; make</literal>; и т. д.), с учётом следующих особенностей Cygwin: <itemizedlist>
+     <listitem>
+      <para>Настройте путь поиска так, чтобы каталог bin в Cygwin стоял перед каталогами утилит Windows. Это поможет избавиться от проблем при компиляции.</para>
+     </listitem>
+
+     <listitem>
+      <para>Команда <command>adduser</command> не поддерживается; воспользуйтесь соответствующим средством управления пользователями для Windows NT, 2000 или XP. Либо просто пропустите этот шаг.</para>
+     </listitem>
+
+     <listitem>
+      <para>Команда <command>su</command> не поддерживается; для эмуляции su в Windows NT, 2000 или XP воспользуйтесь ssh. Либо пропустите этот шаг.</para>
+     </listitem>
+
+     <listitem>
+      <para>OpenSSL не поддерживается.</para>
+     </listitem>
+
+     <listitem>
+      <para>Запустите <command>cygserver</command> для поддержки разделяемой памяти. Для этого введите команду <literal>/usr/sbin/cygserver &amp;</literal>. Эта программа должна работать всегда при запуске сервера &productname; или инициализации кластера баз данных (<command>initdb</command>). Возможно, вам придётся настроить конфигурацию <command>cygserver</command> (например, увеличить <symbol>SEMMNS</symbol>), чтобы &productname; мог получить требуемые системные ресурсы.</para>
+     </listitem>
+
+     <listitem>
+      <para>Сборка может завершиться ошибкой в некоторых системах, где используется локаль, отличная от C. Чтобы исправить это, выберите локаль C, выполнив <command>export LANG=C.utf8</command> до сборки, а затем восстановите предыдущее значение после установки &productname;.</para>
+     </listitem>
+
+     <listitem>
+      <para>Параллельные регрессионные тесты (<literal>make check</literal>) могут выдавать ложные ошибки тестирования при переполнении очереди <function>listen()</function>, из-за чего подключения могут не устанавливаться или зависать. Вы можете ограничить число подключений, определив переменную make <varname>MAX_CONNECTIONS</varname> так: <programlisting>make MAX_CONNECTIONS=5 check</programlisting> (В некоторых системах поддерживается до 10 одновременных подключений).</para>
+     </listitem>
+    </itemizedlist></para>
+
+   <para>Сервер &productname; и <command>cygserver</command> можно запустить в виде служб Windows NT. Как это сделать, рассказывается в описании <filename>README</filename>, включённом в двоичный пакет &productname; для Cygwin. Оно устанавливается в каталог <filename>/usr/share/doc/Cygwin</filename>.</para>
+  </sect2>
+
+  <sect2 id="installation-notes-hpux">
+   <title>HP-UX</title>
+
+   <indexterm zone="installation-notes-hpux"><primary>HP-UX</primary> <secondary>установка в</secondary></indexterm>
+
+   <para>PostgreSQL 7.3+ и &productname; должен работать на машинах Series 700/800 PA-RISC под управлением HP-UX 10.X или 11.X, с подходящими уровнями системных исправлений и средствами сборки. Как минимум один разработчик регулярно тестирует сборку в HP-UX 10.20, и мы получали сообщения об успешных установках в HP-UX 11.00 и 11.11.</para>
+
+   <para>Помимо пакета исходного кода &productname;, вам потребуется GNU make (HP make не подойдёт) и GCC или полный компилятор ANSI C от HP. Если вы намерены выполнить сборку не из дистрибутивного пакета исходного кода, а из Git, вам также потребуется Flex (GNU lex) и Bison (GNU yacc). Мы также рекомендуем убедиться, что у вас установлены довольно свежие исправления HP. Для сборки 64-битного кода в HP-UX 11.11 вам потребуется PHSS_30966 (11.11) или более новое исправление, без него <command>initdb</command> может зависать. Как правило, для сборки нужно иметь текущие исправления libc и ld/dld, а также компилятора (если вы используете компилятор HP). Получить эти исправления бесплатно можно на сайтах поддержки HP <ulink url="http://itrc.hp.com"/> и <ulink url="ftp://us-ffs.external.hp.com/"/>.</para>
+
+   <para>Если вы проводите сборку на машине PA-RISC 2.0 и хотите получить 64-битный исполняемый код, вы должны использовать 64-битную версию GCC. Скомпилированный GCC для HP-UX PA-RISC и Itanium доступен по адресу <ulink url="http://www.hp.com/go/gcc"/>. Не забудьте также загрузить и установить binutils.</para>
+
+   <para>Если вы проводите сборку на машине PA-RISC 2.0 и хотите, чтобы скомпилированный код запускался на машинах PA-RISC 1.1, также потребуется указать <option>+DAportable</option> в <envar>CFLAGS</envar>.</para>
+
+   <para>Если вы проводите сборку на машине HP-UX Itanium, вам потребуется последний компилятор ANSI C от HP с соответствующим исправлением или более новыми: <literallayout>
+PHSS_30848  s700_800 HP C Compiler (A.05.57)
+PHSS_30849  s700_800 u2comp/be/plugin library Patch
+</literallayout></para>
+
+   <para>Если вы используете компилятор HP C и GCC, может потребоваться явно выбрать предпочитаемый компилятор при запуске <command>configure</command>: <programlisting>./configure CC=cc</programlisting> для использования компилятора C от HP, либо <programlisting>./configure CC=gcc</programlisting> для выбора GCC. При отсутствии явного указания configure выберет <command>gcc</command>, если есть такая возможность.</para>
+
+   <para>По умолчанию целевой каталог установки — <filename>/usr/local/pgsql</filename>, но вы, возможно, захотите его изменить на другой, внутри <filename>/opt</filename>. В этом случае передайте его <command>configure</command> с ключом <option>--prefix</option>.</para>
+
+   <para>В регрессионных тестах возможны отклонения при геометрических проверках, в наименее значащих цифрах, в зависимости от применяемого компилятора и математической библиотеки. Любые другие ошибки заслуживают внимания.</para>
+  </sect2>
+
+  <sect2 id="installation-notes-mingw">
+   <title>MinGW/Собственная сборка Windows</title>
+
+   <indexterm zone="installation-notes-mingw"><primary>MinGW</primary> <secondary>установка в</secondary></indexterm>
+
+   <para>&productname; для Windows можно собрать с использованием MinGW, Unix-подобной среды сборки для операционных систем Microsoft, либо используя набор средств разработки Microsoft <productname>Visual C++</productname>. При использовании MinGW применяется обычная система сборки, описанная в этой главе; сборка с Visual C++ выполняется по-другому, как описано в <phrase condition="standalone">документации</phrase><phrase condition="default"><xref remap="6" linkend="install-windows"/></phrase>. Это полностью естественная сборка для Windows, для которой не требуется дополнительное ПО вроде MinGW. Готовый инсталлятор для Windows можно найти на сайте &productname;.</para>
+
+   <para>PostgreSQL, портированный в Windows, будет работать в 32- или 64-битной версии Windows 2000 или новее. В предыдущих операционных системах нет достаточной инфраструктуры (но там можно использовать Cygwin). MinGW, Unix-подобные средства сборки, и MSYS, набор утилит Unix, требуемых для исполнения скриптов типа <command>configure</command>, можно загрузить с сайта <ulink url="http://www.mingw.org/"/>. Эти дополнительные программы нужны только для сборки, для запуска полученных исполняемых файлов они не требуются.</para>
+
+   <para>Чтобы собрать 64-битную версию с использованием MinGW, установите набор 64-битных утилит с <ulink url="http://mingw-w64.sourceforge.net/"/>, добавьте путь к его каталогу bin в <envar>PATH</envar> и запустите <command>configure</command> с параметром <command>--host=x86_64-w64-mingw32</command>.</para>
+
+   <para>Когда вы всё установите, запускать <application>psql</application> предлагается из <command>CMD.EXE</command>, так как в консоли MSYS есть проблемы с буферизацией.</para>
+
+   <sect3 id="windows-crash-dumps">
+    <title>Сбор аварийных дампов в Windows</title>
+
+    <para>В случае аварии &productname; в Windows он может сгенерировать минидамп памяти, который помогает выяснить причину аварии, подобно дампам памяти в Unix. Проанализировать эти дампы можно, используя <productname>Windows Debugger Tools</productname> (Средства отладки Windows) или <productname>Visual Studio</productname>. Чтобы в Windows получить дамп в случае аварии, создайте подкаталог <filename>crashdumps</filename> в каталоге данных кластера. Дампы будут записываться в этот каталог с уникальным именем, составленным из идентификатора процесса, давшего сбой, и времени сбоя.</para>
+   </sect3>
+  </sect2>
+
+  <sect2 id="installation-notes-sco">
+   <title>SCO OpenServer и SCO UnixWare</title>
+
+   <indexterm zone="installation-notes-sco"><primary>SCO</primary> <secondary>установка в</secondary></indexterm>
+
+   <indexterm zone="installation-notes-sco"><primary>UnixWare</primary> <secondary>установка в</secondary></indexterm>
+
+   <para>&productname; можно собрать в SCO UnixWare 7 и SCO OpenServer 5. В OpenServer для сборки можно использовать либо Инструменты разработки OpenServer (OpenServer Development Kit), либо Универсальные средства разработки (Universal Development Kit). Возможно, при этом потребуется выполнить дополнительные действия, как описано ниже.</para>
+
+   <sect3>
+    <title>Skunkware</title>
+
+    <para>Вы должны найти свою копию SCO Skunkware CD. Skunkware CD поставлялся с UnixWare 7 и текущими версиями OpenServer 5. В набор Skunkware входят готовые к установке версии многих популярных программ, доступных в Интернете. В частности, в него входят gzip, gunzip, GNU Make, Flex и Bison. Для UnixWare 7.1 этот CD называется "Open License Software Supplement" (Дополнительное ПО с открытыми лицензиями). Если у вас нет такого CD, это ПО можно найти на сайте <ulink url="http://www.sco.com/skunkware/"/>.</para>
+
+    <para>Версии Skunkware для UnixWare и OpenServer различаются. Убедитесь, что вы устанавливаете правильную версию для вашей ОС, но учтите следующие замечания.</para>
+
+    <para>В UnixWare 7.1.3 и новее компилятор GCC поставляется на UDK CD, вместе с GNU Make.</para>
+   </sect3>
+
+   <sect3>
+    <title>GNU Make</title>
+
+    <para>Вам потребуется программа GNU Make, которая находится на Skunkware CD. По умолчанию она устанавливается в <filename>/usr/local/bin/make</filename>.</para>
+
+    <para>В UnixWare 7.1.3 и новее программа GNU Make включена в раздел OSTK диска UDK и устанавливается в <filename>/usr/gnu/bin/gmake</filename>.</para>
+   </sect3>
+
+   <sect3>
+    <title>Readline</title>
+
+    <para>Библиотека Readline поставляется на Skunkware CD, но она не включена в Skunkware CD для UnixWare 7.1. Если у вас есть Skunkware CD для UnixWare 7.0.0 или 7.0.1, вы можете установить её с этого диска. В противном случае, обратитесь к <ulink url="http://www.sco.com/skunkware/"/>.</para>
+
+    <para>По умолчанию Readline устанавливается в <filename>/usr/local/lib</filename> и <filename>/usr/local/include</filename>. Однако <command>configure</command> для &productname; не сможет найти её там без дополнительной помощи. Поэтому, если вы установили Readline, передайте <command>configure</command> следующие параметры: <programlisting>./configure --with-libraries=/usr/local/lib --with-includes=/usr/local/include</programlisting></para>
+   </sect3>
+
+   <sect3>
+    <title>Использование UDK в OpenServer</title>
+
+    <para>Если вы используете новый компилятор из Универсальных средств разработки (UDK, Universal Development Kit) в OpenServer, вам потребуется задать размещение библиотек UDK: <programlisting>./configure --with-libraries=/udk/usr/lib --with-includes=/udk/usr/include</programlisting> Совместите эти параметры с заданными выше для Readline: <programlisting>./configure --with-libraries="/udk/usr/lib /usr/local/lib" --with-includes="/udk/usr/include /usr/local/include"</programlisting></para>
+   </sect3>
+
+   <sect3>
+    <title>Получение справки man по &productname;</title>
+
+    <para>По умолчанию страницы man для &productname; устанавливаются в <filename>/usr/local/pgsql/share/man</filename>. Но UnixWare по умолчанию не ищет там эти страницы. Чтобы вы могли обращаться к ним, потребуется изменить переменную <varname>MANPATH</varname> в <filename>/etc/default/man</filename>, например так: <programlisting>MANPATH=/usr/lib/scohelp/%L/man:/usr/dt/man:/usr/man:/usr/share/man:scohelp:/usr/local/man:/usr/local/pgsql/share/man</programlisting></para>
+
+    <para>В OpenServer необходимо провести дополнительные исследования, чтобы справкой man можно было пользоваться, потому что в этой системе man работает немного не так, как в других. В настоящее время &productname; просто не устанавливает справочные страницы в ней.</para>
+   </sect3>
+
+   <sect3>
+    <title>Проблемы C99 с функциональным дополнением 7.1.1b</title>
+
+    <para>Для компиляторов, более ранних, чем выпущенный с OpenUNIX 8.0.0 (UnixWare 7.1.2), в том числе с функциональным дополнением 7.1.1b, может потребоваться указать <option>-Xb</option> в переменной окружения <varname>CC</varname> или <varname>CFLAGS</varname>. Признаком этой проблемы будет ошибка при компиляции <filename>tuplesort.c</filename> в коде, ссылающемся на встроенные функции. Судя по всему, соответствующее исправление включено в компилятор версии 7.1.2(8.0.0) и новее.</para>
+   </sect3>
+
+   <sect3>
+    <title>Многопоточность в UnixWare</title>
+
+    <para>Для использования многопоточности вы <emphasis>должны</emphasis> добавлять указание <option>-Kpthread</option> при компиляции <emphasis>всех</emphasis> программ на базе libpq. Библиотека libpq вызывает функции <function>pthread_*</function>, которые доступны только при компиляции с флагом <option>-Kpthread</option>/<option>-Kthread</option>.</para>
+   </sect3>
+  </sect2>
+
+  <sect2 id="installation-notes-solaris">
+   <title>Solaris</title>
+
+   <indexterm zone="installation-notes-solaris"><primary>Solaris</primary> <secondary>установка в</secondary></indexterm>
+
+   <para>&productname; хорошо поддерживается в Solaris. Чем новее операционная система, тем меньше затруднений будет; подробнее об этом ниже.</para>
+
+   <sect3>
+    <title>Требуемые инструменты</title>
+
+    <para>Вы можете выполнить сборку с GCC или с набором компиляторов Sun. Для лучшей оптимизации кода на архитектуре SPARC настоятельно рекомендуется использовать компилятор Sun. Мы слышали о проблемах с GCC 2.95.1, поэтому рекомендуется использовать GCC 2.95.3 или новее. Если вы решили применить компилятор Sun, не выберите по ошибке <filename>/usr/ucb/cc</filename>; правильный путь — <filename>/opt/SUNWspro/bin/cc</filename>.</para>
+
+    <para>Sun Studio вы можете загрузить с сайта <ulink url="http://www.oracle.com/technetwork/server-storage/solarisstudio/downloads/"/>. Средства GNU по большей части интегрированы в Solaris 10, либо представлены на сопутствующем CD. Если вам нужны пакеты для старых версий Solaris, вы можете найти их на сайте <ulink url="http://www.sunfreeware.com"/>. Если вы предпочитаете исходный код, обратитесь к <ulink url="http://www.gnu.org/order/ftp.html"/>.</para>
+   </sect3>
+
+   <sect3>
+    <title>Проблемы с OpenSSL</title>
+
+    <para>Собирая &productname; с поддержкой OpenSSL, вы можете получить ошибки компиляции в следующих файлах: <itemizedlist>
+      <listitem><para><filename>src/backend/libpq/crypt.c</filename></para></listitem>
+      <listitem><para><filename>src/backend/libpq/password.c</filename></para></listitem>
+      <listitem><para><filename>src/interfaces/libpq/fe-auth.c</filename></para></listitem>
+      <listitem><para><filename>src/interfaces/libpq/fe-connect.c</filename></para></listitem>
+     </itemizedlist> Это вызвано конфликтом имён между стандартным <filename>/usr/include/crypt.h</filename> и заголовочными файлами в составе OpenSSL.</para>
+
+    <para>Эту проблему можно решить, обновив инсталляцию OpenSSL до версии 0.9.6a. Solaris 9 и новее уже включает обновлённую версию OpenSSL.</para>
+   </sect3>
+
+   <sect3>
+    <title>Процедура configure сообщает о сбое тестовой программы</title>
+
+    <para>Если <command>configure</command> сообщает о сбое тестовой программы, это может быть вызвано тем, что при связывании во время выполнения не удаётся найти некоторую библиотеку, вероятно, libz, libreadline или какую-то другую нестандартную, например, libssl. Чтобы указать правильное размещение библиотеки, задайте переменную окружения <envar>LDFLAGS</envar> в командной строке <command>configure</command>, например так: <programlisting>configure ... LDFLAGS="-R /usr/sfw/lib:/opt/sfw/lib:/usr/local/lib"</programlisting> За дополнительными сведениями обратитесь к странице man <citerefentry><refentrytitle>ld</refentrytitle><manvolnum>1</manvolnum></citerefentry>.</para>
+   </sect3>
+
+   <sect3>
+    <title>Периодические сбои 64-битной сборки</title>
+
+    <para>В Solaris 7 и старее 64-битная версия libc содержала бракованную функцию <function>vsnprintf</function>, которая могла вызывать непредсказуемые сбои &productname;. Самое простое известное решение — сделать, чтобы &productname; использовал собственную версию <function>vsnprintf</function> вместо библиотечной версии. Для этого, выполнив <command>configure</command>, отредактируйте полученный в результате <command>configure</command> файл. В <filename>src/Makefile.global</filename> поменяйте строку <programlisting>LIBOBJS =</programlisting> на такую <programlisting>LIBOBJS = snprintf.o</programlisting> (В этой переменной уже также могут быть перечислены и другие файлы.) Затем продолжите сборку как обычно.</para>
+   </sect3>
+
+   <sect3>
+    <title>Компиляция для максимальной производительности</title>
+
+    <para>Для архитектуры SPARC настоятельно рекомендуется проводить компиляцию с использованием Sun Studio. Добавив флаг <option>-xO5</option>, вы можете получить исполняемый код, который будет работать значительно быстрее. Но не добавляйте никакие флаги, влияющие на вычисления с плавающей точкой или обработку <varname>errno</varname> (например, <option>-fast</option>). С такими флагами &productname; может вести себя нестандартно, например, выполняя операции с датами/временем.</para>
+
+    <para>Если у вас нет причины использовать 64-битные программы в архитектуре SPARC, собирайте 32-битную версию, так как 64-битные операции, а значит и 64-битные программы, выполняются медленнее 32-битных. С другой стороны, 32-битный код для процессоров семейства AMD64 не является &laquo;родным&raquo;, поэтому на таких процессорах значительно медленнее работает 32-битный код.</para>
+   </sect3>
+
+   <sect3>
+    <title>Применение DTrace для трассировки &productname;</title>
+
+    <para>Да, вы можете использовать DTrace. За дополнительными сведениями обратитесь к <phrase condition="standalone">документации</phrase> <phrase condition="default"><xref remap="3" linkend="dynamic-trace"/></phrase>. Другую полезную информацию можно найти в этой статье: <ulink url="https://blogs.oracle.com/robertlor/entry/user_level_dtrace_probes_in"/>.</para>
+
+    <para>Если компоновка исполняемого файла <command>postgres</command> прерывается с таким сообщением об ошибке: <screen>
+Undefined                       first referenced
+ symbol                             in file
+AbortTransaction                    utils/probes.o
+CommitTransaction                   utils/probes.o
+ld: fatal: Symbol referencing errors. No output written to postgres
+collect2: ld returned 1 exit status
+make: *** [postgres] Error 1
+</screen> Это означает, что ваша инсталляция DTrace слишком стара и неспособна работать с пробами в статических функциях. В этом случае вам нужна версия Solaris 10u4 или новее.</para>
+   </sect3>
+  </sect2>
+ </sect1>
+
+</chapter>
