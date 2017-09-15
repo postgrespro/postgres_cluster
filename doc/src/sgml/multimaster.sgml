@@ -857,7 +857,7 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
 <sect3 id="multimaster-guc-variables">
   <title>GUC Variables</title>
 <variablelist>
-  <varlistentry><term><varname>multimaster.node_id</varname>
+  <varlistentry id="multimaster-node-id"><term><varname>multimaster.node_id</varname>
   <indexterm><primary><varname>multimaster.node_id</varname></primary></indexterm></term><listitem><para>
     Node ID &mdash; a unique natural
     number identifying the node of a multi-master cluster. You must
