@@ -924,7 +924,7 @@ pg_probackup archive-get -B <replaceable>backupdir</replaceable> --instance <rep
 --wal-file-path %p --wal-file-name %f'
 </programlisting>
        <para>
-      Moves <acronym>WAL</acronym> files from the corresponding subdirectory of the backup catalog to the cluster's xlog location.
+      Moves <acronym>WAL</acronym> files from the corresponding subdirectory of the backup catalog to the cluster's write-ahead log location.
       This command is automatically set by <application>pg_probackup</application> as <varname>archive_command</varname> in
       <filename>recovery.conf</filename> when restoring archive backups. You do not need to set it manually.
        </para>
