@@ -405,7 +405,7 @@
     <productname>Postgres Pro Enterprise 9.6</productname> introduced
     64-bit transaction IDs, which are not subject to wraparound and
     do not need modulo-2<superscript>32</> arithmetic to be compared.
-    Each tuple header contain two XIDs, so extending them would lead to
+    Each tuple header contains two XIDs, so extending them would lead to
     high overhead.  For that reason on-page XIDs are still 32-bit, but
     each page's header contains an offset, called <firstterm>epoch</>,
     to which they are added before comparing with each other.

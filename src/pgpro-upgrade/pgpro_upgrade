@@ -2,6 +2,8 @@
 # Utilities needed
 # 1. sh
 # 3. sed 
+LC_MESSAGES=C
+export LC_MESSAGES
 if [ -z "$PGDATA" ]; then
 	echo "PGDATA environment variable is not set. Stop." 1>&2
 	exit 2
@@ -26,6 +28,58 @@ case "$PGBIN" in
 	PGSHARE=""
 ;;
 esac
+
+# Check the catalog version
+CATALOG_VERSION_NO=2016081311
+MAJORVER=9.6
+# catalog version upgrade supported from. Space-separated list
+UPGRADABLE_CATVER="201608131"
+if [ ! -f "${PGDATA}/global/pg_control" -a -f "${PGDATA}/postgresql.conf" ]; then
+	# looks like we have Debian with separate directory for configs
+	SAVE_PGDATA="$PGDATA"
+	PGDATA=`sed -n "/data_directory/{s/^data_directory = '//
+	s/'.*$//
+	p}" ${PGDATA}/postgresql.conf`
+	if [ -z "$PGDATA" -o ! -f "${PGDATA}/global/pg_control" ]; then
+		echo "Cannot find valid database in $PGDATA" 1>&2;
+		exit 1
+	fi
+fi
+CATVER=`"${PGBIN}pg_controldata"|sed -n '/Catalog version number:/s/^.*: *//p'`
+if [ "$CATVER" != $CATALOG_VERSION_NO ]; then
+	for v in $UPGRADABLE_CATVER; do
+		if [ "$CATVER" = "$v" ]; then
+			upgrade_possible=1
+			break
+		fi
+	done
+	if [ -z "$upgrade_possible" ];  then
+		echo "Upgrade of $PGDATA  from catalog version '$CATVER' is not supported" >&2
+		exit 2
+	fi
+
+    if [ -n "$check" ]; then
+        echo "Database needs upgrade"
+        exit 1
+    fi
+	if [ -f "$PGDATA/postmaster.pid" ]; then
+		echo "postmaster.pid exists. Is another backend running on $PGDATA" 1>&2; 
+		exit 1;
+	fi
+	# Fix pg_control file
+	"${PGBIN}pg_controldata" -c
+	# Fix tablespace directories
+	(cd "$PGDATA/pg_tblspc"
+	 for i in *; do
+	 	[ "$i" = "*" ] && break # Glob pattern not expanded
+		(cd $i; mv PG_${MAJORVER}_$CATVER PG_${MAJORVER}_$CATALOG_VERSION_NO)
+	 done
+	)
+fi
+
+if [ -n "$SAVE_PGDATA" ]; then
+	PGDATA="$SAVE_PGDATA"
+fi
 
 for dir in "$PGSHARE" /usr/pgsql-9.6/share /usr/share/postgresql/9.6 /usr/pgsql/9.6/share /usr/share/pgsql /usr/share/postgrespro96  ; do
 	if [ -d "$dir/pgpro-upgrade" ]; then

@@ -278,7 +278,6 @@ sub GenerateFiles
 			"src/include/pg_config_ext.h.win32",
 			"src/include/pg_config_ext.h");
 	}
-
 	$self->GenerateDefFile(
 		"src/interfaces/libpq/libpqdll.def",
 		"src/interfaces/libpq/exports.txt",
@@ -305,6 +304,10 @@ sub GenerateFiles
 "perl -I ../catalog Gen_fmgrtab.pl ../../../src/include/catalog/pg_proc.h");
 		chdir('../../..');
 	}
+ 	print "Generating pgpro_upgrade";
+	chdir("src/pgpro-upgrade");
+	system("perl setver.pl ../.. ../..");
+	chdir("../..");
 	if (IsNewer(
 			'src/include/utils/fmgroids.h',
 			'src/backend/utils/fmgroids.h'))
@@ -506,7 +509,8 @@ EOF
 	# Generate commit_id file
 	# If there is .git rewrite file whenever gitlog succeeds
 	if ( -d ".git" ) {
-		open P,"git log -1 --format='%h' |";
+		my $cmd = "git log -1 --format='%h'";
+		open P,"$cmd |" || confess "Could not open: $cmd\n";
 		my $commit_id = <P>;
 		chomp($commit_id);
 		if (close(P)) {

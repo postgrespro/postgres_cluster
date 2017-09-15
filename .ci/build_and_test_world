@@ -2,6 +2,7 @@
 if [ -z "$TCLCONFIG" ]; then
 [ -x /usr/lib/tcl8.5/tclConfig.sh ] && TCLCONFIG=/usr/lib/tcl8.5
 [ -x /usr/lib/tcl8.6/tclConfig.sh ] && TCLCONFIG=/usr/lib/tcl8.6
+[ -f /usr/lib64/tclConfig.sh ] && TCLCONFIG=/usr/lib64
 fi
 [ -n "$TCLCONFIG" ] && export TCLCONFIG
 echo TCLCONFIG=${TCLCONFIG}

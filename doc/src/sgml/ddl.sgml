@@ -1096,16 +1096,13 @@ CREATE TABLE circles (
    </para>
 
    <para>
-    Transaction identifiers are also 32-bit quantities.  In a
-    long-lived database it is possible for transaction IDs to wrap
-    around.  This is not a fatal problem given appropriate maintenance
-    procedures; see <xref linkend="maintenance"> for details.  It is
-    unwise, however, to depend on the uniqueness of transaction IDs
-    over the long term (more than one billion transactions).
+    In <productname>&productname;</productname>, transaction IDs
+    are implemented as 64-bit counters to prevent transaction ID wraparound.
+    For details, see <xref linkend="vacuum-for-wraparound">.
    </para>
 
    <para>
-    Command identifiers are also 32-bit quantities.  This creates a hard limit
+    Command identifiers are 32-bit quantities.  This creates a hard limit
     of 2<superscript>32</> (4 billion) <acronym>SQL</acronym> commands
     within a single transaction.  In practice this limit is not a
     problem &mdash; note that the limit is on the number of

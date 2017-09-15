@@ -1184,7 +1184,7 @@ include_dir 'conf.d'
         aliases for <literal>md5</> and <literal>plain</>, respectively.  Setting
         this parameter to <literal>scram</> will encrypt the password with
         SCRAM-SHA-256.
-       </para>
+       </para>       
       </listitem>
      </varlistentry>
 
@@ -7502,7 +7502,8 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       </term>
       <listitem>
        <para>
-        Control background garbage collection of compressed pages.
+        Enables/disables background garbage collection of compressed pages.
+        Default: <literal>on</literal>
        </para>
       </listitem>
      </varlistentry>
@@ -7515,7 +7516,8 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       </term>
       <listitem>
        <para>
-        Control encryption of compressed pages.
+        Enables/disables encryption of compressed pages.
+        Default: <literal>off</literal>
        </para>
       </listitem>
      </varlistentry>
@@ -7529,20 +7531,23 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       <listitem>
        <para>
         Number of CFS background garbage collection workers.
+        Default: 1
        </para>
       </listitem>
      </varlistentry>
 
      <varlistentry id="guc-cfs-level" xreflabel="cfs-level">
-      <term><varname>cfs_gc_workers</varname> (<type>integer</type>)
+      <term><varname>cfs_level</varname> (<type>integer</type>)
       <indexterm>
        <primary><varname>cfs_level</> configuration parameter</primary>
       </indexterm>
       </term>
       <listitem>
        <para>
-        CFS compression level: 0 - no compression, 1 - maximal speed,
-		other possible values depend on the specific algorithm.
+        CFS compression level: 0 &mdash; no compression, 1 &mdash; maximal speed.
+        Other possible values depend on the specific compression algorithm used.
+        For example, 9 for <literal>zlib</literal> or 19 for <literal>zstd</literal>.
+        Default: 1
        </para>
       </listitem>
      </varlistentry>
@@ -7555,7 +7560,8 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       </term>
       <listitem>
        <para>
-        Minimum percent of garbage blocks in the file prior to garbage collection.
+        Minimum percent of garbage blocks in the file required to start garbage collection.
+        Default: 50%
        </para>
       </listitem>
      </varlistentry>
@@ -7568,7 +7574,8 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       </term>
       <listitem>
        <para>
-        Time to sleep between GC runs in milliseconds.
+        Time interval between CFS garbage collection iterations, in milliseconds.
+        Default: 5 seconds
        </para>
       </listitem>
      </varlistentry>
@@ -7581,7 +7588,9 @@ dynamic_library_path = 'C:\tools\postgresql;H:\my_project\lib;$libdir'
       </term>
       <listitem>
        <para>
-        Delay in milliseconds between files defragmentation.
+        Time interval for which garbage collection is paused after
+        each file defragmentation, in milliseconds.
+        Default: 0
        </para>
       </listitem>
      </varlistentry>

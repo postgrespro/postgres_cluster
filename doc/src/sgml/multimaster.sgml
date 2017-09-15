@@ -12,7 +12,7 @@
     <filename>multimaster</filename> is a <productname>&productname;</productname> extension with a set
     of patches that turns <productname>&productname;</productname> into a synchronous shared-nothing
     cluster to provide Online Transaction Processing (<acronym>OLTP</acronym>) scalability for read transactions and high availability with automatic disaster recovery.</para>
-    <para> As compared to a standard <productname>PostgreSQL</productname> master-slave cluster, a cluster configured with the <filename>multimaster</filename> extension offers the following benefits:</para>
+    <para> As compared to a standard <productname>PostgreSQL</productname> master-standby cluster, a cluster configured with the <filename>multimaster</filename> extension offers the following benefits:</para>
     <itemizedlist>
       <listitem>
         <para>
@@ -857,7 +857,7 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
 <sect3 id="multimaster-guc-variables">
   <title>GUC Variables</title>
 <variablelist>
-  <varlistentry><term><varname>multimaster.node_id</varname>
+  <varlistentry id="multimaster-node-id"><term><varname>multimaster.node_id</varname>
   <indexterm><primary><varname>multimaster.node_id</varname></primary></indexterm></term><listitem><para>
     Node ID &mdash; a unique natural
     number identifying the node of a multi-master cluster. You must
