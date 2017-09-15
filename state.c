@@ -533,8 +533,10 @@ MtmGetRefereeWinner(void)
 		return -1;
 	}
 
-	MTM_LOG1("Got referee response, winner node_id=%d.", winner_node_id);
 	/* Ok, we finally got it! */
+	PQclear(res);
+	PQfinish(conn);
+	MTM_LOG1("Got referee response, winner node_id=%d.", winner_node_id);
 	return winner_node_id;
 }
 
