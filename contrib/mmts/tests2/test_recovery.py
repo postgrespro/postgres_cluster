@@ -94,10 +94,12 @@ class RecoveryTest(unittest.TestCase, TestHelper):
 
         if not cls.client.is_data_identic():
             raise AssertionError('Different data on nodes')
-            
+
+        if cls.client.no_prepared_tx() != 0:
+            raise AssertionError('There are some uncommitted tx')
 
         # XXX: check nodes data identity here
-#        subprocess.check_call(['docker-compose','down'])
+        # subprocess.check_call(['docker-compose','down'])
 
     def setUp(self):
         warnings.simplefilter("ignore", ResourceWarning)
@@ -130,7 +132,6 @@ class RecoveryTest(unittest.TestCase, TestHelper):
 
         self.assertCommits(aggs)
         self.assertIsolation(aggs)
-
 
     def test_edge_partition(self):
         print('### test_edge_partition ###')

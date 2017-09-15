@@ -21,6 +21,7 @@ do
     initdb node$i
     pg_ctl -w -D node$i -l node$i.log start
     createdb regression
+    # psql regression -c "create table t(id int primary key, v int); insert into t values($i,$i);"
     pg_ctl -w -D node$i -l node$i.log stop
 done
 
@@ -55,6 +56,7 @@ do
         multimaster.arbiter_port = $arbiter_port
         multimaster.min_2pc_timeout = 10000000
         multimaster.trans_spill_threshold = 100
+        multimaster.monotonic_sequences = true
 SQL
     cp pg_hba.conf node$i
     pg_ctl -w -D node$i -l node$i.log start

@@ -42,6 +42,7 @@
 
 #include "multimaster.h"
 #include "spill.h"
+#include "state.h"
 
 #define ERRCODE_DUPLICATE_OBJECT_STR  "42710"
 #define RECEIVER_SUSPEND_TIMEOUT (1*USECS_PER_SEC)
@@ -285,6 +286,8 @@ pglogical_receiver_main(Datum main_arg)
 		 * Slots at other nodes should be removed
 		 */
 		mode = MtmGetReplicationMode(nodeId, &got_sigterm);
+		MTM_LOG1("[STATE] Node %i: wal_receiver starts in %s mode", nodeId, MtmReplicationModeName[mode]);
+
 		if (mode == REPLMODE_EXIT)
 		{
 			break;
@@ -363,15 +366,14 @@ pglogical_receiver_main(Datum main_arg)
 			}
 			if (n_deleted_slots == Mtm->nAllNodes - 1)
 			{
-				elog(WARNING, "All neighbour nopes have no replication slot for us. Exiting.");
-				kill(PostmasterPid, SIGTERM);
+				elog(FATAL, "All neighbour nopes have no replication slot for us. Exiting.");
 			}
 			proc_exit(1);
 		}
 		PQclear(res);
 		resetPQExpBuffer(query);
 
-		MtmReceiverStarted(nodeId);
+		MtmStateProcessNeighborEvent(nodeId, MTM_NEIGHBOR_WAL_RECEIVER_START);
 
 		while (!got_sigterm)
 		{
@@ -401,7 +403,7 @@ pglogical_receiver_main(Datum main_arg)
 			if (rc & WL_POSTMASTER_DEATH)
 				proc_exit(1);
 
-			if (Mtm->status == MTM_OFFLINE || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != nodeId))
+			if (Mtm->status == MTM_DISABLED || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != nodeId))
 			{
 				ereport(LOG, (MTM_ERRMSG("%s: restart WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
 				break;
@@ -516,14 +518,6 @@ pglogical_receiver_main(Datum main_arg)
 				{
 					int msg_len = rc - hdr_len;
 					stmt = copybuf + hdr_len;
-					if (mode == REPLMODE_RECOVERED) {
-						/* Ingore all incompleted transactions from recovered node */
-						if (stmt[0] != 'B') {
-							output_written_lsn = Max(walEnd, output_written_lsn);
-							continue;
-						}
-						mode = REPLMODE_OPEN_EXISTED;
-					}
 					MTM_LOG3("Receive message %c from node %d", stmt[0], nodeId);
 					if (buf.used + msg_len + 1 >= MtmTransSpillThreshold*MB) {
 						if (spill_file < 0) {

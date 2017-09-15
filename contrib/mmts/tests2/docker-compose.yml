@@ -11,6 +11,7 @@ services:
     environment:
       POSTGRES_USER: 'pg'
       POSTGRES_DB: 'regression'
+      MAJOR: 'off'
       NODE_ID: 1
       # CONNSTRS: >-
       #   dbname=regression user=pg host=node1,
@@ -32,6 +33,7 @@ services:
     environment:
       POSTGRES_USER: 'pg'
       POSTGRES_DB: 'regression'
+      MAJOR: 'off'
       NODE_ID: 2
       # CONNSTRS: >-
       #   dbname=regression user=pg host=toxi port=21000 arbiterport=21001,
@@ -53,6 +55,7 @@ services:
     environment:
       POSTGRES_USER: 'pg'
       POSTGRES_DB: 'regression'
+      MAJOR: 'off'
       NODE_ID: 3
       # CONNSTRS: >-
       #   dbname=regression user=pg host=toxi port=31000 arbiterport=31001,
