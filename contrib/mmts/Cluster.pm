@@ -66,6 +66,7 @@ sub new
 		my $node = new PostgresNode("node$i", $host, $pgport);
 		$node->{id} = $i;
 		$node->{arbiter_port} = $arbiter_port;
+		$node->{mmconnstr} = "${ \$node->connstr('postgres') } arbiter_port=${ \$node->{arbiter_port} }";
 		push(@$nodes, $node);
 	}
 
@@ -89,13 +90,20 @@ sub init
 	}
 }
 
+sub all_connstrs
+{
+	my ($self) = @_;
+	my $nodes = $self->{nodes};
+	return join(', ', map { "${ \$_->connstr('postgres') } arbiter_port=${ \$_->{arbiter_port} }" } @$nodes);
+}
+
+
 sub configure
 {
 	my ($self) = @_;
 	my $nodes = $self->{nodes};
-	my $nnodes = scalar @{ $nodes };
 
-	my $connstr = join(', ', map { "${ \$_->connstr('postgres') } arbiter_port=${ \$_->{arbiter_port} }" } @$nodes);
+	my $connstr = $self->all_connstrs();
 
 	foreach my $node (@$nodes)
 	{
@@ -103,20 +111,21 @@ sub configure
 		my $host = $node->host;
 		my $pgport = $node->port;
 		my $arbiter_port = $node->{arbiter_port};
+		my $unix_sock_dir = $ENV{PGHOST};
 
 		$node->append_conf("postgresql.conf", qq(
 			log_statement = none
 			listen_addresses = '$host'
-			unix_socket_directories = ''
+			unix_socket_directories = '$unix_sock_dir'
 			port = $pgport
 			max_prepared_transactions = 10
 			max_connections = 10
 			max_worker_processes = 100
 			wal_level = logical
-			max_wal_senders = 5
+			max_wal_senders = 6
 			wal_sender_timeout = 0
 			default_transaction_isolation = 'repeatable read'
-			max_replication_slots = 5
+			max_replication_slots = 6
 			shared_preload_libraries = 'multimaster'
 			shared_buffers = 16MB
 
@@ -124,12 +133,11 @@ sub configure
 			multimaster.workers = 1
 			multimaster.node_id = $id
 			multimaster.conn_strings = '$connstr'
-			multimaster.heartbeat_recv_timeout = 2050
+			multimaster.heartbeat_recv_timeout = 1050
 			multimaster.heartbeat_send_timeout = 250
-			multimaster.max_nodes = $nnodes
-			multimaster.ignore_tables_without_pk = true
+			multimaster.max_nodes = 6
+			multimaster.ignore_tables_without_pk = false
 			multimaster.queue_size = 4194304
-			multimaster.min_2pc_timeout = 150000
 			log_line_prefix = '%t: '
 		));
 
@@ -305,6 +313,85 @@ sub pgbench_await()
 {
 	my ($self, $pgbench_handle) = @_;
 	IPC::Run::finish($pgbench_handle) || BAIL_OUT("pgbench exited with $?");
+}
+
+sub is_data_identic()
+{
+	my ($self, @nodenums) = @_;
+	my $checksum = '';
+
+	my $sql = "select md5('(' || string_agg(aid::text || ', ' || abalance::text , '),(') || ')')
+			from (select * from pgbench_accounts order by aid) t;";
+
+	foreach my $i (@nodenums)
+	{
+		my $current_hash = '';
+		$self->{nodes}->[$i]->psql('postgres', $sql, stdout => \$current_hash);
+		if ($current_hash eq '')
+		{
+			diag("got empty hash from node $i");
+			return 0;
+		}
+		if ($checksum eq '')
+		{
+			$checksum = $current_hash;
+		}
+		elsif ($checksum ne $current_hash)
+		{
+			diag("got different hashes: $checksum ang $current_hash");
+			return 0;
+		}
+	}
+
+	diag($checksum);
+	return 1;
+}
+
+sub add_node()
+{
+	my ($self, %params) = @_;
+	my $pgport = defined $params{port} ? $params{port} : (allocate_ports('127.0.0.1', 1))[0];
+	my $arbiter_port = defined $params{arbiter_port} ? $params{arbiter_port} : (allocate_ports('127.0.0.1', 1))[0];
+
+	my $connstrs;
+	my $node_id;
+
+	if (defined $params{node_id})
+	{
+		$node_id = $params{node_id};
+		$connstrs = $self->all_connstrs();
+	}
+	else
+	{
+		my $new_conn = ", dbname=postgres host=127.0.0.1 port=$pgport arbiter_port=$arbiter_port";
+		$connstrs = $self->all_connstrs() . $new_conn;
+		$node_id = scalar(@{$self->{nodes}}) + 1;
+	}
+
+	my $node = PostgresNode->get_new_node("node${node_id}x");
+
+	$self->{nodes}->[0]->backup("backup_for_$node_id");
+	# do init from backup before setting host, since init_from_backup() checks
+	# it default value
+	$node->init_from_backup($self->{nodes}->[0], "backup_for_$node_id");
+
+	$node->{_host} = '127.0.0.1';
+	$node->{_port} = $pgport;
+	$node->{arbiter_port} = $arbiter_port;
+	$node->{mmconnstr} = "${ \$node->connstr('postgres') } arbiter_port=${ \$node->{arbiter_port} }";
+	$node->append_conf("postgresql.conf", qq(
+		multimaster.arbiter_port = $arbiter_port
+		multimaster.conn_strings = '$connstrs'
+		multimaster.node_id = $node_id
+		port = $pgport
+	));
+	$node->append_conf("pg_hba.conf", qq(
+		local replication all trust
+		host replication all 127.0.0.1/32 trust
+		host replication all ::1/128 trust
+	));
+
+	push($self->{nodes}, $node);
 }
 
 1;
