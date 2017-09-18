@@ -2,7 +2,7 @@
 PATH=C:\Windows\system32;C:\Perl64\bin;C:\Program Files\Git\cmd;C:\msys64\usr\bin
 
 REM Copy source-repo to CI temporary catalog
-robocopy /MIR postgrespro .
+cp -r postgrespro/* .
 
 IF "%ARCH%"==""	     SET ARCH=X86
 IF "%ARCH%"=="x86"   SET ARCH=X86
