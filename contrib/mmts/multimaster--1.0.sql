@@ -170,8 +170,11 @@ END
 $$
 LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION mtm.referee_clean() RETURNS void AS
+CREATE OR REPLACE FUNCTION mtm.referee_clean() RETURNS bool AS
 $$
+BEGIN
     delete from mtm.referee_decision where key = 'winner';
+    return 'true';
+END
 $$
-LANGUAGE sql;
+LANGUAGE plpgsql;

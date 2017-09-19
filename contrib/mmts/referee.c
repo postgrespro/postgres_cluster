@@ -50,7 +50,7 @@ static void MtmRefereeLoop(char const** connections, int nConns)
 	int result;
 	
 	for (i = 0; i < nConns; i++) {
-		conns[i] = PQconnectdb_safe(connections[i]);
+		conns[i] = PQconnectdb_safe(connections[i], 0);
 		status = PQstatus(conns[i]);
 		if (status != CONNECTION_OK)
 		{
@@ -74,7 +74,7 @@ static void MtmRefereeLoop(char const** connections, int nConns)
 			/* Some of live node reestablished connection with dead node, so referee should also try to connect to this node */
 			if (conns[i] == NULL) { 
 				if (BIT_CHECK(newEnabledMask, i)) { 
-					conns[i] = PQconnectdb_safe(connections[i]);
+					conns[i] = PQconnectdb_safe(connections[i], 0);
 					status = PQstatus(conns[i]);
 					if (status == CONNECTION_OK) {
 						BIT_CLEAR(disabledMask, i);

@@ -34,7 +34,7 @@ class TestHelper(object):
         if commits:
             raise AssertionError('There are commits during aggregation interval')
 
-    def performFailure(self, failure):
+    def performFailure(self, failure, wait=0):
 
         time.sleep(TEST_WARMING_TIME)
          
@@ -51,7 +51,7 @@ class TestHelper(object):
         aggs_failure = self.client.get_aggregates()
 
 
-        # time.sleep(10000)
+        time.sleep(wait)
         failure.stop()
 
         print('Eliminate failure at ',datetime.datetime.utcnow())

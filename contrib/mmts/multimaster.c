@@ -2380,6 +2380,7 @@ static void MtmInitialize()
 		Mtm->disabledNodeMask =  (((nodemask_t)1 << MtmNodes) - 1);
 		Mtm->clique = 0;
 		Mtm->refereeGrant = false;
+		Mtm->refereeWinnerId = 0;
 		Mtm->stalledNodeMask = 0;
 		Mtm->stoppedNodeMask = 0;
 		Mtm->deadNodeMask = 0;
@@ -4162,15 +4163,42 @@ static void erase_option_from_connstr(const char *option, char *connstr)
 	pfree(needle);
 }
 
-PGconn *PQconnectdb_safe(const char *conninfo)
+PGconn *
+PQconnectdb_safe(const char *conninfo, int timeout)
 {
 	PGconn *conn;
+	struct timeval tv = { timeout, 0 };
 	char *safe_connstr = pstrdup(conninfo);
+
+	/* XXXX add timeout to connstring if set */
+
 	erase_option_from_connstr("arbiter_port", safe_connstr);
-
 	conn = PQconnectdb(safe_connstr);
-
 	pfree(safe_connstr);
+
+	if (PQstatus(conn) != CONNECTION_OK)
+	{
+		MTM_ELOG(WARNING, "Could not connect to '%s': %s",
+			safe_connstr, PQerrorMessage(conn));
+	}
+
+	if (timeout != 0)
+	{
+		int socket_fd = PQsocket(conn);
+
+		if (socket_fd < 0)
+		{
+			MTM_ELOG(WARNING, "Referee socket is invalid");
+		}
+
+		if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO,
+									(char *)&tv, sizeof(tv)) < 0)
+		{
+			MTM_ELOG(WARNING, "Could not set referee socket timeout: %s",
+						strerror(errno));
+		}
+	}
+
 	return conn;
 }
 
@@ -4206,7 +4234,7 @@ mtm_collect_cluster_info(PG_FUNCTION_ARGS)
 		SRF_RETURN_DONE(funcctx);
 	}
 
-	conn = PQconnectdb_safe(Mtm->nodes[usrfctx->nodeId-1].con.connStr);
+	conn = PQconnectdb_safe(Mtm->nodes[usrfctx->nodeId-1].con.connStr, 0);
 	if (PQstatus(conn) != CONNECTION_OK)
 	{
 		MTM_ELOG(WARNING, "Failed to establish connection '%s' to node %d: error = %s", Mtm->nodes[usrfctx->nodeId-1].con.connStr, usrfctx->nodeId, PQerrorMessage(conn));
@@ -4415,7 +4443,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError, int force
 	{
 		if (!BIT_CHECK(disabledNodeMask, i) || (i + 1 == forceOnNode))
 		{
-			conns[i] = PQconnectdb_safe(psprintf("%s application_name=%s", Mtm->nodes[i].con.connStr, MULTIMASTER_BROADCAST_SERVICE));
+			conns[i] = PQconnectdb_safe(psprintf("%s application_name=%s", Mtm->nodes[i].con.connStr, MULTIMASTER_BROADCAST_SERVICE), 0);
 			if (PQstatus(conns[i]) != CONNECTION_OK)
 			{
 				if (ignoreError)

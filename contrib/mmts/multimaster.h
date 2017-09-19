@@ -289,7 +289,8 @@ typedef struct
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* Bitmask of disabled nodes */
 	nodemask_t clique;                 /* Bitmask of nodes that are connected and we allowed to connect/send wal/receive wal with them */
-	bool refereeGrant;                 /* Referee allowed us to work with half of the nodes */
+	bool       refereeGrant;           /* Referee allowed us to work with half of the nodes */
+	int        refereeWinnerId;        /* Node that won referee contest */
 	nodemask_t deadNodeMask;           /* Bitmask of nodes considered as dead by referee */
 	nodemask_t recoveredNodeMask;      /* Bitmask of nodes recoverd after been reported as dead by referee */
 	nodemask_t stalledNodeMask;        /* Bitmask of stalled nodes (node with dropped replication slot which makes it not possible automatic recovery of such node) */
@@ -430,7 +431,7 @@ extern void MtmCheckHeartbeat(void);
 extern void MtmResetTransaction(void);
 extern void MtmUpdateLockGraph(int nodeId, void const* messageBody, int messageSize);
 extern void MtmReleaseRecoverySlot(int nodeId);
-extern PGconn *PQconnectdb_safe(const char *conninfo);
+extern PGconn *PQconnectdb_safe(const char *conninfo, int timeout);
 extern void MtmBeginSession(int nodeId);
 extern void MtmEndSession(int nodeId, bool unlock);
 extern void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit);

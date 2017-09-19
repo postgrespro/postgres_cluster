@@ -25,7 +25,8 @@ char const* const MtmEventMnem[] =
 	"MTM_NONRECOVERABLE_ERROR"
 };
 
-static int MtmGetRefereeWinner(void);
+static int  MtmRefereeGetWinner(void);
+static bool MtmRefereeClearWinner(void);
 
 // XXXX: allocate in context and clean it
 static char *
@@ -81,7 +82,7 @@ MtmCheckState(void)
 	// int nVotingNodes = MtmGetNumberOfVotingNodes();
 	bool isEnabledState;
 	int nEnabled   = countZeroBits(Mtm->disabledNodeMask, Mtm->nAllNodes);
-	int nConnected = countZeroBits(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes);
+	int nConnected = countZeroBits(EFFECTIVE_CONNECTIVITY_MASK, Mtm->nAllNodes);
 	int nReceivers = Mtm->nAllNodes - countZeroBits(Mtm->pglogicalReceiverMask, Mtm->nAllNodes);
 	int nSenders   = Mtm->nAllNodes - countZeroBits(Mtm->pglogicalSenderMask, Mtm->nAllNodes);
 
@@ -390,26 +391,46 @@ MtmRefreshClusterStatus()
 	MtmCheckState();
 
 	/*
-	 * Check for referee decidion when pnly half of nodes are visible.
+	 * Check for referee decision when only half of nodes are visible.
 	 */
-	if (MtmRefereeConnStr && *MtmRefereeConnStr && !Mtm->refereeGrant &&
+	if (MtmRefereeConnStr && *MtmRefereeConnStr && !Mtm->refereeWinnerId &&
 		countZeroBits(EFFECTIVE_CONNECTIVITY_MASK, Mtm->nAllNodes) == Mtm->nAllNodes/2)
 	{
-		int winner_node_id = MtmGetRefereeWinner();
-		if (winner_node_id != -1 &&
-			!BIT_CHECK(EFFECTIVE_CONNECTIVITY_MASK, winner_node_id - 1))
-		{
-			MTM_LOG1("[STATE] Referee allowed to proceed with half of the nodes (winner_id = %d)",
-						winner_node_id);
-			Mtm->refereeGrant = true;
+		int winner_node_id = MtmRefereeGetWinner();
 
-			MtmLock(LW_EXCLUSIVE);
-			MtmEnableNode(MtmNodeId);
-			MtmCheckState();
-			MtmUnlock();
+		if (winner_node_id > 0)
+		{
+			Mtm->refereeWinnerId = winner_node_id;
+			if (!BIT_CHECK(EFFECTIVE_CONNECTIVITY_MASK, winner_node_id - 1))
+			{
+				MTM_LOG1("[STATE] Referee allowed to proceed with half of the nodes (winner_id = %d)",
+							winner_node_id);
+				Mtm->refereeGrant = true;
+				MtmLock(LW_EXCLUSIVE);
+				MtmEnableNode(MtmNodeId);
+				MtmCheckState();
+				MtmUnlock();
+			}
 		}
 	}
 
+	/*
+	 * Clear winner if we again have all nodes are online.
+	 */
+	if (MtmRefereeConnStr && *MtmRefereeConnStr && Mtm->refereeWinnerId &&
+		countZeroBits(EFFECTIVE_CONNECTIVITY_MASK, Mtm->nAllNodes) == Mtm->nAllNodes)
+	{
+		if (MtmRefereeClearWinner())
+		{
+			Mtm->refereeWinnerId = 0;
+			Mtm->refereeGrant = false;
+			MTM_LOG1("[STATE] Cleaning old referee decision");
+		}
+	}
+
+	/* Do not check clique with referee grant */
+	if (Mtm->refereeGrant)
+		return;
 
 	/*
 	 * Check for clique.
@@ -473,37 +494,17 @@ MtmRefreshClusterStatus()
 }
 
 static int
-MtmGetRefereeWinner(void)
+MtmRefereeGetWinner(void)
 {
-	int socket_fd;
 	PGconn* conn;
 	PGresult *res;
-	struct timeval timeout = { 5, 0 };
 	char sql[128];
 	int  winner_node_id;
 
-	conn = PQconnectdb_safe(MtmRefereeConnStr);
+	conn = PQconnectdb_safe(MtmRefereeConnStr, 5);
 	if (PQstatus(conn) != CONNECTION_OK)
 	{
-		MTM_ELOG(WARNING, "Could not connect to referee (%s): %s",
-					MtmRefereeConnStr, PQerrorMessage(conn));
-		PQfinish(conn);
-		return -1;
-	}
-
-	socket_fd = PQsocket(conn);
-	if (socket_fd < 0)
-	{
-		MTM_ELOG(WARNING, "Referee socket is invalid");
-		PQfinish(conn);
-		return -1;
-	}
-
-	if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO,
-								(char *)&timeout, sizeof(timeout)) < 0)
-	{
-		MTM_ELOG(WARNING, "Could not set referee socket timeout: %s",
-					strerror(errno));
+		MTM_ELOG(WARNING, "Could not connect to referee");
 		PQfinish(conn);
 		return -1;
 	}
@@ -540,3 +541,46 @@ MtmGetRefereeWinner(void)
 	return winner_node_id;
 }
 
+static bool
+MtmRefereeClearWinner(void)
+{
+	PGconn* conn;
+	PGresult *res;
+	char *response;
+
+	conn = PQconnectdb_safe(MtmRefereeConnStr, 5);
+	if (PQstatus(conn) != CONNECTION_OK)
+	{
+		MTM_ELOG(WARNING, "Could not connect to referee");
+		PQfinish(conn);
+		return false;
+	}
+
+	res = PQexec(conn, "select mtm.referee_clean()");
+	if (PQresultStatus(res) != PGRES_TUPLES_OK ||
+		PQntuples(res) != 1 ||
+		PQnfields(res) != 1)
+	{
+		MTM_ELOG(WARNING, "Refusing unexpected result (r=%d, n=%d, w=%d, k=%s) from referee_clean().",
+			PQresultStatus(res), PQntuples(res), PQnfields(res), PQgetvalue(res, 0, 0));
+		PQclear(res);
+		PQfinish(conn);
+		return false;
+	}
+
+	response = PQgetvalue(res, 0, 0);
+
+	if (false)
+	{
+		MTM_ELOG(WARNING, "Wrong response from referee");
+		PQclear(res);
+		PQfinish(conn);
+		return false;
+	}
+
+	/* Ok, we finally got it! */
+	MTM_LOG1("Got referee clear response %s", response);
+	PQclear(res);
+	PQfinish(conn);
+	return true;
+}
