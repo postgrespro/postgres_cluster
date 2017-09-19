@@ -309,7 +309,7 @@ pglogical_receiver_main(Datum main_arg)
 
 		/* Start logical replication at specified position */
 		originStartPos = replorigin_get_progress(originId, false);
-		if (originStartPos == INVALID_LSN) {
+		if (originStartPos == INVALID_LSN || Mtm->nodes[nodeId-1].manualRecovery) {
 			/*
 			 * We are just creating new replication slot.
 			 * It is assumed that state of local and remote nodes is the same at this moment.
@@ -331,6 +331,7 @@ pglogical_receiver_main(Datum main_arg)
 			}
 			PQclear(res);
 			resetPQExpBuffer(query);
+			Mtm->nodes[nodeId-1].manualRecovery = false;
 		} else {
 			if (Mtm->nodes[nodeId-1].restartLSN < originStartPos) {
 				MTM_LOG1("Advance restartLSN for node %d: from %llx to %llx (pglogical_receiver_main)", nodeId, Mtm->nodes[nodeId-1].restartLSN, originStartPos);
