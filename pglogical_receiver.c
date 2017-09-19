@@ -296,7 +296,7 @@ pglogical_receiver_main(Datum main_arg)
 		count = Mtm->recoveryCount;
 
 		/* Establish connection to remote server */
-		conn = PQconnectdb_safe(connString);
+		conn = PQconnectdb_safe(connString, 0);
 		status = PQstatus(conn);
 		if (status != CONNECTION_OK)
 		{

@@ -95,6 +95,28 @@ class MajorTest(unittest.TestCase, TestHelper):
         self.assertCommits(aggs)
         self.assertIsolation(aggs)
 
+    def test_double_failure_referee(self):
+        print('### test_double_failure_referee ###')
+
+        aggs_failure, aggs = self.performFailure(SingleNodePartition('node2'))
+
+        self.assertCommits(aggs_failure[:1])
+        self.assertNoCommits(aggs_failure[1:])
+        self.assertIsolation(aggs_failure)
+
+        self.assertCommits(aggs)
+        self.assertIsolation(aggs)
+
+        aggs_failure, aggs = self.performFailure(SingleNodePartition('node1'))
+
+        self.assertNoCommits(aggs_failure[:1])
+        self.assertCommits(aggs_failure[1:])
+        self.assertIsolation(aggs_failure)
+
+        self.assertCommits(aggs)
+        self.assertIsolation(aggs)
+
+
 if __name__ == '__main__':
     unittest.main()
 
