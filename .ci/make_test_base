@@ -19,10 +19,7 @@ def prepare_extlist(value):
     if "pg_pathman" in l:
         # remove duplicates and reorder extension list to move pg_pathman to tail
         nl = sorted(list(set(l)), cmp = lambda a,b: 1 if a=="pg_pathman" else -1)
-        if len(nl) > 0:
-            new_value = "'{}'".format(",".join(nl))
-        else:
-            new_value = "''"
+        new_value = "'{0}'".format(",".join(nl))
         return new_value
     else:
         return value
