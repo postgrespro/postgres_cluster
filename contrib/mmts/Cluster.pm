@@ -350,22 +350,25 @@ sub is_data_identic()
 sub add_node()
 {
 	my ($self, %params) = @_;
-	my $pgport = defined $params{port} ? $params{port} : (allocate_ports('127.0.0.1', 1))[0];
-	my $arbiter_port = defined $params{arbiter_port} ? $params{arbiter_port} : (allocate_ports('127.0.0.1', 1))[0];
 
+	my $pgport;
+	my $arbiter_port;
 	my $connstrs;
 	my $node_id;
 
 	if (defined $params{node_id})
 	{
 		$node_id = $params{node_id};
+		$pgport = $params{port};
+		$arbiter_port = $params{arbiter_port};
 		$connstrs = $self->all_connstrs();
 	}
 	else
 	{
-		my $new_conn = ", dbname=postgres host=127.0.0.1 port=$pgport arbiter_port=$arbiter_port";
-		$connstrs = $self->all_connstrs() . $new_conn;
 		$node_id = scalar(@{$self->{nodes}}) + 1;
+		$pgport = (allocate_ports('127.0.0.1', 1))[0];
+		$arbiter_port = (allocate_ports('127.0.0.1', 1))[0];
+		$connstrs = $self->all_connstrs() . ", dbname=postgres host=127.0.0.1 port=$pgport arbiter_port=$arbiter_port";
 	}
 
 	my $node = PostgresNode->get_new_node("node${node_id}x");
@@ -377,6 +380,8 @@ sub add_node()
 
 	$node->{_host} = '127.0.0.1';
 	$node->{_port} = $pgport;
+	$node->{port} = $pgport;
+	$node->{host} = '127.0.0.1';
 	$node->{arbiter_port} = $arbiter_port;
 	$node->{mmconnstr} = "${ \$node->connstr('postgres') } arbiter_port=${ \$node->{arbiter_port} }";
 	$node->append_conf("postgresql.conf", qq(

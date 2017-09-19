@@ -85,21 +85,23 @@ MtmCheckState(void)
 	int nReceivers = Mtm->nAllNodes - countZeroBits(Mtm->pglogicalReceiverMask, Mtm->nAllNodes);
 	int nSenders   = Mtm->nAllNodes - countZeroBits(Mtm->pglogicalSenderMask, Mtm->nAllNodes);
 
-	MTM_LOG1("[STATE]   Status = (disabled=%s, unaccessible=%s, clique=%s, receivers=%s, senders=%s, total=%i, major=%d)",
+	MTM_LOG1("[STATE]   Status = (disabled=%s, unaccessible=%s, clique=%s, receivers=%s, senders=%s, total=%i, major=%d, stopped=%s)",
 		maskToString(Mtm->disabledNodeMask, Mtm->nAllNodes),
 		maskToString(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes),
 		maskToString(Mtm->clique, Mtm->nAllNodes),
 		maskToString(Mtm->pglogicalReceiverMask, Mtm->nAllNodes),
 		maskToString(Mtm->pglogicalSenderMask, Mtm->nAllNodes),
 		Mtm->nAllNodes,
-		(MtmMajorNode || Mtm->refereeGrant) );
+		(MtmMajorNode || Mtm->refereeGrant),
+		maskToString(Mtm->stoppedNodeMask, Mtm->nAllNodes));
 
 	isEnabledState =
 		( (nConnected >= Mtm->nAllNodes/2+1)							/* majority */
 			// XXXX: should we restrict major with two nodes setup?
 			|| (nConnected == Mtm->nAllNodes/2 && MtmMajorNode)			/* or half + major node */
 			|| (nConnected == Mtm->nAllNodes/2 && Mtm->refereeGrant) )  /* or half + referee */
-		&& BIT_CHECK(Mtm->clique, MtmNodeId-1);							/* in clique */
+		&& BIT_CHECK(Mtm->clique, MtmNodeId-1)							/* in clique */
+		&& !BIT_CHECK(Mtm->stoppedNodeMask, MtmNodeId-1);				/* is not stopped */
 
 	/* ANY -> MTM_DISABLED */
 	if (!isEnabledState)
@@ -336,7 +338,7 @@ void MtmOnNodeConnect(int nodeId)
 	// MtmRefreshClusterStatus();
 }
 
-void MtmReconnectNode(int nodeId)
+void MtmReconnectNode(int nodeId) // XXXX evict that
 {
 	// MTM_LOG1("[STATE] ReconnectNode for node %u", nodeId);
 	MtmLock(LW_EXCLUSIVE);
@@ -391,13 +393,11 @@ MtmRefreshClusterStatus()
 	 * Check for referee decidion when pnly half of nodes are visible.
 	 */
 	if (MtmRefereeConnStr && *MtmRefereeConnStr && !Mtm->refereeGrant &&
-		// XXXX visibility & ~clique?
-		countZeroBits(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes) == Mtm->nAllNodes/2)
+		countZeroBits(EFFECTIVE_CONNECTIVITY_MASK, Mtm->nAllNodes) == Mtm->nAllNodes/2)
 	{
 		int winner_node_id = MtmGetRefereeWinner();
 		if (winner_node_id != -1 &&
-			// XXXX visibility & ~clique?
-			!BIT_CHECK(SELF_CONNECTIVITY_MASK, winner_node_id - 1))
+			!BIT_CHECK(EFFECTIVE_CONNECTIVITY_MASK, winner_node_id - 1))
 		{
 			MTM_LOG1("[STATE] Referee allowed to proceed with half of the nodes (winner_id = %d)",
 						winner_node_id);

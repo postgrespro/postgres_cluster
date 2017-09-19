@@ -170,7 +170,7 @@ static void MtmShmemStartup(void);
 
 static BgwPool* MtmPoolConstructor(void);
 static bool MtmRunUtilityStmt(PGconn* conn, char const* sql, char **errmsg);
-static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError);
+static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError, int forceOnNode);
 static void MtmProcessDDLCommand(char const* queryString, bool transactional);
 
 static void MtmLockCluster(void);
@@ -978,7 +978,9 @@ MtmBeginTransaction(MtmCurrentTrans* x)
 		x->isTwoPhase = false;
 		x->isTransactionBlock = IsTransactionBlock();
 		/* Application name can be changed using PGAPPNAME environment variable */
-		if (x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0 && !MtmBypass) {
+		if (x->isDistributed && Mtm->status != MTM_ONLINE && strcmp(application_name, MULTIMASTER_ADMIN) != 0
+			&& strcmp(application_name, MULTIMASTER_BROADCAST_SERVICE) != 0
+			&& !MtmBypass) {
 			/* Reject all user's transactions at offline cluster.
 			 * Allow execution of transaction by bg-workers to make it possible to perform recovery.
 			 */
@@ -2410,7 +2412,7 @@ static void MtmInitialize()
 		for (i = 0; i < MtmNodes; i++) {
 			Mtm->nodes[i].oldestSnapshot = 0;
 			Mtm->nodes[i].disabledNodeMask = 0;
-			Mtm->nodes[i].connectivityMask = 7; // XXXX
+			Mtm->nodes[i].connectivityMask = (((nodemask_t)1 << MtmNodes) - 1);
 			Mtm->nodes[i].lockGraphUsed = 0;
 			Mtm->nodes[i].lockGraphAllocated = 0;
 			Mtm->nodes[i].lockGraphData = NULL;
@@ -2423,6 +2425,7 @@ static void MtmInitialize()
 			Mtm->nodes[i].originId = InvalidRepOriginId;
 			Mtm->nodes[i].timeline = 0;
 			Mtm->nodes[i].nHeartbeats = 0;
+			Mtm->nodes[i].manualRecovery = false;
 			Mtm->nodes[i].slotDeleted = false;
 		}
 		Mtm->nodes[MtmNodeId-1].originId = DoNotReplicateId;
@@ -3345,9 +3348,8 @@ MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shut
 	}
 
 	/* Await until node is connected and both receiver and sender are in clique */
-	while (BIT_CHECK(SELF_CONNECTIVITY_MASK, nodeId - 1) ||
-			!BIT_CHECK(Mtm->clique, nodeId - 1) ||
-			!BIT_CHECK(Mtm->clique, MtmNodeId - 1) )
+	while (BIT_CHECK(EFFECTIVE_CONNECTIVITY_MASK, nodeId - 1) ||
+			BIT_CHECK(EFFECTIVE_CONNECTIVITY_MASK, MtmNodeId - 1))
 	{
 		MtmUnlock();
 		if (*shutdown)
@@ -3402,6 +3404,7 @@ void MtmRecoverNode(int nodeId)
 		MTM_ELOG(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nAllNodes);
 	}
 	MtmLock(LW_EXCLUSIVE);
+	Mtm->nodes[nodeId-1].manualRecovery = true;
 	if (BIT_CHECK(Mtm->stoppedNodeMask, nodeId-1))
 	{
 		Assert(BIT_CHECK(Mtm->disabledNodeMask, nodeId-1));
@@ -3412,8 +3415,8 @@ void MtmRecoverNode(int nodeId)
 
 	if (!MtmIsBroadcast())
 	{
-		MtmBroadcastUtilityStmt(psprintf("select pg_create_logical_replication_slot('" MULTIMASTER_SLOT_PATTERN "', '" MULTIMASTER_NAME "')", nodeId), true);
-		MtmBroadcastUtilityStmt(psprintf("select mtm.recover_node(%d)", nodeId), true);
+		MtmBroadcastUtilityStmt(psprintf("select pg_create_logical_replication_slot('" MULTIMASTER_SLOT_PATTERN "', '" MULTIMASTER_NAME "')", nodeId), true, 0);
+		MtmBroadcastUtilityStmt(psprintf("select mtm.recover_node(%d)", nodeId), true, 0);
 	}
 }
 
@@ -3443,7 +3446,7 @@ void MtmResumeNode(int nodeId)
 
 	if (!MtmIsBroadcast())
 	{
-		MtmBroadcastUtilityStmt(psprintf("select mtm.resume_node(%d)", nodeId), true);
+		MtmBroadcastUtilityStmt(psprintf("select mtm.resume_node(%d)", nodeId), true, nodeId);
 	}
 }
 
@@ -3458,20 +3461,19 @@ void MtmStopNode(int nodeId, bool dropSlot)
 		MTM_ELOG(ERROR, "NodeID %d is out of range [1,%d]", nodeId, Mtm->nAllNodes);
 	}
 
+	if (!MtmIsBroadcast())
+	{
+		MtmBroadcastUtilityStmt(psprintf("select mtm.stop_node(%d,%s)", nodeId, dropSlot ? "true" : "false"), true, nodeId);
+	}
+
 	MtmLock(LW_EXCLUSIVE);
-
 	BIT_SET(Mtm->stoppedNodeMask, nodeId-1);
-
 	if (!BIT_CHECK(Mtm->disabledNodeMask, nodeId-1))
 	{
 		MtmDisableNode(nodeId);
 	}
 	MtmUnlock();
 
-	if (!MtmIsBroadcast())
-	{
-		MtmBroadcastUtilityStmt(psprintf("select mtm.stop_node(%d,%s)", nodeId, dropSlot ? "true" : "false"), true);
-	}
 	if (dropSlot)
 	{
 		MtmDropSlot(nodeId);
@@ -3545,12 +3547,8 @@ MtmReplicationStartupHook(struct PGLogicalStartupHookArgs* args)
 	}
 
 	if (BIT_CHECK(Mtm->stoppedNodeMask, MtmReplicationNodeId-1)) {
-		MTM_ELOG(WARNING, "Stopped node %d tries to initiate recovery", MtmReplicationNodeId);
-		do {
-			MtmUnlock();
-			MtmSleep(STATUS_POLL_DELAY);
-			MtmLock(LW_EXCLUSIVE);
-		} while (BIT_CHECK(Mtm->stoppedNodeMask, MtmReplicationNodeId-1));
+		MtmUnlock();
+		MTM_ELOG(ERROR, "Stopped node %d tries to connect", MtmReplicationNodeId);
 	}
 
 	if (MtmIsRecoverySession) {
@@ -3857,8 +3855,8 @@ mtm_add_node(PG_FUNCTION_ARGS)
 	}
 	if (!MtmIsBroadcast())
 	{
-		MtmBroadcastUtilityStmt(psprintf("select pg_create_logical_replication_slot('" MULTIMASTER_SLOT_PATTERN "', '" MULTIMASTER_NAME "')", Mtm->nAllNodes+1), true);
-		MtmBroadcastUtilityStmt(psprintf("select mtm.add_node('%s')", connStr), true);
+		MtmBroadcastUtilityStmt(psprintf("select pg_create_logical_replication_slot('" MULTIMASTER_SLOT_PATTERN "', '" MULTIMASTER_NAME "')", Mtm->nAllNodes+1), true, 0);
+		MtmBroadcastUtilityStmt(psprintf("select mtm.add_node('%s')", connStr), true, 0);
 	}
 	else
 	{
@@ -4403,7 +4401,7 @@ MtmNoticeReceiver(void *i, const PGresult *res)
 	pfree(stripped_notice);
 }
 
-static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
+static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError, int forceOnNode)
 {
 	int i = 0;
 	nodemask_t disabledNodeMask = Mtm->disabledNodeMask;
@@ -4415,7 +4413,7 @@ static void MtmBroadcastUtilityStmt(char const* sql, bool ignoreError)
 
 	for (i = 0; i < nNodes; i++)
 	{
-		if (!BIT_CHECK(disabledNodeMask, i))
+		if (!BIT_CHECK(disabledNodeMask, i) || (i + 1 == forceOnNode))
 		{
 			conns[i] = PQconnectdb_safe(psprintf("%s application_name=%s", Mtm->nodes[i].con.connStr, MULTIMASTER_BROADCAST_SERVICE));
 			if (PQstatus(conns[i]) != CONNECTION_OK)
