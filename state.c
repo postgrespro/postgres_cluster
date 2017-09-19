@@ -241,7 +241,7 @@ MtmStateProcessEvent(MtmEvent ev)
 			break;
 
 		case MTM_NONRECOVERABLE_ERROR:
-			kill(PostmasterPid, SIGQUIT);
+			// kill(PostmasterPid, SIGQUIT);
 			break;
 	}
 
