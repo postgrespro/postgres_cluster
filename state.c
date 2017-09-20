@@ -394,14 +394,14 @@ MtmRefreshClusterStatus()
 	 * Check for referee decision when only half of nodes are visible.
 	 */
 	if (MtmRefereeConnStr && *MtmRefereeConnStr && !Mtm->refereeWinnerId &&
-		countZeroBits(EFFECTIVE_CONNECTIVITY_MASK, Mtm->nAllNodes) == Mtm->nAllNodes/2)
+		countZeroBits(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes) == Mtm->nAllNodes/2)
 	{
 		int winner_node_id = MtmRefereeGetWinner();
 
 		if (winner_node_id > 0)
 		{
 			Mtm->refereeWinnerId = winner_node_id;
-			if (!BIT_CHECK(EFFECTIVE_CONNECTIVITY_MASK, winner_node_id - 1))
+			if (!BIT_CHECK(SELF_CONNECTIVITY_MASK, winner_node_id - 1))
 			{
 				MTM_LOG1("[STATE] Referee allowed to proceed with half of the nodes (winner_id = %d)",
 							winner_node_id);
@@ -418,7 +418,7 @@ MtmRefreshClusterStatus()
 	 * Clear winner if we again have all nodes are online.
 	 */
 	if (MtmRefereeConnStr && *MtmRefereeConnStr && Mtm->refereeWinnerId &&
-		countZeroBits(EFFECTIVE_CONNECTIVITY_MASK, Mtm->nAllNodes) == Mtm->nAllNodes)
+		countZeroBits(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes) == Mtm->nAllNodes)
 	{
 		if (MtmRefereeClearWinner())
 		{
@@ -429,7 +429,7 @@ MtmRefreshClusterStatus()
 	}
 
 	/* Do not check clique with referee grant */
-	if (Mtm->refereeGrant)
+	if (Mtm->refereeWinnerId)
 		return;
 
 	/*
@@ -570,16 +570,16 @@ MtmRefereeClearWinner(void)
 
 	response = PQgetvalue(res, 0, 0);
 
-	if (false)
+	if (strncmp(response, "t", 1) != 0)
 	{
-		MTM_ELOG(WARNING, "Wrong response from referee");
+		MTM_ELOG(WARNING, "Wrong response from referee: '%s'", response);
 		PQclear(res);
 		PQfinish(conn);
 		return false;
 	}
 
 	/* Ok, we finally got it! */
-	MTM_LOG1("Got referee clear response %s", response);
+	MTM_LOG1("Got referee clear response '%s'", response);
 	PQclear(res);
 	PQfinish(conn);
 	return true;

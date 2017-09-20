@@ -69,6 +69,7 @@ if [ "$1" = 'postgres' ]; then
 			multimaster.ignore_tables_without_pk = 1
 			multimaster.heartbeat_recv_timeout = 1100
 			multimaster.heartbeat_send_timeout = 250
+			multimaster.max_recovery_lag = 1000000000
 		EOF
 
 		if [ -n "$NODE_ID" ]; then
