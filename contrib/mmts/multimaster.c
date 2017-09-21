@@ -1529,6 +1529,10 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 					ts->csn = x->csn;
 					MtmSyncClock(ts->csn);
 				}
+				if (ts->isLocal)
+				{
+					ts->csn = MtmAssignCSN();
+				}
 				Mtm->lastCsn = ts->csn;
 				ts->status = TRANSACTION_STATUS_COMMITTED;
 				MtmAdjustSubtransactions(ts);
