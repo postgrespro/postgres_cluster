@@ -328,4 +328,12 @@ void cache_selectivity(int clause_hash,
 double	   *selectivity_cache_find_global_relid(int clause_hash, int global_relid);
 void		selectivity_cache_clear(void);
 
+#ifndef fmax
+#define fmax(a, b) ((a > b) ? (a) : (b))
+#endif
+
+#ifndef isfinite
+#define isfinite(x) (-INFINITY < (x) && (x) < INFINITY)
+#endif
+
 #endif
