@@ -267,7 +267,7 @@ stop_postmaster(void)
 		fflush(stderr);
 
 		snprintf(buf, sizeof(buf),
-				 "\"%s%spg_ctl\" stop -D \"%s/data\" -s -m fast",
+				 "\"%s%spg_ctl\" stop -D \"%s/data\" -s -m fast -t 600",
 				 bindir ? bindir : "",
 				 bindir ? "/" : "",
 				 temp_instance);
