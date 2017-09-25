@@ -729,7 +729,7 @@ sub restart
 	my $logfile = $self->logfile;
 	my $name    = $self->name;
 	print "### Restarting node \"$name\"\n";
-	TestLib::system_or_bail('pg_ctl', '-D', $pgdata, '-w', '-l', $logfile,
+	TestLib::system_or_bail('pg_ctl', '-D', $pgdata, '-w', '-t', '600', '-l', $logfile,
 							'restart');
 	$self->_update_pid(1);
 }
