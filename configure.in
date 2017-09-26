@@ -17,7 +17,7 @@ dnl Read the Autoconf manual for details.
 dnl
 m4_pattern_forbid(^PGAC_)dnl to catch undefined macros
 
-AC_INIT([PostgreSQL], [9.6.2], [pgsql-bugs@postgresql.org])
+AC_INIT([PostgreSQL], [9.6.5], [pgsql-bugs@postgresql.org])
 
 m4_if(m4_defn([m4_PACKAGE_VERSION]), [2.69], [], [m4_fatal([Autoconf version 2.69 is required.
 Untested combinations of 'autoconf' and PostgreSQL versions are not
@@ -928,6 +928,7 @@ You might have to rebuild your Perl installation.  Refer to the
 documentation for details.  Use --without-perl to disable building
 PL/Perl.])
   fi
+  PGAC_CHECK_PERL_EMBED_CCFLAGS
   PGAC_CHECK_PERL_EMBED_LDFLAGS
 fi
 
@@ -1456,7 +1457,7 @@ PGAC_FUNC_WCSTOMBS_L
 LIBS_including_readline="$LIBS"
 LIBS=`echo "$LIBS" | sed -e 's/-ledit//g' -e 's/-lreadline//g'`
 
-AC_CHECK_FUNCS([cbrt dlopen fdatasync getifaddrs getpeerucred getrlimit mbstowcs_l memmove poll pstat pthread_is_threaded_np readlink setproctitle setsid shm_open symlink sync_file_range towlower utime utimes wcstombs wcstombs_l])
+AC_CHECK_FUNCS([cbrt dlopen fdatasync getifaddrs getpeerucred getrlimit mbstowcs_l memmove poll posix_fallocate pstat pthread_is_threaded_np readlink setproctitle setsid shm_open symlink sync_file_range towlower utime utimes wcstombs wcstombs_l])
 
 AC_REPLACE_FUNCS(fseeko)
 case $host_os in
@@ -1749,18 +1750,6 @@ fi
 
 AC_DEFINE_UNQUOTED(PG_INT64_TYPE, $pg_int64_type,
   [Define to the name of a signed 64-bit integer type.])
-
-dnl If we need to use "long long int", figure out whether nnnLL notation works.
-
-if test x"$HAVE_LONG_LONG_INT_64" = xyes ; then
-  AC_COMPILE_IFELSE([AC_LANG_SOURCE([
-#define INT64CONST(x)  x##LL
-long long int foo = INT64CONST(0x1234567890123456);
-])],
-	[AC_DEFINE(HAVE_LL_CONSTANTS, 1, [Define to 1 if constants of type 'long long int' should have the suffix LL.])],
-	[])
-fi
-
 
 # If we found "long int" is 64 bits, assume snprintf handles it.  If
 # we found we need to use "long long int", better check.  We cope with

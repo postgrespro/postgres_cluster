@@ -34,7 +34,7 @@ if (-e "src/tools/msvc/buildenv.pl")
 
 my $what = shift || "";
 if ($what =~
-/^(check|installcheck|plcheck|contribcheck|modulescheck|ecpgcheck|isolationcheck|upgradecheck|bincheck|recoverycheck)$/i
+/^(check|installcheck|plcheck|contribcheck|modulescheck|ecpgcheck|isolationcheck|upgradecheck|bincheck|recoverycheck|taptest)$/i
   )
 {
 	$what = uc $what;
@@ -53,13 +53,6 @@ copy("$Config/regress/regress.dll",               "src/test/regress");
 copy("$Config/dummy_seclabel/dummy_seclabel.dll", "src/test/regress");
 
 $ENV{PATH} = "$topdir/$Config/libpq;$ENV{PATH}";
-
-my $schedule = shift;
-unless ($schedule)
-{
-	$schedule = "serial";
-	$schedule = "parallel" if ($what eq 'CHECK' || $what =~ /PARALLEL/);
-}
 
 if ($ENV{PERL5LIB})
 {
@@ -90,13 +83,14 @@ my %command = (
 	ISOLATIONCHECK => \&isolationcheck,
 	BINCHECK       => \&bincheck,
 	RECOVERYCHECK  => \&recoverycheck,
-	UPGRADECHECK   => \&upgradecheck,);
+	UPGRADECHECK   => \&upgradecheck,
+	TAPTEST        => \&taptest,);
 
 my $proc = $command{$what};
 
 exit 3 unless $proc;
 
-&$proc();
+&$proc(@ARGV);
 
 exit 0;
 
@@ -104,6 +98,7 @@ exit 0;
 
 sub installcheck
 {
+	my $schedule = shift || 'serial';
 	my @args = (
 		"../../../$Config/pg_regress/pg_regress",
 		"--dlpath=.",
@@ -119,6 +114,7 @@ sub installcheck
 
 sub check
 {
+	my $schedule = shift || 'parallel';
 	InstallTemp();
 	chdir "${topdir}/src/test/regress";
 	my @args = (
@@ -144,8 +140,8 @@ sub ecpgcheck
 	exit $status if $status;
 	InstallTemp();
 	chdir "$topdir/src/interfaces/ecpg/test";
-	$schedule = "ecpg";
-	my @args = (
+	my $schedule = "ecpg";
+	my @args     = (
 		"../../../../$Config/pg_regress_ecpg/pg_regress_ecpg",
 		"--bindir=",
 		"--dbname=ecpg1_regression,ecpg2_regression",
@@ -181,10 +177,19 @@ sub tap_check
 	die "Tap tests not enabled in configuration"
 	  unless $config->{tap_tests};
 
+	my @flags;
+	foreach my $arg (0 .. scalar(@_))
+	{
+		next unless $_[$arg] =~ /^PROVE_FLAGS=(.*)/;
+		@flags = split(/\s+/, $1);
+		splice(@_,$arg,1);
+		last;
+	}
+
 	my $dir = shift;
 	chdir $dir;
 
-	my @args = ("prove", "--verbose", "t/*.pl");
+	my @args = ("prove", @flags, "t/*.pl");
 
 	# adjust the environment for just this test
 	local %ENV = %ENV;
@@ -216,6 +221,26 @@ sub bincheck
 		$mstat ||= $status;
 	}
 	exit $mstat if $mstat;
+}
+
+sub taptest
+{
+	my $dir = shift;
+	my @args;
+
+	if ($dir =~ /^PROVE_FLAGS=/)
+	{
+		push(@args, $dir);
+		$dir = shift;
+	}
+
+	die "no tests found!" unless -d "$topdir/$dir/t";
+
+	push(@args,"$topdir/$dir");
+
+	InstallTemp();
+	my $status = tap_check(@args);
+	exit $status if $status;
 }
 
 sub plcheck
@@ -515,7 +540,6 @@ sub fetchRegressOpts
 	$m =~ s{\\\r?\n}{}g;
 	if ($m =~ /^\s*REGRESS_OPTS\s*\+?=(.*)/m)
 	{
-
 		# Substitute known Makefile variables, then ignore options that retain
 		# an unhandled variable reference.  Ignore anything that isn't an
 		# option starting with "--".
@@ -588,15 +612,18 @@ sub GetTests
 
 sub InstallTemp
 {
-	print "Setting up temp install\n\n";
-	Install("$tmp_installdir", "all", $config);
+	unless ($ENV{NO_TEMP_INSTALL})
+	{
+		print "Setting up temp install\n\n";
+		Install("$tmp_installdir", "all", $config);
+	}
 	$ENV{PATH} = "$tmp_installdir/bin;$ENV{PATH}";
 }
 
 sub usage
 {
 	print STDERR
-	  "Usage: vcregress.pl <mode> [ <schedule> ]\n\n",
+	  "Usage: vcregress.pl <mode> [ <arg>]\n\n",
 	  "Options for <mode>:\n",
 	  "  bincheck       run tests of utilities in src/bin/\n",
 	  "  check          deploy instance and run regression tests on it\n",
@@ -607,9 +634,12 @@ sub usage
 	  "  modulescheck   run tests of modules in src/test/modules/\n",
 	  "  plcheck        run tests of PL languages\n",
 	  "  recoverycheck  run recovery test suite\n",
+	  "  taptest        run an arbitrary TAP test set\n",
 	  "  upgradecheck   run tests of pg_upgrade\n",
-	  "\nOptions for <schedule>:\n",
+	  "\nOptions for <arg>: (used by check and installcheck)\n",
 	  "  serial         serial mode\n",
-	  "  parallel       parallel mode\n";
+	  "  parallel       parallel mode\n",
+	  "\nOption for <arg>: for taptest\n",
+	  "  TEST_DIR       (required) directory where tests reside\n";
 	exit(1);
 }

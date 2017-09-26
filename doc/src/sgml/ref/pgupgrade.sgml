@@ -123,7 +123,7 @@
       <term><option>-k</option></term>
       <term><option>--link</option></term>
       <listitem><para>use hard links instead of copying files to the new
-      cluster (use junction points on Windows)</para></listitem>
+      cluster</para></listitem>
      </varlistentry>
 
      <varlistentry>
@@ -317,15 +317,18 @@ NET STOP postgresql-9.0
    </step>
 
    <step>
-    <title>Verify standby servers</title>
+    <title>Prepare for standby server upgrades</title>
 
     <para>
-     If you are upgrading Streaming Replication and Log-Shipping standby
-     servers, verify that the old standby servers are caught up by running
-     <application>pg_controldata</> against the old primary and standby
-     clusters.  Verify that the <quote>Latest checkpoint location</>
-     values match in all clusters.  (There will be a mismatch if old
-     standby servers were shut down before the old primary.)
+     If you are upgrading standby servers using methods outlined in section <xref
+     linkend="pgupgrade-step-replicas">, verify that the old standby
+     servers are caught up by running <application>pg_controldata</>
+     against the old primary and standby clusters.  Verify that the
+     <quote>Latest checkpoint location</> values match in all clusters.
+     (There will be a mismatch if old standby servers were shut down
+     before the old primary.)  Also, change <varname>wal_level</> to
+     <literal>replica</> in the <filename>postgresql.conf</> file on the
+     new primary cluster.
     </para>
    </step>
 
@@ -410,16 +413,24 @@ pg_upgrade.exe
     </para>
    </step>
 
-   <step>
+   <step id="pgupgrade-step-replicas">
     <title>Upgrade Streaming Replication and Log-Shipping standby servers</title>
 
     <para>
-     If you have Streaming Replication (see <xref
+     If you used link mode and have Streaming Replication (see <xref
      linkend="streaming-replication">) or Log-Shipping (see <xref
-     linkend="warm-standby">) standby servers, follow these steps to
-     upgrade them.  You will not be running <application>pg_upgrade</>
-     on the standby servers, but rather <application>rsync</>.  Do not
-     start any servers yet.
+     linkend="warm-standby">) standby servers, you can follow these steps to
+     quickly upgrade them.  You will not be running <application>pg_upgrade</> on
+     the standby servers, but rather <application>rsync</> on the primary.
+     Do not start any servers yet.
+    </para>
+
+    <para>
+     If you did <emphasis>not</> use link mode, do not have or do not
+     want to use <application>rsync</>, or want an easier solution, skip
+     the instructions in this section and simply recreate the standby
+     servers once <application>pg_upgrade</> completes and the new primary
+     is running.
     </para>
 
     <substeps>
@@ -439,7 +450,7 @@ pg_upgrade.exe
       <para>
        Make sure the new standby data directories do <emphasis>not</>
        exist or are empty.  If <application>initdb</> was run, delete
-       the standby server data directories.
+       the standby servers' new data directories.
       </para>
      </step>
 
@@ -448,7 +459,7 @@ pg_upgrade.exe
 
       <para>
        Install the same custom shared object files on the new standbys
-       that you installed in the new master cluster.
+       that you installed in the new primary cluster.
       </para>
      </step>
 
@@ -465,19 +476,10 @@ pg_upgrade.exe
       <title>Save configuration files</title>
 
       <para>
-       Save any configuration files from the standbys you need to keep,
-       e.g.  <filename>postgresql.conf</>, <literal>recovery.conf</>,
-       as these will be overwritten or removed in the next step.
-      </para>
-     </step>
-
-     <step>
-      <title>Start and stop the new master cluster</title>
-
-      <para>
-       In the new master cluster, change <varname>wal_level</> to
-       <literal>replica</> in the <filename>postgresql.conf</> file
-       and then start and stop the cluster.
+       Save any configuration files from the old standbys' data
+       directories you need to keep, e.g.  <filename>postgresql.conf</>,
+       <literal>recovery.conf</>, because these will be overwritten or
+       removed in the next step.
       </para>
      </step>
 
@@ -485,32 +487,62 @@ pg_upgrade.exe
       <title>Run <application>rsync</></title>
 
       <para>
-       From a directory that is above the old and new database cluster
-       directories, run this for each slave:
+       When using link mode, standby servers can be quickly upgraded using
+       <application>rsync</>.  To accomplish this, from a directory on
+       the primary server that is above the old and new database cluster
+       directories, run this on the <emphasis>primary</> for each standby
+       server:
 
 <programlisting>
-rsync --archive --delete --hard-links --size-only old_pgdata new_pgdata remote_dir
+rsync --archive --delete --hard-links --size-only --no-inc-recursive old_pgdata new_pgdata remote_dir
 </programlisting>
 
        where <option>old_pgdata</> and <option>new_pgdata</> are relative
-       to the current directory, and <option>remote_dir</> is
-       <emphasis>above</> the old and new cluster directories on
-       the standby server.  The old and new relative cluster paths
-       must match on the master and standby server.  Consult the
+       to the current directory on the primary, and <option>remote_dir</>
+       is <emphasis>above</> the old and new cluster directories
+       on the standby.  The directory structure under the specified
+       directories on the primary and standbys must match.  Consult the
        <application>rsync</> manual page for details on specifying the
-       remote directory, e.g. <literal>standbyhost:/opt/PostgreSQL/</>.
-       <application>rsync</> will be fast when <application>pg_upgrade</>'s
-       <option>--link</> mode is used because it will create hard links
-       on the remote server rather than transferring user data.
-       Unfortunately, <application>rsync</> needlessly copies the
-       files associated with temporary and unlogged tables.
+       remote directory, e.g.
+
+<programlisting>
+rsync --archive --delete --hard-links --size-only --no-inc-recursive /opt/PostgreSQL/9.5/data \
+      /opt/PostgreSQL/9.6/data standby.example.com:/opt/PostgreSQL
+</programlisting>
+
+       You can verify what the command will do using
+       <application>rsync</>'s <option>--dry-run</> option.  While
+       <application>rsync</> must be run on the primary for at least one
+       standby, it is possible to run <application>rsync</> on an upgraded
+       standby to upgrade other standbys, as long as the upgraded standby
+       has not been started.
+      </para>
+
+      <para>
+       What this does is to record the links created by
+       <application>pg_upgrade</>'s link mode that connect files in the
+       old and new clusters on the primary server.  It then finds matching
+       files in the standby's old cluster and creates links for them in the
+       standby's new cluster.  Files that were not linked on the primary
+       are copied from the primary to the standby.  (They are usually
+       small.)  This provides rapid standby upgrades.  Unfortunately,
+       <application>rsync</> needlessly copies files associated with
+       temporary and unlogged tables because these files don't normally
+       exist on standby servers.
       </para>
 
       <para>
        If you have tablespaces, you will need to run a similar
-       <application>rsync</> command for each tablespace directory.  If you
-       have relocated <filename>pg_xlog</> outside the data directories,
-       <application>rsync</> must be run on those directories too.
+       <application>rsync</> command for each tablespace directory, e.g.:
+
+<programlisting>
+rsync --archive --delete --hard-links --size-only --no-inc-recursive /vol1/pg_tblsp/PG_9.5_201510051 \
+      /vol1/pg_tblsp/PG_9.6_201608131 standby.example.com:/vol1/pg_tblsp
+</programlisting>
+
+       If you have relocated <filename>pg_xlog</> outside the data
+       directories, <application>rsync</> must be run on those directories
+       too.
       </para>
      </step>
 
@@ -520,8 +552,8 @@ rsync --archive --delete --hard-links --size-only old_pgdata new_pgdata remote_d
       <para>
        Configure the servers for log shipping.  (You do not need to run
        <function>pg_start_backup()</> and <function>pg_stop_backup()</>
-       or take a file system backup as the slaves are still synchronized
-       with the master.)
+       or take a file system backup as the standbys are still synchronized
+       with the primary.)
       </para>
      </step>
 

@@ -3930,7 +3930,7 @@ l2:
 
 		/*
 		 * To prevent concurrent sessions from updating the tuple, we have to
-		 * temporarily mark it locked, while we release the lock.
+		 * temporarily mark it locked, while we release the page-level lock.
 		 *
 		 * To satisfy the rule that any xid potentially appearing in a buffer
 		 * written out to disk, we unfortunately have to WAL log this
@@ -3942,8 +3942,9 @@ l2:
 
 		/*
 		 * Compute xmax / infomask appropriate for locking the tuple. This has
-		 * to be done separately from the lock, because the potentially
-		 * created multixact would otherwise be wrong.
+		 * to be done separately from the combo that's going to be used for
+		 * updating, because the potentially created multixact would otherwise
+		 * be wrong.
 		 */
 		compute_new_xmax_infomask(HeapTupleHeaderGetRawXmax(oldtup.t_data),
 								  oldtup.t_data->t_infomask,
@@ -5550,8 +5551,10 @@ l5:
  * with the given xid, does the current transaction need to wait, fail, or can
  * it continue if it wanted to acquire a lock of the given mode?  "needwait"
  * is set to true if waiting is necessary; if it can continue, then
- * HeapTupleMayBeUpdated is returned.  In case of a conflict, a different
- * HeapTupleSatisfiesUpdate return code is returned.
+ * HeapTupleMayBeUpdated is returned.  If the lock is already held by the
+ * current transaction, return HeapTupleSelfUpdated.  In case of a conflict
+ * with another transaction, a different HeapTupleSatisfiesUpdate return code
+ * is returned.
  *
  * The held status is said to be hypothetical because it might correspond to a
  * lock held by a single Xid, i.e. not a real MultiXactId; we express it this
@@ -5574,8 +5577,9 @@ test_lockmode_for_conflict(MultiXactStatus status, TransactionId xid,
 	if (TransactionIdIsCurrentTransactionId(xid))
 	{
 		/*
-		 * Updated by our own transaction? Just return failure.  This
-		 * shouldn't normally happen.
+		 * The tuple has already been locked by our own transaction.  This is
+		 * very rare but can happen if multiple transactions are trying to
+		 * lock an ancient version of the same tuple.
 		 */
 		return HeapTupleSelfUpdated;
 	}
@@ -5774,6 +5778,22 @@ l4:
 														members[i].xid,
 														mode, &needwait);
 
+					/*
+					 * If the tuple was already locked by ourselves in a
+					 * previous iteration of this (say heap_lock_tuple was
+					 * forced to restart the locking loop because of a change
+					 * in xmax), then we hold the lock already on this tuple
+					 * version and we don't need to do anything; and this is
+					 * not an error condition either.  We just need to skip
+					 * this tuple and continue locking the next version in the
+					 * update chain.
+					 */
+					if (result == HeapTupleSelfUpdated)
+					{
+						pfree(members);
+						goto next;
+					}
+
 					if (needwait)
 					{
 						LockBuffer(buf, BUFFER_LOCK_UNLOCK);
@@ -5834,6 +5854,19 @@ l4:
 
 				result = test_lockmode_for_conflict(status, rawxmax, mode,
 													&needwait);
+
+				/*
+				 * If the tuple was already locked by ourselves in a previous
+				 * iteration of this (say heap_lock_tuple was forced to
+				 * restart the locking loop because of a change in xmax), then
+				 * we hold the lock already on this tuple version and we don't
+				 * need to do anything; and this is not an error condition
+				 * either.  We just need to skip this tuple and continue
+				 * locking the next version in the update chain.
+				 */
+				if (result == HeapTupleSelfUpdated)
+					goto next;
+
 				if (needwait)
 				{
 					LockBuffer(buf, BUFFER_LOCK_UNLOCK);
@@ -5894,6 +5927,7 @@ l4:
 
 		END_CRIT_SECTION();
 
+next:
 		/* if we find the end of update chain, we're done. */
 		if (mytup.t_data->t_infomask & HEAP_XMAX_INVALID ||
 			ItemPointerEquals(&mytup.t_self, &mytup.t_data->t_ctid) ||
@@ -6653,7 +6687,7 @@ heap_prepare_freeze_tuple(HeapTupleHeader tuple, TransactionId cutoff_xid,
 			frz->t_infomask &= ~HEAP_XMAX_BITS;
 			frz->xmax = newxmax;
 			if (flags & FRM_MARK_COMMITTED)
-				frz->t_infomask &= HEAP_XMAX_COMMITTED;
+				frz->t_infomask |= HEAP_XMAX_COMMITTED;
 			changed = true;
 			totally_frozen = false;
 		}

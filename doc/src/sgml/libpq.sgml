@@ -1073,10 +1073,10 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
         Controls the number of seconds of inactivity after which TCP should
         send a keepalive message to the server.  A value of zero uses the
         system default. This parameter is ignored for connections made via a
-        Unix-domain socket, or if keepalives are disabled. It is only supported
-        on systems where the <symbol>TCP_KEEPIDLE</> or <symbol>TCP_KEEPALIVE</>
-        socket option is available, and on Windows; on other systems, it has no
-        effect.
+        Unix-domain socket, or if keepalives are disabled.
+        It is only supported on systems where <symbol>TCP_KEEPIDLE</> or
+        an equivalent socket option is available, and on Windows; on other
+        systems, it has no effect.
        </para>
       </listitem>
      </varlistentry>
@@ -1089,9 +1089,9 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
         that is not acknowledged by the server should be retransmitted.  A
         value of zero uses the system default. This parameter is ignored for
         connections made via a Unix-domain socket, or if keepalives are disabled.
-        It is only supported on systems where the <symbol>TCP_KEEPINTVL</>
-        socket option is available, and on Windows; on other systems, it has no
-        effect.
+        It is only supported on systems where <symbol>TCP_KEEPINTVL</> or
+        an equivalent socket option is available, and on Windows; on other
+        systems, it has no effect.
        </para>
       </listitem>
      </varlistentry>
@@ -1104,8 +1104,9 @@ postgresql://%2Fvar%2Flib%2Fpostgresql/dbname
         client's connection to the server is considered dead.  A value of
         zero uses the system default. This parameter is ignored for
         connections made via a Unix-domain socket, or if keepalives are disabled.
-        It is only supported on systems where the <symbol>TCP_KEEPCNT</>
-        socket option is available; on other systems, it has no effect.
+        It is only supported on systems where <symbol>TCP_KEEPCNT</> or
+        an equivalent socket option is available; on other systems, it has no
+        effect.
        </para>
       </listitem>
      </varlistentry>
@@ -3060,9 +3061,10 @@ void PQclear(PGresult *res);
 
      <listitem>
       <para>
-       Returns the number of rows (tuples) in the query result.  Because
-       it returns an integer result, large result sets might overflow the
-       return value on 32-bit operating systems.
+       Returns the number of rows (tuples) in the query result.
+       (Note that <structname>PGresult</> objects are limited to no more
+       than <literal>INT_MAX</> rows, so an <type>int</> result is
+       sufficient.)
 
 <synopsis>
 int PQntuples(const PGresult *res);
@@ -6894,22 +6896,6 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
     <listitem>
      <para>
       <indexterm>
-       <primary><envar>PGREALM</envar></primary>
-      </indexterm>
-      <envar>PGREALM</envar> sets the Kerberos realm to use with
-      <productname>PostgreSQL</productname>, if  it is different from the
-      local realm.  If <envar>PGREALM</envar> is set,
-      <application>libpq</application> applications will attempt
-      authentication  with  servers for this realm and use separate ticket
-      files to avoid conflicts with local ticket files.   This
-      environment  variable is only used if GSSAPI authentication is
-      selected by the server.
-     </para>
-    </listitem>
-
-    <listitem>
-     <para>
-      <indexterm>
        <primary><envar>PGOPTIONS</envar></primary>
       </indexterm>
       <envar>PGOPTIONS</envar> behaves the same as the <xref
@@ -6944,6 +6930,9 @@ myEventProc(PGEventId evtId, void *evtInfo, void *passThrough)
       </indexterm>
       <envar>PGREQUIRESSL</envar> behaves the same as the <xref
       linkend="libpq-connect-requiressl"> connection parameter.
+      This environment variable is deprecated in favor of the
+      <envar>PGSSLMODE</envar> variable; setting both variables suppresses the
+      effect of this one.
      </para>
     </listitem>
 

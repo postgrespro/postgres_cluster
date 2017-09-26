@@ -762,6 +762,15 @@ use_physical_tlist(PlannerInfo *root, Path *path, int flags)
 		return false;
 
 	/*
+	 * Also, don't do it to a CustomPath; the premise that we're extracting
+	 * columns from a simple physical tuple is unlikely to hold for those.
+	 * (When it does make sense, the custom path creator can set up the path's
+	 * pathtarget that way.)
+	 */
+	if (IsA(path, CustomPath))
+		return false;
+
+	/*
 	 * Can't do it if any system columns or whole-row Vars are requested.
 	 * (This could possibly be fixed but would take some fragile assumptions
 	 * in setrefs.c, I think.)
@@ -6136,8 +6145,10 @@ make_modifytable(PlannerInfo *root,
 		}
 
 		/*
-		 * If the target foreign table has any row-level triggers, we can't
-		 * modify the foreign table directly.
+		 * Try to modify the foreign table directly if (1) the FDW provides
+		 * callback functions needed for that, (2) there are no row-level
+		 * triggers on the foreign table, and (3) there are no WITH CHECK
+		 * OPTIONs from parent views.
 		 */
 		direct_modify = false;
 		if (fdwroutine != NULL &&
@@ -6145,6 +6156,7 @@ make_modifytable(PlannerInfo *root,
 			fdwroutine->BeginDirectModify != NULL &&
 			fdwroutine->IterateDirectModify != NULL &&
 			fdwroutine->EndDirectModify != NULL &&
+			withCheckOptionLists == NIL &&
 			!has_row_triggers(root, rti, operation))
 			direct_modify = fdwroutine->PlanDirectModify(root, node, rti, i);
 		if (direct_modify)
