@@ -1459,7 +1459,7 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 	parsed->nsubxacts = hdr->nsubxacts;
 	parsed->nrels = hdr->ncommitrels;
 	parsed->nmsgs = hdr->ninvalmsgs;
-	
+
 	parsed->subxacts = (TransactionId *) bufptr;
 	bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
 
@@ -1949,8 +1949,8 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 	cldir = AllocateDir(TWOPHASE_DIR);
 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
 	{
-		if (strlen(clde->d_name) == 8 &&
-			strspn(clde->d_name, "0123456789ABCDEF") == 8)
+		if (strlen(clde->d_name) == 2*sizeof(TransactionId) &&
+			strspn(clde->d_name, "0123456789ABCDEF") == 2*sizeof(TransactionId))
 		{
 			TransactionId xid;
 			char	   *buf;
@@ -2085,8 +2085,8 @@ StandbyRecoverPreparedTransactions(bool overwriteOK)
 	cldir = AllocateDir(TWOPHASE_DIR);
 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
 	{
-		if (strlen(clde->d_name) == 8 &&
-			strspn(clde->d_name, "0123456789ABCDEF") == 8)
+		if (strlen(clde->d_name) == 2*sizeof(TransactionId) &&
+			strspn(clde->d_name, "0123456789ABCDEF") == 2*sizeof(TransactionId))
 		{
 			TransactionId xid;
 			char	   *buf;
@@ -2170,8 +2170,8 @@ RecoverPreparedTransactions(void)
 	cldir = AllocateDir(dir);
 	while ((clde = ReadDir(cldir, dir)) != NULL)
 	{
-		if (strlen(clde->d_name) == 8 &&
-			strspn(clde->d_name, "0123456789ABCDEF") == 8)
+		if (strlen(clde->d_name) == 2*sizeof(TransactionId) &&
+			strspn(clde->d_name, "0123456789ABCDEF") == 2*sizeof(TransactionId))
 		{
 			TransactionId xid;
 			char	   *buf;
@@ -2226,7 +2226,7 @@ RecoverPreparedTransactions(void)
 			 * here must match one used in AssignTransactionId().
 			 */
 			if (InHotStandby && (hdr->nsubxacts >= PGPROC_MAX_CACHED_SUBXIDS ||
-								 XLogLogicalInfoActive()))
+								 XLogStandbyInfoActive()))
 				overwriteOK = true;
 
 			/*
