@@ -388,7 +388,9 @@ MtmRefreshClusterStatus()
 	 * Periodical check that we are still in RECOVERED state.
 	 * See comment to MTM_RECOVERED -> MTM_ONLINE transition in MtmCheckState()
 	 */
+	MtmLock(LW_EXCLUSIVE);
 	MtmCheckState();
+	MtmUnlock();
 
 	/*
 	 * Check for referee decision when only half of nodes are visible.
