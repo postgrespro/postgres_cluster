@@ -217,8 +217,6 @@ pglogical_receiver_main(Datum main_arg)
 	MtmReplicationMode mode;
 
 	ByteBuffer buf;
-	RepOriginId originId;
-	char* originName;
 	/* Buffer for COPY data */
 	char	*copybuf = NULL;
 	int spill_file = -1;
@@ -226,6 +224,7 @@ pglogical_receiver_main(Datum main_arg)
 	char *slotName;
 	char* connString = psprintf("replication=database %s", Mtm->nodes[nodeId-1].con.connStr);
 	static PortalData fakePortal;
+	int i;
 
 	MtmBackgroundWorker = true;
 
@@ -258,16 +257,27 @@ pglogical_receiver_main(Datum main_arg)
 	ActivePortal->status = PORTAL_ACTIVE;
 	ActivePortal->sourceText = "";
 
-	/* Create originid */
-	StartTransactionCommand();
-	originName = psprintf(MULTIMASTER_SLOT_PATTERN, nodeId);
-	originId = replorigin_by_name(originName, true);
-	if (originId == InvalidRepOriginId) {
-		originId = replorigin_create(originName);
+	/*
+	 * Set proper restartLsn for all origins
+	 */
+	MtmLock(LW_EXCLUSIVE);
+	for (i = 0; i < Mtm->nAllNodes; i++)
+	{
+		char	   *originName;
+		RepOriginId originId;
+
+		StartTransactionCommand();
+		originName = psprintf(MULTIMASTER_SLOT_PATTERN, i + 1);
+		originId = replorigin_by_name(originName, true);
+		if (originId == InvalidRepOriginId) {
+			originId = replorigin_create(originName);
+		}
+		CommitTransactionCommand();
+		if (Mtm->nodes[i].restartLSN == INVALID_LSN)
+			Mtm->nodes[i].restartLSN = replorigin_get_progress(originId, true);
+		Mtm->nodes[i].originId = originId;
 	}
-	CommitTransactionCommand();
-	Mtm->nodes[nodeId-1].originId = originId;
-	Mtm->nodes[nodeId-1].restartLSN = INVALID_LSN;
+	MtmUnlock();
 
 	/* This is main loop of logical replication.
 	 * In case of errors we will try to reestablish connection.
@@ -277,7 +287,7 @@ pglogical_receiver_main(Datum main_arg)
 	{
 		int	 count;
 		ConnStatusType status;
-		lsn_t originStartPos = Mtm->nodes[nodeId-1].restartLSN;
+		lsn_t originStartPos;
 		int timeline;
 
 		/*
@@ -308,7 +318,7 @@ pglogical_receiver_main(Datum main_arg)
 		query = createPQExpBuffer();
 
 		/* Start logical replication at specified position */
-		originStartPos = replorigin_get_progress(originId, false);
+		originStartPos = replorigin_get_progress(Mtm->nodes[nodeId-1].originId, false);
 		if (originStartPos == INVALID_LSN || Mtm->nodes[nodeId-1].manualRecovery) {
 			/*
 			 * We are just creating new replication slot.
@@ -337,7 +347,7 @@ pglogical_receiver_main(Datum main_arg)
 				MTM_LOG1("Advance restartLSN for node %d: from %llx to %llx (pglogical_receiver_main)", nodeId, Mtm->nodes[nodeId-1].restartLSN, originStartPos);
 				Mtm->nodes[nodeId-1].restartLSN = originStartPos;
 			}
-			MTM_LOG1("Restart logical receiver at position %llx with origin=%d from node %d", originStartPos, originId, nodeId);
+			MTM_LOG1("Restart logical receiver at position %llx from node %d", originStartPos, nodeId);
 		}
 
 		MTM_LOG1("Start replication on slot %s from node %d at position %llx, mode %s, recovered lsn %llx",
