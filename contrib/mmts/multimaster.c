@@ -1413,6 +1413,8 @@ MtmPreCommitPreparedTransaction(MtmCurrentTrans* x)
 	MtmTransMap* tm;
 	MtmTransState* ts;
 
+	MTM_TXTRACE(x, "MtmPreCommitPreparedTransaction Start");
+
 	if (Mtm->status == MTM_RECOVERY || x->isReplicated || x->isPrepared) { /* Ignore auto-2PC originated by multimaster */
 		return;
 	}
@@ -1446,12 +1448,17 @@ MtmPreCommitPreparedTransaction(MtmCurrentTrans* x)
 		x->isPrepared = true;
 	}
 	MtmUnlock();
+
+	MTM_TXTRACE(x, "MtmPreCommitPreparedTransaction Finish");
 }
 
 static void
 MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 {
 	MtmTransMap* tm;
+
+	MTM_TXTRACE(x, "MtmAbortPreparedTransaction Start");
+
 	if (x->status != TRANSACTION_STATUS_ABORTED) {
 		MtmLock(LW_EXCLUSIVE);
 		tm = (MtmTransMap*)hash_search(MtmGid2State, x->gid, HASH_FIND, NULL);
@@ -1471,6 +1478,8 @@ MtmAbortPreparedTransaction(MtmCurrentTrans* x)
 	} else {
 		MTM_LOG1("Transaction %s (%llu) is already aborted", x->gid, (long64)x->xid);
 	}
+
+	MTM_TXTRACE(x, "MtmAbortPreparedTransaction Finish");
 }
 
 static void
@@ -1493,6 +1502,8 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 	MTM_LOG3("%d: End transaction %lld, prepared=%d, replicated=%d, distributed=%d, 2pc=%d, gid=%s -> %s, LSN %lld",
 			 MyProcPid, (long64)x->xid, x->isPrepared, x->isReplicated, x->isDistributed, x->isTwoPhase, x->gid, commit ? "commit" : "abort", (long64)GetXLogInsertRecPtr());
 	commit &= (x->status != TRANSACTION_STATUS_ABORTED);
+
+	MTM_TXTRACE(x, "MtmEndTransaction Start (c=%d)", commit);
 
 	MtmLock(LW_EXCLUSIVE);
 
@@ -1589,6 +1600,8 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 		Assert(!x->isActive);
 	}
 	MtmUnlock();
+
+	MTM_TXTRACE(x, "MtmEndTransaction Finish");
 
 	MtmResetTransaction();
 	if (MtmClusterLocked) {
@@ -4541,6 +4554,8 @@ MtmGenerateGid(char* gid)
  */
 static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 {
+	MTM_TXTRACE(x, "MtmTwoPhaseCommit Start");
+
 	if (!x->isReplicated && x->isDistributed && x->containsDML) {
 		MtmGenerateGid(x->gid);
 		if (!x->isTransactionBlock) {
@@ -4568,6 +4583,7 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 					MTM_ELOG(ERROR, "Transaction %s (%llu) is aborted on node %d. Check its log to see error details.", x->gid, (long64)x->xid, ts->abortedByNode);
 				} else {
 					FinishPreparedTransaction(x->gid, true);
+					MTM_TXTRACE(x, "MtmTwoPhaseCommit Committed");
 					MTM_LOG2("Distributed transaction %s (%lld) is committed at %lld with LSN=%lld", x->gid, (long64)x->xid, MtmGetCurrentTime(), (long64)GetXLogInsertRecPtr());
 				}
 			}
