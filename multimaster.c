@@ -5271,7 +5271,6 @@ MtmExecutorStart(QueryDesc *queryDesc, int eflags)
 					funcform = (Form_pg_proc) GETSTRUCT(func_tuple);
 					is_sec_def = funcform->prosecdef;
 					ReleaseSysCache(func_tuple);
-					elog(LOG, "Function %s security defined=%d", tle->resname, is_sec_def);
 					if (!is_sec_def)
 					{
 						continue;
