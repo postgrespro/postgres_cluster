@@ -4197,6 +4197,7 @@ PQconnectdb_safe(const char *conninfo, int timeout)
 	{
 		MTM_ELOG(WARNING, "Could not connect to '%s': %s",
 			safe_connstr, PQerrorMessage(conn));
+		return conn;
 	}
 
 	if (timeout != 0)
@@ -4206,13 +4207,15 @@ PQconnectdb_safe(const char *conninfo, int timeout)
 		if (socket_fd < 0)
 		{
 			MTM_ELOG(WARNING, "Referee socket is invalid");
+			return conn;
 		}
 
-		if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO,
-									(char *)&tv, sizeof(tv)) < 0)
+		if (pg_setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO,
+									(char *)&tv, sizeof(tv), MtmUseRDMA) < 0)
 		{
 			MTM_ELOG(WARNING, "Could not set referee socket timeout: %s",
 						strerror(errno));
+			return conn;
 		}
 	}
 
