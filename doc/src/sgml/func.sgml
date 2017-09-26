@@ -17200,8 +17200,7 @@ SELECT collation for ('foo' COLLATE "de_DE");
    <para>
     In <productname>&productname;</productname>, transaction IDs
     are implemented as 64-bit counters to prevent transaction ID wraparound.
-    The following functions
-    export a 64-bit format that is extended with an <quote>epoch</> counter
+    The following functions export a 64-bit format,
     so it will not wrap around during the life of an installation.
     The data type used by these functions, <type>txid_snapshot</type>,
     stores information about transaction ID
