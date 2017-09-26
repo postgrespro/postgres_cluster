@@ -60,12 +60,9 @@ if [ "$1" = 'postgres' ]; then
 			log_line_prefix = '%m: '
 			# log_statement = all
 
-			multimaster.workers = 4
-			multimaster.max_workers = 16
 			multimaster.max_nodes = 3
-			multimaster.volkswagen_mode = 1
-			multimaster.queue_size=52857600
-			multimaster.ignore_tables_without_pk = 1
+			# multimaster.volkswagen_mode = 1
+			# multimaster.ignore_tables_without_pk = 1
 			multimaster.heartbeat_recv_timeout = 1100
 			multimaster.heartbeat_send_timeout = 250
 			multimaster.max_recovery_lag = 1000000000

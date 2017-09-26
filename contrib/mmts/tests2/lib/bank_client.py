@@ -207,7 +207,7 @@ class MtmClient(object):
                 if status != TRANSACTION_STATUS_IDLE:
                     yield from cur.execute('rollback')
 
-                yield from tx_block(conn, cur, agg)
+                yield from tx_block(conn, cur, agg, conn_i)
                 agg.finish_tx('commit')
 
             except psycopg2.Error as e:
@@ -231,7 +231,7 @@ class MtmClient(object):
         print("We've count to infinity!")
 
     @asyncio.coroutine
-    def transfer_tx(self, conn, cur, agg):
+    def transfer_tx(self, conn, cur, agg, conn_i):
         amount = 1
         # to avoid deadlocks:
         from_uid = random.randint(1, self.n_accounts - 2)
@@ -250,14 +250,14 @@ class MtmClient(object):
         yield from cur.execute('commit')
 
     @asyncio.coroutine
-    def total_tx(self, conn, cur, agg):
-        yield from cur.execute('select sum(amount) from bank_test')
+    def total_tx(self, conn, cur, agg, conn_i):
+        yield from cur.execute("select sum(amount), count(*), count(uid), current_setting('multimaster.node_id') from bank_test")
         total = yield from cur.fetchone()
         if total[0] != self.total:
             agg.isolation += 1
             self.total = total[0]
             print(self.oops)
-            print('Isolation error, total = ', total[0])
+            print(datetime.datetime.utcnow(), 'Isolation error, total = ', total, ', node ', conn_i+1)
             # yield from cur.execute('select * from mtm.get_nodes_state()')
             # nodes_state = yield from cur.fetchall()
             # for i, col in enumerate(self.nodes_state_fields):
