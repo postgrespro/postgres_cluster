@@ -574,7 +574,7 @@ MtmRefereeClearWinner(void)
 
 	if (strncmp(response, "t", 1) != 0)
 	{
-		MTM_ELOG(WARNING, "Wrong response from referee: '%s'", response);
+		MTM_ELOG(WARNING, "Wrong response from referee_clean(): '%s'", response);
 		PQclear(res);
 		PQfinish(conn);
 		return false;
