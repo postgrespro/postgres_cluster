@@ -47,7 +47,7 @@
 #define MTM_TXTRACE(tx, event, ...)
 #else
 #define MTM_TXTRACE(tx, event, ...) \
-		fprintf(stderr, MTM_TAG "%s, %lld, %u " event "\n", tx->gid, (long long)MtmGetSystemTime(), MyProcPid, ## __VA_ARGS__)
+		elog(LOG, MTM_TAG "%s, %lld, %u " event "\n", tx->gid, (long long)MtmGetSystemTime(), MyProcPid, ## __VA_ARGS__)
 #endif
 
 #define MULTIMASTER_NAME                 "multimaster"
