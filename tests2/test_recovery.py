@@ -169,6 +169,27 @@ class RecoveryTest(unittest.TestCase, TestHelper):
         self.assertCommits(aggs)
         self.assertIsolation(aggs)
 
+    def test_node_bicrash(self):
+        print('### test_node_bicrash ###')
+
+        aggs_failure, aggs = self.performFailure(CrashRecoverNode('node3'))
+
+        self.assertCommits(aggs_failure[:2])
+        self.assertNoCommits(aggs_failure[2:])
+        self.assertIsolation(aggs_failure)
+
+        self.assertCommits(aggs)
+        self.assertIsolation(aggs)
+
+        aggs_failure, aggs = self.performFailure(CrashRecoverNode('node3'))
+
+        self.assertCommits(aggs_failure[:2])
+        self.assertNoCommits(aggs_failure[2:])
+        self.assertIsolation(aggs_failure)
+
+        self.assertCommits(aggs)
+        self.assertIsolation(aggs)
+
 if __name__ == '__main__':
     unittest.main()
 

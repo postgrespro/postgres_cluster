@@ -61,6 +61,19 @@ class MajorTest(unittest.TestCase, TestHelper):
     def tearDown(self):
         print('Finish test at ',datetime.datetime.utcnow())
 
+    def test_node_crash(self):
+        print('### test_node_crash ###')
+
+        aggs_failure, aggs = self.performFailure(CrashRecoverNode('node2'))
+
+        self.assertCommits(aggs_failure[:1])
+        self.assertNoCommits(aggs_failure[1:])
+        self.assertIsolation(aggs_failure)
+
+        self.assertCommits(aggs)
+        self.assertIsolation(aggs)
+
+
     def test_partition_referee(self):
         print('### test_partition_referee ###')
 
