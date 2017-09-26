@@ -13,6 +13,7 @@
 #include "funcapi.h"
 #include "fmgr.h"
 #include "miscadmin.h"
+#include "pg_socket.h"
 
 #include "libpq-fe.h"
 #include "lib/stringinfo.h"
