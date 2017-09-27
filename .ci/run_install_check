@@ -22,9 +22,10 @@ make install prefix=`pwd`/tmp_install -C contrib
 
 # Setup an environment
 LD_LIBRARY_PATH=$(pwd)/tmp_install/lib
+DYLD_LIBRARY_PATH=$(pwd)/tmp_install/lib
 PATH=$(pwd)/tmp_install/bin:${PATH}
 PGDATA=$(pwd)/tmp_base
-export LD_LIBRARY_PATH PATH PG_DATA
+export DYLD_LIBRARY_PATH LD_LIBRARY_PATH PATH PG_DATA
 
 # create installation
 PGPORT=`./.ci/find_free_port 5432`
