@@ -396,7 +396,7 @@ sub add_node()
 		host replication all ::1/128 trust
 	));
 
-	push($self->{nodes}, $node);
+	push(@{$self->{nodes}}, $node);
 }
 
 1;
