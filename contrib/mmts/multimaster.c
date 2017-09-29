@@ -1541,7 +1541,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 					ts->csn = x->csn;
 					MtmSyncClock(ts->csn);
 				}
-				if (ts->isLocal)
+				if (ts->isLocal && !x->isReplicated)
 				{
 					ts->csn = MtmAssignCSN();
 				}
