@@ -943,6 +943,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		uint32 second_pass_bytes = 0;
 		inode_t** inodes = (inode_t**)palloc(RELSEG_SIZE*sizeof(inode_t*));
 		bool remove_backups = true;
+		bool got_lock = false;
 		int second_pass_whole = 0;
 		int n_pages, n_pages1;
 		TimestampTz startTime, secondTime, endTime;
@@ -998,6 +999,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 retry:
 		/* temporary lock file for fetching map snapshot */
 		cfs_gc_lock(lock);
+		got_lock = true;
 
 		/* Reread variables after locking file */
 		physSize = pg_atomic_read_u32(&map->hdr.physSize);
@@ -1013,6 +1015,7 @@ retry:
 		}
 		/* may unlock until second phase */
 		cfs_gc_unlock(lock);
+		got_lock = false;
 
 		if (!cfs_copy_inodes(inodes, n_pages, fd, fd2, &writeback, &newSize,
 							file_path, file_bck_path))
@@ -1034,6 +1037,7 @@ retry:
 		secondTime = GetCurrentTimestamp();
 
 		cfs_gc_lock(lock);
+		got_lock = true;
 
 		/* Reread variables after locking file */
 		n_pages1 = n_pages;
@@ -1087,6 +1091,7 @@ retry:
 			if (second_pass_whole == 1 && physSize < CFS_RETRY_GC_THRESHOLD)
 			{
 				cfs_gc_unlock(lock);
+				got_lock = false;
 				/* sleep, cause there is possibly checkpoint is on a way */
 				pg_usleep(CFS_LOCK_MAX_TIMEOUT);
 				second_pass = 0;
@@ -1285,7 +1290,8 @@ retry:
 		else
 			remove_backups = true; /* we don't need backups anymore */
 
-		cfs_gc_unlock(lock);
+		if (got_lock)
+			cfs_gc_unlock(lock);
 
 		/* remove map backup file */
 		if (remove_backups && unlink(map_bck_path))
