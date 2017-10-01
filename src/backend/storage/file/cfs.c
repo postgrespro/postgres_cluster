@@ -1408,6 +1408,7 @@ static bool cfs_gc_directory(int worker_id, char const* path)
 static void cfs_gc_cancel(int sig)
 {
 	cfs_gc_stop = true;
+	SetLatch(MyLatch);
 }
 
 static void cfs_sighup(SIGNAL_ARGS)
@@ -1464,7 +1465,7 @@ static void cfs_gc_bgworker_main(Datum arg)
 		rc = WaitLatch(MyLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
 					   timeout /* ms */ );
-		if (rc & WL_POSTMASTER_DEATH)
+		if ((rc & WL_POSTMASTER_DEATH) || cfs_gc_stop)
 			exit(1);
 
 		ResetLatch(MyLatch);
