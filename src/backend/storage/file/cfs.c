@@ -855,6 +855,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 	char* file_path = (char*)palloc(suf+1);
 	char* map_bck_path = (char*)palloc(suf+10);
 	char* file_bck_path = (char*)palloc(suf+5);
+	char* state;
 	int rc;
 
 	pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
@@ -876,6 +877,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		{
 			pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
 
+			pgstat_report_activity(STATE_DISABLED, "GC is disabled");
 			rc = WaitLatch(MyLatch,
 						   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
 						   CFS_DISABLE_TIMEOUT /* ms */);
@@ -913,6 +915,10 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 	file_path[suf] = '\0';
 	strcat(strcpy(map_bck_path, map_path), ".bck");
 	strcat(strcpy(file_bck_path, file_path), ".bck");
+
+	state = psprintf("Check file %s", file_path);
+	pgstat_report_activity(STATE_RUNNING, state);
+	pfree(state);
 
 	/* mostly same as for cfs_lock_file */
 	if (pg_atomic_read_u32(&map->gc_active)) /* Check if GC was not normally completed at previous Postgres run */
@@ -957,6 +963,10 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		secondTime = startTime;
 
 		lock = cfs_get_lock(file_path);
+
+		state = psprintf("Process file %s", file_path);
+		pgstat_report_activity(STATE_RUNNING, state);
+		pfree(state);
 
 		fd2 = open(file_bck_path, O_CREAT|O_RDWR|PG_BINARY|O_TRUNC, 0600);
 		if (fd2 < 0)
@@ -1346,10 +1356,12 @@ retry:
 
 	if (background == CFS_BACKGROUND)
 	{
-		int rc = WaitLatch(MyLatch,
-						   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-						   performed ? cfs_gc_delay : 0 /* ms */ );
-		if (rc & WL_POSTMASTER_DEATH)
+		int rc;
+		pgstat_report_activity(STATE_IDLE, "Processing pause");
+		rc = WaitLatch(MyLatch,
+					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+					   performed ? cfs_gc_delay : 0 /* ms */ );
+		if (cfs_gc_stop || (rc & WL_POSTMASTER_DEATH))
 			exit(1);
 
 		ResetLatch(MyLatch);
@@ -1440,11 +1452,18 @@ static void cfs_gc_bgworker_main(Datum arg)
 {
 	MemoryContext MemCxt;
 	int worker_id = DatumGetInt32(arg);
+	char* appname;
 
 	pqsignal(SIGINT, cfs_gc_cancel);
     pqsignal(SIGQUIT, cfs_gc_cancel);
     pqsignal(SIGTERM, cfs_gc_cancel);
 	pqsignal(SIGHUP, cfs_sighup);
+
+	InitPostgres(NULL, InvalidOid, NULL, InvalidOid, NULL);
+
+	appname = psprintf("CFS GC worker %d", worker_id);
+	pgstat_report_appname(appname);
+	pfree(appname);
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -1468,6 +1487,7 @@ static void cfs_gc_bgworker_main(Datum arg)
 		{
 			break;
 		}
+		pgstat_report_activity(STATE_IDLE, "Pause between GC iterations");
 		rc = WaitLatch(MyLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
 					   timeout /* ms */ );
@@ -1887,4 +1907,9 @@ Datum cfs_gc_activity_processed_files(PG_FUNCTION_ARGS)
 Datum cfs_gc_activity_scanned_files(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT64(cfs_state->gc_stat.scannedFiles);
+}
+
+void cfs_on_exit_callback(int code, Datum arg)
+{
+	cfs_control_gc_unlock();
 }

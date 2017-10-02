@@ -480,11 +480,11 @@ mdunlink(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 	else
 	{
 		cfs_control_gc_lock();
-		PG_ENSURE_ERROR_CLEANUP(cfs_control_gc_unlock, BoolGetDatum(false));
+		PG_ENSURE_ERROR_CLEANUP(cfs_on_exit_callback, BoolGetDatum(false));
 		{
 			do_mdunlink(rnode, forkNum, isRedo);
 		}
-		PG_END_ENSURE_ERROR_CLEANUP(cfs_control_gc_unlock, BoolGetDatum(false));
+		PG_END_ENSURE_ERROR_CLEANUP(cfs_on_exit_callback, BoolGetDatum(false));
 		cfs_control_gc_unlock();
 	}
 }
