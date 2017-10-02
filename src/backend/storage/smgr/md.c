@@ -35,6 +35,7 @@
 #include "storage/fd.h"
 #include "storage/cfs.h"
 #include "storage/bufmgr.h"
+#include "storage/ipc.h"
 #include "storage/relfilenode.h"
 #include "storage/smgr.h"
 #include "utils/hsearch.h"
@@ -401,6 +402,19 @@ mdcreate(SMgrRelation reln, ForkNumber forkNum, bool isRedo)
 	reln->md_fd[forkNum]->mdfd_chain = NULL;
 }
 
+static void
+do_mdunlink(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
+{
+	/* Now do the per-fork work */
+	if (forkNum == InvalidForkNumber)
+	{
+		for (forkNum = 0; forkNum <= MAX_FORKNUM; forkNum++)
+			mdunlinkfork(rnode, forkNum, isRedo);
+	}
+	else
+		mdunlinkfork(rnode, forkNum, isRedo);
+}
+
 /*
  *	mdunlink() -- Unlink a relation.
  *
@@ -451,7 +465,6 @@ mdcreate(SMgrRelation reln, ForkNumber forkNum, bool isRedo)
 void
 mdunlink(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 {
-	bool cfs_gc_locked = false;
 	/*
 	 * We have to clean out any pending fsync requests for the doomed
 	 * relation, else the next mdsync() will fail.  There can't be any such
@@ -462,34 +475,18 @@ mdunlink(RelFileNodeBackend rnode, ForkNumber forkNum, bool isRedo)
 	if (!RelFileNodeBackendIsTemp(rnode))
 		ForgetRelationFsyncRequests(rnode.node, forkNum);
 
-	if (md_use_compression(rnode, forkNum == InvalidForkNumber ? MAIN_FORKNUM : forkNum))
+	if (!md_use_compression(rnode, forkNum == InvalidForkNumber ? MAIN_FORKNUM : forkNum))
+		do_mdunlink(rnode, forkNum, isRedo);
+	else
 	{
-		cfs_gc_locked = true;
 		cfs_control_gc_lock();
-	}
-
-	PG_TRY();
-	{
-		/* Now do the per-fork work */
-		if (forkNum == InvalidForkNumber)
+		PG_ENSURE_ERROR_CLEANUP(cfs_on_exit_callback, BoolGetDatum(false));
 		{
-			for (forkNum = 0; forkNum <= MAX_FORKNUM; forkNum++)
-				mdunlinkfork(rnode, forkNum, isRedo);
+			do_mdunlink(rnode, forkNum, isRedo);
 		}
-		else
-		{
-			mdunlinkfork(rnode, forkNum, isRedo);
-		}
-	}
-	PG_CATCH();
-	{
-		if (cfs_gc_locked)
-			cfs_control_gc_unlock();
-		PG_RE_THROW();
-	}
-	PG_END_TRY();
-	if (cfs_gc_locked)
+		PG_END_ENSURE_ERROR_CLEANUP(cfs_on_exit_callback, BoolGetDatum(false));
 		cfs_control_gc_unlock();
+	}
 }
 
 static void

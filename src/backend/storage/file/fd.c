@@ -2056,7 +2056,6 @@ FileWrite(File file, char *buffer, int amount)
 			if (CFS_INODE_SIZE(inode) != BLCKSZ)
 			{
 				pos = cfs_alloc_page(map, CFS_INODE_SIZE(inode), BLCKSZ);
-				inode = CFS_INODE(BLCKSZ, pos);
 			}
 			else
 			{
@@ -2066,6 +2065,8 @@ FileWrite(File file, char *buffer, int amount)
 				 */
 				pos = CFS_INODE_OFFS(inode);
 			}
+			/* we need to do it in both cases to clear flag set by gc */
+			inode = CFS_INODE(BLCKSZ, pos);
 		}
 		seekPos = lseek(vfdP->fd, pos, SEEK_SET);
 		Assert(seekPos == (off_t)pos);

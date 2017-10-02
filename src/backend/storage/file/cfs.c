@@ -54,6 +54,7 @@
 #include "utils/guc.h"
 #include "utils/rel.h"
 #include "utils/builtins.h"
+#include "utils/memutils.h"
 #include "utils/resowner_private.h"
 
 
@@ -603,7 +604,10 @@ static bool cfs_recover(FileMap* map, int md,
 		else if (pg_fsync(md) < 0)
 			elog(WARNING, "CFS failed to sync map %s: %m", map_path);
 		else
+		{
 			ok = true;
+			map->generation += 1; /* it is here just for pg_probackup */
+		}
 		close(md2);
 	}
 	else
@@ -851,6 +855,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 	char* file_path = (char*)palloc(suf+1);
 	char* map_bck_path = (char*)palloc(suf+10);
 	char* file_bck_path = (char*)palloc(suf+5);
+	char* state;
 	int rc;
 
 	pg_atomic_fetch_add_u32(&cfs_state->n_active_gc, 1);
@@ -859,6 +864,9 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		if (pg_atomic_read_u32(&cfs_state->gc_disabled) != 0)
 		{
 			pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
+			pfree(file_path);
+			pfree(map_bck_path);
+			pfree(file_bck_path);
 			return false;
 		}
 	}
@@ -869,6 +877,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		{
 			pg_atomic_fetch_sub_u32(&cfs_state->n_active_gc, 1);
 
+			pgstat_report_activity(STATE_DISABLED, "GC is disabled");
 			rc = WaitLatch(MyLatch,
 						   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
 						   CFS_DISABLE_TIMEOUT /* ms */);
@@ -907,13 +916,17 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 	strcat(strcpy(map_bck_path, map_path), ".bck");
 	strcat(strcpy(file_bck_path, file_path), ".bck");
 
+	state = psprintf("Check file %s", file_path);
+	pgstat_report_activity(STATE_RUNNING, state);
+	pfree(state);
+
 	/* mostly same as for cfs_lock_file */
 	if (pg_atomic_read_u32(&map->gc_active)) /* Check if GC was not normally completed at previous Postgres run */
 	{
 		/* there could not be concurrent GC for this file here, so recover */
 		if (!cfs_recover(map, md, file_path, map_path, file_bck_path, map_bck_path))
 		{
-			elog(ERROR, "CFS found that file %s is completely destroyed", file_path);
+			elog(WARNING, "CFS found that file %s is completely destroyed", file_path);
 			goto FinUnmap;
 		}
 	}
@@ -936,6 +949,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		uint32 second_pass_bytes = 0;
 		inode_t** inodes = (inode_t**)palloc(RELSEG_SIZE*sizeof(inode_t*));
 		bool remove_backups = true;
+		bool got_lock = false;
 		int second_pass_whole = 0;
 		int n_pages, n_pages1;
 		TimestampTz startTime, secondTime, endTime;
@@ -949,6 +963,10 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 		secondTime = startTime;
 
 		lock = cfs_get_lock(file_path);
+
+		state = psprintf("Process file %s", file_path);
+		pgstat_report_activity(STATE_RUNNING, state);
+		pfree(state);
 
 		fd2 = open(file_bck_path, O_CREAT|O_RDWR|PG_BINARY|O_TRUNC, 0600);
 		if (fd2 < 0)
@@ -991,6 +1009,7 @@ static bool cfs_gc_file(char* map_path, GC_CALL_KIND background)
 retry:
 		/* temporary lock file for fetching map snapshot */
 		cfs_gc_lock(lock);
+		got_lock = true;
 
 		/* Reread variables after locking file */
 		physSize = pg_atomic_read_u32(&map->hdr.physSize);
@@ -1006,6 +1025,7 @@ retry:
 		}
 		/* may unlock until second phase */
 		cfs_gc_unlock(lock);
+		got_lock = false;
 
 		if (!cfs_copy_inodes(inodes, n_pages, fd, fd2, &writeback, &newSize,
 							file_path, file_bck_path))
@@ -1027,6 +1047,7 @@ retry:
 		secondTime = GetCurrentTimestamp();
 
 		cfs_gc_lock(lock);
+		got_lock = true;
 
 		/* Reread variables after locking file */
 		n_pages1 = n_pages;
@@ -1080,6 +1101,7 @@ retry:
 			if (second_pass_whole == 1 && physSize < CFS_RETRY_GC_THRESHOLD)
 			{
 				cfs_gc_unlock(lock);
+				got_lock = false;
 				/* sleep, cause there is possibly checkpoint is on a way */
 				pg_usleep(CFS_LOCK_MAX_TIMEOUT);
 				second_pass = 0;
@@ -1278,7 +1300,8 @@ retry:
 		else
 			remove_backups = true; /* we don't need backups anymore */
 
-		cfs_gc_unlock(lock);
+		if (got_lock)
+			cfs_gc_unlock(lock);
 
 		/* remove map backup file */
 		if (remove_backups && unlink(map_bck_path))
@@ -1300,9 +1323,6 @@ retry:
 				 secs2*USECS_PER_SEC + usecs2);
 		}
 
-		pfree(file_path);
-		pfree(file_bck_path);
-		pfree(map_bck_path);
 		pfree(inodes);
 		pfree(newMap);
 
@@ -1325,6 +1345,9 @@ retry:
 	}
 
   FinishGC:
+	pfree(file_path);
+	pfree(file_bck_path);
+	pfree(map_bck_path);
 	if (background == CFS_BACKGROUND)
 	{
 		LWLockRelease(CfsGcLock);
@@ -1333,10 +1356,12 @@ retry:
 
 	if (background == CFS_BACKGROUND)
 	{
-		int rc = WaitLatch(MyLatch,
-						   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
-						   performed ? cfs_gc_delay : 0 /* ms */ );
-		if (rc & WL_POSTMASTER_DEATH)
+		int rc;
+		pgstat_report_activity(STATE_IDLE, "Processing pause");
+		rc = WaitLatch(MyLatch,
+					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
+					   performed ? cfs_gc_delay : 0 /* ms */ );
+		if (cfs_gc_stop || (rc & WL_POSTMASTER_DEATH))
 			exit(1);
 
 		ResetLatch(MyLatch);
@@ -1401,6 +1426,7 @@ static bool cfs_gc_directory(int worker_id, char const* path)
 static void cfs_gc_cancel(int sig)
 {
 	cfs_gc_stop = true;
+	SetLatch(MyLatch);
 }
 
 static void cfs_sighup(SIGNAL_ARGS)
@@ -1424,18 +1450,29 @@ static bool cfs_gc_scan_tablespace(int worker_id)
 
 static void cfs_gc_bgworker_main(Datum arg)
 {
+	MemoryContext MemCxt;
 	int worker_id = DatumGetInt32(arg);
+	char* appname;
 
 	pqsignal(SIGINT, cfs_gc_cancel);
     pqsignal(SIGQUIT, cfs_gc_cancel);
     pqsignal(SIGTERM, cfs_gc_cancel);
 	pqsignal(SIGHUP, cfs_sighup);
 
+	InitPostgres(NULL, InvalidOid, NULL, InvalidOid, NULL);
+
+	appname = psprintf("CFS GC worker %d", worker_id);
+	pgstat_report_appname(appname);
+	pfree(appname);
+
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
 
 	elog(INFO, "Start CFS garbage collector %d (enabled=%d)", MyProcPid, cfs_state->background_gc_enabled);
 
+	MemCxt = AllocSetContextCreate(TopMemoryContext, "CFS worker ctx",
+									ALLOCSET_DEFAULT_SIZES);
+	MemoryContextSwitchTo(MemCxt);
 	while (true)
 	{
 		int timeout = cfs_gc_period;
@@ -1445,14 +1482,16 @@ static void cfs_gc_bgworker_main(Datum arg)
 		{
 			timeout = CFS_RETRY_TIMEOUT;
 		}
+		MemoryContextReset(MemCxt);
 		if (cfs_gc_stop || --cfs_state->max_iterations <= 0)
 		{
 			break;
 		}
+		pgstat_report_activity(STATE_IDLE, "Pause between GC iterations");
 		rc = WaitLatch(MyLatch,
 					   WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH,
 					   timeout /* ms */ );
-		if (rc & WL_POSTMASTER_DEATH)
+		if ((rc & WL_POSTMASTER_DEATH) || cfs_gc_stop)
 			exit(1);
 
 		ResetLatch(MyLatch);
@@ -1508,7 +1547,7 @@ void cfs_control_gc_lock(void)
 }
 
 /* Enable garbage collection. */
-void cfs_control_gc_unlock(void)
+void cfs_control_gc_unlock() /* argument could be given by PG_ENSURE_ERROR_CLEANUP */
 {
 	pg_atomic_fetch_sub_u32(&cfs_state->gc_disabled, 1);
 }
@@ -1834,18 +1873,18 @@ void cfs_recover_map(FileMap* map)
 			}
 			usedSize += size;
 		}
-		if (usedSize != pg_atomic_read_u32(&map->hdr.usedSize))
-		{
-			pg_atomic_write_u32(&map->hdr.usedSize, usedSize);
-		}
-		if (physSize != pg_atomic_read_u32(&map->hdr.physSize))
-		{
-			pg_atomic_write_u32(&map->hdr.physSize, physSize);
-		}
-		if (virtSize != pg_atomic_read_u32(&map->hdr.virtSize))
-		{
-			pg_atomic_write_u32(&map->hdr.virtSize, virtSize);
-		}
+	}
+	if (usedSize != pg_atomic_read_u32(&map->hdr.usedSize))
+	{
+		pg_atomic_write_u32(&map->hdr.usedSize, usedSize);
+	}
+	if (physSize != pg_atomic_read_u32(&map->hdr.physSize))
+	{
+		pg_atomic_write_u32(&map->hdr.physSize, physSize);
+	}
+	if (virtSize != pg_atomic_read_u32(&map->hdr.virtSize))
+	{
+		pg_atomic_write_u32(&map->hdr.virtSize, virtSize);
 	}
 }
 
@@ -1868,4 +1907,9 @@ Datum cfs_gc_activity_processed_files(PG_FUNCTION_ARGS)
 Datum cfs_gc_activity_scanned_files(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_INT64(cfs_state->gc_stat.scannedFiles);
+}
+
+void cfs_on_exit_callback(int code, Datum arg)
+{
+	cfs_control_gc_unlock();
 }

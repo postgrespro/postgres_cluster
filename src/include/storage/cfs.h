@@ -130,12 +130,13 @@ void     cfs_unlock_file(FileMap* map, char const* path);
 uint32   cfs_alloc_page(FileMap* map, uint32 oldSize, uint32 newSize);
 void     cfs_extend(FileMap* map, uint32 pos);
 void     cfs_control_gc_lock(void);
-void     cfs_control_gc_unlock(void);
+void     cfs_control_gc_unlock(void); /* argument could be given by PG_ENSURE_ERROR_CLEANUP */
 int      cfs_msync(FileMap* map);
 FileMap* cfs_mmap(int md);
 int      cfs_munmap(FileMap* map);
 void     cfs_initialize(void);
 size_t   cfs_shmem_size(void);
+void     cfs_on_exit_callback(int code, Datum arg);
 
 void     cfs_encrypt(const char* fname, void* block, uint32 offs, uint32 size);
 void     cfs_decrypt(const char* fname, void* block, uint32 offs, uint32 size);
