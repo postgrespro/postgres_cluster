@@ -18,17 +18,26 @@ CREATE FUNCTION mtm.stop_replication() RETURNS void
 AS 'MODULE_PATHNAME','mtm_stop_replication'
 LANGUAGE C;
 
+-- Stop replication to the node. Node is didsabled, If drop_slot is true, then replication slot is dropped and node can be recovered using basebackup and recover_node function.
+-- If drop_slot is false and limit for maximal slot gap was not reached, then node can be restarted using resume_node function.
 CREATE FUNCTION mtm.stop_node(node integer, drop_slot bool default false) RETURNS void
 AS 'MODULE_PATHNAME','mtm_stop_node'
 LANGUAGE C;
 
+-- Add new node to the cluster. Number of nodes should not exeed maximal number of nodes in the cluster.
 CREATE FUNCTION mtm.add_node(conn_str text) RETURNS void
 AS 'MODULE_PATHNAME','mtm_add_node'
 LANGUAGE C;
 
--- Create replication slot for the node which was previously stopped 
+-- Create replication slot for the node which was previously stalled (its replicatoin slot was deleted)
 CREATE FUNCTION mtm.recover_node(node integer) RETURNS void
 AS 'MODULE_PATHNAME','mtm_recover_node'
+LANGUAGE C;
+
+-- Resume previously stopped node with live replication slot. If node was not stopped, this function has no effect.
+-- It doesn't create slot and returns error if node is stalled (slot eas dropped)
+CREATE FUNCTION mtm.resume_node(node integer) RETURNS void
+AS 'MODULE_PATHNAME','mtm_resume_node'
 LANGUAGE C;
 
 
@@ -51,7 +60,7 @@ AS 'MODULE_PATHNAME','mtm_get_nodes_state'
 LANGUAGE C;
 
 CREATE TYPE mtm.cluster_state AS ("id" integer, "status" text, "disabledNodeMask" bigint, "disconnectedNodeMask" bigint, "catchUpNodeMask" bigint, "liveNodes" integer, "allNodes" integer, "nActiveQueries" integer, "nPendingQueries" integer, "queueSize" bigint, "transCount" bigint, "timeShift" bigint, "recoverySlot" integer,
-"xidHashSize" bigint, "gidHashSize" bigint, "oldestXid" bigint, "configChanges" integer, "stalledNodeMask" bigint, "stoppedNodeMask" bigint, "lastStatusChange" timestamp);
+"xidHashSize" bigint, "gidHashSize" bigint, "oldestXid" bigint, "configChanges" integer, "stalledNodeMask" bigint, "stoppedNodeMask" bigint, "deadNodeMask" bigint, "lastStatusChange" timestamp);
 
 CREATE TYPE mtm.trans_state AS ("status" text, "gid" text, "xid" bigint, "coordinator" integer, "gxid" bigint, "csn" timestamp, "snapshot" timestamp, "local" boolean, "prepared" boolean, "active" boolean, "twophase" boolean, "votingCompleted" boolean, "participants" bigint, "voted" bigint, "configChanges" integer);
 
@@ -63,16 +72,24 @@ CREATE FUNCTION mtm.get_trans_by_xid(xid bigint) RETURNS mtm.trans_state
 AS 'MODULE_PATHNAME','mtm_get_trans_by_xid'
 LANGUAGE C;
 
-CREATE FUNCTION mtm.get_cluster_state() RETURNS mtm.cluster_state 
+CREATE FUNCTION mtm.get_cluster_state() RETURNS mtm.cluster_state
 AS 'MODULE_PATHNAME','mtm_get_cluster_state'
 LANGUAGE C;
 
-CREATE FUNCTION mtm.collect_cluster_info() RETURNS SETOF mtm.cluster_state 
+CREATE FUNCTION mtm.collect_cluster_info() RETURNS SETOF mtm.cluster_state
 AS 'MODULE_PATHNAME','mtm_collect_cluster_info'
 LANGUAGE C;
 
 CREATE FUNCTION mtm.make_table_local(relation regclass) RETURNS void
 AS 'MODULE_PATHNAME','mtm_make_table_local'
+LANGUAGE C;
+
+CREATE FUNCTION mtm.broadcast_table(srcTable regclass, dstNodesMask bigint) RETURNS void
+AS 'MODULE_PATHNAME','mtm_broadcast_table'
+LANGUAGE C;
+
+CREATE FUNCTION mtm.copy_table(srcTable regclass, dstNode integer) RETURNS void
+AS 'MODULE_PATHNAME','mtm_copy_table'
 LANGUAGE C;
 
 CREATE FUNCTION mtm.dump_lock_graph() RETURNS text
@@ -91,9 +108,13 @@ CREATE FUNCTION mtm.check_deadlock(xid bigint) RETURNS boolean
 AS 'MODULE_PATHNAME','mtm_check_deadlock'
 LANGUAGE C;
 
-CREATE TABLE IF NOT EXISTS mtm.local_tables(rel_schema text, rel_name text, primary key(rel_schema, rel_name));
+CREATE FUNCTION mtm.referee_poll(xid bigint) RETURNS bigint
+AS 'MODULE_PATHNAME','mtm_referee_poll'
+LANGUAGE C;
 
-CREATE OR REPLACE FUNCTION mtm.alter_sequences() RETURNS boolean AS 
+CREATE TABLE IF NOT EXISTS mtm.local_tables(rel_schema name, rel_name name, primary key(rel_schema, rel_name));
+
+CREATE OR REPLACE FUNCTION mtm.alter_sequences() RETURNS boolean AS
 $$
 DECLARE
     seq_class record;

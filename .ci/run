@@ -1,0 +1,30 @@
+#!/bin/sh
+#
+# Universal CI hook
+#
+
+set -e
+
+if [ "`id -un`" = "root" ]; then
+    if [ -d ".ci" ]; then
+	if [ "`uname`" = "Darwin" ]; then
+	    if ! [ -e /Users/ci ]; then
+		echo "Error: User ci not found."
+		exit 1
+	    fi
+	    chown -R ci .
+	    [ -e ~/.ci.env ] && source ~/.ci.env
+	else
+	    groupadd ci
+	    useradd -g ci ci
+	    # chown -R ci:ci .
+	    find . -type d -exec chown ci:ci {} +
+	fi
+	su ci -c ./.ci/build_and_test_world
+    else
+	echo "Error: .ci not found"
+	exit 1
+    fi
+else
+    ./.ci/build_and_test_world
+fi

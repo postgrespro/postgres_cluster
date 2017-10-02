@@ -46,4 +46,3 @@ lib*.pc
 /contrib/pg_query_state/isolation_output/
 /contrib/pg_hint_plan/expected/ut-fdw.out
 /contrib/pg_hint_plan/sql/ut-fdw.sql
-

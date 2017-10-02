@@ -78,12 +78,41 @@ get_role_details(const char *role,
 
 	ReleaseSysCache(roleTup);
 
+	/*
+	 * Don't allow an empty password. Libpq treats an empty password the same
+	 * as no password at all, and won't even try to authenticate. But other
+	 * clients might, so allowing it would be confusing.
+	 *
+	 * For a plaintext password, we can simply check that it's not an empty
+	 * string. For an encrypted password, check that it does not match the MD5
+	 * hash of an empty string.
+	 */
 	if (**password == '\0')
 	{
 		*logdetail = psprintf(_("User \"%s\" has an empty password."),
 							  role);
 		pfree(*password);
 		return PG_ROLE_EMPTY_PASSWORD;	/* empty password */
+	}
+	if (isMD5(*password))
+	{
+		char		crypt_empty[MD5_PASSWD_LEN + 1];
+
+		if (!pg_md5_encrypt("",
+							role,
+							strlen(role),
+							crypt_empty))
+		{
+			pfree(*password);
+			return STATUS_ERROR;
+		}
+		if (strcmp(*password, crypt_empty) == 0)
+		{
+			*logdetail = psprintf(_("User \"%s\" has an empty password."),
+								  role);
+			pfree(*password);					  
+			return STATUS_ERROR;	/* empty password */
+		}
 	}
 
 	return PG_ROLE_OK;

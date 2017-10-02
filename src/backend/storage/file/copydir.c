@@ -40,8 +40,8 @@ copydir(char *fromdir, char *todir, bool recurse)
 {
 	DIR		   *xldir;
 	struct dirent *xlde;
-	char		fromfile[MAXPGPATH];
-	char		tofile[MAXPGPATH];
+	char		fromfile[MAXPGPATH * 2];
+	char		tofile[MAXPGPATH * 2];
 
 	if (mkdir(todir, S_IRWXU) != 0)
 		ereport(ERROR,
@@ -113,7 +113,8 @@ copydir(char *fromdir, char *todir, bool recurse)
 			strcmp(xlde->d_name, "..") == 0)
 			continue;
 
-		snprintf(tofile, MAXPGPATH, "%s/%s", todir, xlde->d_name);
+		snprintf(fromfile, sizeof(fromfile), "%s/%s", fromdir, xlde->d_name);
+		snprintf(tofile, sizeof(tofile), "%s/%s", todir, xlde->d_name);
 
 		/*
 		 * We don't need to sync subdirectories here since the recursive
@@ -215,7 +216,7 @@ copyzipdir(char *fromdir, bool from_compressed,
 			strcmp(xlde->d_name, "..") == 0)
 			continue;
 
-		snprintf(tofile, MAXPGPATH, "%s/%s", todir, xlde->d_name);
+		snprintf(tofile, sizeof(tofile), "%s/%s", todir, xlde->d_name);
 
 		/*
 		 * We don't need to sync subdirectories here since the recursive

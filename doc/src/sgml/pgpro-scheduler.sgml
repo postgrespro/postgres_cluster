@@ -114,7 +114,9 @@ Make sure to create the <filename>pgpro_scheduler</filename> extension for each 
           schedule jobs, in the comma-separated format:
         <programlisting>
 <varname>schedule.database</varname> = '<replaceable>database1</>,<replaceable>database2</>'
-</programlisting></para>
+</programlisting>
+         You can omit this step when using <filename>pgpro_scheduler</filename>
+         on a cluster configured with <filename>multimaster</filename>.</para>
       </listitem>
       <listitem>
         <para>
@@ -639,7 +641,7 @@ schedule.cancel_job(<replaceable>job_id</replaceable> <type>bigint</type>);
      </term>
      <listitem>
       <para>
-       Specifies whether the scheduler is enabled on your system.</para>
+       Specifies whether <filename>pgpro_scheduler</filename> is enabled on your system.</para>
        <para>Default: <literal>false</literal>.
       </para>
      </listitem>
@@ -653,7 +655,16 @@ schedule.cancel_job(<replaceable>job_id</replaceable> <type>bigint</type>);
      </term>
      <listitem>
       <para>
-       Specifies the list of databases for which the scheduler is enabled. Database names must be separated by commas.</para><para>Default: empty string.
+       Specifies the databases for which <filename>pgpro_scheduler</filename> is enabled.
+       Database names must be separated by commas.
+      </para>
+      <para>
+        If <filename>pgpro_scheduler</filename> is running on a cluster configured with
+        <filename>multimaster</filename>, the database name is derived from the
+        <xref linkend="multimaster-conn-strings"> variable.
+      </para>
+      <para>
+       Default: empty string.
       </para>
      </listitem>
     </varlistentry>
@@ -666,11 +677,10 @@ schedule.cancel_job(<replaceable>job_id</replaceable> <type>bigint</type>);
      </term>
      <listitem>
       <para>
-      Specifies the name of a schema where the scheduler
-       stores its tables and functions. Normally, you should
-       not change this variable. This
-      variable may be useful if you run <filename>pgpro_scheduler</filename>
-      on a multi-master cluster.</para>
+       Deprecated. Specifies the name of a schema where the scheduler
+       stores its tables and functions.
+       If you need to change the default schema, use <xref linkend="sql-alterextension">.
+      </para>
        <para>Default: <literal>schedule</literal>.
       </para>
      </listitem>
@@ -684,10 +694,18 @@ schedule.cancel_job(<replaceable>job_id</replaceable> <type>bigint</type>);
      </term>
      <listitem>
       <para>
-      Specifies the node name of your <productname>&productname;</productname> instance. Do
-      not change or use this variable if you run a single server configuration. You may need this 
-      variable if you run <filename>pgpro_scheduler</filename>
-      on a multi-master cluster.</para>
+      Specifies the node name of your <productname>&productname;</productname> instance.
+      Do not change or use this variable if you run a single-server cluster configuration.
+      </para>
+      <para>
+      On a cluster configured with <filename>multimaster</filename>, the node name is
+      derived from the <xref linkend="multimaster-node-id"> variable. For example, if
+      <literal>multimaster.node_id = 3</literal>, the <varname>schedule.nodename</>
+      variable is set to <literal>mtm-node-3</>. However, if you explicitly set
+      the <varname>schedule.nodename</> variable by editing the <filename>postgresql.conf</filename>
+      file or running the <command>ALTER</command> command, <filename>pgpro_scheduler</filename>
+      will use the provided value, ignoring the <varname>multimaster.node_id</varname> variable.
+      </para>
        <para>Default: <literal>master</literal>.
       </para>
      </listitem>
@@ -2064,7 +2082,7 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
 
     <varlistentry>
      <term>
-      <function>schedule.get_user_log()
+      <function>schedule.get_user_log(<parameter>username</parameter> <type>text</type>)
       </function>
      <indexterm>
        <primary><function>schedule.get_user_log</></primary>
@@ -2111,6 +2129,21 @@ schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[
        <itemizedlist>
         <listitem>
          <para>The number of records deleted.</para></listitem></itemizedlist>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.nodename()
+      </function>
+     <indexterm>
+       <primary><function>schedule.nodename()</></primary>
+     </indexterm>
+     </term>
+     <listitem>
+      <para>
+      Returns the current node name.
+      </para>
      </listitem>
     </varlistentry>
     </variablelist>

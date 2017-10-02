@@ -933,7 +933,7 @@ ReorderBufferIterTXNInit(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	{
 		ReorderBufferChange *cur_change;
 
-		if (txn->nentries != txn->nentries_mem)
+		if (txn->serialized)
 		{
 			/* serialize remaining changes */
 			ReorderBufferSerializeTXN(rb, txn);
@@ -962,7 +962,7 @@ ReorderBufferIterTXNInit(ReorderBuffer *rb, ReorderBufferTXN *txn)
 		{
 			ReorderBufferChange *cur_change;
 
-			if (cur_txn->nentries != cur_txn->nentries_mem)
+			if (cur_txn->serialized)
 			{
 				/* serialize remaining changes */
 				ReorderBufferSerializeTXN(rb, cur_txn);
@@ -1184,7 +1184,7 @@ ReorderBufferCleanupTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	Assert(found);
 
 	/* remove entries spilled to disk */
-	if (txn->nentries != txn->nentries_mem)
+	if (txn->serialized)
 		ReorderBufferRestoreCleanup(rb, txn);
 
 	/* deallocate */
@@ -1728,6 +1728,10 @@ ReorderBufferCommitBareXact(ReorderBuffer *rb, TransactionId xid,
 	txn = ReorderBufferTXNByXid(rb, xid, true, NULL, commit_lsn,
 								true);
 
+	if (rb->xact_action == XLOG_XACT_ABORT_PREPARED) {
+		ReorderBufferCleanupTXN(rb, txn);
+	}
+
 	txn->final_lsn = commit_lsn;
 	txn->end_lsn = end_lsn;
 	txn->commit_time = commit_time;
@@ -2197,6 +2201,7 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	Assert(spilled == txn->nentries_mem);
 	Assert(dlist_is_empty(&txn->changes));
 	txn->nentries_mem = 0;
+	txn->serialized = true;
 
 	if (fd != -1)
 		CloseTransientFile(fd);
@@ -2680,7 +2685,7 @@ StartupReorderBuffer(void)
 	while ((logical_de = ReadDir(logical_dir, "pg_replslot")) != NULL)
 	{
 		struct stat statbuf;
-		char		path[MAXPGPATH];
+		char		path[MAXPGPATH * 2 + 12];
 
 		if (strcmp(logical_de->d_name, ".") == 0 ||
 			strcmp(logical_de->d_name, "..") == 0)

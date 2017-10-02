@@ -1,0 +1,1703 @@
+<!-- doc/src/sgml/pgaudit.sgml -->
+
+<sect1 id="pgaudit">
+  <title>pgaudit</title>
+  <para>
+    The <filename>pgaudit</filename> extension enables detailed logging of various security events.
+  </para>
+  <para>
+    <filename>pgaudit</filename> works in parallel with the standard <productname>PostgreSQL</productname>
+    logging solutions (logging collector) and does not depend on them. Security
+    event log of the <filename>pgaudit</filename> extension is stored separately from the server
+    log. At the <productname>&productname;</productname> startup, <filename>pgaudit</filename>
+    launches two special background processes:
+  </para>
+  <itemizedlist spacing="compact">
+    <listitem>
+      <para>
+        <filename>pgaudit</filename> configuration worker &mdash; scans the <filename>pgaudit.conf</filename>
+        configuration file to determine whether an event needs to be logged.
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <filename>pgaudit</filename> logging worker &mdash; logs security events.
+      </para>
+    </listitem>
+  </itemizedlist>
+  <para>
+    The <filename>pgaudit.conf</filename> configuration file is located in the data directory
+    of the cluster (<envar>PGDATA</envar>). It is a text file that
+    can be edited directly using operating-system facilities. To modify
+    the file using <acronym>SQL</acronym>, you can use several <filename>pgaudit</filename> functions.
+    The <literal>pgaudit_settings</literal> view displays the
+    contents of the <filename>pgaudit.conf</filename> file.
+  </para>
+  <para>All the logged events belong to the following classes:
+  </para>
+  <itemizedlist spacing="compact">
+    <listitem>
+      <para>
+        <acronym>DDL</acronym> commands for creating, changing, and deleting <acronym>DBMS</acronym> objects
+        (databases, tablespaces, schemas, tables, views, sequences, languages, functions)
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        access control commands for database objects (<literal>GRANT</literal>, <literal>REVOKE</literal>)
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <acronym>DML</acronym> commands for access to database objects
+        (<command>INSERT</command>, <command>UPDATE</command>, <command>DELETE</command>,
+        <command>SELECT</command>, <command>TRUNCATE</command> for tables and/or views,
+        <command>EXECUTE</command> for functions)
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        database connection/disconnection events
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        all commands executed by a particular user
+      </para>
+    </listitem>
+  </itemizedlist>
+  <para>
+    Security events can be logged both in the centralized logging
+    solution of the operating system (<literal>syslog</literal>) and in
+    the operating system files. Event logs can be written both into the <literal>syslog</literal> and into
+    the files simultaneously. Event log files are written in the <acronym>CSV</acronym>
+    format. Each event is logged on a separate line that contains the
+    following fields:
+  </para>
+  <itemizedlist spacing="compact">
+    <listitem>
+      <para>
+        date and time of the event
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        username
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        database name
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        server process ID (PID)
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        severity level: <literal>INFO</literal> or <literal>ERROR</literal>
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        serial number of the command in a session
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        subcommand number in complex commands 
+        (<literal>CREATE TABLE ... AS SELECT ...</literal>)
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        operator name
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        object type
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        object name
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        operator execution results: <literal>SUCCESS</literal> or <literal>FAILURE</literal>
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        error message in case of <literal>FAILURE</literal>
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        text of the <acronym>SQL</acronym> command
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        parameters of the command (for example, for <literal>PREPARE</literal>)
+      </para>
+    </listitem>
+  </itemizedlist>
+  <para>
+    You can define a directory to store security log files and set up
+    log file rotation. <filename>pgaudit</filename> can switch to a new log file either after
+    the specified time interval, or when the specified size of the log file is exceeded.
+    This enables you to define a workflow for cleaning up security event logs.
+  </para>
+  <para>
+    <productname>&productname;</productname> user with the <literal>SUPERUSER</literal> attribute can grant access to
+    the <filename>pgaudit</filename> extension and security event log files only to the user
+    with the information security administrator role.
+  </para>
+  <sect2 id="pgaudit-installation-and-setup">
+    <title>Installation and Setup</title>
+    <para>
+      The <filename>pgaudit</filename> extension is a standard extension included into
+      <productname>&productname;</productname>. To enable <filename>pgaudit</filename>, complete the following
+      steps:
+    </para>
+    <orderedlist>
+      <listitem>
+        <para>
+          Add <literal>pgaudit</literal> to the
+          <literal>shared_preload_libraries</literal> variable in the
+          postgresql.conf file:
+        </para>
+        <programlisting>
+shared_preload_libraries = 'pgaudit'
+</programlisting>
+      </listitem>
+      <listitem>
+        <para>
+          Reload the database server for the changes to take effect.
+        </para>
+      <note>
+        <para>
+          To verify that the <literal>pgaudit</literal> library
+          was installed correctly, you can run the following command:
+        </para>
+      </note>
+    <programlisting>
+SHOW shared_preload_libraries;
+</programlisting>
+      </listitem>
+      <listitem>
+        <para>
+          Create the <filename>pgaudit</filename> extension using the following query:
+        </para>
+        <programlisting>
+CREATE EXTENSION pgaudit;
+</programlisting>
+        <para>
+          The <filename>pgaudit</filename> extension adds several functions for managing the
+          <filename>pgaudit.conf</filename> file, the <literal>pgaudit_settings</literal>
+          view that displays the <filename>pgaudit.conf</filename> contents, and event
+          triggers. For convenience, the <filename>pgaudit</filename> extension should be
+          created in each database for which you are going to log security events.
+        </para>
+      </listitem>
+    </orderedlist>
+  </sect2>
+  <sect2 id="pgaudit-configuring-security-event-types-to-log">
+    <title>Configuring Security Events to Log</title>
+    <para>
+      To configure security event logging, <filename>pgaudit</filename> provides an <acronym>SQL</acronym>
+      interface that consists of several functions and the
+      <literal>pgaudit_settings</literal> view.
+    </para>
+    <programlisting>
+pgaudit_set_object(event_type  text,
+                   object_type text)
+pgaudit_set_object(event_type text,
+                   object_oid oid)
+</programlisting>
+    <para>
+      Enables logging for a new event type. When the
+      <literal>pgaudit_set_object</literal> function completes, security
+      event logging starts immediately, but the <filename>pgaudit.conf</filename> file is not
+      updated. To save the changes in the <filename>pgaudit.conf</filename> file, call the
+      <literal>pgaudit_save()</literal> function.
+    </para>
+    <para>
+      Options:
+    </para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>
+          <literal>event_type</literal> &mdash; type of the event that needs
+          to be logged, including <acronym>SQL</acronym> operator names, as well as
+          <literal>CONNECT</literal> and <literal>DISCONNECT</literal> events.
+          When set to <literal>ALL</literal>, enables logging for all events
+          available for the specified object type. For example, for the *table
+          object type, the <literal>ALL</literal> keyword switches on logging for commands
+          <literal>SELECT</literal>, <literal>INSERT</literal>,
+          <literal>UPDATE</literal>, <literal>DELETE</literal>,
+          <literal>TRUNCATE</literal>, as well as
+          <literal>CREATE</literal>, <literal>ALTER</literal>,
+          <literal>DROP</literal>. For the full list of possible
+          <literal>event_type</literal> values, see <xref linkend="pgaudit-event-types">.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>object_type</literal> &mdash; type of the object for which
+          security events need to be logged. The
+          <literal>object_type</literal> option can take the following
+          values: <literal>DATABASE</literal>,
+          <literal>TABLESPACE</literal>, <literal>SCHEMA</literal>,
+          <literal>TABLE</literal>, <literal>VIEW</literal>,
+          <literal>SEQUENCE</literal>,
+          <literal>MATERIALIZED VIEW</literal>,
+          <literal>LANGUAGE</literal>, <literal>FUNCTION</literal>,
+          <literal>NULL</literal>. If <literal>event_type</literal> is
+          set to CONNECT or DISCONNECT, the NULL value must be used.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>object_oid</literal> &mdash; identifier of the object
+          (OID) whose events need to be logged.
+        </para>
+      </listitem>
+    </itemizedlist>
+    <programlisting>
+pgaudit_set_role(event_type text,
+                 role_oid   oid)
+</programlisting>
+    <para>
+      Enables logging of events caused by the specified DBMS user. When
+      the <literal>pgaudit_set_role</literal> function completes,
+      security event logging starts immediately, but the <filename>pgaudit.conf</filename>
+      file is not updated. To save the changes in the <filename>pgaudit.conf</filename> file,
+      call the <literal>pgaudit_save()</literal> function.
+    </para>
+    <para>
+      Options:
+      <itemizedlist>
+        <listitem>
+          <para>
+            <literal>event_type</literal> &mdash; type of the event that
+            needs to be logged. When set to <literal>ALL</literal>, enables
+            logging for all commands executed by the <literal>role_oid</literal>
+            user. For the list of possible values, see <xref linkend="pgaudit-event-types">.
+         </para>
+        </listitem>
+        <listitem>
+          <para>
+            <literal>role_oid</literal> &mdash; identifier of the
+            user (OID) whose actions need to be logged.
+          </para>
+        </listitem>
+      </itemizedlist>
+    </para>
+    <programlisting>
+pgaudit_reset_object(event_type text,
+                    object_type text)
+pgaudit_reset_object(event_type text,
+                     object_oid oid)
+</programlisting>
+    <para>
+      Disables logging for a previously specified event. To save
+      information about the canceled events in the <filename>pgaudit.conf</filename> file,
+      call the <literal>pgaudit_save()</literal> function.
+    </para>
+    <para>
+      Options:
+    </para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>
+          <literal>event_type</literal> &mdash; type of the event that needs
+          to be logged, including <acronym>SQL</acronym> operator names, as well as CONNECT
+          and DISCONNECT events. You an use the <literal>ALL</literal>
+          keyword to log all events available for the specified object
+          type. For example, for the *table object type, the
+          <literal>ALL</literal> keyword switches on logging for
+          commands <literal>SELECT</literal>, <literal>INSERT</literal>,
+          <literal>UPDATE</literal>, <literal>DELETE</literal>,
+          <literal>TRUNCATE</literal>, as well as
+          <literal>CREATE</literal>, <literal>ALTER</literal>,
+          <literal>DROP</literal>. For the full list of possible
+          <literal>event_type</literal> values, see <xref linkend="pgaudit-event-types">.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>object_type</literal> &mdash; type of the object for which
+          security events need to be logged. The
+          <literal>object_type</literal> option can take the following
+          values: <literal>DATABASE</literal>,
+          <literal>TABLESPACE</literal>, <literal>SCHEMA</literal>,
+          <literal>TABLE</literal>, <literal>VIEW</literal>,
+          <literal>SEQUENCE</literal>,
+          <literal>MATERIALIZED VIEW</literal>,
+          <literal>LANGUAGE</literal>, <literal>FUNCTION</literal>,
+          <literal>NULL</literal>. If <literal>event_type</literal> is
+          set to <literal>CONNECT</literal> or
+          <literal>DISCONNECT</literal>, thе <literal>NULL</literal>
+          value must be used.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>object_oid</literal> &mdash; identifier of the object (OID)
+          for which security events need to be logged.
+        </para>
+      </listitem>
+    </itemizedlist>
+    <programlisting>
+pgaudit_reset_role(event_type text,
+                   role_oid   oid)
+</programlisting>
+    <para>
+      Disables logging for a previously specified event. To save
+      information about the canceled events in the <filename>pgaudit.conf</filename> file,
+      call the <literal>pgaudit_save()</literal> function.
+    </para>
+    <para>
+      Options:
+      <itemizedlist>
+        <listitem>
+          <para>
+            <literal>event_type</literal> &mdash; type of the event that
+            needs to be logged. When set to <literal>ALL</literal>, enables
+            logging of all commands executed by the <literal>role_oid</literal>
+            user. For the list of possible values, see <xref linkend="pgaudit-event-types">.
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            <literal>role_oid</literal> &mdash; identifier of the
+            user (OID) whose actions need to be logged.
+          </para>
+        </listitem>
+      </itemizedlist>
+    </para>
+    <programlisting>
+pgaudit_show()
+</programlisting>
+    <para>
+      Returns logged events in a table view. This function is used by
+      the <literal>pgaudit_settings</literal> view.
+    </para>
+    <programlisting>
+pgaudit_reload()
+</programlisting>
+    <para>
+      Reads logging settings from the <filename>pgaudit.conf</filename> file.
+      Call this function if the <filename>pgaudit.conf</filename> file was modified directly
+      by the operating system facilities.
+    </para>
+    <programlisting>
+pgaudit_save()
+</programlisting>
+    <para>
+      Saves logging settings from memory into the <filename>pgaudit.conf</filename> file. The
+      <filename>pgaudit.conf</filename> file is located in the cluster data directory
+      (<envar>PGDATA</envar>). You cannot change the <filename>pgaudit.conf</filename>
+      file location.
+    </para>
+  </sect2>
+  <sect2 id="pgaudit-pgaudit-settings-view">
+    <title>pgaudit_settings View</title>
+    <para>
+      This view displays the contents of the <filename>pgaudit.conf</filename> file. The
+      <literal>pgaudit_settings</literal> view consists of the following
+      columns:
+    </para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>
+          <literal>db_name</literal> (<type>text</type>) &mdash; name of the database
+          for which to log security events.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>event_type</literal> (<type>text</type>) &mdash; event type to log.
+          For the list of all possible event types, see <xref linkend="pgaudit-event-types">.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>object_type</literal> (<type>text</type>) &mdash; &mdash; type of the object for which
+          security events need to be logged. The
+          <literal>object_type</literal> option can take the following
+          values: <literal>DATABASE</literal>,
+          <literal>TABLESPACE</literal>, <literal>SCHEMA</literal>,
+          <literal>TABLE</literal>, <literal>VIEW</literal>,
+          <literal>SEQUENCE</literal>,
+          <literal>MATERIALIZED VIEW</literal>,
+          <literal>LANGUAGE</literal>, <literal>FUNCTION</literal>,
+          <literal>NULL</literal>.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>object_name</literal> (<type>text</type>) &mdash; name of the object
+          for which security events need to be logged.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>role_name</literal> (<type>text</type>) &mdash; the role
+          on behalf of which logged events are performed.
+        </para>
+      </listitem>
+    </itemizedlist>
+    <sect3 id="pgaudit-event-types">
+      <title>Event Types</title>
+      <para>
+        The <filename>pgaudit</filename> extension can log events of the
+        following types:
+      </para>
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>
+            connect
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            disconnect
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter aggregate
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter collation
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter conversion
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter database
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter default privileges
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter domain
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter event trigger
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter extension
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter foreign data wrapper
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter foreign table
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter function
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter index
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter language
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter large object
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter materialized view
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter operator
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter operator class
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter operator family
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter policy
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter role, alter user, alter group
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter rule
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter schema
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter sequence
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter server
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter system
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter system audit
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter table
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter table rls
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter tablespace
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter text search configuration
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter text search dictionary
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter text search parser
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter text search template
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter trigger
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter type
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter user mapping
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            alter view
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            analyze
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            audit
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            begin, start transaction
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            checkpoint
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            close
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            cluster
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            comment
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            commit, end
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            commit prepared
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            copy from
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            copy to
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create aggragate
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create cast
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create collation
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create convertion
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create database
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create domain
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create event trigger
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create extension
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create foreign data wrapper
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create foreign table
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create function
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create index
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create language
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create materialized view
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create operator
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create operator class
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create operator family
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create policy
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create role, create user, create group
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create rule
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create schema
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create sequence
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create server
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create table, create table as, select into
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create tablespace
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create text search configuration
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create text search dictionary
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create text search parser
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create text search template
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create transform
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create trigger
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create type
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create user mapping
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            create view
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            deallocate
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            declare
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            delete
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            discard
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            do
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop aggragate
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop cast
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop collation
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop convertion
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop database
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop domain
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop event trigger
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop extension
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop foreign data wrapper
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop foreign table
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop function
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop index
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop language
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop materialized view
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop operator
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop operator class
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop operator family
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop policy
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop role, drop user, drop group
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop rule
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop schema
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop sequence
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop server
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop table
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop tablespace
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop text search configuration
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop text search dictionary
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop text search parser
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop text search template
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop transform
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop trigger
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop type
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop user mapping
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            drop view
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            execute
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            explain
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            fetch
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            grant
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            import foreign schema
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            insert
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            listen
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            load
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            lock
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            move
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            noaudit
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            notify
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            prepare
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            prepare transaction
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            reassign owned
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            refresh materialized view
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            reindex
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            release savepoint
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            reset
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            revoke
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            rollback to savepoint
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            rollback
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            rollback prepared
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            savepoint
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            security label
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            select, values
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            set
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            set constraints
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            set role
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            set session authorization
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            set transaction
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            show
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            truncate
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            unlisten
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            update
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+            vacuum
+          </para>
+        </listitem>
+      </itemizedlist>
+    </sect3>
+  </sect2>
+  <sect2 id="pgaudit-security-event-log-configuration-parameters">
+    <title>Security Event Log Configuration Parameters</title>
+    <para>
+      The <filename>pgaudit</filename> extension provides several configuration parameters
+      for managing security event log files. These parameters can be set
+      in the <filename>postgresql.conf</filename> configuration file, or with the help of the
+      <literal>ALTER SYSTEM</literal> command. For the changes to take
+      effect, call the <literal>pg_reload_conf()</literal> function or
+      reload the database server.
+    </para>
+    <para>
+      <literal>audit_log_path</literal> (<type>string</type>)
+    </para>
+    <para>Defines the
+      method for logging security events. Possible values are:
+      <itemizedlist>
+        <listitem>
+          <para>csvlog &mdash; log security events in a CSV file.
+          </para>
+        </listitem>
+        <listitem>
+          <para>syslog &mdash; log security events in syslog.
+          </para>
+        </listitem>
+      </itemizedlist>
+      You can specify one or more values separated by commas.
+    </para>
+    <para>
+      Default: <literal>csvlog</literal>.
+    </para>
+    <para>
+      <literal>audit_cat_log</literal> (<type>boolean</type>)
+      </para>
+      <para>Specifies whether
+      to log access to system catalog objects in the
+      <literal>pg_catalog</literal> schema.
+    </para>
+    <para>
+      Default: <literal>off</literal>.
+    </para>
+    <para>
+      <literal>audit_log_stat</literal> (<type>boolean</type>)
+      </para>
+      <para>Specifies
+      whether to log the <acronym>SQL</acronym> command text for security events.
+    </para>
+    <para>
+       Default: <literal>off</literal>.
+    </para>
+    <para>
+      <literal>audit_dir_log</literal> (<type>string</type>)</para>
+      <para>Specifies the
+      path to the directory that stores CSV log files. This can be an
+      absolute path, or a relative path to the cluster data directory
+      (<envar>PGDATA</envar>). This parameter is used if the
+      <literal>audit_log_path</literal> is set to
+      <literal>csvlog</literal>.
+    </para>
+    <para>Default: <literal>pgaudit</literal>.
+    </para>
+    <para>
+      <literal>audit_fname_log</literal> (<type>string</type>)
+      </para>
+      <para>Defines the
+      filenames of the created security event log files. The filename
+      can contain %-escapes, similar to the ones listed in the
+      <literal>strftime</literal> specification of the Open Group
+      (http://pubs.opengroup.org/onlinepubs/009695399/functions/strftime.html).
+      This parameter is used if the
+      <literal>audit_log_path</literal> parameter is set to
+      <literal>csvlog</literal>.
+    </para>
+    <para>
+      Default: <filename>postgresql-%Y-%m-%d_%H%M%S.log</filename>.
+    </para>
+    <para>
+      <literal>audit_sz_log</literal> (<type>integer</type>)
+    </para>
+    <para>
+      Sets the maximum size of the <acronym>CSV</acronym> log file, in kilobytes. When this size is
+      achieved, <filename>pgaudit</filename> creates a new file for
+      logging security events. This parameter is used if the
+      <literal>audit_log_path</literal> parameter is set to
+      <literal>csvlog</literal>. If set to 0, disables size-based
+      creation of new log files.
+    </para>
+    <para>
+      Default: 10MB.
+    </para>
+    <para>
+      <literal>audit_age_log</literal> (<type>integer</type>)
+      </para>
+      <para>Sets the
+      maximum lifetime of a log file, in minutes. After this timeframe
+      has elapsed, <filename>pgaudit</filename> creates a new file for
+      logging security events. This parameter is used if the
+      <literal>audit_log_path</literal> is set to
+      <literal>csvlog</literal>. If set to 0, disables time-based
+      creation of new log files.
+    </para>
+    <para>
+      Default: 60.
+    </para>
+    <para>
+      <literal>audit_del_on_rotation</literal> (<type>boolean</type>)
+    </para>
+    <para>
+      Specifies whether to truncate log files when logging is switched
+      to an existing log file. If set to <literal>off</literal>, <filename>pgaudit</filename> 
+      appends new log entries to the end of the file. This parameter is
+      used if the <literal>audit_log_path</literal> parameter
+      is set to <literal>csvlog</literal>.
+    </para>
+    <para>Default: <literal>off</literal>.
+    </para>
+    <para>
+      <literal>audit_syslog</literal> (<type>enum</type>)
+      </para>
+      <para>
+      Specifies the logging category in <literal>syslog</literal>. This parameter is
+      used if the <literal>audit_log_path</literal> parameter
+      is set to <literal>syslog</literal>. Possible values are:
+      <literal>LOCAL0</literal>, <literal>LOCAL1</literal>,
+      <literal>LOCAL2</literal>, <literal>LOCAL3</literal>,
+      <literal>LOCAL4</literal>, <literal>LOCAL5</literal>,
+      <literal>LOCAL6</literal>, <literal>LOCAL7</literal>. 
+    </para>
+    <para>
+      Default: <literal>LOCAL0</literal>.
+    </para>
+    <para>
+      <literal>audit_syslog_ident</literal> (<type>string</type>)
+      </para>
+      <para>Specifies the
+      program name used to identify <filename>pgaudit</filename> messages in
+      <literal>syslog</literal> logs.
+    </para>
+    <para>
+      Default: <literal>pgaudit</literal>.
+    </para>
+    <para>
+      <literal>audit_sz_shm_queue</literal> (<type>integer</type>)
+      </para>
+      <para>Determines the size of
+      the allocated memory, in kilobytes, for messages through the
+      shared memory.
+    </para>
+    <para>
+      Default: 1MB.
+    </para>
+  </sect2>
+  <sect2 id="pgaudit-viewing-security-event-log">
+    <title>Viewing Security Event Log</title>
+    <para>
+      Security event log files are text files that can be viewed by the
+      operating system facilities. To access log files using <acronym>SQL</acronym>,
+      you can use the <filename>file_fdw</filename> extension &mdash; a foreign data
+      wrapper for accessing files on the database server. To use this
+      method, complete the following steps:
+    </para>
+    <orderedlist>
+      <listitem>
+        <para>
+          Install the <filename>file_fdw</filename> and create an external
+          server:
+        </para>
+        <programlisting>
+CREATE EXTENSION file_fdw;
+CREATE SERVER pgauditlog FOREIGN DATA WRAPPER file_fdw;
+</programlisting>
+      </listitem>
+      <listitem>
+        <para>
+          Create a foreign table, specifying the columns and the
+          absolute path to the log file. The actual log file location is
+          determined by the <literal>audit_dir_log</literal> and
+          <literal>audit_fname_log</literal> parameters.
+<programlisting>
+CREATE FOREIGN TABLE pgaudit_log 
+      ( log_time timestamp(3) with time zone, 
+        role_name text,
+        database_name text,
+        session_pid text,
+        error_severity text,
+        session_line_num bigint,
+        session_line_subcommand_num bigint,
+        event_type text,
+        object_type text,
+        object_name text,
+        status text,
+        error_message text,
+        query_text text,
+        query_args text )
+SERVER pgauditlog
+OPTIONS (filename 'absolute_file_path_to_log_file.csv', format 'csv' );
+</programlisting>
+        </para>
+      </listitem>
+    </orderedlist>
+    <para>
+      Make sure that the security event log files are written in the <acronym>CSV</acronym>
+      format, which is determined by the <literal>csvlog</literal> value
+      of the <literal>audit_log_path</literal> parameter.
+    </para>
+  </sect2>
+  <sect2 id="pgaudit-examples">
+    <title>Examples</title>
+    <para>
+      As an example, let's set up logging for the following security
+      events:
+    </para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>
+          connections/disconnections to the <literal>postgres</literal>
+          database
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          all actions of the <literal>postgres</literal> user
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          creating, updating, and deleting any tables
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          all operations on the <structname>app_table</structname> table that
+          belongs to the <literal>public</literal> schema
+        </para>
+      </listitem>
+    </itemizedlist>
+    <para>
+      All events must be logged in the <acronym>CSV</acronym> format and stored for a week.
+      It is required to set up <acronym>SQL</acronym> access to the security event log. To
+      complete the scenario, do the following:
+    </para>
+    <para>
+      In psql, check that the preliminary setup of the <filename>pgaudit</filename> extension
+      is complete in the <literal>postgres</literal> database:
+    </para>
+    <programlisting>
+SHOW shared_preload_libraries;
+ shared_preload_libraries 
+--------------------------
+ pgaudit
+
+\dx pgaudit 
+                 List of installed extensions
+  Name   | Version | Schema |           Description           
+---------+---------+--------+---------------------------------
+ pgaudit | 1.0     | public | provides auditing functionality
+</programlisting>
+    <para>
+      Add the following lines to the <filename>postgresql.conf</filename>
+      configuration file:
+    </para>
+    <programlisting>
+audit_log_path = 'csvlog'
+audit_dir_log = 'audit'
+audit_fname_log = 'audit-%u'
+audit_age_log = 1440
+audit_sz_log = 0
+audit_del_on_rotation = on
+audit_log_stat = on
+</programlisting>
+    <para>
+      For the changes to take effect, run the following query:
+    </para>
+    <programlisting>
+select pg_reload_conf();
+</programlisting>
+    <para>
+      Check that the following parameters are set as expected:
+    </para>
+    <programlisting>
+SHOW audit_log_path;
+SHOW audit_dir_log;
+SHOW audit_fname_log;
+SHOW audit_age_log;
+SHOW audit_sz_log;
+SHOW audit_del_on_rotation;
+SHOW audit_log_stat;
+</programlisting>
+    <para>
+      Let's assume that the cluster data directory is defined by the
+      <envar>$PGDATA</envar> environment variable. In this case, log
+      files are located in the <filename>$PDATA/audit</filename>
+      directory. Let's create empty file for each day of the week and
+      make them available for their owner only:
+    </para>
+    <programlisting>
+touch $PGDATA/audit/audit-1.csv
+touch $PGDATA/audit/audit-2.csv
+touch $PGDATA/audit/audit-3.csv
+touch $PGDATA/audit/audit-4.csv
+touch $PGDATA/audit/audit-5.csv
+touch $PGDATA/audit/audit-6.csv
+touch $PGDATA/audit/audit-7.csv
+chmod 600 $PGDATA/audit/audit-*.csv
+</programlisting>
+    <para>
+      Create a table for reading log entries:
+    </para>
+    <programlisting>
+CREATE TABLE pgaudit_log (
+  log_time timestamp(3) with time zone,
+  role_name text,
+  database_name text,
+  session_pid text,
+  error_severity text,
+  session_line_num bigint,
+  session_line_subcommand_num bigint,
+  event_type text,
+  object_type text,
+  object_name text,
+  status text,
+  error_message text,
+  query_text text,
+  query_args text
+);
+</programlisting>
+    <para>
+      Install the <literal>file_fdw</literal> extension and create an
+      external server:
+    </para>
+    <programlisting>
+CREATE EXTENSION file_fdw;
+CREATE SERVER pgauditlog FOREIGN DATA WRAPPER file_fdw;
+</programlisting>
+    <para>
+      Now let's create seven child foreign tables for the
+      <structname>pgaudit_log</structname> table, for each day of the week:
+    </para>
+    <programlisting>
+create foreign table pgaudit_log_1 () inherits (pgaudit_log) server pgauditlog 
+   options (filename '/<replaceable>path_to_PGDATA</replaceable>/audit/audit-1.csv',  format 'csv');
+create foreign table pgaudit_log_2 () inherits (pgaudit_log) server pgauditlog 
+   options (filename '/<replaceable>path_to_PGDATA</replaceable>/audit/audit-2.csv',  format 'csv');
+create foreign table pgaudit_log_3 () inherits (pgaudit_log) server pgauditlog 
+   options (filename '/<replaceable>path_to_PGDATA</replaceable>/audit/audit-3.csv',  format 'csv');
+create foreign table pgaudit_log_4 () inherits (pgaudit_log) server pgauditlog 
+   options (filename '/<replaceable>path_to_PGDATA</replaceable>/audit/audit-4.csv',  format 'csv');
+create foreign table pgaudit_log_5 () inherits (pgaudit_log) server pgauditlog 
+   options (filename '/<replaceable>path_to_PGDATA</replaceable>/audit/audit-5.csv',  format 'csv');
+create foreign table pgaudit_log_6 () inherits (pgaudit_log) server pgauditlog 
+   options (filename '/<replaceable>path_to_PGDATA</replaceable>/audit/audit-6.csv',  format 'csv');
+create foreign table pgaudit_log_7 () inherits (pgaudit_log) server pgauditlog 
+   options (filename '/<replaceable>path_to_PGDATA</replaceable>/audit/audit-7.csv',  format 'csv');
+</programlisting>
+    <para>
+      To set up logging for the required security events, connect to the
+      <structname>postgres</structname> database and execute the following
+      commands:
+    </para>
+    <programlisting>
+select pgaudit_set_object ('connect', null);
+select pgaudit_set_object ('disconnect', null);
+select pgaudit_set_object ('all', 'table');
+select pgaudit_set_role ('all', 'postgres'::regrole);
+</programlisting>
+    <para>
+      Create the <structname>app_table</structname> table and enable logging
+      for all operations on this table:
+    </para>
+    <programlisting>
+create table app_table (id int, name text);
+select pgaudit_set_object ('all', 'public.app_table'::regclass);
+</programlisting>
+    <para>
+      Check that event logging is configured as expected:
+    </para>
+    <programlisting>
+postgres=# select * from pgaudit_settings;
+ db_name | event_type | object_type |  object_name    | role_name 
+---------+------------+-------------+-----------------+-----------
+postgres | DISCONNECT |             | 0               | 0
+postgres | CONNECT    |             | 0               | 0
+postgres | ALL        | TABLE       | 0               | 0
+postgres | ALL        |             | public.app_table| 0
+postgres | ALL        |             | 0               | postgres
+(5 rows)
+</programlisting>
+    <para>
+      Save these configuration settings into the
+      <filename>pgaudit.conf</filename> file, so that they are not lost
+      after the server restart:
+    </para>
+    <programlisting>
+select pgaudit_save();
+</programlisting>
+    <para>
+      Let's run several queries on the <structname>app_table</structname>
+      table:
+    </para>
+    <programlisting>
+insert into app_table values (1, 'first');
+select * from app_table;
+</programlisting>
+    <para>
+      Check the log entries for the <structname>app_table</structname> table:
+    </para>
+    <programlisting>
+select to_char(log_time, 'DD.MM.YY HH24:MI:SS') as when, role_name, 
+       session_pid, event_type, query_text 
+from   pgaudit_log 
+where  object_name = 'public.app_table';
+-[ RECORD 1 ]--------------------------------------------
+when        | 24.11.16 16:31:16
+role_name   | postgres
+session_pid | 26513
+event_type  | CREATE TABLE
+query_text  | create table app_table (id int, name text);
+-[ RECORD 2 ]--------------------------------------------
+when        | 24.11.16 16:31:53
+role_name   | postgres
+session_pid | 26513
+event_type  | INSERT
+query_text  | insert into app_table values (1, 'first');
+-[ RECORD 3 ]--------------------------------------------
+when        | 24.11.16 16:31:54
+role_name   | postgres
+session_pid | 26513
+event_type  | SELECT
+query_text  | select * from app_table;
+</programlisting>
+    <para>
+      We have set up a weekly rotation of log files, with the log file
+      switched once a day. It means that queries to the
+      <structname>pgaudit_log</structname> table will return only those
+      security events that have happened in the latest week. Older
+      events will be automatically removed at log file rotation.
+      To define additional access constraints for specific
+      log entries, you can create separate views based on queries to the
+      <structname>pgaudit_log</structname> table and grant read rights to such
+      views using built-in <productname>&productname;</productname> access control methods.
+    </para>
+  </sect2>
+</sect1>

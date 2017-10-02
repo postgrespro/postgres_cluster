@@ -3,14 +3,14 @@
   <sect2 id="jsquery-introduction">
     <title>Introduction</title>
     <para>
-      JsQuery - is a language to query jsonb data type, introduced in
+      JsQuery is a language to query jsonb data type, introduced in
       PostgreSQL release 9.4.
     </para>
     <para>
-      It's primary goal is to provide an additional functionality to
+      Its primary goal is to provide an additional functionality to
       jsonb (currently missing in PostgreSQL), such as a simple and
       effective way to search in nested objects and arrays, more
-      comparison operators with indexes support. We hope, that jsquery
+      comparison operators with indexes support. We hope that jsquery
       will be eventually a part of PostgreSQL.
     </para>
     <para>
@@ -72,7 +72,7 @@ CREATE EXTENSION jsquery;
     <para>
       Simple expression is specified as
       <literal>path binary_operator value</literal> or
-      <literal>path unary_operator</literal>. See following examples.
+      <literal>path unary_operator</literal>. See the following examples.
     </para>
     <itemizedlist spacing="compact">
       <listitem>
@@ -135,9 +135,9 @@ CREATE EXTENSION jsquery;
     </itemizedlist>
     <para>
       Path selects set of JSON values to be checked using given
-      operators. In the simplest case path is just an key name. In
-      general path is key names and placeholders combined by dot signs.
-      Path can use following placeholders:
+      operators. In the simplest case, path is just a key name. In
+      general, path is key names and placeholders combined by dot signs.
+      Path can use the following placeholders:
     </para>
     <itemizedlist spacing="compact">
       <listitem>
@@ -176,7 +176,7 @@ CREATE EXTENSION jsquery;
     <para>
       Key names could be given either with or without double quotes. Key
       names without double quotes shouldn't contain spaces, start with
-      number or concur with jsquery keyword.
+      number, or concur with jsquery keyword.
     </para>
     <para>
       The supported binary operators are:
@@ -256,25 +256,26 @@ CREATE EXTENSION jsquery;
     <itemizedlist spacing="compact">
       <listitem>
         <para>
-          <literal>#(a = 1 AND b = 2)</literal> - exists element of
-          array which a key is 1 and b key is 2
+          <literal>#(a = 1 AND b = 2)</literal> - an array contains
+          an element where the <literal>a</literal> key is 2
+          and the <literal>b</literal> key is 2
         </para>
       </listitem>
       <listitem>
         <para>
-          <literal>%($ &gt;= 10 AND $ &lt;= 20)</literal> - exists
-          object key which values is between 10 and 20
+          <literal>%($ &gt;= 10 AND $ &lt;= 20)</literal> - an
+          object contains a key with a value between 10 and 20
         </para>
       </listitem>
     </itemizedlist>
     <para>
-      Path also could contain following special placeholders with
+      Path also could contain the following special placeholders with
       &quot;every&quot; semantics:
     </para>
     <itemizedlist spacing="compact">
       <listitem>
         <para>
-          <literal>#:</literal> - every indexes of array;
+          <literal>#:</literal> - every index of array;
         </para>
       </listitem>
       <listitem>
@@ -290,14 +291,14 @@ CREATE EXTENSION jsquery;
       </listitem>
     </itemizedlist>
     <para>
-      Consider following example.
+      Consider the following example.
     </para>
     <programlisting>
 %.#:($ &gt;= 0 AND $ &lt;= 1)
 </programlisting>
     <para>
-      This example could be read as following: there is at least one key
-      which value is array of numerics between 0 and 1.
+      This example could be read as follows: there is at least one key
+      for which the value is an array of numerics between 0 and 1.
     </para>
     <para>
       We can rewrite this example in the following form with extra
@@ -309,7 +310,7 @@ CREATE EXTENSION jsquery;
     <para>
       The first placeholder <literal>%</literal> checks that expression
       in braces is true for at least one value in object. The second
-      placeholder <literal>#:</literal> checks value to be array and all
+      placeholder <literal>#:</literal> checks that the value is an array and all
       its elements satisfy expressions in braces.
     </para>
     <para>
@@ -321,7 +322,7 @@ CREATE EXTENSION jsquery;
 </programlisting>
     <para>
       In this example we transform assertion that every element of array
-      satisfy some condition to assertion that there is no one element
+      satisfies some condition to assertion that there is no one element
       which doesn't satisfy the same condition.
     </para>
     <para>
@@ -350,7 +351,7 @@ CREATE EXTENSION jsquery;
       <listitem>
         <para>
           <literal>documents.#:.% = *</literal> - &quot;documents&quot;
-          is array of objects containing at least one key.
+          is an array of objects containing at least one key.
         </para>
       </listitem>
       <listitem>
@@ -362,41 +363,41 @@ CREATE EXTENSION jsquery;
       <listitem>
         <para>
           <literal>#.% = true</literal> - at least one array element is
-          objects which contains at least one &quot;true&quot; value.
+          an object that contains at least one &quot;true&quot; value.
         </para>
       </listitem>
     </itemizedlist>
     <para>
       Usage of path operators and braces need some explanation. When
-      same path operators are used multiple times they may refer
-      different values while you can refer same value multiple time by
-      using braces and <literal>$</literal> operator. See following
+      same path operators are used multiple times they may refer to
+      different values while you can refer to the same value multiple times by
+      using braces and <literal>$</literal> operator. See the following
       examples.
     </para>
     <itemizedlist spacing="compact">
       <listitem>
         <para>
-          <literal># &lt; 10 AND # &gt; 20</literal> - exists element
-          less than 10 and exists another element greater than 20.
+          <literal># &lt; 10 AND # &gt; 20</literal> - there is an element
+          less than 10 and another element greater than 20.
         </para>
       </listitem>
       <listitem>
         <para>
-          <literal>#($ &lt; 10 AND $ &gt; 20)</literal> - exists element
-          which both less than 10 and greater than 20 (impossible).
+          <literal>#($ &lt; 10 AND $ &gt; 20)</literal> - there is an element
+          that is both less than 10 and greater than 20 (impossible).
         </para>
       </listitem>
       <listitem>
         <para>
-          <literal>#($ &gt;= 10 AND $ &lt;= 20)</literal> - exists
+          <literal>#($ &gt;= 10 AND $ &lt;= 20)</literal> - there is an
           element between 10 and 20.
         </para>
       </listitem>
       <listitem>
         <para>
-          <literal># &gt;= 10 AND # &lt;= 20</literal> - exists element
-          great or equal to 10 and exists another element less or equal
-          to 20. Query can be satisfied by array with no elements
+          <literal># &gt;= 10 AND # &lt;= 20</literal> - there is an element
+          greater than or equal to 10 and another element less than or equal
+          to 20. The query can be satisfied by an array with no elements
           between 10 and 20, for instance [0,30].
         </para>
       </listitem>
@@ -409,7 +410,7 @@ CREATE EXTENSION jsquery;
       Type checking operators and &quot;every&quot; placeholders are
       useful for document schema validation. JsQuery matching operator
       <literal>@@</literal> is immutable and can be used in CHECK
-      constraint. See following example.
+      constraint. See the following example.
     </para>
     <programlisting>
 CREATE TABLE js (
@@ -453,14 +454,14 @@ CREATE TABLE js (
     </itemizedlist>
     <para>
       In each of two GIN opclasses jsonb documents are decomposed into
-      entries. Each entry is associated with particular value and it's
+      entries. Each entry is associated with a particular value and its
       path. Difference between opclasses is in the entry representation,
-      comparison and usage for search optimization.
+      comparison, and usage for search optimization.
     </para>
     <para>
       For example, jsonb document
       <literal>{&quot;a&quot;: [{&quot;b&quot;: &quot;xyz&quot;, &quot;c&quot;: true}, 10], &quot;d&quot;: {&quot;e&quot;: [7, false]}}</literal>
-      would be decomposed into following entries:
+      would be decomposed into the following entries:
     </para>
     <itemizedlist spacing="compact">
       <listitem>
@@ -490,9 +491,9 @@ CREATE TABLE js (
       </listitem>
     </itemizedlist>
     <para>
-      Since JsQuery doesn't support search in particular array index, we
+      Since JsQuery doesn't support search in a particular array index, we
       consider all array elements to be equivalent. Thus, each array
-      element is marked with same <literal>#</literal> sign in the path.
+      element is marked with the same <literal>#</literal> sign in the path.
     </para>
     <para>
       Major problem in the entries representation is its size. In the
@@ -505,7 +506,7 @@ CREATE TABLE js (
       <title>jsonb_path_value_ops</title>
       <para>
         jsonb_path_value_ops represents entry as pair of path hash and
-        value. Following pseudocode illustrates it.
+        value. The following pseudocode illustrates it.
       </para>
       <programlisting>
 (hash(path_item_1.path_item_2. ... .path_item_n); value)
@@ -534,7 +535,7 @@ CREATE TABLE js (
         features of this opclass. Since value is the higher part of
         entry we can perform only exact value search efficiently. Range
         value search is possible as well but we would have to filter all
-        the the different paths where matching values occur. Bloom
+        the different paths where matching values occur. Bloom
         filter over path items allows index usage for conditions
         containing <literal>%</literal> and <literal>*</literal> in
         their paths.
@@ -547,7 +548,7 @@ CREATE TABLE js (
         valuable for developer or administrator to see the result of
         such optimization. Unfortunately, opclasses aren't allowed to do
         any custom output to the EXPLAIN. That's why JsQuery provides
-        following functions which allows to see how particular opclass
+        the following functions which allows to see how particular opclass
         optimizes given query.
       </para>
       <itemizedlist spacing="compact">
@@ -566,7 +567,7 @@ CREATE TABLE js (
       </itemizedlist>
       <para>
         Result of these functions is a textual representation of query
-        tree which leafs are GIN search entries. Following examples show
+        tree which leaves are GIN search entries. The following examples show
         different results of query optimization by different opclasses.
       </para>
       <programlisting>
@@ -585,11 +586,11 @@ CREATE TABLE js (
          y = 2 , entry 2       +
 </programlisting>
       <para>
-        Unfortunately, jsonb have no statistics yet. That's why JsQuery
+        Unfortunately, jsonb has no statistics yet. That's why JsQuery
         optimizer has to do imperative decision while selecting
         conditions to be evaluated using index. This decision is made by
         assumption that some condition types are less selective than
-        others. Optimizer divides conditions into following selectivity
+        others. Optimizer divides conditions into the following selectivity
         class (listed by descending of selectivity).
       </para>
       <orderedlist numeration="arabic" spacing="compact">
@@ -638,7 +639,7 @@ CREATE TABLE js (
         inaccurate. That's why JsQuery supports hints. Comments
         <literal>/*-- index */</literal> and
         <literal>/*-- noindex */</literal> placed in the conditions
-        forces optimizer to use and not use index correspondingly.
+        forces optimizer to use and not to use index correspondingly.
       </para>
       <programlisting>
     SELECT gin_debug_query_path_value('x = 1 AND y /*-- index */ &gt; 0');
@@ -658,14 +659,14 @@ CREATE TABLE js (
   <sect2 id="jsquery-contribution">
     <title>Contribution</title>
     <para>
-      Please, notice, that JsQuery is still under development and while
-      it's stable and tested, it may contains some bugs. Don't hesitate
+      Please, notice, that JsQuery is still under development and before
+      it's stable and tested, it may contain some bugs. Don't hesitate
       to raise
       <ulink url="https://github.com/akorotkov/jsquery/issues">issues at
       github</ulink> with your bug reports.
     </para>
     <para>
-      If you're lacking of some functionality in JsQuery and feeling
+      If you're lacking some functionality in JsQuery and feeling
       power to implement it then you're welcome to make pull requests.
     </para>
   </sect2>

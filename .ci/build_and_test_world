@@ -2,6 +2,7 @@
 if [ -z "$TCLCONFIG" ]; then
 [ -x /usr/lib/tcl8.5/tclConfig.sh ] && TCLCONFIG=/usr/lib/tcl8.5
 [ -x /usr/lib/tcl8.6/tclConfig.sh ] && TCLCONFIG=/usr/lib/tcl8.6
+[ -f /usr/lib64/tclConfig.sh ] && TCLCONFIG=/usr/lib64
 fi
 [ -n "$TCLCONFIG" ] && export TCLCONFIG
 echo TCLCONFIG=${TCLCONFIG}
@@ -34,7 +35,8 @@ set -e
 stage configure
 ./configure --enable-tap-tests --enable-debug --enable-cassert --enable-nls \
 	--with-openssl --with-perl --with-tcl --with-python \
-	--with-gssapi --with-libxml --with-libxslt --with-ldap \
+	--with-gssapi --with-includes=/usr/include/gssglue \
+	--with-libxml --with-libxslt --with-ldap \
 	--with-icu --with-zstd ${TCLCONFIG:+--with-tclconfig=${TCLCONFIG}}
 stage make
 make

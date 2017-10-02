@@ -35,7 +35,6 @@
 #ifdef WIN32
 #include "win32.h"
 #else
-#include <sys/socket.h>
 #include <unistd.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -54,6 +53,8 @@
 #include <pthread.h>
 #endif
 #endif
+
+#include "pg_socket.h"
 
 /*
  * Macros to handle disabling and then restoring the state of SIGPIPE handling.
@@ -227,7 +228,7 @@ pqsecure_raw_read(PGconn *conn, void *ptr, size_t len)
 	int			result_errno = 0;
 	char		sebuf[256];
 
-	n = recv(conn->sock, ptr, len, 0);
+	n = pg_recv(conn->sock, ptr, len, 0, conn->isRsocket);
 
 	if (n < 0)
 	{
@@ -316,7 +317,7 @@ retry_masked:
 
 	DISABLE_SIGPIPE(conn, spinfo, return -1);
 
-	n = send(conn->sock, ptr, len, flags);
+	n = pg_send(conn->sock, ptr, len, flags, conn->isRsocket);
 
 	if (n < 0)
 	{

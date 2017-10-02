@@ -81,14 +81,14 @@ static bool startup_message_sent = false;
 
 #define OUTPUT_BUFFER_SIZE (16*1024*1024) 
 
-static void MtmOutputPluginWrite(LogicalDecodingContext *ctx, bool last_write, bool flush)
+void MtmOutputPluginWrite(LogicalDecodingContext *ctx, bool last_write, bool flush)
 {
 	if (flush) {
 		OutputPluginWrite(ctx, last_write);
 	}
 }
 
-static void MtmOutputPluginPrepareWrite(LogicalDecodingContext *ctx, bool last_write, bool flush)
+void MtmOutputPluginPrepareWrite(LogicalDecodingContext *ctx, bool last_write, bool flush)
 {
 	if (!ctx->prepared_write) { 
 		OutputPluginPrepareWrite(ctx, last_write);
@@ -557,7 +557,7 @@ pg_decode_message(LogicalDecodingContext *ctx,
 	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
 
 	MtmOutputPluginPrepareWrite(ctx, true, !transactional);
-	data->api->write_message(ctx->out, prefix, sz, message);
+	data->api->write_message(ctx->out, ctx, prefix, sz, message);
 	MtmOutputPluginWrite(ctx, true, !transactional);
 }
 

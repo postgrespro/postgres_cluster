@@ -19,14 +19,11 @@
 
 #include "postgres.h"
 
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <signal.h>
 #include <unistd.h>
-#include <sys/socket.h>
-#ifdef HAVE_SYS_SELECT_H
-#include <sys/select.h>
-#endif
 #ifdef HAVE_SYS_RESOURCE_H
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -42,6 +39,7 @@
 #include "catalog/pg_type.h"
 #include "commands/async.h"
 #include "commands/prepare.h"
+#include "libpq/ip.h"
 #include "libpq/libpq.h"
 #include "libpq/pqformat.h"
 #include "libpq/pqsignal.h"
@@ -53,6 +51,7 @@
 #include "parser/analyze.h"
 #include "parser/parser.h"
 #include "pg_getopt.h"
+#include "pg_socket.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/postmaster.h"
 #include "replication/slot.h"
@@ -122,13 +121,6 @@ char	   *register_stack_base_ptr = NULL;
 #endif
 
 /*
- * Flag to mark SIGHUP. Whenever the main loop comes around it
- * will reread the configuration file. (Better than doing the
- * reading in the signal handler, ey?)
- */
-static volatile sig_atomic_t got_SIGHUP = false;
-
-/*
  * Flag to keep track of whether we have started a transaction.
  * For extended query protocol this has to be remembered across messages.
  */
@@ -186,8 +178,11 @@ static bool IsTransactionExitStmt(Node *parsetree);
 static bool IsTransactionExitStmtList(List *parseTrees);
 static bool IsTransactionStmtList(List *parseTrees);
 static void drop_unnamed_stmt(void);
-static void SigHupHandler(SIGNAL_ARGS);
 static void log_disconnections(int code, Datum arg);
+
+#ifdef WITH_RSOCKET
+static void RsocketInitialize(Port *port);
+#endif
 
 
 /* ----------------------------------------------------------------
@@ -453,6 +448,9 @@ SocketBackend(StringInfo inBuf)
 		case 'd':				/* copy data */
 		case 'c':				/* copy done */
 		case 'f':				/* copy fail */
+#ifdef WITH_RSOCKET
+		case 'R':				/* rsocket connection */
+#endif
 			doing_extended_query_message = false;
 			/* these are only legal in protocol 3 */
 			if (PG_PROTOCOL_MAJOR(FrontendProtocol) < 3)
@@ -2696,13 +2694,19 @@ FloatExceptionHandler(SIGNAL_ARGS)
 					   "invalid operation, such as division by zero.")));
 }
 
-/* SIGHUP: set flag to re-read config file at next convenient time */
-static void
-SigHupHandler(SIGNAL_ARGS)
+/*
+ * SIGHUP: set flag to re-read config file at next convenient time.
+ *
+ * Sets the ConfigReloadPending flag, which should be checked at convenient
+ * places inside main loops. (Better than doing the reading in the signal
+ * handler, ey?)
+ */
+void
+PostgresSigHupHandler(SIGNAL_ARGS)
 {
 	int			save_errno = errno;
 
-	got_SIGHUP = true;
+	ConfigReloadPending = true;
 	SetLatch(MyLatch);
 
 	errno = save_errno;
@@ -3573,6 +3577,273 @@ process_postgres_switches(int argc, char *argv[], GucContext ctx,
 }
 
 
+#ifdef WITH_RSOCKET
+static void
+RsocketInitialize(Port *port)
+{
+	int			RsocketPortCounter = PostPortNumber;
+	pgsocket	fd,
+				sfd;
+	char		local_addr[NI_MAXHOST];
+	char		local_port[NI_MAXSERV];
+	struct addrinfo *addr = NULL,
+				hint;
+
+	struct sockaddr_in *addr_in;
+#ifdef HAVE_IPV6
+	struct sockaddr_in6 *addr_in6;
+#endif
+
+	StringInfoData buf;
+	int			ret;
+	int			maxconn;
+	int			one = 1;
+
+	char		remote_host[NI_MAXHOST];
+	char		remote_port[NI_MAXSERV];
+
+	/* It is necessary to dynamically load librdmacm at first call */
+	initialize_rsocket();
+
+	switch (port->laddr.addr.ss_family)
+	{
+		case AF_INET:
+			addr_in = (struct sockaddr_in *) &port->laddr.addr;
+			inet_ntop(AF_INET, &(addr_in->sin_addr), local_addr,
+					  sizeof(local_addr));
+			break;
+#ifdef HAVE_IPV6
+		case AF_INET6:
+			addr_in6 = (struct sockaddr_in6 *) &port->laddr.addr;
+			inet_ntop(AF_INET6, &(addr_in6->sin6_addr), local_addr,
+					  sizeof(local_addr));
+			break;
+#endif
+		default:
+			ereport(FATAL,
+					(errmsg("unrecognized address family %d",
+							port->laddr.addr.ss_family)));
+	}
+
+retry2:
+	RsocketPortCounter++;
+	snprintf(local_port, sizeof(local_port), "%d", RsocketPortCounter);
+
+	MemSet(&hint, 0, sizeof(hint));
+	hint.ai_family = port->laddr.addr.ss_family;
+	hint.ai_flags = AI_NUMERICHOST;
+	hint.ai_socktype = SOCK_STREAM;
+
+	ret = pg_getaddrinfo_all(local_addr, local_port, &hint, &addr);
+	if (ret || !addr)
+	{
+		if (addr)
+			pg_freeaddrinfo_all(hint.ai_family, addr);
+		ereport(FATAL,
+				(errmsg("could not translate host name \"%s\", service \"%s\" to address: %s",
+						local_addr, local_port, gai_strerror(ret))));
+	}
+
+	if ((fd = pg_socket(addr->ai_family, SOCK_STREAM, 0, true))
+		 == PGINVALID_SOCKET)
+	{
+		pg_freeaddrinfo_all(hint.ai_family, addr);
+		ereport(FATAL,
+				(errcode_for_socket_access(),
+				 errmsg("could not create socket: %m")));
+	}
+
+#ifndef WIN32
+	/*
+	 * Without the SO_REUSEADDR flag, a new postmaster can't be started
+	 * right away after a stop or crash, giving "address already in use"
+	 * error on TCP ports.
+	 *
+	 * On win32, however, this behavior only happens if the
+	 * SO_EXLUSIVEADDRUSE is set. With SO_REUSEADDR, win32 allows multiple
+	 * servers to listen on the same address, resulting in unpredictable
+	 * behavior. With no flags at all, win32 behaves as Unix with
+	 * SO_REUSEADDR.
+	 */
+	if ((pg_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
+					   (char *) &one, sizeof(one), true)) == -1)
+	{
+		pg_freeaddrinfo_all(hint.ai_family, addr);
+		pg_closesocket(fd, true);
+		ereport(FATAL,
+				(errcode_for_socket_access(),
+				 errmsg("setsockopt(SO_REUSEADDR) failed: %m")));
+	}
+#endif
+
+#ifdef IPV6_V6ONLY
+	if (addr->ai_family == AF_INET6)
+	{
+		if (pg_setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
+						  (char *) &one, sizeof(one), true) == -1)
+		{
+			pg_freeaddrinfo_all(hint.ai_family, addr);
+			pg_closesocket(fd, true);
+			ereport(FATAL,
+					(errcode_for_socket_access(),
+					 errmsg("setsockopt(IPV6_V6ONLY) failed: %m")));
+		}
+	}
+#endif
+
+	/*
+	 * Note: This might fail on some OS's, like Linux older than
+	 * 2.4.21-pre3, that don't have the IPV6_V6ONLY socket option, and map
+	 * ipv4 addresses to ipv6.  It will show ::ffff:ipv4 for all ipv4
+	 * connections.
+	 */
+	ret = pg_bind(fd, addr->ai_addr, addr->ai_addrlen, true);
+	if (ret < 0)
+	{
+		pg_freeaddrinfo_all(hint.ai_family, addr);
+		pg_closesocket(fd, true);
+
+		/* Retry with new port */
+		if (errno == EADDRINUSE)
+			goto retry2;
+
+		ereport(FATAL,
+				(errcode_for_socket_access(),
+				 errmsg("could not bind socket: %m"),
+			  errhint("Is another postmaster already running on port %s?"
+					  " If not, wait a few seconds and retry.",
+					  local_port)));
+	}
+	pg_freeaddrinfo_all(hint.ai_family, addr);
+
+	/*
+	 * Select appropriate accept-queue length limit.  PG_SOMAXCONN is only
+	 * intended to provide a clamp on the request on platforms where an
+	 * overly large request provokes a kernel error (are there any?).
+	 */
+	maxconn = MaxBackends * 2;
+	if (maxconn > PG_SOMAXCONN)
+		maxconn = PG_SOMAXCONN;
+
+	ret = pg_listen(fd, maxconn, true);
+	if (ret < 0)
+	{
+		pg_closesocket(fd, true);
+
+		/* Retry with new port */
+		if (errno == EADDRINUSE)
+			goto retry2;
+
+		ereport(FATAL,
+				(errcode_for_socket_access(),
+				 errmsg("could not listen on socket: %m")));
+	}
+
+	/* Send to client rsocket port */
+	pq_beginmessage(&buf, 'S');
+	pq_sendstring(&buf, local_port);
+	pq_endmessage(&buf);
+	pq_flush();
+
+	/* Accept connection and fill in the client (remote) address */
+	port->raddr.salen = sizeof(port->raddr.addr);
+	if ((sfd = pg_accept(fd,
+						 (struct sockaddr *) &port->raddr.addr,
+						 &port->raddr.salen, true)) == PGINVALID_SOCKET)
+	{
+		pg_closesocket(fd, true);
+		ereport(FATAL,
+				(errcode_for_socket_access(),
+				 errmsg("could not accept new connection: %m")));
+	}
+
+	/* Replace port->sock with rsocket descriptor */
+	StreamClose(port->sock);
+
+	port->sock = sfd;
+	port->isRsocket = true;
+
+	/* Re-initialize libpq for rsocket connection */
+	pq_reinit();
+
+	/*
+	 * Get the remote host name and port for logging and status display.
+	 */
+	remote_host[0] = '\0';
+	remote_port[0] = '\0';
+	if ((ret = pg_getnameinfo_all(&port->raddr.addr, port->raddr.salen,
+								  remote_host, sizeof(remote_host),
+								  remote_port, sizeof(remote_port),
+				 (log_hostname ? 0 : NI_NUMERICHOST) | NI_NUMERICSERV)) != 0)
+		ereport(WARNING,
+				(errmsg_internal("pg_getnameinfo_all() failed: %s",
+								 gai_strerror(ret))));
+
+	if (port->remote_host)
+		free(port->remote_host);
+	if (port->remote_port)
+		free(port->remote_port);
+	port->remote_host = strdup(remote_host);
+	port->remote_port = strdup(remote_port);
+
+	if (Log_connections)
+	{
+		if (remote_port[0])
+			ereport(LOG,
+					(errmsg("rsocket connection established: host=%s port=%s",
+							remote_host,
+							remote_port)));
+		else
+			ereport(LOG,
+					(errmsg("rsocket connection established: host=%s",
+							remote_host)));
+	}
+
+	/* fill in the server (local) address */
+	port->laddr.salen = sizeof(port->laddr.addr);
+	if (pg_getsockname(port->sock,
+					   (struct sockaddr *) & port->laddr.addr,
+					   &port->laddr.salen, port->isRsocket) < 0)
+	{
+		pg_closesocket(port->sock, port->isRsocket);
+		elog(FATAL, "getsockname() failed: %m");
+	}
+
+	/* select NODELAY and KEEPALIVE options */
+#ifdef	TCP_NODELAY
+	one = 1;
+	if (pg_setsockopt(port->sock, IPPROTO_TCP, TCP_NODELAY,
+					  (char *) &one, sizeof(one), port->isRsocket) < 0)
+	{
+		pg_closesocket(port->sock, port->isRsocket);
+		elog(FATAL, "setsockopt(TCP_NODELAY) failed: %m");
+	}
+#endif
+	one = 1;
+	if (pg_setsockopt(port->sock, SOL_SOCKET, SO_KEEPALIVE,
+					  (char *) &one, sizeof(one), port->isRsocket) < 0)
+	{
+		pg_closesocket(port->sock, port->isRsocket);
+		elog(FATAL, "setsockopt(SO_KEEPALIVE) failed: %m");
+	}
+
+	/*
+	 * Also apply the current keepalive parameters.  If we fail to set a
+	 * parameter, don't error out, because these aren't universally
+	 * supported.  (Note: you might think we need to reset the GUC
+	 * variables to 0 in such a case, but it's not necessary because the
+	 * show hooks for these variables report the truth anyway.)
+	 */
+	(void) pq_setkeepalivesidle(tcp_keepalives_idle, port);
+	(void) pq_setkeepalivesinterval(tcp_keepalives_interval, port);
+	(void) pq_setkeepalivescount(tcp_keepalives_count, port);
+
+	/* Close listened socket */
+	pg_closesocket(fd, true);
+}
+#endif
+
+
 /* ----------------------------------------------------------------
  * PostgresMain
  *	   postgres main loop -- all backends, interactive or otherwise start here
@@ -3648,8 +3919,8 @@ PostgresMain(int argc, char *argv[],
 		WalSndSignals();
 	else
 	{
-		pqsignal(SIGHUP, SigHupHandler);		/* set flag to read config
-												 * file */
+		pqsignal(SIGHUP, PostgresSigHupHandler);		/* set flag to read config
+														 * file */
 		pqsignal(SIGINT, StatementCancelHandler);		/* cancel current query */
 		pqsignal(SIGTERM, die); /* cancel current query and exit */
 
@@ -4072,9 +4343,9 @@ PostgresMain(int argc, char *argv[],
 		 * (6) check for any other interesting events that happened while we
 		 * slept.
 		 */
-		if (got_SIGHUP)
+		if (ConfigReloadPending)
 		{
-			got_SIGHUP = false;
+			ConfigReloadPending = false;
 			ProcessConfigFile(PGC_SIGHUP);
 		}
 
@@ -4322,6 +4593,16 @@ PostgresMain(int argc, char *argv[],
 				 * is still sending data.
 				 */
 				break;
+
+#ifdef WITH_RSOCKET
+			case 'R':			/* rsocket connection */
+				if (!MyProcPort->with_rsocket)
+					ereport(FATAL,
+							(errcode(ERRCODE_CANNOT_CONNECT_NOW),
+							 errmsg("server does not configured to connect using rsocket, but client requested rsocket connection")));
+				RsocketInitialize(MyProcPort);
+				break;
+#endif
 
 			default:
 				ereport(FATAL,

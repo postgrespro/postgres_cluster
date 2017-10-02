@@ -5,7 +5,8 @@ OBJS = src/pgpro_scheduler.o src/cron_string.o src/sched_manager_poll.o \
 	src/scheduler_executor.o \
 	$(WIN32RES)
 EXTENSION = pgpro_scheduler
-DATA = pgpro_scheduler--2.0.sql
+DATA = pgpro_scheduler--2.0.sql pgpro_scheduler--2.0--2.1.sql \
+	pgpro_scheduler--2.1.sql
 REGRESS	= install_pgpro_scheduler cron_string
 #REGRESS_OPTS = --user=postgres
 EXTRA_REGRESS_OPTS=--temp-config=$(top_srcdir)/$(subdir)/conf.add

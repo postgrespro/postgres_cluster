@@ -188,6 +188,14 @@ typedef struct Port
 	bool		peer_cert_valid;
 
 	/*
+	 * Rsocket structures.
+	 */
+	bool		isRsocket;		/* Is rsocket connection made? */
+#ifdef WITH_RSOCKET
+	bool		with_rsocket;
+#endif
+
+	/*
 	 * OpenSSL structures. (Keep these last so that the locations of other
 	 * fields are the same whether or not you build with OpenSSL.)
 	 */

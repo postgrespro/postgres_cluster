@@ -7,11 +7,22 @@ put into postgresql conf.
 
 On success, starts database
 """
-import os,sys,subprocess,glob,re,os.path,time
+import os,sys,subprocess,glob,re,os.path,time,re
 
 if len(sys.argv)!=2:
     print >>sys.stderr,"Usage %s data-directory" % sys.argv[0]
     sys.exit(1)
+    
+def prepare_extlist(value):
+    v = re.sub("[']", '', value)
+    l = re.split("\s*,\s*",v)
+    if "pg_pathman" in l:
+        # remove duplicates and reorder extension list to move pg_pathman to tail
+        nl = sorted(list(set(l)), cmp = lambda a,b: 1 if a=="pg_pathman" else -1)
+        new_value = "'{0}'".format(",".join(nl))
+        return new_value
+    else:
+        return value
 
 datadir=sys.argv[1]
 
@@ -56,10 +67,10 @@ for module in glob.glob("contrib/*"):
                         else:
                             addopts[opt]=value
                                 
-if addopts:                     
+if addopts:
     with open(datadir+"/postgresql.conf","a") as f:
         for opt,value in addopts.items():
-            print >> f,"%s=%s"%(opt,value)
+            print >> f,"%s=%s"%(opt,prepare_extlist(value))
 with open("initdb.log","a") as f:
     exitcode=subprocess.call(["pg_ctl","start","-D",datadir,"-l",datadir+"/postmaster.log"],env=env,stdout=f,stderr=subprocess.STDOUT)
 if exitcode:
@@ -73,5 +84,3 @@ while time.time() < failtime:
         sys.exit(0)
 print >>sys.stderr,"Database havent't started in 60 seconds"
 sys.exit(1)
-
-

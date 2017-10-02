@@ -977,6 +977,11 @@ SELECT '52093.89'::money::numeric::float8;
    </para>
 
    <para>
+    Division of a <type>money</type> value by an integer value is performed
+    with truncation of the fractional part towards zero.  To get a rounded
+    result, divide by a floating-point value, or cast the <type>money</type>
+    value to <type>numeric</> before dividing and back to <type>money</type>
+    afterwards.  (The latter is preferable to avoid risking precision loss.)
     When a <type>money</type> value is divided by another <type>money</type>
     value, the result is <type>double precision</type> (i.e., a pure number,
     not money); the currency units cancel each other out in the division.
@@ -4539,13 +4544,16 @@ SELECT * FROM pg_attribute
    <para>
     Another identifier type used by the system is <type>xid</>, or transaction
     (abbreviated <abbrev>xact</>) identifier.  This is the data type of the system columns
-    <structfield>xmin</> and <structfield>xmax</>.  Transaction identifiers are 32-bit quantities.
+    <structfield>xmin</> and <structfield>xmax</>.
+    In <productname>&productname;</productname>, transaction IDs
+    are implemented as 64-bit counters to prevent transaction ID wraparound.
+    For details, see <xref linkend="vacuum-for-wraparound">.
    </para>
 
    <para>
     A third identifier type used by the system is <type>cid</>, or
     command identifier.  This is the data type of the system columns
-    <structfield>cmin</> and <structfield>cmax</>. Command identifiers are also 32-bit quantities.
+    <structfield>cmin</> and <structfield>cmax</>. Command identifiers are 32-bit quantities.
    </para>
 
    <para>

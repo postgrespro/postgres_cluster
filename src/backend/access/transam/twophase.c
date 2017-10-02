@@ -1250,7 +1250,8 @@ EndPrepare(GlobalTransaction gxact)
 	for (record = records.head; record != NULL; record = record->next)
 		XLogRegisterData(record->data, record->len);
 
-	XLogIncludeOrigin();
+	if (replorigin)
+		XLogIncludeOrigin();
 
 	gxact->prepare_end_lsn = XLogInsert(RM_XACT_ID, info);
 

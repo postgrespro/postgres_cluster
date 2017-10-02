@@ -168,6 +168,14 @@ typedef struct _dumpOptions
 	int			copy_mode_transfer;
 } DumpOptions;
 
+typedef enum _pgproEdition
+{
+	NONE,
+	STANDART,
+	STANDART_CERTIFIED,
+	ENTERPRISE,
+} pgproEdition;
+
 /*
  *	We may want to have some more user-readable data, but in the mean
  *	time this gives us some abstraction and type checking.
@@ -180,6 +188,8 @@ typedef struct Archive
 	int			verbose;
 	char	   *remoteVersionStr;		/* server's version string */
 	int			remoteVersion;	/* same in numeric form */
+	int			pgproremoteVersion;	/* pgpro server's version in numeric form */
+	pgproEdition pgproremoteEdition; /* pgpro server's edition. */
 	bool		isStandby;		/* is server a standby node */
 
 	int			minRemoteVersion;		/* allowable range */

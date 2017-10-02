@@ -23,25 +23,25 @@
 #define MTM_ERRMSG(fmt,...)     errmsg(MTM_TAG fmt, ## __VA_ARGS__)
 
 #if DEBUG_LEVEL == 0
-#define MTM_LOG1(fmt, ...) elog(LOG, "[MTM] " fmt, ## __VA_ARGS__) 
-#define MTM_LOG2(fmt, ...) 
-#define MTM_LOG3(fmt, ...) 
-#define MTM_LOG4(fmt, ...) 
+#define MTM_LOG1(fmt, ...) elog(LOG, "[MTM] " fmt, ## __VA_ARGS__)
+#define MTM_LOG2(fmt, ...)
+#define MTM_LOG3(fmt, ...)
+#define MTM_LOG4(fmt, ...)
 #elif  DEBUG_LEVEL == 1
-#define MTM_LOG1(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
-#define MTM_LOG2(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
-#define MTM_LOG3(fmt, ...) 
-#define MTM_LOG4(fmt, ...) 
+#define MTM_LOG1(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__)
+#define MTM_LOG2(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__)
+#define MTM_LOG3(fmt, ...)
+#define MTM_LOG4(fmt, ...)
 #elif  DEBUG_LEVEL == 2
-#define MTM_LOG1(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
-#define MTM_LOG2(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
-#define MTM_LOG3(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
-#define MTM_LOG4(fmt, ...) 
+#define MTM_LOG1(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__)
+#define MTM_LOG2(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__)
+#define MTM_LOG3(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__)
+#define MTM_LOG4(fmt, ...)
 #elif  DEBUG_LEVEL >= 3
-#define MTM_LOG1(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
-#define MTM_LOG2(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
-#define MTM_LOG3(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
-#define MTM_LOG4(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__) 
+#define MTM_LOG1(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__)
+#define MTM_LOG2(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__)
+#define MTM_LOG3(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__)
+#define MTM_LOG4(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__)
 #endif
 
 #if MTM_TRACE == 0
@@ -51,22 +51,22 @@
 		fprintf(stderr, MTM_TAG "%s, %lld, %s, %d\n", tx->gid, (long long)MtmGetSystemTime(), event, MyProcPid)
 #endif
 
-#define MULTIMASTER_NAME                "multimaster"
-#define MULTIMASTER_SCHEMA_NAME         "mtm"
-#define MULTIMASTER_LOCAL_TABLES_TABLE  "local_tables"
-#define MULTIMASTER_SLOT_PATTERN        "mtm_slot_%d"
-#define MULTIMASTER_MIN_PROTO_VERSION   1
-#define MULTIMASTER_MAX_PROTO_VERSION   1
-#define MULTIMASTER_MAX_GID_SIZE        32
-#define MULTIMASTER_MAX_SLOT_NAME_SIZE  16
-#define MULTIMASTER_MAX_CONN_STR_SIZE   128
-#define MULTIMASTER_MAX_HOST_NAME_SIZE  64
-#define MULTIMASTER_MAX_LOCAL_TABLES    256
-#define MULTIMASTER_MAX_CTL_STR_SIZE    256
-#define MULTIMASTER_LOCK_BUF_INIT_SIZE  4096
-#define MULTIMASTER_BROADCAST_SERVICE   "mtm_broadcast"
-#define MULTIMASTER_ADMIN               "mtm_admin"
-#define MULTIMASTER_PRECOMMITTED        "precommitted"
+#define MULTIMASTER_NAME                 "multimaster"
+#define MULTIMASTER_SCHEMA_NAME          "mtm"
+#define MULTIMASTER_LOCAL_TABLES_TABLE   "local_tables"
+#define MULTIMASTER_SLOT_PATTERN         "mtm_slot_%d"
+#define MULTIMASTER_MIN_PROTO_VERSION    1
+#define MULTIMASTER_MAX_PROTO_VERSION    1
+#define MULTIMASTER_MAX_GID_SIZE         32
+#define MULTIMASTER_MAX_SLOT_NAME_SIZE   16
+#define MULTIMASTER_MAX_CONN_STR_SIZE    128
+#define MULTIMASTER_MAX_HOST_NAME_SIZE   64
+#define MULTIMASTER_MAX_LOCAL_TABLES     256
+#define MULTIMASTER_MAX_CTL_STR_SIZE     256
+#define MULTIMASTER_LOCK_BUF_INIT_SIZE   4096
+#define MULTIMASTER_BROADCAST_SERVICE    "mtm_broadcast"
+#define MULTIMASTER_ADMIN                "mtm_admin"
+#define MULTIMASTER_PRECOMMITTED         "precommitted"
 
 #define MULTIMASTER_DEFAULT_ARBITER_PORT 5433
 
@@ -85,7 +85,7 @@
 
 #define Natts_mtm_trans_state   15
 #define Natts_mtm_nodes_state   17
-#define Natts_mtm_cluster_state 20
+#define Natts_mtm_cluster_state 21
 
 typedef ulong64 csn_t; /* commit serial number */
 #define INVALID_CSN  ((csn_t)-1)
@@ -98,7 +98,7 @@ typedef char pgid_t[MULTIMASTER_MAX_GID_SIZE];
 #define SELF_CONNECTIVITY_MASK  (Mtm->nodes[MtmNodeId-1].connectivityMask)
 
 typedef enum
-{ 
+{
 	PGLOGICAL_COMMIT,
 	PGLOGICAL_PREPARE,
 	PGLOGICAL_COMMIT_PREPARED,
@@ -107,7 +107,7 @@ typedef enum
 } PGLOGICAL_EVENT;
 
 /* Identifier of global transaction */
-typedef struct 
+typedef struct
 {
 	int node;          /* Zero based index of node initiating transaction */
 	TransactionId xid; /* Transaction ID at this node */
@@ -116,7 +116,7 @@ typedef struct
 #define EQUAL_GTID(x,y) ((x).node == (y).node && (x).xid == (y).xid)
 
 typedef enum
-{ 
+{
 	MSG_INVALID,
 	MSG_HANDSHAKE,
 	MSG_PREPARED,
@@ -153,12 +153,12 @@ typedef enum
 typedef struct
 {
 	MtmMessageCode code;   /* Message code: MSG_PREPARE, MSG_PRECOMMIT, MSG_COMMIT, MSG_ABORT,... */
-    int            node;   /* Sender node ID */	
+    int            node;   /* Sender node ID */
 	bool           lockReq;/* Whether sender node needs to lock cluster to let wal-sender caught-up and complete recovery */
 	bool           locked; /* Whether sender node is locked */
 	TransactionId  dxid;   /* Transaction ID at destination node */
-	TransactionId  sxid;   /* Transaction ID at sender node */  
-    XidStatus      status; /* Transaction status */	
+	TransactionId  sxid;   /* Transaction ID at sender node */
+    XidStatus      status; /* Transaction status */
 	csn_t          csn;    /* Local CSN in case of sending data from replica to master, global CSN master->replica */
 	csn_t          oldestSnapshot; /* Oldest snapshot used by active transactions at this node */
 	nodemask_t     disabledNodeMask; /* Bitmask of disabled nodes at the sender of message */
@@ -185,13 +185,13 @@ typedef struct MtmMessageQueue
 	struct MtmMessageQueue* next;
 } MtmMessageQueue;
 
-typedef struct 
+typedef struct
 {
 	MtmArbiterMessage hdr;
 	char connStr[MULTIMASTER_MAX_CONN_STR_SIZE];
 } MtmHandshakeMessage;
 
-typedef struct 
+typedef struct
 {
 	int used;
 	int size;
@@ -209,6 +209,13 @@ typedef struct
 
 typedef struct
 {
+	Oid sourceTable;
+	nodemask_t targetNodes;
+} MtmCopyRequest;
+
+
+typedef struct
+{
 	MtmConnectionInfo con;
 	timestamp_t transDelay;
 	timestamp_t lastStatusChangeTime;
@@ -220,7 +227,7 @@ typedef struct
 	int         senderPid;
 	int         receiverPid;
 	lsn_t       flushPos;
-	csn_t       oldestSnapshot;        /* Oldest snapshot used by active transactions at this node */	
+	csn_t       oldestSnapshot;        /* Oldest snapshot used by active transactions at this node */
 	lsn_t       restartLSN;
 	RepOriginId originId;
 	int         timeline;
@@ -228,6 +235,9 @@ typedef struct
 	int         lockGraphAllocated;
 	int         lockGraphUsed;
 	uint64      nHeartbeats;
+	bool		slotDeleted;			/* Signalizes that node is already deleted our slot and
+										 * recovery from that node isn't possible.
+										 */
 } MtmNodeInfo;
 
 typedef struct MtmL2List
@@ -239,12 +249,12 @@ typedef struct MtmL2List
 typedef struct MtmTransState
 {
     TransactionId  xid;
-    XidStatus      status; 
+    XidStatus      status;
 	pgid_t         gid;                /* Global transaction ID (used for 2PC) */
 	GlobalTransactionId gtid;          /* Transaction id at coordinator */
     csn_t          csn;                /* commit serial number */
     csn_t          snapshot;           /* transaction snapshot, or INVALID_CSN for local transactions */
-	int            procno;             /* pgprocno of transaction coordinator waiting for responses from replicas, 
+	int            procno;             /* pgprocno of transaction coordinator waiting for responses from replicas,
 							              used to notify coordinator by arbiter */
 	int            nSubxids;           /* Number of subtransanctions */
     struct MtmTransState* next;        /* Next element in L1 list of all finished transaction present in xid2state hash */
@@ -260,6 +270,7 @@ typedef struct MtmTransState
 	nodemask_t     participantsMask;   /* Mask of nodes involved in transaction */
 	nodemask_t     votedMask;          /* Mask of voted nodes */
 	TransactionId  xids[1];            /* [Mtm->nAllNodes]: transaction ID at replicas */
+	int			   aborted_by_node;    /* Store info about node on which this tx was aborted */
 } MtmTransState;
 
 typedef struct {
@@ -277,14 +288,16 @@ typedef struct
 	PGSemaphoreData sendSemaphore;     /* semaphore used to notify mtm-sender about new responses to coordinator */
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
-	nodemask_t disabledNodeMask;       /* bitmask of disabled nodes */
-	nodemask_t stalledNodeMask;        /* bitmask of stalled nodes (node with dropped replication slot which makes it not possible automatic recovery of such node) */
+	nodemask_t disabledNodeMask;       /* Bitmask of disabled nodes */
+	nodemask_t deadNodeMask;           /* Bitmask of nodes considered as dead by referee */
+	nodemask_t recoveredNodeMask;      /* Bitmask of nodes recoverd after been reported as dead by referee */
+	nodemask_t stalledNodeMask;        /* Bitmask of stalled nodes (node with dropped replication slot which makes it not possible automatic recovery of such node) */
 	nodemask_t stoppedNodeMask;        /* Bitmask of stopped (permanently disabled nodes) */
 	nodemask_t pglogicalReceiverMask;  /* bitmask of started pglogic receivers */
 	nodemask_t pglogicalSenderMask;    /* bitmask of started pglogic senders */
 	nodemask_t currentLockNodeMask;    /* Mask of nodes IDs which are locking the cluster */
 	nodemask_t inducedLockNodeMask;    /* Mask of node IDs which requested cluster-wide lock */
-	nodemask_t originLockNodeMask;     /* Mask of node IDs which WAL-senders are locking the cluster. 
+	nodemask_t originLockNodeMask;     /* Mask of node IDs which WAL-senders are locking the cluster.
 										* MtmNodeId bit is used by recovered node to complete recovery and by MtmLockCluster method */
 	nodemask_t reconnectMask; 	       /* Mask of nodes connection to which has to be reestablished by sender */
 	int        lastLockHolder;         /* PID of process last obtaining the node lock */
@@ -310,13 +323,13 @@ typedef struct
     MtmTransState** transListTail;     /* Tail of L1 list of all finished transactions, used to append new elements.
 								  		  This list is expected to be in CSN ascending order, by strict order may be violated */
 	MtmL2List activeTransList;         /* List of active transactions */
-	ulong64 transCount;                /* Counter of transactions performed by this node */	
+	ulong64 transCount;                /* Counter of transactions performed by this node */
 	ulong64 gcCount;                   /* Number of global transactions performed since last GC */
 	MtmMessageQueue* sendQueue;        /* Messages to be sent by arbiter sender */
 	MtmMessageQueue* freeQueue;        /* Free messages */
 	lsn_t recoveredLSN;           /* LSN at the moment of recovery completion */
 	BgwPool pool;                      /* Pool of background workers for applying logical replication patches */
-	MtmNodeInfo nodes[1];              /* [Mtm->nAllNodes]: per-node data */ 
+	MtmNodeInfo nodes[1];              /* [Mtm->nAllNodes]: per-node data */
 } MtmState;
 
 typedef struct MtmFlushPosition
@@ -327,6 +340,12 @@ typedef struct MtmFlushPosition
 	lsn_t      remote_end;
 } MtmFlushPosition;
 
+
+typedef struct MtmSeqPosition
+{
+	Oid   seqid;
+	int64 next;
+} MtmSeqPosition;
 
 #define MtmIsCoordinator(ts) (ts->gtid.node == MtmNodeId)
 
@@ -347,6 +366,7 @@ extern int   MtmNodeDisableDelay;
 extern int   MtmTransSpillThreshold;
 extern int   MtmHeartbeatSendTimeout;
 extern int   MtmHeartbeatRecvTimeout;
+extern bool  MtmUseRDMA;
 extern bool  MtmUseDtm;
 extern bool  MtmPreserveCommitOrder;
 extern HTAB* MtmXid2State;
@@ -358,6 +378,8 @@ extern void*   MtmTablespaceStmt; /* CREATE/DELETE tablespace */
 extern MemoryContext MtmApplyContext;
 extern lsn_t MtmSenderWalEnd;
 extern timestamp_t MtmRefreshClusterStatusSchedule;
+extern MtmConnectionInfo* MtmConnections;
+extern bool MtmBackgroundWorker;
 
 
 extern void  MtmArbiterInitialize(void);
@@ -377,14 +399,16 @@ extern void  MtmAdjustSubtransactions(MtmTransState* ts);
 extern void  MtmLock(LWLockMode mode);
 extern void  MtmUnlock(void);
 extern void  MtmLockNode(int nodeId, LWLockMode mode);
+extern bool  MtmTryLockNode(int nodeId, LWLockMode mode);
 extern void  MtmUnlockNode(int nodeId);
 extern void  MtmStopNode(int nodeId, bool dropSlot);
 extern void  MtmReconnectNode(int nodeId);
 extern void  MtmRecoverNode(int nodeId);
+extern void  MtmResumeNode(int nodeId);
 extern void  MtmOnNodeDisconnect(int nodeId);
 extern void  MtmOnNodeConnect(int nodeId);
 extern void  MtmWakeUpBackend(MtmTransState* ts);
-extern void  MtmSleep(timestamp_t interval); 
+extern void  MtmSleep(timestamp_t interval);
 extern void  MtmAbortTransaction(MtmTransState* ts);
 extern void  MtmSetCurrentTransactionGID(char const* gid);
 extern csn_t MtmGetTransactionCSN(TransactionId xid);
@@ -401,7 +425,7 @@ extern void  MtmCheckQuorum(void);
 extern bool  MtmRecoveryCaughtUp(int nodeId, lsn_t walEndPtr);
 extern void  MtmCheckRecoveryCaughtUp(int nodeId, lsn_t slotLSN);
 extern void  MtmRecoveryCompleted(void);
-extern void  MtmMakeRelationLocal(Oid relid);
+extern void  MtmMakeTableLocal(char const* schema, char const* name);
 extern void  MtmHandleApplyError(void);
 extern void  MtmUpdateLsnMapping(int nodeId, lsn_t endLsn);
 extern lsn_t MtmGetFlushPosition(int nodeId);
@@ -423,5 +447,6 @@ extern MtmTransState* MtmGetActiveTransaction(MtmL2List* list);
 extern void MtmReleaseLocks(void);
 extern void MtmInitMessage(MtmArbiterMessage* msg, MtmMessageCode code);
 extern void MtmSetSnapshot(csn_t snapshot);
+extern void MtmRefereeInitialize(void);
 
 #endif

@@ -1,0 +1,1117 @@
+<!-- doc/src/sgml/installation-bin.sgml -->
+
+<chapter id="installation-bin">
+<title>Binary Installation</title>
+<sect1 id="binary-installation-on-linux">
+  <title>Installing <productname>&productname;</productname> on Linux</title>
+  <para>
+    For Linux-based operating systems, <productname>&productname;</productname> is shipped
+    as binary packages. Each <productname>&productname;</productname> binary
+    distribution consists of several packages, similar to native
+    packaging of the PostgreSQL for these operating systems.
+  </para>
+  <para>
+    Splitting the distribution into several packages enables customizing
+    the installation for different purposes: you can install
+    <productname>&productname;</productname> on database servers, client workstations, developer
+    workstations for developing client applications, and so on. All
+    <productname>&productname;</productname> distributions include separate documentation packages
+    in English and in Russian.
+  </para>
+  <para>
+    Depending on your target OS distribution, the available packages and
+    installation specifics may differ. For more information, select your
+    target OS family:
+  </para>
+  <itemizedlist spacing="compact">
+    <listitem>
+      <para>
+        <link linkend="installation-on-centos-red-hat">Red Hat Enterprise Linux systems</link>
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <link linkend="installation-on-debian-based-operating-systems">Debian-based systems</link>
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <link linkend="installation-on-alt-linux">ALT Linux</link>
+      </para>
+    </listitem>
+    <listitem>
+      <para>
+        <link linkend="installation-on-the-suse-linux">SUSE Linux</link>
+      </para>
+    </listitem>
+  </itemizedlist>
+  <sect2 id="installation-on-centos-red-hat">
+    <title>Installation on CentOS and Red Hat Enterprise Linux Systems</title>
+    <sect3>
+      <title>Choosing the Packages to Install</title>
+      <para>
+        For Red Hat Enterprise Linux and its derivatives, such as
+        CentOS, Oracle Linux, and Rosa Enterprise Linux Server,
+        <productname>&productname;</productname> distribution is split into the following packages:
+      </para>
+      <informaltable>
+        <tgroup cols="2">
+          <thead>
+            <row>
+              <entry>
+                Package
+              </entry>
+              <entry>
+                Description
+              </entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry>
+                <filename>postgrespro-enterprise96</filename>
+              </entry>
+              <entry>
+                Standard client applications such as
+                <literal>psql</literal>, <literal>pg_dump</literal>, and
+                so on
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <filename>postgrespro-enterprise96-libs</filename>
+              </entry>
+              <entry>
+                Shared libraries, required to deploy client
+                applications
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <filename>postgrespro-enterprise96-server</filename>
+              </entry>
+              <entry>
+                <productname>&productname;</productname> server and PL/pgSQL server-side programming
+                language
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <filename>postgrespro-enterprise96-contrib</filename>
+              </entry>
+              <entry>
+                Additional extensions and programs deployable on
+                database servers
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <filename>postgrespro-enterprise96-pg_probackup</filename>
+              </entry>
+              <entry>
+                <application>pg_probackup</application> utility
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <filename>pg_repack</filename>
+              </entry>
+              <entry>
+                Table reorganization utility
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <filename>postgrespro-enterprise96-devel</filename>
+              </entry>
+              <entry>
+                Development headers and libraries both for development
+                of client applications and server extensions
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <filename>postgrespro-enterprise96-plperl</filename>
+              </entry>
+              <entry>
+                Server-side programming language based on Perl
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <filename>postgrespro-enterprise96-plpython</filename>
+              </entry>
+              <entry>
+                Server-side programming language based on Python
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <filename>postgrespro-enterprise96-pltcl</filename>
+              </entry>
+              <entry>
+                Server-side programming language based on Tcl
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <filename>postgrespro-enterprise96-docs</filename>
+              </entry>
+              <entry>
+                Documentation (English)
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <filename>postgrespro-enterprise96-docs-ru</filename>
+              </entry>
+              <entry>
+                Documentation (Russian)
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <filename>postgrespro-enterprise96-test</filename>
+              </entry>
+              <entry>
+                Test scripts for the server
+              </entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </informaltable>
+      <para>
+        For server installations, install at least the following
+        packages:
+        <itemizedlist>
+          <listitem>
+            <para><filename>postgrespro-enterprise96-server</filename> 
+            </para>
+          </listitem>
+          <listitem>
+            <para><filename>postgrespro-enterprise96</filename>
+            </para>
+          </listitem>
+          <listitem>
+            <para><filename>postgrespro-enterprise96-libs</filename>
+            </para>
+          </listitem>
+        </itemizedlist>
+        To use additional <productname>&productname;</productname> extensions, you must also install
+        the <filename>postgrespro-enterprise96-contrib</filename> package.
+      </para>
+      <para>
+        By default, all files are installed into the
+        <literal>/usr/pgproee-&majorversion;</literal> directory. Make sure
+        <literal>/usr/pgproee-&majorversion;/bin</literal> is added to your
+        <literal>PATH</literal> environment variable.
+      </para>
+    </sect3>
+    <sect3>
+      <title>Creating the Default Database</title>
+      <para>
+        Installation of the
+        <filename>postgrespro-enterprise96-server</filename> package
+        does not create the default database. It only creates the
+        <literal>postgres</literal> system user that
+        owns database files and server processes.
+      </para>
+      <para>
+        To create the default database:
+      <itemizedlist spacing="compact">
+        <listitem>
+         <para>On SysVinit systems, such as Red Hat Enterprise Linux 6 and its derivatives, run:
+      <programlisting>
+service postgrespro-&majorversion; initdb
+</programlisting>
+         </para>
+        </listitem>
+        <listitem>
+          <para>
+            On systemd-based systems, such as Red Hat Enterprise Linux 7
+            or CentOS 7, run the helper script
+            <filename>/usr/pgpro-&majorversion;/bin/pg-setup</filename>.
+          </para>
+        </listitem>
+      </itemizedlist>
+      </para>
+      <para>
+        The default database is created in the
+        <filename>/var/lib/pgproee/&majorversion;/data</filename> directory. To change
+        the default directory, modify the corresponding setting in the
+        <filename>/etc/sysconfig/pgsql/postgrespro-&majorversion;</filename> file.
+      </para>
+    </sect3>
+    <sect3>
+      <title>Installing Multiple <productname>&productname;</productname> Instances</title>
+      <para>
+        To run several instances of <productname>&productname;</productname> server with different
+        data directories, create a copy or a symlink of
+        <literal>/etc/init.d/postgresql</literal> with a different name,
+        create the corresponding <literal>/etc/sysconfig</literal> files
+        and symlinks in runlevel directories.
+      </para>
+      <para>
+        If required, you can install vanilla <productname>PostgreSQL</productname>,
+        <productname>Postgres Pro</productname>, and <productname>Postgres Pro Enterprise</productname>
+        on the same system simultaneously.
+      </para>
+      <para>
+        The name of <literal>sysconfig</literal> file read by
+        <filename>init.d</filename> script is derived from its own name.
+      </para>
+    </sect3>
+  </sect2>
+  <sect2 id="installation-on-debian-based-operating-systems">
+    <title>Installation on Debian-Based Operating Systems</title>
+    <sect3>
+      <title>Choosing the Packages to Install</title>
+      <para>
+        For Debian-based operating systems (Debian, Ubuntu, Astra
+        Linux), <productname>&productname;</productname> is split into following packages:
+      </para>
+      <informaltable>
+        <tgroup cols="2">
+          <tbody>
+            <row>
+              <entry>
+                Package
+              </entry>
+              <entry>
+                Description
+              </entry>
+            </row>
+            <row>
+              <entry>
+                libecpg6
+              </entry>
+              <entry>
+                 Runtime libraries for ECPG preprocessor
+              </entry>
+            </row>
+            <row>
+              <entry>
+                 libecpg-compat3
+              </entry>
+              <entry>
+                Compatibility runtime for programs compiled with old ECPG
+              </entry>
+            </row>
+            <row>
+              <entry>
+                libecpg-dev
+              </entry>
+              <entry>
+                 ECPG preprocessor for embedded SQL
+              </entry>
+            </row>
+            <row>
+              <entry>
+                 libpgtypes3
+              </entry>
+              <entry>
+                 Runtime libpgtypes library for programs build with ECPG
+              </entry>
+            </row>
+            <row>
+              <entry>
+                 libpq5
+              </entry>
+              <entry>
+                Runtime libraries for Postgres client programs
+              </entry>
+            </row>
+            <row>
+              <entry>
+                 libpq-dev
+              </entry>
+              <entry>
+                Development files for develop client programs
+              </entry>
+            </row>
+            <row>
+              <entry>
+                 postgrespro-&majorversion;
+              </entry>
+              <entry>
+        <productname>&productname;</productname> server
+              </entry>
+            </row>
+            <row>
+              <entry>
+                  postgrespro-&majorversion;-dbg
+              </entry>
+              <entry>
+                Debug information for <productname>&productname;</productname> server
+              </entry>
+            </row>
+            <row>
+              <entry>
+                 postgrespro-client-&majorversion;
+              </entry>
+              <entry>
+                Client programs for interaction with <productname>&productname;</productname> server
+              </entry>
+            </row>
+            <row>
+              <entry>
+                 postgrespro-contrib-&majorversion;
+              </entry>
+              <entry>
+                 Additional modules and extensions
+              </entry>
+            </row>
+            <row>
+              <entry>
+                  postgrespro-doc-&majorversion;
+              </entry>
+              <entry>
+                Documentation (English)
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-doc-ru-&majorversion;
+              </entry>
+              <entry>
+                 Documentation (Russian)
+              </entry>
+            </row>
+            <row>
+              <entry>
+                 postgrespro-pg-probackup-&majorversion;
+              </entry>
+              <entry>
+                 <application>pg_probackup</application> utility
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-plperl-&majorversion;
+              </entry>
+              <entry>
+                 Server-side PL/Perl language
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-plpython3-&majorversion;
+              </entry>
+              <entry>
+                 Server-side PL/Python language based on Python 3
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-plpython-&majorversion;
+              </entry>
+              <entry>
+                 Server-side PL/Python language based on Python 2
+              </entry>
+            </row>
+            <row>
+              <entry>
+                 postgrespro-pltcl-&majorversion;
+              </entry>
+              <entry>
+                 Server-side PL/Tcl language
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-server-dev-&majorversion;
+              </entry>
+              <entry>
+                Development files to compile server extensions using PGXS framework
+              </entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </informaltable>
+      <para>
+        Server installations require postgrespro-&majorversion; package (which
+        depends on postgrespro-contrib-&majorversion;). Other server-related
+        packages such as PL languages, and
+        <literal>pg_probackup</literal> utilites are optional.
+      </para>
+      <para>
+        Client installations need only <literal>libpq5</literal> and
+        <literal>postgrespro-client-&majorversion;</literal> packages. If you use
+        custom applications and do not need standard clients such as
+        <literal>psql</literal>, you can install the
+        <literal>libpq5</literal> package only.
+      </para>
+      <para>
+        Development files on Debian are split into the following
+        packages:
+        <itemizedlist>
+          <listitem>
+            <para><literal>libpq-dev</literal> &mdash; development package
+            for compiling client programs.
+            </para>
+          </listitem>
+          <listitem>
+            <para><literal>libecpg-dev</literal> &mdash;
+            development package for programs that use ECPG Embedded SQL preprocessor.
+            </para>
+          </listitem>
+          <listitem>
+            <para><literal>postgrespro-server-dev-&majorversion;</literal> &mdash; development package 
+            for compiling server extensions.
+            </para>
+          </listitem>
+        </itemizedlist>
+      </para>
+    </sect3>
+    <sect3>
+      <title>Creating the Default Database</title>
+      <para>
+        Debian database server packages create the default database at
+        the moment of server installation, and allow to create
+        additional ones, called clusters using
+        <filename>pg_createcluster</filename> script. All
+        these clusters are managed using system service management
+        facilities (SysVinit in older distributions, systemd in newer
+        ones).
+      </para>
+      <para>
+        <filename>pg_createcluster</filename> also allows
+        to import existing databases into Debian-specific service
+        management system.
+        It tries to automatically enable SSL on the newly created
+        cluster, but can do so only if the <literal>postgres</literal>
+        user is a member of <literal>ssl-cert</literal> group and there is
+        valid certificate in <filename>/etc/ssl/certs</filename>.
+      </para>
+      <para>
+        <productname>&productname;</productname> distribution for Debian-based systems
+        uses a non-standard directory layout for the database cluster.
+        By default, <productname>&productname;</productname> keeps
+        configuration files and data in the same directory. However, Debian
+        policy requires configuration files to be stored under
+        <literal>/etc</literal>. Thus, on Debian-based systems, the <literal>PGDATA</literal> parameter always
+        points to a subdirectory under <literal>/etc</literal>, where
+        only <filename>postgresql.conf</filename>,
+        <filename>pg_hba_conf</filename> and a few other configuration
+        files are stored. The actual location of data is determined by the
+        <literal>data_directory</literal> option in
+        <filename>postgresql.conf</filename>.
+      </para>
+      </sect3>
+      <sect3>
+      <title>Installing Multiple <productname>&productname;</productname> Instances</title>
+      <para>
+        The <literal>postgrespro-common</literal> and
+        <literal>postgrespro-client-common</literal> packages provide a
+        complex infrastructure that allows running several versions of
+        <productname>PostgreSQL</productname>, <productname>Postgres Pro</productname> and <productname>Postgres Pro Enterprise</productname>
+        servers simultaneously, thus enabling smooth database upgrades.
+      </para>
+      <para>
+        For more information about Debian-specific infrastucture, see
+        the following manual pages:
+        <literal>pg_createcluster(1)</literal>,
+        <literal>pg_ctlcluster(1)</literal>,
+        <literal>pg_conftool(1)</literal>,
+        <literal>postgresql-common(5)</literal>,
+        <literal>postgresqlrc(5)</literal> and
+        <literal>user_clusters(5)</literal>.
+      </para>
+      <para>
+        Debian provides the script
+        <literal>pg_wrapper(1)</literal> to invoke
+        client binaries for correct version of your <productname>PostgreSQL</productname>-based product. It is linked as
+        <filename>/usr/bin/psql</filename>, <filename>/usr/bin/pg_dump</filename>, etc. If several <productname>PostgreSQL</productname>-based
+        products are installed, it invokes the most recent binaries unless
+        explicitely configured to do the opposite.
+      </para>
+      <note>
+       <para>
+        Debian packaging of <productname>&productname;</productname> programs contains two
+        copies of the <application>pg_config</application> utility, one in the
+        <filename>libpq-dev</filename> package and the other in <filename>postgrespro-server-dev-&majorversion;</filename> package.
+        It is because both client programs and server extensions use
+        this utility to determine location of Postgres development
+        files. So, if you are planning to develop both client
+        applications and server extensions on same system, make sure
+        that you have installed <filename>libpq-dev</filename> and
+        <filename>postgrespro-server-dev-X.X</filename> from same Postgres product.
+       </para>
+      </note>
+    </sect3>
+  </sect2>
+  <sect2 id="installation-on-alt-linux">
+    <title>Installation on ALT Linux</title>
+    <sect3>
+      <title>Choosing the Packages to Install</title>
+      <para>
+        For ALT Linux, <productname>&productname;</productname> is split into the following
+        packages:
+      </para>
+      <informaltable>
+        <tgroup cols="2">
+          <tbody>
+            <row>
+              <entry>
+                Package
+              </entry>
+              <entry>
+                Description
+              </entry>
+            </row>
+            <row>
+              <entry>
+                libecpg6.8
+              </entry>
+              <entry>
+                 Runtime libraries for programs using ECPG
+              </entry>
+            </row>
+            <row>
+              <entry>
+                libecpg6.8-devel
+              </entry>
+              <entry>
+                 ECPG embedded SQL preprocessor
+              </entry>
+            </row>
+            <row>
+              <entry>
+                libecpg6.8-devel-static
+              </entry>
+              <entry>
+                 Static libraries for ECPG
+              </entry>
+            </row>
+            <row>
+              <entry>
+                 libpq5.9
+              </entry>
+              <entry>
+                Client library <literal>libpq</literal>
+              </entry>
+            </row>
+            <row>
+              <entry>
+                libpq5.9-devel
+              </entry>
+              <entry>
+                Development files for <literal>libpq</literal>
+              </entry>
+            </row>
+            <row>
+              <entry>
+                libpq5.9-devel-static
+              </entry>
+              <entry>
+                 Static libraries for compiling client programs
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise&majorversion;
+              </entry>
+              <entry>
+                Standard client programs, such as <application>psql</application>, and man pages for SQL commands
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise&majorversion;-contrib
+              </entry>
+              <entry>
+                 Extensions loadable into <productname>&productname;</productname> server
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise&majorversion;-devel
+              </entry>
+              <entry>
+                 Files to compile server extensions using PGXS framework
+              </entry>
+            </row>
+            <row>
+              <entry>
+                 postgrespro-enterprise&majorversion;-devel-static
+              </entry>
+              <entry>
+                 Static libraries needed to compile extensions
+              </entry>
+            </row>
+            <row>
+              <entry>
+                 postgrespro-enterprise&majorversion;-docs
+              </entry>
+              <entry>
+                 Documentation (English)
+              </entry>
+            </row>
+            <row>
+              <entry>
+               postgrespro-enterprise&majorversion;-docs-ru
+              </entry>
+              <entry>
+               Documentation (Russian)
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise&majorversion;-perl
+              </entry>
+              <entry>
+               PL/Perl programming language
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise&majorversion;-pg_probackup
+              </entry>
+              <entry>
+               <application>pg_probackup</application> utility
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise&majorversion;-python
+              </entry>
+              <entry>
+               PL/Python programming language
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise&majorversion;-server
+              </entry>
+              <entry>
+               Postgres Pro Enterprise server
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise&majorversion;-tcl
+              </entry>
+              <entry>
+               PL/Tcl programming language
+              </entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </informaltable>
+      <para>
+        All packages containing binary files have the corresponding
+        <literal>-debuginfo</literal> packages.
+      </para>
+      <para>
+        For server installations, you need
+        <literal>postgrespro-enterprise&majorversion;-server</literal>.
+        For a minimal client installation, only the
+        <literal>libpq5.9</literal> package is required.
+        <literal>postgrespro-enterprise&majorversion;</literal> is typically needed on
+        clients.
+      </para>
+      <para>
+        <application>pg_config</application> utility is only
+        shipped as part of <literal>postgrespro-&majorversion;-devel</literal>
+        package, so you need to install this package if you are going to
+        compile client programs that use <application>pg_config</application> in
+        the build process.
+      </para>
+    </sect3>
+    <sect3>
+      <title>Installing Multiple <productname>&productname;</productname> Instances</title>
+      <para>
+        On ALT Linux, you can only have a single PostgreSQL installation
+        on your system at a time. If you are installing a newer version
+        over the old one, new binaries replace the old ones. To perform
+        database upgrade using
+        <filename>pg_upgrade</filename> utility, you need
+        both new and old <literal>postgres</literal>
+        executable files. So, preinstallation script copies the existing
+        <literal>postgres</literal> binary and
+        <literal>libpq</literal> shared library into
+        <filename>/usr/lib64/pgsql/&majorversion;/backup</filename>. Use this
+        directory name as an argument of the
+        <filename>pg_upgrade</filename>
+        <literal>-b</literal> option.
+      </para>
+    </sect3>
+  </sect2>
+  <sect2 id="installation-on-the-suse-linux">
+    <title>Installation on the SUSE Linux</title>
+    <sect3>
+      <title>Choosing the Packages to Install</title>
+      <para>
+        For SUSE systems, <productname>&productname;</productname> is split into following packages:
+      </para>
+      <informaltable>
+        <tgroup cols="2">
+          <thead>
+            <row>
+              <entry>
+                Package
+              </entry>
+              <entry>
+                Description
+              </entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry>
+                libecpg6
+              </entry>
+              <entry>
+                Runtime libraries for programs using ECPG
+              </entry>
+            </row>
+            <row>
+              <entry>
+                libpq5
+              </entry>
+              <entry>
+                Runtime libraries for Postgres client programs
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise96
+              </entry>
+              <entry>
+                Standard client programs, such as <application>psql</application>, and man pages for SQL commands
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise96-contrib
+              </entry>
+              <entry>
+                Loadable modules and extensions for server
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise96-devel
+              </entry>
+              <entry>
+                Development files for both client programs
+                and server extensions
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise96-docs
+              </entry>
+              <entry>
+                Documentation (English)
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise96-docs-ru
+              </entry>
+              <entry>
+                Documentation (Russian)
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise96-pg_probackup
+              </entry>
+              <entry>
+                <application>pg_probackup</application> utility
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise96-plperl
+              </entry>
+              <entry>
+                PL/Perl programming language
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise96-plpython
+              </entry>
+              <entry>
+                PL/Python programming language
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise96-pltcl
+              </entry>
+              <entry>
+                PL/Tcl programming language
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise96-server
+              </entry>
+              <entry>
+                <productname>&productname;</productname>
+                server
+              </entry>
+            </row>
+            <row>
+              <entry>
+                postgrespro-enterprise96-test
+              </entry>
+              <entry>
+                Regression test suite for <productname>&productname;</productname> server
+              </entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </informaltable>
+      <para>
+        Server installations require
+        <filename>postgrespro-enterprise96-server</filename>,
+        <filename>postgrespro-enterprise96</filename>, and
+        <filename>postgrespro-enterprise96-libs</filename> packages.
+        To use additional <productname>&productname;</productname> extensions, you must also install
+        the <filename>postgrespro-enterprise96-contrib</filename>
+        package.
+      </para>
+    </sect3>
+    <sect3>
+      <title>Creating the Default Database</title>
+      <para>
+        To start Postgres server after installation of the server
+        package, run the following command:
+      </para>
+      <programlisting>
+service postgresql start
+</programlisting>
+      <para>
+        The default database in SUSE is created upon the first start of
+        service. You can customize its location, locale, and other
+        parameters in <filename>/etc/sysconfig/postgrespro</filename>.
+      </para>
+    </sect3>
+    <sect3>
+      <title>Installing Multiple <productname>&productname;</productname> Instances</title>
+      <para>
+        On SUSE systems, you cannot install several versions of client
+        programs simultaneously.
+      </para>
+    </sect3>
+  </sect2>
+</sect1>
+<sect1 id="binary-installation-on-windows">
+  <title>Installing <productname>&productname;</productname> on Windows</title>
+  <para>
+    For Windows systems, <productname>&productname;</productname> provides a binary self-extracting
+    interactive installer that installs all the components at once. The
+    installer also provides the options to create the default database.
+  </para>
+  <sect2 id="external-connections-and-windows-firewall">
+    <title>External Connections and Windows Firewall</title>
+    <para>
+      By default, <productname>&productname;</productname> server is listening for connections from the
+      localhost only. To allow external connections to <productname>&productname;</productname>
+      server, select the &quot;Allow external connections&quot; checkbox
+      to add the appropriate parameter into the
+      <literal>postgresql.conf</literal> file, add a line into the
+      <literal>pg_pba.conf</literal> file, and create a Windows Firewall
+      rule.
+    </para>
+    <note><para>
+      <productname>&productname;</productname> application is registered with Windows
+      firewal anyway, so if you haven't enabled external connection
+      during installation, and decide to do it later, you only have to
+      open Windows Firewall configuration in the Control Panel, find the
+      <productname>&productname;</productname> server here, and allow it to accept connections.
+    </para>
+    </note>
+  </sect2>
+  <sect2 id="supported-operating-systems">
+    <title>Supported Operating Systems</title>
+    <para>
+      <productname>&productname;</productname> provides two versions of Windows distribution:
+    </para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>
+          distribution for Windows 7, Windows Server 2008 R2 or higher
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          compatibility distribution built with Windows SDK 7.1, which
+          supports Windows XP and Windows Server 2003 Do not use the
+          compatibility version on newer versions of Windows.
+        </para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2 id="procedural-languages">
+    <title>Procedural Languages</title>
+    <para>
+      The procedural languages <literal>PL/Perl</literal>,
+      <literal>PL/Python</literal> are included in this distribution of
+      <productname>&productname;</productname>. The server has been built using the LanguagePack
+      community distributions of those language interpreters. To use any
+      of the these languages from within <productname>&productname;</productname>, download and
+      install the appropriate interpreters and ensure they are included
+      in the <literal>PATH</literal> variable under which the database
+      server will be started.
+      <!-- The versions used are shown below - newer
+      minor (bugfix) releases may also work, but have not been tested. -->
+    </para>
+    <para>
+      The current version of <literal>PL/Python</literal> is dynamically
+      linked with Python shared library in the LanguagePack installers.
+      Some distributions of Python interpreters (including ActivePython)
+      on Windows do not include a dynamic library of Python. Such
+      interpreters would no longer be functional with
+      <literal>PL/Python</literal>. You are recommended to use
+      LanguagePack installers for <literal>PL/Perl</literal> and
+      <literal>PL/Python</literal> instead.
+    </para>
+  </sect2>
+  <sect2 id="windows-service-account">
+    <title>Windows Service Account</title>
+    <para>
+      A special <literal>NT AUTHORITY\\NetworkService</literal>
+      account is used.
+    </para>
+  </sect2>
+  <sect2 id="command-line-options">
+    <title>Command-Line Options</title>
+    <para>
+      Installation directory path:
+    </para>
+    <programlisting>
+/D=<replaceable>path</replaceable>
+</programlisting>
+    <para>
+      Silent install:
+    </para>
+    <programlisting>
+/S
+</programlisting>
+    <para>
+      <literal>*.ini</literal> file with instalation options:
+    </para>
+    <programlisting>
+/init=<replaceable>ini_file_name</replaceable>
+</programlisting>
+  </sect2>
+  <sect2 id="ini-file-format">
+    <title>INI File Format</title>
+    <para>
+      In the section [options] can be these options:
+    </para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>
+          <literal>InstallDir</literal> &mdash; path where to install server
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>DataDir</literal> &mdash; path where to create default
+          database
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>Port</literal> &mdash; TCP/IP port to listen. Default: 5432.
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>SuperUser</literal> &mdash; name of the database user who
+          will have admin rights in the database
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>Password</literal> &mdash; password of the user
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>noExtConnections = 1</literal> &mdash; don't allow external
+          connection
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>Coding = UNICODE</literal> &mdash; character encoding to
+          use in the database
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>Locale</literal> &mdash; locale to use in the database.
+          There can be several different locales for each encoding
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>Vcredist = no</literal> &mdash; do not install Visual C
+          redistributable libraries (use it only if these libraries are
+          already installed on your system)
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>envvar = 1</literal> &mdash; set up environment variables
+          helpful for <productname>&productname;</productname>: <literal>PGDATA</literal>,
+          <literal>PGDATABASE</literal>, <literal>PGUSER</literal>,
+          <literal>PGPORT</literal>, <literal>PGLOCALEDIR</literal>
+        </para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+</sect1>
+<sect1 id="installing-additional-modules">
+  <title>Installing Additional Supplied Modules</title>
+  <para>
+    <productname>&productname;</productname> comes with a huge set of server extensions, or modules.
+    On Windows, these extensions are always installed. On Linux, they
+    are included into the <literal>postgrespro-contrib</literal> package
+    which may or may not be installed. If it is installed, you already
+    have binary files for these extensions in the system and only need
+    to enable it in the database in order to use it.
+  </para>
+  <para>
+    Typically, you only need to issue the following SQL command:
+  </para>
+  <programlisting>
+CREATE EXTENSION <replaceable>module_name</replaceable>
+</programlisting>
+<para>For details, see <xref linkend="sql-createextension">.
+</para>
+  <para>
+    To get the list of extensions available in your <productname>&productname;</productname>
+    installation, view the
+    <link linkend="view-pg-available-extensions"><structname>pg_available_extensions</structname></link>
+    system catalog.
+  </para>
+  <para>
+    <xref linkend="contrib"> contains documentation
+    for extensions available in the installation.
+  </para>
+  <para>
+    Some extensions require shared libraries to be preloaded on server
+    startup.
+  </para>
+  <para>
+    If you want to use such an extension, you need to add parameter
+  </para>
+  <programlisting>
+shared_preload_libraries = '<replaceable>lib1</replaceable>, <replaceable>lib2</replaceable>, <replaceable>lib3</replaceable>'
+</programlisting>
+  <para>
+    into <filename>postgresql.conf</filename> of your
+    <productname>&productname;</productname> database
+    instance and restart the server. After that you can issue the
+    <literal>CREATE EXTENSION</literal> statement.
+  </para>
+</sect1>
+</chapter>
