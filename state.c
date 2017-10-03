@@ -71,8 +71,7 @@ MtmSetClusterStatus(MtmNodeStatus status)
 		Mtm->recoverySlot = 0;
 		Mtm->pglogicalReceiverMask = 0;
 		Mtm->pglogicalSenderMask = 0;
-		// XXXX: better to enable, but not now. It requires better testing
-		// Mtm->recoveryCount++; /* this will restart replication connection */
+		Mtm->recoveryCount++; /* this will restart replication connection */
 	}
 
 	Mtm->status = status;
@@ -270,7 +269,7 @@ void MtmDisableNode(int nodeId)
 	if (Mtm->status == MTM_ONLINE) {
 		/* Make decision about prepared transaction status only in quorum */
 		MtmLock(LW_EXCLUSIVE);
-		MtmPollStatusOfPreparedTransactionsForDisabledNode(nodeId);
+		MtmPollStatusOfPreparedTransactionsForDisabledNode(nodeId, false);
 		MtmUnlock();
 	}
 }
@@ -411,6 +410,13 @@ MtmRefreshClusterStatus()
 							winner_node_id);
 				Mtm->refereeGrant = true;
 				MtmLock(LW_EXCLUSIVE);
+				if (countZeroBits(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes) == 1)
+				{
+					// XXXX: that is valid for two nodes. Better idea is to parametrize MtmPollStatus*
+					// functions.
+					int neighbor_node_id = MtmNodeId == 1 ? 2 : 1;
+					MtmPollStatusOfPreparedTransactionsForDisabledNode(neighbor_node_id, true);
+				}
 				MtmEnableNode(MtmNodeId);
 				MtmCheckState();
 				MtmUnlock();

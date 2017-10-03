@@ -445,7 +445,7 @@ extern void MtmReleaseLocks(void);
 extern void MtmInitMessage(MtmArbiterMessage* msg, MtmMessageCode code);
 extern void MtmSetSnapshot(csn_t snapshot);
 extern void MtmRefereeInitialize(void);
-extern void MtmPollStatusOfPreparedTransactionsForDisabledNode(int disabledNodeId);
+extern void MtmPollStatusOfPreparedTransactionsForDisabledNode(int disabledNodeId, bool commitPrecommited);
 extern int MtmGetNumberOfVotingNodes(void);
 
 #endif
