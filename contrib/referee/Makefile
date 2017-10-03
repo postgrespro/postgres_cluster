@@ -1,5 +1,6 @@
 EXTENSION = referee
 DATA = referee--1.0.sql
+REGRESS = referee
 
 ifdef USE_PGXS
 PG_CONFIG = pg_config
