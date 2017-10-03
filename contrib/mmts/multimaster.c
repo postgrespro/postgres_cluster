@@ -1957,9 +1957,11 @@ void MtmHandleApplyError(void)
  * Actually, if node is precommitted (state == UNKNOWN) at any of nodes, then is is prepared at all nodes and so can be committed.
  * But if coordinator of transaction is crashed, we made a decision about transaction commit only if transaction is precommitted at ALL live nodes.
  * The reason is that we want to avoid extra polling to obtain maximum CSN from all nodes to assign it to committed transaction.
- * Called only from MtmDisableNode in critical section.
+ * Called only from MtmDisableNode and in major mode.
+ *
+ * commitPrecommited is used when nnodes=2 and we are switching to major/referee mode.
  */
-void MtmPollStatusOfPreparedTransactionsForDisabledNode(int disabledNodeId)
+void MtmPollStatusOfPreparedTransactionsForDisabledNode(int disabledNodeId, bool commitPrecommited)
 {
 	MtmTransState *ts;
 	for (ts = Mtm->transListHead; ts != NULL; ts = ts->next) {
@@ -1973,8 +1975,15 @@ void MtmPollStatusOfPreparedTransactionsForDisabledNode(int disabledNodeId)
 				MTM_ELOG(LOG, "Abort transaction %s because its coordinator is disabled and it is not prepared at node %d", ts->gid, MtmNodeId);
 				MtmFinishPreparedTransaction(ts, false);
 			} else {
-				MTM_LOG1("Poll state of transaction %s (%llu)", ts->gid, (long64)ts->xid);
-				MtmBroadcastPollMessage(ts);
+				if (commitPrecommited)
+				{
+					MtmFinishPreparedTransaction(ts, true);
+				}
+				else
+				{
+					MTM_LOG1("Poll state of transaction %s (%llu)", ts->gid, (long64)ts->xid);
+					MtmBroadcastPollMessage(ts);
+				}
 			}
 		} else {
 			MTM_LOG2("Skip transaction %s (%llu) with status %s gtid.node=%d gtid.xid=%llu votedMask=%llx",

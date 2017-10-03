@@ -255,9 +255,9 @@ class MtmClient(object):
         total = yield from cur.fetchone()
         if total[0] != self.total:
             agg.isolation += 1
+            print(datetime.datetime.utcnow(), 'Isolation error, total ', self.total, ' -> ', total[0], ', node ', conn_i+1)
             self.total = total[0]
             print(self.oops)
-            print(datetime.datetime.utcnow(), 'Isolation error, total = ', total, ', node ', conn_i+1)
             # yield from cur.execute('select * from mtm.get_nodes_state()')
             # nodes_state = yield from cur.fetchall()
             # for i, col in enumerate(self.nodes_state_fields):
