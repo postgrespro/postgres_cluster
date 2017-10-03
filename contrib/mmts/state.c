@@ -417,7 +417,7 @@ MtmRefreshClusterStatus()
 	}
 
 	/*
-	 * Clear winner if we again have all nodes are online.
+	 * Clear winner if we again have all nodes online.
 	 */
 	if (MtmRefereeConnStr && *MtmRefereeConnStr && Mtm->refereeWinnerId &&
 		countZeroBits(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes) == Mtm->nAllNodes)
@@ -511,13 +511,13 @@ MtmRefereeGetWinner(void)
 		return -1;
 	}
 
-	sprintf(sql, "select mtm.referee_get_winner(%d)", MtmNodeId);
+	sprintf(sql, "select referee.get_winner(%d)", MtmNodeId);
 	res = PQexec(conn, sql);
 	if (PQresultStatus(res) != PGRES_TUPLES_OK ||
 		PQntuples(res) != 1 ||
 		PQnfields(res) != 1)
 	{
-		MTM_ELOG(WARNING, "Refusing unexpected result (r=%d, n=%d, w=%d, k=%s) from referee.",
+		MTM_ELOG(WARNING, "Refusing unexpected result (r=%d, n=%d, w=%d, k=%s) from referee.get_winner()",
 			PQresultStatus(res), PQntuples(res), PQnfields(res), PQgetvalue(res, 0, 0));
 		PQclear(res);
 		PQfinish(conn);
@@ -558,12 +558,12 @@ MtmRefereeClearWinner(void)
 		return false;
 	}
 
-	res = PQexec(conn, "select mtm.referee_clean()");
+	res = PQexec(conn, "select referee.clean()");
 	if (PQresultStatus(res) != PGRES_TUPLES_OK ||
 		PQntuples(res) != 1 ||
 		PQnfields(res) != 1)
 	{
-		MTM_ELOG(WARNING, "Refusing unexpected result (r=%d, n=%d, w=%d, k=%s) from referee_clean().",
+		MTM_ELOG(WARNING, "Refusing unexpected result (r=%d, n=%d, w=%d, k=%s) from referee.clean().",
 			PQresultStatus(res), PQntuples(res), PQnfields(res), PQgetvalue(res, 0, 0));
 		PQclear(res);
 		PQfinish(conn);
@@ -574,7 +574,7 @@ MtmRefereeClearWinner(void)
 
 	if (strncmp(response, "t", 1) != 0)
 	{
-		MTM_ELOG(WARNING, "Wrong response from referee_clean(): '%s'", response);
+		MTM_ELOG(WARNING, "Wrong response from referee.clean(): '%s'", response);
 		PQclear(res);
 		PQfinish(conn);
 		return false;
