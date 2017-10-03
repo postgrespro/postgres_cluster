@@ -71,6 +71,8 @@ MtmSetClusterStatus(MtmNodeStatus status)
 		Mtm->recoverySlot = 0;
 		Mtm->pglogicalReceiverMask = 0;
 		Mtm->pglogicalSenderMask = 0;
+		// XXXX: better to enable, but not now. It requires better testing
+		// Mtm->recoveryCount++; /* this will restart replication connection */
 	}
 
 	Mtm->status = status;
@@ -82,7 +84,7 @@ MtmCheckState(void)
 	// int nVotingNodes = MtmGetNumberOfVotingNodes();
 	bool isEnabledState;
 	int nEnabled   = countZeroBits(Mtm->disabledNodeMask, Mtm->nAllNodes);
-	int nConnected = countZeroBits(EFFECTIVE_CONNECTIVITY_MASK, Mtm->nAllNodes);
+	int nConnected = countZeroBits(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes);
 	int nReceivers = Mtm->nAllNodes - countZeroBits(Mtm->pglogicalReceiverMask, Mtm->nAllNodes);
 	int nSenders   = Mtm->nAllNodes - countZeroBits(Mtm->pglogicalSenderMask, Mtm->nAllNodes);
 
