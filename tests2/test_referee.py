@@ -35,7 +35,7 @@ class MajorTest(unittest.TestCase, TestHelper):
         cls.client.bgrun()
 
         # create extension on referee
-        cls.nodeExecute("dbname=regression user=postgres host=127.0.0.1 port=15435", ['create extension multimaster'])
+        cls.nodeExecute("dbname=regression user=postgres host=127.0.0.1 port=15435", ['create extension referee'])
 
     @classmethod
     def tearDownClass(cls):
