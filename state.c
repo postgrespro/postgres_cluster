@@ -395,6 +395,7 @@ MtmRefreshClusterStatus()
 
 	/*
 	 * Check for referee decision when only half of nodes are visible.
+	 * Do not hold lock here, but recheck later wheter mask changed.
 	 */
 	if (MtmRefereeConnStr && *MtmRefereeConnStr && !Mtm->refereeWinnerId &&
 		countZeroBits(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes) == Mtm->nAllNodes/2)
@@ -406,29 +407,40 @@ MtmRefreshClusterStatus()
 			Mtm->refereeWinnerId = winner_node_id;
 			if (!BIT_CHECK(SELF_CONNECTIVITY_MASK, winner_node_id - 1))
 			{
-				MTM_LOG1("[STATE] Referee allowed to proceed with half of the nodes (winner_id = %d)",
-							winner_node_id);
-				Mtm->refereeGrant = true;
+				/*
+				 * By the time we enter this block we can already see other nodes.
+				 * So recheck old conditions under lock.
+				 */
 				MtmLock(LW_EXCLUSIVE);
-				if (countZeroBits(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes) == 1)
+				if (countZeroBits(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes) == Mtm->nAllNodes/2 &&
+					!BIT_CHECK(SELF_CONNECTIVITY_MASK, winner_node_id - 1))
 				{
-					// XXXX: that is valid for two nodes. Better idea is to parametrize MtmPollStatus*
-					// functions.
-					int neighbor_node_id = MtmNodeId == 1 ? 2 : 1;
-					MtmPollStatusOfPreparedTransactionsForDisabledNode(neighbor_node_id, true);
+					MTM_LOG1("[STATE] Referee allowed to proceed with half of the nodes (winner_id = %d)",
+					winner_node_id);
+					Mtm->refereeGrant = true;
+					if (countZeroBits(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes) == 1)
+					{
+						// XXXX: that is valid for two nodes. Better idea is to parametrize MtmPollStatus*
+						// functions.
+						int neighbor_node_id = MtmNodeId == 1 ? 2 : 1;
+						MtmPollStatusOfPreparedTransactionsForDisabledNode(neighbor_node_id, true);
+					}
+					MtmEnableNode(MtmNodeId);
+					MtmCheckState();
 				}
-				MtmEnableNode(MtmNodeId);
-				MtmCheckState();
 				MtmUnlock();
 			}
 		}
 	}
 
 	/*
-	 * Clear winner if we again have all nodes online.
+	 * Clear winner if we again have all nodes recovered.
+	 * We should clean old value based on disabledNodeMask instead of SELF_CONNECTIVITY_MASK
+	 * because we can clean old value before failed node starts it recovery and that node
+	 * can get refereeGrant before start of walsender, so it start in recovered mode.
 	 */
-	if (MtmRefereeConnStr && *MtmRefereeConnStr && Mtm->refereeWinnerId &&
-		countZeroBits(SELF_CONNECTIVITY_MASK, Mtm->nAllNodes) == Mtm->nAllNodes)
+	 if (MtmRefereeConnStr && *MtmRefereeConnStr && Mtm->refereeWinnerId &&
+		countZeroBits(Mtm->disabledNodeMask, Mtm->nAllNodes) == Mtm->nAllNodes)
 	{
 		if (MtmRefereeClearWinner())
 		{
@@ -438,8 +450,10 @@ MtmRefreshClusterStatus()
 		}
 	}
 
-	/* Do not check clique with referee grant */
-	if (Mtm->refereeWinnerId)
+	/*
+	 * Do not check clique with referee grant, because we can disable ourself.
+	 */
+	if (Mtm->refereeGrant)
 		return;
 
 	/*
