@@ -35,7 +35,8 @@ set -e
 stage configure
 ./configure --enable-tap-tests --enable-debug --enable-cassert --enable-nls \
 	--with-openssl --with-perl --with-tcl --with-python \
-	--with-gssapi --with-libxml --with-libxslt --with-ldap \
+	--with-gssapi --with-includes=/usr/include/gssglue \
+	--with-libxml --with-libxslt --with-ldap \
 	--with-icu --with-zstd ${TCLCONFIG:+--with-tclconfig=${TCLCONFIG}}
 stage make
 make
