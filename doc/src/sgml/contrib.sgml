@@ -153,6 +153,7 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &pg-wait-sampling;
  &plantuner; 
  &postgres-fdw;
+ &referee;
  &rum;
  &seg;
  &sepgsql;
