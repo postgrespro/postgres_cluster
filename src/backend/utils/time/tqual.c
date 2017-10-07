@@ -68,6 +68,7 @@
 #include "access/subtrans.h"
 #include "access/transam.h"
 #include "access/xact.h"
+#include "access/xtm.h"
 #include "access/xlog.h"
 #include "storage/bufmgr.h"
 #include "storage/procarray.h"
@@ -984,8 +985,9 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 			{
 				if (TransactionIdDidCommit(xvac))
 				{
-					SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
-								InvalidTransactionId);
+					if (!TransactionIdIsInProgress(xvac))
+						SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
+									InvalidTransactionId);
 					return false;
 				}
 				SetHintBits(tuple, buffer, HEAP_XMIN_COMMITTED,
@@ -1006,8 +1008,9 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 								InvalidTransactionId);
 				else
 				{
-					SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
-								InvalidTransactionId);
+					if (!TransactionIdIsInProgress(xvac))
+						SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
+									InvalidTransactionId);
 					return false;
 				}
 			}
@@ -1062,8 +1065,9 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 		else
 		{
 			/* it must have aborted or crashed */
-			SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
-						InvalidTransactionId);
+			if (!TransactionIdIsInProgress(HeapTupleHeaderGetRawXmin(tuple)))
+				SetHintBits(tuple, buffer, HEAP_XMIN_INVALID,
+							InvalidTransactionId);
 			return false;
 		}
 	}
@@ -1126,8 +1130,9 @@ HeapTupleSatisfiesMVCC(HeapTuple htup, Snapshot snapshot,
 		if (!TransactionIdDidCommit(HeapTupleHeaderGetRawXmax(tuple)))
 		{
 			/* it must have aborted or crashed */
-			SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
-						InvalidTransactionId);
+			if (!TransactionIdIsInProgress(HeapTupleHeaderGetRawXmax(tuple)))
+				SetHintBits(tuple, buffer, HEAP_XMAX_INVALID,
+							InvalidTransactionId);
 			return true;
 		}
 
@@ -1461,6 +1466,12 @@ HeapTupleIsSurelyDead(HeapTuple htup, TransactionId OldestXmin)
 	return TransactionIdPrecedes(HeapTupleHeaderGetRawXmax(tuple), OldestXmin);
 }
 
+bool
+XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
+{
+	return TM->IsInSnapshot(xid, snapshot);
+}
+
 /*
  * XidInMVCCSnapshot
  *		Is the given XID still-in-progress according to the snapshot?
@@ -1472,7 +1483,7 @@ HeapTupleIsSurelyDead(HeapTuple htup, TransactionId OldestXmin)
  * XID could not be ours anyway.
  */
 bool
-XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
+PgXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 {
 	uint32		i;
 
