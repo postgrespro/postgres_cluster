@@ -305,7 +305,6 @@ static void AtCommit_Memory(void);
 static void AtStart_Cache(void);
 static void AtStart_Memory(void);
 static void AtStart_ResourceOwner(void);
-static void CallXactCallbacks(XactEvent event);
 static void CallSubXactCallbacks(SubXactEvent event,
 					 SubTransactionId mySubid,
 					 SubTransactionId parentSubid);
@@ -1928,6 +1927,7 @@ StartTransaction(void)
 	 */
 	s->state = TRANS_INPROGRESS;
 
+	CallXactCallbacks(XACT_EVENT_START);
 	ShowTransactionState("StartTransaction");
 }
 
@@ -3339,7 +3339,7 @@ UnregisterXactCallback(XactCallback callback, void *arg)
 	}
 }
 
-static void
+void
 CallXactCallbacks(XactEvent event)
 {
 	XactCallbackItem *item;

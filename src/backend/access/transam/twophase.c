@@ -1509,6 +1509,12 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
 	RemoveGXact(gxact);
 	LWLockRelease(TwoPhaseStateLock);
+
+	if (isCommit)
+		CallXactCallbacks(XACT_EVENT_COMMIT_PREPARED);
+	else
+		CallXactCallbacks(XACT_EVENT_ABORT_PREPARED);
+
 	MyLockedGxact = NULL;
 
 	pfree(buf);
@@ -2407,4 +2413,14 @@ PrepareRedoRemove(TransactionId xid, bool giveWarning)
 	RemoveGXact(gxact);
 
 	return;
+}
+
+
+/*
+ * Return identified of current global transaction
+ */
+const char*
+GetLockedGlobalTransactionId(void)
+{
+	return MyLockedGxact ? MyLockedGxact->gid : NULL;
 }
