@@ -7,7 +7,7 @@ sudo apt-get update
 
 # required packages
 apt_packages="postgresql-$PG_VER postgresql-server-dev-$PG_VER postgresql-common python-pip python-dev build-essential"
-pip_packages="testgres"
+pip_packages="testgres==0.4.0"
 
 # exit code
 status=0
@@ -93,11 +93,13 @@ if test -f regression.diffs; then cat regression.diffs; fi
 set +u
 
 # create virtual environment and activate it
-virtualenv /tmp/envs/pg_pathman
+virtualenv /tmp/envs/pg_pathman --python=python3
 source /tmp/envs/pg_pathman/bin/activate
+type python
+type pip
 
 # install pip packages
-pip3 install $pip_packages
+pip install $pip_packages
 
 # run python tests
 make USE_PGXS=1 PG_CONFIG=$config_path python_tests || status=$?
