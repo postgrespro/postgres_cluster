@@ -1076,6 +1076,8 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 	TimestampTz next_time;
 	char *next_time_str;
 	char *error;
+	schd_remove_reason_t die_reason = 0;
+	BgwHandleStatus status;
 
 	if(p->free == p->len) return 0;
 	busy = p->len - p->free;
@@ -1084,6 +1086,7 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 	for(i = 0; i < busy; i++)
 	{
 		item = p->slots[i];
+
 		if(item->wait_worker_to_die)
 		{
 			toremove[nremove].pos = i;
@@ -1121,6 +1124,27 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 				toremove[nremove].reason = RmFreeSlot;
 				toremove[nremove].vanish_item = true;
 				nremove++;
+			}
+			else
+			{
+				die_reason = 0;
+				status = GetBackgroundWorkerPid(item->handler, &tmppid);
+				if(status == BGWH_STOPPED)
+				{
+					die_reason = RmExited;
+				}
+				else if(status == BGWH_POSTMASTER_DIED)
+				{
+					die_reason = RmDied;
+				}
+		
+				if(die_reason)
+				{
+					toremove[nremove].pos = i;
+					toremove[nremove].reason = die_reason;
+					toremove[nremove].vanish_item = true;
+					nremove++;
+				}
 			}
 		}
 	}
@@ -1179,6 +1203,10 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 				{
 					set_job_error(ctx->mem_ctx, item->job, "unknown error occured" );
 				}
+			}
+			else if(toremove[i].reason == RmExited || toremove[i].reason == RmDied)
+			{
+				set_job_error(ctx->mem_ctx, item->job, "Executor died unexpectedly (%d)", toremove[i].reason);
 			}
 			else if(toremove[i].reason == RmFreeSlot)
 			{

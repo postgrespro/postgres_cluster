@@ -91,6 +91,8 @@ my @sql2 = (
 	"DROP ROLE IF EXISTS tester",
 	"CREATE ROLE tester",
 	"GRANT INSERT ON test_results TO tester",
+	"CREATE TABLE task_info (pid integer, name text, vanished timestamp, finished boolean default false)",
+	"GRANT ALL ON task_info TO tester",
 );
 map { __do_sql($dbh, $_) } @sql2;
 $dbh->disconnect();
@@ -109,7 +111,7 @@ my %args = (
 );
 my $harness = TAP::Harness->new( \%args );
 my @tests = glob( 't/*.t' );
-#@tests = ('t/jobMaxRunTime.t'); 
+#@tests = ('t/terminateBackend.t'); 
 $harness->runtests(@tests);
 
 

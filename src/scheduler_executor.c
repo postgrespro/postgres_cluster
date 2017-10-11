@@ -65,7 +65,10 @@ handle_sigterm(SIGNAL_ARGS)
 	}
 
 	errno = save_errno;
-	proc_exit(0);
+	/*
+	 * Do not need to exit at once
+	 * CHECK_FOR_INTERRUPTS  will do cleanup and exits
+	 */
 }
 
 int read_worker_job_limit(void)
@@ -133,7 +136,9 @@ void executor_worker_main(Datum arg)
 			ProcessConfigFile(PGC_SIGHUP);
 			worker_jobs_limit = read_worker_job_limit();
 		}
+		CHECK_FOR_INTERRUPTS();
 		result = do_one_job(shared, &status);
+		CHECK_FOR_INTERRUPTS();
 		if(result > 0)
 		{
 			if(++jobs_done >= worker_jobs_limit)
@@ -207,6 +212,7 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 
 	pgstat_report_activity(STATE_RUNNING, "initialize job");
 	job = initializeExecutorJob(shared);
+	CHECK_FOR_INTERRUPTS();
 	if(!job)
 	{
 		if(shared->message[0] == 0)
@@ -332,6 +338,7 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 
 		SetConfigOption("schedule.transaction_state", "success", PGC_INTERNAL, PGC_S_SESSION);
 	}
+	CHECK_FOR_INTERRUPTS();
 	if(job->next_time_statement)
 	{
 		shared->next_time = get_next_excution_time(job->next_time_statement, &EE);

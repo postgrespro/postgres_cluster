@@ -33,7 +33,9 @@ typedef enum {
 	RmWaitWorker,
 	RmError,
 	RmDoneResubmit,
-	RmDone
+	RmDone,
+	RmExited,
+	RmDied
 } schd_remove_reason_t;
 
 typedef struct {
