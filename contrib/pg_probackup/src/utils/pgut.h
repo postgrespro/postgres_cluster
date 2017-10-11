@@ -117,6 +117,9 @@ extern void pgut_atexit_pop(pgut_atexit_callback callback, void *userdata);
  */
 extern PGconn *pgut_connect(const char *dbname);
 extern PGconn *pgut_connect_extended(const char *pghost, const char *pgport,
+									 const char *dbname, const char *login);
+extern PGconn *pgut_connect_replication(const char *dbname);
+extern PGconn *pgut_connect_replication_extended(const char *pghost, const char *pgport,
 									 const char *dbname, const char *login,
 									 const char *pwd);
 extern void pgut_disconnect(PGconn *conn);
@@ -192,7 +195,7 @@ extern bool parse_int32(const char *value, int32 *result);
 extern bool parse_uint32(const char *value, uint32 *result);
 extern bool parse_int64(const char *value, int64 *result);
 extern bool parse_uint64(const char *value, uint64 *result);
-extern bool parse_time(const char *value, time_t *time);
+extern bool parse_time(const char *value, time_t *result);
 extern bool parse_int(const char *value, int *result, int flags,
 					  const char **hintmsg);
 
