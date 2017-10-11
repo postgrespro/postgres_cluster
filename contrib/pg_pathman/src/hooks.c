@@ -112,6 +112,41 @@ pathman_join_pathlist_hook(PlannerInfo *root,
 		!(inner_prel = get_pathman_relation_info(inner_rte->relid)))
 		return;
 
+	/*
+	 * Check if query is:
+	 *		1) UPDATE part_table SET = .. FROM part_table.
+	 *		2) DELETE FROM part_table USING part_table.
+	 *
+	 * Either outerrel or innerrel may be a result relation.
+	 */
+	if ((root->parse->resultRelation == outerrel->relid ||
+		 root->parse->resultRelation == innerrel->relid) &&
+			(root->parse->commandType == CMD_UPDATE ||
+			 root->parse->commandType == CMD_DELETE))
+	{
+		int		rti = -1,
+				count = 0;
+
+		/* Inner relation must be partitioned */
+		Assert(inner_prel);
+
+		/* Check each base rel of outer relation */
+		while ((rti = bms_next_member(outerrel->relids, rti)) >= 0)
+		{
+			Oid outer_baserel = root->simple_rte_array[rti]->relid;
+
+			/* Is it partitioned? */
+			if (get_pathman_relation_info(outer_baserel))
+				count++;
+		}
+
+		if (count > 0)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("DELETE and UPDATE queries with a join "
+							"of partitioned tables are not supported")));
+	}
+
 	/* Skip if inner table is not allowed to act as parent (e.g. FROM ONLY) */
 	if (PARENTHOOD_DISALLOWED == get_rel_parenthood_status(root->parse->queryId,
 														   inner_rte))
@@ -323,6 +358,17 @@ pathman_rel_pathlist_hook(PlannerInfo *root,
 		/*
 		 * Check that this child is not the parent table itself.
 		 * This is exactly how standard inheritance works.
+		 *
+		 * Helps with queries like this one:
+		 *
+		 *		UPDATE test.tmp t SET value = 2
+		 *		WHERE t.id IN (SELECT id
+		 *					   FROM test.tmp2 t2
+		 *					   WHERE id = t.id);
+		 *
+		 * Since we disable optimizations on 9.5, we
+		 * have to skip parent table that has already
+		 * been expanded by standard inheritance.
 		 */
 		if (rel->reloptkind == RELOPT_OTHER_MEMBER_REL)
 		{
@@ -590,9 +636,6 @@ pathman_planner_hook(Query *parse, int cursorOptions, ParamListInfo boundParams)
 
 		if (pathman_ready)
 		{
-			/* Give rowmark-related attributes correct names */
-			ExecuteForPlanTree(result, postprocess_lock_rows);
-
 			/* Add PartitionFilter node for INSERT queries */
 			ExecuteForPlanTree(result, add_partition_filters);
 
@@ -632,38 +675,50 @@ pathman_post_parse_analysis_hook(ParseState *pstate, Query *query)
 	if (post_parse_analyze_hook_next)
 		post_parse_analyze_hook_next(pstate, query);
 
-	/* Hooks can be disabled */
+	/* See cook_partitioning_expression() */
 	if (!pathman_hooks_enabled)
 		return;
 
-	/* Finish delayed invalidation jobs */
+	/* We shouldn't proceed on: ... */
+	if (query->commandType == CMD_UTILITY)
+	{
+		/* ... BEGIN */
+		if (xact_is_transaction_stmt(query->utilityStmt))
+			return;
+
+		/* ... SET pg_pathman.enable */
+		if (xact_is_set_stmt(query->utilityStmt, PATHMAN_ENABLE))
+		{
+			/* Accept all events in case it's "enable = OFF" */
+			if (IsPathmanReady())
+				finish_delayed_invalidation();
+
+			return;
+		}
+
+		/* ... SET [TRANSACTION] */
+		if (xact_is_set_stmt(query->utilityStmt, NULL))
+			return;
+
+		/* ... ALTER EXTENSION pg_pathman */
+		if (xact_is_alter_pathman_stmt(query->utilityStmt))
+		{
+			/* Leave no delayed events before ALTER EXTENSION */
+			if (IsPathmanReady())
+				finish_delayed_invalidation();
+
+			/* Disable pg_pathman to perform a painless update */
+			(void) set_config_option(PATHMAN_ENABLE, "off",
+									 PGC_SUSET, PGC_S_SESSION,
+									 GUC_ACTION_SAVE, true, 0, false);
+
+			return;
+		}
+	}
+
+	/* Finish all delayed invalidation jobs */
 	if (IsPathmanReady())
 		finish_delayed_invalidation();
-
-	/*
-	 * We shouldn't proceed on:
-	 *		BEGIN
-	 *		SET [TRANSACTION]
-	 */
-	if (query->commandType == CMD_UTILITY &&
-		   (xact_is_transaction_stmt(query->utilityStmt) ||
-			xact_is_set_stmt(query->utilityStmt)))
-		return;
-
-	/*
-	 * We should also disable pg_pathman on:
-	 *		ALTER EXTENSION pg_pathman
-	 */
-	if (query->commandType == CMD_UTILITY &&
-			xact_is_alter_pathman_stmt(query->utilityStmt))
-	{
-		/* Disable pg_pathman to perform a painless update */
-		(void) set_config_option(PATHMAN_ENABLE, "off",
-								 PGC_SUSET, PGC_S_SESSION,
-								 GUC_ACTION_SAVE, true, 0, false);
-
-		return;
-	}
 
 	/* Load config if pg_pathman exists & it's still necessary */
 	if (IsPathmanEnabled() &&
@@ -746,7 +801,7 @@ pathman_relcache_hook(Datum arg, Oid relid)
 {
 	Oid parent_relid;
 
-	/* Hooks can be disabled */
+	/* See cook_partitioning_expression() */
 	if (!pathman_hooks_enabled)
 		return;
 
@@ -819,6 +874,7 @@ pathman_process_utility_hook(Node *first_arg,
 		Oid			relation_oid;
 		PartType	part_type;
 		AttrNumber	attr_number;
+		bool		is_parent;
 
 		/* Override standard COPY statement if needed */
 		if (is_pathman_related_copy(parsetree))
@@ -837,10 +893,15 @@ pathman_process_utility_hook(Node *first_arg,
 
 		/* Override standard RENAME statement if needed */
 		else if (is_pathman_related_table_rename(parsetree,
-												 &relation_oid))
+												 &relation_oid,
+												 &is_parent))
 		{
-			PathmanRenameConstraint(relation_oid,
-									(const RenameStmt *) parsetree);
+			const RenameStmt *rename_stmt = (const RenameStmt *) parsetree;
+
+			if (is_parent)
+				PathmanRenameSequence(relation_oid, rename_stmt);
+			else
+				PathmanRenameConstraint(relation_oid, rename_stmt);
 		}
 
 		/* Override standard ALTER COLUMN TYPE statement if needed */
