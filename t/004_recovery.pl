@@ -48,7 +48,7 @@ $cluster->psql(0, 'postgres', $hash_query, stdout => \$hash0);
 $cluster->psql(1, 'postgres', $hash_query, stdout => \$hash1);
 $cluster->psql(2, 'postgres', $hash_query, stdout => \$hash2);
 
-diag("$oldhash, $hash0, $hash1, $hash2");
+note("$oldhash, $hash0, $hash1, $hash2");
 is( (($hash0 == $hash1) and ($hash1 == $hash2) and ($oldhash == $hash0)) , 1, "Check that hash is the same after recovery");
 
 ########################################################
@@ -108,14 +108,14 @@ sleep(10);
 $cluster->psql(0, 'postgres', $hash_query, stdout => \$hash0);
 $cluster->psql(1, 'postgres', $hash_query, stdout => \$hash1);
 $cluster->psql(2, 'postgres', $hash_query, stdout => \$hash2);
-diag("$hash0, $hash1, $hash2");
+note("$hash0, $hash1, $hash2");
 is( (($hash0 == $hash1) and ($hash1 == $hash2)) , 1, "Check that hash is the same");
 
 # $cluster->psql(0, 'postgres', "select sum(abalance) from pgbench_accounts;", stdout => \$sum0);
 # $cluster->psql(1, 'postgres', "select sum(abalance) from pgbench_accounts;", stdout => \$sum1);
 # $cluster->psql(2, 'postgres', "select sum(abalance) from pgbench_accounts;", stdout => \$sum2);
 
-# diag("Sums: $sum0, $sum1, $sum2");
+# note("Sums: $sum0, $sum1, $sum2");
 # is($sum2, $sum0, "Check that sum_2 == sum_0");
 # is($sum2, $sum1, "Check that sum_2 == sum_1");
 
