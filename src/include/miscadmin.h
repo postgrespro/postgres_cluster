@@ -161,7 +161,7 @@ extern PGDLLIMPORT int NBuffers;
 extern int	MaxATX;
 extern int	MaxBackends;
 extern int	MaxConnections;
-extern int	max_worker_processes;
+extern PGDLLIMPORT int	max_worker_processes;
 
 extern PGDLLIMPORT int MyProcPid;
 extern PGDLLIMPORT pg_time_t MyStartTime;
