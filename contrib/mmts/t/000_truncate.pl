@@ -13,7 +13,7 @@ my $cluster = new Cluster($nnodes);
 $cluster->init();
 $cluster->configure();
 $cluster->start();
-diag("sleeping 10");
+note("sleeping 10");
 sleep(10);
 
 my ($in, $out, $err, $rc);
@@ -28,7 +28,7 @@ my @init_argv = (
 	-p => $cluster->{nodes}->[0]->port(),
 	'postgres',
 );
-diag("running pgbench init");
+note("running pgbench init");
 my $init_run = start(\@init_argv, $in, $out);
 finish($init_run) || BAIL_OUT("pgbench exited with $?");
 
@@ -41,7 +41,7 @@ my @bench_argv = (
 	-p => $cluster->{nodes}->[0]->port(),
 	'postgres',
 );
-diag("running pgbench: " . join(' ', @bench_argv));
+note("running pgbench: " . join(' ', @bench_argv));
 my $bench_run = start(\@bench_argv, $in, $out);
 sleep(2);
 

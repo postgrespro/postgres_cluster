@@ -16,10 +16,10 @@ $cluster->start();
 
 my ($rc, $in, $out, $err);
 
-diag("sleeping 10");
+note("sleeping 10");
 sleep(10);
 
-diag("preparing the tables");
+note("preparing the tables");
 if ($cluster->psql(0, 'postgres', "create table t (k int primary key, v int)"))
 {
 	$cluster->bail_out_with_logs('failed to create t');
@@ -56,7 +56,7 @@ sub reader
 		'postgres',
 	);
 
-	diag("running[" . getcwd() . "]: " . join(' ', @argv));
+	note("running[" . getcwd() . "]: " . join(' ', @argv));
 
 	return start(\@argv, $inref, $outref);
 }
@@ -80,12 +80,12 @@ sub writer
 		'postgres',
 	);
 
-	diag("running[" . getcwd() . "]: " . join(' ', @argv));
+	note("running[" . getcwd() . "]: " . join(' ', @argv));
 
 	return start(\@argv, $inref, $outref);
 }
 
-diag("starting benches");
+note("starting benches");
 $in = '';
 $out = '';
 my @benches = ();
@@ -95,14 +95,14 @@ foreach my $node (@{$cluster->{nodes}})
 	push(@benches, reader($node, \$in, \$out));
 }
 
-diag("finishing benches");
+note("finishing benches");
 foreach my $bench (@benches)
 {
 	finish($bench) || $cluster->bail_out_with_logs("pgbench exited with $?");
 }
-diag($out);
+note($out);
 
-diag("checking readers' logs");
+note("checking readers' logs");
 
 ($rc, $out, $err) = $cluster->psql(0, 'postgres', "select count(*) from reader_log where v != 0;");
 is($out, 0, "there is nothing except zeros in reader_log");

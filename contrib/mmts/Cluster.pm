@@ -157,7 +157,7 @@ sub start
 	foreach my $node (@$nodes)
 	{
 		$node->start();
-		diag "Starting node with connstr 'dbname=postgres port=@{[ $node->port() ]} host=@{[ $node->host() ]}'";
+		note( "Starting node with connstr 'dbname=postgres port=@{[ $node->port() ]} host=@{[ $node->host() ]}'");
 	}
 }
 
@@ -167,7 +167,7 @@ sub stopnode
 	return 1 unless defined $node->{_pid};
 	$mode = 'fast' unless defined $mode;
 	my $name   = $node->name;
-	diag("stopping $name ${mode}ly");
+	note("stopping $name ${mode}ly");
 
 	if ($mode eq 'kill') {
 		killtree($node->{_pid});
@@ -177,13 +177,13 @@ sub stopnode
 	my $pgdata = $node->data_dir;
 	my $ret = TestLib::system_log('pg_ctl', '-D', $pgdata, '-m', 'fast', 'stop');
 	my $pidfile = $node->data_dir . "/postmaster.pid";
-	diag("unlink $pidfile");
+	note("unlink $pidfile");
 	unlink $pidfile;
 	$node->{_pid} = undef;
 	$node->_update_pid;
 
 	if ($ret != 0) {
-		diag("$name failed to stop ${mode}ly");
+		note("$name failed to stop ${mode}ly");
 		return 0;
 	}
 
@@ -201,16 +201,16 @@ sub dumplogs
 	my ($self) = @_;
 	my $nodes = $self->{nodes};
 
-	diag("Dumping logs:");
+	note("Dumping logs:");
 	foreach my $node (@$nodes) {
-		diag("##################################################################");
-		diag($node->{_logfile});
-		diag("##################################################################");
+		note("##################################################################");
+		note($node->{_logfile});
+		note("##################################################################");
 		my $filename = $node->{_logfile};
 		open my $fh, '<', $filename or die "error opening $filename: $!";
 		my $data = do { local $/; <$fh> };
-		diag($data);
-		diag("##################################################################\n\n");
+		note($data);
+		note("##################################################################\n\n");
 	}
 }
 
@@ -221,7 +221,7 @@ sub stop
 	$mode = 'fast' unless defined $mode;
 
 	my $ok = 1;
-	diag("stopping cluster ${mode}ly");
+	note("stopping cluster ${mode}ly");
 	
 	foreach my $node (@$nodes) {
 		if (!stopnode($node, $mode)) {
@@ -276,7 +276,7 @@ sub poll
 			return 1;
 		}
 		my $tries_left = $tries - $i - 1;
-		diag("$poller poll for $pollee failed [$tries_left tries left]");
+		note("$poller poll for $pollee failed [$tries_left tries left]");
 		sleep($delay);
 	}
 	return 0;
@@ -304,7 +304,7 @@ sub pgbench_async()
 		-p => $self->{nodes}->[$node]->port(),
 		'postgres',
 	);
-	diag("running pgbench: " . join(" ", @pgbench_command));
+	note("running pgbench: " . join(" ", @pgbench_command));
 	my $handle = IPC::Run::start(\@pgbench_command, $in, $out);
 	return $handle;
 }
@@ -329,7 +329,7 @@ sub is_data_identic()
 		$self->{nodes}->[$i]->psql('postgres', $sql, stdout => \$current_hash);
 		if ($current_hash eq '')
 		{
-			diag("got empty hash from node $i");
+			note("got empty hash from node $i");
 			return 0;
 		}
 		if ($checksum eq '')
@@ -338,12 +338,12 @@ sub is_data_identic()
 		}
 		elsif ($checksum ne $current_hash)
 		{
-			diag("got different hashes: $checksum ang $current_hash");
+			note("got different hashes: $checksum ang $current_hash");
 			return 0;
 		}
 	}
 
-	diag($checksum);
+	note($checksum);
 	return 1;
 }
 
