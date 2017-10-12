@@ -158,6 +158,7 @@ extern bool ExitOnAnyError;
 extern PGDLLIMPORT char *DataDir;
 
 extern PGDLLIMPORT int NBuffers;
+
 extern PGDLLIMPORT int	MaxATX;
 extern PGDLLIMPORT int	MaxBackends;
 extern PGDLLIMPORT int	MaxConnections;
