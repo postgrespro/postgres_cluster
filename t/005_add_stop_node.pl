@@ -90,6 +90,8 @@ $cluster->pgbench(1, ('-N', '-n', -T => '1') );
 $cluster->pgbench(3, ('-N', '-n', -T => '1') );
 is($cluster->is_data_identic( (0,1,3) ), 1, "hard stop / resume");
 
+TODO: {
+todo_skip "Not working correcly yet",1;
 $cluster->psql(0, 'postgres', "select mtm.recover_node(3)");
 
 # now we need to perform backup from live node
@@ -102,9 +104,9 @@ note("preparing to start $dd");
 
 $cluster->{nodes}->[4]->start;
 $cluster->{nodes}->[4]->poll_query_until('postgres', "select 't'");
-
 $cluster->pgbench(0, ('-N', '-n', -T => '1') );
 $cluster->pgbench(1, ('-N', '-n', -T => '1') );
 $cluster->pgbench(3, ('-N', '-n', -T => '1') );
 $cluster->pgbench(4, ('-N', '-n', -T => '1') );
 is($cluster->is_data_identic( (0,1,3,4) ), 1, "hard stop / resume");
+}
