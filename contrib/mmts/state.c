@@ -102,14 +102,15 @@ MtmCheckState(void)
 			// XXXX: should we restrict major with two nodes setup?
 			|| (nConnected == Mtm->nAllNodes/2 && MtmMajorNode)			/* or half + major node */
 			|| (nConnected == Mtm->nAllNodes/2 && Mtm->refereeGrant) )  /* or half + referee */
-		&& BIT_CHECK(Mtm->clique, MtmNodeId-1)							/* in clique */
+		&& (BIT_CHECK(Mtm->clique, MtmNodeId-1) || Mtm->refereeGrant)	/* in clique when non-major */
 		&& !BIT_CHECK(Mtm->stoppedNodeMask, MtmNodeId-1);				/* is not stopped */
 
 	/* ANY -> MTM_DISABLED */
 	if (!isEnabledState)
 	{
-		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
+		// BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
 		MtmSetClusterStatus(MTM_DISABLED);
+		MtmDisableNode(MtmNodeId);
 		return;
 	}
 
@@ -311,9 +312,9 @@ void MtmOnNodeDisconnect(int nodeId)
 	 * We should disable it, as clique detector will not necessarily
 	 * do that. For example it will anyway find clique with one node.
 	 */
-	MtmDisableNode(nodeId);
 
 	MtmLock(LW_EXCLUSIVE);
+	MtmDisableNode(nodeId);
 	BIT_SET(SELF_CONNECTIVITY_MASK, nodeId-1);
 	BIT_SET(Mtm->reconnectMask, nodeId-1);
 	Mtm->nConfigChanges += 1;
