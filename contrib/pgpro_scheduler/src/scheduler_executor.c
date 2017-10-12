@@ -27,6 +27,9 @@
 #include "utils/builtins.h"
 #include "utils/timestamp.h"
 #include "utils/memutils.h"
+#if PG_VERSION_NUM >= 100000
+#include "utils/regproc.h"
+#endif
 #include "utils/guc.h"
 
 #include "pgpro_scheduler.h"
@@ -62,7 +65,10 @@ handle_sigterm(SIGNAL_ARGS)
 	}
 
 	errno = save_errno;
-	proc_exit(0);
+	/*
+	 * Do not need to exit at once
+	 * CHECK_FOR_INTERRUPTS  will do cleanup and exits
+	 */
 }
 
 int read_worker_job_limit(void)
@@ -130,7 +136,9 @@ void executor_worker_main(Datum arg)
 			ProcessConfigFile(PGC_SIGHUP);
 			worker_jobs_limit = read_worker_job_limit();
 		}
+		CHECK_FOR_INTERRUPTS();
 		result = do_one_job(shared, &status);
+		CHECK_FOR_INTERRUPTS();
 		if(result > 0)
 		{
 			if(++jobs_done >= worker_jobs_limit)
@@ -160,7 +168,12 @@ void executor_worker_main(Datum arg)
 		}
 
 		pgstat_report_activity(STATE_IDLE, "waiting for a job");
+#if PG_VERSION_NUM < 100000
 		rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0L);
+#else
+		rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_POSTMASTER_DEATH, 0L,
+			PG_WAIT_EXTENSION);
+#endif
 		ResetLatch(MyLatch);
 		if(rc && rc & WL_POSTMASTER_DEATH) break;
 	}
@@ -199,6 +212,7 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 
 	pgstat_report_activity(STATE_RUNNING, "initialize job");
 	job = initializeExecutorJob(shared);
+	CHECK_FOR_INTERRUPTS();
 	if(!job)
 	{
 		if(shared->message[0] == 0)
@@ -237,8 +251,6 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 
 	pgstat_report_activity(STATE_RUNNING, "process job");
 	CHECK_FOR_INTERRUPTS();
-	/* rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 0);
-	ResetLatch(MyLatch); */
 	SetConfigOption("schedule.transaction_state", "running", PGC_INTERNAL, PGC_S_SESSION);
 
 	if(job->same_transaction)
@@ -326,6 +338,7 @@ int do_one_job(schd_executor_share_t *shared, schd_executor_status_t *status)
 
 		SetConfigOption("schedule.transaction_state", "success", PGC_INTERNAL, PGC_S_SESSION);
 	}
+	CHECK_FOR_INTERRUPTS();
 	if(job->next_time_statement)
 	{
 		shared->next_time = get_next_excution_time(job->next_time_statement, &EE);
@@ -737,7 +750,12 @@ void at_executor_worker_main(Datum arg)
 		{
 			pgstat_report_activity(STATE_IDLE, "waiting for a job");
 			rc = WaitLatch(MyLatch,
+#if PG_VERSION_NUM < 100000
 				WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_TIMEOUT, 1000L);
+#else
+				WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_TIMEOUT, 1000L,
+				PG_WAIT_EXTENSION);
+#endif
 			ResetLatch(MyLatch);
 			if(rc && rc & WL_POSTMASTER_DEATH) break;
 			lets_sleep = false;
