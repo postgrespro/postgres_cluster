@@ -449,6 +449,7 @@ static const BuiltinScript builtin_script[] =
 /* Default transaction isolation level */
 typedef enum DefaultIsolationLevel
 {
+	READ_UNCOMMITTED,
 	READ_COMMITTED,
 	REPEATABLE_READ,
 	SERIALIZABLE,
@@ -457,10 +458,22 @@ typedef enum DefaultIsolationLevel
 
 DefaultIsolationLevel default_isolation_level = READ_COMMITTED;
 
-static const char *DEFAULT_ISOLATION_LEVEL_ABBREVIATION[] = {"RC", "RR", "S"};
+static const char *DEFAULT_ISOLATION_LEVEL_ABBREVIATION[] = {
+	"RUC",
+	"RC",
+	"RR",
+	"S"
+};
 static const char *DEFAULT_ISOLATION_LEVEL_SQL[] = {
+	"read uncommitted",
 	"read committed",
 	"repeatable read",
+	"serializable"
+};
+static const char *DEFAULT_ISOLATION_LEVEL_SHELL[] = {
+	"read\\ uncommitted",
+	"read\\ committed",
+	"repeatable\\ read",
 	"serializable"
 };
 
@@ -2708,9 +2721,9 @@ doLog(TState *thread, CState *st, instr_time *now,
 		if (throttle_delay)
 			fprintf(logfile, " %.0f", lag);
 		if (max_tries > 1)
-				fprintf(logfile, " " INT64_FORMAT " " INT64_FORMAT,
-						st->retries.serialization,
-						st->retries.deadlocks);
+			fprintf(logfile, " " INT64_FORMAT " " INT64_FORMAT,
+					st->retries.serialization,
+					st->retries.deadlocks);
 		fputc('\n', logfile);
 	}
 }
@@ -3398,16 +3411,16 @@ process_backslash_command(PsqlScanState sstate, const char *source)
 }
 
 /*
- * Returns the same command where all continuous blocks of whitespaces are
- * replaced by one space symbol.
+ * Returns the same text where all continuous blocks of whitespaces are replaced
+ * by one space symbol.
  *
  * Returns a malloc'd string.
  */
 static char *
-normalize_whitespaces(const char *command)
+normalize_whitespaces(const char *text)
 {
-	const char *ptr = command;
-	char	   *buffer = pg_malloc(strlen(command) + 1);
+	const char *ptr = text;
+	char	   *buffer = pg_malloc(strlen(text) + 1);
 	int			length = 0;
 
 	while (*ptr)
@@ -4065,6 +4078,39 @@ main(int argc, char **argv)
 		pgport = env;
 	else if ((env = getenv("PGUSER")) != NULL && *env != '\0')
 		login = env;
+	if ((env = getenv("PGOPTIONS")) != NULL && *env != '\0')
+	{
+		/* search for the default transaction isolation level value */
+		char	   *pgoptions = normalize_whitespaces(env);
+		const char *ptr = pgoptions;
+		int			level;
+
+		while (*ptr)
+		{
+			if (isspace((unsigned char) *ptr))
+				ptr++;
+			if (strncmp(ptr, "-c ", 3) == 0 &&
+				pg_strncasecmp(ptr + 3, "default_transaction_isolation=", 30) == 0)
+			{
+				ptr = ptr + 33;
+				for (level = 0; level < NUM_DEFAULT_ISOLATION_LEVEL; level++)
+				{
+					const char *level_shell = DEFAULT_ISOLATION_LEVEL_SHELL[
+						level];
+					int			level_shell_len = strlen(level_shell);
+					const char *next = ptr + level_shell_len;
+
+					if (pg_strncasecmp(ptr, level_shell, level_shell_len) == 0
+						&& (*next == '\0' || isspace((unsigned char) *next)))
+						default_isolation_level = level;
+				}
+			}
+			while (*ptr && !isspace((unsigned char) *ptr))
+				ptr++;
+		}
+
+		pg_free(pgoptions);
+	}
 
 	state = (CState *) pg_malloc(sizeof(CState));
 	memset(state, 0, sizeof(CState));

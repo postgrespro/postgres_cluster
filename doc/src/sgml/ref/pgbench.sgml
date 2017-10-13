@@ -347,6 +347,9 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
          Set the default transaction isolation level:
           <itemizedlist>
            <listitem>
+            <para><literal>RUC</>: Read Uncommitted</para>
+           </listitem>
+           <listitem>
             <para><literal>RC</>: Read Committed</para>
            </listitem>
            <listitem>

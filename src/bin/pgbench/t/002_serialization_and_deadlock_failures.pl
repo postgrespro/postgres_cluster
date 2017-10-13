@@ -4,26 +4,31 @@ use warnings;
 use Config;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 59;
+use Test::More tests => 76;
 
 use constant
 {
-	READ_COMMITTED  => 0,
-	REPEATABLE_READ => 1,
-	SERIALIZABLE    => 2,
+	READ_UNCOMMITTED => 0,
+	READ_COMMITTED   => 1,
+	REPEATABLE_READ  => 2,
+	SERIALIZABLE     => 3,
 };
 
-my @isolation_level_sql = ('read committed', 'repeatable read', 'serializable');
-my @isolation_level_abbreviations = ('RC', 'RR', 'S');
+my @isolation_level_sql = (
+	'read uncommitted',
+	'read committed',
+	'repeatable read',
+	'serializable');
+my @isolation_level_abbreviations = ('RUC', 'RC', 'RR', 'S');
 
 # The keys of advisory locks for testing deadlock failures:
 use constant
 {
-	TRANSACTION_BEGINS => 3,
-	DEADLOCK_1         => 4,
-	WAIT_PGBENCH_2     => 5,
-	DEADLOCK_2         => 6,
-	TRANSACTION_ENDS   => 7,
+	TRANSACTION_BEGINS => 4,
+	DEADLOCK_1         => 5,
+	WAIT_PGBENCH_2     => 6,
+	DEADLOCK_2         => 7,
+	TRANSACTION_ENDS   => 8,
 };
 
 # Test concurrent update in table row with different default transaction
@@ -33,7 +38,7 @@ $node->init;
 $node->start;
 $node->safe_psql('postgres',
     'CREATE UNLOGGED TABLE xy (x integer, y integer); '
-  . 'INSERT INTO xy VALUES (1, 2), (2, 3);');
+  . 'INSERT INTO xy VALUES (1, 2);');
 
 my $script_serialization = $node->basedir . '/pgbench_script_serialization';
 append_to_file($script_serialization,
@@ -111,7 +116,8 @@ sub test_pgbench_default_transaction_isolation_level_and_serialization_failures
 	  \$err_pgbench;
 
 	# Wait until pgbench also tries to acquire the same advisory lock:
-	do {
+	do
+	{
 		$in_psql =
 			"select * from pg_locks where "
 		  . "locktype = 'advisory' and "
@@ -169,19 +175,32 @@ sub test_pgbench_default_transaction_isolation_level_and_serialization_failures
 	  . $isolation_level_sql
 	  . ": check processed transactions");
 
-	my $regex =
-		($isolation_level == READ_COMMITTED)
-	  ? qr{^((?!number of failures)(.|\n))*$}
-	  : qr{number of failures: [1-9]\d* \([1-9]\d*\.\d* %\)};
+	my ($regex);
+
+	if ($isolation_level == READ_UNCOMMITTED ||
+		$isolation_level == READ_COMMITTED)
+	{
+		$regex = qr{^((?!number of failures)(.|\n))*$};
+	}
+	else
+	{
+		$regex = qr{number of failures: [1-9]\d* \([1-9]\d*\.\d* %\)};
+	}
 
 	like($out_pgbench,
 		$regex,
 		"concurrent update: $isolation_level_sql: check failures");
 
-	$regex =
-		($isolation_level == READ_COMMITTED)
-	  ? qr{^((?!client 0 got a serialization failure \(try 1/1\))(.|\n))*$}
-	  : qr{client 0 got a serialization failure \(try 1/1\)};
+	if ($isolation_level == READ_UNCOMMITTED ||
+		$isolation_level == READ_COMMITTED)
+	{
+		$regex =
+			qr{^((?!client 0 got a serialization failure \(try 1/1\))(.|\n))*$};
+	}
+	else
+	{
+		$regex = qr{client 0 got a serialization failure \(try 1/1\)};
+	}
 
 	like($err_pgbench,
 		$regex,
@@ -228,7 +247,8 @@ sub test_pgbench_serialization_failures_retry
 	  \$err_pgbench;
 
 	# Wait until pgbench also tries to acquire the same advisory lock:
-	do {
+	do
+	{
 		$in_psql =
 			"select * from pg_locks where "
 		  . "locktype = 'advisory' and "
@@ -341,7 +361,8 @@ sub test_pgbench_deadlock_failures
 	$h1 = IPC::Run::start \@command1, \$in1, \$out1, \$err1;
 
 	# Wait until the first pgbench also tries to acquire the same advisory lock:
-	do {
+	do
+	{
 		$in_psql =
 			"select case count(*) "
 		  . "when 0 then '" . WAIT_PGBENCH_2 . "_zero' "
@@ -369,7 +390,8 @@ sub test_pgbench_deadlock_failures
 
 	# Wait until the second pgbench tries to acquire the lock held by the first
 	# pgbench:
-	do {
+	do
+	{
 		$in_psql =
 			"select case count(*) "
 		  . "when 0 then '" . DEADLOCK_1 . "_zero' "
@@ -486,7 +508,8 @@ sub test_pgbench_deadlock_failures_retry
 	$h1 = IPC::Run::start \@command1, \$in1, \$out1, \$err1;
 
 	# Wait until the first pgbench also tries to acquire the same advisory lock:
-	do {
+	do
+	{
 		$in_psql =
 			"select case count(*) "
 		  . "when 0 then '" . WAIT_PGBENCH_2 . "_zero' "
@@ -514,7 +537,8 @@ sub test_pgbench_deadlock_failures_retry
 
 	# Wait until the second pgbench tries to acquire the lock held by the first
 	# pgbench:
-	do {
+	do
+	{
 		$in_psql =
 			"select case count(*) "
 		  . "when 0 then '" . DEADLOCK_1 . "_zero' "
@@ -557,7 +581,8 @@ sub test_pgbench_deadlock_failures_retry
 	$h_psql->pump() until $out_psql =~ /pg_advisory_unlock_@{[ WAIT_PGBENCH_2 ]}/;
 
 	# Wait until pgbenches try to acquire the locks held by the psql session:
-	do {
+	do
+	{
 		$in_psql =
 			"select case count(*) "
 		  . "when 0 then '" . TRANSACTION_BEGINS . "_zero' "
@@ -573,7 +598,8 @@ sub test_pgbench_deadlock_failures_retry
 		$h_psql->pump() while length $in_psql;
 	} while ($out_psql !~ /@{[ TRANSACTION_BEGINS ]}_not_zero/);
 
-	do {
+	do
+	{
 		$in_psql =
 			"select case count(*) "
 		  . "when 0 then '" . TRANSACTION_ENDS . "_zero' "
@@ -679,6 +705,8 @@ sub test_pgbench_deadlock_failures_retry
 }
 
 test_pgbench_default_transaction_isolation_level_and_serialization_failures(
+	READ_UNCOMMITTED);
+test_pgbench_default_transaction_isolation_level_and_serialization_failures(
 	READ_COMMITTED);
 test_pgbench_default_transaction_isolation_level_and_serialization_failures(
 	REPEATABLE_READ);
@@ -688,10 +716,12 @@ test_pgbench_default_transaction_isolation_level_and_serialization_failures(
 test_pgbench_serialization_failures_retry(REPEATABLE_READ);
 test_pgbench_serialization_failures_retry(SERIALIZABLE);
 
+test_pgbench_deadlock_failures(READ_UNCOMMITTED);
 test_pgbench_deadlock_failures(READ_COMMITTED);
 test_pgbench_deadlock_failures(REPEATABLE_READ);
 test_pgbench_deadlock_failures(SERIALIZABLE);
 
+test_pgbench_deadlock_failures_retry(READ_UNCOMMITTED);
 test_pgbench_deadlock_failures_retry(READ_COMMITTED);
 test_pgbench_deadlock_failures_retry(REPEATABLE_READ);
 test_pgbench_deadlock_failures_retry(SERIALIZABLE);
