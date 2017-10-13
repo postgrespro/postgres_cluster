@@ -1527,7 +1527,7 @@ script statistics:
   </para>
 
   <para>
-   The latency of a sucessful transaction includes the entire time of
+   The latency of a successful transaction includes the entire time of
    transaction execution with rollbacks and retries. The latency for failed
    transactions and commands is not computed separately.
   </para>
