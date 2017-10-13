@@ -46,6 +46,11 @@
       times.
       </para>
       </listitem>
+      <listitem>
+      <para>
+      fix incompatibility of pg_pathman and online_analyze extensions.
+      </para>
+      </listitem>
       </itemizedlist>
       </sect2>
       </sect1>

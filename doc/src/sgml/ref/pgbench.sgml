@@ -499,7 +499,7 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
         perspective of the client), the number of serialization failures and
         retries, the number of deadlock failures and retries. The report
         displays the columns with statistics on failures and retries only if the
-        current <application>pgbech</> run has a failure or retry of any type,
+        current <application>pgbench</> run has a failure or retry of any type,
         respectively. See below for details.
        </para>
       </listitem>
@@ -1402,7 +1402,7 @@ END;
 
   <para>
    The report displays the columns with statistics on failures and retries only
-   if the current <application>pgbech</> run has a failure or retry of any
+   if the current <application>pgbench</> run has a failure or retry of any
    type, respectively.
   </para>
 
@@ -1527,20 +1527,19 @@ script statistics:
   </para>
 
   <para>
-   The latency of a sucessful transaction includes the entire time of
+   The latency of a successful transaction includes the entire time of
    transaction execution with rollbacks and retries. The latency for failed
    transactions and commands is not computed separately.
   </para>
 
   <para>
-   The main report contains the number of failed transactions if it is not zero
+   The main report contains the number of failed transactions if it is non-zero
    (see <xref linkend="transactions-and-scripts"
    endterm="transactions-and-scripts-title"> for more information). If the total
-   number of retried transactions is not zero the main report also contains it,
+   number of retried transactions is non-zero, the main report also contains
    the total number of retries and the number of retries after each kind of
    failure (use option <option>--max-tries</> to make it possible). The
-   per-statement report contains the failures if the main report contains them
-   too. The same for retries.
+   per-statement report inherits all columns from the main report.
   </para>
   <note>
      <para>The total sum of retries can be greater than the number of
