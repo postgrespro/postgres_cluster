@@ -51,7 +51,7 @@ sleep(5); # Wait until failure of node will be detected
 
 note("inserting 2 on node 0");
 $ret = $cluster->psql(0, 'postgres', "insert into t values(2, 20);"); # this transaciton may fail
-note  "tx1 status = $ret";
+note("tx1 status = $ret");
  
 
 note("inserting 3 on node 1");
@@ -60,7 +60,7 @@ note("tx2 status = $ret");
 
 note("inserting 4 on node 0 (can fail)");
 $ret = $cluster->psql(0, 'postgres', "insert into t values(4, 40);"); 
-note "tx1 status = $ret";
+note("tx1 status = $ret");
 
 note("inserting 5 on node 1 (can fail)");
 $ret = $cluster->psql(1, 'postgres', "insert into t values(5, 50);"); 
