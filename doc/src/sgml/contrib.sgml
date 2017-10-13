@@ -134,7 +134,6 @@ CREATE EXTENSION <replaceable>module_name</> FROM unpackaged;
  &online-analyze;
  &pageinspect;
  &passwordcheck;
- &pgaudit;
  &pgbuffercache;
  &pgcrypto;
  &pgfreespacemap;
