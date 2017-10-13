@@ -1537,7 +1537,8 @@ script statistics:
    (see <xref linkend="transactions-and-scripts"
    endterm="transactions-and-scripts-title"> for more information). If the total
    number of retried transactions is non-zero, the main report also contains
-   the total number of retries and the number of retries after each kind of
+   the total number of retried transactions, the total number of retries, and
+   the number of retries after each kind of
    failure (use option <option>--max-tries</> to make it possible). The
    per-statement report inherits all columns from the main report.
   </para>
