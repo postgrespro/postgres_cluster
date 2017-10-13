@@ -20,6 +20,7 @@
 #include "access/genam.h"
 #include "access/generic_xlog.h"
 #include "catalog/pg_depend.h"
+#include "catalog/pg_tablespace.h"
 #include "access/htup_details.h"
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
@@ -29,6 +30,7 @@
 #include "utils/array.h"
 #include "utils/relfilenodemap.h"
 #include "utils/builtins.h"
+#include "utils/pg_lsn.h"
 #include <unistd.h>
 #include <sys/stat.h>
 
@@ -55,6 +57,11 @@ void SetPtrackClearLSN(bool set_invalid);
 Datum pg_ptrack_test(PG_FUNCTION_ARGS);
 Datum pg_ptrack_clear(PG_FUNCTION_ARGS);
 Datum pg_ptrack_get_and_clear(PG_FUNCTION_ARGS);
+Datum pg_ptrack_get_and_clear_db(PG_FUNCTION_ARGS);
+Datum pg_ptrack_control_lsn(PG_FUNCTION_ARGS);
+
+void create_ptrack_init_file(char *dest_dir);
+void drop_ptrack_init_file(char *dest_dir);
 
 /*
  * Mark tracked memory block during recovery.
@@ -471,172 +478,6 @@ assign_ptrack_enable(bool newval, void *extra)
 		SetPtrackClearLSN(true);
 }
 
-/* Test ptrack file. */
-Datum
-pg_ptrack_test(PG_FUNCTION_ARGS)
-{
-	Oid relation_oid = PG_GETARG_OID(0);
-	BlockNumber nblock, num_blocks;
-	Relation rel;
-	XLogRecPtr ptrack_control_lsn;
-	Buffer ptrack_buf = InvalidBuffer;
-	Page		page;
-	char	   *map;
-	int			fd;
-	unsigned int excess_data_counter = 0;
-	unsigned int necessary_data_counter = 0;
-	ArrayType *result_array;
-	Datum result_elems[2];
-
-	if (!superuser() && !has_rolreplication(GetUserId()))
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-		 (errmsg("must be superuser or replication role to clear ptrack files"))));
-
-	/* get LSN from ptrack_control file */
-	fd = BasicOpenFile("global/ptrack_control",
-					   O_RDONLY | PG_BINARY,
-					   0);
-
-	if (fd < 0)
-		ereport(PANIC,
-				(errcode_for_file_access(),
-				 errmsg("could not open ptrack control file \"%s\": %m",
-						"global/ptrack_control")));
-	errno = 0;
-	if (read(fd, &ptrack_control_lsn, sizeof(XLogRecPtr)) != sizeof(XLogRecPtr))
-	{
-		/* if write didn't set errno, assume problem is no disk space */
-		if (errno == 0)
-			errno = ENOSPC;
-
-		ereport(PANIC,
-				(errcode_for_file_access(),
-				 errmsg("could not read to ptrack control file: %m")));
-	}
-
-	if (close(fd))
-		ereport(PANIC,
-				(errcode_for_file_access(),
-				 errmsg("could not close ptrack control file: %m")));
-
-	rel = RelationIdGetRelation(relation_oid);
-	if (rel == InvalidRelation)
-	{
-		elog(WARNING, "Relation not found.");
-		goto end_return;
-	}
-
-	LockRelationOid(relation_oid, AccessShareLock);
-	RelationOpenSmgr(rel);
-	if (rel->rd_smgr == NULL)
-		goto end_rel;
-
-	LockRelationForExtension(rel, ExclusiveLock);
-
-	num_blocks = smgrnblocks(rel->rd_smgr, MAIN_FORKNUM);
-	if (rel->rd_smgr->smgr_ptrack_nblocks == InvalidBlockNumber)
-	{
-		if (smgrexists(rel->rd_smgr, PAGESTRACK_FORKNUM))
-			rel->rd_smgr->smgr_ptrack_nblocks = smgrnblocks(rel->rd_smgr, PAGESTRACK_FORKNUM);
-		else
-			rel->rd_smgr->smgr_ptrack_nblocks = 0;
-	}
-
-	for(nblock = 0; nblock < num_blocks; nblock++)
-	{
-		Buffer	main_buf = ReadBufferExtended(rel,
-			MAIN_FORKNUM,
-			nblock,
-			RBM_ZERO_ON_ERROR,
-			NULL);
-		Page main_page;
-		XLogRecPtr	main_page_lsn;
-
-		BlockNumber mapBlock = HEAPBLK_TO_MAPBLOCK(nblock);
-		uint32		mapByte = HEAPBLK_TO_MAPBYTE(nblock);
-		uint8		mapBit = HEAPBLK_TO_MAPBIT(nblock);
-
-		/* Get page lsn */
-		LockBuffer(main_buf, BUFFER_LOCK_SHARE);
-		main_page = BufferGetPage(main_buf);
-		main_page_lsn = PageGetLSN(main_page);
-		LockBuffer(main_buf, BUFFER_LOCK_UNLOCK);
-		ReleaseBuffer(main_buf);
-
-		/* Reuse the old pinned buffer if possible */
-		if (BufferIsValid(ptrack_buf))
-		{
-			if (BufferGetBlockNumber(ptrack_buf) == mapBlock)
-				goto read_bit;
-			else
-				ReleaseBuffer(ptrack_buf);
-		}
-		ptrack_buf = ptrack_readbuf(rel, mapBlock, false);
-
-		read_bit:
-		if (ptrack_buf == InvalidBuffer)
-		{
-			/* not tracked data */
-			if(ptrack_control_lsn < main_page_lsn)
-			{
-				necessary_data_counter++;
-				elog(WARNING, "Block %ud not track. Ptrack lsn:%X/%X page lsn:%X/%X",
-					nblock,
-					(uint32) (ptrack_control_lsn >> 32),
-					(uint32) ptrack_control_lsn,
-					(uint32) (main_page_lsn >> 32),
-					(uint32) main_page_lsn);
-			}
-			else
-				continue;
-		}
-
-		page = BufferGetPage(ptrack_buf);
-		map = PageGetContents(page);
-		LockBuffer(ptrack_buf, BUFFER_LOCK_SHARE);
-		if(map[mapByte] & (1 << mapBit))
-		{
-			/* excess data */
-			if (ptrack_control_lsn >= main_page_lsn)
-			{
-				excess_data_counter++;
-				elog(WARNING, "Block %ud not needed. Ptrack lsn:%X/%X page lsn:%X/%X",
-					nblock,
-					(uint32) (ptrack_control_lsn >> 32),
-					(uint32) ptrack_control_lsn,
-					(uint32) (main_page_lsn >> 32),
-					(uint32) main_page_lsn);
-			}
-		}
-		/* not tracked data */
-		else if (ptrack_control_lsn < main_page_lsn)
-		{
-			necessary_data_counter++;
-			elog(WARNING, "Block %ud not tracked. Ptrack lsn:%X/%X page lsn:%X/%X",
-				nblock,
-				 (uint32) (ptrack_control_lsn >> 32),
-				 (uint32) ptrack_control_lsn,
-				 (uint32) (main_page_lsn >> 32),
-				 (uint32) main_page_lsn);
-		}
-		LockBuffer(ptrack_buf, BUFFER_LOCK_UNLOCK);
-	}
-
-	end_rel:
-	if (ptrack_buf != InvalidBuffer)
-		ReleaseBuffer(ptrack_buf);
-	UnlockRelationForExtension(rel, ExclusiveLock);
-	RelationClose(rel);
-	UnlockRelationOid(relation_oid, AccessShareLock);
-
-	end_return:
-	result_elems[0] = UInt32GetDatum(excess_data_counter);
-	result_elems[1] = UInt32GetDatum(necessary_data_counter);
-	result_array = construct_array(result_elems, 2, 23, 4, true, 'i');
-	PG_RETURN_ARRAYTYPE_P(result_array);
-}
-
 /* Clear all ptrack files */
 Datum
 pg_ptrack_clear(PG_FUNCTION_ARGS)
@@ -664,6 +505,76 @@ pg_ptrack_get_and_clear(PG_FUNCTION_ARGS)
 }
 
 /*
+ * Check if PTRACK_INIT_FILE exits in the given database
+ * and delete it.
+ * Args: dbOid and tblspcOid
+ * Return true if file existed.
+ */
+Datum
+pg_ptrack_get_and_clear_db(PG_FUNCTION_ARGS)
+{
+	char *db_path = GetDatabasePath(PG_GETARG_OID(0), PG_GETARG_OID(1));
+	struct stat buf;
+	char ptrack_init_file_path[MAXPGPATH];
+
+	if (!superuser() && !has_rolreplication(GetUserId()))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+		 (errmsg("must be superuser or replication role to clear ptrack files"))));
+
+	snprintf(ptrack_init_file_path, sizeof(ptrack_init_file_path), "%s/%s", db_path, PTRACK_INIT_FILE);
+
+	if (stat(ptrack_init_file_path, &buf) == -1 && errno == ENOENT)
+		PG_RETURN_BOOL(false);
+	else if (!S_ISREG(buf.st_mode))
+		PG_RETURN_BOOL(false);
+	else
+	{
+		drop_ptrack_init_file(db_path);
+		PG_RETURN_BOOL(true);
+	}
+}
+
+/* create empty ptrack_init_file */
+void
+create_ptrack_init_file(char *dest_dir)
+{
+	int			dstfd;
+
+	char ptrack_init_file_path[MAXPGPATH];
+	snprintf(ptrack_init_file_path, sizeof(ptrack_init_file_path), "%s/%s", dest_dir, PTRACK_INIT_FILE);
+
+	dstfd = OpenTransientFile(ptrack_init_file_path, O_RDWR | O_CREAT | O_EXCL | PG_BINARY,
+							  S_IRUSR | S_IWUSR);
+	if (dstfd < 0)
+	{
+		if (errno != EEXIST)
+			ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not create file \"%s\": %m", ptrack_init_file_path)));
+	}
+	else if (CloseTransientFile(dstfd))
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not close file \"%s\": %m", ptrack_init_file_path)));
+}
+
+void
+drop_ptrack_init_file(char *dest_dir)
+{
+	char ptrack_init_file_path[MAXPGPATH];
+	snprintf(ptrack_init_file_path, sizeof(ptrack_init_file_path), "%s/%s", dest_dir, PTRACK_INIT_FILE);
+
+	if (unlink(ptrack_init_file_path) != 0)
+	{
+		if (errno != ENOENT)
+			ereport(WARNING,
+				(errcode_for_file_access(),
+					errmsg("could not remove file \"%s\": %m", ptrack_init_file_path)));
+	}
+}
+
+/*
  * Returns ptrack version currently in use.
  */
 PG_FUNCTION_INFO_V1(ptrack_version);
@@ -671,4 +582,37 @@ Datum
 ptrack_version(PG_FUNCTION_ARGS)
 {
 	PG_RETURN_TEXT_P(cstring_to_text(PTRACK_VERSION));
+}
+
+/* Get lsn from ptrack_control file */
+Datum
+pg_ptrack_control_lsn(PG_FUNCTION_ARGS)
+{
+	int			fd;
+	char		file_path[MAXPGPATH];
+	XLogRecPtr	lsn = 0;
+
+	if (!superuser() && !has_rolreplication(GetUserId()))
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+		 (errmsg("must be superuser or replication role read ptrack files"))));
+	join_path_components(file_path, DataDir, "global/ptrack_control");
+	canonicalize_path(file_path);
+
+	fd = BasicOpenFile(file_path, O_RDONLY | PG_BINARY, 0);
+	if (fd < 0)
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not open file \"%s\" for reading: %m",
+						file_path)));
+
+	if (read(fd, &lsn, sizeof(XLogRecPtr)) != sizeof(XLogRecPtr))
+		ereport(ERROR,
+				(errcode_for_file_access(),
+				 errmsg("could not read content of the file \"%s\" %m",
+						file_path)));
+
+	close(fd);
+
+	PG_RETURN_LSN(lsn);
 }

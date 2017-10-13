@@ -561,6 +561,8 @@ shiftList(Relation index, Buffer metabuffer, BlockNumber newHead,
 			XLogEnsureRecordSpace(data.ndeleted, 0);
 
 		ptrack_add_block(index, BufferGetBlockNumber(metabuffer));
+		for (i = 0; i < data.ndeleted; i++)
+			ptrack_add_block(index, BufferGetBlockNumber(buffers[i]));
 		START_CRIT_SECTION();
 
 		metadata->head = blknoToDelete;

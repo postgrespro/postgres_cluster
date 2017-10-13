@@ -5,6 +5,7 @@
 #include "char_array.h"
 #include "sched_manager_poll.h"
 #include "utils/datetime.h"
+#include "utils/guc.h"
 
 #define PGPRO_SHM_TOC_MAGIC 0x50310
 #define PGPRO_SCHEDULER_DBNAME_MAX 128
@@ -25,8 +26,11 @@
 extern void worker_spi_sighup(SIGNAL_ARGS);
 extern void worker_spi_sigterm(SIGNAL_ARGS);
 
+bool is_guc_in_default_state(const char *name);
+
 void pg_scheduler_startup(void);
 char_array_t *readBasesToCheck(void);
+extern Datum nodename(PG_FUNCTION_ARGS);
 extern Datum cron_string_to_json_text(PG_FUNCTION_ARGS);
 void _PG_init(void);
 extern PGDLLEXPORT void parent_scheduler_main(Datum) pg_attribute_noreturn();
@@ -41,5 +45,9 @@ TimestampTz get_timestamp_from_string(char *str);
 TimestampTz _round_timestamp_to_minute(TimestampTz ts);
 bool is_scheduler_enabled(void);
 char *set_schema(const char *name, bool get_old);
+char *get_scheduler_schema_name(void);
+char *get_scheduler_nodename(MemoryContext mem);
+char_array_t *_split_string_to_char_array(char *str, bool doclean);
+const char *check_multimaster_database(void);
 
 #endif

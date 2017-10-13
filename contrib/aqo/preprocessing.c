@@ -163,6 +163,21 @@ aqo_planner(Query *parse,
 					 aqo_mode);
 				break;
 		}
+		if (RecoveryInProgress())
+		{
+			if (aqo_mode == AQO_MODE_FORCED)
+			{
+				adding_query = false;
+				learn_aqo = false;
+				auto_tuning = false;
+				collect_stat = false;
+			}
+			else
+			{
+				disable_aqo_for_query();
+				return call_default_planner(parse, cursorOptions, boundParams);
+			}
+		}
 		if (adding_query)
 		{
 			add_query(query_hash, learn_aqo, use_aqo, fspace_hash, auto_tuning);
@@ -177,8 +192,14 @@ aqo_planner(Query *parse,
 		fspace_hash = DatumGetInt32(query_params[3]);
 		auto_tuning = DatumGetBool(query_params[4]);
 		collect_stat = learn_aqo || use_aqo || auto_tuning;
-		if (!collect_stat)
+		if (!learn_aqo && !use_aqo && !auto_tuning)
 			add_deactivated_query(query_hash);
+		if (RecoveryInProgress())
+		{
+			learn_aqo = false;
+			auto_tuning = false;
+			collect_stat = false;
+		}
 	}
 	explain_aqo = use_aqo;
 

@@ -39,6 +39,8 @@ ok($sth->execute()) or (print $DBI::errstr . "\n" and $dbh->disconnect() and BAI
 my $errorstr = $sth->fetchrow_array() and $sth->finish();
 ok($errorstr eq "max instances limit reached") or print $DBI::errstr . "\n";
 
+sleep 120;  # to be sure that started job finished
+
 $query = "DELETE FROM test_results;";
 $dbh->do($query);
 ok($dbh->err == 0, $dbh->errstr) or print $DBI::errstr . "\n";

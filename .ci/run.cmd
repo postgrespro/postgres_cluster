@@ -1,10 +1,14 @@
 @echo off
 PATH=C:\Windows\system32;C:\Perl64\bin;C:\Program Files\Git\cmd;C:\msys64\usr\bin
 
+REM Copy source-repo to CI temporary catalog
+cp -r postgrespro/* .
+
 IF "%ARCH%"==""	     SET ARCH=X86
 IF "%ARCH%"=="x86"   SET ARCH=X86
 IF "%ARCH%"=="x64"   SET ARCH=X64
 IF "%ARCH%"=="amd64" SET ARCH=X64
+IF "%ARCH%"=="AMD64" SET ARCH=X64
 IF "%SDK%"=="" 	     SET SDK=SDK71
 
 echo BUILD_ID=%BUILD_ID%

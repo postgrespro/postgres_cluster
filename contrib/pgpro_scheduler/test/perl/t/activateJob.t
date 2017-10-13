@@ -5,6 +5,7 @@ use Test::More;
 use DBI;
 use Getopt::Long;
 
+require 't/_json.pm';
 my $dbh = require 't/_connect.pl'; 
 ok($dbh->err == 0) or (print $DBI::errstr and BAIL_OUT);
 
@@ -25,13 +26,18 @@ $sth->bind_param(1, $job_id);
 ok($sth->execute()) or (print $DBI::errstr and $dbh->disconnect() and BAIL_OUT);
 $sth->finish();
 
-$query = "SELECT schedule.set_job_attributes(?, \'{ \"name\": \"Test\",
-    \"cron\": \"* * * * *\",
-    \"commands\": [\"INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''createJob'')\",
-                    \"INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''createJob'')\"],
-    \"run_as\": \"tester\",
-    \"use_same_transaction\": \"true\"
-    }\')";
+my %data = (
+	name => "Test activateJob.t",
+	cron => "* * * * *",
+	commands =>  [
+		"INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''createJob'')",
+		"INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''createJob'')"
+	],
+	run_as =>  "tester",
+	use_same_transaction =>  "true"
+);
+
+$query = "SELECT schedule.set_job_attributes(?, '". t::json(\%data) ."')";
 $sth = $dbh->prepare($query);
 $sth->bind_param(1, $job_id);
 ok($sth->execute()) or (print $DBI::errstr and $dbh->disconnect() and BAIL_OUT);

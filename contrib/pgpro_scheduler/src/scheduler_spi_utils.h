@@ -30,9 +30,6 @@ void START_SPI_SNAP(void);
 void STOP_SPI_SNAP(void);
 void ABORT_SPI_SNAP(void);
 
-char *_mcopy_string(MemoryContext ctx, char *str);
-char *my_copy_string(char *str);
-
 int select_oneintvalue_sql(const char *sql, int d);
 Datum select_onedatumvalue_sql(const char *sql, bool *is_null);
 int select_count_with_args(const char *sql, int n, Oid *argtypes, Datum *values, char *nulls);

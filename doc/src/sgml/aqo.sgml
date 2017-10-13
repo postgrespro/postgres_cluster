@@ -83,7 +83,7 @@ DROP EXTENSION aqo;
         <listitem>
           <para>
          <literal>forced</literal> &mdash;  
-        this mode tries to optimize all queries together, regardless of
+        this mode tries to optimize all new queries together, regardless of
         the query type.
           </para>
         </listitem>
@@ -148,11 +148,8 @@ where <replaceable>mode</> is the name of the optimization mode to use.
         mode. However, since the <literal>forced</literal> mode lacks
         intelligent tuning, performance may decrease for some queries.
         If you see performance issues in this mode, switch <filename>aqo</filename> to the
-        <literal>controlled</literal> mode:
+        <literal>controlled</literal> mode.
       </para>
-      <programlisting>
-SET aqo.mode = 'controlled';
-</programlisting>
       <para>
         In the <literal>controlled</literal> mode, <filename>aqo</filename> does not collect statistics for new
         query types, so they will not be optimized. For known query
@@ -297,6 +294,57 @@ UPDATE aqo_queries SET learn_aqo=false WHERE query_hash = '<replaceable>hash</>'
     <programlisting>
 UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;
 </programlisting>
+    </sect3>
+    <sect3 id="using-aqo-on-standby">
+      <title>Using aqo on Standby</title>
+        <para>
+          In master-standby configurations, <filename>aqo</filename>
+          statistics on standby is inherited from master in read-only mode.
+          Standby queries do not update <filename>aqo</filename> statistics,
+          regardless of the current <filename>aqo</filename> settings.
+          If you would like to update the statistics on
+          standby for one or more query types, you must run these queries
+          on master and synchronize the standby.
+        </para>
+        <para>
+          You can define whether to use <filename>aqo</filename> statistics
+          for standby queries independent of the master configuration,
+          toggling <filename>aqo</filename> modes as required. By default,
+          <filename>aqo</filename> optimizes queries on standby as follows:
+          <itemizedlist>
+            <listitem>
+              <para>
+                In <literal>intelligent</> and <literal>controlled</> modes,
+                <filename>aqo</filename> statistics is only used for the
+                already known query types.
+              </para>
+            </listitem>
+            <listitem>
+              <para>
+                In the <literal>forced</> mode,
+                <filename>aqo</filename> tries to optimize the unknown
+                queries based on the common statistics collected in the 
+                <literal>forced</> mode on master, if any. If the common
+                statistics is not found, <filename>aqo</filename> falls back
+                to the default query planner. All the known query types continue using
+                the available statistics.
+              </para>
+            </listitem>
+            <listitem>
+              <para>
+                The <literal>disabled</literal> mode switches off the collected
+                statistics completely, relying on the default query planner
+                for all queries.
+              </para>
+            </listitem>
+          </itemizedlist>
+        </para>
+        <para>
+          If you fine-tuned optimization settings for specific query types
+          on master, these settings override the default <filename>aqo</filename>
+          behavior, unless you choose the <literal>disabled</literal> mode.
+          For details, see <xref linkend="aqo-advanced-query-tuning">.
+        </para>
     </sect3>
   </sect2>
     <sect2 id="aqo-reference">

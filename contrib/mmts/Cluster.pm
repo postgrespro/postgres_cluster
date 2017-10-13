@@ -149,7 +149,7 @@ sub start
 	foreach my $node (@$nodes)
 	{
 		$node->start();
-		diag "Starting node with connstr 'dbname=postgres port=@{[ $node->port() ]} host=@{[ $node->host() ]}'";
+		note( "Starting node with connstr 'dbname=postgres port=@{[ $node->port() ]} host=@{[ $node->host() ]}'");
 	}
 }
 
@@ -159,7 +159,7 @@ sub stopnode
 	return 1 unless defined $node->{_pid};
 	$mode = 'fast' unless defined $mode;
 	my $name   = $node->name;
-	diag("stopping $name ${mode}ly");
+	note("stopping $name ${mode}ly");
 
 	if ($mode eq 'kill') {
 		killtree($node->{_pid});
@@ -169,13 +169,13 @@ sub stopnode
 	my $pgdata = $node->data_dir;
 	my $ret = TestLib::system_log('pg_ctl', '-D', $pgdata, '-m', 'fast', 'stop');
 	my $pidfile = $node->data_dir . "/postmaster.pid";
-	diag("unlink $pidfile");
+	note("unlink $pidfile");
 	unlink $pidfile;
 	$node->{_pid} = undef;
 	$node->_update_pid;
 
 	if ($ret != 0) {
-		diag("$name failed to stop ${mode}ly");
+		note("$name failed to stop ${mode}ly");
 		return 0;
 	}
 
@@ -193,16 +193,16 @@ sub dumplogs
 	my ($self) = @_;
 	my $nodes = $self->{nodes};
 
-	diag("Dumping logs:");
+	note("Dumping logs:");
 	foreach my $node (@$nodes) {
-		diag("##################################################################");
-		diag($node->{_logfile});
-		diag("##################################################################");
+		note("##################################################################");
+		note($node->{_logfile});
+		note("##################################################################");
 		my $filename = $node->{_logfile};
 		open my $fh, '<', $filename or die "error opening $filename: $!";
 		my $data = do { local $/; <$fh> };
-		diag($data);
-		diag("##################################################################\n\n");
+		note($data);
+		note("##################################################################\n\n");
 	}
 }
 
@@ -213,7 +213,7 @@ sub stop
 	$mode = 'fast' unless defined $mode;
 
 	my $ok = 1;
-	diag("stopping cluster ${mode}ly");
+	note("stopping cluster ${mode}ly");
 	
 	foreach my $node (@$nodes) {
 		if (!stopnode($node, $mode)) {
@@ -268,7 +268,7 @@ sub poll
 			return 1;
 		}
 		my $tries_left = $tries - $i - 1;
-		diag("$poller poll for $pollee failed [$tries_left tries left]");
+		note("$poller poll for $pollee failed [$tries_left tries left]");
 		sleep($delay);
 	}
 	return 0;
@@ -296,7 +296,7 @@ sub pgbench_async()
 		-p => $self->{nodes}->[$node]->port(),
 		'postgres',
 	);
-	# diag("running pgbench init");
+	note("running pgbench: " . join(" ", @pgbench_command));
 	my $handle = IPC::Run::start(\@pgbench_command, $in, $out);
 	return $handle;
 }
@@ -305,6 +305,90 @@ sub pgbench_await()
 {
 	my ($self, $pgbench_handle) = @_;
 	IPC::Run::finish($pgbench_handle) || BAIL_OUT("pgbench exited with $?");
+}
+
+sub is_data_identic()
+{
+	my ($self, @nodenums) = @_;
+	my $checksum = '';
+
+	my $sql = "select md5('(' || string_agg(aid::text || ', ' || abalance::text , '),(') || ')')
+			from (select * from pgbench_accounts order by aid) t;";
+
+	foreach my $i (@nodenums)
+	{
+		my $current_hash = '';
+		$self->{nodes}->[$i]->psql('postgres', $sql, stdout => \$current_hash);
+		if ($current_hash eq '')
+		{
+			note("got empty hash from node $i");
+			return 0;
+		}
+		if ($checksum eq '')
+		{
+			$checksum = $current_hash;
+		}
+		elsif ($checksum ne $current_hash)
+		{
+			note("got different hashes: $checksum ang $current_hash");
+			return 0;
+		}
+	}
+
+	note($checksum);
+	return 1;
+}
+
+sub add_node()
+{
+	my ($self, %params) = @_;
+
+	my $pgport;
+	my $arbiter_port;
+	my $connstrs;
+	my $node_id;
+
+	if (defined $params{node_id})
+	{
+		$node_id = $params{node_id};
+		$pgport = $params{port};
+		$arbiter_port = $params{arbiter_port};
+		$connstrs = $self->all_connstrs();
+	}
+	else
+	{
+		$node_id = scalar(@{$self->{nodes}}) + 1;
+		$pgport = (allocate_ports('127.0.0.1', 1))[0];
+		$arbiter_port = (allocate_ports('127.0.0.1', 1))[0];
+		$connstrs = $self->all_connstrs() . ", dbname=postgres host=127.0.0.1 port=$pgport arbiter_port=$arbiter_port";
+	}
+
+	my $node = PostgresNode->get_new_node("node${node_id}x");
+
+	$self->{nodes}->[0]->backup("backup_for_$node_id");
+	# do init from backup before setting host, since init_from_backup() checks
+	# it default value
+	$node->init_from_backup($self->{nodes}->[0], "backup_for_$node_id");
+
+	$node->{_host} = '127.0.0.1';
+	$node->{_port} = $pgport;
+	$node->{port} = $pgport;
+	$node->{host} = '127.0.0.1';
+	$node->{arbiter_port} = $arbiter_port;
+	$node->{mmconnstr} = "${ \$node->connstr('postgres') } arbiter_port=${ \$node->{arbiter_port} }";
+	$node->append_conf("postgresql.conf", qq(
+		multimaster.arbiter_port = $arbiter_port
+		multimaster.conn_strings = '$connstrs'
+		multimaster.node_id = $node_id
+		port = $pgport
+	));
+	$node->append_conf("pg_hba.conf", qq(
+		local replication all trust
+		host replication all 127.0.0.1/32 trust
+		host replication all ::1/128 trust
+	));
+
+	push(@{$self->{nodes}}, $node);
 }
 
 1;

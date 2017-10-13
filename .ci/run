@@ -17,7 +17,8 @@ if [ "`id -un`" = "root" ]; then
 	else
 	    groupadd ci
 	    useradd -g ci ci
-	    chown -R ci:ci .
+	    # chown -R ci:ci .
+	    find . -type d -exec chown ci:ci {} +
 	fi
 	su ci -c ./.ci/build_and_test_world
     else
