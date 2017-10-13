@@ -557,6 +557,9 @@ makeAnalyze(Oid relOid, CmdKind operation, int64 naffected)
 			&vacstmt, NULL, true, GetAccessStrategy(BAS_VACUUM)
 #endif
 		);
+		
+		/* Make changes visible to subsequent calls */
+		CommandCounterIncrement();
 
 		if (online_analyze_verbose)
 		{
