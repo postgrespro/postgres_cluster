@@ -15,29 +15,36 @@
     <itemizedlist>
       <listitem>
       <para>
-      <productname>pg_pathman</productname> module is updated to version
-      1.4.7
+      Updated <productname>pg_pathman</productname> module to version
+      1.4.7.
       </para>
       </listitem>
       <listitem>
       <para>
-      <productname>pg_probackup</productname> utility updated to version
-      2.0.8
+      Updated <productname>pg_probackup</productname> utility to version
+      2.0.8.
       </para>
       </listitem>
       <listitem>
       <para>
-      Fixed problem in compressed tablespace garbage collection with
+      Fixed a problem in compressed tablespace garbage collection with
       uncompressable data.
       </para>
       </listitem>
       <listitem>
       <para>
-      Fixed handling of SIGTERM in pgpro_scheduler extension.
+      Fixed handling of SIGTERM in <application>pgpro_scheduler</> extension.
       </para>
       </listitem>
       <listitem>
-      <para>Bug fixes in the AQO contributed module</para>
+      <para>Fixed bugs in the <application>aqo</> extension.</para>
+      </listitem>
+      <listitem>
+      <para>
+      <application>pgbench</> utility now continues to execute the script
+      if a transaction is rolled back, and has an option to retry failed transactions several
+      times.
+      </para>
       </listitem>
       </itemizedlist>
       </sect2>
