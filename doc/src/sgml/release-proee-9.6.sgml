@@ -36,6 +36,9 @@
       Fixed handling of SIGTERM in pgpro_scheduler extension.
       </para>
       </listitem>
+      <listitem>
+      <para>Bug fixes in the AQO contributed module</para>
+      </listitem>
       </itemizedlist>
       </sect2>
       </sect1>
