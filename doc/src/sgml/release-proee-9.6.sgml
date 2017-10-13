@@ -39,6 +39,13 @@
       <listitem>
       <para>Bug fixes in the AQO contributed module</para>
       </listitem>
+      <listitem>
+      <para>
+      pgbench utility now continues to execute script if transaction
+      rolled back, and has an option to retry failed transaction several
+      times.
+      </para>
+      </listitem>
       </itemizedlist>
       </sect2>
       </sect1>
