@@ -21,8 +21,17 @@
 #include "utils/snapmgr.h"
 #include "utils/datetime.h"
 #include "utils/builtins.h"
+#include "utils/guc.h"
+#include "utils/guc_tables.h"
 #include "catalog/pg_db_role_setting.h"
 #include "commands/dbcommands.h"
+#include "utils/lsyscache.h"
+#include "catalog/pg_extension.h"
+#include "catalog/indexing.h"
+#include "commands/extension.h"
+#include "access/sysattr.h"
+#include "access/htup_details.h"
+#include "utils/fmgroids.h"
 
 
 #include "char_array.h"
@@ -38,6 +47,9 @@
 PG_MODULE_MAGIC;
 #endif
 
+static const char *show_scheduler_nodename(void);
+static const char *show_scheduler_database(void);
+
 volatile sig_atomic_t got_sighup = false;
 volatile sig_atomic_t got_sigterm = false;
 
@@ -52,6 +64,7 @@ bool scheduler_service_enabled = false;
 char *scheduler_schema = NULL;
 /* Custom GUC done */
 
+Oid scheduler_schema_oid = InvalidOid;
 Oid scheduler_atjob_id_OID = InvalidOid;
 
 extern void
@@ -77,6 +90,43 @@ worker_spi_sigterm(SIGNAL_ARGS)
 }
 
 /** Some utils **/
+
+static int _var_name_cmp(const void *a, const void *b)
+{
+	const struct config_generic *confa = *(struct config_generic * const *) a;
+	const struct config_generic *confb = *(struct config_generic * const *) b;
+
+	return strcmp(confa->name, confb->name);
+}
+
+bool is_guc_in_default_state(const char *name)
+{
+	int num;
+	struct config_generic **vars;
+	const char **key = &name;
+	struct config_generic **res;
+	struct config_generic *conf;
+
+	num = GetNumConfigOptions();
+	vars = get_guc_variables();
+
+	res = (struct config_generic **) bsearch((void *) &key,
+										(void *) vars,
+										num, sizeof(struct config_generic *),
+										_var_name_cmp);
+	if(res)
+	{
+		conf = *res;
+		if(conf->source == PGC_S_DEFAULT || conf->source == PGC_S_DYNAMIC_DEFAULT || conf->source == PGC_S_OVERRIDE)
+		{
+			return true;
+		}
+		return false;
+	}
+
+	return true;
+
+}
 
 void reload_db_role_config(char *dbname)
 {
@@ -166,6 +216,66 @@ bool is_scheduler_enabled(void)
 	return false;
 }
 
+char *get_scheduler_schema_name(void)
+{
+	Oid ns_oid;
+	Oid ext_oid;
+	char *name = NULL;
+
+	Relation rel;
+	SysScanDesc scandesc;
+	HeapTuple tuple;
+	ScanKeyData entry[1];
+	LOCKMODE heap_lock =  AccessShareLock;
+	bool use_transaction = false;
+
+	if (!IsTransactionState())
+	{
+		StartTransactionCommand();
+		use_transaction = true;
+	}
+
+	if(scheduler_schema_oid == InvalidOid)
+	{
+		ext_oid = get_extension_oid("pgpro_scheduler", true);
+		if(ext_oid == InvalidOid) 
+			elog(ERROR, "pgpro_scheduler: cannot get extension id");
+
+		ScanKeyInit(&entry[0],
+					ObjectIdAttributeNumber,
+					BTEqualStrategyNumber,
+					F_OIDEQ,
+					ObjectIdGetDatum(ext_oid));
+		rel = heap_open(ExtensionRelationId, heap_lock);
+		scandesc = systable_beginscan(rel, ExtensionOidIndexId, true,
+										NULL, 1, entry);
+		tuple = systable_getnext(scandesc);
+		if (HeapTupleIsValid(tuple))
+			ns_oid = ((Form_pg_extension) GETSTRUCT(tuple))->extnamespace;
+		else
+			ns_oid =  InvalidOid;
+		systable_endscan(scandesc);
+		heap_close(rel, heap_lock);
+
+
+		if(ns_oid == InvalidOid) 
+			elog(ERROR, "pgpro_scheduler: cannot get extension schema oid");
+
+		scheduler_schema_oid = ns_oid;
+	}
+	else
+	{
+		ns_oid = scheduler_schema_oid;
+	}
+
+	/* need a copy due to after CommitTransactionCommand memory released */
+	name =  _mcopy_string(NULL, get_namespace_name(ns_oid));
+
+	if(use_transaction) CommitTransactionCommand();
+
+	return name;
+}
+
 char *set_schema(const char *name, bool get_old)
 {
 	char *schema_name = NULL;
@@ -180,68 +290,176 @@ char *set_schema(const char *name, bool get_old)
 	}
 	else
 	{
-		schema_name = _mcopy_string(NULL, (char *)GetConfigOption("schedule.schema", true, false));	
+		schema_name = get_scheduler_schema_name();
 		free_name = true;
 	}
 	SetConfigOption("search_path", schema_name,  PGC_USERSET, PGC_S_SESSION);
+
 	if(free_name) pfree(schema_name);
 
 	return current;
 }
 
+static const char *
+show_scheduler_nodename(void)
+{
+	static char nbuf[256];
+	char *nname;
+
+	nname = get_scheduler_nodename(CurrentMemoryContext);
+	snprintf(nbuf, sizeof(nbuf), "%s", nname);
+	pfree(nname);
+	return nbuf;
+}
+
+static const char *
+show_scheduler_database(void)
+{
+	static char nbuf[256];
+	const char *value;
+	bool drop_context = false;
+
+	if(!is_worker_context_initialized())
+	{
+		init_worker_mem_ctx("temp for functions");
+		drop_context = true;
+	}
+
+	value = check_multimaster_database();
+
+	if(!value)
+		value = GetConfigOption("schedule.database", true, false);
+	snprintf(nbuf, sizeof(nbuf), "%s", value);
+
+	if(drop_context) drop_worker_context();
+	return nbuf;
+}
+
+char *get_scheduler_nodename(MemoryContext mem)
+{
+	const char *opt;
+	const char *mtm_node_id;
+	char buffer[50];
+
+
+	if(!is_guc_in_default_state("schedule.nodename"))
+	{
+		opt = GetConfigOption("schedule.nodename", true, false);
+		return _mcopy_string(mem, (char *)(opt == NULL || strlen(opt) == 0 ? "master": opt));
+	}
+	mtm_node_id = GetConfigOption("multimaster.node_id", true, false);
+	if(mtm_node_id)
+	{
+		snprintf(buffer, 50, "mtm-node-%s", mtm_node_id);
+		return _mcopy_string(mem, buffer);
+	}
+	opt = GetConfigOption("schedule.nodename", true, false);
+	return _mcopy_string(mem, (char *)(opt == NULL || strlen(opt) == 0 ? "master": opt));
+}
+
+
 
 /** END of SOME UTILS **/
 
-
-
-char_array_t *readBasesToCheck(void)
+const char *check_multimaster_database(void)
 {
-	const char *value;
-	int value_len = 0;
-	int nnames = 0;
-	char_array_t *names;
-	char_array_t *result;
-	char *clean_value;
-	int i;
-	int cv_len = 0;
-	StringInfoData sql;
-	int ret;
-	int start_pos = 0;
-	int processed;
-	char *ptr = NULL;
+	char_array_t *split_libs, *conns;
+	const char *libs = NULL;
+	bool mtm_present = false;
+	static char buffer[256];
+	char *dbbeg;
+	int mtm_id, i, j = 0;
+	const char *mtm_id_str, *mtm_cstring;
 
-
-	pgstat_report_activity(STATE_RUNNING, "read configuration");
-	result = makeCharArray();
-
-	value = GetConfigOption("schedule.database", true, false);
-	if(!value || strlen(value) == 0)
+	/* at first need to parse shared_preload_libraries */
+	libs = GetConfigOption("shared_preload_libraries", true, false);
+	if(!libs) return NULL;
+	split_libs  = _split_string_to_char_array((char *)libs, true);
+	if(split_libs->n == 0)
 	{
-		return result;
+		destroyCharArray(split_libs);
+		return NULL;
 	}
-	value_len = strlen(value);
-	clean_value = worker_alloc(sizeof(char)*(value_len+1));
-	nnames = 1;
-	for(i=0; i < value_len; i++)
+	for(i=0; i< split_libs->n; i++)
 	{
-		if(value[i] != ' ')
+		if(strcmp(split_libs->data[i], "multimaster") == 0)
 		{
-			if(value[i] == ',')
-			{
-				nnames++;
-				clean_value[cv_len++] = 0;
-			}
-			else
-			{
-				clean_value[cv_len++] = value[i];
-			}
+			mtm_present = true;
+			break;
+		}
+	}
+	destroyCharArray(split_libs);
+	if(!mtm_present) return NULL;
+
+	/* now check id multimaster.node_id set */
+	mtm_id_str = GetConfigOption("multimaster.node_id", true, false);
+	if(!mtm_id_str) return NULL;
+	mtm_id = atoi(mtm_id_str);
+	if(mtm_id == 0) return NULL;
+
+	/* find proper connection string from mtm_id */
+	mtm_cstring = GetConfigOption("multimaster.conn_strings", true, false);
+	if(!mtm_cstring) return NULL;
+
+	conns = _split_string_to_char_array((char *)mtm_cstring, false);
+	if(conns->n < mtm_id)
+	{
+		destroyCharArray(conns);
+		return NULL;
+	}
+	dbbeg = strstr(conns->data[mtm_id-1], "dbname=");
+	if(dbbeg == NULL)
+	{
+		destroyCharArray(conns);
+		return NULL;
+	}
+
+	for(i=7; dbbeg[i] != 0 && i < 256; i++)
+	{
+		if(dbbeg[i] != ' ')
+		{
+			buffer[j++] = dbbeg[i];
+		}
+		else
+		{
+			break;
+		}
+	}
+	buffer[j] = 0;
+	destroyCharArray(conns);
+	if(j > 0) return buffer;
+	return NULL;
+}
+
+char_array_t *_split_string_to_char_array(char *str, bool do_clean)
+{
+	int str_len, cv_len=0, i;
+	char *clean_value;
+	char_array_t *names;
+	int start_pos = 0;
+	char *ptr = NULL;
+	int nnames = 1;
+
+	str_len = strlen(str);
+	clean_value = worker_alloc(sizeof(char)*(str_len+1));
+	for(i=0; i < str_len; i++)
+	{
+		if(do_clean && str[i] == ' ') continue;
+		if(str[i] == ',')
+		{
+			nnames++;
+			clean_value[cv_len++] = 0;
+		}
+		else
+		{
+			clean_value[cv_len++] = str[i];
 		}
 	}
 	clean_value[cv_len] = 0;
 	if(cv_len == 0 || nnames == cv_len)
 	{
 		pfree(clean_value);
-		return result;
+		return NULL;
 	}
 	names = makeCharArray();
 	for(i=0; i < cv_len + 1; i++)
@@ -254,7 +472,39 @@ char_array_t *readBasesToCheck(void)
 		}
 	}
 	pfree(clean_value);
-	if(names->n == 0)
+
+	return names;
+}
+
+
+
+char_array_t *readBasesToCheck(void)
+{
+	const char *value = NULL;
+	char_array_t *names;
+	char_array_t *result;
+	char *clean_value = NULL;
+	int i;
+	StringInfoData sql;
+	int ret;
+	int processed;
+
+
+	pgstat_report_activity(STATE_RUNNING, "read configuration");
+	result = makeCharArray();
+
+	value = check_multimaster_database();
+
+	if(!value)
+		value = GetConfigOption("schedule.database", true, false);
+
+	if(!value || strlen(value) == 0)
+	{
+		return result;
+	}
+
+	names = _split_string_to_char_array((char *)value, true);
+	if(names == NULL || names->n == 0)
 	{
 		destroyCharArray(names);
 		return result;
@@ -306,7 +556,6 @@ void parent_scheduler_main(Datum arg)
 	CurrentResourceOwner = ResourceOwnerCreate(NULL, "pgpro_scheduler");
 
 	init_worker_mem_ctx("Parent scheduler context");
-	elog(LOG, "Start PostgresPro scheduler."); 
 
 	SetConfigOption("application_name", "pgp-s supervisor", PGC_USERSET, PGC_S_SESSION);
 	pgstat_report_activity(STATE_RUNNING, "Initialize");
@@ -392,7 +641,12 @@ void parent_scheduler_main(Datum arg)
 			}
 		}
 		rc = WaitLatch(MyLatch,
+#if PG_VERSION_NUM < 100000
 			WL_LATCH_SET | WL_POSTMASTER_DEATH, 0);
+#else
+			WL_LATCH_SET | WL_POSTMASTER_DEATH, 0, 
+			PG_WAIT_EXTENSION);
+#endif
 		CHECK_FOR_INTERRUPTS();
 		ResetLatch(MyLatch);
 	}
@@ -411,7 +665,9 @@ pg_scheduler_startup(void)
 		BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_restart_time = 10;
+#if PG_VERSION_NUM < 100000
 	worker.bgw_main = NULL;
+#endif
 	worker.bgw_notify_pid = 0;
 	worker.bgw_main_arg = Int32GetDatum(0);
 	worker.bgw_extra[0] = 0;
@@ -452,7 +708,7 @@ void _PG_init(void)
 		0,
 		NULL,
 		NULL,
-		NULL
+		show_scheduler_database
 	);
 	DefineCustomStringVariable(
 		"schedule.nodename",
@@ -464,7 +720,7 @@ void _PG_init(void)
 		0,
 		NULL,
 		NULL,
-		NULL
+		show_scheduler_nodename
 	);
 	DefineCustomStringVariable(
 		"schedule.transaction_state",
@@ -535,6 +791,24 @@ void _PG_init(void)
 	pg_scheduler_startup();
 }
 
+PG_FUNCTION_INFO_V1(nodename);
+Datum
+nodename(PG_FUNCTION_ARGS)
+{
+	text *text_p;
+	int len;
+	char *nname;
+
+	nname = get_scheduler_nodename(CurrentMemoryContext);
+
+	len = strlen(nname);
+	text_p = (text *) palloc(sizeof(char)*len + VARHDRSZ);
+	memcpy((void *)VARDATA(text_p), nname, len);
+	SET_VARSIZE(text_p, sizeof(char)*len + VARHDRSZ);
+	pfree(nname);
+	PG_RETURN_TEXT_P(text_p);
+}
+
 PG_FUNCTION_INFO_V1(cron_string_to_json_text);
 Datum
 cron_string_to_json_text(PG_FUNCTION_ARGS)
@@ -558,7 +832,7 @@ cron_string_to_json_text(PG_FUNCTION_ARGS)
 		text_p = (text *) palloc(sizeof(char)*len + VARHDRSZ);
 		memcpy((void *)VARDATA(text_p), jsonText, len);
 		SET_VARSIZE(text_p, sizeof(char)*len + VARHDRSZ);
-		free(jsonText);
+		pfree(jsonText);
 		PG_RETURN_TEXT_P(text_p);
 	}
 	else

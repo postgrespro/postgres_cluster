@@ -370,7 +370,7 @@ BEGIN
 	END IF;
 
 	IF node IS NULL THEN
-		node := 'master';
+		node := nodename();
 	END IF;
 
 	IF run_as IS NOT NULL AND run_as <> session_user THEN
@@ -482,7 +482,7 @@ CREATE FUNCTION _possible_args() RETURNS jsonb AS
 $BODY$
 BEGIN 
    RETURN jsonb_build_object(
-      'node', 'node name (default: master)',
+      'node', 'node name (default: ' || nodename() || ')',
       'name', 'job name',
       'comments', 'some comments on job',
       'cron', 'cron string rule',
@@ -717,7 +717,7 @@ BEGIN
    cron := _get_cron_from_attrs(params, NULL);
    commands := _get_commands_from_attrs(params);
    executor := _get_executor_from_attrs(params);
-   node := 'master';
+   node := nodename();
    mi := 1;
 
    IF params?'start_date' THEN
@@ -1424,6 +1424,11 @@ LANGUAGE sql STABLE;
 CREATE FUNCTION cron2jsontext(CSTRING)
   RETURNS text 
   AS 'MODULE_PATHNAME', 'cron_string_to_json_text'
+  LANGUAGE C IMMUTABLE;
+
+CREATE FUNCTION nodename()
+  RETURNS text 
+  AS 'MODULE_PATHNAME', 'nodename'
   LANGUAGE C IMMUTABLE;
 
 --------------
