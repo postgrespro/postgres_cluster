@@ -758,6 +758,10 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	 * If that is ROLLBACK PREPARED than send that to callbacks.
 	 */
 
+	if (TransactionIdIsValid(parsed->twophase_xid)) {
+		fprintf(stderr, "(!) db_id=%d, gid=%s\n", parsed->dbId, parsed->twophase_gid);
+	}
+
 	if (TransactionIdIsValid(parsed->twophase_xid)
 			&& (parsed->dbId == ctx->slot->data.database)) {
 

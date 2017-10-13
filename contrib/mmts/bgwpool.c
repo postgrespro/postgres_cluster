@@ -14,7 +14,6 @@
 
 #include "bgwpool.h"
 #include "multimaster.h"
-#include "utils/guc.h"
 
 bool MtmIsLogicalReceiver;
 int  MtmMaxWorkers;
@@ -44,7 +43,6 @@ static void BgwPoolMainLoop(BgwPool* pool)
 	pqsignal(SIGINT, BgwShutdownWorker);
 	pqsignal(SIGQUIT, BgwShutdownWorker);
 	pqsignal(SIGTERM, BgwShutdownWorker);
-	pqsignal(SIGHUP, PostgresSigHupHandler);
 
     BackgroundWorkerUnblockSignals();
 	BackgroundWorkerInitializeConnection(pool->dbname, pool->dbuser);
@@ -52,13 +50,7 @@ static void BgwPoolMainLoop(BgwPool* pool)
 	ActivePortal->status = PORTAL_ACTIVE;
 	ActivePortal->sourceText = "";
 
-	while (true) {
-		if (ConfigReloadPending)
-		{
-			ConfigReloadPending = false;
-			ProcessConfigFile(PGC_SIGHUP);
-		}
-
+    while (true) { 
         PGSemaphoreLock(&pool->available);
         SpinLockAcquire(&pool->lock);
 		if (pool->shutdown) { 	

@@ -47,7 +47,6 @@ SUBDIRS = \
 		pg_visibility	\
 		pg_wait_sampling \
 		postgres_fdw	\
-		referee	\
 		rum		\
 		seg		\
 		spi		\

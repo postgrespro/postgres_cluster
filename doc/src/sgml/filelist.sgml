@@ -164,7 +164,6 @@
 <!ENTITY pgvisibility    SYSTEM "pgvisibility.sgml">
 <!ENTITY pg-wait-sampling    SYSTEM "pg-wait-sampling.sgml">
 <!ENTITY postgres-fdw    SYSTEM "postgres-fdw.sgml">
-<!ENTITY referee         SYSTEM "referee.sgml">
 <!ENTITY rum             SYSTEM "rum.sgml">
 <!ENTITY plantuner       SYSTEM "plantuner.sgml">
 <!ENTITY seg             SYSTEM "seg.sgml">

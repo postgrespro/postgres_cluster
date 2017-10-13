@@ -66,7 +66,6 @@ sub new
 		my $node = new PostgresNode("node$i", $host, $pgport);
 		$node->{id} = $i;
 		$node->{arbiter_port} = $arbiter_port;
-		$node->{mmconnstr} = "${ \$node->connstr('postgres') } arbiter_port=${ \$node->{arbiter_port} }";
 		push(@$nodes, $node);
 	}
 
@@ -90,20 +89,13 @@ sub init
 	}
 }
 
-sub all_connstrs
-{
-	my ($self) = @_;
-	my $nodes = $self->{nodes};
-	return join(', ', map { "${ \$_->connstr('postgres') } arbiter_port=${ \$_->{arbiter_port} }" } @$nodes);
-}
-
-
 sub configure
 {
 	my ($self) = @_;
 	my $nodes = $self->{nodes};
+	my $nnodes = scalar @{ $nodes };
 
-	my $connstr = $self->all_connstrs();
+	my $connstr = join(', ', map { "${ \$_->connstr('postgres') } arbiter_port=${ \$_->{arbiter_port} }" } @$nodes);
 
 	foreach my $node (@$nodes)
 	{
@@ -111,21 +103,20 @@ sub configure
 		my $host = $node->host;
 		my $pgport = $node->port;
 		my $arbiter_port = $node->{arbiter_port};
-		my $unix_sock_dir = $ENV{PGHOST};
 
 		$node->append_conf("postgresql.conf", qq(
 			log_statement = none
 			listen_addresses = '$host'
-			unix_socket_directories = '$unix_sock_dir'
+			unix_socket_directories = ''
 			port = $pgport
 			max_prepared_transactions = 10
 			max_connections = 10
 			max_worker_processes = 100
 			wal_level = logical
-			max_wal_senders = 6
+			max_wal_senders = 5
 			wal_sender_timeout = 0
 			default_transaction_isolation = 'repeatable read'
-			max_replication_slots = 6
+			max_replication_slots = 5
 			shared_preload_libraries = 'multimaster'
 			shared_buffers = 16MB
 
@@ -133,11 +124,12 @@ sub configure
 			multimaster.workers = 1
 			multimaster.node_id = $id
 			multimaster.conn_strings = '$connstr'
-			multimaster.heartbeat_recv_timeout = 1050
+			multimaster.heartbeat_recv_timeout = 2050
 			multimaster.heartbeat_send_timeout = 250
-			multimaster.max_nodes = 6
-			multimaster.ignore_tables_without_pk = false
+			multimaster.max_nodes = $nnodes
+			multimaster.ignore_tables_without_pk = true
 			multimaster.queue_size = 4194304
+			multimaster.min_2pc_timeout = 150000
 			log_line_prefix = '%t: '
 		));
 

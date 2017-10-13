@@ -11,7 +11,6 @@ import copy
 import aioprocessing
 import multiprocessing
 import logging
-import re
 
 class MtmTxAggregate(object):
 
@@ -27,19 +26,16 @@ class MtmTxAggregate(object):
     def start_tx(self):
         self.start_time = datetime.datetime.now()
 
-    def finish_tx(self, status):
+    def finish_tx(self, name):
         latency = (datetime.datetime.now() - self.start_time).total_seconds()
-
-        if "is aborted on node" in status:
-            status = re.sub(r'MTM-.+\)', '<censored>', status)
 
         if latency > self.max_latency:
             self.max_latency = latency
 
-        if status not in self.finish:
-            self.finish[status] = 1
+        if name not in self.finish:
+            self.finish[name] = 1
         else:
-            self.finish[status] += 1
+            self.finish[name] += 1
 
     def as_dict(self):
         return {
@@ -66,7 +62,6 @@ class MtmClient(object):
         # logging.basicConfig(level=logging.DEBUG)
         self.n_accounts = n_accounts
         self.dsns = dsns
-        self.total = 0
         self.aggregates = {}
         keep_trying(40, 1, self.initdb, 'self.initdb')
         self.running = True
@@ -114,15 +109,6 @@ class MtmClient(object):
         cur.close()
         conn.close()
 
-    def execute(self, node_id, statements):
-        con = psycopg2.connect(self.dsns[node_id])
-        con.autocommit = True
-        cur = con.cursor()
-        for statement in statements:
-            cur.execute(statement)
-        cur.close()
-        con.close()
-
     def is_data_identic(self):
         hashes = set()
 
@@ -141,20 +127,6 @@ class MtmClient(object):
         print(hashes)
         return (len(hashes) == 1)
 
-    def no_prepared_tx(self):
-        n_prepared = 0
-
-        for dsn in self.dsns:
-            con = psycopg2.connect(dsn)
-            cur = con.cursor()
-            cur.execute("select count(*) from pg_prepared_xacts;")
-            n_prepared += int(cur.fetchone()[0])
-            cur.close()
-            con.close()
-
-        print("n_prepared = %d" % (n_prepared))
-        return (n_prepared)
-
     @asyncio.coroutine
     def status(self):
         while self.running:
@@ -168,7 +140,7 @@ class MtmClient(object):
                         serialized_aggs[conn_id][aggname] = agg.as_dict()
                         agg.clear_values()
 
-                yield from self.child_pipe.coro_send(serialized_aggs)
+                self.child_pipe.send(serialized_aggs)
             else:
                 print('evloop: unknown message')
 
@@ -190,15 +162,11 @@ class MtmClient(object):
                         # enable_hstore tries to perform select from database
                         # which in case of select's failure will lead to exception
                         # and stale connection to the database
-                        conn = yield from aiopg.connect(dsn, enable_hstore=False, timeout=1)
-                        print('Connected %s, %d' % (aggname_prefix, conn_i + 1) )
+                        conn = yield from aiopg.connect(dsn, enable_hstore=False, timeout=3600)
+                        print("reconnected")
 
                 if (not cur) or cur.closed:
-                        # big timeout here is important because on timeout
-                        # expiration psycopg tries to call PQcancel() which
-                        # tries to create blocking connection to postgres and
-                        # blocks evloop
-                        cur = yield from conn.cursor(timeout=3600)
+                        cur = yield from conn.cursor()
 
                 # ROLLBACK tx after previous exception.
                 # Doing this here instead of except handler to stay inside try
@@ -207,7 +175,7 @@ class MtmClient(object):
                 if status != TRANSACTION_STATUS_IDLE:
                     yield from cur.execute('rollback')
 
-                yield from tx_block(conn, cur, agg, conn_i)
+                yield from tx_block(conn, cur, agg)
                 agg.finish_tx('commit')
 
             except psycopg2.Error as e:
@@ -216,22 +184,22 @@ class MtmClient(object):
                 # Give evloop some free time.
                 # In case of continuous excetions we can loop here without returning
                 # back to event loop and block it
-                yield from asyncio.sleep(0.5)
-
+                if "Multimaster node is not online" in msg:
+                    yield from asyncio.sleep(1.00)
+                else:
+                    yield from asyncio.sleep(0.01)
             except BaseException as e:
-                msg = str(e).strip()
-                agg.finish_tx(msg)
-                print('Caught exception %s, %s, %d, %s' % (type(e), aggname_prefix, conn_i + 1, msg) )
-
+                print('Catch exception ', type(e))
+                agg.finish_tx(str(e).strip())
                 # Give evloop some free time.
                 # In case of continuous excetions we can loop here without returning
                 # back to event loop and block it
-                yield from asyncio.sleep(0.5)
+                yield from asyncio.sleep(0.01)                
 
         print("We've count to infinity!")
 
     @asyncio.coroutine
-    def transfer_tx(self, conn, cur, agg, conn_i):
+    def transfer_tx(self, conn, cur, agg):
         amount = 1
         # to avoid deadlocks:
         from_uid = random.randint(1, self.n_accounts - 2)
@@ -250,14 +218,13 @@ class MtmClient(object):
         yield from cur.execute('commit')
 
     @asyncio.coroutine
-    def total_tx(self, conn, cur, agg, conn_i):
-        yield from cur.execute("select sum(amount), count(*), count(uid), current_setting('multimaster.node_id') from bank_test")
+    def total_tx(self, conn, cur, agg):
+        yield from cur.execute('select sum(amount) from bank_test')
         total = yield from cur.fetchone()
-        if total[0] != self.total:
+        if total[0] != 0:
             agg.isolation += 1
-            print(datetime.datetime.utcnow(), 'Isolation error, total ', self.total, ' -> ', total[0], ', node ', conn_i+1)
-            self.total = total[0]
             print(self.oops)
+            print('Isolation error, total = ', total[0])
             # yield from cur.execute('select * from mtm.get_nodes_state()')
             # nodes_state = yield from cur.fetchall()
             # for i, col in enumerate(self.nodes_state_fields):

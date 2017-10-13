@@ -15,8 +15,6 @@ from lib.failure_injector import *
 TEST_WARMING_TIME = 5
 TEST_DURATION = 10
 TEST_RECOVERY_TIME = 30
-TEST_SETUP_TIME = 20
-TEST_STOP_DELAY = 5
 
 class TestHelper(object):
 
@@ -32,8 +30,6 @@ class TestHelper(object):
         for conn_id, agg in enumerate(aggs):
             commits = commits and 'commit' in agg['transfer']['finish']
         if not commits:
-            print('No commits during aggregation interval')
-            time.sleep(100000)
             raise AssertionError('No commits during aggregation interval')
 
     def assertNoCommits(self, aggs):
@@ -69,35 +65,18 @@ class TestHelper(object):
 class RecoveryTest(unittest.TestCase, TestHelper):
 
     @classmethod
-    def setUpClass(cls):
-        subprocess.check_call(['docker-compose','up',
-            '--force-recreate',
-            '--build',
-            '-d'])
-
-        # XXX: add normal wait here
-        time.sleep(TEST_SETUP_TIME)
-
-        cls.client = MtmClient([
+    def setUpClass(self):
+        self.client = MtmClient([
             "dbname=regression user=postgres host=127.0.0.1 port=15432",
             "dbname=regression user=postgres host=127.0.0.1 port=15433",
             "dbname=regression user=postgres host=127.0.0.1 port=15434"
         ], n_accounts=1000)
-        cls.client.bgrun()
+        self.client.bgrun()
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(self):
         print('tearDown')
-        cls.client.stop()
-
-        time.sleep(TEST_STOP_DELAY)
-
-        if not cls.client.is_data_identic():
-            raise AssertionError('Different data on nodes')
-            
-
-        # XXX: check nodes data identity here
-#        subprocess.check_call(['docker-compose','down'])
+        self.client.stop()
 
     def setUp(self):
         warnings.simplefilter("ignore", ResourceWarning)

@@ -57,36 +57,20 @@ if [ "$1" = 'postgres' ]; then
 			max_wal_senders = 10
 			shared_preload_libraries = 'multimaster'
 			default_transaction_isolation = 'repeatable read'
-			log_line_prefix = '%m: '
-			# log_statement = all
+            log_line_prefix = '%m: '
 
+			multimaster.workers = 4
+			multimaster.max_workers = 16
 			multimaster.max_nodes = 3
-			# multimaster.volkswagen_mode = 1
-			# multimaster.ignore_tables_without_pk = 1
+			multimaster.volkswagen_mode = 1
+			multimaster.queue_size=52857600
+			multimaster.ignore_tables_without_pk = 1
+			multimaster.node_id = $NODE_ID
+			multimaster.conn_strings = '$CONNSTRS'
 			multimaster.heartbeat_recv_timeout = 1100
 			multimaster.heartbeat_send_timeout = 250
-			multimaster.max_recovery_lag = 1000000000
+			multimaster.min_2pc_timeout = 100000000
 		EOF
-
-		if [ -n "$NODE_ID" ]; then
-			echo "multimaster.node_id = $NODE_ID" >> $PGDATA/postgresql.conf
-		fi
-
-		if [ -n "$CONNSTRS" ]; then
-			echo "multimaster.conn_strings = '$CONNSTRS'" >> $PGDATA/postgresql.conf
-		fi
-
-		if [ -n "$MAJOR" ]; then
-			echo 'multimaster.major_node = on' >> $PGDATA/postgresql.conf
-		fi
-
-		if [ -n "$REFEREE" ]; then
-			echo 'multimaster.referee = on' >> $PGDATA/postgresql.conf
-		fi
-
-		if [ -n "$REFEREE_CONNSTR" ]; then
-			echo "multimaster.referee_connstring = '$REFEREE_CONNSTR'" >> $PGDATA/postgresql.conf
-		fi
 
 		cat $PGDATA/postgresql.conf
 

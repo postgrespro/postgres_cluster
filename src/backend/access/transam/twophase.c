@@ -1459,7 +1459,7 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 	parsed->nsubxacts = hdr->nsubxacts;
 	parsed->nrels = hdr->ncommitrels;
 	parsed->nmsgs = hdr->ninvalmsgs;
-
+	
 	parsed->subxacts = (TransactionId *) bufptr;
 	bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
 
@@ -1573,10 +1573,12 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	int			ndelrels;
 	SharedInvalidationMessage *invalmsgs;
 	int			i;
-	XactEvent	finish_event;
 
-	if (isCommit)
+
+	if (isCommit) 
+	{ 
 		CallXactCallbacks(XACT_EVENT_PRE_COMMIT_PREPARED);
+	}		
 
 	/*
 	 * Validate the GID, and lock the GXACT to ensure that two backends do not
@@ -1632,7 +1634,7 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 										hdr->ncommitrels, commitrels,
 										hdr->ninvalmsgs, invalmsgs,
 										hdr->initfileinval, gid);
-		finish_event = XACT_EVENT_COMMIT_PREPARED;
+		CallXactCallbacks(XACT_EVENT_COMMIT_PREPARED);
 	}
 	else
 	{
@@ -1640,9 +1642,9 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 									   hdr->nsubxacts, children,
 									   hdr->nabortrels, abortrels,
 									   gid);
-		finish_event = XACT_EVENT_ABORT_PREPARED;
+		CallXactCallbacks(XACT_EVENT_ABORT_PREPARED);
 	}
-
+									   
 
 	ProcArrayRemove(proc, latestXid);
 
@@ -1714,8 +1716,6 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	MyLockedGxact = NULL;
 
 	pfree(buf);
-
-	CallXactCallbacks(finish_event);
 }
 
 /*
@@ -1949,8 +1949,8 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 	cldir = AllocateDir(TWOPHASE_DIR);
 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
 	{
-		if (strlen(clde->d_name) == 2*sizeof(TransactionId) &&
-			strspn(clde->d_name, "0123456789ABCDEF") == 2*sizeof(TransactionId))
+		if (strlen(clde->d_name) == 8 &&
+			strspn(clde->d_name, "0123456789ABCDEF") == 8)
 		{
 			TransactionId xid;
 			char	   *buf;
@@ -2085,8 +2085,8 @@ StandbyRecoverPreparedTransactions(bool overwriteOK)
 	cldir = AllocateDir(TWOPHASE_DIR);
 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
 	{
-		if (strlen(clde->d_name) == 2*sizeof(TransactionId) &&
-			strspn(clde->d_name, "0123456789ABCDEF") == 2*sizeof(TransactionId))
+		if (strlen(clde->d_name) == 8 &&
+			strspn(clde->d_name, "0123456789ABCDEF") == 8)
 		{
 			TransactionId xid;
 			char	   *buf;
@@ -2170,8 +2170,8 @@ RecoverPreparedTransactions(void)
 	cldir = AllocateDir(dir);
 	while ((clde = ReadDir(cldir, dir)) != NULL)
 	{
-		if (strlen(clde->d_name) == 2*sizeof(TransactionId) &&
-			strspn(clde->d_name, "0123456789ABCDEF") == 2*sizeof(TransactionId))
+		if (strlen(clde->d_name) == 8 &&
+			strspn(clde->d_name, "0123456789ABCDEF") == 8)
 		{
 			TransactionId xid;
 			char	   *buf;
@@ -2226,7 +2226,7 @@ RecoverPreparedTransactions(void)
 			 * here must match one used in AssignTransactionId().
 			 */
 			if (InHotStandby && (hdr->nsubxacts >= PGPROC_MAX_CACHED_SUBXIDS ||
-								 XLogStandbyInfoActive()))
+								 XLogLogicalInfoActive()))
 				overwriteOK = true;
 
 			/*
