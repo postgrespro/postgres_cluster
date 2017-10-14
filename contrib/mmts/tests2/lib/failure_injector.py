@@ -81,3 +81,30 @@ class SkewTime(FailureInjector):
     def __init__(self, node):
         self.node = node
         super().__init__()
+
+class StopNode(FailureInjector):
+
+    def __init__(self, node):
+        self.node = node
+        super().__init__()
+
+    # XXX: Is it really a good idea to call cli.stop inside method called start?
+    def start(self):
+        self.docker_api.stop(self.node)
+
+    def stop(self):
+        return
+
+
+class StartNode(FailureInjector):
+
+    def __init__(self, node):
+        self.node = node
+        super().__init__()
+
+    # XXX: Is it really a good idea to call cli.stop inside method called start?
+    def start(self):
+        return
+
+    def stop(self):
+        self.docker_api.start(self.node)
