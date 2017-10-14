@@ -359,11 +359,17 @@ static void MtmSendHeartbeat()
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
 		if (i+1 != MtmNodeId) { 
-			if (!BIT_CHECK(busy_mask, i)
-				&& (Mtm->status != MTM_ONLINE 
-					|| sockets[i] >= 0 
-					|| !BIT_CHECK(Mtm->disabledNodeMask, i)
-					|| BIT_CHECK(Mtm->reconnectMask, i)))
+			if (!BIT_CHECK(busy_mask, i))
+				/*
+				 * Old behaviour here can cause subtle bugs, for example
+				 * it can happened that none of mentioned conditiotions is
+				 * true when disabled node connects to a major node which
+				 * is online. So just send it allways. --sk
+				 */
+				// && (Mtm->status != MTM_ONLINE
+				// 	|| sockets[i] >= 0
+				// 	|| !BIT_CHECK(Mtm->disabledNodeMask, i)
+				// 	|| BIT_CHECK(Mtm->reconnectMask, i)))
 			{ 
 				if (!MtmSendToNode(i, &msg, sizeof(msg))) {
 					MTM_ELOG(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
