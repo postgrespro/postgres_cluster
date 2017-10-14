@@ -1530,7 +1530,7 @@ MtmEndTransaction(MtmCurrentTrans* x, bool commit)
 						 (commit ? "commit" : "rollback"), ts->gid, ts->xid, ts->gtid.node, ts->gtid.xid, MtmTxnStatusMnem[ts->status]);
 			if (commit) {
 				if (!(ts->status == TRANSACTION_STATUS_UNKNOWN
-					  || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status == MTM_RECOVERY)))
+					  || (ts->status == TRANSACTION_STATUS_IN_PROGRESS && Mtm->status <= MTM_RECOVERY)))
 				{
 					MtmUnlock();
 					MTM_ELOG(ERROR, "Attempt to commit %s transaction %s (%llu)",
