@@ -1690,7 +1690,7 @@ static void MtmBroadcastPollMessage(MtmTransState* ts)
 
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
-		if (BIT_CHECK(ts->participantsMask & ~Mtm->disabledNodeMask, i))
+		if (BIT_CHECK(ts->participantsMask, i))
 		{
 			msg.node = i+1;
 			MTM_LOG3("Send request for transaction %s to node %d", msg.gid, msg.node);
@@ -1734,7 +1734,7 @@ static void	MtmLoadPreparedTransactions(void)
 			ts->gtid.xid = xid;
 			ts->nSubxids = 0;
 			ts->votingCompleted = true;
-			ts->participantsMask = (((nodemask_t)1 << Mtm->nAllNodes) - 1) & ~Mtm->disabledNodeMask & ~((nodemask_t)1 << (MtmNodeId-1));
+			ts->participantsMask = (((nodemask_t)1 << Mtm->nAllNodes) - 1) & ~((nodemask_t)1 << (MtmNodeId-1));
 			ts->nConfigChanges = Mtm->nConfigChanges;
 			ts->votedMask = 0;
 			strcpy(ts->gid, gid);
