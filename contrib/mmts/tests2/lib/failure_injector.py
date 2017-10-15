@@ -3,11 +3,11 @@ import docker
 class FailureInjector(object):
 
     def __init__(self):
-        self.docker_api = docker.Client()
+        self.docker_api = docker.from_env()
 
     def container_exec(self, node, command):
-        exec_id = self.docker_api.exec_create(node, command, user='root')
-        output = self.docker_api.exec_start(exec_id)
+        docker_node = self.docker_api.containers.get(node)
+        docker_node.exec_run(command, user='root')
 
 class NoFailure(FailureInjector):
 
@@ -57,10 +57,10 @@ class RestartNode(FailureInjector):
 
     # XXX: Is it really a good idea to call cli.stop inside method called start?
     def start(self):
-        self.docker_api.stop(self.node)
+        self.docker_api.containers.get(self.node).stop()
 
     def stop(self):
-        self.docker_api.start(self.node)
+        self.docker_api.containers.get(self.node).start()
 
 
 class CrashRecoverNode(FailureInjector):
@@ -70,10 +70,10 @@ class CrashRecoverNode(FailureInjector):
         super().__init__()
 
     def start(self):
-        self.docker_api.kill(self.node)
+        self.docker_api.containers.get(self.node).kill()
 
     def stop(self):
-        self.docker_api.start(self.node)
+        self.docker_api.containers.get(self.node).start()
 
 
 class SkewTime(FailureInjector):
@@ -90,7 +90,7 @@ class StopNode(FailureInjector):
 
     # XXX: Is it really a good idea to call cli.stop inside method called start?
     def start(self):
-        self.docker_api.stop(self.node)
+        self.docker_api.containers.get(self.node).stop()
 
     def stop(self):
         return
@@ -107,4 +107,4 @@ class StartNode(FailureInjector):
         return
 
     def stop(self):
-        self.docker_api.start(self.node)
+        self.docker_api.containers.get(self.node).start()
