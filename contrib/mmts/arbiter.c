@@ -987,6 +987,7 @@ static void MtmReceiver(Datum arg)
 										 msg->gid, MtmTxnStatusMnem[msg->status], node);
 
 									replorigin_session_origin = DoNotReplicateId;
+									TXFINISH("%s ABORT, MSG_POLL_STATUS", msg->gid);
 									MtmFinishPreparedTransaction(ts, false);
 									replorigin_session_origin = InvalidRepOriginId;
 								} 
@@ -1000,6 +1001,7 @@ static void MtmReceiver(Datum arg)
 										MTM_ELOG(LOG, "Commit transaction %s because it is prepared at all live nodes", msg->gid);		
 
 										replorigin_session_origin = DoNotReplicateId;
+										TXFINISH("%s COMMIT, MSG_POLL_STATUS", msg->gid);
 										MtmFinishPreparedTransaction(ts, true);
 										replorigin_session_origin = InvalidRepOriginId;
 									} else { 
