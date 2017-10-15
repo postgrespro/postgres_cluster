@@ -1974,10 +1974,12 @@ void MtmPollStatusOfPreparedTransactionsForDisabledNode(int disabledNodeId, bool
 			Assert(ts->gid[0]);
 			if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
 				MTM_ELOG(LOG, "Abort transaction %s because its coordinator is disabled and it is not prepared at node %d", ts->gid, MtmNodeId);
+				TXFINISH("%s ABORT, PollStatusOfPrepared", ts->gid);
 				MtmFinishPreparedTransaction(ts, false);
 			} else {
 				if (commitPrecommited)
 				{
+					TXFINISH("%s COMMIT, PollStatusOfPrepared", ts->gid);
 					MtmFinishPreparedTransaction(ts, true);
 				}
 				else
@@ -3305,6 +3307,7 @@ void MtmRollbackPreparedTransaction(int nodeId, char const* gid)
 		StartTransactionCommand();
 		MtmBeginSession(nodeId);
 		MtmSetCurrentTransactionGID(gid);
+		TXFINISH("%s ABORT, MtmRollbackPrepared", gid);
 		FinishPreparedTransaction(gid, false);
 		MtmTx.isActive = true;
 		CommitTransactionCommand();
@@ -4588,9 +4591,11 @@ static bool MtmTwoPhaseCommit(MtmCurrentTrans* x)
 					ts = (MtmTransState*) hash_search(MtmXid2State, &(x->xid), HASH_FIND, NULL);
 					Assert(ts);
 
+					TXFINISH("%s ABORT, MtmTwoPhase", x->gid);
 					FinishPreparedTransaction(x->gid, false);
 					MTM_ELOG(ERROR, "Transaction %s (%llu) is aborted on node %d. Check its log to see error details.", x->gid, (long64)x->xid, ts->abortedByNode);
 				} else {
+					TXFINISH("%s COMMIT, MtmTwoPhase", x->gid);
 					FinishPreparedTransaction(x->gid, true);
 					MTM_TXTRACE(x, "MtmTwoPhaseCommit Committed");
 					MTM_LOG2("Distributed transaction %s (%lld) is committed at %lld with LSN=%lld", x->gid, (long64)x->xid, MtmGetCurrentTime(), (long64)GetXLogInsertRecPtr());

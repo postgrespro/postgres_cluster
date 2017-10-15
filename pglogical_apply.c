@@ -726,6 +726,7 @@ process_remote_commit(StringInfo in)
 					MTM_LOG1("Perform delayed rollback of prepared global transaction %s", gid);	
 					StartTransactionCommand();
 					MtmSetCurrentTransactionGID(gid);
+					TXFINISH("%s ABORT, PGLOGICAL_PREPARE", gid);
 					FinishPreparedTransaction(gid, false);
 					CommitTransactionCommand();					
 					Assert(!MtmTransIsActive());
@@ -755,6 +756,7 @@ process_remote_commit(StringInfo in)
 			else
 				MtmSetCurrentTransactionCSN(csn);
 			MtmSetCurrentTransactionGID(gid);
+			TXFINISH("%s COMMIT, PGLOGICAL_COMMIT_PREPARED csn=%lld", gid, csn);
 			FinishPreparedTransaction(gid, true);
 			MTM_LOG2("Distributed transaction %s is committed", gid);
 			CommitTransactionCommand();

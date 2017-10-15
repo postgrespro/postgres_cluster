@@ -41,6 +41,14 @@
 #define MTM_LOG4(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__)
 #endif
 
+// #define MTM_TXFINISH 1
+
+#ifndef MTM_TXFINISH
+#define TXFINISH(fmt, ...)
+#else
+#define TXFINISH(fmt, ...) elog(LOG, MTM_TAG "[TXFINISH] " fmt, ## __VA_ARGS__)
+#endif
+
 // #define MTM_TRACE 1
 
 #ifndef MTM_TRACE
