@@ -131,8 +131,8 @@ class RefereeTest(unittest.TestCase, TestHelper):
         self.assertIsolation(aggs)
 
         # need to start node1 to perform consequent tests
-        docker_api = docker.Client()
-        docker_api.start('node1')
+        docker_api = docker.from_env()
+        docker_api.containers.get('node1').start()
         time.sleep(35)
 
 
