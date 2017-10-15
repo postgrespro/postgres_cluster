@@ -133,7 +133,7 @@ class RefereeTest(unittest.TestCase, TestHelper):
         # need to start node1 to perform consequent tests
         docker_api = docker.Client()
         docker_api.start('node1')
-        time.sleep(20)
+        time.sleep(35)
 
 
 if __name__ == '__main__':
