@@ -324,6 +324,7 @@ void MtmOnNodeDisconnect(int nodeId)
 	// MtmRefreshClusterStatus();
 }
 
+// XXXX: make that event too
 void MtmOnNodeConnect(int nodeId)
 {
 	// if (!BIT_CHECK(SELF_CONNECTIVITY_MASK, nodeId-1))
@@ -452,12 +453,6 @@ MtmRefreshClusterStatus()
 	}
 
 	/*
-	 * Do not check clique with referee grant, because we can disable ourself.
-	 */
-	if (Mtm->refereeGrant)
-		return;
-
-	/*
 	 * Check for clique.
 	 */
 	MtmBuildConnectivityMatrix(matrix);
@@ -499,6 +494,18 @@ MtmRefreshClusterStatus()
 	MtmLock(LW_EXCLUSIVE);
 
 	Mtm->clique = newClique;
+
+	/*
+	 * Do not perform any action based on clique with referee grant,
+	 * because we can disable ourself.
+	 * But we also need to maintain actual clique not disable ourselves
+	 * when neighbour node will come back and we erase refereeGrant.
+	 */
+	if (Mtm->refereeGrant)
+	{
+		MtmUnlock();
+		return;
+	}
 
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
