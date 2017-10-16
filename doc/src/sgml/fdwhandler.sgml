@@ -428,11 +428,13 @@ AddForeignUpdateTargets (Query *parsetree,
      Avoid using names matching <literal>ctid<replaceable>N</></literal>,
      <literal>wholerow</literal>, or
      <literal>wholerow<replaceable>N</></literal>, as the core system can
-     generate junk columns of these names.
+     generate junk columns of these names.  Also, as it assumes that those
+     expressions have already been simplified enough to execute,
+     apply <function>eval_const_expressions</> if necessary.
     </para>
 
     <para>
-     This function is called in the rewriter, not the planner, so the
+     Although this function is called in the planner, the
      information available is a bit different from that available to the
      planning routines.
      <literal>parsetree</> is the parse tree for the <command>UPDATE</> or
