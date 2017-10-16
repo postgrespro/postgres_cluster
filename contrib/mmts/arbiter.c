@@ -76,6 +76,7 @@
 
 
 #include "multimaster.h"
+#include "state.h"
 
 #define MAX_ROUTES       16
 #define INIT_BUFFER_SIZE 1024
@@ -189,7 +190,6 @@ static void MtmDisconnect(int node)
 	MtmUnregisterSocket(sockets[node]);
 	pg_closesocket(sockets[node], MtmUseRDMA);
 	sockets[node] = -1;
-	MtmOnNodeDisconnect(node+1);
 }
 
 static int MtmWaitSocket(int sd, bool forWrite, timestamp_t timeoutMsec)
@@ -316,25 +316,22 @@ static void MtmCheckResponse(MtmArbiterMessage* resp)
 	} else { 
 		BIT_CLEAR(Mtm->currentLockNodeMask, resp->node-1);
 	}
-	if (
-		( BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1) || Mtm->status == MTM_IN_MINORITY )
-		&& !BIT_CHECK(Mtm->disabledNodeMask, resp->node-1)
-		&& Mtm->status != MTM_RECOVERY
-		&& Mtm->status != MTM_RECOVERED
-		&& Mtm->nodes[MtmNodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < MtmGetSystemTime()) 
-	{ 
-		MTM_ELOG(WARNING, "Node %d thinks that I'm dead, while I'm %s (message %s)", resp->node, MtmNodeStatusMnem[Mtm->status], MtmMessageKindMnem[resp->code]);
-		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
-		Mtm->nConfigChanges += 1;
-		MtmSwitchClusterMode(MTM_RECOVERY);
-	} else if (BIT_CHECK(Mtm->disabledNodeMask, resp->node-1) && sockets[resp->node-1] < 0) { 
-		/* We receive heartbeat from disabled node.
+
+	// if (BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1))
+	// {
+	// 	MtmStateProcessEvent(MTM_REMOTE_DISABLE);
+	// }
+
+	if (BIT_CHECK(Mtm->disabledNodeMask, resp->node-1) &&
+		sockets[resp->node-1] < 0)
+	{
+		/* We've received heartbeat from disabled node.
 		 * Looks like it is restarted.
 		 * Try to reconnect to it.
 		 */
 		MTM_ELOG(WARNING, "Receive heartbeat from disabled node %d", resp->node);		
 		BIT_SET(Mtm->reconnectMask, resp->node-1);
-	}	
+	}
 }
 
 static void MtmScheduleHeartbeat()
@@ -543,17 +540,9 @@ static void MtmOpenConnections()
 	for (i = 0; i < nNodes; i++) {
 		if (i+1 != MtmNodeId && i < Mtm->nAllNodes) { 
 			sockets[i] = MtmConnectSocket(i, Mtm->nodes[i].con.arbiterPort);
-			if (sockets[i] < 0) { 
-				MtmOnNodeDisconnect(i+1);
-			} 
 		}
 	}
-	if (Mtm->nLiveNodes < Mtm->nAllNodes/2+1) { /* no quorum */
-		MTM_ELOG(WARNING, "Node is out of quorum: only %d nodes of %d are accessible", Mtm->nLiveNodes, Mtm->nAllNodes);
-		MtmSwitchClusterMode(MTM_IN_MINORITY);
-	} else if (Mtm->status == MTM_INITIALIZATION) { 
-		MtmSwitchClusterMode(MTM_CONNECTED);
-	}
+	MtmStateProcessEvent(MTM_ARBITER_RECEIVER_START);
 }
 
 
@@ -586,7 +575,6 @@ static bool MtmSendToNode(int node, void const* buf, int size)
 			}
 			sockets[node] = MtmConnectSocket(node, Mtm->nodes[node].con.arbiterPort);
 			if (sockets[node] < 0) { 
-				MtmOnNodeDisconnect(node+1);
 				result = false;
 				break;
 			}
@@ -716,16 +704,18 @@ static void MtmSender(Datum arg)
 {
 	int nNodes = MtmMaxNodes;
 	int i;
+	MtmBuffer* txBuffer;
 
 	MtmBackgroundWorker = true;
 
-	MtmBuffer* txBuffer = (MtmBuffer*)palloc0(sizeof(MtmBuffer)*nNodes);
+	txBuffer = (MtmBuffer*)palloc0(sizeof(MtmBuffer)*nNodes);
 	MTM_ELOG(LOG, "Start arbiter sender %d", MyProcPid);
 	InitializeTimeouts();
 
 	pqsignal(SIGINT, SetStop);
 	pqsignal(SIGQUIT, SetStop);
 	pqsignal(SIGTERM, SetStop);
+	pqsignal(SIGHUP, PostgresSigHupHandler);
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -743,6 +733,12 @@ static void MtmSender(Datum arg)
 		MtmMessageQueue *curr, *next;		
 		PGSemaphoreLock(&Mtm->sendSemaphore);
 		CHECK_FOR_INTERRUPTS();
+
+		if (ConfigReloadPending)
+		{
+			ConfigReloadPending = false;
+			ProcessConfigFile(PGC_SIGHUP);
+		}
 
 		MtmCheckHeartbeat();
 		/* 
@@ -805,6 +801,7 @@ static void MtmMonitor(Datum arg)
 	pqsignal(SIGINT, SetStop);
 	pqsignal(SIGQUIT, SetStop);
 	pqsignal(SIGTERM, SetStop);
+	pqsignal(SIGHUP, PostgresSigHupHandler);
 	
 	MtmBackgroundWorker = true;
 
@@ -819,6 +816,13 @@ static void MtmMonitor(Datum arg)
 		if (rc & WL_POSTMASTER_DEATH) { 
 			break;
 		}
+
+		if (ConfigReloadPending)
+		{
+			ConfigReloadPending = false;
+			ProcessConfigFile(PGC_SIGHUP);
+		}
+
 		MtmRefreshClusterStatus();
 	}
 }
@@ -844,6 +848,7 @@ static void MtmReceiver(Datum arg)
 	pqsignal(SIGINT, SetStop);
 	pqsignal(SIGQUIT, SetStop);
 	pqsignal(SIGTERM, SetStop);
+	pqsignal(SIGHUP, PostgresSigHupHandler);
 
 	MtmBackgroundWorker = true;
 
@@ -879,7 +884,14 @@ static void MtmReceiver(Datum arg)
 		for (j = 0; j < n; j++) {
 			if (events[j].events & EPOLLIN)  
 #else
-        fd_set events;
+		fd_set events;
+
+		if (ConfigReloadPending)
+		{
+			ConfigReloadPending = false;
+			ProcessConfigFile(PGC_SIGHUP);
+		}
+
 		do { 
 			struct timeval tv;
 			events = inset;
@@ -1006,7 +1018,7 @@ static void MtmReceiver(Datum arg)
 					  default:
 						break;
 					}
-					if (BIT_CHECK(msg->disabledNodeMask, node-1)) {
+					if (BIT_CHECK(msg->disabledNodeMask, node-1) || BIT_CHECK(Mtm->disabledNodeMask, node-1)) {
 						MTM_ELOG(WARNING, "Ignore message from dead node %d\n", node);
 						continue;
 					}
@@ -1084,7 +1096,7 @@ static void MtmReceiver(Datum arg)
 							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
 								MTM_LOG1("Arbiter receive abort message for transaction %s (%llu) from node %d", ts->gid, (long64)ts->xid, node);
 								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
-								ts->aborted_by_node = node;
+								ts->abortedByNode = node;
 								MtmAbortTransaction(ts);
 							}
 							if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
@@ -1161,4 +1173,3 @@ static void MtmReceiver(Datum arg)
 	}
 	proc_exit(1); /* force restart of this bgwroker */
 }
-
