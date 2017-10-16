@@ -316,7 +316,7 @@ UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;
               <para>
                 In <literal>intelligent</> and <literal>controlled</> modes,
                 <filename>aqo</filename> statistics is only used for the
-                alreadyknown query types.
+                already known query types.
               </para>
             </listitem>
             <listitem>

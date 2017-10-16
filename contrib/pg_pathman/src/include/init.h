@@ -157,7 +157,7 @@ simpify_mcxt_name(MemoryContext mcxt)
 #define LOWEST_COMPATIBLE_FRONT		0x010400
 
 /* Current version of native C library (0xAA_BB_CC) */
-#define CURRENT_LIB_VERSION			0x010403
+#define CURRENT_LIB_VERSION			0x010407
 
 
 void *pathman_cache_search_relid(HTAB *cache_table,
@@ -201,7 +201,8 @@ find_children_status find_inheritance_children_array(Oid parentrelId,
 char *build_check_constraint_name_relid_internal(Oid relid);
 char *build_check_constraint_name_relname_internal(const char *relname);
 
-char *build_sequence_name_internal(Oid relid);
+char *build_sequence_name_relid_internal(Oid relid);
+char *build_sequence_name_relname_internal(const char *relname);
 
 char *build_update_trigger_name_internal(Oid relid);
 char *build_update_trigger_func_name_internal(Oid relid);

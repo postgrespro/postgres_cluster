@@ -58,10 +58,11 @@ shared_preload_libraries = 'pg_pathman'
             extensions that use the same hook functions. For example,
             <filename>pg_pathman</filename> may interfere with the
             <filename>pg_stat_statements</filename> extension as they both
-            use <literal>ProcessUtility_hook</literal>. If you run into
-            this issue, try reordering libraries specified in this
-            parameter:
-            <literal>shared_preload_libraries = 'pg_pathman, pg_stat_statements'</literal></para>
+            use <literal>ProcessUtility_hook</literal>. To avoid such
+            issues, <filename>pg_pathman</filename> must always be the
+            last in the list of libraries:
+            <literal>shared_preload_libraries = 'pg_stat_statements, pg_pathman'</literal>
+            </para>
           </important>
       </listitem>
       <listitem>

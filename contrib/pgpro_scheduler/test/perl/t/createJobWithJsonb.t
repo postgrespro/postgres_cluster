@@ -14,8 +14,8 @@ ok($dbh->err == 0) or (print $DBI::errstr . "\n" and $dbh->disconnect() and BAIL
 
 $query = "SELECT schedule.create_job(\'{ \"name\": \"Test 1\",
     \"cron\": \"* * * * *\",
-    \"commands\": [\"INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''createJob'')\",
-                    \"INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''createJob'')\"],
+    \"commands\": [\"INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''createJobWithJsonb'')\",
+                    \"INSERT INTO test_results (time_mark, commentary) VALUES(now(), ''createJobWithJsonb'')\"],
     \"run_as\": \"tester\",
     \"use_same_transaction\": \"true\"
     }\'

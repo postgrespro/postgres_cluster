@@ -11,7 +11,7 @@ teardown
 }
 
 session "s1"
-setup         { begin; }
+setup         { begin; SET deadlock_timeout = '10s'; }
 step "s1la"   { lock table a in access exclusive mode; }
 step "s1atxb" { begin autonomous; }
 step "s1lb"   { lock table b in access exclusive mode; }
@@ -19,7 +19,7 @@ step "s1atxc" { commit; }
 step "s1c"    { commit; }
 
 session "s2"
-setup       { begin; }
+setup       { begin; SET deadlock_timeout = '10s'; }
 step "s2lb" { lock table b in access exclusive mode; }
 step "s2la" { lock table a in access exclusive mode; }
 step "s2c"  { commit; }

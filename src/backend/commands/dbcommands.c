@@ -30,6 +30,7 @@
 #include "access/xact.h"
 #include "access/xloginsert.h"
 #include "access/xlogutils.h"
+#include "access/ptrack.h"
 #include "catalog/catalog.h"
 #include "catalog/dependency.h"
 #include "catalog/indexing.h"
@@ -617,6 +618,7 @@ createdb(const CreatedbStmt *stmt)
 			 * We don't need to copy subdirectories
 			 */
 			copydir(srcpath, dstpath, false);
+			create_ptrack_init_file(dstpath);
 
 			/* Record the filesystem change in XLOG */
 			{
@@ -1231,6 +1233,7 @@ movedb(const char *dbname, const char *tblspcname)
 			copyzipdir(src_dbpath, src_compressed, dst_dbpath, dst_compressed);
 		else
 			copydir(src_dbpath, dst_dbpath, false);
+		create_ptrack_init_file(dst_dbpath);
 
 		/*
 		 * Record the filesystem change in XLOG
@@ -2094,6 +2097,7 @@ dbase_redo(XLogReaderState *record)
 		 * We don't need to copy subdirectories
 		 */
 		copydir(src_path, dst_path, false);
+		create_ptrack_init_file(dst_path);
 	}
 	else if (info == XLOG_DBASE_DROP)
 	{

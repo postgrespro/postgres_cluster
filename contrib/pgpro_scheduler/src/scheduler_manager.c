@@ -11,6 +11,8 @@
 #include "storage/procarray.h"
 #include "storage/shm_toc.h"
 #include "catalog/pg_type.h"
+#include "commands/extension.h"
+#include "nodes/makefuncs.h"
 
 #include "pg_config.h"
 #include "fmgr.h"
@@ -24,6 +26,9 @@
 #include "utils/snapmgr.h"
 #include "utils/builtins.h"
 #include "utils/timestamp.h"
+#if PG_VERSION_NUM >= 100000
+#include "utils/regproc.h"
+#endif
 #include <sys/time.h>
 #include "utils/lsyscache.h"
 #include "catalog/namespace.h"
@@ -47,54 +52,22 @@
 extern volatile sig_atomic_t got_sighup;
 extern volatile sig_atomic_t got_sigterm;
 extern Oid scheduler_atjob_id_OID;
+extern Oid scheduler_schema_oid;
 
-int checkSchedulerNamespace(void)
+bool checkSchedulerExtension(void)
 {
-	const char *sql = "select count(*) from pg_catalog.pg_namespace where nspname = $1";
-	int count  = 0;
-	const char *schema;
-	Oid argtypes[1] = { TEXTOID };
-	Datum values[1];
-
-	SetCurrentStatementStartTimestamp();
-	pgstat_report_activity(STATE_RUNNING, "initialize: check namespace");
-
-	schema = GetConfigOption("schedule.schema", false, true);
-
-	START_SPI_SNAP(); 
-
-	values[0] = CStringGetTextDatum(schema);
-	count = select_count_with_args(sql, 1, argtypes, values, NULL);
-
-	if(count == -1)
+	Oid extoid;
+	bool use_transaction = false;
+	if (!IsTransactionState())
 	{
-		STOP_SPI_SNAP();
-		elog(ERROR, "Scheduler manager: %s: cannot check namespace: sql error",
-													MyBgworkerEntry->bgw_name); 
+		StartTransactionCommand();
+		use_transaction = true;
 	}
-	else if(count > 1 || count == 0 )
-	{
-		elog(LOG, "Scheduler manager: %s: cannot check namespace: "
-				  "found %d namespaces", MyBgworkerEntry->bgw_name, count);
-	}
-	else if(count == -2)
-	{
-		elog(LOG, "Scheduler manager: %s: cannot check namespace: "
-				  "count return null", MyBgworkerEntry->bgw_name);
-	}
-	else if(count != 1)
-	{
-		STOP_SPI_SNAP();
-		elog(ERROR, "Scheduler manager: %s: cannot check namespace: "
-					"unknown error %d", MyBgworkerEntry->bgw_name, count); 
-	}
-	STOP_SPI_SNAP();
+	
+	extoid = get_extension_oid("pgpro_scheduler", true);
+	if(use_transaction) CommitTransactionCommand();
 
-	if(count) {
-		SetConfigOption("search_path", schema, PGC_USERSET, PGC_S_SESSION);
-	}
-
-	return count;
+	return extoid != InvalidOid ? true: false;
 }
 
 int get_scheduler_maxworkers(void)
@@ -125,14 +98,6 @@ int get_scheduler_at_max_workers(void)
 
 	var =  atoi(opt);
 	return var;
-}
-
-char *get_scheduler_nodename(MemoryContext mem)
-{
-	const char *opt;
-	opt = GetConfigOption("schedule.nodename", true, false);
-
-	return _mcopy_string(mem, (char *)(opt == NULL || strlen(opt) == 0 ? "master": opt));
 }
 
 int init_manager_pool(MemoryContext mem, scheduler_manager_pool_t *p, int N)
@@ -304,7 +269,12 @@ int refresh_scheduler_manager_context(scheduler_manager_ctx_t *ctx)
 			if(got_sighup) return 0;   /* need to refresh it again */
 		}
 		rc = WaitLatch(MyLatch,
+#if PG_VERSION_NUM < 100000
 				WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 500L);
+#else
+				WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 500L, 
+				PG_WAIT_EXTENSION);
+#endif
 		ResetLatch(MyLatch);
 	}
 
@@ -883,7 +853,9 @@ int launch_executor_worker(scheduler_manager_ctx_t *ctx, scheduler_manager_slot_
 					BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_restart_time = BGW_NEVER_RESTART;
+#if PG_VERSION_NUM < 100000
 	worker.bgw_main = NULL;
+#endif
 	worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
 	sprintf(worker.bgw_library_name, "pgpro_scheduler");
 	sprintf(worker.bgw_function_name, "executor_worker_main");
@@ -1104,6 +1076,8 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 	TimestampTz next_time;
 	char *next_time_str;
 	char *error;
+	schd_remove_reason_t die_reason = 0;
+	BgwHandleStatus status;
 
 	if(p->free == p->len) return 0;
 	busy = p->len - p->free;
@@ -1112,6 +1086,7 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 	for(i = 0; i < busy; i++)
 	{
 		item = p->slots[i];
+
 		if(item->wait_worker_to_die)
 		{
 			toremove[nremove].pos = i;
@@ -1149,6 +1124,27 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 				toremove[nremove].reason = RmFreeSlot;
 				toremove[nremove].vanish_item = true;
 				nremove++;
+			}
+			else
+			{
+				die_reason = 0;
+				status = GetBackgroundWorkerPid(item->handler, &tmppid);
+				if(status == BGWH_STOPPED)
+				{
+					die_reason = RmExited;
+				}
+				else if(status == BGWH_POSTMASTER_DIED)
+				{
+					die_reason = RmDied;
+				}
+		
+				if(die_reason)
+				{
+					toremove[nremove].pos = i;
+					toremove[nremove].reason = die_reason;
+					toremove[nremove].vanish_item = true;
+					nremove++;
+				}
 			}
 		}
 	}
@@ -1207,6 +1203,10 @@ int scheduler_check_slots(scheduler_manager_ctx_t *ctx, scheduler_manager_pool_t
 				{
 					set_job_error(ctx->mem_ctx, item->job, "unknown error occured" );
 				}
+			}
+			else if(toremove[i].reason == RmExited || toremove[i].reason == RmDied)
+			{
+				set_job_error(ctx->mem_ctx, item->job, "Executor died unexpectedly (%d)", toremove[i].reason);
 			}
 			else if(toremove[i].reason == RmFreeSlot)
 			{
@@ -1705,7 +1705,9 @@ int start_at_worker(scheduler_manager_ctx_t *ctx, int pos)
 					BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
 	worker.bgw_restart_time = BGW_NEVER_RESTART;
+#if PG_VERSION_NUM < 100000
 	worker.bgw_main = NULL;
+#endif
 	worker.bgw_main_arg = UInt32GetDatum(dsm_segment_handle(seg));
 	sprintf(worker.bgw_library_name, "pgpro_scheduler");
 	sprintf(worker.bgw_function_name, "at_executor_worker_main");
@@ -1810,14 +1812,15 @@ void manager_worker_main(Datum arg)
 	elog(LOG, "Started scheduler manager for '%s'", database);
 	SetConfigOption("application_name", buffer, PGC_USERSET, PGC_S_SESSION);
 
-	if(!checkSchedulerNamespace())
+	if(!checkSchedulerExtension())
 	{
-		elog(LOG, "cannot start scheduler for %s - there is no namespace", database);
+		elog(LOG, "cannot start scheduler for %s - there is no extention", database);
 		changeChildBgwState(shared, SchdManagerQuit);
 		dsm_detach(seg);
 		delete_worker_mem_ctx(NULL);
 		proc_exit(0); 
 	}
+	set_schema(NULL, false);
 	SetCurrentStatementStartTimestamp();
 	pgstat_report_activity(STATE_RUNNING, "initialize.");
 
@@ -1829,8 +1832,9 @@ void manager_worker_main(Datum arg)
 	ctx = initialize_scheduler_manager_context(longTerm, database, seg);
 
 	START_SPI_SNAP();
-	reloid = RangeVarGetRelid(makeRangeVarFromNameList(
-		stringToQualifiedNameList("schedule.at_jobs_submitted")), NoLock, true);
+	reloid = RangeVarGetRelid(
+		makeRangeVar(get_scheduler_schema_name(), "at_jobs_submitted", -1)
+		, NoLock, true);
 	STOP_SPI_SNAP();
 	if(reloid == InvalidOid)
 	{
@@ -1842,7 +1846,6 @@ void manager_worker_main(Datum arg)
 	start_at_workers(ctx, shared);
 	clean_at_table(ctx);
 	set_slots_stat_report(ctx);
-	/* SetConfigOption("enable_seqscan", "off", PGC_USERSET, PGC_S_SESSION); */
 
 	while(!got_sigterm)
 	{
@@ -1855,9 +1858,13 @@ void manager_worker_main(Datum arg)
 			if(got_sighup)
 			{
 				got_sighup = false;
+				/* make read extension schema again */
+				scheduler_schema_oid = InvalidOid; 
+				set_schema(NULL, false);
+
 				ProcessConfigFile(PGC_SIGHUP);
 				reload_db_role_config(database); 
-				refresh_scheduler_manager_context(ctx); /* TODO */
+				refresh_scheduler_manager_context(ctx); 
 				set_slots_stat_report(ctx);
 			}
 			if(!got_sigterm)
@@ -1882,7 +1889,12 @@ void manager_worker_main(Datum arg)
 
 		delete_worker_mem_ctx(old);
 		rc = WaitLatch(MyLatch,
+#if PG_VERSION_NUM < 100000
 			WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1500L);
+#else
+			WL_LATCH_SET | WL_TIMEOUT | WL_POSTMASTER_DEATH, 1500L, 
+			PG_WAIT_EXTENSION);
+#endif
 		ResetLatch(MyLatch);
 	}
 	scheduler_manager_stop(ctx);
