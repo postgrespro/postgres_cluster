@@ -10,7 +10,7 @@ teardown
 }
 
 session "s1"
-setup         { begin; }
+setup         { begin; SET deadlock_timeout = '10s'; }
 step "s1u1"   { update t set b = 11 where a = 1; }
 step "s1atxb" { begin autonomous; }
 step "s1u2"   { update t set b = 21 where a = 2; }
@@ -18,7 +18,7 @@ step "s1atxc" { commit; }
 step "s1c"    { commit; }
 
 session "s2"
-setup       { begin; }
+setup       { begin; SET deadlock_timeout = '10s'; }
 step "s2u2" { update t set b = 22 where a = 2; }
 step "s2u1" { update t set b = 11 where a = 1; }
 step "s2c"  { commit; }

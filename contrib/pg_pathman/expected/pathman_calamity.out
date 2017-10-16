@@ -12,7 +12,7 @@ SELECT debug_capture();
 SELECT get_pathman_lib_version();
  get_pathman_lib_version 
 -------------------------
- 10403
+ 10407
 (1 row)
 
 set client_min_messages = NOTICE;
@@ -854,6 +854,25 @@ DROP TABLE calamity.trig_test_tbl CASCADE;
 NOTICE:  drop cascades to 2 other objects
 DROP SCHEMA calamity CASCADE;
 NOTICE:  drop cascades to 15 other objects
+DROP EXTENSION pg_pathman;
+/*
+ * -------------------------------
+ *  Special tests (SET statement)
+ * -------------------------------
+ */
+CREATE EXTENSION pg_pathman;
+SET pg_pathman.enable = false;
+NOTICE:  RuntimeAppend, RuntimeMergeAppend and PartitionFilter nodes and some other options have been disabled
+SET pg_pathman.enable = true;
+NOTICE:  RuntimeAppend, RuntimeMergeAppend and PartitionFilter nodes and some other options have been enabled
+SET pg_pathman.enable = false;
+NOTICE:  RuntimeAppend, RuntimeMergeAppend and PartitionFilter nodes and some other options have been disabled
+RESET pg_pathman.enable;
+NOTICE:  RuntimeAppend, RuntimeMergeAppend and PartitionFilter nodes and some other options have been enabled
+RESET ALL;
+BEGIN; ROLLBACK;
+BEGIN ISOLATION LEVEL SERIALIZABLE; ROLLBACK;
+BEGIN; SET TRANSACTION ISOLATION LEVEL SERIALIZABLE; ROLLBACK;
 DROP EXTENSION pg_pathman;
 /*
  * -------------------------------------

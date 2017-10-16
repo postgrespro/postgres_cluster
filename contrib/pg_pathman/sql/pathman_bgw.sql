@@ -5,6 +5,7 @@ CREATE EXTENSION pg_pathman;
 CREATE SCHEMA test_bgw;
 
 
+
 /*
  * Tests for SpawnPartitionsWorker
  */
@@ -71,6 +72,72 @@ SELECT * FROM pathman_partition_list ORDER BY partition; /* should contain 3 par
 
 DROP FUNCTION test_bgw.abort_xact(args JSONB);
 DROP TABLE test_bgw.test_5 CASCADE;
+
+
+
+/*
+ * Tests for ConcurrentPartWorker
+ */
+
+CREATE TABLE test_bgw.conc_part(id INT4 NOT NULL);
+INSERT INTO test_bgw.conc_part SELECT generate_series(1, 500);
+SELECT create_hash_partitions('test_bgw.conc_part', 'id', 5, false);
+
+BEGIN;
+/* Also test FOR SHARE/UPDATE conflicts in BGW */
+SELECT * FROM test_bgw.conc_part ORDER BY id LIMIT 1 FOR SHARE;
+/* Run partitioning bgworker */
+SELECT partition_table_concurrently('test_bgw.conc_part', 10, 1);
+/* Wait until bgworker starts */
+SELECT pg_sleep(1);
+ROLLBACK;
+
+/* Wait until it finises */
+DO $$
+DECLARE
+	ops			int8;
+	rows		int8;
+	rows_old	int8 := 0;
+	i			int4 := 0; -- protect from endless loop
+BEGIN
+	LOOP
+		SELECT processed
+		FROM pathman_concurrent_part_tasks
+		WHERE relid = 'test_bgw.conc_part'::regclass
+		INTO rows;
+
+		-- get number of partitioning tasks
+		GET DIAGNOSTICS ops = ROW_COUNT;
+
+		IF ops > 0 THEN
+			PERFORM pg_sleep(0.2);
+
+			ASSERT rows IS NOT NULL;
+
+			-- rows should increase!
+			IF rows_old <= rows THEN
+				i = i + 1;
+			END IF;
+		ELSE
+			EXIT; -- exit loop
+		END IF;
+
+		IF i > 50 THEN
+			RAISE WARNING 'looks like partitioning bgw is stuck!';
+			EXIT; -- exit loop
+		END IF;
+
+		rows_old = rows;
+	END LOOP;
+END
+$$ LANGUAGE plpgsql;
+
+/* Check amount of tasks and rows in parent and partitions */
+SELECT count(*) FROM pathman_concurrent_part_tasks;
+SELECT count(*) FROM ONLY test_bgw.conc_part;
+SELECT count(*) FROM test_bgw.conc_part;
+
+DROP TABLE test_bgw.conc_part CASCADE;
 
 
 

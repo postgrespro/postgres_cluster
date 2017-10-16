@@ -74,7 +74,7 @@ typedef struct
 	pid_t	pid;			/* worker's PID */
 	Oid		dbid;			/* database which contains the relation */
 	Oid		relid;			/* table to be partitioned concurrently */
-	uint64	total_rows;		/* total amount of rows processed */
+	int64	total_rows;		/* total amount of rows processed */
 
 	int32	batch_size;		/* number of rows in a batch */
 	float8	sleep_time;		/* how long should we sleep in case of error? */
@@ -112,10 +112,29 @@ cps_set_status(ConcurrentPartSlot *slot, ConcurrentPartSlotStatus status)
 	SpinLockRelease(&slot->mutex);
 }
 
+static inline const char *
+cps_print_status(ConcurrentPartSlotStatus status)
+{
+	switch(status)
+	{
+		case CPS_FREE:
+			return "free";
+
+		case CPS_WORKING:
+			return "working";
+
+		case CPS_STOPPING:
+			return "stopping";
+
+		default:
+			return "[unknown]";
+	}
+}
+
 
 
 /* Number of worker slots for concurrent partitioning */
-#define PART_WORKER_SLOTS			10
+#define PART_WORKER_SLOTS			max_worker_processes
 
 /* Max number of attempts per batch */
 #define PART_WORKER_MAX_ATTEMPTS	60

@@ -600,21 +600,30 @@ spawn_partitions_val(Oid parent_relid,				/* parent's Oid */
 static char *
 choose_range_partition_name(Oid parent_relid, Oid parent_nsp)
 {
-	Datum	part_num;
-	Oid		part_seq_relid;
-	char   *part_seq_relname;
-	Oid		save_userid;
-	int		save_sec_context;
-	bool	need_priv_escalation = !superuser(); /* we might be a SU */
-	char   *relname;
-	int		attempts_cnt = 1000;
+	Datum		part_num;
+	Oid			part_seq_relid;
+	char	   *part_seq_nspname,
+			   *part_seq_relname;
+	RangeVar   *part_seq_rv;
+	Oid			save_userid;
+	int			save_sec_context;
+	bool		need_priv_escalation = !superuser(); /* we might be a SU */
+	char	   *relname;
+	int			attempts_cnt = 1000;
 
-	part_seq_relname = build_sequence_name_internal(parent_relid);
-	part_seq_relid = get_relname_relid(part_seq_relname, parent_nsp);
+	/* Dispatch sequence and lock it using AccessShareLock */
+	part_seq_nspname	= get_namespace_name(get_rel_namespace(parent_relid));
+	part_seq_relname	= build_sequence_name_relid_internal(parent_relid);
+	part_seq_rv			= makeRangeVar(part_seq_nspname, part_seq_relname, -1);
+	part_seq_relid		= RangeVarGetRelid(part_seq_rv, AccessShareLock, true);
 
 	/* Could not find part number generating sequence */
 	if (!OidIsValid(part_seq_relid))
 		elog(ERROR, "auto naming sequence \"%s\" does not exist", part_seq_relname);
+
+	pfree(part_seq_nspname);
+	pfree(part_seq_relname);
+	pfree(part_seq_rv);
 
 	/* Do we have to escalate privileges? */
 	if (need_priv_escalation)
@@ -757,7 +766,7 @@ create_single_partition_internal(Oid parent_relid,
 	create_stmt.partbound		= NULL;
 	create_stmt.partspec		= NULL;
 #endif
-#if defined(PGPRO_EE) && PG_VERSION_NUM >= 90600
+#if defined(PGPRO_EE) && PG_VERSION_NUM < 100000
 	create_stmt.partition_info	= NULL;
 #endif
 

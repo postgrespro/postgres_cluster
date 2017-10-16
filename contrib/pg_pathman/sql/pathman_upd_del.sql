@@ -17,9 +17,13 @@ SET enable_indexscan = ON;
 SET enable_seqscan = OFF;
 
 
-/* Temporary table for JOINs */
+/* Temporary tables for JOINs */
 CREATE TABLE test.tmp (id INTEGER NOT NULL, value INTEGER NOT NULL);
 INSERT INTO test.tmp VALUES (1, 1), (2, 2);
+
+CREATE TABLE test.tmp2 (id INTEGER NOT NULL, value INTEGER NOT NULL);
+INSERT INTO test.tmp2 SELECT i % 10 + 1, i FROM generate_series(1, 100) i;
+SELECT pathman.create_range_partitions('test.tmp2', 'id', 1, 1, 10);
 
 
 /* Partition table by RANGE */
@@ -34,6 +38,9 @@ FROM generate_series('2010-01-01'::date, '2010-12-31'::date, '1 day') AS g;
 SELECT pathman.create_range_partitions('test.range_rel', 'dt',
 									   '2010-01-01'::date, '1 month'::interval,
 									   12);
+
+
+VACUUM ANALYZE;
 
 
 /*
@@ -120,6 +127,77 @@ WHERE r.dt = '2010-01-02' AND r.id = t.id;
 ROLLBACK;
 
 
+/* DELETE + USING, two partitioned tables */
+EXPLAIN (COSTS OFF)
+DELETE FROM test.range_rel r USING test.tmp2 t
+WHERE t.id = r.id;
+
+BEGIN;
+DELETE FROM test.range_rel r USING test.tmp2 t
+WHERE t.id = r.id;
+ROLLBACK;
+
+
+/* DELETE + USING, partitioned table + two partitioned tables in subselect */
+EXPLAIN (COSTS OFF)
+DELETE FROM test.range_rel r
+USING (SELECT *
+	   FROM test.tmp2 a1
+	   JOIN test.tmp2 a2
+	   USING(id)) t
+WHERE t.id = r.id;
+
+BEGIN;
+DELETE FROM test.range_rel r
+USING (SELECT *
+	   FROM test.tmp2 a1
+	   JOIN test.tmp2 a2
+	   USING(id)) t
+WHERE t.id = r.id;
+ROLLBACK;
+
+
+/* DELETE + USING, single table + two partitioned tables in subselect */
+EXPLAIN (COSTS OFF)
+DELETE FROM test.tmp r
+USING (SELECT *
+	   FROM test.tmp2 a1
+	   JOIN test.tmp2 a2
+	   USING(id)) t
+WHERE t.id = r.id;
+
+BEGIN;
+DELETE FROM test.tmp r
+USING (SELECT *
+	   FROM test.tmp2 a1
+	   JOIN test.tmp2 a2
+	   USING(id)) t
+WHERE t.id = r.id;
+ROLLBACK;
+
+
+/* UPDATE + FROM, two partitioned tables */
+EXPLAIN (COSTS OFF)
+UPDATE test.range_rel r SET value = 1 FROM test.tmp2 t
+WHERE t.id = r.id;
+
+BEGIN;
+UPDATE test.range_rel r SET value = 1 FROM test.tmp2 t
+WHERE t.id = r.id;
+ROLLBACK;
+
+
+/*
+ * UPDATE + subquery with partitioned table (PG 9.5).
+ * See pathman_rel_pathlist_hook() + RELOPT_OTHER_MEMBER_REL.
+ */
+EXPLAIN (COSTS OFF)
+UPDATE test.tmp t SET value = 2
+WHERE t.id IN (SELECT id
+			   FROM test.tmp2 t2
+			   WHERE id = t.id);
+
+
 /* Test special rule for CTE; SELECT (PostgreSQL 9.5) */
 EXPLAIN (COSTS OFF)
 WITH q AS (SELECT * FROM test.range_rel r
@@ -162,6 +240,29 @@ WITH q AS (DELETE FROM test.tmp t
 		   WHERE r.dt = '2010-01-02' AND r.id = t.id
 		   RETURNING *)
 DELETE FROM test.tmp USING q;
+ROLLBACK;
+
+
+/* Test special rule for CTE; Nested CTEs (PostgreSQL 9.5) */
+EXPLAIN (COSTS OFF)
+WITH q AS (WITH n AS (SELECT id FROM test.tmp2 WHERE id = 2)
+		   DELETE FROM test.tmp t
+		   USING n
+		   WHERE t.id = n.id
+		   RETURNING *)
+DELETE FROM test.tmp USING q;
+
+
+/* Test special rule for CTE; CTE in quals (PostgreSQL 9.5) */
+EXPLAIN (COSTS OFF)
+WITH q AS (SELECT id FROM test.tmp2
+		   WHERE id < 3)
+DELETE FROM test.tmp t WHERE t.id in (SELECT id FROM q);
+
+BEGIN;
+WITH q AS (SELECT id FROM test.tmp2
+		   WHERE id < 3)
+DELETE FROM test.tmp t WHERE t.id in (SELECT id FROM q);
 ROLLBACK;
 
 
