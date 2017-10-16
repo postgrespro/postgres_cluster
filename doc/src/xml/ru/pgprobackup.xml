@@ -162,7 +162,7 @@ doc/src/xml/pgprobackup.xml
       <para>Хранение копируемых данных в сжатом состоянии для экономии дискового пространства</para>
     </listitem>
     <listitem>
-      <para>Снятие резервной копии с дежурного сервера с целью избежать дополнительной нагрузки на ведущий сервер</para>
+      <para>Снятие резервной копии с ведомого сервера с целью избежать дополнительной нагрузки на ведущий сервер</para>
     </listitem>
     <listitem>
       <para>Расширенные параметры ведения журнала</para>
@@ -293,7 +293,7 @@ GRANT EXECUTE ON FUNCTION txid_current() TO backup;
 GRANT EXECUTE ON FUNCTION txid_current_snapshot() TO backup;
 GRANT EXECUTE ON FUNCTION txid_snapshot_xmax(txid_snapshot) TO backup;</programlisting>
 
-    <para>В зависимости от того, будете ли вы применять автономное или архивное резервное копирование, конфигурация кластера <productname>&productname;</productname> будет разной (об особенностях рассказывается ниже). Чтобы получить копию кластера баз данных с резервного сервера или создать резервную копию <literal>PTRACK</literal>, требуется дополнительная настройка, За подробностями обратитесь к <xref remap="3" linkend="ptrack-backup"/> и <xref remap="3" linkend="backup-from-standby"/>.</para>
+    <para>В зависимости от того, будете ли вы применять автономное или архивное резервное копирование, конфигурация кластера <productname>&productname;</productname> будет разной (об особенностях рассказывается ниже). Чтобы получить копию кластера баз данных с ведомого сервера или создать резервную копию <literal>PTRACK</literal>, требуется дополнительная настройка. За подробностями обратитесь к <xref remap="3" linkend="ptrack-backup"/> и <xref remap="3" linkend="backup-from-standby"/>.</para>
 
     <refsect3 id="autonomous-backups">
       <title>Настройка автономного резервного копирования</title>
@@ -340,11 +340,11 @@ GRANT EXECUTE ON FUNCTION txid_snapshot_xmax(txid_snapshot) TO backup;</programl
       </orderedlist>
     </refsect3>
     <refsect3 id="backup-from-standby">
-      <title>Копирование данных с резервного сервера</title>
-      <para>С <productname>&productname;</productname> 9.6 или новее <application>pg_probackup</application> может копировать данные с резервного сервера. Для этого требуется дополнительная настройка:</para>
+      <title>Копирование данных с ведомого сервера</title>
+      <para>С <productname>&productname;</productname> 9.6 или новее <application>pg_probackup</application> может копировать данные с ведомого сервера. Для этого требуется дополнительная настройка:</para>
       <orderedlist spacing="compact">
         <listitem>
-          <para>Разрешите подключения для репликации на резервном сервере:</para>
+          <para>Разрешите подключения для репликации на ведомом сервере:</para>
           <itemizedlist spacing="compact">
             <listitem>
               <para>Установите в файле <filename>postgresql.conf</filename> параметры <varname>max_wal_senders</varname> и <varname>hot_standby</varname>.</para>
@@ -359,10 +359,10 @@ GRANT EXECUTE ON FUNCTION txid_snapshot_xmax(txid_snapshot) TO backup;</programl
         </listitem>
       </orderedlist>
       <note>
-        <para>Архивное копирование с резервного сервера имеет следующие ограничения:</para> 
+        <para>Архивное копирование с ведомого сервера имеет следующие ограничения:</para> 
         <itemizedlist spacing="compact">
           <listitem>
-            <para>Если резервный сервер переводится в роль ведущего во время архивного копирования, копирование прерывается с ошибкой.</para>
+            <para>Если ведомый сервер переводится в роль ведущего во время архивного копирования, копирование прерывается с ошибкой.</para>
           </listitem>
           <listitem>
             <para>Все необходимые для резервной копии записи <acronym>WAL</acronym> должны содержать полные страницы. Это требует включения режима <literal>full_page_writes</literal> на ведущем сервере и отказа от использования в <varname>archive_command</varname> утилит, удаляющих полные страницы из файлов <acronym>WAL</acronym>, как например <application>pg_compresslog</application>.</para>
@@ -536,7 +536,7 @@ GRANT EXECUTE ON FUNCTION pg_ptrack_get_and_clear(oid, oid) TO backup;</programl
        <para>Синтаксис:</para>
        <programlisting>pg_probackup archive-get -B <replaceable>каталог_копий</replaceable> --instance <replaceable>имя_экземпляра</replaceable>
 --wal-file-path %p --wal-file-name %f'</programlisting>
-       <para>Перемещает файлы <acronym>WAL</acronym> из соответствующего подкаталога каталога резервной копии в каталог xlog кластера. Эта команда автоматически устанавливается программой <application>pg_probackup</application> в качестве <varname>archive_command</varname> в <filename>recovery.conf</filename> при восстановлении архивных копий. Устанавливать её вручную не нужно.</para>
+       <para>Перемещает файлы <acronym>WAL</acronym> из соответствующего подкаталога каталога резервной копии в каталог журнала предзаписи кластера. Эта команда автоматически устанавливается программой <application>pg_probackup</application> в качестве <varname>archive_command</varname> в <filename>recovery.conf</filename> при восстановлении архивных копий. Устанавливать её вручную не нужно.</para>
        </listitem>
      </varlistentry>
 

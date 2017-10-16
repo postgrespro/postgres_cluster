@@ -384,7 +384,7 @@ UPDATE pg_database SET datallowconn = false WHERE datname = 'template0';</progra
     </listitem>
 
     <listitem>
-     <para>В <filename>postgres_fdw</filename> соединения к удалённым серверам должны устанавливаться заново после команд <command>ALTER SERVER</command> и <command>ALTER USER MAPPING</command> (Киотаро Хоригучи)</para>
+     <para>В <filename>postgres_fdw</filename> соединения к удалённым серверам должны устанавливаться заново после команд <command>ALTER SERVER</command> и <command>ALTER USER MAPPING</command> (Кётаро Хоригути)</para>
 
      <para>Благодаря этому изменения параметров, затрагивающие свойства соединения, вступят в силу своевременно.</para>
     </listitem>
@@ -541,7 +541,7 @@ Branch: REL9_5_STABLE [7be3678a8] 2017-04-24 07:53:05 +0100
     </listitem>
 
     <listitem>
-     <para>Обеспечение видимости результатов непосредственно предшествующих DDL при разборе запросов в скриптах расширений (Жульен Рохо, Том Лейн)</para>
+     <para>Обеспечение видимости результатов непосредственно предшествующих DDL при разборе запросов в скриптах расширений (Жульен Рухо, Том Лейн)</para>
 
      <para>Из-за того, что кеш между командами в скрипте расширения не сбрасывался, запрос к данным мог не наблюдать эффектов непосредственно предшествующего ему изменения каталога, например результатов <command>ALTER TABLE ... RENAME</command>.</para>
     </listitem>
@@ -581,7 +581,7 @@ Branch: REL9_5_STABLE [7be3678a8] 2017-04-24 07:53:05 +0100
     </listitem>
 
     <listitem>
-     <para>Исправление проблем с переполнением целочисленных значений при сравнении типов <type>interval</type> (Киотаро Хоригучи, Том Лейн)</para>
+     <para>Исправление проблем с переполнением целочисленных значений при сравнении типов <type>interval</type> (Кётаро Хоригути, Том Лейн)</para>
 
      <para>Операторы сравнения для типа <type>interval</type> могли выдавать неверные ответы для интервалов, превышающих 296000 лет. Индексы по столбцам с такими большими значениями следует перестроить, так как они могут быть испорчены.</para>
     </listitem>
@@ -1007,7 +1007,7 @@ Branch: REL9_2_STABLE [60314e28e] 2016-12-13 19:08:09 -0600
     </listitem>
 
     <listitem>
-     <para>Реализация <filename>contrib/dblink</filename> должна игнорировать невоспринимаемые ей параметры сервера, когда в качестве источника параметров подключения используется сторонний сервер <filename>contrib/postgres_fdw</filename> (Кори Хаинкер)</para>
+     <para>Реализация <filename>contrib/dblink</filename> должна игнорировать невоспринимаемые ей параметры сервера, когда в качестве источника параметров подключения используется сторонний сервер <filename>contrib/postgres_fdw</filename> (Кори Хинкер)</para>
 
      <para>Ранее, если объект стороннего сервера имел параметры, которые не относились к параметрам подключения <application>libpq</application>, происходила ошибка.</para>
     </listitem>
@@ -1228,7 +1228,7 @@ Branch: REL9_1_STABLE [7e01c8ef3] 2016-08-14 15:06:02 -0400
     </listitem>
 
     <listitem>
-     <para>Сохранение времени фиксирования транзакций после перезагрузки сервера (Жульен Рохо, Крейг Рингер)</para>
+     <para>Сохранение времени фиксирования транзакций после перезагрузки сервера (Жульен Рухо, Крейг Рингер)</para>
 
      <para>При включённом параметре <xref linkend="guc-track-commit-timestamp"/> старые метки времени фиксации становились недоступными после полной перезагрузки сервера.</para>
     </listitem>
@@ -1324,7 +1324,7 @@ Branch: REL9_6_STABLE Release: REL9_6_0 [6bcd26c43] 2016-09-20 12:12:27 -0400
 Branch: REL9_5_STABLE [c124e3649] 2016-09-20 12:12:31 -0400
 Branch: REL9_4_STABLE [c23b2523d] 2016-09-20 12:12:36 -0400
 -->
-     <para>В Windows нужно повторять попытку создания управляющего сегмента динамической разделяемой памяти после ошибки «нет доступа» (Киотаро Хоригучи, Амит Капила)</para>
+     <para>В Windows нужно повторять попытку создания управляющего сегмента динамической разделяемой памяти после ошибки «нет доступа» (Кётаро Хоригути, Амит Капила)</para>
 
      <para>Иногда Windows выдаёт ошибку <literal>ERROR_ACCESS_DENIED</literal> вместо <literal>ERROR_ALREADY_EXISTS</literal>, когда такой сегмент уже существует. Получая такую ошибку, главный процесс не мог запуститься, считая, что столкнулся с неисправимой ошибкой.</para>
     </listitem>
@@ -1460,7 +1460,7 @@ Branch: REL9_6_STABLE Release: REL9_6_0 [bea38f34a] 2016-09-15 09:30:37 -0400
 Branch: REL9_5_STABLE [60b6d99da] 2016-09-15 09:30:36 -0400
 Branch: REL9_4_STABLE [1336bd986] 2016-09-15 09:22:52 -0400
 -->
-     <para>Исправление <filename>contrib/pg_buffercache</filename> для работы со значением <varname>shared_buffers</varname>, превышающим 256 Гбайт (КайГай Кохей)</para>
+     <para>Исправление <filename>contrib/pg_buffercache</filename> для работы со значением <varname>shared_buffers</varname>, превышающим 256 Гбайт (КайГай Кохэй)</para>
     </listitem>
 
     <listitem>
@@ -1856,7 +1856,7 @@ Author: Tom Lane <tgl@sss.pgh.pa.us>
 Branch: master [80b346c20] 2016-07-29 12:52:57 -0400
 Branch: REL9_5_STABLE [c8966a925] 2016-07-29 12:53:02 -0400
 -->
-     <para>Предотвращение незапланированного ожидания приёмника в процессах, передающих WAL (Киотаро Хоригучи)</para>
+     <para>Предотвращение незапланированного ожидания приёмника в процессах, передающих WAL (Кётаро Хоригути)</para>
     </listitem>
 
     <listitem>
@@ -1900,7 +1900,7 @@ Branch: REL9_5_STABLE [47215c16f] 2016-05-31 15:54:46 -0400
 Branch: REL9_4_STABLE [3ffff7257] 2016-05-31 15:54:46 -0400
 Branch: REL9_3_STABLE [a84cad224] 2016-05-31 15:54:47 -0400
 -->
-     <para>Исключение ненужной записи в файлы статистики, когда несколько обслуживающих процессов запрашивают обновление один за другим (Том Лейн, Томас Вондра)</para>
+     <para>Исключение ненужной записи в файлы статистики, когда несколько обслуживающих процессов запрашивают обновление один за другим (Том Лейн, Томаш Вондра)</para>
     </listitem>
 
     <listitem>
@@ -2155,7 +2155,7 @@ Branch: REL9_5_STABLE [6479df137] 2016-05-26 10:50:38 -0400
 Branch: REL9_4_STABLE [d32bc204c] 2016-05-26 10:50:42 -0400
 Branch: REL9_3_STABLE [b9784e1f7] 2016-05-26 10:50:46 -0400
 -->
-     <para>Обеспечение корректного отключения параллельных процессов <application>pg_dump</application> и <application>pg_restore</application> в Windows в случае ошибки (Киотаро Хоригучи)</para>
+     <para>Обеспечение корректного отключения параллельных процессов <application>pg_dump</application> и <application>pg_restore</application> в Windows в случае ошибки (Кётаро Хоригути)</para>
 
      <para>Ранее процесс выдавал ошибку, но затем просто оставался в памяти, пока пользователь не останавливал его вручную.</para>
     </listitem>
@@ -2179,7 +2179,7 @@ Branch: REL9_5_STABLE [64b296976] 2016-05-26 11:51:11 -0400
 Branch: REL9_4_STABLE [f2f18a37c] 2016-05-26 11:51:16 -0400
 Branch: REL9_3_STABLE [99565a1ef] 2016-05-26 11:51:20 -0400
 -->
-     <para>Улучшение поведения <application>pg_dump</application> при сборке без поддержки zlib (Киотаро Хоригучи)</para>
+     <para>Улучшение поведения <application>pg_dump</application> при сборке без поддержки zlib (Кётаро Хоригути)</para>
 
      <para>С такой сборкой не работала корректно параллельная выгрузка, а в других случаях выдавались довольно бессмысленные предупреждения.</para>
     </listitem>
@@ -2220,7 +2220,7 @@ Branch: REL9_3_STABLE [57e9ea2dd] 2016-07-11 11:24:04 -0400
 Branch: REL9_2_STABLE [fdf2ee62e] 2016-07-11 11:24:04 -0400
 Branch: REL9_1_STABLE [71af6c006] 2016-07-11 11:24:04 -0400
 -->
-     <para>Исправление тестов TAP и скриптов MSVC для работы с каталогом сборки, путь к которому содержит пробелы (Мишель Пакье, Киотаро Хоригучи)</para>
+     <para>Исправление тестов TAP и скриптов MSVC для работы с каталогом сборки, путь к которому содержит пробелы (Мишель Пакье, Кётаро Хоригути)</para>
     </listitem>
 
     <listitem>
@@ -2382,7 +2382,7 @@ Branch: master [f0e766bd7] 2016-04-15 00:02:26 -0400
 Branch: REL9_5_STABLE [edd57377f] 2016-04-15 00:02:26 -0400
 Branch: REL9_4_STABLE [0479eccdc] 2016-04-15 00:02:26 -0400
 -->
-     <para>Ликвидирована утечка памяти на протяжении запроса при сканировании индекса GIN (Жульен Рохо)</para>
+     <para>Ликвидирована утечка памяти на протяжении запроса при сканировании индекса GIN (Жульен Рухо)</para>
     </listitem>
 
     <listitem>
@@ -2709,7 +2709,7 @@ Branch: REL9_5_STABLE [bf78a6f10] 2016-03-28 10:57:46 -0300
 -->
 
     <listitem>
-     <para>В некоторые новые функции <filename>contrib/pageinspect</filename> добавлены проверки суперпользователя (Андреас Сельтенрейх)</para>
+     <para>В некоторые новые функции <filename>contrib/pageinspect</filename> добавлены проверки суперпользователя (Андреас Зельтенрейх)</para>
 
      <para>Большинство функций в расширении <filename>pageinspect</filename>, исследующие значения <type>bytea</type>, не допускают вызова обычными пользователями, но в <function>brin_page_type()</function> и <function>brin_metapage_info()</function> такие ограничения отсутствуют. Однако, передав им изощрённо сформированные значения <type>bytea</type>, можно вызвать крах сервера или прочитать несколько байт памяти сервера. Поэтому были добавлены недостающие проверки во избежание подобных злоупотреблений. (CVE-2016-3065)</para>
     </listitem>
@@ -2759,7 +2759,7 @@ Branch: REL9_1_STABLE [d0e47bcd4] 2016-03-09 18:53:54 -0800
 -->
 
     <listitem>
-     <para>Предотвращение маловероятных сценариев потери данных в случае переименования файлов без соответствующих вызовов <function>fsync()</function> до и после (Мишель Пакье, Томас Вондра, Андрес Фройнд)</para>
+     <para>Предотвращение маловероятных сценариев потери данных в случае переименования файлов без соответствующих вызовов <function>fsync()</function> до и после (Мишель Пакье, Томаш Вондра, Андрес Фройнд)</para>
     </listitem>
 
 <!--
@@ -2991,7 +2991,7 @@ Branch: REL9_1_STABLE [b4895bf79] 2016-03-04 11:57:40 -0500
 -->
 
     <listitem>
-     <para>В <application>psql</application> исправлена логика завершения команд табуляцией с учётом особенностей многобайтных символов (Киотаро Хоригучи, Роберт Хаас)</para>
+     <para>В <application>psql</application> исправлена логика завершения команд табуляцией с учётом особенностей многобайтных символов (Кётаро Хоригути, Роберт Хаас)</para>
     </listitem>
 
 <!--
@@ -3188,7 +3188,7 @@ Branch: REL9_5_STABLE [129db3cbe] 2016-02-07 12:29:17 -0500
 -->
 
     <listitem>
-     <para>Исправлено упущение, из-за которого в редких случаях при соединениях по хешу пропускалось соединение некоторых кортежей внутреннего отношения (Томас Вондра, Том Лейн)</para>
+     <para>Исправлено упущение, из-за которого в редких случаях при соединениях по хешу пропускалось соединение некоторых кортежей внутреннего отношения (Томаш Вондра, Том Лейн)</para>
     </listitem>
 
 <!--
@@ -3685,7 +3685,7 @@ Branch: REL9_1_STABLE [6887d72d0] 2016-02-05 10:59:39 -0500
 2015-03-28 [3a20b0e] Heikki..: Add index-only scan support to inet GiST opclass.
 2015-03-30 [0633a60] Heikki..: Add index-only scan support to range type GiST ..
 -->
-       <para>Возможность использования индексов <link linkend="gist">GiST</link> в сканировании только по индексу (Анастасия Лубенникова, Хейкки Линнакангас, Андреас Карлсон)</para>
+       <para>Возможность использования индексов <link linkend="gist">GiST</link> в сканировании только по индексу (Анастасия Лубенникова, Хейкки Линнакангас, Андреас Карлссон)</para>
       </listitem>
 
       <listitem>
@@ -3735,7 +3735,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 2014-09-12 [8cce08f] Robert..: Change NTUP_PER_BUCKET to 1 to improve hash joi..
 2014-10-13 [30d7ae3] Kevin ..: Increase number of hash join buckets for undere..
 -->
-       <para>Улучшение производительности соединений по хешу (Томас Вондра, Роберт Хаас)</para>
+       <para>Улучшение производительности соединений по хешу (Томаш Вондра, Роберт Хаас)</para>
       </listitem>
 
       <listitem>
@@ -3958,7 +3958,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 <!--
 2014-12-22 [584e35d] Peter ..: Change local_preload_libraries to PGC_USERSET
 -->
-       <para>Возможность устанавливать <xref linkend="guc-local-preload-libraries"/> в команде <command>ALTER ROLE SET</command> (Питер Эйзентраут, Киотаро Хоригучи)</para>
+       <para>Возможность устанавливать <xref linkend="guc-local-preload-libraries"/> в команде <command>ALTER ROLE SET</command> (Питер Эйзентраут, Кётаро Хоригути)</para>
       </listitem>
 
       <listitem>
@@ -4247,7 +4247,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 <!--
 2014-09-19 [491c029] Stephe..: Row-Level Security Policies (RLS)
 -->
-       <para>Добавление <link linkend="ddl-rowsecurity">механизма защиты на уровне строк</link> (Крейг Рингер, КайГай Кохей, Адам Брайтвелл, Дин Рашид, Стивен Фрост)</para>
+       <para>Добавление <link linkend="ddl-rowsecurity">механизма защиты на уровне строк</link> (Крейг Рингер, КайГай Кохэй, Адам Брайтвелл, Дин Рашид, Стивен Фрост)</para>
 
        <para>Этот механизм позволяет на уровне строк определять, какие строки пользователи смогут добавлять, изменять и даже видеть в таблице. Для управления им введены новые команды <link linkend="sql-createpolicy"><command>CREATE</command></link>/<link linkend="sql-alterpolicy"><command>ALTER</command></link>/<link linkend="sql-droppolicy"><command>DROP POLICY</command></link> и <link linkend="sql-altertable"><command>ALTER TABLE ... ENABLE/DISABLE ROW SECURITY</command></link>.</para>
       </listitem>
@@ -4279,7 +4279,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 <!--
 2015-03-09 [31eae60] Alvaro..: Allow CURRENT/SESSION_USER to be used in certai..
 -->
-       <para>Возможность передать некоторым командам DDL вместо имени конкретного пользователя идентификаторы <literal>CURRENT_USER</literal> и <literal>SESSION_USER</literal>, обозначающие текущего пользователя и пользователя сеанса (Киотаро Хоригучи, Альваро Эррера)</para>
+       <para>Возможность передать некоторым командам DDL вместо имени конкретного пользователя идентификаторы <literal>CURRENT_USER</literal> и <literal>SESSION_USER</literal>, обозначающие текущего пользователя и пользователя сеанса (Кётаро Хоригути, Альваро Эррера)</para>
 
        <para>Это поддерживают команды <xref linkend="sql-alteruser"/>, <xref linkend="sql-altergroup"/>, <xref linkend="sql-alterrole"/>, <xref linkend="sql-grant"/> и <command>ALTER <replaceable>объект</replaceable> OWNER TO</command>.</para>
       </listitem>
@@ -4295,7 +4295,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 <!--
 2015-04-05 [0ef0396] Simon ..: Reduce lock levels of some trigger DDL and add ..
 -->
-       <para>Снижение уровней блокировки для некоторых команд, управляющих триггерами и сторонними ключами (Саймон Риггс, Андреас Карлсон)</para>
+       <para>Снижение уровней блокировки для некоторых команд, управляющих триггерами и сторонними ключами (Саймон Риггс, Андреас Карлссон)</para>
       </listitem>
 
       <listitem>
@@ -4365,7 +4365,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 2015-05-01 [e7cb7ee] Robert..: Allow FDWs and custom scan providers to replace..
 2015-05-10 [1a8a4e5] Tom Lane: Code review for foreign/custom join pushdown pa..
 -->
-       <para>Обёртки сторонних данных и методы нестандартного сканирования обрели возможность выносить соединения наружу (КайГай Кохей)</para>
+       <para>Обёртки сторонних данных и методы нестандартного сканирования обрели возможность выносить соединения наружу (КайГай Кохэй)</para>
       </listitem>
 
      </itemizedlist>
@@ -4458,7 +4458,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 2015-05-09 [0c90f67] Andrew..: Add new OID alias type regrole
 2015-05-09 [cb9fa80] Andrew..: Add new OID alias type regnamespace
 -->
-      <para>Добавление типов данных <link linkend="datatype-oid-table"><type>regrole</type></link> и <link linkend="datatype-oid-table"><type>regnamespace</type></link> для упрощения ввода и улучшенного вывода <type>OID</type> ролей и пространств имён (Киотаро Хоригучи)</para>
+      <para>Добавление типов данных <link linkend="datatype-oid-table"><type>regrole</type></link> и <link linkend="datatype-oid-table"><type>regnamespace</type></link> для упрощения ввода и улучшенного вывода <type>OID</type> ролей и пространств имён (Кётаро Хоригути)</para>
      </listitem>
 
     </itemizedlist>
@@ -4652,7 +4652,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 2015-03-20 [8122e14] Andres..: Add, optional, support for 128bit integers.
 2015-03-20 [959277a] Andres..: Use 128-bit math to accelerate some aggregation..
 -->
-       <para>Использование 128-битных целых, где они поддерживаются, для накопления значений в некоторых агрегатных функциях (Андреас Карлсон)</para>
+       <para>Использование 128-битных целых, где они поддерживаются, для накопления значений в некоторых агрегатных функциях (Андреас Карлссон)</para>
       </listitem>
 
      </itemizedlist>
@@ -4882,7 +4882,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 <!--
 2014-06-23 [631e7f6] Heikki..: Improve tab-completion of DROP and ALTER ENABLE..
 -->
-        <para>Улучшение в <application>psql</application> дополнения табуляцией для триггеров и правил (Андреас Карлсон)</para>
+        <para>Улучшение в <application>psql</application> дополнения табуляцией для триггеров и правил (Андреас Карлссон)</para>
        </listitem>
 
       </itemizedlist>
@@ -5152,7 +5152,7 @@ Add GUC and storage parameter to set the maximum size of GIN pending list.
 2014-11-21 [c2ea228] Tom Lane: Simplify API for initially hooking custom-path ..
 2014-11-21 [4477704] Tom Lane: Rearrange CustomScan API.
 -->
-       <para>Возможность реализации нестандартных методов сканирования и путей (КайГай Кохей, Том Лейн)</para>
+       <para>Возможность реализации нестандартных методов сканирования и путей (КайГай Кохэй, Том Лейн)</para>
 
        <para>Это даёт расширениям дополнительные рычаги управления оптимизатором и исполнителем.</para>
       </listitem>

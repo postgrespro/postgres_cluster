@@ -127,7 +127,7 @@ $ pg_recvlogical -d postgres --slot test --drop-slot</programlisting>
 
     <para>Логическое декодирование — это процедура извлечения всех постоянных изменений, происходящих в таблицах базы данных, в согласованном и понятном формате, который можно интерпретировать, не имея полного представления о внутреннем состоянии базы данных.</para>
 
-    <para>В <productname>&productname;</productname> логическое декодирование реализуется путём перевода содержимого <link linkend="wal">журнала упреждающей записи</link>, описывающего изменения на уровне хранения, в специальную форму уровня приложения, например, в поток кортежей или операторов SQL.</para>
+    <para>В <productname>&productname;</productname> логическое декодирование реализуется путём перевода содержимого <link linkend="wal">журнала предзаписи</link>, описывающего изменения на уровне хранения, в специальную форму уровня приложения, например, в поток кортежей или операторов SQL.</para>
    </sect2>
 
    <sect2 id="logicaldecoding-replication-slots">
@@ -156,7 +156,7 @@ $ pg_recvlogical -d postgres --slot test --drop-slot</programlisting>
 
    <sect2>
     <title>Модули вывода</title>
-    <para>Модули вывода переводят данные из внутреннего представления в журнале упреждающей записи в формат, устраивающий потребителя слота репликации.</para>
+    <para>Модули вывода переводят данные из внутреннего представления в журнале предзаписи в формат, устраивающий потребителя слота репликации.</para>
    </sect2>
 
    <sect2>
@@ -196,7 +196,7 @@ $ pg_recvlogical -d postgres --slot test --drop-slot</programlisting>
   <sect1 id="logicaldecoding-catalogs">
    <title>Системные каталоги, связанные с логическим декодированием</title>
 
-   <para>Информацию о текущем состоянии слотов репликации и соединений потоковой репликации отображают представления <link linkend="view-pg-replication-slots"><structname>pg_replication_slots</structname></link> и <link linkend="monitoring-stats-views-table"><structname>pg_stat_replication</structname></link>, соответственно. Эти представления относятся и к физической, и к логической репликации.</para>
+   <para>Информацию о текущем состоянии слотов репликации и соединений потоковой репликации отображают представления <link linkend="view-pg-replication-slots"><structname>pg_replication_slots</structname></link> и <link linkend="pg-stat-replication-view"><structname>pg_stat_replication</structname></link>, соответственно. Эти представления относятся и к физической, и к логической репликации.</para>
   </sect1>
 
   <sect1 id="logicaldecoding-output-plugin">

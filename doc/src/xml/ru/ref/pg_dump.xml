@@ -560,7 +560,7 @@ doc/src/xml/ref/pg_dump.xml
 
   <para><application>pg_dump</application> на низком уровне выполняет команды <command>SELECT</command>. Если есть проблемы с работой <application>pg_dump</application>, убедитесь, что в базе данных можно выполнить <command>SELECT</command>, например из <xref linkend="app-psql"/>. Также следует учитывать, что при этом применяются все свойства подключения по умолчанию и переменные окружения, которые использует клиентская библиотека <application>libpq</application>.</para>
 
-  <para>Обычно действия <application>pg_dump</application> в базе данных собираются коллектором статистики. Если это нежелательно, то можно установить параметр <varname>track_counts</varname> в false в переменной окружения <envar>PGOPTIONS</envar> или в команде <literal>ALTER USER</literal>.</para>
+  <para>Обычно действия <application>pg_dump</application> в базе данных отслеживаются сборщиком статистики. Если это нежелательно, то можно установить параметр <varname>track_counts</varname> в false в переменной окружения <envar>PGOPTIONS</envar> или в команде <literal>ALTER USER</literal>.</para>
 
  </refsect1>
 

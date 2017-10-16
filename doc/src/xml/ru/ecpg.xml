@@ -1054,7 +1054,7 @@ free(out);
 
   <sect2 id="ecpg-pgtypes-numeric">
    <title>Тип numeric</title>
-   <para>Тип numeric позволяет производить вычисления с фиксированной точностью. Эквивалентный ему тип на сервере <productname>&productname;</productname> описан в <xref remap="6" linkend="datatype-numeric"/>. Ввиду того, что переменная имеет фиксированную точность, она должна расширяться и сжиматься динамически. Поэтому такие переменные можно создавать только в области кучи, используя функции <function>PGTYPESnumeric_new</function> и <function>PGTYPESnumeric_free</function>. Тип decimal подобен numeric, но имеет ограниченную точность, и поэтому может размещаться и в области кучи, и в стеке.</para>
+   <para>Тип numeric позволяет производить вычисления с произвольной точностью. Эквивалентный ему тип на сервере <productname>&productname;</productname> описан в <xref remap="6" linkend="datatype-numeric"/>. Ввиду того, что переменная имеет произвольную точность, она должна расширяться и сжиматься динамически. Поэтому такие переменные можно создавать только в области кучи, используя функции <function>PGTYPESnumeric_new</function> и <function>PGTYPESnumeric_free</function>. Тип decimal подобен numeric, но имеет ограниченную точность, и поэтому может размещаться и в области кучи, и в стеке.</para>
    <para>Для работы с типом numeric можно использовать следующие функции: <variablelist>
     <varlistentry>
      <term><function>PGTYPESnumeric_new</function></term>

@@ -111,7 +111,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
 
      <row>
       <entry><structname>pg_stat_replication</structname><indexterm><primary>pg_stat_replication</primary></indexterm></entry>
-      <entry>По одной строке для каждого процесса-передатчика WAL со статистикой по репликации на резервном сервере, к которому подключён этот процесс. За подробностями обратитесь к <xref remap="3" linkend="pg-stat-replication-view"/>.</entry>
+      <entry>По одной строке для каждого процесса-передатчика WAL со статистикой по репликации на ведомом сервере, к которому подключён этот процесс. За подробностями обратитесь к <xref remap="3" linkend="pg-stat-replication-view"/>.</entry>
      </row>
 
      <row>
@@ -162,7 +162,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
 
      <row>
       <entry><structname>pg_stat_database_conflicts</structname><indexterm><primary>pg_stat_database_conflicts</primary></indexterm></entry>
-      <entry>По одной строке на каждую базу данных со статистикой по отменам запросов, выполненным вследствие конфликта с процессами восстановления на резервных серверах. Более подробно смотрите <xref linkend="pg-stat-database-conflicts-view"/>.</entry>
+      <entry>По одной строке на каждую базу данных со статистикой по отменам запросов, выполненным вследствие конфликта с процессами восстановления на ведомых серверах. Более подробно смотрите <xref linkend="pg-stat-database-conflicts-view"/>.</entry>
      </row>
 
      <row>
@@ -787,7 +787,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
     <row>
      <entry><structfield>backend_xmin</structfield></entry>
      <entry><type>xid</type></entry>
-     <entry>Значение <literal>xmin</literal> полученное от резервного сервера при включённом <xref linkend="guc-hot-standby-feedback"/>.</entry>
+     <entry>Значение <literal>xmin</literal>, полученное от ведомого сервера при включённом <xref linkend="guc-hot-standby-feedback"/>.</entry>
     </row>
     <row>
      <entry><structfield>state</structfield></entry>
@@ -802,33 +802,33 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
     <row>
      <entry><structfield>write_location</structfield></entry>
      <entry><type>pg_lsn</type></entry>
-     <entry>Позиция последней транзакции в журнале транзакций, записанной на диск резервным сервером</entry>
+     <entry>Позиция последней транзакции в журнале транзакций, записанной на диск ведомым сервером</entry>
     </row>
     <row>
      <entry><structfield>flush_location</structfield></entry>
      <entry><type>pg_lsn</type></entry>
-     <entry>Позиция последней транзакции в журнале транзакций, сброшенной на диск резервным сервером</entry>
+     <entry>Позиция последней транзакции в журнале транзакций, сброшенной на диск ведомым сервером</entry>
     </row>
     <row>
      <entry><structfield>replay_location</structfield></entry>
      <entry><type>pg_lsn</type></entry>
-     <entry>Позиция последней транзакции в журнале транзакций, выполненной в этой базе данных на резервном сервере</entry>
+     <entry>Позиция последней транзакции в журнале транзакций, выполненной в этой базе данных на ведомом сервере</entry>
     </row>
     <row>
      <entry><structfield>sync_priority</structfield></entry>
      <entry><type>integer</type></entry>
-     <entry>Приоритет этого резервного сервера для выбора в качестве синхронного резервного</entry>
+     <entry>Приоритет этого ведомого сервера для выбора в качестве синхронного ведомого</entry>
     </row>
     <row>
      <entry><structfield>sync_state</structfield></entry>
      <entry><type>text</type></entry>
-     <entry>Состояние синхронизации для этого резервного сервера</entry>
+     <entry>Состояние синхронизации для этого ведомого сервера</entry>
     </row>
    </tbody>
    </tgroup>
   </table>
 
-  <para>Представление <structname>pg_stat_replication</structname> для каждого процесса-передатчика WAL будет содержать по одной строке со статистикой о репликации на резервный сервер, к которому подключён этот процесс. В представлении перечисляются только резервные серверы, подключённые напрямую; информация о резервных серверах, подключённых опосредованно, не представлена.</para>
+  <para>Представление <structname>pg_stat_replication</structname> для каждого процесса-передатчика WAL будет содержать по одной строке со статистикой о репликации на ведомый сервер, к которому подключён этот процесс. В представлении перечисляются только ведомые серверы, подключённые напрямую; информация о ведомых серверах, подключённых опосредованно, не представлена.</para>
 
   <table id="pg-stat-wal-receiver-view" xreflabel="pg_stat_wal_receiver">
    <title>Представление <structname>pg_stat_wal_receiver</structname></title>
@@ -1165,7 +1165,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
     <row>
      <entry><structfield>conflicts</structfield></entry>
      <entry><type>bigint</type></entry>
-     <entry>Количество запросов, отменённых из-за конфликта с восстановлением в этой базе данных. (Конфликты происходят только на резервных серверах; более подробно смотрите <xref linkend="pg-stat-database-conflicts-view"/>.)</entry>
+     <entry>Количество запросов, отменённых из-за конфликта с восстановлением в этой базе данных. (Конфликты происходят только на ведомых серверах; более подробно смотрите <xref linkend="pg-stat-database-conflicts-view"/>.)</entry>
     </row>
     <row>
      <entry><structfield>temp_files</structfield></entry>
@@ -1254,7 +1254,7 @@ postgres   27093  0.0  0.0  30096  2752 ?        Ss   11:34   0:00 postgres: ser
    </tgroup>
   </table>
 
-  <para>Представление <structname>pg_stat_database_conflicts</structname> для каждой базы данных будет содержать по одной строке со статистикой на уровне базы по отменам запросов, произошедшим вследствие конфликтов с процессами восстановления на резервных серверах. В этом представлении будет содержаться только информация по резервным серверам, поскольку на главных серверах конфликты не возникают.</para>
+  <para>Представление <structname>pg_stat_database_conflicts</structname> для каждой базы данных будет содержать по одной строке со статистикой на уровне базы по отменам запросов, произошедшим вследствие конфликтов с процессами восстановления на ведомых серверах. В этом представлении будет содержаться только информация по ведомым серверам, поскольку на главных серверах конфликты не возникают.</para>
 
   <table id="pg-stat-all-tables-view" xreflabel="pg_stat_all_tables">
    <title>Представление <structname>pg_stat_all_tables</structname></title>

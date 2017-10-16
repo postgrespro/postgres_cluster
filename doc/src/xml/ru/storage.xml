@@ -115,7 +115,7 @@
 
 <row>
  <entry><filename>pg_xlog</filename></entry>
- <entry>Подкаталог, содержащий файлы WAL (журнал упреждающей записи)</entry>
+ <entry>Подкаталог, содержащий файлы WAL (журнал предзаписи)</entry>
 </row>
 
 <row>

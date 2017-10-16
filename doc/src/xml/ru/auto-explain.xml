@@ -54,7 +54,7 @@
    </varlistentry>
 
    <varlistentry>
-    <term><varname>auto_explain.log_verbose</varname> (<type>boolean</type>) <indexterm><primary>параметр конфигурации <varname>auto_explain.log_verbose</varname> configuration parameter</primary></indexterm></term>
+    <term><varname>auto_explain.log_verbose</varname> (<type>boolean</type>) <indexterm><primary>параметр конфигурации <varname>auto_explain.log_verbose</varname></primary></indexterm></term>
     <listitem>
      <para>Параметр <varname>auto_explain.log_verbose</varname> определяет, будут ли при протоколировании плана выполнения выводиться подробные сведения; он равнозначен указанию <literal>VERBOSE</literal> команды <command>EXPLAIN</command>. По умолчанию этот параметр отключён. Изменить его могут только суперпользователи.</para>
     </listitem>

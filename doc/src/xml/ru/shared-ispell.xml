@@ -113,7 +113,7 @@ ALTER TEXT SEARCH CONFIGURATION english_shared
  <sect2>
   <title>Автор</title>
 
-  <para>Томас Вондра <email>tomas.vondra@2ndquadrant.com</email>, Прага, Чешская республика</para>
+  <para>Томаш Вондра <email>tomas.vondra@2ndquadrant.com</email>, Прага, Чешская республика</para>
  </sect2>
 
 </sect1>

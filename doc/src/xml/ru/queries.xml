@@ -602,7 +602,7 @@ SELECT <replaceable>список_выборки</replaceable> FROM ... <optional
   <sect2 id="queries-column-labels">
    <title>Метки столбцов</title>
 
-   <indexterm zone="queries-column-labels"><primary>псевдоним</primary> <secondary>в списке выборке</secondary></indexterm>
+   <indexterm zone="queries-column-labels"><primary>псевдоним</primary> <secondary>в списке выборки</secondary></indexterm>
 
    <para>Элементам в списке выборки можно назначить имена для последующей обработки, например, для указания в предложении <literal>ORDER BY</literal> или для вывода в клиентском приложении. Например: <programlisting>SELECT a AS value, b + c AS sum FROM ...</programlisting></para>
 

@@ -64,7 +64,7 @@
         <para>Задержка фиксации. В текущей реализации логической репликации <filename>multimaster</filename> передаёт данные узлам-подписчикам только после локальной фиксации, так что приходится ожидать двойной обработки транзакции: сначала на локальном узле, а затем на всех других узлах одновременно. Если транзакция производит запись в большом объёме, задержка может быть весьма ощутимой.</para>
       </listitem>
     </itemizedlist>
-<para>Если какие-либо данные должны присутствовать только на одном из узлов кластера, вы можете исключить таблицу с ними из репликации следующим образом: <programlisting><function>mtm.make_table_local</function>('имя_таблицы') </programlisting></para>
+<para>Если какие-либо данные должны присутствовать только на одном из узлов кластера, вы можете исключить таблицу с ними из репликации следующим образом: <programlisting><function>mtm.make_table_local</function>('table_name') </programlisting></para>
   </sect2>
     
     <sect2 id="multimaster-architecture">
@@ -187,7 +187,7 @@ multimaster.conn_strings = 'dbname=mydb user=myuser host=node1,dbname=mydb user=
         <programlisting>pg_ctl -D <replaceable>каталог_данных</replaceable> -l <replaceable>pg.log</replaceable> start</programlisting>
       </listitem>
     </orderedlist>
-          <para>Когда <productname>&productname;</productname> будет запущен на всех узлах, подключитесь к любому зулу и создайте расширение <filename>multimaster</filename>: <programlisting>psql -h node1
+          <para>Когда <productname>&productname;</productname> будет запущен на всех узлах, подключитесь к любому узлу и создайте расширение <filename>multimaster</filename>: <programlisting>psql -h node1
 CREATE EXTENSION multimaster;</programlisting></para>
     <para>Запрос <command>CREATE EXTENSION</command> реплицируется на все узлы кластера.</para>
     <para>Чтобы убедиться, что расширение <filename>multimaster</filename> активно, прочитайте представление <structname>mtm.get_cluster_state()</structname>:</para>

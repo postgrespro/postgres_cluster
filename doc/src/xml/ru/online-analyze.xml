@@ -1,53 +1,67 @@
 <sect1 id="online-analyze">
   <title>online-analyze</title>
-  <para>Модуль <literal>online_analyze</literal> предоставляет набор функций, которые немедленно обновляют статистику в целевых таблицах после операций INSERT, UPDATE, DELETE или SELECT INTO в них.</para>
+  <para>Модуль <filename>online_analyze</filename> предоставляет набор функций, которые немедленно обновляют статистику после операций <command>INSERT</command>, <command>UPDATE</command>, <command>DELETE</command> или <command>SELECT INTO</command> в целевых таблицах.</para>
 
   <sect2 id="online-analyze-loading">
     <title>Загрузка модуля</title>
-    <para>Чтобы использовать модуль <literal>online_analyze</literal>, необходимо сначала загрузить разделяемую библиотеку: <programlisting>        LOAD 'online_analyze';
-      </programlisting></para>
+    <para>Чтобы использовать модуль <filename>online_analyze</filename>, загрузите разделяемую библиотеку: <programlisting>LOAD 'online_analyze';</programlisting></para>
   </sect2>
 
   <sect2 id="online-analyze-configuration">
     <title>Настройка модуля</title>
 
-    <para>Дополнительные переменные (показаны значения по умолчанию): <itemizedlist>
+    <para>Вы можете настроить <filename>online_analyze</filename>, используя следующие дополнительные переменные (для них показаны значения по умолчанию): <itemizedlist>
         <listitem>
           <para>online_analyze.enable = on</para>
-          <para>Включает немедленный анализ</para>
+          <para>Включает <filename>online_analyze</filename>.</para>
         </listitem>
         <listitem>
           <para>online_analyze.verbose = on</para>
-          <para>Выполняет ANALYZE VERBOSE</para>
+          <para>Выполняет <command>ANALYZE VERBOSE</command>.</para>
         </listitem>
         <listitem>
           <para>online_analyze.scale_factor = 0.1</para>
-          <para>Процент от размера таблицы, при котором начинается немедленный анализ (этот параметр подобен autovacuum_analyze_scale_factor)</para>
+          <para>Процент от размера таблицы, при котором начинается немедленный анализ (этот параметр подобен <xref linkend="guc-autovacuum-analyze-scale-factor"/>).</para>
         </listitem>
 
         <listitem>
           <para>online_analyze.threshold = 50</para>
-          <para>Минимальное число изменений строк, после которого может начаться немедленный анализ (этот параметр подобен autovacuum_analyze_threshold)</para>
+          <para>Минимальное число изменений строк, после которого может начаться немедленный анализ (этот параметр подобен <xref linkend="guc-autovacuum-analyze-threshold"/>).</para>
         </listitem>
 
         <listitem>
           <para>online_analyze.min_interval = 10000</para>
-          <para>Минимальный интервал времени между вызовами ANALYZE для отдельной таблицы (в миллисекундах)</para>
+          <para>Минимальный интервал времени между вызовами <command>ANALYZE</command> для отдельной таблицы (в миллисекундах).</para>
         </listitem>
 
         <listitem>
           <para>online_analyze.table_type = "all"</para>
-          <para>Типы таблиц, для которых выполняется немедленный анализ: all (все), persistent (постоянные), temporary (временные), none (никакие)</para>
+          <para>Типы таблиц, для которых выполняется немедленный анализ: <literal>all</literal> (все), <literal>persistent</literal> (постоянные), <literal>temporary</literal> (временные), <literal>none</literal> (никакие).</para>
         </listitem>
 
         <listitem>
           <para>online_analyze.exclude_tables = ""</para>
-          <para>Список таблиц, исключаемых из немедленного анализа</para>
+          <para>Список таблиц, исключаемых из немедленного анализа.</para>
         </listitem>
 
         <listitem>
           <para>online_analyze.include_tables = ""</para>
-          <para>Список таблиц, подвергаемых немедленному анализу (параметр online_analyze.include_tables переопределяет online_analyze.exclude_tables).</para>
+          <para>Список таблиц, подвергаемых немедленному анализу (параметр <varname>online_analyze.include_tables</varname> переопределяет <varname>online_analyze.exclude_tables</varname>).</para>
+        </listitem>
+
+        <listitem>
+          <para>online_analyze.local_tracking = off</para>
+          <para>Включает в <filename>online_analyze</filename> отслеживание временных таблиц в рамках обслуживающего процесса. Когда эта переменная отключена (<literal>off</literal>), <filename>online_analyze</filename> использует для временных таблиц системную статистику по умолчанию.</para>
+        </listitem>
+
+        <listitem>
+          <para>online_analyze.lower_limit = 0</para>
+          <para>Минимальное число строк в таблиц, при котором будет срабатывать <filename>online_analyze</filename>.</para>
+        </listitem>
+
+        <listitem>
+          <para>online_analyze.capacity_threshold = 100000</para>
+          <para>Максимальное число временных таблиц, сохраняемых в локальном кеше.</para>
         </listitem>
       </itemizedlist></para>
   </sect2>

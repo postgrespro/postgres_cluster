@@ -349,7 +349,7 @@ SELECT * FROM dup(42);</programlisting> Однако пример с <literal>TA
  <refsect1 id="sql-createfunction-security">
   <title>Разработка защищённых функций <literal>SECURITY DEFINER</literal></title>
 
-  <indexterm><primary><varname>путь_поиска</varname> параметр конфигурации</primary> <secondary>использование в защищённых функциях</secondary></indexterm>
+  <indexterm><primary>параметр конфигурации <varname>search_path</varname></primary> <secondary>использование в защищённых функциях</secondary></indexterm>
 
    <para>Так как функция <literal>SECURITY DEFINER</literal> выполняется с правами пользователя, создавшего её, необходимо позаботиться о том, чтобы её нельзя было использовать не по назначению. В целях безопасности, в пути <xref linkend="guc-search-path"/> следует исключить любые схемы, доступные на запись недоверенным пользователям. Это не позволит злонамеренным пользователям создать свои объекты (например, таблицы, функции и операторы), которые замаскируют объекты, используемые функцией. Особенно важно в этом отношении исключить схему временных таблиц, которая по умолчанию просматривается первой, а право записи в неё по умолчанию имеют все. Соответствующую защиту можно организовать, поместив временную схему в конец списка поиска. Для этого следует сделать <literal>pg_temp</literal><indexterm><primary>pg_temp</primary> <secondary>защищённые функции</secondary></indexterm> последней записью в <varname>search_path</varname>. Безопасное использование демонстрирует следующая функция: <programlisting>CREATE FUNCTION check_password(uname TEXT, pass TEXT)
 RETURNS BOOLEAN AS $$

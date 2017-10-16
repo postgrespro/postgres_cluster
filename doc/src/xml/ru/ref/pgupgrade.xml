@@ -203,11 +203,22 @@ NET STOP postgresql-9.0</programlisting></para>
    </step>
 
    <step>
-    <title>Подготовьтесь к обновлению резервных серверов</title>
+    <title>Prepare for standby server upgrades</title>
 
-    <para>Если вы производите обновление резервных серверов (как описано в разделе <xref linkend="pgupgrade-step-replicas"/>), удостоверьтесь, что старые серверы резерва находятся в актуальном состоянии, запустив <application>pg_controldata</application> в старых ведущем и резервных кластерах. Убедитесь в том, что значения <quote>Положение последней контрольной точки</quote> во всех кластерах совпадают. (Несовпадение будет иметь место, если старые резервные серверы будут отключены раньше, чем старый ведущий.)</para>
+    <para>
+     If you are upgrading standby servers (as outlined in section <xref linkend="pgupgrade-step-replicas"/>), verify that the old standby
+     servers are caught up by running <application>pg_controldata</application>
+     against the old primary and standby clusters.  Verify that the
+     <quote>Latest checkpoint location</quote> values match in all clusters.
+     (There will be a mismatch if old standby servers were shut down
+     before the old primary.)
+    </para>
 
-    <para>Также при обновлении резервных серверов измените <varname>wal_level</varname> на <literal>replica</literal> в файле <filename>postgresql.conf</filename> нового основного кластера.</para>
+    <para>
+     Also, if upgrading standby servers, change <varname>wal_level</varname>
+     to <literal>replica</literal> in the <filename>postgresql.conf</filename> file on
+     the new master cluster.
+    </para>
    </step>
 
    <step>
@@ -257,9 +268,9 @@ SET PATH=%PATH%;C:\Program Files\PostgreSQL\9.0\bin;</programlisting> Након
      </step>
 
      <step>
-      <title>Остановите резервные серверы</title>
+      <title>Остановите ведомые серверы</title>
 
-      <para>Если резервные серверы продолжают работу, остановите их, следуя приведённым выше инструкциям.</para>
+      <para>Если ведомые серверы продолжают работу, остановите их, следуя приведённым выше инструкциям.</para>
      </step>
 
      <step>

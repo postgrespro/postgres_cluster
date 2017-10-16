@@ -394,11 +394,11 @@
    </sect2>
 
    <sect2 id="datatype-numeric-decimal">
-    <title>Числа с фиксированной точностью</title>
+    <title>Числа с произвольной точностью</title>
 
     <indexterm><primary>numeric (тип данных)</primary></indexterm>
 
-   <indexterm><primary>числа с фиксированной точностью</primary></indexterm>
+   <indexterm><primary>числа с произвольной точностью</primary></indexterm>
 
     <indexterm><primary>decimal</primary> <see>numeric</see></indexterm>
 
@@ -2498,7 +2498,7 @@ SET xmloption TO { DOCUMENT | CONTENT };
 
    <para>Тип данных <type>pg_lsn</type> может применяться для хранения значения LSN (последовательный номер в журнале, Log Sequence Number), которое представляет собой указатель на позицию в журнале транзакций (XLOG). Этот тип содержит <type>XLogRecPtr</type> и является внутренним системным типом <productname>&productname;</productname>.</para>
 
-   <para>Технически LSN &mdash; это 64-битное целое, представляющее байтовое смещение в потоке журнала упреждающей записи. Он выводится в виде двух шестнадцатеричных чисел до 8 цифр каждое, через косую черту, например: <literal>16/B374D848</literal>. Тип <type>pg_lsn</type> поддерживает стандартные операторы сравнения, такие как <literal>=</literal> и <literal>&gt;</literal>. Можно также вычесть один LSN из другого с помощью оператора <literal>-</literal>; результатом будет число байт между этими двумя позициями в журнале транзакций.</para>
+   <para>Технически LSN &mdash; это 64-битное целое, представляющее байтовое смещение в потоке журнала предзаписи. Он выводится в виде двух шестнадцатеричных чисел до 8 цифр каждое, через косую черту, например: <literal>16/B374D848</literal>. Тип <type>pg_lsn</type> поддерживает стандартные операторы сравнения, такие как <literal>=</literal> и <literal>&gt;</literal>. Можно также вычесть один LSN из другого с помощью оператора <literal>-</literal>; результатом будет число байт между этими двумя позициями в журнале предзаписи.</para>
   </sect1>
 
   <sect1 id="datatype-pseudo">

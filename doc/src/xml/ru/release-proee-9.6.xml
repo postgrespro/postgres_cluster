@@ -1,4 +1,39 @@
 <!-- doc/src/xml/release-proee-9.6.xml -->
+<sect1 id="release-proee-9-6-5-2">
+<title>&productname; 9.6.5.2</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2017-10-16</simpara>
+  </note>
+<sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>Postgres Pro Enterprise</productname> <link linkend="release-proee-9-6-5-1">9.6.5.1</link>.</para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro Enterprise</productname> 9.6.5.1 входят:</para>
+    <itemizedlist>
+      <listitem>
+      <para>Модуль <application>pg_pathman</application> обновлён до версии 1.4.7.</para>
+      </listitem>
+      <listitem>
+      <para>Утилита <application>pg_probackup</application> обновлена до версии 2.0.8.</para>
+      </listitem>
+      <listitem>
+      <para>Исправлена проблема при сборке мусора в сжимаемом табличном пространстве с несжимаемыми данными.</para>
+      </listitem>
+      <listitem>
+      <para>Исправлена обработка сигнала SIGTERM в расширении <application>pgpro_scheduler</application>.</para>
+      </listitem>
+      <listitem>
+      <para>Исправлены ошибки в расширении <application>aqo</application>.</para>
+      </listitem>
+      <listitem>
+      <para>Утилита <application>pgbench</application> теперь продолжает выполнение скрипта в случае отката транзакции и может повторять сбойные транзакции несколько раз.</para>
+      </listitem>
+      <listitem>
+      <para>Устранена несовместимость между расширениями <application>pg_pathman</application> и <application>online_analyze</application>.</para>
+      </listitem>
+      </itemizedlist>
+      </sect2>
+      </sect1>
 <sect1 id="release-proee-9-6-5-1">
 <title>&productname; 9.6.5.1</title>
   <note>

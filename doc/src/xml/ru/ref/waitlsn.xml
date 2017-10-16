@@ -24,9 +24,9 @@ doc/src/xml/ref/waitlsn.xml
  <refsect1>
   <title>Описание</title>
 
-  <para>Команда <command>WAITLSN</command> будет ждать воспроизведения целевого <acronym>LSN</acronym> в течение указанного времени (задаваемого в необязательном параметре <quote>задержка</quote> в миллисекундах) или без ограничения времени (по умолчанию).</para>
+  <para>Команда <command>WAITLSN</command> ожидает воспроизведения целевого <acronym>LSN</acronym> в течение указанного времени (задаваемого в необязательном параметре <quote>задержка</quote> в миллисекундах) или без ограничения времени (по умолчанию).</para>
 
-  <para><command>WAITLSN</command> предоставляет простой межпроцессный механизм ожидания <acronym>LSN</acronym> для обслуживающих процессов на ведомых узлах в схеме репликации ведущий-ведомый баз данных <productname>&productname;</productname>.</para>
+  <para><command>WAITLSN</command> предоставляет простой межпроцессный механизм ожидания <acronym>LSN</acronym> для обслуживающих процессов на ведомых узлах в схеме репликации ведущий-ведомый <productname>&productname;</productname>.</para>
  </refsect1>
 
  <refsect1>

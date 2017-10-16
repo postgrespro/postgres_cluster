@@ -474,6 +474,7 @@
         <entry align="center"><literal>X</literal></entry>
         <entry align="center"><literal>-</literal></entry>
         <entry align="center"><literal>-</literal></entry>
+        <entry align="center"/>
        </row>
        <row>
         <entry align="left"><literal>CREATE USER MAPPING</literal></entry>

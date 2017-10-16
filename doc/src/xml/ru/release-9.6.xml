@@ -964,7 +964,7 @@ Branch: REL9_5_STABLE [90877d28e] 2017-07-21 14:20:43 -0400
 Branch: REL9_4_STABLE [a648fc70a] 2017-07-21 14:20:43 -0400
 Branch: REL9_3_STABLE [6d9de660d] 2017-07-21 14:20:43 -0400
 -->
-     <para>В <filename>postgres_fdw</filename> соединения к удалённым серверам должны устанавливаться заново после команд <command>ALTER SERVER</command> и <command>ALTER USER MAPPING</command> (Киотаро Хоригучи)</para>
+     <para>В <filename>postgres_fdw</filename> соединения к удалённым серверам должны устанавливаться заново после команд <command>ALTER SERVER</command> и <command>ALTER USER MAPPING</command> (Кётаро Хоригути)</para>
 
      <para>Благодаря этому изменения параметров, затрагивающие свойства соединения, вступят в силу своевременно.</para>
     </listitem>
@@ -1311,7 +1311,7 @@ Branch: REL9_4_STABLE [c6b3d0706] 2017-05-02 18:05:54 -0400
 Branch: REL9_3_STABLE [062824edd] 2017-05-02 18:05:54 -0400
 Branch: REL9_2_STABLE [c9d6c564f] 2017-05-02 18:05:54 -0400
 -->
-     <para>Обеспечение видимости результатов непосредственно предшествующих DDL при разборе запросов в скриптах расширений (Жульен Рохо, Том Лейн)</para>
+     <para>Обеспечение видимости результатов непосредственно предшествующих DDL при разборе запросов в скриптах расширений (Жульен Рухо, Том Лейн)</para>
 
      <para>Из-за того, что кеш между командами в скрипте расширения не сбрасывался, запрос к данным мог не наблюдать эффектов непосредственно предшествующего ему изменения каталога, например результатов <command>ALTER TABLE ... RENAME</command>.</para>
     </listitem>
@@ -1419,7 +1419,7 @@ Branch: REL9_6_STABLE [fd52b8834] 2017-04-05 23:51:28 -0400
 Branch: REL9_5_STABLE [d68a2b20a] 2017-04-05 23:51:28 -0400
 Branch: REL9_4_STABLE [8851bcf88] 2017-04-05 23:51:28 -0400
 -->
-     <para>Исправление проблем с переполнением целочисленных значений при сравнении типов <type>interval</type> (Киотаро Хоригучи, Том Лейн)</para>
+     <para>Исправление проблем с переполнением целочисленных значений при сравнении типов <type>interval</type> (Кётаро Хоригути, Том Лейн)</para>
 
      <para>Операторы сравнения для типа <type>interval</type> могли выдавать неверные ответы для интервалов, превышающих 296000 лет. Индексы по столбцам с такими большими значениями следует перестроить, так как они могут быть испорчены.</para>
     </listitem>
@@ -2329,7 +2329,7 @@ Author: Robert Haas <rhaas@postgresql.org>
 Branch: master [53c7cff72] 2016-12-05 15:54:28 -0500
 Branch: REL9_6_STABLE [06fa6670f] 2016-12-05 15:59:02 -0500
 -->
-     <para>Устранения сбоя в ситуациях, когда число рабочих процессов, доступных для параллельных запросов, уменьшалось при повторном сканировании (Андреас Сельтенрейх)</para>
+     <para>Устранения сбоя в ситуациях, когда число рабочих процессов, доступных для параллельных запросов, уменьшалось при повторном сканировании (Андреас Зельтенрейх)</para>
     </listitem>
 
     <listitem>
@@ -2645,7 +2645,7 @@ Author: Tom Lane <tgl@sss.pgh.pa.us>
 Branch: master [404e66758] 2016-11-28 11:51:30 -0500
 Branch: REL9_6_STABLE [28735cc72] 2016-11-28 11:51:35 -0500
 -->
-     <para>Исправление в <application>psql</application> дополнения табуляцией для <command>ALTER TABLE t ALTER c DROP ...</command> (Киотаро Хоригучи)</para>
+     <para>Исправление в <application>psql</application> дополнения табуляцией для <command>ALTER TABLE t ALTER c DROP ...</command> (Кётаро Хоригути)</para>
     </listitem>
 
     <listitem>
@@ -2685,7 +2685,7 @@ Branch: REL9_5_STABLE [d5c05f27a] 2016-12-22 09:19:18 -0800
 Branch: REL9_4_STABLE [cb687e0ac] 2016-12-22 09:19:08 -0800
 Branch: REL9_3_STABLE [bd46cce21] 2016-12-22 09:18:50 -0800
 -->
-     <para>Реализация <filename>contrib/dblink</filename> должна игнорировать невоспринимаемые ей параметры сервера, когда в качестве источника параметров подключения используется сторонний сервер <filename>contrib/postgres_fdw</filename> (Кори Хаинкер)</para>
+     <para>Реализация <filename>contrib/dblink</filename> должна игнорировать невоспринимаемые ей параметры сервера, когда в качестве источника параметров подключения используется сторонний сервер <filename>contrib/postgres_fdw</filename> (Кори Хинкер)</para>
 
      <para>Ранее, если объект стороннего сервера имел параметры, которые не относились к параметрам подключения <application>libpq</application>, происходила ошибка.</para>
     </listitem>
@@ -2962,7 +2962,7 @@ Branch: master [00f15338b] 2016-10-24 09:45:48 -0300
 Branch: REL9_6_STABLE [c8329f934] 2016-10-24 09:46:49 -0300
 Branch: REL9_5_STABLE [7a2fa5774] 2016-10-24 09:38:28 -0300
 -->
-     <para>Сохранение времени фиксирования транзакций после перезагрузки сервера (Жульен Рохо, Крейг Рингер)</para>
+     <para>Сохранение времени фиксирования транзакций после перезагрузки сервера (Жульен Рухо, Крейг Рингер)</para>
 
      <para>При включённом параметре <xref linkend="guc-track-commit-timestamp"/> старые метки времени фиксации становились недоступными после полной перезагрузки сервера.</para>
     </listitem>
@@ -3350,7 +3350,7 @@ This commit is also listed under libpq and psql
 2016-06-07 [a89b4b1be] Update citext extension for parallel query.
 and many others in the same vein
 -->
-       <para>Функции расширений, для которых это уместно, помечены как безопасные для распараллеливания (Андреас Карлсон)</para>
+       <para>Функции расширений, для которых это уместно, помечены как безопасные для распараллеливания (Андреас Карлссон)</para>
 
        <para>Во многие стандартные расширения внесены изменения, чтобы их функции могли выполняться параллельными исполнителями запросов. Эти изменения не вступят в силу в базах данных, обновлённых с предыдущих версий (с помощью <application>pg_upgrade</application>), пока вы не примените для каждого такого расширения команду <command>ALTER EXTENSION UPDATE</command> (в каждой базе данных кластера).</para>
       </listitem>
@@ -3583,7 +3583,7 @@ and many others in the same vein
 2016-04-01 [3d3bf62f3] Omit null rows when setting the threshold for what's a m
 2016-04-04 [391159e03] Partially revert commit 3d3bf62f30200500637b24fdb7b992a9
 -->
-       <para>Улучшение оценок <command>ANALYZE</command> для столбцов с большим количеством NULL (Томас Вондра, Александр Шульгин)</para>
+       <para>Улучшение оценок <command>ANALYZE</command> для столбцов с большим количеством NULL (Томаш Вондра, Александр Шульгин)</para>
 
        <para>Ранее процедура <command>ANALYZE</command> была склонна недооценивать число различных и отличных от <literal>NULL</literal> значений в столбце со множеством <literal>NULL</literal>, и также неточно вычисляла наиболее распространённые значения.</para>
       </listitem>
@@ -3592,7 +3592,7 @@ and many others in the same vein
 <!--
 2016-04-04 [84f9a35e3] Improve estimate of distinct values in estimate_num_grou
 -->
-       <para>Улучшение оценки планировщиком количества различных значений в результате запроса (Томас Вондра)</para>
+       <para>Улучшение оценки планировщиком количества различных значений в результате запроса (Томаш Вондра)</para>
       </listitem>
 
       <listitem>
@@ -3601,7 +3601,7 @@ and many others in the same vein
 2016-06-07 [77ba61080] Revert "Use Foreign Key relationships to infer multi-col
 2016-06-18 [100340e2d] Restore foreign-key-aware estimation of join relation si
 -->
-       <para>Использование связей по внешним ключам для оценки избирательности предикатов соединения (Томас Вондра, Дэвид Роули)</para>
+       <para>Использование связей по внешним ключам для оценки избирательности предикатов соединения (Томаш Вондра, Дэвид Роули)</para>
 
        <para>Если в таблице <literal>t</literal> имеется ограничение внешнего ключа, например <literal>(a,b) REFERENCES r (x,y)</literal>, то условие <literal>WHERE</literal> вида <literal>t.a = r.x AND t.b = r.y</literal> не может выбрать больше одной строки из <literal>r</literal> для строки <literal>t</literal>. Ранее планировщик считал объединённые <literal>AND</literal> условия независимыми и поэтому часто неправильно оценивал избирательность запроса. Теперь он сравнивает условия <literal>WHERE</literal> с применимыми ограничениями внешнего ключа и получает более точные оценки.</para>
       </listitem>
@@ -3676,7 +3676,7 @@ and many others in the same vein
 <!--
 2016-03-31 [f9aefcb91] Support using index-only scans with partial indexes in m
 -->
-       <para>Возможность использования <link linkend="indexes-index-only-scans">сканирования только индекса</link> с частичным индексом, когда предложение <literal>WHERE</literal> индекса обращается к не индексированным столбцам (Томас Вондра, Киотаро Хоригучи)</para>
+       <para>Возможность использования <link linkend="indexes-index-only-scans">сканирования только индекса</link> с частичным индексом, когда предложение <literal>WHERE</literal> индекса обращается к не индексированным столбцам (Томаш Вондра, Кётаро Хоригути)</para>
 
        <para>Например, индекс, определённый командой <command>CREATE INDEX tidx_partial ON t(b) WHERE a &gt; 0</command>, теперь может использоваться для сканирования только по индексу в запросе, в котором задаётся условие <literal>WHERE a &gt; 0</literal> и никак больше не задействуется <literal>a</literal>. Ранее это использование не допускалось, на основании того, что <literal>a</literal> не входит в число столбцов индекса.</para>
 
@@ -3871,7 +3871,7 @@ and many others in the same vein
 <!--
 2016-01-12 [e63bb4549] Add new user fn pg_current_xlog_flush_location()
 -->
-       <para>Добавление функции <link linkend="functions-admin-backup-table"><function>pg_current_xlog_flush_location()</function></link> для вывода текущей позиции сброшенной записи в журнале транзакции (Томас Вондра)</para>
+       <para>Добавление функции <link linkend="functions-admin-backup-table"><function>pg_current_xlog_flush_location()</function></link> для вывода текущей позиции сброшенной записи в журнале транзакции (Томаш Вондра)</para>
       </listitem>
 
       <listitem>
@@ -3967,7 +3967,7 @@ and many others in the same vein
 <!--
 2015-09-08 [1aba62ec6] Allow per-tablespace effective_io_concurrency
 -->
-       <para>Возможность устанавливать <varname>effective_io_concurrency</varname> для табличного пространства; это полезно в случаях, когда различные табличные пространства имеют разные характеристики ввода/вывода (Жульен Рохо)</para>
+       <para>Возможность устанавливать <varname>effective_io_concurrency</varname> для табличного пространства; это полезно в случаях, когда различные табличные пространства имеют разные характеристики ввода/вывода (Жульен Рухо)</para>
       </listitem>
 
       <listitem>
@@ -3975,7 +3975,7 @@ and many others in the same vein
 2015-09-07 [f828654e1] Add log_line_prefix option 'n' for Unix epoch.
 2015-09-07 [b1e1862a1] Coordinate log_line_prefix options 'm' and 'n' to share
 -->
-       <para>Добавление в <xref linkend="guc-log-line-prefix"/> спецкода <literal>%n</literal> для вывода текущего времени в формате Unix, с миллисекундами (Томас Вондра, Джефф Дэвис)</para>
+       <para>Добавление в <xref linkend="guc-log-line-prefix"/> спецкода <literal>%n</literal> для вывода текущего времени в формате Unix, с миллисекундами (Томаш Вондра, Джефф Дэвис)</para>
       </listitem>
 
       <listitem>
@@ -4077,7 +4077,7 @@ XXX this is pending backpatch, may need to remove
 2016-04-27 [4c804fbdf] Clean up parsing of synchronous_standby_names GUC variab
 2016-04-30 [17d5db352] Remove warning about num_sync being too large in synchro
 -->
-       <para>Возможность при синхронной репликации задействовать одновременно несколько синхронных резервных серверов (раньше поддерживался только один) (Масахико Савада, Бина Емерсон, Мишель Пакье, Фудзии Масао, Киотаро Хоригучи)</para>
+       <para>Возможность при синхронной репликации задействовать одновременно несколько синхронных резервных серверов (раньше поддерживался только один) (Масахико Савада, Бина Емерсон, Мишель Пакье, Фудзии Масао, Кётаро Хоригути)</para>
 
        <para>Число резервных серверов, которые должны подтвердить фиксацию, прежде чем она будет считаться завершённой, теперь устанавливается в значении параметра <xref linkend="guc-synchronous-standby-names"/>.</para>
       </listitem>
@@ -4782,7 +4782,7 @@ this commit is also listed in the compatibility section
 <!--
 2016-04-04 [2bbe9112a] Add a \gexec command to psql for evaluation of computed
 -->
-       <para>Добавление команды <command>\gexec</command>, выполняющей запрос и передающей полученный результат на выполнение как тело нового запроса (Кори Хаинкер)</para>
+       <para>Добавление команды <command>\gexec</command>, выполняющей запрос и передающей полученный результат на выполнение как тело нового запроса (Кори Хинкер)</para>
       </listitem>
 
       <listitem>
@@ -4796,7 +4796,7 @@ this commit is also listed in the compatibility section
 <!--
 2016-03-11 [69ab7b9d6] psql: Don't automatically use expanded format when there
 -->
-       <para>В режиме автоматического расширения (<literal>\pset expanded auto</literal>) не нужно применять широкий формат для запросов результата с всего одним столбцом (Андреас Карлсон, Роберт Хаас)</para>
+       <para>В режиме автоматического расширения (<literal>\pset expanded auto</literal>) не нужно применять широкий формат для запросов результата с всего одним столбцом (Андреас Карлссон, Роберт Хаас)</para>
       </listitem>
 
       <listitem>
@@ -4834,14 +4834,14 @@ this commit is also listed in the compatibility section
 2016-01-26 [879d71393] Various fixes to REFRESH MATERIALIZED VIEW tab completio
 2016-02-01 [89611c4df] Various fixes to "ALTER ... SET/RESET" tab completions
 -->
-       <para>Многочисленные улучшения механизма завершения табуляцией (Питер Эйзентраут, Вик Фиринг, Кевин Гриттнер, Киотаро Хоригучи, Джефф Джейнс, Андреас Карлсон, Фудзии Масао, Томас Мунро, Масахико Савада, Павел Стехуле)</para>
+       <para>Многочисленные улучшения механизма завершения табуляцией (Питер Эйзентраут, Вик Фиринг, Кевин Гриттнер, Кётаро Хоригути, Джефф Джейнс, Андреас Карлссон, Фудзии Масао, Томас Мунро, Масахико Савада, Павел Стехуле)</para>
       </listitem>
 
       <listitem>
 <!--
 2015-07-07 [275f05c99] Add psql PROMPT variable showing the pid of the connecte
 -->
-       <para>Добавление в формат приглашения <literal>PROMPT</literal> спецкода <literal>%p</literal> для отображения ID текущего обслуживающего процесса (Жульен Рохо)</para>
+       <para>Добавление в формат приглашения <literal>PROMPT</literal> спецкода <literal>%p</literal> для отображения ID текущего обслуживающего процесса (Жульен Рухо)</para>
       </listitem>
 
       <listitem>
@@ -4874,7 +4874,7 @@ This commit is also listed under libpq and PL/pgSQL
 <!--
 2016-03-20 [68ab8e8ba] SQL commands in pgbench scripts are now ended by semicol
 -->
-       <para>Команды SQL в <application>pgbench</application> теперь завершаются точкой с запятой, а не переводом строки (Киотаро Хоригучи, Том Лейн)</para>
+       <para>Команды SQL в <application>pgbench</application> теперь завершаются точкой с запятой, а не переводом строки (Кётаро Хоригути, Том Лейн)</para>
 
        <para>Благодаря этому изменению, команды SQL в скриптах могут располагаться на нескольких строках. Существующие нестандартные скрипты придётся подредактировать и добавить точку с запятой в конце каждой строки, если это не было сделано ранее. (Это не помешает использовать тот же скрипт со старыми версиями <application>pgbench</application>.)</para>
       </listitem>
@@ -5103,7 +5103,7 @@ This commit is also listed under libpq and PL/pgSQL
 <!--
 2016-02-12 [bcac23de7] Introduce extensible node types.
 -->
-       <para>Введение расширяемых типов узлов (КайГай Кохей)</para>
+       <para>Введение расширяемых типов узлов (КайГай Кохэй)</para>
 
        <para>В результате этого изменения обёртки сторонних данных или провайдеры нестандартного сканирования могут сохранить данные в дереве плана в более удобном формате, чем было возможно ранее.</para>
       </listitem>
@@ -5149,7 +5149,7 @@ This commit is also listed under libpq and PL/pgSQL
 2016-03-24 [d65bea26a] Move psql's print.c and mbprint.c into src/fe_utils.
 2016-03-24 [c1156411a] Move psql's psqlscan.l into src/fe_utils.
 -->
-       <para>Выделение из <application>psql</application> лексического анализатора <application>flex</application>, чтобы его можно было использовать в других клиентских программах (Том Лейн, Киотаро Хоригучи)</para>
+       <para>Выделение из <application>psql</application> лексического анализатора <application>flex</application>, чтобы его можно было использовать в других клиентских программах (Том Лейн, Кётаро Хоригути)</para>
 
        <para>Это избавляет от необходимости дублировать код для программ, которым нужно достаточно хорошо понимать команды SQL, чтобы распознавать границы команд. Полноценно реализовать это оказывается гораздо сложнее, чем хотелось бы, и на данный момент только <application>psql</application> из всех поддерживаемых клиентских программ делает это на самом деле правильно.</para>
 
@@ -5214,7 +5214,7 @@ This commit is also listed under libpq and PL/pgSQL
 2016-09-15 [fcd93e4af] Support OpenSSL 1.1.0.
 2016-09-15 [9895818d5] Fix building with LibreSSL.
 -->
-       <para>Поддержка OpenSSL 1.1.0 (Андреас Карлсон, Хейкки Линнакангас)</para>
+       <para>Поддержка OpenSSL 1.1.0 (Андреас Карлссон, Хейкки Линнакангас)</para>
       </listitem>
 
      </itemizedlist>
@@ -5231,7 +5231,7 @@ This commit is also listed under libpq and PL/pgSQL
 2016-03-11 [92f03fe76] Allow setting sample ratio for auto_explain
 2016-03-13 [7a8d87483] Rename auto_explain.sample_ratio to sample_rate
 -->
-       <para>Добавление параметра конфигурации <literal>auto_explain.sample_rate</literal>, устанавливающего для <link linkend="auto-explain"><filename>contrib/auto_explain</filename></link> процент запросов, подлежащих анализу (Крейг Рингер, Жульен Рохо)</para>
+       <para>Добавление параметра конфигурации <literal>auto_explain.sample_rate</literal>, устанавливающего для <link linkend="auto-explain"><filename>contrib/auto_explain</filename></link> процент запросов, подлежащих анализу (Крейг Рингер, Жульен Рухо)</para>
 
        <para>Это позволяет снизить издержки при большой нагрузке и при этом всё же получать полезную общую информацию.</para>
       </listitem>
@@ -5376,7 +5376,7 @@ This commit is also listed under libpq and PL/pgSQL
 <!--
 2016-02-03 [dc203dc3a] postgres_fdw: Allow fetch_size to be set per-table or pe
 -->
-       <para>Возможность задавать число извлекаемых строк в параметрах сервера или таблицы (Кори Хаинкер)</para>
+       <para>Возможность задавать число извлекаемых строк в параметрах сервера или таблицы (Кори Хинкер)</para>
 
        <para>Ранее <filename>postgres_fdw</filename> всегда читала результаты удалённых запросов по 100 строк; теперь это количество стало настраиваемым.</para>
       </listitem>

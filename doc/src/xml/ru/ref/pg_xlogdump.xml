@@ -14,7 +14,7 @@ doc/src/xml/ref/pg_xlogdump.xml
 
  <refnamediv>
   <refname>pg_xlogdump</refname>
-  <refpurpose>вывести журнал упреждающей записи кластера БД <productname>&productname;</productname> в понятном человеку виде</refpurpose>
+  <refpurpose>вывести журнал предзаписи кластера БД <productname>&productname;</productname> в понятном человеку виде</refpurpose>
  </refnamediv>
 
  <refsynopsisdiv>
@@ -30,7 +30,7 @@ doc/src/xml/ref/pg_xlogdump.xml
 
  <refsect1 id="r1-app-pgxlogdump-1">
   <title>Описание</title>
-  <para>Программа <command>pg_xlogdump</command> показывает содержимое журнала упреждающей записи (WAL) с метками времени. Прежде всего она полезна для отладки и исследовательских целей.</para>
+  <para>Программа <command>pg_xlogdump</command> показывает содержимое журнала предзаписи (WAL) с метками времени. Прежде всего она полезна для отладки и исследовательских целей.</para>
 
   <para>Эту утилиту может запускать только пользователь, установивший сервер, так как ей требуется доступ на чтение к каталогу данных.</para>
  </refsect1>

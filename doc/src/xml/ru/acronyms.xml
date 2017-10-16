@@ -512,7 +512,7 @@
    <varlistentry>
     <term><acronym>WAL</acronym></term>
     <listitem>
-     <para>Write-Ahead Log, <link linkend="wal">Журнал упреждающей записи</link></para>
+     <para>Write-Ahead Log, <link linkend="wal">Журнал предзаписи</link></para>
     </listitem>
    </varlistentry>
 

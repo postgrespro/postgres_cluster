@@ -301,7 +301,7 @@ SELECT merge_fields(t.*) FROM table1 t WHERE ... ;</programlisting></para>
   <sect2 id="plpgsql-declaration-collation">
    <title>Упорядочение переменных <application>PL/pgSQL</application></title>
 
-   <indexterm><primary>collation</primary> <secondary>in PL/pgSQL</secondary></indexterm>
+   <indexterm><primary>правило сортировки</primary> <secondary>на PL/pgSQL</secondary></indexterm>
 
    <para>Когда функция на <application>PL/pgSQL</application> имеет один или несколько параметров сортируемых типов данных, правило сортировки определяется при каждом вызове функции в зависимости от правил сортировки фактических аргументов, как описано в <xref remap="6" linkend="collation"/>. Если оно определено успешно (т. е. среди аргументов нет конфликтов между неявными правилами сортировки), то все соответствующие параметры неявно трактуются как имеющее это правило сортировки. Внутри функции это будет влиять на поведение операторов, зависящих от используемого правила сортировки. Рассмотрим пример: <programlisting>CREATE FUNCTION less_than(a text, b text) RETURNS boolean AS $$
 BEGIN
@@ -385,9 +385,9 @@ PERFORM <replaceable>запрос</replaceable>;
    <sect2 id="plpgsql-statements-sql-onerow">
     <title>Выполнение запроса, возвращающего одну строку</title>
 
-    <indexterm zone="plpgsql-statements-sql-onerow"><primary>SELECT INTO</primary> <secondary>in PL/pgSQL</secondary></indexterm>
+    <indexterm zone="plpgsql-statements-sql-onerow"><primary>SELECT INTO</primary> <secondary>в PL/pgSQL</secondary></indexterm>
 
-    <indexterm zone="plpgsql-statements-sql-onerow"><primary>RETURNING INTO</primary> <secondary>in PL/pgSQL</secondary></indexterm>
+    <indexterm zone="plpgsql-statements-sql-onerow"><primary>RETURNING INTO</primary> <secondary>в PL/pgSQL</secondary></indexterm>
 
     <para>Результат SQL-команды, возвращающей одну строку (возможно из нескольких столбцов), может быть присвоен переменной типа <type>record</type>, переменной строкового типа или списку скалярных переменных. Для этого нужно к основной команде SQL добавить предложение <literal>INTO</literal>. Так, например: <synopsis>
 SELECT <replaceable>выражения_select</replaceable> INTO <optional>STRICT</optional> <replaceable>цель</replaceable> FROM ...;
@@ -649,8 +649,8 @@ RETURN (1, 2, 'three'::text);  -- требуется приведение тип
 
     <sect3>
      <title><command>RETURN NEXT</command> и <command>RETURN QUERY</command></title>
-    <indexterm><primary>RETURN NEXT</primary> <secondary>in PL/pgSQL</secondary></indexterm>
-    <indexterm><primary>RETURN QUERY</primary> <secondary>in PL/pgSQL</secondary></indexterm>
+    <indexterm><primary>RETURN NEXT</primary> <secondary>в PL/pgSQL</secondary></indexterm>
+    <indexterm><primary>RETURN QUERY</primary> <secondary>в PL/pgSQL</secondary></indexterm>
 
 <synopsis>RETURN NEXT <replaceable>выражение</replaceable>;
 RETURN QUERY <replaceable>запрос</replaceable>;
@@ -1595,7 +1595,7 @@ ASSERT <replaceable class="parameter">условие</replaceable> <optional> , 
  <sect1 id="plpgsql-trigger">
   <title>Триггерные процедуры</title>
 
-  <indexterm zone="plpgsql-trigger"><primary>trigger</primary> <secondary>in PL/pgSQL</secondary></indexterm>
+  <indexterm zone="plpgsql-trigger"><primary>триггер</primary> <secondary>в PL/pgSQL</secondary></indexterm>
 
   <para>В <application>PL/pgSQL</application> можно создавать триггерные процедуры, которые будут вызываться при изменениях данных или событиях в базе данных. Триггерная процедура создаётся командой <command>CREATE FUNCTION</command>, при этом у функции не должно быть аргументов, а типом возвращаемого значения должен быть <type>trigger</type> (для триггеров, срабатывающих при изменениях данных) или <type>event_trigger</type> (для триггеров, срабатывающих при событиях в базе). Для триггеров автоматически определяются специальные локальные переменные с именами вида <varname>PG_<replaceable>переменная</replaceable></varname>, описывающие условие, повлекшее вызов триггера.</para>
 
@@ -2055,7 +2055,7 @@ BEGIN
 
    <para>Иногда может быть не очень практичным исправлять таким способом все неоднозначные ссылки в большом куске <application>PL/pgSQL</application> кода. В таких случаях можно указать, чтобы <application>PL/pgSQL</application> разрешал неоднозначные ссылки в пользу переменных (это совместимо с <application>PL/pgSQL</application> до версии <productname>PostgreSQL</productname> 9.0), или в пользу столбцов таблицы (совместимо с некоторыми другими системами, такими как <productname>Oracle</productname>).</para>
 
-   <indexterm><primary><varname>plpgsql.variable_conflict</varname> configuration parameter</primary></indexterm>
+   <indexterm><primary>параметр конфигурации <varname>plpgsql.variable_conflict</varname></primary></indexterm>
 
    <para>На уровне всей системы поведение <application>PL/pgSQL</application> регулируется установкой конфигурационного параметра <literal>plpgsql.variable_conflict</literal>, имеющего значения: <literal>error</literal>, <literal>use_variable</literal> или <literal>use_column</literal> (<literal>error</literal> устанавливается по умолчанию при установке системы). Изменение этого параметра влияет на все последующие компиляции операторов в функциях на <application>PL/pgSQL</application>, но не на операторы уже скомпилированные в текущей сессии. Так как изменение этого параметра может привести к неожиданным изменениям в поведении функций на <application>PL/pgSQL</application>, он может быть изменён только суперпользователем.</para>
 
@@ -2090,7 +2090,7 @@ $$ LANGUAGE plpgsql;</programlisting></para>
 
    <para>Интерпретатор <application>PL/pgSQL</application> анализирует исходный текст функции и строит внутреннее бинарное дерево инструкций при первом вызове функции (для каждой сессии). В дерево инструкций полностью переводится вся структура операторов <application>PL/pgSQL</application>, но для выражений и команд <acronym>SQL</acronym>, используемых в функции, это происходит не сразу.</para>
 
-   <para><indexterm><primary>preparing a query</primary> <secondary>in PL/pgSQL</secondary></indexterm> При первом выполнении в функции каждого выражения или команды <acronym>SQL</acronym> интерпретатор <application>PL/pgSQL</application> разбирает и анализирует команду для создания подготовленного к выполнению оператора с помощью функции <function>SPI_prepare</function> менеджера интерфейса программирования сервера. Последующие обращения к этому выражению или команде повторно используют подготовленный к выполнению оператор. Таким образом, <acronym>SQL</acronym>-команды, находящиеся в редко посещаемой ветке кода условного оператора, не несут накладных расходов на разбор команд, если они так и не будут выполнены в текущей сессии. Здесь есть недостаток, заключающийся в том, что ошибки в определённом выражении или команде не могут быть обнаружены, пока выполнение не дойдёт до этой части функции. (Тривиальные синтаксические ошибки обнаружатся в ходе первоначального разбора, но ничего более серьёзного не будет обнаружено до исполнения.)</para>
+   <para><indexterm><primary>подготовка запроса</primary> <secondary>в PL/pgSQL</secondary></indexterm> При первом выполнении в функции каждого выражения или команды <acronym>SQL</acronym> интерпретатор <application>PL/pgSQL</application> разбирает и анализирует команду для создания подготовленного к выполнению оператора с помощью функции <function>SPI_prepare</function> менеджера интерфейса программирования сервера. Последующие обращения к этому выражению или команде повторно используют подготовленный к выполнению оператор. Таким образом, <acronym>SQL</acronym>-команды, находящиеся в редко посещаемой ветке кода условного оператора, не несут накладных расходов на разбор команд, если они так и не будут выполнены в текущей сессии. Здесь есть недостаток, заключающийся в том, что ошибки в определённом выражении или команде не могут быть обнаружены, пока выполнение не дойдёт до этой части функции. (Тривиальные синтаксические ошибки обнаружатся в ходе первоначального разбора, но ничего более серьёзного не будет обнаружено до исполнения.)</para>
 
    <para>Кроме того, <application>PL/pgSQL</application> (точнее, менеджер интерфейса программирования сервера) будет пытаться кешировать план выполнения для любого подготовленного к исполнению оператора. При каждом вызове оператора, если не используется план из кеша, генерируется новый план выполнения, и текущие значения параметров (то есть значения переменных <application>PL/pgSQL</application>) могут быть использованы для оптимизации нового плана. Если оператор не имеет параметров или выполняется много раз, менеджер интерфейса программирования сервера рассмотрит вопрос о создании и кешировании (для повторного использования) общего плана, не зависящего от значений параметров. Как правило, это происходит в тех случаях, когда план выполнения не очень чувствителен к имеющимся ссылкам на значения переменных <application>PL/pgSQL</application>. В противном случае, выгоднее каждый раз формировать новый план. Более подробно поведение подготовленных операторов рассматривается в <xref remap="6" linkend="sql-prepare"/>.</para>
 
