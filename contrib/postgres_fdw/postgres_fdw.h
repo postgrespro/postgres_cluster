@@ -188,5 +188,7 @@ extern bool is_builtin(Oid objectId);
 extern bool is_shippable(Oid objectId, Oid classId, PgFdwRelationInfo *fpinfo);
 
 extern bool UseTsDtmTransactions;
+extern bool Use2PC;
+extern bool UseRepeatableRead;
 
 #endif							/* POSTGRES_FDW_H */

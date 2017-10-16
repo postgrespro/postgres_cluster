@@ -42,6 +42,8 @@
 #include "utils/sampling.h"
 #include "utils/selfuncs.h"
 
+void _PG_init(void);
+
 PG_MODULE_MAGIC;
 
 /* Default CPU cost to start up a foreign query. */
@@ -52,6 +54,9 @@ PG_MODULE_MAGIC;
 
 /* If no remote estimates, assume a sort costs 20% extra */
 #define DEFAULT_FDW_SORT_MULTIPLIER 1.2
+
+bool Use2PC;
+bool UseRepeatableRead;
 
 /*
  * Indexes of FDW-private information stored in fdw_private lists.
@@ -5214,15 +5219,6 @@ postgres_fdw_exec(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-void
-_PG_init(void)
-{
-	DefineCustomBoolVariable("postgres_fdw.use_tsdtm",
-							 "Use timestamp base distributed transaction manager for FDW connections", NULL,
-						  &UseTsDtmTransactions, false, PGC_USERSET, 0, NULL,
-							 NULL, NULL);
-}
-
 /* Begin COPY FROM to foreign table */
 static void
 postgresBeginForeignCopyFrom(EState *estate, ResultRelInfo *rinfo,
@@ -5312,4 +5308,23 @@ postgresEndForeignCopyFrom(EState *estate, ResultRelInfo *rinfo)
 		*copy_from_started = false;
 		ReleaseConnection(conn);
 	}
+}
+
+void
+_PG_init(void)
+{
+	DefineCustomBoolVariable("postgres_fdw.use_twophase",
+							 "Use two phase commit for distributed transactions", NULL,
+							 &Use2PC, false, PGC_USERSET, 0, NULL,
+							 NULL, NULL);
+
+	DefineCustomBoolVariable("postgres_fdw.use_global_snapshots",
+							 "Use timestamp base distributed transaction manager for FDW connections", NULL,
+							 &UseTsDtmTransactions, false, PGC_USERSET, 0, NULL,
+							 NULL, NULL);
+
+	DefineCustomBoolVariable("postgres_fdw.use_repeatable_read",
+							 "Use repeatable read isilation error for remote transactions", NULL,
+							 &UseRepeatableRead, true, PGC_USERSET, 0, NULL,
+							 NULL, NULL);
 }
