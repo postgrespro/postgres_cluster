@@ -705,21 +705,11 @@ a new winner can be chosen in case of another network failure.
         in a two-node cluster configuration, or to quickly restore a
         single node in a broken cluster.
     </para>
-    <important>
-      <para>
-        If your cluster has more than two nodes, promoting one of the
-        nodes to the major status can lead to split-brain problems
-        in case of network failures, and reduce the number of possible
-        failover options. Consider
-        <link linkend="setting-up-a-referee">setting up a standalone referee</link>
-        instead.
-      </para>
-    </important>
     <para>
       To make one of the nodes major, enable the
       <literal>multimaster.major_node</literal> parameter on this node:
 <programlisting>
-ALTER SYSTEM SET multimaster.major_node TO on
+ALTER SYSTEM SET multimaster.major_node TO on;
 SELECT pg_reload_conf();
 </programlisting>
     </para>
@@ -730,6 +720,18 @@ SELECT pg_reload_conf();
         referee for your cluster, the <varname>major_node</varname>
         option is forbidden.
     </para>
+     <important>
+      <para>
+        If your cluster has more than two nodes, do not use the major node
+        setting, as it can lead to split-brain problems
+        in case of network failures, and reduce the number of possible
+        failover options. If the major node gets isolated by a network failure
+        while the majority of nodes are connected to each other, both the major
+        node and the subset that has a quorum will continue working. Consider
+        <link linkend="setting-up-a-referee">setting up a standalone referee</link>
+        instead.
+      </para>
+    </important>
     </sect4>
   </sect3>
   </sect2>
@@ -1085,14 +1087,29 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
       </indexterm>
     </term>
     <listitem>
-      <para>The node with this flag continues working even if it cannot access the majority of other nodes.
-      This may be required to break the symmetry in two-node clusters.
+      <para>The node with this flag continues working even if there is no quorum.
+      This may be required to break the symmetry in two-node clusters,
+      or to quickly restore a single node in a broken cluster.
       </para>
       <important>
-        <para>This parameter should be used with caution. This parameter can cause the
-        split-brain problem if you use it on clusters with more than two nodes, or set
-        it to <literal>true</literal> on more than one node.
-        Only one node in the cluster can be the major node. 
+        <para>This parameter should be used with caution to avoid split-brain
+        problems:
+        <itemizedlist>
+          <listitem>
+            <para>
+              Do not use the <parameter>major_node</> parameter on clusters with more
+              than two nodes. If the major node gets isolated by a network failure
+              while the majority of nodes are connected to each other, both the major
+              node and the subset that has a quorum will continue working.
+              Consider setting up a standalone referee instead.
+            </para>
+          </listitem>
+          <listitem>
+            <para>
+              Never set more than one major node in the cluster.
+            </para>
+          </listitem>
+        </itemizedlist>
         </para>
       </important>
     </listitem>
