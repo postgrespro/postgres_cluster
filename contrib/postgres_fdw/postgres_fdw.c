@@ -263,10 +263,14 @@ typedef struct
 	List	   *already_used;	/* expressions already dealt with */
 } ec_member_foreign_arg;
 
+bool		UseTsDtmTransactions;
+void		_PG_init(void);
+
 /*
  * SQL functions
  */
 PG_FUNCTION_INFO_V1(postgres_fdw_handler);
+PG_FUNCTION_INFO_V1(postgres_fdw_exec);
 
 /*
  * FDW callback routines
@@ -3287,21 +3291,28 @@ execute_dml_stmt(ForeignScanState *node)
 	 * Construct array of query parameter values in text format.
 	 */
 	if (numParams > 0)
+	{
 		process_query_params(econtext,
 							 dmstate->param_flinfo,
 							 dmstate->param_exprs,
 							 values);
 
-	/*
-	 * Notice that we pass NULL for paramTypes, thus forcing the remote server
-	 * to infer types for all parameters.  Since we explicitly cast every
-	 * parameter (see deparse.c), the "inference" is trivial and will produce
-	 * the desired result.  This allows us to avoid assuming that the remote
-	 * server has the same OIDs we do for the parameters' types.
-	 */
-	if (!PQsendQueryParams(dmstate->conn, dmstate->query, numParams,
-						   NULL, values, NULL, NULL, 0))
-		pgfdw_report_error(ERROR, NULL, dmstate->conn, false, dmstate->query);
+		/*
+		 * Notice that we pass NULL for paramTypes, thus forcing the remote server
+		 * to infer types for all parameters.  Since we explicitly cast every
+		 * parameter (see deparse.c), the "inference" is trivial and will produce
+		 * the desired result.  This allows us to avoid assuming that the remote
+		 * server has the same OIDs we do for the parameters' types.
+		 */
+		if (!PQsendQueryParams(dmstate->conn, dmstate->query, numParams,
+							   NULL, values, NULL, NULL, 0))
+			pgfdw_report_error(ERROR, NULL, dmstate->conn, false, dmstate->query);
+	}
+	else
+	{
+		if (!PQsendQuery(dmstate->conn, dmstate->query))
+			pgfdw_report_error(ERROR, NULL, dmstate->conn, false, dmstate->query);
+	}
 
 	/*
 	 * Get the result, and check for success.
@@ -5183,4 +5194,30 @@ find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel)
 
 	/* We didn't find any suitable equivalence class expression */
 	return NULL;
+}
+
+Datum
+postgres_fdw_exec(PG_FUNCTION_ARGS)
+{
+	Oid			relid = PG_GETARG_OID(0);
+	char const *sql = PG_GETARG_CSTRING(1);
+	Oid			userid = GetUserId();
+	ForeignTable *table = GetForeignTable(relid);
+	ForeignServer *server = GetForeignServer(table->serverid);
+	UserMapping *user = GetUserMapping(userid, server->serverid);
+	PGconn	   *conn = GetConnection(user, false);
+	PGresult   *res = PQexec(conn, sql);
+
+	PQclear(res);
+	ReleaseConnection(conn);
+	PG_RETURN_VOID();
+}
+
+void
+_PG_init(void)
+{
+	DefineCustomBoolVariable("postgres_fdw.use_tsdtm",
+							 "Use timestamp base distributed transaction manager for FDW connections", NULL,
+						  &UseTsDtmTransactions, false, PGC_USERSET, 0, NULL,
+							 NULL, NULL);
 }
