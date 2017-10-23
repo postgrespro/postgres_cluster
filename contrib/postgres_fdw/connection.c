@@ -724,7 +724,7 @@ RunDtmStatement(char const * sql, unsigned expectedStatus, DtmCommandResultHandl
 	{
 		if (entry->xact_depth > 0)
 		{
-			do_sql_send_command(entry->conn, sql);
+			do_sql_command(entry->conn, sql);
 		}
 	}
 
@@ -875,6 +875,7 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 					/* Commit all remote transactions during pre-commit */
 					entry->changing_xact_state = true;
 					do_sql_command(entry->conn, "COMMIT TRANSACTION");
+					// do_sql_send_command(entry->conn, "COMMIT TRANSACTION");
 					entry->changing_xact_state = false;
 					continue;
 
