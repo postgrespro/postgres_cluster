@@ -1,0 +1,6 @@
+\set id random(1, 2000)
+
+BEGIN;
+UPDATE accounts SET amount = amount - 1 WHERE id = :id;
+UPDATE accounts SET amount = amount + 1 WHERE id = (:id + 1);
+COMMIT;
