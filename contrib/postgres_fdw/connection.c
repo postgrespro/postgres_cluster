@@ -450,7 +450,7 @@ begin_remote_xact(ConnCacheEntry *entry)
 		elog(DEBUG3, "starting remote transaction on connection %p",
 			 entry->conn);
 
-		if (TransactionIdIsValid(gxid))
+		if (UseTsDtmTransactions && TransactionIdIsValid(gxid))
 		{
 			char	stmt[64];
 			snprintf(stmt, sizeof(stmt), "select public.dtm_join_transaction(%d)", gxid);
@@ -873,7 +873,9 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 					pgfdw_reject_incomplete_xact_state_change(entry);
 
 					/* Commit all remote transactions during pre-commit */
-					do_sql_send_command(entry->conn, "COMMIT TRANSACTION");
+					entry->changing_xact_state = true;
+					do_sql_command(entry->conn, "COMMIT TRANSACTION");
+					entry->changing_xact_state = false;
 					continue;
 
 				case XACT_EVENT_PRE_PREPARE:
