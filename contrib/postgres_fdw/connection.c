@@ -414,7 +414,7 @@ do_sql_command(PGconn *conn, const char *sql)
 static void
 do_sql_send_command(PGconn *conn, const char *sql)
 {
-	if (PQsendQuery(conn, sql) != PGRES_COMMAND_OK)
+	if (!PQsendQuery(conn, sql))
 	{
 		PGresult   *res = PQgetResult(conn);
 
@@ -724,7 +724,7 @@ RunDtmStatement(char const * sql, unsigned expectedStatus, DtmCommandResultHandl
 	{
 		if (entry->xact_depth > 0)
 		{
-			do_sql_command(entry->conn, sql);
+			do_sql_send_command(entry->conn, sql);
 		}
 	}
 
@@ -791,16 +791,16 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 	HASH_SEQ_STATUS scan;
 	ConnCacheEntry *entry;
 
-	/* Do nothing for this events */
-	switch (event)
-	{
-		case XACT_EVENT_START:
-		case XACT_EVENT_COMMIT_PREPARED:
-		case XACT_EVENT_ABORT_PREPARED:
-			return;
-		default:
-			break;
-	}
+	// /* Do nothing for this events */
+	// switch (event)
+	// {
+	// 	case XACT_EVENT_START:
+	// 	case XACT_EVENT_COMMIT_PREPARED:
+	// 	case XACT_EVENT_ABORT_PREPARED:
+	// 		return;
+	// 	default:
+	// 		break;
+	// }
 
 	/* Quick exit if no connections were touched in this transaction. */
 	if (!xact_got_connection)
@@ -863,6 +863,11 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 
 			switch (event)
 			{
+				case XACT_EVENT_START:
+				case XACT_EVENT_COMMIT_PREPARED:
+				case XACT_EVENT_ABORT_PREPARED:
+					break;
+
 				case XACT_EVENT_PARALLEL_PRE_COMMIT:
 				case XACT_EVENT_PRE_COMMIT:
 
@@ -873,37 +878,13 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 					pgfdw_reject_incomplete_xact_state_change(entry);
 
 					/* Commit all remote transactions during pre-commit */
-					entry->changing_xact_state = true;
-					do_sql_command(entry->conn, "COMMIT TRANSACTION");
-					// do_sql_send_command(entry->conn, "COMMIT TRANSACTION");
-					entry->changing_xact_state = false;
-					continue;
-
-				case XACT_EVENT_PRE_PREPARE:
-
-					/*
-					 * We disallow remote transactions that modified anything,
-					 * since it's not very reasonable to hold them open until
-					 * the prepared transaction is committed.  For the moment,
-					 * throw error unconditionally; later we might allow
-					 * read-only cases.  Note that the error will cause us to
-					 * come right back here with event == XACT_EVENT_ABORT, so
-					 * we'll clean up the connection state at that point.
-					 */
-					ereport(ERROR,
-							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-							 errmsg("cannot prepare a transaction that modified remote tables")));
-					break;
-
-				case XACT_EVENT_PARALLEL_COMMIT:
-				case XACT_EVENT_COMMIT:
-				case XACT_EVENT_PREPARE:
 					if (!currentGlobalTransactionId)
 					{
 						entry->changing_xact_state = true;
 						do_sql_command(entry->conn, "COMMIT TRANSACTION");
 						entry->changing_xact_state = false;
 					}
+
 					/*
 					 * If there were any errors in subtransactions, and we
 					 * made prepared statements, do a DEALLOCATE ALL to make
@@ -927,7 +908,27 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 					entry->have_prep_stmt = false;
 					entry->have_error = false;
 					break;
+				case XACT_EVENT_PRE_PREPARE:
 
+					/*
+					 * We disallow remote transactions that modified anything,
+					 * since it's not very reasonable to hold them open until
+					 * the prepared transaction is committed.  For the moment,
+					 * throw error unconditionally; later we might allow
+					 * read-only cases.  Note that the error will cause us to
+					 * come right back here with event == XACT_EVENT_ABORT, so
+					 * we'll clean up the connection state at that point.
+					 */
+					ereport(ERROR,
+							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+								errmsg("cannot prepare a transaction that modified remote tables")));
+					break;
+				case XACT_EVENT_PARALLEL_COMMIT:
+				case XACT_EVENT_COMMIT:
+				case XACT_EVENT_PREPARE:
+					/* Pre-commit should have closed the open transaction */
+					// elog(ERROR, "missed cleaning up connection during pre-commit");
+					break;
 				case XACT_EVENT_PARALLEL_ABORT:
 				case XACT_EVENT_ABORT:
 
@@ -991,11 +992,6 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 					/* Disarm changing_xact_state if it all worked. */
 					entry->changing_xact_state = abort_cleanup_failure;
 					break;
-
-				case XACT_EVENT_START:
-				case XACT_EVENT_COMMIT_PREPARED:
-				case XACT_EVENT_ABORT_PREPARED:
-					break;
 			}
 		}
 
@@ -1014,13 +1010,12 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 			disconnect_pg_server(entry);
 		}
 	}
-	if (event != XACT_EVENT_PARALLEL_PRE_COMMIT && event != XACT_EVENT_PRE_COMMIT)
-	{
+	// if (event != XACT_EVENT_PARALLEL_PRE_COMMIT && event != XACT_EVENT_PRE_COMMIT)
+	// {
 		/*
-		 * Regardless of the event type, we can now mark ourselves as out of
-		 * the transaction.  (Note: if we are here during PRE_COMMIT or
-		 * PRE_PREPARE, this saves a useless scan of the hashtable during
-		 * COMMIT or PREPARE.)
+		 * Regardless of the event type, we can now mark ourselves as out of the
+		 * transaction.  (Note: if we are here during PRE_COMMIT or PRE_PREPARE,
+		 * this saves a useless scan of the hashtable during COMMIT or PREPARE.)
 		 */
 		xact_got_connection = false;
 
@@ -1029,7 +1024,7 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 
 		currentGlobalTransactionId = 0;
 		currentConnection = NULL;
-	}
+	// }
 }
 
 /*
