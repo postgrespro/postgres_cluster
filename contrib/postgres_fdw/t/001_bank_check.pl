@@ -8,7 +8,7 @@ use Test::More tests => 1;
 my $master = get_new_node("master");
 $master->init;
 $master->append_conf('postgresql.conf', qq(
-	max_prepared_transactions = 10
+	max_prepared_transactions = 30
 	log_checkpoints = true
 	postgres_fdw.use_tsdtm = on
 ));
@@ -17,7 +17,7 @@ $master->start;
 my $shard1 = get_new_node("shard1");
 $shard1->init;
 $shard1->append_conf('postgresql.conf', qq(
-	max_prepared_transactions = 10
+	max_prepared_transactions = 300
 	log_checkpoints = true
 	shared_preload_libraries = 'pg_tsdtm'
 ));
@@ -26,7 +26,7 @@ $shard1->start;
 my $shard2 = get_new_node("shard2");
 $shard2->init;
 $shard2->append_conf('postgresql.conf', qq(
-	max_prepared_transactions = 10
+	max_prepared_transactions = 300
 	log_checkpoints = true
 	shared_preload_libraries = 'pg_tsdtm'
 ));
@@ -52,24 +52,30 @@ foreach my $node ($shard1, $shard2)
 	diag("done $host $port");
 }
 
-$shard1->psql('postgres', "insert into accounts select 2*id-1, 0 from generate_series(1, 1000) as id;");
-$shard2->psql('postgres', "insert into accounts select 2*id, 0 from generate_series(1, 1000) as id;");
+$shard1->psql('postgres', "insert into accounts select 2*id-1, 0 from generate_series(1, 10000) as id;");
+$shard2->psql('postgres', "insert into accounts select 2*id, 0 from generate_series(1, 10000) as id;");
+
+diag( $master->connstr() );
+# sleep(3600);
 
 ###############################################################################
 
 my ($err, $rc);
 my $seconds = 30;
-my $total = 0;
-my $oldtotal = 0;
+my $total = '0';
+my $oldtotal = '0';
 my $isolation_error = 0;
 
-my $pgb_handle = $master->pgbench_async(-n, -c => 1, -T => $seconds, -f => "$TestLib::log_path/../../t/bank.pgb", 'postgres' );
+
+$master->pgbench(-n, -c => 5, -t => 10, -f => "$TestLib::log_path/../../t/bank.pgb", 'postgres' );
+
+my $pgb_handle = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank.pgb", 'postgres' );
 
 my $started = time();
 while (time() - $started < $seconds)
 {
 	($rc, $total, $err) = $master->psql('postgres', "select sum(amount) from accounts");
-	if ($oldtotal != $total)
+	if ( ($total ne $oldtotal) and ($total ne '') )
 	{
 		$isolation_error = 1;
 		$oldtotal = $total;
