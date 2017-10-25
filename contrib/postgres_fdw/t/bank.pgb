@@ -1,4 +1,4 @@
-\set id random(1, 2000)
+\set id random(1, 20000)
 
 BEGIN;
 UPDATE accounts SET amount = amount - 1 WHERE id = :id;
