@@ -1077,17 +1077,10 @@ static void MtmReceiver(Datum arg)
 									if (ts->isTwoPhase) { 
 										MtmWakeUpBackend(ts);										
 									} else if (MtmUseDtm) { 
-										ts->votedMask = 0;
 										MTM_TXTRACE(ts, "MtmTransReceiver send MSG_PRECOMMIT");
 										Assert(replorigin_session_origin == InvalidRepOriginId);
-										MTM_LOG2("SetPreparedTransactionState for %s", ts->gid);
-										MtmUnlock();
-										MtmResetTransaction();
-										StartTransactionCommand();
-										SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);	
-										CommitTransactionCommand();
-										Assert(!MtmTransIsActive());
-										MtmLock(LW_EXCLUSIVE);						
+										ts->isPrepared = false;
+										SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch);
 									} else { 
 										ts->status = TRANSACTION_STATUS_UNKNOWN;
 										MtmWakeUpBackend(ts);
