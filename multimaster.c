@@ -3813,7 +3813,7 @@ void MtmSetupReplicationHooks(struct PGLogicalHooks* hooks)
  */
 void MtmBeginSession(int nodeId)
 {
-	MtmLockNode(nodeId, LW_EXCLUSIVE);
+	// MtmLockNode(nodeId, LW_EXCLUSIVE);
 	Assert(replorigin_session_origin == InvalidRepOriginId);
 	replorigin_session_origin = Mtm->nodes[nodeId-1].originId;
 	Assert(replorigin_session_origin != InvalidRepOriginId);
@@ -3833,9 +3833,9 @@ void MtmEndSession(int nodeId, bool unlock)
 		replorigin_session_origin_lsn = INVALID_LSN;
 		replorigin_session_origin_timestamp = 0;
 		replorigin_session_reset();
-		if (unlock) {
-			MtmUnlockNode(nodeId);
-		}
+		// if (unlock) {
+		// 	MtmUnlockNode(nodeId);
+		// }
 		MTM_LOG3("%d: End reset replorigin session: %d", MyProcPid, replorigin_session_origin);
 	}
 }
