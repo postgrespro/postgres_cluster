@@ -1029,13 +1029,20 @@ replorigin_session_setup(RepOriginId node)
 		if (curstate->roident != node)
 			continue;
 
-		else if (curstate->acquired_by != 0)
-		{
-			ereport(ERROR,
-					(errcode(ERRCODE_OBJECT_IN_USE),
-			 errmsg("replication identifier %d is already active for PID %d",
-					curstate->roident, curstate->acquired_by)));
-		}
+		/*
+		 * MTM-CRUTCH.
+		 *
+		 * Allow multiple backends to setup same replication session.
+		 *
+		 * else if (curstate->acquired_by != 0)
+		 * {
+		 * 	ereport(ERROR,
+		 * 			(errcode(ERRCODE_OBJECT_IN_USE),
+		 * 	 errmsg("replication identifier %d is already active for PID %d",
+		 * 			curstate->roident, curstate->acquired_by)));
+		 * }
+		 *
+		 */
 
 		/* ok, found slot */
 		session_replication_state = curstate;
