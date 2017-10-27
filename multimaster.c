@@ -2036,10 +2036,10 @@ MtmCheckSlots()
 			if (slot->in_use
 				&& sscanf(slot->data.name.data, MULTIMASTER_SLOT_PATTERN, &nodeId) == 1
 				&& BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)
-				&& slot->data.confirmed_flush + MtmMaxRecoveryLag < GetXLogInsertRecPtr()
+				&& slot->data.confirmed_flush + MtmMaxRecoveryLag * 1024 < GetXLogInsertRecPtr()
 				&& slot->data.confirmed_flush != 0)
 			{
-				MTM_ELOG(WARNING, "Drop slot for node %d which lag %lld is larger than threshold %d",
+				MTM_ELOG(WARNING, "Drop slot for node %d which lag %lld B is larger than threshold %d kB",
 					 nodeId,
 					 (long64)(GetXLogInsertRecPtr() - slot->data.restart_lsn),
 					 MtmMaxRecoveryLag);
@@ -2100,7 +2100,7 @@ void MtmCheckRecoveryCaughtUp(int nodeId, lsn_t slotLSN)
 	if (MtmIsRecoveredNode(nodeId)) {
 		lsn_t walLSN = GetXLogInsertRecPtr();
 		if (!BIT_CHECK(Mtm->originLockNodeMask, nodeId-1)
-			&& slotLSN + MtmMinRecoveryLag > walLSN)
+			&& slotLSN + MtmMinRecoveryLag * 1024 > walLSN)
 		{
 			/*
 			 * Wal sender almost caught up.
@@ -2858,14 +2858,14 @@ _PG_init(void)
 	);
 	DefineCustomIntVariable(
 		"multimaster.trans_spill_threshold",
-		"Maximal size (Mb) of transaction after which transaction is written to the disk",
+		"Maximal size of transaction after which transaction is written to the disk",
 		NULL,
 		&MtmTransSpillThreshold,
-		100, /* 100Mb */
+		100 * 1024, /* 100Mb */
 		0,
-		MaxAllocSize/MB,
-		PGC_BACKEND,
-		0,
+		MaxAllocSize/GUC_UNIT_KB,
+		PGC_SIGHUP,
+		GUC_UNIT_KB,
 		NULL,
 		NULL,
 		NULL
@@ -2892,11 +2892,11 @@ _PG_init(void)
 		"When wal-sender almost catch-up WAL current position we need to stop 'Achilles tortile competition' and "
 		"temporary stop commit of new transactions until node will be completely repared",
 		&MtmMinRecoveryLag,
-		100000,
-		1,
-		INT_MAX,
-		PGC_BACKEND,
+		10 * 1024, /* 10 MB */
 		0,
+		INT_MAX,
+		PGC_SIGHUP,
+		GUC_UNIT_KB,
 		NULL,
 		NULL,
 		NULL
@@ -2908,11 +2908,11 @@ _PG_init(void)
 		"Dropping slot makes it not possible to recover node using logical replication mechanism, it will be ncessary to completely copy content of some other nodes "
 		"using basebackup or similar tool. Zero value of parameter disable dropping slot.",
 		&MtmMaxRecoveryLag,
-		100000000,
+		1 * 1024 * 1024, /* 1 GB */
 		0,
 		INT_MAX,
-		PGC_BACKEND,
-		0,
+		PGC_SIGHUP,
+		GUC_UNIT_KB,
 		NULL,
 		NULL,
 		NULL
