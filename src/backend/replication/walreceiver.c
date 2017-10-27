@@ -205,6 +205,7 @@ WalReceiverMain(void)
 	bool		first_stream;
 	WalRcvData *walrcv = WalRcv;
 	TimestampTz last_recv_timestamp;
+	TimestampTz now;
 	bool		ping_sent;
 
 	/*
@@ -212,6 +213,8 @@ WalReceiverMain(void)
 	 * by fork() or EXEC_BACKEND mechanism from the postmaster).
 	 */
 	Assert(walrcv != NULL);
+
+	now = GetCurrentTimestamp();
 
 	/*
 	 * Mark walreceiver as running in shared memory.
@@ -243,6 +246,7 @@ WalReceiverMain(void)
 		case WALRCV_RESTARTING:
 		default:
 			/* Shouldn't happen */
+			SpinLockRelease(&walrcv->mutex);
 			elog(PANIC, "walreceiver still running according to shared memory state");
 	}
 	/* Advertise our PID so that the startup process can kill us */
@@ -257,7 +261,8 @@ WalReceiverMain(void)
 	startpointTLI = walrcv->receiveStartTLI;
 
 	/* Initialise to a sanish value */
-	walrcv->lastMsgSendTime = walrcv->lastMsgReceiptTime = walrcv->latestWalEndTime = GetCurrentTimestamp();
+	walrcv->lastMsgSendTime =
+		walrcv->lastMsgReceiptTime = walrcv->latestWalEndTime = now;
 
 	SpinLockRelease(&walrcv->mutex);
 
@@ -321,12 +326,12 @@ WalReceiverMain(void)
 	SpinLockAcquire(&walrcv->mutex);
 	memset(walrcv->conninfo, 0, MAXCONNINFO);
 	if (tmp_conninfo)
-	{
 		strlcpy((char *) walrcv->conninfo, tmp_conninfo, MAXCONNINFO);
-		pfree(tmp_conninfo);
-	}
 	walrcv->ready_to_display = true;
 	SpinLockRelease(&walrcv->mutex);
+
+	if (tmp_conninfo)
+		pfree(tmp_conninfo);
 
 	first_stream = true;
 	for (;;)
@@ -1349,8 +1354,8 @@ pg_stat_get_wal_receiver(PG_FUNCTION_ARGS)
 	TimestampTz last_receipt_time;
 	XLogRecPtr	latest_end_lsn;
 	TimestampTz latest_end_time;
-	char	   *slotname;
-	char	   *conninfo;
+	char		slotname[NAMEDATALEN];
+	char		conninfo[MAXCONNINFO];
 
 	/*
 	 * No WAL receiver (or not ready yet), just return a tuple with NULL
@@ -1377,8 +1382,8 @@ pg_stat_get_wal_receiver(PG_FUNCTION_ARGS)
 	last_receipt_time = walrcv->lastMsgReceiptTime;
 	latest_end_lsn = walrcv->latestWalEnd;
 	latest_end_time = walrcv->latestWalEndTime;
-	slotname = pstrdup(walrcv->slotname);
-	conninfo = pstrdup(walrcv->conninfo);
+	strlcpy(slotname, (char *) walrcv->slotname, sizeof(slotname));
+	strlcpy(conninfo, (char *) walrcv->conninfo, sizeof(conninfo));
 	SpinLockRelease(&walrcv->mutex);
 
 	/* Fetch values */

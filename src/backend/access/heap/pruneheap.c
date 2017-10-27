@@ -479,7 +479,7 @@ heap_prune_chain(Relation relation, Buffer buffer, OffsetNumber rootoffnum,
 		 * Check the tuple XMIN against prior XMAX, if any
 		 */
 		if (TransactionIdIsValid(priorXmax) &&
-			!TransactionIdEquals(HeapTupleGetXmin(&tup), priorXmax))
+			!HeapTupleUpdateXmaxMatchesXmin(priorXmax, &tup))
 			break;
 
 		/*
@@ -826,7 +826,7 @@ heap_get_root_tuples(Page page, OffsetNumber *root_offsets)
 			HeapTupleCopyEpochFromPage(&tup, page);
 
 			if (TransactionIdIsValid(priorXmax) &&
-				!TransactionIdEquals(priorXmax, HeapTupleGetXmin(&tup)))
+				!HeapTupleUpdateXmaxMatchesXmin(priorXmax, &tup))
 				break;
 
 			/* Remember the root line pointer for this item */

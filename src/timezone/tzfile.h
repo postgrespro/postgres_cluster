@@ -34,9 +34,9 @@ struct tzhead
 {
 	char		tzh_magic[4];	/* TZ_MAGIC */
 	char		tzh_version[1]; /* '\0' or '2' or '3' as of 2013 */
-	char		tzh_reserved[15];		/* reserved; must be zero */
-	char		tzh_ttisgmtcnt[4];		/* coded number of trans. time flags */
-	char		tzh_ttisstdcnt[4];		/* coded number of trans. time flags */
+	char		tzh_reserved[15];	/* reserved; must be zero */
+	char		tzh_ttisgmtcnt[4];	/* coded number of trans. time flags */
+	char		tzh_ttisstdcnt[4];	/* coded number of trans. time flags */
 	char		tzh_leapcnt[4]; /* coded number of leap seconds */
 	char		tzh_timecnt[4]; /* coded number of transition times */
 	char		tzh_typecnt[4]; /* coded number of local time types */
@@ -50,8 +50,8 @@ struct tzhead
  *	tzh_timecnt (unsigned char)s	types of local time starting at above
  *	tzh_typecnt repetitions of
  *		one (char [4])		coded UT offset in seconds
- *		one (unsigned char) used to set tm_isdst
- *		one (unsigned char) that's an abbreviation list index
+ *		one (unsigned char)	used to set tm_isdst
+ *		one (unsigned char)	that's an abbreviation list index
  *	tzh_charcnt (char)s		'\0'-terminated zone abbreviations
  *	tzh_leapcnt repetitions of
  *		one (char [4])		coded leap second transition times
@@ -100,4 +100,4 @@ struct tzhead
 
 #define TZ_MAX_LEAPS	50		/* Maximum number of leap second corrections */
 
-#endif   /* !defined TZFILE_H */
+#endif							/* !defined TZFILE_H */
