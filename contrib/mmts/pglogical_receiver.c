@@ -576,7 +576,8 @@ pglogical_receiver_main(Datum main_arg)
 											elog(WARNING, "Commit of prepared transaction takes %lld usec, flags=%x", stop - start, stmt[1]);
 										}
 									} else {
-										Assert(stmt[1] == PGLOGICAL_PREPARE || stmt[1] == PGLOGICAL_COMMIT); /* all other commits should be applied in place */
+										/* all other commits should be applied in place */
+										Assert(stmt[1] == PGLOGICAL_PREPARE || stmt[1] == PGLOGICAL_COMMIT || stmt[1] == PGLOGICAL_PRECOMMIT_PREPARED);
 										MtmExecute(buf.data, buf.used);
 									}
 								}
