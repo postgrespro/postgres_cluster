@@ -366,20 +366,21 @@ pglogical_receiver_main(Datum main_arg)
 		res = PQexec(conn, query->data);
 		if (PQresultStatus(res) != PGRES_COPY_BOTH)
 		{
-			int i, n_deleted_slots = 0;
+			// int i, n_deleted_slots = 0;
 
-			elog(WARNING, "Can't find slot on node%d. Shutting down receiver.", nodeId);
-			Mtm->nodes[nodeId-1].slotDeleted = true;
-			for (i = 0; i < Mtm->nAllNodes; i++)
-			{
-				if (Mtm->nodes[i].slotDeleted)
-					n_deleted_slots++;
-			}
-			if (n_deleted_slots == Mtm->nAllNodes - 1)
-			{
-				elog(FATAL, "All neighbour nopes have no replication slot for us. Exiting.");
-			}
-			proc_exit(1);
+			elog(WARNING, "Can't find slot on node%d. Shutting down receiver. %s", nodeId, PQresultErrorMessage(res));
+			goto OnError;
+			// Mtm->nodes[nodeId-1].slotDeleted = true;
+			// for (i = 0; i < Mtm->nAllNodes; i++)
+			// {
+			// 	if (Mtm->nodes[i].slotDeleted)
+			// 		n_deleted_slots++;
+			// }
+			// if (n_deleted_slots == Mtm->nAllNodes - 1)
+			// {
+			// 	elog(FATAL, "All neighbour nopes have no replication slot for us. Exiting.");
+			// }
+			// proc_exit(1);
 		}
 		PQclear(res);
 		resetPQExpBuffer(query);
