@@ -1255,7 +1255,7 @@ MtmVotingCompleted(MtmTransState* ts)
 			ts->status = TRANSACTION_STATUS_UNKNOWN;
 			return true;
 		} else {
-			MTM_LOG1("Transaction %s is considered as prepared (status=%s participants=%llx disabled=%llx, voted=%llx)",
+			MTM_LOG2("Transaction %s is considered as prepared (status=%s participants=%llx disabled=%llx, voted=%llx)",
 					 ts->gid, MtmTxnStatusMnem[ts->status], ts->participantsMask, Mtm->disabledNodeMask, ts->votedMask);
 			ts->isPrepared = true;
 			if (ts->isTwoPhase) {
