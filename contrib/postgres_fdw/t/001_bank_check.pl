@@ -17,7 +17,7 @@ $master->start;
 my $shard1 = get_new_node("shard1");
 $shard1->init;
 $shard1->append_conf('postgresql.conf', qq(
-	max_prepared_transactions = 300
+	max_prepared_transactions = 30
 	log_checkpoints = true
 	shared_preload_libraries = 'pg_tsdtm'
 ));
@@ -26,7 +26,7 @@ $shard1->start;
 my $shard2 = get_new_node("shard2");
 $shard2->init;
 $shard2->append_conf('postgresql.conf', qq(
-	max_prepared_transactions = 300
+	max_prepared_transactions = 30
 	log_checkpoints = true
 	shared_preload_libraries = 'pg_tsdtm'
 ));
@@ -52,8 +52,8 @@ foreach my $node ($shard1, $shard2)
 	diag("done $host $port");
 }
 
-$shard1->psql('postgres', "insert into accounts select 2*id-1, 0 from generate_series(1, 10000) as id;");
-$shard2->psql('postgres', "insert into accounts select 2*id, 0 from generate_series(1, 10000) as id;");
+$shard1->psql('postgres', "insert into accounts select 2*id-1, 0 from generate_series(1, 10010) as id;");
+$shard2->psql('postgres', "insert into accounts select 2*id, 0 from generate_series(1, 10010) as id;");
 
 diag( $master->connstr() );
 # sleep(3600);
@@ -81,6 +81,7 @@ while (time() - $started < $seconds)
 		$oldtotal = $total;
 		diag("Isolation error. Total = $total");
 	}
+	diag("Total = $total");
 }
 
 $master->pgbench_await($pgb_handle);
