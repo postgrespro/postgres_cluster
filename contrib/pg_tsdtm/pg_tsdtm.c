@@ -36,7 +36,6 @@
 #define INVALID_CID    0
 #define MIN_WAIT_TIMEOUT 1000
 #define MAX_WAIT_TIMEOUT 100000
-#define MAX_GTID_SIZE  16
 #define HASH_PER_ELEM_OVERHEAD 64
 
 #define USEC 1000000
@@ -297,12 +296,6 @@ dtm_shmem_startup(void)
 	DtmInitialize();
 }
 
-static GlobalTransactionId
-dtm_get_global_trans_id()
-{
-	return GetLockedGlobalTransactionId();
-}
-
 static void
 dtm_xact_callback(XactEvent event, void *arg)
 {
@@ -324,15 +317,15 @@ dtm_xact_callback(XactEvent event, void *arg)
 			break;
 
 		case XACT_EVENT_ABORT_PREPARED:
-			DtmLocalAbortPrepared(&dtm_tx, dtm_get_global_trans_id());
+			DtmLocalAbortPrepared(&dtm_tx);
 			break;
 
 		case XACT_EVENT_COMMIT_PREPARED:
-			DtmLocalCommitPrepared(&dtm_tx, dtm_get_global_trans_id());
+			DtmLocalCommitPrepared(&dtm_tx);
 			break;
 
 		case XACT_EVENT_PREPARE:
-			DtmLocalSavePreparedState(dtm_get_global_trans_id());
+			DtmLocalSavePreparedState(&dtm_tx);
 			DtmLocalEnd(&dtm_tx);
 			break;
 
@@ -679,6 +672,7 @@ DtmLocalExtend(DtmCurrentTrans * x, GlobalTransactionId gtid)
 			id->nSubxids = 0;
 			id->subxids = 0;
 		}
+		strncpy(x->gtid, gtid, MAX_GTID_SIZE);
 		SpinLockRelease(&local->lock);
 	}
 	x->is_global = true;
@@ -708,6 +702,7 @@ DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 		x->snapshot = global_cid;
 		x->is_global = true;
 	}
+	strncpy(x->gtid, gtid, MAX_GTID_SIZE);
 	SpinLockRelease(&local->lock);
 	if (global_cid < local_cid - DtmVacuumDelay * USEC)
 	{
@@ -813,13 +808,13 @@ DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
  * Mark tranasction as prepared
  */
 void
-DtmLocalCommitPrepared(DtmCurrentTrans * x, GlobalTransactionId gtid)
+DtmLocalCommitPrepared(DtmCurrentTrans * x)
 {
-	Assert(gtid != NULL);
+	Assert(x->gtid != NULL);
 
 	SpinLockAcquire(&local->lock);
 	{
-		DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, gtid, HASH_REMOVE, NULL);
+		DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, x->gtid, HASH_REMOVE, NULL);
 
 		Assert(id != NULL);
 
@@ -881,13 +876,13 @@ DtmLocalCommit(DtmCurrentTrans * x)
  * Mark tranasction as prepared
  */
 void
-DtmLocalAbortPrepared(DtmCurrentTrans * x, GlobalTransactionId gtid)
+DtmLocalAbortPrepared(DtmCurrentTrans * x)
 {
-	Assert(gtid != NULL);
+	Assert(x->gtid != NULL);
 
 	SpinLockAcquire(&local->lock);
 	{
-		DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, gtid, HASH_REMOVE, NULL);
+		DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, x->gtid, HASH_REMOVE, NULL);
 
 		Assert(id != NULL);
 
@@ -998,13 +993,13 @@ DtmGetCsn(TransactionId xid)
  * Save state of parepared transaction
  */
 void
-DtmLocalSavePreparedState(GlobalTransactionId gtid)
+DtmLocalSavePreparedState(DtmCurrentTrans * x)
 {
-	if (gtid != NULL)
+	if (x->gtid[0])
 	{
 		SpinLockAcquire(&local->lock);
 		{
-			DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, gtid, HASH_FIND, NULL);
+			DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, x->gtid, HASH_FIND, NULL);
 
 			if (id != NULL)
 			{

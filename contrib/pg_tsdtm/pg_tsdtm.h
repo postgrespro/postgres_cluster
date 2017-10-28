@@ -1,6 +1,8 @@
 #ifndef DTM_BACKEND_H
 #define DTM_BACKEND_H
 
+#define MAX_GTID_SIZE  16
+
 typedef int nodeid_t;
 typedef uint64 cid_t;
 
@@ -11,6 +13,7 @@ typedef struct
 	bool		is_prepared;
 	cid_t		cid;
 	cid_t		snapshot;
+	char		gtid[MAX_GTID_SIZE];
 }	DtmCurrentTrans;
 
 typedef char const *GlobalTransactionId;
@@ -37,10 +40,10 @@ cid_t		DtmLocalPrepare(GlobalTransactionId gtid, cid_t cid);
 void		DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid);
 
 /* Do local commit of global transaction */
-void		DtmLocalCommitPrepared(DtmCurrentTrans * x, GlobalTransactionId gtid);
+void		DtmLocalCommitPrepared(DtmCurrentTrans * x);
 
 /* Do local abort of global transaction */
-void		DtmLocalAbortPrepared(DtmCurrentTrans * x, GlobalTransactionId gtid);
+void		DtmLocalAbortPrepared(DtmCurrentTrans * x);
 
 /* Do local commit of global transaction */
 void		DtmLocalCommit(DtmCurrentTrans * x);
@@ -52,6 +55,6 @@ void		DtmLocalAbort(DtmCurrentTrans * x);
 void		DtmLocalEnd(DtmCurrentTrans * x);
 
 /* Save global preapred transactoin state */
-void		DtmLocalSavePreparedState(GlobalTransactionId gtid);
+void		DtmLocalSavePreparedState(DtmCurrentTrans * x);
 
 #endif
