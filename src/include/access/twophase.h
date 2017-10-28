@@ -58,6 +58,4 @@ extern void PrepareRedoAdd(char *buf, XLogRecPtr start_lsn,
 extern void PrepareRedoRemove(TransactionId xid, bool giveWarning);
 extern void restoreTwoPhaseData(void);
 
-extern const char *GetLockedGlobalTransactionId(void);
-
 #endif							/* TWOPHASE_H */

@@ -2414,13 +2414,3 @@ PrepareRedoRemove(TransactionId xid, bool giveWarning)
 
 	return;
 }
-
-
-/*
- * Return identified of current global transaction
- */
-const char*
-GetLockedGlobalTransactionId(void)
-{
-	return MyLockedGxact ? MyLockedGxact->gid : NULL;
-}
