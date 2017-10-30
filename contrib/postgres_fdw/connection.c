@@ -480,7 +480,7 @@ begin_remote_xact(ConnCacheEntry *entry)
 				if (!currentGlobalTransactionId)
 				{
 					char	   *resp;
-					res = PQexec(currentConnection, psprintf("SELECT public.pg_global_snaphot_create('%d.%d')",
+					res = PQexec(currentConnection, psprintf("SELECT pg_global_snaphot_create('%d.%d')",
 															 MyProcPid, ++currentLocalTransactionId));
 
 					if (PQresultStatus(res) != PGRES_TUPLES_OK)
@@ -494,7 +494,7 @@ begin_remote_xact(ConnCacheEntry *entry)
 					}
 					PQclear(res);
 				}
-				res = PQexec(entry->conn, psprintf("SELECT public.pg_global_snaphot_join(%llu, '%d.%d')", currentGlobalTransactionId, MyProcPid, currentLocalTransactionId));
+				res = PQexec(entry->conn, psprintf("SELECT pg_global_snaphot_join(%llu, '%d.%d')", currentGlobalTransactionId, MyProcPid, currentLocalTransactionId));
 
 				if (PQresultStatus(res) != PGRES_TUPLES_OK)
 				{
@@ -819,11 +819,11 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 
 					if (!RunDtmCommand(psprintf("PREPARE TRANSACTION '%d.%d'",
 									MyProcPid, currentLocalTransactionId)) ||
-						!RunDtmFunction(psprintf("SELECT public.pg_global_snaphot_begin_prepare('%d.%d')",
+						!RunDtmFunction(psprintf("SELECT pg_global_snaphot_begin_prepare('%d.%d')",
 									MyProcPid, currentLocalTransactionId)) ||
-						!RunDtmStatement(psprintf("SELECT public.pg_global_snaphot_prepare('%d.%d',0)",
+						!RunDtmStatement(psprintf("SELECT pg_global_snaphot_prepare('%d.%d',0)",
 												  MyProcPid, currentLocalTransactionId), PGRES_TUPLES_OK, DtmMaxCSN, &maxCSN) ||
-						!RunDtmFunction(psprintf("SELECT public.pg_global_snaphot_end_prepare('%d.%d',%lld)",
+						!RunDtmFunction(psprintf("SELECT pg_global_snaphot_end_prepare('%d.%d',%lld)",
 							MyProcPid, currentLocalTransactionId, maxCSN)) ||
 						!RunDtmCommand(psprintf("COMMIT PREPARED '%d.%d'",
 									  MyProcPid, currentLocalTransactionId)))

@@ -5482,9 +5482,9 @@ DATA(insert OID = 3435 ( pg_global_snaphot_join				 PGNSP PGUID 12 1 0 0 0 f f f
 DESCR("set given global snapshot for current transaction");
 DATA(insert OID = 3436 ( pg_global_snaphot_begin_prepare	 PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 2278 "25" _null_ _null_ _null_ _null_ _null_ pg_global_snaphot_begin_prepare _null_ _null_ _null_ ));
 DESCR("start prepare of global transaction");
-DATA(insert OID = 3437 ( pg_global_snaphot_prepare			 PGNSP PGUID 12 1 0 0 0 f f f f t f v u 2 0 20 "20 25" _null_ _null_ _null_ _null_ _null_ pg_global_snaphot_prepare _null_ _null_ _null_ ));
+DATA(insert OID = 3437 ( pg_global_snaphot_prepare			 PGNSP PGUID 12 1 0 0 0 f f f f t f v u 2 0 20 "25 20" _null_ _null_ _null_ _null_ _null_ pg_global_snaphot_prepare _null_ _null_ _null_ ));
 DESCR("prepare global transaction");
-DATA(insert OID = 3438 ( pg_global_snaphot_end_prepare		 PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 2278 "25" _null_ _null_ _null_ _null_ _null_ pg_global_snaphot_end_prepare _null_ _null_ _null_ ));
+DATA(insert OID = 3438 ( pg_global_snaphot_end_prepare		 PGNSP PGUID 12 1 0 0 0 f f f f t f v u 2 0 2278 "25 20" _null_ _null_ _null_ _null_ _null_ pg_global_snaphot_end_prepare _null_ _null_ _null_ ));
 DESCR("finalize global transaction");
 
 /*

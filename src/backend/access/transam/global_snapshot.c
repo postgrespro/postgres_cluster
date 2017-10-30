@@ -30,6 +30,7 @@
 #include "utils/hsearch.h"
 #include <utils/guc.h>
 #include "utils/tqual.h"
+#include "utils/builtins.h"
 
 #define DTM_HASH_INIT_SIZE	1000000
 #define INVALID_CID    0
@@ -83,7 +84,7 @@ typedef struct
 #define DTM_TRACE(x)
 /* #define DTM_TRACE(x) fprintf x */
 
-static shmem_startup_hook_type prev_shmem_startup_hook;
+// static shmem_startup_hook_type prev_shmem_startup_hook;
 static HTAB *xid2status;
 static HTAB *gtid2xid;
 static DtmNodeState *local;
@@ -126,7 +127,7 @@ void		_PG_init(void);
 void		_PG_fini(void);
 
 
-static void dtm_shmem_startup(void);
+// static void dtm_shmem_startup(void);
 static void dtm_xact_callback(XactEvent event, void *arg);
 static timestamp_t dtm_get_current_time();
 static void dtm_sleep(timestamp_t interval);
@@ -199,70 +200,6 @@ dtm_sync(cid_t global_cid)
 	return local_cid;
 }
 
-// void
-// _PG_init(void)
-// {
-// 	DTM_TRACE((stderr, "DTM_PG_init \n"));
-
-// 	/*
-// 	 * In order to create our shared memory area, we have to be loaded via
-// 	 * shared_preload_libraries.  If not, fall out without hooking into any of
-// 	 * the main system.  (We don't throw error here because it seems useful to
-// 	 * allow the pg_stat_statements functions to be created even when the
-// 	 * module isn't active.  The functions must protect themselves against
-// 	 * being called then, however.)
-// 	 */
-// 	if (!process_shared_preload_libraries_in_progress)
-// 		return;
-
-// 	RequestAddinShmemSpace(dtm_memsize());
-
-// 	DefineCustomIntVariable(
-// 							"dtm.vacuum_delay",
-// 					"Minimal age of records which can be vacuumed (seconds)",
-// 							NULL,
-// 							&DtmVacuumDelay,
-// 							10,
-// 							1,
-// 							INT_MAX,
-// 							PGC_BACKEND,
-// 							0,
-// 							NULL,
-// 							NULL,
-// 							NULL
-// 		);
-
-// 	DefineCustomBoolVariable(
-// 							 "dtm.record_commits",
-// 							 "Store information about committed global transactions in pg_committed_xacts table",
-// 							 NULL,
-// 							 &DtmRecordCommits,
-// 							 false,
-// 							 PGC_BACKEND,
-// 							 0,
-// 							 NULL,
-// 							 NULL,
-// 							 NULL
-// 		);
-
-
-// 	/*
-// 	 * Install hooks.
-// 	 */
-// 	prev_shmem_startup_hook = shmem_startup_hook;
-// 	shmem_startup_hook = dtm_shmem_startup;
-// }
-
-// /*
-//  * Module unload callback
-//  */
-// void
-// _PG_fini(void)
-// {
-// 	/* Uninstall hooks. */
-// 	shmem_startup_hook = prev_shmem_startup_hook;
-// }
-
 /*
  * Estimate shared memory space needed.
  */
@@ -276,23 +213,6 @@ GlobalSnapshotShmemSize(void)
 
 	return size;
 }
-
-
-/*
- * shmem_startup hook: allocate or attach to shared memory,
- * then load any pre-existing statistics from file.
- * Also create and load the query-texts file, which is expected to exist
- * (even if empty) while the module is enabled.
- */
-// static void
-// dtm_shmem_startup(void)
-// {
-// 	if (prev_shmem_startup_hook)
-// 	{
-// 		prev_shmem_startup_hook();
-// 	}
-// 	DtmInitialize();
-// }
 
 static void
 dtm_xact_callback(XactEvent event, void *arg)
@@ -331,20 +251,6 @@ dtm_xact_callback(XactEvent event, void *arg)
 			break;
 	}
 }
-
-/*
- *	***************************************************************************
- */
-
-// PG_MODULE_MAGIC;
-
-// PG_FUNCTION_INFO_V1(dtm_extend);
-// PG_FUNCTION_INFO_V1(dtm_access);
-// PG_FUNCTION_INFO_V1(dtm_begin_prepare);
-// PG_FUNCTION_INFO_V1(dtm_prepare);
-// PG_FUNCTION_INFO_V1(dtm_end_prepare);
-// PG_FUNCTION_INFO_V1(dtm_get_csn);
-
 
 /*
  *	***************************************************************************
@@ -459,7 +365,7 @@ Snapshot
 DtmGetSnapshot(Snapshot snapshot)
 {
 	snapshot = PgGetSnapshotData(snapshot);
-	// RecentGlobalDataXmin = RecentGlobalXmin = DtmAdjustOldestXid(RecentGlobalDataXmin);
+	RecentGlobalDataXmin = RecentGlobalXmin = DtmAdjustOldestXid(RecentGlobalDataXmin);
 	return snapshot;
 }
 
@@ -468,7 +374,7 @@ DtmGetOldestXmin(Relation rel, int flags)
 {
 	TransactionId xmin = PgGetOldestXmin(rel, flags);
 
-	// xmin = DtmAdjustOldestXid(xmin);
+	xmin = DtmAdjustOldestXid(xmin);
 	return xmin;
 }
 
@@ -581,7 +487,8 @@ DtmLocalBegin(DtmCurrentTrans * x)
 	if (!TransactionIdIsValid(x->xid))
 	{
 		SpinLockAcquire(&local->lock);
-		x->xid = GetCurrentTransactionIdIfAny();
+		// x->xid = GetCurrentTransactionIdIfAny();
+		x->xid = GetCurrentTransactionId();
 		// Assert(TransactionIdIsValid(x->xid));
 		x->cid = INVALID_CID;
 		x->is_global = false;
@@ -662,7 +569,6 @@ DtmLocalBeginPrepare(GlobalTransactionId gtid)
 
 		id = (DtmTransId *) hash_search(gtid2xid, gtid, HASH_FIND, NULL);
 		Assert(id != NULL);
-		id->xid = GetCurrentTransactionId();
 		Assert(TransactionIdIsValid(id->xid));
 		ts = (DtmTransStatus *) hash_search(xid2status, &id->xid, HASH_ENTER, NULL);
 		ts->status = TRANSACTION_STATUS_IN_PROGRESS;
@@ -706,7 +612,6 @@ DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
 		int			i;
 
 		id = (DtmTransId *) hash_search(gtid2xid, gtid, HASH_FIND, NULL);
-		Assert(id != NULL);
 
 		ts = (DtmTransStatus *) hash_search(xid2status, &id->xid, HASH_FIND, NULL);
 		Assert(ts != NULL);
@@ -748,6 +653,9 @@ DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
 void
 DtmLocalCommitPrepared(DtmCurrentTrans * x)
 {
+	// if (!x->is_global)
+	// 	return;
+
 	Assert(x->gtid != NULL);
 
 	SpinLockAcquire(&local->lock);
@@ -772,6 +680,9 @@ DtmLocalCommitPrepared(DtmCurrentTrans * x)
 void
 DtmLocalCommit(DtmCurrentTrans * x)
 {
+	// if (!x->is_global)
+	// 	return;
+
 	SpinLockAcquire(&local->lock);
 	if (TransactionIdIsValid(x->xid))
 	{
@@ -816,8 +727,8 @@ DtmLocalCommit(DtmCurrentTrans * x)
 void
 DtmLocalAbortPrepared(DtmCurrentTrans * x)
 {
-	if (x->is_global)
-		return;
+	// if (!x->is_global)
+	// 	return;
 
 	Assert(x->gtid != NULL);
 
@@ -826,15 +737,10 @@ DtmLocalAbortPrepared(DtmCurrentTrans * x)
 		DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, x->gtid, HASH_REMOVE, NULL);
 
 		Assert(id != NULL);
-
-		if (id != NULL)
-		{
-			x->is_global = true;
-			x->is_prepared = true;
-			x->xid = id->xid;
-			free(id->subxids);
-		}
-
+		x->is_global = true;
+		x->is_prepared = true;
+		x->xid = id->xid;
+		free(id->subxids);
 		DTM_TRACE((stderr, "Global transaction %u(%s) is preaborted\n", x->xid, gtid));
 	}
 	SpinLockRelease(&local->lock);
@@ -846,8 +752,8 @@ DtmLocalAbortPrepared(DtmCurrentTrans * x)
 void
 DtmLocalAbort(DtmCurrentTrans * x)
 {
-	if (x->is_global)
-		return;
+	// if (!x->is_global)
+	// 	return;
 
 	SpinLockAcquire(&local->lock);
 	{
@@ -942,6 +848,8 @@ DtmGetCsn(TransactionId xid)
 void
 DtmLocalSavePreparedState(DtmCurrentTrans * x)
 {
+	// x->is_prepared = true;
+
 	if (x->gtid[0])
 	{
 		SpinLockAcquire(&local->lock);
@@ -999,7 +907,7 @@ DtmAddSubtransactions(DtmTransStatus * ts, TransactionId *subxids, int nSubxids)
 Datum
 pg_global_snaphot_create(PG_FUNCTION_ARGS)
 {
-	GlobalTransactionId gtid = PG_GETARG_CSTRING(0);
+	GlobalTransactionId gtid = text_to_cstring(PG_GETARG_TEXT_PP(0));
 	cid_t		cid = DtmLocalExtend(&dtm_tx, gtid);
 
 	DTM_TRACE((stderr, "Backend %d extends transaction %u(%s) to global with cid=%lu\n", getpid(), dtm_tx.xid, gtid, cid));
@@ -1010,7 +918,7 @@ Datum
 pg_global_snaphot_join(PG_FUNCTION_ARGS)
 {
 	cid_t		cid = PG_GETARG_INT64(0);
-	GlobalTransactionId gtid = PG_GETARG_CSTRING(1);
+	GlobalTransactionId gtid = text_to_cstring(PG_GETARG_TEXT_PP(1));
 
 	DTM_TRACE((stderr, "Backend %d joins transaction %u(%s) with cid=%lu\n", getpid(), dtm_tx.xid, gtid, cid));
 	cid = DtmLocalAccess(&dtm_tx, gtid, cid);
@@ -1020,7 +928,7 @@ pg_global_snaphot_join(PG_FUNCTION_ARGS)
 Datum
 pg_global_snaphot_begin_prepare(PG_FUNCTION_ARGS)
 {
-	GlobalTransactionId gtid = PG_GETARG_CSTRING(0);
+	GlobalTransactionId gtid = text_to_cstring(PG_GETARG_TEXT_PP(0));
 
 	DtmLocalBeginPrepare(gtid);
 	DTM_TRACE((stderr, "Backend %d begins prepare of transaction %s\n", getpid(), gtid));
@@ -1030,7 +938,7 @@ pg_global_snaphot_begin_prepare(PG_FUNCTION_ARGS)
 Datum
 pg_global_snaphot_prepare(PG_FUNCTION_ARGS)
 {
-	GlobalTransactionId gtid = PG_GETARG_CSTRING(0);
+	GlobalTransactionId gtid = text_to_cstring(PG_GETARG_TEXT_PP(0));
 	cid_t		cid = PG_GETARG_INT64(1);
 
 	cid = DtmLocalPrepare(gtid, cid);
@@ -1041,7 +949,7 @@ pg_global_snaphot_prepare(PG_FUNCTION_ARGS)
 Datum
 pg_global_snaphot_end_prepare(PG_FUNCTION_ARGS)
 {
-	GlobalTransactionId gtid = PG_GETARG_CSTRING(0);
+	GlobalTransactionId gtid = text_to_cstring(PG_GETARG_TEXT_PP(0));
 	cid_t		cid = PG_GETARG_INT64(1);
 
 	DTM_TRACE((stderr, "Backend %d ends prepare of transactions %s with cid=%lu\n", getpid(), gtid, cid));
