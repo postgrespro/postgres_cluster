@@ -450,7 +450,6 @@ bool		default_with_oids = false;
 bool		SQL_inheritance = true;
 bool        cfs_gc_enabled = true;
 
-bool		Password_encryption = true;
 bool		session_auth_is_superuser;
 
 int			log_min_error_statement = ERROR;
