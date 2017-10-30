@@ -5475,6 +5475,18 @@ DESCR("list files in the log directory");
 DATA(insert OID = 3354 (  pg_ls_waldir				 PGNSP PGUID 12 10 20 0 0 f f f f t t v s 0 0 2249 "" "{25,20,1184}" "{o,o,o}" "{name,size,modification}" _null_ _null_ pg_ls_waldir _null_ _null_ _null_ ));
 DESCR("list of files in the WAL directory");
 
+/* global snapshot management functions */
+DATA(insert OID = 3434 ( pg_global_snaphot_create			 PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 20 "25" _null_ _null_ _null_ _null_ _null_ pg_global_snaphot_create _null_ _null_ _null_ ));
+DESCR("create global transaction snapshot");
+DATA(insert OID = 3435 ( pg_global_snaphot_join				 PGNSP PGUID 12 1 0 0 0 f f f f t f v u 2 0 20 "20 25" _null_ _null_ _null_ _null_ _null_ pg_global_snaphot_join _null_ _null_ _null_ ));
+DESCR("set given global snapshot for current transaction");
+DATA(insert OID = 3436 ( pg_global_snaphot_begin_prepare	 PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 2278 "25" _null_ _null_ _null_ _null_ _null_ pg_global_snaphot_begin_prepare _null_ _null_ _null_ ));
+DESCR("start prepare of global transaction");
+DATA(insert OID = 3437 ( pg_global_snaphot_prepare			 PGNSP PGUID 12 1 0 0 0 f f f f t f v u 2 0 20 "20 25" _null_ _null_ _null_ _null_ _null_ pg_global_snaphot_prepare _null_ _null_ _null_ ));
+DESCR("prepare global transaction");
+DATA(insert OID = 3438 ( pg_global_snaphot_end_prepare		 PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 2278 "25" _null_ _null_ _null_ _null_ _null_ pg_global_snaphot_end_prepare _null_ _null_ _null_ ));
+DESCR("finalize global transaction");
+
 /*
  * Symbolic values for provolatile column: these indicate whether the result
  * of a function is dependent *only* on the values of its explicit arguments,

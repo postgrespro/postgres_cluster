@@ -12,7 +12,7 @@ DATA = postgres_fdw--1.0.sql
 
 REGRESS = postgres_fdw
 
-EXTRA_INSTALL += contrib/pg_tsdtm
+# EXTRA_INSTALL += contrib/pg_tsdtm
 
 ifdef USE_PGXS
 PG_CONFIG = pg_config

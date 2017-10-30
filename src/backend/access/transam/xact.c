@@ -4851,8 +4851,9 @@ EstimateTransactionStateSpace(void)
 		nxids = add_size(nxids, s->nChildXids);
 	}
 
-	nxids = add_size(nxids, nParallelCurrentXids);
-	return mul_size(nxids, sizeof(TransactionId));
+	nxids = add_size(nxids, nParallelCurrentXids);	
+	nxids = mul_size(nxids, sizeof(TransactionId));
+	return add_size(nxids, TM->GetTransactionStateSize());
 }
 
 /*
