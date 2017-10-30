@@ -308,7 +308,7 @@
           When the node gets synchronized up to the minimum recovery
           lag, all the cluster nodes get locked for write transactions to allow the
           recovery process to finish. By default, the minimum recovery
-          lag is 100KB. You can change this value in the
+          lag is 10MB. You can change this value in the
           <varname>multimaster.min_recovery_lag</varname> variable.
         </para>
       </listitem>
@@ -574,7 +574,7 @@ SELECT mtm.get_cluster_state();
           <para>
             <varname>multimaster.min_recovery_lag</varname> &mdash; sets the
             minimal WAL lag between the node to be restored and the current cluster state. 
-            By default, <varname>multimaster.min_recovery_lag</varname> is set to 100KB.
+            By default, <varname>multimaster.min_recovery_lag</varname> is set to 10MB.
             When the disconnected node is fast-forwarded up to the
             <varname>multimaster.min_recovery_lag</varname> threshold,
             <filename>multimaster</filename> stops all new commits to the
@@ -596,7 +596,7 @@ SELECT mtm.get_cluster_state();
       </itemizedlist>
       <para>
         By default, <varname>multimaster.max_recovery_lag</varname> is
-        set to 100MB. Setting
+        set to 1GB. Setting
         <varname>multimaster.max_recovery_lag</varname> to a larger
         value increases the timeframe for automatic recovery, but
         requires more disk space for WAL collection.
@@ -1032,13 +1032,13 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
   <varlistentry><term><varname>multimaster.min_recovery_lag</varname><indexterm><primary><varname>multimaster.min_recovery_lag</varname></primary></indexterm></term><listitem><para>
     Minimal WAL lag
     between the node to be restored and the current cluster state, in
-    bytes. When this threshold is reached during node recovery, the
+    kB. When this threshold is reached during node recovery, the
     cluster is locked for write transactions until the recovery is
-    complete. </para><para>Default: 100000
+    complete. </para><para>Default: 10MB
   </para></listitem></varlistentry>
   <varlistentry><term><varname>multimaster.max_recovery_lag</varname><indexterm><primary><varname>multimaster.max_recovery_lag</varname></primary></indexterm></term><listitem><para>
     Maximal WAL lag
-    size, in bytes. When a node is disconnected from the cluster, other
+    size, in kB. When a node is disconnected from the cluster, other
     nodes copy WALs for all new transactions into the replication slot of
     this node. Upon reaching the
     <varname>multimaster.max_recovery_lag</varname> value, the
@@ -1048,7 +1048,7 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
     the data from one of the alive nodes using
     <application>pg_basebackup</application> or a similar tool. If you set this
     variable to zero, replication slot will not be dropped. </para><para>Default:
-    100000000
+    1GB
   </para></listitem></varlistentry>
   <varlistentry id="ignore-tables-without-pk"><term><varname>multimaster.ignore_tables_without_pk</varname><indexterm><primary><varname>multimaster.ignore_tables_without_pk</varname></primary></indexterm></term><listitem><para>
     Boolean.
@@ -1146,9 +1146,9 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
       </indexterm>
     </term>
     <listitem>
-      <para>The maximal size of transaction, in MB. When this threshold is reached, the transaction is written to the disk.
+      <para>The maximal size of transaction, in kB. When this threshold is reached, the transaction is written to the disk.
       </para>
-      <para>Default: 100
+      <para>Default: 100MB
       </para>
     </listitem>
   </varlistentry>
