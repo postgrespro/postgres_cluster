@@ -221,8 +221,10 @@ replorigin_by_name(char *roname, bool missing_ok)
 		ReleaseSysCache(tuple);
 	}
 	else if (!missing_ok)
-		elog(ERROR, "cache lookup failed for replication origin '%s'",
-			 roname);
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("replication origin \"%s\" does not exist",
+						roname)));
 
 	return roident;
 }
@@ -422,8 +424,10 @@ replorigin_by_oid(RepOriginId roident, bool missing_ok, char **roname)
 		*roname = NULL;
 
 		if (!missing_ok)
-			elog(ERROR, "cache lookup failed for replication origin with oid %u",
-				 roident);
+			ereport(ERROR,
+					(errcode(ERRCODE_UNDEFINED_OBJECT),
+					 errmsg("replication origin with OID %u does not exist",
+							roident)));
 
 		return false;
 	}
@@ -1029,13 +1033,20 @@ replorigin_session_setup(RepOriginId node)
 		if (curstate->roident != node)
 			continue;
 
-		else if (curstate->acquired_by != 0)
-		{
-			ereport(ERROR,
-					(errcode(ERRCODE_OBJECT_IN_USE),
-			 errmsg("replication identifier %d is already active for PID %d",
-					curstate->roident, curstate->acquired_by)));
-		}
+		/*
+		 * MTM-CRUTCH.
+		 *
+		 * Allow multiple backends to setup same replication session.
+		 *
+		 * else if (curstate->acquired_by != 0)
+		 * {
+		 * 	ereport(ERROR,
+		 * 			(errcode(ERRCODE_OBJECT_IN_USE),
+		 * 	 errmsg("replication identifier %d is already active for PID %d",
+		 * 			curstate->roident, curstate->acquired_by)));
+		 * }
+		 *
+		 */
 
 		/* ok, found slot */
 		session_replication_state = curstate;

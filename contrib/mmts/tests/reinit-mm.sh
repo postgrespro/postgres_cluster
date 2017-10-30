@@ -1,13 +1,19 @@
+CURPATH=`pwd`
+BASEDIR=$CURPATH/../../..
+export PATH=$BASEDIR/tmp_install/usr/local/pgsql/bin/:$PATH
+export DESTDIR=$BASEDIR/tmp_install
+
 n_nodes=3
-export PATH=~/code/postgres_cluster/tmp_install/bin/:$PATH
 ulimit -c unlimited
 pkill -9 postgres
 
-cd ~/code/postgres_cluster/contrib/mmts/
+cd $BASEDIR
+make install
+
+cd $BASEDIR/contrib/mmts
 make clean && make install
 
-cd ~/code/postgres_cluster/contrib/mmts/tests
-
+cd $BASEDIR/contrib/mmts/tests
 
 rm -fr node? *.log
 conn_str=""
@@ -21,6 +27,7 @@ do
     initdb node$i
     pg_ctl -w -D node$i -l node$i.log start
     createdb regression
+    # psql regression -c "create table t(id int primary key, v int); insert into t values($i,$i);"
     pg_ctl -w -D node$i -l node$i.log stop
 done
 
@@ -55,6 +62,7 @@ do
         multimaster.arbiter_port = $arbiter_port
         multimaster.min_2pc_timeout = 10000000
         multimaster.trans_spill_threshold = 100
+        multimaster.monotonic_sequences = true
 SQL
     cp pg_hba.conf node$i
     pg_ctl -w -D node$i -l node$i.log start

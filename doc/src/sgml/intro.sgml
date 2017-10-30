@@ -86,7 +86,7 @@
 
   <para>
    <productname>&productname;</productname> is an object-relational
-   database management system (<acronym>ORDBMS</acronym>), developed by Postgres Professional on the base of<ulink
+   database management system (<acronym>ORDBMS</acronym>), developed by Postgres Professional on the base of <ulink
    url="http://postgresql.org"><productname>PostgreSQL</productname></ulink>, which is in turn based on
    <ulink url="http://db.cs.berkeley.edu/postgres.html">
    <productname>POSTGRES, Version 4.2</productname></ulink>,

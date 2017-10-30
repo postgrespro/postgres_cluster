@@ -57,6 +57,7 @@
 #include "multimaster.h"
 #include "pglogical_relid_map.h"
 #include "spill.h"
+#include "state.h"
 
 typedef struct TupleData
 {
@@ -657,6 +658,7 @@ process_remote_commit(StringInfo in)
 	csn_t       csn;
 	lsn_t       end_lsn;
 	lsn_t       origin_lsn;
+	lsn_t       commit_lsn;
 	int         origin_node;
 	char        gid[MULTIMASTER_MAX_GID_SIZE];
 
@@ -667,7 +669,7 @@ process_remote_commit(StringInfo in)
 	MtmReplicationNodeId = pq_getmsgbyte(in);
 
 	/* read fields */
-	pq_getmsgint64(in); /* commit_lsn */
+	commit_lsn = pq_getmsgint64(in); /* commit_lsn */
 	end_lsn = pq_getmsgint64(in); /* end_lsn */
 	replorigin_session_origin_timestamp = pq_getmsgint64(in); /* commit_time */
 
@@ -683,7 +685,7 @@ process_remote_commit(StringInfo in)
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			strncpy(gid, pq_getmsgstring(in), sizeof gid);
-			MTM_LOG2("%d: PGLOGICAL_PRECOMMIT_PREPARED %s", MyProcPid, gid);
+			MTM_LOG2("%d: PGLOGICAL_PRECOMMIT_PREPARED %s, (%llx,%llx,%llx)", MyProcPid, gid, commit_lsn, end_lsn, origin_lsn);
 			MtmBeginSession(origin_node);
 			MtmPrecommitTransaction(gid);
 			MtmEndSession(origin_node, true);
@@ -691,7 +693,7 @@ process_remote_commit(StringInfo in)
 		}
 		case PGLOGICAL_COMMIT:
 		{
-			MTM_LOG2("%d: PGLOGICAL_COMMIT commit", MyProcPid);
+			MTM_LOG1("%d: PGLOGICAL_COMMIT %s, (%llx,%llx,%llx)", MyProcPid, gid, commit_lsn, end_lsn, origin_lsn);
 			if (IsTransactionState()) {
 				Assert(TransactionIdIsValid(MtmGetCurrentTransactionId()));
 				MtmBeginSession(origin_node);
@@ -704,12 +706,12 @@ process_remote_commit(StringInfo in)
 		{
 			Assert(IsTransactionState() && TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			strncpy(gid, pq_getmsgstring(in), sizeof gid);
+			MTM_LOG2("%d: PGLOGICAL_PREPARE %s, (%llx,%llx,%llx)", MyProcPid, gid, commit_lsn, end_lsn, origin_lsn);
 			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_IN_PROGRESS) == TRANSACTION_STATUS_ABORTED) { 
 				MTM_LOG1("Avoid prepare of previously aborted global transaction %s", gid);	
 				AbortCurrentTransaction();
 			} else { 				
 				/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
-				MTM_LOG2("PGLOGICAL_PREPARE commit: gid=%s", gid);
 				BeginTransactionBlock(false);
 				CommitTransactionCommand();
 				StartTransactionCommand();
@@ -724,6 +726,7 @@ process_remote_commit(StringInfo in)
 					MTM_LOG1("Perform delayed rollback of prepared global transaction %s", gid);	
 					StartTransactionCommand();
 					MtmSetCurrentTransactionGID(gid);
+					TXFINISH("%s ABORT, PGLOGICAL_PREPARE", gid);
 					FinishPreparedTransaction(gid, false);
 					CommitTransactionCommand();					
 					Assert(!MtmTransIsActive());
@@ -737,19 +740,23 @@ process_remote_commit(StringInfo in)
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			csn = pq_getmsgint64(in);
 			/*
-			 * Since our recovery method allows undershoot of csn, we can receive
+			 * Since our recovery method allows undershoot of lsn, we can receive
 			 * some already committed transactions. And in case of donor node reboot
 			 * xid<->csn mapping for them will be lost. However we must filter such
 			 * transactions in walreceiver before this code. --sk
 			 */
 			Assert(csn);
 			strncpy(gid, pq_getmsgstring(in), sizeof gid);
-			MTM_LOG2("PGLOGICAL_COMMIT_PREPARED commit: csn=%lld, gid=%s, lsn=%llx", csn, gid, end_lsn);
+			MTM_LOG2("%d: PGLOGICAL_COMMIT_PREPARED %s, (%llx,%llx,%llx)", MyProcPid, gid, commit_lsn, end_lsn, origin_lsn);
 			MtmResetTransaction();
 			StartTransactionCommand();
 			MtmBeginSession(origin_node);
-			MtmSetCurrentTransactionCSN(csn);
+			if (csn == INVALID_CSN && Mtm->status == MTM_RECOVERY)
+				MtmSetCurrentTransactionCSN(MtmAssignCSN());
+			else
+				MtmSetCurrentTransactionCSN(csn);
 			MtmSetCurrentTransactionGID(gid);
+			TXFINISH("%s COMMIT, PGLOGICAL_COMMIT_PREPARED csn=%lld", gid, csn);
 			FinishPreparedTransaction(gid, true);
 			MTM_LOG2("Distributed transaction %s is committed", gid);
 			CommitTransactionCommand();
@@ -869,7 +876,7 @@ process_remote_insert(StringInfo s, Relation rel)
 	if (strcmp(RelationGetRelationName(rel), MULTIMASTER_LOCAL_TABLES_TABLE) == 0 &&
 		strcmp(get_namespace_name(RelationGetNamespace(rel)), MULTIMASTER_SCHEMA_NAME) == 0)
 	{
-		MtmMakeTableLocal(TextDatumGetCString(new_tuple.values[0]), TextDatumGetCString(new_tuple.values[1]));
+		MtmMakeTableLocal((char*)DatumGetPointer(new_tuple.values[0]), (char*)DatumGetPointer(new_tuple.values[1]));
 	}
 		
     ExecResetTupleTable(estate->es_tupleTable, true);
@@ -968,10 +975,10 @@ process_remote_update(StringInfo s, Relation rel)
 		{
 			StringInfoData o;
 			initStringInfo(&o);
-			tuple_to_stringinfo(&o, RelationGetDescr(rel), oldslot->tts_tuple);
+			tuple_to_stringinfo(&o, RelationGetDescr(rel), oldslot->tts_tuple, false);
 			appendStringInfo(&o, " to");
-			tuple_to_stringinfo(&o, RelationGetDescr(rel), remote_tuple);
-			MTM_LOG1(DEBUG1, "UPDATE:%s", o.data);
+			tuple_to_stringinfo(&o, RelationGetDescr(rel), remote_tuple, false);
+			MTM_LOG1("%lu: UPDATE: %s", GetCurrentTransactionId(), o.data);
 			resetStringInfo(&o);
 		}
 #endif
@@ -1190,7 +1197,7 @@ void MtmExecutor(void* work, size_t size)
 			}
 			case 'Z':
 			{
-				MtmRecoveryCompleted();
+				MtmStateProcessEvent(MTM_RECOVERY_FINISH2);
 				inside_transaction = false;
 				break;
 			}

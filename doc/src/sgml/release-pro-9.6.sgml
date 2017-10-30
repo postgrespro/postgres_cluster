@@ -2,10 +2,10 @@
 <!-- See header comment in release.sgml about typical markup -->
 <sect1 id="release-pro-9-6-5-1">
   <title>Postgres Pro 9.6.5.1</title>
-  <note>
-    <title>Release Date</title>
-    <simpara>2017-08-31</simpara>
-  </note>
+  <formalpara>
+    <title>Release date:</title>
+    <para>2017-08-31</para>
+  </formalpara>
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>Postgres Pro</productname>
@@ -93,10 +93,10 @@
 </sect1>
 <sect1 id="release-pro-9-6-4-1">
   <title>Postgres Pro 9.6.4.1</title>
-  <note>
-    <title>Release Date</title>
-    <simpara>2017-08-14</simpara>
-  </note>
+  <formalpara>
+    <title>Release date:</title>
+    <para>2017-08-14</para>
+  </formalpara>
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>Postgres Pro</productname>
@@ -141,10 +141,10 @@
 </sect1>
 <sect1 id="release-pro-9-6-3-3">
   <title>Postgres Pro 9.6.3.3</title>
-  <note>
-    <title>Release Date</title>
-    <simpara>2017-07-27</simpara>
-  </note>
+  <formalpara>
+    <title>Release date:</title>
+    <para>2017-07-27</para>
+  </formalpara>
   <sect2>
   <title>Overview</title>
     <para>This release is based on <productname>Postgres Pro</productname>
@@ -166,10 +166,10 @@
 </sect1>
 <sect1 id="release-pro-9-6-3-2">
   <title>Postgres Pro 9.6.3.2</title>
-  <note>
-    <title>Release Date</title>
-    <simpara>2017-07-12</simpara>
-  </note>
+  <formalpara>
+    <title>Release date:</title>
+    <para>2017-07-12</para>
+  </formalpara>
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>Postgres Pro</productname>
@@ -228,10 +228,10 @@
 </sect1>
 <sect1 id="release-pro-9-6-3-1">
   <title>Postgres Pro 9.6.3.1</title>
-  <note>
-    <title>Release Date</title>
-    <simpara>2017-05-15</simpara>
-  </note>
+  <formalpara>
+    <title>Release date:</title>
+    <para>2017-05-15</para>
+  </formalpara>
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>Postgres Pro</productname>
@@ -303,10 +303,10 @@
 </sect1>
 <sect1 id="release-pro-9-6-2-1">
   <title>Postgres Pro 9.6.2.1</title>
-  <note>
-    <title>Release Date</title>
-    <simpara>2017-02-22</simpara>
-  </note>
+  <formalpara>
+    <title>Release date:</title>
+    <para>2017-02-22</para>
+  </formalpara>
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>Postgres Pro</productname>
@@ -394,10 +394,10 @@
 </sect1>
 <sect1 id="release-pro-9-6-1-2">
   <title>Postgres Pro 9.6.1.2</title>
-  <note>
-    <title>Release Date</title>
-    <simpara>2016-12-14</simpara>
-  </note>
+  <formalpara>
+    <title>Release date:</title>
+    <para>2016-12-14</para>
+  </formalpara>
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>Postgres Pro</productname>
@@ -471,10 +471,10 @@
 </sect1>
 <sect1 id="release-pro-9-6-1-1">
   <title>Postgres Pro 9.6.1.1</title>
-  <note>
-    <title>Release Date</title>
-    <simpara>2016-11-01</simpara>
-  </note>
+  <formalpara>
+    <title>Release date:</title>
+    <para>2016-11-01</para>
+  </formalpara>
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>PostgreSQL</productname>
@@ -515,10 +515,10 @@
 </sect1>
 <sect1 id="release-pro-9-6-0-1">
   <title>Postgres Pro 9.6.0.1</title>
-  <note>
-    <title>Release Date</title>
-    <simpara>2016-10-12</simpara>
-  </note>
+  <formalpara>
+    <title>Release date:</title>
+    <para>2016-10-12</para>
+  </formalpara>
   <sect2>
     <title>Overview</title>
     <para>This release is based on <productname>PostgreSQL</productname>

@@ -143,7 +143,7 @@
       </listitem>
     </itemizedlist>
 <para>If you have any data that must be present on one of the nodes only, you can exclude a particular table from replication, as follows:
-    <programlisting><function>mtm.make_table_local</function>('table_name') </programlisting> 
+<programlisting>SELECT mtm.make_table_local('table_name') </programlisting> 
     </para>
   </sect2>
     
@@ -266,6 +266,12 @@
       of 2<replaceable>N</replaceable>+1 nodes can tolerate <replaceable>N</replaceable> node failures and stay alive if any
       <replaceable>N</replaceable>+1 nodes are alive and connected to each other.
     </para>
+    <tip>
+        <para>
+          For clusters with an even number of nodes, you can override this
+          behavior. For details, see <xref linkend="multimaster-quorum-settings">.
+        </para>
+    </tip>
     <para>
       In case of a partial network split when different nodes have
       different connectivity, <filename>multimaster</filename> finds a
@@ -274,18 +280,11 @@
       C, but node B cannot access node C, <filename>multimaster</filename>
       isolates node C to ensure data consistency on nodes A and B.
     </para>
-    <note>
-        <para>
-          If you try to access a disconnected node, <filename>multimaster</filename> returns an error
-          message indicating the current status of the node. To prevent stale reads, read-only queries are also forbidden.
-          Additionally, you can break connections between the disconnected node and the clients using the
-          <link linkend="mtm-break-connection"><varname>multimaster.break_connection</varname></link> variable.
-        </para>
-    </note>
     <para>
-      If required, you can override this behavior for one of the nodes using the
-      <link linkend="mtm-major-node"><varname>multimaster.major_node</varname></link> variable.
-      In this case, the node will continue working even if it is isolated.
+      If you try to access a disconnected node, <filename>multimaster</filename> returns an error
+      message indicating the current status of the node. To prevent stale reads, read-only queries are also forbidden.
+      Additionally, you can break connections between the disconnected node and the clients using the
+      <link linkend="mtm-break-connection"><varname>multimaster.break_connection</varname></link> variable.
     </para>
     <para>
       Each node maintains a data structure that keeps the information about the state of all
@@ -339,7 +338,7 @@
       <para>
         To use <filename>multimaster</filename>, you need to install
         <productname>&productname;</productname> on all nodes of your cluster. <productname>&productname;</productname> includes all the required dependencies and
-        extensions. 
+        extensions.
       </para>
   <sect3 id="multimaster-setting-up-a-multi-master-cluster">
     <title>Setting up a Multi-Master Cluster</title>
@@ -606,6 +605,133 @@ SELECT mtm.get_cluster_state();
       <para><link linkend="multimaster-guc-variables">GUC Variables</link></para>
     </sect4>
   </sect3>
+  <sect3 id="multimaster-quorum-settings">
+    <title>Defining Quorum Settings for Clusters with an Even Number of Nodes</title>
+    <para>
+      By default, <filename>multimaster</filename> uses a majority-based
+      algorithm to determine whether the cluster nodes have a quorum: a cluster
+      can only continue working if the majority of its nodes are alive and can
+      access each other. For clusters with an even number of nodes, this
+      approach is not optimal. For example, if a network failure splits the
+      cluster into equal parts, or one of the nodes fails in a two-node
+      cluster, all the nodes stop accepting queries, even though at least
+      half of the cluster nodes are running normally.
+      </para>
+      <para>
+      To enable a smooth failover for such cases, you can modify the
+      <filename>multimaster</filename> majority-based behavior using one
+      of the following options:
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>
+            <link linkend="setting-up-a-referee">Set up a standalone <firstterm>referee</> node</link>
+            to assign the quorum status to a subset of nodes that constitutes half of the cluster.
+          </para>
+        </listitem>
+        <listitem>
+          <para>
+           <link linkend="configuring-the-major-node">Choose the <firstterm>major node</></link>
+           that continues working regardless of the status of other nodes.
+           Use this option in two-node cluster configurations only.
+          </para>
+        </listitem>
+      </itemizedlist>
+      <important>
+        <para>
+          To avoid split-brain problems, do not use the major node together
+          with a referee in the same cluster.
+        </para>
+      </important>
+      </para>
+    <sect4 id="setting-up-a-referee">
+      <title>Setting up a Standalone Referee Node</title>
+    <para>
+      A <firstterm>referee</> is a voting node used to determine which subset
+      of nodes has a quorum if the cluster is split into equal parts. The
+      referee node does not store any cluster data, so it is not
+      resource-intensive and can be configured on virtually any system with
+      <productname>&productname;</productname> installed.
+    </para>
+    <para>
+      To set up a referee for your cluster:
+<orderedlist>
+  <listitem>
+    <para>
+      Install <productname>&productname;</productname> on the node you are
+      going to make a referee and create the <filename>referee</filename>
+      extension:
+      <programlisting>
+CREATE EXTENSION referee;
+</programlisting>
+    </para>
+  </listitem>
+  <listitem>
+    <para>
+      Make sure the <filename>pg_hba.conf</filename> file allows
+      access to the referee node.
+    </para>
+  </listitem>
+  <listitem>
+    <para>
+     On all your cluster nodes, specify the referee connection string
+     in the <filename>postgresql.conf</> file:
+      <programlisting>
+multimaster.referee_connstring = <replaceable>connstring</>
+</programlisting>
+where <replaceable>connstring</> holds <link linkend="libpq-paramkeywords">libpq options</link>
+required to access the referee.
+    </para>
+  </listitem>
+</orderedlist>
+</para>
+<para>
+The first subset of nodes that gets connected to the referee wins the voting
+and continues working. The referee keeps the voting result until all the
+other cluster nodes get online again. Then the result is discarded, and 
+a new winner can be chosen in case of another network failure.
+</para>
+    <para>
+      To avoid split-brain problems, you can only have a single referee
+      in your cluster. Do not set up a referee if you have already
+      <link linkend="configuring-the-major-node">configured the major node</link>.
+    </para>
+    </sect4>
+    <sect4 id="configuring-the-major-node">
+    <title>Configuring the Major Node</title>
+    <para>
+        If you configure one of the nodes to be the major one, this node
+        will continue accepting queries even if it is isolated by a
+        network failure, or other nodes get broken. This setting is useful
+        in a two-node cluster configuration, or to quickly restore a
+        single node in a broken cluster.
+    </para>
+    <important>
+      <para>
+        If your cluster has more than two nodes, promoting one of the
+        nodes to the major status can lead to split-brain problems
+        in case of network failures, and reduce the number of possible
+        failover options. Consider
+        <link linkend="setting-up-a-referee">setting up a standalone referee</link>
+        instead.
+      </para>
+    </important>
+    <para>
+      To make one of the nodes major, enable the
+      <literal>multimaster.major_node</literal> parameter on this node:
+<programlisting>
+ALTER SYSTEM SET multimaster.major_node TO on
+SELECT pg_reload_conf();
+</programlisting>
+    </para>
+    <para>
+        Do not set the <varname>major_node</varname> parameter on more
+        than one cluster node. When enabled on several nodes, it can
+        cause the split-brain problem. If you have already set up a
+        referee for your cluster, the <varname>major_node</varname>
+        option is forbidden.
+    </para>
+    </sect4>
+  </sect3>
   </sect2>
   <sect2 id="multimaster-administration"><title>Multi-Master Cluster Administration</title>
   <itemizedlist>
@@ -795,7 +921,7 @@ SELECT mtm.stop_node(3);
       set to <literal>true</literal>:
     </para>
     <programlisting>
-SELECT mtm.stop_node(3, drop_slot true);
+SELECT mtm.stop_node(3, true);
 </programlisting>
     <para>
       This disables replication slots for node 3 on all cluster nodes and stops replication to
@@ -959,17 +1085,42 @@ pg_ctl -D <replaceable>datadir</replaceable> -l <replaceable>pg.log</replaceable
       </indexterm>
     </term>
     <listitem>
-      <para>Node with this flag continues working even if it cannot access the majority of other nodes.
-      This is needed to break the symmetry if there is an even number of alive nodes in the cluster.
-      For example, in a cluster of three nodes, if one of the nodes has crashed and
-      the connection between the remaining nodes is lost, the node with <varname>multimaster.major_node</varname> = <literal>true</literal> will continue working.
+      <para>The node with this flag continues working even if there is no quorum.
+      This may be required to break the symmetry in two-node clusters,
+      or to quickly restore a single node in a broken cluster.
       </para>
       <important>
-        <para>This parameter should be used with caution. Only one node in the cluster
-        can have this parameter set to <literal>true</literal>. When set to <literal>true</literal> on several
-        nodes, this parameter can cause the split-brain problem.
+        <para>This parameter should be used with caution to avoid split-brain
+        problems:
+        <itemizedlist>
+          <listitem>
+            <para>
+              Do not use the <parameter>major_node</> parameter on clusters with more
+              than two nodes. If the major node gets isolated by a network failure
+              while the majority of nodes are connected to each other, both the major
+              node and the subset that has a quorum will continue working.
+              Consider setting up a standalone referee instead.
+            </para>
+          </listitem>
+          <listitem>
+            <para>
+              Never set more than one major node in the cluster.
+            </para>
+          </listitem>
+        </itemizedlist>
         </para>
       </important>
+    </listitem>
+  </varlistentry>
+  <varlistentry id="mtm-referee-connstring" xreflabel="multimaster.referee_connstring">
+    <term><varname>multimaster.referee_connstring</varname>
+      <indexterm><primary><varname>multimaster.referee_connstring</varname></primary>
+      </indexterm>
+    </term>
+    <listitem>
+      <para>Connection string to access the referee node. You must set this parameter
+      on all cluster nodes if the referee is set up.
+      </para>
     </listitem>
   </varlistentry>
   <varlistentry>

@@ -4,6 +4,23 @@
 # 3. sed 
 LC_MESSAGES=C
 export LC_MESSAGES
+if [ "$1" = "--help" -o "$1" = "-h" ]; then
+	echo "$0 Upgrade PostgresPro database to new minor version"
+	echo ""
+	echo " $0"
+	echo ""
+	echo "Upgrades database, pointed by PGDATA environment var, to current version"
+	echo ""
+	echo " $0 --check"
+	echo ""
+	echo "Returns zero code if database, pointed by PGDATA env. var, doesn't need upgrade"
+	echo "and non-zero if it needs"
+	echo ""
+	echo "This script should be run  as user, who owns database files,"
+	echo "typically 'postgres'"
+	exit 0
+fi
+
 if [ -z "$PGDATA" ]; then
 	echo "PGDATA environment variable is not set. Stop." 1>&2
 	exit 2

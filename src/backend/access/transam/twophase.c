@@ -1459,7 +1459,7 @@ ParsePrepareRecord(uint8 info, char *xlrec, xl_xact_parsed_prepare *parsed)
 	parsed->nsubxacts = hdr->nsubxacts;
 	parsed->nrels = hdr->ncommitrels;
 	parsed->nmsgs = hdr->ninvalmsgs;
-	
+
 	parsed->subxacts = (TransactionId *) bufptr;
 	bufptr += MAXALIGN(hdr->nsubxacts * sizeof(TransactionId));
 
@@ -1573,12 +1573,10 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	int			ndelrels;
 	SharedInvalidationMessage *invalmsgs;
 	int			i;
+	XactEvent	finish_event;
 
-
-	if (isCommit) 
-	{ 
+	if (isCommit)
 		CallXactCallbacks(XACT_EVENT_PRE_COMMIT_PREPARED);
-	}		
 
 	/*
 	 * Validate the GID, and lock the GXACT to ensure that two backends do not
@@ -1634,7 +1632,7 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 										hdr->ncommitrels, commitrels,
 										hdr->ninvalmsgs, invalmsgs,
 										hdr->initfileinval, gid);
-		CallXactCallbacks(XACT_EVENT_COMMIT_PREPARED);
+		finish_event = XACT_EVENT_COMMIT_PREPARED;
 	}
 	else
 	{
@@ -1642,9 +1640,9 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 									   hdr->nsubxacts, children,
 									   hdr->nabortrels, abortrels,
 									   gid);
-		CallXactCallbacks(XACT_EVENT_ABORT_PREPARED);
+		finish_event = XACT_EVENT_ABORT_PREPARED;
 	}
-									   
+
 
 	ProcArrayRemove(proc, latestXid);
 
@@ -1716,6 +1714,8 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	MyLockedGxact = NULL;
 
 	pfree(buf);
+
+	CallXactCallbacks(finish_event);
 }
 
 /*
@@ -1784,6 +1784,18 @@ RecreateTwoPhaseFile(TransactionId xid, void *content, int len)
 	INIT_CRC32C(statefile_crc);
 	COMP_CRC32C(statefile_crc, content, len);
 	FIN_CRC32C(statefile_crc);
+
+	/*
+	 * 3PC hacky support. Xid for xlog record is set during xlog insert
+	 * via GetCurrentTransactionIdIfAny() call. However this tx isn't already
+	 * active so allow it to be zero in xlog, but override here during recovery
+	 * so the file name will be valid xid.
+	 */
+	if (!TransactionIdIsValid(xid))
+	{
+		Assert( *(((TwoPhaseFileHeader *) content)->state_3pc) != '\0');
+		xid = ((TwoPhaseFileHeader *) content)->xid;
+	}
 
 	TwoPhaseFilePath(path, xid);
 
@@ -1949,8 +1961,8 @@ PrescanPreparedTransactions(TransactionId **xids_p, int *nxids_p)
 	cldir = AllocateDir(TWOPHASE_DIR);
 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
 	{
-		if (strlen(clde->d_name) == 8 &&
-			strspn(clde->d_name, "0123456789ABCDEF") == 8)
+		if (strlen(clde->d_name) == 2*sizeof(TransactionId) &&
+			strspn(clde->d_name, "0123456789ABCDEF") == 2*sizeof(TransactionId))
 		{
 			TransactionId xid;
 			char	   *buf;
@@ -2085,8 +2097,8 @@ StandbyRecoverPreparedTransactions(bool overwriteOK)
 	cldir = AllocateDir(TWOPHASE_DIR);
 	while ((clde = ReadDir(cldir, TWOPHASE_DIR)) != NULL)
 	{
-		if (strlen(clde->d_name) == 8 &&
-			strspn(clde->d_name, "0123456789ABCDEF") == 8)
+		if (strlen(clde->d_name) == 2*sizeof(TransactionId) &&
+			strspn(clde->d_name, "0123456789ABCDEF") == 2*sizeof(TransactionId))
 		{
 			TransactionId xid;
 			char	   *buf;
@@ -2170,8 +2182,8 @@ RecoverPreparedTransactions(void)
 	cldir = AllocateDir(dir);
 	while ((clde = ReadDir(cldir, dir)) != NULL)
 	{
-		if (strlen(clde->d_name) == 8 &&
-			strspn(clde->d_name, "0123456789ABCDEF") == 8)
+		if (strlen(clde->d_name) == 2*sizeof(TransactionId) &&
+			strspn(clde->d_name, "0123456789ABCDEF") == 2*sizeof(TransactionId))
 		{
 			TransactionId xid;
 			char	   *buf;
@@ -2226,7 +2238,7 @@ RecoverPreparedTransactions(void)
 			 * here must match one used in AssignTransactionId().
 			 */
 			if (InHotStandby && (hdr->nsubxacts >= PGPROC_MAX_CACHED_SUBXIDS ||
-								 XLogLogicalInfoActive()))
+								 XLogStandbyInfoActive()))
 				overwriteOK = true;
 
 			/*
