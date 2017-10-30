@@ -14,7 +14,7 @@ from lib.failure_injector import *
 from lib.test_helper import *
 
 
-class MajorTest(unittest.TestCase, TestHelper):
+class RefereeTest(unittest.TestCase, TestHelper):
 
     @classmethod
     def setUpClass(cls):
@@ -106,6 +106,34 @@ class MajorTest(unittest.TestCase, TestHelper):
 
         self.assertCommits(aggs)
         self.assertIsolation(aggs)
+
+
+    def test_winner_restart(self):
+        print('### test_winner_restart ###')
+
+        aggs_failure, aggs = self.performFailure(StopNode('node1'))
+
+        self.assertNoCommits(aggs_failure[:1])
+        self.assertCommits(aggs_failure[1:])
+        self.assertIsolation(aggs_failure)
+
+        self.assertNoCommits(aggs[:1])
+        self.assertCommits(aggs[1:])
+        self.assertIsolation(aggs)
+
+        aggs_failure, aggs = self.performFailure(RestartNode('node2'))
+
+        self.assertNoCommits(aggs_failure)
+        self.assertIsolation(aggs_failure)
+
+        self.assertNoCommits(aggs[:1])
+        self.assertCommits(aggs[1:])
+        self.assertIsolation(aggs)
+
+        # need to start node1 to perform consequent tests
+        docker_api = docker.from_env()
+        docker_api.containers.get('node1').start()
+        time.sleep(35)
 
 
 if __name__ == '__main__':

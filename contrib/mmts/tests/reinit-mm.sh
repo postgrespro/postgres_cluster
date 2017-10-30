@@ -1,13 +1,19 @@
+CURPATH=`pwd`
+BASEDIR=$CURPATH/../../..
+export PATH=$BASEDIR/tmp_install/usr/local/pgsql/bin/:$PATH
+export DESTDIR=$BASEDIR/tmp_install
+
 n_nodes=3
-export PATH=~/code/postgres_cluster/tmp_install/bin/:$PATH
 ulimit -c unlimited
 pkill -9 postgres
 
-cd ~/code/postgres_cluster/contrib/mmts/
+cd $BASEDIR
+make install
+
+cd $BASEDIR/contrib/mmts
 make clean && make install
 
-cd ~/code/postgres_cluster/contrib/mmts/tests
-
+cd $BASEDIR/contrib/mmts/tests
 
 rm -fr node? *.log
 conn_str=""

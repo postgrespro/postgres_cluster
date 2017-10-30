@@ -359,11 +359,17 @@ static void MtmSendHeartbeat()
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
 		if (i+1 != MtmNodeId) { 
-			if (!BIT_CHECK(busy_mask, i)
-				&& (Mtm->status != MTM_ONLINE 
-					|| sockets[i] >= 0 
-					|| !BIT_CHECK(Mtm->disabledNodeMask, i)
-					|| BIT_CHECK(Mtm->reconnectMask, i)))
+			if (!BIT_CHECK(busy_mask, i))
+				/*
+				 * Old behaviour here can cause subtle bugs, for example
+				 * it can happened that none of mentioned conditiotions is
+				 * true when disabled node connects to a major node which
+				 * is online. So just send it allways. --sk
+				 */
+				// && (Mtm->status != MTM_ONLINE
+				// 	|| sockets[i] >= 0
+				// 	|| !BIT_CHECK(Mtm->disabledNodeMask, i)
+				// 	|| BIT_CHECK(Mtm->reconnectMask, i)))
 			{ 
 				if (!MtmSendToNode(i, &msg, sizeof(msg))) {
 					MTM_ELOG(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
@@ -981,6 +987,7 @@ static void MtmReceiver(Datum arg)
 										 msg->gid, MtmTxnStatusMnem[msg->status], node);
 
 									replorigin_session_origin = DoNotReplicateId;
+									TXFINISH("%s ABORT, MSG_POLL_STATUS", msg->gid);
 									MtmFinishPreparedTransaction(ts, false);
 									replorigin_session_origin = InvalidRepOriginId;
 								} 
@@ -994,6 +1001,7 @@ static void MtmReceiver(Datum arg)
 										MTM_ELOG(LOG, "Commit transaction %s because it is prepared at all live nodes", msg->gid);		
 
 										replorigin_session_origin = DoNotReplicateId;
+										TXFINISH("%s COMMIT, MSG_POLL_STATUS", msg->gid);
 										MtmFinishPreparedTransaction(ts, true);
 										replorigin_session_origin = InvalidRepOriginId;
 									} else { 
@@ -1069,17 +1077,10 @@ static void MtmReceiver(Datum arg)
 									if (ts->isTwoPhase) { 
 										MtmWakeUpBackend(ts);										
 									} else if (MtmUseDtm) { 
-										ts->votedMask = 0;
 										MTM_TXTRACE(ts, "MtmTransReceiver send MSG_PRECOMMIT");
 										Assert(replorigin_session_origin == InvalidRepOriginId);
-										MTM_LOG2("SetPreparedTransactionState for %s", ts->gid);
-										MtmUnlock();
-										MtmResetTransaction();
-										StartTransactionCommand();
-										SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);	
-										CommitTransactionCommand();
-										Assert(!MtmTransIsActive());
-										MtmLock(LW_EXCLUSIVE);						
+										ts->isPrepared = false;
+										SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch);
 									} else { 
 										ts->status = TRANSACTION_STATUS_UNKNOWN;
 										MtmWakeUpBackend(ts);

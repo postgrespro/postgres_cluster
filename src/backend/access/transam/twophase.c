@@ -1785,6 +1785,18 @@ RecreateTwoPhaseFile(TransactionId xid, void *content, int len)
 	COMP_CRC32C(statefile_crc, content, len);
 	FIN_CRC32C(statefile_crc);
 
+	/*
+	 * 3PC hacky support. Xid for xlog record is set during xlog insert
+	 * via GetCurrentTransactionIdIfAny() call. However this tx isn't already
+	 * active so allow it to be zero in xlog, but override here during recovery
+	 * so the file name will be valid xid.
+	 */
+	if (!TransactionIdIsValid(xid))
+	{
+		Assert( *(((TwoPhaseFileHeader *) content)->state_3pc) != '\0');
+		xid = ((TwoPhaseFileHeader *) content)->xid;
+	}
+
 	TwoPhaseFilePath(path, xid);
 
 	fd = OpenTransientFile(path,

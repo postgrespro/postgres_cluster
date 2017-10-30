@@ -726,6 +726,7 @@ process_remote_commit(StringInfo in)
 					MTM_LOG1("Perform delayed rollback of prepared global transaction %s", gid);	
 					StartTransactionCommand();
 					MtmSetCurrentTransactionGID(gid);
+					TXFINISH("%s ABORT, PGLOGICAL_PREPARE", gid);
 					FinishPreparedTransaction(gid, false);
 					CommitTransactionCommand();					
 					Assert(!MtmTransIsActive());
@@ -739,7 +740,7 @@ process_remote_commit(StringInfo in)
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
 			csn = pq_getmsgint64(in);
 			/*
-			 * Since our recovery method allows undershoot of csn, we can receive
+			 * Since our recovery method allows undershoot of lsn, we can receive
 			 * some already committed transactions. And in case of donor node reboot
 			 * xid<->csn mapping for them will be lost. However we must filter such
 			 * transactions in walreceiver before this code. --sk
@@ -750,8 +751,12 @@ process_remote_commit(StringInfo in)
 			MtmResetTransaction();
 			StartTransactionCommand();
 			MtmBeginSession(origin_node);
-			MtmSetCurrentTransactionCSN(csn);
+			if (csn == INVALID_CSN && Mtm->status == MTM_RECOVERY)
+				MtmSetCurrentTransactionCSN(MtmAssignCSN());
+			else
+				MtmSetCurrentTransactionCSN(csn);
 			MtmSetCurrentTransactionGID(gid);
+			TXFINISH("%s COMMIT, PGLOGICAL_COMMIT_PREPARED csn=%lld", gid, csn);
 			FinishPreparedTransaction(gid, true);
 			MTM_LOG2("Distributed transaction %s is committed", gid);
 			CommitTransactionCommand();
