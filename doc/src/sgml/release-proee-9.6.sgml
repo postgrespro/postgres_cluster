@@ -1,4 +1,39 @@
 <!-- doc/src/sgml/release-proee-9.6.sgml -->
+<sect1 id="release-proee-9-6-5-3">
+<title>&productname; 9.6.5.2</title>
+  <formalpara>
+    <title>Release date:</title>
+    <para>2017-10-31</para>
+  </formalpara>
+<sect2>
+    <title>Overview</title>
+    <para>This release is based on <productname>Postgres Pro Enterprise</productname>
+      <link linkend="release-proee-9-6-5-2">9.6.5.2</link>.
+     </para>
+    <para>Major enhancements over <productname>Postgres Pro Enterprise</productname>
+      9.6.5.2 include:</para>
+    <itemizedlist>
+      <listitem>
+      <para>
+      Updated <application>pg_pathman</application> module to version
+      1.4.8.
+      </para>
+      </listitem>
+      <listitem>
+      <para>
+      Updated <application>pg_probackup</application> utility to version
+      2.0.10.
+      </para>
+      </listitem>
+      <listitem>
+      <para>
+      Several bugfixes in multimaster extension. Added separate
+      extension referee.
+      </para>
+      </listitem>
+    </itemizedlist>
+  </sect2>  
+</sect1>
 <sect1 id="release-proee-9-6-5-2">
 <title>&productname; 9.6.5.2</title>
   <formalpara>
