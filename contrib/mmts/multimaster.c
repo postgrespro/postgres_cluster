@@ -2104,7 +2104,7 @@ void MtmCheckRecoveryCaughtUp(int nodeId, lsn_t slotLSN)
 	if (MtmIsRecoveredNode(nodeId)) {
 		lsn_t walLSN = GetXLogInsertRecPtr();
 		if (!BIT_CHECK(Mtm->originLockNodeMask, nodeId-1)
-			&& slotLSN + MtmMinRecoveryLag * 1024 > walLSN)
+			&& slotLSN + (long64) MtmMinRecoveryLag * 1024 > walLSN)
 		{
 			/*
 			 * Wal sender almost caught up.
