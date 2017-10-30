@@ -49,13 +49,13 @@ foreach my $node ($shard1, $shard2)
 	$master->psql('postgres', "CREATE FOREIGN TABLE accounts_fdw_$port() inherits (accounts) server shard_$port options(table_name 'accounts')");
 	$master->psql('postgres', "CREATE USER MAPPING for stas SERVER shard_$port options (user 'stas')");
 
-	diag("done $host $port");
+	# diag("done $host $port");
 }
 
 $shard1->psql('postgres', "insert into accounts select 2*id-1, 0 from generate_series(1, 10010) as id;");
 $shard2->psql('postgres', "insert into accounts select 2*id, 0 from generate_series(1, 10010) as id;");
 
-diag( $master->connstr() );
+# diag( $master->connstr() );
 # sleep(3600);
 
 ###############################################################################
@@ -81,7 +81,7 @@ while (time() - $started < $seconds)
 		$oldtotal = $total;
 		diag("Isolation error. Total = $total");
 	}
-	diag("Total = $total");
+	# diag("Total = $total");
 }
 
 $master->pgbench_await($pgb_handle);
