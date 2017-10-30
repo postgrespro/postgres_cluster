@@ -14,9 +14,6 @@
 #define DEBUG_LEVEL 0
 #endif
 
-#ifndef MTM_TRACE
-#define MTM_TRACE   0
-#endif
 
 #define MTM_TAG "[MTM] "
 #define MTM_ELOG(level,fmt,...) elog(level, MTM_TAG fmt, ## __VA_ARGS__)
@@ -44,11 +41,13 @@
 #define MTM_LOG4(fmt, ...) fprintf(stderr, fmt "\n", ## __VA_ARGS__)
 #endif
 
-#if MTM_TRACE == 0
-#define MTM_TXTRACE(tx, event)
+// #define MTM_TRACE 1
+
+#ifndef MTM_TRACE
+#define MTM_TXTRACE(tx, event, ...)
 #else
-#define MTM_TXTRACE(tx, event) \
-		fprintf(stderr, MTM_TAG "%s, %lld, %s, %d\n", tx->gid, (long long)MtmGetSystemTime(), event, MyProcPid)
+#define MTM_TXTRACE(tx, event, ...) \
+		elog(LOG, MTM_TAG "%s, %lld, %u " event "\n", tx->gid, (long long)MtmGetSystemTime(), MyProcPid, ## __VA_ARGS__)
 #endif
 
 #define MULTIMASTER_NAME                 "multimaster"
@@ -96,6 +95,7 @@ typedef ulong64 lsn_t;
 typedef char pgid_t[MULTIMASTER_MAX_GID_SIZE];
 
 #define SELF_CONNECTIVITY_MASK  (Mtm->nodes[MtmNodeId-1].connectivityMask)
+#define EFFECTIVE_CONNECTIVITY_MASK  ( SELF_CONNECTIVITY_MASK | Mtm->stoppedNodeMask | ~Mtm->clique )
 
 typedef enum
 {
@@ -109,7 +109,7 @@ typedef enum
 /* Identifier of global transaction */
 typedef struct
 {
-	int node;          /* Zero based index of node initiating transaction */
+	int node;          /* One based id of node initiating transaction */
 	TransactionId xid; /* Transaction ID at this node */
 } GlobalTransactionId;
 
@@ -131,14 +131,12 @@ typedef enum
 
 typedef enum
 {
-	MTM_INITIALIZATION, /* Initial status */
-	MTM_OFFLINE,        /* Node is excluded from cluster */
-	MTM_CONNECTED,      /* Arbiter is established connections with other nodes */
-	MTM_ONLINE,         /* Ready to receive client's queries */
+	MTM_DISABLED,       /* Node disabled */
 	MTM_RECOVERY,       /* Node is in recovery process */
-	MTM_RECOVERED,      /* Node is recovered by is not yet switched to ONLINE because not all sender/receivers are restarted */
-	MTM_IN_MINORITY,    /* Node is out of quorum */
-	MTM_OUT_OF_SERVICE  /* Node is not available to to critical, non-recoverable error */
+	MTM_RECOVERED,      /* Node is recovered by is not yet switched to ONLINE because
+						 * not all sender/receivers are restarted
+						 */
+	MTM_ONLINE          /* Ready to receive client's queries */
 } MtmNodeStatus;
 
 typedef enum
@@ -235,6 +233,7 @@ typedef struct
 	int         lockGraphAllocated;
 	int         lockGraphUsed;
 	uint64      nHeartbeats;
+	bool		manualRecovery;
 	bool		slotDeleted;			/* Signalizes that node is already deleted our slot and
 										 * recovery from that node isn't possible.
 										 */
@@ -269,8 +268,8 @@ typedef struct MtmTransState
 	int            nConfigChanges;     /* Number of cluster configuration changes at moment of transaction start */
 	nodemask_t     participantsMask;   /* Mask of nodes involved in transaction */
 	nodemask_t     votedMask;          /* Mask of voted nodes */
+	int			   abortedByNode;      /* Store info about node on which this tx was aborted */
 	TransactionId  xids[1];            /* [Mtm->nAllNodes]: transaction ID at replicas */
-	int			   aborted_by_node;    /* Store info about node on which this tx was aborted */
 } MtmTransState;
 
 typedef struct {
@@ -289,6 +288,9 @@ typedef struct
 	LWLockPadded *locks;               /* multimaster lock tranche */
 	TransactionId oldestXid;           /* XID of oldest transaction visible by any active transaction (local or global) */
 	nodemask_t disabledNodeMask;       /* Bitmask of disabled nodes */
+	nodemask_t clique;                 /* Bitmask of nodes that are connected and we allowed to connect/send wal/receive wal with them */
+	bool       refereeGrant;           /* Referee allowed us to work with half of the nodes */
+	int        refereeWinnerId;        /* Node that won referee contest */
 	nodemask_t deadNodeMask;           /* Bitmask of nodes considered as dead by referee */
 	nodemask_t recoveredNodeMask;      /* Bitmask of nodes recoverd after been reported as dead by referee */
 	nodemask_t stalledNodeMask;        /* Bitmask of stalled nodes (node with dropped replication slot which makes it not possible automatic recovery of such node) */
@@ -379,7 +381,9 @@ extern MemoryContext MtmApplyContext;
 extern lsn_t MtmSenderWalEnd;
 extern timestamp_t MtmRefreshClusterStatusSchedule;
 extern MtmConnectionInfo* MtmConnections;
+extern bool MtmMajorNode;
 extern bool MtmBackgroundWorker;
+extern char* MtmRefereeConnStr;
 
 
 extern void  MtmArbiterInitialize(void);
@@ -389,7 +393,6 @@ extern csn_t MtmDistributedTransactionSnapshot(TransactionId xid, int nodeId, no
 extern csn_t MtmAssignCSN(void);
 extern csn_t MtmSyncClock(csn_t csn);
 extern void  MtmJoinTransaction(GlobalTransactionId* gtid, csn_t snapshot, nodemask_t participantsMask);
-extern void  MtmReceiverStarted(int nodeId);
 extern MtmReplicationMode MtmGetReplicationMode(int nodeId, sig_atomic_t volatile* shutdown);
 extern void  MtmExecute(void* work, int size);
 extern void  MtmExecutor(void* work, size_t size);
@@ -398,15 +401,13 @@ extern void  MtmSendMessage(MtmArbiterMessage* msg);
 extern void  MtmAdjustSubtransactions(MtmTransState* ts);
 extern void  MtmLock(LWLockMode mode);
 extern void  MtmUnlock(void);
+extern void  MtmDeepUnlock(void);
 extern void  MtmLockNode(int nodeId, LWLockMode mode);
 extern bool  MtmTryLockNode(int nodeId, LWLockMode mode);
 extern void  MtmUnlockNode(int nodeId);
 extern void  MtmStopNode(int nodeId, bool dropSlot);
-extern void  MtmReconnectNode(int nodeId);
 extern void  MtmRecoverNode(int nodeId);
 extern void  MtmResumeNode(int nodeId);
-extern void  MtmOnNodeDisconnect(int nodeId);
-extern void  MtmOnNodeConnect(int nodeId);
 extern void  MtmWakeUpBackend(MtmTransState* ts);
 extern void  MtmSleep(timestamp_t interval);
 extern void  MtmAbortTransaction(MtmTransState* ts);
@@ -417,14 +418,10 @@ extern TransactionId MtmGetCurrentTransactionId(void);
 extern XidStatus MtmGetCurrentTransactionStatus(void);
 extern XidStatus MtmExchangeGlobalTransactionStatus(char const* gid, XidStatus status);
 extern bool  MtmIsRecoveredNode(int nodeId);
-extern void  MtmRefreshClusterStatus(void);
-extern void  MtmSwitchClusterMode(MtmNodeStatus mode);
 extern void  MtmUpdateNodeConnectionInfo(MtmConnectionInfo* conn, char const* connStr);
 extern void  MtmSetupReplicationHooks(struct PGLogicalHooks* hooks);
-extern void  MtmCheckQuorum(void);
 extern bool  MtmRecoveryCaughtUp(int nodeId, lsn_t walEndPtr);
 extern void  MtmCheckRecoveryCaughtUp(int nodeId, lsn_t slotLSN);
-extern void  MtmRecoveryCompleted(void);
 extern void  MtmMakeTableLocal(char const* schema, char const* name);
 extern void  MtmHandleApplyError(void);
 extern void  MtmUpdateLsnMapping(int nodeId, lsn_t endLsn);
@@ -434,7 +431,7 @@ extern void MtmCheckHeartbeat(void);
 extern void MtmResetTransaction(void);
 extern void MtmUpdateLockGraph(int nodeId, void const* messageBody, int messageSize);
 extern void MtmReleaseRecoverySlot(int nodeId);
-extern PGconn *PQconnectdb_safe(const char *conninfo);
+extern PGconn *PQconnectdb_safe(const char *conninfo, int timeout);
 extern void MtmBeginSession(int nodeId);
 extern void MtmEndSession(int nodeId, bool unlock);
 extern void MtmFinishPreparedTransaction(MtmTransState* ts, bool commit);
@@ -448,5 +445,7 @@ extern void MtmReleaseLocks(void);
 extern void MtmInitMessage(MtmArbiterMessage* msg, MtmMessageCode code);
 extern void MtmSetSnapshot(csn_t snapshot);
 extern void MtmRefereeInitialize(void);
+extern void MtmPollStatusOfPreparedTransactionsForDisabledNode(int disabledNodeId, bool commitPrecommited);
+extern int MtmGetNumberOfVotingNodes(void);
 
 #endif

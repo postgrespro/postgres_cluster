@@ -42,6 +42,7 @@
 
 #include "multimaster.h"
 #include "spill.h"
+#include "state.h"
 
 #define ERRCODE_DUPLICATE_OBJECT_STR  "42710"
 #define RECEIVER_SUSPEND_TIMEOUT (1*USECS_PER_SEC)
@@ -216,8 +217,6 @@ pglogical_receiver_main(Datum main_arg)
 	MtmReplicationMode mode;
 
 	ByteBuffer buf;
-	RepOriginId originId;
-	char* originName;
 	/* Buffer for COPY data */
 	char	*copybuf = NULL;
 	int spill_file = -1;
@@ -225,6 +224,7 @@ pglogical_receiver_main(Datum main_arg)
 	char *slotName;
 	char* connString = psprintf("replication=database %s", Mtm->nodes[nodeId-1].con.connStr);
 	static PortalData fakePortal;
+	int i;
 
 	MtmBackgroundWorker = true;
 
@@ -257,16 +257,27 @@ pglogical_receiver_main(Datum main_arg)
 	ActivePortal->status = PORTAL_ACTIVE;
 	ActivePortal->sourceText = "";
 
-	/* Create originid */
-	StartTransactionCommand();
-	originName = psprintf(MULTIMASTER_SLOT_PATTERN, nodeId);
-	originId = replorigin_by_name(originName, true);
-	if (originId == InvalidRepOriginId) {
-		originId = replorigin_create(originName);
+	/*
+	 * Set proper restartLsn for all origins
+	 */
+	MtmLock(LW_EXCLUSIVE);
+	for (i = 0; i < Mtm->nAllNodes; i++)
+	{
+		char	   *originName;
+		RepOriginId originId;
+
+		StartTransactionCommand();
+		originName = psprintf(MULTIMASTER_SLOT_PATTERN, i + 1);
+		originId = replorigin_by_name(originName, true);
+		if (originId == InvalidRepOriginId) {
+			originId = replorigin_create(originName);
+		}
+		CommitTransactionCommand();
+		if (Mtm->nodes[i].restartLSN == INVALID_LSN)
+			Mtm->nodes[i].restartLSN = replorigin_get_progress(originId, true);
+		Mtm->nodes[i].originId = originId;
 	}
-	CommitTransactionCommand();
-	Mtm->nodes[nodeId-1].originId = originId;
-	Mtm->nodes[nodeId-1].restartLSN = INVALID_LSN;
+	MtmUnlock();
 
 	/* This is main loop of logical replication.
 	 * In case of errors we will try to reestablish connection.
@@ -276,7 +287,7 @@ pglogical_receiver_main(Datum main_arg)
 	{
 		int	 count;
 		ConnStatusType status;
-		lsn_t originStartPos = Mtm->nodes[nodeId-1].restartLSN;
+		lsn_t originStartPos;
 		int timeline;
 
 		/*
@@ -285,6 +296,8 @@ pglogical_receiver_main(Datum main_arg)
 		 * Slots at other nodes should be removed
 		 */
 		mode = MtmGetReplicationMode(nodeId, &got_sigterm);
+		MTM_LOG1("[STATE] Node %i: wal_receiver starts in %s mode", nodeId, MtmReplicationModeName[mode]);
+
 		if (mode == REPLMODE_EXIT)
 		{
 			break;
@@ -293,7 +306,7 @@ pglogical_receiver_main(Datum main_arg)
 		count = Mtm->recoveryCount;
 
 		/* Establish connection to remote server */
-		conn = PQconnectdb_safe(connString);
+		conn = PQconnectdb_safe(connString, 0);
 		status = PQstatus(conn);
 		if (status != CONNECTION_OK)
 		{
@@ -305,8 +318,8 @@ pglogical_receiver_main(Datum main_arg)
 		query = createPQExpBuffer();
 
 		/* Start logical replication at specified position */
-		originStartPos = replorigin_get_progress(originId, false);
-		if (originStartPos == INVALID_LSN) {
+		originStartPos = replorigin_get_progress(Mtm->nodes[nodeId-1].originId, false);
+		if (originStartPos == INVALID_LSN || Mtm->nodes[nodeId-1].manualRecovery) {
 			/*
 			 * We are just creating new replication slot.
 			 * It is assumed that state of local and remote nodes is the same at this moment.
@@ -328,12 +341,13 @@ pglogical_receiver_main(Datum main_arg)
 			}
 			PQclear(res);
 			resetPQExpBuffer(query);
+			Mtm->nodes[nodeId-1].manualRecovery = false;
 		} else {
 			if (Mtm->nodes[nodeId-1].restartLSN < originStartPos) {
 				MTM_LOG1("Advance restartLSN for node %d: from %llx to %llx (pglogical_receiver_main)", nodeId, Mtm->nodes[nodeId-1].restartLSN, originStartPos);
 				Mtm->nodes[nodeId-1].restartLSN = originStartPos;
 			}
-			MTM_LOG1("Restart logical receiver at position %llx with origin=%d from node %d", originStartPos, originId, nodeId);
+			MTM_LOG1("Restart logical receiver at position %llx from node %d", originStartPos, nodeId);
 		}
 
 		MTM_LOG1("Start replication on slot %s from node %d at position %llx, mode %s, recovered lsn %llx",
@@ -363,15 +377,14 @@ pglogical_receiver_main(Datum main_arg)
 			}
 			if (n_deleted_slots == Mtm->nAllNodes - 1)
 			{
-				elog(WARNING, "All neighbour nopes have no replication slot for us. Exiting.");
-				kill(PostmasterPid, SIGTERM);
+				elog(FATAL, "All neighbour nopes have no replication slot for us. Exiting.");
 			}
 			proc_exit(1);
 		}
 		PQclear(res);
 		resetPQExpBuffer(query);
 
-		MtmReceiverStarted(nodeId);
+		MtmStateProcessNeighborEvent(nodeId, MTM_NEIGHBOR_WAL_RECEIVER_START);
 
 		while (!got_sigterm)
 		{
@@ -401,7 +414,7 @@ pglogical_receiver_main(Datum main_arg)
 			if (rc & WL_POSTMASTER_DEATH)
 				proc_exit(1);
 
-			if (Mtm->status == MTM_OFFLINE || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != nodeId))
+			if (Mtm->status == MTM_DISABLED || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != nodeId))
 			{
 				ereport(LOG, (MTM_ERRMSG("%s: restart WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
 				break;
@@ -516,14 +529,6 @@ pglogical_receiver_main(Datum main_arg)
 				{
 					int msg_len = rc - hdr_len;
 					stmt = copybuf + hdr_len;
-					if (mode == REPLMODE_RECOVERED) {
-						/* Ingore all incompleted transactions from recovered node */
-						if (stmt[0] != 'B') {
-							output_written_lsn = Max(walEnd, output_written_lsn);
-							continue;
-						}
-						mode = REPLMODE_OPEN_EXISTED;
-					}
 					MTM_LOG3("Receive message %c from node %d", stmt[0], nodeId);
 					if (buf.used + msg_len + 1 >= MtmTransSpillThreshold*MB) {
 						if (spill_file < 0) {
