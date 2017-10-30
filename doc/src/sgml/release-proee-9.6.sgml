@@ -1,6 +1,6 @@
 <!-- doc/src/sgml/release-proee-9.6.sgml -->
 <sect1 id="release-proee-9-6-5-3">
-<title>&productname; 9.6.5.2</title>
+<title>&productname; 9.6.5.3</title>
   <formalpara>
     <title>Release date:</title>
     <para>2017-10-31</para>
@@ -27,12 +27,30 @@
       </listitem>
       <listitem>
       <para>
-      Several bugfixes in multimaster extension. Added separate
-      extension referee.
+      Improved <application>multimaster</application> extension. In particular, the
+      following changes were introduced:
+        <itemizedlist>
+          <listitem>
+            <para>
+              In two-node clusters, you can now set up a major node that
+              continues working even if there is no quorum.
+              For details, see <xref linkend="configuring-the-major-node">.
+            </para>
+          </listitem>
+          <listitem>
+            <para>
+              Using a separate <application>referee</application> extension,
+              you can set up a standalone referee node for your cluster to
+              assign the quorum status to a subset of nodes that constitutes
+              half of the cluster.
+              For details, see <xref linkend="setting-up-a-referee">.
+            </para>
+          </listitem>
+        </itemizedlist>
       </para>
       </listitem>
     </itemizedlist>
-  </sect2>  
+  </sect2>
 </sect1>
 <sect1 id="release-proee-9-6-5-2">
 <title>&productname; 9.6.5.2</title>
