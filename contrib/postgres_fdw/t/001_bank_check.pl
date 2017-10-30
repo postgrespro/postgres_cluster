@@ -19,7 +19,7 @@ $shard1->init;
 $shard1->append_conf('postgresql.conf', qq(
 	max_prepared_transactions = 30
 	log_checkpoints = true
-	shared_preload_libraries = 'pg_tsdtm'
+	# shared_preload_libraries = 'pg_tsdtm'
 ));
 $shard1->start;
 
@@ -28,7 +28,7 @@ $shard2->init;
 $shard2->append_conf('postgresql.conf', qq(
 	max_prepared_transactions = 30
 	log_checkpoints = true
-	shared_preload_libraries = 'pg_tsdtm'
+	# shared_preload_libraries = 'pg_tsdtm'
 ));
 $shard2->start;
 
@@ -42,7 +42,7 @@ foreach my $node ($shard1, $shard2)
 	my $port = $node->port;
 	my $host = $node->host;
 
-	$node->psql('postgres', "CREATE EXTENSION pg_tsdtm");
+	# $node->psql('postgres', "CREATE EXTENSION pg_tsdtm");
 	$node->psql('postgres', "CREATE TABLE accounts(id integer primary key, amount integer)");
 
 	$master->psql('postgres', "CREATE SERVER shard_$port FOREIGN DATA WRAPPER postgres_fdw options(dbname 'postgres', host '$host', port '$port')");
