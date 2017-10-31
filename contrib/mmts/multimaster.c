@@ -2035,7 +2035,7 @@ MtmCheckSlots()
 			if (slot->in_use
 				&& sscanf(slot->data.name.data, MULTIMASTER_SLOT_PATTERN, &nodeId) == 1
 				&& BIT_CHECK(Mtm->disabledNodeMask, nodeId-1)
-				&& slot->data.confirmed_flush + MtmMaxRecoveryLag * 1024 < GetXLogInsertRecPtr()
+				&& slot->data.confirmed_flush + (long64) MtmMaxRecoveryLag * 1024 < GetXLogInsertRecPtr()
 				&& slot->data.confirmed_flush != 0)
 			{
 				MTM_ELOG(WARNING, "Drop slot for node %d which lag %lld B is larger than threshold %d kB",
@@ -2104,7 +2104,7 @@ void MtmCheckRecoveryCaughtUp(int nodeId, lsn_t slotLSN)
 	if (MtmIsRecoveredNode(nodeId)) {
 		lsn_t walLSN = GetXLogInsertRecPtr();
 		if (!BIT_CHECK(Mtm->originLockNodeMask, nodeId-1)
-			&& slotLSN + MtmMinRecoveryLag * 1024 > walLSN)
+			&& slotLSN + (long64) MtmMinRecoveryLag * 1024 > walLSN)
 		{
 			/*
 			 * Wal sender almost caught up.
