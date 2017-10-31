@@ -32,18 +32,20 @@
         <itemizedlist>
           <listitem>
             <para>
-              In two-node clusters, you can now set up a major node that
-              continues working even if there is no quorum.
-              For details, see <xref linkend="configuring-the-major-node">.
-            </para>
-          </listitem>
-          <listitem>
-            <para>
-              Using a separate <application>referee</application> extension,
+              Added a new extension (<application>referee</application>)
+              for managing quorum settings. With this extension,
               you can set up a standalone referee node for your cluster to
               assign the quorum status to a subset of nodes that constitutes
               half of the cluster.
               For details, see <xref linkend="setting-up-a-referee">.
+            </para>
+          </listitem>
+          <listitem>
+            <para>
+              Added a new parameter for choosing a major node in two-node 
+              clusters. You can now set up a major node that
+              continues working even if there is no quorum.
+              For details, see <xref linkend="configuring-the-major-node">.
             </para>
           </listitem>
         </itemizedlist>
