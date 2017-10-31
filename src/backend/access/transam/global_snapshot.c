@@ -242,7 +242,7 @@ dtm_xact_callback(XactEvent event, void *arg)
 			DtmLocalCommitPrepared(&dtm_tx);
 			break;
 
-		case XACT_EVENT_PREPARE:
+		case XACT_EVENT_PRE_PREPARE:
 			DtmLocalSavePreparedState(&dtm_tx);
 			DtmLocalEnd(&dtm_tx);
 			break;
@@ -488,8 +488,6 @@ DtmLocalBegin(DtmCurrentTrans * x)
 	{
 		SpinLockAcquire(&local->lock);
 		// x->xid = GetCurrentTransactionIdIfAny();
-		x->xid = GetCurrentTransactionId();
-		// Assert(TransactionIdIsValid(x->xid));
 		x->cid = INVALID_CID;
 		x->is_global = false;
 		x->is_prepared = false;
@@ -653,8 +651,8 @@ DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
 void
 DtmLocalCommitPrepared(DtmCurrentTrans * x)
 {
-	// if (!x->is_global)
-	// 	return;
+	if (!x->gtid[0])
+		return;
 
 	Assert(x->gtid != NULL);
 
@@ -727,8 +725,8 @@ DtmLocalCommit(DtmCurrentTrans * x)
 void
 DtmLocalAbortPrepared(DtmCurrentTrans * x)
 {
-	// if (!x->is_global)
-	// 	return;
+	if (!x->gtid[0])
+		return;
 
 	Assert(x->gtid != NULL);
 
@@ -752,8 +750,8 @@ DtmLocalAbortPrepared(DtmCurrentTrans * x)
 void
 DtmLocalAbort(DtmCurrentTrans * x)
 {
-	// if (!x->is_global)
-	// 	return;
+	if (!TransactionIdIsValid(x->xid))
+		return;
 
 	SpinLockAcquire(&local->lock);
 	{
@@ -861,6 +859,7 @@ DtmLocalSavePreparedState(DtmCurrentTrans * x)
 				TransactionId *subxids;
 				int			nSubxids = xactGetCommittedChildren(&subxids);
 
+				id->xid = GetCurrentTransactionId();
 				if (nSubxids != 0)
 				{
 					id->subxids = (TransactionId *) malloc(nSubxids * sizeof(TransactionId));
