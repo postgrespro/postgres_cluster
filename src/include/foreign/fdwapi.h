@@ -15,6 +15,7 @@
 #include "access/parallel.h"
 #include "nodes/execnodes.h"
 #include "nodes/relation.h"
+#include "commands/copy.h"
 
 /* To avoid including explain.h here, reference ExplainState thus: */
 struct ExplainState;
@@ -159,6 +160,19 @@ typedef bool (*IsForeignScanParallelSafe_function) (PlannerInfo *root,
 													RelOptInfo *rel,
 													RangeTblEntry *rte);
 
+typedef void (*BeginForeignCopyFrom_function) (EState *estate,
+											   ResultRelInfo *rinfo,
+											   CopyState cstate);
+/*
+ * Currently we support only text and csv format and pass each row in
+ * cstate->line_buf. We should also pass binary data and/or deformed tuple.
+ */
+typedef void (*ForeignNextCopyFrom_function) (EState *estate,
+											  ResultRelInfo *rinfo,
+											  CopyState cstate);
+typedef void (*EndForeignCopyFrom_function) (EState *estate,
+											 ResultRelInfo *rinfo);
+
 /*
  * FdwRoutine is the struct returned by a foreign-data wrapper's handler
  * function.  It provides pointers to the callback functions needed by the
@@ -230,6 +244,11 @@ typedef struct FdwRoutine
 	ReInitializeDSMForeignScan_function ReInitializeDSMForeignScan;
 	InitializeWorkerForeignScan_function InitializeWorkerForeignScan;
 	ShutdownForeignScan_function ShutdownForeignScan;
+
+	/* Support functions for COPY FROM */
+	BeginForeignCopyFrom_function BeginForeignCopyFrom;
+	ForeignNextCopyFrom_function ForeignNextCopyFrom;
+	EndForeignCopyFrom_function EndForeignCopyFrom;
 } FdwRoutine;
 
 
@@ -242,5 +261,6 @@ extern FdwRoutine *GetFdwRoutineForRelation(Relation relation, bool makecopy);
 extern bool IsImportableForeignTable(const char *tablename,
 						 ImportForeignSchemaStmt *stmt);
 extern Path *GetExistingLocalJoinPath(RelOptInfo *joinrel);
+extern bool FdwCopyFromIsSupported(FdwRoutine *fdwroutine);
 
 #endif							/* FDWAPI_H */

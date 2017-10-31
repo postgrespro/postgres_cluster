@@ -799,3 +799,10 @@ GetExistingLocalJoinPath(RelOptInfo *joinrel)
 	}
 	return NULL;
 }
+
+bool FdwCopyFromIsSupported(FdwRoutine *fdwroutine)
+{
+	return fdwroutine->BeginForeignCopyFrom &&
+		fdwroutine->ForeignNextCopyFrom &&
+		fdwroutine->EndForeignCopyFrom;
+}

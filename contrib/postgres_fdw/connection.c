@@ -19,6 +19,8 @@
 #include "access/xact.h"
 #include "access/xtm.h"
 #include "access/transam.h"
+#include "access/xlog.h"
+#include "libpq-int.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "pgstat.h"
@@ -1231,21 +1233,40 @@ pgfdw_cancel_query(PGconn *conn)
 	endtime = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), 30000);
 
 	/*
-	 * Issue cancel request.  Unfortunately, there's no good way to limit the
-	 * amount of time that we might block inside PQgetCancel().
+	 * If COPY IN in progress, send CopyFail. Otherwise send cancel request.
+	 * TODO: make it less hackish, without libpq-int.h inclusion and handling
+	 * EAGAIN.
 	 */
-	if ((cancel = PQgetCancel(conn)))
+	if (conn->asyncStatus == PGASYNC_COPY_IN)
 	{
-		if (!PQcancel(cancel, errbuf, sizeof(errbuf)))
+		if (PQputCopyEnd(conn, "postgres_fdw: transaction abort on source node") != 1)
 		{
 			ereport(WARNING,
 					(errcode(ERRCODE_CONNECTION_FAILURE),
-					 errmsg("could not send cancel request: %s",
+					 errmsg("could not send abort copy request: %s",
 							errbuf)));
-			PQfreeCancel(cancel);
 			return false;
 		}
-		PQfreeCancel(cancel);
+	}
+	else
+	{
+		/*
+		 * Issue cancel request.  Unfortunately, there's no good way to limit the
+		 * amount of time that we might block inside PQgetCancel().
+		 */
+		if ((cancel = PQgetCancel(conn)))
+		{
+			if (!PQcancel(cancel, errbuf, sizeof(errbuf)))
+			{
+				ereport(WARNING,
+						(errcode(ERRCODE_CONNECTION_FAILURE),
+						 errmsg("could not send cancel request: %s",
+								errbuf)));
+				PQfreeCancel(cancel);
+				return false;
+			}
+			PQfreeCancel(cancel);
+		}
 	}
 
 	/* Get and discard the result of the query. */

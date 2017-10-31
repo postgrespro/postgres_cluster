@@ -352,6 +352,14 @@ static void postgresGetForeignUpperPaths(PlannerInfo *root,
 							 UpperRelationKind stage,
 							 RelOptInfo *input_rel,
 							 RelOptInfo *output_rel);
+static void postgresBeginForeignCopyFrom(EState *estate,
+										 ResultRelInfo *rinfo,
+										 CopyState cstate);
+static void postgresForeignNextCopyFrom(EState *estate,
+										ResultRelInfo *rinfo,
+										CopyState cstate);
+static void postgresEndForeignCopyFrom(EState *estate,
+									   ResultRelInfo *rinfo);
 
 /*
  * Helper functions
@@ -475,6 +483,11 @@ postgres_fdw_handler(PG_FUNCTION_ARGS)
 
 	/* Support functions for upper relation push-down */
 	routine->GetForeignUpperPaths = postgresGetForeignUpperPaths;
+
+	/* Functions for COPY FROM */
+	routine->BeginForeignCopyFrom = postgresBeginForeignCopyFrom;
+	routine->ForeignNextCopyFrom = postgresForeignNextCopyFrom;
+	routine->EndForeignCopyFrom = postgresEndForeignCopyFrom;
 
 	PG_RETURN_POINTER(routine);
 }
@@ -5207,4 +5220,81 @@ _PG_init(void)
 							 "Use timestamp base distributed transaction manager for FDW connections", NULL,
 						  &UseTsDtmTransactions, false, PGC_USERSET, 0, NULL,
 							 NULL, NULL);
+}
+
+/* Begin COPY FROM to foreign table */
+static void
+postgresBeginForeignCopyFrom(EState *estate, ResultRelInfo *rinfo,
+							 CopyState cstate)
+{
+	Relation		rel = rinfo->ri_RelationDesc;
+	RangeTblEntry	*rte;
+	Oid				userid;
+	ForeignTable	*table;
+	UserMapping		*user;
+	StringInfoData 	sql;
+	PGconn	   *conn;
+	PGresult   *res;
+
+	/*
+	 * Identify which user to do the remote access as.  This should match what
+	 * ExecCheckRTEPerms() does.
+	 */
+	rte = rt_fetch(rinfo->ri_RangeTableIndex, estate->es_range_table);
+	userid = rte->checkAsUser ? rte->checkAsUser : GetUserId();
+
+	/* Get info about foreign table. */
+	table = GetForeignTable(RelationGetRelid(rel));
+	user = GetUserMapping(userid, table->serverid);
+
+	/* Open connection */
+	conn = GetConnection(user, false);
+	rinfo->ri_FdwState = conn;
+
+	/* deparse COPY stmt */
+	initStringInfo(&sql);
+	deparseCopyFromSql(&sql, rel, cstate);
+
+	res = PQexec(conn, sql.data);
+	if (PQresultStatus(res) != PGRES_COPY_IN)
+	{
+		pgfdw_report_error(ERROR, res, conn, true, sql.data);
+	}
+	PQclear(res);
+}
+
+/* COPY FROM next row to foreign table */
+static void
+postgresForeignNextCopyFrom(EState *estate, ResultRelInfo *rinfo,
+							CopyState cstate)
+{
+	PGconn	   *conn = (PGconn *) rinfo->ri_FdwState;
+
+	Assert(!cstate->binary);
+	/* TODO: distinuish failure and nonblocking-send EAGAIN */
+	if (PQputline(conn, cstate->line_buf.data) || PQputnbytes(conn, "\n", 1))
+	{
+		pgfdw_report_error(ERROR, NULL, conn, false, cstate->line_buf.data);
+	}
+}
+
+/* Finish COPY FROM */
+static void
+postgresEndForeignCopyFrom(EState *estate, ResultRelInfo *rinfo)
+{
+	PGconn	   *conn = (PGconn *) rinfo->ri_FdwState;
+	PGresult   *res;
+
+	/* TODO: PQgetResult? */
+	if (PQendcopy(conn))
+	{
+		pgfdw_report_error(ERROR, NULL, conn, false, "end postgres_fdw copy from");
+	}
+	while ((res = PQgetResult(conn)) != NULL)
+	{
+		/* TODO: get error? */
+		PQclear(res);
+	}
+
+	ReleaseConnection(conn);
 }

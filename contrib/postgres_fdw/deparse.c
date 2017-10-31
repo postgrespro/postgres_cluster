@@ -45,6 +45,8 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
+#include "commands/copy.h"
+#include "mb/pg_wchar.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/plannodes.h"
@@ -3171,4 +3173,48 @@ get_relation_column_alias_ids(Var *node, RelOptInfo *foreignrel,
 
 	/* Shouldn't get here */
 	elog(ERROR, "unexpected expression in subquery output");
+}
+
+/*
+ * Deparse COPY FROM
+ */
+void
+deparseCopyFromSql(StringInfo buf, Relation rel, CopyState cstate)
+{
+	appendStringInfoString(buf, "COPY ");
+	deparseRelation(buf, rel);
+	appendStringInfoString(buf, " FROM STDIN WITH (");
+
+	/* TODO: deparse column names */
+	if (cstate->binary)
+	{
+			ereport(ERROR,
+					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+					 errmsg("cannot copy to postgres_fdw table \"%s\" in binary format ",
+							RelationGetRelationName(rel))));
+	}
+	if (cstate->csv_mode)
+	{
+		appendStringInfoString(buf, " FORMAT csv ");
+		appendStringInfo(buf, ", QUOTE '%c'", *(cstate->quote));
+		appendStringInfo(buf, ", ESCAPE '%c'", *(cstate->escape));
+		/* TODO: force quote, force not null, force null */
+	}
+	else
+	{
+		appendStringInfoString(buf, " FORMAT text ");
+	}
+
+	appendStringInfo(buf, ", OIDS %d", cstate->oids);
+	appendStringInfo(buf, ", FREEZE %d", cstate->freeze);
+	appendStringInfo(buf, ", DELIMITER '%c'", *(cstate->delim));
+	appendStringInfo(buf, ", NULL %s", quote_literal_cstr(cstate->null_print));
+	/*
+	 * cstate->line_buf is passed to us already converted to this server
+	 * encoding.
+	 */
+	appendStringInfo(buf, ", ENCODING %s",
+					 quote_literal_cstr(
+						 pg_encoding_to_char(GetDatabaseEncoding())));
+	appendStringInfoChar(buf, ')');
 }

@@ -14,6 +14,7 @@
 #define POSTGRES_FDW_H
 
 #include "foreign/foreign.h"
+#include "commands/copy.h"
 #include "lib/stringinfo.h"
 #include "nodes/relation.h"
 #include "utils/relcache.h"
@@ -177,6 +178,7 @@ extern void deparseSelectStmtForRel(StringInfo buf, PlannerInfo *root,
 						List *remote_conds, List *pathkeys, bool is_subquery,
 						List **retrieved_attrs, List **params_list);
 extern const char *get_jointype_name(JoinType jointype);
+extern void deparseCopyFromSql(StringInfo buf, Relation rel, CopyState cstate);
 
 /* in shippable.c */
 extern bool is_builtin(Oid objectId);
