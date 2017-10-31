@@ -1,0 +1,230 @@
+<!--
+doc/src/xml/ref/alter_domain.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterdomain">
+ <indexterm zone="sql-alterdomain"><primary>ALTER DOMAIN</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER DOMAIN</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER DOMAIN</refname>
+  <refpurpose>изменить определение домена</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER DOMAIN <replaceable class="parameter">имя</replaceable>
+    { SET DEFAULT <replaceable class="parameter">выражение</replaceable> | DROP DEFAULT }
+ALTER DOMAIN <replaceable class="parameter">имя</replaceable>
+    { SET | DROP } NOT NULL
+ALTER DOMAIN <replaceable class="parameter">имя</replaceable>
+    ADD <replaceable class="parameter">ограничение_домена</replaceable> [ NOT VALID ]
+ALTER DOMAIN <replaceable class="parameter">имя</replaceable>
+    DROP CONSTRAINT [ IF EXISTS ] <replaceable class="parameter">имя_ограничения</replaceable> [ RESTRICT | CASCADE ]
+ALTER DOMAIN <replaceable class="parameter">имя</replaceable>
+     RENAME CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable> TO <replaceable class="parameter">имя_нового_ограничения</replaceable>
+ALTER DOMAIN <replaceable class="parameter">имя</replaceable>
+    VALIDATE CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable>
+ALTER DOMAIN <replaceable class="parameter">имя</replaceable>
+    OWNER TO { <replaceable class="parameter">новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+ALTER DOMAIN <replaceable class="parameter">имя</replaceable>
+    RENAME TO <replaceable class="parameter">новое_имя</replaceable>
+ALTER DOMAIN <replaceable class="parameter">имя</replaceable>
+    SET SCHEMA <replaceable class="parameter">новая_схема</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER DOMAIN</command> изменяет определение существующего домена. Эта команда имеет несколько разновидностей:</para>
+
+  <variablelist>
+   <varlistentry>
+    <term>SET/DROP DEFAULT</term>
+    <listitem>
+     <para>Эти формы задают/убирают значение по умолчанию для домена. Заметьте, что эти значения по умолчанию применяются только при последующих командах <command>INSERT</command>; они не меняются в строках с данным доменом, уже добавленных в таблицу.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>SET/DROP NOT NULL</term>
+    <listitem>
+     <para>Эти формы определяют, будет ли домен принимать значения NULL или нет. <literal>SET NOT NULL</literal> можно выполнить, только если столбцы с этим доменом ещё не содержат значений NULL.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>ADD <replaceable class="parameter">ограничение_домена</replaceable> [ NOT VALID ]</term>
+    <listitem>
+     <para>Эта форма добавляет новое ограничение для домена с тем же синтаксисом, что описан в <xref remap="6" linkend="sql-createdomain"/>. Когда добавляется новое ограничение домена, все столбцы с этим доменом будут проверены на соответствие этому ограничению. Эти проверки можно подавить, добавив указание <literal>NOT VALID</literal>, а затем активировать позднее с помощью команды <command>ALTER DOMAIN ... VALIDATE CONSTRAINT</command>. Вновь вставленные или изменённые строки всегда проверяются по всем ограничениям, даже тем, что отмечены как <literal>NOT VALID</literal>. Указание <literal>NOT VALID</literal> допускается только для ограничений <literal>CHECK</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>DROP CONSTRAINT [ IF EXISTS ]</term>
+    <listitem>
+     <para>Эта форма убирает ограничения домена. Если указано <literal>IF EXISTS</literal> и заданное ограничение не существует, это не считается ошибкой. В этом случае выдаётся только замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>RENAME CONSTRAINT</term>
+    <listitem>
+     <para>Эта форма меняет название ограничения домена.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>VALIDATE CONSTRAINT</term>
+    <listitem>
+     <para>Эта форма включает проверку ограничения, ранее добавленного как <literal>NOT VALID</literal>, то есть, проверяет все данные в столбцах с этим доменом на соответствие этому ограничению.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>OWNER</term>
+    <listitem>
+     <para>Эта форма меняет владельца домена на заданного пользователя.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RENAME</literal></term>
+    <listitem>
+     <para>Эта форма меняет название домена.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>SET SCHEMA</term>
+    <listitem>
+     <para>Эта форма меняет схему домена. Все ограничения, связанные с данным доменом, так же переносятся в новую схему.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Выполнить <command>ALTER DOMAIN</command> может только владелец соответствующего домена. Чтобы сменить схему домена, необходимо также иметь право <literal>CREATE</literal> в новой схеме. Чтобы сменить владельца, необходимо быть непосредственным или опосредованным членом новой роли-владельца, а эта роль должна иметь право <literal>CREATE</literal> в схеме домена. (С такими ограничениями при смене владельца не происходит ничего такого, что нельзя было бы сделать, имея право удалить и вновь создать домен. Однако суперпользователь может сменить владельца домена в любом случае.)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <para>
+    <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">имя</replaceable></term>
+      <listitem>
+       <para>Имя (возможно, дополненное схемой) существующего домена, подлежащего изменению.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">ограничение_домена</replaceable></term>
+      <listitem>
+       <para>Новое ограничение домена.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_ограничения</replaceable></term>
+      <listitem>
+       <para>Имя существующего ограничения, подлежащего удалению или переименованию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">NOT VALID</replaceable></term>
+      <listitem>
+       <para>Не проверять существующие данные в столбцах на соответствие ограничению.</para>
+      </listitem>
+     </varlistentry>
+
+
+     <varlistentry>
+      <term><literal>CASCADE</literal></term>
+      <listitem>
+       <para>Автоматически удалять объекты, зависящие от данного ограничения, и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>RESTRICT</literal></term>
+      <listitem>
+       <para>Отказать в удалении ограничения, если существуют зависящие от него объекты. Это поведение по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">новое_имя</replaceable></term>
+      <listitem>
+       <para>Новое имя домена.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_нового_ограничения</replaceable></term>
+      <listitem>
+       <para>Новое имя ограничения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">новый_владелец</replaceable></term>
+      <listitem>
+       <para>Имя пользователя, назначаемого новым владельцем домена.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">новая_схема</replaceable></term>
+      <listitem>
+       <para>Новая схема домена.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+   </para>
+  </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>В настоящее время команды <command>ALTER DOMAIN ADD CONSTRAINT</command>, <command>ALTER DOMAIN VALIDATE CONSTRAINT</command> и <command>ALTER DOMAIN SET NOT NULL</command> выдают ошибку, если проверяемый указанный домен или производный от него используется в столбце составного типа в любой таблице БД. В дальнейшем они будут доработаны, с тем чтобы новое ограничение проверялось и при такой вложенности.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Добавление ограничения <literal>NOT NULL</literal> к домену: <programlisting>ALTER DOMAIN zipcode SET NOT NULL;</programlisting> Удаление ограничения <literal>NOT NULL</literal> из домена: <programlisting>ALTER DOMAIN zipcode DROP NOT NULL;</programlisting></para>
+
+  <para>Добавление ограничения-проверки к домену: <programlisting>ALTER DOMAIN zipcode ADD CONSTRAINT zipchk CHECK (char_length(VALUE) = 5);</programlisting></para>
+
+  <para>Удаление ограничения-проверки из домена: <programlisting>ALTER DOMAIN zipcode DROP CONSTRAINT zipchk;</programlisting></para>
+
+  <para>Переименование ограничения-проверки в домене: <programlisting>ALTER DOMAIN zipcode RENAME CONSTRAINT zipchk TO zip_check;</programlisting></para>
+
+  <para>Перемещение домена в другую схему: <programlisting>ALTER DOMAIN zipcode SET SCHEMA customers;</programlisting></para>
+ </refsect1>
+
+ <refsect1 id="sql-alterdomain-compatibility">
+  <title>Совместимость</title>
+
+  <para><command>ALTER DOMAIN</command> соответствует стандарту <acronym>SQL</acronym>, за исключением подвидов <literal>OWNER</literal>, <literal>RENAME</literal>, <literal>SET SCHEMA</literal> и <literal>VALIDATE CONSTRAINT</literal>, которые являются расширениями <productname>&productname;</productname>. Предложение <literal>NOT VALID</literal> вариации <literal>ADD CONSTRAINT</literal> также является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1 id="sql-alterdomain-see-also">
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createdomain"/></member>
+   <member><xref linkend="sql-dropdomain"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

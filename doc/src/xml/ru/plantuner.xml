@@ -1,0 +1,77 @@
+<sect1 id="plantuner">
+  <title>plantuner</title>
+  <para>Модуль <application>plantuner</application> добавляет поддержку указаний для планировщика, позволяющих отключать или подключать определённые индексы при выполнении запроса.</para>
+
+  <sect2 id="plantuner-motivation">
+    <title>Объяснение</title>
+    <para>Это можно считать хорошей или плохой возможностью, но иногда управлять планировщиком очень интересно (давать указания оптимизатору частично отключать его алгоритмы), однако в настоящее время это невозможно в &productname; (и в PostgreSQL). При этом Oracle, например, поддерживает более 120 вариантов таких указаний; также их поддерживает и Microsoft SQL Server.</para>
+    <para>Первая версия plantuner даёт возможность скрыть определённые индексы от планировщика &productname;, чтобы он их не использовал.</para>
+    <para>Очень часто возникают ситуации, когда разработчик хотел бы временно отключить определённые индексы, не удаляя их, либо, наоборот, принудить планировщик использовать некоторый индекс.</para>
+    <para>Кроме того, с некоторой нагрузкой &productname; бывает слишком пессимистичным в отношении только что созданных таблиц и считает, что в них содержится гораздо больше строк, чем есть на самом деле. Если же переменная GUC plantuner.fix_empty_table имеет значение true, модуль будет обнулять число страниц/кортежей в таблице, которая не содержит никаких блоков в файле.</para>
+  </sect2>
+
+  <sect2 id="plantuner-syntax">
+    <title>Синтаксис</title>
+    <para>plantuner.disable_index &mdash; Список индексов, которые не будет видеть планировщик</para>
+    <para>plantuner.enable_index &mdash; Список индексов, которые будет видеть планировщик, даже если они скрыты параметром plantuner.disable_index.</para>
+  </sect2>
+
+  <sect2 id="plantuner-usage-example">
+    <title>Пример</title>
+    <para>Чтобы включить этот модуль, вы можете либо загрузить разделяемую библиотеку 'plantuner' в сеансе psql либо указать её в параметре 'shared_preload_libraries' в postgresql.conf. <programlisting>=# LOAD 'plantuner';
+=# create table test(id int);
+=# create index id_idx on test(id);
+=# create index id_idx2 on test(id);
+=# \d test
+     Table "public.test"
+ Column |  Type   | Modifiers
+--------+---------+-----------
+ id     | integer |
+Indexes:
+    "id_idx" btree (id)
+    "id_idx2" btree (id)
+=# explain select id from test where id=1;
+                              QUERY PLAN
+-----------------------------------------------------------------------
+ Bitmap Heap Scan on test  (cost=4.34..15.03 rows=12 width=4)
+   Recheck Cond: (id = 1)
+   -&gt;  Bitmap Index Scan on id_idx2  (cost=0.00..4.34 rows=12 width=0)
+         Index Cond: (id = 1)
+(4 rows)
+=# set enable_seqscan=off;
+=# set plantuner.disable_index='id_idx2';
+=# explain select id from test where id=1;
+                              QUERY PLAN
+----------------------------------------------------------------------
+ Bitmap Heap Scan on test  (cost=4.34..15.03 rows=12 width=4)
+   Recheck Cond: (id = 1)
+   -&gt;  Bitmap Index Scan on id_idx  (cost=0.00..4.34 rows=12 width=0)
+         Index Cond: (id = 1)
+(4 rows)
+=# set plantuner.disable_index='id_idx2,id_idx';
+=# explain select id from test where id=1;
+                               QUERY PLAN
+-------------------------------------------------------------------------
+ Seq Scan on test  (cost=10000000000.00..10000000040.00 rows=12 width=4)
+   Filter: (id = 1)
+(2 rows)
+=# set plantuner.enable_index='id_idx';
+=# explain select id from test where id=1;
+                              QUERY PLAN
+-----------------------------------------------------------------------
+ Bitmap Heap Scan on test  (cost=4.34..15.03 rows=12 width=4)
+   Recheck Cond: (id = 1)
+   -&gt;  Bitmap Index Scan on id_idx  (cost=0.00..4.34 rows=12 width=0)
+         Index Cond: (id = 1)
+(4 rows)
+      </programlisting></para>
+  </sect2>
+
+  <sect2 id="plantuner-authors">
+    <title>Авторы</title>
+    <para>Разработку осуществили Фёдор Сигаев (teodor@sigaev.ru) и Олег Бартунов (oleg@sai.msu.su).</para>
+    <para>Эта работу спонсировал проект Nomao (http://www.nomao.com).</para>
+  </sect2>
+
+</sect1>
+

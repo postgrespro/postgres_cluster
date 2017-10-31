@@ -1,0 +1,85 @@
+<!--
+doc/src/xml/ref/drop_foreign_data_wrapper.xml
+&productname; documentation
+-->
+
+<refentry id="sql-dropforeigndatawrapper">
+ <indexterm zone="sql-dropforeigndatawrapper"><primary>DROP FOREIGN DATA WRAPPER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP FOREIGN DATA WRAPPER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP FOREIGN DATA WRAPPER</refname>
+  <refpurpose>удалить обёртку сторонних данных</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP FOREIGN DATA WRAPPER [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP FOREIGN DATA WRAPPER</command> удаляет существующую обёртку сторонних данных. Пользователь, выполняющий эту команду, должен быть владельцем обёртки.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если обёртка сторонних данных не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя существующей обёртки сторонних данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данной обёртки сторонних данных (например, сторонние таблицы и серверы), и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении обёртки сторонних данных, если от неё зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление обёртки сторонних данных <literal>dbi</literal>: <programlisting>DROP FOREIGN DATA WRAPPER dbi;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>DROP FOREIGN DATA WRAPPER</command> соответствует стандарту ISO/IEC 9075-9 (SQL/MED). Предложение <literal>IF EXISTS</literal> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createforeigndatawrapper"/></member>
+   <member><xref linkend="sql-alterforeigndatawrapper"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

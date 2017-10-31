@@ -1,0 +1,85 @@
+<!--
+doc/src/xml/ref/discard.xml
+&productname; documentation
+-->
+
+<refentry id="sql-discard">
+ <indexterm zone="sql-discard"><primary>DISCARD</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DISCARD</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DISCARD</refname>
+  <refpurpose>очистить состояние сеанса</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DISCARD { ALL | PLANS | SEQUENCES | TEMPORARY | TEMP }</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DISCARD</command> высвобождает внутренние ресурсы, связанные с сеансом использования базы данных. Эта команда полезна для частичного или полного сброса состояния сеанса. Для освобождения различных типов ресурсов она поддерживает несколько разных подкоманд; вариант <command>DISCARD ALL</command> включает в себя все остальные и также сбрасывает дополнительное состояние.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+
+   <varlistentry>
+    <term><literal>PLANS</literal></term>
+    <listitem>
+     <para>Высвобождает все кешированные планы запросов, вынуждая сервер провести планирование заново при следующем использовании связанного подготовленного оператора.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SEQUENCES</literal></term>
+    <listitem>
+     <para>Сбрасывает кешированное состояние, связанное с последовательностями, включая внутреннюю информацию <function>currval()</function>/<function>lastval()</function> и любые предварительно выделенные значения последовательностей, которые ещё не выдала функция <function>nextval()</function>. (Кеширование значений последовательности описано в <xref remap="6" linkend="sql-createsequence"/>.)</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>TEMPORARY</literal> или <literal>TEMP</literal></term>
+    <listitem>
+     <para>Удаляет все временные таблицы, созданные в текущем сеансе.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ALL</literal></term>
+    <listitem>
+     <para>Высвобождает все временные ресурсы, связанные с текущим сеансом, и сбрасывает сеанс к начальному состоянию. В настоящее время действует так же, как и следующая последовательность операторов: <programlisting>SET SESSION AUTHORIZATION DEFAULT;
+RESET ALL;
+DEALLOCATE ALL;
+CLOSE ALL;
+UNLISTEN *;
+SELECT pg_advisory_unlock_all();
+DISCARD PLANS;
+DISCARD SEQUENCES;
+DISCARD TEMP;</programlisting></para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para><command>DISCARD ALL</command> нельзя выполнять внутри блока транзакции.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>DISCARD</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+</refentry>

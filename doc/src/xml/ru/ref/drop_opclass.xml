@@ -1,0 +1,102 @@
+<!--
+doc/src/xml/ref/drop_opclass.xml
+&productname; documentation
+-->
+
+<refentry id="sql-dropopclass">
+ <indexterm zone="sql-dropopclass"><primary>DROP OPERATOR CLASS</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP OPERATOR CLASS</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP OPERATOR CLASS</refname>
+  <refpurpose>удалить класс операторов</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP OPERATOR CLASS [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> USING <replaceable class="parameter">метод_индекса</replaceable> [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP OPERATOR CLASS</command> удаляет существующий класс операторов. Выполнить эту команду может только владелец класса операторов.</para>
+
+  <para><command>DROP OPERATOR CLASS</command> не удаляет операторы или функции, связанные с этим классом. Если же существуют индексы, зависящие от этого класса, класс будет удалён успешно (вместе с индексами), только если добавить указание <literal>CASCADE</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если класс операторов не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующего класса операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">метод_индекса</replaceable></term>
+    <listitem>
+     <para>Имя индексного метода, для которого предназначен этот класс операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данного класса операторов (например, использующие его индексы), и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении класса операторов, если от него зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para><command>DROP OPERATOR CLASS</command> не удалит семейство операторов, содержавшее этот класс, даже если в этом семействе больше ничего не останется (в том числе, если семейство было неявно создано командой <command>CREATE OPERATOR CLASS</command>). Пустое семейство операторов безвредно, но порядка ради затем следует удалить и его, командой <command>DROP OPERATOR FAMILY</command>; или, возможно, выполнить <command>DROP OPERATOR FAMILY</command> в первую очередь.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление класса операторов B-дерева с именем <literal>widget_ops</literal>: <programlisting>DROP OPERATOR CLASS widget_ops USING btree;</programlisting> Эта команда не будет выполнена, если в базе существуют индексы, использующие этот класс. Чтобы удалить такие индексы вместе с классом операторов, нужно добавить указание <literal>CASCADE</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Команда <command>DROP OPERATOR CLASS</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alteropclass"/></member>
+   <member><xref linkend="sql-createopclass"/></member>
+   <member><xref linkend="sql-dropopfamily"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

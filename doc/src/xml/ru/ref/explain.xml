@@ -1,0 +1,232 @@
+<!--
+doc/src/xml/ref/explain.xml
+&productname; documentation
+-->
+
+<refentry id="sql-explain">
+ <indexterm zone="sql-explain"><primary>EXPLAIN</primary></indexterm>
+
+ <indexterm zone="sql-explain"><primary>подготовленные операторы</primary> <secondary>показ плана запроса</secondary></indexterm>
+
+ <indexterm zone="sql-explain"><primary>курсор</primary> <secondary>показ плана запроса</secondary></indexterm>
+
+ <refmeta>
+  <refentrytitle>EXPLAIN</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>EXPLAIN</refname>
+  <refpurpose>показать план выполнения оператора</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>EXPLAIN [ ( <replaceable class="parameter">параметр</replaceable> [, ...] ) ] <replaceable class="parameter">оператор</replaceable>
+EXPLAIN [ ANALYZE ] [ VERBOSE ] <replaceable class="parameter">оператор</replaceable>
+
+<phrase>Здесь допускается <replaceable class="parameter">параметр</replaceable>:</phrase>
+
+    ANALYZE [ <replaceable class="parameter">boolean</replaceable> ]
+    VERBOSE [ <replaceable class="parameter">boolean</replaceable> ]
+    COSTS [ <replaceable class="parameter">boolean</replaceable> ]
+    BUFFERS [ <replaceable class="parameter">boolean</replaceable> ]
+    TIMING [ <replaceable class="parameter">boolean</replaceable> ]
+    FORMAT { TEXT | XML | JSON | YAML }</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Эта команда выводит план выполнения, генерируемый планировщиком <productname>&productname;</productname> для заданного оператора. План выполнения показывает, как будут сканироваться таблицы, затрагиваемые оператором &mdash; просто последовательно, по индексу и т. д. &mdash; а если запрос связывает несколько таблиц, какой алгоритм соединения будет выбран для объединения считанных из них строк.</para>
+
+  <para>Наибольший интерес в выводимой информации представляет ожидаемая стоимость выполнения оператора, которая показывает, сколько, по мнению планировщика, будет выполняться этот оператор (это значение измеряется в единицах стоимости, которые не имеют точного определения, но обычно это обращение к странице на диске). Фактически выводятся два числа: стоимость запуска до выдачи первой строки и общая стоимость выдачи всех строк. Для большинства запросов важна общая стоимость, но в таких контекстах, как подзапрос в <literal>EXISTS</literal>, планировщик будет минимизировать стоимость запуска, а не общую стоимость (так как исполнение запроса всё равно завершится сразу после получения одной строки). Кроме того, если количество возвращаемых строк ограничивается предложением <literal>LIMIT</literal>, планировщик интерполирует стоимость между двумя этими числами, выбирая наиболее выгодный план.</para>
+
+  <para>С параметром <literal>ANALYZE</literal> оператор будет выполнен на самом деле, а не только запланирован. При этом в вывод добавляются фактические сведения о времени выполнения, включая общее время, затраченное на каждый узел плана (в миллисекундах) и общее число строк, выданных в результате. Это помогает понять, насколько близки к реальности предварительные оценки планировщика.</para>
+
+  <important>
+   <para>Имейте в виду, что с указанием <literal>ANALYZE</literal> оператор действительно выполняется. Хотя <command>EXPLAIN</command> отбрасывает результат, который вернул бы <command>SELECT</command>, в остальном все действия выполняются как обычно. Если вы хотите выполнить <command>EXPLAIN ANALYZE</command> с командой <command>INSERT</command>, <command>UPDATE</command>, <command>DELETE</command>, <command>CREATE TABLE AS</command> или <command>EXECUTE</command>, не допуская изменения данных этой командой, воспользуйтесь таким приёмом: <programlisting>BEGIN;
+EXPLAIN ANALYZE ...;
+ROLLBACK;</programlisting></para>
+  </important>
+
+  <para>Без скобок для этого оператора можно указать только параметры <literal>ANALYZE</literal> и <literal>VERBOSE</literal> и только в таком порядке. В <productname>PostgreSQL</productname> до версии 9.0 поддерживался только синтаксис без скобок, однако в дальнейшем ожидается, что все новые параметры будут восприниматься только в скобках.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>ANALYZE</literal></term>
+    <listitem>
+     <para>Выполнить команду и вывести фактическое время выполнения и другую статистику. По умолчанию этот параметр равен <literal>FALSE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>VERBOSE</literal></term>
+    <listitem>
+     <para>Вывести дополнительную информацию о плане запроса. В частности, включить список столбцов результата для каждого узла в дереве плана, дополнить схемой имена таблиц и функций, всегда указывать для переменных в выражениях псевдоним их таблицы, а также выводить имена всех триггеров, для которых выдаётся статистика. По умолчанию этот параметр равен <literal>FALSE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>COSTS</literal></term>
+    <listitem>
+     <para>Вывести рассчитанную стоимость запуска и общую стоимость каждого узла плана, а также рассчитанное число строк и ширину каждой строки. Этот параметр по умолчанию равен <literal>TRUE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>BUFFERS</literal></term>
+    <listitem>
+     <para>Включить информацию об использовании буфера. В частности, вывести число попаданий, блоков прочитанных, загрязненных и записанных в разделяемом и локальном буфере, а также число прочитанных и записанных временных блоков. <emphasis>Попаданием</emphasis> считается ситуация, когда требуемый блок уже находится в кеше и чтения с диска удаётся избежать. Блоки в общем буфере содержат данные обычных таблиц и индексов, в локальном — данные временных таблиц и индексов, а временные блоки предназначены для краткосрочного использования при выполнении сортировки, хеширования, материализации и подобных узлов плана. Число <emphasis>загрязнённых</emphasis> блоков показывает, сколько ранее не модифицированных блоков изменила данная операция; тогда как число <emphasis>записанных</emphasis> блоков показывает, сколько ранее загрязнённых блоков данный серверный процесс вынес из кеша при обработке запроса. Значения, указываемые для узла верхнего уровня, включают значения всех его дочерних узлов. В текстовом формате выводятся только ненулевые значения. Этот параметр действует только в режиме <literal>ANALYZE</literal>. По умолчанию его значение равно <literal>FALSE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>TIMING</literal></term>
+    <listitem>
+     <para>Включить в вывод фактическое время запуска и время, затраченное на каждый узел. Постоянное чтение системных часов может значительно замедлить запрос, так что если достаточно знать фактическое число строк, имеет смысл сделать этот параметр равным <literal>FALSE</literal>. Время выполнения всего оператора замеряется всегда, даже когда этот параметр выключен и на уровне узлов время не подсчитывается. Этот параметр действует только в режиме <literal>ANALYZE</literal>. По умолчанию его значение равно <literal>TRUE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>FORMAT</literal></term>
+    <listitem>
+     <para>Установить один из следующих форматов вывода: TEXT, XML, JSON или YAML. Последние три формата содержат ту же информацию, что и текстовый, но больше подходят для программного разбора. По умолчанию выбирается формат <literal>TEXT</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">boolean</replaceable></term>
+    <listitem>
+     <para>Включает или отключает заданный параметр. Для включения параметра можно написать <literal>TRUE</literal>, <literal>ON</literal> или <literal>1</literal>, а для отключения — <literal>FALSE</literal>, <literal>OFF</literal> или <literal>0</literal>. Значение <replaceable class="parameter">boolean</replaceable> можно опустить, в этом случае подразумевается <literal>TRUE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">оператор</replaceable></term>
+    <listitem>
+     <para>Любой оператор <command>SELECT</command>, <command>INSERT</command>, <command>UPDATE</command>, <command>DELETE</command>, <command>VALUES</command>, <command>EXECUTE</command>, <command>DECLARE</command>, <command>CREATE TABLE AS</command> и <command>CREATE MATERIALIZED VIEW AS</command>, план выполнения которого вас интересует.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Выводимая информация</title>
+
+   <para>Результатом команды будет текстовое описание плана, выбранного для <replaceable class="parameter">оператора</replaceable>, возможно, дополненное статистикой выполнения. Представленная информация описана в <xref remap="6" linkend="using-explain"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Чтобы планировщик запросов <productname>&productname;</productname> был достаточно информирован для эффективной оптимизации запросов, данные в <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link> должны быть актуальными для всех таблиц, задействованных в запросе. Обычно об этом автоматически заботится <link linkend="autovacuum">демон автоочистки</link>. Но если в таблице недавно произошли значительные изменения, может потребоваться вручную выполнить <xref linkend="sql-analyze"/>, не дожидаясь, пока автоочистка обработает эти изменения.</para>
+
+  <para>Измеряя фактическую стоимость выполнения каждого узла в плане, текущая реализация <command>EXPLAIN ANALYZE</command> привносит накладные расходы профилирования в выполнение запроса. В результате этого, при запуске запроса командой <command>EXPLAIN ANALYZE</command> он может выполняться значительно дольше, чем при обычном выполнении. Объём накладных расходов зависит от природы запроса, а также от используемой платформы. Худшая ситуация наблюдается для узлов плана, которые сами по себе выполняются очень быстро, и в операционных системах, где получение текущего времени относительно длительная операция.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Получение плана простого запроса для таблицы, содержащей единственный столбец типа <type>integer</type>, с 10000 строк: <programlisting>EXPLAIN SELECT * FROM foo;
+
+                       QUERY PLAN
+---------------------------------------------------------
+ Seq Scan on foo  (cost=0.00..155.00 rows=10000 width=4)
+(1 row)</programlisting></para>
+
+  <para>План того же запроса, но выведенный в формате JSON: <programlisting>EXPLAIN (FORMAT JSON) SELECT * FROM foo;
+           QUERY PLAN
+--------------------------------
+ [                             +
+   {                           +
+     "Plan": {                 +
+       "Node Type": "Seq Scan",+
+       "Relation Name": "foo", +
+       "Alias": "foo",         +
+       "Startup Cost": 0.00,   +
+       "Total Cost": 155.00,   +
+       "Plan Rows": 10000,     +
+       "Plan Width": 4         +
+     }                         +
+   }                           +
+ ]
+(1 row)</programlisting></para>
+
+  <para>Если в таблице есть индекс, а в запросе присутствует условие <literal>WHERE</literal>, для которого полезен этот индекс, <command>EXPLAIN</command> может показать другой план: <programlisting>EXPLAIN SELECT * FROM foo WHERE i = 4;
+
+                         QUERY PLAN
+--------------------------------------------------------------
+ Index Scan using fi on foo  (cost=0.00..5.98 rows=1 width=4)
+   Index Cond: (i = 4)
+(2 rows)</programlisting></para>
+
+  <para>План того же запроса, но в формате YAML: <programlisting>EXPLAIN (FORMAT YAML) SELECT * FROM foo WHERE i='4';
+          QUERY PLAN
+-------------------------------
+ - Plan:                      +
+     Node Type: "Index Scan"  +
+     Scan Direction: "Forward"+
+     Index Name: "fi"         +
+     Relation Name: "foo"     +
+     Alias: "foo"             +
+     Startup Cost: 0.00       +
+     Total Cost: 5.98         +
+     Plan Rows: 1             +
+     Plan Width: 4            +
+     Index Cond: "(i = 4)"    
+(1 row)</programlisting> Рассмотрение формата XML оставлено в качестве упражнения для читателя.</para>
+  <para>План того же запроса без вывода оценок стоимости: <programlisting>EXPLAIN (COSTS FALSE) SELECT * FROM foo WHERE i = 4;
+
+        QUERY PLAN
+----------------------------
+ Index Scan using fi on foo
+   Index Cond: (i = 4)
+(2 rows)</programlisting></para>
+
+  <para>Пример плана для запроса с агрегатной функцией: <programlisting>EXPLAIN SELECT sum(i) FROM foo WHERE i &lt; 10;
+
+                             QUERY PLAN
+---------------------------------------------------------------------
+ Aggregate  (cost=23.93..23.93 rows=1 width=4)
+   -&gt;  Index Scan using fi on foo  (cost=0.00..23.92 rows=6 width=4)
+         Index Cond: (i &lt; 10)
+(3 rows)</programlisting></para>
+
+  <para>Пример использования <command>EXPLAIN EXECUTE</command> для отображения плана выполнения подготовленного запроса: <programlisting>PREPARE query(int, int) AS SELECT sum(bar) FROM test
+    WHERE id &gt; $1 AND id &lt; $2
+    GROUP BY foo;
+
+EXPLAIN ANALYZE EXECUTE query(100, 200);
+
+                                                       QUERY PLAN                                                       
+------------------------------------------------------------------------------------------------------------------------
+ HashAggregate  (cost=9.54..9.54 rows=1 width=8) (actual time=0.156..0.161 rows=11 loops=1)
+   Group Key: foo
+   -&gt;  Index Scan using test_pkey on test  (cost=0.29..9.29 rows=50 width=8) (actual time=0.039..0.091 rows=99 loops=1)
+         Index Cond: ((id &gt; $1) AND (id &lt; $2))
+ Planning time: 0.197 ms
+ Execution time: 0.225 ms
+(6 rows)</programlisting></para>
+
+  <para>Разумеется, конкретные числа, показанные здесь, зависят от фактического содержимого задействованных таблиц. Также учтите, что эти числа и даже выбранная стратегия выполнения запроса могут меняться от версии к версии <productname>&productname;</productname> вследствие усовершенствования планировщика. Кроме того, команда <command>ANALYZE</command> при обработке статистических данных производит случайные выборки, так что оценки стоимости могут меняться при каждом чистом запуске <command>ANALYZE</command>, даже когда фактическое распределение данных в таблице не меняется.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>EXPLAIN</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-analyze"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

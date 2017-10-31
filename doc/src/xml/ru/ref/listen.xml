@@ -1,0 +1,80 @@
+<!--
+doc/src/xml/ref/listen.xml
+&productname; documentation
+-->
+
+<refentry id="sql-listen">
+ <indexterm zone="sql-listen"><primary>LISTEN</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>LISTEN</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>LISTEN</refname>
+  <refpurpose>ожидать уведомления</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>LISTEN <replaceable class="parameter">канал</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>LISTEN</command> регистрирует текущий сеанс для получения уведомления через канал с заданным именем (<replaceable class="parameter">канал</replaceable>). Если текущий сеанс уже зарегистрирован и ожидает уведомления через этот канал, ничего не происходит.</para>
+
+  <para>Когда вызывается команда <command>NOTIFY <replaceable class="parameter">канал</replaceable></command> (в текущем или другом сеансе, подключённом к той же базе данных), все сеансы, ожидающие уведомления через заданный канал, получают уведомление и каждый, в свою очередь, передаёт его подключённому клиентскому приложению.</para>
+
+  <para>Сеанс может отказаться от получения уведомлений через определённый канал с помощью команды <command>UNLISTEN</command>. Кроме того, подписка на любые уведомления автоматически отменяется при завершении сеанса.</para>
+
+  <para>Способ получения уведомлений клиентским приложением определяется программным интерфейсом <productname>&productname;</productname>, который оно использует. Приложение, использующее библиотеку <application>libpq</application>, выполняет команду <command>LISTEN</command> как обычную команду SQL, а затем оно должно периодически вызывать функцию <function>PQnotifies</function>, чтобы проверить, не поступили ли новые уведомления. Другие интерфейсы, например <application>libpgtcl</application>, предоставляют более высокоуровневые методы для обработки событий уведомлений; на самом деле с <application>libpgtcl</application> разработчик приложения даже не должен непосредственно выполнять команды <command>LISTEN</command> и <command>UNLISTEN</command>. За дополнительными подробностями обратитесь к документации интерфейса, который вы используете.</para>
+
+  <para>В описании <xref linkend="sql-notify"/> использование <command>LISTEN</command> и <command>NOTIFY</command> рассматривается более подробно.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">канал</replaceable></term>
+    <listitem>
+     <para>Имя канала уведомлений (любой идентификатор).</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para><command>LISTEN</command> начинает действовать при фиксировании транзакции. Если <command>LISTEN</command> или <command>UNLISTEN</command> выполняется в транзакции, которая затем откатывается, состояние подписки этого сеанса на уведомления не меняется.</para>
+  <para>Транзакция, в которой выполняется <command>LISTEN</command>, не может быть подготовлена для двухфазной фиксации.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Демонстрация процедуры ожидания/получения уведомления в <application>psql</application>: <programlisting>LISTEN virtual;
+NOTIFY virtual;
+Asynchronous notification "virtual" received from server process with PID 8448.</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>LISTEN</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-notify"/></member>
+   <member><xref linkend="sql-unlisten"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

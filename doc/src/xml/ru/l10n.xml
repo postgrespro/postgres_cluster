@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<l:i18n xmlns:l="http://docbook.sourceforge.net/xmlns/l10n/1.0">
+<l:l10n language="ru" english-language-name="Russian">
+
+<l:context name="xref">
+<l:template name="refsect1_3" text="Разделу «%t»"/>
+<l:template name="refsect1_4" text="Раздел «%t»"/>
+<l:template name="refsect1_6" text="Разделе «%t»"/>
+<l:template name="refsect2_2" text="Подраздела «%t»"/>
+<l:template name="refsect2_3" text="Подразделу «%t»"/>
+<l:template name="refsect2_4" text="Подраздел «%t»"/>
+<l:template name="refsect2_6" text="Подразделе «%t»"/>
+<l:template name="refsect3_3" text="Подразделу «%t»"/>
+<l:template name="refsect3_4" text="Подраздел «%t»"/>
+<l:template name="refsect3_6" text="Подразделе «%t»"/>
+<l:template name="reference_3" text="Справке: «%t»"/>
+<l:template name="reference_6" text="Справке: «%t»"/>
+</l:context>
+
+<l:context name="xref-number">
+<l:template name="answer" text="Ответ: %n"/>
+<l:template name="appendix" text="Приложение %n"/>
+<l:template name="appendix_3" text="Приложению %n"/>
+<l:template name="appendix_4" text="Приложение %n"/>
+<l:template name="appendix_6" text="Приложении %n"/>
+<l:template name="bridgehead" text="Раздел %n"/>
+<l:template name="chapter" text="Глава %n"/>
+<l:template name="chapter_2" text="Главы %n"/>
+<l:template name="chapter_3" text="Главе %n"/>
+<l:template name="chapter_4" text="Главу %n"/>
+<l:template name="chapter_6" text="Главе %n"/>
+<l:template name="equation" text="Формула %n"/>
+<l:template name="example" text="Пример %n"/>
+<l:template name="example_4" text="Пример %n"/>
+<l:template name="example_6" text="Примере %n"/>
+<l:template name="figure" text="Рисунок %n"/>
+<l:template name="figure_6" text="Рисунке %n"/>
+<l:template name="part" text="Часть %n"/>
+<l:template name="part_3" text="Части %n"/>
+<l:template name="part_4" text="Часть %n"/>
+<l:template name="part_6" text="Части %n"/>
+<l:template name="procedure" text="Процедура %n"/>
+<l:template name="productionset" text="Производство %n"/>
+<l:template name="qandadiv" text="Вопросы и ответы %n"/>
+<l:template name="qandaentry" text="Вопрос: %n"/>
+<l:template name="question" text="Вопрос: %n"/>
+<l:template name="sect1" text="Раздел %n"/>
+<l:template name="sect1_2" text="Раздела %n"/>
+<l:template name="sect1_3" text="Разделу %n"/>
+<l:template name="sect1_4" text="Раздел %n"/>
+<l:template name="sect1_6" text="Разделе %n"/>
+<l:template name="sect2" text="Подраздел %n"/>
+<l:template name="sect2_2" text="Подраздела %n"/>
+<l:template name="sect2_3" text="Подразделу %n"/>
+<l:template name="sect2_4" text="Подраздел %n"/>
+<l:template name="sect2_6" text="Подразделе %n"/>
+<l:template name="sect3" text="Подраздел %n"/>
+<l:template name="sect3_3" text="Подразделу %n"/>
+<l:template name="sect3_4" text="Подраздел %n"/>
+<l:template name="sect3_6" text="Подразделе %n"/>
+<l:template name="sect4" text="Подраздел %n"/>
+<l:template name="sect4_3" text="Подразделу %n"/>
+<l:template name="sect4_4" text="Подраздел %n"/>
+<l:template name="sect4_6" text="Подразделе %n"/>
+<l:template name="sect5" text="Подраздел %n"/>
+<l:template name="section" text="Раздел %n"/>
+<l:template name="table" text="Таблица %n"/>
+<l:template name="table_2" text="Таблицы %n"/>
+<l:template name="table_3" text="Таблице %n"/>
+<l:template name="table_4" text="Таблицу %n"/>
+<l:template name="table_6" text="Таблице %n"/>
+</l:context>
+</l:l10n>
+</l:i18n>

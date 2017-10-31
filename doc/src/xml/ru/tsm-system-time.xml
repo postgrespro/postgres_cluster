@@ -1,0 +1,28 @@
+<!-- doc/src/xml/tsm-system-time.xml -->
+
+<sect1 id="tsm-system-time" xreflabel="tsm_system_time">
+ <title>tsm_system_time</title>
+
+ <indexterm zone="tsm-system-time"><primary>tsm_system_time</primary></indexterm>
+
+ <para>Модуль <filename>tsm_system_time</filename> предоставляет метод извлечения выборки <literal>SYSTEM_TIME</literal>, который можно использовать в предложении <literal>TABLESAMPLE</literal> команды <xref linkend="sql-select"/>.</para>
+
+ <para>Этот метод извлечения выборки принимает в единственном аргументе число с плавающей точкой, задающее максимальное время (в миллисекундах), которое отводится на чтение таблицы. Это даёт возможность непосредственно управлять длительностью выполнения запроса, ценой того, что размер выборки оказывается трудно предсказуемым. Результирующая выборка будет содержать столько строк, сколько удастся прочитать за отведённое время, если только быстрее не будет прочитана вся таблица.</para>
+
+ <para>Как и встроенный метод извлечения выборки <literal>SYSTEM</literal>, <literal>SYSTEM_TIME</literal> производит выборку на уровне блоков, так что выборка будет не полностью случайной, а может подвергаться эффектам кластеризации, особенно когда выбирается небольшое число строк.</para>
+
+ <para><literal>SYSTEM_TIME</literal> не поддерживает предложение <literal>REPEATABLE</literal>.</para>
+
+ <sect2>
+  <title>Примеры</title>
+
+  <para>Пример получения выборки из таблицы с применением метода <literal>SYSTEM_TIME</literal>. Сначала нужно установить расширение:</para>
+
+<programlisting>CREATE EXTENSION tsm_system_time;</programlisting>
+
+  <para>Затем вы можете использовать его в команде <command>SELECT</command>, например так: <programlisting>SELECT * FROM my_table TABLESAMPLE SYSTEM_TIME(1000);</programlisting></para>
+
+  <para>Эта команда выдаст настолько большую выборку из <structname>my_table</structname>, насколько много строк она успеет прочитать за 1 секунду (1000 миллисекунд). Разумеется, если за 1 секунду удастся прочитать всю таблицу, будут возвращены все её строки.</para>
+ </sect2>
+
+</sect1>

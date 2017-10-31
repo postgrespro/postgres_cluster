@@ -1,0 +1,89 @@
+<!-- doc/src/xml/pgvisibility.xml -->
+
+<sect1 id="pgvisibility" xreflabel="pg_visibility">
+ <title>pg_visibility</title>
+
+ <indexterm zone="pgvisibility"><primary>pg_visibility</primary></indexterm>
+
+ <para>Модуль <filename>pg_visibility</filename> даёт возможность исследовать для определённой таблицы карту видимости (Visibility Map, VM) и информацию о видимости на уровне страниц. Он также предоставляет функции для проверки целостности карты видимости и принудительного её пересоздания.</para>
+
+ <para>Для хранения информации о видимости на уровне страниц применяются по три различных бита. Бит полной видимости в карте показывает, что каждый кортеж в соответствующей странице отношения является видимым для всех текущих и будущих транзакций. Бит полной заморозки в карте видимости показывает, что все кортежи в данной странице являются замороженными; то есть никакой операции очистки в будущем не придётся обрабатывать эту страницу, пока в ней не будет добавлен, изменён, удалён или заблокирован кортеж. Бит <literal>PD_ALL_VISIBLE</literal> в заголовке страницы имеет то же значение, что и бит полной видимости в карте видимости, но он хранится в самой странице данных, а не в отдельной структуре данных. В обычной ситуации эти два бита будут согласованы, но бит полной видимости в странице иногда может быть установлен, тогда как в карте видимости он оказывается сброшенным при восстановлении после сбоя. Считываемые значения могут также различаться, если они подвергаются изменению в промежутке между обращениями <literal>pg_visibility</literal> к карте видимости и к странице данных. Разумеется, эти биты также могут различаться при событиях, приводящих к разрушению данных.</para>
+
+ <para>Функции, выдающие информацию о битах <literal>PD_ALL_VISIBLE</literal>, более дорогостоящие, чем те, что обращаются только к карте видимости, так как они должны читать блоки отношения, а не только карту видимости (которая намного меньше). Дорогостоящими являются также и функции, проверяющие блоки данных отношения.</para>
+
+ <sect2>
+  <title>Функции</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><function>pg_visibility_map(relation regclass, blkno bigint, all_visible OUT boolean, all_frozen OUT boolean) returns record</function></term>
+    <listitem>
+     <para>Возвращает биты полной видимости и полной заморозки в карте видимости для указанного блока заданного отношения.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>pg_visibility(relation regclass, blkno bigint, all_visible OUT boolean, all_frozen OUT boolean, pd_all_visible OUT boolean) returns record</function></term>
+    <listitem>
+     <para>Возвращает биты полной видимости и полной заморозки в карте видимости для указанного блока заданного отношения, а также бит <literal>PD_ALL_VISIBLE</literal> этого блока.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>pg_visibility_map(relation regclass, blkno OUT bigint, all_visible OUT boolean, all_frozen OUT boolean) returns setof record</function></term>
+    <listitem>
+     <para>Возвращает биты полной видимости и полной заморозки в карте видимости для каждого блока заданного отношения.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>pg_visibility(relation regclass, blkno OUT bigint, all_visible OUT boolean, all_frozen OUT boolean, pd_all_visible OUT boolean) returns setof record</function></term>
+
+    <listitem>
+     <para>Возвращает биты полной видимости и полной заморозки в карте видимости для каждого блока заданного отношения, а также бит <literal>PD_ALL_VISIBLE</literal> каждого блока.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>pg_visibility_map_summary(relation regclass, all_visible OUT bigint, all_frozen OUT bigint) returns record</function></term>
+
+    <listitem>
+     <para>Возвращает число полностью видимых страниц и полностью замороженных страниц в отношении, согласно карте видимости.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>pg_check_frozen(relation regclass, t_ctid OUT tid) returns setof tid</function></term>
+
+    <listitem>
+     <para>Возвращает идентификаторы TID незамороженных кортежей в страницах, помеченных как полностью замороженные в карте видимости. Если эта функция возвращает непустой набор TID, карта видимости испорчена.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>pg_check_visible(relation regclass, t_ctid OUT tid) returns setof tid</function></term>
+
+    <listitem>
+     <para>Возвращает идентификаторы TID не полностью видимых кортежей в страницах, помеченных как полностью видимые в карте видимости. Если эта функция возвращает непустой набор TID, карта видимости испорчена.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>pg_truncate_visibility_map(relation regclass) returns void</function></term>
+
+    <listitem>
+     <para>Аннулирует карту видимости для заданного отношения. Эта функция полезна, если вы считаете, что карта видимости для указанного отношения испорчена, и хотите принудительно пересоздать её. Первая же команда <command>VACUUM</command>, выполняемая с данным отношением после этой функции, просканирует все страницы в отношении и пересоздаст карту видимости. (Пока это не произойдёт, для запросов карта видимости будет выглядеть как полностью нулевая.)</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>По умолчанию выполнять эти функции могут только суперпользователи.</para>
+ </sect2>
+
+ <sect2>
+  <title>Автор</title>
+
+  <para>Роберт Хаас <email>rhaas@postgresql.org</email></para>
+ </sect2>
+
+</sect1>

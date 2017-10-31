@@ -1,0 +1,89 @@
+<!--
+doc/src/xml/ref/do.xml
+&productname; documentation
+-->
+
+<refentry id="sql-do">
+ <indexterm zone="sql-do"><primary>DO</primary></indexterm>
+
+ <indexterm zone="sql-do"><primary>анонимные блоки кода</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DO</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DO</refname>
+  <refpurpose>выполнить анонимный блок кода</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DO [ LANGUAGE <replaceable class="parameter">имя_языка</replaceable> ] <replaceable class="parameter">код</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DO</command> выполняет анонимный блок кода или, другими словами, разовую анонимную функцию на процедурном языке.</para>
+
+  <para>Блок кода воспринимается, как если бы это было тело функции, которая не имеет параметров и возвращает <type>void</type>. Этот код разбирается и выполняется один раз.</para>
+
+  <para>Необязательное предложение <literal>LANGUAGE</literal> можно записать до или после блока кода.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">код</replaceable></term>
+    <listitem>
+     <para>Выполняемый код на процедурном языке. Он должен задаваться в виде текстовой строки (её рекомендуется заключать в доллары), как и код в <command>CREATE FUNCTION</command>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_языка</replaceable></term>
+    <listitem>
+     <para>Имя процедурного языка, на котором написан код. По умолчанию подразумевается <literal>plpgsql</literal>.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Применяемый процедурный язык должен быть уже зарегистрирован в текущей базе с помощью команды <command>CREATE LANGUAGE</command>. По умолчанию зарегистрирован только <literal>plpgsql</literal>, но не другие языки.</para>
+
+  <para>Пользователь должен иметь право <literal>USAGE</literal> для данного процедурного языка, либо быть суперпользователем, если этот язык недоверенный. Такие же требования действуют и при создании функции на этом языке.</para>
+ </refsect1>
+
+ <refsect1 id="sql-do-examples">
+  <title id="sql-do-examples-title">Примеры</title>
+  <para>Следующий код даст все права для всех представлений в схеме <literal>public</literal> роли <literal>webuser</literal>: <programlisting>DO $$DECLARE r record;
+BEGIN
+    FOR r IN SELECT table_schema, table_name FROM information_schema.tables
+             WHERE table_type = 'VIEW' AND table_schema = 'public'
+    LOOP
+        EXECUTE 'GRANT ALL ON ' || quote_ident(r.table_schema) || '.' || quote_ident(r.table_name) || ' TO webuser';
+    END LOOP;
+END$$;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>DO</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createlanguage"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

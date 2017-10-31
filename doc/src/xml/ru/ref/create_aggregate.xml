@@ -1,0 +1,325 @@
+<!--
+doc/src/xml/ref/create_aggregate.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createaggregate">
+ <indexterm zone="sql-createaggregate"><primary>CREATE AGGREGATE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE AGGREGATE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE AGGREGATE</refname>
+  <refpurpose>создать агрегатную функцию</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE AGGREGATE <replaceable class="parameter">имя</replaceable> ( [ <replaceable class="parameter">режим_аргумента</replaceable> ] [ <replaceable class="parameter">имя_аргумента</replaceable> ] <replaceable class="parameter">тип_данных_аргумента</replaceable> [ , ... ] ) (
+    SFUNC = <replaceable class="parameter">функция_состояния</replaceable>,
+    STYPE = <replaceable class="parameter">тип_данных_состояния</replaceable>
+    [ , SSPACE = <replaceable class="parameter">размер_данных_состояния</replaceable> ]
+    [ , FINALFUNC = <replaceable class="parameter">функция_завершения</replaceable> ]
+    [ , FINALFUNC_EXTRA ]
+    [ , COMBINEFUNC = <replaceable class="parameter">комбинирующая_функция</replaceable> ]
+    [ , SERIALFUNC = <replaceable class="parameter">функция_сериализации</replaceable> ]
+    [ , DESERIALFUNC = <replaceable class="parameter">функция_десериализации</replaceable> ]
+    [ , INITCOND = <replaceable class="parameter">начальное_условие</replaceable> ]
+    [ , MSFUNC = <replaceable class="parameter">функция_состояния_движ</replaceable> ]
+    [ , MINVFUNC = <replaceable class="parameter">обратная_функция_движ</replaceable> ]
+    [ , MSTYPE = <replaceable class="parameter">тип_данных_состояния_движ</replaceable> ]
+    [ , MSSPACE = <replaceable class="parameter">размер_данных_состояния_движ</replaceable> ]
+    [ , MFINALFUNC = <replaceable class="parameter">функция_завершения_движ</replaceable> ]
+    [ , MFINALFUNC_EXTRA ]
+    [ , MINITCOND = <replaceable class="parameter">начальное_условие_движ</replaceable> ]
+    [ , SORTOP = <replaceable class="parameter">оператор_сортировки</replaceable> ]
+    [ , PARALLEL = { SAFE | RESTRICTED | UNSAFE } ]
+)
+
+CREATE AGGREGATE <replaceable class="parameter">имя</replaceable> ( [ [ <replaceable class="parameter">режим_аргумента</replaceable> ] [ <replaceable class="parameter">имя_аргумента</replaceable> ] <replaceable class="parameter">тип_данных_аргумента</replaceable> [ , ... ] ]
+                        ORDER BY [ <replaceable class="parameter">режим_аргумента</replaceable> ] [ <replaceable class="parameter">имя_аргумента</replaceable> ] <replaceable class="parameter">тип_данных_аргумента</replaceable> [ , ... ] ) (
+    SFUNC = <replaceable class="parameter">функция_состояния</replaceable>,
+    STYPE = <replaceable class="parameter">тип_данных_состояния</replaceable>
+    [ , SSPACE = <replaceable class="parameter">размер_данных_состояния</replaceable> ]
+    [ , FINALFUNC = <replaceable class="parameter">функция_завершения</replaceable> ]
+    [ , FINALFUNC_EXTRA ]
+    [ , INITCOND = <replaceable class="parameter">начальное_условие</replaceable> ]
+    [ , PARALLEL = { SAFE | RESTRICTED | UNSAFE } ]
+    [ , HYPOTHETICAL ]
+)
+
+<phrase>или старый синтаксис</phrase>
+
+CREATE AGGREGATE <replaceable class="parameter">имя</replaceable> (
+    BASETYPE = <replaceable class="parameter">базовый_тип</replaceable>,
+    SFUNC = <replaceable class="parameter">функция_состояния</replaceable>,
+    STYPE = <replaceable class="parameter">тип_данных_состояния</replaceable>
+    [ , SSPACE = <replaceable class="parameter">размер_данных_состояния</replaceable> ]
+    [ , FINALFUNC = <replaceable class="parameter">функция_завершения</replaceable> ]
+    [ , FINALFUNC_EXTRA ]
+    [ , COMBINEFUNC = <replaceable class="parameter">комбинирующая_функция</replaceable> ]
+    [ , SERIALFUNC = <replaceable class="parameter">функция_сериализации</replaceable> ]
+    [ , DESERIALFUNC = <replaceable class="parameter">функция_десериализации</replaceable> ]
+    [ , INITCOND = <replaceable class="parameter">начальное_условие</replaceable> ]
+    [ , MSFUNC = <replaceable class="parameter">функция_состояния_движ</replaceable> ]
+    [ , MINVFUNC = <replaceable class="parameter">обратная_функция_движ</replaceable> ]
+    [ , MSTYPE = <replaceable class="parameter">тип_данных_состояния_движ</replaceable> ]
+    [ , MSSPACE = <replaceable class="parameter">размер_данных_состояния_движ</replaceable> ]
+    [ , MFINALFUNC = <replaceable class="parameter">функция_завершения_движ</replaceable> ]
+    [ , MFINALFUNC_EXTRA ]
+    [ , MINITCOND = <replaceable class="parameter">начальное_условие_движ</replaceable> ]
+    [ , SORTOP = <replaceable class="parameter">оператор_сортировки</replaceable> ]
+)</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE AGGREGATE</command> создаёт новую агрегатную функцию. Некоторое количество базовых и часто используемых агрегатных функций включено в дистрибутив, они описаны в <xref remap="6" linkend="functions-aggregate"/>. Но если нужно адаптировать их к новым типам или создать недостающие агрегатные функции, это можно сделать с помощью команды <command>CREATE AGGREGATE</command>.</para>
+
+  <para>Если указывается имя схемы (например, <literal>CREATE AGGREGATE myschema.myagg ...</literal>), агрегатная функция создаётся в указанной схеме. В противном случае она создаётся в текущей схеме.</para>
+
+  <para>Агрегатная функция идентифицируется по имени и типам входных данных. Две агрегатных функции в одной схеме могут иметь одно имя, только если они работают с разными типами данных. Имя и тип(ы) входных данных агрегата не могут совпадать с именем и типами данных любой другой обычной функции в той же схеме. Это же правило действует при перегрузке имён обычных функций (см. <xref remap="4" linkend="sql-createfunction"/>).</para>
+
+  <para>Простую агрегатную функцию образуют одна или две обычные функции: функция перехода состояния <replaceable class="parameter">функция_состояния</replaceable> и необязательная функция окончательного вычисления <replaceable class="parameter">функция_завершения</replaceable>. Они используются следующим образом: <programlisting><replaceable class="parameter">функция_состояния</replaceable>( внутреннее-состояние, следующие-значения-данных ) ---&gt; следующее-внутреннее-состояние
+<replaceable class="parameter">функция_завершения</replaceable>( внутреннее-состояние ) ---&gt; агрегатное_значение</programlisting></para>
+
+  <para><productname>&productname;</productname> создаёт временную переменную типа <replaceable class="parameter">тип_данных_состояния</replaceable> для хранения текущего внутреннего состояния агрегата. Затем для каждой поступающей строки вычисляются значения аргументов агрегата и вызывается функция перехода состояния с текущим значением состояния и полученными аргументами; эта функция вычисляет следующее внутреннее состояние. Когда таким образом будут обработаны все строки, вызывается завершающая функция, которая должна вычислить возвращаемое значение агрегата. Если функция завершения отсутствует, просто возвращается конечное значение состояния.</para>
+
+  <para>Агрегатная функция может определить начальное условие, то есть начальное значение для внутренней переменной состояния. Это значение задаётся и сохраняется в базе данных в виде строки типа <type>text</type>, но оно должно быть допустимым внешним представлением константы типа данных переменной состояния. По умолчанию начальным значением состояния считается NULL.</para>
+
+  <para>Если функция перехода состояния объявлена как <quote>strict</quote> (строгая), её нельзя вызывать с входными значениями NULL. В этом случае агрегатная функция выполняется следующим образом. Строки со значениями NULL игнорируются (функция перехода не вызывается и предыдущее значение состояния не меняется) и если начальное состояние равно NULL, то в первой же строке, в которой все входные значения не NULL, первый аргумент заменяет значение состояния, а функция перехода вызывается для каждой последующей строки, в которой все входные значения не NULL. Это поведение удобно для реализации таких агрегатных функций, как <function>max</function>. Заметьте, что такое поведение возможно, только если <replaceable class="parameter">тип_данных_состояния</replaceable> совпадает с первым <replaceable class="parameter">типом_данных_аргумента</replaceable>. Если же эти типы различаются, необходимо задать начальное условие не NULL или использовать нестрогую функцию перехода состояния.</para>
+
+  <para>Если функция перехода состояния не является строгой, она вызывается безусловно для каждой поступающей строки и должна сама обрабатывать вводимые значения и переменную состояния, равные NULL. Это позволяет разработчику агрегатной функции полностью управлять тем, как она воспринимает значения NULL.</para>
+
+  <para>Если функция завершения объявлена как <quote>strict</quote> (строгая), она не будет вызвана при конечном значении состояния, равном NULL; вместо этого автоматически возвращается результат NULL. (Разумеется, это вполне нормальное поведение для строгих функций.) Когда функция завершения вызывается, она в любом случае может возвратить значение NULL. Например, функция завершения для <function>avg</function> возвращает NULL, если определяет, что было обработано ноль строк.</para>
+
+  <para>Иногда бывает полезно объявить функцию завершения как принимающую не только состояние, но и дополнительные параметры, соответствующие входным данным агрегата. В основном это имеет смысл для полиморфных функций завершения, которым может быть недостаточно знать тип данных только переменной состояния, чтобы вывести тип результата. Эти дополнительные параметры всегда передаются как NULL (так что функция завершения не должна быть строгой, когда применяется <literal>FINALFUNC_EXTRA</literal>), но в остальном это обычные параметры. Функция завершения может выяснить фактические типы аргументов в текущем вызове, воспользовавшись системным вызовом <function>get_fn_expr_argtype</function>.</para>
+
+  <para>Агрегатная функция может дополнительно поддерживать <firstterm>режим движущегося агрегата</firstterm>, как описано в <xref remap="6" linkend="xaggr-moving-aggregates"/>. Для применения этого режима требуется указать параметры <literal>MSFUNC</literal>, <literal>MINVFUNC</literal> и <literal>MSTYPE</literal>, а также, возможно, параметры <literal>MSPACE</literal>, <literal>MFINALFUNC</literal>, <literal>MFINALFUNC_EXTRA</literal> и <literal>MINITCOND</literal>. За исключением <literal>MINVFUNC</literal>, эти параметры работают как соответствующие параметры простого агрегата без начальной буквы <literal>M</literal>; они определяют отдельную реализацию агрегата, включающую функцию обратного перехода.</para>
+
+  <para>Если в список параметров добавлено указание <literal>ORDER BY</literal>, создаётся особый типа агрегата, называемый <firstterm>сортирующим агрегатом</firstterm>; с указанием <literal>HYPOTHETICAL</literal> создаётся <firstterm>гипотезирующий агрегат</firstterm>. Эти агрегаты работают с группами отсортированных значений и зависят от порядка сортировки, поэтому определение порядка сортировки входных данных является неотъемлемой частью их вызова. Кроме того, они могут иметь <firstterm>непосредственные</firstterm> аргументы, которые вычисляются единожды для всей процедуры агрегирования, а не для каждой поступающей строки. Гипотезирующие агрегаты представляют собой подкласс сортирующих агрегатов, в которых непосредственные аргументы должны совпадать, по количеству и типам данных, с агрегируемыми аргументами. Это позволяет добавить значения этих непосредственных аргументов в набор агрегируемых строк в качестве дополнительной <quote>гипотетической</quote> строки.</para>
+
+  <para>Агрегатная функция может дополнительно поддерживать <firstterm>частичное агрегирование</firstterm>, как описано в <xref remap="6" linkend="xaggr-partial-aggregates"/>. Для этого требуется задать параметр <literal>COMBINEFUNC</literal>. Если в качестве <replaceable class="parameter">типа_данных_состояния</replaceable> выбран <type>internal</type>, обычно уместно также задать <literal>SERIALFUNC</literal> и <literal>DESERIALFUNC</literal>, чтобы было возможно параллельное агрегирование. Заметьте, что для параллельного агрегирования агрегатная функция также должна быть помечена как <literal>PARALLEL SAFE</literal> (безопасная для распараллеливания).</para>
+
+  <para>Агрегаты, работающие подобно <function>MIN</function> и <function>MAX</function>, иногда можно соптимизировать, заменив сканирование всех строк таблицы обращением к индексу. Если агрегат подлежит такой оптимизации, это можно указать, определив <firstterm>оператор сортировки</firstterm>. Основное требование при этом: агрегат должен выдавать в результате первый элемент по порядку сортировки, задаваемому оператором; другими словами: <programlisting>SELECT agg(col) FROM tab;</programlisting> должно быть равнозначно: <programlisting>SELECT col FROM tab ORDER BY col USING sortop LIMIT 1;</programlisting> Дополнительно предполагается, что агрегат игнорирует значения NULL и возвращает NULL, только если строк со значениями не NULL не нашлось. Обычно оператор <literal>&lt;</literal> является подходящим оператором сортировки для <function>MIN</function>, а <literal>&gt;</literal> — для <function>MAX</function>. Заметьте, что обращение к индексу может дать эффект, только если заданный оператор реализует стратегию <quote>меньше</quote> или <quote>больше</quote> в классе операторов индекса-B-дерева.</para>
+
+  <para>Чтобы создать агрегатную функцию, необходимо иметь право <literal>USAGE</literal> для типов аргументов, типа(ов) состояния и типа результата, а также право <literal>EXECUTE</literal> для опорных функций.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) создаваемой агрегатной функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">режим_аргумента</replaceable></term>
+
+    <listitem>
+     <para>Режим аргумента: <literal>IN</literal> или <literal>VARIADIC</literal>. (Агрегатные функции не поддерживают выходные аргументы (<literal>OUT</literal>).) По умолчанию подразумевается <literal>IN</literal>. Режим <literal>VARIADIC</literal> может быть указан только последним.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_аргумента</replaceable></term>
+
+    <listitem>
+     <para>Имя аргумента. В настоящее время используется только в целях документирования. Если опущено, соответствующий аргумент будет безымянным.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_данных_аргумента</replaceable></term>
+    <listitem>
+     <para>Тип входных данных, с которым работает эта агрегатная функция. Для создания агрегатной функции без аргументов вставьте <literal>*</literal> вместо списка с определениями аргументов. (Пример такой агрегатной функции: <function>count(*)</function>.)</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">базовый_тип</replaceable></term>
+    <listitem>
+     <para>В прежнем синтаксисе <command>CREATE AGGREGATE</command> тип входных данных задавался параметром <literal>basetype</literal>, а не записывался после имени агрегата. Это позволяло указать только один входной параметр. Чтобы определить функцию без аргументов, используя этот синтаксис, в качестве значения <literal>basetype</literal> нужно указать <literal>"ANY"</literal> (не <literal>*</literal>). Создать сортирующий агрегат старый синтаксис не позволял.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_состояния</replaceable></term>
+    <listitem>
+     <para>Имя функции перехода состояния, вызываемой для каждой входной строки. Для обычных агрегатных функций с <replaceable class="parameter">N</replaceable> аргументами, <replaceable class="parameter">функция_состояния</replaceable> должна принимать <replaceable class="parameter">N</replaceable>+1 аргумент, первый должен иметь тип <replaceable class="parameter">тип_данных_состояния</replaceable>, а остальные — типы соответствующих входных данных. Возвращать она должна значение типа <replaceable class="parameter">тип_данных_состояния</replaceable>. Эта функция принимает текущее значение состояния и текущие значения входных данных, и возвращает следующее значение состояния.</para>
+
+     <para>В сортирующих (и в том числе, гипотезирующих) агрегатах функция перехода состояния получает только текущее значение состояния и агрегируемые аргументы, без непосредственных аргументов. Других отличий у неё нет.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_данных_состояния</replaceable></term>
+    <listitem>
+     <para>Тип данных значения состояния для агрегатной функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">размер_данных_состояния</replaceable></term>
+    <listitem>
+     <para>Средний размер значения состояния агрегата (в байтах). Если этот параметр опущен или равен нулю, применяемая оценка по умолчанию определяется по типу <replaceable>тип_данных_состояния</replaceable>. Планировщик использует это значение для оценивания объёма памяти, требуемому для агрегатного запроса с группировкой. Планировщик может применить агрегирование по хешу для такого запроса, только если хеш-таблица, судя по оценке, поместится в <xref linkend="guc-work-mem"/>; таким образом, при больших значениях этого параметра агрегирование по хешу будет менее желательным.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_завершения</replaceable></term>
+    <listitem>
+     <para>Имя функции завершения, вызываемой для вычисления результата агрегатной функции после обработки всех входных строк. Для обычного агрегата эта функция должна принимать единственный аргумент типа <replaceable class="parameter">тип_данных_состояния</replaceable>. Возвращаемым типом агрегата будет тип, который возвращает эта функция. Если <replaceable class="parameter">функция_завершения</replaceable> не указана, результатом агрегата будет конечное значение состояния, а типом результата — <replaceable class="parameter">тип_данных_состояния</replaceable>.</para>
+
+     <para>В сортирующих (и в том числе, гипотезирующих) агрегатах функция завершения получает не только конечное значение состояния, но и значения всех непосредственных аргументов.</para>
+
+     <para>Если команда содержит указание <literal>FINALFUNC_EXTRA</literal>, то в дополнение к конечному значению состояния и всем непосредственным аргументам функция завершения получает добавочные значения NULL, соответствующие обычным (агрегируемым) аргументам агрегата. Это в основном полезно для правильного определения типа результата при создании полиморфной агрегатной функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">комбинирующая_функция</replaceable></term>
+    <listitem>
+     <para>Дополнительно может быть указана <replaceable class="parameter">комбинирующая_функция</replaceable>, чтобы агрегатная функция поддерживала частичное агрегирование. Если задаётся, <replaceable class="parameter">комбинирующая_функция</replaceable> должна комбинировать два значения <replaceable class="parameter">типа_данных_состояния</replaceable>, содержащих результат агрегирования по некоторому подмножеству входных значений, и вычислять новое значение <replaceable class="parameter">типа_данных_состояния</replaceable>, представляющее результат агрегирования по обоим множествам данных. Эту функцию можно считать своего рода <replaceable class="parameter">функцией_состояния</replaceable>, которая вместо обработки отдельной входной строки и включения её данных в текущее агрегируемое состояние включает некоторое агрегированное состояние в текущее.</para>
+
+     <para>Указанная <replaceable class="parameter">комбинирующая_функция</replaceable> должна быть объявлена как принимающая два аргумента <replaceable class="parameter">типа_данных_состояния</replaceable> и возвращающая значение <replaceable class="parameter">типа_данных_состояния</replaceable>. Эта функция дополнительно может быть объявлена <quote>строгой</quote>. В этом случае данная функция не будет вызываться, когда одно из входных состояний — NULL; в качестве корректного результата будет выдано другое состояние.</para>
+
+     <para>Для агрегатных функций, у которых <replaceable class="parameter">тип_данных_состояния</replaceable> — <type>internal</type>, <replaceable class="parameter">комбинирующая_функция</replaceable> не должна быть <quote>строгой</quote>. При этом <replaceable class="parameter">комбинирующая_функция</replaceable> должна позаботиться о том, чтобы состояния NULL обрабатывались корректно и возвращаемое состояние располагалось в контексте памяти агрегирования.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_сериализации</replaceable></term>
+    <listitem>
+     <para>Агрегатная функция, у которой <replaceable class="parameter">тип_данных_состояния</replaceable> — <type>internal</type>, может участвовать в параллельном агрегировании, только если для неё задана <replaceable class="parameter">функция_сериализации</replaceable>, которая должна сериализовать агрегатное состояние в значение <type>bytea</type> для передачи другому процессу. Эта функция должна принимать один аргумент типа <type>internal</type> и возвращать тип <type>bytea</type>. Также при этом нужно задать соответствующую <replaceable class="parameter">функцию_десериализации</replaceable>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_десериализации</replaceable></term>
+    <listitem>
+     <para>Десериализует ранее сериализованное агрегатное состояние обратно в <replaceable class="parameter">тип_данных_состояния</replaceable>. Эта функция должна принимать два аргумента типов <type>bytea</type> и <type>internal</type> и выдавать результат типа <type>internal</type>. (Замечание: второй аргумент типа <type>internal</type> не используется, но требуется из соображений типобезопасности.)</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">начальное_условие</replaceable></term>
+    <listitem>
+     <para>Начальное значение переменной состояния. Оно должно задаваться строковой константой в форме, пригодной для ввода в <replaceable class="parameter">тип_данных_состояния</replaceable>. Если не указано, начальным значением состояния будет NULL.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_состояния_движ</replaceable></term>
+    <listitem>
+     <para>Имя функции прямого перехода состояния, вызываемой для каждой входной строки в режиме движущегося агрегата. Это точно такая же функция, как и обычная функция перехода, но её первый аргумент и результат имеют тип <replaceable>тип_данных_состояния_движ</replaceable>, который может отличаться от типа <replaceable>тип_данных_состояния</replaceable>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">обратная_функция_движ</replaceable></term>
+    <listitem>
+     <para>Имя функции обратного перехода состояния, применяемой в режиме движущегося агрегата. У этой функции те же типы аргумента и результатов, что и у <replaceable>функции_состояния_движ</replaceable>, но она предназначена не для добавления, а для удаления значения из текущего состояния агрегата. Функция обратного перехода должна иметь ту же характеристику строгости, что и функция прямого перехода.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_данных_состояния_движ</replaceable></term>
+    <listitem>
+     <para>Тип данных значения состояния для агрегатной функции в режиме движущегося агрегата.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">размер_данных_состояния_движ</replaceable></term>
+    <listitem>
+     <para>Примерный размер значения состояния в режиме движущегося агрегата. Он имеет то же значение, что и <replaceable>размер_данных_состояния</replaceable>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_завершения_движ</replaceable></term>
+    <listitem>
+     <para>Имя функции завершения, вызываемой в режиме движущегося агрегата для вычисления результата агрегатной функции после обработки всех входных строк. Она работает так же, как <replaceable>функция_завершения</replaceable>, но её первый аргумент имеет тип <replaceable>тип_данных_состояния_движ</replaceable>, а дополнительными пустыми аргументами управляет параметр <literal>MFINALFUNC_EXTRA</literal>. Тип результата, который определяет <replaceable>функция_завершения_движ</replaceable>, или <replaceable>тип_данных_состояния_движ</replaceable>, должен совпадать с типом результата обычной реализации агрегата.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">начальное_условие_движ</replaceable></term>
+    <listitem>
+     <para>Начальное значение переменной состояния в режиме движущегося агрегата. Оно применяется так же, как <replaceable>начальное_условие</replaceable>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">оператор_сортировки</replaceable></term>
+    <listitem>
+     <para>Связанный оператор сортировки для реализации агрегатов, подобных <function>MIN</function> или <function>MAX</function>. Здесь указывается просто имя оператора (возможно, дополненное схемой). Предполагается, что оператор поддерживает те же типы входных данных, что и агрегат (который должен быть обычным и иметь один аргумент).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>PARALLEL</literal></term>
+    <listitem>
+     <para>Указания <literal>PARALLEL SAFE</literal>, <literal>PARALLEL RESTRICTED</literal> и <literal>PARALLEL UNSAFE</literal> имеют те же значения, что и в <xref linkend="sql-createfunction"/>. Агрегатная функция не будет считаться распараллеливаемой, если она имеет характеристику <literal>PARALLEL UNSAFE</literal> (она подразумевается по умолчанию!) или <literal>PARALLEL RESTRICTED</literal>. Заметьте, что планировщик не обращает внимание на допустимость распараллеливания опорных функций агрегата, а учитывает только характеристику самой агрегатной функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>HYPOTHETICAL</literal></term>
+    <listitem>
+     <para>Этот признак, допустимый только для сортирующих агрегатов, указывает, что агрегатные аргументы должны обрабатываться согласно требованиям гипотезирующих агрегатов: то есть последние несколько непосредственных аргументов должны соответствовать по типам агрегатным аргументам (<literal>WITHIN GROUP</literal>). Признак <literal>HYPOTHETICAL</literal> не влияет на поведение во время выполнения, он учитывается только при разрешении типов данных и правил сортировки аргументов.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Параметры <command>CREATE AGGREGATE</command> могут записываться в любом порядке, не обязательно так, как показано выше.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para>В параметрах, определяющих имена вспомогательных функций, при необходимости можно написать имя схемы, например: <literal>SFUNC = public.sum</literal>. Однако типы аргументов там не указываются &mdash; типы аргументов вспомогательных функций определяются другими параметрами.</para>
+
+   <para>Если агрегатная функция поддерживает режим движущегося агрегата, это увеличивает эффективность вычислений, когда она применяется в качестве оконной функции для окна с движущимся началом рамки (то есть, когда начало определяется не как <literal>UNBOUNDED PRECEDING</literal>). По сути, функция прямого перехода добавляет входные значения к состоянию агрегата, когда они поступают в рамку окна снизу, а функция обратного перехода снова вычитает их, когда они покидают рамку сверху. Поэтому вычитаются значения в том же порядке, в каком добавлялись. Когда бы ни вызывалась функция обратного перехода, она таким образом получит первое из добавленных, но ещё не удалённых значений аргумента. Функция обратного перехода может рассчитывать на то, что после того, как она удалит самые старые данные, в текущем состоянии останется ещё как минимум одна строка. (Когда это правило могло бы нарушиться, механизм оконных функций просто начинает агрегировать данные заново, а не вызывает функцию обратного перехода.)</para>
+
+   <para>Функция прямого перехода для режима движущегося агрегата не может возвращать NULL в качестве нового значения состояния. Если NULL возвращает функция обратного перехода, это показывает, что она не может произвести обратное вычисление для этих конкретных данных, и что вычисление агрегата следует выполнить заново от начальной позиции текущей рамки. Благодаря этому соглашению, режим движущегося агрегата можно использовать, даже если иногда возникают ситуации, в которых обратный расчёт состояния производить непрактично.</para>
+
+   <para>Агрегатную функцию можно использовать с движущимися рамками и без реализации движущегося агрегата, но при этом <productname>&productname;</productname> будет заново агрегировать все данные при каждом перемещении начала рамки. Заметьте, что вне зависимости от того, поддерживает ли агрегатная функция режим движущегося агрегата, <productname>&productname;</productname> может обойтись без повторных вычислений при сдвиге конца рамки; новые значения просто продолжают добавляться в состояние агрегата. Предполагается, что функция завершения не повреждает значение состояния агрегата, так что вычисление агрегата можно продолжить даже после получения результата для строк в определённой рамке.</para>
+
+   <para>Синтаксис сортирующих агрегатных функций позволяет указать <literal>VARIADIC</literal> и в последнем непосредственном параметре, и в последнем агрегатном (<literal>WITHIN GROUP</literal>). Однако в текущей реализации на применение <literal>VARIADIC</literal> накладываются два ограничения. Во-первых, в сортирующих агрегатах можно использовать только <literal>VARIADIC "any"</literal>, но не другие типы переменных массивов. Во-вторых, если последним непосредственным аргументом является <literal>VARIADIC "any"</literal>, то допускается только один агрегатный аргумент и это тоже должен быть <literal>VARIADIC "any"</literal>. (В представлении, используемом в системных каталогах, эти два параметра объединяются в один элемент <literal>VARIADIC "any"</literal>, так как в <structname>pg_proc</structname> нельзя представить функцию с несколькими параметрами <literal>VARIADIC</literal>.) Если агрегатная функция является гипотезирующей, непосредственные аргументы, соответствующие параметру <literal>VARIADIC "any"</literal>, будут гипотетическими; любые предшествующие параметры представляют дополнительные непосредственные аргументы, которые могут не соответствовать агрегатным.</para>
+
+   <para>В настоящее время сортирующие агрегатные функции не поддерживают режим движущегося агрегата, так как их нельзя применять в качестве оконных функций.</para>
+
+   <para>Частичное (в том числе, параллельное) агрегирование в настоящее время не поддерживается для сортирующих агрегатных функций. Также оно никогда не будет применяться для агрегатных вызовов с предложениями <literal>DISTINCT</literal> или <literal>ORDER BY</literal>, так как они по природе своей не могут быть реализованы с частичным агрегированием.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>См. <xref remap="4" linkend="xaggr"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>CREATE AGGREGATE</command> является языковым расширением <productname>&productname;</productname>. В стандарте SQL не предусмотрено создание пользовательских агрегатных функций.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alteraggregate"/></member>
+   <member><xref linkend="sql-dropaggregate"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

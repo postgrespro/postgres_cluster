@@ -1,0 +1,79 @@
+<!-- doc/src/xml/pgtransfer.xml -->
+
+<sect1 id="pgtransfer" xreflabel="pg_transfer">
+ <title>pg_transfer</title>
+
+ <indexterm zone="pgtransfer"><primary>pg_transfer</primary></indexterm>
+
+ <para>Расширение <filename>pg_transfer</filename> предоставляет возможность быстрого перемещения таблиц между экземплярами <productname>&productname;</productname>.</para>
+
+ <sect2>
+  <title>Описание</title>
+
+  <para>Для некоторых приложений узким местом является загрузка большего объёма данных в базу, например, при переносе данных с региональных серверов в центральный. Стандартным методом является перенос схемы и данных при помощи утилит <application>pg_dump</application> и <application>pg_restore</application>. При этом большая часть нагрузки приходится на принимающий сервер. Загрузка данных осуществляется командами <command>INSERT</command> или <command>COPY</command>, что значительно нагружает дисковую подсистему. Построение индексов и сбор статистики необходимо выполнить в целевой базе уже после загрузки данных.</para>
+
+  <para>С помощью расширения <filename>pg_transfer</filename> можно подготовить таблицу (построить индексы и собрать статистику) без участия целевого сервера и обеспечить большую скорость добавления данных только для чтения. Это расширение содержит дополнительные функции для использования утилитами <application>pg_dump</application> и <application>pg_restore</application>.</para>
+ </sect2>
+
+ <sect2>
+  <title>Установка</title>
+
+  <para>Для установки расширения необходимо выполнить следующую SQL-команду: <programlisting>    CREATE EXTENSION pg_transfer;
+   </programlisting></para>
+ </sect2>
+
+ <sect2>
+  <title>Использование</title>
+
+  <para>Перед переносом таблицы необходимо перевести её в режим <quote>только чтение</quote>. <programlisting>    ALTER TABLE <replaceable>имя_таблицы</replaceable> SET CONSTANT;
+   </programlisting></para>
+
+  <para>После этого нужно выполнить <command>VACUUM (ANALYZE)</command> для удаления устаревших записей и обновления статистики. <programlisting>    VACUUM (ANALYZE) <replaceable>имя_таблицы</replaceable>;
+   </programlisting></para>
+
+  <para>Перенос таблицы происходит в два этапа. Сначала логическая резервная копия схемы данных выполняется на вспомогательном сервере и восстанавливается на целевом. Затем данные на вспомогательном сервере подготавливаются к переносу, используя информацию о восстановленной схеме, после чего выполняется собственно перенос.</para>
+
+  <para>Когда исходная и целевая базы расположены в одной файловой системе, нужно как минимум один раз (при <application>pg_dump</application> или <application>pg_restore</application>) использовать ключ <option>--copy-mode-transfer</option>, чтобы получить независимую копию данных. Чтобы при переносе данных на ведущий сервер изменения реплицировались на ведомый, необходимо указать ключ <option>--generate-wal</option> для команды <application>pg_restore</application>.</para>
+
+  <note>
+   <para>Архитектура и конфигурация обеих систем <productname>&productname;</productname> должны обеспечивать идентичность бинарного формата данных. При восстановлении выполняется проверка совпадения выравнивания, размеров страницы и сегмента и т. п.</para>
+  </note>
+
+  <sect3>
+    <title>Этап 1</title>
+
+    <para>
+     <programlisting>      pg_dump <replaceable>база_данных</replaceable> -t <replaceable>имя_таблицы</replaceable> --schema-only -f <replaceable>каталог_для_переноса</replaceable>/archive.out
+      pg_restore -d <replaceable>база_данных</replaceable> --schema-only <replaceable>каталог_для_переноса</replaceable>/archive.out
+     </programlisting>
+    </para>
+
+    <para>После восстановления схемы необходимо получить идентификатор TOAST-таблицы. <programlisting>      psql <replaceable>целевая_база</replaceable> -c select reltoastrelid from pg_class where relname='<replaceable>имя_таблицы</replaceable>'
+     </programlisting></para>
+  </sect3>
+
+  <sect3>
+    <title>Этап 2</title>
+
+    <para>В обеих базах должно быть установлено расширение <filename>pg_transfer</filename>.</para>
+
+    <para>Используя полученный на предыдущем шаге идентификатор TOAST-таблицы (<replaceable>ид_таблицы_toast</replaceable>), подготовьте таблицу к переносу и выполните сброс данных на диск.</para>
+
+  </sect3>
+
+  <sect3>
+   <title>Перенос данных</title>
+   <para>Подготовка данных завершена. Теперь можно перенести данные в отдельный каталог, используя утилиту <application>pg_dump</application>. <programlisting>      pg_dump <replaceable>база_данных</replaceable> -Fc -t <replaceable>имя_таблицы</replaceable> --copy-mode-transfer --transfer-dir <replaceable>каталог_для_переноса</replaceable>/ -f <replaceable>каталог_для_переноса</replaceable>/archive.out
+     </programlisting></para>
+
+   <para>И наконец, можно восстановить данные в целевой базе данных.</para>
+  </sect3>
+ </sect2>
+
+ <sect2>
+  <title>Совместимость</title>
+
+  <para>Это расширение совместимо с серверами <productname>Postgres Pro</productname> 9.6 и новее в Unix-подобных системах.</para>
+ </sect2>
+
+</sect1>

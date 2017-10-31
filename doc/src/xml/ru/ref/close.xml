@@ -1,0 +1,86 @@
+<!--
+doc/src/xml/ref/close.xml
+&productname; documentation
+-->
+
+<refentry id="sql-close">
+ <indexterm zone="sql-close"><primary>CLOSE</primary></indexterm>
+
+ <indexterm zone="sql-close"><primary>курсор</primary> <secondary>CLOSE</secondary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CLOSE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CLOSE</refname>
+  <refpurpose>закрыть курсор</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CLOSE { <replaceable class="parameter">имя</replaceable> | ALL }</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CLOSE</command> освобождает ресурсы, связанные с открытым курсором. Когда курсор закрыт, никакие операции с ним невозможны. Закрывать курсор следует, когда он становится ненужным.</para>
+
+  <para>Все не удерживаемые открытые курсоры закрываются неявно при завершении транзакции командами <command>COMMIT</command> или <command>ROLLBACK</command>. Удерживаемый курсор закрывается неявно, если транзакция, его создавшая, прерывается командой <command>ROLLBACK</command>. Если создавшая его транзакция завершается успешной фиксацией, удерживаемый курсор остаётся открытым до явного вызова команды <command>CLOSE</command> или отключения клиента.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя открытого курсора, который будет закрыт.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ALL</literal></term>
+    <listitem>
+     <para>Закрывает все открытые курсоры.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>В <productname>&productname;</productname> нет явной команды <command>OPEN</command> для курсора; курсор считается открытым при объявлении. Чтобы объявить курсор, используйте оператор <xref linkend="sql-declare"/>.</para>
+
+  <para>Получить список всех доступных курсоров можно, обратившись к системному представлению <link linkend="view-pg-cursors"><structname>pg_cursors</structname></link>.</para>
+
+  <para>Если курсор был закрыт после точки сохранения, а затем произошёл откат к этой точке, действие команды <command>CLOSE</command> не отменяется; то есть курсор остаётся закрытым.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Следующая команда закрывает курсор <literal>liahona</literal>: <programlisting>CLOSE liahona;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>CLOSE</command> полностью соответствует стандарту SQL. <command>CLOSE ALL</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-declare"/></member>
+   <member><xref linkend="sql-fetch"/></member>
+   <member><xref linkend="sql-move"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

@@ -1,0 +1,88 @@
+<!-- doc/src/xml/ref/drop_cast.xml -->
+
+<refentry id="sql-dropcast">
+ <indexterm zone="sql-dropcast"><primary>DROP CAST</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP CAST</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP CAST</refname>
+  <refpurpose>удалить приведение типа</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP CAST [ IF EXISTS ] (<replaceable>исходный_тип</replaceable> AS <replaceable>целевой_тип</replaceable>) [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="sql-dropcast-description">
+  <title>Описание</title>
+
+  <para><command>DROP CAST</command> удаляет ранее определённое приведение типа.</para>
+
+  <para>Чтобы удалить приведение, необходимо быть владельцем исходного или целевого типа данных. Такие же требования действуют и при создании приведения.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <variablelist>
+
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если приведение не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>исходный_тип</replaceable></term>
+
+     <listitem>
+      <para>Имя исходного типа данных для приведения.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>целевой_тип</replaceable></term>
+
+     <listitem>
+      <para>Имя целевого типа данных для приведения.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>CASCADE</literal></term>
+     <term><literal>RESTRICT</literal></term>
+
+     <listitem>
+      <para>Эти ключевые слова игнорируются, так как от приведений не зависят никакие объекты.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+ </refsect1>
+
+ <refsect1 id="sql-dropcast-examples">
+  <title>Примеры</title>
+
+  <para>Удаление приведения типа <type>text</type> к типу <type>int</type>: <programlisting>DROP CAST (text AS int);</programlisting></para>
+ </refsect1>
+
+ <refsect1 id="sql-dropcast-compat">
+  <title>Совместимость</title>
+
+  <para>Команда <command>DROP CAST</command> соответствует стандарту SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createcast"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

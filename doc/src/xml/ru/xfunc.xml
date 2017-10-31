@@ -1,0 +1,1685 @@
+<!-- doc/src/xml/xfunc.xml -->
+
+ <sect1 id="xfunc">
+  <title>Пользовательские функции</title>
+
+  <indexterm zone="xfunc"><primary>функция</primary> <secondary>определяемая пользователем</secondary></indexterm>
+
+  <para>В <productname>&productname;</productname> представлены функции четырёх видов: <itemizedlist>
+    <listitem>
+     <para>функции на языке запросов (функции, написанные на <acronym>SQL</acronym>) (<xref linkend="xfunc-sql"/>)</para>
+    </listitem>
+    <listitem>
+     <para>функции на процедурных языках (функции, написанные, например, на <application>PL/pgSQL</application> или <application>PL/Tcl</application>) (<xref linkend="xfunc-pl"/>)</para>
+    </listitem>
+    <listitem>
+     <para>внутренние функции (<xref linkend="xfunc-internal"/>)</para>
+    </listitem>
+    <listitem>
+     <para>функции на языке C (<xref linkend="xfunc-c"/>)</para>
+    </listitem>
+   </itemizedlist></para>
+
+  <para>Функции любых видов могут принимать в качестве аргументов (параметров) базовые типы, составные типы или их сочетания. Кроме того, любые функции могут возвращать значения базового или составного типа. Также можно определить функции, возвращающие наборы базовых или составных значений.</para>
+
+  <para>Функции многих видов могут также принимать или возвращать определённые псевдотипы (например, полиморфные типы), но доступные средства для работы с ними различаются. За подробностями обратитесь к описанию конкретного вида функций.</para>
+
+  <para>Проще всего определить функции на языке <acronym>SQL</acronym>, поэтому сначала мы рассмотрим их. Многие концепции, касающиеся функций на <acronym>SQL</acronym>, затем распространятся и на другие виды функций.</para>
+
+  <para>Изучая эту главу, будет полезно обращаться к странице справки по команде <xref linkend="sql-createfunction"/>, чтобы лучше понимать примеры. Некоторые примеры из этой главы можно найти в файлах <filename>funcs.sql</filename> и <filename>funcs.c</filename> в каталоге <filename>src/tutorial</filename> исходного кода <productname>&productname;</productname>.</para>
+  </sect1>
+
+  <sect1 id="xfunc-sql">
+   <title>Функции на языке запросов (<acronym>SQL</acronym>)</title>
+
+   <indexterm zone="xfunc-sql"><primary>функции</primary> <secondary>пользовательские</secondary> <tertiary>на SQL</tertiary></indexterm>
+
+   <para>SQL-функции выполняют произвольный список операторов SQL и возвращают результат последнего запроса в списке. В простом случае (не с множеством) будет возвращена первая строка результата последнего запроса. (Помните, что понятие <quote>первая строка</quote> в наборе результатов с несколькими строками определено точно, только если присутствует <literal>ORDER BY</literal>.) Если последний запрос вообще не вернёт строки, будет возвращено значение NULL.</para>
+
+   <para>Кроме того, можно объявить SQL-функцию как возвращающую множество (то есть, несколько строк), указав в качестве возвращаемого типа функции <literal>SETOF <replaceable>некий_тип</replaceable></literal>, либо объявив её с указанием <literal>RETURNS TABLE(<replaceable>столбцы</replaceable>)</literal>. В этом случае будут возвращены все строки результата последнего запроса. Подробнее это описывается ниже.</para>
+
+   <para>Тело SQL-функции должно представлять собой список SQL-операторов, разделённых точкой с запятой. Точка с запятой после последнего оператора может отсутствовать. Если только функция не объявлена как возвращающая <type>void</type>, последним оператором должен быть <command>SELECT</command>, либо <command>INSERT</command>, <command>UPDATE</command> или <command>DELETE</command> с предложением <literal>RETURNING</literal>.</para>
+
+    <para>Любой набор команд на языке <acronym>SQL</acronym> можно скомпоновать вместе и обозначить как функцию. Помимо запросов <command>SELECT</command>, эти команды могут включать запросы, изменяющие данные (<command>INSERT</command>, <command>UPDATE</command> и <command>DELETE</command>), а также другие SQL-команды. (В <acronym>SQL</acronym>-функциях нельзя использовать команды управления транзакциями, например <command>COMMIT</command>, <command>SAVEPOINT</command>, и некоторые вспомогательные команды, в частности <literal>VACUUM</literal>.) Однако последней командой должна быть <command>SELECT</command> или команда с предложением <literal>RETURNING</literal>, возвращающая результат с типом возврата функции. Если же вы хотите определить функцию SQL, выполняющую действия, но не возвращающую полезное значение, вы можете объявить её как возвращающую тип <type>void</type>. Например, эта функция удаляет строки с отрицательным жалованьем из таблицы <literal>emp</literal>: <screen>
+CREATE FUNCTION clean_emp() RETURNS void AS '
+    DELETE FROM emp
+        WHERE salary &lt; 0;
+' LANGUAGE SQL;
+
+SELECT clean_emp();
+
+ clean_emp
+-----------
+
+(1 row)
+</screen></para>
+
+    <note>
+     <para>Прежде чем начинается выполнение команд, разбирается всё тело SQL-функции. Когда SQL-функция содержит команды, модифицирующие системные каталоги (например, <command>CREATE TABLE</command>), действие таких команд не будет видимо на стадии анализа последующих команд этой функции. Так, например, команды <literal>CREATE TABLE foo (...); INSERT INTO foo VALUES(...);</literal> не будут работать, как ожидается, если их упаковать в одну SQL-функцию, так как <structname>foo</structname> не будет существовать к моменту разбору команды <command>INSERT</command>. В подобных ситуациях вместо SQL-функции рекомендуется использовать <application>PL/PgSQL</application>.</para>
+   </note>
+
+   <para>Синтаксис команды <command>CREATE FUNCTION</command> требует, чтобы тело функции было записано как строковая константа. Обычно для этого удобнее всего заключать строковую константу в доллары (см. <xref remap="4" linkend="sql-syntax-dollar-quoting"/>). Если вы решите использовать обычный синтаксис с заключением строки в апострофы, вам придётся дублировать апострофы (<literal>'</literal>) и обратную косую черту (<literal>\</literal>) (предполагается синтаксис спецпоследовательностей) в теле функции (см. <xref remap="4" linkend="sql-syntax-strings"/>).</para>
+
+   <sect2 id="xfunc-sql-function-arguments">
+    <title>Аргументы <acronym>SQL</acronym>-функций</title>
+
+   <indexterm><primary>функция</primary> <secondary>именованный аргумент</secondary></indexterm>
+
+    <para>К аргументам SQL-функции можно обращаться в теле функции по именам или номерам. Ниже приведены примеры обоих вариантов.</para>
+
+    <para>Чтобы использовать имя, объявите аргумент функции как именованный, а затем просто пишите это имя в теле функции. Если имя аргумента совпадает с именем какого-либо столбца в текущей SQL-команде внутри функции, имя столбца будет иметь приоритет. Чтобы всё же перекрыть имя столбца, дополните имя аргумента именем самой функции, то есть запишите его в виде <literal><replaceable>имя_функции</replaceable>.<replaceable>имя_аргумента</replaceable></literal>. (Если и это имя будет конфликтовать с полным именем столбца, снова выиграет имя столбца. Неоднозначности в этом случае вы можете избежать, выбрав другой псевдоним для таблицы в SQL-команде.)</para>
+
+    <para>Старый подход с нумерацией позволяет обращаться к аргументам, применяя запись <literal>$<replaceable>n</replaceable></literal>: <literal>$1</literal> обозначает первый аргумент, <literal>$2</literal> — второй и т. д. Это будет работать и в том случае, если данному аргументу назначено имя.</para>
+
+    <para>Если аргумент имеет составной тип, то для обращения к его атрибутам можно использовать запись с точкой, например: <literal><replaceable>аргумент</replaceable>.<replaceable>поле</replaceable></literal> или <literal>$1.<replaceable>поле</replaceable></literal>. И опять же, при этом может потребоваться дополнить имя аргумента именем функции, чтобы сделать имя аргумента однозначным.</para>
+
+    <para>Аргументы SQL-функции могут использоваться только как значения данных, но не как идентификаторы. Например, это приемлемо: <programlisting>INSERT INTO mytable VALUES ($1);</programlisting> а это не будет работать: <programlisting>INSERT INTO $1 VALUES (42);</programlisting></para>
+
+    <note>
+     <para>Возможность обращаться к аргументам SQL-функций по именам появилась в <productname>PostgreSQL</productname> 9.2. В функциях, которые должны работать со старыми серверами, необходимо применять запись <literal>$<replaceable>n</replaceable></literal>.</para>
+    </note>
+   </sect2>
+
+   <sect2 id="xfunc-sql-base-functions">
+    <title>Функции <acronym>SQL</acronym> с базовыми типами</title>
+
+    <para>Простейшая возможная функция <acronym>SQL</acronym> не имеет аргументов и просто возвращает базовый тип, например <type>integer</type>: <screen>
+CREATE FUNCTION one() RETURNS integer AS $$
+    SELECT 1 AS result;
+$$ LANGUAGE SQL;
+
+-- Альтернативная запись строковой константы:
+CREATE FUNCTION one() RETURNS integer AS '
+    SELECT 1 AS result;
+' LANGUAGE SQL;
+
+SELECT one();
+
+ one
+-----
+   1
+</screen></para>
+
+    <para>Заметьте, что мы определили псевдоним столбца в теле функции для её результата (дали ему имя <literal>result</literal>), но этот псевдоним не виден снаружи функции. Вследствие этого, столбец результата получил имя <literal>one</literal>, а не <literal>result</literal>.</para>
+
+    <para>Практически так же легко определяются функции <acronym>SQL</acronym>, которые принимают в аргументах базовые типы: <screen>
+CREATE FUNCTION add_em(x integer, y integer) RETURNS integer AS $$
+    SELECT x + y;
+$$ LANGUAGE SQL;
+
+SELECT add_em(1, 2) AS answer;
+
+ answer
+--------
+      3
+</screen></para>
+
+    <para>Мы также можем отказаться от имён аргументов и обращаться к ним по номерам: <screen>
+CREATE FUNCTION add_em(integer, integer) RETURNS integer AS $$
+    SELECT $1 + $2;
+$$ LANGUAGE SQL;
+
+SELECT add_em(1, 2) AS answer;
+
+ answer
+--------
+      3
+</screen></para>
+
+    <para>Вот более полезная функция, которую можно использовать, чтобы дебетовать банковский счёт: <programlisting>CREATE FUNCTION tf1 (accountno integer, debit numeric) RETURNS integer AS $$
+    UPDATE bank
+        SET balance = balance - debit
+        WHERE accountno = tf1.accountno;
+    SELECT 1;
+$$ LANGUAGE SQL;</programlisting> Пользователь может выполнить эту функцию, чтобы дебетовать счёт 17 на 100 долларов, так: <programlisting>SELECT tf1(17, 100.0);</programlisting></para>
+
+    <para>В этом примере мы выбрали имя <literal>accountno</literal> для первого аргумента, но это же имя имеет столбец в таблице <literal>bank</literal>. В команде <command>UPDATE</command> имя <literal>accountno</literal> относится к столбцу <literal>bank.accountno</literal>, так для обращения к аргументу нужно записать <literal>tf1.accountno</literal>. Конечно, мы могли бы избежать этого, выбрав другое имя для аргумента.</para>
+
+    <para>На практике обычно желательно получать от функции более полезный результат, чем константу 1, поэтому более реалистично такое определение: <programlisting>CREATE FUNCTION tf1 (accountno integer, debit numeric) RETURNS integer AS $$
+    UPDATE bank
+        SET balance = balance - debit
+        WHERE accountno = tf1.accountno;
+    SELECT balance FROM bank WHERE accountno = tf1.accountno;
+$$ LANGUAGE SQL;</programlisting> Эта функция изменяет баланс и возвращает полученное значение. То же самое можно сделать в одной команде, применив <literal>RETURNING</literal>: <programlisting>CREATE FUNCTION tf1 (accountno integer, debit numeric) RETURNS integer AS $$
+    UPDATE bank
+        SET balance = balance - debit
+        WHERE accountno = tf1.accountno
+    RETURNING balance;
+$$ LANGUAGE SQL;</programlisting></para>
+   </sect2>
+
+   <sect2 id="xfunc-sql-composite-functions">
+    <title>Функции <acronym>SQL</acronym> со сложными типами</title>
+
+    <para>В функциях с аргументами составных типов мы должны указывать не только, какой аргумент, но и какой атрибут (поле) этого аргумента нам нужен. Например, предположим, что <type>emp</type> — таблица, содержащая данные работников, и это же имя составного типа, представляющего каждую строку таблицы. Следующая функция <function>double_salary</function> вычисляет, каким было бы чьё-либо жалование в случае увеличения вдвое: <screen>
+CREATE TABLE emp (
+    name        text,
+    salary      numeric,
+    age         integer,
+    cubicle     point
+);
+
+INSERT INTO emp VALUES ('Bill', 4200, 45, '(2,1)');
+
+CREATE FUNCTION double_salary(emp) RETURNS numeric AS $$
+    SELECT $1.salary * 2 AS salary;
+$$ LANGUAGE SQL;
+
+SELECT name, double_salary(emp.*) AS dream
+    FROM emp
+    WHERE emp.cubicle ~= point '(2,1)';
+
+ name | dream
+------+-------
+ Bill |  8400
+</screen></para>
+
+    <para>Обратите внимание на запись <literal>$1.salary</literal> позволяющую выбрать одно поле из значения строки аргумента. Также заметьте, что в вызывающей команде <command>SELECT</command> указание <replaceable>имя_таблицы</replaceable><literal>.*</literal> выбирает всю текущую строку таблицы как составное значение. На строку таблицы можно сослаться и просто по имени таблицы, например так: <screen>
+SELECT name, double_salary(emp) AS dream
+    FROM emp
+    WHERE emp.cubicle ~= point '(2,1)';
+</screen> Однако это использование считается устаревшим, так как провоцирует путаницу. (Подробнее эти две записи составных значений строки таблицы описаны в <xref remap="6" linkend="rowtypes-usage"/>.)</para>
+
+    <para>Иногда бывает удобно образовать составное значение аргумента на лету. Это позволяет сделать конструкция <literal>ROW</literal>. Например, так можно изменить данные, передаваемые функции: <screen>
+SELECT name, double_salary(ROW(name, salary*1.1, age, cubicle)) AS dream
+    FROM emp;
+</screen></para>
+
+    <para>Также возможно создать функцию, возвращающую составной тип. Например, эта функция возвращает одну строку <type>emp</type>: <programlisting>CREATE FUNCTION new_emp() RETURNS emp AS $$
+    SELECT text 'None' AS name,
+        1000.0 AS salary,
+        25 AS age,
+        point '(2,2)' AS cubicle;
+$$ LANGUAGE SQL;</programlisting> В этом примере мы задали для каждого атрибута постоянное значение, но вместо этих констант можно подставить любые вычисления.</para>
+
+    <para>Учтите два важных требования относительно определения функции: <itemizedlist>
+      <listitem>
+       <para>Порядок в списке выборки внутреннего запроса должен в точности совпадать с порядком следования столбцов в таблице, связанной с составным типом. (Имена столбцов, как показывает пример выше, для системы значения не имеют.)</para>
+      </listitem>
+      <listitem>
+       <para>Вы должны привести выражения в соответствие с определением составного типа, либо вы получите такие ошибки: <screen>
+<computeroutput>
+ERROR:  function declared to return emp returns varchar instead of text at column 1
+</computeroutput>
+</screen>(ОШИБКА:  функция, объявленная как возвращающая emp, возвращает varchar вместо text в столбце 1)</para>
+      </listitem>
+     </itemizedlist></para>
+
+    <para>Ту же функцию можно определить другим способом: <programlisting>CREATE FUNCTION new_emp() RETURNS emp AS $$
+    SELECT ROW('None', 1000.0, 25, '(2,2)')::emp;
+$$ LANGUAGE SQL;</programlisting> Здесь мы записали <command>SELECT</command>, который возвращает один столбец нужного составного типа. В данной ситуации этот вариант на самом деле не лучше, но в некоторых случаях он может быть удобной альтернативой &mdash; например, если нам нужно вычислить результат, вызывая другую функцию, которая возвращает нужное составное значение.</para>
+
+    <para>Мы можем вызывать эту функцию напрямую, либо указав её в выражении значения: <screen>
+SELECT new_emp();
+
+         new_emp
+--------------------------
+ (None,1000.0,25,"(2,2)")
+</screen> либо обратившись к ней, как к табличной функции: <screen>
+SELECT * FROM new_emp();
+
+ name | salary | age | cubicle
+------+--------+-----+---------
+ None | 1000.0 |  25 | (2,2)
+</screen> Второй способ более подробно описан в <xref remap="6" linkend="xfunc-sql-table-functions"/>.</para>
+
+    <para>Когда используется функция, возвращающая составной тип, может возникнуть желание получить из её результата только одно поле (атрибут). Это можно сделать, применяя такую запись: <screen>
+SELECT (new_emp()).name;
+
+ name
+------
+ None
+</screen> Дополнительные скобки необходимы во избежание неоднозначности при разборе запроса. Если вы попытаетесь выполнить запрос без них, вы получите ошибку: <screen>
+SELECT new_emp().name;
+ERROR:  syntax error at or near "."
+LINE 1: SELECT new_emp().name;
+                        ^
+</screen>
+(ОШИБКА:  синтаксическая ошибка (примерное положение: "."))</para>
+
+    <para>Функциональную запись также можно использовать и для извлечения атрибутов: <screen>
+SELECT name(new_emp());
+
+ name
+------
+ None
+</screen> Как рассказывалось в <xref remap="6" linkend="rowtypes-usage"/>, запись с указанием поля и функциональная запись являются равнозначными.</para>
+
+    <para>Ещё один вариант использования функции, возвращающей составной тип, заключается в передаче её результата другой функции, которая принимает этот тип строки на вход: <screen>
+CREATE FUNCTION getname(emp) RETURNS text AS $$
+    SELECT $1.name;
+$$ LANGUAGE SQL;
+
+SELECT getname(new_emp());
+ getname
+---------
+ None
+(1 row)
+</screen></para>
+   </sect2>
+
+   <sect2 id="xfunc-output-parameters">
+    <title>Функции <acronym>SQL</acronym> с выходными параметрами</title>
+
+   <indexterm><primary>функция</primary> <secondary>выходной параметр</secondary></indexterm>
+
+    <para>Альтернативный способ описать результаты функции — определить её с <firstterm>выходными параметрами</firstterm>, как в этом примере: <screen>
+CREATE FUNCTION add_em (IN x int, IN y int, OUT sum int)
+AS 'SELECT x + y'
+LANGUAGE SQL;
+
+SELECT add_em(3,7);
+ add_em
+--------
+     10
+(1 row)
+</screen> Это по сути не отличается от версии <literal>add_em</literal>, показанной в <xref remap="6" linkend="xfunc-sql-base-functions"/>. Действительная ценность выходных параметров в том, что они позволяют удобным способом определить функции, возвращающие несколько столбцов. Например: <screen>
+CREATE FUNCTION sum_n_product (x int, y int, OUT sum int, OUT product int)
+AS 'SELECT x + y, x * y'
+LANGUAGE SQL;
+
+ SELECT * FROM sum_n_product(11,42);
+ sum | product
+-----+---------
+  53 |     462
+(1 row)
+</screen> Фактически здесь мы определили анонимный составной тип для результата функции. Показанный выше пример даёт тот же конечный результат, что и команды: <screen>
+CREATE TYPE sum_prod AS (sum int, product int);
+
+CREATE FUNCTION sum_n_product (int, int) RETURNS sum_prod
+AS 'SELECT $1 + $2, $1 * $2'
+LANGUAGE SQL;
+</screen> Но предыдущий вариант зачастую удобнее, так как он не требует отдельно заниматься определением составного типа. Заметьте, что имена, назначаемые выходным параметрам, не просто декоративные, а определяют имена столбцов анонимного составного типа. (Если вы опустите имя выходного параметра, система выберет имя сама.)</para>
+
+    <para>Заметьте, что выходные параметры не включаются в список аргументов при вызове такой функции из SQL. Это объясняется тем, что <productname>&productname;</productname> определяет сигнатуру вызова функции, рассматривая только входные параметры. Это также значит, что при таких операциях, как удаление функции, в ссылках на функцию учитываются только типы входных параметров. Таким образом, удалить эту конкретную функцию можно любой из этих команд: <screen>
+DROP FUNCTION sum_n_product (x int, y int, OUT sum int, OUT product int);
+DROP FUNCTION sum_n_product (int, int);
+</screen></para>
+
+    <para>Параметры функции могут быть объявлены как <literal>IN</literal> (по умолчанию), <literal>OUT</literal>, <literal>INOUT</literal> или <literal>VARIADIC</literal>. Параметр <literal>INOUT</literal> действует как входной (является частью списка аргументов при вызове) и как выходной (часть типа записи результата). Параметры <literal>VARIADIC</literal> являются входными, но обрабатывается специальным образом, как описано далее.</para>
+   </sect2>
+
+   <sect2 id="xfunc-sql-variadic-functions">
+    <title>Функции <acronym>SQL</acronym> с переменным числом аргументов</title>
+
+    <indexterm><primary>функция</primary> <secondary>переменные параметры</secondary></indexterm>
+
+    <indexterm><primary>функция с переменными параметрами</primary></indexterm>
+
+    <para>Функции <acronym>SQL</acronym> могут быть объявлены как принимающие переменное число аргументов, с условием, что все <quote>необязательные</quote> аргументы имеют один тип данных. Необязательные аргументы будут переданы такой функции в виде массива. Для этого в объявлении функции последний параметр помечается как <literal>VARIADIC</literal>; при этом он должен иметь тип массива. Например: <screen>
+CREATE FUNCTION mleast(VARIADIC arr numeric[]) RETURNS numeric AS $$
+    SELECT min($1[i]) FROM generate_subscripts($1, 1) g(i);
+$$ LANGUAGE SQL;
+
+SELECT mleast(10, -1, 5, 4.4);
+ mleast 
+--------
+     -1
+(1 row)
+</screen> По сути, все фактические аргументы, начиная с позиции <literal>VARIADIC</literal>, собираются в одномерный массив, как если бы вы написали <screen>
+SELECT mleast(ARRAY[10, -1, 5, 4.4]);    -- это не будет работать
+</screen> На самом деле так вызвать эту функцию нельзя, или, по крайней мере, это не будет соответствовать определению функции. Параметру <literal>VARIADIC</literal> соответствуют одно или несколько вхождений типа его элемента, но не его собственного типа.</para>
+
+    <para>Но иногда бывает полезно передать функции с переменными параметрами уже подготовленный массив; особенно когда одна функция с переменными параметрами хочет передавать свой массив параметров другой. Это можно сделать, указав <literal>VARIADIC</literal> в вызове: <screen>
+SELECT mleast(VARIADIC ARRAY[10, -1, 5, 4.4]);
+</screen> Это предотвращает разворачивание переменного множества параметров функции в базовый тип, что позволяет сопоставить с ним значение типа массива. <literal>VARIADIC</literal> можно добавить только к последнему фактическому аргументу вызова функции.</para>
+
+    <para>Также указание <literal>VARIADIC</literal> даёт единственную возможность передать пустой массив функции с переменными параметрами, например, так: <screen>
+SELECT mleast(VARIADIC ARRAY[]::numeric[]);
+</screen> Простой вызов <literal>SELECT mleast()</literal> не будет работать, так как переменным параметрам должен соответствовать минимум один фактический аргумент. (Можно определить вторую функцию с таким же именем <literal>mleast</literal>, но без параметров, если вы хотите выполнять такие вызовы.)</para>
+
+    <para>Элементы массива, создаваемые из переменных параметров, считаются не имеющими собственных имён. Это означает, что передать функции с переменными параметрами именованные аргументы нельзя (см. <xref remap="4" linkend="sql-syntax-calling-funcs"/>), если только при вызове не добавлено <literal>VARIADIC</literal>. Например, этот вариант будет работать: <screen>
+SELECT mleast(VARIADIC arr =&gt; ARRAY[10, -1, 5, 4.4]);
+</screen> А эти варианты нет: <screen>
+SELECT mleast(arr =&gt; 10);
+SELECT mleast(arr =&gt; ARRAY[10, -1, 5, 4.4]);
+</screen></para>
+   </sect2>
+
+   <sect2 id="xfunc-sql-parameter-defaults">
+    <title>Функции <acronym>SQL</acronym> со значениями аргументов по умолчанию</title>
+
+    <indexterm><primary>функция</primary> <secondary>значения аргументов по умолчанию</secondary></indexterm>
+
+    <para>Функции могут быть объявлены со значениями по умолчанию для некоторых или всех входных аргументов. Значения по умолчанию подставляются, когда функция вызывается с недостаточным количеством фактических аргументов. Так как аргументы можно опускать только с конца списка фактических аргументов, все параметры после параметра со значением по умолчанию также получат значения по умолчанию. (Хотя запись с именованными аргументами могла бы ослабить это ограничение, оно всё же остаётся в силе, чтобы позиционные ссылки на аргументы оставались действительными.)</para>
+
+    <para>Например: <screen>
+CREATE FUNCTION foo(a int, b int DEFAULT 2, c int DEFAULT 3)
+RETURNS int
+LANGUAGE SQL
+AS $$
+    SELECT $1 + $2 + $3;
+$$;
+
+SELECT foo(10, 20, 30);
+ foo 
+-----
+  60
+(1 row)
+
+SELECT foo(10, 20);
+ foo 
+-----
+  33
+(1 row)
+
+SELECT foo(10);
+ foo 
+-----
+  15
+(1 row)
+
+SELECT foo();  -- не работает из-за отсутствия значения по умолчанию для первого аргумента
+ERROR:  function foo() does not exist
+</screen> (ОШИБКА: функция foo() не существует) Вместо ключевого слова <literal>DEFAULT</literal> можно использовать знак <literal>=</literal>.</para>
+   </sect2>
+
+   <sect2 id="xfunc-sql-table-functions">
+    <title>Функции <acronym>SQL</acronym>, порождающие таблицы</title>
+
+    <para>Все функции SQL можно использовать в предложении <literal>FROM</literal> запросов, но наиболее полезно это для функций, возвращающих составные типы. Если функция объявлена как возвращающая базовый тип, она возвращает таблицу с одним столбцом. Если же функция объявлена как возвращающая составной тип, она возвращает таблицу со столбцами для каждого атрибута составного типа.</para>
+
+    <para>Например: <screen>
+CREATE TABLE foo (fooid int, foosubid int, fooname text);
+INSERT INTO foo VALUES (1, 1, 'Joe');
+INSERT INTO foo VALUES (1, 2, 'Ed');
+INSERT INTO foo VALUES (2, 1, 'Mary');
+
+CREATE FUNCTION getfoo(int) RETURNS foo AS $$
+    SELECT * FROM foo WHERE fooid = $1;
+$$ LANGUAGE SQL;
+
+SELECT *, upper(fooname) FROM getfoo(1) AS t1;
+
+ fooid | foosubid | fooname | upper
+-------+----------+---------+-------
+     1 |        1 | Joe     | JOE
+(1 row)
+</screen> Как показывает этот пример, мы можем работать со столбцами результата функции так же, как если бы это были столбцы обычной таблицы.</para>
+
+    <para>Заметьте, что мы получаем из данной функции только одну строку. Это объясняется тем, что мы не использовали указание <literal>SETOF</literal>. Оно описывается в следующем разделе.</para>
+   </sect2>
+
+   <sect2 id="xfunc-sql-functions-returning-set">
+    <title>Функции <acronym>SQL</acronym>, возвращающие множества</title>
+
+    <indexterm><primary>функция</primary> <secondary>с SETOF</secondary></indexterm>
+
+    <para>Когда SQL-функция объявляется как возвращающая <literal>SETOF <replaceable>некий_тип</replaceable></literal>, конечный запрос функции выполняется до завершения и каждая строка выводится как элемент результирующего множества.</para>
+
+    <para>Это обычно используется, когда функция вызывается в предложении <literal>FROM</literal>. В этом случае каждая строка, возвращаемая функцией, становится строкой таблицы, появляющейся в запросе. Например, в предположении, что таблица <literal>foo</literal> имеет то же содержимое, что и раньше, мы выполняем: <programlisting>CREATE FUNCTION getfoo(int) RETURNS SETOF foo AS $$
+    SELECT * FROM foo WHERE fooid = $1;
+$$ LANGUAGE SQL;
+
+SELECT * FROM getfoo(1) AS t1;</programlisting> Тогда в ответ мы получим: <screen>
+ fooid | foosubid | fooname
+-------+----------+---------
+     1 |        1 | Joe
+     1 |        2 | Ed
+(2 rows)
+</screen></para>
+
+    <para>Также возможно выдать несколько строк со столбцами, определяемыми выходными параметрами, следующим образом: <programlisting>CREATE TABLE tab (y int, z int);
+INSERT INTO tab VALUES (1, 2), (3, 4), (5, 6), (7, 8);
+
+CREATE FUNCTION sum_n_product_with_tab (x int, OUT sum int, OUT product int)
+RETURNS SETOF record
+AS $$
+    SELECT $1 + tab.y, $1 * tab.y FROM tab;
+$$ LANGUAGE SQL;
+
+SELECT * FROM sum_n_product_with_tab(10);
+ sum | product
+-----+---------
+  11 |      10
+  13 |      30
+  15 |      50
+  17 |      70
+(4 rows)</programlisting> Здесь ключевая особенность заключается в записи <literal>RETURNS SETOF record</literal>, показывающей, что функция возвращает множество строк вместо одной. Если существует только один выходной параметр, укажите тип этого параметра вместо <type>record</type>.</para>
+
+    <para>Часто бывает полезно сконструировать результат запроса, вызывая функцию, возвращающую множество, несколько раз, передавая при каждом вызове параметры из очередных строк таблицы или подзапроса. Для этого рекомендуется применить ключевое слово <literal>LATERAL</literal>, описываемое в <xref remap="6" linkend="queries-lateral"/>. Ниже приведён пример использования функции, возвращающей множество, для перечисления элементов древовидной структуры: <screen>
+SELECT * FROM nodes;
+   name    | parent
+-----------+--------
+ Top       |
+ Child1    | Top
+ Child2    | Top
+ Child3    | Top
+ SubChild1 | Child1
+ SubChild2 | Child1
+(6 rows)
+
+CREATE FUNCTION listchildren(text) RETURNS SETOF text AS $$
+    SELECT name FROM nodes WHERE parent = $1
+$$ LANGUAGE SQL STABLE;
+
+SELECT * FROM listchildren('Top');
+ listchildren
+--------------
+ Child1
+ Child2
+ Child3
+(3 rows)
+
+SELECT name, child FROM nodes, LATERAL listchildren(name) AS child;
+  name  |   child
+--------+-----------
+ Top    | Child1
+ Top    | Child2
+ Top    | Child3
+ Child1 | SubChild1
+ Child1 | SubChild2
+(5 rows)
+</screen> В этом примере не делается ничего такого, что мы не могли бы сделать, применив простое соединение, но для более сложных вычислений возможность поместить некоторую логику в функцию может быть весьма удобной.</para>
+
+    <para>В настоящее время функции, возвращающие множества, могут также вызываться в списке выборки запроса. Для каждой строки, которая генерируется самим запросом, вызывается функция, возвращающая множество, и для каждого элемента набора её результатов генерируется отдельная строка. Заметьте, однако, что эта возможность считается устаревшей и может быть ликвидирована в будущих выпусках. Предыдущий пример можно было бы также переписать с применением запросов следующим образом: <screen>
+SELECT listchildren('Top');
+ listchildren
+--------------
+ Child1
+ Child2
+ Child3
+(3 rows)
+
+SELECT name, listchildren(name) FROM nodes;
+  name  | listchildren
+--------+--------------
+ Top    | Child1
+ Top    | Child2
+ Top    | Child3
+ Child1 | SubChild1
+ Child1 | SubChild2
+(5 rows)
+</screen> Заметьте, что в последней команде <command>SELECT</command> для <literal>Child2</literal>, <literal>Child3</literal> и т. д. строки не выдаются. Это происходит потому, что <function>listchildren</function> возвращает пустое множество для этих аргументов, так что строки результата не генерируются. Это же поведение мы получаем при внутреннем соединении с результатом функции с применением <literal>LATERAL</literal>.</para>
+
+    <note>
+     <para>Если последняя команда функции — <command>INSERT</command>, <command>UPDATE</command> или <command>DELETE</command> с <literal>RETURNING</literal>, эта команда будет всегда выполняться до завершения, даже если функция не объявлена с указанием <literal>SETOF</literal> или вызывающий запрос не выбирает все строки результата. Все дополнительные строки, выданные предложением <literal>RETURNING</literal>, просто игнорируются, но соответствующие изменения в таблице всё равно произойдут (и будут завершены до выхода из функции).</para>
+    </note>
+
+    <note>
+     <para>Ключевая проблема использования функций, возвращающих множества, в списке выборки, а не в предложении <literal>FROM</literal>, заключается в том, что при вызове в одном списке выборки нескольких таких функций, результат будет не вполне разумным. (На самом деле, если вы сделаете это, вы получите выходные строки в количестве, равном наименьшему общему кратному чисел строк, которые будут выданы всеми функциями, возвращающими множества.) Синтаксис <literal>LATERAL</literal> даёт более ожидаемые результаты при вызове нескольких таких функций и поэтому рекомендуется использовать его.</para>
+    </note>
+   </sect2>
+
+   <sect2 id="xfunc-sql-functions-returning-table">
+    <title>Функции <acronym>SQL</acronym>, возвращающие таблицы (<literal>TABLE</literal>)</title>
+
+    <indexterm><primary>функция</primary> <secondary>RETURNS TABLE</secondary></indexterm>
+
+    <para>Есть ещё один способ объявить функцию, возвращающую множества, — использовать синтаксис <literal>RETURNS TABLE(<replaceable>столбцы</replaceable>)</literal>. Это равнозначно использованию одного или нескольких параметров <literal>OUT</literal> с объявлением функции как возвращающей <literal>SETOF record</literal> (или <literal>SETOF</literal> тип единственного параметра, если это применимо). Этот синтаксис описан в последних версиях стандарта SQL, так что этот вариант может быть более портируемым, чем <literal>SETOF</literal>.</para>
+
+    <para>Например, предыдущий пример с суммой и произведением можно также переписать так: <programlisting>CREATE FUNCTION sum_n_product_with_tab (x int)
+RETURNS TABLE(sum int, product int) AS $$
+    SELECT $1 + tab.y, $1 * tab.y FROM tab;
+$$ LANGUAGE SQL;</programlisting> Запись <literal>RETURNS TABLE</literal> не позволяет явно указывать <literal>OUT</literal> и <literal>INOUT</literal> для параметров &mdash; все выходные столбцы необходимо записать в списке <literal>TABLE</literal>.</para>
+   </sect2>
+
+   <sect2>
+    <title>Полиморфные функции <acronym>SQL</acronym></title>
+
+    <para>Функции <acronym>SQL</acronym> могут быть объявлены как принимающие и возвращающие полиморфные типы <type>anyelement</type>, <type>anyarray</type>, <type>anynonarray</type>, <type>anyenum</type> и <type>anyrange</type>. За более подробным объяснением полиморфизма функций обратитесь к <xref remap="3" linkend="extend-types-polymorphic"/>. В следующем примере полиморфная функция <function>make_array</function> создаёт массив из двух элементов произвольных типов: <screen>
+CREATE FUNCTION make_array(anyelement, anyelement) RETURNS anyarray AS $$
+    SELECT ARRAY[$1, $2];
+$$ LANGUAGE SQL;
+
+SELECT make_array(1, 2) AS intarray, make_array('a'::text, 'b') AS textarray;
+ intarray | textarray
+----------+-----------
+ {1,2}    | {a,b}
+(1 row)
+</screen></para>
+
+    <para>Обратите внимание на приведение типа <literal>'a'::text</literal>, определяющее, что аргумент имеет тип <type>text</type>. Оно необходимо, если аргумент задаётся просто строковой константой, так как иначе он будет воспринят как имеющий тип <type>unknown</type>, а массив типов <type>unknown</type> является недопустимым. Без этого приведения вы получите такую ошибку: <screen>
+<computeroutput>
+ERROR:  could not determine polymorphic type because input has type "unknown"
+</computeroutput>
+</screen> (ОШИБКА:  не удалось определить полиморфный тип, так как входные аргументы имеют тип "unknown")</para>
+
+    <para>Функция с полиморфными аргументами может иметь фиксированный тип результата, однако обратное не допускается. Например: <screen>
+CREATE FUNCTION is_greater(anyelement, anyelement) RETURNS boolean AS $$
+    SELECT $1 &gt; $2;
+$$ LANGUAGE SQL;
+
+SELECT is_greater(1, 2);
+ is_greater
+------------
+ f
+(1 row)
+
+CREATE FUNCTION invalid_func() RETURNS anyelement AS $$
+    SELECT 1;
+$$ LANGUAGE SQL;
+ERROR:  cannot determine result data type
+DETAIL:  A function returning a polymorphic type must have at least one polymorphic argument.
+</screen> (ОШИБКА: не удалось определить тип результата; ПОДРОБНОСТИ: Функция, возвращающая полиморфный тип, должна иметь минимум один полиморфный аргумент.")</para>
+
+    <para>Полиморфизм можно применять и с функциями, имеющими выходные аргументы. Например: <screen>
+CREATE FUNCTION dup (f1 anyelement, OUT f2 anyelement, OUT f3 anyarray)
+AS 'select $1, array[$1,$1]' LANGUAGE SQL;
+
+SELECT * FROM dup(22);
+ f2 |   f3
+----+---------
+ 22 | {22,22}
+(1 row)
+</screen></para>
+
+    <para>Полиморфизм также можно применять с функциями с переменными параметрами. Например: <screen>
+CREATE FUNCTION anyleast (VARIADIC anyarray) RETURNS anyelement AS $$
+    SELECT min($1[i]) FROM generate_subscripts($1, 1) g(i);
+$$ LANGUAGE SQL;
+
+SELECT anyleast(10, -1, 5, 4);
+ anyleast 
+----------
+       -1
+(1 row)
+
+SELECT anyleast('abc'::text, 'def');
+ anyleast 
+----------
+ abc
+(1 row)
+
+CREATE FUNCTION concat_values(text, VARIADIC anyarray) RETURNS text AS $$
+    SELECT array_to_string($2, $1);
+$$ LANGUAGE SQL;
+
+SELECT concat_values('|', 1, 4, 2);
+ concat_values 
+---------------
+ 1|4|2
+(1 row)
+</screen></para>
+   </sect2>
+
+   <sect2>
+    <title>Функции <acronym>SQL</acronym> с правилами сортировки</title>
+
+    <indexterm><primary>правила сортировки</primary> <secondary>в функциях SQL</secondary></indexterm>
+
+    <para>Когда функция SQL принимает один или несколько параметров сортируемых типов данных, правило сортировки определяется при каждом вызове функции, в зависимости от правил сортировки, связанных с фактическими аргументами, как описано в <xref remap="6" linkend="collation"/>. Если правило сортировки определено успешно (то есть не возникло конфликтов между неявно установленными правилами сортировки аргументов), оно неявно назначается для всех сортируемых параметров. Выбранное правило будет определять поведение операций, связанных с сортировкой, в данной функции. Например, для показанной выше функции <function>anyleast</function>, результат <programlisting>SELECT anyleast('abc'::text, 'ABC');</programlisting> будет зависеть от правила сортировки по умолчанию, заданного в базе данных. С локалью <literal>C</literal> результатом будет строка <literal>ABC</literal>, но со многими другими локалями это будет <literal>abc</literal>. Нужное правило сортировки можно установить принудительно, добавив предложение <literal>COLLATE</literal> к одному из аргументов функции, например: <programlisting>SELECT anyleast('abc'::text, 'ABC' COLLATE "C");</programlisting> С другой стороны, если вы хотите, чтобы функция работала с определённым правилом сортировки, вне зависимости от того, с каким она была вызвана, вставьте предложения <literal>COLLATE</literal> где требуется в определении функции. Эта версия <function>anyleast</function> всегда будет сравнивать строки по правилам локали <literal>en_US</literal>: <programlisting>CREATE FUNCTION anyleast (VARIADIC anyarray) RETURNS anyelement AS $$
+    SELECT min($1[i] COLLATE "en_US") FROM generate_subscripts($1, 1) g(i);
+$$ LANGUAGE SQL;</programlisting> Но заметьте, что при попытке применить правило к несортируемому типу данных, возникнет ошибка.</para>
+
+    <para>Если для фактических аргументов не удаётся определить общее правило сортировки, функция SQL считает, что им назначено правило сортировки по умолчанию для их типа данных (обычно это то же правило сортировки, что определено по умолчанию для базы данных, но оно может быть и другим для параметров доменных типов).</para>
+
+    <para>Поведение сортируемых параметров можно воспринимать как ограниченную форму полиморфизма, применимую только к текстовым типам данных.</para>
+   </sect2>
+  </sect1>
+
+  <sect1 id="xfunc-overload">
+   <title>Перегрузка функций</title>
+
+   <indexterm zone="xfunc-overload"><primary>перегрузка</primary> <secondary>функций</secondary></indexterm>
+
+   <para>Вы можете определить несколько функций с одним именем SQL, если эти функции будут принимать разные аргументы. Другими словами, имена функций можно <firstterm>перегружать</firstterm>. Когда выполняется запрос, сервер определяет, какую именно функцию вызывать, по количеству и типам представленных аргументов. Перегрузка может быть полезна для имитации функций с переменным количеством аргументов, до какого-то конечного числа.</para>
+
+   <para>Создавая семейство перегруженных функций, необходимо не допускать неоднозначности. Например, если созданы функции: <programlisting>CREATE FUNCTION test(int, real) RETURNS ...
+CREATE FUNCTION test(smallint, double precision) RETURNS ...</programlisting> не вполне понятно, какая функция будет вызвана с довольно простыми аргументами вроде <literal>test(1, 1.5)</literal>. Реализованные в данный момент правила разрешения типов описаны в <xref remap="6" linkend="typeconv"/>, но разрабатывать систему, которая будет незаметно полагаться на такие особенности, неразумно.</para>
+
+   <para>Функции, принимающей один аргумент составного типа, обычно не следует давать имя, совпадающее с именем какого-либо атрибута (поля) этого типа. Вспомните, что запись <literal><replaceable>атрибут</replaceable>(<replaceable>таблица</replaceable>)</literal> считается равнозначной <literal><replaceable>таблица</replaceable>.<replaceable>атрибут</replaceable></literal>. В случае, когда возникает неоднозначность между функцией, принимающей составной тип, и атрибутом составного типа, всегда будет выбираться атрибут. Этот выбор можно переопределить, дополнив имя функции схемой (то есть, записав <literal><replaceable>схема</replaceable>.<replaceable>функция</replaceable>(<replaceable>таблица</replaceable>) </literal>), но лучше избежать этой проблемы, подобрав разные имена.</para>
+
+   <para>Другой тип конфликта возможен между обычными функциями и функциями с переменными параметрами. Например, можно создать функции <literal>foo(numeric)</literal> и <literal>foo(VARIADIC numeric[])</literal>. В этом случае будет непонятно, какая функция должна выбираться при передаче одного числового аргумента, например <literal>foo(10.1)</literal>. При разрешении этого конфликта предпочтение отдаётся функции, найденной первой по пути поиска, либо, если две функции находятся в одной схеме, выбирается функция с постоянными аргументами.</para>
+
+   <para>При перегрузке функций на языке C есть дополнительное ограничение: имя уровня C каждой функции в семействе перегруженных функций должно отличаться от имён уровня C всех других функций, как внутренних, так и загружаемых динамически. Если это правило нарушается, поведение зависит от среды. Вы можете получить ошибку компоновщика во время выполнения, либо будет вызвана не та функция (обычно внутренняя). Альтернативная форма предложения <literal>AS</literal> для SQL-команды <command>CREATE FUNCTION</command> позволяет отвязать имя SQL-функции от имени, определённого в исходном коде на C. Например: <programlisting>CREATE FUNCTION test(int) RETURNS int
+    AS '<replaceable>имя_файла</replaceable>', 'test_1arg'
+    LANGUAGE C;
+CREATE FUNCTION test(int, int) RETURNS int
+    AS '<replaceable>имя_файла</replaceable>', 'test_2arg'
+    LANGUAGE C;</programlisting> Имена функций на C здесь следуют одному из множества возможных соглашений.</para>
+  </sect1>
+
+  <sect1 id="xfunc-volatility">
+   <title>Категории изменчивости функций</title>
+
+   <indexterm zone="xfunc-volatility"><primary>изменчивость</primary> <secondary>функций</secondary></indexterm>
+   <indexterm zone="xfunc-volatility"><primary>VOLATILE</primary></indexterm>
+   <indexterm zone="xfunc-volatility"><primary>STABLE</primary></indexterm>
+   <indexterm zone="xfunc-volatility"><primary>IMMUTABLE</primary></indexterm>
+
+   <para>Для каждой функции определяется характеристика <firstterm>изменчивости</firstterm>, с возможными вариантами: <literal>VOLATILE</literal>, <literal>STABLE</literal> и <literal>IMMUTABLE</literal>. Если эта характеристика не задаётся явно в команде <xref linkend="sql-createfunction"/>, по умолчанию подразумевается <literal>VOLATILE</literal>. Категория изменчивости представляет собой обещание некоторого поведения функции для оптимизатора: <itemizedlist>
+    <listitem>
+     <para>Изменчивая функция (<literal>VOLATILE</literal>) может делать всё, что угодно, в том числе, модифицировать базу данных. Она может возвращать различные результаты при нескольких вызовах с одинаковыми аргументами. Оптимизатор не делает никаких предположений о поведении таких функций. В запросе, использующем изменчивую функцию, она будет вычисляться заново для каждой строки, когда потребуется её результат.</para>
+    </listitem>
+    <listitem>
+     <para>Стабильная функция (<literal>STABLE</literal>) не может модифицировать базу данных и гарантированно возвращает одинаковый результат, получая одинаковые аргументы, для всех строк в одном операторе. Эта характеристика позволяет оптимизатору заменить множество вызовов этой функции одним. В частности, выражение, содержащее такую функцию, можно безопасно использовать в условии поиска по индексу. (Так как при поиске по индексу целевое значение вычисляется только один раз, а не для каждой строки, использовать функцию с характеристикой <literal>VOLATILE</literal> в условии поиска по индексу нельзя.)</para>
+    </listitem>
+    <listitem>
+     <para>Постоянная функция (<literal>IMMUTABLE</literal>) не может модифицировать базу данных и гарантированно всегда возвращает одинаковые результаты для одних и тех же аргументов. Эта характеристика позволяет оптимизатору предварительно вычислить функцию, когда она вызывается в запросе с постоянными аргументами. Например, запрос вида <literal>SELECT ... WHERE x = 2 + 2</literal> можно упростить до <literal>SELECT ... WHERE x = 4</literal>, так как нижележащая функция оператора сложения помечена как <literal>IMMUTABLE</literal>.</para>
+    </listitem>
+   </itemizedlist></para>
+
+   <para>Для наилучших результатов оптимизации, функции следует назначать самую строгую характеристику изменчивости, которой она соответствует.</para>
+
+   <para>Любая функция с побочными эффектами <emphasis>должна</emphasis> быть помечена как <literal>VOLATILE</literal>, чтобы обращения к ней не исключались при оптимизации. Даже если функция не имеет побочных эффектов, её нужно пометить как <literal>VOLATILE</literal>, если её значение может меняться при выполнении одного запроса; таковы функции <literal>random()</literal>, <literal>currval()</literal> и <literal>timeofday()</literal>.</para>
+
+   <para>Другой важный пример представляет семейство функций <function>current_timestamp</function>, которые имеют характеристику <literal>STABLE</literal>, потому что их значения не меняются в рамках одной транзакции.</para>
+
+   <para>Характеристики <literal>STABLE</literal> и <literal>IMMUTABLE</literal> мало различаются, когда речь идёт о простых интерактивных запросах, которые планируются и сразу же выполняются; не имеет большого значения, будет ли функция выполнена однократно на этапе планирования или в начале выполнения. Существенное различие проявляется, когда план сохраняется и многократно используется позже. Если функция помечена как <literal>IMMUTABLE</literal>, тогда как на самом деле она не является постоянной, она может быть сведена к константе во время планирования, так что при последующих выполнениях плана вместо неё будет использоваться неактуальное значение. Это опасно при использовании подготовленных операторов или языков функций, кеширующих планы (например, <application>PL/pgSQL</application>).</para>
+
+   <para>У функций, написанных на SQL или на любом другом стандартном процедурном языке, есть ещё одно важное свойство, определяемое характеристикой изменчивости, а именно видимость изменений, произведённых командой SQL, которая вызывает эту функцию. Функция <literal>VOLATILE</literal> будет видеть такие изменения, тогда как <literal>STABLE</literal> и <literal>IMMUTABLE</literal> — нет. Это поведение реализуется посредством снимков в MVCC (см. <xref remap="4" linkend="mvcc"/>): <literal>STABLE</literal> и <literal>IMMUTABLE</literal> используют снимок, полученный в начале вызывающего запроса, тогда как функции <literal>VOLATILE</literal> получают свежий снимок в начале каждого запроса, который они выполняют.</para>
+
+   <note>
+    <para>Функции, написанные на C, могут работать со снимками как угодно, но обычно лучше сделать так, чтобы они действовали аналогично.</para>
+   </note>
+
+   <para>Вследствие такой организации работы со снимками, функцию, содержащую только команды <command>SELECT</command>, можно безопасно пометить как <literal>STABLE</literal>, даже если она выбирает данные из таблиц, которые могут быть изменены параллельными запросами. <productname>&productname;</productname> выполнит все команды в функции <literal>STABLE</literal> со снимком, полученным для вызывающего запроса, так что они будут видеть одно представление базы данных на протяжении всего запроса.</para>
+
+   <para>То же самое поведение со снимками распространяется на команды <command>SELECT</command> в функциях <literal>IMMUTABLE</literal>. Вообще в функциях <literal>IMMUTABLE</literal> обычно неразумно выбирать данные из таблиц, так как &laquo;постоянство&raquo; функции будет нарушено, если содержимое таблиц изменится. Однако <productname>&productname;</productname> не принуждает вас явно отказаться от этого.</para>
+
+   <para>Одна из распространённых ошибок — помечать функцию как <literal>IMMUTABLE</literal>, при том, что её результаты зависят от параметра конфигурации. Например, функция, работающая с временем, может выдавать результаты, зависящие от параметра <xref linkend="guc-timezone"/>. Для надёжности такие функции следует помечать как <literal>STABLE</literal>.</para>
+
+   <note>
+    <para><productname>&productname;</productname> требует, чтобы функции <literal>STABLE</literal> и <literal>IMMUTABLE</literal> не содержали SQL-команд, кроме <command>SELECT</command>, для предотвращения модификации данных. (Это не совсем непробиваемое ограничение, так как эти функции всё же могут вызывать функции <literal>VOLATILE</literal>, способные модифицировать базу данных. Если вы реализуете такую схему, вы увидите, что функция <literal>STABLE</literal> и <literal>IMMUTABLE</literal> не замечает изменений в базе данных, произведённых вызванной функцией, так как они не проявляются в её снимке данных.)</para>
+   </note>
+  </sect1>
+
+  <sect1 id="xfunc-pl">
+   <title>Функции на процедурных языках</title>
+
+   <para><productname>&productname;</productname> позволяет разрабатывать собственные функции и на языках, отличных от SQL и C. Эти другие языки в целом обычно называются <firstterm>процедурными языками</firstterm> (<acronym>PL</acronym>, Procedural Languages). Процедурные языки не встроены в сервер <productname>&productname;</productname>; они предлагаются загружаемыми модулями. За дополнительной информацией обратитесь к <xref remap="3" linkend="xplang"/> и следующим главам.</para>
+  </sect1>
+
+  <sect1 id="xfunc-internal">
+   <title>Внутренние функции</title>
+
+   <indexterm zone="xfunc-internal"><primary>функция</primary> <secondary>внутренняя</secondary></indexterm>
+
+   <para>Внутренние функции — это функции, написанные на языке C, и статически скомпонованные в исполняемый код сервера <productname>&productname;</productname>. В <quote>теле</quote> определения функции задаётся имя функции на уровне C, которое не обязательно должно совпадать с именем, объявленным для использования в SQL. (Обратной совместимости ради, тело функции может быть пустым, что будет означать, что имя функции на уровне C совпадает с именем в SQL.)</para>
+
+   <para>Обычно все внутренние функции, представленные на сервере, объявляются в ходе инициализации кластера баз данных (см. <xref remap="4" linkend="creating-cluster"/>), но пользователь может воспользоваться командой <command>CREATE FUNCTION</command> и добавить дополнительные псевдонимы для внутренней функции. Внутренние функции объявляются в <command>CREATE FUNCTION</command> с именем языка <literal>internal</literal>. Например, так можно создать псевдоним для функции <function>sqrt</function>: <programlisting>CREATE FUNCTION square_root(double precision) RETURNS double precision
+    AS 'dsqrt'
+    LANGUAGE internal
+    STRICT;</programlisting> (Большинство внутренних функций должны объявляться как <quote>strict</quote>.)</para>
+
+   <note>
+    <para>Не все <quote>предопределённые</quote> функции являются <quote>внутренними</quote> в вышеописанном смысле. Некоторые предопределённые функции написаны на SQL.</para>
+   </note>
+  </sect1>
+
+  <sect1 id="xfunc-c">
+   <title>Функции на языке C</title>
+
+   <indexterm zone="xfunc-c"><primary>функция</primary> <secondary>пользовательская</secondary> <tertiary>на C</tertiary></indexterm>
+
+   <para>Пользовательские функции могут быть написаны на C (или на языке, который может быть совместим с C, например C++). Такие функции компилируются в динамически загружаемые объекты (также называемые разделяемыми библиотеками) и загружаются сервером по требованию. Именно метод динамической загрузки отличает функции <quote>на языке C</quote> от <quote>внутренних</quote> функций &mdash; правила написания кода по сути одни и те же. (Собственно, поэтому стандартная библиотека внутренних функций может быть богатым источником примеров для написания собственных функций на языке C.)</para>
+
+   <para>Для функций на C в настоящее время используются два различных соглашения о вызовах. По новому соглашению <quote>версии 1</quote> для функции записывается макрос <literal>PG_FUNCTION_INFO_V1()</literal>, как показано ниже. Отсутствие такого макроса говорит о том, что это функция старого стиля (<quote>версии 0</quote>). В качестве имени языка в <command>CREATE FUNCTION</command> задаётся <literal>C</literal> в любом случае. Функции старого стиля считаются устаревшими из-за проблем с переносимостью и недостаточной функциональности, но они всё ещё поддерживаются для совместимости.</para>
+
+  <sect2 id="xfunc-c-dynload">
+   <title>Динамическая загрузка</title>
+
+   <indexterm zone="xfunc-c-dynload"><primary>динамическая загрузка</primary></indexterm>
+
+   <para>В первый раз, когда в сеансе вызывается пользовательская функция в определённом внешнем объектном файле, загрузчик динамических модулей загружает этот файл в память, чтобы можно было вызвать эту функцию. Таким образом, в команде <command>CREATE FUNCTION</command>, объявляющей пользовательскую функцию на языке C, необходимо определить две сущности для функции: имя загружаемого объектного файла и имя уровня C (символ для компоновки) заданной функции в этом объектном файле. Если имя уровня C не указано явно, предполагается, что оно совпадает с именем функции в SQL.</para>
+
+   <para>Для нахождения разделяемого объектного файла по имени, заданному в команде <command>CREATE FUNCTION</command>, применяется следующий алгоритм: <orderedlist>
+     <listitem>
+      <para>Если имя задаётся абсолютным путём, загружается заданный файл.</para>
+     </listitem>
+
+     <listitem>
+      <para>Если имя начинается со строки <literal>$libdir</literal>, эта часть пути заменяется путём к каталогу библиотек <productname>&productname;</productname>, который определяется во время сборки.<indexterm><primary>$libdir</primary></indexterm></para>
+     </listitem>
+
+     <listitem>
+      <para>Если в имени не указывается каталог, поиск файла производится по пути, заданному конфигурационной переменной <xref linkend="guc-dynamic-library-path"/>.<indexterm><primary>dynamic_library_path</primary></indexterm></para>
+     </listitem>
+
+     <listitem>
+      <para>В противном случае (файл не был найден в пути поиска, или в его имени указывается не абсолютный путь к каталогу), загрузчик попытается принять имя как есть, что, скорее всего, не увенчается успехом. (Полагаться на текущий рабочий каталог ненадёжно.)</para>
+     </listitem>
+    </orderedlist> Если эта последовательность не даёт положительный результат, к данному имени добавляется принятое на данной платформе расширение файлов библиотек (часто <filename>.so</filename>) и последовательность повторяется снова. Если и это не приводит к успеху, происходит сбой загрузки.</para>
+
+   <para>Для поиска разделяемых библиотек рекомендуется задавать либо путь относительно <literal>$libdir</literal>, либо путь динамических библиотек. Это упрощает обновление версии при перемещении новой инсталляции в другое место. Какой именно каталог подразумевается под <literal>$libdir</literal>, можно узнать с помощью команды <literal>pg_config --pkglibdir</literal>.</para>
+
+   <para>Пользователь, от имени которого работает сервер <productname>&productname;</productname>, должен иметь возможность пройти путь к файлу, который требуется загрузить. Очень распространённая ошибка — когда сам файл или каталог верхнего уровня оказывается недоступным для чтения и/или исполнения для пользователя <systemitem>postgres</systemitem>.</para>
+
+   <para>В любом случае, имя файла, заданное в команде <command>CREATE FUNCTION</command>, записывается в системные каталоги буквально, так что если этот файл потребуется загрузить ещё раз, та же процедура будет проделана снова.</para>
+
+   <note>
+    <para><productname>&productname;</productname> не будет компилировать функцию на C автоматически, поэтому прежде чем ссылаться на объектный файл в команде <command>CREATE FUNCTION</command>, его нужно скомпилировать. За дополнительными сведениями обратитесь к <xref remap="3" linkend="dfunc"/>.</para>
+   </note>
+
+   <indexterm zone="xfunc-c-dynload"><primary>отличительный блок</primary></indexterm>
+
+   <para>Чтобы гарантировать, что динамически загружаемый объектный файл не будет загружен несовместимым сервером, <productname>&productname;</productname> проверяет, содержит ли этот файл <quote>отличительный блок</quote> с требуемым содержимым. Благодаря этому сервер может выявить очевидную несовместимость, например, когда код скомпилирован для другой основной версии <productname>&productname;</productname>. Отличительный блок стал обязательным, начиная с версии <productname>PostgreSQL</productname> 8.2. Чтобы включить его в свой модуль, напишите это в одном (и только одном) из исходных файлов модуля, после включения заголовочного файла <filename>fmgr.h</filename>: <programlisting>#ifdef PG_MODULE_MAGIC
+PG_MODULE_MAGIC;
+#endif</programlisting> Проверку <literal>#ifdef</literal> можно опустить, если этот код не планируется компилировать для версий <productname>PostgreSQL</productname> до 8.2.</para>
+
+   <para>После того, как он был использован первый раз, динамически загружаемый объектный файл сохраняется в памяти. Следующие обращения в том же сеансе к функциям в этом файле повлекут только небольшие издержки, связанные с поиском в таблице символов. Если вам нужно принудительно перезагрузить объектный файл, например, после перекомпиляции, начните новый сеанс.</para>
+
+   <indexterm zone="xfunc-c-dynload"><primary>_PG_init</primary></indexterm>
+   <indexterm zone="xfunc-c-dynload"><primary>_PG_fini</primary></indexterm>
+   <indexterm zone="xfunc-c-dynload"><primary>функция инициализации библиотеки</primary></indexterm>
+   <indexterm zone="xfunc-c-dynload"><primary>функция завершения работы библиотеки</primary></indexterm>
+
+   <para>Динамически загружаемый файл может дополнительно содержать функции инициализации и завершения работы библиотеки. Если в файле находится функция с именем <function>_PG_init</function>, эта функция будет вызвана сразу после загрузки файла. Эта функция не принимает параметры и не должна ничего возвращать. Если в файле находится функция <function>_PG_fini</function>, эта функция будет вызвана непосредственно перед выгрузкой файла. Эта функция так же не принимает параметры и не должна ничего возвращать. Заметьте, что <function>_PG_fini</function> будет вызываться только при выгрузке файла, но не при завершении процесса. (В настоящее время выгрузка отключена и не происходит никогда, но в будущем это может измениться.)</para>
+
+  </sect2>
+
+   <sect2 id="xfunc-c-basetype">
+    <title>Базовые типы в функциях на языке C</title>
+
+    <indexterm zone="xfunc-c-basetype"><primary>тип данных</primary> <secondary>внутренняя организация</secondary></indexterm>
+
+    <para>Чтобы понимать, как написать функцию на языке C, вы должны знать, как внутри <productname>&productname;</productname> представляются базовые типы данных и как их могут принимать и передавать функции. <productname>&productname;</productname> внутри воспринимает базовые типы как <quote>блоки памяти</quote>. Пользовательские функции, устанавливаемые для типов, в свою очередь, определяют, как <productname>&productname;</productname> может работать с этими типами. То есть, <productname>&productname;</productname> только сохраняет и загружает данные с диска, а для ввода, обработки и вывода данных он использует определяемые вами функции.</para>
+
+    <para>Базовые типы могут иметь один из трёх внутренних форматов: <itemizedlist>
+      <listitem>
+       <para>передаётся по значению, фиксированной длины</para>
+      </listitem>
+      <listitem>
+       <para>передаётся по ссылке, фиксированной длины</para>
+      </listitem>
+      <listitem>
+       <para>передаётся по ссылке, переменной длины</para>
+      </listitem>
+     </itemizedlist></para>
+
+    <para>Типы, передаваемые по значению, могут иметь размер только 1, 2 или 4 байта (и 8 байт, если <literal>sizeof(Datum)</literal> равен 8 на вашей машине). Определяя собственные типы, следует позаботиться о том, чтобы они имели одинаковый размер (в байтах) во всех архитектурах. Например, тип <literal>long</literal> опасен, так как он имеет размер 4 байта на одних машинах, и 8 байт на других, тогда как тип <type>int</type> состоит из 4 байт в большинстве систем Unix. Поэтому разумной реализацией типа <type>int4</type> на платформе Unix может быть такая: <programlisting>/* 4-байтное целое, передаётся по значению */
+typedef int int4;</programlisting> (В коде собственно &productname; этот тип называется <type>int32</type>, так как в C принято соглашение, что <type>int<replaceable>XX</replaceable></type> подразумевает <replaceable>XX</replaceable> <emphasis>бит</emphasis>. Заметьте, что вследствие этого тип <type>int8</type> в C имеет размер 1 байт. Тип <type>int8</type>, принятый в SQL, в C называется <type>int64</type>. См. также <xref remap="4" linkend="xfunc-c-type-table"/>.)</para>
+
+    <para>С другой стороны, типы фиксированной длины любого размера можно передавать по ссылке. Например, взгляните на пример реализации типа <productname>&productname;</productname>: <programlisting>/* 16-байтная структура, передаётся по ссылке */
+typedef struct
+{
+    double  x, y;
+} Point;</programlisting> В функции <productname>&productname;</productname> и из них могут передаваться только указатели на такие типы. Чтобы вернуть значение такого типа, выделите для него нужное количество памяти функцией <literal>palloc</literal>, заполните выделенную память и верните указатель на неё. (Если вы захотите просто вернуть то же значение, что было получено во входном аргументе этого же типа данных, вы можете пропустить дополнительный вызов <literal>palloc</literal> и просто вернуть указатель на это поступившее значение.)</para>
+
+    <para>Наконец, все типы переменной длины также должны передаваться по ссылке. Все типы переменной длины должны начинаться с обязательного поля длины размером ровно 4 байта, которая будет задаваться макросом <symbol>SET_VARSIZE</symbol>; никогда не устанавливайте это поле вручную! Все данные, которые будут храниться в этом типе, должны размещаться в памяти непосредственно за этим полем длины. Поле длины содержит полную длину структуры, то есть включает размер самого поля длины.</para>
+
+    <para>Ещё один важный момент — старайтесь не оставлять неинициализированных байт в значениях данных; например, обнуляйте все возможные байты выравнивания, которые могут присутствовать в структурах. Если этого не делать, логически равные значения ваших данных могут представляться неравными планировщику, что приведёт к построению неэффективных (хотя и корректных) планов.</para>
+
+    <warning>
+     <para><emphasis>Никогда</emphasis> не изменяйте содержимое, передаваемое на вход по ссылке. Если вы сделаете это, вы скорее всего испортите данные на диске, так как полученный вами указатель указывает непосредственно на место в дисковом буфере. Единственное исключение из этого правила освещается в <xref remap="6" linkend="xaggr"/>.</para>
+    </warning>
+
+    <para>В качестве примера мы можем определить тип <type>text</type> так: <programlisting>typedef struct {
+    int32 length;
+    char data[FLEXIBLE_ARRAY_MEMBER];
+} text;</programlisting> Запись <literal>[FLEXIBLE_ARRAY_MEMBER]</literal> означает, что действительная длина массива данных в этом объявлении не указывается.</para>
+
+    <para>Работая с типами переменной длины, мы должны аккуратно выделить нужный объём памяти и записать его размер в поле длины. Например, если нужно сохранить 40 байт в структуре <structname>text</structname>, можно применить такой код: <programlisting><![CDATA[
+#include "postgres.h"
+...
+char buffer[40]; /* our source data */
+...
+text *destination = (text *) palloc(VARHDRSZ + 40);
+SET_VARSIZE(destination, VARHDRSZ + 40);
+memcpy(destination->data, buffer, 40);
+...
+]]>
+</programlisting> <literal>VARHDRSZ</literal> совпадает с <literal>sizeof(int32)</literal>, но для получения размера заголовка типа переменной длины хорошим стилем считается применять макрос <literal>VARHDRSZ</literal>. Кроме того, поле длины <emphasis>должно</emphasis> устанавливаться макросом <literal>SET_VARSIZE</literal>, а не простым присваиванием.</para>
+
+    <para>В <xref remap="6" linkend="xfunc-c-type-table"/> указано, какие типы языка C соответствуют типам SQL при написании функций на C с использованием встроенных типов <productname>&productname;</productname>. В столбце <quote>Определён в</quote> указывается, какой заголовочный файл необходимо подключить, чтобы получить определение типа. (Фактическое определение может быть в другом файле, который подключается из указанного, однако рекомендуется придерживаться обозначенного интерфейса.) Заметьте, что в любом исходном файле всегда необходимо первым включать <filename>postgres.h</filename>, так как в нём объявляется ряд вещей, которые нужны в любом случае.</para>
+
+     <table tocentry="1" id="xfunc-c-type-table">
+      <title>Типы C, эквивалентные встроенным типам SQL</title>
+      <tgroup cols="3">
+       <thead>
+        <row>
+         <entry>Тип SQL</entry>
+         <entry>Тип C</entry>
+         <entry>Определён в</entry>
+        </row>
+       </thead>
+       <tbody>
+        <row>
+         <entry><type>abstime</type></entry>
+         <entry><type>AbsoluteTime</type></entry>
+         <entry><filename>utils/nabstime.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>bigint</type> (<type>int8</type>)</entry>
+         <entry><type>int64</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>boolean</type></entry>
+         <entry><type>bool</type></entry>
+         <entry><filename>postgres.h</filename> (может быть встроен в компиляторе)</entry>
+        </row>
+        <row>
+         <entry><type>box</type></entry>
+         <entry><type>BOX*</type></entry>
+         <entry><filename>utils/geo_decls.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>bytea</type></entry>
+         <entry><type>bytea*</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>"char"</type></entry>
+         <entry><type>char</type></entry>
+         <entry>(встроен в компиляторе)</entry>
+        </row>
+        <row>
+         <entry><type>character</type></entry>
+         <entry><type>BpChar*</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>cid</type></entry>
+         <entry><type>CommandId</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>date</type></entry>
+         <entry><type>DateADT</type></entry>
+         <entry><filename>utils/date.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>smallint</type> (<type>int2</type>)</entry>
+         <entry><type>int16</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>int2vector</type></entry>
+         <entry><type>int2vector*</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>integer</type> (<type>int4</type>)</entry>
+         <entry><type>int32</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>real</type> (<type>float4</type>)</entry>
+         <entry><type>float4*</type></entry>
+        <entry><filename>postgres.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>double precision</type> (<type>float8</type>)</entry>
+         <entry><type>float8*</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>interval</type></entry>
+         <entry><type>Interval*</type></entry>
+         <entry><filename>datatype/timestamp.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>lseg</type></entry>
+         <entry><type>LSEG*</type></entry>
+         <entry><filename>utils/geo_decls.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>name</type></entry>
+         <entry><type>Name</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>oid</type></entry>
+         <entry><type>Oid</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>oidvector</type></entry>
+         <entry><type>oidvector*</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>path</type></entry>
+         <entry><type>PATH*</type></entry>
+         <entry><filename>utils/geo_decls.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>point</type></entry>
+         <entry><type>POINT*</type></entry>
+         <entry><filename>utils/geo_decls.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>regproc</type></entry>
+         <entry><type>regproc</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>reltime</type></entry>
+         <entry><type>RelativeTime</type></entry>
+         <entry><filename>utils/nabstime.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>text</type></entry>
+         <entry><type>text*</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>tid</type></entry>
+         <entry><type>ItemPointer</type></entry>
+         <entry><filename>storage/itemptr.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>time</type></entry>
+         <entry><type>TimeADT</type></entry>
+         <entry><filename>utils/date.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>time with time zone</type></entry>
+         <entry><type>TimeTzADT</type></entry>
+         <entry><filename>utils/date.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>timestamp</type></entry>
+         <entry><type>Timestamp*</type></entry>
+         <entry><filename>datatype/timestamp.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>tinterval</type></entry>
+         <entry><type>TimeInterval</type></entry>
+         <entry><filename>utils/nabstime.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>varchar</type></entry>
+         <entry><type>VarChar*</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
+        <row>
+         <entry><type>xid</type></entry>
+         <entry><type>TransactionId</type></entry>
+         <entry><filename>postgres.h</filename></entry>
+        </row>
+       </tbody>
+      </tgroup>
+     </table>
+
+    <para>Теперь, когда мы рассмотрели все возможные структуры для базовых типов, мы можем перейти к примерам реальных функций.</para>
+   </sect2>
+
+   <sect2>
+    <title>Соглашение о вызовах версии 0</title>
+
+    <para>Сначала мы представим соглашение о вызовах <quote>старого стиля</quote> &mdash; хотя этот подход уже устарел, понять его сначала будет легче. По методу версии 0 аргументы и результат функции C объявляются в обычном стиле C, но при этом должны использоваться типы C, соответствующие типам данных SQL, как показано выше.</para>
+
+    <para>Несколько примеров функций: <programlisting><![CDATA[
+#include "postgres.h"
+#include <string.h>
+#include "utils/geo_decls.h"
+
+#ifdef PG_MODULE_MAGIC
+PG_MODULE_MAGIC;
+#endif
+
+/* by value */
+
+int
+add_one(int arg)
+{
+    return arg + 1;
+}
+
+/* by reference, fixed length */
+
+float8 *
+add_one_float8(float8 *arg)
+{
+    float8    *result = (float8 *) palloc(sizeof(float8));
+
+    *result = *arg + 1.0;
+
+    return result;
+}
+
+Point *
+makepoint(Point *pointx, Point *pointy)
+{
+    Point     *new_point = (Point *) palloc(sizeof(Point));
+
+    new_point->x = pointx->x;
+    new_point->y = pointy->y;
+
+    return new_point;
+}
+
+/* by reference, variable length */
+
+text *
+copytext(text *t)
+{
+    /*
+     * VARSIZE is the total size of the struct in bytes.
+     */
+    text *new_t = (text *) palloc(VARSIZE(t));
+    SET_VARSIZE(new_t, VARSIZE(t));
+    /*
+     * VARDATA is a pointer to the data region of the struct.
+     */
+    memcpy((void *) VARDATA(new_t), /* destination */
+           (void *) VARDATA(t),     /* source */
+           VARSIZE(t) - VARHDRSZ);  /* how many bytes */
+    return new_t;
+}
+
+text *
+concat_text(text *arg1, text *arg2)
+{
+    int32 new_text_size = VARSIZE(arg1) + VARSIZE(arg2) - VARHDRSZ;
+    text *new_text = (text *) palloc(new_text_size);
+
+    SET_VARSIZE(new_text, new_text_size);
+    memcpy(VARDATA(new_text), VARDATA(arg1), VARSIZE(arg1) - VARHDRSZ);
+    memcpy(VARDATA(new_text) + (VARSIZE(arg1) - VARHDRSZ),
+           VARDATA(arg2), VARSIZE(arg2) - VARHDRSZ);
+    return new_text;
+}
+]]>
+</programlisting></para>
+
+    <para>В предположении, что приведённый выше код был подготовлен в файле <filename>funcs.c</filename> и скомпилирован в разделяемый объект, мы можем объявить эти функции в <productname>&productname;</productname> следующими командами: <programlisting>CREATE FUNCTION add_one(integer) RETURNS integer
+     AS '<replaceable>КАТАЛОГ</replaceable>/funcs', 'add_one'
+     LANGUAGE C STRICT;
+
+-- обратите внимание — это перегрузка SQL-функции "add_one"
+CREATE FUNCTION add_one(double precision) RETURNS double precision
+     AS '<replaceable>КАТАЛОГ</replaceable>/funcs', 'add_one_float8'
+     LANGUAGE C STRICT;
+
+CREATE FUNCTION makepoint(point, point) RETURNS point
+     AS '<replaceable>КАТАЛОГ</replaceable>/funcs', 'makepoint'
+     LANGUAGE C STRICT;
+
+CREATE FUNCTION copytext(text) RETURNS text
+     AS '<replaceable>КАТАЛОГ</replaceable>/funcs', 'copytext'
+     LANGUAGE C STRICT;
+
+CREATE FUNCTION concat_text(text, text) RETURNS text
+     AS '<replaceable>КАТАЛОГ</replaceable>/funcs', 'concat_text'
+     LANGUAGE C STRICT;</programlisting></para>
+
+    <para>Здесь <replaceable>КАТАЛОГ</replaceable> — это путь к каталогу, в который помещён разделяемый библиотечный файл (например, каталог учебных материалов (tutorial) в исходном коде <productname>&productname;</productname>, содержащий код примеров, использованных в этом разделе). (Лучше было бы просто написать <literal>'funcs'</literal> в предложении <literal>AS</literal>, предварительно добавив <replaceable>КАТАЛОГ</replaceable> в путь поиска. В любом случае, мы можем опустить принятое в системе расширение файлов разделяемых библиотек, обычно <literal>.so</literal> или <literal>.sl</literal>.)</para>
+
+    <para>Заметьте, что мы объявили эти функции как <quote>strict</quote> (строгие) — это означает, что система будет автоматически подразумевать результат NULL, если в одном из входных значений передаётся NULL. Благодаря этому, мы избегаем необходимости проверять входные значения на NULL в коде функции. Без такого объявления нам пришлось бы явно проверять параметры на NULL, сравнивая указатель аргументов, передаваемых по ссылке, с NULL. (Для аргументов, передаваемых по значению, мы даже не можем это проверить!)</para>
+
+    <para>Хотя это соглашение о вызовах легко использовать, оно плохо портируется; на некоторых архитектурах возникали проблемы с передачей таким образом типов данных размером меньше <type>int</type>. Кроме того, оно не позволяет простым способом вернуть результат NULL, как и управиться с аргументами NULL, кроме как объявив функцию строгой. В соглашении версии 1, представленном далее, эти недостатки устранены.</para>
+   </sect2>
+
+   <sect2>
+    <title>Соглашение о вызовах версии 1</title>
+
+    <para>Соглашение о вызовах версии 1 полагается на макросы, скрывающие основную долю сложностей, связанных с передачей аргументов и результатов. По соглашению версии 1 функция на C должна всегда определяться так: <programlisting>Datum funcname(PG_FUNCTION_ARGS)</programlisting> В дополнение к этому, в том же исходном файле должен присутствовать вызов макроса: <programlisting>PG_FUNCTION_INFO_V1(funcname);</programlisting> (Обычно его принято записывать непосредственно перед функцией.) Этот вызов макроса не нужен для функций <literal>internal</literal>, так как <productname>&productname;</productname> предполагает, что все внутренние функции используют соглашении версии 1. Однако для функций, загружаемых динамически, этот макрос необходим.</para>
+
+    <para>В функции версии 1 каждый аргумент выбирается макросом <function>PG_GETARG_<replaceable>xxx</replaceable>()</function>, который соответствует типу данных аргумента, а результат возвращается макросом <function>PG_RETURN_<replaceable>xxx</replaceable>()</function> для возвращаемого типа. <function>PG_GETARG_<replaceable>xxx</replaceable>()</function> принимает в качестве параметра номер выбираемого аргумента функции (нумерация начинается с 0). <function>PG_RETURN_<replaceable>xxx</replaceable>()</function> принимает в качестве параметра фактическое значение, которое нужно возвратить.</para>
+
+    <para>Так выглядят те же функции, что были показаны выше, но реализованные в стиле версии 1: <programlisting><![CDATA[
+#include "postgres.h"
+#include <string.h>
+#include "fmgr.h"
+#include "utils/geo_decls.h"
+
+#ifdef PG_MODULE_MAGIC
+PG_MODULE_MAGIC;
+#endif
+
+/* by value */
+
+PG_FUNCTION_INFO_V1(add_one);
+
+Datum
+add_one(PG_FUNCTION_ARGS)
+{
+    int32   arg = PG_GETARG_INT32(0);
+
+    PG_RETURN_INT32(arg + 1);
+}
+
+/* by reference, fixed length */
+
+PG_FUNCTION_INFO_V1(add_one_float8);
+
+Datum
+add_one_float8(PG_FUNCTION_ARGS)
+{
+    /* The macros for FLOAT8 hide its pass-by-reference nature. */
+    float8   arg = PG_GETARG_FLOAT8(0);
+
+    PG_RETURN_FLOAT8(arg + 1.0);
+}
+
+PG_FUNCTION_INFO_V1(makepoint);
+
+Datum
+makepoint(PG_FUNCTION_ARGS)
+{
+    /* Here, the pass-by-reference nature of Point is not hidden. */
+    Point     *pointx = PG_GETARG_POINT_P(0);
+    Point     *pointy = PG_GETARG_POINT_P(1);
+    Point     *new_point = (Point *) palloc(sizeof(Point));
+
+    new_point->x = pointx->x;
+    new_point->y = pointy->y;
+
+    PG_RETURN_POINT_P(new_point);
+}
+
+/* by reference, variable length */
+
+PG_FUNCTION_INFO_V1(copytext);
+
+Datum
+copytext(PG_FUNCTION_ARGS)
+{
+    text     *t = PG_GETARG_TEXT_P(0);
+    /*
+     * VARSIZE is the total size of the struct in bytes.
+     */
+    text     *new_t = (text *) palloc(VARSIZE(t));
+    SET_VARSIZE(new_t, VARSIZE(t));
+    /*
+     * VARDATA is a pointer to the data region of the struct.
+     */
+    memcpy((void *) VARDATA(new_t), /* destination */
+           (void *) VARDATA(t),     /* source */
+           VARSIZE(t) - VARHDRSZ);  /* how many bytes */
+    PG_RETURN_TEXT_P(new_t);
+}
+
+PG_FUNCTION_INFO_V1(concat_text);
+
+Datum
+concat_text(PG_FUNCTION_ARGS)
+{
+    text  *arg1 = PG_GETARG_TEXT_P(0);
+    text  *arg2 = PG_GETARG_TEXT_P(1);
+    int32 new_text_size = VARSIZE(arg1) + VARSIZE(arg2) - VARHDRSZ;
+    text *new_text = (text *) palloc(new_text_size);
+
+    SET_VARSIZE(new_text, new_text_size);
+    memcpy(VARDATA(new_text), VARDATA(arg1), VARSIZE(arg1) - VARHDRSZ);
+    memcpy(VARDATA(new_text) + (VARSIZE(arg1) - VARHDRSZ),
+           VARDATA(arg2), VARSIZE(arg2) - VARHDRSZ);
+    PG_RETURN_TEXT_P(new_text);
+}
+]]>
+</programlisting></para>
+
+    <para>Команды <command>CREATE FUNCTION</command> не отличаются от тех, что объявляют функции версии 0.</para>
+
+    <para>На первый взгляд соглашение версии 1 может показаться всего лишь бессмысленным мракобесием. Однако, оно приносит ряд усовершенствований, так как макрос может скрыть лишние детали. Например, в реализации <function>add_one_float8</function> мы больше не должны думать о том, что тип <type>float8</type> передаётся по ссылке. Ещё один плюс состоит в том, что макрос <literal>GETARG</literal> для типов переменной длины позволяет эффективно выбирать значения в формате TOAST (сжатых или хранимых отдельно).</para>
+
+    <para>Важным усовершенствованием для функций версии 1 стало улучшение обработки аргументов и результатов NULL. Такие функции могут проверить любое входное значение на NULL, воспользовавшись макросом <function>PG_ARGISNULL(<replaceable>n</replaceable>)</function>. (Разумеется, эти проверки нужны только в функциях, объявленных без характеристики <quote>strict</quote>.) Как и с макросом <function>PG_GETARG_<replaceable>xxx</replaceable>()</function>, входные аргументы нумеруются, начиная с нуля. Заметьте, что не следует обращаться к макросу <function>PG_GETARG_<replaceable>xxx</replaceable>()</function>, не убедившись, что соответствующий аргумент не NULL. Чтобы возвратить NULL в качестве результата, воспользуйтесь макросом <function>PG_RETURN_NULL()</function>; это работает и со строгими, и с нестрогими функциями.</para>
+
+    <para>Кроме того, в интерфейсе нового стиля появились две вариации макросов <function>PG_GETARG_<replaceable>xxx</replaceable>()</function>. Первая вариация, <function>PG_GETARG_<replaceable>xxx</replaceable>_COPY()</function>, гарантированно возвращает копию указанного аргумента, которую можно безопасно модифицировать. (Обычный макрос иногда возвращает указатель на значение, которое физически хранится в таблице, в которую нельзя писать. С макросом <function>PG_GETARG_<replaceable>xxx</replaceable>_COPY()</function> гарантированно получается результат, доступный для записи.) Вторая вариация представлена макросом <function>PG_GETARG_<replaceable>xxx</replaceable>_SLICE()</function>, принимающим три параметра. В первом передаётся номер аргумента функции (как и раньше). Во втором и третьем передаётся смещение и длина сегмента, который должен быть возвращён. Смещение отсчитывается с нуля, а отрицательная длина указывает, что запрашивается оставшаяся часть значения. Эти макросы дают более эффективный доступ к частям больших значений, имеющим тип хранения <quote>external</quote>. (Тип хранения столбца может задаваться командой <literal>ALTER TABLE <replaceable>имя_таблицы</replaceable> ALTER COLUMN <replaceable>имя_столбца</replaceable> SET STORAGE <replaceable>тип_хранения</replaceable></literal>. Где <replaceable>тип_хранения</replaceable> может быть <literal>plain</literal>, <literal>external</literal>, <literal>extended</literal> или <literal>main</literal>.)</para>
+
+    <para>Наконец соглашение о вызовах версии 1 позволяет возвращать множества (<xref linkend="xfunc-c-return-set"/>) и реализовывать триггерные функции (<xref linkend="triggers"/>) и обработчики вызовов процедурных языков (<xref linkend="plhandler"/>). Код версии 1 также более портируемый, чем версии 0, так как он не нарушает установленных в стандарте C ограничений протокола вызова функций. Дополнительные подробности можно найти в <filename>src/backend/utils/fmgr/README</filename> в пакете исходного кода.</para>
+   </sect2>
+
+   <sect2>
+    <title>Написание кода</title>
+
+    <para>Прежде чем перейти к более сложным темам, мы должны обсудить некоторые правила написания кода функций на языке C для <productname>&productname;</productname>. Хотя принципиально можно загружать в <productname>&productname;</productname> функции, написанные на языках, отличных от C, обычно это довольно сложно (когда вообще возможно), так как другие языки, например C++, FORTRAN или Pascal часто не следуют соглашениям, принятым в C. То есть другие языки могут передавать аргументы и возвращаемые значения между функциями разными способами. Поэтому далее предполагается, что ваши функции на языке C действительно написаны на C.</para>
+
+    <para>Основные правила написания и компиляции функций на C таковы: <itemizedlist>
+      <listitem>
+       <para>Чтобы выяснить, где находятся заголовочные файлы сервера <productname>&productname;</productname>, установленные в вашей системе (или в системе, с которой будут работать ваши пользователи), воспользуйтесь командой <literal>pg_config --includedir-server</literal><indexterm><primary>pg_config</primary> <secondary>для пользовательских функций на C</secondary></indexterm>.</para>
+      </listitem>
+
+      <listitem>
+       <para>Для компиляции и компоновки кода, который можно будет динамически загрузить в <productname>&productname;</productname>, требуется указать специальные флаги. Чтобы конкретнее узнать, как это сделать в вашей конкретной операционной системе, обратитесь к <xref remap="3" linkend="dfunc"/>.</para>
+      </listitem>
+
+      <listitem>
+       <para>Не забудьте определить <quote>отличительный блок</quote> для вашей разделяемой библиотеки, как описано в <xref remap="6" linkend="xfunc-c-dynload"/>.</para>
+      </listitem>
+
+      <listitem>
+       <para>Для выделения памяти используйте функцию <productname>&productname;</productname> <function>palloc</function><indexterm><primary>palloc</primary></indexterm>, а для освобождения <function>pfree</function><indexterm><primary>pfree</primary></indexterm>, вместо соответствующих функций библиотеки C <function>malloc</function> и <function>free</function>. Память, выделяемая функцией <function>palloc</function>, будет автоматически освобождаться в конце каждой транзакции, во избежание утечек памяти.</para>
+      </listitem>
+
+      <listitem>
+       <para>Всегда обнуляйте байты ваших структур, применяя <function>memset</function> (или сразу выделяйте память функцией <function>palloc0</function>). Даже если вы присвоите значение каждому полю структуры, в ней могут оставаться байты выравнивания (пустоты в структуре), содержащие случайные значения. Если исключить это требование, будет сложно поддерживать индексы или соединение по хешу, так как для вычисления хеша придётся выбирать только значащие биты из вашей структуры данных. Планировщик также иногда полагается на побитовое сравнение констант, так что результаты планирования могут оказаться неожиданными, если логически равные значения окажутся неравными на битовом уровне.</para>
+      </listitem>
+
+      <listitem>
+       <para>Большинство внутренних типов <productname>&productname;</productname> объявлены в <filename>postgres.h</filename>, тогда как интерфейс менеджера функций (<symbol>PG_FUNCTION_ARGS</symbol> и т. д.) определён в <filename>fmgr.h</filename>, так что потребуется подключить как минимум два этих файла. По соображениям портируемости, лучше включить <filename>postgres.h</filename> <emphasis>первым</emphasis>, до каких-либо других системных или пользовательских файлов заголовков. При подключении <filename>postgres.h</filename> автоматически также будут подключены <filename>elog.h</filename> и <filename>palloc.h</filename>.</para>
+      </listitem>
+
+      <listitem>
+       <para>Имена символов, определённые в объектных файлах, не должны конфликтовать друг с другом или с именами других символов, определённых в исполняемых файлах сервера <productname>&productname;</productname>. Если вы столкнётесь с ошибками, вызванными таким конфликтом, вам придётся переименовать ваши функции или переменные.</para>
+      </listitem>
+     </itemizedlist></para>
+   </sect2>
+
+&dfunc;
+
+   <sect2>
+    <title>Аргументы составного типа</title>
+
+    <para>Составные типы не имеют фиксированного макета данных, как структуры C. В частности, экземпляры составного типа могут содержать поля NULL. Кроме того, в контексте наследования составные типы могут иметь разные поля для разных членов в одной иерархии наследования. Поэтому <productname>&productname;</productname> предоставляет функциям специальный интерфейс для обращения к полям составных типов из C.</para>
+
+    <para>Предположим, что мы хотим написать функцию, отвечающую на запрос: <programlisting>SELECT name, c_overpaid(emp, 1500) AS overpaid
+    FROM emp
+    WHERE name = 'Bill' OR name = 'Sam';</programlisting> С соглашением о вызовах версии 0 мы можем определить функцию <function>c_overpaid</function> так: <programlisting><![CDATA[
+#include "postgres.h"
+#include "executor/executor.h"  /* for GetAttributeByName() */
+
+#ifdef PG_MODULE_MAGIC
+PG_MODULE_MAGIC;
+#endif
+
+bool
+c_overpaid(HeapTupleHeader t, /* the current row of emp */
+           int32 limit)
+{
+    bool isnull;
+    int32 salary;
+
+    salary = DatumGetInt32(GetAttributeByName(t, "salary", &isnull));
+    if (isnull)
+        return false;
+    return salary > limit;
+}
+]]>
+</programlisting> Для версии 1 она будет выглядеть следующим образом: <programlisting><![CDATA[
+#include "postgres.h"
+#include "executor/executor.h"  /* for GetAttributeByName() */
+
+#ifdef PG_MODULE_MAGIC
+PG_MODULE_MAGIC;
+#endif
+
+PG_FUNCTION_INFO_V1(c_overpaid);
+
+Datum
+c_overpaid(PG_FUNCTION_ARGS)
+{
+    HeapTupleHeader  t = PG_GETARG_HEAPTUPLEHEADER(0);
+    int32            limit = PG_GETARG_INT32(1);
+    bool isnull;
+    Datum salary;
+
+    salary = GetAttributeByName(t, "salary", &isnull);
+    if (isnull)
+        PG_RETURN_BOOL(false);
+    /* Alternatively, we might prefer to do PG_RETURN_NULL() for null salary. */
+
+    PG_RETURN_BOOL(DatumGetInt32(salary) > limit);
+}
+]]>
+</programlisting></para>
+
+    <para><function>GetAttributeByName</function> — это системная функция <productname>&productname;</productname>, которая возвращает атрибуты указанной строки. Она принимает три параметра: аргумент типа <type>HeapTupleHeader</type>, имя нужного атрибута и выходной параметр, устанавливаемый, если значение атрибута — NULL. <function>GetAttributeByName</function> возвращает значение <type>Datum</type>, которое вы можете привести к подходящему типу данных, используя соответствующий макрос <function>DatumGet<replaceable>XXX</replaceable>()</function>. Заметьте, что возвращаемое значение недействительно, если установлен флаг null; всегда проверяйте этот флаг, прежде чем что-либо делать с результатом.</para>
+
+    <para>Есть также функция <function>GetAttributeByNum</function>, которая выбирает целевой атрибут не по имени, а по номеру столбца.</para>
+
+    <para>Следующая команда объявляет функцию <function>c_overpaid</function> в SQL: <programlisting>CREATE FUNCTION c_overpaid(emp, integer) RETURNS boolean
+    AS '<replaceable>КАТАЛОГ</replaceable>/funcs', 'c_overpaid'
+    LANGUAGE C STRICT;</programlisting> Заметьте, что мы использовали <literal>STRICT</literal>, чтобы нам не пришлось проверять входные аргументы на равенство NULL.</para>
+   </sect2>
+
+   <sect2>
+    <title>Возврат строк (составных типов)</title>
+
+    <para>Чтобы вернуть строку или значение составного типа из функции на языке C, можно использовать специальный API, предоставляющий макросы и функции, скрывающие основную сложность формирования составных типов данных. Для использования этого API необходимо включить в исходный файл: <programlisting>#include "funcapi.h"</programlisting></para>
+
+    <para>Сформировать значение составного типа (далее <quote>кортеж</quote>) можно двумя способами: его можно построить из массива значений Datum, или из массива строк C, которые будут переданы функциям преобразования ввода для типов столбцов кортежа. В любом случае, сначала нужно получить или сконструировать дескриптор <structname>TupleDesc</structname> для структуры кортежа. Работая со значениями Datum, вы передаёте <structname>TupleDesc</structname> функции <function>BlessTupleDesc</function>, а затем вызываете <function>heap_form_tuple</function> для каждой строки. Работая со строками C, вы передаёте <structname>TupleDesc</structname> функции <function>TupleDescGetAttInMetadata</function>, а затем для каждой строки вызываете <function>BuildTupleFromCStrings</function>. В случае функции, возвращающей множество кортежей, все подготовительные действия можно выполнить один раз при первом вызове функции.</para>
+
+    <para>Для получения требуемого дескриптора <structname>TupleDesc</structname> предлагается несколько дополнительных функций. Рекомендованный способ возврата составных значений заключается в вызове функции: <programlisting>TypeFuncClass get_call_result_type(FunctionCallInfo fcinfo,
+                                   Oid *resultTypeId,
+                                   TupleDesc *resultTupleDesc)</programlisting> При этом в <literal>fcinfo</literal> должна передаваться та же структура, что была передана самой вызывающей функции. (Для этого, конечно, необходимо использовать соглашения о вызовах версии 1.) В <varname>resultTypeId</varname> можно передать <literal>NULL</literal> или адрес локальной переменной, в которую будет записан OID типа результата функции. В <varname>resultTupleDesc</varname> должен передаваться адрес локальной переменной <structname>TupleDesc</structname>. Убедить, что функция возвратила результат <literal>TYPEFUNC_COMPOSITE</literal>; в этом случае, в <varname>resultTupleDesc</varname> оказывается требуемая структура <structname>TupleDesc</structname>. (Если получен другой результат, вы можете выдать ошибку с сообщением <quote>функция, возвращающая запись, вызвана в контексте, не допускающем этот тип</quote>.)</para>
+
+    <tip>
+     <para><function>get_call_result_type</function> позволяет получить фактический тип результата полиморфной функции, так что она полезна и в функциях, возвращающих скалярные полиморфные результаты, не только в функциях, возвращающих составные типы. Выходной параметр <varname>resultTypeId</varname> полезен в первую очередь для полиморфных скалярных функций.</para>
+    </tip>
+
+    <note>
+     <para>В дополнение к <function>get_call_result_type</function> есть схожая функция <function>get_expr_result_type</function>, позволяющая получить ожидаемый тип результата для вызова функции, представленного деревом выражения. Её можно использовать, когда тип результата нужно определить извне самой функции. Есть также функция <function>get_func_result_type</function>, которую можно применять, когда известен только OID функции. Однако эти две функции неспособны выдать тип результата функций, возвращающих <structname>record</structname>, а <function>get_func_result_type</function> неспособна разрешать полиморфные типы, так что вместо них лучше использовать <function>get_call_result_type</function>.</para>
+    </note>
+
+    <para>Ранее для получения <structname>TupleDesc</structname> использовались теперь уже устаревшие функции: <programlisting>TupleDesc RelationNameGetTupleDesc(const char *relname)</programlisting> (возвращает <structname>TupleDesc</structname> для типа строк указанного отношения) и: <programlisting>TupleDesc TypeGetTupleDesc(Oid typeoid, List *colaliases)</programlisting> (возвращает <structname>TupleDesc</structname> для типа, задаваемого по OID). Применяя её, можно получить <structname>TupleDesc</structname> для базового или составного типа. Однако она не подойдёт для функции, возвращающей тип <structname>record</structname>, и не сможет разрешить полиморфные типы.</para>
+
+    <para>Получив <structname>TupleDesc</structname>, вызовите: <programlisting>TupleDesc BlessTupleDesc(TupleDesc tupdesc)</programlisting> если вы планируете работать со структурами Datum, либо: <programlisting>AttInMetadata *TupleDescGetAttInMetadata(TupleDesc tupdesc)</programlisting> если планируете работать со строками C. Если вы разрабатываете функцию, возвращающую набор данных, вы можете сохранить результаты этих функций в структуре <structname>FuncCallContext</structname>, в поле <structfield>tuple_desc</structfield> или <structfield>attinmeta</structfield>, соответственно.</para>
+
+    <para>Если вы работаете со структурами Datum, воспользуйтесь функцией: <programlisting>HeapTuple heap_form_tuple(TupleDesc tupdesc, Datum *values, bool *isnull)</programlisting> Она формирует <structname>HeapTuple</structname> из переданных ей данных в форме Datum.</para>
+
+    <para>Если вы работаете со строками C, воспользуйтесь функцией: <programlisting>HeapTuple BuildTupleFromCStrings(AttInMetadata *attinmeta, char **values)</programlisting> Она формирует <structname>HeapTuple</structname> из переданных ей данных в виде строк C. В параметре <parameter>values</parameter> ей передаётся массив строк C, по одной для каждого атрибута выходной строки. Каждая из этих строк должна иметь формат, принимаемый функцией ввода типа данных атрибута. Чтобы задать значение NULL для одного из этих атрибутов, вместо соответствующего указателя в массиве <parameter>values</parameter> нужно передать <symbol>NULL</symbol>. Эту функцию нужно вызывать для каждой строки, которую вы будете возвращать.</para>
+
+    <para>Получив кортеж, который вы будете возвращать из вашей функции, вы должны преобразовать его в тип <type>Datum</type>. Чтобы преобразовать <structname>HeapTuple</structname> в Datum, воспользуйтесь функцией: <programlisting>HeapTupleGetDatum(HeapTuple tuple)</programlisting> Полученный тип <type>Datum</type> можно вернуть непосредственно, если должна возвращаться только одна строка, либо использовать как текущее выдаваемое значение в функции, возвращающей набор строк.</para>
+
+    <para>Пример приведён в следующем разделе.</para>
+
+   </sect2>
+
+   <sect2 id="xfunc-c-return-set">
+    <title>Возврат множеств</title>
+
+    <para>Есть также специальный интерфейс, который позволяет функциям на C возвращать множества (несколько строк). Функции, возвращающие множества, должны следовать соглашению о вызовах версии 1. Кроме того, соответствующие исходные файлы должны включать <filename>funcapi.h</filename>, как показано выше.</para>
+
+    <para>Функция, возвращающая множество (<acronym>SRF</acronym>, Set-Returning Function), вызывается каждый раз для очередной записи. Таким образом, <acronym>SRF</acronym> должна сохранять достаточно информации о состоянии, чтобы понимать, что она делает, и выдать очередную запись при следующем вызове. Для облегчения управления этим процессом представлена структура <structname>FuncCallContext</structname>. Для кода функции указатель на эту структуру <structname>FuncCallContext</structname> сохраняется между вызовами в поле <literal>fcinfo-&gt;flinfo-&gt;fn_extra</literal>. <programlisting>typedef struct FuncCallContext
+{
+    /*
+     * Счётчик числа ранее выполненных вызовов
+     *
+     * call_cntr сбрасывается в 0 макросом SRF_FIRSTCALL_INIT() и
+     * увеличивается на 1 каждый раз, когда вызывается SRF_RETURN_NEXT().
+     */
+    uint64 call_cntr;
+
+    /*
+     * Максимальное число вызовов (может не использоваться)
+     *
+     * max_calls не является обязательным и присутствует здесь только для удобства.
+     * Если это значение не задано, вы должны предоставить другую возможность определить,
+     * когда функция завершила свою работу.
+     */
+    uint64 max_calls;
+
+    /*
+     * Указатель на слот результата (может не использоваться)
+     *
+     * Это поле устарело и представлено только для обратной совместимости, а именно,
+     * для пользовательских SRF, использующих устаревшую TupleDescGetSlot().
+     */
+    TupleTableSlot *slot;
+
+    /*
+     * Указатель на разнообразную контекстную информацию,
+     * представленную пользователем; (может не использоваться)
+     *
+     * user_fctx используется как указатель на ваши собственные данные,
+     * позволяющий сохранить контекстную информацию между вызовами функции.
+     */
+    void *user_fctx;
+
+    /*
+     * Указатель на структуру, содержащую метаданные ввода типа атрибута
+     * (может не использоваться)
+     *
+     * attinmeta задействуется, когда возвращаются кортежи (т. е. составные типы данных),
+     * и не применяется для возврата базовых типов. Он нужен, только если
+     * вы планируете использовать BuildTupleFromCStrings() для формирования возвращаемого
+     * кортежа.
+     */
+    AttInMetadata *attinmeta;
+
+    /*
+     * Контекст памяти, нужный для структур, которые должны сохраняться при нескольких вызовах
+     *
+     * Поле multi_call_memory_ctx заполняется в SRF_FIRSTCALL_INIT() и используется
+     * в SRF_RETURN_DONE() для очистки. Это наиболее подходящий контекст
+     * для любых блоков памяти, которые должны многократно использоваться при
+     * повторных вызовах SRF.
+     */
+    MemoryContext multi_call_memory_ctx;
+
+    /*
+     * Указатель на структуру, содержащую описание кортежа (может не использоваться)
+     *
+     * tuple_desc задействуется, когда возвращаются кортежи (т. е. составные типы),
+     * и нужен только, если вы планируете формировать кортежи с помощью функции
+     * heap_form_tuple(), а не BuildTupleFromCStrings().  Заметьте, что сохраняемый
+     * здесь указатель TupleDesc обычно должен сначала пройти через вызов
+     * BlessTupleDesc().
+     */
+    TupleDesc tuple_desc;
+
+} FuncCallContext;</programlisting></para>
+
+    <para>В <acronym>SRF</acronym> применяются различные функции и макросы, автоматически манипулирующие структурой <structname>FuncCallContext</structname> (они обращаются к ней через <literal>fn_extra</literal>). В частности, чтобы определить, была ли функция вызвана в первый или последующий раз, используйте: <programlisting>SRF_IS_FIRSTCALL()</programlisting> Чтобы инициализировать <structname>FuncCallContext</structname> при первом вызове (и только), используйте: <programlisting>SRF_FIRSTCALL_INIT()</programlisting> Чтобы подготовиться к использованию <structname>FuncCallContext</structname> и очистить все ранее возвращённые данные, оставшиеся после предыдущего прохода, при каждом вызове функции, в том числе, первом, выполните: <programlisting>SRF_PERCALL_SETUP()</programlisting></para>
+
+    <para>Если у вашей функции есть данные, которые нужно возвратить, выполните: <programlisting>SRF_RETURN_NEXT(funcctx, result)</programlisting> для того, чтобы выдать их вызывающему. (Переменная <literal>result</literal> должна быть типа <type>Datum</type>, либо одним значением, либо кортежем, подготовленным как описано выше.) Наконец, когда ваша функция закончила возвращать данные, выполните: <programlisting>SRF_RETURN_DONE(funcctx)</programlisting> для того, чтобы провести очистку и завершить <acronym>SRF</acronym>.</para>
+
+    <para>Контекст памяти, в котором вызывается <acronym>SRF</acronym>, временный, он будет очищаться между вызовами. Это значит, что вам не нужно вызывать <function>pfree</function> для всех блоков памяти, которые вы получили через <function>palloc</function>; они всё равно будут освобождены. Однако, если вы хотите выделить структуры данных и сохранить их между вызовами, вам нужно разместить их где-то в другом месте. Для размещения таких данных, которые не должны уничтожаться, пока <acronym>SRF</acronym> не закончит работу, подходит контекст памяти, на который указывает <structfield>multi_call_memory_ctx</structfield>. В большинстве случаев это означает, что вы должны переключиться в контекст <structfield>multi_call_memory_ctx</structfield> в коде подготовки при первом вызове.</para>
+
+    <warning>
+     <para>Тогда как фактические аргументы такой функции не меняются от вызова к вызову, если вы распаковываете значения аргументов (что обычно прозрачно делают макросы <function>PG_GETARG_<replaceable>xxx</replaceable></function>) во временном контексте, распакованные копии будут освобождаться при каждом вызове. Соответственно, если вы сохраните ссылки на такие значения в своём контексте <structfield>user_fctx</structfield>, вы должны либо скопировать эти значения в <structfield>multi_call_memory_ctx</structfield> после распаковки, либо распаковывать значения только в этом контексте.</para>
+    </warning>
+
+    <para>Полный пример с псевдокодом будет выглядеть так: <programlisting>Datum
+my_set_returning_function(PG_FUNCTION_ARGS)
+{
+    FuncCallContext  *funcctx;
+    Datum             result;
+    <replaceable>другие необходимые объявления</replaceable>
+
+    if (SRF_IS_FIRSTCALL())
+    {
+        MemoryContext oldcontext;
+
+        funcctx = SRF_FIRSTCALL_INIT();
+        oldcontext = MemoryContextSwitchTo(funcctx-&gt;multi_call_memory_ctx);
+        /* Здесь размещается код подготовки при первом вызове: */
+        <replaceable>некоторый код</replaceable>
+        <replaceable>если возвращается составной тип</replaceable>
+            <replaceable>получить TupleDesc и, возможно, AttInMetadata</replaceable>
+        <replaceable>конец ветвления для составного типа</replaceable>
+        <replaceable>некоторый код</replaceable>
+        MemoryContextSwitchTo(oldcontext);
+    }
+
+    /* Здесь размещается код подготовки для каждого вызова: */
+    <replaceable>некоторый код</replaceable>
+    funcctx = SRF_PERCALL_SETUP();
+    <replaceable>некоторый код</replaceable>
+
+    /* это только один способ определить, не пора ли закончить работу: */
+    if (funcctx-&gt;call_cntr &lt; funcctx-&gt;max_calls)
+    {
+        /* Здесь мы хотим вернуть следующий результат: */
+        <replaceable>некоторый код</replaceable>
+        <replaceable>получить результирующий Datum</replaceable>
+        SRF_RETURN_NEXT(funcctx, result);
+    }
+    else
+    {
+        /* Здесь мы заканчиваем выдавать результаты и нам нужно провести очистку: */
+        <replaceable>некоторый код</replaceable>
+        SRF_RETURN_DONE(funcctx);
+    }
+}</programlisting></para>
+
+    <para>Полный пример простой <acronym>SRF</acronym>-функции, возвращающей составной тип, выглядит так: <programlisting><![CDATA[
+PG_FUNCTION_INFO_V1(retcomposite);
+
+Datum
+retcomposite(PG_FUNCTION_ARGS)
+{
+    FuncCallContext     *funcctx;
+    int                  call_cntr;
+    int                  max_calls;
+    TupleDesc            tupdesc;
+    AttInMetadata       *attinmeta;
+
+    /* stuff done only on the first call of the function */
+    if (SRF_IS_FIRSTCALL())
+    {
+        MemoryContext   oldcontext;
+
+        /* create a function context for cross-call persistence */
+        funcctx = SRF_FIRSTCALL_INIT();
+
+        /* switch to memory context appropriate for multiple function calls */
+        oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+
+        /* total number of tuples to be returned */
+        funcctx->max_calls = PG_GETARG_UINT32(0);
+
+        /* Build a tuple descriptor for our result type */
+        if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+            ereport(ERROR,
+                    (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                     errmsg("function returning record called in context "
+                            "that cannot accept type record")));
+
+        /*
+         * generate attribute metadata needed later to produce tuples from raw
+         * C strings
+         */
+        attinmeta = TupleDescGetAttInMetadata(tupdesc);
+        funcctx->attinmeta = attinmeta;
+
+        MemoryContextSwitchTo(oldcontext);
+    }
+
+    /* stuff done on every call of the function */
+    funcctx = SRF_PERCALL_SETUP();
+
+    call_cntr = funcctx->call_cntr;
+    max_calls = funcctx->max_calls;
+    attinmeta = funcctx->attinmeta;
+
+    if (call_cntr < max_calls)    /* do when there is more left to send */
+    {
+        char       **values;
+        HeapTuple    tuple;
+        Datum        result;
+
+        /*
+         * Prepare a values array for building the returned tuple.
+         * This should be an array of C strings which will
+         * be processed later by the type input functions.
+         */
+        values = (char **) palloc(3 * sizeof(char *));
+        values[0] = (char *) palloc(16 * sizeof(char));
+        values[1] = (char *) palloc(16 * sizeof(char));
+        values[2] = (char *) palloc(16 * sizeof(char));
+
+        snprintf(values[0], 16, "%d", 1 * PG_GETARG_INT32(1));
+        snprintf(values[1], 16, "%d", 2 * PG_GETARG_INT32(1));
+        snprintf(values[2], 16, "%d", 3 * PG_GETARG_INT32(1));
+
+        /* build a tuple */
+        tuple = BuildTupleFromCStrings(attinmeta, values);
+
+        /* make the tuple into a datum */
+        result = HeapTupleGetDatum(tuple);
+
+        /* clean up (this is not really necessary) */
+        pfree(values[0]);
+        pfree(values[1]);
+        pfree(values[2]);
+        pfree(values);
+
+        SRF_RETURN_NEXT(funcctx, result);
+    }
+    else    /* do when there is no more left */
+    {
+        SRF_RETURN_DONE(funcctx);
+    }
+}
+]]>
+</programlisting> В SQL её можно объявить следующим образом: <programlisting>CREATE TYPE __retcomposite AS (f1 integer, f2 integer, f3 integer);
+
+CREATE OR REPLACE FUNCTION retcomposite(integer, integer)
+    RETURNS SETOF __retcomposite
+    AS '<replaceable>имя_файла</replaceable>', 'retcomposite'
+    LANGUAGE C IMMUTABLE STRICT;</programlisting> Также её можно объявить с параметрами OUT: <programlisting>CREATE OR REPLACE FUNCTION retcomposite(IN integer, IN integer,
+    OUT f1 integer, OUT f2 integer, OUT f3 integer)
+    RETURNS SETOF record
+    AS '<replaceable>имя_файла</replaceable>', 'retcomposite'
+    LANGUAGE C IMMUTABLE STRICT;</programlisting> Заметьте, что при таком подходе выходным типом функции формально является анонимный тип <structname>record</structname>.</para>
+
+    <para>Каталог <link linkend="tablefunc">contrib/tablefunc</link> в пакете исходного кода содержит дополнительные примеры функций, возвращающих множества.</para>
+   </sect2>
+
+   <sect2>
+    <title>Полиморфные типы аргументов и результата</title>
+
+    <para>Функции на языке C могут быть объявлены как принимающие и возвращающие полиморфные типы <type>anyelement</type>, <type>anyarray</type>, <type>anynonarray</type>, <type>anyenum</type> и <type>anyrange</type>. За более подробным объяснением полиморфных функций обратитесь к <xref remap="3" linkend="extend-types-polymorphic"/>. Когда типы аргументов или результат определены как полиморфные, автор функции не может заранее знать, с какими типами данных она будет вызываться и какой возвращать. Чтобы функция на C в стиле версии 1 могла определить фактические типы данных своих аргументов и тип, который она должна вернуть, в <filename>fmgr.h</filename> предлагаются две функции. Они называются <literal>get_fn_expr_rettype(FmgrInfo *flinfo)</literal> и <literal>get_fn_expr_argtype(FmgrInfo *flinfo, int argnum)</literal> и возвращают соответственно OID типа результата и аргумента, либо <symbol>InvalidOid</symbol>, если информация о типе отсутствует. Структуру <literal>flinfo</literal> обычно можно получить по ссылке <literal>fcinfo-&gt;flinfo</literal>. Номер аргумента <literal>argnum</literal> задаётся, начиная с нуля. В качестве альтернативы <function>get_fn_expr_rettype</function> также можно использовать функции <function>get_call_result_type</function>. Кроме того, есть функция <function>get_fn_expr_variadic</function>, позволяющая определить, были ли переменные аргументы объединены в массив. Это полезно в основном для функций <literal>VARIADIC "any"</literal>, так как такое объединение всегда имеет место для функций с переменными аргументами, принимающих обычные типы.</para>
+
+    <para>Например, предположим, что нам нужно написать функцию, принимающую один элемент любого типа и возвращающую одномерный массив этого типа: <programlisting>PG_FUNCTION_INFO_V1(make_array);
+Datum
+make_array(PG_FUNCTION_ARGS)
+{
+    ArrayType  *result;
+    Oid         element_type = get_fn_expr_argtype(fcinfo-&gt;flinfo, 0);
+    Datum       element;
+    bool        isnull;
+    int16       typlen;
+    bool        typbyval;
+    char        typalign;
+    int         ndims;
+    int         dims[MAXDIM];
+    int         lbs[MAXDIM];
+
+    if (!OidIsValid(element_type))
+        elog(ERROR, "could not determine data type of input");
+
+    /* получить переданный элемент, учитывая, что это может быть NULL */
+    isnull = PG_ARGISNULL(0);
+    if (isnull)
+        element = (Datum) 0;
+    else
+        element = PG_GETARG_DATUM(0);
+
+    /* мы имеем дело с одной размерностью */
+    ndims = 1;
+    /* и одним элементом */
+    dims[0] = 1;
+    /* с нижней границей, равной 1 */
+    lbs[0] = 1;
+
+    /* получить требуемую информацию о типе элемента */
+    get_typlenbyvalalign(element_type, &amp;typlen, &amp;typbyval, &amp;typalign);
+
+    /* теперь создать массив */
+    result = construct_md_array(&amp;element, &amp;isnull, ndims, dims, lbs,
+                                element_type, typlen, typbyval, typalign);
+
+    PG_RETURN_ARRAYTYPE_P(result);
+}</programlisting></para>
+
+    <para>Следующая команда объявляет функцию <function>make_array</function> в SQL: <programlisting>CREATE FUNCTION make_array(anyelement) RETURNS anyarray
+    AS '<replaceable>КАТАЛОГ</replaceable>/funcs', 'make_array'
+    LANGUAGE C IMMUTABLE;</programlisting></para>
+
+    <para>Существует один вариант полиморфизма, которым могут пользоваться только функции на языке C: их можно объявить с параметрами типа <literal>"any"</literal>. (Заметьте, что имя этого типа нужно заключать в двойные кавычки, так как это также зарезервированное слово в SQL.) Он работает так же, как <type>anyelement</type>, за исключением того, что он не требует, чтобы аргументы <literal>"any"</literal> имели одинаковый тип, и не помогает определить тип результата функции. Функцию на языке C можно также объявить с последним параметром <literal>VARIADIC "any"</literal>. Ему будут соответствовать один или более фактических аргументов любого типа (не обязательно одинакового). Эти аргументы <emphasis>не</emphasis> будут собираться в массив, как это происходит с обычными функциями с переменными аргументами; они просто будут переданы функции по отдельности. Если применяется этот вариант, то чтобы определить число фактических аргументов и их типы, нужно использовать макрос <function>PG_NARGS()</function> и функции, описанные выше. Пользователи такой функции также могут пожелать использовать ключевое слово <literal>VARIADIC</literal> в вызове функции, ожидая, что функция обработает элементы массива как отдельные аргументы. При необходимости соответствующее поведение должна реализовывать сама функция, определив с помощью <function>get_fn_expr_variadic</function>, был ли фактический аргумент передан с указанием <literal>VARIADIC</literal>.</para>
+   </sect2>
+
+   <sect2 id="xfunc-transform-functions">
+    <title>Функции преобразования</title>
+
+    <para>Некоторые вызовы функций можно упростить на стадии планирования, в зависимости от особых свойств функции. Например, функцию умножения (<literal>int4mul(n, 1)</literal>) можно упростить просто до <literal>n</literal>. Чтобы определить такую оптимизацию, нужно написать <firstterm>функцию преобразования</firstterm> и поместить её OID в поле <structfield>protransform</structfield> записи основной функции в <structname>pg_proc</structname>. Функция преобразования должна иметь в SQL сигнатуру <literal>protransform(internal) RETURNS internal</literal>. В аргументе, фактически имеющем тип <type>FuncExpr *</type>, передаётся фиктивный узел, представляющий вызов основной функции. Если анализ дерева выражения в функции преобразования показывает, что вместо всех возможных конкретных вызовов может быть подставлено дерево упрощённого выражения, эта функция должна построить и вернуть это упрощённое выражение. В противном случае нужно вернуть указатель <literal>NULL</literal> (<emphasis>не</emphasis> NULL языка SQL).</para>
+
+    <para>Мы не гарантируем, что <productname>&productname;</productname> никогда не будет вызывать основную функцию во всех случаях, когда функция преобразования может её упростить, поэтому важно, чтобы упрощённое выражение строго соответствовало реальному вызову основной функции.</para>
+
+    <para>В настоящее время эта функциональность не предоставляется пользователям на уровне SQL из соображений безопасности, так что на практике это можно использовать только для оптимизации встроенных функций.</para>
+   </sect2>
+
+   <sect2>
+    <title>Разделяемая память и лёгкие блокировки</title>
+
+    <para>Модули расширений могут резервировать лёгкие блокировки и область в разделяемой памяти при запуске сервера. Чтобы библиотека модуля предварительно загружалась на этапе запуска сервера, нужно указать её в <xref linkend="guc-shared-preload-libraries"/><indexterm><primary>shared_preload_libraries</primary></indexterm>. Чтобы зарезервировать разделяемую память, вызовите из вашей функции <function>_PG_init</function> функцию: <programlisting>void RequestAddinShmemSpace(int size)</programlisting></para>
+    <para>Чтобы зарезервировать лёгкие блокировки, из <function>_PG_init</function> нужно вызвать: <programlisting>void RequestNamedLWLockTranche(const char *tranche_name, int num_lwlocks)</programlisting> В результате будет сформирован массив из <literal>num_lwlocks</literal> лёгких блокировок под именем <literal>tranche_name</literal>. Чтобы получить указатель на этот массив, воспользуйтесь функцией <function>GetNamedLWLockTranche</function>.</para>
+    <para>Во избежание возможных условий гонки каждый обслуживающий процесс должен вызывать <function>AddinShmemInitLock</function> в момент подключения и при инициализации разделяемой памяти, как показано здесь: <programlisting>static mystruct *ptr = NULL;
+
+if (!ptr)
+{
+        bool    found;
+
+        LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
+        ptr = ShmemInitStruct("my struct name", size, &amp;found);
+        if (!found)
+        {
+                /* инициализировать содержимое области разделяемой памяти; */
+                /* получить все требуемые блокировки LWLocks:
+ */                ptr-&gt;locks = GetNamedLWLockTranche("my tranche name");
+        }
+        LWLockRelease(AddinShmemInitLock);
+}</programlisting></para>
+   </sect2>
+
+   <sect2 id="extend-cpp">
+    <title>Использование C++ для расширяемости</title>
+
+    <indexterm zone="extend-cpp"><primary>C++</primary></indexterm>
+
+    <para>Хотя код сервера <productname>&productname;</productname> написан на C, расширения для него можно писать и на C++, если соблюдать эти правила: <itemizedlist>
+      <listitem>
+       <para>Все функции, к которым будет обращаться сервер, должны предоставлять ему интерфейс C; эти функции на C затем могут вызывать функции на языке C++. В частности, для функций, доступных серверу, необходимо указать <literal>extern C</literal>. Это также необходимо для всех функций, указатели на которые передаются между кодом сервера и подключаемым кодом на C++.</para>
+      </listitem>
+      <listitem>
+       <para>Освобождайте память, применяя для этого подходящий метод. Например, память сервера в основном выделяется функцией <function>palloc()</function>, так что освобождать её нужно, вызывая <function>pfree()</function>. Попытка использовать в таких случаях принятую в C++ операцию <function>delete</function> приведёт к ошибке.</para>
+      </listitem>
+      <listitem>
+       <para>Не допускайте распространения исключений в код C (добавляйте блок, перехватывающий все исключения, на верхнем уровне функций <literal>extern C</literal>). Это необходимо, даже если код на C++ не генерирует исключения явно, потому что исключения могут возникать, например, и при нехватке памяти. Все исключения должны перехватываться, и в интерфейс C должны передаваться соответствующие ошибки. Если возможно, скомпилируйте код C++ с указанием <option>-fno-exceptions</option>, чтобы полностью отключить исключения; в таких случаях вы должны будете выявлять исключительные ситуации в коде C++, например, проверять на NULL адрес, возвращённый <function>new()</function>.</para>
+      </listitem>
+      <listitem>
+       <para>Вызывая серверные функции из кода C++, убедитесь, что в стеке вызова C++ содержатся только простые структуры данных. Это необходимо, потому что в случае ошибки сервера выполняется функция <function>longjmp()</function>, а она не отматывает стек вызовов C++ должным образом для объектов, отличных от простых структур.</para>
+      </listitem>
+     </itemizedlist></para>
+
+    <para>Резюмируя, лучше всего поместить код C++ за ограду из функций <literal>extern C</literal>, которые будут доступны серверу и смогут защитить от исключений, а также потери стека вызовов и утечки памяти.</para>
+   </sect2>
+
+  </sect1>

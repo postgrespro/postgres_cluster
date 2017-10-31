@@ -1,0 +1,425 @@
+<!--
+doc/src/xml/ref/pg_ctl-ref.xml
+&productname; documentation
+-->
+
+<refentry id="app-pg-ctl">
+ <indexterm zone="app-pg-ctl"><primary>pg_ctl</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>pg_ctl</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_ctl</refname>
+  <refpurpose>инициализировать, запустить, остановить или управлять сервером <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_ctl</command>
+   <arg choice="plain"><option>init[db]</option></arg>
+   <arg choice="opt"><option>-s</option></arg>
+   <arg choice="opt"><option>-D</option> <replaceable>каталог_данных</replaceable></arg>
+   <arg choice="opt"><option>-o</option> <replaceable>параметры-initdb</replaceable></arg>
+  </cmdsynopsis>
+
+  <cmdsynopsis>
+   <command>pg_ctl</command>
+   <arg choice="plain"><option>start</option></arg>
+   <arg choice="opt"><option>-w</option></arg>
+   <arg choice="opt"><option>-t</option> <replaceable>секунды</replaceable></arg>
+   <arg choice="opt"><option>-s</option></arg>
+   <arg choice="opt"><option>-D</option> <replaceable>каталог_данных</replaceable></arg>
+   <arg choice="opt"><option>-l</option> <replaceable>имя_файла</replaceable></arg>
+   <arg choice="opt"><option>-o</option> <replaceable>параметры</replaceable></arg>
+   <arg choice="opt"><option>-p</option> <replaceable>путь</replaceable></arg>
+   <arg choice="opt"><option>-c</option></arg>
+  </cmdsynopsis>
+
+  <cmdsynopsis>
+   <command>pg_ctl</command>
+   <arg choice="plain"><option>stop</option></arg>
+   <arg choice="opt"><option>-W</option></arg>
+   <arg choice="opt"><option>-t</option> <replaceable>секунды</replaceable></arg>
+   <arg choice="opt"><option>-s</option></arg>
+   <arg choice="opt"><option>-D</option> <replaceable>каталог_данных</replaceable></arg>
+   <arg choice="opt"><option>-m</option>
+     <group choice="plain">
+       <arg choice="plain"><option>s[mart]</option></arg>
+       <arg choice="plain"><option>f[ast]</option></arg>
+       <arg choice="plain"><option>i[mmediate]</option></arg>
+     </group>
+   </arg>
+  </cmdsynopsis>
+
+  <cmdsynopsis>
+   <command>pg_ctl</command>
+   <arg choice="plain"><option>restart</option></arg>
+   <arg choice="opt"><option>-w</option></arg>
+   <arg choice="opt"><option>-t</option> <replaceable>секунды</replaceable></arg>
+   <arg choice="opt"><option>-s</option></arg>
+   <arg choice="opt"><option>-D</option> <replaceable>каталог_данных</replaceable></arg>
+   <arg choice="opt"><option>-c</option></arg>
+   <arg choice="opt"><option>-m</option>
+     <group choice="plain">
+       <arg choice="plain"><option>s[mart]</option></arg>
+       <arg choice="plain"><option>f[ast]</option></arg>
+       <arg choice="plain"><option>i[mmediate]</option></arg>
+     </group>
+   </arg>
+   <arg choice="opt"><option>-o</option> <replaceable>параметры</replaceable></arg>
+  </cmdsynopsis>
+
+  <cmdsynopsis>
+   <command>pg_ctl</command>
+   <arg choice="plain"><option>reload</option></arg>
+   <arg choice="opt"><option>-s</option></arg>
+   <arg choice="opt"><option>-D</option> <replaceable>каталог_данных</replaceable></arg>
+  </cmdsynopsis>
+
+  <cmdsynopsis>
+   <command>pg_ctl</command>
+   <arg choice="plain"><option>status</option></arg>
+   <arg choice="opt"><option>-D</option> <replaceable>каталог_данных</replaceable></arg>
+  </cmdsynopsis>
+
+  <cmdsynopsis>
+   <command>pg_ctl</command>
+   <arg choice="plain"><option>promote</option></arg>
+   <arg choice="opt"><option>-s</option></arg>
+   <arg choice="opt"><option>-D</option> <replaceable>каталог_данных</replaceable></arg>
+  </cmdsynopsis>
+
+  <cmdsynopsis>
+   <command>pg_ctl</command>
+   <arg choice="plain"><option>kill</option></arg>
+   <arg choice="plain"><replaceable>имя_сигнала</replaceable></arg>
+   <arg choice="plain"><replaceable>ид_процесса</replaceable></arg>
+  </cmdsynopsis>
+
+  <cmdsynopsis>
+   <command>pg_ctl</command>
+   <arg choice="plain"><option>register</option></arg>
+   <arg choice="opt"><option>-N</option> <replaceable>имя_службы</replaceable></arg>
+   <arg choice="opt"><option>-U</option> <replaceable>имя_пользователя</replaceable></arg>
+   <arg choice="opt"><option>-P</option> <replaceable>пароль</replaceable></arg>
+   <arg choice="opt"><option>-D</option> <replaceable>каталог_данных</replaceable></arg>
+   <arg choice="opt"><option>-S</option>
+     <group choice="plain">
+       <arg choice="plain"><option>a[uto]</option></arg>
+       <arg choice="plain"><option>d[emand]</option></arg>
+     </group>
+   </arg>
+   <arg choice="opt"><option>-w</option></arg>
+   <arg choice="opt"><option>-t</option> <replaceable>секунды</replaceable></arg>
+   <arg choice="opt"><option>-s</option></arg>
+   <arg choice="opt"><option>-o</option> <replaceable>параметры</replaceable></arg>
+  </cmdsynopsis>
+
+  <cmdsynopsis>
+   <command>pg_ctl</command>
+   <arg choice="plain"><option>unregister</option></arg>
+   <arg choice="opt"><option>-N</option> <replaceable>имя_службы</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+
+ <refsect1 id="app-pg-ctl-description">
+  <title>Описание</title>
+  <para><application>pg_ctl</application> — это утилита для начальной инициализации, запуска, остановки, повторного запуска и управления кластером баз данных <productname>&productname;</productname> (<xref linkend="app-postgres"/>). Сервер можно стартовать в ручном режиме, но <application>pg_ctl</application> реализует задачи направления вывода в журнал и отсоединения от терминала и группы процессов, а также предоставляет удобный интерфейс остановки кластера.</para>
+
+  <para>Для инициализации нового кластера <productname>&productname;</productname> используются режимы <option>init</option> или <option>initdb</option>. Кластер — это коллекция баз данных под управлением единого сервера. По факту вызывается команда <command>initdb</command>. За подробностями обратитесь к <xref remap="3" linkend="app-initdb"/>.</para>
+
+  <para>Сервер запускается в режиме <option>start</option>. Процесс работает в фоновом режиме, а стандартный ввод связывается с <filename>/dev/null</filename> (или <literal>nul</literal> под управлением Windows). По умолчанию в Unix-подобных системах вывод и ошибки сервера пишутся в устройство стандартного вывода (не ошибок) <application>pg_ctl</application>. Вывод <application>pg_ctl</application> следует перенаправить в файл или процесс, например, приложение ротации журналов <application>rotatelogs</application>; в ином случае, <command>postgres</command> будет писать вывод в управляющий терминал (в фоновом режиме) и останется в группе процессов оболочки. В Windows вывод и ошибки сервера по умолчанию перенаправляются в терминал. Это поведение можно изменить и направить вывод сервера в файл, добавив ключ <option>-l</option>. Мы рекомендуем использовать ключ <option>-l</option> или перенаправлять вывод.</para>
+
+  <para>В режиме <option>stop</option> сервер, работающий в указанном каталоге данных, останавливается. Параметр <option>-m</option> позволяет выбрать три различных режима остановки. Режим <quote>Smart</quote> ожидает отключения всех активных клиентов и завершения всех текущих процессов резервного копирования. Если сервер работает в режиме горячего резерва, восстановление и потоковая репликация будут прерваны, как только отключатся все клиенты. Режим <quote>Fast</quote> (выбираемый по умолчанию) не ожидает отключения клиентов и завершает все текущие процессы резервного копирования. Все активные транзакции откатываются, а клиенты принудительно отключаются, после чего сервер останавливается. Режим <quote>Immediate</quote> незамедлительно прерывает все серверные процессы, не выполняя процедуру штатной остановки. В результате при следующем запуске будет запущено восстановление после сбоя.</para>
+
+  <para>В режиме <option>restart</option> по сути выполняется остановка и последующий запуск сервера. Это позволяет изменить параметры командной строки <command>postgres</command>. Режим <option>restart</option> может не отработать, если при запуске сервера в командной строке задавались относительные пути.</para>
+
+  <para>Чтобы перечитать конфигурацию (<filename>postgresql.conf</filename>, <filename>pg_hba.conf</filename> и т. д.), используется <option>reload</option>, при этом процесс <command>postgres</command> получает системный сигнал <systemitem>SIGHUP</systemitem>. Это позволяет применить изменения без полного рестарта сервера.</para>
+
+  <para>Чтобы проверить статус кластера, используется <option>status</option>. Если кластер запущен, то будет выведен <acronym>PID</acronym> процесса, а также команда с использованными при запуске аргументами. Если кластер остановлен, то процесс вернёт статус завершения 3. Если не указан каталог хранения данных, то процесс вернёт статус завершения 4.</para>
+
+  <para>Чтобы перевести резервный сервер в режим главного, используется <option>promote</option>. При этом сервер прекращает работу в режиме восстановления и начинает работать в режиме чтения-записи.</para>
+
+  <para>Чтобы послать сигнал процессу, используется <option>kill</option>. Это особенно применимо в среде <productname>Microsoft Windows</productname>, которая не имеет в оснастке команды <application>kill</application>. Чтобы посмотреть список доступных сигналов, обратитесь к справке <literal>--help</literal>.</para>
+
+  <para>Режим <option>register</option> предназначен для регистрации системной службы в <productname>Microsoft Windows</productname>. Параметр <option>-S</option> позволяет выбрать тип запуска службы, <quote>auto</quote> (запускать службу автоматически при загрузке системы) или <quote>demand</quote> (запускать службу по требованию).</para>
+
+  <para>Чтобы удалить зарегистрированную службу в <productname>Microsoft Windows</productname>, используется <option>unregister</option>. Эта операция отменяет действие команды <option>register</option>.</para>
+ </refsect1>
+
+ <refsect1 id="app-pg-ctl-options">
+  <title>Параметры</title>
+
+    <variablelist>
+
+     <varlistentry>
+      <term><option>-c</option></term>
+      <term><option>--core-file</option></term>
+      <listitem>
+       <para>Способствует сбросу дампа памяти процесса при крахе сервера на платформах, где это возможно, поднимая мягкие ограничения, задаваемые для файлов дампа. Это полезно при отладке и диагностике проблем, так как позволяет получить трассировку стека отказавшего процесса сервера.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-D <replaceable class="parameter">каталог_данных</replaceable></option></term>
+      <term><option>--pgdata <replaceable class="parameter">каталог_данных</replaceable></option></term>
+      <listitem>
+       <para>Указывает размещение конфигурационных файлов кластера. Если не указано, используется значение переменной окружения <envar>PGDATA</envar>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-l <replaceable class="parameter">имя_файла</replaceable></option></term>
+      <term><option>--log <replaceable class="parameter">имя_файла</replaceable></option></term>
+      <listitem>
+       <para>Направляет вывод сообщений сервера в файл <replaceable>имя_файла</replaceable>. Файл создаётся, если он ещё не существует. При этом устанавливается <systemitem>umask</systemitem> 077, что предотвращает доступ других пользователей к этому файлу.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-m <replaceable class="parameter">режим</replaceable></option></term>
+      <term><option>--mode <replaceable class="parameter">режим</replaceable></option></term>
+      <listitem>
+       <para>Задаёт режим остановки кластера. Значением <replaceable>режим</replaceable> может быть <literal>smart</literal>, <literal>fast</literal> или <literal>immediate</literal>, либо первая буква этих вариантов. По умолчанию выбирается режим <literal>fast</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-o <replaceable class="parameter">параметры</replaceable></option></term>
+      <listitem>
+       <para>Указывает флаги, которые будут переданы непосредственно программе <command>postgres</command>; несколько параметров складываются вместе.</para>
+       <para>Эти параметры обычно следует обрамлять одинарными или двойными кавычками, чтобы они передавались вместе как одна группа.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-o <replaceable class="parameter">параметры-initdb</replaceable></option></term>
+      <listitem>
+       <para>Указывает флаги, которые будут переданы в <command>initdb</command>.</para>
+       <para>Эти параметры обычно следует обрамлять одинарными или двойными кавычками, чтобы они передавались вместе как одна группа.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">путь</replaceable></option></term>
+      <listitem>
+       <para>Указывает размещение исполняемого файла <filename>postgres</filename>. По умолчанию задействуется исполняемый файл <filename>postgres</filename> из того же каталога, из которого запускался <command>pg_ctl</command>, а если это невозможно, из жёстко заданного каталога инсталляции. Применять этот параметр может понадобиться, только если вы делаете что-то необычное или получаете сообщения, что найти исполняемый файл <filename>postgres</filename> не удаётся.</para>
+
+       <para>В режиме <literal>init</literal> этот параметр аналогичным образом задаёт размещение исполняемого файла <filename>initdb</filename>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s</option></term>
+      <term><option>--silent</option></term>
+      <listitem>
+       <para>Выводить лишь ошибки, без сообщений информационного характера.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-t</option></term>
+      <term><option>--timeout</option></term>
+      <listitem>
+       <para>Максимальное время (в секундах) ожидания запуска или остановки сервера. По умолчанию принимается значение переменной среды <envar>PGCTLTIMEOUT</envar> или, если оно не задано, 60 секунд.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-V</option></term>
+      <term><option>--version</option></term>
+       <listitem>
+        <para>Выводит версию <application>pg_ctl</application> и прерывает выполнение.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</option></term>
+      <listitem>
+       <para>Ждать завершения запуска или остановки. Это вариант по умолчанию при остановке, но не при запуске. Ожидая запуска, <command>pg_ctl</command> постоянно пытается подключиться к серверу. Ожидая остановки, <command>pg_ctl</command> ждёт, пока сервер не удалит свой файл <acronym>PID</acronym>. Этот параметр позволяет ввести парольную фразу <acronym>SSL</acronym> при запуске. <command>pg_ctl</command> возвращает код завершения, сообщающий об успехе запуска или остановки.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option></term>
+      <listitem>
+       <para>Не ждать завершения запуска или остановки. Это вариант по умолчанию для режимов запуска и перезапуска.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-?</option></term>
+      <term><option>--help</option></term>
+      <listitem>
+       <para>Вывести справку по команде <application>pg_ctl</application> и прервать выполнение.</para>
+      </listitem>
+     </varlistentry>
+   </variablelist>
+
+  <refsect2 id="app-pg-ctl-windows-options">
+   <title>Параметры, специфичные для Windows</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><option>-e <replaceable class="parameter">source</replaceable></option></term>
+     <listitem>
+      <para>Имя источника событий, с которым <application>pg_ctl</application> будет записывать в системный журнал события при запуске в виде службы Windows. Имя по умолчанию — <literal>&productname;</literal>. Заметьте, что это влияет только на сообщения, которые выдаёт сам <application>pg_ctl</application>; как только сервер запустится, он будет использовать источник событий, заданный в <xref linkend="guc-event-source"/>. Если произойдёт ошибка при запуске сервера на ранней стадии, он также выдаст сообщение с источником по умолчанию <literal>&productname;</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-N <replaceable class="parameter">имя_службы</replaceable></option></term>
+     <listitem>
+      <para>Имя регистрируемой системной службы. Оно станет и собственно именем службы, и отображаемым именем.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-P <replaceable class="parameter">пароль</replaceable></option></term>
+     <listitem>
+      <para>Пароль для пользователя, запускающего службу.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-S <replaceable class="parameter">тип-запуска</replaceable></option></term>
+     <listitem>
+      <para>Тип запуска системной службы. Может принимать значения: <literal>auto</literal>, или <literal>demand</literal>, либо быть представлен первой буквой названия каждого приведённого значения. По умолчанию используется <literal>auto</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-U <replaceable class="parameter">имя_пользователя</replaceable></option></term>
+     <listitem>
+      <para>Имя пользователя, от имени которого будут запущена служба. Для доменных пользователей необходимо использовать нотацию <literal>DOMAIN\username</literal>.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect2>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><envar>PGCTLTIMEOUT</envar></term>
+
+    <listitem>
+     <para>Значение по умолчанию для максимального времени ожидания запуска или остановки сервера (в секундах). По умолчанию это время составляет 60 секунд.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><envar>PGDATA</envar></term>
+
+    <listitem>
+     <para>Размещение каталога хранения данных по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+
+  <para><command>pg_ctl</command>, как и большинство других утилит <productname>&productname;</productname>, также использует переменные окружения, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>). Другие переменные сервера описаны в <xref remap="6" linkend="app-postgres"/>.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Файлы</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><filename>postmaster.pid</filename></term>
+
+    <listitem>
+     <para>Наличие файла в каталоге хранения данных помогает <application>pg_ctl</application> определить, работает ли сервер в настоящий момент.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><filename>postmaster.opts</filename></term>
+
+    <listitem>
+     <para>Если файл существует в каталоге хранения данных, то <application>pg_ctl</application> (при <option>restart</option>) передаст его содержимое в качестве аргументов <application>postgres</application>, если не указаны иные значения в <option>-o</option>. Содержимое файла также отображается при вызове в режиме <option>status</option>.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+ </refsect1>
+
+
+ <refsect1 id="r1-app-pgctl-2">
+  <title>Примеры</title>
+
+  <refsect2 id="r2-app-pgctl-3">
+   <title>Запуск сервера</title>
+
+   <para>Для запуска сервера: <screen>
+<prompt>$</prompt> <userinput>pg_ctl start</userinput>
+</screen></para>
+
+   <para>Для запуска сервера с ожиданием готовности к приему подключений: <screen>
+<prompt>$</prompt> <userinput>pg_ctl -w start</userinput>
+</screen></para>
+
+   <para>Чтобы запустить сервер с использованием порта 5433 и без <function>fsync</function>, выполните: <screen>
+<prompt>$</prompt> <userinput>pg_ctl -o "-F -p 5433" start</userinput>
+</screen></para>
+  </refsect2>
+
+  <refsect2 id="r2-app-pgctl-4">
+   <title>Остановка сервера</title>
+   <para>Для остановки сервера: <screen>
+<prompt>$</prompt> <userinput>pg_ctl stop</userinput>
+</screen> Параметр <option>-m</option> указывает <emphasis>режим</emphasis> остановки: <screen>
+<prompt>$</prompt> <userinput>pg_ctl stop -m fast</userinput>
+</screen></para>
+  </refsect2>
+
+  <refsect2 id="r2-app-pgctl-5">
+   <title>Повторный запуск сервера</title>
+
+   <para>Повторный запуск сервера производится аналогично остановке с дальнейшим его запуском, за исключением того, что <command>pg_ctl</command> использует аргументы, которые были переданы при предыдущем запуске кластера. В простейшем случае повторный запуск выглядит так: <screen>
+<prompt>$</prompt> <userinput>pg_ctl restart</userinput>
+</screen></para>
+
+   <para>Для повторного запуска сервера с ожиданием полной остановки и последующего запуска: <screen>
+<prompt>$</prompt> <userinput>pg_ctl -w restart</userinput>
+</screen></para>
+
+   <para>Для повторного запуска на порту 5433 с выключенным <function>fsync</function> после старта: <screen>
+<prompt>$</prompt> <userinput>pg_ctl -o "-F -p 5433" restart</userinput>
+</screen></para>
+  </refsect2>
+
+  <refsect2 id="r2-app-pgctl-6">
+   <title>Вывод состояния сервера</title>
+
+   <para>Ниже представлен примерный вывод <application>pg_ctl</application>: <screen>
+<prompt>$</prompt> <userinput>pg_ctl status</userinput>
+<computeroutput>
+pg_ctl: server is running (PID: 13718)
+/usr/local/pgsql/bin/postgres "-D" "/usr/local/pgsql/data" "-p" "5433" "-B" "128"
+</computeroutput>
+</screen> Показанная командная строка будет использоваться в режиме перезапуска.</para>
+  </refsect2>
+ </refsect1>
+
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-initdb"/></member>
+   <member><xref linkend="app-postgres"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

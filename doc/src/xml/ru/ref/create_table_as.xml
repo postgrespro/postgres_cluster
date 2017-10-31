@@ -1,0 +1,222 @@
+<!--
+doc/src/xml/ref/create_table_as.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createtableas">
+ <indexterm zone="sql-createtableas"><primary>CREATE TABLE AS</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE TABLE AS</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE TABLE AS</refname>
+  <refpurpose>создать таблицу из результатов запроса</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE [ [ GLOBAL | LOCAL ] { TEMPORARY | TEMP } | UNLOGGED | CONSTANT ] TABLE [ IF NOT EXISTS ] <replaceable>имя_таблицы</replaceable>
+    [ (<replaceable>имя_столбца</replaceable> [, ...] ) ]
+    [ WITH ( <replaceable class="parameter">параметр_хранения</replaceable> [= <replaceable class="parameter">значение</replaceable>] [, ... ] ) | WITH OIDS | WITHOUT OIDS ]
+    [ ON COMMIT { PRESERVE ROWS | DELETE ROWS | DROP } ]
+    [ TABLESPACE <replaceable class="parameter">табл_пространство</replaceable> ]
+    AS <replaceable>запрос</replaceable>
+    [ WITH [ NO ] DATA ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE TABLE AS</command> создаёт таблицу и наполняет её данными, полученными в результате выполнения <command>SELECT</command>. Столбцы этой таблицы получают имена и типы данных в соответствии со столбцами результата <command>SELECT</command> (хотя имена столбцов можно переопределить, добавив явно список новых имён столбцов).</para>
+
+  <para><command>CREATE TABLE AS</command> напоминает создание представления, но на самом деле есть значительная разница: эта команда создаёт новую таблицу и выполняет запрос только раз, чтобы наполнить таблицу начальными данными. Последующие изменения в исходных таблицах запроса в новой таблице отражаться не будут. С представлением, напротив, определяющая его команда <command>SELECT</command> выполняется при каждой выборке из него.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>GLOBAL</literal> или <literal>LOCAL</literal></term>
+    <listitem>
+     <para>Для совместимости игнорируются. Использование этих ключевых слов считается устаревшим; за подробностями обратитесь к <xref remap="3" linkend="sql-createtable"/>.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>TEMPORARY</literal> или <literal>TEMP</literal></term>
+    <listitem>
+     <para>Если указано, создаваемая таблица будет временной. За подробностями обратитесь к <xref remap="3" linkend="sql-createtable"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>UNLOGGED</literal></term>
+    <listitem>
+     <para>Если указано, создаваемая таблица будет нежурналируемой. За подробностями обратитесь к <xref remap="3" linkend="sql-createtable"/>.</para>
+    </listitem>
+   </varlistentry>
+
+  <varlistentry>
+    <term><literal>CONSTANT</literal></term>
+    <listitem>
+     <para>Если указывается, таблица создаётся в режиме &laquo;только чтение&raquo;. В таких таблицах нельзя изменять или добавлять данные, и они не обрабатываются при <link linkend="autovacuum">автоочистке</link>. Вернуть в режим &laquo;чтение-запись&raquo; такие таблицы невозможно.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>IF NOT EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если отношение с таким именем уже существует. В этом случае будет выдано замечание. За подробностями обратитесь к описанию <xref linkend="sql-createtable"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable>имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) создаваемой таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable>имя_столбца</replaceable></term>
+    <listitem>
+     <para>Имя столбца в создаваемой таблице. Если имена столбцов не заданы явно, они определяются по именам столбцов результата запроса.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>WITH ( <replaceable class="parameter">параметр_хранения</replaceable> [= <replaceable class="parameter">значение</replaceable>] [, ... ] )</literal></term>
+    <listitem>
+     <para>Это предложение определяет дополнительные параметры хранения для новой таблицы: за подробностями обратитесь к <xref remap="3" linkend="sql-createtable-storage-parameters" endterm="sql-createtable-storage-parameters-title"/>. Предложение <literal>WITH</literal> может также включать указание <literal>OIDS=TRUE</literal> (или просто <literal>OIDS</literal>), с которым строкам в новой таблице будут назначаться идентификаторы объектов (OID), либо указание <literal>OIDS=FALSE</literal>, с которым строки не будут содержать OID. За дополнительными сведениями обратитесь к <xref remap="3" linkend="sql-createtable"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>WITH OIDS</literal></term>
+    <term><literal>WITHOUT OIDS</literal></term>
+    <listitem>
+     <para>Это устаревшее написание указаний <literal>WITH (OIDS)</literal> и <literal>WITH (OIDS=FALSE)</literal>, соответственно. Если требуется определить одновременно свойство <literal>OIDS</literal> и параметры хранения, необходимо использовать синтаксис <literal>WITH ( ... )</literal>; см. ниже.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ON COMMIT</literal></term>
+    <listitem>
+     <para>Поведением временных таблиц в конце блока транзакции позволяет управлять предложение <literal>ON COMMIT</literal>, которое принимает три параметра: <variablelist>
+       <varlistentry>
+        <term><literal>PRESERVE ROWS</literal></term>
+        <listitem>
+         <para>Никакое специальное действие в конце транзакции не выполняется. Это поведение по умолчанию.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>DELETE ROWS</literal></term>
+        <listitem>
+         <para>Все строки в этой временной таблице будут удаляться в конце каждого блока транзакции. По сути, при каждой фиксации транзакции будет автоматически выполняться <xref linkend="sql-truncate"/>.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>DROP</literal></term>
+        <listitem>
+         <para>Эта временная таблица будет удаляться в конце текущего блока транзакции.</para>
+        </listitem>
+       </varlistentry>
+      </variablelist></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>TABLESPACE <replaceable class="parameter">табл_пространство</replaceable></literal></term>
+    <listitem>
+     <para>Здесь <replaceable class="parameter">табл_пространство</replaceable> — имя табличного пространства, в котором будет создаваться новая таблица. Если оно не указано, выбирается <xref linkend="guc-default-tablespace"/> или <xref linkend="guc-temp-tablespaces"/>, если таблица временная.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable>запрос</replaceable></term>
+    <listitem>
+     <para>Команда <xref linkend="sql-select"/>, <link linkend="sql-table">TABLE</link> или <xref linkend="sql-values"/>, либо команда <xref linkend="sql-execute"/>, выполняющая подготовленный запрос <command>SELECT</command>, <command>TABLE</command> или <command>VALUES</command>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>WITH [ NO ] DATA</literal></term>
+    <listitem>
+     <para>Это предложение определяет, будут ли данные, выданные запросом, копироваться в новую таблицу. Если нет, то копируется только структура. По умолчанию данные копируются.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Функциональность этой команды подобна <xref linkend="sql-selectinto"/>, но предпочтительнее использовать её, во избежание путаницы с другими применениями синтаксиса <command>SELECT INTO</command>. Кроме того, набор возможностей <command>CREATE TABLE AS</command> шире, чем у <command>SELECT INTO</command>.</para>
+
+  <para>Команда <command>CREATE TABLE AS</command> позволяет пользователю явно определить, добавлять ли OID в таблицу. Если присутствие OID не определено явно, оно определяется конфигурационной переменной <xref linkend="guc-default-with-oids"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Создание таблицы <literal>films_recent</literal>, содержащей только последние записи из таблицы <literal>films</literal>: <programlisting>CREATE TABLE films_recent AS
+  SELECT * FROM films WHERE date_prod &gt;= '2002-01-01';</programlisting></para>
+
+  <para>Чтобы скопировать таблицу полностью, можно также использовать короткую форму команды <literal>TABLE</literal>: <programlisting>CREATE TABLE films2 AS
+  TABLE films;</programlisting></para>
+
+  <para>Создание временной таблицы <literal>films_recent</literal>, содержащей только последние записи таблицы <literal>films</literal>, с применением подготовленного оператора. Новая таблица будет содержать OID и прекратит существование при фиксации транзакции: <programlisting>PREPARE recentfilms(date) AS
+  SELECT * FROM films WHERE date_prod &gt; $1;
+CREATE TEMP TABLE films_recent WITH (OIDS) ON COMMIT DROP AS
+  EXECUTE recentfilms('2002-01-01');</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>CREATE TABLE AS</command> соответствует стандарту <acronym>SQL</acronym>. Нестандартные расширения перечислены ниже: <itemizedlist spacing="compact">
+    <listitem>
+     <para>Стандарт требует заключать предложение подзапроса в скобки, но в <productname>&productname;</productname> эти скобки необязательны.</para>
+    </listitem>
+
+    <listitem>
+     <para>Стандарт требует присутствия указания <literal>WITH [ NO ] DATA</literal>, в &productname; оно необязательно.</para>
+    </listitem>
+
+    <listitem>
+     <para><productname>&productname;</productname> работает с временными таблицами не так, как описано в стандарте; за подробностями обратитесь к <xref remap="3" linkend="sql-createtable"/>.</para>
+    </listitem>
+
+    <listitem>
+     <para>Предложение <literal>WITH</literal> является расширением <productname>&productname;</productname>; в стандарте ни параметры хранения, ни OID не оговариваются.</para>
+    </listitem>
+
+    <listitem>
+     <para>Концепция табличных пространств в <productname>&productname;</productname> отсутствует в стандарте. Как следствие, предложение <literal>TABLESPACE</literal> является расширением.</para>
+    </listitem>
+   </itemizedlist></para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-creatematerializedview"/></member>
+   <member><xref linkend="sql-createtable"/></member>
+   <member><xref linkend="sql-execute"/></member>
+   <member><xref linkend="sql-select"/></member>
+   <member><xref linkend="sql-selectinto"/></member>
+   <member><xref linkend="sql-values"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

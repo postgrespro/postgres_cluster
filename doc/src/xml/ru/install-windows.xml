@@ -1,0 +1,260 @@
+<!-- doc/src/xml/install-windows.xml -->
+
+<chapter id="install-windows">
+ <title>Установка из исходного кода в <productname>Windows</productname></title>
+
+ <indexterm><primary>установка</primary> <secondary>в Windows</secondary></indexterm>
+
+ <para>Для большинства пользователей рекомендуется просто загрузить дистрибутив для Windows с сайта <productname>&productname;</productname>. Компиляция из исходного кода описана только для разработчиков сервера <productname>&productname;</productname> или его расширений.</para>
+
+ <para>Существует несколько различных способов сборки &productname; для <productname>Windows</productname>. Самый простой способ сборки с применением инструментов Microsoft — установить <productname>Visual Studio Express 2015 для Windows Desktop</productname> и использовать входящий в её состав компилятор. Также возможна сборка с помощью полной версии <productname>Microsoft Visual C++ 2005-2015</productname>. В некоторых случаях помимо компилятора требуется установить <productname>Windows SDK</productname>.</para>
+
+ <para>Также возможно собрать &productname; с помощью средств компиляции GNU, используя среду <productname>MinGW</productname>, либо с помощью <productname>Cygwin</productname> для более старых версий <productname>Windows</productname>.</para>
+
+ <para>Наконец, клиентскую библиотеку (<application>libpq</application>) можно собрать с помощью <productname>Visual C++ 7.1</productname> или <productname>Borland C++</productname> для совместимости со статически компилируемыми приложениями, создаваемыми этими средствами разработки.</para>
+
+ <para>При компиляции с помощью <productname>MinGW</productname> или <productname>Cygwin</productname> сборка производится как обычно, см. <xref remap="4" linkend="installation"/> и дополнительные замечания в <xref remap="6" linkend="installation-notes-mingw"/> и <xref remap="6" linkend="installation-notes-cygwin"/>. Чтобы получить в этих окружениях &laquo;родные&raquo; 64-битные двоичные файлы, используйте инструменты из <productname>MinGW-w64</productname>. Данные инструменты также могут быть использованы для кросс-компиляции для 32- и 64-битной <productname>Windows</productname> в других системах, например в <productname>Linux</productname> и <productname>Darwin</productname>. <productname>Cygwin</productname> не рекомендуется применять в производственной среде, его следует использовать только для запуска в старых версиях <productname>Windows</productname>, где &laquo;родная&raquo; сборка невозможна, таких как <productname>Windows 98</productname>. Официальные двоичные файлы собираются с использованием <productname>Visual Studio</productname>.</para>
+
+ <para>&laquo;Родные&raquo; сборки <application>psql</application> не поддерживают редактирование командной строки. Однако сборка в <productname>Cygwin</productname> это поддерживает, так что следует выбрать её, когда необходимо интерактивно использовать psql в <productname>Windows</productname>.</para>
+
+ <sect1 id="install-windows-full">
+  <title>Сборка с помощью <productname>Visual C++</productname> или <productname>Microsoft Windows SDK</productname></title>
+
+ <para>&productname; может быть собран с помощью компилятора Visual C++ от Microsoft. Этот компилятор есть в пакетах <productname>Visual Studio</productname>, <productname>Visual Studio Express</productname> или в некоторых версиях <productname>Microsoft Windows SDK</productname>. Если у вас ещё не установлена среда <productname>Visual Studio</productname>, проще всего будет использовать компиляторы из <productname>Visual Studio Express 2015 для Windows Desktop</productname> или из <productname>Windows SDK 7.1</productname>, которые Microsoft распространяет бесплатно.</para>
+
+ <para>С пакетом компиляторов Microsoft можно получить как 32-, так и 64-битные сборки. 32-битные сборки можно произвести, используя выпуски <productname>Visual Studio 2005</productname> — <productname>Visual Studio 2015</productname> (включая редакции Express), а также отдельные выпуски Windows SDK версии с 6.0 по 7.1. 64-битные сборки &productname; поддерживаются с <productname>Microsoft Windows SDK</productname> версий 6.0a — 7.1 или <productname>Visual Studio 2008</productname> и новее. При сборке с <productname>Visual Studio 2005</productname> — <productname>Visual Studio 2013</productname> поддерживается компиляция для систем вплоть до <productname>Windows XP</productname> и <productname>Windows Server 2003</productname>. При сборке с <productname>Visual Studio 2015</productname> в качестве целевых поддерживаются системы, начиная с <productname>Windows Vista</productname> и <productname>Windows Server 2008</productname>.</para>
+
+ <para>Инструменты для компиляции с помощью <productname>Visual C++</productname> или <productname>Platform SDK</productname> находятся в каталоге <filename>src/tools/msvc</filename>. При сборке убедитесь, что в системном пути PATH не подключаются инструменты из набора <productname>MinGW</productname> или <productname>Cygwin</productname>. Также убедитесь, что в пути PATH указаны каталоги всех необходимых инструментов Visual C++. Если вы используете <productname>Visual Studio</productname>, запустите <application>Visual Studio Command Prompt</application>. Если вы хотите собрать 64-битную версию, вы должны выбрать 64-битную версию данной оболочки, и наоборот. Если вы используете <productname>Microsoft Windows SDK</productname>, запустите через стартовое меню, подменю SDK оболочку <application>CMD shell</application>. В последних версиях SDK можно изменить целевую архитектуру процессора, вариант сборки и целевую ОС с помощью команды <command>setenv</command>, например после <command>setenv /x86 /release /xp</command> будет получена выпускаемая 32-битная сборка для Windows XP. О других параметрах <command>setenv</command> можно узнать с ключом <command>/?</command>. Все команды должны запускаться из каталога <filename>src\tools\msvc</filename>.</para>
+
+ <para>До начала сборки может потребоваться отредактировать файл <filename>config.pl</filename> и изменить в нём желаемые параметры конфигурации или пути к сторонним библиотекам, которые будут использоваться. Для получения конфигурации сначала считывается и разбирается файл <filename>config_default.pl</filename>, а затем применяются все изменения из <filename>config.pl</filename>. Например, чтобы указать, куда установлен <productname>Python</productname>, следует добавить в <filename>config.pl</filename>: <programlisting>$config-&gt;{python} = 'c:\python26';</programlisting> Вам нужно задать только те параметры, которые отличаются от заданных в <filename>config_default.pl</filename>.</para>
+
+ <para>Если вам необходимо установить какие-либо другие переменные окружения, создайте файл с именем <filename>buildenv.pl</filename> и поместите в него требуемые команды. Например, чтобы добавить путь к bison, которого нет в PATH, создайте файл следующего содержания: <programlisting>$ENV{PATH}=$ENV{PATH} . ';c:\some\where\bison\bin';</programlisting></para>
+
+ <sect2>
+  <title>Требования</title>
+  <para>Для сборки <productname>&productname;</productname> требуется следующее дополнительное ПО. Укажите каталоги, в которых находятся соответствующие библиотеки, в файле конфигурации <filename>config.pl</filename>. <variablelist>
+    <varlistentry>
+     <term><productname>Microsoft Windows SDK</productname></term>
+     <listitem><para>Если с вашим инструментарием для разработки не поставляется поддерживаемая версия <productname>Microsoft Windows SDK</productname>, рекомендуется установить последнюю версию SDK (в настоящее время 7.1), которую можно загрузить с <ulink url="https://www.microsoft.com/download/"/>.</para>
+     <para>Устанавливая SDK, вы всегда должны выбирать для установки пункт <application>Windows Headers and Libraries</application> (Заголовочные файлы и библиотеки Windows). Если вы установили <productname>Windows SDK</productname>, включая <application>Visual C++ Compilers</application>, <productname>Visual Studio</productname> для сборки вам не нужна. Обратите внимание, что с версии 8.0a в SDK для Windows не включается полное окружение для сборки в командной строке.</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><productname>ActiveState Perl</productname></term>
+     <listitem><para>ActiveState Perl требуется для запуска скриптов, управляющих сборкой. Perl из MinGW или Cygwin работать не будет. ActiveState Perl также должен находиться по пути в PATH. Готовый двоичный пакет можно загрузить с <ulink url="http://www.activestate.com"/> (Заметьте, что требуется версия 5.8.3 или выше, при этом достаточно бесплатного стандартного дистрибутива (Standard Distribution).)</para></listitem>
+    </varlistentry>
+
+   </variablelist></para>
+  <para>Следующее дополнительное ПО не требуется для базовой сборки, но требуется для сборки полного пакета. Укажите каталоги, в которых находятся соответствующие библиотеки, в файле конфигурации <filename>config.pl</filename>. <variablelist>
+    <varlistentry>
+     <term><productname>ActiveState TCL</productname></term>
+     <listitem><para>Требуется для компиляции <application>PL/TCL</application> (Заметьте, что требуется версия 8.4 или выше, при этом достаточно бесплатного стандартного дистрибутива (Standard Distribution).</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><productname>Bison</productname> и <productname>Flex</productname></term>
+     <listitem>
+     <para>Для компиляции из Git требуются <productname>Bison</productname> и <productname>Flex</productname>, хотя они не нужны для компиляции из дистрибутивного пакета исходного кода. <productname>Bison</productname> должен быть версии 1.875 или 2.2, либо новее, а <productname>Flex</productname> — версии 2.5.31 или новее.</para>
+
+     <para>И <productname>Bison</productname>, и <productname>Flex</productname> входят в комплект утилит <productname>msys</productname>, который можно загрузить с <ulink url="http://www.mingw.org/wiki/MSYS"/> в качестве компонента набора <productname>MinGW</productname>.</para>
+
+     <para>Вам потребуется добавить каталог, содержащий <filename>flex.exe</filename> и <filename>bison.exe</filename>, в путь, задаваемый переменной PATH, в <filename>buildenv.pl</filename>, если она его ещё не включает. В случае с MinGW, это будет подкаталог <filename>\msys\1.0\bin</filename> в каталоге вашей инсталляции MinGW.</para>
+
+     <note>
+      <para>Bison, поставляемый в составе GnuWin32, может работать некорректно, когда он установлен в каталог с именем, содержащим пробелы, например, <filename>C:\Program Files\GnuWin32</filename> (целевой каталог по умолчанию в англоязычной системе). В таком случае, возможно, стоит установить его в <filename>C:\GnuWin32</filename> или задать в переменной окружения PATH короткий путь NTFS к GnuWin32 (например, <filename>C:\PROGRA~1\GnuWin32</filename>).</para>
+     </note>
+
+     <note>
+       <para>Старые программы <literal>winflex</literal>, которые раньше размещались на FTP-сайте &productname; и упоминались в старой документации, не будут работать в 64-битной Windows, выдавая ошибку <quote>flex: fatal internal error, exec failed</quote>. Используйте Flex из набора MSYS.</para>
+     </note>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><productname>Diff</productname></term>
+     <listitem><para>Diff требуется для запуска регрессионных тестов, его можно загрузить с <ulink url="http://gnuwin32.sourceforge.net"/>.</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><productname>Gettext</productname></term>
+     <listitem><para>Gettext требуется для сборки с поддержкой NLS, его можно загрузить с <ulink url="http://gnuwin32.sourceforge.net"/>. Заметьте, что для сборки потребуются и исполняемые файлы, и зависимости, и файлы для разработки.</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><productname>MIT Kerberos</productname></term>
+     <listitem><para>Требуется для поддержки проверки подлинности GSSAPI. MIT Kerberos можно загрузить с <ulink url="http://web.mit.edu/Kerberos/dist/index.html"/>.</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><productname>libxml2</productname> и <productname>libxslt</productname></term>
+     <listitem><para>Требуется для поддержки XML. Двоичный пакет можно загрузить с <ulink url="http://zlatkovic.com/pub/libxml"/>, а исходный код с <ulink url="http://xmlsoft.org"/>. Учтите, что для libxml2 требуется iconv, который можно загрузить там же.</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><productname>openssl</productname></term>
+     <listitem><para>Требуется для поддержки SSL. Двоичные пакеты можно загрузить с <ulink url="http://www.slproweb.com/products/Win32OpenSSL.html"/>, а исходный код с <ulink url="http://www.openssl.org"/>.</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><productname>ossp-uuid</productname></term>
+     <listitem><para>Требуется для поддержки UUID-OSSP (только для contrib). Исходный код можно загрузить с <ulink url="http://www.ossp.org/pkg/lib/uuid/"/>.</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><productname>Python</productname></term>
+     <listitem><para>Требуется для сборки <application>PL/Python</application>. Двоичные пакеты можно загрузить с <ulink url="http://www.python.org"/>.</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><productname>zlib</productname></term>
+     <listitem><para>Требуется для поддержки сжатия в <application>pg_dump</application> и <application>pg_restore</application>. Двоичные пакеты можно загрузить с <ulink url="http://www.zlib.net"/>.</para></listitem>
+    </varlistentry>
+
+   </variablelist></para>
+ </sect2>
+
+ <sect2>
+  <title>Специальные замечания для 64-битной Windows</title>
+
+  <para>&productname; для архитектуры x64 можно собрать только в 64-битной Windows, процессоры Itanium не поддерживаются.</para>
+
+  <para>Совместная сборка 32- и 64-битных версий в одном дереве не поддерживается. Система сборки автоматически определит, в каком окружении (32- или 64-битном) она запущена, и соберёт соответствующий вариант &productname;. Поэтому перед сборкой важно запустить требуемую версию командного интерпретатора.</para>
+
+  <para>Для использования на стороне сервера сторонних библиотек, таких как <productname>python</productname> или <productname>openssl</productname>, эти библиотеки также <emphasis>должны быть</emphasis> 64-битными. 64-битный сервер не поддерживает загрузку 32-битных библиотек. Некоторые библиотеки сторонних разработчиков, предназначенные для &productname;, могут быть доступны только в 32-битных версиях и в таком случае их нельзя будет использовать с 64-битной версией &productname;.</para>
+ </sect2>
+
+ <sect2>
+  <title>Сборка</title>
+
+  <para>Чтобы собрать весь &productname; в конфигурации выпуска (по умолчанию), запустите команду: <screen>
+<userinput>build</userinput>
+</screen> Чтобы собрать весь &productname; в конфигурации отладки, запустите команду: <screen>
+<userinput>build DEBUG</userinput>
+</screen> Для сборки отдельного проекта, например psql, выполните, соответственно: <screen>
+<userinput>build psql</userinput>
+<userinput>build DEBUG psql</userinput>
+</screen> Чтобы сменить конфигурацию по умолчанию на отладочную, поместите в файл <filename>buildenv.pl</filename> следующую строку: <programlisting>$ENV{CONFIG}="Debug";</programlisting></para>
+
+  <para>Также возможна сборка из графической среды Visual Studio. В этом случае вам нужно запустить в командной строке: <screen>
+<userinput>perl mkvcbuild.pl</userinput>
+</screen> и затем открыть в Visual Studio полученный <filename>pgsql.sln</filename> в корневом каталоге дерева исходных кодов.</para>
+ </sect2>
+
+ <sect2>
+  <title>Очистка и установка</title>
+
+  <para>В большинстве случаев за изменением файлов будет следить автоматическая система отслеживания зависимостей в Visual Studio. Но если изменений было слишком много, может понадобиться очистка установки. Чтобы её выполнить, просто запустите команду <filename>clean.bat</filename>, которая автоматически очистит все сгенерированные файлы. Вы также можете запустить эту команду с параметром <parameter>dist</parameter>, в этом случае она отработает подобно <userinput>make distclean</userinput> и удалит также выходные файлы flex/bison.</para>
+
+  <para>По умолчанию все файлы сохраняются в подкаталогах <filename>debug</filename> или <filename>release</filename>. Чтобы установить эти файлы стандартным образом, а также сгенерировать файлы, требуемые для инициализации и использования базы данных, запустите команду: <screen>
+<userinput>install c:\destination\directory</userinput>
+</screen></para>
+
+  <para>Если вы хотите установить только клиентские приложения и интерфейсные библиотеки, выполните команду: <screen>
+<userinput>install c:\destination\directory client</userinput>
+</screen></para>
+ </sect2>
+
+ <sect2>
+  <title>Запуск регрессионных тестов</title>
+
+  <para>Чтобы запустить регрессионные тесты, важно сначала собрать все необходимые для них компоненты. Также убедитесь, что в системном пути могут быть найдены все DLL, требуемые для загрузки всех подсистем СУБД (например, DLL Perl и Python для процедурных языков). Если их каталоги в пути поиска отсутствуют, задайте их в файле <filename>buildenv.pl</filename>. Чтобы запустить тесты, выполните одну из следующих команд в каталоге <filename>src\tools\msvc</filename>: <screen>
+<userinput>vcregress check</userinput>
+<userinput>vcregress installcheck</userinput>
+<userinput>vcregress plcheck</userinput>
+<userinput>vcregress contribcheck</userinput>
+<userinput>vcregress modulescheck</userinput>
+<userinput>vcregress ecpgcheck</userinput>
+<userinput>vcregress isolationcheck</userinput>
+<userinput>vcregress bincheck</userinput>
+<userinput>vcregress recoverycheck</userinput>
+<userinput>vcregress upgradecheck</userinput>
+</screen> Чтобы выбрать другой планировщик выполнения тестов (по умолчанию выбран параллельный), укажите его в командной строке, например: <screen>
+<userinput>vcregress check serial</userinput>
+</screen> За дополнительными сведениями о регрессионных тестах обратитесь к <xref remap="3" linkend="regress"/>.</para>
+
+  <para>Для запуска регрессионных тестов клиентских программ с применением команды <command>vcregress bincheck</command> или тестов восстановления, с применением <command>vcregress recoverycheck</command>, должен быть установлен дополнительный модуль Perl: <variablelist>
+    <varlistentry>
+     <term><productname>IPC::Run</productname></term>
+     <listitem><para>На момент написания документации, модуль <literal>IPC::Run</literal> не включается ни в инсталляцию Perl ActiveState, ни в библиотеку ActiveState PPM (Perl Package Manager, Менеджер пакетов Perl). Чтобы установить его, загрузите архив исходного кода <filename>IPC-Run-&lt;version&gt;.tar.gz</filename> из CPAN, по адресу <ulink url="http://search.cpan.org/dist/IPC-Run/"/>, и распакуйте его. Откройте файл <filename>buildenv.pl</filename> и добавьте в него переменную PERL5LIB, указывающую на подкаталог <filename>lib</filename> из извлечённого архива. Например: <programlisting>$ENV{PERL5LIB}=$ENV{PERL5LIB} . ';c:\IPC-Run-0.94\lib';</programlisting></para></listitem>
+    </varlistentry>
+   </variablelist></para>
+ </sect2>
+
+ <sect2>
+  <title>Сборка документации</title>
+
+  <para>Для сборки документации &productname; в формате HTML требуются дополнительные инструменты и файлы. Создайте общий каталог для всех этих файлов и сохраните их в названные подкаталоги. <variablelist>
+    <varlistentry>
+     <term>OpenJade 1.3.1-2</term>
+     <listitem><para>Загрузите архив <ulink url="http://sourceforge.net/projects/openjade/files/openjade/1.3.1/openjade-1_3_1-2-bin.zip/download"/> и распакуйте его в подкаталог <filename>openjade-1.3.1</filename>.</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>DocBook DTD 4.2</term>
+     <listitem><para>Загрузите архив с <ulink url="http://www.oasis-open.org/docbook/sgml/4.2/docbook-4.2.zip"/> и распакуйте его в подкаталог <filename>docbook</filename>.</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>DocBook DSSSL 1.79</term>
+     <listitem><para>Загрузите архив с <ulink url="http://sourceforge.net/projects/docbook/files/docbook-dsssl/1.79/docbook-dsssl-1.79.zip/download"/> и распакуйте его в подкаталог <filename>docbook-dsssl-1.79</filename>.</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>Сущности символов ISO</term>
+     <listitem><para>Загрузите архив с <ulink url="http://www.oasis-open.org/cover/ISOEnts.zip"/> и распакуйте его в подкаталог <filename>docbook</filename>.</para></listitem>
+    </varlistentry>
+   </variablelist> Добавьте в <filename>buildenv.pl</filename> переменную, задающую местоположение ранее созданного общего каталога, например: <programlisting>$ENV{DOCROOT}='c:\docbook';</programlisting> Чтобы собрать документацию, запустите <filename>builddoc.bat</filename>. Обратите внимание, что при этом сборка фактически будет запущена дважды; это нужно для построения индексов. Сгенерированные HTML-файлы окажутся в каталоге <filename>doc\src\sgml</filename>.</para>
+ </sect2>
+
+ </sect1>
+
+ <sect1 id="install-windows-libpq">
+  <title>Сборка <application>libpq</application> с помощью <productname>Visual C++</productname> или <productname>Borland C++</productname></title>
+
+ <para>Использовать <productname>Visual C++ 7.1-9.0</productname> или <productname>Borland C++</productname> для компиляции libpq рекомендуется, только если вам нужна версия с другими флагами для отладки/выпуска, либо вам нужна статическая библиотека для компоновки приложения. Для нормального использования рекомендуется вариант сборки с <productname>MinGW</productname>, либо <productname>Visual Studio</productname>, либо <productname>Windows SDK</productname>.</para>
+
+ <para>Чтобы собрать клиентскую библиотеку <application>libpq</application>, используя <productname>Visual Studio 7.1</productname> или новее, перейдите в каталог <filename>src</filename> и введите команду: <screen>
+<userinput>nmake /f win32.mak</userinput>
+</screen></para>
+ <para>Чтобы собрать 64-битную версию клиентской библиотеки <application>libpq</application>, используя <productname>Visual Studio 8.0</productname> или выше, перейдите в каталог <filename>src</filename> и введите команду: <screen>
+<userinput>nmake /f win32.mak CPU=AMD64</userinput>
+</screen> Подробнее узнать о поддерживаемых переменных можно в файле <filename>win32.mak</filename>.</para>
+
+ <para>Чтобы собрать клиентскую библиотеку <application>libpq</application>, используя <productname>Borland C++</productname>, перейдите в каталог <filename>src</filename> и введите команду: <screen>
+<userinput>make -N -DCFG=Release /f bcc32.mak</userinput>
+</screen></para>
+
+ <sect2>
+ <title>Генерируемые файлы</title>
+ <para>При сборке будут получены следующие файлы: <variablelist>
+   <varlistentry>
+    <term><filename>interfaces\libpq\Release\libpq.dll</filename></term>
+    <listitem>
+     <para>Динамически связываемая клиентская библиотека</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><filename>interfaces\libpq\Release\libpqdll.lib</filename></term>
+    <listitem>
+     <para>Библиотека импорта для связывания программ с <filename>libpq.dll</filename></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><filename>interfaces\libpq\Release\libpq.lib</filename></term>
+    <listitem>
+     <para>Статическая версия клиентской библиотеки</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist></para>
+
+ <para>Обычно устанавливать какие-либо клиентские файлы не требуется. Достаточно поместить файл <filename>libpq.dll</filename> в тот каталог, где находится исполняемый файл приложения. Не устанавливайте <filename>libpq.dll</filename> в каталоги Windows, <filename>System</filename> или <filename>System32</filename>, если только это не абсолютно необходимо. Если эта библиотека устанавливается программой setup, при установке нужно проверить версию по содержимому включённого в неё ресурса <symbol>VERSIONINFO</symbol>, чтобы более новая версия библиотеки не была заменена старой.</para>
+
+ <para>Если вы планируете разрабатывать программы, использующие <application>libpq</application> в текущей системе, вы должны добавить подкаталоги <filename>src\include</filename> и <filename>src\interfaces\libpq</filename> в путь поиска заголовочных файлов для компилятора.</para>
+
+ <para>Чтобы использовать данную библиотеку, вы должны добавить файл <filename>libpqdll.lib</filename> в ваш проект. (В Visual C++ просто щёлкните проект правой кнопкой и выберите соответствующее действие.)</para>
+ </sect2>
+ </sect1>
+</chapter>

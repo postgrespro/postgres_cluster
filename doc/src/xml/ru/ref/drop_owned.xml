@@ -1,0 +1,85 @@
+<!--
+doc/src/xml/ref/drop_owned.xml
+&productname; documentation
+-->
+
+<refentry id="sql-drop-owned">
+ <indexterm zone="sql-drop-owned"><primary>DROP OWNED</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP OWNED</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP OWNED</refname>
+  <refpurpose>удалить объекты базы данных, принадлежащие роли</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP OWNED BY { <replaceable class="parameter">имя</replaceable> | CURRENT_USER | SESSION_USER } [, ...] [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP OWNED</command> удаляет в текущей базе данных все объекты, принадлежащие любой из указанных ролей. Кроме того, эти роли лишаются всех прав, которые они имели для объектов текущей базы данных и общих объектов (баз данных, табличных пространств).</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя роли, все объекты которой будут уничтожены, а права отозваны.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от каждого затрагиваемого объекта, и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении объектов, принадлежащих роли, если от каких-либо из них зависят другие объекты в базе данных. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+  <para><command>DROP OWNED</command> часто применяется при подготовке к удалению одной или нескольких ролей. Так как команда <command>DROP OWNED</command> затрагивает объекты только в текущей базе данных, обычно её нужно выполнять в каждой базе данных, которая содержит объекты, принадлежащие удаляемой роли.</para>
+
+  <para>С указанием <literal>CASCADE</literal> эта команда может рекурсивно удалить объекты, принадлежащие и другим пользователям.</para>
+
+  <para>Команда <xref linkend="sql-drop-owned"/> даёт альтернативную возможность — удалить все объекты базы данных, принадлежащие одной или нескольким ролям. Однако <command>DROP OWNED</command> не затрагивает права, назначенные для других объектов.</para>
+
+  <para>Базы данных и табличные пространства, принадлежащие указанным ролям, эта команда не удаляет.</para>
+
+  <para>За подробностями обратитесь к <xref remap="3" linkend="role-removal"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Команда <command>DROP OWNED</command> — расширение <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-reassign-owned"/></member>
+   <member><xref linkend="sql-droprole"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

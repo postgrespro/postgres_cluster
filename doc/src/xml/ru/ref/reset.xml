@@ -1,0 +1,79 @@
+<!--
+doc/src/xml/ref/reset.xml
+&productname; documentation
+-->
+
+<refentry id="sql-reset">
+ <indexterm zone="sql-reset"><primary>RESET</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>RESET</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>RESET</refname>
+  <refpurpose>восстановить значение по умолчанию заданного параметра времени выполнения</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>RESET <replaceable class="parameter">параметр_конфигурации</replaceable>
+RESET ALL</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>RESET</command> сбрасывает параметры времени выполнения к значениям по умолчанию. <command>RESET</command> — альтернативное написание команды <synopsis>
+SET <replaceable class="parameter">параметр_конфигурации</replaceable> TO DEFAULT
+</synopsis> За подробностями обратитесь к <xref remap="3" linkend="sql-set"/>.</para>
+
+  <para>Значение по умолчанию определяется как значение, которое имел бы этот параметр, если бы для него не выполнялась команда <command>SET</command> в текущем сеансе. Фактическое значение может быть задано в компилируемом коде, файле конфигурации, параметрах командной строки или в параметрах по умолчанию для базы данных или пользователя. Если определить его как <quote>значение, которое имеет параметр в начале сеанса</quote>, это будет не вполне корректно, так как оно будет сброшено к тому, что задано в файле конфигурации в данный момент. За подробностями обратитесь к <xref remap="3" linkend="runtime-config"/>.</para>
+
+  <para>Транзакционное поведение команды <command>RESET</command> не отличается от <command>SET</command>: её действие будет отменено при откате транзакции.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">параметр_конфигурации</replaceable></term>
+    <listitem>
+     <para>Имя устанавливаемого параметра конфигурации времени выполнения. Доступные параметры описаны в <xref remap="6" linkend="runtime-config"/> и на справочной странице <xref linkend="sql-set"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ALL</literal></term>
+    <listitem>
+     <para>Сбрасывает к значениям по умолчанию все устанавливаемые параметры времени выполнения.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Сброс конфигурационной переменной <varname>timezone</varname> к значению по умолчанию: <screen>
+RESET timezone;
+</screen></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>RESET</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-set"/></member>
+   <member><xref linkend="sql-show"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

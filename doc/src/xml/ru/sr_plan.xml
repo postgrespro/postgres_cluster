@@ -1,0 +1,87 @@
+<!-- doc/src/xml/sr_plan.xml -->
+
+<sect1 id="sr-plan" xreflabel="sr_plan">
+  <title>sr_plan</title>
+  <indexterm zone="sr-plan"><primary>sr_plan</primary></indexterm>
+  <sect2 id="rationale">
+    <title>Обоснование</title>
+    <para>Расширение sr_plan позволяет сохранять планы выполнения запросов и использовать эти планы при последующем выполнении тех же запросов, исключая многократную оптимизацию одного и того же запроса.</para>
+    <para>Модуль sr_plan действует подобно системе Oracle Outline. Используя его, вы можете жёстко зафиксировать план выполнения. Это бывает необходимо, если вы уверены, что планировщик не сможет выработать лучший план.</para>
+    <para>Обычно системные администраторы играют с запросами интерактивно и сохраняют выбранные планы для использования с запросами, время обработки которых должно быть предсказуемым.</para>
+    <para>Затем сохранённые планы должны задействоваться приложением, выполняющим эти запросы.</para>
+  </sect2>
+  <sect2>
+    <title>Установка</title>
+    <para>Выполните в вашей базе:</para>
+    <programlisting>CREATE EXTENSION sr_plan;</programlisting>
+    <para>И отредактируйте postgresql.conf:</para>
+    <programlisting>shared_preload_libraries = 'sr_plan.so'</programlisting>
+    <para>Важно, чтобы эта библиотека предзагружалась при запуске сервера, так как применение сохранённых планов включается на уровне баз данных и не зависит от каких-либо параметров соединений.</para>
+  </sect2>
+  <sect2>
+    <title>Использование</title>
+    <para>Если вы хотите сохранить план запроса, необходимо установить переменную:</para>
+    <programlisting>set sr_plan.write_mode = true;</programlisting>
+    <para>После этого планы всех последующих запросов будут сохраняться в таблице sr_plans, пока этой переменной не будет присвоено значение false. Помните, что при этом сохраняются планы всех запросов, включая повторные. Выполните нужный вам запрос:</para>
+    <programlisting>select query_hash from sr_plans where query_hash=10;</programlisting>
+    <para>Отключите сохранение планов:</para>
+    <programlisting>set sr_plan.write_mode = false;</programlisting>
+    <para>Убедитесь в том, что план запроса сохранён:</para>
+    <programlisting>select query_hash, enable, valid, query, explain_jsonb_plan(plan) from sr_plans;
+
+ query_hash | enable | valid |                        query                         |                 explain_jsonb_plan                 
+------------+--------+-------+------------------------------------------------------+----------------------------------------------------
+ 1783086253 | f      | t     | select query_hash from sr_plans where query_hash=10; | Bitmap Heap Scan on sr_plans                      +
+            |        |       |                                                      |   Recheck Cond: (query_hash = 10)                 +
+            |        |       |                                                      |   -&gt;  Bitmap Index Scan on sr_plans_query_hash_idx+
+            |        |       |                                                      |         Index Cond: (query_hash = 10)             +
+            |        |       |                                                      | </programlisting>
+    <para>Обратите внимание на вызов функции <literal>explain_jsonb_plan</literal>, которая позволяет визуализировать план выполнения подобно тому, как это делает команда EXPLAIN.</para>
+    <para>Планы сохраняются в базе данных в виде jsonb. По умолчанию все записанные планы отключены, их использование необходимо разрешить вручную:</para>
+    <para>Чтобы разрешить использование сохранённого плана, выполните:</para>
+    <programlisting>update sr_plans set enable=true where query_hash=1783086253;</programlisting>
+    <para>(Здесь 1783086253 указано только для примера.) После этого при выполнении данного запроса будет использоваться план из таблицы <literal>sr_plans</literal>.</para>
+    <para>Кроме того, sr_plan позволяет сохранять планы параметризованных запросов. В этом случае в запросе будут некоторые константы, которые, как предполагается, не должны влиять на план.</para>
+    <para>Мы можем пометить в режиме сохранения плана эти константы как параметры запроса, используя специальную функцию <literal>_p (anyelement)</literal>. Например:</para>
+    <programlisting>=&gt;create table test_table (a numeric, b text);
+CREATE TABLE
+=&gt;insert into test_table values (1,'1'),(2,'2'),(3,'3');
+INSERT 0 3 
+=&gt; set sr_plan.write_mode = true;
+SET
+=&gt; select a,b  from test_table where a = _p(1);
+ a | b
+---+---
+ 1 | 1
+(1 row)
+
+=&gt; set sr_plan.write_mode = false;
+SET</programlisting>
+    <para>Теперь план запроса к нашей таблице сохранён с параметром. И если мы включим сохранённый план, он будет использоваться для запросов с любым значением a, если это значение будет завёрнуто в вызов функции <literal>_p()</literal>.</para>
+    <programlisting>=&gt;update sr_plans set enable = true where query=
+  'select a,b from test_table where a = _p(1)';
+UPDATE 1
+-- Эти запросы будут использовать сохранённый план
+
+=&gt;select a,b from test_table where a = _p(2);
+ a | b
+---+---
+ 2 | 2
+(1 row)
+
+=&gt;select a,b from test_table where a = _p(3);
+ a | b
+---+---
+ 3 | 3
+(1 row)
+
+-- Этот запрос не будет использовать сохранённый план, так как
+-- константа не завёрнута в _p()
+
+=&gt;select a,b from test_table where a = 1;
+ a | b
+---+---
+ 1 | 1
+(1 row)</programlisting>
+  </sect2>
+</sect1>

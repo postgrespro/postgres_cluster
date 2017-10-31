@@ -1,0 +1,550 @@
+<!-- doc/src/xml/gin.xml -->
+
+<chapter id="gin">
+<title>Индексы GIN</title>
+
+   <indexterm><primary>индекс</primary> <secondary>GIN</secondary></indexterm>
+
+<sect1 id="gin-intro">
+ <title>Введение</title>
+
+ <para><acronym>GIN</acronym> расшифровывается как &laquo;Generalized Inverted Index&raquo; (Обобщённый инвертированный индекс). <acronym>GIN</acronym> предназначается для случаев, когда индексируемые значения являются составными, а запросы, на обработку которых рассчитан индекс, ищут значения элементов в этих составных объектах. Например, такими объектами могут быть документы, а запросы могут выполнять поиск документов, содержащих определённые слова.</para>
+
+ <para>Здесь мы используем термин <firstterm>объект</firstterm>, говоря о составном значении, которое индексируется, и термин <firstterm>ключ</firstterm>, говоря о включённом в него элементе. <acronym>GIN</acronym> всегда хранит и ищет ключи, а не объекты как таковые.</para>
+
+ <para>Индекс <acronym>GIN</acronym> сохраняет набор пар (ключ, список идентификаторов), где <firstterm>список идентификаторов</firstterm> содержит идентификаторы строк, в которых находится ключ. Один и тот же идентификатор строки может фигурировать в нескольких списках, так как объект может содержать больше одного ключа. Значение каждого ключа хранится только один раз, так что индекс <acronym>GIN</acronym> очень компактен в случаях, когда один ключ встречается много раз.</para>
+
+ <para><acronym>GIN</acronym> является обобщённым в том смысле, что код метода доступа <acronym>GIN</acronym> не должен знать о конкретных операциях, которые он ускоряет. Вместо этого задаются специальные стратегии для конкретных типов данных. Стратегия определяет, как извлекаются ключи из индексируемых объектов и условий запросов, и как установить, действительно ли удовлетворяет запросу строка, содержащая некоторые значения ключей.</para>
+
+ <para>Ключевым преимуществом <acronym>GIN</acronym> является то, что он позволяет разрабатывать дополнительные типы данных с соответствующими методами доступа экспертам в предметной области типа данных, а не специалистам по СУБД. В этом аспекте он похож на <acronym>GiST</acronym>.</para>
+
+ <para>Сопровождением реализации <acronym>GIN</acronym> в <productname>&productname;</productname> в основном занимаются Фёдор Сигаев и Олег Бартунов. Дополнительные сведения о <acronym>GIN</acronym> можно получить на их <ulink url="http://www.sai.msu.su/~megera/wiki/Gin">сайте</ulink>.</para>
+</sect1>
+
+<sect1 id="gin-builtin-opclasses">
+ <title>Встроенные классы операторов</title>
+
+ <para>В базовый дистрибутив <productname>&productname;</productname> включены классы операторов <acronym>GIN</acronym>, перечисленные в <xref remap="6" linkend="gin-builtin-opclasses-table"/>. (Некоторые дополнительные модули, описанные в <xref remap="6" linkend="contrib"/>, добавляют другие классы операторов <acronym>GIN</acronym>.)</para>
+
+  <table id="gin-builtin-opclasses-table">
+   <title>Встроенные классы операторов <acronym>GIN</acronym></title>
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Имя</entry>
+      <entry>Индексируемый тип данных</entry>
+      <entry>Индексируемые операторы</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><literal>_abstime_ops</literal></entry>
+      <entry><type>abstime[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_bit_ops</literal></entry>
+      <entry><type>bit[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_bool_ops</literal></entry>
+      <entry><type>boolean[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_bpchar_ops</literal></entry>
+      <entry><type>character[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_bytea_ops</literal></entry>
+      <entry><type>bytea[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_char_ops</literal></entry>
+      <entry><type>"char"[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_cidr_ops</literal></entry>
+      <entry><type>cidr[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_date_ops</literal></entry>
+      <entry><type>date[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_float4_ops</literal></entry>
+      <entry><type>float4[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_float8_ops</literal></entry>
+      <entry><type>float8[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_inet_ops</literal></entry>
+      <entry><type>inet[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_int2_ops</literal></entry>
+      <entry><type>smallint[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_int4_ops</literal></entry>
+      <entry><type>integer[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_int8_ops</literal></entry>
+      <entry><type>bigint[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_interval_ops</literal></entry>
+      <entry><type>interval[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_macaddr_ops</literal></entry>
+      <entry><type>macaddr[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_money_ops</literal></entry>
+      <entry><type>money[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_name_ops</literal></entry>
+      <entry><type>name[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_numeric_ops</literal></entry>
+      <entry><type>numeric[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_oid_ops</literal></entry>
+      <entry><type>oid[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_oidvector_ops</literal></entry>
+      <entry><type>oidvector[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_reltime_ops</literal></entry>
+      <entry><type>reltime[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_text_ops</literal></entry>
+      <entry><type>text[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_time_ops</literal></entry>
+      <entry><type>time[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_timestamp_ops</literal></entry>
+      <entry><type>timestamp[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_timestamptz_ops</literal></entry>
+      <entry><type>timestamp with time zone[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_timetz_ops</literal></entry>
+      <entry><type>time with time zone[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_tinterval_ops</literal></entry>
+      <entry><type>tinterval[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_varbit_ops</literal></entry>
+      <entry><type>bit varying[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>_varchar_ops</literal></entry>
+      <entry><type>character varying[]</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&lt;@</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>jsonb_ops</literal></entry>
+      <entry><type>jsonb</type></entry>
+      <entry>
+       <literal>?</literal>
+       <literal>?&amp;</literal>
+       <literal>?|</literal>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>jsonb_path_ops</literal></entry>
+      <entry><type>jsonb</type></entry>
+      <entry>
+       <literal>@&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>tsvector_ops</literal></entry>
+      <entry><type>tsvector</type></entry>
+      <entry>
+       <literal>@@</literal>
+       <literal>@@@</literal>
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+ <para>Из двух классов операторов для типа <type>jsonb</type> классом по умолчанию является <literal>jsonb_ops</literal>. Класс <literal>jsonb_path_ops</literal> поддерживает меньше операторов, но обеспечивает для них большую производительность. За подробностями обратитесь к <xref remap="3" linkend="json-indexing"/>.</para>
+
+</sect1>
+
+<sect1 id="gin-extensibility">
+ <title>Расширяемость</title>
+
+ <para>Интерфейс <acronym>GIN</acronym> характеризуется высоким уровнем абстракции и таким образом требует от разработчика метода доступа реализовать только смысловое наполнение обрабатываемого типа данных. Уровень <acronym>GIN</acronym> берёт на себя заботу о параллельном доступе, поддержке журнала и поиске в структуре дерева.</para>
+
+ <para>Всё, что нужно, чтобы получить работающий метод доступа <acronym>GIN</acronym> — это реализовать несколько пользовательских методов, определяющих поведение ключей в дереве и отношения между ключами, индексируемыми объектами и поддерживаемыми запросами. Словом, <acronym>GIN</acronym> сочетает расширяемость с универсальностью, повторным использованием кода и аккуратным интерфейсом.</para>
+
+ <para>Класс операторов должен предоставить <acronym>GIN</acronym> следующие три метода: <variablelist>
+    <varlistentry>
+     <term><function>int compare(Datum a, Datum b)</function></term>
+     <listitem>
+      <para>Сравнивает два ключа (не индексированные объекты!) и возвращает целое меньше нуля, ноль или целое больше нуля, показывающее, что первый ключ меньше, равен или больше второго. Ключи NULL никогда не передаются этой функции.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>Datum *extractValue(Datum itemValue, int32 *nkeys, bool **nullFlags)</function></term>
+     <listitem>
+      <para>Возвращает массив ключей (выделенный через palloc) для индексируемого объекта. Число возвращаемых ключей должно записываться в <literal>*nkeys</literal>. Если какой-либо из ключей может быть NULL, нужно так же выделить через palloc массив из <literal>*nkeys</literal> полей <type>bool</type>, записать его адрес в <literal>*nullFlags</literal> и установить эти флаги NULL как требуется. В <literal>*nullFlags</literal> можно оставить значение <symbol>NULL</symbol> (это начальное значение), если все ключи отличны от NULL. Эта функция может возвратить <symbol>NULL</symbol>, если объект не содержит ключей.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>Datum *extractQuery(Datum query, int32 *nkeys, StrategyNumber n, bool **pmatch, Pointer **extra_data, bool **nullFlags, int32 *searchMode)</function></term>
+     <listitem>
+      <para>Возвращает массив ключей (выделенный через palloc) для запрашиваемого значения; то есть, в <literal>query</literal> поступает значение, находящееся по правую сторону индексируемого оператора, по левую сторону которого указан индексируемый столбец. Аргумент <literal>n</literal> задаёт номер стратегии оператора в классе операторов (см. <xref remap="4" linkend="xindex-strategies"/>). Часто функция <function>extractQuery</function> должна проанализировать <literal>n</literal>, чтобы определить тип данных аргумента <literal>query</literal> и выбрать метод для извлечения значений ключей. Число возвращаемых ключей должно быть записано в <literal>*nkeys</literal>. Если какие-либо ключи могут быть NULL, нужно так же выделить через palloc массив из <literal>*nkeys</literal> полей <type>bool</type>, сохранить его адрес в <literal>*nullFlags</literal>, и установить эти флаги NULL как требуется. В <literal>*nullFlags</literal> можно оставить значение <symbol>NULL</symbol> (это начальное значение), если все ключи отличны от NULL. Эта функция может возвратить <symbol>NULL</symbol>, если <literal>query</literal> не содержит ключей.</para>
+
+      <para>Выходной аргумент <literal>searchMode</literal> позволяет функции <function>extractQuery</function> выбрать режим, в котором должен выполняться поиск. Если <literal>*searchMode</literal> имеет значение <literal>GIN_SEARCH_MODE_DEFAULT</literal> (это значение устанавливается перед вызовом), подходящими кандидатами считаются только те объекты, которые соответствуют минимум одному из возвращённых ключей. Если в <literal>*searchMode</literal> установлено значение <literal>GIN_SEARCH_MODE_INCLUDE_EMPTY</literal>, то в дополнение к объектам с минимум одним совпадением ключа, подходящими кандидатами будут считаться и объекты, вообще не содержащие ключей. (Этот режим полезен для реализации, например, операторов A-является-подмножеством-B.) Если в <literal>*searchMode</literal> установлено значение <literal>GIN_SEARCH_MODE_ALL</literal>, подходящими кандидатами считаются все отличные от NULL объекты в индексе, независимо от того, встречаются ли в них возвращаемые ключи. (Этот режим намного медленнее двух других, так как он по сути требует сканирования всего индекса, но он может быть необходим для корректной обработки крайних случаев. Оператор, который выбирает этот режим в большинстве ситуаций, скорее всего не подходит для реализации в классе операторов GIN.) Символы для этих значений режима определены в <filename>access/gin.h</filename>.</para>
+
+      <para>Выходной аргумент <literal>pmatch</literal> используется, когда поддерживается частичное соответствие. Чтобы использовать его, <function>extractQuery</function> должна выделить массив из <literal>*nkeys</literal> булевских элементов и сохранить его адрес в <literal>*pmatch</literal>. Элемент этого массива должен содержать TRUE, если соответствующий ключ требует частичного соответствия, и FALSE в противном случае. Если переменная <literal>*pmatch</literal> содержит <symbol>NULL</symbol>, GIN полагает, что частичное соответствие не требуется. В эту переменную записывается <symbol>NULL</symbol> перед вызовом, так что этот аргумент можно просто игнорировать в классах операторов, не поддерживающих частичное соответствие.</para>
+
+      <para>Выходной аргумент <literal>extra_data</literal> позволяет функции <function>extractQuery</function> передать дополнительные данные методам <function>consistent</function> и <function>comparePartial</function>. Чтобы использовать его, <function>extractQuery</function> должна выделить массив из <literal>*nkeys</literal> указателей и сохранить его адрес в <literal>*extra_data</literal>, а затем сохранить всё, что ей требуется, в отдельных указателях. В эту переменную записывается <symbol>NULL</symbol> перед вызовом, поэтому данный аргумент может просто игнорироваться классами операторов, которым не нужны дополнительные данные. Если массив <literal>*extra_data</literal> задан, он целиком передаётся в метод <function>consistent</function>, а в <function>comparePartial</function> передаётся соответствующий его элемент.</para>
+
+     </listitem>
+    </varlistentry>
+  </variablelist> Класс операторов должен также предоставить функцию для проверки, соответствует ли индексированный объект запросу. Поддерживаются две её вариации: булевская <function>consistent</function> и троичная <function>triConsistent</function>. Функция <function>triConsistent</function> покрывает функциональность обоих, так что достаточно реализовать только её. Однако, если вычисление булевской вариации оказывается значительно дешевле, может иметь смысл реализовать их обе. Если представлена только булевская вариация, некоторые оптимизации, построенные на отбраковывании объектов до выборки всех ключей, отключаются. <variablelist>
+    <varlistentry>
+     <term><function>bool consistent(bool check[], StrategyNumber n, Datum query, int32 nkeys, Pointer extra_data[], bool *recheck, Datum queryKeys[], bool nullFlags[])</function></term>
+     <listitem>
+      <para>Возвращает TRUE, если индексированный объект удовлетворяет оператору запроса с номером стратегии <literal>n</literal> (или потенциально удовлетворяет, когда возвращается указание перепроверки). Эта функция не имеет прямого доступа к значению индексированного объекта, так как <acronym>GIN</acronym> не хранит сами объекты. Вместо этого, она знает о значениях ключей, извлечённых из запроса и встречающихся в данном индексированном объекте. Массив <literal>check</literal> имеет длину <literal>nkeys</literal>, что равняется числу ключей, ранее возвращённых функцией <function>extractQuery</function> для данного значения <literal>query</literal>. Элемент массива <literal>check</literal> равняется TRUE, если индексированный объект содержит соответствующий ключ запроса; то есть, если (check[i] == TRUE), то i-ый ключ в массиве результата <function>extractQuery</function> присутствует в индексированном объекте. Исходное значение <literal>query</literal> передаётся на случай, если оно потребуется методу <function>consistent</function>; с той же целью ему передаются массивы <literal>queryKeys[]</literal> и <literal>nullFlags[]</literal>, ранее возвращённые функцией <function>extractQuery</function>. В аргументе <literal>extra_data</literal> передаётся массив дополнительных данных, возвращённый функцией <function>extractQuery</function>, или <symbol>NULL</symbol>, если дополнительных данных нет.</para>
+
+      <para>Когда <function>extractQuery</function> возвращает ключ NULL в <literal>queryKeys[]</literal>, соответствующий элемент <literal>check[]</literal> содержит TRUE, если индексированный объект содержит ключ NULL; то есть можно считать, что элементы <literal>check[]</literal> отражают условие <literal>IS NOT DISTINCT FROM</literal>. Функция <function>consistent</function> может проверить соответствующий элемент <literal>nullFlags[]</literal>, если ей нужно различать соответствие с обычным значением и соответствие с NULL.</para>
+
+      <para>В случае успеха в <literal>*recheck</literal> нужно записать TRUE, если кортеж данных нужно перепроверить с оператором запроса, либо FALSE, если проверка по индексу была точной. То есть результат FALSE гарантирует, что кортеж данных не соответствует запросу; результат TRUE со значением <literal>*recheck</literal>, равным FALSE, гарантирует, что кортеж данных соответствует запросу; а результат TRUE со значением <literal>*recheck</literal>, равным TRUE, означает, что кортеж данных может соответствовать запросу, поэтому его нужно выбрать и перепроверить, применив оператор запроса непосредственно к исходному индексированному элементу.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>GinTernaryValue triConsistent(GinTernaryValue check[], StrategyNumber n, Datum query, int32 nkeys, Pointer extra_data[], Datum queryKeys[], bool nullFlags[])</function></term>
+     <listitem>
+      <para>Функция <function>triConsistent</function> подобна <function>consistent</function>, но вместо булевских значений в векторе <literal>check</literal> ей передаются три варианта сравнений для каждого ключа: <literal>GIN_TRUE</literal>, <literal>GIN_FALSE</literal> и <literal>GIN_MAYBE</literal>. <literal>GIN_FALSE</literal> и <literal>GIN_TRUE</literal> имеют обычное булевское значение, тогда как <literal>GIN_MAYBE</literal> означает, что присутствие ключа неизвестно. Когда присутствуют значения <literal>GIN_MAYBE</literal>, функция должна возвращать <literal>GIN_TRUE</literal>, только если объект удовлетворяет запросу независимо от того, содержит ли индекс соответствующие ключи запроса. Подобным образом, функция должна возвращать <literal>GIN_FALSE</literal>, только если объект не удовлетворяет запросу независимо от того, содержит ли он ключи <literal>GIN_MAYBE</literal>. Если результат зависит от элементов <literal>GIN_MAYBE</literal>, то есть соответствие нельзя утверждать или отрицать в зависимости от известных ключей запроса, функция должна вернуть <literal>GIN_MAYBE</literal>.</para>
+      <para>Когда в векторе <literal>check</literal> нет элементов <literal>GIN_MAYBE</literal>, возвращаемое значение <literal>GIN_MAYBE</literal> равнозначно установленному флагу <literal>recheck</literal> в булевской функции <function>consistent</function>.</para>
+     </listitem>
+    </varlistentry>
+  </variablelist> Дополнительно класс операторов может предоставить <acronym>GIN</acronym> следующий метод: <variablelist>
+    <varlistentry>
+     <term><function>int comparePartial(Datum partial_key, Datum key, StrategyNumber n, Pointer extra_data)</function></term>
+     <listitem>
+      <para>Сравнивает ключ запроса с частичным соответствием с ключом индекса. Возвращает целое число, знак которого отражает результат сравнения: отрицательное число означает, что ключ индекса не соответствует запросу, но нужно продолжать сканирование индекса; ноль означает, что ключ индекса соответствует запросу; положительное число означает, что сканирование индекса нужно прекратить, так как других соответствий не будет. Функции передаётся номер стратегии <literal>n</literal> оператора, сформировавшего запрос частичного соответствия, на случай, если нужно знать его смысл, чтобы определить, когда прекращать сканирование. Кроме того, ей передаётся <literal>extra_data</literal> — соответствующий элемент массива дополнительных данных, сформированного функцией <function>extractQuery</function>, либо <symbol>NULL</symbol>, если дополнительных данных нет. Значения NULL этой функции никогда не передаются.</para>
+     </listitem>
+    </varlistentry>
+  </variablelist></para>
+
+ <para>Для поддержки проверок на <quote>частичное соответствие</quote> класс операторов должен предоставить метод <function>comparePartial</function>, а метод <function>extractQuery</function> должен устанавливать параметр <literal>pmatch</literal>, когда встречается запрос на частичное соответствие. За подробностями обратитесь к <xref remap="3" linkend="gin-partial-match"/>.</para>
+
+ <para>Фактические типы данных различных значений <literal>Datum</literal>, упоминаемых выше, зависят от класса операторов. Значения объектов, передаваемые в <function>extractValue</function>, всегда имеют входной тип класса операторов, а все значения ключей должны быть типа, заданного параметром <literal>STORAGE</literal> для класса. Типом аргумента <literal>query</literal>, передаваемого функциям <function>extractQuery</function>, <function>consistent</function> и <function>triConsistent</function>, будет тот тип, что указан в качестве типа правого операнда оператора-члена класса, определяемого по номеру стратегии. Это не обязательно должен быть индексируемый тип, достаточно лишь, чтобы из него можно было извлечь значения ключей, имеющие нужный тип. Однако рекомендуется, чтобы в SQL-объявлениях этих трёх опорных функций для аргумента <literal>query</literal> назначался индексируемый тип класса операторов, даже несмотря на то, что фактический тип может быть другим, в зависимости от оператора.</para>
+
+</sect1>
+
+<sect1 id="gin-implementation">
+ <title>Реализация</title>
+
+ <para>Внутри индекс <acronym>GIN</acronym> содержит B-дерево, построенное по ключам, где каждый ключ является элементом одного или нескольких индексированных объектов (например, членом массива) и где каждый кортеж на страницах листьев содержит либо указатель на B-дерево указателей на данные (<quote>дерево идентификаторов</quote>), либо простой список указателей на данные (<quote>список идентификаторов</quote>), когда этот список достаточно мал, чтобы уместиться в одном кортеже индекса вместе со значением ключа.</para>
+
+ <para>Начиная с <productname>PostgreSQL</productname> версии 9.1, в индекс могут быть включены значения ключей, равные NULL. Кроме того, в индекс вставляются NULL для индексируемых объектов, равных NULL или не содержащих ключей, согласно функции <function>extractValue</function>. Это позволяет находить при поиске пустые объекты, когда они должны быть найдены.</para>
+
+ <para>Составные индексы <acronym>GIN</acronym> реализуются в виде одного B-дерева по составным значениям (номер столбца, значение ключа). Значения ключей для различных столбцов могут быть разных типов.</para>
+
+ <sect2 id="gin-fast-update">
+  <title>Методика быстрого обновления GIN</title>
+
+  <para>Природа инверсированного индекса такова, что обновление <acronym>GIN</acronym> обычно медленная операция: при добавлении или изменении одной строки данных может потребоваться выполнить множество добавлений записей в индекс (для каждого ключа, извлечённого из индексируемого объекта). Начиная с <productname>PostgreSQL</productname> 8.4, <acronym>GIN</acronym> может отложить большой объём этой работы, вставляя новые кортежи во временный, несортированный список записей, ожидающих индексации. Когда таблица очищается, автоматически анализируется, вызывается функция <function>gin_clean_pending_list</function> или размер этого списка временного списка становится больше чем <xref linkend="guc-gin-pending-list-limit"/>, записи переносятся в основную структуру данных <acronym>GIN</acronym> теми же методами массового добавления данных, что и при начальном создании индекса. Это значительно увеличивает скорость обновления индекса <acronym>GIN</acronym>, даже с учётом дополнительных издержек при очистке. К тому же эту дополнительную работу можно выполнить в фоновом процессе, а не в процессе, непосредственно выполняющем запросы.</para>
+
+  <para>Основной недостаток такого подхода состоит в том, что при поиске необходимо не только проверить обычный индекс, но и просканировать список ожидающих записей, так что если этот список большой, поиск значительно замедляется. Ещё один недостаток состоит в том, что хотя в основном изменения производятся быстро, изменение, при котором этот список оказывается <quote>слишком большим</quote>, влечёт необходимость немедленной очистки и поэтому выполняется гораздо дольше остальных изменений. Минимизировать эти недостатки можно, правильно организовав автоочистку.</para>
+
+  <para>Если выдержанность времени операций важнее скорости обновления, применение списка ожидающих записей можно отключить, выключив параметр хранения <literal>fastupdate</literal> для индекса <acronym>GIN</acronym>. За подробностями обратитесь к <xref remap="3" linkend="sql-createindex"/>.</para>
+ </sect2>
+
+ <sect2 id="gin-partial-match">
+  <title>Алгоритм частичного соответствия</title>
+
+  <para>GIN может поддерживать проверки <quote>частичного соответствия</quote>, когда запрос выявляет не точное соответствие одному или нескольким ключам, а возможные соответствия, попадающие в достаточно узкий диапазон значений ключей (при порядке сортировки ключей, определённым опорным методом <function>compare</function>). В этом случае метод <function>extractQuery</function> возвращает не значение ключа, которое должно соответствовать точно, а значение, определяющее нижнюю границу искомого диапазона, и устанавливает флаг <literal>pmatch</literal>. Затем диапазон ключей сканируется методом <function>comparePartial</function>. Метод <function>comparePartial</function> должен вернуть ноль при соответствии ключа индекса, отрицательное значение, если соответствия нет, но нужно продолжать проверку диапазона, и положительное значение, если ключ индекса оказался за искомым диапазоном.</para>
+ </sect2>
+
+</sect1>
+
+<sect1 id="gin-tips">
+<title>Приёмы и советы по применению GIN</title>
+
+ <variablelist>
+  <varlistentry>
+   <term>Создание или добавление</term>
+   <listitem>
+    <para>Добавление объектов в индекс <acronym>GIN</acronym> может выполняться медленно, так как для каждого объекта скорее всего потребуется добавлять множество ключей. Поэтому при массовом добавлении данных в таблицу рекомендуется удалить индекс GIN и пересоздать его по окончании добавления.</para>
+
+    <para>Начиная с <productname>PostgreSQL</productname> 8.4, этот совет менее актуален, так как выполнение индексации может быть отложенным (подробнее об этом в <xref remap="6" linkend="gin-fast-update"/>). Но при очень большом объёме изменений может быть лучше всё-таки удалить и пересоздать индекс.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><xref linkend="guc-maintenance-work-mem"/></term>
+   <listitem>
+    <para>Время построения индекса <acronym>GIN</acronym> очень сильно зависит от параметра <varname>maintenance_work_mem</varname>; не стоит экономить на рабочей памяти при создании индекса.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><xref linkend="guc-gin-pending-list-limit"/></term>
+   <listitem>
+    <para>В процессе последовательных добавлений в существующий индекс <acronym>GIN</acronym> с включённым режимом <literal>fastupdate</literal>, система будет очищать список ожидающих индексации записей, когда его размер будет превышать <varname>gin_pending_list_limit</varname>. Во избежание значительных колебаний конечного времени ответа имеет смысл проводить очистку этого списка в фоновом режиме (то есть, применяя автоочистку). Избежать операций очистки на переднем плане можно, увеличив <varname>gin_pending_list_limit</varname> или проводя автоочистку более активно. Однако, если вследствие увеличения порога операции очистки запустится очистка на переднем плане, она будет выполняться ещё дольше.</para>
+    <para>Значение <varname>gin_pending_list_limit</varname> можно переопределить для отдельных индексов GIN, изменив их параметры хранения, что позволяет задавать для каждого индекса GIN свой порог очистки. Например, можно увеличить порог только для часто обновляемых индексов GIN и оставить его низким для остальных.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><xref linkend="guc-gin-fuzzy-search-limit"/></term>
+   <listitem>
+    <para>Основной целью разработки индексов <acronym>GIN</acronym> было обеспечить поддержку хорошо расширяемого полнотекстового поиска в <productname>&productname;</productname>, а при полнотекстовом поиске нередко возникают ситуации, когда возвращается очень большой набор результатов. Однако чаще всего так происходит, когда запрос содержит очень часто встречающиеся слова, так что полученный результат всё равно оказывается бесполезным. Так как чтение множества записей с диска и последующая сортировка их может занять много времени, это неприемлемо в производственных условиях. (Заметьте, что поиск по индексу при этом выполняется очень быстро.)</para>
+    <para>Для управляемого выполнения таких запросов в <acronym>GIN</acronym> введено настраиваемое мягкое ограничение сверху для числа возвращаемых строк: конфигурационный параметр <varname>gin_fuzzy_search_limit</varname>. По умолчанию он равен 0 (то есть ограничение отсутствует). Если он имеет ненулевое значение, возвращаемый набор строк будет случайно выбранным подмножеством всего набора результатов.</para>
+    <para><quote>Мягким</quote> оно называется потому, что фактическое число возвращаемых строк может несколько отличаться от заданного значения, в зависимости от запроса и качества системного генератора случайных чисел.</para>
+    <para>Из практики, со значениями в несколько тысяч (например, 5000 &mdash; 20000) получаются приемлемые результаты.</para>
+   </listitem>
+  </varlistentry>
+ </variablelist>
+
+</sect1>
+
+<sect1 id="gin-limit">
+ <title>Ограничения</title>
+
+ <para><acronym>GIN</acronym> полагает, что индексируемые операторы являются строгими. Это означает, что функция <function>extractValue</function> вовсе не будет вызываться для значений NULL (вместо этого будет автоматически создаваться пустая запись в индексе), так же как и <function>extractQuery</function> не будет вызываться с искомым значением NULL (при этом сразу предполагается, что запрос не удовлетворяется). Заметьте, однако, что при этом поддерживаются ключи NULL, содержащиеся в составных объектах или искомых значениях.</para>
+</sect1>
+
+<sect1 id="gin-examples">
+ <title>Примеры</title>
+
+ <para>Дистрибутив исходного кода <productname>&productname;</productname> содержит классы операторов <acronym>GIN</acronym> для <type>tsvector</type> и для одномерных массивов всех внутренних типов. Поиск по префиксу в <type>tsvector</type> реализован с применением возможности проверки частичного соответствия <acronym>GIN</acronym>. Классы операторов <acronym>GIN</acronym> также содержатся в следующих дополнительных модулях (<filename>contrib</filename>): <variablelist>
+  <varlistentry>
+   <term><filename>btree_gin</filename></term>
+   <listitem>
+    <para>Функциональность B-дерева для различных типов данных</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><filename>hstore</filename></term>
+   <listitem>
+    <para>Модуль для хранения пар (ключ, значение)</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><filename>intarray</filename></term>
+   <listitem>
+    <para>Расширенная поддержка <type>int[]</type></para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><filename>pg_trgm</filename></term>
+   <listitem>
+    <para>Схожесть текста на основе статистики триграмм</para>
+   </listitem>
+  </varlistentry>
+ </variablelist></para>
+</sect1>
+
+</chapter>

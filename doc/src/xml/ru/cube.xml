@@ -1,0 +1,391 @@
+<!-- doc/src/xml/cube.xml -->
+
+<sect1 id="cube" xreflabel="cube">
+ <title>cube</title>
+
+ <indexterm zone="cube"><primary>cube (расширение)</primary></indexterm>
+
+ <para>Этот модуль реализует тип данных <type>cube</type> для представления многомерных кубов.</para>
+
+ <sect2>
+  <title>Синтаксис</title>
+
+  <para>В <xref remap="6" linkend="cube-repr-table"/> показаны внешние представления типа <type>cube</type>. Буквы <replaceable>x</replaceable>, <replaceable>y</replaceable> и т. д. обозначают числа с плавающей точкой.</para>
+
+  <table id="cube-repr-table">
+   <title>Внешние представления кубов</title>
+   <tgroup cols="2">
+    <thead>
+     <row>
+      <entry>Внешний синтаксис</entry>
+      <entry>Значение</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><literal><replaceable>x</replaceable></literal></entry>
+      <entry>Одномерная точка (или одномерный интервал нулевой длины)</entry>
+     </row>
+     <row>
+      <entry><literal>(<replaceable>x</replaceable>)</literal></entry>
+      <entry>То же, что и выше</entry>
+     </row>
+     <row>
+      <entry><literal><replaceable>x1</replaceable>,<replaceable>x2</replaceable>,...,<replaceable>xn</replaceable></literal></entry>
+      <entry>Точка в n-мерном пространстве, представленная внутри как куб нулевого объёма</entry>
+     </row>
+     <row>
+      <entry><literal>(<replaceable>x1</replaceable>,<replaceable>x2</replaceable>,...,<replaceable>xn</replaceable>)</literal></entry>
+      <entry>То же, что и выше</entry>
+     </row>
+     <row>
+      <entry><literal>(<replaceable>x</replaceable>),(<replaceable>y</replaceable>)</literal></entry>
+      <entry>Одномерный интервал, начинающийся в точке <replaceable>x</replaceable> и заканчивающийся в <replaceable>y</replaceable>, либо наоборот; порядок значения не имеет</entry>
+     </row>
+     <row>
+      <entry><literal>[(<replaceable>x</replaceable>),(<replaceable>y</replaceable>)]</literal></entry>
+      <entry>То же, что и выше</entry>
+     </row>
+     <row>
+      <entry><literal>(<replaceable>x1</replaceable>,...,<replaceable>xn</replaceable>),(<replaceable>y1</replaceable>,...,<replaceable>yn</replaceable>)</literal></entry>
+      <entry>N-мерный куб, представленный парой диагонально противоположных углов</entry>
+     </row>
+     <row>
+      <entry><literal>[(<replaceable>x1</replaceable>,...,<replaceable>xn</replaceable>),(<replaceable>y1</replaceable>,...,<replaceable>yn</replaceable>)]</literal></entry>
+      <entry>То же, что и выше</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>В каком порядке вводятся противоположные углы куба, не имеет значения. Функции, принимающие тип <type>cube</type>, автоматически меняют углы местами, чтобы получить единое внутреннее представление <quote>левый нижний &mdash; правый верхний</quote>. Когда эти углы совмещаются, в <type>cube</type> для экономии пространства хранится только один угол с флагом <quote>является точкой</quote>.</para>
+
+  <para>Пробельные символы игнорируются, так что <literal>[(<replaceable>x</replaceable>),(<replaceable>y</replaceable>)]</literal> не отличается от <literal>[ ( <replaceable>x</replaceable> ), ( <replaceable>y</replaceable> ) ]</literal>.</para>
+ </sect2>
+
+ <sect2>
+  <title>Точность</title>
+
+  <para>Значения хранятся внутри как 64-битные числа с плавающей точкой. Это значит, что числа с более чем 16 значащими цифрами будут усекаться.</para>
+ </sect2>
+
+ <sect2>
+  <title>Использование</title>
+
+  <para>В <xref remap="6" linkend="cube-operators-table"/> показаны операторы, предназначенные для работы с типом <type>cube</type>.</para>
+
+  <table id="cube-operators-table">
+   <title>Операторы для кубов</title>
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Оператор</entry>
+      <entry>Результат</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><literal>a = b</literal></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Кубы a и b идентичны.</entry>
+     </row>
+
+     <row>
+      <entry><literal>a &amp;&amp; b</literal></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Кубы a и b пересекаются.</entry>
+     </row>
+
+     <row>
+      <entry><literal>a @&gt; b</literal></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Куб a включает куб b.</entry>
+     </row>
+
+     <row>
+      <entry><literal>a &lt;@ b</literal></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Куб a включён в куб b.</entry>
+     </row>
+
+     <row>
+      <entry><literal>a &lt; b</literal></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Куб a меньше куба b.</entry>
+     </row>
+
+     <row>
+      <entry><literal>a &lt;= b</literal></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Куб a меньше или равен кубу b.</entry>
+     </row>
+
+     <row>
+      <entry><literal>a &gt; b</literal></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Куб a больше куба b.</entry>
+     </row>
+
+     <row>
+      <entry><literal>a &gt;= b</literal></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Куб a больше или равен кубу b.</entry>
+     </row>
+
+     <row>
+      <entry><literal>a &lt;&gt; b</literal></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Куб a не равен кубу b.</entry>
+     </row>
+
+     <row>
+      <entry><literal>a -&gt; n</literal></entry>
+      <entry><type>float8</type></entry>
+      <entry>Выдаёт <replaceable>n</replaceable>-ную координату куба (отсчитывая с 1).</entry>
+     </row>
+
+     <row>
+      <entry><literal>a ~&gt; n</literal></entry>
+      <entry><type>float8</type></entry>
+      <entry>Выдаёт <replaceable>n</replaceable>-ную координату в <quote>нормализованном</quote> представлении куба, в котором координаты углов приводятся к виду <quote>левый нижний &mdash; правый верхний</quote>; то есть первой идёт точка с минимальными значениями по каждому измерению.</entry>
+     </row>
+
+     <row>
+      <entry><literal>a &lt;-&gt; b</literal></entry>
+      <entry><type>float8</type></entry>
+      <entry>Евклидово расстояние между a и b.</entry>
+     </row>
+
+     <row>
+      <entry><literal>a &lt;#&gt; b</literal></entry>
+      <entry><type>float8</type></entry>
+      <entry>Расстояние городских кварталов (метрика L-1) между a и b.</entry>
+     </row>
+
+     <row>
+      <entry><literal>a &lt;=&gt; b</literal></entry>
+      <entry><type>float8</type></entry>
+      <entry>Расстояние Чебышева (метрика L-inf) между a и b.</entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>(До версии PostgreSQL 8.2 операторы включения <literal>@&gt;</literal> и <literal>&lt;@</literal> обозначались соответственно как <literal>@</literal> и <literal>~</literal>. Эти имена по-прежнему действуют, но считаются устаревшими и в конце концов будут упразднены. Заметьте, что старые имена произошли из соглашения, которому раньше следовали ключевые геометрические типы данных!)</para>
+
+  <para>Скалярные операторы упорядочивания (<literal>&lt;</literal>, <literal>&gt;=</literal> и т. д.) не имеют большого смысла ни для каких практических целей, кроме сортировки. Эти операторы сначала сравнивают первые координаты и если они равны, сравнивают вторые и т. д. Они предназначены в основном для поддержки класса операторов индекса-B-дерева для типа <type>cube</type>, который может быть полезен, например, если вы хотите создать ограничение UNIQUE для столбца типа <type>cube</type>.</para>
+
+  <para>Модуль <filename>cube</filename> также предоставляет класс операторов индекса GiST для значений <type>cube</type>. Индекс GiST для <type>cube</type> может применяться для поиска значений в выражениях с операторами <literal>=</literal>, <literal>&amp;&amp;</literal>, <literal>@&gt;</literal> и <literal>&lt;@</literal> в предложениях <literal>WHERE</literal>.</para>
+
+  <para>GiST-индекс для <type>cube</type> может быть полезен и для поиска ближайших соседей с использованием операторов метрики <literal>&lt;-&gt;</literal>, <literal>&lt;#&gt;</literal> и <literal>&lt;=&gt;</literal> в предложениях <literal>ORDER BY</literal>. Например, ближайшего соседа точки в трёхмерном пространстве (0.5, 0.5, 0.5) можно эффективно найти так: <programlisting>SELECT c FROM test ORDER BY c &lt;-&gt; cube(array[0.5,0.5,0.5]) LIMIT 1;</programlisting></para>
+
+  <para>Оператор <literal>~&gt;</literal> может также использоваться таким образом, чтобы эффективно выдавать первые несколько значений, отсортированных по выбранной координате. Например, чтобы получить первые несколько кубов, упорядоченных по возрастанию первой координаты (левого нижнего угла), можно использовать следующий запрос: <programlisting>SELECT c FROM test ORDER BY c ~&gt; 1 LIMIT 5;</programlisting> А чтобы получить двумерные кубы, отсортированные по убыванию первой координаты правого верхнего угла: <programlisting>SELECT c FROM test ORDER BY c ~&gt; 3 DESC LIMIT 5;</programlisting></para>
+
+  <para>В <xref remap="6" linkend="cube-functions-table"/> перечислены все доступные функции.</para>
+
+  <table id="cube-functions-table">
+   <title>Функции для работы с кубами</title>
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry>Функция</entry>
+      <entry>Результат</entry>
+      <entry>Описание</entry>
+      <entry>Пример</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><literal>cube(float8)</literal></entry>
+      <entry><type>cube</type></entry>
+      <entry>Создаёт одномерный куб, у которого обе координаты равны.</entry>
+      <entry>
+       <literal>cube(1) == '(1)'</literal>
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>cube(float8, float8)</literal></entry>
+      <entry><type>cube</type></entry>
+      <entry>Создаёт одномерный куб.</entry>
+      <entry>
+       <literal>cube(1,2) == '(1),(2)'</literal>
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>cube(float8[])</literal></entry>
+      <entry><type>cube</type></entry>
+      <entry>Создаёт куб нулевого объёма по координатам, определяемым массивом.</entry>
+      <entry>
+       <literal>cube(ARRAY[1,2]) == '(1,2)'</literal>
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>cube(float8[], float8[])</literal></entry>
+      <entry><type>cube</type></entry>
+      <entry>Создаёт куб с координатами правого верхнего и левого нижнего углов, определяемыми двумя массивами, которые должны быть одинаковой длины.</entry>
+      <entry>
+       <literal>cube(ARRAY[1,2], ARRAY[3,4]) == '(1,2),(3,4)'</literal>
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>cube(cube, float8)</literal></entry>
+      <entry><type>cube</type></entry>
+      <entry>Создаёт новый куб, добавляя размерность к существующему кубу с одинаковым значением новой координаты для обеих углов. Это бывает полезно, когда нужно построить кубы поэтапно из вычисляемых значений.</entry>
+      <entry>
+       <literal>cube('(1,2),(3,4)'::cube, 5) == '(1,2,5),(3,4,5)'</literal>
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>cube(cube, float8, float8)</literal></entry>
+      <entry><type>cube</type></entry>
+      <entry>Создаёт новый куб, добавляя размерность к существующему кубу. Это бывает полезно, когда нужно построить кубы поэтапно из вычисляемых значений.</entry>
+      <entry>
+       <literal>cube('(1,2),(3,4)'::cube, 5, 6) == '(1,2,5),(3,4,6)'</literal>
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>cube_dim(cube)</literal></entry>
+      <entry><type>integer</type></entry>
+      <entry>Возвращает число размерностей куба.</entry>
+      <entry>
+       <literal>cube_dim('(1,2),(3,4)') == '2'</literal>
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>cube_ll_coord(cube, integer)</literal></entry>
+      <entry><type>float8</type></entry>
+      <entry>Возвращает значение <replaceable>n</replaceable>-ной координаты левого нижнего угла куба.</entry>
+      <entry>
+       <literal>cube_ll_coord('(1,2),(3,4)', 2) == '2'</literal>
+      </entry>
+     </row>
+
+    <row>
+      <entry><literal>cube_ur_coord(cube, integer)</literal></entry>
+      <entry><type>float8</type></entry>
+      <entry>Возвращает значение <replaceable>n</replaceable>-ной координаты правого верхнего угла куба.</entry>
+      <entry>
+       <literal>cube_ur_coord('(1,2),(3,4)', 2) == '4'</literal>
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>cube_is_point(cube)</literal></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Возвращает true, если куб является точкой, то есть если два определяющих его угла совпадают.</entry>
+      <entry>
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>cube_distance(cube, cube)</literal></entry>
+      <entry><type>float8</type></entry>
+      <entry>Возвращает расстояние между двумя кубами. Если оба куба являются точками, вычисляется обычная функция расстояния.</entry>
+      <entry>
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>cube_subset(cube, integer[])</literal></entry>
+      <entry><type>cube</type></entry>
+      <entry>Создаёт новый куб из существующего, используя список размерностей из массива. Может применяться для получения координат углов в одном измерении, для удаления измерений и изменения их порядка.</entry>
+      <entry>
+       <literal>cube_subset(cube('(1,3,5),(6,7,8)'), ARRAY[2]) == '(3),(7)'</literal>
+       <literal>cube_subset(cube('(1,3,5),(6,7,8)'), ARRAY[3,2,1,1]) == '(5,3,1,1),(8,7,6,6)'</literal>
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>cube_union(cube, cube)</literal></entry>
+      <entry><type>cube</type></entry>
+      <entry>Создаёт объединение двух кубов.</entry>
+      <entry>
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>cube_inter(cube, cube)</literal></entry>
+      <entry><type>cube</type></entry>
+      <entry>Создаёт пересечение двух кубов.</entry>
+      <entry>
+      </entry>
+     </row>
+
+     <row>
+      <entry><literal>cube_enlarge(c cube, r double, n integer)</literal></entry>
+      <entry><type>cube</type></entry>
+      <entry>Увеличивает размер куба на заданный радиус <replaceable>r</replaceable> как минимум в <replaceable>n</replaceable> измерениях. Если радиус отрицательный, куб, наоборот, уменьшается. Все определённые измерения изменяются на величину радиуса <replaceable>r</replaceable>. Координаты левого нижнего угла уменьшаются на <replaceable>r</replaceable>, а координаты правого верхнего увеличиваются на <replaceable>r</replaceable>. Если координата левого нижнего угла становится больше соответствующей координаты правого верхнего (это возможно, только когда <replaceable>r</replaceable> &lt; 0), обоим координатам присваивается их среднее значение. Если <replaceable>n</replaceable> превышает число определённых измерений и куб увеличивается (<replaceable>r</replaceable> &gt; 0), добавляются дополнительные размерности, недостающие до <replaceable>n</replaceable>; начальным значением для дополнительных координат считается ноль. Эта функция полезна для создания окружающих точку прямоугольников для поиска ближайших точек.</entry>
+      <entry>
+       <literal>cube_enlarge('(1,2),(3,4)', 0.5, 3) == '(0.5,1.5,-0.5),(3.5,4.5,0.5)'</literal>
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+ </sect2>
+
+ <sect2>
+  <title>Поведение по умолчанию</title>
+
+  <para>Я полагаю, что это объединение:</para>
+<programlisting>select cube_union('(0,5,2),(2,3,1)', '0');
+cube_union
+-------------------
+(0, 0, 0),(2, 5, 2)
+(1 row)</programlisting>
+
+   <para>не противоречит здравому смыслу, как и это пересечение</para>
+
+<programlisting>select cube_inter('(0,-1),(1,1)', '(-2),(2)');
+cube_inter
+-------------
+(0, 0),(1, 0)
+(1 row)</programlisting>
+
+   <para>Во всех бинарных операциях с кубами разных размерностей, я полагаю, что куб с меньшей размерностью является декартовой проекцией; то есть в опущенных в строковом представлении координатах предполагаются нули. Таким образом, показанные выше вызовы равнозначны следующим:</para>
+
+<programlisting>cube_union('(0,5,2),(2,3,1)','(0,0,0),(0,0,0)');
+cube_inter('(0,-1),(1,1)','(-2,0),(2,0)');</programlisting>
+
+   <para>В следующем предикате включения применяется синтаксис точек, хотя фактически второй аргумент представляется внутри кубом. Этот синтаксис избавляет от необходимости определять отдельный тип точек и функции для предикатов (cube,point).</para>
+
+<programlisting>select cube_contains('(0,0),(1,1)', '0.5,0.5');
+cube_contains
+--------------
+t
+(1 row)</programlisting>
+ </sect2>
+
+ <sect2>
+  <title>Замечания</title>
+
+  <para>Примеры использования можно увидеть в регрессионном тесте <filename>sql/cube.sql</filename>.</para>
+
+  <para>Во избежание некорректного применения этого типа, число размерностей кубов искусственно ограничено значением 100. Если это ограничение вас не устраивает, его можно изменить в <filename>cubedata.h</filename>.</para>
+ </sect2>
+
+ <sect2>
+  <title>Благодарности</title>
+
+  <para>Первый автор: Джин Селков мл. <email>selkovjr@mcs.anl.gov</email>, Аргоннская национальная лаборатория, Отдел математики и компьютерных наук</para>
+
+  <para>Я очень благодарен в первую очередь профессору Джо Геллерштейну (<ulink url="http://db.cs.berkeley.edu/jmh/"/>) за пояснение сути GiST (<ulink url="http://gist.cs.berkeley.edu/"/>) и его бывшему студенту, Энди Донгу, за пример, написанный для Illustra. Я также признателен всем разработчикам Postgres в настоящем и прошлом за возможность создать свой собственный мир и спокойно жить в нём. Ещё я хотел бы выразить признательность Аргоннской лаборатории и Министерству энергетики США за годы постоянной поддержки моих исследований в области баз данных.</para>
+
+  <para>Небольшие изменения в этот пакет внёс Бруно Вольф III <email>bruno@wolff.to</email> в августе/сентябре 2002 г. В том числе он перешёл от одинарной к двойной точности и добавил несколько новых функций.</para>
+
+  <para>Дополнительные изменения внёс Джошуа Рейх <email>josh@root.net</email> в июле 2006 г. В частности, он добавил <literal>cube(float8[], float8[])</literal>, подчистил код и перевёл его на протокол вызовов версии V1 с устаревшего протокола V0.</para>
+ </sect2>
+
+</sect1>

@@ -1,0 +1,148 @@
+<!--
+doc/src/xml/ref/security_label.xml
+&productname; documentation
+-->
+
+<refentry id="sql-security-label">
+ <indexterm zone="sql-security-label"><primary>SECURITY LABEL</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SECURITY LABEL</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SECURITY LABEL</refname>
+  <refpurpose>определить или изменить метку безопасности, применённую к объекту</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>SECURITY LABEL [ FOR <replaceable class="parameter">провайдер</replaceable> ] ON
+{
+  TABLE <replaceable class="parameter">имя_объекта</replaceable> |
+  COLUMN <replaceable class="parameter">имя_таблицы</replaceable>.<replaceable class="parameter">имя_столбца</replaceable> |
+  AGGREGATE <replaceable class="parameter">имя_агрегатной_функции</replaceable> ( <replaceable>сигнатура_агр_функции</replaceable> ) |
+  DATABASE <replaceable class="parameter">имя_объекта</replaceable> |
+  DOMAIN <replaceable class="parameter">имя_объекта</replaceable> |
+  EVENT TRIGGER <replaceable class="parameter">имя_объекта</replaceable> |
+  FOREIGN TABLE <replaceable class="parameter">имя_объекта</replaceable>
+  FUNCTION <replaceable class="parameter">имя_функции</replaceable> ( [ [ <replaceable class="parameter">режим_аргумента</replaceable> ] [ <replaceable class="parameter">имя_аргумента</replaceable> ] <replaceable class="parameter">тип_аргумента</replaceable> [, ...] ] ) |
+  LARGE OBJECT <replaceable class="parameter">oid_большого_объекта</replaceable> |
+  MATERIALIZED VIEW <replaceable class="parameter">имя_объекта</replaceable> |
+  [ PROCEDURAL ] LANGUAGE <replaceable class="parameter">имя_объекта</replaceable> |
+  ROLE <replaceable class="parameter">имя_объекта</replaceable> |
+  SCHEMA <replaceable class="parameter">имя_объекта</replaceable> |
+  SEQUENCE <replaceable class="parameter">имя_объекта</replaceable> |
+  TABLESPACE <replaceable class="parameter">имя_объекта</replaceable> |
+  TYPE <replaceable class="parameter">имя_объекта</replaceable> |
+  VIEW <replaceable class="parameter">имя_объекта</replaceable>
+} IS '<replaceable class="parameter">метка</replaceable>'
+
+<phrase>Здесь <replaceable>сигнатура_агр_функции</replaceable>:</phrase>
+
+* |
+[ <replaceable>режим_аргумента</replaceable> ] [ <replaceable>имя_аргумента</replaceable> ] <replaceable>тип_аргумента</replaceable> [ , ... ] |
+[ [ <replaceable>режим_аргумента</replaceable> ] [ <replaceable>имя_аргумента</replaceable> ] <replaceable>тип_аргумента</replaceable> [ , ... ] ] ORDER BY [ <replaceable>режим_аргумента</replaceable> ] [ <replaceable>имя_аргумента</replaceable> ] <replaceable>тип_аргумента</replaceable> [ , ... ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>SECURITY LABEL</command> применяет метку безопасности к объекту базы данных. С определённым объектом может быть связано произвольное количество меток безопасности, по одной для каждого провайдера. Провайдеры меток представляют собой загружаемые модули, которые регистрирует себя, вызывая функцию <function>register_label_provider</function>.</para>
+
+  <note>
+    <para><function>register_label_provider</function> ­­­— это не SQL-функция; её можно вызывать только из скомпилированного кода C, загруженного сервером.</para>
+  </note>
+
+  <para>Провайдер меток определяет, допустима ли заданная метка и разрешено ли применять эту метку к указанному объекту. Какой смысл вкладывается в данную метку, так же определяет провайдер меток. <productname>&productname;</productname> не накладывает никаких ограничений на то, как провайдер должен интерпретировать метки безопасности; он просто обеспечивает механизм их хранения. На практике, этот механизм реализован для того, чтобы в базы данных можно было интегрировать системы мандатного управления доступом (MAC) на базе меток, такие как <productname>SE-Linux</productname>. Такие системы принимают все решения по ограничению доступа, учитывая метки объектов, а не традиционные сущности избирательного управления доступом (DAC), такие как пользователи и группы.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя_объекта</replaceable></term>
+    <term><replaceable class="parameter">имя_таблицы.имя_столбца</replaceable></term>
+    <term><replaceable class="parameter">имя_агрегатной_функции</replaceable></term>
+    <term><replaceable class="parameter">имя_функции</replaceable></term>
+    <listitem>
+     <para>Имя помечаемого объекта. Имена таблиц, агрегатных и обычных функций, доменов, сторонних таблиц, последовательностей и представлений можно дополнить именем схемы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">провайдер</replaceable></term>
+    <listitem>
+     <para>Имя провайдера, с которым будет связана эта метка. Указанный провайдер должен быть загружен и готов выполнять операцию размечивания. Если загружен всего один провайдер, его имя можно опустить для краткости.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">режим_аргумента</replaceable></term>
+
+    <listitem>
+     <para>Режим аргумента обычной или агрегатной функции: <literal>IN</literal>, <literal>OUT</literal>, <literal>INOUT</literal> или <literal>VARIADIC</literal>. По умолчанию подразумевается <literal>IN</literal>. Заметьте, что <command>SECURITY LABEL</command> на самом деле не учитывает аргументы <literal>OUT</literal>, так как для идентификации функции нужны только типы входных аргументов. Поэтому достаточно перечислить только аргументы <literal>IN</literal>, <literal>INOUT</literal> и <literal>VARIADIC</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_аргумента</replaceable></term>
+
+    <listitem>
+     <para>Имя аргумента обычной или агрегатной функции. Заметьте, что на самом деле <command>SECURITY LABEL</command> не обращает внимание на имена аргументов, так как для однозначной идентификации функции достаточно только типов аргументов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_аргумента</replaceable></term>
+
+    <listitem>
+     <para>Тип данных аргумента обычной или агрегатной функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">oid_большого_объекта</replaceable></term>
+    <listitem>
+     <para>OID большого объекта.</para>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+     <term><literal>PROCEDURAL</literal></term>
+
+     <listitem>
+      <para>Это слово не несёт смысловой нагрузки.</para>
+     </listitem>
+    </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">метка</replaceable></term>
+    <listitem>
+     <para>Новая метка безопасности, записанная в виде строковой константы, либо <literal>NULL</literal>, если метку безопасности нужно удалить.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Следующий пример показывает, как можно изменить метку безопасности для таблицы. <programlisting>SECURITY LABEL FOR selinux ON TABLE mytable IS 'system_u:object_r:sepgsql_table_t:s0';</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+  <para>Команда <command>SECURITY LABEL</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+  <simplelist type="inline">
+   <member><xref linkend="sepgsql"/></member>
+   <member><filename>src/test/modules/dummy_seclabel</filename></member>
+  </simplelist>
+ </refsect1>
+</refentry>

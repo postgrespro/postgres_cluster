@@ -1,0 +1,74 @@
+<!--
+doc/src/xml/ref/commit_prepared.xml
+&productname; documentation
+-->
+
+<refentry id="sql-commit-prepared">
+ <indexterm zone="sql-commit-prepared"><primary>COMMIT PREPARED</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>COMMIT PREPARED</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>COMMIT PREPARED</refname>
+  <refpurpose>зафиксировать транзакцию, которая ранее была подготовлена для двухфазной фиксации</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>COMMIT PREPARED <replaceable class="parameter">id_транзакции</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>COMMIT PREPARED</command> фиксирует транзакцию, находящуюся в подготовленном состоянии.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">id_транзакции</replaceable></term>
+    <listitem>
+     <para>Идентификатор транзакции, которая будет зафиксирована.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Зафиксировать подготовленную транзакцию может либо пользователь, выполнявший её изначально, либо суперпользователь. При этом не обязательно работать в том же сеансе, где выполнялась транзакция.</para>
+
+  <para>Эту команду нельзя выполнить внутри блока транзакции. Подготовленная транзакция фиксируется немедленно.</para>
+
+  <para>Все существующие в текущий момент подготовленные транзакции показываются в системном представлении <link linkend="view-pg-prepared-xacts"><structname>pg_prepared_xacts</structname></link>.</para>
+ </refsect1>
+
+ <refsect1 id="sql-commit-prepared-examples">
+  <title id="sql-commit-prepared-examples-title">Примеры</title>
+  <para>Фиксация транзакции, имеющей идентификатор <literal>foobar</literal>: <programlisting>COMMIT PREPARED 'foobar';</programlisting></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>COMMIT PREPARED</command> является расширением <productname>&productname;</productname>. Он предназначен для использования внешними системами управления транзакциями, некоторые из которых работают по стандартам (например, X/Open XA), но сторона SQL в этих системах не стандартизирована.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-prepare-transaction"/></member>
+   <member><xref linkend="sql-rollback-prepared"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

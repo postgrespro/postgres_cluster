@@ -1,0 +1,86 @@
+<!--
+doc/src/xml/ref/drop_tsconfig.xml
+&productname; documentation
+-->
+
+<refentry id="sql-droptsconfig">
+ <indexterm zone="sql-droptsconfig"><primary>DROP TEXT SEARCH CONFIGURATION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP TEXT SEARCH CONFIGURATION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP TEXT SEARCH CONFIGURATION</refname>
+  <refpurpose>удалить конфигурацию текстового поиска</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP TEXT SEARCH CONFIGURATION [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP TEXT SEARCH CONFIGURATION</command> удаляет существующую конфигурацию текстового поиска. Выполнить эту команду может только владелец конфигурации.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если конфигурация текстового поиска не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующей конфигурации текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данной конфигурации текстового поиска, и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении конфигурации текстового поиска, если от неё зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление конфигурации текстового поиска <literal>my_english</literal>: <programlisting>DROP TEXT SEARCH CONFIGURATION my_english;</programlisting> Эта команда не будет выполнена, если какие-либо индексы ссылаются на эту конфигурацию в вызовах <function>to_tsvector</function>. Чтобы удалить такие индексы вместе с конфигурацией, следует добавить указание <literal>CASCADE</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>DROP TEXT SEARCH CONFIGURATION</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altertsconfig"/></member>
+   <member><xref linkend="sql-createtsconfig"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

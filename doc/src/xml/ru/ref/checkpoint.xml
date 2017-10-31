@@ -1,0 +1,38 @@
+<!-- doc/src/xml/ref/checkpoint.xml -->
+
+<refentry id="sql-checkpoint">
+ <indexterm zone="sql-checkpoint"><primary>CHECKPOINT</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CHECKPOINT</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CHECKPOINT</refname>
+  <refpurpose>записать контрольную точку в журнал транзакций</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CHECKPOINT</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Контрольная точка — это момент в последовательности событий в журнале транзакций, когда все файлы данных приводятся в актуальное состояние, соответствующее информации в журнале. При этом все файлы данных сохраняются на диск. Более подробно о том, что происходит во время контрольной точки, можно узнать в <xref remap="6" linkend="wal-configuration"/>.</para>
+
+  <para>Команда <command>CHECKPOINT</command> приводит к принудительному выполнению контрольной точки в момент вызова, не дожидаясь периодической контрольной точки, производимой системой по графику (это настраивается параметрами в <xref linkend="runtime-config-wal-checkpoints"/>). Команда <command>CHECKPOINT</command> не предназначена для применения при обычном использовании базы данных.</para>
+
+  <para>Если <command>CHECKPOINT</command> выполняется в процессе восстановления, вместо записи новой контрольной точки производится точка перезапуска (см. <xref remap="4" linkend="wal-configuration"/>).</para>
+
+  <para>Выполнять <command>CHECKPOINT</command> могут только суперпользователи.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Команда <command>CHECKPOINT</command> является языковым расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+</refentry>

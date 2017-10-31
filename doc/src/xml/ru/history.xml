@@ -1,0 +1,73 @@
+<!-- doc/src/xml/history.xml -->
+
+<sect1 id="history">
+ <title>Краткая история <productname>PostgreSQL</productname></title>
+
+ <indexterm zone="history"><primary>история</primary> <secondary>PostgreSQL</secondary></indexterm>
+
+ <para>Объектно-реляционная система управления базами данных, именуемая сегодня <productname>PostgreSQL</productname>, произошла от пакета <productname>POSTGRES</productname>, написанного в Беркли, Калифорнийском университете. После двух десятилетий разработки <productname>PostgreSQL</productname> стал самой развитой СУБД с открытым исходным кодом.</para>
+
+ <sect2 id="history-berkeley">
+  <title>Проект <productname>POSTGRES</productname> в Беркли</title>
+
+  <indexterm zone="history-berkeley"><primary>POSTGRES</primary></indexterm>
+
+  <para>Проект <productname>POSTGRES</productname>, возглавляемый профессором Майклом Стоунбрейкером, спонсировали агентство <acronym>DARPA</acronym> при Минобороны США, Управление военных исследований (<acronym>ARO</acronym>), Национальный Научный Фонд (<acronym>NSF</acronym>) и компания ESL, Inc. Реализация <productname>POSTGRES</productname> началась в 1986 г. Первоначальные концепции системы были представлены в документе <xref remap="6" linkend="ston86"/>, а описание первой модели данных появилось в <xref remap="6" linkend="rowe87"/>. Проект системы правил тогда был представлен в <xref remap="6" linkend="ston87a"/>. Суть и архитектура менеджера хранилища были расписаны в <xref remap="6" linkend="ston87b"/>.</para>
+
+  <para>С тех пор <productname>POSTGRES</productname> прошёл несколько этапов развития. Первая <quote>демоверсия</quote> заработала в 1987 и была показана в 1988 на конференции <acronym>ACM-SIGMOD</acronym>. Версия 1, описанная в <xref remap="6" linkend="ston90a"/>, была выпущена для нескольких внешних пользователей в июне 1989. В ответ на критику первой системы правил (<xref linkend="ston89"/>), она была переделана (<xref linkend="ston90b"/>), и в версии 2, выпущенной в июне 1990, была уже новая система правил. В 1991 вышла версия 3, в которой появилась поддержка различных менеджеров хранилища, улучшенный исполнитель запросов и переписанная система правил. Последующие выпуски до <productname>Postgres95</productname> (см. ниже) в основном были направлены на улучшение портируемости и надёжности.</para>
+
+  <para><productname>POSTGRES</productname> применялся для реализации множества исследовательских и производственных задач. В их числе: система анализа финансовых данных, пакет мониторинга работы реактивных двигателей, база данных наблюдений за астероидами, база данных медицинской информации, несколько географических информационных систем. <productname>POSTGRES</productname> также использовался для обучения в нескольких университетах. Наконец, компания Illustra Information Technologies (позже ставшая частью <ulink url="http://www.informix.com/"><productname>Informix</productname></ulink>, которая сейчас принадлежит <ulink url="http://www.ibm.com/">IBM</ulink>) воспользовалась кодом и нашла ему коммерческое применение. В конце 1992 <productname>POSTGRES</productname> стал основной СУБД научного вычислительного проекта <ulink url="http://meteora.ucsd.edu/s2k/s2k_home.html">Sequoia 2000</ulink>.</para>
+
+  <para>В 1993 число внешних пользователей удвоилось. Стало очевидно, что обслуживание кода и поддержка занимает слишком много времени, и его не хватает на исследования. Для снижения этой нагрузки проект <productname>POSTGRES</productname> в Беркли был официально закрыт на версии 4.2.</para>
+ </sect2>
+
+ <sect2 id="history-postgres95">
+  <title><productname>Postgres95</productname></title>
+
+  <indexterm zone="history-postgres95"><primary>Postgres95</primary></indexterm>
+
+  <para>В 1994 Эндри Ю и Джолли Чен добавили в <productname>POSTGRES</productname> интерпретатор языка SQL. Уже с новым именем <productname>Postgres95</productname> был опубликован в Интернете и начал свой путь как потомок разработанного в Беркли <productname>POSTGRES</productname>, с открытым исходным кодом.</para>
+
+  <para>Код <productname>Postgres95</productname> был приведён в полное соответствие с ANSI C и уменьшился на 25%. Благодаря множеству внутренних изменений он стал быстрее и удобнее. <productname>Postgres95</productname> версии 1.0.x работал примерно на 30-50% быстрее <productname>POSTGRES</productname> версии 4.2 (по тестам Wisconsin Benchmark). Помимо исправления ошибок, произошли следующие изменения: <itemizedlist>
+    <listitem>
+     <para>На смену языку запросов PostQUEL пришёл <acronym>SQL</acronym> (реализованный в сервере). (Интерфейсная библиотека <link linkend="libpq">libpq</link> унаследовала своё имя от PostQUEL.) Подзапросы не поддерживались до выхода <productname>PostgreSQL</productname> (см. ниже), хотя их можно было имитировать в <productname>Postgres95</productname> с помощью пользовательских функций <acronym>SQL</acronym>. Были заново реализованы агрегатные функции. Также появилась поддержка предложения <literal>GROUP BY</literal>.</para>
+    </listitem>
+
+    <listitem>
+     <para>Для интерактивных SQL-запросов была разработана новая программа (<application>psql</application>), которая использовала <acronym>GNU</acronym> <application>Readline</application>. Старая программа <application>monitor</application> стала не нужна.</para>
+    </listitem>
+
+    <listitem>
+     <para>Появилась новая клиентская библиотека <filename>libpgtcl</filename> для поддержки <acronym>Tcl</acronym>-клиентов. Пример оболочки, <command>pgtclsh</command>, представлял новые команды Tcl для взаимодействия программ <application>Tcl</application> с сервером <productname>Postgres95</productname>.</para>
+    </listitem>
+
+    <listitem>
+     <para>Был усовершенствован интерфейс для работы с большими объектами. Единственным механизмом хранения таких данных стали инверсионные объекты. (Инверсионная файловая система была удалена.)</para>
+    </listitem>
+
+    <listitem>
+     <para>Удалена система правил на уровне экземпляров; перезаписывающие правила сохранились.</para>
+    </listitem>
+
+    <listitem>
+     <para>С исходным кодом стали распространяться краткие описания возможностей стандартного <acronym>SQL</acronym>, а также самого <productname>Postgres95</productname>.</para>
+    </listitem>
+
+    <listitem>
+     <para>Для сборки использовался <acronym>GNU</acronym> make (вместо <acronym>BSD</acronym> make). Кроме того, стало возможно скомпилировать <productname>Postgres95</productname> с немодифицированной версией <productname>GCC</productname> (было исправлено выравнивание данных).</para>
+    </listitem>
+   </itemizedlist></para>
+ </sect2>
+
+ <sect2>
+  <title><productname>PostgreSQL</productname></title>
+
+  <para>В 1996 г. стало понятно, что имя <quote>Postgres95</quote> не выдержит испытание временем. Мы выбрали новое имя, <productname>PostgreSQL</productname>, отражающее связь между оригинальным <productname>POSTGRES</productname> и более поздними версиями с поддержкой <acronym>SQL</acronym>. В то же время, мы продолжили нумерацию версий с 6.0, вернувшись к последовательности, начатой в проекте Беркли <productname>POSTGRES</productname>.</para>
+
+  <para>Многие продолжают называть <productname>PostgreSQL</productname> именем <quote>Postgres</quote> (теперь уже редко заглавными буквами) по традиции или для простоты. Это название закрепилось как псевдоним или неформальное обозначение.</para>
+
+  <para>В процессе разработки <productname>Postgres95</productname> основными задачами были поиск и понимание существующих проблем в серверном коде. С переходом к <productname>PostgreSQL</productname> акценты сместились к реализации новых функций и возможностей, хотя работа продолжается во всех направлениях.</para>
+
+  <para>Подробнее узнать о том, что происходило с <productname>PostgreSQL</productname> с тех пор, можно в <xref remap="6" linkend="release"/>.</para>
+ </sect2>
+</sect1>

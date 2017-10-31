@@ -1,0 +1,110 @@
+<!--
+doc/src/xml/ref/drop_function.xml
+&productname; documentation
+-->
+
+<refentry id="sql-dropfunction">
+ <indexterm zone="sql-dropfunction"><primary>DROP FUNCTION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP FUNCTION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP FUNCTION</refname>
+  <refpurpose>удалить функцию</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP FUNCTION [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> ( [ [ <replaceable class="parameter">режим_аргумента</replaceable> ] [ <replaceable class="parameter">имя_аргумента</replaceable> ] <replaceable class="parameter">тип_аргумента</replaceable> [, ...] ] )
+    [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP FUNCTION</command> удаляет определение существующей функции. Пользователь, выполняющий эту команду, должен быть владельцем функции. Помимо имени функции требуется указать типы её аргументов, так как в базе данных могут существовать несколько функций с одним именем, но с разными списками аргументов.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+    <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если функция не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+  <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующей функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">режим_аргумента</replaceable></term>
+
+    <listitem>
+     <para>Режим аргумента: <literal>IN</literal>, <literal>OUT</literal>, <literal>INOUT</literal> или <literal>VARIADIC</literal>. По умолчанию подразумевается <literal>IN</literal>. Заметьте, что <command>DROP FUNCTION</command> на самом деле не учитывает аргументы <literal>OUT</literal>, так как для идентификации функции нужны только типы входных аргументов. Поэтому достаточно перечислить только аргументы <literal>IN</literal>, <literal>INOUT</literal> и <literal>VARIADIC</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_аргумента</replaceable></term>
+
+    <listitem>
+     <para>Имя аргумента. Заметьте, что на самом деле <command>DROP FUNCTION</command> не обращает внимание на имена аргументов, так как для однозначной идентификации функции достаточно только типов аргументов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_аргумента</replaceable></term>
+
+    <listitem>
+     <para>Тип данных аргументов функции (возможно, дополненный именем схемы), если таковые имеются.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данной функции (например, операторы или триггеры), и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении функции, если от неё зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1 id="sql-dropfunction-examples">
+  <title>Примеры</title>
+
+  <para>Эта команда удаляет функцию, вычисляющую квадратный корень: <programlisting>DROP FUNCTION sqrt(integer);</programlisting></para>
+ </refsect1>
+
+ <refsect1 id="sql-dropfunction-compatibility">
+  <title>Совместимость</title>
+
+  <para>Оператор <command>DROP FUNCTION</command> определён в стандарте SQL, но с данным оператором он несовместим.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createfunction"/></member>
+   <member><xref linkend="sql-alterfunction"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

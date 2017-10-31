@@ -1,0 +1,84 @@
+<!--
+doc/src/xml/ref/drop_access_method.xml
+&productname; documentation
+-->
+
+<refentry id="sql-drop-access-method">
+ <indexterm zone="sql-drop-access-method"><primary>DROP ACCESS METHOD</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP ACCESS METHOD</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP ACCESS METHOD</refname>
+  <refpurpose>удалить метод доступа</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP ACCESS METHOD [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP ACCESS METHOD</command> удаляет существующий метод доступа. Удалять методы доступа разрешено только суперпользователям.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если метод доступа не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя существующего метода доступа.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данного метода доступа (например, классы и семейства операторов, а также индексы), и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении метода доступа, если от него зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление метода доступа <literal>heptree</literal>: <programlisting>DROP ACCESS METHOD heptree;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>DROP ACCESS METHOD</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-create-access-method"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

@@ -1,0 +1,83 @@
+<!--
+doc/src/xml/ref/set_role.xml
+&productname; documentation
+-->
+
+<refentry id="sql-set-role">
+ <indexterm zone="sql-set-role"><primary>SET ROLE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SET ROLE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SET ROLE</refname>
+  <refpurpose>установить идентификатор текущего пользователя в рамках сеанса</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>SET [ SESSION | LOCAL ] ROLE <replaceable class="parameter">имя_роли</replaceable>
+SET [ SESSION | LOCAL ] ROLE NONE
+RESET ROLE</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Эта команда меняет идентификатор текущего пользователя в активном сеансе SQL на <replaceable class="parameter">имя_роли</replaceable>. Имя роли может быть записано в виде идентификатора или строковой константы. После <command>SET ROLE</command>, права доступа для команд SQL проверяются так, как если бы сеанс изначально был установлен с этим именем роли.</para>
+
+  <para>Указывая определённое <replaceable class="parameter">имя_роли</replaceable>, текущий пользователь должен являться членом этой роли. (Если пользователь сеанса является суперпользователем, он может выбрать любую роль.)</para>
+
+  <para>Указания <literal>SESSION</literal> и <literal>LOCAL</literal> действуют на эту команду так же, как и на обычную команду <xref linkend="sql-set"/>.</para>
+
+  <para>Формы <literal>NONE</literal> и <literal>RESET</literal> сбрасывают идентификатор текущего пользователя, так что активным становится идентификатор пользователя сеанса. Эти формы могут выполняться любыми пользователями.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>С помощью этой команды можно как добавить права, так и ограничить их. Если роль пользователя сеанса имеет атрибут <literal>INHERITS</literal>, она автоматически получает права всех ролей, на которые может переключиться (с помощью <command>SET ROLE</command>); в этом случае <command>SET ROLE</command> убирает все права, назначенные непосредственно пользователю сеанса и другим ролям, в которые он включён, и оставляет только права, назначенные указанной роли. Если же роль пользователя сеанса имеет атрибут <literal>NOINHERITS</literal>, <command>SET ROLE</command> убирает права, назначенные непосредственно пользователю сеанса, и вместо них назначает права, которые имеет указанная роль.</para>
+
+  <para>В частности, когда суперпользователь переключается на роль не суперпользователя (используя <command>SET ROLE</command>), он теряет свои права суперпользователя.</para>
+
+  <para><command>SET ROLE</command> оказывает действие, сравнимое с <xref linkend="sql-set-session-authorization"/>, но проверка прав выполняется по-другому. Также <command>SET SESSION AUTHORIZATION</command> определяет, какие роли разрешены для последующей <command>SET ROLE</command>, тогда как при смене ролей командой <command>SET ROLE</command> набор ролей, допустимых для последующей команды <command>SET ROLE</command> не меняется.</para>
+
+  <para><command>SET ROLE</command> не обрабатывает сеансовые переменные, указанные в свойствах роли (<xref linkend="sql-alterrole"/>); они устанавливаются только при подключении.</para>
+
+  <para><command>SET ROLE</command> нельзя использовать внутри функции с характеристикой <literal>SECURITY DEFINER</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+<programlisting>SELECT SESSION_USER, CURRENT_USER;
+
+ session_user | current_user 
+--------------+--------------
+ peter        | peter
+
+SET ROLE 'paul';
+
+SELECT SESSION_USER, CURRENT_USER;
+
+ session_user | current_user 
+--------------+--------------
+ peter        | paul</programlisting>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><productname>&productname;</productname> принимает идентификаторы (<literal>"<replaceable>имя_роли</replaceable>"</literal>), тогда как стандарт SQL требует, чтобы имя роли записывалось в виде строковой константы. Стандарт не позволяет выполнять эту команду в транзакции; в <productname>&productname;</productname> такого ограничения нет, так как для него нет причины. Указания <literal>SESSION</literal> и <literal>LOCAL</literal> относятся к расширениям <productname>&productname;</productname>, так же, как и синтаксис <literal>RESET</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-set-session-authorization"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

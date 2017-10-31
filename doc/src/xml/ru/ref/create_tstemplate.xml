@@ -1,0 +1,84 @@
+<!--
+doc/src/xml/ref/create_tstemplate.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createtstemplate">
+ <indexterm zone="sql-createtstemplate"><primary>CREATE TEXT SEARCH TEMPLATE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE TEXT SEARCH TEMPLATE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE TEXT SEARCH TEMPLATE</refname>
+  <refpurpose>создать шаблон текстового поиска</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE TEXT SEARCH TEMPLATE <replaceable class="parameter">имя</replaceable> (
+    [ INIT = <replaceable class="parameter">функция_инициализации</replaceable> , ]
+    LEXIZE = <replaceable class="parameter">функция_выделения_лексем</replaceable>
+)</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE TEXT SEARCH TEMPLATE</command> создаёт новый шаблон текстового поиска. Шаблоны текстового поиска определяют функции для реализации словарей текстового поиска. Шаблон сам по себе бесполезен, но его экземпляр нужно создать для словаря. Словарь обычно определяет параметры, передаваемые функциям шаблона.</para>
+
+  <para>Если указывается имя схемы, шаблон текстового поиска создаётся в указанной схеме. В противном случае он создаётся в текущей схеме.</para>
+
+  <para>Выполнить <command>CREATE TEXT SEARCH TEMPLATE</command> может только суперпользователь. Это ограничение введено потому, что ошибочное определение шаблона текстового поиска может вызвать нарушения или даже сбой в работе сервера. Смысл отделения шаблонов от словарей в том, что шаблон покрывает <quote>небезопасные</quote> аспекты определения словаря. Параметры, которые можно задать при определении словаря, не могут причинить вред, поэтому создавать словари разрешено и непривилегированным пользователям.</para>
+
+  <para>За дополнительными сведениями обратитесь к <xref remap="3" linkend="textsearch"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя создаваемого шаблона текстового поиска, возможно, дополненное схемой.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_инициализации</replaceable></term>
+    <listitem>
+     <para>Имя функции инициализации для шаблона.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_выделения_лексем</replaceable></term>
+    <listitem>
+     <para>Имя функции выделения лексем.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Имена функций могут быть дополнены именем схемы, если требуется. Типы аргументов не указываются, так как список аргументов для всех типов функций предопределён. Функция выделения лексем является обязательной, а функция инициализации может отсутствовать.</para>
+
+  <para>Аргументы могут перечисляться в любом порядке, не только в том, что показан выше.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>CREATE TEXT SEARCH TEMPLATE</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altertstemplate"/></member>
+   <member><xref linkend="sql-droptstemplate"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

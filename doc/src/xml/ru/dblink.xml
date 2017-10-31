@@ -1,0 +1,1536 @@
+<!-- doc/src/xml/dblink.xml -->
+
+<sect1 id="dblink" xreflabel="dblink">
+ <title>dblink</title>
+
+ <indexterm zone="dblink"><primary>dblink</primary></indexterm>
+
+ <para>Модуль <filename>dblink</filename> обеспечивает подключения к другим базам данных <productname>&productname;</productname> из сеанса базы данных.</para>
+
+ <para>См. также описание модуля <xref linkend="postgres-fdw"/>, который предоставляет примерно ту же функциональность, но через более современную и стандартизированную инфраструктуру.</para>
+
+ <refentry id="contrib-dblink-connect">
+  <indexterm><primary>dblink_connect</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_connect</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_connect</refname>
+   <refpurpose>открывает постоянное подключение к удалённой базе данных</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_connect(text connstr) returns text
+dblink_connect(text connname, text connstr) returns text</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para>Функция <function>dblink_connect()</function> устанавливает подключение к удалённой базе данных <productname>&productname;</productname>. Целевой сервер и база данных указываются в стандартной строке подключения <application>libpq</application>. Если требуется, этому подключению можно назначить имя. В один момент времени могут быть открытыми несколько именованных подключений, но только одно подключение без имени. Подключение будет сохраняться, пока не будет закрыто или до завершения сеанса базы данных.</para>
+
+   <para>В строке подключения также может задаваться имя существующего стороннего сервера. Для определения стороннего сервера рекомендуется использовать обёртку сторонних данных <literal>dblink_fdw</literal>. См. пример ниже, а также <xref remap="4" linkend="sql-createserver"/> и <xref remap="4" linkend="sql-createusermapping"/>.</para>
+
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>connname</parameter></term>
+     <listitem>
+      <para>Имя, назначаемое этому подключению; если опускается, открывается безымянное подключение, заменяющее ранее существующее безымянное подключение.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>connstr</parameter></term>
+     <listitem>
+      <para>Строка подключения в стиле <application>libpq</application>, например <literal>hostaddr=127.0.0.1 port=5432 dbname=mydb user=postgres password=mypasswd</literal>. За подробностями обратитесь к <xref remap="3" linkend="libpq-connstring"/>. В ней также может задаваться имя стороннего сервера.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Возвращает состояние (это всегда строка <literal>OK</literal>, так как в случае любой ошибки функция прерывается, выдавая исключение).</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Замечания</title>
+
+   <para>Создавать подключения, не требующие аутентификации по паролю, с помощью <function>dblink_connect</function> разрешено только суперпользователям. Если эта возможность нужна обычным пользователям, следует воспользоваться функцией <function>dblink_connect_u</function>.</para>
+
+   <para>Использовать в именах подключений знаки &laquo;равно&raquo; не рекомендуется, так как при этом возможна путаница со строками подключений в других функциях <filename>dblink</filename>.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<screen>SELECT dblink_connect('dbname=postgres');
+ dblink_connect
+----------------
+ OK
+(1 row)
+
+SELECT dblink_connect('myconn', 'dbname=postgres');
+ dblink_connect
+----------------
+ OK
+(1 row)
+
+-- Функциональность обёртки сторонних данных (FOREIGN DATA WRAPPER)
+-- Замечание: чтобы это работало, для локальных подключений требуется аутентификация по паролю
+--       В противном случае, вызвав dblink_connect(), вы получите:
+--       ----------------------------------------------------------------------
+--       ERROR:  password is required
+--       DETAIL:  Non-superuser cannot connect if the server does not request a password.
+--       HINT:  Target server's authentication method must be changed.
+--
+--       ОШИБКА:  требуется пароль
+--       ПОДРОБНОСТИ:  Обычный пользователь не может подключиться, если сервер не требует пароль.
+--       ПОДСКАЗКА:  Необходимо изменить метод аутентификации целевого сервера.
+
+CREATE SERVER fdtest FOREIGN DATA WRAPPER dblink_fdw OPTIONS (hostaddr '127.0.0.1', dbname 'contrib_regression');
+
+CREATE USER regress_dblink_user WITH PASSWORD 'secret';
+CREATE USER MAPPING FOR regress_dblink_user SERVER fdtest OPTIONS (user 'regress_dblink_user', password 'secret');
+GRANT USAGE ON FOREIGN SERVER fdtest TO regress_dblink_user;
+GRANT SELECT ON TABLE foo TO regress_dblink_user;
+
+\set ORIGINAL_USER :USER
+\c - regress_dblink_user
+SELECT dblink_connect('myconn', 'fdtest');
+ dblink_connect 
+----------------
+ OK
+(1 row)
+
+SELECT * FROM dblink('myconn','SELECT * FROM foo') AS t(a int, b text, c text[]);
+ a  | b |       c       
+----+---+---------------
+  0 | a | {a0,b0,c0}
+  1 | b | {a1,b1,c1}
+  2 | c | {a2,b2,c2}
+  3 | d | {a3,b3,c3}
+  4 | e | {a4,b4,c4}
+  5 | f | {a5,b5,c5}
+  6 | g | {a6,b6,c6}
+  7 | h | {a7,b7,c7}
+  8 | i | {a8,b8,c8}
+  9 | j | {a9,b9,c9}
+ 10 | k | {a10,b10,c10}
+(11 rows)
+
+\c - :ORIGINAL_USER
+REVOKE USAGE ON FOREIGN SERVER fdtest FROM regress_dblink_user;
+REVOKE SELECT ON TABLE foo FROM regress_dblink_user;
+DROP USER MAPPING FOR regress_dblink_user SERVER fdtest;
+DROP USER regress_dblink_user;
+DROP SERVER fdtest;</screen>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-connect-u">
+  <indexterm><primary>dblink_connect_u</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_connect_u</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_connect_u</refname>
+   <refpurpose>открывает постоянное подключение к удалённой базе данных, небезопасно</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_connect_u(text connstr) returns text
+dblink_connect_u(text connname, text connstr) returns text</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para>Функция <function>dblink_connect_u()</function> не отличается от <function>dblink_connect()</function>, за исключением того, что она позволяет подключаться с любым методом аутентификации обычным пользователям.</para>
+
+   <para>Если удалённый сервер выбирает режим аутентификации без пароля, возможно олицетворение и последующее повышение привилегий, так как сеанс будет установлен от имени пользователя, который исполняет локальный процесс <productname>&productname;</productname>. Кроме того, даже если удалённый сервер запрашивает пароль, этот пароль можно получить из среды сервера, например, из файла <filename>~/.pgpass</filename>, принадлежащего пользователю сервера. Это чревато не только олицетворением, но и выдачей пароля не заслуживающему доверия удалённому серверу. Поэтому <function>dblink_connect_u()</function> изначально устанавливается так, что роль <literal>PUBLIC</literal> лишена всех прав на её использование, то есть вызывать её могут только суперпользователи. В некоторых ситуациях допустимо дать право <literal>EXECUTE</literal> для <function>dblink_connect_u()</function> определённым пользователям, которым можно доверять, но это нужно делать осторожно. Также рекомендуется убедиться в том, что файл <filename>~/.pgpass</filename>, принадлежащий пользователю сервера, <emphasis>не</emphasis> содержит никаких записей со звёздочкой в качестве имени узла.</para>
+
+   <para>За дополнительными подробностями обратитесь к описанию <function>dblink_connect()</function>.</para>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-disconnect">
+  <indexterm><primary>dblink_disconnect</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_disconnect</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_disconnect</refname>
+   <refpurpose>закрывает постоянное подключение к удалённой базе данных</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_disconnect() returns text
+dblink_disconnect(text connname) returns text</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para><function>dblink_disconnect()</function> закрывает подключение, ранее открытое функцией <function>dblink_connect()</function>. Форма без аргументов закрывает безымянное подключение.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>connname</parameter></term>
+     <listitem>
+      <para>Имя закрываемого именованного подключения.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Возвращает состояние (это всегда строка <literal>OK</literal>, так как в случае любой ошибки функция прерывается, выдавая исключение).</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<screen>SELECT dblink_disconnect();
+ dblink_disconnect
+-------------------
+ OK
+(1 row)
+
+SELECT dblink_disconnect('myconn');
+ dblink_disconnect
+-------------------
+ OK
+(1 row)</screen>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-function">
+  <indexterm><primary>dblink</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink</refname>
+   <refpurpose>выполняет запрос в удалённой базе данных</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink(text connname, text sql [, bool fail_on_error]) returns setof record
+dblink(text connstr, text sql [, bool fail_on_error]) returns setof record
+dblink(text sql [, bool fail_on_error]) returns setof record</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para><function>dblink</function> выполняет запрос (обычно <command>SELECT</command>, но это может быть и любой другой оператор SQL, возвращающий строки) в удалённой базе данных.</para>
+
+   <para>Когда этой функции передаются два аргумента типа <type>text</type>, первый сначала рассматривается как имя постоянного подключения; если такое подключение находится, команда выполняется для него. Если не находится, первый аргумент воспринимается как строка подключения, как для функции <function>dblink_connect</function>, и заданное подключение устанавливается только на время выполнения этой команды.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>connname</parameter></term>
+     <listitem>
+      <para>Имя используемого подключения; опустите этот параметр, чтобы использовать безымянное подключение.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>connstr</parameter></term>
+     <listitem>
+      <para>Строка подключения, описанная ранее для <function>dblink_connect</function></para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>sql</parameter></term>
+     <listitem>
+      <para>SQL-запрос, который вы хотите выполнить в удалённой базе данных, например <literal>select * from foo</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>fail_on_error</parameter></term>
+     <listitem>
+      <para>Если равен true (это значение по умолчанию), в случае ошибки, выданной на удалённой стороне соединения, ошибка также выдаётся локально. Если равен false, удалённая ошибка выдаётся локально как ЗАМЕЧАНИЕ, и функция не возвращает строки.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Эта функция возвращает строки, выдаваемые в результате запроса. Так как <function>dblink</function> может выполнять произвольные запросы, она объявлена как возвращающая тип <type>record</type>, а не некоторый определённый набор столбцов. Это означает, что вы должны указать ожидаемый набор столбцов в вызывающем запросе &mdash; в противном случае <productname>&productname;</productname> не будет знать, чего ожидать. Например: <programlisting>SELECT *
+    FROM dblink('dbname=mydb', 'select proname, prosrc from pg_proc')
+      AS t1(proname name, prosrc text)
+    WHERE proname LIKE 'bytea%';</programlisting> В части <quote>псевдонима</quote> предложения <literal>FROM</literal> должны указываться имена столбцов и типы, которые будет возвращать функция. (Указание имён столбцов в псевдониме таблицы предусмотрено стандартом SQL, но определение типов столбцов является расширением <productname>&productname;</productname>.) Это позволяет системе понять, во что должно разворачиваться обозначение <literal>*</literal>, и на что ссылается <structname>proname</structname> в предложении <literal>WHERE</literal>, прежде чем пытаться выполнять эту функцию. Во время выполнения произойдёт ошибка, если действительный результат запроса из удалённой базы данных не будет содержать столько столбцов, сколько указано в предложении <literal>FROM</literal>. Однако имена столбцов могут не совпадать, так же, как <function>dblink</function> не настаивает на точном совпадении типов. Функция завершится успешно, если возвращаемые строки данных будут допустимыми для ввода в тип столбца, объявленный в предложении <literal>FROM</literal>.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Замечания</title>
+
+   <para>Использовать <function>dblink</function> с предопределёнными запросами будет удобнее, если создать представление. Это позволит скрыть в его определении информацию о типах столбцов и не выписывать её в каждом запросе. Например: <programlisting>CREATE VIEW myremote_pg_proc AS
+  SELECT *
+    FROM dblink('dbname=postgres', 'select proname, prosrc from pg_proc')
+    AS t1(proname name, prosrc text);
+
+SELECT * FROM myremote_pg_proc WHERE proname LIKE 'bytea%';</programlisting></para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<screen>SELECT * FROM dblink('dbname=postgres', 'select proname, prosrc from pg_proc')
+  AS t1(proname name, prosrc text) WHERE proname LIKE 'bytea%';
+  proname   |   prosrc
+------------+------------
+ byteacat   | byteacat
+ byteaeq    | byteaeq
+ bytealt    | bytealt
+ byteale    | byteale
+ byteagt    | byteagt
+ byteage    | byteage
+ byteane    | byteane
+ byteacmp   | byteacmp
+ bytealike  | bytealike
+ byteanlike | byteanlike
+ byteain    | byteain
+ byteaout   | byteaout
+(12 rows)
+
+SELECT dblink_connect('dbname=postgres');
+ dblink_connect
+----------------
+ OK
+(1 row)
+
+SELECT * FROM dblink('select proname, prosrc from pg_proc')
+  AS t1(proname name, prosrc text) WHERE proname LIKE 'bytea%';
+  proname   |   prosrc
+------------+------------
+ byteacat   | byteacat
+ byteaeq    | byteaeq
+ bytealt    | bytealt
+ byteale    | byteale
+ byteagt    | byteagt
+ byteage    | byteage
+ byteane    | byteane
+ byteacmp   | byteacmp
+ bytealike  | bytealike
+ byteanlike | byteanlike
+ byteain    | byteain
+ byteaout   | byteaout
+(12 rows)
+
+SELECT dblink_connect('myconn', 'dbname=regression');
+ dblink_connect
+----------------
+ OK
+(1 row)
+
+SELECT * FROM dblink('myconn', 'select proname, prosrc from pg_proc')
+  AS t1(proname name, prosrc text) WHERE proname LIKE 'bytea%';
+  proname   |   prosrc
+------------+------------
+ bytearecv  | bytearecv
+ byteasend  | byteasend
+ byteale    | byteale
+ byteagt    | byteagt
+ byteage    | byteage
+ byteane    | byteane
+ byteacmp   | byteacmp
+ bytealike  | bytealike
+ byteanlike | byteanlike
+ byteacat   | byteacat
+ byteaeq    | byteaeq
+ bytealt    | bytealt
+ byteain    | byteain
+ byteaout   | byteaout
+(14 rows)</screen>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-exec">
+  <indexterm><primary>dblink_exec</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_exec</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_exec</refname>
+   <refpurpose>выполняет команду в удалённой базе данных</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_exec(text connname, text sql [, bool fail_on_error]) returns text
+dblink_exec(text connstr, text sql [, bool fail_on_error]) returns text
+dblink_exec(text sql [, bool fail_on_error]) returns text</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para>Функция <function>dblink_exec</function> выполняет команду (то есть любой SQL-оператор, не возвращающий строки) в удалённой базе данных.</para>
+
+   <para>Когда этой функции передаются два аргумента типа <type>text</type>, первый сначала рассматривается как имя постоянного подключения; если такое подключение находится, команда выполняется для него. Если не находится, первый аргумент воспринимается как строка подключения, как для функции <function>dblink_connect</function>, и заданное подключение устанавливается только на время выполнения этой команды.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>connname</parameter></term>
+     <listitem>
+      <para>Имя используемого подключения; опустите этот параметр, чтобы использовать безымянное подключение.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>connstr</parameter></term>
+     <listitem>
+      <para>Строка подключения, описанная ранее для <function>dblink_connect</function></para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>sql</parameter></term>
+     <listitem>
+      <para>SQL-запрос, который вы хотите выполнить в удалённой базе данных, например <literal>insert into foo values(0,'a','{"a0","b0","c0"}')</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>fail_on_error</parameter></term>
+     <listitem>
+      <para>Если равен true (это значение по умолчанию), в случае ошибки, выданной на удалённой стороне соединения, ошибка также выдаётся локально. Если равен false, удалённая ошибка выдаётся локально как ЗАМЕЧАНИЕ, и возвращаемым значением функции будет <literal>ERROR</literal>.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Возвращает состояние (либо строку состояния команды, либо <literal>ERROR</literal>).</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<screen>SELECT dblink_connect('dbname=dblink_test_standby');
+ dblink_connect
+----------------
+ OK
+(1 row)
+
+SELECT dblink_exec('insert into foo values(21,''z'',''{"a0","b0","c0"}'');');
+   dblink_exec
+-----------------
+ INSERT 943366 1
+(1 row)
+
+SELECT dblink_connect('myconn', 'dbname=regression');
+ dblink_connect
+----------------
+ OK
+(1 row)
+
+SELECT dblink_exec('myconn', 'insert into foo values(21,''z'',''{"a0","b0","c0"}'');');
+   dblink_exec
+------------------
+ INSERT 6432584 1
+(1 row)
+
+SELECT dblink_exec('myconn', 'insert into pg_class values (''foo'')',false);
+NOTICE:  sql error
+DETAIL:  ERROR:  null value in column "relnamespace" violates not-null constraint
+
+ dblink_exec
+-------------
+ ERROR
+(1 row)</screen>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-open">
+  <indexterm><primary>dblink_open</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_open</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_open</refname>
+   <refpurpose>открывает курсор в удалённой базе данных</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_open(text cursorname, text sql [, bool fail_on_error]) returns text
+dblink_open(text connname, text cursorname, text sql [, bool fail_on_error]) returns text</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para>Функция <function>dblink_open()</function> открывает курсор в удалённой базе данных. Открытым курсором можно будет манипулировать функциями <function>dblink_fetch()</function> и <function>dblink_close()</function>.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>connname</parameter></term>
+     <listitem>
+      <para>Имя используемого подключения; опустите этот параметр, чтобы использовать безымянное подключение.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>cursorname</parameter></term>
+     <listitem>
+      <para>Имя, назначаемое курсору.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>sql</parameter></term>
+     <listitem>
+      <para>Оператор <command>SELECT</command>, который вы хотите выполнять в удалённой базе данных, например <literal>select * from pg_class</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>fail_on_error</parameter></term>
+     <listitem>
+      <para>Если равен true (это значение по умолчанию), в случае ошибки, выданной на удалённой стороне соединения, ошибка также выдаётся локально. Если равен false, удалённая ошибка выдаётся локально как ЗАМЕЧАНИЕ, и возвращаемым значением функции будет <literal>ERROR</literal>.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Возвращает состояние, <literal>OK</literal> или <literal>ERROR</literal>.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Замечания</title>
+
+   <para>Так как курсор может существовать только в рамках транзакции, функция <function>dblink_open</function> начинает явный блок транзакции (командой <command>BEGIN</command>) на удалённой стороне, если транзакция там ещё не открыта. Эта транзакция будет снова закрыта при соответствующем вызове <function>dblink_close</function>. Заметьте, что если вы с помощью <function>dblink_exec</function> изменяете данные между вызовами <function>dblink_open</function> и <function>dblink_close</function>, а затем происходит ошибка, либо если вы вызываете <function>dblink_disconnect</function> перед <function>dblink_close</function>, ваши изменения <emphasis>будут потеряны</emphasis>, так как транзакция будет прервана.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<screen>SELECT dblink_connect('dbname=postgres');
+ dblink_connect
+----------------
+ OK
+(1 row)
+
+SELECT dblink_open('foo', 'select proname, prosrc from pg_proc');
+ dblink_open
+-------------
+ OK
+(1 row)</screen>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-fetch">
+  <indexterm><primary>dblink_fetch</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_fetch</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_fetch</refname>
+   <refpurpose>возвращает строки из открытого курсора в удалённой базе данных</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_fetch(text cursorname, int howmany [, bool fail_on_error]) returns setof record
+dblink_fetch(text connname, text cursorname, int howmany [, bool fail_on_error]) returns setof record</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para><function>dblink_fetch</function> выбирает строки из курсора, ранее открытого функцией <function>dblink_open</function>.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>connname</parameter></term>
+     <listitem>
+      <para>Имя используемого подключения; опустите этот параметр, чтобы использовать безымянное подключение.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>cursorname</parameter></term>
+     <listitem>
+      <para>Имя курсора, из которого выбираются данные.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>howmany</parameter></term>
+     <listitem>
+      <para>Максимальное число строк, которое нужно получить. Данная функция выбирает через курсор следующие <parameter>howmany</parameter> строк, начиная с текущей позиции курсора и двигаясь вперёд. Когда курсор доходит до конца, строки больше не выдаются.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>fail_on_error</parameter></term>
+     <listitem>
+      <para>Если равен true (это значение по умолчанию), в случае ошибки, выданной на удалённой стороне соединения, ошибка также выдаётся локально. Если равен false, удалённая ошибка выдаётся локально как ЗАМЕЧАНИЕ, и функция не возвращает строки.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Эта функция возвращает строки, выбираемые через курсор. Для использования этой функции необходимо задать ожидаемый набор столбцов, как ранее говорилось в описании <function>dblink</function>.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Замечания</title>
+
+   <para>При несовпадении числа возвращаемых столбцов, определённого в предложении <literal>FROM</literal>, с фактическим числом столбцов, возвращённых удалённым курсором, выдаётся ошибка. В этом случае удалённый курсор всё равно продвигается на столько строк, на сколько он продвинулся бы, если бы ошибка не произошла. То же самое верно для любых других ошибок, происходящих при локальной обработке результатов после выполнения удалённой команды <command>FETCH</command>.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<screen>SELECT dblink_connect('dbname=postgres');
+ dblink_connect
+----------------
+ OK
+(1 row)
+
+SELECT dblink_open('foo', 'select proname, prosrc from pg_proc where proname like ''bytea%''');
+ dblink_open
+-------------
+ OK
+(1 row)
+
+SELECT * FROM dblink_fetch('foo', 5) AS (funcname name, source text);
+ funcname |  source
+----------+----------
+ byteacat | byteacat
+ byteacmp | byteacmp
+ byteaeq  | byteaeq
+ byteage  | byteage
+ byteagt  | byteagt
+(5 rows)
+
+SELECT * FROM dblink_fetch('foo', 5) AS (funcname name, source text);
+ funcname  |  source
+-----------+-----------
+ byteain   | byteain
+ byteale   | byteale
+ bytealike | bytealike
+ bytealt   | bytealt
+ byteane   | byteane
+(5 rows)
+
+SELECT * FROM dblink_fetch('foo', 5) AS (funcname name, source text);
+  funcname  |   source
+------------+------------
+ byteanlike | byteanlike
+ byteaout   | byteaout
+(2 rows)
+
+SELECT * FROM dblink_fetch('foo', 5) AS (funcname name, source text);
+ funcname | source
+----------+--------
+(0 rows)</screen>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-close">
+  <indexterm><primary>dblink_close</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_close</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_close</refname>
+   <refpurpose>закрывает курсор в текущей базе данных</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_close(text cursorname [, bool fail_on_error]) returns text
+dblink_close(text connname, text cursorname [, bool fail_on_error]) returns text</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para><function>dblink_close</function> закрывает курсор, ранее открытый функцией <function>dblink_open</function>.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>connname</parameter></term>
+     <listitem>
+      <para>Имя используемого подключения; опустите этот параметр, чтобы использовать безымянное подключение.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>cursorname</parameter></term>
+     <listitem>
+      <para>Имя курсора, который будет закрыт.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>fail_on_error</parameter></term>
+     <listitem>
+      <para>Если равен true (это значение по умолчанию), в случае ошибки, выданной на удалённой стороне соединения, ошибка также выдаётся локально. Если равен false, удалённая ошибка выдаётся локально как ЗАМЕЧАНИЕ, и возвращаемым значением функции будет <literal>ERROR</literal>.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Возвращает состояние, <literal>OK</literal> или <literal>ERROR</literal>.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Замечания</title>
+
+   <para>Если вызов <function>dblink_open</function> начал явный блок транзакции и это последний открытый курсор, остававшийся в этом подключении, то <function>dblink_close</function> выполнит соответствующую команду <command>COMMIT</command>.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<screen>SELECT dblink_connect('dbname=postgres');
+ dblink_connect
+----------------
+ OK
+(1 row)
+
+SELECT dblink_open('foo', 'select proname, prosrc from pg_proc');
+ dblink_open
+-------------
+ OK
+(1 row)
+
+SELECT dblink_close('foo');
+ dblink_close
+--------------
+ OK
+(1 row)</screen>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-get-connections">
+  <indexterm><primary>dblink_get_connections</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_get_connections</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_get_connections</refname>
+   <refpurpose>возвращает имена всех открытых именованных подключений dblink</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_get_connections() returns text[]</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para><function>dblink_get_connections</function> возвращает массив имён всех открытых именованных подключений <filename>dblink</filename>.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Возвращает текстовый массив имён подключений, либо NULL, если они отсутствуют.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<programlisting>SELECT dblink_get_connections();</programlisting>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-error-message">
+  <indexterm><primary>dblink_error_message</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_error_message</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_error_message</refname>
+   <refpurpose>выдаёт сообщение последней ошибки для именованного подключения</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_error_message(text connname) returns text</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para><function>dblink_error_message</function> извлекает самое последнее сообщение удалённой ошибки для заданного подключения.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>connname</parameter></term>
+     <listitem>
+      <para>Имя используемого подключения.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Возвращает сообщение последней ошибки, либо пустую строку, если в сеансе этого подключения не было ошибок.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<programlisting>SELECT dblink_error_message('dtest1');</programlisting>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-send-query">
+  <indexterm><primary>dblink_send_query</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_send_query</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_send_query</refname>
+   <refpurpose>передаёт асинхронный запрос в удалённую базу данных</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_send_query(text connname, text sql) returns int</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para><function>dblink_send_query</function> передаёт запрос для асинхронного выполнения, то есть не дожидается получения результата. С этим подключением не должен быть связан уже выполняющийся асинхронный запрос.</para>
+
+   <para>После успешной передачи асинхронного запроса состояние его завершения можно проверять, вызывая функцию <function>dblink_is_busy</function>, и в итоге получать данные, вызвав <function>dblink_get_result</function>. Также можно попытаться отменить активный асинхронный запрос, вызвав <function>dblink_cancel_query</function>.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>connname</parameter></term>
+     <listitem>
+      <para>Имя используемого подключения.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>sql</parameter></term>
+     <listitem>
+      <para>Оператор SQL, который вы хотите выполнить в удалённой базе данных, например <literal>select * from pg_class</literal>.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Возвращает 1, если запрос был успешно отправлен на обработку, или 0 в противном случае.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<programlisting>SELECT dblink_send_query('dtest1', 'SELECT * FROM foo WHERE f1 &lt; 3');</programlisting>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-is-busy">
+  <indexterm><primary>dblink_is_busy</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_is_busy</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_is_busy</refname>
+   <refpurpose>проверяет, не выполняется ли через подключение асинхронный запрос</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_is_busy(text connname) returns int</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para><function>dblink_is_busy</function> проверяет, не выполняется ли асинхронный запрос.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>connname</parameter></term>
+     <listitem>
+      <para>Имя проверяемого подключения.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Возвращает 1, если подключение занято, или 0 в противном случае. Если эта функция возвращает 0, гарантируется, что вызов <function>dblink_get_result</function> не будет заблокирован.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<programlisting>SELECT dblink_is_busy('dtest1');</programlisting>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-get-notify">
+  <indexterm><primary>dblink_get_notify</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_get_notify</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_get_notify</refname>
+   <refpurpose>выдаёт асинхронные уведомления подключения</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_get_notify() returns setof (notify_name text, be_pid int, extra text)
+dblink_get_notify(text connname) returns setof (notify_name text, be_pid int, extra text)</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para><function>dblink_get_notify</function> выдаёт уведомления либо безымянного подключения, либо подключения с заданным именем. Чтобы получать уведомления через dblink, необходимо сначала выполнить <function>LISTEN</function>, воспользовавшись функцией <function>dblink_exec</function>. За подробностями обратитесь к <xref remap="3" linkend="sql-listen"/> и <xref remap="3" linkend="sql-notify"/>.</para>
+
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>connname</parameter></term>
+     <listitem>
+      <para>Имя именованного подключения, уведомления которого нужно получить.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+    <para>Возвращает <type>setof (notify_name text, be_pid int, extra text)</type> или пустой набор, если уведомлений нет.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<screen>SELECT dblink_exec('LISTEN virtual');
+ dblink_exec 
+-------------
+ LISTEN
+(1 row)
+
+SELECT * FROM dblink_get_notify();
+ notify_name | be_pid | extra
+-------------+--------+-------
+(0 rows)
+
+NOTIFY virtual;
+NOTIFY
+
+SELECT * FROM dblink_get_notify();
+ notify_name | be_pid | extra
+-------------+--------+-------
+ virtual     |   1229 |
+(1 row)</screen>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-get-result">
+  <indexterm><primary>dblink_get_result</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_get_result</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_get_result</refname>
+   <refpurpose>получает результат асинхронного запроса</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_get_result(text connname [, bool fail_on_error]) returns setof record</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para><function>dblink_get_result</function> получает результаты асинхронного запроса, запущенного ранее вызовом <function>dblink_send_query</function>. Если запрос ещё выполняется, <function>dblink_get_result</function> будет ждать его завершения.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>connname</parameter></term>
+     <listitem>
+      <para>Имя используемого подключения.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>fail_on_error</parameter></term>
+     <listitem>
+      <para>Если равен true (это значение по умолчанию), в случае ошибки, выданной на удалённой стороне соединения, ошибка также выдаётся локально. Если равен false, удалённая ошибка выдаётся локально как ЗАМЕЧАНИЕ, и функция не возвращает строки.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Для асинхронного запроса (то есть, SQL-оператора, возвращающего строки) эта функция выдаёт строки, полученные в результате запроса. Чтобы использовать эту функцию, вы должны задать ожидаемый набор столбцов, как ранее говорилось в описании <function>dblink</function>.</para>
+
+   <para>Для асинхронной команды (то есть, SQL-оператора, не возвращающего строки), эта функция возвращает одну строку с одним текстовым столбцом, содержащим строку состояния команды. Для такого вызова в предложении <literal>FROM</literal> так же необходимо определить, что результат будет содержать один текстовый столбец.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Замечания</title>
+
+   <para>Эта функция <emphasis>должна</emphasis> вызываться, если <function>dblink_send_query</function> возвращает 1. Её нужно вызывать по одному разу для каждого отправленного запроса, а затем ещё раз для получения пустого набора данных, прежде чем подключением можно будет пользоваться снова.</para>
+
+   <para>Когда используются <function>dblink_send_query</function> и <function>dblink_get_result</function>, подсистема <application>dblink</application> получает весь набор удалённых результатов, прежде чем передавать его для локальной обработки. Если запрос возвращает большое количество строк, это может занимать много памяти в локальном сеансе. Поэтому может быть лучше открыть такой запрос как курсор, вызвав <function>dblink_open</function>, а затем выбирать результаты удобоваримыми порциями. Кроме того, можно воспользоваться простой функцией <function>dblink()</function>, которая не допускает заполнения памяти, выгружая большие наборы результатов на диск.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<screen>contrib_regression=# SELECT dblink_connect('dtest1', 'dbname=contrib_regression');
+ dblink_connect
+----------------
+ OK
+(1 row)
+
+contrib_regression=# SELECT * FROM
+contrib_regression-# dblink_send_query('dtest1', 'select * from foo where f1 &lt; 3') AS t1;
+ t1
+----
+  1
+(1 row)
+
+contrib_regression=# SELECT * FROM dblink_get_result('dtest1') AS t1(f1 int, f2 text, f3 text[]);
+ f1 | f2 |     f3
+----+----+------------
+  0 | a  | {a0,b0,c0}
+  1 | b  | {a1,b1,c1}
+  2 | c  | {a2,b2,c2}
+(3 rows)
+
+contrib_regression=# SELECT * FROM dblink_get_result('dtest1') AS t1(f1 int, f2 text, f3 text[]);
+ f1 | f2 | f3
+----+----+----
+(0 rows)
+
+contrib_regression=# SELECT * FROM
+contrib_regression-# dblink_send_query('dtest1', 'select * from foo where f1 &lt; 3; select * from foo where f1 &gt; 6') AS t1;
+ t1
+----
+  1
+(1 row)
+
+contrib_regression=# SELECT * FROM dblink_get_result('dtest1') AS t1(f1 int, f2 text, f3 text[]);
+ f1 | f2 |     f3
+----+----+------------
+  0 | a  | {a0,b0,c0}
+  1 | b  | {a1,b1,c1}
+  2 | c  | {a2,b2,c2}
+(3 rows)
+
+contrib_regression=# SELECT * FROM dblink_get_result('dtest1') AS t1(f1 int, f2 text, f3 text[]);
+ f1 | f2 |      f3
+----+----+---------------
+  7 | h  | {a7,b7,c7}
+  8 | i  | {a8,b8,c8}
+  9 | j  | {a9,b9,c9}
+ 10 | k  | {a10,b10,c10}
+(4 rows)
+
+contrib_regression=# SELECT * FROM dblink_get_result('dtest1') AS t1(f1 int, f2 text, f3 text[]);
+ f1 | f2 | f3
+----+----+----
+(0 rows)</screen>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-cancel-query">
+  <indexterm><primary>dblink_cancel_query</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_cancel_query</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_cancel_query</refname>
+   <refpurpose>отменяет любой активный запрос в заданном подключении</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_cancel_query(text connname) returns text</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para>Функция <function>dblink_cancel_query</function> пытается отменить любой запрос, выполняющийся через заданное подключение. Заметьте, что её вызов не обязательно будет успешным (например, потому что удалённый запрос уже завершился). Запрос отмены просто увеличивает шансы того, что выполняющийся запрос будет вскоре прерван. При этом всё равно нужно завершить обычную процедуру обработки запроса, например, вызвать <function>dblink_get_result</function>.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>connname</parameter></term>
+     <listitem>
+      <para>Имя используемого подключения.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Возвращает <literal>OK</literal>, если запрос отмены был отправлен, либо текст сообщения об ошибке в случае неудачи.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<programlisting>SELECT dblink_cancel_query('dtest1');</programlisting>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-get-pkey">
+  <indexterm><primary>dblink_get_pkey</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_get_pkey</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_get_pkey</refname>
+   <refpurpose>возвращает позиции и имена полей первичного ключа отношения</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_get_pkey(text relname) returns setof dblink_pkey_results</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para>Функция <function>dblink_get_pkey</function> выдаёт информацию о первичном ключе отношения в локальной базе данных. Иногда это полезно при формировании запросов, отправляемых в удалённые базы данных.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>relname</parameter></term>
+     <listitem>
+      <para>Имя локального отношения, например <literal>foo</literal> или <literal>myschema.mytab</literal>. Заключите его в двойные кавычки, если это имя в смешанном регистре или содержит специальные символы, например <literal>"FooBar"</literal>; без кавычек эта строка приводится к нижнему регистру.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Возвращает одну строку для каждого поля первичного ключа, либо не возвращает строк, если в отношении нет первичного ключа. Тип результирующей строки определён как <programlisting>CREATE TYPE dblink_pkey_results AS (position int, colname text);</programlisting> В столбце <literal>position</literal> содержится число от 1 до <replaceable>N</replaceable>; это номер поля в первичном ключе, а не номер столбца в списке столбцов таблицы.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<screen>CREATE TABLE foobar (
+    f1 int,
+    f2 int,
+    f3 int,
+    PRIMARY KEY (f1, f2, f3)
+);
+CREATE TABLE
+
+SELECT * FROM dblink_get_pkey('foobar');
+ position | colname
+----------+---------
+        1 | f1
+        2 | f2
+        3 | f3
+(3 rows)</screen>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-build-sql-insert">
+  <indexterm><primary>dblink_build_sql_insert</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_build_sql_insert</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_build_sql_insert</refname>
+   <refpurpose>формирует оператор INSERT из локального кортежа, заменяя значения полей первичного ключа переданными альтернативными значениями</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_build_sql_insert(text relname,
+                        int2vector primary_key_attnums,
+                        integer num_primary_key_atts,
+                        text[] src_pk_att_vals_array,
+                        text[] tgt_pk_att_vals_array) returns text</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para>Функция <function>dblink_build_sql_insert</function> может быть полезна при избирательной репликации локальной таблицы с удалённой базой данных. Она выбирает строку из локальной таблицы по заданному первичному ключу, а затем формирует SQL-команду <command>INSERT</command>, дублирующую эту строку, но заменяет в ней значения первичного ключа данными из последнего аргумента. (Чтобы получить точную копию строки, просто укажите одинаковые значения в двух последних аргументах.)</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>relname</parameter></term>
+     <listitem>
+      <para>Имя локального отношения, например <literal>foo</literal> или <literal>myschema.mytab</literal>. Заключите его в двойные кавычки, если это имя в смешанном регистре или содержит специальные символы, например <literal>"FooBar"</literal>; без кавычек эта строка приводится к нижнему регистру.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>primary_key_attnums</parameter></term>
+     <listitem>
+      <para>Номера атрибутов (начиная с 1) полей первичного ключа, например <literal>1 2</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>num_primary_key_atts</parameter></term>
+     <listitem>
+      <para>Число полей первичного ключа.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>src_pk_att_vals_array</parameter></term>
+     <listitem>
+      <para>Значения полей первичного ключа, по которым будет выполняться поиск локального кортежа. Каждое поле здесь представляется в текстовом виде. Если локальной строки с этими значениями первичного ключа нет, выдаётся ошибка.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>tgt_pk_att_vals_array</parameter></term>
+     <listitem>
+      <para>Значения полей первичного ключа, которые будут помещены в результирующую команду <command>INSERT</command>. Каждое поле представляется в текстовом виде.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Возвращает запрошенный SQL-оператор в текстовом виде.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Замечания</title>
+
+   <para>Начиная с <productname>PostgreSQL</productname> 9.0, номера атрибутов в <parameter>primary_key_attnums</parameter> воспринимаются как логические номера столбцов, соответствующие позициям столбцов в <literal>SELECT * FROM relname</literal>. Предыдущие версии воспринимали эти номера как физические позиции столбцов. Отличие этих подходов проявляется, когда на протяжении жизни таблицы из неё удаляются столбцы левее указанных.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<screen>SELECT dblink_build_sql_insert('foo', '1 2', 2, '{"1", "a"}', '{"1", "b''a"}');
+             dblink_build_sql_insert
+--------------------------------------------------
+ INSERT INTO foo(f1,f2,f3) VALUES('1','b''a','1')
+(1 row)</screen>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-build-sql-delete">
+  <indexterm><primary>dblink_build_sql_delete</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_build_sql_delete</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_build_sql_delete</refname>
+   <refpurpose>формирует оператор DELETE со значениями, передаваемыми для полей первичного ключа</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_build_sql_delete(text relname,
+                        int2vector primary_key_attnums,
+                        integer num_primary_key_atts,
+                        text[] tgt_pk_att_vals_array) returns text</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para>Функция <function>dblink_build_sql_delete</function> может быть полезна при избирательной репликации локальной таблицы с удалённой базой данных. Она формирует SQL-команду <command>DELETE</command>, которая удалит строку с заданными значениями первичного ключа.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>relname</parameter></term>
+     <listitem>
+      <para>Имя локального отношения, например <literal>foo</literal> или <literal>myschema.mytab</literal>. Заключите его в двойные кавычки, если это имя в смешанном регистре или содержит специальные символы, например <literal>"FooBar"</literal>; без кавычек эта строка приводится к нижнему регистру.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>primary_key_attnums</parameter></term>
+     <listitem>
+      <para>Номера атрибутов (начиная с 1) полей первичного ключа, например <literal>1 2</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>num_primary_key_atts</parameter></term>
+     <listitem>
+      <para>Число полей первичного ключа.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>tgt_pk_att_vals_array</parameter></term>
+     <listitem>
+      <para>Значения полей первичного ключа, которые будут использоваться в результирующей команде <command>DELETE</command>. Каждое поле представляется в текстовом виде.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Возвращает запрошенный SQL-оператор в текстовом виде.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Замечания</title>
+
+   <para>Начиная с <productname>PostgreSQL</productname> 9.0, номера атрибутов в <parameter>primary_key_attnums</parameter> воспринимаются как логические номера столбцов, соответствующие позициям столбцов в <literal>SELECT * FROM relname</literal>. Предыдущие версии воспринимали эти номера как физические позиции столбцов. Отличие этих подходов проявляется, когда на протяжении жизни таблицы из неё удаляются столбцы левее указанных.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<screen>SELECT dblink_build_sql_delete('"MyFoo"', '1 2', 2, '{"1", "b"}');
+           dblink_build_sql_delete
+---------------------------------------------
+ DELETE FROM "MyFoo" WHERE f1='1' AND f2='b'
+(1 row)</screen>
+  </refsect1>
+ </refentry>
+
+ <refentry id="contrib-dblink-build-sql-update">
+  <indexterm><primary>dblink_build_sql_update</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>dblink_build_sql_update</refentrytitle>
+   <manvolnum>3</manvolnum>
+  </refmeta>
+
+  <refnamediv>
+   <refname>dblink_build_sql_update</refname>
+   <refpurpose>формирует оператор UPDATE из локального кортежа, заменяя значения первичного ключа переданными альтернативными значениями</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+<synopsis>dblink_build_sql_update(text relname,
+                        int2vector primary_key_attnums,
+                        integer num_primary_key_atts,
+                        text[] src_pk_att_vals_array,
+                        text[] tgt_pk_att_vals_array) returns text</synopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+   <title>Описание</title>
+
+   <para>Функция <function>dblink_build_sql_update</function> может быть полезна при избирательной репликации локальной таблицы с удалённой базой данных. Она выбирает строку из локальной таблицы по заданному первичному ключу, а затем формирует SQL-команду <command>UPDATE</command>, дублирующую эту строку, но заменяющую в ней значения первичного ключа данными из последнего аргумента. (Чтобы получить точную копию строки, просто укажите одинаковые значения в двух последних аргументах.) Команда <command>UPDATE</command> всегда присваивает значения всем полям строки &mdash; основное отличие этой функции от <function>dblink_build_sql_insert</function> в том, что она предполагает, что целевая строка уже существует в удалённой таблице.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Аргументы</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><parameter>relname</parameter></term>
+     <listitem>
+      <para>Имя локального отношения, например <literal>foo</literal> или <literal>myschema.mytab</literal>. Заключите его в двойные кавычки, если это имя в смешанном регистре или содержит специальные символы, например <literal>"FooBar"</literal>; без кавычек эта строка приводится к нижнему регистру.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>primary_key_attnums</parameter></term>
+     <listitem>
+      <para>Номера атрибутов (начиная с 1) полей первичного ключа, например <literal>1 2</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>num_primary_key_atts</parameter></term>
+     <listitem>
+      <para>Число полей первичного ключа.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>src_pk_att_vals_array</parameter></term>
+     <listitem>
+      <para>Значения полей первичного ключа, по которым будет выполняться поиск локального кортежа. Каждое поле здесь представляется в текстовом виде. Если локальной строки с этими значениями первичного ключа нет, выдаётся ошибка.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><parameter>tgt_pk_att_vals_array</parameter></term>
+     <listitem>
+      <para>Значения полей первичного ключа, которые будут помещены в результирующую команду <command>UPDATE</command>. Каждое поле представляется в текстовом виде.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1>
+   <title>Возвращаемое значение</title>
+
+   <para>Возвращает запрошенный SQL-оператор в текстовом виде.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Замечания</title>
+
+   <para>Начиная с <productname>PostgreSQL</productname> 9.0, номера атрибутов в <parameter>primary_key_attnums</parameter> воспринимаются как логические номера столбцов, соответствующие позициям столбцов в <literal>SELECT * FROM relname</literal>. Предыдущие версии воспринимали эти номера как физические позиции столбцов. Отличие этих подходов проявляется, когда на протяжении жизни таблицы из неё удаляются столбцы левее указанных.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+<screen>SELECT dblink_build_sql_update('foo', '1 2', 2, '{"1", "a"}', '{"1", "b"}');
+                   dblink_build_sql_update
+-------------------------------------------------------------
+ UPDATE foo SET f1='1',f2='b',f3='1' WHERE f1='1' AND f2='b'
+(1 row)</screen>
+  </refsect1>
+ </refentry>
+
+</sect1>

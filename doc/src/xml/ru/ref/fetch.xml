@@ -1,0 +1,255 @@
+<!--
+doc/src/xml/ref/fetch.xml
+&productname; documentation
+-->
+
+<refentry id="sql-fetch">
+
+ <indexterm zone="sql-fetch"><primary>FETCH</primary></indexterm>
+
+ <indexterm zone="sql-fetch"><primary>курсор</primary> <secondary>FETCH</secondary></indexterm>
+ <refmeta>
+  <refentrytitle>FETCH</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>FETCH</refname>
+  <refpurpose>получить результат запроса через курсор</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<!-- Note the "direction" bit is also in ref/move.sgml -->
+<synopsis>FETCH [ <replaceable class="parameter">direction</replaceable> [ FROM | IN ] ] <replaceable class="parameter">имя_курсора</replaceable>
+
+<phrase>Здесь <replaceable class="parameter">direction</replaceable> может быть пустым или принимать следующее значение:</phrase>
+
+    NEXT
+    PRIOR
+    FIRST
+    LAST
+    ABSOLUTE <replaceable class="parameter">число</replaceable>
+    RELATIVE <replaceable class="parameter">число</replaceable>
+    <replaceable class="parameter">число</replaceable>
+    ALL
+    FORWARD
+    FORWARD <replaceable class="parameter">число</replaceable>
+    FORWARD ALL
+    BACKWARD
+    BACKWARD <replaceable class="parameter">число</replaceable>
+    BACKWARD ALL</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>FETCH</command> получает строки через ранее созданный курсор.</para>
+
+  <para>Курсор связан с определённым положением, что и использует команда <command>FETCH</command>. Курсор может располагаться перед первой строкой результата запроса, на любой строке этого результата, либо после последней строки. При создании курсор оказывается перед первой строкой. Когда <command>FETCH</command> доходит до конца набора строк, курсор остаётся в положении после последней строки, либо перед первой, при движении назад. После команд <command>FETCH ALL</command> и <command>FETCH BACKWARD ALL</command> курсор всегда оказывается после последней строки или перед первой, соответственно.</para>
+
+  <para>Формы <literal>NEXT</literal>, <literal>PRIOR</literal>, <literal>FIRST</literal>, <literal>LAST</literal>, <literal>ABSOLUTE</literal> и <literal>RELATIVE</literal> выбирают одну строку после соответствущего перемещения курсора. Если в этом положении строки не оказывается, возвращается пустой результат, а курсор остаётся в достигнутом положении перед первой строкой или после последней.</para>
+
+  <para>Формы <literal>FORWARD</literal> и <literal>BACKWARD</literal> получают указанное число строк, сдвигаясь соответственно вперёд или назад; в результате курсор оказывается на последней выданной строке (или перед/после всех строк, если <replaceable class="parameter">число</replaceable> превышает количество доступных строк).</para>
+
+  <para>Формы <literal>RELATIVE 0</literal>, <literal>FORWARD 0</literal> и <literal>BACKWARD 0</literal> действуют одинаково — они считывают текущую строку, не перемещая курсор, то есть, повторно выбирая строку, выбранную последней. Эта операция будет успешна, только если курсор не расположен до первой или после последней строки; в этом случае строка возвращена не будет.</para>
+
+  <note>
+   <para>На этой странице описывается применение курсоров на уровне команд SQL. Если вы попытаетесь использовать курсоры внутри функции <application>PL/pgSQL</application>, правила будут другими &mdash; см. <xref remap="4" linkend="plpgsql-cursors"/>.</para>
+  </note>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">direction</replaceable></term>
+    <listitem>
+     <para>Параметр <replaceable class="parameter">направление</replaceable> задаёт направление движения и число выбираемых строк. Он может принимать одно из следующих значений: <variablelist>
+       <varlistentry>
+        <term><literal>NEXT</literal></term>
+        <listitem>
+         <para>Выбрать следующую строку. Это действие подразумевается по умолчанию, если <replaceable class="parameter">направление</replaceable> опущено.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>PRIOR</literal></term>
+        <listitem>
+         <para>Выбрать предыдущую строку.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>FIRST</literal></term>
+        <listitem>
+         <para>Выбрать первую строку запроса (аналогично указанию <literal>ABSOLUTE 1</literal>).</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>LAST</literal></term>
+        <listitem>
+         <para>Выбрать последнюю строку запроса (аналогично <literal>ABSOLUTE -1</literal>).</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>ABSOLUTE <replaceable class="parameter">число</replaceable></literal></term>
+        <listitem>
+         <para>Выбрать строку под номером <replaceable class="parameter">число</replaceable> с начала, либо под номером <literal>abs(<replaceable class="parameter">число</replaceable>)</literal> с конца, если <replaceable class="parameter">число</replaceable> отрицательно. Если <replaceable class="parameter">число</replaceable> выходит за границы набора строк, курсор размещается перед первой или после последней строки; в частности, с <literal>ABSOLUTE 0</literal> курсор оказывается перед первой строкой.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>RELATIVE <replaceable class="parameter">число</replaceable></literal></term>
+        <listitem>
+         <para>Выбрать строку под номером <replaceable class="parameter">число</replaceable>, считая со следующей вперёд, либо под номером <literal>abs(<replaceable class="parameter">число</replaceable>)</literal>, считая с предыдущей назад, если <replaceable class="parameter">число</replaceable> отрицательно. <literal>RELATIVE 0</literal> повторно считывает текущую строку, если таковая имеется.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><replaceable class="parameter">число</replaceable></term>
+        <listitem>
+         <para>Выбрать следующее <replaceable class="parameter">число</replaceable> строк (аналогично <literal>FORWARD <replaceable class="parameter">число</replaceable></literal>).</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>ALL</literal></term>
+        <listitem>
+         <para>Выбрать все оставшиеся строки (аналогично <literal>FORWARD ALL</literal>).</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>FORWARD</literal></term>
+        <listitem>
+         <para>Выбрать следующую строку (аналогично <literal>NEXT</literal>).</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>FORWARD <replaceable class="parameter">число</replaceable></literal></term>
+        <listitem>
+         <para>Выбрать следующее <replaceable class="parameter">число</replaceable> строк. <literal>FORWARD 0</literal> повторно выбирает текущую строку.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>FORWARD ALL</literal></term>
+        <listitem>
+         <para>Выбрать все оставшиеся строки.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>BACKWARD</literal></term>
+        <listitem>
+         <para>Выбрать предыдущую строку (аналогично <literal>PRIOR</literal>).</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>BACKWARD <replaceable class="parameter">число</replaceable></literal></term>
+        <listitem>
+         <para>Выбрать предыдущее <replaceable class="parameter">число</replaceable> строк (с перемещением назад). <literal>BACKWARD 0</literal> повторно выбирает текущую строку.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>BACKWARD ALL</literal></term>
+        <listitem>
+         <para>Выбрать все предыдущие строки (с перемещением назад).</para>
+        </listitem>
+       </varlistentry>
+      </variablelist></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">число</replaceable></term>
+    <listitem>
+     <para>Здесь <replaceable class="parameter">число</replaceable> — целочисленная константа, возможно со знаком, определяющая смещение или количество выбираемых строк. Для вариантов <literal>FORWARD</literal> и <literal>BACKWARD</literal> указание отрицательного <replaceable class="parameter">числа</replaceable> равнозначно смене направления <literal>FORWARD</literal> на <literal>BACKWARD</literal> и наоборот.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_курсора</replaceable></term>
+    <listitem>
+     <para>Имя открытого курсора.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Выводимая информация</title>
+
+  <para>При успешном выполнении <command>FETCH</command> возвращает метку команды вида <screen>
+FETCH <replaceable class="parameter">число</replaceable>
+</screen> Здесь <replaceable class="parameter">count</replaceable> — количество выбранных строк (может быть и нулевым). Заметьте, что в <application>psql</application> метка команды не выдаётся, так как вместо неё <application>psql</application> выводит выбранные строки.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Если перемещение курсора в <command>FETCH</command> не ограничивается вариантами <command>FETCH NEXT</command> или <command>FETCH FORWARD</command> с положительным числом, курсор должен быть объявлен с указанием <literal>SCROLL</literal>. Для простых запросов <productname>&productname;</productname> допускает обратное перемещение курсора, объявленного без <literal>SCROLL</literal>, но на это поведение лучше не рассчитывать. Если курсор объявлен с указанием <literal>NO SCROLL</literal>, перемещение назад запрещается.</para>
+
+  <para>Вариант <literal>ABSOLUTE</literal> нисколько не быстрее, чем перемещение к требуемой строке с относительным сдвигом: нижележащий механизм всё равно должен прочитать все промежуточные строки. Выборки по абсолютному отрицательному положению ещё хуже: сначала запрос необходимо прочитать до конца и найти последнюю строку, а затем вернуться назад к указанной строке. Однако перемотка к началу запроса (<literal>FETCH ABSOLUTE 0</literal>) выполняется быстро.</para>
+
+  <para>Определить курсор позволяет команда <xref linkend="sql-declare"/>, а переместить его, не читая данные, — команда <xref linkend="sql-move"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Следующий пример демонстрирует перемещение курсора в таблице: <programlisting>BEGIN WORK;
+
+-- Создание курсора:
+DECLARE liahona SCROLL CURSOR FOR SELECT * FROM films;
+
+-- Получение первых 5 строк через курсор liahona:
+FETCH FORWARD 5 FROM liahona;
+
+ code  |          title          | did | date_prod  |   kind   |  len
+-------+-------------------------+-----+------------+----------+-------
+ BL101 | The Third Man           | 101 | 1949-12-23 | Drama    | 01:44
+ BL102 | The African Queen       | 101 | 1951-08-11 | Romantic | 01:43
+ JL201 | Une Femme est une Femme | 102 | 1961-03-12 | Romantic | 01:25
+ P_301 | Vertigo                 | 103 | 1958-11-14 | Action   | 02:08
+ P_302 | Becket                  | 103 | 1964-02-03 | Drama    | 02:28
+
+-- Получение предыдущей строки:
+FETCH PRIOR FROM liahona;
+
+ code  |  title  | did | date_prod  |  kind  |  len
+-------+---------+-----+------------+--------+-------
+ P_301 | Vertigo | 103 | 1958-11-14 | Action | 02:08
+
+-- Закрытие курсора и завершение транзакции:
+CLOSE liahona;
+COMMIT WORK;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>В стандарте SQL команда <command>FETCH</command> определена только для встраиваемого SQL. Описанная здесь реализация <command>FETCH</command> возвращает данные подобно оператору <command>SELECT</command>, а не помещает их в переменные исполняющей среды. В остальном, <command>FETCH</command> полностью прямо-совместима со стандартом SQL.</para>
+
+  <para>Формы <command>FETCH</command> с <literal>FORWARD</literal> и <literal>BACKWARD</literal>, а также формы <literal>FETCH <replaceable class="parameter">число</replaceable></literal> и <literal>FETCH ALL</literal> (в которых <literal>FORWARD</literal> подразумевается) являются расширениями <productname>&productname;</productname>.</para>
+
+  <para>В стандарте SQL перед именем курсора допускается только указание <literal>FROM</literal>; возможность указать <literal>IN</literal> или опустить оба указания относится к расширениям.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-close"/></member>
+   <member><xref linkend="sql-declare"/></member>
+   <member><xref linkend="sql-move"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

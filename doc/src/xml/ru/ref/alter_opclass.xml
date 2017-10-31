@@ -1,0 +1,95 @@
+<!--
+doc/src/xml/ref/alter_opclass.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alteropclass">
+ <indexterm zone="sql-alteropclass"><primary>ALTER OPERATOR CLASS</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER OPERATOR CLASS</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER OPERATOR CLASS</refname>
+  <refpurpose>изменить определение класса операторов</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER OPERATOR CLASS <replaceable>имя</replaceable> USING <replaceable class="parameter">метод_индекса</replaceable>
+    RENAME TO <replaceable>новое_имя</replaceable>
+
+ALTER OPERATOR CLASS <replaceable>имя</replaceable> USING <replaceable class="parameter">метод_индекса</replaceable>
+    OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+
+ALTER OPERATOR CLASS <replaceable>имя</replaceable> USING <replaceable class="parameter">метод_индекса</replaceable>
+    SET SCHEMA <replaceable>новая_схема</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER OPERATOR CLASS</command> изменяет определение класса операторов.</para>
+
+  <para>Выполнить <command>ALTER OPERATOR CLASS</command> может только владелец соответствующего класса операторов. Чтобы сменить владельца, необходимо быть непосредственным или опосредованным членом новой роли-владельца, а эта роль должна иметь право <literal>CREATE</literal> в схеме класса операторов. (С такими ограничениями при смене владельца не происходит ничего такого, что нельзя было бы сделать, имея право удалить и вновь создать класс операторов. Однако суперпользователь может сменить владельца классов операторов в любом случае.)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующего класса операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">метод_индекса</replaceable></term>
+    <listitem>
+     <para>Имя индексного метода, для которого предназначен этот класс операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя класса операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Новый владелец класса операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_схема</replaceable></term>
+    <listitem>
+     <para>Новая схема класса операторов.</para>
+    </listitem>
+   </varlistentry>
+ </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Команда <command>ALTER OPERATOR CLASS</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createopclass"/></member>
+   <member><xref linkend="sql-dropopclass"/></member>
+   <member><xref linkend="sql-alteropfamily"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

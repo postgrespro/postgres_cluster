@@ -1,0 +1,204 @@
+<!-- doc/src/xml/ref/create_foreign_table.xml -->
+
+<refentry id="sql-createforeigntable">
+ <indexterm zone="sql-createforeigntable"><primary>CREATE FOREIGN TABLE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE FOREIGN TABLE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE FOREIGN TABLE</refname>
+  <refpurpose>создать стороннюю таблицу</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE FOREIGN TABLE [ IF NOT EXISTS ] <replaceable class="parameter">имя_таблицы</replaceable> ( [
+  { <replaceable class="parameter">имя_столбца</replaceable> <replaceable class="parameter">тип_данных</replaceable> [ OPTIONS ( <replaceable class="parameter">параметр</replaceable> '<replaceable class="parameter">значение</replaceable>' [, ... ] ) ] [ COLLATE <replaceable>правило_сортировки</replaceable> ] [ <replaceable class="parameter">ограничение_столбца</replaceable> [ ... ] ]
+    | <replaceable>ограничение_таблицы</replaceable> }
+    [, ... ]
+] )
+[ INHERITS ( <replaceable>таблица_родитель</replaceable> [, ... ] ) ]
+  SERVER <replaceable class="parameter">имя_сервера</replaceable>
+[ OPTIONS ( <replaceable class="parameter">параметр</replaceable> '<replaceable class="parameter">значение</replaceable>' [, ... ] ) ]
+
+<phrase>Здесь <replaceable class="parameter">ограничение_столбца</replaceable>:</phrase>
+
+[ CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable> ]
+{ NOT NULL |
+  NULL |
+  CHECK ( <replaceable class="parameter">выражение</replaceable> ) [ NO INHERIT ] |
+  DEFAULT <replaceable>выражение_по_умолчанию</replaceable> }
+
+<phrase>и <replaceable class="parameter">ограничение_таблицы</replaceable>:</phrase>
+
+[ CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable> ]
+CHECK ( <replaceable class="parameter">выражение</replaceable> ) [ NO INHERIT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="sql-createforeigntable-description">
+  <title>Описание</title>
+
+  <para><command>CREATE FOREIGN TABLE</command> создаёт новую стороннюю таблицу в текущей базе данных. Владельцем таблицы будет пользователь, выполнивший эту команду.</para>
+
+  <para>Если указано имя схемы (например, <literal>CREATE FOREIGN TABLE myschema.mytable ...</literal>), таблица будет создана в этой схеме. В противном случае она создаётся в текущей схеме. Имя сторонней таблицы должно отличаться от имён других сторонних и обычных таблиц, последовательностей, индексов, представлений и материализованных представлений, существующих в этой схеме.</para>
+
+  <para><command>CREATE FOREIGN TABLE</command> также автоматически создаёт составной тип данных, соответствующий одной строке сторонней таблицы. Таким образом, имя сторонней таблицы не может совпадать с именем существующего типа в этой же схеме.</para>
+
+  <para>Чтобы создать стороннюю таблицу, необходимо иметь право <literal>USAGE</literal> для стороннего сервера, а также право <literal>USAGE</literal> для всех типов столбцов, содержащихся в таблице.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+
+   <varlistentry>
+    <term><literal>IF NOT EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если отношение с таким именем уже существует. В этом случае будет выдано замечание. Заметьте, что нет никакой гарантии, что существующее отношение как-то соотносится с тем, которое могло бы быть создано.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) создаваемой таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_столбца</replaceable></term>
+    <listitem>
+     <para>Имя столбца, создаваемого в новой таблице.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_данных</replaceable></term>
+    <listitem>
+     <para>Тип данных столбца (может включать определение массива с этим типом). За дополнительными сведениями о типах данных, которые поддерживает <productname>&productname;</productname>, обратитесь к <xref remap="3" linkend="datatype"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>COLLATE <replaceable>правило_сортировки</replaceable></literal></term>
+    <listitem>
+     <para>Предложение <literal>COLLATE</literal> назначает правило сортировки для столбца (который должен иметь тип, поддерживающий сортировку). Если оно отсутствует, используется правило сортировки по умолчанию, установленное для типа данных столбца.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>INHERITS ( <replaceable>таблица_родитель</replaceable> [, ... ] )</literal></term>
+    <listitem>
+     <para>Необязательное предложение <literal>INHERITS</literal> определяет список таблиц, от которых новая сторонняя таблица будет автоматически наследовать все столбцы. Родительскими таблицами могут быть обычные или сторонние таблицы. За подробностями обратитесь к описанию подобной формы <xref linkend="sql-createtable"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable></literal></term>
+    <listitem>
+     <para>Необязательное имя столбца или ограничения таблицы. При нарушении ограничения его имя будет выводиться в сообщении об ошибках, так что имена ограничений вида <literal>столбец должен быть положительным</literal> могут сообщить полезную информацию об ограничении клиентскому приложению. (Имена ограничений, включающие пробелы, необходимо заключать в двойные кавычки.) Если имя ограничения не указано, система генерирует имя автоматически.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>NOT NULL</literal></term>
+    <listitem>
+     <para>Данный столбец не принимает значения NULL.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>NULL</literal></term>
+    <listitem>
+     <para>Данный столбец может содержать значения NULL (по умолчанию).</para>
+
+     <para>Это предложение предназначено только для совместимости с нестандартными базами данных SQL. Использовать его в новых приложениях не рекомендуется.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CHECK ( <replaceable class="parameter">выражение</replaceable> ) [ NO INHERIT ]</literal></term>
+    <listitem>
+     <para>В ограничении <literal>CHECK</literal> задаётся выражение, возвращающее булевский результат, которому должны удовлетворять все строки в сторонней таблице; то есть это выражение должно выдавать TRUE или UNKNOWN, но никогда FALSE, для всех строк в сторонней таблице. Ограничение-проверка, заданное как ограничение столбца, должно ссылаться только на значение самого столбца, тогда как ограничение на уровне таблицы может ссылаться и на несколько столбцов.</para>
+
+     <para>В настоящее время выражения <literal>CHECK</literal> не могут содержать подзапросы или ссылаться на переменные, кроме как на столбцы текущей строки. Также допустима ссылка на системный столбец <literal>tableoid</literal>, но не на другие системные столбцы.</para>
+
+     <para>Ограничение с пометкой <literal>NO INHERIT</literal> не будет наследоваться дочерними таблицами.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DEFAULT <replaceable>выражение_по_умолчанию</replaceable></literal></term>
+    <listitem>
+     <para>Предложение <literal>DEFAULT</literal> задаёт значение по умолчанию для столбца, в определении которого оно присутствует. Значение задаётся выражением без переменных (подзапросы и перекрёстные ссылки на другие столбцы текущей таблицы в нём не допускаются). Тип данных выражения, задающего значение по умолчанию, должен соответствовать типу данных столбца.</para>
+
+     <para>Это выражение будет использоваться во всех операциях добавления данных, в которых не задаётся значение данного столбца. Если значение по умолчанию не определено, таким значением будет NULL.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_сервера</replaceable></term>
+    <listitem>
+     <para>Имя существующего стороннего сервера, предоставляющего данную стороннюю таблицу. О создании сервера можно узнать в <xref remap="6" linkend="sql-createserver"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>OPTIONS ( <replaceable class="parameter">параметр</replaceable> '<replaceable class="parameter">значение</replaceable>' [, ...] )</literal></term>
+    <listitem>
+     <para>Параметры, связываемые с новой сторонней таблицей или одним из её столбцов. Допустимые имена и значения параметров у каждой обёртки сторонних данных свои; они контролируются функцией проверки, связанной с этой обёрткой. Имена параметров не должны повторяться (хотя параметр таблицы и параметр столбца вполне могут иметь одно имя).</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para>Ограничения сторонних таблиц (например, <literal>CHECK</literal> и <literal>NOT NULL</literal>) не контролируются ядром системы <productname>&productname;</productname>, как не пытаются их контролировать и большинство обёрток сторонних данных; то есть, система просто предполагает, что ограничение выполняется. Контролировать такое ограничение не имело бы большого смысла, так как оно применялось бы только к строкам, добавляемым или изменяемым через стороннюю таблицу, но не к строкам, модифицируемым другим путём, например, непосредственно на удалённом сервере. Вместо этого, ограничение, связанное со сторонней таблицей, должно представлять ограничение, выполнение которого обеспечивает удалённый сервер.</para>
+
+   <para>Некоторые специализированные обёртки сторонних данных могут быть единственным вариантом обращения к доступным через них данным, и в этом случае может быть уместно реализовать контроль ограничений в самой такой обёртке. Но не следует полагать, что какая-либо обёртка ведёт себя так, если об этом не сказано явно в её документации.</para>
+
+   <para>Хотя <productname>&productname;</productname> не пытается контролировать ограничения для сторонних таблиц, он полагает, что они выполняются для целей оптимизации запросов. Если в сторонней таблице будут видны строки, не удовлетворяющие объявленному ограничению, запросы к этой таблицы могут выдавать некорректные результаты. Ответственность за фактическое выполнение условия ограничения лежит на пользователе.</para>
+ </refsect1>
+
+ <refsect1 id="sql-createforeigntable-examples">
+  <title>Примеры</title>
+
+  <para>Создание сторонней таблицы <structname>films</structname>, которая будет доступна через сервер <structname>film_server</structname>: <programlisting>CREATE FOREIGN TABLE films (
+    code        char(5) NOT NULL,
+    title       varchar(40) NOT NULL,
+    did         integer NOT NULL,
+    date_prod   date,
+    kind        varchar(10),
+    len         interval hour to minute
+)
+SERVER film_server;</programlisting></para>
+
+ </refsect1>
+
+ <refsect1 id="sql-createforeigntable-compatibility">
+  <title id="sql-createforeigntable-compatibility-title">Совместимость</title>
+
+  <para>Команда <command>CREATE FOREIGN TABLE</command> в основном соответствует стандарту <acronym>SQL</acronym>; однако, как и <link linkend="sql-createtable"><command>CREATE TABLE</command></link>, она допускает ограничения <literal>NULL</literal> и сторонние таблицы с нулём столбцов. Возможность задавать значения по умолчанию для столбцов также является расширением <productname>&productname;</productname>. Наследование таблиц, в форме, определённой в <productname>&productname;</productname>, стандарту не соответствует.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterforeigntable"/></member>
+   <member><xref linkend="sql-dropforeigntable"/></member>
+   <member><xref linkend="sql-createtable"/></member>
+   <member><xref linkend="sql-createserver"/></member>
+   <member><xref linkend="sql-importforeignschema"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

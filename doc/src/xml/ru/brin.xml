@@ -1,0 +1,640 @@
+<!-- doc/src/xml/brin.xml -->
+
+<chapter id="brin">
+<title>Индексы BRIN</title>
+
+   <indexterm><primary>индекс</primary> <secondary>BRIN</secondary></indexterm>
+
+<sect1 id="brin-intro">
+ <title>Введение</title>
+
+ <para><acronym>BRIN</acronym> расшифровывается как &laquo;Block Range Index&raquo; (Индекс зон блоков). <acronym>BRIN</acronym> предназначается для обработки очень больших таблиц, в которых определённые столбцы некоторым естественным образом коррелируют с их физическим расположением в таблице. <firstterm>Зоной блоков</firstterm> называется группа страниц, физически расположенных в таблице рядом; для каждой зоны в индексе сохраняется некоторая сводная информация. Например, в таблице заказов магазина может содержаться поле с датой добавления заказа, и практически всегда записи более ранних заказов и в таблице будут размещены ближе к началу; в таблице, содержащей столбец с почтовым индексом, также естественным образом могут группироваться записи по городам.</para>
+
+ <para>Индексы <acronym>BRIN</acronym> могут удовлетворять запросы, выполняя обычное сканирование по битовой карте, и будут возвращать все кортежи во всех страницах каждой зоны, если сводные данные, сохранённые в индексе, <firstterm>соответствуют</firstterm> условиям запроса. Исполнитель запроса должен перепроверить эти кортежи и отбросить те, что не соответствуют условиям запроса &mdash; другими словами, эти индексы неточные. Так как индекс <acronym>BRIN</acronym> очень маленький, сканирование индекса влечёт мизерные издержки по сравнению с последовательным сканированием, но может избавить от необходимости сканирования больших областей таблицы, которые определённо не содержат подходящие кортежи.</para>
+
+ <para>Конкретные данные, которые будут хранится в индексе <acronym>BRIN</acronym>, а также запросы, которые сможет поддержать этот индекс, зависят от класса операторов, выбранного для каждого столбца индекса. Например, типы данных с линейным порядком сортировки могут иметь классы операторов, хранящие минимальное и максимальное значение для каждой зоны блоков; для геометрических типов может храниться прямоугольник, вмещающий все объекты в зоне блоков.</para>
+
+ <para>Размер зоны блоков определяется в момент создания индекса параметром хранения <literal>pages_per_range</literal>. Число записей в индексе будет равняться размеру отношения в страницах, делённому на установленное значение <literal>pages_per_range</literal>. Таким образом, чем меньше это число, тем больше становится индекс (так как в нём требуется хранить больше элементов), но в то же время сводные данные могут быть более точными и большее число блоков данных может быть пропущено при сканировании индекса.</para>
+
+ <sect2 id="brin-operation">
+  <title>Обслуживание индекса</title>
+
+  <para>Во время создания индекса сканируются все существующие страницы, и в результате в индексе создаётся сводный кортеж для каждой зоны, в том числе, возможно неполной зоны в конце. По мере того, как данными наполняются новые страницы, если они оказываются в зонах, для которых уже есть сводная информация, она будет обновлена с учётом данных из новых кортежей. Если же создаётся новая страница, которая не попадает в последнюю зону, для новой зоны автоматически не рассчитывается сводная запись; кортежи на таких страницах остаются неучтёнными, пока позже не будет проведён расчёт сводных данных. Эта процедура может быть вызвана вручную, с помощью функции <function>brin_summarize_new_values(regclass)</function>, или автоматически, когда таблицу будет обрабатывать <command>VACUUM</command>.</para>
+ </sect2>
+</sect1>
+
+<sect1 id="brin-builtin-opclasses">
+ <title>Встроенные классы операторов</title>
+
+ <para>В базовый дистрибутив <productname>&productname;</productname> включены классы операторов <acronym>BRIN</acronym>, перечисленные в <xref remap="6" linkend="brin-builtin-opclasses-table"/>.</para>
+
+ <para>Классы операторов <firstterm>minmax</firstterm> хранят минимальные и максимальные значения, встречающиеся в индексированном столбце в определённой зоне. Классы операторов <firstterm>inclusion</firstterm> хранят значение, в котором содержатся значения индексированного столбца в определённой зоне.</para>
+
+ <table id="brin-builtin-opclasses-table">
+  <title>Встроенные классы операторов <acronym>BRIN</acronym></title>
+  <tgroup cols="3">
+   <thead>
+    <row>
+     <entry>Имя</entry>
+     <entry>Индексируемый тип данных</entry>
+     <entry>Индексируемые операторы</entry>
+    </row>
+   </thead>
+   <tbody>
+    <row>
+     <entry><literal>abstime_minmax_ops</literal></entry>
+     <entry><type>abstime</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>int8_minmax_ops</literal></entry>
+     <entry><type>bigint</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>bit_minmax_ops</literal></entry>
+     <entry><type>bit</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>varbit_minmax_ops</literal></entry>
+     <entry><type>bit varying</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>box_inclusion_ops</literal></entry>
+     <entry><type>box</type></entry>
+     <entry>
+      <literal>&lt;&lt;</literal>
+      <literal>&amp;&lt;</literal>
+      <literal>&amp;&amp;</literal>
+      <literal>&amp;&gt;</literal>
+      <literal>&gt;&gt;</literal>
+      <literal>~=</literal>
+      <literal>@&gt;</literal>
+      <literal>&lt;@</literal>
+      <literal>&amp;&lt;|</literal>
+      <literal>&lt;&lt;|</literal>
+      <literal>|&gt;&gt;</literal>
+      <literal>|&amp;&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>bytea_minmax_ops</literal></entry>
+     <entry><type>bytea</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>bpchar_minmax_ops</literal></entry>
+     <entry><type>character</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>char_minmax_ops</literal></entry>
+     <entry><type>"char"</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>date_minmax_ops</literal></entry>
+     <entry><type>date</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>float8_minmax_ops</literal></entry>
+     <entry><type>double precision</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>inet_minmax_ops</literal></entry>
+     <entry><type>inet</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>network_inclusion_ops</literal></entry>
+     <entry><type>inet</type></entry>
+     <entry>
+      <literal>&amp;&amp;</literal>
+      <literal>&gt;&gt;=</literal>
+      <literal>&lt;&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;&gt;</literal>
+      <literal>&lt;&lt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>int4_minmax_ops</literal></entry>
+     <entry><type>integer</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>interval_minmax_ops</literal></entry>
+     <entry><type>interval</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>macaddr_minmax_ops</literal></entry>
+     <entry><type>macaddr</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>name_minmax_ops</literal></entry>
+     <entry><type>name</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>numeric_minmax_ops</literal></entry>
+     <entry><type>numeric</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>pg_lsn_minmax_ops</literal></entry>
+     <entry><type>pg_lsn</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>oid_minmax_ops</literal></entry>
+     <entry><type>oid</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>range_inclusion_ops</literal></entry>
+     <entry><type>любой тип диапазона</type></entry>
+     <entry>
+      <literal>&lt;&lt;</literal>
+      <literal>&amp;&lt;</literal>
+      <literal>&amp;&amp;</literal>
+      <literal>&amp;&gt;</literal>
+      <literal>&gt;&gt;</literal>
+      <literal>@&gt;</literal>
+      <literal>&lt;@</literal>
+      <literal>-|-</literal>
+      <literal>=</literal>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;</literal>
+      <literal>&gt;=</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>float4_minmax_ops</literal></entry>
+     <entry><type>real</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>reltime_minmax_ops</literal></entry>
+     <entry><type>reltime</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>int2_minmax_ops</literal></entry>
+     <entry><type>smallint</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>text_minmax_ops</literal></entry>
+     <entry><type>text</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>tid_minmax_ops</literal></entry>
+     <entry><type>tid</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>timestamp_minmax_ops</literal></entry>
+     <entry><type>timestamp without time zone</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>timestamptz_minmax_ops</literal></entry>
+     <entry><type>timestamp with time zone</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>time_minmax_ops</literal></entry>
+     <entry><type>time without time zone</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>timetz_minmax_ops</literal></entry>
+     <entry><type>time with time zone</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+    <row>
+     <entry><literal>uuid_minmax_ops</literal></entry>
+     <entry><type>uuid</type></entry>
+     <entry>
+      <literal>&lt;</literal>
+      <literal>&lt;=</literal>
+      <literal>=</literal>
+      <literal>&gt;=</literal>
+      <literal>&gt;</literal>
+     </entry>
+    </row>
+   </tbody>
+  </tgroup>
+ </table>
+</sect1>
+
+<sect1 id="brin-extensibility">
+ <title>Расширяемость</title>
+
+ <para>Интерфейс <acronym>BRIN</acronym> характеризуется высоким уровнем абстракции и таким образом требует от разработчика метода доступа реализовать только смысловое наполнение обрабатываемого типа данных. Уровень <acronym>BRIN</acronym> берёт на себя заботу о параллельном доступе, поддержке журнала и поиске в структуре индекса.</para>
+
+ <para>Всё, что нужно, чтобы получить работающий метод доступа <acronym>BRIN</acronym> — это реализовать несколько пользовательских методов, определяющих поведение сводных значений, хранящихся в индексе, и их взаимоотношения с ключами сканирования. Словом, <acronym>BRIN</acronym> сочетает расширяемость с универсальностью, повторным использованием кода и аккуратным интерфейсом.</para>
+
+ <para>Класс операторов для <acronym>BRIN</acronym> должен предоставлять четыре метода: <variablelist>
+   <varlistentry>
+    <term><function>BrinOpcInfo *opcInfo(Oid type_oid)</function></term>
+    <listitem>
+     <para>Возвращает внутреннюю информацию о сводных данных индексированных столбцов. Возвращаемое значение должно указывать на <structname>BrinOpcInfo</structname> (в памяти palloc) со следующим определением: <programlisting>typedef struct BrinOpcInfo
+{
+    /* Число полей, хранящихся в столбце индекса этого класса операторов */
+    uint16      oi_nstored;
+
+    /* Прозрачный указатель для частного использования классом операторов */
+    void       *oi_opaque;
+
+    /* Элементы кеша типов для сохранённых столбцов */
+    TypeCacheEntry *oi_typcache[FLEXIBLE_ARRAY_MEMBER];
+} BrinOpcInfo;</programlisting> Поле <structname>BrinOpcInfo</structname>.<structfield>oi_opaque</structfield> могут использовать подпрограммы класса операторов для передачи информации опорным процедурам при сканировании индекса.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>bool consistent(BrinDesc *bdesc, BrinValues *column, ScanKey key)</function></term>
+    <listitem>
+     <para>Показывает, соответствует ли значение ScanKey заданным индексированным значениям некоторой зоны. Номер целевого атрибута передаётся в составе ключа сканирования.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>bool addValue(BrinDesc *bdesc, BrinValues *column, Datum newval, bool isnull)</function></term>
+    <listitem>
+     <para>Для заданного кортежа индекса и индексируемого значения изменяет выбранный атрибут кортежа, чтобы он дополнительно охватывал новое значение. Если в кортеж вносятся какие-либо изменения, возвращается <literal>true</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><function>bool unionTuples(BrinDesc *bdesc, BrinValues *a, BrinValues *b)</function></term>
+    <listitem>
+     <para>Консолидирует два кортежа индекса. Получая два кортежа, изменяет выбранный атрибут первого из них, что он охватывал оба кортежа. Второй кортеж не изменяется.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist> Основной дистрибутив включает поддержку двух типов классов операторов: minmax и inclusion. Определения классов операторов, использующие их, представлены для встроенных типов данных, насколько это уместно. Пользователь может определить дополнительные классы операторов для других типов данных, применяя аналогичные определения, обойдясь без написания исходного кода; достаточно будет объявить нужные записи в каталоге. Заметьте, что предположения о семантике стратегий операторов зашиты в исходном коде опорных процедур.</para>
+
+ <para>Также возможно создать классы операторов, воплощающие полностью другую семантику, разработав реализации четырёх основных опорных процедур, описанных выше. Заметьте, что обратная совместимость между разными основными версиями не гарантируется: к примеру, в следующих выпусках могут потребоваться дополнительные опорные процедуры.</para>
+
+ <para>При написании класса операторов для типа данных, представляющего полностью упорядоченное множество, можно использовать опорные процедуры minmax вместе с соответствующими операторами, как показано в <xref remap="6" linkend="brin-extensibility-minmax-table"/>. Все члены класса операторов (процедуры и операторы) являются обязательными.</para>
+
+ <table id="brin-extensibility-minmax-table">
+  <title>Номера стратегий и опорных процедур для классов операторов Minmax</title>
+  <tgroup cols="2">
+   <thead>
+    <row>
+     <entry>Член класса операторов</entry>
+     <entry>Объект</entry>
+    </row>
+   </thead>
+   <tbody>
+    <row>
+     <entry>Опорная процедура 1</entry>
+     <entry>внутренняя функция <function>brin_minmax_opcinfo()</function></entry>
+    </row>
+    <row>
+     <entry>Опорная процедура 2</entry>
+     <entry>внутренняя функция <function>brin_minmax_add_value()</function></entry>
+    </row>
+    <row>
+     <entry>Опорная процедура 3</entry>
+     <entry>внутренняя функция <function>brin_minmax_consistent()</function></entry>
+    </row>
+    <row>
+     <entry>Опорная процедура 4</entry>
+     <entry>внутренняя функция <function>brin_minmax_union()</function></entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 1</entry>
+     <entry>оператор меньше</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 2</entry>
+     <entry>оператор меньше-или-равно</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 3</entry>
+     <entry>оператор равно</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 4</entry>
+     <entry>оператор больше-или-равно</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 5</entry>
+     <entry>оператор больше</entry>
+    </row>
+   </tbody>
+  </tgroup>
+ </table>
+
+ <para>При написании класса операторов для сложного типа данных, значения которого включаются в другой тип, можно использовать опорные процедуры inclusion вместе с соответствующими операторами, как показано в <xref remap="6" linkend="brin-extensibility-inclusion-table"/>. Для этого требуется одна дополнительная функция, которую можно написать на любом языке. Для расширенной функциональности можно определить другие функции. Все операторы являются необязательными. Некоторые из них требует наличия других, что показано в таблице как зависимости.</para>
+
+ <table id="brin-extensibility-inclusion-table">
+  <title>Номера стратегий и опорных процедур для классов операторов Inclusion</title>
+  <tgroup cols="3">
+   <thead>
+    <row>
+     <entry>Член класса операторов</entry>
+     <entry>Объект</entry>
+     <entry>Зависимость</entry>
+    </row>
+   </thead>
+   <tbody>
+    <row>
+     <entry>Опорная процедура 1</entry>
+     <entry>внутренняя функция <function>brin_inclusion_opcinfo()</function></entry>
+     <entry/>
+    </row>
+    <row>
+     <entry>Опорная процедура 2</entry>
+     <entry>внутренняя функция <function>brin_inclusion_add_value()</function></entry>
+     <entry/>
+    </row>
+    <row>
+     <entry>Опорная процедура 3</entry>
+     <entry>внутренняя функция <function>brin_inclusion_consistent()</function></entry>
+     <entry/>
+    </row>
+    <row>
+     <entry>Опорная процедура 4</entry>
+     <entry>внутренняя функция <function>brin_inclusion_union()</function></entry>
+     <entry/>
+    </row>
+    <row>
+     <entry>Опорная процедура 11</entry>
+     <entry>функция для слияния двух элементов</entry>
+     <entry/>
+    </row>
+    <row>
+     <entry>Опорная процедура 12</entry>
+     <entry>необязательная функция для проверки возможности слияния двух элементов</entry>
+     <entry/>
+    </row>
+    <row>
+     <entry>Опорная процедура 13</entry>
+     <entry>необязательная функция для проверки, содержится ли один элемент в другом</entry>
+     <entry/>
+    </row>
+    <row>
+     <entry>Опорная процедура 14</entry>
+     <entry>необязательная функция для проверки, является ли элемент пустым</entry>
+     <entry/>
+    </row>
+    <row>
+     <entry>Стратегия оператора 1</entry>
+     <entry>оператор левее</entry>
+     <entry>Стратегия оператора 4</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 2</entry>
+     <entry>оператор не-простирается-правее</entry>
+     <entry>Стратегия оператора 5</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 3</entry>
+     <entry>оператор перекрывается</entry>
+     <entry/>
+    </row>
+    <row>
+     <entry>Стратегия оператора 4</entry>
+     <entry>оператор не-простирается-левее</entry>
+     <entry>Стратегия оператора 1</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 5</entry>
+     <entry>оператор правее</entry>
+     <entry>Стратегия оператора 2</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 6, 18</entry>
+     <entry>оператор то-же-или-равно</entry>
+     <entry>Стратегия оператора 7</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 7, 13, 16, 24, 25</entry>
+     <entry>оператор содержит-или-равно</entry>
+     <entry/>
+    </row>
+    <row>
+     <entry>Стратегия оператора 8, 14, 26, 27</entry>
+     <entry>оператор содержится-в-или-равно</entry>
+     <entry>Стратегия оператора 3</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 9</entry>
+     <entry>оператор не-простирается-выше</entry>
+     <entry>Стратегия оператора 11</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 10</entry>
+     <entry>оператор ниже</entry>
+     <entry>Стратегия оператора 12</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 11</entry>
+     <entry>оператор выше</entry>
+     <entry>Стратегия оператора 9</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 12</entry>
+     <entry>оператор не-простирается-ниже</entry>
+     <entry>Стратегия оператора 10</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 20</entry>
+     <entry>оператор меньше</entry>
+     <entry>Стратегия оператора 5</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 21</entry>
+     <entry>оператор меньше-или-равно</entry>
+     <entry>Стратегия оператора 5</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 22</entry>
+     <entry>оператор больше</entry>
+     <entry>Стратегия оператора 1</entry>
+    </row>
+    <row>
+     <entry>Стратегия оператора 23</entry>
+     <entry>оператор больше-или-равно</entry>
+     <entry>Стратегия оператора 1</entry>
+    </row>
+   </tbody>
+  </tgroup>
+ </table>
+
+ <para>Номера опорных процедур 1-10 зарезервированы для внутренних функций BRIN, так что функции уровня SQL начинаются с номера 11. Опорная функция номер 11 является основной, необходимой для построения индекса. Она должна принимать два аргумента того же типа данных, что и целевой тип класса, и возвращать их объединение. Класс операторов inclusion может сохранять значения объединения в различных типах данных, в зависимости от параметра <literal>STORAGE</literal>. Возвращаемое значение функции объединения должно соответствовать типу данных <literal>STORAGE</literal>.</para>
+
+ <para>Опорные процедуры под номерами 12 и 14 предоставляются для поддержки нерегулярностей встроенных типов данных. Процедура номер 12 применяется для поддержки работы с сетевыми адресами из различных семейств, которые нельзя объединять. Процедура номер 14 применяется для поддержки зон с пустыми значениями. Процедура номер 13 является необязательной, но рекомендуемой; она проверяет новое значение, прежде чем оно будет передано функции объединения. Так как инфраструктура BRIN может соптимизировать некоторые операции, когда объединение не меняется, то применяя эту функцию, можно увеличить быстродействие индекса.</para>
+
+ <para>Классы операторов minmax и inclusion поддерживают операторы с разными типами, хотя с ними зависимости становятся более сложными. Класс minmax требует, чтобы для двух аргументов одного типа определялся полный набор операторов. Это позволяет поддерживать дополнительные типы данных, определяя дополнительные наборы операторов. Стратегии операторов класса inclusion могут зависеть от других стратегий, как показано в <xref remap="6" linkend="brin-extensibility-inclusion-table"/>, или от своих собственных стратегий. Для них требуется, чтобы был определён необходимый оператор с типом данных <literal>STORAGE</literal> для левого аргумента и другим поддерживаемым типом для правого аргумента реализуемого оператора. См. определение <literal>float4_minmax_ops</literal> в качестве примера для minmax и <literal>box_inclusion_ops</literal> в качестве примера для inclusion.</para>
+</sect1>
+</chapter>

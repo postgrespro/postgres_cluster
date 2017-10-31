@@ -1,0 +1,150 @@
+<!--
+doc/src/xml/ref/alter_database.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterdatabase">
+ <indexterm zone="sql-alterdatabase"><primary>ALTER DATABASE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER DATABASE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER DATABASE</refname>
+  <refpurpose>изменить атрибуты базы данных</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER DATABASE <replaceable class="parameter">имя</replaceable> [ [ WITH ] <replaceable class="parameter">параметр</replaceable> [ ... ] ]
+
+<phrase>Здесь <replaceable class="parameter">параметр</replaceable>:</phrase>
+
+    ALLOW_CONNECTIONS <replaceable class="parameter">разр_подключения</replaceable>
+    CONNECTION LIMIT <replaceable class="parameter">предел_подключений</replaceable>
+    IS_TEMPLATE <replaceable class="parameter">это_шаблон</replaceable>
+
+ALTER DATABASE <replaceable class="parameter">имя</replaceable> RENAME TO <replaceable>новое_имя</replaceable>
+
+ALTER DATABASE <replaceable class="parameter">имя</replaceable> OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+
+ALTER DATABASE <replaceable class="parameter">имя</replaceable> SET TABLESPACE <replaceable class="parameter">новое_табл_пространство</replaceable>
+
+ALTER DATABASE <replaceable class="parameter">имя</replaceable> SET <replaceable>параметр_конфигурации</replaceable> { TO | = } { <replaceable>значение</replaceable> | DEFAULT }
+ALTER DATABASE <replaceable class="parameter">имя</replaceable> SET <replaceable>параметр_конфигурации</replaceable> FROM CURRENT
+ALTER DATABASE <replaceable class="parameter">имя</replaceable> RESET <replaceable>параметр_конфигурации</replaceable>
+ALTER DATABASE <replaceable class="parameter">имя</replaceable> RESET ALL</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER DATABASE</command> изменяет атрибуты базы данных.</para>
+
+  <para>Первая форма оператора меняет параметры на уровне базы данных. (Подробнее описано ниже.) Изменять эти параметры может только владелец базы данных или суперпользователь.</para>
+
+  <para>Вторая форма меняет имя базы данных. Переименовать базу данных может только владелец БД или суперпользователь (не суперпользователю требуется также право <literal>CREATEDB</literal>). Переименовать текущую базу данных нельзя. (Если вам нужно сделать это, сначала подключитесь к другой базе.)</para>
+
+  <para>Третья форма меняет владельца базы данных. Чтобы сменить владельца базы, необходимо быть её владельцем и также непосредственным или опосредованным членом новой роли-владельца, и кроме того, иметь право <literal>CREATEDB</literal>. (Заметьте, что суперпользователи наделяются всеми этими правами автоматически.)</para>
+
+  <para>Четвёртая форма меняет табличное пространство по умолчанию для базы данных. Произвести это изменение может только её владелец или суперпользователь; кроме того, необходимо иметь право для создания нового табличного пространства. Эта команда физически переносит все таблицы или индексы из прежнего основного табличного пространства БД в новое. Новое табличное пространство должно быть пустым для этой базы данных и к ней никто не должен быть подключён. Таблицы и индексы, находящиеся не в основном табличном пространстве, при этом не затрагиваются.</para>
+
+  <para>Остальные формы меняют значение по умолчанию конфигурационных переменных времени выполнения для базы данных <productname>&productname;</productname>. Когда устанавливается следующий сеанс работы с указанной базой данных, заданное этой командой значение становится значением по умолчанию. Значения переменных, заданные для базы данных, переопределяют значения, определённые в <filename>postgresql.conf</filename> или полученные через командную строку <command>postgres</command>. Менять сеансовые значения переменных для базы данных может только её владелец или суперпользователь. Некоторые параметры изменить таким образом нельзя, а некоторые может изменить только суперпользователь.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">имя</replaceable></term>
+      <listitem>
+       <para>Имя базы данных, атрибуты которой изменяются.</para>
+      </listitem>
+     </varlistentry>
+
+      <varlistentry>
+       <term><replaceable class="parameter">разр_подключения</replaceable></term>
+       <listitem>
+        <para>Если false, никто не сможет подключаться к этой базе данных.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+      <term><replaceable class="parameter">предел_подключений</replaceable></term>
+      <listitem>
+       <para>Число разрешённых одновременно подключений к этой базе данных (-1 снимает ограничение).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><replaceable class="parameter">это_шаблон</replaceable></term>
+       <listitem>
+        <para>Если true, базу данных сможет клонировать любой пользователь с правами <literal>CREATEDB</literal>; в противном случае, клонировать эту базу смогут только суперпользователи и её владелец.</para>
+       </listitem>
+      </varlistentry>
+
+   <varlistentry>
+    <term><replaceable>новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя базы данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Новый владелец базы данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_табл_пространство</replaceable></term>
+    <listitem>
+     <para>Новое основное табличное пространство базы данных.</para>
+    </listitem>
+   </varlistentry>
+
+     <varlistentry>
+      <term><replaceable>параметр_конфигурации</replaceable></term>
+      <term><replaceable>значение</replaceable></term>
+      <listitem>
+       <para>Устанавливает сеансовое значение по умолчанию для указанного параметра конфигурации. Если указывается <replaceable>значение</replaceable> <literal>DEFAULT</literal> или равнозначный вариант, <literal>RESET</literal>, определение параметра на уровне базы данных удаляется, так что в новых сеансах будет действовать значение по умолчанию, определённое на уровне системы. Для очистки всех значений параметров на уровне базы данных выполните <literal>RESET ALL</literal>. <literal>SET FROM CURRENT</literal> устанавливает значение параметра на уровне базы данных из текущего значения в активном сеансе.</para>
+
+       <para>За подробными сведениями об именах и значениях параметров обратитесь к <xref remap="3" linkend="sql-set"/> и <xref remap="3" linkend="runtime-config"/>.</para>
+      </listitem>
+     </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Также возможно связать параметры сеанса не с базой данных, а с определённой ролью; см. <xref remap="4" linkend="sql-alterrole"/>. В случае конфликта параметры на уровне роли переопределяют параметры на уровне базы данных.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Отключение сканирования индекса по умолчанию в базе данных <literal>test</literal>: <programlisting>ALTER DATABASE test SET enable_indexscan TO off;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER DATABASE</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createdatabase"/></member>
+   <member><xref linkend="sql-dropdatabase"/></member>
+   <member><xref linkend="sql-set"/></member>
+   <member><xref linkend="sql-createtablespace"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

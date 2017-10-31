@@ -1,0 +1,89 @@
+<!-- doc/src/xml/pgfreespacemap.xml -->
+
+<sect1 id="pgfreespacemap" xreflabel="pg_freespacemap">
+ <title>pg_freespacemap</title>
+
+ <indexterm zone="pgfreespacemap"><primary>pg_freespacemap</primary></indexterm>
+
+ <para>Модуль <filename>pg_freespacemap</filename> предоставляет средства для исследования карты свободного пространства (FSM). В нём реализована функция <function>pg_freespace</function>, точнее, две перегруженных функции. Эти функции показывают значение, записанное в карте свободного пространства для данной страницы, либо для всех страниц отношения.</para>
+
+ <para>По умолчанию, роли public на всякий случай, во избежание угрозы безопасности, запрещён доступ к этим функциям.</para>
+
+ <sect2>
+  <title>Функции</title>
+
+  <variablelist>
+   <varlistentry>
+    <term>
+     <function>pg_freespace(rel regclass IN, blkno bigint IN) returns int2</function>
+     <indexterm><primary>pg_freespace</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para>Возвращает объём свободного пространства на странице для отношения, заданного параметром <literal>blkno</literal>, согласно FSM.</para>
+    </listitem>
+   </varlistentry>
+
+
+   <varlistentry>
+    <term>
+     <function>pg_freespace(rel regclass IN, blkno OUT bigint, avail OUT int2)</function>
+    </term>
+
+    <listitem>
+     <para>Выдаёт объём свободного пространства на каждой странице отношения, согласно FSM. Возвращается набор кортежей <literal>(blkno bigint, avail int2)</literal>, по одному кортежу для каждой страницы в отношении.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Значения, хранимые в карте свободного пространства, не являются точными. Они округляются до 1/256 величины <symbol>BLCKSZ</symbol> (до 32 байт со значением <symbol>BLCKSZ</symbol> по умолчанию) и не поддерживаются в актуальном состоянии при каждом добавлении и изменении кортежей.</para>
+
+  <para>Для индексов отслеживаются полностью неиспользованные страницы, а не свободное пространство в страницах. Таким образом, эти значения отражают только то, что страница занята или свободна.</para>
+
+  <note>
+   <para>Интерфейс был изменён в версии 8.4, в соответствии с нововведениями реализации FSM, которые появились в этой версии.</para>
+  </note>
+ </sect2>
+
+ <sect2>
+  <title>Пример вывода</title>
+
+<screen>postgres=# SELECT * FROM pg_freespace('foo');
+ blkno | avail 
+-------+-------
+     0 |     0
+     1 |     0
+     2 |     0
+     3 |    32
+     4 |   704
+     5 |   704
+     6 |   704
+     7 |  1216
+     8 |   704
+     9 |   704
+    10 |   704
+    11 |   704
+    12 |   704
+    13 |   704
+    14 |   704
+    15 |   704
+    16 |   704
+    17 |   704
+    18 |   704
+    19 |  3648
+(20 rows)
+
+postgres=# SELECT * FROM pg_freespace('foo', 7);
+ pg_freespace 
+--------------
+         1216
+(1 row)</screen>
+ </sect2>
+
+ <sect2>
+  <title>Автор</title>
+
+  <para>Исходную версию разработал Марк Кирквуд <email>markir@paradise.net.nz</email>. Для версии 8.4 с новой реализацией FSM код адаптировал Хейкки Линнакангас <email>heikki@enterprisedb.com</email></para>
+ </sect2>
+
+</sect1>

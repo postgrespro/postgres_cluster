@@ -1,0 +1,80 @@
+<!--
+doc/src/xml/ref/alter_rule.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterrule">
+ <indexterm zone="sql-alterrule"><primary>ALTER RULE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER RULE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER RULE</refname>
+  <refpurpose>изменить определение правила</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER RULE <replaceable class="parameter">имя</replaceable> ON <replaceable class="parameter">имя_таблицы</replaceable> RENAME TO <replaceable class="parameter">новое_имя</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER RULE</command> изменяет свойства существующего правила. В настоящее время эта команда может только изменить имя правила.</para>
+
+  <para>Использовать <command>ALTER RULE</command> может только владелец таблицы (или представления), к которой применяется это правило.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя существующего правила, подлежащего изменению.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующей таблицы (или представления), к которой применяется это правило.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя правила.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Переименование существующего правила: <programlisting>ALTER RULE notify_all ON emp RENAME TO notify_me;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER RULE</command> является языковым расширением <productname>&productname;</productname>, как и вся система перезаписи запросов.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createrule"/></member>
+   <member><xref linkend="sql-droprule"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

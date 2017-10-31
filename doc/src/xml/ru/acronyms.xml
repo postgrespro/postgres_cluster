@@ -1,0 +1,535 @@
+<!-- doc/src/xml/acronyms.xml -->
+
+<appendix id="acronyms">
+ <title>Сокращения</title>
+
+ <para>Ниже перечислены сокращения, часто используемые в документации <productname>&productname;</productname>, и в обсуждениях, связанных с <productname>&productname;</productname>. <variablelist>
+
+   <varlistentry>
+    <term><acronym>ANSI</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/American_National_Standards_Institute">American National Standards Institute</ulink>, Американский национальный институт стандартов</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>API</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/API">Application Programming Interface</ulink>, <ulink url="http://ru.wikipedia.org/wiki/API">Интерфейс программирования приложений</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>ASCII</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Ascii">American Standard Code for Information Interchange</ulink>, <ulink url="http://ru.wikipedia.org/wiki/ASCII">Американский стандартный код для обмена информацией</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>BKI</acronym></term>
+    <listitem>
+     <para>Backend Interface, <link linkend="bki">Внутренний интерфейс</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>CA</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Certificate_authority">Certificate Authority</ulink>, <ulink url="http://ru.wikipedia.org/wiki/%D0%A6%D0%B5%D0%BD%D1%82%D1%80_%D1%81%D0%B5%D1%80%D1%82%D0%B8%D1%84%D0%B8%D0%BA%D0%B0%D1%86%D0%B8%D0%B8">Центр сертификации</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>CIDR</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing">Classless Inter-Domain Routing</ulink>, <ulink url="http://ru.wikipedia.org/wiki/%D0%91%D0%B5%D1%81%D0%BA%D0%BB%D0%B0%D1%81%D1%81%D0%BE%D0%B2%D0%B0%D1%8F_%D0%B0%D0%B4%D1%80%D0%B5%D1%81%D0%B0%D1%86%D0%B8%D1%8F">Бесклассовая междоменная маршрутизация</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>CPAN</acronym></term>
+    <listitem>
+     <para><ulink url="http://www.cpan.org/">Comprehensive Perl Archive Network</ulink>, Всеобъемлющая сеть архивов Perl</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>CRL</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Certificate_revocation_list">Certificate Revocation List</ulink>, Список отозванных сертификатов</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>CSV</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Comma-separated_values">Comma Separated Values</ulink>, <ulink url="http://ru.wikipedia.org/wiki/CSV">Значения, разделённые запятыми</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>CTE</acronym></term>
+    <listitem>
+     <para>Common Table Expression, <link linkend="queries-with">Общее табличное выражение</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>CVE</acronym></term>
+    <listitem>
+     <para><ulink url="http://cve.mitre.org/">Common Vulnerabilities and Exposures</ulink>, Общие уязвимости и риски</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>DBA</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Database_administrator">Database Administrator</ulink>, <ulink url="http://ru.wikipedia.org/wiki/%D0%90%D0%B4%D0%BC%D0%B8%D0%BD%D0%B8%D1%81%D1%82%D1%80%D0%B0%D1%82%D0%BE%D1%80_%D0%B1%D0%B0%D0%B7_%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85">Администратор баз данных</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>DBI</acronym></term>
+    <listitem>
+     <para><ulink url="http://dbi.perl.org/">Database Interface (Perl)</ulink>, Интерфейс баз данных (Perl)</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>DBMS</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Dbms">Database Management System</ulink>, <ulink url="https://ru.wikipedia.org/wiki/%D0%A1%D0%B8%D1%81%D1%82%D0%B5%D0%BC%D0%B0_%D1%83%D0%BF%D1%80%D0%B0%D0%B2%D0%BB%D0%B5%D0%BD%D0%B8%D1%8F_%D0%B1%D0%B0%D0%B7%D0%B0%D0%BC%D0%B8_%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D1%85">Система управления базами данных</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>DDL</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Data_Definition_Language">Data Definition Language</ulink>, <ulink url="http://ru.wikipedia.org/wiki/Data_Definition_Language">Язык описания данных</ulink>, включающий такие команды SQL, как <command>CREATE TABLE</command>, <command>ALTER USER</command></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>DML</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Data_Manipulation_Language">Data Manipulation Language</ulink>, <ulink url="http://ru.wikipedia.org/wiki/Data_Manipulation_Language">Язык обработки данных</ulink>, включающий такие SQL-команды, как <command>INSERT</command>, <command>UPDATE</command>, <command>DELETE</command></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>DST</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Daylight_saving_time">Daylight Saving Time</ulink>, <ulink url="http://ru.wikipedia.org/wiki/%D0%9B%D0%B5%D1%82%D0%BD%D0%B5%D0%B5_%D0%B2%D1%80%D0%B5%D0%BC%D1%8F">Летнее время</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>ECPG</acronym></term>
+    <listitem>
+     <para>Embedded C for &productname;, <link linkend="ecpg">Встроенный C для &productname;</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>ESQL</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Embedded_SQL">Embedded SQL</ulink>, <ulink url="http://ru.wikipedia.org/wiki/Embedded_SQL">Встраиваемый SQL</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>FAQ</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/FAQ">Frequently Asked Questions</ulink>, <ulink url="https://ru.wikipedia.org/wiki/%D0%A7%D0%B0%D1%81%D1%82%D0%BE_%D0%B7%D0%B0%D0%B4%D0%B0%D0%B2%D0%B0%D0%B5%D0%BC%D1%8B%D0%B5_%D0%B2%D0%BE%D0%BF%D1%80%D0%BE%D1%81%D1%8B">Часто задаваемые вопросы</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>FSM</acronym></term>
+    <listitem>
+     <para>Free Space Map, <link linkend="storage-fsm">Карта свободного пространства</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>GEQO</acronym></term>
+    <listitem>
+     <para>Genetic Query Optimizer, <link linkend="geqo">Генетический оптимизатор запросов</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>GIN</acronym></term>
+    <listitem>
+     <para>Generalized Inverted Index, <link linkend="gin">Обобщённый инвертированный индекс</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>GiST</acronym></term>
+    <listitem>
+     <para>Generalized Search Tree, <link linkend="gist">Обобщённое дерево поиска</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>Git</acronym></term>
+    <listitem>
+     <para><ulink url="http://ru.wikipedia.org/wiki/Git">Git</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>GMT</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/GMT">Greenwich Mean Time</ulink>, <ulink url="http://ru.wikipedia.org/wiki/%D0%A1%D1%80%D0%B5%D0%B4%D0%BD%D0%B5%D0%B5_%D0%B2%D1%80%D0%B5%D0%BC%D1%8F_%D0%BF%D0%BE_%D0%93%D1%80%D0%B8%D0%BD%D0%B2%D0%B8%D1%87%D1%83">Среднее время по Гринвичу</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>GSSAPI</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Generic_Security_Services_Application_Program_Interface">Generic Security Services Application Programming Interface</ulink>, <ulink url="http://ru.wikipedia.org/wiki/GSS-API">Универсальный интерфейс программирования приложений служб безопасности</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>GUC</acronym></term>
+    <listitem>
+     <para>Grand Unified Configuration, <link linkend="config-setting">Главная унифицированная конфигурация</link>, подсистема <productname>&productname;</productname>, управляющая конфигурацией сервера</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>HBA</acronym></term>
+    <listitem>
+     <para>Host-Based Authentication, <link linkend="auth-pg-hba-conf">Аутентификация по сетевым узлам</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>HOT</acronym></term>
+    <listitem>
+     <para><ulink url="https://git.postgresql.org/gitweb?p=postgresql.git;a=blob;f=src/backend/access/heap/README.HOT;hb=HEAD">Heap-Only Tuples</ulink>, &laquo;Кортежи только в куче&raquo;</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>IEC</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/International_Electrotechnical_Commission">International Electrotechnical Commission</ulink>, <ulink url="http://ru.wikipedia.org/wiki/%D0%9C%D0%B5%D0%B6%D0%B4%D1%83%D0%BD%D0%B0%D1%80%D0%BE%D0%B4%D0%BD%D0%B0%D1%8F_%D1%8D%D0%BB%D0%B5%D0%BA%D1%82%D1%80%D0%BE%D1%82%D0%B5%D1%85%D0%BD%D0%B8%D1%87%D0%B5%D1%81%D0%BA%D0%B0%D1%8F_%D0%BA%D0%BE%D0%BC%D0%B8%D1%81%D1%81%D0%B8%D1%8F">Международная электротехническая комиссия</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>IEEE</acronym></term>
+    <listitem>
+     <para><ulink url="http://standards.ieee.org/">Institute of Electrical and Electronics Engineers</ulink>, Институт инженеров по электротехнике и электронике</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>IPC</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Inter-process_communication">Inter-Process Communication</ulink>, <ulink url="http://ru.wikipedia.org/wiki/%D0%9C%D0%B5%D0%B6%D0%BF%D1%80%D0%BE%D1%86%D0%B5%D1%81%D1%81%D0%BD%D0%BE%D0%B5_%D0%B2%D0%B7%D0%B0%D0%B8%D0%BC%D0%BE%D0%B4%D0%B5%D0%B9%D1%81%D1%82%D0%B2%D0%B8%D0%B5">Межпроцессное взаимодействие</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>ISO</acronym></term>
+    <listitem>
+     <para><ulink url="http://www.iso.org/iso/home.htm">International Organization for Standardization</ulink>, Международная организация по стандартизации</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>ISSN</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Issn">International Standard Serial Number</ulink>, <ulink url="http://ru.wikipedia.org/wiki/%D0%9C%D0%B5%D0%B6%D0%B4%D1%83%D0%BD%D0%B0%D1%80%D0%BE%D0%B4%D0%BD%D1%8B%D0%B9_%D1%81%D1%82%D0%B0%D0%BD%D0%B4%D0%B0%D1%80%D1%82%D0%BD%D1%8B%D0%B9_%D1%81%D0%B5%D1%80%D0%B8%D0%B9%D0%BD%D1%8B%D0%B9_%D0%BD%D0%BE%D0%BC%D0%B5%D1%80">Международный стандартный серийный номер</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>JDBC</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Java_Database_Connectivity">Java Database Connectivity</ulink>, <ulink url="http://ru.wikipedia.org/wiki/Java_Database_Connectivity">Соединение с базами данных на Java</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>LDAP</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol">Lightweight Directory Access Protocol</ulink>, <ulink url="http://ru.wikipedia.org/wiki/LDAP">Облегчённый протокол доступа к каталогам</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>MSVC</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Visual_C++"><productname>Microsoft Visual C</productname></ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>MVCC</acronym></term>
+    <listitem>
+     <para>Multi-Version Concurrency Control, <link linkend="mvcc">Многоверсионное управление конкурентным доступом</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>NLS</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Internationalization_and_localization">National Language Support</ulink>, <ulink url="http://ru.wikipedia.org/wiki/%D0%9B%D0%BE%D0%BA%D0%B0%D0%BB%D0%B8%D0%B7%D0%B0%D1%86%D0%B8%D1%8F_%D0%BF%D1%80%D0%BE%D0%B3%D1%80%D0%B0%D0%BC%D0%BC%D0%BD%D0%BE%D0%B3%D0%BE_%D0%BE%D0%B1%D0%B5%D1%81%D0%BF%D0%B5%D1%87%D0%B5%D0%BD%D0%B8%D1%8F">Поддержка национальных языков</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>ODBC</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Open_Database_Connectivity">Open Database Connectivity</ulink>, <ulink url="http://ru.wikipedia.org/wiki/ODBC">Открытое соединение с базами данных</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>OID</acronym></term>
+    <listitem>
+     <para>Object Identifier, <link linkend="datatype-oid">Идентификатор объекта</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>OLAP</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Olap">Online Analytical Processing</ulink>, <ulink url="http://ru.wikipedia.org/wiki/OLAP">Непосредственная аналитическая обработка</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>OLTP</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/OLTP">Online Transaction Processing</ulink>, <ulink url="http://ru.wikipedia.org/wiki/OLTP">Непосредственная транзакционная обработка</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>ORDBMS</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/ORDBMS">Object-Relational Database Management System</ulink>, <ulink url="https://ru.wikipedia.org/wiki/%D0%9E%D0%B1%D1%8A%D0%B5%D0%BA%D1%82%D0%BD%D0%BE-%D1%80%D0%B5%D0%BB%D1%8F%D1%86%D0%B8%D0%BE%D0%BD%D0%BD%D0%B0%D1%8F_%D0%A1%D0%A3%D0%91%D0%94">Объектно-реляционная система управления базами данных</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>PAM</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Pluggable_Authentication_Modules">Pluggable Authentication Modules</ulink>, <ulink url="http://ru.wikipedia.org/wiki/Pluggable_Authentication_Modules">Подключаемые модули аутентификации</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>PGSQL</acronym></term>
+    <listitem>
+     <para><link linkend="postgres"><productname>&productname;</productname></link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>PGXS</acronym></term>
+    <listitem>
+     <para><productname>&productname;</productname> Extension System, <link linkend="extend-pgxs">Система расширений <productname>&productname;</productname></link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>PID</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Process_identifier">Process Identifier</ulink>, <ulink url="http://ru.wikipedia.org/wiki/%D0%98%D0%B4%D0%B5%D0%BD%D1%82%D0%B8%D1%84%D0%B8%D0%BA%D0%B0%D1%82%D0%BE%D1%80_%D0%BF%D1%80%D0%BE%D1%86%D0%B5%D1%81%D1%81%D0%B0">Идентификатор процесса</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>PITR</acronym></term>
+    <listitem>
+     <para>Point-In-Time Recovery, <link linkend="continuous-archiving">Восстановление на момент времени</link> (Непрерывное архивирование)</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>PL</acronym></term>
+    <listitem>
+     <para>Procedural Languages, <link linkend="server-programming">Процедурные языки</link> (на стороне сервера)</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>POSIX</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/POSIX">Portable Operating System Interface</ulink>, <ulink url="http://ru.wikipedia.org/wiki/POSIX">Переносимый интерфейс операционных систем</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>RDBMS</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Relational_database_management_system">Relational Database Management System</ulink>, <ulink url="http://ru.wikipedia.org/wiki/%D0%A0%D0%B5%D0%BB%D1%8F%D1%86%D0%B8%D0%BE%D0%BD%D0%BD%D0%B0%D1%8F_%D0%A1%D0%A3%D0%91%D0%94">Реляционная система управления базами данных</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>RFC</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Request_for_Comments">Request For Comments</ulink>, <ulink url="http://ru.wikipedia.org/wiki/RFC">Рабочее предложение</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>SGML</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/SGML">Standard Generalized Markup Language</ulink>, <ulink url="http://ru.wikipedia.org/wiki/SGML">Стандартный обобщённый язык разметки</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>SPI</acronym></term>
+    <listitem>
+     <para>Server Programming Interface, <link linkend="spi">Интерфейс программирования сервера</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>SP-GiST</acronym></term>
+    <listitem>
+     <para>Space-Partitioned Generalized Search Tree, <link linkend="spgist">Обобщённое дерево поиска с разбиением пространства</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>SQL</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/SQL">Structured Query Language</ulink>, <ulink url="http://ru.wikipedia.org/wiki/SQL">Язык структурированных запросов</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>SRF</acronym></term>
+    <listitem>
+     <para>Set-Returning Function, <link linkend="xfunc-c-return-set">Функция, возвращающая множество</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>SSH</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Secure_Shell">Secure Shell</ulink>, <ulink url="http://ru.wikipedia.org/wiki/SSH">Защищённая оболочка</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>SSL</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Secure_Sockets_Layer">Secure Sockets Layer</ulink>, <ulink url="http://ru.wikipedia.org/wiki/SSL">Уровень защищённых сокетов</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>SSPI</acronym></term>
+    <listitem>
+     <para><ulink url="http://msdn.microsoft.com/en-us/library/aa380493%28VS.85%29.aspx">Security Support Provider Interface</ulink>, Интерфейс поставщика поддержки безопасности</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>SYSV</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/System_V">Unix System V</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>TCP/IP</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Transmission_Control_Protocol">Transmission Control Protocol (TCP) / Internet Protocol (IP)</ulink>, <ulink url="http://ru.wikipedia.org/wiki/TCP"> Протокол управления передачей/Межсетевой протокол</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>TID</acronym></term>
+    <listitem>
+     <para>Tuple Identifier, <link linkend="datatype-oid">Идентификатор кортежа</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>TOAST</acronym></term>
+    <listitem>
+     <para>The Oversized-Attribute Storage Technique, <link linkend="storage-toast">Методика хранения сверхбольших атрибутов</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>TPC</acronym></term>
+    <listitem>
+     <para><ulink url="http://www.tpc.org/">Transaction Processing Performance Council</ulink>, Совет по оценке производительности обработки транзакций</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>URL</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/URL">Uniform Resource Locator</ulink>, <ulink url="http://ru.wikipedia.org/wiki/URL">Универсальный указатель ресурса</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>UTC</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Coordinated_Universal_Time">Coordinated Universal Time</ulink>, <ulink url="http://ru.wikipedia.org/wiki/UTC">Универсальное координированное время</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>UTF</acronym></term>
+    <listitem>
+     <para><ulink url="http://www.unicode.org/">Unicode Transformation Format</ulink>, Формат преобразования Unicode</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>UTF8</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/Utf8">Eight-Bit Unicode Transformation Format</ulink>, <ulink url="http://ru.wikipedia.org/wiki/UTF-8">Восьмибитный формат преобразования Unicode</ulink></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>UUID</acronym></term>
+    <listitem>
+     <para>Universally Unique Identifier, <link linkend="datatype-uuid">Универсальный уникальный идентификатор</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>WAL</acronym></term>
+    <listitem>
+     <para>Write-Ahead Log, <link linkend="wal">Журнал предзаписи</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>XID</acronym></term>
+    <listitem>
+     <para>Transaction Identifier, <link linkend="datatype-oid">Идентификатор транзакции</link></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><acronym>XML</acronym></term>
+    <listitem>
+     <para><ulink url="http://en.wikipedia.org/wiki/XML">Extensible Markup Language</ulink>, <ulink url="http://ru.wikipedia.org/wiki/XML">Расширяемый язык разметки</ulink></para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist></para>
+
+</appendix>

@@ -1,0 +1,93 @@
+<!--
+doc/src/xml/ref/alter_tablespace.xml
+&productname; documentation
+-->
+
+<refentry id="sql-altertablespace">
+ <indexterm zone="sql-altertablespace"><primary>ALTER TABLESPACE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER TABLESPACE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER TABLESPACE</refname>
+  <refpurpose>изменить определение табличного пространства</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER TABLESPACE <replaceable>имя</replaceable> RENAME TO <replaceable>новое_имя</replaceable>
+ALTER TABLESPACE <replaceable>имя</replaceable> OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+ALTER TABLESPACE <replaceable>имя</replaceable> SET ( <replaceable class="parameter">параметр_табличного_пространства</replaceable> = <replaceable class="parameter">значение</replaceable> [, ... ] )
+ALTER TABLESPACE <replaceable>имя</replaceable> RESET ( <replaceable class="parameter">параметр_табличного_пространства</replaceable> [, ... ] )</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER TABLESPACE</command> может применяться для изменения определения табличного пространства.</para>
+
+  <para>Чтобы изменить определение табличного пространства, нужно быть его владельцем. Чтобы сменить владельца, нужно быть непосредственным или опосредованным членом новой роли-владельца. (Заметьте, что суперпользователи наделяются этими правами автоматически.)</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя существующего табличного пространства.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя табличного пространства. Новое имя не может начинаться с <literal>pg_</literal>, так как такие имена зарезервированы для системных табличных пространств.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Новый владелец табличного пространства.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">параметр_табличного_пространства</replaceable></term>
+    <listitem>
+     <para>Устанавливаемый или сбрасываемый параметр табличного пространства. В настоящее время поддерживаются только параметры <varname>seq_page_cost</varname>, <varname>random_page_cost</varname> и <varname>effective_io_concurrency</varname>. При установке этих значений для заданного табличного пространства будет переопределена обычная оценка стоимости чтения страниц из таблиц в этом пространстве, настраиваемая одноимённым параметром конфигурации (см. <xref remap="4" linkend="guc-seq-page-cost"/>, <xref remap="4" linkend="guc-random-page-cost"/>, <xref remap="4" linkend="guc-effective-io-concurrency"/>). Это может быть полезно, если одно из табличных пространств размещено на диске, который быстрее или медленнее остальной дисковой системы.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Переименование табличного пространства <literal>index_space</literal> в <literal>fast_raid</literal>: <programlisting>ALTER TABLESPACE index_space RENAME TO fast_raid;</programlisting></para>
+
+  <para>Смена владельца табличного пространства <literal>index_space</literal>: <programlisting>ALTER TABLESPACE index_space OWNER TO mary;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER TABLESPACE</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createtablespace"/></member>
+   <member><xref linkend="sql-droptablespace"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

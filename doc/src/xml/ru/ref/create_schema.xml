@@ -1,0 +1,125 @@
+<!--
+doc/src/xml/ref/create_schema.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createschema">
+ <indexterm zone="sql-createschema"><primary>CREATE SCHEMA</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE SCHEMA</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE SCHEMA</refname>
+  <refpurpose>создать схему</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE SCHEMA <replaceable class="parameter">имя_схемы</replaceable> [ AUTHORIZATION <replaceable class="parameter">указание_роли</replaceable> ] [ <replaceable class="parameter">элемент_схемы</replaceable> [ ... ] ]
+CREATE SCHEMA AUTHORIZATION <replaceable class="parameter">указание_роли</replaceable> [ <replaceable class="parameter">элемент_схемы</replaceable> [ ... ] ]
+CREATE SCHEMA IF NOT EXISTS <replaceable class="parameter">имя_схемы</replaceable> [ AUTHORIZATION <replaceable class="parameter">указание_роли</replaceable> ]
+CREATE SCHEMA IF NOT EXISTS AUTHORIZATION <replaceable class="parameter">указание_роли</replaceable>
+
+<phrase>Здесь <replaceable class="parameter">указание_роли</replaceable>:</phrase>
+
+    [ GROUP ] <replaceable class="parameter">имя_пользователя</replaceable>
+  | CURRENT_USER
+  | SESSION_USER</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE SCHEMA</command> создаёт новую схему в текущей базе данных. Имя схемы должно отличаться от имён других существующих схем в текущей базе данных.</para>
+
+  <para>Схема по сути представляет собой пространство имён: она содержит именованные объекты (таблицы, типы данных, функции и операторы), имена которых могут совпадать с именами других объектов, существующих в других схемах. Для обращения к объекту нужно либо <quote>дополнить</quote> его имя именем схемы в виде префикса, либо установить путь поиска, включающий требуемую схему. Команда <literal>CREATE</literal>, в которой указывается неполное имя объекта, создаёт объект в текущей схеме (схеме, стоящей первой в пути поиска; узнать её позволяет функция <function>current_schema</function>).</para>
+
+  <para>Команда <command>CREATE SCHEMA</command> может дополнительно включать подкоманды, создающие объекты в новой схеме. Эти подкоманды по сути воспринимаются как отдельные команды, выполняемые после создания схемы, за исключением того, что с предложением <literal>AUTHORIZATION</literal> все создаваемые объекты будут принадлежать указанному в нём пользователю.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">имя_схемы</replaceable></term>
+      <listitem>
+       <para>Имя создаваемой схемы. Если оно опущено, именем схемы будет <replaceable class="parameter">имя_пользователя</replaceable>. Это имя не может начинаться с <literal>pg_</literal>, так как такие имена зарезервированы для системных схем.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_пользователя</replaceable></term>
+      <listitem>
+       <para>Имя пользователя (роли), назначаемого владельцем новой схемы. Если опущено, по умолчанию владельцем будет пользователь, выполняющий команды. Чтобы назначить владельцем создаваемой схемы другую роль, необходимо быть непосредственным или опосредованным членом этой роли, либо суперпользователем.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">элемент_схемы</replaceable></term>
+      <listitem>
+       <para>Оператор SQL, определяющий объект, создаваемый в новой схеме. В настоящее время <command>CREATE SCHEMA</command> может содержать только подкоманды <command>CREATE TABLE</command>, <command>CREATE VIEW</command>, <command>CREATE INDEX</command>, <command>CREATE SEQUENCE</command>, <command>CREATE TRIGGER</command> и <command>GRANT</command>. Создать объекты других типов можно отдельными командами после создания схемы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>IF NOT EXISTS</literal></term>
+      <listitem>
+       <para>Не делать ничего (только выдать замечание), если схема с таким именем уже существует. Когда используется это указание, эта команда не может содержать подкоманды <replaceable class="parameter">элемент_схемы</replaceable>.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Чтобы создать схему, пользователь должен иметь право <literal>CREATE</literal> в текущей базе данных. (Разумеется, на суперпользователей это условие не распространяется.)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Создание схемы: <programlisting>CREATE SCHEMA myschema;</programlisting></para>
+
+  <para>Создание схемы для пользователя <literal>joe</literal>; схема так же получит имя <literal>joe</literal>: <programlisting>CREATE SCHEMA AUTHORIZATION joe;</programlisting></para>
+
+  <para>Создание схемы с именем <literal>test</literal>, владельцем которой будет пользователь <literal>joe</literal>, если только схема <literal>test</literal> ещё не существует. (Является ли владельцем существующей схемы пользователь <literal>joe</literal>, значения не имеет.) <programlisting>CREATE SCHEMA IF NOT EXISTS test AUTHORIZATION joe;</programlisting></para>
+
+  <para>Создание схемы, в которой сразу создаются таблица и представление: <programlisting>CREATE SCHEMA hollywood
+    CREATE TABLE films (title text, release date, awards text[])
+    CREATE VIEW winners AS
+        SELECT title, release FROM films WHERE awards IS NOT NULL;</programlisting> Заметьте, что отдельные подкоманды не завершаются точкой с запятой.</para>
+
+  <para>Следующие команды приводят к тому же результату другим способом: <programlisting>CREATE SCHEMA hollywood;
+CREATE TABLE hollywood.films (title text, release date, awards text[]);
+CREATE VIEW hollywood.winners AS
+    SELECT title, release FROM hollywood.films WHERE awards IS NOT NULL;</programlisting></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Стандарт SQL также допускает в команде <command>CREATE SCHEMA</command> предложение <literal>DEFAULT CHARACTER SET</literal> и дополнительные типы подкоманд, которые <productname>&productname;</productname> в настоящее время не принимает.</para>
+
+  <para>В стандарте SQL говорится, что подкоманды в <command>CREATE SCHEMA</command> могут следовать в любом порядке. Однако текущая реализация в <productname>&productname;</productname> не воспринимает все возможные варианты ссылок вперёд в подкомандах, поэтому иногда возникает необходимость переупорядочить подкоманды, чтобы исключить такие ссылки.</para>
+
+  <para>Согласно стандарту SQL, владелец схемы всегда владеет всеми объектами в ней, но <productname>&productname;</productname> допускает размещение в схемах объектов, принадлежащих не владельцу схемы. Такая ситуация возможна, только если владелец схемы даст право <literal>CREATE</literal> в этой схеме кому-либо другому, либо объекты в ней будет создавать суперпользователь.</para>
+
+  <para>Указание <literal>IF NOT EXISTS</literal> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterschema"/></member>
+   <member><xref linkend="sql-dropschema"/></member>
+ </simplelist>
+ </refsect1>
+
+</refentry>

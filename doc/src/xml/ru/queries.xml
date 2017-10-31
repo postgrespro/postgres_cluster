@@ -1,0 +1,940 @@
+<!-- doc/src/xml/queries.xml -->
+
+<chapter id="queries">
+ <title>Запросы</title>
+
+ <indexterm zone="queries"><primary>запрос</primary></indexterm>
+
+ <indexterm zone="queries"><primary>SELECT</primary></indexterm>
+
+ <para>В предыдущих главах рассказывалось, как создать таблицы, как заполнить их данными и как изменить эти данные. Теперь мы наконец обсудим, как получить данные из базы данных.</para>
+
+
+ <sect1 id="queries-overview">
+  <title>Обзор</title>
+
+  <para>Процесс или команда получения данных из базы данных называется <firstterm>запросом</firstterm>. В SQL запросы формулируются с помощью команды <xref linkend="sql-select"/>. В общем виде команда <command>SELECT</command> записывается так: <synopsis>
+<optional>WITH <replaceable>запросы_with</replaceable></optional> SELECT <replaceable>список_выборки</replaceable> FROM <replaceable>табличное_выражение</replaceable> <optional><replaceable>определение_сортировки</replaceable></optional>
+</synopsis> В следующих разделах подробно описываются список выборки, табличное выражение и определение сортировки. Запросы <literal>WITH</literal> являются расширенной возможностью <productname>PostgreSQL</productname> и будут рассмотрены в последнюю очередь.</para>
+
+  <para>Простой запрос выглядит так: <programlisting>SELECT * FROM table1;</programlisting> Если предположить, что в базе данных есть таблица <literal>table1</literal>, эта команда получит все строки с содержимым всех столбцов из <literal>table1</literal>. (Метод выдачи результата определяет клиентское приложение. Например, программа <application>psql</application> выведет на экране ASCII-таблицу, хотя клиентские библиотеки позволяют извлекать отдельные значения из результата запроса.) Здесь список выборки задан как <literal>*</literal>, это означает, что запрос должен вернуть все столбцы табличного выражения. В списке выборки можно также указать подмножество доступных столбцов или составить выражения с этими столбцами. Например, если в <literal>table1</literal> есть столбцы <literal>a</literal>, <literal>b</literal> и <literal>c</literal> (и возможно, другие), вы можете выполнить следующий запрос: <programlisting>SELECT a, b + c FROM table1;</programlisting> (в предположении, что столбцы <literal>b</literal> и <literal>c</literal> имеют числовой тип данных). Подробнее это описано в <xref remap="6" linkend="queries-select-lists"/>.</para>
+
+ <para><literal>FROM table1</literal> &mdash; это простейший тип табличного выражения, в котором просто читается одна таблица. Вообще табличные выражения могут быть сложными конструкциями из базовых таблиц, соединений и подзапросов. А можно и вовсе опустить табличное выражение и использовать команду <command>SELECT</command> как калькулятор: <programlisting>SELECT 3 * 4;</programlisting> В этом может быть больше смысла, когда выражения в списке выборки возвращают меняющиеся результаты. Например, можно вызвать функцию так: <programlisting>SELECT random();</programlisting></para>
+ </sect1>
+
+
+ <sect1 id="queries-table-expressions">
+  <title>Табличные выражения</title>
+
+  <indexterm zone="queries-table-expressions"><primary>табличное выражение</primary></indexterm>
+
+  <para><firstterm>Табличное выражение</firstterm> вычисляет таблицу. Это выражение содержит предложение <literal>FROM</literal>, за которым могут следовать предложения <literal>WHERE</literal>, <literal>GROUP BY</literal> и <literal>HAVING</literal>. Тривиальные табличные выражения просто ссылаются на физическую таблицу, её называют также базовой, но в более сложных выражениях такие таблицы можно преобразовывать и комбинировать самыми разными способами.</para>
+
+  <para>Необязательные предложения <literal>WHERE</literal>, <literal>GROUP BY</literal> и <literal>HAVING</literal> в табличном выражении определяют последовательность преобразований, осуществляемых с данными таблицы, полученной в предложении <literal>FROM</literal>. В результате этих преобразований образуется виртуальная таблица, строки которой передаются списку выборки, вычисляющему выходные строки запроса.</para>
+
+  <sect2 id="queries-from">
+   <title>Предложение <literal>FROM</literal></title>
+
+   <para><xref linkend="sql-from" endterm="sql-from-title"/> образует таблицу из одной или нескольких ссылок на таблицы, разделённых запятыми. <synopsis>
+FROM <replaceable>табличная_ссылка</replaceable> <optional>, <replaceable>табличная_ссылка</replaceable> <optional>, ...</optional></optional>
+</synopsis> Здесь табличной ссылкой может быть имя таблицы (возможно, с именем схемы), производная таблица, например подзапрос, соединение таблиц или сложная комбинация этих вариантов. Если в предложении <literal>FROM</literal> перечисляются несколько ссылок, для них применяется перекрёстное соединение (то есть декартово произведение их строк; см. ниже). Список <literal>FROM</literal> преобразуется в промежуточную виртуальную таблицу, которая может пройти через преобразования <literal>WHERE</literal>, <literal>GROUP BY</literal> и <literal>HAVING</literal>, и в итоге определит результат табличного выражения.</para>
+
+   <indexterm><primary>ONLY</primary></indexterm>
+
+   <para>Когда в табличной ссылке указывается таблица, являющаяся родительской в иерархии наследования, в результате будут получены строки не только этой таблицы, но и всех её дочерних таблиц. Чтобы выбрать строки только одной родительской таблицы, перед её именем нужно добавить ключевое слово <literal>ONLY</literal>. Учтите, что при этом будут получены только столбцы указанной таблицы &mdash; дополнительные столбцы дочерних таблиц не попадут в результат.</para>
+
+   <para>Если же вы не добавляете <literal>ONLY</literal> перед именем таблицы, вы можете дописать после него <literal>*</literal>, тем самым указав, что должны обрабатываться и все дочерние таблицы. Добавлять <literal>*</literal> не обязательно, так как теперь это поведение подразумевается по умолчанию (если только вы не измените параметр конфигурации <xref linkend="guc-sql-inheritance"/>). Однако такая запись может быть полезна тем, что подчеркнёт использование дополнительных таблиц.</para>
+
+   <sect3 id="queries-join">
+    <title>Соединённые таблицы</title>
+
+    <indexterm zone="queries-join"><primary>соединение</primary></indexterm>
+
+    <para>Соединённая таблица ­­­­­­&mdash; это таблица, полученная из двух других (реальных или производных от них) таблиц в соответствии с правилами соединения конкретного типа. Общий синтаксис описания соединённой таблицы: <synopsis>
+<replaceable>T1</replaceable> <replaceable>тип_соединения</replaceable> <replaceable>T2</replaceable> <optional> <replaceable>условие_соединения</replaceable> </optional>
+</synopsis>Соединения любых типов могут вкладываются друг в друга или объединяться: и <replaceable>T1</replaceable>, и <replaceable>T2</replaceable> могут быть результатами соединения. Для однозначного определения порядка соединений предложения <literal>JOIN</literal> можно заключать в скобки. Если скобки отсутствуют, предложения <literal>JOIN</literal> обрабатываются слева направо.</para>
+
+    <variablelist>
+     <title>Типы соединений</title>
+
+     <varlistentry>
+      <term>Перекрёстное соединение <indexterm><primary>соединение</primary> <secondary>перекрёстное</secondary></indexterm> <indexterm><primary>перекрёстное соединение</primary></indexterm></term>
+
+      <listitem>
+<synopsis><replaceable>T1</replaceable> CROSS JOIN <replaceable>T2</replaceable></synopsis>
+
+       <para>Соединённую таблицу образуют все возможные сочетания строк из <replaceable>T1</replaceable> и <replaceable>T2</replaceable> (т. е. их декартово произведение), а набор её столбцов объединяет в себе столбцы <replaceable>T1</replaceable> со следующими за ними столбцами <replaceable>T2</replaceable>. Если таблицы содержат N и M строк, соединённая таблица будет содержать N * M строк.</para>
+
+       <para><literal>FROM <replaceable>T1</replaceable> CROSS JOIN <replaceable>T2</replaceable></literal> эквивалентно <literal>FROM <replaceable>T1</replaceable> INNER JOIN <replaceable>T2</replaceable> ON TRUE</literal> (см. ниже). Эта запись также эквивалентна <literal>FROM <replaceable>T1</replaceable>, <replaceable>T2</replaceable></literal>. <note>
+        <para>Последняя запись не полностью эквивалентна первым при указании более чем двух таблиц, так как <literal>JOIN</literal> связывает таблицы сильнее, чем запятая. Например, <literal>FROM <replaceable>T1</replaceable> CROSS JOIN <replaceable>T2</replaceable> INNER JOIN <replaceable>T3</replaceable> ON <replaceable>условие</replaceable></literal> не равнозначно <literal>FROM <replaceable>T1</replaceable>, <replaceable>T2</replaceable> INNER JOIN <replaceable>T3</replaceable> ON <replaceable>условие</replaceable></literal>, так как <replaceable>условие</replaceable> может ссылаться на <replaceable>T1</replaceable> в первом случае, но не во втором.</para>
+        </note></para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>Соединения с сопоставлениями строк <indexterm><primary>соединение</primary> <secondary>внешнее</secondary></indexterm> <indexterm><primary>внешнее соединение</primary></indexterm></term>
+
+      <listitem>
+<synopsis><replaceable>T1</replaceable> { <optional>INNER</optional> | { LEFT | RIGHT | FULL } <optional>OUTER</optional> } JOIN <replaceable>T2</replaceable>
+  ON <replaceable>логическое_выражение</replaceable>
+<replaceable>T1</replaceable> { <optional>INNER</optional> | { LEFT | RIGHT | FULL } <optional>OUTER</optional> } JOIN <replaceable>T2</replaceable>
+  USING ( <replaceable>список столбцов соединения</replaceable> )
+<replaceable>T1</replaceable> NATURAL { <optional>INNER</optional> | { LEFT | RIGHT | FULL } <optional>OUTER</optional> } JOIN <replaceable>T2</replaceable></synopsis>
+
+       <para>Слова <literal>INNER</literal> и <literal>OUTER</literal> необязательны во всех формах. По умолчанию подразумевается <literal>INNER</literal> (внутреннее соединение), а при указании <literal>LEFT</literal>, <literal>RIGHT</literal> и <literal>FULL</literal> &mdash; внешнее соединение.</para>
+
+       <para><firstterm>Условие соединения</firstterm> указывается в предложении <literal>ON</literal> или <literal>USING</literal>, либо неявно задаётся ключевым словом <literal>NATURAL</literal>. Это условие определяет, какие строки двух исходных таблиц считаются <quote>соответствующими</quote> друг другу (это подробно рассматривается ниже).</para>
+
+       <para>Возможные типы соединений с сопоставлениями строк: <variablelist>
+        <varlistentry>
+         <term><literal>INNER JOIN</literal></term>
+
+         <listitem>
+          <para>Для каждой строки R1 из T1 в результирующей таблице содержится строка для каждой строки в T2, удовлетворяющей условию соединения с R1.</para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry>
+         <term><literal>LEFT OUTER JOIN</literal>
+         <indexterm><primary>соединение</primary> <secondary>левое</secondary></indexterm>
+
+         <indexterm><primary>левое соединение</primary></indexterm>
+         </term>
+
+         <listitem>
+          <para>Сначала выполняется внутреннее соединение (INNER JOIN). Затем в результат добавляются все строки из T1, которым не соответствуют никакие строки в T2, а вместо значений столбцов T2 вставляются NULL. Таким образом, в результирующей таблице всегда будет минимум одна строка для каждой строки из T1.</para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry>
+         <term><literal>RIGHT OUTER JOIN</literal>
+         <indexterm><primary>соединение</primary> <secondary>справа</secondary></indexterm>
+
+         <indexterm><primary>правое соединение</primary></indexterm>
+         </term>
+
+         <listitem>
+          <para>Сначала выполняется внутреннее соединение (INNER JOIN). Затем в результат добавляются все строки из T2, которым не соответствуют никакие строки в T1, а вместо значений столбцов T1 вставляются NULL. Это соединение является обратным к левому (LEFT JOIN): в результирующей таблице всегда будет минимум одна строка для каждой строки из T2.</para>
+         </listitem>
+        </varlistentry>
+
+        <varlistentry>
+         <term><literal>FULL OUTER JOIN</literal></term>
+
+         <listitem>
+          <para>Сначала выполняется внутреннее соединение. Затем в результат добавляются все строки из T1, которым не соответствуют никакие строки в T2, а вместо значений столбцов T2 вставляются NULL. И наконец, в результат включаются все строки из T2, которым не соответствуют никакие строки в T1, а вместо значений столбцов T1 вставляются NULL.</para>
+         </listitem>
+        </varlistentry>
+       </variablelist></para>
+
+       <para>Предложение <literal>ON</literal> определяет наиболее общую форму условия соединения: в нём указываются выражения логического типа, подобные тем, что используются в предложении <literal>WHERE</literal>. Пара строк из <replaceable>T1</replaceable> и <replaceable>T2</replaceable> соответствуют друг другу, если выражение <literal>ON</literal> возвращает для них true.</para>
+
+       <para><literal>USING</literal> &mdash; это сокращённая запись условия, полезная в ситуации, когда с обеих сторон соединения столбцы имеют одинаковые имена. Она принимает список общих имён столбцов через запятую и формирует условие соединения с равенством этих столбцов. Например, запись соединения <replaceable>T1</replaceable> и <replaceable>T2</replaceable> с <literal>USING (a, b)</literal> формирует условие <literal>ON <replaceable>T1</replaceable>.a = <replaceable>T2</replaceable>.a AND <replaceable>T1</replaceable>.b = <replaceable>T2</replaceable>.b</literal>.</para>
+
+       <para>Более того, при выводе <literal>JOIN USING</literal> исключаются избыточные столбцы: оба сопоставленных столбца выводить не нужно, так как они содержат одинаковые значения. Тогда как <literal>JOIN ON</literal> выдаёт все столбцы из <replaceable>T1</replaceable>, а за ними все столбцы из <replaceable>T2</replaceable>, <literal>JOIN USING</literal> выводит один столбец для каждой пары (в указанном порядке), за ними все оставшиеся столбцы из <replaceable>T1</replaceable> и, наконец, все оставшиеся столбцы <replaceable>T2</replaceable>.</para>
+
+       <para><indexterm><primary>соединение</primary> <secondary>естественное</secondary></indexterm> <indexterm><primary>естественное соединение</primary></indexterm> Наконец, <literal>NATURAL</literal> &mdash; сокращённая форма <literal>USING</literal>: она образует список <literal>USING</literal> из всех имён столбцов, существующих в обеих входных таблицах. Как и с <literal>USING</literal>, эти столбцы оказываются в выходной таблице в единственном экземпляре. Если столбцов с одинаковыми именами не находится, <literal>NATURAL JOIN</literal> действует как <literal>JOIN ... ON TRUE</literal> и выдаёт декартово произведение строк.</para>
+
+       <note>
+        <para>Предложение <literal>USING</literal> разумно защищено от изменений в соединяемых отношениях, так как оно связывает только явно перечисленные столбцы. <literal>NATURAL</literal> считается более рискованным, так как при любом изменении схемы в одном или другом отношении, когда появляются столбцы с совпадающими именами, при соединении будут связываться и эти новые столбцы.</para>
+       </note>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+
+    <para>Для наглядности предположим, что у нас есть таблицы <literal>t1</literal>: <programlisting> num | name
+-----+------
+   1 | a
+   2 | b
+   3 | c</programlisting> и <literal>t2</literal>: <programlisting> num | value
+-----+-------
+   1 | xxx
+   3 | yyy
+   5 | zzz</programlisting> С ними для разных типов соединений мы получим следующие результаты: <screen>
+<prompt>=&gt;</prompt> <userinput>SELECT * FROM t1 CROSS JOIN t2;</userinput>
+ num | name | num | value
+-----+------+-----+-------
+   1 | a    |   1 | xxx
+   1 | a    |   3 | yyy
+   1 | a    |   5 | zzz
+   2 | b    |   1 | xxx
+   2 | b    |   3 | yyy
+   2 | b    |   5 | zzz
+   3 | c    |   1 | xxx
+   3 | c    |   3 | yyy
+   3 | c    |   5 | zzz
+(9 rows)
+
+<prompt>=&gt;</prompt> <userinput>SELECT * FROM t1 INNER JOIN t2 ON t1.num = t2.num;</userinput>
+ num | name | num | value
+-----+------+-----+-------
+   1 | a    |   1 | xxx
+   3 | c    |   3 | yyy
+(2 rows)
+
+<prompt>=&gt;</prompt> <userinput>SELECT * FROM t1 INNER JOIN t2 USING (num);</userinput>
+ num | name | value
+-----+------+-------
+   1 | a    | xxx
+   3 | c    | yyy
+(2 rows)
+
+<prompt>=&gt;</prompt> <userinput>SELECT * FROM t1 NATURAL INNER JOIN t2;</userinput>
+ num | name | value
+-----+------+-------
+   1 | a    | xxx
+   3 | c    | yyy
+(2 rows)
+
+<prompt>=&gt;</prompt> <userinput>SELECT * FROM t1 LEFT JOIN t2 ON t1.num = t2.num;</userinput>
+ num | name | num | value
+-----+------+-----+-------
+   1 | a    |   1 | xxx
+   2 | b    |     |
+   3 | c    |   3 | yyy
+(3 rows)
+
+<prompt>=&gt;</prompt> <userinput>SELECT * FROM t1 LEFT JOIN t2 USING (num);</userinput>
+ num | name | value
+-----+------+-------
+   1 | a    | xxx
+   2 | b    |
+   3 | c    | yyy
+(3 rows)
+
+<prompt>=&gt;</prompt> <userinput>SELECT * FROM t1 RIGHT JOIN t2 ON t1.num = t2.num;</userinput>
+ num | name | num | value
+-----+------+-----+-------
+   1 | a    |   1 | xxx
+   3 | c    |   3 | yyy
+     |      |   5 | zzz
+(3 rows)
+
+<prompt>=&gt;</prompt> <userinput>SELECT * FROM t1 FULL JOIN t2 ON t1.num = t2.num;</userinput>
+ num | name | num | value
+-----+------+-----+-------
+   1 | a    |   1 | xxx
+   2 | b    |     |
+   3 | c    |   3 | yyy
+     |      |   5 | zzz
+(4 rows)
+</screen></para>
+
+    <para>Условие соединения в предложении <literal>ON</literal> может также содержать выражения, не связанные непосредственно с соединением. Это может быть полезно в некоторых запросах, но не следует использовать это необдуманно. Рассмотрите следующий запрос: <screen>
+<prompt>=&gt;</prompt> <userinput>SELECT * FROM t1 LEFT JOIN t2 ON t1.num = t2.num AND t2.value = 'xxx';</userinput>
+ num | name | num | value
+-----+------+-----+-------
+   1 | a    |   1 | xxx
+   2 | b    |     |
+   3 | c    |     |
+(3 rows)
+</screen> Заметьте, что если поместить ограничение в предложение <literal>WHERE</literal>, вы получите другой результат: <screen>
+<prompt>=&gt;</prompt> <userinput>SELECT * FROM t1 LEFT JOIN t2 ON t1.num = t2.num WHERE t2.value = 'xxx';</userinput>
+ num | name | num | value
+-----+------+-----+-------
+   1 | a    |   1 | xxx
+(1 row)
+</screen> Это связано с тем, что ограничение, помещённое в предложение <literal>ON</literal>, обрабатывается <emphasis>до</emphasis> операции соединения, тогда как ограничение в <literal>WHERE</literal> &mdash; <emphasis>после</emphasis>. Это не имеет значения при внутренних соединениях, но важно при внешних.</para>
+   </sect3>
+
+   <sect3 id="queries-table-aliases">
+    <title>Псевдонимы таблиц и столбцов</title>
+
+    <indexterm zone="queries-table-aliases"><primary>псевдоним</primary> <secondary>в предложении FROM</secondary></indexterm>
+
+    <indexterm><primary>метка</primary> <see>псевдоним</see></indexterm>
+
+    <para>Таблицам и ссылкам на сложные таблицы в запросе можно дать временное имя, по которому к ним можно будет обращаться в рамках запроса. Такое имя называется <firstterm>псевдонимом таблицы</firstterm>.</para>
+
+    <para>Определить псевдоним таблицы можно, написав <synopsis>
+FROM <replaceable>табличная_ссылка</replaceable> AS <replaceable>псевдоним</replaceable>
+</synopsis> или <synopsis>
+FROM <replaceable>табличная_ссылка</replaceable> <replaceable>псевдоним</replaceable>
+</synopsis> Ключевое слово <literal>AS</literal> является необязательным. Вместо <replaceable>псевдоним</replaceable> здесь может быть любой идентификатор.</para>
+
+    <para>Псевдонимы часто применяются для назначения коротких идентификаторов длинным именам таблиц с целью улучшения читаемости запросов. Например: <programlisting>SELECT * FROM "очень_длинное_имя_таблицы" s JOIN "другое_длинное_имя" a
+  ON s.id = a.num;</programlisting></para>
+
+    <para>Псевдоним становится новым именем таблицы в рамках текущего запроса, т. е. после назначения псевдонима использовать исходное имя таблицы в другом месте запроса нельзя. Таким образом, следующий запрос недопустим: <programlisting>SELECT * FROM my_table AS m WHERE my_table.a &gt; 5;    -- неправильно</programlisting></para>
+
+    <para>Хотя в основном псевдонимы используются для удобства, они бывают необходимы, когда таблица соединяется сама с собой, например: <programlisting>SELECT * FROM people AS mother JOIN people AS child
+  ON mother.id = child.mother_id;</programlisting> Кроме того, псевдонимы обязательно нужно назначать подзапросам (см. <xref remap="4" linkend="queries-subqueries"/>).</para>
+
+    <para>В случае неоднозначности определения псевдонимов можно использовать скобки. В следующем примере первый оператор назначает псевдоним <literal>b</literal> второму экземпляру <literal>my_table</literal>, а второй оператор назначает псевдоним результату соединения: <programlisting>SELECT * FROM my_table AS a CROSS JOIN my_table AS b ...
+SELECT * FROM (my_table AS a CROSS JOIN my_table) AS b ...</programlisting></para>
+
+    <para>В другой форме назначения псевдонима временные имена даются не только таблицам, но и её столбцам: <synopsis>
+FROM <replaceable>табличная_ссылка</replaceable> <optional>AS</optional> <replaceable>псевдоним</replaceable> ( <replaceable>столбец1</replaceable> <optional>, <replaceable>столбец2</replaceable> <optional>, ...</optional></optional> )
+</synopsis> Если псевдонимов столбцов оказывается меньше, чем фактически столбцов в таблице, остальные столбцы сохраняют свои исходные имена. Эта запись особенно полезна для замкнутых соединений или подзапросов.</para>
+
+    <para>Когда псевдоним применяется к результату <literal>JOIN</literal>, он скрывает оригинальные имена таблиц внутри <literal>JOIN</literal>. Например, это допустимый SQL-запрос: <programlisting>SELECT a.* FROM my_table AS a JOIN your_table AS b ON ...</programlisting>а запрос: <programlisting>SELECT a.* FROM (my_table AS a JOIN your_table AS b ON ...) AS c</programlisting> ошибочный, так как псевдоним таблицы <literal>a</literal> не виден снаружи определения псевдонима <literal>c</literal>.</para>
+   </sect3>
+
+   <sect3 id="queries-subqueries">
+    <title>Подзапросы</title>
+
+    <indexterm zone="queries-subqueries"><primary>подзапрос</primary></indexterm>
+
+    <para>Подзапросы, образующие таблицы, должны заключаться в скобки и им <emphasis>обязательно</emphasis> должны назначаться псевдонимы (как описано в <xref remap="6" linkend="queries-table-aliases"/>). Например: <programlisting>FROM (SELECT * FROM table1) AS псевдоним</programlisting></para>
+
+    <para>Этот пример равносилен записи <literal>FROM table1 AS псевдоним</literal>. Более интересные ситуации, которые нельзя свести к простому соединению, возникают, когда в подзапросе используются агрегирующие функции или группировка.</para>
+
+    <para>Подзапросом может также быть список <command>VALUES</command>: <programlisting>FROM (VALUES ('anne', 'smith'), ('bob', 'jones'), ('joe', 'blow'))
+     AS names(first, last)</programlisting> Такому подзапросу тоже требуется псевдоним. Назначать псевдонимы столбцам списка <command>VALUES</command> не требуется, но вообще это хороший приём. Подробнее это описано в <xref remap="6" linkend="queries-values"/>.</para>
+   </sect3>
+
+   <sect3 id="queries-tablefunctions">
+    <title>Табличные функции</title>
+
+    <indexterm zone="queries-tablefunctions"><primary>табличная функция</primary></indexterm>
+
+    <indexterm zone="queries-tablefunctions"><primary>функция</primary> <secondary>в предложении FROM</secondary></indexterm>
+
+    <para>Табличные функции &mdash; это функции, выдающие набор строк, содержащих либо базовые типы данных (скалярных типов), либо составные типы (табличные строки). Они применяются в запросах как таблицы, представления или подзапросы в предложении <literal>FROM</literal>. Столбцы, возвращённые табличными функциями, можно включить в выражения <literal>SELECT</literal>, <literal>JOIN</literal> или <literal>WHERE</literal> так же, как столбцы таблиц, представлений или подзапросов.</para>
+
+    <para>Табличные функции можно также скомбинировать, используя запись <literal>ROWS FROM</literal>. Результаты функций будут возвращены в параллельных столбцах; число строк в этом случае будет наибольшим из результатов всех функций, а результаты функций с меньшим количеством строк будут дополнены значениями NULL.</para>
+
+<synopsis><replaceable>вызов_функции</replaceable> <optional>WITH ORDINALITY</optional> <optional><optional>AS</optional> <replaceable>псевдоним_таблицы</replaceable> <optional>(<replaceable>псевдоним_столбца</replaceable> <optional>, ...</optional>)</optional></optional>
+ROWS FROM( <replaceable>вызов_функции</replaceable> <optional>, ...</optional> ) <optional>WITH ORDINALITY</optional> <optional><optional>AS</optional> <replaceable>псевдоним_таблицы</replaceable> <optional>(<replaceable>псевдоним_столбца</replaceable> <optional>, ...</optional>)</optional></optional></synopsis>
+
+    <para>Если указано предложение <literal>WITH ORDINALITY</literal>, к столбцам результатов функций будет добавлен ещё один, с типом <type>bigint</type>. В этом столбце нумеруются строки результирующего набора, начиная с 1. (Это обобщение стандартного SQL-синтаксиса <literal>UNNEST ... WITH ORDINALITY</literal>.) По умолчанию, этот столбец называется <literal>ordinality</literal>, но ему можно присвоить и другое имя с помощью указания <literal>AS</literal>.</para>
+
+    <para>Специальную табличную функцию <literal>UNNEST</literal> можно вызвать с любым числом параметров-массивов, а возвращает она соответствующее число столбцов, как если бы <literal>UNNEST</literal> (<xref linkend="functions-array"/>) вызывалась для каждого параметра в отдельности, а результаты объединялись с помощью конструкции <literal>ROWS FROM</literal>.</para>
+
+<synopsis>UNNEST( <replaceable>выражение_массива</replaceable> <optional>, ...</optional> ) <optional>WITH ORDINALITY</optional> <optional><optional>AS</optional> <replaceable>псевдоним_таблицы</replaceable> <optional>(<replaceable>псевдоним_столбца</replaceable> <optional>, ...</optional>)</optional></optional></synopsis>
+
+    <para>Если <replaceable>псевдоним_таблицы</replaceable> не указан, в качестве имени таблицы используется имя функции; в случае с конструкцией <literal>ROWS FROM()</literal> &mdash; имя первой функции.</para>
+
+    <para>Если псевдонимы столбцов не указаны, то для функции, возвращающей базовый тип данных, именем столбца будет имя функции. Для функций, возвращающих составной тип, имена результирующих столбцов определяются индивидуальными атрибутами типа.</para>
+
+    <para>Несколько примеров: <programlisting>CREATE TABLE foo (fooid int, foosubid int, fooname text);
+
+CREATE FUNCTION getfoo(int) RETURNS SETOF foo AS $$
+    SELECT * FROM foo WHERE fooid = $1;
+$$ LANGUAGE SQL;
+
+SELECT * FROM getfoo(1) AS t1;
+
+SELECT * FROM foo
+    WHERE foosubid IN (
+                        SELECT foosubid
+                        FROM getfoo(foo.fooid) z
+                        WHERE z.fooid = foo.fooid
+                      );
+
+CREATE VIEW vw_getfoo AS SELECT * FROM getfoo(1);
+
+SELECT * FROM vw_getfoo;</programlisting></para>
+
+    <para>В некоторых случаях бывает удобно определить табличную функцию, возвращающую различные наборы столбцов при разных вариантах вызова. Для этого нужно указать, что она возвращает псевдотип <type>record</type>. Используя такую функцию, ожидаемую структуру строк нужно описать в самом запросе, чтобы система знала, как разобрать запрос и составить его план. Записывается это так:</para>
+
+<synopsis><replaceable>вызов_функции</replaceable> <optional>AS</optional> <replaceable>псевдоним</replaceable> (<replaceable>определение_столбца</replaceable> <optional>, ...</optional>)
+<replaceable>вызов_функции</replaceable> AS <optional><replaceable>псевдоним</replaceable></optional> (<replaceable>определение_столбца</replaceable> <optional>, ...</optional>)
+ROWS FROM( ... <replaceable>вызов_функции</replaceable> AS (<replaceable>определение_столбца</replaceable> <optional>, ...</optional>) <optional>, ...</optional> )</synopsis>
+
+    <para>Без <literal>ROWS FROM()</literal> список <replaceable>определения_столбцов</replaceable> заменяет список псевдонимов, который можно также добавить в предложении <literal>FROM</literal>; имена в определениях столбцов служат псевдонимами. С <literal>ROWS FROM()</literal> список <replaceable>определения_столбцов</replaceable> можно добавить к каждой функции отдельно, либо в случае с одной функцией и без предложения <literal>WITH ORDINALITY</literal>, список <replaceable>определения_столбцов</replaceable> можно записать вместо списка с псевдонимами столбцов после <literal>ROWS FROM()</literal>.</para>
+
+    <para>Взгляните на этот пример: <programlisting>SELECT *
+    FROM dblink('dbname=mydb', 'SELECT proname, prosrc FROM pg_proc')
+      AS t1(proname name, prosrc text)
+    WHERE proname LIKE 'bytea%';</programlisting> Здесь функция <xref linkend="contrib-dblink-function"/> (из модуля <xref linkend="dblink"/>) выполняет удалённый запрос. Она объявлена как функция, возвращающая тип <type>record</type>, так как он подойдёт для запроса любого типа. В этом случае фактический набор столбцов функции необходимо описать в вызывающем её запросе, чтобы анализатор запроса знал, например, как преобразовать <literal>*</literal>.</para>
+   </sect3>
+
+   <sect3 id="queries-lateral">
+    <title>Подзапросы <literal>LATERAL</literal></title>
+
+    <indexterm zone="queries-lateral"><primary>LATERAL</primary> <secondary>в предложении FROM</secondary></indexterm>
+
+    <para>Перед подзапросами в предложении <literal>FROM</literal> можно добавить ключевое слово <literal>LATERAL</literal>. Это позволит ссылаться в них на столбцы предшествующих элементов списка <literal>FROM</literal>. (Без <literal>LATERAL</literal> каждый подзапрос выполняется независимо и поэтому не может обращаться к другим элементам <literal>FROM</literal>.)</para>
+
+    <para>Перед табличными функциями в предложении <literal>FROM</literal> также можно указать <literal>LATERAL</literal>, но для них это ключевое слово необязательно; в аргументах функций в любом случае можно обращаться к столбцам в предыдущих элементах <literal>FROM</literal>.</para>
+
+    <para>Элемент <literal>LATERAL</literal> может находиться на верхнем уровне списка <literal>FROM</literal> или в дереве <literal>JOIN</literal>. В последнем случае он может также ссылаться на любые элементы в левой части <literal>JOIN</literal>, справа от которого он находится.</para>
+
+    <para>Когда элемент <literal>FROM</literal> содержит ссылки <literal>LATERAL</literal>, запрос выполняется следующим образом: сначала для строки элемента <literal>FROM</literal> с целевыми столбцами, или набора строк из нескольких элементов <literal>FROM</literal>, содержащих целевые столбцы, вычисляется элемент <literal>LATERAL</literal> со значениями этих столбцов. Затем результирующие строки обычным образом соединяются со строками, из которых они были вычислены. Эта процедура повторяется для всех строк исходных таблиц.</para>
+
+    <para><literal>LATERAL</literal> можно использовать так: <programlisting>SELECT * FROM foo, LATERAL (SELECT * FROM bar WHERE bar.id = foo.bar_id) ss;</programlisting> Здесь это не очень полезно, так как тот же результат можно получить более простым и привычным способом: <programlisting>SELECT * FROM foo, bar WHERE bar.id = foo.bar_id;</programlisting> Применять <literal>LATERAL</literal> имеет смысл в основном, когда для вычисления соединяемых строк необходимо обратиться к столбцам других таблиц. В частности, это полезно, когда нужно передать значение функции, возвращающей набор данных. Например, если предположить, что <function>vertices(polygon)</function> возвращает набор вершин многоугольника, близкие вершины многоугольников из таблицы polygons можно получить так: <programlisting>SELECT p1.id, p2.id, v1, v2
+FROM polygons p1, polygons p2,
+     LATERAL vertices(p1.poly) v1,
+     LATERAL vertices(p2.poly) v2
+WHERE (v1 &lt;-&gt; v2) &lt; 10 AND p1.id != p2.id;</programlisting> Этот запрос можно записать и так: <programlisting>SELECT p1.id, p2.id, v1, v2
+FROM polygons p1 CROSS JOIN LATERAL vertices(p1.poly) v1,
+     polygons p2 CROSS JOIN LATERAL vertices(p2.poly) v2
+WHERE (v1 &lt;-&gt; v2) &lt; 10 AND p1.id != p2.id;</programlisting> или переформулировать другими способами. (Как уже упоминалось, в данном примере ключевое слово <literal>LATERAL</literal> не требуется, но мы добавили его для ясности.)</para>
+
+    <para>Особенно полезно бывает использовать <literal>LEFT JOIN</literal> с подзапросом <literal>LATERAL</literal>, чтобы исходные строки оказывались в результате, даже если подзапрос <literal>LATERAL</literal> не возвращает строк. Например, если функция <function>get_product_names()</function> выдаёт названия продуктов, выпущенных определённым производителем, но о продукции некоторых производителей информации нет, мы можем найти, каких именно, примерно так: <programlisting>SELECT m.name
+FROM manufacturers m LEFT JOIN LATERAL get_product_names(m.id) pname ON true
+WHERE pname IS NULL;</programlisting></para>
+   </sect3>
+  </sect2>
+
+  <sect2 id="queries-where">
+   <title>Предложение <literal>WHERE</literal></title>
+
+   <indexterm zone="queries-where"><primary>WHERE</primary></indexterm>
+
+   <para><xref linkend="sql-where" endterm="sql-where-title"/> записывается так: <synopsis>
+WHERE <replaceable>условие_ограничения</replaceable>
+</synopsis> где <replaceable>условие_ограничения</replaceable> &mdash; любое выражение значения (см. <xref remap="4" linkend="sql-expressions"/>), выдающее результат типа <type>boolean</type>.</para>
+
+   <para>После обработки предложения <literal>FROM</literal> каждая строка полученной виртуальной таблицы проходит проверку по условию ограничения. Если результат условия равен true, эта строка остаётся в выходной таблице, а иначе (если результат равен false или NULL) отбрасывается. В условии ограничения, как правило, задействуется минимум один столбец из таблицы, полученной на выходе <literal>FROM</literal>. Хотя строго говоря, это не требуется, но в противном случае предложение <literal>WHERE</literal> будет бессмысленным.</para>
+
+   <note>
+    <para>Условие для внутреннего соединения можно записать как в предложении <literal>WHERE</literal>, так и в предложении <literal>JOIN</literal>. Например, это выражение: <programlisting>FROM a, b WHERE a.id = b.id AND b.val &gt; 5</programlisting> равнозначно этому: <programlisting>FROM a INNER JOIN b ON (a.id = b.id) WHERE b.val &gt; 5</programlisting> и возможно, даже этому: <programlisting>FROM a NATURAL JOIN b WHERE b.val &gt; 5</programlisting> Какой вариант выбрать, в основном дело вкуса и стиля. Вариант с <literal>JOIN</literal> внутри предложения <literal>FROM</literal>, возможно, не лучший с точки зрения совместимости с другими СУБД, хотя он и описан в стандарте SQL. Но для внешних соединений других вариантов нет: их можно записывать только во <literal>FROM</literal>. Предложения <literal>ON</literal> и <literal>USING</literal> во внешних соединениях <emphasis>не</emphasis> равнозначны условию <literal>WHERE</literal>, так как они могут добавлять строки (для входных строк без соответствия), а также удалять их из конечного результата.</para>
+   </note>
+
+   <para>Несколько примеров запросов с <literal>WHERE</literal>: <programlisting>SELECT ... FROM fdt WHERE c1 &gt; 5
+
+SELECT ... FROM fdt WHERE c1 IN (1, 2, 3)
+
+SELECT ... FROM fdt WHERE c1 IN (SELECT c1 FROM t2)
+
+SELECT ... FROM fdt WHERE c1 IN (SELECT c3 FROM t2 WHERE c2 = fdt.c1 + 10)
+
+SELECT ... FROM fdt WHERE c1 BETWEEN
+  (SELECT c3 FROM t2 WHERE c2 = fdt.c1 + 10) AND 100
+
+SELECT ... FROM fdt WHERE EXISTS (SELECT c1 FROM t2 WHERE c2 &gt; fdt.c1)</programlisting> <literal>fdt</literal> &mdash; название таблицы, порождённой в предложении <literal>FROM</literal>. Строки, которые не соответствуют условию <literal>WHERE</literal>, исключаются из <literal>fdt</literal>. Обратите внимание, как в качестве выражений значения используются скалярные подзапросы. Как и любые другие запросы, подзапросы могут содержать сложные табличные выражения. Заметьте также, что <literal>fdt</literal> используется в подзапросах. Дополнение имени <literal>c1</literal> в виде <literal>fdt.c1</literal> необходимо только, если в порождённой таблице в подзапросе также оказывается столбец <literal>c1</literal>. Полное имя придаёт ясность даже там, где без него можно обойтись. Этот пример показывает, как область именования столбцов внешнего запроса распространяется на все вложенные в него внутренние запросы.</para>
+  </sect2>
+
+
+  <sect2 id="queries-group">
+   <title>Предложения <literal>GROUP BY</literal> и <literal>HAVING</literal></title>
+
+   <indexterm zone="queries-group"><primary>GROUP BY</primary></indexterm>
+
+   <indexterm zone="queries-group"><primary>группировка</primary></indexterm>
+
+   <para>Строки порождённой входной таблицы, прошедшие фильтр <literal>WHERE</literal>, можно сгруппировать с помощью предложения <literal>GROUP BY</literal>, а затем оставить в результате только нужные группы строк, используя предложение <literal>HAVING</literal>.</para>
+
+<synopsis>SELECT <replaceable>список_выборки</replaceable>
+    FROM ...
+    <optional>WHERE ...</optional>
+    GROUP BY <replaceable>группирующий_столбец</replaceable> <optional>, <replaceable>группирующий_столбец</replaceable></optional>...</synopsis>
+
+   <para><xref linkend="sql-groupby" endterm="sql-groupby-title"/> группирует строки таблицы, объединяя их в одну группу при совпадении значений во всех перечисленных столбцах. Порядок, в котором указаны столбцы, не имеет значения. В результате наборы строк с одинаковыми значениями преобразуются в отдельные строки, представляющие все строки группы. Это может быть полезно для устранения избыточности выходных данных и/или для вычисления агрегатных функций, применённых к этим группам. Например: <screen>
+<prompt>=&gt;</prompt> <userinput>SELECT * FROM test1;</userinput>
+ x | y
+---+---
+ a | 3
+ c | 2
+ b | 5
+ a | 1
+(4 rows)
+
+<prompt>=&gt;</prompt> <userinput>SELECT x FROM test1 GROUP BY x;</userinput>
+ x
+---
+ a
+ b
+ c
+(3 rows)
+</screen></para>
+
+   <para>Во втором запросе мы не могли написать <literal>SELECT * FROM test1 GROUP BY x</literal>, так как для столбца <literal>y</literal> нет единого значения, связанного с каждой группой. Однако столбцы, по которым выполняется группировка, можно использовать в списке выборки, так как они имеют единственное значение в каждой группе.</para>
+
+   <para>Вообще говоря, в группированной таблице столбцы, не включённые в список <literal>GROUP BY</literal>, можно использовать только в агрегатных выражениях. Пример такого агрегатного выражения: <screen>
+<prompt>=&gt;</prompt> <userinput>SELECT x, sum(y) FROM test1 GROUP BY x;</userinput>
+ x | sum
+---+-----
+ a |   4
+ b |   5
+ c |   2
+(3 rows)
+</screen> Здесь <literal>sum</literal> &mdash; агрегатная функция, вычисляющая единственное значение для всей группы. Подробную информацию о существующих агрегатных функциях можно найти в <xref remap="6" linkend="functions-aggregate"/>.</para>
+
+   <tip>
+    <para>Группировка без агрегатных выражений по сути выдаёт набор различающихся значений столбцов. Этот же результат можно получить с помощью предложения <literal>DISTINCT</literal> (см. <xref remap="4" linkend="queries-distinct"/>).</para>
+   </tip>
+
+   <para>Взгляните на следующий пример: в нём вычисляется общая сумма продаж по каждому продукту (а не общая сумма по всем продуктам): <programlisting>SELECT product_id, p.name, (sum(s.units) * p.price) AS sales
+    FROM products p LEFT JOIN sales s USING (product_id)
+    GROUP BY product_id, p.name, p.price;</programlisting> В этом примере столбцы <literal>product_id</literal>, <literal>p.name</literal> и <literal>p.price</literal> должны присутствовать в списке <literal>GROUP BY</literal>, так как они используются в списке выборки. Столбец <literal>s.units</literal> может отсутствовать в списке <literal>GROUP BY</literal>, так как он используется только в агрегатном выражении (<literal>sum(...)</literal>), вычисляющем сумму продаж. Для каждого продукта этот запрос возвращает строку с итоговой суммой по всем продажам данного продукта.</para>
+
+   <indexterm><primary>функциональная зависимость</primary></indexterm>
+
+   <para>Если бы в таблице products по столбцу <literal>product_id</literal> был создан первичный ключ, тогда в данном примере было бы достаточно сгруппировать строки по <literal>product_id</literal>, так как название и цена продукта <firstterm>функционально зависят</firstterm> от кода продукта и можно однозначно определить, какое название и цену возвращать для каждой группы по ID.</para>
+
+   <para>В стандарте SQL <literal>GROUP BY</literal> может группировать только по столбцам исходной таблицы, но расширение <productname>&productname;</productname> позволяет использовать в <literal>GROUP BY</literal> столбцы из списка выборки. Также возможна группировка по выражениям, а не просто именам столбцов.</para>
+
+   <indexterm><primary>HAVING</primary></indexterm>
+
+   <para>Если таблица была сгруппирована с помощью <literal>GROUP BY</literal>, но интерес представляют только некоторые группы, отфильтровать их можно с помощью предложения <literal>HAVING</literal>, действующего подобно <literal>WHERE</literal>. Записывается это так: <synopsis>
+SELECT <replaceable>список_выборки</replaceable> FROM ... <optional>WHERE ...</optional> GROUP BY ...
+  HAVING <replaceable>логическое_выражение</replaceable>
+</synopsis> В предложении <literal>HAVING</literal> могут использоваться и группирующие выражения, и выражения, не участвующие в группировке (в этом случае это должны быть агрегирующие функции).</para>
+
+   <para>Пример: <screen>
+<prompt>=&gt;</prompt> <userinput>SELECT x, sum(y) FROM test1 GROUP BY x HAVING sum(y) &gt; 3;</userinput>
+ x | sum
+---+-----
+ a |   4
+ b |   5
+(2 rows)
+
+<prompt>=&gt;</prompt> <userinput>SELECT x, sum(y) FROM test1 GROUP BY x HAVING x &lt; 'c';</userinput>
+ x | sum
+---+-----
+ a |   4
+ b |   5
+(2 rows)
+</screen></para>
+
+   <para>И ещё один более реалистичный пример: <programlisting>SELECT product_id, p.name, (sum(s.units) * (p.price - p.cost)) AS profit
+    FROM products p LEFT JOIN sales s USING (product_id)
+    WHERE s.date &gt; CURRENT_DATE - INTERVAL '4 weeks'
+    GROUP BY product_id, p.name, p.price, p.cost
+    HAVING sum(p.price * s.units) &gt; 5000;</programlisting> В данном примере предложение <literal>WHERE</literal> выбирает строки по столбцу, не включённому в группировку (выражение истинно только для продаж за последние четыре недели), тогда как предложение <literal>HAVING</literal> отфильтровывает группы с общей суммой продаж больше 5000. Заметьте, что агрегатные выражения не обязательно должны быть одинаковыми во всех частях запроса.</para>
+
+   <para>Если в запросе есть вызовы агрегатных функций, но нет предложения <literal>GROUP BY</literal>, строки всё равно будут группироваться: в результате окажется одна строка группы (или возможно, ни одной строки, если эта строка будет отброшена предложением <literal>HAVING</literal>). Это справедливо и для запросов, которые содержат только предложение <literal>HAVING</literal>, но не содержат вызовы агрегатных функций и предложение <literal>GROUP BY</literal>.</para>
+  </sect2>
+
+  <sect2 id="queries-grouping-sets">
+   <title><literal>GROUPING SETS</literal>, <literal>CUBE</literal> и <literal>ROLLUP</literal></title>
+
+   <indexterm zone="queries-grouping-sets"><primary>GROUPING SETS</primary></indexterm>
+   <indexterm zone="queries-grouping-sets"><primary>CUBE</primary></indexterm>
+   <indexterm zone="queries-grouping-sets"><primary>ROLLUP</primary></indexterm>
+
+   <para>Более сложные, чем описанные выше, операции группировки возможны с концепцией <firstterm>наборов группирования</firstterm>. Данные, выбранные предложениями <literal>FROM</literal> и <literal>WHERE</literal>, группируются отдельно для каждого заданного набора группирования, затем для каждой группы вычисляются агрегатные функции как для простых предложений <literal>GROUP BY</literal>, и в конце возвращаются результаты. Например: <screen>
+<prompt>=&gt;</prompt> <userinput>SELECT * FROM items_sold;</userinput>
+ brand | size | sales
+-------+------+-------
+ Foo   | L    |  10
+ Foo   | M    |  20
+ Bar   | M    |  15
+ Bar   | L    |  5
+(4 rows)
+
+<prompt>=&gt;</prompt> <userinput>SELECT brand, size, sum(sales) FROM items_sold GROUP BY GROUPING SETS ((brand), (size), ());</userinput>
+ brand | size | sum
+-------+------+-----
+ Foo   |      |  30
+ Bar   |      |  20
+       | L    |  15
+       | M    |  35
+       |      |  50
+(5 rows)
+</screen></para>
+
+   <para>В каждом внутреннем списке <literal>GROUPING SETS</literal> могут задаваться ноль или более столбцов или выражений, которые воспринимаются так же, как если бы они были непосредственно записаны в предложении <literal>GROUP BY</literal>. Пустой набор группировки означает, что все строки сводятся к одной группе (которая выводится, даже если входных строк нет), как описано выше для агрегатных функций без предложения <literal>GROUP BY</literal>.</para>
+
+   <para>Ссылки на группирующие столбцы или выражения заменяются в результирующих строках значениями NULL для тех группирующих наборов, в которых эти столбцы отсутствуют. Чтобы можно было понять, результатом какого группирования стала конкретная выходная строка, предназначена функция, описанная в <xref remap="6" linkend="functions-grouping-table"/>.</para>
+
+   <para>Для указания двух распространённых видов наборов группирования предусмотрена краткая запись. Предложение формы <programlisting>ROLLUP ( <replaceable>e1</replaceable>, <replaceable>e2</replaceable>, <replaceable>e3</replaceable>, ... )</programlisting> представляет заданный список выражений и всех префиксов списка, включая пустой список; то есть оно равнозначно записи <programlisting>GROUPING SETS (
+    ( <replaceable>e1</replaceable>, <replaceable>e2</replaceable>, <replaceable>e3</replaceable>, ... ),
+    ...
+    ( <replaceable>e1</replaceable>, <replaceable>e2</replaceable> ),
+    ( <replaceable>e1</replaceable> ),
+    ( )
+)</programlisting> Оно часто применяется для анализа иерархических данных, например, для суммирования зарплаты по отделам, подразделениям и компании в целом.</para>
+
+   <para>Предложение формы <programlisting>CUBE ( <replaceable>e1</replaceable>, <replaceable>e2</replaceable>, ... )</programlisting> представляет заданный список и все его возможные подмножества (степень множества). Таким образом, запись <programlisting>CUBE ( a, b, c )</programlisting> равнозначна <programlisting>GROUPING SETS (
+    ( a, b, c ),
+    ( a, b    ),
+    ( a,    c ),
+    ( a       ),
+    (    b, c ),
+    (    b    ),
+    (       c ),
+    (         )
+)</programlisting></para>
+
+   <para>Элементами предложений <literal>CUBE</literal> и <literal>ROLLUP</literal> могут быть либо отдельные выражения, либо вложенные списки элементов в скобках. Вложенные списки обрабатываются как атомарные единицы, с которыми формируются отдельные наборы группирования. Например: <programlisting>CUBE ( (a, b), (c, d) )</programlisting> равнозначно <programlisting>GROUPING SETS (
+    ( a, b, c, d ),
+    ( a, b       ),
+    (       c, d ),
+    (            )
+)</programlisting> и <programlisting>ROLLUP ( a, (b, c), d )</programlisting> равнозначно <programlisting>GROUPING SETS (
+    ( a, b, c, d ),
+    ( a, b, c    ),
+    ( a          ),
+    (            )
+)</programlisting></para>
+
+   <para>Конструкции <literal>CUBE</literal> и <literal>ROLLUP</literal> могут применяться либо непосредственно в предложении <literal>GROUP BY</literal>, либо вкладываться внутрь предложения <literal>GROUPING SETS</literal>. Если одно предложение <literal>GROUPING SETS</literal> вкладывается внутрь другого, результат будет таким же, как если бы все элементы внутреннего предложения были записаны непосредственно во внешнем.</para>
+
+   <para>Если в одном предложении <literal>GROUP BY</literal> задаётся несколько элементов группирования, окончательный список наборов группирования образуется как прямое произведение этих элементов. Например: <programlisting>GROUP BY a, CUBE (b, c), GROUPING SETS ((d), (e))</programlisting> равнозначно <programlisting>GROUP BY GROUPING SETS (
+    (a, b, c, d), (a, b, c, e),
+    (a, b, d),    (a, b, e),
+    (a, c, d),    (a, c, e),
+    (a, d),       (a, e)
+)</programlisting></para>
+
+  <note>
+   <para>Конструкция <literal>(a, b)</literal> обычно воспринимается в выражениях как <link linkend="sql-syntax-row-constructors">конструктор строки</link>. Однако в предложении <literal>GROUP BY</literal> на верхнем уровне выражений запись <literal>(a, b)</literal> воспринимается как список выражений, как описано выше. Если вам по какой-либо причине <emphasis>нужен</emphasis> именно конструктор строки в выражении группирования, используйте запись <literal>ROW(a, b)</literal>.</para>
+  </note>
+  </sect2>
+
+  <sect2 id="queries-window">
+   <title>Обработка оконных функций</title>
+
+   <indexterm zone="queries-window"><primary>оконная функция</primary> <secondary>порядок выполнения</secondary></indexterm>
+
+   <para>Если запрос содержит оконные функции (см. <xref remap="4" linkend="tutorial-window"/>, <xref remap="4" linkend="functions-window"/> и <xref remap="4" linkend="syntax-window-functions"/>), эти функции вычисляются после каждой группировки, агрегатных выражений и фильтрации <literal>HAVING</literal>. Другими словами, если в запросе есть агрегатные функции, предложения <literal>GROUP BY</literal> или <literal>HAVING</literal>, оконные функции видят не исходные строки, полученные из <literal>FROM</literal>/<literal>WHERE</literal>, а сгруппированные.</para>
+
+   <para>Когда используются несколько оконных функций, все оконные функции, имеющие в своих определениях синтаксически равнозначные предложения <literal>PARTITION BY</literal> и <literal>ORDER BY</literal>, гарантированно обрабатывают данные за один проход. Таким образом, они увидят один порядок сортировки, даже если <literal>ORDER BY</literal> не определяет порядок однозначно. Однако относительно функций с разными формулировками <literal>PARTITION BY</literal> и <literal>ORDER BY</literal> никаких гарантий не даётся. (В таких случаях между проходами вычислений оконных функций обычно требуется дополнительный этап сортировки и эта сортировка может не сохранять порядок строк, равнозначный с точки зрения <literal>ORDER BY</literal>.)</para>
+
+   <para>В настоящее время оконные функции всегда требуют предварительно отсортированных данных, так что результат запроса будет отсортирован согласно тому или иному предложению <literal>PARTITION BY</literal>/<literal>ORDER BY</literal> оконных функций. Однако полагаться на это не следует. Если вы хотите, чтобы результаты сортировались определённым образом, явно добавьте предложение <literal>ORDER BY</literal> на верхнем уровне запроса.</para>
+  </sect2>
+ </sect1>
+
+
+ <sect1 id="queries-select-lists">
+  <title>Списки выборки</title>
+
+  <indexterm><primary>SELECT</primary> <secondary>список выборки</secondary></indexterm>
+
+  <para>Как говорилось в предыдущем разделе, табличное выражение в <command>SELECT</command> создаёт промежуточную виртуальную таблицу, возможно объединяя таблицы, представления, группируя и исключая лишние строки и т. д. Полученная таблица передаётся для обработки в <firstterm>список выборки</firstterm>. Этот список выбирает, какие <emphasis>столбцы</emphasis> промежуточной таблицы должны выводиться в результате и как именно.</para>
+
+  <sect2 id="queries-select-list-items">
+   <title>Элементы списка выборки</title>
+
+   <indexterm><primary>*</primary></indexterm>
+
+   <para>Простейший список выборки образует элемент <literal>*</literal>, который выбирает все столбцы из полученного табличного выражения. Список выборки также может содержать список выражений значения через запятую (как определено в <xref remap="6" linkend="sql-expressions"/>). Например, это может быть список имён столбцов: <programlisting>SELECT a, b, c FROM ...</programlisting> Имена столбцов <literal>a</literal>, <literal>b</literal> и <literal>c</literal> представляют либо фактические имена столбцов таблиц, перечисленных в предложении <literal>FROM</literal>, либо их псевдонимы, определённые как описано в <xref remap="6" linkend="queries-table-aliases"/>. Пространство имён в списке выборки то же, что и в предложении <literal>WHERE</literal>, если не используется группировка. В противном случае оно совпадает с пространством имён предложения <literal>HAVING</literal>.</para>
+
+   <para>Если столбец с заданным именем есть в нескольких таблицах, необходимо также указать имя таблицы, например так: <programlisting>SELECT tbl1.a, tbl2.a, tbl1.b FROM ...</programlisting> Обращаясь к нескольким таблицам, бывает удобно получить сразу все столбцы одной из таблиц: <programlisting>SELECT tbl1.*, tbl2.a FROM ...</programlisting> Подробнее запись <replaceable>имя_таблицы</replaceable><literal>.*</literal> описывается в <xref remap="6" linkend="rowtypes-usage"/>.</para>
+
+   <para>Если в списке выборки используется обычное выражение значения, по сути при этом в возвращаемую таблицу добавляется новый виртуальный столбец. Выражение значения вычисляется один раз для каждой строки результата со значениями столбцов в данной строке. Хотя выражения в списке выборки не обязательно должны обращаться к столбцам табличного выражения из предложения <literal>FROM</literal>; они могут содержать, например и простые арифметические выражения.</para>
+  </sect2>
+
+  <sect2 id="queries-column-labels">
+   <title>Метки столбцов</title>
+
+   <indexterm zone="queries-column-labels"><primary>псевдоним</primary> <secondary>в списке выборки</secondary></indexterm>
+
+   <para>Элементам в списке выборки можно назначить имена для последующей обработки, например, для указания в предложении <literal>ORDER BY</literal> или для вывода в клиентском приложении. Например: <programlisting>SELECT a AS value, b + c AS sum FROM ...</programlisting></para>
+
+   <para>Если выходное имя столбца не определено (с помощью <literal>AS</literal>), система назначает имя сама. Для простых ссылок на столбцы этим именем становится имя целевого столбца, а для вызовов функций это имя функции. Для сложных выражений система генерирует некоторое подходящее имя.</para>
+
+   <para>Слово <literal>AS</literal> можно опустить, но только если имя нового столбца не является ключевым словом <productname>&productname;</productname> (см. <xref remap="4" linkend="sql-keywords-appendix"/>). Во избежание случайного совпадения имени с ключевым словом это имя можно заключить в кавычки. Например, <literal>VALUE</literal> &mdash; ключевое слово, поэтому такой вариант не будет работать: <programlisting>SELECT a value, b + c AS sum FROM ...</programlisting> а такой будет: <programlisting>SELECT a "value", b + c AS sum FROM ...</programlisting> Для предотвращения конфликта с ключевыми словами, которые могут появиться в будущем, рекомендуется всегда писать <literal>AS</literal> или заключать метки выходных столбцов в кавычки.</para>
+
+   <note>
+    <para>Именование выходных столбцов отличается от того, что происходит в предложении <literal>FROM</literal> (см. <xref remap="4" linkend="queries-table-aliases"/>). Один столбец можно переименовать дважды, но на выходе окажется имя, назначенное в списке выборки.</para>
+   </note>
+  </sect2>
+
+  <sect2 id="queries-distinct">
+   <title><literal>DISTINCT</literal></title>
+
+   <indexterm zone="queries-distinct"><primary>DISTINCT</primary></indexterm>
+
+   <indexterm zone="queries-distinct"><primary>дублирование</primary></indexterm>
+
+   <para>После обработки списка выборки в результирующей таблице можно дополнительно исключить дублирующиеся строки. Для этого сразу после <literal>SELECT</literal> добавляется ключевое слово <literal>DISTINCT</literal>: <synopsis>
+SELECT DISTINCT <replaceable>список_выборки</replaceable> ...
+</synopsis> (Чтобы явно включить поведение по умолчанию, когда возвращаются все строки, вместо <literal>DISTINCT</literal> можно указать ключевое слово <literal>ALL</literal>.)</para>
+
+   <indexterm><primary>NULL-значение</primary> <secondary sortas="DISTINCT">в DISTINCT</secondary></indexterm>
+
+   <para>Две строки считаются разными, если они содержат различные значения минимум в одном столбце. При этом значения NULL полагаются равными.</para>
+
+   <para>Кроме того, можно явно определить, какие строки будут считаться различными, следующим образом: <synopsis>
+SELECT DISTINCT ON (<replaceable>выражение</replaceable> <optional>, <replaceable>выражение</replaceable> ...</optional>) <replaceable>список_выборки</replaceable> ...
+</synopsis> Здесь <replaceable>выражение</replaceable> &mdash; обычное выражение значения, вычисляемое для всех строк. Строки, для которых перечисленные выражения дают один результат, считаются дублирующимися и возвращается только первая строка из такого набора. Заметьте, что <quote>первая строка</quote> набора может быть любой, если только запрос не включает сортировку, гарантирующую однозначный порядок строк, поступающих в фильтр <literal>DISTINCT</literal>. (Обработка <literal>DISTINCT ON</literal> производится после сортировки <literal>ORDER BY</literal>.)</para>
+
+   <para>Предложение <literal>DISTINCT ON</literal> не описано в стандарте SQL и иногда его применение считается плохим стилем из-за возможной неопределённости в результатах. При разумном использовании <literal>GROUP BY</literal> и подзапросов во <literal>FROM</literal> можно обойтись без этой конструкции, но часто она бывает удобнее.</para>
+  </sect2>
+ </sect1>
+
+
+ <sect1 id="queries-union">
+  <title>Сочетание запросов</title>
+
+  <indexterm zone="queries-union"><primary>UNION</primary></indexterm>
+  <indexterm zone="queries-union"><primary>INTERSECT</primary></indexterm>
+  <indexterm zone="queries-union"><primary>EXCEPT</primary></indexterm>
+  <indexterm zone="queries-union"><primary>объединение множеств</primary></indexterm>
+  <indexterm zone="queries-union"><primary>пересечение множеств</primary></indexterm>
+  <indexterm zone="queries-union"><primary>вычитание множеств</primary></indexterm>
+  <indexterm zone="queries-union"><primary>операции над множествами</primary></indexterm>
+
+  <para>Результаты двух запросов можно обработать, используя операции над множествами: объединение, пересечение и вычитание. Эти операции записываются соответственно так: <synopsis>
+<replaceable>запрос1</replaceable> UNION <optional>ALL</optional> <replaceable>запрос2</replaceable>
+<replaceable>запрос1</replaceable> INTERSECT <optional>ALL</optional> <replaceable>запрос2</replaceable>
+<replaceable>запрос1</replaceable> EXCEPT <optional>ALL</optional> <replaceable>запрос2</replaceable>
+</synopsis> Здесь <replaceable>запрос1</replaceable> и <replaceable>запрос2</replaceable> &mdash; это запросы, в которых могут использоваться все возможности, рассмотренные до этого. Операции над множествами тоже можно вкладывать и соединять, например:<synopsis>
+<replaceable>запрос1</replaceable> UNION <replaceable>запрос2</replaceable> UNION <replaceable>запрос3</replaceable>
+</synopsis> Этот сложный запрос выполняется так: <synopsis>
+(<replaceable>запрос1</replaceable> UNION <replaceable>запрос2</replaceable>) UNION <replaceable>запрос3</replaceable>
+</synopsis></para>
+
+  <para><literal>UNION</literal> по сути добавляет результаты второго запроса к результатам первого (хотя никакой порядок возвращаемых строк при этом не гарантируется). Более того, эта операция убирает дублирующиеся строки из результата так же, как это делает <literal>DISTINCT</literal>, если только не указано <literal>UNION ALL</literal>.</para>
+
+  <para><literal>INTERSECT</literal> возвращает все строки, содержащиеся в результате и первого, и второго запроса. Дублирующиеся строки отфильтровываются, если не указано <literal>ALL</literal>.</para>
+
+  <para><literal>EXCEPT</literal> возвращает все строки, которые есть в результате первого запроса, но отсутствуют в результате второго. (Иногда это называют <firstterm>разницей</firstterm> двух запросов.) И здесь дублирующиеся строки отфильтровываются, если не указано <literal>ALL</literal>.</para>
+
+  <para>Чтобы можно было вычислить объединение, пересечение или разницу результатов двух запросов, эти запросы должны быть <quote>совместимыми для объединения</quote>, что означает, что они должны иметь одинаковое число столбцов и соответствующие столбцы должны быть совместимых типов, как описывается в <xref remap="6" linkend="typeconv-union-case"/>.</para>
+ </sect1>
+
+
+ <sect1 id="queries-order">
+  <title>Сортировка строк</title>
+
+  <indexterm zone="queries-order"><primary>сортировка</primary></indexterm>
+
+  <indexterm zone="queries-order"><primary>ORDER BY</primary></indexterm>
+
+  <para>После того как запрос выдал таблицу результатов (после обработки списка выборки), её можно отсортировать. Если сортировка не задана, строки возвращаются в неопределённом порядке. Фактический порядок строк в этом случае будет зависеть от плана соединения и сканирования, а также от порядка данных на диске, поэтому полагаться на него нельзя. Определённый порядок выводимых строк гарантируется, только если этап сортировки задан явно.</para>
+
+  <para>Порядок сортировки определяет предложение <literal>ORDER BY</literal>: <synopsis>
+SELECT <replaceable>список_выборки</replaceable>
+    FROM <replaceable>табличное_выражение</replaceable>
+    ORDER BY <replaceable>выражение_сортировки1</replaceable> <optional>ASC | DESC</optional> <optional>NULLS { FIRST | LAST }</optional>
+             <optional>, <replaceable>выражение_сортировки2</replaceable> <optional>ASC | DESC</optional> <optional>NULLS { FIRST | LAST }</optional> ...</optional>
+</synopsis> Выражениями сортировки могут быть любые выражения, допустимые в списке выборки запроса. Например: <programlisting>SELECT a, b FROM table1 ORDER BY a + b, c;</programlisting> Когда указывается несколько выражений, последующие значения позволяют отсортировать строки, в которых совпали все предыдущие значения. Каждое выражение можно дополнить ключевыми словами <literal>ASC</literal> или <literal>DESC</literal>, которые выбирают сортировку соответственно по возрастанию или убыванию. По умолчанию принят порядок по возрастанию (<literal>ASC</literal>). При сортировке по возрастанию сначала идут меньшие значения, где понятие <quote>меньше</quote> определяется оператором <literal>&lt;</literal>. Подобным образом, сортировка по возрастанию определяется оператором <literal>&gt;</literal>. <footnote>
+     <para>На деле <productname>&productname;</productname> определяет порядок сортировки для <literal>ASC</literal> и <literal>DESC</literal> по <firstterm>классу оператора B-дерева по умолчанию</firstterm> для типа данных выражения. Обычно типы данных создаются так, что этому порядку соответствуют операторы <literal>&lt;</literal> и <literal>&gt;</literal>, но возможно разработать собственный тип данных, который будет вести себя по-другому.</para>
+    </footnote></para>
+
+  <para>Для определения места значений NULL можно использовать указания <literal>NULLS FIRST</literal> и <literal>NULLS LAST</literal>, которые помещают значения NULL соответственно до или после значений не NULL. По умолчанию значения NULL считаются больше любых других, то есть подразумевается <literal>NULLS FIRST</literal> для порядка <literal>DESC</literal> и <literal>NULLS LAST</literal> в противном случае.</para>
+
+  <para>Заметьте, что порядки сортировки определяются независимо для каждого столбца. Например, <literal>ORDER BY x, y DESC</literal> означает <literal>ORDER BY x ASC, y DESC</literal>, и это не то же самое, что <literal>ORDER BY x DESC, y DESC</literal>.</para>
+
+  <para>Здесь <replaceable>выражение_сортировки</replaceable> может быть меткой столбца или номером выводимого столбца, как в данном примере: <programlisting>SELECT a + b AS sum, c FROM table1 ORDER BY sum;
+SELECT a, max(b) FROM table1 GROUP BY a ORDER BY 1;</programlisting>Оба эти запроса сортируют результат по первому столбцу. Заметьте, что имя выводимого столбца должно оставаться само по себе, его нельзя использовать в выражении. Например, это <emphasis>ошибка</emphasis>: <programlisting>SELECT a + b AS sum, c FROM table1 ORDER BY sum + c;          -- неправильно</programlisting> Это ограничение позволяет уменьшить неоднозначность. Тем не менее неоднозначность возможна, когда в <literal>ORDER BY</literal> указано простое имя, но оно соответствует и имени выходного столбца, и столбцу из табличного выражения. В этом случае используется выходной столбец. Эта ситуация может возникнуть, только когда с помощью <literal>AS</literal> выходному столбцу назначается то же имя, что имеет столбец в другой таблице.</para>
+
+  <para><literal>ORDER BY</literal> можно применить к результату комбинации <literal>UNION</literal>, <literal>INTERSECT</literal> и <literal>EXCEPT</literal>, но в этом случае возможна сортировка только по номерам или именам столбцов, но не по выражениям.</para>
+ </sect1>
+
+
+ <sect1 id="queries-limit">
+  <title><literal>LIMIT</literal> и <literal>OFFSET</literal></title>
+
+  <indexterm zone="queries-limit"><primary>LIMIT</primary></indexterm>
+
+  <indexterm zone="queries-limit"><primary>OFFSET</primary></indexterm>
+
+  <para>Указания <literal>LIMIT</literal> и <literal>OFFSET</literal> позволяют получить только часть строк из тех, что выдал остальной запрос: <synopsis>
+SELECT <replaceable>список_выборки</replaceable>
+    FROM <replaceable>табличное_выражение</replaceable>
+    <optional> ORDER BY ... </optional>
+    <optional> LIMIT { <replaceable>число</replaceable> | ALL } </optional> <optional> OFFSET <replaceable>число</replaceable> </optional>
+</synopsis></para>
+
+  <para>Если указывается число LIMIT, в результате возвращается не больше заданного числа строк (меньше может быть, если сам запрос выдал меньшее количество строк). <literal>LIMIT ALL</literal> равносильно отсутствию указания <literal>LIMIT</literal>, как и <literal>LIMIT</literal> с аргументом NULL.</para>
+
+  <para><literal>OFFSET</literal> указывает пропустить указанное число строк, прежде чем начать выдавать строки. <literal>OFFSET 0</literal> равносильно отсутствию указания <literal>OFFSET</literal>, как и <literal>OFFSET</literal> с аргументом NULL.</para>
+
+  <para>Если указано и <literal>OFFSET</literal>, и <literal>LIMIT</literal>, сначала система пропускает <literal>OFFSET</literal> строк, а затем начинает подсчитывать строки для ограничения <literal>LIMIT</literal>.</para>
+
+  <para>Применяя <literal>LIMIT</literal>, важно использовать также предложение <literal>ORDER BY</literal>, чтобы строки результата выдавались в определённом порядке. Иначе будут возвращаться непредсказуемые подмножества строк. Вы можете запросить строки с десятой по двадцатую, но какой порядок вы имеете в виду? Порядок будет неизвестен, если не добавить <literal>ORDER BY</literal>.</para>
+
+  <para>Оптимизатор запроса учитывает ограничение <literal>LIMIT</literal>, строя планы выполнения запросов, поэтому вероятнее всего планы (а значит и порядок строк) будут меняться при разных <literal>LIMIT</literal> и <literal>OFFSET</literal>. Таким образом, различные значения <literal>LIMIT</literal>/<literal>OFFSET</literal>, выбирающие разные подмножества результатов запроса, <emphasis>приведут к несогласованности результатов</emphasis>, если не установить предсказуемую сортировку с помощью <literal>ORDER BY</literal>. Это не ошибка, а неизбежное следствие того, что SQL не гарантирует вывод результатов запроса в некотором порядке, если порядок не определён явно предложением <literal>ORDER BY</literal>.</para>
+
+  <para>Строки, пропускаемые согласно предложению <literal>OFFSET</literal>, тем не менее должны вычисляться на сервере. Таким образом, при больших значениях <literal>OFFSET</literal> работает неэффективно.</para>
+ </sect1>
+
+
+ <sect1 id="queries-values">
+  <title>Списки <literal>VALUES</literal></title>
+
+  <indexterm zone="queries-values"><primary>VALUES</primary></indexterm>
+
+  <para>Предложение <literal>VALUES</literal> позволяет создать <quote>постоянную таблицу</quote>, которую можно использовать в запросе, не создавая и не наполняя таблицу в БД. Синтаксис предложения: <synopsis>
+VALUES ( <replaceable class="parameter">выражение</replaceable> [, ...] ) [, ...]
+</synopsis> Для каждого списка выражений в скобках создаётся строка таблицы. Все списки должны иметь одинаковое число элементов (т. е. число столбцов в таблице) и соответствующие элементы во всех списках должны иметь совместимые типы данных. Фактический тип данных столбцов результата определяется по тем же правилам, что и для <literal>UNION</literal> (см. <xref remap="4" linkend="typeconv-union-case"/>).</para>
+
+  <para>Как пример: <programlisting>VALUES (1, 'one'), (2, 'two'), (3, 'three');</programlisting> вернёт таблицу из двух столбцов и трёх строк. Это равносильно такому запросу: <programlisting>SELECT 1 AS column1, 'one' AS column2
+UNION ALL
+SELECT 2, 'two'
+UNION ALL
+SELECT 3, 'three';</programlisting> По умолчанию <productname>&productname;</productname> назначает столбцам таблицы <literal>VALUES</literal> имена <literal>column1</literal>, <literal>column2</literal> и т. д. Имена столбцов не определены в стандарте SQL и в другой СУБД они могут быть другими, поэтому обычно лучше переопределить имена списком псевдонимов, например так: <programlisting>=&gt; SELECT * FROM (VALUES (1, 'one'), (2, 'two'), (3, 'three')) AS t (num,letter);
+ num | letter
+-----+--------
+   1 | one
+   2 | two
+   3 | three
+(3 rows)</programlisting></para>
+
+  <para>Синтаксически список <literal>VALUES</literal> с набором выражений равнозначен: <synopsis>
+SELECT <replaceable>список_выборки</replaceable> FROM <replaceable>табличное_выражение</replaceable>
+</synopsis> и допускается везде, где допустим <literal>SELECT</literal>. Например, вы можете использовать его в составе <literal>UNION</literal> или добавить к нему <replaceable>определение_сортировки</replaceable> (<literal>ORDER BY</literal>, <literal>LIMIT</literal> и/или <literal>OFFSET</literal>). <literal>VALUES</literal> чаще всего используется как источник данных для команды <command>INSERT</command>, а также как подзапрос.</para>
+
+  <para>За дополнительными сведениями обратитесь к справке <xref remap="1" linkend="sql-values"/>.</para>
+
+ </sect1>
+
+
+ <sect1 id="queries-with">
+  <title>Запросы <literal>WITH</literal> (Общие табличные выражения)</title>
+
+  <indexterm zone="queries-with"><primary>WITH</primary> <secondary>внутри SELECT</secondary></indexterm>
+
+  <indexterm><primary>общее табличное выражение</primary> <see>WITH</see></indexterm>
+
+  <para><literal>WITH</literal> предоставляет способ записывать дополнительные операторы для применения в больших запросах. Эти операторы, которые также называют общими табличными выражениями (Common Table Expressions, <acronym>CTE</acronym>), можно представить как определения временных таблиц, существующих только для одного запроса. Дополнительным оператором в предложении <literal>WITH</literal> может быть <command>SELECT</command>, <command>INSERT</command>, <command>UPDATE</command> или <command>DELETE</command>, а само предложение <literal>WITH</literal> присоединяется к основному оператору, которым также может быть <command>SELECT</command>, <command>INSERT</command>, <command>UPDATE</command> или <command>DELETE</command>.</para>
+
+ <sect2 id="queries-with-select">
+   <title><command>SELECT</command> в <literal>WITH</literal></title>
+
+  <para>Основное предназначение <command>SELECT</command> в предложении <literal>WITH</literal> заключается в разбиении сложных запросов на простые части. Например, запрос: <programlisting>WITH regional_sales AS (
+    SELECT region, SUM(amount) AS total_sales
+    FROM orders
+    GROUP BY region
+   ), top_regions AS (
+    SELECT region
+    FROM regional_sales
+    WHERE total_sales &gt; (SELECT SUM(total_sales)/10 FROM regional_sales)
+   )
+SELECT region,
+   product,
+   SUM(quantity) AS product_units,
+   SUM(amount) AS product_sales
+FROM orders
+WHERE region IN (SELECT region FROM top_regions)
+GROUP BY region, product;</programlisting> выводит итоги по продажам только для передовых регионов. Предложение <literal>WITH</literal> определяет два дополнительных оператора <structname>regional_sales</structname> и <structname>top_regions</structname> так, что результат <structname>regional_sales</structname> используется в <structname>top_regions</structname>, а результат <structname>top_regions</structname> используется в основном запросе <command>SELECT</command>. Этот пример можно было бы переписать без <literal>WITH</literal>, но тогда нам понадобятся два уровня вложенных подзапросов <command>SELECT</command>. Показанным выше способом это можно сделать немного проще.</para>
+
+  <para>Необязательное указание <literal>RECURSIVE</literal> превращает <literal>WITH</literal> из простого синтаксического удобства в средство реализации того, что невозможно в стандартном SQL. Используя <literal>RECURSIVE</literal>, запрос <literal>WITH</literal> может обращаться к собственному результату. Очень простой пример, суммирующий числа от 1 до 100: <programlisting>WITH RECURSIVE t(n) AS (
+    VALUES (1)
+  UNION ALL
+    SELECT n+1 FROM t WHERE n &lt; 100
+)
+SELECT sum(n) FROM t;</programlisting> В общем виде рекурсивный запрос <literal>WITH</literal> всегда записывается как <firstterm>не рекурсивная часть</firstterm>, потом <literal>UNION</literal> (или <literal>UNION ALL</literal>), а затем <firstterm>рекурсивная часть</firstterm>, где только в рекурсивной части можно обратиться к результату запроса. Такой запрос выполняется следующим образом:</para>
+
+  <procedure>
+   <title>Вычисление рекурсивного запроса</title>
+
+   <step performance="required">
+    <para>Вычисляется не рекурсивная часть. Для <literal>UNION</literal> (но не <literal>UNION ALL</literal>) отбрасываются дублирующиеся строки. Все оставшиеся строки включаются в результат рекурсивного запроса и также помещаются во временную <firstterm>рабочую таблицу</firstterm>.</para>
+   </step>
+
+   <step performance="required">
+    <para>Пока рабочая таблица не пуста, повторяются следующие действия:</para>
+    <substeps>
+     <step performance="required">
+      <para>Вычисляется рекурсивная часть так, что рекурсивная ссылка на сам запрос обращается к текущему содержимому рабочей таблицы. Для <literal>UNION</literal> (но не <literal>UNION ALL</literal>) отбрасываются дублирующиеся строки и строки, дублирующие ранее полученные. Все оставшиеся строки включаются в результат рекурсивного запроса и также помещаются во временную <firstterm>промежуточную таблицу</firstterm>.</para>
+     </step>
+
+     <step performance="required">
+      <para>Содержимое рабочей таблицы заменяется содержимым промежуточной таблицы, а затем промежуточная таблица очищается.</para>
+     </step>
+    </substeps>
+   </step>
+  </procedure>
+
+  <note>
+   <para>Строго говоря, этот процесс является итерационным, а не рекурсивным, но комитетом по стандартам SQL был выбран термин <literal>RECURSIVE</literal>.</para>
+  </note>
+
+  <para>В показанном выше примере в рабочей таблице на каждом этапе содержится всего одна строка и в ней последовательно накапливаются значения от 1 до 100. На сотом шаге, благодаря условию <literal>WHERE</literal>, не возвращается ничего, так что вычисление запроса завершается.</para>
+
+  <para>Рекурсивные запросы обычно применяются для работы с иерархическими или древовидными структурами данных. В качестве полезного примера можно привести запрос, находящий все непосредственные и косвенные составные части продукта, используя только таблицу с прямыми связями: <programlisting>WITH RECURSIVE included_parts(sub_part, part, quantity) AS (
+    SELECT sub_part, part, quantity FROM parts WHERE part = 'our_product'
+  UNION ALL
+    SELECT p.sub_part, p.part, p.quantity
+    FROM included_parts pr, parts p
+    WHERE p.part = pr.sub_part
+  )
+SELECT sub_part, SUM(quantity) as total_quantity
+FROM included_parts
+GROUP BY sub_part</programlisting></para>
+
+  <para>Работая с рекурсивными запросами, важно обеспечить, чтобы рекурсивная часть запроса в конце концов не выдала никаких кортежей (строк), в противном случае цикл будет бесконечным. Иногда для этого достаточно применять <literal>UNION</literal> вместо <literal>UNION ALL</literal>, так как при этом будут отбрасываться строки, которые уже есть в результате. Однако часто в цикле выдаются строки, не совпадающие полностью с предыдущими: в таких случаях может иметь смысл проверить одно или несколько полей, чтобы определить, не была ли текущая точка достигнута раньше. Стандартный способ решения подобных задач &mdash; вычислить массив с уже обработанными значениями. Например, рассмотрите следующий запрос, просматривающий таблицу <structname>graph</structname> по полю <structfield>link</structfield>: <programlisting>WITH RECURSIVE search_graph(id, link, data, depth) AS (
+        SELECT g.id, g.link, g.data, 1
+        FROM graph g
+      UNION ALL
+        SELECT g.id, g.link, g.data, sg.depth + 1
+        FROM graph g, search_graph sg
+        WHERE g.id = sg.link
+)
+SELECT * FROM search_graph;</programlisting> Этот запрос зациклится, если связи <structfield>link</structfield> содержат циклы. Так как нам нужно получать в результате <quote>depth</quote>, одно лишь изменение <literal>UNION ALL</literal> на <literal>UNION</literal> не позволит избежать зацикливания. Вместо этого мы должны как-то определить, что уже достигали текущей строки, пройдя некоторый путь. Для этого мы добавляем два столбца <structfield>path</structfield> и <structfield>cycle</structfield> и получаем запрос, защищённый от зацикливания: <programlisting>WITH RECURSIVE search_graph(id, link, data, depth, path, cycle) AS (
+        SELECT g.id, g.link, g.data, 1,
+          ARRAY[g.id],
+          false
+        FROM graph g
+      UNION ALL
+        SELECT g.id, g.link, g.data, sg.depth + 1,
+          path || g.id,
+          g.id = ANY(path)
+        FROM graph g, search_graph sg
+        WHERE g.id = sg.link AND NOT cycle
+)
+SELECT * FROM search_graph;</programlisting> Помимо предотвращения циклов, значения массива часто бывают полезны сами по себе для представления <quote>пути</quote>, приведшего к определённой строке.</para>
+
+  <para>В общем случае, когда для выявления цикла нужно проверять несколько полей, следует использовать массив строк. Например, если нужно сравнить поля <structfield>f1</structfield> и <structfield>f2</structfield>: <programlisting>WITH RECURSIVE search_graph(id, link, data, depth, path, cycle) AS (
+        SELECT g.id, g.link, g.data, 1,
+          ARRAY[ROW(g.f1, g.f2)],
+          false
+        FROM graph g
+      UNION ALL
+        SELECT g.id, g.link, g.data, sg.depth + 1,
+          path || ROW(g.f1, g.f2),
+          ROW(g.f1, g.f2) = ANY(path)
+        FROM graph g, search_graph sg
+        WHERE g.id = sg.link AND NOT cycle
+)
+SELECT * FROM search_graph;</programlisting></para>
+
+  <tip>
+   <para>Часто для распознавания цикла достаточного одного поля и тогда <literal>ROW()</literal> можно опустить. При этом будет использоваться не массив данных составного типа, а простой массив, что более эффективно.</para>
+  </tip>
+
+  <tip>
+   <para>Этот алгоритм рекурсивного вычисления запроса выдаёт в результате узлы, упорядоченные по пути погружения. Чтобы получить результаты, отсортированные по глубине, можно добавить во внешний запрос <literal>ORDER BY</literal> по столбцу <quote>path</quote>, полученному, как показано выше.</para>
+  </tip>
+
+  <para>Для тестирования запросов, которые могут зацикливаться, есть хороший приём &mdash; добавить <literal>LIMIT</literal> в родительский запрос. Например, следующий запрос зациклится, если не добавить предложение <literal>LIMIT</literal>: <programlisting>WITH RECURSIVE t(n) AS (
+    SELECT 1
+  UNION ALL
+    SELECT n+1 FROM t
+)
+SELECT n FROM t LIMIT 100;</programlisting> Но в данном случае этого не происходит, так как в <productname>&productname;</productname> запрос <literal>WITH</literal> выдаёт столько строк, сколько фактически принимает родительский запрос. В производственной среде использовать этот приём не рекомендуется, так как другие системы могут вести себя по-другому. Кроме того, это не будет работать, если внешний запрос сортирует результаты рекурсивного запроса или соединяет их с другой таблицей, так как в подобных случаях внешний запрос обычно всё равно выбирает результат запроса <literal>WITH</literal> полностью.</para>
+
+  <para>Запросы <literal>WITH</literal> имеют полезное свойство &mdash; они вычисляются только раз для всего родительского запроса, даже если этот запрос или соседние запросы <literal>WITH</literal> обращаются к ним неоднократно. Таким образом, сложные вычисления, результаты которых нужны в нескольких местах, можно выносить в запросы <literal>WITH</literal> в целях оптимизации. Кроме того, такие запросы позволяют избежать нежелательных вычислений функций с побочными эффектами. Однако есть и обратная сторона &mdash; оптимизатор не может распространить ограничения родительского запроса на запрос <literal>WITH</literal> так, как он делает это для обычного подзапроса. Запрос <literal>WITH</literal> обычно выполняется буквально и возвращает все строки, включая те, что потом может отбросить родительский запрос. (Но как было сказано выше, вычисление может остановиться раньше, если в ссылке на этот запрос затребуется только ограниченное число строк.)</para>
+
+  <para>Примеры выше показывают только предложение <literal>WITH</literal> с <command>SELECT</command>, но таким же образом его можно использовать с командами <command>INSERT</command>, <command>UPDATE</command> и <command>DELETE</command>. В каждом случае он по сути создаёт временную таблицу, к которой можно обратиться в основной команде.</para>
+ </sect2>
+
+ <sect2 id="queries-with-modifying">
+   <title>Изменение данных в <literal>WITH</literal></title>
+
+   <para>В предложении <literal>WITH</literal> можно также использовать операторы, изменяющие данные (<command>INSERT</command>, <command>UPDATE</command> или <command>DELETE</command>). Это позволяет выполнять в одном запросе сразу несколько разных операций. Например: <programlisting>WITH moved_rows AS (
+    DELETE FROM products
+    WHERE
+        "date" &gt;= '2010-10-01' AND
+        "date" &lt; '2010-11-01'
+    RETURNING *
+)
+INSERT INTO products_log
+SELECT * FROM moved_rows;</programlisting> Этот запрос фактически перемещает строки из <structname>products</structname> в <structname>products_log</structname>. Оператор <command>DELETE</command> в <literal>WITH</literal> удаляет указанные строки из <structname>products</structname> и возвращает их содержимое в предложении <literal>RETURNING</literal>; а затем главный запрос читает это содержимое и вставляет в таблицу <structname>products_log</structname>.</para>
+
+   <para>Следует заметить, что предложение <literal>WITH</literal> в данном случае присоединяется к оператору <command>INSERT</command>, а не к <command>SELECT</command>, вложенному в <command>INSERT</command>. Это необходимо, так как <literal>WITH</literal> может содержать операторы, изменяющие данные, только на верхнем уровне запроса. Однако при этом применяются обычные правила видимости <literal>WITH</literal>, так что к результату <literal>WITH</literal> можно обратиться и из вложенного оператора <command>SELECT</command>.</para>
+
+   <para>Операторы, изменяющие данные, в <literal>WITH</literal> обычно дополняются предложением <literal>RETURNING</literal> (см. <xref remap="4" linkend="dml-returning"/>), как показано в этом примере. Важно понимать, что временная таблица, которую можно будет использовать в остальном запросе, создаётся из результата <literal>RETURNING</literal>, а <emphasis>не</emphasis> целевой таблицы оператора. Если оператор, изменяющий данные, в <literal>WITH</literal> не дополнен предложением <literal>RETURNING</literal>, временная таблица не создаётся и обращаться к ней в остальном запросе нельзя. Однако такой запрос всё равно будет выполнен. Например, допустим следующий не очень практичный запрос: <programlisting>WITH t AS (
+    DELETE FROM foo
+)
+DELETE FROM bar;</programlisting> Он удалит все строки из таблиц <structname>foo</structname> и <structname>bar</structname>. При этом число задействованных строк, которое получит клиент, будет подсчитываться только по строкам, удалённым из <structname>bar</structname>.</para>
+
+   <para>Рекурсивные ссылки в операторах, изменяющих данные, не допускаются. В некоторых случаях это ограничение можно обойти, обратившись к конечному результату рекурсивного <literal>WITH</literal>, например так: <programlisting>WITH RECURSIVE included_parts(sub_part, part) AS (
+    SELECT sub_part, part FROM parts WHERE part = 'our_product'
+  UNION ALL
+    SELECT p.sub_part, p.part
+    FROM included_parts pr, parts p
+    WHERE p.part = pr.sub_part
+  )
+DELETE FROM parts
+  WHERE part IN (SELECT part FROM included_parts);</programlisting> Этот запрос удаляет все непосредственные и косвенные составные части продукта.</para>
+
+   <para>Операторы, изменяющие данные в <literal>WITH</literal>, выполняются только один раз и всегда полностью, вне зависимости от того, принимает ли их результат основной запрос. Заметьте, что это отличается от поведения <command>SELECT</command> в <literal>WITH</literal>: как говорилось в предыдущем разделе, <command>SELECT</command> выполняется только до тех пор, пока его результаты востребованы основным запросом.</para>
+
+   <para>Вложенные операторы в <literal>WITH</literal> выполняются одновременно друг с другом и с основным запросом. Таким образом, порядок, в котором операторы в <literal>WITH</literal> будут фактически изменять данные, непредсказуем. Все эти операторы выполняются с одним <firstterm>снимком данных</firstterm> (см. <xref remap="4" linkend="mvcc"/>), так что они не могут <quote>видеть</quote>, как каждый из них меняет целевые таблицы. Это уменьшает эффект непредсказуемости фактического порядка изменения строк и означает, что <literal>RETURNING</literal> &mdash; единственный вариант передачи изменений от вложенных операторов <literal>WITH</literal> основному запросу. Например, в данном случае: <programlisting>WITH t AS (
+    UPDATE products SET price = price * 1.05
+    RETURNING *
+)
+SELECT * FROM products;</programlisting> внешний оператор <command>SELECT</command> выдаст цены, которые были до действия <command>UPDATE</command>, тогда как в запросе <programlisting>WITH t AS (
+    UPDATE products SET price = price * 1.05
+    RETURNING *
+)
+SELECT * FROM t;</programlisting> внешний <command>SELECT</command> выдаст изменённые данные.</para>
+
+   <para>Неоднократное изменение одной и той же строки в рамках одного оператора не поддерживается. Иметь место будет только одно из нескольких изменений и надёжно определить, какое именно, часто довольно сложно (а иногда и вовсе невозможно). Это так же касается случая, когда строка удаляется и изменяется в том же операторе: в результате может быть выполнено только обновление. Поэтому в общем случае следует избегать подобного наложения операций. В частности, избегайте подзапросов <literal>WITH</literal>, которые могут повлиять на строки, изменяемые основным оператором или операторами, вложенные в него. Результат действия таких запросов будет непредсказуемым.</para>
+
+   <para>В настоящее время, для оператора, изменяющего данные в <literal>WITH</literal>, в качестве целевой нельзя использовать таблицу, для которой определено условное правило или правило <literal>ALSO</literal> или <literal>INSTEAD</literal>, если оно состоит из нескольких операторов.</para>
+
+  </sect2>
+
+ </sect1>
+
+</chapter>

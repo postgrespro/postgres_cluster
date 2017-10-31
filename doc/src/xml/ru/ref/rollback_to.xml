@@ -1,0 +1,102 @@
+<!--
+doc/src/xml/ref/rollback_to.xml
+&productname; documentation
+-->
+
+<refentry id="sql-rollback-to">
+ <indexterm zone="sql-rollback-to"><primary>ROLLBACK TO SAVEPOINT</primary></indexterm>
+
+ <indexterm zone="sql-rollback-to"><primary>точки сохранения</primary> <secondary>откат</secondary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ROLLBACK TO SAVEPOINT</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ROLLBACK TO SAVEPOINT</refname>
+  <refpurpose>откатиться к точке сохранения</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ROLLBACK [ WORK | TRANSACTION ] TO [ SAVEPOINT ] <replaceable>имя_точки_сохранения</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Откатывает все команды, выполненные после установления точки сохранения. Точка сохранения остаётся действующей и при необходимости можно снова откатиться к ней позже.</para>
+
+  <para><command>ROLLBACK TO SAVEPOINT</command> неявно уничтожает все точки сохранения, установленные после заданной точки.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя_точки_сохранения</replaceable></term>
+    <listitem>
+     <para>Точка сохранения, к которой нужно откатиться.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Чтобы уничтожить точку сохранения, не отменяя действия команд, выполненных после неё, применяется команда <xref linkend="sql-release-savepoint"/>.</para>
+
+  <para>Указание имени точки сохранения, не установленной ранее, считается ошибкой.</para>
+
+  <para>Курсоры проявляют не совсем транзакционное поведение применительно к точкам сохранения. Любой курсор, открытый внутри точки сохранения, будет закрыт при откате к этой точке. Если ранее открытый курсор был перемещён командой <command>FETCH</command> или <command>MOVE</command> внутри точки сохранения, к которой затем произошёл откат, курсор остаётся в той позиции, в которой он остался после <command>FETCH</command> (то есть, перемещение курсора, производимое командой <command>FETCH</command>, не откатывается). Также при откате не отменяется и закрытие курсора. Однако другие побочные эффекты, вызываемые запросом курсора (например, побочные действия изменчивых функций, вызываемых в запросе) <emphasis>отменяются</emphasis>, если они производятся после точки сохранения, к которой затем происходит откат. Курсор, выполнение которого приводит к прерыванию транзакции, переводится в нерабочее состояние, так что даже если восстановить транзакцию, выполнив <command>ROLLBACK TO SAVEPOINT</command>, этот курсор нельзя будет использовать.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Отмена действия команд, выполненных после установки точки сохранения <literal>my_savepoint</literal>: <programlisting>ROLLBACK TO SAVEPOINT my_savepoint;</programlisting></para>
+
+  <para>Откат к точке сохранения не отражается на положении курсора: <programlisting>BEGIN;
+
+DECLARE foo CURSOR FOR SELECT 1 UNION SELECT 2;
+
+SAVEPOINT foo;
+
+FETCH 1 FROM foo;
+ ?column? 
+----------
+        1
+
+ROLLBACK TO SAVEPOINT foo;
+
+FETCH 1 FROM foo;
+ ?column? 
+----------
+        2
+
+COMMIT;</programlisting></para>
+
+
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>В стандарте <acronym>SQL</acronym> говорится, что ключевое слово <literal>SAVEPOINT</literal> является обязательным, но <productname>&productname;</productname> и <productname>Oracle</productname> позволяют опускать его. SQL допускает <literal>WORK</literal>, но не <literal>TRANSACTION</literal>, в качестве избыточного слова после <literal>ROLLBACK</literal>. Кроме того, в SQL есть дополнительное предложение <literal>AND [ NO ] CHAIN</literal>, которое в настоящее время не поддерживается в <productname>&productname;</productname>. В остальном эта команда соответствует стандарту SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-begin"/></member>
+   <member><xref linkend="sql-commit"/></member>
+   <member><xref linkend="sql-release-savepoint"/></member>
+   <member><xref linkend="sql-rollback"/></member>
+   <member><xref linkend="sql-savepoint"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

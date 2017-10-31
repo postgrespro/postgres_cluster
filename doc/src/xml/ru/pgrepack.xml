@@ -1,0 +1,446 @@
+<!--
+doc/src/xml/pgrepack.xml
+&productname; documentation
+-->
+
+<refentry id="app-pgrepack">
+  <indexterm zone="app-pgrepack"><primary>pg_repack</primary></indexterm>
+
+  <refmeta>
+   <refentrytitle>pg_repack</refentrytitle>
+   <manvolnum>1</manvolnum>
+   <refmiscinfo>Приложение</refmiscinfo>
+  </refmeta>
+
+  <refnamediv>
+    <refname>pg_repack</refname>
+    <refpurpose>утилита и расширение <productname>&productname;</productname> для реорганизации таблиц</refpurpose>
+  </refnamediv>
+
+  <refsynopsisdiv>
+   <cmdsynopsis>
+    <command>pg_repack</command>
+    <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+    <arg choice="opt"><replaceable>имя_бд</replaceable></arg>
+   </cmdsynopsis>
+  </refsynopsisdiv>
+
+  <refsect1>
+     <title>Описание</title>
+    <para>Модуль <ulink url="http://reorg.github.com/pg_repack">pg_repack</ulink> — это расширение <productname>&productname;</productname>, которое позволяет ликвидировать пустоты в таблицах и индексах и может дополнительно восстанавливать физический порядок кластеризованных индексов. В отличие от <xref linkend="sql-cluster"/> и <command>VACUUM_ FULL</command>, оно выполняет эти операции «на ходу», обходясь без исключительных блокировок таблиц в ходе их обработки. К тому же <application>pg_repack</application> действует эффективно, демонстрируя производительность, сравнимую с непосредственным использованием <command>CLUSTER</command>.</para>
+    <para><application>pg_repack</application> — это альтернативная ветвь развития проекта <ulink url="http://reorg.projects.pgfoundry.org/">http://reorg.projects.pgfoundry.org/</ulink>. Отправить сообщение об ошибке и получить информацию о разработке можно на странице <ulink url="https://github.com/reorg/pg_repack">https://github.com/reorg/pg_repack</ulink>.</para>
+    <para>Вы можете выбрать один из следующих способов реорганизации данных: <itemizedlist>
+       <listitem>
+        <para>Неблокирующая кластеризация (<command>CLUSTER</command>) (с упорядочиванием по кластеризующему индексу)</para>
+       </listitem>
+       <listitem>
+        <para>Упорядочивание по указанным столбцам</para>
+       </listitem>
+       <listitem>
+        <para>Неблокирующая полная очистка (<command>VACUUM FULL</command>) (только упаковка строк)</para>
+       </listitem>
+       <listitem>
+        <para>Перестроение или перемещение только индексов таблицы</para>
+       </listitem>
+      </itemizedlist></para>
+    <note>
+     <para>Использовать эту утилиту могут только суперпользователи.</para>
+    </note>
+    <note>
+     <para>В целевой таблице должен быть первичный ключ (PRIMARY KEY) или как минимум уникальный индекс по столбцу NOT NULL.</para>
+    </note>
+  </refsect1>
+
+
+  <refsect1 id="app-pgrepack-installation">
+   <title>Установка</title>
+
+   <para><application>pg_repack</application> можно собрать в UNIX или Linux, воспользовавшись <application>make</application>. При этом автоматически будет использоваться сборочная инфраструктура <acronym>PGXS</acronym>. Перед сборкой может потребоваться установить пакеты <productname>&productname;</productname> для разработки и добавить каталог, в котором находится <application>pg_config</application>, в вашу переменную окружения <envar>PATH</envar>. Затем вы можете выполнить: <screen>
+$ cd pg_repack
+$ make
+$ sudo make install
+</screen></para>
+
+   <para>Вы также можете собрать эту программу в <productname>Windows</productname>, воспользовавшись <productname>Microsoft Visual C++ 2010</productname>. В каталоге <filename>msvc</filename> находятся необходимые для этого файлы проекта.</para>
+
+   <para>После установки загрузите расширение <filename>pg_repack</filename> в базу данных, которую вы хотите обрабатывать. Для <productname>PostgreSQL</productname> 9.1 и последующих версий <filename>pg_repack</filename> представляется в виде расширения, так что вы можете просто выполнить: <screen>
+$ psql -c "CREATE EXTENSION pg_repack" -d <replaceable>ваша_база</replaceable>
+</screen></para>
+
+   <para>Для предыдущих версий <productname>PostgreSQL</productname> вы должны загрузить в нужной базе данных <filename>$SHAREDIR/contrib/pg_repack.sql</filename>; узнать расположение <replaceable>$SHAREDIR</replaceable> можно, выполнив <command>pg_config --sharedir</command>, например: <screen>
+$ psql -f "$(pg_config --sharedir)/contrib/pg_repack.sql" -d <replaceable>ваша_база</replaceable>
+</screen></para>
+
+   <para>Удалить <literal>pg_repack</literal> из базы данных <productname>PostgreSQL</productname> 9.1 и новее можно с помощью команды <literal>DROP EXTENSION pg_repack</literal>. Для предыдущих версий <productname>PostgreSQL</productname> нужно выполнить скрипт <filename>$SHAREDIR/contrib/uninstall_pg_repack.sql</filename> или просто удалить схему <literal>repack</literal>.</para>
+
+   <para>Чтобы обновить ранее установленную версию <application>pg_repack</application> или <application>pg_reorg</application>, просто удалите старую версию, как описано выше, и установите новую.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Параметры</title>
+
+    <refsect2>
+     <title>Параметры реорганизации</title>
+
+     <variablelist>
+      <varlistentry>
+       <term><option>-a</option></term>
+       <term><option>--all</option></term>
+       <listitem>
+        <para>Попытаться перепаковать все базы данных в кластере. Базы данных, в которых расширение <filename>pg_repack</filename> не установлено, будут пропущены.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-t <replaceable class="parameter">таблица</replaceable></option></term>
+       <term><option>--table=<replaceable class="parameter">таблица</replaceable></option></term>
+       <listitem>
+        <para>Реорганизовать только указанную таблицу (таблицы). Реорганизовать несколько таблиц можно, добавив несколько ключей <option>-t</option>. По умолчанию реорганизуются все подходящие таблицы в целевых базах данных.</para>
+       </listitem>
+      </varlistentry>
+
+
+      <varlistentry>
+       <term><option>-c <replaceable class="parameter">схема</replaceable></option></term>
+       <term><option>--schema=<replaceable class="parameter">схема</replaceable></option></term>
+       <listitem>
+        <para>Перепаковать таблицы только в указанной схеме (схемах). Перепаковать несколько схем можно, добавив несколько ключей <option>-c</option>. Можно использовать в сочетании с <option>--tablespace</option> для перемещения таблиц в другое табличное пространство.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-o <replaceable class="parameter">столбец</replaceable>[, ...]</option></term>
+       <term><option>--order-by=<replaceable class="parameter">столбец</replaceable>[, ...]</option></term>
+       <listitem>
+        <para>Выполнить неблокирующую кластеризацию (<command>CLUSTER</command>), упорядочивая данные по указанным столбцам.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-n</option></term>
+       <term><option>--no-order</option></term>
+       <listitem>
+        <para>Выполнить неблокирующую полную очистку (<command>VACUUM FULL</command>). Начиная с версии 1.2, это производится по умолчанию для некластеризованных таблиц.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-N</option></term>
+       <term><option>--dry-run</option></term>
+       <listitem>
+        <para>Только показать, какие таблицы будут перепакованы, и завершиться.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-j <replaceable class="parameter">num_jobs</replaceable></option></term>
+       <term><option>--jobs=<replaceable class="parameter">num_jobs</replaceable></option></term>
+       <listitem>
+        <para>Установить заданное количество дополнительных соединений к <productname>&productname;</productname> и использовать эти дополнительные подключения для перестраивания индексов таблиц в параллельном режиме. Параллельное перестроение индексов поддерживается только при реорганизации таблиц полностью, без ключей <option>--index</option> или <option>--only-indexes</option>. Если ваш сервер имеет несколько процессорных ядер и быструю дисковую подсистему, параллельный режим может быть полезен для ускорения <application>pg_repack</application>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-s <replaceable class="parameter">табличное_пространство</replaceable></option></term>
+       <term><option>--tablespace=<replaceable class="parameter">табличное_пространство</replaceable></option></term>
+       <listitem>
+        <para>Перенести перепакованные таблицы в заданное табличное пространство: по сути это неблокирующая версия команды <command>ALTER TABLE ... SET TABLESPACE</command>. Индексы таблиц остаются в исходном табличном пространстве, если только дополнительно не указан ключ <option>--moveidx</option>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-S</option></term>
+       <term><option>--moveidx</option></term>
+       <listitem>
+        <para>Также перенести индексы перепакованных таблиц в табличное пространство, заданное ключом <option>--tablespace</option>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-i <replaceable class="parameter">индекс</replaceable></option></term>
+       <term><option>--index=<replaceable class="parameter">индекс</replaceable></option></term>
+       <listitem>
+        <para>Перепаковать только указанный индекс. Перепаковать несколько индексов можно, добавив несколько ключей <option>-i</option>. Можно использовать в сочетании с <option>--tablespace</option> для перемещения индексов в другое табличное пространство.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-x</option></term>
+       <term><option>--only-indexes</option></term>
+       <listitem>
+        <para>Перепаковать только индексы таблиц, заданных ключами <option>--table</option>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-T <replaceable class="parameter">сек</replaceable></option></term>
+       <term><option>--wait-timeout=<replaceable class="parameter">сек</replaceable></option></term>
+       <listitem>
+        <para>Расширению <application>pg_repack</application> необходимо получить исключительную блокировку в конце реорганизации. Этот параметр определяет, сколько секунд <application>pg_repack</application> будет ждать получения этой блокировки. Если за это время блокировка не будет получена, <application>pg_repack</application> принудительно отменит конфликтующие запросы. Если же вы используете <productname>&productname;</productname> или <productname>PostgreSQL</productname> версии 8.4 и новее, <application>pg_repack</application> прибегнет к вызову <function>pg_terminate_backend()</function>, чтобы отключить все оставшиеся фоновые процессы, после того, как это время истечёт дважды. Значение по умолчанию: 60 сек.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-Z</option></term>
+       <term><option>--no-analyze</option></term>
+       <listitem>
+        <para>Не выполнять <command>ANALYZE</command> после полной реорганизации таблицы. В отсутствие этого ключа после реорганизации <command>ANALYZE</command> выполняется.</para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
+    </refsect2>
+
+    <refsect2>
+     <title>Параметры подключения</title>
+
+     <variablelist>
+      <varlistentry>
+       <term><option><optional>-d</optional> <replaceable class="parameter">имя_бд</replaceable></option></term>
+       <term><option><optional>--dbname=</optional><replaceable class="parameter">имя_бд</replaceable></option></term>
+       <listitem>
+        <para>Указывает имя базы данных для реорганизации. Если оно не указано, и параметр <option>-a</option> (или <option>--all</option>) не используется, то имя базы берётся из переменной окружения <envar>PGDATABASE</envar>. Если и эта переменная не задана, выбирается имя подключающегося пользователя.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-h <replaceable class="parameter">сервер</replaceable></option></term>
+       <term><option>--host=<replaceable class="parameter">сервер</replaceable></option></term>
+       <listitem>
+        <para>Указывает имя компьютера, на котором запущен сервер. Если значение начинается с косой черты, оно интерпретируется как имя каталога с доменным сокетом Unix.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-p <replaceable class="parameter">порт</replaceable></option></term>
+       <term><option>--port=<replaceable class="parameter">порт</replaceable></option></term>
+       <listitem>
+        <para>Указывает TCP-порт или расширение файла Unix-сокета, через который сервер принимает подключения.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-U <replaceable class="parameter">имя_пользователя</replaceable></option></term>
+       <term><option>--username=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+       <listitem>
+        <para>Имя пользователя для подключения.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-w</option></term>
+       <term><option>--no-password</option></term>
+       <listitem>
+        <para>Не выдавать запрос на ввод пароля. Если сервер требует аутентификацию по паролю и пароль не доступен с помощью других средств, таких как файл <filename>.pgpass</filename>, попытка соединения не удастся. Этот параметр может быть полезен в пакетных заданиях и скриптах, где нет пользователя, который вводит пароль.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-W</option></term>
+       <term><option>--password</option></term>
+       <listitem>
+        <para>Принудительно запрашивать пароль перед подключением к базе данных.</para>
+
+        <para>Это несущественный параметр, так как <application moreinfo="none">pg_repack</application> запрашивает пароль автоматически, если сервер проверяет подлинность по паролю. Однако, чтобы понять это, <application moreinfo="none">pg_repack</application> лишний раз подключается к серверу. Поэтому иногда имеет смысл ввести <option>-W</option>, чтобы исключить эту ненужную попытку подключения.</para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
+    </refsect2>
+
+    <refsect2>
+     <title>Общие параметры</title>
+
+     <variablelist>
+      <varlistentry>
+       <term><option>-e</option></term>
+       <term><option>--echo</option></term>
+       <listitem>
+        <para>Выводить команды, которые <application>pg_repack</application> формирует и передаёт на сервер.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-E <replaceable class="parameter">уровень</replaceable></option></term>
+       <term><option>--elevel=<replaceable class="parameter">уровень</replaceable></option></term>
+       <listitem>
+        <para>Устанавливает уровень выводимых сообщений: <literal>DEBUG</literal>, <literal>INFO</literal>, <literal>NOTICE</literal>, <literal>WARNING</literal>, <literal>ERROR</literal>, <literal>LOG</literal>, <literal>FATAL</literal> и <literal>PANIC</literal>. Уровень по умолчанию: <literal>INFO</literal>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>--help</option></term>
+       <listitem>
+        <para>Вывести справку об аргументах командной строки <application>pg_repack</application> и завершиться.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>--version</option></term>
+       <listitem>
+        <para>Вывести версию <application>pg_repack</application> и завершиться.</para>
+       </listitem>
+      </varlistentry>
+     </variablelist>
+    </refsect2>
+  </refsect1>
+
+  <refsect1>
+   <title>Переменные окружения</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><envar>PGDATABASE</envar></term>
+     <term><envar>PGHOST</envar></term>
+     <term><envar>PGPORT</envar></term>
+     <term><envar>PGUSER</envar></term>
+
+     <listitem>
+      <para>Параметры подключения по умолчанию</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+   <para>Эта утилита, как и большинство других утилит <productname>&productname;</productname>, также использует переменные среды, поддерживаемые libpq (см. описание переменных окружения"/&gt;).</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Примеры</title>
+
+   <para>Выполнение неблокирующей кластеризации (<command>CLUSTER</command>) всех кластеризованных таблиц и полной очистки (<command>VACUUM FULL</command>) всех некластеризованных таблиц в базе данных <literal>test</literal>: <screen>
+$ pg_repack test
+</screen></para>
+    <para>Выполнение неблокирующей полной очистки (<command>VACUUM FULL</command>) в таблицах <literal>foo</literal> и <literal>bar</literal> в базе данных <literal>test</literal> (кластерные индексы, если они есть, игнорируются): <screen>
+$ pg_repack --no-order --table foo --table bar test
+</screen></para>
+    <para>Перемещение всех индексов таблицы <literal>foo</literal> в табличное пространство <literal>tbs</literal>: <screen>
+$ pg_repack -d test --table foo --only-indexes --tablespace tbs
+</screen></para>
+    <para>Перемещение указанного индекса в табличное пространство <literal>tbs</literal>: <screen>
+$ pg_repack -d test --index idx --tablespace tbs
+</screen></para>
+  </refsect1>
+
+  <refsect1>
+   <title>Диагностика</title>
+
+    <para>В случае ошибок <application>pg_repack</application> выдаёт соответствующие сообщения. В следующем списке поясняются причины ряда ошибок.</para>
+
+    <para>В случае неисправимых ошибок вам потребуется провести очистку вручную. Для этого просто удалите <literal>pg_repack</literal> из базы данных, а затем снова установите это расширение.</para>
+
+    <para>Для <productname>&productname;</productname> или PostgreSQL версии 9.1 и новее выполните: <programlisting>DROP EXTENSION pg_repack CASCADE</programlisting> в базе данных, где произошла ошибка. Затем выполните: <programlisting>CREATE EXTENSION pg_repack</programlisting></para>
+
+    <para>Для предыдущих версий загрузите скрипт <filename>$SHAREDIR/contrib/uninstall_pg_repack.sql</filename> в базу данных, где произошла ошибка, а затем повторно загрузите <filename>$SHAREDIR/contrib/pg_repack.sql</filename>.</para>
+
+    <para><screen>
+<computeroutput>
+INFO: database "db" skipped:
+pg_repack VER is not installed in the database:
+pg_repack is not installed in the database when the --all option is specified.
+</computeroutput>
+</screen> Создайте расширение <filename>pg_repack</filename> в базе данных.</para>
+
+    <para><screen>
+<computeroutput>
+ERROR: pg_repack VER is not installed in the database:
+pg_repack is not installed in the database specified by --dbname
+</computeroutput>
+</screen> Создайте расширение <filename>pg_repack</filename> в базе данных.</para>
+
+    <para><screen>
+<computeroutput>
+ERROR: program 'pg_repack V1' does not match database library 'pg_repack V2':
+There is a mismatch between the pg_repack binary and the database library
+(.so or .dll).
+</computeroutput>
+</screen> Обнаруженное несоответствие версий может быть связано с нахождением некорректной программы в переменной <envar>PATH</envar> или обращением к неправильной базе данных. Проверьте корректность каталога программы и базы данных; если всё верно, возможно, вам придётся переустановить <filename>pg_repack</filename>.</para>
+
+    <para><screen>
+<computeroutput>
+ERROR: extension 'pg_repack V1' required, found extension 'pg_repack V2':
+The SQL extension found in the database does not match the version required by the pg_repack program.
+</computeroutput>
+</screen> Столкнувшись с такой ошибкой, удалите расширение из базы данных и пересоздайте его, как описано в <xref remap="6" linkend="app-pgrepack-installation"/>.</para>
+
+    <para><screen>
+<computeroutput>
+ERROR: relation "table" must have a primary key or not-null unique keys:
+The target table doesn't have a PRIMARY KEY or any UNIQUE constraints defined.
+</computeroutput>
+</screen> Создайте в указанной таблице ограничение PRIMARY KEY или UNIQUE.</para>
+
+    <para><screen>
+<computeroutput>
+ERROR: query failed: ERROR: column "col" does not exist:
+The target table doesn't have columns specified by --order-by option.
+</computeroutput>
+</screen> Укажите существующие столбцы.</para>
+
+    <para><screen>
+<computeroutput>
+WARNING: the table "tbl" already has a trigger called z_repack_trigger:
+The trigger was probably installed during a previous attempt
+to run pg_repack on the table which was interrupted
+and for some reason failed to clean up the temporary objects.
+</computeroutput>
+</screen> Вы можете ликвидировать все временные объекты, удалив и создав расширение заново: это описано подробно в <xref remap="6" linkend="app-pgrepack-installation"/>.</para>
+
+    <para><screen>
+<computeroutput>
+WARNING: trigger "trg" conflicting on table "tbl":
+The target table has a trigger whose name follows z_repack_trigger
+in alphabetical order.
+</computeroutput>
+</screen> Триггер <literal>z_repack_trigger</literal> должен быть последним триггером в наборе BEFORE. Переименуйте свой триггер, чтобы он шёл в алфавитном порядке перед <filename>pg_repack</filename>; это можно сделать командой: <programlisting>ALTER TRIGGER <replaceable>zzz_my_trigger</replaceable>
+ ON <replaceable>таблица</replaceable> RENAME TO <replaceable>yyy_my_trigger</replaceable>;</programlisting></para>
+
+    <para><screen>
+<computeroutput>
+ERROR: Another pg_repack command may be running on the table. Please try again later.
+</computeroutput>
+</screen> Когда две команды <command>pg_repack</command> выполняются одновременно, возможна взаимоблокировка. В таком случае стоит попробовать выполнять эти команды с некоторой задержкой.</para>
+
+    <para><screen>
+<computeroutput>
+WARNING: Cannot create index "schema"."index_xxxxx", already exists
+DETAIL: An invalid index may have been left behind by a previous
+pg_repack on the table which was interrupted. Please use DROP INDEX
+"schema"."index_xxxxx" to remove this index and try again.
+</computeroutput>
+</screen> Похоже, что в базе данных остался временный индекс, созданный программой <application>pg_repack</application>, но он не удаляется автоматически во избежание недоразумений. Если этот индекс действительно был создан старым заданием <application>pg_repack</application> и по какой-то причине не удалился, вы можете просто выполнить <command>DROP INDEX</command> и повторить команду <command>repack</command> ещё раз.</para>
+  </refsect1>
+
+  <refsect1>
+   <title>Ограничения</title>
+
+   <para><application>pg_repack</application> имеет следующие ограничения.</para>
+
+   <variablelist>
+    <varlistentry>
+     <term>Временные таблицы</term>
+
+     <listitem>
+      <para><application>pg_repack</application> не может реорганизовывать временные таблицы.</para>
+     </listitem>
+    </varlistentry>
+    <varlistentry>
+     <term>Индексы GiST</term>
+     <listitem>
+      <para><application>pg_repack</application> не может реорганизовывать таблицы с индексами <literal>GiST</literal>.</para>
+     </listitem>
+    </varlistentry>
+    <varlistentry>
+     <term>Команды DDL</term>
+     <listitem>
+      <para>Пока работает <application>pg_repack</application>, нельзя выполнять команды DDL с целевыми таблицами, <emphasis>за исключением</emphasis> <command>VACUUM</command> и <command>ANALYZE</command>. Для реализации этого ограничения <application>pg_repack</application> устанавливает блокировку <literal>ACCESS SHARE</literal> в целевой таблице на время реорганизации таблицы.</para>
+      <para>Если вы используете версию расширения 1.1.8 или старее, воздержитесь от выполнения каких-либо команд DDL с целевыми таблицами в процессе работы <application>pg_repack</application>. Во многих случаях <application>pg_repack</application> выдаст ошибку и отменит свои изменения корректно, но с этими старыми версиями в некоторых случаях было возможно разрушение данных.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+  </refsect1>
+
+  <refsect1><title>См. также</title>
+    <simplelist type="inline">
+      <member><xref linkend="app-clusterdb"/></member>
+      <member><xref linkend="app-vacuumdb"/></member>
+    </simplelist>
+  </refsect1>
+</refentry>

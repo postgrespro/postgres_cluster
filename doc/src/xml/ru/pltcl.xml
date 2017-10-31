@@ -1,0 +1,359 @@
+<!-- doc/src/xml/pltcl.xml -->
+
+ <chapter id="pltcl">
+  <title>PL/Tcl — процедурный язык Tcl</title>
+
+  <indexterm zone="pltcl"><primary>PL/Tcl</primary></indexterm>
+
+  <indexterm zone="pltcl"><primary>Tcl</primary></indexterm>
+
+  <para>PL/Tcl — это загружаемый процедурный язык для СУБД <productname>&productname;</productname>, позволяющий использовать <ulink url="http://www.tcl.tk/">язык Tcl</ulink> для написания функций и триггерных процедур.</para>
+
+  <!-- **** PL/Tcl overview **** -->
+
+  <sect1 id="pltcl-overview">
+   <title>Обзор</title>
+
+   <para>PL/Tcl предоставляет большинство возможностей, которые имеет разработчик функций на C, с небольшими ограничениями, и позволяет применять мощные библиотеки обработки строк, существующие для Tcl.</para>
+   <para>Одним убедительным <emphasis>хорошим</emphasis> ограничением является то, что весь код выполняется в контексте безопасности интерпретатора Tcl. Помимо ограниченного набора команд безопасного Tcl, разрешены только несколько команд для обращения к базе данных через SPI и вызовы <function>elog()</function> для выдачи сообщений. PL/Tcl не даёт возможности взаимодействовать с внутренним механизмом сервера баз данных или обращаться к ОС с правами серверного процесса <productname>&productname;</productname>, что возможно в функциях на C. Таким образом, использование этого языка можно доверить непривилегированным пользователям; это не даст им неограниченные полномочия.</para>
+   <para>Ещё одно существенное ограничение заключается в том, что функции на Tcl нельзя использовать для создания функций ввода/вывода для новых типов данных.</para>
+   <para>Иногда возникает желание написать функцию на Tcl, которая не будут ограничена безопасным Tcl. Например, может потребоваться функция, которая будет посылать сообщения по почте. Для этих случаев есть вариация <application>PL/Tcl</application>, названная <literal>PL/TclU</literal> (название подразумевает &laquo;untrusted Tcl&raquo;, недоверенный Tcl). Это тот же язык, за исключением того, что для него используется полноценный интерпретатор Tcl. <emphasis>Если применяется <application>PL/TclU</application>, он должен быть установлен как недоверенный процедурный язык</emphasis>, чтобы только суперпользователи могли создавать функции на нём. Автор функции на <application>PL/TclU</application> должен позаботиться о том, чтобы эту функцию нельзя было использовать не по назначению, так как она может делать всё, что может пользователь с правами администратора баз данных.</para>
+   <para>Разделяемый объектный код для обработчиков вызова <application>PL/Tcl</application> и <application>PL/TclU</application> собирается автоматически и устанавливается в каталог библиотек <productname>&productname;</productname>, если поддержка Tcl включена на этапе конфигурирования процедуры установки. Чтобы установить <application>PL/Tcl</application> и/или <application>PL/TclU</application> в конкретную базу данных, воспользуйтесь командой <command>CREATE EXTENSION</command> или программой <command>createlang</command>, например, так: <literal>createlang pltcl <replaceable>имя_базы</replaceable></literal> или <literal>createlang pltclu <replaceable>имя_базы</replaceable></literal>.</para>
+  </sect1>
+
+  <!-- **** PL/Tcl description **** -->
+
+   <sect1 id="pltcl-functions">
+    <title>Функции на PL/Tcl и их аргументы</title>
+
+    <para>Чтобы создать функцию на языке <application>PL/Tcl</application>, используйте стандартный синтаксис <xref linkend="sql-createfunction"/>: <programlisting>CREATE FUNCTION <replaceable>имя_функции</replaceable> (<replaceable>типы_аргументов</replaceable>) RETURNS <replaceable>тип_результата</replaceable> AS $$
+    # Тело функции на PL/Tcl
+$$ LANGUAGE pltcl;</programlisting> С <application>PL/TclU</application> команда та же, но в качестве языка должно быть указано <literal>pltclu</literal>.</para>
+
+    <para>Тело функции содержит просто скрипт на Tcl. Когда вызывается функция, значения аргументов передаются скрипту Tcl в виде переменных <literal>$1</literal> ... <literal>$<replaceable>n</replaceable></literal>. Результат из кода Tcl возвращается как обычно, оператором <literal>return</literal>.</para>
+
+    <para>Например, функцию, возвращающую большее из двух целых чисел, можно определить так: <programlisting>CREATE FUNCTION tcl_max(integer, integer) RETURNS integer AS $$
+    if {$1 &gt; $2} {return $1}
+    return $2
+$$ LANGUAGE pltcl STRICT;</programlisting> Обратите внимание на предложение <literal>STRICT</literal>, которое избавляет нас от необходимости думать о входящих значениях NULL: если при вызове передаётся значение NULL, функция не будет выполняться вовсе, будет сразу возвращён результат NULL.</para>
+
+    <para>В нестрогой функции, если фактическое значение аргумента — NULL, соответствующей переменной <literal>$<replaceable>n</replaceable></literal> будет присвоена пустая строка. Чтобы определить, был ли передан NULL в определённом аргументе, используйте функцию <literal>argisnull</literal>. Например, предположим, что нам нужна функция <function>tcl_max</function>, которая с одним аргументом NULL и вторым аргументом не NULL должна возвращать не NULL, а второй аргумент: <programlisting>CREATE FUNCTION tcl_max(integer, integer) RETURNS integer AS $$
+    if {[argisnull 1]} {
+        if {[argisnull 2]} { return_null }
+        return $2
+    }
+    if {[argisnull 2]} { return $1 }
+    if {$1 &gt; $2} {return $1}
+    return $2
+$$ LANGUAGE pltcl;</programlisting></para>
+
+    <para>Как показано выше, чтобы вернуть значение NULL из функции PL/Tcl, нужно выполнить <literal>return_null</literal>. Это можно сделать и в строгой, и в нестрогой функции.</para>
+
+    <para>Аргументы составного типа передаются функции в виде массивов Tcl. Именами элементов массива являются имена атрибутов составного типа. Если атрибут в переданной строке имеет значение NULL, он будет отсутствовать в данном массиве. Например: <programlisting>CREATE TABLE employee (
+    name text,
+    salary integer,
+    age integer
+);
+
+CREATE FUNCTION overpaid(employee) RETURNS boolean AS $$
+    if {200000.0 &lt; $1(salary)} {
+        return "t"
+    }
+    if {$1(age) &lt; 30 &amp;&amp; 100000.0 &lt; $1(salary)} {
+        return "t"
+    }
+    return "f"
+$$ LANGUAGE pltcl;</programlisting></para>
+
+    <para>В настоящее время возврат результатов составного типа не поддерживается, как и возврат множеств.</para>
+
+    <para><application>PL/Tcl</application> в настоящее время не поддерживает полностью доменные типы: он воспринимает домен как нижележащий скалярный тип. Это означает, что ограничения, связанные с доменом, не будут действовать. Это не проблема для аргументов функции, но представляет опасность, когда функция <application>PL/Tcl</application> объявлена как возвращающая доменный тип.</para>
+
+   </sect1>
+
+   <sect1 id="pltcl-data">
+    <title>Значения данных в PL/Tcl</title>
+
+    <para>Значения аргументов, передаваемые в код функции PL/Tcl, представляют собой просто входные аргументы, преобразованные в текстовый вид (так же, как при выводе оператором <command>SELECT</command>). И наоборот, команда <literal>return</literal> может принять любую строку, соответствующую формату ввода для типа результата функции. Таким образом, внутри функции PL/Tcl все значения представляют собой просто текстовые строки.</para>
+
+   </sect1>
+
+   <sect1 id="pltcl-global">
+    <title>Глобальные данные в PL/Tcl</title>
+
+    <indexterm zone="pltcl-global"><primary>глобальные данные</primary> <secondary>в PL/Tcl</secondary></indexterm>
+
+    <para>Иногда полезно иметь некоторые глобальные данные, сохраняемые между двумя вызовами функции или совместно используемые разными функциями. Это легко сделать в PL/Tcl, но есть некоторые ограничения, которые необходимо понимать.</para>
+
+    <para>По соображениям безопасности, PL/Tcl выполняет функции, вызываемые некоторой ролью SQL в отдельном интерпретаторе Tcl, выделенном для этой роли. Это предотвращает случайное или злонамеренное влияние одного пользователя на поведение функций PL/Tcl другого пользователя. В каждом интерпретаторе будут свои значения всех <quote>глобальных</quote> переменных Tcl. Таким образом, в двух функциях PL/Tcl будут общие глобальные переменные, только если они выполняются одной ролью SQL. В приложении, выполняющем код в одном сеансе с разными ролями SQL (вызывающем функции <literal>SECURITY DEFINER</literal>, использующем команду <command>SET ROLE</command> и т. д.) может понадобиться явно предпринять дополнительные меры, чтобы функции могли разделять свои данные. Для этого сначала установите для функций, которые должны взаимодействовать, одного владельца, а затем задайте для них свойство <literal>SECURITY DEFINER</literal>. Разумеется, при этом нужно позаботиться о том, чтобы эти функции не могли сделать ничего непредусмотренного.</para>
+
+    <para>Все функции PL/TclU, вызываемые в одном сеансе, выполняются одним интерпретатором Tcl, который, конечно, отличается от интерпретатора(ов), используемого для функций PL/Tcl. Поэтому глобальные данные функций PL/TclU автоматически становятся общими. Это не считается угрозой безопасности, так как все функции PL/TclU выполняются на одном уровне доверия, а именно уровне суперпользователя базы данных.</para>
+
+    <para>Чтобы защитить функции PL/Tcl от непреднамеренного влияния друг на друга, каждой из них предоставляется глобальная переменная-массив через команду <function>upvar</function>. Глобальным именем этой переменной является внутреннее имя функции, а в качестве локального выбрано <literal>GD</literal>. Переменную <literal>GD</literal> рекомендуется использовать для постоянных внутренних данных функции. Обычные глобальные переменные Tcl следует использовать только для значений, которые предназначены именно для совместного использования несколькими функциями. (Заметьте, что массивы <literal>GD</literal> являются глобальными только для конкретного интерпретатора, так что они не нарушают ограничения безопасности, описанные выше.)</para>
+
+    <para>Использование <literal>GD</literal> демонстрируется в примере <function>spi_execp</function>, приведённом ниже.</para>
+   </sect1>
+
+   <sect1 id="pltcl-dbaccess">
+    <title>Обращение к базе данных из PL/Tcl</title>
+
+    <para>Для обращения к базе данных из тела функции на PL/Tcl предназначены следующие команды: <variablelist>
+
+     <varlistentry>
+      <term><literal><function>spi_exec</function> <optional role="tcl">-count <replaceable>n</replaceable></optional> <optional role="tcl">-array <replaceable>имя</replaceable></optional> <replaceable>команда</replaceable> <optional role="tcl"><replaceable>тело-цикла</replaceable></optional></literal></term>
+      <listitem>
+       <para>Выполняет команду SQL, заданную в виде строки. В случае ошибки в этой команде выдаётся ошибка в Tcl. В противном случае <function>spi_exec</function> возвращает число обработанных командой строк (выбранных, добавленных, изменённых или удалённых), либо ноль, если эта команда — служебный оператор. Кроме того, если команда — оператор <command>SELECT</command>, значения выбранных столбцов помещаются в переменные Tcl, как описано ниже.</para>
+       <para>Необязательное значение <literal>-count</literal> задаёт для <function>spi_exec</function> максимальное число строк, которое должно быть обработано в команде. Его действие можно представить как выполнение <literal>FETCH <replaceable>n</replaceable></literal> для курсора, предварительно подготовленного для команды.</para>
+       <para>Если в качестве команды выполняется оператор <command>SELECT</command>, значения результирующих столбцов помещаются в переменные Tcl, названные по именам столбцов. Если передаётся <literal>-array</literal>, значения столбцов вместо этого становятся элементами названного ассоциативного массива, индексами в котором становятся имена столбцов. Кроме того, в элементе с именем <quote><literal>.tupno</literal></quote> сохраняется номер текущей строки в результирующем наборе (отсчитывая от нуля), если только это имя не занято одним из столбцов результата.</para>
+       <para>Если в качестве команды выполняется <command>SELECT</command> без указания скрипта <replaceable>тело-цикла</replaceable>, в переменных Tcl или элементах массива сохраняется только первая строка результатов; оставшиеся строки (если они есть), игнорируются. Если запрос не возвращает строки, не сохраняется ничего. (Этот случай можно отследить, проверив результат <function>spi_exec</function>.) Например, команда: <programlisting>spi_exec "SELECT count(*) AS cnt FROM pg_proc"</programlisting> присвоит переменной <literal>$cnt</literal> в Tcl число строк, содержащихся в системном каталоге <structname>pg_proc</structname>.</para>
+       <para>Если передаётся необязательный аргумент <replaceable>тело-цикла</replaceable>, заданный в нём блок скрипта Tcl будет выполняться для каждой строки результата запроса. (Аргумент <replaceable>тело-цикла</replaceable> игнорируется, если целевая команда — не <command>SELECT</command>.) При этом значения столбцов текущей строки сохраняются в переменных Tcl или элементах массива перед каждой итерацией этого цикла. Например, код: <programlisting>spi_exec -array C "SELECT * FROM pg_class" {
+    elog DEBUG "have table $C(relname)"
+}</programlisting> будет выводить в журнал сообщение для каждой строки <literal>pg_class</literal>. Это работает подобно другим конструкциям циклов в Tcl; в частности, команды <literal>continue</literal> и <literal>break</literal> в теле цикла будут действовать обычным образом.</para>
+       <para>Если в столбце результата запроса выдаётся NULL, целевая переменная для неё не устанавливается, и оказывается <quote>неустановленной</quote>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><function>spi_prepare</function> <replaceable>запрос</replaceable> <replaceable>список-типов</replaceable></term>
+      <listitem>
+       <para>Подготавливает и сохраняет план запроса для последующего выполнения. Сохранённый план будет продолжать существование до завершения текущего сеанса.<indexterm><primary>подготовка запроса</primary> <secondary>в PL/Tcl</secondary></indexterm></para>
+       <para>Запрос может принимать параметры, то есть местозаполнители для значений, которые будут передаваться, когда план будет собственно выполняться. В строке запроса эти параметры обозначаются как <literal>$1</literal> ... <literal>$<replaceable>n</replaceable></literal>. Если в запросе используются параметры, нужно задать имена типов этих параметров в виде списка Tcl. (Если параметры отсутствуют, задайте пустой <replaceable>список_типов</replaceable>.)</para>
+       <para>Функция <function>spi_prepare</function> возвращает идентификатор запроса, который может использоваться в последующих вызовах <function>spi_execp</function>. Пример приведён в описании <function>spi_execp</function>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal><function>spi_execp</function> <optional role="tcl">-count <replaceable>n</replaceable></optional> <optional role="tcl">-array <replaceable>имя</replaceable></optional> <optional role="tcl">-nulls <replaceable>строка</replaceable></optional> <replaceable>ид-запроса</replaceable> <optional role="tcl"><replaceable>список-значений</replaceable></optional> <optional role="tcl"><replaceable>тело-цикла</replaceable></optional></literal></term>
+      <listitem>
+       <para>Выполняет запрос, ранее подготовленный функцией <function>spi_prepare</function>. В качестве <replaceable>ид_запроса</replaceable> передаётся идентификатор, возвращённый функцией <function>spi_prepare</function>. Если в запросе задействуются параметры, необходимо указать <replaceable>список-значений</replaceable>. Это должен быть принятый в Tcl список параметров. Он должен иметь ту же длину, что и список типов параметров, ранее переданный <function>spi_prepare</function>. Опустите <replaceable>список-значений</replaceable>, если у запроса нет параметров.</para>
+       <para>Необязательный аргумент <literal>-nulls</literal> принимает строку из пробелов и символов <literal>'n'</literal>, которые отмечают, в каких параметрах <function>spi_execp</function> передаются значения NULL. Если присутствует, эта строка должна иметь ту же длину, что и <replaceable>список-значений</replaceable>. В случае её отсутствия значения всех параметров считаются отличными от NULL.</para>
+       <para>Не считая отличий в способе передачи запроса и параметров, <function>spi_execp</function> работает так же, как <function>spi_exec</function>. Параметры <literal>-count</literal>, <literal>-array</literal> и <replaceable>тело-цикла</replaceable> задаются так же, и так же передаётся возвращаемое значение.</para>
+       <para>Взгляните на пример функции на PL/Tcl, использующей подготовленный план: <programlisting>CREATE FUNCTION t1_count(integer, integer) RETURNS integer AS $$
+    if {![ info exists GD(plan) ]} {
+        # подготовить сохранённый план при первом вызове
+        set GD(plan) [ spi_prepare \
+                "SELECT count(*) AS cnt FROM t1 WHERE num &gt;= \$1 AND num &lt;= \$2" \
+                [ list int4 int4 ] ]
+    }
+    spi_execp -count 1 $GD(plan) [ list $1 $2 ]
+    return $cnt
+$$ LANGUAGE pltcl;</programlisting> Обратные косые черты внутри строки запроса, передаваемой функции <function>spi_prepare</function>, нужны для того, чтобы маркеры <literal>$<replaceable>n</replaceable></literal> передавались функции <function>spi_prepare</function> как есть, а не заменялись при подстановке переменных Tcl.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>
+       <function>spi_lastoid</function>
+       <indexterm><primary>spi_lastoid</primary> <secondary>в PL/Tcl</secondary></indexterm>
+      </term>
+      <listitem>
+       <para>Возвращает OID строки, вставленной последней командой <function>spi_exec</function> или <function>spi_execp</function>, если этой командой был оператор <command>INSERT</command> с одной строкой и изменяемая таблица содержит OID. (В противном случае вы получите ноль.)</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><function>quote</function> <replaceable>строка</replaceable></term>
+      <listitem>
+       <para>Дублирует все вхождения апострофа и обратной косой черты в заданной строке. Это можно использовать для защиты строк, которые будут вставляться в команды SQL, передаваемые в <function>spi_exec</function> или <function>spi_prepare</function>. Например, представьте, что при выполнении такой команды SQL: <programlisting>"SELECT '$val' AS ret"</programlisting> переменная языка Tcl <literal>val</literal> содержит <literal>doesn't</literal>. Это приведёт к формированию такой окончательной строки команды: <programlisting>SELECT 'doesn't' AS ret</programlisting> при разборе которой в процессе <function>spi_exec</function> или <function>spi_prepare</function> возникнет ошибка. Чтобы этот запрос работал правильно, итоговая команда должна выглядеть так: <programlisting>SELECT 'doesn''t' AS ret</programlisting> Получить её в PL/Tcl можно так: <programlisting>"SELECT '[ quote $val ]' AS ret"</programlisting> Преимуществом <function>spi_execp</function> является то, что для неё заключать значения параметров в кавычки подобным образом не нужно, так как параметры никогда не разбираются в составе строки команды SQL.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>
+       <function>elog</function> <replaceable>уровень</replaceable> <replaceable>сообщение</replaceable>
+       <indexterm><primary>elog</primary> <secondary>в PL/Tcl</secondary></indexterm>
+      </term>
+      <listitem>
+       <para>Выдаёт служебное сообщение или сообщение об ошибке. Возможные уровни сообщений: <literal>DEBUG</literal> (ОТЛАДКА), <literal>LOG</literal> (СООБЩЕНИЕ), <literal>INFO</literal> (ИНФОРМАЦИЯ), <literal>NOTICE</literal> (ЗАМЕЧАНИЕ), <literal>WARNING</literal> (ПРЕДУПРЕЖДЕНИЕ), <literal>ERROR</literal> (ОШИБКА) и <literal>FATAL</literal> (ВАЖНО). С уровнем <literal>ERROR</literal> выдаётся ошибка; если она не перехватывается окружающим кодом Tcl, она распространяется в вызывающий запрос, что приводит к прерыванию текущей транзакции или подтранзакции. По сути то же самое делает команда <literal>error</literal> языка Tcl. Сообщение уровня <literal>FATAL</literal> прерывает транзакцию и приводит к завершению текущего сеанса. (Вероятно, нет обоснованной причины использовать этот уровень ошибок в функциях PL/Tcl, но он поддерживается для полноты.) При использовании других уровней происходит просто вывод сообщения с заданным уровнем важности. Будут ли сообщения определённого уровня передаваться клиенту и/или записываться в журнал, определяется конфигурационными переменными <xref linkend="guc-log-min-messages"/> и <xref linkend="guc-client-min-messages"/>. За дополнительными сведениями обратитесь к <xref remap="3" linkend="runtime-config"/> и <xref remap="3" linkend="pltcl-error-handling"/>.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+
+   </sect1>
+
+   <sect1 id="pltcl-trigger">
+    <title>Процедуры триггеров на PL/Tcl</title>
+
+    <indexterm><primary>триггер</primary> <secondary>на языке PL/Tcl</secondary></indexterm>
+
+    <para>На PL/Tcl можно написать триггерные процедуры. <productname>&productname;</productname> требует, чтобы процедура, которая будет вызываться как триггерная, была объявлена как функция без аргументов и возвращала тип <literal>trigger</literal>.</para>
+    <para>Информация от менеджера триггеров передаётся в тело процедуры в следующих переменных: <variablelist>
+
+      <varlistentry>
+       <term><varname>$TG_name</varname></term>
+       <listitem>
+        <para>Имя триггера из оператора <command>CREATE TRIGGER</command>.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$TG_relid</varname></term>
+       <listitem>
+        <para>Идентификатор объекта таблицы, для которой будет вызываться триггерная процедура.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$TG_table_name</varname></term>
+       <listitem>
+        <para>Имя таблицы, для которой будет вызываться триггерная процедура.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$TG_table_schema</varname></term>
+       <listitem>
+        <para>Схема таблицы, для которой будет вызываться триггерная процедура.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$TG_relatts</varname></term>
+       <listitem>
+        <para>Список языка Tcl, содержащий имена столбцов таблицы. В начало списка добавлен пустой элемент, поэтому при поиске в этом списке имени столбца с помощью стандартной в <application>Tcl</application> команды <function>lsearch</function> будет возвращён номер элемента, начиная с 1, так же, как нумеруются столбцы в <productname>&productname;</productname>. (В позициях удалённых столбцов также содержатся пустые элементы, так что нумерация следующих за ними атрибутов не нарушается.)</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$TG_when</varname></term>
+       <listitem>
+        <para>Строка <literal>BEFORE</literal>, <literal>AFTER</literal> или <literal>INSTEAD OF</literal>, в зависимости от типа события триггера.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$TG_level</varname></term>
+       <listitem>
+        <para>Строка <literal>ROW</literal> или <literal>STATEMENT</literal>, в зависимости от уровня события триггера.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$TG_op</varname></term>
+       <listitem>
+        <para>Строка <literal>INSERT</literal>, <literal>UPDATE</literal>, <literal>DELETE</literal> или <literal>TRUNCATE</literal>, в зависимости от действия события триггера.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$NEW</varname></term>
+       <listitem>
+        <para>Ассоциативный массив, содержащий значения новой строки таблицы для действий <command>INSERT</command> или <command>UPDATE</command>, либо пустой массив для <command>DELETE</command>. Индексами в массиве являются имена столбцов. Столбцы со значениями NULL в нём отсутствуют. Для триггеров уровня оператора этот массив не определяется.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$OLD</varname></term>
+       <listitem>
+        <para>Ассоциативный массив, содержащий значения старой строки таблицы для действий <command>UPDATE</command> или <command>DELETE</command>, либо пустой массив для <command>INSERT</command>. Индексами в массиве являются имена столбцов. Столбцы со значениями NULL в нём отсутствуют. Для триггеров уровня оператора этот массив не определяется.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$args</varname></term>
+       <listitem>
+        <para>Список на языке Tcl аргументов процедуры, заданных в операторе <command>CREATE TRIGGER</command>. Эти аргументы также доступны под обозначениями <literal>$1</literal> ... <literal>$<replaceable>n</replaceable></literal> в теле процедуры.</para>
+       </listitem>
+      </varlistentry>
+
+     </variablelist></para>
+
+    <para>Возвращаемым значением триггерной процедуры может быть строка <literal>OK</literal> или <literal>SKIP</literal> либо список пар имя столбца/значение. Если возвращается значение <literal>OK</literal>, операция (<command>INSERT</command>/<command>UPDATE</command>/<command>DELETE</command>), которая привела к срабатыванию триггера, выполняется нормально. Значение <literal>SKIP</literal> указывает менеджеру триггеров просто пропустить эту операцию с текущей строкой данных. Если возвращается список, через него PL/Tcl передаёт менеджеру триггеров изменённую строку; содержимое изменённой строки задаётся именами и значениями столбцов в списке. Все столбцы, не перечисленные в этом списке, получают значения NULL. Возвращать изменённую строку имеет смысл только для триггеров уровня строки с порядком <literal>BEFORE</literal> команд <command>INSERT</command> и <command>UPDATE</command>, в которых вместо заданной в <varname>$NEW</varname> будет записываться изменённая строка; либо с порядком <literal>INSTEAD OF</literal> команд <command>INSERT</command> и <command>UPDATE</command>, в которых возвращаемая строка служит исходными данными для предложений <command>INSERT RETURNING</command> или <command>UPDATE RETURNING</command>. В триггерах уровня строки с порядком <literal>BEFORE</literal> или <literal>INSTEAD OF</literal> команды <command>DELETE</command> возврат изменённой строки воспринимается так же, как и возврат значения <literal>OK</literal>, то есть операция выполняется. Для всех остальных типов триггеров возвращаемое значение игнорируется.</para>
+
+    <tip>
+     <para>Список результатов можно создать из изменённого кортежа, представленного в виде массива, с помощью команды <literal>array get</literal> языка Tcl.</para>
+    </tip>
+
+    <para>Следующий небольшой пример показывает триггерную процедуру, которая ведёт в таблице целочисленный счётчик числа изменений, выполненных в строке. Для новых строк счётчик инициализируется нулевым значением, а затем увеличивается на единицу при каждом изменении. <programlisting>CREATE FUNCTION trigfunc_modcount() RETURNS trigger AS $$
+    switch $TG_op {
+        INSERT {
+            set NEW($1) 0
+        }
+        UPDATE {
+            set NEW($1) $OLD($1)
+            incr NEW($1)
+        }
+        default {
+            return OK
+        }
+    }
+    return [array get NEW]
+$$ LANGUAGE pltcl;
+
+CREATE TABLE mytab (num integer, description text, modcnt integer);
+
+CREATE TRIGGER trig_mytab_modcount BEFORE INSERT OR UPDATE ON mytab
+    FOR EACH ROW EXECUTE PROCEDURE trigfunc_modcount('modcnt');</programlisting> Заметьте, что сама триггерная процедура не знает имени столбца; оно передаётся в аргументах триггера. Это позволяет применять эту триггерную процедуру для различных таблиц.</para>
+   </sect1>
+
+   <sect1 id="pltcl-event-trigger">
+    <title>Процедуры событийных триггеров в PL/Tcl</title>
+
+    <indexterm><primary>событийный триггер</primary> <secondary>в PL/Tcl</secondary></indexterm>
+
+    <para>На PL/Tcl можно написать процедуры событийных триггеров. <productname>&productname;</productname> требует, чтобы процедура, которая будет вызываться как событийный триггер, была объявлена как функция без аргументов и возвращала тип <literal>event_trigger</literal>.</para>
+    <para>Информация от менеджера триггеров передаётся в тело процедуры в следующих переменных: <variablelist>
+
+      <varlistentry>
+       <term><varname>$TG_event</varname></term>
+       <listitem>
+        <para>Имя события, при котором срабатывает этот триггер.</para>
+       </listitem>
+      </varlistentry>
+
+      <varlistentry>
+       <term><varname>$TG_tag</varname></term>
+       <listitem>
+        <para>Тег команды, для которой срабатывает этот триггер.</para>
+       </listitem>
+      </varlistentry>
+     </variablelist></para>
+
+    <para>Возвращаемое значение триггерной процедуры игнорируется.</para>
+
+    <para>Следующий небольшой пример процедуры событийного триггера просто выдаёт замечание (<literal>NOTICE</literal>) при каждом выполнении поддерживаемой команды: <programlisting>CREATE OR REPLACE FUNCTION tclsnitch() RETURNS event_trigger AS $$
+  elog NOTICE "tclsnitch: $TG_event $TG_tag"
+$$ LANGUAGE pltcl;
+
+CREATE EVENT TRIGGER tcl_a_snitch ON ddl_command_start EXECUTE PROCEDURE tclsnitch();</programlisting></para>
+   </sect1>
+
+   <sect1 id="pltcl-error-handling">
+    <title>Обработка ошибок в PL/Tcl</title>
+
+    <indexterm><primary>исключения</primary> <secondary>в PL/Tcl</secondary></indexterm>
+
+    <para>Tcl-код, содержащийся или вызываемый из функции PL/Tcl, может выдавать ошибку, либо выполняя недопустимую операцию, либо генерируя ошибку с помощью команды <function>error</function> языка Tcl или команды <function>elog</function> языка PL/Tcl. Такие ошибки могут быть перехвачены в среде Tcl с помощью команды Tcl <function>catch</function>. Если они не перехватываются, а распространяются выше уровня выполнения функций PL/Tcl, они становятся ошибками СУБД.</para>
+
+    <para>И напротив, ошибки СУБД, возникающие внутри команд <function>spi_exec</function>, <function>spi_prepare</function> и <function>spi_execp</function> в среде PL/Tcl, выдаются как ошибки Tcl, так что их можно перехватить командой Tcl <function>catch</function>. Опять же, если они не перехватываются и распространяются на верхний уровень, они становятся ошибками СУБД.</para>
+
+    <para>В Tcl имеется переменная <varname>errorCode</varname>, представляющая дополнительную информацию об ошибке в виде, удобном для обработки в программах на Tcl. Эта информация передаётся в формате списка Tcl, первое слово в котором указывает на подсистему или библиотеку, выдающую ошибку; последующее содержимое определяется в зависимости от подсистемы или библиотеки. Для ошибок СУБД, возникающих в командах PL/Tcl, первым словом будет <literal>POSTGRES</literal>, вторым — номер версии Postgres, а дополнительные слова представляют пары имя/значения, передающие подробную информацию об ошибке. В этих парах всегда передаются поля <varname>SQLSTATE</varname>, <varname>condition</varname> и <varname>message</varname> (первые два представляют код ошибки и имя условия, как описано в <xref remap="6" linkend="errcodes-appendix"/>). Также могут передаваться поля <varname>detail</varname>, <varname>hint</varname>, <varname>context</varname>, <varname>schema</varname>, <varname>table</varname>, <varname>column</varname>, <varname>datatype</varname>, <varname>constraint</varname>, <varname>statement</varname>, <varname>cursor_position</varname>, <varname>filename</varname>, <varname>lineno</varname> и <varname>funcname</varname>.</para>
+
+    <para>С информацией в переменной <varname>errorCode</varname> среды PL/Tcl удобно работать, загрузив переменную в массив, чтобы имена полей стали индексами в массиве. Пример такого кода: <programlisting>if {[catch { spi_exec $sql_command }]} {
+    if {[lindex $::errorCode 0] == "POSTGRES"} {
+        array set errorArray $::errorCode
+        if {$errorArray(condition) == "undefined_table"} {
+            # разобраться с отсутствием таблицы
+        } else {
+            # разобраться с другими типами ошибок SQL
+        }
+    }
+}</programlisting> (Двойные двоеточия явно указывают, что переменная <varname>errorCode</varname> является глобальной.)</para>
+   </sect1>
+
+   <sect1 id="pltcl-unknown">
+       <title>Модули и команда <function>unknown</function></title>
+       <para>PL/Tcl поддерживает автозагрузку кода Tcl. Для этого он задействует специальную таблицу, <literal>pltcl_modules</literal>, предназначенную для размещения модулей кода Tcl. Если эта таблица существует, из таблицы выбирается модуль <literal>unknown</literal> и загружается в интерпретатор Tcl непосредственно перед первым выполнением функции PL/Tcl в сеансе базы данных. (Это происходит независимо для каждого интерпретатора Tcl, если их несколько в одном сеансе; см. <xref remap="4" linkend="pltcl-global"/>.)</para>
+       <para>Хотя модуль <literal>unknown</literal> может на самом деле содержать любой нужный вам скрипт инициализации, обычно в нём определяется процедура <function>unknown</function> языка Tcl, которая вызывается всякий раз, когда Tcl не распознаёт имя вызываемой процедуры. Принятая в <application>PL/Tcl</application> версия этой процедуры пытается найти в <literal>pltcl_modules</literal> модуль, в котором будет определена требуемая процедура. Если такой модуль находится, он загружается в интерпретатор и затем выполнение изначального вызова процедуры может быть продолжено. Дополнительная таблица <literal>pltcl_modfuncs</literal> содержит индекс, связывающий функции с модулями, в которых они определены, так что поиск выполняется довольно быстро.</para>
+       <para>В составе <productname>&productname;</productname> поставляются вспомогательные скрипты для обслуживания этих таблиц: <command>pltcl_loadmod</command>, <command>pltcl_listmod</command>, <command>pltcl_delmod</command>, а также исходный код стандартного модуля <literal>unknown</literal> в <filename>share/unknown.pltcl</filename>. Для поддержки механизма автозагрузки этот модуль должен изначально загружаться в каждую базу данных.</para>
+       <para>Таблицы <literal>pltcl_modules</literal> и <literal>pltcl_modfuncs</literal> должны быть доступны на чтение всем, но разрешать запись в них разумно только администратору базы данных (и только он должен быть их владельцем). В качестве меры предосторожности PL/Tcl будет игнорировать таблицу <literal>pltcl_modules</literal> (и таким образом, не будет пытаться загрузить модуль <literal>unknown</literal>), если она принадлежит не суперпользователю. Но право на изменение данных в ней можно дать и другим пользователям, если они заслуживают такого доверия.</para>
+   </sect1>
+
+   <sect1 id="pltcl-procnames">
+    <title>Имена процедур Tcl</title>
+
+    <para>В <productname>&productname;</productname> одно имя функции может использоваться разными определениями функций, если они имеют разное число и типы аргументов. Tcl, однако, требует, чтобы имена всех процедур различались. PL/Tcl решает эту проблему, устанавливая такие внутренние имена процедур Tcl, чтобы они включали в свой состав OID функции из системной таблицы <structname>pg_proc</structname>. Таким образом, функциям <productname>&productname;</productname> с одним именем и разными типами аргументов так же будут соответствовать различные процедуры Tcl. Это обычно остаётся незамеченным для программиста PL/Tcl, но может проявиться при отладке.</para>
+
+   </sect1>
+ </chapter>

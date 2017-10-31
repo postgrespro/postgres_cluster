@@ -1,0 +1,141 @@
+<!-- doc/src/xml/citext.xml -->
+
+<sect1 id="citext" xreflabel="citext">
+ <title>citext</title>
+
+ <indexterm zone="citext"><primary>citext</primary></indexterm>
+
+ <para>Модуль <filename>citext</filename> предоставляет тип данных для строк, нечувствительных к регистру, <type>citext</type>. По сути он сравнивает значения, вызывая внутри себя функцию <function>lower</function>. В остальном он почти не отличается от типа <type>text</type>.</para>
+
+ <sect2>
+  <title>Обоснование</title>
+
+  <para>Стандартный способ выполнить сравнение строк без учёта регистра в <productname>&productname;</productname> заключается в использовании функции <function>lower</function> при сравнении значений, например <programlisting>SELECT * FROM tab WHERE lower(col) = LOWER(?);</programlisting></para>
+
+  <para>Этот подход работает довольно хорошо, но имеет ряд недостатков:</para>
+
+   <itemizedlist>
+    <listitem>
+     <para>Операторы SQL становятся громоздкими, и нужно не забывать всегда обрабатывать функцией <function>lower</function> и столбец, и значение.</para>
+    </listitem>
+    <listitem>
+     <para>Индекс не будет использоваться, если только дополнительно не создать функциональный индекс с функцией <function>lower</function>.</para>
+    </listitem>
+    <listitem>
+     <para>Если вы объявляете столбец как <literal>UNIQUE</literal> или <literal>PRIMARY KEY</literal>, неявно создаваемый индекс будет чувствительным к регистру. Поэтому он бесполезен для регистронезависимого поиска, так же как он не будет обеспечивать уникальность без учёта регистра.</para>
+    </listitem>
+   </itemizedlist>
+
+   <para>Тип данных <type>citext</type> позволяет исключить вызовы <function>lower</function> в SQL-запросах и позволяет сделать первичный ключ регистронезависимым. Тип <type>citext</type> учитывает локаль, так же, как и тип <type>text</type>, что означает, что сравнение символов в верхнем и нижнем регистре зависит от правил <literal>LC_CTYPE</literal> для базы данных. Это поведение, опять же, не отличается от вызовов <function>lower</function> в запросах. Но так как оно реализуется прозрачно типом данных, в самих запросах дополнительно не нужно ничего делать.</para>
+
+ </sect2>
+
+ <sect2>
+  <title>Как его использовать</title>
+
+  <para>Простой пример использования: <programlisting>CREATE TABLE users (
+    nick CITEXT PRIMARY KEY,
+    pass TEXT   NOT NULL
+);
+
+INSERT INTO users VALUES ( 'larry',  md5(random()::text) );
+INSERT INTO users VALUES ( 'Tom',    md5(random()::text) );
+INSERT INTO users VALUES ( 'Damian', md5(random()::text) );
+INSERT INTO users VALUES ( 'NEAL',   md5(random()::text) );
+INSERT INTO users VALUES ( 'Bj&oslash;rn',  md5(random()::text) );
+
+SELECT * FROM users WHERE nick = 'Larry';</programlisting> Оператор <command>SELECT</command> вернёт один кортеж, несмотря на то, что в столбец <structfield>nick</structfield> записано значение <literal>larry</literal>, а в запросе фигурирует <literal>Larry</literal>.</para>
+ </sect2>
+
+ <sect2>
+  <title>Поведение при сравнении строк</title>
+
+  <para>Модуль <type>citext</type> выполняет сравнения, приводя каждую строку к нижнему регистру (как если бы вызывалась функция <function>lower</function>) и затем производя сравнения как обычно. Так, например, две строки будут считаться равными, если функция <function>lower</function>, обработав их, выдаст одинаковые результаты.</para>
+
+  <para>Чтобы имитировать правило сортировки без учёта регистра в максимально возможной степени, этот модуль предоставляет специальные, ориентированные на <type>citext</type>, операторы и функции для обработки строки. Так, например, операторы регулярных выражений <literal>~</literal> и <literal>~*</literal> действуют в том же ключе, когда применяются к типу <type>citext</type>: оба они не учитывают регистр. Это же распространяется на операторы <literal>!~</literal> и <literal>!~*</literal>, а также операторы <literal>LIKE</literal> <literal>~~</literal>, <literal>~~*</literal>, <literal>!~~</literal> и <literal>!~~*</literal>. Если же вы хотите, чтобы эти операторы учитывали регистр, вы можете привести их аргументы к типу <type>text</type>.</para>
+
+  <para>Подобным образом, все следующие функции выполняют сопоставления без учёта регистра, если их аргументы имеют тип <type>citext</type>:</para>
+
+  <itemizedlist>
+   <listitem>
+    <para>
+      <function>regexp_matches()</function>
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+      <function>regexp_replace()</function>
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+      <function>regexp_split_to_array()</function>
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+      <function>regexp_split_to_table()</function>
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+      <function>replace()</function>
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+      <function>split_part()</function>
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+      <function>strpos()</function>
+    </para>
+   </listitem>
+   <listitem>
+    <para>
+      <function>translate()</function>
+    </para>
+   </listitem>
+  </itemizedlist>
+
+  <para>Для функций с регулярными выражениями, если вам нужно регистрозависимое сопоставление, вы можете добавить флаг <quote>c</quote>, чтобы принудительно включить этот режим. Чтобы получить регистрозависимое поведение без этого флага, вы должны привести аргумент к типу <type>text</type>, прежде чем вызывать эту функцию.</para>
+
+ </sect2>
+
+ <sect2>
+  <title>Ограничения</title>
+
+   <itemizedlist>
+    <listitem>
+     <para>Смена регистра символов в <type>citext</type> зависит от параметра <literal>LC_CTYPE</literal> вашей базы данных. Таким образом, как будут сравниваться значения, определяется при создании базы данных. На самом деле, по определениям стандарта Unicode, это сравнение не будет истинно регистронезависимым. По сути это означает, что если вас устраивает установленное правило сортировки, вас должны устраивать и сравнения <type>citext</type>. Но если в вашей базе данных хранятся строки на разных языках, пользователи одного языка могут получать неожиданные результаты запросов, если правило сортировки предназначено для другого языка.</para>
+    </listitem>
+
+    <listitem>
+     <para>Начиная с <productname>PostgreSQL</productname> версии 9.1, вы можете добавлять указание <literal>COLLATE</literal> к значениям данных или столбцам <type>citext</type>. В настоящее время операторы <type>citext</type> принимают во внимание такое явное указание <literal>COLLATE</literal>, сравнивая строки в нижнем регистре, но изначальное приведение в нижний регистр всегда выполняется согласно параметру <literal>LC_CTYPE</literal> базы данных (как если бы указывалось <literal>COLLATE "default"</literal>). Это может быть изменено в будущем, чтобы на обоих этапах учитывалось указание <literal>COLLATE</literal> во входных данных.</para>
+    </listitem>
+
+    <listitem>
+     <para>Тип <type>citext</type> не так эффективен, как <type>text</type>, так как функции операторов и функции сравнения для B-дерева должны делать копии данных и переводить их в нижний регистр для сравнения. Однако он несколько эффективнее варианта с применением <function>lower</function> для получения регистронезависимого сравнения.</para>
+    </listitem>
+
+    <listitem>
+     <para>Тип <type>citext</type> малополезен в ситуациях, когда вам нужно сравнивать данные без учёта регистра в одних контекстах, и с учётом регистра — в других. Обычно в таких случаях используют <type>text</type> и вручную применяют функцию <function>lower</function>, когда нужно выполнить сравнение без учёта регистра; это прекрасно работает, если регистронезависимое сравнение требуется выполнять относительно редко. Если же почти всегда сравнение должно быть регистронезависимым и только иногда регистрозависимым, имеет смысл сохранить данные в столбце типа <type>citext</type>, и явно приводить их к типу <type>text</type> для регистрозависимого сравнения. В любом случае, чтобы оба варианта поиска были быстрыми, вам потребуются два индекса.</para>
+    </listitem>
+
+    <listitem>
+     <para>Схема, содержащая операторы <type>citext</type>, должна находиться в текущем пути <varname>search_path</varname> (обычно это схема <literal>public</literal>); в противном случае будут вызываться регистрозависимые операторы для типа <type>text</type>.</para>
+    </listitem>
+   </itemizedlist>
+ </sect2>
+
+ <sect2>
+  <title>Автор</title>
+
+  <para>Дэвид Е. Уилер <email>david@kineticode.com</email></para>
+
+  <para>Разработку вдохновил оригинальный модуль <type>citext</type> Дональда Фрейзера.</para>
+
+ </sect2>
+
+</sect1>

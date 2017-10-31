@@ -1,0 +1,83 @@
+<!--
+doc/src/xml/ref/alter_event_trigger.xml
+&productname; documentation
+-->
+
+<refentry id="sql-altereventtrigger">
+ <indexterm zone="sql-altereventtrigger"><primary>ALTER EVENT TRIGGER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER EVENT TRIGGER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER EVENT TRIGGER</refname>
+  <refpurpose>изменить определение событийного триггера</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER EVENT TRIGGER <replaceable class="parameter">имя</replaceable> DISABLE
+ALTER EVENT TRIGGER <replaceable class="parameter">имя</replaceable> ENABLE [ REPLICA | ALWAYS ]
+ALTER EVENT TRIGGER <replaceable class="parameter">имя</replaceable> OWNER TO { <replaceable class="parameter">новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+ALTER EVENT TRIGGER <replaceable class="parameter">имя</replaceable> RENAME TO <replaceable class="parameter">новое_имя</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER EVENT TRIGGER</command> изменяет свойства существующего событийного триггера.</para>
+
+  <para>Для изменения событийного триггера нужно быть суперпользователем.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя существующего триггера, подлежащего изменению.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Имя пользователя, назначаемого новым владельцем событийного триггера.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя событийного триггера.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DISABLE</literal>/<literal>ENABLE [ REPLICA | ALWAYS ] TRIGGER</literal></term>
+    <listitem>
+     <para>Эти формы настраивают срабатывание событийных триггеров. Отключённый триггер сохраняется в системе, но не выполняется, когда происходит его событие срабатывания. См. также <xref remap="4" linkend="guc-session-replication-role"/>.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1 id="sql-alterventtrigger-compatibility">
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER EVENT TRIGGER</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createeventtrigger"/></member>
+   <member><xref linkend="sql-dropeventtrigger"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

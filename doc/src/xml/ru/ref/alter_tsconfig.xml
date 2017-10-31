@@ -1,0 +1,132 @@
+<!--
+doc/src/xml/ref/alter_tsconfig.xml
+&productname; documentation
+-->
+
+<refentry id="sql-altertsconfig">
+ <indexterm zone="sql-altertsconfig"><primary>ALTER TEXT SEARCH CONFIGURATION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER TEXT SEARCH CONFIGURATION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER TEXT SEARCH CONFIGURATION</refname>
+  <refpurpose>изменить определение конфигурации текстового поиска</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER TEXT SEARCH CONFIGURATION <replaceable>имя</replaceable>
+    ADD MAPPING FOR <replaceable class="parameter">тип_фрагмента</replaceable> [, ... ] WITH <replaceable class="parameter">имя_словаря</replaceable> [, ... ]
+ALTER TEXT SEARCH CONFIGURATION <replaceable>имя</replaceable>
+    ALTER MAPPING FOR <replaceable class="parameter">тип_фрагмента</replaceable> [, ... ] WITH <replaceable class="parameter">имя_словаря</replaceable> [, ... ]
+ALTER TEXT SEARCH CONFIGURATION <replaceable>имя</replaceable>
+    ALTER MAPPING REPLACE <replaceable class="parameter">старый_словарь</replaceable> WITH <replaceable class="parameter">новый_словарь</replaceable>
+ALTER TEXT SEARCH CONFIGURATION <replaceable>имя</replaceable>
+    ALTER MAPPING FOR <replaceable class="parameter">тип_фрагмента</replaceable> [, ... ] REPLACE <replaceable class="parameter">старый_словарь</replaceable> WITH <replaceable class="parameter">новый_словарь</replaceable>
+ALTER TEXT SEARCH CONFIGURATION <replaceable>имя</replaceable>
+    DROP MAPPING [ IF EXISTS ] FOR <replaceable class="parameter">тип_фрагмента</replaceable> [, ... ]
+ALTER TEXT SEARCH CONFIGURATION <replaceable>имя</replaceable> RENAME TO <replaceable>новое_имя</replaceable>
+ALTER TEXT SEARCH CONFIGURATION <replaceable>имя</replaceable> OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+ALTER TEXT SEARCH CONFIGURATION <replaceable>имя</replaceable> SET SCHEMA <replaceable>новая_схема</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER TEXT SEARCH CONFIGURATION</command> изменяет определение конфигурации текстового поиска. Эта команда позволяет настроить сопоставления типов фрагментов со словарями или сменить владельца или имя конфигурации.</para>
+
+  <para>Выполнить <command>ALTER TEXT SEARCH CONFIGURATION</command> может только владелец соответствующей конфигурации.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующей конфигурации текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_фрагмента</replaceable></term>
+    <listitem>
+     <para>Имя типа фрагмента, выдаваемое при разборе конфигурации.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_словаря</replaceable></term>
+    <listitem>
+     <para>Имя словаря текстового поиска, в котором будет искаться указанный тип фрагмента. Если указаны несколько словарей, они просматриваются в порядке перечисления.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">старый_словарь</replaceable></term>
+    <listitem>
+     <para>Имя словаря текстового поиска, которое будет заменено в сопоставлении.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_словарь</replaceable></term>
+    <listitem>
+     <para>Имя словаря текстового поиска, которое будет подставлено там, где был <replaceable class="parameter">старый_словарь</replaceable>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя конфигурации текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Новый владелец конфигурации текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_схема</replaceable></term>
+    <listitem>
+     <para>Новая схема конфигурации текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+ </variablelist>
+
+  <para>Форма <literal>ADD MAPPING FOR</literal> настраивает список словарей, которые будут просматриваться в поиске указанных типов фрагментов; если сопоставление для каких-либо типов уже задано, возникнет ошибка. Форма <literal>ALTER MAPPING FOR</literal> делает то же самое, но она сначала удаляет существующее сопоставление для этих типов фрагментов. Формы <literal>ALTER MAPPING REPLACE</literal> подставляют <replaceable class="parameter">новый_словарь</replaceable> вместо <replaceable class="parameter">старый_словарь</replaceable> везде, где упоминается последний. Это выполняется только для указанных типов фрагментов, когда присутствует <literal>FOR</literal>, либо для всех сопоставлений в конфигурации в противном случае. Форма <literal>DROP MAPPING</literal> удаляет все словари для заданных типов фрагментов, в результате чего фрагменты этих типов будут игнорироваться конфигурацией. Если сопоставлений для заданных типов фрагментов нет, возникает ошибка, если только не добавлено указание <literal>IF EXISTS</literal>.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>В следующем примере словарь <literal>english</literal> заменяется на <literal>swedish</literal> везде, где использовался <literal>english</literal> в конфигурации <literal>my_config</literal>.</para>
+
+<programlisting>ALTER TEXT SEARCH CONFIGURATION my_config
+  ALTER MAPPING REPLACE english WITH swedish;</programlisting>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER TEXT SEARCH CONFIGURATION</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createtsconfig"/></member>
+   <member><xref linkend="sql-droptsconfig"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

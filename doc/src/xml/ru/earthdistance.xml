@@ -1,0 +1,115 @@
+<!-- doc/src/xml/earthdistance.xml -->
+
+<sect1 id="earthdistance" xreflabel="earthdistance">
+ <title>earthdistance</title>
+
+ <indexterm zone="earthdistance"><primary>earthdistance</primary></indexterm>
+
+ <para>Модуль <filename>earthdistance</filename> реализует два разных варианта вычисления ортодромии (расстояния между точками на поверхности Земли). Описанный первым вариант зависит от модуля <filename>cube</filename> (который <emphasis>должен</emphasis> быть установлен, чтобы можно было установить <filename>earthdistance</filename>). Второй вариант основан на встроенном типе данных <type>point</type>, в котором в качестве координат задаётся широта и долгота.</para>
+
+ <para>В этом модуле Земля считается идеальной сферой. (Если для вас это слишком грубо, обратите внимание на проект <application><ulink url="http://postgis.net/">PostGIS</ulink></application> project.)</para>
+
+ <sect2>
+  <title>Земные расстояния по кубам</title>
+
+  <para>Данные хранятся в кубах, представляющих точки (оба угла куба совпадают) по 3 координатам, выражающим смещения x, y и z от центра Земли. Этот модуль предоставляет домен <type>earth</type> на базе <type>cube</type>, включающий проверки того, что значение соответствует этим ограничениям и представляет точку, достаточно близкую к сферической поверхности Земли.</para>
+
+  <para>Радиус Земли выдаёт функция <function>earth()</function> (в метрах). Изменив одну эту функцию, вы можете сделать так, чтобы модуль работал с другими единицами, либо выдать другое значение радиуса, которое кажется вам более подходящим.</para>
+
+  <para>Этот пакет может также применяться и для астрономических расчётов. Астрономы обычно меняют функцию <function>earth()</function>, чтобы она возвращала радиус, равный <literal>180/pi()</literal>, и расстояния в результате выдавались в градусах.</para>
+
+  <para>В этом модуле реализованы функции для ввода данных, выражающих широту и долготу (в градусах), для вывода ширины и долготы, для вычисления ортодромии между двумя точками и простого указания окружающего прямоугольника, что полезно для поиска по индексу.</para>
+
+  <para>Предоставляемые этим модулем функции показаны в <xref linkend="earthdistance-cube-functions"/>.</para>
+
+  <table id="earthdistance-cube-functions">
+   <title>Функции земных расстояний по кубам</title>
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Функция</entry>
+      <entry>Возвращает</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><function>earth()</function><indexterm><primary>earth</primary></indexterm></entry>
+      <entry><type>float8</type></entry>
+      <entry>Возвращает предполагаемый радиус Земли.</entry>
+     </row>
+     <row>
+      <entry><function>sec_to_gc(float8)</function><indexterm><primary>sec_to_gc</primary></indexterm></entry>
+      <entry><type>float8</type></entry>
+      <entry>Переводит расстояние по обычной прямой (по секущей) между двумя точками на поверхности Земли в расстояние между ними по сфере.</entry>
+     </row>
+     <row>
+      <entry><function>gc_to_sec(float8)</function><indexterm><primary>gc_to_sec</primary></indexterm></entry>
+      <entry><type>float8</type></entry>
+      <entry>Переводит расстояние по сфере между двумя точками на поверхности Земли в расстояние по обычной прямой (по секущей) между ними.</entry>
+     </row>
+     <row>
+      <entry><function>ll_to_earth(float8, float8)</function><indexterm><primary>ll_to_earth</primary></indexterm></entry>
+      <entry><type>earth</type></entry>
+      <entry>Возвращает положение точки на поверхности Земли по заданной широте (аргумент 1) и долготе (аргумент 2) в градусах.</entry>
+     </row>
+     <row>
+      <entry><function>latitude(earth)</function><indexterm><primary>latitude</primary></indexterm></entry>
+      <entry><type>float8</type></entry>
+      <entry>Возвращает широту (в градусах) точки на поверхности Земли.</entry>
+     </row>
+     <row>
+      <entry><function>longitude(earth)</function><indexterm><primary>longitude</primary></indexterm></entry>
+      <entry><type>float8</type></entry>
+      <entry>Возвращает долготу (в градусах) точки на поверхности Земли.</entry>
+     </row>
+     <row>
+      <entry><function>earth_distance(earth, earth)</function><indexterm><primary>earth_distance</primary></indexterm></entry>
+      <entry><type>float8</type></entry>
+      <entry>Возвращает расстояние по сфере между двумя точками на поверхности Земли.</entry>
+     </row>
+     <row>
+      <entry><function>earth_box(earth, float8)</function><indexterm><primary>earth_box</primary></indexterm></entry>
+      <entry><type>cube</type></entry>
+      <entry>Возвращает охватывающий куб, подходящий для поиска по индексу с применением оператора кубов <literal>@&gt;</literal> точек в пределах заданной ортодромии от цели. Некоторые точки в этом кубе будут отстоять от цели дальше, чем на заданную ортодромию, поэтому в запрос нужно включить вторую проверку с функцией <function>earth_distance</function>.</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+ </sect2>
+
+ <sect2>
+  <title>Земные расстояния по точкам</title>
+
+  <para>Вторая часть этого модуля основана на представлении точек на Земле в виде значений типа <type>point</type>, в которых первый компонент представляет долготу в градусах, а второй — широту. Точки воспринимаются как (долгота, широта), а не наоборот, так как долгота ближе к интуитивному представлению как оси X, а широта — оси Y.</para>
+
+  <para>В модуле реализован один оператор, показанный в <xref remap="6" linkend="earthdistance-point-operators"/>.</para>
+
+  <table id="earthdistance-point-operators">
+   <title>Операторы земных расстояний по точкам</title>
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Оператор</entry>
+      <entry>Возвращает</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><type>point</type> <literal>&lt;@&gt;</literal> <type>point</type></entry>
+      <entry><type>float8</type></entry>
+      <entry>Выдаёт расстояние в сухопутных милях между точками на поверхности Земли.</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>Заметьте, что в этой части модуля, в отличие от части, построенной на <type>cube</type>, единицы зашиты жёстко: изменение функции <function>earth()</function> не повлияет на результат этого оператора.</para>
+
+  <para>Представление в виде долготы/широты плохо тем, что вам придётся учитывать граничные условия возле полюсов и в районе +/- 180 градусов долготы. Представление на базе <type>cube</type> лишено таких нарушений непрерывности.</para>
+
+ </sect2>
+
+</sect1>

@@ -1,0 +1,132 @@
+<!-- doc/src/xml/contrib.xml -->
+
+<appendix id="contrib">
+ <title>Дополнительно поставляемые модули</title>
+
+ <para>В этом и следующем приложении содержится информация о модулях, которые можно найти в каталоге <literal>contrib</literal> дистрибутива <productname>&productname;</productname>. В их число входят средства портирования, утилиты анализа и подключаемые функции, не включённые в состав основной системы &productname;, в основном потому что они адресованы ограниченной аудитории или находятся в экспериментальном состоянии, неподходящем для основного дерева кода. Однако это всё не умаляет их полезность.</para>
+
+ <para>В этом приложении описываются расширения и другие подключаемые серверные модули, включённые в <literal>contrib</literal>. В <xref remap="6" linkend="contrib-prog"/> описываются вспомогательные программы.</para>
+
+ <para>При сборке сервера из дистрибутивного исходного кода эти компоненты собираются, только если выбрана цель "world". Вы можете собрать и установить их отдельно, выполнив: <screen>
+<userinput>make</userinput>
+<userinput>make install</userinput>
+</screen> в каталоге <literal>contrib</literal> в настроенном дереве исходного кода; либо собрать и установить только один выбранный модуль, проделав то же самое в его подкаталоге. Для многих модулей имеются регрессионные тесты, которые можно выполнить, запустив: <screen>
+<userinput>make check</userinput>
+</screen> перед установкой или <screen>
+<userinput>make installcheck</userinput>
+</screen>, когда сервер <productname>&productname;</productname> будет работать.</para>
+
+ <para>Если вы используете готовую собранную версию <productname>&productname;</productname>, эти модули обычно поставляются в виде отдельного подпакета, например <literal>postgresql-contrib</literal>.</para>
+
+ <para>Многие модули предоставляют дополнительные пользовательские функции, операторы и типы. Чтобы использовать один из таких модулей, когда его исполняемый код установлен, вы должны зарегистрировать новые объекты SQL в СУБД. В <productname>&productname;</productname> и <productname>PostgreSQL</productname> версии 9.1 и новее для этого нужно воспользоваться командой <xref linkend="sql-createextension"/>. В чистой базе данных вы можете просто выполнить: <programlisting>CREATE EXTENSION <replaceable>имя_модуля</replaceable>;</programlisting> Запускать эту команду должен суперпользователь баз данных. При этом новые объекты SQL будут зарегистрированы только в текущей базе данных, так что эту команду нужно выполнять в каждой базе данных, в которой вы хотите пользоваться функциональностью этого модуля. Вы также можете запустить её в <literal>template1</literal>, чтобы установленное расширение копировалось во все впоследствии создаваемые базы по умолчанию.</para>
+
+ <para>Многие модули позволяют устанавливать свои объекты в схему по выбору. Для этого нужно добавить <literal>SCHEMA <replaceable>имя_схемы</replaceable></literal> в команду <command>CREATE EXTENSION</command>. По умолчанию объекты устанавливаются в текущую схему для создаваемых объектов, обычно это <literal>public</literal>.</para>
+
+ <para>Если ваша база данных была получена в результате выгрузки/перезагрузки данных <productname>PostgreSQL</productname> версии до 9.1, и вы ранее использовали версию этого модуля, рассчитанную на версию до 9.1, вместо этого вы должны выполнить: <programlisting>CREATE EXTENSION <replaceable>имя_модуля</replaceable> FROM unpackaged;</programlisting> При этом объекты этого модуля версии до 9.1 будут упакованы в соответствующий объект <firstterm>расширения</firstterm>. После этого обновления расширения будут осуществляться командой <xref linkend="sql-alterextension"/>. За дополнительными сведениями об обновлении расширении обратитесь к <xref remap="3" linkend="extend-extensions"/>.</para>
+
+ <para>Однако некоторые из этих модулей не являются <quote>расширениями</quote> в этом смысле, а подключаются к серверу по-другому, например, через параметр конфигурации <xref linkend="guc-shared-preload-libraries"/>. Подробнее об этом говорится в документации каждого модуля.</para>
+
+ &adminpack;
+ &aqo;
+ &auth-delay;
+ &auto-explain;
+ &bloom;
+ &btree-gin;
+ &btree-gist;
+ &chkpass;
+ &citext;
+ &contrib-spi;
+ &cube;
+ &dblink;
+ &dict-int;
+ &dict-xsyn;
+ &dump-stat;
+ &earthdistance;
+ &fasttrun;
+ &file-fdw;
+ &fulleq;
+ &fuzzystrmatch;
+ &hstore;
+ &hunspell-dict;
+ &intagg;
+ &intarray;
+ &isn;
+ &jsquery;
+ &lo;
+ &ltree;
+ &mchar;
+ &multimaster;
+ &online-analyze;
+ &pageinspect;
+ &passwordcheck;
+ &pgbuffercache;
+ &pgcrypto;
+ &pgfreespacemap;
+ &pghintplan;
+ &pgpathman;
+ &pgprewarm;
+ &pgpro-scheduler;
+ &pgquerystate;
+ &pgrowlocks;
+ &pgstatstatements;
+ &pgstattuple;
+ &pgtransfer;
+ &pgtrgm;
+ &pg-tsparser;
+ &pgvariables;
+ &pgvisibility;
+ &pg-wait-sampling;
+ &plantuner; 
+ &postgres-fdw;
+ &rum;
+ &seg;
+ &sepgsql;
+ &shared-ispell;
+ &sr-plan;
+ &sslinfo;
+ &tablefunc;
+ &tcn;
+ &test-decoding;
+ &tsearch2;
+ &tsm-system-rows;
+ &tsm-system-time;
+ &unaccent;
+ &uuid-ossp;
+ &xml2;
+ 
+</appendix>
+
+<!--
+These are two separate appendixes because it is difficult to mix regular
+sections (for extensions) and refentries (for programs) in one chapter or
+appendix.  And we do want the programs as refentries so that we can produce man
+pages.
+-->
+
+<appendix id="contrib-prog">
+ <title>Дополнительно поставляемые программы</title>
+
+ <para>В этом и предыдущем приложении содержится информация о программах и модулях, которые можно найти в каталоге <literal>contrib</literal> дистрибутива исходного кода <productname>&productname;</productname>. Обратитесь к <xref remap="3" linkend="contrib"/> за дополнительной информацией о секции <literal>contrib</literal> в целом и серверных расширениях и модулях внутри <literal>contrib</literal> в частности.</para>
+
+ <para>В этом приложении описываются вспомогательные программы, находящиеся в <literal>contrib</literal>. После установки из исходного кода или двоичного пакета их можно найти в подкаталоге <filename>bin</filename> инсталляции <productname>&productname;</productname> и использовать как любую другую программу.</para>
+
+ <sect1 id="contrib-prog-client">
+  <title>Клиентские приложения</title>
+
+  <para>В этом разделе рассматриваются клиентские приложения <productname>&productname;</productname>, размещённые в <literal>contrib</literal>. Их можно запускать откуда угодно, независимо от того, где находится сервер баз данных. Обратитесь также к <xref remap="3" linkend="reference-client"/> за информацией о клиентских приложениях, относящихся к ядру дистрибутива <productname>&productname;</productname>.</para>
+
+  &oid2name;
+  &pgprobackup;
+  &pgrepack;
+  &vacuumlo;  
+ </sect1>
+
+ <sect1 id="contrib-prog-server">
+  <title>Серверные приложения</title>
+
+  <para>В этом разделе рассматриваются приложения, связанные с функциональностью сервера <productname>&productname;</productname> и размещённые в <literal>contrib</literal>. Они обычно запускаются в той же системе, где работает сервер баз данных. Обратитесь также к <xref remap="3" linkend="reference-server"/> за информацией о серверных приложениях, относящихся к ядру дистрибутива <productname>&productname;</productname>.</para>
+
+ &pgstandby;
+ &mamonsu;
+ </sect1>
+</appendix>

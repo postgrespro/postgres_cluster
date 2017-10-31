@@ -1,0 +1,107 @@
+<!-- doc/src/xml/ref/set_transaction.xml -->
+<refentry id="sql-set-transaction">
+ <indexterm zone="sql-set-transaction"><primary>SET TRANSACTION</primary></indexterm>
+
+ <indexterm><primary>уровень изоляции транзакции</primary> <secondary>установка</secondary></indexterm>
+
+ <indexterm><primary>транзакция без записи</primary> <secondary>установка</secondary></indexterm>
+
+ <indexterm><primary>откладываемая транзакция</primary> <secondary>установка</secondary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SET TRANSACTION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SET TRANSACTION</refname>
+  <refpurpose>установить характеристики текущей транзакции</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>SET TRANSACTION <replaceable class="parameter">режим_транзакции</replaceable> [, ...]
+SET TRANSACTION SNAPSHOT <replaceable class="parameter">id_снимка</replaceable>
+SET SESSION CHARACTERISTICS AS TRANSACTION <replaceable class="parameter">режим_транзакции</replaceable> [, ...]
+
+<phrase>Где <replaceable class="parameter">режим_транзакции</replaceable> может быть следующим:</phrase>
+
+    ISOLATION LEVEL { SERIALIZABLE | REPEATABLE READ | READ COMMITTED | READ UNCOMMITTED }
+    READ WRITE | READ ONLY
+    [ NOT ] DEFERRABLE</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Команда <command>SET TRANSACTION</command> устанавливает характеристики текущей транзакции. На последующие транзакции она не влияет. <command>SET SESSION CHARACTERISTICS</command> устанавливает характеристики транзакции по умолчанию для последующих транзакций в рамках сеанса. Заданные по умолчанию характеристики затем можно переопределить для отдельных транзакций командой <command>SET TRANSACTION</command>.</para>
+
+  <para>К характеристикам транзакции относится уровень изоляции транзакции, режим доступа транзакции (чтение/запись или только чтение) и допустимость её откладывания. В дополнение к ним можно выбрать снимок, но только для текущей транзакции, не для сеанса по умолчанию.</para>
+
+  <para>Уровень изоляции транзакции определяет, какие данные может видеть транзакция, когда параллельно с ней выполняются другие транзакции: <variablelist>
+    <varlistentry>
+     <term><literal>READ COMMITTED</literal></term>
+     <listitem>
+      <para>Оператор видит только те строки, которые были зафиксированы до начала его выполнения. Этот уровень устанавливается по умолчанию.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>REPEATABLE READ</literal></term>
+     <listitem>
+      <para>Все операторы текущей транзакции видят только те строки, которые были зафиксированы перед первым запросом на выборку или изменение данных, выполненным в этой транзакции.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>SERIALIZABLE</literal></term>
+     <listitem>
+      <para>Все операторы текущей транзакции видят только те строки, которые были зафиксированы перед первым запросом на выборку или изменение данных, выполненным в этой транзакции. Если наложение операций чтения и записи параллельных сериализуемых транзакций может привести к ситуации, невозможной при последовательном их выполнении (когда одна транзакция выполняется за другой), произойдёт откат одной из транзакций с ошибкой <literal>serialization_failure</literal> (сбой сериализации).</para>
+     </listitem>
+    </varlistentry>
+   </variablelist> В стандарте SQL определён ещё один уровень, <literal>READ UNCOMMITTED</literal>. В <productname>&productname;</productname> уровень <literal>READ UNCOMMITTED</literal> обрабатывается как <literal>READ COMMITTED</literal>.</para>
+
+  <para>Уровень изоляции транзакции нельзя изменить после выполнения первого запроса на выборку или изменение данных (<command>SELECT</command>, <command>INSERT</command>, <command>DELETE</command>, <command>UPDATE</command>, <command>FETCH</command> или <command>COPY</command>) в текущей транзакции. За дополнительными сведениями об изоляции транзакций и управлении параллельным доступом обратитесь к <xref remap="3" linkend="mvcc"/>.</para>
+
+  <para>Режим доступа транзакции определяет, будет ли транзакция только читать данные или будет и читать, и писать. По умолчанию подразумевается чтение/запись. В транзакции без записи запрещаются следующие команды SQL: <literal>INSERT</literal>, <literal>UPDATE</literal>, <literal>DELETE</literal> и <literal>COPY FROM</literal>, если только целевая таблица не временная; любые команды <literal>CREATE</literal>, <literal>ALTER</literal> и <literal>DROP</literal>, а также <literal>COMMENT</literal>, <literal>GRANT</literal>, <literal>REVOKE</literal>, <literal>TRUNCATE</literal>; кроме того, запрещаются <literal>EXPLAIN ANALYZE</literal> и <literal>EXECUTE</literal>, если команда, которую они должны выполнить, относится к вышеперечисленным. Это высокоуровневое определение режима только для чтения, которое в принципе не исключает запись на диск.</para>
+
+  <para>Свойство <literal>DEFERRABLE</literal> оказывает влияние, только если транзакция находится также в режимах <literal>SERIALIZABLE</literal> и <literal>READ ONLY</literal>. Когда для транзакции установлены все три этих свойства, транзакция может быть заблокирована при первой попытке получить свой снимок данных, после чего она сможет выполняться без дополнительных усилий, обычных для режима <literal>SERIALIZABLE</literal>, и без риска привести к сбою сериализации или пострадать от него. Этот режим подходит для длительных операций, например для построения отчётов или резервного копирования.</para>
+
+  <para>Команда <literal>SET TRANSACTION SNAPSHOT</literal> позволяет выполнить новую транзакцию со <firstterm>снимком данных</firstterm>, который имеет уже существующая. Эта ранее созданная транзакция должна экспортировать этот снимок с помощью функции <literal>pg_export_snapshot</literal> (см. <xref remap="4" linkend="functions-snapshot-synchronization"/>). Эта функция возвращает идентификатор снимка, который и нужно передать команде <literal>SET TRANSACTION SNAPSHOT</literal> в качестве идентификатора импортируемого снимка. В данной команде этот идентификатор должен записываться в виде строковой константы, например <literal>'000003A1-1'</literal>. <literal>SET TRANSACTION SNAPSHOT</literal> можно выполнить только в начале транзакции, до первого запроса на выборку или изменение данных (<command>SELECT</command>, <command>INSERT</command>, <command>DELETE</command>, <command>UPDATE</command>, <command>FETCH</command> или <command>COPY</command>) в текущей транзакции. Более того, для транзакции уже должен быть установлен уровень изоляции <literal>SERIALIZABLE</literal> или <literal>REPEATABLE READ</literal> (в противном случае, снимок будет сразу же потерян, так как на уровне <literal>READ COMMITTED</literal> для каждой команды делается новый снимок). Если импортирующая транзакция работает на уровне изоляции <literal>SERIALIZABLE</literal>, то транзакция, экспортирующая снимок, также должна работать на этом уровне. Кроме того, транзакции в режиме чтение/запись не могут импортировать снимок из транзакции в режиме &laquo;только чтение&raquo;.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Если команде <command>SET TRANSACTION</command> не предшествует <command>START TRANSACTION</command> или <command>BEGIN</command>, она выдаёт предупреждение и больше ничего не делает.</para>
+
+  <para>Без <command>SET TRANSACTION</command> можно обойтись, задав требуемые <replaceable class="parameter">режимы_транзакции</replaceable> в операторах <command>BEGIN</command> или <command>START TRANSACTION</command>. Но для <command>SET TRANSACTION SNAPSHOT</command> такой возможности не предусмотрено.</para>
+
+  <para>Режимы транзакции для сеанса по умолчанию можно также задать в конфигурационных переменных <xref linkend="guc-default-transaction-isolation"/>, <xref linkend="guc-default-transaction-read-only"/> и <xref linkend="guc-default-transaction-deferrable"/>. (На практике, <command>SET SESSION CHARACTERISTICS</command> — это просто более многословная альтернатива изменению этих переменных командой <command>SET</command>.) Это значит, что значения этих переменных по умолчанию можно задать в файле конфигурации, с помощью команды <command>ALTER DATABASE</command> и т. д. За дополнительными сведениями обратитесь к <xref remap="3" linkend="runtime-config"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Чтобы начать новую транзакцию со снимком данных, который получила уже существующая транзакция, его нужно сначала экспортировать из первой транзакции. При этом будет получен идентификатор снимка, например: <programlisting>BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+SELECT pg_export_snapshot();
+ pg_export_snapshot
+--------------------
+ 000003A1-1
+(1 row)</programlisting> Затем этот идентификатор нужно передать команде <command>SET TRANSACTION SNAPSHOT</command> в начале новой транзакции: <programlisting>BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+SET TRANSACTION SNAPSHOT '000003A1-1';</programlisting></para>
+ </refsect1>
+
+ <refsect1 id="r1-sql-set-transaction-3">
+  <title>Совместимость</title>
+
+  <para>Эти команды определены в стандарте <acronym>SQL</acronym>, за исключением режима транзакции <literal>DEFERRABLE</literal> и формы <command>SET TRANSACTION SNAPSHOT</command>, которые являются расширениями <productname>&productname;</productname>.</para>
+
+  <para>В стандарте уровнем изоляции по умолчанию является <literal>SERIALIZABLE</literal>. В <productname>&productname;</productname> уровнем по умолчанию обычно считается <literal>READ COMMITTED</literal>, но его можно изменить, как описано выше.</para>
+
+  <para>В стандарте SQL есть ещё одна характеристика транзакции, которую нельзя задать этими командами: размер диагностической области. Эта специфическая концепция встраиваемого SQL, поэтому в сервере <productname>&productname;</productname> она не реализована.</para>
+
+  <para>Стандарт SQL требует, чтобы последовательные <replaceable class="parameter">режимы_транзакций</replaceable> разделялись запятыми, но по историческим причинам <productname>&productname;</productname> позволяет опустить запятые.</para>
+ </refsect1>
+</refentry>

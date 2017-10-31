@@ -1,0 +1,138 @@
+<!--
+doc/src/xml/ref/reindex.xml
+&productname; documentation
+-->
+
+<refentry id="sql-reindex">
+ <indexterm zone="sql-reindex"><primary>REINDEX</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>REINDEX</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>REINDEX</refname>
+  <refpurpose>перестроить индексы</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>REINDEX [ ( VERBOSE ) ] { INDEX | TABLE | SCHEMA | DATABASE | SYSTEM } <replaceable class="parameter">имя</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>REINDEX</command> перестраивает индекс, обрабатывая данные таблицы, к которой относится индекс, и в результате заменяет старую копию индекса. Команда <command>REINDEX</command> применяется в следующих ситуациях: <itemizedlist>
+    <listitem>
+     <para>Индекс был повреждён, его содержимое стало некорректным. Хотя в теории этого не должно случаться, на практике индексы могут испортиться из-за программных ошибок или аппаратных сбоев. В таких случаях <command>REINDEX</command> служит методом восстановления индекса.</para>
+    </listitem>
+
+    <listitem>
+     <para>Индекс стал <quote>раздутым</quote>, то есть в нём оказалось много пустых или почти пустых страниц. Это может происходить с B-деревьями в <productname>&productname;</productname> при определённых, достаточно редких сценариях использования. <command>REINDEX</command> даёт возможность сократить объём, занимаемый индексом, записывая новую версию индекса без &laquo;мёртвых&raquo; страниц. За подробностями обратитесь к <xref remap="3" linkend="routine-reindex"/>.</para>
+    </listitem>
+
+    <listitem>
+     <para>Параметр хранения индекса (например, фактор заполнения) был изменён, и теперь требуется, чтобы это изменение вступило в силу в полной мере.</para>
+    </listitem>
+
+    <listitem>
+     <para>Построение индекса с параметром <literal>CONCURRENTLY</literal> завершилось ошибкой, в результате чего индекс оказался <quote>нерабочим</quote>. Такие индексы бесполезны, но команда <command>REINDEX</command> предоставляет удобный способ перестроить их. Однако заметьте, что <command>REINDEX</command> перестраивает индекс не в параллельном режиме. Чтобы перестроить такой индекс, минимизируя влияние на производственную среду, его следует удалить, а затем снова выполнить команду <command>CREATE INDEX CONCURRENTLY</command>.</para>
+    </listitem>
+
+   </itemizedlist></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>INDEX</literal></term>
+    <listitem>
+     <para>Перестраивает указанный индекс.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>TABLE</literal></term>
+    <listitem>
+     <para>Перестраивает все индексы в указанной таблице. Если у таблицы имеется дополнительная таблица <quote>TOAST</quote>, она так же переиндексируется.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SCHEMA</literal></term>
+    <listitem>
+     <para>Перестраивает все индексы в указанной схеме. Если таблица в этой схеме имеет вторичную таблицу <quote>TOAST</quote>, она также будет переиндексирована. При этом обрабатываются и индексы в общих системных каталогах. Эту форму <command>REINDEX</command> нельзя выполнить в блоке транзакции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DATABASE</literal></term>
+    <listitem>
+     <para>Перестраивает все индексы в текущей базе данных. При этом обрабатываются также индексы в общих системных каталогах. Эту форму <command>REINDEX</command> нельзя выполнить в блоке транзакции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SYSTEM</literal></term>
+    <listitem>
+     <para>Перестраивает все индексы в системных каталогах текущей базы данных. При этом обрабатываются также индексы в общих системных каталогах, но индексы в таблицах пользователя не затрагиваются. Эту форму <command>REINDEX</command> нельзя выполнить в блоке транзакции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя определённого индекса, таблицы или базы данных, подлежащих переиндексации. В настоящее время <command>REINDEX DATABASE</command> и <command>REINDEX SYSTEM</command> могут переиндексировать только текущую базу данных, так что их параметр должен соответствовать имени текущей базы данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>VERBOSE</literal></term>
+    <listitem>
+     <para>Выводит отчёт о прогрессе после переиндексации каждого индекса.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>В случае подозрений в повреждении индекса таблицы пользователя, этот индекс или все индексы таблицы можно перестроить, используя команду <command>REINDEX INDEX</command> или <command>REINDEX TABLE</command>.</para>
+
+  <para>Всё усложняется, если возникает необходимость восстановить повреждённый индекс системной таблицы. В этом случае важно, чтобы система сама не использовала этот индекс. (На самом деле в таких случаях вы, скорее всего, столкнётесь с падением процессов сервера в момент запуска, как раз вследствие испорченных индексов.) Чтобы надёжно восстановить рабочее состояние, сервер следует запускать с параметром <option>-P</option>, который отключает использование индексов при поиске в системных каталогах.</para>
+
+  <para>Один из вариантов сделать это — выключить сервер <productname>&productname;</productname> и запустить его снова в однопользовательском режиме, с параметром <option>-P</option> в командной строке. Затем можно выполнить <command>REINDEX DATABASE</command>, <command>REINDEX SYSTEM</command>, <command>REINDEX TABLE</command> или <command>REINDEX INDEX</command>, в зависимости от того, что вы хотите восстановить. В случае сомнений выполните <command>REINDEX SYSTEM</command>, чтобы перестроить все системные индексы в базе данных. Затем завершите однопользовательский сеанс сервера и перезапустите сервер в обычном режиме. Чтобы подробнее узнать, как работать с сервером в однопользовательском интерфейсе, обратитесь к справочной странице <xref linkend="app-postgres"/>.</para>
+
+  <para>Можно так же запустить обычный экземпляр сервера, но добавить в параметры командной строки <option>-P</option>. В разных клиентах это может делаться по-разному, но во всех клиентах на базе <application>libpq</application> можно установить для переменной окружения <envar>PGOPTIONS</envar> значение <literal>-P</literal> до запуска клиента. Учтите, что хотя этот метод не препятствует работе других клиентов, всё же имеет смысл не позволять им подключаться к повреждённой базе данных до завершения восстановления.</para>
+
+  <para>Действие <command>REINDEX</command> подобно удалению и пересозданию индекса в том смысле, что содержимое индекса пересоздаётся с нуля, но блокировки при этом устанавливаются другие. <command>REINDEX</command> блокирует запись, но не чтение родительской таблицы индекса. Эта команда также устанавливает исключительную блокировку для обрабатываемого индекса, что блокирует чтение таблицы, при котором задействуется этот индекс. <command>DROP INDEX</command>, напротив, моментально устанавливает исключительную блокировку на родительскую таблицу, блокируя и запись, и чтение. Последующая команда <command>CREATE INDEX</command> блокирует запись, но не чтение; так как индекс отсутствует, обращений к нему ни при каком чтении не будет, что означает, что блокироваться чтение не будет, но выполняться оно будет как дорогостоящее последовательное сканирование.</para>
+
+  <para>Для перестраивания одного индекса или индексов таблицы необходимо быть владельцем этого индекса или таблицы. Для переиндексирования базы данных необходимо быть владельцем базы данных (заметьте, что он может таким образом перестроить индексы таблиц, принадлежащих другим пользователям). Разумеется, суперпользователи могут переиндексировать всё без ограничений.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Перестроение одного индекса: <programlisting>REINDEX INDEX my_index;</programlisting></para>
+
+  <para>Перестроение всех индексов таблицы <literal>my_table</literal>: <programlisting>REINDEX TABLE my_table;</programlisting></para>
+
+  <para>Перестроение всех индексов в определённой базе данных, в предположении, что целостность системных индексов под сомнением: <programlisting>$ <userinput>export PGOPTIONS="-P"</userinput>
+$ <userinput>psql broken_db</userinput>
+...
+broken_db=&gt; REINDEX DATABASE broken_db;
+broken_db=&gt; \q</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Команда <command>REINDEX</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+</refentry>

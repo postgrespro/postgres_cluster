@@ -1,0 +1,207 @@
+<!--
+doc/src/xml/ref/update.xml
+&productname; documentation
+-->
+
+<refentry id="sql-update">
+ <indexterm zone="sql-update"><primary>UPDATE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>UPDATE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>UPDATE</refname>
+  <refpurpose>изменить строки таблицы</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>[ WITH [ RECURSIVE ] <replaceable class="parameter">запрос_WITH</replaceable> [, ...] ]
+UPDATE [ ONLY ] <replaceable class="parameter">имя_таблицы</replaceable> [ * ] [ [ AS ] <replaceable class="parameter">псевдоним</replaceable> ]
+    SET { <replaceable class="parameter">имя_столбца</replaceable> = { <replaceable class="parameter">выражение</replaceable> | DEFAULT } |
+          ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] ) = ( { <replaceable class="parameter">выражение</replaceable> | DEFAULT } [, ...] ) |
+          ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] ) = ( <replaceable class="parameter">вложенный_SELECT</replaceable> )
+        } [, ...]
+    [ FROM <replaceable class="parameter">список_FROM</replaceable> ]
+    [ WHERE <replaceable class="parameter">условие</replaceable> | WHERE CURRENT OF <replaceable class="parameter">имя_курсора</replaceable> ]
+    [ RETURNING * | <replaceable class="parameter">выражение_результата</replaceable> [ [ AS ] <replaceable class="parameter">имя_результата</replaceable> ] [, ...] ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>UPDATE</command> изменяет значения указанных столбцов во всех строках, удовлетворяющих условию. В предложении <literal>SET</literal> должны указываться только те столбцы, которые будут изменены; столбцы, не изменяемые явно, сохраняют свои предыдущие значения.</para>
+
+  <para>Изменить строки в таблице, используя информацию из других таблиц в базе данных, можно двумя способами: применяя вложенные запросы или указав дополнительные таблицы в предложении <literal>FROM</literal>. Выбор предпочитаемого варианта зависит от конкретных обстоятельств.</para>
+
+  <para>Предложение <literal>RETURNING</literal> указывает, что команда <command>UPDATE</command> должна вычислить и возвратить значения для каждой фактически изменённой строки. Вычислить в нём можно любое выражение со столбцами целевой таблицы и/или столбцами других таблиц, упомянутых во <literal>FROM</literal>. При этом в выражении будут использоваться новые (изменённые) значения столбцов таблицы. Список <literal>RETURNING</literal> имеет тот же синтаксис, что и список результатов <command>SELECT</command>.</para>
+
+  <para>Для выполнения этой команды необходимо иметь право <literal>UPDATE</literal> для таблицы, или как минимум для столбцов, перечисленных в списке изменяемых. Также необходимо иметь право <literal>SELECT</literal> для всех столбцов, значения которых считываются в <replaceable class="parameter">выражениях</replaceable> или <replaceable class="parameter">условии</replaceable>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">запрос_WITH</replaceable></term>
+    <listitem>
+     <para>Предложение <literal>WITH</literal> позволяет задать один или несколько подзапросов, на которые затем можно ссылаться по имени в запросе <command>UPDATE</command>. Подробнее об этом см. <xref remap="4" linkend="queries-with"/> и <xref remap="4" linkend="sql-select"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) таблицы, строки которой будут изменены. Если перед именем таблицы добавлено <literal>ONLY</literal>, соответствующие строки изменяются только в указанной таблице. Без <literal>ONLY</literal> строки будут также изменены во всех таблицах, унаследованных от указанной. При желании, после имени таблицы можно указать <literal>*</literal>, чтобы явно обозначить, что операция затрагивает все дочерние таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">псевдоним</replaceable></term>
+    <listitem>
+     <para>Альтернативное имя целевой таблицы. Когда указывается это имя, оно полностью скрывает фактическое имя таблицы. Например, в запросе <literal>UPDATE foo AS f</literal> дополнительные компоненты оператора <command>UPDATE</command> должны обращаться к целевой таблице по имени <literal>f</literal>, а не <literal>foo</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_столбца</replaceable></term>
+    <listitem>
+     <para>Имя столбца в таблице <replaceable class="parameter">имя_таблицы</replaceable>. Имя столбца при необходимости может быть дополнено именем вложенного поля или индексом массива. Имя таблицы добавлять к имени целевого столбца не нужно &mdash; например, запись <literal>UPDATE table_name SET table_name.col = 1</literal> ошибочна.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">выражение</replaceable></term>
+    <listitem>
+     <para>Выражение, результат которого присваивается столбцу. В этом выражении можно использовать предыдущие значения этого и других столбцов таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DEFAULT</literal></term>
+    <listitem>
+     <para>Присвоить столбцу значение по умолчанию (это может быть NULL, если для столбца не определено некоторое выражение по умолчанию).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">вложенный_SELECT</replaceable></term>
+    <listitem>
+     <para>Подзапрос <literal>SELECT</literal>, выдающий столько выходных столбцов, сколько перечислено в предшествующем ему списке столбцов в скобках. При выполнении этого подзапроса должна быть получена максимум одна строка. Если он выдаёт одну строку, значения столбцов в нём присваиваются целевым столбцам; если же он не возвращает строку, целевым столбцам присваивается NULL. Этот подзапрос может обращаться к предыдущим значениям текущей изменяемой строки в таблице.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">список_FROM</replaceable></term>
+    <listitem>
+     <para>Список табличных выражений, позволяющий использовать в условии <literal>WHERE</literal> и выражениях присваивания столбцы из других таблиц. Этот список подобен тому, что задаётся в предложении <xref linkend="sql-from" endterm="sql-from-title"/> оператора <command>SELECT</command>. Заметьте, что целевую таблицу нужно добавлять в <replaceable>список_FROM</replaceable> только при формировании замкнутого соединения (в этом случае она должна фигурировать в <replaceable>списке_FROM</replaceable> под псевдонимом).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">условие</replaceable></term>
+    <listitem>
+     <para>Выражение, возвращающее значение типа <type>boolean</type>. Изменены будут только те стоки, для которых это выражение возвращает <literal>true</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_курсора</replaceable></term>
+    <listitem>
+     <para>Имя курсора, который будет использоваться в условии <literal>WHERE CURRENT OF</literal>. С таким условием будет изменена строка, выбранная из этого курсора последней. Курсор должен образовываться запросом, не применяющим группировку, к целевой таблице команды <command>UPDATE</command>. Заметьте, что <literal>WHERE CURRENT OF</literal> нельзя задать вместе с булевским условием. За дополнительными сведениями об использовании курсоров с <literal>WHERE CURRENT OF</literal> обратитесь к <xref remap="3" linkend="sql-declare"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">выражение_результата</replaceable></term>
+    <listitem>
+     <para>Выражение, которое будет вычисляться и возвращаться командой <command>UPDATE</command> после изменения каждой строки. В этом выражении можно использовать имена любых столбцов таблицы <replaceable class="parameter">имя_таблицы</replaceable> или таблиц, перечисленных в списке <literal>FROM</literal>. Чтобы получить все столбцы, достаточно написать <literal>*</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_результата</replaceable></term>
+    <listitem>
+     <para>Имя, назначаемое возвращаемому столбцу.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Выводимая информация</title>
+
+  <para>В случае успешного завершения, <command>UPDATE</command> возвращает метку команды в виде <screen>
+UPDATE <replaceable class="parameter">число</replaceable>
+</screen> Здесь <replaceable class="parameter">число</replaceable> обозначает количество изменённых строк, включая те подлежащие изменению строки, значения в которых не были изменены. Заметьте, что это число может быть меньше количества строк, удовлетворяющих <replaceable class="parameter">условию</replaceable>, когда изменения отменяются триггером <literal>BEFORE UPDATE</literal>. Если <replaceable class="parameter">число</replaceable> равно 0, данный запрос не изменил ни одной строки (это не считается ошибкой).</para>
+
+  <para>Если команда <command>UPDATE</command> содержит предложение <literal>RETURNING</literal>, её результат будет похож на результат оператора <command>SELECT</command> (с теми же столбцами и значениями, что содержатся в списке <literal>RETURNING</literal>), полученный для строк, изменённых этой командой.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Когда присутствует предложение <literal>FROM</literal>, целевая таблица по сути соединяется с таблицами, перечисленными в <replaceable>списке_FROM</replaceable>, и каждая выходная строка соединения представляет операцию изменения для целевой таблицы. Применяя предложение <literal>FROM</literal>, необходимо обеспечить, чтобы соединение выдавало максимум одну выходную строку для каждой строки, которую нужно изменить. Другими словами, целевая строка не должна соединяться с более чем одной строкой из других таблиц. Если это условие нарушается, только одна из строк соединения будет использоваться для изменения целевой строки, но какая именно, предсказать нельзя.</para>
+
+  <para>Из-за этой неопределённости надёжнее ссылаться на другие таблицы только в подзапросах, хотя такие запросы часто хуже читаются и работают медленнее, чем соединение.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Изменение слова <literal>Drama</literal> на <literal>Dramatic</literal> в столбце <structfield>kind</structfield> таблицы <structname>films</structname>: <programlisting>UPDATE films SET kind = 'Dramatic' WHERE kind = 'Drama';</programlisting></para>
+
+  <para>Изменение значений температуры и сброс уровня осадков к значению по умолчанию в одной строке таблицы <structname>weather</structname>: <programlisting>UPDATE weather SET temp_lo = temp_lo+1, temp_hi = temp_lo+15, prcp = DEFAULT
+  WHERE city = 'San Francisco' AND date = '2003-07-03';</programlisting></para>
+
+  <para>Выполнение той же операции с получением изменённых записей: <programlisting>UPDATE weather SET temp_lo = temp_lo+1, temp_hi = temp_lo+15, prcp = DEFAULT
+  WHERE city = 'San Francisco' AND date = '2003-07-03'
+  RETURNING temp_lo, temp_hi, prcp;</programlisting></para>
+
+  <para>Такое же изменение с применением альтернативного синтаксиса со списком столбцов: <programlisting>UPDATE weather SET (temp_lo, temp_hi, prcp) = (temp_lo+1, temp_lo+15, DEFAULT)
+  WHERE city = 'San Francisco' AND date = '2003-07-03';</programlisting></para>
+
+  <para>Увеличение счётчика продаж для менеджера, занимающегося компанией Acme Corporation, с применением предложения <literal>FROM</literal>: <programlisting>UPDATE employees SET sales_count = sales_count + 1 FROM accounts
+  WHERE accounts.name = 'Acme Corporation'
+  AND employees.id = accounts.sales_person;</programlisting></para>
+
+  <para>Выполнение той же операции, с вложенным запросом в предложении <literal>WHERE</literal>: <programlisting>UPDATE employees SET sales_count = sales_count + 1 WHERE id =
+  (SELECT sales_person FROM accounts WHERE name = 'Acme Corporation');</programlisting></para>
+
+  <para>Изменение имени контакта в таблице счетов (это должно быть имя назначенного менеджера по продажам): <programlisting>UPDATE accounts SET (contact_first_name, contact_last_name) =
+    (SELECT first_name, last_name FROM salesmen
+     WHERE salesmen.id = accounts.sales_id);</programlisting> Подобный результат можно получить, применив соединение: <programlisting>UPDATE accounts SET contact_first_name = first_name,
+                    contact_last_name = last_name
+  FROM salesmen WHERE salesmen.id = accounts.sales_id;</programlisting> Однако, если <structname>salesmen</structname>.<structfield>id</structfield> — не уникальный ключ, второй запрос может давать непредсказуемые результаты, тогда как первый запрос гарантированно выдаст ошибку, если найдётся несколько записей с одним <structfield>id</structfield>. Кроме того, если соответствующая запись <structname>accounts</structname>.<structfield>sales_id</structfield> не найдётся, первый запрос запишет в поля имени NULL, а второй вовсе не изменит строку.</para>
+
+  <para>Обновление статистики в сводной таблице в соответствии с текущими данными: <programlisting>UPDATE summary s SET (sum_x, sum_y, avg_x, avg_y) =
+    (SELECT sum(x), sum(y), avg(x), avg(y) FROM data d
+     WHERE d.group_id = s.group_id);</programlisting></para>
+
+  <para>Попытка добавить новый продукт вместе с количеством. Если такая запись уже существует, вместо этого увеличить количество данного продукта в существующей записи. Чтобы реализовать этот подход, не откатывая всю транзакцию, можно использовать точки сохранения: <programlisting>BEGIN;
+-- другие операции
+SAVEPOINT sp1;
+INSERT INTO wines VALUES('Chateau Lafite 2003', '24');
+-- Предполагая, что здесь возникает ошибка из-за нарушения уникальности ключа,
+-- мы выполняем следующие команды:
+ROLLBACK TO sp1;
+UPDATE wines SET stock = stock + 24 WHERE winename = 'Chateau Lafite 2003';
+-- Продолжение других операций и в завершение...
+COMMIT;</programlisting></para>
+
+  <para>Изменение столбца <structfield>kind</structfield> таблицы <structname>films</structname> в строке, на которой в данный момент находится курсор <literal>c_films</literal>: <programlisting>UPDATE films SET kind = 'Dramatic' WHERE CURRENT OF c_films;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Эта команда соответствует стандарту <acronym>SQL</acronym>, за исключением предложений <literal>FROM</literal> и <literal>RETURNING</literal>, которые являются расширениями <productname>&productname;</productname>, как и возможность применять <literal>WITH</literal> с <command>UPDATE</command>.</para>
+
+  <para>В некоторых других СУБД также поддерживается дополнительное предложение <literal>FROM</literal>, но предполагается, что целевая таблица должна ещё раз упоминаться в этом предложении. <productname>&productname;</productname> воспринимает предложение <literal>FROM</literal> не так, поэтому будьте внимательны, портируя приложения, которые используют это расширение языка.</para>
+
+  <para>Согласно стандарту, исходным значением для вложенного списка имён столбцов в скобках может быть любое выражение, выдающее строку с нужным количеством столбцов. <productname>&productname;</productname> принимает в качестве этого значения только список выражений в скобках или вложенный <literal>SELECT</literal>. Изменяемое значение отдельного столбца можно обозначить словом <literal>DEFAULT</literal> в случае со списком выражений, но не внутри вложенного <literal>SELECT</literal>.</para>
+ </refsect1>
+</refentry>

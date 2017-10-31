@@ -1,0 +1,234 @@
+<!-- doc/src/xml/filelist.xml -->
+
+<!ENTITY history    SYSTEM "history.xml">
+<!ENTITY info       SYSTEM "info.xml">
+<!ENTITY intro      SYSTEM "intro.xml">
+<!ENTITY legal      SYSTEM "legal.xml">
+<!ENTITY notation   SYSTEM "notation.xml">
+<!ENTITY problems   SYSTEM "problems.xml">
+
+<!-- tutorial -->
+<!ENTITY advanced   SYSTEM "advanced.xml">
+<!ENTITY query      SYSTEM "query.xml">
+<!ENTITY start      SYSTEM "start.xml">
+
+<!-- currently unused, but contains some interesting information -->
+<!ENTITY sql        SYSTEM "sql.xml">
+
+<!-- user's guide -->
+<!ENTITY array      SYSTEM "array.xml">
+<!ENTITY datatype   SYSTEM "datatype.xml">
+<!ENTITY ddl        SYSTEM "ddl.xml">
+<!ENTITY dml        SYSTEM "dml.xml">
+<!ENTITY func       SYSTEM "func.xml">
+<!ENTITY indices    SYSTEM "indices.xml">
+<!ENTITY json       SYSTEM "json.xml">
+<!ENTITY mvcc       SYSTEM "mvcc.xml">
+<!ENTITY parallel   SYSTEM "parallel.xml">
+<!ENTITY perform    SYSTEM "perform.xml">
+<!ENTITY queries    SYSTEM "queries.xml">
+<!ENTITY rangetypes SYSTEM "rangetypes.xml">
+<!ENTITY rowtypes   SYSTEM "rowtypes.xml">
+<!ENTITY syntax     SYSTEM "syntax.xml">
+<!ENTITY textsearch SYSTEM "textsearch.xml">
+<!ENTITY typeconv   SYSTEM "typeconv.xml">
+<!ENTITY atx           SYSTEM "atx.xml">
+
+<!-- administrator's guide -->
+<!ENTITY backup        SYSTEM "backup.xml">
+<!ENTITY charset       SYSTEM "charset.xml">
+<!ENTITY client-auth   SYSTEM "client-auth.xml">
+<!ENTITY diskusage     SYSTEM "diskusage.xml">
+<!ENTITY high-availability      SYSTEM "high-availability.xml">
+<!ENTITY installation-bin       SYSTEM "installation-bin.xml">
+<!ENTITY installation  SYSTEM "installation.xml">
+<!ENTITY installw      SYSTEM "install-windows.xml">
+<!ENTITY maintenance   SYSTEM "maintenance.xml">
+<!ENTITY manage-ag     SYSTEM "manage-ag.xml">
+<!ENTITY monitoring    SYSTEM "monitoring.xml">
+<!ENTITY regress       SYSTEM "regress.xml">
+<!ENTITY recovery-config SYSTEM "recovery-config.xml">
+<!ENTITY runtime       SYSTEM "runtime.xml">
+<!ENTITY config        SYSTEM "config.xml">
+<!ENTITY user-manag    SYSTEM "user-manag.xml">
+<!ENTITY wal           SYSTEM "wal.xml">
+<!ENTITY cfs           SYSTEM "cfs.xml">
+
+<!-- programmer's guide -->
+<!ENTITY bgworker   SYSTEM "bgworker.xml">
+<!ENTITY dfunc      SYSTEM "dfunc.xml">
+<!ENTITY ecpg       SYSTEM "ecpg.xml">
+<!ENTITY extend     SYSTEM "extend.xml">
+<!ENTITY external-projects SYSTEM "external-projects.xml">
+<!ENTITY func-ref   SYSTEM "func-ref.xml">
+<!ENTITY infoschema SYSTEM "information_schema.xml">
+<!ENTITY libpq      SYSTEM "libpq.xml">
+<!ENTITY lobj       SYSTEM "lobj.xml">
+<!ENTITY rules      SYSTEM "rules.xml">
+<!ENTITY spi        SYSTEM "spi.xml">
+<!ENTITY trigger    SYSTEM "trigger.xml">
+<!ENTITY event-trigger SYSTEM "event-trigger.xml">
+<!ENTITY xaggr      SYSTEM "xaggr.xml">
+<!ENTITY xfunc      SYSTEM "xfunc.xml">
+<!ENTITY xindex     SYSTEM "xindex.xml">
+<!ENTITY xplang     SYSTEM "xplang.xml">
+<!ENTITY xoper      SYSTEM "xoper.xml">
+<!ENTITY xtypes     SYSTEM "xtypes.xml">
+<!ENTITY plperl     SYSTEM "plperl.xml">
+<!ENTITY plpython   SYSTEM "plpython.xml">
+<!ENTITY plsql      SYSTEM "plpgsql.xml">
+<!ENTITY pltcl      SYSTEM "pltcl.xml">
+
+<!-- reference pages -->
+<!ENTITY % allfiles   SYSTEM "ref/allfiles.xml">
+%allfiles;
+
+<!-- developer's guide -->
+<!ENTITY arch-dev   SYSTEM "arch-dev.xml">
+<!ENTITY bki        SYSTEM "bki.xml">
+<!ENTITY catalogs   SYSTEM "catalogs.xml">
+<!ENTITY geqo       SYSTEM "geqo.xml">
+<!ENTITY gist       SYSTEM "gist.xml">
+<!ENTITY spgist     SYSTEM "spgist.xml">
+<!ENTITY gin        SYSTEM "gin.xml">
+<!ENTITY brin       SYSTEM "brin.xml">
+<!ENTITY planstats    SYSTEM "planstats.xml">
+<!ENTITY indexam    SYSTEM "indexam.xml">
+<!ENTITY nls        SYSTEM "nls.xml">
+<!ENTITY plhandler  SYSTEM "plhandler.xml">
+<!ENTITY fdwhandler SYSTEM "fdwhandler.xml">
+<!ENTITY custom-scan SYSTEM "custom-scan.xml">
+<!ENTITY logicaldecoding SYSTEM "logicaldecoding.xml">
+<!ENTITY replication-origins SYSTEM "replication-origins.xml">
+<!ENTITY protocol   SYSTEM "protocol.xml">
+<!ENTITY sources    SYSTEM "sources.xml">
+<!ENTITY storage    SYSTEM "storage.xml">
+<!ENTITY tablesample-method SYSTEM "tablesample-method.xml">
+<!ENTITY generic-wal SYSTEM "generic-wal.xml">
+
+<!-- contrib information -->
+<!ENTITY contrib         SYSTEM "contrib.xml">
+<!ENTITY adminpack       SYSTEM "adminpack.xml">
+<!ENTITY aqo             SYSTEM "aqo.xml">
+<!ENTITY auth-delay      SYSTEM "auth-delay.xml">
+<!ENTITY auto-explain    SYSTEM "auto-explain.xml">
+<!ENTITY bloom           SYSTEM "bloom.xml">
+<!ENTITY btree-gin       SYSTEM "btree-gin.xml">
+<!ENTITY btree-gist      SYSTEM "btree-gist.xml">
+<!ENTITY chkpass         SYSTEM "chkpass.xml">
+<!ENTITY citext          SYSTEM "citext.xml">
+<!ENTITY cube            SYSTEM "cube.xml">
+<!ENTITY dblink          SYSTEM "dblink.xml">
+<!ENTITY dict-int        SYSTEM "dict-int.xml">
+<!ENTITY dict-xsyn       SYSTEM "dict-xsyn.xml">
+<!ENTITY dump-stat       SYSTEM "dump-stat.xml">
+<!ENTITY dummy-seclabel  SYSTEM "dummy-seclabel.xml">
+<!ENTITY earthdistance   SYSTEM "earthdistance.xml">
+<!ENTITY fasttrun        SYSTEM "fasttrun.xml">
+<!ENTITY file-fdw        SYSTEM "file-fdw.xml">
+<!ENTITY fuzzystrmatch   SYSTEM "fuzzystrmatch.xml">
+<!ENTITY fulleq          SYSTEM "fulleq.xml">
+<!ENTITY hstore          SYSTEM "hstore.xml">
+<!ENTITY hunspell-dict   SYSTEM "hunspell-dict.xml">
+<!ENTITY intagg          SYSTEM "intagg.xml">
+<!ENTITY intarray        SYSTEM "intarray.xml">
+<!ENTITY isn             SYSTEM "isn.xml">
+<!ENTITY jsquery         SYSTEM "jsquery.xml">
+<!ENTITY lo              SYSTEM "lo.xml">
+<!ENTITY ltree           SYSTEM "ltree.xml">
+<!ENTITY mamonsu           SYSTEM "mamonsu.xml">
+<!ENTITY mchar           SYSTEM "mchar.xml">
+<!ENTITY multimaster           SYSTEM "multimaster.xml">
+<!ENTITY oid2name        SYSTEM "oid2name.xml">
+<!ENTITY online-analyze  SYSTEM "online-analyze.xml">
+<!ENTITY pageinspect     SYSTEM "pageinspect.xml">
+<!ENTITY passwordcheck   SYSTEM "passwordcheck.xml">
+<!ENTITY pgprobackup     SYSTEM "pgprobackup.xml">
+<!ENTITY pgbuffercache   SYSTEM "pgbuffercache.xml">
+<!ENTITY pgcrypto        SYSTEM "pgcrypto.xml">
+<!ENTITY pgfreespacemap  SYSTEM "pgfreespacemap.xml">
+<!ENTITY pghintplan      SYSTEM "pghintplan.xml">
+<!ENTITY pgpathman       SYSTEM "pgpathman.xml">
+<!ENTITY pgprewarm       SYSTEM "pgprewarm.xml">
+<!ENTITY pgpro-scheduler SYSTEM "pgpro-scheduler.xml">
+<!ENTITY pgquerystate    SYSTEM "pgquerystate.xml">
+<!ENTITY pgrepack        SYSTEM "pgrepack.xml">
+<!ENTITY pgrowlocks      SYSTEM "pgrowlocks.xml">
+<!ENTITY pgstandby       SYSTEM "pgstandby.xml">
+<!ENTITY pgstatstatements SYSTEM "pgstatstatements.xml">
+<!ENTITY pgstattuple     SYSTEM "pgstattuple.xml">
+<!ENTITY pgtransfer      SYSTEM "pgtransfer.xml">
+<!ENTITY pgtrgm          SYSTEM "pgtrgm.xml">
+<!ENTITY pg-tsparser          SYSTEM "pg_tsparser.xml">
+<!ENTITY pgvariables     SYSTEM "pg_variables.xml">
+<!ENTITY pgvisibility    SYSTEM "pgvisibility.xml">
+<!ENTITY pg-wait-sampling    SYSTEM "pg-wait-sampling.xml">
+<!ENTITY postgres-fdw    SYSTEM "postgres-fdw.xml">
+<!ENTITY rum             SYSTEM "rum.xml">
+<!ENTITY plantuner       SYSTEM "plantuner.xml">
+<!ENTITY seg             SYSTEM "seg.xml">
+<!ENTITY contrib-spi     SYSTEM "contrib-spi.xml">
+<!ENTITY sepgsql         SYSTEM "sepgsql.xml">
+<!ENTITY shared-ispell   SYSTEM "shared-ispell.xml">
+<!ENTITY sslinfo         SYSTEM "sslinfo.xml">
+<!ENTITY sr-plan         SYSTEM "sr_plan.xml">
+<!ENTITY tablefunc       SYSTEM "tablefunc.xml">
+<!ENTITY tcn             SYSTEM "tcn.xml">
+<!ENTITY test-decoding   SYSTEM "test-decoding.xml">
+<!ENTITY test-parser     SYSTEM "test-parser.xml">
+<!ENTITY test-shm-mq     SYSTEM "test-shm-mq.xml">
+<!ENTITY tsearch2        SYSTEM "tsearch2.xml">
+<!ENTITY tsm-system-rows SYSTEM "tsm-system-rows.xml">
+<!ENTITY tsm-system-time SYSTEM "tsm-system-time.xml">
+<!ENTITY unaccent        SYSTEM "unaccent.xml">
+<!ENTITY uuid-ossp       SYSTEM "uuid-ossp.xml">
+<!ENTITY vacuumlo        SYSTEM "vacuumlo.xml">
+<!ENTITY xml2            SYSTEM "xml2.xml">
+
+<!-- appendixes -->
+<!ENTITY contacts   SYSTEM "contacts.xml">
+<!ENTITY datetime   SYSTEM "datetime.xml">
+<!ENTITY docguide   SYSTEM "docguide.xml">
+<!ENTITY demodb-bookings SYSTEM "demodb-bookings.xml">
+<!ENTITY errcodes   SYSTEM "errcodes.xml">
+<!ENTITY features   SYSTEM "features.xml">
+<!ENTITY keywords   SYSTEM "keywords.xml">
+<!ENTITY config-one-c   SYSTEM "config-one-c.xml">
+<!ENTITY sourcerepo SYSTEM "sourcerepo.xml">
+
+<!ENTITY release    SYSTEM "release.xml">
+<!ENTITY release-pro-9.6 SYSTEM "release-pro-9.6.xml">
+<!ENTITY release-proee-9.6 SYSTEM "release-proee-9.6.xml">
+<!ENTITY release-9.6    SYSTEM "release-9.6.xml">
+<!ENTITY release-9.5    SYSTEM "release-9.5.xml">
+<!ENTITY release-9.4    SYSTEM "release-9.4.xml">
+<!ENTITY release-9.3    SYSTEM "release-9.3.xml">
+<!ENTITY release-9.2    SYSTEM "release-9.2.xml">
+<!ENTITY release-9.1    SYSTEM "release-9.1.xml">
+<!ENTITY release-9.0    SYSTEM "release-9.0.xml">
+<!ENTITY release-8.4    SYSTEM "release-8.4.xml">
+<!ENTITY release-8.3    SYSTEM "release-8.3.xml">
+<!ENTITY release-8.2    SYSTEM "release-8.2.xml">
+<!ENTITY release-8.1    SYSTEM "release-8.1.xml">
+<!ENTITY release-8.0    SYSTEM "release-8.0.xml">
+<!ENTITY release-7.4    SYSTEM "release-7.4.xml">
+<!ENTITY release-old    SYSTEM "release-old.xml">
+
+<!ENTITY acronyms   SYSTEM "acronyms.xml">
+
+<!ENTITY features-supported   SYSTEM "features-supported.xml">
+<!ENTITY features-unsupported SYSTEM "features-unsupported.xml">
+
+<!ENTITY errcodes-table SYSTEM "errcodes-table.xml">
+
+<!-- back matter -->
+<!ENTITY biblio     SYSTEM "biblio.xml">
+
+<!--
+ Some parts of the documentation are also source for some plain-text
+ files used during installation.  To selectively ignore or include
+ some parts (e.g., external xref's) when generating these files we use
+ these parameter entities.  See also standalone-install.xml.
+ -->
+<!ENTITY % standalone-ignore  "INCLUDE">
+<!ENTITY % standalone-include "IGNORE">

@@ -1,0 +1,93 @@
+<!--
+doc/src/xml/ref/drop_schema.xml
+&productname; documentation
+-->
+
+<refentry id="sql-dropschema">
+ <indexterm zone="sql-dropschema"><primary>DROP SCHEMA</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP SCHEMA</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP SCHEMA</refname>
+  <refpurpose>удалить схему</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP SCHEMA [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [, ...] [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP SCHEMA</command> удаляет схемы из базы данных.</para>
+
+  <para>Схему может удалить только её владелец или суперпользователь. Заметьте, что владелец может удалить схему (вместе со всеми содержащимися в ней объектами), даже если он не владеет некоторыми объектами в своей схеме.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если схема не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя схемы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, содержащиеся в этой схеме (таблицы, функции и т. д.), и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении схемы, если она содержит какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>С указанием <literal>CASCADE</literal> эта команда может удалить объекты не только в данной схеме, но и в других.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление схемы <literal>mystuff</literal> из базы данных вместе со всем, что в ней содержится: <programlisting>DROP SCHEMA mystuff CASCADE;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Команда <command>DROP SCHEMA</command> полностью соответствует стандарту SQL, но возможность удалять в одной команде несколько схем и указание <literal>IF EXISTS</literal> являются расширениями <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterschema"/></member>
+   <member><xref linkend="sql-createschema"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

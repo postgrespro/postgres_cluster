@@ -1,0 +1,112 @@
+<!--
+doc/src/xml/ref/cluster.xml
+&productname; documentation
+-->
+
+<refentry id="sql-cluster">
+ <indexterm zone="sql-cluster"><primary>CLUSTER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CLUSTER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CLUSTER</refname>
+  <refpurpose>кластеризовать таблицу согласно индексу</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CLUSTER [VERBOSE] <replaceable class="parameter">имя_таблицы</replaceable> [ USING <replaceable class="parameter">имя_индекса</replaceable> ]
+CLUSTER [VERBOSE]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Оператор <command>CLUSTER</command> указывает <productname>&productname;</productname> кластеризовать таблицу, заданную параметром <replaceable class="parameter">имя_таблицы</replaceable>, согласно индексу, заданному параметром <replaceable class="parameter">имя_индекса</replaceable>. Указанный индекс уже должен быть определён в таблице <replaceable class="parameter">имя_таблицы</replaceable>.</para>
+
+  <para>В результате кластеризации таблицы её содержимое физически переупорядочивается в зависимости от индекса. Кластеризация является одноразовой операцией: последующие изменения в таблице нарушают порядок кластеризации. Другими словами, система не пытается автоматически сохранять порядок новых или изменённых строк в соответствии с индексом. (Если такое желание возникает, можно периодически повторять кластеризацию, выполняя команду снова. Кроме того, если для заданной таблицы установить параметр <literal>FILLFACTOR</literal> меньше 100%, это может помочь сохранить порядок кластеризации при изменениях, так как изменяемые строки будут помещаться в ту же страницу, если в ней достаточно места.)</para>
+
+  <para>Когда таблица кластеризована, <productname>&productname;</productname> запоминает, по какому именно индексу. Форма <command>CLUSTER <replaceable class="parameter">имя_таблицы</replaceable></command> повторно кластеризует таблицу по тому же индексу. Для установки индекса, который будет использоваться для будущих операций кластеризации, или очистки предыдущего значения можно также применить команду <literal>CLUSTER</literal> или формы <literal>SET WITHOUT CLUSTER</literal> команды <xref linkend="sql-altertable"/>.</para>
+
+  <para><command>CLUSTER</command> без параметров повторно кластеризует все ранее кластеризованные таблицы в текущей базе данных, принадлежащие пользователю, вызывающему команду, или все такие таблицы, если её вызывает суперпользователь. Эту форму <command>CLUSTER</command> нельзя выполнять внутри блока транзакции.</para>
+
+  <para>В процессе кластеризации таблицы для неё запрашивается блокировка <literal>ACCESS EXCLUSIVE</literal>. Это препятствует выполнению всех других операций (чтению и записи) с таблицей до завершения <command>CLUSTER</command>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_индекса</replaceable></term>
+    <listitem>
+     <para>Имя индекса.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>VERBOSE</literal></term>
+    <listitem>
+     <para>Выводит отчёт о процессе кластеризации по мере обработки таблиц.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para>В случаях, когда происходит обращение к случайным единичным строкам таблицы, фактический порядок данных в этой таблице не важен. Но если обращения к одним данным происходят чаще, чем к другим, и есть индекс, которые собирает их вместе, применение команды <command>CLUSTER</command> может быть полезным. Например, когда из таблицы запрашивается диапазон индексированных значений, либо одно индексированное значение, которому соответствуют несколько строк, <command>CLUSTER</command> может помочь, так как страница таблицы, найденная по индексу для первой искомой строки, скорее всего, будет содержать и все остальные искомые строки. Таким образом, кластеризация помогает соптимизировать обращения к диску и ускорить запросы.</para>
+
+   <para><command>CLUSTER</command> может переупорядочить таблицу, выполнив либо сканирование указанного индекса, либо (для индексов-B-деревьев) последовательное сканирование, а затем сортировку. Наилучший по скорости вариант будет выбран, исходя из имеющейся статистической информации и параметров планировщика.</para>
+
+   <para>Когда выбирается сканирование индекса, создаётся временная таблица, содержащая данные целевой таблицы по порядку индекса. Также создаются копии всех индексов таблицы. Таким образом, для этой операции требуется объём дискового пространства не меньше, чем размер таблицы и индексов в сумме.</para>
+
+   <para>В случае выбора последовательного сканирования и сортировки создаётся ещё и временный файл для сортировки, так что пиковым требованием будет удвоенный размер таблицы плюс размер индексов. Этот метод часто быстрее, чем сканирование по индексу, но если требование к дисковому пространству неприемлемо, можно отключить его выбор, временно установив <xref linkend="guc-enable-sort"/> в <literal>off</literal>.</para>
+
+   <para>Перед кластеризацией рекомендуется установить в <xref linkend="guc-maintenance-work-mem"/> достаточно большое значение (но не больше, чем объём ОЗУ, который вы хотите выделить для операции <command>CLUSTER</command>).</para>
+
+   <para>Так как планировщик записывает статистику, связанную с порядком таблиц, для вновь кластеризуемых таблиц рекомендуется запускать <xref linkend="sql-analyze"/>. В противном случае планировщик может ошибиться с выбором плана запроса.</para>
+
+   <para>Так как <command>CLUSTER</command> запоминает, по каким индексам кластеризованы таблицы, достаточно лишь один раз вручную кластеризовать нужные таблицы, а затем настроить периодический скрипт обслуживания, который будет выполнять <command>CLUSTER</command> без параметров, с тем чтобы эти таблицы регулярно кластеризовались.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Кластеризация таблицы <literal>employees</literal> согласно её индексу <literal>employees_ind</literal>: <programlisting>CLUSTER employees USING employees_ind;</programlisting></para>
+
+  <para>Кластеризация таблицы <literal>employees</literal> согласно тому же индексу, что был использован ранее: <programlisting>CLUSTER employees;</programlisting></para>
+
+  <para>Кластеризация всех таблиц в базе данных, что были кластеризованы ранее: <programlisting>CLUSTER;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>CLUSTER</command> отсутствует в стандарте SQL.</para>
+
+  <para>Синтаксис <synopsis>
+CLUSTER <replaceable class="parameter">имя_индекса</replaceable> ON <replaceable class="parameter">имя_таблицы</replaceable>
+</synopsis> так же является допустимым для совместимости с <productname>PostgreSQL</productname> до версии 8.3.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-clusterdb"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

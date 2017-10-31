@@ -1,0 +1,369 @@
+<!-- doc/src/xml/sepgsql.xml -->
+
+<sect1 id="sepgsql" xreflabel="sepgsql">
+ <title>sepgsql</title>
+
+ <indexterm zone="sepgsql"><primary>sepgsql</primary></indexterm>
+
+ <para>Загружаемый модуль <filename>sepgsql</filename> поддерживает мандатное управление доступом (MAC, Mandatory Access Control) с метками, построенное на базе политик безопасности <productname>SELinux</productname>.</para>
+
+ <warning>
+   <para>Текущая реализация имеет существенные ограничения и контролирует не все действия. См. <xref remap="4" linkend="sepgsql-limitations"/>.</para>
+ </warning>
+
+ <sect2 id="sepgsql-overview">
+  <title>Обзор</title>
+
+  <para>Этот модуль интегрируется в <productname>SELinux</productname> и обеспечивает дополнительный уровень проверок безопасности, расширяющий и дополняющий обычные средства <productname>&productname;</productname>. С точки зрения <productname>SELinux</productname>, данный модуль позволяет <productname>&productname;</productname> выполнять роль менеджера объектов в пространстве пользователя. При выполнении запроса DML обращение к каждой таблице или функции в нём будет контролироваться согласно системной политике безопасности. Эта проверка дополняет штатную проверку разрешений SQL, которую производит <productname>&productname;</productname>.</para>
+
+  <para>Механизм <productname>SELinux</productname> принимает решения о разрешении доступа на основе меток безопасности, представляемых строками вида <literal>system_u:object_r:sepgsql_table_t:s0</literal>. В каждом решении учитываются две метки: метка субъекта, пытающегося выполнить действие, и метка объекта, над которым должно совершаться это действие. Так как эти метки могут применяться к объекту любого вида, решения о разрешении доступа к объектам внутри базы данных могут подчиняться (и с этим модулем фактически подчиняются) общим критериям, применяемым к объектам любого другого типа, например, к файлам. Эта схема позволяет организовать централизованную политику безопасности для защиты информационных активов, не зависящую от того, как именно хранятся эти активы.</para>
+
+  <para>Назначить метку безопасности объекту баз данных позволяет команда <xref linkend="sql-security-label"/>.</para>
+
+ </sect2>
+ <sect2 id="sepgsql-installation">
+  <title>Установка</title>
+
+  <para>Модуль <filename>sepgsql</filename> может работать только в <productname>Linux</productname> 2.6.28 и новее с включённым <productname>SELinux</productname>. На остальных платформах он не поддерживается. Вам также понадобится <productname>libselinux</productname> 2.1.10 или новее и <productname>selinux-policy</productname> 3.9.13 или новее (хотя в некоторых дистрибутивах необходимые правила могут быть адаптированы к политике старой версии).</para>
+
+  <para>Команда <command>sestatus</command> позволяет проверить состояние <productname>SELinux</productname>. Типичный её вывод выглядит так: <screen>
+$ sestatus
+SELinux status:                 enabled
+SELinuxfs mount:                /selinux
+Current mode:                   enforcing
+Mode from config file:          enforcing
+Policy version:                 24
+Policy from config file:        targeted
+</screen> Если <productname>SELinux</productname> отключён или не установлен, его необходимо привести в рабочее состояние, прежде чем устанавливать этот модуль.</para>
+
+  <para>Чтобы собрать этот модуль, добавьте параметр <literal>--with-selinux</literal> в команду &productname; <literal>configure</literal>. Убедитесь в том, что в момент сборки установлен RPM-пакет <filename>libselinux-devel</filename>.</para>
+
+  <para>Чтобы использовать этот модуль, вы должны включить <literal>sepgsql</literal> в <xref linkend="guc-shared-preload-libraries"/> в <filename>postgresql.conf</filename>. Этот модуль не будет корректно работать, если загрузить его каким-либо другим способом. Загрузив его, нужно выполнить <filename>sepgsql.sql</filename> в каждой базе данных. Этот скрипт установит функции, необходимые для управления метками безопасности, и назначит начальные метки безопасности.</para>
+
+  <para>Следующий пример показывает, как инициализировать новый кластер баз данных и установить в него функции и метки безопасности <filename>sepgsql</filename>. Измените пути в соответствии с размещением вашей инсталляции:</para>
+
+<screen>$ export PGDATA=/path/to/data/directory
+$ initdb
+$ vi $PGDATA/postgresql.conf
+  изменить
+    #shared_preload_libraries = ''                # (после изменения требуется перезапуск)
+  на
+    shared_preload_libraries = 'sepgsql'          # (после изменения требуется перезапуск)
+$ for DBNAME in template0 template1 postgres; do
+    postgres --single -F -c exit_on_error=true $DBNAME \
+      &lt;/usr/local/pgsql/share/contrib/sepgsql.sql &gt;/dev/null
+  done</screen>
+
+  <para>Заметьте, что вы можете увидеть следующие уведомления, в зависимости от конкретных установленных версий <productname>libselinux</productname> и <productname>selinux-policy</productname>: <screen>
+/etc/selinux/targeted/contexts/sepgsql_contexts:  line 33 has invalid object type db_blobs
+/etc/selinux/targeted/contexts/sepgsql_contexts:  line 36 has invalid object type db_language
+/etc/selinux/targeted/contexts/sepgsql_contexts:  line 37 has invalid object type db_language
+/etc/selinux/targeted/contexts/sepgsql_contexts:  line 38 has invalid object type db_language
+/etc/selinux/targeted/contexts/sepgsql_contexts:  line 39 has invalid object type db_language
+/etc/selinux/targeted/contexts/sepgsql_contexts:  line 40 has invalid object type db_language
+</screen> Эти сообщения не критичны и их можно игнорировать.</para>
+
+  <para>Если процесс установки завершается без ошибок, вы можете запустить сервер обычным образом.</para>
+ </sect2>
+
+ <sect2 id="sepgsql-regression">
+  <title>Регрессионные тесты</title>
+
+  <para>Природа <productname>SELinux</productname> такова, что для проведения регрессионных тестов <filename>sepgsql</filename> требуются дополнительные действия по настройке и некоторые из них должен выполнять root. Регрессионные тесты не будут запускаться обычной командой <literal>make check</literal> или <literal>make installcheck</literal>; вы должны настроить конфигурацию и затем вызвать тестовый скрипт вручную. Тесты должны запускаться в каталоге <filename>contrib/sepgsql</filename> настроенного дерева сборки &productname;. Хотя им требуется дерево сборки, эти тесты рассчитаны на использование установленного сервера, то есть они примерно соответствуют <literal>make installcheck</literal>, но не <literal>make check</literal>.</para>
+
+  <para>Сначала установите <filename>sepgsql</filename> в рабочую базу данных по инструкциям, приведённым в <xref remap="6" linkend="sepgsql-installation"/>. Заметьте, что для этого текущий пользователь операционной системы должен подключаться к базе данных как суперпользователь без аутентификации по паролю.</para>
+
+  <para>На втором шаге соберите и установите пакет политики для регрессионного теста. Политика <filename>sepgsql-regtest</filename> представляет собой политику особого назначения, предоставляющую набор правил, включаемых во время регрессионных тестов. Её следует скомпилировать из исходного файла <filename>sepgsql-regtest.te</filename>, что можно сделать командой <command>make</command> со скриптом Makefile, поставляемым с SELinux. Вам нужно будет найти нужный Makefile в своей системе; путь, показанный ниже, приведён только в качестве примера. Скомпилировав пакет политики, его нужно установить с помощью команды <command>semodule</command>, которая загружает переданные ей пакеты в ядро. Если пакет установлен корректно, команда <literal><command>semodule</command> -l</literal> должна вывести <literal>sepgsql-regtest</literal> в списке доступных пакетов политик:</para>
+
+<screen>$ cd .../contrib/sepgsql
+$ make -f /usr/share/selinux/devel/Makefile
+$ sudo semodule -u sepgsql-regtest.pp
+$ sudo semodule -l | grep sepgsql
+sepgsql-regtest 1.07</screen>
+
+  <para>На третьем шаге включите параметр <literal>sepgsql_regression_test_mode</literal>. По соображениям безопасности, правила в <filename>sepgsql-regtest</filename> по умолчанию неактивны; параметр <literal>sepgsql_regression_test_mode</literal> активирует правила, необходимые для проведения регрессионных тестов. Включить этот параметр можно командой <command>setsebool</command>:</para>
+
+<screen>$ sudo setsebool sepgsql_regression_test_mode on
+$ getsebool sepgsql_regression_test_mode
+sepgsql_regression_test_mode --&gt; on</screen>
+
+  <para>На четвёртом шаге убедитесь в том, что ваша оболочка работает в домене <literal>unconfined_t</literal>:</para>
+<screen>$ id -Z
+unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023</screen>
+
+  <para>Если необходимо сменить рабочий домен, в подробностях это описывается в <xref remap="6" linkend="sepgsql-resources"/>.</para>
+
+  <para>Наконец, запустите скрипт регрессионного теста:</para>
+<screen>$ ./test_sepgsql</screen>
+
+  <para>Этот скрипт попытается проверить, все ли шаги по настройке конфигурации выполнены корректно, а затем запустит регрессионные тесты для модуля <filename>sepgsql</filename>.</para>
+
+  <para>Завершив тесты, рекомендуется отключить параметр <literal>sepgsql_regression_test_mode</literal>:</para>
+
+<screen>$ sudo setsebool sepgsql_regression_test_mode off</screen>
+
+  <para>Другой, возможно, более предпочтительный вариант — удалить политику <filename>sepgsql-regtest</filename> полностью:</para>
+
+<screen>$ sudo semodule -r sepgsql-regtest</screen>
+ </sect2>
+
+ <sect2 id="sepgsql-parameters">
+  <title>Параметры GUC</title>
+
+  <variablelist>
+   <varlistentry id="guc-sepgsql-permissive" xreflabel="sepgsql.permissive">
+    <term><varname>sepgsql.permissive</varname> (<type>boolean</type>) <indexterm><primary>параметр конфигурации <varname>sepgsql.permissive</varname></primary></indexterm></term>
+    <listitem>
+     <para>Этот параметр переводит <filename>sepgsql</filename> в разрешительный режим, вне зависимости от режима системы. По умолчанию он имеет значение off (отключён). Задать этот параметр можно только в <filename>postgresql.conf</filename> или в командной строке при запуске сервера.</para>
+
+     <para>Когда этот параметр включён, <filename>sepgsql</filename> действует в разрешительном режиме, даже если SELinux в целом находится в ограничительном режиме. Этот параметр полезен в первую очередь для тестирования.</para>
+    </listitem>
+
+   </varlistentry>
+   <varlistentry id="guc-sepgsql-debug-audit" xreflabel="sepgsql.debug_audit">
+    <term><varname>sepgsql.debug_audit</varname> (<type>boolean</type>) <indexterm><primary>параметр конфигурации <varname>sepgsql.debug_audit</varname></primary></indexterm></term>
+    <listitem>
+     <para>Этот параметр включает вывод сообщений аудита вне зависимости от параметров системной политики. По умолчанию он отключён (имеет значение off), что означает, что сообщения будут выводиться согласно параметрам системы.</para>
+
+     <para>Политики безопасности <productname>SELinux</productname> также содержит правила, определяющие, будут ли фиксироваться в журнале определённые события. По умолчанию фиксируются нарушения доступа, а успешный доступ — нет.</para>
+
+     <para>Этот параметр принудительно включает фиксирование в журнале всех возможных событий, вне зависимости от системной политики.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </sect2>
+
+ <sect2 id="sepgsql-features">
+  <title>Функциональные возможности</title>
+  <sect3>
+   <title>Управляемые классы объектов</title>
+   <para>Модель безопасности <productname>SELinux</productname> описывает все правила доступа в виде отношений между сущностью субъекта (обычно, это клиент базы данных) и сущностью объекта (например, объектом базы данных), каждая из которых определяется меткой безопасности. Если осуществляется попытка доступа к непомеченному объекту, он обрабатывается как объект, имеющий метку <literal>unlabeled_t</literal>.</para>
+
+   <para>В настоящее время <filename>sepgsql</filename> позволяет назначать метки безопасности схемам, таблицам, столбцам, последовательностям, представлениям и функциям. Когда <filename>sepgsql</filename> активен, метки безопасности автоматически назначаются поддерживаемым объектам базы в момент создания. Такая метка называется меткой безопасности по умолчанию и устанавливается согласно политике безопасности системы, которая учитывает метку создателя, метку, назначенную родительскому объекту создаваемого объекта и, возможно, имя создаваемого объекта.</para>
+
+   <para>Новый объект базы, как правило, наследует метку безопасности, назначенную родительскому объекту, если только в политике безопасности не заданы специальные правила, называемые правилами перехода типов (в этом случае может быть назначена другая метка). Для схем родительским объектом является текущая база данных; для таблиц, последовательностей, представлений и функций — схема, содержащая эти объекты; для столбцов — таблица.</para>
+  </sect3>
+
+  <sect3>
+   <title>Разрешения для DML</title>
+
+   <para>Для таблиц, задействованных в запросе в качестве целевых, проверяются разрешения <literal>db_table:select</literal>, <literal>db_table:insert</literal>, <literal>db_table:update</literal> или <literal>db_table:delete</literal> в зависимости от типа оператора; кроме того, для всех таблиц, содержащих столбцы, фигурирующие в предложении <literal>WHERE</literal> или <literal>RETURNING</literal>, или служащих источником данных для <literal>UPDATE</literal> и т. п., также проверяется разрешение <literal>db_table:select</literal>.</para>
+
+   <para>Для всех задействованных столбцов также проверяются разрешения на уровне столбцов. Разрешение <literal>db_column:select</literal> проверяется не только для столбцов, которые считываются оператором <literal>SELECT</literal>, но и для тех, к которым обращаются другие операторы DML; <literal>db_column:update</literal> или <literal>db_column:insert</literal> также проверяется для столбцов, изменяемых операторами <literal>UPDATE</literal> или <literal>INSERT</literal>.</para>
+
+   <para>Например, рассмотрим запрос: <synopsis>
+UPDATE t1 SET x = 2, y = md5sum(y) WHERE z = 100;
+</synopsis> В данном случае <literal>db_column:update</literal> будет проверяться для столбца <literal>t1.x</literal>, так как он изменяется, <literal>db_column:{select update}</literal> будет проверяться для <literal>t1.y</literal>, так как он и считывается, и изменяется, а <literal>db_column:select</literal> — для столбца <literal>t1.z</literal>, так как он только считывается. На уровне таблицы также будет проверяться разрешение <literal>db_table:{select update}</literal>.</para>
+
+   <para>Для последовательностей проверяется разрешение <literal>db_sequence:get_value</literal>, когда имеет место обращение к объекту последовательности в <literal>SELECT</literal>; заметьте, однако, что в настоящее время разрешения на выполнение связанных функций, таких как, <literal>lastval()</literal>, не проверяются.</para>
+
+   <para>Для представлений проверяется <literal>db_view:expand</literal>, а затем все другие соответствующие разрешения для объектов, развёрнутых из определения представления, в индивидуальном порядке.</para>
+
+   <para>Для функций проверяется <literal>db_procedure:{execute}</literal>, когда пользователь пытается выполнить функцию в составе запроса, либо при вызове по быстрому пути. Если эта функция является доверенной процедурой, также проверяется разрешение <literal>db_procedure:{entrypoint}</literal>, чтобы удостовериться, что эта функция может быть точкой входа в доверенную процедуру.</para>
+
+   <para>При обращении к любому объекту схемы необходимо иметь разрешение <literal>db_schema:search</literal> для содержащей его схемы. Когда имя целевого объекта не дополняется схемой, схемы, для которых данное разрешение отсутствует, не будут просматриваться (то же происходит, если у пользователя нет права <literal>USAGE</literal> для этой схемы). Когда схема указывается явно, пользователь получит ошибку, если он не имеет требуемого разрешения для доступа к указанной схеме.</para>
+
+   <para>Клиенту должен быть разрешён доступ ко всем задействованным в запросе таблицам и столбцам, даже если они проявились в нём в результате разворачивания представлений, так что правила применяются согласованно вне зависимости от варианта обращения к содержимому таблиц.</para>
+
+   <para>Стандартная система привилегий позволяет суперпользователям баз данных изменять системные каталоги с помощью команд DML и обращаться к таблицам TOAST или модифицировать их. Когда модуль <filename>sepgsql</filename> активен, эти операции запрещаются.</para>
+  </sect3>
+
+  <sect3>
+   <title>Разрешения для DDL</title>
+   <para><productname>SELinux</productname> определяет набор разрешений для управления стандартными операциями для каждого типа объекта: создание, изменение определения, удаление и смена метки безопасности. В дополнение к ним для некоторых типов объектов предусмотрены специальные разрешения для управления их специфическими операциями, как например, добавление или удаление объектов в определённой схеме.</para>
+   <para>Для создания нового объекта базы данных требуется разрешение <literal>create</literal>. <productname>SELinux</productname> разрешает или запрещает выполнение этой операции в зависимости от метки безопасности клиента и предполагаемой метки безопасности нового объекта. В некоторых случаях требуются дополнительные разрешения:</para>
+
+   <itemizedlist>
+    <listitem>
+     <para><xref linkend="sql-createdatabase"/> дополнительно требует разрешения <literal>getattr</literal> в исходной или шаблонной базе данных.</para>
+    </listitem>
+    <listitem>
+     <para>Создание объекта схемы дополнительно требует разрешения <literal>add_name</literal> в родительской схеме.</para>
+    </listitem>
+    <listitem>
+     <para>Создание таблицы дополнительно требует разрешения на создание каждой отдельного столбца таблицы, как если бы каждый столбец таблицы был отдельным объектом верхнего уровня.</para>
+    </listitem>
+    <listitem>
+     <para>Создание функции с атрибутом <literal>LEAKPROOF</literal> дополнительно требует разрешения <literal>install</literal>. (Это разрешение также проверяется, когда атрибут <literal>LEAKPROOF</literal> устанавливается для существующей функции.)</para>
+    </listitem>
+   </itemizedlist>
+
+   <para>Когда выполняется команда <literal>DROP</literal>, для удаляемого объекта будет проверяться разрешение <literal>drop</literal>. Разрешения будут также проверяться и для объектов, удаляемых косвенно, вследствие указания <literal>CASCADE</literal>. Для удаления объектов, содержащихся в определённой схеме, (таблиц, представления, последовательностей и процедур) дополнительно нужно иметь разрешение <literal>remove_name</literal> в этой схеме.</para>
+
+   <para>Когда выполняется команда <literal>ALTER</literal>, для каждого модифицируемого объекта проверяется разрешение <literal>setattr</literal>, кроме подчинённых объектов, таких как индексы или триггеры таблиц (на них распространяются разрешения родительского объекта). В некоторых случаях требуются дополнительные разрешения:</para>
+
+   <itemizedlist>
+    <listitem>
+     <para>При перемещении объекта в новую схему дополнительно требуется разрешение <literal>remove_name</literal> в старой схеме и <literal>add_name</literal> в новой.</para>
+    </listitem>
+    <listitem>
+     <para>Для установки атрибута <literal>LEAKPROOF</literal> для функции требуется разрешение <literal>install</literal>.</para>
+    </listitem>
+    <listitem>
+     <para>Для использования <xref linkend="sql-security-label"/> дополнительно требуется разрешение <literal>relabelfrom</literal> для объекта с его старой меткой безопасности и <literal>relabelto</literal> для этого объекта с новой меткой безопасности. (В случаях, когда установлено несколько поставщиков меток и пользователь пытается задать метку, неподконтрольную <productname>SELinux</productname>, должно проверяться только разрешение <literal>setattr</literal>. В настоящее время этого не происходит из-за ограничений реализации.)</para>
+    </listitem>
+   </itemizedlist>
+
+  </sect3>
+
+  <sect3>
+   <title>Доверенные процедуры</title>
+   <para>Доверенные процедуры похожи на функции, определяющие контекст безопасности, или команды setuid. В <productname>SELinux</productname> реализована возможность запускать доверенный код с меткой безопасности, отличной от метки клиента, как правило, для предоставления чётко контролируемого доступа к важным данным (при этом например, могут отсеиваться строки или хранимые значения могут выводиться с меньшей точностью). Будет ли функция вызываться как доверенная процедура, определяется её меткой безопасности и политикой операционной системы. Например:</para>
+
+<screen>postgres=# CREATE TABLE customer (
+               cid     int primary key,
+               cname   text,
+               credit  text
+           );
+CREATE TABLE
+postgres=# SECURITY LABEL ON COLUMN customer.credit
+               IS 'system_u:object_r:sepgsql_secret_table_t:s0';
+SECURITY LABEL
+postgres=# CREATE FUNCTION show_credit(int) RETURNS text
+             AS 'SELECT regexp_replace(credit, ''-[0-9]+$'', ''-xxxx'', ''g'')
+                        FROM customer WHERE cid = $1'
+           LANGUAGE sql;
+CREATE FUNCTION
+postgres=# SECURITY LABEL ON FUNCTION show_credit(int)
+               IS 'system_u:object_r:sepgsql_trusted_proc_exec_t:s0';
+SECURITY LABEL</screen>
+
+   <para>Показанные выше операции должен выполнять пользователь с правами администратора.</para>
+
+<screen>postgres=# SELECT * FROM customer;
+ERROR:  SELinux: security policy violation
+postgres=# SELECT cid, cname, show_credit(cid) FROM customer;
+ cid | cname  |     show_credit
+-----+--------+---------------------
+   1 | taro   | 1111-2222-3333-xxxx
+   2 | hanako | 5555-6666-7777-xxxx
+(2 rows)</screen>
+
+   <para>В данном случае обычный пользователь не может обращаться к <literal>customer.credit</literal> напрямую, но доверенная процедура <literal>show_credit</literal> позволяет ему получить номера кредитных карт клиентов, в которых будут скрыты некоторые цифры.</para>
+  </sect3>
+
+  <sect3>
+   <title>Динамические переключения домена</title>
+   <para>Возможность динамического перехода из домена в домен SELinux позволяет переводить метку безопасности клиентского процесса, клиентский домен в новый контекст, если это допускается политикой безопасности. Для этого клиент должен иметь разрешение <literal>setcurrent</literal>, а также разрешение <literal>dyntransition</literal> для перехода из старого в новый домен.</para>
+   <para>Динамические переключения домена следует тщательно продумывать, так как таким образом пользователи могут менять свои метки, а значит и привилегии, по собственному желанию, а не (как в случае с доверенными процедурами) по правилам, диктуемым системой. Таким образом, разрешение <literal>dyntransition</literal> считается безопасным, только когда применяется для переключения в домен с более ограниченным набором привилегий, чем текущий. Например:</para>
+<screen>regression=# select sepgsql_getcon();
+                    sepgsql_getcon
+-------------------------------------------------------
+ unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023
+(1 row)
+
+regression=# SELECT sepgsql_setcon('unconfined_u:unconfined_r:unconfined_t:s0-s0:c1.c4');
+ sepgsql_setcon 
+----------------
+ t
+(1 row)
+
+regression=# SELECT sepgsql_setcon('unconfined_u:unconfined_r:unconfined_t:s0-s0:c1.c1023');
+ERROR:  SELinux: security policy violation</screen>
+   <para>В показанном выше примере мы смогли переключиться из более широкого диапазона MCS <literal>c1.c1023</literal> в более узкий <literal>c1.c4</literal>, но переключение в обратную сторону было запрещено.</para>
+   <para>Сочетание динамического переключения домена с доверенными процедурами позволяет получить интересное решение, подходящее для реализации жизненного цикла процессов с пулом соединений. Даже если вашему менеджеру пула соединений не разрешается запускать многие команды SQL, вы можете разрешить ему сменить метку безопасности клиента, вызвав функцию <literal>sepgsql_setcon()</literal> из доверенной процедуры; для этого может передаваться удостоверение для авторизации запроса на смену метки клиента. После этого сеанс получит привилегии целевого пользователя, а не пользователя пула соединений. Позднее менеджер пула может отменить смену контекста безопасности, вызвав <literal>sepgsql_setcon()</literal> с аргументом <literal>NULL</literal>, так же из доверенной процедуры с необходимыми проверками разрешений. Идея этого подхода в том, что только этой доверенной процедуре будет разрешено менять действующую метку безопасности и только в том случае, когда ей передаётся правильное удостоверение. Разумеется, чтобы это решение было безопасным, хранилище удостоверений (таблица, определение процедуры или что-то другое) не должно быть общедоступным.</para>
+  </sect3>
+
+  <sect3>
+   <title>Разное</title>
+   <para>Выполнение команды <xref linkend="sql-load"/> в активном режиме запрещается, так как любой загруженный модуль может легко обойти ограничения политики безопасности.</para>
+
+  </sect3>
+</sect2>
+
+ <sect2 id="sepgsql-functions">
+  <title>Функции sepgsql</title>
+  <para>В <xref remap="6" linkend="sepgsql-functions-table"/> перечислены все доступные функции.</para>
+
+  <table id="sepgsql-functions-table">
+   <title>Функции sepgsql</title>
+   <tgroup cols="2">
+    <tbody>
+     <row>
+      <entry><literal>sepgsql_getcon() returns text</literal></entry>
+      <entry>Возвращает клиентский домен, текущую метку безопасности клиента.</entry>
+     </row>
+     <row>
+      <entry><literal>sepgsql_setcon(text) returns bool</literal></entry>
+      <entry>Переключает домен клиента текущего сеанса в новый домен, если это допускает политика безопасности. Эта функция также принимает в аргументе <literal>NULL</literal> как запрос на переход в начальный домен клиента.</entry>
+     </row>
+     <row>
+      <entry><literal>sepgsql_mcstrans_in(text) returns text</literal></entry>
+      <entry>Переводит заданный диапазон MLS/MCS из полной записи в низкоуровневый формат, если работает демон mcstrans.</entry>
+     </row>
+     <row>
+      <entry><literal>sepgsql_mcstrans_out(text) returns text</literal></entry>
+      <entry>Переводит заданный диапазон MLS/MCS из низкоуровневого формата в полную запись, если работает демон mcstrans.</entry>
+     </row>
+     <row>
+      <entry><literal>sepgsql_restorecon(text) returns bool</literal></entry>
+      <entry>Устанавливает начальные метки безопасности для всех объектов в текущей базе данных. В аргументе может передаваться NULL или имя файла со спецификациями контекстов, который будет применяться вместо стандартного системного.</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+ </sect2>
+
+ <sect2 id="sepgsql-limitations">
+  <title>Ограничения</title>
+
+  <variablelist>
+   <varlistentry>
+    <term>Разрешения для языка определения данных (DDL, Data Definition Language)</term>
+    <listitem>
+     <para>Вследствие ограничений реализации, для некоторых операций DDL разрешения не проверяются.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>Разрешения для языка управления данными (DCL, Data Control Language)</term>
+    <listitem>
+     <para>Вследствие ограничений реализации, для операций DCL разрешения не проверяются.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>Управление доступом на уровне строк</term>
+    <listitem>
+     <para><productname>&productname;</productname> поддерживает ограничение доступа на уровне строк, а <filename>sepgsql</filename> — нет.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>Скрытые каналы</term>
+    <listitem>
+     <para>Модуль <filename>sepgsql</filename> не пытается скрыть существование определённого объекта, даже если пользователю не разрешено обращаться к нему. Например, возможно догадаться о существовании невидимого объекта по конфликтам первичного ключа, нарушениям внешних ключей и т. д., даже когда нельзя получить содержимое этого объекта. Существование совершенно секретной таблицы невозможно скрыть; надеяться можно только на то, что будет защищено её содержимое.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </sect2>
+
+ <sect2 id="sepgsql-resources">
+  <title>Внешние ресурсы</title>
+  <variablelist>
+   <varlistentry>
+    <term><ulink url="https://wiki.postgresql.org/wiki/SEPostgreSQL">SE-PostgreSQL Introduction</ulink>, Введение в SE-PostgreSQL</term>
+    <listitem>
+     <para>На этой вики-странице даётся краткий обзор этого решения и рассказывается об архитектуре и конструкции безопасности, администрировании и ожидаемых в будущем возможностях.</para>
+    </listitem>
+   </varlistentry>
+   <varlistentry>
+    <term><ulink url="http://docs.fedoraproject.org/selinux-user-guide/">Fedora SELinux User Guide</ulink>, Руководство пользователя SELinux в ОС Fedora</term>
+    <listitem>
+     <para>В этом документе представлен широкий спектр знаний по администрированию <productname>SELinux</productname> в системе. В первую очередь он ориентирован на ОС Fedora, но его область применения не ограничена ей.</para>
+    </listitem>
+   </varlistentry>
+   <varlistentry>
+    <term><ulink url="http://docs.fedoraproject.org/selinux-faq">Fedora SELinux FAQ</ulink>, Часто задаваемые вопросы по SELinux в ОС Fedora</term>
+    <listitem>
+     <para>В этом документе даются ответы на часто задаваемые вопросы по <productname>SELinux</productname>. В первую очередь он ориентирован на ОС Fedora, но его область применения не ограничена ей.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </sect2>
+
+ <sect2 id="sepgsql-author">
+  <title>Автор</title>
+  <para>КайГай Кохэй <email>kaigai@ak.jp.nec.com</email></para>
+ </sect2>
+</sect1>

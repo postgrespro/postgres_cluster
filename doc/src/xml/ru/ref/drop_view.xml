@@ -1,0 +1,85 @@
+<!--
+doc/src/xml/ref/drop_view.xml
+&productname; documentation
+-->
+
+<refentry id="sql-dropview">
+ <indexterm zone="sql-dropview"><primary>DROP VIEW</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP VIEW</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP VIEW</refname>
+  <refpurpose>удалить представление</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP VIEW [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [, ...] [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP VIEW</command> удаляет существующее представление. Выполнить эту команду может только владелец представления.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если представление не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) представления, подлежащего удалению.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данного представления (например, другие представления), и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении представления, если от него зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Эта команда удаляет представление с именем <literal>kinds</literal>: <programlisting>DROP VIEW kinds;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Эта команда соответствует стандарту SQL, но возможность удалять в одной команде несколько представлений и указание <literal>IF EXISTS</literal> являются расширениями <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterview"/></member>
+   <member><xref linkend="sql-createview"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

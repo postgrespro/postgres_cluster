@@ -1,0 +1,227 @@
+<!--
+doc/src/xml/ref/alter_function.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterfunction">
+ <indexterm zone="sql-alterfunction"><primary>ALTER FUNCTION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER FUNCTION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER FUNCTION</refname>
+  <refpurpose>изменить определение функции</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER FUNCTION <replaceable>имя</replaceable> ( [ [ <replaceable class="parameter">режим_аргумента</replaceable> ] [ <replaceable class="parameter">имя_аргумента</replaceable> ] <replaceable class="parameter">тип_аргумента</replaceable> [, ...] ] )
+    <replaceable class="parameter">действие</replaceable> [ ... ] [ RESTRICT ]
+ALTER FUNCTION <replaceable>имя</replaceable> ( [ [ <replaceable class="parameter">режим_аргумента</replaceable> ] [ <replaceable class="parameter">имя_аргумента</replaceable> ] <replaceable class="parameter">тип_аргумента</replaceable> [, ...] ] )
+    RENAME TO <replaceable>новое_имя</replaceable>
+ALTER FUNCTION <replaceable>имя</replaceable> ( [ [ <replaceable class="parameter">режим_аргумента</replaceable> ] [ <replaceable class="parameter">имя_аргумента</replaceable> ] <replaceable class="parameter">тип_аргумента</replaceable> [, ...] ] )
+    OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+ALTER FUNCTION <replaceable>имя</replaceable> ( [ [ <replaceable class="parameter">режим_аргумента</replaceable> ] [ <replaceable class="parameter">имя_аргумента</replaceable> ] <replaceable class="parameter">тип_аргумента</replaceable> [, ...] ] )
+    SET SCHEMA <replaceable>новая_схема</replaceable>
+ALTER FUNCTION <replaceable>имя</replaceable> ( [ [ <replaceable class="parameter">режим_аргумента</replaceable> ] [ <replaceable class="parameter">имя_аргумента</replaceable> ] <replaceable class="parameter">тип_аргумента</replaceable> [, ...] ] )
+    DEPENDS ON EXTENSION <replaceable>имя_расширения</replaceable>
+
+<phrase>Где <replaceable class="parameter">действие</replaceable> может быть следующим:</phrase>
+
+    CALLED ON NULL INPUT | RETURNS NULL ON NULL INPUT | STRICT
+    IMMUTABLE | STABLE | VOLATILE | [ NOT ] LEAKPROOF
+    [ EXTERNAL ] SECURITY INVOKER | [ EXTERNAL ] SECURITY DEFINER
+    PARALLEL { UNSAFE | RESTRICTED | SAFE }
+    COST <replaceable class="parameter">стоимость_выполнения</replaceable>
+    ROWS <replaceable class="parameter">строк_в_результате</replaceable>
+    SET <replaceable class="parameter">параметр_конфигурации</replaceable> { TO | = } { <replaceable class="parameter">значение</replaceable> | DEFAULT }
+    SET <replaceable class="parameter">параметр_конфигурации</replaceable> FROM CURRENT
+    RESET <replaceable class="parameter">параметр_конфигурации</replaceable>
+    RESET ALL</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER FUNCTION</command> изменяет определение функции.</para>
+
+  <para>Выполнить <command>ALTER FUNCTION</command> может только владелец соответствующей функции. Чтобы сменить схему функции, необходимо также иметь право <literal>CREATE</literal> в новой схеме. Чтобы сменить владельца, требуется также быть непосредственным или опосредованным членом новой роли, а эта роль должна иметь право <literal>CREATE</literal> в схеме функции. (С такими ограничениями при смене владельца не происходит ничего такого, что нельзя было бы сделать, имея право удалить и вновь создать функцию. Однако суперпользователь может сменить владельца функции в любом случае.)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующей функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">режим_аргумента</replaceable></term>
+
+    <listitem>
+     <para>Режим аргумента: <literal>IN</literal>, <literal>OUT</literal>, <literal>INOUT</literal> или <literal>VARIADIC</literal>. По умолчанию подразумевается <literal>IN</literal>. Заметьте, что <command>ALTER FUNCTION</command> на самом деле не учитывает аргументы <literal>OUT</literal>, так как для идентификации функции нужны только типы входных аргументов. Поэтому достаточно перечислить только аргументы <literal>IN</literal>, <literal>INOUT</literal> и <literal>VARIADIC</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_аргумента</replaceable></term>
+
+    <listitem>
+     <para>Имя аргумента. Заметьте, что на самом деле <command>ALTER FUNCTION</command> не обращает внимание на имена аргументов, так как для однозначной идентификации функции достаточно только типов аргументов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_аргумента</replaceable></term>
+
+    <listitem>
+     <para>Тип данных аргументов функции (возможно, дополненный именем схемы), если таковые имеются.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Новый владелец функции. Заметьте, что если функция помечена как <literal>SECURITY DEFINER</literal>, в дальнейшем она будет выполняться от имени нового владельца.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_схема</replaceable></term>
+    <listitem>
+     <para>Новая схема функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_расширения</replaceable></term>
+    <listitem>
+     <para>Имя расширения, от которого будет зависеть функция.</para>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+     <term><literal>CALLED ON NULL INPUT</literal></term>
+     <term><literal>RETURNS NULL ON NULL INPUT</literal></term>
+     <term><literal>STRICT</literal></term>
+
+     <listitem>
+      <para><literal>CALLED ON NULL INPUT</literal> меняет функцию так, чтобы она вызывалась, когда некоторые или все её аргументы равны NULL. <literal>RETURNS NULL ON NULL INPUT</literal> или <literal>STRICT</literal> меняет функцию так, чтобы она не вызывалась, когда некоторые или все её аргументы равны NULL, а вместо вызова автоматически выдавался результат NULL. За подробностями обратитесь к <xref remap="3" linkend="sql-createfunction"/>.</para>
+     </listitem>
+   </varlistentry>
+
+    <varlistentry>
+     <term><literal>IMMUTABLE</literal></term>
+     <term><literal>STABLE</literal></term>
+     <term><literal>VOLATILE</literal></term>
+
+     <listitem>
+      <para>Устанавливает заданный вариант изменчивости функции. Подробнее это описано в <xref remap="6" linkend="sql-createfunction"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal><optional>EXTERNAL</optional> SECURITY INVOKER</literal></term>
+    <term><literal><optional>EXTERNAL</optional> SECURITY DEFINER</literal></term>
+
+    <listitem>
+     <para>Устанавливает, является ли функция определяющей контекст безопасности или нет. Ключевое слово <literal>EXTERNAL</literal> игнорируется для соответствия стандарту SQL. Подробнее это свойство описано в <xref remap="6" linkend="sql-createfunction"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>PARALLEL</literal></term>
+
+    <listitem>
+     <para>Устанавливает, будет ли функция считаться безопасной для распараллеливания. Подробнее это описано в <xref linkend="sql-createfunction"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>LEAKPROOF</literal></term>
+    <listitem>
+     <para>Устанавливает, является ли функция герметичной или нет. Подробнее это свойство описано в <xref remap="6" linkend="sql-createfunction"/>.</para>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+     <term><literal>COST</literal> <replaceable class="parameter">стоимость_выполнения</replaceable></term>
+
+     <listitem>
+      <para>Изменяет ориентировочную стоимость выполнения функции. Подробнее это описывается в <xref remap="6" linkend="sql-createfunction"/>.</para>
+     </listitem>
+   </varlistentry>
+
+    <varlistentry>
+     <term><literal>ROWS</literal> <replaceable class="parameter">строк_в_результате</replaceable></term>
+
+     <listitem>
+      <para>Изменяет ориентировочное число строк в результате функции, возвращающей множество. Подробнее это описывается в <xref remap="6" linkend="sql-createfunction"/>.</para>
+     </listitem>
+   </varlistentry>
+
+     <varlistentry>
+      <term><replaceable>параметр_конфигурации</replaceable></term>
+      <term><replaceable>значение</replaceable></term>
+      <listitem>
+       <para>Добавляет или изменяет установку параметра конфигурации, выполняемую при вызове функции. Если задано <replaceable>значение</replaceable> <literal>DEFAULT</literal> или, что равнозначно, выполняется действие <literal>RESET</literal>, локальное переопределение для функции удаляется и функция выполняется со значением, установленным в окружении. Для удаления всех установок параметров для данной функции укажите <literal>RESET ALL</literal>. <literal>SET FROM CURRENT</literal> сохраняет в качестве значения параметра, которое будет применяться при вызове функции, значение, действующее в момент выполнения <command>ALTER FUNCTION</command>.</para>
+
+       <para>За подробными сведениями об именах и значениях параметров обратитесь к <xref remap="3" linkend="sql-set"/> и <xref remap="3" linkend="runtime-config"/>.</para>
+      </listitem>
+     </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+
+    <listitem>
+     <para>Игнорируется для соответствия стандарту SQL.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Переименование функции <literal>sqrt</literal> для типа <type>integer</type> в <literal>square_root</literal>: <programlisting>ALTER FUNCTION sqrt(integer) RENAME TO square_root;</programlisting></para>
+
+  <para>Смена владельца функции <literal>sqrt</literal> для типа <type>integer</type> на <literal>joe</literal>: <programlisting>ALTER FUNCTION sqrt(integer) OWNER TO joe;</programlisting></para>
+
+  <para>Смена схемы функции <literal>sqrt</literal> для типа <type>integer</type> на <literal>maths</literal>: <programlisting>ALTER FUNCTION sqrt(integer) SET SCHEMA maths;</programlisting></para>
+
+  <para>Обозначение функции <literal>sqrt</literal> для типа <type>integer</type> как зависимой от расширения <literal>mathlib</literal>: <programlisting>ALTER FUNCTION sqrt(integer) DEPENDS ON EXTENSION mathlib;</programlisting></para>
+
+  <para>Изменение пути поиска, чтобы он устанавливался автоматически при вызове функции: <programlisting>ALTER FUNCTION check_password(text) SET search_path = admin, pg_temp;</programlisting></para>
+
+  <para>Отмена автоматического определения <varname>search_path</varname> для функции: <programlisting>ALTER FUNCTION check_password(text) RESET search_path;</programlisting> Теперь функция будет выполняться с тем путём, который задан в момент вызова.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Этот оператор частично совместим с оператором <command>ALTER FUNCTION</command> в стандарте SQL. Стандарт позволяет менять больше свойств функции, но не позволяет переименовывать функции, переключать контекст безопасности, связывать с функциями значения параметров конфигурации, а также менять владельца, схему и тип изменчивости функции. Также в стандарте слово <literal>RESTRICT</literal> считается обязательным, тогда как в <productname>&productname;</productname> оно не требуется.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createfunction"/></member>
+   <member><xref linkend="sql-dropfunction"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

@@ -1,0 +1,358 @@
+<!--
+doc/src/xml/ref/pg_basebackup.xml
+&productname; documentation
+-->
+
+<refentry id="app-pgbasebackup">
+ <indexterm zone="app-pgbasebackup"><primary>pg_basebackup</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>pg_basebackup</refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_basebackup</refname>
+  <refpurpose>создать резервную копию кластера <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_basebackup</command>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+  <para><application>pg_basebackup</application> предназначен для создания резервных копий работающего кластера баз данных <productname>&productname;</productname>. Процедура создания копии не влияет на работу других клиентов. Полученные копии могут использоваться для обеих стратегий восстановления — на заданный момент в прошлом (см. <xref remap="4" linkend="continuous-archiving"/>) и в качестве отправной точки для ведомого сервера при реализации трансляции файлов или потоковой репликации (см. <xref remap="4" linkend="warm-standby"/>).</para>
+
+  <para><application>pg_basebackup</application> создаёт бинарную копию файлов кластера, контролируя режим создания копии автоматически. Резервные копии всегда создаются для кластера целиком и невозможно создать копию для какой-либо сущности базы отдельно. Для этой цели можно использовать, например, утилиту <xref linkend="app-pgdump"/>.</para>
+
+  <para>Копия создаётся через обычное подключение к <productname>&productname;</productname>, и при этом используется протокол репликации. Подключение должно осуществляться от лица суперпользователя или пользователя с правом <literal>REPLICATION</literal> (см. <xref remap="4" linkend="role-attributes"/>), а в <filename>pg_hba.conf</filename> должно быть прописано подключение для репликации. Значение <xref linkend="guc-max-wal-senders"/> на сервере должно быть достаточно большим, чтобы допускать минимум ещё одно подключение для копирования.</para>
+
+  <para>Можно запустить одновременно несколько команд <command>pg_basebackup</command>, но с точки зрения производительности лучше делать всего одну копию одновременно, а затем копировать получаемый результат.</para>
+
+  <para>С помощью <application>pg_basebackup</application> можно получить базовую копию не только на ведущем, но и на ведомом сервере. Для этого на ведомом сервере необходимо разрешить подключения репликации (параметры <varname>max_wal_senders</varname> и <xref linkend="guc-hot-standby"/>, а также настроить <link linkend="auth-pg-hba-conf">аутентификацию компьютера</link>). При этом на ведущем необходимо включить <xref linkend="guc-full-page-writes"/>.</para>
+
+  <para>Заметьте, что при копировании с ведомого сервера есть некоторые ограничения: <itemizedlist>
+    <listitem>
+     <para>Файл истории резервного копирования в целевом кластере баз данных не создаётся.</para>
+    </listitem>
+    <listitem>
+     <para>Нет гарантии, что все необходимые файлы журналов WAL будут доступны на момент завершения создания резервной копии. Если планируется использовать резервную копию для восстановления из журнала, то для обеспечения целостности необходимо самостоятельно добавлять их с помощью параметра <literal>-x</literal>.</para>
+    </listitem>
+    <listitem>
+     <para>Если ведомый сервер переключается в роль ведущего в процессе копирования, копирование прерывается.</para>
+    </listitem>
+    <listitem>
+     <para>Все необходимые для резервной копии WAL-записи должны содержать полные страницы, для чего нужно включить режим <varname>full_page_writes</varname> на ведущем и не использовать в <varname>archive_command</varname> такие утилиты, как <application>pg_compresslog</application>, которые могут удалить записанные полные страницы из WAL.</para>
+    </listitem>
+   </itemizedlist></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <para>Описанные далее аргументы командной строки влияют на размещение и формат вывода. <variablelist>
+     <varlistentry>
+      <term><option>-D <replaceable class="parameter">каталог</replaceable></option></term>
+      <term><option>--pgdata=<replaceable class="parameter">каталог</replaceable></option></term>
+      <listitem>
+       <para>Целевой каталог для записи данных. <application>pg_basebackup</application> создаст его и родительские, если необходимо. Каталог может быть создан заранее, но должен быть пустым, иначе возникнет ошибка.</para>
+       <para>Если резервирование работает в режиме <literal>tar</literal>, а имя каталога имеет значение <literal>-</literal> (тире), то tar-файл будет писаться в <literal>stdout</literal>.</para>
+       <para>Этот флаг является обязательным.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-F <replaceable class="parameter">формат</replaceable></option></term>
+      <term><option>--format=<replaceable class="parameter">формат</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает формат вывода. <replaceable>формат</replaceable> может принимать следующие значения: <variablelist>
+         <varlistentry>
+          <term><literal>p</literal></term>
+          <term><literal>plain</literal></term>
+          <listitem>
+           <para>Записывает выводимые данные в обычные файлы, сохраняя текущую схему размещения каталогов данных и табличных пространств. Если кластер не имеет дополнительных табличных пространств, то вся база будет помещена в заданный каталог. Иначе основной каталог хранения данных будет помещён в целевой каталог, а все остальные табличные пространства — в те же абсолютные пути, в которых они находятся на сервере.</para>
+           <para>Это формат по умолчанию.</para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry>
+          <term><literal>t</literal></term>
+          <term><literal>tar</literal></term>
+          <listitem>
+           <para>Записывает в целевой каталог файлы в формате tar. Основной каталог хранения данных будет писаться в файл <filename>base.tar</filename>, а табличные пространства — в файлы, именованные в соответствии с их OID.</para>
+           <para>Если имя целевого каталога задано как <literal>-</literal> (тире), то данные будут писаться в стандартный вывод, что позволяет, например, использовать <productname>gzip</productname>. Это возможно лишь в случае без использования дополнительных табличных пространств.</para>
+           </listitem>
+         </varlistentry>
+        </variablelist></para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-r <replaceable class="parameter">скорость_передачи</replaceable></option></term>
+      <term><option>--max-rate=<replaceable class="parameter">скорость_передачи</replaceable></option></term>
+      <listitem>
+       <para>Максимальная скорость передачи данных с сервера. Значение задаётся в Кб/с. Для установки значения в мегабайтах, можно использовать суффикс <literal>M</literal>. Также допустим суффикс <literal>k</literal>, но он не принципиален. Допустимые значения лежат в рамках между 32 Кб/с и 1024 Мб/с.</para>
+       <para>Служит для снижения влияния на производительность сервера со стороны работающего <application>pg_basebackup</application>.</para>
+       <para>Параметр всегда влияет на передачу данных каталога хранения. На передачу данных файлов WAL влияние оказывается лишь при методе сбора <literal>fetch</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-R</option></term>
+      <term><option>--write-recovery-conf</option></term>
+      <listitem>
+
+       <para>Записать минимальный файл <filename>recovery.conf</filename> в каталог вывода (или базовый архивный файл при использовании формата tar) для упрощения настройки ведомого сервера. В файл <filename>recovery.conf</filename> будут записаны параметры соединения и, если указан, слот репликации, который использует <application>pg_basebackup</application>, так что впоследствии при потоковой репликации будут использоваться те же параметры.</para>
+
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-S <replaceable>имя_слота</replaceable></option></term>
+      <term><option>--slot=<replaceable class="parameter">имя_слота</replaceable></option></term>
+      <listitem>
+       <para>Этот параметр может применяться только вместе с <literal>-X stream</literal>. Он устанавливает использование заданного слота репликации при потоковой передаче WAL. Если базовая копия предназначена для использования на ведомом сервере с потоковой репликацией, затем должен использоваться слот с тем же именем в <filename>recovery.conf</filename>. Тем самым гарантируется, что сервер не удалит никакие необходимые данные WAL после того, как базовая копия будет получена, и до того, как начнётся потоковая репликация.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-T <replaceable class="parameter">старый_каталог</replaceable>=<replaceable class="parameter">новый_каталог</replaceable></option></term>
+      <term><option>--tablespace-mapping=<replaceable class="parameter">старый_каталог</replaceable>=<replaceable class="parameter">новый_каталог</replaceable></option></term>
+      <listitem>
+       <para>Переместить табличное пространство из <replaceable>старого_каталога</replaceable> в <replaceable>новый_каталог</replaceable> в процессе копирования. Чтобы перемещение произошло, в параметре <replaceable>старый_каталог</replaceable> должен задаваться в точности путь табличного пространства, как он определён. (Но не будет ошибкой, если табличного пространства, на которое указывает <replaceable>старый_каталог</replaceable>, в архиве не окажется.) И <replaceable>старый_каталог</replaceable>, и <replaceable>новый_каталог</replaceable> должны задаваться абсолютными путями. Если в пути встречается символ <literal>=</literal>, его необходимо экранировать обратной косой чертой. Этот параметр можно добавить несколько раз для нескольких табличных пространств. См. примеры ниже.</para>
+
+       <para>Если табличное пространство перемещается таким способом, символьные ссылки внутри основного каталога хранения данных также приводятся в соответствие с новым местоположением. Таким образом, для экземпляра сервера подготавливается новый каталог данных, в котором все табличные пространства оказываются в новом расположении.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--xlogdir=<replaceable class="parameter">каталог_xlog</replaceable></option></term>
+      <listitem>
+       <para>Указывает размещение каталога хранения журналов транзакций. Задаваемый в параметре <replaceable>каталог_xlog</replaceable> путь должен быть абсолютным. Каталог с журналом транзакций можно задать только при создании копии в простом режиме.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-x</option></term>
+      <term><option>--xlog</option></term>
+      <listitem>
+       <para>Использование параметра эквивалентно <literal>-X</literal> в режиме <literal>fetch</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-X <replaceable class="parameter">метод</replaceable></option></term>
+      <term><option>--xlog-method=<replaceable class="parameter">метод</replaceable></option></term>
+      <listitem>
+       <para>Включает все необходимые файлы журналов транзакций (файлы WAL) в резервную копию. В том числе включаются все журналы транзакций, сгенерированные в процессе создания резервной копии. Если параметр указан, то главный процесс БД может быть запущен непосредственно с восстановленным каталогом, без дополнительного архива журналов; таким образом полученная резервная копия будет вполне самодостаточной.</para>
+       <para>Для сбора журналов транзакций поддерживаются следующие методы: <variablelist>
+         <varlistentry>
+          <term><literal>f</literal></term>
+          <term><literal>fetch</literal></term>
+          <listitem>
+           <para>Файлы журналов транзакций собираются в конце процесса копирования. Таким образом необходимо установить достаточно большое значение параметра <xref linkend="guc-wal-keep-segments"/>, чтобы избежать преждевременного удаления файлов журнала. В случае удаления файлов до завершения процесса копирования возникнет ошибка, а копия будет непригодной к использованию.</para>
+          </listitem>
+         </varlistentry>
+
+         <varlistentry>
+          <term><literal>s</literal></term>
+          <term><literal>stream</literal></term>
+          <listitem>
+           <para>Передавать журнал транзакций в процессе создания резервной копии. При этом открывается второе соединение к серверу, по которому будет передаваться журнал транзакций, одновременно с созданием резервной копии. Таким образом будут использоваться два подключения из разрешённых параметром <xref linkend="guc-max-wal-senders"/>. И если клиент будет успевать получать журнал транзакций, ведущему серверу не потребуется хранить дополнительные журналы транзакций.</para>
+          </listitem>
+         </varlistentry>
+        </variablelist></para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-z</option></term>
+      <term><option>--gzip</option></term>
+      <listitem>
+       <para>Включает gzip-сжатие для выводимого tar-файла с уровнем компрессии по умолчанию. Сжатие поддерживается лишь в режиме упаковки.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-Z <replaceable class="parameter">уровень</replaceable></option></term>
+      <term><option>--compress=<replaceable class="parameter">уровень</replaceable></option></term>
+      <listitem>
+       <para>Включает gzip-сжатие для выводимого tar-файла и задаёт уровень сжатия от 0 (без сжатия) до 9 (максимальное сжатие). Сжатие поддерживается только с форматом tar.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+   <para>Описанные далее аргументы командной строки влияют на генерацию резервной копии и ход выполнения приложения. <variablelist>
+     <varlistentry>
+      <term><option>-c <replaceable class="parameter">fast|spread</replaceable></option></term>
+      <term><option>--checkpoint=<replaceable class="parameter">fast|spread</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает режим контрольных точек: fast (быстрый) или spread (протяжённый, по умолчанию). Подробнее см. <xref remap="4" linkend="backup-lowlevel-base-backup"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-l <replaceable class="parameter">метка</replaceable></option></term>
+      <term><option>--label=<replaceable class="parameter">метка</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает метку для созданной резервной копии. Если не указана, то по умолчанию будет использовано значение <quote><literal>pg_basebackup base backup</literal></quote>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-P</option></term>
+      <term><option>--progress</option></term>
+      <listitem>
+       <para>Включает отчёт о прогрессе. Если этот режим включён, то во время создания копии будет передаваться примерный процент выполнения. Так как данные в базе могут меняться во время копирования, это значение будет лишь приближённым и может достигать не точно <literal>100%</literal>. В частности, когда в копию включается журнал WAL, конечный размер невозможно предсказать заранее, и в этом случае ожидаемый конечный размер будет увеличиваться, превысив ориентировочный полный размер без WAL.</para>
+       <para>Если режим включён, то процесс копирования начнется с перечисления размеров всей базы, а затем продолжится отправкой непосредственно данных. Это может немного увеличить время операции, в частности, пройдёт больше времени до начала передачи данных.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-v</option></term>
+      <term><option>--verbose</option></term>
+      <listitem>
+       <para>Включает режим подробного вывода. Будет выводится некоторая дополнительная информация при начале и завершении, а также имена обрабатываемых файлов, если включён отчёт о прогрессе.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+
+   <para>Далее описаны параметры управления подключением. <variablelist>
+     <varlistentry>
+      <term><option>-d <replaceable class="parameter">строка_подключения</replaceable></option></term>
+      <term><option>--dbname=<replaceable class="parameter">строка_подключения</replaceable></option></term>
+      <listitem>
+       <para>Указывает параметры подключения к серверу в формате строки подключения. См. <xref remap="4" linkend="libpq-connstring"/> для более подробной информации.</para>
+       <para>Параметр называется <literal>--dbname</literal> для согласованности с другими клиентскими приложениями, но так как <application>pg_basebackup</application> не подключается к какой-либо конкретной базе, это имя в строке подключения игнорируется.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-h <replaceable class="parameter">сервер</replaceable></option></term>
+      <term><option>--host=<replaceable class="parameter">сервер</replaceable></option></term>
+      <listitem>
+       <para>Указывает имя компьютера, на котором запущен сервер. Если значение начинается с косой черты, оно интерпретируется как имя каталога с доменным сокетом Unix. Значение по умолчанию берётся из переменной окружения <envar>PGHOST</envar>, если она установлена. В противном случае выполняется подключение к доменному сокету.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">порт</replaceable></option></term>
+      <term><option>--port=<replaceable class="parameter">порт</replaceable></option></term>
+      <listitem>
+       <para>Указывает TCP-порт или расширение локального файла Unix-сокета, на котором сервер слушает подключения. По умолчанию берётся значение переменной окружения <envar>PGPORT</envar>, если оно установлено, либо значение времени компиляции.</para>
+      </listitem>
+     </varlistentry>
+
+
+     <varlistentry>
+      <term><option>-s <replaceable class="parameter">interval</replaceable></option></term>
+      <term><option>--status-interval=<replaceable class="parameter">interval</replaceable></option></term>
+      <listitem>
+       <para>Указывает интервал в секундах между отправкой пакетов статуса, отправляемых на сервер. Это позволяет упростить мониторинг прогресса. Чтобы выключить периодическое обновление статуса, необходимо установить значение в ноль. При этом обновление будет отправляться по запросу сервера для избежания отсоединения по истечению времени. Значение по умолчанию составляет 10 секунд.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable>имя_пользователя</replaceable></option></term>
+      <term><option>--username=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <listitem>
+       <para>Имя пользователя, под которым производится подключение.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</option></term>
+      <term><option>--no-password</option></term>
+      <listitem>
+       <para>Не выдавать запрос на ввод пароля. Если сервер требует аутентификацию по паролю и пароль не доступен с помощью других средств, таких как файл <filename>.pgpass</filename>, попытка соединения не удастся. Этот параметр может быть полезен в пакетных заданиях и скриптах, где нет пользователя, который вводит пароль.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option></term>
+      <term><option>--password</option></term>
+      <listitem>
+       <para>Принудительно запрашивать пароль перед подключением к базе данных.</para>
+
+       <para>Это несущественный параметр, так как <application>pg_basebackup</application> запрашивает пароль автоматически, если сервер проверяет подлинность по паролю. Однако, чтобы понять это, <application>pg_basebackup</application> лишний раз подключается к серверу. Поэтому иногда имеет смысл ввести <option>-W</option>, чтобы исключить эту ненужную попытку подключения.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+   <para>Другие флаги: <variablelist>
+     <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>--version</option></term>
+       <listitem>
+       <para>Вывести версию <application>pg_basebackup</application>.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-?</option></term>
+       <term><option>--help</option></term>
+       <listitem>
+       <para>Вывести справку по команде <application>pg_basebackup</application>.</para>
+       </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <para>Как и большинство других утилит <productname>&productname;</productname>, приложение также использует переменные окружения, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>).</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Прежде чем начнётся копирование, на сервере с копируемой базой необходимо выполнить контрольную точку. И если копирование запускается без ключа <literal>--checkpoint=fast</literal>, это может занять некоторое время, в течение которого <application>pg_basebackup</application> не будет проявлять никакой активности.</para>
+
+  <para>Резервная копия будет включать в себя все файлы каталога хранения данных и табличных пространств, а также конфигурационные файлы и прочие файлы, размещённые в каталоге данных. Однако копируются лишь простые файлы и каталоги. Символьные ссылки (кроме тех, что указывают на табличные пространства) и файлы спецустройств игнорируются. Более подробно см. <xref remap="4" linkend="protocol-replication"/>.</para>
+
+  <para>Если не указан параметр <literal>--tablespace-mapping</literal>, табличные пространства в простом формате будут копироваться в тот же путь, который они имеют на сервере. Поэтому при наличии табличных пространств создать базовую копию в простом формате на том же сервере не удастся, так как копия будет направлена в те же каталоги, где располагаются исходные табличные пространства.</para>
+
+  <para>Когда применяется режим формата tar, пользователь должен позаботиться о том, чтобы все архивы tar были распакованы до запуска сервера &productname;. Если имеются дополнительные табличные пространства, архивы tar для них должны быть распакованы в правильные каталоги. В таком случае для этих табличных пространств сервером будут созданы символические ссылки, согласно содержимому файла <filename>tablespace_map</filename>, включённого в архив <filename>base.tar</filename>.</para>
+
+  <para><application>pg_basebackup</application> совместим с серверами той же или более младших версий, но не ниже 9.1. Однако режим трансляции WAL (<literal>-X stream</literal>) поддерживается с версиями сервера не ниже 9.3, а режим формата tar (<literal>--format=tar</literal>) текущей версии совместим только с версиями сервера не ниже 9.5.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Создание резервной копии сервера <literal>mydbserver</literal> и сохранение её в локальном каталоге <filename>/usr/local/pgsql/data</filename>: <screen>
+<prompt>$</prompt> <userinput>pg_basebackup -h mydbserver -D /usr/local/pgsql/data</userinput>
+</screen></para>
+
+  <para>Создание резервной копии локального сервера в отдельных сжатых файлах tar для каждого табличного пространства и сохранение их в каталоге <filename>backup</filename> с индикатором прогресса в процессе выполнения: <screen>
+<prompt>$</prompt> <userinput>pg_basebackup -D backup -Ft -z -P</userinput>
+</screen></para>
+
+  <para>Чтобы создать резервную копию локальной базы с единым табличным пространством и сжатием через <productname>bzip2</productname>: <screen>
+<prompt>$</prompt> <userinput>pg_basebackup -D - -Ft | bzip2 &gt; backup.tar.bz2</userinput>
+</screen> Команда завершится ошибкой, если в базе будет более одного табличного пространства.</para>
+
+  <para>Создание резервной копии локальной базы данных с перемещением табличного пространства <filename>/opt/ts</filename> в <filename>./backup/ts</filename>: <screen>
+<prompt>$</prompt> <userinput>pg_basebackup -D backup/data -T /opt/ts=$(pwd)/backup/ts</userinput>
+</screen></para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-pgdump"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

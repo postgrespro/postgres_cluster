@@ -25,11 +25,13 @@ LD_LIBRARY_PATH=$(pwd)/tmp_install/lib
 DYLD_LIBRARY_PATH=$(pwd)/tmp_install/lib
 PATH=$(pwd)/tmp_install/bin:${PATH}
 PGDATA=$(pwd)/tmp_base
-export DYLD_LIBRARY_PATH LD_LIBRARY_PATH PATH PG_DATA
+export DYLD_LIBRARY_PATH LD_LIBRARY_PATH PATH PGDATA
 
 # create installation
 PGPORT=`./.ci/find_free_port 5432`
-export PGPORT
+LANG=C
+LC_ALL=C
+export PGPORT LANG LC_ALL
 ./.ci/make_test_base $PGDATA
 #run checks
 set +e

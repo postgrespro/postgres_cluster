@@ -1,0 +1,2009 @@
+<!-- doc/src/xml/textsearch.xml -->
+
+<chapter id="textsearch">
+ <title>Полнотекстовый поиск</title>
+
+  <indexterm zone="textsearch"><primary>полнотекстовый поиск</primary></indexterm>
+
+  <indexterm zone="textsearch"><primary>поиск текста</primary></indexterm>
+
+ <sect1 id="textsearch-intro">
+  <title>Введение</title>
+
+  <para>Полнотекстовый поиск (или просто <firstterm>поиск текста</firstterm>) &mdash; это возможность находить <firstterm>документы</firstterm> на естественном языке, соответствующие <firstterm>запросу</firstterm>, и, возможно, дополнительно сортировать их по релевантности для этого запроса. Наиболее распространённая задача &mdash; найти все документы, содержащие <firstterm>слова запроса</firstterm>, и выдать их отсортированными по степени <firstterm>соответствия</firstterm> запросу. Понятия <varname>запроса</varname> и <varname>соответствия</varname> довольно расплывчаты и зависят от конкретного приложения. В самом простом случае <varname>запросом</varname> считается набор слов, а <varname>соответствие</varname> определяется частотой слов в документе.</para>
+
+  <para>Операторы текстового поиска существуют в СУБД уже многие годы. В <productname>&productname;</productname> для текстовых типов данных есть операторы <literal>~</literal>, <literal>~*</literal>, <literal>LIKE</literal> и <literal>ILIKE</literal>, но им не хватает очень важных вещей, которые требуются сегодня от информационных систем:</para>
+
+  <itemizedlist spacing="compact" mark="bullet">
+   <listitem>
+    <para>Нет поддержки лингвистического функционала, даже для английского языка. Возможности регулярных выражений ограничены &mdash; они не рассчитаны на работу со словоформами, например, <literal>подходят</literal> и <literal>подходить</literal>. С ними вы можете пропустить документы, которые содержат <literal>подходят</literal>, но, вероятно, и они представляют интерес при поиске по ключевому слову <literal>подходить</literal>. Конечно, можно попытаться перечислить в регулярном выражении все варианты слова, но это будет очень трудоёмко и чревато ошибками (некоторые слова могут иметь десятки словоформ).</para>
+   </listitem>
+
+   <listitem>
+    <para>Они не позволяют упорядочивать результаты поиска (по релевантности), а без этого поиск неэффективен, когда находятся сотни подходящих документов.</para>
+   </listitem>
+
+   <listitem>
+    <para>Они обычно выполняются медленно из-за отсутствия индексов, так как при каждом поиске приходится просматривать все документы.</para>
+   </listitem>
+  </itemizedlist>
+
+  <para>Полнотекстовая индексация заключается в <emphasis>предварительной обработке</emphasis> документов и сохранении индекса для последующего быстрого поиска. Предварительная обработка включает следующие операции:</para>
+
+  <itemizedlist mark="none">
+   <listitem>
+    <para><emphasis>Разбор документов на <firstterm>фрагменты</firstterm></emphasis>. При этом полезно выделить различные классы фрагментов, например, числа, слова, словосочетания, почтовые адреса и т. д., которые будут обрабатываться по-разному. В принципе классы фрагментов могут зависеть от приложения, но для большинства применений вполне подойдёт предопределённый набор классов. Эту операцию в <productname>&productname;</productname> выполняет <firstterm>анализатор</firstterm> (parser). Вы можете использовать как стандартный анализатор, так и создавать свои, узкоспециализированные.</para>
+   </listitem>
+
+   <listitem>
+    <para><emphasis>Преобразование фрагментов в <firstterm>лексемы</firstterm></emphasis>. Лексема &mdash; это <firstterm>нормализованный</firstterm> фрагмент, в котором разные словоформы приведены к одной. Например, при нормализации буквы верхнего регистра приводятся к нижнему, а из слов обычно убираются окончания (в частности, <literal>s</literal> или <literal>es</literal> в английском). Благодаря этому можно находить разные формы одного слова, не вводя вручную все возможные варианты. Кроме того, на данном шаге обычно исключаются <firstterm>стоп-слова</firstterm>, то есть слова, настолько распространённые, что искать их нет смысла. (Другими словами, фрагменты представляют собой просто подстроки текста документа, а лексемы &mdash; это слова, имеющие ценность для индексации и поиска.) Для выполнения этого шага в <productname>&productname;</productname> используются <firstterm>словари</firstterm>. Набор существующих стандартных словарей при необходимости можно расширять, создавая свои собственные.</para>
+   </listitem>
+
+   <listitem>
+    <para><emphasis>Хранение документов в форме, подготовленной для поиска</emphasis>. Например, каждый документ может быть представлен в виде сортированного массива нормализованных лексем. Помимо лексем часто желательно хранить информацию об их положении для <firstterm>ранжирования по близости</firstterm>, чтобы документ, в котором слова запроса расположены <quote>плотнее</quote>, получал более высокий ранг, чем документ с разбросанными словами.</para>
+   </listitem>
+  </itemizedlist>
+
+  <para>Словари позволяют управлять нормализацией фрагментов с большой гибкостью. Создавая словари, можно:</para>
+
+  <itemizedlist spacing="compact" mark="bullet">
+   <listitem>
+    <para>Определять стоп-слова, которые не будут индексироваться.</para>
+   </listitem>
+
+   <listitem>
+    <para>Сопоставлять синонимы с одним словом, используя <application>Ispell</application>.</para>
+   </listitem>
+
+   <listitem>
+    <para>Сопоставлять словосочетания с одним словом, используя тезаурус.</para>
+   </listitem>
+
+   <listitem>
+    <para>Сопоставлять различные склонения слова с канонической формой, используя словарь <application>Ispell</application>.</para>
+   </listitem>
+
+   <listitem>
+    <para>Сопоставлять различные склонения слова с канонической формой, используя стеммер <application>Snowball</application>.</para>
+   </listitem>
+  </itemizedlist>
+
+  <para>Для хранения подготовленных документов в <productname>PostgreSQL</productname> предназначен тип данных <type>tsvector</type>, а для представления обработанных запросов &mdash; тип <type>tsquery</type> (<xref linkend="datatype-textsearch"/>). С этими типами данных работают целый ряд функций и операторов (<xref linkend="functions-textsearch"/>), и наиболее важный из них &mdash; оператор соответствия <literal>@@</literal>, с которым мы познакомимся в <xref remap="6" linkend="textsearch-matching"/>. Для ускорения полнотекстового поиска могут применяться индексы (<xref linkend="textsearch-indexes"/>).</para>
+
+
+  <sect2 id="textsearch-document">
+   <title>Что такое документ?</title>
+
+   <indexterm zone="textsearch-document"><primary>документ</primary> <secondary>поиск текста</secondary></indexterm>
+
+   <para><firstterm>Документ</firstterm> &mdash; это единица обработки в системе полнотекстового поиска; например, журнальная статья или почтовое сообщение. Система поиска текста должна уметь разбирать документы и сохранять связи лексем (ключевых слов) с содержащим их документом. Впоследствии эти связи могут использоваться для поиска документов с заданными ключевыми словами.</para>
+
+   <para>В контексте поиска в <productname>&productname;</productname> документ &mdash; это обычно содержимое текстового поля в строке таблицы или, возможно, сочетание (объединение) таких полей, которые могут храниться в разных таблицах или формироваться динамически. Другими словами, документ для индексации может создаваться из нескольких частей и не храниться где-либо как единое целое. Например: <programlisting>SELECT title || ' ' ||  author || ' ' ||  abstract || ' ' || body
+  AS document
+FROM messages
+WHERE mid = 12;
+
+SELECT m.title || ' ' || m.author || ' ' || m.abstract || ' ' || d.body
+  AS document
+FROM messages m, docs d
+WHERE mid = did AND mid = 12;</programlisting></para>
+
+   <note>
+    <para>На самом деле в этих примерах запросов следует использовать функцию <function>coalesce</function>, чтобы значение <literal>NULL</literal> в каком-либо одном атрибуте не привело к тому, что результирующим документом окажется <literal>NULL</literal>.</para>
+   </note>
+
+   <para>Документы также можно хранить в обычных текстовых файлах в файловой системе. В этом случае база данных может быть просто хранилищем полнотекстового индекса и исполнителем запросов, а найденные документы будут загружаться из файловой системы по некоторым уникальным идентификаторам. Однако для загрузки внешних файлов требуются права суперпользователя или поддержка специальных функций, так что это обычно менее удобно, чем хранить все данные внутри БД <productname>&productname;</productname>. Кроме того, когда всё хранится в базе данных, это упрощает доступ к метаданным документов при индексации и выводе результатов.</para>
+
+   <para>Для нужд текстового поиска каждый документ должен быть сведён к специальному формату <type>tsvector</type>. Поиск и ранжирование выполняется исключительно с этим представлением документа &mdash; исходный текст потребуется извлечь, только когда документ будет отобран для вывода пользователю. Поэтому мы часто подразумеваем под <type>tsvector</type> документ, тогда как этот тип, конечно, содержит только компактное представление всего документа.</para>
+  </sect2>
+
+  <sect2 id="textsearch-matching">
+   <title>Простое соответствие текста</title>
+
+   <para>Полнотекстовый поиск в <productname>&productname;</productname> реализован на базе оператора соответствия <literal>@@</literal>, который возвращает <literal>true</literal>, если <type>tsvector</type> (документ) соответствует <type>tsquery</type> (запросу). Для этого оператора не важно, какой тип записан первым: <programlisting>SELECT 'a fat cat sat on a mat and ate a fat rat'::tsvector @@
+  'cat &amp; rat'::tsquery;
+ ?column?
+----------
+ t
+
+SELECT 'fat &amp; cow'::tsquery @@
+  'a fat cat sat on a mat and ate a fat rat'::tsvector;
+ ?column?
+----------
+ f</programlisting></para>
+
+   <para>Как можно догадаться из этого примера, <type>tsquery</type> &mdash; это не просто текст, как и <type>tsvector</type>. Значение типа <type>tsquery</type> содержит искомые слова, это должны быть уже нормализованные лексемы, возможно объединённые в выражение операторами И, ИЛИ, НЕ и ПРЕДШЕСТВУЕТ. (Подробнее синтаксис описан в <xref remap="6" linkend="datatype-tsquery"/>.) Вы можете воспользоваться функциями <function>to_tsquery</function>, <function>plainto_tsquery</function> и <function>phraseto_tsquery</function>, которые могут преобразовать заданный пользователем текст в значение <type>tsquery</type>, прежде всего нормализуя слова в этом тексте. Функция <function>to_tsvector</function> подобным образом может разобрать и нормализовать текстовое содержимое документа. Так что запрос с поиском соответствия на практике выглядит скорее так: <programlisting>SELECT to_tsvector('fat cats ate fat rats') @@ to_tsquery('fat &amp; rat');
+ ?column? 
+----------
+ t</programlisting> Заметьте, что соответствие не будет обнаружено, если запрос записан как <programlisting>SELECT 'fat cats ate fat rats'::tsvector @@ to_tsquery('fat &amp; rat');
+ ?column? 
+----------
+ f</programlisting> так как слово <literal>rats</literal> не будет нормализовано. Элементами <type>tsvector</type> являются лексемы, предположительно уже нормализованные, так что <literal>rats</literal> считается не соответствующим <literal>rat</literal>.</para>
+
+   <para>Оператор <literal>@@</literal> также может принимать типы <type>text</type>, позволяя опустить явные преобразования текстовых строк в типы <type>tsvector</type> и <type>tsquery</type> в простых случаях. Всего есть четыре варианта этого оператора: <programlisting>tsvector @@ tsquery
+tsquery  @@ tsvector
+text @@ tsquery
+text @@ text</programlisting></para>
+
+   <para>Первые два мы уже видели раньше. Форма <type>text</type><literal>@@</literal><type>tsquery</type> равнозначна выражению <literal>to_tsvector(x) @@ y</literal>, а форма <type>text</type><literal>@@</literal><type>text</type> &mdash; выражению <literal>to_tsvector(x) @@ plainto_tsquery(y)</literal>.</para>
+
+   <para>В значении <type>tsquery</type> оператор <literal>&amp;</literal> (И) указывает, что оба его операнда должны присутствовать в документе, чтобы он удовлетворял запросу. Подобным образом, оператор <literal>|</literal> (ИЛИ) указывает, что в документе должен присутствовать минимум один из его операндов, тогда как оператор <literal>!</literal> (НЕ) указывает, что его операнд <emphasis>не</emphasis> должен присутствовать, чтобы условие удовлетворялось. Например, запросу <literal>fat &amp; ! rat</literal> соответствуют документы, содержащие <literal>fat</literal> и не содержащие <literal>rat</literal>.</para>
+
+   <para>Фразовый поиск возможен с использованием оператора <literal>&lt;-&gt;</literal> (ПРЕДШЕСТВУЕТ) типа <type>tsquery</type>, который находит соответствие, только если его операнды расположены рядом и в заданном порядке. Например: <programlisting>SELECT to_tsvector('fatal error') @@ to_tsquery('fatal &lt;-&gt; error');
+ ?column? 
+----------
+ t
+
+SELECT to_tsvector('error is not fatal') @@ to_tsquery('fatal &lt;-&gt; error');
+ ?column? 
+----------
+ f</programlisting> Более общая версия оператора ПРЕДШЕСТВУЕТ имеет вид <literal>&lt;<replaceable>N</replaceable>&gt;</literal>, где <replaceable>N</replaceable> — целое число, выражающее разность между позициями найденных лексем. Запись <literal>&lt;1&gt;</literal> равнозначна <literal>&lt;-&gt;</literal>, тогда как <literal>&lt;2&gt;</literal> допускает существование ровно одной лексемы между этими лексемами и т. д. Функция <literal>phraseto_tsquery</literal> задействует этот оператор для конструирования <literal>tsquery</literal>, который может содержать многословную фразу, включающую в себя стоп-слова. Например: <programlisting>SELECT phraseto_tsquery('cats ate rats');
+       phraseto_tsquery        
+-------------------------------
+ 'cat' &lt;-&gt; 'ate' &lt;-&gt; 'rat'
+
+SELECT phraseto_tsquery('the cats ate the rats');
+       phraseto_tsquery        
+-------------------------------
+ 'cat' &lt;-&gt; 'ate' &lt;2&gt; 'rat'</programlisting></para>
+
+   <para>Особый случай, который иногда бывает полезен, представляет собой запись <literal>&lt;0&gt;</literal>, требующая, чтобы обоим лексемам соответствовало одно слово.</para>
+
+   <para>Сочетанием операторов <type>tsquery</type> можно управлять, применяя скобки. Без скобок операторы имеют следующие приоритеты, в порядке возрастания: <literal>|</literal>, <literal>&amp;</literal>, <literal>&lt;-&gt;</literal> и самый приоритетный — <literal>!</literal>.</para>
+
+   <para>Стоит отметить, что операторы И/ИЛИ/НЕ имеют несколько другое значение, когда они применяются в аргументах оператора ПРЕДШЕСТВУЕТ, так как в этом случае имеет значение точная позиция совпадения. Например, обычному <literal>!x</literal> соответствуют только документы, не содержащие <literal>x</literal> нигде. Но условию <literal>!x &lt;-&gt; y</literal> соответствует <literal>y</literal>, если оно не следует непосредственно за <literal>x</literal>; при вхождении <literal>x</literal> в любом другом месте документа он не будет исключаться из рассмотрения. Другой пример: для условия <literal>x &amp; y</literal> обычно требуется, чтобы и <literal>x</literal>, и <literal>y</literal> встречались в каком-то месте документа, но для выполнения условия <literal>(x &amp; y) &lt;-&gt; z</literal> требуется, чтобы <literal>x</literal> и <literal>y</literal> располагались в одном месте, непосредственно перед <literal>z</literal>. Таким образом, этот запрос отличается от <literal>x &lt;-&gt; z &amp; y &lt;-&gt; z</literal>, которому удовлетворяют документы, содержащие две отдельные последовательности <literal>x z</literal> и <literal>y z</literal>. (Этот конкретный запрос в таком виде, как он записан, не имеет смысла, так как <literal>x</literal> и <literal>y</literal> не могут находиться в одном месте; но в более сложных ситуациях, например, с шаблонами поиска по маске, запросы этого вида могут быть полезны.)</para>
+  </sect2>
+
+  <sect2 id="textsearch-intro-configurations">
+   <title>Конфигурации</title>
+
+   <para>До этого мы рассматривали очень простые примеры поиска текста. Как было упомянуто выше, весь функционал текстового поиска позволяет делать гораздо больше: пропускать определённые слова (стоп-слова), обрабатывать синонимы и выполнять сложный анализ слов, например, выделять фрагменты не только по пробелам. Все эти функции управляются <firstterm>конфигурациями текстового поиска</firstterm>. В <productname>&productname;</productname> есть набор предопределённых конфигураций для многих языков, но вы также можете создавать собственные конфигурации. (Все доступные конфигурации можно просмотреть с помощью команды <command>\dF</command> в <application>psql</application>.)</para>
+
+   <para>Подходящая конфигурация для данной среды выбирается во время установки и записывается в параметре <xref linkend="guc-default-text-search-config"/> в <filename>postgresql.conf</filename>. Если вы используете для всего кластера одну конфигурацию текстового поиска, вам будет достаточно этого параметра в <filename>postgresql.conf</filename>. Если же требуется использовать в кластере разные конфигурации, но для каждой базы данных одну определённую, её можно задать командой <command>ALTER DATABASE ... SET</command>. В противном случае конфигурацию можно выбрать в рамках сеанса, определив параметр <varname>default_text_search_config</varname>.</para>
+
+   <para>У каждой функции текстового поиска, зависящей от конфигурации, есть необязательный аргумент <type>regconfig</type>, в котором можно явно указать конфигурацию для данной функции. Значение <varname>default_text_search_config</varname> используется, только когда этот аргумент опущен.</para>
+
+   <para>Для упрощения создания конфигураций текстового поиска они строятся из более простых объектов. В <productname>&productname;</productname> есть четыре типа таких объектов:</para>
+
+  <itemizedlist spacing="compact" mark="bullet">
+   <listitem>
+    <para><firstterm>Анализаторы текстового поиска</firstterm> разделяют документ на фрагменты и классифицируют их (например, как слова или числа).</para>
+   </listitem>
+
+   <listitem>
+    <para><firstterm>Словари текстового поиска</firstterm> приводят фрагменты к нормализованной форме и отбрасывают стоп-слова.</para>
+   </listitem>
+
+   <listitem>
+    <para><firstterm>Шаблоны текстового поиска</firstterm> предоставляют функции, образующие реализацию словарей. (При создании словаря просто задаётся шаблон и набор параметров для него.)</para>
+   </listitem>
+
+   <listitem>
+    <para><firstterm>Конфигурации текстового поиска</firstterm> выбирают анализатор и набор словарей, который будет использоваться для нормализации фрагментов, выданных анализатором.</para>
+   </listitem>
+  </itemizedlist>
+
+   <para>Анализаторы и шаблоны текстового поиска строятся из низкоуровневых функций на языке C; чтобы создать их, нужно программировать на C, а подключить их к базе данных может только суперпользователь. (В подкаталоге <filename>contrib/</filename> инсталляции <productname>&productname;</productname> можно найти примеры дополнительных анализаторов и шаблонов.) Так как словари и конфигурации представляют собой просто наборы параметров, связывающие анализаторы и шаблоны, их можно создавать, не имея административных прав. Далее в этой главе будут приведены примеры их создания.</para>
+
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="textsearch-tables">
+  <title>Таблицы и индексы</title>
+
+  <para>В предыдущем разделе приводились примеры, которые показывали, как можно выполнить сопоставление с простыми текстовыми константами. В этом разделе показывается, как находить текст в таблице, возможно с применением индексов.</para>
+
+  <sect2 id="textsearch-tables-search">
+   <title>Поиск в таблице</title>
+
+   <para>Полнотекстовый поиск можно выполнить, не применяя индекс. Следующий простой запрос выводит заголовок (<structname>title</structname>) каждой строки, содержащей слово <literal>friend</literal> в поле <structfield>body</structfield>: <programlisting>SELECT title
+FROM pgweb
+WHERE to_tsvector('english', body) @@ to_tsquery('english', 'friend');</programlisting> При этом также будут найдены связанные слова, такие как <literal>friends</literal> и <literal>friendly</literal>, так как все они сводятся к одной нормализованной лексеме.</para>
+
+   <para>В показанном выше примере для разбора и нормализации строки явно выбирается конфигурация <literal>english</literal>. Хотя параметры, задающие конфигурацию, можно опустить: <programlisting>SELECT title
+FROM pgweb
+WHERE to_tsvector(body) @@ to_tsquery('friend');</programlisting> Такой запрос будет использовать конфигурацию, заданную в параметре <xref linkend="guc-default-text-search-config"/>.</para>
+
+   <para>В следующем более сложном примере выбираются десять документов, изменённых последними, со словами <literal>create</literal> и <literal>table</literal> в полях <structname>title</structname> или <structname>body</structname>: <programlisting>SELECT title
+FROM pgweb
+WHERE to_tsvector(title || ' ' || body) @@ to_tsquery('create &amp; table')
+ORDER BY last_mod_date DESC
+LIMIT 10;</programlisting> Чтобы найти строки, содержащие <literal>NULL</literal> в одном из полей, нужно воспользоваться функцией <function>coalesce</function>, но здесь мы опустили её вызовы для краткости.</para>
+
+   <para>Хотя такие запросы будут работать и без индекса, для большинства приложений скорость будет неприемлемой; этот подход рекомендуется только для нерегулярного поиска и динамического содержимого. Для практического применения полнотекстового поиска обычно создаются индексы.</para>
+
+  </sect2>
+
+  <sect2 id="textsearch-tables-index">
+   <title>Создание индексов</title>
+
+   <para>Для ускорения текстового поиска мы можем создать индекс <acronym>GIN</acronym> (см. <xref remap="4" linkend="textsearch-indexes"/>): <programlisting>CREATE INDEX pgweb_idx ON pgweb USING GIN (to_tsvector('english', body));</programlisting> Заметьте, что здесь используется функция <function>to_tsvector</function> с двумя аргументами. В выражениях, определяющих индексы, можно использовать только функции, в которых явно задаётся имя конфигурации текстового поиска (см. <xref remap="4" linkend="indexes-expressional"/>). Это объясняется тем, что содержимое индекса не должно зависеть от значения параметра <xref linkend="guc-default-text-search-config"/>. В противном случае содержимое индекса может быть неактуальным, если разные его элементы <type>tsvector</type> будут создаваться с разными конфигурациями текстового поиска и нельзя будет понять, какую именно использовать. Выгрузить и восстановить такой индекс будет невозможно.</para>
+
+   <para>Так как при создании индекса использовалась версия <function>to_tsvector</function> с двумя аргументами, этот индекс будет использоваться только в запросах, где <function>to_tsvector</function> вызывается с двумя аргументами и во втором передаётся имя той же конфигурации. То есть, <literal>WHERE to_tsvector('english', body) @@ 'a &amp; b'</literal> сможет использовать этот индекс, а <literal>WHERE to_tsvector(body) @@ 'a &amp; b'</literal> &mdash; нет. Это гарантирует, что индекс будет использоваться только с той конфигурацией, с которой создавались его элементы.</para>
+
+  <para>Индекс можно создать более сложным образом, определив для него имя конфигурации в другом столбце таблицы, например: <programlisting>CREATE INDEX pgweb_idx ON pgweb USING GIN (to_tsvector(config_name, body));</programlisting> где <literal>config_name</literal> &mdash; имя столбца в таблице <literal>pgweb</literal>. Так можно сохранить имя конфигурации, связанной с элементом индекса, и, таким образом, иметь в одном индексе элементы с разными конфигурациями. Это может быть полезно, например, когда в коллекции документов хранятся документы на разных языках. И в этом случае в запросах должен использоваться тот же индекс (с таким же образом задаваемой конфигурацией), например, так: <literal>WHERE to_tsvector(config_name, body) @@ 'a &amp; b'</literal>.</para>
+
+   <para>Индексы могут создаваться даже по объединению столбцов: <programlisting>CREATE INDEX pgweb_idx ON pgweb USING GIN (to_tsvector('english', title || ' ' || body));</programlisting></para>
+
+   <para>Ещё один вариант &mdash; создать отдельный столбец <type>tsvector</type>, в котором сохранить результат <function>to_tsvector</function>. Следующий пример показывает, как можно подготовить для индексации объединённое содержимое столбцов <literal>title</literal> и <literal>body</literal>, применив функцию <function>coalesce</function> для получения желаемого результата, даже когда один из столбцов <literal>NULL</literal>: <programlisting>ALTER TABLE pgweb ADD COLUMN textsearchable_index_col tsvector;
+UPDATE pgweb SET textsearchable_index_col =
+     to_tsvector('english', coalesce(title,'') || ' ' || coalesce(body,''));</programlisting> Затем мы создаём индекс <acronym>GIN</acronym> для ускорения поиска: <programlisting>CREATE INDEX textsearch_idx ON pgweb USING GIN (textsearchable_index_col);</programlisting> Теперь мы можем быстро выполнять полнотекстовый поиск: <programlisting>SELECT title
+FROM pgweb
+WHERE textsearchable_index_col @@ to_tsquery('create &amp; table')
+ORDER BY last_mod_date DESC
+LIMIT 10;</programlisting></para>
+
+   <para>Когда представление <type>tsvector</type> хранится в отдельном столбце, необходимо создать триггер, который будет поддерживать столбец с <type>tsvector</type> в актуальном состоянии при любых изменениях <literal>title</literal> или <literal>body</literal>. Как это сделать, рассказывается в <xref remap="6" linkend="textsearch-update-triggers"/>.</para>
+
+   <para>Хранение вычисленного выражения индекса в отдельном столбце даёт ряд преимуществ. Во-первых, для использования индекса в запросах не нужно явно указывать имя конфигурации текстового поиска. Как показано в вышеприведённом примере, в этом случае запрос может зависеть от <varname>default_text_search_config</varname>. Во-вторых, поиск выполняется быстрее, так как для проверки соответствия данных индексу не нужно повторно выполнять <function>to_tsvector</function>. (Это актуально больше для индексов GiST, чем для GIN; см. <xref remap="4" linkend="textsearch-indexes"/>.) С другой стороны, схему с индексом по выражению проще реализовать и она позволяет сэкономить место на диске, так как представление <type>tsvector</type> не хранится явно.</para>
+
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="textsearch-controls">
+  <title>Управление текстовым поиском</title>
+
+  <para>Для реализации полнотекстового поиска необходимы функции, позволяющие создать <type>tsvector</type> из документа и <type>tsquery</type> из запроса пользователя. Кроме того, результаты нужно выдавать в удобном порядке, так что нам потребуется функция, оценивающая релевантность документа для данного запроса. Важно также иметь возможность выводить найденный текст подходящим образом. В <productname>&productname;</productname> есть все необходимые для этого функции.</para>
+
+  <sect2 id="textsearch-parsing-documents">
+   <title>Разбор документов</title>
+
+   <para>Для преобразования документа в тип <type>tsvector</type> <productname>&productname;</productname> предоставляет функцию <function>to_tsvector</function>.</para>
+
+   <indexterm><primary>to_tsvector</primary></indexterm>
+
+<synopsis>to_tsvector(<optional> <replaceable class="parameter">конфигурация</replaceable> <type>regconfig</type>, </optional> <replaceable class="parameter">документ</replaceable> <type>text</type>) возвращает <type>tsvector</type></synopsis>
+
+   <para><function>to_tsvector</function> разбирает текстовый документ на фрагменты, сводит фрагменты к лексемам и возвращает значение <type>tsvector</type>, в котором перечисляются лексемы и их позиции в документе. При обработке документа используется указанная конфигурация текстового поиска или конфигурация по умолчанию. Простой пример: <screen>
+SELECT to_tsvector('english', 'a fat  cat sat on a mat - it ate a fat rats');
+                  to_tsvector
+-----------------------------------------------------
+ 'ate':9 'cat':3 'fat':2,11 'mat':7 'rat':12 'sat':4
+</screen></para>
+
+   <para>В этом примере мы видим, что результирующий <type>tsvector</type> не содержит слова <literal>a</literal>, <literal>on</literal> и <literal>it</literal>, слово <literal>rats</literal> превратилось <literal>rat</literal>, а знак препинания <quote><literal>-</literal></quote> был проигнорирован.</para>
+
+   <para>Функция <function>to_tsvector</function> внутри вызывает анализатор, который разбивает текст документа на фрагменты и классифицирует их. Для каждого фрагмента она проверяет список словарей (<xref linkend="textsearch-dictionaries"/>), определяемый типом фрагмента. Первый же словарь, <firstterm>распознавший</firstterm> фрагмент, выдаёт одну или несколько представляющих его <firstterm>лексем</firstterm>. Например, <literal>rats</literal> превращается в <literal>rat</literal>, так как один из словарей понимает, что слово <literal>rats</literal> &mdash; это слово <literal>rat</literal> во множественном числе. Некоторое слова распознаются как <firstterm>стоп-слова</firstterm> (<xref linkend="textsearch-stopwords"/>) и игнорируются как слова, фигурирующие в тексте настолько часто, что искать их бессмысленно. В нашем примере это <literal>a</literal>, <literal>on</literal> и <literal>it</literal>. Если фрагмент не воспринимается ни одним словарём из списка, он так же игнорируется. В данном примере это происходит со знаком препинания <literal>-</literal>, так как с таким типом фрагмента (<literal>символы-разделители</literal>) не связан никакой словарь и значит такие фрагменты никогда не будут индексироваться. Выбор анализатора, словарей и индексируемых типов фрагментов определяется конфигурацией текстового поиска (<xref linkend="textsearch-configuration"/>). В одной базе данных можно использовать разные конфигурации, в том числе, предопределённые конфигурации для разных языков. В нашем примере мы использовали конфигурацию по умолчанию для английского языка &mdash; <literal>english</literal>.</para>
+
+   <para>Для назначения элементам <type>tsvector</type> разных <firstterm>весов</firstterm> используется функция <function>setweight</function>. Вес элемента задаётся буквой <literal>A</literal>, <literal>B</literal>, <literal>C</literal> или <literal>D</literal>. Обычно это применяется для обозначения важности слов в разных частях документа, например в заголовке или в теле документа. Затем эта информация может использоваться при ранжировании результатов поиска.</para>
+
+   <para>Так как <function>to_tsvector</function>(<literal>NULL</literal>) вернёт <literal>NULL</literal>, мы советуем использовать <function>coalesce</function> везде, где соответствующее поле может быть NULL. Создавать <type>tsvector</type> из структурированного документа рекомендуется так: <programlisting>UPDATE tt SET ti =
+    setweight(to_tsvector(coalesce(title,'')), 'A')    ||
+    setweight(to_tsvector(coalesce(keyword,'')), 'B')  ||
+    setweight(to_tsvector(coalesce(abstract,'')), 'C') ||
+    setweight(to_tsvector(coalesce(body,'')), 'D');</programlisting> Здесь мы использовали <function>setweight</function> для пометки происхождения каждой лексемы в сформированных значениях <type>tsvector</type> и объединили помеченные значения с помощью оператора конкатенации типов <type>tsvector</type> <literal>||</literal>. (Подробнее эти операции рассматриваются в <xref remap="6" linkend="textsearch-manipulate-tsvector"/>.)</para>
+
+  </sect2>
+
+  <sect2 id="textsearch-parsing-queries">
+   <title>Разбор запросов</title>
+
+   <para><productname>&productname;</productname> предоставляет функции <function>to_tsquery</function>, <function>plainto_tsquery</function> и <function>phraseto_tsquery</function> для приведения запроса к типу данных <type>tsquery</type>. Функция <function>to_tsquery</function> даёт больше возможностей, чем <function>plainto_tsquery</function> и <function>phraseto_tsquery</function>, но более строга к входному запросу.</para>
+
+   <indexterm><primary>to_tsquery</primary></indexterm>
+
+<synopsis>to_tsquery(<optional> <replaceable class="parameter">конфигурация</replaceable> <type>regconfig</type>, </optional> <replaceable class="parameter">текст_запроса</replaceable> <type>text</type>) возвращает <type>tsquery</type></synopsis>
+
+   <para><function>to_tsquery</function> создаёт значение <type>tsquery</type> из <replaceable>текста_запроса</replaceable>, который может состоять из простых фрагментов, разделённых логическими операторами <type>tsquery</type>: <literal>&amp;</literal> (И), <literal>|</literal> (ИЛИ), <literal>!</literal> (НЕ) и <literal>&lt;-&gt;</literal> (ПРЕДШЕСТВУЕТ), возможно, сгруппированных скобками. Другими словами, входное значение для <function>to_tsquery</function> должно уже соответствовать общим правилам для значений <type>tsquery</type>, описанным в <xref remap="6" linkend="datatype-tsquery"/>. Различие их состоит в том, что во вводимом в <type>tsquery</type> значении фрагменты воспринимаются буквально, тогда как <function>to_tsquery</function> нормализует фрагменты, приводя их к лексемам, используя явно указанную или подразумеваемую конфигурацию, и отбрасывая стоп-слова. Например: <screen>
+SELECT to_tsquery('english', 'The &amp; Fat &amp; Rats');
+  to_tsquery   
+---------------
+ 'fat' &amp; 'rat'
+</screen> Как и при вводе значения <type>tsquery</type>, для каждой лексемы можно задать вес(а), чтобы при поиске можно было выбрать из <type>tsvector</type> только лексемы с заданными весами. Например: <screen>
+SELECT to_tsquery('english', 'Fat | Rats:AB');
+    to_tsquery    
+------------------
+ 'fat' | 'rat':AB
+</screen> К лексеме также можно добавить <literal>*</literal>, определив таким образом условие поиска по префиксу: <screen>
+SELECT to_tsquery('supern:*A &amp; star:A*B');
+        to_tsquery        
+--------------------------
+ 'supern':*A &amp; 'star':*AB
+</screen> Такая лексема будет соответствовать любому слову в <type>tsvector</type>, начинающемуся с данной подстроки.</para>
+
+   <para><function>to_tsquery</function> может также принимать фразы в апострофах. Это полезно в основном когда конфигурация включает тезаурус, который может обрабатывать такие фразы. В показанном ниже примере предполагается, что тезаурус содержит правило <literal>supernovae stars : sn</literal>: <screen>
+SELECT to_tsquery('''supernovae stars'' &amp; !crab');
+  to_tsquery
+---------------
+ 'sn' &amp; !'crab'
+</screen> Если убрать эти апострофы, <function>to_tsquery</function> не примет фрагменты, не разделённые операторами И, ИЛИ и ПРЕДШЕСТВУЕТ, и выдаст синтаксическую ошибку.</para>
+
+   <indexterm><primary>plainto_tsquery</primary></indexterm>
+
+<synopsis>plainto_tsquery(<optional> <replaceable class="parameter">конфигурация</replaceable> <type>regconfig</type>, </optional> <replaceable class="parameter">текст_запроса</replaceable> <type>text</type>) возвращает <type>tsquery</type></synopsis>
+
+   <para><function>plainto_tsquery</function> преобразует неформатированный <replaceable>текст_запроса</replaceable> в значение <type>tsquery</type>. Текст разбирается и нормализуется подобно тому, как это делает <function>to_tsvector</function>, а затем между оставшимися словами вставляются операторы <literal>&amp;</literal> (И) типа <type>tsquery</type>.</para>
+
+   <para>Пример: <screen>
+SELECT plainto_tsquery('english', 'The Fat Rats');
+ plainto_tsquery 
+-----------------
+ 'fat' &amp; 'rat'
+</screen> Заметьте, что <function>plainto_tsquery</function> не распознает во входной строке операторы <type>tsquery</type>, метки весов или обозначения префиксов: <screen>
+SELECT plainto_tsquery('english', 'The Fat &amp; Rats:C');
+   plainto_tsquery   
+---------------------
+ 'fat' &amp; 'rat' &amp; 'c'
+</screen> В данном случае все знаки пунктуации были отброшены как символы-разделители.</para>
+
+   <indexterm><primary>phraseto_tsquery</primary></indexterm>
+
+<synopsis>phraseto_tsquery(<optional><replaceable class="parameter">конфигурация</replaceable> <type>regconfig</type>,</optional> <replaceable class="parameter">текст_запроса</replaceable> <type>text</type>) returns <type>tsquery</type></synopsis>
+
+   <para><function>phraseto_tsquery</function> ведёт себя подобно <function>plainto_tsquery</function>, за исключением того, что она вставляет между оставшимися словами оператор <literal>&lt;-&gt;</literal> (ПРЕДШЕСТВУЕТ) вместо оператора <literal>&amp;</literal> (И). Кроме того, стоп-слова не просто отбрасываются, а подсчитываются, и вместо операторов <literal>&lt;-&gt;</literal> используются операторы <literal>&lt;<replaceable>N</replaceable>&gt;</literal> с подсчитанным числом. Эта функция полезна при поиске точных последовательностей лексем, так как операторы ПРЕДШЕСТВУЕТ проверяют не только наличие всех лексем, но и их порядок.</para>
+
+   <para>Пример: <screen>
+SELECT phraseto_tsquery('english', 'The Fat Rats');
+ phraseto_tsquery
+------------------
+ 'fat' &lt;-&gt; 'rat'
+</screen> Как и <function>plainto_tsquery</function>, функция <function>phraseto_tsquery</function> не распознает во входной строке операторы типа <type>tsquery</type>, метки весов или обозначения префиксов: <screen>
+SELECT phraseto_tsquery('english', 'The Fat &amp; Rats:C');
+      phraseto_tsquery
+-----------------------------
+ 'fat' &lt;-&gt; 'rat' &lt;-&gt; 'c'
+</screen></para>
+
+  </sect2>
+
+  <sect2 id="textsearch-ranking">
+   <title>Ранжирование результатов поиска</title>
+
+   <para>Ранжирование документов можно представить как попытку оценить, насколько они релевантны заданному запросу и отсортировать их так, чтобы наиболее релевантные выводились первыми. В <productname>&productname;</productname> встроены две функции ранжирования, принимающие во внимание лексическую, позиционную и структурную информацию; то есть, они учитывают, насколько часто и насколько близко встречаются в документе ключевые слова и какова важность содержащей их части документа. Однако само понятие релевантности довольно размытое и во многом определяется приложением. Приложения могут использовать для ранжирования и другую информацию, например, время изменения документа. Встроенные функции ранжирования можно рассматривать лишь как примеры реализации. Для своих конкретных задач вы можете разработать собственные функции ранжирования и/или учесть при обработке их результатов дополнительные факторы.</para>
+
+   <para>Ниже описаны две встроенные функции ранжирования: <variablelist>
+
+     <varlistentry>
+
+      <term>
+       <indexterm><primary>ts_rank</primary></indexterm>
+
+       <literal>ts_rank(<optional><replaceable class="parameter">веса</replaceable> <type>float4[]</type>,</optional> <replaceable class="parameter">вектор</replaceable> <type>tsvector</type>, <replaceable class="parameter">запрос</replaceable> <type>tsquery</type> <optional>, <replaceable class="parameter">нормализация</replaceable> <type>integer</type></optional>) returns <type>float4</type></literal>
+      </term>
+
+      <listitem>
+       <para>Ранжирует векторы по частоте найденных лексем.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+
+      <term>
+      <indexterm><primary>ts_rank_cd</primary></indexterm>
+
+       <literal>ts_rank_cd(<optional><replaceable class="parameter">веса</replaceable> <type>float4[]</type>,</optional> <replaceable class="parameter">вектор</replaceable> <type>tsvector</type>, <replaceable class="parameter">запрос</replaceable> <type>tsquery</type> <optional>, <replaceable class="parameter">нормализация</replaceable> <type>integer</type></optional>) returns <type>float4</type></literal>
+      </term>
+
+      <listitem>
+       <para>Эта функция вычисляет <firstterm>плотность покрытия</firstterm> для данного вектора документа и запроса, используя метод, разработанный Кларком, Кормаком и Тадхоуп и описанный в статье "Relevance Ranking for One to Three Term Queries" в журнале "Information Processing and Management" в 1999 г. Плотность покрытия вычисляется подобно рангу <function>ts_rank</function>, но в расчёт берётся ещё и близость соответствующих лексем друг к другу.</para>
+
+       <para>Для вычисления результата этой функции требуется информация о позиции лексем. Поэтому она игнорируют <quote>очищенные</quote> от этой информации лексемы в <type>tsvector</type>. Если во входных данных нет неочищенных лексем, результат будет равен нулю. (За дополнительными сведениями о функции <function>strip</function> и позиционной информации в данных <type>tsvector</type> обратитесь к <xref remap="3" linkend="textsearch-manipulate-tsvector"/>.)</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+
+   <para>Для обеих этих функций аргумент <replaceable class="parameter">веса</replaceable> позволяет придать больший или меньший вес словам, в зависимости от их меток. В передаваемом массиве весов определяется, насколько весома каждая категория слов, в следующем порядке: <synopsis>
+{вес D, вес C, вес B, вес A}
+</synopsis> Если этот аргумент опускается, подразумеваются следующие значения: <programlisting>{0.1, 0.2, 0.4, 1.0}</programlisting> Обычно весами выделяются слова из особых областей документа, например из заголовка или краткого введения, с тем, чтобы эти слова считались более и менее значимыми, чем слова в основном тексте документа.</para>
+
+   <para>Так как вероятность найти ключевые слова увеличивается с размером документа, при ранжировании имеет смысл учитывать его, чтобы, например, документ с сотней слов, содержащий пять вхождений искомых слов, считался более релевантным, чем документ с тысячей слов и теми же пятью вхождениями. Обе функции ранжирования принимают целочисленный параметр <replaceable>нормализации</replaceable>, определяющий, как ранг документа будет зависеть от его размера. Этот параметр представляет собой битовую маску и управляет несколькими режимами: вы можете включить сразу несколько режимов, объединив значения оператором <literal>|</literal> (например так: <literal>2|4</literal>). <itemizedlist spacing="compact" mark="bullet">
+     <listitem>
+      <para>0 (по умолчанию): длина документа не учитывается</para>
+     </listitem>
+     <listitem>
+      <para>1: ранг документа делится на 1 + логарифм длины документа</para>
+     </listitem>
+     <listitem>
+      <para>2: ранг документа делится на его длину</para>
+     </listitem>
+     <listitem>
+      <para>4: ранг документа делится на среднее гармоническое расстояние между блоками (это реализовано только в <function>ts_rank_cd</function>)</para>
+     </listitem>
+     <listitem>
+      <para>8: ранг документа делится на число уникальных слов в документе</para>
+     </listitem>
+     <listitem>
+      <para>16: ранг документа делится на 1 + логарифм числа уникальных слов в документе</para>
+     </listitem>
+     <listitem>
+      <para>32: ранг делится своё же значение + 1</para>
+     </listitem>
+    </itemizedlist> Если включены несколько флагов, соответствующие операции выполняются в показанном порядке.</para>
+
+   <para>Важно заметить, что функции ранжирования не используют никакую внешнюю информацию, так что добиться нормализации до 1% или 100% невозможно, хотя иногда это желательно. Применив параметр 32 (<literal>rank/(rank+1)</literal>), можно свести все ранги к диапазону 0..1, но это изменение будет лишь косметическим, на порядке сортировки результатов это не отразится.</para>
+
+   <para>В данном примере выбираются десять найденных документов с максимальным рангом: <screen>
+SELECT title, ts_rank_cd(textsearch, query) AS rank
+FROM apod, to_tsquery('neutrino|(dark &amp; matter)') query
+WHERE query @@ textsearch
+ORDER BY rank DESC
+LIMIT 10;
+                     title                     |   rank
+-----------------------------------------------+----------
+ Neutrinos in the Sun                          |      3.1
+ The Sudbury Neutrino Detector                 |      2.4
+ A MACHO View of Galactic Dark Matter          |  2.01317
+ Hot Gas and Dark Matter                       |  1.91171
+ The Virgo Cluster: Hot Plasma and Dark Matter |  1.90953
+ Rafting for Solar Neutrinos                   |      1.9
+ NGC 4650A: Strange Galaxy and Dark Matter     |  1.85774
+ Hot Gas and Dark Matter                       |   1.6123
+ Ice Fishing for Cosmic Neutrinos              |      1.6
+ Weak Lensing Distorts the Universe            | 0.818218
+</screen> Тот же пример с нормализованным рангом: <screen>
+SELECT title, ts_rank_cd(textsearch, query, 32 /* rank/(rank+1) */ ) AS rank
+FROM apod, to_tsquery('neutrino|(dark &amp; matter)') query
+WHERE  query @@ textsearch
+ORDER BY rank DESC
+LIMIT 10;
+                     title                     |        rank
+-----------------------------------------------+-------------------
+ Neutrinos in the Sun                          | 0.756097569485493
+ The Sudbury Neutrino Detector                 | 0.705882361190954
+ A MACHO View of Galactic Dark Matter          | 0.668123210574724
+ Hot Gas and Dark Matter                       |  0.65655958650282
+ The Virgo Cluster: Hot Plasma and Dark Matter | 0.656301290640973
+ Rafting for Solar Neutrinos                   | 0.655172410958162
+ NGC 4650A: Strange Galaxy and Dark Matter     | 0.650072921219637
+ Hot Gas and Dark Matter                       | 0.617195790024749
+ Ice Fishing for Cosmic Neutrinos              | 0.615384618911517
+ Weak Lensing Distorts the Universe            | 0.450010798361481
+</screen></para>
+
+   <para>Ранжирование может быть довольно дорогостоящей операцией, так как для вычисления ранга необходимо прочитать <type>tsvector</type> каждого подходящего документа и это займёт значительное время, если придётся обращаться к диску. К сожалению, избежать этого вряд ли возможно, так как на практике по многим запросам выдаётся большое количество результатов.</para>
+
+  </sect2>
+
+  <sect2 id="textsearch-headline">
+   <title>Выделение результатов</title>
+
+   <para>Представляя результаты поиска, в идеале нужно выделять часть документа и показывать, как он связан с запросом. Обычно поисковые системы показывают фрагменты документа с отмеченными искомыми словами. В <productname>&productname;</productname> для реализации этой возможности представлена функция <function>ts_headline</function>.</para>
+
+   <indexterm><primary>ts_headline</primary></indexterm>
+
+<synopsis>ts_headline(<optional><replaceable class="parameter">конфигурация</replaceable> <type>regconfig</type>,</optional> <replaceable class="parameter">документ</replaceable> <type>text</type>, <replaceable class="parameter">запрос</replaceable> <type>tsquery</type> <optional>, <replaceable class="parameter">параметры</replaceable> <type>text</type></optional>)
+  returns <type>text</type></synopsis>
+
+   <para><function>ts_headline</function> принимает документ вместе с запросом и возвращает выдержку из документа, в которой выделяются слова из запроса. Применяемую для разбора документа конфигурацию можно указать в параметре <replaceable>config</replaceable>; если этот параметр опущен, применяется конфигурация <varname>default_text_search_config</varname>.</para>
+
+   <para>Если в параметрах передаётся строка <replaceable>options</replaceable>, она должна состоять из списка разделённых запятыми пар <replaceable>параметр</replaceable><literal>=</literal><replaceable>значение</replaceable>. Параметры могут быть следующими: <itemizedlist spacing="compact" mark="bullet">
+     <listitem>
+      <para><literal>StartSel</literal>, <literal>StopSel</literal>: строки, которые будут разграничивать слова запроса в документе, выделяя их среди остальных. Если эти строки содержат пробелы или запятые, их нужно заключить в кавычки.</para>
+     </listitem>
+     <listitem>
+      <para><literal>MaxWords</literal>, <literal>MinWords</literal>: эти числа определяет нижний и верхний предел размера выдержки.</para>
+     </listitem>
+     <listitem>
+      <para><literal>ShortWord</literal>: слова такой длины или короче в начале и конце выдержки будут отбрасываться. Значение по умолчанию, равное 3, исключает распространённые английские артикли.</para>
+     </listitem>
+     <listitem>
+      <para><literal>HighlightAll</literal>: логический флаг; если он равен <literal>true</literal>, выдержкой будет весь документ и три предыдущие параметра игнорируются.</para>
+     </listitem>
+     <listitem>
+      <para><literal>MaxFragments</literal>: максимальное число выводимых текстовых выдержек или фрагментов. Значение по умолчанию, равное 0, выбирает метод создания выдержки без фрагментов. При значении большем 0 выбирается метод с фрагментами, когда находятся все фрагменты, содержащие как можно больше слов запроса, а затем они сжимаются до слов запроса. Такие фрагменты могут содержать какие-то ключевые слова в середине и ограничиваются двумя искомыми словами. При этом фрагменты могут содержать не больше <literal>MaxWords</literal> слов, а в начале и конце они будут очищены от слов длины <literal>ShortWord</literal> и меньше. Если в документе найдены не все слова запроса, выводится один фрагмент, включающий первые <literal>MinWords</literal> слов в документе.</para>
+     </listitem>
+     <listitem>
+      <para><literal>FragmentDelimiter</literal>: Когда выводятся несколько фрагментов, они будут разделяться этой строкой.</para>
+     </listitem>
+    </itemizedlist> Все явно не определённые параметры получают такие значения по умолчанию: <programlisting>StartSel=&lt;b&gt;, StopSel=&lt;/b&gt;,
+MaxWords=35, MinWords=15, ShortWord=3, HighlightAll=FALSE,
+MaxFragments=0, FragmentDelimiter=" ... "</programlisting></para>
+
+   <para>Пример использования: <screen>
+SELECT ts_headline('english',
+  'The most common type of search
+is to find all documents containing given query terms
+and return them in order of their similarity to the
+query.',
+  to_tsquery('query &amp; similarity'));
+                        ts_headline                         
+------------------------------------------------------------
+ containing given &lt;b&gt;query&lt;/b&gt; terms
+ and return them in order of their &lt;b&gt;similarity&lt;/b&gt; to the
+ &lt;b&gt;query&lt;/b&gt;.
+
+SELECT ts_headline('english',
+  'The most common type of search
+is to find all documents containing given query terms
+and return them in order of their similarity to the
+query.',
+  to_tsquery('query &amp; similarity'),
+  'StartSel = &lt;, StopSel = &gt;');
+                      ts_headline                      
+-------------------------------------------------------
+ containing given &lt;query&gt; terms
+ and return them in order of their &lt;similarity&gt; to the
+ &lt;query&gt;.
+</screen></para>
+
+   <para>Функция <function>ts_headline</function> работает с оригинальным документом, а не его сжатым представлением <type>tsvector</type>, так что она может быть медленной и использовать её следует осмотрительно.</para>
+
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="textsearch-features">
+  <title>Дополнительные возможности</title>
+
+  <para>В этом разделе описываются дополнительные функции и операторы, которые могут быть полезны при поиске текста.</para>
+
+  <sect2 id="textsearch-manipulate-tsvector">
+   <title>Обработка документов</title>
+
+   <para>В <xref remap="6" linkend="textsearch-parsing-documents"/> показывалось, как обычные текстовые документы можно преобразовать в значения <type>tsvector</type>. <productname>&productname;</productname> предлагает также набор функций и операторов для обработки документов, уже представленных в формате <type>tsvector</type>.</para>
+
+   <variablelist>
+
+    <varlistentry>
+
+     <term>
+     <indexterm><primary>конкатенация значений tsvector</primary></indexterm>
+
+      <literal><type>tsvector</type> || <type>tsvector</type></literal>
+     </term>
+
+     <listitem>
+      <para>Оператор конкатенации значений <type>tsvector</type> возвращает вектор, объединяющий лексемы и позиционную информацию двух векторов, переданных ему в аргументах. В полученном результате сохраняются позиции и метки весов. При этом позиции в векторе справа сдвигаются на максимальное значение позиции в векторе слева, что почти равносильно применению <function>to_tsvector</function> к результату конкатенации двух исходных строк документов. (Почти, потому что стоп-слова, исключаемые в конце левого аргумента, при конкатенации исходных строк влияют на позиции лексем в правой части, а при конкатенации <type>tsvector</type> &mdash; нет.)</para>
+
+      <para>Преимущество же конкатенации документов в векторной форме по сравнению с конкатенацией текста до вызова <function>to_tsvector</function> заключается в том, что так можно разбирать разные части документа, применяя разные конфигурации. И так как функция <function>setweight</function> помечает все лексемы данного вектора одинаково, разбирать текст и выполнять <function>setweight</function> нужно до объединения разных частей документа с подразумеваемым разным весом.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+
+     <term>
+     <indexterm><primary>setweight</primary></indexterm>
+
+      <literal>setweight(<replaceable class="parameter">вектор</replaceable> <type>tsvector</type>, <replaceable class="parameter">вес</replaceable> <type>"char"</type>) returns <type>tsvector</type></literal>
+     </term>
+
+     <listitem>
+      <para><function>setweight</function> возвращает копию входного вектора, помечая в ней каждую позицию заданным <replaceable>весом</replaceable>, меткой <literal>A</literal>, <literal>B</literal>, <literal>C</literal> или <literal>D</literal>. (Метка <literal>D</literal> по умолчанию назначается всем векторам, так что при выводе она опускается.) Эти метки сохраняются при конкатенации векторов, что позволяет придавать разные веса словам из разных частей документа и, как следствие, ранжировать их по-разному.</para>
+
+      <para>Заметьте, что веса назначаются <emphasis>позициям</emphasis>, а не <emphasis>лексемам</emphasis>. Если входной вектор очищен от позиционной информации, <function>setweight</function> не делает ничего.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+     <indexterm><primary>length(tsvector)</primary></indexterm>
+
+      <literal>length(<replaceable class="parameter">вектор</replaceable> <type>tsvector</type>) returns <type>integer</type></literal>
+     </term>
+
+     <listitem>
+      <para>Возвращает число лексем, сохранённых в векторе.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+
+     <term>
+     <indexterm><primary>strip</primary></indexterm>
+
+      <literal>strip(<replaceable class="parameter">вектор</replaceable> <type>tsvector</type>) returns <type>tsvector</type></literal>
+     </term>
+
+     <listitem>
+      <para>Возвращает вектор с теми же лексемами, что и в данном, но без информации о позиции и весе. Очищенный вектор обычно оказывается намного меньше исходного, но при этом и менее полезным. С очищенными векторами хуже работает ранжирование, а также оператор <literal>&lt;-&gt;</literal> (ПРЕДШЕСТВУЕТ) типа <type>tsquery</type> никогда не найдёт соответствие в них, так как не сможет определить расстояние между вхождениями лексем.</para>
+     </listitem>
+
+    </varlistentry>
+
+   </variablelist>
+
+   <para>Полный список связанных с <type>tsvector</type> функций приведён в <xref remap="6" linkend="textsearch-functions-table"/>.</para>
+
+  </sect2>
+
+  <sect2 id="textsearch-manipulate-tsquery">
+   <title>Обработка запросов</title>
+
+   <para>В <xref remap="6" linkend="textsearch-parsing-queries"/> показывалось, как обычные текстовые запросы можно преобразовывать в значения <type>tsquery</type>. <productname>&productname;</productname> предлагает также набор функций и операторов для обработки запросов, уже представленных в формате <type>tsquery</type>.</para>
+
+   <variablelist>
+
+    <varlistentry>
+
+     <term>
+      <literal><type>tsquery</type> &amp;&amp; <type>tsquery</type></literal>
+     </term>
+
+     <listitem>
+      <para>Возвращает логическое произведение (AND) двух данных запросов.</para>
+     </listitem>
+
+    </varlistentry>
+
+    <varlistentry>
+
+     <term>
+      <literal><type>tsquery</type> || <type>tsquery</type></literal>
+     </term>
+
+     <listitem>
+      <para>Возвращает логическое объединение (OR) двух данных запросов.</para>
+     </listitem>
+
+    </varlistentry>
+
+    <varlistentry>
+
+     <term>
+      <literal>!! <type>tsquery</type></literal>
+     </term>
+
+     <listitem>
+      <para>Возвращает логическое отрицание (NOT) данного запроса.</para>
+     </listitem>
+
+    </varlistentry>
+
+    <varlistentry>
+
+     <term>
+      <literal><type>tsquery</type> &lt;-&gt; <type>tsquery</type></literal>
+     </term>
+
+     <listitem>
+      <para>Возвращает запрос, который ищет соответствие первому данному запросу, за которым следует соответствие второму данному запросу, с применением оператора <literal>&lt;-&gt;</literal> (ПРЕДШЕСТВУЕТ) типа <type>tsquery</type>. Например: <screen>
+SELECT to_tsquery('fat') &lt;-&gt; to_tsquery('cat | rat');
+             ?column?
+-----------------------------------
+ 'fat' &lt;-&gt; 'cat' | 'fat' &lt;-&gt; 'rat'
+</screen></para>
+     </listitem>
+
+    </varlistentry>
+
+    <varlistentry>
+
+     <term>
+     <indexterm><primary>tsquery_phrase</primary></indexterm>
+
+      <literal>tsquery_phrase(<replaceable class="parameter">запрос1</replaceable> <type>tsquery</type>, <replaceable class="parameter">запрос2</replaceable> <type>tsquery</type> [, <replaceable class="parameter">расстояние</replaceable> <type>integer</type> ]) returns <type>tsquery</type></literal>
+     </term>
+
+     <listitem>
+      <para>Возвращает запрос, который ищет соответствие первому данному запросу, за которым следует соответствие второму данному запросу (число лексем между ними задаётся параметром <replaceable>расстояние</replaceable>), с применением оператора <literal>&lt;<replaceable>N</replaceable>&gt;</literal> типа <type>tsquery</type>. Например: <screen>
+SELECT tsquery_phrase(to_tsquery('fat'), to_tsquery('cat'), 10);
+  tsquery_phrase
+------------------
+ 'fat' &lt;10&gt; 'cat'
+</screen></para>
+     </listitem>
+
+    </varlistentry>
+
+    <varlistentry>
+
+     <term>
+     <indexterm><primary>numnode</primary></indexterm>
+
+      <literal>numnode(<replaceable class="parameter">запрос</replaceable> <type>tsquery</type>) returns <type>integer</type></literal>
+     </term>
+
+     <listitem>
+      <para>Возвращает число узлов (лексем и операторов) в значении <type>tsquery</type>. Эта функция помогает определить, имеет ли смысл <replaceable>запрос</replaceable> (тогда её результат &gt; 0) или он содержит только стоп-слова (тогда она возвращает 0). Примеры: <screen>
+ SELECT numnode(plainto_tsquery('the any'));
+ЗАМЕЧАНИЕ:  запрос поиска текста игнорируется, так как содержит
+ только стоп-слова или не содержит лексем
+ numnode
+---------
+       0
+
+SELECT numnode('foo &amp; bar'::tsquery);
+ numnode
+---------
+       3
+</screen></para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+
+     <term>
+     <indexterm><primary>querytree</primary></indexterm>
+
+      <literal>querytree(<replaceable class="parameter">запрос</replaceable> <type>tsquery</type>) returns <type>text</type></literal>
+     </term>
+
+     <listitem>
+      <para>Возвращает часть <type>tsquery</type>, которую можно использовать для поиска по индексу. Эта функция помогает выявить неиндексируемые запросы, например, такие, которые содержат только стоп-слова или условия отрицания. Например: <screen>
+SELECT querytree(to_tsquery('!defined'));
+ querytree
+-----------
+
+</screen></para>
+     </listitem>
+    </varlistentry>
+
+   </variablelist>
+
+   <sect3 id="textsearch-query-rewriting">
+    <title>Перезапись запросов</title>
+
+    <indexterm zone="textsearch-query-rewriting"><primary>ts_rewrite</primary></indexterm>
+
+    <para>Семейство запросов <function>ts_rewrite</function> ищет в данном <type>tsquery</type> вхождения целевого подзапроса и заменяет каждое вхождение указанной подстановкой. По сути эта операция похожа на замену подстроки в строке, только рассчитана на работу с <type>tsquery</type>. Сочетание целевого подзапроса с подстановкой можно считать <firstterm>правилом перезаписи запроса</firstterm>. Набор таких правил перезаписи может быть очень полезен при поиске. Например, вы можете улучшить результаты, добавив синонимы (например, <literal>big apple</literal>, <literal>nyc</literal> и <literal>gotham</literal> для <literal>new york</literal>) или сузить область поиска, чтобы нацелить пользователя на некоторую область. Это в некотором смысле пересекается с функциональностью тезаурусов (<xref linkend="textsearch-thesaurus"/>). Однако, при таком подходе вы можете изменять правила перезаписи &laquo;на лету&raquo;, тогда как при обновлении тезауруса необходима переиндексация.</para>
+
+    <variablelist>
+
+     <varlistentry>
+
+      <term>
+       <literal>ts_rewrite (<replaceable class="parameter">запрос</replaceable> <type>tsquery</type>, <replaceable class="parameter">цель</replaceable> <type>tsquery</type>, <replaceable class="parameter">замена</replaceable> <type>tsquery</type>) returns <type>tsquery</type></literal>
+      </term>
+
+      <listitem>
+       <para>Эта форма <function>ts_rewrite</function> просто применяет одно правило перезаписи: <replaceable class="parameter">цель</replaceable> заменяется <replaceable class="parameter">подстановкой</replaceable> везде, где она находится в <replaceable class="parameter">запросе</replaceable>. Например: <screen>
+SELECT ts_rewrite('a &amp; b'::tsquery, 'a'::tsquery, 'c'::tsquery);
+ ts_rewrite
+------------
+ 'b' &amp; 'c'
+</screen></para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+
+      <term>
+       <literal>ts_rewrite (<replaceable class="parameter">запрос</replaceable> <type>tsquery</type>, <replaceable class="parameter">выборка</replaceable> <type>text</type>) returns <type>tsquery</type></literal>
+      </term>
+
+      <listitem>
+       <para>Эта форма <function>ts_rewrite</function> принимает начальный <replaceable>запрос</replaceable> и SQL-команду <replaceable>select</replaceable>, которая задаётся текстовой строкой. Команда <replaceable>select</replaceable> должна выдавать два столбца типа <type>tsquery</type>. Для каждой строки результата <replaceable>select</replaceable> вхождения первого столбца (цели) заменяются значениями второго столбца (подстановкой) в тексте <replaceable>запроса</replaceable>. Например: <screen>
+CREATE TABLE aliases (t tsquery PRIMARY KEY, s tsquery);
+INSERT INTO aliases VALUES('a', 'c');
+
+SELECT ts_rewrite('a &amp; b'::tsquery, 'SELECT t,s FROM aliases');
+ ts_rewrite
+------------
+ 'b' &amp; 'c'
+</screen></para>
+
+       <para>Заметьте, что когда таким способом применяются несколько правил перезаписи, порядок их применения может иметь значение, поэтому в исходном запросе следует добавить <literal>ORDER BY</literal> по какому-либо ключу.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+
+    <para>Давайте рассмотрим практический пример на тему астрономии. Мы развернём запрос <literal>supernovae</literal>, используя правила перезаписи в таблице: <screen>
+CREATE TABLE aliases (t tsquery primary key, s tsquery);
+INSERT INTO aliases VALUES(to_tsquery('supernovae'),
+  to_tsquery('supernovae|sn'));
+
+SELECT ts_rewrite(to_tsquery('supernovae &amp; crab'), 'SELECT * FROM aliases');
+           ts_rewrite            
+---------------------------------
+ 'crab' &amp; ( 'supernova' | 'sn' )
+</screen> Мы можем скорректировать правила перезаписи, просто изменив таблицу: <screen>
+UPDATE aliases
+SET s = to_tsquery('supernovae|sn &amp; !nebulae')
+WHERE t = to_tsquery('supernovae');
+
+SELECT ts_rewrite(to_tsquery('supernovae &amp; crab'), 'SELECT * FROM aliases');
+                 ts_rewrite                  
+---------------------------------------------
+ 'crab' &amp; ( 'supernova' | 'sn' &amp; !'nebula' )
+</screen></para>
+
+    <para>Перезапись может быть медленной, когда задано много правил перезаписи, так как соответствия будут проверяться для каждого правила. Чтобы отфильтровать явно неподходящие правила, можно использовать проверки включения для типа <type>tsquery</type>. В следующем примере выбираются только те правила, которые могут соответствовать исходному запросу: <screen>
+SELECT ts_rewrite('a &amp; b'::tsquery,
+                  'SELECT t,s FROM aliases WHERE ''a &amp; b''::tsquery @&gt; t');
+ ts_rewrite
+------------
+ 'b' &amp; 'c'
+</screen></para>
+
+   </sect3>
+
+  </sect2>
+
+  <sect2 id="textsearch-update-triggers">
+   <title>Триггеры для автоматического обновления</title>
+
+   <indexterm><primary>триггер</primary> <secondary>для обновления столбца с производным значением tsvector</secondary></indexterm>
+
+   <para>Когда представление документа в формате <type>tsvector</type> хранится в отдельном столбце, необходимо создать триггер, который будет обновлять его содержимое при изменении столбцов, из которых составляется исходный документ. Для этого можно использовать две встроенные триггерные функции или написать свои собственные.</para>
+
+<synopsis>tsvector_update_trigger(<replaceable class="parameter">столбец_tsvector</replaceable>, <replaceable class="parameter">имя_конфигурации</replaceable>, <replaceable class="parameter">столбец_текста</replaceable> <optional>, ...</optional>)
+tsvector_update_trigger_column(<replaceable class="parameter">столбец_tsvector</replaceable>, <replaceable class="parameter">столбец_конфигурации</replaceable>,
+<replaceable class="parameter">столбец_текста</replaceable> <optional>, ...</optional>)</synopsis>
+
+   <para>Эти триггерные функции автоматически вычисляют значение для столбца <type>tsvector</type> из одного или нескольких текстовых столбцов с параметрами, указанными в команде <command>CREATE TRIGGER</command>. Пример их использования: <screen>
+CREATE TABLE messages (
+    title       text,
+    body        text,
+    tsv         tsvector
+);
+
+CREATE TRIGGER tsvectorupdate BEFORE INSERT OR UPDATE
+ON messages FOR EACH ROW EXECUTE PROCEDURE
+tsvector_update_trigger(tsv, 'pg_catalog.english', title, body);
+
+INSERT INTO messages VALUES('title here', 'the body text is here');
+
+SELECT * FROM messages;
+   title    |         body          |            tsv             
+------------+-----------------------+----------------------------
+ title here | the body text is here | 'bodi':4 'text':5 'titl':1
+
+SELECT title, body FROM messages WHERE tsv @@ to_tsquery('title &amp; body');
+   title    |         body          
+------------+-----------------------
+ title here | the body text is here
+</screen> С таким триггером любое изменение в полях <structfield>title</structfield> или <structfield>body</structfield> будет автоматически отражаться в содержимом <structfield>tsv</structfield>, так что приложению не придётся заниматься этим.</para>
+
+   <para>Первым аргументом этих функций должно быть имя столбца <type>tsvector</type>, содержимое которого будет обновляться. Ещё один аргумент &mdash; конфигурация текстового поиска, которая будет использоваться для преобразования. Для <function>tsvector_update_trigger</function> имя конфигурации передаётся просто как второй аргумент триггера. Это имя должно быть определено полностью, чтобы поведение триггера не менялось при изменениях в пути поиска (<varname>search_path</varname>). Для <function>tsvector_update_trigger_column</function> во втором аргументе триггера передаётся имя другого столбца таблицы, который должен иметь тип <type>regconfig</type>. Это позволяет использовать разные конфигурации для разных строк. В оставшихся аргументах передаются имена текстовых столбцов (типа <type>text</type>, <type>varchar</type> или <type>char</type>). Их содержимое будет включено в документ в заданном порядке. При этом значения NULL будут пропущены (а другие столбцы будут индексироваться).</para>
+
+   <para>Ограничение этих встроенных триггеров заключается в том, что они обрабатывают все столбцы одинаково. Чтобы столбцы обрабатывались по-разному, например для текста заголовка задавался не тот же вес, что для тела документа, потребуется разработать свой триггер. К примеру, так это можно сделать на языке <application>PL/pgSQL</application>: <programlisting>CREATE FUNCTION messages_trigger() RETURNS trigger AS $$
+begin
+  new.tsv :=
+     setweight(to_tsvector('pg_catalog.english', coalesce(new.title,'')),
+       'A') ||
+     setweight(to_tsvector('pg_catalog.english', coalesce(new.body,'')),
+       'D');
+  return new;
+end
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tsvectorupdate BEFORE INSERT OR UPDATE
+    ON messages FOR EACH ROW EXECUTE PROCEDURE messages_trigger();</programlisting></para>
+
+   <para>Помните, что, создавая значения <type>tsvector</type> в триггерах, важно явно указывать имя конфигурации, чтобы содержимое столбца не зависело от изменений <varname>default_text_search_config</varname>. В противном случае могут возникнуть проблемы, например результаты поиска изменятся после выгрузки и восстановления данных.</para>
+
+  </sect2>
+
+  <sect2 id="textsearch-statistics">
+   <title>Сбор статистики по документу</title>
+
+   <indexterm><primary>ts_stat</primary></indexterm>
+
+   <para>Функция <function>ts_stat</function> может быть полезна для проверки конфигурации и нахождения возможных стоп-слов.</para>
+
+<synopsis>ts_stat(<replaceable class="parameter">sql_запрос</replaceable> <type>text</type>, <optional><replaceable class="parameter">веса</replaceable> <type>text</type>,</optional>
+        OUT <replaceable class="parameter">слово</replaceable> <type>text</type>, OUT <replaceable class="parameter">число_док</replaceable> <type>integer</type>,
+        OUT <replaceable class="parameter">число_вхожд</replaceable> <type>integer</type>) returns <type>setof record</type></synopsis>
+
+   <para>Здесь <replaceable>sql_запрос</replaceable> &mdash; текстовая строка, содержащая SQL-запрос, который должен возвращать один столбец <type>tsvector</type>. Функция <function>ts_stat</function> выполняет запрос и возвращает статистику по каждой отдельной лексеме (слову), содержащейся в данных <type>tsvector</type>. Её результат представляется в столбцах <itemizedlist spacing="compact" mark="bullet">
+     <listitem>
+      <para><replaceable>слово</replaceable> <type>text</type> &mdash; значение лексемы</para>
+     </listitem>
+     <listitem>
+      <para><replaceable>число_док</replaceable> <type>integer</type> &mdash; число документов (значений <type>tsvector</type>), в которых встретилось слово</para>
+     </listitem>
+     <listitem>
+      <para><replaceable>число_вхожд</replaceable> <type>integer</type> &mdash; общее число вхождений слова</para>
+     </listitem>
+    </itemizedlist> Если передаётся параметр <replaceable>weights</replaceable>, то подсчитываются только вхождения с указанными в нём весами.</para>
+
+   <para>Например, найти десять наиболее часто используемых слов в коллекции документов можно так: <programlisting>SELECT * FROM ts_stat('SELECT vector FROM apod')
+ORDER BY nentry DESC, ndoc DESC, word
+LIMIT 10;</programlisting> Следующий запрос возвращает тоже десять слов, но при выборе их учитываются только вхождения с весами <literal>A</literal> или <literal>B</literal>: <programlisting>SELECT * FROM ts_stat('SELECT vector FROM apod', 'ab')
+ORDER BY nentry DESC, ndoc DESC, word
+LIMIT 10;</programlisting></para>
+
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="textsearch-parsers">
+  <title>Анализаторы</title>
+
+  <para>Задача анализаторов текста &mdash; разделить текст документа на <firstterm>фрагменты</firstterm> и присвоить каждому из них тип из набора, определённого в самом анализаторе. Заметьте, что анализаторы не меняют текст &mdash; они просто выдают позиции предполагаемых слов. Вследствие такой ограниченности их функций, собственные специфические анализаторы бывают нужны гораздо реже, чем собственные словари. В настоящее время в <productname>&productname;</productname> есть только один встроенный анализатор, который может быть полезен для широкого круга приложений.</para>
+
+  <para>Этот встроенный анализатор называется <literal>pg_catalog.default</literal>. Он распознаёт 23 типа фрагментов, перечисленные в <xref remap="6" linkend="textsearch-default-parser"/>.</para>
+
+  <table id="textsearch-default-parser">
+   <title>Типы фрагментов, выделяемых стандартным анализатором</title>
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Псевдоним</entry>
+      <entry>Описание</entry>
+      <entry>Пример</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><literal>asciiword</literal></entry>
+      <entry>Слово только из букв ASCII</entry>
+      <entry><literal>elephant</literal></entry>
+     </row>
+     <row>
+      <entry><literal>word</literal></entry>
+      <entry>Слово из любых букв</entry>
+      <entry><literal>ma&ntilde;ana</literal></entry>
+     </row>
+     <row>
+      <entry><literal>numword</literal></entry>
+      <entry>Слово из букв и цифр</entry>
+      <entry><literal>beta1</literal></entry>
+     </row>
+     <row>
+      <entry><literal>asciihword</literal></entry>
+      <entry>Слово только из букв ASCII с дефисами</entry>
+      <entry><literal>up-to-date</literal></entry>
+     </row>
+     <row>
+      <entry><literal>hword</literal></entry>
+      <entry>Слово из любых букв с дефисами</entry>
+      <entry><literal>l&oacute;gico-matem&aacute;tica</literal></entry>
+     </row>
+     <row>
+      <entry><literal>numhword</literal></entry>
+      <entry>Слово из букв и цифр с дефисами</entry>
+      <entry><literal>postgresql-beta1</literal></entry>
+     </row>
+     <row>
+      <entry><literal>hword_asciipart</literal></entry>
+      <entry>Часть слова с дефисами, только из букв ASCII</entry>
+      <entry><literal>postgresql</literal> в словосочетании <literal>postgresql-beta1</literal></entry>
+     </row>
+     <row>
+      <entry><literal>hword_part</literal></entry>
+      <entry>Часть слова с дефисами, из любых букв</entry>
+      <entry><literal>l&oacute;gico</literal> или <literal>matem&aacute;tica</literal> в словосочетании <literal>l&oacute;gico-matem&aacute;tica</literal></entry>
+     </row>
+     <row>
+      <entry><literal>hword_numpart</literal></entry>
+      <entry>Часть слова с дефисами, из букв и цифр</entry>
+      <entry><literal>beta1</literal> в словосочетании <literal>postgresql-beta1</literal></entry>
+     </row>
+     <row>
+      <entry><literal>email</literal></entry>
+      <entry>Адрес электронной почты</entry>
+      <entry><literal>foo@example.com</literal></entry>
+     </row>
+     <row>
+      <entry><literal>protocol</literal></entry>
+      <entry>Префикс протокола</entry>
+      <entry><literal>http://</literal></entry>
+     </row>
+     <row>
+      <entry><literal>url</literal></entry>
+      <entry>URL</entry>
+      <entry><literal>example.com/stuff/&#8203;index.html</literal></entry>
+     </row>
+     <row>
+      <entry><literal>host</literal></entry>
+      <entry>Имя узла</entry>
+      <entry><literal>example.com</literal></entry>
+     </row>
+     <row>
+      <entry><literal>url_path</literal></entry>
+      <entry>Путь в адресе URL</entry>
+      <entry><literal>/stuff/index.html</literal>, как часть URL</entry>
+     </row>
+     <row>
+      <entry><literal>file</literal></entry>
+      <entry>Путь или имя файла</entry>
+      <entry><literal>/usr/local/foo.txt</literal>, если не является частью URL</entry>
+     </row>
+     <row>
+      <entry><literal>sfloat</literal></entry>
+      <entry>Научная запись числа</entry>
+      <entry><literal>-1.234e56</literal></entry>
+     </row>
+     <row>
+      <entry><literal>float</literal></entry>
+      <entry>Десятичная запись числа</entry>
+      <entry><literal>-1.234</literal></entry>
+     </row>
+     <row>
+      <entry><literal>int</literal></entry>
+      <entry>Целое со знаком</entry>
+      <entry><literal>-1234</literal></entry>
+     </row>
+     <row>
+      <entry><literal>uint</literal></entry>
+      <entry>Целое без знака</entry>
+      <entry><literal>1234</literal></entry>
+     </row>
+     <row>
+      <entry><literal>version</literal></entry>
+      <entry>Номер версии</entry>
+      <entry><literal>8.3.0</literal></entry>
+     </row>
+     <row>
+      <entry><literal>tag</literal></entry>
+      <entry>Тег XML</entry>
+      <entry><literal>&lt;a href=&#8203;"dictionaries.html"&gt;</literal></entry>
+     </row>
+     <row>
+      <entry><literal>entity</literal></entry>
+      <entry>Сущность XML</entry>
+      <entry><literal>&amp;amp;</literal></entry>
+     </row>
+     <row>
+      <entry><literal>blank</literal></entry>
+      <entry>Символы-разделители</entry>
+      <entry>(любые пробельные символы или знаки препинания, не попавшие в другие категории)</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <note>
+   <para>Понятие <quote>буквы</quote> анализатор определяет исходя из локали, заданной для базы данных, в частности параметра <varname>lc_ctype</varname>. Слова, содержащие только буквы из ASCII (латинские буквы), распознаются как фрагменты отдельного типа, так как иногда бывает полезно выделить их. Для многих европейских языков типы фрагментов <literal>word</literal> и <literal>asciiword</literal> можно воспринимать как синонимы.</para>
+
+   <para><literal>email</literal> принимает не все символы, которые считаются допустимыми по стандарту RFC 5322. В частности, имя почтового ящика помимо алфавитно-цифровых символов может содержать только точку, минус и подчёркивание.</para>
+  </note>
+
+  <para>Анализатор может выделить в одном тексте несколько перекрывающихся фрагментов. Например, слово с дефисом будет выдано как целое составное слово и по частям: <screen>
+SELECT alias, description, token FROM ts_debug('foo-bar-beta1');
+      alias      |               description                |     token    
+-----------------+------------------------------------------+--------------
+ numhword        | Hyphenated word, letters and digits      | foo-bar-beta1
+ hword_asciipart | Hyphenated word part, all ASCII          | foo
+ blank           | Space symbols                            | -
+ hword_asciipart | Hyphenated word part, all ASCII          | bar
+ blank           | Space symbols                            | -
+ hword_numpart   | Hyphenated word part, letters and digits | beta1
+</screen> Это поведение считается желательным, так как это позволяет находить при последующем поиске и всё слово целиком, и его части. Ещё один показательный пример: <screen>
+SELECT alias, description, token
+FROM ts_debug('http://example.com/stuff/index.html');
+  alias   |  description  |            token             
+----------+---------------+------------------------------
+ protocol | Protocol head | http://
+ url      | URL           | example.com/stuff/index.html
+ host     | Host          | example.com
+ url_path | URL path      | /stuff/index.html
+</screen></para>
+
+ </sect1>
+
+ <sect1 id="textsearch-dictionaries">
+  <title>Словари</title>
+
+  <para>Словари полнотекстового поиска предназначены для исключения <firstterm>стоп-слов</firstterm> (слов, которые не должны учитываться при поиске) и <firstterm>нормализации</firstterm> слов, чтобы разные словоформы считались совпадающими. Успешно нормализованное слово называется <firstterm>лексемой</firstterm>. Нормализация и исключение стоп-слов не только улучшает качество поиска, но и уменьшает размер представления документа в формате <type>tsvector</type>, и, как следствие, увеличивает быстродействие. Нормализация не всегда имеет лингвистический смысл, обычно она зависит от требований приложения.</para>
+
+  <para>Несколько примеров нормализации: <itemizedlist spacing="compact" mark="bullet">
+
+    <listitem>
+     <para>Лингвистическая нормализация &mdash; словари Ispell пытаются свести слова на входе к нормализованной форме, а стеммеры убирают окончания слов</para>
+    </listitem>
+    <listitem>
+     <para>Адреса <acronym>URL</acronym> могут быть канонизированы, чтобы например следующие адреса считались одинаковыми: <itemizedlist spacing="compact" mark="bullet">
+       <listitem>
+        <para>http://www.pgsql.ru/db/mw/index.html</para>
+       </listitem>
+       <listitem>
+        <para>http://www.pgsql.ru/db/mw/</para>
+       </listitem>
+       <listitem>
+        <para>http://www.pgsql.ru/db/../db/mw/index.html</para>
+       </listitem>
+      </itemizedlist></para>
+    </listitem>
+    <listitem>
+     <para>Названия цветов могут быть заменены их шестнадцатеричными значениями, например <literal>red, green, blue, magenta -&gt; FF0000, 00FF00, 0000FF, FF00FF</literal></para>
+    </listitem>
+    <listitem>
+     <para>При индексировании чисел можно отбросить цифры в дробной части для сокращения множества всевозможных чисел, чтобы например <emphasis>3.14</emphasis>159265359, <emphasis>3.14</emphasis>15926 и <emphasis>3.14</emphasis> стали одинаковыми после нормализации, при которой после точки останутся только две цифры.</para>
+    </listitem>
+   </itemizedlist></para>
+
+  <para>Словарь &mdash; это программа, которая принимает на вход фрагмент и возвращает: <itemizedlist spacing="compact" mark="bullet">
+    <listitem>
+     <para>массив лексем, если входной фрагмент известен в словаре (заметьте, один фрагмент может породить несколько лексем)</para>
+    </listitem>
+    <listitem>
+     <para>одну лексему с установленным флагом <literal>TSL_FILTER</literal> для замены исходного фрагмента новым, чтобы следующие словари работали с новым вариантом (словарь, который делает это, называется <firstterm>фильтрующим словарём</firstterm>)</para>
+    </listitem>
+    <listitem>
+     <para>пустой массив, если словарь воспринимает этот фрагмент, но считает его стоп-словом</para>
+    </listitem>
+    <listitem>
+     <para><literal>NULL</literal>, если словарь не воспринимает полученный фрагмент</para>
+    </listitem>
+   </itemizedlist></para>
+
+  <para>В <productname>&productname;</productname> встроены стандартные словари для многих языков. Есть также несколько предопределённых шаблонов, на основании которых можно создавать новые словари с изменёнными параметрами. Все эти шаблоны описаны ниже. Если же ни один из них не подходит, можно создать и свои собственные шаблоны. Соответствующие примеры можно найти в каталоге <filename>contrib/</filename> инсталляции <productname>&productname;</productname>.</para>
+
+  <para>Конфигурация текстового поиска связывает анализатор с набором словарей, которые будут обрабатывать выделенные им фрагменты. Для каждого типа фрагментов, выданных анализатором, в конфигурации задаётся отдельный список словарей. Найденный анализатором фрагмент проходит через все словари по порядку, пока какой-либо словарь не увидит в нём знакомое для него слово. Если он окажется стоп-словом или его не распознает ни один словарь, этот фрагмент не будет учитываться при индексации и поиске. Обычно результат определяет первый же словарь, который возвращает не <literal>NULL</literal>, и остальные словари уже не проверяются; однако фильтрующий словарь может заменить полученное слово другим, которое и будет передано следующим словарям.</para>
+
+  <para>Общее правило настройки списка словарей заключается в том, чтобы поставить наиболее частные и специфические словари в начале, затем перечислить более общие и закончить самым общим словарём, например стеммером <application>Snowball</application> или словарём <literal>simple</literal>, который распознаёт всё. Например, для поиска по теме астрономии (конфигурация <literal>astro_en</literal>) тип фрагментов <type>asciiword</type> (слово из букв ASCII) можно связать со словарём синонимов астрономических терминов, затем с обычным английским словарём и наконец со стеммером английских окончаний <application>Snowball</application>: <programlisting>ALTER TEXT SEARCH CONFIGURATION astro_en
+    ADD MAPPING FOR asciiword WITH astrosyn, english_ispell, english_stem;</programlisting></para>
+
+  <para>Фильтрующий словарь можно включить в любом месте списка, кроме конца, где он будет бесполезен. Фильтрующие словари бывают полезны для частичной нормализации слов и упрощения задачи следующих словарей. Например, фильтрующий словарь может удалить из текста диакритические знаки, как это делает модуль <xref linkend="unaccent"/>.</para>
+
+  <sect2 id="textsearch-stopwords">
+   <title>Стоп-слова</title>
+
+   <para>Стоп-словами называются слова, которые встречаются очень часто, практически в каждом документе, и поэтому не имеют различительной ценности. Таким образом, при полнотекстовом поиске их можно игнорировать. Например, в каждом английском тексте содержатся артикли <literal>a</literal> и <literal>the</literal>, так что хранить их в индексе бессмысленно. Однако стоп-слова влияют на позиции лексем в значении <type>tsvector</type>, от чего, в свою очередь, зависит ранжирование: <screen>
+SELECT to_tsvector('english','in the list of stop words');
+        to_tsvector
+----------------------------
+ 'list':3 'stop':5 'word':6
+</screen> В результате отсутствуют позиции 1,2,4, потому что фрагменты в этих позициях оказались стоп-словами. Ранги, вычисленные для документов со стоп-словами и без них, могут значительно различаться: <screen>
+SELECT ts_rank_cd (to_tsvector('english','in the list of stop words'),
+  to_tsquery('list &amp; stop'));
+ ts_rank_cd
+------------
+       0.05
+
+SELECT ts_rank_cd (to_tsvector('english','list stop words'),
+  to_tsquery('list &amp; stop'));
+ ts_rank_cd
+------------
+        0.1
+</screen></para>
+
+   <para>Как именно обрабатывать стоп-слова, определяет сам словарь. Например, словари <literal>ispell</literal> сначала нормализуют слова, а затем просматривают список стоп-слов, тогда как стеммеры <literal>Snowball</literal> просматривают свой список стоп-слов в первую очередь. Это различие в поведении объясняется стремлением уменьшить шум.</para>
+
+  </sect2>
+
+  <sect2 id="textsearch-simple-dictionary">
+   <title>Простой словарь</title>
+
+   <para>Работа шаблона словарей <literal>simple</literal> сводится к преобразованию входного фрагмента в нижний регистр и проверки результата по файлу со списком стоп-слов. Если это слово находится в файле, словарь возвращает пустой массив и фрагмент исключается из дальнейшего рассмотрения. В противном случае словарь возвращает в качестве нормализованной лексемы слово в нижнем регистре. Этот словарь можно настроить и так, чтобы все слова, кроме стоп-слов, считались неопознанными и передавались следующему словарю в списке.</para>
+
+   <para>Определить словарь на основе шаблона <literal>simple</literal> можно так: <programlisting>CREATE TEXT SEARCH DICTIONARY public.simple_dict (
+    TEMPLATE = pg_catalog.simple,
+    STOPWORDS = english
+);</programlisting> Здесь <literal>english</literal> &mdash; базовое имя файла со стоп-словами. Полным именем файла будет <filename>$SHAREDIR/tsearch_data/english.stop</filename>, где <literal>$SHAREDIR</literal> указывает на каталог с общими данными <productname>&productname;</productname>, часто это <filename>/usr/local/share/postgresql</filename> (точно узнать его можно с помощью команды <command>pg_config --sharedir</command>). Этот текстовый файл должен содержать просто список слов, по одному слову в строке. Пустые строки и окружающие пробелы игнорируются, все символы переводятся в нижний регистр и на этом обработка файла заканчивается.</para>
+
+   <para>Теперь мы можем проверить наш словарь: <screen>
+SELECT ts_lexize('public.simple_dict','YeS');
+ ts_lexize
+-----------
+ {yes}
+
+SELECT ts_lexize('public.simple_dict','The');
+ ts_lexize
+-----------
+ {}
+</screen></para>
+
+   <para>Мы также можем настроить словарь так, чтобы он возвращал <literal>NULL</literal> вместо слова в нижнем регистре, если оно не находится в файле стоп-слов. Для этого нужно присвоить параметру <literal>Accept</literal> значение <literal>false</literal>. Продолжая наш пример: <screen>
+ALTER TEXT SEARCH DICTIONARY public.simple_dict ( Accept = false );
+
+SELECT ts_lexize('public.simple_dict','YeS');
+ ts_lexize
+-----------
+
+
+SELECT ts_lexize('public.simple_dict','The');
+ ts_lexize
+-----------
+ {}
+</screen></para>
+
+   <para>Со значением <literal>Accept</literal> = <literal>true</literal> (по умолчанию) словарь <literal>simple</literal> имеет смысл включать только в конце списка словарей, так как он никогда не передаст фрагмент следующему словарю. И напротив, <literal>Accept</literal> = <literal>false</literal> имеет смысл, только если за ним следует ещё минимум один словарь.</para>
+
+   <caution>
+    <para>Большинство словарей работают с дополнительными файлами, например, файлами стоп-слов. Содержимое этих файлов <emphasis>должно</emphasis> иметь кодировку UTF-8. Если база данных работает в другой кодировке, они будут переведены в неё, когда сервер будет загружать их.</para>
+   </caution>
+
+   <caution>
+    <para>Обычно в рамках одного сеанса дополнительный файл словаря загружается только один раз, при первом использовании. Если же вы измените его и захотите, чтобы существующие сеансы работали с новым содержимым, выполните для этого словаря команду <command>ALTER TEXT SEARCH DICTIONARY</command>. Это обновление словаря может быть <quote>фиктивным</quote>, фактически не меняющим значения никаких параметров.</para>
+   </caution>
+
+  </sect2>
+
+  <sect2 id="textsearch-synonym-dictionary">
+   <title>Словарь синонимов</title>
+
+   <para>Этот шаблон словарей используется для создания словарей, заменяющих слова синонимами. Словосочетания такие словари не поддерживают (используйте для этого тезаурус (<xref linkend="textsearch-thesaurus"/>)). Словарь синонимов может помочь в преодолении лингвистических проблем, например, не дать стеммеру английского уменьшить слово <quote>Paris</quote> до <quote>pari</quote>. Для этого достаточно поместить в словарь синонимов строку <literal>Paris paris</literal> и поставить этот словарь перед словарём <literal>english_stem</literal>. Например: <screen>
+SELECT * FROM ts_debug('english', 'Paris');
+   alias  |   description  | token|  dictionaries |  dictionary | lexemes
+----------+----------------+------+---------------+-------------+--------
+ asciiword| Word, all ASCII| Paris| {english_stem}| english_stem| {pari}
+
+CREATE TEXT SEARCH DICTIONARY my_synonym (
+    TEMPLATE = synonym,
+    SYNONYMS = my_synonyms
+);
+
+ALTER TEXT SEARCH CONFIGURATION english
+    ALTER MAPPING FOR asciiword
+    WITH my_synonym, english_stem;
+
+SELECT * FROM ts_debug('english', 'Paris');
+   alias  |   description  | token| dictionaries | dictionary| lexemes
+----------+----------------+------+--------------+-----------+--------
+ asciiword| Word, all ASCII| Paris| {my_synonym, | my_synonym| {paris}
+          |                |      | english_stem}|           |
+</screen></para>
+
+   <para>Шаблон <literal>synonym</literal> принимает единственный параметр, <literal>SYNONYMS</literal>, в котором задаётся базовое имя его файла конфигурации &mdash; в данном примере это <literal>my_synonyms</literal>. Полным именем файла будет <filename>$SHAREDIR/tsearch_data/my_synonyms.syn</filename> (где <literal>$SHAREDIR</literal> указывает на каталог общих данных <productname>&productname;</productname>). Содержимое этого файла должны составлять строки с двумя словами в каждой (первое &mdash; заменяемое слово, а второе &mdash; его синоним), разделёнными пробелами. Пустые строки и окружающие пробелы при разборе этого файла игнорируются.</para>
+
+   <para>Шаблон <literal>synonym</literal> также принимает необязательный параметр <literal>CaseSensitive</literal>, который по умолчанию имеет значение <literal>false</literal>. Когда <literal>CaseSensitive</literal> равен <literal>false</literal>, слова в файле синонимов переводятся в нижний регистр, вместе с проверяемыми фрагментами. Если же он не равен <literal>true</literal>, регистр слов в файле и проверяемых фрагментов не меняются, они сравниваются &laquo;как есть&raquo;.</para>
+
+   <para>В конце синонима в этом файле можно добавить звёздочку (<literal>*</literal>), тогда этот синоним будет рассматриваться как префикс. Эта звёздочка будет игнорироваться в <function>to_tsvector()</function>, но <function>to_tsquery()</function> изменит результат, добавив в него маркер сопоставления префикса (см. <xref remap="4" linkend="textsearch-parsing-queries"/>). Например, предположим, что файл <filename>$SHAREDIR/tsearch_data/synonym_sample.syn</filename> имеет следующее содержание: <programlisting>postgres        pgsql
+postgresql      pgsql
+postgre pgsql
+gogle   googl
+indices index*</programlisting> С ним мы получим такие результаты: <screen>
+mydb=# CREATE TEXT SEARCH DICTIONARY
+  syn (template=synonym, synonyms='synonym_sample');
+mydb=# SELECT ts_lexize('syn','indices');
+ ts_lexize
+-----------
+ {index}
+(1 row)
+
+mydb=# CREATE TEXT SEARCH CONFIGURATION tst (copy=simple);
+mydb=# ALTER TEXT SEARCH CONFIGURATION tst ALTER MAPPING FOR asciiword
+  WITH syn;
+mydb=# SELECT to_tsvector('tst','indices');
+ to_tsvector
+-------------
+ 'index':1
+(1 row)
+
+mydb=# SELECT to_tsquery('tst','indices');
+ to_tsquery
+------------
+ 'index':*
+(1 row)
+
+mydb=# SELECT 'indexes are very useful'::tsvector;
+            tsvector             
+---------------------------------
+ 'are' 'indexes' 'useful' 'very'
+(1 row)
+
+mydb=# SELECT 'indexes are very useful'::tsvector @@
+  to_tsquery('tst','indices');
+ ?column?
+----------
+ t
+(1 row)
+</screen></para>
+  </sect2>
+
+  <sect2 id="textsearch-thesaurus">
+   <title>Тезаурус</title>
+
+   <para>Тезаурус (или сокращённо <acronym>TZ</acronym>) содержит набор слов и информацию о связях слов и словосочетаний, то есть более широкие понятия (Broader Terms, <acronym>BT</acronym>), более узкие понятия (Narrow Terms, <acronym>NT</acronym>), предпочитаемые названия, исключаемые названия, связанные понятия и т. д.</para>
+
+   <para>В основном тезаурус заменяет исключаемые слова и словосочетания предпочитаемыми и может также сохранить исходные слова для индексации. Текущая реализация тезауруса в <productname>&productname;</productname> представляет собой расширение словаря синонимов с поддержкой <firstterm>фраз</firstterm>. Конфигурация тезауруса определяется файлом следующего формата: <programlisting># это комментарий
+образец слов(а) : индексируемые слова
+другой образец слов(а) : другие индексируемые слова
+...</programlisting> Здесь двоеточие (<symbol>:</symbol>) служит разделителем между исходной фразой и её заменой.</para>
+
+   <para>Прежде чем проверять соответствие фраз, тезаурус нормализует файл конфигурации, используя <firstterm>внутренний словарь</firstterm> (который указывается в конфигурации словаря-тезауруса). Этот внутренний словарь для тезауруса может быть только одним. Если он не сможет распознать какое-либо слово, произойдёт ошибка. В этом случае необходимо либо исключить это слово, либо добавить его во внутренний словарь. Также можно добавить звёздочку (<symbol>*</symbol>) перед индексируемыми словами, чтобы они не проверялись по внутреннему словарю, но все слова-образцы <emphasis>должны</emphasis> быть известны внутреннему словарю.</para>
+
+   <para>Если входному фрагменту соответствуют несколько фраз в этом списке, тезаурус выберет самое длинное определение, а если таких окажется несколько, самое последнее из них.</para>
+
+   <para>Выделить во фразе какие-то стоп-слова нельзя; вместо этого можно вставить <literal>?</literal> в том месте, где может оказаться стоп-слово. Например, в предположении, что <literal>a</literal> и <literal>the</literal> &mdash; стоп-слова по внутреннему словарю: <programlisting>? one ? two : swsw</programlisting> соответствует входным строкам <literal>a one the two</literal> и <literal>the one a two</literal>, так что обе эти строки будут заменены на <literal>swsw</literal>.</para>
+
+   <para>Как и обычный словарь, тезаурус должен привязываться к лексемам определённых типов. Так как тезаурус может распознавать фразы, он должен запоминать своё состояние и взаимодействовать с анализатором. Учитывая свои привязки, он может либо обрабатывать следующий фрагмент, либо прекратить накопление фразы. Поэтому настройка тезаурусов в системе требует особого внимания. Например, если привязать тезаурус только к типу фрагментов <literal>asciiword</literal>, тогда определение в тезаурусе <literal>one 7</literal> не будет работать, так как этот тезаурус не связан с типом <literal>uint</literal>.</para>
+
+   <caution>
+    <para>Тезаурусы используются при индексации, поэтому при любом изменении параметров или содержимого тезауруса <emphasis>необходима</emphasis> переиндексация. Для большинства других типов словарей при небольших изменениях, таких как удаление и добавление стоп-слов, переиндексация не требуется.</para>
+   </caution>
+
+  <sect3 id="textsearch-thesaurus-config">
+   <title>Конфигурация тезауруса</title>
+
+   <para>Для создания нового словаря-тезауруса используется шаблон <literal>thesaurus</literal>. Например: <programlisting>CREATE TEXT SEARCH DICTIONARY thesaurus_simple (
+    TEMPLATE = thesaurus,
+    DictFile = mythesaurus,
+    Dictionary = pg_catalog.english_stem
+);</programlisting> Здесь: <itemizedlist spacing="compact" mark="bullet">
+     <listitem>
+      <para><literal>thesaurus_simple</literal> &mdash; имя нового словаря</para>
+     </listitem>
+     <listitem>
+      <para><literal>mythesaurus</literal> &mdash; базовое имя файла конфигурации тезауруса. (Полным путём к файлу будет <filename>$SHAREDIR/tsearch_data/mythesaurus.ths</filename>, где <literal>$SHAREDIR</literal> указывает на каталог общих данных <productname>PostgreSQL</productname>.)</para>
+     </listitem>
+     <listitem>
+      <para><literal>pg_catalog.english_stem</literal> &mdash; внутренний словарь (в данном случае, это стеммер Snowball для английского) для нормализации тезауруса. Заметьте, что внутренний словарь имеет собственную конфигурацию (например, список стоп-слов), но здесь она не рассматривается.</para>
+     </listitem>
+    </itemizedlist> Теперь тезаурус <literal>thesaurus_simple</literal> можно связать с желаемыми типами фрагментов в конфигурации, например так: <programlisting>ALTER TEXT SEARCH CONFIGURATION english
+    ALTER MAPPING FOR asciiword, asciihword, hword_asciipart
+    WITH thesaurus_simple;</programlisting></para>
+
+  </sect3>
+
+  <sect3 id="textsearch-thesaurus-examples">
+   <title>Пример тезауруса</title>
+
+   <para>Давайте рассмотрим простой астрономический тезаурус <literal>thesaurus_astro</literal>, содержащий несколько астрономических терминов: <programlisting>supernovae stars : sn
+crab nebulae : crab</programlisting> Ниже мы создадим словарь и привяжем некоторые типы фрагментов к астрономическому тезаурусу и английскому стеммеру: <programlisting>CREATE TEXT SEARCH DICTIONARY thesaurus_astro (
+    TEMPLATE = thesaurus,
+    DictFile = thesaurus_astro,
+    Dictionary = english_stem
+);
+
+ALTER TEXT SEARCH CONFIGURATION russian
+    ALTER MAPPING FOR asciiword, asciihword, hword_asciipart
+    WITH thesaurus_astro, english_stem;</programlisting> Теперь можно проверить, как он работает. Функция <function>ts_lexize</function> не очень полезна для проверки тезауруса, так как она обрабатывает входную строку как один фрагмент. Вместо неё мы можем использовать функции <function>plainto_tsquery</function> и <function>to_tsvector</function>, которые разбивают входную строку на несколько фрагментов: <screen>
+SELECT plainto_tsquery('supernova star');
+ plainto_tsquery
+-----------------
+ 'sn'
+
+SELECT to_tsvector('supernova star');
+ to_tsvector
+-------------
+ 'sn':1
+</screen> В принципе так же можно использовать <function>to_tsquery</function>, если заключить аргумент в кавычки: <screen>
+SELECT to_tsquery(' ''supernova star''');
+ to_tsquery
+------------
+ 'sn'
+</screen> Заметьте, что <literal>supernova star</literal> совпадает с <literal>supernovae stars</literal> в <literal>thesaurus_astro</literal>, так как мы подключили стеммер <literal>english_stem</literal> в определении тезауруса. Этот стеммер удалил конечные буквы <literal>e</literal> и <literal>s</literal>.</para>
+
+   <para>Чтобы проиндексировать исходную фразу вместе с заменой, её нужно просто добавить в правую часть соответствующего определения: <screen>
+supernovae stars : sn supernovae stars
+
+SELECT plainto_tsquery('supernova star');
+       plainto_tsquery
+-----------------------------
+ 'sn' &amp; 'supernova' &amp; 'star'
+</screen></para>
+
+  </sect3>
+
+  </sect2>
+
+  <sect2 id="textsearch-ispell-dictionary">
+   <title>Словарь <application>Ispell</application></title>
+
+   <para>Шаблон словарей <application>Ispell</application> поддерживает <firstterm>морфологические словари</firstterm>, которые могут сводить множество разных лингвистических форм слова к одной лексеме. Например, английский словарь <application>Ispell</application> может связать вместе все склонения и спряжения ключевого слова <literal>bank</literal>: <literal>banking</literal>, <literal>banked</literal>, <literal>banks</literal>, <literal>banks'</literal>,<literal>bank's</literal> и т. п.</para>
+
+   <para>Стандартный дистрибутив <productname>&productname;</productname> не включает файлы конфигурации <application>Ispell</application>. Загрузить словари для множества языков можно со страницы <ulink url="http://ficus-www.cs.ucla.edu/geoff/ispell.html">Ispell</ulink>. Кроме того, поддерживаются и другие современные форматы словарей: <ulink url="http://en.wikipedia.org/wiki/MySpell">MySpell</ulink> (OO &lt; 2.0.1) и <ulink url="http://sourceforge.net/projects/hunspell/">Hunspell</ulink> (OO &gt;= 2.0.2). Большой набор соответствующих словарей можно найти на странице <ulink url="http://wiki.services.openoffice.org/wiki/Dictionaries">OpenOffice Wiki</ulink>.</para>
+
+   <para>Чтобы создать словарь <application>Ispell</application>, выполните следующие действия:</para>
+   <itemizedlist spacing="compact" mark="bullet">
+    <listitem>
+     <para>загрузите файлы конфигурации словаря. Пакет с дополнительным словарём <productname>OpenOffice</productname> имеет расширение <filename>.oxt</filename>. Из него необходимо извлечь файлы <filename>.aff</filename> и <filename>.dic</filename>, и сменить их расширения на <filename>.affix</filename> и <filename>.dict</filename>, соответственно. Для некоторых файлов словарей также необходимо преобразовать символы в кодировку UTF-8 с помощью, например, таких команд (для норвежского языка): <programlisting>iconv -f ISO_8859-1 -t UTF-8 -o nn_no.affix nn_NO.aff
+iconv -f ISO_8859-1 -t UTF-8 -o nn_no.dict nn_NO.dic</programlisting></para>
+    </listitem>
+    <listitem>
+     <para>скопируйте файлы в каталог <filename>$SHAREDIR/tsearch_data</filename></para>
+    </listitem>
+    <listitem>
+     <para>загрузите эти файлы в PostgreSQL следующей командой: <programlisting>CREATE TEXT SEARCH DICTIONARY english_hunspell (
+    TEMPLATE = ispell,
+    DictFile = en_us,
+    AffFile = en_us,
+    Stopwords = english);</programlisting></para>
+    </listitem>
+   </itemizedlist>
+
+   <para>Здесь параметры <literal>DictFile</literal>, <literal>AffFile</literal> и <literal>StopWords</literal> определяют базовые имена файлов словаря, аффиксов и стоп-слов. Файл стоп-слов должен иметь тот же формат, что рассматривался выше в описании словаря <literal>simple</literal>. Формат других файлов здесь не рассматривается, но его можно узнать по вышеуказанным веб-адресам.</para>
+
+   <para>Словари Ispell обычно воспринимают ограниченный набор слов, так что за ними следует подключить другой, более общий словарь, например, Snowball, который принимает всё.</para>
+
+   <para>Файл <filename>.affix</filename> для <application>Ispell</application> имеет такую структуру: <programlisting>prefixes
+flag *A:
+    .           &gt;   RE      # As in enter &gt; reenter
+suffixes
+flag T:
+    E           &gt;   ST      # As in late &gt; latest
+    [^AEIOU]Y   &gt;   -Y,IEST # As in dirty &gt; dirtiest
+    [AEIOU]Y    &gt;   EST     # As in gray &gt; grayest
+    [^EY]       &gt;   EST     # As in small &gt; smallest</programlisting></para>
+   <para>А файл <filename>.dict</filename> — такую: <programlisting>lapse/ADGRS
+lard/DGRS
+large/PRTY
+lark/MRS</programlisting></para>
+
+   <para>Формат файла <filename>.dict</filename> следующий: <programlisting>basic_form/affix_class_name</programlisting></para>
+
+   <para>В файле <filename>.affix</filename> каждый флаг аффиксов описывается в следующем формате: <programlisting>условие &gt; [-отсекаемые_буквы,] добавляемый_аффикс</programlisting></para>
+
+   <para>Здесь условие записывается в формате, подобном формату регулярных выражений. В нём возможно описать группы <literal>[...]</literal> и <literal>[^...]</literal>. Например, запись <literal>[AEIOU]Y</literal> означает, что последняя буква слова — <literal>"y"</literal>, а предпоследней может быть <literal>"a"</literal>, <literal>"e"</literal>, <literal>"i"</literal>, <literal>"o"</literal> или <literal>"u"</literal>. Запись <literal>[^EY]</literal> означает, что последняя буква не <literal>"e"</literal> и не <literal>"y"</literal>.</para>
+
+   <para>Словари Ispell поддерживают разделение составных слов, что бывает полезно. Заметьте, что для этого в файле аффиксов нужно пометить специальным оператором <literal>compoundwords controlled</literal> слова, которые могут участвовать в составных образованиях: <programlisting>compoundwords  controlled z</programlisting> Вот как это работает для норвежского языка: <programlisting>SELECT ts_lexize('norwegian_ispell',
+  'overbuljongterningpakkmesterassistent');
+   {over,buljong,terning,pakk,mester,assistent}
+SELECT ts_lexize('norwegian_ispell', 'sjokoladefabrikk');
+   {sjokoladefabrikk,sjokolade,fabrikk}</programlisting></para>
+
+   <para>Формат <application>MySpell</application> представляет собой подмножество формата <application>Hunspell</application>. Файл <filename>.affix</filename> словаря <application>Hunspell</application> имеет следующую структуру: <programlisting>PFX A Y 1
+PFX A   0     re         .
+SFX T N 4
+SFX T   0     st         e
+SFX T   y     iest       [^aeiou]y
+SFX T   0     est        [aeiou]y
+SFX T   0     est        [^ey]</programlisting></para>
+
+   <para>Первая строка класса аффиксов &mdash; заголовок. Поля правил аффиксов указываются после заголовка:</para>
+   <itemizedlist spacing="compact" mark="bullet">
+    <listitem>
+     <para>имя параметра (PFX или SFX)</para>
+    </listitem>
+    <listitem>
+     <para>флаг (имя класса аффиксов)</para>
+    </listitem>
+    <listitem>
+     <para>отсекаемые символы в начале (в префиксе) или в конце (в суффиксе) слова</para>
+    </listitem>
+    <listitem>
+     <para>добавляемый аффикс</para>
+    </listitem>
+    <listitem>
+     <para>условие в формате, подобном регулярным выражениям.</para>
+    </listitem>
+   </itemizedlist>
+
+   <para>Файл <filename>.dict</filename> подобен файлу <filename>.dict</filename> словаря <application>Ispell</application>: <programlisting>larder/M
+lardy/RT
+large/RSPMYT
+largehearted</programlisting></para>
+
+   <note>
+    <para>Словарь <application>MySpell</application> не поддерживает составные слова. С другой стороны, <application>Hunspell</application> поддерживает множество операции с ними, но в настоящее время <productname>&productname;</productname> использует только самые простые из этого множества.</para>
+   </note>
+
+  </sect2>
+
+  <sect2 id="textsearch-snowball-dictionary">
+   <title>Словарь <application>Snowball</application></title>
+
+   <para>Шаблон словарей <application>Snowball</application> основан на проекте Мартина Потера, изобретателя популярного алгоритма стемминга для английского языка. Сейчас Snowball предлагает алгоритмы и для многих других языков (за подробностями обратитесь на <ulink url="http://snowballstem.org">сайт Snowball</ulink>). Каждый алгоритм знает, как для данного языка свести распространённые словоформы к начальной форме. Для словаря Snowball задаётся обязательный параметр <literal>language</literal>, определяющий, какой именно стеммер использовать, и может задаваться параметр <literal>stopword</literal>, указывающий файл со списком исключаемых слов. (Стандартные списки стоп-слов <productname>&productname;</productname> используется также в и проекте Snowball.) Например, встроенное определение выглядит так <programlisting>CREATE TEXT SEARCH DICTIONARY english_stem (
+    TEMPLATE = snowball,
+    Language = english,
+    StopWords = english
+);</programlisting> Формат файла стоп-слов не отличается от рассмотренного ранее.</para>
+
+   <para>Словарь <application>Snowball</application> распознаёт любые фрагменты, даже если он не может упростить слова, так что он должен быть самым последним в списке словарей. Помещать его перед другими словарями нет смысла, так как после него никакой фрагмент не будет передан следующему словарю.</para>
+
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="textsearch-configuration">
+  <title>Пример конфигурации</title>
+
+   <para>Конфигурация текстового поиска определяет всё, что необходимо для преобразования документа в формат <type>tsvector</type>: анализатор, который будет разбивать текст на фрагменты, и словари, которые будут преобразовывать фрагменты в лексемы. При каждом вызове <function>to_tsvector</function> или <function>to_tsquery</function> обязательно используется конфигурация текстового поиска. В конфигурации сервера есть параметр <xref linkend="guc-default-text-search-config"/>, задающий имя конфигурации текстового поиска по умолчанию, которая будет использоваться, когда при вызове функций поиска соответствующий аргумент не определён. Этот параметр можно задать в <filename>postgresql.conf</filename> или установить в рамках отдельного сеанса с помощью команды <command>SET</command>.</para>
+
+   <para>В системе есть несколько встроенных конфигураций текстового поиска и вы можете легко дополнить их своими. Для удобства управления объектами текстового поиска в <productname>PostgreSQL</productname> реализованы соответствующие <acronym>SQL</acronym>-команды и специальные команды в <application>psql</application>, выводящие информацию об этих объектах (<xref linkend="textsearch-psql"/>).</para>
+
+   <para>В качестве примера использования этих команд мы создадим конфигурацию <literal>pg</literal>, взяв за основу встроенную конфигурацию <literal>english</literal>: <programlisting>CREATE TEXT SEARCH CONFIGURATION public.pg ( COPY = pg_catalog.english );</programlisting></para>
+
+   <para>Мы будем использовать список синонимов, связанных с &productname;, в файле <filename>$SHAREDIR/tsearch_data/pg_dict.syn</filename>. Этот файл содержит строки: <programlisting>postgres    pg
+pgsql       pg
+postgresql  pg</programlisting> Мы определим словарь синонимов следующим образом: <programlisting>CREATE TEXT SEARCH DICTIONARY pg_dict (
+    TEMPLATE = synonym,
+    SYNONYMS = pg_dict
+);</programlisting> Затем мы зарегистрируем словарь <productname>Ispell</productname> <literal>english_ispell</literal>, у которого есть собственные файлы конфигурации: <programlisting>CREATE TEXT SEARCH DICTIONARY english_ispell (
+    TEMPLATE = ispell,
+    DictFile = english,
+    AffFile = english,
+    StopWords = english
+);</programlisting> Теперь мы можем настроить сопоставления для слов в конфигурации <literal>pg</literal>: <programlisting>ALTER TEXT SEARCH CONFIGURATION pg
+    ALTER MAPPING FOR asciiword, asciihword, hword_asciipart,
+                      word, hword, hword_part
+    WITH pg_dict, english_ispell, english_stem;</programlisting> Мы решили не индексировать и не учитывать при поиске некоторые типы фрагментов, которые не обрабатываются встроенной конфигурацией: <programlisting>ALTER TEXT SEARCH CONFIGURATION pg
+    DROP MAPPING FOR email, url, url_path, sfloat, float;</programlisting></para>
+
+   <para>Теперь мы можем протестировать нашу конфигурацию: <programlisting>SELECT * FROM ts_debug('public.pg', '
+&productname;, the highly scalable, SQL compliant, open source
+object-relational database management system, is now undergoing
+beta testing of the next version of our software.
+');</programlisting></para>
+
+   <para>И наконец мы выбираем в текущем сеансе эту конфигурацию, созданную в схеме <literal>public</literal>: <screen>
+=&gt; \dF
+   List of text search configurations
+ Schema  | Name | Description
+---------+------+-------------
+ public  | pg   |
+
+SET default_text_search_config = 'public.pg';
+SET
+
+SHOW default_text_search_config;
+ default_text_search_config
+----------------------------
+ public.pg
+</screen></para>
+
+ </sect1>
+
+ <sect1 id="textsearch-debugging">
+  <title>Тестирование и отладка текстового поиска</title>
+
+  <para>Поведение нестандартной конфигурации текстового поиска по мере её усложнения может стать непонятным. В этом разделе описаны функции, полезные для тестирования объектов текстового поиска. Вы можете тестировать конфигурацию как целиком, так и по частям, отлаживая анализаторы и словари по отдельности.</para>
+
+  <sect2 id="textsearch-configuration-testing">
+   <title>Тестирование конфигурации</title>
+
+  <para>Созданную конфигурацию текстового поиска можно легко протестировать с помощью функции <function>ts_debug</function>.</para>
+
+  <indexterm><primary>ts_debug</primary></indexterm>
+
+<synopsis>ts_debug(<optional><replaceable class="parameter">конфигурация</replaceable> <type>regconfig</type>,</optional> <replaceable class="parameter">документ</replaceable> <type>text</type>,
+         OUT <replaceable class="parameter">псевдоним</replaceable> <type>text</type>,
+         OUT <replaceable class="parameter">описание</replaceable> <type>text</type>,
+         OUT <replaceable class="parameter">фрагмент</replaceable> <type>text</type>,
+         OUT <replaceable class="parameter">словари</replaceable> <type>regdictionary[]</type>,
+         OUT <replaceable class="parameter">словарь</replaceable> <type>regdictionary</type>,
+         OUT <replaceable class="parameter">лексемы</replaceable> <type>text[]</type>)
+         returns setof record</synopsis>
+
+  <para><function>ts_debug</function> выводит информацию обо всех фрагментах данного документа, которые были выданы анализатором и обработаны настроенными словарями. Она использует конфигурацию, указанную в аргументе <replaceable class="parameter">config</replaceable>, или <varname>default_text_search_config</varname>, если этот аргумент опущен.</para>
+
+  <para><function>ts_debug</function> возвращает по одной строке для каждого фрагмента, найденного в тексте анализатором. Эта строка содержит следующие столбцы: <itemizedlist spacing="compact" mark="bullet">
+     <listitem>
+      <para><replaceable>синоним</replaceable> <type>text</type> &mdash; краткое имя типа фрагмента</para>
+     </listitem>
+     <listitem>
+      <para><replaceable>описание</replaceable> <type>text</type> &mdash; описание типа фрагмента</para>
+     </listitem>
+     <listitem>
+      <para><replaceable>фрагмент</replaceable> <type>text</type> &mdash; текст фрагмента</para>
+     </listitem>
+     <listitem>
+      <para><replaceable>словари</replaceable> <type>regdictionary[]</type> &mdash; словари, назначенные в конфигурации для фрагментов такого типа</para>
+     </listitem>
+     <listitem>
+      <para><replaceable>словарь</replaceable> <type>regdictionary</type> &mdash; словарь, распознавший этот фрагмент, или <literal>NULL</literal>, если подходящего словаря не нашлось</para>
+     </listitem>
+     <listitem>
+      <para><replaceable>лексемы</replaceable> <type>text[]</type> &mdash; лексемы, выданные словарём, распознавшим фрагмент, или <literal>NULL</literal>, если подходящий словарь не нашёлся; может быть также пустым массивом (<literal>{}</literal>), если фрагмент распознан как стоп-слово</para>
+     </listitem>
+    </itemizedlist></para>
+
+  <para>Простой пример: <screen>
+SELECT * FROM ts_debug('english',
+  'a fat  cat sat on a mat - it ate a fat rats');
+   alias  |   description  | token|  dictionaries |  dictionary |lexemes
+----------+----------------+------+---------------+-------------+-------
+ asciiword| Word, all ASCII| a    | {english_stem}| english_stem| {}
+ blank    | Space symbols  |      | {}            |             | 
+ asciiword| Word, all ASCII| fat  | {english_stem}| english_stem| {fat}
+ blank    | Space symbols  |      | {}            |             | 
+ asciiword| Word, all ASCII| cat  | {english_stem}| english_stem| {cat}
+ blank    | Space symbols  |      | {}            |             | 
+ asciiword| Word, all ASCII| sat  | {english_stem}| english_stem| {sat}
+ blank    | Space symbols  |      | {}            |             | 
+ asciiword| Word, all ASCII| on   | {english_stem}| english_stem| {}
+ blank    | Space symbols  |      | {}            |             | 
+ asciiword| Word, all ASCII| a    | {english_stem}| english_stem| {}
+ blank    | Space symbols  |      | {}            |             | 
+ asciiword| Word, all ASCII| mat  | {english_stem}| english_stem| {mat}
+ blank    | Space symbols  |      | {}            |             | 
+ blank    | Space symbols  | -    | {}            |             | 
+ asciiword| Word, all ASCII| it   | {english_stem}| english_stem| {}
+ blank    | Space symbols  |      | {}            |             | 
+ asciiword| Word, all ASCII| ate  | {english_stem}| english_stem| {ate}
+ blank    | Space symbols  |      | {}            |             | 
+ asciiword| Word, all ASCII| a    | {english_stem}| english_stem| {}
+ blank    | Space symbols  |      | {}            |             | 
+ asciiword| Word, all ASCII| fat  | {english_stem}| english_stem| {fat}
+ blank    | Space symbols  |      | {}            |             | 
+ asciiword| Word, all ASCII| rats | {english_stem}| english_stem| {rat}
+</screen></para>
+
+  <para>Для более полной демонстрации мы сначала создадим конфигурацию <literal>public.english</literal> и словарь Ispell для английского языка:</para>
+
+<programlisting>CREATE TEXT SEARCH CONFIGURATION public.english
+  ( COPY = pg_catalog.english );
+
+CREATE TEXT SEARCH DICTIONARY english_ispell (
+    TEMPLATE = ispell,
+    DictFile = english,
+    AffFile = english,
+    StopWords = english
+);
+
+ALTER TEXT SEARCH CONFIGURATION public.english
+   ALTER MAPPING FOR asciiword WITH english_ispell, english_stem;</programlisting>
+
+<screen>SELECT * FROM ts_debug('public.english','The Brightest supernovaes');
+  alias  | description |   token   |  dictionaries |dictionary| lexemes   
+---------+-------------+-----------+----------- ---+----------+-----------
+asciiword|Word,        |The        |{english_ispell|english_  |{}
+         | all ASCII   |           |,english_stem} |ispell    |
+blank    |Space symbols|           |{}             |          |
+         |             |           |               |          |
+asciiword|Word,        |Brightest  |{english_ispell|english_  |{bright}
+         |all ASCII    |           |,english_stem} |ispell    |
+blank    |Space symbols|           | {}            |          |
+         |             |           |               |          |
+asciiword|Word,        |supernovaes|{english_ispell|english_  |{supernova}
+         |all ASCII    |           |,english_stem} |stem      |</screen>
+
+  <para>В этом примере слово <literal>Brightest</literal> было воспринято анализатором как фрагмент <literal>ASCII word</literal> (синоним <literal>asciiword</literal>). Для этого типа фрагментов список словарей включает <literal>english_ispell</literal> и <literal>english_stem</literal>. Данное слово было распознано словарём <literal>english_ispell</literal>, который свёл его к <literal>bright</literal>. Слово <literal>supernovaes</literal> оказалось незнакомо словарю <literal>english_ispell</literal>, так что оно было передано следующему словарю, который его благополучно распознал (на самом деле <literal>english_stem</literal> &mdash; это стеммер Snowball, который распознаёт всё, поэтому он включён в список словарей последним).</para>
+
+  <para>Слово <literal>The</literal> было распознано словарём <literal>english_ispell</literal> как стоп-слово (см. <xref remap="4" linkend="textsearch-stopwords"/>) и поэтому не будет индексироваться. Пробелы тоже отбрасываются, так как в данной конфигурации для них нет словарей.</para>
+
+  <para>Вы можете уменьшить ширину вывода, явно перечислив только те столбцы, которые вы хотите видеть: <screen>
+SELECT alias, token, dictionary, lexemes
+FROM ts_debug('public.english','The Brightest supernovaes');
+   alias   |    token    |   dictionary   |   lexemes   
+-----------+-------------+----------------+-------------
+ asciiword | The         | english_ispell | {}
+ blank     |             |                | 
+ asciiword | Brightest   | english_ispell | {bright}
+ blank     |             |                | 
+ asciiword | supernovaes | english_stem   | {supernova}
+</screen></para>
+
+  </sect2>
+
+  <sect2 id="textsearch-parser-testing">
+   <title>Тестирование анализатора</title>
+
+  <para>Следующие функции позволяют непосредственно протестировать анализатор текстового поиска.</para>
+
+  <indexterm><primary>ts_parse</primary></indexterm>
+
+<synopsis>ts_parse(<replaceable class="parameter">имя_анализатора</replaceable> <type>text</type>, <replaceable class="parameter">документ</replaceable> <type>text</type>,
+         OUT <replaceable class="parameter">код_фрагмента</replaceable> <type>integer</type>, OUT <replaceable class="parameter">фрагмент</replaceable> <type>text</type>) returns <type>setof record</type>
+ts_parse(<replaceable class="parameter">oid_анализатора</replaceable> <type>oid</type>, <replaceable class="parameter">документ</replaceable> <type>text</type>,
+         OUT <replaceable class="parameter">код_фрагмента</replaceable> <type>integer</type>, OUT <replaceable class="parameter">фрагмент</replaceable> <type>text</type>) returns <type>setof record</type></synopsis>
+
+  <para><function>ts_parse</function> разбирает данный документ и возвращает набор записей, по одной для каждого извлечённого фрагмента. Каждая запись содержит <varname>код_фрагмента</varname>, код назначенного типа фрагмента, и <varname>фрагмент</varname>, собственно текст фрагмента. Например: <screen>
+SELECT * FROM ts_parse('default', '123 - a number');
+ tokid | token
+-------+--------
+    22 | 123
+    12 |
+    12 | -
+     1 | a
+    12 |
+     1 | number
+</screen></para>
+
+  <indexterm><primary>ts_token_type</primary></indexterm>
+
+<synopsis>ts_token_type(<replaceable class="parameter">имя_анализатора</replaceable> <type>text</type>, OUT <replaceable class="parameter">код_фрагмента</replaceable> <type>integer</type>,
+              OUT <replaceable class="parameter">псевдоним</replaceable> <type>text</type>, OUT <replaceable class="parameter">описание</replaceable> <type>text</type>) returns <type>setof record</type>
+ts_token_type(<replaceable class="parameter">oid_анализатора</replaceable> <type>oid</type>, OUT <replaceable class="parameter">код_фрагмента</replaceable> <type>integer</type>,
+              OUT <replaceable class="parameter">псевдоним</replaceable> <type>text</type>, OUT <replaceable class="parameter">описание</replaceable> <type>text</type>) returns <type>setof record</type></synopsis>
+
+  <para><function>ts_token_type</function> возвращает таблицу, описывающую все типы фрагментов, которые может распознать анализатор. Для каждого типа в этой таблице указывается его целочисленный <varname>код_фрагмента</varname>, <varname>псевдоним </varname>, с которым этот тип фигурирует в командах, и краткое <varname>description</varname>. Например: <screen>
+SELECT * FROM ts_token_type('default');
+ tokid |      alias      |               description                
+-------+-----------------+------------------------------------------
+     1 | asciiword       | Word, all ASCII
+     2 | word            | Word, all letters
+     3 | numword         | Word, letters and digits
+     4 | email           | Email address
+     5 | url             | URL
+     6 | host            | Host
+     7 | sfloat          | Scientific notation
+     8 | version         | Version number
+     9 | hword_numpart   | Hyphenated word part, letters and digits
+    10 | hword_part      | Hyphenated word part, all letters
+    11 | hword_asciipart | Hyphenated word part, all ASCII
+    12 | blank           | Space symbols
+    13 | tag             | XML tag
+    14 | protocol        | Protocol head
+    15 | numhword        | Hyphenated word, letters and digits
+    16 | asciihword      | Hyphenated word, all ASCII
+    17 | hword           | Hyphenated word, all letters
+    18 | url_path        | URL path
+    19 | file            | File or path name
+    20 | float           | Decimal notation
+    21 | int             | Signed integer
+    22 | uint            | Unsigned integer
+    23 | entity          | XML entity
+</screen></para>
+
+  </sect2>
+
+  <sect2 id="textsearch-dictionary-testing">
+   <title>Тестирование словаря</title>
+
+   <para>Для тестирования словаря предназначена функция <function>ts_lexize</function>.</para>
+
+   <indexterm><primary>ts_lexize</primary></indexterm>
+
+<synopsis>ts_lexize(<replaceable class="parameter">словарь</replaceable> <type>regdictionary</type>, <replaceable class="parameter">фрагмент</replaceable> <type>text</type>) returns <type>text[]</type></synopsis>
+
+   <para><function>ts_lexize</function> возвращает массив лексем, если входной <replaceable>фрагмент</replaceable> известен словарю, либо пустой массив, если этот фрагмент считается в словаре стоп-словом, либо <literal>NULL</literal>, если он не был распознан.</para>
+
+   <para>Примеры: <screen>
+SELECT ts_lexize('english_stem', 'stars');
+ ts_lexize
+-----------
+ {star}
+
+SELECT ts_lexize('english_stem', 'a');
+ ts_lexize
+-----------
+ {}
+</screen></para>
+
+   <note>
+    <para>Функция <function>ts_lexize</function> принимает одиночный <emphasis>фрагмент</emphasis>, а не просто текст. Вот пример возможного заблуждения: <screen>
+SELECT ts_lexize('thesaurus_astro','supernovae stars') is null;
+ ?column?
+----------
+ t
+</screen> Хотя фраза <literal>supernovae stars</literal> есть в тезаурусе <literal>thesaurus_astro</literal>, <function>ts_lexize</function> не работает, так как она не разбирает входной текст, а воспринимает его как один фрагмент. Поэтому для проверки тезаурусов следует использовать функции <function>plainto_tsquery</function> и <function>to_tsvector</function>, например: <screen>
+SELECT plainto_tsquery('supernovae stars');
+ plainto_tsquery
+-----------------
+ 'sn'
+</screen></para>
+   </note>
+
+  </sect2>
+
+ </sect1>
+
+ <sect1 id="textsearch-indexes">
+  <title>Типы индексов GIN и GiST</title>
+
+  <indexterm zone="textsearch-indexes"><primary>текстовый поиск</primary> <secondary>индексы</secondary></indexterm>
+
+  <para>Для ускорения полнотекстового поиска можно использовать индексы двух видов. Заметьте, что эти индексы не требуются для поиска, но если по какому-то столбцу поиск выполняется регулярно, обычно желательно её индексировать. <variablelist>
+
+    <varlistentry>
+
+     <term>
+     <indexterm zone="textsearch-indexes"><primary>индекс</primary> <secondary>GIN</secondary> <tertiary>текстовый поиск</tertiary></indexterm>
+
+      <literal>CREATE INDEX <replaceable>имя</replaceable> ON <replaceable>таблица</replaceable> USING GIN (<replaceable>столбец</replaceable>);</literal>
+     </term>
+
+     <listitem>
+      <para>Создаёт индекс на базе GIN (Generalized Inverted Index, Обобщённый Инвертированный Индекс). <replaceable>Столбец</replaceable> должен иметь тип <type>tsvector</type>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+
+     <term>
+     <indexterm zone="textsearch-indexes"><primary>индекс</primary> <secondary>GiST</secondary> <tertiary>текстовый поиск</tertiary></indexterm>
+
+      <literal>CREATE INDEX <replaceable>имя</replaceable> ON <replaceable>таблица</replaceable> USING GIST (<replaceable>столбец</replaceable>);</literal>
+     </term>
+
+     <listitem>
+      <para>Создаёт индекс на базе GiST (Generalized Search Tree, Обобщённое дерево поиска). Здесь <replaceable>столбец</replaceable> может иметь тип <type>tsvector</type> или <type>tsquery</type>.</para>
+     </listitem>
+    </varlistentry>
+
+   </variablelist></para>
+
+  <para>Более предпочтительными для текстового поиска являются индексы GIN. Будучи инверсированными индексами, они содержат записи для всех отдельных слов (лексем) с компактным списком мест их вхождений. При поиске нескольких слов можно найти первое, а затем воспользоваться индексом и исключить строки, в которых дополнительные слова отсутствуют. Индексы GIN хранят только слова (лексемы) из значений <type>tsvector</type>, и теряют информацию об их весах. Таким образом для выполнения запроса с весами потребуется перепроверить строки в таблице.</para>
+
+  <para>Индекс GiST допускает <firstterm>неточности</firstterm>, то есть он допускает ложные попадания и поэтому их нужно исключать дополнительно, сверяя результат с фактическими данными таблицы. (<productname>&productname;</productname> делает это автоматически.) Индексы GiST являются неточными, так как все документы в них представляются сигнатурой фиксированной длины. Эта сигнатура создаётся в результате представления присутствия каждого слова как одного бита в строке из n-бит, а затем логического объединения этих битовых строк. Если двум словам будет соответствовать одна битовая позиция, попадание оказывается ложным. Если для всех слов оказались установлены соответствующие биты (в случае фактического или ложного попадания), для проверки правильности предположения о совпадении слов необходимо прочитать строку таблицы.</para>
+
+  <para>Неточность индекса приводит к снижению производительности из-за дополнительных обращений к записям таблицы, для которых предположение о совпадении оказывается ложным. Так как произвольный доступ к таблице обычно не бывает быстрым, это ограничивает применимость индексов GiST. Вероятность ложных попаданий зависит от ряда факторов, например от количества уникальных слов, так что его рекомендуется сокращать, применяя словари.</para>
+
+  <para>Заметьте, что построение индекса <acronym>GIN</acronym> часто можно ускорить, увеличив <xref linkend="guc-maintenance-work-mem"/>, тогда как время построения индекса <acronym>GiST</acronym> не зависит от этого параметра.</para>
+
+  <para>Правильно используя индексы GIN и GiST и разделяя большие коллекции документов на секции, можно реализовать очень быстрый поиск с возможностью обновления &laquo;на лету&raquo;. Секционировать данные можно как на уровне базы, с использованием наследования таблиц, так и распределив документы по разным серверам и затем собирая результаты с помощью модуля <xref linkend="dblink"/>. Последний вариант возможен благодаря тому, что функции ранжирования используют только локальную информацию.</para>
+
+ </sect1>
+
+ <sect1 id="textsearch-psql">
+  <title>Поддержка <application>psql</application></title>
+
+  <para>Информацию об объектах конфигурации текстового поиска можно получить в <application>psql</application> с помощью следующего набора команд: <synopsis>
+\dF{d,p,t}<optional>+</optional> <optional>ШАБЛОН</optional>
+</synopsis> Необязательный <literal>+</literal> в этих командах включает более подробный вывод.</para>
+
+  <para>В необязательном параметре <replaceable>ШАБЛОН</replaceable> может указываться имя объекта текстового поиска, возможно дополненное именем схемы. Если <replaceable>ШАБЛОН</replaceable> не указан, выводится информация обо всех видимых объектах. <replaceable>ШАБЛОН</replaceable> может содержать регулярное выражение с <emphasis>разными</emphasis> масками для схемы и объекта. Это иллюстрируют следующие примеры: <screen>
+=&gt; \dF *fulltext*
+       List of text search configurations
+ Schema |  Name        | Description
+--------+--------------+-------------
+ public | fulltext_cfg |
+</screen> <screen>
+=&gt; \dF *.fulltext*
+       List of text search configurations
+ Schema   |  Name        | Description
+----------+----------------------------
+ fulltext | fulltext_cfg |
+ public   | fulltext_cfg |
+</screen> Возможны следующие команды:</para>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>\dF<optional>+</optional> <optional>ШАБЛОН</optional></literal></term>
+    <listitem>
+     <para>Список конфигураций текстового поиска (добавьте <literal>+</literal> для дополнительных сведений). <screen>
+=&gt; \dF russian
+            List of text search configurations
+   Schema   |  Name   |            Description             
+------------+---------+------------------------------------
+ pg_catalog | russian | configuration for russian language
+
+=&gt; \dF+ russian
+Text search configuration "pg_catalog.russian"
+Parser: "pg_catalog.default"
+      Token      | Dictionaries 
+-----------------+--------------
+ asciihword      | english_stem
+ asciiword       | english_stem
+ email           | simple
+ file            | simple
+ float           | simple
+ host            | simple
+ hword           | russian_stem
+ hword_asciipart | english_stem
+ hword_numpart   | simple
+ hword_part      | russian_stem
+ int             | simple
+ numhword        | simple
+ numword         | simple
+ sfloat          | simple
+ uint            | simple
+ url             | simple
+ url_path        | simple
+ version         | simple
+ word            | russian_stem
+</screen></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>\dFd<optional>+</optional> <optional>ШАБЛОН</optional></literal></term>
+    <listitem>
+     <para>Список словарей текстового поиска (добавьте <literal>+</literal> для дополнительных сведений). <screen>
+=&gt; \dFd
+                            List of text search dictionaries
+  Schema   |     Name       |              Description                  
+-----------+----------------+-------------------------------------------
+pg_catalog | danish_stem    | snowball stemmer for danish language
+pg_catalog | dutch_stem     | snowball stemmer for dutch language
+pg_catalog | english_stem   | snowball stemmer for english language
+pg_catalog | finnish_stem   | snowball stemmer for finnish language
+pg_catalog | french_stem    | snowball stemmer for french language
+pg_catalog | german_stem    | snowball stemmer for german language
+pg_catalog | hungarian_stem | snowball stemmer for hungarian language
+pg_catalog | italian_stem   | snowball stemmer for italian language
+pg_catalog | norwegian_stem | snowball stemmer for norwegian language
+pg_catalog | portuguese_stem| snowball stemmer for portuguese language
+pg_catalog | romanian_stem  | snowball stemmer for romanian language
+pg_catalog | russian_stem   | snowball stemmer for russian language
+pg_catalog | simple         | simple dictionary: just lower case and ...
+pg_catalog | spanish_stem   | snowball stemmer for spanish language
+pg_catalog | swedish_stem   | snowball stemmer for swedish language
+pg_catalog | turkish_stem   | snowball stemmer for turkish language
+</screen></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+   <term><literal>\dFp<optional>+</optional> <optional>ШАБЛОН</optional></literal></term>
+    <listitem>
+     <para>Список анализаторов текстового поиска (добавьте <literal>+</literal> для дополнительных сведений). <screen>
+=&gt; \dFp
+        List of text search parsers
+   Schema   |  Name   |     Description     
+------------+---------+---------------------
+ pg_catalog | default | default word parser
+=&gt; \dFp+
+    Text search parser "pg_catalog.default"
+     Method      |    Function    | Description 
+-----------------+----------------+-------------
+ Start parse     | prsd_start     | 
+ Get next token  | prsd_nexttoken | 
+ End parse       | prsd_end       | 
+ Get headline    | prsd_headline  | 
+ Get token types | prsd_lextype   | 
+
+        Token types for parser "pg_catalog.default"
+   Token name    |               Description                
+-----------------+------------------------------------------
+ asciihword      | Hyphenated word, all ASCII
+ asciiword       | Word, all ASCII
+ blank           | Space symbols
+ email           | Email address
+ entity          | XML entity
+ file            | File or path name
+ float           | Decimal notation
+ host            | Host
+ hword           | Hyphenated word, all letters
+ hword_asciipart | Hyphenated word part, all ASCII
+ hword_numpart   | Hyphenated word part, letters and digits
+ hword_part      | Hyphenated word part, all letters
+ int             | Signed integer
+ numhword        | Hyphenated word, letters and digits
+ numword         | Word, letters and digits
+ protocol        | Protocol head
+ sfloat          | Scientific notation
+ tag             | XML tag
+ uint            | Unsigned integer
+ url             | URL
+ url_path        | URL path
+ version         | Version number
+ word            | Word, all letters
+(23 rows)
+</screen></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+   <term><literal>\dFt<optional>+</optional> <optional>ШАБЛОН</optional></literal></term>
+    <listitem>
+     <para>Список шаблонов текстового поиска (добавьте <literal>+</literal> для дополнительных сведений). <screen>
+=&gt; \dFt
+                           List of text search templates
+  Schema  |  Name   |                       Description                  
+----------+---------+----------------------------------------------------
+pg_catalog|ispell   |ispell dictionary
+pg_catalog|simple   |simple dictionary: just lower case and check for ...
+pg_catalog|snowball |snowball stemmer
+pg_catalog|synonym  |synonym dictionary: replace word by its synonym
+pg_catalog|thesaurus|thesaurus dictionary: phrase by phrase substitution
+</screen></para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+ </sect1>
+
+ <sect1 id="textsearch-limitations">
+  <title>Ограничения</title>
+
+  <para>Текущая реализация текстового поиска в <productname>&productname;</productname> имеет следующие ограничения: <itemizedlist spacing="compact" mark="bullet">
+    <listitem>
+     <para>Длина лексемы не может превышать 2 килобайта</para>
+    </listitem>
+    <listitem>
+     <para>Длина значения <type>tsvector</type> (лексемы и их позиции) не может превышать 1 мегабайт</para>
+    </listitem>
+    <listitem>
+     
+     <para>Число лексем должно быть меньше 2<superscript>64</superscript></para>
+    </listitem>
+    <listitem>
+     <para>Значения позиций в <type>tsvector</type> должны быть от 0 до 16383</para>
+    </listitem>
+    <listitem>
+     <para>Расстояние в операторе <literal>&lt;<replaceable>N</replaceable>&gt;</literal> (ПРЕДШЕСТВУЕТ) типа <type>tsquery</type> не может быть больше 16384</para>
+    </listitem>
+    <listitem>
+     <para>Не больше 256 позиций для одной лексемы</para>
+    </listitem>
+    <listitem>
+     <para>Число узлов (лексемы + операторы) в значении <type>tsquery</type> должно быть меньше 32768</para>
+    </listitem>
+   </itemizedlist></para>
+
+  <para>Для сравнения, документация <productname>PostgreSQL</productname> 8.1 содержала 335&nbsp;420 слов, из них 10&nbsp;441 уникальных, а наиболее часто употребляющееся в ней слово <quote>postgresql</quote> встречается 6&nbsp;127 раз в 655 документах.</para>
+
+   <!-- TODO we need to put a date on these numbers? -->
+  <para>Другой пример &mdash; архивы списков рассылки <productname>PostgreSQL</productname> содержали 910&nbsp;989 уникальных слов в 57&nbsp;491&nbsp;343 лексемах в 461&nbsp;020 сообщениях.</para>
+
+ </sect1>
+
+ <sect1 id="textsearch-migration">
+  <title>Миграция с реализации текстового поиска в версиях до 8.3</title>
+
+  <para>Для работы со встроенными средствами текстового поиска приложения, ранее использовавшие модуль <xref linkend="tsearch2"/>, должны быть изменены с учётом следующих замечаний:</para>
+
+  <itemizedlist>
+   <listitem>
+    <para>Некоторые функции были переименованы, а у других мог измениться список аргументов. Все они сейчас находятся в схеме <literal>pg_catalog</literal>, тогда как раньше они в располагались схеме <literal>public</literal> или другой не системной схеме. Для устранения подобных несоответствий была выпущена новая версия <application>tsearch2</application>, предоставляющая необходимый уровень совместимости.</para>
+   </listitem>
+
+   <listitem>
+    <para>Функции и другие объекты старого модуля <application>tsearch2</application> <emphasis>нужно</emphasis> игнорировать при загрузке в <application>pg_dump</application> базы до версии 8.3. Хотя многие из них всё равно не загрузятся, остальные могут создать проблемы. Есть один простой способ выполнить это требование &mdash; загрузить новый модуль <application>tsearch2</application> прежде чем восстанавливать базу; тогда он предотвратит загрузку старых объектов.</para>
+   </listitem>
+
+   <listitem>
+    <para>Настройка конфигурации текстового поиска теперь выполняется совсем по-другому. Вместо того, чтобы вручную вставлять строки в таблицы конфигурации, теперь используются специальные SQL-команды, описанные в этой главе ранее. Нестандартные конфигурации в базах версий до 8.3 не будут автоматически преобразованы в новый формат, вам придётся делать это самостоятельно.</para>
+   </listitem>
+
+   <listitem>
+    <para>Многие типы словарей загружают свои определения и параметры из внешних файлов конфигурации. В основном характер использования этих файлов не изменился в версии 8.3, но есть и следующие различия: <itemizedlist spacing="compact" mark="bullet">
+      <listitem>
+       <para>Файлы конфигурации теперь должны размещаться в одном каталоге (<filename>$SHAREDIR/tsearch_data</filename>) и иметь определённые расширения, в зависимости от типа, как отмечалось ранее в описании различных типов словарей. Это ограничение было добавлено для предупреждения проблем безопасности.</para>
+      </listitem>
+
+      <listitem>
+       <para>Файлы конфигурации должны иметь кодировку UTF-8, вне зависимости от кодировок баз данных.</para>
+      </listitem>
+
+      <listitem>
+       <para>В файлах конфигурации тезаурусов стоп-слова должны помечаться знаком <literal>?</literal>.</para>
+      </listitem>
+     </itemizedlist></para>
+   </listitem>
+
+  </itemizedlist>
+
+ </sect1>
+
+</chapter>

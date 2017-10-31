@@ -1,0 +1,298 @@
+<!--
+doc/src/xml/ref/reindexdb.xml
+&productname; documentation
+-->
+
+<refentry id="app-reindexdb">
+ <indexterm zone="app-reindexdb"><primary>reindexdb</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>reindexdb</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname id="reindexdb">reindexdb</refname>
+  <refpurpose>переиндексировать базу данных <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>reindexdb</command>
+   <arg rep="repeat"><replaceable>параметр-подключения</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+   
+   <arg choice="plain" rep="repeat">
+    <arg choice="opt">
+     <group choice="plain">
+      <arg choice="plain"><option>--schema</option></arg>
+      <arg choice="plain"><option>-S</option></arg>
+     </group>
+     <replaceable>схема</replaceable>
+    </arg>
+   </arg>
+
+   <arg choice="plain" rep="repeat">
+    <arg choice="opt">
+     <group choice="plain">
+      <arg choice="plain"><option>--table</option></arg>
+      <arg choice="plain"><option>-t</option></arg>
+     </group>
+     <replaceable>таблица</replaceable>
+    </arg>
+   </arg>
+
+   <arg choice="plain" rep="repeat">
+    <arg choice="opt">
+     <group choice="plain">
+      <arg choice="plain"><option>--index</option></arg>
+      <arg choice="plain"><option>-i</option></arg>
+     </group>
+     <replaceable>индекс</replaceable>
+    </arg>
+   </arg>
+
+   <arg choice="opt"><replaceable>имя_бд</replaceable></arg>
+  </cmdsynopsis>
+
+  <cmdsynopsis>
+   <command>reindexdb</command>
+   <arg rep="repeat"><replaceable>параметр-подключения</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+
+   <group choice="plain">
+    <arg choice="plain"><option>--all</option></arg>
+    <arg choice="plain"><option>-a</option></arg>
+   </group>
+  </cmdsynopsis>
+
+  <cmdsynopsis>
+   <command>reindexdb</command>
+   <arg rep="repeat"><replaceable>параметр-подключения</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+
+   <group choice="plain">
+    <arg choice="plain"><option>--system</option></arg>
+    <arg choice="plain"><option>-s</option></arg>
+   </group>
+   <arg choice="opt"><replaceable>имя_бд</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Утилита <application>reindexdb</application> предназначена для перестроения индексов в базе данных <productname>&productname;</productname>.</para>
+
+  <para>Утилита <application>reindexdb</application> представляет собой обёртку SQL-команды <xref linkend="sql-reindex"/>. Переиндексация базы данных с её помощью по сути не отличается от переиндексации при обращении к серверу другими способами.</para>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <para><application>reindexdb</application> принимает следующие аргументы командной строки: <variablelist>
+     <varlistentry>
+      <term><option>-a</option></term>
+      <term><option>--all</option></term>
+      <listitem>
+       <para>Переиндексировать все базы данных.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option><optional>-d</optional> <replaceable class="parameter">имя_бд</replaceable></option></term>
+      <term><option><optional>--dbname=</optional><replaceable class="parameter">имя_бд</replaceable></option></term>
+      <listitem>
+       <para>Задаёт имя базы данных, подлежащей переиндексации. Если это имя не задано и отсутствует параметр <option>-a</option> (или <option>--all</option>), имя базы данных берётся из переменной окружения <envar>PGDATABASE</envar>. Если и эта переменная не задана, выбирается имя подключающегося пользователя.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-e</option></term>
+      <term><option>--echo</option></term>
+      <listitem>
+       <para>Выводить команды, которые <application>reindexdb</application> генерирует и передаёт серверу.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-i <replaceable class="parameter">индекс</replaceable></option></term>
+      <term><option>--index=<replaceable class="parameter">индекс</replaceable></option></term>
+      <listitem>
+       <para>Пересоздать только указанный <replaceable class="parameter">индекс</replaceable>. Добавив дополнительные ключи <option>-i</option>, можно пересоздать несколько индексов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-q</option></term>
+      <term><option>--quiet</option></term>
+      <listitem>
+       <para>Подавлять вывод сообщений о прогрессе выполнения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s</option></term>
+      <term><option>--system</option></term>
+      <listitem>
+       <para>Переиндексировать системные каталоги базы данных.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-S <replaceable class="parameter">схема</replaceable></option></term>
+      <term><option>--schema=<replaceable class="parameter">схема</replaceable></option></term>
+      <listitem>
+       <para>Переиндексировать только указанную <replaceable class="parameter">схему</replaceable>. Переиндексировать несколько схем можно, добавив несколько ключей <option>-S</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-t <replaceable class="parameter">таблица</replaceable></option></term>
+      <term><option>--table=<replaceable class="parameter">таблица</replaceable></option></term>
+      <listitem>
+       <para>Переиндексировать только указанную <replaceable class="parameter">таблицу</replaceable>. Переиндексировать несколько таблиц можно, добавив несколько ключей <option>-t</option>.</para>
+      </listitem>
+     </varlistentry>
+
+    <varlistentry>
+     <term><option>-v</option></term>
+     <term><option>--verbose</option></term>
+     <listitem>
+      <para>Вывести подробную информацию во время процесса.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-V</option></term>
+      <term><option>--version</option></term>
+      <listitem>
+       <para>Сообщить версию <application>reindexdb</application> и завершиться.</para>
+      </listitem>
+    </varlistentry>
+
+    <varlistentry>
+      <term><option>-?</option></term>
+      <term><option>--help</option></term>
+      <listitem>
+      <para>Показать справку по аргументам командной строки <application>reindexdb</application> и завершиться.</para>
+      </listitem>
+    </varlistentry>
+
+   </variablelist></para>
+
+   <para>Утилита <application>reindexdb</application> также принимает следующие аргументы командной строки в качестве параметров подключения: <variablelist>
+     <varlistentry>
+      <term><option>-h <replaceable class="parameter">сервер</replaceable></option></term>
+      <term><option>--host=<replaceable class="parameter">сервер</replaceable></option></term>
+      <listitem>
+       <para>Указывает имя компьютера, на котором запущен сервер. Если значение начинается с косой черты, оно интерпретируется как имя каталога с доменным сокетом Unix.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">порт</replaceable></option></term>
+      <term><option>--port=<replaceable class="parameter">порт</replaceable></option></term>
+      <listitem>
+       <para>Указывает TCP-порт или расширение файла Unix-сокета, на котором сервер слушает подключения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <term><option>--username=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <listitem>
+       <para>Имя пользователя, под которым производится подключение.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</option></term>
+      <term><option>--no-password</option></term>
+      <listitem>
+       <para>Не выдавать запрос на ввод пароля. Если сервер требует аутентификацию по паролю и пароль не доступен с помощью других средств, таких как файл <filename>.pgpass</filename>, попытка соединения не удастся. Этот параметр может быть полезен в пакетных заданиях и скриптах, где нет пользователя, который вводит пароль.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option></term>
+      <term><option>--password</option></term>
+      <listitem>
+       <para>Принудительно запрашивать пароль перед подключением к базе данных.</para>
+
+       <para>Это несущественный параметр, так как <application>reindexdb</application> запрашивает пароль автоматически, если сервер проверяет подлинность по паролю. Однако, чтобы понять это, <application>reindexdb</application> лишний раз подключается к серверу. Поэтому иногда имеет смысл ввести <option>-W</option>, чтобы исключить эту ненужную попытку подключения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--maintenance-db=<replaceable class="parameter">имя_бд</replaceable></option></term>
+      <listitem>
+       <para>Задаёт имя базы данных, через подключение к которой будут находиться другие базы, подлежащие переиндексации. По умолчанию используется <literal>postgres</literal>, а в случае её отсутствия — <literal>template1</literal>.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><envar>PGDATABASE</envar></term>
+    <term><envar>PGHOST</envar></term>
+    <term><envar>PGPORT</envar></term>
+    <term><envar>PGUSER</envar></term>
+
+    <listitem>
+     <para>Параметры подключения по умолчанию</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Эта утилита, как и большинство других утилит <productname>&productname;</productname>, также использует переменные среды, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>).</para>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Диагностика</title>
+
+  <para>В случае возникновения трудностей, обратитесь к описаниям <xref linkend="sql-reindex"/> и <xref linkend="app-psql"/>, где обсуждаются потенциальные проблемы и сообщения об ошибках. Учтите, что на целевом компьютере должен работать сервер баз данных. При этом применяются все свойства подключения по умолчанию и переменные окружения, которые использует клиентская библиотека <application>libpq</application>.</para>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Утилите <application>reindexdb</application> может потребоваться подключаться к серверу <productname>&productname;</productname> несколько раз, и при этом она будет каждый раз запрашивать пароль. В таких случаях удобно иметь файл <filename>~/.pgpass</filename>. За дополнительными сведениями обратитесь к <xref remap="3" linkend="libpq-pgpass"/>.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Примеры</title>
+
+   <para>Переиндексирование базы данных <literal>test</literal>: <screen>
+<prompt>$ </prompt><userinput>reindexdb test</userinput>
+</screen></para>
+
+   <para>Переиндексирование таблицы <literal>foo</literal> и индекса <literal>bar</literal> в базе данных <literal>abcd</literal>: <screen>
+<prompt>$ </prompt><userinput>reindexdb --table foo --index bar abcd</userinput>
+</screen></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-reindex"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

@@ -1,0 +1,248 @@
+<!--
+doc/src/xml/ref/comment.xml
+&productname; documentation
+-->
+
+<refentry id="sql-comment">
+ <indexterm zone="sql-comment"><primary>COMMENT</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>COMMENT</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>COMMENT</refname>
+  <refpurpose>задать или изменить комментарий объекта</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>COMMENT ON
+{
+  ACCESS METHOD <replaceable class="parameter">имя_объекта</replaceable> |
+  AGGREGATE <replaceable class="parameter">имя_агрегатной_функции</replaceable> ( <replaceable>сигнатура_агр_функции</replaceable> ) |
+  CAST (<replaceable>исходный_тип</replaceable> AS <replaceable>целевой_тип</replaceable>) |
+  COLLATION <replaceable class="parameter">имя_объекта</replaceable> |
+  COLUMN <replaceable class="parameter">имя_отношения</replaceable>.<replaceable class="parameter">имя_столбца</replaceable> |
+  CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable> ON <replaceable class="parameter">имя_таблицы</replaceable> |
+  CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable> ON DOMAIN <replaceable class="parameter">имя_домена</replaceable> |
+  CONVERSION <replaceable class="parameter">имя_объекта</replaceable> |
+  DATABASE <replaceable class="parameter">имя_объекта</replaceable> |
+  DOMAIN <replaceable class="parameter">имя_объекта</replaceable> |
+  EXTENSION <replaceable class="parameter">имя_объекта</replaceable> |
+  EVENT TRIGGER <replaceable class="parameter">имя_объекта</replaceable> |
+  FOREIGN DATA WRAPPER <replaceable class="parameter">имя_объекта</replaceable> |
+  FOREIGN TABLE <replaceable class="parameter">имя_объекта</replaceable> |
+  FUNCTION <replaceable class="parameter">имя_функции</replaceable> ( [ [ <replaceable class="parameter">режим_аргумента</replaceable> ] [ <replaceable class="parameter">имя_аргумента</replaceable> ] <replaceable class="parameter">тип_аргумента</replaceable> [, ...] ] ) |
+  INDEX <replaceable class="parameter">имя_объекта</replaceable> |
+  LARGE OBJECT <replaceable class="parameter">oid_большого_объекта</replaceable> |
+  MATERIALIZED VIEW <replaceable class="parameter">имя_объекта</replaceable> |
+  OPERATOR <replaceable class="parameter">имя_оператора</replaceable> (<replaceable class="parameter">тип_слева</replaceable>, <replaceable class="parameter">тип_справа</replaceable>) |
+  OPERATOR CLASS <replaceable class="parameter">имя_объекта</replaceable> USING <replaceable class="parameter">метод_индекса</replaceable> |
+  OPERATOR FAMILY <replaceable class="parameter">имя_объекта</replaceable> USING <replaceable class="parameter">метод_индекса</replaceable> |
+  POLICY <replaceable class="parameter">имя_политики</replaceable> ON <replaceable class="parameter">имя_таблицы</replaceable> |
+  [ PROCEDURAL ] LANGUAGE <replaceable class="parameter">имя_объекта</replaceable> |
+  ROLE <replaceable class="parameter">имя_объекта</replaceable> |
+  RULE <replaceable class="parameter">имя_правила</replaceable> ON <replaceable class="parameter">имя_таблицы</replaceable> |
+  SCHEMA <replaceable class="parameter">имя_объекта</replaceable> |
+  SEQUENCE <replaceable class="parameter">имя_объекта</replaceable> |
+  SERVER <replaceable class="parameter">имя_объекта</replaceable> |
+  TABLE <replaceable class="parameter">имя_объекта</replaceable> |
+  TABLESPACE <replaceable class="parameter">имя_объекта</replaceable> |
+  TEXT SEARCH CONFIGURATION <replaceable class="parameter">имя_объекта</replaceable> |
+  TEXT SEARCH DICTIONARY <replaceable class="parameter">имя_объекта</replaceable> |
+  TEXT SEARCH PARSER <replaceable class="parameter">имя_объекта</replaceable> |
+  TEXT SEARCH TEMPLATE <replaceable class="parameter">имя_объекта</replaceable> |
+  TRANSFORM FOR <replaceable>имя_типа</replaceable> LANGUAGE <replaceable>имя_языка</replaceable> |
+  TRIGGER <replaceable class="parameter">имя_триггера</replaceable> ON <replaceable class="parameter">имя_таблицы</replaceable> |
+  TYPE <replaceable class="parameter">имя_объекта</replaceable> |
+  VIEW <replaceable class="parameter">имя_объекта</replaceable>
+} IS '<replaceable class="parameter">текст</replaceable>'
+
+<phrase>Здесь <replaceable>сигнатура_агр_функции</replaceable>:</phrase>
+
+* |
+[ <replaceable>режим_аргумента</replaceable> ] [ <replaceable>имя_аргумента</replaceable> ] <replaceable>тип_аргумента</replaceable> [ , ... ] |
+[ [ <replaceable>режим_аргумента</replaceable> ] [ <replaceable>имя_аргумента</replaceable> ] <replaceable>тип_аргумента</replaceable> [ , ... ] ] ORDER BY [ <replaceable>режим_аргумента</replaceable> ] [ <replaceable>имя_аргумента</replaceable> ] <replaceable>тип_аргумента</replaceable> [ , ... ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>COMMENT</command> сохраняет комментарий об объекте базы данных.</para>
+
+  <para>Для каждого объекта сохраняется только одна строка, так что для изменения комментария нужно просто выполнить <command>COMMENT</command> ещё раз для того же объекта. Чтобы удалить комментарий, вместо текстовой строки укажите <literal>NULL</literal>. При удалении объектов комментарии удаляются автоматически.</para>
+
+  <para>Для большинства типов объектов комментарий может установить только владелец объекта. Но так как роли не имеют владельцев, <literal>COMMENT ON ROLE</literal> для ролей суперпользователей разрешено выполнять только суперпользователям, а для обычных ролей — тем, кто имеет право <literal>CREATEROLE</literal>. Так же не имеют владельцев и методы доступа; чтобы добавить комментарий для метода доступа, нужно быть суперпользователем. Разумеется, суперпользователи могут задавать комментарии для любых объектов.</para>
+
+  <para>Просмотреть комментарии можно в <application>psql</application>, используя семейство команд <command>\d</command>. Имеется возможность получать комментарии и в других пользовательских интерфейсах, используя те же встроенные функции, что использует <application>psql</application>, а именно <function>obj_description</function>, <function>col_description</function> и <function>shobj_description</function> (см. <xref remap="4" linkend="functions-info-comment-table"/>).</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя_объекта</replaceable></term>
+    <term><replaceable class="parameter">имя_отношения</replaceable>.<replaceable>имя_столбца</replaceable></term>
+    <term><replaceable class="parameter">имя_агрегатной_функции</replaceable></term>
+    <term><replaceable class="parameter">имя_ограничения</replaceable></term>
+    <term><replaceable class="parameter">имя_функции</replaceable></term>
+    <term><replaceable class="parameter">имя_оператора</replaceable></term>
+    <term><replaceable class="parameter">имя_политики</replaceable></term>
+    <term><replaceable class="parameter">имя_правила</replaceable></term>
+    <term><replaceable class="parameter">имя_триггера</replaceable></term>
+    <listitem>
+     <para>Имя объекта, для которого задаётся комментарий. Имена таблиц, агрегатных функций, правил сортировки, перекодировок, доменов, сторонних таблиц, функций, индексов, операторов, классов и семейств операторов, последовательностей, объектов текстового поиска, типов и представлений могут быть дополнены именем схемы. При определении комментария для столбца, <replaceable class="parameter">имя_отношения</replaceable> должно ссылаться на таблицу, представление, составной тип или стороннюю таблицу.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <term><replaceable class="parameter">имя_домена</replaceable></term>
+    <listitem>
+     <para>При создании комментария для ограничения, триггера, правила или политики эти параметры задают имя таблицы или домена, к которым относится этот объект.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+     <term><replaceable>исходный_тип</replaceable></term>
+     <listitem>
+      <para>Имя исходного типа данных для приведения.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>целевой_тип</replaceable></term>
+     <listitem>
+      <para>Имя целевого типа данных для приведения.</para>
+     </listitem>
+    </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">режим_аргумента</replaceable></term>
+    <listitem>
+     <para>Режим аргумента обычной или агрегатной функции: <literal>IN</literal>, <literal>OUT</literal>, <literal>INOUT</literal> или <literal>VARIADIC</literal>. По умолчанию подразумевается <literal>IN</literal>. Заметьте, что <command>COMMENT</command> на самом деле не учитывает аргументы <literal>OUT</literal>, так как для идентификации функции нужны только типы входных аргументов. Поэтому достаточно перечислить только аргументы <literal>IN</literal>, <literal>INOUT</literal> и <literal>VARIADIC</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_аргумента</replaceable></term>
+    <listitem>
+     <para>Имя аргумента обычной или агрегатной функции. Заметьте, что на самом деле <command>COMMENT</command> не обращает внимание на имена аргументов, так как для однозначной идентификации функции достаточно только типов аргументов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_аргумента</replaceable></term>
+    <listitem>
+     <para>Тип данных аргумента обычной или агрегатной функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">oid_большого_объекта</replaceable></term>
+    <listitem>
+     <para>OID большого объекта.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_слева</replaceable></term>
+    <term><replaceable class="parameter">тип_справа</replaceable></term>
+    <listitem>
+     <para>Тип данных аргументов оператора (возможно, дополненный именем схемы). В случае отсутствия аргумента префиксного или постфиксного оператора укажите вместо типа <literal>NONE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+     <term><literal>PROCEDURAL</literal></term>
+     <listitem>
+      <para>Это слово не несёт смысловой нагрузки.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>имя_типа</replaceable></term>
+
+     <listitem>
+      <para>Имя типа данных, для которого предназначена трансформация.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>имя_языка</replaceable></term>
+
+     <listitem>
+      <para>Имя языка, для которого предназначена трансформация.</para>
+     </listitem>
+    </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">текст</replaceable></term>
+    <listitem>
+     <para>Новый комментарий, записанный в виде строковой константы (или <literal>NULL</literal> для удаления комментария).</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>В настоящее время механизм безопасности в части просмотра комментариев отсутствует: любой пользователь, подключённый к базе данных, может видеть все комментарии всех объектов базы. Для общих объектов, таких как базы данных, роли и табличные пространства, комментарии хранятся глобально, так что их может видеть любой пользователь, подключённый к любой базе данных в кластере. Поэтому ничего секретного писать в комментариях не следует.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Добавление комментария для таблицы <literal>mytable</literal>: <programlisting>COMMENT ON TABLE mytable IS 'Это моя таблица.';</programlisting> Удаление его: <programlisting>COMMENT ON TABLE mytable IS NULL;</programlisting></para>
+
+  <para>Ещё несколько примеров: <programlisting>COMMENT ON ACCESS METHOD rtree IS 'Метод доступа R-Tree';
+COMMENT ON AGGREGATE my_aggregate (double precision) IS 'Вычисляет дисперсию выборки';
+COMMENT ON CAST (text AS int4) IS 'Выполняет приведение строк к int4';
+COMMENT ON COLLATION "fr_CA" IS 'Канадский французский';
+COMMENT ON COLUMN my_table.my_column IS 'Порядковый номер сотрудника';
+COMMENT ON CONVERSION my_conv IS 'Перекодировка в UTF8';
+COMMENT ON CONSTRAINT bar_col_cons ON bar IS 'Ограничение столбца col';
+COMMENT ON CONSTRAINT dom_col_constr ON DOMAIN dom IS 'Ограничение col для домена';
+COMMENT ON DATABASE my_database IS 'База данных разработчиков';
+COMMENT ON DOMAIN my_domain IS 'Домен почтового адреса';
+COMMENT ON EXTENSION hstore IS 'Реализует тип данных hstore';
+COMMENT ON FOREIGN DATA WRAPPER mywrapper IS 'Моя обёртка сторонних данных';
+COMMENT ON FOREIGN TABLE my_foreign_table IS 'Информация о сотрудниках в другой БД';
+COMMENT ON FUNCTION my_function (timestamp) IS 'Возвращает число римскими цифрами';
+COMMENT ON INDEX my_index IS 'Обеспечивает уникальность по коду сотрудника';
+COMMENT ON LANGUAGE plpython IS 'Поддержка Python для хранимых процедур';
+COMMENT ON LARGE OBJECT 346344 IS 'Документ планирования';
+COMMENT ON MATERIALIZED VIEW my_matview IS 'Сводка истории заказов';
+COMMENT ON OPERATOR ^ (text, text) IS 'Вычисляет пересечение двух текстов';
+COMMENT ON OPERATOR - (NONE, integer) IS 'Унарный минус';
+COMMENT ON OPERATOR CLASS int4ops USING btree IS 'Операторы для четырёхбайтовых целых (для B-деревьев)';
+COMMENT ON OPERATOR FAMILY integer_ops USING btree IS 'Все целочисленные операторы (для B-деревьев)';
+COMMENT ON POLICY my_policy ON mytable IS 'Фильтр строк по пользователям';
+COMMENT ON ROLE my_role IS 'Административная группа для таблиц бухгалтерии';
+COMMENT ON RULE my_rule ON my_table IS 'Протоколирует изменения в записях сотрудников';
+COMMENT ON SCHEMA my_schema IS 'Данные отдела';
+COMMENT ON SEQUENCE my_sequence IS 'Предназначена для генерации первичных ключей';
+COMMENT ON SERVER myserver IS 'Мой сторонний сервер';
+COMMENT ON TABLE my_schema.my_table IS 'Данные сотрудников';
+COMMENT ON TABLESPACE my_tablespace IS 'Табличное пространство для индексов';
+COMMENT ON TEXT SEARCH CONFIGURATION my_config IS 'Фильтрация специальных слов';
+COMMENT ON TEXT SEARCH DICTIONARY swedish IS 'Стеммер Snowball для шведского языка';
+COMMENT ON TEXT SEARCH PARSER my_parser IS 'Разделяет текст на слова';
+COMMENT ON TEXT SEARCH TEMPLATE snowball IS 'Стеммер Snowball';
+COMMENT ON TRANSFORM FOR hstore LANGUAGE plpythonu IS 'Трансформирует данные из hstore в словарь языка Python';
+COMMENT ON TRIGGER my_trigger ON my_table IS 'Обеспечивает ссылочную целостность';
+COMMENT ON TYPE complex IS 'Тип данных комплексных чисел';
+COMMENT ON VIEW my_view IS 'Представление расходов по отделам';</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>COMMENT</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+</refentry>

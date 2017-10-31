@@ -1,0 +1,231 @@
+<!--
+doc/src/xml/ref/create_view.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createview">
+ <indexterm zone="sql-createview"><primary>CREATE VIEW</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE VIEW</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE VIEW</refname>
+  <refpurpose>создать представление</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE [ OR REPLACE ] [ TEMP | TEMPORARY ] [ RECURSIVE ] VIEW <replaceable class="parameter">имя</replaceable> [ ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] ) ]
+    [ WITH ( <replaceable class="parameter">имя_параметра_представления</replaceable> [= <replaceable class="parameter">значение_параметра_представления</replaceable>] [, ... ] ) ]
+    AS <replaceable class="parameter">запрос</replaceable>
+    [ WITH [ CASCADED | LOCAL ] CHECK OPTION ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE VIEW</command> создаёт представление запроса. Создаваемое представление лишено физической материализации, поэтому указанный запрос будет выполняться при каждом обращении к представлению.</para>
+
+  <para>Команда <command>CREATE OR REPLACE VIEW</command> действует подобным образом, но если представление с этим именем уже существует, оно заменяется. Новый запрос должен выдавать те же столбцы, что выдавал запрос, ранее определённый для этого представления (то есть, столбцы с такими же именами должны иметь те же типы данных и следовать в том же порядке), но может добавить несколько новых столбцов в конце списка. Вычисления, в результате которых формируются столбцы представления, могут быть совершенно другими.</para>
+
+  <para>Если задано имя схемы (например, <literal>CREATE VIEW myschema.myview ...</literal>), представление создаётся в указанной схеме, в противном случае — в текущей. Временные представления существуют в специальной схеме, так что при создании таких представлений имя схемы задать нельзя. Имя представления должно отличаться от имён других представлений, таблиц, последовательностей, индексов или сторонних таблиц в этой схеме.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>TEMPORARY</literal> или <literal>TEMP</literal></term>
+    <listitem>
+     <para>С таким указанием представление создаётся как временное. Временные представления автоматически удаляются в конце сеанса. Существующее постоянное представление с тем же именем не будет видно в текущем сеансе, пока существует временное, однако к нему можно обратиться, дополнив имя указанием схемы.</para>
+
+     <para>Если в определении представления задействованы временные таблицы, представление так же создаётся как временное (вне зависимости от присутствия явного указания <literal>TEMPORARY</literal>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RECURSIVE</literal></term>
+    <listitem>
+     <para>Создаёт рекурсивное представление. Синтаксис <synopsis>
+CREATE RECURSIVE VIEW [ <replaceable>схема</replaceable> . ] <replaceable>имя</replaceable> (<replaceable>имена_столбцов</replaceable>) AS SELECT <replaceable>...</replaceable>;
+</synopsis> равнозначен <synopsis>
+CREATE VIEW [ <replaceable>схема</replaceable> . ] <replaceable>имя</replaceable> AS WITH RECURSIVE <replaceable>имя</replaceable> (<replaceable>имена_столбцов</replaceable>) AS (SELECT <replaceable>...</replaceable>) SELECT <replaceable>имена_столбцов</replaceable> FROM <replaceable>имя</replaceable>;
+</synopsis> Для рекурсивного представления обязательно должен задаваться список с именами столбцов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) создаваемого представления.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_столбца</replaceable></term>
+    <listitem>
+     <para>Необязательный список имён, назначаемых столбцам представления. Если отсутствует, имена столбцов формируются из результатов запроса.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>WITH ( <replaceable class="parameter">имя_параметра_представления</replaceable> [= <replaceable class="parameter">значение_параметра_представления</replaceable>] [, ... ] )</literal></term>
+    <listitem>
+     <para>В этом предложении могут задаваться следующие необязательные параметры представления: <variablelist>
+       <varlistentry>
+        <term><literal>check_option</literal> (<type>string</type>)</term>
+        <listitem>
+         <para>Этот параметр может принимать значение <literal>local</literal> (локально) или <literal>cascaded</literal> (каскадно) и равнозначен указанию <literal>WITH [ CASCADED | LOCAL ] CHECK OPTION</literal> (см. ниже). Изменить этот параметр у существующего представления с помощью <xref linkend="sql-alterview"/> нельзя.</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>security_barrier</literal> (<type>boolean</type>)</term>
+        <listitem>
+         <para>Этот параметр следует использовать, если представление должно обеспечивать безопасность на уровне строк. За дополнительными подробностями обратитесь к <xref remap="3" linkend="rules-privileges"/>.</para>
+        </listitem>
+       </varlistentry>
+      </variablelist></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">запрос</replaceable></term>
+    <listitem>
+     <para>Команда <xref linkend="sql-select"/> или <xref linkend="sql-values"/>, которая выдаёт столбцы и строки представления.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>WITH [ CASCADED | LOCAL ] CHECK OPTION</literal>
+      <indexterm zone="sql-createview"><primary>CHECK OPTION</primary></indexterm>
+      <indexterm zone="sql-createview"><primary>WITH CHECK OPTION</primary></indexterm>
+    </term>
+    <listitem>
+     <para>Это указание управляет поведением автоматически изменяемых представлений. Если оно присутствует, при выполнении операций <command>INSERT</command> и <command>UPDATE</command> с этим представлением будет проверяться, удовлетворяют ли новые строки условию, определяющему представление (то есть, проверяется, будут ли новые строки видны через это представление). Если они не удовлетворяют условию, операция не будет выполнена. Если указание <literal>CHECK OPTION</literal> отсутствует, команды <command>INSERT</command> и <command>UPDATE</command> смогут создавать в этом представлении строки, которые не будут видны в нём. Поддерживаются следующие варианты проверки: <variablelist>
+       <varlistentry>
+        <term><literal>LOCAL</literal></term>
+        <listitem>
+         <para>Новые строки проверяются только по условиям, определённым непосредственно в самом представлении. Любые условия, определённые в нижележащих базовых представлениях, не проверяются (если только в них нет указания <literal>CHECK OPTION</literal>).</para>
+        </listitem>
+       </varlistentry>
+
+       <varlistentry>
+        <term><literal>CASCADED</literal></term>
+        <listitem>
+         <para>Новые строки проверяются по условиям данного представления и всех нижележащих базовых. Если указано <literal>CHECK OPTION</literal>, а <literal>LOCAL</literal> и <literal>CASCADED</literal> опущено, подразумевается указание <literal>CASCADED</literal>.</para>
+        </listitem>
+       </varlistentry>
+      </variablelist></para>
+
+     <para>Указание <literal>CHECK OPTION</literal> нельзя использовать с рекурсивными представлениями.</para>
+
+     <para>Заметьте, что <literal>CHECK OPTION</literal> поддерживается только для автоматически изменяемых представлений, не имеющих триггеров <literal>INSTEAD OF</literal> и правил <literal>INSTEAD</literal>. Если автоматически изменяемое представление определено поверх базового представления с триггерами <literal>INSTEAD OF</literal>, то для проверки ограничений автоматически изменяемого представления можно применить указание <literal>LOCAL CHECK OPTION</literal>, хотя условия базового представления с триггерами <literal>INSTEAD OF</literal> при этом проверяться не будут (каскадная проверка не будет спускаться к представлению, модифицируемому триггером, и любые параметры проверки, определённые для такого представления, будут просто игнорироваться). Если для представления или любого из его базовых отношений определено правило <literal>INSTEAD</literal>, приводящее к перезаписи команды <command>INSERT</command> или <command>UPDATE</command>, в перезаписанном запросе все параметры проверки будут игнорироваться, в том числе проверки автоматически изменяемых представлений, определённых поверх отношений с правилом <literal>INSTEAD</literal>.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para>Для удаления представлений применяется оператор <xref linkend="sql-dropview"/>.</para>
+
+   <para>Будьте аккуратны в определении представления, чтобы получить желаемые имена и типы столбцов. Например, такая команда: <programlisting>CREATE VIEW vista AS SELECT 'Hello World';</programlisting> создаст представление с двумя недостатками: именем столбца по умолчанию будет <literal>?column?</literal>, а типом данных — <type>unknown</type> (неизвестный). Если вы хотите получить в представлении строковую константу, лучше сделать так: <programlisting>CREATE VIEW vista AS SELECT text 'Hello World' AS hello;</programlisting></para>
+
+   <para>Доступ к таблицам, задействованным в представлении, определяется правами владельца представления. В некоторых случаях это позволяет организовать безопасный, но ограниченный доступ к нижележащим таблицам. Однако учтите, что не все представления могут быть защищёнными; за подробностями обратитесь к <xref remap="3" linkend="rules-privileges"/>. Функции, вызываемые в представлении, выполняются так, как будто они вызываются непосредственно из запроса, обращающегося к представлению. Поэтому пользователь представления должен иметь все права, необходимые для вызова всех функций, задействованных в представлении.</para>
+
+   <para>При выполнении <command>CREATE OR REPLACE VIEW</command> для существующего представления меняется только правило SELECT, определяющее представление. Другие свойства представления, включая владельца, права и правила, кроме SELECT, остаются неизменными. Чтобы изменить определение представления, необходимо быть его владельцем (или членом роли-владельца).</para>
+
+  <refsect2 id="sql-createview-updatable-views">
+   <title id="sql-createview-updatable-views-title">Изменяемые представления</title>
+
+   <indexterm zone="sql-createview-updatable-views"><primary>изменяемые представления</primary></indexterm>
+
+   <para>Простые представления становятся изменяемыми автоматически: система позволит выполнять команды <command>INSERT</command>, <command>UPDATE</command> и <command>DELETE</command> с таким представлением так же, как и с обычной таблицей. Представление будет автоматически изменяемым, если оно удовлетворяют одновременно всем следующим условиям: <itemizedlist>
+     <listitem>
+      <para>Список <literal>FROM</literal> в запросе, определяющем представлении, должен содержать ровно один элемент, и это должна быть таблица или другое изменяемое представление.</para>
+     </listitem>
+
+     <listitem>
+      <para>Определение представления не должно содержать предложения <literal>WITH</literal>, <literal>DISTINCT</literal>, <literal>GROUP BY</literal>, <literal>HAVING</literal>, <literal>LIMIT</literal> и <literal>OFFSET</literal> на верхнем уровне запроса.</para>
+     </listitem>
+
+     <listitem>
+      <para>Определение представления не должно содержать операции с множествами (<literal>UNION</literal>, <literal>INTERSECT</literal> и <literal>EXCEPT</literal>) на верхнем уровне запроса.</para>
+     </listitem>
+
+     <listitem>
+      <para>Список выборки в запросе не должен содержать агрегатные и оконные функции, а также функции, возвращающие множества.</para>
+     </listitem>
+    </itemizedlist></para>
+
+   <para>Автоматически обновляемое представление может содержать как изменяемые, так и не изменяемые столбцы. Столбец будет изменяемым, если это простая ссылка на изменяемый столбец нижележащего базового отношения; в противном случае, этот столбец будет доступен только для чтения, и если команда <command>INSERT</command> или <command>UPDATE</command> попытается записать значение в него, возникнет ошибка.</para>
+
+   <para>Если представление автоматически изменяемое, система будет преобразовывать обращающиеся к нему операторы <command>INSERT</command>, <command>UPDATE</command> и <command>DELETE</command> в соответствующие операторы, обращающиеся к нижележащему базовому отношению. При этом в полной мере поддерживаются операторы <command>INSERT</command> с предложением <literal>ON CONFLICT UPDATE</literal>.</para>
+
+   <para>Если автоматически изменяемое представление содержит условие <literal>WHERE</literal>, это условие ограничивает набор строк, которые могут быть изменены командой <command>UPDATE</command> и удалены командой <command>DELETE</command> в этом представлении. Однако <command>UPDATE</command> может изменить строку так, что она больше не будет соответствовать условию <literal>WHERE</literal> и, как следствие, больше не будет видна через представление. Команда <command>INSERT</command> подобным образом может вставить в базовое отношение строки, которые не удовлетворят условию <literal>WHERE</literal> и поэтому не будут видны через представление (<literal>ON CONFLICT UPDATE</literal> может подобным образом воздействовать на существующую строку, не видимую через представление). Чтобы запретить командам <command>INSERT</command> и <command>UPDATE</command> создавать такие строки, которые не видны через представление, можно воспользоваться указанием <literal>CHECK OPTION</literal>.</para>
+
+   <para>Если автоматически изменяемое представление имеет свойство <literal>security_barrier</literal> (барьер безопасности), то все условия <literal>WHERE</literal> этого представления (и все условия с герметичными операторами (<literal>LEAKPROOF</literal>)) будут всегда вычисляться перед условиями, добавленными пользователем представления. За подробностями обратитесь к <xref remap="3" linkend="rules-privileges"/>. Заметьте, что по этой причине строки, которые в конце концов не были выданы (потому что не прошли проверку в пользовательском условии <literal>WHERE</literal>), могут всё же остаться заблокированными. Чтобы определить, какие условия применяются на уровне отношения (и, как следствие, избавляют часть строк от блокировки), можно воспользоваться командой <command>EXPLAIN</command>.</para>
+
+   <para>Более сложные представления, не удовлетворяющие этим условиям, по умолчанию доступны только для чтения: система не позволит выполнить операции добавления, изменения или удаления строк в таком представлении. Создать эффект изменяемого представления для них можно, определив триггеры <literal>INSTEAD OF</literal>, которые будут преобразовывать запросы на изменение данных в соответствующие действия с другими таблицами. За дополнительными сведениями обратитесь к <xref remap="3" linkend="sql-createtrigger"/>. Так же есть возможность создавать правила (см. <xref remap="4" linkend="sql-createrule"/>), но на практике триггеры проще для понимания и применения.</para>
+
+   <para>Учтите, что пользователь, выполняющий операции добавления, изменения или удаления данных в представлении, должен иметь соответствующие права для этого представления. Кроме того, владелец представления должен иметь сопутствующие права в нижележащих базовых отношениях, хотя пользователь, собственно выполняющий эти операции, может этих прав не иметь (см. <xref remap="4" linkend="rules-privileges"/>).</para>
+  </refsect2>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Создание представления, содержащего все комедийные фильмы: <programlisting>CREATE VIEW comedies AS
+    SELECT *
+    FROM films
+    WHERE kind = 'Comedy';</programlisting> Эта команда создаст представление со столбцами, которые содержались в таблице <literal>film</literal> в момент выполнения команды. Хотя при создании представления было указано <literal>*</literal>, столбцы, добавляемые в таблицу позже, частью представления не будут.</para>
+
+  <para>Создание представления с указанием <literal>LOCAL CHECK OPTION</literal>: <programlisting>CREATE VIEW universal_comedies AS
+    SELECT *
+    FROM comedies
+    WHERE classification = 'U'
+    WITH LOCAL CHECK OPTION;</programlisting> Эта команда создаст представление на базе представления <literal>comedies</literal>, выдающее только комедии (<literal>kind = 'Comedy'</literal>) универсальной возрастной категории <literal>classification = 'U'</literal>. Любая попытка выполнить в представлении <command>INSERT</command> или <command>UPDATE</command> со строкой, не удовлетворяющей условию <literal>classification = 'U'</literal>, будет отвергнута, но ограничение по полю <literal>kind</literal> (тип фильма) проверяться не будет.</para>
+
+  <para>Создание представления с указанием <literal>CASCADED CHECK OPTION</literal>: <programlisting>CREATE VIEW pg_comedies AS
+    SELECT *
+    FROM comedies
+    WHERE classification = 'PG'
+    WITH CASCADED CHECK OPTION;</programlisting> Это представление будет проверять, удовлетворяют ли новые строки обоим условиям: по столбцу <literal>kind</literal> и по столбцу <literal>classification</literal>.</para>
+
+  <para>Создание представления с изменяемыми и неизменяемыми столбцами: <programlisting>CREATE VIEW comedies AS
+    SELECT f.*,
+           country_code_to_name(f.country_code) AS country,
+           (SELECT avg(r.rating)
+            FROM user_ratings r
+            WHERE r.film_id = f.id) AS avg_rating
+    FROM films f
+    WHERE f.kind = 'Comedy';</programlisting> Это представление будет поддерживать операции <command>INSERT</command>, <command>UPDATE</command> и <command>DELETE</command>. Изменяемыми будут все столбцы из таблицы <literal>films</literal>, тогда как вычисляемые столбцы <literal>country</literal> и <literal>avg_rating</literal> будут доступны только для чтения.</para>
+
+  <para>Создание рекурсивного представления, содержащего числа от 1 до 100: <programlisting>CREATE RECURSIVE VIEW public.nums_1_100 (n) AS
+    VALUES (1)
+UNION ALL
+    SELECT n+1 FROM nums_1_100 WHERE n &lt; 100;</programlisting> Заметьте, что несмотря на то, что имя рекурсивного представления дополнено схемой в этой команде <command>CREATE</command>, внутренняя ссылка представления на себя же схемой не дополняется. Это связано с тем, что имя неявно создаваемого CTE не может дополняться схемой.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Команда <command>CREATE OR REPLACE VIEW</command> — языковое расширение <productname>&productname;</productname>. Так же расширением является предложение <literal>WITH ( ... )</literal> и концепция временного представления.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterview"/></member>
+   <member><xref linkend="sql-dropview"/></member>
+   <member><xref linkend="sql-creatematerializedview"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

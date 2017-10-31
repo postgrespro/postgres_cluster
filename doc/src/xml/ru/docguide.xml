@@ -1,0 +1,646 @@
+<!-- doc/src/xml/docguide.xml -->
+
+<appendix id="docguide">
+ <title>Документация</title>
+
+ <para>Документация <productname>&productname;</productname> публикуется в четырёх основных форматах: <itemizedlist>
+   <listitem>
+    <para>Простой текст, для информации перед установкой</para>
+   </listitem>
+   <listitem>
+    <para><acronym>HTML</acronym>, для справки, поиска и просмотра в Интернете</para>
+   </listitem>
+   <listitem>
+    <para>PDF или PostScript, для печати</para>
+   </listitem>
+   <listitem>
+    <para>Страницы руководства man, для быстрой справки.</para>
+   </listitem>
+  </itemizedlist> Кроме того, в дереве исходного кода <productname>&productname;</productname> можно найти несколько простых текстовых файлов <filename>README</filename>, освещающих различные вопросы реализации.</para>
+
+ <para>Документация в <acronym>HTML</acronym> и страницы man входят в состав стандартного дистрибутива и устанавливаются по умолчанию. Документацию в форматах PDF и PostScript можно загрузить отдельно.</para>
+
+ <sect1 id="docguide-docbook">
+  <title>DocBook</title>
+  <para>Исходный материал документации пишется на языке разметки <firstterm>DocBook</firstterm>, который отдалённо напоминает <acronym>HTML</acronym>. Оба эти языка являются приложениями <acronym>SGML</acronym> (<firstterm>Standard Generalized Markup Language</firstterm>, Стандартного обобщённого языка разметки), который по сути является языком описания других языков. В следующем описании используется как термин DocBook, так и <acronym>SGML</acronym>, но технически они не взаимозаменяемы.</para>
+
+  <para>Формат <productname>DocBook</productname> позволяет авторам определять структуру и содержимое технического документа, не заботясь о деталях представления. Как это содержимое будет представлено в различных конечных формах, определяет стиль документа. DocBook поддерживается <ulink url="http://www.oasis-open.org"> группой OASIS</ulink>. На <ulink url="http://www.oasis-open.org/docbook/">официальном сайте DocBook</ulink> имеется хорошая вводная и справочная документация, а также полная книга издательства О'Рейли для чтения в электронном виде. Новичкам будет очень полезно руководство <ulink url="http://newbiedoc.sourceforge.net/metadoc/docbook-guide.html">NewbieDoc Docbook Guide</ulink>. Кроме того, в <ulink url="http://www.freebsd.org/docproj/docproj.html">Проекте документации FreeBSD</ulink> (FreeBSD Documentation Project) так же применяется формат DocBook и даются полезные сведения, включая ряд замечаний по стилю, которые стоит принять во внимание.</para>
+ </sect1>
+
+
+ <sect1 id="docguide-toolsets">
+  <title>Инструментарий</title>
+
+  <para>Для обработки документации применяются следующие средства. Некоторые из них могут быть необязательными, как отмечено ниже. <variablelist>
+    <varlistentry>
+     <term><ulink url="http://www.oasis-open.org/docbook/">DTD для DocBook</ulink></term>
+     <listitem>
+      <para>Это полное определение самого формата DocBook. В настоящее время мы применяем версию 4.2; более ранняя или более поздняя версия не подойдёт. Использовать нужно вариант <acronym>SGML</acronym> формата DocBook, но для сборки страниц man вам также потребуется вариант <acronym>XML</acronym> той же версии.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><ulink url="http://www.oasis-open.org/cover/ISOEnts.zip">Сущности символов ISO 8879</ulink></term>
+     <listitem>
+      <para>Они требуются форматом DocBook, но распространяются отдельно, так как поддерживаются комитетом ISO.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><ulink url="http://wiki.docbook.org/DocBookDssslStylesheetDocs">Таблицы стилей DocBook DSSSL</ulink></term>
+     <listitem>
+      <para>Они содержат инструкции обработки для преобразования исходных материалов DocBook в другие форматы, например, в <acronym>HTML</acronym>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><ulink url="http://wiki.docbook.org/DocBookXslStylesheets">Таблицы стилей DocBook XSL</ulink></term>
+     <listitem>
+      <para>Это ещё одни стили для преобразования DocBook в другие форматы. В настоящее время мы используем их для получения страниц man и дополнительного формата, HTMLHelp. Эти стили можно применять и для получения вывода в HTML или PDF, но в официальных выпусках &productname; для этого используются стили DSSSL.</para>
+
+      <para>На данный момент требуется версия как минимум 1.74.0.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><ulink url="http://openjade.sourceforge.net">OpenJade</ulink></term>
+     <listitem>
+      <para>Это базовый пакет для обработки <acronym>SGML</acronym>. В него входит средство разбора <acronym>SGML</acronym>, процессор <acronym>DSSSL</acronym> (то есть программа, преобразующая <acronym>SGML</acronym> в другие форматы, применяя стили <acronym>DSSSL</acronym>), а также ряд связанных инструментов. Поддержкой <productname>Jade</productname> теперь занимается не Джеймс Кларк, а группа OpenJade.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><ulink url="http://xmlsoft.org/">Libxml2</ulink> для <command>xmllint</command></term>
+     <listitem>
+      <para>Эта библиотека и включённая в неё утилита <command>xmllint</command> применяются для обработки XML. У многих разработчиков библиотека <application>Libxml2</application> уже установлена, потому что она также используются при сборке кода &productname;. Заметьте, однако, что <command>xmllint</command> может потребоваться установить из отдельного пакета.</para>
+     </listitem>
+     </varlistentry>
+
+    <varlistentry>
+     <term><ulink url="http://xmlsoft.org/XSLT/">Libxslt</ulink> для <command>xsltproc</command></term>
+     <listitem>
+      <para>Это средство преобразования с применением стилей XSLT (как <command>jade</command> — средство преобразования с применением стилей DSSSL).</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><ulink url="http://jadetex.sourceforge.net">JadeTeX</ulink></term>
+     <listitem>
+      <para>Если хотите, вы также можете установить <productname>JadeTeX</productname>, чтобы использовать <productname>TeX</productname> как модуль форматирования для <productname>Jade</productname>. <application>JadeTeX</application> может создавать файлы PostScript и <acronym>PDF</acronym> (последние с закладками).</para>
+
+      <para>Однако вывод <application>JadeTeX</application> уступает тому, что можно получить через <acronym>RTF</acronym>. В частности, проблемы возникают с таблицами, а также с горизонтальными и вертикальными отступами. Кроме того, при таком выводе нет возможности вручную отполировать результаты.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist></para>
+
+  <para>Ниже мы опишем различные варианты установки программного обеспечения, необходимого для обработки документации. Эти программы могут распространяться и в других пакетах. Пожалуйста, сообщите о состоянии конкретного пакета в список рассылки, посвящённый документации, и мы добавим эту информацию сюда.</para>
+
+  <sect2>
+   <title>Установка в Fedora, RHEL и производных системах</title>
+
+   <para>Чтобы установить требуемые пакеты, выполните: <programlisting>yum install docbook-dtds docbook-style-dsssl docbook-style-xsl libxslt openjade</programlisting></para>
+  </sect2>
+
+  <sect2>
+   <title>Установка во FreeBSD</title>
+
+   <para>Проект документации FreeBSD сам активно использует DocBook, поэтому неудивительно, что для FreeBSD есть полный набор <quote>портов</quote> инструментария для сборки документации. Чтобы собирать документацию во FreeBSD, необходимо установить нижеперечисленные порты. <itemizedlist>
+     <listitem>
+      <para><filename>textproc/docbook-sgml</filename></para>
+     </listitem>
+     <listitem>
+      <para><filename>textproc/docbook-xml</filename></para>
+     </listitem>
+     <listitem>
+      <para><filename>textproc/docbook-xsl</filename></para>
+     </listitem>
+     <listitem>
+      <para><filename>textproc/dsssl-docbook-modular</filename></para>
+     </listitem>
+     <listitem>
+      <para><filename>textproc/libxslt</filename></para>
+     </listitem>
+     <listitem>
+      <para><filename>textproc/openjade</filename></para>
+     </listitem>
+    </itemizedlist></para>
+
+   <para>Также могут представлять интерес некоторые вещи из <filename>/usr/ports/print</filename> (<filename>tex</filename>, <filename>jadetex</filename>).</para>
+
+   <para>Дополнительные сведения об инструментарии документации FreeBSD можно найти в <ulink url="http://www.freebsd.org/doc/en_US.ISO8859-1/books/fdp-primer/tools.html">инструкциях проекта документации FreeBSD</ulink>.</para>
+  </sect2>
+
+  <sect2>
+   <title>Пакеты Debian</title>
+
+   <para>Для <productname>Debian GNU/Linux</productname> имеется полный набор пакетов инструментария сборки документации. Чтобы установить их, просто выполните: <programlisting>apt-get install docbook docbook-dsssl docbook-xsl libxml2-utils openjade1.3 opensp xsltproc</programlisting></para>
+  </sect2>
+
+  <sect2>
+   <title>OS X</title>
+
+   <para>Если вы используете систему MacPorts, вы можете получить необходимое программное обеспечение так: <programlisting>sudo port install docbook-dsssl docbook-sgml-4.2 docbook-xml-4.2 docbook-xsl libxslt openjade opensp</programlisting></para>
+  </sect2>
+
+  <sect2>
+   <title>Установка из исходного кода вручную</title>
+
+   <para>Процесс установки инструментария DocBook довольно сложен, поэтому, если для вашей системы есть готовые пакеты, используйте их. Мы опишем здесь только стандартную процедуру с обычными путями инсталляции и без <quote>экстраординарных</quote> функций. За подробностями вы можете обратиться к документации соответствующего пакета или вводному материалу по <acronym>SGML</acronym>.</para>
+
+   <sect3>
+    <title>Установка OpenJade</title>
+
+    <procedure>
+      <step>
+       <para>Установка OpenJade заключается в процессе сборки в стиле GNU <literal>./configure; make; make install</literal>. Подробности можно найти в пакете исходного кода OpenJade. Вкратце: <synopsis>
+./configure --enable-default-catalog=/usr/local/share/sgml/catalog
+make
+make install
+</synopsis> Обязательно запомните, какой путь вы задали для <quote>каталога по умолчанию</quote>; он понадобится вам позже. Вы можете и не задавать его, но тогда вам надо будет устанавливать путь к каталогу в переменной окружения <envar>SGML_CATALOG_FILES</envar> всякий раз, когда вы будете использовать <application>jade</application>. (Это может пригодиться, если OpenJade уже установлен и вы хотите установить остальные компоненты локально.)</para>
+
+       <note>
+       <para>Некоторые пользователи сообщали о возникновении ошибки сегментации в OpenJade 1.4devel при попытке сгенерировать PDF, с таким сообщением: <screen>
+openjade:./stylesheet.dsl:664:2:E: flow object not accepted by port; only display flow objects accepted
+make: *** [postgres-A4.tex-pdf] Segmentation fault
+</screen> Понижение версии OpenJade до 1.3 должно решить эту проблему.</para>
+       </note>
+
+      </step>
+
+      <step id="doc-openjade-install">
+       <para>Кроме того, вы должны установить файлы <filename>dsssl.dtd</filename>, <filename>fot.dtd</filename>, <filename>style-sheet.dtd</filename> и <filename>catalog</filename> из каталога <filename>dsssl</filename> в определённое место, возможно, в <filename>/usr/local/share/sgml/dsssl</filename>. Вероятно, проще всего для этого будет скопировать весь каталог: <synopsis>
+cp -R dsssl /usr/local/share/sgml
+</synopsis></para>
+      </step>
+
+      <step>
+       <para>Наконец, создайте файл <filename>/usr/local/share/sgml/catalog</filename> и добавьте в него эту строку: <programlisting>CATALOG "dsssl/catalog"</programlisting> (Это ссылка по относительному пути на файл, установленный на <xref remap="6" linkend="doc-openjade-install"/>. Обязательно скорректируйте этот путь, если ваша инсталляция имеет другую структуру.)</para>
+      </step>
+     </procedure>
+   </sect3>
+
+   <sect3>
+    <title>Установка <productname>DocBook</productname> <acronym>DTD</acronym></title>
+
+    <procedure>
+     <step>
+      <para>Получите <ulink url="http://www.docbook.org/sgml/4.2/docbook-4.2.zip">пакет DocBook V4.2</ulink>.</para>
+     </step>
+
+     <step>
+      <para>Создайте каталог <filename>/usr/local/share/sgml/docbook-4.2</filename> и перейдите в него. (Расположение может быть и другим, но данный путь соответствует структуре каталогов, которой мы следуем здесь.) <screen>
+<prompt>$ </prompt><userinput>mkdir /usr/local/share/sgml/docbook-4.2</userinput>
+<prompt>$ </prompt><userinput>cd /usr/local/share/sgml/docbook-4.2</userinput>
+</screen></para>
+     </step>
+
+     <step>
+      <para>Распакуйте архив: <screen>
+<prompt>$ </prompt><userinput>unzip -a ...../docbook-4.2.zip</userinput>
+</screen> (Файлы архива будут распакованы в текущий каталог.)</para>
+     </step>
+
+     <step>
+      <para>Отредактируйте файл <filename>/usr/local/share/sgml/catalog</filename> (или тот, что был указан при инсталляции jade) и добавьте в него такую строку: <programlisting>CATALOG "docbook-4.2/docbook.cat"</programlisting></para>
+     </step>
+
+     <step>
+      <para>Загрузите <ulink url="http://www.oasis-open.org/cover/ISOEnts.zip">архив сущностей символов ISO 8879</ulink>, распакуйте его и поместите файлы в тот же каталог, в который вы поместили файлы DocBook: <screen>
+<prompt>$ </prompt><userinput>cd /usr/local/share/sgml/docbook-4.2</userinput>
+<prompt>$ </prompt><userinput>unzip ...../ISOEnts.zip</userinput>
+</screen></para>
+     </step>
+
+     <step>
+      <para>Запустите в каталоге с файлами DocBook и ISO следующую команду: <programlisting>perl -pi -e 's/iso-(.*).gml/ISO\1/g' docbook.cat</programlisting> (Она исправляет несоответствие имён в файле каталога DocBook и фактических имён файлов сущностей ISO.)</para>
+     </step>
+    </procedure>
+   </sect3>
+
+   <sect3>
+    <title>Установка таблиц стилей DocBook <acronym>DSSSL</acronym></title>
+
+    <para>Чтобы установить таблицы стилей, разархивируйте дистрибутивный пакет и поместите его содержимое в подходящее место, например, в <filename>/usr/local/share/sgml</filename>. (Из архива будет автоматически извлечён подкаталог.) <screen>
+<prompt>$</prompt> <userinput>gunzip docbook-dsssl-1.<replaceable>xx</replaceable>.tar.gz</userinput>
+<prompt>$</prompt> <userinput>tar -C /usr/local/share/sgml -xf docbook-dsssl-1.<replaceable>xx</replaceable>.tar</userinput>
+</screen></para>
+
+    <para>Также можно добавить обычную запись в каталог <filename>/usr/local/share/sgml/catalog</filename>: <programlisting>CATALOG "docbook-dsssl-1.<replaceable>xx</replaceable>/catalog"</programlisting> Так как таблицы стилей меняются довольно часто и иногда имеет смысл использовать альтернативные версии, документация <productname>&productname;</productname> не использует эту запись каталога. Как выбрать таблицы стилей для неё, описано в <xref remap="6" linkend="docguide-toolsets-configure"/>.</para>
+   </sect3>
+
+   <sect3>
+    <title>Установка <productname>JadeTeX</productname></title>
+
+    <para>Чтобы установить и использовать <productname>JadeTeX</productname>, вам потребуется рабочая инсталляция <productname>TeX</productname> и <productname>LaTeX2e</productname>, включающая: поддерживаемые пакеты <productname>tools</productname> и <productname>graphics</productname>, шрифты <productname>Babel</productname>, <productname><acronym>AMS</acronym></productname> и <productname>AMS-LaTeX</productname>, расширение <productname><acronym>PSNFSS</acronym></productname>, дополнительный набор из <quote>35 шрифтов</quote>, программу <productname>dvips</productname> для вывода в <productname>PostScript</productname>, а также пакеты макросов <productname>fancyhdr</productname>, <productname>hyperref</productname>, <productname>minitoc</productname>, <productname>url</productname> и <productname>ot2enc</productname>. Все эти компоненты можно найти на родственном сайте <ulink url="http://www.ctan.org"><acronym>CTAN</acronym></ulink>. Рассмотрение установки базовой системы <application>TeX</application> выходит далеко за рамки этого введения. Для любой системы, в которой может работать <application>TeX</application>, должны существовать и готовые двоичные пакеты.</para>
+
+    <para>Прежде чем использовать <application>JadeTeX</application> с исходным материалом документации <productname>&productname;</productname>, вам необходимо увеличить размер внутренних структур данных <application>TeX</application>. Подробнее об этом рассказывается в инструкциях по установке <application>JadeTeX</application>.</para>
+
+    <para>Выполнив необходимые условия, вы можете установить <application>JadeTeX</application> так: <screen>
+<prompt>$</prompt> <userinput>gunzip jadetex-<replaceable>xxx</replaceable>.tar.gz</userinput>
+<prompt>$</prompt> <userinput>tar xf jadetex-<replaceable>xxx</replaceable>.tar</userinput>
+<prompt>$</prompt> <userinput>cd jadetex</userinput>
+<prompt>$</prompt> <userinput>make install</userinput>
+<prompt>$</prompt> <userinput>mktexlsr</userinput>
+</screen> Последние две команды нужно выполнять от имени <systemitem>root</systemitem>.</para>
+
+   </sect3>
+
+  </sect2>
+
+  <sect2 id="docguide-toolsets-configure">
+   <title>Проверка условий <command>configure</command></title>
+
+  <para>Прежде чем вы сможете собрать документацию, вы должны запустить скрипт <filename>configure</filename> так же, как это нужно сделать для сборки программной части <productname>&productname;</productname>. Обратите внимание на сообщения, выводимые ближе к концу. Вы должны увидеть примерно следующее: <screen>
+<computeroutput>
+checking for onsgmls... onsgmls
+checking for openjade... openjade
+checking for DocBook V4.2... yes
+checking for DocBook stylesheets... /usr/share/sgml/docbook/stylesheet/dsssl/modular
+checking for collateindex.pl... /usr/bin/collateindex.pl
+checking for xsltproc... xsltproc
+checking for osx... osx
+</computeroutput>
+</screen> Если ни <filename>onsgmls</filename>, ни <filename>nsgmls</filename> не будут найдены, некоторые из следующих тестов будут пропущены. Программа <filename>nsgmls</filename> входит в состав пакета Jade. Вы можете передать configure в переменных окружения <envar>JADE</envar> и <envar>NSGMLS</envar> пути к соответствующим программам, если они не находятся автоматически. Если <quote>DocBook V4.2</quote> не находится, значит вы не установили файлы DocBook DTD туда, где их может найти Jade, или не настроили корректно файлы каталогов. В этом случае воспользуйтесь указаниями, данными выше. При поиске таблиц стилей DocBook просматриваются несколько стандартных расположений, но если вы поместили их в другое место, вам, возможно, придётся задать это расположение в переменной окружения <envar>DOCBOOKSTYLE</envar> и затем перезапустить <filename>configure</filename>.</para>
+
+  </sect2>
+ </sect1>
+
+ <sect1 id="docguide-build">
+  <title>Сборка документации</title>
+
+  <para>Завершив все подготовительные действия, перейдите в каталог <filename>doc/src/sgml</filename> и запустите одну из команд сборки, описанных в следующих подразделах. (Помните, что для сборки нужно использовать GNU make.)</para>
+
+  <sect2>
+   <title>HTML</title>
+
+   <para>Чтобы собрать <acronym>HTML</acronym>-версию документации: <screen>
+<prompt>doc/src/sgml$ </prompt><userinput>make html</userinput>
+</screen> Эта цель сборки также выбирается по умолчанию. Результат помещается в подкаталог <filename>html</filename>.</para>
+
+   <para>Чтобы получить HTML-документацию со стилем оформления, используемым на сайте <ulink url="https://www.postgresql.org/docs/current">postgresql.org</ulink>, вместо простого стандартного стиля, выполните: <screen>
+<prompt>doc/src/sgml$ </prompt><userinput>make STYLE=website html</userinput>
+</screen></para>
+
+   <para>Чтобы был сформирован алфавитный указатель, во время сборки требуется выполнить несколько проходов. Если этот указатель вам не нужен, вы просто хотите проверить результат, используйте режим <literal>draft</literal>: <screen>
+<prompt>doc/src/sgml$ </prompt><userinput>make draft</userinput>
+</screen></para>
+
+   <para>Чтобы получить документацию в виде одной HTML-страницы, выполните: <screen>
+<prompt>doc/src/sgml$ </prompt><userinput>make postgres.html</userinput>
+</screen></para>
+ </sect2>
+
+ <sect2>
+  <title>Страницы man</title>
+
+  <para>Для преобразования страниц <productname>DocBook</productname> <sgmltag>refentry</sgmltag> в формат *roff, подходящий для страниц man, мы используем стили DocBook XSL. Страницы man распространяются в архиве tar, подобно <acronym>HTML</acronym>-версии. Чтобы создать страницы man, выполните: <programlisting>cd doc/src/sgml
+make man</programlisting></para>
+ </sect2>
+
+  <sect2>
+   <title>Получение печатной версии с использованием <application>JadeTeX</application></title>
+
+   <para>Если вы хотите получить печатную версию документации, используя <application>JadeTex</application>, вы можете воспользоваться одной из следующих команд: <itemizedlist>
+     <listitem>
+      <para>Чтобы получить PostScript через <acronym>DVI</acronym> для формата A4, выполните: <screen>
+<prompt>doc/src/sgml$ </prompt><userinput>make postgres-A4.ps</userinput>
+</screen> Для формата &laquo;U.S. Letter&raquo; выполните: <screen>
+<prompt>doc/src/sgml$ </prompt><userinput>make postgres-US.ps</userinput>
+</screen></para>
+     </listitem>
+
+     <listitem>
+      <para>Чтобы получить <acronym>PDF</acronym>: <screen>
+<prompt>doc/src/sgml$ </prompt><userinput>make postgres-A4.pdf</userinput>
+</screen> или: <screen>
+<prompt>doc/src/sgml$ </prompt><userinput>make postgres-US.pdf</userinput>
+</screen> (Разумеется, вы можете получить <acronym>PDF</acronym> и из PostScript, но если сгенерировать <acronym>PDF</acronym> напрямую, полученный файл будет содержать гиперссылки и другие расширенные особенности.)</para>
+     </listitem>
+    </itemizedlist></para>
+
+   <para>Если вы намерены использовать JadeTeX для сборки документации &productname;, вам, вероятно, потребуется увеличить некоторые внутренние параметры TeX. Их можно задать в файле <filename>texmf.cnf</filename>. На момент написания этого описания работали следующие параметры: <programlisting>hash_extra.jadetex  = 200000
+hash_extra.pdfjadetex  = 200000
+pool_size.jadetex = 2000000
+pool_size.pdfjadetex = 2000000
+string_vacancies.jadetex = 150000
+string_vacancies.pdfjadetex = 150000
+max_strings.jadetex = 300000
+max_strings.pdfjadetex = 300000
+save_size.jadetex = 15000
+save_size.pdfjadetex = 15000</programlisting></para>
+
+  </sect2>
+
+  <sect2>
+   <title>Переполнение текста</title>
+
+   <para>В некоторых местах текст документации оказывается слишком широким для предопределённых границ, и, в особых случаях, не умещается на странице. В частности, это наблюдается с широкими таблицами или текстом, не допускающим переносы. Сталкиваясь с такой ситуацией, TeX выводит сообщения <quote>Overfull hbox</quote> (Переполнение горизонтальной рамки) в файл журнала, например, <filename>postgres-US.log</filename> или <filename>postgres-A4.log</filename>. С учётом того, что дюйм составляют 72 точки, всё, что выходит за границу больше чем на 72 точки, скорее всего не поместится на печатаемой странице (при размере поля один дюйм). Чтобы найти в <acronym>SGML</acronym> текст, выходящий за границы, определите номер страницы, указанный над сообщением о переполнении, например: <literal>[50 ###]</literal> (стр. 50), и посмотрите на следующую страницу (в данном случае, стр. 51) в <acronym>PDF</acronym>. Увидев, какой текст на ней выходит за границы, внесите требуемые коррективы в <acronym>SGML</acronym>.</para>
+  </sect2>
+
+  <sect2>
+   <title>Получение печатной версии из <acronym>RTF</acronym></title>
+
+   <para>Вы также можете получить печатную версию документации <productname>&productname;</productname>, преобразовав её в формат <acronym>RTF</acronym>, который позволяет откорректировать форматирование в офисном пакете. В зависимости от возможностей конкретного текстового редактора, затем документацию можно будет преобразовать в PostScript или <acronym>PDF</acronym>. Ниже описывается, как это можно проделать с применением <productname>Applixware</productname>.</para>
+
+   <note>
+    <para>Судя по всему, текущие версии документации <productname>&productname;</productname> провоцируют ошибку или превышают ограничения размера, существующие в OpenJade. Если у вас процесс сборки <acronym>RTF</acronym> &laquo;зависает&raquo; на долгое время, а размер выводимого файла остаётся нулевым, возможно, вы столкнулись именно с этой проблемой. (Но учтите, что обычная сборка занимает от 5 до 10 минут, так что не прерывайте процесс слишком быстро.)</para>
+   </note>
+
+   <procedure>
+    <title>Очистка <acronym>RTF</acronym> в <productname>Applixware</productname></title>
+
+    <para><application>OpenJade</application> опускает указание стиля по умолчанию для основного текста. В прошлом, пока это не было обнаружено, генерация оглавления документации выполнялась очень долго. Однако, благодаря помощи разработчиков <productname>Applixware</productname>, мы смогли диагностировать эту проблему и найти обходное решение.</para>
+
+    <step performance="required">
+     <para>Получите <acronym>RTF</acronym>-версию документации, введя: <screen>
+<prompt>doc/src/sgml$ </prompt><userinput>make postgres.rtf</userinput>
+</screen></para>
+    </step>
+
+    <step performance="required">
+     <para>Исправьте файл RTF, чтобы в нём корректно указывались все стили, в частности, стиль по умолчанию. Если документ содержит разделы <sgmltag>refentry</sgmltag>, нужно также заменить указания форматирования, связывающие предыдущий абзац с текущим, на указания, связывающие текущий абзац со следующим. Для внесения этих корректив предоставляется утилита <command>fixrtf</command> (она находится в <filename>doc/src/sgml</filename>): <screen>
+<prompt>doc/src/sgml$ </prompt><userinput>./fixrtf --refentry postgres.rtf</userinput>
+</screen></para>
+
+     <para>Этот скрипт добавляет в документ <literal>{\s0 Normal;}</literal> в качестве нулевого стиля. По утверждению разработчиков <productname>Applixware</productname>, стандарт RTF не должен допускать добавления неявного нулевого стиля, хотя Microsoft Word обрабатывает это указание. Для исправления разделов <sgmltag>refentry</sgmltag> этот скрипт заменяет теги <literal>\keepn</literal> на <literal>\keep</literal>.</para>
+    </step>
+
+    <step performance="required">
+     <para>Создайте новый документ в <productname>Applixware Words</productname>, а затем импортируйте в него файл <acronym>RTF</acronym>.</para>
+    </step>
+
+    <step performance="required">
+     <para>Создайте оглавление с помощью <productname>Applixware</productname>.</para>
+
+     <substeps>
+      <step>
+       <para>Выделите строки существующего оглавления, от первого символа первой строки до последнего символа последней строки.</para>
+      </step>
+
+      <step>
+       <para>Постройте новое оглавление, выбрав в меню <menuchoice><guimenu>Tools</guimenu><guisubmenu>Book Building</guisubmenu><guimenuitem>Create Table of Contents</guimenuitem></menuchoice> (<menuchoice><guimenu>Сервис</guimenu><guisubmenu>Сборка книги</guisubmenu><guimenuitem>Создать оглавление</guimenuitem></menuchoice>). Выберите первые три уровня заголовков для включения в оглавление. В результате строки оглавления, импортированные из RTF, будут заменены оглавлением, созданным в <productname>Applixware</productname>.</para>
+      </step>
+
+      <step>
+       <para>Поправьте форматирование оглавления, выбрав пункт меню <menuchoice><guimenu>Format</guimenu><guimenuitem>Style</guimenuitem></menuchoice> (<menuchoice><guimenu>Формат</guimenu><guimenuitem>Стиль</guimenuitem></menuchoice>), и определив следующие значения отступов (<literal>First</literal> (Первый) и <literal>Left</literal> (Слева)) для каждого из трёх стилей оглавления: <informaltable>
+         <tgroup cols="3">
+          <thead>
+           <row>
+            <entry>Стиль</entry>
+            <entry>Первый отступ (в дюймах)</entry>
+            <entry>Отступ слева (в дюймах)</entry>
+           </row>
+          </thead>
+
+          <tbody>
+           <row>
+            <entry><literal>TOC-Heading 1</literal></entry>
+            <entry><literal>0.4</literal></entry>
+            <entry><literal>0.4</literal></entry>
+           </row>
+
+           <row>
+            <entry><literal>TOC-Heading 2</literal></entry>
+            <entry><literal>0.8</literal></entry>
+            <entry><literal>0.8</literal></entry>
+           </row>
+
+           <row>
+            <entry><literal>TOC-Heading 3</literal></entry>
+            <entry><literal>1.2</literal></entry>
+            <entry><literal>1.2</literal></entry>
+           </row>
+          </tbody>
+         </tgroup>
+        </informaltable></para>
+      </step>
+     </substeps>
+    </step>
+
+    <step performance="required">
+     <para>Проработайте форматирование документа: <itemizedlist>
+       <listitem>
+        <para>Расставьте разрывы страниц.</para>
+       </listitem>
+
+       <listitem>
+        <para>Поправьте ширину столбцов таблиц.</para>
+       </listitem>
+      </itemizedlist></para>
+    </step>
+
+    <step performance="required">
+     <para>Замените выравненные по правому краю номера страниц в части оглавления Примеры и Рисунки правильными значениями. Это должно занять всего несколько минут.</para>
+    </step>
+
+    <step performance="optional">
+     <para>Удалите из документа раздел алфавитного указателя, если он пуст.</para>
+    </step>
+
+    <step performance="required">
+     <para>Сгенерируйте заново и скорректируйте оглавление.</para>
+
+      <substeps>
+       <step>
+        <para>Выделите поле оглавления.</para>
+       </step>
+
+       <step>
+        <para>Выберите в меню <menuchoice><guimenu>Tools</guimenu><guisubmenu>Book Building</guisubmenu><guimenuitem>Create Table of Contents</guimenuitem></menuchoice> (<menuchoice><guimenu>Сервис</guimenu><guisubmenu>Сборка книги</guisubmenu><guimenuitem>Создать оглавление</guimenuitem></menuchoice>).</para>
+       </step>
+
+       <step>
+        <para>Отделите оглавление, выбрав в меню <menuchoice><guimenu>Tools</guimenu><guisubmenu>Field Editing</guisubmenu><guimenuitem>Unprotect</guimenuitem></menuchoice> (<menuchoice><guimenu>Сервис</guimenu><guisubmenu>Изменение полей</guisubmenu><guimenuitem>Снять защиту</guimenuitem></menuchoice>).</para>
+       </step>
+
+       <step>
+        <para>Удалите первую строку в оглавлении, которая указывает на само оглавление.</para>
+       </step>
+      </substeps>
+    </step>
+
+    <step performance="required">
+     <para>Сохраните документ в специальном формате <productname>Applixware Words</productname>, чтобы в него можно было легко внести последние правки.</para>
+    </step>
+
+    <step performance="required">
+     <para><quote>Напечатайте</quote> документ в файл формата PostScript.</para>
+    </step>
+   </procedure>
+  </sect2>
+
+  <sect2>
+   <title>Простые текстовые файлы</title>
+
+   <para>Инструкции по установке также распространяются в виде обычного текста, на случай, если они понадобятся в ситуации, когда под рукой не окажется средств просмотра более удобного формата. Чтобы пересоздать этот файл, перейдите в каталог <filename>doc/src/sgml</filename> и введите <userinput>make INSTALL</userinput>.</para>
+
+   <para>В прошлом примечания к выпуску и инструкции по регрессионному тестированию также распространялись в виде простых текстовых файлов, но эта практика была прекращена.</para>
+  </sect2>
+
+  <sect2>
+   <title>Проверка синтаксиса</title>
+
+   <para>Сборка всей документации может занять много времени. Но если нужно проверить только синтаксис файлов документации, это можно сделать всего за несколько секунд: <screen>
+<prompt>doc/src/sgml$ </prompt><userinput>make check</userinput>
+</screen></para>
+  </sect2>
+ </sect1>
+
+
+ <sect1 id="docguide-authoring">
+  <title>Написание документации</title>
+
+   <para>Форматы <acronym>SGML</acronym> и <productname>DocBook</productname> не страдают от обилия средств их редактирования с открытым исходным кодом. Чаще всего для написания документации используется редактор <productname>Emacs</productname>/<productname>XEmacs</productname> в подходящем режиме. В некоторых системах эти редакторы устанавливаются при типичной полной установке.</para>
+
+   <sect2>
+    <title>Emacs/PSGML</title>
+
+    <para>Режим <productname>PSGML</productname> — наиболее популярный и мощный режим редактирования документов <acronym>SGML</acronym>. При правильной настройке в <application>Emacs</application> он позволяет вставлять теги и проверять корректность разметки. Его также можно использовать для редактирования <acronym>HTML</acronym>. Загружаемые файлы, инструкции по установке и подробную документацию вы можете найти на <ulink url="http://www.lysator.liu.se/projects/about_psgml.html">сайте PSGML</ulink>.</para>
+
+    <para>Необходимо отметить важный момент относительно <productname>PSGML</productname>: его автор предполагал, что вашим основным каталогом с <acronym>DTD</acronym> <acronym>SGML</acronym> будет <filename>/usr/local/lib/sgml</filename>. Если же у вас, как и в приводимых ранее примерах, это каталог <filename>/usr/local/share/sgml</filename>, вам нужно дополнительно скорректировать предопределённый путь, либо воспользовавшись переменной окружения <envar>SGML_CATALOG_FILES</envar>, либо настроив соответственно вашу инсталляцию <productname>PSGML</productname> (как это сделать, можно узнать из его описания).</para>
+
+    <para>Поместите следующие строки в файл <filename>~/.emacs</filename> (изменив пути на подходящие для вашей системы): <programlisting>; ********** для режима SGML (psgml)
+
+(setq sgml-omittag t)
+(setq sgml-shorttag t)
+(setq sgml-minimize-attributes nil)
+(setq sgml-always-quote-attributes t)
+(setq sgml-indent-step 1)
+(setq sgml-indent-data t)
+(setq sgml-parent-document nil)
+(setq sgml-exposed-tags nil)
+(setq sgml-catalog-files '("/usr/local/share/sgml/catalog"))
+
+(autoload 'sgml-mode "psgml" "Major mode to edit SGML files." t )</programlisting> и добавьте в тот же файл запись для <acronym>SGML</acronym> в существующее определение <varname>auto-mode-alist</varname>: <programlisting>(setq
+  auto-mode-alist
+  '(("\\.sgml$" . sgml-mode)
+   ))</programlisting></para>
+
+    <para>Используя <productname>PSGML</productname>, вы можете найти удобным вставлять подходящие объявления <literal>DOCTYPE</literal> в отдельные файлы книги, когда вы редактируете их. Например, редактируя текущий текст, который относится к главе приложений (appendix), вы можете обозначить документ как экземпляр документа <quote>appendix</quote>, добавив в него следующую первую строку: <programlisting>&lt;!DOCTYPE appendix PUBLIC "-//OASIS//DTD DocBook V4.2//EN"&gt;</programlisting> Это будет означать, что всё и вся, читающее этот <acronym>SGML</acronym>, сможет прочитать его правильно, и его корректность можно будет проверить командой <command>nsgmls -s docguide.sgml</command>. (Но вы должны будете убрать эту строку, прежде чем собирать весь комплект документации.)</para>
+   </sect2>
+
+   <sect2>
+    <title>Другие режимы Emacs</title>
+
+    <para><productname>GNU Emacs</productname> предлагает другой режим <acronym>SGML</acronym>, не такой мощный как <productname>PSGML</productname>, но при этом менее запутанный и тяжеловесный. Кроме того, в нём реализована подсветка синтаксиса (привязка шрифтов), которая бывает весьма полезна. Пример конфигурации для этого режима содержится в <filename>src/tools/editors/emacs.samples</filename>.</para>
+
+    <para>Норм Уолш предложил <ulink url="http://nwalsh.com/emacs/docbookide/index.html">главный режим</ulink> специально для DocBook, в котором также реализовал привязку шрифтов и ряд возможностей для оптимизации ввода текста.</para>
+   </sect2>
+
+ </sect1>
+
+
+ <sect1 id="docguide-style">
+  <title>Руководство по стилю</title>
+
+  <sect2>
+   <title>Справочные страницы</title>
+
+   <para>Справочные страницы должны следовать единой структуре. Это позволит пользователям быстрее находить нужную информацию и также подталкивает авторов к описанию всех аспектов команды. При этом важна согласованность не только справочных страниц <productname>&productname;</productname> между собой, но также и со справочными страницами, предоставляемыми операционной системой и другим пакетами. В соответствии с этими требованиями и были разработаны следующие рекомендации. По большей части они соответствуют рекомендациям, сопровождающим документацию различных операционных систем.</para>
+
+   <para>Справочные страницы, описывающие исполняемые команды, должны содержать следующие разделы, в указанном порядке. Разделы, неуместные для данной команды, могут опускаться. Дополнительные разделы верхнего уровня могут использоваться только в особых случаях; часто эта информация помещается в раздел <quote>Использование</quote>. <variablelist>
+     <varlistentry>
+      <term>Название</term>
+      <listitem>
+       <para>Этот раздел генерируется автоматически. Он содержит имя команды и краткое (в полпредложения) описание её функциональности.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>Синтаксис</term>
+      <listitem>
+       <para>В этом разделе представляется синтаксическая диаграмма команды. Обычно в нём не указываются все аргументы командной строки, они перечисляются ниже. Вместо этого, здесь обозначаются основные компоненты командной строки, например, входные и выходные файлы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>Описание</term>
+      <listitem>
+       <para>Состоящее из нескольких абзацев описание действия команды.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>Параметры</term>
+      <listitem>
+       <para>Список всех аргументов командной строки с описанием. Если аргументов очень много, их можно разделить на подразделы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>Код завершения</term>
+      <listitem>
+       <para>Если программа возвращает 0 в случае успеха и ненулевое значение при ошибке, описывать это не нужно. Если же различные ненулевые коды возврата имеют определённые значения, опишите их в этом разделе.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>Использование</term>
+      <listitem>
+       <para>В этом разделе описывается встроенный язык или внутренний интерфейс программы. Если программа неинтерактивная, этот раздел обычно можно опустить. В противном случае он может включать всеобъемлющее описание возможностей времени выполнения. Если это уместно, в нём можно использовать подразделы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>Переменные окружения</term>
+      <listitem>
+       <para>Список всех переменных окружения, которые может использовать эта программа. Постарайтесь сделать его полным — даже кажущиеся очевидными переменные вроде <envar>SHELL</envar> могут быть интересны пользователю.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>Файлы</term>
+      <listitem>
+       <para>Список всех файлов, к которым программа может обращаться неявно. То есть, здесь нужно перечислять не входные и выходные файлы, передаваемые в командной строке, а файлы конфигурации и т. п.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>Диагностика</term>
+      <listitem>
+       <para>В этом разделе можно объяснить необычные сообщения, которые может выдавать программа. Воздержитесь от разъяснения вообще всех сообщений об ошибках. Это потребует больших усилий, но принесёт мало практической пользы. Но если, скажем, сообщения об ошибках имеют определённый формат, который может быть разобран, об этом можно рассказать здесь.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>Замечания</term>
+      <listitem>
+       <para>Всё, что не подходит для других разделов, но особенно описание ошибок, недостатков реализации, соображения безопасности и вопросы совместимости.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>Примеры</term>
+      <listitem>
+       <para>Примеры</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>История</term>
+      <listitem>
+       <para>Если в истории программы были значительные вехи, о них можно рассказать здесь. Обычно этот раздел можно опустить.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>Автор</term>
+      <listitem>
+       <para>Автор (используется только в разделе внешних разработок (contrib))</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>См. также</term>
+      <listitem>
+       <para>Перекрёстные ссылки, перечисленные в следующем порядке: справочные страницы других команд <productname>&productname;</productname>, справочные страницы SQL-команд <productname>&productname;</productname>, цитаты из руководств <productname>&productname;</productname>, другие справочные страницы (например, относящиеся к операционной системе и другим пакетам), другая документация. Пункты внутри одной группы перечисляются в алфавитном порядке.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+
+   <para>Справочные страницы, описывающие команды SQL, должны содержать следующие разделы: Название, Синтаксис, Описание, Параметры, Результаты, Замечания, Примеры, Совместимость, История, См. также. Раздел &laquo;Параметры&raquo; похож на раздел &laquo;Аргументы&raquo; в описании исполняемых команд, но в нём можно выбирать, какие именно предложения команды описывать. Раздел &laquo;Результаты&raquo; может потребоваться, только если команда возвращает результат, отличный от стандартного тега завершения команды. В разделе &laquo;Совместимость&raquo; следует отметить, в какой степени описываемая команда соответствует стандарту SQL, или с какими другими СУБД она совместима. В разделе &laquo;См. также&raquo; следует привести ссылки на связанные команды SQL (до ссылок на команды).</para>
+  </sect2>
+
+ </sect1>
+</appendix>

@@ -1,0 +1,117 @@
+<!-- doc/src/xml/uuid-ossp.xml -->
+
+<sect1 id="uuid-ossp" xreflabel="uuid-ossp">
+ <title>uuid-ossp</title>
+
+ <indexterm zone="uuid-ossp"><primary>uuid-ossp</primary></indexterm>
+
+ <para>Модуль <filename>uuid-ossp</filename> предоставляет функции для генерирования универсальных уникальных идентификаторов (UUID) по одному из нескольких стандартных алгоритмов. В нём также есть функции, выдающие специальные UUID-константы.</para>
+
+ <sect2>
+  <title>Функции <literal>uuid-ossp</literal></title>
+
+  <para>В <xref remap="6" linkend="uuid-ossp-functions"/> показаны функции, предназначенные для генерации UUID. Четыре алгоритма для генерации UUID, обозначаемые номерами версий 1, 3, 4 и 5, описаны в стандартах ITU-T Rec. X.667, ISO/IEC 9834-8:2005 и RFC 4122. (Алгоритма версии 2 нет.) Каждый из этих алгоритмов предназначен для различных сфер применения.</para>
+
+  <table id="uuid-ossp-functions">
+   <title>Функции для генерирования UUID</title>
+   <tgroup cols="2">
+    <thead>
+     <row>
+      <entry>Функция</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><function>uuid_generate_v1()</function><indexterm><primary>uuid_generate_v1</primary></indexterm></entry>
+      <entry>
+       <para>Эта функция генерирует UUID версии 1. Такой UUID включает в себя MAC-адрес компьютера и текущее время. Заметьте, что UUID такого типа раскрывают &laquo;личность&raquo; компьютера, создавшего идентификатор, и время этой операции, что может быть неприемлемым для определённых приложений, где важна конфиденциальность.</para>
+      </entry>
+     </row>
+     <row>
+      <entry><function>uuid_generate_v1mc()</function><indexterm><primary>uuid_generate_v1mc</primary></indexterm></entry>
+      <entry>
+       <para>Эта функция генерирует UUID версии 1, но вместо реального MAC-адреса компьютера используется случайный групповой MAC-адрес.</para>
+      </entry>
+     </row>
+     <row>
+      <entry><function>uuid_generate_v3(namespace uuid, name text)</function><indexterm><primary>uuid_generate_v3</primary></indexterm></entry>
+      <entry>
+       <para>Эта функция генерирует UUID версии 3 для заданного пространства имён UUID и указанного имени. Пространство имён должно задаваться одной из специальных констант, которые выдаются функциями <function>uuid_ns_*()</function>, перечисленными в <xref remap="6" linkend="uuid-ossp-constants"/>. (Хотя теоретически это может быть любой UUID.) Имя задаёт идентификатор в выбранном пространстве имён.</para>
+
+       <para>Например: <programlisting>SELECT uuid_generate_v3(uuid_ns_url(), 'http://www.postgresql.org');</programlisting> Из параметра name будет получен MD5-хеш, так что из сгенерированного UUID нельзя будет восстановить имя. В генерируемых таким алгоритмом UUID нет элемента случайности или зависимости от окружения, так что они могут быть воспроизведены.</para>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>uuid_generate_v4()</literal></entry>
+      <entry>
+       <para>Эта функция генерирует UUID версии 4, который всецело определяется случайными числами.</para>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>uuid_generate_v5(namespace uuid, name text)</literal></entry>
+      <entry>
+       <para>Эта функция генерирует UUID версии 5, который похож на версию 3, но хеш рассчитывается по алгоритму SHA-1. Версия 5 предпочтительнее версии 3, так как SHA-1 считается более безопасным, чем MD5.</para>
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <table id="uuid-ossp-constants">
+   <title>Функции, возвращающие UUID-константы</title>
+   <tgroup cols="2">
+    <tbody>
+     <row>
+      <entry><literal>uuid_nil()</literal></entry>
+      <entry>
+       <para><quote>Нулевой</quote> UUID, который не считается действительным UUID.</para>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>uuid_ns_dns()</literal></entry>
+      <entry>
+       <para>Константа, обозначающая пространство имён DNS для UUID.</para>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>uuid_ns_url()</literal></entry>
+      <entry>
+       <para>Константа, обозначающая пространство имён URL для UUID.</para>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>uuid_ns_oid()</literal></entry>
+      <entry>
+       <para>Константа, обозначающая пространство имён идентификаторов объектов ISO (OID, ISO Object Identifier) для UUID. (Здесь имеются в виду идентификаторы объектов ASN.1, которые никак не связаны с OID, применяемыми в <productname>&productname;</productname>.)</para>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>uuid_ns_x500()</literal></entry>
+      <entry>
+       <para>Константа, обозначающая пространство имён с уникальными именами X.500 для UUID.</para>
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+ </sect2>
+
+ <sect2>
+  <title>Сборка <filename>uuid-ossp</filename></title>
+
+  <para>В прошлом этот модуль зависел от библиотеки OSSP UUID, что отразилось в его имени. Хотя библиотеку OSSP UUID всё ещё можно найти по адресу <ulink url="http://www.ossp.org/pkg/lib/uuid/"/>, она плохо поддерживается и её становится всё сложнее портировать на новые платформы. Поэтому модуль <filename>uuid-ossp</filename> теперь на некоторых платформах можно собирать без библиотеки OSSP. Во FreeBSD, NetBSD и некоторых других ОС на базе BSD подходящие функции формирования UUID включены в системную библиотеку <filename>libc</filename>. В Linux, OS X и некоторых других платформах подходящие функции предоставляются библиотекой <filename>libuuid</filename>, которая изначально пришла из проекта <literal>e2fsprogs</literal> (хотя в современных дистрибутивах Linux она является частью пакета <literal>util-linux-ng</literal>). Вызывая <filename>configure</filename>, передайте ключ <option>--with-uuid=bsd</option>, чтобы использовать функции BSD, либо <option>--with-uuid=e2fs</option>, чтобы использовать <filename>libuuid</filename> из <literal>e2fsprogs</literal>, либо ключ <option>--with-uuid=ossp</option>, чтобы использовать библиотеку OSSP UUID. В конкретной системе может быть установлено сразу несколько библиотек, поэтому <filename>configure</filename> не выбирает библиотеку автоматически.</para>
+
+  <note>
+   <para>Если вам нужны только случайные UUID (версии 4), в качестве альтернативы вы можете использовать функцию <function>gen_random_uuid()</function> из модуля <xref linkend="pgcrypto"/>.</para>
+  </note>
+ </sect2>
+
+ <sect2>
+  <title>Автор</title>
+
+  <para>Питер Эйзентраут <email>peter_e@gmx.net</email></para>
+
+ </sect2>
+
+</sect1>

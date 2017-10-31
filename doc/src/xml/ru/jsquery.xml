@@ -1,0 +1,322 @@
+<sect1 id="jsquery">
+  <title>jsquery</title>
+  <sect2 id="jsquery-introduction">
+    <title>Введение</title>
+    <para>JsQuery — язык запросов к типу данных jsonb, появившемуся в PostgreSQL версии 9.4.</para>
+    <para>Его основное предназначение — предоставить дополнительную функциональность для jsonb (в настоящее время отсутствующую в PostgreSQL), например, простой и эффективный способ поиска во вложенных объектах и массивах, а также дополнительные операторы сравнения с поддержкой индексов. Мы надеемся, что в будущем jsquery станет частью PostgreSQL.</para>
+    <para>Jsquery представляется в виде типа данных jsquery (подобному tsquery) и оператора соответствия @@ для jsonb.</para>
+  </sect2>
+  <sect2 id="jsquery-authors">
+    <title>Авторы</title>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>Фёдор Сигаев <email>teodor@sigaev.ru</email>, Postgres Professional, Москва, Россия</para>
+      </listitem>
+      <listitem>
+        <para>Александр Коротков <email>aekorotkov@gmail.com</email>, Postgres Professional, Москва, Россия</para>
+      </listitem>
+      <listitem>
+        <para>Олег Бартунов <email>oleg@sai.msu.su</email>, Postgres Professional, Москва, Россия</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2 id="jsquery-regards">
+    <title>Благодарности</title>
+    <para>Мы выражаем признательность спонсору разработки, компании <ulink url="http://wargaming.net">Wargaming.net</ulink>.</para>
+  </sect2>
+  <sect2 id="jsquery-installation">
+    <title>Установка</title>
+    <para>Когда вы устанавливаете дистрибутив <productname>Postgres Pro</productname>, jsquery представляется в нём в виде модуля contrib. Чтобы его использовать, установите модули contrib (пакет postgrespro-contrib в двоичном дистрибутиве для Linux либо make -C contrib install, если вы собираете инсталляцию из исходного кода), затем запустите оболочку psql и введите:</para>
+    <programlisting>CREATE EXTENSION jsquery;</programlisting>
+  </sect2>
+  <sect2 id="json-query-language">
+    <title>Язык запросов JSON</title>
+    <para>Расширение JsQuery содержит тип <literal>jsquery</literal>, представляющий весь запрос JSON в виде одного значения (как и <literal>tsquery</literal> для полнотекстового поиска). В этом запросе задаётся выражение, обращающееся к документам JSON.</para>
+    <para>Простое выражение записывается в виде <literal>путь бинарный_оператор значение</literal> или <literal>путь унарный_оператор</literal>. См. следующие примеры.</para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para><literal>x = "abc"</literal> — значение ключа "x" равно "abc";</para>
+      </listitem>
+      <listitem>
+        <para><literal>$ @&gt; [4, 5, "zzz"]</literal> — документ JSON представляет собой массив, содержащий значения 4, 5 и "zzz";</para>
+      </listitem>
+      <listitem>
+        <para><literal>"abc xyz" &gt;= 10</literal> — значение ключа "abc xyz" больше или равно 10;</para>
+      </listitem>
+      <listitem>
+        <para><literal>volume IS NUMERIC</literal> — ключ "volume" имеет числовой тип.</para>
+      </listitem>
+      <listitem>
+        <para><literal>$ = true</literal> — весь документ JSON представляет собой просто значение true.</para>
+      </listitem>
+      <listitem>
+        <para><literal>similar_ids.@# &gt; 5</literal> — similar_ids является массивом или объектом с числом элементов больше 5;</para>
+      </listitem>
+      <listitem>
+        <para><literal>similar_product_ids.# = "0684824396"</literal> — массив similar_product_ids содержит строку "0684824396".</para>
+      </listitem>
+      <listitem>
+        <para><literal>*.color = "red"</literal> — внутри документа существует объект, ключ "color" в котором имеет значение "red".</para>
+      </listitem>
+      <listitem>
+        <para><literal>foo = *</literal> — в объекте существует ключ "foo".</para>
+      </listitem>
+    </itemizedlist>
+    <para>Путь выбирает набор значений JSON для проверки, используя заданные операторы. В простейшем случае путь — это просто имя ключа. В общем случае путь задают имена ключей и подстановочные знаки, соединённые точками. Подстановочные знаки в пути могут быть следующими:</para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para><literal>#</literal> — любой элемент в массиве;</para>
+      </listitem>
+      <listitem>
+        <para><literal>%</literal> — любой ключ объекта;</para>
+      </listitem>
+      <listitem>
+        <para><literal moreinfo="none">*</literal> — любой набор элементов массивов и ключей объектов;</para>
+      </listitem>
+      <listitem>
+        <para><literal>@#</literal> — длина массива или объекта, может задаваться только в последнем компоненте пути;</para>
+      </listitem>
+      <listitem>
+        <para><literal>$</literal> — весь документ JSON в виде одного значения, может быть только единственным компонентом пути.</para>
+      </listitem>
+    </itemizedlist>
+    <para>Результат выражения — true, когда оператор выдаёт true как минимум для одного значения, выбранного по заданному пути.</para>
+    <para>Имена ключей могут задаваться в двойных кавычках и без них. Имена ключей без кавычек не могут содержать пробелы, начинаться с цифры или совпадать с ключевым словом jsquery.</para>
+    <para>Поддерживаются следующие бинарные операторы:</para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>Оператор равенства: <literal>=</literal>;</para>
+      </listitem>
+      <listitem>
+        <para>Операторы численного сравнения: <literal>&gt;</literal>, <literal>&gt;=</literal>, <literal>&lt;</literal>, <literal>&lt;=</literal>;</para>
+      </listitem>
+      <listitem>
+        <para>Оператор <literal>IN</literal> для поиска в списке скалярных значений;</para>
+      </listitem>
+      <listitem>
+        <para>Операторы сравнения массивов: <literal>&amp;&amp;</literal> (пересекается с), <literal>@&gt;</literal> (содержит), <literal>&lt;@</literal> (содержится в).</para>
+      </listitem>
+    </itemizedlist>
+    <para>Поддерживаются следующие унарные операторы:</para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>Оператор проверки существования: <literal>= *</literal>;</para>
+      </listitem>
+      <listitem>
+        <para>Операторы проверки типа: <literal moreinfo="none">IS ARRAY</literal>, <literal moreinfo="none">IS NUMERIC</literal>, <literal moreinfo="none">IS OBJECT</literal>, <literal moreinfo="none">IS STRING</literal> и <literal moreinfo="none">IS BOOLEAN</literal>.</para>
+      </listitem>
+    </itemizedlist>
+    <para>Выражения могут быть сложными. Сложное выражение образуется набором выражений, соединённых логическими операторами (<literal>AND</literal>, <literal>OR</literal> и <literal>NOT</literal>) и сгруппированных скобками.</para>
+    <para>Примеры сложных выражений приведены ниже.</para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>
+          <literal>a = 1 AND (b = 2 OR c = 3) AND NOT d = 1</literal>
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>x.% = true OR x.# = true</literal>
+        </para>
+      </listitem>
+    </itemizedlist>
+    <para>Путь может включать в себя префиксные выражения (подвыражения). В этом случае путь выбирает значения JSON для проверки по заданным подвыражениям. Результаты проверки агрегируются так же, как и в простых выражениях.</para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para><literal>#(a = 1 AND b = 2)</literal> — массив содержит элемент, в котором значение ключа <literal>a</literal> равно 2 и значение ключа <literal>b</literal> равно 2</para>
+      </listitem>
+      <listitem>
+        <para><literal>%($ &gt;= 10 AND $ &lt;= 20)</literal> — объект содержит ключ со значением от 10 до 20</para>
+      </listitem>
+    </itemizedlist>
+    <para>Путь также может содержать следующие подстановочные знаки, обозначающие &laquo;каждый&raquo;:</para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para><literal>#:</literal> — каждый индекс в массиве;</para>
+      </listitem>
+      <listitem>
+        <para><literal>%:</literal> — каждый ключ объекта;</para>
+      </listitem>
+      <listitem>
+        <para><literal>*:</literal> — каждый элемент массива или ключ объекта.</para>
+      </listitem>
+    </itemizedlist>
+    <para>Рассмотрим следующий пример.</para>
+    <programlisting>%.#:($ &gt;= 0 AND $ &lt;= 1)</programlisting>
+    <para>Это условие можно прочитать как: существует минимум один ключ, для которого значением является массив чисел от 0 до 1.</para>
+    <para>Мы можем переписать этот пример в следующей форме с дополнительными скобками.</para>
+    <programlisting>%(#:($ &gt;= 0 AND $ &lt;= 1))</programlisting>
+    <para>Первый подстановочный знак <literal>%</literal> проверяет, что выражение в скобках истинно как минимум для одного значения в объекте. Второй подстановочный знак <literal>#:</literal> проверяет, что значение — массив, все элементы которого удовлетворяют условию в скобках.</para>
+    <para>Мы можем переписать этот пример без подстановочного знака <literal>#:</literal> следующим образом.</para>
+    <programlisting>%(NOT #(NOT ($ &gt;= 0 AND $ &lt;= 1)) AND $ IS ARRAY)</programlisting>
+    <para>В этом примере мы преобразуем утверждение, что каждый элемент массива удовлетворяет некоторому условию, в утверждение, что ни один элемент не удовлетворяет тому же условию.</para>
+    <para>Ниже приведены примеры использования путей.</para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para><literal>numbers.#: IS NUMERIC</literal> — каждый элемент массива numbers является числом.</para>
+      </listitem>
+      <listitem>
+        <para><literal>*:($ IS OBJECT OR $ IS BOOLEAN)</literal> — документ JSON представляет собой структуру вложенных объектов, на уровне листьев содержащую булевские значения.</para>
+      </listitem>
+      <listitem>
+        <para><literal>#:.%:($ &gt;= 0 AND $ &lt;= 1)</literal> — каждый элемент массива представляет собой объект, содержащий числовые значения от 0 до 1.</para>
+      </listitem>
+      <listitem>
+        <para><literal>documents.#:.% = *</literal> — ключу documents соответствует массив из объектов, содержащих минимум один ключ.</para>
+      </listitem>
+      <listitem>
+        <para><literal>%.#: ($ IS STRING)</literal> — объект JSON содержит минимум один массив со строками.</para>
+      </listitem>
+      <listitem>
+        <para><literal>#.% = true</literal> — как минимум один элемент массива является объектом, содержащим минимум одно значение "true".</para>
+      </listitem>
+    </itemizedlist>
+    <para>Использование операторов пути и скобок требует дополнительных разъяснений. Когда операторы пути используются неоднократно, они могут ссылаться на различные значения, тогда как, используя скобки и оператор <literal>$</literal>, вы будете многократно обращаться к одному значению. Взгляните на следующие примеры.</para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para><literal># &lt; 10 AND # &gt; 20</literal> — существует элемент меньше 10 и существует другой элемент больше 20.</para>
+      </listitem>
+      <listitem>
+        <para><literal>#($ &lt; 10 AND $ &gt; 20)</literal> — существует элемент, который одновременно меньше 10 и больше 20 (что невозможно).</para>
+      </listitem>
+      <listitem>
+        <para><literal>#($ &gt;= 10 AND $ &lt;= 20)</literal> — существует элемент между 10 и 20.</para>
+      </listitem>
+      <listitem>
+        <para><literal># &gt;= 10 AND # &lt;= 20</literal> — существует элемент, больший или равный 10, и другой элемент, меньший или равный 20. Запрос может быть удовлетворён массивом без элементов между 10 и 20, например [0,30].</para>
+      </listitem>
+    </itemizedlist>
+    <para>Те же правила применяются при поиске внутри объектов и ветвей.</para>
+    <para>Операторы проверки типа и подстановочные знаки "каждый" полезны для проверки правильности схемы документа. Оператор сопоставления JsQuery <literal>@@</literal> является постоянным (IMMUTABLE) и может применяться в ограничениях CHECK. Взгляните на следующий пример.</para>
+    <programlisting>CREATE TABLE js (
+    id serial,
+    data jsonb,
+    CHECK (data @@ '
+        name IS STRING AND
+        similar_ids.#: IS NUMERIC AND
+        points.#:(x IS NUMERIC AND y IS NUMERIC)'::jsquery));</programlisting>
+    <para>В этом примере ограничение-проверка контролирует данные в колонке data типа jsonb: значением ключа name должна быть строка, значением ключа similar_ids — массив чисел, значением ключа points — массив объектов, содержащих числовые значения для ключей x и y.</para>
+    <para>Другие примеры можно найти в нашей <ulink url="http://www.sai.msu.su/~megera/postgres/talks/pgconfeu-2014-jsquery.pdf">презентации для pgconf.eu</ulink>.</para>
+  </sect2>
+  <sect2 id="jsquery-gin-indexes">
+    <title>Индексы GIN</title>
+    <para>Расширение JsQuery содержит два класса операторов для GIN, которые реализуют различные варианты оптимизации запросов.</para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>jsonb_path_value_ops</para>
+      </listitem>
+      <listitem>
+        <para>jsonb_value_path_ops</para>
+      </listitem>
+    </itemizedlist>
+    <para>В этих классах GIN документы jsonb раскладываются на элементы. Каждый элемент сопоставляется с определённым значением и своим путём. Различаются эти классы операторов тем, как в них представлены элементы, как они сравниваются и используются для оптимизации поиска.</para>
+    <para>Например, документ jsonb <literal>{"a": [{"b": "xyz", "c": true}, 10], "d": {"e": [7, false]}}</literal> будет разложен на следующие элементы:</para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>
+          <literal>"a".#."b"."xyz"</literal>
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>"a".#."c".true</literal>
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>"a".#.10</literal>
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>"d"."e".#.7</literal>
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <literal>"d"."e".#.false</literal>
+        </para>
+      </listitem>
+    </itemizedlist>
+    <para>Так как JsQuery не поддерживает поиск в определённом элементе массива, мы рассматриваем все элементы массива как одинаковые. Таким образом, все элементы массива помечаются одинаковым знаком <literal>#</literal> в пути.</para>
+    <para>Основной проблемой такого представления элементов является его размер. Так, в показанном примере ключ "a" присутствует три раза. В большом документе со множеством ветвей и длинными ключами размер такого наивного представления элементов выходит за рамки разумного. Эти два класса операторов решают эту проблему, но с некоторыми различиями.</para>
+    <sect3 id="jsonb-path-value-ops">
+      <title>jsonb_path_value_ops</title>
+      <para>Класс jsonb_path_value_ops представляет элемент в виде пары хеша пути и значения. Это иллюстрирует следующий псевдокод.</para>
+      <programlisting>(hash(элемент_пути_1.элемент_пути_2. ... .path_item_n); значение)</programlisting>
+      <para>При сравнении записей хеш пути является старшей частью записи, а значение — младшей. Это определяет характеристики данного класса операторов. Так как путь хешируется и оказывается в верхней части записи, нам нужно знать полный путь к значению, чтобы использовать его для поиска. Однако, если путь известен, мы можем применять и точный поиск, и поиск значений в интервале.</para>
+    </sect3>
+    <sect3 id="jsonb-value-path-ops">
+      <title>jsonb_value_path_ops</title>
+      <para>Класс jsonb_value_path_ops представляет элемент в виде пары значения и фильтра Блума для пути.</para>
+      <programlisting>(значение; bloom(элемент_пути_1) | bloom(элемент_пути_2) | ... | bloom(элемент_пути_n))</programlisting>
+      <para>При сравнении записей значение является старшей частью записи, а фильтр Блума для пути — младшей. Это определяет характеристики данного класса операторов. Так как значение находится в старшей части, мы можем выполнять очень эффективно только поиск точного значения. Поиск значений в интервале возможен, но для этого придётся отфильтровать все другие пути, в которых будут найдены подходящие значения. Фильтр Блума по элементам пути позволяет использовать индекс для условий, содержащих в путях <literal>%</literal> и <literal>*</literal>.</para>
+    </sect3>
+    <sect3 id="jsquery-optimization">
+      <title>Оптимизация запросов</title>
+      <para>Классы операторов JsQuery выполняют сложную оптимизацию запросов. Для разработчика или администратора очень ценно иметь возможность видеть результаты такой оптимизации. Но к сожалению, классы операторов не могут добавлять что-либо своё в вывод EXPLAIN. Именно поэтому JsQuery предоставляет следующие функции, позволяющие увидеть, как конкретный класс операторов оптимизирует заданный запрос.</para>
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para>gin_debug_query_path_value(jsquery) — для jsonb_path_value_ops</para>
+        </listitem>
+        <listitem>
+          <para>gin_debug_query_value_path(jsquery) — для jsonb_value_path_ops</para>
+        </listitem>
+      </itemizedlist>
+      <para>Эти функции выдают текстовое представление дерева запросов, листьями в котором являются записи, искомые в индексе GIN. Следующие примеры показывают различия в результатах оптимизации запросов для разных классов операторов.</para>
+      <programlisting>    # SELECT gin_debug_query_path_value('x = 1 AND (*.y = 1 OR y = 2)');
+     gin_debug_query_path_value
+    ----------------------------
+     x = 1 , entry 0           +
+
+    # SELECT gin_debug_query_value_path('x = 1 AND (*.y = 1 OR y = 2)');
+     gin_debug_query_value_path
+    ----------------------------
+     AND                       +
+       x = 1 , entry 0         +
+       OR                      +
+         *.y = 1 , entry 1     +
+         y = 2 , entry 2       +</programlisting>
+      <para>К сожалению, для jsonb ещё нет статистики. Вот почему оптимизатор JsQuery должен принимать императивные решения, выбирая условия, обрабатываемые с индексом. При этом он руководствуется предположением, что некоторые типы условий являются менее избирательными, чем другие. Таким образом, оптимизатор разделяет условия на следующие категории избирательности (перечисленные по убыванию избирательности).</para>
+      <orderedlist numeration="arabic" spacing="compact">
+        <listitem>
+          <para>Равняется (x = c)</para>
+        </listitem>
+        <listitem>
+          <para>В интервале (c1 &lt; x &lt; c2)</para>
+        </listitem>
+        <listitem>
+          <para>Не равняется (x &gt; c)</para>
+        </listitem>
+        <listitem>
+          <para>Является (x is type)</para>
+        </listitem>
+        <listitem>
+          <para>Любое (x = *)</para>
+        </listitem>
+      </orderedlist>
+      <para>Оптимизатор избегает использования индекса для менее избирательных условий, когда это возможно. Например, в запросе <literal>x = 1 AND y &gt; 0</literal> условие <literal>x = 1</literal> считается более избирательным, чем <literal>y &gt; 0</literal>. Поэтому для вычисления <literal>y &gt; 0</literal> индекс не используется.</para>
+      <programlisting>    # SELECT gin_debug_query_path_value('x = 1 AND y &gt; 0');
+     gin_debug_query_path_value
+    ----------------------------
+     x = 1 , entry 0           +</programlisting>
+      <para>Решения, принимаемые оптимизатором без учёта статистики, могут быть неточными. Поэтому в JsQuery поддерживаются подсказки. Комментарии <literal>/*-- index */</literal> и <literal>/*-- noindex */</literal>, помещённые в условия, указывают оптимизатору соответственно использовать или не использовать индекс.</para>
+      <programlisting>    SELECT gin_debug_query_path_value('x = 1 AND y /*-- index */ &gt; 0');
+     gin_debug_query_path_value
+    ----------------------------
+     AND                       +
+       x = 1 , entry 0         +
+       y &gt; 0 , entry 1         +
+
+    SELECT gin_debug_query_path_value('x /*-- noindex */ = 1 AND y &gt; 0');
+     gin_debug_query_path_value
+     ----------------------------
+      y &gt; 0 , entry 0           +</programlisting>
+    </sect3>
+  </sect2>
+  <sect2 id="jsquery-contribution">
+    <title>Вклад в развитие</title>
+    <para>Пожалуйста, учтите, что JsQuery продолжает активно разрабатываться, и хотя его код стабилен и проверен, он может содержать ошибки. Поэтому не стесняйтесь <ulink url="https://github.com/akorotkov/jsquery/issues">сигнализировать о проблемах в github</ulink>, если столкнётесь с какими-либо ошибками.</para>
+    <para>Если вам не хватает какой-либо функциональности в JsQuery и вы чувствуете в себе силы, чтобы реализовать её, мы будем рады вашим запросам на включение доработок.</para>
+  </sect2>
+</sect1>

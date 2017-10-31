@@ -1,0 +1,207 @@
+<!-- doc/src/xml/pgtrgm.xml -->
+
+<sect1 id="pgtrgm" xreflabel="pg_trgm">
+ <title>pg_trgm</title>
+
+ <indexterm zone="pgtrgm"><primary>pg_trgm</primary></indexterm>
+
+ <para>Модуль <filename>pg_trgm</filename> предоставляет функции и операторы для определения схожести алфавитно-цифровых строк на основе триграмм, а также классы операторов индексов, поддерживающие быстрый поиск схожих строк.</para>
+
+ <sect2>
+  <title>Понятия, связанные с триграммами (или триграфами)</title>
+
+  <para>Триграмма — это группа трёх последовательных символов, взятых из строки. Мы можем измерить схожесть двух строк, подсчитав число триграмм, которые есть в обеих. Эта простая идея оказывается очень эффективной для измерения схожести слов на многих естественных языках.</para>
+
+  <note>
+   <para><filename>pg_trgm</filename>, извлекая триграммы из строк, игнорирует символы, не относящиеся к словам (не алфавитно-цифровые). При выделении триграмм, содержащихся в строке, считается, что перед каждым словом находятся два пробела, а после — один пробел. Например, из строки <quote><literal>cat</literal></quote> выделяется набор триграмм: <quote><literal> c</literal></quote>, <quote><literal> ca</literal></quote>, <quote><literal>cat</literal></quote> и <quote><literal>at </literal></quote>. Из строки <quote><literal>foo|bar</literal></quote> выделяются триграммы: <quote><literal> f</literal></quote>, <quote><literal> fo</literal></quote>, <quote><literal>foo</literal></quote>, <quote><literal>oo </literal></quote>, <quote><literal> b</literal></quote>, <quote><literal> ba</literal></quote>, <quote><literal>bar</literal></quote> и <quote><literal>ar </literal></quote>.</para>
+  </note>
+ </sect2>
+
+ <sect2>
+  <title>Функции и операторы</title>
+
+  <para>Реализованные в модуле <filename>pg_trgm</filename> функции перечислены в <xref remap="6" linkend="pgtrgm-func-table"/>, а операторы — в <xref remap="6" linkend="pgtrgm-op-table"/>.</para>
+
+  <table id="pgtrgm-func-table">
+   <title>Функции <filename>pg_trgm</filename></title>
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Функция</entry>
+      <entry>Возвращает</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><function>similarity(text, text)</function><indexterm><primary>similarity</primary></indexterm></entry>
+      <entry><type>real</type></entry>
+      <entry>Возвращает число, показывающее, насколько близки два аргумента. Диапазон результатов — от нуля (это значение указывает, что две строки полностью различны) до одного (это значение указывает, что две строки идентичны).</entry>
+     </row>
+     <row>
+      <entry><function>show_trgm(text)</function><indexterm><primary>show_trgm</primary></indexterm></entry>
+      <entry><type>text[]</type></entry>
+      <entry>Возвращает массив всех триграмм в заданной строке. (На практике это редко бывает полезно, кроме как для отладки.)</entry>
+     </row>
+     <row>
+      <entry>
+       <function>word_similarity(text, text)</function>
+       <indexterm><primary>word_similarity</primary></indexterm>
+      </entry>
+      <entry><type>real</type></entry>
+      <entry>Возвращает число, показывающее, насколько слово в первой строке схоже с наиболее похожим на него словом во второй строке. Эта функция ищет во второй строке наиболее похожее слово, а не подстроку. Результат выдаётся в интервале от нуля (строки полностью различны) до одного (первая строка в точности совпадает с одним из слов во второй строке).</entry>
+     </row>
+     <row>
+      <entry><function>show_limit()</function><indexterm><primary>show_limit</primary></indexterm></entry>
+      <entry><type>real</type></entry>
+      <entry>Возвращает текущий порог схожести, который использует оператор <literal>%</literal>. Это значение задаёт минимальную схожесть между двумя словами, при которой они считаются настолько близкими, что одно может быть, например, ошибочным написанием другого (<emphasis>устаревшая</emphasis>).</entry>
+     </row>
+     <row>
+      <entry><function>set_limit(real)</function><indexterm><primary>set_limit</primary></indexterm></entry>
+      <entry><type>real</type></entry>
+      <entry>Задаёт текущий порог схожести, который использует оператор <literal>%</literal>. Это значение должно быть в диапазоне от 0 до 1 (по умолчанию 0.3). Возвращает то же значение, что было передано на вход (<emphasis>устаревшая</emphasis>).</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <table id="pgtrgm-op-table">
+   <title>Операторы <filename>pg_trgm</filename></title>
+   <tgroup cols="3">
+    <thead>
+     <row>
+      <entry>Оператор</entry>
+      <entry>Возвращает</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry><type>text</type> <literal>%</literal> <type>text</type></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Возвращает <literal>true</literal>, если схожесть аргументов выше текущего порога, заданного параметром <varname>pg_trgm.similarity_threshold</varname>.</entry>
+     </row>
+     <row>
+      <entry><type>text</type> <literal>&lt;%</literal> <type>text</type></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Возвращает <literal>true</literal>, если первый аргумент функции содержит слово, похожее на слово во втором аргументе, и их степень схожести выше текущего порога, заданного параметром <varname>pg_trgm.word_similarity_threshold</varname>.</entry>
+     </row>
+     <row>
+      <entry><type>text</type> <literal>%&gt;</literal> <type>text</type></entry>
+      <entry><type>boolean</type></entry>
+      <entry>Оператор, коммутирующий для <literal>&lt;%</literal>.</entry>
+     </row>
+     <row>
+      <entry><type>text</type> <literal>&lt;-&gt;</literal> <type>text</type></entry>
+      <entry><type>real</type></entry>
+      <entry>Возвращает <quote>расстояние</quote> между аргументами, то есть один минус значение <function>similarity()</function>.</entry>
+     </row>
+     <row>
+      <entry>
+       <type>text</type> <literal>&lt;&lt;-&gt;</literal> <type>text</type>
+      </entry>
+      <entry><type>real</type></entry>
+      <entry>Возвращает <quote>расстояние</quote> между аргументами, то есть один минус значение <function>word_similarity()</function>.</entry>
+     </row>
+     <row>
+      <entry>
+       <type>text</type> <literal>&lt;-&gt;&gt;</literal> <type>text</type>
+      </entry>
+      <entry><type>real</type></entry>
+      <entry>Оператор, коммутирующий для <literal>&lt;&lt;-&gt;</literal>.</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+ </sect2>
+
+ <sect2>
+  <title>Параметры GUC</title>
+
+  <variablelist>
+   <varlistentry id="guc-pgtrgm-similarity-threshold" xreflabel="pg_trgm.similarity_threshold">
+    <term><varname>pg_trgm.similarity_threshold</varname> (<type>real</type>) <indexterm><primary>параметр конфигурации <varname>pg_trgm.similarity_threshold</varname></primary></indexterm></term>
+    <listitem>
+     <para>Задаёт текущий порог схожести, который использует оператор <literal>%</literal>. Это значение должно быть в диапазоне от 0 до 1 (по умолчанию 0.3).</para>
+    </listitem>
+   </varlistentry>
+    <varlistentry id="guc-pgtrgm-word-similarity-threshold" xreflabel="pg_trgm.word_similarity_threshold">
+     <term><varname>pg_trgm.word_similarity_threshold</varname> (<type>real</type>) <indexterm><primary>параметр конфигурации <varname>pg_trgm.word_similarity_threshold</varname></primary></indexterm></term>
+     <listitem>
+      <para>Задаёт текущий порог схожести, который используют операторы <literal>&lt;%</literal> и <literal>%&gt;</literal>. Это значение должно быть в диапазоне от 0 до 1 (по умолчанию 0.6).</para>
+     </listitem>
+    </varlistentry>
+  </variablelist>
+ </sect2>
+
+ <sect2>
+  <title>Поддержка индексов</title>
+
+  <para>Модуль <filename>pg_trgm</filename> предоставляет классы операторов индексов GiST и GIN, позволяющие создавать индекс по текстовым столбцам для очень быстрого поиска по критерию схожести. Эти типы индексов поддерживают вышеописанные операторы схожести и дополнительно поддерживают поиск на основе триграмм для запросов с <literal>LIKE</literal>, <literal>ILIKE</literal>, <literal>~</literal> и <literal>~*</literal>. (Эти индексы не поддерживают простые операторы сравнения и равенства, так что вам может понадобиться и обычный индекс-B-дерево.)</para>
+
+  <para>Пример: <programlisting>CREATE TABLE test_trgm (t text);
+CREATE INDEX trgm_idx ON test_trgm USING GIST (t gist_trgm_ops);</programlisting> или <programlisting>CREATE INDEX trgm_idx ON test_trgm USING GIN (t gin_trgm_ops);</programlisting></para>
+
+  <para>На этот момент у вас будет индекс по столбцу <structfield>t</structfield>, используя который можно осуществлять поиск по схожести. Пример типичного запроса: <programlisting>SELECT t, similarity(t, '<replaceable>слово</replaceable>') AS sml
+  FROM test_trgm
+  WHERE t % '<replaceable>слово</replaceable>'
+  ORDER BY sml DESC, t;</programlisting> Он выдаст все значения в текстовом столбце, которые достаточно схожи со словом <replaceable>word</replaceable>, в порядке сортировки от наиболее к наименее схожим. Благодаря использованию индекса, эта операция будет быстрой даже с очень большими наборами данных.</para>
+
+  <para>Другой вариант предыдущего запроса: <programlisting>SELECT t, t &lt;-&gt; '<replaceable>слово</replaceable>' AS dist
+  FROM test_trgm
+  ORDER BY dist LIMIT 10;</programlisting> Он может быть довольно эффективно выполнен с применением индексов GiST, а не GIN. Обычно он выигрышнее первого варианта только когда требуется получить небольшое количество близких совпадений.</para>
+
+  <para>Вы также можете использовать индекс по столбцу <structfield>t</structfield> для поиска по схожести. Например: <programlisting>SELECT t, word_similarity('<replaceable>слово</replaceable>', t) AS sml
+  FROM test_trgm
+  WHERE '<replaceable>слово</replaceable>' &lt;% t
+  ORDER BY sml DESC, t;</programlisting> Этот запрос выдаст все значения в текстовом столбце, содержащие слова, достаточно схожие со строкой <replaceable>слово</replaceable>, в порядке сортировки от наиболее к наименее схожим. Благодаря использованию индекса, эта операция будет быстрой даже с очень большими наборами данных.</para>
+
+  <para>Другой вариант предыдущего запроса: <programlisting>SELECT t, '<replaceable>слово</replaceable>' &lt;&lt;-&gt; t AS dist
+  FROM test_trgm
+  ORDER BY dist LIMIT 10;</programlisting> Он может быть довольно эффективно выполнен с применением индексов GiST, а не GIN.</para>
+
+
+  <para>Начиная с <productname>PostgreSQL</productname> 9.1, эти типы индексов также поддерживают поиск с операторами <literal>LIKE</literal> и <literal>ILIKE</literal>, например: <programlisting>SELECT * FROM test_trgm WHERE t LIKE '%foo%bar';</programlisting> При таком поиске по индексу сначала из искомой строки извлекаются триграммы, а затем они ищутся в индексе. Чем больше триграмм оказывается в искомой строке, тем более эффективным будет поиск по индексу. В отличие от поиска по B-дереву, искомая строка не должна привязываться к левому краю.</para>
+
+  <para>Начиная с <productname>PostgreSQL</productname> 9.3, индексы этих типов также поддерживают поиск по регулярным выражениям (операторы <literal>~</literal> и <literal>~*</literal>), например: <programlisting>SELECT * FROM test_trgm WHERE t ~ '(foo|bar)';</programlisting> При таком поиске из регулярного выражения извлекаются триграммы, а затем они ищутся в индексе. Чем больше триграмм удаётся извлечь из регулярного выражения, тем более эффективным будет поиск по индексу. В отличие от поиска по B-дереву, искомая строка не должна привязываться к левому краю.</para>
+
+  <para>Относительно поиска по регулярному выражению или с <literal>LIKE</literal>, имейте в виду, что при отсутствии триграмм в искомом шаблоне поиск сводится к полному сканирования индекса.</para>
+
+  <para>Выбор между индексами GiST и GIN зависит от относительных характеристик производительности GiST и GIN, которые здесь не рассматриваются.</para>
+ </sect2>
+
+ <sect2>
+  <title>Интеграция с текстовым поиском</title>
+
+  <para>Сопоставление триграмм — очень полезный приём в сочетании с применением полнотекстового индекса. В частности это может помочь найти слова, написанные неправильно, которые не будут находиться непосредственно механизмом полнотекстового поиска.</para>
+
+  <para>В первую очередь нужно построить дополнительную таблицу, содержащую все уникальные слова в документе: <programlisting>CREATE TABLE words AS SELECT word FROM
+        ts_stat('SELECT to_tsvector(''simple'', bodytext) FROM documents');</programlisting> Здесь <structname>documents</structname> — это таблица с текстовым полем <structfield>bodytext</structfield>, по которому мы будем выполнять поиск. Конфигурация <literal>simple</literal> используется с функцией <function>to_tsvector</function> вместо конфигурации для определённого языка по той причине, что нам нужен список исходных (необработанных стеммером) слов.</para>
+
+  <para>Затем нужно создать индекс триграмм по столбцу со словами: <programlisting>CREATE INDEX words_idx ON words USING GIN (word gin_trgm_ops);</programlisting> Теперь мы можем использовать запрос <command>SELECT</command>, подобный показанному в предыдущем примере, и предлагать варианты исправлений слов, введённых пользователем с ошибками. Кроме того, может быть полезно дополнительно проверить, что выбранные слова также имеют длину, примерно равную длине ошибочных слов.</para>
+
+  <note>
+   <para>Так как таблица <structname>words</structname> была сформирована как отдельная статическая таблица, её нужно периодически обновлять, чтобы она достаточно хорошо соответствовала набору документов. Постоянно поддерживать её в полностью актуальном состоянии обычно не требуется.</para>
+  </note>
+ </sect2>
+
+ <sect2>
+  <title>Ссылки</title>
+
+  <para>Сайт разработки GiST <ulink url="http://www.sai.msu.su/~megera/postgres/gist/"/></para>
+  <para>Сайт разработки Tsearch2 <ulink url="http://www.sai.msu.su/~megera/postgres/gist/tsearch/V2/"/></para>
+ </sect2>
+
+ <sect2>
+  <title>Авторы</title>
+
+  <para>Олег Бартунов <email>oleg@sai.msu.su</email>, Москва, Московский Государственный Университет, Россия</para>
+  <para>Фёдор Сигаев <email>teodor@sigaev.ru</email>, Москва, ООО &laquo;Дельта-Софт&raquo;, Россия</para>
+  <para>Александр Коротков <email>a.korotkov@postgrespro.ru</email>, Москва, Postgres Professional, Россия</para>
+  <para>Документация: Кристофер Кингс-Линн</para>
+  <para>Разработку этого модуля спонсировало ООО &laquo;Дельта-Софт&raquo;, г. Москва, Россия.</para>
+ </sect2>
+
+</sect1>

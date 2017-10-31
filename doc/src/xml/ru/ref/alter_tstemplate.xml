@@ -1,0 +1,74 @@
+<!--
+doc/src/xml/ref/alter_tstemplate.xml
+&productname; documentation
+-->
+
+<refentry id="sql-altertstemplate">
+ <indexterm zone="sql-altertstemplate"><primary>ALTER TEXT SEARCH TEMPLATE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER TEXT SEARCH TEMPLATE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER TEXT SEARCH TEMPLATE</refname>
+  <refpurpose>изменить определение шаблона текстового поиска</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER TEXT SEARCH TEMPLATE <replaceable>имя</replaceable> RENAME TO <replaceable>новое_имя</replaceable>
+ALTER TEXT SEARCH TEMPLATE <replaceable>имя</replaceable> SET SCHEMA <replaceable>новая_схема</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER TEXT SEARCH TEMPLATE</command> изменяет определение шаблона текстового поиска. В настоящее время эта команда позволяет только сменить его имя.</para>
+
+  <para>Выполнить команду <command>ALTER TEXT SEARCH TEMPLATE</command> может только суперпользователь.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующего шаблона текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя шаблона текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_схема</replaceable></term>
+    <listitem>
+     <para>Новая схема шаблона текстового поиска.</para>
+    </listitem>
+   </varlistentry>
+ </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER TEXT SEARCH TEMPLATE</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createtstemplate"/></member>
+   <member><xref linkend="sql-droptstemplate"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

@@ -1,0 +1,205 @@
+<!-- doc/src/xml/dump_stat.xml -->
+
+<sect1 id="dump-stat" xreflabel="dump-stat">
+    <title>dump_stat</title>
+
+    <indexterm zone="dump-stat"><primary>dump_stat</primary></indexterm>
+
+    <para>Модуль <filename>dump_stat</filename> предоставляет функции, позволяющие скопировать и восстановить содержимое таблицы <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>. Функция <function>dump_statistic</function> генерирует операторы <literal>INSERT</literal>, которые затем можно применить к совместимой базе данных. Это расширение должно устанавливаться на целевом сервере, чтобы статистические данные были восстановлены успешно, так как генерируемые операторы сильно зависят от функций этого модуля.</para>
+    
+    <para>Заметьте, что определение таблицы <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link> может поменяться, в результате чего сгенерированный скрипт может оказаться несовместимым с будущими выпусками <productname>&productname;</productname>.</para>
+
+    <sect2>
+        <title>Функции</title>
+
+        <variablelist>
+            <varlistentry>
+                <term>
+                    <function>dump_statistic() returns setof text</function>
+                    <indexterm><primary>dump_statistic</primary></indexterm>
+                </term>
+
+                <listitem>
+                    <para>Функция <function>dump_statistic</function> выгружает содержимое системного каталога <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>. Она формирует <literal>INSERT</literal> для каждого кортежа в <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>, кроме тех, что содержат статистические данные о таблицах в схемах <literal>information_schema</literal> и <literal>pg_catalog</literal>.</para>
+                    
+                    <para>Оператор <literal>INSERT</literal> принимает следующую форму: <screen>
+WITH upsert as (
+  UPDATE pg_catalog.pg_statistic SET <replaceable class="parameter">имя_столбца</replaceable> = <replaceable class="parameter">выражение</replaceable> [, ...]
+  WHERE to_schema_qualified_relation(starelid) = <replaceable class="parameter">t_relname</replaceable>
+    AND to_attname(<replaceable class="parameter">t_relname</replaceable>, staattnum) = <replaceable class="parameter">t_attname</replaceable>
+    AND to_atttype(<replaceable class="parameter">t_relname</replaceable>, staattnum) = <replaceable class="parameter">t_atttype</replaceable>
+    AND stainherit = <replaceable class="parameter">t_stainherit</replaceable>
+  RETURNING *)
+ins as (
+  SELECT <replaceable class="parameter">выражение</replaceable> [, ...]
+  WHERE NOT EXISTS (SELECT * FROM upsert)
+    AND to_attnum(<replaceable class="parameter">t_relname</replaceable>, <replaceable class="parameter">t_attname</replaceable>) IS NOT NULL
+    AND to_atttype(<replaceable class="parameter">t_relname</replaceable>, <replaceable class="parameter">t_attname</replaceable>) = <replaceable class="parameter">t_atttype</replaceable>)
+INSERT INTO pg_catalog.pg_statistic SELECT * FROM ins;
+
+где <replaceable class="parameter">выражение</replaceable> может быть следующим:
+
+array_in(<replaceable class="parameter">текст_массива</replaceable>, <replaceable class="parameter">имя_типа</replaceable>::regtype::oid, -1)
+<replaceable class="parameter">значение</replaceable>::<replaceable class="parameter">имя_типа</replaceable>
+</screen></para>
+                    
+                    <para>Сформированные операторы можно сохранить в файле, например так: <screen>
+$ psql test -A
+test=# \t
+test=# \o dump_stat.sql
+test=# select dump_statistic();
+</screen></para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>dump_statistic(schema_name text) returns setof text</function>
+                </term>
+
+                <listitem>
+                    <para><function>dump_statistic</function> выгружает содержимое системного каталога <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>. Она формирует оператор <literal>INSERT</literal> для каждого кортежа в <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>, относящегося к какой-либо таблице в схеме <literal>schema_name</literal>.</para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>dump_statistic(schema_name text, table_name text) returns setof text</function>
+                </term>
+
+                <listitem>
+                    <para><function>dump_statistic</function> выгружает содержимое системного каталога <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>. Она формирует оператор <literal>INSERT</literal> для каждого кортежа в <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>, относящегося к указанной таблице <literal>schema_name.table_name</literal>.</para>
+                </listitem>
+            </varlistentry>
+            
+            <varlistentry>
+                <term>
+                    <function>dump_statistic(relid oid) returns setof text</function>
+                </term>
+
+                <listitem>
+                    <para><function>dump_statistic</function> выгружает содержимое системного каталога <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>. Она формирует оператор <literal>INSERT</literal> для каждого кортежа в <link linkend="catalog-pg-statistic"><structname>pg_statistic</structname></link>, содержащего статистические данные об отношении, заданном идентификатором <literal>relid</literal>.</para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>to_schema_qualified_operator(opid oid) returns text</function>
+                    <indexterm><primary>to_schema_qualified_operator</primary></indexterm>
+                </term>
+
+                <listitem>
+                    <para>Выдаёт дополненное схемой имя оператора по его идентификатору <literal>opid</literal>. Например:</para>
+<screen>test=# SELECT to_schema_qualified_operator('+(int,int)'::regoperator);
+          to_schema_qualified_operator          
+------------------------------------------------
+ pg_catalog.+(pg_catalog.int4, pg_catalog.int4)
+(1 row)</screen>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>to_schema_qualified_type(typid oid) returns text</function>
+                    <indexterm><primary>to_schema_qualified_type</primary></indexterm>
+                </term>
+
+                <listitem>
+                    <para>Выдаёт дополненное схемой имя типа по его идентификатору <literal>typid</literal>.</para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>to_schema_qualified_relation(relid oid) returns text</function>
+                    <indexterm><primary>to_schema_qualified_relation</primary></indexterm>
+                </term>
+
+                <listitem>
+                    <para>Выдаёт дополненное схемой имя отношения по его идентификатору <literal>relid</literal>.</para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>anyarray_elemtype(arr anyarray) returns oid</function>
+                    <indexterm><primary>anyarray_elemtype</primary></indexterm>
+                </term>
+
+                <listitem>
+                    <para>Возвращает тип элемента массива, заданного по <literal>oid</literal>. Например:</para>
+<screen>test=# SELECT anyarray_elemtype(array_in('{1,2,3}', 'int'::regtype, -1));
+ anyarray_elemtype 
+-------------------
+                23
+(1 row)</screen>                  
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>to_attname(relation text, colnum int2) returns text</function>
+                    <indexterm><primary>to_attname</primary></indexterm>
+                </term>
+
+                <listitem>
+                    <para>Для отношения с заданным именем <literal>relation</literal> и номером столбца <literal>colnum</literal> возвращает имя столбца в виде значения <literal>text</literal>.</para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>to_attnum(relation text, col text) returns int2</function>
+                    <indexterm><primary>to_attnum</primary></indexterm>
+                </term>
+
+                <listitem>
+                    <para>Для отношения с заданным именем <literal>relation</literal> и столбца с именем <literal>col</literal> возвращает номер столбца в виде значения <literal>int2</literal>.</para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>to_atttype(relation text, col text) returns text</function>
+                    <indexterm><primary>to_atttype</primary></indexterm>
+                </term>
+
+                <listitem>
+                    <para>Для отношения с заданным именем <literal>relation</literal> и столбца с именем <literal>col</literal> возвращает дополненное схемой имя типа столбца в виде значения <literal>text</literal>.</para>
+                </listitem>
+            </varlistentry>
+            
+            <varlistentry>
+                <term>
+                    <function>to_atttype(relation text, colnum int2) returns text</function>
+                </term>
+
+                <listitem>
+                    <para>Для отношения с заданным именем <literal>relation</literal> и столбца с номером <literal>colnum</literal> возвращает дополненное схемой имя типа столбца в виде значения <literal>text</literal>.</para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>to_namespace(nsp text) returns oid</function>
+                    <indexterm><primary>to_namespace</primary></indexterm>
+                </term>
+
+                <listitem>
+                    <para><function>to_namespace</function> повторяет поведение приведения к типу <link linkend="datatype-oid"><structname>regnamespace</structname></link>, которое отсутствует в <productname>PostgreSQL</productname> версии 9.4 (и предыдущих). Эта функция возвращает <literal>oid</literal> данной схемы.</para>
+                </listitem>
+            </varlistentry>
+
+            <varlistentry>
+                <term>
+                    <function>get_namespace(relation oid) returns oid</function>
+                    <indexterm><primary>get_namespace</primary></indexterm>
+                </term>
+
+                <listitem>
+                    <para><function>get_namespace</function> возвращает схему заданного отношения в виде <literal>oid</literal>.</para>
+                </listitem>
+            </varlistentry>
+        </variablelist>
+    </sect2>
+</sect1>

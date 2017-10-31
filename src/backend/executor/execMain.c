@@ -1548,10 +1548,7 @@ ExecutePlan(EState *estate,
 	if (numberTuples || dest->mydest == DestIntoRel)
 		use_parallel_mode = false;
 
-	/*
-	 * If a tuple count was supplied, we must force the plan to run without
-	 * parallelism, because we might exit early.
-	 */
+	estate->es_use_parallel_mode = use_parallel_mode;
 	if (use_parallel_mode)
 		EnterParallelMode();
 
@@ -2278,8 +2275,7 @@ EvalPlanQualFetch(EState *estate, Relation relation, int lockmode,
 			 * atomic, and Xmin never changes in an existing tuple, except to
 			 * invalid or frozen, and neither of those can match priorXmax.)
 			 */
-			if (!TransactionIdEquals(HeapTupleGetXmin(&tuple),
-									 priorXmax))
+			if (!HeapTupleUpdateXmaxMatchesXmin(priorXmax, &tuple))
 			{
 				ReleaseBuffer(buffer);
 				return NULL;
@@ -2426,8 +2422,7 @@ EvalPlanQualFetch(EState *estate, Relation relation, int lockmode,
 		/*
 		 * As above, if xmin isn't what we're expecting, do nothing.
 		 */
-		if (!TransactionIdEquals(HeapTupleGetXmin(&tuple),
-								 priorXmax))
+		if (!HeapTupleUpdateXmaxMatchesXmin(priorXmax, &tuple))
 		{
 			ReleaseBuffer(buffer);
 			return NULL;

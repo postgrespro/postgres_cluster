@@ -1,0 +1,25 @@
+<!-- doc/src/xml/test-decoding.xml -->
+
+<sect1 id="test-decoding" xreflabel="test_decoding">
+ <title>test_decoding</title>
+
+ <indexterm zone="test-decoding"><primary>test_decoding</primary></indexterm>
+
+ <para>Модуль <filename>test_decoding</filename> представляет пример модуля вывода логического декодирования. Он не делает ничего особенно полезного, но может послужить отправной точкой для разработки собственного декодера.</para>
+
+ <para>Модуль <filename>test_decoding</filename> получает WAL через механизм логического декодирования и переводит его в текстовое представление выполняемых операций.</para>
+
+ <para>Типичный вывод этого модуля, работающего через интерфейс логического декодирования SQL, может выглядеть так: <programlisting>postgres=# SELECT * FROM pg_logical_slot_get_changes('test_slot', NULL, NULL, 'include-xids', '0');
+ location  | xid |                       data
+-----------+-----+--------------------------------------------------
+ 0/16D30F8 | 691 | BEGIN
+ 0/16D32A0 | 691 | table public.data: INSERT: id[int4]:2 data[text]:'arg'
+ 0/16D32A0 | 691 | table public.data: INSERT: id[int4]:3 data[text]:'demo'
+ 0/16D32A0 | 691 | COMMIT
+ 0/16D32D8 | 692 | BEGIN
+ 0/16D3398 | 692 | table public.data: DELETE: id[int4]:2
+ 0/16D3398 | 692 | table public.data: DELETE: id[int4]:3
+ 0/16D3398 | 692 | COMMIT
+(8 rows)</programlisting></para>
+
+</sect1>

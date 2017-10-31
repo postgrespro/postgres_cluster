@@ -1,0 +1,89 @@
+<!--
+doc/src/xml/ref/create_tsconfig.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createtsconfig">
+ <indexterm zone="sql-createtsconfig"><primary>CREATE TEXT SEARCH CONFIGURATION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE TEXT SEARCH CONFIGURATION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE TEXT SEARCH CONFIGURATION</refname>
+  <refpurpose>создать конфигурацию текстового поиска</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE TEXT SEARCH CONFIGURATION <replaceable class="parameter">имя</replaceable> (
+    PARSER = <replaceable class="parameter">имя_анализатора</replaceable> |
+    COPY = <replaceable class="parameter">исходная_конфигурация</replaceable>
+)</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE TEXT SEARCH CONFIGURATION</command> создаёт конфигурацию текстового поиска. Конфигурация текстового поиска определяет анализатор текстового поиска, разделяющий строку на фрагменты, и словари, позволяющие установить, какие именно фрагменты представляют интерес при поиске.</para>
+
+  <para>Если задаётся только анализатор, новая конфигурация текстового поиска не будет содержать сопоставления типов фрагментов со словарями и, как следствие, будет игнорировать все слова. Для создания сопоставлений, которые бы сделали конфигурацию полезной, затем нужно будет воспользоваться командой <command>ALTER TEXT SEARCH CONFIGURATION</command>. Другой вариант команды позволяет скопировать конфигурацию текстового поиска.</para>
+
+  <para>Если указывается имя схемы, конфигурация текстового поиска создаётся в указанной схеме. В противном случае она создаётся в текущей схеме.</para>
+
+  <para>Владельцем конфигурации текстового поиска становится пользователь её создавший.</para>
+
+  <para>За дополнительными сведениями обратитесь к <xref remap="3" linkend="textsearch"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя создаваемой конфигурации текстового поиска, возможно, дополненное схемой.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_анализатора</replaceable></term>
+    <listitem>
+     <para>Имя анализатора текстового поиска, который будет использоваться этой конфигурацией.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">исходная_конфигурация</replaceable></term>
+    <listitem>
+     <para>Имя существующей конфигурации текстового поиска, которая будет скопирована.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Параметры <literal>PARSER</literal> и <literal>COPY</literal> являются взаимоисключающими, так как при копировании существующей конфигурации выбранный в ней анализатор копируется тоже.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>CREATE TEXT SEARCH CONFIGURATION</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altertsconfig"/></member>
+   <member><xref linkend="sql-droptsconfig"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

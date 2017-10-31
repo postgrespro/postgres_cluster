@@ -1,0 +1,36 @@
+<!-- doc/src/xml/info.xml -->
+
+<sect1 id="resources">
+ <title>Полезные ресурсы</title>
+
+ <para>Помимо этой документации, то есть книги, есть и другие ресурсы, посвящённые <productname>&productname;</productname>: <variablelist>
+
+   <varlistentry>
+    <term>Wiki</term>
+    <listitem>
+     <para><ulink url="https://wiki.postgresql.org">Вики-раздел</ulink> сайта <productname>PostgreSQL</productname> содержит <ulink url="https://wiki.postgresql.org/wiki/Frequently_Asked_Questions">FAQ</ulink> (список популярных вопросов), <ulink url="https://wiki.postgresql.org/wiki/Todo">TODO</ulink> (список предстоящих дел) и подробную информацию по многим темам.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>Основной сайт</term>
+    <listitem>
+     <para><ulink url="https://www.postgrespro.com">Сайт Postgres Professional</ulink> содержит подробное описание каждого выпуска и другую информацию, которая поможет в работе или игре с <productname>&productname;</productname>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>Списки рассылки</term>
+    <listitem>
+     <para>Списки рассылки &mdash; подходящее место для того, чтобы получить ответы на вопросы, поделиться своим опытом с другими пользователями и связаться с разработчиками. Подробнее узнать о них можно на сайте <productname>PostgreSQL</productname>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>Вы сами!</term>
+    <listitem>
+     <para><productname>&productname;</productname> &mdash; проект open-source. А значит, поддержка его зависит от сообщества пользователей. Начиная использовать <productname>&productname;</productname>, вы будете полагаться на явную или неявную помощь других людей, обращаясь к документации или в списки рассылки. Подумайте, как вы можете отблагодарить сообщество, поделившись своими знаниями. Читайте списки рассылки и отвечайте на вопросы. Если вы узнали о чём-то, чего нет в документации, сделайте свой вклад, описав это. Если вы добавляете новые функции в код, поделитесь своими доработками.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist></para>
+</sect1>

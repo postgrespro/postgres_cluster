@@ -1,0 +1,64 @@
+<!--
+doc/src/xml/ref/alter_large_object.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterlargeobject">
+ <indexterm zone="sql-alterlargeobject"><primary>ALTER LARGE OBJECT</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER LARGE OBJECT</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER LARGE OBJECT</refname>
+  <refpurpose>изменить определение большого объекта</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER LARGE OBJECT <replaceable class="parameter">oid_большого_объекта</replaceable> OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER LARGE OBJECT</command> изменяет определение большого объекта. Единственное, что может сделать эта команда — назначить нового владельца. Выполнить <command>ALTER LARGE OBJECT</command> может только суперпользователь или владелец большого объекта.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable>oid_большого_объекта</replaceable></term>
+    <listitem>
+     <para>OID изменяемого большого объекта</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable>новый_владелец</replaceable></term>
+    <listitem>
+     <para>Новый владелец большого объекта</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER LARGE OBJECT</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="largeobjects"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

@@ -1,0 +1,40 @@
+<!--
+doc/src/xml/ref/postmaster.xml
+&productname; documentation
+-->
+
+<refentry id="app-postmaster">
+ <indexterm zone="app-postmaster"><primary>postmaster</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>postmaster</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname id="postmaster-ref">postmaster</refname>
+  <refpurpose>Сервер баз данных <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>postmaster</command>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>postmaster</command> это устаревшее название <command>postgres</command>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <para>
+   <xref linkend="app-postgres"/>
+  </para>
+ </refsect1>
+</refentry>

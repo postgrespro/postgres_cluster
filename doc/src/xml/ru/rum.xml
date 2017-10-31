@@ -1,0 +1,226 @@
+<!-- doc/src/xml/rum.xml -->
+
+<sect1 id="rum">
+  <title>rum</title>
+  <sect2 id="run-introduction">
+    <title>Введение</title>
+    <para>Модуль <emphasis role="strong">rum</emphasis> предоставляет метод доступа для работы с индексами <literal>RUM</literal>. Он основан на коде методов доступа <literal>GIN</literal>.</para>
+
+    <para>Индекс <literal>GIN</literal> позволяет выполнять быстрый полнотекстовый поиск, используя типы <type>tsvector</type> и <type>tsquery</type>, но с таким индексом связан ряд проблем: <itemizedlist>
+      <listitem>
+       <para>Медленное ранжирование. Для ранжирования необходима информация о позициях, но в индексе <literal>GIN</literal> не сохраняется информация о позициях лексем. Поэтому после сканирования индекса необходимо провести ещё одно сканирование собственно данных, чтобы получить позиции лексем.</para>
+      </listitem>
+      <listitem>
+       <para>Медленный поиск фраз с индексом <literal>GIN</literal>. Эта проблема связана с предыдущей, так как для осуществления поиска фраз необходима информация о позициях.</para>
+      </listitem>
+      <listitem>
+       <para>Медленное упорядочивание по меткам времени. Индекс <literal>GIN</literal> не может сохранять вместе с лексемами никакую дополнительную информацию, поэтому это требует дополнительного сканирования данных.</para>
+      </listitem>
+     </itemizedlist></para>
+
+    <para><literal>RUM</literal> решает эти проблемы, сохраняя дополнительную информацию в дереве идентификаторов. В частности, он сохраняет информацию о позиции лексем или метки времени.</para>
+
+    <para>Недостаток <literal>RUM</literal> состоит в том, что он строится и изменяется медленнее, чем <literal>GIN</literal>. Это связано с тем, что помимо ключей в индексе сохраняется дополнительная информация, и с тем, что <literal>RUM</literal> использует унифицированный WAL.</para>
+  </sect2>
+
+  <sect2>
+   <title>Установка</title>
+
+   <para><filename>rum</filename> — это обычное расширение <productname>&productname;</productname> без каких-либо особых предварительных требований.</para>
+
+   <para>Процедура установки выглядит следующим образом: <screen>
+$ psql <replaceable>имя_бд</replaceable> -c "CREATE EXTENSION rum"
+</screen></para>
+  </sect2>
+
+  <sect2 id="rum-ops">
+   <title>Общие операторы</title>
+
+   <para>Реализованные в модуле <filename>rum</filename> операторы перечислены в <xref remap="6" linkend="rum-ops-table"/>:</para>
+
+   <table id="rum-ops-table">
+    <title>Операторы <literal>rum</literal></title>
+
+    <tgroup cols="3">
+     <thead>
+      <row>
+       <entry>Оператор</entry>
+       <entry>Возвращает</entry>
+       <entry>Описание</entry>
+      </row>
+     </thead>
+     <tbody>
+      <row>
+       <entry><type>tsvector</type> <literal>&lt;=&gt;</literal> <type>tsquery</type></entry>
+       <entry><type>float4</type></entry>
+       <entry>Возвращает расстояние между значениями <type>tsvector</type> и <type>tsquery</type>.</entry>
+      </row>
+      <row>
+       <entry><type>timestamp</type> <literal>&lt;=&gt;</literal> <type>timestamp</type></entry>
+       <entry><type>float8</type></entry>
+       <entry>Возвращает расстояние между двумя значениями <type>timestamp</type>.</entry>
+      </row>
+      <row>
+       <entry><type>timestamp</type> <literal>&lt;=|</literal> <type>timestamp</type></entry>
+       <entry><type>float8</type></entry>
+       <entry>Возвращает расстояние только для возрастающих значений <type>timestamp</type>.</entry>
+      </row>
+      <row>
+       <entry><type>timestamp</type> <literal>|=&gt;</literal> <type>timestamp</type></entry>
+       <entry><type>float8</type></entry>
+       <entry>Возвращает расстояние только для убывающих значений <type>timestamp</type>.</entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+
+  </sect2>
+
+  <sect2 id="rum-opclasses">
+   <title>Новые классы операторов</title>
+
+   <para>Расширение <filename>rum</filename> предоставляет следующие классы операторов.</para>
+
+   <sect3 id="rum-tsvector-ops">
+    <title><literal>rum_tsvector_ops</literal> &mdash; класс операторов для <type>tsvector</type></title>
+
+    <para>Этот класс операторов сохраняет лексемы <type>tsvector</type> с информацией о позициях. Поддерживает упорядочивание с оператором <literal>&lt;=&gt;</literal> и поиск по префиксу. Взгляните на следующий пример.</para>
+
+    <para>Допустим, у нас есть таблица: <programlisting>CREATE TABLE test_rum(t text, a tsvector);
+
+CREATE TRIGGER tsvectorupdate
+BEFORE UPDATE OR INSERT ON test_rum
+FOR EACH ROW EXECUTE PROCEDURE tsvector_update_trigger('a', 'pg_catalog.english', 't');
+
+INSERT INTO test_rum(t) VALUES ('The situation is most beautiful');
+INSERT INTO test_rum(t) VALUES ('It is a beautiful');
+INSERT INTO test_rum(t) VALUES ('It looks like a beautiful place');</programlisting></para>
+
+    <para>Чтобы создать индекс <literal>rum</literal>, необходимо создать расширение: <programlisting>CREATE EXTENSION rum;</programlisting></para>
+
+    <para>Затем мы можем создать новый индекс: <programlisting>CREATE INDEX rumidx ON test_rum USING rum (a rum_tsvector_ops);</programlisting></para>
+
+    <para>И выполнять следующие запросы: <programlisting>SELECT t, a &lt;=&gt; to_tsquery('english', 'beautiful | place') AS rank
+    FROM test_rum
+    WHERE a @@ to_tsquery('english', 'beautiful | place')
+    ORDER BY a &lt;=&gt; to_tsquery('english', 'beautiful | place');
+                t                |   rank
+---------------------------------+-----------
+ The situation is most beautiful | 0.0303964
+ It is a beautiful               | 0.0303964
+ It looks like a beautiful place | 0.0607927
+(3 rows)
+
+SELECT t, a &lt;=&gt; to_tsquery('english', 'place | situation') AS rank
+    FROM test_rum
+    WHERE a @@ to_tsquery('english', 'place | situation')
+    ORDER BY a &lt;=&gt; to_tsquery('english', 'place | situation');
+                t                |   rank
+---------------------------------+-----------
+ The situation is most beautiful | 0.0303964
+ It looks like a beautiful place | 0.0303964
+(2 rows)</programlisting></para>
+   </sect3>
+
+   <sect3 id="rum-tsvector-hash-ops">
+    <title><literal>rum_tsvector_hash_ops</literal> &mdash; класс операторов для хешей <type>tsvector</type></title>
+
+    <para>Этот класс операторов сохраняет хеш лексем <type>tsvector</type> с информацией о позиции. Поддерживает упорядочивание с оператором <literal>&lt;=&gt;</literal>, но <emphasis>не</emphasis> поддерживает поиск по префиксу.</para>
+   </sect3>
+
+   <sect3 id="rum-timestamp-ops">
+    <title><literal>rum_timestamp_ops</literal> &mdash; класс операторов для <type>timestamp</type></title>
+
+    <para>Этот класс операторов обеспечивает быстрый поиск и упорядочивание по полям <type>timestamp</type>. Поддерживает упорядочивание с операторами <literal>&lt;=&gt;</literal>, <literal>&lt;=|</literal> и <literal>|=&gt;</literal>. Может использоваться с классом операторов <literal>rum_tsvector_timestamp_ops</literal>.</para>
+   </sect3>
+
+   <sect3 id="rum-timestamptz-ops">
+    <title><literal>rum_timestamptz_ops</literal> &mdash; класс операторов для <type>timestamptz</type></title>
+
+    <para>Этот класс операторов обеспечивает быстрый поиск и упорядочивание по полям <type>timestamptz</type>. Поддерживает упорядочивание с операторами <literal>&lt;=&gt;</literal>, <literal>&lt;=|</literal> и <literal>|=&gt;</literal>. Может использоваться с классом операторов <literal>rum_tsvector_timestamptz_ops</literal>.</para>
+   </sect3>
+
+   <sect3 id="rum-tsvector-timestamp-ops" xreflabel="rum_tsvector_timestamp_ops">
+    <title><literal>rum_tsvector_timestamp_ops</literal> &mdash; класс операторов для <type>tsvector</type> с <type>timestamp</type></title>
+
+    <para>Этот класс операторов сохраняет лексемы <type>tsvector</type> с полем <type>timestamp</type>. Взгляните на следующий пример.</para>
+
+    <para>Допустим, у нас есть таблица: <programlisting>CREATE TABLE tsts (id int, t tsvector, d timestamp);
+
+\copy tsts from 'rum/data/tsts.data'
+
+CREATE INDEX tsts_idx ON tsts USING rum (t rum_tsvector_timestamp_ops, d)
+    WITH (attach = 'd', to = 't');</programlisting></para>
+
+    <para>С ним мы можем выполнять подобные запросы: <programlisting>EXPLAIN (costs off)
+    SELECT id, d, d &lt;=&gt; '2016-05-16 14:21:25' FROM tsts WHERE t @@ 'wr&amp;qh' ORDER BY d &lt;=&gt; '2016-05-16 14:21:25' LIMIT 5;
+                                    QUERY PLAN
+-----------------------------------------------------------------------------------
+ Limit
+   -&gt;  Index Scan using tsts_idx on tsts
+         Index Cond: (t @@ '''wr'' &amp; ''qh'''::tsquery)
+         Order By: (d &lt;=&gt; 'Mon May 16 14:21:25 2016'::timestamp without time zone)
+(4 rows)
+
+SELECT id, d, d &lt;=&gt; '2016-05-16 14:21:25' FROM tsts WHERE t @@ 'wr&amp;qh' ORDER BY d &lt;=&gt; '2016-05-16 14:21:25' LIMIT 5;
+ id  |                d                |   ?column?
+-----+---------------------------------+---------------
+ 355 | Mon May 16 14:21:22.326724 2016 |      2.673276
+ 354 | Mon May 16 13:21:22.326724 2016 |   3602.673276
+ 371 | Tue May 17 06:21:22.326724 2016 |  57597.326724
+ 406 | Wed May 18 17:21:22.326724 2016 | 183597.326724
+ 415 | Thu May 19 02:21:22.326724 2016 | 215997.326724
+(5 rows)</programlisting></para>
+   </sect3>
+
+   <sect3 id="rum-tsvector-timestamptz-ops">
+    <title><literal>rum_tsvector_timestamptz_ops</literal> &mdash; класс операторов для <type>tsvector</type> с <type>timestamptz</type></title>
+
+    <para>См. описание класса операторов <xref linkend="rum-tsvector-timestamp-ops"/>.</para>
+   </sect3>
+
+   <sect3 id="rum-tsvector-hash-timestamp-ops">
+    <title><literal>rum_tsvector_hash_timestamp_ops</literal> &mdash; класс операторов для хешей <type>tsvector</type></title>
+
+    <para>Этот класс операторов сохраняет хеш лексем <type>tsvector</type> с полем <type>timestamp</type>. <emphasis>Не</emphasis> поддерживает поиск по префиксу.</para>
+   </sect3>
+
+   <sect3 id="rum-tsvector-hash-timestamptz-ops">
+    <title><literal>rum_tsvector_hash_timestamptz_ops</literal> &mdash; класс операторов для хешей <type>tsvector</type></title>
+
+    <para>Этот класс операторов сохраняет хеш лексем <type>tsvector</type> с полем <type>timestamptz</type>. <emphasis>Не</emphasis> поддерживает поиск по префиксу.</para>
+   </sect3>
+
+   <sect3 id="rum-tsquery-ops">
+    <title><literal>rum_tsquery_ops</literal> &mdash; класс операторов для <type>tsquery</type></title>
+
+    <para>Сохраняет ветви дерева запроса в дополнительной информации. Например, если у нас есть таблица: <programlisting>CREATE TABLE query (q tsquery, tag text);
+
+INSERT INTO query VALUES ('supernova &amp; star', 'sn'),
+    ('black', 'color'),
+    ('big &amp; bang &amp; black &amp; hole', 'bang'),
+    ('spiral &amp; galaxy', 'shape'),
+    ('black &amp; hole', 'color');
+
+CREATE INDEX query_idx ON query USING rum(q);</programlisting></para>
+
+    <para>Мы можем выполнить следующий быстрый запрос: <programlisting>SELECT * FROM query
+    WHERE to_tsvector('black holes never exists before we think about them') @@ q;
+        q         |  tag  
+------------------+-------
+ 'black'          | color
+ 'black' &amp; 'hole' | color
+(2 rows)</programlisting></para>
+   </sect3>
+  </sect2>
+  <sect2 id="rum-license">
+    <title>Лицензия</title>
+    <para>Этот модуль распространяется по той же лицензии, что и <ulink url="http://www.postgresql.org/about/licence/">PostgreSQL</ulink>.</para>
+  </sect2>
+  <sect2 id="rum-authors">
+    <title>Авторы</title>
+    <para>Александр Коротков <email>a.korotkov@postgrespro.ru</email>, Postgres Professional, Россия</para>
+    <para>Олег Бартунов <email>oleg@sai.msu.su</email>, Postgres Professional, Россия</para>
+    <para>Фёдор Сигаев <email>teodor@sigaev.ru</email>, Postgres Professional, Россия</para>
+  </sect2>
+</sect1>

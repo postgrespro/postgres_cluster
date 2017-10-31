@@ -1,0 +1,771 @@
+<!--
+doc/src/xml/ref/select.xml
+&productname; documentation
+-->
+
+<refentry id="sql-select">
+ <indexterm zone="sql-select"><primary>SELECT</primary></indexterm>
+
+ <indexterm zone="sql-select"><primary>команда TABLE</primary></indexterm>
+
+ <indexterm zone="sql-select"><primary>WITH</primary> <secondary>внутри SELECT</secondary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SELECT</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SELECT</refname>
+  <refname>TABLE</refname>
+  <refname>WITH</refname>
+  <refpurpose>получить строки из таблицы или представления</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>[ WITH [ RECURSIVE ] <replaceable class="parameter">запрос_WITH</replaceable> [, ...] ]
+SELECT [ ALL | DISTINCT [ ON ( <replaceable class="parameter">выражение</replaceable> [, ...] ) ] ]
+    [ * | <replaceable class="parameter">выражение</replaceable> [ [ AS ] <replaceable class="parameter">имя_результата</replaceable> ] [, ...] ]
+    [ FROM <replaceable class="parameter">элемент_FROM</replaceable> [, ...] ]
+    [ WHERE <replaceable class="parameter">условие</replaceable> ]
+    [ GROUP BY <replaceable class="parameter">элемент_группирования</replaceable> [, ...] ]
+    [ HAVING <replaceable class="parameter">условие</replaceable> [, ...] ]
+    [ WINDOW <replaceable class="parameter">имя_окна</replaceable> AS ( <replaceable class="parameter">определение_окна</replaceable> ) [, ...] ]
+    [ { UNION | INTERSECT | EXCEPT } [ ALL | DISTINCT ] <replaceable class="parameter">выборка</replaceable> ]
+    [ ORDER BY <replaceable class="parameter">выражение</replaceable> [ ASC | DESC | USING <replaceable class="parameter">оператор</replaceable> ] [ NULLS { FIRST | LAST } ] [, ...] ]
+    [ LIMIT { <replaceable class="parameter">число</replaceable> | ALL } ]
+    [ OFFSET <replaceable class="parameter">начало</replaceable> [ ROW | ROWS ] ]
+    [ FETCH { FIRST | NEXT } [ <replaceable class="parameter">число</replaceable> ] { ROW | ROWS } ONLY ]
+    [ FOR { UPDATE | NO KEY UPDATE | SHARE | KEY SHARE } [ OF <replaceable class="parameter">имя_таблицы</replaceable> [, ...] ] [ NOWAIT | SKIP LOCKED ] [...] ]
+
+<phrase>Здесь допускается <replaceable class="parameter">элемент_FROM</replaceable>:</phrase>
+
+    [ ONLY ] <replaceable class="parameter">имя_таблицы</replaceable> [ * ] [ [ AS ] <replaceable class="parameter">псевдоним</replaceable> [ ( <replaceable class="parameter">псевдоним_столбца</replaceable> [, ...] ) ] ]
+                [ TABLESAMPLE <replaceable class="parameter">метод_выборки</replaceable> ( <replaceable class="parameter">аргумент</replaceable> [, ...] ) [ REPEATABLE ( <replaceable class="parameter">затравка</replaceable> ) ] ]
+    [ LATERAL ] ( <replaceable class="parameter">выборка</replaceable> ) [ AS ] <replaceable class="parameter">псевдоним</replaceable> [ ( <replaceable class="parameter">псевдоним_столбца</replaceable> [, ...] ) ]
+    <replaceable class="parameter">имя_запроса_WITH</replaceable> [ [ AS ] <replaceable class="parameter">псевдоним</replaceable> [ ( <replaceable class="parameter">псевдоним_столбца</replaceable> [, ...] ) ] ]
+    [ LATERAL ] <replaceable class="parameter">имя_функции</replaceable> ( [ <replaceable class="parameter">аргумент</replaceable> [, ...] ] )
+                [ WITH ORDINALITY ] [ [ AS ] <replaceable class="parameter">псевдоним</replaceable> [ ( <replaceable class="parameter">псевдоним_столбца</replaceable> [, ...] ) ] ]
+    [ LATERAL ] <replaceable class="parameter">имя_функции</replaceable> ( [ <replaceable class="parameter">аргумент</replaceable> [, ...] ] ) [ AS ] <replaceable class="parameter">псевдоним</replaceable> ( <replaceable class="parameter">определение_столбца</replaceable> [, ...] )
+    [ LATERAL ] <replaceable class="parameter">имя_функции</replaceable> ( [ <replaceable class="parameter">аргумент</replaceable> [, ...] ] ) AS ( <replaceable class="parameter">определение_столбца</replaceable> [, ...] )
+    [ LATERAL ] ROWS FROM( <replaceable class="parameter">имя_функции</replaceable> ( [ <replaceable class="parameter">аргумент</replaceable> [, ...] ] ) [ AS ( <replaceable class="parameter">определение_столбца</replaceable> [, ...] ) ] [, ...] )
+                [ WITH ORDINALITY ] [ [ AS ] <replaceable class="parameter">псевдоним</replaceable> [ ( <replaceable class="parameter">псевдоним_столбца</replaceable> [, ...] ) ] ]
+    <replaceable class="parameter">элемент_FROM</replaceable> [ NATURAL ] <replaceable class="parameter">тип_соединения</replaceable> <replaceable class="parameter">элемент_FROM</replaceable> [ ON <replaceable class="parameter">условие_соединения</replaceable> | USING ( <replaceable class="parameter">столбец_соединения</replaceable> [, ...] ) ]
+
+<phrase>и <replaceable class="parameter">элемент_группирования</replaceable> может быть следующим:</phrase>
+
+    ( )
+    <replaceable class="parameter">выражение</replaceable>
+    ( <replaceable class="parameter">выражение</replaceable> [, ...] )
+    ROLLUP ( { <replaceable class="parameter">выражение</replaceable> | ( <replaceable class="parameter">выражение</replaceable> [, ...] ) } [, ...] )
+    CUBE ( { <replaceable class="parameter">выражение</replaceable> | ( <replaceable class="parameter">выражение</replaceable> [, ...] ) } [, ...] )
+    GROUPING SETS ( <replaceable class="parameter">элемент_группирования</replaceable> [, ...] )
+
+<phrase>и <replaceable class="parameter">запрос_WITH</replaceable>:</phrase>
+
+    <replaceable class="parameter">имя_запроса_WITH</replaceable> [ ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] ) ] AS ( <replaceable class="parameter">выборка</replaceable> | <replaceable class="parameter">values</replaceable> | <replaceable class="parameter">insert</replaceable> | <replaceable class="parameter">update</replaceable> | <replaceable class="parameter">delete</replaceable> )
+
+TABLE [ ONLY ] <replaceable class="parameter">имя_таблицы</replaceable> [ * ]</synopsis>
+
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>SELECT</command> получает строки из множества таблиц (возможно, пустого). Общая процедура выполнения <command>SELECT</command> следующая: <orderedlist>
+    <listitem>
+     <para>Выполняются все запросы в списке <literal>WITH</literal>. По сути они формируют временные таблицы, к которым затем можно обращаться в списке <literal>FROM</literal>. Запрос в <literal>WITH</literal> выполняется только один раз, даже если он фигурирует в списке <literal>FROM</literal> неоднократно. (См. <xref remap="4" linkend="sql-with" endterm="sql-with-title"/> ниже.)</para>
+    </listitem>
+
+    <listitem>
+     <para>Вычисляются все элементы в списке <literal>FROM</literal>. (Каждый элемент в списке <literal>FROM</literal> представляет собой реальную или виртуальную таблицу.) Если список <literal>FROM</literal> содержит несколько элементов, они объединяются перекрёстным соединением. (См. <xref remap="4" linkend="sql-from" endterm="sql-from-title"/> ниже.)</para>
+    </listitem>
+
+    <listitem>
+     <para>Если указано предложение <literal>WHERE</literal>, все строки, не удовлетворяющие условию, исключаются из результата. (См. <xref remap="4" linkend="sql-where" endterm="sql-where-title"/> ниже.)</para>
+    </listitem>
+
+    <listitem>
+     <para>Если присутствует указание <literal>GROUP BY</literal>, либо в запросе вызываются агрегатные функции, вывод разделяется по группам строк, соответствующим одному или нескольким значениям, а затем вычисляются результаты агрегатных функций. Если добавлено предложение <literal>HAVING</literal>, оно исключает группы, не удовлетворяющие заданному условию. (См. <xref remap="4" linkend="sql-groupby" endterm="sql-groupby-title"/> и <xref remap="4" linkend="sql-having" endterm="sql-having-title"/> ниже.)</para>
+    </listitem>
+
+    <listitem>
+     <para>Вычисляются фактические выходные строки по заданным в <command>SELECT</command> выражениям для каждой выбранной строки или группы строк. (См. <xref remap="4" linkend="sql-select-list" endterm="sql-select-list-title"/> ниже.)</para>
+    </listitem>
+
+    <listitem>
+     <para><literal>SELECT DISTINCT</literal> исключает из результата повторяющиеся строки. <literal>SELECT DISTINCT ON</literal> исключает строки, совпадающие по всем указанным выражениям. <literal>SELECT ALL</literal> (по умолчанию) возвращает все строки результата, включая дубликаты. (См. <xref remap="4" linkend="sql-distinct" endterm="sql-distinct-title"/> ниже.)</para>
+    </listitem>
+
+    <listitem>
+     <para>Операторы <literal>UNION</literal>, <literal>INTERSECT</literal> и <literal>EXCEPT</literal> объединяют вывод нескольких команд <command>SELECT</command> в один результирующий набор. Оператор <literal>UNION</literal> возвращает все строки, представленные в одном, либо обоих наборах результатов. Оператор <literal>INTERSECT</literal> возвращает все строки, представленные строго в обоих наборах. Оператор <literal>EXCEPT</literal> возвращает все строки, представленные в первом наборе, но не во втором. Во всех трёх случаях повторяющиеся строки исключаются из результата, если явно не указано <literal>ALL</literal>. Чтобы явно обозначить, что выдаваться должны только неповторяющиеся строки, можно добавить избыточное слово <literal>DISTINCT</literal>. Заметьте, что в данном контексте по умолчанию подразумевается <literal>DISTINCT</literal>, хотя в самом <command>SELECT</command> по умолчанию подразумевается <literal>ALL</literal>. (См. <xref remap="4" linkend="sql-union" endterm="sql-union-title"/>, <xref remap="4" linkend="sql-intersect" endterm="sql-intersect-title"/> и <xref remap="4" linkend="sql-except" endterm="sql-except-title"/> ниже.)</para>
+    </listitem>
+
+    <listitem>
+     <para>Если присутствует предложение <literal>ORDER BY</literal>, возвращаемые строки сортируются в указанном порядке. В отсутствие <literal>ORDER BY</literal> строки возвращаются в том порядке, в каком системе будет проще их выдать. (См. <xref remap="4" linkend="sql-orderby" endterm="sql-orderby-title"/> ниже.)</para>
+    </listitem>
+
+    <listitem>
+     <para>Если указано предложение <literal>LIMIT</literal> (или <literal>FETCH FIRST</literal>) либо <literal>OFFSET</literal>, оператор <command>SELECT</command> возвращает только подмножество строк результата. (См. <xref remap="4" linkend="sql-limit" endterm="sql-limit-title"/> ниже.)</para>
+    </listitem>
+
+    <listitem>
+     <para>Если указано <literal>FOR UPDATE</literal>, <literal>FOR NO KEY UPDATE</literal>, <literal>FOR SHARE</literal> или <literal>FOR KEY SHARE</literal>, оператор <command>SELECT</command> блокирует выбранные строки, защищая их от одновременных изменений. (См. <xref remap="4" linkend="sql-for-update-share" endterm="sql-for-update-share-title"/> ниже.)</para>
+    </listitem>
+   </orderedlist></para>
+
+  <para>Для всех столбцов, задействованных в команде <command>SELECT</command>, необходимо иметь право <literal>SELECT</literal>. Применение блокировок <literal>FOR NO KEY UPDATE</literal>, <literal>FOR UPDATE</literal>, <literal>FOR SHARE</literal> или <literal>FOR KEY SHARE</literal> требует также права <literal>UPDATE</literal> (как минимум для одного столбца в каждой выбранной для блокировки таблице).</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <refsect2 id="sql-with">
+   <title id="sql-with-title">Предложение <literal>WITH</literal></title>
+
+   <para>Предложение <literal>WITH</literal> позволяет задать один или несколько подзапросов, к которым затем можно обратиться по имени в основном запросе. Эти подзапросы по сути действуют как временные таблицы или представления в процессе выполнения главного запроса. Каждый подзапрос может представлять собой оператор <command>SELECT</command>, <command>TABLE</command>, <command>VALUES</command>, <command>INSERT</command>, <command>UPDATE</command> или <command>DELETE</command>. При использовании в <literal>WITH</literal> оператора, изменяющего данные, (<command>INSERT</command>, <command>UPDATE</command> или <command>DELETE</command>) обычно добавляется предложение <literal>RETURNING</literal>. Заметьте, что именно результат <literal>RETURNING</literal>, а <emphasis>не</emphasis> нижележащая таблица, изменяемая запросом, формирует временную таблицу, которую затем читает основной запрос. Если <literal>RETURNING</literal> опущено, оператор, тем не менее, выполняется, но не выдаёт никакого результата, так что на него нельзя сослаться как на таблицу в основном запросе.</para>
+
+   <para>Имя (без схемы) должно быть указано для каждого запроса <literal>WITH</literal>. Также можно задать необязательный список с именами столбцов; если он опущен, имена столбцов формируются из результата подзапроса.</para>
+
+   <para>Если указано <literal>RECURSIVE</literal>, подзапрос <command>SELECT</command> может ссылаться сам на себя по имени. Такой подзапрос должен иметь форму <synopsis>
+<replaceable class="parameter">нерекурсивная_часть</replaceable> UNION [ ALL | DISTINCT ] <replaceable class="parameter">рекурсивная_часть</replaceable>
+</synopsis>, где рекурсивная ссылка на сам запрос может находиться только справа от <literal>UNION</literal>. Для одного запроса допускается только одна рекурсивная ссылка на него же. Операторы, изменяющие данные, не могут быть рекурсивными, но результат рекурсивного запроса <command>SELECT</command> в таких операторах можно использовать. За примером обратитесь к <xref remap="3" linkend="queries-with"/>.</para>
+
+   <para>Ещё одна особенность <literal>RECURSIVE</literal> в том, что запросы <literal>WITH</literal> могут быть неупорядоченными: запрос может ссылаться на другой, идущий в списке после него. (Однако циклические ссылки или взаимная рекурсия не поддерживаются.) Без <literal>RECURSIVE</literal> запрос в <literal>WITH</literal> может ссылаться только на запросы того же уровня в <literal>WITH</literal>, предшествующие ему в списке <literal>WITH</literal>.</para>
+
+   <para>Ключевое свойство запросов <literal>WITH</literal> состоит в том, что они вычисляются один раз для всего основного запроса, даже если в основном запросе содержатся несколько ссылок на них. В частности, гарантируется, что операторы, изменяющие данные, будут выполняться ровно один раз, вне зависимости от того, будет ли их результат прочитан основным запросом и в каком объёме.</para>
+
+   <para>Основной запрос и все запросы <literal>WITH</literal>, условно говоря, выполняются одновременно. Это значит, что действие оператора, изменяющего данные в <literal>WITH</literal>, не будут видеть другие части запроса, кроме как прочитав его вывод <literal>RETURNING</literal>. Если два таких оператора попытаются изменить одну строку, результат будет неопределённым.</para>
+
+   <para>За дополнительными сведениями обратитесь к <xref remap="3" linkend="queries-with"/>.</para>
+  </refsect2>
+
+  <refsect2 id="sql-from">
+   <title id="sql-from-title">Предложение <literal>FROM</literal></title>
+
+   <para>В предложении <literal>FROM</literal> перечисляются одна или несколько таблиц, служащих источниками данных для <command>SELECT</command>. Если указано несколько источников, результатом будет декартово произведение (перекрёстное соединение) всех их строк. Но обычно в запрос добавляются уточняющие условия (в предложении <literal>WHERE</literal>), которые ограничивают набор строк небольшим подмножеством этого произведения.</para>
+
+   <para>Предложение <literal>FROM</literal> может содержать следующие элементы: <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+      <listitem>
+       <para>Имя (возможно, дополненное схемой) существующей таблицы или представления. Если перед именем таблицы указано <literal>ONLY</literal>, считывается только заданная таблица. Без <literal>ONLY</literal> считывается и заданная таблица, и все её потомки (если таковые есть). После имени таблицы можно также добавить необязательное указание <literal>*</literal>, чтобы явно обозначить, что блокировка затрагивает и все дочерние таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">псевдоним</replaceable></term>
+      <listitem>
+       <para>Альтернативное имя для элемента списка <literal>FROM</literal>. Этот псевдоним используется для краткости или для исключения неоднозначности с замкнутыми соединениями (когда одна таблица читается неоднократно). Когда задаётся псевдоним, он полностью скрывает настоящее имя таблицы или функции; например, при записи <literal>FROM foo AS f</literal>, в продолжении запроса <command>SELECT</command> к этому элементу <literal>FROM</literal> нужно обращаться по имени <literal>f</literal>, а не <literal>foo</literal>. Если задан псевдоним таблицы, за ним можно также написать список псевдонимов столбцов, который определит альтернативные имена для столбцов таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>TABLESAMPLE <replaceable class="parameter">метод_выборки</replaceable> ( <replaceable class="parameter">аргумент</replaceable> [, ...] ) [ REPEATABLE ( <replaceable class="parameter">затравка</replaceable> ) ]</literal></term>
+      <listitem>
+       <para>Предложение <literal>TABLESAMPLE</literal>, сопровождающее <replaceable class="parameter">имя_таблицы</replaceable>, показывает, что для получения подмножества строк в этой таблице должен применяться указанный <replaceable class="parameter">метод_выборки</replaceable>. Эта выборка предшествует применению любых других фильтров, например, в предложении <literal>WHERE</literal>. В стандартный дистрибутив <productname>&productname;</productname> включены два метода выборки, <literal>BERNOULLI</literal> и <literal>SYSTEM</literal>; другие методы выборки можно установить в базу данных через расширения.</para>
+
+       <para>Методы выборки <literal>BERNOULLI</literal> и <literal>SYSTEM</literal> принимают единственный <replaceable class="parameter">аргумент</replaceable>, определяющий, какой процент таблицы должен попасть в выборку, от 0 до 100. Этот аргумент может задаваться любым выражением со значением типа <type>real</type>. (Другие методы выборки могут принимать дополнительные или другие параметры.) Оба этих метода возвращают случайную выборку таблицы, содержащую примерно указанный процент строк таблицы. Метод <literal>BERNOULLI</literal> сканирует всю таблицу и выбирает или игнорирует отдельные строки независимо, с заданной вероятностью. Метод <literal>SYSTEM</literal> строит выборку на уровне блоков, определяя для каждого блока шанс его задействовать, и возвращает все строки из каждого задействуемого блока. Метод <literal>SYSTEM</literal> работает значительно быстрее <literal>BERNOULLI</literal>, когда выбирается небольшой процент строк, но он может выдавать менее случайную выборку таблицу из-за эффектов кучности.</para>
+
+       <para>В необязательном предложении <literal>REPEATABLE</literal> задаётся <replaceable class="parameter">затравка</replaceable> — число или выражение, задающее отправное значение для генератора случайных чисел в методе выборки. Значением затравки может быть любое отличное от NULL число с плавающей точкой. Два запроса, в которых указаны одинаковые значения затравки и <replaceable class="parameter">аргумента</replaceable>, выдадут одну и ту же выборку таблицы при условии неизменности содержимого таблицы. Но с разными значениями затравки выборки обычно получаются разными. В отсутствие предложения <literal>REPEATABLE</literal> для каждого запроса выдаётся новая случайная выборка, в зависимости от затравки, сгенерированной системой. Заметьте, что некоторые дополнительные методы выборки не принимают предложение <literal>REPEATABLE</literal> и выдают разные выборки при каждом использовании.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">выборка</replaceable></term>
+      <listitem>
+       <para>Предложение <literal>FROM</literal> может содержать вложенный запрос <command>SELECT</command>. Можно считать, что из его результата создаётся временная таблица на время выполнения основной команды <command>SELECT</command>. Заметьте, что вложенный запрос <command>SELECT</command> должен заключаться в скобки и для него <emphasis>должен</emphasis> задаваться псевдоним. Здесь также можно использовать команду <xref linkend="sql-values"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_запроса_WITH</replaceable></term>
+      <listitem>
+       <para>На запрос <literal>WITH</literal> можно ссылаться по имени, как если бы имя запроса представляло имя таблицы. (На самом деле запрос <literal>WITH</literal> скрывает любую реальную таблицу с тем же именем для основного запроса. Если необходимо обратиться к одноимённой реальной таблице, можно дополнить имя этой таблицы именем схемы.) Для этого имени можно задать псевдоним, так же, как и для имени таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_функции</replaceable></term>
+      <listitem>
+       <para>В предложении <literal>FROM</literal> могут содержаться вызовы функций. (Это особенно полезно для функций, возвращающих множества, но в принципе можно использовать любые функции.) Можно считать, что из результата функции создаётся временная таблица на время выполнения основной команды <command>SELECT</command>. Если вызов функции сопровождается необязательным предложением <command>WITH ORDINALITY</command>, после всех выдаваемых функцией столбцов в вывод добавляется ещё один столбец с номерами строк.</para>
+
+       <para>Псевдоним для функции можно задать так же, как и для таблицы. Если этот псевдоним задан, за ним можно также написать список псевдонимов столбцов, который определит альтернативные имена для атрибутов составного типа результата функции, включая имя столбца, который может быть добавлен предложением <literal>ORDINALITY</literal>.</para>
+
+       <para>Несколько вызовов функций можно объединить в одном элементе предложения <literal>FROM</literal>, заключив их в конструкцию <literal>ROWS FROM( ... )</literal>. Выводом такого элемента будет соединение первых строк всех функций, затем вторых строк и т. д. Если одни функции выдают меньше строк, чем другие, недостающие данные заменяются значениями NULL, так что общее число возвращаемых строк всегда будет равняться максимальному числу строк из возвращённых всеми функциями.</para>
+
+      <para>Если функция определена как возвращающая тип данных <type>record</type>, для неё нужно указать псевдоним или ключевое слово <literal>AS</literal>, за которым должен идти список определений столбцов в форме <literal>( <replaceable class="parameter">имя_столбца</replaceable> <replaceable class="parameter">тип_данных</replaceable> <optional>, ... </optional>)</literal>. Список определений столбцов должен соответствовать фактическому количеству и типу столбцов, возвращаемых функцией.</para>
+
+       <para>Если при использовании синтаксиса <literal>ROWS FROM( ... )</literal> одна из функций требует наличия списка определений столбцов, этот список лучше разместить после вызова функции внутри <literal>ROWS FROM( ... )</literal>. Список определений столбцов можно поместить после конструкции <literal>ROWS FROM( ... )</literal>, только если вызывается всего одна функция, а предложение <literal>WITH ORDINALITY</literal> отсутствует.</para>
+
+       <para>Чтобы использовать <literal>ORDINALITY</literal> со списком определений столбцов, необходимо применить запись <literal>ROWS FROM( ... )</literal> и поместить список с определениями столбцов внутрь <literal>ROWS FROM( ... )</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">тип_соединения</replaceable></term>
+      <listitem>
+       <para>Один из следующих вариантов: <itemizedlist>
+         <listitem>
+          <para><literal>[ INNER ] JOIN</literal></para>
+         </listitem>
+         <listitem>
+          <para><literal>LEFT [ OUTER ] JOIN</literal></para>
+         </listitem>
+         <listitem>
+          <para><literal>RIGHT [ OUTER ] JOIN</literal></para>
+         </listitem>
+         <listitem>
+          <para><literal>FULL [ OUTER ] JOIN</literal></para>
+         </listitem>
+         <listitem>
+          <para><literal>CROSS JOIN</literal></para>
+         </listitem>
+        </itemizedlist> Для типов соединений <literal>INNER</literal> и <literal>OUTER</literal> необходимо указать условие соединения, а именно одно из предложений <literal>NATURAL</literal>, <literal>ON <replaceable class="parameter">условие_соединения</replaceable></literal> или <literal>USING (<replaceable class="parameter">столбец_соединения</replaceable> [, ...])</literal>. Эти предложения описываются ниже. Для <literal>CROSS JOIN</literal> ни одно из этих предложений не допускается.</para>
+
+       <para>Предложение <literal>JOIN</literal> объединяет два элемента списка <literal>FROM</literal>, которые мы для простоты дальше будем называть <quote>таблицами</quote>, хотя на самом деле это может быть любой объект, допустимый в качестве элемента <literal>FROM</literal>. Для определения порядка вложенности при необходимости следует использовать скобки. В отсутствие скобок предложения <literal>JOIN</literal> обрабатывается слева направо. В любом случае, <literal>JOIN</literal> связывает элементы сильнее, чем запятые, разделяющие элементы в списке <literal>FROM</literal>.</para>
+
+       <para><literal>CROSS JOIN</literal> и <literal>INNER JOIN</literal> формируют простое декартово произведение, то же, что можно получить, указав две таблицы на верхнем уровне <literal>FROM</literal>, но ограниченное возможным условием соединения. Предложение <literal>CROSS JOIN</literal> равнозначно <literal>INNER JOIN ON (TRUE)</literal>, то есть, никакие строки по условию не удаляются. Эти типы соединений введены исключительно для удобства записи, они не дают ничего такого, что нельзя было бы получить, используя просто <literal>FROM</literal> и <literal>WHERE</literal>.</para>
+
+       <para><literal>LEFT OUTER JOIN</literal> возвращает все строки ограниченного декартова произведения (т. е. все объединённые строки, удовлетворяющие условию соединения) плюс все строки в таблице слева, для которых не находится строк в таблице справа, удовлетворяющих условию. Строка, взятая из таблицы слева, дополняется до полной ширины объединённой таблицы значениями NULL в столбцах таблицы справа. Заметьте, что для определения, какие строки двух таблиц соответствуют друг другу, проверяется только условие самого предложения <literal>JOIN</literal>. Внешние условия проверяются позже.</para>
+
+       <para><literal>RIGHT OUTER JOIN</literal>, напротив, возвращает все соединённые строки плюс одну строку для каждой строки справа, не имеющей соответствия слева (эта строка дополняется значениями NULL влево). Это предложение введено исключительно для удобства записи, так как его можно легко свести к <literal>LEFT OUTER JOIN</literal>, поменяв левую и правую таблицы местами.</para>
+
+       <para><literal>FULL OUTER JOIN</literal> возвращает все соединённые строки плюс все строки слева, не имеющие соответствия справа, (дополненные значениями NULL вправо) плюс все строки справа, не имеющие соответствия слева (дополненные значениями NULL влево).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>ON <replaceable class="parameter">условие_соединения</replaceable></literal></term>
+      <listitem>
+       <para>Задаваемое <replaceable class="parameter">условие_соединения</replaceable> представляет собой выражение, выдающее значение типа <type>boolean</type> (как в предложении <literal>WHERE</literal>), которое определяет, какие строки считаются соответствующими при соединении.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>USING ( <replaceable class="parameter">столбец_соединения</replaceable> [, ...] )</literal></term>
+      <listitem>
+       <para>Предложение вида <literal>USING ( a, b, ... )</literal> представляет собой сокращённую форму записи <literal>ON таблица_слева.a = таблица_справа.a AND таблица_слева.b = таблица_справа.b ...</literal>. Кроме того, <literal>USING</literal> подразумевает, что в результат соединения будет включён только один из пары равных столбцов, но не оба.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>NATURAL</literal></term>
+      <listitem>
+       <para><literal>NATURAL</literal> представляет собой краткую запись <literal>USING</literal> со списком, в котором перечисляются все столбцы двух таблиц, имеющие одинаковые имена. Если одинаковых имён нет, указание <literal>NATURAL</literal> равнозначно <literal>ON TRUE</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>LATERAL</literal></term>
+      <listitem>
+       <para>Ключевое слово <literal>LATERAL</literal> может предварять вложенный запрос <command>SELECT</command> в списке <literal>FROM</literal>. Оно позволяет обращаться в этом вложенном <command>SELECT</command> к столбцам элементов <literal>FROM</literal>, предшествующим ему в списке <literal>FROM</literal>. (Без <literal>LATERAL</literal> все вложенные подзапросы <command>SELECT</command> обрабатываются независимо и не могут ссылаться на другие элементы списка <literal>FROM</literal>.)</para>
+
+       <para>Слово <literal>LATERAL</literal> можно также добавить перед вызовом функции в списке <literal>FROM</literal>, но в этом случае оно будет избыточным, так как выражения с функциями могут ссылаться на предыдущие элементы списка <literal>FROM</literal> в любом случае.</para>
+
+       <para>Элемент <literal>LATERAL</literal> может находиться на верхнем уровне списка <literal>FROM</literal> или в дереве <literal>JOIN</literal>. В последнем случае он может также ссылаться на любые элементы в левой части <literal>JOIN</literal>, справа от которого он находится.</para>
+
+       <para>Когда элемент <literal>FROM</literal> содержит ссылки <literal>LATERAL</literal>, запрос выполняется следующим образом: сначала для строки элемента <literal>FROM</literal> с целевыми столбцами, или набора строк из нескольких элементов <literal>FROM</literal>, содержащих целевые столбцы, вычисляется элемент <literal>LATERAL</literal> со значениями этих столбцов. Затем результирующие строки обычным образом соединяются со строками, из которых они были вычислены. Эта процедура повторяется для всех строк исходных таблиц.</para>
+
+       <para>Таблица, служащая источником столбцов, должна быть связана с элементом <literal>LATERAL</literal> соединением <literal>INNER</literal> или <literal>LEFT</literal>, в противном случае не образуется однозначно определяемый набор строк, из которого можно будет получать наборы строк для элемента <literal>LATERAL</literal>. Таким образом, хотя конструкция <literal><replaceable>X</replaceable> RIGHT JOIN LATERAL <replaceable>Y</replaceable></literal> синтаксически правильная, <replaceable>Y</replaceable> в ней не может обращаться к <replaceable>X</replaceable>.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+  </refsect2>
+
+  <refsect2 id="sql-where">
+   <title id="sql-where-title">Предложение <literal>WHERE</literal></title>
+
+   <para>Необязательное предложение <literal>WHERE</literal> имеет общую форму <synopsis>
+WHERE <replaceable class="parameter">условие</replaceable>
+</synopsis>, где <replaceable class="parameter">условие</replaceable> — любое выражение, выдающее результат типа <type>boolean</type>. Любая строка, не удовлетворяющая этому условию, исключается из результата. Строка удовлетворяет условию, если оно возвращает true при подстановке вместо ссылок на переменные фактических значений из этой строки.</para>
+  </refsect2>
+
+  <refsect2 id="sql-groupby">
+   <title id="sql-groupby-title">Предложение <literal>GROUP BY</literal></title>
+
+   <para>Необязательное предложение <literal>GROUP BY</literal> имеет общую форму <synopsis>
+GROUP BY <replaceable class="parameter">элемент_группирования</replaceable> [, ...]
+</synopsis></para>
+
+   <para><literal>GROUP BY</literal> собирает в одну строку все выбранные строки, выдающие одинаковые значения для выражений группировки. В качестве <replaceable class="parameter">выражения</replaceable> внутри <replaceable class="parameter">элемента_группирования</replaceable> может выступать имя входного столбца, либо имя или порядковый номер выходного столбца (из списка элементов <command>SELECT</command>), либо произвольное значение, вычисляемое по значениям входных столбцов. В случае неоднозначности имя в <literal>GROUP BY</literal> будет восприниматься как имя входного, а не выходного столбца.</para>
+
+   <para>Если в элементе группирования задаётся <literal>GROUPING SETS</literal>, <literal>ROLLUP</literal> или <literal>CUBE</literal>, предложение <literal>GROUP BY</literal> в целом определяет некоторое число независимых <replaceable>наборов группирования</replaceable>. Это даёт тот же эффект, что и объединение подзапросов (с <literal>UNION ALL</literal>) с отдельными наборами группирования в их предложениях <literal>GROUP BY</literal>. Подробнее использование наборов группирования описывается в <xref remap="6" linkend="queries-grouping-sets"/>.</para>
+
+   <para>Агрегатные функции, если они используются, вычисляются по всем строкам, составляющим каждую группу, и в итоге выдают отдельное значение для каждой группы. (Если агрегатные функции используются без предложения <literal>GROUP BY</literal>, запрос выполняется как с одной группой, включающей все выбранные строки.) Набор строк, поступающих в каждую агрегатную функцию, можно дополнительно отфильтровать, добавив предложение <literal>FILTER</literal> к вызову агрегатной функции; за дополнительными сведениями обратитесь к <xref remap="3" linkend="syntax-aggregates"/>. С предложением <literal>FILTER</literal> на вход агрегатной функции поступают только те строки, которые соответствуют заданному фильтру.</para>
+
+   <para>Когда в запросе присутствует предложение <literal>GROUP BY</literal> или какая-либо агрегатная функция, выражения в списке <command>SELECT</command> не могут обращаться к негруппируемым столбцам, кроме как в агрегатных функциях или в случае функциональной зависимости, так как иначе в негруппируемом столбце нужно было бы вернуть более одного возможного значения. Функциональная зависимость образуется, если группируемые столбцы (или их подмножество) составляют первичный ключ таблицы, содержащей негруппируемый столбец.</para>
+
+   <para>Имейте в виду, что все агрегатные функции вычисляются перед <quote>скалярными</quote> выражениями в предложении <literal>HAVING</literal> или списке <literal>SELECT</literal>. Это значит, что например, с помощью выражения <literal>CASE</literal> нельзя обойти вычисление агрегатной функции; см. <xref remap="4" linkend="syntax-express-eval"/>.</para>
+
+   <para>В настоящее время указания <literal>FOR NO KEY UPDATE</literal>, <literal>FOR UPDATE</literal>, <literal>FOR SHARE</literal> и <literal>FOR KEY SHARE</literal> нельзя задать вместе с <literal>GROUP BY</literal>.</para>
+  </refsect2>
+
+  <refsect2 id="sql-having">
+   <title id="sql-having-title">Предложение <literal>HAVING</literal></title>
+
+   <para>Необязательное предложение <literal>HAVING</literal> имеет общую форму <synopsis>
+HAVING <replaceable class="parameter">условие</replaceable>
+</synopsis> Здесь <replaceable class="parameter">условие</replaceable> задаётся так же, как и для предложения <literal>WHERE</literal>.</para>
+
+   <para><literal>HAVING</literal> исключает из результата строки групп, не удовлетворяющих условию. <literal>HAVING</literal> отличается от <literal>WHERE</literal>: <literal>WHERE</literal> фильтрует отдельные строки до применения <literal>GROUP BY</literal>, а <literal>HAVING</literal> фильтрует строки групп, созданных предложением <literal>GROUP BY</literal>. Каждый столбец, фигурирующий в <replaceable class="parameter">условии</replaceable>, должен однозначно ссылаться на группируемый столбец, за исключением случаев, когда эта ссылка находится внутри агрегатной функции или негруппируемый столбец функционально зависит от группируемых.</para>
+
+   <para>В присутствие <literal>HAVING</literal> запрос превращается в группируемый, даже если <literal>GROUP BY</literal> отсутствует. То же самое происходит, когда запрос содержит агрегатные функции, но не предложение <literal>GROUP BY</literal>. Все выбранные строки считаются формирующими одну группу, а в списке <command>SELECT</command> и предложении <literal>HAVING</literal> можно обращаться к столбцам таблицы только из агрегатных функций. Такой запрос будет выдавать единственную строку, если результат условия <literal>HAVING</literal> — true, и ноль строк в противном случае.</para>
+
+   <para>В настоящее время указания <literal>FOR NO KEY UPDATE</literal>, <literal>FOR UPDATE</literal>, <literal>FOR SHARE</literal> и <literal>FOR KEY SHARE</literal> нельзя задать вместе с <literal>HAVING</literal>.</para>
+  </refsect2>
+
+  <refsect2 id="sql-window">
+   <title id="sql-window-title">Предложение <literal>WINDOW</literal></title>
+
+   <para>Необязательное предложение <literal>WINDOW</literal> имеет общую форму <synopsis>
+WINDOW <replaceable class="parameter">имя_окна</replaceable> AS ( <replaceable class="parameter">определение_окна</replaceable> ) [, ...]
+</synopsis> Здесь <replaceable class="parameter">имя_окна</replaceable> — это имя, на которое можно ссылаться из предложений <literal>OVER</literal> или последующих определений окон, а <replaceable class="parameter">определение_окна</replaceable> имеет следующий вид: <synopsis>
+[ <replaceable class="parameter">имя_существующего_окна</replaceable> ]
+[ PARTITION BY <replaceable class="parameter">выражение</replaceable> [, ...] ]
+[ ORDER BY <replaceable class="parameter">выражение</replaceable> [ ASC | DESC | USING <replaceable class="parameter">оператор</replaceable> ] [ NULLS { FIRST | LAST } ] [, ...] ]
+[ <replaceable class="parameter">предложение_рамки</replaceable> ]
+</synopsis></para>
+
+   <para>Если указано <replaceable class="parameter">имя_существующего_окна</replaceable>, оно должно ссылаться на предшествующую запись в списке <literal>WINDOW</literal>; новое окно копирует предложение разбиения из этой записи, а также предложение сортировки, если оно присутствует. В этом случае для нового окна нельзя задать собственное предложение <literal>PARTITION BY</literal>, а <literal>ORDER BY</literal> можно указать, только если его не было у копируемого окна. Новое окно всегда использует собственное предложение рамки; в копируемом окне оно задаваться не должно.</para>
+
+   <para>Элементы списка <literal>PARTITION BY</literal> интерпретируется во многом так же, как и элементы <xref remap="2" linkend="sql-groupby" endterm="sql-groupby-title"/>, за исключением того, что это всегда простые выражения, но не имя или номер выходного столбца. Другое различие состоит в том, что эти выражения могут содержать вызовы агрегатных функций, которые не допускаются в обычном предложении <literal>GROUP BY</literal>. Здесь они допускаются потому, что формирование окна происходит после группировки и агрегирования.</para>
+
+   <para>Подобным образом, элементы списка <literal>ORDER BY</literal> интерпретируются во многом так же, как и элементы <xref remap="2" linkend="sql-orderby" endterm="sql-orderby-title"/>, за исключением того, что выражения в нём всегда принимаются как простые выражения, но не как имя или номер выходного столбца.</para>
+
+   <para>Необязательное <replaceable class="parameter">предложение_рамки</replaceable> определяет <firstterm>рамку окна</firstterm> для оконных функций, которые зависят от рамки (не все функции таковы). Рамка окна — это набор связанных строк для каждой строки запроса (называемой <firstterm>текущей строкой</firstterm>). В качестве <replaceable class="parameter">предложения_рамки</replaceable> может задаваться <synopsis>
+{ RANGE | ROWS } <replaceable>начало_рамки</replaceable>
+{ RANGE | ROWS } BETWEEN <replaceable>начало_рамки</replaceable> AND <replaceable>конец_рамки</replaceable>
+</synopsis> Здесь <replaceable>начало_рамки</replaceable> и <replaceable>конец_рамки</replaceable> может задаваться как <synopsis>
+UNBOUNDED PRECEDING
+<replaceable>значение</replaceable> PRECEDING
+CURRENT ROW
+<replaceable>значение</replaceable> FOLLOWING
+UNBOUNDED FOLLOWING
+</synopsis> Если <replaceable>конец_рамки</replaceable> опущен, по умолчанию подразумевается <literal>CURRENT ROW</literal>. В качестве <replaceable>начала_рамки</replaceable> нельзя задать <literal>UNBOUNDED FOLLOWING</literal>, а в качестве <replaceable>конца_рамки</replaceable> — <literal>UNBOUNDED PRECEDING</literal>, к тому же выбранный вариант <replaceable>конца_рамки</replaceable> не может стоять в приведённом списке выше варианта <replaceable>начала_рамки</replaceable> &mdash; например, комбинация <literal>RANGE BETWEEN CURRENT ROW AND <replaceable>значение</replaceable> PRECEDING</literal> не допускается.</para>
+
+   <para>По умолчанию рамка образуется предложением <literal>RANGE UNBOUNDED PRECEDING</literal>, что по сути то же, что <literal>RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</literal>; оно устанавливает рамку так, что она включает все строки от начала раздела до последней строки, родственной текущей (строки, которую <literal>ORDER BY</literal> считает равной текущей), либо все строки раздела, если <literal>ORDER BY</literal> отсутствует. Вообще <literal>UNBOUNDED PRECEDING</literal> означает, что рамка начинается с первой строки раздела, а <literal>UNBOUNDED FOLLOWING</literal> означает, что рамка заканчивается на последней строке раздела (вне зависимости от режима <literal>RANGE</literal> или <literal>ROWS</literal>). В режиме <literal>ROWS</literal> указание <literal>CURRENT ROW</literal> означает, что рамка начинается или заканчивается текущей строкой; но в режиме <literal>RANGE</literal> оно означает, что рамка начинается или заканчивается первой или последней строкой, родственной текущей, согласно порядку <literal>ORDER BY</literal>. Варианты <replaceable>значение</replaceable> <literal>PRECEDING</literal> и <replaceable>значение</replaceable> <literal>FOLLOWING</literal> в настоящее время допускаются только в режиме <literal>ROWS</literal>. Они показывают, что рамка начинается или заканчивается со сдвигом на заданное количество строк назад или вперёд от текущей. Здесь <replaceable>значение</replaceable> должно быть целочисленным выражением, не содержащим никакие переменные, агрегатные или оконные функции. Это значение не может быть отрицательным или равным NULL, но может быть равно 0 (при этом выбирается текущая строка).</para>
+
+   <para>Учтите, что варианты <literal>ROWS</literal> могут выдавать непредсказуемые результаты, если согласно порядку, заданному в <literal>ORDER BY</literal>, строки сортируются неоднозначно. Варианты <literal>RANGE</literal> предусмотрены для того, чтобы строки, являющиеся родственными в порядке <literal>ORDER BY</literal>, обрабатывались одинаково; все родственные строки будут находиться в одной рамке.</para>
+
+   <para>Предложение <literal>WINDOW</literal> применяется для управления поведением <firstterm>оконных функций</firstterm>, фигурирующих в запросе, в <xref remap="6" linkend="sql-select-list" endterm="sql-select-list-title"/> или <xref remap="6" linkend="sql-orderby" endterm="sql-orderby-title"/>. Эти функции могут обращаться к элементам <literal>WINDOW</literal> по именам в своих предложениях <literal>OVER</literal>. При этом элементы <literal>WINDOW</literal> не обязательно задействовать в запросе; если они не используются, они просто игнорируются. Оконные функции можно использовать вовсе без элементов <literal>WINDOW</literal>, так как в вызове оконной функции можно задать определение окна непосредственно в предложении <literal>OVER</literal>. Однако предложение <literal>WINDOW</literal> позволяет сократить текст запроса, когда одно и то же определение окна применяется при вызове нескольких оконных функций.</para>
+
+   <para>В настоящее время указания <literal>FOR NO KEY UPDATE</literal>, <literal>FOR UPDATE</literal>, <literal>FOR SHARE</literal> и <literal>FOR KEY SHARE</literal> нельзя задать вместе с <literal>WINDOW</literal>.</para>
+
+   <para>Оконные функции подробно описываются в <xref remap="6" linkend="tutorial-window"/>, <xref remap="6" linkend="syntax-window-functions"/> и <xref remap="6" linkend="queries-window"/>.</para>
+  </refsect2>
+
+  <refsect2 id="sql-select-list">
+   <title id="sql-select-list-title">Список <command>SELECT</command></title>
+
+   <para>Список <command>SELECT</command> (между ключевыми словами <literal>SELECT</literal> и <literal>FROM</literal>) содержит выражения, которые формируют выходные строки оператора <command>SELECT</command>. Эти выражения могут обращаться (и обычно обращаются) к столбцам, вычисленным в предложении <literal>FROM</literal>.</para>
+
+   <para>Так же, как в таблице, каждый выходной столбец <command>SELECT</command> имеет имя. В простом предложении <command>SELECT</command> это имя просто помечает столбец при выводе, но когда <command>SELECT</command> представляет собой подзапрос большого запроса, это имя большой запрос видит как имя столбца виртуальной таблицы, созданной подзапросом. Чтобы задать имя для выходного столбца, нужно написать <literal>AS</literal> <replaceable class="parameter">выходное_имя</replaceable> после выражения столбца. (Слово <literal>AS</literal> можно опустить, но только если желаемое выходное имя не совпадает с каким-либо ключевым словом <productname>&productname;</productname> (см. <xref remap="4" linkend="sql-keywords-appendix"/>). Чтобы не зависеть от появления новых ключевых слов в будущем, рекомендуется всегда писать <literal>AS</literal>, либо заключать имя в двойные кавычки.) Если имя столбца не задать, <productname>&productname;</productname> выберет его автоматически. Если выражение столбца представляет собой просто ссылку на столбец, то выбранное таким образом имя будет совпадать с именем столбца. В более сложных случаях может использоваться имя функции или типа, либо в отсутствие других вариантов система может сгенерировать имя вроде <literal>?column?</literal>.</para>
+
+   <para>По имени выходного столбца можно обратиться к его значению в предложениях <literal>ORDER BY</literal> и <literal>GROUP BY</literal>, но не в <literal>WHERE</literal> или <literal>HAVING</literal>; в них вместо имени надо записывать всё выражение.</para>
+
+   <para>Вместо выражения в выходном списке можно указать <literal>*</literal>, что будет обозначать все столбцы выбранных строк. Кроме того, можно записать <literal><replaceable class="parameter">имя_таблицы</replaceable>.*</literal> как краткое обозначение всех столбцов, получаемых из данной таблицы. В этих случаях нельзя задать новые имена столбцов с помощью <literal>AS</literal>; именами выходных столбцов будут имена столбцов в таблице.</para>
+
+   <para>Согласно стандарту SQL, выражения в выходном списке должны вычисляться до применения <literal>DISTINCT</literal>, <literal>ORDER BY</literal> или <literal>LIMIT</literal>. Это, очевидно, необходимо для <literal>DISTINCT</literal>, так как иначе не будет ясно, какие значения должны выдаваться как уникальные. Однако во многих случаях выходные выражения удобнее вычислять после <literal>ORDER BY</literal> и <literal>LIMIT</literal>; в частности, если в выходном списке содержатся изменчивые или дорогостоящие функции. В этом случае порядок вычисления функций оказывается более интуитивным, а для строк, которые не попадут в результат, не будут производиться вычисления. <productname>&productname;</productname> фактически будет вычислять выходные выражения после сортировки и ограничения их количества, если эти выражения не фигурируют в <literal>DISTINCT</literal>, <literal>ORDER BY</literal> или <literal>GROUP BY</literal>. (Например, в запросе <literal>SELECT f(x) FROM tab ORDER BY 1</literal> функция <function>f(x)</function>, несомненно, должна вычисляться перед сортировкой.) Выходные выражения, содержащие функции, возвращающие множества, фактически вычисляются после сортировки и до ограничения количества строк, так что <literal>LIMIT</literal> будет отбрасывать строки, выдаваемые функцией, возвращающей множество.</para>
+
+   <note>
+    <para>В <productname>&productname;</productname> до версии 9.6 никакой порядок вычисления выходных выражений по отношению к сортировке или ограничениям количества не гарантировался; он зависел от формы выбранного плана запроса.</para>
+   </note>
+  </refsect2>
+
+  <refsect2 id="sql-distinct">
+   <title id="sql-distinct-title">Предложение <literal>DISTINCT</literal></title>
+
+   <para>Если указано <literal>SELECT DISTINCT</literal>, все повторяющиеся строки исключаются из результирующего набора (из каждой группы дубликатов остаётся одна строка). <literal>SELECT ALL</literal> делает противоположное: сохраняет все строки; это поведение по умолчанию.</para>
+
+   <para><literal>SELECT DISTINCT ON ( <replaceable class="parameter">выражение</replaceable> [, ...] )</literal> сохраняет только первую строку из каждого набора строк, для которого данное выражение даёт одинаковые значения. Выражения <literal>DISTINCT ON</literal> обрабатываются по тем же правилам, что и выражения <literal>ORDER BY</literal> (см. выше). Заметьте, что <quote>первая строка</quote> каждого набора непредсказуема, если только не применяется предложение <literal>ORDER BY</literal>, определяющее, какие строки должны быть первыми. Например: <programlisting>SELECT DISTINCT ON (location) location, time, report
+    FROM weather_reports
+    ORDER BY location, time DESC;</programlisting> возвращает самую последнюю сводку погоды для каждого местоположения. Но если бы мы не добавили <literal>ORDER BY</literal>, чтобы значения времени убывали, мы бы получили сводки по местоположениям от непредсказуемого времени.</para>
+
+   <para>Выражения <literal>DISTINCT ON</literal> должны соответствовать самым левым выражениям в <literal>ORDER BY</literal>. Предложение <literal>ORDER BY</literal> обычно содержит и другие выражения, которые определяют желаемый порядок строк в каждой группе <literal>DISTINCT ON</literal>.</para>
+
+   <para>В настоящее время указания <literal>FOR NO KEY UPDATE</literal>, <literal>FOR UPDATE</literal>, <literal>FOR SHARE</literal> и <literal>FOR KEY SHARE</literal> нельзя задать вместе с <literal>DISTINCT</literal>.</para>
+  </refsect2>
+
+  <refsect2 id="sql-union">
+   <title id="sql-union-title">Предложение <literal>UNION</literal>+</title>
+
+   <para>Предложение <literal>UNION</literal> имеет следующую общую форму: <synopsis>
+<replaceable class="parameter">оператор_SELECT</replaceable> UNION [ ALL | DISTINCT ] <replaceable class="parameter">оператор_SELECT</replaceable>
+</synopsis> Здесь <replaceable class="parameter">оператор_SELECT</replaceable> — это любой подзапрос <command>SELECT</command> без предложений <literal>ORDER BY</literal>, <literal>LIMIT</literal>, <literal>FOR NO KEY UPDATE</literal>, <literal>FOR UPDATE</literal>, <literal>FOR SHARE</literal> и <literal>FOR KEY SHARE</literal>. (<literal>ORDER BY</literal> и <literal>LIMIT</literal> можно добавить к вложенному выражению, если оно заключено в скобки. Без скобок эти предложения будут восприняты как применяемые к результату <literal>UNION</literal>, а не к выражению в его правой части.)</para>
+
+   <para>Оператор <literal>UNION</literal> вычисляет объединение множеств всех строк, возвращённых заданными запросами <command>SELECT</command>. Строка оказывается в объединении двух наборов результатов, если она присутствует минимум в одном наборе. Два оператора <command>SELECT</command>, представляющие прямые операнды <literal>UNION</literal>, должны выдавать одинаковое число столбцов, а типы соответствующих столбцов должны быть совместимыми.</para>
+
+   <para>Результат <literal>UNION</literal> не будет содержать повторяющихся строк, если не указан параметр <literal>ALL</literal>. <literal>ALL</literal> предотвращает исключение дубликатов. (Таким образом, <literal>UNION ALL</literal> обычно работает значительно быстрее, чем <literal>UNION</literal>; поэтому, везде, где возможно, следует указывать <literal>ALL</literal>.) <literal>DISTINCT</literal> можно записать явно, чтобы обозначить, что дублирующиеся строки должны удаляться (это поведение по умолчанию).</para>
+
+   <para>При использовании в одном запросе <command>SELECT</command> нескольких операторов <literal>UNION</literal> они вычисляются слева направо, если иной порядок не определяется скобками.</para>
+
+   <para>В настоящее время указания <literal>FOR NO KEY UPDATE</literal>, <literal>FOR UPDATE</literal>, <literal>FOR SHARE</literal> и <literal>FOR KEY SHARE</literal> нельзя задать ни для результата <literal>UNION</literal>, ни для любого из подзапросов <literal>UNION</literal>.</para>
+  </refsect2>
+
+  <refsect2 id="sql-intersect">
+   <title id="sql-intersect-title">Предложение <literal>INTERSECT</literal></title>
+
+   <para>Предложение <literal>INTERSECT</literal> имеет следующую общую форму: <synopsis>
+<replaceable class="parameter">оператор_SELECT</replaceable> INTERSECT [ ALL | DISTINCT ] <replaceable class="parameter">оператор_SELECT</replaceable>
+</synopsis> Здесь <replaceable class="parameter">оператор_SELECT</replaceable> — это любой подзапрос <command>SELECT</command> без предложений <literal>ORDER BY</literal>, <literal>LIMIT</literal>, <literal>FOR NO KEY UPDATE</literal>, <literal>FOR UPDATE</literal>, <literal>FOR SHARE</literal> и <literal>FOR KEY SHARE</literal>.</para>
+
+   <para>Оператор <literal>INTERSECT</literal> вычисляет пересечение множеств всех строк, возвращённых заданными запросами <command>SELECT</command>. Строка оказывается в пересечении двух наборов результатов, если она присутствует в обоих наборах.</para>
+
+   <para>Результат <literal>INTERSECT</literal> не будет содержать повторяющихся строк, если не указан параметр <literal>ALL</literal>. С параметром <literal>ALL</literal> строка, повторяющаяся <replaceable>m</replaceable> раз в левой таблице и <replaceable>n</replaceable> раз в правой, будет выдана в результирующем наборе min(<replaceable>m</replaceable>,<replaceable>n</replaceable>) раз. <literal>DISTINCT</literal> можно записать явно, чтобы обозначить, что дублирующиеся строки должны удаляться (это поведение по умолчанию).</para>
+
+   <para>При использовании в одном запросе <command>SELECT</command> нескольких операторов <literal>INTERSECT</literal> они вычисляются слева направо, если иной порядок не диктуется скобками. <literal>INTERSECT</literal> связывает свои подзапросы сильнее, чем <literal>UNION</literal>. Другими словами, <literal>A UNION B INTERSECT C</literal> будет восприниматься как <literal>A UNION (B INTERSECT C)</literal>.</para>
+
+   <para>В настоящее время указания <literal>FOR NO KEY UPDATE</literal>, <literal>FOR UPDATE</literal>, <literal>FOR SHARE</literal> и <literal>FOR KEY SHARE</literal> нельзя задать ни для результата <literal>INTERSECT</literal>, ни для любого из подзапросов <literal>INTERSECT</literal>.</para>
+  </refsect2>
+
+  <refsect2 id="sql-except">
+   <title id="sql-except-title">Предложение <literal>EXCEPT</literal></title>
+
+   <para>Предложение <literal>EXCEPT</literal> имеет следующую общую форму: <synopsis>
+<replaceable class="parameter">оператор_SELECT</replaceable> EXCEPT [ ALL | DISTINCT ] <replaceable class="parameter">оператор_SELECT</replaceable>
+</synopsis> Здесь <replaceable class="parameter">оператор_SELECT</replaceable> — это любой подзапрос <command>SELECT</command> без предложений <literal>ORDER BY</literal>, <literal>LIMIT</literal>, <literal>FOR NO KEY UPDATE</literal>, <literal>FOR UPDATE</literal>, <literal>FOR SHARE</literal> и <literal>FOR KEY SHARE</literal>.</para>
+
+   <para>Оператор <literal>EXCEPT</literal> вычисляет набор строк, которые присутствуют в результате левого запроса <command>SELECT</command>, но отсутствуют в результате правого.</para>
+
+   <para>Результат <literal>EXCEPT</literal> не будет содержать повторяющихся строк, если не указан параметр <literal>ALL</literal>. С параметром <literal>ALL</literal> строка, повторяющаяся <replaceable>m</replaceable> раз в левой таблице и <replaceable>n</replaceable> раз в правой, будет выдана в результирующем наборе max(<replaceable>m</replaceable>-<replaceable>n</replaceable>,0) раз. <literal>DISTINCT</literal> можно записать явно, чтобы обозначить, что дублирующиеся строки должны удаляться (это поведение по умолчанию).</para>
+
+   <para>При использовании в одном запросе <command>SELECT</command> нескольких операторов <literal>EXCEPT</literal> они вычисляются слева направо, если иной порядок не диктуется скобками. <literal>EXCEPT</literal> связывает свои подзапросы так же сильно, как <literal>UNION</literal>.</para>
+
+   <para>В настоящее время указания <literal>FOR NO KEY UPDATE</literal>, <literal>FOR UPDATE</literal>, <literal>FOR SHARE</literal> и <literal>FOR KEY SHARE</literal> нельзя задать ни для результата <literal>EXCEPT</literal>, ни для любого из подзапросов <literal>EXCEPT</literal>.</para>
+  </refsect2>
+
+  <refsect2 id="sql-orderby">
+   <title id="sql-orderby-title">Предложение <literal>ORDER BY</literal></title>
+
+   <para>Необязательное предложение <literal>ORDER BY</literal> имеет следующую общую форму: <synopsis>
+ORDER BY <replaceable class="parameter">выражение</replaceable> [ ASC | DESC | USING <replaceable class="parameter">оператор</replaceable> ] [ NULLS { FIRST | LAST } ] [, ...]
+</synopsis> Предложение <literal>ORDER BY</literal> указывает, что строки результата должны сортироваться согласно заданным выражениям. Если две строки дают равные значения для самого левого выражения, проверяется следующее выражение и т. д. Если их значения оказываются равными для всех заданных выражений, строки возвращаются в порядке, определяемом реализацией.</para>
+
+   <para>В качестве <replaceable class="parameter">выражения</replaceable> может задаваться имя или порядковый номер выходного столбца (элемента списка <command>SELECT</command>), либо произвольное выражение со значениями входных столбцов.</para>
+
+   <para>Порядковым номером в данном случае считается последовательный номер (при нумерации слева направо) позиции выходного столбца. Возможность указать порядковый номер позволяет выполнить сортировку по столбцу, не имеющему уникального имени. В принципе это не абсолютно необходимо, так как выходному столбцу всегда можно присвоить имя, воспользовавшись предложением <literal>AS</literal>.</para>
+
+   <para>В предложении <literal>ORDER BY</literal> также можно использовать произвольные выражения, в том числе, и со столбцами, отсутствующими в списке результатов <command>SELECT</command>. Таким образом, следующий оператор вполне корректен: <programlisting>SELECT name FROM distributors ORDER BY code;</programlisting> Однако, если <literal>ORDER BY</literal> применяется к результату <literal>UNION</literal>, <literal>INTERSECT</literal> или <literal>EXCEPT</literal>, в нём можно задать только имя или номер выходного столбца, но не выражение.</para>
+
+   <para>Если в качестве выражения <literal>ORDER BY</literal> задано простое имя, которому соответствует и выходной, и входной столбец, то <literal>ORDER BY</literal> будет воспринимать его как имя выходного столбца. Этот выбор противоположен тому, что делает <literal>GROUP BY</literal> в такой же ситуации. Такая несогласованность допущена для соответствия стандарту SQL.</para>
+
+   <para>Дополнительно после любого выражения в предложении <literal>ORDER BY</literal> можно добавить ключевое слово <literal>ASC</literal> (по возрастанию) или <literal>DESC</literal> (по убыванию). По умолчанию подразумевается <literal>ASC</literal>. Кроме того, можно задать имя специфического оператора сортировки в предложении <literal>USING</literal>. Оператор сортировки должен быть членом &laquo;меньше&raquo; или &laquo;больше&raquo; некоторого семейства операторов B-дерева. <literal>ASC</literal> обычно равнозначно <literal>USING &lt;</literal> и <literal>DESC</literal> обычно равнозначно <literal>USING &gt;</literal>. (Хотя создатель нестандартного типа данных может определить по-другому порядок сортировки по умолчанию и поставить ему в соответствие операторы с другими именами.)</para>
+
+   <para>Если указано <literal>NULLS LAST</literal>, значения NULL при сортировке оказываются после значений не NULL; с указанием <literal>NULLS FIRST</literal> значения NULL оказываются перед значениями не NULL. Если не указано ни то, ни другое, по умолчанию подразумевается <literal>NULLS LAST</literal> при явно или неявно выбранном порядке <literal>ASC</literal>, либо <literal>NULLS FIRST</literal> при порядке <literal>DESC</literal> (то есть по умолчанию считается, что значения NULL больше значений не NULL). С предложением <literal>USING</literal> порядок NULL по умолчанию зависит от того, является ли указанный оператор оператором &laquo;меньше&raquo; или &laquo;больше&raquo;.</para>
+
+   <para>Заметьте, что параметры сортировки применяются только к тому выражению, за которым они следуют; в частности, <literal>ORDER BY x, y DESC</literal> означает не то же самое, что <literal>ORDER BY x DESC, y DESC</literal>.</para>
+
+   <para>Данные символьных строк сортируются согласно правилу сортировки, установленному для сортируемого столбца. При необходимости это правило можно переопределить, добавив предложение <literal>COLLATE</literal> в <replaceable class="parameter">выражение</replaceable>, например так: <literal>ORDER BY mycolumn COLLATE "en_US"</literal>. За дополнительными сведениями обратитесь к <xref remap="3" linkend="sql-syntax-collate-exprs"/> и <xref remap="3" linkend="collation"/>.</para>
+  </refsect2>
+
+  <refsect2 id="sql-limit">
+   <title id="sql-limit-title">Предложение <literal>LIMIT</literal></title>
+
+   <para>Предложение <literal>LIMIT</literal> состоит из двух независимых вложенных предложений: <synopsis>
+LIMIT { <replaceable class="parameter">число</replaceable> | ALL }
+OFFSET <replaceable class="parameter">начало</replaceable>
+</synopsis> Здесь <replaceable class="parameter">число</replaceable> определяет максимальное количество строк, которое должно быть выдано, тогда как <replaceable class="parameter">начало</replaceable> определяет, сколько строк нужно пропустить, прежде чем начать выдавать строки. Когда указаны оба значения, сначала строки пропускаются в количестве, заданном значением <replaceable class="parameter">начало</replaceable>, а затем следующие строки выдаются в количестве, не превышающем значения <replaceable class="parameter">число</replaceable>.</para>
+
+   <para>Если результатом выражения <replaceable class="parameter">число</replaceable> оказывается NULL, предложение воспринимается как <literal>LIMIT ALL</literal>, т. е. число строк не ограничивается. Если <replaceable class="parameter">начало</replaceable> принимает значение NULL, предложение воспринимается как <literal>OFFSET 0</literal>.</para>
+
+   <para>SQL:2008 вводит другой синтаксис для получения того же результата, и его так же поддерживает <productname>&productname;</productname>. Он выглядит так: <synopsis>
+OFFSET <replaceable class="parameter">начало</replaceable> { ROW | ROWS }
+FETCH { FIRST | NEXT } [ <replaceable class="parameter">число</replaceable> ] { ROW | ROWS } ONLY
+</synopsis> В этом синтаксисе, чтобы подставить в <replaceable class="parameter">начало</replaceable> или <replaceable class="parameter">число</replaceable> что-либо сложнее простой целочисленной константы, необходимо заключить это выражение в скобки. Если <replaceable class="parameter">число</replaceable> опускается в предложении <literal>FETCH</literal>, оно принимает значение 1. <literal>ROW</literal> и <literal>ROWS</literal> так же, как и <literal>FIRST</literal> и <literal>NEXT</literal> являются избыточными словами, которые не влияют не действие этих предложений. Согласно стандарту, предложение <literal>OFFSET</literal> должно предшествовать предложению <literal>FETCH</literal>, если присутствуют они оба; но <productname>&productname;</productname> менее строг и допускает любой порядок.</para>
+
+   <para>Применяя <literal>LIMIT</literal>, имеет смысл использовать также предложение <literal>ORDER BY</literal>, чтобы строки результата выдавались в определённом порядке. Иначе будут возвращаться непредсказуемые подмножества строк запроса &mdash; вы можете запросить строки с десятой по двадцатую, но какой порядок вы имеете в виду? Порядок будет неизвестен, если не добавить <literal>ORDER BY</literal>.</para>
+
+   <para>Планировщик запроса учитывает ограничение <literal>LIMIT</literal>, строя план выполнения запроса, поэтому, вероятнее всего, планы (а значит и порядок строк) будут меняться при разных <literal>LIMIT</literal> и <literal>OFFSET</literal>. Таким образом, различные значения <literal>LIMIT</literal>/<literal>OFFSET</literal>, выбирающие разные подмножества результатов запроса, <emphasis>приведут к несогласованности результатов</emphasis>, если не установить предсказуемую сортировку с помощью <literal>ORDER BY</literal>. Это не ошибка, а неизбежное следствие того, что SQL не гарантирует вывод результатов запроса в некотором порядке, если порядок не определён явно предложением <literal>ORDER BY</literal>.</para>
+
+   <para>Возможно даже, что при повторном выполнении одного и того же запроса с <literal>LIMIT</literal> будут получены разные подмножества строк таблицы, если предложение <literal>ORDER BY</literal> не диктует выбор определённого подмножества. Опять же, это не ошибка; в данном случае детерминированность результата просто не гарантируется.</para>
+  </refsect2>
+
+  <refsect2 id="sql-for-update-share">
+   <title id="sql-for-update-share-title">Предложение блокировки</title>
+
+   <para><firstterm>Предложения блокировки</firstterm> включают в себя <literal>FOR UPDATE</literal>, <literal>FOR NO KEY UPDATE</literal>, <literal>FOR SHARE</literal> и <literal>FOR KEY SHARE</literal>; они влияют на то, как <literal>SELECT</literal> блокирует строки, получаемые из таблицы.</para>
+
+   <para>Предложение блокировки имеет следующую общую форму: <synopsis>
+FOR <replaceable>вариант_блокировки</replaceable> [ OF <replaceable class="parameter">имя_таблицы</replaceable> [, ...] ] [ NOWAIT | SKIP LOCKED ]
+</synopsis> Здесь <replaceable>вариант_блокировки</replaceable> может быть следующим: <synopsis>
+UPDATE
+NO KEY UPDATE
+SHARE
+KEY SHARE
+</synopsis></para>
+
+   <para>Подробнее о каждом режиме блокировки на уровне строк можно узнать в <xref remap="6" linkend="locking-rows"/>.</para>
+
+   <para>Чтобы операция не ждала завершения других транзакций, к блокировке можно добавить указание <literal>NOWAIT</literal> или <literal>SKIP LOCKED</literal>. С <literal>NOWAIT</literal> оператор выдаёт ошибку, а не ждёт, если выбранную строку нельзя заблокировать немедленно. С указанием <literal>SKIP LOCKED</literal> выбранные строки, которые нельзя заблокировать немедленно, пропускаются. При этом формируется несогласованное представление данных, так что этот вариант не подходит для общего применения, но может использоваться для исключения блокировок при обращении множества потребителей к таблице типа очереди. Заметьте, что указания <literal>NOWAIT</literal> и <literal>SKIP LOCKED</literal> применяются только к блокировкам на уровне строк &mdash; необходимая блокировка <literal>ROW SHARE</literal> уровня таблицы запрашивается обычным способом (см. <xref remap="4" linkend="mvcc"/>). Если требуется запросить блокировку уровня таблицы без ожидания, можно сначала выполнить <xref linkend="sql-lock"/> с указанием <literal>NOWAIT</literal>.</para>
+
+   <para>Если в предложении блокировки указаны определённые таблицы, блокироваться будут только строки, получаемые из этих таблиц; другие таблицы, задействованные в <command>SELECT</command>, будут прочитаны как обычно. Предложение блокировки без списка таблиц затрагивает все таблицы, задействованные в этом операторе. Если предложение блокировки применяется к представлению или подзапросу, оно затрагивает все таблицы, которые используются в представлении или подзапросе. Однако эти предложения не применяются к запросам <literal>WITH</literal>, к которым обращается основной запрос. Если требуется установить блокировку строк в запросе <literal>WITH</literal>, предложение блокировки нужно указать непосредственно в этом запросе <literal>WITH</literal>.</para>
+
+   <para>В случае необходимости задать для разных таблиц разное поведение блокировки, в запрос можно добавить несколько предложений. Если при этом одна и та же таблица упоминается (или неявно затрагивается) в нескольких предложениях блокировки, блокировка устанавливается так, как если бы было указано только одно, самое сильное из них. Подобным образом, если в одном из предложений указано <literal>NOWAIT</literal>, для этой таблицы блокировка будет запрашиваться без ожидания. В противном случае она будет обработана в режиме <literal>SKIP LOCKED</literal>, если он выбран в любом из затрагивающих её предложений.</para>
+
+   <para>Предложения блокировки не могут применяться в контекстах, где возвращаемые строки нельзя чётко связать с отдельными строками таблицы; например, блокировка неприменима при агрегировании.</para>
+
+   <para>Когда предложение блокировки находится на верхнем уровне запроса <command>SELECT</command>, блокируются именно те строки, которые возвращаются запросом; в случае с запросом объединения, блокировке подлежат строки, из которых составляются возвращаемые строки объединения. В дополнение к этому, заблокированы будут строки, удовлетворяющие условиям запроса на момент создания снимка запроса, хотя они не будут возвращены, если с момента снимка они изменятся и перестанут удовлетворять условиям. Если применяется <literal>LIMIT</literal>, блокировка прекращается, как только будет получено достаточное количество строк для удовлетворения лимита (но заметьте, что строки, пропускаемые указанием <literal>OFFSET</literal>, будут блокироваться). Подобным образом, если предложение блокировки применяется в запросе курсора, блокироваться будут только строки, фактически полученные или пройденные курсором.</para>
+
+   <para>Когда предложение блокировки находится в подзапросе <command>SELECT</command>, блокировке подлежат те строки, которые будет получены внешним запросом от подзапроса. Таких строк может оказаться меньше, чем можно было бы предположить, проанализировав только сам подзапрос, так как условия из внешнего запроса могут способствовать оптимизации выполнения подзапроса. Например, запрос <programlisting>SELECT * FROM (SELECT * FROM mytable FOR UPDATE) ss WHERE col1 = 5;</programlisting> заблокирует только строки, в которых <literal>col1 = 5</literal>, при том, что в такой записи условие не относится к подзапросу.</para>
+
+  <para>Предыдущие версии не могли сохранить блокировку, которая была повышена последующей точкой сохранения. Например, этот код: <programlisting>BEGIN;
+SELECT * FROM mytable WHERE key = 1 FOR UPDATE;
+SAVEPOINT s;
+UPDATE mytable SET ... WHERE key = 1;
+ROLLBACK TO s;</programlisting> не мог сохранить блокировку <literal>FOR UPDATE</literal> после <command>ROLLBACK TO</command>. Это было исправлено в версии 9.3.</para>
+
+  <caution>
+   <para>Возможно, что команда <command>SELECT</command>, работающая на уровне изоляции <literal>READ COMMITTED</literal> и применяющая предложение <literal>ORDER BY</literal> вместе с блокировкой, будет возвращать строки не по порядку. Это связано с тем, что <literal>ORDER BY</literal> выполняется в первую очередь. Эта команда отсортирует результат, но затем может быть заблокирована, пытаясь получить блокировку одной или нескольких строк. К моменту, когда блокировка <literal>SELECT</literal> будет снята, некоторые из сортируемых столбцов могут уже измениться, в результате чего их порядок может быть нарушен (хотя они были упорядочены для исходных значений). При необходимости обойти эту проблему, можно поместить <literal>FOR UPDATE/SHARE</literal> в подзапрос, например так: <programlisting>SELECT * FROM (SELECT * FROM mytable FOR UPDATE) ss ORDER BY column1;</programlisting> Заметьте, что в результате это приведёт к блокированию всех строк в <structname>mytable</structname>, тогда как указание <literal>FOR UPDATE</literal> на верхнем уровне могло бы заблокировать только фактически возвращаемые строки. Это может значительно повлиять на производительность, особенно в сочетании <literal>ORDER BY</literal> с <literal>LIMIT</literal> или другими ограничениями. Таким образом, этот приём рекомендуется, только если ожидается параллельное изменение сортируемых столбцов, а результат должен быть строго отсортирован.</para>
+
+   <para>На уровнях изоляции <literal>REPEATABLE READ</literal> и <literal>SERIALIZABLE</literal> это приведёт к ошибке сериализации (с <literal>SQLSTATE</literal> равным <literal>'40001'</literal>), так что на этих уровнях получить строки не по порядку невозможно.</para>
+  </caution>
+  </refsect2>
+
+  <refsect2 id="sql-table">
+   <title>Команда <literal>TABLE</literal></title>
+
+   <para>Команда <programlisting>TABLE <replaceable class="parameter">имя</replaceable></programlisting> равнозначна <programlisting>SELECT * FROM <replaceable class="parameter">имя</replaceable></programlisting> Её можно применять в качестве команды верхнего уровня или как более краткую запись внутри сложных запросов. С командой <command>TABLE</command> могут использоваться только предложения <literal>WITH</literal>, <literal>UNION</literal>, <literal>INTERSECT</literal>, <literal>EXCEPT</literal>, <literal>ORDER BY</literal>, <literal>LIMIT</literal>, <literal>OFFSET</literal>, <literal>FETCH</literal> и предложения блокировки <literal>FOR</literal>; предложение <literal>WHERE</literal> и какие-либо формы агрегирования не поддерживаются.</para>
+  </refsect2>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Соединение таблицы <literal>films</literal> с таблицей <literal>distributors</literal>: <programlisting>SELECT f.title, f.did, d.name, f.date_prod, f.kind
+    FROM distributors d, films f
+    WHERE f.did = d.did
+
+       title       | did |     name     | date_prod  |   kind
+-------------------+-----+--------------+------------+----------
+ The Third Man     | 101 | British Lion | 1949-12-23 | Drama
+ The African Queen | 101 | British Lion | 1951-08-11 | Romantic
+ ...</programlisting></para>
+
+  <para>Суммирование значений столбца <literal>len</literal> (продолжительность) для всех фильмов и группирование результатов по столбцу <literal>kind</literal> (типу фильма): <programlisting>SELECT kind, sum(len) AS total FROM films GROUP BY kind;
+
+   kind   | total
+----------+-------
+ Action   | 07:34
+ Comedy   | 02:58
+ Drama    | 14:28
+ Musical  | 06:42
+ Romantic | 04:38</programlisting></para>
+
+  <para>Суммирование значений столбца <literal>len</literal> для всех фильмов, группирование результатов по столбцу <literal>kind</literal> и вывод только тех групп, общая продолжительность которых меньше 5 часов: <programlisting>SELECT kind, sum(len) AS total
+    FROM films
+    GROUP BY kind
+    HAVING sum(len) &lt; interval '5 hours';
+
+   kind   | total
+----------+-------
+ Comedy   | 02:58
+ Romantic | 04:38</programlisting></para>
+
+  <para>Следующие два запроса демонстрируют равнозначные способы сортировки результатов по содержимому второго столбца (<literal>name</literal>): <programlisting>SELECT * FROM distributors ORDER BY name;
+SELECT * FROM distributors ORDER BY 2;
+
+ did |       name
+-----+------------------
+ 109 | 20th Century Fox
+ 110 | Bavaria Atelier
+ 101 | British Lion
+ 107 | Columbia
+ 102 | Jean Luc Godard
+ 113 | Luso films
+ 104 | Mosfilm
+ 103 | Paramount
+ 106 | Toho
+ 105 | United Artists
+ 111 | Walt Disney
+ 112 | Warner Bros.
+ 108 | Westward</programlisting></para>
+
+  <para>Следующий пример показывает объединение таблиц <literal>distributors</literal> и <literal>actors</literal>, ограниченное именами, начинающимися с буквы W в каждой таблице. Интерес представляют только неповторяющиеся строки, поэтому ключевое слово <literal>ALL</literal> опущено. <programlisting>distributors:               actors:
+ did |     name              id |     name
+-----+--------------        ----+----------------
+ 108 | Westward               1 | Woody Allen
+ 111 | Walt Disney            2 | Warren Beatty
+ 112 | Warner Bros.           3 | Walter Matthau
+ ...                         ...
+
+SELECT distributors.name
+    FROM distributors
+    WHERE distributors.name LIKE 'W%'
+UNION
+SELECT actors.name
+    FROM actors
+    WHERE actors.name LIKE 'W%';
+
+      name
+----------------
+ Walt Disney
+ Walter Matthau
+ Warner Bros.
+ Warren Beatty
+ Westward
+ Woody Allen</programlisting></para>
+
+  <para>Этот пример показывает, как использовать функцию в предложении <literal>FROM</literal>, со списком определений столбцов и без него: <programlisting>CREATE FUNCTION distributors(int) RETURNS SETOF distributors AS $$
+    SELECT * FROM distributors WHERE did = $1;
+$$ LANGUAGE SQL;
+
+SELECT * FROM distributors(111);
+ did |    name
+-----+-------------
+ 111 | Walt Disney
+
+CREATE FUNCTION distributors_2(int) RETURNS SETOF record AS $$
+    SELECT * FROM distributors WHERE did = $1;
+$$ LANGUAGE SQL;
+
+SELECT * FROM distributors_2(111) AS (f1 int, f2 text);
+ f1  |     f2
+-----+-------------
+ 111 | Walt Disney</programlisting></para>
+
+  <para>Пример функции с добавленным столбцом нумерации: <programlisting>SELECT * FROM unnest(ARRAY['a','b','c','d','e','f']) WITH ORDINALITY;
+ unnest | ordinality
+--------+----------
+ a      |        1
+ b      |        2
+ c      |        3
+ d      |        4
+ e      |        5
+ f      |        6
+(6 rows)</programlisting></para>
+
+  <para>Этот пример показывает, как использовать простое предложение <literal>WITH</literal>: <programlisting>WITH t AS (
+    SELECT random() as x FROM generate_series(1, 3)
+  )
+SELECT * FROM t
+UNION ALL
+SELECT * FROM t
+
+         x          
+--------------------
+  0.534150459803641
+  0.520092216785997
+ 0.0735620250925422
+  0.534150459803641
+  0.520092216785997
+ 0.0735620250925422</programlisting> Заметьте, что запрос <literal>WITH</literal> выполняется всего один раз, поэтому мы получаем два одинаковых набора по три случайных значения.</para>
+
+  <para>В этом примере <literal>WITH RECURSIVE</literal> применяется для поиска всех подчинённых Мери (непосредственных или косвенных) и вывода их уровня косвенности в таблице с информацией только о непосредственных подчинённых: <programlisting>WITH RECURSIVE employee_recursive(distance, employee_name, manager_name) AS (
+    SELECT 1, employee_name, manager_name
+    FROM employee
+    WHERE manager_name = 'Mary'
+  UNION ALL
+    SELECT er.distance + 1, e.employee_name, e.manager_name
+    FROM employee_recursive er, employee e
+    WHERE er.employee_name = e.manager_name
+  )
+SELECT distance, employee_name FROM employee_recursive;</programlisting> Заметьте, что это типичная форма рекурсивных запросов: начальное условие, последующий <literal>UNION</literal>, а затем рекурсивная часть запроса. Убедитесь в том, что рекурсивная часть запроса в конце концов перестанет возвращать строки, иначе запрос окажется в бесконечном цикле. (За другими примерами обратитесь к <xref remap="3" linkend="queries-with"/>.)</para>
+
+  <para>В этом примере используется <literal>LATERAL</literal> для применения функции <function>get_product_names()</function>, возвращающей множество, для каждой строки таблицы <structname>manufacturers</structname>: <programlisting>SELECT m.name AS mname, pname
+FROM manufacturers m, LATERAL get_product_names(m.id) pname;</programlisting> Производители, с которыми в данный момент не связаны никакие продукты, не попадут в результат, так как это внутреннее соединение. Если бы мы захотели включить названия и этих производителей, мы могли бы сделать так: <programlisting>SELECT m.name AS mname, pname
+FROM manufacturers m LEFT JOIN LATERAL get_product_names(m.id) pname ON true;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Разумеется, оператор <command>SELECT</command> совместим со стандартом SQL. Однако не все описанные в стандарте возможности реализованы, а некоторые, наоборот, являются расширениями.</para>
+
+  <refsect2>
+   <title>Необязательное предложение <literal>FROM</literal></title>
+
+   <para><productname>&productname;</productname> разрешает опустить предложение <literal>FROM</literal>. Это позволяет очень легко вычислять результаты простых выражений: <programlisting>SELECT 2+2;
+
+ ?column?
+----------
+        4</programlisting> Некоторые другие базы данных <acronym>SQL</acronym> не допускают этого, требуя задействовать в <command>SELECT</command> фиктивную таблицу с одной строкой.</para>
+
+   <para>Заметьте, что если предложение <literal>FROM</literal> не указано, запрос не может обращаться ни к каким таблицам базы данных. Например, следующий запрос недопустим: <programlisting>SELECT distributors.* WHERE distributors.name = 'Westward';</programlisting> До версии 8.1 <productname>PostgreSQL</productname> мог принимать запросы такого вида, неявно добавляя каждую таблицу, задействованную в запросе, в предложение <literal>FROM</literal> этого запроса. Теперь это не допускается.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Пустые списки <literal>SELECT</literal></title>
+
+   <para>Список выходных выражений после <literal>SELECT</literal> может быть пустым, что в результате даст таблицу без столбцов. Стандарт SQL не считает такой синтаксис допустимым, но <productname>&productname;</productname> допускает его, так как это согласуется с возможностью иметь таблицы с нулём столбцов. Однако, когда используется <literal>DISTINCT</literal>, пустой список не допускается.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Необязательное ключевое слово <literal>AS</literal></title>
+
+   <para>В стандарте SQL необязательное ключевое слово <literal>AS</literal> можно опустить перед именем выходного столбца, если это имя является допустимым именем столбца (то есть не совпадает с каким-либо зарезервированным ключевым словом). <productname>&productname;</productname> несколько более строг: <literal>AS</literal> требуется, если имя столбца совпадает с любым ключевым словом, зарезервированным или нет. Тем не менее, рекомендуется использовать <literal>AS</literal> или заключать имена выходных столбцов в кавычки, во избежание конфликтов, возможных при появлении в будущем новых ключевых слов.</para>
+
+   <para>В списке <literal>FROM</literal> и стандарт, и <productname>&productname;</productname> позволяют опускать <literal>AS</literal> перед псевдонимом, который является незарезервированным ключевым словом. Но для имён выходных столбцов это не подходит из-за синтаксической неоднозначности.</para>
+  </refsect2>
+
+  <refsect2>
+   <title><literal>ONLY</literal> и наследование</title>
+
+   <para>Стандарт SQL требует заключать в скобки имя таблицы после <literal>ONLY</literal>, например <literal>SELECT * FROM ONLY (tab1), ONLY (tab2) WHERE ...</literal>. <productname>&productname;</productname> считает эти скобки необязательными.</para>
+
+   <para><productname>&productname;</productname> позволяет добавлять в конце <literal>*</literal>, чтобы явно обозначить, что дочерние таблицы включаются в рассмотрение, в отличие от поведения с <literal>ONLY</literal>. Стандарт не позволяет этого.</para>
+
+   <para>(Эти соображения в равной степени касаются всех SQL-команд, поддерживающих параметр <literal>ONLY</literal>.)</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Ограничения предложения <literal>TABLESAMPLE</literal></title>
+
+   <para>Предложение <literal>TABLESAMPLE</literal> в настоящий момент принимается только для обычных таблиц и материализованных представлений. Однако согласно стандарту SQL оно должно применяться к любым элементам списка <literal>FROM</literal>.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Вызовы функций в предложении <literal>FROM</literal></title>
+
+   <para><productname>&productname;</productname> позволяет записать вызов функции непосредственно в виде элемента списка <literal>FROM</literal>. В стандарте SQL такой вызов функции требуется помещать во вложенный <command>SELECT</command>; то есть, запись <literal>FROM <replaceable>функция</replaceable>(...) <replaceable>псевдоним</replaceable></literal> примерно равнозначна записи <literal>FROM LATERAL (SELECT <replaceable>функция</replaceable>(...)) <replaceable>псевдоним</replaceable></literal>. Заметьте, что указание <literal>LATERAL</literal> считается неявным; это связано с тем, что стандарт требует поведения <literal>LATERAL</literal> для элемента <literal>UNNEST()</literal> в предложении <literal>FROM</literal>. <productname>&productname;</productname> обрабатывает <literal>UNNEST()</literal> так же, как и другие функции, возвращающие множества.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Пространства имён в <literal>GROUP BY</literal> и <literal>ORDER BY</literal></title>
+
+   <para>В стандарте SQL-92 предложение <literal>ORDER BY</literal> может содержать ссылки только на выходные столбцы по именам или номерам, тогда как <literal>GROUP BY</literal> может содержать выражения с именами только входных столбцов. <productname>&productname;</productname> расширяет оба эти предложения, позволяя также применять другие варианты (но если возникает неоднозначность, он разрешает её согласно стандарту). <productname>&productname;</productname> также позволяет задавать произвольные выражения в обоих предложениях. Заметьте, что имена, фигурирующие в выражениях, всегда будут восприниматься как имена входных, а не выходных столбцов.</para>
+
+   <para>В SQL:1999 и более поздних стандартах введено несколько другое определение, которое не полностью совместимо с SQL-92. Однако в большинстве случаев <productname>&productname;</productname> будет интерпретировать выражение <literal>ORDER BY</literal> или <literal>GROUP BY</literal> так, как требует SQL:1999.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Функциональные зависимости</title>
+
+   <para><productname>&productname;</productname> распознаёт функциональную зависимость (что позволяет опускать столбцы в <literal>GROUP BY</literal>), только когда первичный ключ таблицы присутствует в списке <literal>GROUP BY</literal>. В стандарте SQL оговариваются дополнительные условия, которые следует учитывать.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Ограничения предложения <literal>WINDOW</literal></title>
+
+   <para>Стандарт SQL предоставляет дополнительные возможности для указания <replaceable class="parameter">предложения_рамки</replaceable> окна. <productname>&productname;</productname> в настоящее время поддерживает только варианты, описанные выше.</para>
+  </refsect2>
+
+  <refsect2>
+   <title><literal>LIMIT</literal> и <literal>OFFSET</literal></title>
+
+   <para>Предложения <literal>LIMIT</literal> и <literal>OFFSET</literal> относятся к специфическим особенностям <productname>&productname;</productname> и поддерживаются также в <productname>MySQL</productname>. В стандарте SQL:2008 для той же цели вводятся предложения <literal>OFFSET ... FETCH {FIRST|NEXT} ...</literal>, рассмотренные ранее в <xref remap="6" linkend="sql-limit" endterm="sql-limit-title"/>. Этот синтаксис также используется в <productname>IBM DB2</productname>. (Приложения, написанные для <productname>Oracle</productname>, часто применяют обходной способ и получают эффект этих предложений, задействуя автоматически генерируемый столбец <literal>rownum</literal>, который отсутствует в &productname;.)</para>
+  </refsect2>
+
+  <refsect2>
+   <title><literal>FOR NO KEY UPDATE</literal>, <literal>FOR UPDATE</literal>, <literal>FOR SHARE</literal>, <literal>FOR KEY SHARE</literal></title>
+
+   <para>Хотя указание <literal>FOR UPDATE</literal> есть в стандарте SQL, стандарт позволяет использовать его только в предложении <command>DECLARE CURSOR</command>. <productname>&productname;</productname> допускает его использование в любом запросе <command>SELECT</command>, а также в подзапросах <command>SELECT</command>, но это является расширением. Варианты <literal>FOR NO KEY UPDATE</literal>, <literal>FOR SHARE</literal> и <literal>FOR KEY SHARE</literal>, а также указания <literal>NOWAIT</literal> и <literal>SKIP LOCKED</literal> в стандарте отсутствуют.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Изменение данных в <literal>WITH</literal></title>
+
+   <para><productname>&productname;</productname> разрешает использовать <command>INSERT</command>, <command>UPDATE</command> и <command>DELETE</command> в качестве запросов <literal>WITH</literal>. Стандарт SQL этого не предусматривает.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Нестандартные предложения</title>
+
+   <para><literal>DISTINCT ON ( ... )</literal> — расширение стандарта SQL.</para>
+
+   <para><literal>ROWS FROM( ... )</literal> — расширение стандарта SQL.</para>
+  </refsect2>
+
+ </refsect1>
+</refentry>

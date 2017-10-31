@@ -1,0 +1,310 @@
+<!-- doc/src/xml/query.xml -->
+
+ <chapter id="tutorial-sql">
+  <title>Язык <acronym>SQL</acronym></title>
+
+  <sect1 id="tutorial-sql-intro">
+   <title>Введение</title>
+
+   <para>В этой главе рассматривается использование <acronym>SQL</acronym> для выполнения простых операций. Она призвана только познакомить вас с <acronym>SQL</acronym>, но ни в коей мере не претендует на исчерпывающее руководство. Про <acronym>SQL</acronym> написано множество книг, включая <xref linkend="melt93"/> и <xref linkend="date97"/>. При этом следует учитывать, что некоторые возможности языка <productname>&productname;</productname> являются расширениями стандарта.</para>
+
+   <para>В следующих примерах мы предполагаем, что вы создали базу данных <literal>mydb</literal>, как описано в предыдущей главе, и смогли запустить <application>psql</application>.</para>
+
+   <para>Примеры этого руководства также можно найти в пакете исходного кода <productname>&productname;</productname> в каталоге <filename>src/tutorial/</filename>. (Двоичные дистрибутивы <productname>&productname;</productname> могут не включать эти файлы.) Чтобы использовать эти файлы, перейдите в этот каталог и запустите <application>make</application>: <screen>
+<prompt>$</prompt> <userinput>cd <replaceable>....</replaceable>/src/tutorial</userinput>
+<prompt>$</prompt> <userinput>make</userinput>
+</screen> При этом будут созданы скрипты и скомпилированы модули C, содержащие пользовательские функции и типы. Затем, чтобы начать работу с учебным материалом, выполните следующее: <screen>
+<prompt>$</prompt> <userinput>cd <replaceable>....</replaceable>/tutorial</userinput>
+<prompt>$</prompt> <userinput>psql -s mydb</userinput>
+<computeroutput>
+...
+</computeroutput>
+
+<prompt>mydb=&gt;</prompt> <userinput>\i basics.sql</userinput>
+</screen> Команда <literal>\i</literal> считывает и выполняет команды из заданного файла. Переданный <command>psql</command> параметр <literal>-s</literal> переводит его в пошаговый режим, когда он делает паузу перед отправкой каждого оператора серверу. Команды, используемые в этом разделе, содержатся в файле <filename>basics.sql</filename>.</para>
+  </sect1>
+
+
+  <sect1 id="tutorial-concepts">
+   <title>Основные понятия</title>
+
+   <para><indexterm><primary>реляционная база данных</primary></indexterm> <indexterm><primary>иерархическая база данных</primary></indexterm> <indexterm><primary>объектно-ориентированная база данных</primary></indexterm> <indexterm><primary>отношение</primary></indexterm> <indexterm><primary>таблица</primary></indexterm> <productname>&productname;</productname> &mdash; это <firstterm>реляционная система управления базами данных </firstterm> (<acronym>РСУБД</acronym>). Это означает, что это система управления данными, представленными в виде <firstterm>отношений</firstterm> (relation). Отношение &mdash; это математически точное обозначение <firstterm>таблицы</firstterm>. Хранение данных в таблицах так распространено сегодня, что это кажется самым очевидным вариантом, хотя есть множество других способов организации баз данных. Например, файлы и каталоги в Unix-подобных операционных системах образуют иерархическую базу данных, а сегодня активно развиваются объектно-ориентированные базы данных.</para>
+
+   <para><indexterm><primary>строка</primary></indexterm> <indexterm><primary>столбец</primary></indexterm> Любая таблица представляет собой именованный набор <firstterm>строк</firstterm>. Все строки таблицы имеют одинаковый набор именованных <firstterm>столбцов</firstterm>, при этом каждому столбцу назначается определённый тип данных. Хотя порядок столбцов во всех строках фиксирован, важно помнить, что SQL не гарантирует какой-либо порядок строк в таблице (хотя их можно явно отсортировать при выводе).</para>
+
+   <para><indexterm><primary>кластер баз данных</primary></indexterm> <indexterm><primary>кластер</primary> <secondary>баз данных</secondary> <see>кластер баз данных</see></indexterm> Таблицы объединяются в базы данных, а набор баз данных, управляемый одним экземпляром сервера <productname>&productname;</productname>, образует <firstterm>кластер</firstterm> баз данных.</para>
+  </sect1>
+
+
+  <sect1 id="tutorial-table">
+   <title>Создание таблицы</title>
+
+   <indexterm zone="tutorial-table"><primary>CREATE TABLE</primary></indexterm>
+
+   <para>Вы можете создать таблицу, указав её имя и перечислив все имена столбцов и их типы: <programlisting>CREATE TABLE weather (
+    city            varchar(80),
+    temp_lo         int,           -- минимальная температура дня
+    temp_hi         int,           -- максимальная температура дня
+    prcp            real,          -- уровень осадков
+    date            date
+);</programlisting> Весь этот текст можно ввести в <command>psql</command> вместе с символами перевода строк. <command>psql</command> понимает, что команда продолжается до точки с запятой.</para>
+
+   <para>В командах SQL можно свободно использовать пробельные символы (пробелы, табуляции и переводы строк). Это значит, что вы можете ввести команду, выровняв её по-другому или даже уместив в одной строке. Два минуса (<quote><literal>--</literal></quote>) обозначают начало комментария. Всё, что идёт за ними до конца строки, игнорируется. SQL не чувствителен к регистру в ключевых словах и идентификаторах, за исключением идентификаторов, взятых в кавычки (в данном случае это не так).</para>
+
+   <para><type>varchar(80)</type> определяет тип данных, допускающий хранение произвольных символьных строк длиной до 80 символов. <type>int</type> &mdash; обычный целочисленный тип. <type>real</type> &mdash; тип для хранения чисел с плавающей точкой одинарной точности. <type>date</type> &mdash; тип даты. (Да, столбец типа <type>date</type> также называется <structfield>date</structfield>. Это может быть удобно или вводить в заблуждение &mdash; как посмотреть.)</para>
+
+   <para><productname>&productname;</productname> поддерживает стандартные типы <acronym>SQL</acronym>: <type>int</type>, <type>smallint</type>, <type>real</type>, <type>double precision</type>, <type>char(<replaceable>N</replaceable>)</type>, <type>varchar(<replaceable>N</replaceable>)</type>, <type>date</type>, <type>time</type>, <type>timestamp</type> и <type>interval</type>, а также другие универсальные типы и богатый набор геометрических типов. Кроме того, <productname>&productname;</productname> можно расширять, создавая набор собственных типов данных. Как следствие, имена типов не являются ключевыми словами в данной записи, кроме тех случаев, когда это требуется для реализации особых конструкций стандарта <acronym>SQL</acronym>.</para>
+
+   <para>Во втором примере мы сохраним в таблице города и их географическое положение: <programlisting>CREATE TABLE cities (
+    name            varchar(80),
+    location        point
+);</programlisting> Здесь <type>point</type> &mdash; пример специфического типа данных <productname>&productname;</productname>.</para>
+
+   <para><indexterm><primary>DROP TABLE</primary></indexterm> Наконец, следует сказать, что если вам больше не нужна какая-либо таблица, или вы хотите пересоздать её по-другому, вы можете удалить её, используя следующую команду: <synopsis>
+DROP TABLE <replaceable>имя_таблицы</replaceable>;
+</synopsis></para>
+  </sect1>
+
+
+  <sect1 id="tutorial-populate">
+   <title>Добавление строк в таблицу</title>
+
+   <indexterm zone="tutorial-populate"><primary>INSERT</primary></indexterm>
+
+   <para>Для добавления строк в таблицу используется оператор <command>INSERT</command>: <programlisting>INSERT INTO weather VALUES ('San Francisco', 46, 50, 0.25, '1994-11-27');</programlisting> Заметьте, что для всех типов данных применяются довольно очевидные форматы. Константы, за исключением простых числовых значений, обычно заключаются в апострофы (<literal>'</literal>), как в данном примере. Тип <type>date</type> на самом деле очень гибок и принимает разные форматы, но в данном введении мы будем придерживаться простого и однозначного.</para>
+
+   <para>Тип <type>point</type> требует ввода пары координат, например таким образом: <programlisting>INSERT INTO cities VALUES ('San Francisco', '(-194.0, 53.0)');</programlisting></para>
+
+   <para>Показанный здесь синтаксис требует, чтобы вы запомнили порядок столбцов. Можно также применить альтернативную запись, перечислив столбцы явно: <programlisting>INSERT INTO weather (city, temp_lo, temp_hi, prcp, date)
+    VALUES ('San Francisco', 43, 57, 0.0, '1994-11-29');</programlisting>Вы можете перечислить столбцы в другом порядке, если желаете опустить некоторые из них, например, если уровень осадков (столбец prcp) неизвестен: <programlisting>INSERT INTO weather (date, city, temp_hi, temp_lo)
+    VALUES ('1994-11-29', 'Hayward', 54, 37);</programlisting> Многие разработчики предпочитают явно перечислять столбцы, а не полагаться на их порядок в таблице.</para>
+
+   <para>Пожалуйста, введите все показанные выше команды, чтобы у вас были данные, с которыми можно будет работать дальше.</para>
+
+   <para><indexterm><primary>COPY</primary></indexterm> Вы также можете загрузить большой объём данных из обычных текстовых файлов, применив команду <command>COPY</command>. Обычно это будет быстрее, так как команда <command>COPY</command> оптимизирована для такого применения, хотя и менее гибка, чем <command>INSERT</command>. Например, её можно использовать так: <programlisting>COPY weather FROM '/home/user/weather.txt';</programlisting> здесь подразумевается, что данный файл доступен на компьютере, где работает серверный процесс, а не на клиенте, так как указанный файл будет прочитан непосредственно на сервере. Подробнее об этом вы можете узнать в описании команды <xref linkend="sql-copy"/>.</para>
+  </sect1>
+
+
+  <sect1 id="tutorial-select">
+   <title>Выполнение запроса</title>
+
+   <para><indexterm><primary>запрос</primary></indexterm> <indexterm><primary>SELECT</primary></indexterm> Чтобы получить данные из таблицы, нужно выполнить <firstterm>запрос</firstterm>. Для этого предназначен <acronym>SQL</acronym>-оператор <command>SELECT</command>. Он состоит из нескольких частей: выборки (в которой перечисляются столбцы, которые должны быть получены), списка таблиц (в нём перечисляются таблицы, из которых будут получены данные) и необязательного условия (определяющего ограничения). Например, чтобы получить все строки таблицы <structname>weather</structname>, введите: <programlisting>SELECT * FROM weather;</programlisting> Здесь <literal>*</literal> &mdash; это краткое обозначение <quote>всех столбцов</quote>. <footnote>
+      <para>Хотя запросы <literal>SELECT *</literal> часто пишут экспромтом, это считается плохим стилем в производственном коде, так как результат таких запросов будет меняться при добавлении новых столбцов.</para>
+     </footnote> Таким образом, это равносильно записи: <programlisting>SELECT city, temp_lo, temp_hi, prcp, date FROM weather;</programlisting> В результате должно получиться: <screen>
+     city      | temp_lo | temp_hi | prcp |    date
+---------------+---------+---------+------+------------
+ San Francisco |      46 |      50 | 0.25 | 1994-11-27
+ San Francisco |      43 |      57 |    0 | 1994-11-29
+ Hayward       |      37 |      54 |      | 1994-11-29
+(3 rows)
+</screen></para>
+
+   <para>В списке выборки вы можете писать не только ссылки на столбцы, но и выражения. Например, вы можете написать: <programlisting>SELECT city, (temp_hi+temp_lo)/2 AS temp_avg, date FROM weather;</programlisting> И получить в результате: <screen>
+     city      | temp_avg |    date
+---------------+----------+------------
+ San Francisco |       48 | 1994-11-27
+ San Francisco |       50 | 1994-11-29
+ Hayward       |       45 | 1994-11-29
+(3 rows)
+</screen> Обратите внимание, как предложение <literal>AS</literal> позволяет переименовать выходной столбец. (Само слово <literal>AS</literal> можно опускать.)</para>
+
+   <para>Запрос можно дополнить <quote>условием</quote>, добавив предложение <literal>WHERE</literal>, ограничивающее множество возвращаемых строк. В предложении <literal>WHERE</literal> указывается логическое выражение (проверка истинности), которое служит фильтром строк: в результате оказываются только те строки, для которых это выражение истинно. В этом выражении могут присутствовать обычные логические операторы (<literal>AND</literal>, <literal>OR</literal> и <literal>NOT</literal>). Например, следующий запрос покажет, какая погода была в Сан-Франциско в дождливые дни: <programlisting>SELECT * FROM weather
+    WHERE city = 'San Francisco' AND prcp &gt; 0.0;</programlisting> Результат: <screen>
+     city      | temp_lo | temp_hi | prcp |    date
+---------------+---------+---------+------+------------
+ San Francisco |      46 |      50 | 0.25 | 1994-11-27
+(1 row)
+</screen></para>
+
+   <para><indexterm><primary>ORDER BY</primary></indexterm> Вы можете получить результаты запроса в определённом порядке: <programlisting>SELECT * FROM weather
+    ORDER BY city;</programlisting> <screen>
+     city      | temp_lo | temp_hi | prcp |    date
+---------------+---------+---------+------+------------
+ Hayward       |      37 |      54 |      | 1994-11-29
+ San Francisco |      43 |      57 |    0 | 1994-11-29
+ San Francisco |      46 |      50 | 0.25 | 1994-11-27
+</screen> В этом примере порядок сортировки определён не полностью, поэтому вы можете получить строки Сан-Франциско в любом порядке. Но вы всегда получите результат, показанный выше, если напишете: <programlisting>SELECT * FROM weather
+    ORDER BY city, temp_lo;</programlisting></para>
+
+   <para><indexterm><primary>DISTINCT</primary></indexterm> <indexterm><primary>дублирование</primary></indexterm> Если требуется, вы можете убрать дублирующиеся строки из результата запроса: <programlisting>SELECT DISTINCT city
+    FROM weather;</programlisting> <screen>
+     city
+---------------
+ Hayward
+ San Francisco
+(2 rows)
+</screen> И здесь порядок строк также может варьироваться. Чтобы получать неизменные результаты, соедините предложения <literal>DISTINCT</literal> и <literal>ORDER BY</literal>: <footnote>
+      <para>В некоторых СУБД, включая старые версии <productname>&productname;</productname>, реализация предложения <literal>DISTINCT</literal> автоматически упорядочивает строки, так что <literal>ORDER BY</literal> добавлять не обязательно. Но стандарт SQL этого не требует и текущая версия <productname>&productname;</productname> не гарантирует определённого порядка строк после <literal>DISTINCT</literal>.</para>
+     </footnote> <programlisting>SELECT DISTINCT city
+    FROM weather
+    ORDER BY city;</programlisting></para>
+  </sect1>
+
+
+  <sect1 id="tutorial-join">
+   <title>Соединения таблиц</title>
+
+   <indexterm zone="tutorial-join"><primary>соединение</primary></indexterm>
+
+   <para>До этого все наши запросы обращались только к одной таблице. Однако запросы могут также обращаться сразу к нескольким таблицам или обращаться к той же таблице так, что одновременно будут обрабатываться разные наборы её строк. Запрос, обращающийся к разным наборам строк одной или нескольких таблиц, называется <firstterm>соединением</firstterm> (JOIN). Например, мы захотели перечислить все погодные события вместе с координатами соответствующих городов. Для этого мы должны сравнить столбец <structfield>city</structfield> каждой строки таблицы <structname>weather</structname> со столбцом <structfield>name</structfield> всех строк таблицы <structname>cities</structname> и выбрать пары строк, для которых эти значения совпадают. <note>
+     <para>Это не совсем точная модель. Обычно соединения выполняются эффективнее (сравниваются не все возможные пары строк), но это скрыто от пользователя.</para>
+    </note> Это можно сделать с помощью следующего запроса: <programlisting>SELECT *
+    FROM weather, cities
+    WHERE city = name;</programlisting> <screen>
+     city     |temp_lo|temp_hi| prcp|    date   |     name     | location
+--------------+-------+-------+-----+-----------+--------------+----------
+ San Francisco|     46|     50| 0.25| 1994-11-27| San Francisco| (-194,53)
+ San Francisco|     43|     57|    0| 1994-11-29| San Francisco| (-194,53)
+(2 rows)
+</screen></para>
+
+   <para>Обратите внимание на две особенности полученных данных: <itemizedlist>
+     <listitem>
+      <para>В результате нет строки с городом Хейуорд (Hayward). Так получилось потому, что в таблице <structname>cities</structname> нет строки для данного города, а при соединении все строки таблицы <structname>weather</structname>, для которых не нашлось соответствие, опускаются. Вскоре мы увидим, как это можно исправить.</para>
+     </listitem>
+
+     <listitem>
+      <para>Название города оказалось в двух столбцах. Это правильно и объясняется тем, что столбцы таблиц <structname>weather</structname> и <structname>cities</structname> были объединены. Хотя на практике это нежелательно, поэтому лучше перечислить нужные столбцы явно, а не использовать <literal>*</literal>: <programlisting>SELECT city, temp_lo, temp_hi, prcp, date, location
+    FROM weather, cities
+    WHERE city = name;</programlisting></para>
+     </listitem>
+    </itemizedlist></para>
+
+   <formalpara>
+    <title>Упражнение:</title>
+
+    <para>Попробуйте определить, что будет делать этот запрос без предложения <literal>WHERE</literal>.</para>
+   </formalpara>
+
+   <para>Так как все столбцы имеют разные имена, анализатор запроса автоматически понимает, к какой таблице они относятся. Если бы имена столбцов в двух таблицах повторялись, вам пришлось бы <firstterm>дополнить</firstterm> имена столбцов, конкретизируя, что именно вы имели в виду: <programlisting>SELECT weather.city, weather.temp_lo, weather.temp_hi,
+       weather.prcp, weather.date, cities.location
+    FROM weather, cities
+    WHERE cities.name = weather.city;</programlisting> Вообще хорошим стилем считается указывать полные имена столбцов в запросе соединения, чтобы запрос не поломался, если позже в таблицы будут добавлены столбцы с повторяющимися именами.</para>
+
+   <para>Запросы соединения, которые вы видели до этого, можно также записать в другом виде: <programlisting>SELECT *
+    FROM weather INNER JOIN cities ON (weather.city = cities.name);</programlisting> Эта запись не так распространена, как первый вариант, но мы показываем её, чтобы вам было проще понять следующие темы.</para>
+
+   <para><indexterm><primary>соединение</primary> <secondary>внешнее</secondary></indexterm> Сейчас мы выясним, как вернуть записи о погоде в городе Хейуорд. Мы хотим, чтобы запрос просканировал таблицу <structname>weather</structname> и для каждой её строки нашёл соответствующую строку в таблице <structname>cities</structname>. Если же такая строка не будет найдена, мы хотим, чтобы вместо значений столбцов из таблицы <structname>cities</structname> были подставлены <quote>пустые значения</quote>. Запросы такого типа называются <firstterm>внешними соединениями</firstterm>. (Соединения, которые мы видели до этого, называются внутренними.) Эта команда будет выглядеть так: <programlisting>SELECT *
+    FROM weather LEFT OUTER JOIN cities ON (weather.city = cities.name);
+
+     city     |temp_lo|temp_hi| prcp|    date   |     name     | location
+--------------+-------+-------+-----+-----------+--------------+----------
+ Hayward      |     37|     54|     | 1994-11-29|              |
+ San Francisco|     46|     50| 0.25| 1994-11-27| San Francisco| (-194,53)
+ San Francisco|     43|     57|    0| 1994-11-29| San Francisco| (-194,53)
+(3 rows)</programlisting> Этот запрос называется <firstterm>левым внешним соединением</firstterm>, потому что из таблицы в левой части оператора будут выбраны все строки, а из таблицы справа только те, которые удалось сопоставить каким-нибудь строкам из левой. При выводе строк левой таблицы, для которых не удалось найти соответствия в правой, вместо столбцов правой таблицы подставляются пустые значения (NULL).</para>
+
+   <formalpara>
+    <title>Упражнение:</title>
+
+    <para>Существуют также правые внешние соединения и полные внешние соединения. Попробуйте выяснить, что они собой представляют.</para>
+   </formalpara>
+
+   <para><indexterm><primary>соединение</primary> <secondary>замкнутое</secondary></indexterm> <indexterm><primary>псевдоним</primary> <secondary>таблицы в запросе</secondary></indexterm> В соединении мы также можем замкнуть таблицу на себя. Это называется <firstterm>замкнутым соединением</firstterm>. Например, представьте, что мы хотим найти все записи погоды, в которых температура лежит в диапазоне температур других записей. Для этого мы должны сравнить столбцы <structfield>temp_lo</structfield> и <structfield>temp_hi</structfield> каждой строки таблицы <structname>weather</structname> со столбцами <structfield>temp_lo</structfield> и <structfield>temp_hi</structfield> другого набора строк <structname>weather</structname>. Это можно сделать с помощью следующего запроса: <programlisting>SELECT W1.city, W1.temp_lo AS low, W1.temp_hi AS high,
+    W2.city, W2.temp_lo AS low, W2.temp_hi AS high
+    FROM weather W1, weather W2
+    WHERE W1.temp_lo &lt; W2.temp_lo
+    AND W1.temp_hi &gt; W2.temp_hi;
+
+     city      | low | high |     city      | low | high
+---------------+-----+------+---------------+-----+------
+ San Francisco |  43 |   57 | San Francisco |  46 |   50
+ Hayward       |  37 |   54 | San Francisco |  46 |   50
+(2 rows)</programlisting> Здесь мы ввели новые обозначения таблицы weather: <literal>W1</literal> и <literal>W2</literal>, чтобы можно было различить левую и правую стороны соединения. Вы можете использовать подобные псевдонимы и в других запросах для сокращения: <programlisting>SELECT *
+    FROM weather w, cities c
+    WHERE w.city = c.name;</programlisting> Вы будете встречать сокращения такого рода довольно часто.</para>
+  </sect1>
+
+
+  <sect1 id="tutorial-agg">
+   <title>Агрегатные функции</title>
+
+   <indexterm zone="tutorial-agg"><primary>агрегатная функция</primary></indexterm>
+
+   <para>Как большинство других серверов реляционных баз данных, <productname>&productname;</productname> поддерживает <firstterm>агрегатные функции</firstterm>. Агрегатная функция вычисляет единственное значение, обрабатывая множество строк. Например, есть агрегатные функции, вычисляющие: <function>count</function> (количество), <function>sum</function> (сумму), <function>avg</function> (среднее), <function>max</function> (максимум) и <function>min</function> (минимум) для набора строк.</para>
+
+   <para>К примеру, мы можем найти самую высокую из всех минимальных дневных температур: <programlisting>SELECT max(temp_lo) FROM weather;</programlisting> <screen>
+ max
+-----
+  46
+(1 row)
+</screen></para>
+
+   <para><indexterm><primary>подзапрос</primary></indexterm> Если мы хотим узнать, в каком городе (или городах) наблюдалась эта температура, можно попробовать: <programlisting>SELECT city FROM weather WHERE temp_lo = max(temp_lo);     <lineannotation>НЕВЕРНО</lineannotation></programlisting> но это не будет работать, так как агрегатную функцию <function>max</function> нельзя использовать в предложении <literal>WHERE</literal>. (Это ограничение объясняется тем, что предложение <literal>WHERE</literal> должно определить, для каких строк вычислять агрегатную функцию, так что оно, очевидно, должно вычисляться до агрегатных функций.) Однако, как часто бывает, запрос можно перезапустить и получить желаемый результат, применив <firstterm>подзапрос</firstterm>: <programlisting>SELECT city FROM weather
+    WHERE temp_lo = (SELECT max(temp_lo) FROM weather);</programlisting> <screen>
+     city
+---------------
+ San Francisco
+(1 row)
+</screen> Теперь всё в порядке &mdash; подзапрос выполняется отдельно и результат агрегатной функции вычисляется вне зависимости от того, что происходит во внешнем запросе.</para>
+
+   <para><indexterm><primary>GROUP BY</primary></indexterm> <indexterm><primary>HAVING</primary></indexterm> Агрегатные функции также очень полезны в сочетании с предложением <literal>GROUP BY</literal>. Например, мы можем получить максимум минимальной дневной температуры в разрезе городов: <programlisting>SELECT city, max(temp_lo)
+    FROM weather
+    GROUP BY city;</programlisting> <screen>
+     city      | max
+---------------+-----
+ Hayward       |  37
+ San Francisco |  46
+(2 rows)
+</screen> Здесь мы получаем по одной строке для каждого города. Каждый агрегатный результат вычисляется по строкам таблицы, соответствующим отдельному городу. Мы можем отфильтровать сгруппированные строки с помощью предложения <literal>HAVING</literal>: <programlisting>SELECT city, max(temp_lo)
+    FROM weather
+    GROUP BY city
+    HAVING max(temp_lo) &lt; 40;</programlisting> <screen>
+  city   | max
+---------+-----
+ Hayward |  37
+(1 row)
+</screen> Мы получаем те же результаты, но только для тех городов, где все значения <structfield>temp_lo</structfield> меньше 40. Наконец, если нас интересуют только города, названия которых начинаются с <quote><literal>S</literal></quote>, мы можем сделать: <programlisting>SELECT city, max(temp_lo)
+    FROM weather
+    WHERE city LIKE 'S%'<co id="co.tutorial-agg-like"/>
+    GROUP BY city
+    HAVING max(temp_lo) &lt; 40;</programlisting> <calloutlist>
+    <callout arearefs="co.tutorial-agg-like">
+     <para>Оператор <literal>LIKE</literal> (выполняющий сравнение по шаблону) рассматривается в <xref remap="6" linkend="functions-matching"/>.</para>
+    </callout>
+   </calloutlist></para>
+
+   <para>Важно понимать, как соотносятся агрегатные функции и <acronym>SQL</acronym>-предложения <literal>WHERE</literal> и <literal>HAVING</literal>. Основное отличие <literal>WHERE</literal> от <literal>HAVING</literal> заключается в том, что <literal>WHERE</literal> сначала выбирает строки, а затем группирует их и вычисляет агрегатные функции (таким образом, она отбирает строки для вычисления агрегатов), тогда как <literal>HAVING</literal> отбирает строки групп после группировки и вычисления агрегатных функций. Как следствие, предложение <literal>WHERE</literal> не должно содержать агрегатных функций; не имеет смысла использовать агрегатные функции для определения строк для вычисления агрегатных функций. Предложение <literal>HAVING</literal>, напротив, всегда содержит агрегатные функции. (Строго говоря, вы можете написать предложение <literal>HAVING</literal>, не используя агрегаты, но это редко бывает полезно. То же самое условие может работать более эффективно на стадии <literal>WHERE</literal>.)</para>
+
+   <para>В предыдущем примере мы смогли применить фильтр по названию города в предложении <literal>WHERE</literal>, так как названия не нужно агрегировать. Такой фильтр эффективнее, чем дополнительное ограничение <literal>HAVING</literal>, потому что с ним не приходится группировать и вычислять агрегаты для всех строк, не удовлетворяющих условию <literal>WHERE</literal>.</para>
+  </sect1>
+
+
+  <sect1 id="tutorial-update">
+   <title>Изменение данных</title>
+
+   <indexterm zone="tutorial-update"><primary>UPDATE</primary></indexterm>
+
+   <para>Данные в существующих строках можно изменять, используя команду <command>UPDATE</command>. Например, предположим, что вы обнаружили, что все значения температуры после 28 ноября завышены на два градуса. Вы можете поправить ваши данные следующим образом: <programlisting>UPDATE weather
+    SET temp_hi = temp_hi - 2,  temp_lo = temp_lo - 2
+    WHERE date &gt; '1994-11-28';</programlisting></para>
+
+   <para>Посмотрите на новое состояние данных: <programlisting>SELECT * FROM weather;
+
+     city      | temp_lo | temp_hi | prcp |    date
+---------------+---------+---------+------+------------
+ San Francisco |      46 |      50 | 0.25 | 1994-11-27
+ San Francisco |      41 |      55 |    0 | 1994-11-29
+ Hayward       |      35 |      52 |      | 1994-11-29
+(3 rows)</programlisting></para>
+  </sect1>
+
+  <sect1 id="tutorial-delete">
+   <title>Удаление данных</title>
+
+   <indexterm zone="tutorial-delete"><primary>DELETE</primary></indexterm>
+
+   <para>Строки также можно удалить из таблицы, используя команду <command>DELETE</command>. Предположим, что вас больше не интересует погода в Хейуорде. В этом случае вы можете удалить ненужные строки из таблицы: <programlisting>DELETE FROM weather WHERE city = 'Hayward';</programlisting> Записи всех наблюдений, относящиеся к Хейуорду, удалены. <programlisting>SELECT * FROM weather;</programlisting> <screen>
+     city      | temp_lo | temp_hi | prcp |    date
+---------------+---------+---------+------+------------
+ San Francisco |      46 |      50 | 0.25 | 1994-11-27
+ San Francisco |      41 |      55 |    0 | 1994-11-29
+(2 rows)
+</screen></para>
+
+   <para>Остерегайтесь операторов вида <synopsis>
+DELETE FROM <replaceable>имя_таблицы</replaceable>;
+</synopsis> Без указания условия <command>DELETE</command> удалит <emphasis>все</emphasis> строки данной таблицы, полностью очистит её. При этом система не попросит вас подтвердить операцию!</para>
+  </sect1>
+
+ </chapter>

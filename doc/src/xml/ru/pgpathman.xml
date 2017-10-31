@@ -1,0 +1,791 @@
+<sect1 id="pg-pathman">
+  <title>pg_pathman</title>
+<para><filename>pg_pathman</filename> — это расширение <productname>&productname;</productname>, реализующее оптимизированное решение для секционирования больших и распределённых баз данных. Используя <filename>pg_pathman</filename>, вы можете:</para>
+  <itemizedlist>
+    <listitem>
+      <para>Секционировать большие базы данных, не прерывая их работу.</para>
+    </listitem>
+    <listitem>
+      <para>Ускорять выполнение запросов с секционированными таблицами.</para>
+    </listitem>
+    <listitem>
+      <para>Управлять существующими и добавлять новые секции на лету.</para>
+    </listitem>
+    <listitem>
+      <para>Добавлять в качестве секций сторонние таблицы.</para>
+    </listitem>
+    <listitem>
+      <para>Соединять секционированные таблицы для операций чтения и записи.</para>
+    </listitem>
+  </itemizedlist>
+  <para>Это расширение совместимо с <productname>&productname;</productname> 9.5 и новее.</para>
+  <sect2 id="pg-pathman-installation-and-setup">
+    <title>Установка и подготовка</title>
+    <para>Расширение <filename>pg_pathman</filename> включено в состав <productname>&productname;</productname>. Установив <productname>&productname;</productname>, выполните следующие действия, чтобы подготовить <filename>pg_pathman</filename> к работе:</para>
+    <orderedlist>
+      <listitem>
+        <para>Добавьте <filename>pg_pathman</filename> в переменную <varname>shared_preload_libraries</varname> в файле <filename>postgresql.conf</filename>:</para>
+        <programlisting>shared_preload_libraries = 'pg_pathman'</programlisting>
+          <important><para><filename>pg_pathman</filename> может конфликтовать с другими расширениями, использующими те же функции для перехвата управления. Например, возможен конфликт <filename>pg_pathman</filename> с <filename>pg_stat_statements</filename>, так как оба эти расширения используют функцию <literal>ProcessUtility_hook</literal>. Во избежание подобных проблем <filename>pg_pathman</filename> должен быть всегда последним в списке библиотек: <literal>shared_preload_libraries = 'pg_stat_statements, pg_pathman'</literal></para>
+          </important>
+      </listitem>
+      <listitem>
+        <para>Перезапустите <productname>&productname;</productname>, чтобы изменения вступили в силу.</para>
+      </listitem>
+      <listitem>
+        <para>Создайте расширение <filename>pg_pathman</filename>, выполнив следующий запрос:</para>
+        <programlisting>CREATE EXTENSION pg_pathman;</programlisting>
+      </listitem>
+    </orderedlist>
+    <para>После того как расширение <filename>pg_pathman</filename> будет создано, вы можете приступить к секционированию таблиц.</para>
+      <para>Включать/отключать <filename>pg_pathman</filename> или его определённые узлы можно с помощью переменных <acronym>GUC</acronym>. За подробностями обратитесь к <xref remap="3" linkend="pg-pathman-guc-variables"/>.</para>
+      <para>Если вы хотите полностью отключить <filename>pg_pathman</filename> для ранее секционированной таблицы, воспользуйтесь функцией <function>disable_pathman_for()</function>:</para>
+      <programlisting>SELECT disable_pathman_for('range_rel');</programlisting>
+      <para>Все секции и данные останутся неизменными и будут обрабатываться стандартным механизмом наследования <productname>&productname;</productname>.</para>
+      <sect3 id="pg-pathman-how-to-update">
+      <title>Обновление расширения pg_pathman</title>
+      <para>Если у вас уже была установлена предыдущая версия <filename>pg_pathman</filename>, выполните следующие действия для установки новой версии:</para>
+      <orderedlist>
+      <listitem><para>Установите <productname>&productname;</productname>.</para>
+      </listitem>
+      <listitem><para>Перезапустите кластер <productname>&productname;</productname>.</para>
+      </listitem>
+      <listitem><para>Выполните следующие запросы:</para>
+<programlisting>ALTER EXTENSION pg_pathman UPDATE TO <replaceable>версия</replaceable>;
+SET pg_pathman.enable = t;</programlisting>
+<para>Здесь <replaceable>версия</replaceable> — это номер версии <filename>pg_pathman</filename>, например, 1.3. Узнать текущую версию <filename>pg_pathman</filename> вы можете в замечаниях к выпуску <productname>&productname;</productname>.</para>
+      </listitem>
+      </orderedlist>
+      </sect3>
+    </sect2>
+  <sect2 id="pg-pathman-usage">
+    <title>Использование</title>
+    <para><emphasis role="strong">Содержимое</emphasis></para>
+      <para><link linkend="pg-pathman-choosing-partitioning-strategies">Выбор стратегии секционирования</link></para>
+      <para><link linkend="pg-pathman-running-non-blocking-data-migration">Осуществление неблокирующего переноса данных</link></para>
+      <para><link linkend="pg-pathman-choosing-partitioning-strategies">Секционирование по одному выражению</link></para>
+      <para><link linkend="pg-pathman-partitioning-by-comp-key">Секционирование по составному ключу</link></para>
+    <para>По мере увеличения базы данных механизмы индексирования могут становиться неэффективными и запросы могут выполняться намного медленнее. Для повышения производительности, улучшения масштабируемости и оптимизации процессов администрирования вы можете использовать секционирование &mdash; разделение большой таблицы на множество меньших по размеру, когда все строки размещаются в секциях согласно ключу разбиения. Секционирование в <productname>&productname;</productname> основано на механизме наследования: каждая секция должна создаваться как дочерняя таблица с ограничением CHECK. Например:</para>
+    <programlisting>CREATE TABLE test (id SERIAL PRIMARY KEY, title TEXT);
+CREATE TABLE test_1 (CHECK ( id &gt;= 100 AND id &lt; 200 )) INHERITS (test);
+CREATE TABLE test_2 (CHECK ( id &gt;= 200 AND id &lt; 300 )) INHERITS (test);</programlisting>
+    <para>Однако при очень большом количестве секций возникают заметные издержки планирования, так как планировщик вынужден производить полный перебор и проверку условий ограничения для каждой секции, чтобы построить план выполнения запроса. Расширение <filename>pg_pathman</filename> решает эту проблему, применяя оптимизированные алгоритмы планирования и функции секционирования, учитывающие внутреннюю структуру секционированных таблиц. Более подробно детали реализации <filename>pg_pathman</filename> описаны в <xref remap="6" linkend="pg-pathman-internals"/>.</para>
+<sect3 id="pg-pathman-choosing-partitioning-strategies">
+      <title>Выбор стратегии секционирования</title>
+      <para>Расширение <filename>pg_pathman</filename> поддерживает следующие стратегии секционирования:</para>
+        <itemizedlist>
+        <listitem><para>По хешу &mdash; строки сопоставляются с секциями с использованием универсальной функции хеширования. Выберите эту стратегию, если в большинстве запросов будет выполняться поиск точного соответствия.</para></listitem>
+        <listitem><para>По диапазонам &mdash; строки сопоставляются с секциями по диапазонам разбивающего ключа, назначаемым каждой секции. Выберите эту стратегию, если ваша база данных содержит числовые данные, которые, скорее всего, будут представлять интерес как значения в интервалах. Например, вас могут интересовать исторические данные по годам или результаты экспериментов в определённых числовых диапазонах. Для получения выигрыша в производительности <filename>pg_pathman</filename> использует алгоритм бинарного поиска.</para></listitem></itemizedlist>
+        <para>По умолчанию <filename>pg_pathman</filename> переносит все данные из родительской таблицы в создаваемые секции сразу (производится <emphasis>блокирующее секционирование</emphasis>). При таком подходе вы можете изменить структуру таблицы в одной транзакции, но если объём данных велик, это может привести к приостановке работы. Если важно, чтобы работа не прерывалась, вы можете выполнить <emphasis>параллельное секционирование</emphasis>. В этом случае <filename>pg_pathman</filename> записывает все новые данные в созданные секции, но сохраняет исходные данные в родительской таблице, пока вы явно не перенесёте их. Это позволяет секционировать большие базы данных, не прерывая работу, так как вы можете выбрать удобное время для переноса данных и переносить их небольшими порциями, не блокируя другие транзакции. Подробнее параллельное секционирование описано в <xref remap="6" linkend="pg-pathman-running-non-blocking-data-migration"/>.</para>
+      <sect4 id="pg-pathman-setting-up-hash-partitioning">
+        <title>Организация секционирования по хешу</title>
+        <para>Чтобы выполнить секционирование по хешу с применением <filename>pg_pathman</filename>, воспользуйтесь функцией <function>create_hash_partitions()</function>:</para>
+        <programlisting>create_hash_partitions(relation         REGCLASS,
+                       attribute        TEXT,
+                       partitions_count INTEGER,
+                       partition_data   BOOLEAN DEFAULT TRUE,
+                       partition_names  TEXT[] DEFAULT NULL,
+                       tablespaces      TEXT[] DEFAULT NULL)</programlisting>
+        <para>Модуль <filename>pg_pathman</filename> создаёт указанное число секций, используя хеш-функцию. Вы можете также указать имена секций и табличных пространств, задав параметры <literal>partition_names</literal> и <literal>tablespaces</literal>, соответственно.</para>
+          <para>После того, как таблица разделена на секции, удалять или добавлять секции в ней нельзя. Однако при необходимости определённую секцию можно заменить другой таблицей:</para>
+          <programlisting>replace_hash_partition(old_partition       REGCLASS,
+                       new_partition       REGCLASS,
+                       lock_parent         BOOL DEFAULT TRUE);</programlisting>
+<para>Если параметр <literal>lock_parent</literal> равен <literal>true</literal>, никакие запросы <command>INSERT</command>/<command>UPDATE</command>/<command>ALTER TABLE</command> в родительской таблице не разрешаются.</para>
+          <para>Если вы опустите необязательный параметр <literal>partition_data</literal> или зададите для него значение <literal>true</literal>, все данные из родительской таблицы будут перенесены в секции. Модуль <filename>pg_pathman</filename> заблокирует эту таблицу для других транзакций до завершения переноса данных. Чтобы избежать приостановки работы, вы можете передать в параметре <literal>partition_data</literal> значение <literal>false</literal> и затем вызвать функцию <function>partition_table_concurrently()</function> для переноса данных без блокирования других запросов. За подробностями обратитесь к <xref remap="3" linkend="pg-pathman-running-non-blocking-data-migration"/>.</para>
+      </sect4>
+      <sect4 id="pg-pathman-setting-up-range-partitioning">
+        <title>Организация секционирования по диапазонам</title>
+        <para>Модуль <filename>pg_pathman</filename> предоставляет функцию <function>create_range_partitions()</function> для разбиения по диапазонам. Эта функция создаёт секции, исходя из заданного интервала и начального значения ключа разбиения. Новые секции будут создаваться автоматически при добавлении данных, не попадающих в ранее охваченный интервал.</para>
+        <programlisting>create_range_partitions(relation       REGCLASS,
+                        expression     TEXT,
+                        start_value    ANYELEMENT,
+                        p_interval     ANYELEMENT | INTERVAL,
+                        p_count        INTEGER DEFAULT NULL,
+                        partition_data BOOLEAN DEFAULT TRUE)</programlisting>
+        <para>Модуль <filename>pg_pathman</filename> создаёт секции в зависимости от переданных параметров. Если необязательный параметр <literal>p_count</literal> опущен, <filename>pg_pathman</filename> вычисляет требуемое число секций, исходя из заданного начального значения и интервала. Если затем будут добавляться данные вне ранее заданного диапазона, <filename>pg_pathman</filename> создаст новые секции автоматически, сохраняя указанный интервал. При таком подходе все секции оказываются одного размера, что может способствовать ускорению запросов и упрощению управления данными.</para>
+
+        <para>Также вы можете задать массив, определяющий границы создаваемых секций, в параметре <literal>bounds</literal>: <programlisting>create_range_partitions(relation        REGCLASS,
+                        expression      TEXT,
+                        bounds          ANYARRAY,
+                        partition_names TEXT[] DEFAULT NULL,
+                        tablespaces     TEXT[] DEFAULT NULL,
+                        partition_data  BOOLEAN DEFAULT TRUE)</programlisting></para>
+        <para>Если требуется, вы можете также использовать <link linkend="pg-pathman-partition-management">функции управления секциями</link> и добавлять секции вручную. Например, если между созданными секциями образовался промежуток, <filename>pg_pathman</filename> не сможет заполнить его новой секцией в автоматическом режиме.</para>
+        <para>По умолчанию все данные из родительской таблицы будут перенесены в указанное количество секций. Модуль <filename>pg_pathman</filename> заблокирует эту таблицу для других транзакций до завершения переноса данных. Чтобы избежать приостановки работы, вы можете передать в параметре <literal>partition_data</literal> значение <literal>false</literal> и затем вызвать функцию <function>partition_table_concurrently()</function> для переноса данных без блокирования других запросов. За подробностями обратитесь к <xref remap="3" linkend="pg-pathman-running-non-blocking-data-migration"/>.</para>
+      </sect4>
+    </sect3>
+    <sect3 id="pg-pathman-running-non-blocking-data-migration">
+      <title>Осуществление неблокирующего переноса данных</title>
+      <para>Если важно не допустить прерывания работы, вы можете произвести секционирование в параллельном режиме, установив для параметра <literal>partition_data</literal> значение <literal>false</literal>. В этом случае <filename>pg_pathman</filename> создаст пустые секции и оставит все исходные данные в родительской таблице. При этом все новые записи будут попадать в созданные секции. Позднее вы сможете переместить все начальные данные в соответствующие секции, не блокируя другие запросы, воспользовавшись функцией <function>partition_table_concurrently()</function>:</para>
+      <programlisting>partition_table_concurrently(relation   REGCLASS,
+                             batch_size INTEGER DEFAULT 1000,
+                             sleep_time FLOAT8 DEFAULT 1.0)</programlisting>
+      <para>Здесь:</para>
+        <itemizedlist><listitem><para><literal>relation</literal> — родительская таблица.</para></listitem>
+        <listitem><para><literal>batch_size</literal> — количество строк, которое должно копироваться из родительской таблицы в секции за один раз. Этот параметр может принимать любое целое значение от 1 до 10000.</para></listitem>
+        <listitem><para><literal>sleep_time</literal> — интервал времени между попытками переноса данных, в секундах.</para></listitem></itemizedlist>
+      <para>Модуль <filename>pg_pathman</filename> запускает фоновый рабочий процесс для переноса данных из родительской таблицы в секции маленькими порциями, размер которых задаётся параметром <literal>batch_size</literal>. Если одна или несколько строк в порции оказались заблокированы другими запросами, <filename>pg_pathman</filename> ждёт заданное время (<literal>sleep_time</literal>) и повторяет попытку (до 60 раз). За процессом переноса данных можно наблюдать в представлении <structname>pathman_concurrent_part_tasks</structname>, показывающем количество строк, обработанных на данный момент:</para>
+      <programlisting>[user]postgres: select * from pathman_concurrent_part_tasks ;
+ userid |  pid  | dbid  | relid | processed | status
+--------+-------+-------+-------+-----------+---------
+ user   | 20012 | 12413 | test  |    334000 | working
+(1 row)</programlisting>
+      <para>Если потребуется остановить перенос данных, вы можете в любое время выполнить функцию <function>stop_concurrent_part_task()</function>:</para>
+      <programlisting>SELECT stop_concurrent_part_task(relation REGCLASS);</programlisting>
+      <para><filename>pg_pathman</filename> завершит перенос текущей порции и прекратит процесс переноса.</para>
+      <tip><para>Когда <filename>pg_pathman</filename> перенесёт все данные из родительской таблицы, вы можете исключить её из плана запроса. За подробностями обратитесь к описанию функции <function>set_enable_parent()</function>.</para></tip>
+      </sect3>
+      <sect3 id="pg-pathman-partitioning-by-expression">
+        <title>Секционирование по одному выражению</title>
+        <para>Для стратегий секционирования по диапазону и хешу <filename>pg_pathman</filename> поддерживает разбиение по выражению, возвращающему одно скалярное значение. Выражением разбиения может быть ссылка на столбец таблицы или вычисление ключа разбиения с использованием значений одного или нескольких столбцов.</para>
+          <tip>
+            <para>Если вас интересует разбиение таблицы по значению кортежа, обратитесь к <xref remap="3" linkend="pg-pathman-partitioning-by-comp-key"/>.</para>
+          </tip>
+          <para>Для разбиения таблицы по выражению используйте <link linkend="pg-pathman-partition-creation">функции секционирования</link> <filename>pg_pathman</filename>. Выражение разбиения должно соответствовать следующим условиям: <itemizedlist spacing="compact">
+            <listitem>
+              <para>В выражении должен фигурировать минимум один столбец секционируемой таблицы.</para>
+            </listitem>
+            <listitem>
+              <para>Все фигурирующие в нём столбцы должны иметь свойство <literal>NOT NULL</literal>.</para>
+            </listitem>
+            <listitem>
+              <para>В выражении нельзя обращаться к системным атрибутам, таким как <literal>oid</literal>, <literal>xmin</literal>, <literal>xmax</literal> и т. д.</para>
+            </listitem>
+            <listitem>
+              <para>В выражение нельзя включать подзапросы.</para>
+            </listitem>
+            <listitem>
+              <para>Все функции, используемые выражением, должны быть помечены как <literal>IMMUTABLE</literal>.</para>
+            </listitem>
+          </itemizedlist></para>
+        <para>Так как выражение может возвращать значение практически любого типа, возвращаемое значение нужно привести к типу, для которого выполняется разбиение.</para>
+        <para>Для обращения к секции необходимо использовать в точности то выражение, по которому выполнено разбиение. В противном случае <filename>pg_pathman</filename> не сможет оптимизировать запрос. Просмотреть выражения разбиения для всех секционированных таблиц можно в таблице <structname>pathman_config</structname>.</para>
+        <sect4><title>Примеры</title>
+        <para>Предположим, что у вас есть таблица <structname>test</structname>, содержащая некоторые данные <literal>jsonb</literal>: <programlisting>CREATE TABLE test(col jsonb not null);
+INSERT INTO test
+SELECT format('{"key": %s, "date": "%s", "value": "%s"}',
+              i, current_date, md5(i::text))::jsonb
+FROM generate_series(1, 10000 * 10) as g(i);</programlisting></para>
+        <para>Для разбиения этой таблицы по диапазонам значения <literal>key</literal>, вам нужно извлечь это значение из объекта <literal>jsonb</literal> и преобразовать его в числовой тип, например, в <literal>bigint</literal>:</para>
+        <programlisting>SELECT create_range_partitions('test', '(col-&gt;&gt;''key'')::bigint', 1, 10000, 10);</programlisting>
+        <para>В результате <filename>pg_pathman</filename> разделит родительскую таблицу на десять секций и поместит в каждую 10000 строк:</para>
+<programlisting>SELECT * FROM pathman_partition_list;
+ parent | partition | parttype |              expr               | range_min | range_max
+--------+-----------+----------+---------------------------------+-----------+-----------
+ test   | test_1    |        2 | ((col -&gt;&gt; 'key'::text))::bigint | 1         | 10001
+ test   | test_2    |        2 | ((col -&gt;&gt; 'key'::text))::bigint | 10001     | 20001
+ test   | test_3    |        2 | ((col -&gt;&gt; 'key'::text))::bigint | 20001     | 30001
+ test   | test_4    |        2 | ((col -&gt;&gt; 'key'::text))::bigint | 30001     | 40001
+ test   | test_5    |        2 | ((col -&gt;&gt; 'key'::text))::bigint | 40001     | 50001
+ test   | test_6    |        2 | ((col -&gt;&gt; 'key'::text))::bigint | 50001     | 60001
+ test   | test_7    |        2 | ((col -&gt;&gt; 'key'::text))::bigint | 60001     | 70001
+ test   | test_8    |        2 | ((col -&gt;&gt; 'key'::text))::bigint | 70001     | 80001
+ test   | test_9    |        2 | ((col -&gt;&gt; 'key'::text))::bigint | 80001     | 90001
+ test   | test_10   |        2 | ((col -&gt;&gt; 'key'::text))::bigint | 90001     | 100001
+(10 rows)</programlisting>
+      </sect4>
+      </sect3>
+      <sect3 id="pg-pathman-partitioning-by-comp-key">
+        <title>Секционирование по составному ключу</title>
+        <para>Используя <filename>pg_pathman</filename>, вы также можете реализовать диапазонное секционирование по составному ключу. Составной ключ образуется из двух или нескольких разделённых запятыми элементов, которыми могут быть ссылки на столбцы или выражения, извлекающие значения из таблицы. Выражения, определяющие составной ключ, должны удовлетворять условиям, перечисленным в <xref remap="6" linkend="pg-pathman-partitioning-by-expression"/>.</para>
+        <para>Хотя <filename>pg_pathman</filename> не поддерживает автоматическое создание секций с составным ключом, вы можете добавлять секции, используя функцию <function>add_range_partition()</function>. Обычно это происходит так: <orderedlist>
+            <listitem>
+              <para>Включите автоматическое наименование секций для вашей таблицы, вызвав функцию <function>create_naming_sequence()</function>.</para>
+            </listitem>
+            <listitem>
+              <para>Создайте составной ключ разбиения.</para>
+            </listitem>
+            <listitem>
+              <para>Зарегистрируйте таблицу, которую вы будете секционировать с помощью <filename>pg_pathman</filename>, воспользовавшись функцией <function>add_to_pathman_config()</function>.</para>
+            </listitem>
+            <listitem>
+              <para>Добавьте секции на основе составного ключа разбиения, вызвав функцию <function>add_range_partition()</function>.</para>
+            </listitem>
+          </orderedlist></para>
+        <sect4>
+        <title>Примеры</title>
+          <para>Предположим, что у вас есть таблица <structname>test</structname>, содержащая некоторые данные с датами: <programlisting>CREATE TABLE test (logdate date not null, comment text);</programlisting></para>
+          <para>Для разбиения таких данных по месяцам и годам вам нужно создать составной ключ: <programlisting>CREATE TYPE test_key AS (year float8, month float8);</programlisting></para>
+          <para>Для включения автоматического именования секций выполните функцию <literal>create_naming_sequence()</literal>, передав в качестве аргумента имя функции: <programlisting>SELECT create_naming_sequence('test');</programlisting></para>
+          <para>Зарегистрируйте таблицу <structname>test</structname> в <filename>pg_pathman</filename>, указав ключ разбиения, который вы намерены использовать: <programlisting>SELECT add_to_pathman_config('test',
+                             '( extract(year from logdate),
+                                extract(month from logdate) )::test_key',
+                             NULL);</programlisting></para>
+          <para>Создайте секцию, включающую все данные в интервале десяти лет, начиная с января текущего кода: <programlisting>SELECT add_range_partition('test',
+                           (extract(year from current_date), 1)::test_key,
+                           (extract(year from current_date + '10 years'::interval), 1)::test_key);</programlisting></para>
+        </sect4>
+      </sect3>
+      <sect3 id="pg-pathman-managing-partitions">
+        <title>Управление секциями</title>
+        <para><filename>pg_pathman</filename> предоставляет набор функций для простого управления секциями. За подробностями обратитесь к <xref remap="3" linkend="pg-pathman-partition-management"/>.</para>
+      </sect3>
+    <sect3 id="pg-pathman-using-declarative-syntax">
+      <title>Использование декларативного синтаксиса <filename>pg_pathman</filename></title>
+      <para>Расширение <filename>pg_pathman</filename> поддерживает декларативный синтаксис SQL определения секций. Этот синтаксис позволяет выбрать стратегию секционирования в момент создания таблиц, секционировать ранее созданные таблицы, а также управлять секциями.</para>
+        <para>Выполняя команду <command>CREATE TABLE</command>, вы можете добавить предложение <literal>PARTITION BY</literal> и секционировать таблицу по диапазонам или по хешу.</para>
+        <para>Например, чтобы создать таблицу <literal>abc</literal>, секционированную по диапазонам с интервалом 100, выполните следующий <acronym>SQL</acronym>-оператор:</para>
+        <programlisting>CREATE TABLE abc(id SERIAL)
+PARTITION BY RANGE(id) INTERVAL (100);</programlisting>
+        <para>Вместо параметра <literal>INTERVAL</literal> вы можете указать, какие именно секции создавать, а также соответствующие табличные пространства:</para>
+        <programlisting>CREATE TABLE abc(id SERIAL)
+PARTITION BY RANGE(id)
+(
+    PARTITION abc_100 VALUES LESS THAN (100) TABLESPACE ts1,
+    PARTITION abc_200 VALUES LESS THAN (200) TABLESPACE ts2
+);</programlisting>
+        <para>Создавая таблицу, секционированную по хешу, вы можете либо указать, сколько секций создавать, либо явно задать секции и табличные пространства. Например, чтобы создать таблицу <literal>abc</literal> с тремя секциями, выполните:</para>
+        <programlisting>CREATE TABLE abc(id serial)
+PARTITION BY HASH (id) PARTITIONS (3);</programlisting>
+<para>Чтобы явно определить создаваемые секции, выполните следующий оператор:</para>
+        <programlisting>CREATE TABLE abc(id serial)
+PARTITION BY HASH (id)
+(
+    PARTITION abc_first  TABLESPACE ts1,
+    PARTITION abc_second TABLESPACE ts2
+);</programlisting>
+        <para>Вы также можете использовать предложение <literal>PARTITION BY</literal> с <acronym>SQL</acronym>-командой <command>ALTER TABLE</command> для секционирования ранее созданных таблиц. Например, чтобы разбить таблицу <literal>abc</literal> по хешу на три секции, выполните:</para>
+        <programlisting>ALTER TABLE abc PARTITION BY HASH (id) PARTITIONS (3);</programlisting>
+<para>Производя секционирование по диапазонам, укажите нижнюю границу первой секции и интервал разбиения, определив тем самым диапазон значений, которые попадут в одну секцию: <programlisting>ALTER TABLE abc PARTITION BY RANGE (id) START FROM (0)
+INTERVAL (2000);</programlisting> Значение <literal>START FROM</literal> должно быть не больше наименьшего значения, присутствующего в столбце разбиения. В противном случае <filename>pg_pathman</filename> выдаст соответствующую ошибку.</para>
+<para>Если важно не допустить остановки работы при секционировании существующих таблиц, вы можете использовать необязательный параметр <literal>CONCURRENTLY</literal>. В этом случае <filename>pg_pathman</filename> создаёт пустые секции, а затем переносит в них данные по 1000 строк. Например, чтобы разбить большую таблицу со значением <literal>INTERVAL</literal>, равным 50000, выполните: <programlisting>ALTER TABLE abc PARTITION BY RANGE (id) START FROM (0)
+INTERVAL (50000) CONCURRENTLY;</programlisting></para>
+<para>В уже секционированной таблице вы можете добавлять, удалять или изменять секции, применяя команду <command>ALTER TABLE</command> с предложениями, предназначенными для управления секциями. За подробностями обратитесь к <xref remap="3" linkend="sql-altertable"/>.</para>
+    </sect3>
+  </sect2>
+   <sect2 id="pg-pathman-examples">
+ <title>Примеры</title>
+         <sect3 id="common-tips">
+      <title>Общие рекомендации</title>
+      <itemizedlist>
+        <listitem>
+          <para>Так можно получить столбец <literal>partition</literal>, содержащий имена нижележащих секций, воспользовавшись системным атрибутом <literal>tableoid</literal>:</para>
+          <programlisting>SELECT tableoid::regclass AS partition, * FROM partitioned_table;</programlisting>
+        </listitem>
+        <listitem>
+          <para>Несмотря на то, что индексы в родительской таблице не очень полезны (так как предполагается, что она пуста), они выполняют роль прототипов для создания индексов в секциях. Для каждого индекса в родительской таблице <filename>pg_pathman</filename> создаёт подобный индекс в каждой секции.</para>
+        </listitem>
+        <listitem>
+          <para>Получить список всех текущих задач параллельного разбиения можно в представлении <structname>pathman_concurrent_part_tasks</structname>:</para>
+          <programlisting>SELECT * FROM pathman_concurrent_part_tasks;
+userid  | pid  | dbid  | relid | processed | status
+--------+------+-------+-------+-----------+---------
+user    | 7367 | 16384 | test  |    472000 | working
+(1 row)</programlisting>
+        </listitem>
+        <listitem>
+          <para>Представление <structname>pathman_partition_list</structname> в сочетании с <function>drop_range_partition()</function> может использоваться для удаления диапазонных секций более гибким образом по сравнению с обычным <command>DROP TABLE</command>:</para>
+          <programlisting>SELECT drop_range_partition(partition, false) /* перенос данных в родительскую таблицу */
+FROM pathman_partition_list
+WHERE parent = 'part_test'::regclass AND range_min::int &lt; 500;
+NOTICE:  1 rows copied from part_test_11
+NOTICE:  100 rows copied from part_test_1
+NOTICE:  100 rows copied from part_test_2
+drop_range_partition 
+----------------------
+dummy_test_11
+dummy_test_1
+dummy_test_2
+(3 rows)</programlisting>
+        </listitem>
+      </itemizedlist>
+    </sect3>
+    <sect3 id="hash-partitioning">
+      <title>Секционирование по хешу</title>
+      <para>Рассмотрим пример секционирования таблицы по хешу. Для начала создадим таблицу с целочисленным столбцом:</para>
+      <programlisting>CREATE TABLE items (
+id       SERIAL PRIMARY KEY,
+name     TEXT,
+code     BIGINT);
+
+INSERT INTO items (id, name, code)
+SELECT g, md5(g::text), random() * 100000
+FROM generate_series(1, 100000) as g;</programlisting>
+      <para>Теперь выполним функцию <function>create_hash_partitions()</function> с подходящими аргументами:</para>
+      <programlisting>SELECT create_hash_partitions('items', 'id', 100);</programlisting>
+      <para>Этот запрос создаст новые секции и переместит в них данные из родительской таблицы.</para>
+      <para>Пример запроса, выполняющего фильтрацию по ключу разбиения:</para>
+      <programlisting>SELECT * FROM items WHERE id = 1234;
+  id  |               name               | code
+------+----------------------------------+------
+ 1234 | 81dc9bdb52d04dc20036dbd8313ed055 | 1855
+(1 row)
+
+EXPLAIN SELECT * FROM items WHERE id = 1234;
+QUERY PLAN
+------------------------------------------------------------------------------------
+Append  (cost=0.28..8.29 rows=0 width=0)
+-&gt;  Index Scan using items_34_pkey on items_34  (cost=0.28..8.29 rows=0 width=0)
+Index Cond: (id = 1234)</programlisting>
+      <para>Заметьте, узел <literal>Append</literal> содержит только одно дочернее сканирование, соответствующее предложению <literal>WHERE</literal>.</para>
+      <important>
+        <para>Обратите внимание на тот факт, что <filename>pg_pathman</filename> исключает родительскую таблицу из плана запроса.</para>
+      </important>
+      <para>Чтобы обратиться к родительской таблице, используйте модификатор <literal>ONLY</literal>:</para>
+      <programlisting>EXPLAIN SELECT * FROM ONLY items;
+QUERY PLAN
+------------------------------------------------------
+Seq Scan on items  (cost=0.00..0.00 rows=1 width=45)</programlisting>
+    </sect3>
+    <sect3 id="range-partitioning">
+      <title>Секционирование по диапазонам</title>
+      <para>Рассмотрим пример секционирования по диапазонам. Давайте создадим таблицу, содержащую сообщения журнала:</para>
+      <programlisting>CREATE TABLE journal (
+id      SERIAL,
+dt      TIMESTAMP NOT NULL,
+level   INTEGER,
+msg     TEXT);
+
+-- подобный индекс будет также создан для каждой секции
+CREATE INDEX ON journal(dt);
+
+-- генерируются некоторые данные
+INSERT INTO journal (dt, level, msg)
+SELECT g, random() * 6, md5(g::text)
+FROM generate_series('2015-01-01'::date, '2015-12-31'::date, '1 minute') as g;</programlisting>
+      <para>Выполним функцию <function>create_range_partitions()</function>, чтобы создать секции, которые будут содержать данные за один день:</para>
+      <programlisting>SELECT create_range_partitions('journal', 'dt', '2015-01-01'::date, '1 day'::interval);</programlisting>
+      <para>Этот запрос создаст 364 секции и переместит в них данные из родительской таблицы.</para>
+      <para>Новые секции добавляются автоматически триггером INSERT, но это можно сделать и вручную, с помощью следующих функций:</para>
+      <programlisting>-- добавление новой секции с заданным диапазоном
+SELECT add_range_partition('journal', '2016-01-01'::date, '2016-01-07'::date);
+
+-- добавление новой секции с диапазоном по умолчанию
+SELECT append_range_partition('journal');</programlisting>
+      <para>Первая создаёт новую секцию с заданным диапазоном. Вторая создаёт новую секцию с диапазоном, заданным при первоначальном разбиении, и добавляет её в конец списка секций. Также можно присоединить существующую таблицу в качестве секции. Например, мы можем подключить таблицу архива (это может быть даже сторонняя таблица с другого сервера) с историческими данными:</para>
+      <programlisting>CREATE FOREIGN TABLE journal_archive (
+id      INTEGER NOT NULL,
+dt      TIMESTAMP NOT NULL,
+level   INTEGER,
+msg     TEXT)
+SERVER archive_server;
+
+SELECT attach_range_partition('journal', 'journal_archive', '2014-01-01'::date, '2015-01-01'::date);</programlisting>
+      <important>
+        <para>Присоединённая таблица должна содержать такие же столбцы, что и секционируемая, за исключением удалённых. Эти столбцы должны иметь те же типы, правила сортировки и характеристики NOT NULL, что и исходные.</para>
+      </important>
+      <para>Для слияния двух соседних секций используйте функцию <literal>merge_range_partitions()</literal>:</para>
+      <programlisting>SELECT merge_range_partitions('journal_archive', 'journal_1');</programlisting>
+      <para>Чтобы разделить секцию по значению, воспользуйтесь функцией <literal>split_range_partition()</literal>:</para>
+      <programlisting>SELECT split_range_partition('journal_366', '2016-01-03'::date);</programlisting>
+      <para>Чтобы отсоединить секцию, воспользуйтесь функцией <literal>detach_range_partition()</literal>:</para>
+      <programlisting>SELECT detach_range_partition('journal_archive');</programlisting>
+      <para>Пример запроса, выполняющего фильтрацию по ключу разбиения:</para>
+      <programlisting>SELECT * FROM journal WHERE dt &gt;= '2015-06-01' AND dt &lt; '2015-06-03';
+id      |         dt          | level |               msg
+--------+---------------------+-------+----------------------------------
+217441  | 2015-06-01 00:00:00 |     2 | 15053892d993ce19f580a128f87e3dbf
+217442  | 2015-06-01 00:01:00 |     1 | 3a7c46f18a952d62ce5418ac2056010c
+217443  | 2015-06-01 00:02:00 |     0 | 92c8de8f82faf0b139a3d99f2792311d
+...
+(2880 rows)
+
+EXPLAIN SELECT * FROM journal WHERE dt &gt;= '2015-06-01' AND dt &lt; '2015-06-03';
+QUERY PLAN
+------------------------------------------------------------------
+Append  (cost=0.00..58.80 rows=0 width=0)
+-&gt;  Seq Scan on journal_152  (cost=0.00..29.40 rows=0 width=0)
+-&gt;  Seq Scan on journal_153  (cost=0.00..29.40 rows=0 width=0)
+(3 rows)</programlisting>
+    </sect3>
+ </sect2>
+  <sect2 id="pg-pathman-internals">
+    <title>Внутреннее устройство</title>
+    <para>Расширение <filename>pg_pathman</filename> сохраняет конфигурацию разбиения в таблице <structname>pathman_config</structname>; каждая её строка содержит запись для одной секционированной таблицы (название отношения, столбец разбиения и тип секционирования). На этапе инициализации модуль <filename>pg_pathman</filename> кеширует некоторую информацию дочерних секций в общей памяти, а затем она может использоваться при построении плана. Когда начинает выполняться запрос <literal>SELECT</literal>, <filename>pg_pathman</filename> проходит по дереву условий в поиске выражений вида:</para>
+    <programlisting>VARIABLE OP CONST</programlisting>
+    <para>где <literal>VARIABLE</literal> — это ключ разбиения, <literal>OP</literal> — оператор сравнения (поддерживаются =, &lt;, &lt;=, &gt;, &gt;=), <literal>CONST</literal> — скалярное значение. Например:</para>
+    <programlisting>WHERE id = 150</programlisting>
+    <para>Затем, учитывая стратегию секционирования и оператор условия, <filename>pg_pathman</filename> ищет соответствующие секции и строит план.</para>
+    <sect3 id="pg-pathman-custom-plan-nodes">
+      <title>Дополнительные узлы плана</title>
+    <para><filename>pg_pathman</filename> предоставляет несколько <ulink url="https://wiki.postgresql.org/wiki/CustomScanAPI">нестандартных узлов плана</ulink>, позволяющих сократить время выполнения, а именно:</para>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para><literal>RuntimeAppend</literal> (переопределяет узел плана <literal>Append</literal>)</para>
+      </listitem>
+      <listitem>
+        <para><literal>RuntimeMergeAppend</literal> (переопределяет узел плана <literal>MergeAppend</literal>)</para>
+      </listitem>
+      <listitem>
+        <para><literal>PartitionFilter</literal> (выполняет роль триггеров INSERT)</para>
+      </listitem>
+    </itemizedlist>
+    <para><literal>PartitionFilter</literal> действует как <emphasis>прокси-узел</emphasis> для дочерних узлов INSERT, то есть он может перенаправлять выходные кортежи в соответствующие секции:</para>
+    <programlisting>EXPLAIN (COSTS OFF)
+INSERT INTO partitioned_table
+SELECT generate_series(1, 10), random();
+               QUERY PLAN
+-----------------------------------------
+ Insert on partitioned_table
+   -&gt;  Custom Scan (PartitionFilter)
+         -&gt;  Subquery Scan on "*SELECT*"
+               -&gt;  Result
+(4 rows)</programlisting>
+    <para><literal>RuntimeAppend</literal> и <literal>RuntimeMergeAppend</literal> имеют много общего: они оказываются полезными, когда условие WHERE принимает вид:</para>
+    <programlisting>VARIABLE OP PARAM</programlisting>
+    <para>Подобные выражения уже не могут быть оптимизированы во время планирования, так как значение параметра оказывается неизвестным до стадии выполнения. Решить эту проблему можно, включив <emphasis>процедуру анализа условия WHERE</emphasis> в первоначальный код узла <literal>Append</literal>, таким образом позволяя ему выбирать только нужные варианты сканирования из всего набора планируемых сканирований. Это по сути сводится к созданию нестандартного узла, способного выполнять такие проверки.</para>
+    <para>Есть по меньше мере несколько ситуаций, которые демонстрируют полезность таких узлов:</para>
+    <programlisting>/* создать таблицу, которую мы будем секционировать */
+CREATE TABLE partitioned_table(id INT NOT NULL, payload REAL);
+
+/* вставить произвольные данные */
+INSERT INTO partitioned_table
+SELECT generate_series(1, 1000), random();
+
+/* выполнить секционирование */
+SELECT create_hash_partitions('partitioned_table', 'id', 100);
+
+/* создать обычную таблицу */
+CREATE TABLE some_table AS SELECT generate_series(1, 100) AS VAL;
+    </programlisting>
+    <itemizedlist spacing="compact">
+      <listitem>
+        <para>
+          <emphasis role="strong"><literal>id = (select ... limit 1)</literal></emphasis>
+          <programlisting>EXPLAIN (COSTS OFF, ANALYZE) SELECT * FROM partitioned_table
+WHERE id = (SELECT * FROM some_table LIMIT 1);
+                                             QUERY PLAN
+----------------------------------------------------------------------------------------------------
+ Custom Scan (RuntimeAppend) (actual time=0.030..0.033 rows=1 loops=1)
+   InitPlan 1 (returns $0)
+     -&gt;  Limit (actual time=0.011..0.011 rows=1 loops=1)
+           -&gt;  Seq Scan on some_table (actual time=0.010..0.010 rows=1 loops=1)
+   -&gt;  Seq Scan on partitioned_table_70 partitioned_table (actual time=0.004..0.006 rows=1 loops=1)
+         Filter: (id = $0)
+         Rows Removed by Filter: 9
+ Planning time: 1.131 ms
+ Execution time: 0.075 ms
+(9 rows)
+
+/* отключить узел RuntimeAppend */
+SET pg_pathman.enable_runtimeappend = f;
+
+EXPLAIN (COSTS OFF, ANALYZE) SELECT * FROM partitioned_table
+WHERE id = (SELECT * FROM some_table LIMIT 1);
+                                    QUERY PLAN
+----------------------------------------------------------------------------------
+ Append (actual time=0.196..0.274 rows=1 loops=1)
+   InitPlan 1 (returns $0)
+     -&gt;  Limit (actual time=0.005..0.005 rows=1 loops=1)
+           -&gt;  Seq Scan on some_table (actual time=0.003..0.003 rows=1 loops=1)
+   -&gt;  Seq Scan on partitioned_table_0 (actual time=0.014..0.014 rows=0 loops=1)
+         Filter: (id = $0)
+         Rows Removed by Filter: 6
+   -&gt;  Seq Scan on partitioned_table_1 (actual time=0.003..0.003 rows=0 loops=1)
+         Filter: (id = $0)
+         Rows Removed by Filter: 5
+         ... /* more plans follow */
+ Planning time: 1.140 ms
+ Execution time: 0.855 ms
+(306 rows)
+          </programlisting>
+        </para>
+      </listitem>
+      <listitem>
+        <para>
+          <emphasis role="strong"><literal>id = ANY (select ...)</literal></emphasis>
+          <programlisting>EXPLAIN (COSTS OFF, ANALYZE) SELECT * FROM partitioned_table
+WHERE id = any (SELECT * FROM some_table limit 4);
+                                                QUERY PLAN
+-----------------------------------------------------------------------------------------------------------
+ Nested Loop (actual time=0.025..0.060 rows=4 loops=1)
+   -&gt;  Limit (actual time=0.009..0.011 rows=4 loops=1)
+         -&gt;  Seq Scan on some_table (actual time=0.008..0.010 rows=4 loops=1)
+   -&gt;  Custom Scan (RuntimeAppend) (actual time=0.002..0.004 rows=1 loops=4)
+         -&gt;  Seq Scan on partitioned_table_70 partitioned_table (actual time=0.001..0.001 rows=10 loops=1)
+         -&gt;  Seq Scan on partitioned_table_26 partitioned_table (actual time=0.002..0.003 rows=9 loops=1)
+         -&gt;  Seq Scan on partitioned_table_27 partitioned_table (actual time=0.001..0.002 rows=20 loops=1)
+         -&gt;  Seq Scan on partitioned_table_63 partitioned_table (actual time=0.001..0.002 rows=9 loops=1)
+ Planning time: 0.771 ms
+ Execution time: 0.101 ms
+(10 rows)
+
+/* отключить узел RuntimeAppend */
+SET pg_pathman.enable_runtimeappend = f;
+
+EXPLAIN (COSTS OFF, ANALYZE) SELECT * FROM partitioned_table
+WHERE id = any (SELECT * FROM some_table limit 4);
+                                       QUERY PLAN
+-----------------------------------------------------------------------------------------
+ Nested Loop Semi Join (actual time=0.531..1.526 rows=4 loops=1)
+   Join Filter: (partitioned_table.id = some_table.val)
+   Rows Removed by Join Filter: 3990
+   -&gt;  Append (actual time=0.190..0.470 rows=1000 loops=1)
+         -&gt;  Seq Scan on partitioned_table (actual time=0.187..0.187 rows=0 loops=1)
+         -&gt;  Seq Scan on partitioned_table_0 (actual time=0.002..0.004 rows=6 loops=1)
+         -&gt;  Seq Scan on partitioned_table_1 (actual time=0.001..0.001 rows=5 loops=1)
+         -&gt;  Seq Scan on partitioned_table_2 (actual time=0.002..0.004 rows=14 loops=1)
+... /* 96 scans follow */
+   -&gt;  Materialize (actual time=0.000..0.000 rows=4 loops=1000)
+         -&gt;  Limit (actual time=0.005..0.006 rows=4 loops=1)
+               -&gt;  Seq Scan on some_table (actual time=0.003..0.004 rows=4 loops=1)
+ Planning time: 2.169 ms
+ Execution time: 2.059 ms
+(110 rows)
+          </programlisting>
+        </para>
+      </listitem>
+      <listitem>
+        <para><emphasis role="strong"><literal>NestLoop</literal> (вложенный цикл) с секционированной таблицей</emphasis>, которая опущена здесь, так как была показана выше.</para>
+          </listitem>
+    </itemizedlist>
+    <para>Узнать больше о нестандартных узлах плана вы можете в <ulink url="http://akorotkov.github.io/blog/2016/06/15/pg_pathman-runtime-append/">блоге</ulink> Александра Короткова.</para>
+    </sect3>
+  </sect2>
+  <sect2 id="pg-pathman-reference">
+    <title>Справка</title>
+    <sect3 id="pg-pathman-guc-variables">
+    <title>Переменные GUC</title>
+<para>Для включения/отключения модуля <filename>pg_pathman</filename> и отдельных узлов плана предназначены несколько переменных <link linkend="config-setting">GUC</link>:</para>
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para><literal>pg_pathman.enable</literal> &mdash; включает (отключает) модуль <filename>pg_pathman</filename>.</para>
+          <para>По умолчанию: <literal>on</literal> (вкл.)</para>
+        </listitem>
+        <listitem>
+          <para><literal>pg_pathman.enable_runtimeappend</literal> &mdash; включает нестандартный узел <literal>RuntimeAppend</literal>.</para>
+          <para>По умолчанию: <literal>on</literal> (вкл.)</para>
+        </listitem>
+        <listitem>
+          <para><literal>pg_pathman.enable_runtimemergeappend</literal> &mdash; включает нестандартный узел <literal>RuntimeMergeAppend</literal>.</para>
+          <para>По умолчанию: <literal>on</literal> (вкл.)</para>
+        </listitem>
+        <listitem>
+          <para><literal>pg_pathman.enable_partitionfilter</literal> &mdash; включает нестандартный узел <literal>PartitionFilter</literal>.</para>
+          <para>По умолчанию: <literal>on</literal> (вкл.)</para>
+        </listitem>
+        <listitem>
+          <para><literal>pg_pathman.enable_auto_partition</literal> &mdash; включает автоматическое создание секций (в рамках сеанса).</para>
+          <para>По умолчанию: <literal>on</literal> (вкл.)</para>
+        </listitem>
+        <listitem>
+          <para><literal>pg_pathman.enable_bounds_cache</literal> &mdash; включает/отключает кеш границ.</para>
+          <para>По умолчанию: <literal>on</literal> (вкл.)</para>
+        </listitem>
+        <listitem>
+          <para><literal>pg_pathman.insert_into_fdw</literal> &mdash; разрешает использовать операции <command>INSERT</command> с различными обёртками сторонних данных. Возможные значения: <literal>disabled</literal> (такое использование запрещено), <literal>postgres</literal> (разрешено для обёртки postgres) и <literal>any_fdw</literal> (разрешено для любых обёрток).</para>
+          <para>По умолчанию: <literal>postgres</literal></para>
+        </listitem>
+        <listitem>
+          <para><literal>pg_pathman.override_copy</literal> &mdash; включает/отключает перехват оператора <command>COPY</command>.</para>
+          <para>По умолчанию: <literal>on</literal> (вкл.)</para>
+        </listitem>
+      </itemizedlist>
+    </sect3>
+      <sect3 id="views-and-tables">
+    <title>Представления и таблицы</title>
+    <sect4 id="pathman-config-main-config-storage">
+      <title><literal>pathman_config</literal></title>
+      <para>В этой таблице хранится список секционированных таблиц. Это основное хранилище конфигурации.</para>
+      <programlisting>CREATE TABLE IF NOT EXISTS pathman_config (
+    partrel         REGCLASS NOT NULL PRIMARY KEY,
+    attname         TEXT NOT NULL,
+    parttype        INTEGER NOT NULL,
+    range_interval  TEXT);</programlisting>
+      
+    </sect4>
+    <sect4 id="pathman-config-params-optional-parameters">
+      <title><literal>pathman_config_params</literal></title>
+      <para>В этой таблице хранятся дополнительные параметры, переопределяющие стандартное поведение <filename>pg_pathman</filename>.</para>
+      <programlisting>CREATE TABLE IF NOT EXISTS pathman_config_params (
+    partrel        REGCLASS NOT NULL PRIMARY KEY,
+    enable_parent  BOOLEAN NOT NULL DEFAULT TRUE,
+    auto           BOOLEAN NOT NULL DEFAULT TRUE,
+    init_callback  REGPROCEDURE NOT NULL DEFAULT 0,
+    spawn_using_bgw BOOLEAN NOT NULL DEFAULT FALSE);</programlisting>
+    </sect4>
+    <sect4 id="pathman-concurrent-part-tasks-currently-running-partitioning-workers">
+      <title><literal>pathman_concurrent_part_tasks</literal></title>
+      <para>В этом представлении показываются все работающие в данный момент задачи параллельного разбиения.</para>
+      <programlisting>-- вспомогательная функция, возвращающая множество
+CREATE OR REPLACE FUNCTION show_concurrent_part_tasks()
+RETURNS TABLE (
+    userid     REGROLE,
+    pid        INT,
+    dbid       OID,
+    relid      REGCLASS,
+    processed  INT,
+    status     TEXT)
+AS 'pg_pathman', 'show_concurrent_part_tasks_internal'
+LANGUAGE C STRICT;
+
+CREATE OR REPLACE VIEW pathman_concurrent_part_tasks
+AS SELECT * FROM show_concurrent_part_tasks();</programlisting>
+    </sect4>
+    <sect4 id="pathman-partition-list-list-of-all-existing-partitions">
+      <title><literal>pathman_partition_list</literal></title>
+      <para>В этом представлении показываются все существующие разделы, а также их родители и границы диапазонов (NULL для хеш-секций).</para>
+      <programlisting>-- вспомогательная функция, возвращающая множество
+CREATE OR REPLACE FUNCTION show_partition_list()
+RETURNS TABLE (
+    parent     REGCLASS,
+    partition  REGCLASS,
+    parttype   INT4,
+    partattr   TEXT,
+    range_min  TEXT,
+    range_max  TEXT)
+AS 'pg_pathman', 'show_partition_list_internal'
+LANGUAGE C STRICT;
+
+CREATE OR REPLACE VIEW pathman_partition_list
+AS SELECT * FROM show_partition_list();</programlisting>
+    </sect4>
+  </sect3>
+    <sect3><title>Функции</title>
+    <sect4 id="pg-pathman-partition-creation">
+      <title>Функции для создания секций</title>
+      <programlisting>create_hash_partitions(relation         REGCLASS,
+                       attribute        TEXT,
+                       partitions_count INTEGER,
+                       partition_data   BOOLEAN DEFAULT TRUE,
+                       partition_names  TEXT[] DEFAULT NULL,
+                       tablespaces      TEXT[] DEFAULT NULL)</programlisting>
+      <para>Выполняет секционирование по хешу для таблицы <literal>relation</literal> по целочисленному ключу <literal>attribute</literal>. Параметр <literal>partitions_count</literal> задаёт число создаваемых секций; он не может быть изменён впоследствии. Если параметр <literal>partition_data</literal> равен <literal>true</literal>, все данные будут автоматически переноситься из родительской таблицы в секции. Заметьте, что перенос данных может занять некоторое время, и таблица будет заблокирована до завершения транзакции. Если вам нужно перенести данные без блокировки, воспользуйтесь функцией <function>partition_table_concurrently()</function>. Для каждой секции вызывается обработчик создания секции, если он был установлен заранее (см. <function>set_init_callback()</function>).</para>
+      <programlisting>create_range_partitions(relation       REGCLASS,
+                        expression     TEXT,
+                        start_value    ANYELEMENT,
+                        p_interval     ANYELEMENT,
+                        p_count        INTEGER DEFAULT NULL,
+                        partition_data BOOLEAN DEFAULT TRUE)
+
+create_range_partitions(relation       REGCLASS,
+                        expression     TEXT,
+                        start_value    ANYELEMENT,
+                        p_interval     INTERVAL,
+                        p_count        INTEGER DEFAULT NULL,
+                        partition_data BOOLEAN DEFAULT TRUE)
+
+create_range_partitions(relation        REGCLASS,
+                        expression      TEXT,
+                        bounds          ANYARRAY,
+                        partition_names TEXT[] DEFAULT NULL,
+                        tablespaces     TEXT[] DEFAULT NULL,
+                        partition_data  BOOLEAN DEFAULT TRUE)</programlisting>
+      <para>Выполняет секционирование по диапазонам таблицы <literal>relation</literal> по ключу разбиения <literal>expression</literal>. Аргумент <literal>start_value</literal> задаёт начальное значение, <literal>p_interval</literal> задаёт диапазон по умолчанию для автоматически создаваемых секций или секций, создаваемых функциями <function>append_range_partition()</function> или <function>prepend_range_partition()</function>. Если в <literal>p_interval</literal> передаётся <literal>NULL</literal>, автоматическое создание секций отключается. В <literal>p_count</literal> задаётся число заранее создаваемых секций (если <literal>p_count</literal> не задано, <filename>pg_pathman</filename> пытается определить число секций по значению <literal>expression</literal>). Массив <literal>bounds</literal> определяет границы секций, которые должны быть созданы. Этот массив можно построить, воспользовавшись функцией <function>generate_range_bounds()</function>. Для каждой секции вызывается обработчик создания секции, если он был установлен заранее.</para>
+    </sect4>
+    <sect4 id="pg-pathman-data-migration">
+      <title>Перенос данных</title>
+      <programlisting>partition_table_concurrently(relation REGCLASS)</programlisting>
+      <para>Запускает фоновый рабочий процесс для переноса данных из родительской таблицы в секции. Этот рабочий процесс копирует данные в коротких транзакциях небольшими блоками (до 10000 строк в транзакции) и поэтому не оказывает значительного влияния на работу пользователей.</para>
+      <programlisting>stop_concurrent_part_task(relation REGCLASS)</programlisting>
+      <para>Останавливает фоновый рабочий процесс, выполняющий задачу параллельного секционирования. Замечание: рабочий процесс завершается после того, как заканчивает перемещение текущей порции данных.</para>
+    </sect4>
+    <sect4 id="pg-pathman-triggers">
+      <title>Триггеры</title>
+      <programlisting>create_hash_update_trigger(parent REGCLASS)</programlisting>
+      <para>Создаёт триггер на <command>UPDATE</command> для секций с разбиением по хешу. По умолчанию триггер на <command>UPDATE</command> не создаётся по причине связанных с этим издержек. Но он может быть полезен, когда значение ключевого атрибута меняется.</para>
+      <programlisting>create_range_update_trigger(parent REGCLASS)</programlisting>
+      <para>Аналогично предыдущей функции, но для секционирования по хешу.</para>
+    </sect4>
+    <sect4 id="pg-pathman-partition-management">
+      <title>Функции для управления секциями</title>
+      <programlisting>      
+replace_hash_partition(old_partition       REGCLASS,
+                       new_partition       REGCLASS,
+                       lock_parent         BOOL DEFAULT TRUE)</programlisting>
+      <para>Заменяет заданную секцию таблицы, секционированной по хешу, другой таблицей. Если <literal>lock_parent</literal> имеет значение <literal>true</literal>, операции <command>INSERT</command>/<command>UPDATE</command>/<command>ALTER TABLE</command> в родительской таблице не допускаются.</para>
+
+      <programlisting>split_range_partition(partition      REGCLASS,
+                      value          ANYELEMENT,
+                      partition_name TEXT DEFAULT NULL)</programlisting>
+      <para>Разбивает диапазонную секцию <literal>partition</literal> на две по значению <literal>value</literal>. Для создаваемой секции вызывается обработчик создания секции, если он задан.</para>
+      <programlisting>merge_range_partitions(partition1 REGCLASS, partition2 REGCLASS)</programlisting>
+      <para>Объединяет две смежные диапазонные секции. Данные из <literal>partition2</literal> копируются в <literal>partition1</literal>, после чего <literal>partition2</literal> удаляется.</para>
+      <programlisting>merge_range_partitions(partitions REGCLASS[])
+      </programlisting>
+      <para>Объединяет несколько смежных диапазонных секций (они должны быть заданы в порядке возрастания или убывания). Все данные будут собраны в первой секции.</para>
+      <programlisting>append_range_partition(p_relation     REGCLASS,
+                       partition_name TEXT DEFAULT NULL,
+                       tablespace     TEXT DEFAULT NULL)</programlisting>
+      <para>Добавляет новую диапазонную секцию с интервалом <literal>pathman_config.range_interval</literal> в конец списка секций.</para>
+      <programlisting>prepend_range_partition(p_relation     REGCLASS,
+                        partition_name TEXT DEFAULT NULL,
+                        tablespace     TEXT DEFAULT NULL)</programlisting>
+      <para>Добавляет новую диапазонную секцию с интервалом <literal>pathman_config.range_interval</literal> в начало списка секций.</para>
+      <programlisting>add_range_partition(relation       REGCLASS,
+                    start_value    ANYELEMENT,
+                    end_value      ANYELEMENT,
+                    partition_name TEXT DEFAULT NULL,
+                    tablespace     TEXT DEFAULT NULL)</programlisting>
+      <para>Добавляет новую диапазонную секцию для таблицы <literal>relation</literal> с заданными границами диапазона. Если в качестве <literal>start_value</literal> или <literal>end_value</literal> передаётся NULL, соответствующая граница диапазона будет бесконечной.</para>
+      <programlisting>drop_range_partition(partition TEXT, delete_data BOOLEAN DEFAULT TRUE)</programlisting>
+      <para>Удаляет диапазонную секцию, а также все содержащиеся в ней данные, если установлен флаг <literal>delete_data</literal>.</para>
+      <programlisting>attach_range_partition(relation    REGCLASS,
+                       partition   REGCLASS,
+                       start_value ANYELEMENT,
+                       end_value   ANYELEMENT)</programlisting>
+      <para>Присоединяет секцию к существующему отношению с секционированием по диапазонам. Структура присоединяемой таблицы должна в точности повторять структуру родительской, включая удалённые столбцы. Если установлен, вызывается обработчик создания секции (см. <literal>pathman_config_params</literal>).</para>
+      <programlisting>detach_range_partition(partition REGCLASS)</programlisting>
+      <para>Отсоединяет секцию от существующего отношения с секционированием по диапазонам.</para>
+      <programlisting>disable_pathman_for(relation TEXT)</programlisting>
+      <para>Полностью отключает механизм секционирования <filename>pg_pathman</filename> для заданной родительской таблицы и удаляет триггер на добавление, если он существует. При этом все секции и данные остаются без изменений.</para>
+      <programlisting>drop_partitions(parent      REGCLASS,
+                delete_data BOOLEAN DEFAULT FALSE)</programlisting>
+      <para>Удаляет секции таблицы <literal>parent</literal> (как сторонние, так и локальные). Если параметр <literal>delete_data</literal> равен <literal>false</literal> (это значение по умолчанию), данные сначала копируются в родительскую таблицу.</para>
+    </sect4>
+    <sect4 id="pg-pathman-additional-parameters">
+      <title>Дополнительные параметры</title>
+      <programlisting>set_interval(relation REGCLASS, value ANYELEMENT)</programlisting>
+      <para>Изменяет интервал для таблицы, секционированной по диапазонам. Заметьте, что этот интервал должен быть неотрицательными и он не должен быть пустым, то есть его значение должно быть больше нуля для числовых типов, не меньше 1 микросекунды для типа <type>timestamp</type> и не меньше 1 дня для типа <type>date</type>.</para>      
+      <programlisting>set_enable_parent(relation REGCLASS, value BOOLEAN)</programlisting>
+      <para>Включает/исключает родительскую таблицу в план запроса. В оригинальном планировщике &productname; родительская таблица всегда включается в план запроса, даже если она пуста, что может повлечь дополнительные издержки. Вы можете исключить родительскую таблицу из рассмотрения, если не собираетесь никогда хранить в ней какие-либо данные. Значение по умолчанию зависит от параметра <literal>partition_data</literal>, заданного при изначальном создании секций (см. функции <literal>create_range_partitions()</literal> или <literal>create_partitions_from_range()</literal>). Если параметр <literal>partition_data</literal> имел значение <literal>true</literal>, значит все данные уже были перенесены в секции, и родительская таблица отключается. В противном случае она включена.</para>
+      <programlisting>set_auto(relation REGCLASS, value BOOLEAN)</programlisting>
+      <para>Включает/отключает автоматическое создание секций (только для секционирования по диапазонам). По умолчанию этот режим включён.</para>
+      <programlisting>set_init_callback(relation REGCLASS, callback REGPROC DEFAULT 0)</programlisting>
+      <para>Устанавливает обработчик создания секции, который будет вызываться для каждой присоединяемой или создаваемой секции (по диапазонам или по хешу). Обработчик должен иметь следующую сигнатуру: <literal>part_init_callback(args JSONB) RETURNS VOID</literal>. В параметре <literal>arg</literal> передаётся набор полей, в зависимости от типа секционирования:</para>
+      <programlisting>/* Таблица abc с секционированием по диапазонам (потомок abc_4) */
+{
+    "parent":    "abc",
+    "parttype":  "2",
+    "partition": "abc_4",
+    "range_max": "401",
+    "range_min": "301"
+}
+
+/* Таблица abc с секционированием по хешу (потомок abc_0) */
+{
+    "parent":    "abc",
+    "parttype":  "1",
+    "partition": "abc_0"
+}
+      </programlisting>
+      <programlisting>set_spawn_using_bgw(relation REGCLASS, value BOOLEAN)
+      </programlisting>
+      <para>Включает использование SpawnPartitionsWorker для создания новых секций в отдельной транзакции в случае добавления данных за пределами диапазона разбиения.</para>
+<programlisting>create_naming_sequence(relation REGCLASS)
+      </programlisting>
+      <para>Включает автоматическое именование секций для заданной таблицы <literal>relation</literal>. Эту функцию необходимо использовать при разбиении таблицы по составному ключу.</para>
+<programlisting>add_to_pathman_config(relation         REGCLASS,
+                      expression       TEXT,
+                      range_interval   TEXT)
+add_to_pathman_config(relation        REGCLASS,
+                      expression      TEXT)
+      </programlisting>
+      <para>Регистрирует указанную таблицу <literal>relation</literal> в <filename>pg_pathman</filename> для выполнения секционирования по заданному выражению (<literal>expression</literal>). Для разбиения по диапазонам аргумент <literal>range_interval</literal> является обязательным. Вы можете передать в нём <literal>NULL</literal>, если планируете добавлять секции вручную.</para>
+<programlisting>generate_range_bounds(p_start     ANYELEMENT,
+                      p_interval  INTERVAL,
+                      p_count     INTEGER)
+
+generate_range_bounds(p_start     ANYELEMENT,
+                      p_interval  ANYELEMENT,
+                      p_count     INTEGER)</programlisting>
+      <para>Строит массив <literal>bounds</literal> с границами секций, которые должны быть созданы. Этот массив можно передать в качестве аргумента функции <function>create_range_partitions()</function>.</para>
+    </sect4>
+    </sect3>
+  </sect2>
+    <sect2 id="authors">
+    <title>Авторы</title>
+     <itemizedlist spacing="compact">
+      <listitem>
+       <para>Ильдар Мусин <email>i.musin@postgrespro.ru</email>, Postgres Professional, Россия</para>
+      </listitem>
+      <listitem>
+       <para>Александр Коротков <email>a.korotkov@postgrespro.ru</email>, Postgres Professional, Россия</para>
+      </listitem>
+      <listitem>
+       <para>Дмитрий Иванов <email>d.ivanov@postgrespro.ru</email>, Postgres Professional, Россия</para>
+      </listitem>
+     </itemizedlist>
+  </sect2>
+</sect1>

@@ -1,0 +1,80 @@
+<!--
+doc/src/xml/ref/drop_user_mapping.xml
+&productname; documentation
+-->
+
+<refentry id="sql-dropusermapping">
+ <indexterm zone="sql-dropusermapping"><primary>DROP USER MAPPING</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP USER MAPPING</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP USER MAPPING</refname>
+  <refpurpose>удалить сопоставление пользователя для стороннего сервера</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP USER MAPPING [ IF EXISTS ] FOR { <replaceable class="parameter">имя_пользователя</replaceable> | USER | CURRENT_USER | PUBLIC } SERVER <replaceable class="parameter">имя_сервера</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP USER MAPPING</command> удаляет существующее сопоставление пользователя для стороннего сервера.</para>
+
+  <para>Владелец стороннего сервера может удалить заданные для этого сервера сопоставления любых пользователей. Кроме того, обычный пользователь может удалить сопоставление для собственного имени, если он имеет право <literal>USAGE</literal> для сервера.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если сопоставление не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_пользователя</replaceable></term>
+    <listitem>
+     <para>Имя пользователя для сопоставления. Значения <literal>CURRENT_USER</literal> и <literal>USER</literal> соответствуют имени текущего пользователя. Значение <literal>PUBLIC</literal> соответствует именам всех текущих и будущих пользователей системы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_сервера</replaceable></term>
+    <listitem>
+     <para>Имя сервера, для которого меняется сопоставление пользователей.</para>
+    </listitem>
+   </varlistentry>
+    </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление сопоставления пользователя <literal>bob</literal> для сервера <literal>foo</literal>, если оно существует: <programlisting>DROP USER MAPPING IF EXISTS FOR bob SERVER foo;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>DROP USER MAPPING</command> соответствует стандарту ISO/IEC 9075-9 (SQL/MED). Предложение <literal>IF EXISTS</literal> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createusermapping"/></member>
+   <member><xref linkend="sql-alterusermapping"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

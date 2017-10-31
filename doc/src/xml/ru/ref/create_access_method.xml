@@ -1,0 +1,85 @@
+<!--
+doc/src/xml/ref/create_access_method.xml
+&productname; documentation
+-->
+
+<refentry id="sql-create-access-method">
+ <indexterm zone="sql-create-access-method"><primary>CREATE ACCESS METHOD</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE ACCESS METHOD</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE ACCESS METHOD</refname>
+  <refpurpose>создать новый метод доступа</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE ACCESS METHOD <replaceable class="parameter">имя</replaceable>
+    TYPE <replaceable class="parameter">тип_метода_доступа</replaceable>
+    HANDLER <replaceable class="parameter">функция_обработчик</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Команда <command>CREATE ACCESS METHOD</command> создаёт новый метод доступа.</para>
+
+  <para>Имя метода доступа должно быть уникальным в базе данных.</para>
+
+  <para>Определять новые методы доступа могут только суперпользователи.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя создаваемого метода доступа.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_метода_доступа</replaceable></term>
+    <listitem>
+     <para>Это предложение задаёт тип создаваемого метода доступа. В настоящее время поддерживается только <literal>INDEX</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">функция_обработчик</replaceable></term>
+    <listitem>
+     <para>В аргументе <replaceable class="parameter">функция_обработчик</replaceable> указывается имя (возможно дополненное схемой) ранее зарегистрированной функции, представляющей метод доступа. Функция-обработчик должна принимать один аргумент типа <type>internal</type>, а её тип возврата зависит от типа метода доступа; для методов доступа типа <literal>INDEX</literal> это должен быть <type>index_am_handler</type>. Также от типа метода доступа зависит API уровня C, который должна реализовывать эта функция-обработчик. API методов доступа индексов описан в <xref remap="6" linkend="indexam"/>.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Создание метода доступа индекса <literal>heptree</literal> с функцией-обработчиком <literal>heptree_handler</literal>: <programlisting>CREATE ACCESS METHOD heptree TYPE INDEX HANDLER heptree_handler;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>CREATE ACCESS METHOD</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-drop-access-method"/></member>
+   <member><xref linkend="sql-createopclass"/></member>
+   <member><xref linkend="sql-createopfamily"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

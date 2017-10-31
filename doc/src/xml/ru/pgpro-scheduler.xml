@@ -1,0 +1,1467 @@
+<!-- doc/src/xml/pgpro-scheduler.xml -->
+
+<sect1 id="pgpro-scheduler" xreflabel="pgpro_scheduler">
+  <title>pgpro_scheduler</title>
+
+  <indexterm zone="pgpro-scheduler"><primary>pgpro_scheduler</primary></indexterm>
+  <para><filename>pgpro_scheduler</filename> — это встроенное в <productname>&productname;</productname> расширение, позволяющее планировать и контролировать задания, а также управлять их выполнением в базе данных <productname>&productname;</productname>. С <filename>pgpro_scheduler</filename> вы можете:</para>
+  <itemizedlist>
+    <listitem>
+      <para>Задавать сложные расписания в виде объектов <type>jsonb</type> или строк <type>crontab</type>.</para>
+    </listitem>
+    <listitem>
+      <para>Динамически вычислять время следующего запуска для повторяющихся заданий.</para>
+    </listitem>
+    <listitem>
+      <para>Выполнять <acronym>SQL</acronym>-команды задания в одной или в нескольких последовательных транзакциях, если требуется.</para></listitem>
+      <listitem><para>Назначать задания для немедленного или отложенного однократного выполнения одновременно с обычными планируемыми заданиями.</para>
+    </listitem>
+  </itemizedlist>
+  <para>По сравнению с внешними планировщиками <filename>pgpro_scheduler</filename> имеет следующие преимущества:</para>
+  <itemizedlist>
+    <listitem>
+      <para>Любой пользователь может планировать задания независимо.</para>
+    </listitem>
+    <listitem>
+      <para>Планированием заданий можно управлять «на лету», не перезапуская базу данных.</para>
+    </listitem>
+    <listitem>
+      <para><filename>pgpro_scheduler</filename> отличается очень лёгкой реализацией, так как для планирования и контроля заданий, а также для управления ими он использует фоновые рабочие процессы. И при этом <filename>pgpro_scheduler</filename> не задействует никакие клиентские подключения.</para>
+    </listitem>
+    <listitem>
+      <para>Для большей стабильности в каждой базе данных имеется собственный руководящий планировщик, а каждое запланированное задание выполняется в отдельном рабочем процессе.</para>
+    </listitem>
+  </itemizedlist>
+
+  <sect2 id="pgpro-scheduler-installation">
+    <title>Установка и подготовка</title>
+      <para>Расширение <filename>pgpro_scheduler</filename> входит в состав <productname>&productname;</productname>.</para>
+    <para>Установив <productname>&productname;</productname>, выполните следующие действия, чтобы подготовить <filename>pgpro_scheduler</filename> к работе:</para> 
+     <orderedlist>
+      <listitem>
+        <para>Добавьте <filename>pgpro_scheduler</filename> в переменную <varname>shared_preload_libraries</varname> в файле <filename>postgresql.conf</filename>: <programlisting>shared_preload_libraries = 'pgpro_scheduler'</programlisting></para>
+      </listitem>
+      <listitem>
+        <para>Создайте расширение <filename>pgpro_scheduler</filename>, выполнив следующий запрос: <programlisting>CREATE EXTENSION pgpro_scheduler;</programlisting> Расширение <filename>pgpro_scheduler</filename> необходимо создать в каждой базе данных, где вы планируете его использовать.</para>
+      </listitem>
+    </orderedlist>
+    <para>Завершив установку и подготовку, настройте <filename>pgpro_scheduler</filename> в вашей базе данных.</para>
+  </sect2>
+
+  <sect2 id="pgpro-scheduler-configuration">
+   <title>Конфигурирование</title>
+          <para>Для настройки <filename>pgpro_scheduler</filename> необходимо иметь права суперпользователя.</para>
+     <para>Чтобы настроить <filename>pgpro_scheduler</filename>, измените следующие параметры в файле <filename>postgresql.conf</filename>:</para>
+        <orderedlist>
+      <listitem>
+        <para>Включите <filename>pgpro_scheduler</filename> в вашей системе. <programlisting><varname>schedule.enabled</varname> = <literal>on</literal></programlisting></para>
+      </listitem>
+      <listitem>
+        <para>Укажите имена баз данных, для которых вам нужно будет настраивать задания, через запятую: <programlisting><varname>schedule.database</varname> = '<replaceable>база1</replaceable>,<replaceable>база2</replaceable>'</programlisting> Это можно не делать, если <filename>pgpro_scheduler</filename> используется в кластере <filename>multimaster</filename>.</para>
+      </listitem>
+      <listitem>
+        <para>Для ограничения рабочей нагрузки в вашей системе задайте максимальное число рабочих процессов, которые могут выполняться одновременно в каждой базе данных:</para>
+        <programlisting><varname>schedule.max_workers</varname> = 5</programlisting>
+
+      </listitem>
+      <listitem><para>Дополнительно можно задать число рабочих процессов, доступных для одного выполнения задания:</para>
+      <programlisting><varname>schedule.max_parallel_workers</varname> = 3</programlisting>
+<para>По умолчанию для одноразовых заданий выделяются два процесса. Они не учитываются в ограничении <varname>schedule.max_workers</varname>. Таким образом, одноразовые задания могут выполняться параллельно с заданиями, планируемыми по графику, даже если все процессы в количестве <varname>schedule.max_workers</varname> заняты.</para>
+      </listitem>
+      <listitem>
+        <para>Выполните <function>pg_reload_conf()</function>, чтобы изменения вступили в силу:</para>
+        <programlisting>SELECT <function>pg_reload_conf()</function>;</programlisting>
+      </listitem>
+    </orderedlist>
+        <important>
+        <para>Модифицируя переменную <varname>schedule.max_workers</varname>, обязательно оставьте достаточное количество рабочих процессов для остальной системы, так как эти процессы могут требоваться и другим подсистемам. Значение <varname>schedule.max_workers</varname> не может превышать общее число рабочих процессов, установленное переменной <varname>max_worker_processes</varname> для СУБД <productname>&productname;</productname>.</para>
+      <para>Расширение <filename>pgpro_scheduler</filename> запускает отдельные рабочие процессы для системы, для каждой базы данных и для каждого выполняемого задания. Например, если вы работаете с двумя базами данных и установили максимальное число рабочих процессов и параллельных процессов, равным 5 и 3, соответственно, <filename>pgpro_scheduler</filename> может использовать до 19 процессов максимум: один процесс, руководящий всей системой, два процесса, контролирующих две базы данных, и в каждой базе ещё по 5 рабочих процессов для планируемых и по 3 для одноразовых заданий. Если все рабочие процессы в этом количестве окажутся заняты, задания будут ожидать освобождения рабочего процесса. Планируемые и одноразовые задания помещаются в отдельные очереди.</para>
+      <para>Если потребуется, вы можете изменить число рабочих процессов позже. На уже запущенные процессы это не влияет.</para></important>
+
+      <para>Поведение <filename>pgpro_scheduler</filename> можно также динамически настраивать из командной строки. Данный пример показывает, как можно установить различное число рабочих процессов для разных баз данных:</para>
+
+ <programlisting>ALTER SYSTEM SET <varname>schedule.enabled</varname> = <literal>on</literal>;
+ALTER SYSTEM SET <varname>schedule.database</varname> = '<replaceable>база1</replaceable>,<replaceable>база2</replaceable>';
+ALTER DATABASE <replaceable>database1</replaceable> SET <varname>schedule.max_workers</varname> = 5;
+ALTER DATABASE <replaceable>database2</replaceable> SET <varname>schedule.max_workers</varname> = 3;
+ALTER SYSTEM SET <varname>schedule.max_parallel_workers</varname> = 3;
+SELECT <function>pg_reload_conf()</function>;</programlisting>
+    <para>Когда расширение <filename>pgpro_scheduler</filename> будет настроено, можно будет запускать планируемые задания.</para>
+
+
+    <para>
+      <emphasis role="strong">См. также</emphasis>
+    </para>
+    <para><xref linkend="pgpro-scheduler-guc-variables"/>
+    </para>
+  </sect2>
+   <sect2 id="pgpro-scheduler-usage">
+   <title>Использование</title>
+  <sect3 id="pgpro-scheduler-creating-scheduled-jobs">
+        <title>Создание планируемых заданий</title>
+      <para>Чтобы создать и запланировать задание, вызовите функцию <function>create_job()</function>, которая принимает параметры планирования в виде объекта <type>jsonb</type>: <programlisting>
+<function>schedule.create_job(<parameter>options</parameter> <type>jsonb</type>)</function>
+</programlisting></para>
+      <para>В объекте <type>jsonb</type> вы должны задать одну или несколько <acronym>SQL</acronym>-команд в ключе <literal>commands</literal> и задать расписание выполнения в одном из следующих ключей:</para>
+      <itemizedlist>
+        <listitem>
+          <para><literal>dates</literal> &mdash; одна дата или массив дат в формате <type>timestamp with time zone</type></para>
+        </listitem>
+        <listitem>
+          <para><literal>cron</literal> &mdash; строка в стиле <type>crontab</type></para>
+        </listitem>
+        <listitem>
+          <para><literal>rule</literal> &mdash; объект <type>jsonb</type>, содержащий один или несколько следующих ключей:</para>
+        <itemizedlist>
+        <listitem>
+          <para><literal>minutes</literal> &mdash; минуты; массив целых чисел в диапазоне [0, 59]</para>
+        </listitem>
+        <listitem>
+          <para><literal>hours</literal> &mdash; часы; массив целых чисел в диапазоне [0, 23]</para>
+        </listitem>
+        <listitem>
+          <para><literal>days</literal> &mdash; дни месяца; массив целых чисел в диапазоне [1, 31]</para>
+        </listitem>
+        <listitem>
+          <para><literal>months</literal> &mdash; месяцы; массив целых чисел в диапазоне [1, 12]</para>
+        </listitem>
+        <listitem>
+          <para><literal>wdays</literal> &mdash; дни недели; массив целых чисел в диапазоне [0, 6], где 0 — воскресенье.</para>
+        </listitem>
+        <listitem>
+          <para><literal>onstart</literal> &mdash; целое значение 0 или 1. Если <literal>onstart</literal> равняется 1, задание выполняется, только когда включён <filename>pgpro_scheduler</filename>.</para>
+        </listitem>
+        </itemizedlist>
+      </listitem>
+      </itemizedlist>
+
+      <para>Для сложных случаев использования ключи <literal>dates</literal>, <literal>cron</literal> и <literal>rule</literal> можно комбинировать.</para>
+
+      <para>В результате <filename>pgpro_scheduler</filename> создаёт активное задание с заданным расписанием и возвращает идентификатор задания.</para>
+        <tip><para>Для заданий с простым расписанием вы можете использовать следующий упрощённый синтаксис: <programlisting>schedule.create_job(<parameter>cron</parameter>, <parameter>commands</parameter>)
+schedule.create_job(<parameter>dates</parameter>, <parameter>commands</parameter>)</programlisting> За подробностями обратитесь к описанию функции <xref linkend="schedule-create-job"/>.</para>
+      </tip>
+      <para>Если потребуется, вы можете позже изменить один или несколько параметров расписания с помощью функций <function>set_job_attribute()</function> и <function>set_job_attributes()</function>, соответственно.</para>
+      <para>Если все рабочие процессы в указанное время заняты, задание ждёт, пока не появится свободный процесс. По умолчанию ожидание может продолжаться вечно. Вы можете ограничить максимальное время ожидания, установив ключ <literal>last_start_available</literal> в формате <link linkend="datatype-datetime">interval</link>. В случае таймаута <filename>pgpro_scheduler</filename> отменяет выполнение задания.</para>
+      <para>
+        <emphasis role="strong">Примеры:</emphasis>
+      </para>
+      <para>Создание задания, которое будет запускаться каждый день в 15:00 и дополнительно, 31 декабря 2017 г. в 19:00, а также 4 апреля 2020 г. в 13:00:</para>
+      <programlisting>SELECT schedule.create_job('{"commands": "SELECT 15", "cron": "0 15 * * *", "dates": [ "2017-12-31 19:00", "2020-04-04 13:00" ]}');</programlisting>
+      <para>Ограничение периода, в течение которого задание будет ожидать выполнения, до 30 секунд после запланированного времени:</para>
+      <programlisting>SELECT schedule.create_job('{"commands": "SELECT pg_sleep(100)", "cron": "15 */2 * * *", "last_start_available": "30 seconds" }');</programlisting>    
+      <sect4 id="pgpro-scheduler-time-window">
+        <title>Указание интервала времени для выполнения задания</title>
+        <para>В дополнение к обычному расписанию вы можете задать интервал времени, в котором может выполняться запланированное задание. Чтобы <filename>pgpro_scheduler</filename> выполнял задание только в указанном интервале, определите ключи <literal>start_date</literal> и <literal>end_date</literal> в формате <type>timestamp with time zone</type>. Вы можете задать только один из этих ключей, чтобы ограничить только время начала и время окончания, соответственно. Если вы определите интервал времени для задания, <filename>pgpro_scheduler</filename> будет исполнять это задание только в этом интервале. Если запущенное задание продолжает выполняться по достижении конца интервала, <filename>pgpro_scheduler</filename> завершает его и исключает из дальнейшего плана выполнения.</para>
+        <para>
+          <emphasis role="strong">Примеры:</emphasis> </para>
+          <para>Создание задания, выполнение которого начнётся только после 11:00 1 мая 2017 г.: <programlisting>SELECT schedule.create_job('{"commands": "SELECT now()", "cron": "2 17 * * *", "start_date": "2017-05-01 11:00" }');</programlisting></para>
+        <para>Создание задания, которое будет выполняться в интервале от 11:00 1 мая до 15:00 4 июня 2017 г.: <programlisting>SELECT schedule.create_job('{"commands": "SELECT now()", "cron": "2 17 * * *", "start_date": "2017-05-01 11:00", "end_date": "2017-06-04 15:00" }');</programlisting></para>
+</sect4>
+      <sect4 id="pgpro-scheduler-separate-transactions">
+        <title>Выполнение <acronym>SQL</acronym>-команд в отдельных транзакциях</title>
+        <para>В ключе <literal>commands</literal> значения могут задаваться в виде текста или массива. Если вы задаёте в нём отдельные команды <acronym>SQL</acronym> в виде текста, через точку с запятой, всё задание будет выполняться в одной транзакции. Если же требуется, чтобы каждая <acronym>SQL</acronym>-команда выполнялась в отдельной транзакции, передайте команды <acronym>SQL</acronym> в виде массива. Это поведение можно изменить, установив для параметра <literal>use_same_transaction</literal> значение <type>true</type>. В этом случае <acronym>SQL</acronym>-команды в массиве будут выполняться в одной транзакции.</para>
+        <para>
+          <emphasis role="strong">Примеры:</emphasis>
+        </para>
+        <para>Создание задания, которое будет выполняться полностью в одной транзакции:</para>
+        <programlisting>SELECT schedule.create_job('{"commands": "SELECT 1; SELECT 2; SELECT 3;", "cron": "23 23 */2 * *" }');</programlisting>
+        <para>Выполнение команд в отдельных транзакциях: <programlisting>SELECT schedule.create_job('{"commands": [ "SELECT 1", "SELECT 2", "SELECT 3" ], "cron": "23 23 */2 * *" }');</programlisting></para>
+        <para>Создание задания, которое будет выполняться полностью в одной транзакции, когда команды передаются в виде массива: <programlisting>SELECT schedule.create_job('{"commands": [ "SELECT 1", "SELECT 2", "SELECT 3" ], "cron": "23 23 */2 * *", "use_same_transaction": true }');</programlisting></para>
+      </sect4>
+            <sect4 id="pgpro-scheduler-next-start-time">
+        <title>Вычисление времени следующего запуска запланированного задания</title>
+        <para>Для повторяющихся заданий время следующего запуска может быть вычислено с помощью SQL-оператора, задаваемого в ключе <literal>next_time_statement</literal>. В этом случае первый раз задание запускается по расписанию, а все остальные запуски задания производятся в вычисляемое время.</para>
+        <para>По завершении задания <filename>pgpro_scheduler</filename> выполняет <acronym>SQL</acronym>-оператор, заданный в ключе <literal>next_time_statement</literal>, который должен вычислить время следующего запуска и выдать результат типа <type>timestamp with time zone</type>. Если возвращаемое значение имеет другой тип или происходит ошибка, <filename>pgpro_scheduler</filename> помечает задание как нерабочее и отменяет его дальнейшее выполнение. Этот процесс повторяется при каждом последующем запуске.</para>
+
+          <tip><para>Когда задание завершается, <filename>pgpro_scheduler</filename> устанавливает состояние транзакции в переменной <varname>schedule.transaction_state</varname>, в формате <type>text</type>. Вы можете использовать эту переменную в команде <literal>next_time_statement</literal> для динамического вычисления времени следующего запуска в зависимости от состояния транзакции. В момент выполнения <literal>next_time_statement</literal> переменная <literal>schedule.transaction_state</literal> должна содержать состояние основной транзакции &mdash; <literal>success</literal> (успех) или <literal>failure</literal> (сбой). Другие варианты состояния указывают на внутреннюю ошибку <filename>pgpro_scheduler</filename>.</para></tip>
+
+        <para>
+          <emphasis role="strong">Примеры:</emphasis>
+        </para>
+        <para>Создание задания, которое запускается сначала в 10:45, а затем через день после завершения: <programlisting>SELECT schedule.create_job('{"commands": "SELECT random()", "cron": "45 10 * * *", "next_time_statement": "SELECT now() + ''1 day''::interval" }');</programlisting></para>
+      </sect4>
+            <sect4 id="pgpro-scheduler-additional-conditions">
+        <title>Определение дополнительных условий для выполнения задания</title>
+        <para>Расширение <filename>pgpro_scheduler</filename> позволяет определять дополнительные условия для выполнения задания:</para> 
+        <itemizedlist>
+        <listitem>
+          <para>Устанавливать интервалы времени для выполнения задания в ключе <literal>max_run_time</literal>. Если время выполнения задания истекает, <filename>pgpro_scheduler</filename> отменяет задание.</para>
+        </listitem>
+                <listitem>
+          <para>Определять максимальное время ожидания выполнения задания с использованием ключа <literal>last_start_available</literal>. Если происходит таймаут, <filename>pgpro_scheduler</filename> отменяет задание.</para>
+        </listitem>
+        <listitem>
+          <para>Планировать запуск задания от имени другого пользователя, используя ключ <literal>run_as</literal>.</para>
+        </listitem>
+        <listitem>
+          <para>Задавать <acronym>SQL</acronym>-команду, которая будет выполняться, если основная команда завершается ошибкой, в ключе <literal>on_rollback</literal>.</para>
+        </listitem>
+        </itemizedlist>
+        <para>
+          <emphasis role="strong">Примеры:</emphasis> </para>
+          <para>Ограничение времени выполнения до 5 секунд: <programlisting>SELECT schedule.create_job('{"commands": "SELECT pg_sleep(10)", "cron": "15 */10 * * *", "max_run_time": "5 seconds" }');</programlisting></para>
+        <para>Ограничение периода ожидания выполнения задания до 30 секунд после запланированного времени: <programlisting>SELECT schedule.create_job('{"commands": "SELECT pg_sleep(100)", "cron": "15 */2 * * *", "last_start_available": "30 seconds" }');</programlisting></para>
+        <para>Запуск задания от имени пользователя <literal>robot</literal>: <programlisting>SELECT schedule.create_job('{"commands": "SELECT session_user", "cron": "5 */5 * * *", "run_as": "robot" }');</programlisting></para>
+        <para>Определение <acronym>SQL</acronym>-команды, которая будет выполняться в случае сбоя основной команды: <programlisting>SELECT schedule.create_job('{"commands": "SELECT ''zzz''", "cron": "55 */12 * * *", "on_rollback": "SELECT ''Cannot select zzz''" }');</programlisting></para>
+      </sect4>
+  </sect3>
+  <sect3><title>Назначение одноразовых заданий</title>
+      <para>Вы можете назначать задания для однократного выполнения, используя функцию <function>schedule.submit_job()</function>. Для таких заданий используется отдельный набор рабочих процессов в количестве, определённом переменной <varname>schedule.max_parallel_workers</varname>, и они могут выполняться одновременно с планируемыми заданиями. По умолчанию одновременно могут выполняться два одноразовых задания. Если вы назначите больше заданий, они будут ждать в очереди появления свободного рабочего процесса.</para>
+      <para>Чтобы выполнить одноразовое задание немедленно, передайте команды <acronym>SQL</acronym> в аргументе <parameter>query</parameter>. Например:</para>
+      <programlisting>schedule.submit_job(query := 'select 1');</programlisting>
+<para>Вместо того, чтобы передавать параметры запроса <acronym>SQL</acronym> непосредственно, вы можете определить в аргументе <parameter>query</parameter> нумерованные местозаполнители, например, $1 и $2, и передать в аргументе <parameter>params</parameter> массив параметров так, чтобы каждому местозаполнителю соответствовал элемент массива. Для краткости имена параметров <parameter>query</parameter> и <parameter>params</parameter> можно опустить:</para>
+<programlisting>schedule.submit_job(query := 'select $1, $2', params := '{"text 1", "text 2"}')</programlisting>
+        <para>Чтобы запустить одноразовое задание в определённое время, воспользуйтесь аргументом <parameter>run_after</parameter>:</para>
+        <programlisting>schedule.submit_job('select ''flowers''', run_after := '2017-03-08 08:00:01');</programlisting>
+      <para>Также вы можете отложить запуск задания до завершения заданий, указанных в аргументе <parameter>depends_on</parameter>. Например, чтобы запустить задание после завершения заданий под номерами 23, 15 и 334, выполните:</para>
+        <programlisting>schedule.submit_job('select ''well done''', depends_on := '{23, 15, 334}')</programlisting>
+<para>Если требуется, выполнение задания можно переназначить, вызвав функцию <function>schedule.resubmit()</function> внутри запроса в аргументе <parameter>query</parameter>. Например:</para>
+<programlisting>schedule.submit_job('select 1, schedule.resubmit(run_after := '5')');</programlisting>
+<para>Параметр <parameter>run_after</parameter> задаёт интервал времени, после которого задание будет перезапущено, в секундах. По умолчанию интервал равен 1 секунде.</para>
+<para>Переназначенное задание будет выполняться не больше раз, чем задано в аргументе <parameter>resubmit_limit</parameter>. По достижении этого предела задание переходит в состояние <literal>done</literal> (завершено), с соответствующим сообщением об ошибке.</para>
+<para>Если вы хотите отменить переназначенное задание, выполните:</para>
+<programlisting>schedule.cancel_job(<replaceable>ид_задания</replaceable> <type>bigint</type>);</programlisting>
+<para>Для наблюдения за одноразовыми заданиями воспользуйтесь представлениями <filename>pgpro_scheduler</filename> <link linkend="pgpro-scheduler-job-status">job_status</link> и <link linkend="pgpro-scheduler-all-job-status">all_job_status</link>.</para>
+<para>Все функции, предназначенные для управления одноразовыми заданиями, описаны в <xref remap="6" linkend="pgpro-scheduler-one-time-job-functions"/>.</para>
+     </sect3>
+      <sect3 id="pgpro-scheduler-changing-and-removing-jobs">
+      <title>Изменение и удаление запланированных заданий</title>
+      <para>Когда новое задание создаётся с помощью функции <literal>create_job()</literal>, оно становится активным и ждёт выполнения по заданному расписанию. Используя идентификатор задания, возвращённый функцией <function>create_job()</function>, вы можете изменить параметры расписания или удалить задание. Для изменения свойств заданий используются функции <function>set_job_attribute()</function> или <function>set_job_attributes()</function>:</para>
+        <itemizedlist>
+        <listitem>
+          <para>Для изменения одного свойства задания вызовите функцию <function>set_job_attribute()</function>, передав ей в параметрах идентификатор задания, имя изменяемого свойства и новое значение для него.</para>
+        </listitem>
+        <listitem>
+          <para>Для изменения сразу нескольких свойств задания воспользуйтесь функцией <function>set_job_attributes()</function>. В этом случае вы можете задать все эти свойства в одном объекте <type>jsonb</type>. Все ключи, которые можно использовать в расписании заданий, рассматриваются в описании функции <function>create_job()</function>.</para>
+        </listitem>
+        </itemizedlist>
+      <para>Чтобы временно отключить выполнение задания по расписанию, вызовите функцию <function>deactivate_job()</function>: <programlisting>
+<function>schedule.deactivate_job(<parameter>job_id</parameter> <type>integer</type>)</function>
+</programlisting></para>
+      <para>Повторно активизировать задание позже можно, выполнив функцию <function>activate_job()</function>: <programlisting>
+<function>schedule.activate_job(<parameter>job_id</parameter> <type>integer</type>)</function>
+</programlisting></para>
+      <para>Чтобы безвозвратно удалить задание из планировщика, воспользуйтесь функцией <function>drop_job()</function>: <programlisting>
+<function>schedule.drop_job(<parameter>job_id</parameter> <type>integer</type>)</function>
+</programlisting></para>
+    </sect3>
+        <sect3 id="pgpro-scheduler-monitoring-jobs">
+      <title>Наблюдение за запланированными заданиями</title>
+        <para>Для наблюдения за выполнением заданий в системе в целом необходимо иметь права суперпользователя. Без таких прав можно наблюдать только за заданиями, принадлежащими вам. Для отслеживания запланированных заданий <filename>pgpro_scheduler</filename> предоставляет ряд функций, которые возвращают записи <type>cron_rec</type> или <type>cron_job</type>: <itemizedlist>
+        <listitem>
+          <para><function>get_job()</function> &mdash; выдаёт информацию о задании.</para>
+        </listitem>
+        <listitem>
+          <para><function>get_owned_cron()</function> &mdash; выдаёт список заданий, принадлежащих пользователю.</para>
+        </listitem>
+        <listitem>
+          <para><function>get_cron()</function> &mdash; выдаёт список заданий, выполняемых пользователем.</para>
+        </listitem>
+        <listitem>
+          <para><function>get_active_jobs()</function> &mdash; возвращает список заданий, выполняемых в момент вызова функции.</para>
+        </listitem>
+        <listitem>
+          <para><function>get_log()</function> &mdash; возвращает список всех завершённых заданий.</para>
+        </listitem>
+        <listitem>
+          <para><function>get_user_log()</function> &mdash; возвращает список завершённых заданий, выполненных указанным пользователем.</para>
+        </listitem>
+        <listitem>
+          <para><function>clean_log()</function> &mdash; удаляет все записи с информацией о завершённых заданиях.</para>
+        </listitem>
+      </itemizedlist></para>
+          <para>Чтобы узнать больше о каждой функции, обратитесь к <xref remap="3" linkend="pgpro-scheduler-functions"/>.</para>
+          </sect3>
+   </sect2>
+   <sect2 id="pgpro-scheduler-reference">
+   <title>Справка</title>
+       <sect3 id="pgpro-scheduler-guc-variables">
+      <title>Переменные GUC</title>
+   <variablelist>
+    <varlistentry id="pgpro-scheduler-schedule-enable" xreflabel="schedule.enabled">
+     <term><varname>schedule.enabled</varname> (<type>boolean</type>) <indexterm><primary>параметр pgpro-scheduler <varname>schedule.enabled</varname></primary></indexterm></term>
+     <listitem>
+      <para>Определяет, включён ли <filename>pgpro_scheduler</filename> в данной системе.</para>
+       <para>По умолчанию: <literal>false</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry id="pgpro-scheduler-schedule-database" xreflabel="schedule.database">
+     <term><varname>schedule.database</varname> (<type>text</type>) <indexterm><primary>параметр pgpro-scheduler <varname>schedule.database</varname></primary></indexterm></term>
+     <listitem>
+      <para>Задаёт базы данных, для которых включён <filename>pgpro_scheduler</filename>. Имена баз данных должны разделяться запятыми.</para>
+      <para>Если <filename>pgpro_scheduler</filename> работает в кластере <filename>multimaster</filename>, имя единственной базы данных считывается из переменной <xref linkend="multimaster-conn-strings"/>.</para>
+      <para>По умолчанию: пустая строка.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry id="pgpro-scheduler-schedule-schema" xreflabel="schedule.schema">
+     <term><varname>schedule.schema</varname> (<type>text</type>) <indexterm><primary>параметр pgpro-scheduler <varname>schedule.schema</varname></primary></indexterm></term>
+     <listitem>
+      <para>Устаревший параметр. Задаёт имя схемы, в которой планировщик сохраняет свои таблицы и функции. Если вам нужно изменить схему по умолчанию, воспользуйтесь командой <xref linkend="sql-alterextension"/>.</para>
+       <para>По умолчанию: <literal>schedule</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry id="pgpro-scheduler-schedule-nodename" xreflabel="schedule.nodename">
+     <term><varname>schedule.nodename</varname> (<type>text</type>) <indexterm><primary>параметр pgpro-scheduler <varname>schedule.nodename</varname></primary></indexterm></term>
+     <listitem>
+      <para>Указывает имя узла, где находится ваш экземпляр <productname>&productname;</productname>. Эту переменную не нужно изменять или использовать в конфигурации кластера с одним сервером.</para>
+      <para>В кластере, где работает <filename>multimaster</filename>, имя узла определяется переменной <xref linkend="multimaster-node-id"/>. Например, если <literal>multimaster.node_id = 3</literal>, переменная <varname>schedule.nodename</varname> получает значение <literal>mtm-node-3</literal>. Однако, если вы явно зададите переменную <varname>schedule.nodename</varname> в файле <filename>postgresql.conf</filename> или воспользовавшись командой <command>ALTER</command>, <filename>pgpro_scheduler</filename> будет использовать заданное значение, не учитывая переменную <varname>multimaster.node_id</varname>.</para>
+       <para>По умолчанию: <literal>master</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry id="pgpro-scheduler-schedule-max-workers" xreflabel="schedule.max_workers">
+     <term><varname>schedule.max_workers</varname> (<type>integer</type>) <indexterm><primary>параметр pgpro-scheduler <varname>schedule.max_workers</varname></primary></indexterm></term>
+     <listitem>
+      <para>Задаёт максимальное число одновременно работающих запланированных по расписанию заданий в одной базе.</para>
+       <para>По умолчанию: <literal>2</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry id="pgpro-scheduler-schedule-max-parallel-workers" xreflabel="schedule.max_workers">
+     <term><varname>schedule.max_parallel_workers</varname> (<type>integer</type>) <indexterm><primary>параметр pgpro-scheduler <varname>schedule.max_parallel_workers</varname></primary></indexterm></term>
+     <listitem>
+      <para>Задаёт максимальное число параллельных потоков, которые могут использоваться для выполнения одноразовых заданий.</para>
+       <para>По умолчанию: <literal>2</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+
+    <varlistentry id="pgpro-scheduler-schedule-transaction-state" xreflabel="schedule.transaction_state">
+     <term><varname>schedule.transaction_state</varname> (<type>text</type>) <indexterm><primary>параметр pgpro-scheduler <varname>schedule.transaction_state</varname></primary></indexterm></term>
+     <listitem>
+      <para>Внутренняя переменная, содержащая состояние выполняемого задания. <filename>pgpro_scheduler</filename> использует эту переменную для вычисления времени следующего запуска задания. Возможные значения: <itemizedlist><listitem>
+          <para><literal>success</literal> &mdash; транзакция завершилась успешно.</para></listitem><listitem>
+          <para><literal>failure</literal> &mdash; транзакция завершилась сбоем.</para></listitem><listitem>
+          <para><literal>running</literal> &mdash; транзакция в процессе выполнения.</para></listitem>
+                <listitem>
+          <para><literal>undefined</literal> &mdash; транзакция ещё не запускалась.</para></listitem></itemizedlist></para><para>В момент выполнения <literal>next_time_statement</literal> переменная <literal>schedule.transaction_state</literal> должна содержать либо <literal>success</literal> (успех), либо <literal>failure</literal> (сбой). Другие значения указывают на внутреннюю ошибку <filename>pgpro_scheduler</filename>.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+
+    </sect3>
+<sect3 id="pgpro-scheduler-sql-schema">
+   <title><acronym>SQL</acronym>-схема</title>
+
+      <para>Для размещения своих внутренних таблиц и функций расширение <filename>pgpro_scheduler</filename> использует <acronym>SQL</acronym>-схему <literal>schedule</literal>. Обращаться к его таблицам напрямую запрещается. Для управления планированием заданий используйте функции, предоставляемые расширением <filename>pgpro_scheduler</filename>.</para>
+  </sect3>
+
+  <sect3 id="pgpro-scheduler-sql-types">
+   <title>Типы <acronym>SQL</acronym></title>
+
+   <para>Планировщик <filename>pgpro_scheduler</filename> определяет два типа <acronym>SQL</acronym> и тип-перечисление для возврата значений из некоторых функций <filename>pgpro_scheduler</filename>.</para>
+
+   <sect4>
+    <title>cron_rec</title>
+    <para>Этот тип содержит информацию о запланированном задании. <programlisting>CREATE TYPE schedule.cron_rec AS(
+    id integer,             -- идентификатор задания
+    node text,              -- имя узла, на котором
+                            -- оно будет выполняться
+    name text,              -- имя задания
+    comments text,          -- комментарий к заданию
+    rule jsonb,             -- правила расписания
+    commands text[],        -- SQL-команды, которые будут выполнены
+    run_as text,            -- имя пользователя, запускающего задание
+    owner text,             -- имя пользователя-владельца задания
+    start_date timestamptz, -- нижняя граница окна выполнения задания;
+                            -- NULL, если дата начала не ограничена
+    end_date timestamptz,   -- верхняя граница окна выполнения задания;
+                            -- NULL, если дата окончания не ограничена
+    use_same_transaction boolean,   -- true, если набор SQL-команд
+                                    -- будет выполняться в одной
+                                    -- транзакции
+    last_start_available interval,  -- макс. время, на которое может
+                                    -- откладываться запуск задания, если
+                                    -- нет доступных рабочих процессов
+    max_instances int,      -- макс. число экземпляров задания, которые
+                            -- могут быть запущены одновременно
+    max_run_time interval,  -- макс. время выполнения
+    onrollback text,        -- SQL-команда, которая будет выполнена
+                            -- при сбое основной транзакции
+    next_time_statement text,   -- SQL-оператор, который будет вычислять
+                                -- время следующего запуска
+    active boolean,         -- true, если задание запланировано
+                            -- успешно
+    broken boolean          -- true, если в конфигурации задания есть
+                            -- ошибки, препятствующие его
+                            -- дальнейшему выполнению
+);</programlisting></para>
+   </sect4>
+
+   <sect4>
+    <title>cron_job</title>
+    <para>Этот тип содержит информацию о выполнении определённого задания. <programlisting>CREATE TYPE schedule.cron_job AS(
+    cron integer,           -- идентификатор задания
+    node text,              -- имя узла, на котором
+                            -- оно будет выполняться
+    scheduled_at timestamptz,       -- запланированное время выполнения
+    name text,              -- имя задания
+    comments text,          -- комментарий к заданию
+    commands text[],        -- SQL-команды, которые будут выполнены
+    run_as text,            -- имя пользователя, запускающего задание
+    owner text,             -- имя пользователя-владельца задания
+    use_same_transaction boolean,   -- true, если набор SQL-команд
+                                    -- будет выполняться в одной
+                                    -- транзакции
+    started timestamptz,    -- время, когда задание было запущено
+    last_start_available interval,  -- макс. время, на которое может
+                                    -- откладываться запуск задания, если
+                                    -- нет доступных рабочих процессов
+    finished timestamptz,   -- время, когда задание было завершено
+    max_run_time interval,  -- макс. время выполнения
+    max_instances int,      -- макс. число одновременно выполняемых
+                            -- экземпляров задания
+    onrollback text,        -- SQL-команда, которая будет выполнена
+                            -- при сбое основной транзакции
+    next_time_statement text,   -- SQL-оператор, который будет вычислять
+                                -- время следующего запуска
+    status text,            -- состояние задания: working (выполняется),
+                            -- done (завершено), error (ошибка)
+    message text            -- сообщение об ошибке
+);</programlisting></para>
+   </sect4>
+<sect4 id="pgpro-scheduler-job-at-status-type">
+  <title>job_at_status</title>
+  <para>Тип-перечисление. Может принимать следующие значения:</para>
+  <itemizedlist>
+    <listitem>
+      <para><literal>submitted</literal> &mdash; задание поступило в очередь, но ещё не начинало выполняться.</para>
+    </listitem>
+    <listitem>
+      <para><literal>processing</literal> &mdash; задание выполняется.</para>
+    </listitem>
+    <listitem>
+      <para><literal>done</literal> &mdash; выполнение задания завершено.</para>
+    </listitem>
+  </itemizedlist>
+</sect4>
+
+  </sect3>
+<sect3 id="pgpro-scheduler-views" xreflabel="Views">
+<title>Представления</title>
+  <para>В составе расширения <filename>pgpro_scheduler</filename> есть несколько представлений для наблюдения за состоянием выполнения одноразовых заданий:</para>
+<sect4 id="pgpro-scheduler-job-status">
+  <title>Представление job_status</title>
+  <para>Показывает состояние одноразовых заданий, принадлежащих текущему пользователю.</para>
+  <table id="pgpro-scheduler-job-status-view">
+        <title>Представление job_status</title>
+          <tgroup cols="3">
+            <thead>
+              <row>
+                <entry>Имя столбца</entry>
+                <entry>Тип столбца</entry>
+                <entry>Описание</entry>
+              </row>
+            </thead>
+            <tbody>
+              <row>
+                <entry>
+                  <literal>id</literal>
+                </entry>
+                <entry>
+                  <type>bigint</type>
+                </entry>
+                <entry>Идентификатор задания.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>node</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry>Имя узла, на котором выполняется задание.</entry>
+              </row>
+              <row>
+                <entry>
+                 <literal>name</literal>
+                </entry>
+                <entry>
+                 <type>text</type>
+                </entry>
+                <entry>Имя задания.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>comments</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry>Комментарии к заданию.</entry>
+              </row>
+               <row>
+                <entry>
+                  <literal>run_after</literal>
+                </entry>
+                <entry>
+                  <type>timestamp with time zone</type>
+                </entry>
+                <entry>Время, после которого должно начаться выполнение задания.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>query</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry><acronym>SQL</acronym>-команды, выполняемые заданием.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>params</literal>
+                </entry>
+                <entry>
+                  <type>text[]</type>
+                </entry>
+                <entry>Массив параметров для <acronym>SQL</acronym>-запроса.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>depends_on</literal>
+                </entry>
+                <entry>
+                  <type>bigint[]</type>
+                </entry>
+                <entry>Массив идентификаторов заданий, от которых зависит выполнение данного задания.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>run_as</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry>Пользователь или роль, с правами которого будет выполняться задание.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>attempt</literal>
+                </entry>
+                <entry>
+                  <type>bigint</type>
+                </entry>
+                <entry>Число попыток выполнения.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>resubmit_limit</literal>
+                </entry>
+                <entry>
+                  <type>bigint</type>
+                </entry>
+                <entry>Максимально допустимое число переназначений задания.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>max_wait_interval</literal>
+                </entry>
+                <entry>
+                  <type>interval</type>
+                </entry>
+                <entry>Максимальный интервал времени, на который может быть отложено выполнение задания, если в назначенное время все доступные рабочие процессы будут заняты.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>max_duration</literal>
+                </entry>
+                <entry>
+                  <type>interval</type>
+                </entry>
+                <entry>Интервал времени, в течение которого может выполняться задание.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>submit_time</literal>
+                </entry>
+                <entry>
+                  <type>timestamp with time zone</type>
+                </entry>
+                <entry>Время, когда задание было добавлено в очередь выполнения.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>start_time</literal>
+                </entry>
+                <entry>
+                  <type>timestamp with time zone</type>
+                </entry>
+                <entry>Время начала выполнения задания.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>canceled</literal>
+                </entry>
+                <entry>
+                  <type>boolean</type>
+                </entry>
+                <entry>Определяет, было ли задание отменено пользователем.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>is_success</literal>
+                </entry>
+                <entry>
+                  <type>boolean</type>
+                </entry>
+                <entry><itemizedlist><listitem><para><literal>true</literal> &mdash; задание было выполнено успешно.</para></listitem>
+                  <listitem><para><literal>false</literal> &mdash; выполнение задания завершилось с ошибками.</para></listitem></itemizedlist>
+                </entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>error</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry>Сообщение об ошибке.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>done_time</literal>
+                </entry>
+                <entry>
+                  <type>timestamp with time zone</type>
+                </entry>
+                <entry>Время, когда завершилось выполнение задания.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>status</literal>
+                </entry>
+                <entry>
+                  <type>job_at_status</type>
+                </entry>
+                <entry>Состояние задания. За подробностями обратитесь к <xref remap="3" linkend="pgpro-scheduler-job-at-status-type"/>.</entry>
+              </row>
+            </tbody>
+          </tgroup>
+        </table>
+</sect4>
+  <sect4 id="pgpro-scheduler-all-job-status">
+    <title>Представление all_job_status</title>
+    <para>Показывает состояние всех одноразовых заданий. Для обращения к этому представлению необходимо иметь права суперпользователя.</para>
+      <table id="pgpro-scheduler-all-job-status-view">
+        <title>Представление all_job_status</title>
+          <tgroup cols="3">
+            <thead>
+              <row>
+                <entry>Имя столбца</entry>
+                <entry>Тип столбца</entry>
+                <entry>Описание</entry>
+              </row>
+            </thead>
+            <tbody>
+              <row>
+                <entry>
+                  <literal>id</literal>
+                </entry>
+                <entry>
+                  <type>bigint</type>
+                </entry>
+                <entry>Идентификатор задания.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>node</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry>Имя узла, на котором выполняется задание.</entry>
+              </row>
+              <row>
+                <entry>
+                 <literal>name</literal>
+                </entry>
+                <entry>
+                 <type>text</type>
+                </entry>
+                <entry>Имя задания.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>comments</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry>Комментарии к заданию.</entry>
+              </row>
+               <row>
+                <entry>
+                  <literal>run_after</literal>
+                </entry>
+                <entry>
+                  <type>timestamp with time zone</type>
+                </entry>
+                <entry>Время, после которого должно начаться выполнение задания.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>query</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry><acronym>SQL</acronym>-команды, выполняемые заданием.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>params</literal>
+                </entry>
+                <entry>
+                  <type>text[]</type>
+                </entry>
+                <entry>Массив параметров для <acronym>SQL</acronym>-запроса.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>depends_on</literal>
+                </entry>
+                <entry>
+                  <type>bigint[]</type>
+                </entry>
+                <entry>Массив идентификаторов заданий, от которых зависит выполнение данного задания.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>run_as</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry>Пользователь или роль, с правами которого будет выполняться задание.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>attempt</literal>
+                </entry>
+                <entry>
+                  <type>bigint</type>
+                </entry>
+                <entry>Число попыток выполнения.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>owner</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry>Пользователь, создавший задание.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>resubmit_limit</literal>
+                </entry>
+                <entry>
+                  <type>bigint</type>
+                </entry>
+                <entry>Максимально допустимое число переназначений задания.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>max_wait_interval</literal>
+                </entry>
+                <entry>
+                  <type>interval</type>
+                </entry>
+                <entry>Максимальный интервал времени, на который может быть отложено выполнение задания, если в назначенное время все доступные рабочие процессы будут заняты.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>max_duration</literal>
+                </entry>
+                <entry>
+                  <type>interval</type>
+                </entry>
+                <entry>Интервал времени, в течение которого может выполняться задание.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>submit_time</literal>
+                </entry>
+                <entry>
+                  <type>timestamp with time zone</type>
+                </entry>
+                <entry>Время, когда задание было добавлено в очередь выполнения.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>start_time</literal>
+                </entry>
+                <entry>
+                  <type>timestamp with time zone</type>
+                </entry>
+                <entry>Время начала выполнения задания.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>canceled</literal>
+                </entry>
+                <entry>
+                  <type>boolean</type>
+                </entry>
+                <entry>Определяет, было ли задание отменено пользователем.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>is_success</literal>
+                </entry>
+                <entry>
+                  <type>boolean</type>
+                </entry>
+                <entry><itemizedlist><listitem><para><literal>true</literal> &mdash; задание было выполнено успешно.</para></listitem><listitem><para><literal>false</literal> &mdash; выполнение задания завершилось с ошибками.</para></listitem></itemizedlist>
+                </entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>error</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry>Сообщение об ошибке.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>done_time</literal>
+                </entry>
+                <entry>
+                  <type>timestamp with time zone</type>
+                </entry>
+                <entry>Время, когда завершилось выполнение задания.</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>status</literal>
+                </entry>
+                <entry>
+                  <type>job_at_status</type>
+                </entry>
+                <entry>Состояние задания. За подробностями обратитесь к <xref remap="3" linkend="pgpro-scheduler-job-at-status-type"/>.</entry>
+              </row>
+            </tbody>
+          </tgroup>
+        </table>
+  </sect4>
+</sect3>
+<sect3 id="pgpro-scheduler-functions">
+   <title>Функции</title>
+   <para><filename>pgpro_scheduler</filename> предоставляет для управления заданиями, выполняемыми по расписанию, и одноразовыми заданиями два отдельных набора функций:</para>
+   <itemizedlist>
+   <listitem><para><xref linkend="pgpro-scheduler-scheduled-job-functions"/>
+   </para></listitem>
+   <listitem><para><xref linkend="pgpro-scheduler-one-time-job-functions"/>
+   </para></listitem>
+   </itemizedlist>
+   <para>Для конкретного задания можно использовать только те функции, которые предназначены для данного типа задания.</para>
+<sect4 id="pgpro-scheduler-scheduled-job-functions"><title>Функции для управления планируемыми заданиями</title>
+   <variablelist>
+    <varlistentry id="schedule-create-job" xreflabel="schedule.create_job()">
+     <term>
+      <function>schedule.create_job(<parameter>options</parameter> <type>jsonb</type>)</function>
+      <indexterm><primary><function>schedule.create_job</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Создаёт активное задание и возвращает его идентификатор.</para>
+        <para>
+    <emphasis role="strong">Альтернативный синтаксис:</emphasis>
+  </para>
+  <programlisting>schedule.create_job(<parameter>cron</parameter> <type>text</type>, <parameter>commands</parameter> <type>text</type> [, <parameter>node</parameter> <type>text</type>])
+schedule.create_job(<parameter>cron</parameter> <type>text</type>, <parameter>commands</parameter> <type>text</type>[] [, <parameter>node</parameter> <type>text</type>])
+schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone</type>, <parameter>commands</parameter> <type>text</type> [, <parameter>node</parameter> <type>text</type>])
+schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone</type>, commands <type>text[]</type> [, <parameter>node</parameter> <type>text</type>])
+schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[]</type>, <parameter>commands</parameter> <type>text</type> [, <parameter>node</parameter> <type>text</type>])
+schedule.create_job(<parameter>dates</parameter> <type>timestamp with time zone[]</type>, <parameter>commands</parameter> <type>text[]</type> [, <parameter>node</parameter> <type>text</type>])</programlisting>
+<para>Аргументы:</para>
+   <itemizedlist>
+    <listitem>
+    <para><parameter>options</parameter> &mdash; объект <type>jsonb</type>, определяющий все свойства задания. Если задаётся параметр <parameter>data</parameter>, никакие другие параметры определять не нужно. Все поддерживаемые ключи <type>jsonb</type> перечислены в <xref remap="6" linkend="pgpro-scheduler-jsonb-keys"/>.</para>
+    <para>Type: <type>jsonb</type></para>
+    </listitem>
+    <listitem>
+    <para><parameter>cron</parameter> &mdash; строка в стиле <filename>crontab</filename>, задающая график выполнения.</para>
+    <para>Тип: <type>text</type></para>
+    </listitem>
+    <listitem>
+    <para><parameter>dates</parameter> &mdash; точная дата или массив дат для выполнения задания.</para>
+    <para>Тип: <type>timestamp with time zone</type>, <type>timestamp with time zone[]</type></para>
+    </listitem>
+    <listitem>
+    <para><parameter>commands</parameter> &mdash; <acronym>SQL</acronym>-операторы, которые будут выполняться. Вы можете передать в этом параметре одну или несколько <acronym>SQL</acronym>-команд через точку с запятой либо массив <acronym>SQL</acronym>-команд. <acronym>SQL</acronym>-команды, передаваемые в массиве, будут выполняться в отдельных транзакциях.</para>
+            <para>Тип: <type>text</type>, <type>text[]</type></para>
+    </listitem>
+    <listitem>
+    <para><parameter>node</parameter> &mdash; имя узла, на котором выполняются запланированные задания. Этот аргумент может понадобиться при планировании заданий в кластере с несколькими ведущими серверами.</para>
+            <para>Тип: <type>text</type></para>
+    </listitem>
+    </itemizedlist>
+  <para>Возвращаемые значения: <itemizedlist><listitem><para>Идентификатор созданного задания.</para></listitem></itemizedlist></para>
+      <table id="pgpro-scheduler-jsonb-keys">
+      <title>Ключи <type>jsonb</type>, предназначенные для планирования заданий</title>
+        <tgroup cols="3">
+          <thead>
+            <row>
+              <entry>Ключ</entry>
+              <entry>Тип</entry>
+              <entry>Описание</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry>
+                <literal>cron</literal>
+              </entry>
+              <entry>
+                <type>text</type>
+              </entry>
+              <entry>Строка в стиле crontab, задающая график выполнения. Ключ <literal>cron</literal> можно комбинировать с ключами <literal>rule</literal> и <literal>dates</literal>, но нельзя опустить их все.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>dates</literal>
+              </entry>
+              <entry><type>timestamp with time zone</type>, <type>timestamp with time zone[]</type></entry>
+              <entry>Точная дата или массив дат, когда должно выполняться запланированное задание. Ключ <literal>dates</literal> можно комбинировать с ключами <literal>rule</literal> и <literal>cron</literal>, но нельзя опустить их все.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>rule</literal>
+              </entry>
+              <entry>
+                <type>jsonb</type>
+              </entry>
+              <entry><para>Объект <type>jsonb</type>, определяющий расписание задания. Обязательный ключ, если ключи <literal>cron</literal> и <literal>dates</literal> не определены. Объект <literal>rule</literal> содержит один или несколько из следующих ключей: <itemizedlist>
+               <listitem>
+                <para><literal>minutes</literal> &mdash; минуты; массив целых чисел в диапазоне [0, 59]</para></listitem><listitem><para><literal>hours</literal> &mdash; часы; массив целых чисел в диапазоне [0, 23]</para></listitem><listitem><para><literal>days</literal> &mdash; дни месяца; массив целых чисел в диапазоне [1, 31]</para></listitem><listitem><para><literal>months</literal> &mdash; месяцы; массив целых чисел в диапазоне [1, 12]</para></listitem><listitem><para><literal>wdays</literal> &mdash; дни недели; массив целых чисел в диапазоне [0, 6], где 0 — воскресенье.</para></listitem><listitem><para><literal>onstart</literal> &mdash; целое значение 0 или 1. Если <literal>onstart</literal> равняется 1, задание выполняется, только когда включён <filename>pgpro_scheduler</filename>.</para></listitem></itemizedlist></para>
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>commands</literal>
+              </entry>
+              <entry><type>text</type>, <type>text[]</type></entry>
+              <entry><acronym>SQL</acronym>-операторы, которые будут выполняться. Вы можете передать в этом параметре один или несколько <acronym>SQL</acronym>-параметров через точку с запятой либо массив <acronym>SQL</acronym>-операторов. <acronym>SQL</acronym>-операторы, передаваемые в массиве, по умолчанию будут выполняться в отдельных транзакциях. Изменить это поведение позволяет ключ <literal>use_same_transaction</literal>.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>name</literal>
+              </entry>
+              <entry>
+                <type>text</type>
+              </entry>
+              <entry>Необязательное свойство. Имя задания.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>node</literal>
+              </entry>
+              <entry>
+                <type>text</type>
+              </entry>
+              <entry>Необязательное свойство. Имя узла, на котором выполняются запланированные задания. Этот аргумент может понадобиться при планировании заданий в кластере с несколькими ведущими серверами.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>comments</literal>
+              </entry>
+              <entry>
+                <type>text</type>
+              </entry>
+              <entry>Необязательные комментарии к запланированному заданию.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>run_as</literal>
+              </entry>
+              <entry>
+                <type>text</type>
+              </entry>
+              <entry>Необязательное свойство. Пользователь, от имени которого будут выполняться команды.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>start_date</literal>
+              </entry>
+              <entry>
+                <type>timestamp with time zone</type>
+              </entry>
+              <entry>Необязательное свойство. Начало интервала, в котором возможно выполнение задания. Может содержать <literal>NULL</literal>.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>end_date</literal>
+              </entry>
+              <entry>
+                <type>timestamp with time zone</type>
+              </entry>
+              <entry>Необязательное свойство. Конец интервала, в котором возможно выполнение задания. Может содержать <literal>NULL</literal>.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>use_same_transaction</literal>
+              </entry>
+              <entry><type>boolean</type></entry>
+              <entry>Необязательное свойство. Если равняется <literal>true</literal>, устанавливает, что <acronym>SQL</acronym>-операторы, переданные в массиве, будут выполняться в одной транзакции. По умолчанию: <literal>false</literal></entry>
+            </row>
+            <row>
+              <entry>
+                <literal>last_start_available</literal>
+              </entry>
+              <entry>
+                <type>interval</type>
+              </entry>
+              <entry>Необязательное свойство. Максимальное время, на которое может быть отложено выполнение задания, если в запланированный момент все рабочие процессы оказались заняты. Например, если задать в этом ключе '00:02:34', задание будет ждать выполнения 2 минуты 34 секунды. Если значение этого ключа — <literal>NULL</literal>, задание будет ожидать выполнения вечно. Значение по умолчанию: <literal>NULL</literal>.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>max_instances</literal>
+              </entry>
+              <entry>
+                <type>integer</type>
+              </entry>
+              <entry>Необязательное свойство. Максимальное число экземпляров одного задания, которые могут выполняться одновременно. По умолчанию: 1.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>max_run_time</literal>
+              </entry>
+              <entry>
+                <type>interval</type>
+              </entry>
+              <entry>Необязательное свойство. Максимальное время, в течение которого может выполняться запланированное задание. Если значение этого ключа — <literal>NULL</literal> или не установлено, ограничение по времени отсутствует. Значение по умолчанию: <literal>NULL</literal>.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>on_rollback</literal>
+              </entry>
+              <entry>
+                <type>text</type>
+              </entry>
+              <entry>Необязательное свойство. <acronym>SQL</acronym>-оператор, который будет выполняться при сбое основной транзакции.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>next_time_statement</literal>
+              </entry>
+              <entry>
+                <type>text</type>
+              </entry>
+              <entry>Необязательное свойство. <acronym>SQL</acronym>-оператор, который будет вычислять время следующего запуска задания. Подробнее об этом рассказывается в <xref remap="6" linkend="pgpro-scheduler-next-start-time"/>.</entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </table>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.set_job_attributes(<parameter>job_id</parameter> <type>integer</type>, <parameter>data</parameter> <type>jsonb</type>)</function>
+      <indexterm><primary><function>schedule.set_job_attributes</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Изменяет свойства существующего задания.</para>
+      <para>Аргументы: <itemizedlist>
+        <listitem>
+         <para><parameter>job_id</parameter> &mdash; идентификатор существующего задания.</para>
+        </listitem>
+        <listitem>
+         <para><parameter>data</parameter> &mdash; объект <type>jsonb</type> с набором изменяемых свойств. Список ключей с описанием их структуры приведён в <xref remap="6" linkend="pgpro-scheduler-jsonb-keys"/>.</para>
+        </listitem>
+       </itemizedlist></para>
+      <para>Возвращаемые значения: <itemizedlist>
+        <listitem>
+         <para><parameter>true</parameter> &mdash; свойства задания изменены успешно.</para>
+        </listitem>
+        <listitem>
+         <para><parameter>false</parameter> &mdash; свойства задания не были изменены.</para>
+        </listitem>
+       </itemizedlist></para>
+      <para>Чтобы изменить свойства задания, необходимо быть его владельцем или иметь права суперпользователя.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.set_job_attribute(<parameter>job_id</parameter> <type>integer</type>, <parameter>name</parameter> <type>text</type>, <parameter>value</parameter> <type>text</type> || <type>anyarray</type>)</function>
+      <indexterm><primary><function>schedule.set_job_attribute</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Изменяет свойство существующего задания.</para>
+      <para>Аргументы: <itemizedlist>
+        <listitem>
+         <para><parameter>job_id</parameter> &mdash; идентификатор существующего задания.</para>
+        </listitem>
+        <listitem>
+         <para><parameter>name</parameter> &mdash; имя свойства.</para>
+        </listitem>
+        <listitem>
+         <para><parameter>value</parameter> &mdash; значение свойства.</para>
+        </listitem>
+       </itemizedlist></para>
+      <para>Список изменяемых свойств заданий приведён в <xref remap="6" linkend="pgpro-scheduler-jsonb-keys"/>. Некоторые свойства представляются массивами и они должны передаваться как массивы. Если передать для свойства значение неверного типа, будет выдано исключение.</para>
+      <para>Возвращаемые значения: <itemizedlist>
+        <listitem>
+         <para><parameter>true</parameter> &mdash; свойство задания изменено успешно.</para>
+        </listitem>
+        <listitem>
+         <para><parameter>false</parameter> &mdash; свойство задания не было изменено.</para>
+        </listitem>
+       </itemizedlist></para>
+      <para>Чтобы изменить свойства задания, необходимо быть его владельцем или иметь права суперпользователя.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.deactivate_job(<parameter>job_id</parameter> <type>integer</type>)</function>
+     <indexterm><primary><function>schedule.deactivate_job</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Деактивирует задание и приостанавливает его последующее выполнение.</para>
+      <para>Аргументы: <itemizedlist>
+        <listitem>
+         <para><parameter>job_id</parameter> &mdash; идентификатор существующего задания.</para>
+        </listitem>
+       </itemizedlist></para>
+      <para>Возвращаемые значения: <itemizedlist>
+        <listitem><para><literal>true</literal> &mdash; задание было деактивировано успешно.</para></listitem>
+       <listitem><para><literal>false</literal> &mdash; деактивировать задание не удалось.</para></listitem>
+       </itemizedlist></para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.activate_job(<parameter>job_id</parameter> <type>integer</type>)</function>
+     <indexterm><primary><function>schedule.activate_job</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Активирует задание, в результате чего оно начинает выполняться по расписанию.</para>
+      <para>Аргументы: <itemizedlist>
+        <listitem>
+         <para><parameter>job_id</parameter> &mdash; идентификатор существующего задания.</para>
+        </listitem>
+       </itemizedlist></para>
+      <para>Возвращаемые значения: <itemizedlist>
+        <listitem><para><literal>true</literal> &mdash; задание активировано успешно.</para></listitem>
+        <listitem><para><literal>false</literal> &mdash; активировать задание не удалось.</para></listitem>
+       </itemizedlist></para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.drop_job(<parameter>job_id</parameter> <type>integer</type>)</function>
+     <indexterm><primary><function>schedule.drop_job</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Удаляет задание.</para>
+      <para>Аргументы: <itemizedlist>
+        <listitem>
+         <para><parameter>job_id</parameter> &mdash; идентификатор существующего задания.</para>
+        </listitem>
+       </itemizedlist></para>
+      <para>Возвращаемые значения: <itemizedlist>
+        <listitem><para><literal>true</literal> &mdash; задание было удалено успешно.</para></listitem>
+        <listitem><para><literal>false</literal> &mdash; задание не было удалено.</para></listitem>
+       </itemizedlist></para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.get_job(<parameter>job_id</parameter> <type>integer</type>)</function>
+     <indexterm><primary><function>schedule.get_job</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Возвращает информацию об указанном задании.</para>
+      <para>Аргументы: <itemizedlist>
+        <listitem>
+         <para><parameter>job_id</parameter> &mdash; идентификатор существующего задания.</para>
+        </listitem>
+       </itemizedlist></para>
+      <para>Возвращаемые значения: <itemizedlist>
+        <listitem>
+         <para>Объект типа <type>cron_rec</type>.</para>
+        </listitem>
+       </itemizedlist></para>
+      <para>Описание типа <type>cron_rec</type> можно найти в <xref remap="6" linkend="pgpro-scheduler-sql-types"/>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.get_owned_cron(<parameter>username</parameter> <type>text</type>)</function>
+     <indexterm><primary><function>schedule.get_owned_cron</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Получает список заданий, принадлежащих указанному пользователю.</para>
+      <para>Аргументы:</para>
+       <itemizedlist>
+        <listitem>
+         <para><parameter>username</parameter> &mdash; имя пользователя, может отсутствовать.</para>
+        </listitem>
+       </itemizedlist>
+      <para>Возвращаемые значения:</para>
+      <itemizedlist>
+        <listitem><para>Набор записей типа <type>cron_rec</type>. Эти записи содержат информацию обо всех заданиях, принадлежащих указанному пользователю. Если параметр <parameter>username</parameter> опущен, подразумевается имя текущего пользователя сеанса. Получать задания, принадлежащие другому пользователю, может только суперпользователь.</para></listitem>
+       </itemizedlist>     
+      <para>Описание типа <type>cron_rec</type> можно найти в <xref remap="6" linkend="pgpro-scheduler-sql-types"/>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.get_cron(<parameter>username</parameter> <type>text</type>)</function>
+     <indexterm><primary><function>schedule.get_cron</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Получает список заданий, выполняемых указанным пользователем.</para>
+      <para>Аргументы:</para>
+       <itemizedlist>
+        <listitem>
+         <para><parameter>username</parameter> &mdash; имя пользователя, может отсутствовать.</para>
+        </listitem>
+       </itemizedlist>
+      <para>Возвращаемые значения:</para>
+        <itemizedlist>
+        <listitem>
+         <para>Набор записей типа <type>cron_rec</type>. Эти записи содержат информацию обо всех заданиях, выполняемых пользователем. Если параметр <parameter>username</parameter> опущен, подразумевается имя текущего пользователя сеанса. Получать задания, выполняемые другим пользователем, может только суперпользователь.</para>
+     </listitem>
+     </itemizedlist>
+      <para>Описание типа <type>cron_rec</type> можно найти в <xref remap="6" linkend="pgpro-scheduler-sql-types"/>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.get_active_jobs(<parameter>username</parameter> <type>text</type>)</function>
+     <indexterm><primary><function>schedule.get_active_jobs</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Получает список заданий, в настоящее время выполняемых указанным пользователем.</para>
+      <para>Аргументы:</para>
+       <itemizedlist>
+        <listitem>
+         <para><parameter>username</parameter> &mdash; имя пользователя, может отсутствовать.</para></listitem>
+       </itemizedlist>
+      <para>Если параметр <parameter>username</parameter> опущен, подразумевается имя текущего пользователя сеанса. Получать задания, выполняемые другим пользователем, может только суперпользователь.</para>
+      <para>Возвращаемые значения:</para>
+        <itemizedlist>
+        <listitem>
+         <para>Набор записей типа <type>cron_job</type>.</para></listitem></itemizedlist>
+       <para>Описание типа <type>cron_job</type> можно найти в <xref remap="6" linkend="pgpro-scheduler-sql-types"/>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.get_active_jobs()</function>
+     <indexterm><primary><function>schedule.get_active_jobs</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Возвращает список заданий, выполняемых в текущий момент. Вызывать эту функцию может только суперпользователь.</para>
+      <para>Возвращаемые значения:</para>
+       <itemizedlist>
+        <listitem><para>Набор записей типа <type>cron_job</type>.</para></listitem></itemizedlist>
+       <para>Описание типа <type>cron_job</type> можно найти в <xref remap="6" linkend="pgpro-scheduler-sql-types"/>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.get_log()</function>
+     <indexterm><primary><function>schedule.get_log</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Возвращает список всех завершённых заданий. Вызывать эту функцию может только суперпользователь.</para>
+      <para>Возвращаемые значения:</para>
+        <itemizedlist>
+        <listitem>
+         <para>Набор записей типа <type>cron_job</type>.</para></listitem></itemizedlist>
+       <para>Описание типа <type>cron_job</type> можно найти в <xref remap="6" linkend="pgpro-scheduler-sql-types"/>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.get_user_log(<parameter>username</parameter> <type>text</type>)</function>
+     <indexterm><primary><function>schedule.get_user_log</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Возвращает список завершённых заданий, выполненных указанным пользователем.</para>
+      <para>Аргументы:</para>
+       <itemizedlist>
+        <listitem>
+         <para><parameter>username</parameter> &mdash; имя пользователя, может отсутствовать.</para>
+        </listitem>
+       </itemizedlist>
+      <para>Если параметр <parameter>username</parameter> опущен, подразумевается имя текущего пользователя сеанса. Получать список заданий, выполненных другим пользователем, может только суперпользователь.</para>
+      <para>Возвращаемые значения:</para>
+        <itemizedlist>
+        <listitem>
+         <para>Набор записей типа <type>cron_job</type>.</para></listitem></itemizedlist>
+       <para>Описание типа <type>cron_job</type> можно найти в <xref remap="6" linkend="pgpro-scheduler-sql-types"/>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.clean_log()</function>
+     <indexterm><primary><function>schedule.clean_log</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Удаляет все записи с информацией о завершённых заданиях. Вызывать эту функцию может только суперпользователь.</para>
+      <para>Возвращаемые значения:</para>
+       <itemizedlist>
+        <listitem>
+         <para>Число удалённых записей.</para></listitem></itemizedlist>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.nodename()</function>
+     <indexterm><primary><function>schedule.nodename()</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Возвращает имя текущего узла.</para>
+     </listitem>
+    </varlistentry>
+    </variablelist>
+</sect4>
+<sect4 id="pgpro-scheduler-one-time-job-functions"><title>Функции для управления одноразовыми заданиями</title>
+    <variablelist>
+        <varlistentry>
+     <term>
+      <function>schedule.submit_job(<parameter>query</parameter> <type>text</type> [<replaceable>параметры...</replaceable>])</function>
+     <indexterm><primary><function>schedule.submit_job</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Назначает задания для немедленного или отложенного однократного выполнения. По умолчанию задание назначается для немедленного выполнения и оно может выполняться одновременно с другими запланированными заданиями. Чтобы назначить задание с отсроченным запуском, время запуска можно задать в аргументе <parameter>run_after</parameter> или передать в аргументе <parameter>depends_on</parameter> массив идентификаторов некоторых заданий для запуска данного задания сразу после их завершения.</para>
+       <para>Аргументы:</para>
+    <itemizedlist>
+      <listitem>
+        <para><parameter>query</parameter> &mdash; <acronym>SQL</acronym>-команды, которые будут выполнены.</para>
+        <para>Тип: <type>text</type></para>
+      </listitem>
+      <listitem>
+        <para><parameter>params</parameter> &mdash; массив параметров для SQL-запроса, которые могут подменять нумерованные местозаполнители в аргументе <parameter>query</parameter>, как например, $1, $2 и т. д. По умолчанию: <literal>NULL</literal></para>
+        <para>Type: <type>text[]</type></para>
+      </listitem>
+      <listitem>
+        <para><parameter>run_after</parameter> &mdash; время, после которого начнётся выполнение задания. Если в этом аргументе передаётся <literal>NULL</literal>, задание будет выполнено немедленно. Чтобы отложить запуск задания, также можно задать аргумент <parameter>depends_on</parameter>. По умолчанию: <literal>NULL</literal></para><para>Тип: <type>timestamp with time zone</type></para>
+      </listitem>
+      <listitem>
+        <para><parameter>node</parameter> &mdash; имя узла, на котором будет выполняться задание. По умолчанию: <literal>NULL</literal></para><para>Тип: <type>text</type></para>
+      </listitem>
+      <listitem>
+        <para><parameter>max_duration</parameter> &mdash; максимальное время, в течение которого может выполняться это задание. Если заданное ограничение превышается, задание останавливается принудительно. Если в этом аргументе передаётся <literal>NULL</literal> или он опускается, продолжительность выполнения не ограничивается. По умолчанию: <literal>NULL</literal></para><para>Тип: <type>interval</type></para>
+      </listitem>
+      <listitem>
+        <para><parameter>max_wait_interval</parameter> &mdash; максимальное время, на которое может быть отложено выполнение задания, если в запланированный момент все рабочие процессы оказались заняты. Например, если задать в этом ключе '00:02:34', задание будет ждать выполнения 2 минуты 34 секунды. Если значение этого ключа — <literal>NULL</literal> или не определено, задание может ожидать выполнения вечно. По умолчанию: <literal>NULL</literal></para><para>Тип: <type>interval</type></para>
+      </listitem>
+      <listitem>
+        <para><parameter>run_as</parameter> &mdash; пользователь или роль, с правами которого будет выполняться задание. Если в <parameter>run_as</parameter> передаётся <literal>NULL</literal>, задание выполняется от имени текущего пользователя. Чтобы задать этот аргумент, необходимо иметь права суперпользователя. По умолчанию: <literal>NULL</literal></para><para>Тип: <type>text</type></para>
+      </listitem>
+      <listitem>
+        <para><parameter>depends_on</parameter> &mdash; массив идентификаторов заданий. Созданное задание будет запущено сразу после того, как будут завершены все указанные задания. Этот аргумент является альтернативой параметру <parameter>run_after</parameter>. По умолчанию: <literal>NULL</literal></para><para>Тип: <type>bigint[]</type></para>
+      </listitem>
+      <listitem>
+        <para><parameter>name</parameter> &mdash; имя задания. По умолчанию: <literal>NULL</literal></para><para>Тип: <type>text</type></para>
+      </listitem>
+      <listitem>
+        <para><parameter>comments</parameter> &mdash; комментарии к заданию.</para><para>Тип: <type>text</type></para>
+      </listitem>
+      <listitem>
+        <para><parameter>resubmit_limit</parameter> &mdash; максимальное число раз, которое задание может назначаться повторно. За подробностями обратитесь к описанию функции <function>schedule.resubmit()</function>. По умолчанию: 100</para><para>Тип: <type>bigint</type></para>
+      </listitem>
+    </itemizedlist>
+      <para>Возвращаемые значения:</para>
+       <itemizedlist>
+        <listitem>
+        <para>Идентификатор созданного задания.</para>
+        <para>Тип: <type>bigint</type></para>
+     </listitem></itemizedlist></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term>
+      <function>schedule.get_self_id()</function>
+     <indexterm><primary><function>schedule.get_self_id</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Возвращает идентификатор задания, в контексте выполнения которого вызывается эта функция. Возвращаемый идентификатор имеет тип <type>bigint</type>. Эта функция должна вызываться в запросе, задаваемом в параметре <parameter>query</parameter> функции <function>schedule.submit_job()</function>. Если вызвать её иначе, возникает исключение.</para>
+      <para>Возвращаемые значения:</para>
+       <itemizedlist>
+        <listitem>
+         <para>Идентификатор задания.</para></listitem></itemizedlist>
+     </listitem>
+    </varlistentry>
+
+        <varlistentry>
+     <term>
+      <function>schedule.cancel_job(<parameter>job_id</parameter> <type>bigint</type>)</function>
+     <indexterm><primary><function>schedule.cancel_job</function></primary></indexterm>
+     </term>
+     <listitem>
+      <para>Отменяет все последующие запуски указанного задания. Если задание уже выполняется, оно не будет прервано, но повторно назначить его будет нельзя. Чтобы вызывать эту функцию, необходимо быть владельцем задания или иметь права суперпользователя.</para>
+      <para>Аргументы:</para>
+      <itemizedlist>
+      <listitem>
+        <para><parameter>job_id</parameter> &mdash; идентификатор задания, которое нужно отменить.</para></listitem></itemizedlist>
+      <para>Возвращаемые значения:</para>
+     <itemizedlist>
+      <listitem>
+    <para><literal>true</literal>, если операция завершена успешно.</para>
+      </listitem>
+    <listitem>
+    <para><literal>false</literal>, если выполнить операцию не удалось.</para>
+      </listitem>
+    </itemizedlist>
+    </listitem>
+    </varlistentry>
+
+    <varlistentry>
+    <term>
+      <function>schedule.resubmit(<parameter>run_after</parameter> <type>interval</type> default <type>NULL</type>)</function>
+     <indexterm><primary><function>schedule.resubmit</function></primary></indexterm>
+     </term>
+    <listitem>
+    <para>Задаёт время запуска для следующего выполнения задания, без прерывания текущего выполнения. Эта функция должна вызываться внутри запроса, задаваемого в аргументе <parameter>query</parameter> функции <function>schedule.submit_job()</function>. В другом контексте она выдаёт исключение. Если эта функция вызывается несколько раз в процессе выполнения одного задания, решающим будет последний вызов функции.</para>
+    <para>Аргументы:</para>
+    <itemizedlist>
+      <listitem>
+        <para><parameter>run_after</parameter> &mdash; интервал времени, после которого задание будет повторно назначено для выполнения. По умолчанию: 1 сек.</para>
+          <para>Тип: <type>interval</type></para>
+      </listitem>
+    </itemizedlist>
+    <para>Возвращаемые значения:</para>
+    <itemizedlist>
+      <listitem>
+      <para>Число секунд, после которого задание будет повторно назначено для выполнения.</para>
+    </listitem>
+    </itemizedlist>
+    </listitem>
+    </varlistentry>
+    
+   </variablelist>
+   </sect4>
+   </sect3>
+  </sect2>
+  <sect2>
+  <title>Авторы</title>
+  <para>Владимир Ершов <email>v.ershov@postgrespro.ru</email>, Postgres Professional, Москва, Россия</para>
+  </sect2>
+
+</sect1>

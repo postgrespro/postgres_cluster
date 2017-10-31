@@ -1,0 +1,93 @@
+<!-- doc/src/xml/ref/drop_transform.xml -->
+
+<refentry id="sql-droptransform">
+ <indexterm zone="sql-droptransform"><primary>DROP TRANSFORM</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP TRANSFORM</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP TRANSFORM</refname>
+  <refpurpose>удалить трансформацию</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP TRANSFORM [ IF EXISTS ] FOR <replaceable>имя_типа</replaceable> LANGUAGE <replaceable>имя_языка</replaceable> [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="sql-droptransform-description">
+  <title>Описание</title>
+
+  <para><command>DROP TRANSFORM</command> удаляет ранее определённую трансформацию.</para>
+
+  <para>Чтобы удалить трансформацию, необходимо быть владельцем типа и языка. Такие же требования действуют и при создании трансформации.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <variablelist>
+
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если трансформация не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>имя_типа</replaceable></term>
+
+     <listitem>
+      <para>Имя типа данных, для которого предназначена трансформация.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable>имя_языка</replaceable></term>
+
+     <listitem>
+      <para>Имя языка, для которого предназначена трансформация.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>CASCADE</literal></term>
+     <listitem>
+      <para>Автоматически удалять объекты, зависящие от данной трансформации, и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>RESTRICT</literal></term>
+     <listitem>
+      <para>Отказать в удалении трансформации, если от неё зависят какие-либо объекты. Это поведение по умолчанию.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+ </refsect1>
+
+ <refsect1 id="sql-droptransform-examples">
+  <title>Примеры</title>
+
+  <para>Удаление трансформации для типа <type>hstore</type> и языка <literal>plpythonu</literal>: <programlisting>DROP TRANSFORM FOR hstore LANGUAGE plpythonu;</programlisting></para>
+ </refsect1>
+
+ <refsect1 id="sql-droptransform-compat">
+  <title>Совместимость</title>
+
+  <para>Эта форма <command>DROP TRANSFORM</command> является расширением <productname>&productname;</productname>. За подробностями обратитесь к описанию <xref linkend="sql-createtransform"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createtransform"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

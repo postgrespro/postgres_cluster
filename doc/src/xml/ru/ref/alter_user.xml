@@ -1,0 +1,70 @@
+<!--
+doc/src/xml/ref/alter_user.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alteruser">
+ <indexterm zone="sql-alteruser"><primary>ALTER USER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER USER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER USER</refname>
+  <refpurpose>изменить роль в базе данных</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER USER <replaceable class="parameter">указание_роли</replaceable> [ WITH ] <replaceable class="parameter">параметр</replaceable> [ ... ]
+
+<phrase>Здесь <replaceable class="parameter">параметр</replaceable>:</phrase>
+
+      SUPERUSER | NOSUPERUSER
+    | CREATEDB | NOCREATEDB
+    | CREATEROLE | NOCREATEROLE
+    | INHERIT | NOINHERIT
+    | LOGIN | NOLOGIN
+    | REPLICATION | NOREPLICATION
+    | BYPASSRLS | NOBYPASSRLS
+    | CONNECTION LIMIT <replaceable class="parameter">предел_подключений</replaceable>
+    | [ ENCRYPTED | UNENCRYPTED ] PASSWORD '<replaceable class="parameter">пароль</replaceable>'
+    | PASSWORD ( '<replaceable class="parameter">пароль</replaceable>' USING '<replaceable class="parameter">метод</replaceable>' )
+    | VALID UNTIL '<replaceable class="parameter">дата_время</replaceable>'
+
+ALTER USER <replaceable class="parameter">имя</replaceable> RENAME TO <replaceable>новое_имя</replaceable>
+
+ALTER USER { <replaceable class="parameter">указание_роли</replaceable> | ALL } [ IN DATABASE <replaceable class="parameter">имя_бд</replaceable> ] SET <replaceable>параметр_конфигурации</replaceable> { TO | = } { <replaceable>значение</replaceable> | DEFAULT }
+ALTER USER { <replaceable class="parameter">указание_роли</replaceable> | ALL } [ IN DATABASE <replaceable class="parameter">имя_бд</replaceable> ] SET <replaceable>параметр_конфигурации</replaceable> FROM CURRENT
+ALTER USER { <replaceable class="parameter">указание_роли</replaceable> | ALL } [ IN DATABASE <replaceable class="parameter">имя_бд</replaceable> ] RESET <replaceable>параметр_конфигурации</replaceable>
+ALTER USER { <replaceable class="parameter">указание_роли</replaceable> | ALL } [ IN DATABASE <replaceable class="parameter">имя_бд</replaceable> ] RESET ALL
+
+<phrase>Здесь <replaceable class="parameter">указание_роли</replaceable>:</phrase>
+
+    [ GROUP ] <replaceable class="parameter">имя_роли</replaceable>
+  | CURRENT_USER
+  | SESSION_USER</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Оператор <command>ALTER USER</command> теперь стал синонимом оператора <xref linkend="sql-alterrole"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER USER</command> является расширением <productname>&productname;</productname>. В стандарте SQL определение пользователей считается зависимым от реализации.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterrole"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

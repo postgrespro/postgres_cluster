@@ -1,0 +1,85 @@
+<!--
+doc/src/xml/ref/drop_domain.xml
+&productname; documentation
+-->
+
+<refentry id="sql-dropdomain">
+ <indexterm zone="sql-dropdomain"><primary>DROP DOMAIN</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP DOMAIN</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP DOMAIN</refname>
+  <refpurpose>удалить домен</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP DOMAIN [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [, ...] [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP DOMAIN</command> удаляет домен. Удалить домен может только его владелец.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если домен не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующего домена.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данного домена (например, столбцы таблиц), и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении домена, если от него зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1 id="sql-dropdomain-examples">
+  <title>Примеры</title>
+
+  <para>Удаление домена <type>box</type>: <programlisting>DROP DOMAIN box;</programlisting></para>
+ </refsect1>
+
+ <refsect1 id="sql-dropdomain-compatibility">
+  <title>Совместимость</title>
+
+  <para>Эта команда соответствует стандарту SQL, за исключением параметра <literal>IF EXISTS</literal>, являющегося расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1 id="sql-dropdomain-see-also">
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createdomain"/></member>
+   <member><xref linkend="sql-alterdomain"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

@@ -1,0 +1,107 @@
+<!--
+doc/src/xml/ref/truncate.xml
+&productname; documentation
+-->
+
+<refentry id="sql-truncate">
+ <indexterm zone="sql-truncate"><primary>TRUNCATE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>TRUNCATE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>TRUNCATE</refname>
+  <refpurpose>опустошить таблицу или набор таблиц</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>TRUNCATE [ TABLE ] [ ONLY ] <replaceable class="parameter">имя</replaceable> [ * ] [, ... ]
+    [ RESTART IDENTITY | CONTINUE IDENTITY ] [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Команда <command>TRUNCATE</command> быстро удаляет все строки из набора таблиц. Она действует так же, как безусловная команда <command>DELETE</command> для каждой таблицы, но гораздо быстрее, так как она фактически не сканирует таблицы. Более того, она немедленно высвобождает дисковое пространство, так что выполнять операцию <command>VACUUM</command> после неё не требуется. Наиболее полезна она для больших таблиц.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) таблицы, подлежащей опустошению. Если перед именем таблицы указано <literal>ONLY</literal>, очищается только заданная таблица. Без <literal>ONLY</literal> очищается и заданная таблица, и все её потомки (если таковые есть). После имени таблицы можно также добавить необязательное указание <literal>*</literal>, чтобы явно обозначить, что блокировка затрагивает и все дочерние таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTART IDENTITY</literal></term>
+    <listitem>
+     <para>Автоматически перезапускать последовательности, связанные со столбцами опустошаемой таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CONTINUE IDENTITY</literal></term>
+    <listitem>
+     <para>Не изменять значения последовательностей. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически опустошать все таблицы, ссылающиеся по внешнему ключу на заданные таблицы, или на таблицы, затронутые в результате действия <literal>CASCADE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в опустошении любых таблиц, на которые по внешнему ключу ссылаются другие таблицы, не перечисленные в этой команде. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Чтобы опустошить таблицу, необходимо иметь право <literal>TRUNCATE</literal> для этой таблицы.</para>
+
+  <para>Команда <command>TRUNCATE</command> запрашивает блокировку <literal>ACCESS EXCLUSIVE</literal> для каждой таблицы, которую она обрабатывает. Когда указано <literal>RESTART IDENTITY</literal>, все последовательности, которые должны быть перезапущены, так же блокируются исключительно. В случаях, когда требуется обеспечить параллельный доступ к таблице, следует использовать <command>DELETE</command>.</para>
+
+  <para><command>TRUNCATE</command> нельзя использовать с таблицей, на которую по внешнему ключу ссылаются другие таблицы, если только и эти таблицы не опустошаются этой же командой. Проверка допустимости очистки в таких случаях потребовала бы сканирования таблицы, а главная идея данной команды в том, чтобы не делать этого. Для автоматической обработки всех зависимых таблиц можно использовать указание <literal>CASCADE</literal> &mdash; но будьте очень осторожны с ним, иначе вы можете потерять данные, которые не собирались удалять!</para>
+
+  <para>При выполнении <command>TRUNCATE</command> не срабатывают никакие триггеры <literal>ON DELETE</literal>, которые могут быть настроены для таблиц. Однако при этом срабатывают триггеры <literal>ON TRUNCATE</literal>. Если триггеры <literal>ON TRUNCATE</literal> определены для любых из этих таблиц, то все триггеры <literal>BEFORE TRUNCATE</literal> срабатывают до того, как происходит опустошение, а все триггеры <literal>AFTER TRUNCATE</literal> срабатывают после того, как завершается опустошение последней таблицы и все последовательности сбрасываются. Триггеры срабатывают по порядку обработки таблиц (сначала для таблиц, перечисленных в команде, затем для тех, что затрагиваются каскадно).</para>
+
+  <para>Команда <command>TRUNCATE</command> небезопасна с точки зрения MVCC. После опустошения таблицы она будет выглядеть пустой для параллельных транзакций, если они работают со снимком, полученным до опустошения. За подробностями обратитесь к <xref remap="3" linkend="mvcc-caveats"/>.</para>
+
+  <para><command>TRUNCATE</command> является надёжной транзакционной операцией в отношении данных в таблицах: опустошение будет безопасно отменено, если окружающая транзакция не будет зафиксирована.</para>
+
+  <para>С указанием <literal>RESTART IDENTITY</literal> подразумеваемые операции <command>ALTER SEQUENCE RESTART</command> также выполняются транзакционно; то есть, они будут отменены, если окружающая транзакция не будет зафиксирована. Это отличается от обычного поведения <command>ALTER SEQUENCE RESTART</command>. Учтите, что если до того, как транзакция отменится, будут выполнены какие-либо дополнительные операции с последовательностями, эффект этих операций также будет отменён, но не их влияние на значение <function>currval()</function>; то есть после транзакции <function>currval()</function> продолжит возвращать последнее значение последовательности, полученное внутри прерванной транзакции, хотя сама последовательность уже может быть несогласованной с ним. Подобным образом обычно ведёт себя <function>currval()</function> после сбоя транзакции.</para>
+
+  <para><command>TRUNCATE</command> в настоящее время не поддерживается для сторонних таблиц. Из этого следует, что если у целевой таблицы есть дочерние таблицы, являющиеся сторонними, команда не будет выполнена.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Опустошение таблиц <literal>bigtable</literal> и <literal>fattable</literal>: <programlisting>TRUNCATE bigtable, fattable;</programlisting></para>
+
+  <para>Та же операция и сброс всех связанных генераторов последовательностей: <programlisting>TRUNCATE bigtable, fattable RESTART IDENTITY;</programlisting></para>
+
+  <para>Опустошение таблицы <literal>othertable</literal> и каскадная обработка всех таблиц, ссылающихся на <literal>othertable</literal> по ограничениям внешнего ключа: <programlisting>TRUNCATE othertable CASCADE;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Стандарт SQL:2008 включает команду <command>TRUNCATE</command> с синтаксисом <literal>TRUNCATE TABLE <replaceable>имя_таблицы</replaceable></literal>. Предложения <literal>CONTINUE IDENTITY</literal>/<literal>RESTART IDENTITY</literal> также описаны в стандарте, но с небольшими отличиями, хотя их назначение похоже. Поведение этой команды при параллельных операциях, согласно стандарту, отчасти определяются реализацией, так что приведённые выше замечания при необходимости следует учитывать и сопоставлять с другими реализациями.</para>
+ </refsect1>
+</refentry>

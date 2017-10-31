@@ -1,0 +1,130 @@
+<!-- doc/src/xml/vacuumlo.xml -->
+
+<refentry id="vacuumlo">
+ <indexterm zone="vacuumlo"><primary>vacuumlo</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>vacuumlo</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>vacuumlo</refname>
+  <refpurpose>удалить потерянные большие объекты из базы данных <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>vacuumlo</command>
+   <arg choice="opt" rep="repeat"><replaceable>параметр</replaceable></arg>
+   <arg choice="plain" rep="repeat"><replaceable>имя_бд</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+ <para>Программа <application>vacuumlo</application> представляет собой простую утилиту, которая удаляет все <quote>потерянные</quote> большие объекты из базы данных <productname>&productname;</productname>. Потерянным большим объектом (БО) считается такой БО, OID которого не фигурирует ни в каком столбце <type>oid</type> или <type>lo</type> в базе данных.</para>
+
+ <para>Если вы применяете эту утилиту, вас также может заинтересовать триггер <function>lo_manage</function> в модуле <xref linkend="lo"/>. Триггер <function>lo_manage</function> полезен тем, что стремится предотвратить образование потерянных БО.</para>
+
+  <para>Обработке подвергаются все базы данных, перечисленные в командной строке.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <para><application>vacuumlo</application> принимает следующие аргументы командной строки: <variablelist>
+   <varlistentry>
+    <term><option>-l</option> <replaceable>предел</replaceable></term>
+    <listitem>
+     <para>Удалять в одной транзакции ограниченное количество больших объектов (максимальное количество задаёт <replaceable>предел</replaceable>, по умолчанию 1000). Так как сервер запрашивает блокировку для каждого удаляемого БО, удаление слишком большого количества БО в одной транзакции чревато превышением лимита <xref linkend="guc-max-locks-per-transaction"/>. Если вы всё же хотите, чтобы все удаления происходили в одной транзакции, установите этот предел, равным нулю.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-n</option></term>
+    <listitem>
+     <para>Не удалять ничего, только показать, какие операции должны были выполняться.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-v</option></term>
+    <listitem>
+     <para>Выводить подробные сообщения о прогрессе.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-V</option></term>
+    <term><option>--version</option></term>
+    <listitem>
+     <para>Вывести версию <application>vacuumlo</application> и завершиться.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-?</option></term>
+    <term><option>--help</option></term>
+    <listitem>
+     <para>Вывести справку об аргументах командной строки <application>vacuumlo</application> и завершиться.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist></para>
+
+  <para><application>vacuumlo</application> также принимает в командной строке следующие аргументы, задающие параметры подключения: <variablelist>
+   <varlistentry>
+    <term><option>-h</option> <replaceable>компьютер</replaceable></term>
+    <listitem>
+     <para>Адрес сервера баз данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-p</option> <replaceable>порт</replaceable></term>
+    <listitem>
+     <para>Порт сервера баз данных.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-U</option> <replaceable>имя_пользователя</replaceable></term>
+    <listitem>
+     <para>Имя пользователя, под которым производится подключение.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-w</option></term>
+    <term><option>--no-password</option></term>
+    <listitem>
+     <para>Не выдавать запрос на ввод пароля. Если сервер требует аутентификацию по паролю и пароль не доступен с помощью других средств, таких как файл <filename>.pgpass</filename>, попытка соединения не удастся. Этот параметр может быть полезен в пакетных заданиях и скриптах, где нет пользователя, который вводит пароль.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><option>-W</option></term>
+    <listitem>
+     <para>Принудительно запрашивать пароль перед подключением к базе данных.</para>
+
+     <para>Это несущественный параметр, так как <application>vacuumlo</application> запрашивает пароль автоматически, если сервер проверяет подлинность по паролю. Однако, чтобы понять это, <application>vacuumlo</application> лишний раз подключается к серверу. Поэтому иногда имеет смысл ввести <option>-W</option>, чтобы исключить эту ненужную попытку подключения.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Программа <application>vacuumlo</application> работает следующим образом: сначала <application>vacuumlo</application> строит временную таблицу, содержащую все OID больших объектов в выбранной базе данных. Затем она сканирует все столбцы в базе данных, имеющие тип <type>oid</type> или <type>lo</type>, и удаляет соответствующие записи из временной таблицы. (Замечание: рассматриваются только типы именно с такими именами, а не, например, домены на их базе.) Оставшиеся записи во временной таблице указывают на потерянные БО, которые затем и удаляются.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Автор</title>
+
+  <para>Питер Маунт <email>peter@retep.org.uk</email></para>
+ </refsect1>
+
+</refentry>

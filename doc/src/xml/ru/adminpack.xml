@@ -1,0 +1,87 @@
+<!-- doc/src/xml/adminpack.xml -->
+
+<sect1 id="adminpack" xreflabel="adminpack">
+ <title>adminpack</title>
+
+ <indexterm zone="adminpack"><primary>adminpack</primary></indexterm>
+
+ <para>Модуль <filename>adminpack</filename> предоставляет несколько вспомогательных функций, которыми могут пользоваться <application>pgAdmin</application> и другие средства администрирования и управления базами данных, например, для удалённого управления файлами журналов сервера. Использовать все эти функции разрешено только суперпользователям.</para>
+
+ <para>Функции, приведённые в <xref remap="6" linkend="functions-adminpack-table"/>, дают доступ на запись к файлам на компьютере, где работает сервер. (См. также функции в <xref remap="6" linkend="functions-admin-genfile-table"/>, которые дают доступ только на чтение.) С их помощью можно обращаться только к файлам в каталоге кластера баз данных, но путь может задаваться и как относительный, и как абсолютный.</para>
+
+ <table id="functions-adminpack-table">
+  <title>Функции модуля <filename>adminpack</filename></title>
+  <tgroup cols="3">
+   <thead>
+    <row><entry>Имя</entry> <entry>Тип результата</entry> <entry>Описание</entry>
+    </row>
+   </thead>
+
+   <tbody>
+    <row>
+     <entry><function>pg_catalog.pg_file_write(filename text, data text, append boolean)</function></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Записать или дописать в текстовый файл</entry>
+    </row>
+    <row>
+     <entry><function>pg_catalog.pg_file_rename(oldname text, newname text <optional>, archivename text</optional>)</function></entry>
+     <entry><type>boolean</type></entry>
+     <entry>Переименовать файл</entry>
+    </row>
+    <row>
+     <entry><function>pg_catalog.pg_file_unlink(filename text)</function></entry>
+     <entry><type>boolean</type></entry>
+     <entry>Удалить файл</entry>
+    </row>
+    <row>
+     <entry><function>pg_catalog.pg_logdir_ls()</function></entry>
+     <entry><type>setof record</type></entry>
+     <entry>Получить список файлов журналов в каталоге <varname>log_directory</varname></entry>
+    </row>
+   </tbody>
+  </tgroup>
+ </table>
+
+ <indexterm><primary>pg_file_write</primary></indexterm>
+ <para>Функция <function>pg_file_write</function> записывает данные (<parameter>data</parameter>) в файл с именем <parameter>filename</parameter>. Если флаг <parameter>append</parameter> сброшен, этот файл не должен существовать. Если же флаг <parameter>append</parameter> установлен, существование файла допускается и в этом случае данные будут дописаны в него. Возвращает число записанных байтов.</para>
+
+ <indexterm><primary>pg_file_rename</primary></indexterm>
+ <para>Функция <function>pg_file_rename</function> переименовывает файл. Если параметр <parameter>archivename</parameter> опущен или равен NULL, она просто переименовывает файл <parameter>oldname</parameter> в <parameter>newname</parameter> (файл с новым именем не должен существовать). Если параметр <parameter>archivename</parameter> задан, она сначала переименовывает <parameter>newname</parameter> в <parameter>archivename</parameter> (такой файл не должен существовать), а затем переименовывает <parameter>oldname</parameter> в <parameter>newname</parameter>. В случае ошибки на втором этапе переименования она попытается переименовать <parameter>archivename</parameter> назад в <parameter>newname</parameter>, прежде чем выдать ошибку. Возвращает true в случае успеха и false, если исходные файлы отсутствуют или их невозможно изменить; в других случаях выдаются ошибки.</para>
+
+ <indexterm><primary>pg_file_unlink</primary></indexterm>
+ <para>Функция <function>pg_file_unlink</function> удаляет заданный файл. Возвращает true в случае успеха, false в случае отсутствия указанного файла либо при сбое в вызове <function>unlink()</function>; в других случаях выдаются ошибки.</para>
+
+ <indexterm><primary>pg_logdir_ls</primary></indexterm>
+ <para>Функция <function>pg_logdir_ls</function> возвращает время создания и пути всех файлов журналов в каталоге <xref linkend="guc-log-directory"/>. Чтобы эта функция работала, параметр <xref linkend="guc-log-filename"/> должен иметь значение по умолчанию (<literal>postgresql-%Y-%m-%d_%H%M%S.log</literal>).</para>
+
+ <para>Функции, перечисленные в <xref remap="6" linkend="functions-adminpack-deprecated-table"/>, являются устаревшими и не должны использоваться в новых приложениях; вместо них следует использовать функции, описанные в <xref remap="6" linkend="functions-admin-signal-table"/> и <xref remap="6" linkend="functions-admin-genfile-table"/>. Эти функции включены в <filename>adminpack</filename> только для совместимости со старыми версиями <application>pgAdmin</application>.</para>
+
+ <table id="functions-adminpack-deprecated-table">
+  <title>Устаревшие функции модуля <filename>adminpack</filename></title>
+  <tgroup cols="3">
+   <thead>
+    <row><entry>Имя</entry> <entry>Тип результата</entry> <entry>Описание</entry>
+    </row>
+   </thead>
+
+   <tbody>
+    <row>
+     <entry><function>pg_catalog.pg_file_read(filename text, offset bigint, nbytes bigint)</function></entry>
+     <entry><type>text</type></entry>
+     <entry>Альтернативный вариант функции <function>pg_read_file()</function></entry>
+    </row>
+    <row>
+     <entry><function>pg_catalog.pg_file_length(filename text)</function></entry>
+     <entry><type>bigint</type></entry>
+     <entry>Выдаёт то же значение, что содержится в столбце <structfield>size</structfield> результата <function>pg_stat_file()</function></entry>
+    </row>
+    <row>
+     <entry><function>pg_catalog.pg_logfile_rotate()</function></entry>
+     <entry><type>integer</type></entry>
+     <entry>Альтернативный вариант <function>pg_rotate_logfile()</function>, возвращает целое (0 или 1), а не булевское значение</entry>
+    </row>
+   </tbody>
+  </tgroup>
+ </table>
+
+</sect1>

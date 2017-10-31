@@ -1,0 +1,219 @@
+<!-- doc/src/xml/intro.xml -->
+
+<preface id="preface">
+ <title>Предисловие</title>
+
+ <para>Эта книга является официальной документацией <productname>&productname;</productname>. Она была написана разработчиками и добровольцами параллельно с разработкой программного продукта. В ней описывается вся функциональность, которую официально поддерживает текущая версия <productname>&productname;</productname>.</para>
+
+ <para>Чтобы такой большой объём информации о <productname>&productname;</productname> был удобоварим, эта книга разделена на части. Каждая часть предназначена определённой категории пользователей или пользователям на разных стадиях освоения <productname>&productname;</productname>: <itemizedlist>
+   <listitem>
+    <para><xref linkend="tutorial"/> представляет собой неформальное введение для начинающих.</para>
+   </listitem>
+
+   <listitem>
+    <para><xref linkend="sql"/> описывает язык <acronym>SQL</acronym> и его среду, включая типы данных и функции, а также оптимизацию производительности на уровне пользователей. Это будет полезно прочитать всем пользователям <productname>&productname;</productname>.</para>
+   </listitem>
+
+   <listitem>
+    <para><xref linkend="admin"/> описывает установку и администрирование сервера. Эта часть будет полезна всем, кто использует сервер <productname>&productname;</productname> для самых разных целей.</para>
+   </listitem>
+
+   <listitem>
+    <para><xref linkend="client-interfaces"/> описывает программные интерфейсы для клиентских приложений <productname>&productname;</productname>.</para>
+   </listitem>
+
+
+   <listitem>
+    <para><xref linkend="server-programming"/> предназначена для более опытных пользователей и содержит сведения о возможностях расширения сервера. Эта часть включает темы, посвящённые, в частности, пользовательским типам данных и функциям.</para>
+   </listitem>
+
+   <listitem>
+    <para><xref linkend="reference"/> содержит справочную информацию о командах SQL, а также клиентских и серверных программах. Эта часть дополняет другие информацией, структурированной по командам и программам.</para>
+   </listitem>
+
+   <listitem>
+    <para><xref linkend="internals"/> содержит разнообразную информацию, полезную для разработчиков <productname>&productname;</productname>.</para>
+   </listitem>
+  </itemizedlist></para>
+
+ <sect1 id="intro-whatis">
+  <title>Что такое <productname>&productname;</productname>?</title>
+
+  <para><productname>&productname;</productname> &mdash; это объектно-реляционная система управления базами данных (<acronym>ОРСУБД</acronym>, <acronym>ORDBMS</acronym>), разработанная Postgres Professional на основе <ulink url="http://postgresql.org"><productname>PostgreSQL</productname></ulink>, в свою очередь, основанном на <ulink url="http://db.cs.berkeley.edu/postgres.html"><productname>POSTGRES, Version 4.2</productname></ulink> &mdash; программе, разработанной на факультете компьютерных наук Калифорнийского университета в Беркли. В POSTGRES появилось множество новшеств, которые были реализованы в некоторых коммерческих СУБД гораздо позднее.</para>
+
+  <para><productname>PostgreSQL</productname> &mdash; СУБД с открытым исходным кодом, основой которого был код, написанный в Беркли. Она поддерживает большую часть стандарта SQL и предлагает множество современных функций: <itemizedlist spacing="compact">
+    <listitem>
+     <simpara>сложные запросы</simpara>
+    </listitem>
+    <listitem>
+     <simpara>внешние ключи</simpara>
+    </listitem>
+    <listitem>
+     <simpara>триггеры</simpara>
+    </listitem>
+    <listitem>
+     <simpara>изменяемые представления</simpara>
+    </listitem>
+    <listitem>
+     <simpara>транзакционная целостность</simpara>
+    </listitem>
+    <listitem>
+     <simpara>многоверсионность</simpara>
+    </listitem>
+   </itemizedlist> Кроме того, пользователи могут всячески расширять <productname>&productname;</productname>, так же как и <productname>PostgreSQL</productname>, например, создавая свои <itemizedlist spacing="compact">
+    <listitem>
+     <simpara>типы данных</simpara>
+    </listitem>
+    <listitem>
+     <simpara>функции</simpara>
+    </listitem>
+    <listitem>
+     <simpara>операторы</simpara>
+    </listitem>
+    <listitem>
+     <simpara>агрегатные функции</simpara>
+    </listitem>
+    <listitem>
+     <simpara>методы индексирования</simpara>
+    </listitem>
+    <listitem>
+     <simpara>процедурные языки</simpara>
+    </listitem>
+   </itemizedlist></para>
+
+  </sect1>
+
+  <sect1 id="intro-pgpro-vs-pg">
+  <title>Различия между <productname>&productname;</productname> и PostgreSQL</title>
+
+  <para><productname>&productname;</productname> наиболее актуальная версия PostgreSQL c добавленными дополнительными изменениями и добавленными расширениями. Многие из этих изменений уже приняты сообществом PostgreSQL и включены в состав следующей разрабатываемой версии PostgreSQL. Также в дистрибутив включены некоторые расширения и изменения, разработанные в Postgres Professional. Пользователи <productname>&productname;</productname> таким образом получают ранний доступ к ряду важных нововведений и исправлений.</para>
+
+  <para>В настоящее время <productname>&productname;</productname> имеет следующие отличия от PostgreSQL: <itemizedlist spacing="compact">
+    <listitem>
+     <simpara>Улучшение производительности на многоядерных системах (оптимизация буфер-менеджера и блокировок)</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Усовершенствования полнотекстового поиска: поиск фраз, морфология hunspell, некоторые морфологические словари включены в дистрибутив и могут быть подключены одним оператором SQL, модуль <link linkend="shared-ispell"><application>shared_ispell</application></link> позволяет хранить словари в разделяемой памяти</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Покрывающие индексы</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Поддержка <application>libicu</application> на всех платформах, что обеспечивает независимые от платформы результаты сортировки</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Модуль <link linkend="pgtrgm"><application>pg_trgm</application></link> поддерживает нечёткое сравнение строк и поиск подстрок</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Улучшенный модуль <link linkend="pageinspect"><application>pageinspect</application></link> обеспечивает доступ к внутренним структурам хранения данных</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Модуль <link linkend="sr-plan"><application>sr_plan</application></link> позволяет сохранять и восстанавливать планы запросов</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Модуль <link linkend="dump-stat"><application>dump_stat</application></link> позволяет сохранять статистику данных при резервном копировании и восстановлении</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Модуль <link linkend="jsquery"><application>jsquery</application></link> реализует специальный язык запросов для эффективного, с использованием индексов, поиска в структурированных данных JSONB</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Модуль <link linkend="pg-variables"><application>pg_variables</application></link> содержит функции для работы с переменными различных типов</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Модуль <link linkend="pg-pathman"><application>pg_pathman</application></link> предоставляет оптимизированный механизм секционирования, а также функции для создания и управления секциями</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Модуль <link linkend="pg-query-state"><application>pg_query_state</application></link> даёт возможность узнавать текущее состояние выполнения запросов в работающем обслуживающем процессе</simpara>
+    </listitem>
+    <listitem>
+     <simpara><link linkend="app-pgprobackup"><application>pg_probackup</application></link> — менеджер резервного копирования и восстановления</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Модуль <link linkend="mchar"><application>mchar</application></link> предоставляет дополнительный тип данных для совместимости с <productname>Microsoft SQL Server</productname></simpara>
+    </listitem>
+    <listitem>
+     <simpara>Модуль <link linkend="fulleq"><application>fulleq</application></link> предоставляет дополнительный оператор равенства для совместимости с <productname>Microsoft SQL Server</productname>.</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Модуль <link linkend="fasttrun"><application>fasttrun</application></link> предоставляет транзакционно-небезопасную функцию для усечения временных таблиц, предотвращающую разрастание каталога pg_class</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Модуль <link linkend="online-analyze"><application>online_analyze</application></link> предоставляет набор функций, которые немедленно обновляют статистику в целевых таблицах после операций INSERT, UPDATE, DELETE и SELECT INTO в них</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Модуль <link linkend="plantuner"><application>plantuner</application></link> добавляет поддержку указаний для планировщика, позволяющих отключать или подключать определённые индексы при выполнении запроса.</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Добавлен алгоритм поиска k ближайших соседей (KNN) для SP-GiST и B-дерева (см. <xref remap="4" linkend="spgist"/>)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>В качестве отдельного модуля добавлена реализация индексов RUM, основанная на GIN (см. <xref remap="4" linkend="rum"/>)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Операция <command>CREATE INDEX</command> с индексами GiST, GIN, SP-GiST более компактный WAL</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Добавлен таймаут для простаивающих сеансов на стороне сервера (см. <xref remap="4" linkend="guc-idle-session-timeout"/>)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Добавлена поддержка алгоритма SHA-2 для шифрования паролей (см. <xref remap="4" linkend="auth-password"/>)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Добавлено сжатие на уровне страниц (CFS) (см. <xref remap="4" linkend="cfs"/>)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Добавлена поддержка автономных транзакций (см. <xref remap="4" linkend="atx"/>)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Добавлен новый дополнительный рабочий процесс для планирования задач по правилам (см. <xref remap="4" linkend="pgpro-scheduler"/>)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Добавлена поддержка перемещаемых таблиц (см. <xref remap="4" linkend="pgtransfer"/>)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Добавлено расширение <link linkend="pg-hint-plan"><application>pg_hint_plan</application></link></simpara>
+    </listitem>
+    <listitem>
+      <simpara>Для идентификаторов транзакций на 64-битных платформах используется 64-битный тип данных</simpara>
+    </listitem>
+    <listitem>
+      <simpara>«Отложенное» размещение временных таблиц на диске</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Согласованное чтение на ведомом сервере (ожидание применения WAL, см. <xref remap="4" linkend="sql-waitlsn"/>)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Добавлена утилита <link linkend="app-pgrepack"><application>pg_repack</application></link></simpara>
+    </listitem>
+    <listitem>
+      <simpara>Добавлено расширение <link linkend="multimaster"><application>multimaster</application></link></simpara>
+    </listitem>
+    <listitem>
+      <simpara>Добавлен алгоритм смены серверов для подключений <application>libpq</application></simpara>
+    </listitem>
+    <listitem>
+      <simpara>Добавлено расширение <link linkend="aqo"><application>aqo</application></link> для адаптивной оптимизации запросов</simpara>
+    </listitem>    
+    <listitem>
+      <simpara>Реализован декларативный синтаксис секционирования (см. <xref remap="4" linkend="pg-pathman-using-declarative-syntax"/>)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Добавлена служба мониторинга <application>mamonsu</application>, исполненная в виде агента <application>Zabbix</application> (см. <xref remap="4" linkend="mamonsu"/>)</simpara>
+    </listitem>
+    <listitem>
+      <simpara>Добавлено расширение <link linkend="pg-wait-sampling"><application>pg_wait_sampling</application></link>, осуществляющее периодический сбор статистики по событиям ожидания. Воспользовавшись этим расширением, вы сможете понять характер активности сервера, в том числе увидеть текущие события ожидания по всем обычным и фоновым рабочим процессам.</simpara>
+    </listitem>
+    <listitem>
+     <simpara>Модуль <application>sr_plan</application> реализует альтернативный анализатор текстового поиска.</simpara>
+    </listitem>
+   </itemizedlist></para>
+
+  <para>Выпуски <productname>&productname;</productname> следуют за выпусками PostgreSQL, хотя иногда могут выпускаться чаще. Схема версионирования <productname>&productname;</productname> основана на схеме версионирования PostgreSQL и включает дополнительную цифру.</para>
+
+ </sect1>
+
+ &history;
+ &notation;
+ &problems;
+
+</preface>

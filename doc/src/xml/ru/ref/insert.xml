@@ -1,0 +1,309 @@
+<!--
+doc/src/xml/ref/insert.xml
+&productname; documentation
+-->
+
+<refentry id="sql-insert">
+ <indexterm zone="sql-insert"><primary>INSERT</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>INSERT</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>INSERT</refname>
+  <refpurpose>добавить строки в таблицу</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>[ WITH [ RECURSIVE ] <replaceable class="parameter">запрос_WITH</replaceable> [, ...] ]
+INSERT INTO <replaceable class="parameter">имя_таблицы</replaceable> [ AS <replaceable class="parameter">псевдоним</replaceable> ] [ ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] ) ]
+    { DEFAULT VALUES | VALUES ( { <replaceable class="parameter">выражение</replaceable> | DEFAULT } [, ...] ) [, ...] | <replaceable class="parameter">запрос</replaceable> }
+    [ ON CONFLICT [ <replaceable class="parameter">объект_конфликта</replaceable> ] <replaceable class="parameter">действие_при_конфликте</replaceable> ]
+    [ RETURNING * | <replaceable class="parameter">выражение_результата</replaceable> [ [ AS ] <replaceable class="parameter">имя_результата</replaceable> ] [, ...] ]
+
+<phrase>Здесь допускается <replaceable class="parameter">объект_конфликта</replaceable>:</phrase>
+
+    ( { <replaceable class="parameter">имя_столбца_индекса</replaceable> | ( <replaceable class="parameter">выражение_индекса</replaceable> ) } [ COLLATE <replaceable class="parameter">правило_сортировки</replaceable> ] [ <replaceable class="parameter">класс_операторов</replaceable> ] [, ...] ) [ WHERE <replaceable class="parameter">предикат_индекса</replaceable> ]
+    ON CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable>
+
+<phrase>и <replaceable class="parameter">действие_при_конфликте</replaceable> может быть следующим:</phrase>
+
+    DO NOTHING
+    DO UPDATE SET { <replaceable class="parameter">имя_столбца</replaceable> = { <replaceable class="parameter">выражение</replaceable> | DEFAULT } |
+                    ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] ) = ( { <replaceable class="parameter">выражение</replaceable> | DEFAULT } [, ...] ) |
+                    ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] ) = ( <replaceable class="parameter">вложенный_SELECT</replaceable> )
+                  } [, ...]
+              [ WHERE <replaceable class="parameter">условие</replaceable> ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>INSERT</command> добавляет строки в таблицу. Эта команда может добавить одну или несколько строк, сформированных выражениями значений, либо ноль или более строк, выданных дополнительным запросом.</para>
+
+  <para>Имена целевых столбцов могут перечисляться в любом порядке. Если список с именами столбцов отсутствует, по умолчанию целевыми столбцами становятся все столбцы заданной таблицы; либо первые <replaceable>N</replaceable> из них, если только <replaceable>N</replaceable> столбцов поступает от предложения <literal>VALUES</literal> или <replaceable>запроса</replaceable>. Значения, получаемые от предложения <literal>VALUES</literal> или <replaceable>запроса</replaceable>, связываются с явно или неявно определённым списком столбцов слева направо.</para>
+
+  <para>Все столбцы, не представленные в явном или неявном списке столбцов, получат значения по умолчанию, если для них заданы эти значения, либо NULL в противном случае.</para>
+
+  <para>Если выражение для любого столбца выдаёт другой тип данных, система попытается автоматически привести его к нужному.</para>
+
+  <para>Предложение <literal>ON CONFLICT</literal> позволяет задать действие, заменяющее возникновение ошибки при нарушении ограничения уникальности или ограничения-исключения. (См. описание <xref linkend="sql-on-conflict" endterm="sql-on-conflict-title"/> ниже.)</para>
+
+  <para>С необязательным предложением <literal>RETURNING</literal> команда <command>INSERT</command> вычислит и возвратит значения для каждой фактически добавленной строки (или изменённой, если применялось предложение <literal>ON CONFLICT DO UPDATE</literal>). В основном это полезно для получения значений, присвоенных по умолчанию, например, последовательного номера записи. Однако в этом предложении можно задать любое выражение со столбцами таблицы. Список <literal>RETURNING</literal> имеет тот же синтаксис, что и список результатов <command>SELECT</command>. В результате будут возвращены те строки, которые были успешно вставлены или изменены. Например, если строка была заблокирована, но не изменена, из-за того, что <replaceable class="parameter">условие</replaceable> в предложении <literal>ON CONFLICT DO UPDATE ... WHERE</literal> не удовлетворено, эта строка возвращена не будет.</para>
+
+  <para>Чтобы добавлять строки в таблицу, необходимо иметь право <literal>INSERT</literal> для неё. Если присутствует предложение <literal>ON CONFLICT DO UPDATE</literal>, также требуется иметь право <literal>UPDATE</literal> для этой таблицы.</para>
+
+  <para>Если указывается список столбцов, достаточно иметь право <literal>INSERT</literal> только для перечисленных столбцов. Аналогично, с предложением <literal>ON CONFLICT DO UPDATE</literal> достаточно иметь право <literal>UPDATE</literal> только для столбцов, которые будут изменены. Однако предложение <literal>ON CONFLICT DO UPDATE</literal> также требует наличия права <literal>SELECT</literal> для всех столбцов, значения которых считываются в выражениях <literal>ON CONFLICT DO UPDATE</literal> или в <replaceable>условии</replaceable>.</para>
+
+  <para>Для применения предложения <literal>RETURNING</literal> требуется право <literal>SELECT</literal> для всех столбцов, перечисленных в <literal>RETURNING</literal>. Если для добавления строк применяется <replaceable class="parameter">запрос</replaceable>, для всех таблиц или столбцов, задействованных в этом запросе, разумеется, необходимо иметь право <literal>SELECT</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <refsect2 id="sql-inserting-params">
+   <title id="sql-inserting-params-title">Добавление</title>
+
+   <para>В этом разделе рассматриваются параметры, применяемые только при добавлении новых строк. Параметры, применяемые <emphasis>исключительно</emphasis> с предложением <literal>ON CONFLICT</literal>, описываются отдельно.</para>
+
+    <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">запрос_WITH</replaceable></term>
+      <listitem>
+       <para>Предложение <literal>WITH</literal> позволяет задать один или несколько подзапросов, на которые затем можно ссылаться по имени в запросе <command>INSERT</command>. Подробнее об этом см. <xref remap="4" linkend="queries-with"/> и <xref remap="4" linkend="sql-select"/>.</para>
+       <para>Заданный <replaceable class="parameter">запрос</replaceable> (оператор <command>SELECT</command>) также может содержать предложение <literal>WITH</literal>. В этом случае в <replaceable class="parameter">запросе</replaceable> можно обращаться к обоим <replaceable>запросам_WITH</replaceable>, но второй будет иметь приоритет, так как он вложен ближе.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+      <listitem>
+       <para>Имя (возможно, дополненное схемой) существующей таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">псевдоним</replaceable></term>
+      <listitem>
+       <para>Альтернативное имя, заменяющее <replaceable class="parameter">имя_таблицы</replaceable>. Когда указывается это имя, оно полностью скрывает реальное имя таблицы. Это особенно полезно, когда в предложении <literal>ON CONFLICT DO UPDATE</literal> фигурирует таблица с именем excluded, так как это имя дано и специальной таблице, представляющей строки, предназначенные для добавления.</para>
+      </listitem>
+     </varlistentry>
+
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_столбца</replaceable></term>
+      <listitem>
+       <para>Имя столбца в таблице <replaceable class="parameter">имя_таблицы</replaceable>. Это имя столбца при необходимости может быть дополнено именем вложенного поля или индексом в массиве. (Когда данные вставляются только в некоторые поля столбца составного типа, в другие поля записывается NULL.) Обращаясь к столбцу в предложении <literal>ON CONFLICT DO UPDATE</literal>, включать имя таблицы в ссылку на целевой столбец не нужно. Например, запись <literal>INSERT INTO table_name ... ON CONFLICT DO UPDATE SET table_name.col = 1</literal> некорректна (это согласуется с общим поведением команды <command>UPDATE</command>).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>DEFAULT VALUES</literal></term>
+      <listitem>
+       <para>Все столбцы получат значения по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">выражение</replaceable></term>
+      <listitem>
+       <para>Выражение или значение, которое будет присвоено соответствующему столбцу.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>DEFAULT</literal></term>
+      <listitem>
+       <para>Соответствующий столбец получит значение по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">запрос</replaceable></term>
+      <listitem>
+       <para>Запрос (оператор <command>SELECT</command>), который выдаст строки для добавления в таблицу. Его синтаксис описан в справке оператора <xref linkend="sql-select"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">выражение_результата</replaceable></term>
+      <listitem>
+       <para>Выражение, которое будет вычисляться и возвращаться командой <command>INSERT</command> после добавления или изменения каждой строки. В этом выражении можно использовать имена любых столбцов таблицы <replaceable class="parameter">имя_таблицы</replaceable>. Чтобы получить все столбцы, достаточно написать <literal>*</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_результата</replaceable></term>
+      <listitem>
+       <para>Имя, назначаемое возвращаемому столбцу.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+  </refsect2>
+
+  <refsect2 id="sql-on-conflict">
+   <title id="sql-on-conflict-title">Предложение <literal>ON CONFLICT</literal></title>
+   <indexterm zone="sql-insert"><primary>UPSERT</primary></indexterm>
+   <indexterm zone="sql-insert"><primary>ON CONFLICT</primary></indexterm>
+   <para>Необязательное предложение <literal>ON CONFLICT</literal> задаёт действие, заменяющее возникновение ошибки при нарушении ограничения уникальности или ограничения-исключения. Для каждой отдельной строки, предложенной для добавления, добавление либо выполняется успешно, либо, если нарушается <emphasis>решающее</emphasis> ограничение или индекс, задаваемые как <parameter>объект_конфликта</parameter>, выполняется альтернативное <parameter>действие_конфликта</parameter>. Вариант <literal>ON CONFLICT DO NOTHING</literal> в качестве альтернативного действия просто отменяет добавление строки. Вариант <literal>ON CONFLICT DO UPDATE</literal> изменяет существующую строку, вызвавшую конфликт со строкой, предложенной для добавления.</para>
+
+   <para>Задаваемый <parameter>объект_конфликта</parameter> может <emphasis>выбирать уникальный индекс</emphasis>. Определение объекта, позволяющее выбрать индекс, включает один или несколько столбцов (их определяет <replaceable class="parameter">имя_столбца_индекса</replaceable>) и/или <replaceable class="parameter">выражение_индекса</replaceable> и необязательный <replaceable class="parameter">предикат_индекса</replaceable>. Все уникальные индексы в таблице <replaceable class="parameter">имя_таблицы</replaceable>, которые, без учёта порядка столбцов, содержат в точности столбцы/выражения, определяющие <parameter>объект_конфликта</parameter>, выбираются как решающие индексы. Если указывается <replaceable class="parameter">предикат_индекса</replaceable>, он должен, в качестве дополнительного требования выбора, удовлетворять индексам. Заметьте, что это означает, что не частичный уникальный индекс (уникальный индекс без предиката) будет выбран (и будет использоваться в <literal>ON CONFLICT</literal>), если такой индекс удовлетворяет всем остальным критериям. Если попытка выбрать индекс оказывается неудачной, выдаётся ошибка.</para>
+
+   <para><literal>ON CONFLICT DO UPDATE</literal> гарантирует атомарный результат команды <command>INSERT</command> или <command>UPDATE</command>; при отсутствии внешних ошибок гарантируется один из двух этих исходов, даже при большой параллельной активности. Эта операция также известна как <firstterm>UPSERT</firstterm> &mdash; <quote>UPDATE или INSERT</quote>.</para>
+
+    <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">объект_конфликта</replaceable></term>
+      <listitem>
+       <para>Определяет, для какого именно конфликта в <literal>ON CONFLICT</literal> будет предпринято альтернативное действие, устанавливая <firstterm>решающие индексы</firstterm>. Это указание позволяет осуществить <emphasis>выбор уникального индекса</emphasis> или явно задаёт имя ограничения. Для <literal>ON CONFLICT DO NOTHING</literal> <parameter>объект_конфликта</parameter> может не указываться; в этом случае игнорироваться будут все конфликты с любыми ограничениями (и уникальными индексами). Для <literal>ON CONFLICT DO UPDATE</literal> <parameter>объект_конфликта</parameter> <emphasis>должен</emphasis> указываться.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">действие_при_конфликте</replaceable></term>
+      <listitem>
+       <para>Параметр <parameter>действие_при_конфликте</parameter> задаёт альтернативное действие в случае конфликта. Это может быть либо <literal>DO NOTHING</literal> (не делать ничего), либо предложение <literal>DO UPDATE</literal> (произвести изменение), в котором указываются точные детали операции <literal>UPDATE</literal>, выполняемой в случае конфликта. Предложения <literal>SET</literal> и <literal>WHERE</literal> в <literal>ON CONFLICT DO UPDATE</literal> могут обращаться к существующей строке по имени таблицы (или псевдониму) или к строкам, предлагаемым для добавления, используя специальную таблицу <varname>excluded</varname>. Для чтения столбцов <varname>excluded</varname> необходимо иметь право <literal>SELECT</literal> для соответствующих столбцов в целевой таблице.</para>
+       <para>Заметьте, что эффект действий всех триггеров уровня строк <literal>BEFORE INSERT</literal> отражается в значениях <varname>excluded</varname>, так как в результате этих действий строка может быть исключена из множества добавляемых.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_столбца_индекса</replaceable></term>
+      <listitem>
+       <para>Имя столбца в таблице <replaceable class="parameter">имя_таблицы</replaceable>. Используется для выбора решающих индексов. Задаётся в формате <command>CREATE INDEX</command>. Чтобы запрос выполнился, для столбца <replaceable class="parameter">имя_столбца_индекса</replaceable> требуется право <literal>SELECT</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">выражение_индекса</replaceable></term>
+      <listitem>
+       <para>Подобно указанию <replaceable class="parameter">имя_столбца_индекса</replaceable>, но применяется для выбора индекса по выражениям со столбцами таблицы <replaceable class="parameter">имя_таблицы</replaceable>, фигурирующим в определениях индексов (не по простым столбцам). Задаётся в формате <command>CREATE INDEX</command>. Для всех столбцов, к которым обращается <replaceable class="parameter">выражение_индекса</replaceable>, необходимо иметь право <literal>SELECT</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">правило_сортировки</replaceable></term>
+      <listitem>
+       <para>Когда задаётся, устанавливает, что соответствующие <replaceable class="parameter">имя_столбца_индекса</replaceable> или <replaceable class="parameter">выражение_индекса</replaceable> должны использовать определённый порядок сортировки, чтобы этот индекс мог быть выбран. Обычно это указание опускается, так как от правил сортировки чаще всего не зависит, произойдёт ли нарушение ограничений или нет. Задаётся в формате <command>CREATE INDEX</command>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">класс_операторов</replaceable></term>
+      <listitem>
+       <para>Когда задаётся, устанавливает, что соответствующие <replaceable class="parameter">имя_столбца_индекса</replaceable> или <replaceable class="parameter">выражение_индекса</replaceable> должны использовать определённый класс, чтобы индекс мог быть выбран. Обычно это указание опускается, потому что семантика <emphasis>равенства</emphasis> часто всё равно одна и та же в разных классах операторов типа, или потому что достаточно рассчитывать на то, что заданные уникальные индексы имеют адекватное определение равенства. Задаётся в формате <command>CREATE INDEX</command>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">предикат_индекса</replaceable></term>
+      <listitem>
+       <para>Используется для выбора частичных уникальных индексов. Выбраны могут быть любые индексы, удовлетворяющие предикату (при этом они могут не быть собственно частичными индексами). Задаётся в формате <command>CREATE INDEX</command>. Для всех столбцов, задействованных в <replaceable class="parameter">предикате_индекса</replaceable>, требуется право <literal>SELECT</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_ограничения</replaceable></term>
+      <listitem>
+       <para>Явно задаёт решающее <emphasis>ограничение</emphasis> по имени, что заменяет неявный выбор ограничения или индекса.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">условие</replaceable></term>
+      <listitem>
+       <para>Выражение, выдающее значение типа <type>boolean</type>. Изменены будут только те строки, для которых это выражение выдаст <literal>true</literal>, хотя при выборе действия <literal>ON CONFLICT DO UPDATE</literal> заблокируются все строки. Заметьте, что <replaceable>условие</replaceable> вычисляется в конце, после того как конфликт был признан претендующим на выполнение изменения.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   <para>Заметьте, что ограничения-исключения не могут быть решающими в <literal>ON CONFLICT DO UPDATE</literal>. Во всех случаях в качестве решающих поддерживаются только неоткладываемые (<literal>NOT DEFERRABLE</literal>) ограничения и уникальные индексы.</para>
+
+   <para>Команда <command>INSERT</command> с предложением <literal>ON CONFLICT DO UPDATE</literal> является <quote>детерминированной</quote>. Это означает, что этой команде не разрешено воздействовать на любую существующую строку больше одного раза; в случае такой ситуации возникнет ошибка нарушения мощности множества. Строки, предлагаемые для добавления, не должны дублироваться с точки зрения атрибутов, ограничиваемых решающим индексом или ограничением.</para>
+   <tip>
+    <para>Часто предпочтительнее использовать неявный выбор уникального индекса вместо непосредственного указания ограничения в виде <literal>ON CONFLICT ON CONSTRAINT</literal> <replaceable class="parameter">имя_ограничения</replaceable>. Выбор продолжит корректно работать, когда нижележащий индекс будет заменён другим более или менее равнозначным индексом методом наложения, например, с использованием <literal>CREATE UNIQUE INDEX ... CONCURRENTLY</literal> и последующим удалением заменяемого индекса.</para>
+   </tip>
+
+  </refsect2>
+ </refsect1>
+
+ <refsect1>
+  <title>Выводимая информация</title>
+
+  <para>В случае успешного завершения, <command>INSERT</command> возвращает метку команды в виде <screen>
+INSERT <replaceable>oid</replaceable> <replaceable class="parameter">число</replaceable>
+</screen> Здесь <replaceable class="parameter">число</replaceable> представляет количество добавленных или изменённых строк. Если <replaceable class="parameter">число</replaceable> равняется одному, а целевая таблица содержит oid, то в качестве <replaceable class="parameter">oid</replaceable> выводится <acronym>OID</acronym>, назначенный добавленной строке. Эта одна строка должна быть добавлена, но не изменена. В противном случае в качестве <replaceable class="parameter">oid</replaceable> выводится ноль.</para>
+
+  <para>Если команда <command>INSERT</command> содержит предложение <literal>RETURNING</literal>, её результат будет похож на результат оператора <command>SELECT</command> (с теми же столбцами и значениями, что содержатся в списке <literal>RETURNING</literal>), полученный для строк, добавленных или изменённых этой командой.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Добавление одной строки в таблицу <literal>films</literal>: <programlisting>INSERT INTO films VALUES
+    ('UA502', 'Bananas', 105, '1971-07-13', 'Comedy', '82 minutes');</programlisting></para>
+
+  <para>В этом примере столбец <literal>len</literal> опускается и, таким образом, получает значение по умолчанию: <programlisting>INSERT INTO films (code, title, did, date_prod, kind)
+    VALUES ('T_601', 'Yojimbo', 106, '1961-06-16', 'Drama');</programlisting></para>
+
+  <para>В этом примере для столбца с датой задаётся указание <literal>DEFAULT</literal>, а не явное значение: <programlisting>INSERT INTO films VALUES
+    ('UA502', 'Bananas', 105, DEFAULT, 'Comedy', '82 minutes');
+INSERT INTO films (code, title, did, date_prod, kind)
+    VALUES ('T_601', 'Yojimbo', 106, DEFAULT, 'Drama');</programlisting></para>
+
+  <para>Добавление строки, полностью состоящей из значений по умолчанию: <programlisting>INSERT INTO films DEFAULT VALUES;</programlisting></para>
+
+  <para>Добавление нескольких строк с использованием многострочного синтаксиса <command>VALUES</command>: <programlisting>INSERT INTO films (code, title, did, date_prod, kind) VALUES
+    ('B6717', 'Tampopo', 110, '1985-02-10', 'Comedy'),
+    ('HG120', 'The Dinner Game', 140, DEFAULT, 'Comedy');</programlisting></para>
+
+  <para>В этом примере в таблицу <literal>films</literal> вставляются некоторые строки из таблицы <literal>tmp_films</literal>, имеющей ту же структуру столбцов, что и <literal>films</literal>: <programlisting>INSERT INTO films SELECT * FROM tmp_films WHERE date_prod &lt; '2004-05-07';</programlisting></para>
+
+  <para>Этот пример демонстрирует добавление данных в столбцы с типом массива: <programlisting>-- Создание пустого поля 3x3 для игры в крестики-нолики
+INSERT INTO tictactoe (game, board[1:3][1:3])
+    VALUES (1, '{{" "," "," "},{" "," "," "},{" "," "," "}}');
+-- Указания индексов в предыдущей команда могут быть опущены
+INSERT INTO tictactoe (game, board)
+    VALUES (2, '{{X," "," "},{" ",O," "},{" ",X," "}}');</programlisting></para>
+
+  <para>Добавление одной строки в таблицу <literal>distributors</literal> и получение последовательного номера, сгенерированного благодаря указанию <literal>DEFAULT</literal>: <programlisting>INSERT INTO distributors (did, dname) VALUES (DEFAULT, 'XYZ Widgets')
+   RETURNING did;</programlisting></para>
+
+  <para>Увеличение счётчика продаж для продавца, занимающегося компанией Acme Corporation, и сохранение всей изменённой строки вместе с текущим временем в таблице журнала: <programlisting>WITH upd AS (
+  UPDATE employees SET sales_count = sales_count + 1 WHERE id =
+    (SELECT sales_person FROM accounts WHERE name = 'Acme Corporation')
+    RETURNING *
+)
+INSERT INTO employees_log SELECT *, current_timestamp FROM upd;</programlisting></para>
+  <para>Добавить дистрибьюторов или изменить существующие данные должным образом. Предполагается, что в таблице определён уникальный индекс, ограничивающий значения в столбце <literal>did</literal>. Заметьте, что для обращения к значениям, изначально предлагаемым для добавления, используется специальная таблица <varname>excluded</varname>: <programlisting>INSERT INTO distributors (did, dname)
+    VALUES (5, 'Gizmo Transglobal'), (6, 'Associated Computing, Inc')
+    ON CONFLICT (did) DO UPDATE SET dname = EXCLUDED.dname;</programlisting></para>
+  <para>Добавить дистрибьютора или не делать ничего для строк, предложенных для добавления, если уже есть существующая исключающая строка (строка, содержащая конфликтующие значения в столбце или столбцах после срабатывания триггеров перед добавлением строки). В данном примере предполагается, что определён уникальный индекс, ограничивающий значения в столбце <literal>did</literal>: <programlisting>INSERT INTO distributors (did, dname) VALUES (7, 'Redline GmbH')
+    ON CONFLICT (did) DO NOTHING;</programlisting></para>
+  <para>Добавить дистрибьюторов или изменить существующие данные должным образом. В данном примере предполагается, что в таблице определён уникальный индекс, ограничивающий значения в столбце <literal>did</literal>. Предложение <literal>WHERE</literal> позволяет ограничить набор фактически изменяемых строк (однако любая существующая строка, не подлежащая изменению, всё же будет заблокирована): <programlisting>-- Не менять данные существующих дистрибьюторов в зависимости от почтового индекса
+INSERT INTO distributors AS d (did, dname) VALUES (8, 'Anvil Distribution')
+    ON CONFLICT (did) DO UPDATE
+    SET dname = EXCLUDED.dname || ' (formerly ' || d.dname || ')'
+    WHERE d.zipcode &lt;&gt; '21201';
+
+-- Указать имя ограничения непосредственно в операторе (связанный индекс
+-- применяется для принятия решения о выполнении действия DO NOTHING)
+INSERT INTO distributors (did, dname) VALUES (9, 'Antwerp Design')
+    ON CONFLICT ON CONSTRAINT distributors_pkey DO NOTHING;</programlisting></para>
+  <para>Добавить дистрибьютора, если возможно; в противном случае не делать ничего (<literal>DO NOTHING</literal>). В данном примере предполагается, что в таблице определён уникальный индекс, ограничивающий значения в столбце <literal>did</literal> по подмножеству строк, в котором булевский столбец <literal>is_active</literal> содержит <literal>true</literal>: <programlisting>-- Этот оператор может выбрать частичный уникальный индекс по "did"
+-- с предикатом "WHERE is_active", а может и просто использовать
+-- обычное ограничение уникальности по столбцу "did"
+INSERT INTO distributors (did, dname) VALUES (10, 'Conrad International')
+    ON CONFLICT (did) WHERE is_active DO NOTHING;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>INSERT</command> соответствует стандарту SQL, но предложение <literal>RETURNING</literal> относится к расширениям <productname>&productname;</productname>, как и возможность применять <literal>WITH</literal> с <command>INSERT</command> и возможность задавать альтернативное действие с <literal>ON CONFLICT</literal>. Кроме того, ситуация, когда список столбцов опущен, но не все столбцы получают значения из предложения <literal>VALUES</literal> или <replaceable>запроса</replaceable>, стандартом не допускается.</para>
+
+  <para>Возможные ограничения предложения <replaceable class="parameter">запрос</replaceable> описаны в справке <xref linkend="sql-select"/>.</para>
+ </refsect1>
+</refentry>

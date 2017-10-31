@@ -1,0 +1,333 @@
+<!--
+doc/src/xml/ref/create_index.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createindex">
+ <indexterm zone="sql-createindex"><primary>CREATE INDEX</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE INDEX</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE INDEX</refname>
+  <refpurpose>создать индекс</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE [ UNIQUE ] INDEX [ CONCURRENTLY ] [ [ IF NOT EXISTS ] <replaceable class="parameter">имя</replaceable> ] ON <replaceable class="parameter">имя_таблицы</replaceable> [ USING <replaceable class="parameter">метод</replaceable> ]
+    ( { <replaceable class="parameter">имя_столбца</replaceable> | ( <replaceable class="parameter">выражение</replaceable> ) } [ COLLATE <replaceable class="parameter">правило_сортировки</replaceable> ] [ <replaceable class="parameter">класс_операторов</replaceable> ] [ ASC | DESC ] [ NULLS { FIRST | LAST } ] [, ...] )
+    [ INCLUDE ( <replaceable class="parameter">имя_столбца</replaceable> ) ]
+    [ WITH ( <replaceable class="parameter">параметр_хранения</replaceable> = <replaceable class="parameter">значение</replaceable> [, ... ] ) ]
+    [ TABLESPACE <replaceable class="parameter">табл_пространство</replaceable> ]
+    [ WHERE <replaceable class="parameter">предикат</replaceable> ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE INDEX</command> создаёт индексы по указанному столбцу(ам) заданного отношения, которым может быть таблица или материализованное представление. Индексы применяются в первую очередь для оптимизации производительности базы данных (хотя при неправильном использовании возможен и противоположный эффект).</para>
+
+  <para>Ключевое поле для индекса задаётся как имя столбца или выражение, заключённое в скобки. Если метод индекса поддерживает составные индексы, допускается указание нескольких полей.</para>
+
+  <para>Поле индекса может быть выражением, вычисляемым из значений одного или нескольких столбцов в строке таблицы. Это может быть полезно для получения быстрого доступа к данным по некоторому преобразованию исходных значений. Например, индекс, построенный по выражению <literal>upper(col)</literal>, позволит использовать поиск по индексу в предложении <literal>WHERE upper(col) = 'JIM'</literal>.</para>
+
+  <para><productname>&productname;</productname> предоставляет следующие методы индексов: B-дерево, хеш, GiST, SP-GiST, GIN и BRIN. Пользователи могут определить и собственные методы индексов, но это довольно сложная задача.</para>
+
+  <para>Если в команде присутствует предложение <literal>WHERE</literal>, она создаёт <firstterm>частичный индекс</firstterm>. Такой индекс содержит записи только для части таблицы, обычно более полезной для индексации, чем остальная таблица. Например, если таблица содержит информацию об оплаченных и неоплаченных счетах, при этом последних сравнительно немного, но именно эта часть таблицы наиболее востребована, то увеличить быстродействие можно, создав индекс только по этой части. Ещё одно возможное применение <literal>WHERE</literal> — добавив <literal>UNIQUE</literal>, обеспечить уникальность в подмножестве таблицы. Подробнее это рассматривается в <xref remap="6" linkend="indexes-partial"/>.</para>
+
+  <para>Выражение в предложении <literal>WHERE</literal> может ссылаться только на столбцы нижележащей таблицы, но не обязательно ограничиваться теми, по которым строится индекс. В настоящее время в <literal>WHERE</literal> также нельзя использовать подзапросы и агрегатные выражения. Это же ограничение распространяется и на выражения в полях индексов.</para>
+
+  <para>Все функции и операторы, используемые в определении индекса, должны быть <quote>постоянными</quote>, то есть, их результаты должны зависеть только от аргументов, но не от внешних факторов (например, содержимого другой таблицы или текущего времени). Это ограничение обеспечивает определённость поведения индекса. Чтобы использовать в выражении индекса или в предложении <literal>WHERE</literal> собственную функцию, не забудьте пометить её при создании как постоянную (IMMUTABLE).</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><literal>UNIQUE</literal></term>
+      <listitem>
+       <para>Указывает, что система должна контролировать повторяющиеся значения в таблице при создании индекса (если в таблице уже есть данные) и при каждом добавлении данных. Попытки вставить или изменить данные, при которых будет нарушена уникальность индекса, будут завершаться ошибкой.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>CONCURRENTLY</literal></term>
+      <listitem>
+       <para>С этим указанием <productname>&productname;</productname> построит индекс, не устанавливая никаких блокировок, которые бы предотвращали добавление, изменение или удаление записей в таблице; тогда как по умолчанию операция построения индекса блокирует запись (но не чтение) в таблице до своего завершения. При создании индекса в параллельном режиме есть ряд особенностей, о которых следует знать &mdash; см. <xref remap="4" linkend="sql-createindex-concurrently" endterm="sql-createindex-concurrently-title"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>IF NOT EXISTS</literal></term>
+      <listitem>
+       <para>Не считать ошибкой, если индекс с таким именем уже существует. В этом случае будет выдано замечание. Заметьте, что нет никакой гарантии, что существующий индекс как-то соотносится с тем, который мог бы быть создан. Имя индекса является обязательным, когда указывается <literal>IF NOT EXISTS</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>INCLUDE</literal></term>
+      <listitem>
+       <para>Необязательное предложение <literal>INCLUDE</literal> позволяет указать список столбцов, которые будут включены в неключевую часть индекса. Столбцы, указанные в этой части, не могут одновременно входить в ключевую часть, и наоборот. Выражение <literal>INCLUDE</literal> предназначено только для того, чтобы больше запросов могли быть ускорены путём использования сканирования только индекса. Наличие столбца в списке <literal>INCLUDE</literal> в некоторых случаях позволяет <productname>&productname;</productname> полностью избежать обращения к самой таблице. Это также позволяет <literal>UNIQUE</literal>-индексам включать другой набор столбцов, уникальность которых не является обязательной. То же самое касается и других ограничений целостности (PRIMARY KEY и EXCLUDE). Выражение <literal>INCLUDE</literal> может также использоваться и для неуникальных индексов. Индекс будет занимать несколько меньше места на диске, если столбцы, которые не требуются для поиска и сортировки записей, будут описаны как включённые в неключевую часть индекса, поскольку они будут храниться только в листовых страницах индекса. В настоящее время только индексы-B-деревья поддерживают эту возможность. Выражения в качестве включённых столбцов не поддерживаются, так как они не могут быть использованы в сканировании только по индексу.</para>
+        <note>
+		<para>В первых версиях реализации этой функции использовалось ключевое слово INCLUDING, которое по-прежнему поддерживается, но теперь считается устаревшим.</para>
+		</note>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя</replaceable></term>
+      <listitem>
+       <para>Имя создаваемого индекса. Указание схемы при этом не допускается; индекс всегда относится к той же схеме, что и родительская таблица. Если имя опущено, <productname>&productname;</productname> формирует подходящее имя по имени родительской таблицы и именам индексируемых столбцов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+      <listitem>
+       <para>Имя (возможно, дополненное схемой) индексируемой таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">метод</replaceable></term>
+      <listitem>
+       <para>Имя применяемого метода индекса. Возможные варианты: <literal>btree</literal>, <literal>hash</literal>, <literal>gist</literal>, <literal>spgist</literal>, <literal>gin</literal> и <literal>brin</literal>. По умолчанию подразумевается метод <literal>btree</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_столбца</replaceable></term>
+      <listitem>
+       <para>Имя столбца таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">выражение</replaceable></term>
+      <listitem>
+       <para>Выражение с одним или несколькими столбцами таблицы. Обычно выражение должно записываться в скобках, как показано в синтаксисе команды. Однако скобки можно опустить, если выражение записано в виде вызова функции.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">правило_сортировки</replaceable></term>
+      <listitem>
+       <para>Имя правила сортировки, применяемого для индекса. По умолчанию используется правило сортировки, заданное для индексируемого столбца, либо полученное для результата выражения индекса. Индексы с нестандартными правилами сортировки могут быть полезны для запросов, включающих выражения с такими правилами.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">класс_операторов</replaceable></term>
+      <listitem>
+       <para>Имя класса операторов. Подробнее об этом ниже.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>ASC</literal></term>
+      <listitem>
+       <para>Указывает порядок сортировки по возрастанию (подразумевается по умолчанию).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>DESC</literal></term>
+      <listitem>
+       <para>Указывает порядок сортировки по убыванию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>NULLS FIRST</literal></term>
+      <listitem>
+       <para>Указывает, что значения NULL после сортировки оказываются перед остальными. Это поведение по умолчанию с порядком сортировки <literal>DESC</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>NULLS LAST</literal></term>
+      <listitem>
+       <para>Указывает, что значения NULL после сортировки оказываются после остальных. Это поведение по умолчанию с порядком сортировки <literal>ASC</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">параметр_хранения</replaceable></term>
+      <listitem>
+       <para>Имя специфичного для индекса параметра хранения. За подробностями обратитесь к <xref remap="3" linkend="sql-createindex-storage-parameters" endterm="sql-createindex-storage-parameters-title"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">табл_пространство</replaceable></term>
+      <listitem>
+       <para>Табличное пространство, в котором будет создан индекс. Если не определено, выбирается <xref linkend="guc-default-tablespace"/>, либо <xref linkend="guc-temp-tablespaces"/>, при создании индекса временной таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">предикат</replaceable></term>
+      <listitem>
+       <para>Выражение ограничения для частичного индекса.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+
+  <refsect2 id="sql-createindex-storage-parameters">
+   <title id="sql-createindex-storage-parameters-title">Параметры хранения индекса</title>
+
+   <para>Необязательное предложение <literal>WITH</literal> определяет <firstterm>параметры хранения</firstterm> для индекса. У каждого метода индекса есть свой набор допустимых параметров хранения. Следующий параметр принимают методы B-дерево, хеш, GiST и SP-GiST:</para>
+
+   <variablelist>
+   <varlistentry>
+    <term><literal>fillfactor</literal></term>
+    <listitem>
+     <para>Фактор заполнения для индекса определяет в процентном отношении, насколько плотно метод индекса будет заполнять страницы индекса. Для B-деревьев концевые страницы заполняются до этого процента при начальном построении индекса и позже, при расширении индекса вправо (добавлении новых наибольших значений ключа). Если страницы впоследствии оказываются заполненными полностью, они будут разделены, что приводит к постепенному снижению эффективности индекса. Для B-деревьев по умолчанию используется фактор заполнения 90, но его можно поменять на любое целое значение от 10 до 100. Фактор заполнения, равный 100, полезен для статических таблиц и помогает уменьшить физический размер таблицы, но для интенсивно изменяемых таблиц лучше использовать меньшее значение, чтобы разделять страницы приходилось реже. С другими методами индекса фактор заполнения действует по-другому, но примерно в том же ключе; значение фактора заполнения по умолчанию для разных методов разное.</para>
+    </listitem>
+   </varlistentry>
+   </variablelist>
+
+   <para>Индексы GiST дополнительно принимают этот параметр:</para>
+
+   <variablelist>
+   <varlistentry>
+    <term><literal>buffering</literal></term>
+    <listitem>
+    <para>Определяет, будет ли при построении индекса использоваться буферизация, описанная в <xref remap="6" linkend="gist-buffering-build"/>. Со значением <literal>OFF</literal> она отключена, с <literal>ON</literal> — включена, а с <literal>AUTO</literal> — отключена вначале, но может затем включиться на ходу, как только размер индекса достигнет значения <xref linkend="guc-effective-cache-size"/>. По умолчанию подразумевается <literal>AUTO</literal>.</para>
+    </listitem>
+   </varlistentry>
+   </variablelist>
+
+   <para>Индексы GIN принимают другие параметры:</para>
+
+   <variablelist>
+   <varlistentry>
+    <term><literal>fastupdate</literal></term>
+    <listitem>
+    <para>Этот параметр управляет механизмом быстрого обновления, описанным в <xref remap="6" linkend="gin-fast-update"/>. Он имеет логическое значение: <literal>ON</literal> включает быстрое обновление, <literal>OFF</literal> отключает его. (Другие возможные написания <literal>ON</literal> и <literal>OFF</literal> перечислены в <xref remap="6" linkend="config-setting"/>.) Значение по умолчанию — <literal>ON</literal>.</para>
+
+    <note>
+     <para>Выключение <literal>fastupdate</literal> в <command>ALTER INDEX</command> предотвращает помещение добавляемых в дальнейшем строк в список записей, ожидающих индексации, но записи, добавленные в этот список ранее, в нём остаются. Чтобы очистить очередь операций, надо затем выполнить <command>VACUUM</command> для этой таблицы или вызвать функцию <function>gin_clean_pending_list</function>.</para>
+    </note>
+    </listitem>
+   </varlistentry>
+   </variablelist>
+   <variablelist>
+   <varlistentry>
+    <term><literal>gin_pending_list_limit</literal></term>
+    <listitem>
+    <para>Пользовательский параметр <xref linkend="guc-gin-pending-list-limit"/>. Его значение задаётся в килобайтах.</para>
+    </listitem>
+   </varlistentry>
+   </variablelist>
+
+   <para>Индексы <acronym>BRIN</acronym> принимают другой параметр:</para>
+
+   <variablelist>
+   <varlistentry>
+    <term><literal>pages_per_range</literal></term>
+    <listitem>
+    <para>Определяет, сколько блоков таблицы образуют зону блоков для каждой записи в индексе <acronym>BRIN</acronym> (за подробностями обратитесь к <xref remap="3" linkend="brin-intro"/>). Значение по умолчанию — <literal>128</literal>.</para>
+    </listitem>
+   </varlistentry>
+   </variablelist>
+  </refsect2>
+
+  <refsect2 id="sql-createindex-concurrently">
+   <title id="sql-createindex-concurrently-title">Параллельное построение индексов</title>
+
+   <indexterm zone="sql-createindex-concurrently"><primary>индекс</primary> <secondary>параллельное построение</secondary></indexterm>
+
+   <para>Создание индекса может мешать обычной работе с базой данных. Обычно <productname>&productname;</productname> блокирует индексируемую таблицу от записи и выполняет всю операцию построения индекса за одно сканирование таблицы. Другие транзакции могут продолжать читать таблицу, но при попытке вставить, изменить или удалить строки в таблице они будут заблокированы до завершения построения индекса. Это может оказать нежелательное влияние на работу производственной базы данных. Индексация очень больших таблиц может занимать много часов, и даже для маленьких таблиц построение индекса может заблокировать записывающие процессы на время, неприемлемое для производственной системы.</para>
+
+   <para><productname>&productname;</productname> поддерживает построение индексов без блокировки записи. Этот метод выбирается указанием <literal>CONCURRENTLY</literal> команды <command>CREATE INDEX</command>. Когда он используется, <productname>&productname;</productname> должен выполнить два сканирования таблицы, а кроме того, должен дождаться завершения всех существующих транзакций, которые потенциально могут модифицировать и использовать этот индекс. Таким образом, эта процедура требует проделать в сумме больше действий и выполняется значительно дольше, чем обычное построение индекса. Однако благодаря тому, что этот метод позволяет продолжать обычную работу с базой во время построения индекса, он оказывается полезным в производственной среде. Хотя разумеется, дополнительная нагрузка на процессор и подсистему ввода/вывода, создаваемая при построении индекса, может привести к замедлению других операций.</para>
+
+   <para>При параллельном построении индекса он попадает в системный каталог в одной транзакции, затем ещё два сканирования таблицы выполняются в двух других транзакциях. Перед каждым сканированием таблицы процедура построения индекса должна ждать завершения текущих транзакций, модифицировавших эту таблицу. После второго сканирования также необходимо дожидаться завершения всех транзакций, получивших снимок (см. <xref remap="4" linkend="mvcc"/>) перед вторым сканированием. Наконец индекс может быть помечен как готовый к использованию, после чего команда <command>CREATE INDEX</command> завершается. Однако даже тогда индекс может быть не готов немедленно к применению в запросах: в худшем случае он не будет использоваться, пока существуют транзакции, начатые до начала построения индекса.</para>
+
+   <para>Если при сканировании таблицы возникает проблема, например взаимоблокировка или нарушение уникальности в уникальном индексе, команда <command>CREATE INDEX</command> завершится ошибкой, но оставит после себя <quote>нерабочий</quote> индекс. Этот индекс будет игнорироваться при чтении данных, так как он может быть неполным; однако с ним могут быть связаны дополнительные операции при изменениях. В <application>psql</application> встроенная команда <command>\d</command> помечает такой индекс как <literal>INVALID</literal>: <programlisting>postgres=# \d tab
+       Table "public.tab"
+ Column |  Type   | Modifiers 
+--------+---------+-----------
+ col    | integer | 
+Indexes:
+    "idx" btree (col) INVALID</programlisting> Рекомендуемый в таких случаях способ исправления ситуации — удалить индекс и затем попытаться снова выполнить <command>CREATE INDEX CONCURRENTLY</command>. (Кроме того, можно перестроить его с помощью команды <command>REINDEX</command>. Но так как <command>REINDEX</command> не поддерживает параллельный режим, вряд ли этот вариант будет желательным.)</para>
+
+   <para>Ещё одна сложность, с которой можно столкнуться при параллельном построении уникального индекса, заключается в том, что ограничение уникальности уже влияет на другие транзакции, когда второе сканирование таблицы только начинается. Это значит, что нарушения ограничения могут проявляться в других запросах до того, как индекс становится доступным для использования и даже тогда, когда создать индекс в итоге не удаётся. Кроме того, если при втором сканировании происходит ошибка, <quote>нерабочий</quote> индекс оставляет в силе своё ограничение уникальности и дальше.</para>
+
+   <para>Метод параллельного построения поддерживает также индексы выражений и частичные индексы. Ошибки, произошедшие при вычислении этих выражений, могут привести к такому же поведению, как в вышеописанных случаях с нарушением ограничений уникальности.</para>
+
+   <para>Обычное построение индекса допускает одновременное построение других индексов обычным методом, но параллельное построение в один момент времени допускается только одно. В обоих случаях, никакие изменения типов в схеме таблицы в это время не разрешаются. Другое отличие состоит в том, что в блоке транзакции может быть выполнена обычная команда <command>CREATE INDEX</command>, но не <command>CREATE INDEX CONCURRENTLY</command>.</para>
+  </refsect2>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Информацию о том, когда могут применяться, и когда не применяются индексы, и в каких конкретных ситуациях они могут быть полезны, можно найти в <xref remap="6" linkend="indexes"/>.</para>
+
+  <caution>
+   <para>Операции с хеш-индексами в настоящее время не проходят через WAL, так что после аварийной остановки базы данных может потребоваться перестроить хеш-индексы командой <command>REINDEX</command>. Кроме того, изменения в хеш-индексах после начальной копии не переносятся при потоковой или файловой репликации, так что в последующих запросах они будут давать неправильные ответы. Также хеш-индексы не приходят в должное состояние при восстановлении на момент времени. По этим причинам настоятельно рекомендуется не использовать их.</para>
+  </caution>
+
+  <para>В настоящее время составные индексы поддерживаются только методами B-дерево, GiST, GIN и BRIN. По умолчанию такой индекс может включать до 32 полей. (Этот предел можно изменить, пересобрав <productname>&productname;</productname>.) Уникальные индексы поддерживает только B-дерево.</para>
+
+  <para>Для каждого столбца индекса можно задать <firstterm>класс операторов</firstterm>. Этот класс определяет, какие операторы будут использоваться индексом для этого столбца. Например, индекс-B-дерево по четырёхбайтовым целым будет использовать класс <literal>int4_ops</literal>; этот класс операторов включает функции сравнения для таких значений. На практике обычно достаточно использовать класс операторов по умолчанию для типа данных столбца. Существование классов операторов объясняется в первую очередь тем, что для некоторых типов данных можно предложить более одного осмысленного порядка сортировки. Например, может возникнуть желание отсортировать комплексные числа как по абсолютному значению, так и по вещественной части. Это можно сделать, определив два класса операторов для типа данных и выбрав подходящий класс при создании индекса. За дополнительными сведениями о классах операторов обратитесь к <xref remap="3" linkend="indexes-opclass"/> и <xref remap="3" linkend="xindex"/>.</para>
+
+  <para>Для методов индекса, поддерживающих сканирование по порядку (в настоящее время это поддерживает только B-дерево), можно изменить порядок сортировки индекса, добавив необязательные предложения <literal>ASC</literal>, <literal>DESC</literal>, <literal>NULLS FIRST</literal> или <literal>NULLS LAST</literal>. Так как упорядоченный индекс можно сканировать вперёд или назад, обычно не имеет смысла создавать индекс по убыванию (<literal>DESC</literal>) для одного столбца &mdash; этот порядок сортировки можно получить и с обычным индексом. Эти параметры имеют смысл при создании составных индексов так, что они будут соответствовать порядку сортировки, указанному в запросе со смешанным порядком, например <literal>SELECT ... ORDER BY x ASC, y DESC</literal>. Параметры <literal>NULLS</literal> полезны, когда требуется реализовать поведение <quote>NULL внизу</quote>, изменив стандартное <quote>NULL вверху</quote>, в запросах, зависящих от индексов, чтобы избежать дополнительной сортировки.</para>
+
+  <para>Для большинства методов индексов скорость создания индекса зависит от значения <xref linkend="guc-maintenance-work-mem"/>. Чем больше это значение, тем меньше времени требуется для создания индекса (если только заданное значение не превышает объём действительно доступной памяти, что влечёт за собой использование подкачки).</para>
+
+  <para>Для удаления индекса применяется <xref linkend="sql-dropindex"/>.</para>
+
+  <para>В предыдущих выпусках <productname>PostgreSQL</productname> также поддерживался метод индекса R-дерево. Сейчас он отсутствует, так как он не даёт значительных преимуществ по сравнению с GiST. Указание <literal>USING rtree</literal> команда <command>CREATE INDEX</command> будет интерпретировать как <literal>USING gist</literal>, для упрощения перевода старых баз на GiST.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Создание уникального индекса-B-дерева по столбцу <literal>title</literal> в таблице <literal>films</literal>: <programlisting>CREATE UNIQUE INDEX title_idx ON films (title);</programlisting></para>
+
+  <para>Создание уникального индекса-B-дерева по столбцу <literal>title</literal> с включёнными столбцами <literal>director</literal> и <literal>rating</literal> в таблице <literal>films</literal>: <programlisting>CREATE UNIQUE INDEX title_idx ON films (title) INCLUDE (director, rating);</programlisting></para>
+
+  <para>Создание индекса по выражению <literal>lower(title)</literal>, позволяющего эффективно выполнять регистронезависимый поиск: <programlisting>CREATE INDEX ON films ((lower(title)));</programlisting> (В этом примере мы решили опустить имя индекса, чтобы имя выбрала система, например <literal>films_lower_idx</literal>.)</para>
+
+  <para>Создание индекса с нестандартным правилом сортировки: <programlisting>CREATE INDEX title_idx_german ON films (title COLLATE "de_DE");</programlisting></para>
+
+  <para>Создание индекса с нестандартным порядком значений NULL: <programlisting>CREATE INDEX title_idx_nulls_low ON films (title NULLS FIRST);</programlisting></para>
+
+  <para>Создание индекса с нестандартным фактором заполнения: <programlisting>CREATE UNIQUE INDEX title_idx ON films (title) WITH (fillfactor = 70);</programlisting></para>
+
+  <para>Создание индекса <acronym>GIN</acronym> с отключённым механизмом быстрого обновления: <programlisting>CREATE INDEX gin_idx ON documents_table USING GIN (locations) WITH (fastupdate = off);</programlisting></para>
+
+  <para>Создание индекса по столбцу <literal>code</literal> в таблице <literal>films</literal> и размещение его в табличном пространстве <literal>indexspace</literal>: <programlisting>CREATE INDEX code_idx ON films (code) TABLESPACE indexspace;</programlisting></para>
+
+  <para>Создание индекса GiST по координатам точек, позволяющего эффективно использовать операторы box с результатом функции преобразования: <programlisting>CREATE INDEX pointloc
+    ON points USING gist (box(location,location));
+SELECT * FROM points
+    WHERE box(location,location) &amp;&amp; '(0,0),(1,1)'::box;</programlisting></para>
+
+  <para>Создание индекса без блокировки записи в таблицу: <programlisting>CREATE INDEX CONCURRENTLY sales_quantity_index ON sales_table (quantity);</programlisting></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>CREATE INDEX</command> является языковым расширением <productname>&productname;</productname>. Средства обеспечения индексов в стандарте SQL не описаны.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterindex"/></member>
+   <member><xref linkend="sql-dropindex"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

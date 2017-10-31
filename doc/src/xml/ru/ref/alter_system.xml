@@ -1,0 +1,88 @@
+<!--
+doc/src/xml/ref/alter_system.xml
+&productname; documentation
+-->
+
+<refentry id="sql-altersystem">
+ <indexterm zone="sql-altersystem"><primary>ALTER SYSTEM</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER SYSTEM</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER SYSTEM</refname>
+  <refpurpose>изменить параметр конфигурации сервера</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER SYSTEM SET <replaceable class="parameter">параметр_конфигурации</replaceable> { TO | = } { <replaceable class="parameter">значение</replaceable> | '<replaceable class="parameter">значение</replaceable>' | DEFAULT }
+
+ALTER SYSTEM RESET <replaceable class="parameter">параметр_конфигурации</replaceable>
+ALTER SYSTEM RESET ALL</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Оператор <command>ALTER SYSTEM</command> применяется для изменения параметров конфигурации сервера, распространяющихся на весь кластер баз данных. Пользоваться им может быть удобнее, чем вручную редактировать файл <filename>postgresql.conf</filename>. <command>ALTER SYSTEM</command> записывает заданное значение параметра в файл <filename>postgresql.auto.conf</filename>, который считывается сервером в дополнение к <filename>postgresql.conf</filename>. При указании в качестве значения параметра <literal>DEFAULT</literal> или применении формы <command>RESET</command> соответствующий элемент конфигурации удаляется из <filename>postgresql.auto.conf</filename>. Удалить все настроенные таким способом параметры позволяет предложение <literal>RESET ALL</literal>.</para>
+
+  <para>Значения, установленные командой <command>ALTER SYSTEM</command>, вступают в силу после следующей перезагрузки конфигурации сервера либо после перезапуска сервера (если это параметры, воспринимаемые только при запуске). Перезагрузить конфигурацию сервера можно, вызвав SQL-функцию <function>pg_reload_conf()</function>, выполнив <literal>pg_ctl reload</literal> или отправив сигнал <systemitem>SIGHUP</systemitem> главному серверному процессу.</para>
+
+  <para>Выполнить <command>ALTER SYSTEM</command> могут только суперпользователи. А так как эта команда работает непосредственно с файловой системой и не может быть отменена, её нельзя поместить в блок транзакции или функцию.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">параметр_конфигурации</replaceable></term>
+    <listitem>
+     <para>Имя устанавливаемого параметра конфигурации. Список доступных параметров приведён в <xref remap="6" linkend="runtime-config"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">значение</replaceable></term>
+    <listitem>
+     <para>Новое значение параметра. Значениями могут быть строковые константы, идентификаторы, числа или списки таких элементов через запятую, в зависимости от конкретного параметра. Если в качестве значения указать <literal>DEFAULT</literal>, параметр и его значение удаляется из <filename>postgresql.auto.conf</filename>.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>С помощью этой команды нельзя задать <xref linkend="guc-data-directory"/>, равно как и другие параметры, недопустимые в <filename>postgresql.conf</filename> (например, <link linkend="runtime-config-preset">предустановленные параметры</link>).</para>
+
+  <para>Другие способы настройки параметров описаны в <xref remap="6" linkend="config-setting"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Установка уровня ведения журнала транзакций (<literal>wal_level</literal>): <programlisting>ALTER SYSTEM SET wal_level = replica;</programlisting></para>
+
+  <para>Отмена изменения, восстановление значения, заданного в <filename>postgresql.conf</filename>: <programlisting>ALTER SYSTEM RESET wal_level;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER SYSTEM</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-set"/></member>
+   <member><xref linkend="sql-show"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

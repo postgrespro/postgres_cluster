@@ -1,0 +1,75 @@
+<!--
+doc/src/xml/ref/create_opfamily.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createopfamily">
+ <indexterm zone="sql-createopfamily"><primary>CREATE OPERATOR FAMILY</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE OPERATOR FAMILY</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE OPERATOR FAMILY</refname>
+  <refpurpose>создать семейство операторов</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE OPERATOR FAMILY <replaceable class="parameter">имя</replaceable> USING <replaceable class="parameter">метод_индекса</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE OPERATOR FAMILY</command> создаёт новое семейство операторов. Семейство операторов определяет коллекцию связанных классов операторов и, возможно, некоторые дополнительные операторы и вспомогательные функции, совместимые с этими классами, но не требующиеся для функционирования каких-либо индексов. (Операторы и функции, требующиеся для работы индексов, следует группировать в соответствующем классе операторов, а не <quote>слабо</quote> связывать в семействе операторов. Обычно операторы с операндами одного типа привязываются к классам операторов, тогда как операторы для двух разных типов могут быть слабо связаны в семействе, содержащем классы операторов для обоих типов.)</para>
+
+  <para>Создаваемое семейство операторов изначально не содержит ничего. Оно должно наполняться последующими командами <command>CREATE OPERATOR CLASS</command>, добавляющими в него классы операторов, и, возможно, командами <command>ALTER OPERATOR FAMILY</command>, добавляющими <quote>слабосвязанные</quote> операторы и соответствующие вспомогательные функции.</para>
+
+  <para>Если указывается имя схемы, семейство операторов создаётся в указанной схеме, в противном случае — в текущей. Два семейства операторов в одной схеме могут иметь одинаковые имена, только если они предназначены для разных методов индекса.</para>
+
+  <para>Владельцем семейства операторов становится пользователь, создавший его. В настоящее время создавать семейства операторов могут только суперпользователи. (Это ограничение введено потому, что ошибочное определение семейства может вызвать нарушения или даже сбой в работе сервера.)</para>
+
+  <para>За дополнительными сведениями обратитесь к <xref remap="3" linkend="xindex"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя создаваемого семейства операторов, возможно, дополненное схемой.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">метод_индекса</replaceable></term>
+    <listitem>
+     <para>Имя индексного метода, для которого предназначено это семейство операторов.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>CREATE OPERATOR FAMILY</command> является расширением <productname>&productname;</productname>. Команда <command>CREATE OPERATOR FAMILY</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alteropfamily"/></member>
+   <member><xref linkend="sql-dropopfamily"/></member>
+   <member><xref linkend="sql-createopclass"/></member>
+   <member><xref linkend="sql-alteropclass"/></member>
+   <member><xref linkend="sql-dropopclass"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

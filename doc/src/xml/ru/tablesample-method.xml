@@ -1,0 +1,96 @@
+<!-- doc/src/xml/tablesample-method.xml -->
+
+<chapter id="tablesample-method">
+ <title>Написание метода извлечения выборки таблицы</title>
+
+ <indexterm zone="tablesample-method"><primary>метод извлечения выборки таблицы</primary></indexterm>
+
+ <indexterm zone="tablesample-method"><primary>метод <literal>TABLESAMPLE</literal></primary></indexterm>
+
+ <para>Реализация предложения <literal>TABLESAMPLE</literal> в <productname>&productname;</productname> поддерживает подключение собственных методов извлечения выборки таблицы, в дополнение к методам <literal>BERNOULLI</literal> и <literal>SYSTEM</literal>, которые требуются стандартом SQL. Метод выборки определяет, какие строки таблицы будут выбираться, когда используется предложение <literal>TABLESAMPLE</literal>.</para>
+
+ <para>На уровне SQL метод извлечения выборки таблицы представляется одной функцией SQL, обычно реализуемой на C, имеющей сигнатуру <programlisting>method_name(internal) RETURNS tsm_handler</programlisting> Имя функции будет совпадать с именем метода, указываемым в предложении <literal>TABLESAMPLE</literal>. Аргумент <type>internal</type> является фиктивным (в нём всегда передаётся ноль) и введён только для того, чтобы эту функцию нельзя было вызывать напрямую из команд SQL. Возвращать эта функция должна структуру типа <type>TsmRoutine</type> (выделенную вызовом palloc), содержащую указатели на опорные функции для метода извлечения выборки. Эти опорные функции представляют собой простые функции на C, которые не видны и не могут вызываться на уровне SQL. Эти опорные функции описаны в <xref remap="6" linkend="tablesample-support-functions"/>.</para>
+
+ <para>В дополнение к указателям на функции в структуре <type>TsmRoutine</type> должны задаваться следующие дополнительные поля:</para>
+
+ <variablelist>
+  <varlistentry>
+   <term><literal>List *parameterTypes</literal></term>
+   <listitem>
+    <para>Это список OID, содержащий OID типов данных параметров, которые будут приниматься предложением <literal>TABLESAMPLE</literal> при использовании этого метода извлечения выборки. Например, для встроенных методов этот список содержит один элемент со значением <literal>FLOAT4OID</literal>, представляющий процент выборки. Другие методы могут иметь дополнительные или иные параметры.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><literal>bool repeatable_across_queries</literal></term>
+   <listitem>
+    <para>Если это поле равно <literal>true</literal>, данный метод извлечения выборки может выдавать одинаковые выборки при последовательных запросах с одними и теми же параметрами и значением затравки <literal>REPEATABLE</literal> при условии неизменности содержимого таблицы. Если равно <literal>false</literal>, предложение <literal>REPEATABLE</literal> не будет приниматься с этим методом извлечения выборки.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><literal>bool repeatable_across_scans</literal></term>
+   <listitem>
+    <para>Если это поле равно <literal>true</literal>, метод извлечения выборки может выдавать одинаковые выборки при последовательном сканировании в рамках одного запроса (предполагается неизменность параметров, значения затравки и снимка данных). Если равно <literal>false</literal>, планировщик не будет выбирать планы, требующие неоднократного сканирования выборки, так как это может привести к несогласованному результату запроса.</para>
+   </listitem>
+  </varlistentry>
+ </variablelist>
+
+ <para>Тип структуры <type>TsmRoutine</type> объявлен в <filename>src/include/access/tsmapi.h</filename>, где можно найти дополнительную информацию.</para>
+
+ <para>Методы извлечения выборки, включённые в стандартный дистрибутив, могут послужить хорошим примером, если вы хотите написать свой метод. Код встроенных методов вы можете найти в подкаталоге <filename>src/backend/access/tablesample</filename> дерева исходного кода, а код дополнительных методов — в подкаталоге <filename>contrib</filename>.</para>
+
+ <sect1 id="tablesample-support-functions">
+  <title>Опорные функции метода извлечения выборки</title>
+
+  <para>Функция-обработчик TSM возвращает структуру <type>TsmRoutine</type> (выделенную вызовом palloc) с указателями на опорные функции, описанные ниже. Большинство этих функций обязательные, но некоторые — нет, и их указатели могут быть равны NULL.</para>
+
+  <para><programlisting>void
+SampleScanGetSampleSize (PlannerInfo *root,
+                         RelOptInfo *baserel,
+                         List *paramexprs,
+                         BlockNumber *pages,
+                         double *tuples);</programlisting> Эта функция вызывается во время планирования. Она должна рассчитать число страниц отношения, которые будут прочитаны при простом сканировании, и число кортежей, выбираемых при сканировании. (Например, эти числа можно получить, оценив процент выбираемых данных, а затем умножив <literal>baserel-&gt;pages</literal> и <literal>baserel-&gt;tuples</literal> на это значение и округлив результат до целых.) Список <literal>paramexprs</literal> содержит выражения, переданные в параметрах предложению <literal>TABLESAMPLE</literal>. Если для целей оценивания нужны их значения, рекомендуется воспользоваться <function>estimate_expression_value()</function>, чтобы попытаться свести эти выражения к константам; но данная функция должна выдавать оценку размера, даже если это не удастся, и не должна выдавать ошибку, даже если считает переданные значения неверными (помните, что это только приблизительные оценки чисел, которые будут получены во время выполнения). Параметры <literal>pages</literal> и <literal>tuples</literal> являются выходными.</para>
+
+  <para><programlisting>void
+InitSampleScan (SampleScanState *node,
+                int eflags);</programlisting> Выполняет инициализацию перед выполнением узла плана SampleScan. Эта функция вызывается при запуске исполнителя. Она должна выполнить все подготовительные действия, необходимые для начала обработки. Узел <structname>SampleScanState</structname> уже был создан, но его поле <structfield>tsm_state</structfield> содержит NULL. Функция <function>InitSampleScan</function> может выделить через palloc область для любых внутренних данных, нужных методу извлечения выборки, и сохранить указатель на неё в <literal>node-&gt;tsm_state</literal>. Информацию о сканируемой таблице можно получить через другие поля узла <structname>SampleScanState</structname> (но заметьте, что дескриптор сканирования <literal>node-&gt;ss.ss_currentScanDesc</literal> ещё не настроен). Параметр <literal>eflags</literal> содержит битовые флаги, описывающие режим работы исполнителя для этого узла плана.</para>
+
+  <para>Когда <literal>(eflags &amp; EXEC_FLAG_EXPLAIN_ONLY)</literal> не равно нулю, собственно сканирование не будет выполняться, поэтому эта функция должна сделать только то, что необходимо для получения состояния узла, подходящего для <command>EXPLAIN</command> и <function>EndSampleScan</function>.</para>
+
+  <para>Эту функцию можно опустить (присвоить указателю NULL), тогда вся инициализация, необходимая для метода извлечения выборки, должна иметь место в <function>BeginSampleScan</function>.</para>
+
+  <para><programlisting>void
+BeginSampleScan (SampleScanState *node,
+                 Datum *params,
+                 int nparams,
+                 uint32 seed);</programlisting> Начинает выполнение сканирования выборки. Эта функция вызывается непосредственно перед первой попыткой выбрать кортеж и может вызываться повторно, если потребуется перезапустить сканирование. Информацию о сканируемой таблице можно получить через поля узла <structname>SampleScanState</structname> (но заметьте, что дескриптор сканирования <literal>node-&gt;ss.ss_currentScanDesc</literal> ещё не настроен). Массив <literal>params</literal>, длины <literal>nparams</literal>, содержит значения параметров, переданных в предложении <literal>TABLESAMPLE</literal>. Их количество и типы задаются в списке <literal>parameterTypes</literal> метода выборки, и они гарантированно не равны NULL. Параметр <literal>seed</literal> содержит значение затравки, которое этот метод должен учитывать при генерации любых случайных чисел; это либо хеш, полученный из значения <literal>REPEATABLE</literal>, если оно было передано, либо результат <literal>random()</literal> в противном случае.</para>
+
+  <para>Эта функция может скорректировать поля <literal>node-&gt;use_bulkread</literal> и <literal>node-&gt;use_pagemode</literal>. Если поле <literal>node-&gt;use_bulkread</literal> равно <literal>true</literal> (это значение по умолчанию), при сканировании будет использоваться стратегия доступа к буферу, ориентированная на переработку буферов после использования. Может быть разумным присвоить ему <literal>false</literal>, если при сканировании будет просматриваться только небольшой процент страниц. Если поле <literal>node-&gt;use_pagemode</literal> равно <literal>true</literal> (это значение по умолчанию), при сканировании проверка видимости будет выполняться в один проход для всех кортежей на каждой просматриваемой странице. Может иметь смысл присвоить ему <literal>false</literal>, если при сканировании выбирается только небольшой процент кортежей на странице. В результате будет выполняться меньше проверок видимости кортежей, хотя каждая проверка будет дороже, так как потребует расширенную блокировку.</para>
+
+  <para>Если метод выборки помечен как <literal>repeatable_across_scans</literal>, он должен быть способен выбирать при повторном сканировании тот же набор кортежей, что был выбран в первый раз, то есть новый вызов <function>BeginSampleScan</function> должен приводить к выборке тех же кортежей, что и предыдущий (если параметры <literal>TABLESAMPLE</literal> и значение затравки не меняются).</para>
+
+  <para><programlisting>BlockNumber
+NextSampleBlock (SampleScanState *node);</programlisting> Возвращает номер блока следующей сканируемой страницы либо <literal>InvalidBlockNumber</literal>, если страниц для сканирования не осталось.</para>
+
+  <para>Эту функцию можно опустить (присвоить её указателю NULL), в этом случае код ядра произведёт последовательное сканирование всего отношения. Такое сканирование может быть синхронизированным, так что метод выборки не должен полагать, что страницы отношения каждый раз просматриваются в одном и том же порядке.</para>
+
+  <para><programlisting>OffsetNumber
+NextSampleTuple (SampleScanState *node,
+                 BlockNumber blockno,
+                 OffsetNumber maxoffset);</programlisting> Возвращает номер смещения следующего кортежа, выбираемого с указанной страницы, либо <literal>InvalidOffsetNumber</literal>, если кортежей для выборки не осталось. В <literal>maxoffset</literal> задаётся максимальный номер смещения, допустимый на этой странице.</para>
+
+  <note>
+   <para><function>NextSampleTuple</function> не говорит явно, для каких из номеров смещений в диапазоне <literal>1 .. maxoffset</literal> действительно содержатся актуальные кортежи. Это обычно не проблема, так как код ядра игнорирует запросы на выборку несуществующих или невидимых кортежей; это не должно приводить к отклонениям в выборке. Однако при необходимости функция может проверить <literal>node-&gt;ss.ss_currentScanDesc-&gt;rs_vistuples[]</literal> и понять, какие кортежи актуальны и видимы. (Для этого требуется, чтобы признак <literal>node-&gt;use_pagemode</literal> равнялся <literal>true</literal>.)</para>
+  </note>
+
+  <note>
+   <para>Функция <function>NextSampleTuple</function> <emphasis>не</emphasis> должна полагать, что в <literal>blockno</literal> будет получен тот же номер страницы, что был выдан при последнем вызове <function>NextSampleBlock</function>. Этот номер определённо был выдан при каком-то предыдущем вызове <function>NextSampleBlock</function>, но код ядра может вызывать <function>NextSampleBlock</function> перед тем, как собственно сканировать страницы, для поддержки упреждающего чтения. Однако можно рассчитывать на то, что как только начнётся выборка кортежей с одной данной страницы, все последующие вызовы <function>NextSampleTuple</function> будут обращаться к этой странице, пока не будет возвращено значение <literal>InvalidOffsetNumber</literal>.</para>
+  </note>
+
+  <para><programlisting>void
+EndSampleScan (SampleScanState *node);</programlisting> Завершает сканирование и освобождает ресурсы. Обычно при этом не нужно освобождать память, выделенную через palloc, но все видимые извне ресурсы должны быть очищены. Эту функцию чаще всего можно опустить (присвоить её указателю NULL), если таких ресурсов нет.</para>
+
+ </sect1>
+
+</chapter>

@@ -1,0 +1,485 @@
+<sect1 id="pg-variables">
+  <title>pg_variables</title>
+  <sect2 id="pg-varaibles-introduction">
+    <title>Введение</title>
+    <para>Модуль <filename>pg_variables</filename> содержит функции для работы с переменными различных типов. Созданные переменные существуют в течение текущей пользовательской сессии.</para>
+
+    <para>Учтите, что этот модуль не поддерживает транзакции и точки сохранения. Например:</para>
+<programlisting>SELECT pgv_set_int('vars', 'int1', 101);
+BEGIN;
+SELECT pgv_set_int('vars', 'int2', 102);
+ROLLBACK;
+
+SELECT * FROM pgv_list() order by package, name;
+ package | name
+---------+------
+ vars    | int1
+ vars    | int2
+(2 rows)</programlisting>
+  </sect2>
+
+  <sect2 id="pg-variables-functions">
+    <title>Функции модуля</title>
+
+    <para>Реализованные в модуле <filename>pg_variables</filename> функции представлены в следующих таблицах. Этот модуль поддерживает скалярные типы и записи.</para>
+
+    <para>Для функций <function>pgv_get_()</function> требуется, чтобы существовал пакет и указанная переменная. Поэтому перед использованием функций <function>pgv_get_()</function> необходимо установить переменную с помощью функций <function>pgv_set_()</function>.</para>
+
+    <para>Если пакет не существует, выдаётся следующая ошибка:</para>
+
+<programlisting>SELECT pgv_get_int('vars', 'int1');
+ERROR:  unrecognized package "vars"</programlisting>
+
+    <para>Если переменная не существует, вы получите следующую ошибку:</para>
+
+<programlisting>SELECT pgv_get_int('vars', 'int1');
+ERROR:  unrecognized variable "int1"</programlisting>
+
+    <para>Функции <function>pgv_get_()</function> проверяют тип переменной. Если тип переменной не соответствует типу функции, выдаётся ошибка:</para>
+
+<programlisting>SELECT pgv_get_text('vars', 'int1');
+ERROR:  variable "int1" requires "integer" value</programlisting>
+
+    <sect3 id="pg-variables-integer-variables">
+      <title>Целочисленные переменные</title>
+      <informaltable>
+        <tgroup cols="2">
+          <thead>
+            <row>
+              <entry>Функция</entry>
+              <entry>Возвращает</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry>
+                <literal>pgv_set_int(package text, name text, value int)</literal>
+              </entry>
+              <entry>
+                <literal>void</literal>
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_get_int(package text, name text, strict bool default true)</literal>
+              </entry>
+              <entry>
+                <literal>int</literal>
+              </entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </informaltable>
+    </sect3>
+    <sect3 id="pg-variables-text-variables">
+      <title>Текстовые переменные</title>
+      <informaltable>
+        <tgroup cols="2">
+          <thead>
+            <row>
+              <entry>Функция</entry>
+              <entry>Возвращает</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry>
+                <literal>pgv_set_text(package text, name text, value text)</literal>
+              </entry>
+              <entry>
+                <literal>void</literal>
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_get_text(package text, name text, strict bool default true)</literal>
+              </entry>
+              <entry>
+                <literal>text</literal>
+              </entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </informaltable>
+    </sect3>
+    <sect3 id="pg-variables-numeric-variables">
+      <title>Числовые переменные</title>
+      <informaltable>
+        <tgroup cols="2">
+          <thead>
+            <row>
+              <entry>Функция</entry>
+              <entry>Возвращает</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry>
+                <literal>pgv_set_numeric(package text, name text, value numeric)</literal>
+              </entry>
+              <entry>
+                <literal>void</literal>
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_get_numeric(package text, name text, strict bool default true)</literal>
+              </entry>
+              <entry>
+                <literal>numeric</literal>
+              </entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </informaltable>
+    </sect3>
+    <sect3 id="timestamp-variables">
+      <title>Переменные даты/времени</title>
+      <informaltable>
+        <tgroup cols="2">
+          <thead>
+            <row>
+              <entry>Функция</entry>
+              <entry>Возвращает</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry>
+                <literal>pgv_set_timestamp(package text, name text, value timestamp)</literal>
+              </entry>
+              <entry>
+                <literal>void</literal>
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_get_timestamp(package text, name text, strict bool default true)</literal>
+              </entry>
+              <entry>
+                <literal>timestamp</literal>
+              </entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </informaltable>
+    </sect3>
+    <sect3 id="pg-variables-timestamptz-variables">
+      <title>Переменные даты/времени с часовым поясом</title>
+      <informaltable>
+        <tgroup cols="2">
+          <thead>
+            <row>
+              <entry>Функция</entry>
+              <entry>Возвращает</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry>
+                <literal>pgv_set_timestamptz(package text, name text, value timestamptz)</literal>
+              </entry>
+              <entry>
+                <literal>void</literal>
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_get_timestamptz(package text, name text, strict bool default true)</literal>
+              </entry>
+              <entry>
+                <literal>timestamptz</literal>
+              </entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </informaltable>
+    </sect3>
+    <sect3 id="pg-variables-date-variables">
+      <title>Переменные даты</title>
+      <informaltable>
+        <tgroup cols="2">
+          <thead>
+            <row>
+              <entry>Функция</entry>
+              <entry>Возвращает</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry>
+                <literal>pgv_set_date(package text, name text, value date)</literal>
+              </entry>
+              <entry>
+                <literal>void</literal>
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_get_date(package text, name text, strict bool default true)</literal>
+              </entry>
+              <entry>
+                <literal>date</literal>
+              </entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </informaltable>
+    </sect3>
+    <sect3 id="pg-variables-jsonb-variables">
+      <title>Переменные Jsonb</title>
+      <informaltable>
+        <tgroup cols="2">
+          <thead>
+            <row>
+              <entry>Функция</entry>
+              <entry>Возвращает</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry>
+                <literal>pgv_set_jsonb(package text, name text, value jsonb)</literal>
+              </entry>
+              <entry>
+                <literal>void</literal>
+              </entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_get_jsonb(package text, name text, strict bool default true)</literal>
+              </entry>
+              <entry>
+                <literal>jsonb</literal>
+              </entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </informaltable>
+    </sect3>
+    <sect3 id="pg-variables-records">
+      <title>Записи</title>
+
+      <para>Следующие функции этого модуля предназначены для работы с наборами типа запись.</para>
+
+      <para>Для использования функций <function>pgv_update()</function>, <function>pgv_delete()</function> и <function>pgv_select()</function> должны существовать пакет и указанная переменная, в противном случае возникает ошибка. Поэтому перед использованием этих функций необходимо установить переменную с помощью функции <function>pgv_insert()</function>.</para>
+
+      <para>Функции <function>pgv_update()</function>, <function>pgv_delete()</function> и <function>pgv_select()</function> проверяют тип переменной. Если типом переменной оказывается не тип записи, выдаётся ошибка.</para>
+
+      <informaltable>
+        <tgroup cols="3">
+          <thead>
+            <row>
+              <entry>Функция</entry>
+              <entry>Возвращает</entry>
+              <entry>Описание</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry>
+                <literal>pgv_insert(package text, name text, r record)</literal>
+              </entry>
+              <entry>
+                <literal>void</literal>
+              </entry>
+              <entry>Вставляет запись в набор переменных. Если указанный набор и переменная не существуют, они будут созданы. Первый столбец записи <literal>r</literal> будет считаться первичным ключом. Если будет найдена запись с таким же первичным ключом, возникнет ошибка. Так же возникнет ошибка, если у набора переменных окажется другая структура.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_update(package text, name text, r record)</literal>
+              </entry>
+              <entry>
+                <literal>boolean</literal>
+              </entry>
+              <entry>Изменяет запись с соответствующим первичным ключом (он задаётся в первом столбце <literal>r</literal>). Возвращает <literal>true</literal>, если запись была найдена. Если этот набор переменных имеет другую структуру, выдаётся ошибка.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_delete(package text, name text, value anynonarray)</literal>
+              </entry>
+              <entry>
+                <literal>boolean</literal>
+              </entry>
+              <entry>Удаляет запись с соответствующим первичным ключом (он задаётся в первом столбце <literal>r</literal>). Возвращает <literal>true</literal>, если запись была найдена.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_select(package text, name text)</literal>
+              </entry>
+              <entry>
+                <literal>set of record</literal>
+              </entry>
+              <entry>Возвращает записи из набора переменных.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_select(package text, name text, value anynonarray)</literal>
+              </entry>
+              <entry>
+                <literal>record</literal>
+              </entry>
+              <entry>Возвращает записи из набора переменных с соответствующими первичными ключами (первичный ключ задаётся в первом столбце <literal moreinfo="none">r</literal>).</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_select(package text, name text, value anyarray)</literal>
+              </entry>
+              <entry>
+                <literal>set of record</literal>
+              </entry>
+              <entry>Возвращает записи из набора переменных с соответствующими первичными ключами (первичный ключ задаётся в первом столбце <literal>r</literal>).</entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </informaltable>
+    </sect3>
+    <sect3 id="pg-variables-miscellaneous-functions">
+      <title>Функции разного назначения</title>
+      <informaltable>
+        <tgroup cols="3">
+          <thead>
+            <row>
+              <entry>Функция</entry>
+              <entry>Возвращает</entry>
+              <entry>Описание</entry>
+            </row>
+          </thead>
+          <tbody>
+            <row>
+              <entry>
+                <literal>pgv_exists(package text, name text)</literal>
+              </entry>
+              <entry>
+                <literal>bool</literal>
+              </entry>
+              <entry>Возвращает <literal>true</literal>, если существует указанный пакет и переменная.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_remove(package text, name text)</literal>
+              </entry>
+              <entry>
+                <literal>void</literal>
+              </entry>
+              <entry>Удаляет переменную с соответствующим именем. Указанный пакет и переменная должны существовать, иначе будет выдана ошибка.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_remove(package text)</literal>
+              </entry>
+              <entry>
+                <literal>void</literal>
+              </entry>
+              <entry>Удаляет пакет с заданным именем и все переменные пакета. Указанный пакет должен существовать, иначе будет выдана ошибка.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_free()</literal>
+              </entry>
+              <entry>
+                <literal>void</literal>
+              </entry>
+              <entry>Удаляет все пакеты и переменные.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_list()</literal>
+              </entry>
+              <entry>
+                <literal>table(package text, name text)</literal>
+              </entry>
+              <entry>Возвращает список пакетов и связанных с ними переменных.</entry>
+            </row>
+            <row>
+              <entry>
+                <literal>pgv_stats()</literal>
+              </entry>
+              <entry>
+                <literal>table(package text, used_memory bigint)</literal>
+              </entry>
+              <entry>Показывает список задействованных пакетов и объём занимаемой ими памяти (в байтах).</entry>
+            </row>
+          </tbody>
+        </tgroup>
+      </informaltable>
+      <para>Заметьте, что <literal>pgv_stats()</literal> работает только в &productname; 9.6 и новее.</para>
+    </sect3>
+  </sect2>
+  <sect2 id="pg-variables-examples">
+    <title>Примеры</title>
+    <para>Использовать функции для работы со скалярными переменными просто:</para>
+<programlisting>SELECT pgv_set_int('vars', 'int1', 101);
+SELECT pgv_set_int('vars', 'int2', 102);
+
+SELECT pgv_get_int('vars', 'int1');
+ pgv_get_int 
+-------------
+         101
+(1 row)
+
+SELECT pgv_get_int('vars', 'int2');
+ pgv_get_int 
+-------------
+         102
+(1 row)</programlisting>
+    <para>Допустим, у нас есть таблица <varname>tab</varname>:</para>
+<programlisting>CREATE TABLE tab (id int, t varchar);
+INSERT INTO tab VALUES (0, 'str00'), (1, 'str11');</programlisting>
+    <para>Тогда мы можем использовать функции, работающие с записями:</para>
+<programlisting>SELECT pgv_insert('vars', 'r1', tab) FROM tab;
+
+SELECT pgv_select('vars', 'r1');
+ pgv_select
+------------
+ (1,str11)
+ (0,str00)
+(2 rows)
+
+SELECT pgv_select('vars', 'r1', 1);
+ pgv_select
+------------
+ (1,str11)
+(1 row)
+
+SELECT pgv_select('vars', 'r1', 0);
+ pgv_select
+------------
+ (0,str00)
+(1 row)
+
+SELECT pgv_select('vars', 'r1', ARRAY[1, 0]);
+ pgv_select
+------------
+ (1,str11)
+ (0,str00)
+(2 rows)
+
+SELECT pgv_delete('vars', 'r1', 1);
+
+SELECT pgv_select('vars', 'r1');
+ pgv_select
+------------
+ (0,str00)
+(1 row)</programlisting>
+    <para>Вы можете получить список пакетов и переменных:</para>
+<programlisting>SELECT * FROM pgv_list() order by package, name;
+ package | name 
+---------+------
+ vars    | int1
+ vars    | int2
+ vars    | r1
+(3 rows)</programlisting>
+    <para>И получить объём занятой ими памяти:</para>
+<programlisting>SELECT * FROM pgv_stats() order by package;
+ package | used_memory
+---------+-------------
+ vars    |       16736
+(1 row)</programlisting>
+    <para>Вы можете удалять переменные или целые пакеты:</para>
+<programlisting>SELECT pgv_remove('vars', 'int1');
+SELECT pgv_remove('vars');</programlisting>
+    <para>Вы можете удалить все пакеты и переменные:</para>
+<programlisting>SELECT pgv_free();</programlisting>
+  </sect2>
+</sect1>

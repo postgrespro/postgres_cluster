@@ -1,0 +1,155 @@
+<!--
+doc/src/xml/ref/create_language.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createlanguage">
+ <indexterm zone="sql-createlanguage"><primary>CREATE LANGUAGE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE LANGUAGE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE LANGUAGE</refname>
+  <refpurpose>создать процедурный язык</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE [ OR REPLACE ] [ PROCEDURAL ] LANGUAGE <replaceable class="parameter">имя</replaceable>
+CREATE [ OR REPLACE ] [ TRUSTED ] [ PROCEDURAL ] LANGUAGE <replaceable class="parameter">имя</replaceable>
+    HANDLER <replaceable class="parameter">обработчик_вызова</replaceable> [ INLINE <replaceable class="parameter">обработчик_внедрённого_кода</replaceable> ] [ VALIDATOR <replaceable>функция_проверки</replaceable> ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="sql-createlanguage-description">
+  <title>Описание</title>
+
+  <para><command>CREATE LANGUAGE</command> регистрирует в базе данных <productname>&productname;</productname> новый процедурный язык. Впоследствии на этом языке можно будет определять новые функции и триггерные процедуры.</para>
+
+  <note>
+   <para>Начиная с <productname>PostgreSQL</productname> 9.1, большинство процедурных языков были преобразованы в <quote>расширения</quote>, так что они теперь устанавливаются посредством <xref linkend="sql-createextension"/>, а не <command>CREATE LANGUAGE</command>. Прямое использование <command>CREATE LANGUAGE</command> теперь следует ограничить скриптами установки расширений. Если в вашей базе данных есть <quote>чистое</quote> определение языка, возможно, полученное в результате обновления, его можно преобразовать в расширение, выполнив <literal>CREATE EXTENSION <replaceable>имя_языка</replaceable> FROM unpackaged</literal>.</para>
+  </note>
+
+  <para><command>CREATE LANGUAGE</command> по сути связывает имя языка с функциями-обработчиками, исполняющими код, написанный на этом языке. За дополнительными сведениями о языковых обработчиках обратитесь к <xref remap="3" linkend="plhandler"/>.</para>
+
+  <para>Команда <command>CREATE LANGUAGE</command> имеет две формы. В первой форме пользователь задаёт только имя создаваемого языка, и сервер <productname>&productname;</productname> получает подходящие параметры, обращаясь к системному каталогу <link linkend="catalog-pg-pltemplate"><structname>pg_pltemplate</structname></link>. Во второй форме пользователь указывает параметры языка вместе с его именем. Вторая форма позволяет создать язык, не определённый заранее в <structname>pg_pltemplate</structname>, но этот подход считается устаревшим.</para>
+
+  <para>Когда сервер находит в каталоге <structname>pg_pltemplate</structname> запись для заданного имени языка, он будет использовать данные из каталога, даже если параметры языка указаны в команде. Это поведение упрощает загрузку экспортированных ранее файлов, которые, скорее всего, будут содержать устаревшую информацию о функциях поддержки языка.</para>
+
+  <para>Обычно, для того чтобы зарегистрировать новый язык, необходимо иметь право суперпользователя <productname>&productname;</productname>. Однако владелец базы данных может зарегистрировать новый язык в этой базе данных, если язык определён в каталоге <structname>pg_pltemplate</structname> и помечен как допускающий создание владельцами БД (<structfield>tmpldbacreate</structfield> содержит true). По умолчанию доверенные языки могут создаваться владельцами базы данных, но это можно изменить, внеся коррективы в <structname>pg_pltemplate</structname>. Создатель языка становится его владельцем и может впоследствии удалить или переименовать его, либо назначить другого владельца.</para>
+
+  <para><command>CREATE OR REPLACE LANGUAGE</command> создаст новый язык, либо заменит существующее определение. Если язык уже существует, его параметры изменяются в соответствии со значениями, указанными в команде или полученными из <structname>pg_pltemplate</structname>, при этом владелец языка и права доступа к нему не меняются, и все существующие функции, написанные на этом языке, по-прежнему считаются рабочими. Помимо обладания обычными правами, требующимися для создания языка, пользователь должен быть суперпользователем или владельцем существующего языка. Вариант с <literal>REPLACE</literal> в основном предназначен для случаев, когда язык уже существует. Если для языка есть запись в <structname>pg_pltemplate</structname>, то <literal>REPLACE</literal> фактически ничего не меняет в существующем определении, кроме исключительного случая, когда запись в <structname>pg_pltemplate</structname> была изменена после создания языка.</para>
+ </refsect1>
+
+ <refsect1 id="sql-createlanguage-parameters">
+  <title>Параметры</title>
+
+   <variablelist>
+    <varlistentry>
+     <term><literal>TRUSTED</literal></term>
+
+     <listitem>
+      <para>Указание <literal>TRUSTED</literal> (доверенный) означает, что язык не даёт пользователю доступ к данным, к которым он не имел бы доступа без него. Если при регистрации языка это ключевое слово опущено, использовать этот язык для создания новых функций смогут только суперпользователи <productname>&productname;</productname>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>PROCEDURAL</literal></term>
+
+     <listitem>
+      <para>Это слово не несёт смысловой нагрузки.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><replaceable class="parameter">имя</replaceable></term>
+
+     <listitem>
+      <para>Имя процедурного языка. Оно должно быть уникальным среди всех языков в базе данных.</para>
+
+      <para>В целях обратной совместимости имя можно заключить в апострофы.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>HANDLER</literal> <replaceable class="parameter">обработчик_вызова</replaceable></term>
+
+     <listitem>
+      <para>Здесь <replaceable class="parameter">обработчик_вызова</replaceable> — имя ранее зарегистрированной функции, которая будет вызываться для исполнения процедур (функций) на этом языке. Обработчик вызова для процедурного языка должен быть написан на компилируемом языке, например, на C, с соглашениями о вызовах версии 1 и зарегистрирован в <productname>&productname;</productname> как функция без аргументов, возвращающая фиктивный тип <type>language_handler</type>, который просто показывает, что эта функция — обработчик вызова.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>INLINE</literal> <replaceable class="parameter">обработчик_внедрённого_кода</replaceable></term>
+
+     <listitem>
+      <para>Здесь <replaceable class="parameter">обработчик_внедрённого_кода</replaceable> — имя ранее зарегистрированной функции, которая будет вызываться для выполнения анонимного блока кода (команды <xref linkend="sql-do"/>) на этом языке. Если <replaceable class="parameter">обработчик_внедрённого_кода</replaceable> не определён, данный язык не будет поддерживать анонимные блоки кода. Этот обработчик должен принимать один аргумент типа <type>internal</type>, содержащий внутреннее представление команды <command>DO</command>, и обычно возвращает тип <type>void</type>. Значение, возвращаемое этим обработчиком, игнорируется.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><literal>VALIDATOR</literal> <replaceable class="parameter">функция_проверки</replaceable></term>
+
+     <listitem>
+      <para>Здесь <replaceable class="parameter">функция_проверки</replaceable> — имя ранее зарегистрированной функции, которая будет вызываться при создании новой функции на этом языке и проверять её. Если функция проверки не задана, функции на этом языке при создании проверяться не будут. Функция проверки должна принимать один аргумент типа <type>oid</type> с идентификатором создаваемой функции и обычно возвращает <type>void</type>.</para>
+
+      <para>Функция проверки обычно проверяет тело создаваемой функции на синтаксические ошибки, но может также проанализировать и другие характеристики функции, например, поддержку определённых типов аргументов этим языком. Значение, возвращаемое этой функцией, игнорируется, об ошибках она должна сигнализировать, вызывая <function>ereport()</function>.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist>
+
+  <para>Параметр <literal>TRUSTED</literal> и имена вспомогательных функций игнорируются, если на сервере для указанного языка имеется запись в <structname>pg_pltemplate</structname>.</para>
+ </refsect1>
+
+ <refsect1 id="sql-createlanguage-notes">
+  <title>Замечания</title>
+
+  <para>Программа <xref linkend="app-createlang"/> представляет собой простую обёртку команды <command>CREATE LANGUAGE</command>. Она упрощает установку процедурных языков из командной строки оболочки.</para>
+
+  <para>Для удаления процедурных языков следует использовать <xref linkend="sql-droplanguage"/> или, что предпочтительнее, программу <xref linkend="app-droplang"/>.</para>
+
+  <para>В системном каталоге <classname>pg_language</classname> (см. <xref remap="4" linkend="catalog-pg-language"/>) записывается информация о языках, установленных в данный момент. Кроме того, у <command>createlang</command> есть параметр, позволяющий просмотреть список установленных языков.</para>
+
+  <para>Чтобы создавать функции на процедурном языке, пользователь должен иметь право <literal>USAGE</literal> для этого языка. По умолчанию для доверенных языков право <literal>USAGE</literal> даётся роли <literal>PUBLIC</literal> (т. е. всем), однако при желании его можно отозвать.</para>
+
+  <para>Процедурные языки являются локальными по отношению к базам данных. Тем не менее, язык можно установить в базу данных <literal>template1</literal>, в результате чего он будет автоматически доступен во всех базах данных, создаваемых из неё впоследствии.</para>
+
+  <para>Обработчик вызова, обработчик встроенного кода (при наличии) и функция проверки (при наличии) должны уже существовать, если на сервере нет записи для этого языка в <structname>pg_pltemplate</structname>. Но если такая запись уже есть, функции могут не существовать — в случае отсутствия в базе данных они будут определены автоматически. (Это может привести к сбою в <command>CREATE LANGUAGE</command>, если в установленной системе не найдётся разделяемая библиотека, реализующая этот язык.)</para>
+
+  <para>В <productname>PostgreSQL</productname> до версии 7.3 обязательно требовалось объявить функции-обработчики, как возвращающие фиктивный тип <type>opaque</type>, а не <type>language_handler</type>. Для поддержки загрузки старых файлов экспорта БД, команда <command>CREATE LANGUAGE</command> принимает функции с объявленным типом результата <type>opaque</type>, но при этом выдаётся предупреждение и тип результата меняется на <type>language_handler</type>.</para>
+ </refsect1>
+
+ <refsect1 id="sql-createlanguage-examples">
+  <title>Примеры</title>
+
+  <para>Предпочитаемый способ создания любых процедурных языков довольно прост: <programlisting>CREATE LANGUAGE plperl;</programlisting></para>
+
+  <para>Для языка, не представленного в каталоге <structname>pg_pltemplate</structname>, требуется выполнить следующие действия: <programlisting>CREATE FUNCTION plsample_call_handler() RETURNS language_handler
+    AS '$libdir/plsample'
+    LANGUAGE C;
+CREATE LANGUAGE plsample
+    HANDLER plsample_call_handler;</programlisting></para>
+ </refsect1>
+
+ <refsect1 id="sql-createlanguage-compat">
+  <title>Совместимость</title>
+
+  <para><command>CREATE LANGUAGE</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterlanguage"/></member>
+   <member><xref linkend="sql-createfunction"/></member>
+   <member><xref linkend="sql-droplanguage"/></member>
+   <member><xref linkend="sql-grant"/></member>
+   <member><xref linkend="sql-revoke"/></member>
+   <member><xref linkend="app-createlang"/></member>
+   <member><xref linkend="app-droplang"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

@@ -1,0 +1,167 @@
+<!--
+doc/src/xml/ref/alter_index.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterindex">
+ <indexterm zone="sql-alterindex"><primary>ALTER INDEX</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER INDEX</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER INDEX</refname>
+  <refpurpose>изменить определение индекса</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> RENAME TO <replaceable class="parameter">новое_имя</replaceable>
+ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> SET TABLESPACE <replaceable class="parameter">табл_пространство</replaceable>
+ALTER INDEX <replaceable class="parameter">имя</replaceable> DEPENDS ON EXTENSION <replaceable class="parameter">имя_расширения</replaceable>
+ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> SET ( <replaceable class="parameter">параметр_хранения</replaceable> = <replaceable class="parameter">значение</replaceable> [, ... ] )
+ALTER INDEX [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> RESET ( <replaceable class="parameter">параметр_хранения</replaceable> [, ... ] )
+ALTER INDEX ALL IN TABLESPACE <replaceable class="parameter">имя</replaceable> [ OWNED BY <replaceable class="parameter">имя_роли</replaceable> [, ... ] ]
+    SET TABLESPACE <replaceable class="parameter">новое_табл_пространство</replaceable> [ NOWAIT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER INDEX</command> меняет определение существующего индекса. Эта команда имеет несколько разновидностей: <variablelist>
+
+   <varlistentry>
+    <term><literal>RENAME</literal></term>
+    <listitem>
+     <para>Форма <literal>RENAME</literal> меняет имя индекса. На сохранённые данные это не влияет.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET TABLESPACE</literal></term>
+    <listitem>
+     <para>Эта форма меняет табличное пространство индекса на заданное и переносит в него файл(ы) данных, связанные с индексом. Для изменения табличного пространства индекса нужно быть владельцем индекса и иметь право <literal>CREATE</literal> в новом табличном пространстве. Форма <literal>ALL IN TABLESPACE</literal> позволяет перенести из заданного пространства все индексы в текущей базе данных, блокируя их для перемещения и затем перемещая каждый индекс. Эта форма также поддерживает указание <literal>OWNED BY</literal>, с которым будут перемещены только индексы, принадлежащие заданным ролям. Если указан параметр <literal>NOWAIT</literal>, команда завершится ошибкой, если не сможет немедленно получить все требуемые блокировки. Заметьте, что эта команда не переместит системные каталоги; вместо неё следует использовать <command>ALTER DATABASE</command> или явные вызовы <command>ALTER INDEX</command>. См. также <xref remap="4" linkend="sql-createtablespace"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DEPENDS ON EXTENSION</literal></term>
+    <listitem>
+     <para>Эта форма помечает индекс как зависимый от расширения, так что при удалении расширения будет автоматически удалён и индекс.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>SET ( <replaceable class="parameter">параметр_хранения</replaceable> = <replaceable class="parameter">значение</replaceable> [, ... ] )</literal></term>
+    <listitem>
+     <para>Эта форма настраивает один или несколько специфичных для индекса параметров хранения. Список доступных параметров приведён в <xref remap="6" linkend="sql-createindex"/>. Заметьте, что эта команда не меняет содержимое индекса немедленно; для получения желаемого эффекта в зависимости от параметров может потребоваться перестроить индекс командой <xref linkend="sql-reindex"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESET ( <replaceable class="parameter">параметр_хранения</replaceable> [, ... ] )</literal></term>
+    <listitem>
+     <para>Эта форма сбрасывает один или несколько специфичных для индекса параметров хранения к значениям по умолчанию. Как и с <literal>SET</literal>, для полного обновления индекса может потребоваться выполнить <literal>REINDEX</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+    <variablelist>
+
+     <varlistentry>
+      <term><literal>IF EXISTS</literal></term>
+      <listitem>
+       <para>Не считать ошибкой, если индекс не существует. В этом случае будет выдано замечание.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя</replaceable></term>
+      <listitem>
+       <para>Имя (возможно, дополненное схемой) существующего индекса, подлежащего изменению.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">новое_имя</replaceable></term>
+      <listitem>
+       <para>Новое имя индекса.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">табл_пространство</replaceable></term>
+      <listitem>
+       <para>Табличное пространство, в которое будет перемещён индекс.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">имя_расширения</replaceable></term>
+      <listitem>
+       <para>Имя расширения, от которого будет зависеть индекс.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">параметр_хранения</replaceable></term>
+      <listitem>
+       <para>Имя специфичного для индекса параметра хранения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">значение</replaceable></term>
+      <listitem>
+       <para>Новое значение специфичного для индекса параметра хранения. Это может быть число или строка, в зависимости от параметра.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para>Эти операции также возможно выполнить с помощью <xref linkend="sql-altertable"/>. На самом деле <command>ALTER INDEX</command> ­­­— это просто синоним нескольких форм <command>ALTER TABLE</command>, работающих с индексами.</para>
+
+   <para>Ранее существовала форма <command>ALTER INDEX OWNER</command>, но сейчас она игнорируется (с предупреждением). Владельцем индекса может быть только владелец соответствующей таблицы. При смене владельца таблицы владелец индекса меняется автоматически.</para>
+
+   <para>Какие-либо изменения индексов системного каталога не допускаются.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+  <para>Переименование существующего индекса: <programlisting>ALTER INDEX distributors RENAME TO suppliers;</programlisting></para>
+
+  <para>Перемещение индекса в другое табличное пространство: <programlisting>ALTER INDEX distributors SET TABLESPACE fasttablespace;</programlisting></para>
+
+  <para>Изменение фактора заполнения индекса (предполагается, что это поддерживает метод индекса): <programlisting>ALTER INDEX distributors SET (fillfactor = 75);
+REINDEX INDEX distributors;</programlisting></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>ALTER INDEX</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createindex"/></member>
+   <member><xref linkend="sql-reindex"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

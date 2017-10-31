@@ -1,0 +1,73 @@
+<!--
+doc/src/xml/ref/alter_language.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alterlanguage">
+ <indexterm zone="sql-alterlanguage"><primary>ALTER LANGUAGE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER LANGUAGE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER LANGUAGE</refname>
+  <refpurpose>изменить определение процедурного языка</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER [ PROCEDURAL ] LANGUAGE <replaceable>имя</replaceable> RENAME TO <replaceable>новое_имя</replaceable>
+ALTER [ PROCEDURAL ] LANGUAGE <replaceable>имя</replaceable> OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER LANGUAGE</command> изменяет определение процедурного языка. Единственное, что может это команда — переименовать язык или назначить нового владельца. Выполнить <command>ALTER LANGUAGE</command> может только суперпользователь или владелец языка.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable>имя</replaceable></term>
+    <listitem>
+     <para>Имя языка</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable>новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя языка</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable>новый_владелец</replaceable></term>
+    <listitem>
+     <para>Новый владелец языка</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>ALTER LANGUAGE</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createlanguage"/></member>
+   <member><xref linkend="sql-droplanguage"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

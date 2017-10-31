@@ -1,0 +1,124 @@
+<!-- doc/src/xml/custom-scan.xml -->
+
+<chapter id="custom-scan">
+ <title>Написание провайдера нестандартного сканирования</title>
+
+ <indexterm zone="custom-scan"><primary>провайдер нестандартного сканирования</primary> <secondary>обработчик</secondary></indexterm>
+
+ <para><productname>&productname;</productname> поддерживает набор экспериментальных средств, предназначенных для того, чтобы модули расширения могли добавлять в систему новые типы сканирования. В отличие от <link linkend="fdwhandler">обёртки сторонних данных</link>, которая должна знать, как сканировать только собственные таблицы, провайдер сканирования может реализовать нестандартный вариант сканирования любого отношения в системе. Обычно к написанию провайдера нестандартного сканирования подталкивает желание реализовать какую-то оптимизацию, не поддерживаемую основной системой, например, кеширование или аппаратное ускорение некоторого рода. В этой главе рассказывается, как написать свой провайдер нестандартного сканирования.</para>
+
+ <para>Процесс реализации нестандартного сканирования нового типа состоит из трёх этапов. Во-первых, во время планирования необходимо построить пути доступа, представляющие сканирование с предлагаемой стратегией. Во-вторых, если один из этих путей доступа выбирается планировщиком как оптимальная стратегия сканирования определённого отношения, этот путь доступа должен быть преобразован в план. Наконец, должно быть возможно выполнить этот план, получив при этом те же результаты, что были бы получены с любым другим путём доступа, выбранным для того же отношения.</para>
+
+ <sect1 id="custom-scan-path">
+  <title>Создание нестандартных путей сканирования</title>
+
+  <para>Провайдер нестандартного сканирования обычно добавляет пути для базового отношения, установив следующий обработчик, который вызывается после того, как ядро системы построит, по её мнению, полный и корректный набор путей доступа для отношения. <programlisting>typedef void (*set_rel_pathlist_hook_type) (PlannerInfo *root,
+                                            RelOptInfo *rel,
+                                            Index rti,
+                                            RangeTblEntry *rte);
+extern PGDLLIMPORT set_rel_pathlist_hook_type set_rel_pathlist_hook;</programlisting></para>
+
+  <para>Хотя эта функция-обработчик может изучать, изменять или удалять пути, сформированные основной системой, провайдер нестандартного сканирования обычно ограничивается созданием объектов <structname>CustomPath</structname> и добавлением их в <literal>rel</literal> (с помощью <function>add_path</function>). Провайдер нестандартного сканирования отвечает за инициализацию объекта <structname>CustomPath</structname>, который описан так: <programlisting>typedef struct CustomPath
+{
+    Path      path;
+    uint32    flags;
+    List     *custom_paths;
+    List     *custom_private;
+    const CustomPathMethods *methods;
+} CustomPath;</programlisting></para>
+
+  <para>Поле <structfield>path</structfield> должно инициализироваться как для любого другого пути и включать оценку числа строк, стоимость запуска и общую, а также порядок сортировки, устанавливаемый этим путём. Поле <structfield>flags</structfield> задаёт битовую маску, которая должна включать флаг <literal>CUSTOMPATH_SUPPORT_BACKWARD_SCAN</literal>, если нестандартный путь поддерживает сканирование назад, и <literal>CUSTOMPATH_SUPPORT_MARK_RESTORE</literal>, если он поддерживает пометку позиции и её восстановление. Обе эти возможности являются факультативными. В необязательном поле <structfield>custom_paths</structfield> задаётся список узлов <structname>Path</structname>, используемых данным узлом; они будут преобразованы планировщиком в узлы <structname>Plan</structname>. В поле <structfield>custom_private</structfield> могут быть сохранены внутренние данные нестандартного пути. Сохранять их нужно в форме, которую может принять <literal>nodeToString</literal>, чтобы отладочные процедуры, пытающиеся вывести нестандартный путь, работали ожидаемым образом. Поле <structfield>methods</structfield> должно указывать на объект (обычно статически размещённый), реализующий требуемые методы нестандартного пути (на данный момент это один метод). В этом объекте также должны быть инициализированы поля <structfield>LibraryName</structfield> и <structfield>SymbolName</structfield>, чтобы динамический загрузчик мог разрешить их и загрузить таблицу методов.</para>
+
+  <para>Провайдер нестандартного сканирования может также реализовать пути соединений. Как и для базовых отношений, такой путь должен выдавать тот же результат, какой был бы получен обычным соединением, которое он заменяет. Для этого провайдер соединения должен установить следующий обработчик, а затем внутри функции-обработчика создать пути <structname>CustomPath</structname> для отношения соединения. <programlisting>typedef void (*set_join_pathlist_hook_type) (PlannerInfo *root,
+                                             RelOptInfo *joinrel,
+                                             RelOptInfo *outerrel,
+                                             RelOptInfo *innerrel,
+                                             JoinType jointype,
+                                             JoinPathExtraData *extra);
+extern PGDLLIMPORT set_join_pathlist_hook_type set_join_pathlist_hook;</programlisting> Этот обработчик будет вызываться многократно для одного отношения соединения с разными сочетаниями внутренних и внешних отношений; задача обработчика — минимизировать при этом дублирующиеся операции.</para>
+
+  <sect2 id="custom-scan-path-callbacks">
+  <title>Обработчики пути нестандартного сканирования</title>
+
+  <para><programlisting>Plan *(*PlanCustomPath) (PlannerInfo *root,
+                         RelOptInfo *rel,
+                         CustomPath *best_path,
+                         List *tlist,
+                         List *clauses,
+                         List *custom_plans);</programlisting> Преобразует нестандартный путь в законченный план. Возвращаемым значением обычно будет объект <literal>CustomScan</literal>, который этот обработчик должен разместить в памяти и инициализировать. За подробностями обратитесь к <xref remap="3" linkend="custom-scan-plan"/>.</para>
+  </sect2>
+ </sect1>
+
+ <sect1 id="custom-scan-plan">
+  <title>Создание нестандартных планов сканирования</title>
+
+  <para>Нестандартное сканирование представляется в окончательном дереве плана в виде следующей структуры: <programlisting>typedef struct CustomScan
+{
+    Scan      scan;
+    uint32    flags;
+    List     *custom_plans;
+    List     *custom_exprs;
+    List     *custom_private;
+    List     *custom_scan_tlist;
+    Bitmapset *custom_relids;
+    const CustomScanMethods *methods;
+} CustomScan;</programlisting></para>
+
+  <para>Объект в поле <structfield>scan</structfield> должен быть инициализирован, как и для любого другого сканирования, и включать оценки стоимости, целевые списки, условия и т. д. Поле <structfield>flags</structfield> содержит битовую маску с тем же значением, что и в <structname>CustomPath</structname>. В поле <structfield>custom_plans</structfield> могут быть сохранены дочерние узлы <structname>Plan</structname>. В <structfield>custom_exprs</structfield> могут быть сохранены деревья выражений, которые будут исправляться кодом в <filename>setrefs.c</filename> и <filename>subselect.c</filename>, а в <structfield>custom_private</structfield> следует сохранить другие внутренние данные, которые будут использоваться только самим провайдером нестандартного сканирования. Поле <structfield>custom_scan_tlist</structfield> может содержать NIL при сканировании базового отношения, что будет показывать, что нестандартное сканирование возвращает кортежи, соответствующие типу строк базового отношения. В противном случае оно должно указывать на целевой список, описывающий фактические кортежи. Список <structfield>custom_scan_tlist</structfield> должен устанавливаться при соединениях и может задаваться при сканировании, если провайдер сканирования может вычислять какие-либо выражения без переменных. Поле <structfield>custom_relids</structfield> заполняется ядром и задаёт набор отношений (индексов в списке отношений), которые обрабатывает данный узел сканирования; когда имеет место сканирование, а не соединение, в этом списке будет всего один элемент. Поле <structfield>methods</structfield> должно указывать на объект (обычно статически размещённый), реализующий требуемые методы нестандартного сканирования, которые подробнее описываются ниже.</para>
+
+  <para>Когда <structname>CustomScan</structname> сканирует одно отношение, в <structfield>scan.scanrelid</structfield> должен задаваться индекс сканируемой таблицы в списке отношений. Когда он заменяет соединение, поле <structfield>scan.scanrelid</structfield> должно быть нулевым.</para>
+
+  <para>Деревья планов должны поддерживать возможность копирования функцией <function>copyObject</function>, так что все данные, сохранённые в <quote>дополнительных</quote> полях, должны быть узлами, которые может обработать эта функция. Более того, провайдеры нестандартного сканирования не могут заменять структуру <structname>CustomScan</structname> расширенной структурой, её содержащей, что возможно с <structname>CustomPath</structname> или <structname>CustomScanState</structname>.</para>
+
+  <sect2 id="custom-scan-plan-callbacks">
+   <title>Обработчики плана нестандартного сканирования</title>
+   <para><programlisting>Node *(*CreateCustomScanState) (CustomScan *cscan);</programlisting> Выделяет структуру <structname>CustomScanState</structname> для заданного объекта <structname>CustomScan</structname>. Фактически выделенная область будет обычно больше, чем требуется для самой структуры <structname>CustomScanState</structname>, так как многие провайдеры могут включать её в расширенную структуру в качестве первого поля. В возвращаемом значении должны быть подходящим образом заполнены тег узла и поле <structfield>methods</structfield>, но другие поля на данном этапе должны быть обнулены; после того как <function>ExecInitCustomScan</function> произведёт базовую инициализацию, будет вызван обработчик <function>BeginCustomScan</function>, в котором провайдер нестандартного сканирования может выполнить все остальные требуемые действия.</para>
+  </sect2>
+ </sect1>
+
+ <sect1 id="custom-scan-execution">
+  <title>Выполнение нестандартного сканирования</title>
+
+  <para>Когда выполняется узел <structfield>CustomScan</structfield>, его состояние представляется структурой <structfield>CustomScanState</structfield>, объявленной следующим образом: <programlisting>typedef struct CustomScanState
+{
+    ScanState ss;
+    uint32    flags;
+    const CustomExecMethods *methods;
+} CustomScanState;</programlisting></para>
+
+  <para>Поле <structfield>ss</structfield> инициализируется как и для состояния любого другого сканирования, за исключением того, что когда это сканирование для соединения, а не для базового отношения, в <literal>ss.ss_currentRelation</literal> остаётся NULL. Поле <structfield>flags</structfield> содержит битовую маску с тем же значением, что и в <structname>CustomPath</structname> и <structname>CustomScan</structname>. Поле <structfield>methods</structfield> должно указывать на объект (обычно статически размещённый), реализующий требуемые методы состояния нестандартного сканирования, подробнее описанные ниже. Обычно структура <structname>CustomScanState</structname>, которой не нужно поддерживать <function>copyObject</function>, фактически включается в расширенную структуру в качестве её первого члена.</para>
+
+  <sect2 id="custom-scan-execution-callbacks">
+   <title>Обработчики выполнения нестандартного сканирования</title>
+
+   <para><programlisting>void (*BeginCustomScan) (CustomScanState *node,
+                         EState *estate,
+                         int eflags);</programlisting> Завершает инициализацию переданного объекта <structname>CustomScanState</structname>. Стандартные поля инициализируются в <function>ExecInitCustomScan</function>, но все внутренние поля должны инициализироваться здесь.</para>
+
+   <para><programlisting>TupleTableSlot *(*ExecCustomScan) (CustomScanState *node);</programlisting> Считывает следующий кортеж. В случае наличия кортежей эта функция должна записать в <literal>ps_ResultTupleSlot</literal> следующий кортеж в текущем направлении сканирования и вернуть слот с кортежем. Если же кортежей больше нет, она должна вернуть <literal>NULL</literal> или пустой слот.</para>
+
+   <para><programlisting>void (*EndCustomScan) (CustomScanState *node);</programlisting> Очищает все внутренние данные, связанные с <literal>CustomScanState</literal>. Этот метод является обязательным, но он может ничего не делать, если такие данные отсутствуют или они будут очищены автоматически.</para>
+
+   <para><programlisting>void (*ReScanCustomScan) (CustomScanState *node);</programlisting> Возвращает позицию текущего сканирования в начало и подготавливает повторное сканирование отношения.</para>
+
+   <para><programlisting>void (*MarkPosCustomScan) (CustomScanState *node);</programlisting> Сохраняет текущую позицию сканирования, чтобы к ней впоследствии можно было вернуться, вызвав обработчик <function>RestrPosCustomScan</function>. Данный обработчик является необязательным и должен присутствовать, только если установлен флаг <literal>CUSTOMPATH_SUPPORT_MARK_RESTORE</literal>.</para>
+
+   <para><programlisting>void (*RestrPosCustomScan) (CustomScanState *node);</programlisting> Восстанавливает предыдущую позицию сканирования, сохранённую обработчиком <function>MarkPosCustomScan</function>. Данный обработчик является необязательным и должен присутствовать, только если установлен флаг <literal>CUSTOMPATH_SUPPORT_MARK_RESTORE</literal>.</para>
+
+   <para><programlisting>Size (*EstimateDSMCustomScan) (CustomScanState *node,
+                               ParallelContext *pcxt);</programlisting> Оценивает объём динамической разделяемой памяти, которая потребуется для параллельной операции. Это значение может превышать объём, который будет занят фактически, но не должно быть меньше. Возвращаемое значение задаётся в байтах. Этот обработчик не является обязательным и должен устанавливаться, только если провайдер нестандартного сканирования поддерживает параллельное выполнение.</para>
+
+   <para><programlisting>void (*InitializeDSMCustomScan) (CustomScanState *node,
+                                 ParallelContext *pcxt,
+                                 void *coordinate);</programlisting> Инициализирует динамическую разделяемую память, которая потребуется для параллельной операции; <literal>coordinate</literal> указывает на выделяемый размер, равный возвращаемому значению <function>EstimateDSMCustomScan</function>. Этот обработчик является необязательным и должен устанавливаться, только если провайдер нестандартного сканирования поддерживает параллельное выполнение.</para>
+
+   <para><programlisting>void (*InitializeWorkerCustomScan) (CustomScanState *node,
+                                    shm_toc *toc,
+                                    void *coordinate);</programlisting> Инициализирует собственное состояние параллельного исполнителя на основе общего состояния, заданного ведущим исполнителем при вызове <literal>InitializeDSMCustomScan</literal>. Этот обработчик является необязательным и должен устанавливаться, только если провайдер нестандартного сканирования поддерживает параллельное выполнение.</para>
+
+   <para><programlisting>void (*ExplainCustomScan) (CustomScanState *node,
+                           List *ancestors,
+                           ExplainState *es);</programlisting> Выводит дополнительную информацию для <command>EXPLAIN</command> об узле нестандартного сканирования. Этот обработчик является необязательным. Общие данные, сохранённые в <structname>ScanState</structname>, такие как целевой список и сканируемое отношение, будут выводиться и без этого обработчика, но с помощью этого обработчика можно выдать дополнительные, внутренние сведения.</para>
+  </sect2>
+ </sect1>
+</chapter>

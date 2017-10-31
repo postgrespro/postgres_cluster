@@ -1,0 +1,892 @@
+<!-- doc/src/xml/ref/pgbench.xml -->
+
+<refentry id="pgbench">
+ <indexterm zone="pgbench"><primary>pgbench</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>pgbench</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pgbench</refname>
+  <refpurpose>запустить тест производительности <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pgbench</command>
+   <arg choice="plain"><option>-i</option></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+   <arg choice="opt"><replaceable>имя_бд</replaceable></arg>
+  </cmdsynopsis>
+  <cmdsynopsis>
+   <command>pgbench</command>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+   <arg choice="opt"><replaceable>имя_бд</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+ <para><application>pgbench</application> — это простая программа для запуска тестов производительности <productname>&productname;</productname>. Она многократно выполняет одну последовательность команд, возможно в параллельных сеансах базы данных, а затем вычисляет среднюю скорость транзакций (число транзакций в секунду). По умолчанию <application>pgbench</application> тестирует сценарий, примерно соответствующий TPC-B, который состоит из пяти команд <command>SELECT</command>, <command>UPDATE</command> и <command>INSERT</command> в одной транзакции. Однако вы можете легко протестировать и другие сценарии, написав собственные скрипты транзакций.</para>
+
+ <para>Типичный вывод <application>pgbench</application> выглядит так: <screen>
+transaction type: &lt;builtin: TPC-B (sort of)&gt;
+default transaction isolation level: read committed
+transaction maximum tries number: 1
+scaling factor: 10
+query mode: simple
+number of clients: 10
+number of threads: 1
+number of transactions per client: 1000
+number of transactions actually processed: 10000/10000
+tps = 85.184871 (including connections establishing)
+tps = 85.296346 (excluding connections establishing)
+</screen> В первых восьми строках выводятся значения некоторых самых важных параметров. В следующей строке показывается количество выполненных и запланированных транзакций (это будет произведение числа клиентов и числа транзакций для одного клиента); эти количества будут равны, если только выполнение не завершится досрочно. (В режиме <option>-T</option> выводится только число фактически выполненных транзакций.) В двух последних строках выводится число транзакций в секунду, вычисленное с учётом и без учёта времени запуска сеансов базы данных.</para>
+
+  <para>Для запускаемого по умолчанию теста типа TPC-B требуется предварительно подготовить определённые таблицы. Чтобы создать и наполнить эти таблицы, следует запустить <application>pgbench</application> с ключом <option>-i</option> (инициализировать). (Если вы применяете нестандартный скрипт, это не требуется, но тем не менее нужно подготовить конфигурацию, нужную вашему тесту.) Запуск инициализации выглядит так: <programlisting>pgbench -i <optional> <replaceable>другие-параметры</replaceable> </optional> <replaceable>имя_базы</replaceable></programlisting> где <replaceable>имя_базы</replaceable> — имя уже существующей базы, в которой будет проводиться тест. (Чтобы указать, как подключиться к серверу баз данных, вы также можете добавить параметры <option>-h</option>, <option>-p</option> и/или <option>-U</option>.)</para>
+
+  <caution>
+   <para><literal>pgbench -i</literal> создаёт четыре таблицы <structname>pgbench_accounts</structname>, <structname>pgbench_branches</structname>, <structname>pgbench_history</structname> и <structname>pgbench_tellers</structname>, предварительно уничтожая существующие таблицы с этими именами. Если вы вдруг используете эти имена в своей базе данных, обязательно переключитесь на другую базу!</para>
+  </caution>
+
+  <para>С <quote>коэффициентом масштаба</quote>, по умолчанию равным 1, эти таблицы изначально содержат такое количество строк: <screen>
+table                   # of rows
+---------------------------------
+pgbench_branches        1
+pgbench_tellers         10
+pgbench_accounts        100000
+pgbench_history         0
+</screen> Эти числа можно (и в большинстве случаев даже нужно) увеличить, воспользовавшись параметром <option>-s</option> (коэффициент масштаба). При этом также может быть полезен ключ <option>-F</option> (фактор заполнения).</para>
+
+  <para>Подготовив требуемую конфигурацию, можно запустить тест производительности командой без <option>-i</option>, то есть: <programlisting>pgbench <optional> <replaceable>параметры</replaceable> </optional> <replaceable>имя_базы</replaceable></programlisting> Практически во всех случаях, чтобы получить полезные результаты, необходимо передать какие-либо дополнительные параметры. Наиболее важные параметры: <option>-c</option> (число клиентов), <option>-t</option> (число транзакций), <option>-T</option> (длительность) и <option>-f</option> (файл со скриптом). Полный список параметров приведён ниже.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <para>Следующий список разделён на три подраздела: одни параметры используются при инициализации базы данных, другие при проведении тестирования, а третьи в обоих случаях.</para>
+
+ <refsect2 id="pgbench-init-options">
+  <title>Параметры инициализации</title>
+
+   <para><application>pgbench</application> принимает следующие аргументы командной строки для инициализации: <variablelist>
+
+     <varlistentry>
+      <term><option>-i</option></term>
+      <term><option>--initialize</option></term>
+      <listitem>
+       <para>Требуется для вызова режима инициализации.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-F</option> <replaceable>фактор_заполнения</replaceable></term>
+      <term><option>--fillfactor=</option><replaceable>фактор_заполнения</replaceable></term>
+      <listitem>
+       <para>Создать таблицы <structname>pgbench_accounts</structname>, <structname>pgbench_tellers</structname> и <structname>pgbench_branches</structname> с заданным фактором заполнения. Значение по умолчанию — 100.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-n</option></term>
+      <term><option>--no-vacuum</option></term>
+      <listitem>
+       <para>Не выполнять очистку после инициализации.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-q</option></term>
+      <term><option>--quiet</option></term>
+      <listitem>
+       <para>Переключить вывод в немногословный режим, когда выводится только одно сообщение о прогрессе в 5 секунд. В режиме по умолчанию одно сообщение выводится на каждые 100000 строк, при этом за секунду обычно выводится довольно много строк (особенно на хорошем оборудовании).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s</option> <replaceable>коэффициент_масштаба</replaceable></term>
+      <term><option>--scale=</option><replaceable>коэффициент_масштаба</replaceable></term>
+      <listitem>
+       <para>Умножить число генерируемых строк на заданный коэффициент. Например, с ключом <literal>-s 100</literal> в таблицу <structname>pgbench_accounts</structname> будут записаны 10 000 000 строк. Значение по умолчанию — 1. При коэффициенте, равном 20 000 или больше, столбцы, содержащие идентификаторы счетов (столбцы <structfield>aid</structfield>), перейдут к большим целым числам (типу <type>bigint</type>), чтобы в них могли уместиться все возможные значения идентификаторов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--foreign-keys</option></term>
+      <listitem>
+       <para>Создать ограничения внешних ключей между стандартными таблицами.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--index-tablespace=<replaceable>табл_пространство_индексов</replaceable></option></term>
+      <listitem>
+       <para>Создать индексы в указанном табличном пространстве, а не в пространстве по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--tablespace=<replaceable>табличное_пространство</replaceable></option></term>
+      <listitem>
+       <para>Создать таблицы в указанном табличном пространстве, а не в пространстве по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--unlogged-tables</option></term>
+      <listitem>
+       <para>Создать все таблицы как нежурналируемые, а не как постоянные таблицы.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+
+ </refsect2>
+
+ <refsect2 id="pgbench-run-options">
+  <title>Параметры тестирования производительности</title>
+
+   <para><application>pgbench</application> принимает следующие аргументы командной строки для тестирования производительности: <variablelist>
+     <varlistentry>
+      <term><option>-b</option> <replaceable>имя_скрипта[@вес]</replaceable></term>
+      <term><option>--builtin</option>=<replaceable>имя_скрипта[@вес]</replaceable></term>
+      <listitem>
+       <para>Добавляет указанный встроенный скрипт в список выполняемых скриптов. Необязательный целочисленный вес, задаваемый после <literal>@</literal>, позволяет изменить вероятность выбора скрипта. Если он не указан, подразумевается значение 1. В число встроенных скриптов входят <literal>tpcb-like</literal>, <literal>simple-update</literal> и <literal>select-only</literal>. Также принимаются однозначные начала их имён. Со специальным именем <literal>list</literal> программа выводит список встроенных скриптов и немедленно завершается.</para>
+      </listitem>
+     </varlistentry>
+
+
+     <varlistentry>
+      <term><option>-c</option> <replaceable>клиенты</replaceable></term>
+      <term><option>--client=</option><replaceable>клиенты</replaceable></term>
+      <listitem>
+       <para>Число имитируемых клиентов, то есть число одновременных сеансов базы данных. Значение по умолчанию — 1.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-C</option></term>
+      <term><option>--connect</option></term>
+      <listitem>
+       <para>Устанавливать новое подключение для каждой транзакции вместо одного для каждого клиента. Это полезно для оценивания издержек подключений.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-d</option></term>
+      <term><option>--debug</option></term>
+      <listitem>
+       <para>Выводить отладочные сообщения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-D</option> <replaceable>имя_переменной</replaceable><literal>=</literal><replaceable>значение</replaceable></term>
+      <term><option>--define=</option><replaceable>имя_переменной</replaceable><literal>=</literal><replaceable>значение</replaceable></term>
+      <listitem>
+       <para>Определить переменную для пользовательского скрипта (см. ниже). Параметр <option>-D</option> может добавляться неоднократно.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-f</option> <replaceable>имя_файла[@вес]</replaceable></term>
+      <term><option>--file=</option><replaceable>имя_файла[@вес]</replaceable></term>
+      <listitem>
+       <para>Добавить в список выполняемых скриптов скрипт транзакции из файла <replaceable>имя_файла</replaceable>. Изменить вероятность выбора этого скрипта позволяет необязательный целочисленный вес, задаваемый после <literal>@</literal>. Подробности описаны ниже.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-I</option> <replaceable>уровень_изоляции</replaceable></term>
+      <term><option>--default-isolation-level=</option><replaceable>уровень_изоляции</replaceable></term>
+      <listitem>
+       <para>Задаёт уровень изоляции транзакций по умолчанию: <itemizedlist>
+           <listitem>
+            <para><literal>RUC</literal>: Read Uncommitted</para>
+           </listitem>
+           <listitem>
+            <para><literal>RC</literal>: Read Committed</para>
+           </listitem>
+           <listitem>
+            <para><literal>RR</literal>: Repeatable Read</para>
+           </listitem>
+           <listitem>
+            <para><literal>S</literal>: Serializable</para>
+           </listitem>
+          </itemizedlist> В отсутствие этого ключа используется уровень Read Committed. За дополнительными сведениями обратитесь к <xref remap="3" linkend="transaction-iso"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-j</option> <replaceable>потоки</replaceable></term>
+      <term><option>--jobs=</option><replaceable>потоки</replaceable></term>
+      <listitem>
+       <para>Число рабочих потоков в <application>pgbench</application>. Использовать нескольких потоков может быть полезно на многопроцессорных компьютерах. Клиенты распределяются по доступным потокам равномерно, насколько это возможно. Значение по умолчанию — 1.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-l</option></term>
+      <term><option>--log</option></term>
+      <listitem>
+       <para>Записать время выполнения каждой транзакции в файл протокола. Подробности описаны ниже.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-L</option> <replaceable>предел</replaceable></term>
+      <term><option>--latency-limit=</option><replaceable>предел</replaceable></term>
+      <listitem>
+       <para>Транзакции, продолжающиеся дольше указанного <replaceable>предела</replaceable> (в миллисекундах), подсчитываются и отмечаются отдельно, как <firstterm>опаздывающие</firstterm>.</para>
+       <para>В режиме ограничения скорости (<option>--rate=...</option>) транзакции, которые отстают от графика более чем на заданный <replaceable>предел</replaceable> (в мс) и поэтому никак не могут уложиться в отведённый интервал, не передаются серверу вовсе. Они подсчитываются и отмечаются отдельно как <firstterm>пропущенные</firstterm>.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-M</option> <replaceable>режим_запросов</replaceable></term>
+      <term><option>--protocol=</option><replaceable>режим_запросов</replaceable></term>
+      <listitem>
+       <para>Протокол, выбираемый для передачи запросов на сервер: <itemizedlist>
+           <listitem>
+            <para><literal>simple</literal>: использовать протокол простых запросов.</para>
+           </listitem>
+           <listitem>
+            <para><literal>extended</literal>: использовать протокол расширенных запросов.</para>
+           </listitem>
+           <listitem>
+            <para><literal>prepared</literal>: использовать протокол расширенных запросов с подготовленными операторами.</para>
+           </listitem>
+          </itemizedlist> По умолчанию выбирается протокол простых запросов. (За подробностями обратитесь к <xref remap="3" linkend="protocol"/>.)</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-n</option></term>
+      <term><option>--no-vacuum</option></term>
+      <listitem>
+       <para>Не производить очистку таблиц перед запуском теста. Этот параметр <emphasis>необходим</emphasis>, если вы применяете собственный сценарий, не затрагивающий стандартные таблицы <structname>pgbench_accounts</structname>, <structname>pgbench_branches</structname>, <structname>pgbench_history</structname> и <structname>pgbench_tellers</structname>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-N</option></term>
+      <term><option>--skip-some-updates</option></term>
+      <listitem>
+       <para>Запустить встроенный упрощённый скрипт simple-update. Краткий вариант записи <option>-b simple-update</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-P</option> <replaceable>сек</replaceable></term>
+      <term><option>--progress=</option><replaceable>сек</replaceable></term>
+      <listitem>
+       <para>Выводить отчёт о прогрессе через заданное число секунд (<replaceable>sec</replaceable>). Выдаваемый отчёт включает время, прошедшее с момента запуска, а также скорость (в tps), среднее время ожидания транзакций и стандартное отклонение после последнего отчёта. Если какие-либо транзакции после последнего отчёта закончились ошибками сериализации/взаимоблокировки, они также попадут в число неуспешных (подробнее см. <xref remap="4" linkend="failures-and-retries" endterm="failures-and-retries-title"/>). В режиме ограничения скорости (<option>-R</option>) время ожидания вычисляется относительно назначенного времени запуска транзакции, а не фактического времени её начала. Таким образом, в это время включается и время отставания от графика. Если какие-либо транзакции откатываются и повторно выполняются после ошибки сериализации/взаимоблокировки со времени последнего отчёта, в текущий отчёт также включается число таких транзакций и суммарное количество попыток их выполнения. Чтобы разрешить повторное выполнение транзакций после ошибок сериализации/взаимоблокировки, воспользуйтесь параметром <option>--max-tries</option>.</para>
+       <note>
+        <para>Суммарное количество попыток может превышать число повторно выполненных транзакций, умноженное на максимальное число повторных попыток (<option>max_tries</option> - 1). За дополнительными сведениями обратитесь к <xref remap="3" linkend="transactions-and-scripts" endterm="transactions-and-scripts-title"/>.</para>
+       </note>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-r</option></term>
+      <term><option>--report-per-command</option></term>
+      <listitem>
+       <para>Выдать следующую статистику по каждой команде после завершения теста: среднюю длительность выполнения операторов (время выполнения с точки зрения клиента), число ошибок сериализации и попыток выполнения, число ошибок взаимоблокировки и попыток выполнения. В отчёте выводятся столбцы со статистикой по отказам и попыткам выполнения, только если в текущем прогоне <application>pgbench</application> имели место любого рода отказы или повторные попытки, соответственно. Подробности описаны ниже.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-R</option> <replaceable>скорость передачи</replaceable></term>
+      <term><option>--rate=</option><replaceable>скорость передачи</replaceable></term>
+      <listitem>
+       <para>Выполнять транзакции, ориентируясь на заданную скорость, а не максимально быстро (по умолчанию). Скорость задаётся в транзакциях в секунду. Если заданная скорость превышает максимально возможную, это ограничение скорости не повлияет на результаты.</para>
+       <para>Для получения нужной скорости транзакции запускаются со случайными задержками, имеющими распределение Пуассона. При этом запланированное время запуска отсчитывается от начального времени, а не от завершения предыдущей транзакции. Это означает, что если какие-то транзакции отстанут от изначально рассчитанного времени завершения, всё же возможно, что последующие нагонят график.</para>
+       <para>В режиме ограничения скорости время ожидания транзакций, выводимое по итогам тестирования, вычисляется, исходя из запланированного времени запуска, так что в него входит время, которое очередная транзакция должна была ждать завершения предыдущей транзакции. Это время называется временем отклонения от графика, и его среднее и максимальное значения выводятся отдельно. Время ожидания транзакций с момента их фактического запуска, то есть время, потраченное на выполнение транзакций в базе данных, можно получить, если вычесть время отклонения от графика из времени ожидания транзакций.</para>
+
+       <para>Если ограничение <option>--latency-limit</option> задаётся вместе с <option>--rate</option>, транзакция может заведомо не вписываться в отведённое ей время, если предыдущая транзакция завершится слишком поздно, так как ожидаемое время окончания транзакции отсчитывается от времени запуска по графику. Такие транзакции не передаются серверу, а пропускаются и подсчитываются отдельно.</para>
+
+       <para>Время выполнения транзакций с ошибками сериализации или взаимоблокировки исключается из отчёта, как для пропущенных транзакций.</para>
+
+       <note>
+        <para>В скриптах с несколькими транзакциями могут происходить и ошибки сериализации, и ошибки взаимоблокировки. За дополнительной информацией обратитесь к <xref remap="3" linkend="transactions-and-scripts" endterm="transactions-and-scripts-title"/>.</para>
+       </note>
+
+       <para>Большое значение отклонения от графика свидетельствует о том, что система не успевает выполнять транзакции с заданной скоростью и выбранным числом клиентов и потоков. Когда среднее время ожидания транзакции превышает запланированный интервал между транзакциями, каждая последующая транзакция будет отставать от графика, и чем дольше будет выполняться тестирование, тем больше будет отставание. Когда это наблюдается, нужно уменьшить скорость транзакций.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s</option> <replaceable>коэффициент_масштаба</replaceable></term>
+      <term><option>--scale=</option><replaceable>коэффициент_масштаба</replaceable></term>
+      <listitem>
+       <para>Показать заданный коэффициент масштаба в выводе <application>pgbench</application>. Для встроенных тестов это не требуется; корректный коэффициент масштаба будет получен в результате подсчёта строк в таблице <structname>pgbench_branches</structname>. Однако при использовании только нестандартных тестов (запускаемых с ключом <option>-f</option>) без этого параметра в качестве коэффициента масштаба будет выводиться 1.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-S</option></term>
+      <term><option>--select-only</option></term>
+      <listitem>
+       <para>Запустить встроенный скрипт select-only (только выборка). Краткий вариант записи <option>-b select-only</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-t</option> <replaceable>транзакции</replaceable></term>
+      <term><option>--transactions=</option><replaceable>транзакции</replaceable></term>
+      <listitem>
+       <para>Число транзакций, которые будут выполняться каждым клиентом (по умолчанию 10).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-T</option> <replaceable>секунды</replaceable></term>
+      <term><option>--time=</option><replaceable>секунды</replaceable></term>
+      <listitem>
+       <para>Выполнять тест с ограничением по времени (в секундах), а не по числу транзакций для каждого клиента. Параметры <option>-t</option> и <option>-T</option> являются взаимоисключающими.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-v</option></term>
+      <term><option>--vacuum-all</option></term>
+      <listitem>
+       <para>Очищать все четыре стандартные таблицы перед запуском теста. Без параметров <option>-n</option> и <option>-v</option> <application>pgbench</application> будет очищать от старых записей таблицы <structname>pgbench_tellers</structname> и <structname>pgbench_branches</structname>, а также опустошать <structname>pgbench_history</structname>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--aggregate-interval=<replaceable>секунды</replaceable></option></term>
+      <listitem>
+       <para>Длительность интервала агрегации (в секундах). Может использоваться только с ключом <application>-l</application>. С данным параметром в протокол выводится сводка по интервалам (число транзакций, мин./макс. длительность с двумя дополнительными полями, полезными для оценки отклонений, и число транзакций с ошибками сериализации и взаимоблокировки).</para>
+       <para>В настоящее время этот параметр не поддерживается в Windows.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--max-tries=<replaceable>число_попыток</replaceable></option></term>
+      <listitem>
+       <para>Задаёт максимальное число попыток выполнения для транзакций с ошибками сериализации/взаимоблокировки. По умолчанию — 1.</para>
+
+       <note>
+        <para>Будьте осторожны, планируя повторение транзакций с командами оболочки. В отличие от результата команд SQL, действие команд оболочки не отменяется, не считая изменения значений переменных командой <command>\setshell</command>. Если команда оболочки завершается ошибкой, клиент отключается и не перезапускается.</para>
+       </note>
+
+       <note>
+        <para>Транзакции, распределённые по нескольким скриптам, не откатываются и не будут выполняться повторно в случае ошибки. В таких ситуациях ошибочным считается скрипт, в котором произошёл сбой.</para>
+       </note>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--progress-timestamp</option></term>
+      <listitem>
+       <para>При отображении прогресса (с параметром <option>-P</option>) выводить текущее время (в формате Unix), а не количество секунд от начала запуска. Время задаётся в секундах с точностью до миллисекунд. Это помогает сравнивать журналы, записываемые разными средствами.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--sampling-rate=<replaceable>скорость передачи</replaceable></option></term>
+      <listitem>
+       <para>Частота выборки для записи данных в протокол, изменяя которую можно уменьшить объём протокола. При указании этого параметра в протокол выводится информация только о заданном проценте транзакций. Со значением 1.0 в нём будут отмечаться все транзакции, а с 0.05 только 5%.</para>
+       <para>Обрабатывая протокол, не забудьте учесть частоту выборки. Например, вычисляя скорость (tps), вам нужно будет соответственно умножить содержащиеся в нём числа (то есть, с частотой выборки 0.01 вы получите только 1/100 фактической скорости).</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+
+ </refsect2>
+
+ <refsect2 id="pgbench-common-options">
+  <title>Общие параметры</title>
+
+   <para><application>pgbench</application> принимает следующие общие аргументы командной строки: <variablelist>
+
+     <varlistentry>
+      <term><option>-h</option> <replaceable>компьютер</replaceable></term>
+      <term><option>--host=</option><replaceable>компьютер</replaceable></term>
+      <listitem>
+       <para>Адрес сервера баз данных</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p</option> <replaceable>порт</replaceable></term>
+      <term><option>--port=</option><replaceable>порт</replaceable></term>
+      <listitem>
+       <para>Номер порта сервера баз данных</para>
+      </listitem>
+     </varlistentry>
+
+
+     <varlistentry>
+      <term><option>-U</option> <replaceable>имя_пользователя</replaceable></term>
+      <term><option>--username=</option><replaceable>имя_пользователя</replaceable></term>
+      <listitem>
+       <para>Имя пользователя для подключения</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-V</option></term>
+      <term><option>--version</option></term>
+      <listitem>
+       <para>Вывести версию <application>pgbench</application> и завершиться.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-?</option></term>
+      <term><option>--help</option></term>
+      <listitem>
+       <para>Вывести справку об аргументах командной строки <application>pgbench</application> и завершиться.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+ </refsect2>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+ <refsect2 id="transactions-and-scripts">
+  <title id="transactions-and-scripts-title">Каково содержание <quote>транзакции</quote>, которую выполняет <application>pgbench</application>?</title>
+
+  <para>Программа <application>pgbench</application> выполняет тестовые скрипты, выбирая их случайным образом из заданного списка. В том числе это встроенные скрипты, заданные аргументами <option>-b</option>, и пользовательские скрипты, заданные аргументами <option>-f</option>. Для каждого скрипта можно задать относительный вес после <literal>@</literal>, чтобы скорректировать вероятность его выбора. Вес по умолчанию — <literal>1</literal>. Скрипты с весом <literal>0</literal> игнорируются.</para>
+
+  <para>Стандартный встроенный скрипт (также вызываемый с ключом <option>-b tpcb-like</option>) выдаёт семь команд в транзакции со случайно выбранными <literal>aid</literal>, <literal>tid</literal>, <literal>bid</literal> и <literal>balance</literal>. Его сценарий написан по мотивам теста производительности TPC-B, но это не собственно TPC-B, потому он называется так.</para>
+
+  <orderedlist>
+   <listitem><para><literal>BEGIN;</literal></para></listitem>
+   <listitem><para><literal>UPDATE pgbench_accounts SET abalance = abalance + :delta WHERE aid = :aid;</literal></para></listitem>
+   <listitem><para><literal>SELECT abalance FROM pgbench_accounts WHERE aid = :aid;</literal></para></listitem>
+   <listitem><para><literal>UPDATE pgbench_tellers SET tbalance = tbalance + :delta WHERE tid = :tid;</literal></para></listitem>
+   <listitem><para><literal>UPDATE pgbench_branches SET bbalance = bbalance + :delta WHERE bid = :bid;</literal></para></listitem>
+   <listitem><para><literal>INSERT INTO pgbench_history (tid, bid, aid, delta, mtime) VALUES (:tid, :bid, :aid, :delta, CURRENT_TIMESTAMP);</literal></para></listitem>
+   <listitem><para><literal>END;</literal></para></listitem>
+  </orderedlist>
+
+  <para>При выборе встроенного скрипта <literal>simple-update</literal> (или указании <option>-N</option>) шаги 4 и 5 исключаются из транзакции. Это позволяет избежать конкуренции при обращении к этим таблицам, но тест становится ещё менее похожим на TPC-B.</para>
+
+  <para>При выборе встроенного теста <literal>select-only</literal> (или указании <option>-S</option>) выполняется только <command>SELECT</command>.</para>
+ </refsect2>
+
+ <refsect2>
+  <title>Пользовательские скрипты</title>
+
+  <para>Программа <application>pgbench</application> поддерживает запуск пользовательских сценариев оценки производительности, позволяя заменять стандартный скрипт транзакции (описанный выше) скриптом, считываемым из файла (с параметром <option>-f</option>). В этом случае <quote>транзакцией</quote> считается одно выполнение данного скрипта.</para>
+
+  <para>Файл скрипта содержит одну или несколько команд SQL, разделённых точкой с запятой. Пустые строки и строки, начинающиеся с <literal>--</literal>, игнорируются. В файлах скриптов также могут содержаться <quote>метакоманды</quote>, которые обрабатывает сама программа <application>pgbench</application>, как описано ниже.</para>
+
+  <note>
+   <para>До версии <productname>&productname;</productname> 9.6, SQL-команды в файлах скриптов завершались символами перевода строки, и поэтому они не могли занимать несколько строк. Теперь для разделения последовательных команд SQL <emphasis>требуется</emphasis> добавлять точку с запятой (хотя без неё можно обойтись в конце SQL-команды, за которой идёт метакоманда). Если вам нужно создать файл скрипта, работающий и со старыми версиями <application>pgbench</application>, записывайте каждую команду SQL в отдельной строке и завершайте её точкой с запятой.</para>
+  </note>
+
+  <para>Для файлов скриптов реализован простой механизм подстановки переменных. Переменные можно задать в командной строке параметрами <option>-D</option>, описанными выше, или метакомандами, рассматриваемыми ниже. Помимо переменных, которые можно установить параметрами командной строки <option>-D</option>, есть несколько автоматически устанавливаемых переменных; они перечислены в <xref remap="6" linkend="pgbench-automatic-variables"/>. Если значение этих переменных задаётся в параметре <option>-D</option>, оно переопределяет автоматическое значение. Когда значение переменной определено, его можно вставить в команду SQL, написав <literal>:</literal><replaceable>имя_переменной</replaceable>. Каждый клиентский сеанс, если их несколько, получает собственный набор переменных.</para>
+
+   <table id="pgbench-automatic-variables">
+    <title>Автоматические переменные</title>
+    <tgroup cols="2">
+     <thead>
+      <row>
+       <entry>Переменная</entry>
+       <entry>Описание</entry>
+      </row>
+     </thead>
+
+     <tbody>
+      <row>
+       <entry> <literal>scale</literal> </entry>
+       <entry>текущий коэффициент масштаба</entry>
+      </row>
+
+      <row>
+       <entry> <literal>client_id</literal> </entry>
+       <entry>уникальное число, идентифицирующее клиентский сеанс (начиная с нуля)</entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+
+  <para>Метакоманды в скрипте начинаются с обратной косой черты (<literal>\</literal>) и продолжаются до конца строки. Аргументы метакоманд разделяются пробелами. Поддерживаемые метакоманды представлены ниже:</para>
+
+  <variablelist>
+   <varlistentry id="pgbench-metacommand-set">
+    <term>
+     <literal>\set <replaceable>имя_переменной</replaceable> <replaceable>выражение</replaceable></literal>
+    </term>
+
+    <listitem>
+     <para>Устанавливает для переменной <replaceable>имя_переменной</replaceable> значение, вычисленное из <replaceable>выражения</replaceable>. Выражение может содержать целочисленные константы (например, <literal>5432</literal>), константы с плавающей точкой двойной точности (например, <literal>3.14159</literal>), ссылки на переменные (<literal>:</literal><replaceable>имя_переменной</replaceable>), унарные операторы (<literal>+</literal>, <literal>-</literal>), бинарные операторы (<literal>+</literal>, <literal>-</literal>, <literal>*</literal>, <literal>/</literal>, <literal>%</literal>), вычисляемые в обычном порядке, <link linkend="pgbench-builtin-functions">вызовы функций</link>, а также скобки.</para>
+
+     <para>Примеры: <programlisting>\set ntellers 10 * :scale
+\set aid (1021 * random(1, 100000 * :scale)) % (100000 * :scale) + 1</programlisting></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <literal>\sleep <replaceable>номер</replaceable> [ us | ms | s ]</literal>
+    </term>
+
+    <listitem>
+     <para>Приостанавливает выполнение скрипта на заданное число микросекунд (<literal>us</literal>), миллисекунд (<literal>ms</literal>) или секунд (<literal>s</literal>). Когда единицы не указываются, подразумеваются секунды. Здесь <replaceable>число</replaceable> может быть целочисленной константой или ссылкой <literal>:</literal><replaceable>имя_переменной</replaceable> на переменную с целочисленным значением.</para>
+
+     <para>Пример: <programlisting>\sleep 10 ms</programlisting></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <literal>\setshell <replaceable>имя_переменной</replaceable> <replaceable>команда</replaceable> [ <replaceable>аргумент</replaceable> ... ]</literal>
+    </term>
+
+    <listitem>
+     <para>Присваивает переменной <replaceable>имя_переменной</replaceable> результат команды оболочки <replaceable>команда</replaceable> с указанными <replaceable>аргументами</replaceable>. Эта команда должна просто выдать целочисленное значение в стандартный вывод.</para>
+
+     <para>Здесь <replaceable>команда</replaceable> и каждый <replaceable>аргумент</replaceable> может быть либо текстовой константой, либо ссылкой на переменную <literal>:</literal><replaceable>имя_переменной</replaceable>. Если вы хотите записать <replaceable>аргумент</replaceable>, начинающийся с двоеточия, добавьте перед <replaceable>аргументом</replaceable> дополнительное двоеточие.</para>
+
+     <para>Пример: <programlisting>\setshell назначаемая_переменная команда строковый_аргумент :переменная ::строка_начинающаяся_двоеточием</programlisting></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <literal>\shell <replaceable>команда</replaceable> [ <replaceable>аргумент</replaceable> ... ]</literal>
+    </term>
+
+    <listitem>
+     <para>Действует так же, как и <literal>\setshell</literal>, но не учитывает результат команды.</para>
+
+     <para>Пример: <programlisting>\shell команда строковый_аргумент :переменная ::строка_начинающаяся_двоеточием</programlisting></para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect2>
+
+ <refsect2 id="pgbench-builtin-functions">
+  <title>Встроенные функции</title>
+
+  <para>Функции, перечисленные в <xref remap="6" linkend="pgbench-functions"/>, встроены в <application>pgbench</application> и могут применяться в выражениях в метакоманде <link linkend="pgbench-metacommand-set"><literal>\set</literal></link>.</para>
+
+   <!-- list pgbench functions in alphabetical order -->
+   <table id="pgbench-functions">
+    <title>Функции pgbench</title>
+    <tgroup cols="5">
+     <thead>
+      <row>
+       <entry>Функция</entry>
+       <entry>Тип результата</entry>
+       <entry>Описание</entry>
+       <entry>Пример</entry>
+       <entry>Результат</entry>
+      </row>
+     </thead>
+     <tbody>
+      <row>
+       <entry><literal><function>abs(<replaceable>a</replaceable>)</function></literal></entry>
+       <entry>то же, что и <replaceable>a</replaceable></entry>
+       <entry>модуль числа (абсолютное значение)</entry>
+       <entry><literal>abs(-17)</literal></entry>
+       <entry><literal>17</literal></entry>
+      </row>
+      <row>
+       <entry><literal><function>debug(<replaceable>a</replaceable>)</function></literal></entry>
+       <entry>то же, что и <replaceable>a</replaceable></entry>
+       <entry>выводит <replaceable>a</replaceable> в <systemitem>stderr</systemitem> и возвращает <replaceable>a</replaceable></entry>
+       <entry><literal>debug(5432.1)</literal></entry>
+       <entry><literal>5432.1</literal></entry>
+      </row>
+      <row>
+       <entry><literal><function>double(<replaceable>i</replaceable>)</function></literal></entry>
+       <entry>double</entry>
+       <entry>приведение к типу с плавающей точкой</entry>
+       <entry><literal>double(5432)</literal></entry>
+       <entry><literal>5432.0</literal></entry>
+      </row>
+      <row>
+       <entry><literal><function>greatest(<replaceable>a</replaceable> [, <replaceable>...</replaceable> ] )</function></literal></entry>
+       <entry>double, если любой из аргументов (<replaceable>a</replaceable>) — double, а иначе целое число</entry>
+       <entry>наибольшее значение среди аргументов</entry>
+       <entry><literal>greatest(5, 4, 3, 2)</literal></entry>
+       <entry><literal>5</literal></entry>
+      </row>
+      <row>
+       <entry><literal><function>int(<replaceable>x</replaceable>)</function></literal></entry>
+       <entry>integer</entry>
+       <entry>приведение к целочисленному типу</entry>
+       <entry><literal>int(5.4 + 3.8)</literal></entry>
+       <entry><literal>9</literal></entry>
+      </row>
+      <row>
+       <entry><literal><function>least(<replaceable>a</replaceable> [, <replaceable>...</replaceable> ] )</function></literal></entry>
+       <entry>double, если любой из аргументов (<replaceable>a</replaceable>) — double, а иначе целое число</entry>
+       <entry>наименьшее значение среди аргументов</entry>
+       <entry><literal>least(5, 4, 3, 2.1)</literal></entry>
+       <entry><literal>2.1</literal></entry>
+      </row>
+      <row>
+       <entry><literal><function>pi()</function></literal></entry>
+       <entry>double</entry>
+       <entry>значение константы PI</entry>
+       <entry><literal>pi()</literal></entry>
+       <entry><literal>3.1415926535&#8203;8979323846</literal></entry>
+      </row>
+      <row>
+       <entry><literal><function>random(<replaceable>lb</replaceable>, <replaceable>ub</replaceable>)</function></literal></entry>
+       <entry>integer</entry>
+       <entry>случайное целое число с равномерным распределением в интервале <literal>[lb, ub]</literal></entry>
+       <entry><literal>random(1, 10)</literal></entry>
+       <entry>целое между <literal>1</literal> и <literal>10</literal></entry>
+      </row>
+      <row>
+       <entry><literal><function>random_exponential(<replaceable>lb</replaceable>, <replaceable>ub</replaceable>, <replaceable>параметр</replaceable>)</function></literal></entry>
+       <entry>integer</entry>
+       <entry>случайное целое число с экспоненциальным распределением в интервале <literal>[lb, ub]</literal>, см. ниже</entry>
+       <entry><literal>random_exponential(1, 10, 3.0)</literal></entry>
+       <entry>целое между <literal>1</literal> и <literal>10</literal></entry>
+      </row>
+      <row>
+       <entry><literal><function>random_gaussian(<replaceable>lb</replaceable>, <replaceable>ub</replaceable>, <replaceable>параметр</replaceable>)</function></literal></entry>
+       <entry>integer</entry>
+       <entry>целое число с распределением Гаусса в интервале <literal>[lb, ub]</literal>, см. ниже</entry>
+       <entry><literal>random_gaussian(1, 10, 2.5)</literal></entry>
+       <entry>целое между <literal>1</literal> и <literal>10</literal></entry>
+      </row>
+      <row>
+       <entry><literal><function>sqrt(<replaceable>x</replaceable>)</function></literal></entry>
+       <entry>double</entry>
+       <entry>квадратный корень</entry>
+       <entry><literal>sqrt(2.0)</literal></entry>
+       <entry><literal>1.414213562</literal></entry>
+      </row>
+     </tbody>
+     </tgroup>
+   </table>
+
+   <para>Функция <literal>random</literal> выдаёт значения с равномерным распределением, то есть вероятности получения всех чисел в интервале равны. Функции <literal>random_exponential</literal> и <literal>random_gaussian</literal> требуют указания дополнительного параметра типа double, определяющего точную форму распределения.</para>
+
+   <itemizedlist>
+    <listitem>
+     <para>Для экспоненциального распределения <replaceable>parameter</replaceable> управляет распределением, обрезая быстро спадающее экспоненциальное распределение в точке <replaceable>parameter</replaceable>, а затем это распределение проецируется на целые числа между границами. Точнее говоря, с <literallayout>
+f(x) = exp(-parameter * (x - min) / (max - min + 1)) / (1 - exp(-parameter))
+</literallayout> значение <replaceable>i</replaceable> между <replaceable>min</replaceable> и <replaceable>max</replaceable> выдаётся с вероятностью: <literal>f(i) - f(i + 1)</literal>.</para>
+
+     <para>Интуиция подсказывает, что чем больше <replaceable>parameter</replaceable>, тем чаще будут выдаваться значения, близкие к <replaceable>min</replaceable>, и тем реже значения, близкие к <replaceable>max</replaceable>. Чем <replaceable>parameter</replaceable> ближе к 0, тем более плоским (более равномерным) будет распределение. В грубом приближении при таком распределении наиболее частый 1% значений в диапазоне рядом с <replaceable>min</replaceable> выдаётся <replaceable>parameter</replaceable>% времени. Значение <replaceable>parameter</replaceable> должно быть строго положительным.</para>
+    </listitem>
+
+    <listitem>
+     <para>Для распределения Гаусса по интервалу строится обычное нормальное распределение (классическая кривая Гаусса в форме колокола) и этот интервал обрезается в точке <literal>-parameter</literal> слева и <literal>+parameter</literal> справа. Вероятнее всего при таком распределении выдаются значения из середины интервала. Точнее говоря, если <literal>PHI(x)</literal> — функция распределения нормальной случайной величины со средним значением <literal>mu</literal>, равным <literal>(max + min) / 2.0</literal>, и <literallayout>
+f(x) = PHI(2.0 * parameter * (x - mu) / (max - min + 1)) /
+       (2.0 * PHI(parameter) - 1)
+</literallayout> тогда значение <replaceable>i</replaceable> между <replaceable>min</replaceable> и <replaceable>max</replaceable> включительно выдаётся с вероятностью: <literal>f(i + 0.5) - f(i - 0.5)</literal>. Интуиция подсказывает, что чем больше <replaceable>parameter</replaceable>, тем чаще будут выдаваться значения в середине интервала, и тем реже значения у границ <replaceable>min</replaceable> и <replaceable>max</replaceable>. Около 67% значений будут выдаваться из среднего интервала <literal>1.0 / parameter</literal>, то есть плюс/минус <literal>0.5 / parameter</literal> от среднего значения, и 95% из среднего интервала <literal>2.0 / parameter</literal>, то есть плюс/минус <literal>1.0 / parameter</literal> от среднего значения; например, если <replaceable>parameter</replaceable> равен 4.0, 67% значений выдаются из средней четверти (1.0 / 4.0) интервала (то есть от <literal>3.0 / 8.0</literal> до <literal>5.0 / 8.0</literal>) и 95% из средней половины (<literal>2.0 / 4.0</literal>) интервала (из второй и третьей четвертей). Чтобы преобразование Бокса-Мюллера было быстрым, <replaceable>parameter</replaceable> должен быть не меньше 2.0.</para>
+    </listitem>
+   </itemizedlist>
+
+  <para>В качестве примера взгляните на встроенное определение транзакции типа TPC-B: <programlisting>\set aid random(1, 100000 * :scale)
+\set bid random(1, 1 * :scale)
+\set tid random(1, 10 * :scale)
+\set delta random(-5000, 5000)
+BEGIN;
+UPDATE pgbench_accounts SET abalance = abalance + :delta WHERE aid = :aid;
+SELECT abalance FROM pgbench_accounts WHERE aid = :aid;
+UPDATE pgbench_tellers SET tbalance = tbalance + :delta WHERE tid = :tid;
+UPDATE pgbench_branches SET bbalance = bbalance + :delta WHERE bid = :bid;
+INSERT INTO pgbench_history (tid, bid, aid, delta, mtime) VALUES (:tid, :bid, :aid, :delta, CURRENT_TIMESTAMP);
+END;</programlisting> С таким скриптом транзакция на каждой итерации будет обращаться к разным, случайно выбираемым строкам. (Этот пример показывает, почему важно, чтобы в каждом клиентском сеансе были собственные переменные &mdash; в противном случае они не будут независимо обращаться к разным строкам.)</para>
+
+ </refsect2>
+
+ <refsect2>
+  <title>Протоколирование транзакций</title>
+
+  <para>С параметром <option>-l</option>, но без <option>--aggregate-interval</option>, <application>pgbench</application> записывает в протокол время, которое ушло на выполнение каждой транзакции. Этот файл протокола будет называться <filename>pgbench_log.<replaceable>nnn</replaceable></filename>, где <replaceable>nnn</replaceable> — PID процесса <application>pgbench</application>. Если используется параметр <option>-j</option> со значением 2 или больше, будет создано несколько рабочих потоков, и каждый будет записывать отдельный протокол. Первый рабочий процесс будет использовать файл с тем же именем, что и в стандартном случае с одним потоком, а файлы остальных потоков будут называться <filename>pgbench_log.<replaceable>nnn</replaceable>.<replaceable>mmm</replaceable></filename>, где <replaceable>mmm</replaceable> — последовательный номер потока, начиная с 1.</para>
+
+  <para>Протокол имеет следующий формат: <synopsis>
+<replaceable>код_клиента</replaceable> <replaceable>число_транзакций</replaceable> <replaceable>длительность</replaceable> <replaceable>номер_скрипта</replaceable> <replaceable>время_эпохи</replaceable> <replaceable>время_мкс</replaceable> <optional><replaceable>отставание_от_графика</replaceable></optional> <optional> <replaceable>повторы_сериализации</replaceable> <replaceable>повторы_взаимоблокировки</replaceable> </optional>
+</synopsis> Здесь <replaceable>длительность</replaceable> — общее время транзакций (в микросекундах), <replaceable>номер_скрипта</replaceable> показывает, какой файл скрипта использовался (это полезно при указании нескольких скриптов ключами <option>-f</option> и <option>-b</option>), <replaceable>время_эпохи</replaceable>/<replaceable>время_мкс</replaceable> — отметка времени в формате Unix и смещение в микросекундах (из этих чисел можно получить время стандарта ISO 8601 с дробными секундами), показывающие, когда транзакция была завершена. Поле <replaceable>отставание_от_графика</replaceable> представляет разницу между запланированным временем запуска транзакции и фактическим временем запуска (в микросекундах). Оно выводится только когда применяется параметр <option>--rate</option>. Когда одновременно применяются параметры <option>--rate</option> и <option>--latency-limit</option>, в поле <replaceable>длительность</replaceable> для пропущенных транзакций будет выводиться <literal>skipped</literal>. Поля <replaceable>повторы_сериализации</replaceable> и <replaceable>повторы_взаимоблокировки</replaceable> отражают общее количество попыток выполнения транзакции после соответствующих ошибок при выполнении текущего скрипта. Они присутствуют только если максимальное число повторных попыток для транзакций больше 1 (<option>--max-tries</option>). Если в транзакции произошла ошибка сериализации или взаимоблокировки, в столбце <replaceable>длительность</replaceable> для неё будет выводиться <literal>failed</literal> (за дополнительными сведениями обратитесь к <xref remap="3" linkend="failures-and-retries" endterm="failures-and-retries-title"/>).</para>
+
+  <para>Фрагмент полученного протокола: <screen>
+0 199 2241 0 1175850568 995598
+0 200 2465 0 1175850568 998079
+0 201 2513 0 1175850569 608
+0 202 2038 0 1175850569 2663
+</screen> Ещё один пример с --rate=100 и --latency-limit=5 (обратите внимание на дополнительный столбец <replaceable>отставание_от_графика</replaceable>): <screen>
+0 81 4621 0 1412881037 912698 3005
+0 82 6173 0 1412881037 914578 4304
+0 83 skipped 0 1412881037 914578 5217
+0 83 skipped 0 1412881037 914578 5099
+0 83 4722 0 1412881037 916203 3108
+0 84 4142 0 1412881037 918023 2333
+0 85 2465 0 1412881037 919759 740
+</screen> В этом примере транзакция 82 опоздала, так как её длительность (6.173 мс) превысила ограничение в 5 мс. Следующие две транзакции были пропущены, так как было слишком поздно их начинать.</para>
+
+  <para>Ниже показан фрагмент файла журнала с ошибками и повторными попытками, при максимальном числе попыток, равном 10: <screen>
+3 0 47423 0 1499414498 34501 4 0
+3 1 8333 0 1499414498 42848 1 0
+3 2 8358 0 1499414498 51219 1 0
+4 0 72345 0 1499414498 59433 7 0
+1 3 41718 0 1499414498 67879 5 0
+1 4 8416 0 1499414498 76311 1 0
+3 3 33235 0 1499414498 84469 4 0
+0 0 failed 0 1499414498 84905 10 0
+2 0 failed 0 1499414498 86248 10 0
+3 4 8307 0 1499414498 92788 1 0
+</screen></para>
+
+  <para>Когда проводится длительное тестирование с большим количеством транзакций, файлы протоколов могут быть очень объёмными. Чтобы в них записывалась только случайная выборка транзакций, можно запустить команду с параметром <option>--sampling-rate</option>.</para>
+ </refsect2>
+
+ <refsect2>
+  <title>Протоколирование с агрегированием</title>
+
+  <para>С ключом <option>--aggregate-interval</option> протоколы имеют несколько иной формат: <synopsis>
+<replaceable>начало_интервала</replaceable> <replaceable>число_транзакций</replaceable> <replaceable>сумма_длительности</replaceable> <replaceable>сумма_длительности_2</replaceable> <replaceable>мин_длительность</replaceable> <replaceable>макс_длительность</replaceable> <replaceable>ошибки</replaceable> <optional><replaceable>сумма_задержки</replaceable> <replaceable>сумма_задержки_2</replaceable> <replaceable>мин_задержка</replaceable> <replaceable>макс_задержка</replaceable> <optional><replaceable>пропущено_транзакций</replaceable></optional></optional> <optional> <replaceable>повторы_транзакций</replaceable> <replaceable>повторы_сериализации</replaceable> <replaceable>повторы_взаимоблокировки</replaceable> </optional>
+</synopsis> Здесь <replaceable>начало_интервала</replaceable> — начальное время интервала (в формате времени Unix), <replaceable>число_транзакций</replaceable> — количество транзакций в данном интервале, <replaceable>сумма_длительности</replaceable> — суммарная длительность транзакций (что позволяет легко вычислить среднюю длительность). Два поля, <replaceable>сумма_длительности</replaceable> и <replaceable>сумма_длительности_2</replaceable> (представляющее сумму квадратов длительностей) полезны для оценки дисперсии. За ними идут поля <replaceable>мин_длительность</replaceable> — минимальная длительность в интервале и <replaceable>макс_длительность</replaceable> — максимальная. Следующее поле <replaceable>ошибки</replaceable> содержит число транзакций, прерванных из-за ошибок сериализации/взаимоблокировки в данном интервале (за подробностями обратитесь к <xref remap="3" linkend="failures-and-retries" endterm="failures-and-retries-title"/>). Транзакция учитывается в том интервале, в котором она была зафиксирована. Завершающие поля, <replaceable>сумма_задержки</replaceable>, <replaceable>сумма_задержки_2</replaceable>, <replaceable>мин_задержка</replaceable> и <replaceable>макс_задержка</replaceable>, присутствуют, только если применяется параметр <option>--rate</option>. Они отражают время, на которое задержалась каждая транзакция, ожидая завершения предыдущей, то есть разницу между временем фактического запуска и запланированным временем. Следующее поле, <replaceable>пропущено_транзакций</replaceable>, тоже присутствует только если применяется параметр <option>--latency-limit</option>. Поля <replaceable>повторы_транзакций</replaceable>, <replaceable>повторы_сериализации</replaceable> и <replaceable>повторы_взаимоблокировки</replaceable> присутствуют только если максимальное число повторений транзакции больше 1 (<option>--max-tries</option>). Они отражают количество повторно выполненных транзакций и общее число повторений после соответствующих ошибок в интервале.</para>
+
+  <note>
+   <para>Суммарное количество попыток может превышать число повторно выполненных транзакций, умноженное на максимальное число повторных попыток (<option>max_tries</option> - 1). За дополнительными сведениями обратитесь к <xref remap="3" linkend="transactions-and-scripts" endterm="transactions-and-scripts-title"/>.</para>
+  </note>
+
+  <para>Пример вывода: <screen>
+1345828501 5601 1542744 483552416 61 2573 0
+1345828503 7884 1979812 565806736 60 1479 0
+1345828505 7208 1979422 567277552 59 1391 0
+1345828507 7685 1980268 569784714 60 1398 0
+1345828509 7073 1979779 573489941 236 1411 0
+</screen></para>
+
+  <para>Заметьте, что простой протокол (без агрегирования) содержит номера подключаемых файлов скриптов, в отличие от протокола с агрегированием. Таким образом, если вам нужны подобные сведения, но в разрезе скриптов, вам придётся агрегировать данные самостоятельно.</para>
+
+ </refsect2>
+
+ <refsect2>
+  <title>Отчёт по операторам</title>
+
+  <para>С параметром <option>-r</option> программа <application>pgbench</application> собирает следующую статистику по каждому оператору: <itemizedlist>
+     <listitem>
+       <para><literal>latency</literal> &mdash; время выполнения транзакции для каждого оператора. <application>pgbench</application> выводит среднее по всем успешным попыткам выполнения оператора.</para>
+     </listitem>
+     <listitem>
+       <para>Число ошибок сериализации и взаимоблокировки, не повлекших повторное выполнение. За дополнительной информации обратитесь к <xref remap="3" linkend="failures-and-retries" endterm="failures-and-retries-title"/>.</para>
+     </listitem>
+     <listitem>
+       <para>Число повторных попыток выполнения после ошибки сериализации/взаимоблокировки в этом операторе; они обозначаются как повторы при сериализации и повторы при взаимоблокировке, соответственно.</para>
+     </listitem>
+   </itemizedlist></para>
+
+  <para>В отчёте выводятся столбцы со статистикой по ошибкам и повторным попыткам только если в текущем прогоне <application>pgbench</application> имели место любого рода ошибки или повторные попытки, соответственно.</para>
+
+  <note>
+   <para>Суммарное количество ошибок по командам может быть больше числа неуспешных транзакций. Это верно и для количества повторных попыток. За дополнительными сведениями обратитесь к <xref remap="3" linkend="transactions-and-scripts" endterm="transactions-and-scripts-title"/>.</para>
+  </note>
+
+  <para>Все эти значения вычисляются для каждого оператора, выполняемого каждым клиентом, и выдаются после завершения теста.</para>
+
+  <para>Со скриптом по умолчанию вывод будет примерно таким: <screen>
+starting vacuum...end.
+transaction type: &lt;builtin: TPC-B (sort of)&gt;
+default transaction isolation level: read committed
+transaction maximum tries number: 1
+scaling factor: 1
+query mode: simple
+number of clients: 10
+number of threads: 1
+number of transactions per client: 1000
+number of transactions actually processed: 10000/10000
+latency average = 15.844 ms
+latency stddev = 2.715 ms
+tps = 618.764555 (including connections establishing)
+tps = 622.977698 (excluding connections establishing)
+script statistics:
+ - statement latencies in milliseconds:
+        0.002  \set aid random(1, 100000 * :scale)
+        0.005  \set bid random(1, 1 * :scale)
+        0.002  \set tid random(1, 10 * :scale)
+        0.001  \set delta random(-5000, 5000)
+        0.326  BEGIN;
+        0.603  UPDATE pgbench_accounts SET abalance = abalance + :delta WHERE aid = :aid;
+        0.454  SELECT abalance FROM pgbench_accounts WHERE aid = :aid;
+        5.528  UPDATE pgbench_tellers SET tbalance = tbalance + :delta WHERE tid = :tid;
+        7.335  UPDATE pgbench_branches SET bbalance = bbalance + :delta WHERE bid = :bid;
+        0.371  INSERT INTO pgbench_history (tid, bid, aid, delta, mtime) VALUES (:tid, :bid, :aid, :delta, CURRENT_TIMESTAMP);
+        1.212  END;
+</screen> Ещё один пример вывода для скрипта по умолчанию с выбором сериализуемого уровня изоляции (<option>-I S</option>): <screen>
+starting vacuum...end.
+transaction type: &lt;builtin: TPC-B (sort of)&gt;
+default transaction isolation level: serializable
+transaction maximum tries number: 100
+scaling factor: 1
+query mode: simple
+number of clients: 10
+number of threads: 1
+number of transactions per client: 1000
+number of transactions actually processed: 10000/10000
+number of failures: 7194 (71.940 %)
+number of transactions retried: 8855 (88.550 %)
+number of retries: 759474 (serialization: 759474, deadlocks: 0)
+latency average = 592.404 ms
+latency stddev = 1026.986 ms
+tps = 20.287098 (including connections establishing)
+tps = 20.287277 (excluding connections establishing)
+script statistics:
+ - statement latencies in milliseconds, serialization failures and retries,
+   deadlock failures and retries:
+  0.003     0       0  0  0  \set aid random(1, 100000 * :scale)
+  0.000     0       0  0  0  \set bid random(1, 1 * :scale)
+  0.000     0       0  0  0  \set tid random(1, 10 * :scale)
+  0.000     0       0  0  0  \set delta random(-5000, 5000)
+  0.222     0       0  0  0  BEGIN;
+  0.736     0       1  0  0  UPDATE pgbench_accounts
+                             SET abalance = abalance + :delta WHERE aid = :aid;
+  0.502     0       0  0  0  SELECT abalance FROM pgbench_accounts
+                             WHERE aid = :aid;
+  0.966  7175  754739  0  0  UPDATE pgbench_tellers
+                             SET tbalance = tbalance + :delta WHERE tid = :tid;
+  1.136    19    4725  0  0  UPDATE pgbench_branches
+                             SET bbalance = bbalance + :delta WHERE bid = :bid;
+  0.881     0       0  0  0  INSERT INTO pgbench_history
+                                    (tid, bid, aid, delta, mtime)
+                             VALUES (:tid, :bid, :aid, :delta, CURRENT_TIMESTAMP);
+  0.855     0       9  0  0  END;
+</screen></para>
+
+  <para>Если задействуется несколько файлов скриптов, все статистические данные выводятся отдельно для каждого файла.</para>
+
+  <para>Учтите, что сбор дополнительных временных показателей влечёт некоторые издержки и приводит к снижению средней скорости и, как результат, падению TPS. На сколько именно снизится скорость, во многом зависит от платформы и оборудования. Хороший способ оценить, каковы эти издержки — сравнить средние значения TPS, получаемые с подсчётом времени операторов и без такого подсчёта.</para>
+ </refsect2>
+
+ <refsect2 id="failures-and-retries">
+  <title id="failures-and-retries-title">Ошибки сериализации/взаимоблокировки и повторные попытки</title>
+
+  <para>Транзакции с ошибками сериализации или взаимоблокировки откатываются и повторяются до успешного выполнения или до достижения максимального числа попыток, задаваемого параметром <option>--max-tries</option>. Если последняя попытка выполнить транзакцию не удаётся, транзакция считается неуспешной.</para>
+
+  <para>Транзакции, распределённые по нескольким скриптам, не откатываются и не будут выполняться повторно в случае ошибки. В таких ситуациях ошибочным считается скрипт, в котором произошёл сбой.</para>
+
+  <para>Длительность успешной транзакции включает общее время выполнения транзакции с учётом откатов и повторных попыток выполнения. Длительность неуспешных транзакций и команд отдельно не подсчитывается.</para>
+
+  <para>Основной отчёт содержит количество неуспешных транзакций, если оно ненулевое (за подробностями обратитесь к <xref remap="3" linkend="transactions-and-scripts" endterm="transactions-and-scripts-title"/>). Если общее число повторно выполненных транзакций больше нуля, основной отчёт содержит также это число, общее число попыток и число попыток по каждому типу ошибок (чтобы разрешить повторные попытки, воспользуйтесь ключом <option>--max-tries</option>). Отчёт по операторам наследует набор столбцов от основного отчёта.</para>
+  <note>
+     <para>Суммарное количество попыток может превышать число повторно выполненных транзакций, умноженное на максимальное число повторных попыток (<option>max_tries</option> - 1). За дополнительными сведениями обратитесь к <xref remap="3" linkend="transactions-and-scripts" endterm="transactions-and-scripts-title"/>.</para>
+   </note>
+ </refsect2>
+
+ <refsect2>
+  <title>Полезные советы</title>
+
+  <para>Используя <application>pgbench</application>, можно без особого труда получить абсолютно бессмысленные числа. Последуйте приведённым советам, чтобы получить полезные результаты.</para>
+
+  <para>Во-первых, <emphasis>никогда</emphasis> не доверяйте тестам, которые выполняются всего несколько секунд. Воспользуйтесь параметром <option>-t</option> и <option>-T</option> и установите время выполнения не меньше нескольких минут, чтобы избавиться от шума в средних значениях. В некоторых случаях для получения воспроизводимых результатов тестирование должно продолжаться несколько часов. Чтобы понять, были ли получены воспроизводимые значения, имеет смысл запустить тестирование несколько раз.</para>
+
+  <para>Для стандартного сценария по типу TPC-B начальный коэффициент масштаба (<option>-s</option>) должен быть не меньше числа клиентов, с каким вы намерены проводить тестирование (<option>-c</option>); в противном случае вы, по большому счёту, будете замерять время конкурентных изменений. Таблица <structname>pgbench_branches</structname> содержит всего <option>-s</option> строк, а каждая транзакция хочет изменить одну из них, так что если значение <option>-c</option> превышает <option>-s</option>, это несомненно приведёт к тому, что многие транзакции будут блокироваться другими.</para>
+
+  <para>Стандартный сценарий тестирования также довольно сильно зависит от того, сколько времени прошло с момента инициализации таблиц: накопление неактуальных строк и &laquo;мёртвого&raquo; пространства в таблицах влияет на результаты. Чтобы правильно оценить результаты, необходимо учитывать, сколько всего изменений было произведено и когда выполнялась очистка. Если же включена автоочистка, это может быть чревато непредсказуемыми изменениями оценок производительности.</para>
+
+  <para>Полезность результатов <application>pgbench</application> также может ограничиваться тем, что тестирование с большим числом клиентских сеансов само по себе нагружает систему. Этого можно избежать, запуская <application>pgbench</application> на другом компьютере, не на сервере баз данных, хотя при этом большое значение имеет скорость сети. Иногда, оценивая производительность одного сервера, полезно запускать даже несколько экземпляров <application>pgbench</application> параллельно, на отдельных клиентских компьютерах.</para>
+ </refsect2>
+ </refsect1>
+</refentry>

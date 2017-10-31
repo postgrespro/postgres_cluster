@@ -1,0 +1,341 @@
+<!-- doc/src/xml/logicaldecoding.xml -->
+ <chapter id="logicaldecoding">
+  <title>Логическое декодирование</title>
+  <indexterm zone="logicaldecoding"><primary>Логическое декодирование</primary></indexterm>
+  <para>&productname; обеспечивает инфраструктуру для потоковой передачи изменений, выполняемых через SQL, внешним потребителям. Эта функциональность может быть полезна для самых разных целей, включая аудит и реализацию репликации.</para>
+
+  <para>Изменения передаются в потоках, связываемых со слотами логической репликации.</para>
+
+  <para>Формат, в котором передаются изменения, определяет используемый модуль вывода. Пример модуля вывода включён в дистрибутив &productname;. Также возможно разработать и другие модули, расширяющие выбор доступных форматов, не затрагивая код ядра самого сервера. Любой модуль вывода получает на вход отдельные строки, создаваемые командой <command>INSERT</command>, и новые версии строк, которые создаёт <command>UPDATE</command>. Доступность старых версий строк для <command>UPDATE</command> и <command>DELETE</command> зависит от выбора варианта идентификации реплики (см. описание <xref linkend="sql-createtable-replica-identity"/>).</para>
+
+  <para>Изменения могут быть получены либо по протоколу потоковой репликации (см. <xref remap="4" linkend="protocol-replication"/> и <xref remap="4" linkend="logicaldecoding-walsender"/>), либо через функции, вызываемые в SQL (см. <xref remap="4" linkend="logicaldecoding-sql"/>). Также возможно разработать дополнительные методы для обработки данных, поступающих через слот репликации, не модифицируя код ядра сервера (см. <xref remap="4" linkend="logicaldecoding-writer"/>).</para>
+
+  <sect1 id="logicaldecoding-example">
+   <title>Примеры логического декодирования</title>
+
+   <para>Следующий пример демонстрирует управление логическим декодированием на уровне SQL.</para>
+
+   <para>Прежде чем вы сможете использовать логическое декодирование, вы должны установить в <xref linkend="guc-wal-level"/> значение <literal>logical</literal>, а в <xref linkend="guc-max-replication-slots"/> значение, не меньшее 1. После этого вы должны подключиться к целевой базе данных (в следующем примере, это <literal>postgres</literal>) как суперпользователь.</para>
+
+<programlisting>postgres=# -- Создать слот с именем 'regression_slot', использующий модуль вывода 'test_decoding'
+postgres=# SELECT * FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding');
+    slot_name    | xlog_position
+-----------------+---------------
+ regression_slot | 0/16B1970
+(1 row)
+
+postgres=# SELECT slot_name, plugin, slot_type, database, active, restart_lsn, confirmed_flush_lsn FROM pg_replication_slots;
+    slot_name    |    plugin     | slot_type | database | active | restart_lsn | confirmed_flush_lsn
+-----------------+---------------+-----------+----------+--------+-------------+-----------------
+ regression_slot | test_decoding | logical   | postgres | f      | 0/16A4408   | 0/16A4440
+(1 row)
+
+postgres=# -- Пока никакие изменения не видны
+postgres=# SELECT * FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL);
+ location | xid | data
+----------+-----+------
+(0 rows)
+
+postgres=# CREATE TABLE data(id serial primary key, data text);
+CREATE TABLE
+
+postgres=# -- DDL не реплицируется, поэтому видна только транзакция
+postgres=# SELECT * FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL);
+ location  | xid |    data
+-----------+-----+------------
+ 0/16D5D48 | 688 | BEGIN 688
+ 0/16E0380 | 688 | COMMIT 688
+(2 rows)
+
+postgres=# -- Когда изменения прочитаны, они считаются обработанными и уже не выдаются
+postgres=# -- в последующем вызове:
+postgres=# SELECT * FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL);
+ location | xid | data
+----------+-----+------
+(0 rows)
+
+postgres=# BEGIN;
+postgres=# INSERT INTO data(data) VALUES('1');
+postgres=# INSERT INTO data(data) VALUES('2');
+postgres=# COMMIT;
+
+postgres=# SELECT * FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL);
+ location  | xid |                     data
+-----------+-----+-----------------------------------------------
+ 0/16E0478 | 689 | BEGIN 689
+ 0/16E0478 | 689 | table public.data: INSERT: id[integer]:1 data[text]:'1'
+ 0/16E0580 | 689 | table public.data: INSERT: id[integer]:2 data[text]:'2'
+ 0/16E0650 | 689 | COMMIT 689
+(4 rows)
+
+postgres=# INSERT INTO data(data) VALUES('3');
+
+postgres=# -- Также можно заглянуть вперёд в потоке изменений, не считывая эти изменения
+postgres=# SELECT * FROM pg_logical_slot_peek_changes('regression_slot', NULL, NULL);
+ location  | xid |                     data
+-----------+-----+-----------------------------------------------
+ 0/16E09C0 | 690 | BEGIN 690
+ 0/16E09C0 | 690 | table public.data: INSERT: id[integer]:3 data[text]:'3'
+ 0/16E0B90 | 690 | COMMIT 690
+(3 rows)
+
+postgres=# -- Следующий вызов pg_logical_slot_peek_changes() снова возвращает те же изменения
+postgres=# SELECT * FROM pg_logical_slot_peek_changes('regression_slot', NULL, NULL);
+ location  | xid |                     data
+-----------+-----+-----------------------------------------------
+ 0/16E09C0 | 690 | BEGIN 690
+ 0/16E09C0 | 690 | table public.data: INSERT: id[integer]:3 data[text]:'3'
+ 0/16E0B90 | 690 | COMMIT 690
+(3 rows)
+
+postgres=# -- Модулю вывода можно передать параметры, влияющие на форматирование
+postgres=# SELECT * FROM pg_logical_slot_peek_changes('regression_slot', NULL, NULL, 'include-timestamp', 'on');
+ location  | xid |                     data
+-----------+-----+-----------------------------------------------
+ 0/16E09C0 | 690 | BEGIN 690
+ 0/16E09C0 | 690 | table public.data: INSERT: id[integer]:3 data[text]:'3'
+ 0/16E0B90 | 690 | COMMIT 690 (at 2014-02-27 16:41:51.863092+01)
+(3 rows)
+
+postgres=# -- Не забудьте удалить слот, который вам больше не нужен, чтобы он
+postgres=# -- не потреблял ресурсы сервера:
+postgres=# SELECT pg_drop_replication_slot('regression_slot');
+ pg_drop_replication_slot
+-----------------------
+
+(1 row)</programlisting>
+
+   <para>Следующий пример показывает, как можно управлять логическим декодированием средствами протокола потоковой репликации, используя программу <xref linkend="app-pgrecvlogical"/>, включённую в дистрибутив &productname;. Для этого нужно, чтобы конфигурация аутентификации клиентов допускала подключения для репликации (см. <xref remap="4" linkend="streaming-replication-authentication"/>) и чтобы значение <varname>max_wal_senders</varname> было достаточно большим и позволило установить дополнительное подключение.</para>
+<programlisting>$ pg_recvlogical -d postgres --slot test --create-slot
+$ pg_recvlogical -d postgres --slot test --start -f -
+<keycombo action="simul"><keycap>Control</keycap><keycap>Z</keycap></keycombo>
+$ psql -d postgres -c "INSERT INTO data(data) VALUES('4');"
+$ fg
+BEGIN 693
+table public.data: INSERT: id[integer]:4 data[text]:'4'
+COMMIT 693
+<keycombo action="simul"><keycap>Control</keycap><keycap>C</keycap></keycombo>
+$ pg_recvlogical -d postgres --slot test --drop-slot</programlisting>
+  </sect1>
+
+  <sect1 id="logicaldecoding-explanation">
+   <title>Концепции логического декодирования</title>
+   <sect2>
+    <title>Логическое декодирование</title>
+
+    <indexterm><primary>Логическое декодирование</primary></indexterm>
+
+    <para>Логическое декодирование — это процедура извлечения всех постоянных изменений, происходящих в таблицах базы данных, в согласованном и понятном формате, который можно интерпретировать, не имея полного представления о внутреннем состоянии базы данных.</para>
+
+    <para>В <productname>&productname;</productname> логическое декодирование реализуется путём перевода содержимого <link linkend="wal">журнала предзаписи</link>, описывающего изменения на уровне хранения, в специальную форму уровня приложения, например, в поток кортежей или операторов SQL.</para>
+   </sect2>
+
+   <sect2 id="logicaldecoding-replication-slots">
+    <title>Слоты репликации</title>
+
+    <indexterm><primary>слот репликации</primary> <secondary>логическая репликация</secondary></indexterm>
+
+    <para>В контексте логической репликации слот представляет поток изменений, которые могут быть воспроизведены клиентом в том порядке, в каком они происходили на исходном сервере. Через каждый слот передаётся последовательность изменений в одной базе данных.</para>
+
+    <note>
+     <para>В <productname>&productname;</productname> также есть слоты потоковой репликации (см. <xref remap="4" linkend="streaming-replication"/>), но они используются несколько по-другому.</para>
+    </note>
+
+    <para>Слоту репликации назначается идентификатор, уникальный для всех баз данных в кластере <productname>&productname;</productname>. Слоты сохраняются независимо от подключений, использующих их, и защищены от сбоев сервера.</para>
+
+    <para>При обычных условиях через логический слот каждое изменение передаётся только один раз. Текущая позиция в каждом слоте сохраняется только в контрольной точке, так что в случае сбоя слот может вернуться к предыдущему LSN, вследствие чего последние изменения могут быть переданы повторно при перезапуске сервера. За исключение нежелательных эффектов от повторной обработки одного и того же сообщения отвечают клиенты логического декодирования. Клиенты могут запоминать при декодировании, какой последний LSN они уже получали, и пропускать повторяющиеся данные или (при использовании протокола репликации) запрашивать, чтобы декодирование начиналось с этого LSN, а не с позиции, выбираемой сервером. Для этого разработан механизм отслеживания репликации, о котором можно узнать подробнее в описании <link linkend="replication-origins">источников репликации</link>.</para>
+
+    <para>Для одной базы данных могут существовать несколько независимых слотов. Каждый слот имеет собственное состояние, что позволяет различным потребителям получать изменения с разных позиций в потоке изменений базы данных. Для большинства приложений каждому потребителю требуется отдельный слот.</para>
+
+    <para>Слот логической репликации ничего не знает о состоянии получателя(ей). Возможно даже иметь несколько различных потребителей одного слота в разные моменты времени; они просто будут получать изменения с момента, когда их перестал получать предыдущий потребитель. Но в любой определённый момент получать изменения может только один потребитель.</para>
+
+    <note>
+     <para>Слоты репликации сохраняются при сбоях сервера и ничего не знают о состоянии их потребителя(ей). Они не дают удалять требуемые ресурсы, даже когда не используются никаким подключением. На это уходит место в хранилище, так как ни сегменты WAL, ни требуемые строки из системных каталогов нельзя будет удалить в результате <command>VACUUM</command>, пока они нужны этому слоту репликации. Поэтому, если слот больше не требуется, его следует удалять.</para>
+    </note>
+   </sect2>
+
+   <sect2>
+    <title>Модули вывода</title>
+    <para>Модули вывода переводят данные из внутреннего представления в журнале предзаписи в формат, устраивающий потребителя слота репликации.</para>
+   </sect2>
+
+   <sect2>
+    <title>Экспортированные снимки</title>
+    <para>Когда новый слот репликации создаётся через интерфейс потоковой репликации, экспортируется снимок (см. <xref remap="4" linkend="functions-snapshot-synchronization"/>), который будет показывать ровно то состояние базы данных, изменения после которого будут включаться в поток изменений. Используя его, можно создать новую реплику, воспользовавшись командой <link linkend="sql-set-transaction"><literal>SET TRANSACTION SNAPSHOT</literal></link>, чтобы получить состояние базы в момент создания слота. После этого данную транзакцию можно использовать для выгрузки состояния базы на момент экспорта снимка, а затем изменять это состояние, применяя содержимое слота, так что никакие изменения не будут потеряны.</para>
+   </sect2>
+  </sect1>
+
+  <sect1 id="logicaldecoding-walsender">
+   <title>Интерфейс протокола потоковой репликации</title>
+
+   <para>Команды <itemizedlist>
+     <listitem>
+      <para><literal>CREATE_REPLICATION_SLOT <replaceable>имя_слота</replaceable> LOGICAL <replaceable>модуль_вывода</replaceable></literal></para>
+     </listitem>
+
+     <listitem>
+      <para><literal>DROP_REPLICATION_SLOT <replaceable>имя_слота</replaceable></literal></para>
+     </listitem>
+
+     <listitem>
+      <para><literal>START_REPLICATION SLOT <replaceable>имя_слота</replaceable> LOGICAL ...</literal></para>
+     </listitem>
+    </itemizedlist> применяются для создания, удаления и передачи изменений из слота репликации, соответственно. Эти команды доступны только для соединения репликации; их нельзя использовать в обычном SQL. Подробнее они описаны в <xref remap="6" linkend="protocol-replication"/>.</para>
+
+   <para>Для управления логическим декодированием по соединению потоковой репликации можно применять программу <xref linkend="app-pgrecvlogical"/>. (Внутри неё используются эти команды.)</para>
+  </sect1>
+
+  <sect1 id="logicaldecoding-sql">
+   <title>Интерфейс логического декодирования на уровне <acronym>SQL</acronym></title>
+
+   <para>Подробнее API уровня SQL для взаимодействия с механизмом логическим декодированием описан в <xref remap="6" linkend="functions-replication"/>.</para>
+
+   <para>Синхронная репликация (см. <xref remap="4" linkend="synchronous-replication"/>) поддерживается только для слотов репликации, которые используются через интерфейс потоковой репликации. Интерфейс функций и дополнительные, не системные интерфейсы не поддерживают синхронную репликацию.</para>
+  </sect1>
+
+  <sect1 id="logicaldecoding-catalogs">
+   <title>Системные каталоги, связанные с логическим декодированием</title>
+
+   <para>Информацию о текущем состоянии слотов репликации и соединений потоковой репликации отображают представления <link linkend="view-pg-replication-slots"><structname>pg_replication_slots</structname></link> и <link linkend="pg-stat-replication-view"><structname>pg_stat_replication</structname></link>, соответственно. Эти представления относятся и к физической, и к логической репликации.</para>
+  </sect1>
+
+  <sect1 id="logicaldecoding-output-plugin">
+   <title>Модули вывода логического декодирования</title>
+   <para>Пример модуля вывода можно найти в подкаталоге <link linkend="test-decoding"><filename>contrib/test_decoding</filename></link> в дереве исходного кода &productname;.</para>
+   <sect2 id="logicaldecoding-output-init">
+    <title>Функция инициализации</title>
+    <indexterm zone="logicaldecoding"><primary>_PG_output_plugin_init</primary></indexterm>
+    <para>Модуль вывода загружается в результате динамической загрузки разделяемой библиотеки (при этом в качестве имени библиотеки задаётся имя модуля). Для нахождения библиотеки применяется обычный путь поиска библиотек. В этой библиотеке должна быть функция <function>_PG_output_plugin_init</function>, которая показывает, что библиотека на самом деле представляет собой модуль вывода, и устанавливает требуемые обработчики модуля вывода. Этой функции передаётся структура, в которой должны быть заполнены указатели на функции-обработчики отдельных действий. <programlisting>typedef struct OutputPluginCallbacks
+{
+    LogicalDecodeStartupCB startup_cb;
+    LogicalDecodeBeginCB begin_cb;
+    LogicalDecodeChangeCB change_cb;
+    LogicalDecodeCommitCB commit_cb;
+    LogicalDecodeMessageCB message_cb;
+    LogicalDecodeFilterByOriginCB filter_by_origin_cb;
+    LogicalDecodeShutdownCB shutdown_cb;
+} OutputPluginCallbacks;
+
+typedef void (*LogicalOutputPluginInit) (struct OutputPluginCallbacks *cb);</programlisting> Обработчики <function>begin_cb</function>, <function>change_cb</function> и <function>commit_cb</function> должны устанавливаться обязательно, а <function>startup_cb</function>, <function>filter_by_origin_cb</function> и <function>shutdown_cb</function> могут отсутствовать.</para>
+   </sect2>
+
+   <sect2 id="logicaldecoding-capabilities">
+    <title>Возможности</title>
+
+    <para>Для декодирования, форматирования и вывода изменений модули вывода могут использовать практически всю обычную инфраструктуру сервера, включая вызов функций вывода типов. К отношениям разрешается доступ только на чтение, если только эти отношения были созданы программой <command>initdb</command> в схеме <literal>pg_catalog</literal>, либо помечены как пользовательские таблицы каталогов командами <programlisting>ALTER TABLE user_catalog_table SET (user_catalog_table = true);
+CREATE TABLE another_catalog_table(data text) WITH (user_catalog_table = true);</programlisting> Любые действия, которые требует присвоения идентификатора транзакции, запрещаются. В частности, к этим действиям относятся операции записи в таблицы, изменения DDL и вызов <literal>txid_current()</literal>.</para>
+   </sect2>
+
+   <sect2 id="logicaldecoding-output-mode">
+    <title>Режимы вывода</title>
+
+    <para>Обработчики в модуле вывода могут передавать данные потребителю в практически любых форматах. Для некоторых вариантов использования, например, просмотра изменений через SQL, вывод информации в типах, которые могут содержать произвольные данные (например, <type>bytea</type>), может быть неудобоваримым. Если модуль вывода выводит только текстовые данные в кодировке сервера, он может объявить это, установив в <literal>OutputPluginOptions.output_type</literal> значение <literal>OUTPUT_PLUGIN_TEXTUAL_OUTPUT</literal> вместо <literal>OUTPUT_PLUGIN_BINARY_OUTPUT</literal> в <link linkend="logicaldecoding-output-plugin-startup">обработчике запуска</link>. В этом случае все данные должны быть в кодировке сервера, чтобы их можно было передать в значении типа <type>text</type>. Это контролируется в сборках с включёнными проверочными утверждениями.</para>
+   </sect2>
+
+   <sect2 id="logicaldecoding-output-plugin-callbacks">
+    <title>Обработчики в модуле вывода</title>
+
+    <para>Модуль вывода уведомляется о происходящих изменениях через различные обработчики, которые он должен установить.</para>
+
+    <para>Параллельные транзакции декодируются в порядке фиксирования, при этом только изменения, относящиеся к определённой транзакции, декодируются между вызовами обработчиков <literal>begin</literal> и <literal>commit</literal>. Транзакции, отменённые явно или неявно, никогда не декодируются. Успешные точки сохранения заворачиваются в транзакцию, содержащую их, в том порядке, в како они выполнялись в этой транзакции.</para>
+
+    <note>
+     <para>Декодироваться будут только те транзакции, которые уже успешно сброшены на диск. Вследствие этого, <command>COMMIT</command> может не декодироваться в следующем сразу за ним вызове <literal>pg_logical_slot_get_changes()</literal>, когда <varname>synchronous_commit</varname> имеет значение <literal>off</literal>.</para>
+    </note>
+
+    <sect3 id="logicaldecoding-output-plugin-startup">
+     <title>Обработчик запуска</title>
+     <para>Необязательный обработчик <function>startup_cb</function> вызывается, когда слот репликации создаётся или через него запрашивается передача изменений, независимо от того, в каком количестве изменения готовы к передаче. <programlisting>typedef void (*LogicalDecodeStartupCB) (struct LogicalDecodingContext *ctx,
+                                        OutputPluginOptions *options,
+                                        bool is_init);</programlisting> Параметр <literal>is_init</literal> будет равен true, когда слот репликации создаётся, и false в противном случае. Параметр <parameter>options</parameter> указывает на структуру параметров, которые могут устанавливать модули вывода: <programlisting>typedef struct OutputPluginOptions
+{
+    OutputPluginOutputType output_type;
+} OutputPluginOptions;</programlisting> В поле <literal>output_type</literal> должно быть значение <literal>OUTPUT_PLUGIN_TEXTUAL_OUTPUT</literal> или <literal>OUTPUT_PLUGIN_BINARY_OUTPUT</literal>. См. также <xref remap="4" linkend="logicaldecoding-output-mode"/>.</para>
+
+     <para>Обработчик запуска должен проверить параметры, представленные в <literal>ctx-&gt;output_plugin_options</literal>. Если модулю вывода требуется поддерживать состояние, он может сохранить его в <literal>ctx-&gt;output_plugin_private</literal>.</para>
+    </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-shutdown">
+     <title>Обработчик выключения</title>
+
+     <para>Необязательный обработчик <function>shutdown_cb</function> вызывается, когда ранее активный слот репликации перестаёт использоваться, так что ресурсы, занятые модулем вывода, можно освободить. При этом слот не обязательно удаляется, прекращается только потоковая передача через него. <programlisting>typedef void (*LogicalDecodeShutdownCB) (struct LogicalDecodingContext *ctx);</programlisting></para>
+    </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-begin">
+     <title>Обработчик начала транзакции</title>
+
+     <para>Обязательный обработчик <function>begin_cb</function> вызывается, когда декодируется начало зафиксированной транзакции. Прерванные транзакции и их содержимое никогда не декодируется. <programlisting>typedef void (*LogicalDecodeBeginCB) (struct LogicalDecodingContext *ctx,
+                                      ReorderBufferTXN *txn);</programlisting> Параметр <parameter>txn</parameter> содержит метаинформацию о транзакции, в частности её идентификатор и время её фиксирования.</para>
+    </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-commit">
+     <title>Обработчик завершения транзакции</title>
+
+     <para>Обязательный обработчик <function>commit_cb</function> вызывается, когда декодируется фиксирование транзакции. Перед этим обработчиком будет вызываться обработчик <function>change_cb</function> для всех изменённых строк (если строки были изменены). <programlisting>typedef void (*LogicalDecodeCommitCB) (struct LogicalDecodingContext *ctx,
+                                       ReorderBufferTXN *txn,
+                                       XLogRecPtr commit_lsn);</programlisting></para>
+    </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-change">
+     <title>Обработчик изменения</title>
+
+     <para>Обязательный обработчик <function>change_cb</function> вызывается для каждого отдельного изменения строки в транзакции, производимого командами <command>INSERT</command>, <command>UPDATE</command> или <command>DELETE</command>. Даже если команда изменила несколько строк сразу, этот обработчик будет вызываться для каждой отдельной строки. <programlisting>typedef void (*LogicalDecodeChangeCB) (struct LogicalDecodingContext *ctx,
+                                       ReorderBufferTXN *txn,
+                                       Relation relation,
+                                       ReorderBufferChange *change);</programlisting> Параметры <parameter>ctx</parameter> и <parameter>txn</parameter> имеют то же содержимое, что и для обработчиков <function>begin_cb</function> и <function>commit_cb</function>; дополнительный дескриптор отношения <parameter>relation</parameter> указывает на отношение, к которому принадлежит строка, а структура <parameter>change</parameter> описывает передаваемое изменение строки.</para>
+
+     <note>
+      <para>В процессе логического декодирования могут быть обработаны изменения только в таблицах, не являющихся нежурналируемыми (см. описание <xref linkend="sql-createtable-unlogged"/>) или временными (см. описание <xref remap="4" linkend="sql-createtable-temporary"/>).</para>
+     </note>
+    </sect3>
+
+     <sect3 id="logicaldecoding-output-plugin-filter-origin">
+     <title>Обработчик фильтрации источника</title>
+
+     <para>Необязательный обработчик <function>filter_by_origin_cb</function> вызывается, чтобы отметить, интересуют ли модуль вывода изменения, воспроизводимые из указанного источника (<parameter>origin_id</parameter>). <programlisting>typedef bool (*LogicalDecodeFilterByOriginCB) (struct LogicalDecodingContext *ctx,
+                                               RepOriginId origin_id);</programlisting> В параметре <parameter>ctx</parameter> передаётся та же информация, что и для других обработчиков. Чтобы отметить, что изменения, поступающие из переданного узла, не представляют интереса, модуль должен вернуть true, вследствие чего эти изменения будут фильтроваться; в противном случае он должен вернуть false. Другие обработчики для фильтруемых транзакций и изменений вызываться не будут.</para>
+     <para>Это полезно при реализации каскадной или разнонаправленной репликации. Фильтрация по источнику в таких конфигурациях позволяет предотвратить передачу взад-вперёд одних и тех же изменений. Хотя информацию об источнике можно также извлечь из транзакций и изменений, фильтрация с помощью этого обработчика гораздо более эффективна.</para>
+     </sect3>
+
+    <sect3 id="logicaldecoding-output-plugin-message">
+     <title>Обработчик произвольных сообщений</title>
+
+     <para>Необязательный обработчик <function>message_cb</function> вызывается при получении сообщения логического декодирования. <programlisting>typedef void (*LogicalDecodeMessageCB) (struct LogicalDecodingContext *ctx,
+                                        ReorderBufferTXN *txn,
+                                        XLogRecPtr message_lsn,
+                                        bool transactional,
+                                        const char *prefix,
+                                        Size message_size,
+                                        const char *message);</programlisting> Параметр <parameter>txn</parameter> содержит метаинформацию о транзакции, включая время её фиксации и её XID. Заметьте, однако, что в нём может передаваться NULL, когда сообщение нетранзакционное и транзакции, в которой было выдано сообщение, ещё не назначен XID. В параметре <parameter>lsn</parameter> отмечается позиция сообщения в WAL. Параметр <parameter>transactional</parameter> показывает, было ли сообщение передано как транзакционное. В параметре <parameter>prefix</parameter> передаётся некоторый префикс (завершающийся нулём), по которому текущий модуль может выделять интересующие его сообщения. И наконец, параметр <parameter>message</parameter> содержит само сообщение размером <parameter>message_size</parameter> байт.</para>
+     <para>Необходимо дополнительно позаботиться о том, чтобы префикс, определяющий интересующие модуль вывода сообщения, был уникальным. Удачным выбором обычно будет имя расширения или самого модуля вывода.</para>
+    </sect3>
+
+   </sect2>
+
+   <sect2 id="logicaldecoding-output-plugin-output">
+    <title>Функции для формирования вывода</title>
+
+    <para>Чтобы действительно вывести данные, модули вывода могут записывать их в буфер <literal>StringInfo</literal> через <literal>ctx-&gt;out</literal>, внутри обработчиков <function>begin_cb</function>, <function>commit_cb</function> или <function>change_cb</function>. Прежде чем записывать данные в этот буфер, необходимо вызвать <function>OutputPluginPrepareWrite(ctx, last_write)</function>, а завершив запись в буфер, нужно вызвать <function>OutputPluginWrite(ctx, last_write)</function>, чтобы собственно произвести запись. Параметр <parameter>last_write</parameter> указывает, была ли эта определённая операция записи последней в данном обработчике.</para>
+
+    <para>Следующий пример показывает, как вывести данные для потребителя модуля вывода: <programlisting>OutputPluginPrepareWrite(ctx, true);
+appendStringInfo(ctx-&gt;out, "BEGIN %u", txn-&gt;xid);
+OutputPluginWrite(ctx, true);</programlisting></para>
+   </sect2>
+  </sect1>
+
+  <sect1 id="logicaldecoding-writer">
+   <title>Запись вывода логического декодирования</title>
+
+   <para>Архитектура сервера позволяет добавлять другие методы вывода для логического декодирования. За подробностями обратитесь к коду <filename>src/backend/replication/logical/logicalfuncs.c</filename>. По сути, необходимо реализовать три функции: одну для чтения WAL, другую для подготовки к записи, и третью для записи вывода (см. <xref remap="4" linkend="logicaldecoding-output-plugin-output"/>).</para>
+  </sect1>
+
+  <sect1 id="logicaldecoding-synchronous">
+   <title>Поддержка синхронной репликации для логического декодирования</title>
+
+   <para>Логическое декодирование может использоваться для реализации <link linkend="synchronous-replication">синхронной репликации</link> с тем же внешним интерфейсом, что и синхронная репликация поверх <link linkend="streaming-replication">потоковой репликации</link>. Для этого потоковая передача данных должна происходить через интерфейс потоковой репликации (см. <xref remap="4" linkend="logicaldecoding-walsender"/>). Клиенты такой репликации должны посылать сообщения <literal>Обновление состояния резервного сервера (F)</literal> (см. <xref remap="4" linkend="protocol-replication"/>), как и клиенты потоковой репликации.</para>
+
+   <note>
+    <para>Синхронная реплика, получающая изменения через логическое декодирование, будет работать в рамках одной базы данных. Так как <parameter>synchronous_standby_names</parameter> в настоящее время, напротив, устанавливается на уровне сервера, это означает, что этот подход не будет работать корректно при использовании нескольких баз данных.</para>
+   </note>
+  </sect1>
+ </chapter>

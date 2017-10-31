@@ -1,0 +1,151 @@
+<!-- doc/src/xml/file-fdw.xml -->
+
+<sect1 id="file-fdw" xreflabel="file_fdw">
+ <title>file_fdw</title>
+
+ <indexterm zone="file-fdw"><primary>file_fdw</primary></indexterm>
+
+ <para>Модуль <filename>file_fdw</filename> реализует обёртку сторонних данных <function>file_fdw</function> для доступа к файлам на сервере. Файлы должны быть в формате, который понимает команда <command>COPY FROM</command>; он рассматривается в описании <xref linkend="sql-copy"/>. В настоящий момент файлы доступны только для чтения.</para>
+
+ <para>Для сторонней таблицы, создаваемой через эту обёртку, можно задать следующие параметры:</para>
+
+ <variablelist>
+
+  <varlistentry>
+   <term><literal>filename</literal></term>
+
+   <listitem>
+    <para>Имя файла данных. Указывается обязательно. Значение представляет собой абсолютный путь к файлу.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><literal>format</literal></term>
+
+   <listitem>
+    <para>Формат файла. Аналогично указанию <literal>FORMAT</literal> в команде <command>COPY</command>.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><literal>header</literal></term>
+
+   <listitem>
+    <para>Показывает, что файл содержит строку заголовка с именами столбцов. Аналогично указанию <literal>HEADER</literal> в команде <command>COPY</command>.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><literal>delimiter</literal></term>
+
+   <listitem>
+    <para>Задаёт символ, разделяющий столбцы в строках файла. Аналогично указанию <literal>DELIMITER</literal> в команде <command>COPY</command>.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><literal>quote</literal></term>
+
+   <listitem>
+    <para>Задаёт символ, используемый для заключения данных в кавычки. Аналогично указанию <literal>QUOTE</literal> в команде <command>COPY</command>.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><literal>escape</literal></term>
+
+   <listitem>
+    <para>Задаёт символ, который будет выводиться перед символом данных, совпавшим со значением <literal>QUOTE</literal>. Аналогично указанию <literal>ESCAPE</literal> в команде <command>COPY</command>.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><literal>null</literal></term>
+
+   <listitem>
+    <para>Определяет строку, задающую значение <literal>NULL</literal>. Аналогично указанию <literal>NULL</literal> в команде <command>COPY</command>.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><literal>encoding</literal></term>
+
+   <listitem>
+    <para>Задаёт кодировку файла. Аналогично указанию <literal>ENCODING</literal> в команде <command>COPY</command>.</para>
+   </listitem>
+  </varlistentry>
+
+ </variablelist>
+
+ <para>Заметьте, что хотя <command>COPY</command> принимает указания, такие как OIDS и HEADER, без соответствующего значения, синтаксис обёртки сторонних данных требует, чтобы значение присутствовало во всех случаях. Чтобы активировать указания <command>COPY</command>, которым значение обычно не передаётся, им можно просто передать значение TRUE.</para>
+
+ <para>Для столбцов сторонней таблицы, создаваемой через эту обёртку, можно задать следующие параметры:</para>
+
+ <variablelist>
+
+  <varlistentry>
+   <term><literal>force_not_null</literal></term>
+
+   <listitem>
+    <para>Логическое значение. Если true, то значение столбца не должно сверяться со значением NULL (заданным в параметре <literal>null</literal>). Аналогично включению столбца в список указания <literal>FORCE_NOT_NULL</literal> команды <command>COPY</command>.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><literal>force_null</literal></term>
+
+   <listitem>
+    <para>Логическое значение. Если true, значения столбцов нужно сверять со значением NULL (заданным в параметре <literal>NULL</literal>), даже если они заключены в кавычки. Без этого параметра только значения без кавычек, соответствующие значению <literal>null</literal>, будут возвращаться как NULL. Аналогично включению столбца в список указания <literal>FORCE_NULL</literal> команды <command>COPY</command>.</para>
+   </listitem>
+  </varlistentry>
+
+ </variablelist>
+
+ <para>В настоящий момент <literal>file_fdw</literal> не поддерживает указания <literal>OIDS</literal> и <literal>FORCE_QUOTE</literal> команды <command>COPY</command>.</para>
+
+ <para>Перечисленные параметры применимы только для сторонних таблиц или их столбцов. Их нельзя указать для обёртки сторонних данных <literal>file_fdw</literal>, серверов или сопоставлений пользователей, использующих эту обёртку.</para>
+
+ <para>Для изменения параметров, определяемых для таблицы, требуются права суперпользователя. Это сделано в целях безопасности: только суперпользователь должен решать, какой файл использовать. В принципе, доступ на изменение остальных параметров можно предоставить и не суперпользователям, но в настоящий момент это не реализовано.</para>
+
+ <para>Для сторонних таблиц, работающих через <literal>file_fdw</literal>, команда <command>EXPLAIN</command> показывает имя используемого файла. Если не указывать <literal>COSTS OFF</literal>, то выводится и размер файла (в байтах).</para>
+
+ <example>
+ <title id="csvlog-fdw">Создание сторонней таблицы для журнала сервера &productname;</title>
+
+  <para>Одно из очевидных применений <literal>file_fdw</literal> это предоставление доступа к журналу сервера как к таблице. Предварительно нужно убедиться, что журнал сервера пишется в формате CSV. Далее в примере он называется <literal>pglog.csv</literal>. Для начала установите расширение <literal>file_fdw</literal>:</para>
+
+<programlisting>CREATE EXTENSION file_fdw;</programlisting>
+
+  <para>Затем создайте сторонний сервер: <programlisting>CREATE SERVER pglog FOREIGN DATA WRAPPER file_fdw;</programlisting></para>
+
+  <para>Всё готово для создания сторонней таблицы. В команде <command>CREATE FOREIGN TABLE</command> нужно перечислить столбцы таблицы, указать файл CSV и его формат:<programlisting>CREATE FOREIGN TABLE pglog (
+  log_time timestamp(3) with time zone,
+  user_name text,
+  database_name text,
+  process_id integer,
+  connection_from text,
+  session_id text,
+  session_line_num bigint,
+  command_tag text,
+  session_start_time timestamp with time zone,
+  virtual_transaction_id text,
+  transaction_id bigint,
+  error_severity text,
+  sql_state_code text,
+  message text,
+  detail text,
+  hint text,
+  internal_query text,
+  internal_query_pos integer,
+  context text,
+  query text,
+  query_pos integer,
+  location text,
+  application_name text
+) SERVER pglog
+OPTIONS ( filename '/home/josh/9.1/data/pg_log/pglog.csv', format 'csv' );</programlisting></para>
+
+  <para>Вот и всё. Теперь для просмотра журнала сервера можно просто выполнять запросы к таблице. В производственной среде, разумеется, ещё потребуется как-то учесть ротацию файлов журнала.</para>
+ </example>
+
+</sect1>

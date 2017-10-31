@@ -1,0 +1,330 @@
+<!--
+doc/src/xml/ref/createuser.xml
+&productname; documentation
+-->
+
+<refentry id="app-createuser">
+ <indexterm zone="app-createuser"><primary>createuser</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>createuser</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>createuser</refname>
+  <refpurpose>создать новую учётную запись <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>createuser</command>
+   <arg rep="repeat"><replaceable>параметр-подключения</replaceable></arg>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+   <arg choice="opt"><replaceable>имя_пользователя</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+
+ <refsect1>
+  <title>Описание</title>
+  <para><application>createuser</application> создаёт нового пользователя <productname>&productname;</productname>, а если точнее — роль. Лишь суперпользователь и пользователи с привилегией <literal>CREATEROLE</literal> могут создавать новые роли, таким образом, <application>createuser</application> должна запускаться от их лица.</para>
+
+  <para>Чтобы создать дополнительного суперпользователя, необходимо подключиться от имени существующего, одного лишь права <literal>CREATEROLE</literal> недостаточно. Поскольку суперпользователи могут обходить все ограничения доступа в базе данных, к назначению этих полномочий не следует относиться легкомысленно.</para>
+
+  <para><application>createuser</application> — это обёртка для <acronym>SQL</acronym>-команды <xref linkend="sql-createrole"/>. Создание пользователей с её помощью по сути не отличается от выполнения того же действия при обращении к серверу другими способами.</para>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <para><application>createuser</application> принимает следующие аргументы: <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">имя_пользователя</replaceable></term>
+      <listitem>
+       <para>Задаёт имя создаваемого пользователя <productname>&productname;</productname>. Это имя должно отличаться от имён всех существующих ролей в данной инсталляции <productname>&productname;</productname>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-c <replaceable class="parameter">номер</replaceable></option></term>
+      <term><option>--connection-limit=<replaceable class="parameter">номер</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает максимальное допустимое количество соединений для создаваемого пользователя. По умолчанию ограничение в количестве соединений отсутствует.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-d</option></term>
+      <term><option>--createdb</option></term>
+      <listitem>
+       <para>Разрешает новому пользователю создавать базы данных.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-D</option></term>
+      <term><option>--no-createdb</option></term>
+      <listitem>
+       <para>Запрещает новому пользователю создавать базы данных. Это поведение по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-e</option></term>
+      <term><option>--echo</option></term>
+      <listitem>
+       <para>Вывести команды к серверу, генерируемые при выполнении <application>createuser</application>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-E</option></term>
+      <term><option>--encrypted</option></term>
+      <listitem>
+       <para>Шифровать пароль пользователя, хранимый в базе. Если флаг не указан, то для пароля используется поведение по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-g <replaceable class="parameter">role</replaceable></option></term>
+      <term><option>--role=<replaceable class="parameter">role</replaceable></option></term>
+      <listitem>
+       <para>Указывает роль, к которой будет добавлена текущая роль в качестве члена группы. Допускается множественное использование флага <option>-g</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-i</option></term>
+      <term><option>--inherit</option></term>
+      <listitem>
+       <para>Создаваемая роль автоматически унаследует права ролей, в которые она включается. Это поведение по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-I</option></term>
+      <term><option>--no-inherit</option></term>
+      <listitem>
+       <para>Роль не будет наследовать права ролей, в которые она включается.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--interactive</option></term>
+      <listitem>
+       <para>Запросить имя для создаваемого пользователя, а также значения для флагов <option>-d</option>/<option>-D</option>, <option>-r</option>/<option>-R</option>, <option>-s</option>/<option>-S</option>, если они явно не указаны в командной строке. До версии PostgreSQL 9.1 включительно это было поведением по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-l</option></term>
+      <term><option>--login</option></term>
+      <listitem>
+       <para>Новый пользователь сможет подключаться к серверу (то есть его имя может быть идентификатором начального пользователя сеанса). Это свойство по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-L</option></term>
+      <term><option>--no-login</option></term>
+      <listitem>
+       <para>Новый пользователь не сможет подключаться к серверу. (Роль без права входа на сервер тем не менее полезна для управления разрешениями в базе данных.)</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-N</option></term>
+      <term><option>--unencrypted</option></term>
+      <listitem>
+       <para>Не шифровать пароль, хранимый в базе. Если флаг не указан, то для пароля используется поведение по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-P</option></term>
+      <term><option>--pwprompt</option></term>
+      <listitem>
+       <para>Если флаг указан, то <application>createuser</application> запросит пароль для создаваемого пользователя. Если не планируется аутентификация по паролю, то пароль можно не устанавливать.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-r</option></term>
+      <term><option>--createrole</option></term>
+      <listitem>
+       <para>Разрешает новому пользователю создавать другие роли, что означает наделение привилегией <literal>CREATEROLE</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-R</option></term>
+      <term><option>--no-createrole</option></term>
+      <listitem>
+       <para>Запрещает пользователю создавать новые роли. Это поведение по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s</option></term>
+      <term><option>--superuser</option></term>
+      <listitem>
+       <para>Создаваемая роль будет иметь права суперпользователя.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-S</option></term>
+      <term><option>--no-superuser</option></term>
+      <listitem>
+       <para>Новый пользователь не будет суперпользователем. Это поведение по умолчанию.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>--version</option></term>
+       <listitem>
+       <para>Вывести версию <application>createuser</application> и завершить выполнение.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--replication</option></term>
+      <listitem>
+       <para>Создаваемый пользователь будет наделён правом <literal>REPLICATION</literal>. Это рассмотрено подробнее в документации по <xref linkend="sql-createrole"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--no-replication</option></term>
+      <listitem>
+       <para>Создаваемый пользователь не будет иметь привилегии <literal>REPLICATION</literal>. Это рассмотрено подробнее в документации по <xref linkend="sql-createrole"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-?</option></term>
+       <term><option>--help</option></term>
+       <listitem>
+       <para>Вывести помощь по команде <application>createuser</application>.</para>
+       </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+
+  <para><application>createuser</application> также принимает из командной строки параметры подключения: <variablelist>
+     <varlistentry>
+      <term><option>-h <replaceable class="parameter">сервер</replaceable></option></term>
+      <term><option>--host=<replaceable class="parameter">сервер</replaceable></option></term>
+      <listitem>
+       <para>Указывает имя компьютера, на котором запущен сервер. Если значение начинается с косой черты, оно интерпретируется как имя каталога с доменным сокетом Unix.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">порт</replaceable></option></term>
+      <term><option>--port=<replaceable class="parameter">порт</replaceable></option></term>
+      <listitem>
+       <para>Указывает TCP-порт или расширение файла Unix-сокета, на котором сервер слушает подключения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <term><option>--username=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <listitem>
+       <para>Имя пользователя для подключения (не имя создаваемого пользователя).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</option></term>
+      <term><option>--no-password</option></term>
+      <listitem>
+       <para>Не выдавать запрос на ввод пароля. Если сервер требует аутентификацию по паролю и пароль не доступен с помощью других средств, таких как файл <filename>.pgpass</filename>, попытка соединения не удастся. Этот параметр может быть полезен в пакетных заданиях и скриптах, где нет пользователя, который вводит пароль.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option></term>
+      <term><option>--password</option></term>
+      <listitem>
+       <para>Принудительно запрашивать пароль перед подключением к базе данных.</para>
+
+       <para>Это несущественный параметр, так как <application>createuser</application> запрашивает пароль автоматически, если сервер проверяет подлинность по паролю. Однако, чтобы понять это, <application>createuser</application> лишний раз подключается к серверу. Поэтому иногда имеет смысл ввести <option>-W</option>, чтобы исключить эту ненужную попытку подключения.</para>
+      </listitem>
+     </varlistentry>
+   </variablelist></para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><envar>PGHOST</envar></term>
+    <term><envar>PGPORT</envar></term>
+    <term><envar>PGUSER</envar></term>
+
+    <listitem>
+     <para>Параметры подключения по умолчанию</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Эта утилита, как и большинство других утилит <productname>&productname;</productname>, также использует переменные среды, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>).</para>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Диагностика</title>
+
+  <para>В случае возникновения трудностей, обратитесь к <xref remap="3" linkend="sql-createrole"/> и <xref remap="3" linkend="app-psql"/>. Переменные окружения и параметры подключения по умолчанию <application>libpq</application> будут применены при запуске утилиты, это следует учитывать при диагностике.</para>
+
+ </refsect1>
+
+
+ <refsect1>
+  <title>Примеры</title>
+
+   <para>Чтобы создать роль <literal>joe</literal> на сервере, используемом по умолчанию: <screen>
+<prompt>$ </prompt><userinput>createuser joe</userinput>
+</screen></para>
+
+   <para>Чтобы создать роль <literal>joe</literal> на сервере, используемом по умолчанию, с запросом дополнительных параметров: <screen>
+<prompt>$ </prompt><userinput>createuser --interactive joe</userinput>
+<computeroutput>Назначить роль суперпользователем? (y/n) </computeroutput><userinput>n</userinput>
+<computeroutput>Разрешить новой роли создавать базы данных? (y/n) </computeroutput><userinput>n</userinput>
+<computeroutput>Разрешить новой роли создавать другие роли? (y/n) </computeroutput><userinput>n</userinput>
+</screen></para>
+
+   <para>Чтобы создать того же пользователя <literal>joe</literal> с явно заданными атрибутами, подключившись к компьютеру <literal>eden</literal>, порту 5000: <screen>
+<prompt>$ </prompt><userinput>createuser -h eden -p 5000 -S -D -R -e joe</userinput>
+<computeroutput>CREATE ROLE joe NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT LOGIN;</computeroutput>
+</screen></para>
+
+   <para>Чтобы создать роль <literal>joe</literal> с правами суперпользователя и предустановленным паролем: <screen>
+<prompt>$ </prompt><userinput>createuser -P -s -e joe</userinput>
+<computeroutput>Введите пароль для новой роли: </computeroutput><userinput>xyzzy</userinput>
+<computeroutput>Подтвердите ввод пароля: </computeroutput><userinput>xyzzy</userinput>
+<computeroutput>CREATE ROLE joe PASSWORD 'md5b5f5ba1a423792b526f799ae4eb3d59e' SUPERUSER CREATEDB CREATEROLE INHERIT LOGIN;</computeroutput>
+</screen> В приведённом примере введённый пароль отображается лишь для отражения сути, на деле же он не выводится на экран. Как видно в выводе журнала команд, пароль зашифрован. Если же указан флаг <option>--unencrypted</option>, то он <emphasis>отобразиться</emphasis> в этом журнале неизменным, а также, возможно, и в других журналах сервера. По этой причине в этой ситуации стоит использовать флаг <option>-e</option> с особой осторожностью.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-dropuser"/></member>
+   <member><xref linkend="sql-createrole"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

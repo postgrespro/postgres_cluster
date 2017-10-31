@@ -1,0 +1,87 @@
+<!--
+doc/src/xml/ref/drop_table.xml
+&productname; documentation
+-->
+
+<refentry id="sql-droptable">
+ <indexterm zone="sql-droptable"><primary>DROP TABLE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP TABLE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP TABLE</refname>
+  <refpurpose>удалить таблицу</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP TABLE [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [, ...] [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP TABLE</command> удаляет таблицы из базы данных. Удалить таблицу может только её владелец, владелец схемы или суперпользователь. Чтобы опустошить таблицу, не удаляя её саму, вместо этой команды следует использовать <xref linkend="sql-delete"/> или <xref linkend="sql-truncate"/>.</para>
+
+  <para><command>DROP TABLE</command> всегда удаляет все индексы, правила, триггеры и ограничения, существующие в целевой таблице. Однако, чтобы удалить таблицу, на которую ссылается представление или ограничение внешнего ключа в другой таблице, необходимо дополнительно указать <literal>CASCADE</literal>. (С указанием <literal>CASCADE</literal> зависимое представление будет удалено полностью, но в случае с первичным ключом удалено будет только само ограничение, а не таблица, к которой оно относится.)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если таблица не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) таблицы, подлежащей удалению.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данной таблицы (например, представления), и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении таблицы, если от неё зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление таблиц <literal>films</literal> и <literal>distributors</literal>: <programlisting>DROP TABLE films, distributors;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Эта команда соответствует стандарту SQL, но возможность удалять в одной команде несколько таблиц и указание <literal>IF EXISTS</literal> являются расширениями <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altertable"/></member>
+   <member><xref linkend="sql-createtable"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

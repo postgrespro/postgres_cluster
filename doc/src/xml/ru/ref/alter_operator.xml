@@ -1,0 +1,120 @@
+<!--
+doc/src/xml/ref/alter_operator.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alteroperator">
+ <indexterm zone="sql-alteroperator"><primary>ALTER OPERATOR</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER OPERATOR</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER OPERATOR</refname>
+  <refpurpose>изменить определение оператора</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER OPERATOR <replaceable>имя</replaceable> ( { <replaceable>тип_слева</replaceable> | NONE } , { <replaceable>тип_справа</replaceable> | NONE } )
+    OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+
+ALTER OPERATOR <replaceable>имя</replaceable> ( { <replaceable>тип_слева</replaceable> | NONE } , { <replaceable>тип_справа</replaceable> | NONE } )
+    SET SCHEMA <replaceable>новая_схема</replaceable>
+
+ALTER OPERATOR <replaceable>имя</replaceable> ( { <replaceable>тип_слева</replaceable> | NONE } , { <replaceable>тип_справа</replaceable> | NONE } )
+    SET ( {  RESTRICT = { <replaceable class="parameter">процедура_ограничения</replaceable> | NONE }
+           | JOIN = { <replaceable class="parameter">процедура_соединения</replaceable> | NONE }
+         } [, ... ] )</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER OPERATOR</command> изменяет определение оператора.</para>
+
+  <para>Выполнить <command>ALTER OPERATOR</command> может только владелец соответствующего оператора. Чтобы сменить владельца, необходимо быть непосредственным или опосредованным членом новой роли-владельца, а эта роль должна иметь право <literal>CREATE</literal> в схеме оператора. (С такими ограничениями при смене владельца не происходит ничего такого, что нельзя было бы сделать, имея право удалить и вновь создать оператор. Однако суперпользователь может сменить владельца оператора в любом случае.)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующего оператора.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_слева</replaceable></term>
+    <listitem>
+     <para>Тип данных левого операнда оператора; если у оператора нет левого операнда, укажите <literal>NONE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_справа</replaceable></term>
+    <listitem>
+     <para>Тип данных правого операнда оператора; если у оператора нет правого операнда, укажите <literal>NONE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Новый владелец оператора.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_схема</replaceable></term>
+    <listitem>
+     <para>Новая схема оператора.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+     <term><replaceable class="parameter">процедура_ограничения</replaceable></term>
+     <listitem>
+       <para>Функция оценки избирательности ограничения для данного оператора; значение NONE удаляет существующую функцию оценки.</para>
+      </listitem>
+   </varlistentry>
+
+   <varlistentry>
+     <term><replaceable class="parameter">процедура_соединения</replaceable></term>
+     <listitem>
+       <para>Функция оценки избирательности соединения для этого оператора; значение NONE удаляет существующую функцию оценки.</para>
+     </listitem>
+   </varlistentry>
+
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Смена владельца нестандартного оператора <literal>a @@ b</literal> для типа <type>text</type>: <programlisting>ALTER OPERATOR @@ (text, text) OWNER TO joe;</programlisting></para>
+
+  <para>Смена функций оценки избирательности ограничения и соединения для нестандартного оператора <literal>a &amp;&amp; b</literal> для типа <type>int[]</type>: <programlisting>ALTER OPERATOR &amp;&amp; (_int4, _int4) SET (RESTRICT = _int_contsel, JOIN = _int_contjoinsel);</programlisting></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Команда <command>ALTER OPERATOR</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createoperator"/></member>
+   <member><xref linkend="sql-dropoperator"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

@@ -1,0 +1,313 @@
+<!-- doc/src/xml/aqo.xml -->
+
+<sect1 id="aqo">
+  <title>aqo</title>
+
+  <indexterm zone="aqo"><primary>aqo</primary></indexterm>
+
+  <para>Модуль <filename>aqo</filename> представляет собой расширение <productname>&productname;</productname> для оптимизации запросов по стоимости выполнения. Используя методы машинного обучения, а точнее модификацию алгоритма k-NN, <filename>aqo</filename> улучшает оценку количества строк, что может способствовать выбору лучшего плана и, как следствие, ускорению запросов.</para>
+  <para>Модуль <filename>aqo</filename> может собирать статистику по всем выполняемым запросам, за исключением запросов, обращающихся к системным отношениям. Если запросы различаются только константами, они считаются относящимися к одному типу. Для каждого типа модуль <filename>aqo</filename> сохраняет для машинного обучения качество оценки количества строк, время планирования, время и статистику выполнения. Но основе этих данных <filename>aqo</filename> строит новый план выполнения и использует его для следующего запроса того же типа. В тестах <filename>aqo</filename> показал значительное увеличение производительности для сложных запросов.</para>
+  <sect2 id="aqo-installation">
+    <title>Установка и подготовка</title>
+    <para>Расширение <filename>aqo</filename> включено в состав <productname>&productname;</productname>. Установив <productname>&productname;</productname>, выполните следующие действия, чтобы подготовить <filename>aqo</filename> к работе:</para>
+    <orderedlist>
+      <listitem>
+        <para>Настраивая конфигурацию сервера, добавьте <filename>aqo</filename> в переменную <varname>shared_preload_libraries</varname> в файле <filename>postgresql.conf</filename>:</para>
+        <programlisting>shared_preload_libraries = 'aqo'</programlisting>
+        <para>Библиотеку <literal>aqo</literal> нужно предварительно загрузить при запуске сервера, так как адаптивная оптимизация запросов должна быть включена для всего кластера. В противном случае <filename>aqo</filename> будет работать только в тех сеансах, в которых вы создадите расширение <filename>aqo</filename>.</para>
+      </listitem>
+      <listitem>
+        <para>Создайте расширение <filename>aqo</filename>, выполнив следующий запрос:</para>
+        <programlisting>CREATE EXTENSION aqo;</programlisting>
+      </listitem>
+    </orderedlist>
+    <para>Когда расширение будет создано, вы можете приступить к оптимизации запросов.</para>
+    <para>Чтобы отключить <filename>aqo</filename> на уровне кластера и удалить всю собранную статистику, выполните:</para>
+    <programlisting>DROP EXTENSION aqo;</programlisting>
+
+<sect3 id="aqo-configuration">
+      <title>Конфигурирование</title>
+      <para>По умолчанию <filename>aqo</filename> не влияет на быстродействие запросов. Чтобы включить адаптивную оптимизацию запросов для базы данных, добавьте переменную <varname>aqo.mode</varname> в файл <filename>postgresql.conf</filename> и перезапустите кластер. В зависимости от модели использования базы данных вы можете выбрать один из следующих режимов:</para> 
+      <indexterm><primary>параметр конфигурации <varname>aqo.mode</varname></primary></indexterm>
+      <itemizedlist spacing="compact">
+        <listitem>
+          <para><literal>intelligent</literal> &mdash; в этом режиме выполняется автонастройка запросов на основе статистики, собранной по типам запросов.</para>
+        </listitem>
+        <listitem>
+          <para><literal>forced</literal> &mdash; в этом режиме предпринимается попытка оптимизировать все новые запросы на общих основаниях, вне зависимости от их типа.</para>
+        </listitem>
+        <listitem>
+          <para><literal>controlled</literal> &mdash; в этом режиме используется стандартный планировщик для любых новых запросов, но для уже известных типов запросов продолжают использоваться ранее заданные параметры планирования.</para>
+        </listitem>
+        <listitem>
+          <para><literal>disabled</literal> &mdash; в этом режиме <filename>aqo</filename> отключается для всех запросов, даже для запросов известных типов. Этот режим можно использовать для временного отключения <filename>aqo</filename> с сохранением конфигурации и собранной статистики.</para>
+        </listitem>
+      </itemizedlist>
+      <para>Чтобы динамически изменить параметры <filename>aqo</filename> в текущем сеансе, выполните следующую команду: <programlisting>SET aqo.mode = '<replaceable>режим</replaceable>';</programlisting> Здесь <replaceable>режим</replaceable> — название режима оптимизации, который будет использоваться.</para>
+          <important><para>В режиме <literal>intelligent</literal> <filename>aqo</filename> может работать не очень хорошо, если в вашей рабочей нагрузке встречаются запросы множества разных типов. В этом случае вы можете попробовать сменить режим оптимизации на <literal>controlled</literal>.</para>
+        </important>
+      </sect3>
+  </sect2>
+  <sect2 id="aqo-usage">
+    <title>Использование</title>
+    <sect3 id="aqo-choosing-query-optimization-modes">
+      <title>Выбор методов оптимизации запросов</title>
+      <para>Если у вас часто выполняются однотипные запросы, например, ваше приложение выдаёт ограниченное число всевозможных типов запросов, вы можете воспользоваться интеллектуальным режимом (<literal>intelligent</literal>) для улучшения планирования таких запросов. В этом режиме <filename>aqo</filename> анализирует выполнение каждого запроса и собирает статистику. При этом статистика по разным типам запросов собирается отдельно. Если производительность не увеличивается после 50 итераций, расширение <filename>aqo</filename> уступает планирование стандартному планировщику запросов</para>
+      <note><para>Вы можете просмотреть текущий план запроса, воспользовавшись стандартной командой <productname>&productname;</productname> <command>EXPLAIN</command> с указанием <command>ANALYZE</command>. За подробностями обратитесь к <xref remap="3" linkend="using-explain"/>.</para>
+        </note>
+      <para>Так как в режиме <literal>intelligent</literal> различные типы запросов анализируются отдельно, <filename>aqo</filename> может не улучшить производительность, если запросы в рабочей нагрузке постоянно меняются. Для такого динамического профиля нагрузки стоит перевести <filename>aqo</filename> в режим <literal>controlled</literal> или попробовать режим <literal>forced</literal>.</para>
+      <para>В режиме <literal>forced</literal> <filename>aqo</filename> не разделяет собранную статистику по типам запросов и пытается оптимизировать их одинаково. Этот режим может быть полезен для оптимизации нагрузки с множеством различных типов запросов и требует меньше памяти, чем интеллектуальный режим. Но так как в режиме <literal>forced</literal> не производится интеллектуальная настройка на тип запроса, для некоторых запросов производительность может снизиться. Если вы наблюдаете снижение производительности в этом режиме, переключите <filename>aqo</filename> в режим <literal>controlled</literal>.</para>
+      <para>В контролируемом режиме (<literal>controlled</literal>) <filename>aqo</filename> не собирает статистику для новых типов запросов, так что они не будут оптимизироваться. Для ранее наблюдавшихся типов запросов <filename>aqo</filename> будет продолжать собирать статистику и применять оптимизированные алгоритмы планирования.</para>
+      <para>Если вы хотите полностью отключить <filename>aqo</filename>, вы можете переключить его в режим <literal>disabled</literal>. В этом случае для всех запросов будет использоваться стандартный планировщик, но конфигурация и собранная статистика <filename>aqo</filename> сохранятся для возможного использования в будущем.</para>
+    </sect3>
+    <sect3 id="aqo-advanced-query-tuning">
+    <title>Тонкая настройка aqo</title>
+    <para>Для обращения к таблицам <filename>aqo</filename> и изменения расширенных свойств запросов необходимо иметь права суперпользователя.</para>
+      <para>Работая в интеллектуальном режиме (<literal>intelligent</literal>), <filename>aqo</filename> назначает уникальное хеш-значение каждому типу запросов для разделения собираемой статистики. В режиме <literal>forced</literal> статистика всех ранее ненаблюдаемых типов запросов собирается вместе, в одной записи для общего типа с хешем, равным 0. Просмотреть все обработанные типы запросов и их хеш-значения можно в таблице <structname>aqo_query_texts</structname>:</para>
+    <programlisting>SELECT * FROM aqo_query_texts;</programlisting>
+    <para>Разные типы запросов имеют собственные свойства оптимизации. Эти свойства хранятся в таблице <structname>aqo_queries</structname>:</para>
+    <programlisting>SELECT * FROM aqo_queries;</programlisting>
+    <para>Для каждого типа запросов хранятся следующие свойства:</para>
+    <itemizedlist>
+      <listitem>
+        <para><literal>query_hash</literal> содержит хеш-значение, однозначно идентифицирующее тип запроса.</para>
+      </listitem>
+      <listitem>
+        <para><literal>learn_aqo</literal> включает сбор статистики для данного типа запросов.</para>
+      </listitem>
+      <listitem>
+        <para><literal>use_aqo</literal> включает предсказание количества строк средствами <filename>aqo</filename> для следующего выполнения данного типа запросов.</para>
+      </listitem>
+      <listitem>
+        <para><literal>fspace_hash</literal> содержит уникальный идентификатор отдельного пространства, в котором собирается статистика для этого типа запросов. По умолчанию <literal>fspace_hash</literal> равняется <literal>query_hash</literal>.</para>
+      </listitem>
+      <listitem>
+        <para><literal>auto_tuning</literal> показывает, будет ли <filename>aqo</filename> пытаться менять другие параметры для данного запроса. По умолчанию автонастройка включена в интеллектуальном режиме (<literal>intelligent</literal>).</para>
+      </listitem>
+    </itemizedlist>
+    <para>Вы можете вручную изменять эти свойства, чтобы скорректировать оптимизацию для определённого типа запросов. Например:</para>
+    <programlisting> -- Добавление нового типа запросов в таблицу aqo_queries:
+
+SET aqo.mode='intelligent';
+SELECT * FROM a, b WHERE a.id=b.id;
+SET aqo.mode='controlled';
+
+ -- Отключение автонастройки, включение learn_aqo и use_aqo 
+ -- для данного типа запросов:
+
+UPDATE aqo_queries SET use_aqo=true, learn_aqo=true, auto_tuning=false 
+  WHERE query_hash = (SELECT query_hash from aqo_query_texts 
+  WHERE query_text LIKE 'SELECT * FROM a, b WHERE a.id=b.id;');
+
+ -- Запуск EXPLAIN ANALYZE и наблюдение изменённого плана:
+
+EXPLAIN ANALYZE SELECT * FROM a, b WHERE a.id=b.id;
+EXPLAIN ANALYZE SELECT * FROM a, b WHERE a.id=b.id;
+
+ -- Отключение обучения для прекращения сбора статистики и
+ -- начала использования оптимизированного плана:
+
+UPDATE aqo_queries SET learn_aqo=false 
+  WHERE query_hash = (SELECT query_hash from aqo_query_texts 
+  WHERE query_text LIKE 'SELECT * FROM a, b WHERE a.id=b.id;');</programlisting>
+
+    <para>Если распределение данных или запросы быстро меняются, накопление полезной статистики может занять больше чем обычно. В этом случае использование неактуальной статистики может отражаться на производительности. Для ускорения обучения <filename>aqo</filename> статистику можно сбросить. Чтобы удалить всю накопленную статистику машинного обучения, выполните следующую команду:</para>
+    <programlisting>DELETE FROM aqo_data;</programlisting>
+    <para>Также можно сбросить статистику для определённого типа запроса, добавив ограничение поля <literal>fspace_hash</literal> по его хешу. Например:</para>
+    <programlisting>DELETE FROM aqo_data WHERE fspace_hash = (SELECT fspace_hash FROM aqo_queries 
+  WHERE query_hash = (SELECT query_hash from aqo_query_texts 
+  WHERE query_text LIKE 'SELECT * FROM a, b WHERE a.id=b.id;'));</programlisting>
+  
+    <para>Чтобы предотвратить интеллектуальную настройку для определённого типа запросов, отключите свойство <literal>auto_tuning</literal>: <programlisting>UPDATE aqo_queries SET auto_tuning=false WHERE query_hash = '<replaceable>хеш</replaceable>';</programlisting> Здесь <replaceable>хеш</replaceable> — это значение хеша для данного типа запросов. В результате <filename>aqo</filename> не будет автоматически менять свойства <literal>learn_aqo</literal> и <literal>use_aqo</literal>.</para>
+    
+    <para>Чтобы отключить дальнейшее обучение для некоторого типа запросов, выполните следующую команду: <programlisting>UPDATE aqo_queries SET learn_aqo=false WHERE query_hash = '<replaceable>хеш</replaceable>';</programlisting> Здесь <replaceable>хеш</replaceable> — это значение хеша для данного типа запросов.</para>
+
+    <para>Чтобы полностью отключить <filename>aqo</filename> для всех запросов и использовать стандартный планировщик <productname>PostgreSQL</productname>, выполните:</para>
+    <programlisting>UPDATE aqo_queries SET use_aqo=false, learn_aqo=false, auto_tuning=false;</programlisting>
+    </sect3>
+    <sect3 id="using-aqo-on-standby">
+      <title>Использование aqo на ведомом сервере</title>
+        <para>В конфигурациях с ведомыми серверами статистика <filename>aqo</filename> на ведомом поступает от ведущего в режиме «только для чтения». Запросы на ведомых не меняют статистику <filename>aqo</filename> вне зависимости от текущих параметров <filename>aqo</filename>. Если вы хотите изменить статистику на ведомом сервере для одного или нескольких типов запросов, вы должны запустить эти запросы на ведущем, а затем синхронизировать с ним ведомый.</para>
+        <para>Вы можете определить, будет ли использоваться статистика <filename>aqo</filename> для запросов на ведомом, независимо от конфигурации ведущего, переключая режимы <filename>aqo</filename>. По умолчанию <filename>aqo</filename> оптимизирует запросы на ведомом следующим образом: <itemizedlist>
+            <listitem>
+              <para>В режимах <literal>intelligent</literal> и <literal>controlled</literal> статистика <filename>aqo</filename> используется только для уже известных типов запросов.</para>
+            </listitem>
+            <listitem>
+              <para>В режиме <literal>forced</literal> расширение <filename>aqo</filename> пытается оптимизировать неизвестные запросы, основываясь на общей статистике, собранной в режиме <literal>forced</literal> на ведущем (если она там есть). Если общая статистика не найдена, <filename>aqo</filename> оставляет оптимизацию стандартному планировщику запросов. Для всех ранее наблюдавшихся типов запросов будет использоваться доступная статистика.</para>
+            </listitem>
+            <listitem>
+              <para>В режиме <literal>disabled</literal> использование собранной статистики отключается полностью, и для всех запросов используется стандартный планировщик.</para>
+            </listitem>
+          </itemizedlist></para>
+        <para>Если вы провели тонкую настройку параметров для определённых типов запросов на ведущем, этим параметры переопределят стандартное поведение <filename>aqo</filename>, если только не выбран режим <literal>disabled</literal>. За подробностями обратитесь к <xref remap="3" linkend="aqo-advanced-query-tuning"/>.</para>
+    </sect3>
+  </sect2>
+    <sect2 id="aqo-reference">
+    <title>Справка</title>
+      <sect3 id="aqo-variables">
+      <title>Конфигурационные переменные</title>
+        <sect4 id="aqo-mode">
+        <title><varname>aqo.mode</varname></title>
+        <para>Определяет режим оптимизации <filename>aqo</filename>.</para>
+        
+ <table id="aqo-mode-options">
+  <title>Параметры <varname>aqo.mode</varname></title>
+  <tgroup cols="2">
+   <thead>
+    <row><entry>Значение</entry> <entry>Описание</entry>
+    </row>
+   </thead>
+
+   <tbody>
+    <row>
+     <entry><literal>intelligent</literal></entry>
+     <entry>Автонастройка запросов на основе статистики, собранной по типам запросов.</entry>
+     
+    </row>
+    <row>
+     <entry><literal>forced</literal></entry>
+     <entry>Оптимизация всех запросов на общих основаниях, вне зависимости от их типа.</entry>
+    </row>
+    <row>
+     <entry><literal>controlled</literal></entry>
+     <entry><emphasis role="strong">Режим по умолчанию.</emphasis> Для всех новых запросов используется стандартный планировщик, но для уже известных типов запросов может использоваться ранее собранная статистика.</entry>
+    </row>
+    <row>
+     <entry><literal>disabled</literal></entry>
+     <entry>Полностью отключает <filename>aqo</filename> для всех запросов. При этом конфигурация и собранная статистика <filename>aqo</filename> сохраняется для возможного использования в будущем.</entry>
+    </row>
+   </tbody>
+  </tgroup>
+ </table>
+        </sect4>
+
+  
+    </sect3>
+    <sect3 id="aqo-tables">
+      <title>Таблицы</title>
+              <important><para>Вы можете вручную изменить параметры оптимизации в таблице <structname>aqo_queries</structname>. Однако модифицировать содержимое других таблиц не следует, так как это может привести к неожиданным результатам.</para>
+        </important>
+      <sect4 id="aqo-query-texts-table">
+        <title>Таблица <structname>aqo_query_texts</structname></title>
+        <para>В таблице <structname>aqo_query_texts</structname> классифицируются все типы запросов, обрабатываемые <filename>aqo</filename>.</para>
+         <table id="aqo-query-texts-ref">
+         <title>Таблица <structname>aqo_query_texts</structname></title>
+  <tgroup cols="2">
+   <thead>
+    <row><entry>Имя столбца</entry> <entry>Описание</entry>
+    </row>
+   </thead>
+
+   <tbody>
+    <row>
+     <entry><literal>query_hash</literal></entry>
+     <entry>Содержит хеш-значение, однозначно идентифицирующее тип запроса.</entry>  
+    </row>
+    <row>
+     <entry><literal>query_text</literal></entry>
+     <entry>Содержит пример запроса данного типа.</entry>
+    </row>
+
+   </tbody>
+  </tgroup>
+ </table>
+      </sect4>
+      <sect4 id="aqo-queries-table">
+        <title>Таблица <structname>aqo_queries</structname></title>
+        <para>Таблица <structname>aqo_queries</structname> содержит свойства оптимизации для разных типов запросов.</para>
+
+ <table id="aqo-queries-table-ref">
+ <title>Таблица <structname>aqo_queries</structname></title>
+  <tgroup cols="2">
+   <thead>
+    <row><entry>Свойство</entry><entry>Описание</entry>
+    </row>
+   </thead>
+
+   <tbody>
+    <row>
+     <entry><literal>query_hash</literal></entry>
+     <entry>Содержит хеш-значение, однозначно идентифицирующее тип запроса.</entry>
+     
+    </row>
+    <row>
+     <entry><literal>learn_aqo</literal></entry>
+     <entry>Включает сбор статистики для данного типа запросов.</entry>
+    </row>
+    <row>
+     <entry><literal>use_aqo</literal></entry>
+     <entry>Включает предсказание количества строк средствами <filename>aqo</filename> для следующего выполнения данного типа запросов. Если модель оценки стоимости неполная, это может привести к замедлению при выполнении запросов.</entry>
+    </row>
+    <row>
+     <entry><literal>fspace_hash</literal></entry>
+     <entry>Задаёт уникальный идентификатор отдельного пространства, в котором собирается статистика для данного типа запросов. По умолчанию <literal>fspace_hash</literal> равняется <literal>query_hash</literal>. Вы можете присвоить ему другой <literal>query_hash</literal>, чтобы оптимизировать разные типы запросов вместе. В результате может сократиться объём памяти для моделей и даже увеличиться скорость запросов. Однако изменение этого свойства может приводить и к неожиданному поведению <filename>aqo</filename>, так что использовать это следует, только если вы точно понимаете, что делаете.</entry>
+    </row>
+    <row>
+     <entry><literal>auto_tuning</literal></entry>
+     <entry>Определяет, будет ли <filename>aqo</filename> пытаться настраивать другие свойства выполнения для данного запроса. По умолчанию автонастройка включена в интеллектуальном режиме. В других режимах новые запросы не добавляются в <structname>aqo_queries</structname> автоматически. Вы можете изменить это поведение, присвоив переменной <literal>auto_tuning</literal> значение <literal>true</literal>.</entry>
+    </row>
+   </tbody>
+  </tgroup>
+ </table>
+      </sect4>
+      <sect4 id="aqo-data-table">
+        <title>Таблица <structname>aqo_data</structname></title>
+        <para>Таблица <structname>aqo_data</structname> содержит данные машинного обучения для уточнения оценки количества строк. Чтобы стереть всю собранную статистику для определённого типа запросов, вы можете удалить из таблицы <structname>aqo_data</structname> все строки с соответствующим <literal>fspace_hash</literal>.</para>
+      </sect4>
+      <sect4 id="aqo-query-stat-table">
+        <title>Таблица <structname>aqo_query_stat</structname></title>
+         <para>Таблица <structname>aqo_query_stat</structname> содержит статистику выполнения запросов, группируемую по типам запросов, Расширение <filename>aqo</filename> использует эти данные, когда для определённого типа запросов включено свойство <literal>auto_tuning</literal>.</para>
+        <table id="aqo-query-stat-ref">
+ <title>Таблица <structname>aqo_query_stat</structname></title>
+  <tgroup cols="2">
+   <thead>
+    <row><entry>Данные</entry><entry>Описание</entry>
+    </row>
+   </thead>
+
+   <tbody>
+    <row>
+     <entry><literal>execution_time_with_aqo</literal></entry>
+     <entry>Время выполнения запросов со включённым <filename>aqo</filename>.</entry>
+     
+    </row>
+    <row>
+     <entry><literal>execution_time_without_aqo</literal></entry>
+     <entry>Время выполнения запросов с отключённым <filename>aqo</filename>.</entry>
+    </row>
+    <row>
+     <entry><literal>planning_time_with_aqo</literal></entry>
+     <entry>Время планирования запросов со включённым <filename>aqo</filename>.</entry>
+    </row>
+    <row>
+     <entry><literal>planning_time_without_aqo</literal></entry>
+     <entry>Время планирования запросов с отключённым <filename>aqo</filename>.</entry>
+    </row>
+    <row>
+     <entry><literal>cardinality_error_with_aqo</literal></entry>
+     <entry>Ошибка оценки количества строк в планах запросов, выбранных со включённым <filename>aqo</filename>.</entry>
+    </row>
+    <row>
+     <entry><literal>cardinality_error_without_aqo</literal></entry>
+     <entry>Ошибка оценки количества строк в планах запросов, выбранных с отключённым <filename>aqo</filename>.</entry>
+    </row>
+    <row>
+     <entry><literal>executions_with_aqo</literal></entry>
+     <entry>Число запросов, выполненных со включённым <filename>aqo</filename>.</entry>
+    </row>
+    <row>
+     <entry><literal>executions_without_aqo</literal></entry>
+     <entry>Число запросов, выполненных с отключённым <filename>aqo</filename>.</entry>
+    </row>
+   </tbody>
+  </tgroup>
+ </table>
+
+      </sect4>
+    </sect3>
+  </sect2>
+  <sect2 id="aqo-authors">
+    <title>Авторы</title>
+    <para>Олег Иванов <email>o.ivanov@postgrespro.ru</email>, Postgres Professional, Москва, Россия</para>
+  </sect2>
+</sect1>

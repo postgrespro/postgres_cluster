@@ -1,0 +1,285 @@
+<!-- doc/src/xml/pg-wait-sampling.xml -->
+
+<sect1 id="pg-wait-sampling">
+  <title>pg_wait_sampling</title>
+  <para><filename>pg_wait_sampling</filename> — это расширение <productname>&productname;</productname> для периодического сбора статистики по событиям ожидания.</para>
+  <para>Начиная с версии 9.6, <productname>&productname;</productname> выдаёт информацию о текущих событиях ожидания для определённых процессов. Однако, чтобы получить полезную общую статистику активности сервера, необходимо снимать показания по событиям ожидания неоднократно. Расширение <filename>pg_wait_sampling</filename> автоматизирует снятие показаний по событиям ожидания, запуская специальный рабочий процесс. Когда расширение <filename>pg_wait_sampling</filename> включено, вы можете получать следующую периодически собираемую информацию:</para>
+  <itemizedlist>
+    <listitem>
+      <para><emphasis>История ожиданий</emphasis> &mdash; список событий ожидания для недавних процессов, с отметками времени.</para>
+    </listitem>
+    <listitem>
+      <para><emphasis>Профиль ожиданий</emphasis> &mdash; количество наблюдавшихся событий ожидания для всех процессов, в разрезе типов событий.</para>
+    </listitem>
+    <listitem>
+      <para>Текущие события ожидания для всех процессов, включая фоновые рабочие процессы.</para>
+    </listitem>
+  </itemizedlist>
+  <para>Используя <filename>pg_wait_sampling</filename>, вы можете выявить проблемы зависимостей запросов, выполняющихся дольше чем ожидается. Вы можете видеть процессы в состоянии ожидания в каждый момент времени и проанализировать статистику событий ожидания. Список возможных событий ожидания приведён в <xref remap="6" linkend="wait-event-table"/>.</para>
+  <para>
+    <emphasis role="strong">См. также</emphasis></para>
+    <para><link linkend="viewing-statistics-on-wait-events">Просмотр статистики по событиям ожидания</link></para>
+    <para><link linkend="pg-wait-sampling-reference">Справка</link></para>
+  <sect2 id="pg-wait-sampling-install">
+    <title>Установка</title>
+    <para>Расширение <filename>pg_wait_sampling</filename> входит в состав <productname>&productname;</productname> и не имеет особых требований.</para>
+    <para>Чтобы включить <filename>pg_wait_sampling</filename>, выполните следующее:</para>
+    <orderedlist>
+      <listitem>
+        <para>Добавьте <literal>pg_wait_sampling</literal> в переменную <varname>shared_preload_libraries</varname> в файле <filename>postgresql.conf</filename>:</para>
+            <programlisting>shared_preload_libraries = 'pg_wait_sampling'</programlisting>
+      </listitem>
+      <listitem>
+        <para>Создайте расширение <filename>pg_wait_sampling</filename>, выполнив следующий запрос:</para>
+        <programlisting>CREATE EXTENSION pg_wait_sampling;</programlisting>
+      </listitem>
+      <listitem>
+        <para>Перезапустите сервер. Так как расширению <filename>pg_wait_sampling</filename> требуется дополнительная разделяемая память и фоновый рабочий процесс, вы должны перезапустить сервер после добавления или удаления <filename>pg_wait_sampling</filename>.</para>
+      </listitem>
+    </orderedlist>
+    <para>После создания расширения <filename>pg_wait_sampling</filename> начинает собирать статистику по событиям ожидания для каждого процесса. Вы можете по своему усмотрению изменить частоту снятия показаний и настроить режимы сбора статистики, используя <link linkend="pg-wait-sampling-guc-variables">переменные GUC</link>.</para>
+    <para>Если вы хотите остановить сбор статистики, удалите расширение <filename>pg_wait_sampling</filename>, уберите <literal>pg_wait_sampling</literal> из переменной <varname>shared_preload_libraries</varname> и перезагрузите сервер.</para>
+  </sect2>
+  <sect2 id="pg-wait-sampling-usage">
+    <title>Использование</title>
+    <sect3 id="viewing-statistics-on-wait-events">
+      <title>Просмотр статистики по событиям ожидания</title>
+      <para>Когда <filename>pg_wait_sampling</filename> работает, показания снимаются по умолчанию каждые 10 мс. Обратиться к собранной статистике вы можете через набор функций и представлений. Если вы замечаете, что некоторые запросы «зависли» или выполняются дольше, чем ожидается, вы можете увидеть все текущие события ожидания в представлении <literal>pg_wait_sampling_current</literal>:</para>
+      <programlisting>SELECT * FROM pg_wait_sampling_current;</programlisting>
+      <para>Возвращаемая статистика охватывает все активные процессы, включая фоновые рабочие процессы. Чтобы отфильтровать это представление по одному процессу, воспользуйтесь функцией <function>pg_wait_sampling_get_current()</function> и передайте ей идентификатор интересующего процесса:</para>
+      <programlisting>SELECT * FROM pg_wait_sampling_get_current(<replaceable>pid</replaceable>);</programlisting>
+      <para>Чтобы лучше понимать динамику недавних событий ожидания, можно обратиться к представлению <literal>pg_wait_sampling_history</literal>, показывающему историю событий ожидания для последних процессов:</para>
+      <programlisting>SELECT * FROM pg_wait_sampling_get_history;</programlisting>
+      <para>Это представление выдаёт показания по событиям ожидания с отметками времени. История ожиданий реализована как кольцевой буфер в памяти, размер которого по умолчанию ограничен 5000 показаниями. Чтобы сохранить историю за больший период времени, вы можете изменить переменную <varname>pg_wait_sampling.history_size</varname> либо подключить клиентское приложение, которое будет периодически считывать историю ожиданий и сохранять её в локальном хранилище.</para>
+      <para>Для отслеживания событий ожидания в вашей базе данных в течение длительного времени используйте представление <literal>pg_wait_sampling_profile</literal>:</para>
+      <programlisting>SELECT * FROM pg_wait_sampling_get_profile;</programlisting>
+      <para>Профиль ожиданий сохраняется как хеш-таблица в памяти, накапливающая показатели по отдельным процессам и по событиям ожидания. Вы можете сбросить профиль ожиданий, вызвав функцию <function>pg_wait_sampling_reset_profile()</function>. Если вы подключите к вашей базе данных клиента, который будет периодически сбрасывать данные событий ожидания и очищать профиль, вы можете сохранять и анализировать концентрацию событий ожидания во времени.</para>
+          <important><para>Так как статистика по событиям ожидания находится в ОЗУ, важно очищать профиль ожиданий время от времени во избежание переполнения памяти.</para>
+        </important>
+      <para>Если вас не интересует распределение событий ожидания по процессам, вы можете присвоить переменной <varname>pg_wait_sampling.profile_pid</varname> <literal>false</literal>. В этом случае значение <literal>pid</literal> для всех процессов считается равным нулю и показатели ожиданий для всех процессов аккумулируются вместе.</para>
+    </sect3>
+  </sect2>
+  <sect2 id="pg-wait-sampling-reference">
+    <title>Справка</title>
+    <sect3 id="pg-wait-sampling-guc-variables">
+      <title>Переменные GUC</title>
+      <para>Поведение расширения <filename>pg_wait_sampling</filename> настраивается с помощью переменных GUC. Для изменения переменных <acronym>GUC</acronym> необходимо иметь права суперпользователя. Так как эти переменные находятся в разделяемой памяти, вы можете изменить их из любого подключения, и это повлияет на работу фонового рабочего процесса <filename>pg_wait_sampling</filename>.</para>
+    <variablelist>
+    <varlistentry>
+     <term><varname>pg_wait_sampling.history_size</varname> (<type>int4</type>) <indexterm><primary>переменная <varname>pg_wait_sampling.history_size</varname></primary></indexterm></term>
+     <listitem>
+      <para>Размер буфера в памяти для истории показаний (максимальное число показаний).</para>
+       <para>По умолчанию: 5000</para>
+     </listitem>
+    </varlistentry>
+    <varlistentry>
+     <term><varname>pg_wait_sampling.history_period</varname> (<type>int4</type>) <indexterm><primary>переменная <varname>pg_wait_sampling.history_period</varname></primary></indexterm></term>
+     <listitem>
+      <para>Интервал снятия показаний для истории, в миллисекундах.</para>
+       <para>По умолчанию: 10</para>
+     </listitem>
+    </varlistentry>
+    <varlistentry>
+     <term><varname>pg_wait_sampling.profile_period</varname> (<type>int4</type>) <indexterm><primary>переменная <varname>pg_wait_sampling.profile_period</varname></primary></indexterm></term>
+     <listitem>
+      <para>Интервал снятия показаний для профиля, в миллисекундах.</para>
+       <para>По умолчанию: 10</para>
+     </listitem>
+    </varlistentry>
+    <varlistentry>
+     <term><varname>pg_wait_sampling.profile_pid</varname> (<type>int4</type>) <indexterm><primary>переменная <varname>pg_wait_sampling.profile_pid</varname></primary></indexterm></term>
+     <listitem>
+      <para>Режим обработки показаний для профиля ожиданий. Если равняется <literal>true</literal>, профиль ожиданий собирается по процессам. Если задать для <literal>pg_wait_sampling.profile_pid</literal> значение <literal>false</literal>, профиль будет собираться по всем процессам сразу. В этом случае значение <literal>pid</literal> для всех процессов принимается равным нулю и соответствующая строка в профиле отражает события ожидания для всех процессов.</para>
+       <para>По умолчанию: <literal>true</literal></para>
+     </listitem>
+    </varlistentry>
+    </variablelist>
+      <para>
+      </para>
+
+    </sect3>
+    <sect3 id="pg-wait-sampling-views">
+      <title>Представления pg_wait_sampling</title>
+      <sect4 id="pg-wait-sampling-current-view">
+        <title>Представление pg_wait_sampling_current</title>
+        <para>Представление <structname>pg_wait_sampling_current</structname> выдаёт информацию о текущих событиях ожидания для всех процессов, включая фоновые рабочие процессы.</para>
+        <table id="pg-wait-sampling-current">
+        <title>Представление pg_wait_sampling_current</title>
+          <tgroup cols="3">
+            <thead>
+              <row>
+                <entry>Имя столбца</entry>
+                <entry>Тип столбца</entry>
+                <entry>Описание</entry>
+              </row>
+            </thead>
+            <tbody>
+              <row>
+                <entry>
+                  <literal>pid</literal>
+                </entry>
+                <entry>
+                  <type>int4</type>
+                </entry>
+                <entry>Идентификатор процесса</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>event_type</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry>Имя типа события ожидания</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>event</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry>Имя события ожидания</entry>
+              </row>
+            </tbody>
+          </tgroup>
+        </table>
+      </sect4>
+      <sect4 id="pg-wait-sampling-history-view">
+        <title>Представление pg_wait_sampling_history</title>
+        <para>Представление <structname>pg_wait_sampling_history</structname> содержит историю событий ожидания. Эти данные хранятся в кольцевом буфере в памяти.</para>
+        <table id="pg-wait-sampling-history">
+        <title>Представление pg_wait_sampling_history</title>
+          <tgroup cols="3">
+            <thead>
+              <row>
+                <entry>Имя столбца</entry>
+                <entry>Тип столбца</entry>
+                <entry>Описание</entry>
+              </row>
+            </thead>
+            <tbody>
+              <row>
+                <entry>
+                  <literal>pid</literal>
+                </entry>
+                <entry>
+                  <type>int4</type>
+                </entry>
+                <entry>Идентификатор процесса</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>ts</literal>
+                </entry>
+                <entry>
+                  <type>timestamptz</type>
+                </entry>
+                <entry>Время снятия показания</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>event_type</literal>
+                </entry>
+                <entry>
+                 <type>text</type>
+                </entry>
+                <entry>Имя типа события ожидания</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>event</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry>Имя события ожидания</entry>
+              </row>
+            </tbody>
+          </tgroup>
+        </table>
+      </sect4>
+      <sect4 id="pg-wait-sampling-profile-view">
+        <title>Представление pg_wait_sampling_profile</title>
+        <para>Представление <structname>pg_wait_sampling_profile</structname> содержит профиль событий ожидания. Эти данные хранятся в виде хеш-таблицы в памяти.</para>
+        <table id="pg-wait-sampling-profile">
+        <title>Представление pg_wait_sampling_profile</title>
+          <tgroup cols="3">
+            <thead>
+              <row>
+                <entry>Имя столбца</entry>
+                <entry>Тип столбца</entry>
+                <entry>Описание</entry>
+              </row>
+            </thead>
+            <tbody>
+              <row>
+                <entry>
+                  <literal>pid</literal>
+                </entry>
+                <entry>
+                  <type>int4</type>
+                </entry>
+                <entry>Идентификатор процесса</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>event_type</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry>Имя типа события ожидания</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>event</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry>Имя события ожидания</entry>
+              </row>
+              <row>
+                <entry>
+                  <literal>count</literal>
+                </entry>
+                <entry>
+                  <type>text</type>
+                </entry>
+                <entry>Число наблюдений</entry>
+              </row>
+            </tbody>
+          </tgroup>
+        </table>
+      </sect4>
+    </sect3>
+    <sect3 id="pg-wait-sampling-functions">
+    <title>Функции</title>
+    <variablelist>
+    <varlistentry>
+    <term><function>pg_wait_sampling_get_current(<parameter>pid</parameter> <type>int4</type>)</function>
+    <indexterm><primary><function>pg_wait_sampling_get_current</function></primary></indexterm>
+    </term>
+    <listitem><para>Возвращает представление <literal>pg_wait_sampling_current</literal> со списком текущих событий ожидания. Если вы зададите аргумент <parameter>pid</parameter>, представление будет отфильтровано по процессу с заданным идентификатором.</para>
+    <para>Аргументы:</para>
+    <itemizedlist>
+    <listitem><para><parameter>pid</parameter> &mdash; Необязательный параметр. Идентификатор процесса, для которого будут выводиться текущие события ожидания.</para>
+    </listitem>
+    </itemizedlist></listitem>
+    </varlistentry>
+    <varlistentry>
+    <term><function>pg_wait_sampling_reset_profile()</function>
+    <indexterm><primary><function>pg_wait_sampling_reset_profile</function></primary></indexterm>
+    </term><listitem>
+    <para>Сбрасывает профиль ожиданий и очищает память.</para>
+    </listitem>
+    </varlistentry>
+</variablelist>
+    </sect3>
+  </sect2>
+  <sect2 id="pg-wait-sampling-authors">
+    <title>Авторы</title>
+    <para>Александр Коротков <email>a.korotkov@postgrespro.ru</email>, Postgres Professional, Москва, Россия</para>
+  </sect2>
+</sect1>

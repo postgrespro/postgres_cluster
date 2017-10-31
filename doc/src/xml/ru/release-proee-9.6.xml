@@ -1,0 +1,391 @@
+<!-- doc/src/xml/release-proee-9.6.xml -->
+<sect1 id="release-proee-9-6-5-2">
+<title>&productname; 9.6.5.2</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2017-10-16</simpara>
+  </note>
+<sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>Postgres Pro Enterprise</productname> <link linkend="release-proee-9-6-5-1">9.6.5.1</link>.</para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro Enterprise</productname> 9.6.5.1 входят:</para>
+    <itemizedlist>
+      <listitem>
+      <para>Модуль <application>pg_pathman</application> обновлён до версии 1.4.7.</para>
+      </listitem>
+      <listitem>
+      <para>Утилита <application>pg_probackup</application> обновлена до версии 2.0.8.</para>
+      </listitem>
+      <listitem>
+      <para>Исправлена проблема при сборке мусора в сжимаемом табличном пространстве с несжимаемыми данными.</para>
+      </listitem>
+      <listitem>
+      <para>Исправлена обработка сигнала SIGTERM в расширении <application>pgpro_scheduler</application>.</para>
+      </listitem>
+      <listitem>
+      <para>Исправлены ошибки в расширении <application>aqo</application>.</para>
+      </listitem>
+      <listitem>
+      <para>Утилита <application>pgbench</application> теперь продолжает выполнение скрипта в случае отката транзакции и может повторять сбойные транзакции несколько раз.</para>
+      </listitem>
+      <listitem>
+      <para>Устранена несовместимость между расширениями <application>pg_pathman</application> и <application>online_analyze</application>.</para>
+      </listitem>
+      </itemizedlist>
+      </sect2>
+      </sect1>
+<sect1 id="release-proee-9-6-5-1">
+<title>&productname; 9.6.5.1</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2017-08-31</simpara>
+  </note>
+<sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>Postgres Pro Enterprise</productname> <link linkend="release-proee-9-6-4-1">9.6.4.1</link> и <productname>Postgres Pro Standard</productname> <link linkend="release-pro-9-6-5-1">9.6.5.1</link>.</para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro Enterprise</productname> 9.6.4.1 входят:</para>
+    <itemizedlist>
+      <listitem>
+      <para>Модуль <application>pg_pathman</application> обновлён до версии 1.4.3. (См. <xref remap="4" linkend="pg-pathman"/> и <xref remap="4" linkend="pg-pathman-how-to-update"/>.) Эта версия по сравнению с 1.4.2 включает следующие усовершенствования:</para>
+          <itemizedlist spacing="compact">
+            <listitem>
+              <para>Отключена опасная оптимизация команд <command>UPDATE</command> и <command>DELETE</command> для <productname>PostgreSQL</productname> 9.5.</para>
+            </listitem>
+            <listitem>
+              <para>Исправлено выполнение такого запроса: <command>DELETE FROM single_table USING partitioned_table</command>.</para>
+            </listitem>
+            <listitem>
+              <para>Исправлен вывод <command>EXPLAIN INSERT INTO partitioned_table</command> при включённом режиме подробных сведений.</para>
+            </listitem>
+          </itemizedlist>
+              <para>Полный список изменений можно найти на <ulink url="https://github.com/postgrespro/pg_pathman/releases/">вики-странице <application>pg_pathman</application></ulink>.</para>
+      </listitem>
+      <listitem>
+        <para>Усовершенствована утилита <xref linkend="app-pgcontroldata"/>, чтобы было возможным автоматическое обновление <productname>Postgres Pro</productname> с помощью скрипта <literal>pgpro_upgrade</literal>.</para>
+      </listitem>
+      <listitem>
+        <para>Устранены следующие дефекты CFS: <itemizedlist>
+          <listitem>
+            <para>Процесс сборки мусора теперь обрабатывает только каталог табличного пространства, относящийся к текущему экземпляру postgres. Подкаталоги других экземпляров postgres игнорируются.</para>
+          </listitem>
+          <listitem>
+            <para>Файлы *.cfm теперь копируются программой <application>pg_upgrade</application>.</para>
+          </listitem>
+        </itemizedlist></para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Миграция на версию &productname; 9.6.5.1</title>
+    <para>Процедура установки зависит от версии вашей текущей инсталляции.</para>
+    <para>Для обновления СУБД с версии <productname>Postgres Pro Enterprise</productname>, основанной на предыдущем основном выпуске <productname>PostgreSQL</productname>, вы можете выполнить выгрузку/восстановление данных, применив <xref linkend="app-pg-dumpall"/>, или воспользоваться утилитой <xref linkend="pgupgrade"/>. Первый вариант безопаснее, а второй быстрее и может значительно ускорить процесс обновления для больших баз данных.</para>
+    <para>Для обновления с версии <productname>Postgres Pro Enterprise</productname>, основанной на этом же основном выпуске <productname>PostgreSQL</productname>, выгрузка/восстановление данных не требуется. Но вместо <literal>pg_upgrade</literal> вы должны использовать скрипт <literal>pgpro_upgrade</literal>, входящий в состав этого дистрибутивного набора. Этот скрипт обновляет метаданные как требуется в связи с изменением номера каталога, произошедшим в <productname>Postgres Pro Enterprise</productname> 9.6.4.1. Если вы обновляете инсталляцию <productname>Postgres Pro Enterprise</productname>, используя бинарный пакет, скрипт <literal>pgpro_upgrade</literal> запускается автоматически либо вам предлагается запустить его вручную.</para>
+      <important>
+        <para>Если вы запускаете <literal>pgpro_upgrade</literal> вручную, вы должны остановить службу postgres. Этот скрипт должен запускать пользователь-владелец базы данных (обычно postgres), а переменная окружения PGDATA должна указывать на каталог, где располагается база данных. При попытке запустить <literal>pgpro_upgrade</literal> от имени root произойдёт ошибка.</para>
+      </important>
+      <note>
+        <para>В дистрибутивах Linux с системой пакетов RPM при обновлении с версии 9.6.1.2 или более ранней вы должны переименовать каталог данных <filename>pgsql</filename> в <filename>pgproee</filename> до запуска скрипта <literal>pgpro_upgrade</literal> script.</para>
+      </note>
+    <para>Для перехода с ванильной версии PostgreSQL 9.6.x или <productname>Postgres Pro</productname>, выполните выгрузку/восстановление данных, используя <xref linkend="app-pg-dumpall"/>.</para>
+  </sect2>
+</sect1>
+<sect1 id="release-proee-9-6-4-1">
+  <title>&productname; 9.6.4.1</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2017-08-16</simpara>
+  </note>
+  <sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>Postgres Pro Enterprise</productname> <link linkend="release-proee-9-6-3-2">9.6.3.2</link> и <productname>Postgres Pro Standard</productname> <link linkend="release-pro-9-6-4-1">9.6.4.1</link>.</para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro Enterprise</productname> 9.6.3.2 входят:</para>
+    <itemizedlist>
+      <listitem>
+        <para>Менеджер резервного копирования <link linkend="app-pgprobackup"><application>pg_probackup</application></link> обновлён до версии 2.0.</para>
+      </listitem>
+      <listitem>
+        <para>Модуль <link linkend="pg-pathman"><application>pg_pathman</application></link> обновлён до версии 1.4.2.</para>
+      </listitem>
+      <listitem>
+        <para>В реализации сжатой файловой системы устранена утечка памяти.</para>
+      </listitem>
+      <listitem>
+        <para>Устранён дефект в дополнительном модуле online_analyze, способный привести к повреждению данных.</para>
+      </listitem>
+      <listitem>
+        <para>Исправлена работа <command>ALTER COLUMN</command> с таблицами, имеющими индексы.</para>  <!-- PGPRO-818 -->
+      </listitem>
+      <listitem>
+        <para>Улучшено расширение <application>multimaster</application>:</para>
+        <itemizedlist>
+          <listitem>
+            <para>Исправлена работа команды <command>ALTER SYSTEM SET</command>.</para>
+          </listitem>
+          <listitem>
+            <para>Ликвидирован неожиданный тайм-аут асинхронного соединения.</para>
+          </listitem>
+          <listitem>
+            <para>Исправлено некорректное состояние транзакции в снимке <application>walsender</application>.</para>
+          </listitem>
+        </itemizedlist>
+      </listitem>
+      <listitem>
+        <para>Для поддержки технологии <application>multimaster</application> в <application>pgpro_scheduler</application> добавлен первичный ключ в таблицы расписания.</para>
+      </listitem>
+    </itemizedlist>    
+  </sect2>
+  <sect2>
+    <title>Миграция на версию &productname; 9.6.4.1</title>
+
+    <para>Тем, кто хочет мигрировать данные из любой предыдущей основной версии, необходимо выполнить выгрузку/загрузку данных с помощью <xref linkend="app-pg-dumpall"/> или воспользоваться <xref linkend="pgupgrade"/>.</para>
+
+    <para>Если используется версия <productname>&productname;</productname> 9.6.3.2, требуется выполнить выгрузку/восстановление базы, ввиду изменения формата номера каталога для улучшения идентификации <productname>&productname;</productname>.</para>
+
+    <para>При миграции с <productname>PostgreSQL</productname>, <productname>Postgres Pro Standard</productname> или <productname>Postgres Pro Enterprise</productname> необходимо произвести выгрузку/восстановление базы.</para>
+
+    <para>Для обновления с предыдущих выпусков <productname>Postgres Pro Enterprise</productname>, <productname>Postgres Pro Standard</productname> и PostgreSQL 9.6.x требуется произвести некоторые изменения в каталоге.</para>
+    
+    <para>Если вы используете бинарные пакеты, и ваша база данных расположена в стандартном месте, эти обновления будут выполнены автоматически. Если вы разместили ваши базы данных в нестандартном месте, самостоятельно вызывая <literal>initdb</literal>, необходимо выполнить для этих баз скрипт <literal>pgpro_upgrade</literal>, включённый в данный дистрибутивный пакет.</para>
+
+    <para>Перед запуском скрипта следует остановить сервис <literal>postgres</literal>. Скрипт должен запускать пользователь-владелец файлов базы (обычно <literal>postgres</literal>), а переменная среды <envar>PGDATA</envar> должна указывать на каталог, где располагается база данных.</para>
+  </sect2>
+</sect1>
+<sect1 id="release-proee-9-6-3-2">
+  <title>&productname; 9.6.3.2</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2017-06-28</simpara>
+  </note>
+  <sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>Postgres Pro Enterprise</productname> <link linkend="release-proee-9-6-3-1">9.6.3.1</link>.</para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro Enterprise</productname> 9.6.3.1 входят:</para>
+    <itemizedlist>
+      <listitem>
+        <para>Реализация индексов RUM обновлена до версии 1.1 (см. <xref remap="4" linkend="rum"/>).</para>
+      </listitem>
+      <listitem>
+        <para>В реализации сжатой файловой системы (CFS) исправлен дефект, возникший при ошибочном слиянии; также внесён ряд других исправлений.</para>
+      </listitem>
+      <listitem>
+        <para>Улучшено расширение <application>multimaster</application>:</para>
+        <itemizedlist>
+          <listitem>
+            <para>Исправлены проблемы с репликацией и другие ошибки, возникавшие при выполнении <function>mtm.make_table_local</function>.</para>
+          </listitem>
+          <listitem>
+            <para>Добавлена переменная <varname>multimaster.major_node</varname>. Когда она равна <literal>true</literal>, узел кластера может продолжать работать даже при потере соединения с большинством узлов.</para>
+          </listitem>
+        </itemizedlist>
+      </listitem>
+      <listitem>
+        <para>Устранена проблема с запуском рабочего процесса <application>pgpro_scheduler</application> для выполнения запланированного задания, когда важные таблицы оказывались заблокированными.</para>
+      </listitem>
+      <listitem>
+        <para>Ликвидирована проблема с удалением функций на языках, которые не поддерживают метод <literal>validate</literal> (например, на <literal>PL/TCL</literal>).</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Миграция на версию &productname; 9.6.3.2</title>
+
+    <para>Тем, кто хочет мигрировать данные из любой предыдущей основной версии, необходимо выполнить выгрузку/загрузку данных с помощью <xref linkend="app-pg-dumpall"/> или воспользоваться <xref linkend="pgupgrade"/>.</para>
+
+    <para>При миграции с <productname>PostgreSQL</productname>, <productname>Postgres Pro Standard</productname> или <productname>Postgres Pro Enterprise</productname> необходимо произвести выгрузку/восстановление базы.</para>
+
+    <para>Для обновления с предыдущих выпусков <productname>Postgres Pro Enterprise</productname>, <productname>Postgres Pro Standard</productname> и PostgreSQL 9.6.x требуется произвести некоторые изменения в каталоге.</para>
+    
+    <para>Если вы используете бинарные пакеты, и ваша база данных расположена в стандартном месте, эти обновления будут выполнены автоматически. Если вы разместили ваши базы данных в нестандартном месте, самостоятельно вызывая <literal>initdb</literal>, необходимо выполнить для этих баз скрипт <literal>pgpro_upgrade</literal>, включённый в данный дистрибутивный пакет.</para>
+
+    <para>Перед запуском скрипта следует остановить сервис <literal>postgres</literal>. Скрипт должен запускать пользователь-владелец файлов базы (обычно <literal>postgres</literal>), а переменная среды <envar>PGDATA</envar> должна указывать на каталог, где располагается база данных.</para>
+  </sect2>
+</sect1>
+<sect1 id="release-proee-9-6-3-1">
+  <title>&productname; 9.6.3.1</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2017-05-25</simpara>
+  </note>
+  <sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>Postgres Pro Enterprise</productname> <link linkend="release-proee-9-6-2-1">9.6.2.1</link> и <productname>Postgres Pro Standard</productname> <link linkend="release-pro-9-6-3-1">9.6.3.1</link>.</para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro Enterprise</productname> 9.6.2.1 входят:</para>
+    <itemizedlist>
+      <listitem>
+        <para>Менеджер резервного копирования <link linkend="app-pgprobackup"><application>pg_probackup</application></link> обновлён до версии 1.1.11. В ней был изменён интерфейс командной строки.</para>
+      </listitem>
+      <listitem><para>Улучшено расширение <application>multimaster</application>: <itemizedlist>
+            <listitem>
+              <para>Добавлена поддержка точек сохранения.</para>
+            </listitem>
+            <listitem>
+              <para>Расширенная поддержка операторов <acronym>DDL</acronym>.</para>
+            </listitem>
+          </itemizedlist></para>
+          <para>(См. <xref remap="4" linkend="multimaster"/>.)</para>
+      </listitem>
+      <listitem><para>Реализована поддержка множества типов данных в индексах RUM, в частности: <literal>int</literal>, <literal>bigint</literal>, <literal>float</literal>, <literal>time</literal>, <literal>interval</literal>, <literal>bytea</literal>, <literal>text</literal> и т. п. Теперь вы можете сохранить в одном индексе тип <literal>tsvector</literal> вместе с другими типами.</para><para>(См. <xref remap="4" linkend="rum"/>.)</para>
+      </listitem>
+      <listitem><para>Улучшена поддержка автономных транзакций: <itemizedlist>
+            <listitem>
+              <para>Исправлена работа с идентификаторами мультитранзакций.</para>
+            </listitem>
+            <listitem>
+              <para>Ускорено выполнение автономных транзакций.</para>
+            </listitem>
+          </itemizedlist></para><para>(См. <xref remap="4" linkend="atx"/>.)</para>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Миграция на версию &productname; 9.6.3.1</title>
+
+    <para>Тем, кто хочет мигрировать данные из любой предыдущей основной версии, необходимо выполнить выгрузку/загрузку данных с помощью <xref linkend="app-pg-dumpall"/> или воспользоваться <xref linkend="pgupgrade"/>.</para>
+
+    <para>При миграции с <productname>PostgreSQL</productname>, <productname>Postgres Pro Standard</productname> или <productname>Postgres Pro Enterprise</productname> необходимо произвести выгрузку/восстановление базы.</para>
+
+    <para>Для обновления с предыдущих выпусков <productname>Postgres Pro Enterprise</productname>, <productname>Postgres Pro Standard</productname> и PostgreSQL 9.6.x требуется произвести некоторые изменения в каталоге.</para>
+    
+    <para>Если вы используете бинарные пакеты, и ваша база данных расположена в стандартном месте, эти обновления будут выполнены автоматически. Если вы разместили ваши базы данных в нестандартном месте, самостоятельно вызывая <literal>initdb</literal>, необходимо выполнить для этих баз скрипт <literal>pgpro_upgrade</literal>, включённый в данный дистрибутивный пакет.</para>
+
+    <para>Перед запуском скрипта следует остановить сервис <literal>postgres</literal>. Скрипт должен запускать пользователь-владелец файлов базы (обычно <literal>postgres</literal>), а переменная среды <envar>PGDATA</envar> должна указывать на каталог, где располагается база данных.</para>
+  </sect2>
+</sect1>
+<sect1 id="release-proee-9-6-2-1">
+  <title>&productname; 9.6.2.1</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2017-03-24</simpara>
+  </note>
+  <sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>Postgres Pro Enterprise</productname> <link linkend="release-proee-9-6-1-2">9.6.1.2</link> и <productname>Postgres Pro Standard</productname> <link linkend="release-pro-9-6-2-1">9.6.2.1</link>.</para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro Enterprise</productname> 9.6.1.2 входят:</para>
+    <itemizedlist>
+      <listitem><para>Добавлено расширение <application>multimaster</application>.</para><para>Это расширение позволяет вам организовывать кластеры без разделения ресурсов с несколькими ведущими узлами, производящими синхронную репликацию. Такие кластеры обеспечивают расширяемость <acronym>OLTP</acronym> для читающих транзакций, отказоустойчивость и автоматическое восстановление узлов, а также позволяет обновлять <productname>&productname;</productname> «на ходу». (См. <xref remap="4" linkend="multimaster"/>.)</para>
+      </listitem>
+      <listitem><para>Добавлен алгоритм смены серверов для подключений <application>libpq</application>.</para></listitem>
+      <listitem><para>Добавлено расширение <application>aqo</application> для адаптивной оптимизации запросов.</para><para>Собирая и обрабатывая статистику выполнения запросов, <application>aqo</application> улучшает оценку количества строк, что может привести к ускорению последующих запросов. (См. <xref remap="4" linkend="aqo"/>.)</para></listitem>
+      <listitem><para>Реализован декларативный синтаксис секционирования.</para><para>Расширение <application>pg_pathman</application> теперь позволяет осуществлять секционирование по диапазонам и по хешу в составе запроса <command>CREATE TABLE</command>. Также возможно управлять секциями в различных формах команды <command>ALTER TABLE</command>. (См. <xref remap="4" linkend="pg-pathman-using-declarative-syntax"/>.)</para>
+      </listitem>
+      <listitem><para>Добавлена служба мониторинга <application>mamonsu</application>, исполненная в виде агента <application>Zabbix</application>.</para>
+          <para>Используя <application>mamonsu</application>, вы можете отслеживать набор метрик операционной системы и <productname>PostgreSQL</productname>, а также визуализировать собранные показатели в наглядных графиках. При необходимости вы можете расширить <application>mamonsu</application>, добавив в него свои собственные модули. (См. <xref remap="4" linkend="mamonsu"/>.)</para>
+      </listitem>
+      <listitem><para>Добавлено расширение <application>pg_wait_sampling</application> для периодического сбора статистики по событиям ожидания.</para><para>Воспользовавшись этим расширением, вы сможете понять характер активности сервера, в том числе увидеть текущие события ожидания по всем обычным и фоновым рабочим процессам. (См. <xref remap="4" linkend="pg-wait-sampling"/>.)</para>
+      </listitem>
+      <listitem><para>В программе <application>pg_xlogdump</application> добавлена поддержка вывода времени.</para></listitem>
+      <listitem>
+        <para>В <application>pgpro_scheduler</application> добавлена поддержка одноразовых заданий.</para><para>Теперь вы можете назначать задания для немедленного или отложенного однократного выполнения одновременно с обычными планируемыми заданиями. (См. <xref remap="4" linkend="pgpro-scheduler"/>.)</para>
+      </listitem>
+      <listitem>
+        <para>Менеджер резервного копирования <link linkend="app-pgprobackup"><application>pg_probackup</application></link> обновлён до версии 1.1.0. В этой версии проведена чистка кода и улучшена переносимость.</para>
+      </listitem>
+      <listitem>
+        <para>Улучшена реализация сжатых табличных пространств:</para>
+        <itemizedlist>
+          <listitem>
+            <para>Добавлена функция <function>cfs_garbage_ratio</function>, возвращающая процент бесполезного объёма для данного отношения.</para></listitem>
+          <listitem><para>Повышена стабильность в случае аварийной перезагрузки сервера или уничтожения процессов сигналом <literal>SIGTERM</literal>.</para></listitem>
+        </itemizedlist>
+      </listitem>
+      <listitem>
+        <para>Исправления ошибок:</para>
+        <itemizedlist>
+          <listitem>
+            <para>Добавлено исправление оптимизации WAL при создании индексов.</para>
+          </listitem>
+          <listitem>
+            <para>Исправлены некорректные значения <literal>xmin</literal>, <literal>xmax</literal> в автономных транзакциях.</para>
+          </listitem>
+          <listitem>
+            <para>Исправлена работа функций <function>submit_job</function> и <function>set_job_attribute</function> расширения <application>pgpro_scheduler</application> в системах Microsoft Windows.</para>
+          </listitem>
+          <listitem>
+            <para>Устранена проблема, приводящая к разрушению данных в сжимаемых табличных пространствах.</para></listitem>
+        </itemizedlist>
+      </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Миграция на версию &productname; 9.6.2.1</title>
+
+    <para>Тем, кто хочет мигрировать данные из любой предыдущей основной версии, необходимо выполнить выгрузку/загрузку данных с помощью <xref linkend="app-pg-dumpall"/> или воспользоваться <xref linkend="pgupgrade"/>.</para>
+
+    <para>При миграции с <productname>PostgreSQL</productname> или <productname>Postgres Pro Standard</productname> необходимо произвести выгрузку/восстановление базы.</para>
+
+    <para>Для обновления с предыдущих выпусков <productname>Postgres Pro Standard</productname> или с PostgreSQL 9.6.x требуется произвести некоторые изменения в каталоге.</para>
+    
+    <para>Если вы используете бинарные пакеты, и ваша база данных расположена в стандартном месте, эти обновления будут выполнены автоматически. Если вы разместили ваши базы данных в нестандартном месте, самостоятельно вызывая <literal>initdb</literal>, необходимо выполнить для этих баз скрипт <literal>pgpro_upgrade</literal>, включённый в данный дистрибутивный пакет.</para>
+
+    <para>Перед запуском скрипта следует остановить сервис <literal>postgres</literal>. Скрипт должен запускать пользователь-владелец файлов базы (обычно <literal>postgres</literal>), а переменная среды <envar>PGDATA</envar> должна указывать на каталог, где располагается база данных.</para>
+  </sect2>
+</sect1>
+<sect1 id="release-proee-9-6-1-2">
+  <title>&productname; 9.6.1.2</title>
+  <note>
+    <title>Дата выпуска</title>
+    <simpara>2016-12-15</simpara>
+  </note>
+  <sect2>
+    <title>Обзор</title>
+    <para>Этот выпуск основан на <productname>Postgres Pro</productname> <link linkend="release-pro-9-6-1-2">9.6.1.2</link></para>
+    <para>В число ключевых усовершенствований по сравнению с <productname>Postgres Pro</productname> 9.6.1.2 входят:</para>
+    <itemizedlist>
+    <listitem>
+    <para>Добавлен алгоритм поиска k ближайших соседей (KNN) для SP-GiST и B-дерева (см. <xref remap="4" linkend="spgist"/>)</para>
+    </listitem>
+    <listitem>
+    <para>В качестве отдельного модуля добавлена реализация индексов RUM, основанная на GIN (см. <xref remap="4" linkend="rum"/>)</para>
+    </listitem>
+    <listitem>
+    <para>Уменьшен прирост WAL при операциях <command>CREATE INDEX</command> с индексами GiST, GIN, SP-GiST</para>
+    </listitem>
+    <listitem>
+    <para>Добавлен таймаут для простаивающих сеансов на стороне сервера (см. <xref remap="4" linkend="guc-idle-session-timeout"/>)</para>
+    </listitem>
+    <listitem>
+    <para>Добавлена поддержка алгоритма SHA-2 для шифрования паролей (см. <xref remap="4" linkend="auth-password"/>)</para>
+    </listitem>
+    <listitem>
+    <para>Добавлено сжатие на уровне страниц (CFS) (см. <xref remap="4" linkend="cfs"/>)</para>
+    </listitem>
+    <listitem>
+    <para>Добавлена поддержка автономных транзакций (см. <xref remap="4" linkend="atx"/>)</para>
+    </listitem>
+    <listitem>
+    <para>Добавлен новый дополнительный рабочий процесс для планирования задач по правилам (см. <xref remap="4" linkend="pgpro-scheduler"/>)</para>
+    </listitem>
+    <listitem>
+    <para>Добавлена поддержка перемещаемых таблиц (см. <xref remap="4" linkend="pgtransfer"/>)</para>
+    </listitem>
+    <listitem>
+    <para>Добавлено расширение <application>pg_hint_plan</application> (см. <xref remap="4" linkend="pg-hint-plan"/>)</para>
+    </listitem>
+    <listitem>
+    <para>Для идентификаторов транзакций на 64-битных платформах используется 64-битный тип данных</para>
+    </listitem>
+    <listitem>
+    <para>Отложенное размещение временных таблиц на диске</para>
+    </listitem>
+    <listitem>
+    <para>Согласованное чтение на ведомом сервере (ожидание применения WAL, см. <xref remap="4" linkend="sql-waitlsn"/>)</para>
+    </listitem>
+    <listitem>
+    <para>Добавлена утилита <application>pg_repack</application> (см. <xref remap="4" linkend="app-pgrepack"/>)</para>
+    </listitem>
+    </itemizedlist>
+  </sect2>
+  <sect2>
+    <title>Миграция на версию &productname; 9.6.1.2</title>
+
+    <para>Тем, кто хочет мигрировать данные из любой предыдущей основной версии, необходимо выполнить выгрузку/загрузку данных с помощью <xref linkend="app-pg-dumpall"/> или воспользоваться <xref linkend="pgupgrade"/>.</para>
+
+    <para>При миграции с <productname>PostgreSQL</productname> или <productname>Postgres Pro Standard</productname> необходимо произвести выгрузку/восстановление базы.</para>
+
+    <para>Для обновления с предыдущих выпусков <productname>Postgres Pro Standard</productname> или с <productname>PostgreSQL</productname> 9.6.x требуется произвести некоторые изменения в каталоге.</para>
+    
+    <para>Если вы используете бинарные пакеты, и ваша база данных расположена в стандартном месте, эти обновления будут выполнены автоматически. Если вы собираете <productname>Postgres Pro</productname> из исходных текстов или создаёте ваши базы данных в нестандартном месте, самостоятельно вызывая <literal>initdb</literal>, необходимо выполнить для этих баз скрипт <literal>pgpro_upgrade</literal>, включённый в данный дистрибутивный пакет.</para>
+
+    <para>Перед запуском скрипта следует остановить сервис postgres. Скрипт должен запускать пользователь-владелец файлов базы (обычно postgres). В момент запуска переменная среды PGDATA должна указывать на обновляемую базу.</para>
+  </sect2>
+</sect1>

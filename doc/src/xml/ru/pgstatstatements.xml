@@ -1,0 +1,338 @@
+<!-- doc/src/xml/pgstatstatements.xml -->
+
+<sect1 id="pgstatstatements" xreflabel="pg_stat_statements">
+ <title>pg_stat_statements</title>
+
+ <indexterm zone="pgstatstatements"><primary>pg_stat_statements</primary></indexterm>
+
+ <para>Модуль <filename>pg_stat_statements</filename> предоставляет возможность отслеживать статистику выполнения сервером всех операторов SQL.</para>
+
+ <para>Этот модуль нужно загружать, добавив <literal>pg_stat_statements</literal> в <xref linkend="guc-shared-preload-libraries"/> в файле <filename>postgresql.conf</filename>, так как ему требуется дополнительная разделяемая память. Это значит, что для загрузки или выгрузки модуля необходимо перезапустить сервер.</para>
+
+ <para>Когда модуль <filename>pg_stat_statements</filename> загружается, он отслеживает статистику по всем базам данных на сервере. Для получения и обработки этой статистики этот модуль предоставляет представление <structname>pg_stat_statements</structname> и вспомогательные функции <function>pg_stat_statements_reset</function> и <function>pg_stat_statements</function>. Эти объекты не доступны глобально, но их можно установить в определённой базе данных, выполнив команду <command>CREATE EXTENSION pg_stat_statements</command>.</para>
+
+ <sect2>
+  <title>Представление <structname>pg_stat_statements</structname></title>
+
+  <para>Статистика, собираемая модулем, выдаётся через представление с именем <structname>pg_stat_statements</structname>. Это представление содержит отдельные строки для каждой комбинации идентификатора базы данных, идентификатора пользователя и идентификатора запроса (но в количестве, не превышающем максимальное число различных операторов, которые может отслеживать модуль). Столбцы представления показаны в <xref remap="6" linkend="pgstatstatements-columns"/>.</para>
+
+  <table id="pgstatstatements-columns">
+   <title>Столбцы <structname>pg_stat_statements</structname></title>
+
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry>Имя</entry>
+      <entry>Тип</entry>
+      <entry>Ссылки</entry>
+      <entry>Описание</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><structfield>userid</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-authid"><structname>pg_authid</structname></link>.oid</literal></entry>
+      <entry>OID пользователя, выполнявшего оператор</entry>
+     </row>
+
+     <row>
+      <entry><structfield>dbid</structfield></entry>
+      <entry><type>oid</type></entry>
+      <entry><literal><link linkend="catalog-pg-database"><structname>pg_database</structname></link>.oid</literal></entry>
+      <entry>OID базы данных, в которой выполнялся оператор</entry>
+     </row>
+
+     <row>
+      <entry><structfield>queryid</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry/>
+      <entry>Внутренний хеш-код, вычисленный по дереву разбора оператора</entry>
+     </row>
+
+     <row>
+      <entry><structfield>query</structfield></entry>
+      <entry><type>text</type></entry>
+      <entry/>
+      <entry>Текст, представляющий оператор</entry>
+     </row>
+
+     <row>
+      <entry><structfield>calls</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry/>
+      <entry>Число выполнений</entry>
+     </row>
+
+     <row>
+      <entry><structfield>total_time</structfield></entry>
+      <entry><type>double precision</type></entry>
+      <entry/>
+      <entry>Общее время, потраченное на оператор, в миллисекундах</entry>
+     </row>
+
+     <row>
+      <entry><structfield>min_time</structfield></entry>
+      <entry><type>double precision</type></entry>
+      <entry/>
+      <entry>Минимальное время, потраченное на оператор, в миллисекундах</entry>
+     </row>
+
+     <row>
+      <entry><structfield>max_time</structfield></entry>
+      <entry><type>double precision</type></entry>
+      <entry/>
+      <entry>Максимальное время, потраченное на оператор, в миллисекундах</entry>
+     </row>
+
+     <row>
+      <entry><structfield>mean_time</structfield></entry>
+      <entry><type>double precision</type></entry>
+      <entry/>
+      <entry>Среднее время, потраченное на оператор, в миллисекундах</entry>
+     </row>
+
+     <row>
+      <entry><structfield>stddev_time</structfield></entry>
+      <entry><type>double precision</type></entry>
+      <entry/>
+      <entry>Стандартное отклонение во времени, потраченном на оператор, в миллисекундах</entry>
+     </row>
+
+     <row>
+      <entry><structfield>rows</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry/>
+      <entry>Общее число строк, полученных или затронутых оператором</entry>
+     </row>
+
+     <row>
+      <entry><structfield>shared_blks_hit</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry/>
+      <entry>Общее число попаданий в разделяемый кеш блоков для данного оператора</entry>
+     </row>
+
+     <row>
+      <entry><structfield>shared_blks_read</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry/>
+      <entry>Общее число чтений разделяемых блоков для данного оператора</entry>
+     </row>
+
+     <row>
+      <entry><structfield>shared_blks_dirtied</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry/>
+      <entry>Общее число разделяемых блоков, &laquo;загрязнённых&raquo; данным оператором</entry>
+     </row>
+
+     <row>
+      <entry><structfield>shared_blks_written</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry/>
+      <entry>Общее число разделяемых блоков, записанных данным оператором</entry>
+     </row>
+
+     <row>
+      <entry><structfield>local_blks_hit</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry/>
+      <entry>Общее число попаданий в локальный кеш блоков для данного оператора</entry>
+     </row>
+
+     <row>
+      <entry><structfield>local_blks_read</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry/>
+      <entry>Общее число чтений локальных блоков для данного оператора</entry>
+     </row>
+
+     <row>
+      <entry><structfield>local_blks_dirtied</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry/>
+      <entry>Общее число локальных блоков, &laquo;загрязнённых&raquo; данным оператором</entry>
+     </row>
+
+     <row>
+      <entry><structfield>local_blks_written</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry/>
+      <entry>Общее число локальных блоков, записанных данным оператором</entry>
+     </row>
+
+     <row>
+      <entry><structfield>temp_blks_read</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry/>
+      <entry>Общее число чтений временных блоков для данного оператора</entry>
+     </row>
+
+     <row>
+      <entry><structfield>temp_blks_written</structfield></entry>
+      <entry><type>bigint</type></entry>
+      <entry/>
+      <entry>Общее число записей временных блоков для данного оператора</entry>
+     </row>
+
+     <row>
+      <entry><structfield>blk_read_time</structfield></entry>
+      <entry><type>double precision</type></entry>
+      <entry/>
+      <entry>Общее время, потраченное оператором на чтение блоков, в миллисекундах (если включён <xref linkend="guc-track-io-timing"/>, или ноль в противном случае)</entry>
+     </row>
+
+     <row>
+      <entry><structfield>blk_write_time</structfield></entry>
+      <entry><type>double precision</type></entry>
+      <entry/>
+      <entry>Общее время, потраченное оператором на запись блоков, в миллисекундах (если включён <xref linkend="guc-track-io-timing"/>, или ноль в противном случае)</entry>
+     </row>
+
+    </tbody>
+   </tgroup>
+  </table>
+
+  <para>По соображениям безопасности обычные пользователи не видят текст SQL и <structfield>queryid</structfield> для запросов, выполненных другими пользователями. Однако они могут видеть статистику, если в их базу данных установлено представление.</para>
+
+  <para>Планируемые запросы (то есть, <command>SELECT</command>, <command>INSERT</command>, <command>UPDATE</command> и <command>DELETE</command>) объединяются в одну запись в <structname>pg_stat_statements</structname>, когда они имеют идентичные структуры запросов согласно внутреннему вычисленному хешу. Обычно два запроса будут считаться равными при таком сравнении, если они семантически равнозначны, не считая значений констант, фигурирующих в запросе. Однако служебные команды (то есть все другие команды) сравниваются строго по текстовым строкам запросов.</para>
+
+  <para>Когда значение константы игнорируется в целях сравнения запроса с другими запросами, эта константа заменяется в выводе <structname>pg_stat_statements</structname> знаком <literal>?</literal>. В остальном этот вывод содержит текст первого запроса, имеющего определённое значение хеша <structfield>queryid</structfield>, связанное с записью в <structname>pg_stat_statements</structname>.</para>
+
+  <para>В некоторых случаях запросы с визуально различными текстами могут быть объединены в одну запись <structname>pg_stat_statements</structname>. Обычно это происходит только для семантически равнозначных запросов, но есть небольшая вероятность, что из-за наложений хеша несвязанные запросы могут оказаться объединёнными в одной записи. (Однако это невозможно для запросов, принадлежащих разным пользователям баз данных.)</para>
+
+  <para>Так как значение хеша <structfield>queryid</structfield> вычисляется по представлениям запроса на стадии после разбора, возможна и обратная ситуация: запросы с одинаковым текстом могут оказаться в разных записях, если они получили различные представления по разным причинам, например, из-за изменения <varname>search_path</varname>.</para>
+
+  <para>Потребители статистики <structname>pg_stat_statements</structname> могут пожелать использовать в качестве более стабильного и надёжного идентификатора для каждой записи не текст запроса, а <structfield>queryid</structfield> (возможно, в сочетании с <structfield>dbid</structfield> и <structfield>userid</structfield>). Однако важно понимать, что стабильность значения хеша <structfield>queryid</structfield> гарантируется с ограничениями. Так как этот идентификатор получается из дерева запроса после анализа, его значение будет, помимо прочего, зависеть от внутренних идентификаторов объектов, фигурирующих в этом представлении. С этим связано несколько неинтуитивных следствий. Например, <filename>pg_stat_statements</filename> будет считать два одинаково выглядящих запроса разными, если они обращаются к таблице, которая была удалена, а затем воссоздана между этими запросами. Результат хеширования также чувствителен к различиям в машинной архитектуре и другим особенностям платформы. Более того, не стоит рассчитывать на то, что <structfield>queryid</structfield> будет оставаться неизменным при обновлении основных версий <productname>&productname;</productname>.</para>
+
+  <para>Как правило, значения <structfield>queryid</structfield> можно считать надёжными и сравнимыми, только с условием, что версия сервера и детали метаданных каталога неизменны. Следовательно, можно ожидать, что два сервера, участвующие в репликации на основе воспроизведения физического WAL, будут иметь одинаковые <structfield>queryid</structfield> для одного запроса. Однако схемы с логической репликацией не гарантируют сохранения идентичности реплик во всех имеющих значение деталях, так что <structfield>queryid</structfield> не будет полезным идентификатором для накопления показателей стоимости по набору логических реплик. В случае сомнений в том или ином подходе, рекомендуется непосредственно протестировать его.</para>
+
+  <para>Текст, представляющий запрос, сохраняется во внешнем файле не диске и не занимает разделяемую память. Поэтому даже очень объёмный текст запроса может быть сохранён успешно. Однако, если в файле накапливается много длинных текстов запросов, он может вырасти до неудобоваримого размера. В качестве решения этой проблемы, <filename>pg_stat_statements</filename> может решить стереть текст запросов, и в результате во всех существующих записях в представлении <structname>pg_stat_statements</structname> в поле <structfield>query</structfield> окажутся значения NULL, хотя статистика, связанная с каждым <structfield>queryid</structfield> будет сохранена. Если это происходит и мешает анализу, возможно, стоит уменьшить <varname>pg_stat_statements.max</varname> для предотвращения таких ситуаций.</para>
+ </sect2>
+
+ <sect2>
+  <title>Функции</title>
+
+  <variablelist>
+   <varlistentry>
+    <term>
+     <function>pg_stat_statements_reset() returns void</function>
+     <indexterm><primary>pg_stat_statements_reset</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para>Функция <function>pg_stat_statements_reset</function> очищает всю статистику, собранную к этому времени модулем <filename>pg_stat_statements</filename>. По умолчанию эту функцию могут выполнять только суперпользователи.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>pg_stat_statements(showtext boolean) returns setof record</function>
+     <indexterm><primary>pg_stat_statements</primary> <secondary>функция</secondary></indexterm>
+    </term>
+
+    <listitem>
+     <para>Представление <structname>pg_stat_statements</structname> реализовано на базе функции, которая тоже называется <function>pg_stat_statements</function>. Клиенты могут вызывать функцию <function>pg_stat_statements</function> непосредственно, и могут указать <literal>showtext := false</literal> и получить результат без текста запроса (то есть, выходной аргумент (<literal>OUT</literal>), соответствующий столбцу представления <structfield>query</structfield>, будет содержать NULL). Эта возможность предназначена для поддержки внешних инструментов, для которых желательно избежать издержек, связанных с получением текстов запросов неопределённой длины. Такие инструменты могут кешировать текст первого запроса, который они получат самостоятельно, как это и делает <filename>pg_stat_statements</filename>, а затем запрашивать тексты запросов только при необходимости. Так как сервер сохраняет тексты запросов в файле, этот подход сокращает объём физического ввода/вывода, порождаемого при постоянном обращении к данным <structname>pg_stat_statements</structname>.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </sect2>
+
+ <sect2>
+  <title>Параметры конфигурации</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><varname>pg_stat_statements.max</varname> (<type>integer</type>)</term>
+
+    <listitem>
+     <para>Параметр <varname>pg_stat_statements.max</varname> задаёт максимальное число операторов, отслеживаемых модулем (то есть, максимальное число строк в представлении <structname>pg_stat_statements</structname>). Когда на обработку поступает больше, чем заданное число различных операторов, информация о редко выполняемых операторах отбрасывается. Значение по умолчанию — 5000. Этот параметр можно задать только при запуске сервера.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><varname>pg_stat_statements.track</varname> (<type>enum</type>)</term>
+
+    <listitem>
+     <para>Параметр <varname>pg_stat_statements.track</varname> определяет, какие операторы будут отслеживаться модулем. Со значением <literal>top</literal> отслеживаются операторы верхнего уровня (те, что непосредственно выполняются клиентами), со значением <literal>all</literal> также отслеживаются вложенные операторы (например, операторы, вызываемые внутри функций), а значение <literal>none</literal> полностью отключает сбор статистики по операторам. Значение по умолчанию — <literal>top</literal>. Изменять этот параметр могут только суперпользователи.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><varname>pg_stat_statements.track_utility</varname> (<type>boolean</type>)</term>
+
+    <listitem>
+     <para>Параметр <varname>pg_stat_statements.track_utility</varname> определяет, будет ли этот модуль отслеживать служебные команды. Служебными командами считаются команды, отличные от <command>SELECT</command>, <command>INSERT</command>, <command>UPDATE</command> и <command>DELETE</command>. Значение по умолчанию — <literal>on</literal> (вкл.). Изменить этот параметр могут только суперпользователи.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><varname>pg_stat_statements.save</varname> (<type>boolean</type>)</term>
+
+    <listitem>
+     <para>Параметр <varname>pg_stat_statements.save</varname> определяет, должна ли статистика операторов сохраняться после перезагрузки сервера. Если он отключён (имеет значение <literal>off</literal>), статистика не сохраняется при остановке сервера и не перезагружается при запуске. Значение по умолчанию — <literal>on</literal> (вкл.). Этот параметр можно задать только в <filename>postgresql.conf</filename> или в командной строке сервера.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Этому модулю требуется дополнительная разделяемая память в объёме, пропорциональном <varname>pg_stat_statements.max</varname>. Заметьте, что эта память будет занята при загрузке модуля, даже если <varname>pg_stat_statements.track</varname> имеет значение <literal>none</literal>.</para>
+
+  <para>Эти параметры должны задаваться в <filename>postgresql.conf</filename>. Обычное использование выглядит так: <programlisting># postgresql.conf
+shared_preload_libraries = 'pg_stat_statements'
+
+pg_stat_statements.max = 10000
+pg_stat_statements.track = all</programlisting></para>
+ </sect2>
+
+ <sect2>
+  <title>Пример вывода</title>
+
+<screen>bench=# SELECT pg_stat_statements_reset();
+
+$ pgbench -i bench
+$ pgbench -c10 -t300 bench
+
+bench=# \x
+bench=# SELECT query, calls, total_time, rows, 100.0 * shared_blks_hit /
+               nullif(shared_blks_hit + shared_blks_read, 0) AS hit_percent
+          FROM pg_stat_statements ORDER BY total_time DESC LIMIT 5;
+-[ RECORD 1 ]---------------------------------------------------------------------
+query       | UPDATE pgbench_branches SET bbalance = bbalance + ? WHERE bid = ?;
+calls       | 3000
+total_time  | 9609.00100000002
+rows        | 2836
+hit_percent | 99.9778970000200936
+-[ RECORD 2 ]---------------------------------------------------------------------
+query       | UPDATE pgbench_tellers SET tbalance = tbalance + ? WHERE tid = ?;
+calls       | 3000
+total_time  | 8015.156
+rows        | 2990
+hit_percent | 99.9731126579631345
+-[ RECORD 3 ]---------------------------------------------------------------------
+query       | copy pgbench_accounts from stdin
+calls       | 1
+total_time  | 310.624
+rows        | 100000
+hit_percent | 0.30395136778115501520
+-[ RECORD 4 ]---------------------------------------------------------------------
+query       | UPDATE pgbench_accounts SET abalance = abalance + ? WHERE aid = ?;
+calls       | 3000
+total_time  | 271.741999999997
+rows        | 3000
+hit_percent | 93.7968855088209426
+-[ RECORD 5 ]---------------------------------------------------------------------
+query       | alter table pgbench_accounts add primary key (aid)
+calls       | 1
+total_time  | 81.42
+rows        | 0
+hit_percent | 34.4947735191637631</screen>
+ </sect2>
+
+ <sect2>
+  <title>Авторы</title>
+
+  <para>Такахиро Итагаки <email>itagaki.takahiro@oss.ntt.co.jp</email>. Нормализацию запросов добавил Питер Геохеган <email>peter@2ndquadrant.com</email>.</para>
+ </sect2>
+
+</sect1>

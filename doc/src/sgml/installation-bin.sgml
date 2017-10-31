@@ -230,7 +230,7 @@ service postgrespro-&majorversion; initdb
           <para>
             On systemd-based systems, such as Red Hat Enterprise Linux 7
             or CentOS 7, run the helper script
-            <filename>/usr/pgpro-&majorversion;/bin/pg-setup</filename>.
+            <filename>/usr/pgproee-&majorversion;/bin/pg-setup</filename>.
           </para>
         </listitem>
       </itemizedlist>

@@ -1,0 +1,219 @@
+<!-- doc/src/xml/ref/pg_config-ref.xml -->
+
+<refentry id="app-pgconfig">
+ <indexterm zone="app-pgconfig"><primary>pg_config</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>pg_config</refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_config</refname>
+  <refpurpose>вывести информацию об установленной версии <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_config</command>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+  <para>Утилита <application>pg_config</application> выводит параметры конфигурации текущей установленной версии <productname>&productname;</productname>. Это помогает, например, найти заголовочные файлы и библиотеки, требующиеся программным средствам, которые хотят взаимодействовать с <productname>&productname;</productname>.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <para>При использовании <application>pg_config</application> можно передать следующие параметры: <variablelist>
+    <varlistentry>
+     <term><option>--bindir</option></term>
+     <listitem>
+      <para>Вывести расположение исполняемых файлов. Можно использовать, например, для поиска утилиты <command>psql</command>. Обычно там же находится и сама утилита <filename>pg_config</filename>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--docdir</option></term>
+     <listitem>
+      <para>Вывести расположение файлов документации.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--htmldir</option></term>
+     <listitem>
+      <para>Вывести расположение файлов документации в формате HTML.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--includedir</option></term>
+     <listitem>
+      <para>Вывести расположение заголовочных C-файлов клиентских интерфейсов.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--pkgincludedir</option></term>
+     <listitem>
+      <para>Вывести расположение других заголовочных C-файлов.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--includedir-server</option></term>
+     <listitem>
+      <para>Вывести расположение заголовочных C-файлов для программирования серверной части.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--libdir</option></term>
+     <listitem>
+      <para>Вывести расположение библиотек объектного кода.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--pkglibdir</option></term>
+     <listitem>
+      <para>Вывести расположение динамически подгружаемых модулей, либо путь, где сервер должен их искать. По этому пути также могут размещаться и другие архитектурно-зависимые файлы.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--localedir</option></term>
+     <listitem>
+      <para>Вывести расположение файлов поддержки локалей. Если поддержка локалей не была сконфигурирована на этапе сборки <productname>&productname;</productname>, будет выведена пустая строка.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--mandir</option></term>
+     <listitem>
+      <para>Вывести расположение страниц руководства man.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--sharedir</option></term>
+     <listitem>
+      <para>Вывести расположение архитектурно-независимых вспомогательных файлов.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--sysconfdir</option></term>
+     <listitem>
+      <para>Вывести расположение системных конфигурационных файлов.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--pgxs</option></term>
+     <listitem>
+      <para>Вывести расположение файлов сборки расширений.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--configure</option></term>
+     <listitem>
+      <para>Вывести список параметров <filename>configure</filename>, использованных при сборке <productname>&productname;</productname>. Это может пригодиться, чтобы при последующей сборке сделать идентичную конфигурацию. Или для того, чтобы найти с какими параметрами был собран используемый бинарный пакет. (Стоит отметить, что бинарные пакеты нередко содержат патчи, специфичные для дистрибутивов.) См. примеры ниже.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--cc</option></term>
+     <listitem>
+      <para>Вывести использованное при сборке <productname>&productname;</productname> значение переменной <varname>CC</varname>. Оно отражает, какой C-компилятор применялся.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--cppflags</option></term>
+     <listitem>
+      <para>Вывести использованное при сборке <productname>&productname;</productname> значение переменной <varname>CPPFLAGS</varname>. Оно отражает флаги C-компилятора, применённые для препроцессора. Обычно это флаги <literal>-I</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--cflags</option></term>
+     <listitem>
+      <para>Вывести использованное при сборке <productname>&productname;</productname> значение переменной <varname>CFLAGS</varname>. Оно отражает флаги C-компилятора, применённые при сборке.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--cflags_sl</option></term>
+     <listitem>
+      <para>Вывести использованное при сборке <productname>&productname;</productname> значение переменной <varname>CFLAGS_SL</varname>. Оно отражает дополнительные флаги C-компилятора для сборки разделяемых библиотек.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--ldflags</option></term>
+     <listitem>
+      <para>Вывести использованное при сборке <productname>&productname;</productname> значение переменной <varname>LDFLAGS</varname>. Оно отражает флаги компоновщика.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--ldflags_ex</option></term>
+     <listitem>
+      <para>Вывести использованное при сборке <productname>&productname;</productname> значение переменной <varname>LDFLAGS_EX</varname>. Оно отражает флаги компоновщика, использованные при сборке лишь исполняемых файлов.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--ldflags_sl</option></term>
+     <listitem>
+      <para>Вывести использованное при сборке <productname>&productname;</productname> значение переменной <varname>LDFLAGS_SL</varname>. Оно отражает флаги компоновщика, использованные при сборке лишь разделяемых библиотек.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--libs</option></term>
+     <listitem>
+      <para>Вывести использованное при сборке <productname>&productname;</productname> значение переменной <varname>LIBS</varname>. Обычно оно отражает флаги подключения внешних библиотек к <productname>&productname;</productname>, переданные с ключом <literal>-l</literal>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>--version</option></term>
+     <listitem>
+      <para>Вывести версию <productname>&productname;</productname>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-?</option></term>
+     <term><option>--help</option></term>
+      <listitem>
+       <para>Вывести справку по команде <application>pg_config</application>.</para>
+      </listitem>
+     </varlistentry>
+   </variablelist> Если одновременно передано несколько параметров, то выводимая информация будет следовать согласно их порядку. Если параметры не переданы, то будет выведена вся информация с подписями, к чему она относится.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Параметры <option>--docdir</option>, <option>--pkgincludedir</option>, <option>--localedir</option>, <option>--mandir</option>, <option>--sharedir</option>, <option>--sysconfdir</option>, <option>--cc</option>, <option>--cppflags</option>, <option>--cflags</option>, <option>--cflags_sl</option>, <option>--ldflags</option>, <option>--ldflags_sl</option> и <option>--libs</option> доступны, начиная с версии <productname>PostgreSQL</productname> 8.1. Параметр <option>--htmldir</option> добавлен в <productname>PostgreSQL</productname> 8.4. Параметр <option>--ldflags_ex</option> добавлен в <productname>PostgreSQL</productname> 9.0.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Пример</title>
+
+  <para>Чтобы воспроизвести конфигурацию сборки текущей инсталляции &productname;, можно выполнить команду: <programlisting>eval ./configure `pg_config --configure`</programlisting> Вывод <literal>pg_config --configure</literal> содержит символы экранирования, поэтому значения аргументов, содержащие пробелы, представлены корректно. Таким образом, для получения корректного результата необходимо применить <literal>eval</literal>.</para>
+ </refsect1>
+
+</refentry>

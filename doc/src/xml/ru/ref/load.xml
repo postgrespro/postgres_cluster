@@ -1,0 +1,49 @@
+<!--
+doc/src/xml/ref/load.xml
+-->
+
+<refentry id="sql-load">
+ <indexterm zone="sql-load"><primary>LOAD</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>LOAD</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>LOAD</refname>
+  <refpurpose>загрузить файл разделяемой библиотеки</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>LOAD '<replaceable class="parameter">имя_файла</replaceable>'</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="sql-load-description">
+  <title>Описание</title>
+
+  <para>Эта команда загружает файл разделяемой библиотеки в адресное пространство сервера <productname>&productname;</productname>. Если указанный файл был загружен ранее, эта команда не делает ничего. Файлы библиотек, содержащие функции на C, загружаются автоматически при первом вызове любой из этих функций. Поэтому явно выполнять <command>LOAD</command> обычно требуется только для загрузки библиотек, которые изменяют поведение сервера, внедряя свои обработчики, а не предоставляют некоторый набор функций.</para>
+
+  <para>Имя файла указывается так же, как и имя разделяемой библиотеки в <xref linkend="sql-createfunction"/>; в частности, можно полагаться на путь поиска и автоматическое добавление расширения, принятого в системе для файлов разделяемых библиотек. Дополнительную информацию по этой теме можно найти в <xref remap="6" linkend="xfunc-c"/>.</para>
+
+  <indexterm><primary><filename>$libdir/plugins</filename></primary></indexterm>
+
+  <para>Обычные пользователи (не суперпользователи) могут использовать <command>LOAD</command> только для загрузки файлов библиотек, расположенных в <filename>$libdir/plugins/</filename> &mdash; заданное <replaceable class="parameter">имя_файла</replaceable> должно начинаться именно с этой строки. (Ответственность за то, чтобы в этом каталоге находились только <quote>безопасные</quote> библиотеки, лежит на администраторе баз данных.)</para>
+ </refsect1>
+
+ <refsect1 id="sql-load-compat">
+  <title>Совместимость</title>
+
+  <para><command>LOAD</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>См. также</title>
+
+  <para>
+   <xref linkend="sql-createfunction"/>
+  </para>
+ </refsect1>
+</refentry>

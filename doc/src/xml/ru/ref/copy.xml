@@ -1,0 +1,489 @@
+<!--
+doc/src/xml/ref/copy.xml
+&productname; documentation
+-->
+
+
+<refentry id="sql-copy">
+ <indexterm zone="sql-copy"><primary>COPY</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>COPY</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>COPY</refname>
+  <refpurpose>копировать данные между файлом и таблицей</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>COPY <replaceable class="parameter">имя_таблицы</replaceable> [ ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] ) ]
+    FROM { '<replaceable class="parameter">имя_файла</replaceable>' | PROGRAM '<replaceable class="parameter">команда</replaceable>' | STDIN }
+    [ [ WITH ] ( <replaceable class="parameter">параметр</replaceable> [, ...] ) ]
+
+COPY { <replaceable class="parameter">имя_таблицы</replaceable> [ ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] ) ] | ( <replaceable class="parameter">запрос</replaceable> ) }
+    TO { '<replaceable class="parameter">имя_файла</replaceable>' | PROGRAM '<replaceable class="parameter">команда</replaceable>' | STDOUT }
+    [ [ WITH ] ( <replaceable class="parameter">параметр</replaceable> [, ...] ) ]
+
+<phrase>Здесь допускается <replaceable class="parameter">параметр</replaceable>:</phrase>
+
+    FORMAT <replaceable class="parameter">имя_формата</replaceable>
+    OIDS [ <replaceable class="parameter">boolean</replaceable> ]
+    FREEZE [ <replaceable class="parameter">boolean</replaceable> ]
+    DELIMITER '<replaceable class="parameter">символ_разделитель</replaceable>'
+    NULL '<replaceable class="parameter">маркер_NULL</replaceable>'
+    HEADER [ <replaceable class="parameter">boolean</replaceable> ]
+    QUOTE '<replaceable class="parameter">символ_кавычек</replaceable>'
+    ESCAPE '<replaceable class="parameter">символ_экранирования</replaceable>'
+    FORCE_QUOTE { ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] ) | * }
+    FORCE_NOT_NULL ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] )
+    FORCE_NULL ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] )
+    ENCODING '<replaceable class="parameter">имя_кодировки</replaceable>'</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>COPY</command> перемещает данные между таблицами <productname>&productname;</productname> и обычными файлами в файловой системе. <command>COPY TO</command> копирует содержимое таблицы <emphasis>в</emphasis> файл, а <command>COPY FROM</command> — <emphasis>из</emphasis> файла в таблицу (добавляет данные к тем, что уже содержались в таблице). <command>COPY TO</command> может также скопировать результаты запроса <command>SELECT</command>.</para>
+
+  <para>Если указывается список столбцов, <command>COPY</command> скопирует только данные указанных столбцов. Если в таблице есть столбцы, отсутствующие в этом списке, <command>COPY FROM</command> заполнит эти столбцы значениями по умолчанию.</para>
+
+  <para><command>COPY</command> с именем файла указывает серверу <productname>&productname;</productname> читать или записывать непосредственно этот файл. Заданный файл должен быть доступен пользователю <productname>&productname;</productname> (тому пользователю, от имени которого работает сервер), и путь к файлу должен задаваться с точки зрения сервера. Когда указывается параметр <literal>PROGRAM</literal>, сервер выполняет заданную команду и читает данные из стандартного вывода программы, либо записывает их в стандартный ввод. Команда должна определяться с точки зрения сервера и быть доступной для исполнения пользователю <productname>&productname;</productname>. Когда указывается <literal>STDIN</literal> или <literal>STDOUT</literal>, данные передаются через соединение клиента с сервером.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующей таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_столбца</replaceable></term>
+     <listitem>
+     <para>Необязательный список столбцов, данные которых будут копироваться. Если этот список отсутствует, копируются все столбцы таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">запрос</replaceable></term>
+    <listitem>
+     <para>Команда <xref linkend="sql-select"/>, <xref linkend="sql-values"/>, <xref linkend="sql-insert"/>, <xref linkend="sql-update"/> или <xref linkend="sql-delete"/>, результаты которой будут скопированы. Заметьте, что запрос должен заключаться в скобки.</para>
+     <para>Для запросов <command>INSERT</command>, <command>UPDATE</command> и <command>DELETE</command> должно задаваться предложение RETURNING и в целевом отношении не должно быть условного правила, правила <literal>ALSO</literal> или правила <literal>INSTEAD</literal>, разворачивающегося в несколько операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_файла</replaceable></term>
+    <listitem>
+     <para>Путь входного или выходного файла. Путь входного файла может быть абсолютным или относительным, но путь выходного должен быть только абсолютным. Пользователям Windows следует использовать формат <literal>E''</literal> и продублировать каждую обратную черту в пути файла.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>PROGRAM</literal></term>
+    <listitem>
+     <para>Выполняемая команда. <command>COPY FROM</command> читает стандартный вывод команды, а <command>COPY TO</command> записывает в её стандартный ввод.</para>
+     <para>Заметьте, что команда запускается через командную оболочку, так что если требуется передать этой команде какие-либо аргументы, поступающие из недоверенного источника, необходимо аккуратно избавиться от всех спецсимволов, имеющих особое значение в оболочке, либо экранировать их. По соображениям безопасности лучше ограничиться фиксированной строкой команды или как минимум не позволять пользователям вводить в неё произвольное содержимое.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>STDIN</literal></term>
+    <listitem>
+     <para>Указывает, что данные будут поступать из клиентского приложения.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>STDOUT</literal></term>
+    <listitem>
+     <para>Указывает, что данные будут выдаваться клиентскому приложению.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">boolean</replaceable></term>
+    <listitem>
+     <para>Включает или отключает заданный параметр. Для включения параметра можно написать <literal>TRUE</literal>, <literal>ON</literal> или <literal>1</literal>, а для отключения — <literal>FALSE</literal>, <literal>OFF</literal> или <literal>0</literal>. Значение <replaceable class="parameter">boolean</replaceable> можно опустить, в этом случае подразумевается <literal>TRUE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>FORMAT</literal></term>
+    <listitem>
+     <para>Выбирает формат чтения или записи данных: <literal>text</literal> (текстовый), <literal>csv</literal> (значения, разделённые запятыми, Comma Separated Values) или <literal>binary</literal> (двоичный). По умолчанию выбирается формат <literal>text</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>OIDS</literal></term>
+    <listitem>
+     <para>Копирует OID каждой строки. (Если присутствует указание <literal>OIDS</literal>, но таблица не содержит столбец oid, либо копируется <replaceable class="parameter">запрос</replaceable>, возникнет ошибка.)</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>FREEZE</literal></term>
+    <listitem>
+     <para>Запросы копируют данные с уже замороженными строками, как после выполнения команды <command>VACUUM FREEZE</command>. Это позволяет увеличить производительность при начальном добавлении данных. Строки будут замораживаться, только если загружаемая таблица была создана или опустошена в текущей подтранзакции, с ней не связаны открытые курсоры и в данной транзакции нет других снимков.</para>
+     <para>Заметьте, что все другие сеансы будут немедленно видеть данные, как только они будут успешно загружены. Это нарушает принятые правила видимости MVCC, так что пользователи, включающие этот режим, должны понимать, какие проблемы это может вызвать.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DELIMITER</literal></term>
+    <listitem>
+     <para>Задаёт символ, разделяющий столбцы в строках файла. По умолчанию это символ табуляции в текстовом формате и запятая в формате <literal>CSV</literal>. Задаваемый символ должен быть однобайтовым. Для формата <literal>binary</literal> этот параметр не допускается.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>NULL</literal></term>
+    <listitem>
+     <para>Определяет строку, задающую значение NULL. По умолчанию в текстовом формате это <literal>\N</literal> (обратная косая черта и N), а в формате <literal>CSV</literal> — пустая строка без кавычек. Пустую строку можно использовать и в текстовом формате, если не требуется различать пустые строки и NULL. Для формата <literal>binary</literal> этот параметр не допускается.</para>
+
+     <note>
+      <para>При выполнении <command>COPY FROM</command> любые значения, совпадающие с этой строкой, сохраняются как значение NULL, так что при переносе данных важно убедиться в том, что это та же строка, что применялась в <command>COPY TO</command>.</para>
+     </note>
+
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>HEADER</literal></term>
+    <listitem>
+     <para>Указывает, что файл содержит строку заголовка с именами столбцов. При выводе первая строка файла будет содержать имена столбцов таблицы, а при вводе первая строка просто игнорируется. Этот параметр допускается только для формата <literal>CSV</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>QUOTE</literal></term>
+    <listitem>
+     <para>Указывает символ кавычек, используемый для заключения данных в кавычки. По умолчанию это символ двойных кавычек. Задаваемый символ должен быть однобайтовым. Этот параметр поддерживается только для формата <literal>CSV</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ESCAPE</literal></term>
+    <listitem>
+     <para>Задаёт символ, который будет выводиться перед символом данных, совпавшим со значением <literal>QUOTE</literal>. По умолчанию это тот же символ, что и <literal>QUOTE</literal> (то есть, при появлении в данных кавычек, они дублируются). Задаваемый символ должен быть однобайтовым. Этот параметр допускается только для режима <literal>CSV</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>FORCE_QUOTE</literal></term>
+    <listitem>
+     <para>Принудительно заключает в кавычки все значения не <literal>NULL</literal> в указанных столбцах. Выводимое значение <literal>NULL</literal> никогда не заключается в кавычки. Если указано <literal>*</literal>, в кавычки будут заключаться значения не <literal>NULL</literal> во всех столбцах. Этот параметр принимает только команда <command>COPY TO</command> и только для формата <literal>CSV</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>FORCE_NOT_NULL</literal></term>
+    <listitem>
+     <para>Не сопоставлять значения в указанных столбцах с маркером NULL. По умолчанию, когда маркер пуст, это означает, что пустые значения будут считаны как строки нулевой длины, а не NULL, даже когда они не заключены в кавычки. Этот параметр допускается только в команде <command>COPY FROM</command> и только для формата <literal>CSV</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>FORCE_NULL</literal></term>
+    <listitem>
+     <para>Сопоставлять значения в указанных столбцах с маркером NULL, даже если они заключены в кавычки, и в случае совпадения устанавливать значение <literal>NULL</literal>. По умолчанию, когда этот маркер пуст, пустая строка в кавычках будет преобразовываться в NULL. Этот параметр допускается только в команде <command>COPY FROM</command> и только для формата <literal>CSV</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>ENCODING</literal></term>
+    <listitem>
+     <para>Указывает, что файл имеет кодировку <replaceable class="parameter">имя_кодировки</replaceable>. Если этот параметр опущен, выбирается текущая кодировка клиента. Подробнее об этом говорится ниже, в примечаниях.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Выводимая информация</title>
+
+  <para>В случае успешного завершения, <command>COPY</command> возвращает метку команды в виде <screen>
+COPY <replaceable class="parameter">число</replaceable>
+</screen> Здесь <replaceable class="parameter">число</replaceable> — количество скопированных записей.</para>
+
+  <note>
+   <para><application>psql</application> выводит эту метку, только если выполнялась не команда <literal>COPY ... TO STDOUT</literal> или её аналог в <application>psql</application>, метакоманда <literal>\copy ... to stdout</literal>. Это сделано для того, чтобы метка команды не смешалась с данными, выведенными перед ней.</para>
+  </note>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para><command>COPY</command> может использоваться только с обычными таблицами, но не с представлениями. Однако, при необходимости можно скопировать представление так: <literal>COPY (SELECT * FROM <replaceable class="parameter">имя_представления</replaceable>) TO ...</literal>.</para>
+
+   <para><command>COPY</command> обрабатывает только явно заданную таблицу, дочерние таблицы при копировании данных не затрагиваются. Поэтому, например <literal>COPY <replaceable class="parameter">таблица</replaceable> TO</literal> выводит те же данные, что и запрос <literal>SELECT * FROM ONLY <replaceable class="parameter">table</replaceable></literal>. Для выгрузки всех данных в иерархии наследования можно применить <literal>COPY (SELECT * FROM <replaceable class="parameter">table</replaceable>) TO ...</literal>.</para>
+
+   <para>В таблице, данные которой читает команда <command>COPY TO</command>, требуется иметь право на выборку данных, а в таблице, куда вставляет значения <command>COPY FROM</command>, требуется право на добавление. При этом, если в команде перечисляются избранные столбцы, достаточно иметь права только для них.</para>
+
+   <para>Если для таблицы включена защита на уровне строк, соответствующие политики <command>SELECT</command> будут применяться и к операторам <literal>COPY <replaceable class="parameter">таблица</replaceable> TO</literal>. Операторы <command>COPY FROM</command> для таблиц с защитой строк в настоящее время не поддерживаются. Вместо них следует использовать равнозначные операторы <command>INSERT</command>.</para>
+
+   <para>Файлы, указанные в команде <command>COPY</command>, читаются или записываются непосредственно сервером, не клиентским приложением. Поэтому они должны располагаться на сервере или быть доступными серверу, а не клиенту. Они должны быть доступны на чтение или запись пользователю <productname>&productname;</productname> (пользователю, от имени которого работает сервер), не клиенту. Аналогично, команда, указанная параметром <literal>PROGRAM</literal>, выполняется непосредственно сервером, а не клиентским приложением, и должна быть доступна на выполнение пользователю <productname>&productname;</productname>. Выполнять команду <command>COPY</command> с файлом (или командой) разрешено только суперпользователям базы данных, так как она позволяет прочитать и записать любой файл, к которому имеет доступ сервер.</para>
+
+   <para>Не путайте команду <command>COPY</command> с реализованной в <application>psql</application> метакомандой <command><link linkend="app-psql-meta-commands-copy">\copy</link></command>. Метакоманда <command>\copy</command> вызывает <command>COPY FROM STDIN</command> или <command>COPY TO STDOUT</command>, а затем работает с данными в файле, доступном клиенту <application>psql</application>. Таким образом, когда применяется команда <command>\copy</command>, доступность файла и права доступа зависят от клиента, а не от сервера.</para>
+
+   <para>Путь файла, указываемый в <command>COPY</command>, рекомендуется всегда задавать как абсолютный, а не относительный. Это обязательное условие для команды <command>COPY TO</command>, но <command>COPY FROM</command> позволяет прочитать файл, заданный и относительным путём. Такой путь будет интерпретироваться относительно рабочего каталога серверного процесса (обычно это каталог данных кластера), а не рабочего каталога клиента.</para>
+
+   <para>Выполнение команды в <literal>PROGRAM</literal> может быть ограничено и другими работающими в ОС механизмами контроля доступа, например SELinux.</para>
+
+   <para><command>COPY FROM</command> вызывает все триггеры и обрабатывает все ограничения-проверки в целевой таблице. Однако правила при загрузке данных не вызываются.</para>
+
+   <para>При вводе и выводе данных <command>COPY</command> учитывается <varname>DateStyle</varname>. Для обеспечения переносимости на другие инсталляции <productname>&productname;</productname>, в которых могут использоваться нестандартные значения <varname>DateStyle</varname>, значение <varname>DateStyle</varname> следует установить равным <literal>ISO</literal> до вызова <command>COPY TO</command>. Также рекомендуется не выгружать данные с <varname>IntervalStyle</varname> равным <literal>sql_standard</literal>, так как сервер с другим значением <varname>IntervalStyle</varname> может неправильно воспринимать отрицательные интервалы в таких данных.</para>
+
+   <para>Входные данные интерпретируются согласно кодировке, заданной параметром <literal>ENCODING</literal>, или текущей кодировке клиента, а выходные кодируются в кодировке <literal>ENCODING</literal> или текущей кодировке клиента, даже если данные не проходят через клиента, а считываются или записываются в файл непосредственно сервером.</para>
+
+   <para><command>COPY</command> прекращает операцию при первой ошибке. Это не должно приводить к проблемам в случае с <command>COPY TO</command>, но после <command>COPY FROM</command> в целевой таблице остаются ранее полученные строки. Эти строки не будут видимыми и доступными, но будут занимать место на диске. Если сбой происходит при копировании большого объёма данных, это может приводить к значительным потерям дискового пространства. При желании вернуть потерянный объём, это можно сделать с помощью команды <command>VACUUM</command>.</para>
+
+   <para><literal>FORCE_NULL</literal> и <literal>FORCE_NOT_NULL</literal> можно применить одновременно к одному столбцу. В результате NULL-значения в кавычках будут преобразованы в NULL, а NULL-значения без кавычек — в пустые строки.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Форматы файлов</title>
+
+  <refsect2>
+   <title>Текстовый формат</title>
+
+   <para>Когда применяется формат <literal>text</literal>, читаемые или записываемые данные представляют собой текстовый файл, строка в котором соответствует строке таблицы. Столбцы в строке разделяются символом-разделителем. Значения самих столбцов — строки, выдаваемые функцией вывода, либо воспринимаемые функцией ввода, соответствующей типу данных столбца. Заданный маркер NULL выводится и считывается вместо столбцов со значением NULL. <command>COPY FROM</command> выдаёт ошибку, если в любой из строк во входном файле оказывается больше или меньше столбцов, чем ожидается. С указанием <literal>OIDS</literal> значение OID считывается или записывается в первом столбце, предшествующем столбцам с основными данными.</para>
+
+   <para>Конец данных может обозначаться одной строкой, содержащей только обратную косую и точку (<literal>\.</literal>). Маркер конца данных не требуется при чтении из файла, так как его роль вполне выполняет конец файла; он необходим только при передаче данных в/из клиентского приложения по протоколу обмена до версии 3.0.</para>
+
+   <para>Символы обратной косой черты (<literal>\</literal>) в данных <command>COPY</command> позволяют экранировать символы данных, которые без них считались бы разделителями строк или столбцов. В частности, предваряться обратной косой <emphasis>должны</emphasis> следующие символы, когда они оказываются в значении столбца: сама обратная косая черта, перевод строки, возврат каретки и текущий разделитель.</para>
+
+   <para>Маркер NULL передаётся команде <command>COPY TO</command> как есть, без добавления обратной косой; <command>COPY FROM</command>, со своей стороны, ищет во вводимых данных маркеры NULL до удаления обратных косых. Таким образом, маркер NULL, например такой как <literal>\N</literal>, отличается от значения <literal>\N</literal> в данных (оно должно представляться в виде <literal>\\N</literal>).</para>
+
+   <para>Команда <command>COPY FROM</command> распознаёт следующие спецпоследовательности: <informaltable>
+    <tgroup cols="2">
+     <thead>
+      <row>
+       <entry>Последовательность</entry>
+       <entry>Представляет</entry>
+      </row>
+     </thead>
+
+     <tbody>
+      <row>
+       <entry><literal>\b</literal></entry>
+       <entry>Забой (ASCII 8)</entry>
+      </row>
+      <row>
+       <entry><literal>\f</literal></entry>
+       <entry>Подача формы (ASCII 12)</entry>
+      </row>
+      <row>
+       <entry><literal>\n</literal></entry>
+       <entry>Новая строка (ASCII 10)</entry>
+      </row>
+      <row>
+       <entry><literal>\r</literal></entry>
+       <entry>Возврат каретки (ASCII 13)</entry>
+      </row>
+      <row>
+       <entry><literal>\t</literal></entry>
+       <entry>Табуляция (ASCII 9)</entry>
+      </row>
+      <row>
+       <entry><literal>\v</literal></entry>
+       <entry>Вертикальная табуляция (ASCII 11)</entry>
+      </row>
+      <row>
+       <entry><literal>\</literal><replaceable>цифры</replaceable></entry>
+       <entry>Обратная косая с последующими 1-3 восьмеричными цифрами представляет символ с заданным числовым кодом</entry>
+      </row>
+      <row>
+       <entry><literal>\x</literal><replaceable>цифры</replaceable></entry>
+       <entry>Обратная косая с последующим <literal>x</literal> и 1-2 шестнадцатеричными цифрами представляет символ с заданным числовым кодом</entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </informaltable> В настоящее время <command>COPY TO</command> никогда не выводит спецпоследовательности с восьмеричными или шестнадцатеричными кодами, однако выводит другие вышеперечисленные спецпоследовательности вместо управляющих символов.</para>
+
+   <para>Любой другой символ после обратной косой, отсутствующий в приведённой выше таблице, будет представлять себя. Однако опасайтесь излишнего добавления обратных косых, так как это может привести к случайному образованию строки, обозначающей маркер конца данных (<literal>\.</literal>) или маркер NULL (<literal>\N</literal> по умолчанию). Эти строки будут восприняты прежде, чем обработаются спецпоследовательности с обратной косой.</para>
+
+   <para>В приложениях, генерирующих данные для <command>COPY</command>, настоятельно рекомендуется преобразовать символы новой строки и возврата каретки в последовательности <literal>\n</literal> и <literal>\r</literal>, соответственно. В настоящее время можно представить возврат каретки в данных как обратная косая и возврат каретки, а перевод строки как обратная косая и перевод строки, однако это может не поддерживаться в будущих версиях. Такие символы также подвержены искажениям, если файл с выводом <command>COPY</command> переносится между разными системами (например, с Unix в Windows и наоборот).</para>
+
+   <para><command>COPY TO</command> завершает каждую строку символом новой строки в стиле Unix (<quote><literal>\n</literal></quote>). Серверы, работающие в Microsoft Windows, вместо этого выводят символы возврат каретки/новая строка (<quote><literal>\r\n</literal></quote>), но только при выводе <command>COPY</command> в файл на сервере; для согласованности на разных платформах, <command>COPY TO STDOUT</command> всегда передаёт <quote><literal>\n</literal></quote>, вне зависимости от платформы сервера. <command>COPY FROM</command> может воспринимать строки, завершающиеся символами новая строка, перевод каретки, либо возврат каретки+новая строка. Чтобы уменьшить риск ошибки из-за неэкранированных символов новой строки и возврата каретки, которые должны были быть данными, <command>COPY FROM</command> сигнализирует о проблеме, если концы строк во входных данных различаются.</para>
+  </refsect2>
+
+  <refsect2>
+   <title>Формат CSV</title>
+
+   <para>Этот формат применяется для импорта и экспорта данных в виде списка значений, разделённых запятыми (<literal>CSV</literal>), с которым могут работать многие другие программы, например электронные таблицы. Вместо правил экранирования значений, введённых в <productname>&productname;</productname> для текстового формата, этот формат использует стандартный механизм экранирования CSV.</para>
+
+   <para>Значения в каждой записи разделяются символами <literal>DELIMITER</literal>. Если значение содержит символ разделителя, символ <literal>QUOTE</literal>, маркер <literal>NULL</literal>, символ возврата каретки или перевода строки, то всё значение дополнятся спереди и сзади символами <literal>QUOTE</literal>, а любое вхождение символа <literal>QUOTE</literal> или спецсимвола (<literal>ESCAPE</literal>) в данных предваряется спецсимволом. С указанием <literal>FORCE_QUOTE</literal> в кавычки будут принудительно заключаться любые значения не <literal>NULL</literal> в указанных столбцах.</para>
+
+   <para>В формате <literal>CSV</literal> отсутствует стандартный способ отличить значение <literal>NULL</literal> от пустой строки. В <productname>&productname;</productname> команда <command>COPY</command> решает это с помощью кавычек. Значение <literal>NULL</literal> выводится в виде строки, задаваемой параметром <literal>NULL</literal>, и не заключается в кавычки, тогда как значение не <literal>NULL</literal>, со строкой, задаваемой параметром <literal>NULL</literal>, заключается. Например, с параметрами по умолчанию <literal>NULL</literal> записывается в виде пустой строки без кавычек, тогда как пустая строка записывается в двойных кавычках (<literal>""</literal>). При чтении значений действуют похожие правила. Указание <literal>FORCE_NOT_NULL</literal> позволяет избежать сравнений на <literal>NULL</literal> во входных данных в заданных столбцах, а <literal>FORCE_NULL</literal> — преобразовывать в <literal>NULL</literal> маркеры NULL, даже заключённые в кавычки.</para>
+
+   <para>Так как обратная косая черта не является спецсимволом в формате <literal>CSV</literal>, маркер конца данных <literal>\.</literal> может быть и значением данных. Во избежание ошибок интерпретации данные <literal>\.</literal>, выводимые в виде единственного элемента строки, автоматически заключаются в кавычки при выводе, а при вводе этот маркер, заключённый в кавычки, не воспринимается как маркер конца данных. При загрузке файла, созданного другой программой, в котором в единственном столбце без кавычек оказалось значение <literal>\.</literal>, потребуется дополнительно заключить это значение в кавычки.</para>
+
+   <note>
+    <para>В формате <literal>CSV</literal> все символы являются значимыми. Заключённое в кавычки значение, дополненное пробелами или любыми другими символами, кроме <literal>DELIMITER</literal>, будет включать и эти символы. Это может приводить к ошибкам при импорте данных из системы, дополняющей строки <literal>CSV</literal> пробельными символами до некоторой фиксированной ширины. В случае возникновения такой проблемы необходимо обработать файл <literal>CSV</literal> и удалить из него замыкающие пробельные символы, прежде чем загружать данные из него в <productname>&productname;</productname>.</para>
+   </note>
+
+   <note>
+    <para>Обработчик формата CSV воспринимает и генерирует файлы CSV со значениями в кавычках, которые могут содержать символы возврата каретки и перевода строки. Таким образом, число строк в этих файлах не строго равно числу строк в таблице, как в файлах текстового формата.</para>
+   </note>
+
+   <note>
+    <para>Многие программы генерируют странные и иногда неприемлемые файлы CSV, так что этот формат используется скорее по соглашению, чем по стандарту. Поэтому вам могут встретиться файлы, которые невозможно импортировать, используя этот механизм, а <command>COPY</command> может сформировать такие файлы, что их не смогут обработать другие программы.</para>
+   </note>
+
+  </refsect2>
+
+  <refsect2>
+   <title>Двоичный формат</title>
+
+   <para>При выборе формата <literal>binary</literal> все данные сохраняются/считываются в двоичном, а не текстовом виде. Иногда этот формат обрабатывается быстрее, чем текстовый и <literal>CSV</literal>, но он может оказаться непереносимым между разными машинными архитектурами и версиями <productname>&productname;</productname>. Кроме того, двоичный формат сильно зависит от типов данных; например, он не позволяет вывести данные из столбца <type>smallint</type>, а затем прочитать их в столбец <type>integer</type>, хотя с текстовым форматом это вполне возможно.</para>
+
+   <para>Формат <literal>binary</literal> включает заголовок файла, ноль или более записей, содержащих данные строк, и окончание файла. Для заголовков и данных принят сетевой порядок байт.</para>
+
+   <note>
+    <para>В <productname>PostgreSQL</productname> до версии 7.4 использовался другой двоичный формат.</para>
+   </note>
+
+   <refsect3>
+    <title>Заголовок файла</title>
+
+    <para>Заголовок файла содержит 15 байт фиксированных полей, за которыми следует область расширения заголовка переменной длины. Фиксированные поля: <variablelist>
+     <varlistentry>
+      <term>Сигнатура</term>
+      <listitem>
+       <para>Последовательность из 11 байт <literal>PGCOPY\n\377\r\n\0</literal> &mdash; заметьте, что нулевой байт является обязательной частью сигнатуры. (Эта сигнатура позволяет легко выявить файлы, испорченные при передаче, не сохраняющей все 8 бит данных. Она изменится при прохождении через фильтры, меняющие концы строк, отбрасывающие нулевые байты или старшие биты, либо добавляющие чётность.)</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>Поле флагов</term>
+      <listitem>
+       <para>Маска из 32 бит, обозначающая важные аспекты формата файла. Биты нумеруются от 0 (<acronym>LSB</acronym>) до 31 (<acronym>MSB</acronym>). Учтите, что это поле хранится в сетевом порядке байт (наиболее значащий байт первый), как и все целочисленные поля в этом формате. Биты 16-31 зарезервированы для обозначения критичных особенностей формата; обработчик должен прервать чтение, встретив любой неожиданный бит в этом диапазоне. Биты 0-15 зарезервированы для обозначения особенностей, связанных с обратной совместимостью; обработчик может просто игнорировать любые неожиданные биты в этом диапазоне. В настоящее время определён только один битовый флаг, остальные должны быть равны 0: <variablelist>
+         <varlistentry>
+          <term>Бит 16</term>
+          <listitem>
+           <para>При 1 в данные включается OID; при 0 — нет</para>
+          </listitem>
+         </varlistentry>
+        </variablelist></para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term>Длина области расширения заголовка</term>
+      <listitem>
+       <para>Целое 32-битное число, определяющее длину в байтах остального заголовка, не включая само это значение. В настоящее время содержит 0, и сразу за ним следует первая запись. При будущих изменениях формата в заголовок могут быть добавлены дополнительные данные. Обработчик должен просто пропускать все расширенные данные заголовка, о которых ему ничего не известно.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+    <para>Область расширения заголовка предусмотрена для размещения последовательности самоопределяемых блоков. Поле флагов не должно содержать указаний о том, что содержится в области расширения. Точное содержимое области расширения может быть определено в будущих версиях.</para>
+
+    <para>При таком подходе возможно как обратно-совместимое дополнение заголовка (добавить блоки расширения заголовка или установить младшие биты флагов), так и не обратно-совместимое (установить старшие биты флагов, сигнализирующие о подобном изменении, и добавить вспомогательные данные в область расширения, если это потребуется).</para>
+   </refsect3>
+
+   <refsect3>
+    <title>Записи</title>
+    <para>Каждая запись начинается с 16-битного целого числа, определяющего количество полей в записи. (В настоящее время во всех записях должно быть одинаковое число полей, но так может быть не всегда.) Затем, для каждого поля в записи указывается 32-битная длина поля, за которой следует это количество байт с данными поля. (Значение длины не включает свой размер, и может быть равно нулю.) В качестве особого варианта, -1 обозначает, что в поле содержится NULL. В случае с NULL за длиной не следуют байты данных.</para>
+
+    <para>Выравнивание или какие-либо дополнительные данные между полями не вставляются.</para>
+
+    <para>В настоящее время предполагается, что все значения данных в файле двоичного формата содержатся в двоичном формате (формате под кодом 1). Возможно, в будущем расширении в заголовок будет добавлено поле, позволяющее задавать другие коды форматов для разных столбцов.</para>
+
+    <para>Чтобы определить подходящий двоичный формат для фактических данных, обратитесь к исходному коду <productname>&productname;</productname>, в частности, к функциям <function>*send</function> и <function>*recv</function> для типов данных каждого столбца (обычно эти функции находятся в каталоге <filename>src/backend/utils/adt/</filename> в дереве исходного кода).</para>
+
+    <para>Если в файл включается OID, поле OID следует немедленно за числом, определяющим количество полей. Это поле не отличается от других ничем, кроме того, что оно не учитывается в количестве полей. В частности, для него также задаётся длина &mdash; это позволяет обрабатывать и четырёх- и восьмибайтовые OID без особых сложностей, и даже вывести OID, равный NULL, если возникнет потребность в этом.</para>
+   </refsect3>
+
+   <refsect3>
+    <title>Окончание файла</title>
+
+    <para>Окончание файла состоит из 16-битного целого, содержащего -1. Это позволяет легко отличить его от счётчика полей в записи.</para>
+
+    <para>Обработчик, читающий файл, должен выдать ошибку, если число полей в записи не равно -1 или ожидаемому числу столбцов. Это обеспечивает дополнительную проверку синхронизации данных.</para>
+   </refsect3>
+  </refsect2>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>В следующем примере таблица передаётся клиенту с разделителем полей «вертикальная черта» (<literal>|</literal>): <programlisting>COPY country TO STDOUT (DELIMITER '|');</programlisting></para>
+
+  <para>Копирование данных из файла в таблицу <literal>country</literal>: <programlisting>COPY country FROM '/usr1/proj/bray/sql/country_data';</programlisting></para>
+
+  <para>Копирование в файл только данных стран, название которых начинается с 'A': <programlisting>COPY (SELECT * FROM country WHERE country_name LIKE 'A%') TO '/usr1/proj/bray/sql/a_list_countries.copy';</programlisting></para>
+
+  <para>Для копирования данных в сжатый файл можно направить вывод через внешнюю программу сжатия: <programlisting>COPY country TO PROGRAM 'gzip &gt; /usr1/proj/bray/sql/country_data.gz';</programlisting></para>
+
+  <para>Пример данных, подходящих для копирования в таблицу из <literal>STDIN</literal>: <programlisting>AF      AFGHANISTAN
+AL      ALBANIA
+DZ      ALGERIA
+ZM      ZAMBIA
+ZW      ZIMBABWE</programlisting> Примечание: пробелы в каждой строке на самом деле обозначают символы табуляции.</para>
+
+  <para>Ниже приведены те же данные, но выведенные в двоичном формате. Данные показаны после обработки Unix-утилитой <command>od -c</command>. Таблица содержит три столбца; первый имеет тип <type>char(2)</type>, второй — <type>text</type>, а третий — <type>integer</type>. Последний столбец во всех строках содержит NULL. <programlisting>0000000   P   G   C   O   P   Y  \n 377  \r  \n  \0  \0  \0  \0  \0  \0
+0000020  \0  \0  \0  \0 003  \0  \0  \0 002   A   F  \0  \0  \0 013   A
+0000040   F   G   H   A   N   I   S   T   A   N 377 377 377 377  \0 003
+0000060  \0  \0  \0 002   A   L  \0  \0  \0 007   A   L   B   A   N   I
+0000100   A 377 377 377 377  \0 003  \0  \0  \0 002   D   Z  \0  \0  \0
+0000120 007   A   L   G   E   R   I   A 377 377 377 377  \0 003  \0  \0
+0000140  \0 002   Z   M  \0  \0  \0 006   Z   A   M   B   I   A 377 377
+0000160 377 377  \0 003  \0  \0  \0 002   Z   W  \0  \0  \0  \b   Z   I
+0000200   M   B   A   B   W   E 377 377 377 377 377 377</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>COPY</command> отсутствует в стандарте SQL.</para>
+
+  <para>До версии <productname>PostgreSQL</productname> 9.0 использовался и по-прежнему поддерживается следующий синтаксис: <synopsis>
+COPY <replaceable class="parameter">имя_таблицы</replaceable> [ ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] ) ]
+    FROM { '<replaceable class="parameter">имя_файла</replaceable>' | STDIN }
+    [ [ WITH ]
+          [ BINARY ]
+          [ OIDS ]
+          [ DELIMITER [ AS ] '<replaceable class="parameter">разделитель</replaceable>' ]
+          [ NULL [ AS ] '<replaceable class="parameter">маркер_null</replaceable>' ]
+          [ CSV [ HEADER ]
+                [ QUOTE [ AS ] '<replaceable class="parameter">кавычки</replaceable>' ]
+                [ ESCAPE [ AS ] '<replaceable class="parameter">спецсимвол</replaceable>' ]
+                [ FORCE NOT NULL <replaceable class="parameter">имя_столбца</replaceable> [, ...] ] ] ]
+
+COPY { <replaceable class="parameter">имя_таблицы</replaceable> [ ( <replaceable class="parameter">имя_столбца</replaceable> [, ...] ) ] | ( <replaceable class="parameter">запрос</replaceable> ) }
+    TO { '<replaceable class="parameter">имя_файла</replaceable>' | STDOUT }
+    [ [ WITH ]
+          [ BINARY ]
+          [ OIDS ]
+          [ DELIMITER [ AS ] '<replaceable class="parameter">разделитель</replaceable>' ]
+          [ NULL [ AS ] '<replaceable class="parameter">маркер_null</replaceable>' ]
+          [ CSV [ HEADER ]
+                [ QUOTE [ AS ] '<replaceable class="parameter">кавычки</replaceable>' ]
+                [ ESCAPE [ AS ] '<replaceable class="parameter">спецсимвол</replaceable>' ]
+                [ FORCE QUOTE { <replaceable class="parameter">имя_столбца</replaceable> [, ...] | * } ] ] ]
+</synopsis> Заметьте, что в этом синтаксисе ключевые слова <literal>BINARY</literal> и <literal>CSV</literal> обрабатываются как независимые, а не как аргументы параметра <literal>FORMAT</literal>.</para>
+
+  <para>До версии <productname>PostgreSQL</productname> 7.3 использовался и по-прежнему поддерживается следующий синтаксис: <synopsis>
+COPY [ BINARY ] <replaceable class="parameter">table_name</replaceable> [ WITH OIDS ]
+    FROM { '<replaceable class="parameter">имя_файла</replaceable>' | STDIN }
+    [ [USING] DELIMITERS '<replaceable class="parameter">разделитель</replaceable>' ]
+    [ WITH NULL AS '<replaceable class="parameter">маркер_null</replaceable>' ]
+
+COPY [ BINARY ] <replaceable class="parameter">имя_таблицы</replaceable> [ WITH OIDS ]
+    TO { '<replaceable class="parameter">имя_файла</replaceable>' | STDOUT }
+    [ [USING] DELIMITERS '<replaceable class="parameter">разделитель</replaceable>' ]
+    [ WITH NULL AS '<replaceable class="parameter">маркер_null</replaceable>' ]
+</synopsis></para>
+ </refsect1>
+</refentry>

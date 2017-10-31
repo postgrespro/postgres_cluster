@@ -1,0 +1,260 @@
+<!--
+doc/src/xml/ref/create_role.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createrole">
+ <indexterm zone="sql-createrole"><primary>CREATE ROLE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE ROLE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE ROLE</refname>
+  <refpurpose>создать роль в базе данных</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE ROLE <replaceable class="parameter">имя</replaceable> [ [ WITH ] <replaceable class="parameter">параметр</replaceable> [ ... ] ]
+
+<phrase>Здесь <replaceable class="parameter">параметр</replaceable>:</phrase>
+
+      SUPERUSER | NOSUPERUSER
+    | CREATEDB | NOCREATEDB
+    | CREATEROLE | NOCREATEROLE
+    | INHERIT | NOINHERIT
+    | LOGIN | NOLOGIN
+    | REPLICATION | NOREPLICATION
+    | BYPASSRLS | NOBYPASSRLS
+    | CONNECTION LIMIT <replaceable class="parameter">предел_подключений</replaceable>
+    | [ ENCRYPTED | UNENCRYPTED ] PASSWORD '<replaceable class="parameter">пароль</replaceable>'
+    | PASSWORD ( '<replaceable class="parameter">пароль</replaceable>' USING '<replaceable class="parameter">метод</replaceable>' )
+    | VALID UNTIL '<replaceable class="parameter">дата_время</replaceable>'
+    | IN ROLE <replaceable class="parameter">имя_роли</replaceable> [, ...]
+    | IN GROUP <replaceable class="parameter">имя_роли</replaceable> [, ...]
+    | ROLE <replaceable class="parameter">имя_роли</replaceable> [, ...]
+    | ADMIN <replaceable class="parameter">имя_роли</replaceable> [, ...]
+    | USER <replaceable class="parameter">имя_роли</replaceable> [, ...]
+    | SYSID <replaceable class="parameter">uid</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE ROLE</command> добавляет новую роль в кластер баз данных <productname>&productname;</productname>. Роль — это сущность, которая может владеть объектами и иметь определённые права в базе; роль может представлять <quote>пользователя</quote>, <quote>группу</quote> или и то, и другое, в зависимости от варианта использования. За информацией об управлении пользователями и проверке подлинности обратитесь к <xref remap="3" linkend="user-manag"/> и <xref remap="3" linkend="client-authentication"/>. Чтобы выполнить эту команду, необходимо быть суперпользователем или иметь право <literal>CREATEROLE</literal>.</para>
+
+  <para>Учтите, что роли определяются на уровне кластера баз данных, так что они действуют во всех базах в кластере.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">имя</replaceable></term>
+      <listitem>
+       <para>Имя создаваемой роли.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>SUPERUSER</literal></term>
+      <term><literal>NOSUPERUSER</literal></term>
+      <listitem>
+       <para>Эти предложения определяют, будет ли эта роль <quote>суперпользователем</quote>, который может переопределить все ограничения доступа в базе данных. Статус суперпользователя несёт опасность и назначать его следует только в случае необходимости. Создать нового суперпользователя может только суперпользователь. В отсутствие этих предложений по умолчанию подразумевается <literal>NOSUPERUSER</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>CREATEDB</literal></term>
+      <term><literal>NOCREATEDB</literal></term>
+      <listitem>
+       <para>Эти предложения определяют, сможет ли роль создавать базы данных. Указание <literal>CREATEDB</literal> даёт новой роли это право, а <literal>NOCREATEDB</literal> запрещает роли создавать базы данных. По умолчанию подразумевается <literal>NOCREATEDB</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>CREATEROLE</literal></term>
+      <term><literal>NOCREATEROLE</literal></term>
+      <listitem>
+       <para>Эти предложения определяют, сможет ли роль создавать новые роли (т. е. выполнять <command>CREATE ROLE</command>). Роль с правом <literal>CREATEROLE</literal> может также изменять и удалять другие роли. По умолчанию подразумевается <literal>NOCREATEROLE</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>INHERIT</literal></term>
+      <term><literal>NOINHERIT</literal></term>
+      <listitem>
+       <para>Эти предложения определяют, будет ли роль <quote>наследовать</quote> права ролей, членом которых она является. Роль с атрибутом <literal>INHERIT</literal> может автоматически использовать в базе данных любые права, назначенные всем ролям, в которые она включена, непосредственно или опосредованно. Без <literal>INHERIT</literal> членство в другой роли позволяет только выполнить <command>SET ROLE</command> и переключиться на эту роль; правами, назначенными другой роли, можно будет пользоваться только после этого. По умолчанию подразумевается <literal>INHERIT</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>LOGIN</literal></term>
+      <term><literal>NOLOGIN</literal></term>
+      <listitem>
+       <para>Эти предложения определяют, разрешается ли новой роли вход на сервер; то есть, может ли эта роль стать начальным авторизованным именем при подключении клиента. Можно считать, что роль с атрибутом <literal>LOGIN</literal> соответствует пользователю. Роли без этого атрибута бывают полезны для управления доступом в базе данных, но это не пользователи в обычном понимании. По умолчанию подразумевается вариант <literal>NOLOGIN</literal>, за исключением вызова <command>CREATE ROLE</command> в виде <xref linkend="sql-createuser"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>REPLICATION</literal></term>
+      <term><literal>NOREPLICATION</literal></term>
+      <listitem>
+       <para>Эти предложения определяют, будет ли роль ролью репликации. Чтобы роль могла подключаться к серверу в режиме репликации (в режиме физической или логической репликации) и создавать/удалять слоты репликации, у неё должен быть этот атрибут (либо это должна быть роль суперпользователя). Роль, имеющая атрибут <literal>REPLICATION</literal>, обладает очень большими привилегиями и поэтому этот атрибут должны иметь только роли, фактически используемые для репликации. По умолчанию подразумевается вариант <literal>NOREPLICATION</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>BYPASSRLS</literal></term>
+      <term><literal>NOBYPASSRLS</literal></term>
+      <listitem>
+       <para>Эти предложения определяют, будут ли для роли игнорироваться все политики защиты на уровне строк (RLS). Значение по умолчанию — <literal>NOBYPASSRLS</literal>. Заметьте, что pg_dump по умолчанию отключает <literal>row_security</literal> (устанавливает значение <literal>OFF</literal>) для уверенности, что выгружено всё содержимое таблицы. Если пользователь, запускающий pg_dump, не будет иметь необходимых прав, он получит ошибку. Суперпользователь и владелец выгружаемой таблицы всегда обходят защиту RLS.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>CONNECTION LIMIT</literal> <replaceable class="parameter">предел_подключений</replaceable></term>
+      <listitem>
+       <para>Если роли разрешён вход, этот параметр определяет, сколько параллельных подключений может установить роль. Значение -1 (по умолчанию) снимает ограничение. Заметьте, что под это ограничение подпадают только обычные подключения. Ни подготовленные транзакции, ни соединения фоновых рабочих процессов в расчёт не берутся.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>PASSWORD</literal> <replaceable class="parameter">пароль</replaceable></term>
+      <listitem>
+       <para>Задаёт пароль роли. (Пароль полезен только для ролей с атрибутом <literal>LOGIN</literal>, но задать его можно и для ролей без такого атрибута.) Если проверка подлинности по паролю не будет использоваться, этот параметр можно опустить. При указании пустого значения будет задан пароль NULL, что не позволит данному пользователю пройти проверку подлинности по паролю. При желании пароль NULL можно установить явно, указав <literal>PASSWORD NULL</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>ENCRYPTED</literal></term>
+      <term><literal>UNENCRYPTED</literal></term>
+      <listitem>
+       <para>Эти ключевые слова определяют, будет ли пароль храниться в системных каталогах в зашифрованном виде. (При отсутствии явного указания поведение по умолчанию определяется конфигурационным параметром <xref linkend="guc-password-encryption"/>.) Если пароль уже представлен в виде MD5-хеша или формате SCRAM, то он сохраняются в зашифрованном виде как есть, вне зависимости от того, присутствует ли указание <literal>ENCRYPTED</literal> или <literal>UNENCRYPTED</literal> (так как система не может расшифровать зашифрованный пароль). Это позволяет выгружать/загружать зашифрованные пароли при экспорте/импорте данных.</para>
+       <para>Учтите, что старые клиенты могут не поддерживать механизм проверки подлинности с MD5 или SCRAM, необходимый для использования паролей, хранящихся в зашифрованном виде.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>PASSWORD</literal> ( '<replaceable class="parameter">параметр</replaceable>' USING '<replaceable class="parameter">метод</replaceable>' )</term>
+      <listitem>
+       <para>Задаёт пароль роли с применением указанного метода. (Пароль полезен только для ролей с атрибутом <literal>LOGIN</literal>, но задать его можно и для ролей без такого атрибута.) Если проверка подлинности по паролю не будет использоваться, этот параметр можно опустить. В качестве метода можно указать <literal>md5</literal>, чтобы пароль шифровался алгоритмом MD5, или <literal>scram</literal>, чтобы пароль шифровался алгоритмом SCRAM-SHA-256, либо <literal>plain</literal>, чтобы пароль сохранялся незашифрованным. Если строка пароля передаётся уже в зашифрованном формате MD5 или SCRAM-SHA-256, она сохраняется как есть, даже если выбран другой метод.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>VALID UNTIL</literal> '<replaceable class="parameter">дата_время</replaceable>'</term>
+      <listitem>
+       <para>Предложение <literal>VALID UNTIL</literal> устанавливает дату и время, после которого пароль роли перестаёт действовать. Если это предложение отсутствует, срок действия пароля будет неограниченным.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>IN ROLE</literal> <replaceable class="parameter">имя_роли</replaceable></term>
+      <listitem>
+       <para>В предложении <literal>IN ROLE</literal> перечисляются одна или несколько существующих ролей, в которые будет немедленно включена новая роль. (Заметьте, что добавить новую роль с правами администратора таким образом нельзя; для этого надо отдельно выполнить команду <command>GRANT</command>.)</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>IN GROUP</literal> <replaceable class="parameter">имя_роли</replaceable></term>
+      <listitem>
+       <para><literal>IN GROUP</literal> — устаревшее написание предложения <literal>IN ROLE</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>ROLE</literal> <replaceable class="parameter">имя_роли</replaceable></term>
+      <listitem>
+       <para>В предложении <literal>ROLE</literal> перечисляются одна или несколько существующих ролей, которые автоматически становятся членами создаваемой роли. (По сути таким образом новая роль становится <quote>группой</quote>.)</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>ADMIN</literal> <replaceable class="parameter">имя_роли</replaceable></term>
+      <listitem>
+       <para>Предложение <literal>ADMIN</literal> подобно <literal>ROLE</literal>, но перечисленные в нём роли включаются в новую роль с атрибутом <literal>WITH ADMIN OPTION</literal>, что даёт им право включать в эту роль другие роли.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>USER</literal> <replaceable class="parameter">имя_роли</replaceable></term>
+      <listitem>
+       <para>Предложение <literal>USER</literal> является устаревшим написанием предложения <literal>ROLE</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>SYSID</literal> <replaceable class="parameter">uid</replaceable></term>
+      <listitem>
+       <para>Предложение <literal>SYSID</literal> игнорируется, но принимается для обратной совместимости.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Для изменения атрибутов роли применяется <xref linkend="sql-alterrole"/>, а для удаления роли — <xref linkend="sql-droprole"/>. Все атрибуты, заданные в <command>CREATE ROLE</command>, могут быть изменены позднее командами <command>ALTER ROLE</command>.</para>
+
+  <para>Для добавления и удаления членов ролей, используемых в качестве групп, рекомендуется использовать <xref linkend="sql-grant"/> и <xref linkend="sql-revoke"/>.</para>
+
+  <para>Предложение <literal>VALID UNTIL</literal> определяет срок действия только пароля, но не роли как таковой. В частности, ограничение срока пароля не действует при входе пользователя без проверки подлинности по паролю.</para>
+
+  <para>Атрибут <literal>INHERIT</literal> управляет наследованием назначаемых прав (то есть правами доступа к объектам баз данных и членством в ролях). Его действие не распространяется на специальные атрибуты, устанавливаемые командами <command>CREATE ROLE</command> и <command>ALTER ROLE</command>. Например, членства в роли с правом <literal>CREATEDB</literal> недостаточно для получения права создавать базы данных, даже если установлен атрибут <literal>INHERIT</literal>; чтобы воспользоваться правом создавать базы данных, необходимо переключиться на эту роль, выполнив <xref linkend="sql-set-role"/>.</para>
+
+  <para>Атрибут <literal>INHERIT</literal> устанавливается по умолчанию в целях обратной совместимости: в предыдущих выпусках <productname>&productname;</productname> пользователи всегда обладали всеми правами групп, в которые они были включены. Однако <literal>NOINHERIT</literal> по смыслу ближе к тому, что описано в стандарте SQL.</para>
+
+  <para>Будьте осторожны с правом <literal>CREATEROLE</literal>. На роли, создаваемые командой <literal>CREATEROLE</literal>, не распространяется концепция наследования. Это значит, что даже если роль не имеет определённого права, но может создавать другие роли, она вполне способна создать другую роль с отличным набором прав (за исключением создания ролей с правами суперпользователя). Например, если роль <quote>user</quote> имеет право <literal>CREATEROLE</literal>, но не <literal>CREATEDB</literal>, она, тем не менее, может создать новую роль с правом <literal>CREATEDB</literal>. Поэтому роль с правом <literal>CREATEROLE</literal> следует воспринимать как роль почти суперпользователя.</para>
+
+  <para><productname>&productname;</productname> включает программу <xref linkend="app-createuser"/>, которая предоставляет ту же функциональность, что и команда <command>CREATE ROLE</command> (на самом деле она вызывает эту команду), но может запускаться в командной оболочке.</para>
+
+  <para>Ограничение <literal>CONNECTION LIMIT</literal> действует только приблизительно; если одновременно запускаются два сеанса, тогда как для этой роли остаётся только одно <quote>свободное место</quote>, может так случиться, что будут отклонены оба подключения. Кроме того, это ограничение не распространяется на суперпользователей.</para>
+
+  <para>Указывая в этой команде незашифрованный пароль, следует проявлять осторожность. Пароль будет передаваться на сервер открытым текстом и может также записываться в историю команд клиента или в протокол работы сервера. Команда <xref linkend="app-createuser"/>, однако, передаёт пароль зашифрованным. Кроме того, в <xref linkend="app-psql"/> есть команда <command>\password</command>, с помощью которой можно безопасно сменить пароль позже.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Создание роли, для которой разрешён вход, но не задан пароль: <programlisting>CREATE ROLE jonathan LOGIN;</programlisting></para>
+
+  <para>Создание роли с паролем: <programlisting>CREATE USER davide WITH PASSWORD 'jw8s0F4';</programlisting> (<command>CREATE USER</command> действует так же, как <command>CREATE ROLE</command>, но подразумевает ещё и атрибут <literal>LOGIN</literal>.)</para>
+
+  <para>Создание роли с паролем, зашифрованным MD5: <programlisting>CREATE USER lionel WITH PASSWORD ('asdh7as' USING 'md5');</programlisting></para>
+
+  <para>Создание роли с паролем, действующим до конца 2004 г., то есть пароль перестаёт действовать в первую же секунду 2005 г. <programlisting>CREATE ROLE miriam WITH LOGIN PASSWORD 'jw8s0F4' VALID UNTIL '2005-01-01';</programlisting></para>
+
+  <para>Создание роли, которая может создавать базы данных и управлять ролями: <programlisting>CREATE ROLE admin WITH CREATEDB CREATEROLE;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Оператор <command>CREATE ROLE</command> описан в стандарте SQL, но стандарт требует поддержки только следующего синтаксиса: <synopsis>
+CREATE ROLE <replaceable class="parameter">имя</replaceable> [ WITH ADMIN <replaceable class="parameter">имя_роли</replaceable> ]
+</synopsis> Возможность создавать множество начальных администраторов и все другие параметры <command>CREATE ROLE</command> относятся к расширениям <productname>&productname;</productname>.</para>
+
+  <para>В стандарте SQL определяются концепции пользователей и ролей, но в нём они рассматриваются как отдельные сущности, а все команды создания пользователей считаются внутренней спецификой СУБД. В <productname>&productname;</productname> мы решили объединить пользователей и роли в единую сущность, так что роли получили дополнительные атрибуты, не описанные в стандарте.</para>
+
+  <para>Поведение, наиболее близкое к описанному в стандарте SQL, можно получить, если создавать пользователей с атрибутом <literal>NOINHERIT</literal>, а роли — с атрибутом <literal>INHERIT</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-set-role"/></member>
+   <member><xref linkend="sql-alterrole"/></member>
+   <member><xref linkend="sql-droprole"/></member>
+   <member><xref linkend="sql-grant"/></member>
+   <member><xref linkend="sql-revoke"/></member>
+   <member><xref linkend="app-createuser"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

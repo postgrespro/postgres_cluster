@@ -1,0 +1,73 @@
+<!--
+doc/src/xml/ref/rollback.xml
+&productname; documentation
+-->
+
+<refentry id="sql-rollback">
+ <indexterm zone="sql-rollback"><primary>ROLLBACK</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ROLLBACK</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ROLLBACK</refname>
+  <refpurpose>прервать текущую транзакцию</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ROLLBACK [ WORK | TRANSACTION ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ROLLBACK</command> откатывает текущую транзакцию и приводит к аннулированию всех изменений, произведённых транзакцией.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>WORK</literal></term>
+    <term><literal>TRANSACTION</literal></term>
+    <listitem>
+     <para>Необязательные ключевые слова, не оказывают никакого влияния.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Чтобы завершить и зафиксировать транзакцию, используйте <xref linkend="sql-commit"/>.</para>
+
+  <para>При выполнении команды <command>ROLLBACK</command> вне блока транзакции выдаётся предупреждение и больше ничего не происходит.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Чтобы прервать все операции: <programlisting>ROLLBACK;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>В стандарте SQL описаны только две формы: <literal>ROLLBACK</literal> и <literal>ROLLBACK WORK</literal>. В остальном эта команда полностью соответствует стандарту.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-begin"/></member>
+   <member><xref linkend="sql-commit"/></member>
+   <member><xref linkend="sql-rollback-to"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

@@ -1,0 +1,107 @@
+<!--
+doc/src/xml/ref/select_into.xml
+&productname; documentation
+-->
+
+<refentry id="sql-selectinto">
+ <indexterm zone="sql-selectinto"><primary>SELECT INTO</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SELECT INTO</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SELECT INTO</refname>
+  <refpurpose>создать таблицу из результатов запроса</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>[ WITH [ RECURSIVE ] <replaceable class="parameter">запрос_WITH</replaceable> [, ...] ]
+SELECT [ ALL | DISTINCT [ ON ( <replaceable class="parameter">выражение</replaceable> [, ...] ) ] ]
+    * | <replaceable class="parameter">выражение</replaceable> [ [ AS ] <replaceable class="parameter">имя_результата</replaceable> ] [, ...]
+    INTO [ TEMPORARY | TEMP | UNLOGGED | CONSTANT ] [ TABLE ] <replaceable class="parameter">новая_таблица</replaceable>
+    [ FROM <replaceable class="parameter">элемент_FROM</replaceable> [, ...] ]
+    [ WHERE <replaceable class="parameter">условие</replaceable> ]
+    [ GROUP BY <replaceable class="parameter">выражение</replaceable> [, ...] ]
+    [ HAVING <replaceable class="parameter">условие</replaceable> [, ...] ]
+    [ WINDOW <replaceable class="parameter">имя_окна</replaceable> AS ( <replaceable class="parameter">определение_окна</replaceable> ) [, ...] ]
+    [ { UNION | INTERSECT | EXCEPT } [ ALL | DISTINCT ] <replaceable class="parameter">выборка</replaceable> ]
+    [ ORDER BY <replaceable class="parameter">выражение</replaceable> [ ASC | DESC | USING <replaceable class="parameter">оператор</replaceable> ] [ NULLS { FIRST | LAST } ] [, ...] ]
+    [ LIMIT { <replaceable class="parameter">число</replaceable> | ALL } ]
+    [ OFFSET <replaceable class="parameter">начало</replaceable> [ ROW | ROWS ] ]
+    [ FETCH { FIRST | NEXT } [ <replaceable class="parameter">число</replaceable> ] { ROW | ROWS } ONLY ]
+    [ FOR { UPDATE | SHARE } [ OF <replaceable class="parameter">имя_таблицы</replaceable> [, ...] ] [ NOWAIT ] [...] ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>SELECT INTO</command> создаёт новую таблицу и заполняет её данными, полученными из запроса. Данные не передаются клиенту, как с обычной командой <command>SELECT</command>. Столбцы новой таблицы получают имена и типы данных, связанные с выходными столбцами <command>SELECT</command>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+  <varlistentry>
+   <term><literal>TEMPORARY</literal> или <literal>TEMP</literal></term>
+   <listitem>
+    <para>Если указано, создаваемая таблица будет временной. За подробностями обратитесь к <xref remap="3" linkend="sql-createtable"/>.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><literal>UNLOGGED</literal></term>
+   <listitem>
+    <para>Если указано, создаваемая таблица будет нежурналируемой. За подробностями обратитесь к <xref remap="3" linkend="sql-createtable"/>.</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+    <term><literal>CONSTANT</literal></term>
+    <listitem>
+     <para>Если указано, таблица будет создана в режиме &laquo;только чтение&raquo;. За подробностями обратитесь к <xref remap="3" linkend="sql-createtable"/>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_таблица</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) создаваемой таблицы.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Все другие параметры подробно описываются в <xref remap="6" linkend="sql-select"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Команда <command>SELECT INTO</command> действует подобно <xref linkend="sql-createtableas"/>, но рекомендуется использовать <command>CREATE TABLE AS</command>, так как <command>SELECT INTO</command> не поддерживается в <application>ECPG</application> и <application>PL/pgSQL</application>, вследствие того, что они воспринимают предложение <literal>INTO</literal> по-своему. К тому же, <command>CREATE TABLE AS</command> предоставляет больший набор возможностей, чем <command>SELECT INTO</command>.</para>
+
+  <para>Чтобы добавить столбец OID в таблицу, создаваемую командой <command>SELECT INTO</command>, необходимо установить конфигурационную переменную <xref linkend="guc-default-with-oids"/>. С другой стороны, можно использовать <command>CREATE TABLE AS</command> с предложением <literal>WITH OIDS</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Создание таблицы <literal>films_recent</literal>, содержащей только последние записи из таблицы <literal>films</literal>: <programlisting>SELECT * INTO films_recent FROM films WHERE date_prod &gt;= '2002-01-01';</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>В стандарте SQL команда <command>SELECT INTO</command> применяется для передачи скалярных значений клиентской программе, но не для создания новой таблицы. Именно это применение имеет место в <application>ECPG</application> (см. <xref remap="4" linkend="ecpg"/>) и в <application>PL/pgSQL</application> (см. <xref remap="4" linkend="plpgsql"/>). В <productname>&productname;</productname> команда <command>SELECT INTO</command> связана с созданием таблицы по историческим причинам. В новом коде для этих целей лучше использовать <command>CREATE TABLE AS</command>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createtableas"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

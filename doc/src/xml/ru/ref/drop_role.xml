@@ -1,0 +1,82 @@
+<!--
+doc/src/xml/ref/drop_role.xml
+&productname; documentation
+-->
+
+<refentry id="sql-droprole">
+ <indexterm zone="sql-droprole"><primary>DROP ROLE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP ROLE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP ROLE</refname>
+  <refpurpose>удалить роль в базе данных</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP ROLE [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> [, ...]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP ROLE</command> удаляет указанные роли. Удалить роль суперпользователя может только суперпользователь, а чтобы удалить роль обычного пользователя, достаточно иметь право <literal>CREATEROLE</literal>.</para>
+
+  <para>Если на эту роль есть ссылки в какой-либо базе данных в кластере, возникнет ошибка и роль не будет удалена. Прежде чем удалять роль, необходимо удалить все принадлежащие ей объекты (или сменить их владельца), а также лишить её данных ей прав для других объектов. Для этой цели можно применить команды <xref linkend="sql-reassign-owned"/> и <xref linkend="sql-drop-owned"/>; за подробностями обратитесь к <xref remap="3" linkend="role-removal"/>.</para>
+
+  <para>Однако ликвидировать членство в ролях, связанное с этой ролью, не требуется; <command>DROP ROLE</command> автоматически исключит данную роль из других ролей, и третьи роли из данной. Сами роли при этом не удаляются и другим образом никак не затрагиваются.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если роль не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя роли, подлежащей удалению.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para><productname>&productname;</productname> включает программу <xref linkend="app-dropuser"/>, которая предоставляет ту же функциональность (на самом деле она вызывает эту команду), но может запускаться в командной оболочке.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление роли: <programlisting>DROP ROLE jonathan;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>В стандарте SQL определена команда <command>DROP ROLE</command>, но она может удалять только по одной роли, а для её выполнения требуются другие права, не такие как в <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createrole"/></member>
+   <member><xref linkend="sql-alterrole"/></member>
+   <member><xref linkend="sql-set-role"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

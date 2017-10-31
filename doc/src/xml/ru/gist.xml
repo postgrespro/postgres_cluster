@@ -1,0 +1,632 @@
+<!-- doc/src/xml/gist.xml -->
+
+<chapter id="gist">
+<title>Индексы GiST</title>
+
+   <indexterm><primary>индекс</primary> <secondary>GiST</secondary></indexterm>
+
+<sect1 id="gist-intro">
+ <title>Введение</title>
+
+ <para><acronym>GiST</acronym> расшифровывается как <quote>Generalized Search Tree</quote> (Обобщённое поисковое дерево). Это сбалансированный иерархический метод доступа, который представляет собой базовый шаблон, на основе которого могут реализовываться произвольные схемы индексации. На базе <acronym>GiST</acronym> могут быть реализованы B-деревья, R-деревья и многие другие схемы индексации.</para>
+
+ <para>Ключевым преимуществом <acronym>GiST</acronym> является то, что он позволяет разрабатывать дополнительные типы данных с соответствующими методами доступа экспертам в предметной области типа данных, а не специалистам по СУБД.</para>
+
+  <para>Представленная здесь информация частично позаимствована с <ulink url="http://gist.cs.berkeley.edu/">сайта</ulink> Проекта индексации GiST Калифорнийского университета в Беркли и из диссертации Марселя Корнакера <ulink url="http://www.sai.msu.su/~megera/postgres/gist/papers/concurrency/access-methods-for-next-generation.pdf.gz">Методы доступа для СУБД следующего поколения</ulink>. Сопровождением реализации <acronym>SP-GiST</acronym> в <productname>&productname;</productname> в основном занимаются Фёдор Сигаев и Олег Бартунов; дополнительные сведения можно получить на их <ulink url="http://www.sai.msu.su/~megera/postgres/gist/">сайте</ulink>.</para>
+
+</sect1>
+
+<sect1 id="gist-builtin-opclasses">
+ <title>Встроенные классы операторов</title>
+
+ <para>В базовый дистрибутив <productname>&productname;</productname> включены классы операторов <acronym>GiST</acronym>, перечисленные в <xref remap="6" linkend="gist-builtin-opclasses-table"/>. (Некоторые дополнительные модули, описанные в <xref remap="6" linkend="contrib"/>, добавляют другие классы операторов <acronym>GiST</acronym>.)</para>
+
+  <table id="gist-builtin-opclasses-table">
+   <title>Встроенные классы операторов <acronym>GiST</acronym></title>
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry>Имя</entry>
+      <entry>Индексируемый тип данных</entry>
+      <entry>Индексируемые операторы</entry>
+      <entry>Операторы упорядочивания</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry><literal>box_ops</literal></entry>
+      <entry><type>box</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&amp;&gt;</literal>
+       <literal>&amp;&lt;</literal>
+       <literal>&amp;&lt;|</literal>
+       <literal>&gt;&gt;</literal>
+       <literal>&lt;&lt;</literal>
+       <literal>&lt;&lt;|</literal>
+       <literal>&lt;@</literal>
+       <literal>@&gt;</literal>
+       <literal>@</literal>
+       <literal>|&amp;&gt;</literal>
+       <literal>|&gt;&gt;</literal>
+       <literal>~</literal>
+       <literal>~=</literal>
+      </entry>
+      <entry>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>circle_ops</literal></entry>
+      <entry><type>circle</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&amp;&gt;</literal>
+       <literal>&amp;&lt;</literal>
+       <literal>&amp;&lt;|</literal>
+       <literal>&gt;&gt;</literal>
+       <literal>&lt;&lt;</literal>
+       <literal>&lt;&lt;|</literal>
+       <literal>&lt;@</literal>
+       <literal>@&gt;</literal>
+       <literal>@</literal>
+       <literal>|&amp;&gt;</literal>
+       <literal>|&gt;&gt;</literal>
+       <literal>~</literal>
+       <literal>~=</literal>
+      </entry>
+      <entry>
+       <literal>&lt;-&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>inet_ops</literal></entry>
+      <entry><type>inet</type>, <type>cidr</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&gt;&gt;</literal>
+       <literal>&gt;&gt;=</literal>
+       <literal>&gt;</literal>
+       <literal>&gt;=</literal>
+       <literal>&lt;&gt;</literal>
+       <literal>&lt;&lt;</literal>
+       <literal>&lt;&lt;=</literal>
+       <literal>&lt;</literal>
+       <literal>&lt;=</literal>
+       <literal>=</literal>
+      </entry>
+      <entry>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>point_ops</literal></entry>
+      <entry><type>point</type></entry>
+      <entry>
+       <literal>&gt;&gt;</literal>
+       <literal>&gt;^</literal>
+       <literal>&lt;&lt;</literal>
+       <literal>&lt;@</literal>
+       <literal>&lt;@</literal>
+       <literal>&lt;@</literal>
+       <literal>&lt;^</literal>
+       <literal>~=</literal>
+      </entry>
+      <entry>
+       <literal>&lt;-&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>poly_ops</literal></entry>
+      <entry><type>polygon</type></entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&amp;&gt;</literal>
+       <literal>&amp;&lt;</literal>
+       <literal>&amp;&lt;|</literal>
+       <literal>&gt;&gt;</literal>
+       <literal>&lt;&lt;</literal>
+       <literal>&lt;&lt;|</literal>
+       <literal>&lt;@</literal>
+       <literal>@&gt;</literal>
+       <literal>@</literal>
+       <literal>|&amp;&gt;</literal>
+       <literal>|&gt;&gt;</literal>
+       <literal>~</literal>
+       <literal>~=</literal>
+      </entry>
+      <entry>
+       <literal>&lt;-&gt;</literal>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>range_ops</literal></entry>
+      <entry>любой тип диапазона</entry>
+      <entry>
+       <literal>&amp;&amp;</literal>
+       <literal>&amp;&gt;</literal>
+       <literal>&amp;&lt;</literal>
+       <literal>&gt;&gt;</literal>
+       <literal>&lt;&lt;</literal>
+       <literal>&lt;@</literal>
+       <literal>-|-</literal>
+       <literal>=</literal>
+       <literal>@&gt;</literal>
+       <literal>@&gt;</literal>
+      </entry>
+      <entry>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>tsquery_ops</literal></entry>
+      <entry><type>tsquery</type></entry>
+      <entry>
+       <literal>&lt;@</literal>
+       <literal>@&gt;</literal>
+      </entry>
+      <entry>
+      </entry>
+     </row>
+     <row>
+      <entry><literal>tsvector_ops</literal></entry>
+      <entry><type>tsvector</type></entry>
+      <entry>
+       <literal>@@</literal>
+      </entry>
+      <entry>
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+ <para>По историческим причинам класс операторов <literal>inet_ops</literal> не является классом по умолчанию для типов <type>inet</type> и <type>cidr</type>. Чтобы использовать его, укажите имя класса в <command>CREATE INDEX</command>, например: <programlisting>CREATE INDEX ON my_table USING GIST (my_inet_column inet_ops);</programlisting></para>
+
+</sect1>
+
+<sect1 id="gist-extensibility">
+ <title>Расширяемость</title>
+
+ <para>Реализация нового метода доступа индекса традиционно была большой и сложной задачей. Чтобы её решить, необходимо было понимать внутреннее устройство базы данных, в частности работу менеджера блокировок и журнала предзаписи. Но с интерфейсом <acronym>GiST</acronym>, реализующим высокий уровень абстракции, разработчик метода доступа должен реализовать только смысловое наполнение индексируемого типа данных. Уровень <acronym>GiST</acronym> берёт на себя заботу о параллельном доступе, поддержке журнала и поиске в структуре дерева.</para>
+
+ <para>Эту расширяемость не следует путать с расширяемостью других стандартных деревьев поиска в смысле поддержки различных типов данных. Например, <productname>&productname;</productname> поддерживает расширяемость B-деревьев и индексов по хешу. Это означает, что в <productname>&productname;</productname> вы можете построить B-дерево или хеш-таблицу по любому желаемому типу данных. Но такие B-деревья будут поддерживать только предикаты сравнений (<literal>&lt;</literal>, <literal>=</literal>, <literal>&gt;</literal>), а индексы по хешу только запросы с равенством.</para>
+
+ <para>Поэтому, если вы проиндексируете в <productname>&productname;</productname> в B-дереве, например, коллекцию изображений, вы сможете выполнять только проверки вида <quote>равны ли изображения X и Y</quote>, <quote>меньше ли изображение X изображения Y</quote> и <quote>больше ли изображение X изображения Y</quote>. Это может быть полезно, в зависимости от того, как вы определите операции <quote>равно</quote>, <quote>меньше</quote> и <quote>больше</quote>. Однако, используя индекс на базе <acronym>GiST</acronym>, возможно удовлетворять и запросы из предметной области, например, <quote>найти все изображения лошадей</quote> или <quote>найти все пересвеченные изображения</quote>.</para>
+
+ <para>Всё, что нужно, чтобы получить работающий метод доступа <acronym>GiST</acronym> — это реализовать несколько методов, определяющих поведение ключей в дереве. Конечно, эти методы должны быть довольно изощрёнными, чтобы поддерживать изощрённые запросы, но для всех стандартных запросов (B-деревьев, R-деревьев и т. д.) они относительно просты. Словом, <acronym>GiST</acronym> сочетает расширяемость с универсальностью, повторным использованием кода и аккуратным интерфейсом.</para>
+
+ <para>Класс операторов индекса <acronym>GiST</acronym> должен предоставить семь методов и может дополнительно предоставлять ещё два. Корректность индекса обеспечивается реализацией методов <function>same</function>, <function>consistent</function> и <function>union</function>, а его эффективность (по размеру и скорости) будет зависеть от методов <function>penalty</function> и <function>picksplit</function>. Последние два основных метода <function>compress</function> и <function>decompress</function> позволяют реализовать внутреннее представление данных дерева, не совпадающее с типом индексируемых данных. Данные листьев индекса должны быть индексируемого типа, тогда как в остальных узлах дерева могут быть произвольные структуры C (но при этом должны соблюдаться правила, предъявляемые <productname>&productname;</productname> к типам данным; прочитайте о <literal>varlena</literal> для данных переменного размера). Если внутренний тип данных дерева существует на уровне SQL, в команде <command>CREATE OPERATOR CLASS</command> можно использовать указание <literal>STORAGE</literal>. Необязательный восьмой метод <function>distance</function> нужно реализовать, только если класс операторов желает поддерживать упорядоченные сканирования (поиск ближайших соседей). Необязательный девятый метод <function>fetch</function> требуется, если класс операторов желает поддерживать сканирование только индекса.</para>
+
+ <variablelist>
+    <varlistentry>
+     <term><function>consistent</function></term>
+     <listitem>
+      <para>Для переданной записи индекса <literal>p</literal> и значения запроса <literal>q</literal> эта функция определяет, является ли запись индекса <quote>соответствующей</quote> запросу; то есть, может ли предикат <quote><replaceable>индексированный_столбец</replaceable> <replaceable>индексируемый_оператор</replaceable> <literal>q</literal></quote> удовлетворяться для какой-либо строки, представленной данной записью индекса? Для записей на уровне листьев это равносильно проверке индексируемого условия, тогда как для внутреннего узла дерева требуется определить, нужно ли сканировать поддерево индекса, относящееся к данному узлу. Когда результат <literal>true</literal>, также должен возвращаться флаг <literal>recheck</literal>, показывающий, точно ли удовлетворяется предикат или это лишь потенциально возможно. Если <literal>recheck</literal> = <literal>false</literal>, это означает, что индекс проверил условие предиката в точности, тогда как при <literal>recheck</literal> = <literal>true</literal> проверяемая строка будет только кандидатом на совпадение. В этом случае система автоматически перепроверит <replaceable>индексируемый_оператор</replaceable> с действительным значением строки, чтобы окончательно определить, соответствует ли оно запросу. Благодаря этому <acronym>GiST</acronym> поддерживает индексы как точной, так и неточной структуры.</para>
+
+      <para>В <acronym>SQL</acronym> эта функция должна объявляться примерно так: <programlisting>CREATE OR REPLACE FUNCTION my_consistent(internal, data_type, smallint, oid, internal)
+RETURNS bool
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;</programlisting> А соответствующий код в модуле C может реализовываться по такому шаблону: <programlisting>PG_FUNCTION_INFO_V1(my_consistent);
+
+Datum
+my_consistent(PG_FUNCTION_ARGS)
+{
+    GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
+    data_type  *query = PG_GETARG_DATA_TYPE_P(1);
+    StrategyNumber strategy = (StrategyNumber) PG_GETARG_UINT16(2);
+    /* Oid subtype = PG_GETARG_OID(3); */
+    bool       *recheck = (bool *) PG_GETARG_POINTER(4);
+    data_type  *key = DatumGetDataType(entry-&gt;key);
+    bool        retval;
+
+    /*
+     * Определить возвращаемое значение как функцию стратегии, ключа и запроса.
+     *
+     * Вызовите GIST_LEAF(entry), чтобы узнать текущую позицию в дереве индекса,
+     * что удобно, например для поддержки оператора = (вы можете проверить
+     * равенство в листьях дерева и непустое пересечение в остальных
+     * узлах).
+     */
+
+    *recheck = true;        /* или false, если проверка точная */
+
+    PG_RETURN_BOOL(retval);
+}</programlisting> Здесь <varname>key</varname> — это элемент в индексе, а <varname>query</varname> — значение, искомое в индексе. Параметр <literal>StrategyNumber</literal> показывает, какой оператор из класса операторов применяется &mdash; он соответствует одному из номеров операторов, заданных в команде <command>CREATE OPERATOR CLASS</command>.</para>
+
+      <para>В зависимости от того, какие операторы включены в класс, тип данных <varname>query</varname> может быть разным для разных операторов, так как это будет тот тип, что фигурирует в правой части оператора, и он может отличаться от индексируемого типа данных, фигурирующего слева. (В показанном выше шаблоне предполагается, что допускается только один тип; в противном случае получение значения <varname>query</varname> зависело бы от оператора.) В SQL-объявлении функции <function>consistent</function> для аргумента <varname>query</varname> рекомендуется установить индексированный тип данного класса операторов, хотя фактический тип может быть каким-то другим, в зависимости от оператора.</para>
+
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>union</function></term>
+     <listitem>
+      <para>Этот метод консолидирует информацию в дереве. Получив набор записей, он должен сгенерировать в индексе новую запись, представляющие все эти записи.</para>
+
+      <para>В <acronym>SQL</acronym> эта функция должна объявляться так: <programlisting>CREATE OR REPLACE FUNCTION my_union(internal, internal)
+RETURNS storage_type
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;</programlisting> И соответствующий код в модуле C должен реализовываться по такому шаблону: <programlisting>PG_FUNCTION_INFO_V1(my_union);
+
+Datum
+my_union(PG_FUNCTION_ARGS)
+{
+    GistEntryVector *entryvec = (GistEntryVector *) PG_GETARG_POINTER(0);
+    GISTENTRY  *ent = entryvec-&gt;vector;
+    data_type  *out,
+               *tmp,
+               *old;
+    int         numranges,
+                i = 0;
+
+    numranges = entryvec-&gt;n;
+    tmp = DatumGetDataType(ent[0].key);
+    out = tmp;
+
+    if (numranges == 1)
+    {
+        out = data_type_deep_copy(tmp);
+
+        PG_RETURN_DATA_TYPE_P(out);
+    }
+
+    for (i = 1; i &lt; numranges; i++)
+    {
+        old = out;
+        tmp = DatumGetDataType(ent[i].key);
+        out = my_union_implementation(out, tmp);
+    }
+
+    PG_RETURN_DATA_TYPE_P(out);
+}</programlisting></para>
+
+      <para>Как можно заметить, в этом шаблоне мы имеем дело с типом данных, для которого <literal>union(X, Y, Z) = union(union(X, Y), Z)</literal>. Достаточно просто можно поддержать и такие типы данных, для которых это не выполняется, реализовав соответствующий алгоритм объединения в этом опорном методе <acronym>GiST</acronym>.</para>
+
+      <para>Результатом функции <function>union</function> должно быть значение типа хранения индекса, каким бы он ни был (он может совпадать с типом индексированного столбца, а может и отличаться от него). Функция, реализующая <function>union</function>, должна возвращать указатель на память, выделенную вызовом <function>palloc()</function>. Она не может просто вернуть полученное значение как есть, даже если оно имеет тот же тип.</para>
+
+      <para>Как показано выше, первый аргумент <type>internal</type> функции <function>union</function> на самом деле представляет указатель <structname>GistEntryVector</structname>. Во втором аргументе (его можно игнорировать) передаётся указатель на целочисленную переменную. (Раньше требовалось, чтобы функция <function>union</function> сохраняла в этой переменной размер результирующего значения, но теперь такого требования нет.)</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>compress</function></term>
+     <listitem>
+      <para>Преобразует элемент данных в формат, подходящий для физического хранения в странице индекса.</para>
+
+      <para>В <acronym>SQL</acronym> эта функция должна объявляться так: <programlisting>CREATE OR REPLACE FUNCTION my_compress(internal)
+RETURNS internal
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;</programlisting> И соответствующий код в модуле C должен реализовываться по такому шаблону: <programlisting>PG_FUNCTION_INFO_V1(my_compress);
+
+Datum
+my_compress(PG_FUNCTION_ARGS)
+{
+    GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
+    GISTENTRY  *retval;
+
+    if (entry-&gt;leafkey)
+    {
+        /* заменить entry-&gt;key сжатой версией */
+        compressed_data_type *compressed_data = palloc(sizeof(compressed_data_type));
+
+        /* заполнить *compressed_data из entry-&gt;key ... */
+
+        retval = palloc(sizeof(GISTENTRY));
+        gistentryinit(*retval, PointerGetDatum(compressed_data),
+                      entry-&gt;rel, entry-&gt;page, entry-&gt;offset, FALSE);
+    }
+    else
+    {
+        /* обычно с записями внутренних узлов ничего делать не нужно */
+        retval = entry;
+    }
+
+    PG_RETURN_POINTER(retval);
+}</programlisting></para>
+
+      <para>Разумеется, <replaceable>compressed_data_type</replaceable> (тип сжатых данных) нужно привести к нужному типу, при преобразовании в который будут сжиматься узлы на уровне листьев.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>decompress</function></term>
+     <listitem>
+      <para>Метод, обратный к <function>compress</function>. Преобразует представление элемента данных в индексе в формат, с которым могут работать другие методы GiST в классе операторов.</para>
+
+      <para>В <acronym>SQL</acronym> эта функция должна объявляться так: <programlisting>CREATE OR REPLACE FUNCTION my_decompress(internal)
+RETURNS internal
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;</programlisting> И соответствующий код в модуле C должен реализовываться по такому шаблону: <programlisting>PG_FUNCTION_INFO_V1(my_decompress);
+
+Datum
+my_decompress(PG_FUNCTION_ARGS)
+{
+    PG_RETURN_POINTER(PG_GETARG_POINTER(0));
+}</programlisting> Этот шаблон подходит для случая, когда преобразовывать данные не нужно.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>penalty</function></term>
+     <listitem>
+      <para>Возвращает значение, выражающее <quote>стоимость</quote> добавления новой записи в конкретную ветвь дерева. Элементы будут вставляться по тому направлению в дереве, для которого значение <function>penalty</function> минимально. Результаты <function>penalty</function> должны быть неотрицательными; если возвращается отрицательное значение, оно воспринимается как ноль.</para>
+
+      <para>В <acronym>SQL</acronym> эта функция должна объявляться так: <programlisting>CREATE OR REPLACE FUNCTION my_penalty(internal, internal, internal)
+RETURNS internal
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;  -- в некоторых случая функции стоимости не должны быть строгими</programlisting> И соответствующий код в модуле C может реализовываться по такому шаблону: <programlisting>PG_FUNCTION_INFO_V1(my_penalty);
+
+Datum
+my_penalty(PG_FUNCTION_ARGS)
+{
+    GISTENTRY  *origentry = (GISTENTRY *) PG_GETARG_POINTER(0);
+    GISTENTRY  *newentry = (GISTENTRY *) PG_GETARG_POINTER(1);
+    float      *penalty = (float *) PG_GETARG_POINTER(2);
+    data_type  *orig = DatumGetDataType(origentry-&gt;key);
+    data_type  *new = DatumGetDataType(newentry-&gt;key);
+
+    *penalty = my_penalty_implementation(orig, new);
+    PG_RETURN_POINTER(penalty);
+}</programlisting> По историческим причинам функция <function>penalty</function> не просто возвращает результат типа <type>float</type>; вместо этого она должна сохранить его значение по адресу, указанному третьим аргументом. Собственно возвращаемое значение игнорируется, хотя в нём принято возвращать этот же адрес.</para>
+
+      <para>Функция <function>penalty</function> важна для хорошей производительности индекса. Она будет вызываться во время добавления записи, чтобы выбрать ветвь для дальнейшего движения, когда в дерево нужно добавить новый элемент. Это имеет значение во время запроса, так как чем более сбалансирован индекс, тем быстрее будет поиск в нём.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>picksplit</function></term>
+     <listitem>
+      <para>Когда необходимо разделить страницу индекса, эта функция решает, какие записи должны остаться в старой странице, а какие нужно перенести в новую.</para>
+
+      <para>В <acronym>SQL</acronym> эта функция должна объявляться так: <programlisting>CREATE OR REPLACE FUNCTION my_picksplit(internal, internal)
+RETURNS internal
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;</programlisting> И соответствующий код в модуле C может реализовываться по такому шаблону: <programlisting>PG_FUNCTION_INFO_V1(my_picksplit);
+
+Datum
+my_picksplit(PG_FUNCTION_ARGS)
+{
+    GistEntryVector *entryvec = (GistEntryVector *) PG_GETARG_POINTER(0);
+    GIST_SPLITVEC *v = (GIST_SPLITVEC *) PG_GETARG_POINTER(1);
+    OffsetNumber maxoff = entryvec-&gt;n - 1;
+    GISTENTRY  *ent = entryvec-&gt;vector;
+    int         i,
+                nbytes;
+    OffsetNumber *left,
+               *right;
+    data_type  *tmp_union;
+    data_type  *unionL;
+    data_type  *unionR;
+    GISTENTRY **raw_entryvec;
+
+    maxoff = entryvec-&gt;n - 1;
+    nbytes = (maxoff + 1) * sizeof(OffsetNumber);
+
+    v-&gt;spl_left = (OffsetNumber *) palloc(nbytes);
+    left = v-&gt;spl_left;
+    v-&gt;spl_nleft = 0;
+
+    v-&gt;spl_right = (OffsetNumber *) palloc(nbytes);
+    right = v-&gt;spl_right;
+    v-&gt;spl_nright = 0;
+
+    unionL = NULL;
+    unionR = NULL;
+
+    /* Инициализировать чистый вектор записи. */
+    raw_entryvec = (GISTENTRY **) malloc(entryvec-&gt;n * sizeof(void *));
+    for (i = FirstOffsetNumber; i &lt;= maxoff; i = OffsetNumberNext(i))
+        raw_entryvec[i] = &amp;(entryvec-&gt;vector[i]);
+
+    for (i = FirstOffsetNumber; i &lt;= maxoff; i = OffsetNumberNext(i))
+    {
+        int         real_index = raw_entryvec[i] - entryvec-&gt;vector;
+
+        tmp_union = DatumGetDataType(entryvec-&gt;vector[real_index].key);
+        Assert(tmp_union != NULL);
+
+        /*
+         * Выбрать, куда помещать записи индекса и изменить unionL и unionR
+         * соответственно. Добавить записи в v_spl_left или
+         * v_spl_right и увеличить счётчики.
+         */
+
+        if (my_choice_is_left(unionL, curl, unionR, curr))
+        {
+            if (unionL == NULL)
+                unionL = tmp_union;
+            else
+                unionL = my_union_implementation(unionL, tmp_union);
+
+            *left = real_index;
+            ++left;
+            ++(v-&gt;spl_nleft);
+        }
+        else
+        {
+            /*
+             * То же самое с правой стороной
+             */
+        }
+    }
+
+    v-&gt;spl_ldatum = DataTypeGetDatum(unionL);
+    v-&gt;spl_rdatum = DataTypeGetDatum(unionR);
+    PG_RETURN_POINTER(v);
+}</programlisting> Заметьте, что результат функции <function>picksplit</function> доставляется через полученную на вход структуру <structname>v</structname>. Собственно возвращаемое значение игнорируется, хотя в нём принято возвращать адрес <structname>v</structname>.</para>
+
+      <para>Как и <function>penalty</function>, функция <function>picksplit</function> важна для хорошей производительности индекса. Сложность создания быстродействующих индексов <acronym>GiST</acronym> заключается как раз в разработке подходящих реализаций <function>penalty</function> и <function>picksplit</function>.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>same</function></term>
+     <listitem>
+      <para>Возвращает true, если два элемента индекса равны, и false в противном случае. (<quote>Элемент индекса</quote> — это значение типа хранения индекса, а не обязательно исходного типа индексируемого столбца.)</para>
+
+      <para>В <acronym>SQL</acronym> эта функция должна объявляться так: <programlisting>CREATE OR REPLACE FUNCTION my_same(storage_type, storage_type, internal)
+RETURNS internal
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;</programlisting> И соответствующий код в модуле C может реализовываться по такому шаблону: <programlisting>PG_FUNCTION_INFO_V1(my_same);
+
+Datum
+my_same(PG_FUNCTION_ARGS)
+{
+    prefix_range *v1 = PG_GETARG_PREFIX_RANGE_P(0);
+    prefix_range *v2 = PG_GETARG_PREFIX_RANGE_P(1);
+    bool       *result = (bool *) PG_GETARG_POINTER(2);
+
+    *result = my_eq(v1, v2);
+    PG_RETURN_POINTER(result);
+}</programlisting> По историческим причинам функция <function>same</function> не просто возвращает результат булевского типа; вместо этого она должна сохранить флаг по адресу, указанному третьим аргументом. Собственно возвращаемое значение игнорируется, хотя в нём принято возвращать этот же адрес.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>distance</function></term>
+     <listitem>
+      <para>Для переданной записи индекса <literal>p</literal> и значения запроса <literal>q</literal> эта функция определяет <quote>дистанцию</quote> от записи индекса до значения в запросе. Эта функция должна быть представлена, если класс операторов содержит какие-либо операторы упорядочивания. Запрос с оператором упорядочивания будет выполняться так, чтобы записи индекса с наименьшей <quote>дистанцией</quote> возвращались первыми, так что результаты должны согласовываться со смысловым значением оператора. Для записи на уровне листьев результат представляет только дистанцию до этой записи, а для внутреннего узла дерева это будет минимальная дистанция, которая может быть получена среди всех его потомков.</para>
+
+      <para>В <acronym>SQL</acronym> эта функция должна объявляться так: <programlisting>CREATE OR REPLACE FUNCTION my_distance(internal, data_type, smallint, oid, internal)
+RETURNS float8
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;</programlisting> И соответствующий код в модуле C должен реализовываться по такому шаблону: <programlisting>PG_FUNCTION_INFO_V1(my_distance);
+
+Datum
+my_distance(PG_FUNCTION_ARGS)
+{
+    GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
+    data_type  *query = PG_GETARG_DATA_TYPE_P(1);
+    StrategyNumber strategy = (StrategyNumber) PG_GETARG_UINT16(2);
+    /* Oid subtype = PG_GETARG_OID(3); */
+    /* bool *recheck = (bool *) PG_GETARG_POINTER(4); */
+    data_type  *key = DatumGetDataType(entry-&gt;key);
+    double      retval;
+
+    /*
+     * определить возвращаемое значение как функцию стратегии, ключа и запроса.
+     */
+
+    PG_RETURN_FLOAT8(retval);
+}</programlisting> Функции <function>distance</function> передаются те же аргументы, что и функции <function>consistent</function>.</para>
+
+      <para>При определении дистанции допускается некоторая неточность, если результат никогда не будет превышать действительную дистанцию до элемента. Так, например, в геометрических приложениях бывает достаточно определить дистанцию до описанного прямоугольника. Для внутреннего узла дерева результат не должен превышать дистанцию до любого из его дочерних узлов. Если возвращаемая дистанция неточная, функция должна установить флаг <literal>*recheck</literal>. (Это необязательно для внутренних узлов дерева; для них результат всегда считается неточным.) В этом случае исполнитель вычислит точную дистанцию, выбрав кортеж из кучи, и переупорядочит кортежи при необходимости.</para>
+
+      <para>Если функция distance возвращает <literal>*recheck = true</literal> для любого узла на уровне листьев, типом результата исходного оператора упорядочивания должен быть <type>float8</type> или <type>float4</type>, и значения результата функции distance должны быть сравнимы с результатами исходного оператора упорядочивания, так как исполнитель будет выполнять сортировку, используя и результаты функции distance, и уточнённые результаты оператора упорядочивания. В противном случае значениями результата distance могут быть любые конечные значения <type>float8</type>, при условии, что относительный порядок значений результата соответствует порядку, который даёт оператор упорядочивания. (Значения бесконечность и минус бесконечность применяются внутри для особых случаев, например, представления NULL, поэтому возвращать такие значения из функций <function>distance</function> не рекомендуется.)</para>
+
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><function>fetch</function></term>
+     <listitem>
+      <para>Преобразует сжатое представление элемента данных в индексе в исходный тип данных, для сканирования только индекса. Возвращаемые данные должны быть точной, не примерной копией изначально проиндексированного значения.</para>
+
+      <para>В <acronym>SQL</acronym> эта функция должна объявляться так: <programlisting>CREATE OR REPLACE FUNCTION my_fetch(internal)
+RETURNS internal
+AS 'MODULE_PATHNAME'
+LANGUAGE C STRICT;</programlisting> В качестве аргумента ей передаётся указатель на структуру <structname>GISTENTRY</structname>. При вызове её поле <structfield>key</structfield> содержит данные листа в сжатой форме (не NULL). Возвращаемое значение — ещё одна структура <structname>GISTENTRY</structname>, в которой поле <structfield>key</structfield> содержит те же данные в исходной, развёрнутой форме. Если функция compress класса операторов не делает с данными листьев ничего, метод <function>fetch</function> может возвратить аргумент без изменений.</para>
+
+       <para>Соответствующий код в модуле C должен реализовываться по такому шаблону: <programlisting>PG_FUNCTION_INFO_V1(my_fetch);
+
+Datum
+my_fetch(PG_FUNCTION_ARGS)
+{
+    GISTENTRY  *entry = (GISTENTRY *) PG_GETARG_POINTER(0);
+    input_data_type *in = DatumGetP(entry-&gt;key);
+    fetched_data_type *fetched_data;
+    GISTENTRY  *retval;
+
+    retval = palloc(sizeof(GISTENTRY));
+    fetched_data = palloc(sizeof(fetched_data_type));
+
+    /*
+     * Преобразовать структуру 'fetched_data' в Datum исходного типа данных.
+     */
+
+    /* заполнить *retval из fetch_data. */
+    gistentryinit(*retval, PointerGetDatum(converted_datum),
+                  entry-&gt;rel, entry-&gt;page, entry-&gt;offset, FALSE);
+
+    PG_RETURN_POINTER(retval);
+}</programlisting></para>
+
+      <para>Если метод сжатия является неточным для записей уровня листьев, такой класс операторов не может поддерживать сканирование только индекса и не должен определять функцию <function>fetch</function>.</para>
+
+     </listitem>
+    </varlistentry>
+  </variablelist>
+
+  <para>Все опорные методы GiST обычно вызываются в кратковременных контекстах памяти; то есть, <varname>CurrentMemoryContext</varname> сбрасывается после обработки каждого кортежа. Таким образом можно не заботиться об освобождении любых блоков памяти, выделенных функцией palloc. Однако в некоторых случаях для опорного метода полезно кешировать какие-либо данные между вызовами. Для этого нужно разместить долгоживущие данные в контексте <literal>fcinfo-&gt;flinfo-&gt;fn_mcxt</literal> и сохранить указатель на них в <literal>fcinfo-&gt;flinfo-&gt;fn_extra</literal>. Такие данные смогут просуществовать всё время операции с индексом (например, одно сканирование индекса GiST, построение индекса или добавление кортежа в индекс). Не забудьте вызвать pfree для предыдущего значения, заменяя значение в <literal>fn_extra</literal>, чтобы не допустить накопления утечек памяти в ходе операции.</para>
+
+</sect1>
+
+<sect1 id="gist-implementation">
+ <title>Реализация</title>
+
+ <sect2 id="gist-buffering-build">
+  <title>Построение GiST с буферизацией</title>
+  <para>Если попытаться построить большой индекс GiST, просто добавляя все кортежи по очереди, скорее всего это будет медленно, потому что если кортежи индексов будут разбросаны по всему индексу, а индекс будет большим и не поместится в кеше, при добавлении записей потребуется произвести множество операций произвольного доступа. Начиная с версии 9.2, PostgreSQL поддерживает более эффективный метод построения индексов с применением буферизации, что позволяет кардинально сократить число операций произвольного доступа, требующихся при обработке неупорядоченных наборов данных. Для хорошо упорядоченных наборов выигрыш может быть минимальным или вообще отсутствовать, так как всего несколько страниц будут принимать новые кортежи в один момент времени, и эти страницы будут умещаться в кеше, даже если весь индекс очень большой.</para>
+
+  <para>Однако, при построении индекса с буферизацией приходится гораздо чаще вызывать функцию <function>penalty</function>, на что уходят дополнительные ресурсы процессора. Кроме того, используемым для этой операции буферам требуется временное место на диске, вплоть до размера результирующего индекса. Буферизация также может повлиять на качество результирующего индекса, как в положительную, так и в отрицательную сторону. Это влияние зависит от различных факторов, например, от распределения поступающих данных и от реализации класса операторов.</para>
+
+  <para>По умолчанию при построении индекса GiST включается буферизация, когда размер индекса достигает значения <xref linkend="guc-effective-cache-size"/>. Этот режим можно вручную включить или отключить с помощью параметра <literal>buffering</literal> команды CREATE INDEX. Поведение по умолчанию достаточно эффективно в большинстве случаев, но если входные данные упорядочены, выключив буферизацию, можно получить некоторое ускорение.</para>
+
+ </sect2>
+</sect1>
+
+<sect1 id="gist-examples">
+ <title>Примеры</title>
+
+ <para>В дистрибутив исходного кода <productname>&productname;</productname> включены несколько примеров методов индексов, реализованных на базе <acronym>GiST</acronym>. В настоящее время ядро системы обеспечивает поддержку текстового поиска (индексацию типов <type>tsvector</type> и <type>tsquery</type>), а также функциональность R-дерева для некоторых встроенных геометрических типов данных (см. <filename>src/backend/access/gist/gistproc.c</filename>). Классы операторов <acronym>GiST</acronym> содержатся также и в следующих дополнительных модулях (<filename>contrib</filename>): <variablelist>
+  <varlistentry>
+   <term><filename>btree_gist</filename></term>
+   <listitem>
+    <para>Функциональность B-дерева для различных типов данных</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><filename>cube</filename></term>
+   <listitem>
+    <para>Индексирование для многомерных кубов</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><filename>hstore</filename></term>
+   <listitem>
+    <para>Модуль для хранения пар (ключ, значение)</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><filename>intarray</filename></term>
+   <listitem>
+    <para>RD-дерево для одномерных массивов значений int4</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><filename>ltree</filename></term>
+   <listitem>
+    <para>Индексирование древовидных структур</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><filename>pg_trgm</filename></term>
+   <listitem>
+    <para>Схожесть текста на основе статистики триграмм</para>
+   </listitem>
+  </varlistentry>
+
+  <varlistentry>
+   <term><filename>seg</filename></term>
+   <listitem>
+    <para>Индексирование <quote>диапазонов чисел с плавающей точкой</quote></para>
+   </listitem>
+  </varlistentry>
+ </variablelist></para>
+
+</sect1>
+
+</chapter>

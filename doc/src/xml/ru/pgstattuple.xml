@@ -1,0 +1,402 @@
+<!-- doc/src/xml/pgstattuple.xml -->
+
+<sect1 id="pgstattuple" xreflabel="pgstattuple">
+ <title>pgstattuple</title>
+
+ <indexterm zone="pgstattuple"><primary>pgstattuple</primary></indexterm>
+
+ <para>Модуль <filename>pgstattuple</filename> предоставляет различные функции для получения статистики на уровне кортежей.</para>
+
+ <sect2>
+  <title>Функции</title>
+
+  <variablelist>
+   <varlistentry>
+    <term>
+     <indexterm><primary>pgstattuple</primary></indexterm>
+     <function>pgstattuple(regclass) returns record</function>
+    </term>
+
+    <listitem>
+     <para>Функция <function>pgstattuple</function> возвращает физическую длину отношения, процент <quote>мёртвых</quote> кортежей и другую информацию. Она может быть полезна для принятия решения о необходимости очистки. В аргументе передаётся имя (возможно, дополненное схемой) или OID целевого отношения. Например: <programlisting>test=&gt; SELECT * FROM pgstattuple('pg_catalog.pg_proc');
+-[ RECORD 1 ]------+-------
+table_len          | 458752
+tuple_count        | 1470
+tuple_len          | 438896
+tuple_percent      | 95.67
+dead_tuple_count   | 11
+dead_tuple_len     | 3157
+dead_tuple_percent | 0.69
+free_space         | 8932
+free_percent       | 1.95</programlisting> Столбцы результата описаны в <xref remap="6" linkend="pgstattuple-columns"/>.</para>
+
+    <table id="pgstattuple-columns">
+     <title>Столбцы результата <function>pgstattuple</function></title>
+     <tgroup cols="3">
+      <thead>
+       <row>
+        <entry>Столбец</entry>
+        <entry>Тип</entry>
+        <entry>Описание</entry>
+       </row>
+      </thead>
+
+      <tbody>
+       <row>
+        <entry><structfield>table_len</structfield></entry>
+        <entry><type>bigint</type></entry>
+        <entry>Физическая длина отношения в байтах</entry>
+       </row>
+       <row>
+        <entry><structfield>tuple_count</structfield></entry>
+        <entry><type>bigint</type></entry>
+        <entry>Количество &laquo;живых&raquo; кортежей</entry>
+       </row>
+       <row>
+        <entry><structfield>tuple_len</structfield></entry>
+        <entry><type>bigint</type></entry>
+        <entry>Общая длина &laquo;живых&raquo; кортежей в байтах</entry>
+       </row>
+       <row>
+        <entry><structfield>tuple_percent</structfield></entry>
+        <entry><type>float8</type></entry>
+        <entry>Процент &laquo;живых&raquo; кортежей</entry>
+       </row>
+       <row>
+        <entry><structfield>dead_tuple_count</structfield></entry>
+        <entry><type>bigint</type></entry>
+        <entry>Количество &laquo;мёртвых&raquo; кортежей</entry>
+       </row>
+       <row>
+        <entry><structfield>dead_tuple_len</structfield></entry>
+        <entry><type>bigint</type></entry>
+        <entry>Общая длина &laquo;мёртвых&raquo; кортежей в байтах</entry>
+       </row>
+       <row>
+        <entry><structfield>dead_tuple_percent</structfield></entry>
+        <entry><type>float8</type></entry>
+        <entry>Процент &laquo;мёртвых&raquo; кортежей</entry>
+       </row>
+       <row>
+        <entry><structfield>free_space</structfield></entry>
+        <entry><type>bigint</type></entry>
+        <entry>Общий объём свободного пространства в байтах</entry>
+       </row>
+       <row>
+        <entry><structfield>free_percent</structfield></entry>
+        <entry><type>float8</type></entry>
+        <entry>Процент свободного пространства</entry>
+       </row>
+
+      </tbody>
+     </tgroup>
+    </table>
+
+    <note>
+      <para>Значение <literal>table_len</literal> всегда будет больше суммы <literal>tuple_len</literal>, <literal>dead_tuple_len</literal> и <literal>free_space</literal>. Разница объясняется фиксированными издержками, внутристраничной таблицей указателей на кортежи и пропусками, добавляемыми для выравнивания кортежей.</para>
+    </note>
+
+    <para>Функция <function>pgstattuple</function> получает блокировку отношения только для чтения. Таким образом, её результаты отражают не мгновенный снимок; на них будут влиять параллельные изменения.</para>
+
+    <para><function>pgstattuple</function> считает кортеж <quote>мёртвым</quote>, если <function>HeapTupleSatisfiesDirty</function> возвращает false.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>pgstattuple(text) returns record</function>
+    </term>
+
+    <listitem>
+     <para>Эта функция равнозначна функции <function>pgstattuple(regclass)</function> за исключением того, что для неё целевое отношение задаётся в текстовом виде. Данная функция оставлена для обратной совместимости, в будущем она может перейти в разряд устаревших.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+    <indexterm><primary>pgstatindex</primary></indexterm>
+     <function>pgstatindex(regclass) returns record</function>
+    </term>
+
+    <listitem>
+     <para>Функция <function>pgstatindex</function> возвращает запись с информацией об индексе типа B-дерево. Например: <programlisting>test=&gt; SELECT * FROM pgstatindex('pg_cast_oid_index');
+-[ RECORD 1 ]------+------
+version            | 2
+tree_level         | 0
+index_size         | 16384
+root_block_no      | 1
+internal_pages     | 0
+leaf_pages         | 1
+empty_pages        | 0
+deleted_pages      | 0
+avg_leaf_density   | 54.27
+leaf_fragmentation | 0</programlisting></para>
+
+    <para>Столбцы результата: <informaltable>
+     <tgroup cols="3">
+      <thead>
+       <row>
+        <entry>Столбец</entry>
+        <entry>Тип</entry>
+        <entry>Описание</entry>
+       </row>
+      </thead>
+
+      <tbody>
+       <row>
+        <entry><structfield>version</structfield></entry>
+        <entry><type>integer</type></entry>
+        <entry>Номер версии B-дерева</entry>
+       </row>
+
+       <row>
+        <entry><structfield>tree_level</structfield></entry>
+        <entry><type>integer</type></entry>
+        <entry>Уровень корневой страницы в дереве</entry>
+       </row>
+
+       <row>
+        <entry><structfield>index_size</structfield></entry>
+        <entry><type>bigint</type></entry>
+        <entry>Общий объём индекса в байтах</entry>
+       </row>
+
+       <row>
+        <entry><structfield>root_block_no</structfield></entry>
+        <entry><type>bigint</type></entry>
+        <entry>Расположение страницы корня (0, если её нет)</entry>
+       </row>
+
+       <row>
+        <entry><structfield>internal_pages</structfield></entry>
+        <entry><type>bigint</type></entry>
+        <entry>Количество <quote>внутренних</quote> страниц (верхнего уровня)</entry>
+       </row>
+
+       <row>
+        <entry><structfield>leaf_pages</structfield></entry>
+        <entry><type>bigint</type></entry>
+        <entry>Количество страниц на уровне листьев</entry>
+       </row>
+
+       <row>
+        <entry><structfield>empty_pages</structfield></entry>
+        <entry><type>bigint</type></entry>
+        <entry>Количество пустых страниц</entry>
+       </row>
+
+       <row>
+        <entry><structfield>deleted_pages</structfield></entry>
+        <entry><type>bigint</type></entry>
+        <entry>Количество удалённых страниц</entry>
+       </row>
+
+       <row>
+        <entry><structfield>avg_leaf_density</structfield></entry>
+        <entry><type>float8</type></entry>
+        <entry>Средняя плотность страниц на уровне листьев</entry>
+       </row>
+
+       <row>
+        <entry><structfield>leaf_fragmentation</structfield></entry>
+        <entry><type>float8</type></entry>
+        <entry>Фрагментация на уровне листьев</entry>
+       </row>
+
+      </tbody>
+     </tgroup>
+    </informaltable></para>
+
+    <para>Выдаваемый размер индекса (<literal>index_size</literal>) обычно вычисляется по формуле <literal>internal_pages + leaf_pages + empty_pages + deleted_pages</literal> плюс одна страница, так как в нём учитывается и метастраница индекса.</para>
+
+    <para>Как и <function>pgstattuple</function>, эта функция собирает данные страница за страницей и не следует ожидать, что её результат представляет мгновенный снимок всего индекса.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>pgstatindex(text) returns record</function>
+    </term>
+
+    <listitem>
+     <para>Эта функция равнозначна функции <function>pgstatindex(regclass)</function> за исключением того, что для неё целевое отношение задаётся в текстовом виде. Данная функция оставлена для обратной совместимости, в будущем она может перейти в разряд устаревших.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <indexterm><primary>pgstatginindex</primary></indexterm>
+     <function>pgstatginindex(regclass) returns record</function>
+    </term>
+
+    <listitem>
+     <para>Функция <function>pgstatginindex</function> возвращает запись с информацией об индексе типа GIN. Например: <programlisting>test=&gt; SELECT * FROM pgstatginindex('test_gin_index');
+-[ RECORD 1 ]--+--
+version        | 1
+pending_pages  | 0
+pending_tuples | 0</programlisting></para>
+
+    <para>Столбцы результата: <informaltable>
+     <tgroup cols="3">
+      <thead>
+       <row>
+        <entry>Столбец</entry>
+        <entry>Тип</entry>
+        <entry>Описание</entry>
+       </row>
+      </thead>
+
+      <tbody>
+       <row>
+        <entry><structfield>version</structfield></entry>
+        <entry><type>integer</type></entry>
+        <entry>Номер версии GIN</entry>
+       </row>
+
+       <row>
+        <entry><structfield>pending_pages</structfield></entry>
+        <entry><type>integer</type></entry>
+        <entry>Количество страниц в списке ожидающих обработки</entry>
+       </row>
+
+       <row>
+        <entry><structfield>pending_tuples</structfield></entry>
+        <entry><type>bigint</type></entry>
+        <entry>Количество кортежей в списке ожидающих обработки</entry>
+       </row>
+
+      </tbody>
+     </tgroup>
+    </informaltable></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <indexterm><primary>pg_relpages</primary></indexterm>
+     <function>pg_relpages(regclass) returns bigint</function>
+    </term>
+
+    <listitem>
+     <para>Функция <function>pg_relpages</function> возвращает число страниц в отношении.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>pg_relpages(text) returns bigint</function>
+    </term>
+
+    <listitem>
+     <para>Эта функция равнозначна функции <function>pg_relpages(regclass)</function> за исключением того, что для неё целевое отношение задаётся в текстовом виде. Данная функция оставлена для обратной совместимости, в будущем она может перейти в разряд устаревших.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <indexterm><primary>pgstattuple_approx</primary></indexterm>
+     <function>pgstattuple_approx(regclass) returns record</function>
+    </term>
+
+    <listitem>
+     <para>Функция <function>pgstattuple_approx</function> является более быстрой альтернативой <function>pgstattuple</function>, возвращающей приблизительные результаты. В качестве аргумента ей передаётся имя или OID целевого отношения. Например: <programlisting>test=&gt; SELECT * FROM pgstattuple_approx('pg_catalog.pg_proc'::regclass);
+-[ RECORD 1 ]--------+-------
+table_len            | 573440
+scanned_percent      | 2
+approx_tuple_count   | 2740
+approx_tuple_len     | 561210
+approx_tuple_percent | 97.87
+dead_tuple_count     | 0
+dead_tuple_len       | 0
+dead_tuple_percent   | 0
+approx_free_space    | 11996
+approx_free_percent  | 2.09</programlisting> Выходные столбцы описаны в <xref remap="6" linkend="pgstatapprox-columns"/>.</para>
+
+     <para>Тогда как <function>pgstattuple</function> всегда производит полное сканирование таблицы и возвращает точное число живых и мёртвых кортежей (и их размер), а также точный объём свободного пространства, функция <function>pgstattuple_approx</function> пытается избежать полного сканирования и возвращает точную статистику только по мёртвым кортежам, а количество и объём живых кортежей, как и объём свободного пространства определяет приблизительно.</para>
+
+     <para>Она делает это, пропуская страницы, в которых, согласно карте видимости, есть только видимые кортежи (если для страницы установлен соответствующий бит, предполагается, что она не содержит мёртвых кортежей). Для таких страниц эта функция узнаёт объём свободного пространства из карты свободного пространства и предполагает, что остальное пространство на странице занято живыми кортежами.</para>
+
+     <para>На страницах, которые нельзя пропустить, она сканирует каждый кортеж, отражает его наличие и размер в соответствующих счётчиках и суммирует свободное пространство на странице. В конце она оценивает приблизительно общее число живых кортежей, исходя из числа просканированных страниц и кортежей (так же, как VACUUM рассчитывает значение pg_class.reltuples).</para>
+
+     <table id="pgstatapprox-columns">
+      <title>Столбцы результата <function>pgstattuple_approx</function></title>
+      <tgroup cols="3">
+       <thead>
+        <row>
+         <entry>Столбец</entry>
+         <entry>Тип</entry>
+         <entry>Описание</entry>
+        </row>
+       </thead>
+
+       <tbody>
+        <row>
+         <entry><structfield>table_len</structfield></entry>
+         <entry><type>bigint</type></entry>
+         <entry>Физическая длина отношения в байтах (точная)</entry>
+        </row>
+        <row>
+         <entry><structfield>scanned_percent</structfield></entry>
+         <entry><type>float8</type></entry>
+         <entry>Просканированный процент таблицы</entry>
+        </row>
+        <row>
+         <entry><structfield>approx_tuple_count</structfield></entry>
+         <entry><type>bigint</type></entry>
+         <entry>Количество &laquo;живых&raquo; кортежей (приблизительное)</entry>
+        </row>
+        <row>
+         <entry><structfield>approx_tuple_len</structfield></entry>
+         <entry><type>bigint</type></entry>
+         <entry>Общая длина &laquo;живых&raquo; кортежей в байтах (приблизительная)</entry>
+        </row>
+        <row>
+         <entry><structfield>approx_tuple_percent</structfield></entry>
+         <entry><type>float8</type></entry>
+         <entry>Процент &laquo;живых&raquo; кортежей</entry>
+        </row>
+        <row>
+         <entry><structfield>dead_tuple_count</structfield></entry>
+         <entry><type>bigint</type></entry>
+         <entry>Количество &laquo;мёртвых&raquo; кортежей (точное)</entry>
+        </row>
+        <row>
+         <entry><structfield>dead_tuple_len</structfield></entry>
+         <entry><type>bigint</type></entry>
+         <entry>Общая длина &laquo;мёртвых&raquo; кортежей в байтах (точная)</entry>
+        </row>
+        <row>
+         <entry><structfield>dead_tuple_percent</structfield></entry>
+         <entry><type>float8</type></entry>
+         <entry>Процент &laquo;мёртвых&raquo; кортежей</entry>
+        </row>
+        <row>
+         <entry><structfield>approx_free_space</structfield></entry>
+         <entry><type>bigint</type></entry>
+         <entry>Общий объём свободного пространства в байтах (приблизительный)</entry>
+        </row>
+        <row>
+         <entry><structfield>approx_free_percent</structfield></entry>
+         <entry><type>float8</type></entry>
+         <entry>Процент свободного пространства</entry>
+        </row>
+
+       </tbody>
+      </tgroup>
+     </table>
+
+     <para>В показанном выше выводе показатели свободного пространства могут не соответствовать выводу <function>pgstattuple</function> в точности, потому что карта свободного пространства показывает верное значение, но не гарантируется, что оно будет точным до байта.</para>
+
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+ </sect2>
+
+ <sect2>
+  <title>Авторы</title>
+
+  <para>Тацуо Исии, Сатоши Нагаясу и Абхиджит Менон-Сен</para>
+ </sect2>
+
+</sect1>

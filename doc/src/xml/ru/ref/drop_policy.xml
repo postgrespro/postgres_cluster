@@ -1,0 +1,89 @@
+<!--
+doc/src/xml/ref/drop_policy.xml
+&productname; documentation
+-->
+
+<refentry id="sql-droppolicy">
+ <indexterm zone="sql-droppolicy"><primary>DROP POLICY</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP POLICY</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP POLICY</refname>
+  <refpurpose>удалить политику защиты на уровне строк для таблицы</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP POLICY [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> ON <replaceable class="parameter">имя_таблицы</replaceable> [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP POLICY</command> удаляет указанную политику из таблицы. Заметьте, что если из таблицы удаляется последняя политика, а в таблице продолжает действовать защита на уровне строк (включённая командой <command>ALTER TABLE</command>), будет применена политика запрета по умолчанию. Отключить защиту на уровне строк для таблицы можно с помощью команды <literal>ALTER TABLE ... DISABLE ROW LEVEL SECURITY</literal>, независимо от того, определены ли политики для этой таблицы или нет.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если политика не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя политики, подлежащей удалению.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) таблицы, к которой применяется эта политика.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <term><literal>RESTRICT</literal></term>
+
+    <listitem>
+     <para>Эти ключевые слова игнорируются, так как от политик не зависят никакие объекты.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление политики <literal>p1</literal> из таблицы <literal>my_table</literal>: <programlisting>DROP POLICY p1 ON my_table;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>DROP POLICY</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createpolicy"/></member>
+   <member><xref linkend="sql-alterpolicy"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

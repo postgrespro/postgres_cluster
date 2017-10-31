@@ -1,0 +1,872 @@
+<!-- doc/src/xml/sql.xml -->
+
+ <chapter id="sql-intro">
+  <title>SQL</title>
+
+  <abstract>
+   <para>В этой главе вводятся математические концепции, стоящие за реляционными базами данных. Этот материал не является обязательным к прочтению, так что если он окажется сложным или вы хотите сразу перейти к простым примерам, вы можете свободно пропустить эту главу и вернуться сюда, когда у вас будет больше времени и терпения. Тут должно быть интересно!</para>
+
+   <para>Этот материал изначально был представлен в дипломной работе Стефана Симковича (<xref linkend="sim98" endterm="sim98"/>).</para>
+  </abstract>
+
+  <para><acronym>SQL</acronym> стал самым популярным языком реляционных запросов. Название <quote><acronym>SQL</acronym></quote> является аббревиатурой от <firstterm>Structured Query Language</firstterm> (Язык структурированных запросов). В 1974 в группе IBM Research Дональд Чамберлин с коллегами разработали язык SEQUEL (<firstterm>Structured English Query Language</firstterm>, Язык структурированных англоязычных запросов). Сначала этот язык был воплощён внутри IBM, в прототипе, названном SEQUEL-XRM, в 1974-75 г. В 1976-77 была определена пересмотренная версия SEQUEL, названная SEQUEL/2, а затем имя было изменено на <acronym>SQL</acronym>.</para>
+
+  <para>Новый прототип, названный System R, был разработан в IBM в 1977 г. В проекте System R было реализовано большое подмножество SEQUEL/2 (ставшего <acronym>SQL</acronym>), а в процессе его разработки ряд изменений был внесён и в <acronym>SQL</acronym>. Технология System R была внедрена на нескольких площадках, как внутри IBM, так и у некоторых клиентов. Благодаря признанию System R и успеху у этих пользователей, IBM начала разрабатывать коммерческие продукты, реализующие язык <acronym>SQL</acronym> на базе System R.</para>
+
+  <para>За следующие несколько лет IBM и ряд других компаний анонсировали несколько продуктов <acronym>SQL</acronym>, включая <productname>SQL/DS</productname> (IBM), <productname>DB2</productname> (IBM), <productname>ORACLE</productname> (Oracle Corp.), <productname>DG/SQL</productname> (Data General Corp.) и <productname>SYBASE</productname> (Sybase Inc.).</para>
+
+  <para>Сейчас <acronym>SQL</acronym> является официальным стандартом. В 1982 г. Американский национальный институт стандартов (<acronym>ANSI</acronym>, American National Standards Institute) поручил своему комитету баз данных X3H2 разработать предложение для стандартного реляционного языка. Это предложение было принято в 1986 и по сути содержало диалект <acronym>SQL</acronym>, сложившийся в IBM. В 1987 г. этот стандарт <acronym>ANSI</acronym> также был принят в качестве международного стандарта Международной организацией по стандартизации (<acronym>ISO</acronym>, International Organization for Standardization). Первоначальная версия стандарта <acronym>SQL</acronym> часто неформально называется <quote><abbrev>SQL/86</abbrev></quote>. В 1989 г. первая версия стандарта была расширена и этот новый стандарт получил, так же неформальное, название <quote><abbrev>SQL/89</abbrev></quote>. В том же 1989 г. был разработан связанный стандарт <firstterm>Язык баз данных Встраиваемый <acronym>SQL</acronym></firstterm> (<acronym>ESQL</acronym>, Embedded <acronym>SQL</acronym>).</para>
+
+  <para>Комитеты <acronym>ISO</acronym> и <acronym>ANSI</acronym> несколько лет работали над определением значительно расширенной версии начального стандарта, получившей неформальное название <firstterm><acronym>SQL2</acronym></firstterm> или <firstterm><acronym>SQL/92</acronym></firstterm>. Эта версия стала принятым стандартом <quote>International Standard ISO/IEC 9075:1992, Database Language <acronym>SQL</acronym></quote> в конце 1992 г. И сейчас, когда говорят <quote>о стандарте <acronym>SQL</acronym></quote>, обычно имеют в виду версию <acronym>SQL/92</acronym>. Подробное описание <acronym>SQL/92</acronym> приведено в книге <xref linkend="date97" endterm="date97"/>. На момент написания этого материала разрабатывался новый стандарт, неформально называемый <firstterm><acronym>SQL3</acronym></firstterm>. Планировалось, что в нём <acronym>SQL</acronym> станет языком, полным по Тьюрингу, то есть будут возможны все вычисляемые запросы (например, рекурсивные). Позже это было воплощено в стандарте SQL:2003.</para>
+
+  <sect1 id="rel-model">
+   <title>Реляционная модель данных</title>
+
+  <para>Как упоминалось ранее, <acronym>SQL</acronym> является реляционным языком. Это означает, что он основан на <firstterm>реляционной модели данных</firstterm>, которую впервые предложил Эдгар Франк Кодд в 1970 г. Мы дадим формальное описание реляционной модели позже (в <xref remap="6" linkend="formal-notion" endterm="formal-notion"/>), но сначала хотим посмотреть на неё с более интуитивной точки зрения.</para>
+
+  <para><firstterm>Реляционная база данных</firstterm> — это база данных, воспринимаемая пользователями как <firstterm>набор таблиц</firstterm> (и ничего кроме таблиц). Таблицы состоят из строк и столбцов, в которой каждая строка представляет запись, а каждый столбец — один атрибут записей, содержащихся в таблице. <xref linkend="supplier-fig" endterm="supplier-fig"/> показывает пример базы данных, состоящей из трёх таблиц: <itemizedlist>
+     <listitem>
+      <para>Таблица &laquo;Поставщик&raquo; (SUPPLIER) содержит номер (SNO), имя (SNAME) и город (CITY) поставщика.</para>
+     </listitem>
+
+     <listitem>
+      <para>Таблица &laquo;Деталь&raquo; (PART) содержит номер (PNO), имя (PNAME) и цену (PRICE) детали.</para>
+     </listitem>
+
+     <listitem>
+      <para>Таблица &laquo;Продажи&raquo; (SELLS) содержит информацию о том, какая деталь (PNO) была продана каким поставщиком (SNO). Она играет роль связывающей две другие таблицы.</para>
+     </listitem>
+    </itemizedlist> <example><title id="supplier-fig">База данных поставщиков и деталей</title>
+<screen>
+SUPPLIER:                   SELLS:
+ SNO |  SNAME  |  CITY       SNO | PNO
+----+---------+--------     -----+-----
+ 1  |  Smith  | London        1  |  1
+ 2  |  Jones  | Paris         1  |  2
+ 3  |  Adams  | Vienna        2  |  4
+ 4  |  Blake  | Rome          3  |  1
+                              3  |  3
+                              4  |  2
+PART:                         4  |  3
+ PNO |  PNAME  |  PRICE       4  |  4
+----+---------+---------
+ 1  |  Screw  |   10
+ 2  |  Nut    |    8
+ 3  |  Bolt   |   15
+ 4  |  Cam    |   25
+</screen></example></para>
+
+   <para>Таблицы PART и SUPPLIER можно считать <firstterm>сущностями</firstterm> в БД, а SELLS — устанавливающей <firstterm>связь</firstterm> между определённой деталью и определённым поставщиком.</para>
+
+   <para>Как мы увидим позже, <acronym>SQL</acronym> работает с таблицами, подобными тем, что были только что определены, но прежде мы изучим теорию реляционной модели.</para>
+  </sect1>
+
+  <sect1 id="relmodel-formal">
+   <title id="formal-notion">Формальное определение реляционной модели данных</title>
+
+   <para>Математическая концепция, стоящая за реляционной моделью, основана на <firstterm>отношениях</firstterm>, являющихся декартовым произведением списка доменов. Отношение (англ. relation) из теории множеств и дало модели название (англ. relational) (не стоит путать его с отношением в <firstterm>модели сущность-связь</firstterm>). Доменом в данном контексте формально является просто множество значений. Например, домен образует множество целых чисел. Другие примеры доменов — множество строк из 20 символов или вещественные числа.</para>
+
+   <para><firstterm>Декартовым произведением</firstterm> доменов <parameter>D<subscript>1</subscript></parameter>, <parameter>D<subscript>2</subscript></parameter>, ... <parameter>D<subscript>k</subscript></parameter> (записывается как <parameter>D<subscript>1</subscript></parameter> &times; <parameter>D<subscript>2</subscript></parameter> &times; ... &times; <parameter>D<subscript>k</subscript></parameter>) является множество из всех k-арных кортежей <parameter>v<subscript>1</subscript></parameter>, <parameter>v<subscript>2</subscript></parameter>, ... <parameter>v<subscript>k</subscript></parameter>, таких, что <parameter>v<subscript>1</subscript></parameter> &isin; <parameter>D<subscript>1</subscript></parameter>, <parameter>v<subscript>2</subscript></parameter> &isin; <parameter>D<subscript>2</subscript></parameter>, ... <parameter>v<subscript>k</subscript></parameter> &isin; <parameter>D<subscript>k</subscript></parameter>.</para>
+
+   <para>Например, если <parameter>k</parameter>=2, <parameter>D<subscript>1</subscript></parameter>=<literal>{0,1}</literal> и <parameter>D<subscript>2</subscript></parameter>=<literal>{a,b,c}</literal>, то <parameter>D<subscript>1</subscript></parameter> &times; <parameter>D<subscript>2</subscript></parameter> равняется <literal>{(0,a),(0,b),(0,c),(1,a),(1,b),(1,c)}</literal>.</para>
+
+   <para>Отношением является любое подмножество декартова произведения одного или нескольких доменов: <parameter>R</parameter> &sube; <parameter>D<subscript>1</subscript></parameter> &times; <parameter>D<subscript>2</subscript></parameter> &times; ... &times; <parameter>D<subscript>k</subscript></parameter>.</para>
+
+   <para>Например, <literal>{(0,a),(0,b),(1,a)}</literal> — это отношение, и на самом деле оно является подмножеством вышеописанного произведения <parameter>D<subscript>1</subscript></parameter> &times; <parameter>D<subscript>2</subscript></parameter>.</para>
+
+   <para>Члены отношения называются кортежами. Про отношение некоторого декартового произведения <parameter>D<subscript>1</subscript></parameter> &times; <parameter>D<subscript>2</subscript></parameter> &times; ... &times; <parameter>D<subscript>k</subscript></parameter> говорят, что оно имеет арность <literal>k</literal> и таким образом является множеством <literal>k</literal>-арных кортежей.</para>
+
+   <para>Отношение можно рассматривать как таблицу (как мы уже делали, вспомните <xref linkend="supplier-fig" endterm="supplier-fig"/>, где каждый кортеж представляет строку, а каждый столбец соответствует одному компоненту кортежа. Введя имёна (называемые атрибутами) столбцов, мы приходим к определению <firstterm>схемы отношения</firstterm>.</para>
+
+   <para><firstterm>Реляционная схема</firstterm> <literal>R</literal> определяет <parameter>A<subscript>1</subscript></parameter>, <parameter>A<subscript>2</subscript></parameter>, ... <parameter>A<subscript>k</subscript></parameter>. Для каждого атрибута <parameter>A<subscript>i</subscript></parameter>, 1 &lt;= <literal>i</literal> &lt;= <literal>k</literal> существует домен <parameter>D<subscript>i</subscript></parameter>, из которого берутся значения атрибутов. Мы часто записываем реляционную схему как <literal>R(<parameter>A<subscript>1</subscript></parameter>, <parameter>A<subscript>2</subscript></parameter>, ... <parameter>A<subscript>k</subscript></parameter>)</literal>. <note>
+     <para><firstterm>Реляционная схема</firstterm> — это своего рода класс, экземпляром которого является <firstterm>отношение</firstterm>. Отношение состоит из кортежей (и поэтому может рассматриваться как таблица), в отличие от реляционной схемы.</para>
+    </note></para>
+
+   <sect2>
+    <title id="domains">Домены и типы данных</title>
+
+    <para>В последнем разделе мы часто говорили о <firstterm>доменах</firstterm>. Вспомните, что домен формально является просто множеством значений (например, множество целых или вещественных чисел). В терминах баз данных мы часто говорим о <firstterm>типах данных</firstterm>, а не о доменах. Когда мы определяем таблицу, мы должны решить, какие атрибуты в неё включить. Кроме того, необходимо решить, какого рода данные будут храниться в качестве значений атрибутов. Например, значениями <classname>SNAME</classname> в таблице <classname>SUPPLIER</classname> будут символьные строки, тогда как в <classname>SNO</classname> будут храниться целые числа. Мы определяем это, назначая типы данных каждому атрибуту. Типом <classname>SNAME</classname> будет <type>VARCHAR(20)</type> (это тип <acronym>SQL</acronym> для символьных строк длины &lt;= 20), а типом <classname>SNO</classname> будет <type>INTEGER</type>. Назначая тип данных, мы тем самым также выбираем домен для атрибута. Доменом <classname>SNAME</classname> будет множество всех символьных строк длины &lt;= 20, а доменом <classname>SNO</classname> — множество всех целых чисел.</para>
+   </sect2>
+  </sect1>
+
+  <sect1 id="relmodel-oper">
+   <title id="operations">Операции в реляционной модели данных</title>
+
+   <para>В предыдущем разделе (<xref linkend="formal-notion" endterm="formal-notion"/>) мы определили математическую запись реляционной модели. Теперь мы знаем, как данные могут храниться в реляционной модели данных, но пока ещё не знаем, что делать со всеми этими таблицами, чтобы извлечь что-либо из базы данных. Например, кого-то могут интересовать имена всех поставщиков, продающих шурупы (деталь 'Screw'). Для этого были определены два весьма различных вида нотаций, позволяющих выражать операции с отношениями: <itemizedlist>
+     <listitem>
+      <para><firstterm>Реляционная алгебра</firstterm>, представляющая алгебраическую нотацию, в которой запросы выражаются как применение специализированных операторов к отношениям.</para>
+     </listitem>
+
+     <listitem>
+      <para><firstterm>Реляционное исчисление</firstterm>, представляющее логическую нотацию, в которой запросы выражаются как формулировка логических ограничений, которым должны удовлетворять интересующие кортежи.</para>
+    </listitem>
+    </itemizedlist></para>
+
+   <sect2>
+    <title id="rel-alg">Реляционная алгебра</title>
+
+    <para><firstterm>Реляционную алгебру</firstterm> впервые ввёл Эдгар Франк Кодд в 1972 г. Она включает набор операций с отношениями: <itemizedlist>
+      <listitem>
+       <para>SELECT (&sigma;): извлекает <firstterm>кортежи</firstterm> из отношения, удовлетворяющие заданному ограничению. Пусть <parameter>R</parameter> — таблица, содержащая атрибут <parameter>A</parameter>. &sigma;<subscript>A=a</subscript>(R) = {t &isin; R &mid; t(A) = a}, где <literal>t</literal> обозначает кортеж отношения <parameter>R</parameter>, а <literal>t(A)</literal> обозначает значение атрибута <parameter>A</parameter> кортежа <literal>t</literal>.</para>
+      </listitem>
+
+      <listitem>
+       <para>PROJECT (&pi;): извлекает указанные <firstterm>атрибуты</firstterm> (столбцы) из отношения. Пусть <classname>R</classname> — отношение, содержащее атрибут <classname>X</classname>, тогда &pi;<subscript>X</subscript>(<classname>R</classname>) = {t(X) &mid; t &isin; <classname>R</classname>}, где <literal>t</literal>(<classname>X</classname>) обозначает значение атрибута <classname>X</classname> кортежа <literal>t</literal>.</para>
+      </listitem>
+
+      <listitem>
+       <para>PRODUCT (&times;): формирует декартово произведение двух отношений. Пусть <classname>R</classname> — таблица с арностью <literal>k</literal><subscript>1</subscript> и <classname>S</classname> — таблица с арностью <literal>k</literal><subscript>2</subscript>. Тогда <classname>R</classname> &times; <classname>S</classname> — множество всех <literal>k</literal><subscript>1</subscript> + <literal>k</literal><subscript>2</subscript>-арных кортежей, в которых первые <literal>k</literal><subscript>1</subscript> компонентов формируют кортеж в <classname>R</classname>, а последние <literal>k</literal><subscript>2</subscript> компонентов формируют кортеж в <classname>S</classname>.</para>
+      </listitem>
+
+      <listitem>
+       <para>UNION (&cup;): формирует объединение (в терминах теории множеств) двух таблиц. Для данных таблиц <classname>R</classname> и <classname>S</classname> (обе должны иметь одну арность) объединением <classname>R</classname> &cup; <classname>S</classname> будет множество кортежей, принадлежащих <classname>R</classname> или <classname>S</classname> или обеим таблицам.</para>
+      </listitem>
+
+      <listitem>
+       <para>INTERSECT (&cap;): формирует пересечение (в терминах теории множеств) двух таблиц. Для данных таблиц <classname>R</classname> и <classname>S</classname>, пересечением <classname>R</classname> &cap; <classname>S</classname> будет множество кортежей, принадлежащих и <classname>R</classname>, и <classname>S</classname>. При этом опять же требуется, чтобы <classname>R</classname> и <classname>S</classname> были одной арности.</para>
+      </listitem>
+
+      <listitem>
+       <para>DIFFERENCE (&minus; или &setmn;): формирует разность (в терминах теории множеств) двух таблиц. Пусть <classname>R</classname> и <classname>S</classname> так же две таблицы одинаковой арности, тогда <classname>R</classname> — <classname>S</classname> — множество кортежей, принадлежащих <classname>R</classname>, но не <classname>S</classname>.</para>
+      </listitem>
+
+      <listitem>
+       <para>JOIN (&prod;): соединяет две таблицы по их общим атрибутам. Пусть <classname>R</classname> — таблица с атрибутами <classname>A</classname>, <classname>B</classname> и <classname>C</classname>, а <classname>S</classname> — таблица с атрибутами <classname>C</classname>, <classname>D</classname> и <classname>E</classname>. Общим для обоих отношений является только один атрибут, атрибут <classname>C</classname>. Тогда R &prod; S = &pi;<subscript>R.A,R.B,R.C,S.D,S.E</subscript>(&sigma;<subscript>R.C=S.C</subscript>(R &times; S)). Что здесь происходит? Сначала мы вычисляем декартово произведение <classname>R</classname> &times; <classname>S</classname>, а затем выбираем кортежи, в которых значения общего атрибута <classname>C</classname> равны (&sigma;<subscript>R.C = S.C</subscript>). В результате получается таблица, содержащая атрибут <classname>C</classname> два раза, и мы исправляем это, извлекая столбцы без повторения.</para>
+
+       <example>
+        <title id="join-example">Внутреннее соединение</title>
+
+        <para>Давайте взглянем на получаемые таблицы, проанализировав этапы соединения. Пусть даны две следующие таблицы: <screen>
+R:                 S:
+ A | B | C          C | D | E
+---+---+---        ---+---+---
+ 1 | 2 | 3          3 | a | b
+ 4 | 5 | 6          6 | c | d
+ 7 | 8 | 9
+</screen></para>
+       </example>
+
+       <para>Сначала вычислим декартово произведение <classname>R</classname> &times; <classname>S</classname> и получим: <screen>
+R x S:
+ A | B | R.C | S.C | D | E
+---+---+-----+-----+---+---
+ 1 | 2 |  3  |  3  | a | b
+ 1 | 2 |  3  |  6  | c | d
+ 4 | 5 |  6  |  3  | a | b
+ 4 | 5 |  6  |  6  | c | d
+ 7 | 8 |  9  |  3  | a | b
+ 7 | 8 |  9  |  6  | c | d
+</screen></para>
+
+       <para>После выборки &sigma;<subscript>R.C=S.C</subscript>(R &times; S) мы получаем: <screen>
+ A | B | R.C | S.C | D | E
+---+---+-----+-----+---+---
+ 1 | 2 |  3  |  3  | a | b
+ 4 | 5 |  6  |  6  | c | d
+</screen></para>
+
+       <para>Чтобы удалить дублирующийся столбец <classname>S</classname>.<classname>C</classname>, мы проделываем следующую операцию: &pi;<subscript>R.A,R.B,R.C,S.D,S.E</subscript>(&sigma;<subscript>R.C=S.C</subscript>(R &times; S)) и получаем: <screen>
+ A | B | C | D | E
+---+---+---+---+---
+ 1 | 2 | 3 | a | b
+ 4 | 5 | 6 | c | d
+</screen></para>
+      </listitem>
+
+      <listitem>
+       <para>DIVIDE (&divide;): Пусть <classname>R</classname> — таблица с атрибутами A, B, C и D и пусть <classname>S</classname> — таблица с атрибутами C и D. Тогда мы определим деление как: <programlisting>R &divide; S = {t &mid; &forall; t<subscript>s</subscript> &isin; S &exist; t<subscript>r</subscript> &isin; R</programlisting> и <subscript>r</subscript>(A,B)=t&and;t<subscript>r</subscript>(C,D)=t<subscript>s</subscript>} где t<subscript>r</subscript>(x,y) обозначает кортеж таблицы <classname>R</classname>, состоящий только из компонентов <literal>x</literal> и <literal>y</literal>. Заметьте, что кортеж <literal>t</literal> состоит только из компонентов <classname>A</classname> и <classname>B</classname> отношения <classname>R</classname>.</para>
+
+       <para id="divide-example">Со следующими таблицами <screen>
+R:                    S:
+ A | B | C | D         C | D
+---+---+---+---       ---+---
+ a | b | c | d         c | d
+ a | b | e | f         e | f
+ b | c | e | f
+ e | d | c | d
+ e | d | e | f
+ a | b | d | e
+</screen> R &divide; S даёт <screen>
+ A | B
+---+---
+ a | b
+ e | d
+</screen></para>
+      </listitem>
+     </itemizedlist></para>
+
+    <para>За более подробным описанием и определением реляционной алгебры обратитесь к [<xref linkend="ull88" endterm="ull88"/>] или [<xref linkend="date04" endterm="date04"/>].</para>
+
+    <example>
+     <title id="suppl-rel-alg">Запросы с применением реляционной алгебры</title>
+     <para>Вспомните, что мы формулировали все эти реляционные операторы, чтобы иметь возможность извлекать данные из базы данных. Давайте вернёмся к нашему примеру из предыдущего раздела (<xref linkend="operations" endterm="operations"/>), когда кто-то захотел узнать имена всех поставщиков шурупов (детали <literal>Screw</literal>). На этот вопрос можно ответить, применяя реляционную алгебру, выполнив следующую операцию: <programlisting>&pi;<subscript>SUPPLIER.SNAME</subscript>(&sigma;<subscript>PART.PNAME='Screw'</subscript>(SUPPLIER &prod; SELLS &prod; PART))</programlisting></para>
+
+     <para>Мы называем такую операцию запросом. Если мы вычислим предыдущий запрос с таблицами из нашего примера (см. <xref remap="4" linkend="supplier-fig" endterm="supplier-fig"/>), мы получим следующий результат: <screen>
+ SNAME
+-------
+ Smith
+ Adams
+</screen></para>
+    </example>
+   </sect2>
+
+   <sect2 id="rel-calc">
+    <title>Реляционное исчисление</title>
+
+    <para>Реляционное исчисление основано на <firstterm>логике первого порядка</firstterm>. Существует два варианта реляционного исчисления: <itemizedlist>
+      <listitem>
+       <para><firstterm>Реляционное исчисление доменов</firstterm> (Domain Relational Calculus, <acronym>DRC</acronym>), где под переменными понимаются компоненты (атрибуты) кортежей.</para>
+      </listitem>
+
+      <listitem>
+       <para><firstterm>Реляционное исчисление кортежей</firstterm> (Tuple Relational Calculus, <acronym>TRC</acronym>), где под переменными понимаются кортежи.</para>
+      </listitem>
+     </itemizedlist></para>
+
+    <para>Мы хотим обсудить реляционное исчисление кортежей только потому, что на нём основаны многие реляционные языки. Более подробное описание <acronym>DRC</acronym> (а также <acronym>TRC</acronym>) можно найти в <xref remap="6" linkend="date04" endterm="date04"/> или <xref remap="6" linkend="ull88" endterm="ull88"/>.</para>
+   </sect2>
+
+   <sect2>
+    <title>Реляционное исчисление кортежей</title>
+
+    <para>Запросы в <acronym>TRC</acronym> имеют следующий вид: <programlisting>x(A) &mid; F(x)</programlisting> где <literal>x</literal> — переменная кортежа, <classname>A</classname> — множество атрибутов, а <literal>F</literal> — формула. Результирующее отношение состоит из всех кортежей <literal>t(A)</literal>, удовлетворяющих условию <literal>F(t)</literal>.</para>
+
+    <para>Если мы хотим ответить на вопрос из примера <xref linkend="suppl-rel-alg" endterm="suppl-rel-alg"/>, применяя <acronym>TRC</acronym>, мы можем сформулировать следующий запрос: <programlisting>{x(SNAME) &mid; x &isin; SUPPLIER &and;
+    &exist; y &isin; SELLS &exist; z &isin; PART (y(SNO)=x(SNO) &and;
+    z(PNO)=y(PNO) &and;
+    z(PNAME)='Screw')}</programlisting></para>
+
+    <para>Вычисление этого запроса с таблицами из <xref linkend="supplier-fig" endterm="supplier-fig"/> даёт тот же результат, что и в разделе <xref linkend="suppl-rel-alg" endterm="suppl-rel-alg"/>.</para>
+   </sect2>
+
+   <sect2 id="alg-vs-calc">
+    <title>Реляционная алгебра и реляционное исчисление</title>
+
+    <para>Реляционная алгебра и реляционное исчисление имеют одинаковую <firstterm>выразительную мощность</firstterm>; то есть, все запросы, которые можно выразить в реляционной алгебре, можно также выразить в реляционном исчислении, и наоборот. Впервые это доказал Эдгар Франк Кодд в 1972 г. Это доказательство основывалось на алгоритме (<quote>алгоритме редукции Кодда</quote>), по которому произвольное выражение реляционного исчисления можно свести к семантически равнозначному выражению реляционной алгебры. Более подробно это обсуждается в книге <xref linkend="date04" endterm="date04"/> и <xref linkend="ull88" endterm="ull88"/>.</para>
+
+    <para>Иногда говорят, что языки, основанные на реляционном исчислении, более <quote>высокоуровневые</quote> или <quote>более декларативные</quote>, чем языки, основанные на реляционной алгебре, так как в алгебре (частично) задаётся порядок операций, тогда как в исчислении выбор наиболее эффективного порядка вычислений — задача компилятора или интерпретатора.</para>
+   </sect2>
+  </sect1>
+
+  <sect1 id="sql-language">
+   <title>Язык <acronym>SQL</acronym></title>
+
+   <para>Как и большинство современных реляционных языков, <acronym>SQL</acronym> основывается на реляционном исчислении кортежей. Вследствие этого, каждый запрос, который можно сформулировать с применением реляционного исчисления кортежей (или, что равнозначно, реляционной алгебры), можно так же сформулировать, используя <acronym>SQL</acronym>. Однако у него есть дополнительные возможности, выходящие за рамки реляционной алгебры или реляционного исчисления. К числу дополнительных возможностей <acronym>SQL</acronym>, отсутствующих в реляционной алгебре и реляционном исчислении, относятся: <itemizedlist>
+     <listitem>
+      <para>Команды для добавления, удаления или изменения данных</para>
+     </listitem>
+
+     <listitem>
+      <para>Арифметические действия: В <acronym>SQL</acronym> возможно задействовать арифметические операции, а также сравнения: <programlisting>A &lt; B + 3.</programlisting> Заметьте, что ни в реляционной алгебре, ни в реляционном исчислении нет операции + и других арифметических операций.</para>
+     </listitem>
+
+     <listitem>
+      <para>Команды вывода и присвоения: Отношение, сконструированное запросом, можно вывести, и можно связать вычисленное отношение с именем.</para>
+     </listitem>
+
+     <listitem>
+      <para>Агрегатные функции: Такие операции, как <firstterm>среднее</firstterm>, <firstterm>сумма</firstterm>, <firstterm>максимум</firstterm> и т. п. можно применять к столбцам отношения для получения единственного значения.</para>
+     </listitem>
+    </itemizedlist></para>
+
+   <sect2 id="select">
+    <title id="select-title">Select</title>
+
+    <para>Наиболее часто используемая команда в <acronym>SQL</acronym> — оператор <command>SELECT</command>, осуществляющий выборку данных. Он имеет следующий синтаксис: <synopsis>
+SELECT [ ALL | DISTINCT [ ON ( <replaceable class="parameter">выражение</replaceable> [, ...] ) ] ]
+    * | <replaceable class="parameter">выражение</replaceable> [ [ AS ] <replaceable class="parameter">выходное_имя</replaceable> ] [, ...]
+    [ INTO [ TEMPORARY | TEMP ] [ TABLE ] <replaceable class="parameter">новая_таблица</replaceable> ]
+    [ FROM <replaceable class="parameter">элемент_FROM</replaceable> [, ...] ]
+    [ WHERE <replaceable class="parameter">условие</replaceable> ]
+    [ GROUP BY <replaceable class="parameter">выражение</replaceable> [, ...] ]
+    [ HAVING <replaceable class="parameter">условие</replaceable> [, ...] ]
+    [ { UNION | INTERSECT | EXCEPT } [ ALL ] <replaceable class="parameter">выборка</replaceable> ]
+    [ ORDER BY <replaceable class="parameter">выражение</replaceable> [ ASC | DESC | USING <replaceable class="parameter">оператор</replaceable> ] [ NULLS { FIRST | LAST } ] [, ...] ]
+    [ LIMIT { <replaceable class="parameter">количество</replaceable> | ALL } ]
+    [ OFFSET <replaceable class="parameter">начало</replaceable> ]
+    [ FOR { UPDATE | SHARE } [ OF <replaceable class="parameter">имя_таблицы</replaceable> [, ...] ] [ NOWAIT | SKIP LOCKED ] [...] ]
+</synopsis></para>
+
+    <para>Далее мы проиллюстрируем сложный синтаксис оператора <command>SELECT</command> различными примерами. Таблицы для этих примеров определены в <xref remap="6" linkend="supplier-fig" endterm="supplier-fig"/>.</para>
+
+    <sect3>
+     <title>Простые выборки</title>
+
+     <para>Несколько простых примеров использования оператора <command>SELECT</command>: <example>
+       <title id="simple-query">Простой запрос с условием</title>
+       <para>Чтобы выбрать все кортежи из таблицы PART (детали), у которых атрибут PRICE (цена) больше 10, мы формулируем следующий запрос: <programlisting>SELECT * FROM PART
+    WHERE PRICE &gt; 10;</programlisting> и получаем таблицу: <screen>
+ PNO |  PNAME  |  PRICE
+-----+---------+--------
+  3  |  Bolt   |   15
+  4  |  Cam    |   25
+</screen></para>
+
+       <para>Используя <quote>*</quote> в операторе <command>SELECT</command>, мы получим все атрибуты из этой таблицы. Если мы хотим выбрать из таблицы PART только атрибуты PNAME and PRICE, воспользуемся таким оператором: <programlisting>SELECT PNAME, PRICE
+    FROM PART
+    WHERE PRICE &gt; 10;</programlisting> В этом случае мы получим такой результат: <screen>
+                      PNAME  |  PRICE
+                     --------+--------
+                      Bolt   |   15
+                      Cam    |   25
+</screen> Заметьте, что <command>SELECT</command> в <acronym>SQL</acronym> соответствует в реляционной алгебре <quote>проекции</quote>, а не <quote>выборке</quote> (за подробностями обратитесь к <xref remap="3" linkend="rel-alg" endterm="rel-alg"/>).</para>
+
+       <para>Условия в предложении WHERE также могут логически связываться ключевыми словами OR (ИЛИ), AND (И) и NOT (НЕ): <programlisting>SELECT PNAME, PRICE
+    FROM PART
+    WHERE PNAME = 'Bolt' AND
+         (PRICE = 0 OR PRICE &lt;= 15);</programlisting> даст результат: <screen>
+ PNAME  |  PRICE
+--------+--------
+ Bolt   |   15
+</screen></para>
+
+       <para>В целевом списке и в предложении WHERE могут использоваться арифметические операции. Например, если мы хотим узнать, сколько будет стоить пара каждых деталей, воспользуемся следующим запросом: <programlisting>SELECT PNAME, PRICE * 2 AS DOUBLE
+    FROM PART
+    WHERE PRICE * 2 &lt; 50;</programlisting> и получим: <screen>
+ PNAME  |  DOUBLE
+--------+---------
+ Screw  |    20
+ Nut    |    16
+ Bolt   |    30
+</screen> Заметьте, что слово DOUBLE после ключевого слова AS обозначает новое имя второго столбца. Этот приём можно использовать для каждого элемента целевого списка, чтобы присвоить результирующему столбцу новое имя. Это новое имя часто называется псевдонимом. Использовать этот псевдоним в другой части запроса нельзя.</para>
+      </example></para>
+    </sect3>
+
+    <sect3>
+     <title>Соединения</title>
+
+     <para id="simple-join">Следующий пример показывает, как в <acronym>SQL</acronym> реализованы <firstterm>соединения</firstterm>.</para>
+
+     <para>Чтобы соединить три таблицы SUPPLIER, PART и SELLS по их общим атрибутам, мы формулируем следующий оператор: <programlisting>SELECT S.SNAME, P.PNAME
+    FROM SUPPLIER S, PART P, SELLS SE
+    WHERE S.SNO = SE.SNO AND
+          P.PNO = SE.PNO;</programlisting> и получаем в результате следующую таблицу: <screen>
+ SNAME | PNAME
+-------+-------
+ Smith | Screw
+ Smith | Nut
+ Jones | Cam
+ Adams | Screw
+ Adams | Bolt
+ Blake | Nut
+ Blake | Bolt
+ Blake | Cam
+</screen></para>
+
+     <para>В предложении FROM мы ввели псевдоним для каждого отношения, так как у отношений есть одноимённые атрибуты (SNO и PNO). Теперь мы можем различать общие атрибуты, просто добавляя перед именем атрибута имя псевдонима с точкой. Соединение вычисляется так же, как показано в <xref remap="6" linkend="join-example" endterm="join-example"/>. На первом этапе формируется декартово произведение SUPPLIER &times; PART &times; SELLS. Затем выбираются только те кортежи, которые удовлетворяют условиям, заданным в предложении WHERE (то есть те, у которых указанные общие атрибуты равны). Наконец, мы отбираем все столбцы, кроме S.SNAME и P.PNAME.</para>
+
+     <para>Ещё один способ выполнить соединение — использовать синтаксис SQL JOIN так: <programlisting>SELECT sname, pname from supplier
+    JOIN sells USING (sno)
+    JOIN part USING (pno);</programlisting> Это даёт нам: <screen>
+ sname | pname
+-------+-------
+ Smith | Screw
+ Adams | Screw
+ Smith | Nut
+ Blake | Nut
+ Adams | Bolt
+ Blake | Bolt
+ Jones | Cam
+ Blake | Cam
+(8 rows)
+</screen></para>
+
+     <para>Соединённая таблица, созданная с использованием синтаксиса JOIN, становится элементом списка ссылок на таблицы, имеющим место внутри предложения FROM и перед предложениями WHERE, GROUP BY или HAVING. В предложение FROM можно включить другие ссылки на таблицы, в том числе по именам, или другие предложения JOIN. Соединённые таблицы логически не отличаются от любых других таблиц, перечисленных в предложении FROM.</para>
+
+     <para>Среди соединений SQL можно выделить два основных типа, перекрёстные соединения (соединения без условий, CROSS JOIN) и <firstterm>соединения с условиями</firstterm>. Соединения с условиями можно затем разделить в зависимости от способа указания <firstterm>условия соединения</firstterm> (ON, USING или NATURAL) и способа его применения (внутреннее (INNER) или внешнее (OUTER) соединение).</para>
+
+    <variablelist>
+        <title>Типы соединений</title>
+        <varlistentry>
+            <term>CROSS JOIN</term>
+            <listitem>
+            <cmdsynopsis>
+                <arg choice="req"> <replaceable class="parameter">T1</replaceable> </arg>
+                <command>CROSS JOIN</command>
+                <arg choice="req"> <replaceable class="parameter">T2</replaceable> </arg>
+            </cmdsynopsis>
+
+            <para>Перекрёстное соединение получает две таблицы T1 и T2, имеющих соответственно N и M строк, и выдаёт соединённую таблицу, содержащую все возможные соединённые строки (N*M). Для каждой строки R1 из T1, каждая строка R2 из T2 соединяется с R1 и в результате выдаётся соединённая строка таблицы JR, состоящая из всех полей в R1 и R2. Соединение CROSS JOIN равнозначно соединению INNER JOIN ON TRUE.</para>
+            </listitem>
+        </varlistentry>
+
+        <varlistentry>
+            <term>Соединения с условиями</term>
+            <listitem>
+
+            <cmdsynopsis>
+            <arg choice="req"> <replaceable class="parameter">T1</replaceable> </arg>
+            <arg choice="opt">NATURAL</arg>
+            <group choice="opt">
+                <arg choice="opt">INNER</arg>
+                <arg choice="plain">
+                <group choice="req">
+                    <arg choice="plain">LEFT</arg>
+                    <arg choice="plain">RIGHT</arg>
+                    <arg choice="plain">FULL</arg>
+                </group>
+                <arg choice="opt">OUTER</arg>
+                    </arg>
+                </group>
+            <command>JOIN</command>
+            <arg choice="req"> <replaceable class="parameter">T2</replaceable> </arg>
+            <group choice="req">
+                <arg choice="plain">ON <replaceable>условие поиска</replaceable></arg>
+                <arg choice="plain">USING ( <replaceable>список столбцов соединения</replaceable> )</arg>
+            </group>
+            </cmdsynopsis>
+
+            <para>В соединении с условием должно задаваться условие соединения в одном (и только одном) предложении NATURAL, ON или USING. Предложение ON принимает <replaceable>условие поиска</replaceable>, которое действует так же, как и в предложении WHERE. Предложение USING принимает список имён столбцов через запятую, которые должны быть общими у соединяемых таблиц, и соединяет таблицы по равенству этих столбцов. Предложение NATURAL является краткой формой USING с перечислением всех общих имён столбцов двух таблиц. Побочный эффект использования и USING, и NATURAL состоит в том, что в результирующую таблицу выдаётся только одна копия каждого соединяемого столбца (сравните это с описанным выше определением JOIN в реляционной алгебре).</para>
+
+            <!-- begin join semantics -->
+            <variablelist>
+            <varlistentry>
+                <term>
+                    <cmdsynopsis>
+                        <arg choice="opt">INNER</arg>
+                        <command>JOIN</command>
+                    </cmdsynopsis>
+                </term>
+                <listitem>
+                <para>Для каждой строки R1 из T1 в результирующей таблице содержится строка для каждой строки в T2, удовлетворяющей условию соединения с R1.</para>
+                <tip>
+                <para>Слова INNER и OUTER необязательны для всех форм JOIN. По умолчанию подразумевается INNER (внутреннее соединение), а при указании LEFT, RIGHT и FULL — OUTER (внешнее соединение).</para>
+                </tip>
+                </listitem>
+            </varlistentry>
+            <varlistentry>
+                <term>
+                    <cmdsynopsis>
+                        <arg choice="plain">LEFT</arg>
+                        <arg choice="opt">OUTER</arg>
+                        <command>JOIN</command>
+                    </cmdsynopsis>
+                </term>
+                <listitem>
+                <para>Сначала выполняется внутреннее соединение (INNER JOIN). Затем для каждой строки в T1, не удовлетворяющей условию соединения ни с какой строкой в T2, возвращается дополнительная строка со значениями NULL в столбцах из T2.</para>
+                <tip>
+                    <para>В соединённой таблице всегда оказывается строка для каждой строки в T1.</para>
+                </tip>
+                </listitem>
+            </varlistentry>
+            <varlistentry>
+                <term>
+                    <cmdsynopsis>
+                        <arg choice="plain">RIGHT</arg>
+                        <arg choice="opt">OUTER</arg>
+                        <command>JOIN</command>
+                    </cmdsynopsis>
+                </term>
+                <listitem>
+                <para>Сначала выполняется внутреннее соединение (INNER JOIN). Затем для каждой строки в T2, не удовлетворяющей условию соединения ни с какой строкой в T1, возвращается дополнительная строка со значениями NULL в столбцах из T1.</para>
+                <tip>
+                    <para>В соединённой таблице всегда оказывается строка для каждой строки в T2.</para>
+                </tip>
+                </listitem>
+            </varlistentry>
+            <varlistentry>
+                <term>
+                    <cmdsynopsis>
+                        <arg choice="plain">FULL</arg>
+                        <arg choice="opt">OUTER</arg>
+                        <command>JOIN</command>
+                    </cmdsynopsis>
+                </term>
+                <listitem>
+                <para>Сначала выполняется внутреннее соединение (INNER JOIN). Затем для каждой строки в T1, не удовлетворяющей условию соединения ни с какой строкой в T2, возвращается дополнительная строка со значениями NULL в столбцах из T2. А также для каждой строки в T2, не удовлетворяющей условию соединения ни с какой строкой в T1, возвращается дополнительная строка со значениями NULL в столбцах из T1.</para>
+                <tip>
+                    <para>В соединённой таблице всегда оказывается строка для каждой строки в T1 и для каждой строки в T2.</para>
+                </tip>
+                </listitem>
+            </varlistentry>
+            </variablelist>
+            <!-- end join semantics -->
+
+            </listitem>
+        </varlistentry>
+     </variablelist>
+
+     <para>Соединения всех типов можно связывать вместе или вкладывать одно в другое, так что и <replaceable class="parameter">T1</replaceable>, и <replaceable class="parameter">T2</replaceable> могут быть соединёнными таблицами. Предложения JOIN могут быть заключены в скобки для установления нужного порядка соединений (без них действует порядок справа налево).</para>
+
+    </sect3>
+
+    <sect3>
+     <title id="aggregates-tutorial">Агрегатные функции</title>
+
+     <para>В <acronym>SQL</acronym> имеются агрегатные функции, такие как AVG, COUNT, SUM, MIN и MAX. Агрегатная функция вычисляется по набору входных значений, получаемых для каждой строки, удовлетворяющей предложению WHERE. Обычно агрегатная функция выдаёт единственный результат для всего оператора <command>SELECT</command>. Но если в запросе устанавливается группировка, по строкам в каждой группе выполняется отдельное вычисление и агрегатные результаты выдаются для каждой группы (см. следующий раздел). <example>
+       <title id="aggregates-example">Агрегатные функции</title>
+
+       <para>Если мы хотим узнать среднюю стоимость всех деталей в таблице PART, воспользуемся следующим запросом: <programlisting>SELECT AVG(PRICE) AS AVG_PRICE
+    FROM PART;</programlisting></para>
+
+       <para>Результат: <screen>
+ AVG_PRICE
+-----------
+   14.5
+</screen></para>
+
+       <para>Если мы хотим узнать, сколько деталей учтено в таблице PART, воспользуемся этим оператором: <programlisting>SELECT COUNT(PNO)
+    FROM PART;</programlisting> и получим: <screen>
+ COUNT
+-------
+   4
+</screen></para>
+      </example></para>
+    </sect3>
+
+    <sect3>
+     <title>Агрегирование по группам</title>
+
+     <para><acronym>SQL</acronym> позволяет разбивать кортежи таблицы на группы. Затем к группам можно применить описанные выше агрегатные функции &mdash; т. е. значение агрегатной функции будет вычисляться не по всем значениям определённого столбца, а по всем значениям группы. Таким образом, агрегатная функция вычисляется отдельно для каждой группы.</para>
+
+     <para>Разбиение кортежей на группы осуществляется ключевым словом <command>GROUP BY</command>, за которым следует список атрибутов, определяющих группы. Написав <command>GROUP BY A<subscript>1</subscript>, &tdot;, A<subscript>k</subscript></command>, мы разделяем отношение на группы так, что два кортежа оказываются в одной группе, если и только если они имеют одинаковые значения всех атрибутов A<subscript>1</subscript>, &tdot;, A<subscript>k</subscript>. <example>
+       <title id="aggregates-groupby">Агрегатные функции</title>
+       <para>Если мы хотим узнать, сколько деталей было продано каждым поставщиком, мы формулируем запрос: <programlisting>SELECT S.SNO, S.SNAME, COUNT(SE.PNO)
+    FROM SUPPLIER S, SELLS SE
+    WHERE S.SNO = SE.SNO
+    GROUP BY S.SNO, S.SNAME;</programlisting> и получаем: <screen>
+ SNO | SNAME | COUNT
+-----+-------+-------
+  1  | Smith |   2
+  2  | Jones |   1
+  3  | Adams |   2
+  4  | Blake |   3
+</screen></para>
+
+       <para>Теперь давайте посмотрим, что здесь происходит. Сначала образуется соединение таблиц SUPPLIER и SELLS: <screen>
+ S.SNO | S.SNAME | SE.PNO
+-------+---------+--------
+   1   |  Smith  |   1
+   1   |  Smith  |   2
+   2   |  Jones  |   4
+   3   |  Adams  |   1
+   3   |  Adams  |   3
+   4   |  Blake  |   2
+   4   |  Blake  |   3
+   4   |  Blake  |   4
+</screen></para>
+
+       <para>Затем мы разбиваем кортежи на группы, собирая вместе все кортежи, имеющие общие атрибуты S.SNO и S.SNAME: <screen>
+ S.SNO | S.SNAME | SE.PNO
+-------+---------+--------
+   1   |  Smith  |   1
+                 |   2
+--------------------------
+   2   |  Jones  |   4
+--------------------------
+   3   |  Adams  |   1
+                 |   3
+--------------------------
+   4   |  Blake  |   2
+                 |   3
+                 |   4
+</screen></para>
+
+       <para>В данном примере мы получаем четыре группы и теперь можем применить агрегатную функцию COUNT к каждой группе, чтобы в результате получить окончательный результат данного выше запроса.</para>
+      </example></para>
+
+     <para>Заметьте, чтобы применение GROUP BY и агрегатных функций в запросе имело смысл, в целевом списке должны указываться только непосредственно группируемые атрибуты. Другие атрибуты можно использовать только в аргументах агрегатных функций. В противном случае не будут получены уникальные значения, которые нужно связывать с другими атрибутами.</para>
+
+     <para>Также заметьте, что не имеет смысла применять агрегатную функцию к агрегатной функции, например, AVG(MAX(sno)), так как <command>SELECT</command> делает только один проход для группирования и агрегирования. Получить подобный результат можно, осуществив первый уровень агрегирования с использованием временной таблицы или вложенного SELECT в предложении FROM.</para>
+    </sect3>
+
+    <sect3>
+     <title>Having</title>
+
+     <para>Предложение HAVING действует во многом как предложение WHERE и применяется для рассмотрения только тех групп, которые удовлетворяют заданным в этом предложении условиям. По сути, предложение WHERE отфильтровывает ненужные входные строки до группирования и агрегирования, тогда как HAVING отфильтровывает ненужные группы после группирования. Таким образом, WHERE не может обращаться к результатам агрегатной функции. С другой стороны, нет смысла в условии HAVING, которое не включает агрегатную функцию. Если в вашем условии не задействованы агрегатные функции, вы можете также написать его и в WHERE и тем самым избежать вычисления агрегатных функций для групп, которые вы всё равно собираетесь исключать. <example>
+       <title id="having-example">Having</title>
+
+       <para>Если мы хотим получить только поставщиков, продающих больше одного вида деталей, воспользуемся запросом: <programlisting>SELECT S.SNO, S.SNAME, COUNT(SE.PNO)
+    FROM SUPPLIER S, SELLS SE
+    WHERE S.SNO = SE.SNO
+    GROUP BY S.SNO, S.SNAME
+    HAVING COUNT(SE.PNO) &gt; 1;</programlisting> и получим: <screen>
+ SNO | SNAME | COUNT
+-----+-------+-------
+  1  | Smith |   2
+  3  | Adams |   2
+  4  | Blake |   3
+</screen></para>
+      </example></para>
+    </sect3>
+
+    <sect3>
+     <title>Подзапросы</title>
+
+     <para>Подзапросы (вложенные SELECT) можно использовать в предложениях WHERE и HAVING везде, где ожидается значение. В этом случае сначала должно быть получено значение в результате вычисления подзапроса. Использование подзапросов увеличивает выразительную мощность <acronym>SQL</acronym>. <example>
+       <title id="subselect-example">Вложенная выборка</title>
+
+       <para>Если мы хотим узнать, какие детали стоят дороже, чем деталь 'Screw', воспользуемся запросом: <programlisting>SELECT *
+    FROM PART
+    WHERE PRICE &gt; (SELECT PRICE FROM PART
+                   WHERE PNAME='Screw');</programlisting></para>
+
+       <para>Результат: <screen>
+ PNO |  PNAME  |  PRICE
+-----+---------+--------
+  3  |  Bolt   |   15
+  4  |  Cam    |   25
+</screen></para>
+
+       <para>Взглянув на приведённый выше запрос, вы можете увидеть ключевое слово <command>SELECT</command>, написанное два раза. Первое, в начале запроса, мы будем называть внешним <command>SELECT</command>, а второе, внутри предложения WHERE, начинающее вложенный запрос, — внутренним <command>SELECT</command>. Внутренний <command>SELECT</command> должен вычисляться для каждого кортежа внешнего <command>SELECT</command>. После каждого вычисления внутреннего запроса мы знаем цену шурупа (детали 'Screw') и можем проверить, больше ли цена детали в текущем кортеже. (На самом деле в этом примере внутренний запрос нужно было вычислить только один раз, так как он не зависит от состояния внешнего запроса.)</para>
+
+       <para>Если мы хотим узнать, какие поставщики не продают никакие детали (например, чтобы этих поставщиков можно было удалить из базы данных), выполним: <programlisting>SELECT *
+    FROM SUPPLIER S
+    WHERE NOT EXISTS
+        (SELECT * FROM SELLS SE
+         WHERE SE.SNO = S.SNO);</programlisting></para>
+
+       <para>В нашем примере результат будет пустым, так как каждый поставщик продаёт минимум один вид деталей. Заметьте, что мы использовали S.SNO из внешнего <command>SELECT</command> в предложении WHERE внутреннего <command>SELECT</command>. В данном случае подзапрос должен вычисляться заново для каждого кортежа из внешнего запроса, то есть значение S.SNO всегда берётся из текущего кортежа внешнего <command>SELECT</command>.</para>
+      </example></para>
+    </sect3>
+
+    <sect3>
+     <title>Подзапросы во FROM</title>
+
+     <para>Подзапросы можно использовать и несколько по-другому, поместив их в предложение FROM. Это полезная возможность, так как подзапрос такого рода может выдавать несколько столбцов и строк, тогда как подзапрос в выражении должен сводиться всего к одному результату. Это также позволяет нам произвести несколько проходов группировки/агрегирования, не прибегая к использованию временных таблиц. <example>
+       <title id="subselect-in-from-example">Вложенная выборка во FROM</title>
+
+       <para>Если мы хотим узнать наибольшую среднюю цену деталей по всем поставщикам, мы не можем написать MAX(AVG(PRICE)), но можем написать: <programlisting>SELECT MAX(subtable.avgprice)
+    FROM (SELECT AVG(P.PRICE) AS avgprice
+          FROM SUPPLIER S, PART P, SELLS SE
+          WHERE S.SNO = SE.SNO AND
+                P.PNO = SE.PNO
+          GROUP BY S.SNO) subtable;</programlisting> Этот подзапрос возвращает одну строку для каждого поставщика (из-за GROUP BY), а затем мы агрегируем эти строки во внешнем запросе.</para>
+      </example></para>
+    </sect3>
+
+    <sect3>
+     <title>Объединение, пересечение, разность</title>
+
+     <para>Эти операции вычисляют объединение, пересечение и разность (как она понимается в теории множеств) для кортежей, полученных из двух подзапросов. <example>
+       <title id="union-example">Объединение, пересечение, разность</title>
+
+       <para>Следующий запрос демонстрирует объединение (UNION): <programlisting>SELECT S.SNO, S.SNAME, S.CITY
+    FROM SUPPLIER S
+    WHERE S.SNAME = 'Jones'
+UNION
+    SELECT S.SNO, S.SNAME, S.CITY
+    FROM SUPPLIER S
+    WHERE S.SNAME = 'Adams';</programlisting> и выдаёт результат: <screen>
+ SNO | SNAME |  CITY
+-----+-------+--------
+  2  | Jones | Paris
+  3  | Adams | Vienna
+</screen></para>
+
+       <para>Пример для INTERSECT: <programlisting>SELECT S.SNO, S.SNAME, S.CITY
+    FROM SUPPLIER S
+    WHERE S.SNO &gt; 1
+INTERSECT
+    SELECT S.SNO, S.SNAME, S.CITY
+    FROM SUPPLIER S
+    WHERE S.SNO &lt; 3;</programlisting> даёт следующий результат: <screen>
+ SNO | SNAME |  CITY
+-----+-------+--------
+  2  | Jones | Paris
+</screen> Единственным кортежем, возвращаемым двумя частями запроса, является кортеж с SNO=2.</para>
+
+       <para>И наконец, пример для EXCEPT: <programlisting>SELECT S.SNO, S.SNAME, S.CITY
+    FROM SUPPLIER S
+    WHERE S.SNO &gt; 1
+EXCEPT
+    SELECT S.SNO, S.SNAME, S.CITY
+    FROM SUPPLIER S
+    WHERE S.SNO &gt; 3;</programlisting> даёт такой результат: <screen>
+ SNO | SNAME |  CITY
+-----+-------+--------
+  2  | Jones | Paris
+  3  | Adams | Vienna
+</screen></para>
+      </example></para>
+    </sect3>
+   </sect2>
+
+   <sect2 id="datadef">
+    <title>Определение данных</title>
+
+    <para>Язык <acronym>SQL</acronym> включает набор команд для определения данных.</para>
+
+    <sect3 id="create">
+     <title id="create-title">Create Table</title>
+
+     <para>Самой фундаментальной командой определения данных является команда, создающая новое отношение (новую таблицу). Команда <command>CREATE TABLE</command> имеет следующий синтаксис: <synopsis>
+CREATE TABLE <replaceable class="parameter">имя_таблицы</replaceable>
+    (<replaceable class="parameter">имя_атрибута_1</replaceable> <replaceable class="parameter">тип_атрибута_1</replaceable>
+     [, <replaceable class="parameter">имя_атрибута_2</replaceable> <replaceable class="parameter">тип_атрибута_2</replaceable>
+     [, ...]]);
+</synopsis> <example>
+       <title id="table-create">Создание таблицы</title>
+
+       <para>Следующие операторы <acronym>SQL</acronym> создают таблицы, описанные в <xref linkend="supplier-fig" endterm="supplier-fig"/>: <programlisting>CREATE TABLE SUPPLIER
+    (SNO   INTEGER,
+     SNAME VARCHAR(20),
+     CITY  VARCHAR(20));</programlisting> <programlisting>CREATE TABLE PART
+    (PNO   INTEGER,
+     PNAME VARCHAR(20),
+     PRICE DECIMAL(4 , 2));</programlisting> <programlisting>CREATE TABLE SELLS
+    (SNO INTEGER,
+     PNO INTEGER);</programlisting></para>
+      </example></para>
+    </sect3>
+
+    <sect3>
+     <title>Типы данных в <acronym>SQL</acronym></title>
+
+     <para>Ниже перечислены некоторые типы данных, поддерживаемые <acronym>SQL</acronym>: <itemizedlist>
+       <listitem>
+        <para>INTEGER: знаковое двоичное целое, занимающее полное слово (точность 31 бит).</para>
+       </listitem>
+
+       <listitem>
+        <para>SMALLINT: знаковое двоичное целое, занимающее полслова (точность 15 бит).</para>
+       </listitem>
+
+       <listitem>
+        <para>DECIMAL (<replaceable class="parameter">p</replaceable>[,<replaceable class="parameter">q</replaceable>]): знаковое упакованное десятичное число, содержащее до <replaceable class="parameter">p</replaceable> цифр и <replaceable class="parameter">q</replaceable> цифр справа от десятичной точки. Если <replaceable class="parameter">q</replaceable> опущено, оно считается равным 0.</para>
+       </listitem>
+
+       <listitem>
+        <para>FLOAT: знаковое число с плавающей точкой, занимающее двойное слово.</para>
+       </listitem>
+
+       <listitem>
+        <para>VARCHAR(<replaceable class="parameter">n</replaceable>): символьная строка переменной длины не больше <replaceable class="parameter">n</replaceable>.</para>
+       </listitem>
+
+       <listitem>
+        <para>CHAR(<replaceable class="parameter">n</replaceable>): символьная строка фиксированной длины <replaceable class="parameter">n</replaceable>.</para>
+       </listitem>
+
+      </itemizedlist></para>
+    </sect3>
+
+    <sect3>
+     <title>Create Index</title>
+
+     <para>Индексы используются для ускорения доступа к отношению. Если в отношении <classname>R</classname> есть индекс по атрибуту <classname>A</classname>, мы можем получить все кортежи <replaceable>t</replaceable>, для которых <replaceable>t</replaceable>(<classname>A</classname>) = <replaceable>a</replaceable>, за время, пропорциональное количеству таких кортежей <replaceable>t</replaceable>, а не размеру всего отношения <classname>R</classname>.</para>
+
+     <para>Для создания индекса в <acronym>SQL</acronym> применяется команда <command>CREATE INDEX</command>. Она имеет следующий синтаксис: <programlisting>CREATE INDEX <replaceable class="parameter">имя_индекса</replaceable>
+    ON <replaceable class="parameter">имя_таблицы</replaceable> ( <replaceable class="parameter">имя_атрибута</replaceable> );</programlisting></para>
+
+     <para>
+      <example>
+       <title id="index-create">Create Index</title>
+
+       <para>Следующий оператор создаёт индекс с именем I по атрибуту SNAME в отношении SUPPLIER: <programlisting>CREATE INDEX I ON SUPPLIER (SNAME);</programlisting></para>
+
+       <para>Созданный индекс поддерживается автоматически, то есть добавление нового кортежа в отношение SUPPLIER отражается в индексе I. Заметьте, что единственное изменение, которое замечает пользователь при добавлении индекса, это увеличение скорости <command>SELECT</command> и снижение скорости изменений данных.</para>
+      </example>
+     </para>
+    </sect3>
+
+    <sect3>
+     <title>Create View</title>
+
+     <para>Представление можно считать <firstterm>виртуальной таблицей</firstterm>, то есть таблицей, не существующей <emphasis>физически</emphasis> в базе данных, но существующей для пользователя. И напротив, когда речь идёт о <firstterm>базовой таблице</firstterm>, каждой её строке соответствует физически сохранённая в хранилище сущность.</para>
+
+     <para>Представления лишены собственных, физически отдельных и независимых хранимых данных. Вместо этого, система хранит определение представления (то есть, правила, говорящие, как нужно обращаться к физически хранимым базовым таблицам, чтобы материализовать представление) в своих каталогах (см. <xref remap="4" linkend="tutorial-catalogs-title" endterm="tutorial-catalogs-title"/>). Различные технологии реализации представлений обсуждаются в <citetitle>SIM98</citetitle>.</para>
+
+     <para>В <acronym>SQL</acronym> представление создаёт команда <command>CREATE VIEW</command>. Она имеет следующий синтаксис: <programlisting>CREATE VIEW <replaceable class="parameter">имя_представления</replaceable>
+    AS <replaceable class="parameter">оператор_select</replaceable></programlisting> Здесь <replaceable class="parameter">оператор_SELECT</replaceable> — допустимый оператор SELECT, как определено в <xref remap="6" linkend="select-title" endterm="select-title"/>. Заметьте, что <replaceable class="parameter">оператор_SELECT</replaceable> не выполняется при создании представления. Он только сохраняется в <firstterm>системных каталогах</firstterm> и выполняется, когда обрабатывается запрос к представлению.</para>
+
+     <para>Пусть дано следующее определение представления (в нём мы снова используем таблицы из примера <xref linkend="supplier-fig" endterm="supplier-fig"/>): <programlisting>CREATE VIEW London_Suppliers
+    AS SELECT S.SNAME, P.PNAME
+        FROM SUPPLIER S, PART P, SELLS SE
+        WHERE S.SNO = SE.SNO AND
+              P.PNO = SE.PNO AND
+              S.CITY = 'London';</programlisting></para>
+
+     <para>Теперь мы можем использовать это <firstterm>виртуальное отношение</firstterm> <classname>London_Suppliers</classname>, как если бы это была другая базовая таблица: <programlisting>SELECT * FROM London_Suppliers
+    WHERE PNAME = 'Screw';</programlisting> и в результате мы получим следующую таблицу: <screen>
+ SNAME | PNAME
+-------+-------
+ Smith | Screw                 
+</screen></para>
+
+     <para>Чтобы вычислить этот результат, система управления базой данных должна сначала осуществить <emphasis>скрытое</emphasis> обращение к базовым таблицам SUPPLIER, SELLS и PART. Для этого она выполняет запрос к базовым таблицам, заданный в определении представления. После этого для получения результирующей таблицы могут быть применены дополнительные условия (заданные в запросе с представлением).</para>
+    </sect3>
+
+    <sect3>
+     <title>Drop Table, Drop Index, Drop View</title>
+
+     <para>Чтобы уничтожить таблицы (включая все содержащиеся в ней кортежи), применяется команда <command>DROP TABLE</command>: <programlisting>DROP TABLE <replaceable class="parameter">имя_таблицы</replaceable>;</programlisting></para>
+
+     <para>Чтобы уничтожить таблицу SUPPLIER, выполните следующий оператор: <programlisting>DROP TABLE SUPPLIER;</programlisting></para>
+
+     <para>Для уничтожения индекса применяется команда <command>DROP INDEX</command>: <programlisting>DROP INDEX <replaceable class="parameter">имя_индекса</replaceable>;</programlisting></para>
+
+     <para>Наконец, чтобы уничтожить указанное представление, выполните команду <command>DROP VIEW</command>: <programlisting>DROP VIEW <replaceable class="parameter">имя_представления</replaceable>;</programlisting></para>
+    </sect3>
+   </sect2>
+
+   <sect2>
+    <title>Обработка данных</title>
+
+    <sect3>
+     <title>Insert Into</title>
+
+     <para>Когда таблица создана (см. <xref remap="4" linkend="create-title" endterm="create-title"/>), её можно наполнить кортежами, применив команду <command>INSERT INTO</command>. Синтаксис этой команды: <programlisting>INSERT INTO <replaceable class="parameter">имя_таблицы</replaceable> (<replaceable class="parameter">имя_атр_1</replaceable>
+    [, <replaceable class="parameter">имя_атр_2</replaceable> [, ...]])
+    VALUES (<replaceable class="parameter">знач_атр_1</replaceable> [, <replaceable class="parameter">знач_атр_2</replaceable> [, ...]]);</programlisting></para>
+
+     <para>Для добавления первого кортежа в отношение SUPPLIER (из <xref linkend="supplier-fig" endterm="supplier-fig"/>) воспользуемся следующим оператором: <programlisting>INSERT INTO SUPPLIER (SNO, SNAME, CITY)
+    VALUES (1, 'Smith', 'London');</programlisting></para>
+
+     <para>Для добавления первого кортежа в отношение SELLS мы выполним: <programlisting>INSERT INTO SELLS (SNO, PNO)
+    VALUES (1, 1);</programlisting></para>
+    </sect3>
+
+    <sect3>
+     <title>Update</title>
+
+     <para>Чтобы изменить значения одного или нескольких атрибутов кортежей в отношении, применяется команда <command>UPDATE</command>. Она имеет следующий синтаксис: <programlisting>UPDATE <replaceable class="parameter">имя_таблицы</replaceable>
+    SET <replaceable class="parameter">имя_атрибута_1</replaceable> = <replaceable class="parameter">значение_1</replaceable>
+        [, ... [, <replaceable class="parameter">имя_атрибута_k</replaceable> = <replaceable class="parameter">значение_k</replaceable>]]
+    WHERE <replaceable class="parameter">условие</replaceable>;</programlisting></para>
+
+     <para>Чтобы изменить значение атрибута PRICE детали 'Screw' в отношении PART, выполним: <programlisting>UPDATE PART
+    SET PRICE = 15
+    WHERE PNAME = 'Screw';</programlisting></para>
+
+     <para>Новым значением атрибута PRICE кортежа с именем 'Screw' стало 15.</para>
+    </sect3>
+
+    <sect3>
+     <title>Delete</title>
+
+     <para>Для удаления кортежей из определённой таблицы применяется команда DELETE FROM. Она имеет такой синтаксис: <programlisting>DELETE FROM <replaceable class="parameter">имя_таблицы</replaceable>
+    WHERE <replaceable class="parameter">условие</replaceable>;</programlisting></para>
+
+     <para>Следующий оператор удаляет поставщика с именем 'Smith' из таблицы SUPPLIER: <programlisting>DELETE FROM SUPPLIER
+    WHERE SNAME = 'Smith';</programlisting></para>
+    </sect3>
+   </sect2>
+
+   <sect2 id="tutorial-catalogs">
+    <title id="tutorial-catalogs-title">Системные каталоги</title>
+
+    <para>Во всех СУБД <acronym>SQL</acronym> существуют <firstterm>системные каталоги</firstterm>, в которых описывается, какие таблицы, представления, индексы и т. п. определены в базе данных. К этим системным каталогам можно обращаться, как если бы они были обычными отношениями. Например, существует каталог, в котором определяются представления. В этом каталоге хранится запрос, заданный в определении представления. Когда выполняется запрос к представлению, система сначала извлекает <firstterm>запрос, определяющий представление</firstterm>, из каталога и материализует представление, прежде чем обрабатывать запрос пользователя (более подробно это описано в <xref remap="6" linkend="sim98" endterm="sim98"/>). За дополнительными сведениями о системных каталогах обратитесь к <xref remap="3" linkend="date04" endterm="date04"/>.</para>
+   </sect2>
+
+   <sect2>
+    <title>Встраиваемый <acronym>SQL</acronym></title>
+
+    <para>В этом разделе мы кратко расскажем, как язык <acronym>SQL</acronym> может встраиваться в ведущий язык (например, <literal>C</literal>). Для использования <acronym>SQL</acronym> в среде ведущего языка есть две основные причины: <itemizedlist>
+      <listitem>
+       <para>Существуют и такие запросы, которые нельзя сформулировать на чистом <acronym>SQL</acronym> (например, рекурсивные запросы). Чтобы иметь возможность выполнять эти запросы, нам нужен язык с большей выразительной мощностью, чем <acronym>SQL</acronym>.</para>
+      </listitem>
+
+      <listitem>
+       <para>Мы просто хотим обратиться к базе данных из некоторого приложения, написанного на ведущем языке (например, система резервирования билетов с графическим интерфейсом разрабатывается на C, а информация о наличии билетов хранится в базе данных, и может быть получена с применением встраиваемого <acronym>SQL</acronym>).</para>
+      </listitem>
+     </itemizedlist></para>
+
+    <para>Программа, использующая встраиваемый <acronym>SQL</acronym> в ведущем языке, состоит из операторов ведущего языка и операторов <firstterm>встраиваемого <acronym>SQL</acronym></firstterm> (Embedded SQL, <acronym>ESQL</acronym>). Каждый оператор <acronym>ESQL</acronym> начинается с ключевых слов <command>EXEC SQL</command>. Операторы <acronym>ESQL</acronym> преобразуются в операторы ведущего языка <firstterm>предкомпилятором</firstterm> (который обычно вставляет вместо них вызовы библиотечных подпрограмм, выполняющих различные команды <acronym>SQL</acronym>).</para>
+
+    <para>Взглянув на примеры, приведённые в разделе <xref linkend="select-title" endterm="select-title"/>, можно понять, что результатом запросов часто оказывается множество кортежей. Многие языки не предназначены для работы с множествами, так что нам нужен механизм для обращения к каждому отдельному кортежу из множества, выданного оператором SELECT. Этот механизм может обеспечиваться <firstterm>курсором</firstterm>. Объявив курсор, мы можем применять команду <command>FETCH</command> для чтения текущего кортежа и перемещения к следующему.</para>
+
+    <para>Узнать о встраиваемом <acronym>SQL</acronym> больше можно в <xref linkend="date97" endterm="date97"/>, <xref linkend="date04" endterm="date04"/> и <xref linkend="ull88" endterm="ull88"/>.</para>
+   </sect2>
+  </sect1>
+ </chapter>

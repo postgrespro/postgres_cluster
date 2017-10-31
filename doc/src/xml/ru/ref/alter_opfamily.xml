@@ -1,0 +1,229 @@
+<!--
+doc/src/xml/ref/alter_opfamily.xml
+&productname; documentation
+-->
+
+<refentry id="sql-alteropfamily">
+ <indexterm zone="sql-alteropfamily"><primary>ALTER OPERATOR FAMILY</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>ALTER OPERATOR FAMILY</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>ALTER OPERATOR FAMILY</refname>
+  <refpurpose>изменить определение семейства операторов</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>ALTER OPERATOR FAMILY <replaceable>имя</replaceable> USING <replaceable class="parameter">метод_индекса</replaceable> ADD
+  {  OPERATOR <replaceable class="parameter">номер_стратегии</replaceable> <replaceable class="parameter">имя_оператора</replaceable> ( <replaceable class="parameter">тип_операнда</replaceable>, <replaceable class="parameter">тип_операнда</replaceable> )
+              [ FOR SEARCH | FOR ORDER BY <replaceable class="parameter">семейство_сортировки</replaceable> ]
+   | FUNCTION <replaceable class="parameter">номер_опорной_функции</replaceable> [ ( <replaceable class="parameter">тип_операнда</replaceable> [ , <replaceable class="parameter">тип_операнда</replaceable> ] ) ]
+              <replaceable class="parameter">имя_функции</replaceable> ( <replaceable class="parameter">тип_аргумента</replaceable> [, ...] )
+  } [, ... ]
+
+ALTER OPERATOR FAMILY <replaceable>имя</replaceable> USING <replaceable class="parameter">метод_индекса</replaceable> DROP
+  {  OPERATOR <replaceable class="parameter">номер_стратегии</replaceable> ( <replaceable class="parameter">тип_операнда</replaceable> [ , <replaceable class="parameter">тип_операнда</replaceable> ] )
+   | FUNCTION <replaceable class="parameter">номер_опорной_функции</replaceable> ( <replaceable class="parameter">тип_операнда</replaceable> [ , <replaceable class="parameter">тип_операнда</replaceable> ] )
+  } [, ... ]
+
+ALTER OPERATOR FAMILY <replaceable>имя</replaceable> USING <replaceable class="parameter">метод_индекса</replaceable>
+    RENAME TO <replaceable>новое_имя</replaceable>
+
+ALTER OPERATOR FAMILY <replaceable>имя</replaceable> USING <replaceable class="parameter">метод_индекса</replaceable>
+    OWNER TO { <replaceable>новый_владелец</replaceable> | CURRENT_USER | SESSION_USER }
+
+ALTER OPERATOR FAMILY <replaceable>имя</replaceable> USING <replaceable class="parameter">метод_индекса</replaceable>
+    SET SCHEMA <replaceable>новая_схема</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>ALTER OPERATOR FAMILY</command> меняет определение семейства операторов. Она позволяет добавлять в семейство операторы и опорные функции, удалять их из семейства или менять имя и владельца семейства операторов.</para>
+
+  <para>Когда операторы и опорные функции добавляются в семейство с помощью <command>ALTER OPERATOR FAMILY</command>, они не становятся частью какого-либо определённого класса операторов в семействе, а просто считаются <quote>слабосвязанными</quote> с семейством. Это показывает, что эти операторы и функции семантически совместимы с семейством, но не требуются для корректной работы какого-либо индекса. (Операторы и функции, которые действительно требуются для этого, должны быть включены не в семейство, а в класс операторов; см. <xref remap="4" linkend="sql-createopclass"/>.) <productname>&productname;</productname> позволяет удалять слабосвязанные члены из семейства в любое время, но члены класса операторов не могут быть удалены, пока не будет удалён весь класс и все зависимые от него индексы. Обычно в классы операторов включаются операторы и функции, работающие с одним типом данным (так как они нужны для поддержки индексов данных такого типа), а функции и операторы, работающие с разными типами, становятся слабосвязанными членами семейства.</para>
+
+  <para>Выполнить <command>ALTER OPERATOR FAMILY</command> может только суперпользователь. (Это ограничение введено потому, что ошибочное определение семейства операторов может вызвать нарушения или даже сбой в работе сервера.)</para>
+
+  <para><command>ALTER OPERATOR FAMILY</command> в настоящее время не проверяет, включает ли определение семейства операторов все операторы и функции, требуемые для индексного метода, и образуют ли они целостный набор. Ответственность за правильность определения семейства лежит на пользователе.</para>
+
+  <para>За дополнительными сведениями обратитесь к <xref remap="3" linkend="xindex"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующего семейства операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">метод_индекса</replaceable></term>
+    <listitem>
+     <para>Имя индексного метода, для которого предназначено это семейство операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">номер_стратегии</replaceable></term>
+    <listitem>
+     <para>Номер стратегии индексного метода для оператора, связанного с данным семейством операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_оператора</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) оператора, связанного с данным семейством операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_операнда</replaceable></term>
+    <listitem>
+     <para>В предложении <literal>OPERATOR</literal> указывается тип(ы) данных оператора или <literal>NONE</literal>, если это левый или правый унарный оператор. В отличие от похожего синтаксиса в <command>CREATE OPERATOR CLASS</command>, здесь типы операндов должны указываться всегда.</para>
+
+     <para>В предложении <literal>ADD FUNCTION</literal> это тип данных, который должна поддерживать эта функция, если он отличается от входного типа данных функции. Для функций сравнения B-деревьев и хеш-функций указывать <replaceable class="parameter">тип_операнда</replaceable> необязательно, так как их входные типы данных всегда будут верными. Однако для функций поддержки сортировки B-деревьев и всех функций в классах операторов GiST, SP-GiST и GIN необходимо указать тип(ы) операндов, с которыми будут использоваться эти функции.</para>
+
+     <para>В предложении <literal>DROP FUNCTION</literal> тип операнда, который должна поддерживать эта функция.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">семейство_сортировки</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующего семейства операторов <literal>btree</literal>, описывающего порядок сортировки, связанный с оператором сортировки.</para>
+
+     <para>Если не указано ни <literal>FOR SEARCH</literal> (для поиска), ни <literal>FOR ORDER BY</literal> (для сортировки), подразумевается <literal>FOR SEARCH</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">номер_опорной_функции</replaceable></term>
+    <listitem>
+     <para>Номер опорной процедуры индексного метода для функции, связанной с данным семейством операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_функции</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) функции, которая является опорной процедурой индексного метода для данного семейства операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">тип_аргумента</replaceable></term>
+    <listitem>
+     <para>Тип данных параметра функции.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новое_имя</replaceable></term>
+    <listitem>
+     <para>Новое имя семейства операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новый_владелец</replaceable></term>
+    <listitem>
+     <para>Новый владелец семейства операторов.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">новая_схема</replaceable></term>
+    <listitem>
+     <para>Новая схема семейства операторов.</para>
+    </listitem>
+   </varlistentry>
+ </variablelist>
+
+  <para>Предложения <literal>OPERATOR</literal> и <literal>FUNCTION</literal> могут указываться в любом порядке.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Заметьте, что в синтаксисе <literal>DROP</literal> указывается только <quote>слот</quote> в семействе операторов, по номеру стратегии или опорной функции, и входные типы данных. Имя оператора или функции, занимающих этот слот, не упоминается. Также учтите, что в <literal>DROP FUNCTION</literal> указываются типы входных данных, которые должна поддерживать функция, но для индексов GiST, SP-GiST и GIN они могут не иметь ничего общего с типами фактических аргументов функции.</para>
+
+  <para>Так как механизмы индексов не проверяют права доступа к функциям прежде чем вызывать их, включение функций или операторов в семейство операторов по сути даёт всем право на выполнение их. Обычно это не проблема для таких функций, какие бывают полезны в семействе операторов.</para>
+
+  <para>Операторы не должны реализовываться в функциях на языке SQL. SQL-функция вероятнее всего будет встроена в вызывающий запрос, что помешает оптимизатору понять, что этот запрос соответствует индексу.</para>
+
+  <para>До <productname>PostgreSQL</productname> 8.4 предложение <literal>OPERATOR</literal> могло включать указание <literal>RECHECK</literal>. Теперь это не поддерживается, так как оператор индекса может быть <quote>неточным</quote> и это определяется на ходу в момент выполнения. Это позволяет эффективно справляться с ситуациями, когда оператор может быть или не быть неточным.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Следующий пример добавляет опорные функции и операторы смешанных типов в семейство операторов, уже содержащее классы операторов B-дерева для типов данных <type>int4</type> и <type>int2</type>.</para>
+
+<programlisting>ALTER OPERATOR FAMILY integer_ops USING btree ADD
+
+  -- int4 и int2
+  OPERATOR 1 &lt; (int4, int2) ,
+  OPERATOR 2 &lt;= (int4, int2) ,
+  OPERATOR 3 = (int4, int2) ,
+  OPERATOR 4 &gt;= (int4, int2) ,
+  OPERATOR 5 &gt; (int4, int2) ,
+  FUNCTION 1 btint42cmp(int4, int2) ,
+
+  -- int2 и int4
+  OPERATOR 1 &lt; (int2, int4) ,
+  OPERATOR 2 &lt;= (int2, int4) ,
+  OPERATOR 3 = (int2, int4) ,
+  OPERATOR 4 &gt;= (int2, int4) ,
+  OPERATOR 5 &gt; (int2, int4) ,
+  FUNCTION 1 btint24cmp(int2, int4) ;</programlisting>
+
+  <para>Удаление этих же элементов:</para>
+
+<programlisting>ALTER OPERATOR FAMILY integer_ops USING btree DROP
+
+  -- int4 vs int2
+  OPERATOR 1 (int4, int2) ,
+  OPERATOR 2 (int4, int2) ,
+  OPERATOR 3 (int4, int2) ,
+  OPERATOR 4 (int4, int2) ,
+  OPERATOR 5 (int4, int2) ,
+  FUNCTION 1 (int4, int2) ,
+
+  -- int2 vs int4
+  OPERATOR 1 (int2, int4) ,
+  OPERATOR 2 (int2, int4) ,
+  OPERATOR 3 (int2, int4) ,
+  OPERATOR 4 (int2, int4) ,
+  OPERATOR 5 (int2, int4) ,
+  FUNCTION 1 (int2, int4) ;</programlisting>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Команда <command>ALTER OPERATOR FAMILY</command> отсутствует в стандарте SQL.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createopfamily"/></member>
+   <member><xref linkend="sql-dropopfamily"/></member>
+   <member><xref linkend="sql-createopclass"/></member>
+   <member><xref linkend="sql-alteropclass"/></member>
+   <member><xref linkend="sql-dropopclass"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

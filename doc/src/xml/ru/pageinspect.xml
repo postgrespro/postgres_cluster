@@ -1,0 +1,316 @@
+<!-- doc/src/xml/pageinspect.xml -->
+
+<sect1 id="pageinspect" xreflabel="pageinspect">
+ <title>pageinspect</title>
+
+ <indexterm zone="pageinspect"><primary>pageinspect</primary></indexterm>
+
+ <para>Модуль <filename>pageinspect</filename> предоставляет функции, позволяющие исследовать страницы баз данных на низком уровне, что бывает полезно для отладки. Все эти функции могут вызывать только суперпользователи.</para>
+
+ <sect2>
+  <title>Функции</title>
+
+  <variablelist>
+   <varlistentry>
+    <term>
+     <function>get_raw_page(relname text, fork text, blkno int) returns bytea</function>
+     <indexterm><primary>get_raw_page</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para>Функция <function>get_raw_page</function> считывает указанный блок отношения с заданным именем и возвращает копию значения <type>bytea</type>. Это позволяет получить одну согласованную во времени копию блока. В параметре <parameter>fork</parameter> нужно передать <literal>'main'</literal>, чтобы обратиться к основному слою данных, <literal>'fsm'</literal> — к карте свободного пространства, <literal>'vm'</literal> — к карте видимости, либо <literal>'init'</literal> — к слою инициализации.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>get_raw_page(relname text, blkno int) returns bytea</function>
+    </term>
+
+    <listitem>
+     <para>Упрощённая версия <function>get_raw_page</function> для чтения данных из основного слоя. Синоним <literal>get_raw_page(relname, 'main', blkno)</literal></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>page_header(page bytea) returns record</function>
+     <indexterm><primary>page_header</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para>Функция <function>page_header</function> показывает поля, общие для всех страниц кучи и индекса <productname>&productname;</productname>.</para>
+
+     <para>В качестве аргумента ей передаётся образ страницы, полученный в результате вызова <function>get_raw_page</function>. Например: <screen>
+test=# SELECT * FROM page_header(get_raw_page('pg_class', 0));
+    lsn    | checksum | flags  | lower | upper | special | pagesize | version | prune_xid
+-----------+----------+--------+-------+-------+---------+----------+---------+-----------
+ 0/24A1B50 |        1 |      1 |   232 |   368 |    8192 |     8192 |       4 |         0
+</screen> Возвращаемые столбцы соответствуют полям в структуре <structname>PageHeaderData</structname>. За подробностями обратитесь к <filename>src/include/storage/bufpage.h</filename>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>heap_page_items(page bytea) returns setof record</function>
+     <indexterm><primary>heap_page_items</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para>Функция <function>heap_page_items</function> показывает все указатели линейных блоков на странице кучи. Для используемых блоков также выводятся заголовки кортежей. При этом показываются все кортежи, независимо от того, были ли видны они в снимке MVCC в момент копирования исходной страницы.</para>
+     <para>В качестве аргумента ей передаётся образ страницы кучи, полученный в результате вызова <function>get_raw_page</function>. Например: <screen>
+test=# SELECT * FROM heap_page_items(get_raw_page('pg_class', 0));
+</screen> Описание возвращаемых полей можно найти в <filename>src/include/storage/itemid.h</filename> и <filename>src/include/access/htup_details.h</filename>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>tuple_data_split(rel_oid, t_data bytea, t_infomask integer, t_infomask2 integer, t_bits text [, do_detoast bool]) returns bytea[]</function>
+     <indexterm><primary>tuple_data_split</primary></indexterm>
+    </term>
+    <listitem>
+     <para>Функция <function>tuple_data_split</function> разделяет данные кортежей на атрибуты так, как это происходит внутри сервера. <screen>
+test=# SELECT tuple_data_split('pg_class'::regclass, t_data, t_infomask, t_infomask2, t_bits) FROM heap_page_items(get_raw_page('pg_class', 0));
+</screen> В качестве аргументов этой функции должны передаваться атрибуты, возвращаемые функцией <function>heap_page_items</function>.</para>
+     <para>Если параметр <parameter>do_detoast</parameter> равен <literal>true</literal>, полученные атрибуты будут распакованы по мере необходимости. Если он не задан, подразумевается <literal>false</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>heap_page_item_attrs(rel_oid, t_data bytea, [, do_detoast bool]) returns bytea[]</function>
+     <indexterm><primary>heap_page_item_attrs</primary></indexterm>
+    </term>
+    <listitem>
+     <para>Функция <function>heap_page_item_attrs</function> похожа на <function>heap_page_items</function>, но возвращает неструктурированное содержимое кортежа в виде массива атрибутов, которые могут быть распакованы, если установлен флаг <parameter>do_detoast</parameter> (по умолчанию они не распаковываются).</para>
+     <para>В качестве аргумента ей передаётся образ страницы кучи, полученный в результате вызова <function>get_raw_page</function>. Например: <screen>
+test=# SELECT * FROM heap_page_item_attrs(get_raw_page('pg_class', 0), 'pg_class'::regclass);
+</screen></para>
+    </listitem>
+   </varlistentry>
+   
+   <varlistentry>
+    <term>
+     <function>bt_metap(relname text) returns record</function>
+     <indexterm><primary>bt_metap</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para>Функция <function>bt_metap</function> возвращает информацию о метастранице индекса-B-дерева. Например: <screen>
+test=# SELECT * FROM bt_metap('pg_cast_oid_index');
+-[ RECORD 1 ]-----
+magic     | 340322
+version   | 2
+root      | 1
+level     | 0
+fastroot  | 1
+fastlevel | 0
+</screen></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>bt_page_stats(relname text, blkno int) returns record</function>
+     <indexterm><primary>bt_page_stats</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para><function>bt_page_stats</function> возвращает сводную информацию по единичным страницам B-дерева. Например: <screen>
+test=# SELECT * FROM bt_page_stats('pg_cast_oid_index', 1);
+-[ RECORD 1 ]-+-----
+blkno         | 1
+type          | l
+live_items    | 256
+dead_items    | 0
+avg_item_size | 12
+page_size     | 8192
+free_size     | 4056
+btpo_prev     | 0
+btpo_next     | 0
+btpo          | 0
+btpo_flags    | 3
+</screen></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>bt_page_items(relname text, blkno int) returns setof record</function>
+     <indexterm><primary>bt_page_items</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para><function>bt_page_items</function> возвращает детализированную информацию обо всех элементах на странице B-дерева. Например: <screen>
+test=# SELECT * FROM bt_page_items('pg_cast_oid_index', 1);
+ itemoffset |  ctid   | itemlen | nulls | vars |    data
+------------+---------+---------+-------+------+-------------
+          1 | (0,1)   |      12 | f     | f    | 23 27 00 00
+          2 | (0,2)   |      12 | f     | f    | 24 27 00 00
+          3 | (0,3)   |      12 | f     | f    | 25 27 00 00
+          4 | (0,4)   |      12 | f     | f    | 26 27 00 00
+          5 | (0,5)   |      12 | f     | f    | 27 27 00 00
+          6 | (0,6)   |      12 | f     | f    | 28 27 00 00
+          7 | (0,7)   |      12 | f     | f    | 29 27 00 00
+          8 | (0,8)   |      12 | f     | f    | 2a 27 00 00
+</screen> На странице уровня листьев B-дерева, <structfield>ctid</structfield> указывает на кортеж в куче. На внутренней странице часть <structfield>ctid</structfield>, содержащая номер блока, указывает на другую страницу в самом индексе, а часть смещения (второе число) игнорируется и обычно равняется 1.</para>
+     <para>Заметьте, что первый элемент в любой, кроме самой правой, странице (то есть в любой странице с ненулевым значением в поле <structfield>btpo_next</structfield>) представляет собой <quote>верхний ключ</quote>, то есть его поле <structfield>data</structfield> задаёт верхнюю границу всех элементов, находящихся на странице, а поле <structfield>ctid</structfield> лишено смысла. Кроме того, на внутренних страницах первый действительный элемент данных (первый элемент после верхнего ключа) представляет элемент <quote>минус бесконечность</quote>, без фактического значения в поле <structfield>data</structfield>. Однако такой элемент содержит в своём поле <structfield>ctid</structfield> корректную ссылку на данные.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>brin_page_type(page bytea) returns text</function>
+     <indexterm><primary>brin_page_type</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para>Функция <function>brin_page_type</function> возвращает тип страницы для заданной страницы индекса <acronym>BRIN</acronym> или выдаёт ошибку, если эта страница не является корректной страницей индекса <acronym>BRIN</acronym>. Например: <screen>
+test=# SELECT brin_page_type(get_raw_page('brinidx', 0));
+ brin_page_type 
+----------------
+ meta
+</screen></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>brin_metapage_info(page bytea) returns record</function>
+     <indexterm><primary>brin_metapage_info</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para>Функция <function>brin_metapage_info</function> возвращает разнообразные сведения о метастранице индекса <acronym>BRIN</acronym>. Например: <screen>
+test=# SELECT * FROM brin_metapage_info(get_raw_page('brinidx', 0));
+   magic    | version | pagesperrange | lastrevmappage 
+------------+---------+---------------+----------------
+ 0xA8109CFA |       1 |             4 |              2
+</screen></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>brin_revmap_data(page bytea) returns setof tid</function>
+     <indexterm><primary>brin_revmap_data</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para>Функция <function>brin_revmap_data</function> выдаёт список идентификаторов кортежей со страницы сопоставлений зон индекса <acronym>BRIN</acronym>. Например: <screen>
+test=# SELECT * FROM brin_revmap_data(get_raw_page('brinidx', 2)) limit 5;
+  pages  
+---------
+ (6,137)
+ (6,138)
+ (6,139)
+ (6,140)
+ (6,141)
+</screen></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>brin_page_items(page bytea, index oid) returns setof record</function>
+     <indexterm><primary>brin_page_items</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para>Функция <function>brin_page_items</function> выдаёт содержимое, сохранённое в странице данных <acronym>BRIN</acronym>. Например: <screen>
+test=# SELECT * FROM brin_page_items(get_raw_page('brinidx', 5),
+                                     'brinidx')
+       ORDER BY blknum, attnum LIMIT 6;
+ itemoffset | blknum | attnum | allnulls | hasnulls | placeholder |    value     
+------------+--------+--------+----------+----------+-------------+--------------
+        137 |      0 |      1 | t        | f        | f           | 
+        137 |      0 |      2 | f        | f        | f           | {1 .. 88}
+        138 |      4 |      1 | t        | f        | f           | 
+        138 |      4 |      2 | f        | f        | f           | {89 .. 176}
+        139 |      8 |      1 | t        | f        | f           | 
+        139 |      8 |      2 | f        | f        | f           | {177 .. 264}
+</screen> Возвращаемые столбцы соответствуют полям в структурах <structname>BrinMemTuple</structname> и <structname>BrinValues</structname>. Подробнее они описаны в <filename>src/include/access/brin_tuple.h</filename>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>gin_metapage_info(page bytea) returns record</function>
+     <indexterm><primary>gin_metapage_info</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para>Функция <function>gin_metapage_info</function> выдаёт информацию о метастранице индекса <acronym>GIN</acronym>. Например: <screen>
+test=# SELECT * FROM gin_metapage_info(get_raw_page('gin_index', 0));
+-[ RECORD 1 ]----+-----------
+pending_head     | 4294967295
+pending_tail     | 4294967295
+tail_free_size   | 0
+n_pending_pages  | 0
+n_pending_tuples | 0
+n_total_pages    | 7
+n_entry_pages    | 6
+n_data_pages     | 0
+n_entries        | 693
+version          | 2
+</screen></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>gin_page_opaque_info(page bytea) returns record</function>
+     <indexterm><primary>gin_page_opaque_info</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para>Функция <function>gin_page_opaque_info</function> выдаёт информацию из непрозрачной области индекса <acronym>GIN</acronym>, например, тип страницы. Например: <screen>
+test=# SELECT * FROM gin_page_opaque_info(get_raw_page('gin_index', 2));
+ rightlink | maxoff |         flags
+-----------+--------+------------------------
+         5 |      0 | {data,leaf,compressed}
+(1 row)
+</screen></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>gin_leafpage_items(page bytea) returns setof record</function>
+     <indexterm><primary>gin_leafpage_items</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para>Функция <function>gin_leafpage_items</function> выдаёт информацию о данных, хранящихся в странице индекса <acronym>GIN</acronym> на уровне листьев. Например: <screen>
+test=# SELECT first_tid, nbytes, tids[0:5] as some_tids
+        FROM gin_leafpage_items(get_raw_page('gin_test_idx', 2));
+ first_tid | nbytes |                        some_tids
+-----------+--------+----------------------------------------------------------
+ (8,41)    |    244 | {"(8,41)","(8,43)","(8,44)","(8,45)","(8,46)"}
+ (10,45)   |    248 | {"(10,45)","(10,46)","(10,47)","(10,48)","(10,49)"}
+ (12,52)   |    248 | {"(12,52)","(12,53)","(12,54)","(12,55)","(12,56)"}
+ (14,59)   |    320 | {"(14,59)","(14,60)","(14,61)","(14,62)","(14,63)"}
+ (167,16)  |    376 | {"(167,16)","(167,17)","(167,18)","(167,19)","(167,20)"}
+ (170,30)  |    376 | {"(170,30)","(170,31)","(170,32)","(170,33)","(170,34)"}
+ (173,44)  |    197 | {"(173,44)","(173,45)","(173,46)","(173,47)","(173,48)"}
+(7 rows)
+</screen></para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term>
+     <function>fsm_page_contents(page bytea) returns text</function>
+     <indexterm><primary>fsm_page_contents</primary></indexterm>
+    </term>
+
+    <listitem>
+     <para>Функция <function>fsm_page_contents</function> показывает внутреннюю структуру узла на странице FSM. Она выдаёт текст из нескольких строк, по одной строке на узел двоичного дерева на заданной странице. При этом выдаются только ненулевые узлы. Также выводится так называемый указатель &laquo;следующего слота&raquo;, который указывает на следующий слот, получаемый с этой страницы.</para>
+     <para>Подробнее структура страницы FSM описана в <filename>src/backend/storage/freespace/README</filename>.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </sect2>
+
+</sect1>

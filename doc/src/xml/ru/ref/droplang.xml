@@ -1,0 +1,202 @@
+<!--
+doc/src/xml/ref/droplang.xml
+&productname; documentation
+-->
+
+<refentry id="app-droplang">
+ <indexterm zone="app-droplang"><primary>droplang</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>droplang</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>droplang</refname>
+  <refpurpose>удалить процедурный язык <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>droplang</command>
+   <arg rep="repeat"><replaceable>параметр-подключения</replaceable></arg>
+   <arg choice="plain"><replaceable>имя_языка</replaceable></arg>
+   <arg choice="opt"><replaceable>имя_бд</replaceable></arg>
+  </cmdsynopsis>
+
+  <cmdsynopsis>
+   <command>droplang</command>
+   <arg rep="repeat"><replaceable>параметр-подключения</replaceable></arg>
+   <group choice="plain"><arg choice="plain"><option>--list</option></arg><arg choice="plain"><option>-l</option></arg></group>
+   <arg choice="opt"><replaceable>имя_бд</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1 id="r1-app-droplang-1">
+  <title>Описание</title>
+
+  <para><application>droplang</application> служит для удаления ранее установленного процедурного языка из базы данных <productname>&productname;</productname>.</para>
+
+  <para><application>droplang</application> это обёртка над SQL-командой <xref linkend="sql-dropextension"/>.</para>
+
+  <caution>
+   <para><application>droplang</application> является устаревшей и может быть удалена в последующих версиях <productname>&productname;</productname>. Вместо неё рекомендовано использовать <command>DROP EXTENSION</command>.</para>
+  </caution>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <para><application>droplang</application> принимает в качестве аргументов: <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">имя_языка</replaceable></term>
+      <listitem>
+       <para>Указывает название удаляемого процедурного языка. Имя должно быть в нижнем регистре.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option><optional>-d</optional> <replaceable class="parameter">имя_бд</replaceable></option></term>
+      <term><option><optional>--dbname=</optional><replaceable class="parameter">имя_бд</replaceable></option></term>
+      <listitem>
+       <para>Указывает имя базы данных, из которой удаляется процедурный язык. По умолчанию имя целевой базы совпадает с именем текущего системного пользователя.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-e</option></term>
+      <term><option>--echo</option></term>
+      <listitem>
+       <para>Отобразить выполняемые SQL-команды.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-l</option></term>
+      <term><option>--list</option></term>
+      <listitem>
+       <para>Отобразить список установленных языков в целевой базе данных.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-V</option></term>
+       <term><option>--version</option></term>
+       <listitem>
+       <para>Выводит версию <application>droplang</application>.</para>
+       </listitem>
+     </varlistentry>
+
+     <varlistentry>
+       <term><option>-?</option></term>
+       <term><option>--help</option></term>
+       <listitem>
+       <para>Вывести справку по команде <application>droplang</application>.</para>
+       </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+
+   <para><application>droplang</application> также принимает из командной строки параметры подключения: <variablelist>
+     <varlistentry>
+      <term><option>-h <replaceable class="parameter">сервер</replaceable></option></term>
+      <term><option>--host=<replaceable class="parameter">сервер</replaceable></option></term>
+      <listitem>
+       <para>Указывает имя компьютера, на котором запущен сервер. Если значение начинается с косой черты, оно интерпретируется как имя каталога с доменным сокетом Unix.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">порт</replaceable></option></term>
+      <term><option>--port=<replaceable class="parameter">порт</replaceable></option></term>
+      <listitem>
+       <para>Указывает TCP-порт или расширение файла Unix-сокета, на котором сервер слушает подключения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-U <replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <term><option>--username=<replaceable class="parameter">имя_пользователя</replaceable></option></term>
+      <listitem>
+       <para>Имя пользователя, под которым производится подключение.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-w</option></term>
+      <term><option>--no-password</option></term>
+      <listitem>
+       <para>Не выдавать запрос на ввод пароля. Если сервер требует аутентификацию по паролю и пароль не доступен с помощью других средств, таких как файл <filename>.pgpass</filename>, попытка соединения не удастся. Этот параметр может быть полезен в пакетных заданиях и скриптах, где нет пользователя, который вводит пароль.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option></term>
+      <term><option>--password</option></term>
+      <listitem>
+       <para>Принудительно запрашивать пароль перед подключением к базе данных.</para>
+
+       <para>Это несущественный параметр, так как <application>droplang</application> запрашивает пароль автоматически, если сервер проверяет подлинность по паролю. Однако, чтобы понять это, <application>droplang</application> лишний раз подключается к серверу. Поэтому иногда имеет смысл ввести <option>-W</option>, чтобы исключить эту ненужную попытку подключения.</para>
+      </listitem>
+     </varlistentry>
+
+    </variablelist></para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><envar>PGDATABASE</envar></term>
+    <term><envar>PGHOST</envar></term>
+    <term><envar>PGPORT</envar></term>
+    <term><envar>PGUSER</envar></term>
+
+    <listitem>
+     <para>Параметры подключения по умолчанию</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+
+  <para>Эта утилита, как и большинство других утилит <productname>&productname;</productname>, также использует переменные среды, поддерживаемые <application>libpq</application> (см. <xref remap="4" linkend="libpq-envars"/>).</para>
+
+ </refsect1>
+
+
+ <refsect1>
+   <title>Диагностика</title>
+
+   <para>Большинство сообщений об ошибках говорят сами за себя. В противном случае, запустите <application>droplang</application> с параметром <option>--echo</option>, далее можно обратиться за подробностями касаемо конкретной <acronym>SQL</acronym>-команды. При диагностике возможных проблем стоит учитывать, что при запуске утилиты используются значения переменных окружения и параметров подключения по умолчанию <application>libpq</application>.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Используйте <xref linkend="app-createlang"/> для добавления языков.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Примеры</title>
+
+   <para>Чтобы удалить язык <literal>pltcl</literal>: <screen>
+<prompt>$ </prompt><userinput>droplang pltcl dbname</userinput>
+</screen></para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-createlang"/></member>
+   <member><xref linkend="sql-dropextension"/></member>
+   <member><xref linkend="sql-droplanguage"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

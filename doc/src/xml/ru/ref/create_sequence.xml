@@ -1,0 +1,187 @@
+<!--
+doc/src/xml/ref/create_sequence.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createsequence">
+ <indexterm zone="sql-createsequence"><primary>CREATE SEQUENCE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE SEQUENCE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE SEQUENCE</refname>
+  <refpurpose>создать генератор последовательности</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE [ TEMPORARY | TEMP ] SEQUENCE [ IF NOT EXISTS ] <replaceable class="parameter">имя</replaceable> [ INCREMENT [ BY ] <replaceable class="parameter">шаг</replaceable> ]
+    [ MINVALUE <replaceable class="parameter">мин_значение</replaceable> | NO MINVALUE ] [ MAXVALUE <replaceable class="parameter">макс_значение</replaceable> | NO MAXVALUE ]
+    [ START [ WITH ] <replaceable class="parameter">начало</replaceable> ] [ CACHE <replaceable class="parameter">кеш</replaceable> ] [ [ NO ] CYCLE ]
+    [ OWNED BY { <replaceable class="parameter">имя_таблицы</replaceable>.<replaceable class="parameter">имя_столбца</replaceable> | NONE } ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE SEQUENCE</command> создаёт генератор последовательности. Эта операция включает создание и инициализацию специальной таблицы <replaceable class="parameter">имя</replaceable>, содержащей одну строку. Владельцем генератора будет пользователь, выполняющий эту команду.</para>
+
+  <para>Если указано имя схемы, последовательность создаётся в заданной схеме, в противном случае — в текущей. Временные последовательности существуют в специальной схеме, так что при создании таких последовательностей имя схемы задать нельзя. Имя последовательности должно отличаться от имён других последовательностей, таблиц, индексов, представлений или сторонних таблиц, уже существующих в этой схеме.</para>
+
+  <para>После создания последовательности работать с ней можно, вызывая функции <function>nextval</function>, <function>currval</function> и <function>setval</function>. Эти функции документированы в <xref remap="6" linkend="functions-sequence"/>.</para>
+
+  <para>Хотя непосредственно изменить значение последовательности нельзя, получить её параметры и текущее состояние можно таким запросом: <programlisting>SELECT * FROM <replaceable>name</replaceable>;</programlisting> В частности, поле <literal>last_value</literal> последовательности будет содержать последнее значение, выделенное для какого-либо сеанса. (Конечно, ко времени вывода это значение может стать неактуальным, если другие сеансы активно вызывают <function>nextval</function>.)</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><literal>TEMPORARY</literal> или <literal>TEMP</literal></term>
+    <listitem>
+     <para>Если указано, объект последовательности создаётся только для данного сеанса и автоматически удаляется при завершении сеанса. Существующая постоянная последовательность с тем же именем не будут видна (в этом сеансе), пока существует временная, однако к ней можно обратиться, дополнив имя указанием схемы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>IF NOT EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если отношение с таким именем уже существует. В этом случае будет выдано замечание. Заметьте, что нет никакой гарантии, что существующее отношение как-то соотносится с последовательностью, которая могла бы быть создана — это может быть даже не последовательность.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) создаваемой последовательности.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">шаг</replaceable></term>
+    <listitem>
+     <para>Необязательное предложение <literal>INCREMENT BY <replaceable class="parameter">шаг</replaceable></literal> определяет, какое число будет добавляться к текущему значению последовательности для получения нового значения. С положительным шагом последовательность будет возрастающей, а с отрицательным — убывающей. Значение по умолчанию: 1.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">мин_значение</replaceable></term>
+    <term><literal>NO MINVALUE</literal></term>
+    <listitem>
+     <para>Необязательное предложение <literal>MINVALUE <replaceable class="parameter">мин_значение</replaceable></literal> определяет наименьшее число, которое будет генерировать последовательность. Если это предложение опущено, либо указано <option>NO MINVALUE</option>, используется значение по умолчанию: 1 и -2<superscript>63</superscript>-1 для возрастающих и убывающих последовательностей, соответственно.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">макс_значение</replaceable></term>
+    <term><literal>NO MAXVALUE</literal></term>
+    <listitem>
+     <para>Необязательное предложение <literal>MAXVALUE <replaceable class="parameter">макс_значение</replaceable></literal> определяет наибольшее значение. Если это предложение опущено, либо указано <option>NO MAXVALUE</option>, используется значение по умолчанию: 2<superscript>63</superscript>-1 и -1 для возрастающих и убывающих последовательностей, соответственно.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">начало</replaceable></term>
+    <listitem>
+     <para>Необязательное предложение <literal>START WITH <replaceable class="parameter">начало</replaceable></literal> позволяет запустить последовательность с любого значения. По умолчанию началом считается <replaceable class="parameter">мин_значение</replaceable> для возрастающих последовательностей и <replaceable class="parameter">макс_значение</replaceable> для убывающих.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">кеш</replaceable></term>
+    <listitem>
+     <para>Необязательное предложение <literal>CACHE <replaceable class="parameter">кеш</replaceable></literal> определяет, сколько чисел последовательности будет выделяться и сохраняться в памяти для ускорения доступа к ним. Минимальное значение равно 1 (за один раз генерируется только одно значение, т. е. кеширования нет), и оно же предполагается по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CYCLE</literal></term>
+    <term><literal>NO CYCLE</literal></term>
+    <listitem>
+     <para>Параметр <literal>CYCLE</literal> позволяет зациклить последовательность при достижении <replaceable class="parameter">макс_значения</replaceable> или <replaceable class="parameter">мин_значения</replaceable> для возрастающей или убывающей последовательности, соответственно. Когда этот предел достигается, следующим числом этих последовательностей будет соответственно <replaceable class="parameter">мин_значение</replaceable> или <replaceable class="parameter">макс_значение</replaceable>.</para>
+
+     <para>Если указывается <literal>NO CYCLE</literal>, при каждом вызове <function>nextval</function> после достижения предельного значения будет возникать ошибка. Если указания <literal>CYCLE</literal> и <literal>NO CYCLE</literal> отсутствуют, по умолчанию предполагается <literal>NO CYCLE</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>OWNED BY</literal> <replaceable class="parameter">имя_таблицы</replaceable>.<replaceable class="parameter">имя_столбца</replaceable></term>
+    <term><literal>OWNED BY NONE</literal></term>
+    <listitem>
+     <para>Предложение <literal>OWNED BY</literal> позволяет связать последовательность с определённым столбцом таблицы так, чтобы при удалении этого столбца (или всей таблицы) последовательность удалялась автоматически. Указанная таблица должна иметь того же владельца и находиться в той же схеме, что и последовательность. Подразумеваемое по умолчанию предложение <literal>OWNED BY NONE</literal> указывает, что такая связь не устанавливается.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Для удаления последовательности применяется команда <command>DROP SEQUENCE</command>.</para>
+
+  <para>Последовательности основаны на арифметике <type>bigint</type>, так что их значения не могут выходить за диапазон восьмибайтовых целых (-9223372036854775808 .. 9223372036854775807).</para>
+
+  <para>Так как вызовы <function>nextval</function> и <function>setval</function> никогда не откатываются, объекты последовательностей не подходят, если требуется обеспечить непрерывное назначение номеров последовательностей. Непрерывное назначение можно организовать, используя исключительную блокировку таблицы со счётчиком; однако это решение будет гораздо дороже, чем применение объектов последовательностей, особенно когда последовательные номера будут затребоваться сразу многими транзакциями.</para>
+
+  <para>Если значение параметра <replaceable class="parameter">кеш</replaceable> больше единицы, и объект последовательности используется параллельно в нескольких сеансах, результат может оказаться не вполне ожидаемым. Каждый сеанс будет выделять и кешировать несколько очередных значений последовательности при одном обращении к объекту последовательности и соответственно увеличивать <literal>последнее_значение</literal> этого объекта. Затем при следующих <replaceable class="parameter">кеш</replaceable>-1 вызовах <function>nextval</function> в этом сеансе будет просто возвращать заготовленные значения, не касаясь объекта последовательности. В результате, все числа, выделенные, но не использованные в сеансе, будут потеряны при завершении сеанса, что приведёт к образовании <quote>дырок</quote> в последовательности.</para>
+
+  <para>Более того, хотя разным сеансам гарантированно выделяются различные значения последовательности, если рассмотреть все сеансы в целом, порядок этих значений может быть нарушен. Например, при значении <replaceable class="parameter">кеш</replaceable>, равном 10, сеанс A может зарезервировать значения 1..10 и получить <function>nextval</function>=1, затем сеанс B может зарезервировать значения 11..20 и получить <function>nextval</function>=11 до того, как в сеансе A сгенерируется <literal>nextval</literal>=2. Таким образом, при значении <replaceable class="parameter">кеш</replaceable>, равном одному, можно быть уверенными в том, что <function>nextval</function> генерирует последовательные значения; но если <replaceable class="parameter">кеш</replaceable> больше одного, рассчитывать можно только на то, что все значения <function>nextval</function> различны; их порядок может быть непоследовательным. Кроме того, <literal>last_value</literal> возвращает последнее зарезервированное значение для всех сеансов, вне зависимости от того, было ли оно уже возвращено функцией <function>nextval</function>.</para>
+
+  <para>Также следует учитывать, что действие функции <function>setval</function>, выполненной для такой последовательности, проявится в других сеансах только после того, как в них будут использованы все предварительно закешированные значения.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Создание возрастающей последовательности с именем <literal>serial</literal>, с начальным значением 101: <programlisting>CREATE SEQUENCE serial START 101;</programlisting></para>
+
+  <para>Получение следующего номера этой последовательности: <programlisting>SELECT nextval('serial');
+
+ nextval
+---------
+     101</programlisting></para>
+
+  <para>Получение следующего номера этой последовательности: <programlisting>SELECT nextval('serial');
+
+ nextval
+---------
+     102</programlisting></para>
+
+  <para>Использование этой последовательности в команде <command>INSERT</command>: <programlisting>INSERT INTO distributors VALUES (nextval('serial'), 'nothing');</programlisting></para>
+
+  <para>Изменение значения последовательности после <command>COPY FROM</command>: <programlisting>BEGIN;
+COPY distributors FROM 'input_file';
+SELECT setval('serial', max(id)) FROM distributors;
+END;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Команда <command>CREATE SEQUENCE</command> соответствует стандарту <acronym>SQL</acronym>, со следующими исключениями: <itemizedlist>
+    <listitem>
+     <para>Описанное в стандарте выражение <literal>AS <replaceable>тип_данных</replaceable></literal> не поддерживается.</para>
+    </listitem>
+    <listitem>
+     <para>Для получения следующего значения применяется функция <function>nextval()</function>, а не выражение <command>NEXT VALUE FOR</command>, как того требует стандарт.</para>
+    </listitem>
+    <listitem>
+     <para>Предложение <literal>OWNED BY</literal> является расширением <productname>&productname;</productname>.</para>
+    </listitem>
+   </itemizedlist></para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altersequence"/></member>
+   <member><xref linkend="sql-dropsequence"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

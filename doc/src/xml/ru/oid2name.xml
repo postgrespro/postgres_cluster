@@ -1,0 +1,267 @@
+<!-- doc/src/xml/oid2name.xml -->
+
+<refentry id="oid2name">
+ <indexterm zone="oid2name"><primary>oid2name</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>oid2name</refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>oid2name</refname>
+  <refpurpose>преобразовать в имена OID и номера файловых узлов в каталоге данных <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>oid2name</command>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+ <para><application>oid2name</application> — вспомогательная программа, помогающая администраторам исследовать структуру файлов &productname;. Чтобы использовать её, необходимо понимать структуру базы данных на уровне файлов, описанную в <xref remap="6" linkend="storage"/>.</para>
+
+ <note>
+  <para>Имя <quote>oid2name</quote> сложилось исторически и на самом деле вводит в заблуждение, так как чаще всего, используя её, вы будете иметь дело с номерами файловых узлов таблиц (эти номера образуют имена файлов в каталоге баз данных). Необходимо понимать, что OID таблиц отличаются от номеров файловых узлов!</para>
+ </note>
+
+  <para>Программа <application>oid2name</application> подключается к целевой базе данных и извлекает информацию об OID, файловых узлах и/или именах таблиц. С её помощью можно также просмотреть OID базы данных или табличного пространства.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <para><application>oid2name</application> принимает следующие аргументы командной строки: <variablelist>
+
+    <varlistentry>
+     <term><option>-f</option> <replaceable>файловый_узел</replaceable></term>
+     <listitem><para>показать информацию о таблице, к которой относится <replaceable>файловый_узел</replaceable></para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-i</option></term>
+     <listitem><para>включить в вывод индексы и последовательности</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-o</option> <replaceable>oid</replaceable></term>
+     <listitem><para>показать информацию о таблице с OID, равным <replaceable>oid</replaceable></para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-q</option></term>
+     <listitem><para>не выводить заголовки (полезно для скриптов)</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-s</option></term>
+     <listitem><para>показать OID табличных пространств</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-S</option></term>
+     <listitem><para>включить в вывод системные объекты (те, что находятся в схемах <option>information_schema</option>, <option>pg_toast</option> и <option>pg_catalog</option>)</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-t</option> <replaceable>шаблон_имён_таблиц</replaceable></term>
+     <listitem><para>показать информацию о таблицах, подпадающих под <replaceable>шаблон_имён_таблиц</replaceable></para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-V</option></term>
+     <term><option>--version</option></term>
+     <listitem>
+      <para>вывести версию <application>oid2name</application> и завершиться.</para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-x</option></term>
+     <listitem><para>вывести дополнительные сведения о каждом показываемом объекте: имя табличного пространства, имя схемы и OID</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-?</option></term>
+     <term><option>--help</option></term>
+     <listitem>
+      <para>вывести справку об аргументах командной строки <application>oid2name</application> и завершиться.</para>
+     </listitem>
+    </varlistentry>
+   </variablelist></para>
+
+  <para><application>oid2name</application> также принимает в командной строке следующие аргументы, задающие параметры подключения: <variablelist>
+    <varlistentry>
+     <term><option>-d</option> <replaceable>база_данных</replaceable></term>
+     <listitem><para>целевая база данных</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-H</option> <replaceable>сервер</replaceable></term>
+     <listitem><para>адрес сервера баз данных</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-p</option> <replaceable>порт</replaceable></term>
+     <listitem><para>порт сервера баз данных</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-U</option> <replaceable>имя_пользователя</replaceable></term>
+     <listitem><para>имя пользователя для подключения</para></listitem>
+    </varlistentry>
+
+    <varlistentry>
+     <term><option>-P</option> <replaceable>пароль</replaceable></term>
+     <listitem><para>пароль (устаревшая возможность &mdash; указание пароля в командной строке угрожает безопасности)</para></listitem>
+    </varlistentry>
+
+   </variablelist></para>
+
+  <para>Чтобы получить информацию об определённых таблицах, выберите их с аргументом <option>-o</option>, <option>-f</option> и/или <option>-t</option>. Параметр <option>-o</option> принимает OID, <option>-f</option> — файловый узел, а <option>-t</option> — имя таблицы (на самом деле он принимает шаблон <literal>LIKE</literal>, так что в нём можно задать что-то вроде <literal>foo%</literal>). Вы можете использовать эти аргументы в любом количестве; в вывод будут включены все объекты, соответствующие любым из этих указаний. Но заметьте, что эти аргументы будут выбирать только объекты в базе данных, заданной ключом <option>-d</option>.</para>
+
+  <para>Если аргументы <option>-o</option>, <option>-f</option> и <option>-t</option> отсутствуют, но передаётся <option>-d</option>, будут выведены все таблицы в базе данных с именем, заданным в <option>-d</option>. В этом режиме набором выводимых данных управляют параметры <option>-S</option> и <option>-i</option>.</para>
+
+  <para>Если отсутствует и аргумент <option>-d</option>, выводится список OID баз данных. Также можно получить список табличных пространств, передав аргумент <option>-s</option>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Программе <application>oid2name</application> требуется работающий сервер баз данных с исправными системными каталогами. Таким образом, в ситуациях с катастрофическими повреждениями базы данных её использование ограничено.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+<screen>$ # Что вообще есть на этом сервере базы данных?
+$ oid2name
+All databases:
+    Oid  Database Name  Tablespace
+----------------------------------
+  17228       alvherre  pg_default
+  17255     regression  pg_default
+  17227      template0  pg_default
+      1      template1  pg_default
+
+$ oid2name -s
+All tablespaces:
+     Oid  Tablespace Name
+-------------------------
+    1663       pg_default
+    1664        pg_global
+  155151         fastdisk
+  155152          bigdisk
+
+$ # Хорошо, давайте взглянем на базу alvherre
+$ cd $PGDATA/base/17228
+
+$ # Получим первые 10 объектов базы (отсортированных по размеру) в табличном пространстве по умолчанию
+$ ls -lS * | head -10
+-rw-------  1 alvherre alvherre 136536064 sep 14 09:51 155173
+-rw-------  1 alvherre alvherre  17965056 sep 14 09:51 1155291
+-rw-------  1 alvherre alvherre   1204224 sep 14 09:51 16717
+-rw-------  1 alvherre alvherre    581632 sep  6 17:51 1255
+-rw-------  1 alvherre alvherre    237568 sep 14 09:50 16674
+-rw-------  1 alvherre alvherre    212992 sep 14 09:51 1249
+-rw-------  1 alvherre alvherre    204800 sep 14 09:51 16684
+-rw-------  1 alvherre alvherre    196608 sep 14 09:50 16700
+-rw-------  1 alvherre alvherre    163840 sep 14 09:50 16699
+-rw-------  1 alvherre alvherre    122880 sep  6 17:51 16751
+
+$ # Поинтересуемся, что за файл 155173...
+$ oid2name -d alvherre -f 155173
+From database "alvherre":
+  Filenode  Table Name
+----------------------
+    155173    accounts
+
+$ # Можно узнать сразу о нескольких объектах
+$ oid2name -d alvherre -f 155173 -f 1155291
+From database "alvherre":
+  Filenode     Table Name
+-------------------------
+    155173       accounts
+   1155291  accounts_pkey
+
+$ # Можно добавить другие параметры и получить дополнительные подробности с -x
+$ oid2name -d alvherre -t accounts -f 1155291 -x
+From database "alvherre":
+  Filenode     Table Name      Oid  Schema  Tablespace
+------------------------------------------------------
+    155173       accounts   155173  public  pg_default
+   1155291  accounts_pkey  1155291  public  pg_default
+
+$ # Вычислить объём, который занимает на диске каждый объект БД
+$ du [0-9]* |
+&gt; while read SIZE FILENODE
+&gt; do
+&gt;   echo "$SIZE       `oid2name -q -d alvherre -i -f $FILENODE`"
+&gt; done
+16            1155287  branches_pkey
+16            1155289  tellers_pkey
+17561            1155291  accounts_pkey
+...
+
+$ # То же самое, но с сортировкой по размеру
+$ du [0-9]* | sort -rn | while read SIZE FN
+&gt; do
+&gt;   echo "$SIZE   `oid2name -q -d alvherre -f $FN`"
+&gt; done
+133466             155173    accounts
+17561            1155291  accounts_pkey
+1177              16717  pg_proc_proname_args_nsp_index
+...
+
+$ # Просмотреть содержимое табличных пространств можно в каталоге pg_tblspc
+$ cd $PGDATA/pg_tblspc
+$ oid2name -s
+All tablespaces:
+     Oid  Tablespace Name
+-------------------------
+    1663       pg_default
+    1664        pg_global
+  155151         fastdisk
+  155152          bigdisk
+
+$ # Объекты каких баз данных находятся в табличном пространстве "fastdisk"?
+$ ls -d 155151/*
+155151/17228/  155151/PG_VERSION
+
+$ # И что это за база данных 17228?
+$ oid2name
+All databases:
+    Oid  Database Name  Tablespace
+----------------------------------
+  17228       alvherre  pg_default
+  17255     regression  pg_default
+  17227      template0  pg_default
+      1      template1  pg_default
+
+$ # Давайте посмотрим, какие объекты этой базы содержатся в данном табличном пространстве.
+$ cd 155151/17228
+$ ls -l
+total 0
+-rw-------  1 postgres postgres 0 sep 13 23:20 155156
+
+$ # Мда, таблица невелика... и что это за таблица?
+$ oid2name -d alvherre -f 155156
+From database "alvherre":
+  Filenode  Table Name
+----------------------
+    155156         foo</screen>
+ </refsect1>
+
+ <refsect1>
+  <title>Автор</title>
+
+  <para>Б. Палмер <email>bpalmer@crimelabs.net</email></para>
+ </refsect1>
+
+</refentry>

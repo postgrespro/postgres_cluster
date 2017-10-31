@@ -1,0 +1,77 @@
+<!-- doc/src/xml/ref/pgtestfsync.xml -->
+
+<refentry id="pgtestfsync">
+ <indexterm zone="pgtestfsync"><primary>pg_test_fsync</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>pg_test_fsync</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>pg_test_fsync</refname>
+  <refpurpose>подобрать наилучший вариант <varname>wal_sync_method</varname> для <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>pg_test_fsync</command>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+ <para>Программа <application>pg_test_fsync</application> предназначена для того, чтобы дать вам представление о том, какой из вариантов <xref linkend="guc-wal-sync-method"/> оптимален для вашей конкретной системы, а также выдать вспомогательные диагностические сведения в случае проблем со вводом/выводом. Однако отличия, показанные программой <application>pg_test_fsync</application>, могут не оказывать большого влияния на реальную производительность баз данных, в частности потому, что для многих серверов баз данных скорость упирается не в запись журналов транзакций. <application>pg_test_fsync</application> выводит среднее время операции синхронизации с ФС для каждого метода <literal>wal_sync_method</literal>, что также может быть полезно при поиске оптимального значения <xref linkend="guc-commit-delay"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+   <para><application>pg_test_fsync</application> принимает следующие параметры командной строки: <variablelist>
+
+     <varlistentry>
+      <term><option>-f</option></term>
+      <term><option>--filename</option></term>
+      <listitem>
+       <para>Задаёт имя файла для записи данных тестов. Этот файл должен находиться в той же файловой системе, где размещается или будет размещаться каталог <filename>pg_xlog</filename>. (В каталоге <filename>pg_xlog</filename> содержатся файлы <acronym>WAL</acronym>.) По умолчанию выбирается файл <filename>pg_test_fsync.out</filename> в текущем каталоге.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s</option></term>
+      <term><option>--secs-per-test</option></term>
+      <listitem>
+       <para>Задаёт продолжительность каждого теста (в секундах). Чем больше длится тест, тем точнее результат, но тем дольше работает программа. Со значением по умолчанию (5 секунд) программа должна завершиться примерно за 2 минуты.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-V</option></term>
+      <term><option>--version</option></term>
+      <listitem>
+       <para>Вывести версию <application>pg_test_fsync</application> и завершиться.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-?</option></term>
+      <term><option>--help</option></term>
+      <listitem>
+       <para>Вывести справку об аргументах командной строки <application>pg_test_fsync</application> и завершиться.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist></para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="app-postgres"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

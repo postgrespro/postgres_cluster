@@ -1,0 +1,431 @@
+<!--
+doc/src/xml/ref/postgres-ref.xml
+&productname; documentation
+-->
+
+<refentry id="app-postgres">
+ <indexterm zone="app-postgres"><primary>postgres</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle><application>postgres</application></refentrytitle>
+  <manvolnum>1</manvolnum>
+  <refmiscinfo>Приложение</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>postgres</refname>
+  <refpurpose>Сервер баз данных <productname>&productname;</productname></refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+  <cmdsynopsis>
+   <command>postgres</command>
+   <arg rep="repeat"><replaceable>параметр</replaceable></arg>
+  </cmdsynopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>postgres</command> это сервер баз данных <productname>&productname;</productname>. Для получения доступа к базе данных клиент устанавливает соединение (локально или по сети) с сервером <command>postgres</command>. После установки соединения сервер <command>postgres</command> поднимает выделенный процесс для его обслуживания.</para>
+
+  <para>Один экземпляр <command>postgres</command> всегда управляет данными ровно одного кластера баз данных. Кластер — это коллекция баз данных, хранящихся в файловой системе в определённом размещении (<quote>области данных</quote>). На одном физическом сервере можно запустить несколько экземпляров <command>postgres</command> одновременно, при условии, что они используют различные области данных и порты. При запуске <command>postgres</command> необходимо указать размещение данных, которое задаётся в параметре <option>-D</option> или переменной окружения <envar>PGDATA</envar>, значение по умолчанию отсутствует. Обычно <option>-D</option> или <envar>PGDATA</envar> указывает на каталог, созданный во время развёртывания кластера с помощью <xref linkend="app-initdb"/>. Иные варианты рассмотрены в <xref remap="6" linkend="runtime-config-file-locations"/>.</para>
+
+  <para>По умолчанию <command>postgres</command> запускается не в фоновом режиме, а вывод журнала осуществляет в стандартный поток ошибок. На практике <command>postgres</command> должен запускаться в фоновом режиме, возможно, при старте системы.</para>
+
+  <para>Команду <command>postgres</command> также возможно использовать в однопользовательском режиме. В основном этот режим используется на этапе начальной загрузки при выполнении <xref linkend="app-initdb"/>. Иногда также применяется в целях отладки или после аварийного сбоя. Стоит обратить внимание, что одно-пользовательский режим не совсем корректно использовать для отладки, так как условия далеки от реальных боевых. При запуске из командной строки в однопользовательском режиме можно вводить запросы и видеть результаты их выполнения на экране в форме пригодной для разработки, нежели конечных пользователей. Также в этом режиме ID сессионного пользователя выставляется в единицу, а пользователь неявно наделяется правами суперпользователя. Существование пользователя необязательно, поэтому режим можно использовать в некоторых ситуациях при повреждениях системных каталогов.</para>
+ </refsect1>
+
+ <refsect1 id="app-postgres-options">
+  <title>Параметры</title>
+
+   <para>Программа <command>postgres</command> принимает следующие аргументы командной строки. За подробным описанием параметров обратитесь к <xref remap="3" linkend="runtime-config"/>. От необходимости вводить большинство этих параметров можно избавиться, записав их в файл конфигурации. Некоторые (безопасные) параметры можно также задать со стороны подключающегося клиента (в зависимости от приложения), чтобы они применялись только к одному сеансу. Например, если установлена переменная окружения <envar>PGOPTIONS</envar>, клиенты на базе <application>libpq</application> передадут эту строку серверу, который воспримет её как параметры, передаваемые в командной строке <command>postgres</command>.</para>
+
+   <refsect2>
+    <title>Параметры общего назначения</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><option>-B <replaceable class="parameter">количество-буферов</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает количество разделяемых между процессами буферов. Значение по умолчанию выбирается автоматически при развёртывании кластера с помощью <application>initdb</application>. Установка флага аналогична конфигурации параметра <xref linkend="guc-shared-buffers"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-c <replaceable>имя</replaceable>=<replaceable>значение</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает заданный параметр времени исполнения. Конфигурационные параметры, поддерживаемые <productname>&productname;</productname>, описаны в <xref remap="6" linkend="runtime-config"/>. Большинство других параметров командной строки на самом деле представляют собой краткие формы такого присвоения значений параметрам. Для установления нескольких параметров <option>-c</option> можно указывать многократно.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-C <replaceable>имя</replaceable></option></term>
+      <listitem>
+       <para>Отображает значение заданного параметра времени исполнения и прерывает дальнейшее выполнение (подробнее см. выше). Можно применять на работающем сервере, при этом будут возвращены значения <filename>postgresql.conf</filename> с учётом проведённых в рамках вызова изменений. Значения, переданные при старте кластера, не отображаются.</para>
+
+       <para>Параметр предназначен для приложений, взаимодействующих с сервером, например, <xref linkend="app-pg-ctl"/>, и запрашивающих параметры конфигурации. Пользовательские приложения должны использовать команду <xref linkend="sql-show"/> или представление <structname>pg_settings</structname>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-d <replaceable>уровень-отладки</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает уровень отладки (от 1 до 5). Чем выше значение, тем подробнее осуществляется вывод в журнал сервера. Также возможно передать <literal>-d 0</literal> для отдельной сессии, что предотвратит в её рамках влияние выставленного для <command>postgres</command> значения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-D <replaceable class="parameter">datadir</replaceable></option></term>
+      <listitem>
+       <para>Указывает размещение конфигурационных файлов базы в пределах файловой системы. За подробностями обратитесь к <xref remap="3" linkend="runtime-config-file-locations"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-e</option></term>
+      <listitem>
+       <para>Устанавливает формат вводимых дат по умолчанию в <quote>European</quote> с последовательностью значений <literal>DMY</literal>. Также влияет на вывод дня, идущего перед значением месяца, более подробно см. <xref remap="4" linkend="datatype-datetime"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-F</option></term>
+      <listitem>
+       <para>Отключает вызовы <function>fsync</function> для увеличения производительности, но с увеличением рисков потери данных в случае краха системы. Этот параметр работает аналогично параметру конфигурации <xref linkend="guc-fsync"/>. Внимательно прочтите документацию перед использованием данного параметра!</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-h <replaceable class="parameter">компьютер</replaceable></option></term>
+      <listitem>
+       <para>Указывает IP-адрес или имя компьютера, на котором сервер <command>postgres</command> принимает клиентские подключения по TCP/IP. Значением может быть список адресов, разделённых запятыми, либо символ <literal>*</literal>, обозначающий все доступные интерфейсы. Если значение опущено, то подключения принимаются только через доменные сокеты Unix. По умолчанию принимаются подключения только к <systemitem class="systemname">localhost</systemitem>. Флаг работает аналогично конфигурационному параметру <xref linkend="guc-listen-addresses"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-i</option></term>
+      <listitem>
+       <para>Позволяет клиентам подключаться по TCP/IP. Без этого параметра допускаются лишь локальные подключения. Действие этого параметра аналогично действию параметра конфигурации <varname>listen_addresses</varname> со значением <literal>*</literal> в <filename>postgresql.conf</filename> или ключа <option>-h</option>.</para>
+       <para>Параметр устарел, так как не даёт полной функциональности <xref linkend="guc-listen-addresses"/>. Лучше устанавливать значение <varname>listen_addresses</varname> напрямую.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-k <replaceable class="parameter">каталог</replaceable></option></term>
+      <listitem>
+       <para>Указывает каталог нахождения доменного сокета Unix, через который <command>postgres</command> принимает соединения. Значением параметра может быть список каталогов через запятую. Если это значение пустое, использование сокетов Unix запрещается, разрешаются только подключения по TCP/IP. По умолчанию выбирается каталог <filename>/tmp</filename>, но его можно сменить на этапе компиляции. Этот параметр действует аналогично параметру конфигурации <xref linkend="guc-unix-socket-directories"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-l</option></term>
+      <listitem>
+       <para>Включает поддержку безопасных соединений с использованием <acronym>SSL</acronym> шифрования. <productname>&productname;</productname> необходимо скомпилировать с поддержкой <acronym>SSL</acronym> для использования этого флага. Подробнее использование <acronym>SSL</acronym> описано в <xref linkend="ssl-tcp"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-N <replaceable class="parameter">максимальное количество соединений</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает максимально возможное количество одновременных клиентских соединений. Значение по умолчанию устанавливается автоматически на этапе развёртывания с помощью <application>initdb</application>. Флаг работает аналогично конфигурационному параметру <xref linkend="guc-max-connections"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-o <replaceable class="parameter">дополнительные-параметры</replaceable></option></term>
+      <listitem>
+       <para>Аргументы командной строки, поступившие через <replaceable class="parameter">дополнительные-параметры</replaceable>, передаются всем обслуживающим процессам, запускаемым этим процессом <command>postgres</command>.</para>
+
+       <para>Пробелы в строке <replaceable class="parameter">дополнительные-параметры</replaceable> воспринимаются как разделяющие аргументы, если перед ними нет обратной косой черты (<literal>\</literal>); чтобы представить обратную косую черту буквально, продублируйте её (<literal>\\</literal>). Также можно задать несколько аргументов, используя <option>-o</option> несколько раз.</para>
+
+       <para>Использование этого параметра считается устаревшим, так как на данный момент все параметры <command>postgres</command> можно задать в командной строке.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-p <replaceable class="parameter">порт</replaceable></option></term>
+      <listitem>
+       <para>Указывает порт TCP/IP или расширение файла Unix-сокета, на котором <command>postgres</command> слушает клиентские соединения. По умолчанию принимает значение переменной окружения <envar>PGPORT</envar>, или, если значение <envar>PGPORT</envar> не установлено, то используется значение, установленное на этапе компиляции (обычно это 5432). Если значение порта меняется, то на стороне клиентов это необходимо учитывать, установив, либо <envar>PGPORT</envar>, либо флаг командной строки.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-s</option></term>
+      <listitem>
+       <para>Отображает информацию о времени и другую статистику после каждой выполненной команды, что полезно для оценки производительности во время настройки количества буферов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-S</option> <replaceable class="parameter">рабочая-память</replaceable></term>
+      <listitem>
+       <para>Указывает объём рабочей памяти для внутренних сортировок и хешированных строк во избежание использования временных файлов. Обратитесь к описанию параметра <varname>work_mem</varname>, приведённому в <xref remap="6" linkend="runtime-config-resource-memory"/>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-V</option></term>
+      <term><option>--version</option></term>
+      <listitem>
+       <para>Отображает версию <application>postgres</application> и прерывает дальнейшее выполнение.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--<replaceable>имя</replaceable>=<replaceable>значение</replaceable></option></term>
+      <listitem>
+       <para>Устанавливает заданный параметр времени исполнения. Является короткой формой ключа <option>-c</option>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>--describe-config</option></term>
+      <listitem>
+       <para>Выводит значения конфигурационных переменных сервера, их описаний и значений по умолчанию в формате команды <command>COPY</command> со знаком табуляции в качестве разделителя. В основном это предназначено для средств администрирования.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-?</option></term>
+      <term><option>--help</option></term>
+      <listitem>
+       <para>Выводит помощь по аргументам команды <application>postgres</application>.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </refsect2>
+
+   <refsect2>
+    <title>Параметры для внутреннего использования</title>
+
+    <para>Далее описанные параметры, в основном, применяются в целях отладки, а в некоторых случаях при восстановлении сильно повреждённых баз данных. Их описание приведено для системных разработчиков <productname>&productname;</productname>, поэтому они могут быть изменены без уведомления.</para>
+
+    <variablelist>
+     <varlistentry>
+      <term><option>-f</option> <literal>{ s | i | o | b | t | n | m | h }</literal></term>
+      <listitem>
+       <para>Запрещает использование специфических методов сканирования и объединения: <literal>s</literal> и <literal>i</literal> выключают последовательное сканирование и по индексу соответственно, а <literal>o</literal>, <literal>b</literal> и <literal>t</literal> выключает сканирование только по индексу, сканирование по битовым векторам, и сканирование по ID кортежей соответственно, в то время как <literal>n</literal>, <literal>m</literal> и <literal>h</literal> выключает вложенные циклы, слияния и хеширование соответственно.</para>
+
+       <para>Ни последовательное сканирование, ни вложенные циклы невозможно выключить полностью. Флаги <literal>-fs</literal> и <literal>-fn</literal> просто указывают планировщику избегать выполнения этих операций при наличии других альтернатив.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-n</option></term>
+      <listitem>
+       <para>Параметр предназначен для отладки сервера в случае аномального завершения процесса. Обычная практика в таком случае — завершение порождённых процессов с дальнейшей инициализацией разделяемой памяти и семафоров. Это связано с тем, что потерянный процесс мог повредить область разделяемой памяти. Параметр указывает <command>postgres</command> не производить повторной инициализации общих структур данных, что позволяет произвести дальнейшую отладку текущего состояния памяти и семафоров.</para>
+     </listitem>
+    </varlistentry>
+
+     <varlistentry>
+      <term><option>-O</option></term>
+      <listitem>
+       <para>Разрешает модифицировать структуру системных таблиц. Используется командой <command>initdb</command>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-P</option></term>
+      <listitem>
+       <para>Игнорировать системные индексы при чтении, но продолжать обновлять их при изменениях системных таблиц. Это используется при их восстановлении после повреждения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-t</option> <literal>pa[rser] | pl[anner] | e[xecutor]</literal></term>
+      <listitem>
+       <para>Выводит статистику по времени исполнения каждого запроса в контексте каждого системного модуля. Использование флага совместно с <option>-s</option> невозможно.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-T</option></term>
+      <listitem>
+       <para>Параметр предназначен для отладки сервера в случае аномального завершения процесса. Обычная практика в таком случае — завершение порождённых процессов с дальнейшей инициализацией разделяемой памяти и семафоров. Это связано с тем, что потерянный процесс мог повредить область разделяемой памяти. Параметр указывает <command>postgres</command> на необходимость остановки порождённых процессов сигналом <literal>SIGSTOP</literal>, но не завершит их, что позволяет разработчикам сделать снимки памяти процессов.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-v</option> <replaceable class="parameter">протокол</replaceable></term>
+      <listitem>
+       <para>Указывает для данного сеанса версию протокола взаимодействия сервера с клиентом. Флаг используется лишь для внутренних целей.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-W</option> <replaceable class="parameter">секунды</replaceable></term>
+      <listitem>
+       <para>При старте сервера производится задержка на указанное количество секунд, после чего производится процедура аутентификации, что позволяет подключить отладчик к процессу.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </refsect2>
+
+   <refsect2>
+    <title>Параметры для однопользовательского режима</title>
+
+    <indexterm><primary>single-user mode</primary></indexterm>
+
+    <para>Следующие параметры применимы только для однопользовательского режима (см. <xref remap="4" linkend="app-postgres-single-user" endterm="app-postgres-single-user-title"/>).</para>
+
+    <variablelist>
+     <varlistentry>
+      <term><option>--single</option></term>
+      <listitem>
+       <para>Устанавливает однопользовательский режим. Параметр должен идти первым в командной строке.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">база_данных</replaceable></term>
+      <listitem>
+       <para>Указывает имя базы данных, к которой производится подключение. Параметр должен идти последним в командной строке. Если не указан, то используется имя текущего системного пользователя.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-E</option></term>
+      <listitem>
+       <para>Выводить все команды в устройство стандартного вывода прежде чем выполнять их.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-j</option></term>
+      <listitem>
+       <para>Считать признаком окончания ввода команды точку с запятой с двумя переводами строки, а не один перевод строки.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><option>-r</option> <replaceable class="parameter">имя_файла</replaceable></term>
+      <listitem>
+       <para>Отправляет вывод журнала сервера в файл <replaceable class="parameter">filename</replaceable>. Этот параметр применяется лишь при запуске из командной строки.</para>
+      </listitem>
+     </varlistentry>
+    </variablelist>
+   </refsect2>
+ </refsect1>
+
+ <refsect1>
+  <title>Переменные окружения</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><envar>PGCLIENTENCODING</envar></term>
+
+    <listitem>
+     <para>Кодировка, используемая клиентом по умолчанию. Может переопределяться на стороне клиента, а также устанавливаться в конфигурационном файле сервера.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><envar>PGDATA</envar></term>
+
+    <listitem>
+     <para>Каталог размещения данных кластера по умолчанию</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><envar>PGDATESTYLE</envar></term>
+
+    <listitem>
+     <para>Значение по умолчанию для параметра времени исполнения <xref linkend="guc-datestyle"/>. Применение этой переменной является устаревшим.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><envar>PGPORT</envar></term>
+
+    <listitem>
+     <para>Порт по умолчанию, лучше устанавливать в конфигурационном файле.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+   <title>Диагностика</title>
+
+   <para>Ошибки с упоминанием о <literal>semget</literal> или <literal>shmget</literal> говорят о возможной необходимости проведения более оптимального конфигурирования ядра. Подробнее это обсуждается в <xref remap="6" linkend="kernel-resources"/>. Отложить переконфигурирование можно, уменьшив <xref linkend="guc-shared-buffers"/> для снижения общего потребления разделяемой памяти <productname>&productname;</productname> и/или уменьшив <xref linkend="guc-max-connections"/> для снижения затрат на использование семафоров.</para>
+
+   <para>Необходимо внимательно проверять сообщения об ошибке с упоминанием о другом запущенном экземпляре, например, с использованием команды <screen>
+<prompt>$</prompt> <userinput>ps ax | grep postgres</userinput>
+</screen> или <screen>
+<prompt>$</prompt> <userinput>ps -ef | grep postgres</userinput>
+</screen> в зависимости от ОС. Если есть полная уверенность, что противоречий нет, необходимо самостоятельно удалить упомянутый в сообщении запирающий файл и повторить попытку.</para>
+
+   <para>Упоминание о невозможности привязки к порту в сообщениях об ошибках может указывать на то, что он уже занят другим процессом помимо <productname>&productname;</productname>. Также сообщение может возникнуть при мгновенном рестарте <command>postgres</command> на том же порту. В этом случае нужно немного подождать, пока ОС не закроет порт, и повторить попытку. Ещё возможна ситуация, в которой используется резервный системный порт. Например, многие Unix-подобные ОС резервируют <quote>доверительные</quote> порты от 1024 и ниже, и лишь суперпользователь имеет к ним доступ.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Для комфортного запуска и остановки сервера можно использовать утилиту <xref linkend="app-pg-ctl"/>.</para>
+
+  <para>Если возможно, <emphasis>не используйте</emphasis> сигнал <literal>SIGKILL</literal> для головного процесса <command>postgres</command>. В этом случае <command>postgres</command> не освободит системные ресурсы, например, разделяемую память и семафоры. Это может привести к проблемам при повторном запуске <command>postgres</command>.</para>
+
+  <para>Для корректного завершения <command>postgres</command> используются сигналы <literal>SIGTERM</literal>, <literal>SIGINT</literal> или <literal>SIGQUIT</literal>. При первом будут ожидаться все дочерние процессы до их завершения, второй приведёт к принудительному закрытию соединений, а третий — к незамедлительному выходу без корректного завершения, приводящему к необходимости выполнения процедуры восстановления на следующем старте.</para>
+
+  <para>Получая сигнал <literal>SIGHUP</literal>, сервер перечитывает свои файлы конфигурации. Также возможно отправить <literal>SIGHUP</literal> отдельному процессу, но это чаще всего бессмысленно.</para>
+
+  <para>Для отмены исполняющегося запроса, отправьте <literal>SIGINT</literal> обслуживающему его процессу. Для чистого завершения серверного процесса отправьте ему <literal>SIGTERM</literal>. Также см. <function>pg_cancel_backend</function> и <function>pg_terminate_backend</function> в <xref remap="6" linkend="functions-admin-signal"/>, которые являются аналогами в форме SQL-инструкций.</para>
+
+  <para>Сервер <command>postgres</command> обрабатывает <literal>SIGQUIT</literal> для завершения дочерних процессов в грязную, и сигнал <emphasis>не должен</emphasis> отправляться пользователем. Также не стоит посылать <literal>SIGKILL</literal> серверному процессу &mdash; головной <command>postgres</command> процесс расценит это как аварию и принудительно завершит остальные порождённые, как это было бы сделано при процедуре восстановления после сбоя.</para>
+ </refsect1>
+
+ <refsect1 id="app-postgres-bugs">
+  <title>Ошибки</title>
+  <para>Флаги, начинающиеся с <option>--</option> не работают в ОС <systemitem class="osname">FreeBSD</systemitem> или <systemitem class="osname">OpenBSD</systemitem>. Чтобы обойти это, используйте <option>-c</option>. Это ошибка ОС. В будущих релизах <productname>&productname;</productname> будет предоставлен обходной путь, если ошибка так и не будет устранена.</para>
+ </refsect1>
+
+ <refsect1 id="app-postgres-single-user">
+  <title id="app-postgres-single-user-title">Однопользовательский режим</title>
+
+   <para>Для запуска сервера в однопользовательском режиме используется, например, команда <screen>
+<userinput>postgres --single -D /usr/local/pgsql/data <replaceable>другие параметры</replaceable> my_database</userinput>
+</screen> Необходимо указать корректный путь к каталогу хранения данных в параметре <option>-D</option>, или установить переменную окружения <envar>PGDATA</envar>. Также замените имя базы данных на необходимое.</para>
+
+   <para>Обычно перевод строки в однопользовательском режиме сервер воспринимает как завершение ввода команды; точка с запятой не имеет для него такого значения, как для <application>psql</application>. Поэтому, чтобы ввести команду, занимающую несколько строк, необходимо добавлять в конце каждой строки, кроме последней, обратную косую черту. Обратная косая черта и следующий за ней символ перевода строки автоматически убираются из вводимой команды. Заметьте, что это происходит даже внутри строковой константы или комментария.</para>
+
+   <para>Но если применить аргумент командной строки <option>-j</option>, одиночный символ перевода строки не будет завершать ввод команды; это будет делать последовательность &laquo;точка с запятой, перевод строки, перевод строки&raquo;. То есть для завершения команды нужно ввести точку с запятой, и сразу за ней пустую строку. Просто точка с запятой, дополненная переводом строки, в этом режиме не имеет специального значения. Внутри строковых констант и комментариев такая завершающая последовательность воспринимается в том же ключе.</para>
+
+   <para>Вне зависимости от режима ввода, символ точки с запятой, введённый не прямо перед или в составе последовательности завершения команды, воспринимается как разделитель команд. После ввода завершающей последовательности введённые с разделителями несколько операторов будут выполняться в одной транзакции.</para>
+
+   <para>Для завершения сеанса введите символ конца файла (<acronym>EOF</acronym>, обычно это сочетание <keycombo action="simul"><keycap>Control</keycap><keycap>D</keycap></keycombo>). Если вы вводили текст после окончания ввода последней команды, символ <acronym>EOF</acronym> будет воспринят как символ завершения команды, и для выхода потребуется ещё один <acronym>EOF</acronym>.</para>
+
+   <para>Заметьте, что однопользовательский режим не предоставляет особых возможностей для редактирования команд (например, нет истории команд). Также в однопользовательском режиме не производятся никакие фоновые действия, например, не выполняются автоматические контрольные точки или репликация.</para>
+ </refsect1>
+
+ <refsect1 id="app-postgres-examples">
+  <title>Примеры</title>
+
+  <para>Для запуска <command>postgres</command> в фоновом режиме с параметрами по умолчанию: <screen>
+<prompt>$</prompt> <userinput>nohup postgres &gt;logfile 2&gt;&amp;1 &lt;/dev/null &amp;</userinput>
+</screen></para>
+
+  <para>Для запуска <command>postgres</command> с определённым портом, например, 1234: <screen>
+<prompt>$</prompt> <userinput>postgres -p 1234</userinput>
+</screen> Для соединения с помощью <application>psql</application> укажите этот порт в параметре -p: <screen>
+<prompt>$</prompt> <userinput>psql -p 1234</userinput>
+</screen> или в переменной окружения <envar>PGPORT</envar>: <screen>
+<prompt>$</prompt> <userinput>export PGPORT=1234</userinput>
+<prompt>$</prompt> <userinput>psql</userinput>
+</screen></para>
+
+  <para>Именованный параметр времени исполнения можно указать одним из приведённых способом: <screen>
+<prompt>$</prompt> <userinput>postgres -c work_mem=1234</userinput>
+<prompt>$</prompt> <userinput>postgres --work-mem=1234</userinput>
+</screen> Любой из методов переопределяет значение <varname>work_mem</varname> конфигурации <filename>postgresql.conf</filename>. Символ подчёркивания в именах можно указать и в виде тире. Задавать параметры обычно (не считая кратковременных экспериментов) лучше в <filename>postgresql.conf</filename>, а не в аргументах командной строки.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <para><xref linkend="app-initdb"/>, <xref linkend="app-pg-ctl"/></para>
+ </refsect1>
+</refentry>

@@ -1,0 +1,81 @@
+<!-- doc/src/xml/dict-xsyn.xml -->
+
+<sect1 id="dict-xsyn" xreflabel="dict_xsyn">
+ <title>dict_xsyn</title>
+
+ <indexterm zone="dict-xsyn"><primary>dict_xsyn</primary></indexterm>
+
+ <para>Модуль <filename>dict_xsyn</filename> (Extended Synonym Dictionary, расширенный словарь синонимов) представляет собой пример дополнительного шаблона словаря для полнотекстового поиска. Этот словарь заменяет слова группами их синонимов, что позволяет находить слово по одному из его синонимов.</para>
+
+ <sect2>
+  <title>Конфигурирование</title>
+
+  <para>Словарь <literal>dict_xsyn</literal> принимает следующие параметры:</para>
+  <itemizedlist>
+   <listitem>
+    <para>Параметр <literal>matchorig</literal> определяет, будет ли словарь принимать изначальное слово. По умолчанию он включён (имеет значение <literal>true</literal>).</para>
+   </listitem>
+   <listitem>
+    <para>Параметр <literal>matchsynonyms</literal> определяет, будет ли словарь принимать синонимы. По умолчанию он отключён (имеет значение <literal>false</literal>).</para>
+   </listitem>
+   <listitem>
+    <para>Параметр <literal>keeporig</literal> определяет, будет ли исходное слово включаться в вывод словаря. По умолчанию он включён (имеет значение <literal>true</literal>).</para>
+   </listitem>
+   <listitem>
+    <para>Параметр <literal>keepsynonyms</literal> определяет, будут ли в вывод словаря включаться синонимы. По умолчанию он включён (имеет значение <literal>true</literal>).</para>
+   </listitem>
+   <listitem>
+    <para>Параметр <literal>rules</literal> задаёт базовое имя файла со списком синонимов. Этот файл должен находиться в каталоге <filename>$SHAREDIR/tsearch_data/</filename> (где под <literal>$SHAREDIR</literal> понимается каталог с общими данными инсталляции <productname>&productname;</productname>). Имя файла должно заканчиваться расширением <literal>.rules</literal> (которое не нужно указывать в параметре <literal>rules</literal>).</para>
+   </listitem>
+  </itemizedlist>
+  <para>Файл правил имеет следующий формат:</para>
+  <itemizedlist>
+   <listitem>
+    <para>Каждая строка представляет группу синонимов для одного слова, которое задаётся первым в этой строке. Символы разделяются пробельными символами, так что строка выглядит так: <programlisting>word syn1 syn2 syn3</programlisting></para>
+   </listitem>
+   <listitem>
+    <para>Символ решётки (<literal>#</literal>) обозначает начало комментария. Он может находиться в любом месте строки. Следующая за ним часть строки игнорируется.</para>
+   </listitem>
+  </itemizedlist>
+
+  <para>Пример словаря можно найти в файле <filename>xsyn_sample.rules</filename>, устанавливаемом в <filename>$SHAREDIR/tsearch_data/</filename>.</para>
+ </sect2>
+
+ <sect2>
+  <title>Использование</title>
+
+  <para>При установке расширения <literal>dict_xsyn</literal> в базе создаётся шаблон текстового поиска <literal>xsyn_template</literal> и словарь <literal>xsyn</literal> на его базе, с параметрами по умолчанию. Вы можете изменить параметры словаря, например так: <programlisting>mydb# ALTER TEXT SEARCH DICTIONARY xsyn (RULES='my_rules', KEEPORIG=false);
+ALTER TEXT SEARCH DICTIONARY</programlisting> или создать новые словари на базе этого шаблона.</para>
+
+  <para>Протестировать этот словарь можно так: <programlisting>mydb=# SELECT ts_lexize('xsyn', 'word');
+      ts_lexize
+-----------------------
+ {syn1,syn2,syn3}
+
+mydb# ALTER TEXT SEARCH DICTIONARY xsyn (RULES='my_rules', KEEPORIG=true);
+ALTER TEXT SEARCH DICTIONARY
+
+mydb=# SELECT ts_lexize('xsyn', 'word');
+      ts_lexize
+-----------------------
+ {word,syn1,syn2,syn3}
+
+mydb# ALTER TEXT SEARCH DICTIONARY xsyn (RULES='my_rules', KEEPORIG=false, MATCHSYNONYMS=true);
+ALTER TEXT SEARCH DICTIONARY
+
+mydb=# SELECT ts_lexize('xsyn', 'syn1');
+      ts_lexize
+-----------------------
+ {syn1,syn2,syn3}
+
+mydb# ALTER TEXT SEARCH DICTIONARY xsyn (RULES='my_rules', KEEPORIG=true, MATCHORIG=false, KEEPSYNONYMS=false);
+ALTER TEXT SEARCH DICTIONARY
+
+mydb=# SELECT ts_lexize('xsyn', 'syn1');
+      ts_lexize
+-----------------------
+ {word}</programlisting> Но для практического применения его нужно включить в конфигурацию текстового поиска, как описано в <xref remap="6" linkend="textsearch"/>. Это может выглядеть примерно так: <programlisting>ALTER TEXT SEARCH CONFIGURATION english
+    ALTER MAPPING FOR word, asciiword WITH xsyn, english_stem;</programlisting></para>
+ </sect2>
+
+</sect1>

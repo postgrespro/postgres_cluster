@@ -1,0 +1,75 @@
+<!-- doc/src/xml/ref/set_session_auth.xml -->
+<refentry id="sql-set-session-authorization">
+ <indexterm zone="sql-set-session-authorization"><primary>SET SESSION AUTHORIZATION</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SET SESSION AUTHORIZATION</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SET SESSION AUTHORIZATION</refname>
+  <refpurpose>установить идентификатор пользователя сеанса и идентификатор текущего пользователя в рамках сеанса</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>SET [ SESSION | LOCAL ] SESSION AUTHORIZATION <replaceable class="parameter">имя_пользователя</replaceable>
+SET [ SESSION | LOCAL ] SESSION AUTHORIZATION DEFAULT
+RESET SESSION AUTHORIZATION</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Эта команда меняет идентификатор пользователя сеанса и идентификатор текущего пользователя в рамках активного сеанса SQL на <replaceable class="parameter">имя_пользователя</replaceable>. Имя пользователя может быть записано в виде идентификатора или строковой константы. С помощью этой команды, можно, например, временно переключиться на непривилегированного пользователя, сохранив возможность затем стать суперпользователем.</para>
+
+  <para>Идентификатором пользователя сеанса изначально принимается имя пользователя, введённое клиентом (возможно, прошедшее проверку подлинности). Идентификатор текущего пользователя обычно совпадает с идентификатором пользователя сеанса, но может временно меняться в функциях с характеристикой <literal>SECURITY DEFINER</literal> и подобными механизмами; также его можно изменить командой <xref linkend="sql-set-role"/>. Идентификатор текущего пользователя принимается во внимание при проверке разрешений.</para>
+
+  <para>Идентификатор пользователя сеанса можно изменить, только если начальный пользователь сеанса (<firstterm>аутентифицированный пользователь</firstterm>) имеет права суперпользователя. В противном случае эта команда разрешается, только если в ней указывается имя аутентифицированного пользователя.</para>
+
+  <para>Указания <literal>SESSION</literal> и <literal>LOCAL</literal> действуют на эту команду так же, как и на обычную команду <xref linkend="sql-set"/>.</para>
+
+  <para>Формы <literal>DEFAULT</literal> и <literal>RESET</literal> сбрасывают идентификаторы текущего пользователя и пользователя сеанса, так что текущим становится пользователь, изначально проходивший проверку подлинности. Эти формы могут выполняться любым пользователем.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para><command>SET SESSION AUTHORIZATION</command> нельзя использовать в функции с характеристикой <literal>SECURITY DEFINER</literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+<programlisting>SELECT SESSION_USER, CURRENT_USER;
+
+ session_user | current_user 
+--------------+--------------
+ peter        | peter
+
+SET SESSION AUTHORIZATION 'paul';
+
+SELECT SESSION_USER, CURRENT_USER;
+
+ session_user | current_user 
+--------------+--------------
+ paul         | paul</programlisting>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Стандарт SQL позволяет вместо строковой константы <replaceable>имя_пользователя</replaceable> указывать некоторые другие выражения, но на практике это не очень полезно. <productname>&productname;</productname> допускает синтаксис идентификаторов (<literal>"<replaceable>имя_пользователя</replaceable>"</literal>), а стандарт SQL — нет. Стандарт не позволяет выполнять эту команду в транзакции; в <productname>&productname;</productname> такого ограничения нет, так как для него нет причины. Указания <literal>SESSION</literal> и <literal>LOCAL</literal> относятся к расширениям <productname>&productname;</productname>, так же, как и синтаксис <literal>RESET</literal>.</para>
+
+  <para>Набор прав, требуемых для выполнения этой команды, согласно стандарту, определяется реализацией.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-set-role"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

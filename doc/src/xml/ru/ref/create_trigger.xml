@@ -1,0 +1,295 @@
+<!--
+doc/src/xml/ref/create_trigger.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createtrigger">
+ <indexterm zone="sql-createtrigger"><primary>CREATE TRIGGER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE TRIGGER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE TRIGGER</refname>
+  <refpurpose>создать триггер</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE [ CONSTRAINT ] TRIGGER <replaceable class="parameter">имя</replaceable> { BEFORE | AFTER | INSTEAD OF } { <replaceable class="parameter">событие</replaceable> [ OR ... ] }
+    ON <replaceable class="parameter">имя_таблицы</replaceable>
+    [ FROM <replaceable class="parameter">ссылающаяся_таблица</replaceable> ]
+    [ NOT DEFERRABLE | [ DEFERRABLE ] [ INITIALLY IMMEDIATE | INITIALLY DEFERRED ] ]
+    [ FOR [ EACH ] { ROW | STATEMENT } ]
+    [ WHEN ( <replaceable class="parameter">условие</replaceable> ) ]
+    EXECUTE PROCEDURE <replaceable class="parameter">имя_функции</replaceable> ( <replaceable class="parameter">аргументы</replaceable> )
+
+<phrase>Здесь допускается <replaceable class="parameter">событие</replaceable>:</phrase>
+
+    INSERT
+    UPDATE [ OF <replaceable class="parameter">имя_столбца</replaceable> [, ... ] ]
+    DELETE
+    TRUNCATE</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE TRIGGER</command> создаёт новый триггер. Триггер будет связан с указанной таблицей, представлением или сторонней таблицей и будет выполнять заданную функцию <replaceable class="parameter">имя_функции</replaceable> при определённых событиях.</para>
+
+  <para>Триггер можно настроить так, чтобы он срабатывал до операции со строкой (до проверки ограничений и попытки выполнить <command>INSERT</command>, <command>UPDATE</command> или <command>DELETE</command>) или после её завершения (после проверки ограничений и выполнения <command>INSERT</command>, <command>UPDATE</command> или <command>DELETE</command>), либо вместо операции (при добавлении, изменении и удалении строк в представлении). Если триггер срабатывает до или вместо события, он может пропустить операцию с текущей строкой, либо изменить добавляемую строку (только для операций <command>INSERT</command> и <command>UPDATE</command>). Если триггер срабатывает после события, он <quote>видит</quote> все изменения, включая результат действия других триггеров.</para>
+
+  <para>Триггер с пометкой <literal>FOR EACH ROW</literal> вызывается один раз для каждой строки, изменяемой в процессе операции. Например, операция <command>DELETE</command>, удаляющая 10 строк, приведёт к срабатыванию всех триггеров <literal>ON DELETE</literal> в целевом отношении 10 раз подряд, по одному разу для каждой удаляемой строки. Триггер с пометкой <literal>FOR EACH STATEMENT</literal>, напротив, вызывается только один раз для конкретной операции, вне зависимости от того, как много строк она изменила (в частности, при выполнении операции, изменяющей ноль строк, всё равно будут вызваны все триггеры <literal>FOR EACH STATEMENT</literal>). Заметьте, что при выполнении <command>INSERT</command> с предложением <literal>ON CONFLICT DO UPDATE</literal> сработают оба триггера уровня операторов, для <command>INSERT</command> и для <command>UPDATE</command>.</para>
+
+  <para>Триггеры, срабатывающие в режиме <literal>INSTEAD OF</literal>, должны быть помечены <literal>FOR EACH ROW</literal> и могут быть определены только для представлений. Триггеры <literal>BEFORE</literal> и <literal>AFTER</literal> для представлений должны быть помечены <literal>FOR EACH STATEMENT</literal>.</para>
+
+  <para>Кроме того, триггеры можно определить и для команды <command>TRUNCATE</command>, но только типа <literal>FOR EACH STATEMENT</literal>.</para>
+
+  <para>В следующей таблице перечисляются типы триггеров, которые могут использоваться для таблиц, представлений и сторонних таблиц:</para>
+
+  <informaltable id="supported-trigger-types">
+   <tgroup cols="4">
+    <thead>
+     <row>
+      <entry>Когда</entry>
+      <entry>Событие</entry>
+      <entry>На уровне строк</entry>
+      <entry>На уровне оператора</entry>
+     </row>
+    </thead>
+    <tbody>
+     <row>
+      <entry align="center" morerows="1"><literal>BEFORE</literal></entry>
+      <entry align="center"><command>INSERT</command>/<command>UPDATE</command>/<command>DELETE</command></entry>
+      <entry align="center">Таблицы и сторонние таблицы</entry>
+      <entry align="center">Таблицы, представления и сторонние таблицы</entry>
+     </row>
+     <row>
+      <entry align="center"><command>TRUNCATE</command></entry>
+      <entry align="center">&mdash;</entry>
+      <entry align="center">Таблицы</entry>
+     </row>
+     <row>
+      <entry align="center" morerows="1"><literal>AFTER</literal></entry>
+      <entry align="center"><command>INSERT</command>/<command>UPDATE</command>/<command>DELETE</command></entry>
+      <entry align="center">Таблицы и сторонние таблицы</entry>
+      <entry align="center">Таблицы, представления и сторонние таблицы</entry>
+     </row>
+     <row>
+      <entry align="center"><command>TRUNCATE</command></entry>
+      <entry align="center">&mdash;</entry>
+      <entry align="center">Таблицы</entry>
+     </row>
+     <row>
+      <entry align="center" morerows="1"><literal>INSTEAD OF</literal></entry>
+      <entry align="center"><command>INSERT</command>/<command>UPDATE</command>/<command>DELETE</command></entry>
+      <entry align="center">Представления</entry>
+      <entry align="center">&mdash;</entry>
+     </row>
+     <row>
+      <entry align="center"><command>TRUNCATE</command></entry>
+      <entry align="center">&mdash;</entry>
+      <entry align="center">&mdash;</entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </informaltable>
+
+  <para>Кроме того, в определении триггера можно указать булевское условие <literal>WHEN</literal>, которое определит, вызывать триггер или нет. В триггерах на уровне строк условия <literal>WHEN</literal> могут проверять старые и/или новые значения столбцов в строке. Триггеры на уровне оператора так же могут содержать условие <literal>WHEN</literal>, хотя для них это не столь полезно, так как в этом условии нельзя ссылаться на какие-либо значения в таблице.</para>
+
+  <para>Если для одного события определено несколько триггеров одного типа, они будут срабатывать в алфавитном порядке их имён.</para>
+
+  <para>Когда указывается параметр <literal>CONSTRAINT</literal>, эта команда создаёт <firstterm>триггер ограничения</firstterm>. Он подобен обычным триггерам, но отличается тем, что время его срабатывания можно изменить командой <xref linkend="sql-set-constraints"/>. Триггеры ограничений должны работать в режиме <literal>AFTER ROW</literal>. Они могут срабатывать либо в конце оператора, вызвавшего целевое событие, либо в конце содержащей его транзакции; в последнем случае они называются <firstterm>отложенными</firstterm>. Срабатывание ожидающего отложенного триггера можно вызвать немедленно, воспользовавшись командой <command>SET CONSTRAINTS</command>. Предполагается, что триггеры ограничений будут генерировать исключения при нарушении ограничений.</para>
+
+  <para><command>SELECT</command> не изменяет никакие строки, поэтому создавать триггеры для <command>SELECT</command> нельзя. В случае подобной потребности будут более уместны правила и представления.</para>
+
+  <para>За дополнительными сведениями о триггерах обратитесь к <xref remap="3" linkend="triggers"/>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя, назначаемое новому триггеру. Это имя должно отличаться от имени любого другого триггера в этой же таблице. Имя не может быть дополнено схемой &mdash; триггер наследует схему от своей таблицы. Для триггеров ограничений это имя также используется, когда требуется скорректировать поведение триггера с помощью команды <command>SET CONSTRAINTS</command>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>BEFORE</literal></term>
+    <term><literal>AFTER</literal></term>
+    <term><literal>INSTEAD OF</literal></term>
+    <listitem>
+     <para>Определяет, будет ли заданная функция вызываться до, после или вместо события. Для триггера ограничения можно указать только <literal>AFTER</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">событие</replaceable></term>
+    <listitem>
+     <para>Принимает одно из значений: <literal>INSERT</literal>, <literal>UPDATE</literal>, <literal>DELETE</literal> или <literal>TRUNCATE</literal>; этот параметр определяет событие, при котором будет срабатывать триггер. Несколько событий можно указать, добавив между ними слово <literal>OR</literal>.</para>
+
+     <para>Для событий <literal>UPDATE</literal> можно указать список столбцов, используя такую запись: <synopsis>
+UPDATE OF <replaceable>имя_столбца1</replaceable> [, <replaceable>имя_столбца2</replaceable> ... ]
+</synopsis> Такой триггер сработает, только если в указанном в целевой команде <command>UPDATE</command> списке столбцов найдётся минимум одна из перечисленных.</para>
+
+     <para>Для событий <literal>INSTEAD OF UPDATE</literal> список столбцов задать нельзя.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) таблицы, представления или сторонней таблицы, для которых предназначен триггер.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">ссылающаяся_таблица</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) другой таблицы, на которую ссылается ограничение. Оно используется для ограничений внешнего ключа и не рекомендуется для обычного применения. Это указание допускается только для триггеров ограничений.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>DEFERRABLE</literal></term>
+    <term><literal>NOT DEFERRABLE</literal></term>
+    <term><literal>INITIALLY IMMEDIATE</literal></term>
+    <term><literal>INITIALLY DEFERRED</literal></term>
+    <listitem>
+     <para>Время срабатывания триггера по умолчанию. Подробнее возможные варианты описаны в документации <xref linkend="sql-createtable"/>. Это указание допускается только для триггеров ограничений.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>FOR EACH ROW</literal></term>
+    <term><literal>FOR EACH STATEMENT</literal></term>
+
+    <listitem>
+     <para>Определяет, будет ли процедура триггера срабатывать один раз для каждой строки, либо для SQL-оператора. Если не указано ничего, подразумевается <literal>FOR EACH STATEMENT</literal> (для оператора). Для триггеров ограничений можно указать только <literal>FOR EACH ROW</literal>.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">условие</replaceable></term>
+    <listitem>
+     <para>Булевское выражение, определяющее, будет ли выполняться функция триггера. Если для триггера задано указание <literal>WHEN</literal>, функция будет вызываться, только когда <replaceable class="parameter">условие</replaceable> возвращает <literal>true</literal>. В триггерах <literal>FOR EACH ROW</literal> условие <literal>WHEN</literal> может ссылаться на значения столбца в старой и/или новой строке, в виде <literal>OLD.<replaceable class="parameter">имя_столбца</replaceable></literal> и <literal>NEW.<replaceable class="parameter">имя_столбца</replaceable></literal>, соответственно. Разумеется, триггеры <literal>INSERT</literal> не могут ссылаться на <literal>OLD</literal>, а триггеры <literal>DELETE</literal> не могут ссылаться на <literal>NEW</literal>.</para>
+
+     <para>Триггеры <literal>INSTEAD OF</literal> не поддерживают условия <literal>WHEN</literal>.</para>
+
+     <para>В настоящее время выражения <literal>WHEN</literal> не могут содержать подзапросы.</para>
+
+     <para>Учтите, что для триггеров ограничений вычисление условия <literal>WHEN</literal> не откладывается, а выполняется немедленно после операции, изменяющей строки. Если результат условия — ложь, сам триггер не откладывается для последующего выполнения.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_функции</replaceable></term>
+    <listitem>
+     <para>Заданная пользователем функция, объявленная как функция без аргументов и возвращающая тип <literal>trigger</literal>, которая будет вызываться при срабатывании триггера.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">аргументы</replaceable></term>
+    <listitem>
+     <para>Необязательный список аргументов через запятую, которые будут переданы функции при срабатывании триггера. В качестве аргументов функции передаются строковые константы. И хотя в этом списке можно записать и простые имена или числовые константы, они тоже будут преобразованы в строки. Порядок обращения к таким аргументам в функции триггера может отличаться от обычных аргументов, поэтому его следует уточнить в описании языка реализации этой функции.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1 id="sql-createtrigger-notes">
+  <title>Замечания</title>
+
+  <para>Чтобы создать триггер, пользователь должен иметь право <literal>TRIGGER</literal> для этой таблицы. Также пользователь должен иметь право <literal>EXECUTE</literal> для триггерной функции.</para>
+
+  <para>Для удаления триггера применяется команда <xref linkend="sql-droptrigger"/>.</para>
+
+  <para>Триггер для избранных столбцов (определённый с помощью <literal>UPDATE OF <replaceable>имя_столбца</replaceable></literal>) будет срабатывать, когда его столбцы перечислены в качестве целевых в списке <literal>SET</literal> команды <command>UPDATE</command>. Изменения, вносимые в строки триггерами <literal>BEFORE UPDATE</literal>, при этом не учитываются, поэтому значения столбцов можно изменить так, что триггер не сработает. И наоборот, при выполнении команды <literal>UPDATE ... SET x = x ...</literal> триггер для столбца <literal>x</literal> сработает, хотя значение столбца не меняется.</para>
+
+  <para>В триггере <literal>BEFORE</literal> условие <literal>WHEN</literal> вычисляется непосредственно перед возможным вызовом функции, поэтому проверка <literal>WHEN</literal> существенно не отличается от проверки того же условия в начале функции триггера. В частности, учтите, что строка <literal>NEW</literal>, которую видит ограничение, содержит текущие значения, возможно, изменённые предыдущими триггерами. Кроме того, в триггере <literal>BEFORE</literal> условие <literal>WHEN</literal> не может проверять системные столбцы в строке <literal>NEW</literal> (например, <literal>oid</literal>), так как они ещё не установлены.</para>
+
+  <para>В триггере <literal>AFTER</literal> условие <literal>WHEN</literal> проверяется сразу после изменения строки, и если оно выполняется, событие запоминается, чтобы вызвать триггер в конце оператора. Если же для триггера <literal>AFTER</literal> условие <literal>WHEN</literal> не выполняется, нет необходимости запоминать событие для последующей обработки или заново перечитывать строку в конце оператора. Это приводит к значительному ускорению операторов, изменяющих множество строк, когда триггер должен срабатывать только для некоторых из них.</para>
+
+  <para>В <productname>PostgreSQL</productname> до версии 7.3 обязательно требовалось объявлять триггерные функции, как возвращающие фиктивный тип <type>opaque</type>, а не <type>trigger</type>. Для поддержки загрузки старых файлов экспорта БД, команда <command>CREATE TRIGGER</command> принимает функции с объявленным типом результата <type>opaque</type>, но при этом выдаётся предупреждение и тип результата меняется на <type>trigger</type>.</para>
+ </refsect1>
+
+ <refsect1 id="sql-createtrigger-examples">
+  <title>Примеры</title>
+
+  <para>Выполнение функции <function>check_account_update</function> перед любым изменением строк в таблице <literal>accounts</literal>: <programlisting>CREATE TRIGGER check_update
+    BEFORE UPDATE ON accounts
+    FOR EACH ROW
+    EXECUTE PROCEDURE check_account_update();</programlisting> То же самое, но функция триггера будет выполняться, только если столбец <literal>balance</literal> присутствует в списке целевых столбцов команды <command>UPDATE</command>: <programlisting>CREATE TRIGGER check_update
+    BEFORE UPDATE OF balance ON accounts
+    FOR EACH ROW
+    EXECUTE PROCEDURE check_account_update();</programlisting> В этом примере функция будет выполняться, если значение столбца <literal>balance</literal> в действительности изменилось: <programlisting>CREATE TRIGGER check_update
+    BEFORE UPDATE ON accounts
+    FOR EACH ROW
+    WHEN (OLD.balance IS DISTINCT FROM NEW.balance)
+    EXECUTE PROCEDURE check_account_update();</programlisting> Вызов функции, ведущей журнал изменений в <literal>accounts</literal>, но только если что-то изменилось: <programlisting>CREATE TRIGGER log_update
+    AFTER UPDATE ON accounts
+    FOR EACH ROW
+    WHEN (OLD.* IS DISTINCT FROM NEW.*)
+    EXECUTE PROCEDURE log_account_update();</programlisting> Выполнение для каждой строки функции <function>view_insert_row</function>, которая будет вставлять строки в нижележащие таблицы представления: <programlisting>CREATE TRIGGER view_insert
+    INSTEAD OF INSERT ON my_view
+    FOR EACH ROW
+    EXECUTE PROCEDURE view_insert_row();</programlisting></para>
+
+  <para>В <xref remap="6" linkend="trigger-example"/> приведён полный пример функции триггера, написанной на C.</para>
+ </refsect1>
+
+ <refsect1 id="sql-createtrigger-compatibility">
+  <title>Совместимость</title>
+
+  <!--
+   It's not clear whether SQL/MED contemplates triggers on foreign tables.
+   Its <drop basic column definition> General Rules do mention the possibility
+   of a reference from a trigger column list.  On the other hand, nothing
+   overrides the fact that CREATE TRIGGER only targets base tables.  For now,
+   do not document the compatibility status of triggers on foreign tables.
+  -->
+
+  <para>Оператор <command>CREATE TRIGGER</command> в <productname>&productname;</productname> реализует подмножество возможностей, описанных в стандарте <acronym>SQL</acronym>. В настоящее время в нём отсутствует следующая функциональность: <itemizedlist>
+    <listitem>
+     <para>SQL позволяет определить синонимы для строк <quote>old</quote> и <quote>new</quote> или таблиц, которые затем можно будет использовать в определении действия триггера (например, <literal>CREATE TRIGGER ... ON имя_таблицы REFERENCING OLD ROW AS некоторое_имя NEW ROW AS другое_имя...</literal>). <productname>&productname;</productname> позволяет писать процедуры триггеров на различных языках, так что механизм доступа к данным зависит от конкретного языка.</para>
+    </listitem>
+
+    <listitem>
+     <para><productname>&productname;</productname> не позволяет обращаться к старой и новой таблице в триггерах на уровне оператора, т. е. к таблицам, содержащим все старые и/или новые строки, обозначаемые как <literal>OLD TABLE</literal> и <literal>NEW TABLE</literal> в стандарте <acronym>SQL</acronym>.</para>
+    </listitem>
+
+    <listitem>
+     <para><productname>&productname;</productname> позволяет задать в качестве действия триггера только функцию, определённую пользователем. Стандарт допускает также выполнение ряда других команд SQL, например, <command>CREATE TABLE</command>. Однако это ограничение несложно преодолеть, создав пользовательскую функцию, выполняющую требуемые команды.</para>
+    </listitem>
+
+   </itemizedlist></para>
+
+  <para>В стандарте SQL определено, что несколько триггеров должны срабатывать по порядку создания. <productname>&productname;</productname> упорядочивает их по именам, так как это было признано более удобным.</para>
+
+  <para>В стандарте SQL определено, что триггеры <literal>BEFORE DELETE</literal> при каскадном удалении срабатывают <emphasis>после</emphasis> завершения каскадного <literal>DELETE</literal>. В <productname>&productname;</productname> триггеры <literal>BEFORE DELETE</literal> всегда срабатывают перед операцией удаления, даже если она каскадная. Это поведение выбрано как более логичное. Ещё одно отклонение от стандарта проявляется, когда триггеры <literal>BEFORE</literal>, срабатывающие в результате ссылочной операции, изменяют строки или не дают выполнить изменение. Это может привести к нарушению ограничений или сохранению данных, не соблюдающих ссылочную целостность.</para>
+
+  <para>Возможность задать несколько действий для одного триггера с помощью ключевого слова <literal>OR</literal> — реализованное в <productname>&productname;</productname> расширение стандарта SQL.</para>
+
+  <para>Возможность вызывать триггеры для <command>TRUNCATE</command> — реализованное в <productname>&productname;</productname> расширение стандарта SQL, как и возможность определять триггеры на уровне оператора для представлений.</para>
+
+  <para><command>CREATE CONSTRAINT TRIGGER</command> — реализованное в <productname>&productname;</productname> расширение стандарта <acronym>SQL</acronym>.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-altertrigger"/></member>
+   <member><xref linkend="sql-droptrigger"/></member>
+   <member><xref linkend="sql-createfunction"/></member>
+   <member><xref linkend="sql-set-constraints"/></member>
+  </simplelist>
+ </refsect1>
+</refentry>

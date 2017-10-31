@@ -479,11 +479,12 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
        </para>
        <note>
         <para>
-         The total sum of retries can be greater than the number of retried
-         transactions multiplied by the maximum retries number
-         (<option>max_tries</> - 1). See
-         <xref linkend="transactions-and-scripts"
-         endterm="transactions-and-scripts-title"> for more information.
+         If a custom script contains multiple transactions, its run is reported
+         as failed if any of its transactions ended with a
+         serialization/deadlock failure. The run of this script is reported as
+         retried if any of its transactions was retried after a
+         serialization/deadlock failure. The total sum of retries includes the
+         retries for all transactions in this script.
         </para>
        </note>
       </listitem>
@@ -543,21 +544,6 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
         not sent to the server, but are skipped altogether and counted
         separately.
        </para>
-
-       <para>
-        The execution time of transactions with serialization or deadlock
-        failures is excluded from the report, as if these transactions were
-        skipped.
-       </para>
-
-       <note>
-        <para>
-         In scripts with several transactions, both serialization and deadlock
-         failures can occur. For more information, see
-         <xref linkend="transactions-and-scripts"
-         endterm="transactions-and-scripts-title">.
-        </para>
-       </note>
 
        <para>
         A high schedule lag time is an indication that the system cannot
@@ -781,8 +767,8 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
  <refsect1>
   <title>Notes</title>
 
- <refsect2 id="transactions-and-scripts">
-  <title id="transactions-and-scripts-title">What is the <quote>Transaction</> Actually Performed in <application>pgbench</application>?</title>
+ <refsect2>
+  <title>What is the <quote>Transaction</> Actually Performed in <application>pgbench</application>?</title>
 
   <para>
    <application>pgbench</> executes test scripts chosen randomly
@@ -1257,6 +1243,14 @@ END;
    for more information).
   </para>
 
+  <note>
+   <para>
+    If a custom script contains multiple transactions, its <replaceable>time</>
+    will be reported as <literal>failed</> if any of its transactions ended
+    with a serialization/deadlock failure.
+   </para>
+  </note>
+
   <para>
    Here is a snippet of the log file generated:
 <screen>
@@ -1344,10 +1338,15 @@ END;
   </para>
 
   <note>
-   <para>The total sum of retries can be greater than the number of retried
-   transactions multiplied by the maximum retries number
-   (<option>max_tries</> - 1). See <xref linkend="transactions-and-scripts"
-   endterm="transactions-and-scripts-title"> for more information.
+   <para>
+    If a custom script contains multiple transactions and any of its
+    transactions ended with a serialization/deadlock failure, its run is counted
+    in <replaceable>failures</replaceable> only once. Similarly, if any of these
+    transactions was retried, the <replaceable>retried_transactions</>
+    statistics is increased by one, regardless of the number of retried
+    transactions. However, the <replaceable>serialization_retries</> and
+    <replaceable>deadlock_retries</> include the sum of all retries after the
+    corresponding failures for all transactions in this script.
    </para>
   </note>
 
@@ -1408,10 +1407,10 @@ END;
 
   <note>
    <para>
-    The total sum of per-command failures can be greater than the number of
-    failed transactions. The same for retries. See
-    <xref linkend="transactions-and-scripts"
-    endterm="transactions-and-scripts-title"> for more information.
+    If a custom script contains multiple transactions, each failed or retried
+    transaction is counted. Thus, the total sum of per-command failures and/or
+    retries can be greater than the number of failed and/or retried transaction
+    scripts correspondingly.
    </para>
   </note>
 
@@ -1533,22 +1532,22 @@ script statistics:
   </para>
 
   <para>
-   The main report contains the number of failed transactions if it is non-zero
-   (see <xref linkend="transactions-and-scripts"
-   endterm="transactions-and-scripts-title"> for more information). If the total
-   number of retried transactions is non-zero, the main report also contains
-   the total number of retried transactions, the total number of retries, and
-   the number of retries after each kind of
-   failure (use option <option>--max-tries</> to make it possible). The
-   per-statement report inherits all columns from the main report.
+   The main report contains the number of failed transactions if it is non-zero.
+   If the total number of retried transactions is non-zero, the main report also
+   contains the statistics related to retries: the total number of retried
+   transactions, the total number of retries, and the number of retries after
+   each kind of failure (use option <option>--max-tries</> to make it possible).
+   The per-statement report inherits all columns from the main report.
   </para>
   <note>
-     <para>The total sum of retries can be greater than the number of
-     retried transactions multiplied by the maximum retries number
-     (<option>max_tries</> - 1). See <xref linkend="transactions-and-scripts"
-     endterm="transactions-and-scripts-title"> for more information.
-     </para>
-   </note>
+   <para>
+    If a custom script contains multiple transactions, its run is reported as
+    failed if any of its transactions ended with a serialization/deadlock
+    failure. The run of this script is reported as retried if any of its
+    transactions was retried after a serialization/deadlock failure. The total
+    sum of retries includes the retries for all transactions in this script.
+   </para>
+  </note>
  </refsect2>
 
  <refsect2>

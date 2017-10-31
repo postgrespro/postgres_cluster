@@ -1,0 +1,92 @@
+<!--
+doc/src/xml/ref/drop_trigger.xml
+&productname; documentation
+-->
+
+<refentry id="sql-droptrigger">
+ <indexterm zone="sql-droptrigger"><primary>DROP TRIGGER</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP TRIGGER</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP TRIGGER</refname>
+  <refpurpose>удалить триггер</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP TRIGGER [ IF EXISTS ] <replaceable class="parameter">имя</replaceable> ON <replaceable class="parameter">имя_таблицы</replaceable> [ CASCADE | RESTRICT ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP TRIGGER</command> удаляет существующее определение триггера. Пользователь, выполняющий эту команду, должен быть владельцем таблицы, для которой определён данный триггер.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если триггер не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя триггера, подлежащего удалению.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) таблицы, для которой определён триггер.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>CASCADE</literal></term>
+    <listitem>
+     <para>Автоматически удалять объекты, зависящие от данного триггера, и, в свою очередь, все зависящие от них объекты (см. <xref remap="4" linkend="ddl-depend"/>).</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><literal>RESTRICT</literal></term>
+    <listitem>
+     <para>Отказать в удалении триггера, если от него зависят какие-либо объекты. Это поведение по умолчанию.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1 id="sql-droptrigger-examples">
+  <title>Примеры</title>
+
+  <para>Удаление триггера <literal>if_dist_exists</literal> в таблице <literal>films</literal>: <programlisting>DROP TRIGGER if_dist_exists ON films;</programlisting></para>
+ </refsect1>
+
+ <refsect1 id="sql-droptrigger-compatibility">
+  <title>Совместимость</title>
+
+  <para>Оператор <command>DROP TRIGGER</command> в <productname>&productname;</productname> несовместим со стандартом SQL. В стандарте имена триггеров не считаются локальными по отношению к таблицам, так что синтаксис команды проще: <literal>DROP TRIGGER <replaceable>имя</replaceable></literal>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createtrigger"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

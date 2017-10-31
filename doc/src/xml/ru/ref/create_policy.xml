@@ -1,0 +1,181 @@
+<!--
+doc/src/xml/ref/create_policy.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createpolicy">
+ <indexterm zone="sql-createpolicy"><primary>CREATE POLICY</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE POLICY</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE POLICY</refname>
+  <refpurpose>создать новую политику защиты на уровне строк для таблицы</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE POLICY <replaceable class="parameter">имя</replaceable> ON <replaceable class="parameter">имя_таблицы</replaceable>
+    [ FOR { ALL | SELECT | INSERT | UPDATE | DELETE } ]
+    [ TO { <replaceable class="parameter">имя_роли</replaceable> | PUBLIC | CURRENT_USER | SESSION_USER } [, ...] ]
+    [ USING ( <replaceable class="parameter">выражение_USING</replaceable> ) ]
+    [ WITH CHECK ( <replaceable class="parameter">выражение_CHECK</replaceable> ) ]</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para>Команда <command>CREATE POLICY</command> определяет для таблицы новую политику защиты на уровне строк. Заметьте, что для таблицы должна быть включена защита на уровне строк (using <command>ALTER TABLE ... ENABLE ROW LEVEL SECURITY</command>), чтобы созданные политики действовали.</para>
+
+  <para>Политика даёт разрешение на выборку, добавление, изменение или удаление строк, удовлетворяющих соответствующему выражению политики. Существующие строки таблицы проверяются по выражению, указанному в <literal>USING</literal>, тогда как строки, которые могут быть созданы командами <literal>INSERT</literal> или <literal>UPDATE</literal> проверяются по выражению, указанному в <literal>WITH CHECK</literal>. Когда выражение <literal>USING</literal> истинно для заданной строки, эта строка видна пользователю, а если ложно или выдаёт NULL, строка не видна. Когда выражение <literal>WITH CHECK</literal> истинно для заданной строки, эта строка добавляется или изменяется, а если ложно или выдаёт NULL, происходит ошибка.</para>
+
+  <para>Для операторов <command>INSERT</command> и <command>UPDATE</command> выражения <literal>WITH CHECK</literal> применяются после срабатывания триггеров <literal>BEFORE</literal>, но до того, как будут собственно модифицированы данные. Таким образом, триггер <literal>BEFORE ROW</literal> может изменить данные, подлежащие добавлению, и повлиять на результат условия политики защиты. Выражения <literal>WITH CHECK</literal> обрабатываются до каких-либо других ограничений.</para>
+
+  <para>Имена политик задаются на уровне таблицы. Таким образом, одно имя политики можно использовать в нескольких разных таблицах и в каждой дать отдельное, подходящее этой таблице определение политики.</para>
+
+  <para>Политики можно применять к определённым командам или избранным ролям. По умолчанию создаваемые политики применяются ко всем командам и ролям, если нет других указаний. Если к заданному оператору применяются несколько политик, они будут объединены логическим сложением (хотя политики <literal>ON CONFLICT DO UPDATE</literal> и <literal>INSERT</literal> таким образом не складываются, а применяются как отмечено на каждой стадии выполнения <literal>ON CONFLICT</literal>).</para>
+
+  <para>Для команд, допускающих наличие политик <literal>USING</literal> и <literal>WITH CHECK</literal> (<literal>ALL</literal> и <literal>UPDATE</literal>), в отсутствие политики <literal>WITH CHECK</literal> политика <literal>USING</literal> будет определять и видимость строк (обычное предназначение <literal>USING</literal>), и разрешение на добавление строк (предназначение <literal>WITH CHECK</literal>).</para>
+
+  <para>Если для таблицы включена защита на уровне строк, но применимые политики отсутствуют, предполагается политика <quote>запрета по умолчанию</quote>, так что никакие строки нельзя будет увидеть или изменить.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя создаваемой политики. Оно должно отличаться от имён других политик для этой таблицы.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_таблицы</replaceable></term>
+    <listitem>
+     <para>Имя (возможно, дополненное схемой) существующей таблицы (или представления), к которой применяется эта политика.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">команда</replaceable></term>
+    <listitem>
+     <para>Команда, к которой применяется политика. Допустимые варианты: <command>ALL</command>, <command>SELECT</command>, <command>INSERT</command>, <command>UPDATE</command> и <command>DELETE</command>. <command>ALL</command> (все) подразумевается по умолчанию. Особенности их применения описаны ниже.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя_роли</replaceable></term>
+    <listitem>
+     <para>Роль (роли), к которой применяется политика. По умолчанию подразумевается <literal>PUBLIC</literal>, то есть политика применяется ко всем ролям.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">выражение_USING</replaceable></term>
+    <listitem>
+     <para>Произвольное условное выражение <acronym>SQL</acronym> (возвращающее <type>boolean</type>). Это условное выражение не может содержать агрегатные или оконные функции. Когда включена защита на уровне строк, оно добавляется в запросы, обращающиеся к данной таблице, и в их результатах оказываются видимыми только те строки, для которых оно выдаёт true. Все строки, для которых это выражение возвращает false или NULL, не будут видны пользователю (в запросе <command>SELECT</command>), и не будут доступны для модификации (запросами <command>UPDATE</command> или <command>DELETE</command>). Такая строка просто пропускается, ошибка при этом не выдаётся.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">выражение_CHECK</replaceable></term>
+    <listitem>
+     <para>Произвольное условное выражение <acronym>SQL</acronym> (возвращающее <type>boolean</type>). Это условное выражение не может содержать агрегатные или оконные функции. Когда включена защита на уровне строк, оно применяется в запросах <command>INSERT</command> и <command>UPDATE</command> к этой таблице, так что в них принимаются только те строки, для которых оно выдаёт true. Если это выражение выдаёт false или NULL для любой из добавляемых записей или записей, получаемых при изменении, выдаётся ошибка. Заметьте, что <replaceable class="parameter">ограничение_проверки</replaceable> вычисляется для предлагаемого нового содержимого строки, а не для существующих данных.</para>
+    </listitem>
+   </varlistentry>
+
+  </variablelist>
+
+ <refsect2>
+   <title>Политики по командам</title>
+
+   <variablelist>
+
+     <varlistentry id="sql-createpolicy-all">
+      <term><literal>ALL</literal></term>
+      <listitem>
+       <para>Указание <literal>ALL</literal> для политики означает, что она применяется ко всем командам, вне зависимости от типа. Если существует политика <literal>ALL</literal> и другие более детализированные политики, тогда и политика <literal>ALL</literal>, и более детализированная политика (или политики) объединяются логическим сложением, как обычно при наложении политик. Кроме того, политики <literal>ALL</literal> с выражением <literal>USING</literal> будут применяться и к стороне выборки, и к стороне изменения данных в запросе, если определено только выражение <literal>USING</literal>.</para>
+       <para>Например, когда выполняется <literal>UPDATE</literal>, политика <literal>ALL</literal> будет фильтровать и строки, которые сможет прочитать <literal>UPDATE</literal> для изменения (применяя выражение <literal>USING</literal>), и окончательные изменённые строки, проверяя, можно ли записать их в таблицу (применяя выражение <literal>WITH CHECK</literal>, если оно определено, или <literal>USING</literal> в противном случае). Если команда <command>INSERT</command> или <command>UPDATE</command> пытается добавить в таблицу строки, не удовлетворяющие выражению <literal>WITH CHECK</literal> политики <literal>ALL</literal>, вся команда будет прервана.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="sql-createpolicy-select">
+      <term><literal>SELECT</literal></term>
+      <listitem>
+       <para>Указание <literal>SELECT</literal> для политики означает, что она применяется к запросам <literal>SELECT</literal> и тогда, когда при обращении к отношению, для которого определена политика, задействуется право <literal>SELECT</literal>. В результате запрос <literal>SELECT</literal> выдаст только те записи из отношения, которые удовлетворят политике <literal>SELECT</literal>, и запрос, использующий право <literal>SELECT</literal>, например, запрос <literal>UPDATE</literal>, увидит только записи, разрешённые политикой <literal>SELECT</literal>. Для политики <literal>SELECT</literal> не может задаваться выражение <literal>WITH CHECK</literal>, так как оно действует только когда записи читаются из отношения.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="sql-createpolicy-insert">
+      <term><literal>INSERT</literal></term>
+      <listitem>
+       <para>Указание <literal>INSERT</literal> для политики означает, что она применяется к командам <literal>INSERT</literal>. Если вставляемые строки не проходят проверку политики, выдаётся ошибка нарушения политики и вся команда <literal>INSERT</literal> прерывается. Для политики <literal>INSERT</literal> не может задаваться выражение <literal>USING</literal>, так как она действует только когда в отношение добавляются записи.</para>
+       <para>Заметьте, что <literal>INSERT</literal> с указанием <literal>ON CONFLICT DO UPDATE</literal> проверяет выражения <literal>WITH CHECK</literal> политик <literal>INSERT</literal> только для строк, добавляемых в отношение по пути <literal>INSERT</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="sql-createpolicy-update">
+      <term><literal>UPDATE</literal></term>
+      <listitem>
+       <para>Указание <literal>UPDATE</literal> для политики означает, что она применяется к командам <literal>UPDATE</literal> (или дополнительным предложениям <literal>ON CONFLICT DO UPDATE</literal> команд <literal>INSERT</literal>). Так как действие <literal>UPDATE</literal> подразумевает извлечение существующей записи и последующее изменение в ней полей (возможно, не всех), политики <literal>UPDATE</literal> принимают и выражение <literal>USING</literal>, и выражение <literal>WITH CHECK</literal>. Выражение <literal>USING</literal> определяет, какие строки будет обрабатывать команда <literal>UPDATE</literal>, тогда как выражение <literal>WITH CHECK</literal> определяет, какие изменённые строки можно снова записать в отношение.</para>
+
+       <para>Когда выполняется команда <literal>UPDATE</literal> с предложением <literal>WHERE</literal> или <literal>RETURNING</literal>, для обращения к целевому отношению также требуются права <literal>SELECT</literal>, так что соответствующие политики <literal>SELECT</literal> и <literal>ALL</literal> будут объединены (логическим сложением всех найденных связанных политик <literal>SELECT</literal>), а затем совмещены (логическим умножением) с предложением <literal>USING</literal> политики <literal>UPDATE</literal>. Таким образом, чтобы пользователь мог изменять определённые строки (выполняя <literal>UPDATE</literal>), ему должен быть разрешён доступ к ним политикой <literal>SELECT</literal> или <literal>ALL</literal> и эти строки должны удовлетворять выражению <literal>USING</literal> политики <literal>UPDATE</literal>.</para>
+
+       <para>Если в какой-либо строке изменённые значения не будут удовлетворять выражению <literal>WITH CHECK</literal>, произойдёт ошибка и вся команда будет прервана. Если указывается только предложение <literal>USING</literal>, его выражение будет применяться и в качестве <literal>USING</literal>, и в качестве выражения <literal>WITH CHECK</literal>.</para>
+
+       <para>Заметьте однако, что <literal>INSERT</literal> с <literal>ON CONFLICT DO UPDATE</literal> требует, чтобы выражение <literal>USING</literal> политики <literal>UPDATE</literal> всегда действовало как выражение <literal>WITH CHECK</literal>. Эта политика <literal>UPDATE</literal> должна всегда выполняться, когда выбирается путь <literal>UPDATE</literal>. Любая существующая строка, из-за которой выбирается путь <literal>UPDATE</literal>, должна удовлетворять проверкам (политик <literal>UPDATE</literal> или <literal>ALL</literal>) <literal>USING</literal> (объединённым логическим сложением), которые всегда действуют как <literal>WITH CHECK</literal> в данном контексте. (Путь <literal>UPDATE</literal> <emphasis>никогда</emphasis> не игнорируется, так что в случае невыполнения условия выдаётся ошибка.) Наконец, окончательная строка, добавляемая в отношение, должна проходить все проверки <literal>WITH CHECK</literal>, которые должны быть пройдены и при обычном <literal>UPDATE</literal>.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry id="sql-createpolicy-delete">
+      <term><literal>DELETE</literal></term>
+      <listitem>
+       <para>Указание <literal>DELETE</literal> для политики означает, что она применяется к командам <literal>DELETE</literal>. Команда <literal>DELETE</literal> будет видеть только те строки, которые позволит эта политика. При этом строки могут быть видны через <literal>SELECT</literal>, но удалить их будет нельзя, если они не удовлетворяют выражению <literal>USING</literal> политики <literal>DELETE</literal>.</para>
+
+       <para>Когда выполняется команда <literal>DELETE</literal> с предложением <literal>WHERE</literal> или <literal>RETURNING</literal>, для обращения к целевому отношению также требуются права <literal>SELECT</literal>, так что соответствующие политики <literal>SELECT</literal> и <literal>ALL</literal> будут объединены (логическим сложением всех найденных связанных политик <literal>SELECT</literal>), а затем совмещены (логическим умножением) с предложением <literal>USING</literal> политики <literal>DELETE</literal>. Таким образом, чтобы пользователь мог удалить определённые строки (выполняя <literal>DELETE</literal>), ему должен быть разрешён доступ к ним политикой <literal>SELECT</literal> или <literal>ALL</literal> и эти строки должны удовлетворять выражению <literal>USING</literal> политики <literal>DELETE</literal>.</para>
+
+       <para>Для политики <literal>DELETE</literal> не может задаваться выражение <literal>WITH CHECK</literal>, так как она применяется только тогда, когда записи удаляются из отношения, а в этом случае новые строки, подлежащие проверке, отсутствуют.</para>
+      </listitem>
+     </varlistentry>
+
+   </variablelist>
+  </refsect2>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Чтобы создать или изменить политики для таблицы, нужно быть её владельцем.</para>
+
+  <para>Хотя политики применяются к явно выполняемым запросам к таблицам БД, они не применяются, когда система выполняет внутренние проверки ссылочной целостности или проверяет ограничения. Это означает, что существуют косвенные пути проверить существование заданного значения. Например, можно попытаться вставить повторяющееся значение в столбец, образующий первичный ключ или имеющую ограничение уникальности. Если при этом произойдёт ошибка, пользователь может заключить, что это значение уже существует. (В данном случае предполагается, что политика разрешает пользователю вставлять записи, которые он может не видеть.) Подобный приём также возможен, если пользователь может вставлять записи в таблицу, которая ссылается на другую, иным образом не видимую. Существование значения можно определить, вставив его в подчинённую таблицу, при этом успешный результат операции будет признаком того, что это значение есть в главной таблице. Эти изъяны можно устранить, либо тщательно разработав политики, которые вовсе не позволят пользователям выполнять операции добавления, изменения и удаления, по результатам которых можно узнать о значениях в таблицах, не видимых иным образом, либо используя генерируемые значения (например, суррогатные ключи).</para>
+
+  <para>Вообще система будет применять фильтры, устанавливаемые политиками безопасности, до условий в запросах пользователя, чтобы предотвратить нежелательную утечку защищаемых данных через пользовательские функции, которые могут быть недоверенными. Однако функции и операторы, помеченные системой (или системным администратором) как <literal>LEAKPROOF</literal> (герметичные) могут вычисляться до условий политики, так как они считаются доверенными.</para>
+
+  <para>Так как выражения политики добавляются непосредственно в запрос пользователя, они выполняются с правами пользователя, запускающего исходный запрос. Таким образом, пользователи, на которых распространяется заданная политика, должны иметь права для обращения ко всем таблицам и функциям, задействованным в выражении, иначе им просто будет отказано в доступе при попытке обращения к целевой таблице (если для неё включена защита на уровне строк). Однако это не влияет на работу представлений — как и с обычными запросами и представлениями, проверки разрешений и политики для нижележащих таблиц представления будут выполняться с правами владельца представления, и при этом будут действовать политики, распространяющиеся на этого владельца.</para>
+
+  <para>Дополнительное описание и практические примеры можно найти в <xref remap="6" linkend="ddl-rowsecurity"/>.</para>
+
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>CREATE POLICY</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterpolicy"/></member>
+   <member><xref linkend="sql-droppolicy"/></member>
+   <member><xref linkend="sql-altertable"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

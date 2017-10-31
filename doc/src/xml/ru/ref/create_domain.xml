@@ -1,0 +1,157 @@
+<!--
+doc/src/xml/ref/create_domain.xml
+&productname; documentation
+-->
+
+<refentry id="sql-createdomain">
+ <indexterm zone="sql-createdomain"><primary>CREATE DOMAIN</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>CREATE DOMAIN</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>CREATE DOMAIN</refname>
+  <refpurpose>создать домен</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>CREATE DOMAIN <replaceable class="parameter">имя</replaceable> [ AS ] <replaceable class="parameter">тип_данных</replaceable>
+    [ COLLATE <replaceable>правило_сортировки</replaceable> ]
+    [ DEFAULT <replaceable>выражение</replaceable> ]
+    [ <replaceable class="parameter">ограничение</replaceable> [ ... ] ]
+
+<phrase>Здесь <replaceable class="parameter">ограничение</replaceable>:</phrase>
+
+[ CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable> ]
+{ NOT NULL | NULL | CHECK (<replaceable class="parameter">выражение</replaceable>) }</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>CREATE DOMAIN</command> создаёт новый домен. Домен по сути представляет собой тип данных с дополнительными условиями (ограничивающими допустимый набор значений). Владельцем домена становится пользователь его создавший.</para>
+
+  <para>Если задаётся имя схемы (например, <literal>CREATE DOMAIN myschema.mydomain ...</literal>), домен создаётся в указанной схеме, в противном случае — в текущей. Имя домена должно быть уникальным среди имён типов и доменов, существующих в этой схеме.</para>
+
+  <para>Домены полезны для абстрагирования и вынесения общих характеристик разных полей в единое место для упрощения сопровождения. Например, в нескольких таблицах может присутствовать столбец, содержащий электронный адрес, и для всех требуются одинаковые ограничения CHECK, проверяющие синтаксис адреса. В этом случае лучше определить домен, а не задавать для каждой таблицы отдельные ограничения.</para>
+
+  <para>Чтобы создать домен, необходимо иметь право <literal>USAGE</literal> для нижележащего типа.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+    <variablelist>
+     <varlistentry>
+      <term><replaceable class="parameter">имя</replaceable></term>
+      <listitem>
+       <para>Имя (возможно, дополненное схемой) создаваемого домена.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable class="parameter">тип_данных</replaceable></term>
+      <listitem>
+       <para>Нижележащий тип данных домена (может включать определение массива с этим типом).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><replaceable>правило_сортировки</replaceable></term>
+      <listitem>
+       <para>Необязательное указание правила сортировки для домена. Если это указание отсутствует, используется правило сортировки по умолчанию нижележащего типа данных. Указать <literal>COLLATE</literal> можно, только если нижележащий тип данных является сортируемым.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>DEFAULT <replaceable>выражение</replaceable></literal></term>
+
+      <listitem>
+       <para>Предложение <literal>DEFAULT</literal> определяет значение по умолчанию для столбцов, типом данных которых является этот домен. Значением может быть любое выражение без переменных (подзапросы также не допускаются). Тип данных этого выражения должен соответствовать типу данных домена. Если значение по умолчанию не указано, им будет значение NULL.</para>
+
+       <para>Значение по умолчанию будет использоваться в любой операции добавления строк, в которой не задано значение для этого столбца. Если значение по умолчанию установлено для конкретного столбца, оно будет переопределять значение по умолчанию, связанное с доменом. В свою очередь, значение по умолчанию для домена переопределяет любое значение по умолчанию, связанное с нижележащим типом данных.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>CONSTRAINT <replaceable class="parameter">имя_ограничения</replaceable></literal></term>
+      <listitem>
+       <para>Имя ограничения. Если не указано явно, имя будет сгенерировано системой.</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>NOT NULL</literal></term>
+      <listitem>
+       <para>Значения этого домена будут отличны от NULL (но см. замечания ниже).</para>
+      </listitem>
+     </varlistentry>
+
+     <varlistentry>
+      <term><literal>NULL</literal></term>
+      <listitem>
+       <para>Этот домен может содержать значение NULL. Это свойство домена по умолчанию.</para>
+
+       <para>Это предложение предназначено только для совместимости с нестандартными базами данных SQL. Использовать его в новых приложениях не рекомендуется.</para>
+      </listitem>
+     </varlistentry>
+
+   <varlistentry>
+    <term><literal>CHECK (<replaceable class="parameter">выражение</replaceable>)</literal></term>
+    <listitem>
+     <para>Предложения <literal>CHECK</literal> задают ограничения целостности или проверки, которым должны удовлетворять значения домена. Каждое ограничение должно представлять собой выражение, выдающее результат типа Boolean. Проверяемое значение в этом выражении обозначается ключевым словом <literal>VALUE</literal>. Если выражение выдаёт FALSE, сообщается об ошибке и приведение значения к типу домена запрещается.</para>
+
+     <para>В настоящее время выражения <literal>CHECK</literal> не могут содержать переменные, кроме <literal>VALUE</literal>, и подзапросы.</para>
+
+     <para>Когда для домена задано несколько ограничений <literal>CHECK</literal>, они будут проверяться в алфавитном порядке имён. (До версии 9.5 в <productname>PostgreSQL</productname> не было установлено никакого определённого порядка обработки ограничений <literal>CHECK</literal>.)</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Ограничения домена, в частности <literal>NOT NULL</literal>, проверяются при преобразовании значения к типу домена. Однако из столбца, который номинально имеет тип домена, всё же можно прочитать NULL, несмотря на такое ограничение. Например, это может происходить в запросе внешнего соединения, если столбец домена окажется в обнуляемой стороне внешнего соединения. Более тонкий пример: <programlisting>INSERT INTO tab (domcol) VALUES ((SELECT domcol FROM tab WHERE false));</programlisting> Пустой скалярный вложенный SELECT выдаст значение NULL, типом которого будет считаться домен, так что к этому значению не будут применены дополнительные проверки ограничений и строка будет успешно добавлена.</para>
+
+  <para>Избежать таких проблем очень сложно, так как в SQL вообще предполагается, что значение NULL является подходящим для любого типа данных. Таким образом, лучше всего разрабатывать ограничения так, чтобы значения NULL допускались, а затем при необходимости применять ограничения <literal>NOT NULL</literal> к столбцам доменного типа, а не непосредственно к самому этому типу.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>В этом примере создаётся тип данных <type>us_postal_code</type> (почтовый индекс США), который затем используется в определении таблицы. Для проверки значения на соответствие формату почтовых индексов США применяется проверка с регулярными выражениями: <programlisting>CREATE DOMAIN us_postal_code AS TEXT
+CHECK(
+   VALUE ~ '^\d{5}$'
+OR VALUE ~ '^\d{5}-\d{4}$'
+);
+
+CREATE TABLE us_snail_addy (
+  address_id SERIAL PRIMARY KEY,
+  street1 TEXT NOT NULL,
+  street2 TEXT,
+  street3 TEXT,
+  city TEXT NOT NULL,
+  postal us_postal_code NOT NULL
+);</programlisting></para>
+ </refsect1>
+
+ <refsect1 id="sql-createdomain-compatibility">
+  <title>Совместимость</title>
+
+  <para>Команда <command>CREATE DOMAIN</command> соответствует стандарту SQL.</para>
+ </refsect1>
+
+ <refsect1 id="sql-createdomain-see-also">
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-alterdomain"/></member>
+   <member><xref linkend="sql-dropdomain"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

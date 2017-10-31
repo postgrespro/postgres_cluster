@@ -1,0 +1,81 @@
+<!--
+doc/src/xml/ref/drop_tablespace.xml
+&productname; documentation
+-->
+
+<refentry id="sql-droptablespace">
+ <indexterm zone="sql-droptablespace"><primary>DROP TABLESPACE</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>DROP TABLESPACE</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>DROP TABLESPACE</refname>
+  <refpurpose>удалить табличное пространство</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>DROP TABLESPACE [ IF EXISTS ] <replaceable class="parameter">имя</replaceable></synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>DROP TABLESPACE</command> удаляет табличное пространство из системы.</para>
+
+  <para>Удалить табличное пространство может только его владелец или суперпользователь. Перед удалением его необходимо очистить от всех объектов базы данных. Даже если в текущей базе данных не будет ни одного объекта, находящегося в этом пространстве, в нём вполне могут оставаться объекты других баз данных. Кроме того, если табличное пространство указано в списке <xref linkend="guc-temp-tablespaces"/> любого активного сеанса, команда <command>DROP</command> может завершиться ошибкой, если в этом пространстве окажутся временные файлы.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Параметры</title>
+
+  <variablelist>
+
+   <varlistentry>
+    <term><literal>IF EXISTS</literal></term>
+    <listitem>
+     <para>Не считать ошибкой, если табличное пространство не существует. В этом случае будет выдано замечание.</para>
+    </listitem>
+   </varlistentry>
+
+   <varlistentry>
+    <term><replaceable class="parameter">имя</replaceable></term>
+    <listitem>
+     <para>Имя табличного пространства.</para>
+    </listitem>
+   </varlistentry>
+  </variablelist>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+   <para><command>DROP TABLESPACE</command> не может быть выполнена в блоке транзакции.</para>
+ </refsect1>
+
+
+ <refsect1>
+  <title>Примеры</title>
+
+  <para>Удаление табличного пространства <literal>mystuff</literal> из системы: <programlisting>DROP TABLESPACE mystuff;</programlisting></para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para><command>DROP TABLESPACE</command> является расширением <productname>&productname;</productname>.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>См. также</title>
+
+  <simplelist type="inline">
+   <member><xref linkend="sql-createtablespace"/></member>
+   <member><xref linkend="sql-altertablespace"/></member>
+  </simplelist>
+ </refsect1>
+
+</refentry>

@@ -1,0 +1,50 @@
+<!-- doc/src/xml/ref/set_constraints.xml -->
+<refentry id="sql-set-constraints">
+ <indexterm zone="sql-set-constraints"><primary>SET CONSTRAINTS</primary></indexterm>
+
+ <refmeta>
+  <refentrytitle>SET CONSTRAINTS</refentrytitle>
+  <manvolnum>7</manvolnum>
+  <refmiscinfo>Операторы языка SQL</refmiscinfo>
+ </refmeta>
+
+ <refnamediv>
+  <refname>SET CONSTRAINTS</refname>
+  <refpurpose>установить время проверки ограничений для текущей транзакции</refpurpose>
+ </refnamediv>
+
+ <refsynopsisdiv>
+<synopsis>SET CONSTRAINTS { ALL | <replaceable class="parameter">имя</replaceable> [, ...] } { DEFERRED | IMMEDIATE }</synopsis>
+ </refsynopsisdiv>
+
+ <refsect1>
+  <title>Описание</title>
+
+  <para><command>SET CONSTRAINTS</command> определяет, когда будут проверяться ограничения в текущей транзакции. Ограничения <literal>IMMEDIATE</literal> проверяются в конце каждого оператора, а ограничения <literal>DEFERRED</literal> откладываются до фиксации транзакции. Режим <literal>IMMEDIATE</literal> или <literal>DEFERRED</literal> задаётся для каждого ограничения независимо.</para>
+
+  <para>При создании ограничение получает одну из следующих характеристик: <literal>DEFERRABLE INITIALLY DEFERRED</literal> (откладываемое, изначально отложенное), <literal>DEFERRABLE INITIALLY IMMEDIATE</literal> (откладываемое, изначально немедленное) или <literal>NOT DEFERRABLE</literal> (неоткладываемое). Третий вариант всегда подразумевает <literal>IMMEDIATE</literal> и на него команда <command>SET CONSTRAINTS</command> не влияет. Первые два варианта запускаются в каждой транзакции в указанном режиме, но их поведение можно изменить в рамках транзакции командой <command>SET CONSTRAINTS</command>.</para>
+
+  <para><command>SET CONSTRAINTS</command> со списком имён ограничений меняет режим только этих ограничений (все они должны быть откладываемыми). Имя любого ограничения можно дополнить схемой. Если имя схемы не указано, в поисках первого подходящего имени будет просматриваться текущий путь поиска схем. <command>SET CONSTRAINTS ALL</command> меняет режим всех откладываемых ограничений.</para>
+
+  <para>Когда <command>SET CONSTRAINTS</command> меняет режим ограничения с <literal>DEFERRED</literal> на <literal>IMMEDIATE</literal>, новый режим начинает действовать в обратную сторону: все изменения данных, ожидающие проверки в конце транзакции, вместо этого проверяются в момент выполнения команды <command>SET CONSTRAINTS</command>. Если какое-либо ограничение нарушается, при выполнении <command>SET CONSTRAINTS</command> происходит ошибка (и режим проверки не меняется). Таким образом, с помощью <command>SET CONSTRAINTS</command> можно принудительно проверить ограничения в определённом месте транзакции.</para>
+
+  <para>В настоящее время это распространяется только на ограничения <literal>UNIQUE</literal>, <literal>PRIMARY KEY</literal>, <literal>REFERENCES</literal> (внешний ключ) и <literal>EXCLUDE</literal>. Ограничения <literal>NOT NULL</literal> и <literal>CHECK</literal> всегда проверяются немедленно в момент добавления или изменения строки (<emphasis>не</emphasis> в конце оператора). Ограничения уникальности и ограничения-исключения, объявленные без указания <literal>DEFERRABLE</literal>, так же проверяются немедленно.</para>
+
+  <para>Срабатывание триггеров, объявленных как <quote>триггеры ограничений</quote> так же зависит от этой команды &mdash; они срабатывают в момент, когда должно проверяться соответствующее ограничение.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Замечания</title>
+
+  <para>Так как <productname>&productname;</productname> не требует, чтобы имена ограничений были уникальны в схеме (достаточно уникальности в таблице), возможно, что для заданного имени найдётся несколько соответствующих ограничений. В этом случае <command>SET CONSTRAINTS</command> подействует на все эти ограничения. Для имён без указания схемы, её действие будет распространяться только на ограничение(я), найденное в первой из схем; другие схемы просматриваться не будут.</para>
+
+  <para>Эта команда меняет поведение ограничений только в текущей транзакции. При выполнении этой команды вне блока транзакции выдаётся предупреждение и больше ничего не происходит.</para>
+ </refsect1>
+
+ <refsect1>
+  <title>Совместимость</title>
+
+  <para>Эта команда реализует поведение, описанное в стандарте SQL, с одним исключением — в <productname>&productname;</productname> она не влияет на проверку ограничений <literal>NOT NULL</literal> и <literal>CHECK</literal>. Кроме того, <productname>&productname;</productname> проверяет неоткладываемые ограничения уникальности немедленно, а не в конце оператора, как предлагает стандарт.</para>
+
+ </refsect1>
+</refentry>

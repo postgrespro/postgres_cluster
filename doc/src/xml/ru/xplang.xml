@@ -1,0 +1,89 @@
+<!-- doc/src/xml/xplang.xml -->
+
+ <chapter id="xplang">
+  <title>Процедурные языки</title>
+
+  <indexterm zone="xplang"><primary>процедурный язык</primary></indexterm>
+
+  <para><productname>&productname;</productname> позволяет разрабатывать пользовательские функции не только на SQL и C, но и на других языках. Эти языки в целом называются <firstterm>процедурными языками</firstterm> (<acronym>PL</acronym>, Procedural Language). Если функция написана на процедурном языке, сервер баз данных сам по себе не знает, как интерпретировать её исходный текст. Вместо этого он передаёт эту задачу специальному обработчику, понимающему данный язык. Обработчик может либо выполнить всю работу по разбору, синтаксическому анализу, выполнению кода и т. д., либо действовать как <quote>прослойка</quote> между <productname>&productname;</productname> и внешним исполнителем языка программирования. Сам обработчик представляет собой функцию на языке C, скомпилированную в виде разделяемого объекта и загружаемую по требованию, как и любая другая функция на C.</para>
+
+  <para>В настоящее время стандартный дистрибутив <productname>&productname;</productname> включает четыре процедурных языка: <application>PL/pgSQL</application> (<xref linkend="plpgsql"/>), <application>PL/Tcl</application> (<xref linkend="pltcl"/>), <application>PL/Perl</application> (<xref linkend="plperl"/>) и <application>PL/Python</application> (<xref linkend="plpython"/>). Существуют и другие процедурные языки, поддержка которых не включена в базовый дистрибутив. Информацию о них можно найти в <xref remap="6" linkend="external-projects"/>. Кроме того, пользователи могут реализовать и другие языки; основы разработки нового процедурного языка рассматриваются в <xref remap="6" linkend="plhandler"/>.</para>
+
+  <sect1 id="xplang-install">
+   <title>Установка процедурных языков</title>
+
+   <para>Прежде всего, процедурный язык должен быть <quote>установлен</quote> в каждую базу данных, где он будет использоваться. Но процедурные языки, устанавливаемые в базу данных <literal>template1</literal>, автоматически становятся доступными во всех впоследствии создаваемых базах, так как их определения в <literal>template1</literal> будут скопированы командой <command>CREATE DATABASE</command>. Таким образом, администратор баз данных может выбрать, какие языки будут доступны в определённых базах данных, и при желании сделать некоторые языки доступными по умолчанию.</para>
+
+   <para>Для языков, включённых в стандартный дистрибутив, достаточно выполнить команду <command>CREATE EXTENSION</command> <replaceable>имя_языка</replaceable>, чтобы установить язык в текущую базу данных. Чтобы сделать это из командной строки оболочки, также можно воспользоваться программой <xref linkend="app-createlang"/>. Например, чтобы установить в базу данных <literal>template1</literal> язык <application>PL/Perl</application>, выполните: <programlisting>createlang plperl template1</programlisting> Описанная ниже ручная процедура рекомендуется только для установки языков, не упакованных в виде расширений.</para>
+
+   <procedure>
+    <title>Установка процедурного языка вручную</title>
+
+    <para>Процедурный язык устанавливается в базу данных в пять этапов, и выполнять их должен администратор баз данных. В большинстве случаев необходимые команды SQL следует упаковать в виде установочного скрипта <quote>расширения</quote>, чтобы их можно было выполнить, воспользовавшись командой <command>CREATE EXTENSION</command>.</para>
+
+    <step performance="required" id="xplang-install-cr1">
+     <para>Разделяемый объект для обработчика языка должен быть скомпилирован и установлен в соответствующий каталог библиотек. Это в принципе не отличается от сборки и установки дополнительных модулей с обычными функциями на языке C; см. <xref remap="4" linkend="dfunc"/>. Часто обработчик языка зависит от внешней библиотеки, в которой собственно реализован исполнитель языка программирования; в таких случаях нужно установить и эту библиотеку.</para>
+    </step>
+
+    <step performance="required" id="xplang-install-cr2">
+     <para>Обработчик должен быть объявлен командой <synopsis>
+CREATE FUNCTION <replaceable>имя_функции_обработчика</replaceable>()
+    RETURNS language_handler
+    AS '<replaceable>путь-к-разделяемому-объекту</replaceable>'
+    LANGUAGE C;
+</synopsis> Специальный тип возврата <type>language_handler</type> говорит СУБД, что эта функция не возвращает какой-либо определённый тип данных <acronym>SQL</acronym>, и значит её нельзя использовать непосредственно в операторах <acronym>SQL</acronym>.</para>
+    </step>
+
+    <step performance="optional" id="xplang-install-cr3">
+     <para>Дополнительно обработчик языка может предоставить функцию обработки <quote>внедрённого кода</quote>, которая будет выполнять анонимные блоки кода (команды <xref linkend="sql-do"/>), написанные на этом языке. Если для языка есть обработчик внедрённого кода, объявите его такой командой: <synopsis>
+CREATE FUNCTION <replaceable>имя_обработчика_внедрённого_кода</replaceable>(internal)
+    RETURNS void
+    AS '<replaceable>путь-к-разделяемому-объекту</replaceable>'
+    LANGUAGE C;
+</synopsis></para>
+    </step>
+
+    <step performance="optional" id="xplang-install-cr4">
+     <para>Кроме того, обработчик языка может предоставить функцию <quote>проверки</quote>, которая будет проверять корректность определения функции, собственно не выполняя её. Функция проверки, если она существует, вызывается командой <command>CREATE FUNCTION</command>. Если такая функция для языка определена, объявите её такой командой: <synopsis>
+CREATE FUNCTION <replaceable>имя_функции_проверки</replaceable>(oid)
+    RETURNS void
+    AS '<replaceable>путь-к-разделяемому-объекту</replaceable>'
+    LANGUAGE C STRICT;
+</synopsis></para>
+    </step>
+
+    <step performance="required" id="xplang-install-cr5">
+     <para>Наконец, процедурный язык должен быть объявлен командой <synopsis>
+CREATE <optional>TRUSTED</optional> <optional>PROCEDURAL</optional> LANGUAGE <replaceable>имя-языка</replaceable>
+    HANDLER <replaceable>имя_функции_обработчика</replaceable>
+    <optional>INLINE <replaceable>имя_обработчика_внедрённого_кода</replaceable></optional>
+    <optional>VALIDATOR <replaceable>имя_функции_проверки</replaceable></optional> ;
+</synopsis> Необязательное ключевое слово <literal>TRUSTED</literal> (доверенный) указывает, что язык не предоставляет пользователю доступ к данным, которого он не имел бы без него. Доверенные языки предназначены для обычных пользователей баз данных, не имеющих прав суперпользователя, и их можно использовать для безопасного создания функций и триггеров. Так как функции PL выполняются внутри сервера баз данных, флаг <literal>TRUSTED</literal> следует устанавливать только для тех языков, которые не позволяют обращаться к внутренним механизмам сервера или файловой системе. Языки <application>PL/pgSQL</application>, <application>PL/Tcl</application> и <application>PL/Perl</application> считаются доверенными; языки <application>PL/TclU</application>, <application>PL/PerlU</application> и <application>PL/PythonU</application> предоставляют неограниченную функциональность и их <emphasis>не</emphasis> следует помечать как доверенные.</para>
+    </step>
+   </procedure>
+
+   <para><xref remap="6" linkend="xplang-install-example"/> показывает, как выполняется процедура ручной установки для языка <application>PL/Perl</application>.</para>
+
+   <example id="xplang-install-example">
+    <title>Установка <application>PL/Perl</application> вручную</title>
+
+     <para>Следующая команда говорит серверу баз данных, где найти разделяемый объект для функции-обработчика языка <application>PL/Perl</application>: <programlisting>CREATE FUNCTION plperl_call_handler() RETURNS language_handler AS
+    '$libdir/plperl' LANGUAGE C;</programlisting></para>
+
+     <para>Для <application>PL/Perl</application> реализованы обработчик внедрённого кода и функция проверки, так что их мы тоже объявим: <programlisting>CREATE FUNCTION plperl_inline_handler(internal) RETURNS void AS
+    '$libdir/plperl' LANGUAGE C;
+
+CREATE FUNCTION plperl_validator(oid) RETURNS void AS
+    '$libdir/plperl' LANGUAGE C STRICT;</programlisting></para>
+
+     <para>Следующая команда: <programlisting>CREATE TRUSTED PROCEDURAL LANGUAGE plperl
+    HANDLER plperl_call_handler
+    INLINE plperl_inline_handler
+    VALIDATOR plperl_validator;</programlisting> определяет, что ранее объявленные функции должны вызываться для функций и триггерных процедур с атрибутом языка <literal>plperl</literal>.</para>
+  </example>
+
+   <para>В стандартной инсталляции <productname>&productname;</productname> обработчик языка <application>PL/pgSQL</application> уже собран и установлен в каталог <quote>библиотек</quote>; более того, сам язык <application>PL/pgSQL</application> установлен во всех базах данных. Если при сборке сконфигурирована поддержка <application>Tcl</application>, то обработчики для <application>PL/Tcl</application> и <application>PL/TclU</application> собираются и устанавливаются в каталог библиотек, но сам язык по умолчанию в базы данных не устанавливается. Подобным образом, если сконфигурирована поддержка Perl, собираются и устанавливаются обработчики <application>PL/Perl</application> и <application>PL/PerlU</application>, а при включении поддержки Python устанавливается обработчик <application>PL/PythonU</application>, но в базы данных эти языки по умолчанию не устанавливаются.</para>
+
+  </sect1>
+
+</chapter>
