@@ -565,6 +565,9 @@
 /* PostgreSQL version as a number */
 #define PG_VERSION_NUM 100000
 
+/* This version contains patches for pg_shardman */
+#define PG_SHARDMAN
+
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "postgresql"
 

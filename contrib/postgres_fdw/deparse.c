@@ -45,6 +45,8 @@
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
 #include "commands/defrem.h"
+#include "commands/copy.h"
+#include "mb/pg_wchar.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/plannodes.h"
@@ -3171,4 +3173,108 @@ get_relation_column_alias_ids(Var *node, RelOptInfo *foreignrel,
 
 	/* Shouldn't get here */
 	elog(ERROR, "unexpected expression in subquery output");
+}
+
+/*
+ * Deparse COPY FROM into given buf.
+ */
+void
+deparseCopyFromSql(StringInfo buf, Relation rel, CopyState cstate,
+				   const char *dest_relname)
+{
+	ListCell *cur;
+
+	appendStringInfoString(buf, "COPY ");
+	if (dest_relname == NULL)
+		deparseRelation(buf, rel);
+	else
+		appendStringInfoString(buf, dest_relname);
+
+	if (cstate->binary)
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("cannot copy to postgres_fdw table \"%s\" in binary format ",
+						RelationGetRelationName(rel))));
+	}
+
+	/* deparse column names */
+	if (cstate->attnumlist != NIL)
+	{
+		bool first = true;
+
+		appendStringInfoString(buf, " (");
+		foreach(cur, cstate->attnumlist)
+		{
+			int attnum = lfirst_int(cur);
+			char *attname;
+
+			if (!first)
+				appendStringInfoString(buf, ", ");
+			first = false;
+
+			attname = get_relid_attribute_name(rel->rd_id, attnum);
+			appendStringInfoString(buf, quote_identifier(attname));
+		}
+		appendStringInfoString(buf, " )");
+	}
+
+	appendStringInfoString(buf, " FROM STDIN WITH (");
+	if (cstate->csv_mode)
+	{
+		appendStringInfoString(buf, " FORMAT csv ");
+		appendStringInfo(buf, ", QUOTE '%c'", *(cstate->quote));
+		appendStringInfo(buf, ", ESCAPE '%c'", *(cstate->escape));
+		if (cstate->force_notnull != NIL)
+		{
+			bool first = true;
+
+			appendStringInfoString(buf, ", FORCE_NOT_NULL (");
+			foreach(cur, cstate->force_notnull)
+			{
+				char *attname = strVal(lfirst(cur));
+
+				if (!first)
+					appendStringInfoString(buf, ", ");
+				first = false;
+
+				appendStringInfoString(buf, quote_identifier(attname));
+			}
+			appendStringInfoString(buf, " )");
+		}
+		if (cstate->force_null != NIL)
+		{
+			bool first = true;
+
+			appendStringInfoString(buf, ", FORCE_NULL (");
+			foreach(cur, cstate->force_null)
+			{
+				char *attname = strVal(lfirst(cur));
+
+				if (!first)
+					appendStringInfoString(buf, ", ");
+				first = false;
+
+				appendStringInfoString(buf, quote_identifier(attname));
+			}
+			appendStringInfoString(buf, " )");
+		}
+	}
+	else
+	{
+		appendStringInfoString(buf, " FORMAT text ");
+	}
+
+	appendStringInfo(buf, ", OIDS %d", cstate->oids);
+	appendStringInfo(buf, ", FREEZE %d", cstate->freeze);
+	appendStringInfo(buf, ", DELIMITER '%c'", *(cstate->delim));
+	appendStringInfo(buf, ", NULL %s", quote_literal_cstr(cstate->null_print));
+	/*
+	 * cstate->line_buf is passed to us already converted to this server
+	 * encoding.
+	 */
+	appendStringInfo(buf, ", ENCODING %s",
+					 quote_literal_cstr(
+						 pg_encoding_to_char(GetDatabaseEncoding())));
+	appendStringInfoChar(buf, ')');
 }
