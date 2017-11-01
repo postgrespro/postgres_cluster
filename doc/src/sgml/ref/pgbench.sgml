@@ -1322,7 +1322,7 @@ END;
    serialization/deadlock failures within the interval (see
    <xref linkend="failures-and-retries" endterm="failures-and-retries-title">
    for more information). A transaction is counted into the interval when it was
-   committed. The fields in the end, <replaceable>lag_sum</>,
+   committed. The fields near the end, <replaceable>lag_sum</>,
    <replaceable>lag_2_sum</>, <replaceable>min_lag</>, and
    <replaceable>max_lag</>, are only present if the <option>--rate</> option is
    used. The next field, <replaceable>skipped_transactions</>, is only
