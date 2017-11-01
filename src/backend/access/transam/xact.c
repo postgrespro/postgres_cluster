@@ -1855,6 +1855,7 @@ typedef struct {
 	void *TriggerState;
 	void *SPIState;
 	void *SnapshotState;
+	void *PredicateState;
 	struct TransInvalidationInfo* InvalidationInfo;
 
 	List *on_commit_actions;
@@ -3530,6 +3531,7 @@ void SuspendTransaction(void)
 		sus->TopTransactionStateData = TopTransactionStateData;
 
 		sus->SnapshotState = SuspendSnapshot(); /* only before the resource-owner stuff */
+		sus->PredicateState = SuspendPredicate();
 		
 		if (HasCatcacheInvalidationMessages()) 
 		{
@@ -3652,6 +3654,7 @@ bool ResumeTransaction(void)
 		TopTransactionResourceOwner = sus->TopTransactionResourceOwner;
 
 		ResumeSnapshot(sus->SnapshotState); /* only after the resource-owner stuff */
+		ResumePredicate(sus->PredicateState);
 		ResumeInvalidationInfo(sus->InvalidationInfo);
 		if (xactHasCatcacheInvalidationMessages) 
 		{
