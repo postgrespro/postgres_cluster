@@ -472,10 +472,10 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
         transaction scheduled start time, not the actual transaction beginning
         time. Thus, the latency also includes the average schedule lag time. If
         any transactions have been rolled back and retried after a
-        serialization/deadlock failure since the last report, the report
+        serialization/deadlock error since the last report, the report
         includes the number of such transactions and the sum of all retries. Use
         the <option>--max-tries</> to enable transactions retries after
-        serialization/deadlock failures.
+        serialization/deadlock errors.
        </para>
        <note>
         <para>
@@ -483,7 +483,7 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
          as failed if any of its transactions ended with a
          serialization/deadlock failure. The run of this script is reported as
          retried if any of its transactions was retried after a
-         serialization/deadlock failure. The total sum of retries includes the
+         serialization/deadlock error. The total sum of retries includes the
          retries for all transactions in this script.
         </para>
        </note>
@@ -639,7 +639,7 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
       <listitem>
        <para>
         Set the maximum number of tries for transactions with
-        serialization/deadlock failures. The default is 1.
+        serialization/deadlock errors. The default is 1.
        </para>
 
        <note>
@@ -655,8 +655,8 @@ pgbench <optional> <replaceable>options</> </optional> <replaceable>dbname</>
        <note>
         <para>
          Transactions that span over more than one script are not rolled back
-         and will not be retried in case of a failure. In such cases, the script
-         in which the failure occurred is reported as failed.
+         and will not be retried in case of an error. In such cases, the script
+         in which the error occurred is reported as failed.
         </para>
        </note>
       </listitem>
@@ -1234,7 +1234,7 @@ END;
    the <replaceable>time</> for a skipped transaction will be reported as
    <literal>skipped</>.
    <replaceable>serialization_retries</> and <replaceable>deadlock_retries</>
-   are the sums of all the retries after the corresponding failures during the
+   are the sums of all the retries after the corresponding errors during the
    current script execution. They are only present when the maximum number of
    tries for transactions is more than 1 (<option>--max-tries</>).
    If the transaction ended with a serialization/deadlock failure, its
@@ -1333,7 +1333,7 @@ END;
    <replaceable>serialization_retries</>, and <replaceable>deadlock_retries</>
    fields are only present if the maximum number of tries for transactions is
    more than 1 (<option>--max-tries</>). They report the number of retried
-   transactions and the sum of all the retries after the corresponding failures
+   transactions and the sum of all the retries after the corresponding errors
    within the interval.
   </para>
 
@@ -1346,7 +1346,7 @@ END;
     statistics is increased by one, regardless of the number of retried
     transactions. However, the <replaceable>serialization_retries</> and
     <replaceable>deadlock_retries</> include the sum of all retries after the
-    corresponding failures for all transactions in this script.
+    corresponding errors for all transactions in this script.
    </para>
   </note>
 
@@ -1384,14 +1384,14 @@ END;
      </listitem>
      <listitem>
        <para>
-         The number of serialization and deadlock failures that did not cause a
-         retry. See <xref linkend="failures-and-retries"
+         The number of serialization and deadlock failures. See
+         <xref linkend="failures-and-retries"
          endterm="failures-and-retries-title"> for more information.
        </para>
      </listitem>
      <listitem>
        <para>
-         The number of retries after a serialization/deadlock failure in this
+         The number of retries after a serialization/deadlock error in this
          statement; they are reported as serialization/deadlock retries,
          respectively.
        </para>
@@ -1513,7 +1513,7 @@ script statistics:
   <title id="failures-and-retries-title">Serialization/Deadlock Failures and Retries</title>
 
   <para>
-   Transactions with serialization or deadlock failures are rolled back and
+   Transactions with serialization or deadlock errors are rolled back and
    repeated until they complete successfully or reach the maximum number of
    tries specified by the <option>--max-tries</> option. If the last transaction
    run fails, this transaction will be reported as failed.
@@ -1521,8 +1521,8 @@ script statistics:
 
   <para>
    Transactions that span over more than one script are not rolled back and will
-   not be retried in case of a failure. In such cases, the script in which the
-   failure occurred is reported as failed.
+   not be retried in case of an error. In such cases, the script in which the
+   error occurred is reported as failed.
   </para>
 
   <para>
@@ -1536,7 +1536,7 @@ script statistics:
    If the total number of retried transactions is non-zero, the main report also
    contains the statistics related to retries: the total number of retried
    transactions, the total number of retries, and the number of retries after
-   each kind of failure (use option <option>--max-tries</> to make it possible).
+   each kind of error (use option <option>--max-tries</> to make it possible).
    The per-statement report inherits all columns from the main report.
   </para>
   <note>
@@ -1544,7 +1544,7 @@ script statistics:
     If a custom script contains multiple transactions, its run is reported as
     failed if any of its transactions ended with a serialization/deadlock
     failure. The run of this script is reported as retried if any of its
-    transactions was retried after a serialization/deadlock failure. The total
+    transactions was retried after a serialization/deadlock error. The total
     sum of retries includes the retries for all transactions in this script.
    </para>
   </note>
