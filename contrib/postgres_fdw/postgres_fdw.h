@@ -117,6 +117,8 @@ extern void reset_transmission_modes(int nestlevel);
 
 /* in connection.c */
 extern PGconn *GetConnection(UserMapping *user, bool will_prep_stmt);
+extern PGconn *GetConnectionCopyFrom(UserMapping *user, bool will_prep_stmt,
+									 bool **copy_from_started);
 extern void ReleaseConnection(PGconn *conn);
 extern unsigned int GetCursorNumber(PGconn *conn);
 extern unsigned int GetPrepStmtNumber(PGconn *conn);
@@ -178,7 +180,8 @@ extern void deparseSelectStmtForRel(StringInfo buf, PlannerInfo *root,
 						List *remote_conds, List *pathkeys, bool is_subquery,
 						List **retrieved_attrs, List **params_list);
 extern const char *get_jointype_name(JoinType jointype);
-extern void deparseCopyFromSql(StringInfo buf, Relation rel, CopyState cstate);
+extern void deparseCopyFromSql(StringInfo buf, Relation rel, CopyState cstate,
+							   const char *dest_relname);
 
 /* in shippable.c */
 extern bool is_builtin(Oid objectId);

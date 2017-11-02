@@ -62,6 +62,7 @@ typedef struct ConnCacheEntry
 	bool		invalidated;	/* true if reconnect is pending */
 	uint32		server_hashvalue;	/* hash value of foreign server OID */
 	uint32		mapping_hashvalue;	/* hash value of user mapping OID */
+	bool		copy_from_started;	/* COPY FROM in progress on this conn */
 } ConnCacheEntry;
 
 /*
@@ -114,7 +115,8 @@ static bool pgfdw_get_cleanup_result(PGconn *conn, TimestampTz endtime,
  * (not even on error), we need this flag to cue manual cleanup.
  */
 PGconn *
-GetConnection(UserMapping *user, bool will_prep_stmt)
+GetConnectionCopyFrom(UserMapping *user, bool will_prep_stmt,
+					  bool **copy_from_started)
 {
 	bool		found;
 	ConnCacheEntry *entry;
@@ -200,6 +202,7 @@ GetConnection(UserMapping *user, bool will_prep_stmt)
 		entry->have_error = false;
 		entry->changing_xact_state = false;
 		entry->invalidated = false;
+		entry->copy_from_started = false;
 		entry->server_hashvalue =
 			GetSysCacheHashValue1(FOREIGNSERVEROID,
 								  ObjectIdGetDatum(server->serverid));
@@ -222,7 +225,15 @@ GetConnection(UserMapping *user, bool will_prep_stmt)
 	/* Remember if caller will prepare statements */
 	entry->have_prep_stmt |= will_prep_stmt;
 
+	if (copy_from_started)
+		*copy_from_started = &(entry->copy_from_started);
 	return entry->conn;
+}
+
+PGconn *
+GetConnection(UserMapping *user, bool will_prep_stmt)
+{
+	return GetConnectionCopyFrom(user, will_prep_stmt, NULL);
 }
 
 /*

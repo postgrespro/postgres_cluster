@@ -3179,10 +3179,14 @@ get_relation_column_alias_ids(Var *node, RelOptInfo *foreignrel,
  * Deparse COPY FROM
  */
 void
-deparseCopyFromSql(StringInfo buf, Relation rel, CopyState cstate)
+deparseCopyFromSql(StringInfo buf, Relation rel, CopyState cstate,
+				   const char *dest_relname)
 {
 	appendStringInfoString(buf, "COPY ");
-	deparseRelation(buf, rel);
+	if (dest_relname == NULL)
+		deparseRelation(buf, rel);
+	else
+		appendStringInfoString(buf, dest_relname);
 	appendStringInfoString(buf, " FROM STDIN WITH (");
 
 	/* TODO: deparse column names */

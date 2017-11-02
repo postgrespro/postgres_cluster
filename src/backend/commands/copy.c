@@ -181,7 +181,7 @@ static bool CopyGetInt32(CopyState cstate, int32 *val);
 static void CopySendInt16(CopyState cstate, int16 val);
 static bool CopyGetInt16(CopyState cstate, int16 *val);
 static void InitForeignCopyFrom(EState *estate, ResultRelInfo *resultRelInfo,
-								CopyState cstate);
+								CopyState cstate, char *dest_relname);
 
 
 /*
@@ -2354,12 +2354,12 @@ CopyFrom(CopyState cstate)
 		/* If some partitions are foreign tables, init copy on remote end */
 		for (i = 0; i < num_partitions; i++)
 		{
-			InitForeignCopyFrom(estate, partitions + i, cstate);
+			InitForeignCopyFrom(estate, partitions + i, cstate, NULL);
 		}
 	}
 
 	/* If we are copying to foreign table, init it */
-	InitForeignCopyFrom(estate, resultRelInfo, cstate);
+	InitForeignCopyFrom(estate, resultRelInfo, cstate, NULL);
 
 	/*
 	 * It's more efficient to prepare a bunch of tuples for insertion, and
@@ -4727,7 +4727,7 @@ CreateCopyDestReceiver(void)
 }
 
 static void InitForeignCopyFrom(EState *estate, ResultRelInfo *resultRelInfo,
-								CopyState cstate)
+								CopyState cstate, char *dest_relname)
 {
 	if (resultRelInfo->ri_FdwRoutine)
 	{
@@ -4739,6 +4739,6 @@ static void InitForeignCopyFrom(EState *estate, ResultRelInfo *resultRelInfo,
 					 errmsg("FDW adapter for relation \"%s\" doesn't support COPY FROM",
 							RelationGetRelationName(resultRelInfo->ri_RelationDesc))));
 		resultRelInfo->ri_FdwRoutine->
-			BeginForeignCopyFrom(estate, resultRelInfo, cstate);
+			BeginForeignCopyFrom(estate, resultRelInfo, cstate, dest_relname);
 	}
 }
