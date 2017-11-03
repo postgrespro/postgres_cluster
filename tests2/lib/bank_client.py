@@ -159,14 +159,15 @@ class MtmClient(object):
     def status(self):
         while self.running:
             msg = yield from self.child_pipe.coro_recv()
-            if msg == 'status':
+            if msg == 'status' or msg == 'status_noclean':
                 serialized_aggs = []
 
                 for conn_id, conn_aggs in self.aggregates.items():
                     serialized_aggs.append({})
                     for aggname, agg in conn_aggs.items():
                         serialized_aggs[conn_id][aggname] = agg.as_dict()
-                        agg.clear_values()
+                        if msg == 'status':
+                            agg.clear_values()
 
                 yield from self.child_pipe.coro_send(serialized_aggs)
             else:
@@ -284,9 +285,14 @@ class MtmClient(object):
         self.evloop_process = multiprocessing.Process(target=self.run, args=())
         self.evloop_process.start()
 
-    def get_aggregates(self, _print=True):
-        self.parent_pipe.send('status')
+    def get_aggregates(self, _print=True, clean=True):
+        if clean:
+            self.parent_pipe.send('status')
+        else:
+            self.parent_pipe.send('status_noclean')
+
         resp = self.parent_pipe.recv()
+
         if _print:
             MtmClient.print_aggregates(resp)
         return resp

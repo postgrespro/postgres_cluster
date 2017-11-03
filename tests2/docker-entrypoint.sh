@@ -51,7 +51,7 @@ if [ "$1" = 'postgres' ]; then
 			listen_addresses='*' 
 			max_prepared_transactions = 100
 			synchronous_commit = on
-			fsync = off
+			fsync = on
 			wal_level = logical
 			max_worker_processes = 30
 			max_replication_slots = 10
@@ -62,11 +62,11 @@ if [ "$1" = 'postgres' ]; then
 			# log_statement = all
 
 			multimaster.max_nodes = 3
-			# multimaster.volkswagen_mode = 1
-			# multimaster.ignore_tables_without_pk = 1
 			multimaster.heartbeat_recv_timeout = 1100
 			multimaster.heartbeat_send_timeout = 250
-			multimaster.max_recovery_lag = 1000000000
+			multimaster.max_recovery_lag = 1GB
+			multimaster.min_recovery_lag = 10kB
+			multimaster.preserve_commit_order = off
 		EOF
 
 		if [ -n "$NODE_ID" ]; then

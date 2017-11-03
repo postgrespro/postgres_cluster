@@ -25,9 +25,6 @@ class RefereeTest(unittest.TestCase, TestHelper):
             '--build',
             '-d'])
 
-        # XXX: add normal wait here
-        time.sleep(TEST_SETUP_TIME)
-
         cls.client = MtmClient([
             "dbname=regression user=postgres host=127.0.0.1 port=15432",
             "dbname=regression user=postgres host=127.0.0.1 port=15433"
@@ -42,8 +39,6 @@ class RefereeTest(unittest.TestCase, TestHelper):
         print('tearDown')
         cls.client.stop()
 
-        time.sleep(TEST_STOP_DELAY)
-
         if not cls.client.is_data_identic():
             raise AssertionError('Different data on nodes')
 
@@ -55,7 +50,7 @@ class RefereeTest(unittest.TestCase, TestHelper):
 
     def setUp(self):
         warnings.simplefilter("ignore", ResourceWarning)
-        time.sleep(20)
+
         print('Start new test at ',datetime.datetime.utcnow())
 
     def tearDown(self):
@@ -64,7 +59,7 @@ class RefereeTest(unittest.TestCase, TestHelper):
     def test_node_crash(self):
         print('### test_node_crash ###')
 
-        aggs_failure, aggs = self.performFailure(CrashRecoverNode('node2'))
+        aggs_failure, aggs = self.performFailure(CrashRecoverNode('node2'), node_wait_for_commit=1)
 
         self.assertCommits(aggs_failure[:1])
         self.assertNoCommits(aggs_failure[1:])
@@ -77,7 +72,7 @@ class RefereeTest(unittest.TestCase, TestHelper):
     def test_partition_referee(self):
         print('### test_partition_referee ###')
 
-        aggs_failure, aggs = self.performFailure(SingleNodePartition('node2'))
+        aggs_failure, aggs = self.performFailure(SingleNodePartition('node2'), node_wait_for_commit=1)
 
         self.assertCommits(aggs_failure[:1])
         self.assertNoCommits(aggs_failure[1:])
@@ -89,7 +84,7 @@ class RefereeTest(unittest.TestCase, TestHelper):
     def test_double_failure_referee(self):
         print('### test_double_failure_referee ###')
 
-        aggs_failure, aggs = self.performFailure(SingleNodePartition('node2'))
+        aggs_failure, aggs = self.performFailure(SingleNodePartition('node2'), node_wait_for_commit=1)
 
         self.assertCommits(aggs_failure[:1])
         self.assertNoCommits(aggs_failure[1:])
@@ -98,7 +93,7 @@ class RefereeTest(unittest.TestCase, TestHelper):
         self.assertCommits(aggs)
         self.assertIsolation(aggs)
 
-        aggs_failure, aggs = self.performFailure(SingleNodePartition('node1'))
+        aggs_failure, aggs = self.performFailure(SingleNodePartition('node1'), node_wait_for_commit=0)
 
         self.assertNoCommits(aggs_failure[:1])
         self.assertCommits(aggs_failure[1:])
@@ -121,7 +116,7 @@ class RefereeTest(unittest.TestCase, TestHelper):
         self.assertCommits(aggs[1:])
         self.assertIsolation(aggs)
 
-        aggs_failure, aggs = self.performFailure(RestartNode('node2'))
+        aggs_failure, aggs = self.performFailure(RestartNode('node2'), node_wait_for_commit=1)
 
         self.assertNoCommits(aggs_failure)
         self.assertIsolation(aggs_failure)
@@ -133,7 +128,7 @@ class RefereeTest(unittest.TestCase, TestHelper):
         # need to start node1 to perform consequent tests
         docker_api = docker.from_env()
         docker_api.containers.get('node1').start()
-        time.sleep(35)
+        self.awaitCommit(0)
 
 
 if __name__ == '__main__':
