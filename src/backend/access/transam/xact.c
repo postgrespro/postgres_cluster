@@ -1856,6 +1856,7 @@ typedef struct {
 	void *SPIState;
 	void *SnapshotState;
 	void *PredicateState;
+	void *StorageState;
 	struct TransInvalidationInfo* InvalidationInfo;
 
 	List *on_commit_actions;
@@ -2197,19 +2198,16 @@ CommitTransaction(void)
 						 RESOURCE_RELEASE_AFTER_LOCKS,
 						 true, true);
 
-	if (!is_autonomous_transaction) 
-	{
-		/*
-		 * Likewise, dropping of files deleted during the transaction is best done
-		 * after releasing relcache and buffer pins.  (This is not strictly
-		 * necessary during commit, since such pins should have been released
-		 * already, but this ordering is definitely critical during abort.)  Since
-		 * this may take many seconds, also delay until after releasing locks.
-		 * Other backends will observe the attendant catalog changes and not
-		 * attempt to access affected files.
-		 */
-		smgrDoPendingDeletes(true);
-	}
+	/*
+	 * Likewise, dropping of files deleted during the transaction is best done
+	 * after releasing relcache and buffer pins.  (This is not strictly
+	 * necessary during commit, since such pins should have been released
+	 * already, but this ordering is definitely critical during abort.)  Since
+	 * this may take many seconds, also delay until after releasing locks.
+	 * Other backends will observe the attendant catalog changes and not
+	 * attempt to access affected files.
+	 */
+	smgrDoPendingDeletes(true);
 
 	AtCommit_Notify();
 	AtEOXact_GUC(true, s->gucNestLevel);
@@ -3532,7 +3530,8 @@ void SuspendTransaction(void)
 
 		sus->SnapshotState = SuspendSnapshot(); /* only before the resource-owner stuff */
 		sus->PredicateState = SuspendPredicate();
-		
+		sus->StorageState = SuspendStorage();
+
 		if (HasCatcacheInvalidationMessages()) 
 		{
 			ResetCatalogCaches();
@@ -3655,6 +3654,7 @@ bool ResumeTransaction(void)
 
 		ResumeSnapshot(sus->SnapshotState); /* only after the resource-owner stuff */
 		ResumePredicate(sus->PredicateState);
+		ResumeStorage(sus->StorageState);
 		ResumeInvalidationInfo(sus->InvalidationInfo);
 		if (xactHasCatcacheInvalidationMessages) 
 		{

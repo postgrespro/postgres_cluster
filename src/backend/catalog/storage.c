@@ -563,3 +563,15 @@ smgr_redo(XLogReaderState *record)
 	else
 		elog(PANIC, "smgr_redo: unknown op code %u", info);
 }
+
+void* SuspendStorage(void)
+{
+	PendingRelDelete* pending = pendingDeletes;
+	pendingDeletes = NULL;
+	return pending;
+}
+
+void ResumeStorage(void* ctx)
+{
+	pendingDeletes = (PendingRelDelete*)ctx;
+}
