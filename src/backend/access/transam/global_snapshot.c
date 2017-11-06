@@ -89,7 +89,7 @@ static HTAB *xid2status;
 static HTAB *gtid2xid;
 static DtmNodeState *local;
 static uint64 totalSleepInterrupts;
-static int	DtmVacuumDelay = 10;
+static int	DtmVacuumDelay = 2; /* sec */
 static bool DtmRecordCommits = 0;
 
 DtmCurrentTrans dtm_tx; // XXXX: make static
@@ -97,7 +97,7 @@ DtmCurrentTrans dtm_tx; // XXXX: make static
 static Snapshot DtmGetSnapshot(Snapshot snapshot);
 static TransactionId DtmGetOldestXmin(Relation rel, int flags);
 static bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
-static TransactionId DtmAdjustOldestXid(TransactionId xid);
+static void DtmAdjustOldestXid(void);
 static bool DtmDetectGlobalDeadLock(PGPROC *proc);
 static void DtmAddSubtransactions(DtmTransStatus * ts, TransactionId *subxids, int nSubxids);
 static char const *DtmGetName(void);
@@ -325,47 +325,58 @@ DtmTransactionListInsertAfter(DtmTransStatus * after, DtmTransStatus * ts)
  * is older than it more than DtmVacuumDelay.
  * If no such XID can be located, then return previously observed oldest XID
  */
-static TransactionId
-DtmAdjustOldestXid(TransactionId xid)
+static void
+DtmAdjustOldestXid()
 {
-	if (TransactionIdIsValid(xid))
+	DtmTransStatus *ts,
+				*prev = NULL;
+
+	timestamp_t cutoff_time = dtm_get_current_time() - DtmVacuumDelay * USEC;
+	int total = 0, deleted = 0;
+
+	SpinLockAcquire(&local->lock);
+
+	for (ts = local->trans_list_head; ts != NULL; ts = ts->next)
+		total++;
+
+	for (ts = local->trans_list_head; ts != NULL && ts->cid < cutoff_time; prev = ts, ts = ts->next)
 	{
-		DtmTransStatus *ts,
-				   *prev = NULL;
-		timestamp_t now = dtm_get_current_time();
-		timestamp_t cutoff_time = now - DtmVacuumDelay * USEC;
-
-		SpinLockAcquire(&local->lock);
-		ts = (DtmTransStatus *) hash_search(xid2status, &xid, HASH_FIND, NULL);
-		if (ts != NULL)
-		{
-			cutoff_time = ts->cid - DtmVacuumDelay * USEC;
-
-			for (ts = local->trans_list_head; ts != NULL && ts->cid < cutoff_time; prev = ts, ts = ts->next)
-			{
-				if (prev != NULL)
-					hash_search(xid2status, &prev->xid, HASH_REMOVE, NULL);
-			}
-		}
 		if (prev != NULL)
 		{
-			local->trans_list_head = prev;
-			local->oldest_xid = xid = prev->xid;
+			hash_search(xid2status, &prev->xid, HASH_REMOVE, NULL);
+			deleted++;
 		}
-		else
-		{
-			xid = local->oldest_xid;
-		}
-		SpinLockRelease(&local->lock);
 	}
-	return xid;
+
+	if (prev != NULL)
+		local->trans_list_head = prev;
+
+	if (ts != NULL)
+		local->oldest_xid = ts->xid;
+	else
+		local->oldest_xid = InvalidTransactionId;
+
+	SpinLockRelease(&local->lock);
+
+	// elog(LOG, "DtmAdjustOldestXid total=%d, deleted=%d, xid=%d, prev=%p, ts=%p", total, deleted, local->oldest_xid, prev, ts);
 }
 
 Snapshot
 DtmGetSnapshot(Snapshot snapshot)
 {
 	snapshot = PgGetSnapshotData(snapshot);
-	RecentGlobalDataXmin = RecentGlobalXmin = DtmAdjustOldestXid(RecentGlobalDataXmin);
+	// RecentGlobalDataXmin = RecentGlobalXmin = DtmAdjustOldestXid(RecentGlobalDataXmin);
+	SpinLockAcquire(&local->lock);
+
+	if (TransactionIdIsValid(local->oldest_xid) &&
+		TransactionIdPrecedes(local->oldest_xid, RecentGlobalXmin))
+		RecentGlobalXmin = local->oldest_xid;
+
+	if (TransactionIdIsValid(local->oldest_xid) &&
+		TransactionIdPrecedes(local->oldest_xid, RecentGlobalDataXmin))
+		RecentGlobalDataXmin = local->oldest_xid;
+
+	SpinLockRelease(&local->lock);
 	return snapshot;
 }
 
@@ -374,7 +385,16 @@ DtmGetOldestXmin(Relation rel, int flags)
 {
 	TransactionId xmin = PgGetOldestXmin(rel, flags);
 
-	xmin = DtmAdjustOldestXid(xmin);
+	// xmin = DtmAdjustOldestXid(xmin);
+
+	SpinLockAcquire(&local->lock);
+
+	if (TransactionIdIsValid(local->oldest_xid) &&
+		TransactionIdPrecedes(local->oldest_xid, xmin))
+		xmin = local->oldest_xid;
+
+	SpinLockRelease(&local->lock);
+
 	return xmin;
 }
 
@@ -670,6 +690,9 @@ DtmLocalCommitPrepared(DtmCurrentTrans * x)
 		DTM_TRACE((stderr, "Global transaction %u(%s) is precommitted\n", x->xid, gtid));
 	}
 	SpinLockRelease(&local->lock);
+
+	DtmAdjustOldestXid();
+	// elog(LOG, "DtmLocalCommitPrepared %d", x->xid);
 }
 
 /*
@@ -717,6 +740,9 @@ DtmLocalCommit(DtmCurrentTrans * x)
 		DTM_TRACE((stderr, "Local transaction %u is committed at %lu\n", x->xid, x->cid));
 	}
 	SpinLockRelease(&local->lock);
+
+	DtmAdjustOldestXid();
+	// elog(LOG, "DtmLocalCommit %d", x->xid);
 }
 
 /*
