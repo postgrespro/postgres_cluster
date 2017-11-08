@@ -170,7 +170,7 @@ SubTransGetTopmostTransaction(TransactionId xid)
 		 * data structure that could lead to an infinite loop, so exit.
 		 */
 		if (!TransactionIdPrecedes(parentXid, previousXid))
-			elog(ERROR, "pg_subtrans contains invalid entry: xid %u points to parent xid %u",
+			elog(ERROR, "pg_subtrans contains invalid entry: xid " XID_FMT " points to parent xid " XID_FMT,
 							previousXid, parentXid);
 	}
 
