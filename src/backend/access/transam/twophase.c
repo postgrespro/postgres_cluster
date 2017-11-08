@@ -84,7 +84,6 @@
 #include "storage/proc.h"
 #include "storage/procarray.h"
 #include "storage/sinvaladt.h"
-#include "storage/spin.h"
 #include "storage/smgr.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
@@ -138,7 +137,7 @@ typedef struct GlobalTransactionData
 	int			pgprocno;		/* ID of associated dummy PGPROC */
 	BackendId	dummyBackendId; /* similar to backend id for backends */
 	TimestampTz prepared_at;	/* time of preparation */
-	volatile slock_t spinlock;  /* spinlock used to protect access to GlobalTransactionData */
+
 	/*
 	 * Note that we need to keep track of two LSNs for each GXACT. We keep
 	 * track of the start LSN because this is the address we must use to read
@@ -153,7 +152,6 @@ typedef struct GlobalTransactionData
 	int 	    locking_pid;	/* backend currently working on the xact */
 	bool		valid;			/* TRUE if PGPROC entry is in proc array */
 	bool		ondisk;			/* TRUE if prepare state file is on disk */
-	int         prep_index;     /* Index of prepXacts array */
 	char		gid[GIDSIZE];	/* The GID assigned to the prepared xact */
 	char        state_3pc[MAX_3PC_STATE_SIZE]; /* 3PC transaction state  */
 }	GlobalTransactionData;
@@ -169,9 +167,6 @@ typedef struct TwoPhaseStateData
 
 	/* Number of valid prepXacts entries. */
 	int			numPrepXacts;
-
-	/* Hash table for gxacts */
-	GlobalTransaction* hashTable;
 
 	/* There are max_prepared_xacts items in this array */
 	GlobalTransaction prepXacts[FLEXIBLE_ARRAY_MEMBER];
@@ -259,12 +254,8 @@ static TwoPhaseStateData *TwoPhaseState;
 static GlobalTransaction MyLockedGxact = NULL;
 
 static bool twophaseExitRegistered = false;
-static TransactionId cached_xid = InvalidTransactionId;
-static GlobalTransaction cached_gxact = NULL;
 
 static char* ReadTwoPhaseFile(TransactionId xid, bool give_warnings);
-static void  XlogReadTwoPhaseData(XLogRecPtr lsn, char **buf, int *len);
-
 
 static void RecordTransactionCommitPrepared(TransactionId xid,
 								int nchildren,
@@ -297,7 +288,7 @@ TwoPhaseShmemSize(void)
 
 	/* Need the fixed struct, the array of pointers, and the GTD structs */
 	size = offsetof(TwoPhaseStateData, prepXacts);
-	size = add_size(size, mul_size(max_prepared_xacts*2,
+	size = add_size(size, mul_size(max_prepared_xacts,
 								   sizeof(GlobalTransaction)));
 	size = MAXALIGN(size);
 	size = add_size(size, mul_size(max_prepared_xacts,
@@ -329,17 +320,12 @@ TwoPhaseShmemInit(void)
 		gxacts = (GlobalTransaction)
 			((char *) TwoPhaseState +
 			 MAXALIGN(offsetof(TwoPhaseStateData, prepXacts) +
-					  sizeof(GlobalTransaction) * 2 * max_prepared_xacts));
-		
-		TwoPhaseState->hashTable = &TwoPhaseState->prepXacts[max_prepared_xacts];
-
+					  sizeof(GlobalTransaction) * max_prepared_xacts));
 		for (i = 0; i < max_prepared_xacts; i++)
 		{
 			/* insert into linked list */
 			gxacts[i].next = TwoPhaseState->freeGXacts;
 			TwoPhaseState->freeGXacts = &gxacts[i];
-
-			TwoPhaseState->hashTable[i] = NULL;
 
 			/* associate it with a PGPROC assigned by InitProcGlobal */
 			gxacts[i].pgprocno = PreparedXactProcs[i].pgprocno;
@@ -357,8 +343,6 @@ TwoPhaseShmemInit(void)
 			 * technique.
 			 */
 			gxacts[i].dummyBackendId = MaxBackends + 1 + i;
-			SpinLockInit(&gxacts[i].spinlock);
-			gxacts[i].locking_pid = -1;
 		}
 	}
 	else
@@ -383,7 +367,7 @@ AtAbort_Twophase(void)
 {
 	if (MyLockedGxact == NULL)
 		return;
-	Assert(MyLockedGxact->locking_pid >= 0);
+
 	/*
 	 * What to do with the locked global transaction entry?  If we were in the
 	 * process of preparing the transaction, but haven't written the WAL
@@ -410,8 +394,11 @@ AtAbort_Twophase(void)
 	}
 	else
 	{
-		MyLockedGxact->locking_pid = -1;
-		SpinLockRelease(&MyLockedGxact->spinlock);
+		LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
+
+		MyLockedGxact->locking_pid = InvalidBackendId;
+
+		LWLockRelease(TwoPhaseStateLock);
 	}
 	MyLockedGxact = NULL;
 }
@@ -423,9 +410,10 @@ AtAbort_Twophase(void)
 void
 PostPrepare_Twophase(void)
 {
-	Assert(MyLockedGxact->locking_pid >= 0);
-	MyLockedGxact->locking_pid = -1;
-	SpinLockRelease(&MyLockedGxact->spinlock);
+	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
+	MyLockedGxact->locking_pid = InvalidBackendId;
+	LWLockRelease(TwoPhaseStateLock);
+
 	MyLockedGxact = NULL;
 }
 
@@ -470,12 +458,11 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
 
 	/* Check for conflicting GID */
-	i = string_hash(gid, 0)  % max_prepared_xacts;
-	for (gxact = TwoPhaseState->hashTable[i]; gxact != NULL; gxact = gxact->next)
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
 	{
+		gxact = TwoPhaseState->prepXacts[i];
 		if (strcmp(gxact->gid, gid) == 0)
 		{
-			LWLockRelease(TwoPhaseStateLock);
 			ereport(ERROR,
 					(errcode(ERRCODE_DUPLICATE_OBJECT),
 					 errmsg("transaction identifier \"%s\" is already in use",
@@ -485,27 +472,13 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 
 	/* Get a free gxact from the freelist */
 	if (TwoPhaseState->freeGXacts == NULL)
-	{
-		LWLockRelease(TwoPhaseStateLock);
 		ereport(ERROR,
 				(errcode(ERRCODE_OUT_OF_MEMORY),
 				 errmsg("maximum number of prepared transactions reached"),
 				 errhint("Increase max_prepared_transactions (currently %d).",
 						 max_prepared_xacts)));
-	}
 	gxact = TwoPhaseState->freeGXacts;
 	TwoPhaseState->freeGXacts = gxact->next;
-
-	/* Lock gxact usnig spinlock. We have to release TwoPhaseStateLock LWLock to avoid deadlock and reobtain it after holding spinlock */
-	LWLockRelease(TwoPhaseStateLock);
-	SpinLockAcquire(&gxact->spinlock);
-	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
-
-	Assert(gxact->locking_pid < 0);
-
-	/* Include in collision chain */
-	gxact->next = TwoPhaseState->hashTable[i];
-	TwoPhaseState->hashTable[i] = gxact;
 
 	proc = &ProcGlobal->allProcs[gxact->pgprocno];
 	pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
@@ -530,10 +503,6 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 	proc->lwWaitMode = 0;
 	proc->waitLock = NULL;
 	proc->waitProcLock = NULL;
-	
-	cached_xid = xid;
-	cached_gxact = gxact;
-		
 	for (i = 0; i < NUM_LOCK_PARTITIONS; i++)
 		SHMQueueInit(&(proc->myProcLocks[i]));
 	/* subxid data must be filled later by GXactLoadSubxactData */
@@ -548,7 +517,6 @@ MarkAsPreparing(TransactionId xid, const char *gid,
 	gxact->locking_pid = MyProcPid;
 	gxact->valid = false;
 	gxact->ondisk = false;	
-	gxact->prep_index = TwoPhaseState->numPrepXacts;
 	strcpy(gxact->gid, gid);
 	*gxact->state_3pc = '\0';
 
@@ -615,7 +583,6 @@ MarkAsPrepared(GlobalTransaction gxact)
 	ProcArrayAdd(&ProcGlobal->allProcs[gxact->pgprocno]);
 }
 
-
 /*
  * LockGXact
  *		Locate the prepared transaction and mark it busy for COMMIT or PREPARE.
@@ -624,7 +591,6 @@ static GlobalTransaction
 LockGXact(const char *gid, Oid user)
 {
 	int			i;
-	GlobalTransaction gxact;
 
 	/* on first call, register the exit hook */
 	if (!twophaseExitRegistered)
@@ -633,50 +599,31 @@ LockGXact(const char *gid, Oid user)
 		twophaseExitRegistered = true;
 	}
 
-	/* here we know in advance that there are no prepared transactions */
-	if (max_prepared_xacts == 0)
-		ereport(ERROR,
-				(errcode(ERRCODE_UNDEFINED_OBJECT),
-			errmsg("prepared transaction with identifier \"%s\" does not exist",
-					gid)));
-
-	MyLockedGxact = NULL;
-	i = string_hash(gid, 0) % max_prepared_xacts;
-  Retry:
 	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
-	for (gxact = TwoPhaseState->hashTable[i]; gxact != NULL; gxact = gxact->next)
+
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
 	{
-		if (strcmp(gxact->gid, gid) == 0)
-		{
-			PGPROC	   *proc = &ProcGlobal->allProcs[gxact->pgprocno];
+		GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
+		PGPROC	   *proc = &ProcGlobal->allProcs[gxact->pgprocno];
 
-			/* Lock gxact. We have to release TwoPhaseStateLock LW-Lock to avoid deadlock */
+		/* Ignore not-yet-valid GIDs */
+		if (!gxact->valid)
+			continue;
+		if (strcmp(gxact->gid, gid) != 0)
+			continue;
 
-			LWLockRelease(TwoPhaseStateLock);
-
-			if (MyLockedGxact != gxact) {
-				if (MyLockedGxact != NULL) { 
-					SpinLockRelease(&MyLockedGxact->spinlock);
-				}
-				MyLockedGxact = gxact;
-				SpinLockAcquire(&gxact->spinlock);
-				goto Retry;
-			}
-
-			/* Ignore not-yet-valid GIDs */
-			if (!gxact->valid) {
+		/* Found it, but has someone else got it locked? */
+		if (gxact->locking_pid != InvalidBackendId)
 				ereport(ERROR,
 						(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-						 errmsg("prepared transaction with identifier \"%s\" is not valid",
+						errmsg("prepared transaction with identifier \"%s\" is busy",
 								gid)));
-			}
 			
-			if (user != gxact->owner && !superuser_arg(user)) {
+			if (user != gxact->owner && !superuser_arg(user))
 				ereport(ERROR,
 						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 						 errmsg("permission denied to finish prepared transaction"),
 						 errhint("Must be superuser or the user that prepared the transaction.")));
-			}	
 
 			/*
 			 * Note: it probably would be possible to allow committing from
@@ -684,27 +631,23 @@ LockGXact(const char *gid, Oid user)
 			 * there may be some other issues as well.  Hence disallow until
 			 * someone gets motivated to make it work.
 			 */
-			if (MyDatabaseId != proc->databaseId) {
+			if (MyDatabaseId != proc->databaseId)
 				ereport(ERROR,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("prepared transaction belongs to another database"),
+					  errmsg("prepared transaction belongs to another database"),
 						 errhint("Connect to the database where the transaction was prepared to finish it.")));
-			}
-
 
 			/* OK for me to lock it */
 			Assert(gxact->locking_pid < 0);
 			gxact->locking_pid = MyProcPid;
+			MyLockedGxact = gxact;
+
+			LWLockRelease(TwoPhaseStateLock);
 
 			return gxact;
-		}		
-	}
+		}
 
 	LWLockRelease(TwoPhaseStateLock);
-	if (MyLockedGxact != NULL) { 
-		SpinLockRelease(&MyLockedGxact->spinlock);
-		MyLockedGxact = NULL;
-	}
 
 	ereport(ERROR,
 			(errcode(ERRCODE_UNDEFINED_OBJECT),
@@ -725,32 +668,23 @@ static void
 RemoveGXact(GlobalTransaction gxact)
 {
 	int			i;
-	GlobalTransaction* prev;
 
 	LWLockAcquire(TwoPhaseStateLock, LW_EXCLUSIVE);
 
-	i = string_hash(gxact->gid, 0) % max_prepared_xacts;
-
-	for (prev = &TwoPhaseState->hashTable[i]; *prev != NULL; prev = &(*prev)->next)
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
 	{
-		if (gxact == *prev)
+		if (gxact == TwoPhaseState->prepXacts[i])
 		{
 			/* remove from the active array */
 			TwoPhaseState->numPrepXacts--;
-			TwoPhaseState->prepXacts[gxact->prep_index] = TwoPhaseState->prepXacts[TwoPhaseState->numPrepXacts];
-			TwoPhaseState->prepXacts[gxact->prep_index]->prep_index = gxact->prep_index;
-
-			/* remove from collision list */
-			*prev = gxact->next;
+			TwoPhaseState->prepXacts[i] = TwoPhaseState->prepXacts[TwoPhaseState->numPrepXacts];
 
 			/* and put it back in the freelist */
 			gxact->next = TwoPhaseState->freeGXacts;
 			TwoPhaseState->freeGXacts = gxact;
 
-			gxact->locking_pid = -1;
-
+			gxact->locking_pid = InvalidBackendId;
 			LWLockRelease(TwoPhaseStateLock);
-			SpinLockRelease(&gxact->spinlock);
 
 			return;
 		}
@@ -809,9 +743,9 @@ bool GetPreparedTransactionState(char const* gid, char* state)
 	bool result = false;
 
 	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
-	i = string_hash(gid, 0)  % max_prepared_xacts;
-	for (gxact = TwoPhaseState->hashTable[i]; gxact != NULL; gxact = gxact->next)
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
 	{
+		gxact = TwoPhaseState->prepXacts[i];
 		if (strcmp(gxact->gid, gid) == 0)
 		{
 			strcpy(state, gxact->state_3pc);
@@ -1011,6 +945,9 @@ TwoPhaseGetGXact(TransactionId xid)
 	GlobalTransaction result = NULL;
 	int			i;
 
+	static TransactionId cached_xid = InvalidTransactionId;
+	static GlobalTransaction cached_gxact = NULL;
+
 	/*
 	 * During a recovery, COMMIT PREPARED, or ABORT PREPARED, we'll be called
 	 * repeatedly for the same XID.  We can save work with a simple cache.
@@ -1194,7 +1131,6 @@ EndPrepare(GlobalTransaction gxact)
 {
 	TwoPhaseFileHeader *hdr;
 	StateFileChunk *record;
-	uint8		info = XLOG_XACT_PREPARE;
     bool            replorigin;
 
     replorigin = (replorigin_session_origin != InvalidRepOriginId &&
@@ -1244,6 +1180,7 @@ EndPrepare(GlobalTransaction gxact)
 	XLogEnsureRecordSpace(0, records.num_chunks);
 
 	START_CRIT_SECTION();
+
 	MyPgXact->delayChkpt = true;
 
 	XLogBeginInsert();
@@ -1253,7 +1190,7 @@ EndPrepare(GlobalTransaction gxact)
 	if (replorigin)
 		XLogIncludeOrigin();
 
-	gxact->prepare_end_lsn = XLogInsert(RM_XACT_ID, info);
+	gxact->prepare_end_lsn = XLogInsert(RM_XACT_ID, XLOG_XACT_PREPARE);
 
 	if (replorigin)
 		/* Move LSNs forward for this replication origin */
@@ -1381,7 +1318,6 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 		stat.st_size > MaxAllocSize)
 	{
 		CloseTransientFile(fd);
-		fprintf(stderr, "wrong size of two-phase file \"%s\"\n", path);
 		return NULL;
 	}
 
@@ -1427,7 +1363,6 @@ ReadTwoPhaseFile(TransactionId xid, bool give_warnings)
 	if (!EQ_CRC32C(calc_crc, file_crc))
 	{
 		pfree(buf);
-		fprintf(stderr, "wrong crc32 in two-phase file \"%s\"\n", path);
 		return NULL;
 	}
 
