@@ -33,4 +33,7 @@ extern void AtSubCommit_smgr(void);
 extern void AtSubAbort_smgr(void);
 extern void PostPrepare_smgr(void);
 
+extern void* SuspendStorage(void);
+extern void ResumeStorage(void* ctx);
+
 #endif   /* STORAGE_H */

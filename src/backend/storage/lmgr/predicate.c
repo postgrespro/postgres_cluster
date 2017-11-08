@@ -202,6 +202,7 @@
 #include "utils/rel.h"
 #include "utils/snapmgr.h"
 #include "utils/tqual.h"
+#include "utils/memutils.h"
 
 /* Uncomment the next line to test the graceful degradation code. */
 /* #define TEST_OLDSERXID */
@@ -4962,4 +4963,35 @@ predicatelock_twophase_recover(TransactionId xid, uint16 info,
 
 		CreatePredicateLock(&lockRecord->target, targettaghash, sxact);
 	}
+}
+
+typedef struct SuspendedPredicateState
+{
+	HTAB*             LocalPredicateLockHash;
+	SERIALIZABLEXACT* MySerializableXact;
+	bool              MyXactDidWrite;
+} SuspendedPredicateState;
+
+
+void* SuspendPredicate(void)
+{
+	SuspendedPredicateState *s = (SuspendedPredicateState*)MemoryContextAlloc(TopMemoryContext, sizeof(SuspendedPredicateState));
+	s->LocalPredicateLockHash = LocalPredicateLockHash;
+	s->MySerializableXact = MySerializableXact;
+	s->MyXactDidWrite = MyXactDidWrite;
+
+	LocalPredicateLockHash = NULL;
+	MySerializableXact = InvalidSerializableXact;
+	MyXactDidWrite = false;
+
+	return s;
+}
+
+void ResumePredicate(void *data)
+{
+	SuspendedPredicateState *s = (SuspendedPredicateState*)data;
+	LocalPredicateLockHash = s->LocalPredicateLockHash;
+	MySerializableXact = s->MySerializableXact;
+	MyXactDidWrite = s->MyXactDidWrite;
+	pfree(s);
 }
