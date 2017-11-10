@@ -59,6 +59,8 @@ MtmSetClusterStatus(MtmNodeStatus status)
 	if (Mtm->status == status)
 		return;
 
+	Mtm->nConfigChanges += 1; /* this will restart backends */
+
 	MTM_LOG1("[STATE]   Switching status from %s to %s status",
 		MtmNodeStatusMnem[Mtm->status], MtmNodeStatusMnem[status]);
 
