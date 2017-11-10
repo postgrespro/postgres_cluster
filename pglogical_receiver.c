@@ -298,6 +298,11 @@ pglogical_receiver_main(Datum main_arg)
 		mode = MtmGetReplicationMode(nodeId, &got_sigterm);
 		MTM_LOG1("[STATE] Node %i: wal_receiver starts in %s mode", nodeId, MtmReplicationModeName[mode]);
 
+		if (mode == REPLMODE_RECOVERY)
+			synchronous_twophase = false;
+		else
+			synchronous_twophase = true;
+
 		if (mode == REPLMODE_EXIT)
 		{
 			break;
