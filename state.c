@@ -127,6 +127,7 @@ MtmCheckState(void)
 		case MTM_RECOVERY:
 			if (!BIT_CHECK(Mtm->disabledNodeMask, MtmNodeId-1))
 			{
+				MTM_LOG1("[LOCK] set lock on MTM_RECOVERY switch");
 				BIT_SET(Mtm->originLockNodeMask, MtmNodeId-1); // kk trick, XXXX: log that
 				MtmSetClusterStatus(MTM_RECOVERED);
 				return;
@@ -148,6 +149,7 @@ MtmCheckState(void)
 				 * in major mode or with referee we can be working alone
 				 * so nobody will clean it.
 				 */
+				MTM_LOG1("[LOCK] release lock on MTM_RECOVERED switch");
 				BIT_CLEAR(Mtm->originLockNodeMask, MtmNodeId-1);
 				MtmSetClusterStatus(MTM_ONLINE);
 				return;
@@ -177,6 +179,7 @@ MtmStateProcessNeighborEvent(int node_id, MtmNeighborEvent ev) // XXXX camelcase
 
 		case MTM_NEIGHBOR_WAL_RECEIVER_START:
 			BIT_SET(Mtm->pglogicalReceiverMask, node_id - 1);
+			MTM_LOG1("[LOCK] release lock on MTM_NEIGHBOR_WAL_RECEIVER_START event");
 			BIT_CLEAR(Mtm->originLockNodeMask, MtmNodeId-1);
 			break;
 
@@ -190,6 +193,7 @@ MtmStateProcessNeighborEvent(int node_id, MtmNeighborEvent ev) // XXXX camelcase
 			break;
 
 		case MTM_NEIGHBOR_RECOVERY_CAUGHTUP:
+			MTM_LOG1("[LOCK] release lock on MTM_NEIGHBOR_RECOVERY_CAUGHTUP event");
 			BIT_CLEAR(Mtm->originLockNodeMask, node_id - 1);
 			MtmEnableNode(node_id);
 			break;

@@ -2125,6 +2125,8 @@ void MtmCheckRecoveryCaughtUp(int nodeId, lsn_t slotLSN)
 			 */
 			MTM_LOG1("Node %d is almost caught-up: slot position %llx, WAL position %llx, active transactions %d",
 				 nodeId, slotLSN, walLSN, Mtm->nActiveTransactions);
+
+			MTM_LOG1("[LOCK] set lock on MtmCheckRecoveryCaughtUp");
 			BIT_SET(Mtm->originLockNodeMask, nodeId-1); // XXXX: log that
 		} else {
 			MTM_LOG2("Continue recovery of node %d, slot position %llx, WAL position %llx,"
