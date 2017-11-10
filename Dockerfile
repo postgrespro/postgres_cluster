@@ -12,7 +12,6 @@ RUN export USE_PGXS=1 && \
 # pg_regress client assumes such dir exists on server
 RUN cp /pg/src/src/test/regress/*.so /pg/install/lib/postgresql/
 USER postgres
-RUN mkdir /pg/src/src/test/regress/results
 ENV PGDATA /pg/data
 ENTRYPOINT ["/pg/mmts/tests2/docker-entrypoint.sh"]
 
