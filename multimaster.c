@@ -1203,8 +1203,6 @@ void MtmPrecommitTransaction(char const* gid)
 				ts->status = TRANSACTION_STATUS_UNKNOWN;
 				ts->csn = MtmAssignCSN();
 				MtmAdjustSubtransactions(ts);
-				if (Mtm->status != MTM_RECOVERY) // XXXX why?
-					MtmSend2PCMessage(ts, MSG_PRECOMMITTED);
 				MtmUnlock();
 				Assert(replorigin_session_origin != InvalidRepOriginId);
 				if (!IsTransactionState()) {
@@ -1215,6 +1213,11 @@ void MtmPrecommitTransaction(char const* gid)
 				} else {
 					SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);
 				}
+				/*
+				 * We should send MSG_PRECOMMITTED only after SetPreparedTransactionState()
+				 */
+				if (Mtm->status != MTM_RECOVERY)
+					MtmSend2PCMessage(ts, MSG_PRECOMMITTED);
 			} else {
 				MTM_ELOG(WARNING, "MtmPrecommitTransaction: transaction '%s' is already in %s state", gid, MtmTxnStatusMnem[ts->status]);
 				MtmUnlock();
