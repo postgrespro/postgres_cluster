@@ -41,7 +41,7 @@ maskToString(nodemask_t mask, int nNodes)
 	return strMask;
 }
 
-static int
+int
 countZeroBits(nodemask_t mask, int nNodes)
 {
 	int i, count = 0;

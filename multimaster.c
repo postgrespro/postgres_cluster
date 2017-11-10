@@ -1687,7 +1687,19 @@ void MtmSend2PCMessage(MtmTransState* ts, MtmMessageCode cmd)
 static void MtmBroadcastPollMessage(MtmTransState* ts)
 {
 	int i;
+	int nparts;
 	MtmArbiterMessage msg;
+
+	nparts = Mtm->nAllNodes - countZeroBits(ts->participantsMask, Mtm->nAllNodes);
+	MTM_LOG1("MtmBroadcastPollMessage: %s %lld %d", ts->gid, ts->participantsMask, nparts);
+
+	if (nparts == 1)
+	{
+		/* we were in major mode and there nobody to ask about status */
+		MtmFinishPreparedTransaction(ts, true);
+		return;
+	}
+
 	MtmInitMessage(&msg, MSG_POLL_REQUEST);
 	memcpy(msg.gid, ts->gid, MULTIMASTER_MAX_GID_SIZE);
 	ts->votedMask = 0;
