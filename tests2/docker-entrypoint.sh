@@ -59,7 +59,7 @@ if [ "$1" = 'postgres' ]; then
 			shared_preload_libraries = 'multimaster'
 			default_transaction_isolation = 'repeatable read'
 			log_line_prefix = '%m: '
-			wal_writer_delay = 5ms
+			wal_writer_delay = 1ms
 			# log_statement = all
 
 			multimaster.max_nodes = 3

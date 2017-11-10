@@ -304,6 +304,7 @@ class MtmClient(object):
     def stop(self):
         self.running = False
         self.evloop_process.terminate()
+        time.sleep(3)
 
     @classmethod
     def print_aggregates(cls, aggs):
