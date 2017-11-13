@@ -2,6 +2,7 @@
 
 if [ "$1" = 'postgres' ]; then
 	mkdir -p "$PGDATA"
+	mkdir -p /pg/src/src/test/regress/testtablespace
 
 	# look specifically for PG_VERSION, as it is expected in the DB dir
 	if [ ! -s "$PGDATA/PG_VERSION" ]; then
@@ -45,31 +46,49 @@ if [ "$1" = 'postgres' ]; then
 		# 	dbname=$POSTGRES_DB user=$POSTGRES_USER host=node2, \
 		# 	dbname=$POSTGRES_DB user=$POSTGRES_USER host=node3"
 
+
 		cat <<-EOF >> $PGDATA/postgresql.conf
 			listen_addresses='*' 
 			max_prepared_transactions = 100
 			synchronous_commit = on
-			fsync = off
+			fsync = on
 			wal_level = logical
 			max_worker_processes = 30
 			max_replication_slots = 10
 			max_wal_senders = 10
 			shared_preload_libraries = 'multimaster'
 			default_transaction_isolation = 'repeatable read'
-            log_line_prefix = '%m: '
+			log_line_prefix = '%m: '
+			wal_writer_delay = 1ms
+			# log_statement = all
 
-			multimaster.workers = 4
-			multimaster.max_workers = 16
 			multimaster.max_nodes = 3
-			multimaster.volkswagen_mode = 1
-			multimaster.queue_size=52857600
-			multimaster.ignore_tables_without_pk = 1
-			multimaster.node_id = $NODE_ID
-			multimaster.conn_strings = '$CONNSTRS'
 			multimaster.heartbeat_recv_timeout = 1100
 			multimaster.heartbeat_send_timeout = 250
-			multimaster.min_2pc_timeout = 100000
+			multimaster.max_recovery_lag = 1GB
+			multimaster.min_recovery_lag = 10kB
+			multimaster.preserve_commit_order = off
 		EOF
+
+		if [ -n "$NODE_ID" ]; then
+			echo "multimaster.node_id = $NODE_ID" >> $PGDATA/postgresql.conf
+		fi
+
+		if [ -n "$CONNSTRS" ]; then
+			echo "multimaster.conn_strings = '$CONNSTRS'" >> $PGDATA/postgresql.conf
+		fi
+
+		if [ -n "$MAJOR" ]; then
+			echo 'multimaster.major_node = on' >> $PGDATA/postgresql.conf
+		fi
+
+		if [ -n "$REFEREE" ]; then
+			echo 'multimaster.referee = on' >> $PGDATA/postgresql.conf
+		fi
+
+		if [ -n "$REFEREE_CONNSTR" ]; then
+			echo "multimaster.referee_connstring = '$REFEREE_CONNSTR'" >> $PGDATA/postgresql.conf
+		fi
 
 		cat $PGDATA/postgresql.conf
 

@@ -14,12 +14,15 @@
 #include "catalog/catversion.h"
 #include "catalog/dependency.h"
 #include "catalog/index.h"
+#include "catalog/heap.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
 
 #include "executor/spi.h"
 #include "commands/vacuum.h"
+#include "commands/tablespace.h"
 #include "commands/defrem.h"
+#include "commands/sequence.h"
 #include "parser/parse_utilcmd.h"
 
 #include "libpq/pqformat.h"
@@ -54,6 +57,7 @@
 #include "multimaster.h"
 #include "pglogical_relid_map.h"
 #include "spill.h"
+#include "state.h"
 
 typedef struct TupleData
 {
@@ -61,6 +65,7 @@ typedef struct TupleData
 	bool		isnull[MaxTupleAttributeNumber];
 	bool		changed[MaxTupleAttributeNumber];
 } TupleData;
+
 
 static Relation read_rel(StringInfo s, LOCKMODE mode);
 static void read_tuple_parts(StringInfo s, Relation rel, TupleData *tup);
@@ -79,7 +84,6 @@ static void process_remote_insert(StringInfo s, Relation rel);
 static void process_remote_update(StringInfo s, Relation rel);
 static void process_remote_delete(StringInfo s, Relation rel);
 
-static MemoryContext TopContext;
 static bool          GucAltered; /* transaction is setting some GUC variables */
 
 /*
@@ -101,13 +105,13 @@ find_pkey_tuple(ScanKey skey, Relation rel, Relation idxrel,
 	InitDirtySnapshot(snap);
 	scan = index_beginscan(rel, idxrel,
 						   &snap,
-						   RelationGetNumberOfAttributes(idxrel),
+						   IndexRelationGetNumberOfKeyAttributes(idxrel),
 						   0);
 
 retry:
 	found = false;
 
-	index_rescan(scan, skey, RelationGetNumberOfAttributes(idxrel), NULL, 0);
+	index_rescan(scan, skey, IndexRelationGetNumberOfKeyAttributes(idxrel), NULL, 0);
 
 	if ((scantuple = index_getnext(scan, ForwardScanDirection)) != NULL)
 	{
@@ -154,10 +158,10 @@ retry:
 				/* XXX: Improve handling here */
 				ereport(LOG,
 						(errcode(ERRCODE_T_R_SERIALIZATION_FAILURE),
-						 errmsg("concurrent update, retrying")));
+						 MTM_ERRMSG("concurrent update, retrying")));
 				goto retry;
 			default:
-				elog(ERROR, "unexpected HTSU_Result after locking: %u", res);
+				MTM_ELOG(ERROR, "unexpected HTSU_Result after locking: %u", res);
 				break;
 		}
 	}
@@ -236,7 +240,7 @@ build_index_scan_key(ScanKey skey, Relation rel, Relation idxrel, TupleData *tup
 	indkey = (int2vector *) DatumGetPointer(indkeyDatum);
 
 
-	for (attoff = 0; attoff < RelationGetNumberOfAttributes(idxrel); attoff++)
+	for (attoff = 0; attoff < IndexRelationGetNumberOfKeyAttributes(idxrel); attoff++)
 	{
 		Oid			operator;
 		Oid			opfamily;
@@ -253,7 +257,7 @@ build_index_scan_key(ScanKey skey, Relation rel, Relation idxrel, TupleData *tup
 									   BTEqualStrategyNumber);
 
 		if (!OidIsValid(operator))
-			elog(ERROR,
+			MTM_ELOG(ERROR,
 				 "could not lookup equality operator for type %u, optype %u in opfamily %u",
 				 atttype, optype, opfamily);
 
@@ -305,7 +309,7 @@ UserTableUpdateOpenIndexes(EState *estate, TupleTableSlot *slot)
 		if (recheckIndexes != NIL)
 			ereport(ERROR,
 					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					 errmsg("bdr doesn't support index rechecks")));
+					 MTM_ERRMSG("bdr doesn't support index rechecks")));
 	}
 
 	/* FIXME: recheck the indexes */
@@ -337,25 +341,21 @@ process_remote_begin(StringInfo s)
 {
 	GlobalTransactionId gtid;
 	csn_t snapshot;
+	nodemask_t participantsMask;
 	int rc;
 
 	gtid.node = pq_getmsgint(s, 4); 
-	gtid.xid = pq_getmsgint(s, 4); 
+	gtid.xid = pq_getmsgint64(s); 
 	snapshot = pq_getmsgint64(s);    
-
+	participantsMask = pq_getmsgint64(s);
 	Assert(gtid.node > 0);
 
-	MTM_LOG2("REMOTE begin node=%d xid=%d snapshot=%lld", gtid.node, gtid.xid, snapshot);
+	MTM_LOG2("REMOTE begin node=%d xid=%llu snapshot=%lld participantsMask=%llx", gtid.node, (long64)gtid.xid, snapshot, participantsMask);
 	MtmResetTransaction();		
-#if 1
-	if (BIT_CHECK(Mtm->disabledNodeMask, gtid.node-1)) { 
-		elog(WARNING, "Ignore transaction %llu from disabled node %d", (long64)gtid.xid, gtid.node);
-		return false;
-	}
-#endif
+
     SetCurrentStatementStartTimestamp();     
 	StartTransactionCommand();
-    MtmJoinTransaction(&gtid, snapshot);
+    MtmJoinTransaction(&gtid, snapshot, participantsMask);
 
 	if (GucAltered) {
 		SPI_connect();
@@ -363,7 +363,7 @@ process_remote_begin(StringInfo s)
 		rc = SPI_execute("RESET SESSION AUTHORIZATION; reset all;", false, 0);
 		SPI_finish();
 		if (rc < 0) { 
-			elog(ERROR, "Failed to set reset context: %d", rc);
+			MTM_ELOG(ERROR, "Failed to set reset context: %d", rc);
 		}
 	}
 
@@ -399,25 +399,25 @@ process_remote_message(StringInfo s)
 			MtmVacuumStmt = NULL;
 			MtmIndexStmt = NULL;
 			MtmDropStmt = NULL;
+			MtmTablespaceStmt = NULL;
+
 			rc = SPI_execute(messageBody, false, 0);
 			SPI_finish();
 			if (rc < 0) { 
-				elog(ERROR, "Failed to execute utility statement %s", messageBody);
+				MTM_ELOG(ERROR, "Failed to execute utility statement %s", messageBody);
 			} else { 
+				MemoryContextSwitchTo(MtmApplyContext);
 				PushActiveSnapshot(GetTransactionSnapshot());
 
 				if (MtmVacuumStmt != NULL) { 
 					ExecVacuum(MtmVacuumStmt, 1);
 				} else if (MtmIndexStmt != NULL) {
-					MemoryContext oldContext = MemoryContextSwitchTo(MtmApplyContext);
 					Oid relid =	RangeVarGetRelidExtended(MtmIndexStmt->relation, ShareUpdateExclusiveLock,
 														 false, false,
 														 NULL,
 														 NULL);
 					/* Run parse analysis ... */
 					MtmIndexStmt = transformIndexStmt(relid, MtmIndexStmt, messageBody);
-
-					MemoryContextSwitchTo(oldContext);
 
 					DefineIndex(relid,		/* OID of heap relation */
 								MtmIndexStmt,
@@ -427,8 +427,24 @@ process_remote_message(StringInfo s)
 								false,		/* skip_build */
 								false);		/* quiet */
 					
-				} else if (MtmDropStmt != NULL) { 
+				}
+				else if (MtmDropStmt != NULL)
+				{
 					RemoveObjects(MtmDropStmt);
+				}
+				else if (MtmTablespaceStmt != NULL)
+				{
+					switch (nodeTag(MtmTablespaceStmt))
+					{
+						case T_CreateTableSpaceStmt:
+							CreateTableSpace((CreateTableSpaceStmt *) MtmTablespaceStmt);
+							break;
+						case T_DropTableSpaceStmt:
+							DropTableSpace((DropTableSpaceStmt *) MtmTablespaceStmt);
+							break;
+						default:
+							Assert(false);
+					}
 				}
 				if (ActiveSnapshotSet())
 					PopActiveSnapshot();
@@ -471,8 +487,15 @@ process_remote_message(StringInfo s)
 			standalone = true;
 			break;
 		}
-
-	}
+	    case 'S':
+		{
+  		    Assert(messageSize == sizeof(csn_t));
+		    MtmSetSnapshot(*(csn_t*)messageBody);
+			break;
+		}
+	    default:
+		    Assert(false);
+ 	}
 	return standalone;
 }
 	
@@ -487,7 +510,7 @@ read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 	action = pq_getmsgbyte(s);
 
 	if (action != 'T')
-		elog(ERROR, "expected TUPLE, got %c", action);
+		MTM_ELOG(ERROR, "expected TUPLE, got %c", action);
 
 	memset(tup->isnull, 1, sizeof(tup->isnull));
 	memset(tup->changed, 1, sizeof(tup->changed));
@@ -495,7 +518,7 @@ read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 	rnatts = pq_getmsgint(s, 2);
 
 	if (desc->natts < rnatts)
-		elog(ERROR, "tuple natts mismatch, %u vs %u", desc->natts, rnatts);
+		MTM_ELOG(ERROR, "tuple natts mismatch, %u vs %u", desc->natts, rnatts);
 
 	/* FIXME: unaligned data accesses */
 
@@ -559,7 +582,7 @@ read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 					if (buf.len != buf.cursor)
 						ereport(ERROR,
 								(errcode(ERRCODE_INVALID_BINARY_REPRESENTATION),
-								 errmsg("incorrect binary data format")));
+								 MTM_ERRMSG("incorrect binary data format")));
 					break;
 				}
 			case 't': /* text format */
@@ -578,12 +601,21 @@ read_tuple_parts(StringInfo s, Relation rel, TupleData *tup)
 				}
 				break;
 			default:
-				elog(ERROR, "unknown column type '%c'", kind);
+				MTM_ELOG(ERROR, "unknown column type '%c'", kind);
 		}
 
 		if (att->attisdropped && !tup->isnull[i])
-			elog(ERROR, "data for dropped column");
+			MTM_ELOG(ERROR, "data for dropped column");
 	}
+}
+
+static void
+close_rel(Relation rel)
+{
+	if (rel != NULL) 
+	{
+		heap_close(rel, NoLock);	   
+	} 		
 }
 
 static Relation 
@@ -594,6 +626,7 @@ read_rel(StringInfo s, LOCKMODE mode)
 	RangeVar*	rv;
 	Oid			remote_relid = pq_getmsgint(s, 4);
 	Oid         local_relid;
+	MemoryContext old_context;
 
 	local_relid = pglogical_relid_map_get(remote_relid);
 	if (local_relid == InvalidOid) { 
@@ -606,7 +639,9 @@ read_rel(StringInfo s, LOCKMODE mode)
 		rv->relname = (char *) pq_getmsgbytes(s, relnamelen);
 		
 		local_relid = RangeVarGetRelidExtended(rv, mode, false, false, NULL, NULL);
+		old_context = MemoryContextSwitchTo(TopMemoryContext);
 		pglogical_relid_map_put(remote_relid, local_relid);
+		MemoryContextSwitchTo(old_context);
 	} else { 
 		nspnamelen = pq_getmsgbyte(s);
 		s->cursor += nspnamelen;
@@ -621,16 +656,20 @@ process_remote_commit(StringInfo in)
 {
 	uint8 		event;
 	csn_t       csn;
-	const char *gid = NULL;	
 	lsn_t       end_lsn;
 	lsn_t       origin_lsn;
+	lsn_t       commit_lsn;
 	int         origin_node;
+	char        gid[MULTIMASTER_MAX_GID_SIZE];
+
+	gid[0] = '\0';
+
 	/* read event */
 	event = pq_getmsgbyte(in);
 	MtmReplicationNodeId = pq_getmsgbyte(in);
 
 	/* read fields */
-	pq_getmsgint64(in); /* commit_lsn */
+	commit_lsn = pq_getmsgint64(in); /* commit_lsn */
 	end_lsn = pq_getmsgint64(in); /* end_lsn */
 	replorigin_session_origin_timestamp = pq_getmsgint64(in); /* commit_time */
 
@@ -645,8 +684,8 @@ process_remote_commit(StringInfo in)
 	    case PGLOGICAL_PRECOMMIT_PREPARED:
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
-			gid = pq_getmsgstring(in);
-			MTM_LOG2("%d: PGLOGICAL_PRECOMMIT_PREPARED %s", MyProcPid, gid);
+			strncpy(gid, pq_getmsgstring(in), sizeof gid);
+			MTM_LOG2("%d: PGLOGICAL_PRECOMMIT_PREPARED %s, (%llx,%llx,%llx)", MyProcPid, gid, commit_lsn, end_lsn, origin_lsn);
 			MtmBeginSession(origin_node);
 			MtmPrecommitTransaction(gid);
 			MtmEndSession(origin_node, true);
@@ -654,7 +693,7 @@ process_remote_commit(StringInfo in)
 		}
 		case PGLOGICAL_COMMIT:
 		{
-			MTM_LOG2("%d: PGLOGICAL_COMMIT commit", MyProcPid);
+			MTM_LOG1("%d: PGLOGICAL_COMMIT %s, (%llx,%llx,%llx)", MyProcPid, gid, commit_lsn, end_lsn, origin_lsn);
 			if (IsTransactionState()) {
 				Assert(TransactionIdIsValid(MtmGetCurrentTransactionId()));
 				MtmBeginSession(origin_node);
@@ -666,14 +705,14 @@ process_remote_commit(StringInfo in)
 		case PGLOGICAL_PREPARE:
 		{
 			Assert(IsTransactionState() && TransactionIdIsValid(MtmGetCurrentTransactionId()));
-			gid = pq_getmsgstring(in);
+			strncpy(gid, pq_getmsgstring(in), sizeof gid);
+			MTM_LOG2("%d: PGLOGICAL_PREPARE %s, (%llx,%llx,%llx)", MyProcPid, gid, commit_lsn, end_lsn, origin_lsn);
 			if (MtmExchangeGlobalTransactionStatus(gid, TRANSACTION_STATUS_IN_PROGRESS) == TRANSACTION_STATUS_ABORTED) { 
 				MTM_LOG1("Avoid prepare of previously aborted global transaction %s", gid);	
 				AbortCurrentTransaction();
 			} else { 				
 				/* prepare TBLOCK_INPROGRESS state for PrepareTransactionBlock() */
-				MTM_LOG2("PGLOGICAL_PREPARE commit: gid=%s", gid);
-				BeginTransactionBlock();
+				BeginTransactionBlock(false);
 				CommitTransactionCommand();
 				StartTransactionCommand();
 				
@@ -687,8 +726,10 @@ process_remote_commit(StringInfo in)
 					MTM_LOG1("Perform delayed rollback of prepared global transaction %s", gid);	
 					StartTransactionCommand();
 					MtmSetCurrentTransactionGID(gid);
+					TXFINISH("%s ABORT, PGLOGICAL_PREPARE", gid);
 					FinishPreparedTransaction(gid, false);
 					CommitTransactionCommand();					
+					Assert(!MtmTransIsActive());
 				}	
 				MtmEndSession(origin_node, true);
 			}
@@ -697,23 +738,36 @@ process_remote_commit(StringInfo in)
 		case PGLOGICAL_COMMIT_PREPARED:
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
-			csn = pq_getmsgint64(in); 
-			gid = pq_getmsgstring(in);
-			MTM_LOG2("PGLOGICAL_COMMIT_PREPARED commit: csn=%lld, gid=%s, lsn=%llx", csn, gid, end_lsn);
+			csn = pq_getmsgint64(in);
+			/*
+			 * Since our recovery method allows undershoot of lsn, we can receive
+			 * some already committed transactions. And in case of donor node reboot
+			 * xid<->csn mapping for them will be lost. However we must filter such
+			 * transactions in walreceiver before this code. --sk
+			 */
+			Assert(csn);
+			strncpy(gid, pq_getmsgstring(in), sizeof gid);
+			MTM_LOG2("%d: PGLOGICAL_COMMIT_PREPARED %s, (%llx,%llx,%llx)", MyProcPid, gid, commit_lsn, end_lsn, origin_lsn);
 			MtmResetTransaction();
 			StartTransactionCommand();
 			MtmBeginSession(origin_node);
-			MtmSetCurrentTransactionCSN(csn);
+			if (csn == INVALID_CSN && Mtm->status == MTM_RECOVERY)
+				MtmSetCurrentTransactionCSN(MtmAssignCSN());
+			else
+				MtmSetCurrentTransactionCSN(csn);
 			MtmSetCurrentTransactionGID(gid);
+			TXFINISH("%s COMMIT, PGLOGICAL_COMMIT_PREPARED csn=%lld", gid, csn);
 			FinishPreparedTransaction(gid, true);
+			MTM_LOG2("Distributed transaction %s is committed", gid);
 			CommitTransactionCommand();
+			Assert(!MtmTransIsActive());
 			MtmEndSession(origin_node, true);
 			break;
 		}
 		case PGLOGICAL_ABORT_PREPARED:
 		{
 			Assert(!TransactionIdIsValid(MtmGetCurrentTransactionId()));
-			gid = pq_getmsgstring(in);
+			strncpy(gid, pq_getmsgstring(in), sizeof gid);
 			/* MtmRollbackPreparedTransaction will set origin session itself */
 			MTM_LOG1("Receive ABORT_PREPARED logical message for transaction %s from node %d", gid, origin_node);
 			MtmRollbackPreparedTransaction(origin_node, gid);
@@ -756,7 +810,7 @@ process_remote_insert(StringInfo s, Relation rel)
 	}
 
 	// if (rel->rd_rel->relkind != RELKIND_RELATION) // RELKIND_MATVIEW
-	// 	elog(ERROR, "unexpected relkind '%c' rel \"%s\"",
+	// 	MTM_ELOG(ERROR, "unexpected relkind '%c' rel \"%s\"",
 	// 		 rel->rd_rel->relkind, RelationGetRelationName(rel));
 
 	/* debug output */
@@ -805,7 +859,7 @@ process_remote_insert(StringInfo s, Relation rel)
 			/* TODO: Report tuple identity in log */
 			ereport(ERROR,
                     (errcode(ERRCODE_UNIQUE_VIOLATION),
-                     errmsg("Unique constraints violated by remotely INSERTed tuple"),
+                     MTM_ERRMSG("Unique constraints violated by remotely INSERTed tuple"),
                      errdetail("Cannot apply transaction because remotely INSERTed tuple conflicts with a local tuple on UNIQUE constraint and/or PRIMARY KEY")));
 		}
 		CHECK_FOR_INTERRUPTS();
@@ -819,10 +873,15 @@ process_remote_insert(StringInfo s, Relation rel)
 	if (ActiveSnapshotSet())
 		PopActiveSnapshot();
 
-    heap_close(rel, NoLock);
+	if (strcmp(RelationGetRelationName(rel), MULTIMASTER_LOCAL_TABLES_TABLE) == 0 &&
+		strcmp(get_namespace_name(RelationGetNamespace(rel)), MULTIMASTER_SCHEMA_NAME) == 0)
+	{
+		MtmMakeTableLocal((char*)DatumGetPointer(new_tuple.values[0]), (char*)DatumGetPointer(new_tuple.values[1]));
+	}
+		
     ExecResetTupleTable(estate->es_tupleTable, true);
     FreeExecutorState(estate);
-
+	   
 	CommandCounterIncrement();
 }
 
@@ -846,7 +905,7 @@ process_remote_update(StringInfo s, Relation rel)
 
 	/* old key present, identifying key changed */
 	if (action != 'K' && action != 'N')
-		elog(ERROR, "expected action 'N' or 'K', got %c",
+		MTM_ELOG(ERROR, "expected action 'N' or 'K', got %c",
 			 action);
 
 	estate = create_rel_estate(rel);
@@ -866,11 +925,11 @@ process_remote_update(StringInfo s, Relation rel)
 
 	/* check for new  tuple */
 	if (action != 'N')
-		elog(ERROR, "expected action 'N', got %c",
+		MTM_ELOG(ERROR, "expected action 'N', got %c",
 			 action);
 
 	if (rel->rd_rel->relkind != RELKIND_RELATION)
-		elog(ERROR, "unexpected relkind '%c' rel \"%s\"",
+		MTM_ELOG(ERROR, "unexpected relkind '%c' rel \"%s\"",
 			 rel->rd_rel->relkind, RelationGetRelationName(rel));
 
 	/* read new tuple */
@@ -882,7 +941,7 @@ process_remote_update(StringInfo s, Relation rel)
 	idxoid = rel->rd_replidindex;
 	if (!OidIsValid(idxoid))
 	{
-		elog(ERROR, "could not find primary key for table with oid %u",
+		MTM_ELOG(ERROR, "could not find primary key for table with oid %u",
 			 RelationGetRelid(rel));
 		return;
 	}
@@ -916,10 +975,10 @@ process_remote_update(StringInfo s, Relation rel)
 		{
 			StringInfoData o;
 			initStringInfo(&o);
-			tuple_to_stringinfo(&o, RelationGetDescr(rel), oldslot->tts_tuple);
+			tuple_to_stringinfo(&o, RelationGetDescr(rel), oldslot->tts_tuple, false);
 			appendStringInfo(&o, " to");
-			tuple_to_stringinfo(&o, RelationGetDescr(rel), remote_tuple);
-			MTM_LOG1(DEBUG1, "UPDATE:%s", o.data);
+			tuple_to_stringinfo(&o, RelationGetDescr(rel), remote_tuple, false);
+			MTM_LOG1("%lu: UPDATE: %s", GetCurrentTransactionId(), o.data);
 			resetStringInfo(&o);
 		}
 #endif
@@ -931,7 +990,7 @@ process_remote_update(StringInfo s, Relation rel)
 	{
         ereport(ERROR,
                 (errcode(ERRCODE_NO_DATA_FOUND),
-                 errmsg("Record with specified key can not be located at this node"),
+                 MTM_ERRMSG("Record with specified key can not be located at this node"),
                  errdetail("Most likely we have DELETE-UPDATE conflict")));
 
 	}
@@ -940,7 +999,6 @@ process_remote_update(StringInfo s, Relation rel)
     
 	/* release locks upon commit */
 	index_close(idxrel, NoLock);
-	heap_close(rel, NoLock);
     
 	ExecResetTupleTable(estate->es_tupleTable, true);
 	FreeExecutorState(estate);
@@ -971,7 +1029,7 @@ process_remote_delete(StringInfo s, Relation rel)
 	idxoid = rel->rd_replidindex;
 	if (!OidIsValid(idxoid))
 	{
-		elog(ERROR, "could not find primary key for table with oid %u",
+		MTM_ELOG(ERROR, "could not find primary key for table with oid %u",
 			 RelationGetRelid(rel));
 		return;
 	}
@@ -980,7 +1038,7 @@ process_remote_delete(StringInfo s, Relation rel)
 	idxrel = index_open(idxoid, RowExclusiveLock);
 
 	if (rel->rd_rel->relkind != RELKIND_RELATION)
-		elog(ERROR, "unexpected relkind '%c' rel \"%s\"",
+		MTM_ELOG(ERROR, "unexpected relkind '%c' rel \"%s\"",
 			 rel->rd_rel->relkind, RelationGetRelationName(rel));
 
 #ifdef VERBOSE_DELETE
@@ -1008,14 +1066,13 @@ process_remote_delete(StringInfo s, Relation rel)
 	{
         ereport(ERROR,
                 (errcode(ERRCODE_NO_DATA_FOUND),
-                 errmsg("Record with specified key can not be located at this node"),
+                 MTM_ERRMSG("Record with specified key can not be located at this node"),
                  errdetail("Most likely we have DELETE-DELETE conflict")));
 	}
 
 	PopActiveSnapshot();
 
 	index_close(idxrel, NoLock);
-	heap_close(rel, NoLock);
 
 	ExecResetTupleTable(estate->es_tupleTable, true);
 	FreeExecutorState(estate);
@@ -1030,11 +1087,14 @@ void MtmExecutor(void* work, size_t size)
 	int spill_file = -1;
 	int save_cursor = 0;
 	int save_len = 0;
+	MemoryContext old_context;
+	MemoryContext top_context;
+
     s.data = work;
     s.len = size;
     s.maxlen = -1;
 	s.cursor = 0;
-
+	
     if (MtmApplyContext == NULL) {
         MtmApplyContext = AllocSetContextCreate(TopMemoryContext,
 												"ApplyContext",
@@ -1042,12 +1102,15 @@ void MtmExecutor(void* work, size_t size)
 												ALLOCSET_DEFAULT_INITSIZE,
 												ALLOCSET_DEFAULT_MAXSIZE);
     }
-    TopContext = MemoryContextSwitchTo(MtmApplyContext);
+	top_context = MemoryContextSwitchTo(MtmApplyContext);
 	replorigin_session_origin = InvalidRepOriginId;
     PG_TRY();
     {    
-        while (true) { 
+		bool inside_transaction = true;
+        do { 
             char action = pq_getmsgbyte(&s);
+			old_context = MemoryContextSwitchTo(MtmApplyContext);
+	
             MTM_LOG2("%d: REMOTE process action %c", MyProcPid, action);
 #if 0
 			if (Mtm->status == MTM_RECOVERY) { 
@@ -1058,48 +1121,48 @@ void MtmExecutor(void* work, size_t size)
             switch (action) {
                 /* BEGIN */
             case 'B':
-			    if (process_remote_begin(&s)) { 				   
-					continue;
-				} else { 
-					break;
-				}
+			    inside_transaction = process_remote_begin(&s);
+				break;
                 /* COMMIT */
             case 'C':
+  			    close_rel(rel);
                 process_remote_commit(&s);
+				inside_transaction = false;
                 break;
                 /* INSERT */
             case 'I':
-                process_remote_insert(&s, rel);
-                continue;
+			    process_remote_insert(&s, rel);
+                break;
                 /* UPDATE */
             case 'U':
                 process_remote_update(&s, rel);
-                continue;
+                break;
                 /* DELETE */
             case 'D':
                 process_remote_delete(&s, rel);
-                continue;
+                break;
             case 'R':
+  			    close_rel(rel);
                 rel = read_rel(&s, RowExclusiveLock);
-                continue;
+                break;
 			case 'F':
 			{
 				int node_id = pq_getmsgint(&s, 4);
 				int file_id = pq_getmsgint(&s, 4);
 				Assert(spill_file < 0);
 				spill_file = MtmOpenSpillFile(node_id, file_id);
-				continue;
+				break;
 			}
  		    case '(':
 			{
-			    int64 size = pq_getmsgint(&s, 4);    
-				s.data = palloc(size);
+			    size_t size = pq_getmsgint(&s, 4);    
+				s.data = MemoryContextAlloc(TopMemoryContext, size);
 				save_cursor = s.cursor;
 				save_len = s.len;
 				s.cursor = 0;
 				s.len = size;
 				MtmReadSpillFile(spill_file, s.data, size);
-				continue;
+				break;
 			}
   		    case ')':
 			{
@@ -1107,42 +1170,68 @@ void MtmExecutor(void* work, size_t size)
 				s.data = work;
   			    s.cursor = save_cursor;
 				s.len = save_len;
-				continue;
+				break;
 			}
+ 		    case 'N':
+			{
+				int64 next;
+				Oid relid;
+			    Assert(rel != NULL);
+				relid = RelationGetRelid(rel);
+  			    close_rel(rel);
+				rel = NULL;
+				next = pq_getmsgint64(&s); 
+				AdjustSequence(relid, next);
+				break;
+			}			   
+		    case '0':
+			    Assert(rel != NULL);
+			    heap_truncate_one_rel(rel);
+				break;
 			case 'M':
 			{
-				if (process_remote_message(&s)) { 
-					break;
-				}
-				continue;
+  			    close_rel(rel);
+				rel = NULL;
+				inside_transaction = !process_remote_message(&s);
+				break;
 			}
 			case 'Z':
 			{
-				MtmRecoveryCompleted();
+				MtmStateProcessEvent(MTM_RECOVERY_FINISH2);
+				inside_transaction = false;
 				break;
 			}
             default:
-                elog(ERROR, "unknown action of type %c", action);
+                MTM_ELOG(ERROR, "unknown action of type %c", action);
             }        
-            break;
-        }
+			MemoryContextSwitchTo(old_context);
+			MemoryContextResetAndDeleteChildren(MtmApplyContext);
+        } while (inside_transaction);
     }
     PG_CATCH();
     {
-		MemoryContext oldcontext = MemoryContextSwitchTo(MtmApplyContext);
+		old_context = MemoryContextSwitchTo(MtmApplyContext);
 		MtmHandleApplyError();
-		MemoryContextSwitchTo(oldcontext);
+		MemoryContextSwitchTo(old_context);
 		EmitErrorReport();
         FlushErrorState();
 		MTM_LOG1("%d: REMOTE begin abort transaction %llu", MyProcPid, (long64)MtmGetCurrentTransactionId());
 		MtmEndSession(MtmReplicationNodeId, false);
         AbortCurrentTransaction();
+		Assert(!MtmTransIsActive());
 		MTM_LOG2("%d: REMOTE end abort transaction %llu", MyProcPid, (long64)MtmGetCurrentTransactionId());
     }
     PG_END_TRY();
+	if (s.data != work) { 
+		pfree(s.data);
+	}
+#if 0 /* spill file is expecrted to be closed by tranaction commit or rollback */
 	if (spill_file >= 0) { 
 		MtmCloseSpillFile(spill_file);
 	}
+#endif
+	MemoryContextSwitchTo(top_context);
     MemoryContextResetAndDeleteChildren(MtmApplyContext);
+	MtmReleaseLocks();
 }
     

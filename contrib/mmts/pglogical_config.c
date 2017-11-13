@@ -32,6 +32,8 @@
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 
+#include "multimaster.h"
+
 typedef enum PGLogicalOutputParamType
 {
 	OUTPUT_PARAM_TYPE_BOOL,
@@ -253,7 +255,7 @@ process_parameters_v1(List *options, PGLogicalOutputData *data)
 
 			case PARAM_UNRECOGNISED:
 				ereport(DEBUG1,
-						(errmsg("Unrecognised pglogical parameter %s ignored", elem->defname)));
+						(MTM_ERRMSG("Unrecognised pglogical parameter %s ignored", elem->defname)));
 				break;
 		}
 	}
@@ -298,7 +300,7 @@ get_param_value(DefElem *elem, bool null_ok, PGLogicalOutputParamType type)
 		else
 			ereport(ERROR,
 					(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					 errmsg("parameter \"%s\" cannot be NULL", elem->defname)));
+					 MTM_ERRMSG("parameter \"%s\" cannot be NULL", elem->defname)));
 	}
 
 	switch (type)
@@ -348,7 +350,7 @@ get_param(List *options, const char *name, bool missing_ok, bool null_ok,
 	if (!missing_ok)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("missing required parameter \"%s\"", name)));
+				 MTM_ERRMSG("missing required parameter \"%s\"", name)));
 
 	return (Datum) 0;
 }
@@ -361,7 +363,7 @@ parse_param_bool(DefElem *elem)
 	if (!parse_bool(strVal(elem->arg), &res))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("could not parse boolean value \"%s\" for parameter \"%s\"",
+				 MTM_ERRMSG("could not parse boolean value \"%s\" for parameter \"%s\"",
 						strVal(elem->arg), elem->defname)));
 
 	return res;
@@ -375,13 +377,13 @@ parse_param_uint32(DefElem *elem)
 	if (!scanint8(strVal(elem->arg), true, &res))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("could not parse integer value \"%s\" for parameter \"%s\"",
+				 MTM_ERRMSG("could not parse integer value \"%s\" for parameter \"%s\"",
 						strVal(elem->arg), elem->defname)));
 
 	if (res > PG_UINT32_MAX || res < 0)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("value \"%s\" out of range for parameter \"%s\"",
+				 MTM_ERRMSG("value \"%s\" out of range for parameter \"%s\"",
 						strVal(elem->arg), elem->defname)));
 
 	return (uint32) res;

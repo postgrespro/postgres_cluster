@@ -49,6 +49,8 @@
 #include "utils/typcache.h"
 #include "miscadmin.h"
 
+#include "multimaster.h"
+
 extern void		_PG_output_plugin_init(OutputPluginCallbacks *cb);
 
 /* These must be available to pg_dlsym() */
@@ -76,6 +78,26 @@ static void send_startup_message(LogicalDecodingContext *ctx,
 		PGLogicalOutputData *data, bool last_message);
 
 static bool startup_message_sent = false;
+
+#define OUTPUT_BUFFER_SIZE (16*1024*1024) 
+
+void MtmOutputPluginWrite(LogicalDecodingContext *ctx, bool last_write, bool flush)
+{
+	if (flush) {
+		OutputPluginWrite(ctx, last_write);
+	}
+}
+
+void MtmOutputPluginPrepareWrite(LogicalDecodingContext *ctx, bool last_write, bool flush)
+{
+	if (!ctx->prepared_write) { 
+		OutputPluginPrepareWrite(ctx, last_write);
+	} else if (flush || ctx->out->len > OUTPUT_BUFFER_SIZE) {
+		OutputPluginWrite(ctx, false);
+		OutputPluginPrepareWrite(ctx, last_write);
+	}
+}
+
 
 /* specify output plugin callbacks */
 void
@@ -165,8 +187,8 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 										  ALLOCSET_DEFAULT_MINSIZE,
 										  ALLOCSET_DEFAULT_INITSIZE,
 										  ALLOCSET_DEFAULT_MAXSIZE);
-	data->allow_internal_basetypes = false;
-	data->allow_binary_basetypes = false;
+	data->allow_internal_basetypes = true;
+	data->allow_binary_basetypes = true;
 
 
 	ctx->output_plugin_private = data;
@@ -211,19 +233,19 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		if (params_format != 1)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("client sent startup parameters in format %d but we only support format 1",
+				 MTM_ERRMSG("client sent startup parameters in format %d but we only support format 1",
 					params_format)));
 
 		if (data->client_min_proto_version > PG_LOGICAL_PROTO_VERSION_NUM)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("client sent min_proto_version=%d but we only support protocol %d or lower",
+				 MTM_ERRMSG("client sent min_proto_version=%d but we only support protocol %d or lower",
 					 data->client_min_proto_version, PG_LOGICAL_PROTO_VERSION_NUM)));
 
 		if (data->client_max_proto_version < PG_LOGICAL_PROTO_MIN_VERSION_NUM)
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("client sent max_proto_version=%d but we only support protocol %d or higher",
+				 MTM_ERRMSG("client sent max_proto_version=%d but we only support protocol %d or higher",
 				 	data->client_max_proto_version, PG_LOGICAL_PROTO_MIN_VERSION_NUM)));
 
 		/*
@@ -255,7 +277,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 		{
 			ereport(ERROR,
 				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-				 errmsg("client requested protocol %s but only \"json\" or \"native\" are supported",
+				 MTM_ERRMSG("client requested protocol %s but only \"json\" or \"native\" are supported",
 				 	data->client_protocol_format)));
 		}
 
@@ -268,7 +290,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 			if (wanted_encoding == -1)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("unrecognised encoding name %s passed to expected_encoding",
+						 MTM_ERRMSG("unrecognised encoding name %s passed to expected_encoding",
 								data->client_expected_encoding)));
 
 			if (opt->output_type == OUTPUT_PLUGIN_TEXTUAL_OUTPUT)
@@ -281,7 +303,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				if (wanted_encoding != pg_get_client_encoding())
 					ereport(ERROR,
 							(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-							 errmsg("expected_encoding must be unset or match client_encoding in text protocols")));
+							 MTM_ERRMSG("expected_encoding must be unset or match client_encoding in text protocols")));
 			}
 			else
 			{
@@ -293,7 +315,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 				if (wanted_encoding != GetDatabaseEncoding())
 					ereport(ERROR,
 							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-							 errmsg("encoding conversion for binary datum not supported yet"),
+							 MTM_ERRMSG("encoding conversion for binary datum not supported yet"),
 							 errdetail("expected_encoding %s must be unset or match server_encoding %s",
 								 data->client_expected_encoding, GetDatabaseEncodingName())));
 			}
@@ -338,7 +360,7 @@ pg_decode_startup(LogicalDecodingContext * ctx, OutputPluginOptions *opt,
 			{
 				ereport(DEBUG1,
 						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						 errmsg("Cannot disable changeset forwarding on PostgreSQL 9.4")));
+						 MTM_ERRMSG("Cannot disable changeset forwarding on PostgreSQL 9.4")));
 			}
 		}
 		else if (data->client_forward_changesets_set
@@ -386,7 +408,7 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 	send_replication_origin &= txn->origin_id != InvalidRepOriginId;
 
 	if (data->api) { 
-		OutputPluginPrepareWrite(ctx, !send_replication_origin);
+		MtmOutputPluginPrepareWrite(ctx, !send_replication_origin, true);
 		data->api->write_begin(ctx->out, data, txn);
 
 		if (send_replication_origin)
@@ -394,8 +416,8 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 			char *origin;
 			
 			/* Message boundary */
-			OutputPluginWrite(ctx, false);
-			OutputPluginPrepareWrite(ctx, true);
+			MtmOutputPluginWrite(ctx, false, false);
+			MtmOutputPluginPrepareWrite(ctx, true, false);
 			
 			/*
 			 * XXX: which behaviour we want here?
@@ -410,7 +432,7 @@ pg_decode_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 				replorigin_by_oid(txn->origin_id, true, &origin))
 			data->api->write_origin(ctx->out, origin, txn->origin_lsn);
 		}
-		OutputPluginWrite(ctx, true);
+		MtmOutputPluginWrite(ctx, true, false);
 	}
 }
 
@@ -420,9 +442,9 @@ pg_decode_caughtup(LogicalDecodingContext *ctx)
 	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
 
 	if (data->api) { 
-		OutputPluginPrepareWrite(ctx, true);
+		MtmOutputPluginPrepareWrite(ctx, true, true);
 		data->api->write_caughtup(ctx->out, data, ctx->reader->EndRecPtr);
-		OutputPluginWrite(ctx, true);
+		MtmOutputPluginWrite(ctx, true, true);
 	}
 }
 
@@ -437,9 +459,9 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
 
 	if (data->api) { 
-		OutputPluginPrepareWrite(ctx, true);
+		MtmOutputPluginPrepareWrite(ctx, true, true);
 		data->api->write_commit(ctx->out, data, txn, commit_lsn);
-		OutputPluginWrite(ctx, true);
+		MtmOutputPluginWrite(ctx, true, true);
 	}
 }
 
@@ -460,38 +482,38 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	/* TODO: add caching (send only if changed) */
 	if (data->api->write_rel)
 	{
-		OutputPluginPrepareWrite(ctx, false);
+		MtmOutputPluginPrepareWrite(ctx, false, false);
 		data->api->write_rel(ctx->out, data, relation);
-		OutputPluginWrite(ctx, false);
+		MtmOutputPluginWrite(ctx, false, false);
 	}
 
 	/* Send the data */
 	switch (change->action)
 	{
 		case REORDER_BUFFER_CHANGE_INSERT:
-			OutputPluginPrepareWrite(ctx, true);
+			MtmOutputPluginPrepareWrite(ctx, true, false);
 			data->api->write_insert(ctx->out, data, relation,
 									&change->data.tp.newtuple->tuple);
-			OutputPluginWrite(ctx, true);
+			MtmOutputPluginWrite(ctx, true, false);
 			break;
 		case REORDER_BUFFER_CHANGE_UPDATE:
 			{
 				HeapTuple oldtuple = change->data.tp.oldtuple ?
 					&change->data.tp.oldtuple->tuple : NULL;
 
-				OutputPluginPrepareWrite(ctx, true);
+				MtmOutputPluginPrepareWrite(ctx, true, false);
 				data->api->write_update(ctx->out, data, relation, oldtuple,
 										&change->data.tp.newtuple->tuple);
-				OutputPluginWrite(ctx, true);
+				MtmOutputPluginWrite(ctx, true, false);
 				break;
 			}
 		case REORDER_BUFFER_CHANGE_DELETE:
 			if (change->data.tp.oldtuple)
 			{
-				OutputPluginPrepareWrite(ctx, true);
+				MtmOutputPluginPrepareWrite(ctx, true, false);
 				data->api->write_delete(ctx->out, data, relation,
 										&change->data.tp.oldtuple->tuple);
-				OutputPluginWrite(ctx, true);
+				MtmOutputPluginWrite(ctx, true, false);
 			}
 			else
 				elog(DEBUG1, "didn't send DELETE change because of missing oldtuple");
@@ -534,9 +556,9 @@ pg_decode_message(LogicalDecodingContext *ctx,
 {
 	PGLogicalOutputData* data = (PGLogicalOutputData*)ctx->output_plugin_private;
 
-	OutputPluginPrepareWrite(ctx, true);
-	data->api->write_message(ctx->out, prefix, sz, message);
-	OutputPluginWrite(ctx, true);
+	MtmOutputPluginPrepareWrite(ctx, true, !transactional);
+	data->api->write_message(ctx->out, ctx, prefix, sz, message);
+	MtmOutputPluginWrite(ctx, true, !transactional);
 }
 
 static void
@@ -557,9 +579,9 @@ send_startup_message(LogicalDecodingContext *ctx,
 	 */
 
 	if (data->api) {
-		OutputPluginPrepareWrite(ctx, last_message);
+		MtmOutputPluginPrepareWrite(ctx, last_message, true);
 		data->api->write_startup_message(ctx->out, msg);
-		OutputPluginWrite(ctx, last_message);
+		MtmOutputPluginWrite(ctx, last_message, true);
 	}
 
 	pfree(msg);

@@ -8,7 +8,7 @@ use IPC::Run qw(start finish);
 use Cwd;
 
 my $nnodes = 2;
-my $nclients = 10;
+my $nclients = 2;
 my $nkeys = $nnodes * $nclients;
 my $cluster = new Cluster($nnodes);
 
@@ -18,18 +18,18 @@ $cluster->start();
 
 my ($rc, $in, $out, $err);
 
-diag("sleeping 10");
+note("sleeping 10");
 sleep(10);
 
-diag("preparing the tables");
+note("preparing the tables");
 if ($cluster->psql(0, 'postgres', "create table t (k int primary key, v int)"))
 {
-	BAIL_OUT('failed to create t');
+	$cluster->bail_out_with_logs('failed to create t');
 }
 
 if ($cluster->psql(0, 'postgres', "insert into t (select generate_series(0, $nkeys - 1), 0)"))
 {
-	BAIL_OUT('failed to fill t');
+	$cluster->bail_out_with_logs('failed to fill t');
 }
 
 sub appender
@@ -50,7 +50,7 @@ sub appender
 		'postgres',
 	);
 
-	diag("running[" . getcwd() . "]: " . join(' ', @argv));
+	note("running[" . getcwd() . "]: " . join(' ', @argv));
 
 	return start(\@argv, $inref, $outref);
 }
@@ -59,12 +59,12 @@ sub state_dump
 {
 	my $state = shift;
 
-	diag("<<<<<");
+	note("<<<<<");
 	while (my ($key, $value) = each(%{$state}))
 	{
-		diag("$key -> $value");
+		note("$key -> $value");
 	}
-	diag(">>>>>");
+	note(">>>>>");
 }
 
 sub state_leq
@@ -75,13 +75,13 @@ sub state_leq
 	{
 		if (!exists($b->{$key}))
 		{
-			diag("b has no key $key\n");
+			note("b has no key $key\n");
 			return 0;
 		}
 
 		if ($b->{$key} < $value)
 		{
-			diag($b->{$key} . " < $value\n");
+			note($b->{$key} . " < $value\n");
 			return 0;
 		}
 	}
@@ -102,8 +102,8 @@ sub parse_state
 	return $state;
 }
 
-diag("starting appenders");
-diag("starting benches");
+note("starting appenders");
+note("starting benches");
 $in = '';
 $out = '';
 my @appenders = ();
@@ -136,16 +136,20 @@ while (time() - $started < $seconds)
 	{
 		if (!state_leq($state_a, $state_b) && !state_leq($state_a, $state_b))
 		{
-			diag("cross anomaly detected:\n===a\n$out_a\n+++b\n$out_b\n---\n");
+			note("cross anomaly detected:\n===a\n$out_a\n+++b\n$out_b\n---\n");
 			$anomalies++;
 		}
 	}
 }
 
-diag("finishing benches");
+note("finishing benches");
 foreach my $appender (@appenders)
 {
-	finish($appender) || BAIL_OUT("pgbench exited with $?");
+	if (!finish($appender))
+	{
+		$cluster->dumplogs();
+		$cluster->bail_out_with_logs("pgbench exited with $?");
+	}
 }
 
 is($anomalies, 0, "no cross anomalies after $selects selects");

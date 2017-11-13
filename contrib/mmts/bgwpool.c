@@ -13,6 +13,8 @@
 #include "tcop/pquery.h"
 
 #include "bgwpool.h"
+#include "multimaster.h"
+#include "utils/guc.h"
 
 bool MtmIsLogicalReceiver;
 int  MtmMaxWorkers;
@@ -21,6 +23,7 @@ static BgwPool* MtmPool;
 
 static void BgwShutdownWorker(int sig)
 {
+	MTM_LOG1("Background worker %d receive shutdown request", MyProcPid);
 	if (MtmPool) { 
 		BgwPoolStop(MtmPool);
 	}
@@ -31,17 +34,17 @@ static void BgwPoolMainLoop(BgwPool* pool)
     int size;
     void* work;
 	static PortalData fakePortal;
-	sigset_t sset;
 
+	MTM_ELOG(LOG, "Start background worker %d, shutdown=%d", MyProcPid, pool->shutdown);
+
+	MtmBackgroundWorker = true;
 	MtmIsLogicalReceiver = true;
 	MtmPool = pool;
 
-	signal(SIGINT, BgwShutdownWorker);
-	signal(SIGQUIT, BgwShutdownWorker);
-	signal(SIGTERM, BgwShutdownWorker);
-
-	sigfillset(&sset);
-	sigprocmask(SIG_UNBLOCK, &sset, NULL);
+	pqsignal(SIGINT, BgwShutdownWorker);
+	pqsignal(SIGQUIT, BgwShutdownWorker);
+	pqsignal(SIGTERM, BgwShutdownWorker);
+	pqsignal(SIGHUP, PostgresSigHupHandler);
 
     BackgroundWorkerUnblockSignals();
 	BackgroundWorkerInitializeConnection(pool->dbname, pool->dbuser);
@@ -49,15 +52,22 @@ static void BgwPoolMainLoop(BgwPool* pool)
 	ActivePortal->status = PORTAL_ACTIVE;
 	ActivePortal->sourceText = "";
 
-    while (true) { 
+	while (true) {
+		if (ConfigReloadPending)
+		{
+			ConfigReloadPending = false;
+			ProcessConfigFile(PGC_SIGHUP);
+		}
+
         PGSemaphoreLock(&pool->available);
         SpinLockAcquire(&pool->lock);
-		if (pool->shutdown) { 
+		if (pool->shutdown) { 	
+			PGSemaphoreUnlock(&pool->available);
 			break;
 		}
         size = *(int*)&pool->queue[pool->head];
         Assert(size < pool->size);
-        work = malloc(size);
+        work = palloc(size);
         pool->pending -= 1;
         pool->active += 1;
 		if (pool->lastPeakTime == 0 && pool->active == pool->nWorkers && pool->pending != 0) {
@@ -80,19 +90,23 @@ static void BgwPoolMainLoop(BgwPool* pool)
         }
         SpinLockRelease(&pool->lock);
         pool->executor(work, size);
-        free(work);
+        pfree(work);
         SpinLockAcquire(&pool->lock);
         pool->active -= 1;
 		pool->lastPeakTime = 0;
         SpinLockRelease(&pool->lock);
     }
 	SpinLockRelease(&pool->lock);
+	MTM_ELOG(LOG, "Shutdown background worker %d", MyProcPid);
 }
 
 void BgwPoolInit(BgwPool* pool, BgwPoolExecutor executor, char const* dbname,  char const* dbuser, size_t queueSize, size_t nWorkers)
 {
 	MtmPool = pool;
     pool->queue = (char*)ShmemAlloc(queueSize);
+	if (pool->queue == NULL) { 
+		elog(PANIC, "Failed to allocate memory for background workers pool: %lld bytes requested", (long64)queueSize);
+	}
     pool->executor = executor;
     PGSemaphoreCreate(&pool->available);
     PGSemaphoreCreate(&pool->overflow);

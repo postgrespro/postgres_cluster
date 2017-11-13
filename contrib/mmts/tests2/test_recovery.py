@@ -16,6 +16,7 @@ TEST_WARMING_TIME = 5
 TEST_DURATION = 10
 TEST_RECOVERY_TIME = 30
 TEST_SETUP_TIME = 20
+TEST_STOP_DELAY = 5
 
 class TestHelper(object):
 
@@ -31,6 +32,8 @@ class TestHelper(object):
         for conn_id, agg in enumerate(aggs):
             commits = commits and 'commit' in agg['transfer']['finish']
         if not commits:
+            print('No commits during aggregation interval')
+            # time.sleep(100000)
             raise AssertionError('No commits during aggregation interval')
 
     def assertNoCommits(self, aggs):
@@ -66,7 +69,7 @@ class TestHelper(object):
 class RecoveryTest(unittest.TestCase, TestHelper):
 
     @classmethod
-    def setUpClass(self):
+    def setUpClass(cls):
         subprocess.check_call(['docker-compose','up',
             '--force-recreate',
             '--build',
@@ -75,19 +78,28 @@ class RecoveryTest(unittest.TestCase, TestHelper):
         # XXX: add normal wait here
         time.sleep(TEST_SETUP_TIME)
 
-        self.client = MtmClient([
+        cls.client = MtmClient([
             "dbname=regression user=postgres host=127.0.0.1 port=15432",
             "dbname=regression user=postgres host=127.0.0.1 port=15433",
             "dbname=regression user=postgres host=127.0.0.1 port=15434"
         ], n_accounts=1000)
-        self.client.bgrun()
+        cls.client.bgrun()
 
     @classmethod
-    def tearDownClass(self):
+    def tearDownClass(cls):
         print('tearDown')
-        self.client.stop()
+        cls.client.stop()
+
+        time.sleep(TEST_STOP_DELAY)
+
+        if not cls.client.is_data_identic():
+            raise AssertionError('Different data on nodes')
+
+        if cls.client.no_prepared_tx() != 0:
+            raise AssertionError('There are some uncommitted tx')
+
         # XXX: check nodes data identity here
-#        subprocess.check_call(['docker-compose','down'])
+        # subprocess.check_call(['docker-compose','down'])
 
     def setUp(self):
         warnings.simplefilter("ignore", ResourceWarning)
@@ -121,7 +133,6 @@ class RecoveryTest(unittest.TestCase, TestHelper):
         self.assertCommits(aggs)
         self.assertIsolation(aggs)
 
-
     def test_edge_partition(self):
         print('### test_edge_partition ###')
 
@@ -148,6 +159,27 @@ class RecoveryTest(unittest.TestCase, TestHelper):
 
     def test_node_crash(self):
         print('### test_node_crash ###')
+
+        aggs_failure, aggs = self.performFailure(CrashRecoverNode('node3'))
+
+        self.assertCommits(aggs_failure[:2])
+        self.assertNoCommits(aggs_failure[2:])
+        self.assertIsolation(aggs_failure)
+
+        self.assertCommits(aggs)
+        self.assertIsolation(aggs)
+
+    def test_node_bicrash(self):
+        print('### test_node_bicrash ###')
+
+        aggs_failure, aggs = self.performFailure(CrashRecoverNode('node3'))
+
+        self.assertCommits(aggs_failure[:2])
+        self.assertNoCommits(aggs_failure[2:])
+        self.assertIsolation(aggs_failure)
+
+        self.assertCommits(aggs)
+        self.assertIsolation(aggs)
 
         aggs_failure, aggs = self.performFailure(CrashRecoverNode('node3'))
 

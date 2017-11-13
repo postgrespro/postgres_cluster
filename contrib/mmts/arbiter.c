@@ -21,6 +21,7 @@
 #include "postgres.h"
 #include "fmgr.h"
 #include "miscadmin.h"
+#include "pg_socket.h"
 #include "postmaster/postmaster.h"
 #include "postmaster/bgworker.h"
 #include "storage/s_lock.h"
@@ -56,6 +57,8 @@
 #include "replication/slot.h"
 #include "port/atomics.h"
 #include "tcop/utility.h"
+#include "libpq/ip.h"
+
 
 #ifndef USE_EPOLL
 #ifdef __linux__
@@ -73,6 +76,7 @@
 
 
 #include "multimaster.h"
+#include "state.h"
 
 #define MAX_ROUTES       16
 #define INIT_BUFFER_SIZE 1024
@@ -90,7 +94,7 @@ static void MtmSender(Datum arg);
 static void MtmReceiver(Datum arg);
 static void MtmMonitor(Datum arg);
 static void MtmSendHeartbeat(void);
-static bool MtmSendToNode(int node, void const* buf, int size, time_t reconnectTimeout);
+static bool MtmSendToNode(int node, void const* buf, int size);
 
 char const* const MtmMessageKindMnem[] = 
 {
@@ -133,35 +137,10 @@ static BackgroundWorker MtmMonitorWorker = {
 
 void MtmArbiterInitialize(void)
 {
-	elog(LOG, "Register background workers");
+	MTM_ELOG(LOG, "Register background workers");
 	RegisterBackgroundWorker(&MtmSenderWorker);
 	RegisterBackgroundWorker(&MtmRecevierWorker);
 	RegisterBackgroundWorker(&MtmMonitorWorker);
-}
-
-static int 
-MtmResolveHostByName(const char *hostname, unsigned* addrs, unsigned* n_addrs)
-{
-    struct sockaddr_in sin;
-    struct hostent* hp;
-    unsigned i;
-
-    sin.sin_addr.s_addr = inet_addr(hostname);
-    if (sin.sin_addr.s_addr != INADDR_NONE) {
-        memcpy(&addrs[0], &sin.sin_addr.s_addr, sizeof(sin.sin_addr.s_addr));
-        *n_addrs = 1;
-        return 1;
-    }
-
-    hp = gethostbyname(hostname);
-    if (hp == NULL || hp->h_addrtype != AF_INET) {
-        return 0;
-    }
-    for (i = 0; hp->h_addr_list[i] != NULL && i < *n_addrs; i++) {
-        memcpy(&addrs[i], hp->h_addr_list[i], sizeof(addrs[i]));
-    }
-    *n_addrs = i;
-    return 1;
 }
 
 static int stop = 0;
@@ -184,7 +163,7 @@ static void MtmRegisterSocket(int fd, int node)
     ev.events = EPOLLIN;
     ev.data.u32 = node;        
     if (epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &ev) < 0) {
-        elog(LOG, "Arbiter failed to add socket to epoll set: %d", errno);
+		MTM_ELOG(LOG, "Arbiter failed to add socket to epoll set: %s", strerror(errno));
     } 
 #else
     FD_SET(fd, &inset);    
@@ -198,7 +177,7 @@ static void MtmUnregisterSocket(int fd)
 {
 #if USE_EPOLL
     if (epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL) < 0) { 
-		elog(LOG, "Arbiter failed to unregister socket from epoll set: %d", errno);
+		MTM_ELOG(LOG, "Arbiter failed to unregister socket from epoll set: %s", strerror(errno));
     } 
 #else
 	FD_CLR(fd, &inset); 
@@ -209,9 +188,8 @@ static void MtmUnregisterSocket(int fd)
 static void MtmDisconnect(int node)
 {
 	MtmUnregisterSocket(sockets[node]);
-	close(sockets[node]);
+	pg_closesocket(sockets[node], MtmUseRDMA);
 	sockets[node] = -1;
-	MtmOnNodeDisconnect(node+1);
 }
 
 static int MtmWaitSocket(int sd, bool forWrite, timestamp_t timeoutMsec)
@@ -220,18 +198,20 @@ static int MtmWaitSocket(int sd, bool forWrite, timestamp_t timeoutMsec)
 	fd_set set;
 	int rc;
 	timestamp_t deadline = MtmGetSystemTime() + MSEC_TO_USEC(timeoutMsec);
-    FD_ZERO(&set); 
-    FD_SET(sd, &set); 
+
 	do { 
 		timestamp_t now;
 		MtmCheckHeartbeat();
-		now = MtmGetSystemTime();
-		if (now > deadline) { 
+        now = MtmGetSystemTime();
+        if (now > deadline) { 
 			now = deadline;
 		}
+		FD_ZERO(&set); 
+		FD_SET(sd, &set); 
 		tv.tv_sec = (deadline - now)/USECS_PER_SEC; 
 		tv.tv_usec = (deadline - now)%USECS_PER_SEC;
-	} while ((rc = select(sd+1, forWrite ? NULL : &set, forWrite ? &set : NULL, NULL, &tv)) < 0 && errno == EINTR);
+	} while ((rc = pg_select(sd+1, forWrite ? NULL : &set, forWrite ? &set : NULL, NULL, &tv, MtmUseRDMA)) < 0 && errno == EINTR);
+
 	return rc;
 }
 
@@ -241,8 +221,11 @@ static bool MtmWriteSocket(int sd, void const* buf, int size)
     while (size != 0) {
 		int rc = MtmWaitSocket(sd, true, MtmHeartbeatSendTimeout);
 		if (rc == 1) { 
-			while ((rc = send(sd, src, size, 0)) < 0 && errno == EINTR);			
+			while ((rc = pg_send(sd, src, size, 0, MtmUseRDMA)) < 0 && errno == EINTR);			
 			if (rc < 0) {
+				if (errno == EINPROGRESS) { 
+					continue;
+				}
 				return false;
 			}
 			size -= rc;
@@ -257,11 +240,11 @@ static bool MtmWriteSocket(int sd, void const* buf, int size)
 static int MtmReadSocket(int sd, void* buf, int buf_size)
 {
 	int rc;
-	while ((rc = recv(sd, buf, buf_size, 0)) < 0 && errno == EINTR);			
-	if (rc < 0 && errno == EAGAIN) { 
+	while ((rc = pg_recv(sd, buf, buf_size, 0, MtmUseRDMA)) < 0 && errno == EINTR);			
+	if (rc <= 0 && (errno == EAGAIN || errno == EINPROGRESS)) { 
 		rc = MtmWaitSocket(sd, false, MtmHeartbeatSendTimeout);
 		if (rc == 1) { 
-			while ((rc = recv(sd, buf, buf_size, 0)) < 0 && errno == EINTR);			
+			while ((rc = pg_recv(sd, buf, buf_size, 0, MtmUseRDMA)) < 0 && errno == EINTR);			
 		}
 	}
 	return rc;
@@ -273,74 +256,86 @@ static void MtmSetSocketOptions(int sd)
 {
 #ifdef TCP_NODELAY
 	int on = 1;
-	if (setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char const*)&on, sizeof(on)) < 0) {
-		elog(WARNING, "Failed to set TCP_NODELAY: %m");
+	if (pg_setsockopt(sd, IPPROTO_TCP, TCP_NODELAY, (char const*)&on, sizeof(on), MtmUseRDMA) < 0) {
+		MTM_ELOG(WARNING, "Failed to set TCP_NODELAY: %m");
 	}
 #endif
-	if (setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, (char const*)&on, sizeof(on)) < 0) {
-		elog(WARNING, "Failed to set SO_KEEPALIVE: %m");
+	if (pg_setsockopt(sd, SOL_SOCKET, SO_KEEPALIVE, (char const*)&on, sizeof(on), MtmUseRDMA) < 0) {
+		MTM_ELOG(WARNING, "Failed to set SO_KEEPALIVE: %m");
 	}
 
 	if (tcp_keepalives_idle) { 
 #ifdef TCP_KEEPIDLE
-		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPIDLE,
-					   (char *) &tcp_keepalives_idle, sizeof(tcp_keepalives_idle)) < 0)
+		if (pg_setsockopt(sd, IPPROTO_TCP, TCP_KEEPIDLE,
+						  (char *) &tcp_keepalives_idle, sizeof(tcp_keepalives_idle), MtmUseRDMA) < 0)
 		{
-			elog(WARNING, "Failed to set TCP_KEEPIDLE: %m");
+			MTM_ELOG(WARNING, "Failed to set TCP_KEEPIDLE: %m");
 		}
 #else
 #ifdef TCP_KEEPALIVE
-		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPALIVE,
-					   (char *) &tcp_keepalives_idle, sizeof(tcp_keepalives_idle)) < 0) 
+		if (pg_setsockopt(sd, IPPROTO_TCP, TCP_KEEPALIVE,
+						  (char *) &tcp_keepalives_idle, sizeof(tcp_keepalives_idle), MtmUseRDMA) < 0) 
 		{
-			elog(WARNING, "Failed to set TCP_KEEPALIVE: %m");
+			MTM_ELOG(WARNING, "Failed to set TCP_KEEPALIVE: %m");
 		}
 #endif
 #endif
 	}
 #ifdef TCP_KEEPINTVL
 	if (tcp_keepalives_interval) { 
-		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPINTVL,
-					   (char *) &tcp_keepalives_interval, sizeof(tcp_keepalives_interval)) < 0)
+		if (pg_setsockopt(sd, IPPROTO_TCP, TCP_KEEPINTVL,
+						  (char *) &tcp_keepalives_interval, sizeof(tcp_keepalives_interval), MtmUseRDMA) < 0)
 		{
-			elog(WARNING, "Failed to set TCP_KEEPINTVL: %m");
+			MTM_ELOG(WARNING, "Failed to set TCP_KEEPINTVL: %m");
 		}
 	}
 #endif
 #ifdef TCP_KEEPCNT
 	if (tcp_keepalives_count) {
-		if (setsockopt(sd, IPPROTO_TCP, TCP_KEEPCNT,
-					   (char *) &tcp_keepalives_count, sizeof(tcp_keepalives_count)) < 0)
+		if (pg_setsockopt(sd, IPPROTO_TCP, TCP_KEEPCNT,
+						  (char *) &tcp_keepalives_count, sizeof(tcp_keepalives_count), MtmUseRDMA) < 0)
 		{
-			elog(WARNING, "Failed to set TCP_KEEPCNT: %m");
+			MTM_ELOG(WARNING, "Failed to set TCP_KEEPCNT: %m");
 		}
 	}
 #endif
 }
 
+/*
+ * Check response message and update onde state
+ */
 static void MtmCheckResponse(MtmArbiterMessage* resp)
 {
-	if (BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1) 
-		&& !BIT_CHECK(Mtm->disabledNodeMask, resp->node-1)
-		&& Mtm->status != MTM_RECOVERY
-		&& Mtm->nodes[MtmNodeId-1].lastStatusChangeTime + MSEC_TO_USEC(MtmNodeDisableDelay) < MtmGetSystemTime()) 
-	{ 
-		elog(WARNING, "Node %d thinks that I am dead, while I am %s (message %s)", resp->node, MtmNodeStatusMnem[Mtm->status], MtmMessageKindMnem[resp->code]);
-		BIT_SET(Mtm->disabledNodeMask, MtmNodeId-1);
-		MtmSwitchClusterMode(MTM_RECOVERY);
-	} else if (BIT_CHECK(Mtm->disabledNodeMask, resp->node-1) && sockets[resp->node-1] < 0) { 
-		/* We receive heartbeat from dsiable node with 
+	if (resp->lockReq) {
+		BIT_SET(Mtm->inducedLockNodeMask, resp->node-1);
+	} else { 
+		BIT_CLEAR(Mtm->inducedLockNodeMask, resp->node-1);
+	}
+	if (resp->locked) {
+		BIT_SET(Mtm->currentLockNodeMask, resp->node-1);
+	} else { 
+		BIT_CLEAR(Mtm->currentLockNodeMask, resp->node-1);
+	}
+
+	// if (BIT_CHECK(resp->disabledNodeMask, MtmNodeId-1))
+	// {
+	// 	MtmStateProcessEvent(MTM_REMOTE_DISABLE);
+	// }
+
+	if (BIT_CHECK(Mtm->disabledNodeMask, resp->node-1) &&
+		sockets[resp->node-1] < 0)
+	{
+		/* We've received heartbeat from disabled node.
 		 * Looks like it is restarted.
 		 * Try to reconnect to it.
 		 */
-		elog(WARNING, "Receive heartbeat from disabled node %d", resp->node);		
+		MTM_ELOG(WARNING, "Receive heartbeat from disabled node %d", resp->node);		
 		BIT_SET(Mtm->reconnectMask, resp->node-1);
-	}	
+	}
 }
 
 static void MtmScheduleHeartbeat()
 {
-//	Assert(!last_sent_heartbeat || last_sent_heartbeat + MSEC_TO_USEC(MtmHeartbeatRecvTimeout) >= MtmGetSystemTime());
 	if (!stop) { 
 		enable_timeout_after(heartbeat_timer, MtmHeartbeatSendTimeout);
 		send_heartbeat = true;
@@ -353,10 +348,7 @@ static void MtmSendHeartbeat()
 	int i;
 	MtmArbiterMessage msg;
 	timestamp_t now = MtmGetSystemTime();
-	msg.code = MSG_HEARTBEAT;
-	msg.disabledNodeMask = Mtm->disabledNodeMask;
-	msg.connectivityMask = SELF_CONNECTIVITY_MASK;
-	msg.oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
+	MtmInitMessage(&msg, MSG_HEARTBEAT);
 	msg.node = MtmNodeId;
 	msg.csn = now;
 	if (last_sent_heartbeat != 0 && last_sent_heartbeat + MSEC_TO_USEC(MtmHeartbeatSendTimeout)*2 < now) { 
@@ -367,14 +359,20 @@ static void MtmSendHeartbeat()
 	for (i = 0; i < Mtm->nAllNodes; i++)
 	{
 		if (i+1 != MtmNodeId) { 
-			if (!BIT_CHECK(busy_mask, i)
-				&& (Mtm->status != MTM_ONLINE 
-					|| sockets[i] >= 0 
-					|| !BIT_CHECK(Mtm->disabledNodeMask, i)
-					|| BIT_CHECK(Mtm->reconnectMask, i)))
+			if (!BIT_CHECK(busy_mask, i))
+				/*
+				 * Old behaviour here can cause subtle bugs, for example
+				 * it can happened that none of mentioned conditiotions is
+				 * true when disabled node connects to a major node which
+				 * is online. So just send it allways. --sk
+				 */
+				// && (Mtm->status != MTM_ONLINE
+				// 	|| sockets[i] >= 0
+				// 	|| !BIT_CHECK(Mtm->disabledNodeMask, i)
+				// 	|| BIT_CHECK(Mtm->reconnectMask, i)))
 			{ 
-				if (!MtmSendToNode(i, &msg, sizeof(msg), MtmHeartbeatSendTimeout)) { 
-					elog(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
+				if (!MtmSendToNode(i, &msg, sizeof(msg))) {
+					MTM_ELOG(LOG, "Arbiter failed to send heartbeat to node %d", i+1);
 				} else {
 					if (last_heartbeat_to_node[i] + MSEC_TO_USEC(MtmHeartbeatSendTimeout)*2 < now) { 
 						MTM_LOG1("Last heartbeat to node %d was sent %lld microseconds ago", i+1, now - last_heartbeat_to_node[i]);
@@ -383,23 +381,22 @@ static void MtmSendHeartbeat()
 					/* Connectivity mask can be cleared by MtmWatchdog: in this case sockets[i] >= 0 */
 					if (BIT_CHECK(SELF_CONNECTIVITY_MASK, i)) { 
 						MTM_LOG1("Force reconnect to node %d", i+1);    
-						close(sockets[i]);
+						pg_closesocket(sockets[i], MtmUseRDMA);
 						sockets[i] = -1;
 						MtmReconnectNode(i+1); /* set reconnect mask to force node reconnent */
-						//MtmOnNodeConnect(i+1);
 					}
 					MTM_LOG4("Send heartbeat to node %d with timestamp %lld", i+1, now);    
 				}
 			} else { 
-				MTM_LOG2("Do not send heartbeat to node %d, busy mask %lld, status %s", i+1, (long long) busy_mask, MtmNodeStatusMnem[Mtm->status]);
+				MTM_LOG2("Do not send heartbeat to node %d, busy mask %lld, status %s", i+1, busy_mask, MtmNodeStatusMnem[Mtm->status]);
 			}
 		}
 	}
 	
 }
 
-/* This function shoudl be called from all places where sender can be blocked.
- * It checks send_heartbeat flag set by timer and if it is set hthen sends heartbeats to all alive nodes 
+/* This function should be called from all places where sender can be blocked.
+ * It checks send_heartbeat flag set by timer and if it is set then sends heartbeats to all alive nodes 
  */
 void MtmCheckHeartbeat()
 {
@@ -411,113 +408,109 @@ void MtmCheckHeartbeat()
 }
 
 
-static int MtmConnectSocket(int node, int port, time_t timeout)
+static int MtmConnectSocket(int node, int port)
 {
-    struct sockaddr_in sock_inet;
-    unsigned addrs[MAX_ROUTES];
-    unsigned i, n_addrs = sizeof(addrs) / sizeof(addrs[0]);
+ 	struct addrinfo *addrs = NULL;
+	struct addrinfo *addr;
+	struct addrinfo hint;
+	char portstr[MAXPGPATH];
 	MtmHandshakeMessage req;
 	MtmArbiterMessage   resp;
-	int sd;
-	timestamp_t start = MtmGetSystemTime();
+	int sd = -1;
+	int rc;
 	char const* host = Mtm->nodes[node].con.hostName;
 	nodemask_t save_mask = busy_mask;
-	timestamp_t afterWait;
-	timestamp_t beforeWait;
 
-    sock_inet.sin_family = AF_INET;
-	sock_inet.sin_port = htons(port);
+	/* Initialize hint structure */
+	MemSet(&hint, 0, sizeof(hint));
+	hint.ai_socktype = SOCK_STREAM;
+	hint.ai_family = AF_UNSPEC;
 
-	if (!MtmResolveHostByName(host, addrs, &n_addrs)) {
-		elog(LOG, "Arbiter failed to resolve host '%s' by name", host);
+	snprintf(portstr, sizeof(portstr), "%d", port);
+
+	rc = pg_getaddrinfo_all(host, portstr, &hint, &addrs);
+	if (rc != 0) 
+	{
+		MTM_ELOG(LOG, "Arbiter failed to resolve host '%s' by name: %s", host, gai_strerror(rc));
 		return -1;
 	}
 	BIT_SET(busy_mask, node);
 	
   Retry:
-    while (1) {
-		int rc = -1;
-		sd = socket(AF_INET, SOCK_STREAM, 0);
-		if (sd < 0) {
-			elog(LOG, "Arbiter failed to create socket: %d", errno);
-			busy_mask = save_mask;
-			return -1;
-		}
-		rc = fcntl(sd, F_SETFL, O_NONBLOCK);
-		if (rc < 0) {
-			elog(LOG, "Arbiter failed to switch socket to non-blocking mode: %d", errno);
-			busy_mask = save_mask;
-			return -1;
-		}
-		for (i = 0; i < n_addrs; ++i) {
-			memcpy(&sock_inet.sin_addr, &addrs[i], sizeof sock_inet.sin_addr);
-			do {
-				rc = connect(sd, (struct sockaddr*)&sock_inet, sizeof(sock_inet));
-			} while (rc < 0 && errno == EINTR);
 
-			if (rc >= 0 || errno == EINPROGRESS) {
-				break;
-			}
-		}
-		if (rc == 0) {
+	sd = pg_socket(AF_INET, SOCK_STREAM, 0, MtmUseRDMA);
+	if (sd < 0) {
+		MTM_ELOG(LOG, "Arbiter failed to create socket: %s", strerror(errno));
+		goto Error;
+	}
+	rc = pg_fcntl(sd, F_SETFL, O_NONBLOCK, MtmUseRDMA);
+	if (rc < 0) {
+		MTM_ELOG(LOG, "Arbiter failed to switch socket to non-blocking mode: %s", strerror(errno));
+		goto Error;
+	}
+	for (addr = addrs; addr != NULL; addr = addr->ai_next)
+	{
+		do {
+			rc = pg_connect(sd, addr->ai_addr, addr->ai_addrlen, MtmUseRDMA);
+		} while (rc < 0 && errno == EINTR);
+
+		if (rc >= 0 || errno == EINPROGRESS) {
 			break;
 		}
-		beforeWait = MtmGetSystemTime();
-		if (errno != EINPROGRESS || start + MSEC_TO_USEC(timeout) < beforeWait ) {
-			elog(WARNING, "Arbiter failed to connect to %s:%d: error=%d", host, port, errno);
-			close(sd);
-			busy_mask = save_mask;
-			return -1;
-		} else {
-			rc = MtmWaitSocket(sd, true, MtmHeartbeatSendTimeout);
-			if (rc == 1) {
-				socklen_t optlen = sizeof(int); 
-				if (getsockopt(sd, SOL_SOCKET, SO_ERROR, (void*)&rc, &optlen) < 0) { 
-					elog(WARNING, "Arbiter failed to getsockopt for %s:%d: error=%d", host, port, errno);
-					close(sd);
-					busy_mask = save_mask;
-					return -1;
-				}
-				if (rc == 0) { 
-					break;
-				} else { 
-					elog(WARNING, "Arbiter trying to connect to %s:%d: rc=%d, error=%d", host, port, rc, errno);
-				}
-			} else { 
-				elog(WARNING, "Arbiter waiting socket to %s:%d: rc=%d, error=%d", host, port, rc, errno);
+	}
+
+	if (rc != 0 && errno == EINPROGRESS) {
+		rc = MtmWaitSocket(sd, true, MtmHeartbeatSendTimeout);
+		if (rc == 1) {
+			socklen_t	optlen = sizeof(int);
+			int			errcode;
+
+			if (pg_getsockopt(sd, SOL_SOCKET, SO_ERROR, (void*)&errcode, &optlen, MtmUseRDMA) < 0) {
+				MTM_ELOG(WARNING, "Arbiter failed to getsockopt for %s:%d: %s", host, port, strerror(errcode));
+				goto Error;
 			}
-			close(sd);
-			afterWait = MtmGetSystemTime();
-			if (afterWait < beforeWait + MSEC_TO_USEC(MtmHeartbeatSendTimeout)) {
-				MtmSleep(beforeWait + MSEC_TO_USEC(MtmHeartbeatSendTimeout) - afterWait);
+			if (errcode != 0) {
+				MTM_ELOG(WARNING, "Arbiter trying to connect to %s:%d: %s", host, port, strerror(errcode));
+				goto Error;
 			}
+		} else if (rc == 0) {
+			MTM_ELOG(WARNING, "Arbiter failed to connect to socket to %s:%d within specified timeout", host, port);
+			goto Error;
+		} else { 
+			MTM_ELOG(WARNING, "Arbiter failed to wait socket to %s:%d: %s", host, port, strerror(errno));
+			goto Error;
 		}
 	}
+	else if (rc != 0) {
+		MTM_ELOG(WARNING, "Arbiter failed to connect to %s:%d: (%d) %s", host, port, rc, strerror(errno));
+		goto Error;
+	}
+
 	MtmSetSocketOptions(sd);
-	req.hdr.code = MSG_HANDSHAKE;
+	MtmInitMessage(&req.hdr, MSG_HANDSHAKE);
 	req.hdr.node = MtmNodeId;
 	req.hdr.dxid = HANDSHAKE_MAGIC;
 	req.hdr.sxid = ShmemVariableCache->nextXid;
 	req.hdr.csn  = MtmGetCurrentTime();
-	req.hdr.disabledNodeMask = Mtm->disabledNodeMask;
-	req.hdr.connectivityMask = SELF_CONNECTIVITY_MASK;
 	strcpy(req.connStr, Mtm->nodes[MtmNodeId-1].con.connStr);
 	if (!MtmWriteSocket(sd, &req, sizeof req)) { 
-		elog(WARNING, "Arbiter failed to send handshake message to %s:%d: %d", host, port, errno);
-		close(sd);
+		MTM_ELOG(WARNING, "Arbiter failed to send handshake message to %s:%d: %s", host, port, strerror(errno));
+		pg_closesocket(sd, MtmUseRDMA);
 		goto Retry;
 	}
 	if (MtmReadSocket(sd, &resp, sizeof resp) != sizeof(resp)) { 
-		elog(WARNING, "Arbiter failed to receive response for handshake message from %s:%d: errno=%d", host, port, errno);
-		close(sd);
+		MTM_ELOG(WARNING, "Arbiter failed to receive response for handshake message from %s:%d: %s", host, port, strerror(errno));
+		pg_closesocket(sd, MtmUseRDMA);
 		goto Retry;
 	}
 	if (resp.code != MSG_STATUS || resp.dxid != HANDSHAKE_MAGIC) {
-		elog(WARNING, "Arbiter get unexpected response %d for handshake message from %s:%d", resp.code, host, port);
-		close(sd);
+		MTM_ELOG(WARNING, "Arbiter get unexpected response %d for handshake message from %s:%d", resp.code, host, port);
+		pg_closesocket(sd, MtmUseRDMA);
 		goto Retry;
 	}
-	
+	if (addrs)
+		pg_freeaddrinfo_all(hint.ai_family, addrs);
+
 	MtmLock(LW_EXCLUSIVE);
 	MtmCheckResponse(&resp);
 	MtmUnlock();
@@ -525,8 +518,18 @@ static int MtmConnectSocket(int node, int port, time_t timeout)
 	MtmOnNodeConnect(node+1);
 
 	busy_mask = save_mask;
-
+	
 	return sd;
+
+Error:
+	busy_mask = save_mask;
+	if (sd >= 0) { 
+		pg_closesocket(sd, MtmUseRDMA);
+	}
+	if (addrs) {
+		pg_freeaddrinfo_all(hint.ai_family, addrs);
+	}
+	return -1;
 }
 
 
@@ -542,34 +545,26 @@ static void MtmOpenConnections()
 	}
 	for (i = 0; i < nNodes; i++) {
 		if (i+1 != MtmNodeId && i < Mtm->nAllNodes) { 
-			sockets[i] = MtmConnectSocket(i, Mtm->nodes[i].con.arbiterPort, MtmConnectTimeout);
-			if (sockets[i] < 0) { 
-				MtmOnNodeDisconnect(i+1);
-			} 
+			sockets[i] = MtmConnectSocket(i, Mtm->nodes[i].con.arbiterPort);
 		}
 	}
-	if (Mtm->nLiveNodes < Mtm->nAllNodes/2+1) { /* no quorum */
-		elog(WARNING, "Node is out of quorum: only %d nodes of %d are accessible", Mtm->nLiveNodes, Mtm->nAllNodes);
-		MtmSwitchClusterMode(MTM_IN_MINORITY);
-	} else if (Mtm->status == MTM_INITIALIZATION) { 
-		MtmSwitchClusterMode(MTM_CONNECTED);
-	}
+	MtmStateProcessEvent(MTM_ARBITER_RECEIVER_START);
 }
 
 
-static bool MtmSendToNode(int node, void const* buf, int size, time_t reconnectTimeout)
+static bool MtmSendToNode(int node, void const* buf, int size)
 {	
 	bool result = true;
 	nodemask_t save_mask = busy_mask;
 	BIT_SET(busy_mask, node);
 	while (true) {
 #if 0
-		/* Original intention was to reestablish connectect when reconnet mask is set to avoid hanged-up connection.
-		 * But reconnectMask is set not only when connection is broken, so breaking connection in all this cases cause avalunch of connection failures.
+		/* Original intention was to reestablish connection when reconnect mask is set to avoid hanged-up connection.
+		 * But reconnectMask is set not only when connection is broken, so breaking connection in all this cases cause avalanche of connection failures.
 		 */
 		if (sockets[node] >= 0 && BIT_CHECK(Mtm->reconnectMask, node)) {
-			elog(WARNING, "Arbiter is forced to reconnect to node %d", node+1); 
-			close(sockets[node]);
+			MTM_ELOG(WARNING, "Arbiter is forced to reconnect to node %d", node+1); 
+			pg_closesocket(sockets[node], MtmUseRDMA);
 			sockets[node] = -1;
 		}
 #endif
@@ -580,13 +575,12 @@ static bool MtmSendToNode(int node, void const* buf, int size, time_t reconnectT
 		}
 		if (sockets[node] < 0 || !MtmWriteSocket(sockets[node], buf, size)) {
 			if (sockets[node] >= 0) { 
-				elog(WARNING, "Arbiter fail to write to node %d: %d", node+1, errno);
-				close(sockets[node]);
+				MTM_ELOG(WARNING, "Arbiter fail to write to node %d: %s", node+1, strerror(errno));
+				pg_closesocket(sockets[node], MtmUseRDMA);
 				sockets[node] = -1;
 			}
-			sockets[node] = MtmConnectSocket(node, Mtm->nodes[node].con.arbiterPort, reconnectTimeout);
+			sockets[node] = MtmConnectSocket(node, Mtm->nodes[node].con.arbiterPort);
 			if (sockets[node] < 0) { 
-				MtmOnNodeDisconnect(node+1);
 				result = false;
 				break;
 			}
@@ -604,7 +598,7 @@ static int MtmReadFromNode(int node, void* buf, int buf_size)
 {
 	int rc = MtmReadSocket(sockets[node], buf, buf_size);
 	if (rc <= 0) { 
-		elog(WARNING, "Arbiter failed to read from node=%d, rc=%d, errno=%d", node+1, rc, errno);
+		MTM_ELOG(WARNING, "Arbiter failed to read from node=%d: %s", node+1, strerror(errno));
 		MtmDisconnect(node);
 	}
 	return rc;
@@ -612,22 +606,23 @@ static int MtmReadFromNode(int node, void* buf, int buf_size)
 
 static void MtmAcceptOneConnection()
 {
-	int fd = accept(gateway, NULL, NULL);
+	int fd = pg_accept(gateway, NULL, NULL, MtmUseRDMA);
 	if (fd < 0) {
-		elog(WARNING, "Arbiter failed to accept socket: %d", errno);
+		MTM_ELOG(WARNING, "Arbiter failed to accept socket: %s", strerror(errno));
 	} else { 	
 		MtmHandshakeMessage req;
 		MtmArbiterMessage resp;		
-		int rc = fcntl(fd, F_SETFL, O_NONBLOCK);
+		int rc = pg_fcntl(fd, F_SETFL, O_NONBLOCK, MtmUseRDMA);
 		if (rc < 0) {
-			elog(ERROR, "Arbiter failed to switch socket to non-blocking mode: %d", errno);
+			MTM_ELOG(ERROR, "Arbiter failed to switch socket to non-blocking mode: %s", strerror(errno));
 		}
 		rc = MtmReadSocket(fd, &req, sizeof req);
 		if (rc < sizeof(req)) { 
-			elog(WARNING, "Arbiter failed to handshake socket: %d, errno=%d", rc, errno);
+			MTM_ELOG(WARNING, "Arbiter failed to handshake socket: %s", strerror(errno));
+			pg_closesocket(fd, MtmUseRDMA);
 		} else if (req.hdr.code != MSG_HANDSHAKE && req.hdr.dxid != HANDSHAKE_MAGIC) { 
-			elog(WARNING, "Arbiter get unexpected handshake message %d", req.hdr.code);
-			close(fd);
+			MTM_ELOG(WARNING, "Arbiter failed to handshake socket: %s", strerror(errno));
+			pg_closesocket(fd, MtmUseRDMA);
 		} else { 
 			int node = req.hdr.node-1;
 			Assert(node >= 0 && node < Mtm->nAllNodes && node+1 != MtmNodeId);
@@ -636,17 +631,15 @@ static void MtmAcceptOneConnection()
 			MtmCheckResponse(&req.hdr);
 			MtmUnlock();
 
-			resp.code = MSG_STATUS;
-			resp.disabledNodeMask = Mtm->disabledNodeMask;
-			resp.connectivityMask = SELF_CONNECTIVITY_MASK;
+			MtmInitMessage(&resp, MSG_STATUS);
 			resp.dxid = HANDSHAKE_MAGIC;
 			resp.sxid = ShmemVariableCache->nextXid;
 			resp.csn  = MtmGetCurrentTime();
 			resp.node = MtmNodeId;
 			MtmUpdateNodeConnectionInfo(&Mtm->nodes[node].con, req.connStr);
 			if (!MtmWriteSocket(fd, &resp, sizeof resp)) { 
-				elog(WARNING, "Arbiter failed to write response for handshake message to node %d", node+1);
-				close(fd);
+				MTM_ELOG(WARNING, "Arbiter failed to write response for handshake message to node %d", node+1);
+				pg_closesocket(fd, MtmUseRDMA);
 			} else { 
 				MTM_LOG1("Arbiter established connection with node %d", node+1); 
 				if (sockets[node] >= 0) { 
@@ -676,17 +669,19 @@ static void MtmAcceptIncomingConnections()
 	sock_inet.sin_addr.s_addr = htonl(INADDR_ANY);
 	sock_inet.sin_port = htons(MtmArbiterPort);
 
-    gateway = socket(sock_inet.sin_family, SOCK_STREAM, 0);
+    gateway = pg_socket(sock_inet.sin_family, SOCK_STREAM, 0, MtmUseRDMA);
 	if (gateway < 0) {
-		elog(ERROR, "Arbiter failed to create socket: %d", errno);
+		MTM_ELOG(ERROR, "Arbiter failed to create socket: %s", strerror(errno));
 	}
-    setsockopt(gateway, SOL_SOCKET, SO_REUSEADDR, (char*)&on, sizeof on);
+    if (pg_setsockopt(gateway, SOL_SOCKET, SO_REUSEADDR, (char*)&on, sizeof on, MtmUseRDMA) < 0) {
+		MTM_ELOG(ERROR, "Arbiter failed to set options for socket: %s", strerror(errno));
+	}			
 
-    if (bind(gateway, (struct sockaddr*)&sock_inet, sizeof(sock_inet)) < 0) {
-		elog(ERROR, "Arbiter failed to bind socket: %d", errno);
+    if (pg_bind(gateway, (struct sockaddr*)&sock_inet, sizeof(sock_inet), MtmUseRDMA) < 0) {
+		MTM_ELOG(ERROR, "Arbiter failed to bind socket: %s", strerror(errno));
 	}	
-    if (listen(gateway, nNodes) < 0) {
-		elog(ERROR, "Arbiter failed to listen socket: %d", errno);
+    if (pg_listen(gateway, nNodes, MtmUseRDMA) < 0) {
+		MTM_ELOG(ERROR, "Arbiter failed to listen socket: %s", strerror(errno));
 	}	
 
 	sockets[MtmNodeId-1] = gateway;
@@ -713,19 +708,20 @@ static void MtmAppendBuffer(MtmBuffer* txBuffer, MtmArbiterMessage* msg)
 
 static void MtmSender(Datum arg)
 {
-	sigset_t sset;
 	int nNodes = MtmMaxNodes;
 	int i;
+	MtmBuffer* txBuffer;
 
-	MtmBuffer* txBuffer = (MtmBuffer*)palloc0(sizeof(MtmBuffer)*nNodes);
-	elog(LOG, "Start arbiter sender %d", MyProcPid);
+	MtmBackgroundWorker = true;
+
+	txBuffer = (MtmBuffer*)palloc0(sizeof(MtmBuffer)*nNodes);
+	MTM_ELOG(LOG, "Start arbiter sender %d", MyProcPid);
 	InitializeTimeouts();
 
-	signal(SIGINT, SetStop);
-	signal(SIGQUIT, SetStop);
-	signal(SIGTERM, SetStop);
-	sigfillset(&sset);
-	sigprocmask(SIG_UNBLOCK, &sset, NULL);
+	pqsignal(SIGINT, SetStop);
+	pqsignal(SIGQUIT, SetStop);
+	pqsignal(SIGTERM, SetStop);
+	pqsignal(SIGHUP, PostgresSigHupHandler);
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -743,6 +739,12 @@ static void MtmSender(Datum arg)
 		MtmMessageQueue *curr, *next;		
 		PGSemaphoreLock(&Mtm->sendSemaphore);
 		CHECK_FOR_INTERRUPTS();
+
+		if (ConfigReloadPending)
+		{
+			ConfigReloadPending = false;
+			ProcessConfigFile(PGC_SIGHUP);
+		}
 
 		MtmCheckHeartbeat();
 		/* 
@@ -763,14 +765,14 @@ static void MtmSender(Datum arg)
 
 		for (i = 0; i < Mtm->nAllNodes; i++) { 
 			if (txBuffer[i].used != 0) { 
-				MtmSendToNode(i, txBuffer[i].data, txBuffer[i].used*sizeof(MtmArbiterMessage), MtmReconnectTimeout);
+				MtmSendToNode(i, txBuffer[i].data, txBuffer[i].used*sizeof(MtmArbiterMessage));
 				txBuffer[i].used = 0;
 			}
 		}		
 		CHECK_FOR_INTERRUPTS();
 		MtmCheckHeartbeat();
 	}
-	elog(LOG, "Stop arbiter sender %d", MyProcPid);
+	MTM_ELOG(LOG, "Stop arbiter sender %d", MyProcPid);
 	proc_exit(1); /* force restart of this bgwroker */
 }
 
@@ -789,8 +791,8 @@ static bool MtmRecovery()
             fd_set tryset;
             FD_ZERO(&tryset);
             FD_SET(sd, &tryset);
-            if (select(sd+1, &tryset, NULL, NULL, &tm) < 0) {
-				elog(WARNING, "Arbiter lost connection with node %d", i+1);
+            if (pg_select(sd+1, &tryset, NULL, NULL, &tm, MtmUseRDMA) < 0) {
+				MTM_ELOG(WARNING, "Arbiter lost connection with node %d", i+1);
 				MtmDisconnect(i);
 				recovered = true;
             }
@@ -802,14 +804,13 @@ static bool MtmRecovery()
 
 static void MtmMonitor(Datum arg)
 {
-	sigset_t sset;
-
-	signal(SIGINT, SetStop);
-	signal(SIGQUIT, SetStop);
-	signal(SIGTERM, SetStop);
-	sigfillset(&sset);
-	sigprocmask(SIG_UNBLOCK, &sset, NULL);
+	pqsignal(SIGINT, SetStop);
+	pqsignal(SIGQUIT, SetStop);
+	pqsignal(SIGTERM, SetStop);
+	pqsignal(SIGHUP, PostgresSigHupHandler);
 	
+	MtmBackgroundWorker = true;
+
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
 
@@ -817,17 +818,23 @@ static void MtmMonitor(Datum arg)
 	BackgroundWorkerInitializeConnection(MtmDatabaseName, NULL);
 
 	while (!stop) {
-		int rc = WaitLatch(&MyProc->procLatch, WL_TIMEOUT | WL_POSTMASTER_DEATH, MtmHeartbeatSendTimeout);
+		int rc = WaitLatch(&MyProc->procLatch, WL_TIMEOUT | WL_POSTMASTER_DEATH, MtmHeartbeatRecvTimeout);
 		if (rc & WL_POSTMASTER_DEATH) { 
 			break;
 		}
+
+		if (ConfigReloadPending)
+		{
+			ConfigReloadPending = false;
+			ProcessConfigFile(PGC_SIGHUP);
+		}
+
 		MtmRefreshClusterStatus();
 	}
 }
 
 static void MtmReceiver(Datum arg)
 {
-	sigset_t sset;
 	int nNodes = MtmMaxNodes;
 	int nResponses;
 	int i, j, n, rc;
@@ -844,12 +851,13 @@ static void MtmReceiver(Datum arg)
     max_fd = 0;
 #endif
 
-	signal(SIGINT, SetStop);
-	signal(SIGQUIT, SetStop);
-	signal(SIGTERM, SetStop);
-	sigfillset(&sset);
-	sigprocmask(SIG_UNBLOCK, &sset, NULL);
-	
+	pqsignal(SIGINT, SetStop);
+	pqsignal(SIGQUIT, SetStop);
+	pqsignal(SIGTERM, SetStop);
+	pqsignal(SIGHUP, PostgresSigHupHandler);
+
+	MtmBackgroundWorker = true;
+
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
 
@@ -870,31 +878,38 @@ static void MtmReceiver(Datum arg)
 			if (errno == EINTR) { 
 				continue;
 			}
-			elog(ERROR, "Arbiter failed to poll sockets: %d", errno);
+			MTM_ELOG(ERROR, "Arbiter failed to poll sockets: %s", strerror(errno));
 		}
 		for (j = 0; j < n; j++) {
 			i = events[j].data.u32;
 			if (events[j].events & EPOLLERR) {
-				elog(WARNING, "Arbiter lost connection with node %d", i+1);
+				MTM_ELOG(WARNING, "Arbiter lost connection with node %d", i+1);
 				MtmDisconnect(i);
 			} 
 		}
 		for (j = 0; j < n; j++) {
 			if (events[j].events & EPOLLIN)  
 #else
-        fd_set events;
+		fd_set events;
+
+		if (ConfigReloadPending)
+		{
+			ConfigReloadPending = false;
+			ProcessConfigFile(PGC_SIGHUP);
+		}
+
 		do { 
 			struct timeval tv;
 			events = inset;
 			tv.tv_sec = selectTimeout/1000;
 			tv.tv_usec = selectTimeout%1000*1000;
 			do { 
-				n = select(max_fd+1, &events, NULL, NULL, &tv);
+				n = pg_select(max_fd+1, &events, NULL, NULL, &tv, MtmUseRDMA);
 			} while (n < 0 && errno == EINTR);
 		} while (n < 0 && MtmRecovery());
 		
 		if (n < 0) {
-			elog(ERROR, "Arbiter failed to select sockets: %d", errno);
+			MTM_ELOG(ERROR, "Arbiter failed to select sockets: %s", strerror(errno));
 		}
 		for (i = 0; i < nNodes; i++) { 
 			if (sockets[i] >= 0 && FD_ISSET(sockets[i], &events)) 
@@ -927,7 +942,7 @@ static void MtmReceiver(Datum arg)
 					Assert(node > 0 && node <= nNodes && node != MtmNodeId);
 
 					if (Mtm->nodes[node-1].connectivityMask != msg->connectivityMask) { 
-						elog(LOG, "Node %d changes it connectivity mask from %llx to %llx", node, (long long)Mtm->nodes[node-1].connectivityMask, (long long)msg->connectivityMask);
+						MTM_ELOG(LOG, "Node %d changes it connectivity mask from %llx to %llx", node, Mtm->nodes[node-1].connectivityMask, msg->connectivityMask);
 					}
 
 					Mtm->nodes[node-1].oldestSnapshot = msg->oldestSnapshot;
@@ -936,44 +951,43 @@ static void MtmReceiver(Datum arg)
 					Mtm->nodes[node-1].lastHeartbeat = MtmGetSystemTime();
 
 					MtmCheckResponse(msg);
-					MTM_LOG2("Receive response %s for transaction %s from node %d", MtmMessageKindMnem[msg->code], msg->gid, msg->node);
+					MTM_LOG2("Receive response %s for transaction %s from node %d", MtmMessageKindMnem[msg->code], msg->gid, node);
 
 					switch (msg->code) {
 					  case MSG_HEARTBEAT:
 						MTM_LOG4("Receive HEARTBEAT from node %d with timestamp %lld delay %lld", 
 								 node, msg->csn, USEC_TO_MSEC(MtmGetSystemTime() - msg->csn)); 
-						continue;
+						Mtm->nodes[node-1].nHeartbeats += 1;
+						continue;						
 					  case MSG_POLL_REQUEST:
 						Assert(*msg->gid);
 						tm = (MtmTransMap*)hash_search(MtmGid2State, msg->gid, HASH_FIND, NULL);
 						if (tm == NULL || tm->state == NULL) { 
-							elog(WARNING, "Request for unexisted transaction %s from node %d", msg->gid, node);
+							MTM_ELOG(WARNING, "Request for unexisted transaction %s from node %d", msg->gid, node);
 							msg->status = TRANSACTION_STATUS_ABORTED;
 						} else {
 							msg->status = tm->state->status;
 							msg->csn = tm->state->csn;
-							MTM_LOG1("Send response %s for transaction %s to node %d", MtmTxnStatusMnem[msg->status], msg->gid, msg->node);
+							MTM_LOG1("Send response %s for transaction %s to node %d", MtmTxnStatusMnem[msg->status], msg->gid, node);
 						}
-						msg->disabledNodeMask = Mtm->disabledNodeMask;
-						msg->connectivityMask = SELF_CONNECTIVITY_MASK;
-						msg->oldestSnapshot = Mtm->nodes[MtmNodeId-1].oldestSnapshot;
-						msg->code = MSG_POLL_STATUS;	
+						MtmInitMessage(msg, MSG_POLL_STATUS);
 						MtmSendMessage(msg);
 						continue;
 					  case MSG_POLL_STATUS:
 						Assert(*msg->gid);
 						tm = (MtmTransMap*)hash_search(MtmGid2State, msg->gid, HASH_FIND, NULL);
 						if (tm == NULL || tm->state == NULL) { 
-							elog(WARNING, "Response for unexisted transaction %s from node %d", msg->gid, node);
+							MTM_ELOG(WARNING, "Response for non-existing transaction %s from node %d", msg->gid, node);
 						} else {
 							ts = tm->state;
 							BIT_SET(ts->votedMask, node-1);
 							if (ts->status == TRANSACTION_STATUS_UNKNOWN || ts->status == TRANSACTION_STATUS_IN_PROGRESS) { 
 								if (msg->status == TRANSACTION_STATUS_IN_PROGRESS || msg->status == TRANSACTION_STATUS_ABORTED) {
-									elog(LOG, "Abort prepared transaction %s because it is in state %s at node %d",
+									MTM_ELOG(LOG, "Abort prepared transaction %s because it is in state %s at node %d",
 										 msg->gid, MtmTxnStatusMnem[msg->status], node);
 
 									replorigin_session_origin = DoNotReplicateId;
+									TXFINISH("%s ABORT, MSG_POLL_STATUS", msg->gid);
 									MtmFinishPreparedTransaction(ts, false);
 									replorigin_session_origin = InvalidRepOriginId;
 								} 
@@ -984,45 +998,46 @@ static void MtmReceiver(Datum arg)
 										MtmSyncClock(ts->csn);
 									}
 									if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
-										elog(LOG, "Commit transaction %s because it is prepared at all live nodes", msg->gid);		
+										MTM_ELOG(LOG, "Commit transaction %s because it is prepared at all live nodes", msg->gid);		
 
 										replorigin_session_origin = DoNotReplicateId;
+										TXFINISH("%s COMMIT, MSG_POLL_STATUS", msg->gid);
 										MtmFinishPreparedTransaction(ts, true);
 										replorigin_session_origin = InvalidRepOriginId;
 									} else { 
 										MTM_LOG1("Receive response for transaction %s -> %s, participants=%llx, voted=%llx", 
-												 msg->gid, MtmTxnStatusMnem[msg->status], (long long)ts->participantsMask, (long long)ts->votedMask);		
+												 msg->gid, MtmTxnStatusMnem[msg->status], ts->participantsMask, ts->votedMask);		
 									}
 								} else {
-									elog(LOG, "Receive response %s for transaction %s for node %d, votedMask %llx, participantsMask %llx",
-										 MtmTxnStatusMnem[msg->status], msg->gid, node, (long long)ts->votedMask, (long long)(ts->participantsMask & ~Mtm->disabledNodeMask));
+									MTM_ELOG(LOG, "Receive response %s for transaction %s for node %d, votedMask %llx, participantsMask %llx",
+										 MtmTxnStatusMnem[msg->status], msg->gid, node, ts->votedMask, ts->participantsMask & ~Mtm->disabledNodeMask);
 									continue;
 								}
 							} else if (ts->status == TRANSACTION_STATUS_ABORTED && msg->status == TRANSACTION_STATUS_COMMITTED) {
-								elog(WARNING, "Transaction %s is aborted at node %d but committed at node %d", msg->gid, MtmNodeId, node);
+								MTM_ELOG(WARNING, "Transaction %s is aborted at node %d but committed at node %d", msg->gid, MtmNodeId, node);
 							} else if (msg->status == TRANSACTION_STATUS_ABORTED && ts->status == TRANSACTION_STATUS_COMMITTED) {
-								elog(WARNING, "Transaction %s is committed at node %d but aborted at node %d", msg->gid, MtmNodeId, node);
+								MTM_ELOG(WARNING, "Transaction %s is committed at node %d but aborted at node %d", msg->gid, MtmNodeId, node);
 							} else { 
-								elog(LOG, "Receive response %s for transaction %s status %s for node %d, votedMask %llx, participantsMask %llx",
-									 MtmTxnStatusMnem[msg->status], msg->gid, MtmTxnStatusMnem[ts->status], node, (long long)ts->votedMask, (long long)(ts->participantsMask & ~Mtm->disabledNodeMask) );
+								MTM_ELOG(LOG, "Receive response %s for transaction %s status %s for node %d, votedMask %llx, participantsMask %llx",
+									 MtmTxnStatusMnem[msg->status], msg->gid, MtmTxnStatusMnem[ts->status], node, ts->votedMask, ts->participantsMask & ~Mtm->disabledNodeMask);
 							}
 						}
 						continue;
 					  default:
 						break;
 					}
-					if (BIT_CHECK(msg->disabledNodeMask, node-1)) {
-						elog(WARNING, "Ignore message from dead node %d\n", node);
+					if (BIT_CHECK(msg->disabledNodeMask, node-1) || BIT_CHECK(Mtm->disabledNodeMask, node-1)) {
+						MTM_ELOG(WARNING, "Ignore message from dead node %d\n", node);
 						continue;
 					}
 					ts = (MtmTransState*)hash_search(MtmXid2State, &msg->dxid, HASH_FIND, NULL);
 					if (ts == NULL) { 
-						elog(WARNING, "Ignore response for unexisted transaction %llu from node %d", (long64)msg->dxid, node);
+						MTM_ELOG(WARNING, "Ignore response for non-existing transaction %llu from node %d", (long64)msg->dxid, node);
 						continue;
 					}
 					Assert(msg->code == MSG_ABORTED || strcmp(msg->gid, ts->gid) == 0);
 					if (BIT_CHECK(ts->votedMask, node-1)) {
-						elog(WARNING, "Receive deteriorated %s response for transaction %s (%llu) from node %d",
+						MTM_ELOG(WARNING, "Receive deteriorated %s response for transaction %s (%llu) from node %d",
 							 MtmMessageKindMnem[msg->code], ts->gid, (long64)ts->xid, node);
 						continue;
 					}
@@ -1033,20 +1048,23 @@ static void MtmReceiver(Datum arg)
 						  case MSG_PREPARED:
 							MTM_TXTRACE(ts, "MtmTransReceiver got MSG_PREPARED");
 							if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
-								elog(WARNING, "Receive PREPARED response for already committed transaction %llu from node %d",
+								MTM_ELOG(WARNING, "Receive PREPARED response for already committed transaction %llu from node %d",
 									 (long64)ts->xid, node);
 								continue;
 							}
 							Mtm->nodes[node-1].transDelay += MtmGetCurrentTime() - ts->csn;
 							ts->xids[node-1] = msg->sxid;
 							
+#if 0
+							/* This code seems to be deteriorated because now checking that distributed transaction involves all live nodes is done at replica while applying PREPARE */
 							if ((~msg->disabledNodeMask & Mtm->disabledNodeMask) != 0) { 
 								/* Coordinator's disabled mask is wider than of this node: so reject such transaction to avoid 
 								   commit on smaller subset of nodes */
-								elog(WARNING, "Coordinator of distributed transaction %s (%llu) see less nodes than node %d: %llx instead of %llx",
+								MTM_ELOG(WARNING, "Coordinator of distributed transaction %s (%llu) see less nodes than node %d: %llx instead of %llx",
 									 ts->gid, (long64)ts->xid, node, Mtm->disabledNodeMask, msg->disabledNodeMask);
 								MtmAbortTransaction(ts);
 							}
+#endif
 							if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
 								/* All nodes are finished their transactions */
 								if (ts->status == TRANSACTION_STATUS_ABORTED) { 
@@ -1059,17 +1077,10 @@ static void MtmReceiver(Datum arg)
 									if (ts->isTwoPhase) { 
 										MtmWakeUpBackend(ts);										
 									} else if (MtmUseDtm) { 
-										ts->votedMask = 0;
 										MTM_TXTRACE(ts, "MtmTransReceiver send MSG_PRECOMMIT");
-										//MtmSend2PCMessage(ts, MSG_PRECOMMIT);	
 										Assert(replorigin_session_origin == InvalidRepOriginId);
-										MTM_LOG2("SetPreparedTransactionState for %s", ts->gid);
-										MtmUnlock();
-										MtmResetTransaction();
-										StartTransactionCommand();
-										SetPreparedTransactionState(ts->gid, MULTIMASTER_PRECOMMITTED);	
-										CommitTransactionCommand();
-										MtmLock(LW_EXCLUSIVE);						
+										ts->isPrepared = false;
+										SetLatch(&ProcGlobal->allProcs[ts->procno].procLatch);
 									} else { 
 										ts->status = TRANSACTION_STATUS_UNKNOWN;
 										MtmWakeUpBackend(ts);
@@ -1079,13 +1090,14 @@ static void MtmReceiver(Datum arg)
 							break;						   
 						  case MSG_ABORTED:
 							if (ts->status == TRANSACTION_STATUS_COMMITTED) { 
-								elog(WARNING, "Receive ABORTED response for already committed transaction %s (%llu) from node %d",
+								MTM_ELOG(WARNING, "Receive ABORTED response for already committed transaction %s (%llu) from node %d",
 									 ts->gid, (long64)ts->xid, node);
 								continue;
 							}
 							if (ts->status != TRANSACTION_STATUS_ABORTED) { 
-								MTM_LOG1("Arbiter receive abort message for transaction %s (%llu)", ts->gid, (long64)ts->xid);
+								MTM_LOG1("Arbiter receive abort message for transaction %s (%llu) from node %d", ts->gid, (long64)ts->xid, node);
 								Assert(ts->status == TRANSACTION_STATUS_IN_PROGRESS);
+								ts->abortedByNode = node;
 								MtmAbortTransaction(ts);
 							}
 							if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
@@ -1095,7 +1107,7 @@ static void MtmReceiver(Datum arg)
 						  case MSG_PRECOMMITTED:
 							MTM_TXTRACE(ts, "MtmTransReceiver got MSG_PRECOMMITTED");
                             if (ts->status == TRANSACTION_STATUS_COMMITTED) {
-                                elog(WARNING, "Receive PRECOMMITTED response for already committed transaction %s (%llu) from node %d",
+                                MTM_ELOG(WARNING, "Receive PRECOMMITTED response for already committed transaction %s (%llu) from node %d",
                                      ts->gid, (long64)ts->xid, node);
                                 continue;
                             }
@@ -1111,8 +1123,8 @@ static void MtmReceiver(Datum arg)
 								}
 							} else { 
 								Assert(ts->status == TRANSACTION_STATUS_ABORTED);
-								elog(WARNING, "Receive PRECOMMITTED response for aborted transaction %s (%llu) from node %d", 
-									 ts->gid, (long64)ts->xid, node); // How it can happen? SHould we use assert here?
+								MTM_ELOG(WARNING, "Receive PRECOMMITTED response for aborted transaction %s (%llu) from node %d", 
+										 ts->gid, (long64)ts->xid, node); 
 								if ((ts->participantsMask & ~Mtm->disabledNodeMask & ~ts->votedMask) == 0) {
 									MtmWakeUpBackend(ts);
 								}
@@ -1122,23 +1134,7 @@ static void MtmReceiver(Datum arg)
 							Assert(false);
 						} 
 					} else { 
-						switch (msg->code) { 
-						  case MSG_PRECOMMIT:
-							Assert(false); // Now sent through pglogical 
-							if (ts->status == TRANSACTION_STATUS_IN_PROGRESS) {
-								ts->status = TRANSACTION_STATUS_UNKNOWN;
-								ts->csn = MtmAssignCSN();
-								MtmAdjustSubtransactions(ts);
-								MtmSend2PCMessage(ts, MSG_PRECOMMITTED);
-							} else if (ts->status == TRANSACTION_STATUS_ABORTED) {
-								MtmSend2PCMessage(ts, MSG_ABORTED);
-							} else { 
-								elog(WARNING, "Transaction %s is already %s", ts->gid, MtmTxnStatusMnem[ts->status]);
-							}
-							break;
-						  default:
-							Assert(false);
-						} 
+						Assert(false); /* All broadcasts are now sent through pglogical */
 					}
 				}
 				MtmUnlock();
@@ -1151,7 +1147,7 @@ static void MtmReceiver(Datum arg)
 		}
 		if (Mtm->status == MTM_ONLINE) { 
 			now = MtmGetSystemTime();
-			/* Check for heartbeats only in case of timeout expiration: it means that we do not have unproceeded events.
+			/* Check for heartbeats only in case of timeout expiration: it means that we do not have non-processed events.
 			 * It helps to avoid false node failure detection because of blocking receiver.
 			 */
 			if (n == 0) {
@@ -1178,4 +1174,3 @@ static void MtmReceiver(Datum arg)
 	}
 	proc_exit(1); /* force restart of this bgwroker */
 }
-

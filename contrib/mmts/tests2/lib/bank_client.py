@@ -11,6 +11,7 @@ import copy
 import aioprocessing
 import multiprocessing
 import logging
+import re
 
 class MtmTxAggregate(object):
 
@@ -26,16 +27,19 @@ class MtmTxAggregate(object):
     def start_tx(self):
         self.start_time = datetime.datetime.now()
 
-    def finish_tx(self, name):
+    def finish_tx(self, status):
         latency = (datetime.datetime.now() - self.start_time).total_seconds()
+
+        if "is aborted on node" in status:
+            status = re.sub(r'MTM-.+\)', '<censored>', status)
 
         if latency > self.max_latency:
             self.max_latency = latency
 
-        if name not in self.finish:
-            self.finish[name] = 1
+        if status not in self.finish:
+            self.finish[status] = 1
         else:
-            self.finish[name] += 1
+            self.finish[status] += 1
 
     def as_dict(self):
         return {
@@ -62,6 +66,7 @@ class MtmClient(object):
         # logging.basicConfig(level=logging.DEBUG)
         self.n_accounts = n_accounts
         self.dsns = dsns
+        self.total = 0
         self.aggregates = {}
         keep_trying(40, 1, self.initdb, 'self.initdb')
         self.running = True
@@ -109,20 +114,62 @@ class MtmClient(object):
         cur.close()
         conn.close()
 
+    def execute(self, node_id, statements):
+        con = psycopg2.connect(self.dsns[node_id])
+        con.autocommit = True
+        cur = con.cursor()
+        for statement in statements:
+            cur.execute(statement)
+        cur.close()
+        con.close()
+
+    def is_data_identic(self):
+        hashes = set()
+
+        for dsn in self.dsns:
+            con = psycopg2.connect(dsn)
+            cur = con.cursor()
+            cur.execute("""
+                select
+                    md5('(' || string_agg(uid::text || ', ' || amount::text , '),(') || ')')
+                from
+                    (select * from bank_test order by uid) t;""")
+            hashes.add(cur.fetchone()[0])
+            cur.close()
+            con.close()
+
+        print(hashes)
+        return (len(hashes) == 1)
+
+    def no_prepared_tx(self):
+        n_prepared = 0
+
+        for dsn in self.dsns:
+            con = psycopg2.connect(dsn)
+            cur = con.cursor()
+            cur.execute("select count(*) from pg_prepared_xacts;")
+            n_prepared += int(cur.fetchone()[0])
+            cur.close()
+            con.close()
+
+        print("n_prepared = %d" % (n_prepared))
+        return (n_prepared)
+
     @asyncio.coroutine
     def status(self):
         while self.running:
             msg = yield from self.child_pipe.coro_recv()
-            if msg == 'status':
+            if msg == 'status' or msg == 'status_noclean':
                 serialized_aggs = []
 
                 for conn_id, conn_aggs in self.aggregates.items():
                     serialized_aggs.append({})
                     for aggname, agg in conn_aggs.items():
                         serialized_aggs[conn_id][aggname] = agg.as_dict()
-                        agg.clear_values()
+                        if msg == 'status':
+                            agg.clear_values()
 
-                self.child_pipe.send(serialized_aggs)
+                yield from self.child_pipe.coro_send(serialized_aggs)
             else:
                 print('evloop: unknown message')
 
@@ -144,11 +191,15 @@ class MtmClient(object):
                         # enable_hstore tries to perform select from database
                         # which in case of select's failure will lead to exception
                         # and stale connection to the database
-                        conn = yield from aiopg.connect(dsn, enable_hstore=False)
-                        print("reconnected")
+                        conn = yield from aiopg.connect(dsn, enable_hstore=False, timeout=1)
+                        print('Connected %s, %d' % (aggname_prefix, conn_i + 1) )
 
                 if (not cur) or cur.closed:
-                        cur = yield from conn.cursor()
+                        # big timeout here is important because on timeout
+                        # expiration psycopg tries to call PQcancel() which
+                        # tries to create blocking connection to postgres and
+                        # blocks evloop
+                        cur = yield from conn.cursor(timeout=3600)
 
                 # ROLLBACK tx after previous exception.
                 # Doing this here instead of except handler to stay inside try
@@ -157,27 +208,31 @@ class MtmClient(object):
                 if status != TRANSACTION_STATUS_IDLE:
                     yield from cur.execute('rollback')
 
-                yield from tx_block(conn, cur, agg)
+                yield from tx_block(conn, cur, agg, conn_i)
                 agg.finish_tx('commit')
 
             except psycopg2.Error as e:
-                agg.finish_tx(str(e).strip())
+                msg = str(e).strip()
+                agg.finish_tx(msg)
                 # Give evloop some free time.
                 # In case of continuous excetions we can loop here without returning
                 # back to event loop and block it
-                yield from asyncio.sleep(0.01)
+                yield from asyncio.sleep(0.5)
+
             except BaseException as e:
-                agg.finish_tx(str(e).strip())
-                print('Catch exception ', e)
+                msg = str(e).strip()
+                agg.finish_tx(msg)
+                print('Caught exception %s, %s, %d, %s' % (type(e), aggname_prefix, conn_i + 1, msg) )
+
                 # Give evloop some free time.
                 # In case of continuous excetions we can loop here without returning
                 # back to event loop and block it
-                yield from asyncio.sleep(0.01)                
+                yield from asyncio.sleep(0.5)
 
         print("We've count to infinity!")
 
     @asyncio.coroutine
-    def transfer_tx(self, conn, cur, agg):
+    def transfer_tx(self, conn, cur, agg, conn_i):
         amount = 1
         # to avoid deadlocks:
         from_uid = random.randint(1, self.n_accounts - 2)
@@ -196,13 +251,14 @@ class MtmClient(object):
         yield from cur.execute('commit')
 
     @asyncio.coroutine
-    def total_tx(self, conn, cur, agg):
-        yield from cur.execute('select sum(amount) from bank_test')
+    def total_tx(self, conn, cur, agg, conn_i):
+        yield from cur.execute("select sum(amount), count(*), count(uid), current_setting('multimaster.node_id') from bank_test")
         total = yield from cur.fetchone()
-        if total[0] != 0:
+        if total[0] != self.total:
             agg.isolation += 1
+            print(datetime.datetime.utcnow(), 'Isolation error, total ', self.total, ' -> ', total[0], ', node ', conn_i+1)
+            self.total = total[0]
             print(self.oops)
-            print('Isolation error, total = ', total[0])
             # yield from cur.execute('select * from mtm.get_nodes_state()')
             # nodes_state = yield from cur.fetchall()
             # for i, col in enumerate(self.nodes_state_fields):
@@ -229,9 +285,14 @@ class MtmClient(object):
         self.evloop_process = multiprocessing.Process(target=self.run, args=())
         self.evloop_process.start()
 
-    def get_aggregates(self, _print=True):
-        self.parent_pipe.send('status')
+    def get_aggregates(self, _print=True, clean=True):
+        if clean:
+            self.parent_pipe.send('status')
+        else:
+            self.parent_pipe.send('status_noclean')
+
         resp = self.parent_pipe.recv()
+
         if _print:
             MtmClient.print_aggregates(resp)
         return resp
@@ -243,6 +304,7 @@ class MtmClient(object):
     def stop(self):
         self.running = False
         self.evloop_process.terminate()
+        time.sleep(3)
 
     @classmethod
     def print_aggregates(cls, aggs):

@@ -6,6 +6,8 @@
 #include "spill.h"
 #include "pgstat.h"
 
+#include "multimaster.h"
+
 void MtmSpillToFile(int fd, char const* data, size_t size)
 {
 	Assert(fd >= 0);
@@ -15,7 +17,7 @@ void MtmSpillToFile(int fd, char const* data, size_t size)
 			CloseTransientFile(fd);
 			ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("pglogical_recevier failed to spill transaction to file: %m")));
+				 MTM_ERRMSG("pglogical_recevier failed to spill transaction to file: %m")));
 		}
 		data += written;
 		size -= written;
@@ -33,7 +35,12 @@ void MtmCreateSpillDirectory(int node_id)
 	mkdir(path, S_IRWXU);
 
 	spill_dir = AllocateDir(path);
-
+	if (spill_dir == NULL) { 
+		ereport(PANIC,
+				(errcode_for_file_access(),
+				 MTM_ERRMSG("pglogical_receiver failed to create spill directory \"%s\": %m",
+							path)));
+	}		
 	while ((spill_de = ReadDir(spill_dir, path)) != NULL)
 	{
 		if (strncmp(spill_de->d_name, "txn", 3) == 0)
@@ -43,7 +50,7 @@ void MtmCreateSpillDirectory(int node_id)
 			if (unlink(path) != 0)
 				ereport(PANIC,
 						(errcode_for_file_access(),
-						 errmsg("pglogical_receiver could not remove spill file \"%s\": %m",
+						 MTM_ERRMSG("pglogical_receiver could not remove spill file \"%s\": %m",
 								path)));
 		}
 	}	
@@ -65,7 +72,7 @@ int MtmCreateSpillFile(int node_id, int* file_id)
 	if (fd < 0) { 
 		ereport(PANIC,
 				(errcode_for_file_access(),
-				 errmsg("pglogical_receiver could not create spill file \"%s\": %m",
+				 MTM_ERRMSG("pglogical_receiver could not create spill file \"%s\": %m",
 						path)));
 	}
 	*file_id = spill_file_id;
@@ -85,10 +92,14 @@ int MtmOpenSpillFile(int node_id, int file_id)
 	if (fd < 0) { 
 		ereport(PANIC,
 				(errcode_for_file_access(),
-				 errmsg("pglogical_apply could not open spill file \"%s\": %m",
+				 MTM_ERRMSG("pglogical_apply could not open spill file \"%s\": %m",
 						path)));
 	}
-	unlink(path); /* Should remove file on close */
+	if (unlink(path) < 0) { /* Should remove file on close */
+		ereport(LOG,
+				(errcode_for_file_access(),
+				 MTM_ERRMSG("pglogical_apply failed to unlink spill file: %m")));
+	}
 	return fd;
 }
 
@@ -101,7 +112,7 @@ void MtmReadSpillFile(int fd, char* data, size_t size)
 			CloseTransientFile(fd);
 			ereport(ERROR,
 				(errcode_for_file_access(),
-				 errmsg("pglogical_apply failed to read spill file: %m")));
+				 MTM_ERRMSG("pglogical_apply failed to read spill file: %m")));
 		}
 		data += rc;
 		size -= rc;

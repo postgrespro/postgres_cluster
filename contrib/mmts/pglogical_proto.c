@@ -34,6 +34,7 @@
 #include "utils/syscache.h"
 #include "utils/timestamp.h"
 #include "utils/typcache.h"
+#include "utils/snapmgr.h"
 
 #include "multimaster.h"
 #include "pglogical_relid_map.h"
@@ -42,6 +43,8 @@ static int MtmTransactionRecords;
 static bool MtmIsFilteredTxn;
 static TransactionId MtmCurrentXid;
 static bool DDLInProgress = false;
+static Oid MtmSenderTID; /* transaction identifier for WAL sender */
+static Oid MtmLastRelId; /* last relation ID sent to the receiver in this transaction */
 
 static void pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel);
 
@@ -59,7 +62,7 @@ static void pglogical_write_delete(StringInfo out, PGLogicalOutputData *data,
 							Relation rel, HeapTuple oldtuple);
 
 static void pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
-								   Relation rel, HeapTuple tuple);
+								  Relation rel, HeapTuple tuple);
 static char decide_datum_transfer(Form_pg_attribute att,
 								  Form_pg_type typclass,
 								  bool allow_internal_basetypes,
@@ -80,6 +83,7 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel)
 	const char *relname;
 	uint8		relnamelen;
 	Oid         relid;
+	Oid         tid;
 
 	if (MtmIsFilteredTxn) {
 		MTM_LOG2("%d: pglogical_write_message filtered", MyProcPid);
@@ -92,23 +96,37 @@ pglogical_write_rel(StringInfo out, PGLogicalOutputData *data, Relation rel)
 	}
 
 	relid = RelationGetRelid(rel);
+
+	if (relid == MtmLastRelId) { 
+		return;
+	}
+	MtmLastRelId = relid;
+
 	pq_sendbyte(out, 'R');		/* sending RELATION */	
 	pq_sendint(out, relid, sizeof relid); /* use Oid as relation identifier */
 	
-	nspname = get_namespace_name(rel->rd_rel->relnamespace);
-	if (nspname == NULL)
-		elog(ERROR, "cache lookup failed for namespace %u",
+	Assert(MtmSenderTID != InvalidOid);
+	tid = pglogical_relid_map_get(relid);
+	if (tid == MtmSenderTID) { /* this relation was already sent in this transaction */
+		pq_sendbyte(out, 0); /* do not need to send relation namespace and name in this case */
+		pq_sendbyte(out, 0);
+	} else { 
+		pglogical_relid_map_put(relid, MtmSenderTID);
+		nspname = get_namespace_name(rel->rd_rel->relnamespace);
+		if (nspname == NULL)
+			elog(ERROR, "cache lookup failed for namespace %u",
 				 rel->rd_rel->relnamespace);
-	nspnamelen = strlen(nspname) + 1;
-	
-	relname = NameStr(rel->rd_rel->relname);
-	relnamelen = strlen(relname) + 1;
-	
-	pq_sendbyte(out, nspnamelen);		/* schema name length */
-	pq_sendbytes(out, nspname, nspnamelen);
-	
-	pq_sendbyte(out, relnamelen);		/* table name length */
-	pq_sendbytes(out, relname, relnamelen);
+		nspnamelen = strlen(nspname) + 1;
+		
+		relname = NameStr(rel->rd_rel->relname);
+		relnamelen = strlen(relname) + 1;
+		
+		pq_sendbyte(out, nspnamelen);		/* schema name length */
+		pq_sendbytes(out, nspname, nspnamelen);
+		
+		pq_sendbyte(out, relnamelen);		/* table name length */
+		pq_sendbytes(out, relname, relnamelen);
+	}
 }
 
 /*
@@ -119,38 +137,90 @@ pglogical_write_begin(StringInfo out, PGLogicalOutputData *data,
 					  ReorderBufferTXN *txn)
 {
 	bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
-	csn_t csn = MtmTransactionSnapshot(txn->xid);
+	nodemask_t participantsMask;
+	csn_t csn = MtmDistributedTransactionSnapshot(txn->xid, MtmReplicationNodeId, &participantsMask);
+
+	Assert(isRecovery || txn->origin_id == InvalidRepOriginId);
 
 	if (!isRecovery && csn == INVALID_CSN) { 
 		MtmIsFilteredTxn = true;
-		MTM_LOG3("%d: pglogical_write_begin XID=%d filtered", MyProcPid, txn->xid);
+		MTM_LOG2("%d: pglogical_write_begin XID=%lld filtered", MyProcPid, (long64)txn->xid);
 	} else {
+		if (++MtmSenderTID == InvalidOid) { 
+			pglogical_relid_map_reset();
+			MtmSenderTID += 1; /* skip InvalidOid */
+		}
+		MtmLastRelId = InvalidOid;
 		MtmCurrentXid = txn->xid;
 		MtmIsFilteredTxn = false;
 		MTM_LOG3("%d: pglogical_write_begin XID=%d node=%d CSN=%lld recovery=%d restart_decoding_lsn=%llx first_lsn=%llx end_lsn=%llx confirmed_flush=%llx", 
 				 MyProcPid, txn->xid, MtmReplicationNodeId, csn, isRecovery,
 				 (long64)txn->restart_decoding_lsn, (long64)txn->first_lsn, (long64)txn->end_lsn, (long64)MyReplicationSlot->data.confirmed_flush);
 		
-		MTM_LOG3("%d: pglogical_write_begin XID=%d sent", MyProcPid, txn->xid);
+		MTM_LOG2("%d: pglogical_write_begin XID=%lld sent", MyProcPid, (long64)txn->xid);
 		pq_sendbyte(out, 'B');		/* BEGIN */
 		pq_sendint(out, MtmNodeId, 4);
-		pq_sendint(out, isRecovery ? InvalidTransactionId : txn->xid, 4);
+		pq_sendint64(out, isRecovery ? InvalidTransactionId : txn->xid);
 		pq_sendint64(out, csn);
+		pq_sendint64(out, participantsMask);
 
 		MtmTransactionRecords = 0;
 	}
 }
 
+
+static void pglogical_seq_nextval(StringInfo out, LogicalDecodingContext *ctx, MtmSeqPosition* pos)
+{
+	Relation rel = heap_open(pos->seqid, NoLock);
+	pglogical_write_rel(out, ctx->output_plugin_private, rel);
+	heap_close(rel, NoLock);
+	pq_sendbyte(out, 'N');
+	pq_sendint64(out, pos->next);
+}
+	
+
+static void pglogical_broadcast_table(StringInfo out, LogicalDecodingContext *ctx, MtmCopyRequest* copy)
+{
+	if (BIT_CHECK(copy->targetNodes, MtmReplicationNodeId-1)) { 
+		HeapScanDesc scandesc;
+		HeapTuple	 tuple;
+		Relation     rel;
+		
+		rel = heap_open(copy->sourceTable, ShareLock);
+		
+		pglogical_write_rel(out, ctx->output_plugin_private, rel);
+
+		pq_sendbyte(out, '0');
+
+		scandesc = heap_beginscan(rel, GetTransactionSnapshot(), 0, NULL);
+		while ((tuple = heap_getnext(scandesc, ForwardScanDirection)) != NULL)
+		{
+			MtmOutputPluginPrepareWrite(ctx, false, false);
+			pq_sendbyte(out, 'I');		/* action INSERT */
+			pglogical_write_tuple(out, ctx->output_plugin_private, rel, tuple);
+			MtmOutputPluginWrite(ctx, false, false);
+		}
+		heap_endscan(scandesc);
+		heap_close(rel, ShareLock);
+	}
+}
+
 static void
-pglogical_write_message(StringInfo out,
+pglogical_write_message(StringInfo out, LogicalDecodingContext *ctx,
 						const char *prefix, Size sz, const char *message)
 {
+	MtmLastRelId = InvalidOid;
 	switch (*prefix) { 
 	  case 'L':
 		if (MtmIsRecoveredNode(MtmReplicationNodeId)) { 			
 			return;
 		} else { 
 			MTM_LOG1("Send deadlock message to node %d", MtmReplicationNodeId);
+		}
+		break;
+	  case 'S':
+		if (MtmIsFilteredTxn) {
+			return;
 		}
 		break;
 	  case 'D':
@@ -167,6 +237,12 @@ pglogical_write_message(StringInfo out,
 		 * so no need to send that to replicas.
 		 */
 		return;
+	  case 'B':
+		pglogical_broadcast_table(out, ctx, (MtmCopyRequest*)message);
+		return;
+	  case 'N':
+		pglogical_seq_nextval(out, ctx, (MtmSeqPosition*)message);
+		return;		
 	}
 	pq_sendbyte(out, 'M');
 	pq_sendbyte(out, *prefix);
@@ -205,13 +281,16 @@ pglogical_write_commit(StringInfo out, PGLogicalOutputData *data,
 			return;
 		}
 	} else { 
-		csn_t csn = MtmTransactionSnapshot(txn->xid);
+		nodemask_t partisipantsMask;
 		bool isRecovery = MtmIsRecoveredNode(MtmReplicationNodeId);
+		csn_t csn = MtmDistributedTransactionSnapshot(txn->xid, MtmReplicationNodeId, &partisipantsMask);
 
-		if (!isRecovery && csn == INVALID_CSN && (event != PGLOGICAL_ABORT_PREPARED || txn->origin_id != InvalidRepOriginId))
+		Assert(isRecovery || txn->origin_id == InvalidRepOriginId);
+
+		if (!isRecovery && csn == INVALID_CSN)
 		{
 			if (event == PGLOGICAL_ABORT_PREPARED) { 
-				MTM_LOG1("Skip ABORT_PREPARED for transaction %s to node %d", txn->gid, MtmReplicationNodeId);
+				MTM_LOG1("Skip ABORT_PREPARED for transaction %s to node %d origin %d", txn->gid, MtmReplicationNodeId, txn->origin_id);
 			}
 			Assert(MtmTransactionRecords == 0);
 			return;
@@ -446,6 +525,7 @@ pglogical_write_tuple(StringInfo out, PGLogicalOutputData *data,
 		transfer_type = decide_datum_transfer(att, typclass,
 											  data->allow_internal_basetypes,
 											  data->allow_binary_basetypes);
+			
         pq_sendbyte(out, transfer_type);
 		switch (transfer_type)
 		{

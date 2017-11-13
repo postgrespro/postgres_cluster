@@ -14,11 +14,12 @@
  */
 
 /* Some general headers for custom bgworker facility */
+
 #include <unistd.h>
 #include "postgres.h"
 #include "fmgr.h"
 #include "miscadmin.h"
-#include "libpq-fe.h"
+#include "pg_socket.h"
 #include "pqexpbuffer.h"
 #include "access/xact.h"
 #include "access/clog.h"
@@ -37,9 +38,11 @@
 #include "replication/origin.h"
 #include "utils/portal.h"
 #include "tcop/pquery.h"
+#include "libpq-int.h"
 
 #include "multimaster.h"
 #include "spill.h"
+#include "state.h"
 
 #define ERRCODE_DUPLICATE_OBJECT_STR  "42710"
 #define RECEIVER_SUSPEND_TIMEOUT (1*USECS_PER_SEC)
@@ -96,13 +99,13 @@ sendFeedback(PGconn *conn, int64 now, int node_id)
 
 	replybuf[len] = 'r';
 	len += 1;
-	fe_sendint64(output_written_lsn, &replybuf[len]);   /* write */
+	fe_sendint64(output_written_lsn, &replybuf[len]);	/* write */
 	len += 8;
 	fe_sendint64(output_flushed_lsn, &replybuf[len]);	/* flush */
 	len += 8;
 	fe_sendint64(output_applied_lsn, &replybuf[len]);	/* apply */
 	len += 8;
-	fe_sendint64(now, &replybuf[len]);  /* sendTime */
+	fe_sendint64(now, &replybuf[len]);	/* sendTime */
 	len += 8;
 
 	/* No reply requested from server */
@@ -111,7 +114,7 @@ sendFeedback(PGconn *conn, int64 now, int node_id)
 
 	if (PQputCopyData(conn, replybuf, len) <= 0 || PQflush(conn))
 	{
-		ereport(LOG, (errmsg("%s: could not send feedback packet: %s",
+		ereport(LOG, (MTM_ERRMSG("%s: could not send feedback packet: %s",
 							 worker_proc, PQerrorMessage(conn))));
 		return false;
 	}
@@ -194,11 +197,11 @@ feTimestampDifference(int64 start_time, int64 stop_time,
 	}
 }
 
-static char const* const MtmReplicationModeName[] = 
+static char const* const MtmReplicationModeName[] =
 {
 	"exit",
 	"recovered",   /* recovery of node is completed so drop old slot and restart replication from the current position in WAL */
-	"recovery",    /* perform recorvery of the node by applying all data from theslot from specified point */
+	"recovery",	   /* perform recorvery of the node by applying all data from theslot from specified point */
 	"create_new",  /* destination node is recovered: drop old slot and restart from roveredLsn position */
 	"open_existed" /* normal mode: use existed slot or create new one and start receiving data from it from the rememered position */
 };
@@ -214,8 +217,6 @@ pglogical_receiver_main(Datum main_arg)
 	MtmReplicationMode mode;
 
 	ByteBuffer buf;
-	RepOriginId originId;
-	char* originName;
 	/* Buffer for COPY data */
 	char	*copybuf = NULL;
 	int spill_file = -1;
@@ -223,6 +224,9 @@ pglogical_receiver_main(Datum main_arg)
 	char *slotName;
 	char* connString = psprintf("replication=database %s", Mtm->nodes[nodeId-1].con.connStr);
 	static PortalData fakePortal;
+	int i;
+
+	MtmBackgroundWorker = true;
 
 	ByteBufferAlloc(&buf);
 
@@ -242,7 +246,7 @@ pglogical_receiver_main(Datum main_arg)
 	Mtm->nodes[nodeId-1].receiverStartTime = MtmGetSystemTime();
 	MtmReplicationNodeId = nodeId;
 
-    sprintf(worker_proc, "mtm_pglogical_receiver_%d_%d", MtmNodeId, nodeId);
+	sprintf(worker_proc, "mtm_pglogical_receiver_%d_%d", MtmNodeId, nodeId);
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -253,67 +257,80 @@ pglogical_receiver_main(Datum main_arg)
 	ActivePortal->status = PORTAL_ACTIVE;
 	ActivePortal->sourceText = "";
 
-	/* Create originid */
-	StartTransactionCommand();
-	originName = psprintf(MULTIMASTER_SLOT_PATTERN, nodeId);
-	originId = replorigin_by_name(originName, true);
-	if (originId == InvalidRepOriginId) { 
-		originId = replorigin_create(originName);
+	/*
+	 * Set proper restartLsn for all origins
+	 */
+	MtmLock(LW_EXCLUSIVE);
+	for (i = 0; i < Mtm->nAllNodes; i++)
+	{
+		char	   *originName;
+		RepOriginId originId;
+
+		StartTransactionCommand();
+		originName = psprintf(MULTIMASTER_SLOT_PATTERN, i + 1);
+		originId = replorigin_by_name(originName, true);
+		if (originId == InvalidRepOriginId) {
+			originId = replorigin_create(originName);
+		}
+		CommitTransactionCommand();
+		if (Mtm->nodes[i].restartLSN == INVALID_LSN)
+			Mtm->nodes[i].restartLSN = replorigin_get_progress(originId, true);
+		Mtm->nodes[i].originId = originId;
 	}
-	CommitTransactionCommand();
-	Mtm->nodes[nodeId-1].originId = originId;
-	Mtm->nodes[nodeId-1].restartLSN = INVALID_LSN;
+	MtmUnlock();
 
 	/* This is main loop of logical replication.
 	 * In case of errors we will try to reestablish connection.
 	 * Also reconnet is forced when node is switch to recovery mode
 	 */
 	while (!got_sigterm)
-	{ 
-		int  count;
+	{
+		int	 count;
 		ConnStatusType status;
-		lsn_t originStartPos = Mtm->nodes[nodeId-1].restartLSN;
+		lsn_t originStartPos;
 		int timeline;
 
-		/* 
+		/*
 		 * Determine when and how we should open replication slot.
 		 * Druing recovery we need to open only one replication slot from which node should receive all transactions.
-		 * Slots at other nodes should be removed 
+		 * Slots at other nodes should be removed
 		 */
-		mode = MtmGetReplicationMode(nodeId, &got_sigterm);	
-		if (mode == REPLMODE_EXIT) 
-		{ 
+		mode = MtmGetReplicationMode(nodeId, &got_sigterm);
+		MTM_LOG1("[STATE] Node %i: wal_receiver starts in %s mode", nodeId, MtmReplicationModeName[mode]);
+
+		if (mode == REPLMODE_RECOVERY)
+			synchronous_twophase = false;
+		else
+			synchronous_twophase = true;
+
+		if (mode == REPLMODE_EXIT)
+		{
 			break;
 		}
 		timeline = Mtm->nodes[nodeId-1].timeline;
 		count = Mtm->recoveryCount;
-	   
+
 		/* Establish connection to remote server */
-		conn = PQconnectdb_safe(connString);
+		conn = PQconnectdb_safe(connString, 0);
 		status = PQstatus(conn);
 		if (status != CONNECTION_OK)
 		{
-			ereport(WARNING, (errmsg("%s: Could not establish connection to remote server (%s), status = %d, error = %s",
+			ereport(WARNING, (MTM_ERRMSG("%s: Could not establish connection to remote server (%s), status = %d, error = %s",
 									 worker_proc, connString, status, PQerrorMessage(conn))));
 			goto OnError;
 		}
-		
+
 		query = createPQExpBuffer();
-		if ((mode == REPLMODE_OPEN_EXISTED && timeline != Mtm->nodes[nodeId-1].timeline)
-			|| mode == REPLMODE_CREATE_NEW) 
-		{ /* recreate slot */
-			elog(LOG, "Recreate replication slot %s", slotName);
-			appendPQExpBuffer(query, "DROP_REPLICATION_SLOT \"%s\"", slotName);
-			res = PQexec(conn, query->data);
-			PQclear(res);
-			resetPQExpBuffer(query);
-			timeline = Mtm->nodes[nodeId-1].timeline;
-		}
-		/* My original assumption was that we can perfrom recovery only from existed slot, 
-		 * but unfortunately looks like slots can "disapear" together with WAL-sender.
-		 * So let's try to recreate slot always. */
-		/* if (mode != REPLMODE_REPLICATION) */
-		{ 
+
+		/* Start logical replication at specified position */
+		originStartPos = replorigin_get_progress(Mtm->nodes[nodeId-1].originId, false);
+		if (originStartPos == INVALID_LSN || Mtm->nodes[nodeId-1].manualRecovery) {
+			/*
+			 * We are just creating new replication slot.
+			 * It is assumed that state of local and remote nodes is the same at this moment.
+			 * They are either empty, either new node is synchronized using base_backup.
+			 * So we assume that LSNs are the same for local and remote node
+			 */
 			appendPQExpBuffer(query, "CREATE_REPLICATION_SLOT \"%s\" LOGICAL \"%s\"", slotName, MULTIMASTER_NAME);
 			res = PQexec(conn, query->data);
 			if (PQresultStatus(res) != PGRES_TUPLES_OK)
@@ -322,38 +339,23 @@ pglogical_receiver_main(Datum main_arg)
 				if (!sqlstate || strcmp(sqlstate, ERRCODE_DUPLICATE_OBJECT_STR) != 0)
 				{
 					PQclear(res);
-					ereport(ERROR, (errmsg("%s: Could not create logical slot",
-										   worker_proc)));
-					
+					ereport(ERROR, (MTM_ERRMSG("%s: Could not create logical slot", worker_proc)));
+
 					goto OnError;
 				}
 			}
 			PQclear(res);
 			resetPQExpBuffer(query);
-		}
-		
-		/* Start logical replication at specified position */
-		if (originStartPos == INVALID_LSN) { 
-			originStartPos = replorigin_get_progress(originId, false);
-			if (originStartPos == INVALID_LSN) {
-				/* 
-				 * We are just creating new replication slot.
-				 * It is assumed that state of local and remote nodes is the same at this moment.
-				 * Them are either empty, either new node is synchronized using base_backup.
-				 * So we assume that LSNs are the same for local and remote node
-				 */
-				originStartPos = (Mtm->status == MTM_RECOVERY && Mtm->donorNodeId == nodeId) ? GetXLogInsertRecPtr() : INVALID_LSN;
-				MTM_LOG1("Start logical receiver at position %llx from node %d", originStartPos, nodeId);
-			} else { 
-				if (Mtm->nodes[nodeId-1].restartLSN < originStartPos) { 
-					MTM_LOG1("Advance restartLSN for node %d: from %llx to %llx (pglogical_receiver_main)", nodeId, Mtm->nodes[nodeId-1].restartLSN, originStartPos);
-					Mtm->nodes[nodeId-1].restartLSN = originStartPos;
-				}
-				MTM_LOG1("Restart logical receiver at position %llx with origin=%d from node %d", originStartPos, originId, nodeId);
+			Mtm->nodes[nodeId-1].manualRecovery = false;
+		} else {
+			if (Mtm->nodes[nodeId-1].restartLSN < originStartPos) {
+				MTM_LOG1("Advance restartLSN for node %d: from %llx to %llx (pglogical_receiver_main)", nodeId, Mtm->nodes[nodeId-1].restartLSN, originStartPos);
+				Mtm->nodes[nodeId-1].restartLSN = originStartPos;
 			}
-		}		
-		
-		MTM_LOG1("Start replication on slot %s from node %d at position %llx, mode %s, recovered lsn %llx", 
+			MTM_LOG1("Restart logical receiver at position %llx from node %d", originStartPos, nodeId);
+		}
+
+		MTM_LOG1("Start replication on slot %s from node %d at position %llx, mode %s, recovered lsn %llx",
 				 slotName, nodeId, originStartPos, MtmReplicationModeName[mode], Mtm->recoveredLSN);
 
 		appendPQExpBuffer(query, "START_REPLICATION SLOT \"%s\" LOGICAL %x/%x (\"startup_params_format\" '1', \"max_proto_version\" '%d',  \"min_proto_version\" '%d', \"forward_changesets\" '1', \"mtm_replication_mode\" '%s', \"mtm_restart_pos\" '%llx', \"mtm_recovered_pos\" '%llx')",
@@ -369,16 +371,27 @@ pglogical_receiver_main(Datum main_arg)
 		res = PQexec(conn, query->data);
 		if (PQresultStatus(res) != PGRES_COPY_BOTH)
 		{
-			PQclear(res);
-			ereport(WARNING, (errmsg("%s: Could not start logical replication",
-								 worker_proc)));
+			// int i, n_deleted_slots = 0;
+
+			elog(WARNING, "Can't find slot on node%d. Shutting down receiver. %s", nodeId, PQresultErrorMessage(res));
 			goto OnError;
+			// Mtm->nodes[nodeId-1].slotDeleted = true;
+			// for (i = 0; i < Mtm->nAllNodes; i++)
+			// {
+			// 	if (Mtm->nodes[i].slotDeleted)
+			// 		n_deleted_slots++;
+			// }
+			// if (n_deleted_slots == Mtm->nAllNodes - 1)
+			// {
+			// 	elog(FATAL, "All neighbour nopes have no replication slot for us. Exiting.");
+			// }
+			// proc_exit(1);
 		}
 		PQclear(res);
 		resetPQExpBuffer(query);
-		
-		MtmReceiverStarted(nodeId);
-		
+
+		MtmStateProcessNeighborEvent(nodeId, MTM_NEIGHBOR_WAL_RECEIVER_START);
+
 		while (!got_sigterm)
 		{
 			int rc, hdr_len;
@@ -393,35 +406,35 @@ pglogical_receiver_main(Datum main_arg)
 				/* Process config file */
 				ProcessConfigFile(PGC_SIGHUP);
 				got_sighup = false;
-				ereport(LOG, (errmsg("%s: processed SIGHUP", worker_proc)));
+				ereport(LOG, (MTM_ERRMSG("%s: processed SIGHUP", worker_proc)));
 			}
-			
+
 			if (got_sigterm)
 			{
 				/* Simply exit */
-				ereport(LOG, (errmsg("%s: processed SIGTERM", worker_proc)));
+				ereport(LOG, (MTM_ERRMSG("%s: processed SIGTERM", worker_proc)));
 				proc_exit(0);
 			}
-			
+
 			/* Emergency bailout if postmaster has died */
 			if (rc & WL_POSTMASTER_DEATH)
 				proc_exit(1);
-			
-			if (Mtm->status == MTM_OFFLINE || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != nodeId)) 
+
+			if (Mtm->status == MTM_DISABLED || (Mtm->status == MTM_RECOVERY && Mtm->recoverySlot != nodeId))
 			{
-				ereport(LOG, (errmsg("%s: restart WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
+				ereport(LOG, (MTM_ERRMSG("%s: restart WAL receiver because node was switched to %s mode", worker_proc, MtmNodeStatusMnem[Mtm->status])));
 				break;
 			}
-			if (count != Mtm->recoveryCount) { 				
-				ereport(LOG, (errmsg("%s: restart WAL receiver because node was recovered", worker_proc)));
+			if (count != Mtm->recoveryCount) {
+				ereport(LOG, (MTM_ERRMSG("%s: restart WAL receiver because node was recovered", worker_proc)));
 				break;
 			}
-			
+
 			if (timeline != Mtm->nodes[nodeId-1].timeline) {
-                ereport(LOG, (errmsg("%s: restart WAL receiver because node %d timeline is changed", worker_proc, nodeId)));
-                break;
-            }
-				
+				ereport(LOG, (MTM_ERRMSG("%s: restart WAL receiver because node %d timeline is changed", worker_proc, nodeId)));
+				break;
+			}
+
 			/*
 			 * Receive data.
 			 */
@@ -429,19 +442,19 @@ pglogical_receiver_main(Datum main_arg)
 			{
 				lsn_t walEnd;
 				char* stmt;
-				
+
 				/* Some cleanup */
 				if (copybuf != NULL)
 				{
 					PQfreemem(copybuf);
 					copybuf = NULL;
 				}
-				
+
 				rc = PQgetCopyData(conn, &copybuf, 1);
 				if (rc <= 0) {
 					break;
 				}
-				
+
 				/*
 				 * Check message received from server:
 				 * - 'k', keepalive message
@@ -451,7 +464,7 @@ pglogical_receiver_main(Datum main_arg)
 				{
 					int			pos;
 					bool		replyRequested;
-					
+
 					/*
 					 * Parse the keepalive message, enclosed in the CopyData message.
 					 * We just check if the server requested a reply, and ignore the
@@ -468,7 +481,7 @@ pglogical_receiver_main(Datum main_arg)
 					pos += 8;	/* skip sendTime */
 					if (rc < pos + 1)
 					{
-						ereport(LOG, (errmsg("%s: streaming header too small: %d",
+						ereport(LOG, (MTM_ERRMSG("%s: streaming header too small: %d",
 											 worker_proc, rc)));
 						goto OnError;
 					}
@@ -488,8 +501,8 @@ pglogical_receiver_main(Datum main_arg)
 					{
 						int64 now = feGetCurrentTimestamp();
 
-						/* Leave is feedback is not sent properly */
 						MtmUpdateLsnMapping(nodeId, walEnd);
+						/* Leave if feedback is not sent properly */
 						if (!sendFeedback(conn, now, nodeId)) {
 							goto OnError;
 						}
@@ -498,7 +511,7 @@ pglogical_receiver_main(Datum main_arg)
 				}
 				else if (copybuf[0] != 'w')
 				{
-					ereport(LOG, (errmsg("%s: Incorrect streaming header",
+					ereport(LOG, (MTM_ERRMSG("%s: Incorrect streaming header",
 										 worker_proc)));
 					goto OnError;
 				}
@@ -514,22 +527,16 @@ pglogical_receiver_main(Datum main_arg)
 				/* WAL position of the end of this message at WAL sender */
 				MtmSenderWalEnd = walEnd;
 
-				/*ereport(LOG, (errmsg("%s: receive message %c length %d", worker_proc, copybuf[hdr_len], rc - hdr_len)));*/
+				/*ereport(LOG, (MTM_ERRMSG("%s: receive message %c length %d", worker_proc, copybuf[hdr_len], rc - hdr_len)));*/
 
 				Assert(rc >= hdr_len);
 
 				if (rc > hdr_len)
 				{
+					int msg_len = rc - hdr_len;
 					stmt = copybuf + hdr_len;
-					if (mode == REPLMODE_RECOVERED) {
-						if (stmt[0] != 'B') {
-							output_written_lsn = Max(walEnd, output_written_lsn);
-							continue;
-						}
-						mode = REPLMODE_OPEN_EXISTED;
-					}
 					MTM_LOG3("Receive message %c from node %d", stmt[0], nodeId);
-					if (buf.used >= MtmTransSpillThreshold*MB) { 
+					if (buf.used + msg_len + 1 >= MtmTransSpillThreshold*MB) {
 						if (spill_file < 0) {
 							int file_id;
 							spill_file = MtmCreateSpillFile(nodeId, &file_id);
@@ -546,17 +553,17 @@ pglogical_receiver_main(Datum main_arg)
 					if (stmt[0] == 'Z' || (stmt[0] == 'M' && (stmt[1] == 'L' || stmt[1] == 'A' || stmt[1] == 'C'))) {
 						MTM_LOG3("Process '%c' message from %d", stmt[1], nodeId);
 						if (stmt[0] == 'M' && stmt[1] == 'C') { /* concurrent DDL should be executed by parallel workers */
-							MtmExecute(stmt, rc - hdr_len);
+							MtmExecute(stmt, msg_len);
 						} else {
-							MtmExecutor(stmt, rc - hdr_len); /* all other messages can be processed by receiver itself */
+							MtmExecutor(stmt, msg_len); /* all other messages can be processed by receiver itself */
 						}
-					} else { 
-						ByteBufferAppend(&buf, stmt, rc - hdr_len);
+					} else {
+						ByteBufferAppend(&buf, stmt, msg_len);
 						if (stmt[0] == 'C') /* commit */
 						{
-							if (!MtmFilterTransaction(stmt, rc - hdr_len)) 
-							{ 
-								if (spill_file >= 0) { 
+							if (!MtmFilterTransaction(stmt, msg_len))
+							{
+								if (spill_file >= 0) {
 									ByteBufferAppend(&buf, ")", 1);
 									pq_sendbyte(&spill_info, '(');
 									pq_sendint(&spill_info, buf.used, 4);
@@ -565,22 +572,24 @@ pglogical_receiver_main(Datum main_arg)
 									MtmExecute(spill_info.data, spill_info.len);
 									spill_file = -1;
 									resetStringInfo(&spill_info);
-								} else { 
-									if (MtmPreserveCommitOrder && buf.used == rc - hdr_len) {
+								} else {
+									if (MtmPreserveCommitOrder && buf.used == msg_len) {
 										/* Perform commit-prepared and rollback-prepared requested directly in receiver */
 										timestamp_t stop, start = MtmGetSystemTime();
 										MtmExecutor(buf.data, buf.used);
 										stop = MtmGetSystemTime();
-										if (stop - start > USECS_PER_SEC) { 
+										if (stop - start > USECS_PER_SEC) {
 											elog(WARNING, "Commit of prepared transaction takes %lld usec, flags=%x", stop - start, stmt[1]);
 										}
 									} else {
-										Assert(stmt[1] == PGLOGICAL_PREPARE || stmt[1] == PGLOGICAL_COMMIT); /* all other commits should be applied in place */
+										/* all other commits should be applied in place */
+										// Assert(stmt[1] == PGLOGICAL_PREPARE || stmt[1] == PGLOGICAL_COMMIT || stmt[1] == PGLOGICAL_PRECOMMIT_PREPARED);
 										MtmExecute(buf.data, buf.used);
 									}
 								}
-							} else if (spill_file >= 0) { 
+							} else if (spill_file >= 0) {
 								MtmCloseSpillFile(spill_file);
+								resetStringInfo(&spill_info);
 								spill_file = -1;
 							}
 							ByteBufferReset(&buf);
@@ -630,12 +639,11 @@ pglogical_receiver_main(Datum main_arg)
 				timeout.tv_usec = usecs;
 				timeoutptr = &timeout;
 
-				r = select(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr);
+				r = pg_select(PQsocket(conn) + 1, &input_mask, NULL, NULL, timeoutptr, conn->isRsocket);
 				if (r == 0)
 				{
 					int64 now = feGetCurrentTimestamp();
-					
-					/* Leave is feedback is not sent properly */
+
 					MtmUpdateLsnMapping(nodeId, INVALID_LSN);
 					sendFeedback(conn, now, nodeId);
 				}
@@ -650,16 +658,16 @@ pglogical_receiver_main(Datum main_arg)
 				}
 				else if (r < 0)
 				{
-					ereport(LOG, (errmsg("%s: Incorrect status received.",
+					ereport(LOG, (MTM_ERRMSG("%s: Incorrect status received.",
 										 worker_proc)));
-					
+
 					goto OnError;
 				}
 
 				/* Else there is actually data on the socket */
 				if (PQconsumeInput(conn) == 0)
 				{
-					ereport(LOG, (errmsg("%s: Data remaining on the socket.",
+					ereport(LOG, (MTM_ERRMSG("%s: Data remaining on the socket.",
 										 worker_proc)));
 					goto OnError;
 				}
@@ -669,7 +677,7 @@ pglogical_receiver_main(Datum main_arg)
 			/* End of copy stream */
 			if (rc == -1)
 			{
-				ereport(LOG, (errmsg("%s: COPY Stream has abruptly ended...",
+				ereport(LOG, (MTM_ERRMSG("%s: COPY Stream has abruptly ended...",
 									 worker_proc)));
 				goto OnError;
 			}
@@ -677,7 +685,7 @@ pglogical_receiver_main(Datum main_arg)
 			/* Failure when reading copy stream, leave */
 			if (rc == -2)
 			{
-				ereport(LOG, (errmsg("%s: Failure while receiving changes...",
+				ereport(LOG, (MTM_ERRMSG("%s: Failure while receiving changes...",
 									 worker_proc)));
 				goto OnError;
 			}
@@ -688,9 +696,9 @@ pglogical_receiver_main(Datum main_arg)
 	  OnError:
 		PQfinish(conn);
 		MtmReleaseRecoverySlot(nodeId);
-		MtmSleep(RECEIVER_SUSPEND_TIMEOUT);		
+		MtmSleep(RECEIVER_SUSPEND_TIMEOUT);
 	}
-    ByteBufferFree(&buf);
+	ByteBufferFree(&buf);
 	/* Restart this bgworker */
 	proc_exit(1);
 }
@@ -701,18 +709,20 @@ void MtmStartReceiver(int nodeId, bool dynamic)
 	MemoryContext oldContext = MemoryContextSwitchTo(TopMemoryContext);
 
 	MemSet(&worker, 0, sizeof(BackgroundWorker));
-    worker.bgw_flags = BGWORKER_SHMEM_ACCESS |  BGWORKER_BACKEND_DATABASE_CONNECTION;
+	worker.bgw_flags = BGWORKER_SHMEM_ACCESS |	BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_ConsistentState;
-	worker.bgw_main = pglogical_receiver_main; 
+	worker.bgw_main = pglogical_receiver_main;
 	worker.bgw_restart_time = MULTIMASTER_BGW_RESTART_TIMEOUT;
-	
+
 	/* Worker parameter and registration */
 	snprintf(worker.bgw_name, BGW_MAXLEN, "mtm_pglogical_receiver_%d_%d", MtmNodeId, nodeId);
-	
+
 	worker.bgw_main_arg = Int32GetDatum(nodeId);
-	if (dynamic) { 
+	if (dynamic) {
 		BackgroundWorkerHandle *handle;
-		RegisterDynamicBackgroundWorker(&worker, &handle);
+		if (!RegisterDynamicBackgroundWorker(&worker, &handle)) {
+			elog(WARNING, "Failed to start background worker, please increase max_worker_processes configuration parameter (current value is %d)", max_worker_processes);
+		}
 	} else {
 		RegisterBackgroundWorker(&worker);
 	}
@@ -722,11 +732,10 @@ void MtmStartReceiver(int nodeId, bool dynamic)
 
 void MtmStartReceivers(void)
 {
-    int i;
+	int i;
 	for (i = 0; i < MtmNodes; i++) {
-        if (i+1 != MtmNodeId) {
+		if (i+1 != MtmNodeId) {
 			MtmStartReceiver(i+1, false);
-        }
-    }
+		}
+	}
 }
-
