@@ -92,6 +92,9 @@ typedef struct ProcArrayStruct
 	/* oldest catalog xmin of any replication slot */
 	TransactionId replication_slot_catalog_xmin;
 
+	/* xmin of oldest active global snapshot */
+	TransactionId global_snapshot_xmin;
+
 	/* indexes into allPgXact[], has PROCARRAY_MAXPROCS entries */
 	int			pgprocnos[FLEXIBLE_ARRAY_MEMBER];
 } ProcArrayStruct;
@@ -246,6 +249,7 @@ CreateSharedProcArray(void)
 		procArray->lastOverflowedXid = InvalidTransactionId;
 		procArray->replication_slot_xmin = InvalidTransactionId;
 		procArray->replication_slot_catalog_xmin = InvalidTransactionId;
+		procArray->global_snapshot_xmin = InvalidTransactionId;
 	}
 
 	allProcs = ProcGlobal->allProcs;
@@ -1333,6 +1337,7 @@ PgGetOldestXmin(Relation rel, int flags)
 
 	volatile TransactionId replication_slot_xmin = InvalidTransactionId;
 	volatile TransactionId replication_slot_catalog_xmin = InvalidTransactionId;
+	volatile TransactionId global_snapshot_xmin = InvalidTransactionId;
 
 	/*
 	 * If we're not computing a relation specific limit, or if a shared
@@ -1394,6 +1399,7 @@ PgGetOldestXmin(Relation rel, int flags)
 	/* fetch into volatile var while ProcArrayLock is held */
 	replication_slot_xmin = procArray->replication_slot_xmin;
 	replication_slot_catalog_xmin = procArray->replication_slot_catalog_xmin;
+	global_snapshot_xmin = procArray->global_snapshot_xmin;
 
 	if (RecoveryInProgress())
 	{
@@ -1434,6 +1440,10 @@ PgGetOldestXmin(Relation rel, int flags)
 		if (!TransactionIdIsNormal(result))
 			result = FirstNormalTransactionId;
 	}
+
+	if (TransactionIdIsValid(global_snapshot_xmin) &&
+		NormalTransactionIdPrecedes(global_snapshot_xmin, result))
+		result = global_snapshot_xmin;
 
 	/*
 	 * Check whether there are replication slots requiring an older xmin.
@@ -1536,6 +1546,7 @@ PgGetSnapshotData(Snapshot snapshot)
 	bool		suboverflowed = false;
 	volatile TransactionId replication_slot_xmin = InvalidTransactionId;
 	volatile TransactionId replication_slot_catalog_xmin = InvalidTransactionId;
+	volatile TransactionId global_snapshot_xmin = InvalidTransactionId;
 
 	Assert(snapshot != NULL);
 
@@ -1724,6 +1735,7 @@ PgGetSnapshotData(Snapshot snapshot)
 	/* fetch into volatile var while ProcArrayLock is held */
 	replication_slot_xmin = procArray->replication_slot_xmin;
 	replication_slot_catalog_xmin = procArray->replication_slot_catalog_xmin;
+	global_snapshot_xmin = procArray->global_snapshot_xmin;
 
 	if (!TransactionIdIsValid(MyPgXact->xmin))
 		MyPgXact->xmin = TransactionXmin = xmin;
@@ -1742,6 +1754,10 @@ PgGetSnapshotData(Snapshot snapshot)
 	RecentGlobalXmin = globalxmin - vacuum_defer_cleanup_age;
 	if (!TransactionIdIsNormal(RecentGlobalXmin))
 		RecentGlobalXmin = FirstNormalTransactionId;
+
+	if (TransactionIdIsValid(global_snapshot_xmin) &&
+		TransactionIdPrecedes(global_snapshot_xmin, RecentGlobalXmin))
+		RecentGlobalXmin = global_snapshot_xmin;
 
 	/* Check whether there's a replication slot requiring an older xmin. */
 	if (TransactionIdIsValid(replication_slot_xmin) &&
@@ -3015,6 +3031,16 @@ ProcArrayGetReplicationSlotXmin(TransactionId *xmin,
 	LWLockRelease(ProcArrayLock);
 }
 
+/*
+ * ProcArraySetGlobalSnapshotXmin
+ */
+void
+ProcArraySetGlobalSnapshotXmin(TransactionId xmin)
+{
+	LWLockAcquire(ProcArrayLock, LW_EXCLUSIVE);
+	procArray->global_snapshot_xmin = xmin;
+	LWLockRelease(ProcArrayLock);
+}
 
 #define XidCacheRemove(i) \
 	do { \
