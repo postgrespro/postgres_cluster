@@ -16,6 +16,7 @@
 #include "storage/s_lock.h"
 #include "storage/spin.h"
 #include "storage/lmgr.h"
+#include "storage/procarray.h"
 #include "storage/shmem.h"
 #include "storage/ipc.h"
 #include "access/xlogdefs.h"
@@ -60,8 +61,6 @@ typedef struct
 {
 	cid_t		cid;			/* last assigned CSN; used to provide unique
 								 * ascending CSNs */
-	TransactionId oldest_xid;	/* XID of oldest transaction visible by any
-								 * active transaction (local or global) */
 	long		time_shift;		/* correction to system time */
 	volatile slock_t lock;		/* spinlock to protect access to hash table  */
 	DtmTransStatus *trans_list_head;	/* L1 list of finished transactions
@@ -94,8 +93,6 @@ static bool DtmRecordCommits = 0;
 
 DtmCurrentTrans dtm_tx; // XXXX: make static
 
-static Snapshot DtmGetSnapshot(Snapshot snapshot);
-static TransactionId DtmGetOldestXmin(Relation rel, int flags);
 static bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 static void DtmAdjustOldestXid(void);
 static bool DtmDetectGlobalDeadLock(PGPROC *proc);
@@ -109,9 +106,9 @@ static void DtmDeserializeTransactionState(void* ctx);
 static TransactionManager DtmTM = {
 	PgTransactionIdGetStatus,
 	PgTransactionIdSetTreeStatus,
-	DtmGetSnapshot,
+	PgGetSnapshotData,
 	PgGetNewTransactionId,
-	DtmGetOldestXmin,
+	PgGetOldestXmin,
 	PgTransactionIdIsInProgress,
 	PgGetGlobalTransactionId,
 	DtmXidInMVCCSnapshot,
@@ -329,15 +326,15 @@ static void
 DtmAdjustOldestXid()
 {
 	DtmTransStatus *ts,
-				*prev = NULL;
+				   *prev = NULL;
+	timestamp_t		cutoff_time;
+	TransactionId   oldest_xid = InvalidTransactionId;
+	int				total = 0,
+					deleted = 0;
 
-	timestamp_t cutoff_time = dtm_get_current_time() - DtmVacuumDelay * USEC;
-	int total = 0, deleted = 0;
+	cutoff_time = dtm_get_current_time() - DtmVacuumDelay * USEC;
 
 	SpinLockAcquire(&local->lock);
-
-	for (ts = local->trans_list_head; ts != NULL; ts = ts->next)
-		total++;
 
 	for (ts = local->trans_list_head; ts != NULL && ts->cid < cutoff_time; prev = ts, ts = ts->next)
 	{
@@ -351,52 +348,23 @@ DtmAdjustOldestXid()
 	if (prev != NULL)
 		local->trans_list_head = prev;
 
-	if (ts != NULL)
-		local->oldest_xid = ts->xid;
-	else
-		local->oldest_xid = InvalidTransactionId;
+	if (local->trans_list_head)
+		oldest_xid = local->trans_list_head->xid;
+
+	for (ts = local->trans_list_head; ts != NULL; ts = ts->next)
+	{
+		if (TransactionIdPrecedes(ts->xid, oldest_xid))
+			oldest_xid = ts->xid;
+		total++;
+	}
 
 	SpinLockRelease(&local->lock);
 
-	// elog(LOG, "DtmAdjustOldestXid total=%d, deleted=%d, xid=%d, prev=%p, ts=%p", total, deleted, local->oldest_xid, prev, ts);
+	ProcArraySetGlobalSnapshotXmin(oldest_xid);
+
+	// elog(LOG, "DtmAdjustOldestXid total=%d, deleted=%d, xid=%d, prev=%p, ts=%p", total, deleted, oldest_xid, prev, ts);
 }
 
-Snapshot
-DtmGetSnapshot(Snapshot snapshot)
-{
-	snapshot = PgGetSnapshotData(snapshot);
-	// RecentGlobalDataXmin = RecentGlobalXmin = DtmAdjustOldestXid(RecentGlobalDataXmin);
-	SpinLockAcquire(&local->lock);
-
-	if (TransactionIdIsValid(local->oldest_xid) &&
-		TransactionIdPrecedes(local->oldest_xid, RecentGlobalXmin))
-		RecentGlobalXmin = local->oldest_xid;
-
-	if (TransactionIdIsValid(local->oldest_xid) &&
-		TransactionIdPrecedes(local->oldest_xid, RecentGlobalDataXmin))
-		RecentGlobalDataXmin = local->oldest_xid;
-
-	SpinLockRelease(&local->lock);
-	return snapshot;
-}
-
-TransactionId
-DtmGetOldestXmin(Relation rel, int flags)
-{
-	TransactionId xmin = PgGetOldestXmin(rel, flags);
-
-	// xmin = DtmAdjustOldestXid(xmin);
-
-	SpinLockAcquire(&local->lock);
-
-	if (TransactionIdIsValid(local->oldest_xid) &&
-		TransactionIdPrecedes(local->oldest_xid, xmin))
-		xmin = local->oldest_xid;
-
-	SpinLockRelease(&local->lock);
-
-	return xmin;
-}
 
 /*
  * Check tuple bisibility based on CSN of current transaction.
@@ -487,7 +455,6 @@ DtmInitialize()
 	if (!found)
 	{
 		local->time_shift = 0;
-		local->oldest_xid = FirstNormalTransactionId;
 		local->cid = dtm_get_current_time();
 		local->trans_list_head = NULL;
 		local->trans_list_tail = &local->trans_list_head;

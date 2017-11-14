@@ -67,7 +67,7 @@ my $oldtotal = '0';
 my $isolation_error = 0;
 
 
-$master->pgbench(-n, -c => 5, -t => 10, -f => "$TestLib::log_path/../../t/bank.pgb", 'postgres' );
+$master->pgbench(-n, -c => 20, -t => 30, -f => "$TestLib::log_path/../../t/bank.pgb", 'postgres' );
 
 my $pgb_handle = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank.pgb", 'postgres' );
 
