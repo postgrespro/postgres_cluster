@@ -2,5 +2,6 @@
 
 BEGIN;
 UPDATE accounts SET amount = amount - 1 WHERE id = :id;
+--select pg_sleep(0.5*random());
 UPDATE accounts SET amount = amount + 1 WHERE id = (:id + 1);
 COMMIT;

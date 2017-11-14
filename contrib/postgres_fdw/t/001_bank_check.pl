@@ -68,8 +68,7 @@ my $oldtotal = '0';
 my $isolation_error = 0;
 
 my $pgb_path = catfile(dirname(__FILE__), "bank.pgb");
-$master->pgbench(-n, -c => 5, -t => 10, -f => "$pgb_path", 'postgres' );
-
+$master->pgbench(-n, -c => 20, -t => 30, -f => "$pgb_path", 'postgres' );
 my $pgb_handle = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$pgb_path", 'postgres' );
 
 my $started = time();
