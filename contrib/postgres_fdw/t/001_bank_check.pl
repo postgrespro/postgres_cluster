@@ -1,5 +1,7 @@
 use strict;
 use warnings;
+use File::Basename;
+use File::Spec::Functions 'catfile';
 
 use PostgresNode;
 use TestLib;
@@ -10,7 +12,7 @@ $master->init;
 $master->append_conf('postgresql.conf', qq(
 	max_prepared_transactions = 30
 	log_checkpoints = true
-	# postgres_fdw.use_global_snapshots = on
+	postgres_fdw.use_global_snapshots = on
 ));
 $master->start;
 
@@ -19,7 +21,6 @@ $shard1->init;
 $shard1->append_conf('postgresql.conf', qq(
 	max_prepared_transactions = 30
 	log_checkpoints = true
-	# shared_preload_libraries = 'pg_tsdtm'
 ));
 $shard1->start;
 
@@ -28,7 +29,6 @@ $shard2->init;
 $shard2->append_conf('postgresql.conf', qq(
 	max_prepared_transactions = 30
 	log_checkpoints = true
-	# shared_preload_libraries = 'pg_tsdtm'
 ));
 $shard2->start;
 
@@ -47,7 +47,8 @@ foreach my $node ($shard1, $shard2)
 
 	$master->psql('postgres', "CREATE SERVER shard_$port FOREIGN DATA WRAPPER postgres_fdw options(dbname 'postgres', host '$host', port '$port')");
 	$master->psql('postgres', "CREATE FOREIGN TABLE accounts_fdw_$port() inherits (accounts) server shard_$port options(table_name 'accounts')");
-	$master->psql('postgres', "CREATE USER MAPPING for stas SERVER shard_$port options (user 'stas')");
+	my $me = scalar(getpwuid($<));
+	$master->psql('postgres', "CREATE USER MAPPING for $me SERVER shard_$port options (user '$me')");
 
 	# diag("done $host $port");
 }
@@ -66,10 +67,10 @@ my $total = '0';
 my $oldtotal = '0';
 my $isolation_error = 0;
 
+my $pgb_path = catfile(dirname(__FILE__), "bank.pgb");
+$master->pgbench(-n, -c => 5, -t => 10, -f => "$pgb_path", 'postgres' );
 
-$master->pgbench(-n, -c => 5, -t => 10, -f => "$TestLib::log_path/../../t/bank.pgb", 'postgres' );
-
-my $pgb_handle = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank.pgb", 'postgres' );
+my $pgb_handle = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$pgb_path", 'postgres' );
 
 my $started = time();
 while (time() - $started < $seconds)
