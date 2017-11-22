@@ -182,6 +182,7 @@ static void CopySendInt16(CopyState cstate, int16 val);
 static bool CopyGetInt16(CopyState cstate, int16 *val);
 static void InitForeignCopyFrom(EState *estate, ResultRelInfo *resultRelInfo,
 								CopyState cstate, char *dest_relname);
+static void EndForeignCopyFrom(EState *estate, ResultRelInfo *resultRelInfo);
 
 
 /*
@@ -2638,6 +2639,13 @@ CopyFrom(CopyState cstate)
 					}
 					else /* FDW table */
 					{
+						if (!FdwCopyFromIsSupported(resultRelInfo->ri_FdwRoutine))
+							ereport(ERROR,
+									(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+									 errmsg("FDW adapter for relation \"%s\" doesn't support COPY FROM",
+											RelationGetRelationName(
+												resultRelInfo->ri_RelationDesc))));
+
 						resultRelInfo->ri_FdwRoutine->ForeignNextCopyFrom(
 							estate, resultRelInfo, cstate);
 					}
@@ -2702,11 +2710,7 @@ CopyFrom(CopyState cstate)
 	/*
 	 * Shut down FDW.
 	 */
-	if (resultRelInfo->ri_FdwRoutine)
-	{
-		resultRelInfo->ri_FdwRoutine->EndForeignCopyFrom(
-			estate, resultRelInfo);
-	}
+	EndForeignCopyFrom(estate, resultRelInfo);
 
 	/* Close all the partitioned tables, leaf partitions, and their indices */
 	if (cstate->partition_dispatch_info)
@@ -2730,11 +2734,8 @@ CopyFrom(CopyState cstate)
 		{
 			ResultRelInfo *resultRelInfo = cstate->partitions + i;
 
-			if (resultRelInfo->ri_FdwRoutine)
-			{
-				resultRelInfo->ri_FdwRoutine->EndForeignCopyFrom(
-					estate, resultRelInfo);
-			}
+			EndForeignCopyFrom(estate, resultRelInfo);
+
 			ExecCloseIndices(resultRelInfo);
 			heap_close(resultRelInfo->ri_RelationDesc, NoLock);
 		}
@@ -4726,19 +4727,29 @@ CreateCopyDestReceiver(void)
 	return (DestReceiver *) self;
 }
 
+/*
+ * Start COPY FROM on foreign relation, if possible. If not, just do nothing.
+ */
 static void InitForeignCopyFrom(EState *estate, ResultRelInfo *resultRelInfo,
 								CopyState cstate, char *dest_relname)
 {
-	if (resultRelInfo->ri_FdwRoutine)
+	if (resultRelInfo->ri_FdwRoutine &&
+		FdwCopyFromIsSupported(resultRelInfo->ri_FdwRoutine))
 	{
-		FdwRoutine *fdwroutine = resultRelInfo->ri_FdwRoutine;
-
-		if (!FdwCopyFromIsSupported(fdwroutine))
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("FDW adapter for relation \"%s\" doesn't support COPY FROM",
-							RelationGetRelationName(resultRelInfo->ri_RelationDesc))));
 		resultRelInfo->ri_FdwRoutine->
 			BeginForeignCopyFrom(estate, resultRelInfo, cstate, dest_relname);
+	}
+}
+
+/*
+ * Finish COPY FROM on foreign relation, if needed.
+ */
+static void EndForeignCopyFrom(EState *estate, ResultRelInfo *resultRelInfo)
+{
+	if (resultRelInfo->ri_FdwRoutine &&
+		FdwCopyFromIsSupported(resultRelInfo->ri_FdwRoutine))
+	{
+		resultRelInfo->ri_FdwRoutine->EndForeignCopyFrom(
+			estate, resultRelInfo);
 	}
 }

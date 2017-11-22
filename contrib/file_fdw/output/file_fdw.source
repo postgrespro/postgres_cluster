@@ -315,7 +315,7 @@ SELECT tableoid::regclass, * FROM p2;
 (0 rows)
 
 COPY pt FROM '@abs_srcdir@/data/list2.bad' with (format 'csv', delimiter ','); -- ERROR
-ERROR:  cannot route inserted tuples to a foreign table
+ERROR:  FDW adapter for relation "p1" doesn't support COPY FROM
 CONTEXT:  COPY pt, line 2: "1,qux"
 COPY pt FROM '@abs_srcdir@/data/list2.csv' with (format 'csv', delimiter ',');
 SELECT tableoid::regclass, * FROM pt;
