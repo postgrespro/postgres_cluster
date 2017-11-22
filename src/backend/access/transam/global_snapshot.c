@@ -152,17 +152,19 @@ dtm_get_current_time()
 static void
 dtm_sleep(timestamp_t interval)
 {
-	struct timespec ts;
-	struct timespec rem;
-
-	ts.tv_sec = 0;
-	ts.tv_nsec = interval * 1000;
-
-	while (nanosleep(&ts, &rem) < 0)
+	timestamp_t waketm = dtm_get_current_time() + interval;
+	while (1948)
 	{
-		totalSleepInterrupts += 1;
-		Assert(errno == EINTR);
-		ts = rem;
+		timestamp_t sleepfor = waketm - dtm_get_current_time();
+
+		pg_usleep(sleepfor);
+		if (dtm_get_current_time() < waketm)
+		{
+			totalSleepInterrupts += 1;
+			Assert(errno == EINTR);
+			continue;
+		}
+		break;
 	}
 }
 
@@ -829,7 +831,7 @@ DtmDetectGlobalDeadLock(PGPROC *proc)
 	return true;
 }
 
-static size_t 
+static size_t
 DtmGetTransactionStateSize(void)
 {
 	return sizeof(dtm_tx);
