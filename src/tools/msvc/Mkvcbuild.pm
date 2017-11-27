@@ -35,7 +35,8 @@ my @contrib_uselibpq = ('dblink', 'oid2name', 'postgres_fdw', 'vacuumlo');
 my @contrib_uselibpgport   = ('oid2name', 'pg_standby', 'vacuumlo');
 my @contrib_uselibpgcommon = ('oid2name', 'pg_standby', 'vacuumlo');
 my $contrib_extralibs      = undef;
-my $contrib_extraincludes = { 'dblink' => ['src/backend'] };
+my $contrib_extraincludes = { 'dblink' => ['src/backend'],
+							  'postgres_fdw' => ['src/port']};
 my $contrib_extrasource = {
 	'cube' => [ 'contrib/cube/cubescan.l', 'contrib/cube/cubeparse.y' ],
 	'seg'  => [ 'contrib/seg/segscan.l',   'contrib/seg/segparse.y' ], };
