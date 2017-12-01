@@ -3176,33 +3176,89 @@ get_relation_column_alias_ids(Var *node, RelOptInfo *foreignrel,
 }
 
 /*
- * Deparse COPY FROM
+ * Deparse COPY FROM into given buf.
  */
 void
 deparseCopyFromSql(StringInfo buf, Relation rel, CopyState cstate,
 				   const char *dest_relname)
 {
+	ListCell *cur;
+
 	appendStringInfoString(buf, "COPY ");
 	if (dest_relname == NULL)
 		deparseRelation(buf, rel);
 	else
 		appendStringInfoString(buf, dest_relname);
-	appendStringInfoString(buf, " FROM STDIN WITH (");
 
-	/* TODO: deparse column names */
 	if (cstate->binary)
 	{
-			ereport(ERROR,
-					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
-					 errmsg("cannot copy to postgres_fdw table \"%s\" in binary format ",
-							RelationGetRelationName(rel))));
+		ereport(ERROR,
+				(errcode(ERRCODE_WRONG_OBJECT_TYPE),
+				 errmsg("cannot copy to postgres_fdw table \"%s\" in binary format ",
+						RelationGetRelationName(rel))));
 	}
+
+	/* deparse column names */
+	if (cstate->attnumlist != NIL)
+	{
+		bool first = true;
+
+		appendStringInfoString(buf, " (");
+		foreach(cur, cstate->attnumlist)
+		{
+			int attnum = lfirst_int(cur);
+			char *attname;
+
+			if (!first)
+				appendStringInfoString(buf, ", ");
+			first = false;
+
+			attname = get_relid_attribute_name(rel->rd_id, attnum);
+			appendStringInfoString(buf, quote_identifier(attname));
+		}
+		appendStringInfoString(buf, " )");
+	}
+
+	appendStringInfoString(buf, " FROM STDIN WITH (");
 	if (cstate->csv_mode)
 	{
 		appendStringInfoString(buf, " FORMAT csv ");
 		appendStringInfo(buf, ", QUOTE '%c'", *(cstate->quote));
 		appendStringInfo(buf, ", ESCAPE '%c'", *(cstate->escape));
-		/* TODO: force quote, force not null, force null */
+		if (cstate->force_notnull != NIL)
+		{
+			bool first = true;
+
+			appendStringInfoString(buf, " FORCE NOT NULL (");
+			foreach(cur, cstate->force_notnull)
+			{
+				char *attname = strVal(lfirst(cur));
+
+				if (!first)
+					appendStringInfoString(buf, ", ");
+				first = false;
+
+				appendStringInfoString(buf, quote_identifier(attname));
+			}
+			appendStringInfoString(buf, " )");
+		}
+		if (cstate->force_null != NIL)
+		{
+			bool first = true;
+
+			appendStringInfoString(buf, " FORCE NULL (");
+			foreach(cur, cstate->force_null)
+			{
+				char *attname = strVal(lfirst(cur));
+
+				if (!first)
+					appendStringInfoString(buf, ", ");
+				first = false;
+
+				appendStringInfoString(buf, quote_identifier(attname));
+			}
+			appendStringInfoString(buf, " )");
+		}
 	}
 	else
 	{

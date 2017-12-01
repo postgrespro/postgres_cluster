@@ -163,7 +163,7 @@ typedef bool (*IsForeignScanParallelSafe_function) (PlannerInfo *root,
 typedef void (*BeginForeignCopyFrom_function) (EState *estate,
 											   ResultRelInfo *rinfo,
 											   CopyState cstate,
-											   const char *dest_relname);
+											   ResultRelInfo *parent_rinfo);
 /*
  * Currently we support only text and csv format and pass each row in
  * cstate->line_buf. We should also pass binary data and/or deformed tuple.

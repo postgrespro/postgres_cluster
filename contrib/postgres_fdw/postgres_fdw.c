@@ -360,7 +360,7 @@ static void postgresGetForeignUpperPaths(PlannerInfo *root,
 static void postgresBeginForeignCopyFrom(EState *estate,
 										 ResultRelInfo *rinfo,
 										 CopyState cstate,
-										 const char *dest_relname);
+										 ResultRelInfo *parent_rinfo);
 static void postgresForeignNextCopyFrom(EState *estate,
 										ResultRelInfo *rinfo,
 										CopyState cstate);
@@ -5219,10 +5219,17 @@ postgres_fdw_exec(PG_FUNCTION_ARGS)
 	PG_RETURN_VOID();
 }
 
-/* Begin COPY FROM to foreign table */
+/*
+ * Begin COPY FROM to foreign table. Currently we do it in a bit perverted
+ * way: we redirect COPY FROM to parent table on foreign server, assuming it
+ * exists in public schema (as in shardman), and let it direct tuples to
+ * proper partitions. Otherwise we would have to modify logic of managing
+ * connections and keep many connections open to one server from one backend.
+ * This probably should not be used outside pg_shardman.
+ */
 static void
 postgresBeginForeignCopyFrom(EState *estate, ResultRelInfo *rinfo,
-							 CopyState cstate, const char *dest_relname)
+							 CopyState cstate, ResultRelInfo *parent_rinfo)
 {
 	Relation		rel = rinfo->ri_RelationDesc;
 	RangeTblEntry	*rte;
@@ -5230,9 +5237,10 @@ postgresBeginForeignCopyFrom(EState *estate, ResultRelInfo *rinfo,
 	ForeignTable	*table;
 	UserMapping		*user;
 	StringInfoData 	sql;
-	PGconn	   *conn;
-	PGresult   *res;
-	bool *copy_from_started;
+	PGconn	   		*conn;
+	PGresult   		*res;
+	bool			*copy_from_started;
+	char 			*dest_relname;
 
 	/*
 	 * Identify which user to do the remote access as.  This should match what
@@ -5253,6 +5261,11 @@ postgresBeginForeignCopyFrom(EState *estate, ResultRelInfo *rinfo,
 		return;
 
 	/* deparse COPY stmt */
+	dest_relname = psprintf(
+		"public.%s", quote_identifier(RelationGetRelationName(
+										  parent_rinfo == NULL ?
+										  rinfo->ri_RelationDesc :
+										  parent_rinfo->ri_RelationDesc)));
 	initStringInfo(&sql);
 	deparseCopyFromSql(&sql, rel, cstate, dest_relname);
 
