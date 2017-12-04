@@ -180,9 +180,6 @@ static void CopySendInt32(CopyState cstate, int32 val);
 static bool CopyGetInt32(CopyState cstate, int32 *val);
 static void CopySendInt16(CopyState cstate, int16 val);
 static bool CopyGetInt16(CopyState cstate, int16 *val);
-static void InitForeignCopyFrom(EState *estate, ResultRelInfo *resultRelInfo,
-								CopyState cstate, char *dest_relname);
-static void EndForeignCopyFrom(EState *estate, ResultRelInfo *resultRelInfo);
 
 
 /*
@@ -2314,7 +2311,6 @@ CopyFrom(CopyState cstate)
 		TupleTableSlot *partition_tuple_slot;
 		int			num_parted,
 					num_partitions;
-		int 		i;
 
 		ExecSetupPartitionTupleRouting(cstate->rel,
 									   1,
@@ -2351,16 +2347,15 @@ CopyFrom(CopyState cstate)
 										   gettext_noop("could not convert row type"));
 			}
 		}
-
-		/* If some partitions are foreign tables, init copy on remote end */
-		for (i = 0; i < num_partitions; i++)
-		{
-			InitForeignCopyFrom(estate, partitions + i, cstate, NULL);
-		}
 	}
 
 	/* If we are copying to foreign table, init it */
-	InitForeignCopyFrom(estate, resultRelInfo, cstate, NULL);
+	if (resultRelInfo->ri_FdwRoutine &&
+		FdwCopyFromIsSupported(resultRelInfo->ri_FdwRoutine))
+	{
+		resultRelInfo->ri_FdwRoutine->
+			BeginForeignCopyFrom(estate, resultRelInfo, cstate, NULL);
+	}
 
 	/*
 	 * It's more efficient to prepare a bunch of tuples for insertion, and
@@ -2489,6 +2484,12 @@ CopyFrom(CopyState cstate)
 			 */
 			saved_resultRelInfo = resultRelInfo;
 			resultRelInfo = cstate->partitions + leaf_part_index;
+
+			/* We do not yet have a way to insert into a foreign partition */
+			if (resultRelInfo->ri_FdwRoutine)
+				ereport(ERROR,
+						(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+						 errmsg("cannot route inserted tuples to a foreign table")));
 
 			/*
 			 * For ExecInsertIndexTuples() to work on the partition's indexes
@@ -2710,7 +2711,12 @@ CopyFrom(CopyState cstate)
 	/*
 	 * Shut down FDW.
 	 */
-	EndForeignCopyFrom(estate, resultRelInfo);
+	if (resultRelInfo->ri_FdwRoutine &&
+		FdwCopyFromIsSupported(resultRelInfo->ri_FdwRoutine))
+	{
+		resultRelInfo->ri_FdwRoutine->EndForeignCopyFrom(
+			estate, resultRelInfo);
+	}
 
 	/* Close all the partitioned tables, leaf partitions, and their indices */
 	if (cstate->partition_dispatch_info)
@@ -2733,8 +2739,6 @@ CopyFrom(CopyState cstate)
 		for (i = 0; i < cstate->num_partitions; i++)
 		{
 			ResultRelInfo *resultRelInfo = cstate->partitions + i;
-
-			EndForeignCopyFrom(estate, resultRelInfo);
 
 			ExecCloseIndices(resultRelInfo);
 			heap_close(resultRelInfo->ri_RelationDesc, NoLock);
@@ -4725,31 +4729,4 @@ CreateCopyDestReceiver(void)
 	self->processed = 0;
 
 	return (DestReceiver *) self;
-}
-
-/*
- * Start COPY FROM on foreign relation, if possible. If not, just do nothing.
- */
-static void InitForeignCopyFrom(EState *estate, ResultRelInfo *resultRelInfo,
-								CopyState cstate, char *dest_relname)
-{
-	if (resultRelInfo->ri_FdwRoutine &&
-		FdwCopyFromIsSupported(resultRelInfo->ri_FdwRoutine))
-	{
-		resultRelInfo->ri_FdwRoutine->
-			BeginForeignCopyFrom(estate, resultRelInfo, cstate, dest_relname);
-	}
-}
-
-/*
- * Finish COPY FROM on foreign relation, if needed.
- */
-static void EndForeignCopyFrom(EState *estate, ResultRelInfo *resultRelInfo)
-{
-	if (resultRelInfo->ri_FdwRoutine &&
-		FdwCopyFromIsSupported(resultRelInfo->ri_FdwRoutine))
-	{
-		resultRelInfo->ri_FdwRoutine->EndForeignCopyFrom(
-			estate, resultRelInfo);
-	}
 }

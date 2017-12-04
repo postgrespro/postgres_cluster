@@ -160,6 +160,14 @@ typedef bool (*IsForeignScanParallelSafe_function) (PlannerInfo *root,
 													RelOptInfo *rel,
 													RangeTblEntry *rte);
 
+/*
+ * These functions are not documented in fdwhandler.sgml because the interface
+ * is pretty unstable and weird, it hardly would be useful for anyone but
+ * shardman. In particular,
+ * - There is no way to COPY binary data.
+ * - Private CopyState is exported.
+ * - I am not sure about passing parent_rinfo.
+ */
 typedef void (*BeginForeignCopyFrom_function) (EState *estate,
 											   ResultRelInfo *rinfo,
 											   CopyState cstate,
