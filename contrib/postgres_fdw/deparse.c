@@ -3229,7 +3229,7 @@ deparseCopyFromSql(StringInfo buf, Relation rel, CopyState cstate,
 		{
 			bool first = true;
 
-			appendStringInfoString(buf, " FORCE NOT NULL (");
+			appendStringInfoString(buf, ", FORCE_NOT_NULL (");
 			foreach(cur, cstate->force_notnull)
 			{
 				char *attname = strVal(lfirst(cur));
@@ -3246,7 +3246,7 @@ deparseCopyFromSql(StringInfo buf, Relation rel, CopyState cstate,
 		{
 			bool first = true;
 
-			appendStringInfoString(buf, " FORCE NULL (");
+			appendStringInfoString(buf, ", FORCE_NULL (");
 			foreach(cur, cstate->force_null)
 			{
 				char *attname = strVal(lfirst(cur));
