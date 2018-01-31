@@ -12,8 +12,6 @@ DATA = postgres_fdw--1.0.sql
 
 REGRESS = postgres_fdw
 
-# EXTRA_INSTALL += contrib/pg_tsdtm
-
 ifdef USE_PGXS
 PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
@@ -28,6 +26,6 @@ endif
 
 # Poor's man overload of already defined target: just copy it
 check: submake $(REGRESS_PREP)
-	$(pg_regress_check) $(REGRESS_OPTS) $(REGRESS)
-#	env DESTDIR='$(abs_top_builddir)'/tmp_install $(MAKE) install
-#	$(prove_check)
+#	$(pg_regress_check) $(REGRESS_OPTS) $(REGRESS)
+	env DESTDIR='$(abs_top_builddir)'/tmp_install $(MAKE) install
+	$(prove_check)

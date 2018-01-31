@@ -272,8 +272,7 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	SyncScanShmemInit();
 	AsyncShmemInit();
 	BackendRandomShmemInit();
-	/* Uncomment to turn on DTM */
-	/* DtmInitialize(); */
+	DtmInitialize();
 
 #ifdef EXEC_BACKEND
 

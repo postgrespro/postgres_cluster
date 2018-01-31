@@ -1,7 +1,7 @@
 #ifndef DTM_BACKEND_H
 #define DTM_BACKEND_H
 
-#define MAX_GTID_SIZE  16
+#define MAX_GTID_SIZE  96
 
 typedef int nodeid_t;
 typedef uint64 cid_t;

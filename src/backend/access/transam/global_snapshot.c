@@ -28,6 +28,7 @@
 #include "access/clog.h"
 #include "access/twophase.h"
 #include "executor/spi.h"
+#include "tcop/utility.h"
 #include "utils/hsearch.h"
 #include <utils/guc.h>
 #include "utils/tqual.h"
@@ -89,9 +90,11 @@ static HTAB *gtid2xid;
 static DtmNodeState *local;
 static uint64 totalSleepInterrupts;
 static int	DtmVacuumDelay = 2; /* sec */
-static bool DtmRecordCommits = 0;
 
 DtmCurrentTrans dtm_tx; // XXXX: make static
+
+static ProcessUtility_hook_type process_utility_hook_next = NULL;
+static char *prepared_xact_event_gid = NULL;
 
 static bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 static void DtmAdjustOldestXid(void);
@@ -101,6 +104,13 @@ static char const *DtmGetName(void);
 static size_t DtmGetTransactionStateSize(void);
 static void DtmSerializeTransactionState(void* ctx);
 static void DtmDeserializeTransactionState(void* ctx);
+static void global_snapshot_utility_hook(PlannedStmt *pstmt,
+										 const char *queryString,
+										 ProcessUtilityContext context,
+										 ParamListInfo params,
+										 QueryEnvironment *queryEnv,
+										 DestReceiver *dest, char *completionTag);
+
 
 
 static TransactionManager DtmTM = {
@@ -338,6 +348,7 @@ DtmAdjustOldestXid()
 
 	SpinLockAcquire(&local->lock);
 
+	/* remove old entries */
 	for (ts = local->trans_list_head; ts != NULL && ts->cid < cutoff_time; prev = ts, ts = ts->next)
 	{
 		if (prev != NULL)
@@ -347,9 +358,11 @@ DtmAdjustOldestXid()
 		}
 	}
 
+	/* fix the list */
 	if (prev != NULL)
 		local->trans_list_head = prev;
 
+	/* learn and set oldest xid */
 	if (local->trans_list_head)
 		oldest_xid = local->trans_list_head->xid;
 
@@ -362,15 +375,18 @@ DtmAdjustOldestXid()
 
 	SpinLockRelease(&local->lock);
 
-	ProcArraySetGlobalSnapshotXmin(oldest_xid);
+	DTM_TRACE((stderr, "DtmAdjustOldestXid total=%d, deleted=%d, xid=%d, prev=%p, ts=%p", total, deleted, oldest_xid, prev, ts));
 
-	// elog(LOG, "DtmAdjustOldestXid total=%d, deleted=%d, xid=%d, prev=%p, ts=%p", total, deleted, oldest_xid, prev, ts);
+	/* Assert in procarray.c is unhappy if oldest_xid is not quite normal, uh */
+	if (TransactionIdIsNormal(oldest_xid))
+		ProcArraySetGlobalSnapshotXmin(oldest_xid);
 }
 
 
 /*
- * Check tuple bisibility based on CSN of current transaction.
- * If there is no niformation about transaction with this XID, then use standard PostgreSQL visibility rules.
+ * Check tuple visibility based on CSN of current transaction. If there is no
+ * information about transaction with this XID, then use standard PostgreSQL
+ * visibility rules.
  */
 bool
 DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
@@ -389,7 +405,7 @@ DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 		{
 			if (ts->cid > dtm_tx.snapshot)
 			{
-				DTM_TRACE((stderr, "%d: tuple with xid=%d(csn=%lld) is invisibile in snapshot %lld\n",
+				DTM_TRACE((stderr, "%d: tuple with xid=%d(csn="UINT64_FORMAT") is invisibile in snapshot "UINT64_FORMAT"\n",
 						   getpid(), xid, ts->cid, dtm_tx.snapshot));
 				SpinLockRelease(&local->lock);
 				return true;
@@ -409,7 +425,7 @@ DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 			{
 				bool		invisible = ts->status == TRANSACTION_STATUS_ABORTED;
 
-				DTM_TRACE((stderr, "%d: tuple with xid=%d(csn= %lld) is %s in snapshot %lld\n",
+				DTM_TRACE((stderr, "%d: tuple with xid=%d(csn= "UINT64_FORMAT") is %s in snapshot "UINT64_FORMAT"\n",
 						   getpid(), xid, ts->cid, invisible ? "rollbacked" : "committed", dtm_tx.snapshot));
 				SpinLockRelease(&local->lock);
 				return invisible;
@@ -464,6 +480,9 @@ DtmInitialize()
 		RegisterXactCallback(dtm_xact_callback, NULL);
 	}
 	LWLockRelease(AddinShmemInitLock);
+
+	process_utility_hook_next = ProcessUtility_hook;
+	ProcessUtility_hook	= global_snapshot_utility_hook;
 }
 
 /*
@@ -476,10 +495,6 @@ DtmLocalBegin(DtmCurrentTrans * x)
 	if (!TransactionIdIsValid(x->xid))
 	{
 		SpinLockAcquire(&local->lock);
-		// x->xid = GetCurrentTransactionIdIfAny();
-		x->cid = INVALID_CID;
-		x->is_global = false;
-		x->is_prepared = false;
 		x->snapshot = dtm_get_cid();
 		SpinLockRelease(&local->lock);
 		DTM_TRACE((stderr, "DtmLocalBegin: transaction %u uses local snapshot %lu\n", x->xid, x->snapshot));
@@ -493,48 +508,28 @@ DtmLocalBegin(DtmCurrentTrans * x)
 cid_t
 DtmLocalExtend(DtmCurrentTrans * x, GlobalTransactionId gtid)
 {
-	if (gtid != NULL)
-	{
-		SpinLockAcquire(&local->lock);
-		{
-			DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, gtid, HASH_ENTER, NULL);
-
-			id->xid = x->xid;
-			id->nSubxids = 0;
-			id->subxids = 0;
-		}
-		strncpy(x->gtid, gtid, MAX_GTID_SIZE);
-		SpinLockRelease(&local->lock);
-	}
-	x->is_global = true;
 	return x->snapshot;
 }
 
 /*
  * This function is executed on all nodes joining distributed transaction.
- * global_cid is snapshot taken from node initiated this transaction
+ * global_cid is snapshot taken from node who initiated this transaction.
  */
 cid_t
 DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 {
 	cid_t		local_cid;
 
+	/* Pull the clock hand until coordinator's snapshot time will come */
 	SpinLockAcquire(&local->lock);
 	{
-		if (gtid != NULL)
-		{
-			DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, gtid, HASH_ENTER, NULL);
-
-			id->xid = x->xid;
-			id->nSubxids = 0;
-			id->subxids = 0;
-		}
 		local_cid = dtm_sync(global_cid);
-		x->snapshot = global_cid;
-		x->is_global = true;
 	}
-	strncpy(x->gtid, gtid, MAX_GTID_SIZE);
 	SpinLockRelease(&local->lock);
+
+	/* Assign the snapshot */
+	x->snapshot = global_cid;
+
 	if (global_cid < local_cid - DtmVacuumDelay * USEC)
 	{
 		elog(ERROR, "Too old snapshot: requested %ld, current %ld", global_cid, local_cid);
@@ -543,33 +538,58 @@ DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 }
 
 /*
- * Set transaction status to in-doubt. Now all transactions accessing tuples updated by this transaction have to
- * wait until it is either committed either aborted
+ * Set transaction status to in-doubt. Now all transactions who potentially
+ * might see tuples updated by this transaction have to wait until it is
+ * either committed or aborted. This is only needed for distributed xacts. If
+ * gid is empty string, we work with current xact, otherwise search in
+ * gtid2xact for prepared one.
  */
 void
 DtmLocalBeginPrepare(GlobalTransactionId gtid)
 {
+	DtmTransStatus *ts;
+	DtmTransId *id;
+	TransactionId xid;
+	int nSubxids;
+	TransactionId *subxids;
 	SpinLockAcquire(&local->lock);
-	{
-		DtmTransStatus *ts;
-		DtmTransId *id;
 
+	/* Previously prepared transaction */
+	if (gtid[0])
+	{
 		id = (DtmTransId *) hash_search(gtid2xid, gtid, HASH_FIND, NULL);
-		Assert(id != NULL);
-		Assert(TransactionIdIsValid(id->xid));
-		ts = (DtmTransStatus *) hash_search(xid2status, &id->xid, HASH_ENTER, NULL);
-		ts->status = TRANSACTION_STATUS_IN_PROGRESS;
-		ts->cid = dtm_get_cid();
-		ts->nSubxids = id->nSubxids;
-		DtmTransactionListAppend(ts);
-		DtmAddSubtransactions(ts, id->subxids, id->nSubxids);
+		if (id == NULL)
+		{
+			elog(DEBUG1, "Failed to set xact %s status to in-doubt: its xid not found", gtid);
+			goto end;
+		}
+		xid = id->xid;
+		nSubxids = id->nSubxids;
+		subxids = id->subxids;
 	}
+	else { /* Actual current transaction, materialize xid */
+		TransactionId *subxids;
+
+		nSubxids = xactGetCommittedChildren(&subxids);
+		xid = GetCurrentTransactionId();
+	}
+
+	ts = (DtmTransStatus *) hash_search(xid2status, &xid, HASH_ENTER, NULL);
+	Assert(TransactionIdIsValid(id->xid));
+	/* in-doubt status */
+	ts->status = TRANSACTION_STATUS_IN_PROGRESS;
+	ts->cid = dtm_get_cid();
+	ts->nSubxids = nSubxids;
+	DtmAddSubtransactions(ts, subxids, nSubxids);
+	DtmTransactionListAppend(ts);
+
+end:
 	SpinLockRelease(&local->lock);
 }
 
 /*
- * Choose maximal CSN among all nodes.
- * This function returns maximum of passed (global) and local (current time) CSNs.
+ * Choose maximal CSN among all nodes. This function returns maximum of passed
+ * (global) and local (current time) CSNs.
  */
 cid_t
 DtmLocalPrepare(GlobalTransactionId gtid, cid_t global_cid)
@@ -587,107 +607,137 @@ DtmLocalPrepare(GlobalTransactionId gtid, cid_t global_cid)
 }
 
 /*
- * Adjust system time according to the received maximal CSN
+ * Adjust system time according to the received maximal CSN. If gid is empty
+ * string, we work with current xact, otherwise search in gtid2xact for
+ * prepared one.
  */
 void
 DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
 {
+	DtmTransStatus *ts;
+	DtmTransId *id;
+	int			i;
+	TransactionId xid;
+
 	SpinLockAcquire(&local->lock);
-	{
-		DtmTransStatus *ts;
-		DtmTransId *id;
-		int			i;
 
+	/* Previously prepared transaction */
+	if (gtid[0])
+	{
 		id = (DtmTransId *) hash_search(gtid2xid, gtid, HASH_FIND, NULL);
-
-		ts = (DtmTransStatus *) hash_search(xid2status, &id->xid, HASH_FIND, NULL);
-		Assert(ts != NULL);
-		ts->cid = cid;
-		for (i = 0; i < ts->nSubxids; i++)
+		if (id == NULL)
 		{
-			ts = ts->next;
-			ts->cid = cid;
+			/*
+			 * If xact is not found in gtid2xid, either reboot occured since
+			 * it was prepared (in which case it is safe to use PG rules) or
+			 * user violated the protocol: gtid should be empty string if xact
+			 * wasn't prepared.
+			 */
+			elog(DEBUG1, "Failed to set prepared xact %s csn: its xid not found", gtid);
+			goto end;
 		}
-		dtm_sync(cid);
-
-		DTM_TRACE((stderr, "Prepare transaction %u(%s) with CSN %lu\n", id->xid, gtid, cid));
+		xid = id->xid;
 	}
-	SpinLockRelease(&local->lock);
+	else { /* Actual current transaction */
+		xid = GetCurrentTransactionId();
+	}
 
-	/*
-	 * Record commit in pg_committed_xact table to be make it possible to
-	 * perform recovery in case of crash of some of cluster nodes
-	 */
-	if (DtmRecordCommits)
+	ts = (DtmTransStatus *) hash_search(xid2status, &xid, HASH_FIND, NULL);
+	Assert(ts != NULL);
+	ts->cid = cid;
+	for (i = 0; i < ts->nSubxids; i++)
 	{
-		char		stmt[MAX_GTID_SIZE + 64];
-		int			rc;
-
-		sprintf(stmt, "insert into pg_committed_xacts values ('%s')", gtid);
-		SPI_connect();
-		rc = SPI_execute(stmt, true, 0);
-		SPI_finish();
-		if (rc != SPI_OK_INSERT)
-		{
-			elog(ERROR, "Failed to insert GTID %s in table pg_committed_xacts", gtid);
-		}
+		ts = ts->next;
+		ts->cid = cid;
 	}
+	dtm_sync(cid);
+
+	DTM_TRACE((stderr, "DtmLocalEndPrepare %u(%s) with CSN %lu\n", xid, gtid, cid));
+end:
+	SpinLockRelease(&local->lock);
 }
 
 /*
- * Mark tranasction as prepared
+ * Commit prepared transaction
  */
 void
 DtmLocalCommitPrepared(DtmCurrentTrans * x)
 {
-	if (!x->gtid[0])
-		return;
-
-	Assert(x->gtid != NULL);
+	Assert(prepared_xact_event_gid != NULL);
 
 	SpinLockAcquire(&local->lock);
 	{
-		DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, x->gtid, HASH_REMOVE, NULL);
+		DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, prepared_xact_event_gid,
+													HASH_FIND, NULL);
+		DtmTransStatus *ts;
+		int			i;
+		DtmTransStatus *sts;
 
-		Assert(id != NULL);
+		/*
+		 * If id is not found, reboot had occured since prepare; it is safe to
+		 * use PG rules.
+		 */
+		if (id != NULL)
+		{
+			Assert(TransactionIdIsValid(id->xid));
 
-		x->is_global = true;
-		x->is_prepared = true;
-		x->xid = id->xid;
-		free(id->subxids);
+			ts = (DtmTransStatus *) hash_search(xid2status, &id->xid, HASH_FIND, NULL);
+			/*
+			 * If ts is not found, user is not interested in global snapshot,
+			 * that's fine.
+			 */
+			if (ts != NULL)
+			{
+				/* Mark transaction as committed */
+				ts->status = TRANSACTION_STATUS_COMMITTED;
+				sts = ts;
+				for (i = 0; i < ts->nSubxids; i++)
+				{
+					sts = sts->next;
+					Assert(sts->cid == ts->cid);
+					sts->status = TRANSACTION_STATUS_COMMITTED;
+				}
 
-		DTM_TRACE((stderr, "Global transaction %u(%s) is precommitted\n", x->xid, gtid));
+				DTM_TRACE((stderr, "Prepared transaction %u(%s) is committed\n", id->xid,
+						   prepared_xact_event_gid));
+				/* Remove xact from gtid2xid */
+				if (id->nSubxids != 0)
+					free(id->subxids);
+				hash_search(gtid2xid, prepared_xact_event_gid, HASH_REMOVE, NULL);
+			}
+		}
 	}
 	SpinLockRelease(&local->lock);
 
 	DtmAdjustOldestXid();
-	// elog(LOG, "DtmLocalCommitPrepared %d", x->xid);
 }
 
 /*
- * Set transaction status to committed
+ *  Set currently executing transaction status to committed
  */
 void
 DtmLocalCommit(DtmCurrentTrans * x)
 {
-	// if (!x->is_global)
-	// 	return;
+	TransactionId xid = GetCurrentTransactionIdIfAny();
 
-	SpinLockAcquire(&local->lock);
-	if (TransactionIdIsValid(x->xid))
+	/*
+	 * Xid is valid, add it to xid2csn map (if not yet) and mark as comitted
+	 */
+	if (TransactionIdIsValid(xid))
 	{
 		bool		found;
 		DtmTransStatus *ts;
 
-		ts = (DtmTransStatus *) hash_search(xid2status, &x->xid, HASH_ENTER, &found);
+		SpinLockAcquire(&local->lock);
+
+		ts = (DtmTransStatus *) hash_search(xid2status, &xid, HASH_ENTER, &found);
 		ts->status = TRANSACTION_STATUS_COMMITTED;
-		if (x->is_prepared)
+		if (found)
 		{
+			/* xid is already there: global transaction */
 			int			i;
 			DtmTransStatus *sts = ts;
 
-			Assert(found);
-			Assert(x->is_global);
 			for (i = 0; i < ts->nSubxids; i++)
 			{
 				sts = sts->next;
@@ -697,81 +747,122 @@ DtmLocalCommit(DtmCurrentTrans * x)
 		}
 		else
 		{
+			/* local transaction, receive csn */
 			TransactionId *subxids;
 
-			Assert(!found);
 			ts->cid = dtm_get_cid();
 			DtmTransactionListAppend(ts);
 			ts->nSubxids = xactGetCommittedChildren(&subxids);
 			DtmAddSubtransactions(ts, subxids, ts->nSubxids);
 		}
-		x->cid = ts->cid;
-		DTM_TRACE((stderr, "Local transaction %u is committed at %lu\n", x->xid, x->cid));
-	}
-	SpinLockRelease(&local->lock);
 
-	DtmAdjustOldestXid();
-	// elog(LOG, "DtmLocalCommit %d", x->xid);
+		SpinLockRelease(&local->lock);
+
+		DTM_TRACE((stderr, "Transaction %u is committed\n", xid));
+		DtmAdjustOldestXid();
+	}
 }
 
 /*
- * Mark tranasction as prepared
+ * Abort prepared transaction
  */
 void
 DtmLocalAbortPrepared(DtmCurrentTrans * x)
 {
-	if (!x->gtid[0])
-		return;
-
-	Assert(x->gtid != NULL);
+	Assert(prepared_xact_event_gid != NULL);
 
 	SpinLockAcquire(&local->lock);
 	{
-		DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, x->gtid, HASH_REMOVE, NULL);
+		DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, prepared_xact_event_gid,
+													HASH_FIND, NULL);
+		DtmTransStatus *ts;
+		int			i;
+		DtmTransStatus *sts;
 
-		Assert(id != NULL);
-		x->is_global = true;
-		x->is_prepared = true;
-		x->xid = id->xid;
-		free(id->subxids);
-		DTM_TRACE((stderr, "Global transaction %u(%s) is preaborted\n", x->xid, gtid));
+		/*
+		 * If id is not found, reboot had occured since prepare; it is safe to
+		 * use PG rules.
+		 */
+		if (id != NULL)
+		{
+			Assert(TransactionIdIsValid(id->xid));
+
+			ts = (DtmTransStatus *) hash_search(xid2status, &id->xid, HASH_FIND, NULL);
+			/*
+			 * If ts is not found, user is not interested in global snapshot,
+			 * that's fine.
+			 */
+			if (ts != NULL)
+			{
+				/* Mark transaction as aborted */
+				ts->status = TRANSACTION_STATUS_ABORTED;
+				sts = ts;
+				for (i = 0; i < ts->nSubxids; i++)
+				{
+					sts = sts->next;
+					Assert(sts->cid == ts->cid);
+					sts->status = TRANSACTION_STATUS_ABORTED;
+				}
+
+				/* Remove xact from gtid2xid */
+				if (id->nSubxids != 0)
+					free(id->subxids);
+				hash_search(gtid2xid, prepared_xact_event_gid, HASH_REMOVE, NULL);
+				DTM_TRACE((stderr, "Prepared transaction %u(%s) is aborted\n", x->xid, prepared_xact_event_gid));
+			}
+		}
 	}
 	SpinLockRelease(&local->lock);
 }
 
 /*
- * Set transaction status to aborted
+ * Set currently executing transaction status to aborted
  */
 void
 DtmLocalAbort(DtmCurrentTrans * x)
 {
-	if (!TransactionIdIsValid(x->xid))
-		return;
+	TransactionId xid = GetCurrentTransactionIdIfAny();
 
-	SpinLockAcquire(&local->lock);
+	/*
+	 * Xid is valid, add it to xid2csn map (if not yet) and mark as aborted
+	 */
+	if (TransactionIdIsValid(xid))
 	{
 		bool		found;
 		DtmTransStatus *ts;
 
-		Assert(TransactionIdIsValid(x->xid));
-		ts = (DtmTransStatus *) hash_search(xid2status, &x->xid, HASH_ENTER, &found);
-		if (x->is_prepared)
+		SpinLockAcquire(&local->lock);
+
+		ts = (DtmTransStatus *) hash_search(xid2status, &xid, HASH_ENTER, &found);
+		ts->status = TRANSACTION_STATUS_ABORTED;
+		if (found)
 		{
-			Assert(found);
-			Assert(x->is_global);
+			/* xid is already there: global transaction */
+			int			i;
+			DtmTransStatus *sts = ts;
+
+			for (i = 0; i < ts->nSubxids; i++)
+			{
+				sts = sts->next;
+				Assert(sts->cid == ts->cid);
+				sts->status = TRANSACTION_STATUS_ABORTED;
+			}
 		}
 		else
 		{
-			Assert(!found);
+			/* local transaction, receive csn */
+			TransactionId *subxids;
+
 			ts->cid = dtm_get_cid();
-			ts->nSubxids = 0;
 			DtmTransactionListAppend(ts);
+			ts->nSubxids = xactGetCommittedChildren(&subxids);
+			DtmAddSubtransactions(ts, subxids, ts->nSubxids);
 		}
-		x->cid = ts->cid;
-		ts->status = TRANSACTION_STATUS_ABORTED;
-		DTM_TRACE((stderr, "Local transaction %u is aborted at %lu\n", x->xid, x->cid));
+
+		SpinLockRelease(&local->lock);
+
+		DTM_TRACE((stderr, "Transaction %u is aborted\n", xid));
 	}
-	SpinLockRelease(&local->lock);
 }
 
 /*
@@ -780,10 +871,7 @@ DtmLocalAbort(DtmCurrentTrans * x)
 void
 DtmLocalEnd(DtmCurrentTrans * x)
 {
-	x->is_global = false;
-	x->is_prepared = false;
-	x->xid = InvalidTransactionId;
-	x->cid = INVALID_CID;
+	x->snapshot = INVALID_CID;
 }
 
 /*
@@ -836,35 +924,32 @@ DtmGetCsn(TransactionId xid)
 }
 
 /*
- * Save state of parepared transaction
+ * The xact is going to be prepared. To be able to learn its xid quickly
+ * during COMMIT PREPARED / ABORT PREPARED, save its gid into gid2xid map.
  */
 void
 DtmLocalSavePreparedState(DtmCurrentTrans * x)
 {
-	// x->is_prepared = true;
+	Assert(prepared_xact_event_gid != NULL);
+	elog(WARNING, "preparing gid '%s', my pid %d", prepared_xact_event_gid, getpid());
 
-	if (x->gtid[0])
+	SpinLockAcquire(&local->lock);
 	{
-		SpinLockAcquire(&local->lock);
+		DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, prepared_xact_event_gid, HASH_ENTER, NULL);
+
+		TransactionId *subxids;
+		int			nSubxids = xactGetCommittedChildren(&subxids);
+
+		/* materialize xid */
+		id->xid = GetCurrentTransactionId();
+		if (nSubxids != 0)
 		{
-			DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, x->gtid, HASH_FIND, NULL);
-
-			if (id != NULL)
-			{
-				TransactionId *subxids;
-				int			nSubxids = xactGetCommittedChildren(&subxids);
-
-				id->xid = GetCurrentTransactionId();
-				if (nSubxids != 0)
-				{
-					id->subxids = (TransactionId *) malloc(nSubxids * sizeof(TransactionId));
-					id->nSubxids = nSubxids;
-					memcpy(id->subxids, subxids, nSubxids * sizeof(TransactionId));
-				}
-			}
+			id->subxids = (TransactionId *) malloc(nSubxids * sizeof(TransactionId));
+			id->nSubxids = nSubxids;
+			memcpy(id->subxids, subxids, nSubxids * sizeof(TransactionId));
 		}
-		SpinLockRelease(&local->lock);
 	}
+	SpinLockRelease(&local->lock);
 }
 
 /*
@@ -891,6 +976,41 @@ DtmAddSubtransactions(DtmTransStatus * ts, TransactionId *subxids, int nSubxids)
 	}
 }
 
+/*
+ * If COMMIT PREPARED or ABORT PREPARED arrived, save gid to learn what are
+ * working with.
+ */
+void
+global_snapshot_utility_hook(PlannedStmt *pstmt,
+							 const char *queryString,
+							 ProcessUtilityContext context,
+							 ParamListInfo params,
+							 QueryEnvironment *queryEnv,
+							 DestReceiver *dest, char *completionTag)
+{
+	Node	   *parsetree = pstmt->utilityStmt;
+
+	if (nodeTag(parsetree) == T_TransactionStmt)
+	{
+		TransactionStmt *stmt = (TransactionStmt *) parsetree;
+		if (stmt->kind == TRANS_STMT_PREPARE ||
+			stmt->kind == TRANS_STMT_COMMIT_PREPARED ||
+			stmt->kind == TRANS_STMT_ROLLBACK_PREPARED)
+		{
+			elog(WARNING, "preparing/commiting/aborting gid %s", stmt->gid);
+			prepared_xact_event_gid = stmt->gid;
+		}
+	}
+
+	(process_utility_hook_next ? process_utility_hook_next : standard_ProcessUtility)
+		(pstmt, queryString, context, params, queryEnv, dest, completionTag);
+
+	/*
+	 * Unfortunately we can't reset prepared_xact_event_gid here, because
+	 * PREPARE (and its callbacks) is called from the following
+	 * CommitTransactionCommand, not from process utility hook
+	 */
+}
 
 /*
  *
