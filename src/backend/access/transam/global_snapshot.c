@@ -875,15 +875,12 @@ DtmLocalEnd(DtmCurrentTrans * x)
 }
 
 /*
- * Now only timestapm based dealock detection is supported for pg_tsdtm.
- * Please adjust "deadlock_timeout" parameter in postresql.conf to avoid false
- * deadlock detection.
+ * Not implemented here.
  */
 bool
 DtmDetectGlobalDeadLock(PGPROC *proc)
 {
-	elog(WARNING, "Global deadlock?");
-	return true;
+	return false;
 }
 
 static size_t
