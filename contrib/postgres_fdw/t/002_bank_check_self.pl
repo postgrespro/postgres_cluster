@@ -25,37 +25,36 @@ $shard1->append_conf('postgresql.conf', qq(
 ));
 $shard1->start;
 
-my $shard2 = get_new_node("shard2");
-$shard2->init;
-$shard2->append_conf('postgresql.conf', qq(
-	max_prepared_transactions = 30
-	log_checkpoints = true
-));
-$shard2->start;
+# my $shard2 = get_new_node("shard2");
+# $shard2->init;
+# $shard2->append_conf('postgresql.conf', qq(
+	# max_prepared_transactions = 30
+	# log_checkpoints = true
+# ));
+# $shard2->start;
 
 ###############################################################################
 
 $master->psql('postgres', "CREATE EXTENSION postgres_fdw");
 $master->psql('postgres', "CREATE TABLE accounts(id integer primary key, amount integer)");
+my $master_port = $master->port;
+$master->psql('postgres', "CREATE TABLE accounts_$master_port() inherits (accounts)");
 
-foreach my $node ($shard1, $shard2)
-{
-	my $port = $node->port;
-	my $host = $node->host;
 
-	# $node->psql('postgres', "CREATE EXTENSION pg_tsdtm");
-	$node->psql('postgres', "CREATE TABLE accounts(id integer primary key, amount integer)");
+my $port = $shard1->port;
+my $host = $shard1->host;
 
-	$master->psql('postgres', "CREATE SERVER shard_$port FOREIGN DATA WRAPPER postgres_fdw options(dbname 'postgres', host '$host', port '$port')");
-	$master->psql('postgres', "CREATE FOREIGN TABLE accounts_fdw_$port() inherits (accounts) server shard_$port options(table_name 'accounts')");
-	my $me = scalar(getpwuid($<));
-	$master->psql('postgres', "CREATE USER MAPPING for $me SERVER shard_$port options (user '$me')");
+$shard1->psql('postgres', "CREATE TABLE accounts(id integer primary key, amount integer)");
+
+$master->psql('postgres', "CREATE SERVER shard_$port FOREIGN DATA WRAPPER postgres_fdw options(dbname 'postgres', host '$host', port '$port')");
+$master->psql('postgres', "CREATE FOREIGN TABLE accounts_fdw_$port() inherits (accounts) server shard_$port options(table_name 'accounts')");
+my $me = scalar(getpwuid($<));
+$master->psql('postgres', "CREATE USER MAPPING for $me SERVER shard_$port options (user '$me')");
 
 	# diag("done $host $port");
-}
 
-$shard1->psql('postgres', "insert into accounts select 2*id-1, 0 from generate_series(1, 10010) as id;");
-$shard2->psql('postgres', "insert into accounts select 2*id, 0 from generate_series(1, 10010) as id;");
+$master->psql('postgres', "insert into accounts select 2*id-1, 0 from generate_series(1, 10010) as id;");
+$shard1->psql('postgres', "insert into accounts select 2*id, 0 from generate_series(1, 10010) as id;");
 
 # diag( $master->connstr() );
 # sleep(3600);
@@ -91,4 +90,3 @@ is($isolation_error, 0, 'check proper isolation');
 
 $master->stop;
 $shard1->stop;
-$shard2->stop;
