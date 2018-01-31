@@ -17,6 +17,7 @@
 #include "access/clog.h"
 #include "access/commit_ts.h"
 #include "access/heapam.h"
+#include "access/global_snapshot.h"
 #include "access/multixact.h"
 #include "access/nbtree.h"
 #include "access/subtrans.h"
@@ -272,7 +273,9 @@ CreateSharedMemoryAndSemaphores(bool makePrivate, int port)
 	SyncScanShmemInit();
 	AsyncShmemInit();
 	BackendRandomShmemInit();
-	DtmInitialize();
+
+	if (track_global_snapshots)
+		DtmInitialize();
 
 #ifdef EXEC_BACKEND
 

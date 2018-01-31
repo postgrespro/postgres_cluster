@@ -84,6 +84,9 @@ typedef struct
 #define DTM_TRACE(x)
 /* #define DTM_TRACE(x) fprintf x */
 
+/* GUC enabling global snapshots */
+bool track_global_snapshots;
+
 // static shmem_startup_hook_type prev_shmem_startup_hook;
 static HTAB *xid2status;
 static HTAB *gtid2xid;
@@ -1019,8 +1022,12 @@ Datum
 pg_global_snaphot_create(PG_FUNCTION_ARGS)
 {
 	GlobalTransactionId gtid = text_to_cstring(PG_GETARG_TEXT_PP(0));
-	cid_t		cid = DtmLocalExtend(&dtm_tx, gtid);
+	cid_t		cid;
 
+	if (!track_global_snapshots)
+		elog(ERROR, "Global snapshots are disabled");
+
+	cid = DtmLocalExtend(&dtm_tx, gtid);
 	DTM_TRACE((stderr, "Backend %d extends transaction %u(%s) to global with cid=%lu\n", getpid(), dtm_tx.xid, gtid, cid));
 	PG_RETURN_INT64(cid);
 }
@@ -1031,6 +1038,9 @@ pg_global_snaphot_join(PG_FUNCTION_ARGS)
 	cid_t		cid = PG_GETARG_INT64(0);
 	GlobalTransactionId gtid = text_to_cstring(PG_GETARG_TEXT_PP(1));
 
+	if (!track_global_snapshots)
+		elog(ERROR, "Global snapshots are disabled");
+
 	DTM_TRACE((stderr, "Backend %d joins transaction %u(%s) with cid=%lu\n", getpid(), dtm_tx.xid, gtid, cid));
 	cid = DtmLocalAccess(&dtm_tx, gtid, cid);
 	PG_RETURN_INT64(cid);
@@ -1040,6 +1050,9 @@ Datum
 pg_global_snaphot_begin_prepare(PG_FUNCTION_ARGS)
 {
 	GlobalTransactionId gtid = text_to_cstring(PG_GETARG_TEXT_PP(0));
+
+	if (!track_global_snapshots)
+		elog(ERROR, "Global snapshots are disabled");
 
 	DtmLocalBeginPrepare(gtid);
 	DTM_TRACE((stderr, "Backend %d begins prepare of transaction %s\n", getpid(), gtid));
@@ -1052,6 +1065,10 @@ pg_global_snaphot_prepare(PG_FUNCTION_ARGS)
 	GlobalTransactionId gtid = text_to_cstring(PG_GETARG_TEXT_PP(0));
 	cid_t		cid = PG_GETARG_INT64(1);
 
+	if (!track_global_snapshots)
+		elog(ERROR, "Global snapshots are disabled");
+
+
 	cid = DtmLocalPrepare(gtid, cid);
 	DTM_TRACE((stderr, "Backend %d prepares transaction %s with cid=%lu\n", getpid(), gtid, cid));
 	PG_RETURN_INT64(cid);
@@ -1062,6 +1079,9 @@ pg_global_snaphot_end_prepare(PG_FUNCTION_ARGS)
 {
 	GlobalTransactionId gtid = text_to_cstring(PG_GETARG_TEXT_PP(0));
 	cid_t		cid = PG_GETARG_INT64(1);
+
+	if (!track_global_snapshots)
+		elog(ERROR, "Global snapshots are disabled");
 
 	DTM_TRACE((stderr, "Backend %d ends prepare of transactions %s with cid=%lu\n", getpid(), gtid, cid));
 	DtmLocalEndPrepare(gtid, cid);

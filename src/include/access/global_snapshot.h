@@ -6,6 +6,8 @@
 typedef int nodeid_t;
 typedef uint64 cid_t;
 
+extern bool track_global_snapshots;
+
 typedef struct
 {
 	TransactionId xid;
