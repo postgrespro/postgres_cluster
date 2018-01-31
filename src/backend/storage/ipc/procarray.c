@@ -1441,7 +1441,6 @@ PgGetOldestXmin(Relation rel, int flags)
 			result = FirstNormalTransactionId;
 	}
 
-	printf("global_snapshot_xmin is %d, result is %d", global_snapshot_xmin, result);
 	if (TransactionIdIsValid(global_snapshot_xmin) &&
 		NormalTransactionIdPrecedes(global_snapshot_xmin, result))
 		result = global_snapshot_xmin;
