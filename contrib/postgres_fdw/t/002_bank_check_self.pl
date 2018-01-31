@@ -12,6 +12,7 @@ $master->init;
 $master->append_conf('postgresql.conf', qq(
 	max_prepared_transactions = 30
 	log_checkpoints = true
+	track_global_snapshots = on
 	postgres_fdw.use_global_snapshots = on
 	postgres_fdw.use_twophase = on
 ));
@@ -24,14 +25,6 @@ $shard1->append_conf('postgresql.conf', qq(
 	log_checkpoints = true
 ));
 $shard1->start;
-
-# my $shard2 = get_new_node("shard2");
-# $shard2->init;
-# $shard2->append_conf('postgresql.conf', qq(
-	# max_prepared_transactions = 30
-	# log_checkpoints = true
-# ));
-# $shard2->start;
 
 ###############################################################################
 
