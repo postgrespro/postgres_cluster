@@ -28,6 +28,7 @@
 
 #include "access/commit_ts.h"
 #include "access/gin.h"
+#include "access/global_snapshot.h"
 #include "access/rmgr.h"
 #include "access/transam.h"
 #include "access/twophase.h"
@@ -1663,6 +1664,16 @@ static struct config_bool ConfigureNamesBool[] =
 		},
 		&syslog_split_messages,
 		true,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"track_global_snapshots", PGC_POSTMASTER, CUSTOM_OPTIONS,
+		 gettext_noop("Track global snapshots, allowing to use global_snapshot API"),
+		 NULL
+		},
+		&track_global_snapshots,
+		false,
 		NULL, NULL, NULL
 	},
 
