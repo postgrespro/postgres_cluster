@@ -26,6 +26,6 @@ endif
 
 # Poor's man overload of already defined target: just copy it
 check: submake $(REGRESS_PREP)
-#	$(pg_regress_check) $(REGRESS_OPTS) $(REGRESS)
+	$(pg_regress_check) $(REGRESS_OPTS) $(REGRESS)
 	env DESTDIR='$(abs_top_builddir)'/tmp_install $(MAKE) install
 	$(prove_check)
