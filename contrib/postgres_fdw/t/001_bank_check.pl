@@ -3,7 +3,7 @@ use warnings;
 
 use PostgresNode;
 use TestLib;
-use Test::More tests => 1;
+use Test::More tests => 2;
 
 my $master = get_new_node("master");
 $master->init;
@@ -18,8 +18,6 @@ my $shard1 = get_new_node("shard1");
 $shard1->init;
 $shard1->append_conf('postgresql.conf', qq(
 	max_prepared_transactions = 30
-	log_checkpoints = true
-	# shared_preload_libraries = 'pg_tsdtm'
 ));
 $shard1->start;
 
@@ -27,66 +25,147 @@ my $shard2 = get_new_node("shard2");
 $shard2->init;
 $shard2->append_conf('postgresql.conf', qq(
 	max_prepared_transactions = 30
-	log_checkpoints = true
-	# shared_preload_libraries = 'pg_tsdtm'
 ));
 $shard2->start;
 
 ###############################################################################
+# Prepare nodes
+###############################################################################
 
 $master->psql('postgres', "CREATE EXTENSION postgres_fdw");
 $master->psql('postgres', "CREATE TABLE accounts(id integer primary key, amount integer)");
+$master->psql('postgres', "CREATE TABLE global_transactions(tx_time timestamp)");
 
 foreach my $node ($shard1, $shard2)
 {
 	my $port = $node->port;
 	my $host = $node->host;
 
-	# $node->psql('postgres', "CREATE EXTENSION pg_tsdtm");
 	$node->psql('postgres', "CREATE TABLE accounts(id integer primary key, amount integer)");
 
 	$master->psql('postgres', "CREATE SERVER shard_$port FOREIGN DATA WRAPPER postgres_fdw options(dbname 'postgres', host '$host', port '$port')");
 	$master->psql('postgres', "CREATE FOREIGN TABLE accounts_fdw_$port() inherits (accounts) server shard_$port options(table_name 'accounts')");
 	$master->psql('postgres', "CREATE USER MAPPING for stas SERVER shard_$port options (user 'stas')");
-
-	# diag("done $host $port");
 }
 
 $shard1->psql('postgres', "insert into accounts select 2*id-1, 0 from generate_series(1, 10010) as id;");
+$shard1->psql('postgres', "CREATE TABLE local_transactions(tx_time timestamp)");
+
 $shard2->psql('postgres', "insert into accounts select 2*id, 0 from generate_series(1, 10010) as id;");
+$shard2->psql('postgres', "CREATE TABLE local_transactions(tx_time timestamp)");
+
+$master->pgbench(-n, -c => 20, -t => 30, -f => "$TestLib::log_path/../../t/bank.sql", 'postgres' );
 
 # diag( $master->connstr() );
 # sleep(3600);
 
 ###############################################################################
+# Helpers
+###############################################################################
+
+sub count_and_delete_rows
+{
+	my ($node, $table) = @_;
+	my ($rc, $count, $err);
+
+	($rc, $count, $err) = $node->psql('postgres',"select count(*) from $table",
+									  on_error_die => 1);
+
+	die "count_rows: $err" if ($err ne '');
+
+	$node->psql('postgres',"delete from $table", on_error_die => 1);
+
+	diag($node->name, ": completed $count transactions");
+
+	return $count;
+}
+
+###############################################################################
+# Concurrent global transactions
+###############################################################################
 
 my ($err, $rc);
+my $started;
 my $seconds = 30;
+my $selects;
 my $total = '0';
 my $oldtotal = '0';
-my $isolation_error = 0;
+my $isolation_errors = 0;
 
 
-$master->pgbench(-n, -c => 20, -t => 30, -f => "$TestLib::log_path/../../t/bank.pgb", 'postgres' );
+my $pgb_handle;
 
-my $pgb_handle = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank.pgb", 'postgres' );
+$pgb_handle = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank.sql", 'postgres' );
 
-my $started = time();
+$started = time();
+$selects = 0;
 while (time() - $started < $seconds)
 {
 	($rc, $total, $err) = $master->psql('postgres', "select sum(amount) from accounts");
 	if ( ($total ne $oldtotal) and ($total ne '') )
 	{
-		$isolation_error = 1;
+		$isolation_errors++;
 		$oldtotal = $total;
 		diag("Isolation error. Total = $total");
 	}
-	# diag("Total = $total");
+	if (($err eq '') and ($total ne '') ) { $selects++; }
 }
 
 $master->pgbench_await($pgb_handle);
 
-is($isolation_error, 0, 'check proper isolation');
+# sanity check
+diag("completed $selects selects");
+die "no actual transactions happend" unless ( $selects > 0 &&
+	count_and_delete_rows($master, 'global_transactions') > 0);
+
+is($isolation_errors, 0, 'isolation between concurrent global transaction');
+
+###############################################################################
+# Concurrent global and local transactions
+###############################################################################
+
+my ($pgb_handle1, $pgb_handle2, $pgb_handle3);
+
+# global txses
+$pgb_handle1 = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank.sql", 'postgres' );
+
+# concurrent local
+$pgb_handle2 = $shard1->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank1.sql", 'postgres' );
+$pgb_handle3 = $shard2->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank2.sql", 'postgres' );
+
+$started = time();
+$selects = 0;
+$oldtotal = 0;
+while (time() - $started < $seconds)
+{
+	($rc, $total, $err) = $master->psql('postgres', "select sum(amount) from accounts");
+	if ( ($total ne $oldtotal) and ($total ne '') )
+	{
+		$isolation_errors++;
+		$oldtotal = $total;
+		diag("Isolation error. Total = $total");
+	}
+	if (($err eq '') and ($total ne '') ) { $selects++; }
+}
+
+diag("selects = $selects");
+$master->pgbench_await($pgb_handle1);
+$shard1->pgbench_await($pgb_handle2);
+$shard2->pgbench_await($pgb_handle3);
+
+diag("completed $selects selects");
+die "" unless ( $selects > 0 &&
+	count_and_delete_rows($master, 'global_transactions') > 0 &&
+	count_and_delete_rows($shard1, 'local_transactions') > 0 &&
+	count_and_delete_rows($shard2, 'local_transactions') > 0);
+
+is($isolation_errors, 0, 'isolation between concurrent global and local transactions');
+
+
+# diag( $master->connstr('postgres'), "\n" );
+# diag( $shard1->connstr('postgres'), "\n" );
+# diag( $shard2->connstr('postgres'), "\n" );
+# sleep(3600);
 
 $master->stop;
 $shard1->stop;
