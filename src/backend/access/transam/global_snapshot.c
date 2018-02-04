@@ -792,8 +792,8 @@ DtmLocalEnd(DtmCurrentTrans * x)
 bool
 DtmDetectGlobalDeadLock(PGPROC *proc)
 {
-	elog(WARNING, "Global deadlock?");
-	return true;
+	// elog(WARNING, "Global deadlock?");
+	return false;
 }
 
 static size_t 
