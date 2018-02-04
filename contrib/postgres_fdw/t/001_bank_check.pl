@@ -3,7 +3,7 @@ use warnings;
 
 use PostgresNode;
 use TestLib;
-use Test::More tests => 2;
+use Test::More tests => 3;
 
 my $master = get_new_node("master");
 $master->init;
@@ -55,9 +55,6 @@ $shard2->psql('postgres', "insert into accounts select 2*id, 0 from generate_ser
 $shard2->psql('postgres', "CREATE TABLE local_transactions(tx_time timestamp)");
 
 $master->pgbench(-n, -c => 20, -t => 30, -f => "$TestLib::log_path/../../t/bank.sql", 'postgres' );
-
-# diag( $master->connstr() );
-# sleep(3600);
 
 ###############################################################################
 # Helpers
@@ -162,10 +159,59 @@ die "" unless ( $selects > 0 &&
 is($isolation_errors, 0, 'isolation between concurrent global and local transactions');
 
 
-# diag( $master->connstr('postgres'), "\n" );
-# diag( $shard1->connstr('postgres'), "\n" );
-# diag( $shard2->connstr('postgres'), "\n" );
-# sleep(3600);
+###############################################################################
+# Snapshot stability
+###############################################################################
+
+my ($hashes, $hash1, $hash2);
+my $stability_errors = 0;
+my $stable;
+
+# global txses
+$pgb_handle1 = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank.sql", 'postgres' );
+# concurrent local
+$pgb_handle2 = $shard1->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank1.sql", 'postgres' );
+$pgb_handle3 = $shard2->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank2.sql", 'postgres' );
+
+$selects = 0;
+$started = time();
+while (time() - $started < $seconds)
+{
+	foreach my $node ($master, $shard1, $shard2)
+	{
+		($hash1, $_, $hash2) = split "\n", $node->safe_psql('postgres', qq[
+			begin isolation level repeatable read;
+			select md5(array_agg((t.*)::text)::text) from (select * from accounts order by id) as t;
+			select pg_sleep(1);
+			select md5(array_agg((t.*)::text)::text) from (select * from accounts order by id) as t;
+			commit;
+		]);
+
+		if ($hash1 ne $hash2)
+		{
+			$stability_errors++;
+		}
+		elsif ($hash1 eq '' or $hash2 eq '')
+		{
+			die;
+		}
+		else
+		{
+			$selects++;
+		}
+	}
+}
+
+$master->pgbench_await($pgb_handle1);
+$shard1->pgbench_await($pgb_handle2);
+$shard2->pgbench_await($pgb_handle3);
+
+die "" unless ( $selects > 0 &&
+	count_and_delete_rows($master, 'global_transactions') > 0 &&
+	count_and_delete_rows($shard1, 'local_transactions') > 0 &&
+	count_and_delete_rows($shard2, 'local_transactions') > 0);
+
+is($stability_errors, 0, 'snapshot is stable during concurrent global and local transactions');
 
 $master->stop;
 $shard1->stop;
