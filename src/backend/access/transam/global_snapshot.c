@@ -491,6 +491,8 @@ DtmLocalBegin(DtmCurrentTrans * x)
 cid_t
 DtmLocalExtend(DtmCurrentTrans * x, GlobalTransactionId gtid)
 {
+	// DtmCurrentTrans *x = &dtm_tx;
+
 	if (gtid != NULL)
 	{
 		SpinLockAcquire(&local->lock);

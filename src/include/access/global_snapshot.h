@@ -1,7 +1,7 @@
 #ifndef DTM_BACKEND_H
 #define DTM_BACKEND_H
 
-#define MAX_GTID_SIZE  16
+#define MAX_GTID_SIZE  64
 
 typedef int nodeid_t;
 typedef uint64 cid_t;
@@ -65,10 +65,10 @@ void		DtmLocalSavePreparedState(DtmCurrentTrans * x);
 cid_t		DtmGetCsn(TransactionId xid);
 
 
-extern Datum pg_global_snaphot_create(PG_FUNCTION_ARGS);
-extern Datum pg_global_snaphot_join(PG_FUNCTION_ARGS);
-extern Datum pg_global_snaphot_begin_prepare(PG_FUNCTION_ARGS);
-extern Datum pg_global_snaphot_prepare(PG_FUNCTION_ARGS);
-extern Datum pg_global_snaphot_end_prepare(PG_FUNCTION_ARGS);
+// extern Datum pg_global_snaphot_create(PG_FUNCTION_ARGS);
+// extern Datum pg_global_snaphot_join(PG_FUNCTION_ARGS);
+// extern Datum pg_global_snaphot_begin_prepare(PG_FUNCTION_ARGS);
+// extern Datum pg_global_snaphot_prepare(PG_FUNCTION_ARGS);
+// extern Datum pg_global_snaphot_end_prepare(PG_FUNCTION_ARGS);
 
 #endif

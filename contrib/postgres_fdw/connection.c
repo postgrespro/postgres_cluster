@@ -14,11 +14,15 @@
 
 #include "postgres_fdw.h"
 
+
+#include "access/global_snapshot.h"
 #include "access/htup_details.h"
-#include "catalog/pg_user_mapping.h"
-#include "access/xact.h"
-#include "access/xtm.h"
 #include "access/transam.h"
+#include "access/twophase.h"
+#include "access/xact.h"
+#include "access/xlog.h" /* GetSystemIdentifier() */
+#include "access/xtm.h"
+#include "catalog/pg_user_mapping.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "pgstat.h"
@@ -27,7 +31,6 @@
 #include "utils/inval.h"
 #include "utils/memutils.h"
 #include "utils/syscache.h"
-
 
 /*
  * Connection cache hash table entry
@@ -75,9 +78,11 @@ static unsigned int prep_stmt_number = 0;
 static bool xact_got_connection = false;
 
 typedef long long csn_t;
-static csn_t currentGlobalTransactionId = 0;
-static int	currentLocalTransactionId = 0;
-static PGconn* currentConnection = NULL;
+static int two_phase_xact_count = 0;
+/* This counter includes only non-coordinator participants */
+static int two_phase_xact_participants_count = 0;
+static char* two_phase_xact_gid;
+static cid_t current_global_cid = 0;
 
 /* prototypes of private functions */
 static PGconn *connect_pg_server(ForeignServer *server, UserMapping *user);
@@ -88,6 +93,8 @@ static void do_sql_command(PGconn *conn, const char *sql);
 static void do_sql_send_command(PGconn *conn, const char *sql);
 static void begin_remote_xact(ConnCacheEntry *entry);
 static void pgfdw_xact_callback(XactEvent event, void *arg);
+static void finalize_dtm(void);
+static void deallocate_prepared_stmts(ConnCacheEntry *entry);
 static void pgfdw_subxact_callback(SubXactEvent event,
 					   SubTransactionId mySubid,
 					   SubTransactionId parentSubid,
@@ -444,21 +451,10 @@ begin_remote_xact(ConnCacheEntry *entry)
 	/* Start main transaction if we haven't yet */
 	if (entry->xact_depth <= 0)
 	{
-		TransactionId gxid = GetTransactionManager()->GetGlobalTransactionId();
 		const char *sql;
 
 		elog(DEBUG3, "starting remote transaction on connection %p",
 			 entry->conn);
-
-		// XXXX?
-		//
-		// if (UseTsDtmTransactions && TransactionIdIsValid(gxid))
-		// {
-		// 	char	stmt[64];
-		// 	snprintf(stmt, sizeof(stmt), "select public.dtm_join_transaction(%d)", gxid);
-		// 	res = PQexec(entry->conn, stmt);
-		// 	PQclear(res);
-		// }
 
 		if (IsolationIsSerializable())
 			sql = "START TRANSACTION ISOLATION LEVEL SERIALIZABLE";
@@ -471,38 +467,57 @@ begin_remote_xact(ConnCacheEntry *entry)
 
 		if (UseTsDtmTransactions)
 		{
-			if (currentConnection == NULL)
+			if (current_global_cid == 0)
 			{
-				currentConnection = entry->conn;
-			}
-			else if (entry->conn != currentConnection)
-			{
-				if (!currentGlobalTransactionId)
-				{
-					char	   *resp;
-					res = PQexec(currentConnection, psprintf("SELECT pg_global_snaphot_create('%d.%d')",
-															 MyProcPid, ++currentLocalTransactionId));
+				MemoryContext oldcxt;
+				char	   *resp;
 
-					if (PQresultStatus(res) != PGRES_TUPLES_OK)
-					{
-						pgfdw_report_error(ERROR, res, currentConnection, true, sql);
-					}
-					resp = PQgetvalue(res, 0, 0);
-					if (resp == NULL || (*resp) == '\0' || sscanf(resp, "%lld", &currentGlobalTransactionId) != 1)
-					{
-						pgfdw_report_error(ERROR, res, currentConnection, true, sql);
-					}
-					PQclear(res);
-				}
-				res = PQexec(entry->conn, psprintf("SELECT pg_global_snaphot_join(%llu, '%d.%d')", currentGlobalTransactionId, MyProcPid, currentLocalTransactionId));
+				/*
+				 * This is the first remote participant, create global
+				 * snapshot and save it in xact ctxt.
+				 */
+				oldcxt = MemoryContextSwitchTo(TopMemoryContext);
+				two_phase_xact_gid = psprintf("fdw:%llx:%lld:%d:%d",
+								(long long) GetSystemIdentifier(),
+								(long long) GetCurrentTimestamp(),
+								MyProcPid,
+								++two_phase_xact_count);
+				MemoryContextSwitchTo(oldcxt);
+
+				
+				res = PQexec(entry->conn, psprintf("SELECT pg_global_snaphot_create('%s')",
+															two_phase_xact_gid));
 
 				if (PQresultStatus(res) != PGRES_TUPLES_OK)
 				{
 					pgfdw_report_error(ERROR, res, entry->conn, true, sql);
 				}
+				resp = PQgetvalue(res, 0, 0);
+				if (resp == NULL || (*resp) == '\0' || sscanf(resp, "%ld", &current_global_cid) != 1)
+				{
+					pgfdw_report_error(ERROR, res, entry->conn, true, sql);
+				}
 				PQclear(res);
+
+
+				// current_global_cid = DtmLocalExtend(two_phase_xact_gid);
 			}
+
+			Assert(two_phase_xact_gid);
+			/* join the new participant */
+			res = PQexec(entry->conn,
+						 psprintf("SELECT pg_global_snaphot_join("UINT64_FORMAT", '%s')",
+								  current_global_cid, two_phase_xact_gid));
+
+			if (PQresultStatus(res) != PGRES_TUPLES_OK)
+			{
+				pgfdw_report_error(ERROR, res, entry->conn, true, sql);
+			}
+			PQclear(res);
 		}
+
+		/* A new potential participant for 2PC */
+		two_phase_xact_participants_count += 1;
 	}
 
 	/*
@@ -712,10 +727,12 @@ pgfdw_report_error(int elevel, PGresult *res, PGconn *conn,
 		PQclear(res);
 }
 
-typedef bool (*DtmCommandResultHandler) (PGresult *result, void *arg);
+
+typedef bool (*BroadcastCmdResHandler) (PGresult *result, void *arg);
 
 static bool
-RunDtmStatement(char const * sql, unsigned expectedStatus, DtmCommandResultHandler handler, void *arg)
+BroadcastStmt(char const * sql, unsigned expectedStatus,
+				BroadcastCmdResHandler handler, void *arg)
 {
 	HASH_SEQ_STATUS scan;
 	ConnCacheEntry *entry;
@@ -724,7 +741,9 @@ RunDtmStatement(char const * sql, unsigned expectedStatus, DtmCommandResultHandl
 	hash_seq_init(&scan, ConnectionHash);
 	while ((entry = (ConnCacheEntry *) hash_seq_search(&scan)))
 	{
-		if (entry->xact_depth > 0)
+		pgfdw_reject_incomplete_xact_state_change(entry);
+
+		if (entry->xact_depth > 0 && entry->conn != NULL)
 		{
 			do_sql_send_command(entry->conn, sql);
 		}
@@ -733,11 +752,12 @@ RunDtmStatement(char const * sql, unsigned expectedStatus, DtmCommandResultHandl
 	hash_seq_init(&scan, ConnectionHash);
 	while ((entry = (ConnCacheEntry *) hash_seq_search(&scan)))
 	{
-		if (entry->xact_depth > 0)
+		if (entry->xact_depth > 0 && entry->conn != NULL)
 		{
 			PGresult   *result = PQgetResult(entry->conn);
 
-			if (PQresultStatus(result) != expectedStatus || (handler && !handler(result, arg)))
+			if (PQresultStatus(result) != expectedStatus ||
+				(handler && !handler(result, arg)))
 			{
 				elog(WARNING, "Failed command %s: status=%d, expected status=%d", sql, PQresultStatus(result), expectedStatus);
 				pgfdw_report_error(ERROR, result, entry->conn, true, sql);
@@ -751,17 +771,16 @@ RunDtmStatement(char const * sql, unsigned expectedStatus, DtmCommandResultHandl
 }
 
 static bool
-RunDtmCommand(char const * sql)
+BroadcastCmd(char const * sql)
 {
-	return RunDtmStatement(sql, PGRES_COMMAND_OK, NULL, NULL);
+	return BroadcastStmt(sql, PGRES_COMMAND_OK, NULL, NULL);
 }
 
 static bool
-RunDtmFunction(char const * sql)
+BroadcastFunc(char const * sql)
 {
-	return RunDtmStatement(sql, PGRES_TUPLES_OK, NULL, NULL);
+	return BroadcastStmt(sql, PGRES_TUPLES_OK, NULL, NULL);
 }
-
 
 static bool
 DtmMaxCSN(PGresult *result, void *arg)
@@ -792,54 +811,52 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 {
 	HASH_SEQ_STATUS scan;
 	ConnCacheEntry *entry;
+	bool two_phase_commit;
 
-	// /* Do nothing for this events */
-	// switch (event)
-	// {
-	// 	case XACT_EVENT_START:
-	// 	case XACT_EVENT_COMMIT_PREPARED:
-	// 	case XACT_EVENT_ABORT_PREPARED:
-	// 		return;
-	// 	default:
-	// 		break;
-	// }
 
 	/* Quick exit if no connections were touched in this transaction. */
 	if (!xact_got_connection)
 		return;
 
-	if (currentGlobalTransactionId != 0)
-	{
-		switch (event)
-		{
-			case XACT_EVENT_PARALLEL_PRE_COMMIT:
-			case XACT_EVENT_PRE_COMMIT:
-				{
-					csn_t		maxCSN = 0;
+	/*
+	 * Check if we need to perform 2PC commit: number of paritcipants should
+	 * be greater than 1.
+	 */
+	two_phase_commit = (TransactionIdIsValid(GetCurrentTransactionIdIfAny()) +
+		 two_phase_xact_participants_count) > 1;
 
-					if (!RunDtmCommand(psprintf("PREPARE TRANSACTION '%d.%d'",
-									MyProcPid, currentLocalTransactionId)) ||
-						!RunDtmFunction(psprintf("SELECT pg_global_snaphot_begin_prepare('%d.%d')",
-									MyProcPid, currentLocalTransactionId)) ||
-						!RunDtmStatement(psprintf("SELECT pg_global_snaphot_prepare('%d.%d',0)",
-												  MyProcPid, currentLocalTransactionId), PGRES_TUPLES_OK, DtmMaxCSN, &maxCSN) ||
-						!RunDtmFunction(psprintf("SELECT pg_global_snaphot_end_prepare('%d.%d',%lld)",
-							MyProcPid, currentLocalTransactionId, maxCSN)) ||
-						!RunDtmCommand(psprintf("COMMIT PREPARED '%d.%d'",
-									  MyProcPid, currentLocalTransactionId)))
-					{
-						RunDtmCommand(psprintf("ROLLBACK PREPARED '%d.%d'",
-									  MyProcPid, currentLocalTransactionId));
-						ereport(ERROR,
-								(errcode(ERRCODE_TRANSACTION_ROLLBACK),
-								 errmsg("transaction was aborted at one of the shards")));
-						break;
-					}
-					return;
-				}
-			default:
-				break;
+	if (event == XACT_EVENT_PARALLEL_PRE_COMMIT || event == XACT_EVENT_PRE_COMMIT)
+	{
+		/*
+		 * In case of 2PC broadcast PREPARE TRANSACTION statement. We are
+		 * using BroadcastCommand instead of sending them in the connection
+		 * iterator below because we want to process them in parallel.
+		 */
+		if (two_phase_commit)
+		{
+			/* Prepare xact everywhere */
+			elog(DEBUG1, "Preparing transaction %s on all nodes", two_phase_xact_gid);
+			BroadcastCmd(psprintf("PREPARE TRANSACTION '%s'", two_phase_xact_gid));
+
+			/* Produce CSN and send it to all participants, if dtm in action */
+			finalize_dtm();
+
+			/*
+			 * Now we are done for PRECOMMIT phase; since we still need
+			 * connections for the second phase, return immediately.
+			 */
+			return;
 		}
+		else /* Otherwise, just finalize dtm and proceed below to COMMIT */
+		{
+			finalize_dtm();
+		}
+	}
+
+	if (two_phase_commit &&
+		(event == XACT_EVENT_PARALLEL_COMMIT || event == XACT_EVENT_COMMIT))
+	{
+		BroadcastCmd(psprintf("COMMIT PREPARED '%s'", two_phase_xact_gid));
 	}
 
 	/*
@@ -849,8 +866,6 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 	hash_seq_init(&scan, ConnectionHash);
 	while ((entry = (ConnCacheEntry *) hash_seq_search(&scan)))
 	{
-		PGresult   *res;
-
 		/* Ignore cache entry if no open connection right now */
 		if (entry->conn == NULL)
 			continue;
@@ -873,6 +888,7 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 				case XACT_EVENT_PARALLEL_PRE_COMMIT:
 				case XACT_EVENT_PRE_COMMIT:
 
+					Assert(!two_phase_commit);
 					/*
 					 * If abort cleanup previously failed for this connection,
 					 * we can't issue any more commands against it.
@@ -880,35 +896,11 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 					pgfdw_reject_incomplete_xact_state_change(entry);
 
 					/* Commit all remote transactions during pre-commit */
-					if (!currentGlobalTransactionId)
-					{
-						entry->changing_xact_state = true;
-						do_sql_command(entry->conn, "COMMIT TRANSACTION");
-						entry->changing_xact_state = false;
-					}
+					entry->changing_xact_state = true;
+					do_sql_command(entry->conn, "COMMIT TRANSACTION");
+					entry->changing_xact_state = false;
 
-					/*
-					 * If there were any errors in subtransactions, and we
-					 * made prepared statements, do a DEALLOCATE ALL to make
-					 * sure we get rid of all prepared statements. This is
-					 * annoying and not terribly bulletproof, but it's
-					 * probably not worth trying harder.
-					 *
-					 * DEALLOCATE ALL only exists in 8.3 and later, so this
-					 * constrains how old a server postgres_fdw can
-					 * communicate with.  We intentionally ignore errors in
-					 * the DEALLOCATE, so that we can hobble along to some
-					 * extent with older servers (leaking prepared statements
-					 * as we go; but we don't really support update operations
-					 * pre-8.3 anyway).
-					 */
-					if (entry->have_prep_stmt && entry->have_error)
-					{
-						res = PQexec(entry->conn, "DEALLOCATE ALL");
-						PQclear(res);
-					}
-					entry->have_prep_stmt = false;
-					entry->have_error = false;
+					deallocate_prepared_stmts(entry);
 					break;
 				case XACT_EVENT_PRE_PREPARE:
 
@@ -925,11 +917,14 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 							(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 								errmsg("cannot prepare a transaction that modified remote tables")));
 					break;
-				case XACT_EVENT_PARALLEL_COMMIT:
-				case XACT_EVENT_COMMIT:
 				case XACT_EVENT_PREPARE:
 					/* Pre-commit should have closed the open transaction */
-					// elog(ERROR, "missed cleaning up connection during pre-commit");
+					elog(ERROR, "olololo-prepare");
+					break;
+				case XACT_EVENT_PARALLEL_COMMIT:
+				case XACT_EVENT_COMMIT:
+					Assert(two_phase_commit);
+					deallocate_prepared_stmts(entry);
 					break;
 				case XACT_EVENT_PARALLEL_ABORT:
 				case XACT_EVENT_ABORT:
@@ -1012,21 +1007,94 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 			disconnect_pg_server(entry);
 		}
 	}
-	// if (event != XACT_EVENT_PARALLEL_PRE_COMMIT && event != XACT_EVENT_PRE_COMMIT)
-	// {
-		/*
-		 * Regardless of the event type, we can now mark ourselves as out of the
-		 * transaction.  (Note: if we are here during PRE_COMMIT or PRE_PREPARE,
-		 * this saves a useless scan of the hashtable during COMMIT or PREPARE.)
-		 */
-		xact_got_connection = false;
 
-		/* Also reset cursor numbering for next transaction */
-		cursor_number = 0;
+	/*
+		* Regardless of the event type, we can now mark ourselves as out of the
+		* transaction.  (Note: if we are here during PRE_COMMIT or PRE_PREPARE,
+		* this saves a useless scan of the hashtable during COMMIT or PREPARE.)
+		*/
+	xact_got_connection = false;
 
-		currentGlobalTransactionId = 0;
-		currentConnection = NULL;
-	// }
+	/* Also reset cursor numbering for next transaction */
+	cursor_number = 0;
+
+
+
+	/* Reset 2PC and DTM state */
+	two_phase_xact_participants_count = 0;
+	current_global_cid = 0;
+	
+	if (two_phase_xact_gid)
+	{
+		pfree(two_phase_xact_gid);
+		two_phase_xact_gid = NULL;
+	}
+
+
+}
+
+/*
+ * Produce CSN for current distributed xact and send it to all
+ * participants. After that, viewers will hang on visiblity check until
+ * commit/abort comes.
+ */
+static void
+finalize_dtm(void)
+{
+	if (current_global_cid != 0)
+	{
+		char *gid = two_phase_xact_gid; // != NULL? two_phase_xact_gid : "";
+		cid_t maxCSN = 0;
+		// cid_t localCSN = 0;
+
+		Assert(gid);
+
+		// DtmLocalBeginPrepare(gid);
+		BroadcastFunc(psprintf("SELECT pg_global_snaphot_begin_prepare('%s')",
+								gid));
+
+		/* Collect CSNs and choose max */
+		// localCSN = DtmLocalPrepare(gid, 0);
+		BroadcastStmt(psprintf("SELECT pg_global_snaphot_prepare('%s', 0)",
+								 gid), PGRES_TUPLES_OK, DtmMaxCSN, &maxCSN);
+		// if (localCSN > maxCSN)
+		// 	maxCSN = localCSN;
+
+		// DtmLocalEndPrepare(gid, maxCSN);
+		BroadcastFunc(psprintf("SELECT pg_global_snaphot_end_prepare('%s',"UINT64_FORMAT")",
+								gid, maxCSN));
+
+		// XXX: ROLLBACK in case of error?
+	}
+}
+
+/*
+ * If there were any errors in subtransactions, and we
+ * made prepared statements, do a DEALLOCATE ALL to make
+ * sure we get rid of all prepared statements. This is
+ * annoying and not terribly bulletproof, but it's
+ * probably not worth trying harder.
+ *
+ * DEALLOCATE ALL only exists in 8.3 and later, so this
+ * constrains how old a server postgres_fdw can
+ * communicate with.  We intentionally ignore errors in
+ * the DEALLOCATE, so that we can hobble along to some
+ * extent with older servers (leaking prepared statements
+ * as we go; but we don't really support update operations
+ * pre-8.3 anyway).
+ */
+static void
+deallocate_prepared_stmts(ConnCacheEntry *entry)
+{
+	PGresult   *res;
+
+	if (entry->have_prep_stmt && entry->have_error)
+	{
+		res = PQexec(entry->conn, "DEALLOCATE ALL");
+		PQclear(res);
+	}
+	entry->have_prep_stmt = false;
+	entry->have_error = false;
 }
 
 /*
