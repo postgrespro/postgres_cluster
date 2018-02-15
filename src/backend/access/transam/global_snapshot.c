@@ -88,7 +88,7 @@ static HTAB *xid2status;
 static HTAB *gtid2xid;
 static DtmNodeState *local;
 static uint64 totalSleepInterrupts;
-static int	DtmVacuumDelay = 2; /* sec */
+static int	DtmVacuumDelay = 10; /* sec */
 static bool DtmRecordCommits = 0;
 
 DtmCurrentTrans dtm_tx; // XXXX: make static
@@ -489,9 +489,9 @@ DtmLocalBegin(DtmCurrentTrans * x)
  * Returns snapshot of current transaction.
  */
 cid_t
-DtmLocalExtend(DtmCurrentTrans * x, GlobalTransactionId gtid)
+DtmLocalExtend(GlobalTransactionId gtid)
 {
-	// DtmCurrentTrans *x = &dtm_tx;
+	DtmCurrentTrans *x = &dtm_tx;
 
 	if (gtid != NULL)
 	{
@@ -499,9 +499,10 @@ DtmLocalExtend(DtmCurrentTrans * x, GlobalTransactionId gtid)
 		{
 			DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, gtid, HASH_ENTER, NULL);
 
-			id->xid = x->xid;
+			id->xid = GetCurrentTransactionId();
 			id->nSubxids = 0;
 			id->subxids = 0;
+			x->xid = id->xid;
 		}
 		strncpy(x->gtid, gtid, MAX_GTID_SIZE);
 		SpinLockRelease(&local->lock);
@@ -681,7 +682,7 @@ DtmLocalCommit(DtmCurrentTrans * x)
 
 		ts = (DtmTransStatus *) hash_search(xid2status, &x->xid, HASH_ENTER, &found);
 		ts->status = TRANSACTION_STATUS_COMMITTED;
-		if (x->is_prepared)
+		if (found)
 		{
 			int			i;
 			DtmTransStatus *sts = ts;
@@ -755,7 +756,7 @@ DtmLocalAbort(DtmCurrentTrans * x)
 
 		Assert(TransactionIdIsValid(x->xid));
 		ts = (DtmTransStatus *) hash_search(xid2status, &x->xid, HASH_ENTER, &found);
-		if (x->is_prepared)
+		if (found)
 		{
 			Assert(found);
 			Assert(x->is_global);
@@ -902,7 +903,7 @@ Datum
 pg_global_snaphot_create(PG_FUNCTION_ARGS)
 {
 	GlobalTransactionId gtid = text_to_cstring(PG_GETARG_TEXT_PP(0));
-	cid_t		cid = DtmLocalExtend(&dtm_tx, gtid);
+	cid_t		cid = DtmLocalExtend(gtid);
 
 	DTM_TRACE((stderr, "Backend %d extends transaction %u(%s) to global with cid=%lu\n", getpid(), dtm_tx.xid, gtid, cid));
 	PG_RETURN_INT64(cid);

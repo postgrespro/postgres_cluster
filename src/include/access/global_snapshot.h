@@ -30,7 +30,7 @@ void		DtmInitialize(void);
 void		DtmLocalBegin(DtmCurrentTrans * x);
 
 /* Extend local transaction to global by assigning upper bound CSN which is returned to coordinator */
-cid_t		DtmLocalExtend(DtmCurrentTrans * x, GlobalTransactionId gtid);
+extern cid_t		DtmLocalExtend(GlobalTransactionId gtid);
 
 /* Function called at first access to any datanode except first one involved in distributed transaction */
 cid_t		DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t snapshot);
