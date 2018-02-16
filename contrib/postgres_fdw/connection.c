@@ -470,7 +470,6 @@ begin_remote_xact(ConnCacheEntry *entry)
 			if (current_global_cid == 0)
 			{
 				MemoryContext oldcxt;
-				char	   *resp;
 
 				/*
 				 * This is the first remote participant, create global
@@ -484,38 +483,20 @@ begin_remote_xact(ConnCacheEntry *entry)
 								++two_phase_xact_count);
 				MemoryContextSwitchTo(oldcxt);
 
-				
-				// res = PQexec(entry->conn, psprintf("SELECT pg_global_snaphot_create('%s')",
-				// 											two_phase_xact_gid));
-
-				// if (PQresultStatus(res) != PGRES_TUPLES_OK)
-				// {
-				// 	pgfdw_report_error(ERROR, res, entry->conn, true, sql);
-				// }
-				// resp = PQgetvalue(res, 0, 0);
-				// if (resp == NULL || (*resp) == '\0' || sscanf(resp, "%ld", &current_global_cid) != 1)
-				// {
-				// 	pgfdw_report_error(ERROR, res, entry->conn, true, sql);
-				// }
-				// PQclear(res);
-
-
 				current_global_cid = DtmLocalExtend(two_phase_xact_gid);
 			}
-			// else
-			// {
-				Assert(two_phase_xact_gid);
-				/* join the new participant */
-				res = PQexec(entry->conn,
-							psprintf("SELECT pg_global_snaphot_join("UINT64_FORMAT", '%s')",
-									current_global_cid, two_phase_xact_gid));
 
-				if (PQresultStatus(res) != PGRES_TUPLES_OK)
-				{
-					pgfdw_report_error(ERROR, res, entry->conn, true, sql);
-				}
-				PQclear(res);
-			// }
+			Assert(two_phase_xact_gid);
+			/* join the new participant */
+			res = PQexec(entry->conn,
+						psprintf("SELECT pg_global_snaphot_join("UINT64_FORMAT", '%s')",
+								current_global_cid, two_phase_xact_gid));
+
+			if (PQresultStatus(res) != PGRES_TUPLES_OK)
+			{
+				pgfdw_report_error(ERROR, res, entry->conn, true, sql);
+			}
+			PQclear(res);
 		}
 
 		/* A new potential participant for 2PC */

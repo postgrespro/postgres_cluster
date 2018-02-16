@@ -392,7 +392,7 @@ DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 				SpinLockRelease(&local->lock);
 				return true;
 			}
-			if (ts->status == TRANSACTION_STATUS_IN_PROGRESS)
+			if (ts->status == TRANSACTION_STATUS_UNKNOWN)
 			{
 				DTM_TRACE((stderr, "%d: wait for in-doubt transaction %u in snapshot %lu\n", getpid(), xid, dtm_tx.snapshot));
 				SpinLockRelease(&local->lock);
@@ -431,22 +431,17 @@ DtmInitialize()
 
 	info.keysize = sizeof(TransactionId);
 	info.entrysize = sizeof(DtmTransStatus);
-	info.hash = dtm_xid_hash_fn;
-	info.match = dtm_xid_match_fn;
 	xid2status = ShmemInitHash("xid2status",
 							   DTM_HASH_INIT_SIZE, DTM_HASH_INIT_SIZE,
 							   &info,
-							   HASH_ELEM | HASH_FUNCTION | HASH_COMPARE);
+							   HASH_ELEM | HASH_BLOBS);
 
 	info.keysize = MAX_GTID_SIZE;
 	info.entrysize = sizeof(DtmTransId);
-	info.hash = dtm_gtid_hash_fn;
-	info.match = dtm_gtid_match_fn;
-	info.keycopy = dtm_gtid_keycopy_fn;
 	gtid2xid = ShmemInitHash("gtid2xid",
 							 DTM_HASH_INIT_SIZE, DTM_HASH_INIT_SIZE,
 							 &info,
-					HASH_ELEM | HASH_FUNCTION | HASH_COMPARE | HASH_KEYCOPY);
+							 HASH_ELEM);
 
 	TM = &DtmTM;
 
@@ -526,7 +521,7 @@ DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 		{
 			DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, gtid, HASH_ENTER, NULL);
 
-			id->xid = x->xid;
+			id->xid = GetCurrentTransactionId();
 			id->nSubxids = 0;
 			id->subxids = 0;
 		}
@@ -559,7 +554,7 @@ DtmLocalBeginPrepare(GlobalTransactionId gtid)
 		Assert(id != NULL);
 		Assert(TransactionIdIsValid(id->xid));
 		ts = (DtmTransStatus *) hash_search(xid2status, &id->xid, HASH_ENTER, NULL);
-		ts->status = TRANSACTION_STATUS_IN_PROGRESS;
+		ts->status = TRANSACTION_STATUS_UNKNOWN;
 		ts->cid = dtm_get_cid();
 		ts->nSubxids = id->nSubxids;
 		DtmTransactionListAppend(ts);
