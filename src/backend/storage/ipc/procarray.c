@@ -3042,6 +3042,19 @@ ProcArraySetGlobalSnapshotXmin(TransactionId xmin)
 	LWLockRelease(ProcArrayLock);
 }
 
+/*
+ * ProcArrayGetGlobalSnapshotXmin
+ */
+TransactionId
+ProcArrayGetGlobalSnapshotXmin(void)
+{
+	TransactionId xmin;
+	LWLockAcquire(ProcArrayLock, LW_SHARED);
+	xmin = procArray->global_snapshot_xmin;
+	LWLockRelease(ProcArrayLock);
+	return xmin;
+}
+
 #define XidCacheRemove(i) \
 	do { \
 		MyProc->subxids.xids[i] = MyProc->subxids.xids[MyPgXact->nxids - 1]; \

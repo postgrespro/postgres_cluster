@@ -95,6 +95,7 @@ DtmCurrentTrans dtm_tx; // XXXX: make static
 
 static bool DtmXidInMVCCSnapshot(TransactionId xid, Snapshot snapshot);
 static void DtmAdjustOldestXid(void);
+static void DtmInitGlobalXmin(TransactionId xid);
 static bool DtmDetectGlobalDeadLock(PGPROC *proc);
 static void DtmAddSubtransactions(DtmTransStatus * ts, TransactionId *subxids, int nSubxids);
 static char const *DtmGetName(void);
@@ -365,6 +366,17 @@ DtmAdjustOldestXid()
 	// elog(LOG, "DtmAdjustOldestXid total=%d, deleted=%d, xid=%d, prev=%p, ts=%p", total, deleted, oldest_xid, prev, ts);
 }
 
+static void
+DtmInitGlobalXmin(TransactionId xid)
+{
+	TransactionId current_xmin;
+
+	/* Better change to CAS */
+	current_xmin = ProcArrayGetGlobalSnapshotXmin();
+	if (!TransactionIdIsValid(current_xmin))
+		ProcArraySetGlobalSnapshotXmin(xid);
+}
+
 
 /*
  * Check tuple bisibility based on CSN of current transaction.
@@ -503,6 +515,7 @@ DtmLocalExtend(GlobalTransactionId gtid)
 		SpinLockRelease(&local->lock);
 	}
 	x->is_global = true;
+	DtmInitGlobalXmin(x->xid);
 	return x->snapshot;
 }
 
@@ -524,6 +537,7 @@ DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 			id->xid = GetCurrentTransactionId();
 			id->nSubxids = 0;
 			id->subxids = 0;
+			x->xid = id->xid;
 		}
 		local_cid = dtm_sync(global_cid);
 		x->snapshot = global_cid;
@@ -535,6 +549,7 @@ DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 	{
 		elog(ERROR, "Too old snapshot: requested %ld, current %ld", global_cid, local_cid);
 	}
+	DtmInitGlobalXmin(x->xid);
 	return global_cid;
 }
 
