@@ -367,14 +367,16 @@ DtmAdjustOldestXid()
 }
 
 static void
-DtmInitGlobalXmin(TransactionId xid)
+DtmInitGlobalXmin(TransactionId xmin)
 {
 	TransactionId current_xmin;
+
+	Assert(TransactionIdIsValid(xmin));
 
 	/* Better change to CAS */
 	current_xmin = ProcArrayGetGlobalSnapshotXmin();
 	if (!TransactionIdIsValid(current_xmin))
-		ProcArraySetGlobalSnapshotXmin(xid);
+		ProcArraySetGlobalSnapshotXmin(xmin);
 }
 
 
@@ -515,7 +517,7 @@ DtmLocalExtend(GlobalTransactionId gtid)
 		SpinLockRelease(&local->lock);
 	}
 	x->is_global = true;
-	DtmInitGlobalXmin(x->xid);
+	DtmInitGlobalXmin(TransactionXmin);
 	return x->snapshot;
 }
 
@@ -549,7 +551,7 @@ DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 	{
 		elog(ERROR, "Too old snapshot: requested %ld, current %ld", global_cid, local_cid);
 	}
-	DtmInitGlobalXmin(x->xid);
+	DtmInitGlobalXmin(TransactionXmin);
 	return global_cid;
 }
 
