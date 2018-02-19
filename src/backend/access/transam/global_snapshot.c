@@ -226,32 +226,27 @@ dtm_xact_callback(XactEvent event, void *arg)
 			break;
 
 		case XACT_EVENT_ABORT_PREPARED:
-			// DtmLocalAbortPrepared(&dtm_tx);
 			finishing_prepared = true;
 			DtmAdjustOldestXid();
 			break;
 
 		case XACT_EVENT_COMMIT_PREPARED:
-			// DtmLocalCommitPrepared(&dtm_tx);
 			finishing_prepared = true;
 			DtmAdjustOldestXid();
 			break;
 
 		case XACT_EVENT_COMMIT:
 			DtmLocalFinish(true);
-			DtmLocalEnd(&dtm_tx);
 			finishing_prepared = false;
 			break;
 
 		case XACT_EVENT_ABORT:
 			DtmLocalFinish(false);
-			DtmLocalEnd(&dtm_tx);
 			finishing_prepared = false;
 			break;
 
 		case XACT_EVENT_PRE_PREPARE:
 			DtmLocalSavePreparedState(&dtm_tx);
-			DtmLocalEnd(&dtm_tx);
 			break;
 
 		default:
@@ -452,11 +447,9 @@ DtmInitialize()
 void
 DtmLocalBegin(DtmCurrentTrans * x)
 {
-		SpinLockAcquire(&local->lock);
-		x->cid = INVALID_CID;
-		x->snapshot = dtm_get_cid();
-		SpinLockRelease(&local->lock);
-		DTM_TRACE((stderr, "DtmLocalBegin: transaction %u uses local snapshot %lu\n", x->xid, x->snapshot));
+	SpinLockAcquire(&local->lock); // XXX: move to snapshot aquire?
+	x->snapshot = dtm_get_cid();
+	SpinLockRelease(&local->lock);
 }
 
 /*
@@ -477,7 +470,6 @@ DtmLocalExtend(GlobalTransactionId gtid)
 			id->xid = GetCurrentTransactionId();
 			id->nSubxids = 0;
 			id->subxids = 0;
-			x->xid = id->xid;
 		}
 		strncpy(x->gtid, gtid, MAX_GTID_SIZE);
 		SpinLockRelease(&local->lock);
@@ -495,6 +487,8 @@ DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 {
 	cid_t		local_cid;
 
+	// Check that snapshot isn't set?
+
 	SpinLockAcquire(&local->lock);
 	{
 		if (gtid != NULL)
@@ -504,17 +498,18 @@ DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 			id->xid = GetCurrentTransactionId();
 			id->nSubxids = 0;
 			id->subxids = 0;
-			x->xid = id->xid;
 		}
 		local_cid = dtm_sync(global_cid);
 		x->snapshot = global_cid;
 	}
 	strncpy(x->gtid, gtid, MAX_GTID_SIZE);
 	SpinLockRelease(&local->lock);
+
 	if (global_cid < local_cid - DtmVacuumDelay * USEC)
 	{
 		elog(ERROR, "Too old snapshot: requested %ld, current %ld", global_cid, local_cid);
 	}
+
 	DtmInitGlobalXmin(TransactionXmin);
 	return global_cid;
 }
@@ -663,23 +658,10 @@ DtmLocalFinish(bool is_commit)
 				ts->nSubxids = 0;
 			}
 		}
-		x->cid = ts->cid;
-		DTM_TRACE((stderr, "Local transaction %u is committed at %lu\n", x->xid, x->cid));
 	}
 	SpinLockRelease(&local->lock);
 
 	// DtmAdjustOldestXid();
-	// elog(LOG, "DtmLocalCommit %d", x->xid);
-}
-
-/*
- * Cleanup dtm_tx structure
- */
-void
-DtmLocalEnd(DtmCurrentTrans * x)
-{
-	x->xid = InvalidTransactionId;
-	x->cid = INVALID_CID;
 }
 
 /*

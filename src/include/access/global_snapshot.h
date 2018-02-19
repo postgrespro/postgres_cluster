@@ -8,8 +8,6 @@ typedef uint64 cid_t;
 
 typedef struct
 {
-	TransactionId xid;
-	cid_t		cid;
 	cid_t		snapshot;
 	char		gtid[MAX_GTID_SIZE];
 }	DtmCurrentTrans;
@@ -41,9 +39,6 @@ cid_t		DtmLocalPrepare(GlobalTransactionId gtid, cid_t cid);
 
 /* Assign CSN to global transaction */
 void		DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid);
-
-/* Invoked at the end of any local or global transaction: free transaction state */
-void		DtmLocalEnd(DtmCurrentTrans * x);
 
 /* Save global preapred transactoin state */
 void		DtmLocalSavePreparedState(DtmCurrentTrans * x);
