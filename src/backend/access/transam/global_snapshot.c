@@ -89,7 +89,8 @@ static HTAB *gtid2xid;
 static DtmNodeState *local;
 static uint64 totalSleepInterrupts;
 static int	DtmVacuumDelay = 10; /* sec */
-static bool DtmRecordCommits = 0;
+static bool finishing_prepared;
+
 
 DtmCurrentTrans dtm_tx; // XXXX: make static
 
@@ -103,6 +104,7 @@ static size_t DtmGetTransactionStateSize(void);
 static void DtmSerializeTransactionState(void* ctx);
 static void DtmDeserializeTransactionState(void* ctx);
 
+static void DtmLocalFinish(bool is_commit);
 
 static TransactionManager DtmTM = {
 	PgTransactionIdGetStatus,
@@ -207,7 +209,8 @@ GlobalSnapshotShmemSize(void)
 	Size		size;
 
 	size = MAXALIGN(sizeof(DtmNodeState));
-	size = add_size(size, (sizeof(DtmTransId) + sizeof(DtmTransStatus) + HASH_PER_ELEM_OVERHEAD * 2) * DTM_HASH_INIT_SIZE);
+	size = add_size(size, DTM_HASH_INIT_SIZE *
+			(sizeof(DtmTransId) + sizeof(DtmTransStatus) + HASH_PER_ELEM_OVERHEAD * 2));
 
 	return size;
 }
@@ -222,22 +225,28 @@ dtm_xact_callback(XactEvent event, void *arg)
 			DtmLocalBegin(&dtm_tx);
 			break;
 
-		case XACT_EVENT_ABORT:
-			DtmLocalAbort(&dtm_tx);
-			DtmLocalEnd(&dtm_tx);
-			break;
-
-		case XACT_EVENT_COMMIT:
-			DtmLocalCommit(&dtm_tx);
-			DtmLocalEnd(&dtm_tx);
-			break;
-
 		case XACT_EVENT_ABORT_PREPARED:
-			DtmLocalAbortPrepared(&dtm_tx);
+			// DtmLocalAbortPrepared(&dtm_tx);
+			finishing_prepared = true;
+			DtmAdjustOldestXid();
 			break;
 
 		case XACT_EVENT_COMMIT_PREPARED:
-			DtmLocalCommitPrepared(&dtm_tx);
+			// DtmLocalCommitPrepared(&dtm_tx);
+			finishing_prepared = true;
+			DtmAdjustOldestXid();
+			break;
+
+		case XACT_EVENT_COMMIT:
+			DtmLocalFinish(true);
+			DtmLocalEnd(&dtm_tx);
+			finishing_prepared = false;
+			break;
+
+		case XACT_EVENT_ABORT:
+			DtmLocalFinish(false);
+			DtmLocalEnd(&dtm_tx);
+			finishing_prepared = false;
 			break;
 
 		case XACT_EVENT_PRE_PREPARE:
@@ -253,43 +262,6 @@ dtm_xact_callback(XactEvent event, void *arg)
 /*
  *	***************************************************************************
  */
-
-static uint32
-dtm_xid_hash_fn(const void *key, Size keysize)
-{
-	return (uint32) *(TransactionId *) key;
-}
-
-static int
-dtm_xid_match_fn(const void *key1, const void *key2, Size keysize)
-{
-	return *(TransactionId *) key1 - *(TransactionId *) key2;
-}
-
-static uint32
-dtm_gtid_hash_fn(const void *key, Size keysize)
-{
-	GlobalTransactionId id = (GlobalTransactionId) key;
-	uint32		h = 0;
-
-	while (*id != 0)
-	{
-		h = h * 31 + *id++;
-	}
-	return h;
-}
-
-static void *
-dtm_gtid_keycopy_fn(void *dest, const void *src, Size keysize)
-{
-	return strcpy((char *) dest, (GlobalTransactionId) src);
-}
-
-static int
-dtm_gtid_match_fn(const void *key1, const void *key2, Size keysize)
-{
-	return strcmp((GlobalTransactionId) key1, (GlobalTransactionId) key2);
-}
 
 static char const *
 DtmGetName(void)
@@ -480,17 +452,11 @@ DtmInitialize()
 void
 DtmLocalBegin(DtmCurrentTrans * x)
 {
-	if (!TransactionIdIsValid(x->xid))
-	{
 		SpinLockAcquire(&local->lock);
-		// x->xid = GetCurrentTransactionIdIfAny();
 		x->cid = INVALID_CID;
-		x->is_global = false;
-		x->is_prepared = false;
 		x->snapshot = dtm_get_cid();
 		SpinLockRelease(&local->lock);
 		DTM_TRACE((stderr, "DtmLocalBegin: transaction %u uses local snapshot %lu\n", x->xid, x->snapshot));
-	}
 }
 
 /*
@@ -516,7 +482,6 @@ DtmLocalExtend(GlobalTransactionId gtid)
 		strncpy(x->gtid, gtid, MAX_GTID_SIZE);
 		SpinLockRelease(&local->lock);
 	}
-	x->is_global = true;
 	DtmInitGlobalXmin(TransactionXmin);
 	return x->snapshot;
 }
@@ -543,7 +508,6 @@ DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 		}
 		local_cid = dtm_sync(global_cid);
 		x->snapshot = global_cid;
-		x->is_global = true;
 	}
 	strncpy(x->gtid, gtid, MAX_GTID_SIZE);
 	SpinLockRelease(&local->lock);
@@ -627,85 +591,59 @@ DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
 	}
 	SpinLockRelease(&local->lock);
 
-	/*
-	 * Record commit in pg_committed_xact table to be make it possible to
-	 * perform recovery in case of crash of some of cluster nodes
-	 */
-	if (DtmRecordCommits)
-	{
-		char		stmt[MAX_GTID_SIZE + 64];
-		int			rc;
-
-		sprintf(stmt, "insert into pg_committed_xacts values ('%s')", gtid);
-		SPI_connect();
-		rc = SPI_execute(stmt, true, 0);
-		SPI_finish();
-		if (rc != SPI_OK_INSERT)
-		{
-			elog(ERROR, "Failed to insert GTID %s in table pg_committed_xacts", gtid);
-		}
-	}
-}
-
-/*
- * Mark tranasction as prepared
- */
-void
-DtmLocalCommitPrepared(DtmCurrentTrans * x)
-{
-	if (!x->gtid[0])
-		return;
-
-	Assert(x->gtid != NULL);
-
-	SpinLockAcquire(&local->lock);
-	{
-		DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, x->gtid, HASH_REMOVE, NULL);
-
-		Assert(id != NULL);
-
-		x->is_global = true;
-		x->is_prepared = true;
-		x->xid = id->xid;
-		free(id->subxids);
-
-		DTM_TRACE((stderr, "Global transaction %u(%s) is precommitted\n", x->xid, gtid));
-	}
-	SpinLockRelease(&local->lock);
-
-	DtmAdjustOldestXid();
-	// elog(LOG, "DtmLocalCommitPrepared %d", x->xid);
 }
 
 /*
  * Set transaction status to committed
  */
 void
-DtmLocalCommit(DtmCurrentTrans * x)
+DtmLocalFinish(bool is_commit)
 {
-	// if (!x->is_global)
-	// 	return;
+	DtmCurrentTrans * x = &dtm_tx;
+	TransactionId xid = GetCurrentTransactionIdIfAny();
+
+	if (x->gtid[0] && finishing_prepared)
+	{
+		// Assert(!TransactionIdIsValid(xid));
+
+		SpinLockAcquire(&local->lock);
+		{
+			DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, x->gtid, HASH_REMOVE, NULL);
+
+			Assert(id != NULL);
+			Assert(TransactionIdIsValid(id->xid));
+
+			xid = id->xid;
+			free(id->subxids);
+		}
+		SpinLockRelease(&local->lock);
+	}
+	else if (!TransactionIdIsValid(xid))
+	{
+		return;
+	}
 
 	SpinLockAcquire(&local->lock);
-	if (TransactionIdIsValid(x->xid))
 	{
 		bool		found;
 		DtmTransStatus *ts;
 
-		ts = (DtmTransStatus *) hash_search(xid2status, &x->xid, HASH_ENTER, &found);
-		ts->status = TRANSACTION_STATUS_COMMITTED;
+		ts = (DtmTransStatus *) hash_search(xid2status, &xid, HASH_ENTER, &found);
+		ts->status = is_commit ? TRANSACTION_STATUS_COMMITTED : TRANSACTION_STATUS_ABORTED;
 		if (found)
 		{
-			int			i;
-			DtmTransStatus *sts = ts;
 
-			Assert(found);
-			Assert(x->is_global);
-			for (i = 0; i < ts->nSubxids; i++)
+			if (is_commit) // XXX: why only for commit?
 			{
-				sts = sts->next;
-				Assert(sts->cid == ts->cid);
-				sts->status = TRANSACTION_STATUS_COMMITTED;
+				int			i;
+				DtmTransStatus *sts = ts;
+
+				for (i = 0; i < ts->nSubxids; i++)
+				{
+					sts = sts->next;
+					Assert(sts->cid == ts->cid);
+					sts->status = TRANSACTION_STATUS_COMMITTED;
+				}
 			}
 		}
 		else
@@ -715,76 +653,23 @@ DtmLocalCommit(DtmCurrentTrans * x)
 			Assert(!found);
 			ts->cid = dtm_get_cid();
 			DtmTransactionListAppend(ts);
-			ts->nSubxids = xactGetCommittedChildren(&subxids);
-			DtmAddSubtransactions(ts, subxids, ts->nSubxids);
+			if (is_commit) // XXX: why?
+			{
+				ts->nSubxids = xactGetCommittedChildren(&subxids);
+				DtmAddSubtransactions(ts, subxids, ts->nSubxids);
+			}
+			else
+			{
+				ts->nSubxids = 0;
+			}
 		}
 		x->cid = ts->cid;
 		DTM_TRACE((stderr, "Local transaction %u is committed at %lu\n", x->xid, x->cid));
 	}
 	SpinLockRelease(&local->lock);
 
-	DtmAdjustOldestXid();
+	// DtmAdjustOldestXid();
 	// elog(LOG, "DtmLocalCommit %d", x->xid);
-}
-
-/*
- * Mark tranasction as prepared
- */
-void
-DtmLocalAbortPrepared(DtmCurrentTrans * x)
-{
-	if (!x->gtid[0])
-		return;
-
-	Assert(x->gtid != NULL);
-
-	SpinLockAcquire(&local->lock);
-	{
-		DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, x->gtid, HASH_REMOVE, NULL);
-
-		Assert(id != NULL);
-		x->is_global = true;
-		x->is_prepared = true;
-		x->xid = id->xid;
-		free(id->subxids);
-		DTM_TRACE((stderr, "Global transaction %u(%s) is preaborted\n", x->xid, gtid));
-	}
-	SpinLockRelease(&local->lock);
-}
-
-/*
- * Set transaction status to aborted
- */
-void
-DtmLocalAbort(DtmCurrentTrans * x)
-{
-	if (!TransactionIdIsValid(x->xid))
-		return;
-
-	SpinLockAcquire(&local->lock);
-	{
-		bool		found;
-		DtmTransStatus *ts;
-
-		Assert(TransactionIdIsValid(x->xid));
-		ts = (DtmTransStatus *) hash_search(xid2status, &x->xid, HASH_ENTER, &found);
-		if (found)
-		{
-			Assert(found);
-			Assert(x->is_global);
-		}
-		else
-		{
-			Assert(!found);
-			ts->cid = dtm_get_cid();
-			ts->nSubxids = 0;
-			DtmTransactionListAppend(ts);
-		}
-		x->cid = ts->cid;
-		ts->status = TRANSACTION_STATUS_ABORTED;
-		DTM_TRACE((stderr, "Local transaction %u is aborted at %lu\n", x->xid, x->cid));
-	}
-	SpinLockRelease(&local->lock);
 }
 
 /*
@@ -793,8 +678,6 @@ DtmLocalAbort(DtmCurrentTrans * x)
 void
 DtmLocalEnd(DtmCurrentTrans * x)
 {
-	x->is_global = false;
-	x->is_prepared = false;
 	x->xid = InvalidTransactionId;
 	x->cid = INVALID_CID;
 }
@@ -854,7 +737,6 @@ DtmGetCsn(TransactionId xid)
 void
 DtmLocalSavePreparedState(DtmCurrentTrans * x)
 {
-	// x->is_prepared = true;
 
 	if (x->gtid[0])
 	{

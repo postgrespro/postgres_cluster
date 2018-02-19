@@ -9,8 +9,6 @@ typedef uint64 cid_t;
 typedef struct
 {
 	TransactionId xid;
-	bool		is_global;
-	bool		is_prepared;
 	cid_t		cid;
 	cid_t		snapshot;
 	char		gtid[MAX_GTID_SIZE];
@@ -44,18 +42,6 @@ cid_t		DtmLocalPrepare(GlobalTransactionId gtid, cid_t cid);
 /* Assign CSN to global transaction */
 void		DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid);
 
-/* Do local commit of global transaction */
-void		DtmLocalCommitPrepared(DtmCurrentTrans * x);
-
-/* Do local abort of global transaction */
-void		DtmLocalAbortPrepared(DtmCurrentTrans * x);
-
-/* Do local commit of global transaction */
-void		DtmLocalCommit(DtmCurrentTrans * x);
-
-/* Do local abort of global transaction */
-void		DtmLocalAbort(DtmCurrentTrans * x);
-
 /* Invoked at the end of any local or global transaction: free transaction state */
 void		DtmLocalEnd(DtmCurrentTrans * x);
 
@@ -63,12 +49,5 @@ void		DtmLocalEnd(DtmCurrentTrans * x);
 void		DtmLocalSavePreparedState(DtmCurrentTrans * x);
 
 cid_t		DtmGetCsn(TransactionId xid);
-
-
-// extern Datum pg_global_snaphot_create(PG_FUNCTION_ARGS);
-// extern Datum pg_global_snaphot_join(PG_FUNCTION_ARGS);
-// extern Datum pg_global_snaphot_begin_prepare(PG_FUNCTION_ARGS);
-// extern Datum pg_global_snaphot_prepare(PG_FUNCTION_ARGS);
-// extern Datum pg_global_snaphot_end_prepare(PG_FUNCTION_ARGS);
 
 #endif
