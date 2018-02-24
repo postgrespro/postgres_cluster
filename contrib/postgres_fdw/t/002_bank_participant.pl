@@ -5,15 +5,6 @@ use PostgresNode;
 use TestLib;
 use Test::More tests => 1;
 
-# my $master = get_new_node("master");
-# $master->init;
-# $master->append_conf('postgresql.conf', qq(
-# 	max_prepared_transactions = 30
-# 	log_checkpoints = true
-# 	postgres_fdw.use_tsdtm = on
-# ));
-# $master->start;
-
 my $shard1 = get_new_node("shard1");
 $shard1->init;
 $shard1->append_conf('postgresql.conf', qq(
@@ -58,26 +49,22 @@ foreach my $node (@shards)
 
 }
 
-diag("\n");
-diag( $shard1->connstr('postgres'), "\n" );
-diag( $shard2->connstr('postgres'), "\n" );
-
 $shard1->psql('postgres', "insert into accounts_local select 2*id-1, 0 from generate_series(1, 10010) as id;");
 $shard2->psql('postgres', "insert into accounts_local select 2*id,   0 from generate_series(1, 10010) as id;");
 
-diag("\n");
-diag( $shard1->connstr('postgres'), "\n" );
-diag( $shard2->connstr('postgres'), "\n" );
+###############################################################################
+# pgbench scripts
+###############################################################################
 
-#sleep(6000);
-
-$shard1->pgbench(-n, -c => 20, -t => 30, -f => "$TestLib::log_path/../../t/bank.sql", 'postgres' );
-$shard2->pgbench(-n, -c => 20, -t => 30, -f => "$TestLib::log_path/../../t/bank.sql", 'postgres' );
-
-diag("\n");
-diag( $shard1->connstr('postgres'), "\n" );
-diag( $shard2->connstr('postgres'), "\n" );
-# sleep(3600);
+my $bank = File::Temp->new();
+append_to_file($bank, q{
+	\set id random(1, 20000)
+	BEGIN;
+	WITH upd AS (UPDATE accounts SET amount = amount - 1 WHERE id = :id RETURNING *)
+		INSERT into global_transactions SELECT now() FROM upd;
+	UPDATE accounts SET amount = amount + 1 WHERE id = (:id + 1);
+	COMMIT;
+});
 
 ###############################################################################
 # Helpers
@@ -115,8 +102,8 @@ my $isolation_errors = 0;
 
 my ($pgb_handle1, $pgb_handle2);
 
-$pgb_handle1 = $shard1->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank.sql", 'postgres' );
-$pgb_handle2 = $shard2->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank.sql", 'postgres' );
+$pgb_handle1 = $shard1->pgbench_async(-n, -c => 5, -T => $seconds, -f => $bank, 'postgres' );
+$pgb_handle2 = $shard2->pgbench_async(-n, -c => 5, -T => $seconds, -f => $bank, 'postgres' );
 
 $started = time();
 $selects = 0;

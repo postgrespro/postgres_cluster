@@ -32,29 +32,71 @@ $shard2->start;
 # Prepare nodes
 ###############################################################################
 
-$master->psql('postgres', "CREATE EXTENSION postgres_fdw");
-$master->psql('postgres', "CREATE TABLE accounts(id integer primary key, amount integer)");
-$master->psql('postgres', "CREATE TABLE global_transactions(tx_time timestamp)");
+$master->safe_psql('postgres', qq[
+	CREATE EXTENSION postgres_fdw;
+	CREATE TABLE accounts(id integer primary key, amount integer);
+	CREATE TABLE global_transactions(tx_time timestamp);
+]);
 
 foreach my $node ($shard1, $shard2)
 {
 	my $port = $node->port;
 	my $host = $node->host;
 
-	$node->psql('postgres', "CREATE TABLE accounts(id integer primary key, amount integer)");
+	$node->safe_psql('postgres',
+			"CREATE TABLE accounts(id integer primary key, amount integer)");
 
-	$master->psql('postgres', "CREATE SERVER shard_$port FOREIGN DATA WRAPPER postgres_fdw options(dbname 'postgres', host '$host', port '$port')");
-	$master->psql('postgres', "CREATE FOREIGN TABLE accounts_fdw_$port() inherits (accounts) server shard_$port options(table_name 'accounts')");
-	$master->psql('postgres', "CREATE USER MAPPING for stas SERVER shard_$port options (user 'stas')");
+	$master->safe_psql('postgres', qq[
+		CREATE SERVER shard_$port FOREIGN DATA WRAPPER postgres_fdw options(dbname 'postgres', host '$host', port '$port');
+		CREATE FOREIGN TABLE accounts_fdw_$port() inherits (accounts) server shard_$port options(table_name 'accounts');
+		CREATE USER MAPPING for stas SERVER shard_$port options (user 'stas');
+	])
 }
 
-$shard1->psql('postgres', "insert into accounts select 2*id-1, 0 from generate_series(1, 10010) as id;");
-$shard1->psql('postgres', "CREATE TABLE local_transactions(tx_time timestamp)");
+$shard1->safe_psql('postgres', qq[
+	insert into accounts select 2*id-1, 0 from generate_series(1, 10010) as id;
+	CREATE TABLE local_transactions(tx_time timestamp);
+]);
 
-$shard2->psql('postgres', "insert into accounts select 2*id, 0 from generate_series(1, 10010) as id;");
-$shard2->psql('postgres', "CREATE TABLE local_transactions(tx_time timestamp)");
+$shard2->safe_psql('postgres', qq[
+	insert into accounts select 2*id, 0 from generate_series(1, 10010) as id;
+	CREATE TABLE local_transactions(tx_time timestamp);
+]);
 
-$master->pgbench(-n, -c => 20, -t => 30, -f => "$TestLib::log_path/../../t/bank.sql", 'postgres' );
+###############################################################################
+# pgbench scripts
+###############################################################################
+
+my $bank = File::Temp->new();
+append_to_file($bank, q{
+	\set id random(1, 20000)
+	BEGIN;
+	WITH upd AS (UPDATE accounts SET amount = amount - 1 WHERE id = :id RETURNING *)
+		INSERT into global_transactions SELECT now() FROM upd;
+	UPDATE accounts SET amount = amount + 1 WHERE id = (:id + 1);
+	COMMIT;
+});
+
+my $bank1 = File::Temp->new();
+append_to_file($bank1, q{
+	\set id random(1, 10000)
+	BEGIN;
+	WITH upd AS (UPDATE accounts SET amount = amount - 1 WHERE id = (2*:id + 1) RETURNING *)
+		INSERT into local_transactions SELECT now() FROM upd;
+	UPDATE accounts SET amount = amount + 1 WHERE id = (2*:id + 3);
+	COMMIT;
+});
+
+my $bank2 = File::Temp->new();
+append_to_file($bank2, q{
+	\set id random(1, 10000)
+
+	BEGIN;
+	WITH upd AS (UPDATE accounts SET amount = amount - 1 WHERE id = 2*:id RETURNING *)
+		INSERT into local_transactions SELECT now() FROM upd;
+	UPDATE accounts SET amount = amount + 1 WHERE id = (2*:id + 2);
+	COMMIT;
+});
 
 ###############################################################################
 # Helpers
@@ -63,17 +105,11 @@ $master->pgbench(-n, -c => 20, -t => 30, -f => "$TestLib::log_path/../../t/bank.
 sub count_and_delete_rows
 {
 	my ($node, $table) = @_;
-	my ($rc, $count, $err);
+	my $count;
 
-	($rc, $count, $err) = $node->psql('postgres',"select count(*) from $table",
-									  on_error_die => 1);
-
-	die "count_rows: $err" if ($err ne '');
-
-	$node->psql('postgres',"delete from $table", on_error_die => 1);
-
+	$count = $node->safe_psql('postgres',"select count(*) from $table");
+	$node->safe_psql('postgres',"delete from $table");
 	diag($node->name, ": completed $count transactions");
-
 	return $count;
 }
 
@@ -92,20 +128,20 @@ my $isolation_errors = 0;
 
 my $pgb_handle;
 
-$pgb_handle = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank.sql", 'postgres' );
+$pgb_handle = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => $bank, 'postgres' );
 
 $started = time();
 $selects = 0;
 while (time() - $started < $seconds)
 {
-	($rc, $total, $err) = $master->psql('postgres', "select sum(amount) from accounts");
+	$total = $master->safe_psql('postgres', "select sum(amount) from accounts");
 	if ( ($total ne $oldtotal) and ($total ne '') )
 	{
 		$isolation_errors++;
 		$oldtotal = $total;
 		diag("Isolation error. Total = $total");
 	}
-	if (($err eq '') and ($total ne '') ) { $selects++; }
+	if ($total ne '') { $selects++; }
 }
 
 $master->pgbench_await($pgb_handle);
@@ -124,25 +160,25 @@ is($isolation_errors, 0, 'isolation between concurrent global transaction');
 my ($pgb_handle1, $pgb_handle2, $pgb_handle3);
 
 # global txses
-$pgb_handle1 = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank.sql", 'postgres' );
+$pgb_handle1 = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => $bank, 'postgres' );
 
 # concurrent local
-$pgb_handle2 = $shard1->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank1.sql", 'postgres' );
-$pgb_handle3 = $shard2->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank2.sql", 'postgres' );
+$pgb_handle2 = $shard1->pgbench_async(-n, -c => 5, -T => $seconds, -f => $bank1, 'postgres' );
+$pgb_handle3 = $shard2->pgbench_async(-n, -c => 5, -T => $seconds, -f => $bank2, 'postgres' );
 
 $started = time();
 $selects = 0;
 $oldtotal = 0;
 while (time() - $started < $seconds)
 {
-	($rc, $total, $err) = $master->psql('postgres', "select sum(amount) from accounts");
+	$total = $master->safe_psql('postgres', "select sum(amount) from accounts");
 	if ( ($total ne $oldtotal) and ($total ne '') )
 	{
 		$isolation_errors++;
 		$oldtotal = $total;
 		diag("Isolation error. Total = $total");
 	}
-	if (($err eq '') and ($total ne '') ) { $selects++; }
+	if ($total ne '') { $selects++; }
 }
 
 diag("selects = $selects");
@@ -168,10 +204,10 @@ my $stability_errors = 0;
 my $stable;
 
 # global txses
-$pgb_handle1 = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank.sql", 'postgres' );
+$pgb_handle1 = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => $bank, 'postgres' );
 # concurrent local
-$pgb_handle2 = $shard1->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank1.sql", 'postgres' );
-$pgb_handle3 = $shard2->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$TestLib::log_path/../../t/bank2.sql", 'postgres' );
+$pgb_handle2 = $shard1->pgbench_async(-n, -c => 5, -T => $seconds, -f => $bank1, 'postgres' );
+$pgb_handle3 = $shard2->pgbench_async(-n, -c => 5, -T => $seconds, -f => $bank2, 'postgres' );
 
 $selects = 0;
 $started = time();
