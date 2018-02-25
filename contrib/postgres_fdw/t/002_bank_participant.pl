@@ -29,11 +29,13 @@ my @shards = ($shard1, $shard2);
 
 foreach my $node (@shards)
 {
-	$node->safe_psql('postgres', "CREATE EXTENSION postgres_fdw");
-	$node->safe_psql('postgres', "CREATE TABLE accounts(id integer primary key, amount integer)");
-	$node->safe_psql('postgres', "CREATE TABLE accounts_local() inherits(accounts)");
-	$node->safe_psql('postgres', "CREATE TABLE global_transactions(tx_time timestamp)");
-	$node->safe_psql('postgres', "CREATE TABLE local_transactions(tx_time timestamp)");
+	$node->safe_psql('postgres', qq[
+		CREATE EXTENSION postgres_fdw;
+		CREATE TABLE accounts(id integer primary key, amount integer);
+		CREATE TABLE accounts_local() inherits(accounts);
+		CREATE TABLE global_transactions(tx_time timestamp);
+		CREATE TABLE local_transactions(tx_time timestamp);
+	]);
 
 	foreach my $neighbor (@shards)
 	{
@@ -42,11 +44,15 @@ foreach my $node (@shards)
 		my $port = $neighbor->port;
 		my $host = $neighbor->host;
 
-		$node->safe_psql('postgres', "CREATE SERVER shard_$port FOREIGN DATA WRAPPER postgres_fdw options(dbname 'postgres', host '$host', port '$port')");
-		$node->safe_psql('postgres', "CREATE FOREIGN TABLE accounts_fdw_$port() inherits (accounts) server shard_$port options(table_name 'accounts_local')");
-		$node->safe_psql('postgres', "CREATE USER MAPPING for stas SERVER shard_$port options (user 'stas')");
+		$node->safe_psql('postgres', qq[
+			CREATE SERVER shard_$port FOREIGN DATA WRAPPER postgres_fdw
+					options(dbname 'postgres', host '$host', port '$port');
+			CREATE FOREIGN TABLE accounts_fdw_$port() inherits (accounts)
+					server shard_$port options(table_name 'accounts_local');
+			CREATE USER MAPPING for stas SERVER shard_$port
+					options (user 'stas');
+		]);
 	}
-
 }
 
 $shard1->psql('postgres', "insert into accounts_local select 2*id-1, 0 from generate_series(1, 10010) as id;");
@@ -73,17 +79,11 @@ append_to_file($bank, q{
 sub count_and_delete_rows
 {
 	my ($node, $table) = @_;
-	my ($rc, $count, $err);
+	my $count;
 
-	($rc, $count, $err) = $node->psql('postgres',"select count(*) from $table",
-									  on_error_die => 1);
-
-	die "count_rows: $err" if ($err ne '');
-
-	$node->psql('postgres',"delete from $table", on_error_die => 1);
-
+	$count = $node->safe_psql('postgres',"select count(*) from $table");
+	$node->safe_psql('postgres',"delete from $table");
 	diag($node->name, ": completed $count transactions");
-
 	return $count;
 }
 

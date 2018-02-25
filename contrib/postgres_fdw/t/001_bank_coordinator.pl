@@ -201,7 +201,6 @@ is($isolation_errors, 0, 'isolation between concurrent global and local transact
 
 my ($hashes, $hash1, $hash2);
 my $stability_errors = 0;
-my $stable;
 
 # global txses
 $pgb_handle1 = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => $bank, 'postgres' );
