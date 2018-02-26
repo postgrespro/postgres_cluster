@@ -217,13 +217,14 @@ while (time() - $started < $seconds)
 		($hash1, $_, $hash2) = split "\n", $node->safe_psql('postgres', qq[
 			begin isolation level repeatable read;
 			select md5(array_agg((t.*)::text)::text) from (select * from accounts order by id) as t;
-			select pg_sleep(1);
+			select pg_sleep(3);
 			select md5(array_agg((t.*)::text)::text) from (select * from accounts order by id) as t;
 			commit;
 		]);
 
 		if ($hash1 ne $hash2)
 		{
+			diag("oops");
 			$stability_errors++;
 		}
 		elsif ($hash1 eq '' or $hash2 eq '')
