@@ -872,6 +872,31 @@ TwoPhaseGetDummyProc(TransactionId xid)
 	return &ProcGlobal->allProcs[gxact->pgprocno];
 }
 
+TransactionId
+TwoPhaseGetTransactionId(const char *gid)
+{
+	int i;
+
+	LWLockAcquire(TwoPhaseStateLock, LW_SHARED);
+	for (i = 0; i < TwoPhaseState->numPrepXacts; i++)
+	{
+		GlobalTransaction gxact = TwoPhaseState->prepXacts[i];
+
+		/* Ignore not-yet-valid GIDs */
+		if (!gxact->valid)
+			continue;
+
+		if (strcmp(gxact->gid, gid) == 0)
+		{
+			LWLockRelease(TwoPhaseStateLock);
+			return gxact->xid;
+		}
+	}
+	LWLockRelease(TwoPhaseStateLock);
+
+	return InvalidTransactionId;
+}
+
 /************************************************************************/
 /* State file support													*/
 /************************************************************************/

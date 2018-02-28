@@ -832,7 +832,7 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 		}
 		else /* Otherwise, just finalize dtm and proceed below to COMMIT */
 		{
-			finalize_dtm();
+			// finalize_dtm();
 		}
 	}
 

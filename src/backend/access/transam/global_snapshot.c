@@ -85,7 +85,6 @@ typedef struct
 
 // static shmem_startup_hook_type prev_shmem_startup_hook;
 static HTAB *xid2status;
-static HTAB *gtid2xid;
 static DtmNodeState *local;
 static uint64 totalSleepInterrupts;
 static int	DtmVacuumDelay = 15; /* sec */
@@ -432,13 +431,6 @@ DtmInitialize()
 							   &info,
 							   HASH_ELEM | HASH_BLOBS);
 
-	info.keysize = MAX_GTID_SIZE;
-	info.entrysize = sizeof(DtmTransId);
-	gtid2xid = ShmemInitHash("gtid2xid",
-							 DTM_HASH_INIT_SIZE, DTM_HASH_INIT_SIZE,
-							 &info,
-							 HASH_ELEM);
-
 	TM = &DtmTM;
 
 	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
@@ -478,16 +470,7 @@ DtmLocalExtend(GlobalTransactionId gtid)
 
 	if (gtid != NULL)
 	{
-		SpinLockAcquire(&local->lock);
-		{
-			DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, gtid, HASH_ENTER, NULL);
-
-			id->xid = GetCurrentTransactionId();
-			id->nSubxids = 0;
-			id->subxids = 0;
-		}
 		strncpy(x->gtid, gtid, MAX_GTID_SIZE);
-		SpinLockRelease(&local->lock);
 	}
 	DtmInitGlobalXmin(TransactionXmin);
 	return x->snapshot;
@@ -506,14 +489,6 @@ DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 
 	SpinLockAcquire(&local->lock);
 	{
-		if (gtid != NULL)
-		{
-			DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, gtid, HASH_ENTER, NULL);
-
-			id->xid = GetCurrentTransactionId();
-			id->nSubxids = 0;
-			id->subxids = 0;
-		}
 		local_cid = dtm_sync(global_cid);
 		x->snapshot = global_cid;
 	}
@@ -536,18 +511,20 @@ DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 void
 DtmLocalBeginPrepare(GlobalTransactionId gtid)
 {
-	// TransactionId xid = TwoPhaseGetTransactionId(gtid);
+	TransactionId xid = TwoPhaseGetTransactionId(gtid);
+
+	if (!TransactionIdIsValid(xid))
+	{
+		// XXX: check that it is global tx with the same xid, XactTopTransactionId?
+		xid = GetCurrentTransactionId();
+	}
 
 	SpinLockAcquire(&local->lock);
 	{
 		DtmTransStatus *ts;
-		DtmTransId *id;
 		bool found;
 
-		id = (DtmTransId *) hash_search(gtid2xid, gtid, HASH_FIND, NULL);
-		Assert(id != NULL);
-		Assert(TransactionIdIsValid(id->xid));
-		ts = (DtmTransStatus *) hash_search(xid2status, &id->xid, HASH_ENTER, &found);
+		ts = (DtmTransStatus *) hash_search(xid2status, &xid, HASH_ENTER, &found);
 		ts->status = TRANSACTION_STATUS_UNKNOWN;
 		ts->cid = dtm_get_cid();
 		if (!found)
@@ -582,15 +559,23 @@ DtmLocalPrepare(GlobalTransactionId gtid, cid_t global_cid)
 void
 DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
 {
+	TransactionId xid = TwoPhaseGetTransactionId(gtid);
+
+	if (!TransactionIdIsValid(xid))
+	{
+		// XXX: check that it is global tx with the same xid, XactTopTransactionId?
+		xid = GetCurrentTransactionId();
+	}
+
+	dtm_tx.xid = xid;
+
 	SpinLockAcquire(&local->lock);
 	{
 		DtmTransStatus *ts;
 		DtmTransId *id;
 		int			i;
 
-		id = (DtmTransId *) hash_search(gtid2xid, gtid, HASH_FIND, NULL);
-
-		ts = (DtmTransStatus *) hash_search(xid2status, &id->xid, HASH_FIND, NULL);
+		ts = (DtmTransStatus *) hash_search(xid2status, &xid, HASH_FIND, NULL);
 		Assert(ts != NULL);
 		ts->cid = cid;
 		DtmAdjustSubtransactions(ts);
@@ -613,19 +598,7 @@ DtmLocalFinish(bool is_commit)
 
 	if (x->gtid[0] && finishing_prepared)
 	{
-		// Assert(!TransactionIdIsValid(xid));
-
-		SpinLockAcquire(&local->lock);
-		{
-			DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, x->gtid, HASH_REMOVE, NULL);
-
-			Assert(id != NULL);
-			Assert(TransactionIdIsValid(id->xid));
-
-			xid = id->xid;
-			free(id->subxids);
-		}
-		SpinLockRelease(&local->lock);
+		xid = x->xid;
 	}
 	else if (!TransactionIdIsValid(xid))
 	{
@@ -716,20 +689,6 @@ DtmLocalSavePreparedState(DtmCurrentTrans * x)
 		int			  nSubxids = xactGetCommittedChildren(&subxids);
 
 		SpinLockAcquire(&local->lock);
-		{
-			DtmTransId *id = (DtmTransId *) hash_search(gtid2xid, x->gtid, HASH_FIND, NULL);
-
-			if (id != NULL)
-			{
-				id->xid = GetCurrentTransactionId();
-
-			}
-		}
-		// SpinLockRelease(&local->lock);
-
-
-
-		// SpinLockAcquire(&local->lock);
 		{
 			DtmTransStatus *ts;
 

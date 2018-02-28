@@ -35,6 +35,7 @@ extern void PostPrepare_Twophase(void);
 
 extern PGPROC *TwoPhaseGetDummyProc(TransactionId xid);
 extern BackendId TwoPhaseGetDummyBackendId(TransactionId xid);
+extern TransactionId TwoPhaseGetTransactionId(const char *gid);
 
 extern GlobalTransaction MarkAsPreparing(TransactionId xid, const char *gid,
 				TimestampTz prepared_at,

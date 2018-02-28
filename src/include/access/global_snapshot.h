@@ -10,6 +10,7 @@ typedef struct
 {
 	cid_t		snapshot;
 	char		gtid[MAX_GTID_SIZE];
+	TransactionId xid;
 }	DtmCurrentTrans;
 
 typedef char const *GlobalTransactionId;
