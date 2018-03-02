@@ -11,7 +11,6 @@ typedef struct
 {
 	cid_t		snapshot;
 	GlobalCSN	csn;
-	char		gtid[MAX_GTID_SIZE];
 	TransactionId xid;
 	bool		is_global;
 }	DtmCurrentTrans;
@@ -36,10 +35,10 @@ void		DtmInitialize(void);
 void		DtmLocalBegin(DtmCurrentTrans * x);
 
 /* Extend local transaction to global by assigning upper bound CSN which is returned to coordinator */
-extern cid_t		DtmLocalExtend(GlobalTransactionId gtid);
+extern cid_t		DtmLocalExtend(void);
 
 /* Function called at first access to any datanode except first one involved in distributed transaction */
-cid_t		DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t snapshot);
+cid_t		DtmLocalAccess(cid_t snapshot);
 
 /* Mark transaction as in-doubt */
 void		DtmLocalBeginPrepare(GlobalTransactionId gtid);

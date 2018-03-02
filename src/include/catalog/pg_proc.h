@@ -5534,9 +5534,9 @@ DATA(insert OID = 5028 ( satisfies_hash_partition PGNSP PGUID 12 1 0 2276 0 f f 
 DESCR("hash partition CHECK constraint");
 
 /* global snapshot management functions */
-DATA(insert OID = 3434 ( pg_global_snaphot_create			 PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 20 "25" _null_ _null_ _null_ _null_ _null_ pg_global_snaphot_create _null_ _null_ _null_ ));
+DATA(insert OID = 3434 ( pg_global_snaphot_create			 PGNSP PGUID 12 1 0 0 0 f f f f t f v u 0 0 20 "" _null_ _null_ _null_ _null_ _null_ pg_global_snaphot_create _null_ _null_ _null_ ));
 DESCR("create global transaction snapshot");
-DATA(insert OID = 3435 ( pg_global_snaphot_join				 PGNSP PGUID 12 1 0 0 0 f f f f t f v u 2 0 20 "20 25" _null_ _null_ _null_ _null_ _null_ pg_global_snaphot_join _null_ _null_ _null_ ));
+DATA(insert OID = 3435 ( pg_global_snaphot_join				 PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 20 "20" _null_ _null_ _null_ _null_ _null_ pg_global_snaphot_join _null_ _null_ _null_ ));
 DESCR("set given global snapshot for current transaction");
 DATA(insert OID = 3436 ( pg_global_snaphot_begin_prepare	 PGNSP PGUID 12 1 0 0 0 f f f f t f v u 1 0 2278 "25" _null_ _null_ _null_ _null_ _null_ pg_global_snaphot_begin_prepare _null_ _null_ _null_ ));
 DESCR("start prepare of global transaction");

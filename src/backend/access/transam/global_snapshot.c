@@ -296,6 +296,29 @@ DtmAdjustSubtransactions(DtmTransStatus *ts)
 }
 
 /*
+ * Add subtransactions to finished transactions list.
+ * Copy CSN and status of parent transaction.
+ */
+static void
+DtmAddSubtransactions(DtmTransStatus * ts, TransactionId *subxids, int nSubxids)
+{
+	int			i;
+
+	for (i = 0; i < nSubxids; i++)
+	{
+		bool		found;
+		DtmTransStatus *sts;
+
+		Assert(TransactionIdIsValid(subxids[i]));
+		sts = (DtmTransStatus *) hash_search(xid2status, &subxids[i], HASH_ENTER, &found);
+		Assert(!found);
+		sts->cid = ts->cid;
+		sts->nSubxids = 0;
+		DtmTransactionListInsertAfter(ts, sts);
+	}
+}
+
+/*
  * There can be different oldest XIDs at different cluster node.
  * Seince we do not have centralized aribiter, we have to rely in DtmVacuumDelay.
  * This function takes XID which PostgreSQL consider to be the latest and try to find XID which
@@ -465,19 +488,11 @@ DtmLocalBegin(DtmCurrentTrans * x)
  * Returns snapshot of current transaction.
  */
 cid_t
-DtmLocalExtend(GlobalTransactionId gtid)
+DtmLocalExtend()
 {
-	DtmCurrentTrans *x = &dtm_tx;
-
-	if (gtid != NULL)
-	{
-		strncpy(x->gtid, gtid, MAX_GTID_SIZE);
-	}
 	DtmInitGlobalXmin(TransactionXmin);
-
 	dtm_tx.is_global = true;
-
-	return x->snapshot;
+	return dtm_tx.snapshot;
 }
 
 /*
@@ -485,7 +500,7 @@ DtmLocalExtend(GlobalTransactionId gtid)
  * global_cid is snapshot taken from node initiated this transaction
  */
 cid_t
-DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
+DtmLocalAccess(cid_t global_cid)
 {
 	cid_t		local_cid;
 
@@ -494,9 +509,8 @@ DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 	SpinLockAcquire(&local->lock);
 	{
 		local_cid = dtm_sync(global_cid);
-		x->snapshot = global_cid;
+		dtm_tx.snapshot = global_cid;
 	}
-	strncpy(x->gtid, gtid, MAX_GTID_SIZE);
 	SpinLockRelease(&local->lock);
 
 	dtm_tx.is_global = true;
@@ -509,6 +523,37 @@ DtmLocalAccess(DtmCurrentTrans * x, GlobalTransactionId gtid, cid_t global_cid)
 	DtmInitGlobalXmin(TransactionXmin);
 	return global_cid;
 }
+
+
+/*
+ * Save state of parepared transaction
+ */
+void
+DtmLocalSavePreparedState(DtmCurrentTrans * x)
+{
+
+	if (dtm_tx.is_global)
+	{
+		TransactionId *subxids;
+		TransactionId xid = GetCurrentTransactionId();
+		int			  nSubxids = xactGetCommittedChildren(&subxids);
+
+		SpinLockAcquire(&local->lock);
+		{
+			DtmTransStatus *ts;
+			bool found;
+
+			ts = (DtmTransStatus *) hash_search(xid2status, &xid, HASH_ENTER, &found);
+			Assert(!found);
+			ts->cid = InDoubtGlobalCSN;
+			ts->nSubxids = nSubxids;
+			DtmTransactionListAppend(ts);
+			DtmAddSubtransactions(ts, subxids, nSubxids);
+		}
+		SpinLockRelease(&local->lock);
+	}
+}
+
 
 /*
  * Set transaction status to in-doubt. Now all transactions accessing tuples updated by this transaction have to
@@ -587,10 +632,8 @@ DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
 			return; // global ro tx
 	}
 
-
 	dtm_tx.xid = xid;
 	dtm_tx.csn = cid;
-
 }
 
 /*
@@ -599,43 +642,57 @@ DtmLocalEndPrepare(GlobalTransactionId gtid, cid_t cid)
 void
 DtmLocalFinish(bool is_commit)
 {
-	DtmCurrentTrans * x = &dtm_tx;
 	TransactionId xid = GetCurrentTransactionIdIfAny();
+	bool		found;
+	DtmTransStatus *ts;
 
-	if (x->gtid[0] && finishing_prepared)
+	// We can't check just TransactionIdIsValid(dtm_tx.xid) because
+	// then we catch commit of `select pg_global_snaphot_end_prepare(...)`
+	if (TransactionIdIsValid(dtm_tx.xid) &&
+			(finishing_prepared ||				// commit prepared of global
+			 TransactionIdIsValid(xid)))		// ordinary commit of global
 	{
+		// Commit of global prepared tx
+
 		xid = dtm_tx.xid;
-	}
-	else if (!TransactionIdIsValid(xid))
-	{
-		return;
-	}
+		Assert(GlobalCSNIsNormal(dtm_tx.csn));
 
-	SpinLockAcquire(&local->lock);
-	{
-		bool		found;
-		DtmTransStatus *ts;
+		SpinLockAcquire(&local->lock);
+		ts = (DtmTransStatus *) hash_search(xid2status, &xid, HASH_FIND, &found);
+		Assert(found);
+		ts->cid = is_commit ? dtm_tx.csn : AbortedGlobalCSN;
+		DtmAdjustSubtransactions(ts); // !
+		SpinLockRelease(&local->lock);
 
+		dtm_tx.xid = InvalidTransactionId;
+		dtm_tx.csn = InvalidGlobalCSN;
+		dtm_tx.is_global = false;
+	}
+	else if (TransactionIdIsValid(xid))
+	{
+		// Commit of local tx
+
+		TransactionId *subxids;
+		int nSubxids = xactGetCommittedChildren(&subxids);
+
+		Assert(!GlobalCSNIsNormal(dtm_tx.csn));
+		Assert(!TransactionIdIsValid(dtm_tx.xid));
+
+		if (dtm_tx.is_global)
+		{
+			Assert(!is_commit);
+			dtm_tx.is_global = false;
+		}
+
+		SpinLockAcquire(&local->lock);
 		ts = (DtmTransStatus *) hash_search(xid2status, &xid, HASH_ENTER, &found);
-
-		if (found)
-		{
-			Assert(GlobalCSNIsNormal(dtm_tx.csn));
-			ts->cid = is_commit ? dtm_tx.csn : AbortedGlobalCSN;
-
-			dtm_tx.xid = InvalidTransactionId;
-			dtm_tx.csn = InvalidGlobalCSN;
-		}
-		else
-		{
-			Assert(!GlobalCSNIsNormal(dtm_tx.csn));
-			ts->cid = is_commit ? dtm_get_cid() : AbortedGlobalCSN;
-			DtmTransactionListAppend(ts);
-		}
-		DtmAdjustSubtransactions(ts);
+		Assert(!found);
+		ts->cid = is_commit ? dtm_get_cid() : AbortedGlobalCSN;
+		ts->nSubxids = nSubxids;
+		DtmTransactionListAppend(ts);
+		DtmAddSubtransactions(ts, subxids, nSubxids);
+		SpinLockRelease(&local->lock);
 	}
-	SpinLockRelease(&local->lock);
-
 }
 
 /*
@@ -670,59 +727,6 @@ DtmDeserializeTransactionState(void* ctx)
 
 
 /*
- * Save state of parepared transaction
- */
-void
-DtmLocalSavePreparedState(DtmCurrentTrans * x)
-{
-
-	if (dtm_tx.is_global)
-	{
-		TransactionId *subxids;
-		TransactionId xid = GetCurrentTransactionId();
-		int			  nSubxids = xactGetCommittedChildren(&subxids);
-
-		SpinLockAcquire(&local->lock);
-		{
-			DtmTransStatus *ts;
-			bool found;
-
-			ts = (DtmTransStatus *) hash_search(xid2status, &xid, HASH_ENTER, &found);
-			Assert(!found);
-			ts->cid = InDoubtGlobalCSN;
-			ts->nSubxids = nSubxids;
-			DtmTransactionListAppend(ts);
-			DtmAddSubtransactions(ts, subxids, nSubxids);
-		}
-		SpinLockRelease(&local->lock);
-	}
-}
-
-/*
- * Add subtransactions to finished transactions list.
- * Copy CSN and status of parent transaction.
- */
-static void
-DtmAddSubtransactions(DtmTransStatus * ts, TransactionId *subxids, int nSubxids)
-{
-	int			i;
-
-	for (i = 0; i < nSubxids; i++)
-	{
-		bool		found;
-		DtmTransStatus *sts;
-
-		Assert(TransactionIdIsValid(subxids[i]));
-		sts = (DtmTransStatus *) hash_search(xid2status, &subxids[i], HASH_ENTER, &found);
-		Assert(!found);
-		sts->cid = ts->cid;
-		sts->nSubxids = 0;
-		DtmTransactionListInsertAfter(ts, sts);
-	}
-}
-
-
-/*
  *
  * SQL functions for global snapshot mamagement.
  *
@@ -731,8 +735,7 @@ DtmAddSubtransactions(DtmTransStatus * ts, TransactionId *subxids, int nSubxids)
 Datum
 pg_global_snaphot_create(PG_FUNCTION_ARGS)
 {
-	GlobalTransactionId gtid = text_to_cstring(PG_GETARG_TEXT_PP(0));
-	cid_t		cid = DtmLocalExtend(gtid);
+	cid_t		cid = DtmLocalExtend();
 
 	DTM_TRACE((stderr, "Backend %d extends transaction %u(%s) to global with cid=%lu\n", getpid(), dtm_tx.xid, gtid, cid));
 	PG_RETURN_INT64(cid);
@@ -742,10 +745,9 @@ Datum
 pg_global_snaphot_join(PG_FUNCTION_ARGS)
 {
 	cid_t		cid = PG_GETARG_INT64(0);
-	GlobalTransactionId gtid = text_to_cstring(PG_GETARG_TEXT_PP(1));
 
 	DTM_TRACE((stderr, "Backend %d joins transaction %u(%s) with cid=%lu\n", getpid(), dtm_tx.xid, gtid, cid));
-	cid = DtmLocalAccess(&dtm_tx, gtid, cid);
+	cid = DtmLocalAccess(cid);
 	PG_RETURN_INT64(cid);
 }
 

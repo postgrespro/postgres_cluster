@@ -483,14 +483,14 @@ begin_remote_xact(ConnCacheEntry *entry)
 								++two_phase_xact_count);
 				MemoryContextSwitchTo(oldcxt);
 
-				current_global_cid = DtmLocalExtend(two_phase_xact_gid);
+				current_global_cid = DtmLocalExtend();
 			}
 
 			Assert(two_phase_xact_gid);
 			/* join the new participant */
 			res = PQexec(entry->conn,
-						psprintf("SELECT pg_global_snaphot_join("UINT64_FORMAT", '%s')",
-								current_global_cid, two_phase_xact_gid));
+						psprintf("SELECT pg_global_snaphot_join("UINT64_FORMAT")",
+								current_global_cid));
 
 			if (PQresultStatus(res) != PGRES_TUPLES_OK)
 			{
