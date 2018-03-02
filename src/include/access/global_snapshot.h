@@ -5,12 +5,15 @@
 
 typedef int nodeid_t;
 typedef uint64 cid_t;
+typedef cid_t GlobalCSN;
 
 typedef struct
 {
 	cid_t		snapshot;
+	GlobalCSN	csn;
 	char		gtid[MAX_GTID_SIZE];
 	TransactionId xid;
+	bool		is_global;
 }	DtmCurrentTrans;
 
 typedef char const *GlobalTransactionId;
@@ -19,6 +22,12 @@ Size		GlobalSnapshotShmemSize(void);
 
 extern DtmCurrentTrans dtm_tx;
 
+#define InvalidGlobalCSN	 0x0
+#define AbortedGlobalCSN	 0x2
+#define InDoubtGlobalCSN	 0x3
+#define FirstNormalGlobalCSN 0x4
+
+#define GlobalCSNIsNormal(csn) ((csn) >= FirstNormalGlobalCSN)
 
 /* Initialize DTM extension */
 void		DtmInitialize(void);
