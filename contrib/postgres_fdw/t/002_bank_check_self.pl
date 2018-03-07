@@ -21,6 +21,7 @@ $master->start;
 my $shard1 = get_new_node("shard1");
 $shard1->init;
 $shard1->append_conf('postgresql.conf', qq(
+	track_global_snapshots = on
 	max_prepared_transactions = 30
 	log_checkpoints = true
 ));
@@ -28,26 +29,25 @@ $shard1->start;
 
 ###############################################################################
 
-$master->psql('postgres', "CREATE EXTENSION postgres_fdw");
-$master->psql('postgres', "CREATE TABLE accounts(id integer primary key, amount integer)");
+$master->safe_psql('postgres', "CREATE EXTENSION postgres_fdw");
+$master->safe_psql('postgres', "CREATE TABLE accounts(id integer primary key, amount integer)");
 my $master_port = $master->port;
-$master->psql('postgres', "CREATE TABLE accounts_$master_port() inherits (accounts)");
+$master->safe_psql('postgres', "CREATE TABLE accounts_$master_port() inherits (accounts)");
 
 
 my $port = $shard1->port;
 my $host = $shard1->host;
 
-$shard1->psql('postgres', "CREATE TABLE accounts(id integer primary key, amount integer)");
+$shard1->safe_psql('postgres', "CREATE TABLE accounts(id integer primary key, amount integer)");
 
-$master->psql('postgres', "CREATE SERVER shard_$port FOREIGN DATA WRAPPER postgres_fdw options(dbname 'postgres', host '$host', port '$port')");
-$master->psql('postgres', "CREATE FOREIGN TABLE accounts_fdw_$port() inherits (accounts) server shard_$port options(table_name 'accounts')");
-my $me = scalar(getpwuid($<));
-$master->psql('postgres', "CREATE USER MAPPING for $me SERVER shard_$port options (user '$me')");
+$master->safe_psql('postgres', "CREATE SERVER shard_$port FOREIGN DATA WRAPPER postgres_fdw options(dbname 'postgres', host '$host', port '$port')");
+$master->safe_psql('postgres', "CREATE FOREIGN TABLE accounts_fdw_$port() inherits (accounts) server shard_$port options(table_name 'accounts')");
+$master->safe_psql('postgres', "CREATE USER MAPPING for CURRENT_USER SERVER shard_$port");
 
 	# diag("done $host $port");
 
-$master->psql('postgres', "insert into accounts select 2*id-1, 0 from generate_series(1, 10010) as id;");
-$shard1->psql('postgres', "insert into accounts select 2*id, 0 from generate_series(1, 10010) as id;");
+$master->safe_psql('postgres', "insert into accounts select 2*id-1, 0 from generate_series(1, 10010) as id;");
+$shard1->safe_psql('postgres', "insert into accounts select 2*id, 0 from generate_series(1, 10010) as id;");
 
 # diag( $master->connstr() );
 # sleep(3600);
@@ -67,7 +67,7 @@ my $pgb_handle = $master->pgbench_async(-n, -c => 5, -T => $seconds, -f => "$pgb
 my $started = time();
 while (time() - $started < $seconds)
 {
-	($rc, $total, $err) = $master->psql('postgres', "select sum(amount) from accounts");
+	($rc, $total, $err) = $master->safe_psql('postgres', "select sum(amount) from accounts");
 	if ( ($total ne $oldtotal) and ($total ne '') )
 	{
 		$isolation_error = 1;
