@@ -329,7 +329,7 @@ connect_pg_server(ConnCacheEntry *entry, ForeignServer *server, UserMapping *use
 
 		/* Here we will wait for the results */
 		/* xxx check for postmaster death? */
-		entry->wait_set = CreateWaitEventSet(TopMemoryContext, 2);
+		entry->wait_set = CreateWaitEventSet(CacheMemoryContext, 2);
 		AddWaitEventToSet(entry->wait_set, WL_LATCH_SET, PGINVALID_SOCKET,
 						  MyLatch, NULL);
 		AddWaitEventToSet(entry->wait_set, WL_SOCKET_READABLE, PQsocket(conn), NULL, NULL);
