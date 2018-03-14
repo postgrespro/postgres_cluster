@@ -49,10 +49,11 @@
  */
 typedef Oid ConnCacheKey;
 
-typedef struct ConnCacheEntry
+struct ConnCacheEntry
 {
 	ConnCacheKey key;			/* hash key (must be first) */
 	PGconn	   *conn;			/* connection to foreign server, or NULL */
+	WaitEventSet *wait_set;		/* for data from server ready notifications */
 	/* Remaining fields are invalid when conn is NULL: */
 	int			xact_depth;		/* 0 = no xact open, 1 = main xact open, 2 =
 								 * one level of subxact open, etc */
@@ -62,7 +63,7 @@ typedef struct ConnCacheEntry
 	bool		invalidated;	/* true if reconnect is pending */
 	uint32		server_hashvalue;	/* hash value of foreign server OID */
 	uint32		mapping_hashvalue;	/* hash value of user mapping OID */
-} ConnCacheEntry;
+};
 
 /*
  * Connection cache (initialized on first use)
@@ -95,11 +96,12 @@ static bool xact_got_connection = false;
 static int two_phase_xact_count = 0;
 
 /* prototypes of private functions */
-static PGconn *connect_pg_server(ForeignServer *server, UserMapping *user);
+static void connect_pg_server(ConnCacheEntry *entry, ForeignServer *server,
+							  UserMapping *user);
 static void disconnect_pg_server(ConnCacheEntry *entry);
 static void check_conn_params(const char **keywords, const char **values, UserMapping *user);
-static void configure_remote_session(PGconn *conn);
-static void do_sql_command(PGconn *conn, const char *sql);
+static void configure_remote_session(ConnCacheEntry *entry);
+static void do_sql_command(ConnCacheEntry *entry, const char *sql);
 static void begin_remote_xact(ConnCacheEntry *entry);
 static void pgfdw_xact_callback(XactEvent event, void *arg);
 static void deallocate_prepared_stmts(ConnCacheEntry *entry);
@@ -109,15 +111,15 @@ static void pgfdw_subxact_callback(SubXactEvent event,
 					   void *arg);
 static void pgfdw_inval_callback(Datum arg, int cacheid, uint32 hashvalue);
 static void pgfdw_reject_incomplete_xact_state_change(ConnCacheEntry *entry);
-static bool pgfdw_cancel_query(PGconn *conn);
-static bool pgfdw_exec_cleanup_query(PGconn *conn, const char *query,
+static bool pgfdw_cancel_query(ConnCacheEntry *entry);
+static bool pgfdw_exec_cleanup_query(ConnCacheEntry *entry, const char *query,
 						 bool ignore_errors);
-static bool pgfdw_get_cleanup_result(PGconn *conn, TimestampTz endtime,
+static bool pgfdw_get_cleanup_result(ConnCacheEntry *entry, TimestampTz endtime,
 						 PGresult **result);
 
 
 /*
- * Get a PGconn which can be used to execute queries on the remote PostgreSQL
+ * Get a ConnCacheEntry which can be used to execute queries on the remote PostgreSQL
  * server with the user's authorization.  A new connection is established
  * if we don't already have a suitable one, and a transaction is opened at
  * the right subtransaction nesting depth if we didn't do that already.
@@ -126,7 +128,7 @@ static bool pgfdw_get_cleanup_result(PGconn *conn, TimestampTz endtime,
  * statements.  Since those don't go away automatically at transaction end
  * (not even on error), we need this flag to cue manual cleanup.
  */
-PGconn *
+ConnCacheEntry *
 GetConnection(UserMapping *user, bool will_prep_stmt)
 {
 	bool		found;
@@ -230,7 +232,7 @@ GetConnection(UserMapping *user, bool will_prep_stmt)
 								  ObjectIdGetDatum(user->umid));
 
 		/* Now try to make the connection */
-		entry->conn = connect_pg_server(server, user);
+		connect_pg_server(entry, server, user);
 
 		elog(DEBUG3, "new postgres_fdw connection %p for server \"%s\" (user mapping oid %u, userid %u)",
 			 entry->conn, server->servername, user->umid, user->userid);
@@ -244,16 +246,24 @@ GetConnection(UserMapping *user, bool will_prep_stmt)
 	/* Remember if caller will prepare statements */
 	entry->have_prep_stmt |= will_prep_stmt;
 
+	return entry;
+}
+
+PGconn *
+ConnectionEntryGetConn(ConnCacheEntry *entry)
+{
 	return entry->conn;
 }
 
 /*
  * Connect to remote server using specified server and user mapping properties.
  */
-static PGconn *
-connect_pg_server(ForeignServer *server, UserMapping *user)
+static void
+connect_pg_server(ConnCacheEntry *entry, ForeignServer *server, UserMapping *user)
 {
 	PGconn	   *volatile conn = NULL;
+
+	entry->wait_set = NULL;
 
 	/*
 	 * Use PG_TRY block to ensure closing connection on error.
@@ -315,22 +325,35 @@ connect_pg_server(ForeignServer *server, UserMapping *user)
 					 errdetail("Non-superuser cannot connect if the server does not request a password."),
 					 errhint("Target server's authentication method must be changed.")));
 
+		entry->conn = conn;
+
+		/* Here we will wait for the results */
+		/* xxx check for postmaster death? */
+		entry->wait_set = CreateWaitEventSet(TopMemoryContext, 2);
+		AddWaitEventToSet(entry->wait_set, WL_LATCH_SET, PGINVALID_SOCKET,
+						  MyLatch, NULL);
+		AddWaitEventToSet(entry->wait_set, WL_SOCKET_READABLE, PQsocket(conn), NULL, NULL);
+
 		/* Prepare new session for use */
-		configure_remote_session(conn);
+		configure_remote_session(entry);
 
 		pfree(keywords);
 		pfree(values);
 	}
 	PG_CATCH();
 	{
+		/* Release WaitEventSet if we managed to create one */
+		if (entry->wait_set)
+		{
+			FreeWaitEventSet(entry->wait_set);
+			entry->wait_set = NULL;
+		}
 		/* Release PGconn data structure if we managed to create one */
 		if (conn)
 			PQfinish(conn);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-
-	return conn;
 }
 
 /*
@@ -341,6 +364,9 @@ disconnect_pg_server(ConnCacheEntry *entry)
 {
 	if (entry->conn != NULL)
 	{
+		Assert(entry->wait_set);
+		FreeWaitEventSet(entry->wait_set);
+		entry->wait_set = NULL;
 		PQfinish(entry->conn);
 		entry->conn = NULL;
 	}
@@ -387,12 +413,12 @@ check_conn_params(const char **keywords, const char **values, UserMapping *user)
  * there are any number of ways to break things.
  */
 static void
-configure_remote_session(PGconn *conn)
+configure_remote_session(ConnCacheEntry *entry)
 {
-	int			remoteversion = PQserverVersion(conn);
+	int			remoteversion = PQserverVersion(entry->conn);
 
 	/* Force the search path to contain only pg_catalog (see deparse.c) */
-	do_sql_command(conn, "SET search_path = pg_catalog");
+	do_sql_command(entry, "SET search_path = pg_catalog");
 
 	/*
 	 * Set remote timezone; this is basically just cosmetic, since all
@@ -403,20 +429,20 @@ configure_remote_session(PGconn *conn)
 	 * server might use a different timezone database.  Instead, use UTC
 	 * (quoted, because very old servers are picky about case).
 	 */
-	do_sql_command(conn, "SET timezone = 'UTC'");
+	do_sql_command(entry, "SET timezone = 'UTC'");
 
 	/*
 	 * Set values needed to ensure unambiguous data output from remote.  (This
 	 * logic should match what pg_dump does.  See also set_transmission_modes
 	 * in postgres_fdw.c.)
 	 */
-	do_sql_command(conn, "SET datestyle = ISO");
+	do_sql_command(entry, "SET datestyle = ISO");
 	if (remoteversion >= 80400)
-		do_sql_command(conn, "SET intervalstyle = postgres");
+		do_sql_command(entry, "SET intervalstyle = postgres");
 	if (remoteversion >= 90000)
-		do_sql_command(conn, "SET extra_float_digits = 3");
+		do_sql_command(entry, "SET extra_float_digits = 3");
 	else
-		do_sql_command(conn, "SET extra_float_digits = 2");
+		do_sql_command(entry, "SET extra_float_digits = 2");
 }
 
 /*
@@ -424,15 +450,16 @@ configure_remote_session(PGconn *conn)
  * statement to remote node.
  */
 static void
-do_sql_command(PGconn *conn, const char *sql)
+do_sql_command(ConnCacheEntry *entry, const char *sql)
 {
+	PGconn	   *conn = entry->conn;
 	PGresult   *res;
 
 	if (!PQsendQuery(conn, sql))
 		pgfdw_report_error(ERROR, NULL, conn, false, sql);
-	res = pgfdw_get_result(conn, sql);
+	res = pgfdw_get_result(entry, sql);
 	if (PQresultStatus(res) != PGRES_COMMAND_OK &&
-			PQresultStatus(res) != PGRES_TUPLES_OK)
+		PQresultStatus(res) != PGRES_TUPLES_OK)
 		pgfdw_report_error(ERROR, res, conn, true, sql);
 	PQclear(res);
 }
@@ -465,7 +492,7 @@ begin_remote_xact(ConnCacheEntry *entry)
 				UseRepeatableRead ? "ISOLATION LEVEL REPEATABLE READ" : "",
 				(long long) GetSystemIdentifier(), MyProcPid);
 		entry->changing_xact_state = true;
-		do_sql_command(entry->conn, sql);
+		do_sql_command(entry, sql);
 		entry->xact_depth = 1;
 		entry->changing_xact_state = false;
 
@@ -481,7 +508,7 @@ begin_remote_xact(ConnCacheEntry *entry)
 				"SELECT pg_global_snaphot_import("UINT64_FORMAT")",
 				fdwTransState->global_csn);
 
-			do_sql_command(entry->conn, import_sql);
+			do_sql_command(entry, import_sql);
 		}
 
 		fdwTransState->nparticipants += 1;
@@ -498,7 +525,7 @@ begin_remote_xact(ConnCacheEntry *entry)
 
 		snprintf(sql, sizeof(sql), "SAVEPOINT s%d", entry->xact_depth + 1);
 		entry->changing_xact_state = true;
-		do_sql_command(entry->conn, sql);
+		do_sql_command(entry, sql);
 		entry->xact_depth++;
 		entry->changing_xact_state = false;
 	}
@@ -508,7 +535,7 @@ begin_remote_xact(ConnCacheEntry *entry)
  * Release connection reference count created by calling GetConnection.
  */
 void
-ReleaseConnection(PGconn *conn)
+ReleaseConnection(ConnCacheEntry *entry)
 {
 	/*
 	 * Currently, we don't actually track connection references because all
@@ -529,7 +556,7 @@ ReleaseConnection(PGconn *conn)
  * collisions are highly improbable; just be sure to use %u not %d to print.
  */
 unsigned int
-GetCursorNumber(PGconn *conn)
+GetCursorNumber(ConnCacheEntry *entry)
 {
 	return ++cursor_number;
 }
@@ -543,7 +570,7 @@ GetCursorNumber(PGconn *conn)
  * increasing the risk of prepared-statement name collisions by resetting.
  */
 unsigned int
-GetPrepStmtNumber(PGconn *conn)
+GetPrepStmtNumber(ConnCacheEntry *entry)
 {
 	return ++prep_stmt_number;
 }
@@ -556,17 +583,17 @@ GetPrepStmtNumber(PGconn *conn)
  * Caller is responsible for the error handling on the result.
  */
 PGresult *
-pgfdw_exec_query(PGconn *conn, const char *query)
+pgfdw_exec_query(ConnCacheEntry *entry, const char *query)
 {
 	/*
 	 * Submit a query.  Since we don't use non-blocking mode, this also can
 	 * block.  But its risk is relatively small, so we ignore that for now.
 	 */
-	if (!PQsendQuery(conn, query))
-		pgfdw_report_error(ERROR, NULL, conn, false, query);
+	if (!PQsendQuery(entry->conn, query))
+		pgfdw_report_error(ERROR, NULL, entry->conn, false, query);
 
 	/* Wait for the result. */
-	return pgfdw_get_result(conn, query);
+	return pgfdw_get_result(entry, query);
 }
 
 /*
@@ -580,8 +607,9 @@ pgfdw_exec_query(PGconn *conn, const char *query)
  * Caller is responsible for the error handling on the result.
  */
 PGresult *
-pgfdw_get_result(PGconn *conn, const char *query)
+pgfdw_get_result(ConnCacheEntry *entry, const char *query)
 {
+	PGconn	   *conn = entry->conn;
 	PGresult   *volatile last_res = NULL;
 
 	/* In what follows, do not leak any PGresults on an error. */
@@ -593,19 +621,16 @@ pgfdw_get_result(PGconn *conn, const char *query)
 
 			while (PQisBusy(conn))
 			{
-				int			wc;
+				WaitEvent	ev;
 
 				/* Sleep until there's something to do */
-				wc = WaitLatchOrSocket(MyLatch,
-									   WL_LATCH_SET | WL_SOCKET_READABLE,
-									   PQsocket(conn),
-									   -1L, PG_WAIT_EXTENSION);
+				WaitEventSetWait(entry->wait_set, -1L, &ev, 1, PG_WAIT_EXTENSION);
 				ResetLatch(MyLatch);
 
 				CHECK_FOR_INTERRUPTS();
 
 				/* Data available in socket? */
-				if (wc & WL_SOCKET_READABLE)
+				if (ev.events & WL_SOCKET_READABLE)
 				{
 					if (!PQconsumeInput(conn))
 						pgfdw_report_error(ERROR, NULL, conn, false, query);
@@ -908,7 +933,7 @@ error:
 
 					/* Commit all remote transactions during pre-commit */
 					entry->changing_xact_state = true;
-					do_sql_command(entry->conn, "COMMIT TRANSACTION");
+					do_sql_command(entry, "COMMIT TRANSACTION");
 					entry->changing_xact_state = false;
 
 					deallocate_prepared_stmts(entry);
@@ -973,12 +998,12 @@ error:
 					 * and if so, request cancellation of the command.
 					 */
 					if (PQtransactionStatus(entry->conn) == PQTRANS_ACTIVE &&
-						!pgfdw_cancel_query(entry->conn))
+						!pgfdw_cancel_query(entry))
 					{
 						/* Unable to cancel running query. */
 						abort_cleanup_failure = true;
 					}
-					else if (!pgfdw_exec_cleanup_query(entry->conn,
+					else if (!pgfdw_exec_cleanup_query(entry,
 													   "ABORT TRANSACTION",
 													   false))
 					{
@@ -986,7 +1011,7 @@ error:
 						abort_cleanup_failure = true;
 					}
 					else if (entry->have_prep_stmt && entry->have_error &&
-							 !pgfdw_exec_cleanup_query(entry->conn,
+							 !pgfdw_exec_cleanup_query(entry,
 													   "DEALLOCATE ALL",
 													   true))
 					{
@@ -1116,7 +1141,7 @@ pgfdw_subxact_callback(SubXactEvent event, SubTransactionId mySubid,
 			/* Commit all remote subtransactions during pre-commit */
 			snprintf(sql, sizeof(sql), "RELEASE SAVEPOINT s%d", curlevel);
 			entry->changing_xact_state = true;
-			do_sql_command(entry->conn, sql);
+			do_sql_command(entry, sql);
 			entry->changing_xact_state = false;
 		}
 		else if (in_error_recursion_trouble())
@@ -1145,7 +1170,7 @@ pgfdw_subxact_callback(SubXactEvent event, SubTransactionId mySubid,
 			 * of the command.
 			 */
 			if (PQtransactionStatus(entry->conn) == PQTRANS_ACTIVE &&
-				!pgfdw_cancel_query(entry->conn))
+				!pgfdw_cancel_query(entry))
 				abort_cleanup_failure = true;
 			else
 			{
@@ -1153,7 +1178,7 @@ pgfdw_subxact_callback(SubXactEvent event, SubTransactionId mySubid,
 				snprintf(sql, sizeof(sql),
 						 "ROLLBACK TO SAVEPOINT s%d; RELEASE SAVEPOINT s%d",
 						 curlevel, curlevel);
-				if (!pgfdw_exec_cleanup_query(entry->conn, sql, false))
+				if (!pgfdw_exec_cleanup_query(entry, sql, false))
 					abort_cleanup_failure = true;
 			}
 
@@ -1252,8 +1277,9 @@ pgfdw_reject_incomplete_xact_state_change(ConnCacheEntry *entry)
  * and discard any pending result, and false if not.
  */
 static bool
-pgfdw_cancel_query(PGconn *conn)
+pgfdw_cancel_query(ConnCacheEntry *entry)
 {
+	PGconn	   *conn = entry->conn;
 	PGcancel   *cancel;
 	char		errbuf[256];
 	PGresult   *result = NULL;
@@ -1284,7 +1310,7 @@ pgfdw_cancel_query(PGconn *conn)
 	}
 
 	/* Get and discard the result of the query. */
-	if (pgfdw_get_cleanup_result(conn, endtime, &result))
+	if (pgfdw_get_cleanup_result(entry, endtime, &result))
 		return false;
 	PQclear(result);
 
@@ -1299,8 +1325,10 @@ pgfdw_cancel_query(PGconn *conn)
  * sent or times out, the return value is false.
  */
 static bool
-pgfdw_exec_cleanup_query(PGconn *conn, const char *query, bool ignore_errors)
+pgfdw_exec_cleanup_query(ConnCacheEntry *entry, const char *query,
+						 bool ignore_errors)
 {
+	PGconn	   *conn = entry->conn;
 	PGresult   *result = NULL;
 	TimestampTz endtime;
 
@@ -1323,7 +1351,7 @@ pgfdw_exec_cleanup_query(PGconn *conn, const char *query, bool ignore_errors)
 	}
 
 	/* Get the result of the query. */
-	if (pgfdw_get_cleanup_result(conn, endtime, &result))
+	if (pgfdw_get_cleanup_result(entry, endtime, &result))
 		return false;
 
 	/* Issue a warning if not successful. */
@@ -1353,9 +1381,11 @@ pgfdw_exec_cleanup_query(PGconn *conn, const char *query, bool ignore_errors)
  * Sets *result except in case of a timeout.
  */
 static bool
-pgfdw_get_cleanup_result(PGconn *conn, TimestampTz endtime, PGresult **result)
+pgfdw_get_cleanup_result(ConnCacheEntry *entry, TimestampTz endtime,
+						 PGresult **result)
 {
 	volatile bool timed_out = false;
+	PGconn *conn = entry->conn;
 	PGresult   *volatile last_res = NULL;
 
 	/* In what follows, do not leak any PGresults on an error. */
@@ -1367,11 +1397,11 @@ pgfdw_get_cleanup_result(PGconn *conn, TimestampTz endtime, PGresult **result)
 
 			while (PQisBusy(conn))
 			{
-				int			wc;
 				TimestampTz now = GetCurrentTimestamp();
 				long		secs;
 				int			microsecs;
 				long		cur_timeout;
+				WaitEvent	ev;
 
 				/* If timeout has expired, give up, else get sleep time. */
 				if (now >= endtime)
@@ -1385,16 +1415,14 @@ pgfdw_get_cleanup_result(PGconn *conn, TimestampTz endtime, PGresult **result)
 				cur_timeout = Min(60000, secs * USECS_PER_SEC + microsecs);
 
 				/* Sleep until there's something to do */
-				wc = WaitLatchOrSocket(MyLatch,
-									   WL_LATCH_SET | WL_SOCKET_READABLE | WL_TIMEOUT,
-									   PQsocket(conn),
-									   cur_timeout, PG_WAIT_EXTENSION);
+				WaitEventSetWait(entry->wait_set, cur_timeout, &ev,
+								 1, PG_WAIT_EXTENSION);
 				ResetLatch(MyLatch);
 
 				CHECK_FOR_INTERRUPTS();
 
 				/* Data available in socket? */
-				if (wc & WL_SOCKET_READABLE)
+				if (ev.events & WL_SOCKET_READABLE)
 				{
 					if (!PQconsumeInput(conn))
 					{

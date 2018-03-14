@@ -21,6 +21,12 @@
 #include "libpq-fe.h"
 
 /*
+ * Encapsulates connection to foreign server. Contents should be unknown
+ * outside connection.c
+ */
+typedef struct ConnCacheEntry ConnCacheEntry;
+
+/*
  * FDW-specific planner information kept in RelOptInfo.fdw_private for a
  * postgres_fdw foreign table.  For a baserel, this struct is created by
  * postgresGetForeignRelSize, although some fields are not filled till later.
@@ -115,12 +121,13 @@ extern int	set_transmission_modes(void);
 extern void reset_transmission_modes(int nestlevel);
 
 /* in connection.c */
-extern PGconn *GetConnection(UserMapping *user, bool will_prep_stmt);
-extern void ReleaseConnection(PGconn *conn);
-extern unsigned int GetCursorNumber(PGconn *conn);
-extern unsigned int GetPrepStmtNumber(PGconn *conn);
-extern PGresult *pgfdw_get_result(PGconn *conn, const char *query);
-extern PGresult *pgfdw_exec_query(PGconn *conn, const char *query);
+extern ConnCacheEntry *GetConnection(UserMapping *user, bool will_prep_stmt);
+extern PGconn *ConnectionEntryGetConn(ConnCacheEntry *entry);
+extern void ReleaseConnection(ConnCacheEntry *entry);
+extern unsigned int GetCursorNumber(ConnCacheEntry *entry);
+extern unsigned int GetPrepStmtNumber(ConnCacheEntry *entry);
+extern PGresult *pgfdw_get_result(ConnCacheEntry *entry, const char *query);
+extern PGresult *pgfdw_exec_query(ConnCacheEntry *entry, const char *query);
 extern void pgfdw_report_error(int elevel, PGresult *res, PGconn *conn,
 				   bool clear, const char *sql);
 
