@@ -17,6 +17,7 @@
 #include "access/htup_details.h"
 #include "catalog/pg_user_mapping.h"
 #include "access/global_snapshot.h"
+#include "access/hash.h"
 #include "access/xact.h"
 #include "access/xtm.h"
 #include "access/transam.h"
@@ -32,41 +33,6 @@
 #include "utils/inval.h"
 #include "utils/memutils.h"
 #include "utils/syscache.h"
-
-/*
- * Connection cache hash table entry
- *
- * The lookup key in this hash table is the user mapping OID. We use just one
- * connection per user mapping ID, which ensures that all the scans use the
- * same snapshot during a query.  Using the user mapping OID rather than
- * the foreign server OID + user OID avoids creating multiple connections when
- * the public user mapping applies to all user OIDs.
- *
- * The "conn" pointer can be NULL if we don't currently have a live connection.
- * When we do have a connection, xact_depth tracks the current depth of
- * transactions and subtransactions open on the remote side.  We need to issue
- * commands at the same nesting depth on the remote as we're executing at
- * ourselves, so that rolling back a subtransaction will kill the right
- * queries and not the wrong ones.
- */
-typedef Oid ConnCacheKey;
-
-struct ConnCacheEntry
-{
-	ConnCacheKey key;			/* hash key (must be first) */
-	PGconn	   *conn;			/* connection to foreign server, or NULL */
-	WaitEventSet *wait_set;		/* for data from server ready notifications */
-	/* Remaining fields are invalid when conn is NULL: */
-	int			xact_depth;		/* 0 = no xact open, 1 = main xact open, 2 =
-								 * one level of subxact open, etc */
-	bool		have_prep_stmt; /* have we prepared any stmts in this xact? */
-	bool		have_error;		/* have any subxacts aborted in this xact? */
-	bool		changing_xact_state;	/* xact state change in process */
-	bool		invalidated;	/* true if reconnect is pending */
-	uint32		server_hashvalue;	/* hash value of foreign server OID */
-	uint32		mapping_hashvalue;	/* hash value of user mapping OID */
-	bool		copy_from_started;	/* COPY FROM in progress on this conn */
-};
 
 /*
  * Connection cache (initialized on first use)
@@ -117,6 +83,35 @@ static bool pgfdw_exec_cleanup_query(ConnCacheEntry *entry, const char *query,
 						 bool ignore_errors);
 static bool pgfdw_get_cleanup_result(ConnCacheEntry *entry, TimestampTz endtime,
 						 PGresult **result);
+static void cleanup_dm_prepared(ConnCacheEntry *entry);
+
+/* Adapted from string_hash */
+static uint32
+char_ptr_hash_fn(const void *key, Size keysize)
+{
+	char * const *keyptr = key;
+	return DatumGetUInt32(hash_any((const unsigned char *) (*keyptr), strlen(*keyptr)));
+}
+
+static int
+char_ptr_match_fn(const void *key1, const void *key2, Size keysize)
+{
+	char * const *keyptr1 = key1;
+	char * const *keyptr2 = key2;
+	return strcmp(*keyptr1, *keyptr2);
+}
+
+/* Allocate always from top-level, where hashtable lives */
+static void *
+char_ptr_keycopy_fn(void *dest, const void *src, Size keysize)
+{
+	char **destptr = dest;
+	char * const *srcptr = src;
+
+	*destptr = MemoryContextStrdup(CacheMemoryContext, *srcptr);
+	return NULL; /* not used */
+}
+
 /*
  * Get a ConnCacheEntry which can be used to execute queries on the remote PostgreSQL
  * server with the user's authorization.  A new connection is established
@@ -208,6 +203,7 @@ GetConnectionCopyFrom(UserMapping *user, bool will_prep_stmt,
 	if (entry->conn == NULL)
 	{
 		ForeignServer *server = GetForeignServer(user->serverid);
+		HASHCTL		ctl;
 
 		/* Reset all transient state fields, to be sure all are clean */
 		entry->xact_depth = 0;
@@ -225,6 +221,19 @@ GetConnectionCopyFrom(UserMapping *user, bool will_prep_stmt,
 
 		/* Now try to make the connection */
 		connect_pg_server(entry, server, user);
+
+		/* Create hash table of prepared statemetns for DirectModify */
+		ctl.keysize = sizeof(char *);
+		ctl.entrysize = sizeof(DirectModifyPrepStmtHashEnt);
+		ctl.hash = char_ptr_hash_fn;
+		ctl.match = char_ptr_match_fn;
+		ctl.keycopy = char_ptr_keycopy_fn;
+		ctl.hcxt = CacheMemoryContext;
+
+		entry->dm_prepared = hash_create("DirectModify prepared stmts",
+										 16, &ctl,
+										 HASH_ELEM | HASH_FUNCTION | HASH_COMPARE |
+										 HASH_KEYCOPY | HASH_CONTEXT);
 
 		elog(DEBUG3, "new postgres_fdw connection %p for server \"%s\" (user mapping oid %u, userid %u)",
 			 entry->conn, server->servername, user->umid, user->userid);
@@ -364,6 +373,8 @@ disconnect_pg_server(ConnCacheEntry *entry)
 {
 	if (entry->conn != NULL)
 	{
+		cleanup_dm_prepared(entry);
+		hash_destroy(entry->dm_prepared);
 		Assert(entry->wait_set);
 		FreeWaitEventSet(entry->wait_set);
 		entry->wait_set = NULL;
@@ -1021,6 +1032,9 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 						entry->have_error = false;
 					}
 
+					/* We have deallocated all prepared statements */
+					cleanup_dm_prepared(entry);
+
 					/* Disarm changing_xact_state if it all worked. */
 					entry->changing_xact_state = abort_cleanup_failure;
 					break;
@@ -1118,9 +1132,25 @@ deallocate_prepared_stmts(ConnCacheEntry *entry)
 	{
 		res = PQexec(entry->conn, "DEALLOCATE ALL");
 		PQclear(res);
+		cleanup_dm_prepared(entry);
 	}
 	entry->have_prep_stmt = false;
 	entry->have_error = false;
+}
+
+static void cleanup_dm_prepared(ConnCacheEntry *entry)
+{
+	HASH_SEQ_STATUS scan;
+	DirectModifyPrepStmtHashEnt *prep_stmt_entry;
+
+	hash_seq_init(&scan, entry->dm_prepared);
+	while ((prep_stmt_entry = (DirectModifyPrepStmtHashEnt *) hash_seq_search(&scan)))
+	{
+		/* save the key to free it */
+		char *sql = prep_stmt_entry->sql;
+		hash_search(entry->dm_prepared, &prep_stmt_entry->sql, HASH_REMOVE, NULL);
+		pfree(sql);
+	}
 }
 
 /*

@@ -2337,7 +2337,7 @@ postgresBeginDirectModify(ForeignScanState *node, int eflags)
 	 * Get connection to the foreign server.  Connection manager will
 	 * establish new connection if necessary.
 	 */
-	dmstate->conn_entry = GetConnection(user, false);
+	dmstate->conn_entry = GetConnection(user, true);
 
 	/* Initialize state variable */
 	dmstate->num_tuples = -1;	/* -1 means not set yet */
@@ -3323,6 +3323,8 @@ execute_dml_stmt(ForeignScanState *node)
 	ExprContext *econtext = node->ss.ps.ps_ExprContext;
 	int			numParams = dmstate->numParams;
 	const char **values = dmstate->param_values;
+	DirectModifyPrepStmtHashEnt *prep_stmt_entry;
+	bool found;
 
 	/*
 	 * Construct array of query parameter values in text format.
@@ -3335,21 +3337,58 @@ execute_dml_stmt(ForeignScanState *node)
 							 values);
 
 	/*
+	 * Prepare the statement, if we have never seen it before.
+	 */
+	prep_stmt_entry = hash_search(entry->dm_prepared, &dmstate->query,
+								  HASH_FIND, &found);
+	if (!found)
+	{
+		char p_name[NAMEDATALEN];
+		long num = hash_get_num_entries(entry->dm_prepared) + 1;
+		PGresult   *res;
+
+		snprintf(p_name, NAMEDATALEN, "postgres_fdw:%d:%ld", MyProcPid, num);
+
+		if (!PQsendPrepare(conn,
+						   p_name,
+						   dmstate->query,
+						   0,
+						   NULL))
+			pgfdw_report_error(ERROR, NULL, conn, false, dmstate->query);
+
+		/*
+		 * Get the result, and check for success.
+		 *
+		 * We don't use a PG_TRY block here, so be careful not to throw error
+		 * without releasing the PGresult.
+		 */
+		res = pgfdw_get_result(entry, dmstate->query);
+		if (PQresultStatus(res) != PGRES_COMMAND_OK)
+			pgfdw_report_error(ERROR, res, conn, true, dmstate->query);
+		PQclear(res);
+
+		/* Now, when it is successfully prepared, add it to the hashtable */
+		prep_stmt_entry = hash_search(entry->dm_prepared, &dmstate->query,
+									  HASH_ENTER, &found);
+		strlcpy(prep_stmt_entry->prep_name, p_name, NAMEDATALEN);
+	}
+
+	/*
 	 * Notice that we pass NULL for paramTypes, thus forcing the remote server
 	 * to infer types for all parameters.  Since we explicitly cast every
 	 * parameter (see deparse.c), the "inference" is trivial and will produce
 	 * the desired result.  This allows us to avoid assuming that the remote
 	 * server has the same OIDs we do for the parameters' types.
 	 */
-	if (!PQsendQueryParams(conn, dmstate->query, numParams,
-						   NULL, values, NULL, NULL, 0))
+
+	if (!PQsendQueryPrepared(conn,
+							 prep_stmt_entry->prep_name,
+							 numParams,
+							 values,
+							 NULL,
+							 NULL,
+							 0))
 		pgfdw_report_error(ERROR, NULL, conn, false, dmstate->query);
-	// }
-	// else
-	// {
-	// 	if (!PQsendQuery(dmstate->conn, dmstate->query))
-	// 		pgfdw_report_error(ERROR, NULL, dmstate->conn, false, dmstate->query);
-	// }
 
 	/*
 	 * Get the result, and check for success.

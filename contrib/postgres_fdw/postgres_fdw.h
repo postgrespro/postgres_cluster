@@ -17,15 +17,10 @@
 #include "commands/copy.h"
 #include "lib/stringinfo.h"
 #include "nodes/relation.h"
+#include "storage/latch.h"
 #include "utils/relcache.h"
 
 #include "libpq-fe.h"
-
-/*
- * Encapsulates connection to foreign server. Contents should be unknown
- * outside connection.c
- */
-typedef struct ConnCacheEntry ConnCacheEntry;
 
 /*
  * FDW-specific planner information kept in RelOptInfo.fdw_private for a
@@ -116,6 +111,50 @@ typedef struct PgFdwRelationInfo
 	 */
 	int			relation_index;
 } PgFdwRelationInfo;
+
+/*
+ * Connection cache hash table entry
+ *
+ * The lookup key in this hash table is the user mapping OID. We use just one
+ * connection per user mapping ID, which ensures that all the scans use the
+ * same snapshot during a query.  Using the user mapping OID rather than
+ * the foreign server OID + user OID avoids creating multiple connections when
+ * the public user mapping applies to all user OIDs.
+ *
+ * The "conn" pointer can be NULL if we don't currently have a live connection.
+ * When we do have a connection, xact_depth tracks the current depth of
+ * transactions and subtransactions open on the remote side.  We need to issue
+ * commands at the same nesting depth on the remote as we're executing at
+ * ourselves, so that rolling back a subtransaction will kill the right
+ * queries and not the wrong ones.
+ */
+typedef Oid ConnCacheKey;
+
+typedef struct ConnCacheEntry ConnCacheEntry;
+struct ConnCacheEntry
+{
+	ConnCacheKey key;			/* hash key (must be first) */
+	PGconn	   *conn;			/* connection to foreign server, or NULL */
+	WaitEventSet *wait_set;		/* for data from server ready notifications */
+	/* Remaining fields are invalid when conn is NULL: */
+	int			xact_depth;		/* 0 = no xact open, 1 = main xact open, 2 =
+								 * one level of subxact open, etc */
+	bool		have_prep_stmt; /* have we prepared any stmts in this xact? */
+	bool		have_error;		/* have any subxacts aborted in this xact? */
+	bool		changing_xact_state;	/* xact state change in process */
+	bool		invalidated;	/* true if reconnect is pending */
+	uint32		server_hashvalue;	/* hash value of foreign server OID */
+	uint32		mapping_hashvalue;	/* hash value of user mapping OID */
+	bool		copy_from_started;	/* COPY FROM in progress on this conn */
+	HTAB		*dm_prepared; /* prepared statements for DirectModify */
+};
+
+/* sql -> prepared statement hashtable */
+typedef struct DirectModifyPrepStmtHashEnt
+{
+	char  *sql; /* SQL of the statement, the key; arbitrary size */
+	char  prep_name[NAMEDATALEN]; /* name of prepared statement */
+} DirectModifyPrepStmtHashEnt;
 
 /* in postgres_fdw.c */
 extern int	set_transmission_modes(void);
