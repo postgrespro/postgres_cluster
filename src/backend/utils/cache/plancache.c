@@ -1150,7 +1150,8 @@ GetCachedPlan(CachedPlanSource *plansource, ParamListInfo boundParams,
 	qlist = RevalidateCachedQuery(plansource, queryEnv);
 
 	/* Decide whether to use a custom plan */
-	customplan = choose_custom_plan(plansource, boundParams);
+	/* customplan = choose_custom_plan(plansource, boundParams); */
+	customplan = false;
 
 	if (!customplan)
 	{
