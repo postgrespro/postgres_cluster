@@ -2247,99 +2247,31 @@ deparseVar(Var *node, deparse_expr_cxt *context)
 static void
 deparseConst(Const *node, deparse_expr_cxt *context, int showtype)
 {
-	StringInfo	buf = context->buf;
-	Oid			typoutput;
-	bool		typIsVarlena;
-	char	   *extval;
-	bool		isfloat = false;
-	bool		needlabel;
-
-	if (node->constisnull)
+	if (context->params_list)
 	{
-		appendStringInfoString(buf, "NULL");
-		if (showtype >= 0)
-			appendStringInfo(buf, "::%s",
-							 deparse_type_name(node->consttype,
-											   node->consttypmod));
-		return;
+		int			pindex = 0;
+		ListCell   *lc;
+
+		/* find its index in params_list */
+		foreach(lc, *context->params_list)
+		{
+			pindex++;
+			if (equal(node, (Node *) lfirst(lc)))
+				break;
+		}
+		if (lc == NULL)
+		{
+			/* not in list, so add it */
+			pindex++;
+			*context->params_list = lappend(*context->params_list, node);
+		}
+
+		printRemoteParam(pindex, node->consttype, node->consttypmod, context);
 	}
-
-	getTypeOutputInfo(node->consttype,
-					  &typoutput, &typIsVarlena);
-	extval = OidOutputFunctionCall(typoutput, node->constvalue);
-
-	switch (node->consttype)
+	else
 	{
-		case INT2OID:
-		case INT4OID:
-		case INT8OID:
-		case OIDOID:
-		case FLOAT4OID:
-		case FLOAT8OID:
-		case NUMERICOID:
-			{
-				/*
-				 * No need to quote unless it's a special value such as 'NaN'.
-				 * See comments in get_const_expr().
-				 */
-				if (strspn(extval, "0123456789+-eE.") == strlen(extval))
-				{
-					if (extval[0] == '+' || extval[0] == '-')
-						appendStringInfo(buf, "(%s)", extval);
-					else
-						appendStringInfoString(buf, extval);
-					if (strcspn(extval, "eE.") != strlen(extval))
-						isfloat = true; /* it looks like a float */
-				}
-				else
-					appendStringInfo(buf, "'%s'", extval);
-			}
-			break;
-		case BITOID:
-		case VARBITOID:
-			appendStringInfo(buf, "B'%s'", extval);
-			break;
-		case BOOLOID:
-			if (strcmp(extval, "t") == 0)
-				appendStringInfoString(buf, "true");
-			else
-				appendStringInfoString(buf, "false");
-			break;
-		default:
-			deparseStringLiteral(buf, extval);
-			break;
+		printRemotePlaceholder(node->consttype, node->consttypmod, context);
 	}
-
-	pfree(extval);
-
-	if (showtype < 0)
-		return;
-
-	/*
-	 * For showtype == 0, append ::typename unless the constant will be
-	 * implicitly typed as the right type when it is read in.
-	 *
-	 * XXX this code has to be kept in sync with the behavior of the parser,
-	 * especially make_const.
-	 */
-	switch (node->consttype)
-	{
-		case BOOLOID:
-		case INT4OID:
-		case UNKNOWNOID:
-			needlabel = false;
-			break;
-		case NUMERICOID:
-			needlabel = !isfloat || (node->consttypmod >= 0);
-			break;
-		default:
-			needlabel = true;
-			break;
-	}
-	if (needlabel || showtype > 0)
-		appendStringInfo(buf, "::%s",
-						 deparse_type_name(node->consttype,
-										   node->consttypmod));
 }
 
 /*
