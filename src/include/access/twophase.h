@@ -18,6 +18,7 @@
 #include "access/xact.h"
 #include "datatype/timestamp.h"
 #include "storage/lock.h"
+#include "utils/snapshot.h"
 
 /*
  * GlobalTransactionData is defined in twophase.c; other places have no
