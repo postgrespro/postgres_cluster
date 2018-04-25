@@ -254,6 +254,8 @@
 				# and comma-separated list of application_name
 				# from standby(s); '*' = all
 #vacuum_defer_cleanup_age = 0	# number of xacts by which cleanup is delayed
+#global_snapshot_defer_time = 0	# minimal age of records which allowed to be
+				# vacuumed, in seconds
 
 # - Standby Servers -
 
