@@ -28,6 +28,7 @@
 
 #include "access/commit_ts.h"
 #include "access/gin.h"
+#include "access/global_snapshot.h"
 #include "access/rmgr.h"
 #include "access/transam.h"
 #include "access/twophase.h"
@@ -1018,7 +1019,7 @@ static struct config_bool ConfigureNamesBool[] =
 			gettext_noop("Used to achieve REPEATEBLE READ isolation level for postgres_fdw transactions.")
 		},
 		&track_global_snapshots,
-		true, /* XXX: set true to simplify tesing. XXX2: Seems that RESOURCES_MEM isn't the best catagory */
+		false, /* XXX: Seems that RESOURCES_MEM isn't the best catagory */
 		NULL, NULL, NULL
 	},
 	{
@@ -2349,6 +2350,16 @@ static struct config_int ConfigureNamesInt[] =
 		},
 		&vacuum_defer_cleanup_age,
 		0, 0, 1000000,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"global_snapshot_defer_time", PGC_POSTMASTER, REPLICATION_MASTER,
+			gettext_noop("Minimal age of records which allowed to be vacuumed, in seconds."),
+			NULL
+		},
+		&global_snapshot_defer_time,
+		5, 0, INT_MAX,
 		NULL, NULL, NULL
 	},
 

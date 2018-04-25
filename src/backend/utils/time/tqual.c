@@ -63,6 +63,7 @@
 
 #include "postgres.h"
 
+#include "access/global_snapshot.h"
 #include "access/htup_details.h"
 #include "access/multixact.h"
 #include "access/subtrans.h"
@@ -1462,8 +1463,8 @@ HeapTupleIsSurelyDead(HeapTuple htup, TransactionId OldestXmin)
 }
 
 /*
- * XidInMVCCSnapshot
- *		Is the given XID still-in-progress according to the snapshot?
+ * XidInLocalMVCCSnapshot
+ *		Is the given XID still-in-progress according to the local snapshot?
  *
  * Note: GetSnapshotData never stores either top xid or subxids of our own
  * backend into a snapshot, so these xids will not be reported as "running"
@@ -1471,8 +1472,8 @@ HeapTupleIsSurelyDead(HeapTuple htup, TransactionId OldestXmin)
  * TransactionIdIsCurrentTransactionId first, except when it's known the
  * XID could not be ours anyway.
  */
-bool
-XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
+static bool
+XidInLocalMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 {
 	uint32		i;
 
@@ -1581,6 +1582,62 @@ XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
 	}
 
 	return false;
+}
+
+/*
+ * XidInMVCCSnapshot
+ *
+ * Check whether this xid is in snapshot, taking into account fact that
+ * snapshot can be global. When track_global_snapshots is switched off
+ * just call XidInLocalMVCCSnapshot().
+ */
+bool
+XidInMVCCSnapshot(TransactionId xid, Snapshot snapshot)
+{
+	bool in_snapshot;
+
+	if (snapshot->imported_global_csn)
+	{
+		Assert(track_global_snapshots);
+		/* No point to using snapshot info except CSN */
+		return XidInvisibleInGlobalSnapshot(xid, snapshot);
+	}
+
+	in_snapshot = XidInLocalMVCCSnapshot(xid, snapshot);
+
+	if (!track_global_snapshots)
+	{
+		Assert(GlobalCSNIsFrozen(snapshot->global_csn));
+		return in_snapshot;
+	}
+
+	if (in_snapshot)
+	{
+		/*
+		 * This xid may be already in unknown state and in that case
+		 * we must wait and recheck.
+		 *
+		 * TODO: this check can be skipped if we know for sure that there were
+		 * no global transactions when this snapshot was taken. That requires
+		 * some changes to mechanisms of global snapshots exprot/import (if
+		 * backend set xmin then we should have a-priori knowledge that this
+		 * transaction going to be global or local -- right now this is not
+		 * enforced). Leave that for future and don't complicate this patch.
+		 */
+		return XidInvisibleInGlobalSnapshot(xid, snapshot);
+	}
+	else
+	{
+#ifdef USE_ASSERT_CHECKING
+		/* Check that global snapshot gives the same results as local one */
+		if (XidInvisibleInGlobalSnapshot(xid, snapshot))
+		{
+			GlobalCSN gcsn = TransactionIdGetGlobalCSN(xid);
+			Assert(GlobalCSNIsAborted(gcsn));
+		}
+#endif
+		return false;
+	}
 }
 
 /*

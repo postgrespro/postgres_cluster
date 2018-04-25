@@ -7037,6 +7037,7 @@ StartupXLOG(void)
 			StartupCLOG();
 			StartupGlobalCSNLog(oldestActiveXID);
 			StartupSUBTRANS(oldestActiveXID);
+			GlobalSnapshotStartup(oldestActiveXID);
 
 			/*
 			 * If we're beginning at a shutdown checkpoint, we know that
@@ -7836,6 +7837,7 @@ StartupXLOG(void)
 		StartupCLOG();
 		StartupGlobalCSNLog(oldestActiveXID);
 		StartupSUBTRANS(oldestActiveXID);
+		GlobalSnapshotStartup(oldestActiveXID);
 	}
 
 	/*

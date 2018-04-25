@@ -47,6 +47,7 @@
 
 #include "access/clog.h"
 #include "access/global_csn_log.h"
+#include "access/global_snapshot.h"
 #include "access/subtrans.h"
 #include "access/transam.h"
 #include "access/twophase.h"
@@ -91,6 +92,8 @@ typedef struct ProcArrayStruct
 	TransactionId replication_slot_xmin;
 	/* oldest catalog xmin of any replication slot */
 	TransactionId replication_slot_catalog_xmin;
+	/* xmin of oldest active global snapshot */
+	TransactionId global_snapshot_xmin;
 
 	/* indexes into allPgXact[], has PROCARRAY_MAXPROCS entries */
 	int			pgprocnos[FLEXIBLE_ARRAY_MEMBER];
@@ -246,6 +249,7 @@ CreateSharedProcArray(void)
 		procArray->lastOverflowedXid = InvalidTransactionId;
 		procArray->replication_slot_xmin = InvalidTransactionId;
 		procArray->replication_slot_catalog_xmin = InvalidTransactionId;
+		procArray->global_snapshot_xmin = InvalidTransactionId;
 	}
 
 	allProcs = ProcGlobal->allProcs;
@@ -352,6 +356,17 @@ ProcArrayRemove(PGPROC *proc, TransactionId latestXid)
 		if (TransactionIdPrecedes(ShmemVariableCache->latestCompletedXid,
 								  latestXid))
 			ShmemVariableCache->latestCompletedXid = latestXid;
+
+		/*
+		 * Assign global csn while holding ProcArrayLock for non-global
+		 * COMMIT PREPARED. After lock is released consequent
+		 * GlobalSnapshotCommit() will write this value to GlobalCsnLog.
+		 *
+		 * In case of global commit proc->assignedGlobalCsn is already set
+		 * by prior AssignGlobalCsn().
+		 */
+		if (GlobalCSNIsInDoubt(pg_atomic_read_u64(&proc->assignedGlobalCsn)))
+			pg_atomic_write_u64(&proc->assignedGlobalCsn, GlobalSnapshotGenerate(false));
 	}
 	else
 	{
@@ -432,6 +447,8 @@ ProcArrayEndTransaction(PGPROC *proc, TransactionId latestXid)
 
 		proc->lxid = InvalidLocalTransactionId;
 		pgxact->xmin = InvalidTransactionId;
+		proc->originalXmin = InvalidTransactionId;
+
 		/* must be cleared with xid/xmin: */
 		pgxact->vacuumFlags &= ~PROC_VACUUM_STATE_MASK;
 		pgxact->delayChkpt = false; /* be sure this is cleared in abort */
@@ -454,6 +471,8 @@ ProcArrayEndTransactionInternal(PGPROC *proc, PGXACT *pgxact,
 	pgxact->xid = InvalidTransactionId;
 	proc->lxid = InvalidLocalTransactionId;
 	pgxact->xmin = InvalidTransactionId;
+	proc->originalXmin = InvalidTransactionId;
+
 	/* must be cleared with xid/xmin: */
 	pgxact->vacuumFlags &= ~PROC_VACUUM_STATE_MASK;
 	pgxact->delayChkpt = false; /* be sure this is cleared in abort */
@@ -467,6 +486,20 @@ ProcArrayEndTransactionInternal(PGPROC *proc, PGXACT *pgxact,
 	if (TransactionIdPrecedes(ShmemVariableCache->latestCompletedXid,
 							  latestXid))
 		ShmemVariableCache->latestCompletedXid = latestXid;
+
+	/*
+	 * Assign global csn while holding ProcArrayLock for non-global
+	 * COMMIT. After lock is released consequent GlobalSnapshotFinish() will
+	 * write this value to GlobalCsnLog.
+	 *
+	 * In case of global commit MyProc->assignedGlobalCsn is already set
+	 * by prior AssignGlobalCsn().
+	 *
+	 * TODO: in case of group commit we can generate one GlobalSnapshot for
+	 * whole group to save time on timestamp aquisition.
+	 */
+	if (GlobalCSNIsInDoubt(pg_atomic_read_u64(&proc->assignedGlobalCsn)))
+		pg_atomic_write_u64(&proc->assignedGlobalCsn, GlobalSnapshotGenerate(false));
 }
 
 /*
@@ -616,6 +649,7 @@ ProcArrayClearTransaction(PGPROC *proc)
 	pgxact->xid = InvalidTransactionId;
 	proc->lxid = InvalidLocalTransactionId;
 	pgxact->xmin = InvalidTransactionId;
+	proc->originalXmin = InvalidTransactionId;
 	proc->recoveryConflictPending = false;
 
 	/* redundant, but just in case */
@@ -1331,6 +1365,7 @@ GetOldestXmin(Relation rel, int flags)
 
 	volatile TransactionId replication_slot_xmin = InvalidTransactionId;
 	volatile TransactionId replication_slot_catalog_xmin = InvalidTransactionId;
+	volatile TransactionId global_snapshot_xmin = InvalidTransactionId;
 
 	/*
 	 * If we're not computing a relation specific limit, or if a shared
@@ -1367,8 +1402,9 @@ GetOldestXmin(Relation rel, int flags)
 			proc->databaseId == MyDatabaseId ||
 			proc->databaseId == 0)	/* always include WalSender */
 		{
-			/* Fetch xid just once - see GetNewTransactionId */
+			/* Fetch both xids just once - see GetNewTransactionId */
 			TransactionId xid = pgxact->xid;
+			TransactionId original_xmin = proc->originalXmin;
 
 			/* First consider the transaction's own Xid, if any */
 			if (TransactionIdIsNormal(xid) &&
@@ -1381,8 +1417,17 @@ GetOldestXmin(Relation rel, int flags)
 			 * We must check both Xid and Xmin because a transaction might
 			 * have an Xmin but not (yet) an Xid; conversely, if it has an
 			 * Xid, that could determine some not-yet-set Xmin.
+			 *
+			 * In case of oldestXmin calculation for GlobalSnapshotMapXmin()
+			 * pgxact->xmin should be changed to proc->originalXmin. Details
+			 * in commets to GlobalSnapshotMapXmin.
 			 */
-			xid = pgxact->xmin; /* Fetch just once */
+			if ((flags & PROCARRAY_NON_IMPORTED_XMIN) &&
+					TransactionIdIsValid(original_xmin))
+				xid = original_xmin;
+			else
+				xid = pgxact->xmin; /* Fetch just once */
+
 			if (TransactionIdIsNormal(xid) &&
 				TransactionIdPrecedes(xid, result))
 				result = xid;
@@ -1392,6 +1437,7 @@ GetOldestXmin(Relation rel, int flags)
 	/* fetch into volatile var while ProcArrayLock is held */
 	replication_slot_xmin = procArray->replication_slot_xmin;
 	replication_slot_catalog_xmin = procArray->replication_slot_catalog_xmin;
+	global_snapshot_xmin = procArray->global_snapshot_xmin;
 
 	if (RecoveryInProgress())
 	{
@@ -1432,6 +1478,11 @@ GetOldestXmin(Relation rel, int flags)
 		if (!TransactionIdIsNormal(result))
 			result = FirstNormalTransactionId;
 	}
+
+	if (!(flags & PROCARRAY_NON_IMPORTED_XMIN) &&
+		TransactionIdIsValid(global_snapshot_xmin) &&
+		NormalTransactionIdPrecedes(global_snapshot_xmin, result))
+		result = global_snapshot_xmin;
 
 	/*
 	 * Check whether there are replication slots requiring an older xmin.
@@ -1528,6 +1579,8 @@ GetSnapshotData(Snapshot snapshot)
 	bool		suboverflowed = false;
 	volatile TransactionId replication_slot_xmin = InvalidTransactionId;
 	volatile TransactionId replication_slot_catalog_xmin = InvalidTransactionId;
+	volatile TransactionId global_snapshot_xmin = InvalidTransactionId;
+	volatile GlobalCSN	   global_csn = FrozenGlobalCSN;
 
 	Assert(snapshot != NULL);
 
@@ -1716,9 +1769,17 @@ GetSnapshotData(Snapshot snapshot)
 	/* fetch into volatile var while ProcArrayLock is held */
 	replication_slot_xmin = procArray->replication_slot_xmin;
 	replication_slot_catalog_xmin = procArray->replication_slot_catalog_xmin;
+	global_snapshot_xmin = procArray->global_snapshot_xmin;
 
 	if (!TransactionIdIsValid(MyPgXact->xmin))
 		MyPgXact->xmin = TransactionXmin = xmin;
+
+	/*
+	 * Take GlobalCSN under ProcArrayLock so the local/global snapshot stays
+	 * synchronized.
+	 */
+	if (track_global_snapshots)
+		global_csn = GlobalSnapshotGenerate(false);
 
 	LWLockRelease(ProcArrayLock);
 
@@ -1734,6 +1795,10 @@ GetSnapshotData(Snapshot snapshot)
 	RecentGlobalXmin = globalxmin - vacuum_defer_cleanup_age;
 	if (!TransactionIdIsNormal(RecentGlobalXmin))
 		RecentGlobalXmin = FirstNormalTransactionId;
+
+	if (TransactionIdIsValid(global_snapshot_xmin) &&
+		TransactionIdPrecedes(global_snapshot_xmin, RecentGlobalXmin))
+		RecentGlobalXmin = global_snapshot_xmin;
 
 	/* Check whether there's a replication slot requiring an older xmin. */
 	if (TransactionIdIsValid(replication_slot_xmin) &&
@@ -1789,6 +1854,13 @@ GetSnapshotData(Snapshot snapshot)
 		snapshot->whenTaken = GetSnapshotCurrentTimestamp();
 		MaintainOldSnapshotTimeMapping(snapshot->whenTaken, xmin);
 	}
+
+	snapshot->imported_global_csn = false;
+	snapshot->global_csn = global_csn;
+	/* if (global_snapshot_defer_time > 0 && IsNormalProcessingMode()) */
+	if (track_global_snapshots && global_snapshot_defer_time > 0 &&
+		IsUnderPostmaster)
+		GlobalSnapshotMapXmin(snapshot->global_csn);
 
 	return snapshot;
 }
@@ -3024,6 +3096,24 @@ ProcArrayGetReplicationSlotXmin(TransactionId *xmin,
 	LWLockRelease(ProcArrayLock);
 }
 
+/*
+ * ProcArraySetGlobalSnapshotXmin
+ */
+void
+ProcArraySetGlobalSnapshotXmin(TransactionId xmin)
+{
+	/* We rely on atomic fetch/store of xid */
+	procArray->global_snapshot_xmin = xmin;
+}
+
+/*
+ * ProcArrayGetGlobalSnapshotXmin
+ */
+TransactionId
+ProcArrayGetGlobalSnapshotXmin(void)
+{
+	return procArray->global_snapshot_xmin;
+}
 
 #define XidCacheRemove(i) \
 	do { \

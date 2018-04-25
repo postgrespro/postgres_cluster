@@ -10206,4 +10206,18 @@
   proisstrict => 'f', prorettype => 'bool', proargtypes => 'oid int4 int4 any',
   proargmodes => '{i,i,i,v}', prosrc => 'satisfies_hash_partition' },
 
+# global transaction handling
+{ oid => '3430', descr => 'export global transaction snapshot',
+  proname => 'pg_global_snapshot_export', provolatile => 'v', proparallel => 'u',
+  prorettype => 'int8', proargtypes => '', prosrc => 'pg_global_snapshot_export' },
+{ oid => '3431', descr => 'import global transaction snapshot',
+  proname => 'pg_global_snapshot_import', provolatile => 'v', proparallel => 'u',
+  prorettype => 'void', proargtypes => 'int8', prosrc => 'pg_global_snapshot_import' },
+{ oid => '3432', descr => 'prepare distributed transaction for commit, get global_csn',
+  proname => 'pg_global_snapshot_prepare', provolatile => 'v', proparallel => 'u',
+  prorettype => 'int8', proargtypes => 'text', prosrc => 'pg_global_snapshot_prepare' },
+{ oid => '3433', descr => 'assign global_csn to distributed transaction',
+  proname => 'pg_global_snapshot_assign', provolatile => 'v', proparallel => 'u',
+  prorettype => 'void', proargtypes => 'text int8', prosrc => 'pg_global_snapshot_assign' },
+
 ]

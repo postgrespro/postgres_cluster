@@ -115,6 +115,14 @@ typedef struct SnapshotData
 
 	TimestampTz whenTaken;		/* timestamp when snapshot was taken */
 	XLogRecPtr	lsn;			/* position in the WAL stream when taken */
+
+	/*
+	 * GlobalCSN for cross-node snapshot isolation support.
+	 * Will be used only if track_global_snapshots is enabled.
+	 */
+	GlobalCSN	global_csn;
+	/* Did we have our own global_csn or imported one from different node */
+	bool		imported_global_csn;
 } SnapshotData;
 
 /*
