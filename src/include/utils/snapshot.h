@@ -24,6 +24,9 @@ typedef struct SnapshotData *Snapshot;
 
 #define InvalidSnapshot		((Snapshot) NULL)
 
+typedef uint64 GlobalCSN;
+extern bool track_global_snapshots;
+
 /*
  * We use SnapshotData structures to represent both "regular" (MVCC)
  * snapshots and "special" snapshots that have non-MVCC semantics.
