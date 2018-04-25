@@ -51,3 +51,4 @@ BackendRandomLock					43
 LogicalRepWorkerLock				44
 CLogTruncationLock					45
 GlobalCSNLogControlLock				46
+GlobalSnapshotXidMapLock			47

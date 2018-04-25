@@ -48,6 +48,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "access/global_snapshot.h"
 #include "access/transam.h"
 #include "access/xact.h"
 #include "access/xlog.h"
@@ -245,6 +246,8 @@ typedef struct SerializedSnapshotData
 	CommandId	curcid;
 	TimestampTz whenTaken;
 	XLogRecPtr	lsn;
+	GlobalCSN	global_csn;
+	bool		imported_global_csn;
 } SerializedSnapshotData;
 
 Size
@@ -992,7 +995,9 @@ SnapshotResetXmin(void)
 										pairingheap_first(&RegisteredSnapshots));
 
 	if (TransactionIdPrecedes(MyPgXact->xmin, minSnapshot->xmin))
+	{
 		MyPgXact->xmin = minSnapshot->xmin;
+	}
 }
 
 /*
@@ -2081,6 +2086,8 @@ SerializeSnapshot(Snapshot snapshot, char *start_address)
 	serialized_snapshot.curcid = snapshot->curcid;
 	serialized_snapshot.whenTaken = snapshot->whenTaken;
 	serialized_snapshot.lsn = snapshot->lsn;
+	serialized_snapshot.global_csn = snapshot->global_csn;
+	serialized_snapshot.imported_global_csn = snapshot->imported_global_csn;
 
 	/*
 	 * Ignore the SubXID array if it has overflowed, unless the snapshot was
@@ -2155,6 +2162,8 @@ RestoreSnapshot(char *start_address)
 	snapshot->curcid = serialized_snapshot.curcid;
 	snapshot->whenTaken = serialized_snapshot.whenTaken;
 	snapshot->lsn = serialized_snapshot.lsn;
+	snapshot->global_csn = serialized_snapshot.global_csn;
+	snapshot->imported_global_csn = serialized_snapshot.imported_global_csn;
 
 	/* Copy XIDs, if present. */
 	if (serialized_snapshot.xcnt > 0)
@@ -2191,4 +2200,98 @@ void
 RestoreTransactionSnapshot(Snapshot snapshot, void *master_pgproc)
 {
 	SetTransactionSnapshot(snapshot, NULL, InvalidPid, master_pgproc);
+}
+
+/*
+ * ExportGlobalSnapshot
+ *
+ * Export global_csn so that caller can expand this transaction to other
+ * nodes.
+ *
+ * TODO: it's better to do this through EXPORT/IMPORT SNAPSHOT syntax and
+ * add some additional checks that transaction did not yet acquired xid, but
+ * for current iteration of this patch I don't want to hack on parser.
+ */
+GlobalCSN
+ExportGlobalSnapshot()
+{
+	if (!track_global_snapshots)
+		ereport(ERROR,
+			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+			 errmsg("could not export global snapshot"),
+			 errhint("Make sure the configuration parameter \"%s\" is enabled.",
+					 "track_global_snapshots")));
+
+	return CurrentSnapshot->global_csn;
+}
+
+/* SQL accessor to ExportGlobalSnapshot() */
+Datum
+pg_global_snapshot_export(PG_FUNCTION_ARGS)
+{
+	GlobalCSN	global_csn = ExportGlobalSnapshot();
+	PG_RETURN_UINT64(global_csn);
+}
+
+/*
+ * ImportGlobalSnapshot
+ *
+ * Import global_csn and retract this backends xmin to the value that was
+ * actual when we had such global_csn.
+ *
+ * TODO: it's better to do this through EXPORT/IMPORT SNAPSHOT syntax and
+ * add some additional checks that transaction did not yet acquired xid, but
+ * for current iteration of this patch I don't want to hack on parser.
+ */
+void
+ImportGlobalSnapshot(GlobalCSN snap_global_csn)
+{
+	volatile TransactionId xmin;
+
+	if (!track_global_snapshots)
+		ereport(ERROR,
+			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+			 errmsg("could not import global snapshot"),
+			 errhint("Make sure the configuration parameter \"%s\" is enabled.",
+					 "track_global_snapshots")));
+
+	if (global_snapshot_defer_time <= 0)
+		ereport(ERROR,
+			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+			 errmsg("could not import global snapshot"),
+			 errhint("Make sure the configuration parameter \"%s\" is positive.",
+					 "global_snapshot_defer_time")));
+
+	/*
+	 * Call GlobalSnapshotToXmin under ProcArrayLock to avoid situation that
+	 * resulting xmin will be evicted from map before we will set it into our
+	 * backend's xmin.
+	 */
+	LWLockAcquire(ProcArrayLock, LW_SHARED);
+	xmin = GlobalSnapshotToXmin(snap_global_csn);
+	if (!TransactionIdIsValid(xmin))
+	{
+		LWLockRelease(ProcArrayLock);
+		elog(ERROR, "GlobalSnapshotToXmin: global snapshot too old");
+	}
+	MyProc->originalXmin = MyPgXact->xmin;
+	MyPgXact->xmin = TransactionXmin = xmin;
+	LWLockRelease(ProcArrayLock);
+
+	CurrentSnapshot->xmin = xmin; /* defuse SnapshotResetXmin() */
+	CurrentSnapshot->global_csn = snap_global_csn;
+	CurrentSnapshot->imported_global_csn = true;
+	GlobalSnapshotSync(snap_global_csn);
+
+	Assert(TransactionIdPrecedesOrEquals(RecentGlobalXmin, xmin));
+	Assert(TransactionIdPrecedesOrEquals(RecentGlobalDataXmin, xmin));
+}
+
+/* SQL accessor to ImportGlobalSnapshot() */
+Datum
+pg_global_snapshot_import(PG_FUNCTION_ARGS)
+{
+	GlobalCSN	global_csn = PG_GETARG_UINT64(0);
+	ImportGlobalSnapshot(global_csn);
+	PG_RETURN_VOID();
 }
