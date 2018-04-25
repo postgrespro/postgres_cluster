@@ -1796,6 +1796,37 @@ sub pg_recvlogical_upto
 	}
 }
 
+sub pgbench()
+{
+	my ($self, $node, @args) = @_;
+	my $pgbench_handle = $self->pgbench_async($node, @args);
+	$self->pgbench_await($pgbench_handle);
+}
+
+sub pgbench_async()
+{
+	my ($self, @args) = @_;
+
+	my ($in, $out, $err, $rc);
+	$in = '';
+	$out = '';
+
+	my @pgbench_command = (
+		'pgbench',
+		-h => $self->host,
+		-p => $self->port,
+		@args
+	);
+	my $handle = IPC::Run::start(\@pgbench_command, $in, $out);
+	return $handle;
+}
+
+sub pgbench_await()
+{
+	my ($self, $pgbench_handle) = @_;
+	IPC::Run::finish($pgbench_handle) || BAIL_OUT("pgbench exited with $?");
+}
+
 =pod
 
 =back
