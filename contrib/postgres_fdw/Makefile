@@ -23,3 +23,9 @@ top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
+
+check: tapcheck
+
+tapcheck:
+	env DESTDIR='$(abs_top_builddir)'/tmp_install $(MAKE) install
+	$(prove_check)
