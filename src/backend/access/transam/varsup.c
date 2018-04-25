@@ -15,6 +15,7 @@
 
 #include "access/clog.h"
 #include "access/commit_ts.h"
+#include "access/global_csn_log.h"
 #include "access/subtrans.h"
 #include "access/transam.h"
 #include "access/xact.h"
@@ -169,6 +170,7 @@ GetNewTransactionId(bool isSubXact)
 	 * Extend pg_subtrans and pg_commit_ts too.
 	 */
 	ExtendCLOG(xid);
+	ExtendGlobalCSNLog(xid);
 	ExtendCommitTs(xid);
 	ExtendSUBTRANS(xid);
 
