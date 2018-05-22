@@ -719,7 +719,7 @@ BroadcastStmt(char const * sql, unsigned expectedStatus,
 				PGresult   *res = PQgetResult(entry->conn);
 
 				elog(WARNING, "Failed to send command %s", sql);
-				pgfdw_report_error(ERROR, res, entry->conn, true, sql);
+				pgfdw_report_error(WARNING, res, entry->conn, true, sql);
 				PQclear(res);
 			}
 		}
@@ -818,11 +818,13 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 			bool	res;
 			char   *sql;
 
-			fdwTransState->gid = psprintf("fdw:%llx:%lld:%d:%d",
-							(long long) GetSystemIdentifier(),
-							(long long) GetCurrentTimestamp(),
-							MyProcPid,
-							++two_phase_xact_count);
+			fdwTransState->gid = psprintf("fdw:%lld:%llx:%u:%d:%d:%d",
+										  (long long) GetCurrentTimestamp(),
+										  (long long) GetSystemIdentifier(),
+										  GetCurrentTransactionIdIfAny(),
+										  fdwTransState->nparticipants,
+										  MyProcPid,
+										  ++two_phase_xact_count);
 
 			/* Broadcast PREPARE */
 			sql = psprintf("PREPARE TRANSACTION '%s'", fdwTransState->gid);
@@ -841,7 +843,7 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 				goto error;
 
 			/* select maximal global csn */
-			if (my_csn > max_csn)
+			if (include_local_tx && my_csn > max_csn)
 				max_csn = my_csn;
 
 			/* Broadcast pg_global_snaphot_assign() */
