@@ -922,6 +922,12 @@ DefineIndex(Oid relationId,
 				int			maplen;
 
 				childrel = heap_open(childRelid, lockmode);
+				/* Foreign table doesn't need indexes */
+				if (childrel->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
+				{
+					heap_close(childrel, NoLock);
+					continue;
+				}
 				childidxs = RelationGetIndexList(childrel);
 				attmap =
 					convert_tuples_by_name_map(RelationGetDescr(childrel),

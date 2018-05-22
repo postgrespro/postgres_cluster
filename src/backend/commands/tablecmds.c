@@ -911,12 +911,13 @@ DefineRelation(CreateStmt *stmt, char relkind, Oid ownerId,
 
 	/*
 	 * If we're creating a partition, create now all the indexes, triggers,
-	 * FKs defined in the parent.
+	 * FKs defined in the parent -- except when we are creating foreign table,
+	 * for which those doesn't make sense.
 	 *
 	 * We can't do it earlier, because DefineIndex wants to know the partition
 	 * key which we just stored.
 	 */
-	if (stmt->partbound)
+	if (stmt->partbound && relkind != RELKIND_FOREIGN_TABLE)
 	{
 		Oid			parentId = linitial_oid(inheritOids);
 		Relation	parent;
@@ -14986,6 +14987,10 @@ AttachPartitionEnsureIndexes(Relation rel, Relation attachrel)
 	ListCell   *cell;
 	MemoryContext cxt;
 	MemoryContext oldcxt;
+
+	/* Foreign table doesn't need indexes */
+	if (attachrel->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
+		return;
 
 	cxt = AllocSetContextCreate(CurrentMemoryContext,
 								"AttachPartitionEnsureIndexes",
