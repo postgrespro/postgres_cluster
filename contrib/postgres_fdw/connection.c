@@ -818,13 +818,13 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 			bool	res;
 			char   *sql;
 
-			fdwTransState->gid = psprintf("fdw:%lld:%llx:%u:%d:%d:%d",
+			fdwTransState->gid = psprintf("pgfdw:%lld:%llu:%d:%u:%d:%d",
 										  (long long) GetCurrentTimestamp(),
 										  (long long) GetSystemIdentifier(),
-										  GetCurrentTransactionIdIfAny(),
-										  fdwTransState->nparticipants,
 										  MyProcPid,
-										  ++two_phase_xact_count);
+										  GetCurrentTransactionIdIfAny(),
+										  ++two_phase_xact_count,
+										  fdwTransState->nparticipants);
 
 			/* Broadcast PREPARE */
 			sql = psprintf("PREPARE TRANSACTION '%s'", fdwTransState->gid);
