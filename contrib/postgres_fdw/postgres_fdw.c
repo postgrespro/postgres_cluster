@@ -269,6 +269,7 @@ typedef struct
 } ec_member_foreign_arg;
 
 bool		UseGlobalSnapshots;
+bool		UseRepeatableRead;
 void		_PG_init(void);
 
 /*
@@ -5805,5 +5806,9 @@ _PG_init(void)
 	DefineCustomBoolVariable("postgres_fdw.use_tsdtm",
 							 "Use global snapshots for FDW transactions", NULL,
 							 &UseGlobalSnapshots, false, PGC_USERSET, 0, NULL,
+							 NULL, NULL);
+	DefineCustomBoolVariable("postgres_fdw.use_repeatable_read",
+							 "Use repeatable read isilation error for remote transactions", NULL,
+							 &UseRepeatableRead, true, PGC_USERSET, 0, NULL,
 							 NULL, NULL);
 }

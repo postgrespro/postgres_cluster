@@ -451,19 +451,19 @@ static void
 begin_remote_xact(ConnCacheEntry *entry)
 {
 	int			curlevel = GetCurrentTransactionNestLevel();
+	char		sql[128];
+
 
 	/* Start main transaction if we haven't yet */
 	if (entry->xact_depth <= 0)
 	{
-		const char *sql;
-
 		elog(DEBUG3, "starting remote transaction on connection %p",
 			 entry->conn);
 
-		if (IsolationIsSerializable())
-			sql = "START TRANSACTION ISOLATION LEVEL SERIALIZABLE";
-		else
-			sql = "START TRANSACTION ISOLATION LEVEL REPEATABLE READ";
+		sprintf(sql, "START TRANSACTION %s; set application_name='pgfdw:%lld:%d';",
+				IsolationIsSerializable() ? "ISOLATION LEVEL SERIALIZABLE" :
+				UseRepeatableRead ? "ISOLATION LEVEL REPEATABLE READ" : "",
+				(long long) GetSystemIdentifier(), MyProcPid);
 		entry->changing_xact_state = true;
 		do_sql_command(entry->conn, sql);
 		entry->xact_depth = 1;
