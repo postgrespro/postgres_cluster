@@ -2255,6 +2255,13 @@ ImportGlobalSnapshot(GlobalCSN snap_global_csn)
 			 errhint("Make sure the configuration parameter \"%s\" is enabled.",
 					 "track_global_snapshots")));
 
+	if (global_snapshot_defer_time <= 0)
+		ereport(ERROR,
+			(errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+			 errmsg("could not import global snapshot"),
+			 errhint("Make sure the configuration parameter \"%s\" is positive.",
+					 "global_snapshot_defer_time")));
+
 	/*
 	 * Call GlobalSnapshotToXmin under ProcArrayLock to avoid situation that
 	 * resulting xmin will be evicted from map before we will set it into our
@@ -2288,5 +2295,3 @@ pg_global_snaphot_import(PG_FUNCTION_ARGS)
 	ImportGlobalSnapshot(global_csn);
 	PG_RETURN_VOID();
 }
-
-
