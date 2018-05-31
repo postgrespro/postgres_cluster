@@ -117,6 +117,12 @@ int			fillfactor = 100;
 int			foreign_keys = 0;
 
 /*
+ * Don't create tables and indexes
+ */
+int			no_ddl = 0;
+
+
+/*
  * use unlogged tables?
  */
 int			unlogged_tables = 0;
@@ -479,6 +485,7 @@ usage(void)
 		   "  -n, --no-vacuum          do not run VACUUM after initialization\n"
 		   "  -q, --quiet              quiet logging (one message each 5 seconds)\n"
 		   "  -s, --scale=NUM          scaling factor\n"
+		   "  --no-ddl				   don't create tables and indexes"
 		   "  --foreign-keys           create foreign key constraints between tables\n"
 		   "  --index-tablespace=TABLESPACE\n"
 		   "                           create indexes in the specified tablespace\n"
@@ -2648,40 +2655,55 @@ init(bool is_no_vacuum)
 	if ((con = doConnect()) == NULL)
 		exit(1);
 
-	for (i = 0; i < lengthof(DDLs); i++)
+	if (!no_ddl)
 	{
-		char		opts[256];
-		char		buffer[256];
-		const struct ddlinfo *ddl = &DDLs[i];
-		const char *cols;
-
-		/* Remove old table, if it exists. */
-		snprintf(buffer, sizeof(buffer), "drop table if exists %s", ddl->table);
-		executeStatement(con, buffer);
-
-		/* Construct new create table statement. */
-		opts[0] = '\0';
-		if (ddl->declare_fillfactor)
-			snprintf(opts + strlen(opts), sizeof(opts) - strlen(opts),
-					 " with (fillfactor=%d)", fillfactor);
-		if (tablespace != NULL)
+		for (i = 0; i < lengthof(DDLs); i++)
 		{
-			char	   *escape_tablespace;
+			char		opts[256];
+			char		buffer[256];
+			const struct ddlinfo *ddl = &DDLs[i];
+			const char *cols;
 
-			escape_tablespace = PQescapeIdentifier(con, tablespace,
-												   strlen(tablespace));
-			snprintf(opts + strlen(opts), sizeof(opts) - strlen(opts),
-					 " tablespace %s", escape_tablespace);
-			PQfreemem(escape_tablespace);
+			/* Remove old table, if it exists. */
+			snprintf(buffer, sizeof(buffer), "drop table if exists %s", ddl->table);
+			executeStatement(con, buffer);
+
+			/* Construct new create table statement. */
+			opts[0] = '\0';
+			if (ddl->declare_fillfactor)
+				snprintf(opts + strlen(opts), sizeof(opts) - strlen(opts),
+						 " with (fillfactor=%d)", fillfactor);
+			if (tablespace != NULL)
+			{
+				char	   *escape_tablespace;
+
+				escape_tablespace = PQescapeIdentifier(con, tablespace,
+													   strlen(tablespace));
+				snprintf(opts + strlen(opts), sizeof(opts) - strlen(opts),
+						 " tablespace %s", escape_tablespace);
+				PQfreemem(escape_tablespace);
+			}
+
+			cols = (scale >= SCALE_32BIT_THRESHOLD) ? ddl->bigcols : ddl->smcols;
+
+			snprintf(buffer, sizeof(buffer), "create%s table %s(%s)%s",
+					 unlogged_tables ? " unlogged" : "",
+					 ddl->table, cols, opts);
+
+			executeStatement(con, buffer);
 		}
+	}
+	else
+	{
+		fprintf(stderr, "erasing tables...\n");
+		for (i = 0; i < lengthof(DDLs); i++)
+		{
+			char		buffer[256];
+			const struct ddlinfo *ddl = &DDLs[i];
 
-		cols = (scale >= SCALE_32BIT_THRESHOLD) ? ddl->bigcols : ddl->smcols;
-
-		snprintf(buffer, sizeof(buffer), "create%s table %s(%s)%s",
-				 unlogged_tables ? " unlogged" : "",
-				 ddl->table, cols, opts);
-
-		executeStatement(con, buffer);
+			snprintf(buffer, sizeof(buffer), "delete from %s;", ddl->table);
+			executeStatement(con, buffer);
+		}
 	}
 
 	executeStatement(con, "begin");
@@ -2709,10 +2731,9 @@ init(bool is_no_vacuum)
 	/*
 	 * fill the pgbench_accounts table with some data
 	 */
-	fprintf(stderr, "creating tables...\n");
+	fprintf(stderr, "inserting data into pgbench_accounts...\n");
 
 	executeStatement(con, "begin");
-	executeStatement(con, "truncate pgbench_accounts");
 
 	res = PQexec(con, "copy pgbench_accounts from stdin");
 	if (PQresultStatus(res) != PGRES_COPY_IN)
@@ -2802,31 +2823,34 @@ init(bool is_no_vacuum)
 	/*
 	 * create indexes
 	 */
-	fprintf(stderr, "set primary keys...\n");
-	for (i = 0; i < lengthof(DDLINDEXes); i++)
+	if (!no_ddl)
 	{
-		char		buffer[256];
-
-		strlcpy(buffer, DDLINDEXes[i], sizeof(buffer));
-
-		if (index_tablespace != NULL)
+		fprintf(stderr, "set primary keys...\n");
+		for (i = 0; i < lengthof(DDLINDEXes); i++)
 		{
-			char	   *escape_tablespace;
+			char		buffer[256];
 
-			escape_tablespace = PQescapeIdentifier(con, index_tablespace,
-												   strlen(index_tablespace));
-			snprintf(buffer + strlen(buffer), sizeof(buffer) - strlen(buffer),
-					 " using index tablespace %s", escape_tablespace);
-			PQfreemem(escape_tablespace);
+			strlcpy(buffer, DDLINDEXes[i], sizeof(buffer));
+
+			if (index_tablespace != NULL)
+			{
+				char	   *escape_tablespace;
+
+				escape_tablespace = PQescapeIdentifier(con, index_tablespace,
+													   strlen(index_tablespace));
+				snprintf(buffer + strlen(buffer), sizeof(buffer) - strlen(buffer),
+						 " using index tablespace %s", escape_tablespace);
+				PQfreemem(escape_tablespace);
+			}
+
+			executeStatement(con, buffer);
 		}
-
-		executeStatement(con, buffer);
 	}
 
 	/*
 	 * create foreign keys
 	 */
-	if (foreign_keys)
+	if (foreign_keys && !no_ddl)
 	{
 		fprintf(stderr, "set foreign keys...\n");
 		for (i = 0; i < lengthof(DDLKEYs); i++)
@@ -3630,6 +3654,7 @@ main(int argc, char **argv)
 		{"vacuum-all", no_argument, NULL, 'v'},
 		/* long-named only options */
 		{"foreign-keys", no_argument, &foreign_keys, 1},
+		{"no-ddl", no_argument, &no_ddl, 1},
 		{"index-tablespace", required_argument, NULL, 3},
 		{"tablespace", required_argument, NULL, 2},
 		{"unlogged-tables", no_argument, &unlogged_tables, 1},
@@ -3940,7 +3965,7 @@ main(int argc, char **argv)
 				break;
 			case 0:
 				/* This covers long options which take no argument. */
-				if (foreign_keys || unlogged_tables)
+				if (foreign_keys || unlogged_tables || no_ddl)
 					initialization_option_set = true;
 				break;
 			case 2:				/* tablespace */
