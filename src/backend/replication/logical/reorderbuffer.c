@@ -680,7 +680,7 @@ AssertTXNLsnOrder(ReorderBuffer *rb)
 			Assert(prev_first_lsn < cur_txn->first_lsn);
 
 		/* known-as-subtxn txns must not be listed */
-		Assert(!cur_txn->is_known_as_subxact);
+		Assert(!rbtxn_is_known_subxact(cur_txn));
 
 		prev_first_lsn = cur_txn->first_lsn;
 	}
@@ -700,7 +700,7 @@ AssertTXNLsnOrder(ReorderBuffer *rb)
 			Assert(prev_base_snap_lsn < cur_txn->base_snapshot_lsn);
 
 		/* known-as-subtxn txns must not be listed */
-		Assert(!cur_txn->is_known_as_subxact);
+		Assert(!rbtxn_is_known_subxact(cur_txn));
 
 		prev_base_snap_lsn = cur_txn->base_snapshot_lsn;
 	}
@@ -723,7 +723,7 @@ ReorderBufferGetOldestTXN(ReorderBuffer *rb)
 
 	txn = dlist_head_element(ReorderBufferTXN, node, &rb->toplevel_by_lsn);
 
-	Assert(!txn->is_known_as_subxact);
+	Assert(!rbtxn_is_known_subxact(txn));
 	Assert(txn->first_lsn != InvalidXLogRecPtr);
 	return txn;
 }
@@ -783,7 +783,7 @@ ReorderBufferAssignChild(ReorderBuffer *rb, TransactionId xid,
 
 	if (!new_sub)
 	{
-		if (subtxn->is_known_as_subxact)
+		if (rbtxn_is_known_subxact(subtxn))
 		{
 			/* already associated, nothing to do */
 			return;
@@ -799,7 +799,7 @@ ReorderBufferAssignChild(ReorderBuffer *rb, TransactionId xid,
 		}
 	}
 
-	subtxn->is_known_as_subxact = true;
+	subtxn->txn_flags |= RBTXN_IS_SUBXACT;
 	subtxn->toplevel_xid = xid;
 	Assert(subtxn->nsubtxns == 0);
 
@@ -1009,7 +1009,7 @@ ReorderBufferIterTXNInit(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	{
 		ReorderBufferChange *cur_change;
 
-		if (txn->serialized)
+		if (rbtxn_is_serialized(txn))
 		{
 			/* serialize remaining changes */
 			ReorderBufferSerializeTXN(rb, txn);
@@ -1038,7 +1038,7 @@ ReorderBufferIterTXNInit(ReorderBuffer *rb, ReorderBufferTXN *txn)
 		{
 			ReorderBufferChange *cur_change;
 
-			if (cur_txn->serialized)
+			if (rbtxn_is_serialized(cur_txn))
 			{
 				/* serialize remaining changes */
 				ReorderBufferSerializeTXN(rb, cur_txn);
@@ -1204,7 +1204,7 @@ ReorderBufferCleanupTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 		 * they originally were happening inside another subtxn, so we won't
 		 * ever recurse more than one level deep here.
 		 */
-		Assert(subtxn->is_known_as_subxact);
+		Assert(rbtxn_is_known_subxact(subtxn));
 		Assert(subtxn->nsubtxns == 0);
 
 		ReorderBufferCleanupTXN(rb, subtxn);
@@ -1245,7 +1245,7 @@ ReorderBufferCleanupTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	/*
 	 * Remove TXN from its containing list.
 	 *
-	 * Note: if txn->is_known_as_subxact, we are deleting the TXN from its
+	 * Note: if txn is known as subxact, we are deleting the TXN from its
 	 * parent's list of known subxacts; this leaves the parent's nsubxacts
 	 * count too high, but we don't care.  Otherwise, we are deleting the TXN
 	 * from the LSN-ordered list of toplevel TXNs.
@@ -1260,7 +1260,7 @@ ReorderBufferCleanupTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	Assert(found);
 
 	/* remove entries spilled to disk */
-	if (txn->serialized)
+	if (rbtxn_is_serialized(txn))
 		ReorderBufferRestoreCleanup(rb, txn);
 
 	/* deallocate */
@@ -1277,7 +1277,7 @@ ReorderBufferBuildTupleCidHash(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	dlist_iter	iter;
 	HASHCTL		hash_ctl;
 
-	if (!txn->has_catalog_changes || dlist_is_empty(&txn->tuplecids))
+	if (!rbtxn_has_catalog_changes(txn) || dlist_is_empty(&txn->tuplecids))
 		return;
 
 	memset(&hash_ctl, 0, sizeof(hash_ctl));
@@ -1891,7 +1891,7 @@ ReorderBufferAbortOld(ReorderBuffer *rb, TransactionId oldestRunningXid)
 			 * final_lsn to that of their last change; this causes
 			 * ReorderBufferRestoreCleanup to do the right thing.
 			 */
-			if (txn->serialized && txn->final_lsn == 0)
+			if (rbtxn_is_serialized(txn) && txn->final_lsn == 0)
 			{
 				ReorderBufferChange *last =
 				dlist_tail_element(ReorderBufferChange, node, &txn->changes);
@@ -2039,7 +2039,7 @@ ReorderBufferSetBaseSnapshot(ReorderBuffer *rb, TransactionId xid,
 	 * operate on its top-level transaction instead.
 	 */
 	txn = ReorderBufferTXNByXid(rb, xid, true, &is_new, lsn, true);
-	if (txn->is_known_as_subxact)
+	if (rbtxn_is_known_subxact(txn))
 		txn = ReorderBufferTXNByXid(rb, txn->toplevel_xid, false,
 									NULL, InvalidXLogRecPtr, false);
 	Assert(txn->base_snapshot == NULL);
@@ -2146,7 +2146,7 @@ ReorderBufferXidSetCatalogChanges(ReorderBuffer *rb, TransactionId xid,
 
 	txn = ReorderBufferTXNByXid(rb, xid, true, NULL, lsn, true);
 
-	txn->has_catalog_changes = true;
+	txn->txn_flags |= RBTXN_HAS_CATALOG_CHANGES;
 }
 
 /*
@@ -2163,7 +2163,7 @@ ReorderBufferXidHasCatalogChanges(ReorderBuffer *rb, TransactionId xid)
 	if (txn == NULL)
 		return false;
 
-	return txn->has_catalog_changes;
+	return rbtxn_has_catalog_changes(txn);
 }
 
 /*
@@ -2183,7 +2183,7 @@ ReorderBufferXidHasBaseSnapshot(ReorderBuffer *rb, TransactionId xid)
 		return false;
 
 	/* a known subtxn? operate on top-level txn instead */
-	if (txn->is_known_as_subxact)
+	if (rbtxn_is_known_subxact(txn))
 		txn = ReorderBufferTXNByXid(rb, txn->toplevel_xid, false,
 									NULL, InvalidXLogRecPtr, false);
 
@@ -2304,7 +2304,7 @@ ReorderBufferSerializeTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	Assert(spilled == txn->nentries_mem);
 	Assert(dlist_is_empty(&txn->changes));
 	txn->nentries_mem = 0;
-	txn->serialized = true;
+	txn->txn_flags |= RBTXN_IS_SERIALIZED;
 
 	if (fd != -1)
 		CloseTransientFile(fd);

@@ -150,18 +150,34 @@ typedef struct ReorderBufferChange
 	dlist_node	node;
 } ReorderBufferChange;
 
+/* ReorderBufferTXN flags */
+#define RBTXN_HAS_CATALOG_CHANGES 0x0001
+#define RBTXN_IS_SUBXACT          0x0002
+#define RBTXN_IS_SERIALIZED       0x0004
+
+/* does the txn have catalog changes */
+#define rbtxn_has_catalog_changes(txn) (txn->txn_flags & RBTXN_HAS_CATALOG_CHANGES)
+/* is the txn known as a subxact? */
+#define rbtxn_is_known_subxact(txn)    (txn->txn_flags & RBTXN_IS_SUBXACT)
+/*
+ * Has this transaction been spilled to disk?  It's not always possible to
+ * deduce that fact by comparing nentries with nentries_mem, because e.g.
+ * subtransactions of a large transaction might get serialized together
+ * with the parent - if they're restored to memory they'd have
+ * nentries_mem == nentries.
+ */
+#define rbtxn_is_serialized(txn)       (txn->txn_flags & RBTXN_IS_SERIALIZED)
+
 typedef struct ReorderBufferTXN
 {
+	int     txn_flags;
+
 	/*
 	 * The transactions transaction id, can be a toplevel or sub xid.
 	 */
 	TransactionId xid;
 
-	/* did the TX have catalog changes */
-	bool		has_catalog_changes;
-
 	/* Do we know this is a subxact?  Xid of top-level txn if so */
-	bool		is_known_as_subxact;
 	TransactionId toplevel_xid;
 
 	/*
@@ -228,15 +244,6 @@ typedef struct ReorderBufferTXN
 	 * spilled to disk.
 	 */
 	uint64		nentries_mem;
-
-	/*
-	 * Has this transaction been spilled to disk?  It's not always possible to
-	 * deduce that fact by comparing nentries with nentries_mem, because e.g.
-	 * subtransactions of a large transaction might get serialized together
-	 * with the parent - if they're restored to memory they'd have
-	 * nentries_mem == nentries.
-	 */
-	bool		serialized;
 
 	/*
 	 * List of ReorderBufferChange structs, including new Snapshots and new
