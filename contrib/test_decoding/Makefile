@@ -26,7 +26,7 @@ installcheck:;
 # installation, allow to do so, but only if requested explicitly.
 installcheck-force: regresscheck-install-force isolationcheck-install-force
 
-check: regresscheck isolationcheck
+check: regresscheck isolationcheck 2pc-check
 
 submake-regress:
 	$(MAKE) -C $(top_builddir)/src/test/regress all
@@ -67,3 +67,6 @@ isolationcheck-install-force: all | submake-isolation submake-test_decoding temp
 	isolationcheck isolationcheck-install-force
 
 temp-install: EXTRA_INSTALL=contrib/test_decoding
+
+2pc-check: temp-install
+	$(prove_check)
