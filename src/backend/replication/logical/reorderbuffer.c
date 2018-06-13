@@ -337,6 +337,11 @@ ReorderBufferReturnTXN(ReorderBuffer *rb, ReorderBufferTXN *txn)
 	}
 
 	/* free data that's contained */
+	if (txn->gid != NULL)
+	{
+		pfree(txn->gid);
+		txn->gid = NULL;
+	}
 
 	if (txn->tuplecid_hash != NULL)
 	{
@@ -1426,24 +1431,17 @@ ReorderBufferFreeSnap(ReorderBuffer *rb, Snapshot snap)
  * and subtransactions (using a k-way merge) and replay the changes in lsn
  * order.
  */
-void
-ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
-					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
-					TimestampTz commit_time,
-					RepOriginId origin_id, XLogRecPtr origin_lsn)
+static void
+ReorderBufferCommitInternal(ReorderBufferTXN *txn,
+							ReorderBuffer *rb, TransactionId xid,
+							XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
+							TimestampTz commit_time,
+							RepOriginId origin_id, XLogRecPtr origin_lsn)
 {
-	ReorderBufferTXN *txn;
 	volatile Snapshot snapshot_now;
 	volatile CommandId command_id = FirstCommandId;
 	bool		using_subtxn;
 	ReorderBufferIterTXNState *volatile iterstate = NULL;
-
-	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
-								false);
-
-	/* unknown transaction, nothing to replay */
-	if (txn == NULL)
-		return;
 
 	txn->final_lsn = commit_lsn;
 	txn->end_lsn = end_lsn;
@@ -1748,7 +1746,6 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 					break;
 			}
 		}
-
 		/*
 		 * There's a speculative insertion remaining, just clean in up, it
 		 * can't have been successful, otherwise we'd gotten a confirmation
@@ -1764,8 +1761,22 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 		ReorderBufferIterTXNFinish(rb, iterstate);
 		iterstate = NULL;
 
-		/* call commit callback */
-		rb->commit(rb, txn, commit_lsn);
+		/*
+		 * Call abort/commit/prepare callback, depending on the transaction
+		 * state.
+		 *
+		 * If the transaction aborted during apply (which currently can happen
+		 * only for prepared transactions), simply call the abort callback.
+		 *
+		 * Otherwise call either PREPARE (for twophase transactions) or COMMIT
+		 * (for regular ones).
+		 */
+		if (rbtxn_rollback(txn))
+			rb->abort(rb, txn, commit_lsn);
+		else if (rbtxn_prepared(txn))
+			rb->prepare(rb, txn, commit_lsn);
+		else
+			rb->commit(rb, txn, commit_lsn);
 
 		/* this is just a sanity check against bad output plugin behaviour */
 		if (GetCurrentTransactionIdIfAny() != InvalidTransactionId)
@@ -1792,7 +1803,12 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 		if (snapshot_now->copied)
 			ReorderBufferFreeSnap(rb, snapshot_now);
 
-		/* remove potential on-disk data, and deallocate */
+		/*
+		 * remove potential on-disk data, and deallocate.
+		 *
+		 * We remove it even for prepared transactions (GID is enough to
+		 * commit/abort those later).
+		 */
 		ReorderBufferCleanupTXN(rb, txn);
 	}
 	PG_CATCH();
@@ -1824,6 +1840,141 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
+}
+
+
+/*
+ * Ask output plugin whether we want to skip this PREPARE and send
+ * this transaction as a regular commit later.
+ */
+bool
+ReorderBufferPrepareNeedSkip(ReorderBuffer *rb, TransactionId xid, const char *gid)
+{
+	ReorderBufferTXN *txn;
+
+	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr, false);
+
+	return rb->filter_prepare(rb, txn, xid, gid);
+}
+
+
+/*
+ * Commit a transaction.
+ *
+ * See comments for ReorderBufferCommitInternal()
+ */
+void
+ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
+					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
+					TimestampTz commit_time,
+					RepOriginId origin_id, XLogRecPtr origin_lsn)
+{
+	ReorderBufferTXN *txn;
+
+	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
+								false);
+
+	/* unknown transaction, nothing to replay */
+	if (txn == NULL)
+		return;
+
+	ReorderBufferCommitInternal(txn, rb, xid, commit_lsn, end_lsn,
+								commit_time, origin_id, origin_lsn);
+}
+
+/*
+ * Prepare a twophase transaction. It calls ReorderBufferCommitInternal()
+ * since all prepared transactions need to be decoded at PREPARE time.
+ */
+void
+ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
+					 XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
+					 TimestampTz commit_time,
+					 RepOriginId origin_id, XLogRecPtr origin_lsn,
+					 char *gid)
+{
+	ReorderBufferTXN *txn;
+
+	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
+								false);
+
+	/* unknown transaction, nothing to replay */
+	if (txn == NULL)
+		return;
+
+	txn->txn_flags |= RBTXN_PREPARE;
+	txn->gid = palloc(strlen(gid) + 1); /* trailing '\0' */
+	strcpy(txn->gid, gid);
+
+	ReorderBufferCommitInternal(txn, rb, xid, commit_lsn, end_lsn,
+								commit_time, origin_id, origin_lsn);
+}
+
+/*
+ * Check whether this transaction was sent as prepared to subscribers.
+ * Called while handling commit|abort prepared.
+ */
+bool
+ReorderBufferTxnIsPrepared(ReorderBuffer *rb, TransactionId xid,
+						   const char *gid)
+{
+	ReorderBufferTXN *txn;
+
+	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
+								false);
+
+	/*
+	 * Always call the prepare filter. It's the job of the prepare filter to
+	 * give us the *same* response for a given xid across multiple calls
+	 * (including ones on restart)
+	 */
+	return !(rb->filter_prepare(rb, txn, xid, gid));
+}
+
+/*
+ * Send standalone xact event. This is used to handle COMMIT/ABORT PREPARED.
+ */
+void
+ReorderBufferFinishPrepared(ReorderBuffer *rb, TransactionId xid,
+							XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
+							TimestampTz commit_time,
+							RepOriginId origin_id, XLogRecPtr origin_lsn,
+							char *gid, bool is_commit)
+{
+	ReorderBufferTXN *txn;
+
+	/*
+	 * The transaction may or may not exist (during restarts for example).
+	 * Anyways, 2PC transactions do not contain any reorderbuffers. So allow
+	 * it to be created below.
+	 */
+	txn = ReorderBufferTXNByXid(rb, xid, true, NULL, commit_lsn,
+								true);
+
+	txn->final_lsn = commit_lsn;
+	txn->end_lsn = end_lsn;
+	txn->commit_time = commit_time;
+	txn->origin_id = origin_id;
+	txn->origin_lsn = origin_lsn;
+	/* this txn is obviously prepared */
+	txn->txn_flags |= RBTXN_PREPARE;
+	txn->gid = palloc(strlen(gid) + 1); /* trailing '\0' */
+	strcpy(txn->gid, gid);
+
+	if (is_commit)
+	{
+		txn->txn_flags |= RBTXN_COMMIT_PREPARED;
+		rb->commit_prepared(rb, txn, commit_lsn);
+	}
+	else
+	{
+		txn->txn_flags |= RBTXN_ROLLBACK_PREPARED;
+		rb->abort_prepared(rb, txn, commit_lsn);
+	}
+
+	/* cleanup: make sure there's no cache pollution */
+	ReorderBufferExecuteInvalidations(rb, txn);
+	ReorderBufferCleanupTXN(rb, txn);
 }
 
 /*

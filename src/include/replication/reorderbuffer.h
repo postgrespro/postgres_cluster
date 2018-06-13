@@ -10,6 +10,7 @@
 #define REORDERBUFFER_H
 
 #include "access/htup_details.h"
+#include "access/twophase.h"
 #include "lib/ilist.h"
 #include "storage/sinval.h"
 #include "utils/hsearch.h"
@@ -154,6 +155,11 @@ typedef struct ReorderBufferChange
 #define RBTXN_HAS_CATALOG_CHANGES 0x0001
 #define RBTXN_IS_SUBXACT          0x0002
 #define RBTXN_IS_SERIALIZED       0x0004
+#define RBTXN_PREPARE             0x0008
+#define RBTXN_COMMIT_PREPARED     0x0010
+#define RBTXN_ROLLBACK_PREPARED   0x0020
+#define RBTXN_COMMIT              0x0040
+#define RBTXN_ROLLBACK            0x0080
 
 /* does the txn have catalog changes */
 #define rbtxn_has_catalog_changes(txn) (txn->txn_flags & RBTXN_HAS_CATALOG_CHANGES)
@@ -167,6 +173,16 @@ typedef struct ReorderBufferChange
  * nentries_mem == nentries.
  */
 #define rbtxn_is_serialized(txn)       (txn->txn_flags & RBTXN_IS_SERIALIZED)
+/* is this txn prepared? */
+#define rbtxn_prepared(txn)            (txn->txn_flags & RBTXN_PREPARE)
+/* was this prepared txn committed in the meanwhile? */
+#define rbtxn_commit_prepared(txn)     (txn->txn_flags & RBTXN_COMMIT_PREPARED)
+/* was this prepared txn aborted in the meanwhile? */
+#define rbtxn_rollback_prepared(txn)   (txn->txn_flags & RBTXN_ROLLBACK_PREPARED)
+/* was this txn committed in the meanwhile? */
+#define rbtxn_commit(txn)              (txn->txn_flags & RBTXN_COMMIT)
+/* was this prepared txn aborted in the meanwhile? */
+#define rbtxn_rollback(txn)            (txn->txn_flags & RBTXN_ROLLBACK)
 
 typedef struct ReorderBufferTXN
 {
@@ -179,6 +195,8 @@ typedef struct ReorderBufferTXN
 
 	/* Do we know this is a subxact?  Xid of top-level txn if so */
 	TransactionId toplevel_xid;
+	/* In case of 2PC we need to pass GID to output plugin */
+	char		 *gid;
 
 	/*
 	 * LSN of the first data carrying, WAL record with knowledge about this
@@ -324,6 +342,37 @@ typedef void (*ReorderBufferCommitCB) (
 									   ReorderBufferTXN *txn,
 									   XLogRecPtr commit_lsn);
 
+/* abort callback signature */
+typedef void (*ReorderBufferAbortCB) (
+									  ReorderBuffer *rb,
+									  ReorderBufferTXN *txn,
+									  XLogRecPtr abort_lsn);
+
+typedef bool (*ReorderBufferFilterPrepareCB) (
+											  ReorderBuffer *rb,
+											  ReorderBufferTXN *txn,
+											  TransactionId xid,
+											  const char *gid);
+
+/* prepare callback signature */
+typedef void (*ReorderBufferPrepareCB) (
+										ReorderBuffer *rb,
+										ReorderBufferTXN *txn,
+										XLogRecPtr prepare_lsn);
+
+/* commit prepared callback signature */
+typedef void (*ReorderBufferCommitPreparedCB) (
+											   ReorderBuffer *rb,
+											   ReorderBufferTXN *txn,
+											   XLogRecPtr commit_lsn);
+
+/* abort prepared callback signature */
+typedef void (*ReorderBufferAbortPreparedCB) (
+											  ReorderBuffer *rb,
+											  ReorderBufferTXN *txn,
+											  XLogRecPtr abort_lsn);
+
+
 /* message callback signature */
 typedef void (*ReorderBufferMessageCB) (
 										ReorderBuffer *rb,
@@ -369,6 +418,11 @@ struct ReorderBuffer
 	ReorderBufferApplyChangeCB apply_change;
 	ReorderBufferApplyTruncateCB apply_truncate;
 	ReorderBufferCommitCB commit;
+	ReorderBufferAbortCB abort;
+	ReorderBufferFilterPrepareCB filter_prepare;
+	ReorderBufferPrepareCB prepare;
+	ReorderBufferCommitPreparedCB commit_prepared;
+	ReorderBufferAbortPreparedCB abort_prepared;
 	ReorderBufferMessageCB message;
 
 	/*
@@ -419,6 +473,11 @@ void ReorderBufferQueueMessage(ReorderBuffer *, TransactionId, Snapshot snapshot
 void ReorderBufferCommit(ReorderBuffer *, TransactionId,
 					XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 					TimestampTz commit_time, RepOriginId origin_id, XLogRecPtr origin_lsn);
+void ReorderBufferFinishPrepared(ReorderBuffer *rb, TransactionId xid,
+							XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
+							TimestampTz commit_time,
+							RepOriginId origin_id, XLogRecPtr origin_lsn,
+							char *gid, bool is_commit);
 void		ReorderBufferAssignChild(ReorderBuffer *, TransactionId, TransactionId, XLogRecPtr commit_lsn);
 void ReorderBufferCommitChild(ReorderBuffer *, TransactionId, TransactionId,
 						 XLogRecPtr commit_lsn, XLogRecPtr end_lsn);
@@ -442,6 +501,15 @@ void		ReorderBufferXidSetCatalogChanges(ReorderBuffer *, TransactionId xid, XLog
 bool		ReorderBufferXidHasCatalogChanges(ReorderBuffer *, TransactionId xid);
 bool		ReorderBufferXidHasBaseSnapshot(ReorderBuffer *, TransactionId xid);
 
+bool ReorderBufferPrepareNeedSkip(ReorderBuffer *rb, TransactionId xid,
+							 const char *gid);
+bool ReorderBufferTxnIsPrepared(ReorderBuffer *rb, TransactionId xid,
+						   const char *gid);
+void ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
+					 XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
+					 TimestampTz commit_time,
+					 RepOriginId origin_id, XLogRecPtr origin_lsn,
+					 char *gid);
 ReorderBufferTXN *ReorderBufferGetOldestTXN(ReorderBuffer *);
 TransactionId ReorderBufferGetOldestXmin(ReorderBuffer *rb);
 
