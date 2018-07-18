@@ -9,7 +9,7 @@ my $shard1 = get_new_node("shard1");
 $shard1->init;
 $shard1->append_conf('postgresql.conf', qq(
 	max_prepared_transactions = 30
-	postgres_fdw.use_tsdtm = on
+	postgres_fdw.use_global_snapshots = on
 	global_snapshot_defer_time = 15
 	track_global_snapshots = on
 ));
@@ -19,7 +19,7 @@ my $shard2 = get_new_node("shard2");
 $shard2->init;
 $shard2->append_conf('postgresql.conf', qq(
 	max_prepared_transactions = 30
-	postgres_fdw.use_tsdtm = on
+	postgres_fdw.use_global_snapshots = on
 	global_snapshot_defer_time = 15
 	track_global_snapshots = on
 ));

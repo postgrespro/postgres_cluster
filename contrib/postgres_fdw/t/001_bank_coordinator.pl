@@ -10,7 +10,8 @@ $master->init;
 $master->append_conf('postgresql.conf', qq(
 	max_prepared_transactions = 30
 	log_checkpoints = true
-	postgres_fdw.use_tsdtm = on
+	postgres_fdw.use_global_snapshots = on
+	track_global_snapshots = on
 ));
 $master->start;
 

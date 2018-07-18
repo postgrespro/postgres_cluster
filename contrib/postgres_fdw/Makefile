@@ -24,8 +24,11 @@ include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
 
+# Global makefile will do temp-install for 'check'. Since REGRESS is defined,
+# PGXS (included from contrib-global.mk or directly) will care to add
+# postgres_fdw to it as EXTRA_INSTALL and build pg_regress. It will also
+# actually run pg_regress, so the only thing left is tap tests.
 check: tapcheck
 
-tapcheck:
-	env DESTDIR='$(abs_top_builddir)'/tmp_install $(MAKE) install
+tapcheck: temp-install
 	$(prove_check)

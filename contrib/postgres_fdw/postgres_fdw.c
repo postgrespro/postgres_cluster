@@ -5825,7 +5825,7 @@ find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel)
 void
 _PG_init(void)
 {
-	DefineCustomBoolVariable("postgres_fdw.use_tsdtm",
+	DefineCustomBoolVariable("postgres_fdw.use_global_snapshots",
 							 "Use global snapshots for FDW transactions", NULL,
 							 &UseGlobalSnapshots, false, PGC_USERSET, 0, NULL,
 							 NULL, NULL);
