@@ -478,7 +478,7 @@ begin_remote_xact(ConnCacheEntry *entry)
 				fdwTransState->global_csn = ExportGlobalSnapshot();
 
 			snprintf(import_sql, sizeof(import_sql),
-				"SELECT pg_global_snaphot_import("UINT64_FORMAT")",
+				"SELECT pg_global_snapshot_import("UINT64_FORMAT")",
 				fdwTransState->global_csn);
 
 			do_sql_command(entry->conn, import_sql);
@@ -832,11 +832,11 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 			if (!res)
 				goto error;
 
-			/* Broadcast pg_global_snaphot_prepare() */
+			/* Broadcast pg_global_snapshot_prepare() */
 			if (include_local_tx)
 				my_csn = GlobalSnapshotPrepareCurrent();
 
-			sql = psprintf("SELECT pg_global_snaphot_prepare('%s')",
+			sql = psprintf("SELECT pg_global_snapshot_prepare('%s')",
 														fdwTransState->gid);
 			res = BroadcastStmt(sql, PGRES_TUPLES_OK, MaxCsnCB, &max_csn);
 			if (!res)
@@ -846,10 +846,10 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 			if (include_local_tx && my_csn > max_csn)
 				max_csn = my_csn;
 
-			/* Broadcast pg_global_snaphot_assign() */
+			/* Broadcast pg_global_snapshot_assign() */
 			if (include_local_tx)
 				GlobalSnapshotAssignCsnCurrent(max_csn);
-			sql = psprintf("SELECT pg_global_snaphot_assign('%s',"UINT64_FORMAT")",
+			sql = psprintf("SELECT pg_global_snapshot_assign('%s',"UINT64_FORMAT")",
 							fdwTransState->gid, max_csn);
 			res = BroadcastFunc(sql);
 
