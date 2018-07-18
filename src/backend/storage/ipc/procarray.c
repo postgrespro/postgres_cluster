@@ -3083,28 +3083,17 @@ ProcArrayGetReplicationSlotXmin(TransactionId *xmin,
 void
 ProcArraySetGlobalSnapshotXmin(TransactionId xmin)
 {
-	LWLockAcquire(ProcArrayLock, LW_SHARED);
-
-	if (TransactionIdFollows(xmin, procArray->global_snapshot_xmin))
-		procArray->global_snapshot_xmin = xmin;
-
-	LWLockRelease(ProcArrayLock);
+	/* We rely on atomic fetch/store of xid */
+	procArray->global_snapshot_xmin = xmin;
 }
 
 /*
  * ProcArrayGetGlobalSnapshotXmin
  */
 TransactionId
-ProcArrayGetGlobalSnapshotXmin(bool locked)
+ProcArrayGetGlobalSnapshotXmin()
 {
-	volatile TransactionId xmin;
-
-	if (!locked)
-		LWLockAcquire(ProcArrayLock, LW_SHARED);
-	xmin = procArray->global_snapshot_xmin;
-	if (!locked)
-		LWLockRelease(ProcArrayLock);
-	return xmin;
+	return procArray->global_snapshot_xmin;
 }
 
 #define XidCacheRemove(i) \

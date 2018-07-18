@@ -2227,7 +2227,7 @@ ExportGlobalSnapshot()
 
 /* SQL accessor to ExportGlobalSnapshot() */
 Datum
-pg_global_snaphot_export(PG_FUNCTION_ARGS)
+pg_global_snapshot_export(PG_FUNCTION_ARGS)
 {
 	GlobalCSN	global_csn = ExportGlobalSnapshot();
 	PG_RETURN_UINT64(global_csn);
@@ -2289,7 +2289,7 @@ ImportGlobalSnapshot(GlobalCSN snap_global_csn)
 
 /* SQL accessor to ImportGlobalSnapshot() */
 Datum
-pg_global_snaphot_import(PG_FUNCTION_ARGS)
+pg_global_snapshot_import(PG_FUNCTION_ARGS)
 {
 	GlobalCSN	global_csn = PG_GETARG_UINT64(0);
 	ImportGlobalSnapshot(global_csn);

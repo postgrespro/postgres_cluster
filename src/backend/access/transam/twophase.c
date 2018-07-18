@@ -2601,7 +2601,7 @@ GlobalSnapshotPrepareTwophase(const char *gid)
  * TODO: Rewrite this as PREPARE TRANSACTION 'gid' RETURNING SNAPSHOT
  */
 Datum
-pg_global_snaphot_prepare(PG_FUNCTION_ARGS)
+pg_global_snapshot_prepare(PG_FUNCTION_ARGS)
 {
 	const char *gid = text_to_cstring(PG_GETARG_TEXT_PP(0));
 	GlobalCSN	global_csn;
@@ -2617,7 +2617,7 @@ pg_global_snaphot_prepare(PG_FUNCTION_ARGS)
  *
  * Asign GlobalCSN for currently active transaction. GlobalCSN is supposedly
  * maximal among of values returned by GlobalSnapshotPrepareCurrent and
- * pg_global_snaphot_prepare.
+ * pg_global_snapshot_prepare.
  *
  * This function is a counterpart of GlobalSnapshotAssignCsnCurrent() for
  * twophase transactions.
@@ -2638,7 +2638,7 @@ GlobalSnapshotAssignCsnTwoPhase(const char *gid, GlobalCSN global_csn)
 	if (!GlobalCSNIsNormal(global_csn))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("pg_global_snaphot_assign expects normal global_csn")));
+				 errmsg("pg_global_snapshot_assign expects normal global_csn")));
 
 	/*
 	 * Validate the GID, and lock the GXACT to ensure that two backends do not
@@ -2662,7 +2662,7 @@ GlobalSnapshotAssignCsnTwoPhase(const char *gid, GlobalCSN global_csn)
  * TODO: Rewrite this as COMMIT PREPARED 'gid' SNAPSHOT 'global_csn'
  */
 Datum
-pg_global_snaphot_assign(PG_FUNCTION_ARGS)
+pg_global_snapshot_assign(PG_FUNCTION_ARGS)
 {
 	const char *gid = text_to_cstring(PG_GETARG_TEXT_PP(0));
 	GlobalCSN	global_csn = PG_GETARG_INT64(1);

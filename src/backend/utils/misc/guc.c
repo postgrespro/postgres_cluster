@@ -1018,7 +1018,7 @@ static struct config_bool ConfigureNamesBool[] =
 			gettext_noop("Used to achieve REPEATEBLE READ isolation level for postgres_fdw transactions.")
 		},
 		&track_global_snapshots,
-		true, /* XXX: set true to simplify tesing. XXX2: Seems that RESOURCES_MEM isn't the best catagory */
+		false, /* XXX: Seems that RESOURCES_MEM isn't the best catagory */
 		NULL, NULL, NULL
 	},
 	{

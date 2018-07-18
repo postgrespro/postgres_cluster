@@ -172,7 +172,7 @@ GlobalSnapshotShmemInit()
 /*
  * GlobalSnapshotStartup
  *
- * Set gsXidMap etnries to oldestActiveXID during startup.
+ * Set gsXidMap entries to oldestActiveXID during startup.
  */
 void
 GlobalSnapshotStartup(TransactionId oldestActiveXID)
@@ -200,24 +200,33 @@ GlobalSnapshotStartup(TransactionId oldestActiveXID)
  * global transaction. Otherwise old versions of tuples that were needed for
  * this transaction can be recycled by other processes (vacuum, HOT, etc).
  *
- * Called upon each snapshot creation after ProcArrayLock is released. Such
- * usage creates a race condition. It is possible that backend who got
- * glabal_csn called GlobalSnapshotMapXmin() only after other backends managed
- * to get snapshot and complete GlobalSnapshotMapXmin() call. To address that
- * race we do two thigs:
+ * Locking here is not trivial. Called upon each snapshot creation after
+ * ProcArrayLock is released. Such usage creates several race conditions. It
+ * is possible that backend who got global_csn called GlobalSnapshotMapXmin()
+ * only after other backends managed to get snapshot and complete
+ * GlobalSnapshotMapXmin() call, or even committed. This is safe because
  *
- *		* snapshot_global_csn is always rounded up to next second. So that is
- *		  okay if call to GlobalSnapshotMapXmin() with later global_csn will
- *		  succeed first -- it anyway will be taken into account for a next
+ *      * We already hold our xmin in MyPgXact, so our snapshot will not be
+ * 	      harmed even though ProcArrayLock is released.
+ *
+ *		* snapshot_global_csn is always pessmistically rounded up to the next
  *		  second.
+ *
+ *      * For performance reasons, xmin value for particular second is filled
+ *        only once. Because of that instead of writing to buffer just our
+ *        xmin (which is enough for our snapshot), we bump oldestXmin there --
+ *        it mitigates the possibility of damaging someone else's snapshot by
+ *        writing to the buffer too advanced value in case of slowness of
+ *        another backend who generated csn earlier, but didn't manage to
+ *        insert it before us.
  *
  *		* if GlobalSnapshotMapXmin() founds a gap in several seconds between
  *		  current call and latest completed call then it should fill that gap
- *		  with latest known values instead of new one. Otherwise it is possible
- *		  (however highly unlikely) that this gap also happend between taking
- *		  snapshot and call to GlobalSnapshotMapXmin() for some backend. And we
- *		  are at risk to fill circullar buffer with oldestXmin's that are
- *		  bigger then they actually were.
+ *		  with latest known values instead of new one. Otherwise it is
+ *		  possible (however highly unlikely) that this gap also happend
+ *		  between taking snapshot and call to GlobalSnapshotMapXmin() for some
+ *		  backend. And we are at risk to fill circullar buffer with
+ *		  oldestXmin's that are bigger then they actually were.
  */
 void
 GlobalSnapshotMapXmin(GlobalCSN snapshot_global_csn)
@@ -233,10 +242,7 @@ GlobalSnapshotMapXmin(GlobalCSN snapshot_global_csn)
 	Assert(gsXidMap != NULL);
 
 	/*
-	 * We don't have guarantee that process who called us first for this
-	 * csn_seconds is actually one who took snapshot firt in this second.
-	 * So just round up global_csn to the next second -- snapshots for next
-	 * second would have oldestXmin greater or equal then ours anyway.
+	 * Round up global_csn to the next second -- pessimistically and safely.
 	 */
 	csn_seconds = (snapshot_global_csn / NSECS_PER_SEC + 1);
 
@@ -290,7 +296,6 @@ GlobalSnapshotMapXmin(GlobalCSN snapshot_global_csn)
 
 	/* Fill new entry with current_oldest_xmin */
 	gsXidMap->xmin_by_second[offset] = current_oldest_xmin;
-	offset = (offset + gsXidMap->size - 1) % gsXidMap->size;
 
 	/*
 	 * If we have gap then fill it with previous_oldest_xmin for reasons
@@ -298,8 +303,8 @@ GlobalSnapshotMapXmin(GlobalCSN snapshot_global_csn)
 	 */
 	for (i = 1; i < gap; i++)
 	{
-		gsXidMap->xmin_by_second[offset] = previous_oldest_xmin;
 		offset = (offset + gsXidMap->size - 1) % gsXidMap->size;
+		gsXidMap->xmin_by_second[offset] = previous_oldest_xmin;
 	}
 
 	oldest_deferred_xmin =
@@ -309,8 +314,11 @@ GlobalSnapshotMapXmin(GlobalCSN snapshot_global_csn)
 
 	/*
 	 * Advance procArray->global_snapshot_xmin after we released
-	 * GlobalSnapshotXidMapLock.
+	 * GlobalSnapshotXidMapLock. Since we gather not xmin but oldestXmin, it
+	 * never goes backwards regardless of how slow we can do that.
 	 */
+	Assert(TransactionIdFollowsOrEquals(oldest_deferred_xmin,
+										ProcArrayGetGlobalSnapshotXmin()));
 	ProcArraySetGlobalSnapshotXmin(oldest_deferred_xmin);
 }
 
@@ -554,7 +562,7 @@ XidInvisibleInGlobalSnapshot(TransactionId xid, Snapshot snapshot)
  * Functions to handle distributed commit on transaction coordinator:
  * GlobalSnapshotPrepareCurrent() / GlobalSnapshotAssignCsnCurrent().
  * Correspoding functions for remote nodes are defined in twophase.c:
- * pg_global_snaphot_prepare/pg_global_snaphot_assign.
+ * pg_global_snapshot_prepare/pg_global_snapshot_assign.
  *****************************************************************************/
 
 
@@ -594,7 +602,7 @@ GlobalSnapshotPrepareCurrent()
  *
  * Asign GlobalCSN for currently active transaction. GlobalCSN is supposedly
  * maximal among of values returned by GlobalSnapshotPrepareCurrent and
- * pg_global_snaphot_prepare.
+ * pg_global_snapshot_prepare.
  */
 void
 GlobalSnapshotAssignCsnCurrent(GlobalCSN global_csn)
@@ -609,7 +617,7 @@ GlobalSnapshotAssignCsnCurrent(GlobalCSN global_csn)
 	if (!GlobalCSNIsNormal(global_csn))
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				 errmsg("pg_global_snaphot_assign expects normal global_csn")));
+				 errmsg("pg_global_snapshot_assign expects normal global_csn")));
 
 	/* Skip emtpty transactions */
 	if (!TransactionIdIsValid(GetCurrentTransactionIdIfAny()))
@@ -633,7 +641,7 @@ GlobalSnapshotAssignCsnCurrent(GlobalCSN global_csn)
  * proc->assignedGlobalCsn to GlobalCSNLog.
  *
  * Same rules applies to global transaction, except that global_csn is already
- * assigned by GlobalSnapshotAssignCsnCurrent/pg_global_snaphot_assign and
+ * assigned by GlobalSnapshotAssignCsnCurrent/pg_global_snapshot_assign and
  * GlobalSnapshotPrecommit is basically no-op.
  *
  * GlobalSnapshotAbort is slightly different comparing to commit because abort
