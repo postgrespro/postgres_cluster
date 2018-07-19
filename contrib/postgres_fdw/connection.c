@@ -18,7 +18,9 @@
 #include "access/htup_details.h"
 #include "catalog/pg_user_mapping.h"
 #include "access/xact.h"
+#include "access/transam.h"
 #include "access/xlog.h" /* GetSystemIdentifier() */
+#include "libpq-int.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "pgstat.h"
@@ -63,7 +65,8 @@ struct ConnCacheEntry
 	bool		invalidated;	/* true if reconnect is pending */
 	uint32		server_hashvalue;	/* hash value of foreign server OID */
 	uint32		mapping_hashvalue;	/* hash value of user mapping OID */
-};
+	bool		copy_from_started;	/* COPY FROM in progress on this conn */
+} ;
 
 /*
  * Connection cache (initialized on first use)
@@ -129,7 +132,8 @@ static bool pgfdw_get_cleanup_result(ConnCacheEntry *entry, TimestampTz endtime,
  * (not even on error), we need this flag to cue manual cleanup.
  */
 ConnCacheEntry *
-GetConnection(UserMapping *user, bool will_prep_stmt)
+GetConnectionCopyFrom(UserMapping *user, bool will_prep_stmt,
+					  bool **copy_from_started)
 {
 	bool		found;
 	ConnCacheEntry *entry;
@@ -224,6 +228,7 @@ GetConnection(UserMapping *user, bool will_prep_stmt)
 		entry->have_error = false;
 		entry->changing_xact_state = false;
 		entry->invalidated = false;
+		entry->copy_from_started = false;
 		entry->server_hashvalue =
 			GetSysCacheHashValue1(FOREIGNSERVEROID,
 								  ObjectIdGetDatum(server->serverid));
@@ -246,6 +251,9 @@ GetConnection(UserMapping *user, bool will_prep_stmt)
 	/* Remember if caller will prepare statements */
 	entry->have_prep_stmt |= will_prep_stmt;
 
+	if (copy_from_started)
+		*copy_from_started = &(entry->copy_from_started);
+
 	return entry;
 }
 
@@ -253,6 +261,12 @@ PGconn *
 ConnectionEntryGetConn(ConnCacheEntry *entry)
 {
 	return entry->conn;
+}
+
+ConnCacheEntry *
+GetConnection(UserMapping *user, bool will_prep_stmt)
+{
+	return GetConnectionCopyFrom(user, will_prep_stmt, NULL);
 }
 
 /*
@@ -1292,21 +1306,40 @@ pgfdw_cancel_query(ConnCacheEntry *entry)
 	endtime = TimestampTzPlusMilliseconds(GetCurrentTimestamp(), 30000);
 
 	/*
-	 * Issue cancel request.  Unfortunately, there's no good way to limit the
-	 * amount of time that we might block inside PQgetCancel().
+	 * If COPY IN in progress, send CopyFail. Otherwise send cancel request.
+	 * TODO: make it less hackish, without libpq-int.h inclusion and handling
+	 * EAGAIN.
 	 */
-	if ((cancel = PQgetCancel(conn)))
+	if (conn->asyncStatus == PGASYNC_COPY_IN)
 	{
-		if (!PQcancel(cancel, errbuf, sizeof(errbuf)))
+		if (PQputCopyEnd(conn, "postgres_fdw: transaction abort on source node") != 1)
 		{
 			ereport(WARNING,
 					(errcode(ERRCODE_CONNECTION_FAILURE),
-					 errmsg("could not send cancel request: %s",
+					 errmsg("could not send abort copy request: %s",
 							errbuf)));
-			PQfreeCancel(cancel);
 			return false;
 		}
-		PQfreeCancel(cancel);
+	}
+	else
+	{
+		/*
+		 * Issue cancel request.  Unfortunately, there's no good way to limit the
+		 * amount of time that we might block inside PQgetCancel().
+		 */
+		if ((cancel = PQgetCancel(conn)))
+		{
+			if (!PQcancel(cancel, errbuf, sizeof(errbuf)))
+			{
+				ereport(WARNING,
+						(errcode(ERRCODE_CONNECTION_FAILURE),
+						 errmsg("could not send cancel request: %s",
+								errbuf)));
+				PQfreeCancel(cancel);
+				return false;
+			}
+			PQfreeCancel(cancel);
+		}
 	}
 
 	/* Get and discard the result of the query. */

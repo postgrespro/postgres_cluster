@@ -15,6 +15,7 @@
 #include "access/parallel.h"
 #include "nodes/execnodes.h"
 #include "nodes/relation.h"
+#include "commands/copy.h"
 
 /* To avoid including explain.h here, reference ExplainState thus: */
 struct ExplainState;
@@ -170,6 +171,28 @@ typedef List *(*ReparameterizeForeignPathByChild_function) (PlannerInfo *root,
 															RelOptInfo *child_rel);
 
 /*
+ * These functions are not documented in fdwhandler.sgml because the interface
+ * is pretty unstable and weird, it hardly would be useful for anyone but
+ * shardman. In particular,
+ * - There is no way to COPY binary data.
+ * - Private CopyState is exported.
+ * - I am not sure about passing parent_rinfo.
+ */
+typedef void (*BeginForeignCopyFrom_function) (EState *estate,
+											   ResultRelInfo *rinfo,
+											   CopyState cstate,
+											   ResultRelInfo *parent_rinfo);
+/*
+ * Currently we support only text and csv format and pass each row in
+ * cstate->line_buf. We should also pass binary data and/or deformed tuple.
+ */
+typedef void (*ForeignNextCopyFrom_function) (EState *estate,
+											  ResultRelInfo *rinfo,
+											  CopyState cstate);
+typedef void (*EndForeignCopyFrom_function) (EState *estate,
+											 ResultRelInfo *rinfo);
+
+/*
  * FdwRoutine is the struct returned by a foreign-data wrapper's handler
  * function.  It provides pointers to the callback functions needed by the
  * planner and executor.
@@ -245,6 +268,11 @@ typedef struct FdwRoutine
 
 	/* Support functions for path reparameterization. */
 	ReparameterizeForeignPathByChild_function ReparameterizeForeignPathByChild;
+
+	/* Support functions for COPY FROM */
+	BeginForeignCopyFrom_function BeginForeignCopyFrom;
+	ForeignNextCopyFrom_function ForeignNextCopyFrom;
+	EndForeignCopyFrom_function EndForeignCopyFrom;
 } FdwRoutine;
 
 
@@ -257,5 +285,6 @@ extern FdwRoutine *GetFdwRoutineForRelation(Relation relation, bool makecopy);
 extern bool IsImportableForeignTable(const char *tablename,
 						 ImportForeignSchemaStmt *stmt);
 extern Path *GetExistingLocalJoinPath(RelOptInfo *joinrel);
+extern bool FdwCopyFromIsSupported(FdwRoutine *fdwroutine);
 
 #endif							/* FDWAPI_H */

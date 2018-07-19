@@ -362,6 +362,15 @@ static void postgresGetForeignUpperPaths(PlannerInfo *root,
 							 RelOptInfo *input_rel,
 							 RelOptInfo *output_rel,
 							 void *extra);
+static void postgresBeginForeignCopyFrom(EState *estate,
+										 ResultRelInfo *rinfo,
+										 CopyState cstate,
+										 ResultRelInfo *parent_rinfo);
+static void postgresForeignNextCopyFrom(EState *estate,
+										ResultRelInfo *rinfo,
+										CopyState cstate);
+static void postgresEndForeignCopyFrom(EState *estate,
+									   ResultRelInfo *rinfo);
 
 /*
  * Helper functions
@@ -508,6 +517,11 @@ postgres_fdw_handler(PG_FUNCTION_ARGS)
 
 	/* Support functions for upper relation push-down */
 	routine->GetForeignUpperPaths = postgresGetForeignUpperPaths;
+
+	/* Functions for COPY FROM */
+	routine->BeginForeignCopyFrom = postgresBeginForeignCopyFrom;
+	routine->ForeignNextCopyFrom = postgresForeignNextCopyFrom;
+	routine->EndForeignCopyFrom = postgresEndForeignCopyFrom;
 
 	PG_RETURN_POINTER(routine);
 }
@@ -5820,6 +5834,114 @@ find_em_expr_for_rel(EquivalenceClass *ec, RelOptInfo *rel)
 
 	/* We didn't find any suitable equivalence class expression */
 	return NULL;
+}
+
+/*
+ * Begin COPY FROM to foreign table. Currently we do it in a bit perverted
+ * way: we redirect COPY FROM to parent table on foreign server, assuming it
+ * exists in public schema (as in shardman), and let it direct tuples to
+ * proper partitions. Otherwise we would have to modify logic of managing
+ * connections and keep many connections open to one server from one backend.
+ * This probably should not be used outside pg_shardman.
+ */
+static void
+postgresBeginForeignCopyFrom(EState *estate, ResultRelInfo *rinfo,
+							 CopyState cstate, ResultRelInfo *parent_rinfo)
+{
+	Relation		rel = rinfo->ri_RelationDesc;
+	RangeTblEntry	*rte;
+	Oid				userid;
+	ForeignTable	*table;
+	UserMapping		*user;
+	StringInfoData 	sql;
+	PGconn	   		*conn;
+	PGresult   		*res;
+	bool			*copy_from_started;
+	char 			*dest_relname;
+
+	/*
+	 * Identify which user to do the remote access as.  This should match what
+	 * ExecCheckRTEPerms() does.
+	 */
+	rte = rt_fetch(rinfo->ri_RangeTableIndex, estate->es_range_table);
+	userid = rte->checkAsUser ? rte->checkAsUser : GetUserId();
+
+	/* Get info about foreign table. */
+	table = GetForeignTable(RelationGetRelid(rel));
+	user = GetUserMapping(userid, table->serverid);
+	rinfo->ri_FdwState = user;
+
+	/* Get (open, if not yet) connection */
+	conn = ConnectionEntryGetConn(
+		GetConnectionCopyFrom(user, false, &copy_from_started));
+	/* We already did COPY FROM to this server */
+	if (*copy_from_started)
+		return;
+
+	/* deparse COPY stmt */
+	dest_relname = psprintf(
+		"public.%s", quote_identifier(RelationGetRelationName(
+										  parent_rinfo == NULL ?
+										  rinfo->ri_RelationDesc :
+										  parent_rinfo->ri_RelationDesc)));
+	initStringInfo(&sql);
+	deparseCopyFromSql(&sql, rel, cstate, dest_relname);
+
+	res = PQexec(conn, sql.data);
+	if (PQresultStatus(res) != PGRES_COPY_IN)
+	{
+		pgfdw_report_error(ERROR, res, conn, true, sql.data);
+	}
+	PQclear(res);
+
+	*copy_from_started = true;
+}
+
+/* COPY FROM next row to foreign table */
+static void
+postgresForeignNextCopyFrom(EState *estate, ResultRelInfo *rinfo,
+							CopyState cstate)
+{
+	bool		*copy_from_started;
+	UserMapping *user = (UserMapping *) rinfo->ri_FdwState;
+	PGconn		*conn = ConnectionEntryGetConn(
+		GetConnectionCopyFrom(user, false, &copy_from_started));
+
+	Assert(copy_from_started);
+	Assert(!cstate->binary);
+	/* TODO: distinuish failure and nonblocking-send EAGAIN */
+	if (PQputline(conn, cstate->line_buf.data) || PQputnbytes(conn, "\n", 1))
+	{
+		pgfdw_report_error(ERROR, NULL, conn, false, cstate->line_buf.data);
+	}
+}
+
+/* Finish COPY FROM */
+static void
+postgresEndForeignCopyFrom(EState *estate, ResultRelInfo *rinfo)
+{
+	bool		*copy_from_started;
+	UserMapping *user = (UserMapping *) rinfo->ri_FdwState;
+	ConnCacheEntry *conn_entry = GetConnectionCopyFrom(user, false,
+													   &copy_from_started);
+	PGconn		*conn = ConnectionEntryGetConn(conn_entry);
+	PGresult	*res;
+
+	if (*copy_from_started)
+	{
+		/* TODO: PQgetResult? */
+		if (PQendcopy(conn))
+		{
+			pgfdw_report_error(ERROR, NULL, conn, false, "end postgres_fdw copy from");
+		}
+		while ((res = PQgetResult(conn)) != NULL)
+		{
+			/* TODO: get error? */
+			PQclear(res);
+		}
+		*copy_from_started = false;
+		ReleaseConnection(conn_entry);
+	}
 }
 
 void

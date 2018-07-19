@@ -14,6 +14,7 @@
 #define POSTGRES_FDW_H
 
 #include "foreign/foreign.h"
+#include "commands/copy.h"
 #include "lib/stringinfo.h"
 #include "nodes/relation.h"
 #include "utils/relcache.h"
@@ -122,6 +123,8 @@ extern void reset_transmission_modes(int nestlevel);
 
 /* in connection.c */
 extern ConnCacheEntry *GetConnection(UserMapping *user, bool will_prep_stmt);
+extern ConnCacheEntry *GetConnectionCopyFrom(UserMapping *user, bool will_prep_stmt,
+											 bool **copy_from_started);
 extern PGconn *ConnectionEntryGetConn(ConnCacheEntry *entry);
 extern void ReleaseConnection(ConnCacheEntry *entry);
 extern unsigned int GetCursorNumber(ConnCacheEntry *entry);
@@ -186,6 +189,8 @@ extern void deparseSelectStmtForRel(StringInfo buf, PlannerInfo *root,
 						List *remote_conds, List *pathkeys, bool is_subquery,
 						List **retrieved_attrs, List **params_list);
 extern const char *get_jointype_name(JoinType jointype);
+extern void deparseCopyFromSql(StringInfo buf, Relation rel, CopyState cstate,
+							   const char *dest_relname);
 
 /* in shippable.c */
 extern bool is_builtin(Oid objectId);
