@@ -282,7 +282,6 @@ GlobalSnapshotMapXmin(GlobalCSN snapshot_global_csn)
 
 	Assert(TransactionIdIsNormal(current_oldest_xmin));
 	Assert(TransactionIdIsNormal(previous_oldest_xmin));
-	Assert(TransactionIdFollowsOrEquals(current_oldest_xmin, previous_oldest_xmin));
 
 	gap = csn_seconds - last_csn_seconds;
 	offset = csn_seconds % gsXidMap->size;
