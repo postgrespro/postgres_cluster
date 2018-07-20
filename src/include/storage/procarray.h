@@ -130,6 +130,6 @@ extern void ProcArrayGetReplicationSlotXmin(TransactionId *xmin,
 
 extern void ProcArraySetGlobalSnapshotXmin(TransactionId xmin);
 
-extern TransactionId ProcArrayGetGlobalSnapshotXmin();
+extern TransactionId ProcArrayGetGlobalSnapshotXmin(void);
 
 #endif							/* PROCARRAY_H */

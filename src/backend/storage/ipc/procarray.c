@@ -1767,7 +1767,7 @@ GetSnapshotData(Snapshot snapshot)
 	 * Take GlobalCSN under ProcArrayLock so the local/global snapshot stays
 	 * synchronized.
 	 */
-	if (track_global_snapshots || global_snapshot_defer_time > 0)
+	if (track_global_snapshots)
 		global_csn = GlobalSnapshotGenerate(false);
 
 	LWLockRelease(ProcArrayLock);
@@ -1846,7 +1846,8 @@ GetSnapshotData(Snapshot snapshot)
 
 	snapshot->imported_global_csn = false;
 	snapshot->global_csn = global_csn;
-	if (global_snapshot_defer_time > 0)
+	/* if (global_snapshot_defer_time > 0 && IsNormalProcessingMode()) */
+	if (global_snapshot_defer_time > 0 && IsUnderPostmaster)
 		GlobalSnapshotMapXmin(snapshot->global_csn);
 
 	return snapshot;
@@ -3091,7 +3092,7 @@ ProcArraySetGlobalSnapshotXmin(TransactionId xmin)
  * ProcArrayGetGlobalSnapshotXmin
  */
 TransactionId
-ProcArrayGetGlobalSnapshotXmin()
+ProcArrayGetGlobalSnapshotXmin(void)
 {
 	return procArray->global_snapshot_xmin;
 }

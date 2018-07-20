@@ -2349,7 +2349,7 @@ static struct config_int ConfigureNamesInt[] =
 			NULL
 		},
 		&global_snapshot_defer_time,
-		30, 0, INT_MAX,
+		5, 0, INT_MAX,
 		NULL, NULL, NULL
 	},
 
