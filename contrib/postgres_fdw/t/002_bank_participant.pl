@@ -12,6 +12,7 @@ $shard1->append_conf('postgresql.conf', qq(
 	postgres_fdw.use_global_snapshots = on
 	global_snapshot_defer_time = 15
 	track_global_snapshots = on
+    default_transaction_isolation = 'REPEATABLE READ'
 ));
 $shard1->start;
 
@@ -22,6 +23,7 @@ $shard2->append_conf('postgresql.conf', qq(
 	postgres_fdw.use_global_snapshots = on
 	global_snapshot_defer_time = 15
 	track_global_snapshots = on
+	default_transaction_isolation = 'REPEATABLE READ'
 ));
 $shard2->start;
 

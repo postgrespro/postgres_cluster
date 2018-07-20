@@ -460,6 +460,10 @@ begin_remote_xact(ConnCacheEntry *entry)
 		elog(DEBUG3, "starting remote transaction on connection %p",
 			 entry->conn);
 
+		if (UseGlobalSnapshots && (!IsolationUsesXactSnapshot() ||
+								   IsolationIsSerializable()))
+			elog(ERROR, "Global snapshots support only REPEATABLE READ");
+
 		if (IsolationIsSerializable())
 			sql = "START TRANSACTION ISOLATION LEVEL SERIALIZABLE";
 		else

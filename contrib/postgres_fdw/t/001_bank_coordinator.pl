@@ -12,6 +12,7 @@ $master->append_conf('postgresql.conf', qq(
 	log_checkpoints = true
 	postgres_fdw.use_global_snapshots = on
 	track_global_snapshots = on
+	default_transaction_isolation = 'REPEATABLE READ'
 ));
 $master->start;
 
