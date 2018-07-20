@@ -501,10 +501,15 @@ begin_remote_xact(ConnCacheEntry *entry)
 		elog(DEBUG3, "starting remote transaction on connection %p",
 			 entry->conn);
 
+		if (UseGlobalSnapshots && (!IsolationUsesXactSnapshot() ||
+								   IsolationIsSerializable()))
+			elog(ERROR, "Global snapshots support only REPEATABLE READ");
+
 		sprintf(sql, "START TRANSACTION %s; set application_name='pgfdw:%lld:%d';",
 				IsolationIsSerializable() ? "ISOLATION LEVEL SERIALIZABLE" :
 				UseRepeatableRead ? "ISOLATION LEVEL REPEATABLE READ" : "",
 				(long long) GetSystemIdentifier(), MyProcPid);
+
 		entry->changing_xact_state = true;
 		do_sql_command(entry, sql);
 		entry->xact_depth = 1;
