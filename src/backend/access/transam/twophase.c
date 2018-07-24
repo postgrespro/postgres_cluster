@@ -1546,8 +1546,8 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	}
 	else
 	{
-		GlobalCSN global_csn = pg_atomic_read_u64(&proc->assignedGlobalCsn);
-		Assert(GlobalCSNIsInProgress(global_csn));
+		Assert(GlobalCSNIsInProgress(
+				   pg_atomic_read_u64(&proc->assignedGlobalCsn)));
 	}
 
 	/*
