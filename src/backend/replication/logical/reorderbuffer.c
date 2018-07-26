@@ -636,7 +636,7 @@ ReorderBufferQueueMessage(ReorderBuffer *rb, TransactionId xid,
 			txn = ReorderBufferTXNByXid(rb, xid, true, NULL, lsn, true);
 
 		/* setup snapshot to allow catalog access */
-		SetupHistoricSnapshot(snapshot_now, NULL);
+		SetupHistoricSnapshot(snapshot_now, NULL, xid);
 		PG_TRY();
 		{
 			rb->message(rb, txn, lsn, false, prefix, message_size, message);
@@ -1442,6 +1442,7 @@ ReorderBufferCommitInternal(ReorderBufferTXN *txn,
 	volatile CommandId command_id = FirstCommandId;
 	bool		using_subtxn;
 	ReorderBufferIterTXNState *volatile iterstate = NULL;
+	MemoryContext ccxt = CurrentMemoryContext;
 
 	txn->final_lsn = commit_lsn;
 	txn->end_lsn = end_lsn;
@@ -1468,7 +1469,7 @@ ReorderBufferCommitInternal(ReorderBufferTXN *txn,
 	ReorderBufferBuildTupleCidHash(rb, txn);
 
 	/* setup the initial snapshot */
-	SetupHistoricSnapshot(snapshot_now, txn->tuplecid_hash);
+	SetupHistoricSnapshot(snapshot_now, txn->tuplecid_hash, xid);
 
 	/*
 	 * Decoding needs access to syscaches et al., which in turn use
@@ -1709,7 +1710,7 @@ ReorderBufferCommitInternal(ReorderBufferTXN *txn,
 
 
 					/* and continue with the new one */
-					SetupHistoricSnapshot(snapshot_now, txn->tuplecid_hash);
+					SetupHistoricSnapshot(snapshot_now, txn->tuplecid_hash, xid);
 					break;
 
 				case REORDER_BUFFER_CHANGE_INTERNAL_COMMAND_ID:
@@ -1729,7 +1730,7 @@ ReorderBufferCommitInternal(ReorderBufferTXN *txn,
 						snapshot_now->curcid = command_id;
 
 						TeardownHistoricSnapshot(false);
-						SetupHistoricSnapshot(snapshot_now, txn->tuplecid_hash);
+						SetupHistoricSnapshot(snapshot_now, txn->tuplecid_hash, xid);
 
 						/*
 						 * Every time the CommandId is incremented, we could
@@ -1814,6 +1815,20 @@ ReorderBufferCommitInternal(ReorderBufferTXN *txn,
 	PG_CATCH();
 	{
 		/* TODO: Encapsulate cleanup from the PG_TRY and PG_CATCH blocks */
+		MemoryContext ecxt = MemoryContextSwitchTo(ccxt);
+		ErrorData  *errdata = CopyErrorData();
+
+		/*
+		 * if the catalog scan access returned an error of
+		 * rollback, then abort on the other side as well
+		 */
+		if (errdata->sqlerrcode == ERRCODE_TRANSACTION_ROLLBACK)
+		{
+			elog(LOG, "stopping decoding of %s (%u)",
+				 txn->gid[0] != '\0'? txn->gid:"", txn->xid);
+			rb->abort(rb, txn, commit_lsn);
+		}
+
 		if (iterstate)
 			ReorderBufferIterTXNFinish(rb, iterstate);
 
@@ -1837,7 +1852,14 @@ ReorderBufferCommitInternal(ReorderBufferTXN *txn,
 		/* remove potential on-disk data, and deallocate */
 		ReorderBufferCleanupTXN(rb, txn);
 
-		PG_RE_THROW();
+		/* re-throw only if it's not an abort */
+		if (errdata->sqlerrcode != ERRCODE_TRANSACTION_ROLLBACK)
+		{
+			MemoryContextSwitchTo(ecxt);
+			PG_RE_THROW();
+		}
+		else
+			FlushErrorState();
 	}
 	PG_END_TRY();
 }

@@ -103,8 +103,10 @@ extern char *ExportSnapshot(Snapshot snapshot);
 
 /* Support for catalog timetravel for logical decoding */
 struct HTAB;
+extern TransactionId CheckXidAlive;
 extern struct HTAB *HistoricSnapshotGetTupleCids(void);
-extern void SetupHistoricSnapshot(Snapshot snapshot_now, struct HTAB *tuplecids);
+extern void SetupHistoricSnapshot(Snapshot snapshot_now, struct HTAB *tuplecids,
+								  TransactionId snapshot_xid);
 extern void TeardownHistoricSnapshot(bool is_error);
 extern bool HistoricSnapshotActive(void);
 

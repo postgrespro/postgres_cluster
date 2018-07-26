@@ -153,6 +153,13 @@ static Snapshot CatalogSnapshot = NULL;
 static Snapshot HistoricSnapshot = NULL;
 
 /*
+ * An xid value pointing to a possibly ongoing or a prepared transaction.
+ * Currently used in logical decoding.  It's possible that such transactions
+ * can get aborted while the decoding is ongoing.
+ */
+TransactionId CheckXidAlive = InvalidTransactionId;
+
+/*
  * These are updated by GetSnapshotData.  We initialize them this way
  * for the convenience of TransactionIdIsInProgress: even in bootstrap
  * mode, we don't want it to say that BootstrapTransactionId is in progress.
@@ -2000,10 +2007,14 @@ MaintainOldSnapshotTimeMapping(TimestampTz whenTaken, TransactionId xmin)
  * Setup a snapshot that replaces normal catalog snapshots that allows catalog
  * access to behave just like it did at a certain point in the past.
  *
+ * If a valid xid is passed in, we check if it is uncommitted and track it in
+ * CheckXidAlive.  This is to re-check XID status while accessing catalog.
+ *
  * Needed for logical decoding.
  */
 void
-SetupHistoricSnapshot(Snapshot historic_snapshot, HTAB *tuplecids)
+SetupHistoricSnapshot(Snapshot historic_snapshot, HTAB *tuplecids,
+					  TransactionId snapshot_xid)
 {
 	Assert(historic_snapshot != NULL);
 
@@ -2012,8 +2023,17 @@ SetupHistoricSnapshot(Snapshot historic_snapshot, HTAB *tuplecids)
 
 	/* setup (cmin, cmax) lookup hash */
 	tuplecid_data = tuplecids;
-}
 
+	/*
+	 * setup CheckXidAlive if it's not committed yet. We don't check
+	 * if the xid aborted. That will happen during catalog access.
+	 */
+	if (TransactionIdIsValid(snapshot_xid) &&
+		!TransactionIdDidCommit(snapshot_xid))
+		CheckXidAlive = snapshot_xid;
+	else
+		CheckXidAlive = InvalidTransactionId;
+}
 
 /*
  * Make catalog snapshots behave normally again.
@@ -2023,6 +2043,7 @@ TeardownHistoricSnapshot(bool is_error)
 {
 	HistoricSnapshot = NULL;
 	tuplecid_data = NULL;
+	CheckXidAlive = InvalidTransactionId;
 }
 
 bool
