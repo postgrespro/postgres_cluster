@@ -66,4 +66,9 @@ extern void seq_desc(StringInfo buf, XLogReaderState *rptr);
 extern const char *seq_identify(uint8 info);
 extern void seq_mask(char *pagedata, BlockNumber blkno);
 
+typedef void (*seq_nextval_hook_t)(Oid seq_relid, int64 next);
+extern seq_nextval_hook_t SeqNextvalHook;
+
+extern void AdjustSequence(Oid relid, int64 next);
+
 #endif							/* SEQUENCE_H */

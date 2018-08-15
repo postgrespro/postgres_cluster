@@ -86,6 +86,8 @@ typedef struct SeqTableData
 
 typedef SeqTableData *SeqTable;
 
+seq_nextval_hook_t SeqNextvalHook;
+
 static HTAB *seqhashtab = NULL; /* hash table for SeqTable items */
 
 /*
@@ -628,6 +630,10 @@ nextval_internal(Oid relid, bool check_permissions)
 		elm->last += elm->increment;
 		relation_close(seqrel, NoLock);
 		last_used_seq = elm;
+
+		if (SeqNextvalHook)
+			SeqNextvalHook(relid, elm->last);
+
 		return elm->last;
 	}
 
@@ -823,6 +829,9 @@ nextval_internal(Oid relid, bool check_permissions)
 
 	relation_close(seqrel, NoLock);
 
+	if (SeqNextvalHook)
+		SeqNextvalHook(relid, result);
+
 	return result;
 }
 
@@ -890,6 +899,139 @@ lastval(PG_FUNCTION_ARGS)
 	relation_close(seqrel, NoLock);
 
 	PG_RETURN_INT64(result);
+}
+
+/*
+ * Bump last value to next iff next > value.
+ * Support routine for multimaster's monotonic sequences.
+ */
+void
+AdjustSequence(Oid relid, int64 next)
+{
+	SeqTable	elm;
+	Relation	seqrel;
+	Buffer		buf;
+	HeapTupleData seqdatatuple;
+	Form_pg_sequence_data seq;
+	HeapTuple	pgstuple;
+	Form_pg_sequence pgsform;
+	int64		maxv,
+				minv,
+				incby,
+				cache;
+	int64		last;
+
+	/* open and lock sequence */
+	init_sequence(relid, &elm, &seqrel);
+
+	if (pg_class_aclcheck(elm->relid, GetUserId(), ACL_UPDATE) != ACLCHECK_OK)
+		ereport(ERROR,
+				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+				 errmsg("permission denied for sequence %s",
+						RelationGetRelationName(seqrel))));
+
+	pgstuple = SearchSysCache1(SEQRELID, ObjectIdGetDatum(relid));
+	if (!HeapTupleIsValid(pgstuple))
+		elog(ERROR, "cache lookup failed for sequence %u", relid);
+	pgsform = (Form_pg_sequence) GETSTRUCT(pgstuple);
+	maxv = pgsform->seqmax;
+	minv = pgsform->seqmin;
+	incby = pgsform->seqincrement;
+	cache = pgsform->seqcache;
+	ReleaseSysCache(pgstuple);
+
+	/* cached number is greater than received */
+	if (elm->last != cache && elm->last + incby > next)
+	{
+		relation_close(seqrel, NoLock);
+		return;
+	}
+
+	/* read-only transactions may only modify temp sequences */
+	if (!seqrel->rd_islocaltemp)
+		PreventCommandIfReadOnly("setval()");
+
+	/*
+	 * Forbid this during parallel operation because, to make it work, the
+	 * cooperating backends would need to share the backend-local cached
+	 * sequence information.  Currently, we don't support that.
+	 */
+	PreventCommandIfParallelMode("setval()");
+
+	/* lock page' buffer and read tuple */
+	seq = read_seq_tuple(seqrel, &buf, &seqdatatuple);
+
+	if ((next < minv) || (next > maxv))
+	{
+		char		bufv[100],
+					bufm[100],
+					bufx[100];
+
+		snprintf(bufv, sizeof(bufv), INT64_FORMAT, next);
+		snprintf(bufm, sizeof(bufm), INT64_FORMAT, minv);
+		snprintf(bufx, sizeof(bufx), INT64_FORMAT, maxv);
+		ereport(ERROR,
+				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
+				 errmsg("setval: value %s is out of bounds for sequence \"%s\" (%s..%s)",
+						bufv, RelationGetRelationName(seqrel),
+						bufm, bufx)));
+	}
+
+	last = seq->last_value;
+	if (seq->is_called)
+	{
+		last += incby;
+	}
+	if (last <= next)
+	{
+		next = last + incby*((next - last + incby)/incby);
+
+		/* Set the currval() state only if iscalled = true */
+		if (seq->is_called)
+		{
+			elm->last = next;		/* last returned number */
+			elm->last_valid = true;
+		}
+
+		/* In any case, forget any future cached numbers */
+		elm->cached = elm->last;
+
+		/* check the comment above nextval_internal()'s equivalent call. */
+		if (RelationNeedsWAL(seqrel))
+			GetTopTransactionId();
+
+		START_CRIT_SECTION();
+
+		seq->last_value = next;		/* last fetched number */
+		seq->log_cnt = 0;
+
+		MarkBufferDirty(buf);
+
+		/* XLOG stuff */
+		if (RelationNeedsWAL(seqrel))
+		{
+			xl_seq_rec	xlrec;
+			XLogRecPtr	recptr;
+			Page		page = BufferGetPage(buf);
+
+			XLogBeginInsert();
+			XLogRegisterBuffer(0, buf, REGBUF_WILL_INIT);
+
+			xlrec.node = seqrel->rd_node;
+			XLogRegisterData((char *) &xlrec, sizeof(xl_seq_rec));
+			XLogRegisterData((char *) seqdatatuple.t_data, seqdatatuple.t_len);
+
+			recptr = XLogInsert(RM_SEQ_ID, XLOG_SEQ_LOG);
+
+			PageSetLSN(page, recptr);
+		}
+
+		END_CRIT_SECTION();
+	}
+
+	UnlockReleaseBuffer(buf);
+
+	relation_close(seqrel, NoLock);
 }
 
 /*
