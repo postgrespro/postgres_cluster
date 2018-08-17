@@ -474,8 +474,9 @@ static void
 apply_handle_commit(StringInfo s)
 {
 	LogicalRepCommitData commit_data;
+	uint8	flags = 0;
 
-	logicalrep_read_commit(s, &commit_data);
+	logicalrep_read_commit(s, &commit_data, &flags);
 
 	Assert(commit_data.commit_lsn == remote_final_lsn);
 
@@ -489,7 +490,11 @@ apply_handle_commit(StringInfo s)
 		replorigin_session_origin_lsn = commit_data.end_lsn;
 		replorigin_session_origin_timestamp = commit_data.committime;
 
-		CommitTransactionCommand();
+		if (flags & LOGICALREP_IS_COMMIT)
+			CommitTransactionCommand();
+		else if (flags & LOGICALREP_IS_ABORT)
+			AbortCurrentTransaction();
+
 		pgstat_report_stat(false);
 
 		store_flush_position(commit_data.end_lsn);
@@ -507,6 +512,121 @@ apply_handle_commit(StringInfo s)
 	process_syncing_tables(commit_data.end_lsn);
 
 	pgstat_report_activity(STATE_IDLE, NULL);
+}
+
+static void
+apply_handle_prepare_txn(LogicalRepCommitData *commit_data)
+{
+	Assert(commit_data->commit_lsn == remote_final_lsn);
+	/* The synchronization worker runs in single transaction. */
+	if (IsTransactionState() && !am_tablesync_worker())
+	{
+		/* End the earlier transaction and start a new one */
+		BeginTransactionBlock();
+		CommitTransactionCommand();
+		StartTransactionCommand();
+		/*
+		 * Update origin state so we can restart streaming from correct
+		 * position in case of crash.
+		 */
+		replorigin_session_origin_lsn = commit_data->end_lsn;
+		replorigin_session_origin_timestamp = commit_data->committime;
+
+		PrepareTransactionBlock(commit_data->gid);
+		CommitTransactionCommand();
+		pgstat_report_stat(false);
+
+		store_flush_position(commit_data->end_lsn);
+	}
+	else
+	{
+		/* Process any invalidation messages that might have accumulated. */
+		AcceptInvalidationMessages();
+		maybe_reread_subscription();
+	}
+
+	in_remote_transaction = false;
+
+	/* Process any tables that are being synchronized in parallel. */
+	process_syncing_tables(commit_data->end_lsn);
+
+	pgstat_report_activity(STATE_IDLE, NULL);
+}
+
+static void
+apply_handle_commit_prepared_txn(LogicalRepCommitData *commit_data)
+{
+	/* there is no transaction when COMMIT PREPARED is called */
+	ensure_transaction();
+
+	/*
+	 * Update origin state so we can restart streaming from correct
+	 * position in case of crash.
+	 */
+	replorigin_session_origin_lsn = commit_data->end_lsn;
+	replorigin_session_origin_timestamp = commit_data->committime;
+
+	FinishPreparedTransaction(commit_data->gid, true);
+	CommitTransactionCommand();
+	pgstat_report_stat(false);
+
+	store_flush_position(commit_data->end_lsn);
+	in_remote_transaction = false;
+
+	/* Process any tables that are being synchronized in parallel. */
+	process_syncing_tables(commit_data->end_lsn);
+
+	pgstat_report_activity(STATE_IDLE, NULL);
+}
+
+static void
+apply_handle_rollback_prepared_txn(LogicalRepCommitData *commit_data)
+{
+	/* there is no transaction when ABORT/ROLLBACK PREPARED is called */
+	ensure_transaction();
+
+	/*
+	 * Update origin state so we can restart streaming from correct
+	 * position in case of crash.
+	 */
+	replorigin_session_origin_lsn = commit_data->end_lsn;
+	replorigin_session_origin_timestamp = commit_data->committime;
+
+	/* FIXME: it is ok if xact is absent */
+	FinishPreparedTransaction(commit_data->gid, false);
+	CommitTransactionCommand();
+	pgstat_report_stat(false);
+
+	store_flush_position(commit_data->end_lsn);
+	in_remote_transaction = false;
+
+	/* Process any tables that are being synchronized in parallel. */
+	process_syncing_tables(commit_data->end_lsn);
+
+	pgstat_report_activity(STATE_IDLE, NULL);
+}
+
+/*
+ * Handle PREPARE message.
+ */
+static void
+apply_handle_prepare(StringInfo s)
+{
+	LogicalRepCommitData commit_data;
+	uint8	flags = 0;
+
+	logicalrep_read_prepare(s, &commit_data, &flags);
+
+	if (flags & LOGICALREP_IS_PREPARE)
+		apply_handle_prepare_txn(&commit_data);
+	else if (flags & LOGICALREP_IS_COMMIT_PREPARED)
+		apply_handle_commit_prepared_txn(&commit_data);
+	else if (flags & LOGICALREP_IS_ROLLBACK_PREPARED)
+		apply_handle_rollback_prepared_txn(&commit_data);
+	else
+		ereport(ERROR,
+			(errcode(ERRCODE_PROTOCOL_VIOLATION),
+			 errmsg("wrong [commit|rollback] prepare message")));
 }
 
 /*
@@ -969,9 +1089,13 @@ apply_dispatch(StringInfo s)
 		case 'B':
 			apply_handle_begin(s);
 			break;
-			/* COMMIT */
+			/* COMMIT|ABORT */
 		case 'C':
 			apply_handle_commit(s);
+			break;
+			/* [COMMIT|ROLLBACK] PREPARE */
+		case 'P':
+			apply_handle_prepare(s);
 			break;
 			/* INSERT */
 		case 'I':

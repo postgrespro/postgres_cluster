@@ -75,10 +75,11 @@ void
 logicalrep_write_commit(StringInfo out, ReorderBufferTXN *txn,
 						XLogRecPtr commit_lsn)
 {
-	uint8		flags = 0;
+	uint8	flags = 0;
 
 	pq_sendbyte(out, 'C');		/* sending COMMIT */
 
+	flags |= LOGICALREP_IS_COMMIT;
 	/* send the flags field (unused for now) */
 	pq_sendbyte(out, flags);
 
@@ -89,21 +90,106 @@ logicalrep_write_commit(StringInfo out, ReorderBufferTXN *txn,
 }
 
 /*
- * Read transaction COMMIT from the stream.
+ * Write ABORT to the output stream.
  */
 void
-logicalrep_read_commit(StringInfo in, LogicalRepCommitData *commit_data)
+logicalrep_write_abort(StringInfo out, ReorderBufferTXN *txn,
+						XLogRecPtr abort_lsn)
 {
-	/* read flags (unused for now) */
-	uint8		flags = pq_getmsgbyte(in);
+	uint8	flags = 0;
 
-	if (flags != 0)
-		elog(ERROR, "unrecognized flags %u in commit message", flags);
+	pq_sendbyte(out, 'C');		/* sending ABORT flag below */
+
+	flags |= LOGICALREP_IS_ABORT;
+	/* send the flags field */
+	pq_sendbyte(out, flags);
+
+	/* send fields */
+	pq_sendint64(out, abort_lsn);
+	pq_sendint64(out, txn->end_lsn);
+	pq_sendint64(out, txn->commit_time);
+}
+
+/*
+ * Read transaction COMMIT|ABORT from the stream.
+ */
+void
+logicalrep_read_commit(StringInfo in, LogicalRepCommitData *commit_data,
+					   uint8 *flags)
+{
+	/* read flags */
+	uint8		commit_flags = pq_getmsgbyte(in);
+
+	if (!(commit_flags & LOGICALREP_COMMIT_MASK))
+		elog(ERROR, "unrecognized flags %u in commit|abort message",
+			 commit_flags);
 
 	/* read fields */
 	commit_data->commit_lsn = pq_getmsgint64(in);
 	commit_data->end_lsn = pq_getmsgint64(in);
 	commit_data->committime = pq_getmsgint64(in);
+
+	/* set gid to empty */
+	commit_data->gid[0] = '\0';
+
+	*flags = commit_flags;
+}
+
+/*
+ * Write PREPARE to the output stream.
+ */
+void
+logicalrep_write_prepare(StringInfo out, ReorderBufferTXN *txn,
+						XLogRecPtr prepare_lsn)
+{
+	uint8		flags = 0;
+
+	pq_sendbyte(out, 'P');		/* sending PREPARE protocol */
+
+	if (txn->txn_flags & RBTXN_COMMIT_PREPARED)
+		flags |= LOGICALREP_IS_COMMIT_PREPARED;
+	else if (txn->txn_flags & RBTXN_ROLLBACK_PREPARED)
+		flags |= LOGICALREP_IS_ROLLBACK_PREPARED;
+	else if (txn->txn_flags & RBTXN_PREPARE)
+		flags |= LOGICALREP_IS_PREPARE;
+
+	if (flags == 0)
+		elog(ERROR, "unrecognized flags %u in [commit|rollback] prepare message", flags);
+
+	/* send the flags field */
+	pq_sendbyte(out, flags);
+
+	/* send fields */
+	pq_sendint64(out, prepare_lsn);
+	pq_sendint64(out, txn->end_lsn);
+	pq_sendint64(out, txn->commit_time);
+
+	/* send gid */
+	pq_sendstring(out, txn->gid);
+}
+
+/*
+ * Read transaction PREPARE from the stream.
+ */
+void
+logicalrep_read_prepare(StringInfo in, LogicalRepCommitData *commit_data, uint8 *flags)
+{
+	/* read flags */
+	uint8		prep_flags = pq_getmsgbyte(in);
+
+	if (!(prep_flags & LOGICALREP_PREPARE_MASK))
+		elog(ERROR, "unrecognized flags %u in prepare message", prep_flags);
+
+	/* read fields */
+	commit_data->commit_lsn = pq_getmsgint64(in);
+	commit_data->end_lsn = pq_getmsgint64(in);
+	commit_data->committime = pq_getmsgint64(in);
+
+	/* read gid */
+	strcpy(commit_data->gid, pq_getmsgstring(in));
+
+	/* set flags */
+	*flags = prep_flags;
 }
 
 /*
