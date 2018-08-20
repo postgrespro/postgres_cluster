@@ -201,7 +201,7 @@ my $create_sub = IPC::Run::start(
 	'2>',
 	\$create_sub_stderr);
 $create_sub_stdin .= qq[
-  create subscription tap_sub connection '$publisher_connstr' publication tap_pub with (copy_data=false);
+  create subscription tap_sub connection '$publisher_connstr application_name=$appname' publication tap_pub with (copy_data=false);
   ];
 ## push input
 pump $create_sub while length $create_sub_stdin;
