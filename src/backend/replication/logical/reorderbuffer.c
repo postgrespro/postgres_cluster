@@ -1933,27 +1933,6 @@ ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
 }
 
 /*
- * Check whether this transaction was sent as prepared to subscribers.
- * Called while handling commit|abort prepared.
- */
-bool
-ReorderBufferTxnIsPrepared(ReorderBuffer *rb, TransactionId xid,
-						   const char *gid)
-{
-	ReorderBufferTXN *txn;
-
-	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
-								false);
-
-	/*
-	 * Always call the prepare filter. It's the job of the prepare filter to
-	 * give us the *same* response for a given xid across multiple calls
-	 * (including ones on restart)
-	 */
-	return !(rb->filter_prepare(rb, txn, xid, gid));
-}
-
-/*
  * Send standalone xact event. This is used to handle COMMIT/ABORT PREPARED.
  */
 void
@@ -2173,6 +2152,18 @@ ReorderBufferProcessXid(ReorderBuffer *rb, TransactionId xid, XLogRecPtr lsn)
 	/* many records won't have an xid assigned, centralize check here */
 	if (xid != InvalidTransactionId)
 		ReorderBufferTXNByXid(rb, xid, true, NULL, lsn, true);
+}
+
+/*
+ * Does reorderbuffer currently holds this xact?
+ */
+bool
+ReorderBufferHasXid(ReorderBuffer *rb, TransactionId xid)
+{
+	ReorderBufferTXN *txn;
+
+	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr, true);
+	return txn != NULL;
 }
 
 /*

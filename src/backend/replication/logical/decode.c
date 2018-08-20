@@ -287,8 +287,13 @@ DecodeXactOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 			{
 				xl_xact_parsed_prepare parsed;
 
-				/* check that output plugin is capable of twophase decoding */
-				if (!ctx->options.enable_twophase)
+				/*
+				 * Check that output plugin is capable of twophase decoding.
+				 * We also don't offer to do 2PC if snap is not yet consistent
+				 * as of reading PREPARE.
+				 */
+				if (!ctx->options.enable_twophase ||
+					SnapBuildCurrentState(builder) < SNAPBUILD_CONSISTENT)
 				{
 					ReorderBufferProcessXid(reorder, XLogRecGetXid(r), buf->origptr);
 					break;
@@ -584,12 +589,22 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	TimestampTz commit_time = parsed->xact_time;
 	RepOriginId origin_id = XLogRecGetOrigin(buf->record);
 	int			i;
+	bool		reorderbuffer_has_xid;
 
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
 	{
 		origin_lsn = parsed->origin_lsn;
 		commit_time = parsed->origin_timestamp;
 	}
+
+	/*
+	 * If this is COMMIT PREPARED and ReorderBuffer doesn't have this xid,
+	 * either the plugin refused to do 2PC on this xact or we didn't have
+	 * consistent snapshot yet during PREPARE processing. Anyway, in this case
+	 * we don't do 2PC and replay xact fully now. We must check this early
+	 * since invalidation addition below might add the record to the RB.
+	 */
+	reorderbuffer_has_xid = ReorderBufferHasXid(ctx->reorder, xid);
 
 	/*
 	 * Process invalidation messages, even if we're not interested in the
@@ -663,10 +678,14 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	 * For output plugins that do not support PREPARE-time decoding of
 	 * two-phase transactions, we never even see the PREPARE and all two-phase
 	 * transactions simply fall through to the second branch.
+	 *
+	 * We rely on existence of xid in reorderbuffer to determine was 2PC done
+	 * or not. This is correct because we always see PREPARE before COMMIT
+	 * PREPARED if the latter was after consistent point.
+	 *
 	 */
 	if (TransactionIdIsValid(parsed->twophase_xid) &&
-		ReorderBufferTxnIsPrepared(ctx->reorder,
-								   parsed->twophase_xid, parsed->twophase_gid))
+		!reorderbuffer_has_xid)
 	{
 		Assert(xid == parsed->twophase_xid);
 		/* we are processing COMMIT PREPARED */
@@ -765,7 +784,7 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		!SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr) &&
 		parsed->dbId == ctx->slot->data.database &&
 		!FilterByOrigin(ctx, origin_id) &&
-		ReorderBufferTxnIsPrepared(ctx->reorder, xid, parsed->twophase_gid))
+		!ReorderBufferHasXid(ctx->reorder, xid))
 	{
 		ReorderBufferFinishPrepared(ctx->reorder, xid, buf->origptr, buf->endptr,
 									commit_time, origin_id, origin_lsn,

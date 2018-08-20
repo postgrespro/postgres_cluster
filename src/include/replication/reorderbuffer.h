@@ -497,14 +497,13 @@ void ReorderBufferAddInvalidations(ReorderBuffer *, TransactionId, XLogRecPtr ls
 void ReorderBufferImmediateInvalidation(ReorderBuffer *, uint32 ninvalidations,
 								   SharedInvalidationMessage *invalidations);
 void		ReorderBufferProcessXid(ReorderBuffer *, TransactionId xid, XLogRecPtr lsn);
+bool		ReorderBufferHasXid(ReorderBuffer *, TransactionId xid);
 void		ReorderBufferXidSetCatalogChanges(ReorderBuffer *, TransactionId xid, XLogRecPtr lsn);
 bool		ReorderBufferXidHasCatalogChanges(ReorderBuffer *, TransactionId xid);
 bool		ReorderBufferXidHasBaseSnapshot(ReorderBuffer *, TransactionId xid);
 
 bool ReorderBufferPrepareNeedSkip(ReorderBuffer *rb, TransactionId xid,
 							 const char *gid);
-bool ReorderBufferTxnIsPrepared(ReorderBuffer *rb, TransactionId xid,
-						   const char *gid);
 void ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
 					 XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 					 TimestampTz commit_time,
