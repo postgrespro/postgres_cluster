@@ -11,6 +11,7 @@ $node_publisher->init(allows_streaming => 'logical');
 $node_publisher->append_conf(
         'postgresql.conf', qq(
         max_prepared_transactions = 10
+	    pgoutput.use_twophase = true
         ));
 $node_publisher->start;
 

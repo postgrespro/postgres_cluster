@@ -12,13 +12,18 @@
  */
 #include "postgres.h"
 
+#include "access/genam.h"
+#include "access/heapam.h"
 #include "catalog/pg_publication.h"
+
+#include "nodes/makefuncs.h"
 
 #include "replication/logical.h"
 #include "replication/logicalproto.h"
 #include "replication/origin.h"
 #include "replication/pgoutput.h"
 
+#include "utils/guc.h"
 #include "utils/inval.h"
 #include "utils/int8.h"
 #include "utils/memutils.h"
@@ -26,6 +31,8 @@
 #include "utils/varlena.h"
 
 PG_MODULE_MAGIC;
+
+extern void _PG_init(void);
 
 extern void _PG_output_plugin_init(OutputPluginCallbacks *cb);
 
@@ -62,6 +69,7 @@ static bool publications_valid;
 static List *LoadPublications(List *pubnames);
 static void publication_invalidation_cb(Datum arg, int cacheid,
 							uint32 hashvalue);
+static char *append_shardman_node_id(const char *gid);
 
 /* Entry in the map used to remember which relation schemas we sent. */
 typedef struct RelationSyncEntry
@@ -75,11 +83,28 @@ typedef struct RelationSyncEntry
 /* Map used to remember which relation schemas we sent. */
 static HTAB *RelationSyncCache = NULL;
 
+/* GUC just for tests */
+static bool use_twophase;
+
 static void init_rel_sync_cache(MemoryContext decoding_context);
 static RelationSyncEntry *get_rel_sync_entry(PGOutputData *data, Oid relid);
 static void rel_sync_cache_relation_cb(Datum arg, Oid relid);
 static void rel_sync_cache_publication_cb(Datum arg, int cacheid,
 							  uint32 hashvalue);
+
+void
+_PG_init(void)
+{
+	DefineCustomBoolVariable(
+		"pgoutput.use_twophase",
+		"Toggle 2PC",
+		NULL,
+		&use_twophase,
+		false,
+		PGC_SUSET,
+		0,
+		NULL, NULL, NULL);
+}
 
 /*
  * Specify output plugin callbacks
@@ -337,10 +362,17 @@ static void
 pgoutput_prepare_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					XLogRecPtr prepare_lsn)
 {
+	char *gid = txn->gid;
+
 	OutputPluginUpdateProgress(ctx);
 
 	OutputPluginPrepareWrite(ctx, true);
-	logicalrep_write_prepare(ctx->out, txn, prepare_lsn);
+	/* Append :sysid to gid to avoid collision */
+	if (strstr(gid, "pgfdw:") != NULL)
+		gid = psprintf("%s:%lx", txn->gid, GetSystemIdentifier());
+	logicalrep_write_prepare(ctx->out, txn, prepare_lsn, gid);
+	if (strstr(gid, "pgfdw:") != NULL)
+		pfree(gid);
 	OutputPluginWrite(ctx, true);
 }
 
@@ -351,12 +383,20 @@ static void
 pgoutput_commit_prepared_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					XLogRecPtr prepare_lsn)
 {
+	char *gid = txn->gid;
+
 	OutputPluginUpdateProgress(ctx);
 
 	OutputPluginPrepareWrite(ctx, true);
-	logicalrep_write_prepare(ctx->out, txn, prepare_lsn);
+	/* Append :sysid to gid to avoid collision */
+	if (strstr(gid, "pgfdw:") != NULL)
+		gid = psprintf("%s:%lx", txn->gid, GetSystemIdentifier());
+	logicalrep_write_prepare(ctx->out, txn, prepare_lsn, gid);
+	if (strstr(gid, "pgfdw:") != NULL)
+		pfree(gid);
 	OutputPluginWrite(ctx, true);
 }
+
 /*
  * PREPARE callback
  */
@@ -364,10 +404,17 @@ static void
 pgoutput_abort_prepared_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					XLogRecPtr prepare_lsn)
 {
+	char *gid = txn->gid;
+
 	OutputPluginUpdateProgress(ctx);
 
 	OutputPluginPrepareWrite(ctx, true);
-	logicalrep_write_prepare(ctx->out, txn, prepare_lsn);
+	/* Append :sysid to gid to avoid collision */
+	if (strstr(gid, "pgfdw:") != NULL)
+		gid = psprintf("%s:%lx", txn->gid, GetSystemIdentifier());
+	logicalrep_write_prepare(ctx->out, txn, prepare_lsn, gid);
+	if (strstr(gid, "pgfdw:") != NULL)
+		pfree(gid);
 	OutputPluginWrite(ctx, true);
 }
 
@@ -502,13 +549,17 @@ pgoutput_truncate(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 /*
  * Filter out unnecessary two-phase transactions.
  *
- * Currently, we forward all two-phase transactions
+ * Make 2PC on shardman's xacts.
  */
 static bool
 pgoutput_filter_prepare(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
-								TransactionId xid, const char *gid)
+						TransactionId xid, const char *gid)
 {
-	return false;
+	if (strstr(gid, "pgfdw:") != NULL) /* shardman */
+	{
+		return false;
+	}
+	return !use_twophase;
 }
 
 /*

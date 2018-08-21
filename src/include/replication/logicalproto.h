@@ -92,7 +92,7 @@ extern void logicalrep_write_commit(StringInfo out, ReorderBufferTXN *txn,
 extern void logicalrep_write_abort(StringInfo out, ReorderBufferTXN *txn,
 						XLogRecPtr abort_lsn);
 extern void logicalrep_write_prepare(StringInfo out, ReorderBufferTXN *txn,
-						XLogRecPtr prepare_lsn);
+									 XLogRecPtr prepare_lsn, const char *gid);
 extern void logicalrep_read_commit(StringInfo in,
 					   LogicalRepCommitData *commit_data, uint8 *flags);
 extern void logicalrep_read_prepare(StringInfo in,

@@ -140,7 +140,7 @@ logicalrep_read_commit(StringInfo in, LogicalRepCommitData *commit_data,
  */
 void
 logicalrep_write_prepare(StringInfo out, ReorderBufferTXN *txn,
-						XLogRecPtr prepare_lsn)
+						 XLogRecPtr prepare_lsn, const char *gid)
 {
 	uint8		flags = 0;
 
@@ -165,7 +165,7 @@ logicalrep_write_prepare(StringInfo out, ReorderBufferTXN *txn,
 	pq_sendint64(out, txn->commit_time);
 
 	/* send gid */
-	pq_sendstring(out, txn->gid);
+	pq_sendstring(out, gid);
 }
 
 /*
