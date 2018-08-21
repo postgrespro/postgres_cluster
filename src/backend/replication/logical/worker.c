@@ -592,8 +592,22 @@ apply_handle_rollback_prepared_txn(LogicalRepCommitData *commit_data)
 	replorigin_session_origin_lsn = commit_data->end_lsn;
 	replorigin_session_origin_timestamp = commit_data->committime;
 
-	/* FIXME: it is ok if xact is absent */
-	FinishPreparedTransaction(commit_data->gid, false);
+	/* It is ok if xact is absent, currently AP might came after ABORT */
+	PG_TRY();
+	{
+		FinishPreparedTransaction(commit_data->gid, false);
+	}
+	PG_CATCH();
+	{
+		ErrorData  *errdata = CopyErrorData();
+
+		/* re-throw if not 'xact absent' error */
+		if (errdata->sqlerrcode != ERRCODE_UNDEFINED_OBJECT)
+		{
+			PG_RE_THROW();
+		}
+	}
+	PG_END_TRY();
 	CommitTransactionCommand();
 	pgstat_report_stat(false);
 
