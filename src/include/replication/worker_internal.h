@@ -17,6 +17,7 @@
 #include "access/xlogdefs.h"
 #include "catalog/pg_subscription.h"
 #include "datatype/timestamp.h"
+#include "replication/logicalworker.h"
 #include "storage/lock.h"
 
 typedef struct LogicalRepWorker
@@ -68,6 +69,13 @@ extern LogicalRepWorker *MyLogicalRepWorker;
 
 extern bool in_remote_transaction;
 
+/*
+ * To correctly sew initial tablesync and main apply process together, we need
+ * to replay in initial tablesync worker all committed xacts prepared before
+ * the sync point.
+ */
+extern int num_unfinished_prepares;
+
 extern void logicalrep_worker_attach(int slot);
 extern LogicalRepWorker *logicalrep_worker_find(Oid subid, Oid relid,
 					   bool only_running);
@@ -90,6 +98,17 @@ static inline bool
 am_tablesync_worker(void)
 {
 	return OidIsValid(MyLogicalRepWorker->relid);
+}
+
+/*
+ * I am tablesync worker and 2pc is enabled; so we need to track
+ * prepared xacts, but decode them only on commit/abort as usual.
+ */
+static inline bool
+need_prepare_notifies(void)
+{
+	return am_tablesync_worker() &&
+		logical_replication_2pc != LOGICAL_REPLICATION_2PC_OFF;
 }
 
 #endif							/* WORKER_INTERNAL_H */

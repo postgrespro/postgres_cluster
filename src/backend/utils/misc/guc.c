@@ -64,6 +64,7 @@
 #include "postmaster/syslogger.h"
 #include "postmaster/walwriter.h"
 #include "replication/logicallauncher.h"
+#include "replication/logicalworker.h"
 #include "replication/slot.h"
 #include "replication/syncrep.h"
 #include "replication/walreceiver.h"
@@ -418,6 +419,13 @@ static const struct config_enum_entry password_encryption_options[] = {
 	{"true", PASSWORD_TYPE_MD5, true},
 	{"yes", PASSWORD_TYPE_MD5, true},
 	{"1", PASSWORD_TYPE_MD5, true},
+	{NULL, 0, false}
+};
+
+static const struct config_enum_entry logical_replication_2pc_options[] = {
+	{"off", LOGICAL_REPLICATION_2PC_OFF, true},
+	{"shardman", LOGICAL_REPLICATION_2PC_SHARDMAN, true},
+	{"always", LOGICAL_REPLICATION_2PC_ALWAYS, true},
 	{NULL, 0, false}
 };
 
@@ -4167,6 +4175,16 @@ static struct config_enum ConfigureNamesEnum[] =
 		},
 		&Password_encryption,
 		PASSWORD_TYPE_MD5, password_encryption_options,
+		NULL, NULL, NULL
+	},
+
+	{
+		{"logical_replication_2pc", PGC_POSTMASTER, REPLICATION_SUBSCRIBERS,
+		 gettext_noop("Perform 2PC in logical replication?"),
+		 NULL
+		},
+		&logical_replication_2pc,
+		LOGICAL_REPLICATION_2PC_OFF, logical_replication_2pc_options,
 		NULL, NULL, NULL
 	},
 

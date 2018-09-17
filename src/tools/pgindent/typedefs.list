@@ -1233,7 +1233,7 @@ LogicalOutputPluginWriterPrepareWrite
 LogicalOutputPluginWriterUpdateProgress
 LogicalOutputPluginWriterWrite
 LogicalRepBeginData
-LogicalRepCommitData
+LogicalRepXactData
 LogicalRepCtxStruct
 LogicalRepRelId
 LogicalRepRelMapEntry

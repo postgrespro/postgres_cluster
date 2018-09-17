@@ -89,6 +89,12 @@ typedef struct LogicalDecodingContext
 	bool		prepared_write;
 	XLogRecPtr	write_location;
 	TransactionId write_xid;
+
+	/*
+	 * See same field at ReorderBuffer. Published only after finding
+	 * startpoint.
+	 */
+	int		num_unfinished_prepares;
 } LogicalDecodingContext;
 
 

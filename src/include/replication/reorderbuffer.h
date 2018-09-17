@@ -211,6 +211,7 @@ typedef struct ReorderBufferTXN
 	 * * plain commit record
 	 * * plain commit record, of a parent transaction
 	 * * prepared transaction commit
+	 * * LSN of PREPARE record if we are doing 2PC decoding
 	 * * plain abort record
 	 * * prepared transaction abort
 	 * * error during decoding
@@ -310,6 +311,11 @@ typedef struct ReorderBufferTXN
 	 * ---
 	 */
 	dlist_node	node;
+
+	/*
+	 * LSN of PREPARE record, if two-phase
+	 */
+	XLogRecPtr	prepare_lsn;
 
 } ReorderBufferTXN;
 
@@ -423,6 +429,8 @@ struct ReorderBuffer
 	ReorderBufferPrepareCB prepare;
 	ReorderBufferCommitPreparedCB commit_prepared;
 	ReorderBufferAbortPreparedCB abort_prepared;
+	ReorderBufferPrepareCB prepare_notify;
+	ReorderBufferAbortPreparedCB abort_prepared_notify;
 	ReorderBufferMessageCB message;
 
 	/*
@@ -452,6 +460,14 @@ struct ReorderBuffer
 	/* buffer for disk<->memory conversions */
 	char	   *outbuf;
 	Size		outbufsize;
+
+	/*
+	 * Number of xacts for which we had read PREPARE, but didn't replayed yet
+	 * (i.e. non-2PC decoding). We actually need it only during snap building
+	 * (later the receiver counts them himself via _notify callbacks), but try
+	 * to maintain it always correct.
+	 */
+	int		num_unfinished_prepares;
 };
 
 
@@ -497,6 +513,9 @@ void ReorderBufferAddInvalidations(ReorderBuffer *, TransactionId, XLogRecPtr ls
 void ReorderBufferImmediateInvalidation(ReorderBuffer *, uint32 ninvalidations,
 								   SharedInvalidationMessage *invalidations);
 void		ReorderBufferProcessXid(ReorderBuffer *, TransactionId xid, XLogRecPtr lsn);
+void ReorderBufferProcessXidPrepared(ReorderBuffer *rb, TransactionId xid,
+									 XLogRecPtr lsn, const char *gid);
+XLogRecPtr ReorderBufferXidGetPreparedLSN(ReorderBuffer *rb, TransactionId xid);
 bool		ReorderBufferHasXid(ReorderBuffer *, TransactionId xid);
 void		ReorderBufferXidSetCatalogChanges(ReorderBuffer *, TransactionId xid, XLogRecPtr lsn);
 bool		ReorderBufferXidHasCatalogChanges(ReorderBuffer *, TransactionId xid);
@@ -508,7 +527,11 @@ void ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
 					 XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 					 TimestampTz commit_time,
 					 RepOriginId origin_id, XLogRecPtr origin_lsn,
-					 char *gid);
+					 const char *gid);
+void ReorderBufferPrepareNotify(ReorderBuffer *rb, TransactionId xid,
+								XLogRecPtr prepare_lsn, const char *gid);
+void ReorderBufferAbortPreparedNotify(ReorderBuffer *rb, TransactionId xid,
+									  XLogRecPtr prepare_lsn, const char *gid);
 ReorderBufferTXN *ReorderBufferGetOldestTXN(ReorderBuffer *);
 TransactionId ReorderBufferGetOldestXmin(ReorderBuffer *rb);
 

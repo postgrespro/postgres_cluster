@@ -14,6 +14,7 @@
 #define PGOUTPUT_H
 
 #include "nodes/pg_list.h"
+#include "replication/logicalworker.h"
 
 typedef struct PGOutputData
 {
@@ -25,6 +26,8 @@ typedef struct PGOutputData
 
 	List	   *publication_names;
 	List	   *publications;
+	LogicalReplication2PCType twophase;
+	bool		prepare_notifies;
 } PGOutputData;
 
 #endif							/* PGOUTPUT_H */

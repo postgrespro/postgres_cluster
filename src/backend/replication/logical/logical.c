@@ -70,6 +70,10 @@ static void commit_prepared_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *t
 						   XLogRecPtr commit_lsn);
 static void abort_prepared_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 						  XLogRecPtr abort_lsn);
+static void prepare_notify_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
+									  XLogRecPtr prepare_lsn);
+static void abort_prepared_notify_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
+											 XLogRecPtr abort_lsn);
 static void change_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 				  Relation relation, ReorderBufferChange *change);
 static void truncate_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
@@ -202,6 +206,8 @@ StartupDecodingContext(List *output_plugin_options,
 	ctx->reorder->prepare = prepare_cb_wrapper;
 	ctx->reorder->commit_prepared = commit_prepared_cb_wrapper;
 	ctx->reorder->abort_prepared = abort_prepared_cb_wrapper;
+	ctx->reorder->prepare_notify = prepare_notify_cb_wrapper;
+	ctx->reorder->abort_prepared_notify = abort_prepared_notify_cb_wrapper;
 	ctx->reorder->message = message_cb_wrapper;
 
 	ctx->out = makeStringInfo();
@@ -497,6 +503,8 @@ DecodingContextFindStartpoint(LogicalDecodingContext *ctx)
 
 		CHECK_FOR_INTERRUPTS();
 	}
+
+	ctx->num_unfinished_prepares = ctx->reorder->num_unfinished_prepares;
 
 	SpinLockAcquire(&slot->mutex);
 	slot->data.confirmed_flush = ctx->reader->EndRecPtr;
@@ -848,6 +856,76 @@ abort_prepared_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
 	/* Push callback + info on the error context stack */
 	state.ctx = ctx;
 	state.callback_name = "abort_prepared";
+	state.report_location = txn->final_lsn; /* beginning of commit record */
+	errcallback.callback = output_plugin_error_callback;
+	errcallback.arg = (void *) &state;
+	errcallback.previous = error_context_stack;
+	error_context_stack = &errcallback;
+
+	/* set output state */
+	ctx->accept_writes = true;
+	ctx->write_xid = txn->xid;
+	ctx->write_location = txn->end_lsn; /* points to the end of the record */
+
+	/* do the actual work: call callback */
+	ctx->callbacks.abort_prepared_cb(ctx, txn, abort_lsn);
+
+	/* Pop the error context stack */
+	error_context_stack = errcallback.previous;
+}
+
+static void
+prepare_notify_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
+						  XLogRecPtr prepare_lsn)
+{
+	LogicalDecodingContext *ctx = cache->private_data;
+	LogicalErrorCallbackState state;
+	ErrorContextCallback errcallback;
+
+	/*
+	 * The prepare_notify callback is optional.
+	 */
+	if (!ctx->callbacks.prepare_notify_cb)
+		return;
+
+	/* Push callback + info on the error context stack */
+	state.ctx = ctx;
+	state.callback_name = "prepare_notify";
+	state.report_location = txn->prepare_lsn;
+	errcallback.callback = output_plugin_error_callback;
+	errcallback.arg = (void *) &state;
+	errcallback.previous = error_context_stack;
+	error_context_stack = &errcallback;
+
+	/* set output state */
+	ctx->accept_writes = true;
+	ctx->write_xid = txn->xid;
+	ctx->write_location = txn->prepare_lsn; /* Shouldn't matter */
+
+	/* do the actual work: call callback */
+	ctx->callbacks.prepare_notify_cb(ctx, txn, prepare_lsn);
+
+	/* Pop the error context stack */
+	error_context_stack = errcallback.previous;
+}
+
+static void
+abort_prepared_notify_cb_wrapper(ReorderBuffer *cache, ReorderBufferTXN *txn,
+								 XLogRecPtr abort_lsn)
+{
+	LogicalDecodingContext *ctx = cache->private_data;
+	LogicalErrorCallbackState state;
+	ErrorContextCallback errcallback;
+
+	/*
+	 * The abort_prepared_notify callback is optional.
+	 */
+	if (!ctx->callbacks.abort_prepared_cb)
+		return;
+
+	/* Push callback + info on the error context stack */
+	state.ctx = ctx;
+	state.callback_name = "abort_prepared_notify";
 	state.report_location = txn->final_lsn; /* beginning of commit record */
 	errcallback.callback = output_plugin_error_callback;
 	errcallback.arg = (void *) &state;

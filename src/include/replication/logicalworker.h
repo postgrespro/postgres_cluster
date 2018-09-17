@@ -16,4 +16,13 @@ extern void ApplyWorkerMain(Datum main_arg);
 
 extern bool IsLogicalWorker(void);
 
+/* GUC */
+typedef enum LogicalReplication2PCType
+{
+	LOGICAL_REPLICATION_2PC_OFF, /* Never do 2PC */
+	LOGICAL_REPLICATION_2PC_SHARDMAN, /* 2PC only xacts with shardman gid */
+	LOGICAL_REPLICATION_2PC_ALWAYS /* Always do 2PC */
+} LogicalReplication2PCType;
+extern int logical_replication_2pc;
+
 #endif							/* LOGICALWORKER_H */

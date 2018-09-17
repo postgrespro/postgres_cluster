@@ -219,6 +219,7 @@ DecodeXactOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	XLogReaderState *r = buf->record;
 	uint8		info = XLogRecGetInfo(r) & XLOG_XACT_OPMASK;
 
+
 	/*
 	 * No point in doing anything yet, data could not be decoded anyway. It's
 	 * ok not to call ReorderBufferProcessXid() in that case, except in the
@@ -285,34 +286,11 @@ DecodeXactOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 			}
 		case XLOG_XACT_PREPARE:
 			{
-				xl_xact_parsed_prepare parsed;
+				xl_xact_parsed_prepare	parsed;
 
-				/*
-				 * Check that output plugin is capable of twophase decoding.
-				 * We also don't offer to do 2PC if snap is not yet consistent
-				 * as of reading PREPARE.
-				 */
-				if (!ctx->options.enable_twophase ||
-					SnapBuildCurrentState(builder) < SNAPBUILD_CONSISTENT)
-				{
-					ReorderBufferProcessXid(reorder, XLogRecGetXid(r), buf->origptr);
-					break;
-				}
-
-				/* ok, parse it */
+				/* parse it */
 				ParsePrepareRecord(XLogRecGetInfo(buf->record),
 								   XLogRecGetData(buf->record), &parsed);
-
-				/* does output plugin want this particular transaction? */
-				if (ctx->callbacks.filter_prepare_cb &&
-					ReorderBufferPrepareNeedSkip(reorder, parsed.twophase_xid,
-												 parsed.twophase_gid))
-				{
-					ReorderBufferProcessXid(reorder, parsed.twophase_xid,
-											buf->origptr);
-					break;
-				}
-
 				DecodePrepare(ctx, buf, &parsed);
 				break;
 			}
@@ -598,11 +576,10 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	}
 
 	/*
-	 * If this is COMMIT PREPARED and ReorderBuffer doesn't have this xid,
-	 * either the plugin refused to do 2PC on this xact or we didn't have
-	 * consistent snapshot yet during PREPARE processing. Anyway, in this case
-	 * we don't do 2PC and replay xact fully now. We must check this early
-	 * since invalidation addition below might add the record to the RB.
+	 * If this is COMMIT PREPARED and ReorderBuffer doesn't have this xid, it
+	 * means that we have decided to replay xact on PREPARE. We must check
+	 * this early since invalidations addition below might add the record to
+	 * the RB.
 	 */
 	reorderbuffer_has_xid = ReorderBufferHasXid(ctx->reorder, xid);
 
@@ -621,6 +598,54 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 
 	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
 					   parsed->nsubxacts, parsed->subxacts);
+
+	/*
+	 * This is 2PC xact for which we do 2PC decoding? We rely on existence of
+	 * xid in reorderbuffer to determine was 2PC done or not. This is correct
+	 * because we always see PREPARE before COMMIT PREPARED if the latter was
+	 * after consistent point. Invalidations will be handled in
+	 * ReorderBufferFinishPrepared.
+	 */
+	if (TransactionIdIsValid(parsed->twophase_xid) &&
+		SnapBuildCurrentState(ctx->snapshot_builder) == SNAPBUILD_CONSISTENT &&
+		!reorderbuffer_has_xid)
+	{
+		if (!SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr))
+		{
+			ReorderBufferFinishPrepared(ctx->reorder, xid, buf->origptr, buf->endptr,
+										commit_time, origin_id, origin_lsn,
+										parsed->twophase_gid, true);
+		}
+		else
+		{
+			/* Already replayed, purge */
+			ReorderBufferForget(ctx->reorder, xid, buf->origptr);
+		}
+		return;
+	}
+
+	/*
+	 * Register the commit if xact was interesting
+	 */
+	if (TransactionIdIsValid(parsed->twophase_xid))
+	{
+		/*
+		 * Tell the reorderbuffer about the surviving subtransactions. Do this
+		 * early so we can check ReorderBufferXidHasBaseSnapshot. Ugly.
+		 */
+		for (i = 0; i < parsed->nsubxacts; i++)
+		{
+			ReorderBufferCommitChild(ctx->reorder, xid, parsed->subxacts[i],
+									 buf->origptr, buf->endptr);
+		}
+		if (parsed->dbId == ctx->slot->data.database &&
+			!FilterByOrigin(ctx, XLogRecGetOrigin(buf->record)) &&
+			!ctx->fast_forward &&
+			/* Count xact only if it was prepared after FULL_SNAPSHOT */
+			!XLogRecPtrIsInvalid(ReorderBufferXidGetPreparedLSN(ctx->reorder, xid)) &&
+			(ReorderBufferXidHasBaseSnapshot(ctx->reorder, xid)))
+			ctx->reorder->num_unfinished_prepares--;
+	}
 
 	/* ----
 	 * Check whether we are interested in this specific transaction, and tell
@@ -661,44 +686,16 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 		return;
 	}
 
-	/* tell the reorderbuffer about the surviving subtransactions */
-	for (i = 0; i < parsed->nsubxacts; i++)
-	{
-		ReorderBufferCommitChild(ctx->reorder, xid, parsed->subxacts[i],
-								 buf->origptr, buf->endptr);
-	}
+	if (!TransactionIdIsValid(parsed->twophase_xid))
+		for (i = 0; i < parsed->nsubxacts; i++)
+		{
+			ReorderBufferCommitChild(ctx->reorder, xid, parsed->subxacts[i],
+									 buf->origptr, buf->endptr);
+		}
 
-	/*
-	 * Decide if we're processing COMMIT PREPARED, or a regular COMMIT.
-	 * Regular commit simply triggers a replay of transaction changes from the
-	 * reorder buffer. For COMMIT PREPARED that however already happened at
-	 * PREPARE time, and so we only need to notify the subscriber that the GID
-	 * finally committed.
-	 *
-	 * For output plugins that do not support PREPARE-time decoding of
-	 * two-phase transactions, we never even see the PREPARE and all two-phase
-	 * transactions simply fall through to the second branch.
-	 *
-	 * We rely on existence of xid in reorderbuffer to determine was 2PC done
-	 * or not. This is correct because we always see PREPARE before COMMIT
-	 * PREPARED if the latter was after consistent point.
-	 *
-	 */
-	if (TransactionIdIsValid(parsed->twophase_xid) &&
-		!reorderbuffer_has_xid)
-	{
-		Assert(xid == parsed->twophase_xid);
-		/* we are processing COMMIT PREPARED */
-		ReorderBufferFinishPrepared(ctx->reorder, xid, buf->origptr, buf->endptr,
-									commit_time, origin_id, origin_lsn,
-									parsed->twophase_gid, true);
-	}
-	else
-	{
-		/* replay actions of all transaction + subtransactions in order */
-		ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
-							commit_time, origin_id, origin_lsn);
-	}
+	/* replay actions of all transaction + subtransactions in order */
+	ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
+						commit_time, origin_id, origin_lsn);
 }
 
 /*
@@ -708,24 +705,32 @@ static void
 DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 			  xl_xact_parsed_prepare * parsed)
 {
-	XLogRecPtr	origin_lsn = parsed->origin_lsn;
-	TimestampTz commit_time = parsed->origin_timestamp;
+	XLogRecPtr	origin_lsn = InvalidXLogRecPtr;
+	TimestampTz commit_time = parsed->xact_time;
 	XLogRecPtr	origin_id = XLogRecGetOrigin(buf->record);
 	int			i;
 	TransactionId xid = parsed->twophase_xid;
+	const char *gid	= parsed->twophase_gid;
+	ReorderBuffer	*reorder = ctx->reorder;
+	SnapBuild	*builder = ctx->snapshot_builder;
+
+	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
+	{
+		origin_lsn = parsed->origin_lsn;
+		commit_time = parsed->origin_timestamp;
+	}
+
+	/* Remember at which LSN xact was prepared */
+	ReorderBufferProcessXidPrepared(reorder, xid, buf->origptr, gid);
 
 	/*
-	 * Process invalidation messages, even if we're not interested in the
-	 * transaction's contents, since the various caches need to always be
-	 * consistent.
+	 * If we are definitely not interested in this xact, do nothing; RB will
+	 * be cleaned and invalidations handled at commit/abort.
 	 */
-	if (parsed->nmsgs > 0)
-	{
-		if (!ctx->fast_forward)
-			ReorderBufferAddInvalidations(ctx->reorder, xid, buf->origptr,
-										  parsed->nmsgs, parsed->msgs);
-		ReorderBufferXidSetCatalogChanges(ctx->reorder, xid, buf->origptr);
-	}
+	if ((parsed->dbId != InvalidOid && parsed->dbId != ctx->slot->data.database) ||
+		FilterByOrigin(ctx, XLogRecGetOrigin(buf->record)) ||
+		ctx->fast_forward)
+		return;
 
 	/*
 	 * Tell the reorderbuffer about the surviving subtransactions. We need to
@@ -740,22 +745,54 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 								 buf->origptr, buf->endptr);
 	}
 
-	if (SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr) ||
-		(parsed->dbId != InvalidOid && parsed->dbId != ctx->slot->data.database) ||
-		ctx->fast_forward || FilterByOrigin(ctx, origin_id))
+	/* We don't offer 2PC if we haven't yet reached consistent snap */
+	if (SnapBuildCurrentState(builder) == SNAPBUILD_CONSISTENT &&
+		ctx->options.enable_twophase &&
+		!ReorderBufferPrepareNeedSkip(reorder, xid, gid))
 	{
-		for (i = 0; i < parsed->nsubxacts; i++)
+		/* We might have already replayed it */
+		if (!SnapBuildXactNeedsSkip(builder, buf->origptr))
 		{
-			ReorderBufferForget(ctx->reorder, parsed->subxacts[i], buf->origptr);
-		}
-		ReorderBufferForget(ctx->reorder, xid, buf->origptr);
+			/*
+			 * Process invalidation messages, even if we're not interested in the
+			 * transaction's contents, since the various caches need to always be
+			 * consistent.
+			 */
+			if (parsed->nmsgs > 0)
+			{
+				if (!ctx->fast_forward)
+					ReorderBufferAddInvalidations(ctx->reorder, xid, buf->origptr,
+												  parsed->nmsgs, parsed->msgs);
+				ReorderBufferXidSetCatalogChanges(ctx->reorder, xid, buf->origptr);
+			}
 
+			/* replay actions of all transaction + subtransactions in order */
+			ReorderBufferPrepare(ctx->reorder, xid, buf->origptr, buf->endptr,
+								 commit_time, origin_id, origin_lsn, gid);
+		}
+		else
+		{
+			/* Already replayed, purge */
+			ReorderBufferAbort(ctx->reorder, xid, buf->record->EndRecPtr);
+		}
 		return;
 	}
 
-	/* replay actions of all transaction + subtransactions in order */
-	ReorderBufferPrepare(ctx->reorder, xid, buf->origptr, buf->endptr,
-						 commit_time, origin_id, origin_lsn, parsed->twophase_gid);
+	elog(DEBUG4, "Decided not to do 2PC for gid %s, xid %d,  LSN %X/%X", gid, xid,
+		 (uint32) (buf->origptr >> 32), (uint32) buf->origptr);
+	/*
+	 * So we don't perform 2PC. Then remember xact if we are going to replay
+	 * it. It is imporant to check base snap availability: if it is absent,
+	 * xact has no changes and will not be replayed. Thus the receiver will
+	 * never know it has committed.
+	 */
+	if (ReorderBufferXidHasBaseSnapshot(ctx->reorder, xid))
+	{
+		reorder->num_unfinished_prepares++;
+		/* If we are beyond the startpoint, also inform the receiver */
+		if (!SnapBuildXactNeedsSkip(builder, buf->origptr))
+			ReorderBufferPrepareNotify(reorder, xid, buf->origptr, gid);
+	}
 }
 
 /*
@@ -770,6 +807,7 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	XLogRecPtr	origin_lsn = InvalidXLogRecPtr;
 	TimestampTz commit_time = 0;
 	XLogRecPtr	origin_id = XLogRecGetOrigin(buf->record);
+	SnapBuild  *builder = ctx->snapshot_builder;
 
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
 	{
@@ -778,18 +816,56 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 	}
 
 	/*
-	 * If it's ROLLBACK PREPARED then handle it via callbacks.
+	 * This is 2PC xact for which we do 2PC decoding? If RB doesn't have 2PC
+	 * xid, it was replayed on PREPARE.
 	 */
-	if (TransactionIdIsValid(xid) &&
-		!SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr) &&
-		parsed->dbId == ctx->slot->data.database &&
-		!FilterByOrigin(ctx, origin_id) &&
+	if (TransactionIdIsValid(parsed->twophase_xid) &&
+		SnapBuildCurrentState(ctx->snapshot_builder) == SNAPBUILD_CONSISTENT &&
 		!ReorderBufferHasXid(ctx->reorder, xid))
 	{
-		ReorderBufferFinishPrepared(ctx->reorder, xid, buf->origptr, buf->endptr,
-									commit_time, origin_id, origin_lsn,
-									parsed->twophase_gid, false);
+		if (!SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr))
+		{
+			ReorderBufferFinishPrepared(ctx->reorder, xid, buf->origptr, buf->endptr,
+										commit_time, origin_id, origin_lsn,
+										parsed->twophase_gid, false);
+		}
+		else
+		{
+			/* Already replayed, purge */
+			ReorderBufferAbort(ctx->reorder, xid, buf->origptr);
+		}
 		return;
+
+	}
+
+	/*
+	 * Ok, we don't perform 2PC. But if xact was two-phase, register the abort
+	 * if xact was interesting; purge the RBs anyway.
+	 */
+	if (TransactionIdIsValid(parsed->twophase_xid) &&
+		(parsed->dbId == ctx->slot->data.database) &&
+		!FilterByOrigin(ctx, XLogRecGetOrigin(buf->record)) &&
+		!ctx->fast_forward &&
+		/* Count xact only if it was prepared after FULL_SNAPSHOT */
+		!XLogRecPtrIsInvalid(ReorderBufferXidGetPreparedLSN(ctx->reorder, xid)))
+	{
+		/*
+		 * tell the reorderbuffer about the surviving subtransactions,
+		 * otherwise ReorderBufferXidHasBaseSnapshot check below is incorrect
+		 */
+		for (i = 0; i < parsed->nsubxacts; i++)
+		{
+			ReorderBufferCommitChild(ctx->reorder, xid, parsed->subxacts[i],
+									 buf->origptr, buf->endptr);
+		}
+		if (ReorderBufferXidHasBaseSnapshot(ctx->reorder, xid))
+		{
+			ctx->reorder->num_unfinished_prepares--;
+			/* If we are beyond the startpoint, inform the receiver */
+			if (!SnapBuildXactNeedsSkip(builder, buf->origptr))
+				ReorderBufferAbortPreparedNotify(ctx->reorder, xid, buf->origptr,
+												 parsed->twophase_gid);
+		}
 	}
 
 	for (i = 0; i < parsed->nsubxacts; i++)

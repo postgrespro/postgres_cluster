@@ -66,37 +66,33 @@ typedef struct LogicalRepBeginData
 	XLogRecPtr	final_lsn;
 	TimestampTz committime;
 	TransactionId xid;
+	XLogRecPtr	prepare_lsn;
 } LogicalRepBeginData;
 
-#define LOGICALREP_IS_COMMIT			0x01
-#define LOGICALREP_IS_ABORT				0x02
-#define LOGICALREP_IS_PREPARE			0x04
-#define LOGICALREP_IS_COMMIT_PREPARED	0x08
-#define LOGICALREP_IS_ROLLBACK_PREPARED	0x10
-#define LOGICALREP_COMMIT_MASK (LOGICALREP_IS_COMMIT | LOGICALREP_IS_ABORT)
-#define LOGICALREP_PREPARE_MASK	(LOGICALREP_IS_PREPARE | LOGICALREP_IS_COMMIT_PREPARED | LOGICALREP_IS_ROLLBACK_PREPARED)
-typedef struct LogicalRepCommitData
+#define LOGICALPROTO_COMMIT				0
+#define LOGICALPROTO_ABORT				1
+#define LOGICALPROTO_PREPARE			2
+#define LOGICALPROTO_COMMIT_PREPARED	3
+#define LOGICALPROTO_ROLLBACK_PREPARED	4
+typedef struct LogicalRepXactData
 {
-	uint8		flag;
-	XLogRecPtr	commit_lsn;
+	uint8		flags;
+	XLogRecPtr	record_lsn;
 	XLogRecPtr	end_lsn;
 	TimestampTz committime;
 	char		gid[GIDSIZE];
-} LogicalRepCommitData;
+	XLogRecPtr	prepare_lsn;
+} LogicalRepXactData;
 
-extern void logicalrep_write_begin(StringInfo out, ReorderBufferTXN *txn);
+extern void logicalrep_write_begin(StringInfo out, ReorderBufferTXN *txn,
+								   bool write_prepared_lsn);
 extern void logicalrep_read_begin(StringInfo in,
-					  LogicalRepBeginData *begin_data);
-extern void logicalrep_write_commit(StringInfo out, ReorderBufferTXN *txn,
-						XLogRecPtr commit_lsn);
-extern void logicalrep_write_abort(StringInfo out, ReorderBufferTXN *txn,
-						XLogRecPtr abort_lsn);
-extern void logicalrep_write_prepare(StringInfo out, ReorderBufferTXN *txn,
-									 XLogRecPtr prepare_lsn, const char *gid);
-extern void logicalrep_read_commit(StringInfo in,
-					   LogicalRepCommitData *commit_data, uint8 *flags);
-extern void logicalrep_read_prepare(StringInfo in,
-					   LogicalRepCommitData *commit_data, uint8 *flags);
+								  LogicalRepBeginData *begin_data, bool read_prepare_lsn);
+extern void logicalrep_write_xact(StringInfo out, ReorderBufferTXN *txn,
+								  XLogRecPtr record_lsn, uint8 type, const char *gid,
+								  bool write_prepare_lsn);
+extern void logicalrep_read_xact(StringInfo in,
+								 LogicalRepXactData *commit_data, bool read_prepare_lsn);
 extern void logicalrep_write_origin(StringInfo out, const char *origin,
 						XLogRecPtr origin_lsn);
 extern char *logicalrep_read_origin(StringInfo in, XLogRecPtr *origin_lsn);

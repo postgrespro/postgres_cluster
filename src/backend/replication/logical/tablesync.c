@@ -80,6 +80,24 @@
  *			-> set in catalog READY
  *			-> stop per-table filtering
  *			-> continue rep
+ *
+ * If apply worker does 2PC, we need special care to sew sync worker with it.
+ * Sync worker does all its work in a single transaction (which is handy), so
+ * doing 2PC in sync worker is not an option. It means that before going to
+ * SYNCDONE syncworker must finish (replay) all xacts which were prepared
+ * before relstate_lsn. To know where to stop, we must be aware of prepared
+ * xacts. There are actually two problems here: first, we must learn number of
+ * unfinished prepares when the snapshot for tablesync became consistent;
+ * these are counted on publisher side and returned as result of
+ * CREATE_REPLICATION_SLOT because the publisher can't send us anything
+ * until we go into START_REPLICATION mode. Later (during CATCHUP) we receive
+ * notifications about prepares and their rollbacks (callbacks
+ * prepare_notify_cb and abort_prepared_notify_cb). They send PREPARE|
+ * ROLLBACK PREPARED logical proto messages when special pgoutput option
+ * prepare_notifies is enabled. LSN of PREPARE is appended to the message.
+ * We learn about commits of prepared xacts from usual COMMIT message coming
+ * in the end of replay; prepare_lsn is appended to the message here too.
+ *
  *-------------------------------------------------------------------------
  */
 
@@ -289,7 +307,8 @@ process_syncing_tables_for_sync(XLogRecPtr current_lsn)
 	SpinLockAcquire(&MyLogicalRepWorker->relmutex);
 
 	if (MyLogicalRepWorker->relstate == SUBREL_STATE_CATCHUP &&
-		current_lsn >= MyLogicalRepWorker->relstate_lsn)
+		current_lsn >= MyLogicalRepWorker->relstate_lsn &&
+		num_unfinished_prepares == 0)
 	{
 		TimeLineID	tli;
 
@@ -459,6 +478,9 @@ process_syncing_tables_for_apply(XLogRecPtr current_lsn)
 					syncworker->relstate = SUBREL_STATE_CATCHUP;
 					syncworker->relstate_lsn =
 						Max(syncworker->relstate_lsn, current_lsn);
+					elog(LOG, "Set relstate_lsn of relid %d to %X/%X",
+						 rstate->relid, (uint32) (syncworker->relstate_lsn >> 32),
+						 (uint32) syncworker->relstate_lsn);
 				}
 				SpinLockRelease(&syncworker->relmutex);
 
@@ -862,6 +884,7 @@ LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
 			{
 				Relation	rel;
 				WalRcvExecResult *res;
+				int	*num_unfinished_prepares_ptr;
 
 				SpinLockAcquire(&MyLogicalRepWorker->relmutex);
 				MyLogicalRepWorker->relstate = SUBREL_STATE_DATASYNC;
@@ -913,8 +936,16 @@ LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
 				 * that is consistent with the lsn used by the slot to start
 				 * decoding.
 				 */
-				walrcv_create_slot(wrconn, slotname, true,
-								   CRS_USE_SNAPSHOT, origin_startpos);
+				num_unfinished_prepares = 0;
+				/* Don't add COUNT_PREPARES if we are talking with vanilla server */
+				if (logical_replication_2pc == LOGICAL_REPLICATION_2PC_OFF)
+					num_unfinished_prepares_ptr = NULL;
+				else
+					num_unfinished_prepares_ptr = &num_unfinished_prepares;
+				walrcv_create_slot_unfinished_prepares(wrconn, slotname, true,
+													   CRS_USE_SNAPSHOT,
+													   origin_startpos,
+													   num_unfinished_prepares_ptr);
 
 				PushActiveSnapshot(GetTransactionSnapshot());
 				copy_table(rel);
@@ -954,7 +985,8 @@ LogicalRepSyncTableStart(XLogRecPtr *origin_startpos)
 				 *	  the state to SYNCDONE and finish.
 				 *----------
 				 */
-				if (*origin_startpos >= MyLogicalRepWorker->relstate_lsn)
+				if (*origin_startpos >= MyLogicalRepWorker->relstate_lsn &&
+					num_unfinished_prepares == 0)
 				{
 					/*
 					 * Update the new state in catalog.  No need to bother

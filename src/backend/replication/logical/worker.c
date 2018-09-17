@@ -108,6 +108,9 @@ typedef struct SlotErrCallbackArg
 	int			remote_attnum;
 } SlotErrCallbackArg;
 
+/* GUC */
+int logical_replication_2pc = LOGICAL_REPLICATION_2PC_OFF;
+
 static MemoryContext ApplyMessageContext = NULL;
 MemoryContext ApplyContext = NULL;
 
@@ -117,6 +120,15 @@ Subscription *MySubscription = NULL;
 bool		MySubscriptionValid = false;
 
 bool		in_remote_transaction = false;
+
+int num_unfinished_prepares = 0;
+
+/*
+ * Sync worker skips all xacts after relstate_lsn except for ones prepared
+ * before it.
+ */
+static bool skip_xact;
+
 static XLogRecPtr remote_final_lsn = InvalidXLogRecPtr;
 
 static void send_feedback(XLogRecPtr recvpos, bool force, bool requestReply);
@@ -145,7 +157,7 @@ static bool
 should_apply_changes_for_rel(LogicalRepRelMapEntry *rel)
 {
 	if (am_tablesync_worker())
-		return MyLogicalRepWorker->relid == rel->localreloid;
+		return MyLogicalRepWorker->relid == rel->localreloid && !skip_xact;
 	else
 		return (rel->state == SUBREL_STATE_READY ||
 				(rel->state == SUBREL_STATE_SYNCDONE &&
@@ -456,7 +468,14 @@ apply_handle_begin(StringInfo s)
 {
 	LogicalRepBeginData begin_data;
 
-	logicalrep_read_begin(s, &begin_data);
+	logicalrep_read_begin(s, &begin_data, need_prepare_notifies());
+
+	if (need_prepare_notifies())
+	{
+		skip_xact = begin_data.prepare_lsn >= MyLogicalRepWorker->relstate_lsn;
+	}
+	else
+		skip_xact = false; /* reset */
 
 	remote_final_lsn = begin_data.final_lsn;
 
@@ -466,19 +485,14 @@ apply_handle_begin(StringInfo s)
 }
 
 /*
- * Handle COMMIT message.
+ * Handle COMMIT|ABORT message.
  *
  * TODO, support tracking of multiple origins
  */
 static void
-apply_handle_commit(StringInfo s)
+apply_handle_commit_abort(LogicalRepXactData *xact_data)
 {
-	LogicalRepCommitData commit_data;
-	uint8	flags = 0;
-
-	logicalrep_read_commit(s, &commit_data, &flags);
-
-	Assert(commit_data.commit_lsn == remote_final_lsn);
+	Assert(xact_data->record_lsn == remote_final_lsn);
 
 	/* The synchronization worker runs in single transaction. */
 	if (IsTransactionState() && !am_tablesync_worker())
@@ -487,20 +501,30 @@ apply_handle_commit(StringInfo s)
 		 * Update origin state so we can restart streaming from correct
 		 * position in case of crash.
 		 */
-		replorigin_session_origin_lsn = commit_data.end_lsn;
-		replorigin_session_origin_timestamp = commit_data.committime;
+		replorigin_session_origin_lsn = xact_data->end_lsn;
+		replorigin_session_origin_timestamp = xact_data->committime;
 
-		if (flags & LOGICALREP_IS_COMMIT)
+		if (xact_data->flags == LOGICALPROTO_COMMIT)
 			CommitTransactionCommand();
-		else if (flags & LOGICALREP_IS_ABORT)
+		else if (xact_data->flags == LOGICALPROTO_ABORT)
 			AbortCurrentTransaction();
 
 		pgstat_report_stat(false);
 
-		store_flush_position(commit_data.end_lsn);
+		store_flush_position(xact_data->end_lsn);
 	}
 	else
 	{
+		if (xact_data->prepare_lsn != InvalidXLogRecPtr &&
+			need_prepare_notifies() &&
+			xact_data->prepare_lsn < MyLogicalRepWorker->relstate_lsn)
+		{
+			/*
+			 * If this is actually 2PC xact, remember that is has committed.
+			 */
+			num_unfinished_prepares--;
+		}
+
 		/* Process any invalidation messages that might have accumulated. */
 		AcceptInvalidationMessages();
 		maybe_reread_subscription();
@@ -509,34 +533,57 @@ apply_handle_commit(StringInfo s)
 	in_remote_transaction = false;
 
 	/* Process any tables that are being synchronized in parallel. */
-	process_syncing_tables(commit_data.end_lsn);
+	process_syncing_tables(xact_data->end_lsn);
 
 	pgstat_report_activity(STATE_IDLE, NULL);
 }
 
 static void
-apply_handle_prepare_txn(LogicalRepCommitData *commit_data)
+apply_handle_prepare(LogicalRepXactData *xact_data)
 {
-	Assert(commit_data->commit_lsn == remote_final_lsn);
+	if (need_prepare_notifies())
+	{
+		/*
+		 * This is just a notification that PREPARE has happened.
+		 */
+		Assert(xact_data->prepare_lsn != InvalidXLogRecPtr);
+		if (xact_data->prepare_lsn < MyLogicalRepWorker->relstate_lsn)
+		{
+			num_unfinished_prepares++;
+		}
+		return;
+	}
+
+	Assert(xact_data->record_lsn == remote_final_lsn);
+
 	/* The synchronization worker runs in single transaction. */
 	if (IsTransactionState() && !am_tablesync_worker())
 	{
-		/* End the earlier transaction and start a new one */
+		/*
+		 * The whole transaction is done as a single command
+		 * (i.e. TBLOCK_STARTED); to execute PREPARE, start block explicitly,
+		 * otherwise PrepareTransactionBlock is surprised. After
+		 * BeginTransactionBlock we also need to start new command to respect
+		 * the conventions. We need all this stuff preserve correct
+		 * TBlockState aftermath.
+		 */
 		BeginTransactionBlock();
 		CommitTransactionCommand();
 		StartTransactionCommand();
+
 		/*
 		 * Update origin state so we can restart streaming from correct
 		 * position in case of crash.
 		 */
-		replorigin_session_origin_lsn = commit_data->end_lsn;
-		replorigin_session_origin_timestamp = commit_data->committime;
+		replorigin_session_origin_lsn = xact_data->end_lsn;
+		replorigin_session_origin_timestamp = xact_data->committime;
 
-		PrepareTransactionBlock(commit_data->gid);
+		if (!PrepareTransactionBlock(xact_data->gid))
+			elog(ERROR, "Failed to prepare transaction %s", xact_data->gid);
 		CommitTransactionCommand();
 		pgstat_report_stat(false);
 
-		store_flush_position(commit_data->end_lsn);
+		store_flush_position(xact_data->end_lsn);
 	}
 	else
 	{
@@ -548,13 +595,13 @@ apply_handle_prepare_txn(LogicalRepCommitData *commit_data)
 	in_remote_transaction = false;
 
 	/* Process any tables that are being synchronized in parallel. */
-	process_syncing_tables(commit_data->end_lsn);
+	process_syncing_tables(xact_data->end_lsn);
 
 	pgstat_report_activity(STATE_IDLE, NULL);
 }
 
 static void
-apply_handle_commit_prepared_txn(LogicalRepCommitData *commit_data)
+apply_handle_commit_prepared(LogicalRepXactData *xact_data)
 {
 	/* there is no transaction when COMMIT PREPARED is called */
 	ensure_transaction();
@@ -563,25 +610,40 @@ apply_handle_commit_prepared_txn(LogicalRepCommitData *commit_data)
 	 * Update origin state so we can restart streaming from correct
 	 * position in case of crash.
 	 */
-	replorigin_session_origin_lsn = commit_data->end_lsn;
-	replorigin_session_origin_timestamp = commit_data->committime;
+	replorigin_session_origin_lsn = xact_data->end_lsn;
+	replorigin_session_origin_timestamp = xact_data->committime;
 
-	FinishPreparedTransaction(commit_data->gid, true);
+	FinishPreparedTransaction(xact_data->gid, true);
 	CommitTransactionCommand();
 	pgstat_report_stat(false);
 
-	store_flush_position(commit_data->end_lsn);
+	store_flush_position(xact_data->end_lsn);
 	in_remote_transaction = false;
 
 	/* Process any tables that are being synchronized in parallel. */
-	process_syncing_tables(commit_data->end_lsn);
+	process_syncing_tables(xact_data->end_lsn);
 
 	pgstat_report_activity(STATE_IDLE, NULL);
 }
 
 static void
-apply_handle_rollback_prepared_txn(LogicalRepCommitData *commit_data)
+apply_handle_rollback_prepared(LogicalRepXactData *xact_data)
 {
+	MemoryContext ccxt;
+
+	if (need_prepare_notifies())
+	{
+		/*
+		 * This is just a notification that RP has happened.
+		 */
+		Assert(xact_data->prepare_lsn != InvalidXLogRecPtr);
+		if (xact_data->prepare_lsn < MyLogicalRepWorker->relstate_lsn)
+		{
+			num_unfinished_prepares--;
+		}
+		return;
+	}
+
 	/* there is no transaction when ABORT/ROLLBACK PREPARED is called */
 	ensure_transaction();
 
@@ -589,21 +651,24 @@ apply_handle_rollback_prepared_txn(LogicalRepCommitData *commit_data)
 	 * Update origin state so we can restart streaming from correct
 	 * position in case of crash.
 	 */
-	replorigin_session_origin_lsn = commit_data->end_lsn;
-	replorigin_session_origin_timestamp = commit_data->committime;
+	replorigin_session_origin_lsn = xact_data->end_lsn;
+	replorigin_session_origin_timestamp = xact_data->committime;
 
 	/* It is ok if xact is absent, currently AP might came after ABORT */
+	ccxt = CurrentMemoryContext;
 	PG_TRY();
 	{
-		FinishPreparedTransaction(commit_data->gid, false);
+		FinishPreparedTransaction(xact_data->gid, false);
 	}
 	PG_CATCH();
 	{
+		MemoryContext ecxt = MemoryContextSwitchTo(ccxt);
 		ErrorData  *errdata = CopyErrorData();
 
 		/* re-throw if not 'xact absent' error */
 		if (errdata->sqlerrcode != ERRCODE_UNDEFINED_OBJECT)
 		{
+			MemoryContextSwitchTo(ecxt);
 			PG_RE_THROW();
 		}
 	}
@@ -611,36 +676,49 @@ apply_handle_rollback_prepared_txn(LogicalRepCommitData *commit_data)
 	CommitTransactionCommand();
 	pgstat_report_stat(false);
 
-	store_flush_position(commit_data->end_lsn);
+	store_flush_position(xact_data->end_lsn);
 	in_remote_transaction = false;
 
 	/* Process any tables that are being synchronized in parallel. */
-	process_syncing_tables(commit_data->end_lsn);
+	process_syncing_tables(xact_data->end_lsn);
 
 	pgstat_report_activity(STATE_IDLE, NULL);
 }
 
 /*
- * Handle PREPARE message.
+ * Dispatch COMMIT|ABORT|PREPARE|CP|RP
  */
 static void
-apply_handle_prepare(StringInfo s)
+apply_dispatch_xact(StringInfo s)
 {
-	LogicalRepCommitData commit_data;
-	uint8	flags = 0;
+	LogicalRepXactData xact_data;
 
-	logicalrep_read_prepare(s, &commit_data, &flags);
+	logicalrep_read_xact(s, &xact_data, need_prepare_notifies());
+	switch (xact_data.flags)
+	{
+		case LOGICALPROTO_COMMIT:
+		case LOGICALPROTO_ABORT:
+			apply_handle_commit_abort(&xact_data);
+			break;
 
-	if (flags & LOGICALREP_IS_PREPARE)
-		apply_handle_prepare_txn(&commit_data);
-	else if (flags & LOGICALREP_IS_COMMIT_PREPARED)
-		apply_handle_commit_prepared_txn(&commit_data);
-	else if (flags & LOGICALREP_IS_ROLLBACK_PREPARED)
-		apply_handle_rollback_prepared_txn(&commit_data);
-	else
-		ereport(ERROR,
-			(errcode(ERRCODE_PROTOCOL_VIOLATION),
-			 errmsg("wrong [commit|rollback] prepare message")));
+		case LOGICALPROTO_PREPARE:
+			apply_handle_prepare(&xact_data);
+			break;
+
+		case LOGICALPROTO_COMMIT_PREPARED:
+			apply_handle_commit_prepared(&xact_data);
+			break;
+
+		case LOGICALPROTO_ROLLBACK_PREPARED:
+			apply_handle_rollback_prepared(&xact_data);
+			break;
+
+		default:
+			ereport(ERROR,
+					(errcode(ERRCODE_PROTOCOL_VIOLATION),
+					 errmsg("invalid logical replication xact message flags \"%c\"",
+							xact_data.flags)));
+	}
 }
 
 /*
@@ -1103,13 +1181,9 @@ apply_dispatch(StringInfo s)
 		case 'B':
 			apply_handle_begin(s);
 			break;
-			/* COMMIT|ABORT */
+			/* COMMIT|ABORT|PREPARE|CP|RP */
 		case 'C':
-			apply_handle_commit(s);
-			break;
-			/* [COMMIT|ROLLBACK] PREPARE */
-		case 'P':
-			apply_handle_prepare(s);
+			apply_dispatch_xact(s);
 			break;
 			/* INSERT */
 		case 'I':
@@ -1882,6 +1956,16 @@ ApplyWorkerMain(Datum main_arg)
 	options.slotname = myslotname;
 	options.proto.logical.proto_version = LOGICALREP_PROTO_VERSION_NUM;
 	options.proto.logical.publication_names = MySubscription->publications;
+	if (need_prepare_notifies())
+	{
+		options.proto.logical.twophase = LOGICAL_REPLICATION_2PC_OFF;
+		options.proto.logical.prepare_notifies = true;
+	}
+	else
+	{
+		options.proto.logical.twophase = logical_replication_2pc;
+		options.proto.logical.prepare_notifies = false;
+	}
 
 	/* Start normal logical streaming replication. */
 	walrcv_startstreaming(wrconn, &options);

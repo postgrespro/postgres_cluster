@@ -87,6 +87,7 @@ static SQLCmd *make_sqlcmd(void);
 %token K_EXPORT_SNAPSHOT
 %token K_NOEXPORT_SNAPSHOT
 %token K_USE_SNAPSHOT
+%token K_COUNT_PREPARES
 
 %type <node>	command
 %type <node>	base_backup start_replication start_logical_replication
@@ -263,6 +264,11 @@ create_slot_opt:
 			| K_USE_SNAPSHOT
 				{
 				  $$ = makeDefElem("use_snapshot",
+								   (Node *)makeInteger(true), -1);
+				}
+			| K_COUNT_PREPARES
+				{
+				  $$ = makeDefElem("count_prepares",
 								   (Node *)makeInteger(true), -1);
 				}
 			| K_RESERVE_WAL

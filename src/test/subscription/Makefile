@@ -14,6 +14,7 @@ top_builddir = ../../..
 include $(top_builddir)/src/Makefile.global
 
 EXTRA_INSTALL = contrib/hstore
+# PROVE_TESTS = t/011_twophase.pl
 
 check:
 	$(prove_check)

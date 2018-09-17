@@ -43,7 +43,8 @@ static const char *logicalrep_read_namespace(StringInfo in);
  * Write BEGIN to the output stream.
  */
 void
-logicalrep_write_begin(StringInfo out, ReorderBufferTXN *txn)
+logicalrep_write_begin(StringInfo out, ReorderBufferTXN *txn,
+					   bool write_prepared_lsn)
 {
 	pq_sendbyte(out, 'B');		/* BEGIN */
 
@@ -51,13 +52,16 @@ logicalrep_write_begin(StringInfo out, ReorderBufferTXN *txn)
 	pq_sendint64(out, txn->final_lsn);
 	pq_sendint64(out, txn->commit_time);
 	pq_sendint32(out, txn->xid);
+	if (write_prepared_lsn)
+		pq_sendint64(out, txn->prepare_lsn);
 }
 
 /*
  * Read transaction BEGIN from the stream.
  */
 void
-logicalrep_read_begin(StringInfo in, LogicalRepBeginData *begin_data)
+logicalrep_read_begin(StringInfo in, LogicalRepBeginData *begin_data,
+					  bool read_prepare_lsn)
 {
 	/* read fields */
 	begin_data->final_lsn = pq_getmsgint64(in);
@@ -65,131 +69,64 @@ logicalrep_read_begin(StringInfo in, LogicalRepBeginData *begin_data)
 		elog(ERROR, "final_lsn not set in begin message");
 	begin_data->committime = pq_getmsgint64(in);
 	begin_data->xid = pq_getmsgint(in, 4);
+	if (read_prepare_lsn)
+		begin_data->prepare_lsn = pq_getmsgint64(in);
 }
 
 
 /*
- * Write COMMIT to the output stream.
+ * Write COMMIT|ABORT|PREPARE|CP|RP to the output stream.
  */
 void
-logicalrep_write_commit(StringInfo out, ReorderBufferTXN *txn,
-						XLogRecPtr commit_lsn)
+logicalrep_write_xact(StringInfo out, ReorderBufferTXN *txn,
+					  XLogRecPtr record_lsn, uint8 type, const char *gid,
+					  bool write_prepare_lsn)
 {
-	uint8	flags = 0;
-
-	pq_sendbyte(out, 'C');		/* sending COMMIT */
-
-	flags |= LOGICALREP_IS_COMMIT;
-	/* send the flags field (unused for now) */
-	pq_sendbyte(out, flags);
+	pq_sendbyte(out, 'C');		/* sending COMMIT|ABORT|PREPARE|etc */
 
 	/* send fields */
-	pq_sendint64(out, commit_lsn);
+	pq_sendbyte(out, type);
+	pq_sendint64(out, record_lsn);
 	pq_sendint64(out, txn->end_lsn);
 	pq_sendint64(out, txn->commit_time);
+	if (gid != NULL) /* P|CP|RP */
+		pq_sendstring(out, gid);
+	if (write_prepare_lsn)
+		pq_sendint64(out, txn->prepare_lsn);
 }
 
 /*
- * Write ABORT to the output stream.
+ * Read transaction COMMIT|ABORT|PREPARE|CP|AP from the stream.
+ * We assume that we either do 2PC decoding (apply worker) or prepare tracking
+ * (sync worker), but not both. If prepare_notifies is enabled, the only
+ * messages we get here is usual COMMIT and (PREPARE|ROLLBACK PREPARE
+ * notifications). All of them always contain prepare_lsn (InvalidXLogRecPtr,
+ * if this is not 2PC).
  */
 void
-logicalrep_write_abort(StringInfo out, ReorderBufferTXN *txn,
-						XLogRecPtr abort_lsn)
+logicalrep_read_xact(StringInfo in, LogicalRepXactData *xact_data,
+					 bool read_prepare_lsn)
 {
-	uint8	flags = 0;
-
-	pq_sendbyte(out, 'C');		/* sending ABORT flag below */
-
-	flags |= LOGICALREP_IS_ABORT;
-	/* send the flags field */
-	pq_sendbyte(out, flags);
-
-	/* send fields */
-	pq_sendint64(out, abort_lsn);
-	pq_sendint64(out, txn->end_lsn);
-	pq_sendint64(out, txn->commit_time);
-}
-
-/*
- * Read transaction COMMIT|ABORT from the stream.
- */
-void
-logicalrep_read_commit(StringInfo in, LogicalRepCommitData *commit_data,
-					   uint8 *flags)
-{
-	/* read flags */
-	uint8		commit_flags = pq_getmsgbyte(in);
-
-	if (!(commit_flags & LOGICALREP_COMMIT_MASK))
-		elog(ERROR, "unrecognized flags %u in commit|abort message",
-			 commit_flags);
-
+	/* read flags. The last 3 bits is type, the rest are unused and must be 0 */
+	xact_data->flags = pq_getmsgbyte(in);
 	/* read fields */
-	commit_data->commit_lsn = pq_getmsgint64(in);
-	commit_data->end_lsn = pq_getmsgint64(in);
-	commit_data->committime = pq_getmsgint64(in);
-
-	/* set gid to empty */
-	commit_data->gid[0] = '\0';
-
-	*flags = commit_flags;
-}
-
-/*
- * Write PREPARE to the output stream.
- */
-void
-logicalrep_write_prepare(StringInfo out, ReorderBufferTXN *txn,
-						 XLogRecPtr prepare_lsn, const char *gid)
-{
-	uint8		flags = 0;
-
-	pq_sendbyte(out, 'P');		/* sending PREPARE protocol */
-
-	if (txn->txn_flags & RBTXN_COMMIT_PREPARED)
-		flags |= LOGICALREP_IS_COMMIT_PREPARED;
-	else if (txn->txn_flags & RBTXN_ROLLBACK_PREPARED)
-		flags |= LOGICALREP_IS_ROLLBACK_PREPARED;
-	else if (txn->txn_flags & RBTXN_PREPARE)
-		flags |= LOGICALREP_IS_PREPARE;
-
-	if (flags == 0)
-		elog(ERROR, "unrecognized flags %u in [commit|rollback] prepare message", flags);
-
-	/* send the flags field */
-	pq_sendbyte(out, flags);
-
-	/* send fields */
-	pq_sendint64(out, prepare_lsn);
-	pq_sendint64(out, txn->end_lsn);
-	pq_sendint64(out, txn->commit_time);
-
-	/* send gid */
-	pq_sendstring(out, gid);
-}
-
-/*
- * Read transaction PREPARE from the stream.
- */
-void
-logicalrep_read_prepare(StringInfo in, LogicalRepCommitData *commit_data, uint8 *flags)
-{
-	/* read flags */
-	uint8		prep_flags = pq_getmsgbyte(in);
-
-	if (!(prep_flags & LOGICALREP_PREPARE_MASK))
-		elog(ERROR, "unrecognized flags %u in prepare message", prep_flags);
-
-	/* read fields */
-	commit_data->commit_lsn = pq_getmsgint64(in);
-	commit_data->end_lsn = pq_getmsgint64(in);
-	commit_data->committime = pq_getmsgint64(in);
+	xact_data->record_lsn = pq_getmsgint64(in);
+	xact_data->end_lsn = pq_getmsgint64(in);
+	xact_data->committime = pq_getmsgint64(in);
 
 	/* read gid */
-	strcpy(commit_data->gid, pq_getmsgstring(in));
+	if (xact_data->flags == LOGICALPROTO_PREPARE ||
+		xact_data->flags == LOGICALPROTO_COMMIT_PREPARED ||
+		xact_data->flags == LOGICALPROTO_ROLLBACK_PREPARED)
+		strcpy(xact_data->gid, pq_getmsgstring(in));
+	else
+		xact_data->gid[0] = '\0';
 
-	/* set flags */
-	*flags = prep_flags;
+	/* read prepare_lsn if we are tracking prepares */
+	if (read_prepare_lsn)
+	{
+		xact_data->prepare_lsn = pq_getmsgint64(in);
+	}
 }
 
 /*

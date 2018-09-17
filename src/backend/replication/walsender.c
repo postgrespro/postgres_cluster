@@ -397,7 +397,7 @@ IdentifySystem(void)
 	TupleDescInitBuiltinEntry(tupdesc, (AttrNumber) 3, "xlogpos",
 							  TEXTOID, -1, 0);
 	TupleDescInitBuiltinEntry(tupdesc, (AttrNumber) 4, "dbname",
-							  TEXTOID, -1, 0);
+							  INT4OID, -1, 0);
 
 	/* prepare for projection of tuples */
 	tstate = begin_tup_output_tupdesc(dest, tupdesc);
@@ -785,11 +785,13 @@ logical_read_xlog_page(XLogReaderState *state, XLogRecPtr targetPagePtr, int req
 static void
 parseCreateReplSlotOptions(CreateReplicationSlotCmd *cmd,
 						   bool *reserve_wal,
-						   CRSSnapshotAction *snapshot_action)
+						   CRSSnapshotAction *snapshot_action,
+						   bool *count_prepares)
 {
 	ListCell   *lc;
 	bool		snapshot_action_given = false;
 	bool		reserve_wal_given = false;
+	bool		count_prepares_given = false;
 
 	/* Parse options */
 	foreach(lc, cmd->options)
@@ -827,6 +829,16 @@ parseCreateReplSlotOptions(CreateReplicationSlotCmd *cmd,
 			reserve_wal_given = true;
 			*reserve_wal = true;
 		}
+		else if (strcmp(defel->defname, "count_prepares") == 0)
+		{
+			if (count_prepares_given || cmd->kind != REPLICATION_KIND_LOGICAL)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+
+			count_prepares_given = true;
+			*count_prepares = true;
+		}
 		else
 			elog(ERROR, "unrecognized option: %s", defel->defname);
 	}
@@ -843,15 +855,19 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 	char	   *slot_name;
 	bool		reserve_wal = false;
 	CRSSnapshotAction snapshot_action = CRS_EXPORT_SNAPSHOT;
+	bool		count_prepares = false;
+	int			natts;
 	DestReceiver *dest;
 	TupOutputState *tstate;
 	TupleDesc	tupdesc;
-	Datum		values[4];
-	bool		nulls[4];
+	Datum		values[5];
+	bool		nulls[5];
+	int			num_unfinished_prepares;
 
 	Assert(!MyReplicationSlot);
 
-	parseCreateReplSlotOptions(cmd, &reserve_wal, &snapshot_action);
+	parseCreateReplSlotOptions(cmd, &reserve_wal, &snapshot_action,
+							   &count_prepares);
 
 	/* setup state for XLogReadPage */
 	sendTimeLineIsHistoric = false;
@@ -955,6 +971,8 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 			RestoreTransactionSnapshot(snap, MyProc);
 		}
 
+		num_unfinished_prepares = ctx->num_unfinished_prepares;
+
 		/* don't need the decoding context anymore */
 		FreeDecodingContext(ctx);
 
@@ -987,7 +1005,8 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 	 * - fourth field: output plugin
 	 *----------
 	 */
-	tupdesc = CreateTemplateTupleDesc(4, false);
+	natts = count_prepares ? 5 : 4;
+	tupdesc = CreateTemplateTupleDesc(natts, false);
 	TupleDescInitBuiltinEntry(tupdesc, (AttrNumber) 1, "slot_name",
 							  TEXTOID, -1, 0);
 	TupleDescInitBuiltinEntry(tupdesc, (AttrNumber) 2, "consistent_point",
@@ -996,6 +1015,10 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 							  TEXTOID, -1, 0);
 	TupleDescInitBuiltinEntry(tupdesc, (AttrNumber) 4, "output_plugin",
 							  TEXTOID, -1, 0);
+	if (count_prepares)
+		TupleDescInitBuiltinEntry(tupdesc, (AttrNumber) 5, "num_unfinished_prepares",
+								  INT4OID, -1, 0);
+
 
 	/* prepare for projection of tuples */
 	tstate = begin_tup_output_tupdesc(dest, tupdesc);
@@ -1018,6 +1041,14 @@ CreateReplicationSlot(CreateReplicationSlotCmd *cmd)
 		values[3] = CStringGetTextDatum(cmd->plugin);
 	else
 		nulls[3] = true;
+
+	if (count_prepares)
+	{
+		if (cmd->kind == REPLICATION_KIND_LOGICAL)
+			values[4] = Int32GetDatum(num_unfinished_prepares);
+		else
+			nulls[4] = true;
+	}
 
 	/* send it to dest */
 	do_tup_output(tstate, values, nulls);

@@ -156,6 +156,16 @@ typedef struct OutputPluginCallbacks
 	LogicalDecodePrepareCB prepare_cb;
 	LogicalDecodeCommitPreparedCB commit_prepared_cb;
 	LogicalDecodeAbortPreparedCB abort_prepared_cb;
+	/*
+	 * These two callbacks are called on prepare/abort prepared record when we
+	 * are *not* doing 2PC decoding, allowing the plugin to know about
+	 * in-progress prepared xacts. We don't need that for commit because xact
+	 * is replayed on commit prepared anyway; in this case prepare_lsn is sent
+	 * in commit_cb callback. This is used for LR initial tablesync; they are
+	 * specifically tailored for this and not documented.
+	 */
+	LogicalDecodePrepareCB prepare_notify_cb;
+	LogicalDecodeAbortPreparedCB abort_prepared_notify_cb;
 	LogicalDecodeFilterByOriginCB filter_by_origin_cb;
 	LogicalDecodeShutdownCB shutdown_cb;
 } OutputPluginCallbacks;

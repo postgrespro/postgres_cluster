@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use PostgresNode;
 use TestLib;
-use Test::More tests => 12;
+use Test::More tests => 14;
 
 # Initialize publisher node
 my $node_publisher = get_new_node('publisher');
@@ -11,17 +11,18 @@ $node_publisher->init(allows_streaming => 'logical');
 $node_publisher->append_conf(
         'postgresql.conf', qq(
         max_prepared_transactions = 10
-	    pgoutput.use_twophase = true
-        ));
+	));
 $node_publisher->start;
 
 # Create subscriber node
 my $node_subscriber = get_new_node('subscriber');
 $node_subscriber->init(allows_streaming => 'logical');
 $node_subscriber->append_conf(
-        'postgresql.conf', qq(max_prepared_transactions = 10));
+	'postgresql.conf', qq(
+	max_prepared_transactions = 10
+	logical_replication_2pc = always
+));
 $node_subscriber->start;
-
 # Create some pre-existing content on publisher
 $node_publisher->safe_psql('postgres', "CREATE TABLE tab_full (a int PRIMARY KEY)");
 $node_publisher->safe_psql('postgres',
@@ -36,14 +37,14 @@ $node_subscriber->safe_psql('postgres', "CREATE TABLE tab_full2 (x text)");
 
 # Setup logical replication
 my $publisher_connstr = $node_publisher->connstr . ' dbname=postgres';
-$node_publisher->safe_psql('postgres', "CREATE PUBLICATION tap_pub");
+$node_publisher->safe_psql('postgres', "CREATE PUBLICATION pub");
 $node_publisher->safe_psql('postgres',
-"ALTER PUBLICATION tap_pub ADD TABLE tab_full, tab_full2"
+"ALTER PUBLICATION pub ADD TABLE tab_full, tab_full2"
 );
 
-my $appname = 'tap_sub';
+my $appname = 'sub';
 $node_subscriber->safe_psql('postgres',
-"CREATE SUBSCRIPTION tap_sub CONNECTION '$publisher_connstr application_name=$appname' PUBLICATION tap_pub"
+"CREATE SUBSCRIPTION sub CONNECTION '$publisher_connstr application_name=$appname' PUBLICATION pub"
 );
 
 # Wait for subscriber to finish initialization
@@ -137,7 +138,7 @@ is($result, qq(2), 'Rows inserted via 2PC are visible on the subscriber');
 # to replicate DDL changes to subscriber.
 
 # check all the cleanup
-$node_subscriber->safe_psql('postgres', "DROP SUBSCRIPTION tap_sub");
+$node_subscriber->safe_psql('postgres', "DROP SUBSCRIPTION sub");
 
 $result = $node_subscriber->safe_psql('postgres',
 	"SELECT count(*) FROM pg_subscription");
@@ -160,8 +161,9 @@ $result = $node_subscriber->safe_psql('postgres',
 	"SELECT count(*) FROM pg_replication_origin");
 is($result, qq(0), 'check replication origin was dropped on subscriber');
 
-# let's explode this
-diag("publisher listens on \"" . $node_publisher->connstr . "\"");
+# Check that if xact was prepared before snap became consistent, but committed
+# after we still get it.
+diag("\npublisher listens on \"" . $node_publisher->connstr . "\"");
 diag("subscriber listens on \"" . $node_subscriber->connstr . "\"");
 
 $node_publisher->safe_psql('postgres', "truncate tab_full");
@@ -202,12 +204,12 @@ my $create_sub = IPC::Run::start(
 	'2>',
 	\$create_sub_stderr);
 $create_sub_stdin .= qq[
-  create subscription tap_sub connection '$publisher_connstr application_name=$appname' publication tap_pub with (copy_data=false);
+  create subscription sub connection '$publisher_connstr application_name=$appname' publication pub with (copy_data=false);
   ];
 ## push input
 pump $create_sub while length $create_sub_stdin;
-## Wait till decoding of xl_running_xacts, not reliable
-sleep(5);
+## Wait till decoding of xl_running_xacts, not 100% reliable
+sleep(3);
 
 # start another xact
 my ($running_xact2_stdin, $running_xact2_stdout, $running_xact2_stderr) = ('', '', '');
@@ -288,13 +290,65 @@ $prepared_xact_stdout = '';
 $prepared_xact_stderr = '';
 
 $node_publisher->poll_query_until('postgres',
-								  "SELECT pg_current_wal_lsn() <= replay_lsn FROM pg_stat_replication WHERE application_name = 'tap_sub';")
-  or die "Timed out while waiting for subscriber to catch up";
+								  "SELECT pg_current_wal_lsn() <= replay_lsn FROM pg_stat_replication WHERE application_name = 'sub';")
+	or die "Timed out while waiting for subscriber to catch up";
+
+# check that prepared xact (the only one replicated) was really done
+my $res_sub = $node_subscriber->safe_psql('postgres', "SELECT sum(a) FROM tab_full");
+is($res_sub, q(44), 'prepared xact replicated');
 
 $running_xact->finish;
 $running_xact2->finish;
 $create_sub->finish;
 $prepared_xact->finish;
+$node_subscriber->safe_psql('postgres', "DROP SUBSCRIPTION sub");
+$node_publisher->safe_psql('postgres', "DROP PUBLICATION pub");
+
+# Now test that tablesync behaviour is sane.
+diag("Testing tablesync");
+$node_publisher->safe_psql('postgres', "CREATE TABLE apples (i int)");
+$node_subscriber->safe_psql('postgres', "CREATE TABLE apples (i int)");
+$node_publisher->safe_psql('postgres', "CREATE TABLE pears (i int)");
+$node_subscriber->safe_psql('postgres', "CREATE TABLE pears (i int)");
+# create a lot of pears
+$node_publisher->safe_psql('postgres',
+	"INSERT INTO pears SELECT generate_series(10000, 1000000); select txid_current();");
+
+# create publication involving only apples...
+$node_publisher->safe_psql('postgres',
+						   "CREATE PUBLICATION pub FOR TABLE apples");
+
+# set up replication and wait for it to start up
+$node_subscriber->safe_psql('postgres',
+							"create subscription sub connection '$publisher_connstr application_name=sub' publication pub;");
+$node_subscriber->poll_query_until('postgres', $synced_query)
+  or die "Timed out while waiting for subscriber to synchronize data";
+
+# now, add another table, starting initial tablesync of large table
+$node_publisher->safe_psql('postgres',
+						   "ALTER PUBLICATION pub ADD TABLE pears");
+$node_subscriber->safe_psql('postgres',
+							"ALTER SUBSCRIPTION sub REFRESH PUBLICATION WITH (copy_data=true)");
+# and while it is (hopefully) still going on, prepare some xact
+# but before that, make sure tablesync can find consistent point
+$node_publisher->safe_psql('postgres', "CHECKPOINT; CHECKPOINT;");
+$node_publisher->safe_psql('postgres', "BEGIN; INSERT INTO apples VALUES (42); INSERT INTO pears VALUES (42); PREPARE TRANSACTION 'prepared_c';");
+# and prepare another xact which we will abort
+$node_publisher->safe_psql('postgres', "BEGIN; INSERT INTO apples VALUES (43); INSERT INTO pears VALUES (43); PREPARE TRANSACTION 'prepared_a';");
+# and finish xacts
+$node_publisher->safe_psql('postgres', "COMMIT PREPARED 'prepared_c';");
+$node_publisher->safe_psql('postgres', "ROLLBACK PREPARED 'prepared_a';");
+
+# replicate commit/abort and check sum
+$node_publisher->poll_query_until('postgres',
+								  "SELECT pg_current_wal_lsn() <= replay_lsn FROM pg_stat_replication WHERE application_name = 'sub';")
+	or die "Timed out while waiting for subscriber to catch up";
+my $res_pub = $node_publisher->safe_psql('postgres', "SELECT sum(i) FROM (SELECT i FROM apples UNION ALL SELECT i FROM pears) u");
+$res_sub = $node_subscriber->safe_psql('postgres', "SELECT sum(i) FROM (SELECT i FROM apples UNION ALL SELECT i FROM pears) u");
+is($res_pub, $res_sub, 'sum is the same');
+
+$node_subscriber->safe_psql('postgres', "DROP SUBSCRIPTION sub");
+$node_publisher->safe_psql('postgres', "DROP PUBLICATION pub");
 
 $node_subscriber->stop('fast');
 $node_publisher->stop('fast');

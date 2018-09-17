@@ -17,6 +17,7 @@
 #include "fmgr.h"
 #include "getaddrinfo.h"		/* for NI_MAXHOST */
 #include "replication/logicalproto.h"
+#include "replication/logicalworker.h"
 #include "replication/walsender.h"
 #include "storage/latch.h"
 #include "storage/spin.h"
@@ -163,6 +164,8 @@ typedef struct
 		{
 			uint32		proto_version;	/* Logical protocol version */
 			List	   *publication_names;	/* String list of publications */
+			LogicalReplication2PCType	twophase;
+			bool	prepare_notifies;
 		}			logical;
 	}			proto;
 } WalRcvStreamOptions;
@@ -226,7 +229,8 @@ typedef void (*walrcv_send_fn) (WalReceiverConn *conn, const char *buffer,
 typedef char *(*walrcv_create_slot_fn) (WalReceiverConn *conn,
 										const char *slotname, bool temporary,
 										CRSSnapshotAction snapshot_action,
-										XLogRecPtr *lsn);
+										XLogRecPtr *lsn,
+										int *num_unfinished_prepares);
 typedef WalRcvExecResult *(*walrcv_exec_fn) (WalReceiverConn *conn,
 											 const char *query,
 											 const int nRetTypes,
@@ -245,7 +249,7 @@ typedef struct WalReceiverFunctionsType
 	walrcv_endstreaming_fn walrcv_endstreaming;
 	walrcv_receive_fn walrcv_receive;
 	walrcv_send_fn walrcv_send;
-	walrcv_create_slot_fn walrcv_create_slot;
+	walrcv_create_slot_fn walrcv_create_slot_internal;
 	walrcv_exec_fn walrcv_exec;
 	walrcv_disconnect_fn walrcv_disconnect;
 } WalReceiverFunctionsType;
@@ -273,7 +277,9 @@ extern PGDLLIMPORT WalReceiverFunctionsType *WalReceiverFunctions;
 #define walrcv_send(conn, buffer, nbytes) \
 	WalReceiverFunctions->walrcv_send(conn, buffer, nbytes)
 #define walrcv_create_slot(conn, slotname, temporary, snapshot_action, lsn) \
-	WalReceiverFunctions->walrcv_create_slot(conn, slotname, temporary, snapshot_action, lsn)
+	WalReceiverFunctions->walrcv_create_slot_internal(conn, slotname, temporary, snapshot_action, lsn, NULL)
+#define walrcv_create_slot_unfinished_prepares(conn, slotname, temporary, snapshot_action, lsn, num_unfinished_prepares) \
+	WalReceiverFunctions->walrcv_create_slot_internal(conn, slotname, temporary, snapshot_action, lsn, num_unfinished_prepares)
 #define walrcv_exec(conn, exec, nRetTypes, retTypes) \
 	WalReceiverFunctions->walrcv_exec(conn, exec, nRetTypes, retTypes)
 #define walrcv_disconnect(conn) \

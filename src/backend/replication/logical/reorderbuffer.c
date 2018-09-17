@@ -282,6 +282,8 @@ ReorderBufferAllocate(void)
 	 */
 	ReorderBufferCleanupSerializedTXNs(NameStr(MyReplicationSlot->data.name));
 
+	buffer->num_unfinished_prepares = 0;
+
 	return buffer;
 }
 
@@ -1900,6 +1902,7 @@ ReorderBufferCommit(ReorderBuffer *rb, TransactionId xid,
 	if (txn == NULL)
 		return;
 
+	txn->txn_flags |= RBTXN_COMMIT;
 	ReorderBufferCommitInternal(txn, rb, xid, commit_lsn, end_lsn,
 								commit_time, origin_id, origin_lsn);
 }
@@ -1913,21 +1916,13 @@ ReorderBufferPrepare(ReorderBuffer *rb, TransactionId xid,
 					 XLogRecPtr commit_lsn, XLogRecPtr end_lsn,
 					 TimestampTz commit_time,
 					 RepOriginId origin_id, XLogRecPtr origin_lsn,
-					 char *gid)
+					 const char *gid)
 {
 	ReorderBufferTXN *txn;
 
 	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
 								false);
-
-	/* unknown transaction, nothing to replay */
-	if (txn == NULL)
-		return;
-
 	txn->txn_flags |= RBTXN_PREPARE;
-	txn->gid = palloc(strlen(gid) + 1); /* trailing '\0' */
-	strcpy(txn->gid, gid);
-
 	ReorderBufferCommitInternal(txn, rb, xid, commit_lsn, end_lsn,
 								commit_time, origin_id, origin_lsn);
 }
@@ -1945,9 +1940,8 @@ ReorderBufferFinishPrepared(ReorderBuffer *rb, TransactionId xid,
 	ReorderBufferTXN *txn;
 
 	/*
-	 * The transaction may or may not exist (during restarts for example).
-	 * Anyways, 2PC transactions do not contain any reorderbuffers. So allow
-	 * it to be created below.
+	 * RB was destroyed after replaying xact on PREPARE, bake a new one
+	 * (might already created by adding invalidations).
 	 */
 	txn = ReorderBufferTXNByXid(rb, xid, true, NULL, commit_lsn,
 								true);
@@ -1973,8 +1967,14 @@ ReorderBufferFinishPrepared(ReorderBuffer *rb, TransactionId xid,
 		rb->abort_prepared(rb, txn, commit_lsn);
 	}
 
-	/* cleanup: make sure there's no cache pollution */
-	ReorderBufferExecuteInvalidations(rb, txn);
+	/*
+	 * Cleanup: make sure there's no cache pollution. We intentionally call
+	 * ReorderBufferImmediateInvalidation, not
+	 * ReorderBufferExecuteInvalidations because there might be no transaction
+	 * context.
+	 */
+	ReorderBufferImmediateInvalidation(rb, txn->ninvalidations,
+									   txn->invalidations);
 	ReorderBufferCleanupTXN(rb, txn);
 }
 
@@ -2007,6 +2007,47 @@ ReorderBufferAbort(ReorderBuffer *rb, TransactionId xid, XLogRecPtr lsn)
 
 	/* remove potential on-disk data, and deallocate */
 	ReorderBufferCleanupTXN(rb, txn);
+}
+
+/*
+ * Call prepare_notify cb. We notify about all PREPAREs after startpoint.
+ */
+void
+ReorderBufferPrepareNotify(ReorderBuffer *rb, TransactionId xid,
+						   XLogRecPtr prepare_lsn, const char *gid)
+{
+	ReorderBufferTXN *txn;
+
+	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
+								false);
+	/*
+	 * xxx better do this at ReorderBufferProcessXidPrepared?
+	 * We also don't set commit time here because we don't care
+	 */
+	txn->gid = pstrdup(gid);
+
+	rb->prepare_notify(rb, txn, prepare_lsn);
+}
+
+/*
+ * Call prepare_notify cb
+ */
+void
+ReorderBufferAbortPreparedNotify(ReorderBuffer *rb, TransactionId xid,
+								 XLogRecPtr abort_lsn, const char *gid)
+{
+	ReorderBufferTXN *txn;
+
+	txn = ReorderBufferTXNByXid(rb, xid, false, NULL, InvalidXLogRecPtr,
+								false);
+	/*
+	 * xxx better do this at ReorderBufferProcessXidPrepared?
+	 * We also don't set commit time here because we don't care
+	 */
+	if (txn->gid == NULL)
+		txn->gid = pstrdup(gid);
+
+	rb->abort_prepared_notify(rb, txn, abort_lsn);
 }
 
 /*
@@ -2152,6 +2193,31 @@ ReorderBufferProcessXid(ReorderBuffer *rb, TransactionId xid, XLogRecPtr lsn)
 	/* many records won't have an xid assigned, centralize check here */
 	if (xid != InvalidTransactionId)
 		ReorderBufferTXNByXid(rb, xid, true, NULL, lsn, true);
+}
+
+/*
+ * Same, but also mark that xact is prepared at given LSN.
+ */
+void
+ReorderBufferProcessXidPrepared(ReorderBuffer *rb, TransactionId xid,
+								XLogRecPtr lsn, const char *gid)
+{
+	ReorderBufferTXN *txn = ReorderBufferTXNByXid(rb, xid, true, NULL, lsn, true);
+	txn->prepare_lsn = lsn;
+	txn->gid = pstrdup(gid);
+}
+
+/*
+ * Get LSN of PREPARE.
+ */
+XLogRecPtr ReorderBufferXidGetPreparedLSN(ReorderBuffer *rb, TransactionId xid)
+{
+	ReorderBufferTXN *txn = ReorderBufferTXNByXid(rb, xid, false, NULL,
+												  InvalidXLogRecPtr, true);
+	if (txn != NULL)
+		return txn->prepare_lsn;
+	else
+		return InvalidXLogRecPtr;
 }
 
 /*

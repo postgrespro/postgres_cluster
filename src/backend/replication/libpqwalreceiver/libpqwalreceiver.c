@@ -27,6 +27,7 @@
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "pgstat.h"
+#include "replication/logicalworker.h"
 #include "replication/walreceiver.h"
 #include "utils/builtins.h"
 #include "utils/memutils.h"
@@ -73,7 +74,8 @@ static char *libpqrcv_create_slot(WalReceiverConn *conn,
 					 const char *slotname,
 					 bool temporary,
 					 CRSSnapshotAction snapshot_action,
-					 XLogRecPtr *lsn);
+					 XLogRecPtr *lsn,
+					 int *num_unfinished_prepares);
 static WalRcvExecResult *libpqrcv_exec(WalReceiverConn *conn,
 			  const char *query,
 			  const int nRetTypes,
@@ -418,6 +420,22 @@ libpqrcv_startstreaming(WalReceiverConn *conn,
 		appendStringInfo(&cmd, ", publication_names %s", pubnames_literal);
 		PQfreemem(pubnames_literal);
 		pfree(pubnames_str);
+
+		/*
+		 * If logical_replication_2pc is off, don't include it at all --
+		 * probably we are talking to vanilla server.
+		 */
+		if (options->proto.logical.twophase != LOGICAL_REPLICATION_2PC_OFF)
+		{
+			appendStringInfo(&cmd, ", twophase '%u'",
+							 options->proto.logical.twophase);
+		}
+
+		/* Same with prepare_notifies */
+		if (options->proto.logical.prepare_notifies)
+		{
+			appendStringInfo(&cmd, ", prepare_notifies 'true'");
+		}
 
 		appendStringInfoChar(&cmd, ')');
 	}
@@ -790,7 +808,7 @@ libpqrcv_send(WalReceiverConn *conn, const char *buffer, int nbytes)
 static char *
 libpqrcv_create_slot(WalReceiverConn *conn, const char *slotname,
 					 bool temporary, CRSSnapshotAction snapshot_action,
-					 XLogRecPtr *lsn)
+					 XLogRecPtr *lsn, int *num_unfinished_prepares)
 {
 	PGresult   *res;
 	StringInfoData cmd;
@@ -818,6 +836,10 @@ libpqrcv_create_slot(WalReceiverConn *conn, const char *slotname,
 				appendStringInfoString(&cmd, " USE_SNAPSHOT");
 				break;
 		}
+		if (num_unfinished_prepares != NULL)
+		{
+			appendStringInfoString(&cmd, " COUNT_PREPARES");
+		}
 	}
 
 	res = libpqrcv_PQexec(conn->streamConn, cmd.data);
@@ -837,6 +859,9 @@ libpqrcv_create_slot(WalReceiverConn *conn, const char *slotname,
 		snapshot = pstrdup(PQgetvalue(res, 0, 2));
 	else
 		snapshot = NULL;
+
+	if (num_unfinished_prepares != NULL && (PQnfields(res) == 5))
+		*num_unfinished_prepares = pg_atoi(PQgetvalue(res, 0, 4), sizeof(int32), 0);
 
 	PQclear(res);
 

@@ -20,9 +20,11 @@
 
 #include "replication/logical.h"
 #include "replication/logicalproto.h"
+#include "replication/logicalworker.h"
 #include "replication/origin.h"
 #include "replication/pgoutput.h"
 
+#include "utils/builtins.h"
 #include "utils/guc.h"
 #include "utils/inval.h"
 #include "utils/int8.h"
@@ -31,8 +33,6 @@
 #include "utils/varlena.h"
 
 PG_MODULE_MAGIC;
-
-extern void _PG_init(void);
 
 extern void _PG_output_plugin_init(OutputPluginCallbacks *cb);
 
@@ -59,10 +59,14 @@ static bool pgoutput_decode_txn_filter(LogicalDecodingContext *ctx,
 					   ReorderBufferTXN *txn);
 static void pgoutput_prepare_txn(LogicalDecodingContext *ctx,
 				ReorderBufferTXN *txn, XLogRecPtr prepare_lsn);
+static void pgoutput_prepare_notify_txn(LogicalDecodingContext *ctx,
+				ReorderBufferTXN *txn, XLogRecPtr prepare_lsn);
 static void pgoutput_commit_prepared_txn(LogicalDecodingContext *ctx,
 				ReorderBufferTXN *txn, XLogRecPtr prepare_lsn);
 static void pgoutput_abort_prepared_txn(LogicalDecodingContext *ctx,
 				ReorderBufferTXN *txn, XLogRecPtr prepare_lsn);
+static void pgoutput_abort_prepared_notify_txn(LogicalDecodingContext *ctx,
+											   ReorderBufferTXN *txn, XLogRecPtr prepare_lsn);
 
 static bool publications_valid;
 
@@ -83,28 +87,11 @@ typedef struct RelationSyncEntry
 /* Map used to remember which relation schemas we sent. */
 static HTAB *RelationSyncCache = NULL;
 
-/* GUC just for tests */
-static bool use_twophase;
-
 static void init_rel_sync_cache(MemoryContext decoding_context);
 static RelationSyncEntry *get_rel_sync_entry(PGOutputData *data, Oid relid);
 static void rel_sync_cache_relation_cb(Datum arg, Oid relid);
 static void rel_sync_cache_publication_cb(Datum arg, int cacheid,
 							  uint32 hashvalue);
-
-void
-_PG_init(void)
-{
-	DefineCustomBoolVariable(
-		"pgoutput.use_twophase",
-		"Toggle 2PC",
-		NULL,
-		&use_twophase,
-		false,
-		PGC_SUSET,
-		0,
-		NULL, NULL, NULL);
-}
 
 /*
  * Specify output plugin callbacks
@@ -125,6 +112,8 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 	cb->prepare_cb = pgoutput_prepare_txn;
 	cb->commit_prepared_cb = pgoutput_commit_prepared_txn;
 	cb->abort_prepared_cb = pgoutput_abort_prepared_txn;
+	cb->prepare_notify_cb = pgoutput_prepare_notify_txn;
+	cb->abort_prepared_notify_cb = pgoutput_abort_prepared_notify_txn;
 
 	cb->filter_by_origin_cb = pgoutput_origin_filter;
 	cb->shutdown_cb = pgoutput_shutdown;
@@ -132,11 +121,18 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 
 static void
 parse_output_parameters(List *options, uint32 *protocol_version,
-						List **publication_names)
+						List **publication_names, uint32 *twophase,
+						bool *prepare_notifies)
 {
 	ListCell   *lc;
 	bool		protocol_version_given = false;
 	bool		publication_names_given = false;
+	bool		twophase_given = false;
+	bool		prepare_notifies_given = false;
+
+	/* default values */
+	*twophase = false;
+	*prepare_notifies = false;
 
 	foreach(lc, options)
 	{
@@ -182,6 +178,40 @@ parse_output_parameters(List *options, uint32 *protocol_version,
 						(errcode(ERRCODE_INVALID_NAME),
 						 errmsg("invalid publication_names syntax")));
 		}
+		else if (strcmp(defel->defname, "twophase") == 0)
+		{
+			int64		parsed;
+
+			if (twophase_given)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			twophase_given = true;
+
+			if (!scanint8(strVal(defel->arg), true, &parsed))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("invalid twophase")));
+
+			*twophase = (LogicalReplication2PCType) parsed;
+		}
+		else if (strcmp(defel->defname, "prepare_notifies") == 0)
+		{
+			if (prepare_notifies_given)
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("conflicting or redundant options")));
+			prepare_notifies_given = true;
+
+			/* if option does not provide a value, it means its value is true */
+			if (defel->arg == NULL)
+				*prepare_notifies = true;
+			else if (!parse_bool(strVal(defel->arg), prepare_notifies))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
+								strVal(defel->arg), defel->defname)));
+		}
 		else
 			elog(ERROR, "unrecognized pgoutput option: %s", defel->defname);
 	}
@@ -219,7 +249,9 @@ pgoutput_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 		/* Parse the params and ERROR if we see any we don't recognize */
 		parse_output_parameters(ctx->output_plugin_options,
 								&data->protocol_version,
-								&data->publication_names);
+								&data->publication_names,
+								&data->twophase,
+								&data->prepare_notifies);
 
 		/* Check if we support requested protocol */
 		if (data->protocol_version > LOGICALREP_PROTO_VERSION_NUM)
@@ -257,10 +289,11 @@ pgoutput_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 static void
 pgoutput_begin_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn)
 {
+	PGOutputData *data = (PGOutputData *) ctx->output_plugin_private;
 	bool		send_replication_origin = txn->origin_id != InvalidRepOriginId;
 
 	OutputPluginPrepareWrite(ctx, !send_replication_origin);
-	logicalrep_write_begin(ctx->out, txn);
+	logicalrep_write_begin(ctx->out, txn, data->prepare_notifies);
 
 	if (send_replication_origin)
 	{
@@ -294,10 +327,13 @@ static void
 pgoutput_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 					XLogRecPtr commit_lsn)
 {
+	PGOutputData *data = (PGOutputData *) ctx->output_plugin_private;
+
 	OutputPluginUpdateProgress(ctx);
 
 	OutputPluginPrepareWrite(ctx, true);
-	logicalrep_write_commit(ctx->out, txn, commit_lsn);
+	logicalrep_write_xact(ctx->out, txn, commit_lsn, LOGICALPROTO_COMMIT, NULL,
+						  data->prepare_notifies);
 	OutputPluginWrite(ctx, true);
 }
 
@@ -351,7 +387,8 @@ pgoutput_abort_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	OutputPluginUpdateProgress(ctx);
 
 	OutputPluginPrepareWrite(ctx, true);
-	logicalrep_write_abort(ctx->out, txn, abort_lsn);
+	logicalrep_write_xact(ctx->out, txn, abort_lsn, LOGICALPROTO_ABORT, NULL,
+						  false);
 	OutputPluginWrite(ctx, true);
 }
 
@@ -370,7 +407,36 @@ pgoutput_prepare_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	/* Append :sysid to gid to avoid collision */
 	if (strstr(gid, "pgfdw:") != NULL)
 		gid = psprintf("%s:%lx", txn->gid, GetSystemIdentifier());
-	logicalrep_write_prepare(ctx->out, txn, prepare_lsn, gid);
+	logicalrep_write_xact(ctx->out, txn, prepare_lsn, LOGICALPROTO_PREPARE, gid,
+		false);
+	if (strstr(gid, "pgfdw:") != NULL)
+		pfree(gid);
+	OutputPluginWrite(ctx, true);
+}
+
+/*
+ * prepare_notify callback
+ */
+static void
+pgoutput_prepare_notify_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
+							XLogRecPtr prepare_lsn)
+{
+	char *gid = txn->gid;
+	PGOutputData *data = (PGOutputData *) ctx->output_plugin_private;
+
+	if (!data->prepare_notifies)
+		return; /* don't send anything if receiver doesn't need prepare tracking */
+
+	/*
+	 * Send PREPARE message, adding prepare_lsn. The receiver should be
+	 * careful not to actually prepare this.
+	 */
+	OutputPluginPrepareWrite(ctx, true);
+	/* Append :sysid to gid to avoid collision */
+	if (strstr(gid, "pgfdw:") != NULL)
+		gid = psprintf("%s:%lx", txn->gid, GetSystemIdentifier());
+	logicalrep_write_xact(ctx->out, txn, prepare_lsn, LOGICALPROTO_PREPARE, gid,
+						  true);
 	if (strstr(gid, "pgfdw:") != NULL)
 		pfree(gid);
 	OutputPluginWrite(ctx, true);
@@ -381,7 +447,7 @@ pgoutput_prepare_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
  */
 static void
 pgoutput_commit_prepared_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
-					XLogRecPtr prepare_lsn)
+					XLogRecPtr cp_lsn)
 {
 	char *gid = txn->gid;
 
@@ -391,18 +457,19 @@ pgoutput_commit_prepared_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	/* Append :sysid to gid to avoid collision */
 	if (strstr(gid, "pgfdw:") != NULL)
 		gid = psprintf("%s:%lx", txn->gid, GetSystemIdentifier());
-	logicalrep_write_prepare(ctx->out, txn, prepare_lsn, gid);
+	logicalrep_write_xact(ctx->out, txn, cp_lsn,
+						  LOGICALPROTO_COMMIT_PREPARED, gid, false);
 	if (strstr(gid, "pgfdw:") != NULL)
 		pfree(gid);
 	OutputPluginWrite(ctx, true);
 }
 
 /*
- * PREPARE callback
+ * ABORT PREPARED callback
  */
 static void
 pgoutput_abort_prepared_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
-					XLogRecPtr prepare_lsn)
+					XLogRecPtr ap_lsn)
 {
 	char *gid = txn->gid;
 
@@ -412,7 +479,36 @@ pgoutput_abort_prepared_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 	/* Append :sysid to gid to avoid collision */
 	if (strstr(gid, "pgfdw:") != NULL)
 		gid = psprintf("%s:%lx", txn->gid, GetSystemIdentifier());
-	logicalrep_write_prepare(ctx->out, txn, prepare_lsn, gid);
+	logicalrep_write_xact(ctx->out, txn, ap_lsn,
+						  LOGICALPROTO_ROLLBACK_PREPARED, gid, false);
+	if (strstr(gid, "pgfdw:") != NULL)
+		pfree(gid);
+	OutputPluginWrite(ctx, true);
+}
+
+/*
+ * abort_prepared_notify callback
+ */
+static void
+pgoutput_abort_prepared_notify_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
+								   XLogRecPtr ap_lsn)
+{
+	char *gid = txn->gid;
+	PGOutputData *data = (PGOutputData *) ctx->output_plugin_private;
+
+	if (!data->prepare_notifies)
+		return; /* don't send anything if receiver doesn't need prepare tracking */
+
+	/*
+	 * Send RP message with prepare_lsn; the receiver should be careful
+	 * not to actually abort anything.
+	 */
+	OutputPluginPrepareWrite(ctx, true);
+	/* Append :sysid to gid to avoid collision */
+	if (strstr(gid, "pgfdw:") != NULL)
+		gid = psprintf("%s:%lx", txn->gid, GetSystemIdentifier());
+	logicalrep_write_xact(ctx->out, txn, ap_lsn, LOGICALPROTO_ROLLBACK_PREPARED,
+						  gid, true);
 	if (strstr(gid, "pgfdw:") != NULL)
 		pfree(gid);
 	OutputPluginWrite(ctx, true);
@@ -555,11 +651,18 @@ static bool
 pgoutput_filter_prepare(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 						TransactionId xid, const char *gid)
 {
-	if (strstr(gid, "pgfdw:") != NULL) /* shardman */
-	{
+	PGOutputData *data = (PGOutputData *) ctx->output_plugin_private;
+	LogicalReplication2PCType twophase = data->twophase;
+
+	if (twophase == LOGICAL_REPLICATION_2PC_OFF)
+		return true;
+	else if (twophase == LOGICAL_REPLICATION_2PC_ALWAYS)
 		return false;
+	else
+	{
+		Assert(twophase == LOGICAL_REPLICATION_2PC_SHARDMAN);
+		return strstr(gid, "pgfdw:") == NULL;
 	}
-	return !use_twophase;
 }
 
 /*
