@@ -1847,7 +1847,8 @@ GetSnapshotData(Snapshot snapshot)
 	snapshot->imported_global_csn = false;
 	snapshot->global_csn = global_csn;
 	/* if (global_snapshot_defer_time > 0 && IsNormalProcessingMode()) */
-	if (global_snapshot_defer_time > 0 && IsUnderPostmaster)
+	if (track_global_snapshots && global_snapshot_defer_time > 0 &&
+		IsUnderPostmaster)
 		GlobalSnapshotMapXmin(snapshot->global_csn);
 
 	return snapshot;

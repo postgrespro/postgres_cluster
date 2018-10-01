@@ -181,7 +181,8 @@ GlobalSnapshotStartup(TransactionId oldestActiveXID)
 	 * Run only if we have initialized shared memory and gsXidMap
 	 * is enabled.
 	 */
-	if (IsNormalProcessingMode() && global_snapshot_defer_time > 0)
+	if (IsNormalProcessingMode() && track_global_snapshots &&
+		global_snapshot_defer_time > 0)
 	{
 		int i;
 
