@@ -705,9 +705,9 @@ static void
 DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 			  xl_xact_parsed_prepare * parsed)
 {
-	XLogRecPtr	origin_lsn = InvalidXLogRecPtr;
+	XLogRecPtr	origin_lsn = parsed->origin_lsn;
 	TimestampTz commit_time = parsed->xact_time;
-	XLogRecPtr	origin_id = XLogRecGetOrigin(buf->record);
+	RepOriginId	origin_id = XLogRecGetOrigin(buf->record);
 	int			i;
 	TransactionId xid = parsed->twophase_xid;
 	const char *gid	= parsed->twophase_gid;
@@ -716,7 +716,6 @@ DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 
 	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
 	{
-		origin_lsn = parsed->origin_lsn;
 		commit_time = parsed->origin_timestamp;
 	}
 
