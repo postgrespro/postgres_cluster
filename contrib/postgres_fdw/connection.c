@@ -16,10 +16,11 @@
 
 #include "access/global_snapshot.h"
 #include "access/htup_details.h"
-#include "catalog/pg_user_mapping.h"
-#include "access/xact.h"
 #include "access/transam.h"
+#include "access/twophase.h"
+#include "access/xact.h"
 #include "access/xlog.h" /* GetSystemIdentifier() */
+#include "catalog/pg_user_mapping.h"
 #include "libpq-int.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
@@ -81,7 +82,7 @@ static HTAB *ConnectionHash = NULL;
  */
 typedef struct FdwTransactionState
 {
-	char		*gid;
+	char		gid[GIDSIZE];
 	int			nparticipants;
 	GlobalCSN	global_csn;
 	bool		two_phase_commit;
@@ -839,7 +840,84 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 	if (!xact_got_connection)
 		return;
 
-	/* Handle possible two-phase commit */
+	/*
+	 * Hack for shardman loader: it allows to do 2PC on user-issued
+	 * prepare. In this case we won't be able to commit xacts because we we
+	 * don't record participants info anywhere; this must be done by loader or
+	 * human behind it.
+	 */
+	if (event == XACT_EVENT_PRE_PREPARE &&
+		UseGlobalSnapshots &&
+		strncmp("pgfdw:", GetPrepareGid(), strlen("pgfdw:")) == 0 &&
+		strstr(GetPrepareGid(), "shmnloader") != 0)
+	{
+		/*
+		 * Remember gid. We will PREPARE on other nodes and finish global
+		 * snaps on XACT_EVENT_POST_PREPARE.
+		 */
+		strncpy(fdwTransState->gid, GetPrepareGid(), GIDSIZE);
+		/*
+		 * xact_depth and fdwTransState will be cleaned up on
+		 * XACT_EVENT_POST_PREPARE.
+		 */
+		elog(WARNING, "pre prepare gid %s", fdwTransState->gid);
+		return;
+	}
+	if (event == XACT_EVENT_PREPARE && fdwTransState->gid[0] != '\0')
+		return; /* prevent cleanup */
+	if (event == XACT_EVENT_POST_PREPARE)
+	{
+		GlobalCSN	max_csn = InProgressGlobalCSN;
+		GlobalCSN	my_csn = InProgressGlobalCSN;
+		bool	res;
+		char   *sql;
+		elog(WARNING, "fdw post prepare");
+
+		if (fdwTransState->gid[0] == '\0')
+		{
+			/*
+			 * Nothing to do here; since this cb is not present in vanilla,
+			 * exit to avoid harming state machine
+			 */
+			return;
+		}
+		sql = psprintf("PREPARE TRANSACTION '%s'", fdwTransState->gid);
+		res = BroadcastCmd(sql);
+		if (!res)
+			goto error;
+
+		/* Broadcast pg_global_snapshot_prepare() */
+		my_csn = GlobalSnapshotPrepareTwophase(fdwTransState->gid);
+
+		sql = psprintf("SELECT pg_global_snapshot_prepare('%s')",
+					   fdwTransState->gid);
+		res = BroadcastStmt(sql, PGRES_TUPLES_OK, MaxCsnCB, &max_csn);
+		if (!res)
+			goto error;
+
+		/* select maximal global csn */
+		if (my_csn > max_csn)
+			max_csn = my_csn;
+
+		/* Broadcast pg_global_snapshot_assign() */
+		GlobalSnapshotAssignCsnTwoPhase(fdwTransState->gid, max_csn);
+		sql = psprintf("SELECT pg_global_snapshot_assign('%s',"UINT64_FORMAT")",
+					   fdwTransState->gid, max_csn);
+		res = BroadcastFunc(sql);
+
+error:
+		elog(WARNING, "post prepare gid %s, res %d", fdwTransState->gid, res);
+		if (!res)
+		{
+			sql = psprintf("ABORT PREPARED '%s'", fdwTransState->gid);
+			BroadcastCmd(sql);
+			elog(ERROR, "failed to PREPARE transaction on remote node, ABORT PREPARED this xact");
+		}
+	}
+
+	/*
+	 * Handle possible two-phase commit.
+	 */
 	if (event == XACT_EVENT_PARALLEL_PRE_COMMIT || event == XACT_EVENT_PRE_COMMIT)
 	{
 		bool include_local_tx = false;
@@ -862,29 +940,31 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 			bool	res;
 			char   *sql;
 
-			fdwTransState->gid = psprintf("pgfdw:%lld:%llu:%d:%u:%d:%d",
-										  (long long) GetCurrentTimestamp(),
-										  (long long) GetSystemIdentifier(),
-										  MyProcPid,
-										  GetCurrentTransactionIdIfAny(),
-										  ++two_phase_xact_count,
-										  fdwTransState->nparticipants);
+			snprintf(fdwTransState->gid,
+					 GIDSIZE,
+					 "pgfdw:%lld:%llu:%d:%u:%d:%d",
+					 (long long) GetCurrentTimestamp(),
+					 (long long) GetSystemIdentifier(),
+					 MyProcPid,
+					 GetCurrentTransactionIdIfAny(),
+					 ++two_phase_xact_count,
+					 fdwTransState->nparticipants);
 
 			/* Broadcast PREPARE */
 			sql = psprintf("PREPARE TRANSACTION '%s'", fdwTransState->gid);
 			res = BroadcastCmd(sql);
 			if (!res)
-				goto error;
+				goto error_user2pc;
 
 			/* Broadcast pg_global_snapshot_prepare() */
 			if (include_local_tx)
 				my_csn = GlobalSnapshotPrepareCurrent();
 
 			sql = psprintf("SELECT pg_global_snapshot_prepare('%s')",
-														fdwTransState->gid);
+						   fdwTransState->gid);
 			res = BroadcastStmt(sql, PGRES_TUPLES_OK, MaxCsnCB, &max_csn);
 			if (!res)
-				goto error;
+				goto error_user2pc;
 
 			/* select maximal global csn */
 			if (include_local_tx && my_csn > max_csn)
@@ -894,10 +974,10 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 			if (include_local_tx)
 				GlobalSnapshotAssignCsnCurrent(max_csn);
 			sql = psprintf("SELECT pg_global_snapshot_assign('%s',"UINT64_FORMAT")",
-							fdwTransState->gid, max_csn);
+						   fdwTransState->gid, max_csn);
 			res = BroadcastFunc(sql);
 
-error:
+error_user2pc:
 			if (!res)
 			{
 				sql = psprintf("ABORT PREPARED '%s'", fdwTransState->gid);
@@ -959,6 +1039,10 @@ error:
 					break;
 				case XACT_EVENT_PRE_PREPARE:
 
+					if (fdwTransState->gid[0] != '\0')
+						/* See comments above */
+						break;
+
 					/*
 					 * We disallow remote transactions that modified anything,
 					 * since it's not very reasonable to hold them open until
@@ -980,6 +1064,9 @@ error:
 						elog(ERROR, "missed cleaning up connection during pre-commit");
 					break;
 				case XACT_EVENT_PREPARE:
+					if (fdwTransState->gid[0] != '\0')
+						break;
+
 					/* Pre-commit should have closed the open transaction */
 					elog(ERROR, "missed cleaning up connection during pre-commit");
 					break;
@@ -1046,6 +1133,14 @@ error:
 					/* Disarm changing_xact_state if it all worked. */
 					entry->changing_xact_state = abort_cleanup_failure;
 					break;
+				case XACT_EVENT_POST_PREPARE:
+					/*
+					 * New event can break our state machine, so let's list
+					 * them here explicitely and force compiler warning in
+					 * case of unhandled event.
+					 */
+					break;
+
 			}
 		}
 
