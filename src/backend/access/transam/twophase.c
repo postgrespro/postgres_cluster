@@ -2548,7 +2548,7 @@ PrepareRedoRemove(TransactionId xid, bool giveWarning)
  * This function is a counterpart of GlobalSnapshotPrepareCurrent() for
  * twophase transactions.
  */
-static GlobalCSN
+GlobalCSN
 GlobalSnapshotPrepareTwophase(const char *gid)
 {
 	GlobalTransaction gxact;
@@ -2619,7 +2619,7 @@ pg_global_snapshot_prepare(PG_FUNCTION_ARGS)
  * This function is a counterpart of GlobalSnapshotAssignCsnCurrent() for
  * twophase transactions.
  */
-static void
+void
 GlobalSnapshotAssignCsnTwoPhase(const char *gid, GlobalCSN global_csn)
 {
 	GlobalTransaction gxact;

@@ -61,4 +61,9 @@ extern void PrepareRedoAdd(char *buf, XLogRecPtr start_lsn,
 			   XLogRecPtr end_lsn, RepOriginId origin_id);
 extern void PrepareRedoRemove(TransactionId xid, bool giveWarning);
 extern void restoreTwoPhaseData(void);
+
+/* Global snapshots support for 2PC on coordinator */
+extern GlobalCSN GlobalSnapshotPrepareTwophase(const char *gid);
+extern void GlobalSnapshotAssignCsnTwoPhase(const char *gid, GlobalCSN global_csn);
+
 #endif							/* TWOPHASE_H */
