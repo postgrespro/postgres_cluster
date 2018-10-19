@@ -2463,6 +2463,8 @@ PrepareTransaction(void)
 	s->state = TRANS_DEFAULT;
 
 	RESUME_INTERRUPTS();
+
+	CallXactCallbacks(XACT_EVENT_POST_PREPARE);
 }
 
 
@@ -5847,4 +5849,11 @@ xact_redo(XLogReaderState *record)
 	}
 	else
 		elog(PANIC, "xact_redo: unknown op code %u", info);
+}
+
+/* Get gid for ongoing PREPARE */
+const char *
+GetPrepareGid(void)
+{
+	return prepareGID;
 }
