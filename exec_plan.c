@@ -36,7 +36,7 @@ static PlannedStmt *HOOK_Planner_injection(Query *parse, int cursorOptions,
 											ParamListInfo boundParams);
 static void HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags);
 static void HOOK_ExecEnd_injection(QueryDesc *queryDesc);
-static char * serialize_plan(PlannedStmt *pstmt, ParamListInfo boundParams,
+static char *serialize_plan(PlannedStmt *pstmt, ParamListInfo boundParams,
 							 const char *querySourceText);
 static void execute_query(char *planString);
 
@@ -91,12 +91,14 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 
 	if ((OidIsValid(get_extension_oid("execplan", true))) &&
 		(node_number1 == 0) &&
-		(nodeTag(parsetree) == T_CreateStmt))
+		(nodeTag(parsetree) != T_CopyStmt) &&
+		(nodeTag(parsetree) != T_CreateExtensionStmt) &&
+		(context != PROCESS_UTILITY_SUBCOMMAND))
 	{
 		char	conninfo[1024];
 		int		status;
 
-		elog(LOG, "Send UTILITY query: %s", queryString);
+		elog(LOG, "Send UTILITY query %d: %s", nodeTag(parsetree), queryString);
 
 		/* Connect to slave and send it a query plan */
 		sprintf(conninfo, "host=localhost port=5433%c", '\0');
@@ -108,6 +110,8 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 		if (status == 0)
 			elog(ERROR, "Query sending error: %s", PQerrorMessage(conn));
 	}
+	else if (node_number1 == 0)
+		elog(LOG, "UTILITY query without sending: %s", queryString);
 
 	if (next_ProcessUtility_hook)
 		(*next_ProcessUtility_hook) (pstmt, queryString, context, params,
@@ -128,6 +132,9 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 	}
 }
 
+/*
+ * INPUT: a base64-encoded serialized plan
+ */
 static void
 execute_query(char *planString)
 {
@@ -142,7 +149,7 @@ execute_query(char *planString)
 		elog(LOG, "Connection error. conninfo: %s", conninfo);
 
 	SQLCommand = (char *) palloc0(strlen(planString)+100);
-	sprintf(SQLCommand, "SELECT pg_execute_plan('%s')", planString);
+	sprintf(SQLCommand, "SELECT pg_execute_plan('%s');", planString);
 //elog(LOG, "query: %s", SQLCommand);
 	status = PQsendQuery(conn, SQLCommand);
 	if (status == 0)
@@ -182,9 +189,10 @@ HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags)
 		(node_number1 == 0) &&
 		((parsetree == NULL) || (nodeTag(parsetree) != T_CreatedbStmt)))
 	{
+		char	*exec_plan_query = serialize_plan(queryDesc->plannedstmt, queryDesc->params,
+				 queryDesc->sourceText);
 		elog(LOG, "Send query: %s", queryDesc->sourceText);
-		execute_query(serialize_plan(queryDesc->plannedstmt, queryDesc->params,
-									 queryDesc->sourceText));
+		execute_query(exec_plan_query);
 	}
 	else
 	{
@@ -217,7 +225,7 @@ HOOK_ExecEnd_injection(QueryDesc *queryDesc)
 		standard_ExecutorEnd(queryDesc);
 }
 
-#include "utils/fmgrprotos.h"
+#include "common/base64.h"
 
 static char *
 serialize_plan(PlannedStmt *pstmt, ParamListInfo boundParams,
@@ -226,37 +234,36 @@ serialize_plan(PlannedStmt *pstmt, ParamListInfo boundParams,
 	int		splan_len,
 			sparams_len,
 			qtext_len,
+			tot_len,
 			econtainer_len;
 	char	*serialized_plan,
 			*container,
-			*start_address,
-			*econtainer;
+			*econtainer,
+			*start_address;
 
 	serialized_plan = nodeToString(pstmt);
-
+//	elog(LOG, "serialized_plan: %s", serialized_plan);
 	/* We use len+1 bytes for include end-of-string symbol. */
 	splan_len = strlen(serialized_plan) + 1;
 	qtext_len = strlen(querySourceText) + 1;
 
 	sparams_len = EstimateParamListSpace(boundParams);
+	tot_len = splan_len + sparams_len + qtext_len;
 
-	container = (char *) palloc0(splan_len + sparams_len + qtext_len);
-//elog(LOG, "Serialize sizes: plan: %d params: %d, numParams: %d", splan_len, sparams_len, boundParams->numParams);
-	memcpy(container, serialized_plan, splan_len);
-	start_address = container + splan_len;
+	container = (char *) palloc0(tot_len);
+	start_address = container;
+
+	memcpy(start_address, serialized_plan, splan_len);
+	start_address += splan_len;
 	SerializeParamList(boundParams, &start_address);
-
 	Assert(start_address == container + splan_len + sparams_len);
 	memcpy(start_address, querySourceText, qtext_len);
 
-	econtainer_len = pg_base64_enc_len(container, splan_len + sparams_len + qtext_len);
-	econtainer = (char *) palloc0(econtainer_len + 1);
-	if (econtainer_len != pg_base64_encode(container, splan_len + sparams_len +
-			qtext_len, econtainer))
-		elog(LOG, "econtainer_len: %d %d", econtainer_len, pg_base64_encode(container, splan_len + sparams_len +
-				qtext_len, econtainer));
-	Assert(econtainer_len == pg_base64_encode(container, splan_len + sparams_len +
-										qtext_len, econtainer));
+	econtainer_len = pg_b64_enc_len(tot_len);
+	econtainer = (char *) palloc0(econtainer_len+1);
+	Assert(pg_b64_encode(container, tot_len, econtainer) <= econtainer_len);
+
+	/* In accordance with example from fe-auth-scram.c */
 	econtainer[econtainer_len] = '\0';
 
 	return econtainer;
@@ -309,21 +316,22 @@ Datum
 pg_execute_plan(PG_FUNCTION_ARGS)
 {
 	char			*data = TextDatumGetCString(PG_GETARG_DATUM(0));
+	char			*decdata;
+	int				decdata_len;
 	PlannedStmt		*pstmt;
 	QueryDesc		*queryDesc;
 	char			*queryString;
 	ParamListInfo 	paramLI = NULL;
-	int				dec_tot_len;
-	char			*dcontainer,
-					*start_addr;
+	char			*start_addr;
 
-	/* Compute decoded size of bytea data */
-	dec_tot_len = pg_base64_dec_len(data, strlen(data));
-	dcontainer = (char *) palloc0(dec_tot_len);
-	Assert(dec_tot_len == pg_base64_decode(data, strlen(data), dcontainer));
-
-	pstmt = (PlannedStmt *) stringToNode((char *) dcontainer);
-	start_addr = dcontainer + strlen(dcontainer) + 1;
+	Assert(data != NULL);
+	decdata_len = pg_b64_dec_len(strlen(data));
+	decdata = (char *) palloc(decdata_len);
+//	elog(LOG, "Decode query");
+	Assert(pg_b64_decode(data, strlen(data), decdata) <= decdata_len);
+//	elog(LOG, "Decode query1");
+	pstmt = (PlannedStmt *) stringToNode((char *) decdata);
+	start_addr = decdata + strlen(decdata) + 1;
 	paramLI = RestoreParamList((char **) &start_addr);
 	queryString = start_addr;
 //	elog(LOG, "Decoded query: %s\n", start_addr);
