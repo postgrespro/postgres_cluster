@@ -1,7 +1,7 @@
 
 #include "postgres.h"
 
-//#include "access/xact.h"
+#include "catalog/namespace.h"
 #include "commands/extension.h"
 #include "executor/execdesc.h"
 #include "executor/executor.h"
@@ -9,11 +9,13 @@
 #include "libpq/libpq.h"
 #include "libpq-fe.h"
 #include "nodes/params.h"
+#include "planwalker.h"
 #include "optimizer/planner.h"
 #include "storage/lmgr.h"
 #include "tcop/utility.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
+#include "utils/lsyscache.h"
 #include "utils/plancache.h"
 #include "utils/snapmgr.h"
 
@@ -36,9 +38,9 @@ static PlannedStmt *HOOK_Planner_injection(Query *parse, int cursorOptions,
 											ParamListInfo boundParams);
 static void HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags);
 static void HOOK_ExecEnd_injection(QueryDesc *queryDesc);
-static char *serialize_plan(PlannedStmt *pstmt, ParamListInfo boundParams,
-							 const char *querySourceText);
+static char *serialize_plan(QueryDesc *queryDesc, int eflags);
 static void execute_query(char *planString);
+static bool store_irel_name(Plan *plan, char *buffer);
 
 static PGconn	*conn = NULL;
 
@@ -98,7 +100,7 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 		char	conninfo[1024];
 		int		status;
 
-		elog(LOG, "Send UTILITY query %d: %s", nodeTag(parsetree), queryString);
+//		elog(LOG, "Send UTILITY query %d: %s", nodeTag(parsetree), queryString);
 
 		/* Connect to slave and send it a query plan */
 		sprintf(conninfo, "host=localhost port=5433%c", '\0');
@@ -185,24 +187,18 @@ HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags)
 {
 	Node	*parsetree = queryDesc->plannedstmt->utilityStmt;
 
-	if ((OidIsValid(get_extension_oid("execplan", true))) &&
-		(node_number1 == 0) &&
-		((parsetree == NULL) || (nodeTag(parsetree) != T_CreatedbStmt)))
-	{
-		char	*exec_plan_query = serialize_plan(queryDesc->plannedstmt, queryDesc->params,
-				 queryDesc->sourceText);
-		elog(LOG, "Send query: %s", queryDesc->sourceText);
-		execute_query(exec_plan_query);
-	}
-	else
-	{
-//		elog(LOG, "EXECUTOR Process query without sending. IsParsetree=%hhu node_number1=%d IsExt=%hhu", parsetree != NULL, node_number1, OidIsValid(get_extension_oid("execplan", true)));
-	}
-
 	if (prev_ExecutorStart)
 		prev_ExecutorStart(queryDesc, eflags);
 	else
 		standard_ExecutorStart(queryDesc, eflags);
+
+	if ((OidIsValid(get_extension_oid("execplan", true))) &&
+		(node_number1 == 0) &&
+		((parsetree == NULL) || (nodeTag(parsetree) != T_CreatedbStmt)))
+	{
+//		elog(LOG, "Send query: %s", queryDesc->sourceText);
+		execute_query(serialize_plan(queryDesc, eflags));
+	}
 }
 
 static void
@@ -226,38 +222,143 @@ HOOK_ExecEnd_injection(QueryDesc *queryDesc)
 }
 
 #include "common/base64.h"
+#include "nodes/nodeFuncs.h"
+
+static bool
+compute_irels_buffer_len(Plan *plan, int *length)
+{
+	Oid		indexid = InvalidOid;
+
+	switch (nodeTag(plan))
+	{
+		case T_IndexScan:
+		{
+			indexid = ((IndexScan *) plan)->indexid;
+			break;
+		}
+		case T_IndexOnlyScan:
+		{
+			indexid = ((IndexOnlyScan *) plan)->indexid;
+			break;
+		}
+		case T_BitmapIndexScan:
+		{
+			indexid = ((BitmapIndexScan *) plan)->indexid;
+			break;
+		}
+		default:
+			break;
+	}
+
+	if (indexid != InvalidOid)
+	{
+		*length += strlen(get_rel_name(indexid)) + 1;
+	}
+
+	return plan_tree_walker(plan, compute_irels_buffer_len, length);
+}
+
+//#include "nodes/pg_list.h"
 
 static char *
-serialize_plan(PlannedStmt *pstmt, ParamListInfo boundParams,
-			   const char *querySourceText)
+serialize_plan(QueryDesc *queryDesc, int eflags)
 {
 	int		splan_len,
 			sparams_len,
 			qtext_len,
+			relnames_len = 0,
+			inames_len = 0,
 			tot_len,
 			econtainer_len;
 	char	*serialized_plan,
 			*container,
 			*econtainer,
 			*start_address;
+	ListCell		*lc;
 
-	serialized_plan = nodeToString(pstmt);
-//	elog(LOG, "serialized_plan: %s", serialized_plan);
+	serialized_plan = nodeToString(queryDesc->plannedstmt);
+
+	/*
+	 * Traverse the rtable list, get elements with relkind == RTE_RELATION, get
+	 * relation name by rte->relid. This step is needed for serialized plan raw
+	 * data memory estimation
+	 */
+	foreach(lc, queryDesc->plannedstmt->rtable)
+	{
+		RangeTblEntry	*rte = (RangeTblEntry *) lfirst(lc);
+		char			*relname;
+
+		if (rte->rtekind == RTE_RELATION)
+		{
+			/* Use the current actual name of the relation */
+			relname = get_rel_name(rte->relid);
+			relnames_len += strlen(relname) + 1;
+		}
+	}
+
+	/*
+	 * Traverse the query plan and search for the node types: T_BitmapIndexScan,
+	 * T_IndexOnlyScan, T_IndexScan. Its contains 'Oid indexid' field. We need
+	 * to save the relation names in serialized plan.
+	 */
+	compute_irels_buffer_len(queryDesc->plannedstmt->planTree, &inames_len);
+//	plan_tree_walker(queryDesc->plannedstmt->planTree,
+//					 compute_irels_buffer_len,
+//					 &inames_len);
+//	planstate_tree_walker((PlanState *) (queryDesc->planstate), compute_irels_buffer_len, &inames_len);
+//elog(LOG, "inames_len=%d", inames_len);
 	/* We use len+1 bytes for include end-of-string symbol. */
 	splan_len = strlen(serialized_plan) + 1;
-	qtext_len = strlen(querySourceText) + 1;
+	qtext_len = strlen(queryDesc->sourceText) + 1;
 
-	sparams_len = EstimateParamListSpace(boundParams);
-	tot_len = splan_len + sparams_len + qtext_len;
+	sparams_len = EstimateParamListSpace(queryDesc->params);
+	tot_len = splan_len + sparams_len + qtext_len + 2*sizeof(int) + relnames_len + inames_len;
 
 	container = (char *) palloc0(tot_len);
 	start_address = container;
 
 	memcpy(start_address, serialized_plan, splan_len);
 	start_address += splan_len;
-	SerializeParamList(boundParams, &start_address);
+	SerializeParamList(queryDesc->params, &start_address);
 	Assert(start_address == container + splan_len + sparams_len);
-	memcpy(start_address, querySourceText, qtext_len);
+	memcpy(start_address, queryDesc->sourceText, qtext_len);
+
+	/* Add instrument_options */
+	start_address += qtext_len;
+	memcpy(start_address, &queryDesc->instrument_options, sizeof(int));
+
+	/* Add flags */
+	start_address += sizeof(int);
+	memcpy(start_address, &eflags, sizeof(int));
+	start_address += sizeof(int);
+
+	/*
+	 * Second pass of the rtable list, get elements with
+	 * relkind == RTE_RELATION, get relation name by rte->relid. Save relation
+	 * names into the serialized plan buffer.
+	 */
+	foreach(lc, queryDesc->plannedstmt->rtable)
+	{
+		RangeTblEntry	*rte = (RangeTblEntry *) lfirst(lc);
+		char			*relname;
+		int				len;
+
+		if (rte->rtekind == RTE_RELATION)
+		{
+			/* Use the current actual name of the relation */
+			relname = get_rel_name(rte->relid);
+			len = strlen(relname) + 1;
+			memcpy(start_address, relname, len);
+			start_address += len;
+		}
+	}
+	store_irel_name((Plan *) (queryDesc->plannedstmt->planTree), start_address);
+//	plan_tree_walker((Plan *) (queryDesc->plannedstmt->planTree),
+//					 store_irel_name,
+//					 start_address);
+
+	start_address += inames_len;
+	Assert((start_address - container) == tot_len);
 
 	econtainer_len = pg_b64_enc_len(tot_len);
 	econtainer = (char *) palloc0(econtainer_len+1);
@@ -312,36 +413,151 @@ AcquirePlannerLocks(PlannedStmt *pstmt, bool acquire)
 	ScanQueryForLocks(pstmt, acquire);
 }
 
+static bool
+store_irel_name(Plan *plan, char *buffer)
+{
+	Oid		indexid = InvalidOid;
+
+	switch (nodeTag(plan))
+	{
+		case T_IndexScan:
+		{
+			indexid = ((IndexScan *) plan)->indexid;
+			break;
+		}
+		case T_IndexOnlyScan:
+		{
+			indexid = ((IndexOnlyScan *) plan)->indexid;
+			break;
+		}
+		case T_BitmapIndexScan:
+		{
+			indexid = ((BitmapIndexScan *) plan)->indexid;
+			break;
+		}
+		default:
+			break;
+	}
+
+	if (indexid != InvalidOid)
+	{
+		char	*relname;
+		int		relname_len;
+//elog(LOG, "INDEXID %d", indexid);
+		relname = get_rel_name(indexid);
+		relname_len = strlen(relname) + 1;
+		memcpy(buffer, relname, relname_len);
+		buffer += relname_len;
+	}
+
+	return plan_tree_walker(plan, store_irel_name, buffer);
+}
+
+static bool
+extract_relname(Plan *plan, char *buffer)
+{
+	Oid		*indexid = NULL;
+
+	switch (nodeTag(plan))
+	{
+		case T_IndexScan:
+		{
+			indexid = &((IndexScan *) plan)->indexid;
+//			elog(LOG, "INDEX SCAN indexid=%d", *indexid);
+			break;
+		}
+		case T_IndexOnlyScan:
+		{
+			indexid = &((IndexOnlyScan *) plan)->indexid;
+			break;
+		}
+		case T_BitmapIndexScan:
+		{
+			indexid = &((BitmapIndexScan *) plan)->indexid;
+			break;
+		}
+		default:
+			break;
+	}
+
+	if (indexid != NULL)
+	{
+		*indexid = RelnameGetRelid(buffer);
+		buffer += strlen(buffer) + 1;
+//		elog(LOG, "RR Relation: %s, indexid=%d", buffer, *indexid);
+	}
+
+	return plan_tree_walker(plan, extract_relname, buffer);
+}
+
+/*
+ * pg_execute_plan() -- execute a query plan by an instance
+ *
+ * Restore an query plan from base64-encoded string.
+ */
 Datum
 pg_execute_plan(PG_FUNCTION_ARGS)
 {
-	char			*data = TextDatumGetCString(PG_GETARG_DATUM(0));
-	char			*decdata;
-	int				decdata_len;
 	PlannedStmt		*pstmt;
 	QueryDesc		*queryDesc;
-	char			*queryString;
 	ParamListInfo 	paramLI = NULL;
-	char			*start_addr;
+	ListCell		*lc;
+	char			*data = TextDatumGetCString(PG_GETARG_DATUM(0)),
+					*decdata,
+					*queryString,
+					*start_addr;
+	int				decdata_len,
+					*instrument_options,
+					*eflags;
 
+	/* Decode base64 string into a byte sequence */
 	Assert(data != NULL);
 	decdata_len = pg_b64_dec_len(strlen(data));
 	decdata = (char *) palloc(decdata_len);
-//	elog(LOG, "Decode query");
-	Assert(pg_b64_decode(data, strlen(data), decdata) <= decdata_len);
-//	elog(LOG, "Decode query1");
+	decdata_len = pg_b64_decode(data, strlen(data), decdata);
+
+	/* Create query plan */
 	pstmt = (PlannedStmt *) stringToNode((char *) decdata);
+
+	/* Restore parameters list. */
 	start_addr = decdata + strlen(decdata) + 1;
 	paramLI = RestoreParamList((char **) &start_addr);
+
+	/* Restore query source text string */
 	queryString = start_addr;
-//	elog(LOG, "Decoded query: %s\n", start_addr);
+//elog(LOG, "queryString: %s", queryString);
+	/* Restore instrument and flags */
+	start_addr += strlen(queryString) + 1;
+	instrument_options = (int *) start_addr;
+	start_addr += sizeof(int);
+	eflags = (int *) start_addr;
+	start_addr += sizeof(int);
+
+	/*
+	 * Get relation oid by relation name, stored at the serialized plan.
+	 */
+	foreach(lc, pstmt->rtable)
+	{
+		RangeTblEntry	*rte = (RangeTblEntry *) lfirst(lc);
+
+		if (rte->rtekind == RTE_RELATION)
+		{
+			rte->relid = RelnameGetRelid(start_addr);
+			Assert(rte->relid != InvalidOid);
+//			elog(LOG, "Relation from decoded plan. relid=%d relname=%s", rte->relid, start_addr);
+			start_addr += strlen(start_addr) + 1;
+		}
+	}
+
+	extract_relname(pstmt->planTree, start_addr);
 
 	queryDesc = CreateQueryDesc(pstmt, queryString, GetActiveSnapshot(),
 								InvalidSnapshot, None_Receiver, paramLI, NULL,
-								0);
+								*instrument_options);
+
 	AcquirePlannerLocks(pstmt, true);
 
-	ExecutorStart(queryDesc, 0);
+	ExecutorStart(queryDesc, *eflags);
 
 	ExecutorRun(queryDesc, ForwardScanDirection, 0, true);
 
@@ -350,6 +566,7 @@ pg_execute_plan(PG_FUNCTION_ARGS)
 	ExecutorEnd(queryDesc);
 	FreeQueryDesc(queryDesc);
 
+	pfree(decdata);
 	PG_RETURN_BOOL(true);
 }
 
