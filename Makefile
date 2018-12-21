@@ -5,7 +5,7 @@ EXTENSION = execplan
 EXTVERSION = 0.1
 PGFILEDESC = "ExecPlan"
 MODULES = execplan
-OBJS = exec_plan.o planwalker.o $(WIN32RES)
+OBJS = exec_plan.o planwalker.o repeater.o $(WIN32RES)
 
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK_INTERNAL = $(libpq)

@@ -2,227 +2,52 @@
 #include "postgres.h"
 
 #include "catalog/namespace.h"
-#include "commands/extension.h"
-#include "executor/execdesc.h"
-#include "executor/executor.h"
-#include "fmgr.h"
-#include "libpq/libpq.h"
-#include "libpq-fe.h"
-#include "nodes/params.h"
-#include "planwalker.h"
-#include "optimizer/planner.h"
+#include "common/base64.h"
+#include "nodes/nodeFuncs.h"
 #include "storage/lmgr.h"
-#include "tcop/utility.h"
 #include "utils/builtins.h"
-#include "utils/guc.h"
 #include "utils/lsyscache.h"
-#include "utils/plancache.h"
 #include "utils/snapmgr.h"
+
+#include "exec_plan.h"
+#include "planwalker.h"
 
 PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(pg_execute_plan);
 
-void _PG_init(void);
-
-static ProcessUtility_hook_type 	next_ProcessUtility_hook = NULL;
-static planner_hook_type			prev_planner_hook = NULL;
-static ExecutorStart_hook_type		prev_ExecutorStart = NULL;
-static ExecutorEnd_hook_type		prev_ExecutorEnd = NULL;
-
-static void HOOK_Utility_injection(PlannedStmt *pstmt, const char *queryString,
-						ProcessUtilityContext context, ParamListInfo params,
-						QueryEnvironment *queryEnv, DestReceiver *dest,
-						char *completionTag);
-static PlannedStmt *HOOK_Planner_injection(Query *parse, int cursorOptions,
-											ParamListInfo boundParams);
-static void HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags);
-static void HOOK_ExecEnd_injection(QueryDesc *queryDesc);
 static char *serialize_plan(QueryDesc *queryDesc, int eflags);
-static void execute_query(char *planString);
 static bool store_irel_name(Plan *plan, char *buffer);
-
-static PGconn	*conn = NULL;
-
-int node_number1 = 0;
-
-/*
- * Module load/unload callback
- */
-void
-_PG_init(void)
-{
-	DefineCustomIntVariable("pargres.node",
-							"Node number in instances collaboration",
-							NULL,
-							&node_number1,
-							0,
-							0,
-							1023,
-							PGC_SIGHUP,
-							GUC_NOT_IN_SAMPLE,
-							NULL,
-							NULL,
-							NULL);
-
-	/* ProcessUtility hook */
-	next_ProcessUtility_hook = ProcessUtility_hook;
-	ProcessUtility_hook = HOOK_Utility_injection;
-
-	/* Planner hook */
-	prev_planner_hook	= planner_hook;
-	planner_hook		= HOOK_Planner_injection;
-
-	prev_ExecutorStart = ExecutorStart_hook;
-	ExecutorStart_hook = HOOK_ExecStart_injection;
-
-	prev_ExecutorEnd = ExecutorEnd_hook;
-	ExecutorEnd_hook = HOOK_ExecEnd_injection;
-}
-
-static void
-HOOK_Utility_injection(PlannedStmt *pstmt,
-						const char *queryString,
-						ProcessUtilityContext context,
-						ParamListInfo params,
-						QueryEnvironment *queryEnv,
-						DestReceiver *dest,
-						char *completionTag)
-{
-	Node	*parsetree = pstmt->utilityStmt;
-
-	if ((OidIsValid(get_extension_oid("execplan", true))) &&
-		(node_number1 == 0) &&
-		(nodeTag(parsetree) != T_CopyStmt) &&
-		(nodeTag(parsetree) != T_CreateExtensionStmt) &&
-		(context != PROCESS_UTILITY_SUBCOMMAND))
-	{
-		char	conninfo[1024];
-		int		status;
-
-//		elog(LOG, "Send UTILITY query %d: %s", nodeTag(parsetree), queryString);
-
-		/* Connect to slave and send it a query plan */
-		sprintf(conninfo, "host=localhost port=5433%c", '\0');
-		conn = PQconnectdb(conninfo);
-		if (PQstatus(conn) == CONNECTION_BAD)
-			elog(LOG, "Connection error. conninfo: %s", conninfo);
-
-		status = PQsendQuery(conn, queryString);
-		if (status == 0)
-			elog(ERROR, "Query sending error: %s", PQerrorMessage(conn));
-	}
-	else if (node_number1 == 0)
-		elog(LOG, "UTILITY query without sending: %s", queryString);
-
-	if (next_ProcessUtility_hook)
-		(*next_ProcessUtility_hook) (pstmt, queryString, context, params,
-									 queryEnv, dest, completionTag);
-	else
-		standard_ProcessUtility(pstmt, queryString,
-											context, params, queryEnv,
-											dest, completionTag);
-
-	if (conn)
-	{
-		PGresult *result;
-
-		while ((result = PQgetResult(conn)) != NULL)
-			Assert(PQresultStatus(result) != PGRES_FATAL_ERROR);
-		PQfinish(conn);
-		conn = NULL;
-	}
-}
 
 /*
  * INPUT: a base64-encoded serialized plan
  */
-static void
-execute_query(char *planString)
+void
+execute_query(PGconn *dest, QueryDesc *queryDesc, int eflags)
 {
-	char	conninfo[1024];
 	char	*SQLCommand;
 	int		status;
+	char	*serializedPlan;
+	PGresult *result;
 
+	Assert(dest != NULL);
+
+	/*
+	 * Before send of plan we need to check connection state.
+	 * If previous query was failed, we get PGRES_FATAL_ERROR.
+	 */
+	while ((result = PQgetResult(dest)) != NULL);
+
+	serializedPlan = serialize_plan(queryDesc, eflags);
 	/* Connect to slave and send it a query plan */
-	sprintf(conninfo, "host=localhost port=5433%c", '\0');
-	conn = PQconnectdb(conninfo);
-	if (PQstatus(conn) == CONNECTION_BAD)
-		elog(LOG, "Connection error. conninfo: %s", conninfo);
+	SQLCommand = (char *) palloc0(strlen(serializedPlan)+100);
+	sprintf(SQLCommand, "SELECT pg_execute_plan('%s');", serializedPlan);
 
-	SQLCommand = (char *) palloc0(strlen(planString)+100);
-	sprintf(SQLCommand, "SELECT pg_execute_plan('%s');", planString);
-//elog(LOG, "query: %s", SQLCommand);
-	status = PQsendQuery(conn, SQLCommand);
+	status = PQsendQuery(dest, SQLCommand);
+
 	if (status == 0)
-		elog(ERROR, "Query sending error: %s", PQerrorMessage(conn));
+		elog(ERROR, "Query sending error: %s", PQerrorMessage(dest));
 }
-
-static PlannedStmt *
-HOOK_Planner_injection(Query *parse, int cursorOptions,
-											ParamListInfo boundParams)
-{
-	PlannedStmt *pstmt;
-
-	conn = NULL;
-
-	if (prev_planner_hook)
-		pstmt = prev_planner_hook(parse, cursorOptions, boundParams);
-	else
-		pstmt = standard_planner(parse, cursorOptions, boundParams);
-
-	if ((node_number1 > 0) || (parse->utilityStmt != NULL))
-		return pstmt;
-
-	/* Extension is not initialized. */
-	if (OidIsValid(get_extension_oid("execplan", true)))
-	{
-
-	}
-	return pstmt;
-}
-
-static void
-HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags)
-{
-	Node	*parsetree = queryDesc->plannedstmt->utilityStmt;
-
-	if (prev_ExecutorStart)
-		prev_ExecutorStart(queryDesc, eflags);
-	else
-		standard_ExecutorStart(queryDesc, eflags);
-
-	if ((OidIsValid(get_extension_oid("execplan", true))) &&
-		(node_number1 == 0) &&
-		((parsetree == NULL) || (nodeTag(parsetree) != T_CreatedbStmt)))
-	{
-//		elog(LOG, "Send query: %s", queryDesc->sourceText);
-		execute_query(serialize_plan(queryDesc, eflags));
-	}
-}
-
-static void
-HOOK_ExecEnd_injection(QueryDesc *queryDesc)
-{
-	/* Execute before hook because it destruct memory context of exchange list */
-	if (conn)
-	{
-		PGresult *result;
-
-		while ((result = PQgetResult(conn)) != NULL)
-			Assert(PQresultStatus(result) != PGRES_FATAL_ERROR);
-		PQfinish(conn);
-		conn = NULL;
-	}
-
-	if (prev_ExecutorEnd)
-		prev_ExecutorEnd(queryDesc);
-	else
-		standard_ExecutorEnd(queryDesc);
-}
-
-#include "common/base64.h"
-#include "nodes/nodeFuncs.h"
 
 static bool
 compute_irels_buffer_len(Plan *plan, int *length)
@@ -258,8 +83,6 @@ compute_irels_buffer_len(Plan *plan, int *length)
 	return plan_tree_walker(plan, compute_irels_buffer_len, length);
 }
 
-//#include "nodes/pg_list.h"
-
 static char *
 serialize_plan(QueryDesc *queryDesc, int eflags)
 {
@@ -275,7 +98,7 @@ serialize_plan(QueryDesc *queryDesc, int eflags)
 			*econtainer,
 			*start_address;
 	ListCell		*lc;
-
+elog(LOG, "Send QUERY: %s", queryDesc->sourceText);
 	serialized_plan = nodeToString(queryDesc->plannedstmt);
 
 	/*
@@ -302,11 +125,7 @@ serialize_plan(QueryDesc *queryDesc, int eflags)
 	 * to save the relation names in serialized plan.
 	 */
 	compute_irels_buffer_len(queryDesc->plannedstmt->planTree, &inames_len);
-//	plan_tree_walker(queryDesc->plannedstmt->planTree,
-//					 compute_irels_buffer_len,
-//					 &inames_len);
-//	planstate_tree_walker((PlanState *) (queryDesc->planstate), compute_irels_buffer_len, &inames_len);
-//elog(LOG, "inames_len=%d", inames_len);
+
 	/* We use len+1 bytes for include end-of-string symbol. */
 	splan_len = strlen(serialized_plan) + 1;
 	qtext_len = strlen(queryDesc->sourceText) + 1;
@@ -353,9 +172,6 @@ serialize_plan(QueryDesc *queryDesc, int eflags)
 		}
 	}
 	store_irel_name((Plan *) (queryDesc->plannedstmt->planTree), start_address);
-//	plan_tree_walker((Plan *) (queryDesc->plannedstmt->planTree),
-//					 store_irel_name,
-//					 start_address);
 
 	start_address += inames_len;
 	Assert((start_address - container) == tot_len);
@@ -525,7 +341,7 @@ pg_execute_plan(PG_FUNCTION_ARGS)
 
 	/* Restore query source text string */
 	queryString = start_addr;
-//elog(LOG, "queryString: %s", queryString);
+	elog(LOG, "Recv QUERY: %s", queryString);
 	/* Restore instrument and flags */
 	start_addr += strlen(queryString) + 1;
 	instrument_options = (int *) start_addr;
@@ -544,7 +360,6 @@ pg_execute_plan(PG_FUNCTION_ARGS)
 		{
 			rte->relid = RelnameGetRelid(start_addr);
 			Assert(rte->relid != InvalidOid);
-//			elog(LOG, "Relation from decoded plan. relid=%d relname=%s", rte->relid, start_addr);
 			start_addr += strlen(start_addr) + 1;
 		}
 	}
@@ -565,7 +380,7 @@ pg_execute_plan(PG_FUNCTION_ARGS)
 	ExecutorFinish(queryDesc);
 	ExecutorEnd(queryDesc);
 	FreeQueryDesc(queryDesc);
-
+//	elog(LOG, "End of QUERY: %s", queryString);
 	pfree(decdata);
 	PG_RETURN_BOOL(true);
 }
