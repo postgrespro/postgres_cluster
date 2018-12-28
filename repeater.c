@@ -5,6 +5,7 @@
 
 #include "postgres.h"
 
+#include "access/xact.h"
 #include "commands/extension.h"
 #include "executor/executor.h"
 #include "fmgr.h"
@@ -17,7 +18,7 @@
 #include "utils/memutils.h"
 #include "utils/plancache.h"
 
-#include "exec_plan.h"
+PG_MODULE_MAGIC;
 
 void _PG_init(void);
 
@@ -31,9 +32,11 @@ static void HOOK_Utility_injection(PlannedStmt *pstmt, const char *queryString,
 						char *completionTag);
 static void HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags);
 static void HOOK_ExecEnd_injection(QueryDesc *queryDesc);
+static int execute_query(PGconn *dest, QueryDesc *queryDesc, int eflags);
 
 
-int node_number1 = 0;
+char	*repeater_host_name;
+int		repeater_port_number;
 
 /*
  * Module load/unload callback
@@ -41,13 +44,24 @@ int node_number1 = 0;
 void
 _PG_init(void)
 {
-	DefineCustomIntVariable("pargres.node",
-							"Node number in instances collaboration",
+	DefineCustomStringVariable("repeater.host",
+							"Remote host name for plan execution",
 							NULL,
-							&node_number1,
-							0,
-							0,
-							1023,
+							&repeater_host_name,
+							"localhost",
+							PGC_SIGHUP,
+							GUC_NOT_IN_SAMPLE,
+							NULL,
+							NULL,
+							NULL);
+
+	DefineCustomIntVariable("repeater.port",
+							"Port number of remote instance",
+							NULL,
+							&repeater_port_number,
+							5432,
+							1,
+							65565,
 							PGC_SIGHUP,
 							GUC_NOT_IN_SAMPLE,
 							NULL,
@@ -65,8 +79,6 @@ _PG_init(void)
 	ExecutorEnd_hook = HOOK_ExecEnd_injection;
 }
 
-#include "access/xact.h"
-
 static PGconn	*conn = NULL;
 
 static PGconn*
@@ -77,7 +89,6 @@ EstablishConnection(void)
 	if (conn != NULL)
 		return conn;
 
-elog(LOG, "Create new connection ---");
 	/* Connect to slave and send it a query plan */
 	sprintf(conninfo, "host=localhost port=5433%c", '\0');
 	conn = PQconnectdb(conninfo);
@@ -86,6 +97,24 @@ elog(LOG, "Create new connection ---");
 		elog(LOG, "Connection error. conninfo: %s", conninfo);
 
 	return conn;
+}
+
+static bool ExtensionIsActivated = false;
+
+static bool
+ExtensionIsActive(void)
+{
+	if (ExtensionIsActivated)
+		return true;
+
+	if (
+		!IsTransactionState() ||
+		!OidIsValid(get_extension_oid("repeater", true))
+		)
+		return false;
+
+	ExtensionIsActivated = true;
+	return ExtensionIsActivated;
 }
 
 static void
@@ -99,23 +128,25 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 {
 	Node	*parsetree = pstmt->utilityStmt;
 
-	//elog(LOG, "queryString: %s", queryString);
-	if ((OidIsValid(get_extension_oid("execplan", true))) &&
-		(node_number1 == 0) &&
+	if (ExtensionIsActive() &&
 		(nodeTag(parsetree) != T_CopyStmt) &&
-		(nodeTag(parsetree) != T_CreateExtensionStmt)// &&
-//		(context != PROCESS_UTILITY_SUBCOMMAND)
+		(nodeTag(parsetree) != T_CreateExtensionStmt) &&
+		(nodeTag(parsetree) != T_ExplainStmt) &&
+		(context != PROCESS_UTILITY_SUBCOMMAND)
 	   )
 	{
-		int		status;
+		PGresult *result;
 
-		status = PQsendQuery(EstablishConnection(), queryString);
+		while ((result = PQgetResult(EstablishConnection())) != NULL);
 
-		if (status == 0)
-			elog(ERROR, "Query sending error: %s", PQerrorMessage(conn));
+		if (PQsendQuery(EstablishConnection(), queryString) == 0)
+		{
+			elog(ERROR, "Sending UTILITY query error: %s", queryString);
+			PQreset(conn);
+		}
 	}
-	else if (node_number1 == 0)
-		elog(LOG, "UTILITY query without sending: %s, isExt=%d node_number1=%d", queryString, (OidIsValid(get_extension_oid("execplan", true))), node_number1);
+	else
+		elog(LOG, "UTILITY query without sending: %s", queryString);
 
 	if (next_ProcessUtility_hook)
 		(*next_ProcessUtility_hook) (pstmt, queryString, context, params,
@@ -129,10 +160,10 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 	{
 		PGresult *result;
 
-		while ((result = PQgetResult(conn)) != NULL)
-			Assert(PQresultStatus(result) != PGRES_FATAL_ERROR);
+		while ((result = PQgetResult(conn)) != NULL);
 	}
 }
+static int IsExecuted = 0;
 
 static void
 HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags)
@@ -144,32 +175,67 @@ HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags)
 	else
 		standard_ExecutorStart(queryDesc, eflags);
 
-	if ((OidIsValid(get_extension_oid("execplan", true))) &&
-		(node_number1 == 0) &&
-		((parsetree == NULL) || (nodeTag(parsetree) != T_CreatedbStmt)))
+	IsExecuted++;
+
+	if (IsExecuted > 1)
+		return;
+
+	if (
+		ExtensionIsActive() &&
+		(repeater_host_name == 0) &&
+		((parsetree == NULL) || (nodeTag(parsetree) != T_CreatedbStmt)) &&
+		!(eflags & EXEC_FLAG_EXPLAIN_ONLY)
+		)
 	{
-//		elog(LOG, "Send query: %s", queryDesc->sourceText);
-		execute_query(EstablishConnection(), queryDesc, eflags);
+		elog(LOG, "Send query: %s", queryDesc->sourceText);
+		if (execute_query(EstablishConnection(), queryDesc, eflags) == 0)
+			PQreset(conn);
 	}
 }
 
 static void
 HOOK_ExecEnd_injection(QueryDesc *queryDesc)
 {
+	IsExecuted--;
 	/* Execute before hook because it destruct memory context of exchange list */
 	if (conn)
 	{
 		PGresult *result;
 
-		while ((result = PQgetResult(conn)) != NULL)
-		{
-			Assert(PQresultStatus(result) != PGRES_FATAL_ERROR);
-//			elog(LOG, "PQresultStatus(result)=%d", PQresultStatus(result));
-		}
+		while ((result = PQgetResult(conn)) != NULL);
 	}
 
 	if (prev_ExecutorEnd)
 		prev_ExecutorEnd(queryDesc);
 	else
 		standard_ExecutorEnd(queryDesc);
+}
+
+
+/*
+ * Serialize plan and send it to the destination instance
+ */
+static int
+execute_query(PGconn *dest, QueryDesc *queryDesc, int eflags)
+{
+	PGresult *result;
+
+	Assert(dest != NULL);
+
+	/*
+	 * Before send of plan we need to check connection state.
+	 * If previous query was failed, we get PGRES_FATAL_ERROR.
+	 */
+	while ((result = PQgetResult(dest)) != NULL);
+
+	if (PQsendPlan(dest, serialize_plan(queryDesc, eflags)) == 0)
+	{
+		/*
+		 * Report about remote execution error and return control to caller.
+		 */
+		elog(ERROR, "PLAN sending error.");
+		return 0;
+	}
+
+	return 1;
 }

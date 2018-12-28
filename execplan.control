@@ -1,5 +1,0 @@
-# Execplan extension
-comment = 'Execute raw query plan'
-default_version = '0.1'
-module_pathname = '$libdir/execplan'
-relocatable = false

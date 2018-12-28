@@ -1,11 +1,11 @@
-# contrib/execplan/Makefile
+# contrib/repeater/Makefile
 
-MODULE_big = execplan
-EXTENSION = execplan
+MODULE_big = repeater
+EXTENSION = repeater
 EXTVERSION = 0.1
-PGFILEDESC = "ExecPlan"
-MODULES = execplan
-OBJS = exec_plan.o planwalker.o repeater.o $(WIN32RES)
+PGFILEDESC = "Repeater"
+MODULES = repeater
+OBJS = repeater.o $(WIN32RES)
 
 PG_CPPFLAGS = -I$(libpq_srcdir)
 SHLIB_LINK_INTERNAL = $(libpq)
@@ -18,7 +18,7 @@ PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 else
 SHLIB_PREREQS = submake-libpq
-subdir = contrib/execplan
+subdir = contrib/repeater
 top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 include $(top_srcdir)/contrib/contrib-global.mk
