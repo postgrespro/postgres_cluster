@@ -1,6 +1,14 @@
-/*
- * repeater.c
+/*-------------------------------------------------------------------------
  *
+ * repeater.c
+ * 			Simple demo for remote plan execution patch.
+ *
+ * Transfer query plan to a remote instance and wait for result.
+ * Remote instance parameters (host, port) defines by GUCs.
+ *
+ * Portions Copyright (c) 1996-2018, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2018-2019, Postgres Professional
+ *-------------------------------------------------------------------------
  */
 
 #include "postgres.h"
@@ -11,12 +19,9 @@
 #include "fmgr.h"
 #include "libpq/libpq.h"
 #include "libpq-fe.h"
-#include "nodes/params.h"
 #include "optimizer/planner.h"
 #include "tcop/utility.h"
 #include "utils/guc.h"
-#include "utils/memutils.h"
-#include "utils/plancache.h"
 
 PG_MODULE_MAGIC;
 
@@ -32,11 +37,13 @@ static void HOOK_Utility_injection(PlannedStmt *pstmt, const char *queryString,
 						char *completionTag);
 static void HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags);
 static void HOOK_ExecEnd_injection(QueryDesc *queryDesc);
-static int execute_query(PGconn *dest, QueryDesc *queryDesc, int eflags);
 
-
+/* Remote instance parameters. */
 char	*repeater_host_name;
 int		repeater_port_number;
+
+static bool		ExtensionIsActivated = false;
+static PGconn	*conn = NULL;
 
 /*
  * Module load/unload callback
@@ -79,8 +86,6 @@ _PG_init(void)
 	ExecutorEnd_hook = HOOK_ExecEnd_injection;
 }
 
-static PGconn	*conn = NULL;
-
 static PGconn*
 EstablishConnection(void)
 {
@@ -90,16 +95,16 @@ EstablishConnection(void)
 		return conn;
 
 	/* Connect to slave and send it a query plan */
-	sprintf(conninfo, "host=localhost port=5433%c", '\0');
+	sprintf(conninfo, "host=%s port=%d %c", repeater_host_name, repeater_port_number, '\0');
 	conn = PQconnectdb(conninfo);
 
 	if (PQstatus(conn) == CONNECTION_BAD)
 		elog(LOG, "Connection error. conninfo: %s", conninfo);
+	else
+		elog(LOG, "Connection established: host=%s, port=%d", repeater_host_name, repeater_port_number);
 
 	return conn;
 }
-
-static bool ExtensionIsActivated = false;
 
 static bool
 ExtensionIsActive(void)
@@ -117,6 +122,10 @@ ExtensionIsActive(void)
 	return ExtensionIsActivated;
 }
 
+/*
+ * We need to send some DML queries for sync database schema to a plan execution
+ * at a remote instance.
+ */
 static void
 HOOK_Utility_injection(PlannedStmt *pstmt,
 						const char *queryString,
@@ -126,27 +135,35 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 						DestReceiver *dest,
 						char *completionTag)
 {
-	Node	*parsetree = pstmt->utilityStmt;
+	Node		*parsetree = pstmt->utilityStmt;
+	PGresult	*result;
 
+	/*
+	 * Very non-trivial decision about transferring utility query to data nodes.
+	 * This exception list used for demonstration and let us to execute some
+	 * simple queries.
+	 */
 	if (ExtensionIsActive() &&
+		pstmt->canSetTag &&
 		(nodeTag(parsetree) != T_CopyStmt) &&
 		(nodeTag(parsetree) != T_CreateExtensionStmt) &&
 		(nodeTag(parsetree) != T_ExplainStmt) &&
+		(nodeTag(parsetree) != T_FetchStmt) &&
 		(context != PROCESS_UTILITY_SUBCOMMAND)
 	   )
 	{
-		PGresult *result;
-
+		/*
+		 * Previous query could be completed with error report at this instance.
+		 * In this case, we need to prepare connection to the remote instance.
+		 */
 		while ((result = PQgetResult(EstablishConnection())) != NULL);
 
 		if (PQsendQuery(EstablishConnection(), queryString) == 0)
-		{
-			elog(ERROR, "Sending UTILITY query error: %s", queryString);
-			PQreset(conn);
-		}
+			elog(ERROR, "Connection error: query: %s, status=%d, errmsg=%s",
+					queryString,
+					PQstatus(EstablishConnection()),
+					PQerrorMessage(EstablishConnection()));
 	}
-	else
-		elog(LOG, "UTILITY query without sending: %s", queryString);
 
 	if (next_ProcessUtility_hook)
 		(*next_ProcessUtility_hook) (pstmt, queryString, context, params,
@@ -156,48 +173,51 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 											context, params, queryEnv,
 											dest, completionTag);
 
+	/*
+	 * Check end of query execution at the remote instance.
+	 */
 	if (conn)
-	{
-		PGresult *result;
-
 		while ((result = PQgetResult(conn)) != NULL);
-	}
 }
-static int IsExecuted = 0;
 
 static void
 HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags)
 {
-	Node	*parsetree = queryDesc->plannedstmt->utilityStmt;
+	Node		*parsetree = queryDesc->plannedstmt->utilityStmt;
+	PGresult	*result;
+	PGconn		*dest = EstablishConnection();
 
 	if (prev_ExecutorStart)
 		prev_ExecutorStart(queryDesc, eflags);
 	else
 		standard_ExecutorStart(queryDesc, eflags);
-
-	IsExecuted++;
-
-	if (IsExecuted > 1)
-		return;
-
-	if (
-		ExtensionIsActive() &&
-		(repeater_host_name == 0) &&
-		((parsetree == NULL) || (nodeTag(parsetree) != T_CreatedbStmt)) &&
-		!(eflags & EXEC_FLAG_EXPLAIN_ONLY)
-		)
+elog(LOG, "QUERY: %s", queryDesc->sourceText);
+	/*
+	 * This not fully correct sign for prevent passing each subquery to
+	 * the remote instance. Only for demo.
+	 */
+		if (ExtensionIsActive() &&
+			queryDesc->plannedstmt->canSetTag &&
+			((parsetree == NULL) || (nodeTag(parsetree) != T_CreatedbStmt)) &&
+			!(eflags & EXEC_FLAG_EXPLAIN_ONLY))
 	{
-		elog(LOG, "Send query: %s", queryDesc->sourceText);
-		if (execute_query(EstablishConnection(), queryDesc, eflags) == 0)
-			PQreset(conn);
+		/*
+		 * Prepare connection.
+		 */
+		while ((result = PQgetResult(dest)) != NULL);
+		elog(LOG, "->QUERY: %s", queryDesc->sourceText);
+		if (PQsendPlan(dest, serialize_plan(queryDesc, eflags)) == 0)
+			/*
+			 * Report about remote execution error.
+			 */
+			elog(ERROR, "Connection errors during PLAN transferring: status=%d, errmsg=%s",
+										PQstatus(dest), PQerrorMessage(dest));
 	}
 }
 
 static void
 HOOK_ExecEnd_injection(QueryDesc *queryDesc)
 {
-	IsExecuted--;
-	/* Execute before hook because it destruct memory context of exchange list */
 	if (conn)
 	{
 		PGresult *result;
@@ -209,33 +229,4 @@ HOOK_ExecEnd_injection(QueryDesc *queryDesc)
 		prev_ExecutorEnd(queryDesc);
 	else
 		standard_ExecutorEnd(queryDesc);
-}
-
-
-/*
- * Serialize plan and send it to the destination instance
- */
-static int
-execute_query(PGconn *dest, QueryDesc *queryDesc, int eflags)
-{
-	PGresult *result;
-
-	Assert(dest != NULL);
-
-	/*
-	 * Before send of plan we need to check connection state.
-	 * If previous query was failed, we get PGRES_FATAL_ERROR.
-	 */
-	while ((result = PQgetResult(dest)) != NULL);
-
-	if (PQsendPlan(dest, serialize_plan(queryDesc, eflags)) == 0)
-	{
-		/*
-		 * Report about remote execution error and return control to caller.
-		 */
-		elog(ERROR, "PLAN sending error.");
-		return 0;
-	}
-
-	return 1;
 }
