@@ -39,8 +39,7 @@ static void HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags);
 static void HOOK_ExecEnd_injection(QueryDesc *queryDesc);
 
 /* Remote instance parameters. */
-char	*repeater_host_name;
-int		repeater_port_number;
+char	*remote_server_fdwname;
 
 static bool		ExtensionIsActivated = false;
 static PGconn	*conn = NULL;
@@ -51,24 +50,11 @@ static PGconn	*conn = NULL;
 void
 _PG_init(void)
 {
-	DefineCustomStringVariable("repeater.host",
-							"Remote host name for plan execution",
+	DefineCustomStringVariable("repeater.fdwname",
+							"Remote host fdw name",
 							NULL,
-							&repeater_host_name,
-							"localhost",
-							PGC_SIGHUP,
-							GUC_NOT_IN_SAMPLE,
-							NULL,
-							NULL,
-							NULL);
-
-	DefineCustomIntVariable("repeater.port",
-							"Port number of remote instance",
-							NULL,
-							&repeater_port_number,
-							5432,
-							1,
-							65565,
+							&remote_server_fdwname,
+							"remoteserv",
 							PGC_SIGHUP,
 							GUC_NOT_IN_SAMPLE,
 							NULL,
@@ -84,26 +70,6 @@ _PG_init(void)
 
 	prev_ExecutorEnd = ExecutorEnd_hook;
 	ExecutorEnd_hook = HOOK_ExecEnd_injection;
-}
-
-static PGconn*
-EstablishConnection(void)
-{
-	char	conninfo[1024];
-
-	if (conn != NULL)
-		return conn;
-
-	/* Connect to slave and send it a query plan */
-	sprintf(conninfo, "host=%s port=%d %c", repeater_host_name, repeater_port_number, '\0');
-	conn = PQconnectdb(conninfo);
-
-	if (PQstatus(conn) == CONNECTION_BAD)
-		elog(LOG, "Connection error. conninfo: %s", conninfo);
-	else
-		elog(LOG, "Connection established: host=%s, port=%d", repeater_host_name, repeater_port_number);
-
-	return conn;
 }
 
 static bool
@@ -122,6 +88,82 @@ ExtensionIsActive(void)
 	return ExtensionIsActivated;
 }
 
+#include "miscadmin.h"
+#include "pgstat.h"
+#include "storage/latch.h"
+
+#include "foreign/foreign.h"
+#include "postgres_fdw.h"
+
+static Oid			serverid = InvalidOid;
+static UserMapping	*user = NULL;
+
+static bool
+pgfdw_cancel_query(PGconn *conn)
+{
+	PGcancel   *cancel;
+	char		errbuf[256];
+	PGresult   *result = NULL;
+
+	if ((cancel = PQgetCancel(conn)))
+	{
+		if (!PQcancel(cancel, errbuf, sizeof(errbuf)))
+		{
+			printf("LAV: Cancel - ERROR\n");
+			ereport(WARNING,
+					(errcode(ERRCODE_CONNECTION_FAILURE),
+					 errmsg("could not send cancel request: %s",
+							errbuf)));
+			PQfreeCancel(cancel);
+			return false;
+		}
+		else
+			printf("LAV: Cancel - OK\n");
+
+		PQfreeCancel(cancel);
+	}
+	else
+		printf("---ERROR---");
+
+	PQconsumeInput(conn);
+	PQclear(result);
+
+	return true;
+}
+
+static void
+cancelQueryIfNeeded(PGconn *conn, const char *query)
+{
+	Assert(conn != NULL);
+	Assert(query != NULL);
+
+	if (PQtransactionStatus(conn) != PQTRANS_IDLE)
+	{
+		PGresult *res;
+
+		printf("CONN status BEFORE EXEC: %d, txs: %d errmsg: %s\n",
+										PQstatus(conn),
+										PQtransactionStatus(conn),
+										PQerrorMessage(conn));
+
+		res = PQgetResult(conn);
+//		printf("status AFTER result request=%d, txs: %d errmsg: %s, resstatus: %s\n",
+//									PQstatus(conn),
+//									PQtransactionStatus(conn),
+//									PQerrorMessage(conn),
+//									PQresStatus(PQresultStatus(res)));
+		if (PQresultStatus(res) == PGRES_FATAL_ERROR)
+//		{
+			Assert(pgfdw_cancel_query(conn));
+//			printf("TRY to CANCEL query. status=%d, txs: %d errmsg: %s, resstatus: %s\n", PQstatus(conn), PQtransactionStatus(conn), PQerrorMessage(conn),
+//									PQresStatus(PQresultStatus(res)));
+//		}
+		else
+			pgfdw_get_result(conn, query);
+	}
+
+}
+
 /*
  * We need to send some DML queries for sync database schema to a plan execution
  * at a remote instance.
@@ -136,33 +178,50 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 						char *completionTag)
 {
 	Node		*parsetree = pstmt->utilityStmt;
-	PGresult	*result;
 
-	/*
-	 * Very non-trivial decision about transferring utility query to data nodes.
-	 * This exception list used for demonstration and let us to execute some
-	 * simple queries.
-	 */
 	if (ExtensionIsActive() &&
 		pstmt->canSetTag &&
-		(nodeTag(parsetree) != T_CopyStmt) &&
-		(nodeTag(parsetree) != T_CreateExtensionStmt) &&
-		(nodeTag(parsetree) != T_ExplainStmt) &&
-		(nodeTag(parsetree) != T_FetchStmt) &&
 		(context != PROCESS_UTILITY_SUBCOMMAND)
 	   )
 	{
-		/*
-		 * Previous query could be completed with error report at this instance.
-		 * In this case, we need to prepare connection to the remote instance.
-		 */
-		while ((result = PQgetResult(EstablishConnection())) != NULL);
+		if (!user)
+		{
+			MemoryContext	oldCxt = MemoryContextSwitchTo(TopMemoryContext);
 
-		if (PQsendQuery(EstablishConnection(), queryString) == 0)
-			elog(ERROR, "Connection error: query: %s, status=%d, errmsg=%s",
-					queryString,
-					PQstatus(EstablishConnection()),
-					PQerrorMessage(EstablishConnection()));
+			serverid = get_foreign_server_oid(remote_server_fdwname, true);
+			Assert(OidIsValid(serverid));
+
+			user = GetUserMapping(GetUserId(), serverid);
+			MemoryContextSwitchTo(oldCxt);
+		}
+		switch (nodeTag(parsetree))
+		{
+		case T_CopyStmt:
+		case T_CreateExtensionStmt:
+		case T_ExplainStmt:
+		case T_FetchStmt:
+		case T_VacuumStmt:
+			break;
+		default:
+			if (nodeTag(parsetree) == T_TransactionStmt)
+			{
+				TransactionStmt *stmt = (TransactionStmt *) parsetree;
+
+				if (
+//					(stmt->kind != TRANS_STMT_ROLLBACK_TO) &&
+					(stmt->kind != TRANS_STMT_SAVEPOINT)
+					)
+					break;
+			}
+			if (conn)
+				cancelQueryIfNeeded(conn, queryString);
+			conn = GetConnection(user, true);
+			cancelQueryIfNeeded(conn, queryString);
+			Assert(conn != NULL);
+
+			Assert(PQsendQuery(conn, queryString));
+			break;
+		};
 	}
 
 	if (next_ProcessUtility_hook)
@@ -172,26 +231,22 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 		standard_ProcessUtility(pstmt, queryString,
 											context, params, queryEnv,
 											dest, completionTag);
-
-	/*
-	 * Check end of query execution at the remote instance.
-	 */
 	if (conn)
-		while ((result = PQgetResult(conn)) != NULL);
+		cancelQueryIfNeeded(conn, queryString);
+//	pgfdw_get_result(conn, queryString);
 }
+
 
 static void
 HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags)
 {
 	Node		*parsetree = queryDesc->plannedstmt->utilityStmt;
-	PGresult	*result;
-	PGconn		*dest = EstablishConnection();
 
 	if (prev_ExecutorStart)
 		prev_ExecutorStart(queryDesc, eflags);
 	else
 		standard_ExecutorStart(queryDesc, eflags);
-elog(LOG, "QUERY: %s", queryDesc->sourceText);
+
 	/*
 	 * This not fully correct sign for prevent passing each subquery to
 	 * the remote instance. Only for demo.
@@ -200,30 +255,32 @@ elog(LOG, "QUERY: %s", queryDesc->sourceText);
 			queryDesc->plannedstmt->canSetTag &&
 			((parsetree == NULL) || (nodeTag(parsetree) != T_CreatedbStmt)) &&
 			!(eflags & EXEC_FLAG_EXPLAIN_ONLY))
-	{
-		/*
-		 * Prepare connection.
-		 */
-		while ((result = PQgetResult(dest)) != NULL);
-		elog(LOG, "->QUERY: %s", queryDesc->sourceText);
-		if (PQsendPlan(dest, serialize_plan(queryDesc, eflags)) == 0)
-			/*
-			 * Report about remote execution error.
-			 */
-			elog(ERROR, "Connection errors during PLAN transferring: status=%d, errmsg=%s",
-										PQstatus(dest), PQerrorMessage(dest));
-	}
+		{
+			Oid			serverid;
+			UserMapping	*user;
+
+			serverid = get_foreign_server_oid(remote_server_fdwname, true);
+			Assert(OidIsValid(serverid));
+
+			user = GetUserMapping(GetUserId(), serverid);
+			conn = GetConnection(user, true);
+			cancelQueryIfNeeded(conn, queryDesc->sourceText);
+
+			if (PQsendPlan(conn, serialize_plan(queryDesc, eflags)) == 0)
+			{
+				pgfdw_report_error(ERROR, NULL, conn, false, queryDesc->sourceText);
+				Assert(0);
+			}
+			else
+				printf("Send Query %s - OK\n", queryDesc->sourceText);
+		}
 }
 
 static void
 HOOK_ExecEnd_injection(QueryDesc *queryDesc)
 {
 	if (conn)
-	{
-		PGresult *result;
-
-		while ((result = PQgetResult(conn)) != NULL);
-	}
+		cancelQueryIfNeeded(conn, queryDesc->sourceText);
 
 	if (prev_ExecutorEnd)
 		prev_ExecutorEnd(queryDesc);
