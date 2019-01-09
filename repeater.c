@@ -224,7 +224,6 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 		cancelQueryIfNeeded(conn, queryString);
 }
 
-
 static void
 HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags)
 {
@@ -255,12 +254,7 @@ HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags)
 			cancelQueryIfNeeded(conn, queryDesc->sourceText);
 
 			if (PQsendPlan(conn, serialize_plan(queryDesc, eflags)) == 0)
-			{
 				pgfdw_report_error(ERROR, NULL, conn, false, queryDesc->sourceText);
-				Assert(0);
-			}
-			else
-				printf("Send Query %s - OK\n", queryDesc->sourceText);
 		}
 }
 
