@@ -109,7 +109,6 @@ pgfdw_cancel_query(PGconn *conn)
 	{
 		if (!PQcancel(cancel, errbuf, sizeof(errbuf)))
 		{
-			printf("LAV: Cancel - ERROR\n");
 			ereport(WARNING,
 					(errcode(ERRCODE_CONNECTION_FAILURE),
 					 errmsg("could not send cancel request: %s",
@@ -117,13 +116,11 @@ pgfdw_cancel_query(PGconn *conn)
 			PQfreeCancel(cancel);
 			return false;
 		}
-		else
-			printf("LAV: Cancel - OK\n");
 
 		PQfreeCancel(cancel);
 	}
 	else
-		printf("---ERROR---");
+		elog(FATAL, "Can't get connection cancel descriptor");
 
 	PQconsumeInput(conn);
 	PQclear(result);
