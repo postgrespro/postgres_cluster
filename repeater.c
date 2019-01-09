@@ -109,7 +109,6 @@ pgfdw_cancel_query(PGconn *conn)
 	{
 		if (!PQcancel(cancel, errbuf, sizeof(errbuf)))
 		{
-			printf("LAV: Cancel - ERROR\n");
 			ereport(WARNING,
 					(errcode(ERRCODE_CONNECTION_FAILURE),
 					 errmsg("could not send cancel request: %s",
@@ -117,13 +116,11 @@ pgfdw_cancel_query(PGconn *conn)
 			PQfreeCancel(cancel);
 			return false;
 		}
-		else
-			printf("LAV: Cancel - OK\n");
 
 		PQfreeCancel(cancel);
 	}
 	else
-		printf("---ERROR---");
+		elog(FATAL, "Can't get connection cancel descriptor");
 
 	PQconsumeInput(conn);
 	PQclear(result);
@@ -147,17 +144,9 @@ cancelQueryIfNeeded(PGconn *conn, const char *query)
 										PQerrorMessage(conn));
 
 		res = PQgetResult(conn);
-//		printf("status AFTER result request=%d, txs: %d errmsg: %s, resstatus: %s\n",
-//									PQstatus(conn),
-//									PQtransactionStatus(conn),
-//									PQerrorMessage(conn),
-//									PQresStatus(PQresultStatus(res)));
+
 		if (PQresultStatus(res) == PGRES_FATAL_ERROR)
-//		{
 			Assert(pgfdw_cancel_query(conn));
-//			printf("TRY to CANCEL query. status=%d, txs: %d errmsg: %s, resstatus: %s\n", PQstatus(conn), PQtransactionStatus(conn), PQerrorMessage(conn),
-//									PQresStatus(PQresultStatus(res)));
-//		}
 		else
 			pgfdw_get_result(conn, query);
 	}
@@ -233,7 +222,6 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 											dest, completionTag);
 	if (conn)
 		cancelQueryIfNeeded(conn, queryString);
-//	pgfdw_get_result(conn, queryString);
 }
 
 
