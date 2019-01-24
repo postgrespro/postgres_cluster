@@ -38,6 +38,7 @@ SUBDIRS = \
 		pgcrypto	\
 		pgrowlocks	\
 		pgstattuple	\
+		pg_execplan \
 		pg_visibility	\
 		postgres_fdw	\
 		seg		\
