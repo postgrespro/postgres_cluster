@@ -1,11 +1,11 @@
-# contrib/repeater/Makefile
+# contrib/pg_execplan/Makefile
 
-MODULE_big = repeater
-EXTENSION = repeater
+MODULE_big = pg_execplan
+EXTENSION = pg_execplan
 EXTVERSION = 0.1
-PGFILEDESC = "Repeater"
-MODULES = repeater
-OBJS = repeater.o $(WIN32RES)
+PGFILEDESC = "pg_execplan"
+MODULES = pg_execplan
+OBJS = pg_execplan.o $(WIN32RES)
 
 fdw_srcdir = $(top_srcdir)/contrib/postgres_fdw/
 
@@ -21,7 +21,7 @@ include $(PGXS)
 else
 EXTRA_INSTALL = contrib/postgres_fdw
 SHLIB_PREREQS = submake-libpq
-subdir = contrib/repeater
+subdir = contrib/pg_execplan
 top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 #include $(top_builddir)/contrib/postgres_fdw/Makefile
