@@ -1,0 +1,6 @@
+# Repeater extension
+comment = 'Execute raw query plan on remote node'
+default_version = '0.1'
+module_pathname = '$libdir/repeater'
+relocatable = false
+requires = 'postgres_fdw'

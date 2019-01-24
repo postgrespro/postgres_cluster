@@ -1,0 +1,10 @@
+#!/bin/bash
+
+export LC_ALL=C
+export LANGUAGE="en_US:en"
+
+pkill -9 -e postgres || true
+#sleep 1
+./prepare_pexec.sh
+cd src/test/regress
+./pg_regress --schedule=serial_schedule1 --load-extension=repeater --dbname=andrey --use-existing
