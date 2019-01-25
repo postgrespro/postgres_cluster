@@ -17,6 +17,7 @@
 
 #include "access/tupdesc.h"
 #include "nodes/params.h"
+#include "nodes/plannodes.h"
 
 /* Forward declaration, to avoid including parsenodes.h here */
 struct RawStmt;
@@ -178,5 +179,6 @@ extern CachedPlan *GetCachedPlan(CachedPlanSource *plansource,
 			  ParamListInfo boundParams,
 			  bool useResOwner);
 extern void ReleaseCachedPlan(CachedPlan *plan, bool useResOwner);
+extern void SetRemoteSubplan(CachedPlanSource *plansource, PlannedStmt *rstmt);
 
 #endif   /* PLANCACHE_H */
