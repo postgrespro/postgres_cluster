@@ -159,6 +159,9 @@ extern void free_attstatsslot(Oid atttype,
 extern char *get_namespace_name(Oid nspid);
 extern char *get_namespace_name_or_temp(Oid nspid);
 extern Oid	get_range_subtype(Oid rangeOid);
+extern char *get_typ_name(Oid typid);
+extern Oid get_typ_namespace(Oid typid);
+extern Oid get_typname_typid(const char *typname, Oid typnamespace);
 
 #define type_is_array(typid)  (get_element_type(typid) != InvalidOid)
 /* type_is_array_domain accepts both plain arrays and domains over arrays */

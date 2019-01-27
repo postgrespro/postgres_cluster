@@ -83,7 +83,9 @@ pg_store_query_plan(PG_FUNCTION_ARGS)
 	fwrite(&string_len, sizeof(size_t), 1, fout);
 	fwrite(query_string, sizeof(char), string_len, fout);
 
+	set_portable_output(true);
 	plan_string = nodeToString(queryDesc->plannedstmt);
+	set_portable_output(false);
 	string_len = strlen(plan_string);
 	fwrite(&string_len, sizeof(size_t), 1, fout);
 	fwrite(plan_string, sizeof(char), string_len, fout);
@@ -135,7 +137,19 @@ pg_exec_query_plan(PG_FUNCTION_ARGS)
 	int					eflags = 0;
 
 	LoadPlanFromFile(filename, &query_string, &plan_string);
-	pstmt = (PlannedStmt *) stringToNode(plan_string);
+
+	PG_TRY();
+	{
+		set_portable_input(true);
+		pstmt = (PlannedStmt *) stringToNode(plan_string);
+		set_portable_input(false);
+	}
+	PG_CATCH();
+	{
+		elog(INFO, "!!!BAD PLAN: %s", plan_string);
+		PG_RE_THROW();
+	}
+	PG_END_TRY();
 
 	psrc = CreateCachedPlan(NULL, query_string, query_string);
 	CompleteCachedPlan(psrc, NIL, NULL, NULL, 0, NULL, NULL,

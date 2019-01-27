@@ -30,8 +30,80 @@
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
 #include "utils/datum.h"
+#include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/syscache.h"
 
+#define OID_TYPES_NUM	(2)
+static const Oid oid_types[OID_TYPES_NUM] = {RELOID, TYPEOID};
+
+static bool portable_output = false;
+void
+set_portable_output(bool value)
+{
+	portable_output = value;
+}
+
+static void
+write_oid_field(StringInfo str, Oid oid)
+{
+	int i;
+
+	if (!portable_output)
+	{
+		appendStringInfo(str, " %u", oid);
+		return;
+	}
+
+	appendStringInfo(str, " (");
+
+	if (!OidIsValid(oid))
+	{
+		/* Special case for invalid oid fields. For example, checkAsUser. */
+		elog(INFO, "oid %d is INVALID OID!", oid);
+		appendStringInfo(str, "%u %u)", 0, oid);
+		return;
+	}
+
+	for (i = 0; i < OID_TYPES_NUM; i++)
+		if (SearchSysCacheExists1(oid_types[i], oid))
+			break;
+
+	if (i == OID_TYPES_NUM)
+	{
+		elog(INFO, "Unexpected oid type %d!", oid);
+		appendStringInfo(str, "%u %u)", 0, oid);
+		return;
+	}
+
+	switch (oid_types[i])
+	{
+	case RELOID:
+		elog(INFO, "(RELOID %d): (%s, %s)", oid,
+				get_namespace_name((get_rel_namespace((oid)))),
+				get_rel_name((oid))
+				);
+		appendStringInfo(str, "%u %s %s", RELOID,
+								get_namespace_name((get_rel_namespace((oid)))),
+								get_rel_name((oid)));
+		break;
+
+	case TYPEOID:
+		elog(INFO, "(TYPEOID %d): %s %s", oid,
+				get_namespace_name(get_typ_namespace(oid)),
+			get_typ_name(oid));
+		appendStringInfo(str, "%u %s %s", TYPEOID,
+								get_namespace_name(get_typ_namespace(oid)),
+								get_typ_name(oid));
+
+		break;
+
+	default:
+		elog(ERROR, "oid %d type is %d (NOT DEFINED)!", oid, oid_types[i]);
+		break;
+	}
+	appendStringInfo(str, ")");
+}
 
 /*
  * Macros to simplify output of different kinds of fields.  Use these
@@ -54,7 +126,10 @@
 
 /* Write an OID field (don't hard-wire assumption that OID is same as uint) */
 #define WRITE_OID_FIELD(fldname) \
-	appendStringInfo(str, " :" CppAsString(fldname) " %u", node->fldname)
+do { \
+	appendStringInfo(str, " :%s", CppAsString(fldname)); \
+	write_oid_field(str, node->fldname); \
+} while (0)
 
 /* Write a long-integer field */
 #define WRITE_LONG_FIELD(fldname) \

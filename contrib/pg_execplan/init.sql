@@ -4,8 +4,9 @@
 -- query - query string which will be parsed and planned.
 -- filename - path to the file on a disk.
 CREATE OR REPLACE FUNCTION @extschema@.pg_store_query_plan(
-														query TEXT,
-														filename TEXT)
+															filename TEXT,
+															query TEXT
+														  )
 RETURNS VOID AS 'pg_execplan'
 LANGUAGE C;
 

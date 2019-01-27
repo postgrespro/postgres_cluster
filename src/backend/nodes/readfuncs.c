@@ -34,6 +34,19 @@
 #include "nodes/plannodes.h"
 #include "nodes/readfuncs.h"
 
+/* Portable-related dependencies */
+#include "utils/lsyscache.h"
+#include "catalog/namespace.h"
+#include "utils/syscache.h"
+
+static Oid read_oid_field(char **token, int *length);
+
+static bool portable_input = false;
+void
+set_portable_input(bool value)
+{
+	portable_input = value;
+}
 
 /*
  * Macros to simplify reading of different kinds of fields.  Use these
@@ -79,8 +92,7 @@
 /* Read an OID field (don't hard-wire assumption that OID is same as uint) */
 #define READ_OID_FIELD(fldname) \
 	token = pg_strtok(&length);		/* skip :fldname */ \
-	token = pg_strtok(&length);		/* get field value */ \
-	local_node->fldname = atooid(token)
+	local_node->fldname = read_oid_field(&token, &length);
 
 /* Read a char field (ie, one ascii character) */
 #define READ_CHAR_FIELD(fldname) \
@@ -2718,4 +2730,81 @@ readBoolCols(int numCols)
 	}
 
 	return bool_vals;
+}
+
+#define atooid(x)  ((Oid) strtoul((x), NULL, 10))
+
+static Oid
+read_oid_field(char **token, int *length)
+{
+	Oid oid_type,
+		oid;
+
+	if (!portable_input)
+	{
+		*token = pg_strtok(length);
+		return atooid(*token);
+	}
+
+	*token = pg_strtok(length);
+	Assert((*token)[0] = '(');
+	*token = pg_strtok(length);
+	oid_type = atooid(*token);
+
+	if (!OidIsValid(oid_type))
+	{
+		Oid oid;
+		*token = pg_strtok(length);
+		oid = atooid(*token);
+		*token = pg_strtok(length);
+		Assert((*token)[0] = ')');
+		return oid;
+	}
+
+	switch (oid_type)
+	{
+	case RELOID:
+	{
+		char	*relname,
+				*nspname;
+		Oid rel_nsp_oid;
+
+		*token = pg_strtok(length); /* Switch to namespace name */
+		nspname = nullable_string(*token, *length);
+		rel_nsp_oid = LookupNamespaceNoError(nspname);
+		*token = pg_strtok(length); /* Switch to relname */
+		relname = nullable_string(*token, *length);
+		oid = get_relname_relid(relname, rel_nsp_oid);
+		elog(INFO, "reloid=%d", oid);
+		break;
+	}
+	case TYPEOID:
+	{
+		char	*nspname; /* namespace name */
+		char	*typname; /* data type name */
+
+		*token = pg_strtok(length); /* get nspname */
+		nspname = nullable_string(*token, *length);
+		*token = pg_strtok(length); /* get typname */
+		typname = nullable_string(*token, *length);
+		if (typname)
+		{
+			oid = get_typname_typid(typname, LookupNamespaceNoError((nspname)));
+			if (!OidIsValid((oid)))
+				elog(WARNING, "could not find OID for type %s.%s",
+															nspname, typname);
+		}
+		else
+			oid = InvalidOid;
+		elog(INFO, "typeoid=%d", oid);
+	}
+		break;
+
+	default:
+		Assert(0);
+		break;
+	}
+	*token = pg_strtok(length);
+	Assert((*token)[0] = ')');
+	return oid;
 }
