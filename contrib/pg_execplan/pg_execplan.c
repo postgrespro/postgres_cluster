@@ -24,7 +24,8 @@
 PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(pg_store_query_plan);
-PG_FUNCTION_INFO_V1(pg_exec_query_plan);
+PG_FUNCTION_INFO_V1(pg_exec_plan);
+PG_FUNCTION_INFO_V1(pg_exec_stored_plan);
 
 void _PG_init(void);
 
@@ -97,37 +98,8 @@ pg_store_query_plan(PG_FUNCTION_ARGS)
 }
 
 static void
-LoadPlanFromFile(const char *filename, char **query_string, char **plan_string)
+exec_plan(char *query_string, char *plan_string)
 {
-	FILE	*fin;
-	size_t	string_len;
-	int		nelems;
-
-	fin = fopen(filename, "rb");
-	Assert(fin != NULL);
-
-	nelems = fread(&string_len, sizeof(size_t), 1, fin);
-	Assert(nelems == 1);
-	*query_string = palloc0(string_len + 1);
-	nelems = fread(*query_string, sizeof(char), string_len, fin);
-	Assert(nelems == string_len);
-
-	nelems = fread(&string_len, sizeof(size_t), 1, fin);
-	Assert(nelems == 1);
-	*plan_string = palloc0(string_len + 1);
-	nelems = fread(*plan_string, sizeof(char), string_len, fin);
-	Assert(nelems == string_len);
-
-	fclose(fin);
-
-}
-
-Datum
-pg_exec_query_plan(PG_FUNCTION_ARGS)
-{
-	char				*filename = TextDatumGetCString(PG_GETARG_DATUM(0)),
-						*query_string = NULL,
-						*plan_string = NULL;
 	PlannedStmt			*pstmt;
 	ParamListInfo 		paramLI = NULL;
 	CachedPlanSource	*psrc;
@@ -136,8 +108,6 @@ pg_exec_query_plan(PG_FUNCTION_ARGS)
 	DestReceiver		*receiver;
 	int16				format = 0;
 	int					eflags = 0;
-
-	LoadPlanFromFile(filename, &query_string, &plan_string);
 
 	PG_TRY();
 	{
@@ -187,7 +157,7 @@ pg_exec_query_plan(PG_FUNCTION_ARGS)
 	PG_CATCH();
 	{
 		elog(INFO, "BAD QUERY: %s", query_string);
-		PG_RETURN_BOOL(false);
+		PG_RE_THROW();
 	}
 	PG_END_TRY();
 
@@ -197,6 +167,54 @@ pg_exec_query_plan(PG_FUNCTION_ARGS)
 
 	if (EXPLAN_DEBUG_LEVEL > 0)
 		elog(INFO, "query execution finished.\n");
+}
 
+Datum
+pg_exec_plan(PG_FUNCTION_ARGS)
+{
+	char	*query_string = TextDatumGetCString(PG_GETARG_DATUM(0));
+	char	*plan_string = TextDatumGetCString(PG_GETARG_DATUM(1));
+
+	Assert(query_string != NULL);
+	Assert(plan_string != NULL);
+	exec_plan(query_string, plan_string);
+	PG_RETURN_BOOL(true);
+}
+
+static void
+LoadPlanFromFile(const char *filename, char **query_string, char **plan_string)
+{
+	FILE	*fin;
+	size_t	string_len;
+	int		nelems;
+
+	fin = fopen(filename, "rb");
+	Assert(fin != NULL);
+
+	nelems = fread(&string_len, sizeof(size_t), 1, fin);
+	Assert(nelems == 1);
+	*query_string = palloc0(string_len + 1);
+	nelems = fread(*query_string, sizeof(char), string_len, fin);
+	Assert(nelems == string_len);
+
+	nelems = fread(&string_len, sizeof(size_t), 1, fin);
+	Assert(nelems == 1);
+	*plan_string = palloc0(string_len + 1);
+	nelems = fread(*plan_string, sizeof(char), string_len, fin);
+	Assert(nelems == string_len);
+
+	fclose(fin);
+
+}
+
+Datum
+pg_exec_stored_plan(PG_FUNCTION_ARGS)
+{
+	char				*filename = TextDatumGetCString(PG_GETARG_DATUM(0)),
+						*query_string = NULL,
+						*plan_string = NULL;
+
+	LoadPlanFromFile(filename, &query_string, &plan_string);
+	exec_plan(query_string, plan_string);
 	PG_RETURN_BOOL(true);
 }

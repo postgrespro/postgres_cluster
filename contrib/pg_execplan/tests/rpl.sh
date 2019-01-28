@@ -53,11 +53,11 @@ psql -p 5433 -c "SELECT current_schemas(true);"
 
 # TEST ON RELOID and TYPEOID objects.
 psql -p 5432 -c "SELECT pg_store_query_plan('../test.txt', 'SELECT * FROM tests.t1;');"
-psql -p 5433 -c "SELECT pg_exec_query_plan('../test.txt');"
+psql -p 5433 -c "SELECT pg_exec_stored_plan('../test.txt');"
 
 psql -p 5432 -c "SELECT pg_store_query_plan('../test.txt', 'SELECT tests.select1(42);');"
-psql -p 5433 -c "SELECT pg_exec_query_plan('../test.txt');"
-psql -p 5432 -c "SELECT pg_exec_query_plan('../test.txt');"
+psql -p 5433 -c "SELECT pg_exec_stored_plan('../test.txt');"
+psql -p 5432 -c "SELECT pg_exec_stored_plan('../test.txt');"
 
 psql -p 5432 -c "SELECT * FROM tests.t2;"
 psql -p 5433 -c "SELECT * FROM tests.t2;"
@@ -68,7 +68,7 @@ psql -p 5432 -c "SELECT oid, * FROM pg_collation WHERE collname LIKE 'test%';"
 psql -p 5433 -c "SELECT oid, * FROM pg_collation WHERE collname LIKE 'test%';"
 
 psql -p 5432 -c "SELECT pg_store_query_plan('../test.txt', 'SELECT max(id) FROM tests.ttest1 WHERE a < b COLLATE tests.test1');"
-psql -p 5433 -c "SELECT pg_exec_query_plan('../test.txt');"
+psql -p 5433 -c "SELECT pg_exec_stored_plan('../test.txt');"
 
 # OPEROID ----------------------------------------------------------------------
 # Check on different oids
@@ -77,11 +77,11 @@ psql -p 5433 -c "SELECT oid, oprname, oprnamespace FROM pg_operator WHERE oprnam
 
 # Test
 psql -p 5432 -c "SELECT pg_store_query_plan('../test.txt', 'SELECT id ### 1 FROM tests.ttest1;');"
-psql -p 5433 -c "SELECT pg_exec_query_plan('../test.txt');"
+psql -p 5433 -c "SELECT pg_exec_stored_plan('../test.txt');"
 
 psql -p 5433 -c "SELECT pg_store_query_plan('../test.txt', 'SELECT collname, nspname
     FROM pg_collation JOIN pg_namespace ON (collnamespace = pg_namespace.oid)
     WHERE collname LIKE ''test%''
     ORDER BY 1;');"
-psql -p 5433 -c "SELECT pg_exec_query_plan('../test.txt');"
+psql -p 5433 -c "SELECT pg_exec_stored_plan('../test.txt');"
 

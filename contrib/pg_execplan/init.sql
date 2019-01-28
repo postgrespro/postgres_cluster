@@ -10,6 +10,12 @@ CREATE OR REPLACE FUNCTION @extschema@.pg_store_query_plan(
 RETURNS VOID AS 'pg_execplan'
 LANGUAGE C;
 
-CREATE OR REPLACE FUNCTION @extschema@.pg_exec_query_plan(filename TEXT)
+CREATE OR REPLACE FUNCTION @extschema@.pg_exec_plan(query TEXT,
+													plan TEXT
+													)
+RETURNS BOOL AS 'pg_execplan'
+LANGUAGE C;
+
+CREATE OR REPLACE FUNCTION @extschema@.pg_exec_stored_plan(filename TEXT)
 RETURNS BOOL AS 'pg_execplan'
 LANGUAGE C;
