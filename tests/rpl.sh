@@ -1,7 +1,9 @@
 #!/bin/bash
 
-# Script for the plan passing between separate instances
+# This script to pass some plans between separate instances.
 U=`whoami`
+export LC_ALL=C
+export LANGUAGE="en_US:en"
 
 # Paths
 PGINSTALL=`pwd`/tmp_install/
@@ -25,8 +27,8 @@ make -C contrib install > /dev/null
 
 mkdir PGDATA_Master
 mkdir PGDATA_Slave
-initdb -D PGDATA_Master
-initdb -D PGDATA_Slave
+initdb -D PGDATA_Master -E UTF8 --locale=C
+initdb -D PGDATA_Slave -E UTF8 --locale=C
 echo "shared_preload_libraries = 'postgres_fdw, pg_execplan'" >> PGDATA_Master/postgresql.conf
 echo "shared_preload_libraries = 'postgres_fdw, pg_execplan'" >> PGDATA_Slave/postgresql.conf
 
@@ -47,8 +49,39 @@ psql -p 5433 -c "DROP TABLE t0;"
 #create database objects for check of oid switching
 psql -p 5432 -f contrib/pg_execplan/tests/create_objects.sql
 psql -p 5433 -f contrib/pg_execplan/tests/create_objects.sql
+psql -p 5433 -c "SELECT current_schemas(true);"
 
 # TEST ON RELOID and TYPEOID objects.
-psql -p 5432 -c "SELECT pg_store_query_plan('../test.txt', 'SELECT * FROM t1;');"
+psql -p 5432 -c "SELECT pg_store_query_plan('../test.txt', 'SELECT * FROM tests.t1;');"
+psql -p 5433 -c "SELECT pg_exec_query_plan('../test.txt');"
+
+psql -p 5432 -c "SELECT pg_store_query_plan('../test.txt', 'SELECT tests.select1(42);');"
+psql -p 5433 -c "SELECT pg_exec_query_plan('../test.txt');"
+psql -p 5432 -c "SELECT pg_exec_query_plan('../test.txt');"
+
+psql -p 5432 -c "SELECT * FROM tests.t2;"
+psql -p 5433 -c "SELECT * FROM tests.t2;"
+
+# COLLOID ----------------------------------------------------------------------
+# Check on different oids
+psql -p 5432 -c "SELECT oid, * FROM pg_collation WHERE collname LIKE 'test%';"
+psql -p 5433 -c "SELECT oid, * FROM pg_collation WHERE collname LIKE 'test%';"
+
+psql -p 5432 -c "SELECT pg_store_query_plan('../test.txt', 'SELECT max(id) FROM tests.ttest1 WHERE a < b COLLATE tests.test1');"
+psql -p 5433 -c "SELECT pg_exec_query_plan('../test.txt');"
+
+# OPEROID ----------------------------------------------------------------------
+# Check on different oids
+psql -p 5432 -c "SELECT oid, oprname, oprnamespace FROM pg_operator WHERE oprname LIKE '###';"
+psql -p 5433 -c "SELECT oid, oprname, oprnamespace FROM pg_operator WHERE oprname LIKE '###';"
+
+# Test
+psql -p 5432 -c "SELECT pg_store_query_plan('../test.txt', 'SELECT id ### 1 FROM tests.ttest1;');"
+psql -p 5433 -c "SELECT pg_exec_query_plan('../test.txt');"
+
+psql -p 5433 -c "SELECT pg_store_query_plan('../test.txt', 'SELECT collname, nspname
+    FROM pg_collation JOIN pg_namespace ON (collnamespace = pg_namespace.oid)
+    WHERE collname LIKE ''test%''
+    ORDER BY 1;');"
 psql -p 5433 -c "SELECT pg_exec_query_plan('../test.txt');"
 

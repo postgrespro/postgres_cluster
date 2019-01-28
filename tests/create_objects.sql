@@ -1,3 +1,7 @@
+CREATE SCHEMA tests;
+SET search_path = 'tests';
+
+CREATE TYPE int42;
 -- Make dummy I/O routines using the existing internal support for int4, text
 CREATE FUNCTION int42_in(cstring)
    RETURNS int42
@@ -17,4 +21,29 @@ CREATE TYPE int42 (
    passedbyvalue
 );
 
-CREATE TABLE t1 (id int42);
+-- RELOID, TYPEOID
+CREATE TABLE tests.t1 (id int42);
+CREATE TABLE t2 (id int, payload TEXT, par1 INT);
+
+CREATE FUNCTION select1(tid INT) RETURNS VOID AS $$
+BEGIN
+    INSERT INTO tests.t2 (id, payload, par1) VALUES (1, 'qwe', 2);
+END;
+$$ LANGUAGE plpgsql;
+
+-- COLLOID
+CREATE COLLATION test1 (locale = 'en_US.utf8');
+CREATE TABLE ttest1 (
+	id serial,
+    a text COLLATE test1,
+    b text COLLATE test1
+);
+INSERT INTO ttest1 (a, b) VALUES ('one', 'one');
+INSERT INTO ttest1 (a, b) VALUES ('one', 'two');
+
+-- OPEROID
+CREATE OPERATOR public.### (
+   leftarg = numeric,
+   rightarg = numeric,
+   procedure = numeric_add
+);
