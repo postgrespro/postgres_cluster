@@ -162,6 +162,12 @@ extern Oid	get_range_subtype(Oid rangeOid);
 extern char *get_typ_name(Oid typid);
 extern Oid get_typ_namespace(Oid typid);
 extern Oid get_typname_typid(const char *typname, Oid typnamespace);
+extern Oid get_funcid(const char *funcname, oidvector *argtypes, Oid funcnsp);
+extern Oid get_collation_namespace(Oid colloid);
+extern int32 get_collation_encoding(Oid colloid);
+extern Oid get_collid(const char *collname, int32 collencoding, Oid collnsp);
+extern Oid get_opnamespace(Oid opno);
+extern Oid get_operid(const char *oprname, Oid oprleft, Oid oprright, Oid oprnsp);
 
 #define type_is_array(typid)  (get_element_type(typid) != InvalidOid)
 /* type_is_array_domain accepts both plain arrays and domains over arrays */

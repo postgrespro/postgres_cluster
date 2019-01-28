@@ -9,6 +9,7 @@
 #include "commands/extension.h"
 #include "commands/prepare.h"
 #include "executor/executor.h"
+#include "nodes/nodes.h"
 #include "nodes/plannodes.h"
 #include "tcop/pquery.h"
 #include "tcop/utility.h"
@@ -146,7 +147,7 @@ pg_exec_query_plan(PG_FUNCTION_ARGS)
 	}
 	PG_CATCH();
 	{
-		elog(INFO, "!!!BAD PLAN: %s", plan_string);
+		elog(INFO, "BAD PLAN: %s", plan_string);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
@@ -172,6 +173,8 @@ pg_exec_query_plan(PG_FUNCTION_ARGS)
 					  query_string,
 					  cplan->stmt_list,
 					  cplan);
+	PG_TRY();
+	{
 	PortalStart(portal, paramLI, eflags, InvalidSnapshot);
 	PortalSetResultFormat(portal, 0, &format);
 	(void) PortalRun(portal,
@@ -180,6 +183,14 @@ pg_exec_query_plan(PG_FUNCTION_ARGS)
 					 receiver,
 					 receiver,
 					 query_string);
+	}
+	PG_CATCH();
+	{
+		elog(INFO, "BAD QUERY: %s", query_string);
+		PG_RETURN_BOOL(false);
+	}
+	PG_END_TRY();
+
 	receiver->rDestroy(receiver);
 	PortalDrop(portal, false);
 	DropPreparedStatement(query_string, false);
@@ -187,5 +198,5 @@ pg_exec_query_plan(PG_FUNCTION_ARGS)
 	if (EXPLAN_DEBUG_LEVEL > 0)
 		elog(INFO, "query execution finished.\n");
 
-	PG_RETURN_VOID();
+	PG_RETURN_BOOL(true);
 }

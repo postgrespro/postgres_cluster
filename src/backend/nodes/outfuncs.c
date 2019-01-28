@@ -34,8 +34,9 @@
 #include "utils/rel.h"
 #include "utils/syscache.h"
 
-#define OID_TYPES_NUM	(2)
-static const Oid oid_types[OID_TYPES_NUM] = {RELOID, TYPEOID};
+#define NSP_NAME(nspoid) (get_namespace_name(nspoid))
+#define OID_TYPES_NUM	(5)
+static const Oid oid_types[OID_TYPES_NUM] = {RELOID, TYPEOID, PROCOID, COLLOID, OPEROID};
 
 static bool portable_output = false;
 void
@@ -60,7 +61,6 @@ write_oid_field(StringInfo str, Oid oid)
 	if (!OidIsValid(oid))
 	{
 		/* Special case for invalid oid fields. For example, checkAsUser. */
-		elog(INFO, "oid %d is INVALID OID!", oid);
 		appendStringInfo(str, "%u %u)", 0, oid);
 		return;
 	}
@@ -79,27 +79,69 @@ write_oid_field(StringInfo str, Oid oid)
 	switch (oid_types[i])
 	{
 	case RELOID:
-		elog(INFO, "(RELOID %d): (%s, %s)", oid,
-				get_namespace_name((get_rel_namespace((oid)))),
-				get_rel_name((oid))
-				);
 		appendStringInfo(str, "%u %s %s", RELOID,
 								get_namespace_name((get_rel_namespace((oid)))),
 								get_rel_name((oid)));
 		break;
 
 	case TYPEOID:
-		elog(INFO, "(TYPEOID %d): %s %s", oid,
-				get_namespace_name(get_typ_namespace(oid)),
-			get_typ_name(oid));
 		appendStringInfo(str, "%u %s %s", TYPEOID,
 								get_namespace_name(get_typ_namespace(oid)),
 								get_typ_name(oid));
 
 		break;
 
+	case PROCOID:
+	{
+		Oid *argtypes;
+		int i, nargs;
+
+		get_func_signature(oid, &argtypes, &nargs);
+		appendStringInfo(str, "%u %s", PROCOID, NSP_NAME(get_func_namespace(oid)));
+		appendStringInfo(str, " %s", get_func_name(oid));
+		appendStringInfo(str, " %d", nargs);
+
+		for (i = 0; i < nargs; i++)
+		{
+			appendStringInfoChar(str, ' ');
+			outToken(str, NSP_NAME(get_typ_namespace(argtypes[i])));
+			appendStringInfoChar(str, ' ');
+			outToken(str, get_typ_name(argtypes[i]));
+		}
+	}
+		break;
+	case COLLOID:
+		appendStringInfo(str, "%u ", COLLOID);
+		outToken(str, NSP_NAME(get_collation_namespace(oid)));
+		appendStringInfoChar(str, ' ');
+		outToken(str, get_collation_name(oid));
+		appendStringInfo(str, " %d", get_collation_encoding(oid));
+		break;
+
+	case OPEROID:
+	{
+		Oid oprleft, oprright;
+
+		appendStringInfo(str, "%u ", OPEROID);
+		outToken(str, NSP_NAME(get_opnamespace(oid)));
+		appendStringInfoChar(str, ' ');
+		outToken(str, get_opname(oid));
+		appendStringInfoChar(str, ' ');
+		op_input_types(oid, &oprleft, &oprright);
+		outToken(str, OidIsValid(oprleft) ?
+				NSP_NAME(get_typ_namespace(oprleft)) : NULL);
+		appendStringInfoChar(str, ' ');
+		outToken(str, OidIsValid(oprleft) ? get_typ_name(oprleft) : NULL);
+		appendStringInfoChar(str, ' ');
+		outToken(str, OidIsValid(oprright) ?
+				NSP_NAME(get_typ_namespace(oprright)) : NULL);
+		appendStringInfoChar(str, ' ');
+		outToken(str, OidIsValid(oprright) ? get_typ_name(oprright) : NULL);
+	}
+		break;
+
 	default:
-		elog(ERROR, "oid %d type is %d (NOT DEFINED)!", oid, oid_types[i]);
+		Assert(0);
 		break;
 	}
 	appendStringInfo(str, ")");

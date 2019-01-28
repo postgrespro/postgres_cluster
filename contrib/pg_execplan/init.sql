@@ -11,5 +11,5 @@ RETURNS VOID AS 'pg_execplan'
 LANGUAGE C;
 
 CREATE OR REPLACE FUNCTION @extschema@.pg_exec_query_plan(filename TEXT)
-RETURNS VOID AS 'pg_execplan'
+RETURNS BOOL AS 'pg_execplan'
 LANGUAGE C;

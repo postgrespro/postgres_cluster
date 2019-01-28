@@ -23,7 +23,6 @@ extern char *pg_strtok(int *length);
 extern char *debackslash(char *token, int length);
 extern void *nodeRead(char *token, int tok_len);
 
-extern void set_portable_input(bool value);
 /*
  * prototypes for functions in readfuncs.c
  */

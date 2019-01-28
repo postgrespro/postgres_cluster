@@ -35,10 +35,12 @@
 #include "nodes/readfuncs.h"
 
 /* Portable-related dependencies */
-#include "utils/lsyscache.h"
 #include "catalog/namespace.h"
+#include "utils/builtins.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
+#define NSP_OID(nspname) LookupNamespaceNoError(nspname)
 static Oid read_oid_field(char **token, int *length);
 
 static bool portable_input = false;
@@ -2775,7 +2777,6 @@ read_oid_field(char **token, int *length)
 		*token = pg_strtok(length); /* Switch to relname */
 		relname = nullable_string(*token, *length);
 		oid = get_relname_relid(relname, rel_nsp_oid);
-		elog(INFO, "reloid=%d", oid);
 		break;
 	}
 	case TYPEOID:
@@ -2796,7 +2797,102 @@ read_oid_field(char **token, int *length)
 		}
 		else
 			oid = InvalidOid;
-		elog(INFO, "typeoid=%d", oid);
+	}
+		break;
+
+	case PROCOID:
+	{
+		char       *nspname; /* namespace name */
+		char       *funcname; /* function name */
+		int 		nargs; /* number of arguments */
+		Oid		   *argtypes; /* argument types */
+
+		*token = pg_strtok(length); /* get nspname */
+		nspname = nullable_string(*token, *length);
+		*token = pg_strtok(length); /* get funcname */
+		funcname = nullable_string(*token, *length);
+		*token = pg_strtok(length); /* get nargs */
+		nargs = atoi(*token);
+
+		if (funcname)
+		{
+			int	i;
+			argtypes = palloc(nargs * sizeof(Oid));
+			for (i = 0; i < nargs; i++)
+			{
+				char *typnspname; /* argument type namespace */
+				char *typname; /* argument type name */
+
+				*token = pg_strtok(length); /* get type nspname */
+				typnspname = nullable_string(*token, *length);
+				*token = pg_strtok(length); /* get type name */
+				typname = nullable_string(*token, *length);
+				argtypes[i] = get_typname_typid(typname,
+												NSP_OID(typnspname));
+			}
+			oid = get_funcid(funcname, buildoidvector(argtypes, nargs), NSP_OID(nspname));
+		}
+		else
+			oid = InvalidOid;
+	}
+	break;
+
+	case COLLOID:
+	{
+		char       *nspname; /* namespace name */
+		char       *collname; /* collation name */
+		int 		collencoding; /* collation encoding */
+
+		*token = pg_strtok(length); /* get nspname */
+		nspname = nullable_string(*token, *length);
+		*token = pg_strtok(length); /* get collname */
+		collname = nullable_string(*token, *length);
+		*token = pg_strtok(length); /* get collencoding */
+		collencoding = atoi(*token);
+		if (collname)
+			oid = get_collid(collname, collencoding, NSP_OID(nspname));
+		else
+			oid = InvalidOid;
+	}
+		break;
+
+	case OPEROID:
+	{
+		char       *nspname; /* namespace name */
+		char       *oprname; /* operator name */
+		char	   *leftnspname; /* left type namespace */
+		char	   *leftname; /* left type name */
+		Oid			oprleft; /* left type */
+		char	   *rightnspname; /* right type namespace */
+		char	   *rightname; /* right type name */
+		Oid			oprright; /* right type */
+
+		*token = pg_strtok(length); /* get nspname */
+		nspname = nullable_string(*token, *length);
+		*token = pg_strtok(length); /* get operator name */
+		oprname = nullable_string(*token, *length);
+		*token = pg_strtok(length); /* left type namespace */
+		leftnspname = nullable_string(*token, *length);
+		*token = pg_strtok(length); /* left type name */
+		leftname = nullable_string(*token, *length);
+		*token = pg_strtok(length); /* right type namespace */
+		rightnspname = nullable_string(*token, *length);
+		*token = pg_strtok(length); /* right type name */
+		rightname =nullable_string(*token, *length);
+		if (oprname)
+		{
+			if (leftname)
+				oprleft = get_typname_typid(leftname, NSP_OID(leftnspname));
+			else
+				oprleft = InvalidOid;
+			if (rightname)
+				oprright = get_typname_typid(rightname, NSP_OID(rightnspname));
+			else
+				oprright = InvalidOid;
+			oid = get_operid(oprname, oprleft, oprright, NSP_OID(nspname));
+		}
+		else
+			oid = InvalidOid;
 	}
 		break;
 

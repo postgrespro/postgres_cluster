@@ -576,6 +576,7 @@ extern void outBitmapset(struct StringInfoData *str,
 extern void outDatum(struct StringInfoData *str, uintptr_t value,
 		 int typlen, bool typbyval);
 
+extern void set_portable_input(bool value);
 extern void set_portable_output(bool value);
 extern char *nodeToString(const void *obj);
 extern char *bmsToString(const struct Bitmapset *bms);
