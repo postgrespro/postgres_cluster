@@ -1,0 +1,6 @@
+# pg_repeater extension
+comment = 'Pass raw query plan to a remote node'
+default_version = '0.1'
+module_pathname = '$libdir/pg_repeater'
+relocatable = false
+requires = 'postgres_fdw pg_execplan'
