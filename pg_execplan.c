@@ -117,31 +117,31 @@ exec_plan(char *query_string, char *plan_string)
 	}
 	PG_CATCH();
 	{
-		elog(INFO, "BAD PLAN: %s", plan_string);
+		elog(INFO, "BAD PLAN: %s. Query: %s", plan_string, query_string);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
-
-	psrc = CreateCachedPlan(NULL, query_string, query_string);
-	CompleteCachedPlan(psrc, NIL, NULL, NULL, 0, NULL, NULL,
-							   CURSOR_OPT_GENERIC_PLAN, false);
-	StorePreparedStatement(query_string, psrc, false);
-	SetRemoteSubplan(psrc, pstmt);
-	cplan = GetCachedPlan(psrc, paramLI, false);
 
 	if (EXPLAN_DEBUG_LEVEL > 0)
 		elog(INFO, "query: %s\n", query_string);
 	if (EXPLAN_DEBUG_LEVEL > 1)
 		elog(INFO, "\nplan: %s\n", plan_string);
 
-	receiver = CreateDestReceiver(DestDebug);
+	psrc = CreateCachedPlan(NULL, query_string, NULL);
+	CompleteCachedPlan(psrc, NIL, NULL, NULL, 0, NULL, NULL,
+							   CURSOR_OPT_GENERIC_PLAN, false);
+
+	SetRemoteSubplan(psrc, pstmt);
+	cplan = GetCachedPlan(psrc, paramLI, false);
+
+	receiver = CreateDestReceiver(DestNone);
 	portal = CreateNewPortal();
 	portal->visible = false;
 	PortalDefineQuery(portal,
 					  NULL,
 					  query_string,
-					  query_string,
-					  cplan->stmt_list,
+					  NULL,
+					  NULL,
 					  cplan);
 	PG_TRY();
 	{
@@ -156,14 +156,14 @@ exec_plan(char *query_string, char *plan_string)
 	}
 	PG_CATCH();
 	{
-		elog(INFO, "BAD QUERY: %s", query_string);
+		elog(INFO, "BAD QUERY: '%s'.", query_string);
+		PortalDrop(portal, false);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
 
 	receiver->rDestroy(receiver);
 	PortalDrop(portal, false);
-	DropPreparedStatement(query_string, false);
 
 	if (EXPLAN_DEBUG_LEVEL > 0)
 		elog(INFO, "query execution finished.\n");
@@ -175,9 +175,29 @@ pg_exec_plan(PG_FUNCTION_ARGS)
 	char	*query_string = TextDatumGetCString(PG_GETARG_DATUM(0));
 	char	*plan_string = TextDatumGetCString(PG_GETARG_DATUM(1));
 
+	char	*dec_query,
+			*dec_plan;
+	int		dec_query_len,
+			dec_query_len1,
+			dec_plan_len,
+			dec_plan_len1;
+
 	Assert(query_string != NULL);
 	Assert(plan_string != NULL);
-	exec_plan(query_string, plan_string);
+
+	dec_query_len = b64_dec_len(query_string, strlen(query_string) + 1)+1;
+	dec_query = palloc0(dec_query_len + 1);
+	dec_query_len1 = b64_decode(query_string, strlen(query_string), dec_query);
+	Assert(dec_query_len > dec_query_len1);
+
+	dec_plan_len = b64_dec_len(plan_string, strlen(plan_string) + 1);
+	dec_plan = palloc0(dec_plan_len + 1);
+	dec_plan_len1 = b64_decode(plan_string, strlen(plan_string), dec_plan);
+	Assert(dec_plan_len > dec_plan_len1);
+
+	exec_plan(dec_query, dec_plan);
+	pfree(dec_query);
+	pfree(dec_plan);
 	PG_RETURN_BOOL(true);
 }
 
