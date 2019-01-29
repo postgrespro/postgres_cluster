@@ -323,7 +323,7 @@ configure_remote_session(PGconn *conn)
 	 * Temporarily switch off this option. Not all regression tests passes
 	 * correctly without including 'public' value in default search path.
 	 */
-	do_sql_command(conn, "SET search_path = pg_catalog");
+	/* do_sql_command(conn, "SET search_path = pg_catalog"); */
 
 	/*
 	 * Set remote timezone; this is basically just cosmetic, since all

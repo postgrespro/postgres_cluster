@@ -25,6 +25,7 @@
 
 #include <ctype.h>
 
+#include "commands/user.h"
 #include "lib/stringinfo.h"
 #include "nodes/extensible.h"
 #include "nodes/plannodes.h"
@@ -35,8 +36,9 @@
 #include "utils/syscache.h"
 
 #define NSP_NAME(nspoid) (get_namespace_name(nspoid))
-#define OID_TYPES_NUM	(5)
-static const Oid oid_types[OID_TYPES_NUM] = {RELOID, TYPEOID, PROCOID, COLLOID, OPEROID};
+#define OID_TYPES_NUM	(6)
+static const Oid oid_types[OID_TYPES_NUM] = {RELOID, TYPEOID, PROCOID, COLLOID,
+											OPEROID, AUTHOID};
 
 static bool portable_output = false;
 void
@@ -139,6 +141,10 @@ write_oid_field(StringInfo str, Oid oid)
 		appendStringInfoChar(str, ' ');
 		outToken(str, OidIsValid(oprright) ? get_typ_name(oprright) : NULL);
 	}
+		break;
+
+	case AUTHOID:
+		appendStringInfo(str, "%u %s", AUTHOID, get_rolename(oid));
 		break;
 
 	default:

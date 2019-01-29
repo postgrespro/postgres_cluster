@@ -36,6 +36,7 @@
 
 /* Portable-related dependencies */
 #include "catalog/namespace.h"
+#include "commands/user.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
@@ -2893,6 +2894,16 @@ read_oid_field(char **token, int *length)
 		}
 		else
 			oid = InvalidOid;
+	}
+		break;
+
+	case AUTHOID:
+	{
+		char	*rolename;
+
+		*token = pg_strtok(length); /* get nspname */
+		rolename = nullable_string(*token, *length);
+		oid = get_roleid(rolename);
 	}
 		break;
 
