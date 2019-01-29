@@ -4,7 +4,7 @@ MODULE_big = pg_repeater
 EXTENSION = pg_repeater
 EXTVERSION = 0.1
 PGFILEDESC = "pg_repeater"
-MODULES = pg_repeater1
+MODULES = pg_repeater
 OBJS = pg_repeater.o $(WIN32RES)
 
 fdw_srcdir = $(top_srcdir)/contrib/postgres_fdw/

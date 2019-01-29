@@ -17,11 +17,19 @@
 #include "commands/extension.h"
 #include "executor/executor.h"
 #include "fmgr.h"
+#include "foreign/foreign.h"
 #include "libpq/libpq.h"
 #include "libpq-fe.h"
+#include "miscadmin.h"
 #include "optimizer/planner.h"
+#include "pgstat.h"
+#include "postgres_fdw.h"
+#include "storage/latch.h"
 #include "tcop/utility.h"
+#include "utils/builtins.h"
 #include "utils/guc.h"
+#include "utils/memutils.h"
+
 
 PG_MODULE_MAGIC;
 
@@ -33,8 +41,7 @@ static ExecutorEnd_hook_type		prev_ExecutorEnd = NULL;
 
 static void HOOK_Utility_injection(PlannedStmt *pstmt, const char *queryString,
 						ProcessUtilityContext context, ParamListInfo params,
-						QueryEnvironment *queryEnv, DestReceiver *dest,
-						char *completionTag);
+						DestReceiver *dest, char *completionTag);
 static void HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags);
 static void HOOK_ExecEnd_injection(QueryDesc *queryDesc);
 
@@ -43,6 +50,10 @@ char	*remote_server_fdwname;
 
 static bool		ExtensionIsActivated = false;
 static PGconn	*conn = NULL;
+
+static Oid			serverid = InvalidOid;
+static UserMapping	*user = NULL;
+
 
 /*
  * Module load/unload callback
@@ -80,77 +91,12 @@ ExtensionIsActive(void)
 
 	if (
 		!IsTransactionState() ||
-		!OidIsValid(get_extension_oid("repeater", true))
+		!OidIsValid(get_extension_oid("pg_repeater", true))
 		)
 		return false;
 
 	ExtensionIsActivated = true;
 	return ExtensionIsActivated;
-}
-
-#include "miscadmin.h"
-#include "pgstat.h"
-#include "storage/latch.h"
-
-#include "foreign/foreign.h"
-#include "postgres_fdw.h"
-
-static Oid			serverid = InvalidOid;
-static UserMapping	*user = NULL;
-
-static bool
-pgfdw_cancel_query(PGconn *conn)
-{
-	PGcancel   *cancel;
-	char		errbuf[256];
-	PGresult   *result = NULL;
-
-	if ((cancel = PQgetCancel(conn)))
-	{
-		if (!PQcancel(cancel, errbuf, sizeof(errbuf)))
-		{
-			ereport(WARNING,
-					(errcode(ERRCODE_CONNECTION_FAILURE),
-					 errmsg("could not send cancel request: %s",
-							errbuf)));
-			PQfreeCancel(cancel);
-			return false;
-		}
-
-		PQfreeCancel(cancel);
-	}
-	else
-		elog(FATAL, "Can't get connection cancel descriptor");
-
-	PQconsumeInput(conn);
-	PQclear(result);
-
-	return true;
-}
-
-static void
-cancelQueryIfNeeded(PGconn *conn, const char *query)
-{
-	Assert(conn != NULL);
-	Assert(query != NULL);
-
-	if (PQtransactionStatus(conn) != PQTRANS_IDLE)
-	{
-		PGresult *res;
-
-		printf("CONN status BEFORE EXEC: %d, txs: %d errmsg: %s\n",
-										PQstatus(conn),
-										PQtransactionStatus(conn),
-										PQerrorMessage(conn));
-
-		res = PQgetResult(conn);
-
-		if (PQresultStatus(res) == PGRES_FATAL_ERROR)
-			Assert(pgfdw_cancel_query(conn));
-		else
-			pgfdw_get_result(conn, query);
-	}
-
 }
 
 /*
@@ -162,7 +108,6 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 						const char *queryString,
 						ProcessUtilityContext context,
 						ParamListInfo params,
-						QueryEnvironment *queryEnv,
 						DestReceiver *dest,
 						char *completionTag)
 {
@@ -192,6 +137,8 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 		case T_VacuumStmt:
 			break;
 		default:
+		{
+			PGresult *res;
 			if (nodeTag(parsetree) == T_TransactionStmt)
 			{
 				TransactionStmt *stmt = (TransactionStmt *) parsetree;
@@ -202,26 +149,23 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 					)
 					break;
 			}
-			if (conn)
-				cancelQueryIfNeeded(conn, queryString);
 			conn = GetConnection(user, true);
-			cancelQueryIfNeeded(conn, queryString);
 			Assert(conn != NULL);
 
-			Assert(PQsendQuery(conn, queryString));
+			res = PQexec(conn, queryString);
+			PQclear(res);
+		}
 			break;
-		};
+		}
 	}
 
 	if (next_ProcessUtility_hook)
 		(*next_ProcessUtility_hook) (pstmt, queryString, context, params,
-									 queryEnv, dest, completionTag);
+									 dest, completionTag);
 	else
 		standard_ProcessUtility(pstmt, queryString,
-											context, params, queryEnv,
+											context, params,
 											dest, completionTag);
-	if (conn)
-		cancelQueryIfNeeded(conn, queryString);
 }
 
 static void
@@ -245,25 +189,47 @@ HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags)
 		{
 			Oid			serverid;
 			UserMapping	*user;
+			char		*query,
+						*query_container,
+						*plan,
+						*plan_container;
+			int			qlen, qlen1,
+						plen, plen1;
+			PGresult	*res;
 
 			serverid = get_foreign_server_oid(remote_server_fdwname, true);
 			Assert(OidIsValid(serverid));
 
 			user = GetUserMapping(GetUserId(), serverid);
 			conn = GetConnection(user, true);
-			cancelQueryIfNeeded(conn, queryDesc->sourceText);
 
-			if (PQsendPlan(conn, serialize_plan(queryDesc, eflags)) == 0)
-				pgfdw_report_error(ERROR, NULL, conn, false, queryDesc->sourceText);
+			set_portable_output(true);
+			plan = nodeToString(queryDesc->plannedstmt);
+			set_portable_output(false);
+			plen = b64_enc_len(plan, strlen(plan) + 1);
+			plan_container = (char *) palloc0(plen+1);
+			plen1 = b64_encode(plan, strlen(plan), plan_container);
+			Assert(plen > plen1);
+
+			qlen = b64_enc_len(queryDesc->sourceText, strlen(queryDesc->sourceText) + 1);
+			query_container = (char *) palloc0(qlen+1);
+			qlen1 = b64_encode(queryDesc->sourceText, strlen(queryDesc->sourceText), query_container);
+			Assert(qlen > qlen1);
+
+			query = palloc0(qlen + plen + 100);
+			sprintf(query, "SELECT public.pg_exec_plan('%s', '%s');", query_container, plan_container);
+
+			res = PQexec(conn, query);
+			PQclear(res);
+			pfree(query);
+			pfree(query_container);
+			pfree(plan_container);
 		}
 }
 
 static void
 HOOK_ExecEnd_injection(QueryDesc *queryDesc)
 {
-	if (conn)
-		cancelQueryIfNeeded(conn, queryDesc->sourceText);
-
 	if (prev_ExecutorEnd)
 		prev_ExecutorEnd(queryDesc);
 	else
