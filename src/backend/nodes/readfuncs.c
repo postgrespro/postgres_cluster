@@ -2749,7 +2749,7 @@ read_oid_field(char **token, int *length)
 	}
 
 	*token = pg_strtok(length);
-	Assert((*token)[0] = '(');
+	Assert((*token)[0] == '(');
 	*token = pg_strtok(length);
 	oid_type = atooid(*token);
 
@@ -2759,7 +2759,7 @@ read_oid_field(char **token, int *length)
 		*token = pg_strtok(length);
 		oid = atooid(*token);
 		*token = pg_strtok(length);
-		Assert((*token)[0] = ')');
+		Assert((*token)[0] == ')');
 		return oid;
 	}
 
@@ -2901,6 +2901,6 @@ read_oid_field(char **token, int *length)
 		break;
 	}
 	*token = pg_strtok(length);
-	Assert((*token)[0] = ')');
+	Assert((*token)[0] == ')');
 	return oid;
 }

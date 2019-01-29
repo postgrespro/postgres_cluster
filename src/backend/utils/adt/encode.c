@@ -214,7 +214,7 @@ static const int8 b64lookup[128] = {
 	41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1,
 };
 
-static unsigned
+unsigned
 b64_encode(const char *src, unsigned len, char *dst)
 {
 	char	   *p,
@@ -261,7 +261,7 @@ b64_encode(const char *src, unsigned len, char *dst)
 	return p - dst;
 }
 
-static unsigned
+unsigned
 b64_decode(const char *src, unsigned len, char *dst)
 {
 	const char *srcend = src + len,
@@ -331,14 +331,14 @@ b64_decode(const char *src, unsigned len, char *dst)
 }
 
 
-static unsigned
+unsigned
 b64_enc_len(const char *src, unsigned srclen)
 {
 	/* 3 bytes will be converted to 4, linefeed after 76 chars */
 	return (srclen + 2) * 4 / 3 + srclen / (76 * 3 / 4);
 }
 
-static unsigned
+unsigned
 b64_dec_len(const char *src, unsigned srclen)
 {
 	return (srclen * 3) >> 2;

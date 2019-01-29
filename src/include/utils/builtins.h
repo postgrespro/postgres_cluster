@@ -33,6 +33,10 @@ extern int	errdomainconstraint(Oid datatypeOid, const char *conname);
 extern unsigned hex_encode(const char *src, unsigned len, char *dst);
 extern unsigned hex_decode(const char *src, unsigned len, char *dst);
 
+extern unsigned b64_encode(const char *src, unsigned len, char *dst);
+extern unsigned b64_decode(const char *src, unsigned len, char *dst);
+extern unsigned b64_enc_len(const char *src, unsigned srclen);
+extern unsigned b64_dec_len(const char *src, unsigned srclen);
 /* int.c */
 extern int2vector *buildint2vector(const int16 *int2s, int n);
 

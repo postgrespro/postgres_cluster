@@ -318,6 +318,11 @@ configure_remote_session(PGconn *conn)
 	int			remoteversion = PQserverVersion(conn);
 
 	/* Force the search path to contain only pg_catalog (see deparse.c) */
+
+	/*
+	 * Temporarily switch off this option. Not all regression tests passes
+	 * correctly without including 'public' value in default search path.
+	 */
 	do_sql_command(conn, "SET search_path = pg_catalog");
 
 	/*

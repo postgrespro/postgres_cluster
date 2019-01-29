@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# This script performs regress tests at a master and mirrored it into the slave.
+U=`whoami`
+export LC_ALL=C
+export LANGUAGE="en_US:en"
+
+# Paths
+PGINSTALL=`pwd`/tmp_install/
+SCRIPTS=`pwd`/contrib/pg_execplan/tests
+LD_LIBRARY_PATH=$PGINSTALL/lib
+remoteSrvName=fdwremote
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
+export PATH=$PGINSTALL/bin:$PATH
+
+pkill -9 postgres || true
+sleep 1
+rm -rf $PGINSTALL || true
+rm -rf PGDATA_Master || true
+rm -rf PGDATA_Slave || true
+rm -rf master.log || true
+rm -rf slave.log || true
+
+# Building project
+make > /dev/null
+make -C contrib > /dev/null
+make install > /dev/null
+make -C contrib install > /dev/null
+
+mkdir PGDATA_Master
+mkdir PGDATA_Slave
+initdb -D PGDATA_Master -E UTF8 --locale=C
+initdb -D PGDATA_Slave -E UTF8 --locale=C
+echo "shared_preload_libraries = 'postgres_fdw, pg_execplan, pg_repeater'" >> PGDATA_Master/postgresql.conf
+echo "shared_preload_libraries = 'pg_execplan'" >> PGDATA_Slave/postgresql.conf
+echo "repeater.fdwname = '$remoteSrvName'" >> PGDATA_Master/postgresql.conf
+
+pg_ctl -c -o "-p 5433" -D PGDATA_Slave -l slave.log start
+pg_ctl -c -o "-p 5432" -D PGDATA_Master -l master.log start
+createdb -p 5433 $U
+createdb -p 5432 $U
+
+psql -p 5432 -c "CREATE EXTENSION postgres_fdw;"
+psql -p 5432 -c "CREATE SERVER $remoteSrvName FOREIGN DATA WRAPPER postgres_fdw OPTIONS (port '5433', use_remote_estimate 'on');"
+psql -p 5432 -c "CREATE USER MAPPING FOR PUBLIC SERVER $remoteSrvName;"
+
+# Prepare plan execution
+psql -p 5432 -c "CREATE EXTENSION pg_execplan;"
+psql -p 5433 -c "CREATE EXTENSION pg_execplan;"
+psql -p 5432 -c "CREATE EXTENSION pg_repeater;"
+
+psql -p 5433 -c "CREATE TABLE t2 (id Serial, b INT, PRIMARY KEY(id));"
+psql -p 5433 -c "DROP TABLE t2;"
+#psql -p 5433 -c "SELECT pg_exec_plan('SELECT * FROM pg_class;','sdadad');"
+
+rm -rf `pwd`/src/test/regress/testtablespace
+mkdir `pwd`/src/test/regress/testtablespace
+rm -rf $PGINSTALL/lib/regress.so
+cp `pwd`/src/test/regress/regress.so $PGINSTALL/lib
+cp `pwd`/src/test/regress/regress.so $PGINSTALL/lib/postgresql/
+cd src/test/regress
+./pg_regress --schedule=$SCRIPTS/serial_schedule --load-extension=postgres_fdw --load-extension=pg_execplan --load-extension=pg_repeater --dbname=andrey --use-existing

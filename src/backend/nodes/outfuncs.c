@@ -97,9 +97,10 @@ write_oid_field(StringInfo str, Oid oid)
 		int i, nargs;
 
 		get_func_signature(oid, &argtypes, &nargs);
-		appendStringInfo(str, "%u %s", PROCOID, NSP_NAME(get_func_namespace(oid)));
-		appendStringInfo(str, " %s", get_func_name(oid));
-		appendStringInfo(str, " %d", nargs);
+		appendStringInfo(str, "%u %s %s %d", PROCOID,
+											NSP_NAME(get_func_namespace(oid)),
+											get_func_name(oid),
+											nargs);
 
 		for (i = 0; i < nargs; i++)
 		{
