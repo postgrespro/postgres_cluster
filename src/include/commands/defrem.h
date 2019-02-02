@@ -87,6 +87,8 @@ extern ObjectAddress DefineOpFamily(CreateOpFamilyStmt *stmt);
 extern Oid	AlterOpFamily(AlterOpFamilyStmt *stmt);
 extern void RemoveOpClassById(Oid opclassOid);
 extern void RemoveOpFamilyById(Oid opfamilyOid);
+extern Oid get_family_oid(const char *opfname, const char *nspname, const char *ammth);
+extern char *get_opfamily_name(Oid opfamilyOid, char **opfnamespace, char **opfmethod);
 extern void RemoveAmOpEntryById(Oid entryOid);
 extern void RemoveAmProcEntryById(Oid entryOid);
 extern void IsThereOpClassInNamespace(const char *opcname, Oid opcmethod,

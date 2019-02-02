@@ -25,8 +25,12 @@
 
 #include <ctype.h>
 
+#include "catalog/pg_type.h"
+#include "commands/dbcommands.h"
+#include "commands/defrem.h"
 #include "commands/user.h"
 #include "lib/stringinfo.h"
+#include "miscadmin.h"
 #include "nodes/extensible.h"
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
@@ -36,10 +40,13 @@
 #include "utils/syscache.h"
 
 #define NSP_NAME(nspoid) (get_namespace_name(nspoid))
-#define OID_TYPES_NUM	(6)
-static const Oid oid_types[OID_TYPES_NUM] = {RELOID, TYPEOID, PROCOID, COLLOID,
-											OPEROID, AUTHOID};
+#define OID_TYPES_NUM	(12)
 
+static const Oid oid_types[OID_TYPES_NUM] = {RELOID, TYPEOID, PROCOID, COLLOID,
+											OPEROID, AUTHOID, LANGOID, AMOID,
+											NAMESPACEOID, DATABASEOID, RULEOID,
+											OPFAMILYOID};
+static void _printDatum(StringInfo str, Datum value, Oid typid);
 static bool portable_output = false;
 void
 set_portable_output(bool value)
@@ -50,7 +57,9 @@ set_portable_output(bool value)
 static void
 write_oid_field(StringInfo str, Oid oid)
 {
-	int i;
+	int		i;
+	char	*rulename;
+	Oid		ev_class = InvalidOid;
 
 	if (!portable_output)
 	{
@@ -63,18 +72,23 @@ write_oid_field(StringInfo str, Oid oid)
 	if (!OidIsValid(oid))
 	{
 		/* Special case for invalid oid fields. For example, checkAsUser. */
-		appendStringInfo(str, "%u %u)", 0, oid);
+		appendStringInfo(str, "0 %u)", oid);
 		return;
 	}
 
 	for (i = 0; i < OID_TYPES_NUM; i++)
-		if (SearchSysCacheExists1(oid_types[i], oid))
+		if (oid_types[i] != RULEOID)
+		{
+			if (SearchSysCacheExists1(oid_types[i], oid))
+				break;
+		}
+		else if ((rulename = get_rule_name(oid, &ev_class)) != NULL)
 			break;
 
 	if (i == OID_TYPES_NUM)
 	{
-		elog(INFO, "Unexpected oid type %d!", oid);
-		appendStringInfo(str, "%u %u)", 0, oid);
+		elog(LOG, "Unexpected oid type %d!", oid);
+		appendStringInfo(str, "0 %u)", oid);
 		return;
 	}
 
@@ -145,6 +159,42 @@ write_oid_field(StringInfo str, Oid oid)
 
 	case AUTHOID:
 		appendStringInfo(str, "%u %s", AUTHOID, get_rolename(oid));
+		break;
+
+	case LANGOID:
+		appendStringInfo(str, "%u %s", LANGOID, get_language_name(oid, false));
+		break;
+
+	case AMOID:
+		appendStringInfo(str, "%u %s", AMOID, get_am_name(oid));
+		break;
+
+	case NAMESPACEOID:
+		appendStringInfo(str, "%u %s", NAMESPACEOID, get_namespace_name_or_temp(oid));
+		break;
+
+	case DATABASEOID:
+		appendStringInfo(str, "%u %s", DATABASEOID, get_database_name(oid));
+		break;
+
+	case RULEOID:
+		Assert(rulename != NULL);
+		appendStringInfo(str, "%u %s %s %s", RULEOID, rulename,
+											NSP_NAME(get_rel_namespace(ev_class)),
+											get_rel_name(ev_class));
+		break;
+
+	case OPFAMILYOID:
+	{
+		char	*opfname = NULL,
+				*nspname = NULL,
+				*amname = NULL;
+
+		opfname = get_opfamily_name(oid, &nspname, &amname);
+		Assert(opfname && nspname && amname);
+
+		appendStringInfo(str, "%u %s %s %s", OPFAMILYOID, opfname, nspname, amname);
+	}
 		break;
 
 	default:
@@ -1125,6 +1175,8 @@ _outConst(StringInfo str, const Const *node)
 	appendStringInfoString(str, " :constvalue ");
 	if (node->constisnull)
 		appendStringInfoString(str, "<>");
+	else if (portable_output)
+		_printDatum(str, node->constvalue, node->consttype);
 	else
 		outDatum(str, node->constvalue, node->constlen, node->constbyval);
 }
@@ -4124,4 +4176,51 @@ bmsToString(const Bitmapset *bms)
 	initStringInfo(&str);
 	outBitmapset(&str, bms);
 	return str.data;
+}
+
+/*
+ * Output value in text format
+ */
+static void
+_printDatum(StringInfo str, Datum value, Oid typid)
+{
+	Oid 		typOutput;
+	bool 		typIsVarlena;
+	FmgrInfo    finfo;
+	Datum		tmpval;
+	char	   *textvalue;
+	int			saveDateStyle;
+
+	/* Get output function for the type */
+	getTypeOutputInfo(typid, &typOutput, &typIsVarlena);
+	fmgr_info(typOutput, &finfo);
+
+	/* Detoast value if needed */
+	if (typIsVarlena)
+		tmpval = PointerGetDatum(PG_DETOAST_DATUM(value));
+	else
+		tmpval = value;
+
+	/*
+	 * It was found that if configuration setting for date style is
+	 * "postgres,ymd" the output dates have format DD-MM-YYYY and they can not
+	 * be parsed correctly by receiving party. So force ISO format YYYY-MM-DD
+	 * in internal cluster communications, these values are always parsed
+	 * correctly.
+	 */
+	saveDateStyle = DateStyle;
+	DateStyle = USE_ISO_DATES;
+
+	if (typid == OIDOID)
+	{
+		/* Const type is "OID". Need to parse. */
+		Oid oid = DatumGetObjectId(value);
+		write_oid_field(str, oid);
+	}
+	else
+	{
+		textvalue = DatumGetCString(FunctionCall1(&finfo, tmpval));
+		outToken(str, textvalue);
+	}
+	DateStyle = saveDateStyle;
 }

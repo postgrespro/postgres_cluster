@@ -17,6 +17,8 @@
 #include "access/htup.h"
 #include "nodes/pg_list.h"
 
+#define RULEOID	(USERMAPPINGUSERSERVER + 1) /* Fake cache id for rule oid*/
+
 /* Result list element for get_op_btree_interpretation */
 typedef struct OpBtreeInterpretation
 {
@@ -168,6 +170,7 @@ extern int32 get_collation_encoding(Oid colloid);
 extern Oid get_collid(const char *collname, int32 collencoding, Oid collnsp);
 extern Oid get_opnamespace(Oid opno);
 extern Oid get_operid(const char *oprname, Oid oprleft, Oid oprright, Oid oprnsp);
+extern char *get_rule_name(Oid ruleoid, Oid *ev_class);
 
 #define type_is_array(typid)  (get_element_type(typid) != InvalidOid)
 /* type_is_array_domain accepts both plain arrays and domains over arrays */

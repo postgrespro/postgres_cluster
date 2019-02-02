@@ -36,13 +36,19 @@
 
 /* Portable-related dependencies */
 #include "catalog/namespace.h"
+#include "catalog/pg_type.h"
+#include "commands/dbcommands.h"
+#include "commands/defrem.h"
+#include "commands/proclang.h"
 #include "commands/user.h"
+#include "rewrite/rewriteSupport.h"
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
 #define NSP_OID(nspname) LookupNamespaceNoError(nspname)
 static Oid read_oid_field(char **token, int *length);
+static Datum scanDatum(Oid typid, int typmod);
 
 static bool portable_input = false;
 void
@@ -531,6 +537,9 @@ _readConst(void)
 	token = pg_strtok(&length); /* skip :constvalue */
 	if (local_node->constisnull)
 		token = pg_strtok(&length);		/* skip "<>" */
+	else if (portable_input)
+		local_node->constvalue = scanDatum(local_node->consttype,
+										   local_node->consttypmod);
 	else
 		local_node->constvalue = readDatum(local_node->constbyval);
 
@@ -2754,6 +2763,9 @@ read_oid_field(char **token, int *length)
 	*token = pg_strtok(length);
 	oid_type = atooid(*token);
 
+	/*
+	 * It is undefined oid type
+	 */
 	if (!OidIsValid(oid_type))
 	{
 		Oid oid;
@@ -2907,6 +2919,84 @@ read_oid_field(char **token, int *length)
 	}
 		break;
 
+	case LANGOID:
+	{
+		char	*langname;
+
+		*token = pg_strtok(length); /* get nspname */
+		langname = nullable_string(*token, *length);
+		oid = get_language_oid(langname, false);
+	}
+		break;
+
+	case AMOID:
+	{
+		char	*amname;
+
+		*token = pg_strtok(length); /* get nspname */
+		amname = nullable_string(*token, *length);
+		oid = get_am_oid(amname, false);
+	}
+		break;
+
+	case NAMESPACEOID:
+	{
+		char	*nspname;
+
+		*token = pg_strtok(length); /* get nspname */
+		nspname = nullable_string(*token, *length);
+		oid = LookupNamespaceNoError(nspname);
+	}
+		break;
+
+	case DATABASEOID:
+	{
+		char	*dbname;
+
+		*token = pg_strtok(length); /* get nspname */
+		dbname = nullable_string(*token, *length);
+		oid = get_database_oid(dbname, false);
+	}
+		break;
+
+	case RULEOID:
+	{
+		char	*rulename,
+				*relname,
+				*nspname;
+		Oid		nspoid,
+				reloid;
+
+		*token = pg_strtok(length); /* get name of the rule */
+		rulename = nullable_string(*token, *length);
+
+		*token = pg_strtok(length);
+		nspname = nullable_string(*token, *length);
+		nspoid = LookupNamespaceNoError(nspname);
+		*token = pg_strtok(length);
+		relname = nullable_string(*token, *length);
+		reloid = get_relname_relid(relname, nspoid);
+
+		oid = get_rewrite_oid(reloid, rulename, false);
+	}
+		break;
+
+	case OPFAMILYOID:
+	{
+		char	*opfname = NULL,
+				*nspname = NULL,
+				*amname = NULL;
+
+		*token = pg_strtok(length);
+		opfname = nullable_string(*token, *length);
+		*token = pg_strtok(length);
+		nspname = nullable_string(*token, *length);
+		*token = pg_strtok(length);
+		amname = nullable_string(*token, *length);
+		oid = get_family_oid(opfname, nspname, amname);
+	}
+		break;
+
 	default:
 		Assert(0);
 		break;
@@ -2914,4 +3004,50 @@ read_oid_field(char **token, int *length)
 	*token = pg_strtok(length);
 	Assert((*token)[0] == ')');
 	return oid;
+}
+/*
+ * scanDatum
+ *
+ * Recreate Datum from the text format understandable by the input function
+ * of the specified data type.
+ */
+static Datum
+scanDatum(Oid typid, int typmod)
+{
+	Oid			typInput;
+	Oid			typioparam;
+	FmgrInfo	finfo;
+	FunctionCallInfoData fcinfo;
+	char	   *value;
+	Datum		res;
+	READ_TEMP_LOCALS();
+
+	if (typid == OIDOID)
+		return read_oid_field(&token, &length);
+
+	/* Get input function for the type */
+	getTypeInputInfo(typid, &typInput, &typioparam);
+	fmgr_info(typInput, &finfo);
+
+	/* Read the value */
+	token = pg_strtok(&length);
+	value = nullable_string(token, length);
+
+	/* The value can not be NULL, so we actually received empty string */
+	if (value == NULL)
+		value = "";
+
+	/* Invoke input function */
+	InitFunctionCallInfoData(fcinfo, &finfo, 3, InvalidOid, NULL, NULL);
+
+	fcinfo.arg[0] = CStringGetDatum(value);
+	fcinfo.arg[1] = ObjectIdGetDatum(typioparam);
+	fcinfo.arg[2] = Int32GetDatum(typmod);
+	fcinfo.argnull[0] = false;
+	fcinfo.argnull[1] = false;
+	fcinfo.argnull[2] = false;
+
+	res = FunctionCallInvoke(&fcinfo);
+
+	return res;
 }

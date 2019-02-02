@@ -3249,3 +3249,39 @@ get_operid(const char *oprname, Oid oprleft, Oid oprright, Oid oprnsp)
 						  ObjectIdGetDatum(oprright),
 						  ObjectIdGetDatum(oprnsp));
 }
+
+#include "catalog/pg_rewrite.h"
+#include "access/sysattr.h"
+
+/*
+ * Returns rule name or NULL, if it is not exists
+ */
+char *
+get_rule_name(Oid ruleoid, Oid *ev_class)
+{
+	Relation	pg_rewrite;
+	ScanKeyData entry[1];
+	SysScanDesc scan;
+	HeapTuple	tuple;
+	char		*name = NULL;
+
+	Assert(ev_class != NULL);
+
+	pg_rewrite = heap_open(RewriteRelationId, AccessShareLock);
+	ScanKeyInit(&entry[0],
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(ruleoid));
+	scan = systable_beginscan(pg_rewrite, 0, false, NULL, 1, entry);
+	tuple = systable_getnext(scan);
+
+	if (HeapTupleIsValid(tuple))
+	{
+		name = pstrdup(NameStr(((Form_pg_rewrite) GETSTRUCT(tuple))->rulename));
+		*ev_class = ((Form_pg_rewrite) GETSTRUCT(tuple))->ev_class;
+	}
+
+	systable_endscan(scan);
+	heap_close(pg_rewrite, AccessShareLock);
+	return name;
+}
