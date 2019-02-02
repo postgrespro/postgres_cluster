@@ -13,6 +13,7 @@
 
 #include "postgres.h"
 
+#include "access/parallel.h"
 #include "access/xact.h"
 #include "commands/extension.h"
 #include "executor/executor.h"
@@ -184,6 +185,7 @@ HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags)
 	 */
 		if (ExtensionIsActive() &&
 			queryDesc->plannedstmt->canSetTag &&
+			!IsParallelWorker() &&
 			((parsetree == NULL) || (nodeTag(parsetree) != T_CreatedbStmt)) &&
 			!(eflags & EXEC_FLAG_EXPLAIN_ONLY))
 		{
