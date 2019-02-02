@@ -78,3 +78,17 @@ psql -p 5433 -c "SELECT oid, oprname, oprnamespace FROM pg_operator WHERE oprnam
 # Test
 psql -p 5432 -c "SELECT pg_store_query_plan('../test.txt', 'SELECT id ### 1 FROM tests.ttest1;');"
 psql -p 5433 -c "SELECT pg_exec_stored_plan('../test.txt');"
+
+#ENUMOID -----------------------------------------------------------------------
+psql -p 5432 -c "CREATE TYPE mood AS ENUM ('sad', 'ok', 'happy');"
+psql -p 5432 -c "CREATE TABLE person ( name text, current_mood mood);"
+psql -p 5433 -c "CREATE TYPE mood AS ENUM ('sad', 'ok', 'happy');"
+psql -p 5433 -c "CREATE TABLE person ( name text, current_mood mood);"
+
+psql -p 5432 -c "SELECT pg_store_query_plan('../test.txt', 'INSERT INTO person VALUES (''Moe'', ''happy'');');"
+psql -p 5432 -c "SELECT pg_exec_stored_plan('../test.txt');"
+psql -p 5433 -c "SELECT pg_exec_stored_plan('../test.txt');"
+
+psql -p 5432 -c "SELECT * FROM person WHERE current_mood = 'happy';"
+psql -p 5433 -c "SELECT * FROM person WHERE current_mood = 'happy';"
+

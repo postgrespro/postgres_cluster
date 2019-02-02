@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # This script performs regress tests at a master and mirrored it into the slave.
-U=`whoami`
+U=regression
 export LC_ALL=C
 export LANGUAGE="en_US:en"
 
@@ -12,6 +12,7 @@ LD_LIBRARY_PATH=$PGINSTALL/lib
 remoteSrvName=fdwremote
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 export PATH=$PGINSTALL/bin:$PATH
+export PGDATABASE=regression
 
 pkill -9 postgres || true
 sleep 1
@@ -41,7 +42,7 @@ createdb -p 5433 $U
 createdb -p 5432 $U
 
 psql -p 5432 -c "CREATE EXTENSION postgres_fdw;"
-psql -p 5432 -c "CREATE SERVER $remoteSrvName FOREIGN DATA WRAPPER postgres_fdw OPTIONS (port '5433', use_remote_estimate 'on');"
+psql -p 5432 -c "CREATE SERVER $remoteSrvName FOREIGN DATA WRAPPER postgres_fdw OPTIONS (port '5433', dbname 'regression', use_remote_estimate 'on');"
 psql -p 5432 -c "CREATE USER MAPPING FOR PUBLIC SERVER $remoteSrvName;"
 
 # Prepare plan execution
@@ -59,4 +60,4 @@ rm -rf $PGINSTALL/lib/regress.so
 cp `pwd`/src/test/regress/regress.so $PGINSTALL/lib
 cp `pwd`/src/test/regress/regress.so $PGINSTALL/lib/postgresql/
 cd src/test/regress
-./pg_regress --schedule=$SCRIPTS/serial_schedule --load-extension=postgres_fdw --load-extension=pg_execplan --load-extension=pg_repeater --dbname=andrey --use-existing
+./pg_regress --schedule=$SCRIPTS/serial_schedule --load-extension=postgres_fdw --load-extension=pg_execplan --load-extension=pg_repeater --dbname=regression --use-existing
