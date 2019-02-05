@@ -104,9 +104,8 @@ exec_plan(char *query_string, char *plan_string)
 	ParamListInfo 		paramLI = NULL;
 	CachedPlanSource	*psrc;
 	CachedPlan			*cplan;
-	Portal				portal;
+	QueryDesc			*queryDesc;
 	DestReceiver		*receiver;
-	int16				format = 0;
 	int					eflags = 0;
 
 	PG_TRY();
@@ -134,36 +133,35 @@ exec_plan(char *query_string, char *plan_string)
 	SetRemoteSubplan(psrc, pstmt);
 	cplan = GetCachedPlan(psrc, paramLI, false);
 
-	receiver = CreateDestReceiver(DestNone);
-	portal = CreateNewPortal();
-	portal->visible = false;
-	PortalDefineQuery(portal,
-					  NULL,
-					  query_string,
-					  NULL,
-					  NULL,
-					  cplan);
+	receiver = CreateDestReceiver(DestLog);
+
 	PG_TRY();
 	{
-	PortalStart(portal, paramLI, eflags, InvalidSnapshot);
-	PortalSetResultFormat(portal, 0, &format);
-	(void) PortalRun(portal,
-					 FETCH_ALL,
-					 true,
-					 receiver,
-					 receiver,
-					 query_string);
+		queryDesc = CreateQueryDesc(pstmt,
+									query_string,
+									GetActiveSnapshot(),
+									InvalidSnapshot,
+									receiver,
+									paramLI,
+									0);
+		ExecutorStart(queryDesc, eflags);
+		PushActiveSnapshot(queryDesc->snapshot);
+		ExecutorRun(queryDesc, ForwardScanDirection, 0);
+		PopActiveSnapshot();
+		ExecutorFinish(queryDesc);
+		ExecutorEnd(queryDesc);
+		FreeQueryDesc(queryDesc);
 	}
 	PG_CATCH();
 	{
 		elog(INFO, "BAD QUERY: '%s'.", query_string);
-		PortalDrop(portal, false);
+		ReleaseCachedPlan(cplan, false);
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
 
 	receiver->rDestroy(receiver);
-	PortalDrop(portal, false);
+	ReleaseCachedPlan(cplan, false);
 
 	if (EXPLAN_DEBUG_LEVEL > 0)
 		elog(INFO, "query execution finished.\n");

@@ -557,6 +557,50 @@ debugtup(TupleTableSlot *slot, DestReceiver *self)
 	return true;
 }
 
+void
+logStartup(DestReceiver *self, int operation, TupleDesc typeinfo)
+{
+	int			natts = typeinfo->natts;
+	Form_pg_attribute *attinfo = typeinfo->attrs;
+	int			i;
+
+	/*
+	 * show the return type of the tuples
+	 */
+	printf("\t---- Result Attributes ----\n");
+	for (i = 0; i < natts; ++i)
+		printf("%s\t|\t", NameStr(attinfo[i]->attname));
+	printf("\n");
+}
+
+bool
+logtup(TupleTableSlot *slot, DestReceiver *self)
+{
+	TupleDesc	typeinfo = slot->tts_tupleDescriptor;
+	int			natts = typeinfo->natts;
+	int			i;
+	Datum		attr;
+	char	   *value;
+	bool		isnull;
+	Oid			typoutput;
+	bool		typisvarlena;
+
+	for (i = 0; i < natts; ++i)
+	{
+		attr = slot_getattr(slot, i + 1, &isnull);
+		if (isnull)
+			continue;
+		getTypeOutputInfo(typeinfo->attrs[i]->atttypid,
+						  &typoutput, &typisvarlena);
+
+		value = OidOutputFunctionCall(typoutput, attr);
+		printf("%s\t|\t", value);
+	}
+	printf("\n");
+
+	return true;
+}
+
 /* ----------------
  *		printtup_internal_20 --- print a binary tuple in protocol 2.0
  *

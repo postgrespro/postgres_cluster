@@ -1619,7 +1619,7 @@ char *
 get_opfamily_name(Oid opfamilyOid, char **nspname, char **opfmethod)
 {
 	HeapTuple	tup;
-	char		*opfname;
+	char	   *opfname;
 	Oid			nspoid,
 				mthoid;
 

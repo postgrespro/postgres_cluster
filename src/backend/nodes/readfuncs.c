@@ -47,7 +47,7 @@
 #include "utils/syscache.h"
 
 #define NSP_OID(nspname) LookupNamespaceNoError(nspname)
-static Oid read_oid_field(char **token, int *length);
+static Oid	read_oid_field(char **token, int *length);
 static Datum scanDatum(Oid typid, int typmod);
 
 static bool portable_input = false;
@@ -138,7 +138,7 @@ set_portable_input(bool value)
 	token = pg_strtok(&length);		/* skip :fldname */ \
 	token = pg_strtok(&length);		/* get field value */ \
 	(void) token;				/* in case not used elsewhere */ \
-	local_node->fldname = -1	/* set field to "unknown" */
+	local_node->fldname = atoi(token)	/* set field to "unknown" */
 
 /* Read a Node field */
 #define READ_NODE_FIELD(fldname) \
@@ -2749,8 +2749,8 @@ readBoolCols(int numCols)
 static Oid
 read_oid_field(char **token, int *length)
 {
-	Oid oid_type,
-		oid;
+	Oid			oid_type,
+				oid;
 
 	if (!portable_input)
 	{
@@ -2768,7 +2768,8 @@ read_oid_field(char **token, int *length)
 	 */
 	if (!OidIsValid(oid_type))
 	{
-		Oid oid;
+		Oid			oid;
+
 		*token = pg_strtok(length);
 		oid = atooid(*token);
 		*token = pg_strtok(length);
@@ -2778,233 +2779,235 @@ read_oid_field(char **token, int *length)
 
 	switch (oid_type)
 	{
-	case RELOID:
-	{
-		char	*relname,
-				*nspname;
-		Oid rel_nsp_oid;
-
-		*token = pg_strtok(length); /* Switch to namespace name */
-		nspname = nullable_string(*token, *length);
-		rel_nsp_oid = LookupNamespaceNoError(nspname);
-		*token = pg_strtok(length); /* Switch to relname */
-		relname = nullable_string(*token, *length);
-		oid = get_relname_relid(relname, rel_nsp_oid);
-		break;
-	}
-	case TYPEOID:
-	{
-		char	*nspname; /* namespace name */
-		char	*typname; /* data type name */
-
-		*token = pg_strtok(length); /* get nspname */
-		nspname = nullable_string(*token, *length);
-		*token = pg_strtok(length); /* get typname */
-		typname = nullable_string(*token, *length);
-		if (typname)
-		{
-			oid = get_typname_typid(typname, LookupNamespaceNoError((nspname)));
-			if (!OidIsValid((oid)))
-				elog(WARNING, "could not find OID for type %s.%s",
-															nspname, typname);
-		}
-		else
-			oid = InvalidOid;
-	}
-		break;
-
-	case PROCOID:
-	{
-		char       *nspname; /* namespace name */
-		char       *funcname; /* function name */
-		int 		nargs; /* number of arguments */
-		Oid		   *argtypes; /* argument types */
-
-		*token = pg_strtok(length); /* get nspname */
-		nspname = nullable_string(*token, *length);
-		*token = pg_strtok(length); /* get funcname */
-		funcname = nullable_string(*token, *length);
-		*token = pg_strtok(length); /* get nargs */
-		nargs = atoi(*token);
-
-		if (funcname)
-		{
-			int	i;
-			argtypes = palloc(nargs * sizeof(Oid));
-			for (i = 0; i < nargs; i++)
+		case RELOID:
 			{
-				char *typnspname; /* argument type namespace */
-				char *typname; /* argument type name */
+				char	   *relname,
+						   *nspname;
+				Oid			rel_nsp_oid;
 
-				*token = pg_strtok(length); /* get type nspname */
-				typnspname = nullable_string(*token, *length);
-				*token = pg_strtok(length); /* get type name */
-				typname = nullable_string(*token, *length);
-				argtypes[i] = get_typname_typid(typname,
-												NSP_OID(typnspname));
+				*token = pg_strtok(length);		/* Switch to namespace name */
+				nspname = nullable_string(*token, *length);
+				rel_nsp_oid = LookupNamespaceNoError(nspname);
+				*token = pg_strtok(length);		/* Switch to relname */
+				relname = nullable_string(*token, *length);
+				oid = get_relname_relid(relname, rel_nsp_oid);
+				break;
 			}
-			oid = get_funcid(funcname, buildoidvector(argtypes, nargs), NSP_OID(nspname));
-		}
-		else
-			oid = InvalidOid;
-	}
-	break;
+		case TYPEOID:
+			{
+				char	   *nspname;	/* namespace name */
+				char	   *typname;	/* data type name */
 
-	case COLLOID:
-	{
-		char       *nspname; /* namespace name */
-		char       *collname; /* collation name */
-		int 		collencoding; /* collation encoding */
+				*token = pg_strtok(length);		/* get nspname */
+				nspname = nullable_string(*token, *length);
+				*token = pg_strtok(length);		/* get typname */
+				typname = nullable_string(*token, *length);
+				if (typname)
+				{
+					oid = get_typname_typid(typname, LookupNamespaceNoError((nspname)));
+					if (!OidIsValid((oid)))
+						elog(WARNING, "could not find OID for type %s.%s",
+							 nspname, typname);
+				}
+				else
+					oid = InvalidOid;
+			}
+			break;
 
-		*token = pg_strtok(length); /* get nspname */
-		nspname = nullable_string(*token, *length);
-		*token = pg_strtok(length); /* get collname */
-		collname = nullable_string(*token, *length);
-		*token = pg_strtok(length); /* get collencoding */
-		collencoding = atoi(*token);
-		if (collname)
-			oid = get_collid(collname, collencoding, NSP_OID(nspname));
-		else
-			oid = InvalidOid;
-	}
-		break;
+		case PROCOID:
+			{
+				char	   *nspname;	/* namespace name */
+				char	   *funcname;	/* function name */
+				int			nargs;		/* number of arguments */
+				Oid		   *argtypes;	/* argument types */
 
-	case OPEROID:
-	{
-		char       *nspname; /* namespace name */
-		char       *oprname; /* operator name */
-		char	   *leftnspname; /* left type namespace */
-		char	   *leftname; /* left type name */
-		Oid			oprleft; /* left type */
-		char	   *rightnspname; /* right type namespace */
-		char	   *rightname; /* right type name */
-		Oid			oprright; /* right type */
+				*token = pg_strtok(length);		/* get nspname */
+				nspname = nullable_string(*token, *length);
+				*token = pg_strtok(length);		/* get funcname */
+				funcname = nullable_string(*token, *length);
+				*token = pg_strtok(length);		/* get nargs */
+				nargs = atoi(*token);
 
-		*token = pg_strtok(length); /* get nspname */
-		nspname = nullable_string(*token, *length);
-		*token = pg_strtok(length); /* get operator name */
-		oprname = nullable_string(*token, *length);
-		*token = pg_strtok(length); /* left type namespace */
-		leftnspname = nullable_string(*token, *length);
-		*token = pg_strtok(length); /* left type name */
-		leftname = nullable_string(*token, *length);
-		*token = pg_strtok(length); /* right type namespace */
-		rightnspname = nullable_string(*token, *length);
-		*token = pg_strtok(length); /* right type name */
-		rightname =nullable_string(*token, *length);
-		if (oprname)
-		{
-			if (leftname)
-				oprleft = get_typname_typid(leftname, NSP_OID(leftnspname));
-			else
-				oprleft = InvalidOid;
-			if (rightname)
-				oprright = get_typname_typid(rightname, NSP_OID(rightnspname));
-			else
-				oprright = InvalidOid;
-			oid = get_operid(oprname, oprleft, oprright, NSP_OID(nspname));
-		}
-		else
-			oid = InvalidOid;
-	}
-		break;
+				if (funcname)
+				{
+					int			i;
 
-	case AUTHOID:
-	{
-		char	*rolename;
+					argtypes = palloc(nargs * sizeof(Oid));
+					for (i = 0; i < nargs; i++)
+					{
+						char	   *typnspname; /* argument type namespace */
+						char	   *typname;	/* argument type name */
 
-		*token = pg_strtok(length); /* get nspname */
-		rolename = nullable_string(*token, *length);
-		oid = get_roleid(rolename);
-	}
-		break;
+						*token = pg_strtok(length);		/* get type nspname */
+						typnspname = nullable_string(*token, *length);
+						*token = pg_strtok(length);		/* get type name */
+						typname = nullable_string(*token, *length);
+						argtypes[i] = get_typname_typid(typname,
+														NSP_OID(typnspname));
+					}
+					oid = get_funcid(funcname, buildoidvector(argtypes, nargs), NSP_OID(nspname));
+				}
+				else
+					oid = InvalidOid;
+			}
+			break;
 
-	case LANGOID:
-	{
-		char	*langname;
+		case COLLOID:
+			{
+				char	   *nspname;	/* namespace name */
+				char	   *collname;	/* collation name */
+				int			collencoding;		/* collation encoding */
 
-		*token = pg_strtok(length); /* get nspname */
-		langname = nullable_string(*token, *length);
-		oid = get_language_oid(langname, false);
-	}
-		break;
+				*token = pg_strtok(length);		/* get nspname */
+				nspname = nullable_string(*token, *length);
+				*token = pg_strtok(length);		/* get collname */
+				collname = nullable_string(*token, *length);
+				*token = pg_strtok(length);		/* get collencoding */
+				collencoding = atoi(*token);
+				if (collname)
+					oid = get_collid(collname, collencoding, NSP_OID(nspname));
+				else
+					oid = InvalidOid;
+			}
+			break;
 
-	case AMOID:
-	{
-		char	*amname;
+		case OPEROID:
+			{
+				char	   *nspname;	/* namespace name */
+				char	   *oprname;	/* operator name */
+				char	   *leftnspname;		/* left type namespace */
+				char	   *leftname;	/* left type name */
+				Oid			oprleft;	/* left type */
+				char	   *rightnspname;		/* right type namespace */
+				char	   *rightname;	/* right type name */
+				Oid			oprright;	/* right type */
 
-		*token = pg_strtok(length); /* get nspname */
-		amname = nullable_string(*token, *length);
-		oid = get_am_oid(amname, false);
-	}
-		break;
+				*token = pg_strtok(length);		/* get nspname */
+				nspname = nullable_string(*token, *length);
+				*token = pg_strtok(length);		/* get operator name */
+				oprname = nullable_string(*token, *length);
+				*token = pg_strtok(length);		/* left type namespace */
+				leftnspname = nullable_string(*token, *length);
+				*token = pg_strtok(length);		/* left type name */
+				leftname = nullable_string(*token, *length);
+				*token = pg_strtok(length);		/* right type namespace */
+				rightnspname = nullable_string(*token, *length);
+				*token = pg_strtok(length);		/* right type name */
+				rightname = nullable_string(*token, *length);
+				if (oprname)
+				{
+					if (leftname)
+						oprleft = get_typname_typid(leftname, NSP_OID(leftnspname));
+					else
+						oprleft = InvalidOid;
+					if (rightname)
+						oprright = get_typname_typid(rightname, NSP_OID(rightnspname));
+					else
+						oprright = InvalidOid;
+					oid = get_operid(oprname, oprleft, oprright, NSP_OID(nspname));
+				}
+				else
+					oid = InvalidOid;
+			}
+			break;
 
-	case NAMESPACEOID:
-	{
-		char	*nspname;
+		case AUTHOID:
+			{
+				char	   *rolename;
 
-		*token = pg_strtok(length); /* get nspname */
-		nspname = nullable_string(*token, *length);
-		oid = LookupNamespaceNoError(nspname);
-	}
-		break;
+				*token = pg_strtok(length);		/* get nspname */
+				rolename = nullable_string(*token, *length);
+				oid = get_roleid(rolename);
+			}
+			break;
 
-	case DATABASEOID:
-	{
-		char	*dbname;
+		case LANGOID:
+			{
+				char	   *langname;
 
-		*token = pg_strtok(length); /* get nspname */
-		dbname = nullable_string(*token, *length);
-		oid = get_database_oid(dbname, false);
-	}
-		break;
+				*token = pg_strtok(length);		/* get nspname */
+				langname = nullable_string(*token, *length);
+				oid = get_language_oid(langname, false);
+			}
+			break;
 
-	case RULEOID:
-	{
-		char	*rulename,
-				*relname,
-				*nspname;
-		Oid		nspoid,
-				reloid;
+		case AMOID:
+			{
+				char	   *amname;
 
-		*token = pg_strtok(length); /* get name of the rule */
-		rulename = nullable_string(*token, *length);
+				*token = pg_strtok(length);		/* get nspname */
+				amname = nullable_string(*token, *length);
+				oid = get_am_oid(amname, false);
+			}
+			break;
 
-		*token = pg_strtok(length);
-		nspname = nullable_string(*token, *length);
-		nspoid = LookupNamespaceNoError(nspname);
-		*token = pg_strtok(length);
-		relname = nullable_string(*token, *length);
-		reloid = get_relname_relid(relname, nspoid);
+		case NAMESPACEOID:
+			{
+				char	   *nspname;
 
-		oid = get_rewrite_oid(reloid, rulename, false);
-	}
-		break;
+				*token = pg_strtok(length);		/* get nspname */
+				nspname = nullable_string(*token, *length);
+				oid = LookupNamespaceNoError(nspname);
+			}
+			break;
 
-	case OPFAMILYOID:
-	{
-		char	*opfname = NULL,
-				*nspname = NULL,
-				*amname = NULL;
+		case DATABASEOID:
+			{
+				char	   *dbname;
 
-		*token = pg_strtok(length);
-		opfname = nullable_string(*token, *length);
-		*token = pg_strtok(length);
-		nspname = nullable_string(*token, *length);
-		*token = pg_strtok(length);
-		amname = nullable_string(*token, *length);
-		oid = get_family_oid(opfname, nspname, amname);
-	}
-		break;
+				*token = pg_strtok(length);		/* get nspname */
+				dbname = nullable_string(*token, *length);
+				oid = get_database_oid(dbname, false);
+			}
+			break;
 
-	default:
-		Assert(0);
-		break;
+		case RULEOID:
+			{
+				char	   *rulename,
+						   *relname,
+						   *nspname;
+				Oid			nspoid,
+							reloid;
+
+				*token = pg_strtok(length);		/* get name of the rule */
+				rulename = nullable_string(*token, *length);
+
+				*token = pg_strtok(length);
+				nspname = nullable_string(*token, *length);
+				nspoid = LookupNamespaceNoError(nspname);
+				*token = pg_strtok(length);
+				relname = nullable_string(*token, *length);
+				reloid = get_relname_relid(relname, nspoid);
+
+				oid = get_rewrite_oid(reloid, rulename, false);
+			}
+			break;
+
+		case OPFAMILYOID:
+			{
+				char	   *opfname = NULL,
+						   *nspname = NULL,
+						   *amname = NULL;
+
+				*token = pg_strtok(length);
+				opfname = nullable_string(*token, *length);
+				*token = pg_strtok(length);
+				nspname = nullable_string(*token, *length);
+				*token = pg_strtok(length);
+				amname = nullable_string(*token, *length);
+				oid = get_family_oid(opfname, nspname, amname);
+			}
+			break;
+
+		default:
+			Assert(0);
+			break;
 	}
 	*token = pg_strtok(length);
 	Assert((*token)[0] == ')');
 	return oid;
 }
+
 /*
  * scanDatum
  *
@@ -3020,6 +3023,7 @@ scanDatum(Oid typid, int typmod)
 	FunctionCallInfoData fcinfo;
 	char	   *value;
 	Datum		res;
+
 	READ_TEMP_LOCALS();
 
 	if (typid == OIDOID)

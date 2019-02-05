@@ -261,7 +261,7 @@ get_ordering_op_properties(Oid opno,
  * (This indicates that the operator is not a valid ordering operator.)
  */
 Oid
-get_equality_op_for_ordering_op(Oid opno, bool *reverse)
+get_equality_op_for_ordering_op(Oid opno, bool * reverse)
 {
 	Oid			result = InvalidOid;
 	Oid			opfamily;
@@ -1966,7 +1966,7 @@ get_typbyval(Oid typid)
  *		returning a bogus value when given a bad type OID.
  */
 void
-get_typlenbyval(Oid typid, int16 *typlen, bool *typbyval)
+get_typlenbyval(Oid typid, int16 *typlen, bool * typbyval)
 {
 	HeapTuple	tp;
 	Form_pg_type typtup;
@@ -1986,7 +1986,7 @@ get_typlenbyval(Oid typid, int16 *typlen, bool *typbyval)
  *		A three-fer: given the type OID, return typlen, typbyval, typalign.
  */
 void
-get_typlenbyvalalign(Oid typid, int16 *typlen, bool *typbyval,
+get_typlenbyvalalign(Oid typid, int16 *typlen, bool * typbyval,
 					 char *typalign)
 {
 	HeapTuple	tp;
@@ -2043,7 +2043,7 @@ void
 get_type_io_data(Oid typid,
 				 IOFuncSelector which_func,
 				 int16 *typlen,
-				 bool *typbyval,
+				 bool * typbyval,
 				 char *typalign,
 				 char *typdelim,
 				 Oid *typioparam,
@@ -2401,7 +2401,7 @@ type_is_range(Oid typid)
  *		Throws error on failure.
  */
 void
-get_type_category_preferred(Oid typid, char *typcategory, bool *typispreferred)
+get_type_category_preferred(Oid typid, char *typcategory, bool * typispreferred)
 {
 	HeapTuple	tp;
 	Form_pg_type typtup;
@@ -2597,7 +2597,7 @@ getTypeInputInfo(Oid type, Oid *typInput, Oid *typIOParam)
  *		Get info needed for printing values of a type
  */
 void
-getTypeOutputInfo(Oid type, Oid *typOutput, bool *typIsVarlena)
+getTypeOutputInfo(Oid type, Oid *typOutput, bool * typIsVarlena)
 {
 	HeapTuple	typeTuple;
 	Form_pg_type pt;
@@ -2663,7 +2663,7 @@ getTypeBinaryInputInfo(Oid type, Oid *typReceive, Oid *typIOParam)
  *		Get info needed for binary output of values of a type
  */
 void
-getTypeBinaryOutputInfo(Oid type, Oid *typSend, bool *typIsVarlena)
+getTypeBinaryOutputInfo(Oid type, Oid *typSend, bool * typIsVarlena)
 {
 	HeapTuple	typeTuple;
 	Form_pg_type pt;
@@ -3122,8 +3122,8 @@ Oid
 get_typname_typid(const char *typname, Oid typnamespace)
 {
 	return GetSysCacheOid2(TYPENAMENSP,
-						  CStringGetDatum(typname),
-						  ObjectIdGetDatum(typnamespace));
+						   CStringGetDatum(typname),
+						   ObjectIdGetDatum(typnamespace));
 }
 
 /*
@@ -3137,9 +3137,9 @@ Oid
 get_funcid(const char *funcname, oidvector *argtypes, Oid funcnsp)
 {
 	return GetSysCacheOid3(PROCNAMEARGSNSP,
-						  CStringGetDatum(funcname),
-						  PointerGetDatum(argtypes),
-						  ObjectIdGetDatum(funcnsp));
+						   CStringGetDatum(funcname),
+						   PointerGetDatum(argtypes),
+						   ObjectIdGetDatum(funcnsp));
 }
 
 /*
@@ -3157,7 +3157,7 @@ get_collation_namespace(Oid colloid)
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_collation colltup = (Form_pg_collation) GETSTRUCT(tp);
-		Oid 		result;
+		Oid			result;
 
 		result = colltup->collnamespace;
 		ReleaseSysCache(tp);
@@ -3182,7 +3182,7 @@ get_collation_encoding(Oid colloid)
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_collation colltup = (Form_pg_collation) GETSTRUCT(tp);
-		int32 		result;
+		int32		result;
 
 		result = colltup->collencoding;
 		ReleaseSysCache(tp);
@@ -3203,9 +3203,9 @@ Oid
 get_collid(const char *collname, int32 collencoding, Oid collnsp)
 {
 	return GetSysCacheOid3(COLLNAMEENCNSP,
-						  CStringGetDatum(collname),
-						  Int32GetDatum(collencoding),
-						  ObjectIdGetDatum(collnsp));
+						   CStringGetDatum(collname),
+						   Int32GetDatum(collencoding),
+						   ObjectIdGetDatum(collnsp));
 }
 
 /*
@@ -3223,7 +3223,7 @@ get_opnamespace(Oid opno)
 	if (HeapTupleIsValid(tp))
 	{
 		Form_pg_operator optup = (Form_pg_operator) GETSTRUCT(tp);
-		Oid				result;
+		Oid			result;
 
 		result = optup->oprnamespace;
 		ReleaseSysCache(tp);
@@ -3244,10 +3244,10 @@ Oid
 get_operid(const char *oprname, Oid oprleft, Oid oprright, Oid oprnsp)
 {
 	return GetSysCacheOid4(OPERNAMENSP,
-						  CStringGetDatum(oprname),
-						  ObjectIdGetDatum(oprleft),
-						  ObjectIdGetDatum(oprright),
-						  ObjectIdGetDatum(oprnsp));
+						   CStringGetDatum(oprname),
+						   ObjectIdGetDatum(oprleft),
+						   ObjectIdGetDatum(oprright),
+						   ObjectIdGetDatum(oprnsp));
 }
 
 #include "catalog/pg_rewrite.h"
@@ -3263,7 +3263,7 @@ get_rule_name(Oid ruleoid, Oid *ev_class)
 	ScanKeyData entry[1];
 	SysScanDesc scan;
 	HeapTuple	tuple;
-	char		*name = NULL;
+	char	   *name = NULL;
 
 	Assert(ev_class != NULL);
 
