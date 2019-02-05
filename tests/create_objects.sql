@@ -47,3 +47,24 @@ CREATE OPERATOR public.### (
    rightarg = numeric,
    procedure = numeric_add
 );
+
+-- Different types and parameter types
+CREATE TYPE bug_status AS ENUM ('new', 'open', 'closed');
+
+CREATE TABLE public.bug (
+    id serial,
+    description TEXT,
+    status bug_status
+);
+
+INSERT INTO public.bug (description, status) VALUES ('abc', 'open');
+INSERT INTO public.bug (description, status) VALUES ('abc1', 'closed');
+
+CREATE TABLE public.bug1 (
+    id serial,
+    status bug_status
+);
+INSERT INTO public.bug1 (status) VALUES ('new');
+INSERT INTO public.bug1 (status) VALUES ('new');
+INSERT INTO public.bug1 (status) VALUES ('closed');
+
