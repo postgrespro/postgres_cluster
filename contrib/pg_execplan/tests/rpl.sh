@@ -82,16 +82,28 @@ psql -p 5433 -c "SELECT pg_exec_stored_plan('../test.txt');"
 #ENUMOID -----------------------------------------------------------------------
 psql -p 5432 -c "SELECT pg_store_query_plan('../test.txt', 'INSERT INTO bug (description, status) VALUES (''abc3'', ''new''::tests.bug_status);');"
 psql -p 5433 -c "SELECT pg_exec_stored_plan('../test.txt');"
-#psql -p 5432 -c "SELECT pg_store_query_plan('../test.txt', 'SELECT * FROM bug WHERE status=''open''');"
-#psql -p 5433 -c "SELECT pg_exec_stored_plan('../test.txt');"
+
 echo "ENUMOID test"
-#psql -p 5432 -c "INSERT INTO public.bug1 (status) VALUES ('new');"
 psql -p 5432 -c "SELECT pg_store_query_plan('../test.txt', '
 													SELECT A.description, B.id
 													FROM bug as A, bug1 AS B
 													WHERE A.status = B.status;
 				');"
 psql -p 5433 -c "SELECT pg_exec_stored_plan('../test.txt');"
-psql -p 5432 -c "SELECT * FROM bug;"
-psql -p 5432 -c "SELECT * FROM bug1;"
+
+# Prepared operator
+psql -p 5432 -c "PREPARE abc (TEXT, tests.bug_status) AS
+									INSERT INTO bug (description, status)
+									VALUES (\$1,\$2);
+				SELECT pg_store_query_plan('../test.txt', '
+									EXECUTE abc(''test1'', ''closed'')
+						');"
+
+psql -p 5433 -c "PREPARE abc (TEXT, tests.bug_status) AS
+									INSERT INTO bug (description, status)
+									VALUES (\$1,\$2);
+				SELECT pg_exec_stored_plan('../test.txt');"
+									 
+psql -p 5433 -c "SELECT * FROM bug;"
+psql -p 5433 -c "SELECT * FROM bug1;"
 
