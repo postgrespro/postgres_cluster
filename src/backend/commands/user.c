@@ -1136,6 +1136,42 @@ DropRole(DropRoleStmt *stmt)
 	heap_close(pg_authid_rel, NoLock);
 }
 
+char *
+get_rolename(Oid roleid)
+{
+	HeapTuple	tuple;
+	char		*rolename;
+
+	tuple = SearchSysCache1(AUTHOID, ObjectIdGetDatum(roleid));
+
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("role with oid\"%d\" does not exist", roleid)));
+
+	rolename = strdup(NameStr(((Form_pg_authid) GETSTRUCT(tuple))->rolname));
+	ReleaseSysCache(tuple);
+	return rolename;
+}
+
+Oid
+get_roleid(const char *rolename)
+{
+	HeapTuple	tuple;
+	Oid			roleid;
+
+	tuple = SearchSysCache1(AUTHNAME, CStringGetDatum(rolename));
+
+	if (!HeapTupleIsValid(tuple))
+		ereport(ERROR,
+				(errcode(ERRCODE_UNDEFINED_OBJECT),
+				 errmsg("role \"%s\" does not exist", rolename)));
+
+	roleid = HeapTupleGetOid(tuple);
+	ReleaseSysCache(tuple);
+	return roleid;
+}
+
 /*
  * Rename role
  */

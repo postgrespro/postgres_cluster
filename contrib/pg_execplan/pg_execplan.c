@@ -8,6 +8,7 @@
 #include "access/printtup.h"
 #include "commands/extension.h"
 #include "commands/prepare.h"
+#include "common/base64.h"
 #include "executor/executor.h"
 #include "nodes/nodes.h"
 #include "nodes/plannodes.h"
@@ -65,7 +66,7 @@ pg_store_query_plan(PG_FUNCTION_ARGS)
 		elog(ERROR, "Query contains %d elements, but must contain only one.", nstmts);
 
 	parsetree = (RawStmt *) linitial(parsetree_list);
-	querytree_list = pg_analyze_and_rewrite(parsetree, query_string, NULL, 0);
+	querytree_list = pg_analyze_and_rewrite(parsetree, query_string, NULL, 0, NULL);
 	plantree_list = pg_plan_queries(querytree_list, CURSOR_OPT_PARALLEL_OK, NULL);
 
 	queryDesc = CreateQueryDesc((PlannedStmt *) linitial(plantree_list),
@@ -73,7 +74,7 @@ pg_store_query_plan(PG_FUNCTION_ARGS)
 												InvalidSnapshot,
 												InvalidSnapshot,
 												None_Receiver,
-												0,
+												NULL, NULL,
 												0);
 
 	if (EXPLAN_DEBUG_LEVEL > 0)
@@ -131,7 +132,7 @@ exec_plan(char *query_string, char *plan_string)
 							   CURSOR_OPT_GENERIC_PLAN, false);
 
 	SetRemoteSubplan(psrc, pstmt);
-	cplan = GetCachedPlan(psrc, paramLI, false);
+	cplan = GetCachedPlan(psrc, paramLI, false, NULL);
 
 	receiver = CreateDestReceiver(DestLog);
 
@@ -142,11 +143,11 @@ exec_plan(char *query_string, char *plan_string)
 									GetActiveSnapshot(),
 									InvalidSnapshot,
 									receiver,
-									paramLI,
+									paramLI, NULL,
 									0);
 		ExecutorStart(queryDesc, eflags);
 		PushActiveSnapshot(queryDesc->snapshot);
-		ExecutorRun(queryDesc, ForwardScanDirection, 0);
+		ExecutorRun(queryDesc, ForwardScanDirection, 0, true);
 		PopActiveSnapshot();
 		ExecutorFinish(queryDesc);
 		ExecutorEnd(queryDesc);
@@ -183,14 +184,14 @@ pg_exec_plan(PG_FUNCTION_ARGS)
 	Assert(query_string != NULL);
 	Assert(plan_string != NULL);
 
-	dec_query_len = b64_dec_len(query_string, strlen(query_string) + 1)+1;
+	dec_query_len = pg_b64_dec_len(strlen(query_string) + 1) + 1;
 	dec_query = palloc0(dec_query_len + 1);
-	dec_query_len1 = b64_decode(query_string, strlen(query_string), dec_query);
+	dec_query_len1 = pg_b64_decode(query_string, strlen(query_string), dec_query);
 	Assert(dec_query_len > dec_query_len1);
 
-	dec_plan_len = b64_dec_len(plan_string, strlen(plan_string) + 1);
+	dec_plan_len = pg_b64_dec_len(strlen(plan_string) + 1);
 	dec_plan = palloc0(dec_plan_len + 1);
-	dec_plan_len1 = b64_decode(plan_string, strlen(plan_string), dec_plan);
+	dec_plan_len1 = pg_b64_decode(plan_string, strlen(plan_string), dec_plan);
 	Assert(dec_plan_len > dec_plan_len1);
 
 	exec_plan(dec_query, dec_plan);

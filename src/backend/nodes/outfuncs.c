@@ -29,13 +29,233 @@
 
 #include <ctype.h>
 
+#include "catalog/pg_type.h"
+#include "commands/dbcommands.h"
+#include "commands/defrem.h"
+#include "commands/user.h"
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
 #include "nodes/extensible.h"
 #include "nodes/plannodes.h"
 #include "nodes/relation.h"
 #include "utils/datum.h"
+#include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/syscache.h"
+
+#define NSP_NAME(nspoid) (get_namespace_name(nspoid))
+#define OID_TYPES_NUM	(12)
+
+static const Oid oid_types[OID_TYPES_NUM] = {RELOID, TYPEOID, PROCOID, COLLOID,
+OPEROID, AUTHOID, LANGOID, AMOID, NAMESPACEOID, DATABASEOID, RULEOID, OPFAMILYOID};
+static void _printDatum(StringInfo str, Datum value, Oid typid);
+static bool portable_output = false;
+void
+set_portable_output(bool value)
+{
+	portable_output = value;
+}
+
+static void
+write_oid_field(StringInfo str, Oid oid)
+{
+	int			i;
+	char	   *rulename;
+	Oid			ev_class = InvalidOid;
+
+	if (!portable_output)
+	{
+		appendStringInfo(str, " %u", oid);
+		return;
+	}
+
+	appendStringInfo(str, " (");
+
+	if (!OidIsValid(oid))
+	{
+		/* Special case for invalid oid fields. For example, checkAsUser. */
+		appendStringInfo(str, "0 %u)", oid);
+		return;
+	}
+
+	for (i = 0; i < OID_TYPES_NUM; i++)
+		if (oid_types[i] != RULEOID)
+		{
+			if (SearchSysCacheExists1(oid_types[i], oid))
+				break;
+		}
+		else if ((rulename = get_rule_name(oid, &ev_class)) != NULL)
+			break;
+
+	if (i == OID_TYPES_NUM)
+	{
+		elog(LOG, "Unexpected oid type %d!", oid);
+		appendStringInfo(str, "0 %u)", oid);
+		return;
+	}
+
+	switch (oid_types[i])
+	{
+		case RELOID:
+			appendStringInfo(str, "%u %s %s", RELOID,
+							 get_namespace_name((get_rel_namespace((oid)))),
+							 get_rel_name((oid)));
+			break;
+
+		case TYPEOID:
+			appendStringInfo(str, "%u %s %s", TYPEOID,
+							 get_namespace_name(get_typ_namespace(oid)),
+							 get_typ_name(oid));
+
+			break;
+
+		case PROCOID:
+			{
+				Oid		   *argtypes;
+				int			i,
+							nargs;
+
+				get_func_signature(oid, &argtypes, &nargs);
+				appendStringInfo(str, "%u %s %s %d", PROCOID,
+								 NSP_NAME(get_func_namespace(oid)),
+								 get_func_name(oid),
+								 nargs);
+
+				for (i = 0; i < nargs; i++)
+				{
+					appendStringInfoChar(str, ' ');
+					outToken(str, NSP_NAME(get_typ_namespace(argtypes[i])));
+					appendStringInfoChar(str, ' ');
+					outToken(str, get_typ_name(argtypes[i]));
+				}
+			}
+			break;
+		case COLLOID:
+			appendStringInfo(str, "%u ", COLLOID);
+			outToken(str, NSP_NAME(get_collation_namespace(oid)));
+			appendStringInfoChar(str, ' ');
+			outToken(str, get_collation_name(oid));
+			appendStringInfo(str, " %d", get_collation_encoding(oid));
+			break;
+
+		case OPEROID:
+			{
+				Oid			oprleft,
+							oprright;
+
+				appendStringInfo(str, "%u ", OPEROID);
+				outToken(str, NSP_NAME(get_opnamespace(oid)));
+				appendStringInfoChar(str, ' ');
+				outToken(str, get_opname(oid));
+				appendStringInfoChar(str, ' ');
+				op_input_types(oid, &oprleft, &oprright);
+				outToken(str, OidIsValid(oprleft) ?
+						 NSP_NAME(get_typ_namespace(oprleft)) : NULL);
+				appendStringInfoChar(str, ' ');
+				outToken(str, OidIsValid(oprleft) ? get_typ_name(oprleft) : NULL);
+				appendStringInfoChar(str, ' ');
+				outToken(str, OidIsValid(oprright) ?
+						 NSP_NAME(get_typ_namespace(oprright)) : NULL);
+				appendStringInfoChar(str, ' ');
+				outToken(str, OidIsValid(oprright) ? get_typ_name(oprright) : NULL);
+			}
+			break;
+
+		case AUTHOID:
+			appendStringInfo(str, "%u %s", AUTHOID, get_rolename(oid));
+			break;
+
+		case LANGOID:
+			appendStringInfo(str, "%u %s", LANGOID, get_language_name(oid, false));
+			break;
+
+		case AMOID:
+			appendStringInfo(str, "%u %s", AMOID, get_am_name(oid));
+			break;
+
+		case NAMESPACEOID:
+			appendStringInfo(str, "%u %s", NAMESPACEOID, get_namespace_name_or_temp(oid));
+			break;
+
+		case DATABASEOID:
+			appendStringInfo(str, "%u %s", DATABASEOID, get_database_name(oid));
+			break;
+
+		case RULEOID:
+			Assert(rulename != NULL);
+			appendStringInfo(str, "%u %s %s %s", RULEOID, rulename,
+							 NSP_NAME(get_rel_namespace(ev_class)),
+							 get_rel_name(ev_class));
+			break;
+
+		case OPFAMILYOID:
+			{
+				char	   *opfname = NULL,
+						   *nspname = NULL,
+						   *amname = NULL;
+
+				opfname = get_opfamily_name(oid, &nspname, &amname);
+				Assert(opfname && nspname && amname);
+
+				appendStringInfo(str, "%u %s %s %s", OPFAMILYOID, opfname,
+								 nspname, amname);
+			}
+			break;
+
+		default:
+			Assert(0);
+			break;
+	}
+	appendStringInfo(str, ")");
+}
+
+/*
+ * Output value in text format
+ */
+static void
+_printDatum(StringInfo str, Datum value, Oid typid)
+{
+	Oid			typOutput;
+	bool		typIsVarlena;
+	FmgrInfo	finfo;
+	Datum		tmpval;
+	char	   *textvalue;
+	int			saveDateStyle;
+
+	/* Get output function for the type */
+	getTypeOutputInfo(typid, &typOutput, &typIsVarlena);
+	fmgr_info(typOutput, &finfo);
+
+	/* Detoast value if needed */
+	if (typIsVarlena)
+		tmpval = PointerGetDatum(PG_DETOAST_DATUM(value));
+	else
+		tmpval = value;
+
+	/*
+	 * It was found that if configuration setting for date style is
+	 * "postgres,ymd" the output dates have format DD-MM-YYYY and they can not
+	 * be parsed correctly by receiving party. So force ISO format YYYY-MM-DD
+	 * in internal cluster communications, these values are always parsed
+	 * correctly.
+	 */
+	saveDateStyle = DateStyle;
+	DateStyle = USE_ISO_DATES;
+
+	if (typid == OIDOID)
+	{
+		/* Const type is "OID". Need to parse. */
+		Oid			oid = DatumGetObjectId(value);
+
+		write_oid_field(str, oid);
+	}
+	else
+	{
+		textvalue = DatumGetCString(FunctionCall1(&finfo, tmpval));
+		outToken(str, textvalue);
+	}
+	DateStyle = saveDateStyle;
+}
 
 static void outChar(StringInfo str, char c);
 
@@ -66,7 +286,10 @@ static void outChar(StringInfo str, char c);
 
 /* Write an OID field (don't hard-wire assumption that OID is same as uint) */
 #define WRITE_OID_FIELD(fldname) \
-	appendStringInfo(str, " :" CppAsString(fldname) " %u", node->fldname)
+	do { \
+		appendStringInfo(str, " :%s", CppAsString(fldname)); \
+		write_oid_field(str, node->fldname); \
+	} while (0)
 
 /* Write a long-integer field */
 #define WRITE_LONG_FIELD(fldname) \
@@ -1183,6 +1406,8 @@ _outConst(StringInfo str, const Const *node)
 	appendStringInfoString(str, " :constvalue ");
 	if (node->constisnull)
 		appendStringInfoString(str, "<>");
+	 if (portable_output)
+		_printDatum(str, node->constvalue, node->consttype);
 	else
 		outDatum(str, node->constvalue, node->constlen, node->constbyval);
 }

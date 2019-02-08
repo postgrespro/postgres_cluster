@@ -171,4 +171,6 @@ extern TypeName *defGetTypeName(DefElem *def);
 extern int	defGetTypeLength(DefElem *def);
 extern List *defGetStringList(DefElem *def);
 
+extern Oid get_family_oid(const char *opfname, const char *nspname, const char *ammth);
+extern char * get_opfamily_name(Oid opfamilyOid, char **nspname, char **opfmethod);
 #endif							/* DEFREM_H */

@@ -77,6 +77,11 @@ static DestReceiver debugtupDR = {
 	DestDebug
 };
 
+static DestReceiver logtupDR = {
+	logtup, logStartup, donothingCleanup, donothingCleanup,
+	DestLog
+};
+
 static DestReceiver printsimpleDR = {
 	printsimple, printsimple_startup, donothingCleanup, donothingCleanup,
 	DestRemoteSimple
@@ -122,6 +127,9 @@ CreateDestReceiver(CommandDest dest)
 
 		case DestDebug:
 			return &debugtupDR;
+
+		case DestLog:
+			return &logtupDR;
 
 		case DestSPI:
 			return &spi_printtupDR;
@@ -171,6 +179,7 @@ EndCommand(const char *commandTag, CommandDest dest)
 
 		case DestNone:
 		case DestDebug:
+		case DestLog:
 		case DestSPI:
 		case DestTuplestore:
 		case DestIntoRel:
@@ -215,6 +224,7 @@ NullCommand(CommandDest dest)
 
 		case DestNone:
 		case DestDebug:
+		case DestLog:
 		case DestSPI:
 		case DestTuplestore:
 		case DestIntoRel:
@@ -261,6 +271,7 @@ ReadyForQuery(CommandDest dest)
 
 		case DestNone:
 		case DestDebug:
+		case DestLog:
 		case DestSPI:
 		case DestTuplestore:
 		case DestIntoRel:

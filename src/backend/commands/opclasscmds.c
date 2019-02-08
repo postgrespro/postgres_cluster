@@ -1599,6 +1599,58 @@ RemoveOpFamilyById(Oid opfamilyOid)
 	heap_close(rel, RowExclusiveLock);
 }
 
+Oid
+get_family_oid(const char *opfname, const char *nspname, const char *ammth)
+{
+	Oid			nspoid,
+				amoid,
+				opfoid = InvalidOid;
+	HeapTuple	htup = NULL;
+
+	nspoid = LookupNamespaceNoError(nspname);
+	amoid = get_am_oid(ammth, false);
+
+	if (OidIsValid(nspoid) && OidIsValid(amoid))
+		htup = SearchSysCache3(OPFAMILYAMNAMENSP,
+							   ObjectIdGetDatum(amoid),
+							   PointerGetDatum(opfname),
+							   ObjectIdGetDatum(nspoid));
+
+	if (HeapTupleIsValid(htup))
+	{
+		opfoid = HeapTupleGetOid(htup);
+		ReleaseSysCache(htup);
+	}
+
+	return opfoid;
+}
+
+char *
+get_opfamily_name(Oid opfamilyOid, char **nspname, char **opfmethod)
+{
+	HeapTuple	tup;
+	char	   *opfname;
+	Oid			nspoid,
+				mthoid;
+
+	Assert(nspname != NULL);
+
+
+	tup = SearchSysCache1(OPFAMILYOID, ObjectIdGetDatum(opfamilyOid));
+	if (!HeapTupleIsValid(tup)) /* should not happen */
+		elog(ERROR, "cache lookup failed for opfamily %u", opfamilyOid);
+
+	opfname = pstrdup(NameStr(((Form_pg_opfamily) GETSTRUCT(tup))->opfname));
+	nspoid = ((Form_pg_opfamily) GETSTRUCT(tup))->opfnamespace;
+	*nspname = get_namespace_name(nspoid);
+
+	mthoid = ((Form_pg_opfamily) GETSTRUCT(tup))->opfmethod;
+	*opfmethod = get_am_name(mthoid);
+
+	ReleaseSysCache(tup);
+	return opfname;
+}
+
 void
 RemoveOpClassById(Oid opclassOid)
 {

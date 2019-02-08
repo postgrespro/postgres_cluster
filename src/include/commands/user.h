@@ -34,4 +34,7 @@ extern void DropOwnedObjects(DropOwnedStmt *stmt);
 extern void ReassignOwnedObjects(ReassignOwnedStmt *stmt);
 extern List *roleSpecsToIds(List *memberNames);
 
+extern char *get_rolename(Oid roleid);
+extern Oid get_roleid(const char *rolename);
+
 #endif							/* USER_H */
