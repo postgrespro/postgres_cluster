@@ -130,6 +130,7 @@ write_oid_field(StringInfo str, Oid oid)
 				}
 			}
 			break;
+
 		case COLLOID:
 			appendStringInfo(str, "%u ", COLLOID);
 			outToken(str, NSP_NAME(get_collation_namespace(oid)));
@@ -419,7 +420,7 @@ _outList(StringInfo str, const List *node)
 		else if (IsA(node, IntList))
 			appendStringInfo(str, " %d", lfirst_int(lc));
 		else if (IsA(node, OidList))
-			appendStringInfo(str, " %u", lfirst_oid(lc));
+			write_oid_field(str, lfirst_oid(lc));
 		else
 			elog(ERROR, "unrecognized list node type: %d",
 				 (int) node->type);
@@ -1406,7 +1407,7 @@ _outConst(StringInfo str, const Const *node)
 	appendStringInfoString(str, " :constvalue ");
 	if (node->constisnull)
 		appendStringInfoString(str, "<>");
-	 if (portable_output)
+	else if (portable_output)
 		_printDatum(str, node->constvalue, node->consttype);
 	else
 		outDatum(str, node->constvalue, node->constlen, node->constbyval);
@@ -4605,6 +4606,9 @@ nodeToString(const void *obj)
 
 	/* see stringinfo.h for an explanation of this maneuver */
 	initStringInfo(&str);
+	/* Add type of serialized plan. */
+	if (portable_output)
+		appendStringInfo(&str, "%s ", "portable");
 	outNode(&str, obj);
 	return str.data;
 }

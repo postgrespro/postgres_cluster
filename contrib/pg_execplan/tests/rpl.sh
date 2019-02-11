@@ -91,19 +91,3 @@ psql -p 5432 -c "SELECT pg_store_query_plan('../test.txt', '
 				');"
 psql -p 5433 -c "SELECT pg_exec_stored_plan('../test.txt');"
 
-# Prepared operator
-psql -p 5432 -c "PREPARE abc (TEXT, tests.bug_status) AS
-									INSERT INTO bug (description, status)
-									VALUES (\$1,\$2);
-				SELECT pg_store_query_plan('../test.txt', '
-									EXECUTE abc(''test1'', ''closed'')
-						');"
-
-psql -p 5433 -c "PREPARE abc (TEXT, tests.bug_status) AS
-									INSERT INTO bug (description, status)
-									VALUES (\$1,\$2);
-				SELECT pg_exec_stored_plan('../test.txt');"
-									 
-psql -p 5433 -c "SELECT * FROM bug;"
-psql -p 5433 -c "SELECT * FROM bug1;"
-

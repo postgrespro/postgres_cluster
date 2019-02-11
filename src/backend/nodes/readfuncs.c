@@ -51,14 +51,17 @@
 
 
 #define NSP_OID(nspname) LookupNamespaceNoError(nspname)
-static Oid	read_oid_field(char **token, int *length);
+
 static Datum scanDatum(Oid typid, int typmod);
 
 static bool portable_input = false;
-void
+
+bool
 set_portable_input(bool value)
 {
+	bool	temp = portable_input;
 	portable_input = value;
+	return temp;
 }
 
 /*
@@ -111,6 +114,7 @@ set_portable_input(bool value)
 /* Read an OID field (don't hard-wire assumption that OID is same as uint) */
 #define READ_OID_FIELD(fldname) \
 	token = pg_strtok(&length);		/* skip :fldname */ \
+	token = pg_strtok(&length);		/* set tooken to begin of OID */ \
 	local_node->fldname = read_oid_field(&token, &length);
 
 /* Read a char field (ie, one ascii character) */
@@ -149,7 +153,7 @@ set_portable_input(bool value)
 	token = pg_strtok(&length);		/* skip :fldname */ \
 	token = pg_strtok(&length);		/* get field value */ \
 	(void) token;				/* in case not used elsewhere */ \
-	local_node->fldname = -1	/* set field to "unknown" */
+	local_node->fldname = atoi(token);	/* set field to "unknown" */
 
 /* Read a Node field */
 #define READ_NODE_FIELD(fldname) \
@@ -2979,19 +2983,17 @@ readBoolCols(int numCols)
 
 #define atooid(x)  ((Oid) strtoul((x), NULL, 10))
 
-static Oid
+Oid
 read_oid_field(char **token, int *length)
 {
 	Oid			oid_type,
 				oid = InvalidOid;
 
-	if (!portable_input)
-	{
-		*token = pg_strtok(length);
-		return atooid(*token);
-	}
+	Assert((token != NULL) && (length != NULL));
 
-	*token = pg_strtok(length);
+	if (!portable_input)
+		return atooid(*token);
+
 	Assert((*token)[0] == '(');
 	*token = pg_strtok(length);
 	oid_type = atooid(*token);
@@ -3260,7 +3262,10 @@ scanDatum(Oid typid, int typmod)
 	READ_TEMP_LOCALS();
 
 	if (typid == OIDOID)
+	{
+		token = pg_strtok(&length);
 		return read_oid_field(&token, &length);
+	}
 
 	/* Get input function for the type */
 	getTypeInputInfo(typid, &typInput, &typioparam);

@@ -16,6 +16,7 @@
 #include "access/parallel.h"
 #include "access/xact.h"
 #include "commands/extension.h"
+#include "common/base64.h"
 #include "executor/executor.h"
 #include "fmgr.h"
 #include "foreign/foreign.h"
@@ -42,6 +43,7 @@ static ExecutorEnd_hook_type prev_ExecutorEnd = NULL;
 
 static void HOOK_Utility_injection(PlannedStmt *pstmt, const char *queryString,
 					   ProcessUtilityContext context, ParamListInfo params,
+					   QueryEnvironment *queryEnv,
 					   DestReceiver *dest, char *completionTag);
 static void HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags);
 static void HOOK_ExecEnd_injection(QueryDesc *queryDesc);
@@ -109,6 +111,7 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 					   const char *queryString,
 					   ProcessUtilityContext context,
 					   ParamListInfo params,
+					   QueryEnvironment *queryEnv,
 					   DestReceiver *dest,
 					   char *completionTag)
 {
@@ -163,10 +166,9 @@ HOOK_Utility_injection(PlannedStmt *pstmt,
 
 	if (next_ProcessUtility_hook)
 		(*next_ProcessUtility_hook) (pstmt, queryString, context, params,
-									 dest, completionTag);
+									 queryEnv, dest, completionTag);
 	else
-		standard_ProcessUtility(pstmt, queryString,
-								context, params,
+		standard_ProcessUtility(pstmt, queryString, context, params, queryEnv,
 								dest, completionTag);
 }
 
@@ -195,11 +197,17 @@ HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags)
 		char	   *query,
 				   *query_container,
 				   *plan,
-				   *plan_container;
+				   *plan_container,
+				   *sparams,
+				   *start_address,
+				   *params_container;
 		int			qlen,
 					qlen1,
 					plen,
-					plen1;
+					plen1,
+					rlen,
+					rlen1,
+					sparams_len;
 		PGresult   *res;
 
 		serverid = get_foreign_server_oid(remote_server_fdwname, true);
@@ -211,24 +219,35 @@ HOOK_ExecStart_injection(QueryDesc *queryDesc, int eflags)
 		set_portable_output(true);
 		plan = nodeToString(queryDesc->plannedstmt);
 		set_portable_output(false);
-		plen = b64_enc_len(plan, strlen(plan) + 1);
+		plen = pg_b64_enc_len(strlen(plan) + 1);
 		plan_container = (char *) palloc0(plen + 1);
-		plen1 = b64_encode(plan, strlen(plan), plan_container);
+		plen1 = pg_b64_encode(plan, strlen(plan), plan_container);
 		Assert(plen > plen1);
 
-		qlen = b64_enc_len(queryDesc->sourceText, strlen(queryDesc->sourceText) + 1);
+		qlen = pg_b64_enc_len(strlen(queryDesc->sourceText) + 1);
 		query_container = (char *) palloc0(qlen + 1);
-		qlen1 = b64_encode(queryDesc->sourceText, strlen(queryDesc->sourceText), query_container);
+		qlen1 = pg_b64_encode(queryDesc->sourceText, strlen(queryDesc->sourceText), query_container);
 		Assert(qlen > qlen1);
 
-		query = palloc0(qlen + plen + 100);
-		sprintf(query, "SELECT public.pg_exec_plan('%s', '%s');", query_container, plan_container);
+		sparams_len = EstimateParamListSpace(queryDesc->params);
+		start_address = sparams = palloc(sparams_len);
+		SerializeParamList(queryDesc->params, &start_address);
+		rlen = pg_b64_enc_len(sparams_len);
+		params_container = (char *) palloc0(rlen + 1);
+		rlen1 = pg_b64_encode(sparams, sparams_len, params_container);
+		Assert(rlen >= rlen1);
+
+		query = palloc0(qlen + plen + rlen + 100);
+		sprintf(query, "SELECT public.pg_exec_plan('%s', '%s', '%s');",
+							query_container, plan_container, params_container);
 
 		res = PQexec(conn, query);
 		PQclear(res);
 		pfree(query);
 		pfree(query_container);
 		pfree(plan_container);
+		pfree(sparams);
+		pfree(params_container);
 	}
 }
 

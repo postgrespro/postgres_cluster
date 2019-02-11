@@ -31,6 +31,9 @@
 static char *pg_strtok_ptr = NULL;
 
 
+#define nullable_string(token,length)  \
+	((length) == 0 ? NULL : debackslash(token, length))
+
 /*
  * stringToNode -
  *	  returns a Node with a given legal ASCII representation
@@ -40,6 +43,10 @@ stringToNode(char *str)
 {
 	char	   *save_strtok;
 	void	   *retval;
+	char		*type;
+	int			tok_len;
+	char		*token;
+	bool		temp;
 
 	/*
 	 * We save and restore the pre-existing state of pg_strtok. This makes the
@@ -51,10 +58,21 @@ stringToNode(char *str)
 
 	pg_strtok_ptr = str;		/* point pg_strtok at the string to read */
 
+	if (pg_strtok_ptr[0] == 'p')
+	{
+		token = pg_strtok(&tok_len);
+		Assert(token != NULL);
+		type = nullable_string(token, tok_len);
+		Assert(strcmp(type, "portable") == 0);
+		temp = set_portable_input(true);
+	}
+	else
+		temp = set_portable_input(false);
+
 	retval = nodeRead(NULL, 0); /* do the reading */
 
 	pg_strtok_ptr = save_strtok;
-
+	set_portable_input(temp);
 	return retval;
 }
 
@@ -331,17 +349,13 @@ nodeRead(char *token, int tok_len)
 					for (;;)
 					{
 						Oid			val;
-						char	   *endptr;
 
 						token = pg_strtok(&tok_len);
 						if (token == NULL)
 							elog(ERROR, "unterminated List structure");
 						if (token[0] == ')')
 							break;
-						val = (Oid) strtoul(token, &endptr, 10);
-						if (endptr != token + tok_len)
-							elog(ERROR, "unrecognized OID: \"%.*s\"",
-								 tok_len, token);
+						val = read_oid_field(&token, &tok_len);
 						l = lappend_oid(l, val);
 					}
 				}

@@ -30,6 +30,7 @@ SUBDIRS = \
 		pageinspect	\
 		passwordcheck	\
 		pg_buffercache	\
+		pg_execplan	\
 		pg_freespacemap \
 		pg_prewarm	\
 		pg_standby	\
@@ -38,6 +39,7 @@ SUBDIRS = \
 		pgcrypto	\
 		pgrowlocks	\
 		pgstattuple	\
+		pg_repeater	\
 		pg_visibility	\
 		postgres_fdw	\
 		seg		\
