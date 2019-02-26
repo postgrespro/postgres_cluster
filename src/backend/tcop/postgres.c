@@ -3189,6 +3189,7 @@ check_stack_depth(void)
 {
 	if (stack_is_too_deep())
 	{
+		Assert(0);
 		ereport(ERROR,
 				(errcode(ERRCODE_STATEMENT_TOO_COMPLEX),
 				 errmsg("stack depth limit exceeded"),

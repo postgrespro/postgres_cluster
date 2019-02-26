@@ -44,4 +44,5 @@ lib*.pc
 /tmp_install/
 /.cproject
 /.project
+/.gdb_history
 /.settings/

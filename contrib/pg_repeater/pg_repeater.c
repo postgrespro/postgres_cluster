@@ -35,7 +35,7 @@
 
 PG_MODULE_MAGIC;
 
-void		_PG_init(void);
+void _PG_init(void);
 
 static ProcessUtility_hook_type next_ProcessUtility_hook = NULL;
 static ExecutorStart_hook_type prev_ExecutorStart = NULL;

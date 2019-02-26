@@ -1,0 +1,6 @@
+# pg_exchange extension
+comment = 'Parallel Query execution node and planner rules'
+default_version = '0.1'
+module_pathname = '$libdir/pg_exchange'
+relocatable = false
+requires = 'postgres_fdw'
