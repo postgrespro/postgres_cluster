@@ -22,7 +22,6 @@
 typedef struct
 {
 	CustomScanState	css;
-	Bitmapset		*servers;
 	PGconn			**conn;
 	int				nconns;
 } DPEState;
@@ -47,7 +46,6 @@ CreateDistPlanExecState(CustomScan *node)
 	state->css.flags = node->flags;
 	state->css.methods = &distplanexec_exec_methods;
 	state->css.custom_ps = NIL;
-	state->servers = NULL;
 	state->conn = NULL;
 	state->nconns = 0;
 
@@ -224,31 +222,26 @@ BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags)
 	subPlanState = (PlanState *) ExecInitNode(subplan, estate, eflags);
 	node->custom_ps = lappend(node->custom_ps, subPlanState);
 
-	/*
-	 * Walk across plan state, see at EXCHANGE each node and collect numbers of
-	 * foreign servers involved in the query execution.
-	 */
-	collect_involved_servers(subPlanState, &dpe->servers);
-
 	if (!explain_only)
 	{
-		int		serverid = -1;
 		char	*query;
 		int i = 0;
+		ListCell	*lc;
 
 		/* The Plan involves foreign servers and uses exchange nodes. */
-		if (!dpe->servers)
+		if (cscan->custom_private == NIL)
 			return;
 
-		dpe->nconns = bms_num_members(dpe->servers);
+		dpe->nconns = list_length(cscan->custom_private);
 		dpe->conn = palloc(sizeof(PGconn *) * dpe->nconns);
 		query = serialize_plan(add_pstmt_node(subplan, estate), estate->es_sourceText, NULL);
-		while ((serverid = bms_next_member(dpe->servers, serverid)) >= 0)
+		for (lc = list_head(cscan->custom_private); lc != NULL; lc = lnext(lc))
 		{
 			UserMapping	*user;
 			int			res;
+			Oid serverid = intVal(lfirst(lc));
 
-			user = GetUserMapping(GetUserId(), (Oid)serverid);
+			user = GetUserMapping(GetUserId(), serverid);
 			dpe->conn[i] = GetConnection(user, true);
 			Assert(dpe->conn[i] != NULL);
 			res = PQsendQuery(dpe->conn[i], query);
@@ -282,7 +275,8 @@ ExecEndDistPlanExec(CustomScanState *node)
 		while ((result = PQgetResult(dpe->conn[i])) != NULL);
 		elog(LOG, "ExecEndDistPlanExec: %d", PQresultStatus(result));
 	}
-	pfree(dpe->conn);
+	if (dpe->conn)
+		pfree(dpe->conn);
 }
 
 static void
@@ -294,24 +288,22 @@ ExecReScanDistPlanExec(CustomScanState *node)
 static void
 ExplainDistPlanExec(CustomScanState *node, List *ancestors, ExplainState *es)
 {
-	StringInfoData		str;
-	DPEState	*dpe = (DPEState *) node;
-	PlanState	*subPlanState = (PlanState *) linitial(dpe->css.custom_ps);
-	int serverid = -1;
+	StringInfoData str;
+	List *servers = ((CustomScan *) node->ss.ps.plan)->custom_private;
+	ListCell *lc;
 
 	initStringInfo(&str);
-
-	collect_involved_servers(subPlanState, &dpe->servers);
-
-	appendStringInfo(&str, "involved %d servers: ", bms_num_members(dpe->servers));
-	while ((serverid = bms_next_member(dpe->servers, serverid)) >= 0)
-		appendStringInfo(&str, "%u ", (Oid) serverid);
+	appendStringInfo(&str, "involved %d remote server(s): ", list_length(servers));
+	foreach(lc, servers)
+	{
+		appendStringInfo(&str, "%u ", (Oid) intVal(lfirst(lc)));
+	}
 
 	ExplainPropertyText("DistPlanExec", str.data, es);
 }
 
 static struct Plan *
-DistExecPlanCustomPath(PlannerInfo *root,
+CreateDistExecPlan(PlannerInfo *root,
 					   RelOptInfo *rel,
 					   struct CustomPath *best_path,
 					   List *tlist,
@@ -320,7 +312,7 @@ DistExecPlanCustomPath(PlannerInfo *root,
 {
 	CustomScan *distExecNode;
 
-	distExecNode = make_distplanexec(custom_plans, tlist);
+	distExecNode = make_distplanexec(custom_plans, tlist, best_path->custom_private);
 
 	distExecNode->scan.plan.startup_cost = best_path->path.startup_cost;
 	distExecNode->scan.plan.total_cost = best_path->path.total_cost;
@@ -333,19 +325,19 @@ DistExecPlanCustomPath(PlannerInfo *root,
 }
 
 void
-DistPlanExec_Init_methods(void)
+DistExec_Init_methods(void)
 {
 	/* Initialize path generator methods */
-	distplanexec_path_methods.CustomName = "Exchange Path";
-	distplanexec_path_methods.PlanCustomPath = DistExecPlanCustomPath;
+	distplanexec_path_methods.CustomName = "DistExecPath";
+	distplanexec_path_methods.PlanCustomPath = CreateDistExecPlan;
 	distplanexec_path_methods.ReparameterizeCustomPathByChild	= NULL;
 
-	distplanexec_plan_methods.CustomName 			= "DistPlanExecPlan";
+	distplanexec_plan_methods.CustomName 			= "DistExecPlan";
 	distplanexec_plan_methods.CreateCustomScanState	= CreateDistPlanExecState;
 	RegisterCustomScanMethods(&distplanexec_plan_methods);
 
 	/* setup exec methods */
-	distplanexec_exec_methods.CustomName				= "DistPlanExec";
+	distplanexec_exec_methods.CustomName				= "DistExec";
 	distplanexec_exec_methods.BeginCustomScan			= BeginDistPlanExec;
 	distplanexec_exec_methods.ExecCustomScan			= ExecDistPlanExec;
 	distplanexec_exec_methods.EndCustomScan				= ExecEndDistPlanExec;
@@ -361,10 +353,11 @@ DistPlanExec_Init_methods(void)
 }
 
 CustomScan *
-make_distplanexec(List *custom_plans, List *tlist)
+make_distplanexec(List *custom_plans, List *tlist, List *private_data)
 {
 	CustomScan	*node = makeNode(CustomScan);
 	Plan		*plan = &node->scan.plan;
+	ListCell	*lc;
 
 	plan->startup_cost = 0;
 	plan->total_cost = 0;
@@ -385,11 +378,22 @@ make_distplanexec(List *custom_plans, List *tlist)
 	node->custom_exprs = NIL;
 	node->custom_private = NIL;
 
+	/* Make Private data list of the plan node */
+	foreach(lc, private_data)
+	{
+		Oid	serverid = *(Oid *)lfirst(lc);
+
+		node->custom_private = lappend(node->custom_private, makeInteger(serverid));
+//		elog(INFO, "make serv: %d", serverid);
+	}
+
+
 	return node;
 }
 
 Path *
-create_distexec_path(PlannerInfo *root, RelOptInfo *rel, Path *children)
+create_distexec_path(PlannerInfo *root, RelOptInfo *rel, Path *children,
+					 List *private_data)
 {
 	CustomPath	*path = makeNode(CustomPath);
 	Path		*pathnode = &path->path;
@@ -412,7 +416,7 @@ create_distexec_path(PlannerInfo *root, RelOptInfo *rel, Path *children)
 	/* Contains only one path */
 	path->custom_paths = lappend(path->custom_paths, children);
 
-	path->custom_private = NIL;
+	path->custom_private = private_data;
 	path->methods = &distplanexec_path_methods;
 
 	return pathnode;

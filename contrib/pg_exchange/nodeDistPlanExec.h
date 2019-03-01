@@ -17,8 +17,9 @@
 
 typedef Scan DistPlanExec;
 
-extern void DistPlanExec_Init_methods(void);
-extern CustomScan *make_distplanexec(List *custom_plans, List *tlist);
-extern Path *create_distexec_path(PlannerInfo *root, RelOptInfo *rel, Path *children);
+extern void DistExec_Init_methods(void);
+extern CustomScan *make_distplanexec(List *custom_plans, List *tlist, List *private_data);
+extern Path *create_distexec_path(PlannerInfo *root, RelOptInfo *rel,
+								  Path *children, List *private_data);
 
 #endif							/* NODEDISTPLANEXEC_H */

@@ -36,15 +36,19 @@ make -C contrib install > /dev/null
 initdb -D PGDATA_Master -E UTF8 --locale=C
 initdb -D PGDATA_Slave -E UTF8 --locale=C
 echo "shared_preload_libraries = 'postgres_fdw, pg_execplan, pg_exchange'" >> PGDATA_Master/postgresql.conf
+echo "pg_exchange.node_number1=0" >> PGDATA_Master/postgresql.conf
+#echo "log_min_messages = debug1" >>  PGDATA_Master/postgresql.conf
 echo "shared_preload_libraries = 'postgres_fdw, pg_execplan, pg_exchange'" >> PGDATA_Slave/postgresql.conf
+echo "pg_exchange.node_number1=1" >> PGDATA_Slave/postgresql.conf
+#echo "log_min_messages = debug1" >>  PGDATA_Slave/postgresql.conf
 
-pg_ctl -c -o "-p 5433" -D PGDATA_Slave -l slave.log start
-pg_ctl -c -o "-p 5432" -D PGDATA_Master -l master.log start
+pg_ctl -w -c -o "-p 5433" -D PGDATA_Slave -l slave.log start
+pg_ctl -w -c -o "-p 5432" -D PGDATA_Master -l master.log start
 createdb -p 5432
 createdb -p 5433
 
+psql -p 5433 -f "contrib/pg_execplan/tests/init_node_overall.sql" &
 psql -p 5432 -f "contrib/pg_execplan/tests/init_node_overall.sql"
-psql -p 5433 -f "contrib/pg_execplan/tests/init_node_overall.sql"
 
 psql -p 5432 -c "CREATE SERVER $remoteSrvName FOREIGN DATA WRAPPER postgres_fdw
 			OPTIONS (port '5433', use_remote_estimate 'on');

@@ -15,27 +15,23 @@
 #ifndef EXCHANGE_H_
 #define EXCHANGE_H_
 
-//#include "commands/explain.h"
-#include "connection.h"
 #include "nodes/extensible.h"
 #include "optimizer/planner.h"
+#include "dmq.h"
 
 
 #define EXCHANGE_NAME	"EXCHANGE"
 
-typedef enum
-{
-	FR_FUNC_NINITIALIZED = 0,
-	FR_FUNC_DEFAULT,
-	FR_FUNC_GATHER,
-	FR_FUNC_HASH
-} fr_func_id;
-
 typedef struct
 {
-	int			attno;
-	fr_func_id	funcId;
-} fr_options_t;
+	char host[256];
+	int port;
+} conninfo_t;
+
+extern int	shardman_instances;
+extern conninfo_t shardman_instances_info[256];
+extern int myNodeNum;
+extern DmqDestinationId	dest_id[1024];
 
 typedef struct
 {
@@ -46,9 +42,8 @@ typedef struct
 
 extern void EXCHANGE_Init_methods(void);
 extern void add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti,
-		RangeTblEntry *rte);
-extern CustomScan *make_exchange(List *custom_plans, List *tlist, List *private_data);
-extern int get_tuple_node(fr_func_id fid, Datum value, int mynode, int nnodes,
-						  void *data);
+							   RangeTblEntry *rte);
+extern CustomScan *make_exchange(List *custom_plans, List *tlist);
+
 
 #endif /* EXCHANGE_H_ */

@@ -29,8 +29,6 @@ typedef struct
 
 
 /* GUC variables */
-extern int		node_number;
-extern int		nodes_at_cluster;
 extern char		*pargres_hosts_string;
 extern char		*pargres_ports_string;
 extern int		eports_pool_size;
