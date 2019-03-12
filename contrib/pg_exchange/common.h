@@ -17,30 +17,28 @@
 
 #include "nodes/pg_list.h"
 #include "storage/lock.h"
+#include "dmq.h"
 
 
 typedef struct
 {
-	LWLock	lock;
-	int 	size;
-	int 	index;
-	int		values[FLEXIBLE_ARRAY_MEMBER];
-} PortStack;
+	Oid serverid;
+	DmqDestinationId dest_id;
+} DMQDestinations;
 
+typedef struct
+{
+	int nservers;
+	DMQDestinations *dests;
+	int coordinator_num;
+} DMQDestCont;
 
-/* GUC variables */
-extern char		*pargres_hosts_string;
-extern char		*pargres_ports_string;
-extern int		eports_pool_size;
+typedef struct
+{
+	LWLock	*lock;
+	HTAB	*htab;
+} ExchangeSharedState;
 
-extern PortStack *PORTS;
-extern int CoordNode;
-extern bool PargresInitialized;
-
-
-extern Oid get_pargres_schema(void);
-extern void STACK_Init(PortStack *stack, int range_min, int size);
-int STACK_Pop(PortStack *stack);
-void STACK_Push(PortStack *stack, int value);
+extern ExchangeSharedState *ExchShmem;
 
 #endif /* COMMON_H_ */

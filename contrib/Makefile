@@ -31,7 +31,6 @@ SUBDIRS = \
 		passwordcheck	\
 		pg_buffercache	\
 		pg_exchange \
-		pg_execplan	\
 		pg_freespacemap \
 		pg_prewarm	\
 		pg_standby	\

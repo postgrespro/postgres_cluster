@@ -3,15 +3,6 @@
  * exchange.c
  *		This module contains the EXHCANGE custom node implementation
  *
- *		The EXCHANGE node implement intra- plan node tuples shuffling
- *		between instances by a socket interface implemented by connection.c
- *		module.
- *		Connections each-by-each are established by EXCHANGE_Begin() and in
- *		parallel worker initializer routine.
- *		Connections are closed by EXCHANGE_End().
- *		After receiving NULL slot from local storage EXCHANGE node sends char
- *		'C' to the another. It is not closed connection immediately for
- *		possible rescan() calling.
  *
  * Copyright (c) 2018, Postgres Professional
  *
@@ -28,9 +19,9 @@
 #include "commands/defrem.h"
 #include "dmq.h"
 #include "nodes/makefuncs.h"
+#include "nodes/nodes.h"
 #include "nodes/plannodes.h"
 #include "nodeDistPlanExec.h"
-#include "nodeDummyscan.h"
 #include "optimizer/cost.h"
 #include "optimizer/pathnode.h"
 #include "utils/lsyscache.h"
@@ -38,30 +29,13 @@
 
 #include "common.h"
 #include "exchange.h"
+#include "stream.h"
 
 
-typedef struct ExchangeDataNode
-{
-	ExtensibleNode en;
-	uint	nservers;
-	Oid		*servers;
-
-	/* Corresponding EXCHANGE nodes from different servers will communicate by
-	 * the named dmq-channel (see dmq.c). This name stored in dmqStreamName by
-	 * the coordinator.
-	 */
-	char	*dmqStreamName;
-} ExchangeDataNode;
-
-static ExtensibleNodeMethods	exchange_data_methods;
+//static ExtensibleNodeMethods	exchange_data_methods;
 static CustomPathMethods	exchange_path_methods;
 static CustomScanMethods	exchange_plan_methods;
 static CustomExecMethods	exchange_exec_methods;
-
-int	shardman_instances = -1;
-conninfo_t shardman_instances_info[256];
-int myNodeNum = -1;
-DmqDestinationId	dest_id[1024];
 
 
 static Path *create_exchange_path(PlannerInfo *root, RelOptInfo *rel,
@@ -90,28 +64,10 @@ static void EXCHANGE_InitializeWorker(CustomScanState *node,
 									  void *coordinate);
 static Node *EXCHANGE_Create_state(CustomScan *node);
 
-/*
- * Serialize node.
- */
-static void
-ExchangeDataNodeOut(struct StringInfoData *str,
-					const struct ExtensibleNode *node)
-{
-	ExchangeDataNode *exch = (ExchangeDataNode *) node;
-
-	appendStringInfo(str, " :" CppAsString(fldname) " %d", exch->nservers);
-}
 
 void
 EXCHANGE_Init_methods(void)
 {
-	exchange_data_methods.extnodename = "ExchangeDataNode";
-	exchange_data_methods.node_size = sizeof(ExchangeDataNode);
-	exchange_data_methods.nodeOut = ExchangeDataNodeOut;
-	//	exchange_data_methods.nodeCopy = ;
-	exchange_data_methods.nodeEqual;
-	exchange_data_methods.nodeRead;
-
 	/* Initialize path generator methods */
 	exchange_path_methods.CustomName = "Exchange";
 	exchange_path_methods.PlanCustomPath = ExchangePlanCustomPath;
@@ -136,7 +92,6 @@ EXCHANGE_Init_methods(void)
 	exchange_exec_methods.ShutdownCustomScan		= NULL;
 	exchange_exec_methods.ExplainCustomScan			= EXCHANGE_Explain;
 
-	DUMMYSCAN_Init_methods();
 	DistExec_Init_methods();
 }
 
@@ -189,7 +144,7 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 		{
 			Path	*subpath = (Path *) lfirst(lc1);
 			Path	*tmpPath;
-			Oid		*serverid = NULL;
+			Oid		serverid = InvalidOid;
 
 			if ((subpath->pathtype != T_ForeignScan) && (tmpLocalScanPath))
 				/* Check assumption No.1 */
@@ -203,7 +158,7 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 				break;
 
 			case T_ForeignScan:
-				serverid = &subpath->parent->serverid;
+				serverid = subpath->parent->serverid;
 				tmpPath = (Path *) makeNode(SeqScan);
 				tmpPath = create_seqscan_path(root, subpath->parent, subpath->parent->lateral_relids, 0);
 				break;
@@ -216,8 +171,8 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 				tmpLocalScanPath = tmpPath;
 
 			appendPath->subpaths = lappend(appendPath->subpaths, tmpPath);
-			if (serverid)
-				private_data = lappend(private_data, serverid);
+			if (OidIsValid(serverid))
+				private_data = lappend_oid(private_data, serverid);
 		}
 
 		if (private_data == NIL)
@@ -226,6 +181,8 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 			elog(INFO, "NO one foreign source found");
 			continue;
 		}
+		else
+			elog(INFO, "Source found: %d", list_length(private_data));
 
 		path = create_exchange_path(root, rel, (Path *) appendPath);
 		path = create_distexec_path(root, rel, path, private_data);
@@ -253,6 +210,9 @@ cost_exchange(PlannerInfo *root, RelOptInfo *baserel, Path *path)
 	path->total_cost = path->startup_cost + 0.0001 * path->rows;
 }
 
+/* XXX: Need to be placed in shared memory */
+static uint32 exchange_counter = 0;
+
 /*
  * Create and Initialize plan structure of EXCHANGE-node. It will serialized
  * and deserialized at some instances and convert to an exchange state.
@@ -266,6 +226,9 @@ ExchangePlanCustomPath(PlannerInfo *root,
 					   List *custom_plans)
 {
 	CustomScan *exchange;
+	char *host;
+	int port;
+	char *streamName = palloc(256);
 
 	exchange = make_exchange(custom_plans, tlist);
 
@@ -275,6 +238,11 @@ ExchangePlanCustomPath(PlannerInfo *root,
 	exchange->scan.plan.plan_width = best_path->path.pathtarget->width;
 	exchange->scan.plan.parallel_aware = best_path->path.parallel_aware;
 	exchange->scan.plan.parallel_safe = best_path->path.parallel_safe;
+
+	/* Add stream name into private field*/
+	GetMyServerName(&host, &port);
+	sprintf(streamName, "%s-%d-%d", host, port, exchange_counter++);
+	exchange->custom_private = lappend(exchange->custom_private, makeString(streamName));
 
 	return &exchange->scan.plan;
 }
@@ -338,6 +306,7 @@ make_exchange(List *custom_plans, List *tlist)
 	node->scan.scanrelid = 0;
 	node->custom_plans = custom_plans;
 	node->custom_exprs = NIL;
+	node->custom_private = NIL;
 
 	return node;
 }
@@ -351,34 +320,22 @@ EXCHANGE_Create_state(CustomScan *node)
 	ExchangeState	*state;
 	ListCell		*lc;
 	List			*private_data;
-	int i;
-	int ncells;
 
 	state = (ExchangeState *) palloc0(sizeof(ExchangeState));
 	NodeSetTag(state, T_CustomScanState);
 
 	state->css.flags = node->flags;
 	state->css.methods = &exchange_exec_methods;
+	state->estate = NULL;
 
 	private_data = node->custom_private;
 	lc = list_head(private_data);
-	ncells = list_length(private_data);
-	state->sid = palloc(sizeof(Oid) * ncells);
-	state->nsids = ncells;
-
-	for (i = 0; i < ncells; i++)
-	{
-		Assert(lc != NULL);
-		state->sid[i] = (Oid)intVal(lfirst(lc));
-		lc = lnext(lc);
-//		elog(INFO, "SERVERID %d/%d: %u", i+1, ncells, state->sid[i]);
-	}
-
+	Assert(list_length(private_data) == 1);
+	strcpy(state->stream, strVal(lfirst(lc)));
 	return (Node *) state;
 }
 
 #include "utils/rel.h"
-
 
 static void
 EXCHANGE_Begin(CustomScanState *node, EState *estate, int eflags)
@@ -386,112 +343,136 @@ EXCHANGE_Begin(CustomScanState *node, EState *estate, int eflags)
 	CustomScan	*cscan = (CustomScan *) node->ss.ps.plan;
 	Plan		*scan_plan;
 	bool		explain_only = ((eflags & EXEC_FLAG_EXPLAIN_ONLY) != 0);
-	AppendState	*appendState;
-	char sender_name[1024];
-	int i;
+	PlanState	*planState;
+	ExchangeState *state = (ExchangeState *) node;
+	TupleDesc	scan_tupdesc;
 
 	Assert(list_length(cscan->custom_plans) == 1);
 
 	scan_plan = linitial(cscan->custom_plans);
-	appendState = (AppendState *) ExecInitNode(scan_plan, estate, eflags);
-	Assert(appendState->ps.type == T_AppendState);
-	node->custom_ps = lappend(node->custom_ps, appendState);
+	planState = (PlanState *) ExecInitNode(scan_plan, estate, eflags);
+	node->custom_ps = lappend(node->custom_ps, planState);
 
-	if (!explain_only)
-	{
-		/*
-		 * Localize plan. Traverse all APPEND scans and search for foreign
-		 * partitions. Scan of foreign parttion is replaced by NullScan node.
-		 */
-		int i;
+	Assert(Stream_subscribe(state->stream));
 
-		for(i = 0; i < appendState->as_nplans; i++)
-		{
-			ScanState	*scanState = (ScanState *) appendState->appendplans[i];
+	state->init = false;
+	state->ltuples = 0;
+	state->rtuples = 0;
 
-			if (scanState->ss_currentRelation->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
-			{
-				CustomScan *dummyScan = make_dummyscan();
+	/* Need to access to QueryEnv which will initialized later. */
+	state->estate = estate;
 
-				ExecCloseScanRelation(scanState->ss_currentRelation);
-				scanState->ps.plan = &dummyScan->scan.plan;
-				appendState->appendplans[i] = ExecInitNode(scanState->ps.plan, estate, eflags);
-			}
-		}
-	}
-//	elog(LOG, "EXCHANGE BEGIN: pid=%d", getpid());
-	/*
-	 * Next, initialize ExchangeState
-	 */
-//	elog(LOG, "Attach receivers %d", shardman_instances);
-	for (i = 0; i < shardman_instances; i++)
-	{
-		if (i == myNodeNum)
-			continue;
-
-		sprintf(sender_name, "node-%d", i);
-//		elog(LOG, "Attach receiver %d", i);
-		dmq_attach_receiver(sender_name, 0);
-	}
-
-	if (myNodeNum == 0)
-		dmq_stream_subscribe("stream10");
-	else
-		dmq_stream_subscribe("stream");
+	scan_tupdesc = ExecTypeFromTL(scan_plan->targetlist, false);
+	ExecInitScanTupleSlot(estate, &node->ss, scan_tupdesc);
 }
 
-static bool init1 = false;
+static DmqDestinationId
+distribution_fn_gather(TupleTableSlot *slot, DMQDestCont *dcont)
+{
+	if (dcont->coordinator_num >= 0)
+		return dcont->dests[dcont->coordinator_num].dest_id;
+	else
+		return -1;
+}
 
 static TupleTableSlot *
 EXCHANGE_Execute(CustomScanState *node)
 {
-	ScanState	*scanState = linitial(node->custom_ps);
-	DmqSenderId			sndr_id;
+	ScanState	*ss = &node->ss;
+	ScanState	*subPlanState = linitial(node->custom_ps);
+	ExchangeState *state = (ExchangeState *) node;
+	bool readRemote = true;
 
-	if (!init1)
+	if (!state->init)
 	{
-		elog(LOG, "INITial step");
-	if (myNodeNum == 0)
-	{
-		int *msg = NULL;
-		Size len;
-
-		Assert(dmq_pop(&sndr_id, (void **)&msg, &len, PG_UINT64_MAX));
-		elog(LOG, "INIT MSG from 1: %d, len=%lu", *msg, len);
-	}
-	else
-	{
-		dmq_push_buffer(dest_id[0], "stream10", &shardman_instances, sizeof(shardman_instances));
-		elog(LOG, "SEND MSG to 0: %d", shardman_instances);
-	}
-		init1 = true;
+		EphemeralNamedRelation enr = get_ENR(state->estate->es_queryEnv, destsName);
+		state->dests = (DMQDestCont *) enr->reldata;
+		state->init = true;
+		state->hasLocal = true;
+		state->activeRemotes = state->dests->nservers;
 	}
 
-	elog(LOG, "Message test");
-	if (myNodeNum == 0)
+	for(;;)
 	{
-		elog(LOG, "Send msg");
-		dmq_push_buffer(dest_id[1], "stream", &shardman_instances, sizeof(shardman_instances));
-	}
-	else
-	{
-		int *msg = NULL;
-		Size len;
+		TupleTableSlot *slot = NULL;
+		DmqDestinationId dest;
 
-		elog(LOG, "Wait msg");
-		Assert(dmq_pop(&sndr_id, (void **)&msg, &len, PG_UINT64_MAX));
-		elog(LOG, "MSG: %d, len=%lu", *msg, len);
-	}
+		readRemote = !readRemote;
 
-	return ExecProcNode(&scanState->ps);
+		if ((state->activeRemotes > 0) && readRemote)
+		{
+			int status;
+
+			slot = RecvTuple(ss->ss_ScanTupleSlot->tts_tupleDescriptor,
+							 state->stream, &status);
+			if (status == 0)
+			{
+				if (TupIsNull(slot))
+				{
+					state->activeRemotes--;
+//					elog(LOG, "Finish remote receiving. r=%d", state->rtuples);
+				}
+				else
+				{
+					state->rtuples++;
+//					elog(LOG, "GOT tuple from another node. r=%d", state->rtuples);
+					return slot;
+				}
+			}
+//			else
+//				elog(LOG, "No remote tuples for now");
+		}
+
+		if ((state->hasLocal) && (!readRemote))
+		{
+			slot = ExecProcNode(&subPlanState->ps);
+			if (TupIsNull(slot))
+			{
+				int i;
+//elog(LOG, "FINISH Local store: l=%d, r=%d", state->ltuples, state->rtuples);
+				for (i = 0; i < state->dests->nservers; i++)
+					SendTuple(state->dests->dests[i].dest_id, state->stream, NULL);
+				state->hasLocal = false;
+				continue;
+			}
+			else
+			{
+//				elog(LOG, "Got from Local store: l=%d.", state->ltuples);
+				state->ltuples++;
+			}
+		}
+
+		if ((state->activeRemotes == 0) && (!state->hasLocal))
+		{
+			elog(LOG, "Exchange returns NULL: %d %d", state->ltuples, state->rtuples);
+			return NULL;
+		}
+
+		if (TupIsNull(slot))
+			continue;
+
+		dest = distribution_fn_gather(slot, state->dests);
+//		elog(LOG, "Distribute: %d", dest);
+		if (dest < 0)
+			return slot;
+		else
+		{
+//			elog(LOG, "Send real tuple");
+			SendTuple(dest, state->stream, slot);
+		}
+	}
+	return NULL;
 }
 
 static void
 EXCHANGE_End(CustomScanState *node)
 {
+	ExchangeState *state = (ExchangeState *) node;
+
 	Assert(list_length(node->custom_ps) == 1);
 	ExecEndNode(linitial(node->custom_ps));
-elog(LOG, "EXCHANGE_END");
+	Assert(Stream_unsubscribe(state->stream));
+	elog(LOG, "EXCHANGE_END");
 	/*
 	 * Clean out exchange state
 	 */

@@ -24,20 +24,15 @@
 
 typedef struct
 {
-	char host[256];
-	int port;
-} conninfo_t;
-
-extern int	shardman_instances;
-extern conninfo_t shardman_instances_info[256];
-extern int myNodeNum;
-extern DmqDestinationId	dest_id[1024];
-
-typedef struct
-{
 	CustomScanState	css;
-	Oid				*sid;
-	int				nsids;
+	char stream[256];
+	DMQDestCont	*dests;
+	bool init;
+	EState *estate;
+	bool hasLocal;
+	int activeRemotes;
+	int ltuples;
+	int rtuples;
 } ExchangeState;
 
 extern void EXCHANGE_Init_methods(void);

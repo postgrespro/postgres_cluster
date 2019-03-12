@@ -62,7 +62,7 @@
 #define DMQ_CONNSTR_MAX_LEN 1024
 
 #define DMQ_MAX_SUBS_PER_BACKEND 100
-#define DMQ_MAX_DESTINATIONS 100
+#define DMQ_MAX_DESTINATIONS 127
 #define DMQ_MAX_RECEIVERS 100
 
 typedef enum
@@ -118,7 +118,7 @@ struct DmqSharedState
 
 
 /* Backend-local i/o queues. */
-struct
+static struct
 {
 	shm_mq_handle  *mq_outh;
 	int				n_inhandles;
@@ -294,14 +294,6 @@ dmq_toc_size()
  *
  *****************************************************************************/
 
-// static void
-// fe_close(PGconn *conn)
-// {
-// 	PQputCopyEnd(conn, NULL);
-// 	PQflush(conn);
-// 	PQfinish(conn);
-// }
-
 static int
 fe_send(PGconn *conn, char *msg, size_t len)
 {
@@ -435,12 +427,12 @@ dmq_sender_main(Datum main_arg)
 			res = shm_mq_receive(mq_handles[i], &len, &data, true);
 			if (res == SHM_MQ_SUCCESS)
 			{
-				int conn_id;
+				DmqDestinationId conn_id;
 
 				/* first byte is connection_id */
-				conn_id = * (char *) data;
-				data = (char *) data + 1;
-				len -= 1;
+				conn_id = * (DmqDestinationId *) data;
+				data = (char *) data + sizeof(DmqDestinationId);
+				len -= sizeof(DmqDestinationId);
 				Assert(0 <= conn_id && conn_id < DMQ_MAX_DESTINATIONS);
 
 				if (conns[conn_id].state == Active)
@@ -724,7 +716,9 @@ dmq_handle_message(StringInfo msg, shm_mq_handle **mq_handles, dsm_segment *seg)
 {
 	const char *stream_name;
 	const char *body;
+	const char *msgptr;
 	int 		body_len;
+	int			msg_len;
 	bool		found;
 	DmqStreamSubscription *sub;
 	shm_mq_result res;
@@ -734,9 +728,11 @@ dmq_handle_message(StringInfo msg, shm_mq_handle **mq_handles, dsm_segment *seg)
 	 * as message body with unknown format that we are going to send down to
 	 * the subscribed backend.
 	 */
-	stream_name = pq_getmsgrawstring(msg);
-	body_len = msg->len - msg->cursor;
-	body = pq_getmsgbytes(msg, body_len);
+	msg_len = msg->len - msg->cursor;
+	msgptr = pq_getmsgbytes(msg, msg_len);
+	stream_name = msgptr;
+	body = msgptr + strlen(stream_name) + 1;
+	body_len = msg_len - (body - msgptr);
 	pq_getmsgend(msg);
 
 	/*
@@ -773,7 +769,7 @@ dmq_handle_message(StringInfo msg, shm_mq_handle **mq_handles, dsm_segment *seg)
 			sub->procno);
 
 	/* and send it */
-	res = shm_mq_send(mq_handles[sub->procno], body_len, body, false);
+	res = shm_mq_send(mq_handles[sub->procno], msg_len, msgptr, false);
 	if (res != SHM_MQ_SUCCESS)
 	{
 		mtm_log(WARNING, "[DMQ] can't send to queue %d", sub->procno);
@@ -1345,10 +1341,17 @@ dmq_reattach_shm_mq(int handle_id)
 }
 
 DmqSenderId
-dmq_attach_receiver(char *sender_name, int mask_pos)
+dmq_attach_receiver(const char *sender_name, int mask_pos)
 {
 	int			i;
 	int			handle_id;
+
+	/* Search for existed receiver. */
+	for (i = 0; i < dmq_local.n_inhandles; i++)
+	{
+		if (strcmp(sender_name, dmq_local.inhandles[i].name) == 0)
+			return i;
+	}
 
 	for (i = 0; i < DMQ_MAX_RECEIVERS; i++)
 	{
@@ -1375,7 +1378,7 @@ dmq_attach_receiver(char *sender_name, int mask_pos)
 }
 
 void
-dmq_detach_receiver(char *sender_name)
+dmq_detach_receiver(const char *sender_name)
 {
 	int			i;
 	int			handle_id = -1;
@@ -1440,6 +1443,36 @@ dmq_stream_unsubscribe(const char *stream_name)
 	Assert(found);
 }
 
+const char *
+dmq_sender_name(DmqSenderId id)
+{
+	Assert((id >= 0) && (id < dmq_local.n_inhandles));
+
+	if (dmq_local.inhandles[id].name[0] == '\0')
+		return NULL;
+	return dmq_local.inhandles[id].name;
+}
+
+DmqDestinationId
+dmq_remote_id(const char *name)
+{
+	DmqDestinationId i;
+
+	LWLockAcquire(dmq_state->lock, LW_SHARED);
+	for (i = 0; i < DMQ_MAX_DESTINATIONS; i++)
+	{
+		DmqDestination *dest = &(dmq_state->destinations[i]);
+		if (strcmp(name, dest->receiver_name) == 0)
+			break;
+	}
+	LWLockRelease(dmq_state->lock);
+
+	if (i == DMQ_MAX_DESTINATIONS)
+		return -1;
+
+	return i;
+}
+
 /*
  * Get a message from input queue. Execution blocking until message will not
  * received. Returns false, if an error is occured.
@@ -1448,10 +1481,12 @@ dmq_stream_unsubscribe(const char *stream_name)
  * msg - buffer that contains received message.
  * len - size of received message.
  */
-bool
-dmq_pop(DmqSenderId *sender_id, void **msg, Size *len, uint64 mask)
+const char *
+dmq_pop(DmqSenderId *sender_id, void **msg, Size *len, uint64 mask,
+		bool waitMsg)
 {
 	shm_mq_result res;
+	const char *stream;
 
 	Assert(msg && len);
 
@@ -1477,13 +1512,19 @@ dmq_pop(DmqSenderId *sender_id, void **msg, Size *len, uint64 mask)
 
 			if (res == SHM_MQ_SUCCESS)
 			{
-				*msg = data;
+				/*
+				 * Stream name is first null-terminated string in
+				 * the message buffer.
+				 */
+				stream = data;
+				*msg = (void *) ((char *)data + strlen(stream) + 1);
+				*len -= (char *)(*msg) - (char *)data;
 				*sender_id = i;
 
 				mtm_log(DmqTraceIncoming,
 						"[DMQ] dmq_pop: got message %s from %s",
 						(char *) data, dmq_local.inhandles[i].name);
-				return true;
+				return stream;
 			}
 			else if (res == SHM_MQ_DETACHED)
 			{
@@ -1498,13 +1539,15 @@ dmq_pop(DmqSenderId *sender_id, void **msg, Size *len, uint64 mask)
 				else
 				{
 					*sender_id = i;
-					return false;
+					return NULL;
 				}
 			}
 		}
 
-		if (nowait)
+		if (nowait && waitMsg)
 			continue;
+		if (!waitMsg)
+			return NULL;
 
 		// XXX cache that
 		rc = WaitLatch(MyLatch, WL_LATCH_SET | WL_TIMEOUT, 10.0,
@@ -1516,6 +1559,7 @@ dmq_pop(DmqSenderId *sender_id, void **msg, Size *len, uint64 mask)
 		if (rc & WL_LATCH_SET)
 			ResetLatch(MyLatch);
 	}
+	return NULL;
 }
 
 bool
@@ -1566,8 +1610,7 @@ dmq_pop_nb(DmqSenderId *sender_id, StringInfo msg, uint64 mask)
  * sender_name - a symbolic name of the sender. Remote backend will attach
  * to this channel by sender name.
  * See dmq_attach_receiver() routine for details.
- * Call this function after shared memory initialization. For example,
- * extensions may create channels during 'CREATE EXTENSION' command execution.
+ * Call this function after shared memory initialization.
  */
 DmqDestinationId
 dmq_destination_add(char *connstr, char *sender_name, char *receiver_name,

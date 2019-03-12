@@ -7,16 +7,23 @@
 
 #include "postgres.h"
 
+#include "arpa/inet.h"
+#include "commands/defrem.h"
+#include "common.h"
 #include "common/base64.h"
 #include "exchange.h"
+#include "foreign/fdwapi.h"
 #include "libpq/libpq.h"
 #include "libpq-fe.h"
 #include "miscadmin.h"
 #include "nodeDistPlanExec.h"
+#include "nodeDummyscan.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/nodes.h"
 #include "nodes/pg_list.h"
 #include "postgres_fdw.h"
+#include "utils/queryenvironment.h"
+#include "utils/rel.h"
 
 
 typedef struct
@@ -52,35 +59,6 @@ CreateDistPlanExecState(CustomScan *node)
 	return (Node *) state;
 }
 
-static bool
-collect_involved_servers(PlanState *node, Bitmapset **servers)
-{
-	if (node == NULL)
-		return false;
-
-	check_stack_depth();
-
-	planstate_tree_walker(node, collect_involved_servers, servers);
-
-	if ((nodeTag(node->plan) == T_CustomScan) &&
-		(strcmp(((CustomScanState *) node)->methods->CustomName,
-														EXCHANGE_NAME) == 0))
-	{
-		int i;
-
-		for (i = 0; i < ((ExchangeState *) node)->nsids; i++)
-		{
-			Oid serverid = ((ExchangeState *) node)->sid[i];
-
-			if (!bms_is_member(serverid, *servers))
-				*servers = bms_add_member(*servers, serverid);
-		}
-		elog(INFO, "Got exchange node!");
-	}
-
-	return false;
-}
-
 static char*
 serialize_plan(Plan *plan, const char *sourceText, ParamListInfo params)
 {
@@ -98,6 +76,9 @@ serialize_plan(Plan *plan, const char *sourceText, ParamListInfo params)
 				rlen,
 				rlen1,
 				sparams_len;
+	char *host;
+	int port;
+	char *serverName;
 
 	set_portable_output(true);
 	splan = nodeToString(plan);
@@ -120,10 +101,15 @@ serialize_plan(Plan *plan, const char *sourceText, ParamListInfo params)
 	rlen1 = pg_b64_encode(sparams, sparams_len, params_container);
 	Assert(rlen >= rlen1);
 
-	query = palloc0(qlen + plen + rlen + 100);
-	sprintf(query, "SELECT public.pg_exec_plan('%s', '%s', '%s');",
-						query_container, plan_container, params_container);
+	GetMyServerName(&host, &port);
+	serverName = serializeServer(host, port);
+	query = palloc0(qlen + plen + rlen + strlen(serverName) + 100);
+	sprintf(query, "SELECT public.pg_exec_plan('%s', '%s', '%s', '%s');",
+						query_container, plan_container, params_container,
+						serverName);
 
+	pfree(serverName);
+	pfree(host);
 	pfree(query_container);
 	pfree(plan_container);
 	pfree(sparams);
@@ -206,6 +192,69 @@ add_pstmt_node(Plan *plan, EState *estate)
 	return (Plan *) pstmt;
 }
 
+char destsName[10] = "DMQ_DESTS";
+void
+EstablishDMQConnections(const lcontext *context, const char *serverName)
+{
+	ListCell	*lc;
+	int nservers = list_length(context->servers);
+	DMQDestCont *dmq_data = palloc(sizeof(DMQDestCont));
+	int i = 0;
+	EphemeralNamedRelation enr = palloc(sizeof(EphemeralNamedRelationData));
+	int coordinator_num = -1;
+
+	dmq_data->nservers = nservers;
+	dmq_data->dests = palloc(nservers * sizeof(DMQDestinations));
+
+	LWLockAcquire(ExchShmem->lock, LW_EXCLUSIVE);
+	foreach(lc, context->servers)
+	{
+		Oid sid = lfirst_oid(lc);
+		bool found;
+		DMQDestinations	*sub;
+		char senderName[256];
+		char receiverName[256];
+		char *host;
+		int port;
+
+		GetMyServerName(&host, &port);
+		sprintf(senderName, "%s-%d", host, port);
+		FSExtractServerName(sid, &host, &port);
+		sprintf(receiverName, "%s-%d", host, port);
+
+		/* This foreign server is a coordinator? */
+		if (strcmp(serverName, receiverName) == 0)
+			coordinator_num = i;
+
+		sub = (DMQDestinations *) hash_search(ExchShmem->htab, &sid,
+														HASH_ENTER, &found);
+		if (!found)
+		{
+			char connstr[1024];
+
+			/* Establish new DMQ channel with foreign server */
+			sprintf(connstr, "host=%s port=%d "
+							 "fallback_application_name=%s",
+							 host, port, senderName);
+			elog(LOG, "Add destination: senderName=%s, receiverName=%s, connstr=%s", senderName, receiverName, connstr);
+			sub->dest_id = dmq_destination_add(connstr, senderName, receiverName, 10);
+		}
+		dmq_attach_receiver(receiverName, 0);
+		memcpy(&dmq_data->dests[i++], sub, sizeof(DMQDestinations));
+	}
+	LWLockRelease(ExchShmem->lock);
+
+	/* if coordinator_num == -1 - I'm the Coordinator */
+	dmq_data->coordinator_num = coordinator_num;
+
+	/* Add list of destinations in queryEnv */
+	if (!context->estate->es_queryEnv)
+		context->estate->es_queryEnv = create_queryEnv();
+	enr->md.name = destsName;
+	enr->reldata = (void *) dmq_data;
+	register_ENR(context->estate->es_queryEnv, enr);
+}
+
 static void
 BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags)
 {
@@ -227,6 +276,7 @@ BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags)
 		char	*query;
 		int i = 0;
 		ListCell	*lc;
+		lcontext context;
 
 		/* The Plan involves foreign servers and uses exchange nodes. */
 		if (cscan->custom_private == NIL)
@@ -239,7 +289,7 @@ BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags)
 		{
 			UserMapping	*user;
 			int			res;
-			Oid serverid = intVal(lfirst(lc));
+			Oid serverid = lfirst_oid(lc);
 
 			user = GetUserMapping(GetUserId(), serverid);
 			dpe->conn[i] = GetConnection(user, true);
@@ -248,6 +298,14 @@ BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags)
 			i++;
 			Assert(res == 1);
 		}
+		Assert(i > 0);
+		context.estate = estate;
+		context.eflags = eflags;
+		context.servers = NIL;
+		localize_plan(subPlanState, &context);
+		Assert(list_length(context.servers) > 0);
+		elog(LOG, "SERVERS: %d", list_length(context.servers));
+		EstablishDMQConnections(&context, " ");
 	}
 }
 
@@ -296,7 +354,7 @@ ExplainDistPlanExec(CustomScanState *node, List *ancestors, ExplainState *es)
 	appendStringInfo(&str, "involved %d remote server(s): ", list_length(servers));
 	foreach(lc, servers)
 	{
-		appendStringInfo(&str, "%u ", (Oid) intVal(lfirst(lc)));
+		appendStringInfo(&str, "%u ", lfirst_oid(lc));
 	}
 
 	ExplainPropertyText("DistPlanExec", str.data, es);
@@ -381,9 +439,9 @@ make_distplanexec(List *custom_plans, List *tlist, List *private_data)
 	/* Make Private data list of the plan node */
 	foreach(lc, private_data)
 	{
-		Oid	serverid = *(Oid *)lfirst(lc);
+		Oid	serverid = lfirst_oid(lc);
 
-		node->custom_private = lappend(node->custom_private, makeInteger(serverid));
+		node->custom_private = lappend_oid(node->custom_private, serverid);
 //		elog(INFO, "make serv: %d", serverid);
 	}
 
@@ -420,4 +478,105 @@ create_distexec_path(PlannerInfo *root, RelOptInfo *rel, Path *children,
 	path->methods = &distplanexec_path_methods;
 
 	return pathnode;
+}
+
+
+bool
+localize_plan(PlanState *node, lcontext *context)
+{
+	if (node == NULL)
+		return false;
+
+	check_stack_depth();
+
+	planstate_tree_walker(node, localize_plan, context);
+
+	if (nodeTag(node->plan) == T_Append)
+	{
+		int i;
+		AppendState	*apSt = (AppendState *) node;
+
+		/*
+		 * Traverse all APPEND scans and search for foreign partitions. Scan of
+		 * foreign partition is replaced by DummyScan node.
+		 */
+		for (i = 0; i < apSt->as_nplans; i++)
+		{
+			switch (nodeTag(apSt->appendplans[i]))
+			{
+			case T_SeqScanState:
+			case T_IndexScanState:
+			case T_BitmapIndexScanState:
+			case T_BitmapHeapScanState:
+			{
+				ScanState	*ss = (ScanState *) apSt->appendplans[i];
+				if (ss->ss_currentRelation->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
+				{
+					CustomScan *dummyScan = make_dummyscan();
+					Oid serverid;
+
+					ss->ps.plan = &dummyScan->scan.plan;
+					apSt->appendplans[i] = ExecInitNode(ss->ps.plan, context->estate, context->eflags);
+
+					serverid = GetForeignServerIdByRelId(ss->ss_currentRelation->rd_id);
+					context->servers = lappend_oid(context->servers, serverid);
+					ExecCloseScanRelation(ss->ss_currentRelation);
+				}
+			}
+				break;
+			default:
+				elog(LOG, "!! Some problems here: tag=%d", nodeTag(apSt->appendplans[i]));
+				break;
+			}
+		}
+		elog(INFO, "Got exchange node!");
+	}
+
+	return false;
+}
+
+const char *LOCALHOST = "localhost";
+/*
+ * fsid - foreign server oid.
+ * host - returns C-string with foreign server host name
+ * port - returns foreign server port number.
+ */
+void
+FSExtractServerName(Oid fsid, char **host, int *port)
+{
+	ForeignServer *server;
+	ListCell   *lc;
+	char *hostname = NULL;
+
+	server = GetForeignServer(fsid);
+	*port = 5432;
+	foreach(lc, server->options)
+	{
+		DefElem    *def = (DefElem *) lfirst(lc);
+
+		if (strcmp(def->defname, "host") == 0)
+			hostname = pstrdup(defGetString(def));
+		else if (strcmp(def->defname, "port") == 0)
+			*port = strtol(defGetString(def), NULL, 10);
+	}
+
+	if (!hostname)
+		hostname = pstrdup(LOCALHOST);
+	*host = hostname;
+}
+#include "postmaster/postmaster.h"
+void
+GetMyServerName(char **host, int *port)
+{
+	*host = pstrdup(LOCALHOST);
+	*port = PostPortNumber;
+}
+
+char*
+serializeServer(const char *host, int port)
+{
+	char *serverName = palloc(256);
+
+	sprintf(serverName, "%s-%d", host, port);
+	return serverName;
 }
