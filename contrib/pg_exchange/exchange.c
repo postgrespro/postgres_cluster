@@ -65,6 +65,8 @@ static void EXCHANGE_InitializeWorker(CustomScanState *node,
 static Node *EXCHANGE_Create_state(CustomScan *node);
 
 
+#define END_OF_TUPLES	'E'
+#define END_OF_EXCHANGE 'Q'
 void
 EXCHANGE_Init_methods(void)
 {
@@ -95,6 +97,7 @@ EXCHANGE_Init_methods(void)
 	DistExec_Init_methods();
 }
 
+#include "nodes/relation.h"
 /*
  * Add one path for a base relation target:  replace all ForeignScan nodes by
  * local Scan nodes.
@@ -116,7 +119,7 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 		 */
 		return;
 
-	elog(INFO, "INSERT EXCHANGE");
+	elog(INFO, "INSERT EXCHANGE. paths: %d", list_length(rel->pathlist));
 
 	/* Traverse all possible paths and search for APPEND */
 	foreach(lc, rel->pathlist)
@@ -125,16 +128,15 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 		Path		*tmpLocalScanPath = NULL;
 		AppendPath	*appendPath = NULL;
 		ListCell	*lc1;
-		List		*private_data = NIL;
-
-		Assert(path->pathtype != T_MergeAppend); /* Do it later */
+		Bitmapset	*servers = NULL;
+		List	*subpaths = NIL;
 
 		if (path->pathtype != T_Append)
 			continue;
 
-		appendPath = makeNode(AppendPath);
-		memcpy(appendPath, path, sizeof(AppendPath));
-		appendPath->subpaths = NIL;
+//		elog(INFO, "-> IE. path params: %hhu, ptype: %d, tcost: %f, scost: %f",
+//				path->param_info != NULL, path->pathtype,
+//				path->total_cost, path->startup_cost);
 
 		/*
 		 * Traverse all APPEND subpaths, check for scan-type and search for
@@ -145,7 +147,9 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 			Path	*subpath = (Path *) lfirst(lc1);
 			Path	*tmpPath;
 			Oid		serverid = InvalidOid;
-
+			elog(INFO, "--> IE. subpath params: %hhu, ptype: %d, tcost: %f, scost: %f",
+					subpath->param_info != NULL, subpath->pathtype,
+					subpath->total_cost, subpath->startup_cost);
 			if ((subpath->pathtype != T_ForeignScan) && (tmpLocalScanPath))
 				/* Check assumption No.1 */
 				Assert(tmpLocalScanPath->pathtype == subpath->pathtype);
@@ -159,8 +163,11 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 
 			case T_ForeignScan:
 				serverid = subpath->parent->serverid;
+				if (PATH_REQ_OUTER(subpath) != NULL)
+					continue;
 				tmpPath = (Path *) makeNode(SeqScan);
-				tmpPath = create_seqscan_path(root, subpath->parent, subpath->parent->lateral_relids, 0);
+				tmpPath = create_seqscan_path(root, subpath->parent,
+						PATH_REQ_OUTER(subpath), 0);
 				break;
 
 			default:
@@ -170,22 +177,25 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 			if (!tmpLocalScanPath)
 				tmpLocalScanPath = tmpPath;
 
-			appendPath->subpaths = lappend(appendPath->subpaths, tmpPath);
-			if (OidIsValid(serverid))
-				private_data = lappend_oid(private_data, serverid);
+			subpaths = lappend(subpaths, tmpPath);
+//			appendPath->subpaths = lappend(appendPath->subpaths, tmpPath);
+			if (OidIsValid(serverid) && !bms_is_member((int)serverid, servers))
+				servers = bms_add_member(servers, serverid);
 		}
 
-		if (private_data == NIL)
+		if (servers == NULL)
 		{
-			pfree(appendPath);
 			elog(INFO, "NO one foreign source found");
 			continue;
 		}
 		else
-			elog(INFO, "Source found: %d", list_length(private_data));
+			elog(INFO, "Source found: %d", bms_num_members(servers));
 
+		appendPath = create_append_path(root, rel, subpaths, NIL,
+								PATH_REQ_OUTER(tmpLocalScanPath), 0, false,
+								((AppendPath *)path)->partitioned_rels, -1);
 		path = create_exchange_path(root, rel, (Path *) appendPath);
-		path = create_distexec_path(root, rel, path, private_data);
+		path = create_distexec_path(root, rel, path, servers);
 		add_path(rel, path);
 	}
 }
@@ -206,8 +216,8 @@ cost_exchange(PlannerInfo *root, RelOptInfo *baserel, Path *path)
 
 	/* Now I do not want to think about cost estimations. */
 	path->rows = baserel->tuples;
-	path->startup_cost = 0.0001;
-	path->total_cost = path->startup_cost + 0.0001 * path->rows;
+	path->startup_cost = 10000.0001;
+	path->total_cost = path->startup_cost + 100000.0001 * path->rows;
 }
 
 /* XXX: Need to be placed in shared memory */
@@ -342,7 +352,7 @@ EXCHANGE_Begin(CustomScanState *node, EState *estate, int eflags)
 {
 	CustomScan	*cscan = (CustomScan *) node->ss.ps.plan;
 	Plan		*scan_plan;
-	bool		explain_only = ((eflags & EXEC_FLAG_EXPLAIN_ONLY) != 0);
+//	bool		explain_only = ((eflags & EXEC_FLAG_EXPLAIN_ONLY) != 0);
 	PlanState	*planState;
 	ExchangeState *state = (ExchangeState *) node;
 	TupleDesc	scan_tupdesc;
@@ -353,7 +363,7 @@ EXCHANGE_Begin(CustomScanState *node, EState *estate, int eflags)
 	planState = (PlanState *) ExecInitNode(scan_plan, estate, eflags);
 	node->custom_ps = lappend(node->custom_ps, planState);
 
-	Assert(Stream_subscribe(state->stream));
+	Stream_subscribe(state->stream);
 
 	state->init = false;
 	state->ltuples = 0;
@@ -375,6 +385,23 @@ distribution_fn_gather(TupleTableSlot *slot, DMQDestCont *dcont)
 		return -1;
 }
 
+static void
+init_state_ifany(ExchangeState *state)
+{
+	if (!state->init)
+	{
+		EphemeralNamedRelation enr = get_ENR(state->estate->es_queryEnv, destsName);
+
+		Assert(enr != NULL && enr->reldata != NULL);
+		state->dests = (DMQDestCont *) enr->reldata;
+		state->hasLocal = true;
+		state->activeRemotes = state->dests->nservers;
+		state->init = true;
+//		elog(INFO, "[%d] EXCHANGE Init", getpid());
+	}
+
+}
+
 static TupleTableSlot *
 EXCHANGE_Execute(CustomScanState *node)
 {
@@ -383,14 +410,7 @@ EXCHANGE_Execute(CustomScanState *node)
 	ExchangeState *state = (ExchangeState *) node;
 	bool readRemote = true;
 
-	if (!state->init)
-	{
-		EphemeralNamedRelation enr = get_ENR(state->estate->es_queryEnv, destsName);
-		state->dests = (DMQDestCont *) enr->reldata;
-		state->init = true;
-		state->hasLocal = true;
-		state->activeRemotes = state->dests->nservers;
-	}
+	init_state_ifany(state);
 
 	for(;;)
 	{
@@ -405,22 +425,23 @@ EXCHANGE_Execute(CustomScanState *node)
 
 			slot = RecvTuple(ss->ss_ScanTupleSlot->tts_tupleDescriptor,
 							 state->stream, &status);
-			if (status == 0)
+			switch (status)
 			{
-				if (TupIsNull(slot))
-				{
-					state->activeRemotes--;
-//					elog(LOG, "Finish remote receiving. r=%d", state->rtuples);
-				}
-				else
-				{
-					state->rtuples++;
-//					elog(LOG, "GOT tuple from another node. r=%d", state->rtuples);
-					return slot;
-				}
+			case -1:
+				/* No tuples currently */
+				break;
+			case 0:
+				Assert(!TupIsNull(slot));
+				state->rtuples++;
+				return slot;
+			case 1:
+				state->activeRemotes--;
+				break;
+			case 2: /* Close EXCHANGE channel */
+				break;
+			default:
+				Assert(0);
 			}
-//			else
-//				elog(LOG, "No remote tuples for now");
 		}
 
 		if ((state->hasLocal) && (!readRemote))
@@ -429,9 +450,9 @@ EXCHANGE_Execute(CustomScanState *node)
 			if (TupIsNull(slot))
 			{
 				int i;
-//elog(LOG, "FINISH Local store: l=%d, r=%d", state->ltuples, state->rtuples);
+//				elog(LOG, "[%s] FINISH Local store: l=%d, r=%d", state->stream, state->ltuples, state->rtuples);
 				for (i = 0; i < state->dests->nservers; i++)
-					SendTuple(state->dests->dests[i].dest_id, state->stream, NULL);
+					SendByteMessage(state->dests->dests[i].dest_id, state->stream, END_OF_TUPLES);
 				state->hasLocal = false;
 				continue;
 			}
@@ -444,7 +465,8 @@ EXCHANGE_Execute(CustomScanState *node)
 
 		if ((state->activeRemotes == 0) && (!state->hasLocal))
 		{
-			elog(LOG, "Exchange returns NULL: %d %d", state->ltuples, state->rtuples);
+			elog(LOG, "[%s] Exchange returns NULL: %d %d", state->stream,
+					state->ltuples, state->rtuples);
 			return NULL;
 		}
 
@@ -457,7 +479,6 @@ EXCHANGE_Execute(CustomScanState *node)
 			return slot;
 		else
 		{
-//			elog(LOG, "Send real tuple");
 			SendTuple(dest, state->stream, slot);
 		}
 	}
@@ -471,20 +492,25 @@ EXCHANGE_End(CustomScanState *node)
 
 	Assert(list_length(node->custom_ps) == 1);
 	ExecEndNode(linitial(node->custom_ps));
-	Assert(Stream_unsubscribe(state->stream));
-	elog(LOG, "EXCHANGE_END");
-	/*
-	 * Clean out exchange state
-	 */
+	Stream_unsubscribe(state->stream);
+
+	elog(INFO, "EXCHANGE_END");
 }
 
 static void
 EXCHANGE_Rescan(CustomScanState *node)
 {
-	PlanState		*outerPlan = outerPlanState(node);
+	ExchangeState *state = (ExchangeState *) node;
+	PlanState *subPlan = (PlanState *) linitial(node->custom_ps);
 
-	if (outerPlan->chgParam == NULL)
-		ExecReScan(outerPlan);
+	init_state_ifany(state);
+elog(INFO, "Rescan exchange! %d", getpid());
+	if (subPlan->chgParam == NULL)
+		ExecReScan(subPlan);
+	state->activeRemotes = state->dests->nservers;
+	state->ltuples = 0;
+	state->rtuples = 0;
+	state->hasLocal = true;
 }
 
 static void
@@ -500,8 +526,10 @@ static void
 EXCHANGE_Explain(CustomScanState *node, List *ancestors, ExplainState *es)
 {
 	StringInfoData		str;
+	ExchangeState *state = (ExchangeState *) node;
 
 	initStringInfo(&str);
+	appendStringInfo(&str, "stream: %s. ", state->stream);
 	ExplainPropertyText("Exchange", str.data, es);
 }
 

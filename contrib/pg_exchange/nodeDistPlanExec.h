@@ -21,17 +21,17 @@ typedef struct
 {
 	EState *estate;
 	int eflags;
-	List *servers;
+	Bitmapset *servers;
 } lcontext;
 
 
 extern char destsName[10];
-
+#define DISTEXECPATHNAME	"DistExecPath"
 
 extern void DistExec_Init_methods(void);
 extern CustomScan *make_distplanexec(List *custom_plans, List *tlist, List *private_data);
 extern Path *create_distexec_path(PlannerInfo *root, RelOptInfo *rel,
-								  Path *children, List *private_data);
+								  Path *children, Bitmapset *servers);
 extern bool localize_plan(PlanState *node, lcontext *context);
 extern void FSExtractServerName(Oid fsid, char **host, int *port);
 extern void GetMyServerName(char **host, int *port);

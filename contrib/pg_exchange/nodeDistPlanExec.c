@@ -196,20 +196,19 @@ char destsName[10] = "DMQ_DESTS";
 void
 EstablishDMQConnections(const lcontext *context, const char *serverName)
 {
-	ListCell	*lc;
-	int nservers = list_length(context->servers);
+	int nservers = bms_num_members(context->servers);
 	DMQDestCont *dmq_data = palloc(sizeof(DMQDestCont));
 	int i = 0;
 	EphemeralNamedRelation enr = palloc(sizeof(EphemeralNamedRelationData));
 	int coordinator_num = -1;
+	int sid = -1;
 
 	dmq_data->nservers = nservers;
 	dmq_data->dests = palloc(nservers * sizeof(DMQDestinations));
 
 	LWLockAcquire(ExchShmem->lock, LW_EXCLUSIVE);
-	foreach(lc, context->servers)
+	while ((sid = bms_next_member(context->servers, sid)) >= 0)
 	{
-		Oid sid = lfirst_oid(lc);
 		bool found;
 		DMQDestinations	*sub;
 		char senderName[256];
@@ -219,7 +218,7 @@ EstablishDMQConnections(const lcontext *context, const char *serverName)
 
 		GetMyServerName(&host, &port);
 		sprintf(senderName, "%s-%d", host, port);
-		FSExtractServerName(sid, &host, &port);
+		FSExtractServerName((Oid)sid, &host, &port);
 		sprintf(receiverName, "%s-%d", host, port);
 
 		/* This foreign server is a coordinator? */
@@ -301,10 +300,11 @@ BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags)
 		Assert(i > 0);
 		context.estate = estate;
 		context.eflags = eflags;
-		context.servers = NIL;
+		context.servers = NULL;
+
 		localize_plan(subPlanState, &context);
-		Assert(list_length(context.servers) > 0);
-		elog(LOG, "SERVERS: %d", list_length(context.servers));
+		Assert(bms_num_members(context.servers) > 0);
+		elog(LOG, "LOCALIZE PLAN. SERVERS: %d", bms_num_members(context.servers));
 		EstablishDMQConnections(&context, " ");
 	}
 }
@@ -386,7 +386,7 @@ void
 DistExec_Init_methods(void)
 {
 	/* Initialize path generator methods */
-	distplanexec_path_methods.CustomName = "DistExecPath";
+	distplanexec_path_methods.CustomName = DISTEXECPATHNAME;
 	distplanexec_path_methods.PlanCustomPath = CreateDistExecPlan;
 	distplanexec_path_methods.ReparameterizeCustomPathByChild	= NULL;
 
@@ -440,9 +440,7 @@ make_distplanexec(List *custom_plans, List *tlist, List *private_data)
 	foreach(lc, private_data)
 	{
 		Oid	serverid = lfirst_oid(lc);
-
 		node->custom_private = lappend_oid(node->custom_private, serverid);
-//		elog(INFO, "make serv: %d", serverid);
 	}
 
 
@@ -451,10 +449,11 @@ make_distplanexec(List *custom_plans, List *tlist, List *private_data)
 
 Path *
 create_distexec_path(PlannerInfo *root, RelOptInfo *rel, Path *children,
-					 List *private_data)
+					 Bitmapset *servers)
 {
 	CustomPath	*path = makeNode(CustomPath);
 	Path		*pathnode = &path->path;
+	int member = -1;
 
 	pathnode->pathtype = T_CustomScan;
 	pathnode->parent = rel;
@@ -471,12 +470,12 @@ create_distexec_path(PlannerInfo *root, RelOptInfo *rel, Path *children,
 	pathnode->total_cost = 0.0;
 
 	path->flags = 0;
-	/* Contains only one path */
 	path->custom_paths = lappend(path->custom_paths, children);
 
-	path->custom_private = private_data;
+	while ((member = bms_next_member(servers, member)) >= 0)
+		path->custom_private = lappend_oid(path->custom_private, (Oid) member);
+	elog(INFO, "Servers count: %d", list_length(path->custom_private));
 	path->methods = &distplanexec_path_methods;
-
 	return pathnode;
 }
 
@@ -519,7 +518,8 @@ localize_plan(PlanState *node, lcontext *context)
 					apSt->appendplans[i] = ExecInitNode(ss->ps.plan, context->estate, context->eflags);
 
 					serverid = GetForeignServerIdByRelId(ss->ss_currentRelation->rd_id);
-					context->servers = lappend_oid(context->servers, serverid);
+					if (!bms_is_member((int)serverid, context->servers))
+						context->servers = bms_add_member(context->servers, (int)serverid);
 					ExecCloseScanRelation(ss->ss_currentRelation);
 				}
 			}

@@ -98,7 +98,7 @@ make_dummyscan(void)
 	plan->startup_cost = 0;
 	plan->total_cost = 0;
 	plan->plan_rows = 0;
-	plan->plan_width =0;
+	plan->plan_width = 0;
 	plan->qual = NIL;
 	plan->lefttree = NULL;
 	plan->righttree = NULL;

@@ -49,6 +49,7 @@ List *ostreams;
 extern bool Stream_subscribe(const char *streamName);
 extern bool Stream_unsubscribe(const char *streamName);
 
+extern void SendByteMessage(DmqDestinationId dest_id, char *stream, char msg);
 extern void SendTuple(DmqDestinationId dest_id, char *stream, TupleTableSlot *slot);
 extern TupleTableSlot *RecvTuple(TupleDesc tupdesc, char *streamName, int *status);
 #endif /* CONTRIB_PG_EXCHANGE_STREAM_H_ */

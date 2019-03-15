@@ -177,7 +177,7 @@ exec_plan(char *squery, PlannedStmt *pstmt, ParamListInfo paramLI, const char *s
 
 		context.estate = queryDesc->estate;
 		context.eflags = eflags;
-		context.servers = NIL;
+		context.servers = NULL;
 		localize_plan(queryDesc->planstate, &context);
 		EstablishDMQConnections(&context, serverName);
 

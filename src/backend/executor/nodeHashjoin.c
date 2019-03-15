@@ -147,7 +147,7 @@ static bool ExecHashJoinNewBatch(HashJoinState *hjstate);
 static bool ExecParallelHashJoinNewBatch(HashJoinState *hjstate);
 static void ExecParallelHashJoinPartitionOuter(HashJoinState *node);
 
-
+static bool distributed = true;
 /* ----------------------------------------------------------------
  *		ExecHashJoinImpl
  *
@@ -243,7 +243,7 @@ ExecHashJoinImpl(PlanState *pstate, bool parallel)
 					/* no chance to not build the hash table */
 					node->hj_FirstOuterTupleSlot = NULL;
 				}
-				else if (parallel)
+				else if (parallel || distributed)
 				{
 					/*
 					 * The empty-outer optimization is not implemented for
@@ -295,7 +295,14 @@ ExecHashJoinImpl(PlanState *pstate, bool parallel)
 				 * outer relation.
 				 */
 				if (hashtable->totalTuples == 0 && !HJ_FILL_OUTER(node))
+				{
+					if (distributed)
+					{
+						TupleTableSlot *slot = ExecProcNode(outerNode);
+						while (!TupIsNull(slot));
+					}
 					return NULL;
+				}
 
 				/*
 				 * need to remember whether nbatch has increased since we
