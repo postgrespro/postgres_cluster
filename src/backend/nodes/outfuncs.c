@@ -90,6 +90,7 @@ write_oid_field(StringInfo str, Oid oid)
 	if (i == OID_TYPES_NUM)
 	{
 		elog(LOG, "Unexpected oid type %d!", oid);
+//		Assert(0);
 		appendStringInfo(str, "0 %u)", oid);
 		return;
 	}

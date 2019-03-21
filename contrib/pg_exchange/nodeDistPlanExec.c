@@ -79,9 +79,12 @@ serialize_plan(Plan *plan, const char *sourceText, ParamListInfo params)
 	char *host;
 	int port;
 	char *serverName;
-
+//	elog(INFO, "Start serialize1");
 	set_portable_output(true);
+//	elog(LOG, "Start serialize1");
 	splan = nodeToString(plan);
+	elog(LOG, "--> PLAN: %s", splan);
+//	elog(INFO, "End serialize");
 	set_portable_output(false);
 	plen = pg_b64_enc_len(strlen(splan) + 1);
 	plan_container = (char *) palloc0(plen + 1);
@@ -123,25 +126,6 @@ add_pstmt_node(Plan *plan, EState *estate)
 {
 	PlannedStmt *pstmt;
 	ListCell   *lc;
-
-	/* We can't scribble on the original plan, so make a copy. */
-	plan = copyObject(plan);
-
-	/*
-	 * The worker will start its own copy of the executor, and that copy will
-	 * insert a junk filter if the toplevel node has any resjunk entries. We
-	 * don't want that to happen, because while resjunk columns shouldn't be
-	 * sent back to the user, here the tuples are coming back to another
-	 * backend which may very well need them.  So mutate the target list
-	 * accordingly.  This is sort of a hack; there might be better ways to do
-	 * this...
-	 */
-	foreach(lc, plan->targetlist)
-	{
-		TargetEntry *tle = lfirst_node(TargetEntry, lc);
-
-		tle->resjunk = false;
-	}
 
 	/*
 	 * Create a dummy PlannedStmt.  Most of the fields don't need to be valid
@@ -264,26 +248,28 @@ BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags)
 	bool		explain_only = ((eflags & EXEC_FLAG_EXPLAIN_ONLY) != 0);
 
 	Assert(list_length(cscan->custom_plans) == 1);
-	elog(LOG, "BeginDistPlanExec");
+//	elog(LOG, "BeginDistPlanExec");
 	/* Initialize subtree */
 	subplan = linitial(cscan->custom_plans);
 	subPlanState = (PlanState *) ExecInitNode(subplan, estate, eflags);
 	node->custom_ps = lappend(node->custom_ps, subPlanState);
-
+	elog(INFO, "Start serialize");
 	if (!explain_only)
 	{
 		char	*query;
 		int i = 0;
 		ListCell	*lc;
 		lcontext context;
-
+		elog(INFO, "Start serialize3");
 		/* The Plan involves foreign servers and uses exchange nodes. */
 		if (cscan->custom_private == NIL)
 			return;
 
 		dpe->nconns = list_length(cscan->custom_private);
 		dpe->conn = palloc(sizeof(PGconn *) * dpe->nconns);
+		elog(INFO, "Start serialize4");
 		query = serialize_plan(add_pstmt_node(subplan, estate), estate->es_sourceText, NULL);
+
 		for (lc = list_head(cscan->custom_private); lc != NULL; lc = lnext(lc))
 		{
 			UserMapping	*user;
@@ -301,10 +287,10 @@ BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags)
 		context.estate = estate;
 		context.eflags = eflags;
 		context.servers = NULL;
-
+		elog(INFO, "LOCALIZE PLAN.");
 		localize_plan(subPlanState, &context);
 		Assert(bms_num_members(context.servers) > 0);
-		elog(LOG, "LOCALIZE PLAN. SERVERS: %d", bms_num_members(context.servers));
+//		elog(LOG, "LOCALIZE PLAN. SERVERS: %d", bms_num_members(context.servers));
 		EstablishDMQConnections(&context, " ");
 	}
 }
@@ -467,14 +453,16 @@ create_distexec_path(PlannerInfo *root, RelOptInfo *rel, Path *children,
 
 	pathnode->rows = rel->tuples;
 	pathnode->startup_cost = 0.0001;
-	pathnode->total_cost = 0.0;
+	pathnode->total_cost = 1.0;
 
 	path->flags = 0;
 	path->custom_paths = lappend(path->custom_paths, children);
 
 	while ((member = bms_next_member(servers, member)) >= 0)
+	{
 		path->custom_private = lappend_oid(path->custom_private, (Oid) member);
-	elog(INFO, "Servers count: %d", list_length(path->custom_private));
+		elog(INFO, "Server: %u", (Oid) member);
+	}
 	path->methods = &distplanexec_path_methods;
 	return pathnode;
 }

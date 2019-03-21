@@ -2556,6 +2556,61 @@ _readPartitionRangeDatum(void)
 }
 
 /*
+ * _readRelOptInfo
+ */
+static RelOptInfo *
+_readRelOptInfo(void)
+{
+	READ_LOCALS(RelOptInfo);
+
+	READ_ENUM_FIELD(reloptkind, RelOptKind);
+	READ_BITMAPSET_FIELD(relids);
+	READ_FLOAT_FIELD(rows);
+	READ_BOOL_FIELD(consider_startup);
+	READ_BOOL_FIELD(consider_param_startup);
+	READ_BOOL_FIELD(consider_parallel);
+	READ_NODE_FIELD(reltarget);
+	READ_NODE_FIELD(pathlist);
+	READ_NODE_FIELD(ppilist);
+	READ_NODE_FIELD(partial_pathlist);
+	READ_NODE_FIELD(cheapest_startup_path);
+	READ_NODE_FIELD(cheapest_total_path);
+	READ_NODE_FIELD(cheapest_unique_path);
+	READ_NODE_FIELD(cheapest_parameterized_paths);
+	READ_BITMAPSET_FIELD(direct_lateral_relids);
+	READ_BITMAPSET_FIELD(lateral_relids);
+	READ_UINT_FIELD(relid);
+	READ_OID_FIELD(reltablespace);
+	READ_ENUM_FIELD(rtekind, RTEKind);
+	READ_INT_FIELD(min_attr);
+	READ_INT_FIELD(max_attr);
+	READ_NODE_FIELD(lateral_vars);
+	READ_BITMAPSET_FIELD(lateral_referencers);
+	READ_NODE_FIELD(indexlist);
+	READ_NODE_FIELD(statlist);
+	READ_UINT_FIELD(pages);
+	READ_FLOAT_FIELD(tuples);
+	READ_FLOAT_FIELD(allvisfrac);
+	READ_NODE_FIELD(subroot);
+	READ_NODE_FIELD(subplan_params);
+	READ_INT_FIELD(rel_parallel_workers);
+	READ_OID_FIELD(serverid);
+	READ_OID_FIELD(userid);
+	READ_BOOL_FIELD(useridiscurrent);
+	/* we don't try to print fdwroutine or fdw_private */
+	/* can't print unique_for_rels/non_unique_for_rels; BMSes aren't Nodes */
+	READ_NODE_FIELD(baserestrictinfo);
+	READ_UINT_FIELD(baserestrict_min_security);
+	READ_NODE_FIELD(joininfo);
+	READ_BOOL_FIELD(has_eclass_joins);
+	READ_BOOL_FIELD(consider_partitionwise_join);
+	READ_BITMAPSET_FIELD(top_parent_relids);
+	READ_NODE_FIELD(partitioned_child_rels);
+
+	READ_DONE();
+}
+
+/*
  * parseNodeString
  *
  * Given a character string representing a node tree, parseNodeString creates
@@ -2814,6 +2869,8 @@ parseNodeString(void)
 		return_value = _readPartitionBoundSpec();
 	else if (MATCH("PARTITIONRANGEDATUM", 19))
 		return_value = _readPartitionRangeDatum();
+	else if (MATCH("RELOPTINFO", 10))
+		return_value = _readRelOptInfo();
 	else
 	{
 		elog(ERROR, "badly formatted node string \"%.32s\"...", token);
