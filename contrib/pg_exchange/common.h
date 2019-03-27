@@ -19,11 +19,13 @@
 #include "storage/lock.h"
 #include "dmq.h"
 
+typedef char NodeName[256];
 
 typedef struct
 {
 	Oid serverid;
 	DmqDestinationId dest_id;
+	NodeName node;
 } DMQDestinations;
 
 typedef struct

@@ -324,6 +324,19 @@ dmq_sender_at_exit(int status, Datum arg)
 	LWLockRelease(dmq_state->lock);
 }
 
+static void
+switch_destination_state(DmqDestinationId dest_id, DmqConnState state)
+{
+	DmqDestination *dest;
+
+	LWLockAcquire(dmq_state->lock, LW_EXCLUSIVE);
+	dest = &(dmq_state->destinations[dest_id]);
+	Assert(dest->active);
+
+	dest->state = state;
+	LWLockRelease(dmq_state->lock);
+}
+
 void
 dmq_sender_main(Datum main_arg)
 {
@@ -402,6 +415,7 @@ dmq_sender_main(Datum main_arg)
 					conns[i] = *dest;
 					Assert(conns[i].pgconn == NULL);
 					conns[i].state = Idle;
+					dest->state = Idle;
 					prev_timer_at = 0; /* do not wait for timer event */
 				}
 				/* close connection to deleted destination */
@@ -443,6 +457,7 @@ dmq_sender_main(Datum main_arg)
 					{
 						// Assert(PQstatus(conns[conn_id].pgconn) != CONNECTION_OK);
 						conns[conn_id].state = Idle;
+						switch_destination_state(conn_id, Idle);
 						// DeleteWaitEvent(set, conns[conn_id].pos);
 
 						mtm_log(DmqStateFinal,
@@ -532,6 +547,7 @@ dmq_sender_main(Datum main_arg)
 					if (PQstatus(conns[conn_id].pgconn) == CONNECTION_BAD)
 					{
 						conns[conn_id].state = Idle;
+						switch_destination_state(conn_id, Idle);
 
 						mtm_log(DmqStateIntermediate,
 								"[DMQ] failed to start connection with %s (%s): %s",
@@ -542,6 +558,7 @@ dmq_sender_main(Datum main_arg)
 					else
 					{
 						conns[conn_id].state = Connecting;
+						switch_destination_state(conn_id, Connecting);
 						conns[conn_id].pos = AddWaitEventToSet(set, WL_SOCKET_CONNECTED,
 											PQsocket(conns[conn_id].pgconn),
 											NULL, (void *) conn_id);
@@ -559,6 +576,7 @@ dmq_sender_main(Datum main_arg)
 					if (ret < 0)
 					{
 						conns[conn_id].state = Idle;
+						switch_destination_state(conn_id, Idle);
 						// DeleteWaitEvent(set, conns[conn_id].pos);
 						// Assert(PQstatus(conns[i].pgconn) != CONNECTION_OK);
 
@@ -622,6 +640,7 @@ dmq_sender_main(Datum main_arg)
 											   sender_name);
 
 						conns[conn_id].state = Negotiating;
+						switch_destination_state(conn_id, Negotiating);
 						ModifyWaitEvent(set, event.pos, WL_SOCKET_READABLE, NULL);
 						PQsendQuery(conns[conn_id].pgconn, query);
 
@@ -632,6 +651,7 @@ dmq_sender_main(Datum main_arg)
 					else if (status == PGRES_POLLING_FAILED)
 					{
 						conns[conn_id].state = Idle;
+						switch_destination_state(conn_id, Idle);
 						DeleteWaitEvent(set, event.pos);
 
 						mtm_log(DmqStateIntermediate,
@@ -655,6 +675,7 @@ dmq_sender_main(Datum main_arg)
 					if (!PQconsumeInput(conns[conn_id].pgconn))
 					{
 						conns[conn_id].state = Idle;
+						switch_destination_state(conn_id, Idle);
 						DeleteWaitEvent(set, event.pos);
 
 						mtm_log(DmqStateIntermediate,
@@ -665,6 +686,7 @@ dmq_sender_main(Datum main_arg)
 					if (!PQisBusy(conns[conn_id].pgconn))
 					{
 						conns[conn_id].state = Active;
+						switch_destination_state(conn_id, Active);
 						DeleteWaitEvent(set, event.pos);
 
 						mtm_log(DmqStateFinal,
@@ -679,6 +701,7 @@ dmq_sender_main(Datum main_arg)
 					if (!PQconsumeInput(conns[conn_id].pgconn))
 					{
 						conns[conn_id].state = Idle;
+						switch_destination_state(conn_id, Idle);
 
 						mtm_log(DmqStateFinal,
 								"[DMQ] connection error with %s: %s",
@@ -1643,6 +1666,31 @@ dmq_destination_add(char *connstr, char *sender_name, char *receiver_name,
 		mtm_log(ERROR, "Can't add new destination. DMQ_MAX_DESTINATIONS reached.");
 	else
 		return dest_id;
+}
+
+/*
+ * Check availability of destination node.
+ * It is needed before sending process to prevent data loss.
+ */
+DmqConnState
+dmq_get_destination_status(DmqDestinationId dest_id)
+{
+	DmqConnState state;
+
+	if ((dest_id < 0) || (dest_id >= DMQ_MAX_DESTINATIONS))
+		return -2;
+
+	LWLockAcquire(dmq_state->lock, LW_EXCLUSIVE);
+	DmqDestination *dest = &(dmq_state->destinations[dest_id]);
+	if (!dest->active)
+	{
+		LWLockRelease(dmq_state->lock);
+		return -1;
+	}
+
+	state = dest->state;
+	LWLockRelease(dmq_state->lock);
+	return state;
 }
 
 void

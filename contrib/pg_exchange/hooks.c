@@ -129,7 +129,8 @@ HOOK_Join_pathlist(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 		 * delete it from the path.
 		 */
 		if ((inner->pathtype == T_CustomScan) &&
-			(strcmp(((CustomPath *)inner)->methods->CustomName, DISTEXECPATHNAME) == 0))
+			(strcmp(((CustomPath *) inner)->methods->CustomName,
+														DISTEXECPATHNAME) == 0))
 		{
 			ListCell *lc;
 
@@ -151,7 +152,8 @@ HOOK_Join_pathlist(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 		 * delete it from the path.
 		 */
 		if ((outer->pathtype == T_CustomScan) &&
-			(strcmp(((CustomPath *)outer)->methods->CustomName, DISTEXECPATHNAME) == 0))
+			(strcmp(((CustomPath *) outer)->methods->CustomName,
+														DISTEXECPATHNAME) == 0))
 		{
 			ListCell *lc;
 
@@ -195,8 +197,7 @@ HOOK_Join_pathlist(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 	(strcmp(((CustomPath *)pathnode)->methods->CustomName, DISTEXECPATHNAME) == 0))
 
 static CustomPath *
-duplicate_exchange_join_path(CustomPath	*distExecPath, RelOptInfo **joinrel,
-		RelOptInfo **outerrel, RelOptInfo **innerrel)
+duplicate_exchange_join_path(CustomPath	*distExecPath)
 {
 	JoinPath *jp;
 	CustomPath	*newDistExecPath;
@@ -218,9 +219,7 @@ duplicate_exchange_join_path(CustomPath	*distExecPath, RelOptInfo **joinrel,
 	newExPathnode = (ExchangePath *) newNode(sizeof(ExchangePath), T_CustomPath);
 	memcpy(newExPathnode, exPathnode, sizeof(ExchangePath));
 	newExPathnode->exchange_counter = exchange_counter++;
-//	elog(INFO, "COPIED inner Exchange: %u", newExPathnode->exchange_counter);
 	jp->innerjoinpath = (Path *) newExPathnode;
-	*innerrel = &newExPathnode->altrel;
 
 	/* Copy outer EXCHANGE path node */
 	exPathnode = (ExchangePath *) jp->outerjoinpath;
@@ -228,17 +227,13 @@ duplicate_exchange_join_path(CustomPath	*distExecPath, RelOptInfo **joinrel,
 	newExPathnode = (ExchangePath *) newNode(sizeof(ExchangePath), T_CustomPath);
 	memcpy(newExPathnode, exPathnode, sizeof(ExchangePath));
 	newExPathnode->exchange_counter = exchange_counter++;
-//	elog(INFO, "COPIED outer Exchange: %u", newExPathnode->exchange_counter);
 	jp->outerjoinpath = (Path *) newExPathnode;
-	*outerrel = &newExPathnode->altrel;
 
 	/* Copy main EXCHANGE path node */
 	newExPathnode = (ExchangePath *) newNode(sizeof(ExchangePath), T_CustomPath);
 	memcpy(newExPathnode, exHeadPathnode, sizeof(ExchangePath));
 	newExPathnode->exchange_counter = exchange_counter++;
-//	elog(INFO, "COPIED MAIN Exchange: %u", newExPathnode->exchange_counter);
 	newExPathnode->cp.custom_paths = lappend(NIL, jp);
-	*joinrel = &newExPathnode->altrel;
 
 	/* Copy DistExec path node */
 	newDistExecPath = makeNode(CustomPath);
@@ -310,8 +305,9 @@ arrange_partitioning_attrs(RelOptInfo *rel1,
 		else
 			Assert(0);
 
-		rel1->partexprs[partno] = lappend(rel1->partexprs[partno], expr1);
-		rel2->partexprs[partno] = lappend(rel2->partexprs[partno], expr2);
+		rel1->partexprs[partno] = lappend(rel1->partexprs[partno], copyObject(expr1));
+		rel2->partexprs[partno] = lappend(rel2->partexprs[partno], copyObject(expr2));
+
 		part_scheme->partcollation[partno] = exprCollation((Node *) expr1);
 		Assert(exprCollation((Node *) expr1) == exprCollation((Node *) expr2));
 		Assert(exprType((Node *) expr1) == exprType((Node *) expr2));
@@ -325,8 +321,31 @@ arrange_partitioning_attrs(RelOptInfo *rel1,
 		part_scheme->partnatts++;
 		ReleaseSysCache(opclasstup);
 	}
+elog(INFO, "arrange_partitioning_attrs: ");
+elog(INFO, "->1: %s ", nodeToString(rel1->partexprs[0]));
+elog(INFO, "->2: %s ", nodeToString(rel2->partexprs[0]));
+elog(INFO, "restrictlist: %s", nodeToString(restrictlist));
+	/* Now we use hash partition only */
+	Assert((rel1->part_scheme->strategy == PARTITION_STRATEGY_HASH) &&
+			(rel1->part_scheme->strategy == rel2->part_scheme->strategy));
+
 	part_scheme->strategy = PARTITION_STRATEGY_HASH;
 	rel1->part_scheme = rel2->part_scheme = part_scheme;
+}
+
+static void
+set_path_pointers(CustomPath *path, JoinPath **jp, ExchangePath **exres,
+		ExchangePath **exouter, ExchangePath **exinner)
+{
+	/* Set pointers to the EXCHANGE nodes */
+	Assert(IsExchangeNode((Path *)linitial(path->custom_paths)));
+	*exres = (ExchangePath *) linitial(path->custom_paths);
+
+	*jp = (JoinPath *) linitial((*exres)->cp.custom_paths);
+	Assert((*jp)->path.pathtype == T_HashJoin);
+	Assert(IsExchangeNode((*jp)->innerjoinpath) && IsExchangeNode((*jp)->outerjoinpath));
+	*exinner = (ExchangePath *) (*jp)->innerjoinpath;
+	*exouter = (ExchangePath *) (*jp)->outerjoinpath;
 }
 
 /*
@@ -341,79 +360,69 @@ second_stage_paths(PlannerInfo *root, List *firstStagePaths, RelOptInfo *joinrel
 	if (list_length(firstStagePaths) == 0)
 		return;
 
+	elog(INFO, "second_stage_paths(). npaths=%d, jtype: %d (%lX %lX %lX)",
+			list_length(firstStagePaths), jointype, (unsigned long int)joinrel,
+			(unsigned long int)outerrel, (unsigned long int)innerrel);
+
 	foreach(lc, firstStagePaths)
 	{
 		CustomPath *path = (CustomPath *) lfirst(lc);
 		JoinPath *jp;
-		RelOptInfo *alter_outer_rel;
-		RelOptInfo *alter_inner_rel;
-		RelOptInfo *alter_join_rel;
 		ExchangePath *innerex;
 		ExchangePath *outerex;
 		ExchangePath *expath;
 
 		Assert(IsDistExecNode(path));
-		jp = (JoinPath *) linitial(path->custom_paths);
-		Assert(jp->path.pathtype == T_HashJoin);
-		Assert(IsExchangeNode(jp->innerjoinpath) &&
-			   IsExchangeNode(jp->outerjoinpath));
-		innerex = (ExchangePath *) jp->innerjoinpath;
-		outerex = (ExchangePath *) jp->outerjoinpath;
-		alter_outer_rel = &innerex->altrel;
-		alter_inner_rel = &outerex->altrel;
+		if (!IsA(((Path *) linitial(path->custom_paths)), CustomScan))
+		{
+			/*
+			 * Add gather-type EXCHANGE node into the head of the path.
+			 */
+			jp = (JoinPath *) linitial(path->custom_paths);
+			Assert(jp->path.pathtype == T_HashJoin);
+			expath = create_exchange_path(root, joinrel, (Path *) jp, GATHER_MODE);
+			path->custom_paths = list_delete(path->custom_paths, jp);
+			path->custom_paths = lappend(path->custom_paths, expath);
+		}
 
-		/* Add gather exchange into the head */
-		elog(INFO, "second_stage_paths()");
-		expath = create_exchange_path(root, joinrel, (Path *) jp);
-		path->custom_paths = list_delete(path->custom_paths, jp);
-		path->custom_paths = lappend(path->custom_paths, expath);
+		set_path_pointers(path, &jp, &expath, &outerex, &innerex);
+		path->path.total_cost = 10000.;
 
-		if (build_joinrel_partition_info(&expath->altrel, alter_outer_rel,
-				alter_inner_rel,extra->restrictlist, jointype))
+		if (build_joinrel_partition_info(&expath->altrel, &outerex->altrel,
+				&innerex->altrel, extra->restrictlist, jointype))
 		{
 			/* Simple case like foreign-push-join case. */
 			elog(INFO, "--- MAKE SIMPLE PATH ---");
-
-			/* Remove trivial exchanges */
-/*			if (alter_inner_rel->part_scheme == innerrel->part_scheme)
-			{
-				Path *sub = (Path *) linitial(innerex->cp.custom_paths);
-				jp->innerjoinpath = sub;
-			}
-			if (alter_outer_rel->part_scheme == outerrel->part_scheme)
-			{
-				Path *sub = (Path *) linitial(outerex->cp.custom_paths);
-				jp->outerjoinpath = sub;
-			} */
+			innerex->mode = STEALTH_MODE;
+			outerex->mode = STEALTH_MODE;
 		}
 		else
 		{
 			CustomPath *newpath;
 			bool res;
 
-			elog(INFO, "--- MAKE SMART PATH ---");
+			elog(INFO, "--- MAKE SHUFFLE PATH ---");
 			/* Get a copy of the simple path */
-			newpath = duplicate_exchange_join_path(path, &alter_join_rel,
-														 &alter_outer_rel,
-														 &alter_inner_rel);
-
-			arrange_partitioning_attrs(alter_outer_rel,
-									   alter_inner_rel,
+			newpath = duplicate_exchange_join_path(path);
+			set_path_pointers(newpath, &jp, &expath, &outerex, &innerex);
+			arrange_partitioning_attrs(&outerex->altrel,
+									   &innerex->altrel,
 									   extra->restrictlist);
 
-			res = build_joinrel_partition_info(alter_join_rel,
-											   alter_outer_rel,
-											   alter_inner_rel,
+			res = build_joinrel_partition_info(&expath->altrel,
+											   &outerex->altrel,
+											   &innerex->altrel,
 											   extra->restrictlist,
 											   jointype);
 			Assert(res);
-			Assert(alter_join_rel->part_scheme != NULL);
-//			Assert(expath->altrel.part_scheme != NULL);
+			Assert(expath->altrel.part_scheme != NULL);
+			innerex->mode = SHUFFLE_MODE;
+			outerex->mode = SHUFFLE_MODE;
+			Assert(expath->mode == GATHER_MODE);
 			newpath->path.total_cost = 0.1;
 			add_path(joinrel, (Path *) newpath);
-//			elog(INFO, "LEN: %d", list_length(joinrel->pathlist));
 		}
-		joinrel->pathlist = list_delete(joinrel->pathlist, path);
+//		joinrel->pathlist = list_delete(joinrel->pathlist, path);
 	}
 }
 

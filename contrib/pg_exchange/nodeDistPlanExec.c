@@ -79,12 +79,11 @@ serialize_plan(Plan *plan, const char *sourceText, ParamListInfo params)
 	char *host;
 	int port;
 	char *serverName;
-//	elog(INFO, "Start serialize1");
+
 	set_portable_output(true);
-//	elog(LOG, "Start serialize1");
+
 	splan = nodeToString(plan);
-	elog(LOG, "--> PLAN: %s", splan);
-//	elog(INFO, "End serialize");
+
 	set_portable_output(false);
 	plen = pg_b64_enc_len(strlen(splan) + 1);
 	plan_container = (char *) palloc0(plen + 1);
@@ -221,6 +220,7 @@ EstablishDMQConnections(const lcontext *context, const char *serverName)
 							 host, port, senderName);
 			elog(LOG, "Add destination: senderName=%s, receiverName=%s, connstr=%s", senderName, receiverName, connstr);
 			sub->dest_id = dmq_destination_add(connstr, senderName, receiverName, 10);
+			memcpy(sub->node, receiverName, strlen(receiverName) + 1);
 		}
 		dmq_attach_receiver(receiverName, 0);
 		memcpy(&dmq_data->dests[i++], sub, sizeof(DMQDestinations));
@@ -253,21 +253,21 @@ BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags)
 	subplan = linitial(cscan->custom_plans);
 	subPlanState = (PlanState *) ExecInitNode(subplan, estate, eflags);
 	node->custom_ps = lappend(node->custom_ps, subPlanState);
-	elog(INFO, "Start serialize");
+
 	if (!explain_only)
 	{
 		char	*query;
 		int i = 0;
 		ListCell	*lc;
 		lcontext context;
-		elog(INFO, "Start serialize3");
+
 		/* The Plan involves foreign servers and uses exchange nodes. */
 		if (cscan->custom_private == NIL)
 			return;
 
 		dpe->nconns = list_length(cscan->custom_private);
 		dpe->conn = palloc(sizeof(PGconn *) * dpe->nconns);
-		elog(INFO, "Start serialize4");
+
 		query = serialize_plan(add_pstmt_node(subplan, estate), estate->es_sourceText, NULL);
 
 		for (lc = list_head(cscan->custom_private); lc != NULL; lc = lnext(lc))
@@ -453,7 +453,7 @@ create_distexec_path(PlannerInfo *root, RelOptInfo *rel, Path *children,
 
 	pathnode->rows = rel->tuples;
 	pathnode->startup_cost = 0.0001;
-	pathnode->total_cost = 1.0;
+	pathnode->total_cost = 0.5;
 
 	path->flags = 0;
 	path->custom_paths = lappend(path->custom_paths, children);

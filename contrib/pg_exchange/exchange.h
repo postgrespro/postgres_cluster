@@ -27,26 +27,18 @@
 #define IsExchangeNode(pathnode) (((pathnode)->pathtype == T_CustomScan) && \
 	(strcmp(((CustomPath *)(pathnode))->methods->CustomName, EXCHANGEPATHNAME) == 0))
 
-/*
- * Структура для хранения информации о распределении кортежей между инстансами.
- * Распределение обеспечивается нодой EXCHANGE.
- */
-typedef struct PState
-{
-	int16 greatest_modulus;
-	int16 partnatts;
-	FmgrInfo *partsupfunc;
-	List *keystate;
-} PState;
-
-typedef struct EPPNode /* Exchange Private Partitioning data */
+/* Exchange Private Partitioning data */
+typedef struct EPPNode
 {
 	ExtensibleNode node;
-	int nparts;
-	int16 partnatts;
+
+	int nnodes;
+	NodeName *nodes;
+
+	int16 natts;
 	Oid *funcid;
-//	PartitionBoundInfoData *boundinfo;
-	List *partexprs;
+	List *att_exprs;
+	int8 mode;
 } EPPNode;
 
 typedef struct ExchangeState
@@ -66,9 +58,13 @@ typedef struct ExchangeState
 	int16 partnatts;
 	FmgrInfo *partsupfunc;
 	List *partexprs;
-
-	PState pstate;
+	List *keystate;
+	int nnodes;
+	NodeName *nodes;
+	int *indexes;
+	int8 mode;
 } ExchangeState;
+
 extern uint32 exchange_counter;
 /*
  * Structure for private path data. It is used at paths generating step only.
@@ -77,19 +73,21 @@ typedef struct ExchangePath
 {
 	CustomPath cp;
 
-	/*
-	 * alternate partitioning scheme.
-	 * */
 	RelOptInfo	altrel;
 	uint32 exchange_counter; // Debug purposes only
+	int8 mode; /* It will send all tuples to a coordinator only. */
 } ExchangePath;
+
+#define GATHER_MODE		(1)
+#define STEALTH_MODE	(2)
+#define SHUFFLE_MODE	(3)
 
 extern void EXCHANGE_Init_methods(void);
 extern void add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti,
 							   RangeTblEntry *rte);
 extern CustomScan *make_exchange(List *custom_plans, List *tlist);
 extern ExchangePath *create_exchange_path(PlannerInfo *root, RelOptInfo *rel,
-		  Path *children);
-
+		  Path *children, int8 mode);
+extern void createNodeName(char *nodeName, const char *hostname, int port);
 
 #endif /* EXCHANGE_H_ */
