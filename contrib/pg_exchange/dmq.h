@@ -4,15 +4,26 @@
 #include "libpq-fe.h"
 #include "lib/stringinfo.h"
 
+typedef enum
+{
+	Idle,			/* upon init or falure */
+	Connecting,		/* upon PQconnectStart */
+	Negotiating,	/* upon PQconnectPoll == OK */
+	Active,			/* upon dmq_receiver_loop() response */
+} DmqConnState;
+
 typedef int8 DmqDestinationId;
 typedef int8 DmqSenderId;
 
 #define DMQ_NAME_MAXLEN 32
+#define DMQ_MAX_DESTINATIONS 127
+#define DMQ_MAX_RECEIVERS 100
 
 extern void dmq_init(const char *library_name);
 
 extern DmqDestinationId dmq_destination_add(char *connstr, char *sender_name,
 											char *receiver_name, int ping_period);
+extern DmqConnState dmq_get_destination_status(DmqDestinationId dest_id);
 extern void dmq_destination_drop(char *receiver_name);
 
 extern DmqSenderId dmq_attach_receiver(const char *sender_name, int mask_pos);

@@ -197,7 +197,7 @@ HOOK_Join_pathlist(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 	(strcmp(((CustomPath *)pathnode)->methods->CustomName, DISTEXECPATHNAME) == 0))
 
 static CustomPath *
-duplicate_exchange_join_path(CustomPath	*distExecPath)
+duplicate_join_path(CustomPath	*distExecPath)
 {
 	JoinPath *jp;
 	CustomPath	*newDistExecPath;
@@ -321,10 +321,10 @@ arrange_partitioning_attrs(RelOptInfo *rel1,
 		part_scheme->partnatts++;
 		ReleaseSysCache(opclasstup);
 	}
-elog(INFO, "arrange_partitioning_attrs: ");
-elog(INFO, "->1: %s ", nodeToString(rel1->partexprs[0]));
-elog(INFO, "->2: %s ", nodeToString(rel2->partexprs[0]));
-elog(INFO, "restrictlist: %s", nodeToString(restrictlist));
+//elog(INFO, "arrange_partitioning_attrs: ");
+//elog(INFO, "->1: %s ", nodeToString(rel1->partexprs[0]));
+//elog(INFO, "->2: %s ", nodeToString(rel2->partexprs[0]));
+//elog(INFO, "restrictlist: %s", nodeToString(restrictlist));
 	/* Now we use hash partition only */
 	Assert((rel1->part_scheme->strategy == PARTITION_STRATEGY_HASH) &&
 			(rel1->part_scheme->strategy == rel2->part_scheme->strategy));
@@ -348,6 +348,48 @@ set_path_pointers(CustomPath *path, JoinPath **jp, ExchangePath **exres,
 	*exouter = (ExchangePath *) (*jp)->outerjoinpath;
 }
 
+/* Arrange partitions */
+static void
+arrange_partitions(RelOptInfo *rel1,
+		   RelOptInfo *rel2,
+		   List *restrictlist)
+{
+	Bitmapset *servers = NULL;
+	int i;
+	int sid = -1;
+
+	for (i = 0; i < rel1->nparts; i++)
+		if (OidIsValid(rel1->part_rels[i]->serverid) &&
+					!bms_is_member((int) rel1->part_rels[i]->serverid, servers))
+			servers = bms_add_member(servers, (int) rel1->part_rels[i]->serverid);
+		else if (!bms_is_member(0, servers))
+			servers = bms_add_member(servers, 0);
+
+	for (i = 0; i < rel2->nparts; i++)
+		if (OidIsValid(rel2->part_rels[i]->serverid) &&
+					!bms_is_member((int) rel2->part_rels[i]->serverid, servers))
+			servers = bms_add_member(servers, (int) rel2->part_rels[i]->serverid);
+		else if (!bms_is_member(0, servers))
+			servers = bms_add_member(servers, 0);
+	rel1->nparts = rel2->nparts = bms_num_members(servers);
+
+	/* Create virtual partitions */
+	rel1->part_rels = palloc(sizeof(RelOptInfo *) * rel1->nparts);
+	rel2->part_rels = palloc(sizeof(RelOptInfo *) * rel2->nparts);
+	for (i = 0; i < rel1->nparts; i++)
+	{
+		sid = bms_next_member(servers, sid);
+
+		rel1->part_rels[i] = palloc(sizeof(RelOptInfo));
+		rel2->part_rels[i] = palloc(sizeof(RelOptInfo));
+		rel1->part_rels[i]->serverid = (Oid) sid;
+		rel2->part_rels[i]->serverid = (Oid) sid;
+	}
+	for (i = 0; i < rel1->nparts; i++)
+	{
+		elog(LOG, "SHUFFLE sid=%u %d", rel1->part_rels[i]->serverid, bms_num_members(servers));
+	}
+}
 /*
  * Add Paths same as the case of partitionwise join.
  */
@@ -360,10 +402,6 @@ second_stage_paths(PlannerInfo *root, List *firstStagePaths, RelOptInfo *joinrel
 	if (list_length(firstStagePaths) == 0)
 		return;
 
-	elog(INFO, "second_stage_paths(). npaths=%d, jtype: %d (%lX %lX %lX)",
-			list_length(firstStagePaths), jointype, (unsigned long int)joinrel,
-			(unsigned long int)outerrel, (unsigned long int)innerrel);
-
 	foreach(lc, firstStagePaths)
 	{
 		CustomPath *path = (CustomPath *) lfirst(lc);
@@ -371,13 +409,16 @@ second_stage_paths(PlannerInfo *root, List *firstStagePaths, RelOptInfo *joinrel
 		ExchangePath *innerex;
 		ExchangePath *outerex;
 		ExchangePath *expath;
+		int i;
 
 		Assert(IsDistExecNode(path));
+
+		/*
+		 * Add gather-type EXCHANGE node into the head of the path.
+		 * If JOIN need to shuffle tuples than we will have virtual partitions.
+		 */
 		if (!IsA(((Path *) linitial(path->custom_paths)), CustomScan))
 		{
-			/*
-			 * Add gather-type EXCHANGE node into the head of the path.
-			 */
 			jp = (JoinPath *) linitial(path->custom_paths);
 			Assert(jp->path.pathtype == T_HashJoin);
 			expath = create_exchange_path(root, joinrel, (Path *) jp, GATHER_MODE);
@@ -392,7 +433,7 @@ second_stage_paths(PlannerInfo *root, List *firstStagePaths, RelOptInfo *joinrel
 				&innerex->altrel, extra->restrictlist, jointype))
 		{
 			/* Simple case like foreign-push-join case. */
-			elog(INFO, "--- MAKE SIMPLE PATH ---");
+//			elog(INFO, "--- MAKE SIMPLE PATH ---");
 			innerex->mode = STEALTH_MODE;
 			outerex->mode = STEALTH_MODE;
 		}
@@ -401,14 +442,14 @@ second_stage_paths(PlannerInfo *root, List *firstStagePaths, RelOptInfo *joinrel
 			CustomPath *newpath;
 			bool res;
 
-			elog(INFO, "--- MAKE SHUFFLE PATH ---");
+//			elog(INFO, "--- MAKE SHUFFLE PATH ---");
 			/* Get a copy of the simple path */
-			newpath = duplicate_exchange_join_path(path);
+			newpath = duplicate_join_path(path);
 			set_path_pointers(newpath, &jp, &expath, &outerex, &innerex);
-			arrange_partitioning_attrs(&outerex->altrel,
-									   &innerex->altrel,
-									   extra->restrictlist);
-
+			arrange_partitioning_attrs(&outerex->altrel, &innerex->altrel,
+														extra->restrictlist);
+			arrange_partitions(&outerex->altrel, &innerex->altrel,
+					   	   	   	   	   	   	   			extra->restrictlist);
 			res = build_joinrel_partition_info(&expath->altrel,
 											   &outerex->altrel,
 											   &innerex->altrel,
@@ -418,11 +459,24 @@ second_stage_paths(PlannerInfo *root, List *firstStagePaths, RelOptInfo *joinrel
 			Assert(expath->altrel.part_scheme != NULL);
 			innerex->mode = SHUFFLE_MODE;
 			outerex->mode = SHUFFLE_MODE;
-			Assert(expath->mode == GATHER_MODE);
 			newpath->path.total_cost = 0.1;
 			add_path(joinrel, (Path *) newpath);
 		}
-//		joinrel->pathlist = list_delete(joinrel->pathlist, path);
+
+		Assert(expath->mode == GATHER_MODE);
+		Assert(expath->altrel.nparts > 0);
+		Assert(outerex->altrel.nparts > 0);
+		Assert(innerex->altrel.nparts > 0);
+
+		/*
+		 * Set partitions preferences at altrel field of after-JOIN exchange
+		 */
+		for (i = 0; i < expath->altrel.nparts; i++)
+		{
+			Assert(expath->altrel.part_rels[i] == NULL);
+			expath->altrel.part_rels[i] = palloc(sizeof(RelOptInfo));
+			memcpy(expath->altrel.part_rels[i], innerex->altrel.part_rels[i], sizeof(RelOptInfo));
+		}
 	}
 }
 

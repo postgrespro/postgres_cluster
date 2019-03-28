@@ -36,6 +36,6 @@ extern bool localize_plan(PlanState *node, lcontext *context);
 extern void FSExtractServerName(Oid fsid, char **host, int *port);
 extern void GetMyServerName(char **host, int *port);
 extern char *serializeServer(const char *host, int port);
-extern void EstablishDMQConnections(const lcontext *context, const char *serverName);
+extern void EstablishDMQConnections(const lcontext *context, const char *serverName, PlanState *substate);
 
 #endif							/* NODEDISTPLANEXEC_H */

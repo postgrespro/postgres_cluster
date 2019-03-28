@@ -62,16 +62,6 @@
 #define DMQ_CONNSTR_MAX_LEN 1024
 
 #define DMQ_MAX_SUBS_PER_BACKEND 100
-#define DMQ_MAX_DESTINATIONS 127
-#define DMQ_MAX_RECEIVERS 100
-
-typedef enum
-{
-	Idle,			/* upon init or falure */
-	Connecting,		/* upon PQconnectStart */
-	Negotiating,	/* upon PQconnectPoll == OK */
-	Active,			/* upon dmq_receiver_loop() response */
-} DmqConnState;
 
 typedef struct {
 	bool			active;
@@ -1676,12 +1666,13 @@ DmqConnState
 dmq_get_destination_status(DmqDestinationId dest_id)
 {
 	DmqConnState state;
+	DmqDestination *dest;
 
 	if ((dest_id < 0) || (dest_id >= DMQ_MAX_DESTINATIONS))
 		return -2;
 
 	LWLockAcquire(dmq_state->lock, LW_EXCLUSIVE);
-	DmqDestination *dest = &(dmq_state->destinations[dest_id]);
+	dest = &(dmq_state->destinations[dest_id]);
 	if (!dest->active)
 	{
 		LWLockRelease(dmq_state->lock);

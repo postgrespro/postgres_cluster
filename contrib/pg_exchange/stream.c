@@ -4,9 +4,19 @@
  */
 
 #include "stream.h"
-
 #include "miscadmin.h"
 #include "unistd.h"
+
+#define IsDeliveryMessage(msg)	(msg->tot_len == MinSizeOfSendBuf)
+
+static DmqDestinationId dmq_dest_id(DmqSenderId id);
+static char *get_stream(List *streams, const char *name);
+static void RecvIfAny(void);
+static bool checkDelivery(OStream *ostream);
+static void StreamRepeatSend(OStream *ostream);
+static OStream * ISendTuple(DmqDestinationId dest_id, char *stream,
+		TupleTableSlot *slot, bool needConfirm);
+static void wait_for_delivery(OStream *ostream);
 
 static DmqDestinationId dmq_dest_id(DmqSenderId id)
 {
@@ -17,7 +27,7 @@ static DmqDestinationId dmq_dest_id(DmqSenderId id)
 	return dmq_remote_id(name);
 }
 
-static Stream *
+static char *
 get_stream(List *streams, const char *name)
 {
 	ListCell *lc;
@@ -26,9 +36,9 @@ get_stream(List *streams, const char *name)
 	Assert(name[0] != '\0');
 	for (lc = list_head(streams); lc != NULL; lc = lnext(lc))
 	{
-		Stream *stream = (Stream *) lfirst(lc);
-		if (strcmp(name, stream->name) == 0)
-			return stream;
+		char *streamName = (char *) lfirst(lc);
+		if (strcmp(name, streamName) == 0)
+			return streamName;
 	}
 	return NULL;
 }
@@ -38,8 +48,9 @@ Stream_subscribe(const char *streamName)
 {
 	IStream *istream;
 	OStream *ostream;
+	DmqSenderId	id;
 
-	elog(LOG, "[%d] Subscribe on %s.", getpid(), streamName);
+//	elog(LOG, "[%d] Subscribe on %s.", getpid(), streamName);
 	/* Check for existed stream */
 	istream = (IStream *) get_stream(istreams, streamName);
 	ostream = (OStream *) get_stream(ostreams, streamName);
@@ -49,11 +60,13 @@ Stream_subscribe(const char *streamName)
 	/* It is unique stream name */
 	istream = palloc(sizeof(IStream));
 	ostream = palloc(sizeof(OStream));
-	strncpy(istream->stream.name, streamName, STREAM_NAME_MAX_LEN);
-	strncpy(ostream->stream.name, streamName, STREAM_NAME_MAX_LEN);
-	istream->stream.index = 0;
+	strncpy(istream->streamName, streamName, STREAM_NAME_MAX_LEN);
+	strncpy(ostream->streamName, streamName, STREAM_NAME_MAX_LEN);
+
+	for (id = 0; id < DMQ_MAX_RECEIVERS; id++)
+		istream->indexes[id] = 0;
+	ostream->index = 0;
 	istream->msgs = NIL;
-	ostream->stream.index = 0;
 	ostream->buf = NULL;
 	istreams = lappend(istreams, istream);
 	ostreams = lappend(ostreams, ostream);
@@ -67,7 +80,7 @@ Stream_unsubscribe(const char *streamName)
 	IStream *istream;
 	OStream *ostream;
 
-	elog(INFO, "[%d] unSubscribe on %s.", getpid(), streamName);
+//	elog(INFO, "[%d] unSubscribe on %s.", getpid(), streamName);
 	istream = (IStream *) get_stream(istreams, streamName);
 	ostream = (OStream *) get_stream(ostreams, streamName);
 	if (!istream || !ostream)
@@ -81,7 +94,6 @@ Stream_unsubscribe(const char *streamName)
 	return true;
 }
 
-#define IsDeliveryMessage(msg)	(msg->tot_len == MinSizeOfSendBuf)
 /*
  * Receive any message for any stream.
  */
@@ -104,19 +116,20 @@ RecvIfAny(void)
 	Assert(len >= MinSizeOfSendBuf);
 	istream = (IStream *) get_stream(istreams, streamName);
 
-	if ((msg->index > istream->stream.index) || IsDeliveryMessage(msg))
+	if ((msg->index > istream->indexes[sender_id]) || IsDeliveryMessage(msg))
 	{
 		SendBuf *buf;
-//		elog(LOG, "RecvIfAny, pid=%d streamName=%s, len=%lu, msg->len=%u", getpid(), streamName, len, msg->tot_len);
+
 		Assert(istream != NULL);
 		buf = palloc(len);
 		memcpy(buf, msg, len);
 		istream->msgs = lappend(istream->msgs, buf);
 		if (!IsDeliveryMessage(msg))
-			istream->stream.index = buf->index;
+			istream->indexes[sender_id] = buf->index;
 	}
 
-	if (!IsDeliveryMessage(msg))
+	/* Send delivery message, if needed. */
+	if (!IsDeliveryMessage(msg) && msg->needConfirm)
 	{
 		SendBuf *dbuf;
 		DmqDestinationId dest_id;
@@ -127,9 +140,7 @@ RecvIfAny(void)
 		dbuf->index = msg->index;
 		dest_id = dmq_dest_id(sender_id);
 		Assert(dest_id >= 0);
-//		elog(LOG, "[%d] Send delivery: dest_id=%d (%d, %u %lu)", getpid(),
-//				dest_id, dbuf->index, dbuf->tot_len, MinSizeOfSendBuf);
-		dmq_push_buffer(dest_id, istream->stream.name, dbuf, dbuf->tot_len);
+		dmq_push_buffer(dest_id, istream->streamName, dbuf, dbuf->tot_len);
 	}
 }
 
@@ -140,39 +151,31 @@ checkDelivery(OStream *ostream)
 	ListCell *lc;
 
 	RecvIfAny();
-	istream = (IStream *) get_stream(istreams, ostream->stream.name);
+	istream = (IStream *) get_stream(istreams, ostream->streamName);
 	Assert(istream);
 
 	foreach(lc, istream->msgs)
 	{
 		SendBuf *buf = lfirst(lc);
-		if ((buf->index == ostream->stream.index) &&
+		if ((buf->index == ostream->index) &&
 			(buf->tot_len == MinSizeOfSendBuf))
 		{
-//			elog(LOG, "[%d] got delivery:", getpid());
 			istream->msgs = list_delete_ptr(istream->msgs, buf);
-//			elog(LOG, "[%d] got delivery2:", getpid());
 			return true;
 		}
-//		else
-//		elog(LOG, "[%d] check delivery: %s, %d %d %u %lu", getpid(), ostream->stream.name,
-//				list_length(istream->msgs),
-//				buf->index,
-//				buf->tot_len,
-//				MinSizeOfSendBuf);
 	}
 	return false;
 }
 static void
 StreamRepeatSend(OStream *ostream)
 {
-	dmq_push_buffer(ostream->dest_id, ostream->stream.name, ostream->buf,
+	dmq_push_buffer(ostream->dest_id, ostream->streamName, ostream->buf,
 					ostream->buf->tot_len);
 }
 
-
 static OStream *
-ISendTuple(DmqDestinationId dest_id, char *stream, TupleTableSlot *slot)
+ISendTuple(DmqDestinationId dest_id, char *stream, TupleTableSlot *slot,
+		bool needConfirm)
 {
 	HeapTuple tuple;
 	int tupsize;
@@ -201,10 +204,15 @@ ISendTuple(DmqDestinationId dest_id, char *stream, TupleTableSlot *slot)
 	else
 		Assert(0);
 
-	buf->index = ++(ostream->stream.index);
-	ostream->buf = buf;
+	buf->index = ++(ostream->index);
+	buf->needConfirm = needConfirm;
 	ostream->dest_id = dest_id;
 	dmq_push_buffer(dest_id, stream, buf, buf->tot_len);
+	if (buf->needConfirm)
+		ostream->buf = buf;
+	else
+		ostream->buf = NULL;
+
 	return ostream;
 }
 
@@ -213,11 +221,11 @@ wait_for_delivery(OStream *ostream)
 {
 	int attempts = 0;
 
-	while (1==1)
-//	for (attempts = 0; attempts < 50; attempts++)
+	for (attempts = 0; attempts < 50; attempts++)
 	{
 		int waits;
 
+		pg_usleep(10);
 		attempts++;
 		for (waits = 0; waits < 100000; waits++)
 		{
@@ -248,7 +256,8 @@ SendByteMessage(DmqDestinationId dest_id, char *stream, char msg)
 	buf->tot_len = MinSizeOfSendBuf + 1;
 	buf->data[0] = msg;
 
-	buf->index = ++(ostream->stream.index);
+	buf->index = ++(ostream->index);
+	buf->needConfirm = true;
 	ostream->buf = buf;
 	ostream->dest_id = dest_id;
 	dmq_push_buffer(dest_id, stream, buf, buf->tot_len);
@@ -260,12 +269,14 @@ SendByteMessage(DmqDestinationId dest_id, char *stream, char msg)
  * of named channel.
  */
 void
-SendTuple(DmqDestinationId dest_id, char *stream, TupleTableSlot *slot)
+SendTuple(DmqDestinationId dest_id, char *stream, TupleTableSlot *slot,
+		bool needConfirm)
 {
 	OStream *ostream;
 
-	ostream = ISendTuple(dest_id, stream, slot);
-	wait_for_delivery(ostream);
+	ostream = ISendTuple(dest_id, stream, slot, needConfirm);
+	if (needConfirm)
+		wait_for_delivery(ostream);
 }
 
 /*
@@ -297,7 +308,7 @@ RecvTuple(TupleDesc tupdesc, char *streamName, int *status)
 			{
 				switch (buf->data[0])
 				{
-				case 'E':
+				case END_OF_TUPLES:
 					/* No tuples from network */
 					*status = 1;
 					break;
@@ -305,8 +316,10 @@ RecvTuple(TupleDesc tupdesc, char *streamName, int *status)
 					*status = 2;
 					break;
 				default:
-					Assert(0);
+					*status = 3;
+					break;
 				}
+				pfree(buf);
 				return (TupleTableSlot *) NULL;
 			}
 
@@ -314,7 +327,7 @@ RecvTuple(TupleDesc tupdesc, char *streamName, int *status)
 			tup = (HeapTuple) buf->data;
 			tup->t_data = (HeapTupleHeader) (buf->data + tupsize);
 			slot = MakeSingleTupleTableSlot(tupdesc);
-			return ExecStoreTuple((HeapTuple) buf->data, slot, InvalidBuffer, false);
+			return ExecStoreTuple((HeapTuple) buf->data, slot, InvalidBuffer, true);
 		}
 	}
 

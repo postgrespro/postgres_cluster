@@ -15,16 +15,21 @@
 #include "access/hash.h"
 #include "access/htup_details.h"
 #include "catalog/pg_am.h"
+#include "catalog/pg_class.h"
 #include "catalog/pg_opclass.h"
 #include "commands/defrem.h"
 #include "dmq.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodes.h"
 #include "nodes/plannodes.h"
+#include "nodes/readfuncs.h"
+#include "nodes/relation.h"
 #include "nodeDistPlanExec.h"
 #include "optimizer/cost.h"
 #include "optimizer/pathnode.h"
+#include "partitioning/partbounds.h"
 #include "utils/lsyscache.h"
+#include "utils/rel.h"
 #include "utils/syscache.h"
 
 #include "common.h"
@@ -33,13 +38,17 @@
 #include "stream.h"
 
 
-//static ExtensibleNodeMethods	exchange_data_methods;
-static CustomPathMethods	exchange_path_methods;
-static CustomScanMethods	exchange_plan_methods;
-static CustomExecMethods	exchange_exec_methods;
-static ExtensibleNodeMethods exchange_plan_private;
+static CustomPathMethods		exchange_path_methods;
+static CustomScanMethods		exchange_plan_methods;
+static CustomExecMethods		exchange_exec_methods;
+static ExtensibleNodeMethods	exchange_plan_private;
 
+/* XXX: Need to be placed in shared memory */
+uint32 exchange_counter = 0;
 
+static void nodeOutExchangePrivate(struct StringInfoData *str,
+								   const struct ExtensibleNode *node);
+static void nodeReadExchangePrivate(struct ExtensibleNode *node);
 static struct Plan * ExchangePlanCustomPath(PlannerInfo *root,
 					   RelOptInfo *rel,
 					   struct CustomPath *best_path,
@@ -69,64 +78,37 @@ static void create_stealth_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root)
 static void create_shuffle_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root);
 
 
-#include "nodes/readfuncs.h"
-#define READ_INT_FIELD(fldname) \
-	token = pg_strtok(&length);		/* skip :fldname */ \
-	token = pg_strtok(&length);		/* get field value */ \
-	fldname = atoi(token)
-
-/* Read a character-string field */
-#define READ_STRING_FIELD(fldname) \
-	token = pg_strtok(&length);		/* skip :fldname */ \
-	token = pg_strtok(&length);		/* get field value */ \
-	fldname = nullable_string(token, length)
-
-#define READ_NODE_FIELD(fldname) \
-	token = pg_strtok(&length);		/* skip :fldname */ \
-	(void) token;				/* in case not used elsewhere */ \
-	fldname = nodeRead(NULL, 0)
-
-/* Read an oid array */
-#define READ_OID_ARRAY(fldname, len) \
-	token = pg_strtok(&length);		/* skip :fldname */ \
-	fldname = readOidCols(len);
-
-/* Write an integer field (anything written as ":fldname %d") */
-#define WRITE_INT_FIELD(fldname) \
-	appendStringInfo(str, " :" CppAsString(fldname) " %d", fldname)
-
-/* Write a Node field */
-#define WRITE_NODE_FIELD(fldname) \
-	(appendStringInfoString(str, " :" CppAsString(fldname) " "), \
-	 outNode(str, fldname))
-
-
+/*
+ * Serialize extensible node with EXCHANGE distribution data.
+ */
 static void
-nodeOutExchangePrivate(struct StringInfoData *str, const struct ExtensibleNode *node)
+nodeOutExchangePrivate(struct StringInfoData *str,
+					   const struct ExtensibleNode *node)
 {
 	EPPNode *planNode = (EPPNode *) node;
 	int i;
 
 	Assert(str && node);
 
-	WRITE_INT_FIELD(planNode->nnodes);
+	appendStringInfo(str, " :nnodes %d", planNode->nnodes);
 	appendStringInfoString(str, " :nodenames");
 	for (i = 0; i < planNode->nnodes; i++)
 		appendStringInfo(str, " %s", planNode->nodes[i]);
 
-	WRITE_INT_FIELD(planNode->natts);
+	appendStringInfo(str, " :natts %d", planNode->natts);
 
 	appendStringInfoString(str, " :funcids");
 	for (i = 0; i < planNode->natts; i++)
 		appendStringInfo(str, " %u", planNode->funcid[i]);
 
-	WRITE_NODE_FIELD(planNode->att_exprs);
-	WRITE_INT_FIELD(planNode->mode);
+	appendStringInfoString(str, " :att_exprs ");
+	outNode(str, planNode->att_exprs);
+
+	appendStringInfo(str, " :mode %d", planNode->mode);
 }
 
 /*
- * Fill node by tokens provided by pg_strok() routine. Node name and node
- * methods are filled correctly yet
+ * Deserialize extensible node with EXCHANGE distribution data.
  */
 static void
 nodeReadExchangePrivate(struct ExtensibleNode *node)
@@ -137,7 +119,13 @@ nodeReadExchangePrivate(struct ExtensibleNode *node)
 	int i;
 
 	Assert(planNode);
-	READ_INT_FIELD(planNode->nnodes);
+
+	/* nnodes field */
+	token = pg_strtok(&length);		/* skip :fldname */
+	token = pg_strtok(&length);
+	planNode->nnodes = atoi(token);
+
+	/* array of node names */
 	planNode->nodes = palloc0(sizeof(NodeName) * planNode->nnodes);
 	token = pg_strtok(&length);
 	for (i = 0; i < planNode->nnodes; i++)
@@ -149,14 +137,25 @@ nodeReadExchangePrivate(struct ExtensibleNode *node)
 		memcpy(planNode->nodes[i], str, strlen(str));
 	}
 
-	READ_INT_FIELD(planNode->natts);
-	READ_OID_ARRAY(planNode->funcid, planNode->natts);
-	READ_NODE_FIELD(planNode->att_exprs);
-	READ_INT_FIELD(planNode->mode);
+	/* natts field */
+	token = pg_strtok(&length);		/* skip :fldname */
+	token = pg_strtok(&length);
+	planNode->natts = atoi(token);
+
+	/* funcid array */
+	token = pg_strtok(&length);		/* skip :fldname */
+	planNode->funcid = readOidCols(planNode->natts);
+
+	/* att_exprs field */
+	token = pg_strtok(&length);		/* skip :fldname */
+	planNode->att_exprs = nodeRead(NULL, 0);
+
+	/* mode field */
+	token = pg_strtok(&length);		/* skip :fldname */
+	token = pg_strtok(&length);
+	planNode->mode = atoi(token);
 }
 
-#define END_OF_TUPLES	'E'
-#define END_OF_EXCHANGE 'Q'
 void
 EXCHANGE_Init_methods(void)
 {
@@ -195,7 +194,6 @@ EXCHANGE_Init_methods(void)
 	DistExec_Init_methods();
 }
 
-#include "nodes/relation.h"
 /*
  * Add one path for a base relation target:  replace all ForeignScan nodes by
  * local Scan nodes.
@@ -216,9 +214,6 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 		 * Relation is not contain any partitions.
 		 */
 		return;
-
-	elog(INFO, "INSERT EXCHANGE. paths: %d (%s)", list_length(rel->pathlist),
-			nodeToString(rel->partexprs[0]));
 
 	/* Traverse all possible paths and search for APPEND */
 	foreach(lc, rel->pathlist)
@@ -242,9 +237,7 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 			Path	*subpath = (Path *) lfirst(lc1);
 			Path	*tmpPath;
 			Oid		serverid = InvalidOid;
-//			elog(INFO, "--> IE. subpath params: %hhu, ptype: %d, tcost: %f, scost: %f",
-//					subpath->param_info != NULL, subpath->pathtype,
-//					subpath->total_cost, subpath->startup_cost);
+
 			if ((subpath->pathtype != T_ForeignScan) && (tmpLocalScanPath))
 				/* Check assumption No.1 */
 				Assert(tmpLocalScanPath->pathtype == subpath->pathtype);
@@ -273,18 +266,13 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 				tmpLocalScanPath = tmpPath;
 
 			subpaths = lappend(subpaths, tmpPath);
-//			appendPath->subpaths = lappend(appendPath->subpaths, tmpPath);
+
 			if (OidIsValid(serverid) && !bms_is_member((int)serverid, servers))
 				servers = bms_add_member(servers, serverid);
 		}
 
 		if (servers == NULL)
-		{
-			elog(INFO, "NO one foreign source found or parametrized Foreign Scan was found.");
 			continue;
-		}
-		else
-			elog(INFO, "Source found: %d", bms_num_members(servers));
 
 		appendPath = create_append_path(root, rel, subpaths, NIL,
 								PATH_REQ_OUTER(tmpLocalScanPath), 0, false,
@@ -315,9 +303,6 @@ cost_exchange(PlannerInfo *root, RelOptInfo *baserel, Path *path)
 	path->total_cost = path->startup_cost + 100000.0001 * path->rows;
 }
 
-/* XXX: Need to be placed in shared memory */
-uint32 exchange_counter = 0;
-#include "partitioning/partbounds.h"
 /*
  * Create and Initialize plan structure of EXCHANGE-node. It will serialized
  * and deserialized at some instances and convert to an exchange state.
@@ -335,6 +320,7 @@ ExchangePlanCustomPath(PlannerInfo *root,
 	int port;
 	char *streamName = palloc(256);
 	ExchangePath *path = (ExchangePath *) best_path;
+	RelOptInfo *altrel = &path->altrel;
 	EPPNode *private = (EPPNode *) newNode(sizeof(EPPNode), T_ExtensibleNode);
 
 	exchange = make_exchange(custom_plans, tlist);
@@ -351,94 +337,68 @@ ExchangePlanCustomPath(PlannerInfo *root,
 	GetMyServerName(&host, &port);
 	sprintf(streamName, "%s-%d-%d", host, port, exchange_counter++);
 	exchange->custom_private = lappend(exchange->custom_private, makeString(streamName));
+	Assert(altrel->nparts > 0);
 
 	/*
 	 * Compute and fill private data structure. It is used connection
 	 * info and a tuple distribution rules.
 	 */
 	if (path->mode == GATHER_MODE)
-		create_gather_dfn(private, rel);
+		create_gather_dfn(private, altrel);
 	else if (path->mode == STEALTH_MODE)
-		create_stealth_dfn(private, rel, root);
+		create_stealth_dfn(private, altrel, root);
 	else if (path->mode == SHUFFLE_MODE)
 	{
-		create_shuffle_dfn(private, &path->altrel, root);
-		elog(INFO, "Shuffle DFN: stream=%s", streamName);
+		create_shuffle_dfn(private, altrel, root);
+//		elog(INFO, "Shuffle DFN: stream=%s", streamName);
 	}
 	else
 		Assert(0);
 
-/*	private->nnodes = path->altrel.nparts;
-	private->natts = path->altrel.part_scheme->partnatts;
-	private->funcid = (Oid *) palloc(sizeof(Oid) * private->natts);
-
-	for (attno = 0; attno < private->natts; attno++)
-	{
-		Oid funcid;
-		Expr *expr;
-
-		expr = copyObject(linitial(path->altrel.partexprs[attno]));
-
-		private->att_exprs = lappend(private->att_exprs, expr);
-		funcid = get_opfamily_proc(path->altrel.part_scheme->partopfamily[attno],
-								   path->altrel.part_scheme->partopcintype[attno],
-								   path->altrel.part_scheme->partopcintype[attno],
-								   HASHEXTENDED_PROC);
-		private->funcid[attno] = funcid;
-	}
-
-	private->nodes = (NodeInfo *) palloc(sizeof(NodeInfo) * private->nnodes);
-	for (partno = 0; partno < private->nnodes; partno++)
-	{
-		RelOptInfo *part_rel;
-		ForeignServer *fs;
-
-		part_rel = path->altrel.part_rels[partno];
-		FSExtractServerName(part_rel->serverid, &private->nodes[partno].hostname,
-												&private->nodes[partno].port);
-	}
-	exchange->custom_private = lappend(exchange->custom_private, private);
-	*/
+	exchange->custom_exprs = private->att_exprs;
 	exchange->custom_private = lappend(exchange->custom_private, private);
 	return &exchange->scan.plan;
 }
 
+/*
+ * Create distribution data for EXCHANGE plan node. It is based on altrel
+ * RelOptInfo structure of exchange path node.
+ */
 static void
 create_gather_dfn(EPPNode *epp, RelOptInfo *rel)
 {
-	int attno;
 	char *hostname;
 	int port;
+	int partno;
 
 	epp->mode = GATHER_MODE;
-	epp->nnodes = 0;
-	epp->nodes = NULL;
-//	epp->nodes = (NodeName *) palloc(sizeof(NodeName));
 
-	/* planner works on coordinator node. Store its parameters into path. */
-//	GetMyServerName(&hostname, &port);
-//	createNodeName(epp->nodes[0], hostname, port);
-
+	/*
+	 * Do not create partition scheme. In the GATHER mode all tuples will
+	 * transfer to the coordinator node. None distribution computations needed.
+	 */
 	epp->natts = 0;
 	epp->funcid = NULL;
 	epp->att_exprs = NIL;
 
-//	epp->natts = rel->part_scheme->partnatts;
-//	epp->funcid = (Oid *) palloc(sizeof(Oid) * epp->natts);
-/*	for (attno = 0; attno < epp->natts; attno++)
-	{
-		Oid funcid;
+	/* nparts of altrel represents real or virtual partitions (after JOIN) */
+	epp->nnodes = rel->nparts;
+	epp->nodes = (NodeName *) palloc(sizeof(NodeName) * epp->nnodes);
 
-		funcid = get_opfamily_proc(rel->part_scheme->partopfamily[attno],
-								   rel->part_scheme->partopcintype[attno],
-								   rel->part_scheme->partopcintype[attno],
-								   HASHEXTENDED_PROC);
-		epp->funcid[attno] = funcid;
-		epp->att_exprs = lappend(epp->att_exprs, linitial(rel->partexprs[attno]));
-	} */
+	for(partno = 0; partno < epp->nnodes; partno++)
+	{
+		RelOptInfo *part_rel = rel->part_rels[partno];
+
+		if (OidIsValid(part_rel->serverid))
+			/* Foreign relation */
+			FSExtractServerName(part_rel->serverid, &hostname, &port);
+		else
+			GetMyServerName(&hostname, &port);
+
+		createNodeName(epp->nodes[partno], hostname, port);
+	}
 }
 
-#include "catalog/pg_class.h"
 /*
  * Do the distribution function of EXCHANGE node in accordance with current
  * RelOptInfo relation partitioning. In this case all tuples will go up.
@@ -447,62 +407,37 @@ static void
 create_stealth_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root)
 {
 	int partno;
-	int attno;
 	char *hostname;
 	int port;
 
 	epp->mode = STEALTH_MODE;
-	epp->nnodes = 0;
-	epp->nodes = NULL;
+
+	/*
+	 * Do not create partition scheme. In the STEALTH mode all tuples will
+	 * transfer up to next node. None distribution computations needed.
+	 */
 	epp->natts = 0;
 	epp->funcid = NULL;
 	epp->att_exprs = NIL;
-	return;
 
+	epp->nnodes = 0;
+	epp->nodes = NULL;
 
-
-	Assert(rel->part_scheme->strategy == PARTITION_STRATEGY_HASH);
+	/* nparts of altrel represents real or virtual partitions (after JOIN) */
 	epp->nnodes = rel->nparts;
-	epp->nodes = (NodeName *) palloc(sizeof(NodeName *) * epp->nnodes);
+	epp->nodes = (NodeName *) palloc(sizeof(NodeName) * epp->nnodes);
 
 	for(partno = 0; partno < epp->nnodes; partno++)
 	{
-		int index = rel->boundinfo->indexes[partno];
-		RelOptInfo *part_rel = rel->part_rels[index];
-		char kind;
-		int i = 0;
+		RelOptInfo *part_rel = rel->part_rels[partno];
 
-		/*
-		 * Extract relation id's from the part_rels list
-		 */
-		// TODO: got foreign sign from rte
-		while (part_rel != root->simple_rel_array[i])
-			i++;
-		Assert(i < root->simple_rel_array_size);
-		kind = root->simple_rte_array[i]->relkind;
-
-		if (kind == RELKIND_FOREIGN_TABLE)
-			FSExtractServerName(part_rel->serverid,
-								&hostname,
-								&port);
+		if (OidIsValid(part_rel->serverid))
+			/* Foreign relation */
+			FSExtractServerName(part_rel->serverid, &hostname, &port);
 		else
-			GetMyServerName(&hostname,
-							&port);
+			GetMyServerName(&hostname, &port);
+
 		createNodeName(epp->nodes[partno], hostname, port);
-	}
-
-	epp->natts = rel->part_scheme->partnatts;
-	epp->funcid = (Oid *) palloc(sizeof(Oid *) * epp->natts);
-	for (attno = 0; attno < epp->natts; attno++)
-	{
-		Oid funcid;
-
-		funcid = get_opfamily_proc(rel->part_scheme->partopfamily[attno],
-								   rel->part_scheme->partopcintype[attno],
-								   rel->part_scheme->partopcintype[attno],
-								   HASHEXTENDED_PROC);
-		epp->funcid[attno] = funcid;
-		epp->att_exprs = lappend(epp->att_exprs, linitial(rel->partexprs[attno]));
 	}
 }
 
@@ -513,41 +448,28 @@ create_shuffle_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root)
 	int attno;
 	char *hostname;
 	int port;
-elog(INFO, "SHUFFLE DFN!");
-	epp->mode = SHUFFLE_MODE;
 
 	Assert(rel->part_scheme->strategy == PARTITION_STRATEGY_HASH);
+
+	epp->mode = SHUFFLE_MODE;
 	epp->nnodes = rel->nparts;
+	elog(LOG, "SHUFFLE. epp->nnodes=%d", epp->nnodes);
 	epp->nodes = (NodeName *) palloc(sizeof(NodeName) * epp->nnodes);
 
 	for(partno = 0; partno < epp->nnodes; partno++)
 	{
-		int index = rel->boundinfo->indexes[partno];
-		RelOptInfo *part_rel = rel->part_rels[index];
-		char kind;
-		int i = 0;
+		RelOptInfo *part_rel = rel->part_rels[partno];
 
-		/*
-		 * Extract relation id's from the part_rels list
-		 */
-		// TODO: got foreign sign from rte
-		while (part_rel != root->simple_rel_array[i])
-			i++;
-		Assert(i < root->simple_rel_array_size);
-		kind = root->simple_rte_array[i]->relkind;
-
-		if (kind == RELKIND_FOREIGN_TABLE)
-			FSExtractServerName(part_rel->serverid,
-								&hostname,
-								&port);
+		if (OidIsValid(part_rel->serverid))
+			/* Foreign relation */
+			FSExtractServerName(part_rel->serverid, &hostname, &port);
 		else
-			GetMyServerName(&hostname,
-							&port);
+			GetMyServerName(&hostname, &port);
+
 		createNodeName(epp->nodes[partno], hostname, port);
 	}
 
 	epp->natts = rel->part_scheme->partnatts;
-	elog(INFO, "SHUFFLE natts: %d", epp->natts);
 	epp->funcid = (Oid *) palloc(sizeof(Oid) * epp->natts);
 	for (attno = 0; attno < epp->natts; attno++)
 	{
@@ -630,7 +552,7 @@ computeTupleDestination(TupleTableSlot *slot, ExchangeState *state)
 		bool	isNull;
 
 		if (partexpr_item == NULL)
-			elog(ERROR, "wrong number of partition key expressions1");
+			elog(ERROR, "wrong number of partition key expressions");
 
 		datum = ExecEvalExprSwitchContext((ExprState *) lfirst(partexpr_item),
 										  GetPerTupleExprContext(estate),
@@ -641,17 +563,15 @@ computeTupleDestination(TupleTableSlot *slot, ExchangeState *state)
 	}
 
 	if (partexpr_item != NULL)
-	{
-		Assert(0);
 		elog(ERROR, "wrong number of partition key expressions. keystate list size: %d, partnatts: %d",
 				list_length(state->keystate), state->partnatts);
-	}
+
 	greatest_modulus = state->greatest_modulus;
 	rowHash = compute_partition_hash_value(state->partnatts, state->partsupfunc,
 			values, isnull);
-
 	part_index = rowHash % greatest_modulus;
 	index = state->indexes[part_index];
+
 	if (index < 0)
 		return -1;
 
@@ -722,24 +642,21 @@ EXCHANGE_Create_state(CustomScan *node)
 	{
 		state->partnatts = epp->natts;
 
-		foreach(lc, epp->att_exprs)
+		foreach(lc, node->custom_exprs)
 			state->partexprs = lappend(state->partexprs, copyObject(lfirst(lc)));
 
 		state->partsupfunc = (FmgrInfo *) palloc(sizeof(FmgrInfo) * state->partnatts);
-//	Assert(epp->nnodes > 0);
 		state->greatest_modulus = epp->nnodes;
 		for (partno = 0; partno < state->partnatts; partno++)
 			fmgr_info(epp->funcid[partno], &state->partsupfunc[partno]);
 		state->keystate = NIL;
-//	Assert(epp->nodes != NULL);
-		state->nodes = epp->nodes;
-		state->nnodes = epp->nnodes;
-		state->indexes = (int *) palloc(sizeof(int) * state->nnodes);
 	}
+	Assert(epp->nnodes > 0);
+	state->nodes = epp->nodes;
+	state->nnodes = epp->nnodes;
+	state->indexes = (int *) palloc(sizeof(int) * state->nnodes);
 	return (Node *) state;
 }
-
-#include "utils/rel.h"
 
 static void
 EXCHANGE_Begin(CustomScanState *node, EState *estate, int eflags)
@@ -756,7 +673,7 @@ EXCHANGE_Begin(CustomScanState *node, EState *estate, int eflags)
 	planState = (PlanState *) ExecInitNode(scan_plan, estate, eflags);
 	node->custom_ps = lappend(node->custom_ps, planState);
 
-	Stream_subscribe(state->stream);
+//	Stream_subscribe(state->stream);
 
 	state->init = false;
 	state->ltuples = 0;
@@ -779,31 +696,12 @@ init_state_ifany(ExchangeState *state)
 	if (!state->init)
 	{
 		EphemeralNamedRelation enr = get_ENR(state->estate->es_queryEnv, destsName);
-		int i;
 
 		Assert(enr != NULL && enr->reldata != NULL);
 		state->dests = (DMQDestCont *) enr->reldata;
 		state->hasLocal = true;
 		state->activeRemotes = state->dests->nservers;
 		state->init = true;
-
-		/*
-		 * Do the mapping from current exchange-made partitioning into the
-		 * DMQ destinations array.
-		 */
-		for (i = 0; i < state->nnodes; i++)
-		{
-			int j;
-
-			for (j = 0; j < state->dests->nservers; j++)
-				if (strcmp(state->nodes[i], state->dests->dests[j].node) == 0)
-					break;
-			if (j >= state->dests->nservers)
-				/* Coordinator node found */
-				state->indexes[i] = -1;
-			else
-				state->indexes[i] = j;
-		}
 	}
 
 }
@@ -846,7 +744,8 @@ EXCHANGE_Execute(CustomScanState *node)
 			case 2: /* Close EXCHANGE channel */
 				break;
 			default:
-				Assert(0);
+				/* Any system message */
+				break;
 			}
 		}
 
@@ -857,24 +756,22 @@ EXCHANGE_Execute(CustomScanState *node)
 			if (TupIsNull(slot))
 			{
 				int i;
-				elog(LOG, "[%s] FINISH Local store: l=%d, r=%d", state->stream, state->ltuples, state->rtuples);
+//				elog(LOG, "[%s] FINISH Local store: l=%d, r=%d", state->stream, state->ltuples, state->rtuples);
 				for (i = 0; i < state->dests->nservers; i++)
 					SendByteMessage(state->dests->dests[i].dest_id,
 												state->stream, END_OF_TUPLES);
+
 				state->hasLocal = false;
 				continue;
 			}
 			else
-			{
-//				elog(INFO, "Got from Local store: l=%d.", state->ltuples);
 				state->ltuples++;
-			}
 		}
 
 		if ((state->activeRemotes == 0) && (!state->hasLocal))
 		{
-			elog(LOG, "[%s] Exchange returns NULL. Tuples: local=%d, remote=%d",
-					state->stream, state->ltuples, state->rtuples);
+//			elog(LOG, "[%s] Exchange returns NULL. Tuples: local=%d, remote=%d",
+//					state->stream, state->ltuples, state->rtuples);
 			return NULL;
 		}
 
@@ -892,9 +789,7 @@ EXCHANGE_Execute(CustomScanState *node)
 		else if (state->mode == STEALTH_MODE)
 			dest = -1;
 		else if (state->mode == SHUFFLE_MODE)
-		{
 			dest = computeTupleDestination(slot, state);
-		}
 		else
 			Assert(0);
 
@@ -902,8 +797,8 @@ EXCHANGE_Execute(CustomScanState *node)
 			return slot;
 		else
 		{
-			elog(LOG, "Send tuple: dest=%d, mode=%d, stream=%s", dest, state->mode, state->stream);
-			SendTuple(dest, state->stream, slot);
+//			elog(LOG, "SEND TUPLE to stream [%s]", state->stream);
+			SendTuple(dest, state->stream, slot, false);
 		}
 	}
 	return NULL;
@@ -918,7 +813,7 @@ EXCHANGE_End(CustomScanState *node)
 	ExecEndNode(linitial(node->custom_ps));
 	Stream_unsubscribe(state->stream);
 
-	elog(INFO, "EXCHANGE_END");
+//	elog(INFO, "EXCHANGE_END");
 }
 
 static void
@@ -928,7 +823,7 @@ EXCHANGE_Rescan(CustomScanState *node)
 	PlanState *subPlan = (PlanState *) linitial(node->custom_ps);
 
 	init_state_ifany(state);
-elog(INFO, "Rescan exchange! %d", getpid());
+
 	if (subPlan->chgParam == NULL)
 		ExecReScan(subPlan);
 	state->activeRemotes = state->dests->nservers;
@@ -942,7 +837,6 @@ EXCHANGE_ReInitializeDSM(CustomScanState *node, ParallelContext *pcxt,
 		  	  	  	  	 void *coordinate)
 {
 	/* ToDo */
-	elog(LOG, "I am in ReInitializeDSM()!");
 	Assert(0);
 }
 
@@ -953,7 +847,7 @@ EXCHANGE_Explain(CustomScanState *node, List *ancestors, ExplainState *es)
 	ExchangeState *state = (ExchangeState *) node;
 
 	initStringInfo(&str);
-	appendStringInfo(&str, "stream: %s. ", state->stream);
+	appendStringInfo(&str, "mode:%d, stream: %s. ", state->mode, state->stream);
 	appendStringInfo(&str, "qual: %s.", nodeToString(state->partexprs));
 	ExplainPropertyText("Exchange", str.data, es);
 }

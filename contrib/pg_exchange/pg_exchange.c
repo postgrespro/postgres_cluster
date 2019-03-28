@@ -71,7 +71,6 @@ _PG_init(void)
 Datum
 init_pg_exchange(PG_FUNCTION_ARGS)
 {
-	elog(LOG, "END OF INIT");
 	PG_RETURN_VOID();
 }
 
@@ -179,7 +178,7 @@ exec_plan(char *squery, PlannedStmt *pstmt, ParamListInfo paramLI, const char *s
 		context.eflags = eflags;
 		context.servers = NULL;
 		localize_plan(queryDesc->planstate, &context);
-		EstablishDMQConnections(&context, serverName);
+		EstablishDMQConnections(&context, serverName, queryDesc->planstate);
 
 		PushActiveSnapshot(queryDesc->snapshot);
 		ExecutorRun(queryDesc, ForwardScanDirection, 0, true);

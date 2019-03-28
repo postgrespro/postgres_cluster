@@ -22,8 +22,11 @@
 #include "nodes/nodes.h"
 #include "nodes/pg_list.h"
 #include "postgres_fdw.h"
+#include "postmaster/postmaster.h"
 #include "utils/queryenvironment.h"
 #include "utils/rel.h"
+
+#include "stream.h"
 
 
 typedef struct
@@ -38,6 +41,24 @@ static CustomPathMethods	distplanexec_path_methods;
 static CustomScanMethods	distplanexec_plan_methods;
 static CustomExecMethods	distplanexec_exec_methods;
 
+char destsName[10] = "DMQ_DESTS";
+
+
+static Node *CreateDistPlanExecState(CustomScan *node);
+static char *serialize_plan(Plan *plan, const char *sourceText,
+														ParamListInfo params);
+static Plan *add_pstmt_node(Plan *plan, EState *estate);
+static void BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags);
+static TupleTableSlot *ExecDistPlanExec(CustomScanState *node);
+static void ExecEndDistPlanExec(CustomScanState *node);
+static void ExecReScanDistPlanExec(CustomScanState *node);
+static void ExplainDistPlanExec(CustomScanState *node, List *ancestors,
+															ExplainState *es);
+static struct Plan *
+CreateDistExecPlan(PlannerInfo *root, RelOptInfo *rel,struct CustomPath *best_path,
+								List *tlist, List *clauses, List *custom_plans);
+static void dmq_init_barrier(DMQDestCont *dmq_data, PlanState *child);
+static bool init_exchange_channel(PlanState *node, void *context);
 
 /*
  * Create state of exchange node.
@@ -175,9 +196,8 @@ add_pstmt_node(Plan *plan, EState *estate)
 	return (Plan *) pstmt;
 }
 
-char destsName[10] = "DMQ_DESTS";
 void
-EstablishDMQConnections(const lcontext *context, const char *serverName)
+EstablishDMQConnections(const lcontext *context, const char *serverName, PlanState *substate)
 {
 	int nservers = bms_num_members(context->servers);
 	DMQDestCont *dmq_data = palloc(sizeof(DMQDestCont));
@@ -229,7 +249,7 @@ EstablishDMQConnections(const lcontext *context, const char *serverName)
 
 	/* if coordinator_num == -1 - I'm the Coordinator */
 	dmq_data->coordinator_num = coordinator_num;
-
+	dmq_init_barrier(dmq_data, substate);
 	/* Add list of destinations in queryEnv */
 	if (!context->estate->es_queryEnv)
 		context->estate->es_queryEnv = create_queryEnv();
@@ -248,7 +268,7 @@ BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags)
 	bool		explain_only = ((eflags & EXEC_FLAG_EXPLAIN_ONLY) != 0);
 
 	Assert(list_length(cscan->custom_plans) == 1);
-//	elog(LOG, "BeginDistPlanExec");
+
 	/* Initialize subtree */
 	subplan = linitial(cscan->custom_plans);
 	subPlanState = (PlanState *) ExecInitNode(subplan, estate, eflags);
@@ -287,11 +307,11 @@ BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags)
 		context.estate = estate;
 		context.eflags = eflags;
 		context.servers = NULL;
-		elog(INFO, "LOCALIZE PLAN.");
+
 		localize_plan(subPlanState, &context);
 		Assert(bms_num_members(context.servers) > 0);
-//		elog(LOG, "LOCALIZE PLAN. SERVERS: %d", bms_num_members(context.servers));
-		EstablishDMQConnections(&context, " ");
+
+		EstablishDMQConnections(&context, " ", subPlanState);
 	}
 }
 
@@ -459,14 +479,11 @@ create_distexec_path(PlannerInfo *root, RelOptInfo *rel, Path *children,
 	path->custom_paths = lappend(path->custom_paths, children);
 
 	while ((member = bms_next_member(servers, member)) >= 0)
-	{
 		path->custom_private = lappend_oid(path->custom_private, (Oid) member);
-		elog(INFO, "Server: %u", (Oid) member);
-	}
+
 	path->methods = &distplanexec_path_methods;
 	return pathnode;
 }
-
 
 bool
 localize_plan(PlanState *node, lcontext *context)
@@ -517,7 +534,6 @@ localize_plan(PlanState *node, lcontext *context)
 				break;
 			}
 		}
-		elog(INFO, "Got exchange node!");
 	}
 
 	return false;
@@ -552,7 +568,7 @@ FSExtractServerName(Oid fsid, char **host, int *port)
 		hostname = pstrdup(LOCALHOST);
 	*host = hostname;
 }
-#include "postmaster/postmaster.h"
+
 void
 GetMyServerName(char **host, int *port)
 {
@@ -567,4 +583,78 @@ serializeServer(const char *host, int port)
 
 	sprintf(serverName, "%s-%d", host, port);
 	return serverName;
+}
+
+/*
+ * All instances call this function and get returned after:
+ * 1. connections established
+ * 2. subscriptions made.
+ * At first, routine wait for 'active' connection status.
+ * At second, it send test message by the stream and wait to confirm
+ * subscription.
+ * Third, it send 'start work' message and wait for confirm delivery.
+ */
+static void
+dmq_init_barrier(DMQDestCont *dmq_data, PlanState *child)
+{
+	int i;
+
+	/* Wait for dmq connection establishing */
+	for (i = 0; i < dmq_data->nservers; i++)
+		while (dmq_get_destination_status(dmq_data->dests[i].dest_id) != Active);
+
+	init_exchange_channel(child, (void *) dmq_data);
+}
+
+static bool
+init_exchange_channel(PlanState *node, void *context)
+{
+	CustomScanState *css;
+	ExchangeState	*state;
+	DMQDestCont *dmq_data;
+	int i;
+	char ib = 'I';
+
+	if (node == NULL)
+		return false;
+
+	check_stack_depth();
+
+	planstate_tree_walker(node, init_exchange_channel, context);
+
+	if (nodeTag(node->plan) != T_CustomScan)
+		return false;
+
+	css = (CustomScanState *) node;
+	if (strcmp(css->methods->CustomName, EXCHANGE_NAME) != 0)
+		return false;
+
+	/* It is EXCHANGE node */
+	state = (ExchangeState *) css;
+	Stream_subscribe(state->stream);
+
+	/*
+	 * Do the mapping from current exchange-made partitioning scheme into the
+	 * DMQ destinations array.
+	 */
+	dmq_data = (DMQDestCont *) context;
+	for (i = 0; i < state->nnodes; i++)
+	{
+		int j;
+
+		for (j = 0; j < dmq_data->nservers; j++)
+			if (strcmp(state->nodes[i], dmq_data->dests[j].node) == 0)
+				break;
+		if (j >= dmq_data->nservers)
+		{
+			/* Coordinator node found */
+			state->indexes[i] = -1;
+			continue;
+		}
+		else
+			state->indexes[i] = j;
+
+		SendByteMessage(dmq_data->dests[j].dest_id, state->stream, ib);
+	}
+	return false;
 }
