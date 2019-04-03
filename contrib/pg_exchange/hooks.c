@@ -23,7 +23,7 @@
 static set_rel_pathlist_hook_type	prev_set_rel_pathlist_hook = NULL;
 static shmem_startup_hook_type PreviousShmemStartupHook = NULL;
 static set_join_pathlist_hook_type prev_set_join_pathlist_hook = NULL;
-static void second_stage_paths(PlannerInfo *root, List *firstStagePaths, RelOptInfo *joinrel,
+static void second_stage_paths(PlannerInfo *root, RelOptInfo *joinrel,
 							   RelOptInfo *outerrel, RelOptInfo *innerrel,
 							   JoinType jointype, JoinPathExtraData *extra);
 
@@ -95,15 +95,56 @@ HOOK_Join_pathlist(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 				   JoinPathExtraData *extra)
 {
 	ListCell *lc;
-	List *firstStagePaths = NIL; /* Trivial paths, made with exchange */
+	int i=0;
+	List *newpaths = NIL;
+	List *delpaths = NIL;
+	List *rpaths = NIL;
+	int distpaths = 0;
 
 	if (prev_set_join_pathlist_hook)
 		prev_set_join_pathlist_hook(root, joinrel, outerrel, innerrel,
 									jointype, extra);
 
 	/*
-	 * At first, traverse all paths and search for the case with Exchanges at
-	 * the left or right subtree. We need to delete DistPlanExec nodes and
+	 * Search for distributed paths for children relations.
+	 */
+	foreach(lc, innerrel->pathlist)
+	{
+		Path *path = lfirst(lc);
+
+		if (IsDistExecNode(path))
+			distpaths++;
+	}
+
+	if (distpaths == 0)
+		/* Distributed query execution does not needed. */
+		return;
+
+	/*
+	 * Force try to add hash joins into the pathlist. Collect any paths that
+	 * do not satisfy the exchange rules and delete it.
+	 */
+	foreach(lc, joinrel->pathlist)
+	{
+		Path *path = lfirst(lc);
+		if ((path->pathtype != T_HashJoin) && !IsDistExecNode(path))
+			rpaths = lappend(rpaths, path);
+	}
+	foreach(lc, rpaths)
+		joinrel->pathlist = list_delete_ptr(joinrel->pathlist, lfirst(lc));
+
+	/*
+	 * Try to create hash join path.
+	 * XXX: Here we have a problem of path additions: hash join may be not added
+	 * if it is not cheap. But cost of the this path includes costs of child paths.
+	 * Child paths will be tuned below and costs will be changed too.
+	 */
+	hash_inner_and_outer(root, joinrel, outerrel, innerrel, jointype, extra);
+	Assert(list_length(joinrel->pathlist) > 0);
+
+	/*
+	 * Traverse all paths and search for the case with EXCHANGE nodes
+	 * at the left or right subtree. We need to delete DistPlanExec nodes and
 	 * insert only one at the head of join.
 	 */
 	foreach(lc, joinrel->pathlist)
@@ -115,9 +156,15 @@ HOOK_Join_pathlist(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 		CustomPath *sub;
 		Path *path = lfirst(lc);
 
-		if ((path->pathtype != T_NestLoop) &&
-			(path->pathtype != T_MergeJoin) &&
-			(path->pathtype != T_HashJoin))
+		/*
+		 * NestLoop and MergeJoin need to change EXCHANGE node logic and
+		 * disabled for now.
+		 * For this we need to introduce remote PUSH or PULL operation for
+		 * force transfer tuples from instance to instance.
+		 */
+		Assert(path->pathtype != T_NestLoop && path->pathtype != T_MergeJoin);
+
+		if (path->pathtype != T_HashJoin)
 			continue;
 
 		jp = (JoinPath *) path;
@@ -128,9 +175,7 @@ HOOK_Join_pathlist(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 		 * If inner path contains DistExec node - save its servers list and
 		 * delete it from the path.
 		 */
-		if ((inner->pathtype == T_CustomScan) &&
-			(strcmp(((CustomPath *) inner)->methods->CustomName,
-														DISTEXECPATHNAME) == 0))
+		if (IsDistExecNode(inner))
 		{
 			ListCell *lc;
 
@@ -145,15 +190,19 @@ HOOK_Join_pathlist(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 			}
 			Assert(list_length(sub->custom_paths) == 1);
 			jp->innerjoinpath = (Path *) linitial(sub->custom_paths);
+		} else
+		{
+			elog(LOG, "inner Path can't contain any FE nodes. JT=%d (innt=%d patht=%d), (outt=%d patht=%d) %d",
+					jp->jointype, inner->type, inner->pathtype,
+					outer->type, outer->pathtype, i++);
+
 		}
 
 		/*
 		 * If outer path contains DistExec node - save its servers list and
 		 * delete it from the path.
 		 */
-		if ((outer->pathtype == T_CustomScan) &&
-			(strcmp(((CustomPath *) outer)->methods->CustomName,
-														DISTEXECPATHNAME) == 0))
+		if (IsDistExecNode(outer))
 		{
 			ListCell *lc;
 
@@ -177,24 +226,28 @@ HOOK_Join_pathlist(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 		path = create_distexec_path(root, joinrel,
 									(Path *) copy_join_pathnode(jp),
 									servers);
-		add_path(joinrel, path);
-
-		/*
-		 * We need guarantee, that previous JOIN path was deleted. It was
-		 * incorrect.
-		 */
-		list_delete_ptr(joinrel->pathlist, jp);
-
-		/* Save link to the path for future works. */
-		firstStagePaths = lappend(firstStagePaths, path);
+		newpaths = lappend(newpaths, path);
+		delpaths = lappend(delpaths, jp);
 	}
 
-	second_stage_paths(root, firstStagePaths, joinrel, outerrel, innerrel, jointype,
-			   extra);
-}
+	/*
+	 * We need to guarantee, that previous JOIN path was deleted from the path
+	 * list. It was incorrect.
+	 */
+	foreach(lc, delpaths)
+	{
+		Path *path = lfirst(lc);
+		joinrel->pathlist = list_delete_ptr(joinrel->pathlist, path);
+	}
 
-#define IsDistExecNode(pathnode) ((pathnode->path.pathtype == T_CustomScan) && \
-	(strcmp(((CustomPath *)pathnode)->methods->CustomName, DISTEXECPATHNAME) == 0))
+	foreach(lc, newpaths)
+	{
+		Path *path = lfirst(lc);
+		add_path(joinrel, path);
+	}
+
+	second_stage_paths(root, joinrel, outerrel, innerrel, jointype, extra);
+}
 
 static CustomPath *
 duplicate_join_path(CustomPath	*distExecPath)
@@ -321,10 +374,7 @@ arrange_partitioning_attrs(RelOptInfo *rel1,
 		part_scheme->partnatts++;
 		ReleaseSysCache(opclasstup);
 	}
-//elog(INFO, "arrange_partitioning_attrs: ");
-//elog(INFO, "->1: %s ", nodeToString(rel1->partexprs[0]));
-//elog(INFO, "->2: %s ", nodeToString(rel2->partexprs[0]));
-//elog(INFO, "restrictlist: %s", nodeToString(restrictlist));
+
 	/* Now we use hash partition only */
 	Assert((rel1->part_scheme->strategy == PARTITION_STRATEGY_HASH) &&
 			(rel1->part_scheme->strategy == rel2->part_scheme->strategy));
@@ -394,24 +444,38 @@ arrange_partitions(RelOptInfo *rel1,
  * Add Paths same as the case of partitionwise join.
  */
 static void
-second_stage_paths(PlannerInfo *root, List *firstStagePaths, RelOptInfo *joinrel, RelOptInfo *outerrel,
+second_stage_paths(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 	 	   RelOptInfo *innerrel, JoinType jointype, JoinPathExtraData *extra)
 {
 	ListCell *lc;
 
-	if (list_length(firstStagePaths) == 0)
-		return;
-
-	foreach(lc, firstStagePaths)
+	elog(LOG, "List length=%d", list_length(joinrel->pathlist));
+	foreach(lc, joinrel->pathlist)
 	{
-		CustomPath *path = (CustomPath *) lfirst(lc);
+		Path *path = lfirst(lc);
+		elog(LOG, "[%d] BEFORE SECOND STAGE: type=%d pathtype=%d",
+				list_length(joinrel->pathlist), path->type, path->pathtype);
+		if (path->type > 300)
+			Assert(0);
+	}
+
+	foreach(lc, joinrel->pathlist)
+	{
+		Path *pathhead = (Path *) lfirst(lc);
+		CustomPath *path;
 		JoinPath *jp;
 		ExchangePath *innerex;
 		ExchangePath *outerex;
 		ExchangePath *expath;
 		int i;
 
-		Assert(IsDistExecNode(path));
+		if (!IsDistExecNode(pathhead))
+		{
+			elog(LOG, "NO second_stage_paths. type=%d, pathtype=%d", pathhead->type, pathhead->pathtype);
+			continue;
+		}
+
+		path = (CustomPath *) pathhead;
 
 		/*
 		 * Add gather-type EXCHANGE node into the head of the path.
@@ -420,7 +484,9 @@ second_stage_paths(PlannerInfo *root, List *firstStagePaths, RelOptInfo *joinrel
 		if (!IsA(((Path *) linitial(path->custom_paths)), CustomScan))
 		{
 			jp = (JoinPath *) linitial(path->custom_paths);
-			Assert(jp->path.pathtype == T_HashJoin);
+
+			if (jp->path.pathtype != T_HashJoin)
+				continue;
 			expath = create_exchange_path(root, joinrel, (Path *) jp, GATHER_MODE);
 			path->custom_paths = list_delete(path->custom_paths, jp);
 			path->custom_paths = lappend(path->custom_paths, expath);
@@ -433,7 +499,6 @@ second_stage_paths(PlannerInfo *root, List *firstStagePaths, RelOptInfo *joinrel
 				&innerex->altrel, extra->restrictlist, jointype))
 		{
 			/* Simple case like foreign-push-join case. */
-//			elog(INFO, "--- MAKE SIMPLE PATH ---");
 			innerex->mode = STEALTH_MODE;
 			outerex->mode = STEALTH_MODE;
 		}
@@ -442,7 +507,6 @@ second_stage_paths(PlannerInfo *root, List *firstStagePaths, RelOptInfo *joinrel
 			CustomPath *newpath;
 			bool res;
 
-//			elog(INFO, "--- MAKE SHUFFLE PATH ---");
 			/* Get a copy of the simple path */
 			newpath = duplicate_join_path(path);
 			set_path_pointers(newpath, &jp, &expath, &outerex, &innerex);

@@ -294,15 +294,9 @@ ExecHashJoinImpl(PlanState *pstate, bool parallel)
 				 * doing a left outer join, we can quit without scanning the
 				 * outer relation.
 				 */
-				if (hashtable->totalTuples == 0 && !HJ_FILL_OUTER(node))
-				{
-					if (distributed)
-					{
-						TupleTableSlot *slot = ExecProcNode(outerNode);
-						while (!TupIsNull(slot));
-					}
+				if (!distributed && hashtable->totalTuples == 0 &&
+						!HJ_FILL_OUTER(node))
 					return NULL;
-				}
 
 				/*
 				 * need to remember whether nbatch has increased since we

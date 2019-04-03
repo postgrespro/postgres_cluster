@@ -25,6 +25,17 @@ CREATE TABLE rt_0 PARTITION OF rt FOR VALUES WITH (modulus 3, remainder 0);
 CREATE FOREIGN TABLE rt_1 PARTITION OF rt FOR VALUES WITH (modulus 3, remainder 1) SERVER remote1;
 CREATE FOREIGN TABLE rt_2 PARTITION OF rt FOR VALUES WITH (modulus 3, remainder 2) SERVER remote2;
 
+DROP TABLE IF EXISTS st cascade;
+CREATE TABLE st (
+    id integer not null,
+    payload integer,
+    test integer
+) PARTITION BY hash (id);
+
+CREATE TABLE st_0 PARTITION OF st FOR VALUES WITH (modulus 3, remainder 0);
+CREATE FOREIGN TABLE st_1 PARTITION OF st FOR VALUES WITH (modulus 3, remainder 1) SERVER remote1;
+CREATE FOREIGN TABLE st_2 PARTITION OF st FOR VALUES WITH (modulus 3, remainder 2) SERVER remote2;
+
 
 -- For local tests
 CREATE TABLE a (

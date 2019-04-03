@@ -238,7 +238,7 @@ EstablishDMQConnections(const lcontext *context, const char *serverName, PlanSta
 			sprintf(connstr, "host=%s port=%d "
 							 "fallback_application_name=%s",
 							 host, port, senderName);
-			elog(LOG, "Add destination: senderName=%s, receiverName=%s, connstr=%s", senderName, receiverName, connstr);
+//			elog(LOG, "Add destination: senderName=%s, receiverName=%s, connstr=%s", senderName, receiverName, connstr);
 			sub->dest_id = dmq_destination_add(connstr, senderName, receiverName, 10);
 			memcpy(sub->node, receiverName, strlen(receiverName) + 1);
 		}
@@ -337,7 +337,7 @@ ExecEndDistPlanExec(CustomScanState *node)
 		PGresult	*result;
 
 		while ((result = PQgetResult(dpe->conn[i])) != NULL);
-		elog(LOG, "ExecEndDistPlanExec: %d", PQresultStatus(result));
+//		elog(LOG, "ExecEndDistPlanExec: %d", PQresultStatus(result));
 	}
 	if (dpe->conn)
 		pfree(dpe->conn);

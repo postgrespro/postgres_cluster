@@ -28,6 +28,9 @@ typedef struct
 extern char destsName[10];
 #define DISTEXECPATHNAME	"DistExecPath"
 
+#define IsDistExecNode(pathnode) ((((Path *) pathnode)->pathtype == T_CustomScan) && \
+	(strcmp(((CustomPath *)pathnode)->methods->CustomName, DISTEXECPATHNAME) == 0))
+
 extern void DistExec_Init_methods(void);
 extern CustomScan *make_distplanexec(List *custom_plans, List *tlist, List *private_data);
 extern Path *create_distexec_path(PlannerInfo *root, RelOptInfo *rel,

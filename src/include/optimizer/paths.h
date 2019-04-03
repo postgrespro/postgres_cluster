@@ -102,6 +102,9 @@ extern void add_paths_to_joinrel(PlannerInfo *root, RelOptInfo *joinrel,
 					 RelOptInfo *outerrel, RelOptInfo *innerrel,
 					 JoinType jointype, SpecialJoinInfo *sjinfo,
 					 List *restrictlist);
+extern void hash_inner_and_outer(PlannerInfo *root, RelOptInfo *joinrel,
+		 RelOptInfo *outerrel, RelOptInfo *innerrel,
+		 JoinType jointype, JoinPathExtraData *extra);
 
 /*
  * joinrels.c

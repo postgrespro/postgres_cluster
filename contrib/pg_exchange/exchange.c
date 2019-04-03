@@ -210,9 +210,7 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 	ListCell   *lc;
 
 	if (!rte->inh)
-		/*
-		 * Relation is not contain any partitions.
-		 */
+		/* Relation is not contain any partitions. */
 		return;
 
 	/* Traverse all possible paths and search for APPEND */
@@ -223,16 +221,31 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 		AppendPath	*appendPath = NULL;
 		ListCell	*lc1;
 		Bitmapset	*servers = NULL;
-		List	*subpaths = NIL;
+		List		*subpaths = NIL;
+		List		*append_paths;
 
-		if (path->pathtype != T_Append)
-			continue;
+		/*
+		 * In the case of partitioned relation all paths will be ended by Append
+		 * or MergeAppend path node.
+		 */
+		switch (path->pathtype)
+		{
+		case T_Append:
+			append_paths = ((AppendPath *) path)->subpaths;
+			break;
+		case T_MergeAppend:
+			append_paths = ((MergeAppendPath *) path)->subpaths;
+			break;
+		default:
+			elog(FATAL, "Unexpected node type %d, pathtype %d", path->type,
+																path->pathtype);
+		}
 
 		/*
 		 * Traverse all APPEND subpaths, check for scan-type and search for
 		 * foreign scans
 		 */
-		foreach(lc1, ((AppendPath *) path)->subpaths)
+		foreach(lc1, append_paths)
 		{
 			Path	*subpath = (Path *) lfirst(lc1);
 			Path	*tmpPath;
@@ -279,6 +292,7 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 								((AppendPath *) path)->partitioned_rels, -1);
 		path = (Path *) create_exchange_path(root, rel, (Path *) appendPath, true);
 		path = create_distexec_path(root, rel, path, servers);
+//		elog(LOG, "Path added");
 		add_path(rel, path);
 	}
 }
@@ -740,6 +754,8 @@ EXCHANGE_Execute(CustomScanState *node)
 				return slot;
 			case 1:
 				state->activeRemotes--;
+				elog(LOG, "[%s] GOT NULL. activeRemotes: %d", state->stream,
+						state->activeRemotes);
 				break;
 			case 2: /* Close EXCHANGE channel */
 				break;
