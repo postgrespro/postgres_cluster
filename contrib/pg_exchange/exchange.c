@@ -37,6 +37,9 @@
 #include "partutils.h"
 #include "stream.h"
 
+#define DEFAULT_EXCHANGE_STARTUP_COST	100.0
+#define DEFAULT_TRANSFER_TUPLE_COST		0.01
+
 
 static CustomPathMethods		exchange_path_methods;
 static CustomScanMethods		exchange_plan_methods;
@@ -401,9 +404,13 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 	}
 }
 
+#include "optimizer/cost.h"
+
 static void
-cost_exchange(PlannerInfo *root, RelOptInfo *baserel, Path *path)
+cost_exchange(PlannerInfo *root, RelOptInfo *baserel, ExchangePath *expath)
 {
+	Path *subpath;
+
 	if (baserel->pages == 0 && baserel->tuples == 0)
 	{
 		baserel->pages = 10;
@@ -414,11 +421,53 @@ cost_exchange(PlannerInfo *root, RelOptInfo *baserel, Path *path)
 
 	/* Estimate baserel size as best we can with local statistics. */
 //	set_baserel_size_estimates(root, baserel);
+	subpath = cstmSubPath1(expath);
+	expath->cp.path.rows = baserel->tuples;
+	expath->cp.path.startup_cost = subpath->startup_cost;
+	switch (expath->mode)
+	{
+	case EXCH_GATHER:
+		expath->cp.path.startup_cost += DEFAULT_EXCHANGE_STARTUP_COST;
+		expath->cp.path.rows = subpath->rows * expath->altrel.nparts;
+		break;
+	case EXCH_STEALTH:
+		expath->cp.path.rows = subpath->rows;
+		break;
+	case EXCH_BROADCAST:
+		expath->cp.path.startup_cost += DEFAULT_EXCHANGE_STARTUP_COST;
+		expath->cp.path.rows = subpath->rows * expath->altrel.nparts;
+		break;
+	case EXCH_SHUFFLE:
+	{
+		double local_rows;
+		double received_rows;
+		double send_rows;
+		int instances;
+		Path *path = &expath->cp.path;
 
-	/* Now I do not want to think about cost estimations. */
-	path->rows = baserel->tuples;
-	path->startup_cost = 0.1;
-	path->total_cost = 0.1;
+		path->startup_cost += DEFAULT_EXCHANGE_STARTUP_COST;
+		path->total_cost += path->startup_cost;
+
+		/*
+		 * We count on perfect balance of tuple distribution:
+		 * If we have N instances, M tuples from subtree, than we send up to
+		 * local subtree M/N tuples, send to network [M-M/N] tuples and same to
+		 * receive.
+		 */
+		path->rows = subpath->rows;
+		instances = expath->altrel.nparts > 0 ? expath->altrel.nparts : 2;
+		send_rows = path->rows - (path->rows/instances);
+		received_rows = send_rows;
+		local_rows = path->rows/instances;
+		path->total_cost += (send_rows + local_rows) * DEFAULT_CPU_TUPLE_COST;
+		path->total_cost += (received_rows) * DEFAULT_CPU_TUPLE_COST * 4.;
+	}
+		break;
+	default:
+		elog(FATAL, "Unknown EXCHANGE mode.");
+	}
+
+	expath->cp.path.total_cost = 0.1;
 }
 
 /*
@@ -663,8 +712,6 @@ create_exchange_path(PlannerInfo *root, RelOptInfo *rel, Path *children,
 	pathnode->parallel_workers = 0; /* permanently */
 	pathnode->pathkeys = NIL;
 
-	cost_exchange(root, rel, pathnode); /* Change at next step*/
-
 	path->flags = 0;
 	/* Contains only one path */
 	path->custom_paths = lappend(path->custom_paths, children);
@@ -675,6 +722,7 @@ create_exchange_path(PlannerInfo *root, RelOptInfo *rel, Path *children,
 	memcpy(&epath->altrel, rel, sizeof(RelOptInfo));
 	epath->exchange_counter = exchange_counter++;
 	epath->mode = mode;
+	cost_exchange(root, rel, epath); /* Change at next step*/
 
 	return epath;
 }
