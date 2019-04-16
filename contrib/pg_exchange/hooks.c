@@ -9,13 +9,16 @@
  */
 
 #include "postgres.h"
+#include "unistd.h"
 
 #include "common.h"
 #include "exchange.h"
 #include "hooks.h"
 #include "partutils.h"
 
+#include "miscadmin.h" /* for check_stack_depth() */
 #include "nodeDistPlanExec.h"
+#include "optimizer/pathnode.h"
 #include "optimizer/paths.h"
 #include "storage/ipc.h"
 
@@ -23,14 +26,15 @@
 static set_rel_pathlist_hook_type	prev_set_rel_pathlist_hook = NULL;
 static shmem_startup_hook_type PreviousShmemStartupHook = NULL;
 static set_join_pathlist_hook_type prev_set_join_pathlist_hook = NULL;
-static void second_stage_paths(PlannerInfo *root, RelOptInfo *joinrel,
-							   RelOptInfo *outerrel, RelOptInfo *innerrel,
-							   JoinType jointype, JoinPathExtraData *extra);
 
+static void HOOK_Baserel_paths(PlannerInfo *root, RelOptInfo *rel, Index rti,
+															RangeTblEntry *rte);
+static void arrange_partitions(RelOptInfo *rel1, RelOptInfo *rel2,
+															List *restrictlist);
 
 static void
 HOOK_Baserel_paths(PlannerInfo *root, RelOptInfo *rel, Index rti,
-				   RangeTblEntry *rte)
+															RangeTblEntry *rte)
 {
 	if (prev_set_rel_pathlist_hook)
 		(*prev_set_rel_pathlist_hook) (root, rel, rti, rte);
@@ -38,52 +42,211 @@ HOOK_Baserel_paths(PlannerInfo *root, RelOptInfo *rel, Index rti,
 	add_exchange_paths(root, rel, rti, rte);
 }
 
-#include "unistd.h"
-#include "optimizer/pathnode.h"
-
-static JoinPath *
-copy_join_pathnode(JoinPath *jp)
+static bool
+join_path_contains_distexec(Path *path)
 {
-	Path *path = &jp->path;
-	JoinPath *joinpath;
+	JoinPath *jp;
 
-	switch (path->pathtype)
+	if (IsDistExecNode(path))
+		return true;
+
+	if (IsExchangeNode(path))
+		jp = (JoinPath *) linitial(((CustomPath *) path)->custom_paths);
+	else
+		jp = (JoinPath *) path;
+
+	Assert(jp->path.pathtype == T_HashJoin || jp->path.pathtype == T_NestLoop ||
+			jp->path.pathtype == T_MergeJoin);
+
+	if (IsDistExecNode(jp->innerjoinpath) || IsDistExecNode(jp->outerjoinpath))
+		return true;
+
+	if (jp->innerjoinpath->pathtype == T_Material)
 	{
-		case T_HashJoin:
-			{
-				HashPath   *hash_path = makeNode(HashPath);
+		MaterialPath *mp = (MaterialPath *) jp->innerjoinpath;
 
-				memcpy(hash_path, path, sizeof(HashPath));
-				joinpath = (JoinPath *) hash_path;
-			}
-			break;
-
-		case T_NestLoop:
-			{
-				NestPath   *nest_path = makeNode(NestPath);
-
-				memcpy(nest_path, path, sizeof(NestPath));
-				joinpath = (JoinPath *) nest_path;
-			}
-			break;
-
-		case T_MergeJoin:
-			{
-				MergePath  *merge_path = makeNode(MergePath);
-
-				memcpy(merge_path, path, sizeof(MergePath));
-				joinpath = (JoinPath *) merge_path;
-			}
-			break;
-
-		default:
-
-			Assert(0);
-			break;
+		if (IsDistExecNode(mp->subpath))
+			return true;
 	}
-	return joinpath;
+	if (jp->outerjoinpath->pathtype == T_Material)
+		{
+			MaterialPath *mp = (MaterialPath *) jp->outerjoinpath;
+
+			if (IsDistExecNode(mp->subpath))
+				return true;
+		}
+	return false;
 }
 
+static void
+reset_cheapest(RelOptInfo *rel)
+{
+	rel->cheapest_parameterized_paths = NIL;
+	rel->cheapest_startup_path = rel->cheapest_total_path =
+	rel->cheapest_unique_path = NULL;
+	if (rel->pathlist != NIL)
+		set_cheapest(rel);
+}
+
+static List *
+create_distributed_join_paths(PlannerInfo *root, RelOptInfo *joinrel,
+						 RelOptInfo *outerrel, RelOptInfo *innerrel,
+						 JoinType jointype, JoinPathExtraData *extra,
+						 ExchangeMode outer_mode, ExchangeMode inner_mode)
+{
+	ListCell *lc;
+	List *prev_inner_pathlist;
+	List *prev_outer_pathlist;
+	List *prev_join_pathlist;
+	List *dist_paths = NIL;
+
+	/* Save old pathlists. */
+	prev_inner_pathlist = innerrel->pathlist;
+	prev_outer_pathlist = outerrel->pathlist;
+	prev_join_pathlist = joinrel->pathlist;
+	innerrel->pathlist = outerrel->pathlist = joinrel->pathlist = NIL;
+
+	foreach(lc, prev_inner_pathlist)
+	{
+		Path *innpath = lfirst(lc);
+		ExchangePath *inn_child;
+		Bitmapset *inner_servers = NULL;
+		ListCell *olc;
+		ExchangePath *gather;
+
+		/* Use only distributed paths */
+		if (!IsDistExecNode(innpath))
+			continue;
+
+		inner_servers = extractForeignServers((CustomPath *) innpath);
+		inn_child = (ExchangePath *) cstmSubPath1(innpath);
+		Assert(inn_child->mode == EXCH_GATHER);
+		if (IsExchangeNode(inn_child))
+			inn_child = create_exchange_path(root, innerrel,
+										   	   	   	   cstmSubPath1(inn_child),
+													   inner_mode);
+		else
+			inn_child = create_exchange_path(root, innerrel, (Path *) inn_child,
+																	inner_mode);
+
+		innerrel->pathlist = lappend(innerrel->pathlist, inn_child);
+		Assert(list_length(innerrel->pathlist) == 1);
+		foreach(olc, prev_outer_pathlist)
+		{
+			Path *outpath = lfirst(olc);
+			ExchangePath *out_child;
+			Path *path;
+			Bitmapset *outer_servers = NULL;
+			RelOptInfo *rel1, *rel2;
+			bool res;
+
+			/* Use only distributed paths */
+			if (!IsDistExecNode(outpath))
+				continue;
+
+			outer_servers = extractForeignServers((CustomPath *) outpath);
+			out_child = (ExchangePath *) cstmSubPath1(outpath);
+			Assert(out_child->mode == EXCH_GATHER);
+			if (IsExchangeNode(out_child))
+				out_child = create_exchange_path(root, outerrel,
+											   cstmSubPath1(out_child),
+											   outer_mode);
+			else
+				out_child = create_exchange_path(root, outerrel,
+															(Path *) out_child,
+															inner_mode);
+
+			if (inner_mode == EXCH_SHUFFLE)
+			{
+				Assert(outer_mode == EXCH_SHUFFLE);
+				rel1 = palloc(sizeof(RelOptInfo));
+				memcpy(rel1, &out_child->altrel, sizeof(RelOptInfo));
+				rel2 = palloc(sizeof(RelOptInfo));
+				memcpy(rel2, &inn_child->altrel, sizeof(RelOptInfo));
+			}
+			else
+			{
+				rel1 = outerrel;
+				rel2 = innerrel;
+			}
+
+			outerrel->pathlist = lappend(outerrel->pathlist, out_child);
+			Assert(list_length(outerrel->pathlist) == 1);
+
+			/* Try to add base path tree for distributed paths */
+			reset_cheapest(joinrel);
+			reset_cheapest(outerrel);
+			reset_cheapest(innerrel);
+			add_paths_to_joinrel(root, joinrel, outerrel, innerrel, jointype,
+											extra->sjinfo, extra->restrictlist);
+			set_cheapest(joinrel);
+			Assert(!join_path_contains_distexec(joinrel->cheapest_total_path));
+			Assert(joinrel->cheapest_total_path);
+			list_free(joinrel->pathlist);
+			joinrel->pathlist = NIL;
+
+			/*Add distribution nodes pair into the head of the path */
+			path = joinrel->cheapest_total_path;
+			Assert(path->pathtype != T_MergeJoin);
+			joinrel->cheapest_total_path = NULL;
+
+			gather = create_exchange_path(root, joinrel, path, EXCH_GATHER);
+			set_exchange_altrel(outer_mode, out_child, rel1, NULL, NULL,
+									bms_union(inner_servers, outer_servers));
+			set_exchange_altrel(inner_mode, inn_child, rel2, NULL, NULL,
+									bms_union(inner_servers, outer_servers));
+
+			/* Check for special case */
+			if (path->pathtype == T_NestLoop)
+			{
+				JoinPath *jp = (JoinPath *) path;
+
+				if (jp->innerjoinpath->pathtype != T_Material)
+					jp->innerjoinpath = (Path *) create_material_path(innerrel,
+															jp->innerjoinpath);
+				Assert(jp->innerjoinpath->pathtype == T_Material);
+
+				set_exchange_altrel(EXCH_BROADCAST, out_child, NULL,
+						&((ExchangePath *)cstmSubPath1(out_child))->altrel,
+						NIL, bms_union(inner_servers, outer_servers));
+
+				inn_child->mode = EXCH_STEALTH;
+			}
+			else if (inner_mode == EXCH_SHUFFLE)
+			{
+				arrange_partitions(&out_child->altrel, &inn_child->altrel, extra->restrictlist);
+
+				res = build_joinrel_partition_info(&gather->altrel, &out_child->altrel, &inn_child->altrel,
+														   extra->restrictlist,
+														   jointype);
+				Assert(res);
+			}
+
+			set_exchange_altrel(EXCH_GATHER, gather, &out_child->altrel,
+							&inn_child->altrel, extra->restrictlist,
+							bms_union(inner_servers, outer_servers));
+			Assert(gather->altrel.part_scheme != NULL);
+			path = create_distexec_path(root, gather->cp.path.parent, (Path *) gather,
+									bms_union(inner_servers, outer_servers));
+			dist_paths = lappend(dist_paths, path);
+			list_free(outerrel->pathlist);
+			outerrel->pathlist = NIL;
+		}
+		list_free(innerrel->pathlist);
+		innerrel->pathlist = NIL;
+	}
+
+	innerrel->pathlist = prev_inner_pathlist;
+	outerrel->pathlist = prev_outer_pathlist;
+	joinrel->pathlist = prev_join_pathlist;
+	reset_cheapest(joinrel);
+	reset_cheapest(outerrel);
+	reset_cheapest(innerrel);
+
+	return dist_paths;
+}
+
+static bool recursion = false;
 /*
  * If left and right relations are partitioned (XXX: not only) we can use an
  * exchange node as left or right son for tuples shuffling of a relation in
@@ -95,205 +258,68 @@ HOOK_Join_pathlist(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 				   JoinPathExtraData *extra)
 {
 	ListCell *lc;
-	int i=0;
-	List *newpaths = NIL;
 	List *delpaths = NIL;
-	List *rpaths = NIL;
-	int distpaths = 0;
+	List *dist_paths = NIL;
+	List *pathlist = NIL;
+
+	if (recursion)
+		return;
+	recursion = true;
 
 	if (prev_set_join_pathlist_hook)
-		prev_set_join_pathlist_hook(root, joinrel, outerrel, innerrel,
-									jointype, extra);
+		(*prev_set_join_pathlist_hook)(root, joinrel, outerrel, innerrel,
+															jointype, extra);
 
 	/*
-	 * Search for distributed paths for children relations.
+	 * Approach: we give to the planner only one path from outer and
+	 * inner pathlists. After this we try to create paths by the
+	 * add_paths_to_joinrel() routine. At last, we append exchange (GATHER)
+	 * and DistExec nodes into the head of each obtained path.
 	 */
-	foreach(lc, innerrel->pathlist)
-	{
-		Path *path = lfirst(lc);
 
-		if (IsDistExecNode(path))
-			distpaths++;
-	}
-
-	if (distpaths == 0)
-		/* Distributed query execution does not needed. */
-		return;
-
-	/*
-	 * Force try to add hash joins into the pathlist. Collect any paths that
-	 * do not satisfy the exchange rules and delete it.
-	 */
+	/* Delete all incorrect paths */
 	foreach(lc, joinrel->pathlist)
 	{
 		Path *path = lfirst(lc);
-		if ((path->pathtype != T_HashJoin) && !IsDistExecNode(path))
-			rpaths = lappend(rpaths, path);
+
+		if (IsDistExecNode(path) || !join_path_contains_distexec(path))
+			continue;
+		delpaths = lappend(delpaths, path);
 	}
-	foreach(lc, rpaths)
+	foreach(lc, delpaths)
 		joinrel->pathlist = list_delete_ptr(joinrel->pathlist, lfirst(lc));
 
-	/*
-	 * Try to create hash join path.
-	 * XXX: Here we have a problem of path additions: hash join may be not added
-	 * if it is not cheap. But cost of the this path includes costs of child paths.
-	 * Child paths will be tuned below and costs will be changed too.
-	 */
-	hash_inner_and_outer(root, joinrel, outerrel, innerrel, jointype, extra);
-	Assert(list_length(joinrel->pathlist) > 0);
-
-	/*
-	 * Traverse all paths and search for the case with EXCHANGE nodes
-	 * at the left or right subtree. We need to delete DistPlanExec nodes and
-	 * insert only one at the head of join.
-	 */
-	foreach(lc, joinrel->pathlist)
-	{
-		JoinPath *jp;
-		Path	*inner;
-		Path	*outer;
-		Bitmapset *servers = NULL;
-		CustomPath *sub;
-		Path *path = lfirst(lc);
-
-		/*
-		 * NestLoop and MergeJoin need to change EXCHANGE node logic and
-		 * disabled for now.
-		 * For this we need to introduce remote PUSH or PULL operation for
-		 * force transfer tuples from instance to instance.
-		 */
-		Assert(path->pathtype != T_NestLoop && path->pathtype != T_MergeJoin);
-
-		if (path->pathtype != T_HashJoin)
-			continue;
-
-		jp = (JoinPath *) path;
-		inner = jp->innerjoinpath;
-		outer = jp->outerjoinpath;
-
-		/*
-		 * If inner path contains DistExec node - save its servers list and
-		 * delete it from the path.
-		 */
-		if (IsDistExecNode(inner))
-		{
-			ListCell *lc;
-
-			sub = (CustomPath *) inner;
-			foreach(lc, sub->custom_private)
-			{
-				Oid serverid = lfirst_oid(lc);
-
-				Assert(OidIsValid(serverid));
-				if (!bms_is_member((int)serverid, servers))
-					servers = bms_add_member(servers, serverid);
-			}
-			Assert(list_length(sub->custom_paths) == 1);
-			jp->innerjoinpath = (Path *) linitial(sub->custom_paths);
-		} else
-		{
-			elog(LOG, "inner Path can't contain any FE nodes. JT=%d (innt=%d patht=%d), (outt=%d patht=%d) %d",
-					jp->jointype, inner->type, inner->pathtype,
-					outer->type, outer->pathtype, i++);
-
-		}
-
-		/*
-		 * If outer path contains DistExec node - save its servers list and
-		 * delete it from the path.
-		 */
-		if (IsDistExecNode(outer))
-		{
-			ListCell *lc;
-
-			sub = (CustomPath *) outer;
-			foreach(lc, sub->custom_private)
-			{
-				Oid serverid = lfirst_oid(lc);
-
-				Assert(OidIsValid(serverid));
-				if (!bms_is_member((int)serverid, servers))
-					servers = bms_add_member(servers, serverid);
-			}
-			Assert(list_length(sub->custom_paths) == 1);
-			jp->outerjoinpath = (Path *) linitial(sub->custom_paths);
-		}
-
-		if (servers == NULL)
-			continue;
-
-		/* Add DistExec node at the top of path. */
-		path = create_distexec_path(root, joinrel,
-									(Path *) copy_join_pathnode(jp),
-									servers);
-		newpaths = lappend(newpaths, path);
-		delpaths = lappend(delpaths, jp);
-	}
-
-	/*
-	 * We need to guarantee, that previous JOIN path was deleted from the path
-	 * list. It was incorrect.
-	 */
-	foreach(lc, delpaths)
-	{
-		Path *path = lfirst(lc);
-		joinrel->pathlist = list_delete_ptr(joinrel->pathlist, path);
-	}
-
-	foreach(lc, newpaths)
+	/* Add trivial paths */
+	dist_paths = create_distributed_join_paths(root, joinrel, outerrel, innerrel,
+									jointype, extra, EXCH_GATHER, EXCH_GATHER);
+	foreach(lc, dist_paths)
 	{
 		Path *path = lfirst(lc);
 		add_path(joinrel, path);
 	}
+	pathlist = create_distributed_join_paths(root, joinrel, outerrel, innerrel,
+								jointype, extra, EXCH_BROADCAST, EXCH_STEALTH);
+	foreach(lc, pathlist)
+	{
+		Path *path = lfirst(lc);
+		path->total_cost -= 0.1;
+		add_path(joinrel, path);
+	}
+	list_free(pathlist);
+	pathlist = NIL;
 
-	second_stage_paths(root, joinrel, outerrel, innerrel, jointype, extra);
-}
+	pathlist = create_distributed_join_paths(root, joinrel, outerrel, innerrel,
+								jointype, extra, EXCH_SHUFFLE, EXCH_SHUFFLE);
+	foreach(lc, pathlist)
+	{
+		Path *path = lfirst(lc);
+		path->total_cost -= 0.2;
+		add_path(joinrel, path);
+	}
+	list_free(pathlist);
+	pathlist = NIL;
 
-static CustomPath *
-duplicate_join_path(CustomPath	*distExecPath)
-{
-	JoinPath *jp;
-	CustomPath	*newDistExecPath;
-	ExchangePath *exPathnode;
-	ExchangePath *exHeadPathnode;
-	ExchangePath *newExPathnode;
-
-	Assert(IsDistExecNode(distExecPath));
-	exHeadPathnode = linitial(distExecPath->custom_paths);
-	Assert(IsExchangeNode(&exHeadPathnode->cp.path));
-
-	/* Copy JOIN path node */
-	jp = (JoinPath *) linitial(exHeadPathnode->cp.custom_paths);
-	jp = copy_join_pathnode(jp);
-
-	/* Copy inner EXCHANGE path node */
-	exPathnode = (ExchangePath *) jp->innerjoinpath;
-	Assert(IsExchangeNode(&exPathnode->cp.path));
-	newExPathnode = (ExchangePath *) newNode(sizeof(ExchangePath), T_CustomPath);
-	memcpy(newExPathnode, exPathnode, sizeof(ExchangePath));
-	newExPathnode->exchange_counter = exchange_counter++;
-	jp->innerjoinpath = (Path *) newExPathnode;
-
-	/* Copy outer EXCHANGE path node */
-	exPathnode = (ExchangePath *) jp->outerjoinpath;
-	Assert(IsExchangeNode(&exPathnode->cp.path));
-	newExPathnode = (ExchangePath *) newNode(sizeof(ExchangePath), T_CustomPath);
-	memcpy(newExPathnode, exPathnode, sizeof(ExchangePath));
-	newExPathnode->exchange_counter = exchange_counter++;
-	jp->outerjoinpath = (Path *) newExPathnode;
-
-	/* Copy main EXCHANGE path node */
-	newExPathnode = (ExchangePath *) newNode(sizeof(ExchangePath), T_CustomPath);
-	memcpy(newExPathnode, exHeadPathnode, sizeof(ExchangePath));
-	newExPathnode->exchange_counter = exchange_counter++;
-	newExPathnode->cp.custom_paths = lappend(NIL, jp);
-
-	/* Copy DistExec path node */
-	newDistExecPath = makeNode(CustomPath);
-	memcpy(newDistExecPath, distExecPath, sizeof(CustomPath));
-	newDistExecPath->custom_paths = lappend(NIL, newExPathnode);
-
-	return newDistExecPath;
+	recursion = false;
 }
 
 #include "access/hash.h"
@@ -303,18 +329,21 @@ duplicate_join_path(CustomPath	*distExecPath)
 #include "commands/defrem.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/clauses.h"
+#include "partitioning/partbounds.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
-/* After the JOIN the distribution will be defined by the join clause. */
+/* Arrange partitions */
 static void
-arrange_partitioning_attrs(RelOptInfo *rel1,
-						   RelOptInfo *rel2,
-						   List *restrictlist)
+arrange_partitions(RelOptInfo *rel1, RelOptInfo *rel2, List *restrictlist)
 {
-	ListCell *lc;
+	struct PartitionBoundInfoData *boundinfo = palloc(sizeof(PartitionBoundInfoData));
 	PartitionScheme part_scheme = palloc(sizeof(PartitionSchemeData));
+	Bitmapset *servers = NULL;
+	ListCell *lc;
 	int16 len = list_length(restrictlist);
+	int i;
+	int sid = -1;
 
 	rel1->partexprs = (List **) palloc0(sizeof(List *) * len);
 	rel2->partexprs = (List **) palloc0(sizeof(List *) * len);
@@ -374,39 +403,12 @@ arrange_partitioning_attrs(RelOptInfo *rel1,
 		part_scheme->partnatts++;
 		ReleaseSysCache(opclasstup);
 	}
-
-	/* Now we use hash partition only */
-	Assert((rel1->part_scheme->strategy == PARTITION_STRATEGY_HASH) &&
-			(rel1->part_scheme->strategy == rel2->part_scheme->strategy));
-
+	rel1->nullable_partexprs =
+					(List **) palloc0(sizeof(List *) * part_scheme->partnatts);
+	rel2->nullable_partexprs =
+						(List **) palloc0(sizeof(List *) * part_scheme->partnatts);
 	part_scheme->strategy = PARTITION_STRATEGY_HASH;
 	rel1->part_scheme = rel2->part_scheme = part_scheme;
-}
-
-static void
-set_path_pointers(CustomPath *path, JoinPath **jp, ExchangePath **exres,
-		ExchangePath **exouter, ExchangePath **exinner)
-{
-	/* Set pointers to the EXCHANGE nodes */
-	Assert(IsExchangeNode((Path *)linitial(path->custom_paths)));
-	*exres = (ExchangePath *) linitial(path->custom_paths);
-
-	*jp = (JoinPath *) linitial((*exres)->cp.custom_paths);
-	Assert((*jp)->path.pathtype == T_HashJoin);
-	Assert(IsExchangeNode((*jp)->innerjoinpath) && IsExchangeNode((*jp)->outerjoinpath));
-	*exinner = (ExchangePath *) (*jp)->innerjoinpath;
-	*exouter = (ExchangePath *) (*jp)->outerjoinpath;
-}
-
-/* Arrange partitions */
-static void
-arrange_partitions(RelOptInfo *rel1,
-		   RelOptInfo *rel2,
-		   List *restrictlist)
-{
-	Bitmapset *servers = NULL;
-	int i;
-	int sid = -1;
 
 	for (i = 0; i < rel1->nparts; i++)
 		if (OidIsValid(rel1->part_rels[i]->serverid) &&
@@ -435,113 +437,26 @@ arrange_partitions(RelOptInfo *rel1,
 		rel1->part_rels[i]->serverid = (Oid) sid;
 		rel2->part_rels[i]->serverid = (Oid) sid;
 	}
+
+	boundinfo->strategy = rel1->part_scheme->strategy;
+	boundinfo->default_index = -1;
+	boundinfo->null_index = -1;
+	boundinfo->kind = NULL;
+	boundinfo->ndatums = rel1->nparts;
+	boundinfo->datums = (Datum **) palloc0(boundinfo->ndatums * sizeof(Datum *));
+	boundinfo->indexes = (int *) palloc(rel1->nparts * sizeof(int));
 	for (i = 0; i < rel1->nparts; i++)
 	{
-		elog(LOG, "SHUFFLE sid=%u %d", rel1->part_rels[i]->serverid, bms_num_members(servers));
-	}
-}
-/*
- * Add Paths same as the case of partitionwise join.
- */
-static void
-second_stage_paths(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
-	 	   RelOptInfo *innerrel, JoinType jointype, JoinPathExtraData *extra)
-{
-	ListCell *lc;
+		int modulus = rel1->nparts;
+		int remainder = i;
 
-	elog(LOG, "List length=%d", list_length(joinrel->pathlist));
-	foreach(lc, joinrel->pathlist)
-	{
-		Path *path = lfirst(lc);
-		elog(LOG, "[%d] BEFORE SECOND STAGE: type=%d pathtype=%d",
-				list_length(joinrel->pathlist), path->type, path->pathtype);
-		if (path->type > 300)
-			Assert(0);
+		boundinfo->datums[i] = (Datum *) palloc(2 * sizeof(Datum));
+		boundinfo->datums[i][0] = Int32GetDatum(modulus);
+		boundinfo->datums[i][1] = Int32GetDatum(remainder);
+		boundinfo->indexes[i] = i;
 	}
 
-	foreach(lc, joinrel->pathlist)
-	{
-		Path *pathhead = (Path *) lfirst(lc);
-		CustomPath *path;
-		JoinPath *jp;
-		ExchangePath *innerex;
-		ExchangePath *outerex;
-		ExchangePath *expath;
-		int i;
-
-		if (!IsDistExecNode(pathhead))
-		{
-			elog(LOG, "NO second_stage_paths. type=%d, pathtype=%d", pathhead->type, pathhead->pathtype);
-			continue;
-		}
-
-		path = (CustomPath *) pathhead;
-
-		/*
-		 * Add gather-type EXCHANGE node into the head of the path.
-		 * If JOIN need to shuffle tuples than we will have virtual partitions.
-		 */
-		if (!IsA(((Path *) linitial(path->custom_paths)), CustomScan))
-		{
-			jp = (JoinPath *) linitial(path->custom_paths);
-
-			if (jp->path.pathtype != T_HashJoin)
-				continue;
-			expath = create_exchange_path(root, joinrel, (Path *) jp, GATHER_MODE);
-			path->custom_paths = list_delete(path->custom_paths, jp);
-			path->custom_paths = lappend(path->custom_paths, expath);
-		}
-
-		set_path_pointers(path, &jp, &expath, &outerex, &innerex);
-		path->path.total_cost = 10000.;
-
-		if (build_joinrel_partition_info(&expath->altrel, &outerex->altrel,
-				&innerex->altrel, extra->restrictlist, jointype))
-		{
-			/* Simple case like foreign-push-join case. */
-			innerex->mode = STEALTH_MODE;
-			outerex->mode = STEALTH_MODE;
-		}
-		else
-		{
-			CustomPath *newpath;
-			bool res;
-
-			/* Get a copy of the simple path */
-			newpath = duplicate_join_path(path);
-			set_path_pointers(newpath, &jp, &expath, &outerex, &innerex);
-			arrange_partitioning_attrs(&outerex->altrel, &innerex->altrel,
-														extra->restrictlist);
-			arrange_partitions(&outerex->altrel, &innerex->altrel,
-					   	   	   	   	   	   	   			extra->restrictlist);
-			res = build_joinrel_partition_info(&expath->altrel,
-											   &outerex->altrel,
-											   &innerex->altrel,
-											   extra->restrictlist,
-											   jointype);
-			Assert(res);
-			Assert(expath->altrel.part_scheme != NULL);
-			innerex->mode = SHUFFLE_MODE;
-			outerex->mode = SHUFFLE_MODE;
-			newpath->path.total_cost = 0.1;
-			add_path(joinrel, (Path *) newpath);
-		}
-
-		Assert(expath->mode == GATHER_MODE);
-		Assert(expath->altrel.nparts > 0);
-		Assert(outerex->altrel.nparts > 0);
-		Assert(innerex->altrel.nparts > 0);
-
-		/*
-		 * Set partitions preferences at altrel field of after-JOIN exchange
-		 */
-		for (i = 0; i < expath->altrel.nparts; i++)
-		{
-			Assert(expath->altrel.part_rels[i] == NULL);
-			expath->altrel.part_rels[i] = palloc(sizeof(RelOptInfo));
-			memcpy(expath->altrel.part_rels[i], innerex->altrel.part_rels[i], sizeof(RelOptInfo));
-		}
-	}
+	rel1->boundinfo = rel2->boundinfo = boundinfo;
 }
 
 static void

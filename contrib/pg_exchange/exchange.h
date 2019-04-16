@@ -20,12 +20,25 @@
 #include "dmq.h"
 
 
-#define EXCHANGE_NAME	"EXCHANGE"
-#define EXCHANGEPATHNAME	"Exchange"
-#define EXCHANGE_PRIVATE_NAME "ExchangePlanPrivate"
+#define EXCHANGE_NAME			"EXCHANGE"
+#define EXCHANGEPATHNAME		"Exchange"
+#define EXCHANGE_PRIVATE_NAME	"ExchangePlanPrivate"
 
-#define IsExchangeNode(pathnode) (((pathnode)->pathtype == T_CustomScan) && \
-	(strcmp(((CustomPath *)(pathnode))->methods->CustomName, EXCHANGEPATHNAME) == 0))
+#define IsExchangeNode(pathnode) \
+	((((Path *) pathnode)->pathtype == T_CustomScan) && \
+	(strcmp(((CustomPath *)(pathnode))->methods->CustomName, \
+	EXCHANGEPATHNAME) == 0))
+
+#define cstmSubPath1(customPath) (Path *) linitial(((CustomPath *) \
+									customPath)->custom_paths)
+
+typedef enum ExchangeMode
+{
+	EXCH_GATHER,
+	EXCH_STEALTH,
+	EXCH_SHUFFLE,
+	EXCH_BROADCAST
+} ExchangeMode;
 
 /* Exchange Private Partitioning data */
 typedef struct EPPNode
@@ -38,7 +51,7 @@ typedef struct EPPNode
 	int16 natts;
 	Oid *funcid;
 	List *att_exprs;
-	int8 mode;
+	ExchangeMode mode;
 } EPPNode;
 
 typedef struct ExchangeState
@@ -52,6 +65,7 @@ typedef struct ExchangeState
 	int activeRemotes;
 	int ltuples;
 	int rtuples;
+	int stuples;
 
 	/* Partitioning info */
 	int greatest_modulus;
@@ -62,7 +76,7 @@ typedef struct ExchangeState
 	int nnodes;
 	NodeName *nodes;
 	int *indexes;
-	int8 mode;
+	ExchangeMode mode;
 } ExchangeState;
 
 extern uint32 exchange_counter;
@@ -74,20 +88,23 @@ typedef struct ExchangePath
 	CustomPath cp;
 
 	RelOptInfo	altrel;
+	RelOptInfo *innerrel_ptr;
+	RelOptInfo *outerrel_ptr;
+
 	uint32 exchange_counter; // Debug purposes only
-	int8 mode; /* It will send all tuples to a coordinator only. */
+	ExchangeMode mode; /* It will send all tuples to a coordinator only. */
 } ExchangePath;
 
-#define GATHER_MODE		(1)
-#define STEALTH_MODE	(2)
-#define SHUFFLE_MODE	(3)
-
+extern Bitmapset *accumulate_part_servers(RelOptInfo *rel);
+extern void set_exchange_altrel(ExchangeMode mode, ExchangePath *path,
+		RelOptInfo *outerrel, RelOptInfo *innerrel, List *restrictlist,
+		Bitmapset *servers);
 extern void EXCHANGE_Init_methods(void);
 extern void add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti,
 							   RangeTblEntry *rte);
 extern CustomScan *make_exchange(List *custom_plans, List *tlist);
 extern ExchangePath *create_exchange_path(PlannerInfo *root, RelOptInfo *rel,
-		  Path *children, int8 mode);
+		  	  	  	  	  	  	  	  	  	 Path *children, ExchangeMode mode);
 extern void createNodeName(char *nodeName, const char *hostname, int port);
 
 #endif /* EXCHANGE_H_ */

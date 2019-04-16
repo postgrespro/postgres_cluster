@@ -60,6 +60,23 @@ CreateDistExecPlan(PlannerInfo *root, RelOptInfo *rel,struct CustomPath *best_pa
 static void dmq_init_barrier(DMQDestCont *dmq_data, PlanState *child);
 static bool init_exchange_channel(PlanState *node, void *context);
 
+Bitmapset *
+extractForeignServers(CustomPath *path)
+{
+	ListCell *lc;
+	Bitmapset *servers = NULL;
+
+	foreach(lc, path->custom_private)
+	{
+		Oid serverid = lfirst_oid(lc);
+
+		Assert(OidIsValid(serverid));
+		if (!bms_is_member((int) serverid, servers))
+			servers = bms_add_member(servers, serverid);
+	}
+	return servers;
+}
+
 /*
  * Create state of exchange node.
  */
@@ -238,7 +255,7 @@ EstablishDMQConnections(const lcontext *context, const char *serverName, PlanSta
 			sprintf(connstr, "host=%s port=%d "
 							 "fallback_application_name=%s",
 							 host, port, senderName);
-//			elog(LOG, "Add destination: senderName=%s, receiverName=%s, connstr=%s", senderName, receiverName, connstr);
+
 			sub->dest_id = dmq_destination_add(connstr, senderName, receiverName, 10);
 			memcpy(sub->node, receiverName, strlen(receiverName) + 1);
 		}
@@ -300,6 +317,8 @@ BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags)
 			dpe->conn[i] = GetConnection(user, true);
 			Assert(dpe->conn[i] != NULL);
 			res = PQsendQuery(dpe->conn[i], query);
+			if (!res)
+				pgfdw_report_error(ERROR, NULL, dpe->conn[i], false, query);
 			i++;
 			Assert(res == 1);
 		}
@@ -337,7 +356,6 @@ ExecEndDistPlanExec(CustomScanState *node)
 		PGresult	*result;
 
 		while ((result = PQgetResult(dpe->conn[i])) != NULL);
-//		elog(LOG, "ExecEndDistPlanExec: %d", PQresultStatus(result));
 	}
 	if (dpe->conn)
 		pfree(dpe->conn);
@@ -423,10 +441,10 @@ make_distplanexec(List *custom_plans, List *tlist, List *private_data)
 	Plan		*plan = &node->scan.plan;
 	ListCell	*lc;
 
-	plan->startup_cost = 0;
-	plan->total_cost = 0;
-	plan->plan_rows = 0;
-	plan->plan_width =0;
+	plan->startup_cost = 10;
+	plan->total_cost = 10;
+	plan->plan_rows = 1000;
+	plan->plan_width =10;
 	plan->qual = NIL;
 	plan->lefttree = NULL;
 	plan->righttree = NULL;
@@ -472,8 +490,8 @@ create_distexec_path(PlannerInfo *root, RelOptInfo *rel, Path *children,
 	pathnode->pathkeys = NIL;
 
 	pathnode->rows = rel->tuples;
-	pathnode->startup_cost = 0.0001;
-	pathnode->total_cost = 0.5;
+	pathnode->startup_cost = 10;
+	pathnode->total_cost = 10;
 
 	path->flags = 0;
 	path->custom_paths = lappend(path->custom_paths, children);
@@ -631,7 +649,10 @@ init_exchange_channel(PlanState *node, void *context)
 
 	/* It is EXCHANGE node */
 	state = (ExchangeState *) css;
-	Stream_subscribe(state->stream);
+
+	if (state->mode == EXCH_STEALTH)
+		/* We can't plan to send or receive any data. */
+		return false;
 
 	/*
 	 * Do the mapping from current exchange-made partitioning scheme into the
@@ -647,7 +668,7 @@ init_exchange_channel(PlanState *node, void *context)
 				break;
 		if (j >= dmq_data->nservers)
 		{
-			/* Coordinator node found */
+			/* My node found */
 			state->indexes[i] = -1;
 			continue;
 		}

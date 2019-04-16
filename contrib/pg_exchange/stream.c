@@ -6,8 +6,12 @@
 #include "stream.h"
 #include "miscadmin.h"
 #include "unistd.h"
+#include "utils/memutils.h" /* MemoryContexts */
 
 #define IsDeliveryMessage(msg)	(msg->tot_len == MinSizeOfSendBuf)
+
+static List *istreams = NIL;
+static List *ostreams = NIL;
 
 static DmqDestinationId dmq_dest_id(DmqSenderId id);
 static char *get_stream(List *streams, const char *name);
@@ -49,17 +53,19 @@ Stream_subscribe(const char *streamName)
 	IStream *istream;
 	OStream *ostream;
 	DmqSenderId	id;
+	MemoryContext OldMemoryContext;
 
-//	elog(LOG, "[%d] Subscribe on %s.", getpid(), streamName);
 	/* Check for existed stream */
 	istream = (IStream *) get_stream(istreams, streamName);
 	ostream = (OStream *) get_stream(ostreams, streamName);
 	if (istream || ostream)
 		return false;
 
+	OldMemoryContext = MemoryContextSwitchTo(TopMemoryContext);
+
 	/* It is unique stream name */
-	istream = palloc(sizeof(IStream));
-	ostream = palloc(sizeof(OStream));
+	istream = (IStream *) palloc(sizeof(IStream));
+	ostream = (OStream *) palloc(sizeof(OStream));
 	strncpy(istream->streamName, streamName, STREAM_NAME_MAX_LEN);
 	strncpy(ostream->streamName, streamName, STREAM_NAME_MAX_LEN);
 
@@ -68,9 +74,11 @@ Stream_subscribe(const char *streamName)
 	ostream->index = 0;
 	istream->msgs = NIL;
 	ostream->buf = NULL;
+
 	istreams = lappend(istreams, istream);
 	ostreams = lappend(ostreams, ostream);
 	dmq_stream_subscribe(streamName);
+	MemoryContextSwitchTo(OldMemoryContext);
 	return true;
 }
 
@@ -80,7 +88,6 @@ Stream_unsubscribe(const char *streamName)
 	IStream *istream;
 	OStream *ostream;
 
-//	elog(INFO, "[%d] unSubscribe on %s.", getpid(), streamName);
 	istream = (IStream *) get_stream(istreams, streamName);
 	ostream = (OStream *) get_stream(ostreams, streamName);
 	if (!istream || !ostream)
@@ -109,7 +116,7 @@ RecvIfAny(void)
 	/* Try to receive a message */
 	streamName = dmq_pop(&sender_id, (void **)(&msg), &len, UINT64_MAX, false);
 	if (!streamName)
-		/* No messages were arrived */
+		/* No messages arrived */
 		return;
 
 	/* Any message was received */
@@ -141,6 +148,7 @@ RecvIfAny(void)
 		dest_id = dmq_dest_id(sender_id);
 		Assert(dest_id >= 0);
 		dmq_push_buffer(dest_id, istream->streamName, dbuf, dbuf->tot_len);
+		pfree(dbuf);
 	}
 }
 
@@ -219,7 +227,7 @@ ISendTuple(DmqDestinationId dest_id, char *stream, TupleTableSlot *slot,
 static void
 wait_for_delivery(OStream *ostream)
 {
-	int attempts = 0;
+	int attempts;
 
 	for (attempts = 0; attempts < 50; attempts++)
 	{

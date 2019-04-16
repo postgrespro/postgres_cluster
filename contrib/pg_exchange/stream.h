@@ -43,9 +43,6 @@ typedef struct
 	List *msgs;
 } IStream;
 
-List *istreams;
-List *ostreams;
-
 
 extern bool Stream_subscribe(const char *streamName);
 extern bool Stream_unsubscribe(const char *streamName);

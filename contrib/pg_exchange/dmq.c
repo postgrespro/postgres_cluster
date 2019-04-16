@@ -1530,8 +1530,8 @@ dmq_pop(DmqSenderId *sender_id, void **msg, Size *len, uint64 mask,
 				 * the message buffer.
 				 */
 				stream = data;
-				*msg = (void *) ((char *)data + strlen(stream) + 1);
-				*len -= (char *)(*msg) - (char *)data;
+				*msg = (void *) (stream + strlen(stream) + 1);
+				*len -= (char *)(*msg) - stream;
 				*sender_id = i;
 
 				mtm_log(DmqTraceIncoming,
