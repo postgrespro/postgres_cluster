@@ -227,14 +227,12 @@ ISendTuple(DmqDestinationId dest_id, char *stream, TupleTableSlot *slot,
 static void
 wait_for_delivery(OStream *ostream)
 {
-	int attempts;
-
-	for (attempts = 0; attempts < 50; attempts++)
+	for (;;)
 	{
 		int waits;
 
 		pg_usleep(10);
-		attempts++;
+
 		for (waits = 0; waits < 100000; waits++)
 		{
 			if (checkDelivery(ostream))

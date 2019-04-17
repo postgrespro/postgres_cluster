@@ -24,7 +24,7 @@ extern void dmq_init(const char *library_name);
 extern DmqDestinationId dmq_destination_add(char *connstr, char *sender_name,
 											char *receiver_name, int ping_period);
 extern DmqConnState dmq_get_destination_status(DmqDestinationId dest_id);
-extern void dmq_destination_drop(char *receiver_name);
+extern void dmq_destination_drop(const char *receiver_name);
 
 extern DmqSenderId dmq_attach_receiver(const char *sender_name, int mask_pos);
 extern void dmq_detach_receiver(const char *sender_name);
@@ -43,7 +43,7 @@ extern bool dmq_pop_nb(DmqSenderId *sender_id, StringInfo msg, uint64 mask);
 extern void dmq_push(DmqDestinationId dest_id, char *stream_name, char *msg);
 extern void dmq_push_buffer(DmqDestinationId dest_id, char *stream_name, const void *buffer, size_t len);
 
-typedef void (*dmq_receiver_hook_type) (char *);
+typedef void (*dmq_receiver_hook_type) (const char *);
 extern dmq_receiver_hook_type dmq_receiver_start_hook;
 extern dmq_receiver_hook_type dmq_receiver_stop_hook;
 

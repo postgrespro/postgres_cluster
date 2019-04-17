@@ -23,6 +23,7 @@
 #include "nodeDummyscan.h"
 #include "nodes/nodes.h"
 #include "utils/builtins.h"
+#include "utils/hsearch.h"
 #include "utils/guc.h"
 #include "utils/memutils.h"
 #include "utils/plancache.h"
@@ -37,10 +38,12 @@ PG_FUNCTION_INFO_V1(pg_exec_plan);
 
 #define DMQ_CONNSTR_MAX_LEN 150
 
+dmq_receiver_hook_type old_dmq_receiver_stop_hook;
 
 void _PG_init(void);
 static void deserialize_plan(char **squery, char **splan, char **sparams);
 static void exec_plan(char *squery, PlannedStmt *pstmt, ParamListInfo paramLI, const char *serverName);
+static void OnNodeDisconnect(const char *node_name);
 
 static Size
 shmem_size(void)
@@ -66,6 +69,9 @@ _PG_init(void)
 
 	RequestAddinShmemSpace(shmem_size());
 	RequestNamedLWLockTranche("pg_exchange", 1);
+
+	old_dmq_receiver_stop_hook = dmq_receiver_stop_hook;
+	dmq_receiver_stop_hook = OnNodeDisconnect;
 }
 
 Datum
@@ -197,4 +203,38 @@ exec_plan(char *squery, PlannedStmt *pstmt, ParamListInfo paramLI, const char *s
 
 	receiver->rDestroy(receiver);
 	ReleaseCachedPlan(cplan, false);
+}
+
+static void
+OnNodeDisconnect(const char *node_name)
+{
+	HASH_SEQ_STATUS status;
+	DMQDestinations *dest;
+	Oid serverid = InvalidOid;
+
+	elog(LOG, "Node %s: disconnected", node_name);
+
+
+	LWLockAcquire(ExchShmem->lock, LW_EXCLUSIVE);
+
+	hash_seq_init(&status, ExchShmem->htab);
+
+	while ((dest = hash_seq_search(&status)) != NULL)
+	{
+		if (!(strcmp(dest->node, node_name) == 0))
+			continue;
+
+		serverid = dest->serverid;
+		dmq_detach_receiver(node_name);
+		dmq_destination_drop(node_name);
+		break;
+	}
+	hash_seq_term(&status);
+
+	if (OidIsValid(serverid))
+		hash_search(ExchShmem->htab, &serverid, HASH_REMOVE, NULL);
+	else
+		elog(LOG, "Record on disconnected server %u with name %s not found.",
+														serverid, node_name);
+	LWLockRelease(ExchShmem->lock);
 }

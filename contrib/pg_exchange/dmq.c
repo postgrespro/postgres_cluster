@@ -1685,7 +1685,7 @@ dmq_get_destination_status(DmqDestinationId dest_id)
 }
 
 void
-dmq_destination_drop(char *receiver_name)
+dmq_destination_drop(const char *receiver_name)
 {
 	DmqDestinationId dest_id;
 	pid_t sender_pid;
