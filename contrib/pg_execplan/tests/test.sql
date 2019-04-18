@@ -8,3 +8,5 @@ SELECT count(*) FROM pt,rt WHERE pt.id=rt.id;
 SELECT count(*) FROM pt,rt,st WHERE pt.id=rt.id and rt.id=st.id;
 SELECT count(*) FROM pt,rt,st WHERE pt.id=rt.id and rt.id=st.payload;
 SELECT count(*) FROM pt,rt,st WHERE pt.id=rt.payload and rt.id=st.payload;
+SELECT count(*) FROM pt group by pt.id;
+SELECT count(*) FROM pt group by pt.id + 1;

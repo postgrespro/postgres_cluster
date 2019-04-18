@@ -412,7 +412,7 @@ DistExec_Init_methods(void)
 	/* Initialize path generator methods */
 	distplanexec_path_methods.CustomName = DISTEXECPATHNAME;
 	distplanexec_path_methods.PlanCustomPath = CreateDistExecPlan;
-	distplanexec_path_methods.ReparameterizeCustomPathByChild	= NULL;
+	distplanexec_path_methods.ReparameterizeCustomPathByChild = NULL;
 
 	distplanexec_plan_methods.CustomName 			= "DistExecPlan";
 	distplanexec_plan_methods.CreateCustomScanState	= CreateDistPlanExecState;
@@ -440,6 +440,7 @@ make_distplanexec(List *custom_plans, List *tlist, List *private_data)
 	CustomScan	*node = makeNode(CustomScan);
 	Plan		*plan = &node->scan.plan;
 	ListCell	*lc;
+	List *child_tlist;
 
 	plan->startup_cost = 10;
 	plan->total_cost = 10;
@@ -454,9 +455,11 @@ make_distplanexec(List *custom_plans, List *tlist, List *private_data)
 
 	/* Setup methods and child plan */
 	node->methods = &distplanexec_plan_methods;
-	node->custom_scan_tlist = tlist;
 	node->scan.scanrelid = 0;
 	node->custom_plans = custom_plans;
+
+	child_tlist = ((Plan *)linitial(node->custom_plans))->targetlist;
+	node->custom_scan_tlist = child_tlist;
 	node->custom_exprs = NIL;
 	node->custom_private = NIL;
 
@@ -471,7 +474,7 @@ make_distplanexec(List *custom_plans, List *tlist, List *private_data)
 	return node;
 }
 
-Path *
+CustomPath *
 create_distexec_path(PlannerInfo *root, RelOptInfo *rel, Path *children,
 					 Bitmapset *servers)
 {
@@ -480,27 +483,29 @@ create_distexec_path(PlannerInfo *root, RelOptInfo *rel, Path *children,
 	int member = -1;
 
 	pathnode->pathtype = T_CustomScan;
-	pathnode->parent = rel;
 	pathnode->pathtarget = rel->reltarget;
 	pathnode->param_info = NULL;
+	pathnode->parent = rel;
 
 	pathnode->parallel_aware = false; /* permanently */
 	pathnode->parallel_safe = false; /* permanently */
 	pathnode->parallel_workers = 0; /* permanently */
 	pathnode->pathkeys = NIL;
 
-	pathnode->rows = rel->tuples;
-	pathnode->startup_cost = 10;
-	pathnode->total_cost = 10;
-
 	path->flags = 0;
 	path->custom_paths = lappend(path->custom_paths, children);
+	path->custom_private = NIL;
 
 	while ((member = bms_next_member(servers, member)) >= 0)
 		path->custom_private = lappend_oid(path->custom_private, (Oid) member);
 
 	path->methods = &distplanexec_path_methods;
-	return pathnode;
+
+	pathnode->rows = children->rows;
+	pathnode->startup_cost = 100.;
+	pathnode->total_cost = pathnode->startup_cost;
+
+	return path;
 }
 
 bool

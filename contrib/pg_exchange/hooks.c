@@ -226,7 +226,7 @@ create_distributed_join_paths(PlannerInfo *root, RelOptInfo *joinrel,
 							&inn_child->altrel, extra->restrictlist,
 							bms_union(inner_servers, outer_servers));
 			Assert(gather->altrel.part_scheme != NULL);
-			path = create_distexec_path(root, gather->cp.path.parent, (Path *) gather,
+			path = (Path *) create_distexec_path(root, joinrel, (Path *) gather,
 									bms_union(inner_servers, outer_servers));
 			dist_paths = lappend(dist_paths, path);
 			list_free(outerrel->pathlist);

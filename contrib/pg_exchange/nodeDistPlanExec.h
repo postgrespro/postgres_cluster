@@ -34,7 +34,7 @@ extern char destsName[10];
 extern Bitmapset *extractForeignServers(CustomPath *path);
 extern void DistExec_Init_methods(void);
 extern CustomScan *make_distplanexec(List *custom_plans, List *tlist, List *private_data);
-extern Path *create_distexec_path(PlannerInfo *root, RelOptInfo *rel,
+extern CustomPath *create_distexec_path(PlannerInfo *root, RelOptInfo *rel,
 								  Path *children, Bitmapset *servers);
 extern bool localize_plan(PlanState *node, lcontext *context);
 extern void FSExtractServerName(Oid fsid, char **host, int *port);

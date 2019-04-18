@@ -197,7 +197,7 @@ EXCHANGE_Init_methods(void)
 	/* Initialize path generator methods */
 	exchange_path_methods.CustomName = EXCHANGEPATHNAME;
 	exchange_path_methods.PlanCustomPath = ExchangePlanCustomPath;
-	exchange_path_methods.ReparameterizeCustomPathByChild	= NULL;
+	exchange_path_methods.ReparameterizeCustomPathByChild = NULL;
 
 	exchange_plan_methods.CustomName = "ExchangePlan";
 	exchange_plan_methods.CreateCustomScanState	= EXCHANGE_Create_state;
@@ -399,7 +399,7 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 																EXCH_GATHER);
 		set_exchange_altrel(EXCH_GATHER, (ExchangePath *) path, rel, NULL, NULL,
 																	servers);
-		path = create_distexec_path(root, rel, path, servers);
+		path = (Path *) create_distexec_path(root, rel, path, servers);
 		add_path(rel, path);
 	}
 }
@@ -713,7 +713,6 @@ create_exchange_path(PlannerInfo *root, RelOptInfo *rel, Path *children,
 	pathnode->pathkeys = NIL;
 
 	path->flags = 0;
-	/* Contains only one path */
 	path->custom_paths = lappend(path->custom_paths, children);
 
 	path->custom_private = NIL;
@@ -790,6 +789,7 @@ make_exchange(List *custom_plans, List *tlist)
 {
 	CustomScan	*node = makeNode(CustomScan);
 	Plan		*plan = &node->scan.plan;
+	List *child_tlist;
 
 	plan->startup_cost = 1;
 	plan->total_cost = 1;
@@ -804,9 +804,10 @@ make_exchange(List *custom_plans, List *tlist)
 
 	/* Setup methods and child plan */
 	node->methods = &exchange_plan_methods;
-	node->custom_scan_tlist = tlist;
 	node->scan.scanrelid = 0;
 	node->custom_plans = custom_plans;
+	child_tlist = ((Plan *)linitial(node->custom_plans))->targetlist;
+	node->custom_scan_tlist = child_tlist;
 	node->custom_exprs = NIL;
 	node->custom_private = NIL;
 
