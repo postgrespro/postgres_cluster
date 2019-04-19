@@ -395,14 +395,6 @@ CreateDistExecPlan(PlannerInfo *root,
 	CustomScan *distExecNode;
 
 	distExecNode = make_distplanexec(custom_plans, tlist, best_path->custom_private);
-
-	distExecNode->scan.plan.startup_cost = best_path->path.startup_cost;
-	distExecNode->scan.plan.total_cost = best_path->path.total_cost;
-	distExecNode->scan.plan.plan_rows = best_path->path.rows;
-	distExecNode->scan.plan.plan_width = best_path->path.pathtarget->width;
-	distExecNode->scan.plan.parallel_aware = best_path->path.parallel_aware;
-	distExecNode->scan.plan.parallel_safe = best_path->path.parallel_safe;
-
 	return &distExecNode->scan.plan;
 }
 
@@ -442,15 +434,9 @@ make_distplanexec(List *custom_plans, List *tlist, List *private_data)
 	ListCell	*lc;
 	List *child_tlist;
 
-	plan->startup_cost = 10;
-	plan->total_cost = 10;
-	plan->plan_rows = 1000;
-	plan->plan_width =10;
 	plan->qual = NIL;
 	plan->lefttree = NULL;
 	plan->righttree = NULL;
-	plan->parallel_aware = false;
-	plan->parallel_safe = false;
 	plan->targetlist = tlist;
 
 	/* Setup methods and child plan */
@@ -502,8 +488,8 @@ create_distexec_path(PlannerInfo *root, RelOptInfo *rel, Path *children,
 	path->methods = &distplanexec_path_methods;
 
 	pathnode->rows = children->rows;
-	pathnode->startup_cost = 100.;
-	pathnode->total_cost = pathnode->startup_cost;
+	pathnode->startup_cost = children->startup_cost + 100.;
+	pathnode->total_cost = children->total_cost + pathnode->startup_cost;
 
 	return path;
 }

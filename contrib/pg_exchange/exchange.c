@@ -37,7 +37,13 @@
 #include "partutils.h"
 #include "stream.h"
 
-#define DEFAULT_EXCHANGE_STARTUP_COST	100.0
+/*
+ * Startup cost of EXCHANGE node is smaller, than DistExec node, because cost
+ * of DistExec node contains cost of query transfer and localization at each
+ * instance. Startup cost of EXCHANGE node includes only connection channel
+ * establishing between instances.
+ */
+#define DEFAULT_EXCHANGE_STARTUP_COST	10.0
 #define DEFAULT_TRANSFER_TUPLE_COST		0.01
 
 
@@ -111,6 +117,7 @@ static void create_gather_dfn(EPPNode *epp, RelOptInfo *rel);
 static void create_stealth_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root);
 static void create_shuffle_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root);
 static void create_broadcast_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root);
+static void force_add_path(RelOptInfo *rel, Path *path);
 
 
 /*
@@ -400,42 +407,52 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 		set_exchange_altrel(EXCH_GATHER, (ExchangePath *) path, rel, NULL, NULL,
 																	servers);
 		path = (Path *) create_distexec_path(root, rel, path, servers);
-		add_path(rel, path);
+
+		force_add_path(rel, path);
 	}
+}
+
+static void
+force_add_path(RelOptInfo *rel, Path *path)
+{
+	List *pathlist = rel->pathlist;
+
+	rel->pathlist = NIL;
+	rel->cheapest_parameterized_paths = NIL;
+	rel->cheapest_startup_path = rel->cheapest_total_path =
+											rel->cheapest_unique_path = NULL;
+	add_path(rel, path);
+	rel->pathlist = list_concat(rel->pathlist, pathlist);
+	set_cheapest(rel);
 }
 
 #include "optimizer/cost.h"
 
-static void
+void
 cost_exchange(PlannerInfo *root, RelOptInfo *baserel, ExchangePath *expath)
 {
 	Path *subpath;
 
-	if (baserel->pages == 0 && baserel->tuples == 0)
-	{
-		baserel->pages = 10;
-		baserel->tuples =
-				(10 * BLCKSZ) / (baserel->reltarget->width +
-									 MAXALIGN(SizeofHeapTupleHeader));
-	}
-
 	/* Estimate baserel size as best we can with local statistics. */
-//	set_baserel_size_estimates(root, baserel);
 	subpath = cstmSubPath1(expath);
-	expath->cp.path.rows = baserel->tuples;
-	expath->cp.path.startup_cost = subpath->startup_cost;
+	expath->cp.path.rows = subpath->rows;
+	expath->cp.path.startup_cost = 0.;
+	expath->cp.path.total_cost = subpath->total_cost;
+
 	switch (expath->mode)
 	{
 	case EXCH_GATHER:
 		expath->cp.path.startup_cost += DEFAULT_EXCHANGE_STARTUP_COST;
-		expath->cp.path.rows = subpath->rows * expath->altrel.nparts;
+		expath->cp.path.total_cost += cpu_tuple_cost * expath->cp.path.rows;
 		break;
 	case EXCH_STEALTH:
-		expath->cp.path.rows = subpath->rows;
+		expath->cp.path.startup_cost = 0.;
+		expath->cp.path.total_cost += cpu_tuple_cost * expath->cp.path.rows /
+														expath->altrel.nparts;
 		break;
 	case EXCH_BROADCAST:
 		expath->cp.path.startup_cost += DEFAULT_EXCHANGE_STARTUP_COST;
-		expath->cp.path.rows = subpath->rows * expath->altrel.nparts;
+		expath->cp.path.total_cost += cpu_tuple_cost * expath->cp.path.rows;
 		break;
 	case EXCH_SHUFFLE:
 	{
@@ -446,15 +463,14 @@ cost_exchange(PlannerInfo *root, RelOptInfo *baserel, ExchangePath *expath)
 		Path *path = &expath->cp.path;
 
 		path->startup_cost += DEFAULT_EXCHANGE_STARTUP_COST;
-		path->total_cost += path->startup_cost;
 
 		/*
-		 * We count on perfect balance of tuple distribution:
-		 * If we have N instances, M tuples from subtree, than we send up to
-		 * local subtree M/N tuples, send to network [M-M/N] tuples and same to
+		 * We assume perfect balance of tuple distribution:
+		 * If we have N instances, M tuples from subtree, than we send up by
+		 * subtree M/N local tuples, send to network [M-M/N] tuples and same to
 		 * receive.
 		 */
-		path->rows = subpath->rows;
+		path->rows /= expath->altrel.nparts;
 		instances = expath->altrel.nparts > 0 ? expath->altrel.nparts : 2;
 		send_rows = path->rows - (path->rows/instances);
 		received_rows = send_rows;
@@ -466,8 +482,7 @@ cost_exchange(PlannerInfo *root, RelOptInfo *baserel, ExchangePath *expath)
 	default:
 		elog(FATAL, "Unknown EXCHANGE mode.");
 	}
-
-	expath->cp.path.total_cost = 0.1;
+	expath->cp.path.total_cost += expath->cp.path.startup_cost;
 }
 
 /*
@@ -492,13 +507,6 @@ ExchangePlanCustomPath(PlannerInfo *root,
 
 	exchange = make_exchange(custom_plans, tlist);
 	private->node.extnodename = EXCHANGE_PRIVATE_NAME;
-
-	exchange->scan.plan.startup_cost = best_path->path.startup_cost;
-	exchange->scan.plan.total_cost = best_path->path.total_cost;
-	exchange->scan.plan.plan_rows = best_path->path.rows;
-	exchange->scan.plan.plan_width = best_path->path.pathtarget->width;
-	exchange->scan.plan.parallel_aware = best_path->path.parallel_aware;
-	exchange->scan.plan.parallel_safe = best_path->path.parallel_safe;
 
 	/* Add stream name into private field*/
 	GetMyServerName(&host, &port);
@@ -791,15 +799,9 @@ make_exchange(List *custom_plans, List *tlist)
 	Plan		*plan = &node->scan.plan;
 	List *child_tlist;
 
-	plan->startup_cost = 1;
-	plan->total_cost = 1;
-	plan->plan_rows = 1;
-	plan->plan_width =1;
 	plan->qual = NIL;
 	plan->lefttree = NULL;
 	plan->righttree = NULL;
-	plan->parallel_aware = false; /* Use Shared Memory in parallel worker */
-	plan->parallel_safe = false;
 	plan->targetlist = tlist;
 
 	/* Setup methods and child plan */
@@ -1026,7 +1028,6 @@ EXCHANGE_Execute(CustomScanState *node)
 		else
 		{
 			state->stuples++;
-//			elog(LOG, "SEND TUPLE to stream [%s]", state->stream);
 			SendTuple(dest, state->stream, slot, false);
 		}
 	}
@@ -1043,8 +1044,6 @@ EXCHANGE_End(CustomScanState *node)
 
 	if (state->mode != EXCH_STEALTH)
 		Stream_unsubscribe(state->stream);
-
-//	elog(INFO, "EXCHANGE_END");
 }
 
 static void

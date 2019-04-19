@@ -106,5 +106,7 @@ extern CustomScan *make_exchange(List *custom_plans, List *tlist);
 extern ExchangePath *create_exchange_path(PlannerInfo *root, RelOptInfo *rel,
 		  	  	  	  	  	  	  	  	  	 Path *children, ExchangeMode mode);
 extern void createNodeName(char *nodeName, const char *hostname, int port);
+extern void cost_exchange(PlannerInfo *root, RelOptInfo *baserel,
+														ExchangePath *expath);
 
 #endif /* EXCHANGE_H_ */

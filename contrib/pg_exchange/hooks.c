@@ -179,6 +179,7 @@ create_distributed_join_paths(PlannerInfo *root, RelOptInfo *joinrel,
 			reset_cheapest(innerrel);
 			add_paths_to_joinrel(root, joinrel, outerrel, innerrel, jointype,
 											extra->sjinfo, extra->restrictlist);
+
 			set_cheapest(joinrel);
 			Assert(!join_path_contains_distexec(joinrel->cheapest_total_path));
 			Assert(joinrel->cheapest_total_path);
@@ -195,6 +196,8 @@ create_distributed_join_paths(PlannerInfo *root, RelOptInfo *joinrel,
 									bms_union(inner_servers, outer_servers));
 			set_exchange_altrel(inner_mode, inn_child, rel2, NULL, NULL,
 									bms_union(inner_servers, outer_servers));
+			cost_exchange(root, outerrel, out_child);
+			cost_exchange(root, innerrel, inn_child);
 
 			/* Check for special case */
 			if (path->pathtype == T_NestLoop)
@@ -209,7 +212,7 @@ create_distributed_join_paths(PlannerInfo *root, RelOptInfo *joinrel,
 				set_exchange_altrel(EXCH_BROADCAST, out_child, NULL,
 						&((ExchangePath *)cstmSubPath1(out_child))->altrel,
 						NIL, bms_union(inner_servers, outer_servers));
-
+				cost_exchange(root, joinrel, out_child);
 				inn_child->mode = EXCH_STEALTH;
 			}
 			else if (inner_mode == EXCH_SHUFFLE)
@@ -225,6 +228,7 @@ create_distributed_join_paths(PlannerInfo *root, RelOptInfo *joinrel,
 			set_exchange_altrel(EXCH_GATHER, gather, &out_child->altrel,
 							&inn_child->altrel, extra->restrictlist,
 							bms_union(inner_servers, outer_servers));
+			cost_exchange(root, joinrel, gather);
 			Assert(gather->altrel.part_scheme != NULL);
 			path = (Path *) create_distexec_path(root, joinrel, (Path *) gather,
 									bms_union(inner_servers, outer_servers));
@@ -259,7 +263,6 @@ HOOK_Join_pathlist(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 {
 	ListCell *lc;
 	List *delpaths = NIL;
-	List *dist_paths = NIL;
 	List *pathlist = NIL;
 
 	if (recursion)
@@ -289,35 +292,21 @@ HOOK_Join_pathlist(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 	foreach(lc, delpaths)
 		joinrel->pathlist = list_delete_ptr(joinrel->pathlist, lfirst(lc));
 
-	/* Add trivial paths */
-	dist_paths = create_distributed_join_paths(root, joinrel, outerrel, innerrel,
-									jointype, extra, EXCH_GATHER, EXCH_GATHER);
-	foreach(lc, dist_paths)
-	{
-		Path *path = lfirst(lc);
-		add_path(joinrel, path);
-	}
-	pathlist = create_distributed_join_paths(root, joinrel, outerrel, innerrel,
-								jointype, extra, EXCH_BROADCAST, EXCH_STEALTH);
-	foreach(lc, pathlist)
-	{
-		Path *path = lfirst(lc);
-		path->total_cost -= 0.1;
-		add_path(joinrel, path);
-	}
-	list_free(pathlist);
-	pathlist = NIL;
+	/* Add distributed paths */
+	pathlist = list_concat(pathlist, create_distributed_join_paths(root, joinrel,
+					   outerrel, innerrel, jointype, extra, EXCH_GATHER,
+					   EXCH_GATHER));
 
-	pathlist = create_distributed_join_paths(root, joinrel, outerrel, innerrel,
-								jointype, extra, EXCH_SHUFFLE, EXCH_SHUFFLE);
+	pathlist = list_concat(pathlist, create_distributed_join_paths(root, joinrel,
+					   outerrel, innerrel, jointype, extra, EXCH_BROADCAST,
+					   EXCH_STEALTH));
+
+	pathlist = list_concat(pathlist, create_distributed_join_paths(root, joinrel,
+					   outerrel, innerrel, jointype, extra, EXCH_SHUFFLE,
+					   EXCH_SHUFFLE));
+
 	foreach(lc, pathlist)
-	{
-		Path *path = lfirst(lc);
-		path->total_cost -= 0.2;
-		add_path(joinrel, path);
-	}
-	list_free(pathlist);
-	pathlist = NIL;
+		add_path(joinrel, lfirst(lc));
 
 	recursion = false;
 }
@@ -499,4 +488,3 @@ EXEC_Hooks_init(void)
 	PreviousShmemStartupHook = shmem_startup_hook;
 	shmem_startup_hook = HOOK_shmem_startup;
 }
-
