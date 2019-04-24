@@ -90,7 +90,7 @@ DUMMYSCAN_Init_methods(void)
 }
 
 CustomScan *
-make_dummyscan(void)
+make_dummyscan(Index scanrelid)
 {
 	CustomScan	*node = makeNode(CustomScan);
 	Plan		*plan = &node->scan.plan;
@@ -109,7 +109,7 @@ make_dummyscan(void)
 	/* Setup methods and child plan */
 	node->methods = &dummyscan_plan_methods;
 	node->custom_scan_tlist = NIL;
-	node->scan.scanrelid = 0;
+	node->scan.scanrelid = scanrelid;
 	node->custom_plans = NIL;
 	node->custom_exprs = NIL;
 	node->custom_private = NIL;

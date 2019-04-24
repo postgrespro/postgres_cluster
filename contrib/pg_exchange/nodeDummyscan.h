@@ -26,6 +26,6 @@ typedef struct
 } DummyScanState;
 
 extern void DUMMYSCAN_Init_methods(void);
-extern CustomScan *make_dummyscan(void);
+extern CustomScan *make_dummyscan(Index scanrelid);
 
 #endif							/* NODEDUMMYSCAN_H */

@@ -19,9 +19,11 @@ typedef Scan DistPlanExec;
 
 typedef struct
 {
-	EState *estate;
+	PlannedStmt *pstmt;
 	int eflags;
 	Bitmapset *servers;
+	IndexOptInfo *indexinfo;
+	List	*foreign_scans;
 } lcontext;
 
 
@@ -36,10 +38,13 @@ extern void DistExec_Init_methods(void);
 extern CustomScan *make_distplanexec(List *custom_plans, List *tlist, List *private_data);
 extern CustomPath *create_distexec_path(PlannerInfo *root, RelOptInfo *rel,
 								  Path *children, Bitmapset *servers);
-extern bool localize_plan(PlanState *node, lcontext *context);
+extern bool localize_plan(Plan *node, lcontext *context);
 extern void FSExtractServerName(Oid fsid, char **host, int *port);
 extern void GetMyServerName(char **host, int *port);
 extern char *serializeServer(const char *host, int port);
-extern void EstablishDMQConnections(const lcontext *context, const char *serverName, PlanState *substate);
+extern void EstablishDMQConnections(const lcontext *context,
+									const char *serverName,
+									EState *estate,
+									PlanState *substate);
 
 #endif							/* NODEDISTPLANEXEC_H */

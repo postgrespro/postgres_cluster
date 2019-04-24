@@ -277,6 +277,13 @@ static void outChar(StringInfo str, char c);
 #define WRITE_INT_FIELD(fldname) \
 	appendStringInfo(str, " :" CppAsString(fldname) " %d", node->fldname)
 
+#define WRITE_INT_ARRAY(fldname, len) \
+	do { \
+		appendStringInfoString(str, " :" CppAsString(fldname) " "); \
+		for (int i = 0; i < len; i++) \
+			appendStringInfo(str, " %d", node->fldname[i]); \
+	} while(0)
+
 /* Write an unsigned integer field (anything written as ":fldname %u") */
 #define WRITE_UINT_FIELD(fldname) \
 	appendStringInfo(str, " :" CppAsString(fldname) " %u", node->fldname)
@@ -292,6 +299,13 @@ static void outChar(StringInfo str, char c);
 		appendStringInfo(str, " :%s", CppAsString(fldname)); \
 		write_oid_field(str, node->fldname); \
 	} while (0)
+
+#define WRITE_OID_ARRAY(fldname, len) \
+	do { \
+		appendStringInfoString(str, " :" CppAsString(fldname) " "); \
+		for (int i = 0; i < len; i++) \
+			appendStringInfo(str, " %u", node->fldname[i]); \
+	} while(0)
 
 /* Write a long-integer field */
 #define WRITE_LONG_FIELD(fldname) \
@@ -2615,6 +2629,7 @@ _outIndexOptInfo(StringInfo str, const IndexOptInfo *node)
 	WRITE_FLOAT_FIELD(tuples, "%.0f");
 	WRITE_INT_FIELD(tree_height);
 	WRITE_INT_FIELD(ncolumns);
+	WRITE_INT_FIELD(nkeycolumns);
 	/* array fields aren't really worth the trouble to print */
 	WRITE_OID_FIELD(relam);
 	/* indexprs is redundant since we print indextlist */
@@ -2625,6 +2640,11 @@ _outIndexOptInfo(StringInfo str, const IndexOptInfo *node)
 	WRITE_BOOL_FIELD(unique);
 	WRITE_BOOL_FIELD(immediate);
 	WRITE_BOOL_FIELD(hypothetical);
+
+	WRITE_INT_ARRAY(indexkeys, node->ncolumns);
+	WRITE_OID_ARRAY(opfamily, node->ncolumns);
+	WRITE_OID_ARRAY(opcintype, node->ncolumns);
+	WRITE_OID_ARRAY(indexcollations, node->ncolumns);
 	/* we don't bother with fields copied from the index AM's API struct */
 }
 

@@ -16,6 +16,7 @@
 #define COMMON_H_
 
 #include "nodes/pg_list.h"
+#include "nodes/plannodes.h"
 #include "storage/lock.h"
 #include "dmq.h"
 
@@ -42,5 +43,7 @@ typedef struct
 } ExchangeSharedState;
 
 extern ExchangeSharedState *ExchShmem;
+
+bool plan_tree_walker(Plan *plan, bool (*walker) (), void *context);
 
 #endif /* COMMON_H_ */

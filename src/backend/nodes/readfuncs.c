@@ -117,6 +117,16 @@ set_portable_input(bool value)
 	token = pg_strtok(&length);		/* set tooken to begin of OID */ \
 	local_node->fldname = read_oid_field(&token, &length);
 
+/* Read an oid array */
+#define READ_OID_ARRAY(fldname, len) \
+	token = pg_strtok(&length);		/* skip :fldname */ \
+	local_node->fldname = readOidCols(len);
+
+/* Read an int array */
+#define READ_INT_ARRAY(fldname, len) \
+	token = pg_strtok(&length);		/* skip :fldname */ \
+	local_node->fldname = readIntCols(len);
+
 /* Read a char field (ie, one ascii character) */
 #define READ_CHAR_FIELD(fldname) \
 	token = pg_strtok(&length);		/* skip :fldname */ \
@@ -2610,6 +2620,63 @@ _readRelOptInfo(void)
 	READ_DONE();
 }
 
+static IndexOptInfo *
+_readIndexOptInfo(void)
+{
+	READ_LOCALS(IndexOptInfo);
+
+	READ_OID_FIELD(indexoid);
+	READ_UINT_FIELD(pages);
+	READ_FLOAT_FIELD(tuples);
+	READ_INT_FIELD(tree_height);
+	READ_INT_FIELD(ncolumns);
+	READ_INT_FIELD(nkeycolumns);
+	READ_OID_FIELD(relam);
+	READ_NODE_FIELD(indpred);
+	READ_NODE_FIELD(indextlist);
+	READ_NODE_FIELD(indrestrictinfo);
+	READ_BOOL_FIELD(predOK);
+	READ_BOOL_FIELD(unique);
+	READ_BOOL_FIELD(immediate);
+	READ_BOOL_FIELD(hypothetical);
+	READ_INT_ARRAY(indexkeys, local_node->ncolumns);
+	READ_OID_ARRAY(opfamily, local_node->ncolumns);
+	READ_OID_ARRAY(opcintype, local_node->ncolumns);
+	READ_OID_ARRAY(indexcollations, local_node->ncolumns);
+
+	READ_DONE();
+}
+
+static RestrictInfo *
+_readRestrictInfo(void)
+{
+	READ_LOCALS(RestrictInfo);
+
+	READ_NODE_FIELD(clause);
+	READ_BOOL_FIELD(is_pushed_down);
+	READ_BOOL_FIELD(outerjoin_delayed);
+	READ_BOOL_FIELD(can_join);
+	READ_BOOL_FIELD(pseudoconstant);
+	READ_BOOL_FIELD(leakproof);
+	READ_UINT_FIELD(security_level);
+	READ_BITMAPSET_FIELD(clause_relids);
+	READ_BITMAPSET_FIELD(required_relids);
+	READ_BITMAPSET_FIELD(outer_relids);
+	READ_BITMAPSET_FIELD(nullable_relids);
+	READ_BITMAPSET_FIELD(left_relids);
+	READ_BITMAPSET_FIELD(right_relids);
+	READ_NODE_FIELD(orclause);
+	READ_FLOAT_FIELD(norm_selec);
+	READ_FLOAT_FIELD(outer_selec);
+	READ_NODE_FIELD(mergeopfamilies);
+	READ_NODE_FIELD(left_em);
+	READ_NODE_FIELD(right_em);
+	READ_BOOL_FIELD(outer_is_left);
+	READ_OID_FIELD(hashjoinoperator);
+
+	READ_DONE();
+}
+
 /*
  * parseNodeString
  *
@@ -2871,6 +2938,10 @@ parseNodeString(void)
 		return_value = _readPartitionRangeDatum();
 	else if (MATCH("RELOPTINFO", 10))
 		return_value = _readRelOptInfo();
+	else if (MATCH("INDEXOPTINFO", 12))
+		return_value = _readIndexOptInfo();
+	else if (MATCH("RESTRICTINFO", 12))
+			return_value = _readRestrictInfo();
 	else
 	{
 		elog(ERROR, "badly formatted node string \"%.32s\"...", token);

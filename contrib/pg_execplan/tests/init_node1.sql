@@ -35,3 +35,16 @@ CREATE TABLE st (
 CREATE FOREIGN TABLE st_0 PARTITION OF st FOR VALUES WITH (modulus 3, remainder 0) SERVER remote1;
 CREATE TABLE st_1 PARTITION OF st FOR VALUES WITH (modulus 3, remainder 1);
 CREATE FOREIGN TABLE st_2 PARTITION OF st FOR VALUES WITH (modulus 3, remainder 2) SERVER remote2;
+
+-- On scan types.
+DROP TABLE IF EXISTS t1 cascade;
+CREATE TABLE t1 (
+    id SERIAL,
+    payload INTEGER
+) PARTITION BY hash (id);
+
+CREATE FOREIGN TABLE t1_0 PARTITION OF t1 FOR VALUES WITH (modulus 3, remainder 0) SERVER remote1;
+CREATE TABLE t1_1 PARTITION OF t1 FOR VALUES WITH (modulus 3, remainder 1);
+CREATE FOREIGN TABLE t1_2 PARTITION OF t1 FOR VALUES WITH (modulus 3, remainder 2) SERVER remote2;
+
+CREATE INDEX ON t1_1(id);

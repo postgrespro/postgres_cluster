@@ -89,7 +89,7 @@ PartitionBoundInfoData STEALTH_BOUND_INFO = ZBI;
 static void nodeOutExchangePrivate(struct StringInfoData *str,
 								   const struct ExtensibleNode *node);
 static void nodeReadExchangePrivate(struct ExtensibleNode *node);
-static struct Plan * ExchangePlanCustomPath(PlannerInfo *root,
+static struct Plan * ExchangeCreateCustomPlan(PlannerInfo *root,
 					   RelOptInfo *rel,
 					   struct CustomPath *best_path,
 					   List *tlist,
@@ -203,10 +203,10 @@ EXCHANGE_Init_methods(void)
 {
 	/* Initialize path generator methods */
 	exchange_path_methods.CustomName = EXCHANGEPATHNAME;
-	exchange_path_methods.PlanCustomPath = ExchangePlanCustomPath;
+	exchange_path_methods.PlanCustomPath = ExchangeCreateCustomPlan;
 	exchange_path_methods.ReparameterizeCustomPathByChild = NULL;
 
-	exchange_plan_methods.CustomName = "ExchangePlan";
+	exchange_plan_methods.CustomName = EXCHANGEPLANNAME;
 	exchange_plan_methods.CreateCustomScanState	= EXCHANGE_Create_state;
 	RegisterCustomScanMethods(&exchange_plan_methods);
 
@@ -307,6 +307,99 @@ set_exchange_altrel(ExchangeMode mode, ExchangePath *path, RelOptInfo *outerrel,
 }
 
 /*
+ * Make scan path for foreign part as for local relation with assumptions:
+ * 1. Size and statistics of foreign part is simple as local part.
+ * 2. Indexes, triggers and others on foreign part is same as on local part.
+ */
+static Path *
+make_local_scan_path(Path *localPath, RelOptInfo *rel,
+					 IndexOptInfo **indexinfo)
+{
+	Path *pathnode = NULL;
+
+	switch (nodeTag(localPath))
+	{
+	case T_Path:
+		Assert(localPath->pathtype == T_SeqScan);
+		pathnode = makeNode(Path);
+		memcpy(pathnode, localPath, sizeof(Path));
+		pathnode->parent = rel;
+		pathnode->pathtarget = rel->reltarget;
+		break;
+
+	case T_BitmapHeapPath:
+	{
+		BitmapHeapPath *path = makeNode(BitmapHeapPath);
+		BitmapHeapPath *ptr = (BitmapHeapPath *) localPath;
+
+		memcpy(path, localPath, sizeof(BitmapHeapPath));
+		pathnode = &path->path;
+		pathnode->parent = rel;
+		pathnode->pathtarget = rel->reltarget;
+		path->bitmapqual = make_local_scan_path(ptr->bitmapqual, rel, indexinfo);
+	}
+		break;
+
+	case T_BitmapAndPath:
+	{
+		BitmapAndPath *path = makeNode(BitmapAndPath);
+		BitmapAndPath *ptr = (BitmapAndPath *) localPath;
+		ListCell *lc;
+
+		memcpy(path, localPath, sizeof(BitmapAndPath));
+		pathnode = &path->path;
+		pathnode->parent = rel;
+		pathnode->pathtarget = rel->reltarget;
+		path->bitmapquals = NIL;
+		foreach(lc, ptr->bitmapquals)
+		{
+			Path *subpath = (Path *)lfirst(lc);
+			path->bitmapquals = lappend(path->bitmapquals,
+						make_local_scan_path(subpath, rel, indexinfo));
+		}
+	}
+		break;
+
+	case T_BitmapOrPath:
+	{
+		BitmapOrPath *path = makeNode(BitmapOrPath);
+		BitmapOrPath *ptr = (BitmapOrPath *) localPath;
+		ListCell *lc;
+
+		memcpy(path, localPath, sizeof(BitmapOrPath));
+		pathnode = &path->path;
+		pathnode->parent = rel;
+		pathnode->pathtarget = rel->reltarget;
+		path->bitmapquals = NIL;
+		foreach(lc, ptr->bitmapquals)
+		{
+			Path *subpath = (Path *)lfirst(lc);
+			path->bitmapquals = lappend(path->bitmapquals,
+						make_local_scan_path(subpath, rel, indexinfo));
+		}
+	}
+		break;
+
+	case T_IndexPath:
+	{
+		IndexPath *path = makeNode(IndexPath);
+
+		memcpy(path, localPath, sizeof(IndexPath));
+		*indexinfo = path->indexinfo;
+		pathnode = &path->path;
+		pathnode->parent = rel;
+		pathnode->pathtarget = rel->reltarget;
+	}
+		break;
+
+	default:
+		Assert(0);
+	}
+
+	return pathnode;
+}
+
+/*
  * Add one path for a base relation target:  replace all ForeignScan nodes by
  * local Scan nodes.
  * Assumptions:
@@ -335,17 +428,18 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 		Bitmapset	*servers = NULL;
 		List		*subpaths = NIL;
 		List		*append_paths;
+		IndexOptInfo *indexinfo = NULL;
 
 		/*
-		 * In the case of partitioned relation all paths will be ended by Append
+		 * In the case of partitioned relation all paths ends up by an Append
 		 * or MergeAppend path node.
 		 */
-		switch (path->pathtype)
+		switch (nodeTag(path))
 		{
-		case T_Append:
+		case T_AppendPath:
 			append_paths = ((AppendPath *) path)->subpaths;
 			break;
-		case T_MergeAppend:
+		case T_MergeAppendPath:
 			append_paths = ((MergeAppendPath *) path)->subpaths;
 			break;
 		default:
@@ -354,48 +448,65 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 		}
 
 		/*
-		 * Traverse all APPEND subpaths, check for scan-type and search for
-		 * foreign scans
+		 * Search for the first local scan node. We assume all partition scans
+		 * at the same node has the only strategy. It is caused by symmetry of
+		 * data placement.
+		 */
+		for (lc1 = list_head(append_paths); lc1 != NULL; lc1 = lnext(lc1))
+		{
+			Path *subpath = (Path *) lfirst(lc1);
+
+			if (subpath->pathtype == T_ForeignScan)
+				continue;
+
+			tmpLocalScanPath = subpath;
+			break;
+		}
+
+		if (!tmpLocalScanPath)
+		{
+			/* TODO: if all partitions placed at another instances. */
+			Assert(0);
+		}
+
+		/*
+		 * Traverse all APPEND subpaths. Form new path list.
 		 */
 		foreach(lc1, append_paths)
 		{
 			Path	*subpath = (Path *) lfirst(lc1);
-			Path	*tmpPath;
+			Path	*tmpPath = NULL;
 			Oid		serverid = InvalidOid;
 
-			if ((subpath->pathtype != T_ForeignScan) && (tmpLocalScanPath))
-				/* Check assumption No.1 */
-				Assert(tmpLocalScanPath->pathtype == subpath->pathtype);
-
-			switch (subpath->pathtype)
+			switch (nodeTag(subpath))
 			{
-			case T_SeqScan:
-				tmpPath = (Path *) makeNode(SeqScan);
-				memcpy(tmpPath, subpath, sizeof(SeqScan));
+			case T_Path:
+			case T_BitmapHeapPath:
+			case T_IndexPath:
+			case T_TidPath:
+			case T_SubqueryScanPath:
+				tmpPath = subpath;
 				break;
 
-			case T_ForeignScan:
+			case T_ForeignPath:
 				serverid = subpath->parent->serverid;
-				if (PATH_REQ_OUTER(subpath) != NULL)
-					continue;
-				tmpPath = (Path *) makeNode(SeqScan);
-				tmpPath = create_seqscan_path(root, subpath->parent,
-						PATH_REQ_OUTER(subpath), 0);
+				tmpPath = make_local_scan_path(tmpLocalScanPath,
+												subpath->parent, &indexinfo);
 				break;
 
 			default:
-				elog(FATAL, "Can't process relpath for pathtype=%d", path->pathtype);
+				Assert(0);
+				elog(FATAL, "Unexpected path node: %d", nodeTag(subpath));
 			}
 
-			if (!tmpLocalScanPath)
-				tmpLocalScanPath = tmpPath;
-
+			Assert(tmpLocalScanPath);
 			subpaths = lappend(subpaths, tmpPath);
 
 			if (OidIsValid(serverid) && !bms_is_member((int)serverid, servers))
 				servers = bms_add_member(servers, serverid);
 		}
 
+		/* No one foreign partition was found. */
 		if (servers == NULL)
 			continue;
 
@@ -406,6 +517,14 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 																EXCH_GATHER);
 		set_exchange_altrel(EXCH_GATHER, (ExchangePath *) path, rel, NULL, NULL,
 																	servers);
+		if (indexinfo)
+		{
+			List **private;
+
+			private = &((ExchangePath *) path)->cp.custom_private;
+			*private = lappend(*private, indexinfo);
+		}
+
 		path = (Path *) create_distexec_path(root, rel, path, servers);
 
 		force_add_path(rel, path);
@@ -436,7 +555,7 @@ cost_exchange(PlannerInfo *root, RelOptInfo *baserel, ExchangePath *expath)
 	/* Estimate baserel size as best we can with local statistics. */
 	subpath = cstmSubPath1(expath);
 	expath->cp.path.rows = subpath->rows;
-	expath->cp.path.startup_cost = 0.;
+	expath->cp.path.startup_cost = subpath->startup_cost;
 	expath->cp.path.total_cost = subpath->total_cost;
 
 	switch (expath->mode)
@@ -446,7 +565,7 @@ cost_exchange(PlannerInfo *root, RelOptInfo *baserel, ExchangePath *expath)
 		expath->cp.path.total_cost += cpu_tuple_cost * expath->cp.path.rows;
 		break;
 	case EXCH_STEALTH:
-		expath->cp.path.startup_cost = 0.;
+		expath->cp.path.startup_cost += 0.;
 		expath->cp.path.total_cost += cpu_tuple_cost * expath->cp.path.rows /
 														expath->altrel.nparts;
 		break;
@@ -471,12 +590,12 @@ cost_exchange(PlannerInfo *root, RelOptInfo *baserel, ExchangePath *expath)
 		 * receive.
 		 */
 		path->rows /= expath->altrel.nparts;
-		instances = expath->altrel.nparts > 0 ? expath->altrel.nparts : 2;
+		instances = expath->altrel.nparts;
 		send_rows = path->rows - (path->rows/instances);
 		received_rows = send_rows;
 		local_rows = path->rows/instances;
-		path->total_cost += (send_rows + local_rows) * DEFAULT_CPU_TUPLE_COST;
-		path->total_cost += (received_rows) * DEFAULT_CPU_TUPLE_COST * 4.;
+		path->total_cost += (send_rows + local_rows) * cpu_tuple_cost;
+		path->total_cost += (received_rows) * cpu_tuple_cost * 4.;
 	}
 		break;
 	default:
@@ -490,7 +609,7 @@ cost_exchange(PlannerInfo *root, RelOptInfo *baserel, ExchangePath *expath)
  * and deserialized at some instances and convert to an exchange state.
  */
 static struct Plan *
-ExchangePlanCustomPath(PlannerInfo *root,
+ExchangeCreateCustomPlan(PlannerInfo *root,
 					   RelOptInfo *rel,
 					   struct CustomPath *best_path,
 					   List *tlist,
@@ -539,6 +658,7 @@ ExchangePlanCustomPath(PlannerInfo *root,
 
 	exchange->custom_exprs = private->att_exprs;
 	exchange->custom_private = lappend(exchange->custom_private, private);
+	exchange->custom_private = list_concat(exchange->custom_private, path->cp.custom_private);
 	return &exchange->scan.plan;
 }
 
@@ -567,7 +687,7 @@ create_gather_dfn(EPPNode *epp, RelOptInfo *rel)
 	epp->nnodes = rel->nparts;
 	epp->nodes = (NodeName *) palloc(sizeof(NodeName) * epp->nnodes);
 
-	for(partno = 0; partno < epp->nnodes; partno++)
+	for (partno = 0; partno < epp->nnodes; partno++)
 	{
 		RelOptInfo *part_rel = rel->part_rels[partno];
 
@@ -606,7 +726,7 @@ create_stealth_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root)
 	epp->nnodes = rel->nparts;
 	epp->nodes = (NodeName *) palloc(sizeof(NodeName) * epp->nnodes);
 
-	for(partno = 0; partno < epp->nnodes; partno++)
+	for (partno = 0; partno < epp->nnodes; partno++)
 	{
 		RelOptInfo *part_rel = rel->part_rels[partno];
 
@@ -635,7 +755,7 @@ create_shuffle_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root)
 	elog(LOG, "SHUFFLE. epp->nnodes=%d", epp->nnodes);
 	epp->nodes = (NodeName *) palloc(sizeof(NodeName) * epp->nnodes);
 
-	for(partno = 0; partno < epp->nnodes; partno++)
+	for (partno = 0; partno < epp->nnodes; partno++)
 	{
 		RelOptInfo *part_rel = rel->part_rels[partno];
 
@@ -684,7 +804,7 @@ create_broadcast_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root)
 	epp->nnodes = rel->nparts;
 	epp->nodes = (NodeName *) palloc(sizeof(NodeName) * epp->nnodes);
 
-	for(partno = 0; partno < epp->nnodes; partno++)
+	for (partno = 0; partno < epp->nnodes; partno++)
 	{
 		RelOptInfo *part_rel = rel->part_rels[partno];
 
@@ -842,8 +962,8 @@ EXCHANGE_Create_state(CustomScan *node)
 	strcpy(state->stream, strVal(lfirst(lc)));
 
 	/* Load partition info */
-	Assert(list_length(private_data) == 2);
-	epp = lsecond(private_data);
+	Assert(list_length(private_data) <= 3);
+	epp = (EPPNode *) lsecond(private_data);
 	state->mode = epp->mode;
 	if (state->mode == EXCH_SHUFFLE)
 	{
@@ -862,6 +982,12 @@ EXCHANGE_Create_state(CustomScan *node)
 	state->nodes = epp->nodes;
 	state->nnodes = epp->nnodes;
 	state->indexes = (int *) palloc(sizeof(int) * state->nnodes);
+
+	if (lnext(lnext(list_head(private_data))) != NULL)
+		state->indexinfo = (IndexOptInfo *) lthird(private_data);
+	else
+		state->indexinfo = NULL;
+
 	return (Node *) state;
 }
 
@@ -874,14 +1000,11 @@ EXCHANGE_Begin(CustomScanState *node, EState *estate, int eflags)
 	ExchangeState *state = (ExchangeState *) node;
 	TupleDesc	scan_tupdesc;
 
-	elog(LOG, "Subscribe on%s. EX mode=%d", state->stream, state->mode);
 	Stream_subscribe(state->stream);
 
 	scan_plan = linitial(cscan->custom_plans);
 	planState = (PlanState *) ExecInitNode(scan_plan, estate, eflags);
 	node->custom_ps = lappend(node->custom_ps, planState);
-
-	elog(LOG, "BEGIN Exchange stream=%s, mode=%d", state->stream, state->mode);
 
 	state->init = false;
 	state->ltuples = 0;
@@ -932,7 +1055,7 @@ EXCHANGE_Execute(CustomScanState *node)
 
 	init_state_ifany(state);
 
-	for(;;)
+	for (;;)
 	{
 		TupleTableSlot *slot = NULL;
 		DmqDestinationId dest;
@@ -1061,7 +1184,6 @@ EXCHANGE_Rescan(CustomScanState *node)
 	state->ltuples = 0;
 	state->rtuples = 0;
 	state->hasLocal = true;
-	elog(LOG, "ReScan!");
 }
 
 static void

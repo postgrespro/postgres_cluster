@@ -21,11 +21,13 @@
 #include "nodes/nodeFuncs.h"
 #include "nodes/nodes.h"
 #include "nodes/pg_list.h"
+#include "parser/parsetree.h"
 #include "postgres_fdw.h"
 #include "postmaster/postmaster.h"
 #include "utils/queryenvironment.h"
 #include "utils/rel.h"
 
+#include "exchange.h"
 #include "stream.h"
 
 
@@ -47,7 +49,7 @@ char destsName[10] = "DMQ_DESTS";
 static Node *CreateDistPlanExecState(CustomScan *node);
 static char *serialize_plan(Plan *plan, const char *sourceText,
 														ParamListInfo params);
-static Plan *add_pstmt_node(Plan *plan, EState *estate);
+static PlannedStmt *add_pstmt_node(Plan *plan, EState *estate);
 static void BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags);
 static TupleTableSlot *ExecDistPlanExec(CustomScanState *node);
 static void ExecEndDistPlanExec(CustomScanState *node);
@@ -121,7 +123,6 @@ serialize_plan(Plan *plan, const char *sourceText, ParamListInfo params)
 	set_portable_output(true);
 
 	splan = nodeToString(plan);
-
 	set_portable_output(false);
 	plen = pg_b64_enc_len(strlen(splan) + 1);
 	plan_container = (char *) palloc0(plen + 1);
@@ -158,7 +159,7 @@ serialize_plan(Plan *plan, const char *sourceText, ParamListInfo params)
 	return query;
 }
 
-static Plan *
+static PlannedStmt *
 add_pstmt_node(Plan *plan, EState *estate)
 {
 	PlannedStmt *pstmt;
@@ -210,11 +211,12 @@ add_pstmt_node(Plan *plan, EState *estate)
 	pstmt->stmt_len = -1;
 
 	/* Return dummy PlannedStmt. */
-	return (Plan *) pstmt;
+	return pstmt;
 }
 
 void
-EstablishDMQConnections(const lcontext *context, const char *serverName, PlanState *substate)
+EstablishDMQConnections(const lcontext *context, const char *serverName,
+						EState *estate, PlanState *substate)
 {
 	int nservers = bms_num_members(context->servers);
 	DMQDestCont *dmq_data = palloc(sizeof(DMQDestCont));
@@ -268,11 +270,11 @@ EstablishDMQConnections(const lcontext *context, const char *serverName, PlanSta
 	dmq_data->coordinator_num = coordinator_num;
 	dmq_init_barrier(dmq_data, substate);
 	/* Add list of destinations in queryEnv */
-	if (!context->estate->es_queryEnv)
-		context->estate->es_queryEnv = create_queryEnv();
+	if (!estate->es_queryEnv)
+		estate->es_queryEnv = create_queryEnv();
 	enr->md.name = destsName;
 	enr->reldata = (void *) dmq_data;
-	register_ENR(context->estate->es_queryEnv, enr);
+	register_ENR(estate->es_queryEnv, enr);
 }
 
 static void
@@ -282,21 +284,31 @@ BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags)
 	DPEState	*dpe = (DPEState *) node;
 	Plan		*subplan;
 	PlanState	*subPlanState;
+	PlannedStmt *pstmt;
 	bool		explain_only = ((eflags & EXEC_FLAG_EXPLAIN_ONLY) != 0);
+	char *query;
+	lcontext context;
 
 	Assert(list_length(cscan->custom_plans) == 1);
 
 	/* Initialize subtree */
 	subplan = linitial(cscan->custom_plans);
+	pstmt = add_pstmt_node(subplan, estate);
+	query = serialize_plan((Plan *) pstmt, estate->es_sourceText, NULL);
+
+	context.pstmt = pstmt;
+	context.eflags = eflags;
+	context.servers = NULL;
+	context.indexinfo = NULL;
+	localize_plan(subplan, &context);
+
 	subPlanState = (PlanState *) ExecInitNode(subplan, estate, eflags);
 	node->custom_ps = lappend(node->custom_ps, subPlanState);
 
 	if (!explain_only)
 	{
-		char	*query;
 		int i = 0;
 		ListCell	*lc;
-		lcontext context;
 
 		/* The Plan involves foreign servers and uses exchange nodes. */
 		if (cscan->custom_private == NIL)
@@ -304,8 +316,6 @@ BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags)
 
 		dpe->nconns = list_length(cscan->custom_private);
 		dpe->conn = palloc(sizeof(PGconn *) * dpe->nconns);
-
-		query = serialize_plan(add_pstmt_node(subplan, estate), estate->es_sourceText, NULL);
 
 		for (lc = list_head(cscan->custom_private); lc != NULL; lc = lnext(lc))
 		{
@@ -322,15 +332,11 @@ BeginDistPlanExec(CustomScanState *node, EState *estate, int eflags)
 			i++;
 			Assert(res == 1);
 		}
-		Assert(i > 0);
-		context.estate = estate;
-		context.eflags = eflags;
-		context.servers = NULL;
 
-		localize_plan(subPlanState, &context);
+		Assert(i > 0);
 		Assert(bms_num_members(context.servers) > 0);
 
-		EstablishDMQConnections(&context, " ", subPlanState);
+		EstablishDMQConnections(&context, " ", estate, subPlanState);
 	}
 }
 
@@ -494,55 +500,171 @@ create_distexec_path(PlannerInfo *root, RelOptInfo *rel, Path *children,
 	return path;
 }
 
+static Oid
+get_appropriate_index(Relation rel, IndexOptInfo *ri_info)
+{
+	List *indexoidlist = RelationGetIndexList(rel);
+	ListCell *lc;
+	int i;
+
+	foreach(lc, indexoidlist)
+	{
+		Oid indexoid = lfirst_oid(lc);
+		Relation	irel;
+		Form_pg_index index;
+
+		irel = index_open(indexoid, AccessShareLock);
+		index = irel->rd_index;
+
+		if (!IndexIsValid(index))
+		{
+			index_close(irel, NoLock);
+			continue;
+		}
+
+		if (irel->rd_rel->relkind == RELKIND_PARTITIONED_INDEX)
+		{
+			index_close(irel, NoLock);
+			continue;
+		}
+
+		if (ri_info->ncolumns != index->indnatts ||
+			ri_info->nkeycolumns != index->indnkeyatts ||
+			ri_info->relam != irel->rd_rel->relam)
+		{
+			heap_close(irel, NoLock);
+			continue;
+		}
+
+		for (i = 0; i < ri_info->ncolumns; i++)
+		{
+			if (ri_info->indexkeys[i] != index->indkey.values[i] ||
+				ri_info->opfamily[i] != irel->rd_opfamily[i] ||
+				ri_info->opcintype[i] != irel->rd_opcintype[i] ||
+				ri_info->indexcollations[i] != irel->rd_indcollation[i])
+				break;
+
+		}
+
+		if (i < ri_info->ncolumns)
+		{
+			heap_close(irel, NoLock);
+			continue;
+		}
+
+		heap_close(irel, NoLock);
+		return indexoid;
+	}
+	return InvalidOid;
+}
+
 bool
-localize_plan(PlanState *node, lcontext *context)
+localize_plan(Plan *node, lcontext *context)
 {
 	if (node == NULL)
 		return false;
 
 	check_stack_depth();
 
-	planstate_tree_walker(node, localize_plan, context);
-
-	if (nodeTag(node->plan) == T_Append)
+	switch (nodeTag(node))
 	{
-		int i;
-		AppendState	*apSt = (AppendState *) node;
-
-		/*
-		 * Traverse all APPEND scans and search for foreign partitions. Scan of
-		 * foreign partition is replaced by DummyScan node.
-		 */
-		for (i = 0; i < apSt->as_nplans; i++)
+	case T_CustomScan:
+		if (IsExchangePlanNode(node))
 		{
-			switch (nodeTag(apSt->appendplans[i]))
-			{
-			case T_SeqScanState:
-			case T_IndexScanState:
-			case T_BitmapIndexScanState:
-			case T_BitmapHeapScanState:
-			{
-				ScanState	*ss = (ScanState *) apSt->appendplans[i];
-				if (ss->ss_currentRelation->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
-				{
-					CustomScan *dummyScan = make_dummyscan();
-					Oid serverid;
+			List *private = ((CustomScan *) node)->custom_private;
 
-					ss->ps.plan = &dummyScan->scan.plan;
-					apSt->appendplans[i] = ExecInitNode(ss->ps.plan, context->estate, context->eflags);
+			if (lnext(lnext(list_head(private))))
+				context->indexinfo = (IndexOptInfo *) lthird(private);
+		}
 
-					serverid = GetForeignServerIdByRelId(ss->ss_currentRelation->rd_id);
-					if (!bms_is_member((int)serverid, context->servers))
-						context->servers = bms_add_member(context->servers, (int)serverid);
-					ExecCloseScanRelation(ss->ss_currentRelation);
-				}
-			}
+		plan_tree_walker(node, localize_plan, context);
+		context->indexinfo = NULL;
+		break;
+
+	case T_Append:
+	case T_MergeAppend:
+	{
+		ListCell *lc;
+		List **plans;
+
+		context->foreign_scans = NIL;
+		plan_tree_walker(node, localize_plan, context);
+
+		if (IsA(node, MergeAppend))
+			plans = &((MergeAppend *) node)->mergeplans;
+		else
+			plans = &((Append *) node)->appendplans;
+
+		foreach(lc, context->foreign_scans)
+		{
+			Index scanrelid = ((Scan *)lfirst(lc))->scanrelid;
+
+			*plans = list_delete_ptr(*plans, lfirst(lc));
+			*plans = lappend(*plans, make_dummyscan(scanrelid));
+		}
+	}
+		break;
+
+	case T_SeqScan:
+	case T_IndexScan:
+	case T_IndexOnlyScan:
+	case T_BitmapIndexScan:
+	case T_BitmapHeapScan:
+	{
+		Scan *scan = (Scan *) node;
+		Relation rel;
+		Oid reloid;
+
+		reloid = getrelid(scan->scanrelid, context->pstmt->rtable);
+		rel = heap_open(reloid, NoLock);
+		if (rel->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
+		{
+			Oid serverid;
+
+			serverid = GetForeignServerIdByRelId(rel->rd_id);
+			if (!bms_is_member((int)serverid, context->servers))
+				context->servers = bms_add_member(context->servers, (int)serverid);
+			context->foreign_scans = lappend(context->foreign_scans, node);
+			relation_close(rel, NoLock);
+			break;
+		}
+
+		/* Need to localize scan */
+		if (IsA(node, IndexScan) || IsA(node, IndexOnlyScan) ||
+			IsA(node, BitmapIndexScan))
+		{
+			Oid indexid;
+
+			/*
+			 * We need to find index relation that can do Index Scan.
+			 */
+			Assert(context->indexinfo);
+			indexid = get_appropriate_index(rel, context->indexinfo);
+			Assert(indexid != InvalidOid);
+			switch (nodeTag(node))
+			{
+			case T_IndexScan:
+				((IndexScan *) node)->indexid = indexid;
+				break;
+			case T_IndexOnlyScan:
+				((IndexScan *) node)->indexid = indexid;
+				break;
+			case T_BitmapIndexScan:
+				((BitmapIndexScan *) node)->indexid = indexid;
 				break;
 			default:
-				elog(LOG, "!! Some problems here: tag=%d", nodeTag(apSt->appendplans[i]));
-				break;
+				Assert(0);
 			}
 		}
+
+		relation_close(rel, NoLock);
+		plan_tree_walker(node, localize_plan, context);
+	}
+		break;
+
+	default:
+		plan_tree_walker(node, localize_plan, context);
+		break;
 	}
 
 	return false;

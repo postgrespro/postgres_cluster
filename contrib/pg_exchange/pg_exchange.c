@@ -178,14 +178,15 @@ exec_plan(char *squery, PlannedStmt *pstmt, ParamListInfo paramLI, const char *s
 									paramLI, NULL,
 									0);
 
-		ExecutorStart(queryDesc, eflags);
-
-		context.estate = queryDesc->estate;
+		context.pstmt = pstmt;
 		context.eflags = eflags;
 		context.servers = NULL;
-		localize_plan(queryDesc->planstate, &context);
-		EstablishDMQConnections(&context, serverName, queryDesc->planstate);
+		context.indexinfo = NULL;
+		localize_plan(pstmt->planTree, &context);
 
+		ExecutorStart(queryDesc, eflags);
+		EstablishDMQConnections(&context, serverName, queryDesc->estate,
+								queryDesc->planstate);
 		PushActiveSnapshot(queryDesc->snapshot);
 		ExecutorRun(queryDesc, ForwardScanDirection, 0, true);
 		PopActiveSnapshot();

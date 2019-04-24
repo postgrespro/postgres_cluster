@@ -22,12 +22,19 @@
 
 #define EXCHANGE_NAME			"EXCHANGE"
 #define EXCHANGEPATHNAME		"Exchange"
+#define EXCHANGEPLANNAME		"ExchangePlanNode"
 #define EXCHANGE_PRIVATE_NAME	"ExchangePlanPrivate"
 
 #define IsExchangeNode(pathnode) \
 	((((Path *) pathnode)->pathtype == T_CustomScan) && \
 	(strcmp(((CustomPath *)(pathnode))->methods->CustomName, \
 	EXCHANGEPATHNAME) == 0))
+
+#define IsExchangePlanNode(node) \
+	(IsA(node, CustomScan) && \
+	(strcmp(((CustomScan *)(node))->methods->CustomName, \
+	EXCHANGEPLANNAME) == 0))
+
 
 #define cstmSubPath1(customPath) (Path *) linitial(((CustomPath *) \
 									customPath)->custom_paths)
@@ -77,6 +84,7 @@ typedef struct ExchangeState
 	NodeName *nodes;
 	int *indexes;
 	ExchangeMode mode;
+	IndexOptInfo *indexinfo;
 } ExchangeState;
 
 extern uint32 exchange_counter;
