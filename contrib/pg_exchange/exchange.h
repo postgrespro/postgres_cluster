@@ -39,6 +39,9 @@
 #define cstmSubPath1(customPath) (Path *) linitial(((CustomPath *) \
 									customPath)->custom_paths)
 
+#define cstmSubPlan1(custom) ((Plan *) linitial(((CustomScan *) \
+									custom)->custom_plans))
+
 typedef enum ExchangeMode
 {
 	EXCH_GATHER,

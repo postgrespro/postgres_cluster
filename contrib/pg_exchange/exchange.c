@@ -263,15 +263,18 @@ set_exchange_altrel(ExchangeMode mode, ExchangePath *path, RelOptInfo *outerrel,
 	RelOptInfo *rel = &path->altrel;
 
 	Assert(rel && (outerrel || innerrel));
-	Assert(!bms_is_empty(servers));
+	Assert(!bms_is_empty(servers) || mode != EXCH_SHUFFLE);
 
-	rel->nparts = bms_num_members(servers);
-	rel->part_rels = palloc(sizeof(RelOptInfo *) * rel->nparts);
-	for (i = 0; i < rel->nparts; i++)
+	if (!bms_is_empty(servers))
 	{
-		sid = bms_next_member(servers, sid);
-		rel->part_rels[i] = palloc0(sizeof(RelOptInfo));
-		rel->part_rels[i]->serverid = (Oid) sid;
+		rel->nparts = bms_num_members(servers);
+		rel->part_rels = palloc(sizeof(RelOptInfo *) * rel->nparts);
+		for (i = 0; i < rel->nparts; i++)
+		{
+			sid = bms_next_member(servers, sid);
+			rel->part_rels[i] = palloc0(sizeof(RelOptInfo));
+			rel->part_rels[i]->serverid = (Oid) sid;
+		}
 	}
 
 	switch (mode)
@@ -399,6 +402,82 @@ make_local_scan_path(Path *localPath, RelOptInfo *rel,
 	return pathnode;
 }
 
+static Path *
+foreign_to_seqscan(PlannerInfo *root, RelOptInfo *rel, ForeignPath *fpath)
+{
+	Path		*seqScan = makeNode(Path);
+	Cost		startup_cost = 0;
+	Cost		cpu_run_cost;
+
+	seqScan->pathtype = T_SeqScan;
+	seqScan->parallel_aware = fpath->path.parallel_aware;
+	seqScan->parallel_safe = fpath->path.parallel_safe;
+	seqScan->parallel_workers = fpath->path.parallel_workers;
+	seqScan->param_info = get_baserel_parampathinfo(root, rel, rel->lateral_relids);
+
+	seqScan->parent = fpath->path.parent;
+	seqScan->pathkeys = fpath->path.pathkeys;
+	seqScan->pathtarget = fpath->path.pathtarget;
+	seqScan->rows = fpath->path.rows;
+	seqScan->startup_cost = fpath->path.startup_cost;
+	seqScan->total_cost = fpath->path.total_cost;
+
+	cpu_run_cost = cpu_tuple_cost * rel->tuples;
+	cpu_run_cost += seqScan->pathtarget->cost.per_tuple * seqScan->rows;
+	seqScan->startup_cost = startup_cost;
+	/* TODO: Disk run costs and qual costs? */
+	seqScan->total_cost = startup_cost + cpu_run_cost;
+
+	return seqScan;
+}
+
+static void
+add_trivial_distributed_path(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry *rte)
+{
+	ListCell   *lc;
+
+	foreach(lc, rel->pathlist)
+	{
+		Path *path = (Path *) lfirst(lc);
+		Bitmapset *servers = NULL;
+		IndexOptInfo *indexinfo = NULL;
+
+		switch (nodeTag(path))
+		{
+		case T_Path:
+		case T_BitmapHeapPath:
+		case T_IndexPath:
+		case T_TidPath:
+		case T_SubqueryScanPath:
+			break;
+
+		case T_ForeignPath:
+			servers = bms_add_member(servers, (int) path->parent->serverid);
+			path = foreign_to_seqscan(root, rel, (ForeignPath *) path);
+			break;
+
+		default:
+			Assert(0);
+			elog(FATAL, "Unexpected path node: %d", nodeTag(path));
+		}
+		path = (Path *) create_exchange_path(root, rel, (Path *) path,
+																EXCH_GATHER);
+		set_exchange_altrel(EXCH_GATHER, (ExchangePath *) path, rel, NULL, NULL,
+																	servers);
+		if (indexinfo)
+		{
+			List **private;
+
+			private = &((ExchangePath *) path)->cp.custom_private;
+			*private = lappend(*private, indexinfo);
+		}
+
+		path = (Path *) create_distexec_path(root, rel, path, servers);
+
+		force_add_path(rel, path);
+	}
+}
+
 /*
  * Add one path for a base relation target:  replace all ForeignScan nodes by
  * local Scan nodes.
@@ -415,8 +494,11 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 	ListCell   *lc;
 
 	if (!rte->inh)
+	{
 		/* Relation is not contain any partitions. */
+//		add_trivial_distributed_path(root, rel, rti, rte);
 		return;
+	}
 
 	/* Traverse all possible paths and search for APPEND */
 	foreach(lc, rel->pathlist)
@@ -427,7 +509,7 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 		ListCell	*lc1;
 		Bitmapset	*servers = NULL;
 		List		*subpaths = NIL;
-		List		*append_paths;
+		List		**append_paths;
 		IndexOptInfo *indexinfo = NULL;
 
 		/*
@@ -437,10 +519,10 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 		switch (nodeTag(path))
 		{
 		case T_AppendPath:
-			append_paths = ((AppendPath *) path)->subpaths;
+			append_paths = &((AppendPath *) path)->subpaths;
 			break;
 		case T_MergeAppendPath:
-			append_paths = ((MergeAppendPath *) path)->subpaths;
+			append_paths = &((MergeAppendPath *) path)->subpaths;
 			break;
 		default:
 			elog(FATAL, "Unexpected node type %d, pathtype %d", path->type,
@@ -452,7 +534,7 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 		 * at the same node has the only strategy. It is caused by symmetry of
 		 * data placement.
 		 */
-		for (lc1 = list_head(append_paths); lc1 != NULL; lc1 = lnext(lc1))
+		for (lc1 = list_head(*append_paths); lc1 != NULL; lc1 = lnext(lc1))
 		{
 			Path *subpath = (Path *) lfirst(lc1);
 
@@ -472,7 +554,7 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 		/*
 		 * Traverse all APPEND subpaths. Form new path list.
 		 */
-		foreach(lc1, append_paths)
+		foreach(lc1, *append_paths)
 		{
 			Path	*subpath = (Path *) lfirst(lc1);
 			Path	*tmpPath = NULL;

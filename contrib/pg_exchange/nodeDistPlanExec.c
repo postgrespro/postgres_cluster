@@ -572,12 +572,26 @@ localize_plan(Plan *node, lcontext *context)
 		if (IsExchangePlanNode(node))
 		{
 			List *private = ((CustomScan *) node)->custom_private;
-
+elog(LOG, "LOCALIZE: exchange");
 			if (lnext(lnext(list_head(private))))
 				context->indexinfo = (IndexOptInfo *) lthird(private);
 		}
 
+		context->foreign_scans = NIL;
 		plan_tree_walker(node, localize_plan, context);
+		if (context->foreign_scans != NIL)
+		{
+			CustomScan *css = (CustomScan *) node;
+//			Index scanrelid = ((Scan *) cstmSubPlan1(node))->scanrelid;
+
+			Assert(list_length(context->foreign_scans) == 1);
+			css->custom_plans = list_delete_ptr(css->custom_plans,
+															cstmSubPlan1(node));
+			css->custom_plans = lappend(css->custom_plans,
+													make_dummyscan(0));
+			list_free(context->foreign_scans);
+			context->foreign_scans = NIL;
+		}
 		context->indexinfo = NULL;
 		break;
 
@@ -602,6 +616,9 @@ localize_plan(Plan *node, lcontext *context)
 			*plans = list_delete_ptr(*plans, lfirst(lc));
 			*plans = lappend(*plans, make_dummyscan(scanrelid));
 		}
+
+		list_free(context->foreign_scans);
+		context->foreign_scans = NIL;
 	}
 		break;
 
@@ -616,8 +633,8 @@ localize_plan(Plan *node, lcontext *context)
 		Oid reloid;
 
 		reloid = getrelid(scan->scanrelid, context->pstmt->rtable);
-		rel = heap_open(reloid, NoLock);
-		if (rel->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
+		rel = try_relation_open(reloid, NoLock);
+		if (rel && rel->rd_rel->relkind == RELKIND_FOREIGN_TABLE)
 		{
 			Oid serverid;
 
@@ -626,6 +643,11 @@ localize_plan(Plan *node, lcontext *context)
 				context->servers = bms_add_member(context->servers, (int)serverid);
 			context->foreign_scans = lappend(context->foreign_scans, node);
 			relation_close(rel, NoLock);
+			break;
+		}
+		else if (!rel)
+		{
+			context->foreign_scans = lappend(context->foreign_scans, node);
 			break;
 		}
 

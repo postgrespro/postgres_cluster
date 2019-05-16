@@ -88,6 +88,25 @@ reset_cheapest(RelOptInfo *rel)
 		set_cheapest(rel);
 }
 
+static bool
+contain_distributed_paths(List *pathlist)
+{
+	ListCell *lc;
+
+	foreach(lc, pathlist)
+	{
+		Path *path = lfirst(lc);
+
+		if (IsDistExecNode(path))
+			return true;
+	}
+	return false;
+}
+
+/*
+ * TODO: We need routine cost_recalculate() that will be walk across path
+ * and call cost function at each node from leaf to the root of path tree.
+ */
 static List *
 create_distributed_join_paths(PlannerInfo *root, RelOptInfo *joinrel,
 						 RelOptInfo *outerrel, RelOptInfo *innerrel,
@@ -99,12 +118,17 @@ create_distributed_join_paths(PlannerInfo *root, RelOptInfo *joinrel,
 	List *prev_outer_pathlist;
 	List *prev_join_pathlist;
 	List *dist_paths = NIL;
+	bool distributedOuter;
+	bool distributedInner;
 
 	/* Save old pathlists. */
 	prev_inner_pathlist = innerrel->pathlist;
 	prev_outer_pathlist = outerrel->pathlist;
 	prev_join_pathlist = joinrel->pathlist;
 	innerrel->pathlist = outerrel->pathlist = joinrel->pathlist = NIL;
+
+	distributedOuter = contain_distributed_paths(prev_outer_pathlist);
+	distributedInner = contain_distributed_paths(prev_inner_pathlist);
 
 	foreach(lc, prev_inner_pathlist)
 	{
@@ -114,20 +138,26 @@ create_distributed_join_paths(PlannerInfo *root, RelOptInfo *joinrel,
 		ListCell *olc;
 		ExchangePath *gather;
 
-		/* Use only distributed paths */
-		if (!IsDistExecNode(innpath))
-			continue;
-
-		inner_servers = extractForeignServers((CustomPath *) innpath);
-		inn_child = (ExchangePath *) cstmSubPath1(innpath);
-		Assert(inn_child->mode == EXCH_GATHER);
-		if (IsExchangeNode(inn_child))
-			inn_child = create_exchange_path(root, innerrel,
-										   	   	   	   cstmSubPath1(inn_child),
-													   inner_mode);
+		if (IsDistExecNode(innpath))
+		{
+			inner_servers = extractForeignServers((CustomPath *) innpath);
+			inn_child = (ExchangePath *) cstmSubPath1(innpath);
+			Assert(inn_child->mode == EXCH_GATHER);
+			if (IsExchangeNode(inn_child))
+				inn_child = create_exchange_path(root, innerrel,
+										cstmSubPath1(inn_child), inner_mode);
+			else
+				inn_child = create_exchange_path(root, innerrel,
+												(Path *) inn_child, inner_mode);
+		}
+		else if (!distributedInner && distributedOuter)
+		{
+			/* The case of JOIN partitioned and simple relation */
+			inn_child = create_exchange_path(root, innerrel, innpath, EXCH_GATHER);
+		}
 		else
-			inn_child = create_exchange_path(root, innerrel, (Path *) inn_child,
-																	inner_mode);
+			/* Use only distributed paths */
+			continue;
 
 		innerrel->pathlist = lappend(innerrel->pathlist, inn_child);
 		Assert(list_length(innerrel->pathlist) == 1);
@@ -141,20 +171,33 @@ create_distributed_join_paths(PlannerInfo *root, RelOptInfo *joinrel,
 			bool res;
 
 			/* Use only distributed paths */
-			if (!IsDistExecNode(outpath))
-				continue;
+			if (IsDistExecNode(outpath))
+			{
+				outer_servers = extractForeignServers((CustomPath *) outpath);
+				if (!outer_servers && !outer_servers &&
+					inner_mode ==EXCH_SHUFFLE && outer_mode ==EXCH_SHUFFLE)
+					continue;
 
-			outer_servers = extractForeignServers((CustomPath *) outpath);
-			out_child = (ExchangePath *) cstmSubPath1(outpath);
-			Assert(out_child->mode == EXCH_GATHER);
-			if (IsExchangeNode(out_child))
-				out_child = create_exchange_path(root, outerrel,
-											   cstmSubPath1(out_child),
-											   outer_mode);
+				out_child = (ExchangePath *) cstmSubPath1(outpath);
+				Assert(out_child->mode == EXCH_GATHER);
+				if (IsExchangeNode(out_child))
+					out_child = create_exchange_path(root, outerrel,
+										   cstmSubPath1(out_child), outer_mode);
+				else
+					out_child = create_exchange_path(root, outerrel,
+												(Path *) out_child, inner_mode);
+				if (!distributedInner)
+					set_exchange_altrel(EXCH_GATHER, inn_child, innerrel, NULL,
+														NULL, outer_servers);
+			}
+			else if (distributedInner && !distributedOuter)
+			{
+				out_child = create_exchange_path(root, outerrel, outpath, EXCH_GATHER);
+				set_exchange_altrel(EXCH_GATHER, out_child, outerrel, NULL,
+														NULL, inner_servers);
+			}
 			else
-				out_child = create_exchange_path(root, outerrel,
-															(Path *) out_child,
-															inner_mode);
+				continue;
 
 			if (inner_mode == EXCH_SHUFFLE)
 			{
@@ -204,16 +247,18 @@ create_distributed_join_paths(PlannerInfo *root, RelOptInfo *joinrel,
 			{
 				JoinPath *jp = (JoinPath *) path;
 
+				set_exchange_altrel(EXCH_BROADCAST, out_child, NULL,
+						&((ExchangePath *)cstmSubPath1(out_child))->altrel,
+						NIL, bms_union(inner_servers, outer_servers));
+				inn_child->mode = EXCH_STEALTH;
+				cost_exchange(root, outerrel, out_child);
+				cost_exchange(root, innerrel, inn_child);
+
 				if (jp->innerjoinpath->pathtype != T_Material)
 					jp->innerjoinpath = (Path *) create_material_path(innerrel,
 															jp->innerjoinpath);
 				Assert(jp->innerjoinpath->pathtype == T_Material);
-
-				set_exchange_altrel(EXCH_BROADCAST, out_child, NULL,
-						&((ExchangePath *)cstmSubPath1(out_child))->altrel,
-						NIL, bms_union(inner_servers, outer_servers));
 				cost_exchange(root, joinrel, out_child);
-				inn_child->mode = EXCH_STEALTH;
 			}
 			else if (inner_mode == EXCH_SHUFFLE)
 			{
