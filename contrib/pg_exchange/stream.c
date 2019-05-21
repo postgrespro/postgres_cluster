@@ -325,6 +325,7 @@ RecvTuple(TupleDesc tupdesc, char *streamName, int *status)
 					*status = 3;
 					break;
 				}
+
 				pfree(buf);
 				return (TupleTableSlot *) NULL;
 			}

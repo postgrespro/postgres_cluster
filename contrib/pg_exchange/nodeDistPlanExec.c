@@ -44,6 +44,7 @@ static CustomScanMethods	distplanexec_plan_methods;
 static CustomExecMethods	distplanexec_exec_methods;
 
 char destsName[10] = "DMQ_DESTS";
+char *network_interface;
 
 
 static Node *CreateDistPlanExecState(CustomScan *node);
@@ -257,7 +258,7 @@ EstablishDMQConnections(const lcontext *context, const char *serverName,
 			sprintf(connstr, "host=%s port=%d "
 							 "fallback_application_name=%s",
 							 host, port, senderName);
-
+elog(LOG, "CONN STR: %s", connstr);
 			sub->dest_id = dmq_destination_add(connstr, senderName, receiverName, 10);
 			memcpy(sub->node, receiverName, strlen(receiverName) + 1);
 		}
@@ -391,12 +392,9 @@ ExplainDistPlanExec(CustomScanState *node, List *ancestors, ExplainState *es)
 }
 
 static struct Plan *
-CreateDistExecPlan(PlannerInfo *root,
-					   RelOptInfo *rel,
-					   struct CustomPath *best_path,
-					   List *tlist,
-					   List *clauses,
-					   List *custom_plans)
+CreateDistExecPlan(PlannerInfo *root, RelOptInfo *rel,
+				   struct CustomPath *best_path,
+				   List *tlist, List *clauses, List *custom_plans)
 {
 	CustomScan *distExecNode;
 
@@ -572,7 +570,7 @@ localize_plan(Plan *node, lcontext *context)
 		if (IsExchangePlanNode(node))
 		{
 			List *private = ((CustomScan *) node)->custom_private;
-elog(LOG, "LOCALIZE: exchange");
+
 			if (lnext(lnext(list_head(private))))
 				context->indexinfo = (IndexOptInfo *) lthird(private);
 		}
@@ -582,7 +580,6 @@ elog(LOG, "LOCALIZE: exchange");
 		if (context->foreign_scans != NIL)
 		{
 			CustomScan *css = (CustomScan *) node;
-//			Index scanrelid = ((Scan *) cstmSubPlan1(node))->scanrelid;
 
 			Assert(list_length(context->foreign_scans) == 1);
 			css->custom_plans = list_delete_ptr(css->custom_plans,
@@ -722,10 +719,48 @@ FSExtractServerName(Oid fsid, char **host, int *port)
 	*host = hostname;
 }
 
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <netinet/in.h>
+#include <net/if.h>
+#include <arpa/inet.h>
+#include "common/ip.h"
+
 void
 GetMyServerName(char **host, int *port)
 {
-	*host = pstrdup(LOCALHOST);
+	 int fd;
+	 struct ifreq ifr;
+	 struct addrinfo hintp;
+	 struct addrinfo *result;
+	 char *sipaddr;
+	 struct sockaddr_storage saddr;
+	 int res;
+
+	 fd = socket(AF_INET, SOCK_DGRAM, 0);
+
+	 /* I want to get an IPv4 IP address */
+	 ifr.ifr_addr.sa_family = AF_INET;
+
+	 /* I want IP address attached to "eth0" */
+	 strncpy(ifr.ifr_name, network_interface, IFNAMSIZ-1);
+	 ioctl(fd, SIOCGIFADDR, &ifr);
+	 close(fd);
+
+	 MemSet(&hintp, 0, sizeof(hintp));
+	 hintp.ai_family = AF_INET;
+	 hintp.ai_flags = AI_ALL;
+	 sipaddr = inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr);
+	 if ((res = pg_getaddrinfo_all(sipaddr, NULL, &hintp, &result)) != 0)
+		 elog(FATAL, "Cannot resolve network address %s, error=%d.", sipaddr, res);
+	 memcpy(&saddr, result->ai_addr, result->ai_addrlen);
+	 *host = (char *) palloc0(NI_MAXHOST);
+	 if (pg_getnameinfo_all(&saddr, result->ai_addrlen, *host, NI_MAXHOST,
+		 NULL, 0, 0) != 0)
+		 elog(FATAL, "Cannot resolve network name");
+
 	*port = PostPortNumber;
 }
 
@@ -755,8 +790,9 @@ dmq_init_barrier(DMQDestCont *dmq_data, PlanState *child)
 	/* Wait for dmq connection establishing */
 	for (i = 0; i < dmq_data->nservers; i++)
 		while (dmq_get_destination_status(dmq_data->dests[i].dest_id) != Active);
-
+elog(LOG, "DMQ INIT BARRIER");
 	init_exchange_channel(child, (void *) dmq_data);
+	elog(LOG, "END DMQ INIT BARRIER");
 }
 
 static bool
@@ -809,7 +845,7 @@ init_exchange_channel(PlanState *node, void *context)
 		}
 		else
 			state->indexes[i] = j;
-
+elog(LOG, "SendByteMessage: j=%d, dest_id=%d, stream=%s", j, dmq_data->dests[j].dest_id, state->stream);
 		SendByteMessage(dmq_data->dests[j].dest_id, state->stream, ib);
 	}
 	return false;
