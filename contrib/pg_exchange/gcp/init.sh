@@ -31,6 +31,9 @@ initdb -D $PGDATA
 echo "shared_preload_libraries = 'postgres_fdw, pg_exchange'" >> $PGDATA/postgresql.conf
 echo "listen_addresses = '*'" >> $PGDATA/postgresql.conf
 echo "host    all             all             0.0.0.0/0                 trust" >> $PGDATA/pg_hba.conf
+echo "enable_mergejoin = 'off'" >> $PGDATA/postgresql.conf
+echo "enable_mergejoin = 'off'" >> $PGDATA/postgresql.conf
+echo "enable_mergejoin = 'off'" >> $PGDATA/postgresql.conf
 
 pg_ctl -w -c -D $PGDATA -l logfile.log start
 createdb
