@@ -706,9 +706,13 @@ get_hostname(const char *sipaddr)
 	char *hostname;
 	struct addrinfo hintp;
 	struct addrinfo *result;
-
 	struct sockaddr_storage saddr;
 	int res;
+
+	MemSet(&hintp, 0, sizeof(hintp));
+	hintp.ai_socktype = SOCK_STREAM;
+	hintp.ai_family = AF_UNSPEC;
+	hintp.ai_flags = AI_ALL;
 
 	if ((res = pg_getaddrinfo_all(sipaddr, NULL, &hintp, &result)) != 0)
 		elog(FATAL, "Cannot resolve network address %s, error=%d.", sipaddr, res);
