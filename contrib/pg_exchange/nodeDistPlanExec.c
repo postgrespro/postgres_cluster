@@ -143,7 +143,7 @@ serialize_plan(Plan *plan, const char *sourceText, ParamListInfo params)
 	rlen1 = pg_b64_encode(sparams, sparams_len, params_container);
 	Assert(rlen >= rlen1);
 
-	GetMyServerName(&host, &port);
+	host = GetMyServerName(&port);
 	serverName = serializeServer(host, port);
 	query = palloc0(qlen + plen + rlen + strlen(serverName) + 100);
 	sprintf(query, "SELECT public.pg_exec_plan('%s', '%s', '%s', '%s');",
@@ -151,7 +151,6 @@ serialize_plan(Plan *plan, const char *sourceText, ParamListInfo params)
 						serverName);
 
 	pfree(serverName);
-	pfree(host);
 	pfree(query_container);
 	pfree(plan_container);
 	pfree(sparams);
@@ -239,7 +238,7 @@ EstablishDMQConnections(const lcontext *context, const char *serverName,
 		char *host;
 		int port;
 
-		GetMyServerName(&host, &port);
+		host = GetMyServerName(&port);
 		sprintf(senderName, "%s-%d", host, port);
 		FSExtractServerName((Oid)sid, &host, &port);
 		sprintf(receiverName, "%s-%d", host, port);
@@ -689,10 +688,40 @@ localize_plan(Plan *node, lcontext *context)
 	return false;
 }
 
+
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <netinet/in.h>
+#include <net/if.h>
+#include <arpa/inet.h>
+#include "common/ip.h"
+
 const char *LOCALHOST = "localhost";
+
+static char *
+get_hostname(const char *sipaddr)
+{
+	char *hostname;
+	struct addrinfo hintp;
+	struct addrinfo *result;
+
+	struct sockaddr_storage saddr;
+	int res;
+
+	if ((res = pg_getaddrinfo_all(sipaddr, NULL, &hintp, &result)) != 0)
+		elog(FATAL, "Cannot resolve network address %s, error=%d.", sipaddr, res);
+	memcpy(&saddr, result->ai_addr, result->ai_addrlen);
+	hostname = (char *) palloc0(NI_MAXHOST);
+	if (pg_getnameinfo_all(&saddr, result->ai_addrlen, hostname, NI_MAXHOST,
+															NULL, 0, 0) != 0)
+		elog(FATAL, "Cannot resolve network name");
+	return hostname;
+}
 /*
  * fsid - foreign server oid.
- * host - returns C-string with foreign server host name
+ * host - returns C-string contained foreign server host name
  * port - returns foreign server port number.
  */
 void
@@ -709,59 +738,31 @@ FSExtractServerName(Oid fsid, char **host, int *port)
 		DefElem    *def = (DefElem *) lfirst(lc);
 
 		if (strcmp(def->defname, "host") == 0)
-			hostname = pstrdup(defGetString(def));
+			hostname = defGetString(def);
 		else if (strcmp(def->defname, "port") == 0)
 			*port = strtol(defGetString(def), NULL, 10);
 	}
 
 	if (!hostname)
-		hostname = pstrdup(LOCALHOST);
+		hostname = GetMyServerName(NULL);
+	else
+	{
+		hostname = get_hostname(hostname);
+		/* Convert foreign server address to network host name. */
+	}
 	*host = hostname;
 }
 
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/ioctl.h>
-#include <netinet/in.h>
-#include <net/if.h>
-#include <arpa/inet.h>
-#include "common/ip.h"
-
-void
-GetMyServerName(char **host, int *port)
+char *
+GetMyServerName(int *port)
 {
-	 int fd;
-	 struct ifreq ifr;
-	 struct addrinfo hintp;
-	 struct addrinfo *result;
-	 char *sipaddr;
-	 struct sockaddr_storage saddr;
-	 int res;
+	char *host = (char *) palloc0(HOST_NAME_MAX + 1);
 
-	 fd = socket(AF_INET, SOCK_DGRAM, 0);
-
-	 /* I want to get an IPv4 IP address */
-	 ifr.ifr_addr.sa_family = AF_INET;
-
-	 /* I want IP address attached to "eth0" */
-	 strncpy(ifr.ifr_name, network_interface, IFNAMSIZ-1);
-	 ioctl(fd, SIOCGIFADDR, &ifr);
-	 close(fd);
-
-	 MemSet(&hintp, 0, sizeof(hintp));
-	 hintp.ai_family = AF_INET;
-	 hintp.ai_flags = AI_ALL;
-	 sipaddr = inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr);
-	 if ((res = pg_getaddrinfo_all(sipaddr, NULL, &hintp, &result)) != 0)
-		 elog(FATAL, "Cannot resolve network address %s, error=%d.", sipaddr, res);
-	 memcpy(&saddr, result->ai_addr, result->ai_addrlen);
-	 *host = (char *) palloc0(NI_MAXHOST);
-	 if (pg_getnameinfo_all(&saddr, result->ai_addrlen, *host, NI_MAXHOST,
-		 NULL, 0, 0) != 0)
-		 elog(FATAL, "Cannot resolve network name");
-
-	*port = PostPortNumber;
+	if (gethostname(host, HOST_NAME_MAX) != 0)
+		elog(FATAL, "An error on resolving local hostname was thrown");
+	if (port != NULL)
+		*port = PostPortNumber;
+	return host;
 }
 
 char*

@@ -41,7 +41,7 @@ extern CustomPath *create_distexec_path(PlannerInfo *root, RelOptInfo *rel,
 								  Path *children, Bitmapset *servers);
 extern bool localize_plan(Plan *node, lcontext *context);
 extern void FSExtractServerName(Oid fsid, char **host, int *port);
-extern void GetMyServerName(char **host, int *port);
+extern char *GetMyServerName(int *port);
 extern char *serializeServer(const char *host, int port);
 extern void EstablishDMQConnections(const lcontext *context,
 									const char *serverName,

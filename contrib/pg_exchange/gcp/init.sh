@@ -26,7 +26,7 @@ make -C contrib > /dev/null
 make install > /dev/null
 make -C contrib install > /dev/null
 
-initdb -D $PGDATA -E UTF8 --locale=C
+initdb -D $PGDATA
 
 echo "shared_preload_libraries = 'postgres_fdw, pg_exchange'" >> $PGDATA/postgresql.conf
 echo "listen_addresses = '*'" >> $PGDATA/postgresql.conf

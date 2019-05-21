@@ -43,6 +43,12 @@ initdb -D PGDATA_n2 -E UTF8 --locale=C
 echo "shared_preload_libraries = 'postgres_fdw, pg_exchange'" >> PGDATA_n0/postgresql.conf
 echo "shared_preload_libraries = 'postgres_fdw, pg_exchange'" >> PGDATA_n1/postgresql.conf
 echo "shared_preload_libraries = 'postgres_fdw, pg_exchange'" >> PGDATA_n2/postgresql.conf
+echo "listen_addresses = '*'" >> PGDATA_n0/postgresql.conf
+echo "listen_addresses = '*'" >> PGDATA_n1/postgresql.conf
+echo "listen_addresses = '*'" >> PGDATA_n2/postgresql.conf
+echo "host    all             all             0.0.0.0/0                 trust" >> PGDATA_n0/pg_hba.conf
+echo "host    all             all             0.0.0.0/0                 trust" >> PGDATA_n1/pg_hba.conf
+echo "host    all             all             0.0.0.0/0                 trust" >> PGDATA_n2/pg_hba.conf
 
 #echo "log_min_messages = debug1" >>  PGDATA_Slave/postgresql.conf
 

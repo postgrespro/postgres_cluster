@@ -710,7 +710,7 @@ ExchangeCreateCustomPlan(PlannerInfo *root,
 	private->node.extnodename = EXCHANGE_PRIVATE_NAME;
 
 	/* Add stream name into private field*/
-	GetMyServerName(&host, &port);
+	host = GetMyServerName(&port);
 	sprintf(streamName, "%s-%d-%d", host, port, exchange_counter++);
 	exchange->custom_private = lappend(exchange->custom_private, makeString(streamName));
 	Assert(altrel->nparts > 0);
@@ -777,7 +777,7 @@ create_gather_dfn(EPPNode *epp, RelOptInfo *rel)
 			/* Foreign relation */
 			FSExtractServerName(part_rel->serverid, &hostname, &port);
 		else
-			GetMyServerName(&hostname, &port);
+			hostname = GetMyServerName(&port);
 
 		createNodeName(epp->nodes[partno], hostname, port);
 	}
@@ -816,7 +816,7 @@ create_stealth_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root)
 			/* Foreign relation */
 			FSExtractServerName(part_rel->serverid, &hostname, &port);
 		else
-			GetMyServerName(&hostname, &port);
+			hostname = GetMyServerName(&port);
 
 		createNodeName(epp->nodes[partno], hostname, port);
 	}
@@ -845,7 +845,7 @@ create_shuffle_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root)
 			/* Foreign relation */
 			FSExtractServerName(part_rel->serverid, &hostname, &port);
 		else
-			GetMyServerName(&hostname, &port);
+			hostname = GetMyServerName(&port);
 
 		createNodeName(epp->nodes[partno], hostname, port);
 	}
@@ -894,7 +894,7 @@ create_broadcast_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root)
 			/* Foreign relation */
 			FSExtractServerName(part_rel->serverid, &hostname, &port);
 		else
-			GetMyServerName(&hostname, &port);
+			hostname = GetMyServerName(&port);
 
 		createNodeName(epp->nodes[partno], hostname, port);
 	}
