@@ -719,7 +719,7 @@ get_hostname(const char *sipaddr)
 	memcpy(&saddr, result->ai_addr, result->ai_addrlen);
 	hostname = (char *) palloc0(NI_MAXHOST);
 	if (pg_getnameinfo_all(&saddr, result->ai_addrlen, hostname, NI_MAXHOST,
-															NULL, 0, 0) != 0)
+													NULL, 0, NI_NOFQDN) != 0)
 		elog(FATAL, "Cannot resolve network name");
 	return hostname;
 }
