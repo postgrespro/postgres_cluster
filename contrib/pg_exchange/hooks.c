@@ -39,7 +39,8 @@ HOOK_Baserel_paths(PlannerInfo *root, RelOptInfo *rel, Index rti,
 	if (prev_set_rel_pathlist_hook)
 		(*prev_set_rel_pathlist_hook) (root, rel, rti, rte);
 
-	add_exchange_paths(root, rel, rti, rte);
+	if (enable_distributed_execution)
+		add_exchange_paths(root, rel, rti, rte);
 }
 
 static bool

@@ -44,7 +44,7 @@ static CustomScanMethods	distplanexec_plan_methods;
 static CustomExecMethods	distplanexec_exec_methods;
 
 char destsName[10] = "DMQ_DESTS";
-char *network_interface;
+bool enable_distributed_execution;
 
 
 static Node *CreateDistPlanExecState(CustomScan *node);

@@ -69,10 +69,16 @@ shmem_size(void)
 void
 _PG_init(void)
 {
-	DefineCustomStringVariable("network_interface",
-							   "Set network interface for EXCHANGE communications",
-							   NULL, &network_interface, "lo",
-							   PGC_SUSET, GUC_NOT_IN_SAMPLE, NULL, NULL, NULL);
+	DefineCustomBoolVariable("enable_distributed_execution",
+							 "Use distributed execution.",
+							 NULL,
+							 &enable_distributed_execution,
+							 true,
+							 PGC_USERSET,
+							 GUC_NOT_IN_SAMPLE,
+							 NULL,
+							 NULL,
+							 NULL);
 
 	EXCHANGE_Init_methods();
 	DUMMYSCAN_Init_methods();

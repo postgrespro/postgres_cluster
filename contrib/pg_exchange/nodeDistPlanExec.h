@@ -27,7 +27,7 @@ typedef struct
 } lcontext;
 
 
-extern char *network_interface;
+extern bool enable_distributed_execution;
 extern char destsName[10];
 #define DISTEXECPATHNAME	"DistExecPath"
 
