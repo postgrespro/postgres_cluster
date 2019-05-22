@@ -129,6 +129,7 @@ static shmem_startup_hook_type PreviousShmemStartupHook;
 dmq_receiver_hook_type dmq_receiver_start_hook;
 dmq_receiver_hook_type dmq_receiver_stop_hook;
 
+int dmq_heartbeat_timeout;
 void dmq_sender_main(Datum main_arg);
 
 PG_FUNCTION_INFO_V1(dmq_receiver_loop);
@@ -1138,9 +1139,9 @@ dmq_receiver_loop(PG_FUNCTION_ARGS)
 		// XXX: is it enough?
 		CHECK_FOR_INTERRUPTS();
 
-		if (dmq_now() - last_message_at > 2000)
+		if (dmq_now() - last_message_at > dmq_heartbeat_timeout)
 		{
-			mtm_log(ERROR, "[DMQ] exit receiver due to heatbeat timeout");
+			mtm_log(ERROR, "[DMQ] exit receiver due to heartbeat timeout");
 		}
 
 	}

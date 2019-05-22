@@ -19,6 +19,8 @@ typedef int8 DmqSenderId;
 #define DMQ_MAX_DESTINATIONS 127
 #define DMQ_MAX_RECEIVERS 100
 
+extern int dmq_heartbeat_timeout;
+
 extern void dmq_init(const char *library_name);
 
 extern DmqDestinationId dmq_destination_add(char *connstr,

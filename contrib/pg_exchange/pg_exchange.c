@@ -80,6 +80,18 @@ _PG_init(void)
 							 NULL,
 							 NULL);
 
+	DefineCustomIntVariable("dmq_heartbeat_timeout",
+							"Max timeout between heartbeat messages",
+							NULL,
+							&dmq_heartbeat_timeout,
+							20000,
+							1, INT_MAX,
+							PGC_USERSET,
+							GUC_UNIT_MS,
+							NULL,
+							NULL,
+							NULL);
+
 	EXCHANGE_Init_methods();
 	DUMMYSCAN_Init_methods();
 	EXEC_Hooks_init();
