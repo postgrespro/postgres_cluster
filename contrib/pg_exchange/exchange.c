@@ -1133,7 +1133,7 @@ EXCHANGE_Execute(CustomScanState *node)
 	ScanState	*ss = &node->ss;
 	ScanState	*subPlanState = linitial(node->custom_ps);
 	ExchangeState *state = (ExchangeState *) node;
-	bool readRemote = true;
+	bool readRemote = false;
 
 	init_state_ifany(state);
 
@@ -1147,7 +1147,7 @@ EXCHANGE_Execute(CustomScanState *node)
 		if ((state->activeRemotes > 0) && readRemote)
 		{
 			int status;
-elog(LOG, "Check msgs");
+
 			slot = RecvTuple(ss->ss_ScanTupleSlot->tts_tupleDescriptor,
 							 state->stream, &status);
 			switch (status)
