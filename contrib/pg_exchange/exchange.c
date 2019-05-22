@@ -1196,8 +1196,8 @@ EXCHANGE_Execute(CustomScanState *node)
 
 		if ((state->activeRemotes == 0) && (!state->hasLocal))
 		{
-//			elog(LOG, "[%s] Exchange returns NULL. Tuples: local=%d, remote=%d",
-//					state->stream, state->ltuples, state->rtuples);
+			elog(LOG, "[%s] Exchange returns NULL. Tuples: local=%d, remote=%d, send=%d",
+					state->stream, state->ltuples, state->rtuples, state->stuples);
 			return NULL;
 		}
 
@@ -1234,6 +1234,7 @@ EXCHANGE_Execute(CustomScanState *node)
 		{
 			state->stuples++;
 			SendTuple(dest, state->stream, slot, false);
+			elog(LOG, "Send tuple: %d", state->stuples);
 		}
 	}
 	return NULL;
