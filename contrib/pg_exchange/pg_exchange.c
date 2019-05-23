@@ -32,7 +32,6 @@
 
 PG_MODULE_MAGIC;
 
-PG_FUNCTION_INFO_V1(init_pg_exchange);
 PG_FUNCTION_INFO_V1(pg_exec_plan);
 
 
@@ -92,63 +91,16 @@ _PG_init(void)
 							NULL,
 							NULL);
 
+	dmq_init("pg_exchange");
 	EXCHANGE_Init_methods();
 	DUMMYSCAN_Init_methods();
 	EXEC_Hooks_init();
-	dmq_init("pg_exchange");
 
 	RequestAddinShmemSpace(shmem_size());
 	RequestNamedLWLockTranche("pg_exchange", 1);
 
 	old_dmq_receiver_stop_hook = dmq_receiver_stop_hook;
 	dmq_receiver_stop_hook = OnNodeDisconnect;
-/*	{
-		char host[1024];
-		FILE *f = fopen("/home/andrey/PostgresPro/pgcluster/hosts.txt", "rt");
-		struct addrinfo hintp;
-		struct addrinfo *result;
-		MemSet(&hintp, 0, sizeof(hintp));
-//		hintp.ai_socktype = SOCK_STREAM;
-		hintp.ai_family = AF_UNSPEC;
-		hintp.ai_flags = AI_ALL;
-
-		Assert(f != NULL);
-		while (!feof(f))
-		{
-			struct addrinfo *next;
-			int i=0;
-			int res1;
-
-			fscanf(f, "%s", host);
-			res1 = pg_getaddrinfo_all(host, NULL, &hintp, &result);
-			next = result;
-
-			while (next != NULL)
-			{
-				SockAddr a1;
-				int res2;
-				char node[NI_MAXHOST];
-				char service[NI_MAXSERV];
-				char *res;
-
-				res = inet_ntoa(((struct sockaddr_in *)next->ai_addr)->sin_addr);
-				memcpy(&a1.addr, next->ai_addr, next->ai_addrlen);
-				res2 = pg_getnameinfo_all(&a1.addr, next->ai_addrlen, node, NI_MAXHOST,
-						service, NI_MAXSERV, 0);
-				elog(LOG, "[%d] srchost: %s, res: [%d, %d] IP: %s, host: %s, service: %s.",
-						i++, host, res1, res2, res, node, service);
-				next = next->ai_next;
-			}
-			pg_freeaddrinfo_all(hintp.ai_family, result);
-		}
-		fclose(f);
-	} */
-}
-
-Datum
-init_pg_exchange(PG_FUNCTION_ARGS)
-{
-	PG_RETURN_VOID();
 }
 
 Datum

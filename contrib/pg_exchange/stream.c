@@ -73,6 +73,7 @@ Stream_subscribe(const char *streamName)
 		istream->indexes[id] = 0;
 	ostream->index = 0;
 	istream->msgs = NIL;
+	istream->deliveries = NIL;
 	ostream->buf = NULL;
 
 	istreams = lappend(istreams, istream);
@@ -114,41 +115,51 @@ RecvIfAny(void)
 	IStream *istream;
 
 	/* Try to receive a message */
-	streamName = dmq_pop(&sender_id, (void **)(&msg), &len, UINT64_MAX, false);
-	if (!streamName)
-		/* No messages arrived */
-		return;
-
-	/* Any message was received */
-	Assert(len >= MinSizeOfSendBuf);
-	istream = (IStream *) get_stream(istreams, streamName);
-
-	if ((msg->index > istream->indexes[sender_id]) || IsDeliveryMessage(msg))
+	for (;;)
 	{
-		SendBuf *buf;
+		streamName = dmq_pop(&sender_id, (void **)(&msg), &len, UINT64_MAX, false);
+		if (!streamName)
+			/* No messages arrived */
+			return;
 
+		/* Any message was received */
+		Assert(len >= MinSizeOfSendBuf);
+		istream = (IStream *) get_stream(istreams, streamName);
 		Assert(istream != NULL);
-		buf = palloc(len);
-		memcpy(buf, msg, len);
-		istream->msgs = lappend(istream->msgs, buf);
-		if (!IsDeliveryMessage(msg))
-			istream->indexes[sender_id] = buf->index;
-	}
 
-	/* Send delivery message, if needed. */
-	if (!IsDeliveryMessage(msg) && msg->needConfirm)
-	{
-		SendBuf *dbuf;
-		DmqDestinationId dest_id;
+		if ((msg->index > istream->indexes[sender_id]) || IsDeliveryMessage(msg))
+		{
+			RecvBuf *buf;
 
-		/* If message is not delivery message, send delivery. */
-		dbuf = palloc(MinSizeOfSendBuf);
-		dbuf->tot_len = MinSizeOfSendBuf;
-		dbuf->index = msg->index;
-		dest_id = dmq_dest_id(sender_id);
-		Assert(dest_id >= 0);
-		dmq_push_buffer(dest_id, istream->streamName, dbuf, dbuf->tot_len);
-		pfree(dbuf);
+			buf = palloc(MinSizeOfRecvBuf + len - MinSizeOfSendBuf);
+			buf->index = msg->index;
+			buf->sid = sender_id;
+
+			if (IsDeliveryMessage(msg))
+				istream->deliveries = lappend(istream->deliveries, buf);
+			else
+			{
+				buf->datalen = len  - MinSizeOfSendBuf;
+				memcpy(&buf->data, &msg->data, buf->datalen);
+				istream->msgs = lappend(istream->msgs, buf);
+				istream->indexes[sender_id] = buf->index;
+			}
+		}
+
+		/* Send delivery message, if needed. */
+		if (!IsDeliveryMessage(msg) && msg->needConfirm)
+		{
+			SendBuf dbuf;
+			DmqDestinationId dest_id;
+
+			/* If message is not delivery message, send delivery. */
+			dbuf.tot_len = MinSizeOfSendBuf;
+			dbuf.index = msg->index;
+			dest_id = dmq_dest_id(sender_id);
+			Assert(dest_id >= 0);
+
+			dmq_push_buffer(dest_id, istream->streamName, &dbuf, dbuf.tot_len, false);
+		}
 	}
 }
 
@@ -157,28 +168,43 @@ checkDelivery(OStream *ostream)
 {
 	IStream *istream;
 	ListCell *lc;
+	bool found = false;
+	List *temp = NIL;
 
 	RecvIfAny();
+
 	istream = (IStream *) get_stream(istreams, ostream->streamName);
 	Assert(istream);
 
-	foreach(lc, istream->msgs)
+	/* Search for the delivery message and all duplicates. */
+	foreach(lc, istream->deliveries)
 	{
-		SendBuf *buf = lfirst(lc);
-		if ((buf->index == ostream->index) &&
-			(buf->tot_len == MinSizeOfSendBuf))
+		RecvBuf *buf = lfirst(lc);
+
+		if (buf->index == ostream->index)
 		{
-			istream->msgs = list_delete_ptr(istream->msgs, buf);
-			return true;
+			temp = lappend(temp, buf);
+			found = true;
 		}
 	}
-	return false;
+
+	/* Delete all duplicates of the delivery message. */
+	foreach(lc, temp)
+	{
+		RecvBuf *buf = lfirst(lc);
+
+		istream->msgs = list_delete_ptr(istream->msgs, buf);
+		pfree(buf);
+	}
+	return found;
 }
+
 static void
 StreamRepeatSend(OStream *ostream)
 {
-	dmq_push_buffer(ostream->dest_id, ostream->streamName, ostream->buf,
-					ostream->buf->tot_len);
+	while (!dmq_push_buffer(ostream->dest_id, ostream->streamName, ostream->buf,
+			ostream->buf->tot_len, true))
+			RecvIfAny();
 }
 
 static OStream *
@@ -189,6 +215,8 @@ ISendTuple(DmqDestinationId dest_id, char *stream, TupleTableSlot *slot,
 	int tupsize;
 	SendBuf *buf;
 	OStream	*ostream;
+
+	RecvIfAny();
 
 	ostream = (OStream *) get_stream(ostreams, stream);
 	Assert(ostream && !ostream->buf);
@@ -215,11 +243,12 @@ ISendTuple(DmqDestinationId dest_id, char *stream, TupleTableSlot *slot,
 	buf->index = ++(ostream->index);
 	buf->needConfirm = needConfirm;
 	ostream->dest_id = dest_id;
-	dmq_push_buffer(dest_id, stream, buf, buf->tot_len);
+
+	while (!dmq_push_buffer(dest_id, stream, buf, buf->tot_len, true))
+		RecvIfAny();
+
 	if (buf->needConfirm)
 		ostream->buf = buf;
-	else
-		ostream->buf = NULL;
 
 	return ostream;
 }
@@ -236,11 +265,7 @@ wait_for_delivery(OStream *ostream)
 		for (waits = 0; waits < 100000; waits++)
 		{
 			if (checkDelivery(ostream))
-			{
-				pfree(ostream->buf);
-				ostream->buf = NULL;
 				return;
-			}
 		}
 		StreamRepeatSend(ostream);
 	}
@@ -250,7 +275,7 @@ wait_for_delivery(OStream *ostream)
 }
 
 void
-SendByteMessage(DmqDestinationId dest_id, char *stream, char msg)
+SendByteMessage(DmqDestinationId dest_id, char *stream, char tag)
 {
 	OStream	*ostream;
 	SendBuf *buf;
@@ -260,14 +285,48 @@ SendByteMessage(DmqDestinationId dest_id, char *stream, char msg)
 
 	buf = palloc(MinSizeOfSendBuf + 1);
 	buf->tot_len = MinSizeOfSendBuf + 1;
-	buf->data[0] = msg;
-
+	buf->data[0] = tag;
 	buf->index = ++(ostream->index);
 	buf->needConfirm = true;
+
 	ostream->buf = buf;
 	ostream->dest_id = dest_id;
-	dmq_push_buffer(dest_id, stream, buf, buf->tot_len);
+
+	while (!dmq_push_buffer(dest_id, stream, buf, buf->tot_len, true))
+		RecvIfAny();
+
 	wait_for_delivery(ostream);
+	pfree(ostream->buf);
+	ostream->buf = NULL;
+}
+
+char
+RecvByteMessage(const char *streamName, const char *sender)
+{
+	IStream *istream;
+	ListCell *lc;
+
+	RecvIfAny();
+
+	istream = (IStream *) get_stream(istreams, streamName);
+	Assert(istream);
+
+	foreach(lc, istream->msgs)
+	{
+		RecvBuf *buf = lfirst(lc);
+		const char *senderName = dmq_sender_name(buf->sid);
+
+		if (buf->datalen == 1 && strcmp(senderName, sender) == 0)
+		{
+			char tag = buf->data[0];
+
+			istream->msgs = list_delete_ptr(istream->msgs, buf);
+			pfree(buf);
+
+			return tag;
+		}
+	}
+	return 0;
 }
 
 /*
@@ -282,7 +341,11 @@ SendTuple(DmqDestinationId dest_id, char *stream, TupleTableSlot *slot,
 
 	ostream = ISendTuple(dest_id, stream, slot, needConfirm);
 	if (needConfirm)
+	{
 		wait_for_delivery(ostream);
+		pfree(ostream->buf);
+		ostream->buf = NULL;
+	}
 }
 
 /*
@@ -294,23 +357,26 @@ RecvTuple(TupleDesc tupdesc, char *streamName, int *status)
 {
 	IStream *istream;
 	ListCell *lc;
-	TupleTableSlot *slot;
+	TupleTableSlot *slot = NULL;
+	List *temp = NIL;
 
 	RecvIfAny();
 
 	istream = (IStream *) get_stream(istreams, streamName);
 	Assert(istream);
+	*status = -1; /* No tuples from network */
 
 	foreach(lc, istream->msgs)
 	{
-		SendBuf *buf = lfirst(lc);
-		if (buf->tot_len > MinSizeOfSendBuf)
+		RecvBuf *buf = lfirst(lc);
+		if (buf->datalen > 0)
 		{
 			HeapTuple tup;
 			int tupsize = offsetof(HeapTupleData, t_data);
 
-			istream->msgs = list_delete_ptr(istream->msgs, buf);
-			if (buf->tot_len == MinSizeOfSendBuf + 1) /* System message */
+			temp = lappend(temp, buf);
+			Assert(buf->datalen > 0);
+			if (buf->datalen == 1) /* System message */
 			{
 				switch (buf->data[0])
 				{
@@ -326,18 +392,28 @@ RecvTuple(TupleDesc tupdesc, char *streamName, int *status)
 					break;
 				}
 
-				pfree(buf);
-				return (TupleTableSlot *) NULL;
+				break;
 			}
 
+			Assert(buf->datalen > 1);
 			*status = 0;
-			tup = (HeapTuple) buf->data;
-			tup->t_data = (HeapTupleHeader) (buf->data + tupsize);
+			tup = palloc(buf->datalen);
+			memcpy(tup, buf->data, buf->datalen);
+			tup->t_data = (HeapTupleHeader) ((char *) tup + tupsize);
 			slot = MakeSingleTupleTableSlot(tupdesc);
-			return ExecStoreTuple((HeapTuple) buf->data, slot, InvalidBuffer, true);
+			slot = ExecStoreTuple((HeapTuple) tup, slot, InvalidBuffer, true);
+			break;
 		}
 	}
 
-	*status = -1; /* No tuples from network */
-	return (TupleTableSlot *) NULL;
+	foreach(lc, temp)
+	{
+		RecvBuf *buf = lfirst(lc);
+
+		istream->msgs = list_delete_ptr(istream->msgs, buf);
+		pfree(buf);
+	}
+	list_free(temp);
+
+	return slot;
 }

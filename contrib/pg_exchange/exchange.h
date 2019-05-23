@@ -83,8 +83,8 @@ typedef struct ExchangeState
 	FmgrInfo *partsupfunc;
 	List *partexprs;
 	List *keystate;
-	int nnodes;
-	NodeName *nodes;
+	int nnodes; /* number of instances containing partitions */
+	NodeName *nodes; /* Unique signature of each instance */
 	int *indexes;
 	ExchangeMode mode;
 	IndexOptInfo *indexinfo;
@@ -111,7 +111,7 @@ extern void set_exchange_altrel(ExchangeMode mode, ExchangePath *path,
 		RelOptInfo *outerrel, RelOptInfo *innerrel, List *restrictlist,
 		Bitmapset *servers);
 extern void EXCHANGE_Init_methods(void);
-extern void add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti,
+extern List *exchange_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, Index rti,
 							   RangeTblEntry *rte);
 extern CustomScan *make_exchange(List *custom_plans, List *tlist);
 extern ExchangePath *create_exchange_path(PlannerInfo *root, RelOptInfo *rel,

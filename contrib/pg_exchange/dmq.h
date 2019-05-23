@@ -15,7 +15,7 @@ typedef enum
 typedef int8 DmqDestinationId;
 typedef int8 DmqSenderId;
 
-#define DMQ_NAME_MAXLEN 32
+#define DMQ_NAME_MAXLEN 64
 #define DMQ_MAX_DESTINATIONS 127
 #define DMQ_MAX_RECEIVERS 100
 
@@ -38,6 +38,7 @@ extern void dmq_terminate_receiver(char *name);
 extern void dmq_stream_subscribe(const char *stream_name);
 extern void dmq_stream_unsubscribe(const char *stream_name);
 extern const char *dmq_sender_name(DmqSenderId id);
+extern char *dmq_receiver_name(DmqDestinationId dest_id);
 extern DmqDestinationId dmq_remote_id(const char *name);
 
 extern const char *
@@ -46,8 +47,8 @@ dmq_pop(DmqSenderId *sender_id, void **msg, Size *len, uint64 mask,
 extern bool dmq_pop_nb(DmqSenderId *sender_id, StringInfo msg, uint64 mask);
 
 extern void dmq_push(DmqDestinationId dest_id, char *stream_name, char *msg);
-extern void dmq_push_buffer(DmqDestinationId dest_id, char *stream_name,
-							const void *buffer, size_t len);
+extern bool dmq_push_buffer(DmqDestinationId dest_id, char *stream_name,
+							const void *buffer, size_t len, bool nowait);
 
 typedef void (*dmq_receiver_hook_type) (const char *);
 extern dmq_receiver_hook_type dmq_receiver_start_hook;

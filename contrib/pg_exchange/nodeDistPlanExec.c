@@ -795,11 +795,14 @@ dmq_init_barrier(DMQDestCont *dmq_data, PlanState *child)
 	/* Wait for dmq connection establishing */
 	for (i = 0; i < dmq_data->nservers; i++)
 		while (dmq_get_destination_status(dmq_data->dests[i].dest_id) != Active);
-elog(LOG, "DMQ INIT BARRIER");
+	elog(LOG, "DMQ INIT BARRIER");
 	init_exchange_channel(child, (void *) dmq_data);
 	elog(LOG, "END DMQ INIT BARRIER");
 }
 
+/*
+ * Walk across EXCHANGE nodes of the plan state.
+ */
 static bool
 init_exchange_channel(PlanState *node, void *context)
 {
@@ -850,8 +853,20 @@ init_exchange_channel(PlanState *node, void *context)
 		}
 		else
 			state->indexes[i] = j;
-elog(LOG, "SendByteMessage: j=%d, dest_id=%d, stream=%s", j, dmq_data->dests[j].dest_id, state->stream);
+
 		SendByteMessage(dmq_data->dests[j].dest_id, state->stream, ib);
+	}
+
+	for (i = 0; i < state->nnodes; i++)
+	{
+		int j = state->indexes[i];
+
+		if (j >= 0)
+		{
+			char c;
+			while ((c = RecvByteMessage(state->stream, dmq_data->dests[j].node)) == 0);
+			Assert(c == 'I');
+		}
 	}
 	return false;
 }

@@ -1239,27 +1239,44 @@ dmq_push(DmqDestinationId dest_id, char *stream_name, char *msg)
 	resetStringInfo(&buf);
 }
 
+static bool push_state = false;
+static StringInfoData buf;
 
-void
-dmq_push_buffer(DmqDestinationId dest_id, char *stream_name, const void *payload, size_t len)
+bool
+dmq_push_buffer(DmqDestinationId dest_id, char *stream_name,
+				const void *payload, size_t len, bool nowait)
 {
-	StringInfoData buf;
 	shm_mq_result res;
 
-	ensure_outq_handle();
+	if (!push_state)
+	{
+		ensure_outq_handle();
 
-	initStringInfo(&buf);
-	pq_sendbyte(&buf, dest_id);
-	pq_send_ascii_string(&buf, stream_name);
-	pq_sendbytes(&buf, payload, len);
+		initStringInfo(&buf);
+		pq_sendbyte(&buf, dest_id);
+		pq_send_ascii_string(&buf, stream_name);
+		pq_sendbytes(&buf, payload, len);
 
-	mtm_log(DmqTraceOutgoing, "[DMQ] pushing l=%d '%.*s'",
-			buf.len, buf.len, buf.data);
+		mtm_log(DmqTraceOutgoing, "[DMQ] pushing l=%d '%.*s'",
+				buf.len, buf.len, buf.data);
+	}
 
 	// XXX: use sendv instead
-	res = shm_mq_send(dmq_local.mq_outh, buf.len, buf.data, false);
+	res = shm_mq_send(dmq_local.mq_outh, buf.len, buf.data, nowait);
+
+	if (res == SHM_MQ_WOULD_BLOCK)
+	{
+		Assert(nowait == true);
+		push_state = true;
+		/* Report on full queue. */
+		return false;
+	}
+
 	if (res != SHM_MQ_SUCCESS)
 		mtm_log(WARNING, "[DMQ] dmq_push: can't send to queue");
+
+	push_state = false;
+	return true;
 }
 
 static bool
@@ -1467,6 +1484,17 @@ dmq_sender_name(DmqSenderId id)
 	return dmq_local.inhandles[id].name;
 }
 
+char *
+dmq_receiver_name(DmqDestinationId dest_id)
+{
+	char *recvName;
+
+	LWLockAcquire(dmq_state->lock, LW_SHARED);
+	recvName = pstrdup(dmq_state->destinations[dest_id].receiver_name);
+	LWLockRelease(dmq_state->lock);
+	return recvName;
+}
+
 DmqDestinationId
 dmq_remote_id(const char *name)
 {
@@ -1492,7 +1520,7 @@ dmq_remote_id(const char *name)
  * received. Returns false, if an error is occured.
  *
  * sender_id - identifier of the received message sender.
- * msg - buffer that contains received message.
+ * msg - pointer to local buffer that contains received message.
  * len - size of received message.
  */
 const char *

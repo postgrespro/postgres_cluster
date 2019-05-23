@@ -13,6 +13,7 @@
 
 #include "common.h"
 #include "exchange.h"
+#include "expath.h"
 #include "hooks.h"
 #include "partutils.h"
 
@@ -36,11 +37,22 @@ static void
 HOOK_Baserel_paths(PlannerInfo *root, RelOptInfo *rel, Index rti,
 															RangeTblEntry *rte)
 {
+	List *pathlist;
+	ListCell *lc;
+
 	if (prev_set_rel_pathlist_hook)
 		(*prev_set_rel_pathlist_hook) (root, rel, rti, rte);
 
-	if (enable_distributed_execution)
-		add_exchange_paths(root, rel, rti, rte);
+	/* Not create distributed paths if the GUC is disabled */
+	if (!enable_distributed_execution)
+		return;
+
+	/* Get the list of distributed paths.*/
+	pathlist = exchange_rel_pathlist(root, rel, rti, rte);
+
+	/* Insert each distributed path into the relation pathlist */
+	foreach(lc, pathlist)
+		force_add_path(rel, (Path *) lfirst(lc));
 }
 
 static bool

@@ -26,7 +26,16 @@ typedef struct SendBuf
 	char data[FLEXIBLE_ARRAY_MEMBER];
 } SendBuf;
 
+typedef struct RecvBuf
+{
+	DmqSenderId sid; /* Sender ID */
+	uint32 index;
+	uint32 datalen;
+	char data[FLEXIBLE_ARRAY_MEMBER];
+} RecvBuf;
+
 #define MinSizeOfSendBuf offsetof(SendBuf, data)
+#define MinSizeOfRecvBuf offsetof(RecvBuf, data)
 
 typedef struct
 {
@@ -41,13 +50,15 @@ typedef struct
 	char streamName[STREAM_NAME_MAX_LEN];
 	uint64 indexes[DMQ_MAX_RECEIVERS];
 	List *msgs;
+	List *deliveries;
 } IStream;
 
 
 extern bool Stream_subscribe(const char *streamName);
 extern bool Stream_unsubscribe(const char *streamName);
 
-extern void SendByteMessage(DmqDestinationId dest_id, char *stream, char msg);
+extern void SendByteMessage(DmqDestinationId dest_id, char *stream, char tag);
+extern char RecvByteMessage(const char *streamName, const char *sender);
 extern void SendTuple(DmqDestinationId dest_id, char *stream, TupleTableSlot *slot,
 		bool needConfirm);
 extern TupleTableSlot *RecvTuple(TupleDesc tupdesc, char *streamName, int *status);

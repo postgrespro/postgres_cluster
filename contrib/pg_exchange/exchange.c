@@ -117,7 +117,6 @@ static void create_gather_dfn(EPPNode *epp, RelOptInfo *rel);
 static void create_stealth_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root);
 static void create_shuffle_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root);
 static void create_broadcast_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root);
-static void force_add_path(RelOptInfo *rel, Path *path);
 
 
 /*
@@ -267,9 +266,12 @@ set_exchange_altrel(ExchangeMode mode, ExchangePath *path, RelOptInfo *outerrel,
 
 	if (!bms_is_empty(servers))
 	{
-		rel->nparts = bms_num_members(servers);
+		rel->nparts = bms_num_members(servers) + 1; /* plus local part */
 		rel->part_rels = palloc(sizeof(RelOptInfo *) * rel->nparts);
-		for (i = 0; i < rel->nparts; i++)
+
+		rel->part_rels[0] = palloc0(sizeof(RelOptInfo));
+		rel->part_rels[0]->serverid = InvalidOid;
+		for (i = 1; i < rel->nparts; i++)
 		{
 			sid = bms_next_member(servers, sid);
 			rel->part_rels[i] = palloc0(sizeof(RelOptInfo));
@@ -402,82 +404,6 @@ make_local_scan_path(Path *localPath, RelOptInfo *rel,
 	return pathnode;
 }
 
-static Path *
-foreign_to_seqscan(PlannerInfo *root, RelOptInfo *rel, ForeignPath *fpath)
-{
-	Path		*seqScan = makeNode(Path);
-	Cost		startup_cost = 0;
-	Cost		cpu_run_cost;
-
-	seqScan->pathtype = T_SeqScan;
-	seqScan->parallel_aware = fpath->path.parallel_aware;
-	seqScan->parallel_safe = fpath->path.parallel_safe;
-	seqScan->parallel_workers = fpath->path.parallel_workers;
-	seqScan->param_info = get_baserel_parampathinfo(root, rel, rel->lateral_relids);
-
-	seqScan->parent = fpath->path.parent;
-	seqScan->pathkeys = fpath->path.pathkeys;
-	seqScan->pathtarget = fpath->path.pathtarget;
-	seqScan->rows = fpath->path.rows;
-	seqScan->startup_cost = fpath->path.startup_cost;
-	seqScan->total_cost = fpath->path.total_cost;
-
-	cpu_run_cost = cpu_tuple_cost * rel->tuples;
-	cpu_run_cost += seqScan->pathtarget->cost.per_tuple * seqScan->rows;
-	seqScan->startup_cost = startup_cost;
-	/* TODO: Disk run costs and qual costs? */
-	seqScan->total_cost = startup_cost + cpu_run_cost;
-
-	return seqScan;
-}
-
-static void
-add_trivial_distributed_path(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry *rte)
-{
-	ListCell   *lc;
-
-	foreach(lc, rel->pathlist)
-	{
-		Path *path = (Path *) lfirst(lc);
-		Bitmapset *servers = NULL;
-		IndexOptInfo *indexinfo = NULL;
-
-		switch (nodeTag(path))
-		{
-		case T_Path:
-		case T_BitmapHeapPath:
-		case T_IndexPath:
-		case T_TidPath:
-		case T_SubqueryScanPath:
-			break;
-
-		case T_ForeignPath:
-			servers = bms_add_member(servers, (int) path->parent->serverid);
-			path = foreign_to_seqscan(root, rel, (ForeignPath *) path);
-			break;
-
-		default:
-			Assert(0);
-			elog(FATAL, "Unexpected path node: %d", nodeTag(path));
-		}
-		path = (Path *) create_exchange_path(root, rel, (Path *) path,
-																EXCH_GATHER);
-		set_exchange_altrel(EXCH_GATHER, (ExchangePath *) path, rel, NULL, NULL,
-																	servers);
-		if (indexinfo)
-		{
-			List **private;
-
-			private = &((ExchangePath *) path)->cp.custom_private;
-			*private = lappend(*private, indexinfo);
-		}
-
-		path = (Path *) create_distexec_path(root, rel, path, servers);
-
-		force_add_path(rel, path);
-	}
-}
-
 /*
  * Add one path for a base relation target:  replace all ForeignScan nodes by
  * local Scan nodes.
@@ -488,24 +414,35 @@ add_trivial_distributed_path(PlannerInfo *root, RelOptInfo *rel, Index rti, Rang
  * 2. Type of scan chosen for local partition of a relation will be correct and
  * optimal for any foreign partition of the same relation.
  */
-void
-add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry *rte)
+List *
+exchange_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry *rte)
 {
-	ListCell   *lc;
+	List *distributed_pathlist = NIL;
+	ListCell *lc;
 
 	if (!rte->inh)
 	{
-		/* Relation is not contain any partitions. */
-//		add_trivial_distributed_path(root, rel, rti, rte);
-		return;
+		/*
+		 * Relation is not contain any partitions.
+		 * At this level we don't need to generate distributed paths for such
+		 * relation. But query can contain JOIN with partitioned relation.
+		 * May be effective to broadcast local relation to all instances to JOIN.
+		 * In this case we will try to add exchange path for this relation at
+		 * the future.
+		 */
+		return NIL;
 	}
 
-	/* Traverse all possible paths and search for APPEND */
+	/*
+	 * We may need exchange paths only for the partitioned relations.
+	 * In the case of scanning only one partition, planner will use FDW.
+	 *
+	 * Traverse all possible paths and search for APPEND */
 	foreach(lc, rel->pathlist)
 	{
 		Path		*path = (Path *) lfirst(lc);
 		Path		*tmpLocalScanPath = NULL;
-		AppendPath	*appendPath = NULL;
+		AppendPath	*ap;
 		ListCell	*lc1;
 		Bitmapset	*servers = NULL;
 		List		*subpaths = NIL;
@@ -530,9 +467,9 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 		}
 
 		/*
-		 * Search for the first local scan node. We assume all partition scans
-		 * at the same node has the only strategy. It is caused by symmetry of
-		 * data placement.
+		 * Search for the first local scan node. We assume scan nodes of all
+		 * relation partitions will have same type. It is caused by symmetry of
+		 * data placement assumption.
 		 */
 		for (lc1 = list_head(*append_paths); lc1 != NULL; lc1 = lnext(lc1))
 		{
@@ -547,12 +484,17 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 
 		if (!tmpLocalScanPath)
 		{
-			/* TODO: if all partitions placed at another instances. */
-			Assert(0);
+			/*
+			 * TODO: if all partitions placed at another instances.
+			 * We do not have info about statistics and so on.
+			 */
+			elog(WARNING, "All partitions placed at another nodes. Ignore distribution planning.");
+			return NIL;
 		}
 
 		/*
-		 * Traverse all APPEND subpaths. Form new path list.
+		 * Traverse all APPEND subpaths. Form new subpaths list. Collect remote
+		 * servers.
 		 */
 		foreach(lc1, *append_paths)
 		{
@@ -568,6 +510,7 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 			case T_TidPath:
 			case T_SubqueryScanPath:
 				tmpPath = subpath;
+				serverid = InvalidOid;
 				break;
 
 			case T_ForeignPath:
@@ -588,17 +531,22 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 				servers = bms_add_member(servers, serverid);
 		}
 
-		/* No one foreign partition was found. */
 		if (servers == NULL)
-			continue;
+			/* No one foreign servers were found. */
+			return NIL;
 
-		appendPath = create_append_path(root, rel, subpaths, NIL,
+		ap = create_append_path(root, rel, subpaths, NIL,
 								PATH_REQ_OUTER(tmpLocalScanPath), 0, false,
 								((AppendPath *) path)->partitioned_rels, -1);
-		path = (Path *) create_exchange_path(root, rel, (Path *) appendPath,
-																EXCH_GATHER);
+		path = (Path *) create_exchange_path(root, rel, (Path *) ap, EXCH_GATHER);
+
 		set_exchange_altrel(EXCH_GATHER, (ExchangePath *) path, rel, NULL, NULL,
 																	servers);
+
+		/*
+		 * If scan path uses index we need to store it in the exchange node
+		 * to use in localization procedure at another instances.
+		 */
 		if (indexinfo)
 		{
 			List **private;
@@ -607,24 +555,12 @@ add_exchange_paths(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEntry 
 			*private = lappend(*private, indexinfo);
 		}
 
+		/* Add head of distributed plan */
 		path = (Path *) create_distexec_path(root, rel, path, servers);
 
-		force_add_path(rel, path);
+		distributed_pathlist = lappend(distributed_pathlist, path);
 	}
-}
-
-static void
-force_add_path(RelOptInfo *rel, Path *path)
-{
-	List *pathlist = rel->pathlist;
-
-	rel->pathlist = NIL;
-	rel->cheapest_parameterized_paths = NIL;
-	rel->cheapest_startup_path = rel->cheapest_total_path =
-											rel->cheapest_unique_path = NULL;
-	add_path(rel, path);
-	rel->pathlist = list_concat(rel->pathlist, pathlist);
-	set_cheapest(rel);
+	return distributed_pathlist;
 }
 
 #include "optimizer/cost.h"
@@ -701,7 +637,7 @@ ExchangeCreateCustomPlan(PlannerInfo *root,
 	CustomScan *exchange;
 	char *host;
 	int port;
-	char *streamName = palloc(256);
+	char *streamName = palloc(DMQ_NAME_MAXLEN);
 	ExchangePath *path = (ExchangePath *) best_path;
 	RelOptInfo *altrel = &path->altrel;
 	EPPNode *private = (EPPNode *) newNode(sizeof(EPPNode), T_ExtensibleNode);
@@ -834,7 +770,7 @@ create_shuffle_dfn(EPPNode *epp, RelOptInfo *rel, PlannerInfo *root)
 
 	epp->mode = EXCH_SHUFFLE;
 	epp->nnodes = rel->nparts;
-	elog(LOG, "SHUFFLE. epp->nnodes=%d", epp->nnodes);
+
 	epp->nodes = (NodeName *) palloc(sizeof(NodeName) * epp->nnodes);
 
 	for (partno = 0; partno < epp->nnodes; partno++)
@@ -1161,8 +1097,8 @@ EXCHANGE_Execute(CustomScanState *node)
 				return slot;
 			case 1:
 				state->activeRemotes--;
-				elog(LOG, "[%s] GOT NULL. activeRemotes: %d, lt=%d, rt=%d hasLocal=%hhu st=%d", state->stream,
-						state->activeRemotes, state->ltuples, state->rtuples, state->hasLocal, state->stuples);
+//				elog(LOG, "[%s] GOT NULL. activeRemotes: %d, lt=%d, rt=%d hasLocal=%hhu st=%d", state->stream,
+//						state->activeRemotes, state->ltuples, state->rtuples, state->hasLocal, state->stuples);
 				break;
 			case 2: /* Close EXCHANGE channel */
 				break;
@@ -1179,9 +1115,9 @@ EXCHANGE_Execute(CustomScanState *node)
 			if (TupIsNull(slot))
 			{
 				int i;
-				elog(LOG, "[%s] FINISH Local store: l=%d, r=%d s=%d",
-						state->stream, state->ltuples,
-						state->rtuples, state->stuples);
+//				elog(LOG, "[%s] FINISH Local store: l=%d, r=%d s=%d",
+//						state->stream, state->ltuples,
+//						state->rtuples, state->stuples);
 				if (state->mode != EXCH_STEALTH)
 					for (i = 0; i < state->dests->nservers; i++)
 						SendByteMessage(state->dests->dests[i].dest_id,
@@ -1196,8 +1132,8 @@ EXCHANGE_Execute(CustomScanState *node)
 
 		if ((state->activeRemotes == 0) && (!state->hasLocal))
 		{
-			elog(LOG, "[%s] Exchange returns NULL. Tuples: local=%d, remote=%d, send=%d",
-					state->stream, state->ltuples, state->rtuples, state->stuples);
+//			elog(LOG, "[%s] Exchange returns NULL. Tuples: local=%d, remote=%d, send=%d",
+//					state->stream, state->ltuples, state->rtuples, state->stuples);
 			return NULL;
 		}
 
@@ -1234,7 +1170,7 @@ EXCHANGE_Execute(CustomScanState *node)
 		{
 			state->stuples++;
 			SendTuple(dest, state->stream, slot, false);
-			elog(LOG, "Send tuple: %d", state->stuples);
+//			elog(LOG, "Send tuple: %d", state->stuples);
 		}
 	}
 	return NULL;

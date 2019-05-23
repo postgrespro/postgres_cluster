@@ -5,7 +5,8 @@ EXTENSION = pg_exchange
 EXTVERSION = 0.1
 PGFILEDESC = "pg_exchange - an exchange custom node and rules for the planner"
 MODULES = pg_exchange
-OBJS = pg_exchange.o exchange.o hooks.o common.o nodeDummyscan.o nodeDistPlanExec.o dmq.o stream.o partutils.o $(WIN32RES)
+OBJS =	common.o dmq.o exchange.o expath.o hooks.o nodeDistPlanExec.o \
+		nodeDummyscan.o partutils.o pg_exchange.o stream.o $(WIN32RES)
 
 fdw_srcdir = $(top_srcdir)/contrib/postgres_fdw/
 
