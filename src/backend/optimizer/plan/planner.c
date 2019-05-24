@@ -1182,7 +1182,7 @@ inheritance_planner(PlannerInfo *root)
 	PlannerInfo **parent_roots = NULL;
 
 	Assert(parse->commandType != CMD_INSERT);
-elog(LOG, "inheritance_plnner()");
+
 	/*
 	 * We generate a modified instance of the original Query for each target
 	 * relation, plan that, and put all the plans into a list that will be

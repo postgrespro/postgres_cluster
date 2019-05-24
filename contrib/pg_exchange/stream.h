@@ -21,7 +21,7 @@
 typedef struct SendBuf
 {
 	uint32 index;
-	uint32 tot_len;
+	uint32 datalen;
 	bool needConfirm;
 	char data[FLEXIBLE_ARRAY_MEMBER];
 } SendBuf;
@@ -35,12 +35,13 @@ typedef struct RecvBuf
 } RecvBuf;
 
 #define MinSizeOfSendBuf offsetof(SendBuf, data)
+#define buf_len(buf) (MinSizeOfSendBuf + buf->datalen)
 #define MinSizeOfRecvBuf offsetof(RecvBuf, data)
 
 typedef struct
 {
 	char streamName[STREAM_NAME_MAX_LEN];
-	uint64 index;
+	uint32 index;
 	SendBuf *buf;
 	DmqDestinationId dest_id;
 } OStream;

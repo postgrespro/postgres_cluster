@@ -68,6 +68,9 @@ static void consider_parallel_mergejoin(PlannerInfo *root,
 							JoinType jointype,
 							JoinPathExtraData *extra,
 							Path *inner_cheapest_total);
+static void hash_inner_and_outer(PlannerInfo *root, RelOptInfo *joinrel,
+					 RelOptInfo *outerrel, RelOptInfo *innerrel,
+					 JoinType jointype, JoinPathExtraData *extra);
 static List *select_mergejoin_clauses(PlannerInfo *root,
 						 RelOptInfo *joinrel,
 						 RelOptInfo *outerrel,
@@ -1670,7 +1673,7 @@ consider_parallel_nestloop(PlannerInfo *root,
  * 'jointype' is the type of join to do
  * 'extra' contains additional input values
  */
-void
+static void
 hash_inner_and_outer(PlannerInfo *root,
 					 RelOptInfo *joinrel,
 					 RelOptInfo *outerrel,

@@ -47,7 +47,10 @@
 #include "utils/dynahash.h"
 #include "utils/ps_status.h"
 
-#define DMQ_MQ_SIZE  ((Size) 65536)
+//#define DMQ_MQ_SIZE  ((Size) 65536)
+#define DMQ_MQ_SIZE  ((Size) 1048576) /* 1 MB */
+//#define DMQ_MQ_SIZE  ((Size) 8388608) /* 8 MB */
+
 #define DMQ_MQ_MAGIC 0x646d71
 
 // XXX: move to common
@@ -222,6 +225,7 @@ dmq_shmem_size(void)
 {
 	Size	size = 0;
 
+//	size = add_size(size, DMQ_MQ_SIZE * DMQ_MAX_DESTINATIONS * 2);
 	size = add_size(size, sizeof(struct DmqSharedState));
 	size = add_size(size, hash_estimate_size(DMQ_MAX_SUBS_PER_BACKEND*MaxBackends,
 											 sizeof(DmqStreamSubscription)));

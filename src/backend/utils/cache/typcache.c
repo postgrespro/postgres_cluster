@@ -1621,7 +1621,6 @@ lookup_rowtype_tupdesc_internal(Oid type_id, int32 typmod, bool noError)
 			ereport(ERROR,
 					(errcode(ERRCODE_WRONG_OBJECT_TYPE),
 					 errmsg("record type has not been registered")));
-
 		return NULL;
 	}
 }
