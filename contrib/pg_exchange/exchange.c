@@ -28,6 +28,7 @@
 #include "optimizer/cost.h"
 #include "optimizer/pathnode.h"
 #include "partitioning/partbounds.h"
+#include "postgres_fdw.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
 #include "utils/syscache.h"
@@ -514,9 +515,17 @@ exchange_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEnt
 				break;
 
 			case T_ForeignPath:
+			{
+				PgFdwRelationInfo *fpinfo =
+							(PgFdwRelationInfo *) subpath->parent->fdw_private;
+
 				serverid = subpath->parent->serverid;
 				tmpPath = make_local_scan_path(tmpLocalScanPath,
 												subpath->parent, &indexinfo);
+				Assert(subpath->parent->fdw_private != NULL);
+				tmpPath->rows = fpinfo->rows;
+				tmpPath->total_cost += fpinfo->total_cost - fpinfo->startup_cost;
+			}
 				break;
 
 			default:
@@ -539,7 +548,6 @@ exchange_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEnt
 								PATH_REQ_OUTER(tmpLocalScanPath), 0, false,
 								((AppendPath *) path)->partitioned_rels, -1);
 		path = (Path *) create_exchange_path(root, rel, (Path *) ap, EXCH_GATHER);
-
 		set_exchange_altrel(EXCH_GATHER, (ExchangePath *) path, rel, NULL, NULL,
 																	servers);
 
@@ -559,6 +567,7 @@ exchange_rel_pathlist(PlannerInfo *root, RelOptInfo *rel, Index rti, RangeTblEnt
 		path = (Path *) create_distexec_path(root, rel, path, servers);
 
 		distributed_pathlist = lappend(distributed_pathlist, path);
+		bms_free(servers);
 	}
 	return distributed_pathlist;
 }
@@ -607,13 +616,13 @@ cost_exchange(PlannerInfo *root, RelOptInfo *baserel, ExchangePath *expath)
 		 * subtree M/N local tuples, send to network [M-M/N] tuples and same to
 		 * receive.
 		 */
-		path->rows /= expath->altrel.nparts;
+//		path->rows /= expath->altrel.nparts;
 		instances = expath->altrel.nparts;
 		send_rows = path->rows - (path->rows/instances);
 		received_rows = send_rows;
 		local_rows = path->rows/instances;
 		path->total_cost += (send_rows + local_rows) * cpu_tuple_cost;
-		path->total_cost += (received_rows) * cpu_tuple_cost * 4.;
+		path->total_cost += (received_rows) * cpu_tuple_cost * 10.;
 	}
 		break;
 	default:
@@ -1062,11 +1071,10 @@ init_state_ifany(ExchangeState *state)
 	state->hasLocal = true;
 	state->init = true;
 }
-
+int print1 = 0;
 static TupleTableSlot *
 EXCHANGE_Execute(CustomScanState *node)
 {
-	ScanState	*ss = &node->ss;
 	ScanState	*subPlanState = linitial(node->custom_ps);
 	ExchangeState *state = (ExchangeState *) node;
 	bool readRemote = false;
@@ -1080,25 +1088,26 @@ EXCHANGE_Execute(CustomScanState *node)
 
 		readRemote = !readRemote;
 
-		if ((state->activeRemotes > 0) && readRemote)
+		if ((state->activeRemotes > 0) /*&& readRemote */)
 		{
 			int status;
+			status = RecvTuple(state->stream, node->ss.ss_ScanTupleSlot);
 
-			slot = RecvTuple(ss->ss_ScanTupleSlot->tts_tupleDescriptor,
-							 state->stream, &status);
 			switch (status)
 			{
 			case -1:
 				/* No tuples currently */
 				break;
 			case 0:
-				Assert(!TupIsNull(slot));
+				Assert(!TupIsNull(node->ss.ss_ScanTupleSlot));
 				state->rtuples++;
-				return slot;
+				return node->ss.ss_ScanTupleSlot;
 			case 1:
 				state->activeRemotes--;
-//				elog(LOG, "[%s] GOT NULL. activeRemotes: %d, lt=%d, rt=%d hasLocal=%hhu st=%d", state->stream,
-//						state->activeRemotes, state->ltuples, state->rtuples, state->hasLocal, state->stuples);
+//				elog(LOG, "[%s %d] GOT NULL. activeRemotes: %d, lt=%d, rt=%d hasLocal=%hhu st=%d",\
+//						state->stream, state->mode, state->activeRemotes,
+//						state->ltuples,
+//						state->rtuples, state->hasLocal, state->stuples);
 				break;
 			case 2: /* Close EXCHANGE channel */
 				break;
@@ -1106,6 +1115,7 @@ EXCHANGE_Execute(CustomScanState *node)
 				/* Any system message */
 				break;
 			}
+			slot = NULL;
 		}
 
 		if ((state->hasLocal) && (!readRemote))
@@ -1170,7 +1180,6 @@ EXCHANGE_Execute(CustomScanState *node)
 		{
 			state->stuples++;
 			SendTuple(dest, state->stream, slot, false);
-//			elog(LOG, "Send tuple: %d", state->stuples);
 		}
 	}
 	return NULL;
@@ -1241,7 +1250,7 @@ EXCHANGE_Explain(CustomScanState *node, List *ancestors, ExplainState *es)
 	}
 
 	appendStringInfo(&str, "mode: %s, stream: %s. ", mode, state->stream);
-	appendStringInfo(&str, "qual: %s.", nodeToString(state->partexprs));
+//	appendStringInfo(&str, "qual: %s.", nodeToString(state->partexprs));
 	ExplainPropertyText("Exchange", str.data, es);
 }
 

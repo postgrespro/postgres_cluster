@@ -100,6 +100,8 @@ Stream_unsubscribe(const char *streamName)
 	istreams = list_delete_ptr(istreams, istream);
 	ostreams = list_delete_ptr(ostreams, ostream);
 	dmq_stream_unsubscribe(streamName);
+	list_free(istream->deliveries);
+	list_free(istream->msgs);
 	pfree(istream);
 	pfree(ostream);
 	return true;
@@ -112,7 +114,7 @@ static void
 RecvIfAny(void)
 {
 	const char *streamName;
-	SendBuf *msg;
+	const SendBuf *msg;
 	Size len;
 	DmqSenderId sender_id;
 	IStream *istream;
@@ -120,15 +122,21 @@ RecvIfAny(void)
 	/* Try to receive a message */
 	for (;;)
 	{
-		streamName = dmq_pop(&sender_id, (void **)(&msg), &len, UINT64_MAX, false);
+		streamName = dmq_pop(&sender_id, (const void **) &msg, &len, UINT64_MAX, false);
 		if (!streamName)
-			/* No messages arrived */
+			/* No messages */
 			return;
 
-		/* Any message was received */
+		/* Message has been received */
 		Assert(len >= MinSizeOfSendBuf);
 		istream = (IStream *) get_stream(istreams, streamName);
-		Assert(istream != NULL);
+
+		if (istream == NULL)
+		{
+			/* We can't lose any data except resended byte messages. */
+			Assert(msg->datalen <= 1);
+			return;
+		}
 
 		if ((msg->index > istream->indexes[sender_id]) || IsDeliveryMessage(msg))
 		{
@@ -137,13 +145,13 @@ RecvIfAny(void)
 			buf = palloc(MinSizeOfRecvBuf + len - MinSizeOfSendBuf);
 			buf->index = msg->index;
 			buf->sid = sender_id;
+			buf->datalen = msg->datalen;
 
 			if (IsDeliveryMessage(msg))
 				istream->deliveries = lappend(istream->deliveries, buf);
 			else
 			{
-				buf->datalen = len  - MinSizeOfSendBuf;
-				memcpy(&buf->data, &msg->data, buf->datalen);
+				memcpy(buf->data, msg->data, buf->datalen);
 				istream->msgs = lappend(istream->msgs, buf);
 				istream->indexes[sender_id] = buf->index;
 			}
@@ -249,6 +257,8 @@ ISendTuple(DmqDestinationId dest_id, char *stream, TupleTableSlot *slot,
 
 	if (buf->needConfirm)
 		ostream->buf = buf;
+	else
+		pfree(buf);
 
 	return ostream;
 }
@@ -291,11 +301,11 @@ SendByteMessage(DmqDestinationId dest_id, char *stream, char tag)
 
 	ostream->buf = buf;
 	ostream->dest_id = dest_id;
-
+//elog(LOG, "-> [%s] SendByteMessage: dest_id=%d, tag=%c", stream, dest_id, tag);
 	while (!dmq_push_buffer(dest_id, stream, buf, buf_len(buf), true))
 		RecvIfAny();
-
 	wait_for_delivery(ostream);
+//	elog(LOG, "-> SendByteMessage: CONFIRMED");
 	pfree(ostream->buf);
 	ostream->buf = NULL;
 }
@@ -352,19 +362,19 @@ SendTuple(DmqDestinationId dest_id, char *stream, TupleTableSlot *slot,
  * Receive tuple or message from any remote instance.
  * Returns NULL, if end-of-transfer received from a instance.
  */
-TupleTableSlot *
-RecvTuple(TupleDesc tupdesc, char *streamName, int *status)
+int
+RecvTuple(char *streamName, TupleTableSlot *slot)
 {
 	IStream *istream;
 	ListCell *lc;
-	TupleTableSlot *slot = NULL;
 	List *temp = NIL;
+	int status;
 
 	RecvIfAny();
 
 	istream = (IStream *) get_stream(istreams, streamName);
 	Assert(istream);
-	*status = -1; /* No tuples from network */
+	status = -1; /* No tuples from network */
 
 	foreach(lc, istream->msgs)
 	{
@@ -382,13 +392,13 @@ RecvTuple(TupleDesc tupdesc, char *streamName, int *status)
 				{
 				case END_OF_TUPLES:
 					/* No tuples from network */
-					*status = 1;
+					status = 1;
 					break;
 				case 'Q':
-					*status = 2;
+					status = 2;
 					break;
 				default:
-					*status = 3;
+					status = 3;
 					break;
 				}
 
@@ -396,11 +406,10 @@ RecvTuple(TupleDesc tupdesc, char *streamName, int *status)
 			}
 
 			Assert(buf->datalen > 1);
-			*status = 0;
+			status = 0;
 			tup = palloc(buf->datalen);
-			memcpy(tup, buf->data, buf->datalen);
+			memcpy(tup, &buf->data[0], buf->datalen);
 			tup->t_data = (HeapTupleHeader) ((char *) tup + tupsize);
-			slot = MakeSingleTupleTableSlot(tupdesc);
 			slot = ExecStoreTuple((HeapTuple) tup, slot, InvalidBuffer, true);
 			break;
 		}
@@ -415,5 +424,5 @@ RecvTuple(TupleDesc tupdesc, char *streamName, int *status)
 	}
 	list_free(temp);
 
-	return slot;
+	return status;
 }

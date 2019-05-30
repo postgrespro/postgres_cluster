@@ -864,6 +864,7 @@ init_exchange_channel(PlanState *node, void *context)
 		if (j >= 0)
 		{
 			char c;
+
 			while ((c = RecvByteMessage(state->stream, dmq_data->dests[j].node)) == 0);
 			Assert(c == 'I');
 		}

@@ -42,7 +42,7 @@ extern char *dmq_receiver_name(DmqDestinationId dest_id);
 extern DmqDestinationId dmq_remote_id(const char *name);
 
 extern const char *
-dmq_pop(DmqSenderId *sender_id, void **msg, Size *len, uint64 mask,
+dmq_pop(DmqSenderId *sender_id, const void **msg, Size *len, uint64 mask,
 		bool waitMsg);
 extern bool dmq_pop_nb(DmqSenderId *sender_id, StringInfo msg, uint64 mask);
 

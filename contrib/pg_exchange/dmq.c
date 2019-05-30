@@ -1379,7 +1379,7 @@ DmqSenderId
 dmq_attach_receiver(const char *sender_name, int mask_pos)
 {
 	int			i;
-	int			handle_id;
+	int			handle_id = -1;
 
 	/* Search for existed receiver. */
 	for (i = 0; i < dmq_local.n_inhandles; i++)
@@ -1520,19 +1520,19 @@ dmq_remote_id(const char *name)
 }
 
 /*
- * Get a message from input queue. Execution blocking until message will not
- * received. Returns false, if an error is occured.
+ * Get a message from input queue. If waitMsg = true, execution blocking until
+ * message will not received. Returns false, if an error is occured.
  *
  * sender_id - identifier of the received message sender.
  * msg - pointer to local buffer that contains received message.
  * len - size of received message.
  */
 const char *
-dmq_pop(DmqSenderId *sender_id, void **msg, Size *len, uint64 mask,
+dmq_pop(DmqSenderId *sender_id, const void **msg, Size *len, uint64 mask,
 		bool waitMsg)
 {
 	shm_mq_result res;
-	const char *stream;
+	char *stream;
 
 	Assert(msg && len);
 
@@ -1559,12 +1559,14 @@ dmq_pop(DmqSenderId *sender_id, void **msg, Size *len, uint64 mask,
 			if (res == SHM_MQ_SUCCESS)
 			{
 				/*
+				 * Set message pointer and length.
 				 * Stream name is first null-terminated string in
 				 * the message buffer.
 				 */
-				stream = data;
-				*msg = (void *) (stream + strlen(stream) + 1);
-				*len -= (char *)(*msg) - stream;
+				stream = (char *) data;
+				*len -= (strlen(stream) + 1);
+				Assert(*len > 0);
+				*msg = ((char *) data + strlen(stream) + 1);
 				*sender_id = i;
 
 				mtm_log(DmqTraceIncoming,

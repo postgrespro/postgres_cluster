@@ -62,5 +62,5 @@ extern void SendByteMessage(DmqDestinationId dest_id, char *stream, char tag);
 extern char RecvByteMessage(const char *streamName, const char *sender);
 extern void SendTuple(DmqDestinationId dest_id, char *stream, TupleTableSlot *slot,
 		bool needConfirm);
-extern TupleTableSlot *RecvTuple(TupleDesc tupdesc, char *streamName, int *status);
+extern int RecvTuple(char *streamName, TupleTableSlot *slot);
 #endif /* CONTRIB_PG_EXCHANGE_STREAM_H_ */

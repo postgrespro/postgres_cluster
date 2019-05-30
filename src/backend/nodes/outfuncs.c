@@ -60,7 +60,7 @@ static void
 write_oid_field(StringInfo str, Oid oid)
 {
 	int			i;
-	char	   *rulename;
+	char	   *rulename = NULL;
 	Oid			ev_class = InvalidOid;
 
 	if (!portable_output)
