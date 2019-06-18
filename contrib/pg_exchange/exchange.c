@@ -1071,7 +1071,8 @@ init_state_ifany(ExchangeState *state)
 	state->hasLocal = true;
 	state->init = true;
 }
-int print1 = 0;
+
+#include "postmaster/postmaster.h"
 static TupleTableSlot *
 EXCHANGE_Execute(CustomScanState *node)
 {
@@ -1104,12 +1105,10 @@ EXCHANGE_Execute(CustomScanState *node)
 				return node->ss.ss_ScanTupleSlot;
 			case 1:
 				state->activeRemotes--;
-//				elog(LOG, "[%s %d] GOT NULL. activeRemotes: %d, lt=%d, rt=%d hasLocal=%hhu st=%d",\
+//				elog(LOG, "[%s %d] GOT NULL. activeRemotes: %d, lt=%d, rt=%d hasLocal=%hhu st=%d",
 //						state->stream, state->mode, state->activeRemotes,
 //						state->ltuples,
 //						state->rtuples, state->hasLocal, state->stuples);
-				break;
-			case 2: /* Close EXCHANGE channel */
 				break;
 			default:
 				/* Any system message */
@@ -1124,15 +1123,17 @@ EXCHANGE_Execute(CustomScanState *node)
 
 			if (TupIsNull(slot))
 			{
-				int i;
-//				elog(LOG, "[%s] FINISH Local store: l=%d, r=%d s=%d",
+//				elog(LOG, "[%s] FINISH Local store: l=%d, r=%d s=%d, activeRemotes=%d",
 //						state->stream, state->ltuples,
-//						state->rtuples, state->stuples);
+//						state->rtuples, state->stuples, state->activeRemotes);
 				if (state->mode != EXCH_STEALTH)
+				{
+					int i;
+
 					for (i = 0; i < state->dests->nservers; i++)
 						SendByteMessage(state->dests->dests[i].dest_id,
-												state->stream, END_OF_TUPLES);
-
+										state->stream, END_OF_TUPLES, false);
+				}
 				state->hasLocal = false;
 				continue;
 			}
@@ -1166,9 +1167,11 @@ EXCHANGE_Execute(CustomScanState *node)
 		{
 			int i;
 			state->stuples++;
+
 			/* Send tuple to each server that involved. Himself too. */
 			for (i = 0; i < state->dests->nservers; i++)
-				SendTuple(state->dests->dests[i].dest_id, state->stream, slot, false);
+				SendTuple(state->dests->dests[i].dest_id, state->stream, slot);
+
 			return slot;
 		}
 		else
@@ -1179,7 +1182,7 @@ EXCHANGE_Execute(CustomScanState *node)
 		else
 		{
 			state->stuples++;
-			SendTuple(dest, state->stream, slot, false);
+			SendTuple(dest, state->stream, slot);
 		}
 	}
 	return NULL;

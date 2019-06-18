@@ -794,7 +794,11 @@ dmq_handle_message(StringInfo msg, shm_mq_handle **mq_handles, dsm_segment *seg)
 	}
 }
 
-#define DMQ_RECV_BUFFER 8192
+/*
+ * recv_buffer can be as large as possible. It is critical for message passing
+ * effectiveness.
+ */
+#define DMQ_RECV_BUFFER (8388608) /* 8 MB */
 static char recv_buffer[DMQ_RECV_BUFFER];
 static int  recv_bytes;
 static int  read_bytes;
@@ -1244,10 +1248,37 @@ dmq_push(DmqDestinationId dest_id, char *stream_name, char *msg)
 }
 
 static bool push_state = false;
-static StringInfoData buf;
+static StringInfoData buf = {NULL, 0, 0, 0};
+
+/*
+ * _initStringInfo
+ *
+ * Replace call of initStringInfo() routine from stringinfo.c.
+ * We need larger strings and need to reduce memory allocations to optimize
+ * message passing.
+ */
+static void
+_initStringInfo(StringInfo str, size_t size)
+{
+	if (str->maxlen <= size)
+	{
+		size_t newsize = (size * 2 < 1024) ? 1024 : (size * 2);
+
+		if (str->data)
+			pfree(str->data);
+
+		/*
+		 * We try to minimize str->data allocations. It can live all of the
+		 * backend life.
+		 */
+		str->data = (char *) MemoryContextAlloc(TopMemoryContext, newsize);
+		str->maxlen = newsize;
+	}
+	resetStringInfo(str);
+}
 
 bool
-dmq_push_buffer(DmqDestinationId dest_id, char *stream_name,
+dmq_push_buffer(DmqDestinationId dest_id, const char *stream_name,
 				const void *payload, size_t len, bool nowait)
 {
 	shm_mq_result res;
@@ -1256,7 +1287,7 @@ dmq_push_buffer(DmqDestinationId dest_id, char *stream_name,
 	{
 		ensure_outq_handle();
 
-		initStringInfo(&buf);
+		_initStringInfo(&buf, len);
 		pq_sendbyte(&buf, dest_id);
 		pq_send_ascii_string(&buf, stream_name);
 		pq_sendbytes(&buf, payload, len);

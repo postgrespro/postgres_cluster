@@ -47,7 +47,7 @@ dmq_pop(DmqSenderId *sender_id, const void **msg, Size *len, uint64 mask,
 extern bool dmq_pop_nb(DmqSenderId *sender_id, StringInfo msg, uint64 mask);
 
 extern void dmq_push(DmqDestinationId dest_id, char *stream_name, char *msg);
-extern bool dmq_push_buffer(DmqDestinationId dest_id, char *stream_name,
+extern bool dmq_push_buffer(DmqDestinationId dest_id, const char *stream_name,
 							const void *buffer, size_t len, bool nowait);
 
 typedef void (*dmq_receiver_hook_type) (const char *);

@@ -854,7 +854,7 @@ init_exchange_channel(PlanState *node, void *context)
 		else
 			state->indexes[i] = j;
 
-		SendByteMessage(dmq_data->dests[j].dest_id, state->stream, ib);
+		SendByteMessage(dmq_data->dests[j].dest_id, state->stream, ib, true);
 	}
 
 	for (i = 0; i < state->nnodes; i++)

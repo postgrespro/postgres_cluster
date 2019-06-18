@@ -42,6 +42,7 @@ typedef struct
 	HTAB	*htab;
 } ExchangeSharedState;
 
+extern MemoryContext memory_context;
 extern ExchangeSharedState *ExchShmem;
 
 bool plan_tree_walker(Plan *plan, bool (*walker) (), void *context);

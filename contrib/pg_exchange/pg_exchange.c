@@ -101,6 +101,8 @@ _PG_init(void)
 
 	old_dmq_receiver_stop_hook = dmq_receiver_stop_hook;
 	dmq_receiver_stop_hook = OnNodeDisconnect;
+
+	memory_context = AllocSetContextCreate(TopMemoryContext, "PG_EXCHANGE_MEMCONTEXT", ALLOCSET_DEFAULT_SIZES*8);
 }
 
 Datum

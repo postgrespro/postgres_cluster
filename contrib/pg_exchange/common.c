@@ -24,6 +24,7 @@
 #include "common.h"
 
 
+MemoryContext memory_context = NULL;
 ExchangeSharedState *ExchShmem = NULL;
 
 static bool
