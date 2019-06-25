@@ -1906,3 +1906,71 @@ ResetPlanCache(void)
 		}
 	}
 }
+
+void
+SetRemoteSubplan(CachedPlanSource *plansource, PlannedStmt *rstmt)
+{
+	CachedPlan 		   *plan;
+	MemoryContext 		plan_context;
+	MemoryContext 		oldcxt;
+	PlannedStmt 	   *stmt;
+
+	Assert(plansource->raw_parse_tree == NULL);
+	Assert(plansource->query_list == NIL);
+
+	/*
+	 * Make dedicated query context to store cached plan. It is in current
+	 * memory context for now, later it will be reparented to
+	 * CachedMemoryContext. If it is in CachedMemoryContext initially we would
+	 * have to destroy it in case of error.
+	 */
+	plan_context = AllocSetContextCreate(CurrentMemoryContext,
+										 "CachedPlan",
+										 ALLOCSET_DEFAULT_SIZES);
+	oldcxt = MemoryContextSwitchTo(plan_context);
+
+	stmt = makeNode(PlannedStmt);
+
+	stmt->commandType = rstmt->commandType;
+	stmt->hasReturning = rstmt->hasReturning;
+	stmt->resultRelations = rstmt->resultRelations;
+	stmt->subplans = rstmt->subplans;
+	stmt->rowMarks = rstmt->rowMarks;
+	stmt->planTree = rstmt->planTree;
+	stmt->rtable = rstmt->rtable;
+
+	stmt->canSetTag = true;
+	stmt->transientPlan = false;
+	stmt->utilityStmt = NULL;
+	stmt->rewindPlanIDs = NULL;
+	stmt->relationOids = rstmt->relationOids;
+	stmt->invalItems = rstmt->invalItems;
+
+	/*
+	 * Create and fill the CachedPlan struct within the new context.
+	 */
+	plan = (CachedPlan *) palloc(sizeof(CachedPlan));
+	plan->magic = CACHEDPLAN_MAGIC;
+	plan->stmt_list = list_make1(stmt);
+	plan->saved_xmin = InvalidTransactionId;
+	plan->refcount = 1; /* will be referenced by plansource */
+	plan->context = plan_context;
+	plan->dependsOnRole = false;
+	if (plansource->is_saved)
+	{
+		MemoryContextSetParent(plan_context, CacheMemoryContext);
+		plan->is_saved = true;
+	}
+	else
+	{
+		MemoryContextSetParent(plan_context,
+							   MemoryContextGetParent(plansource->context));
+		plan->is_saved = false;
+	}
+	plan->is_valid = true;
+	plan->is_oneshot = false;
+
+	plansource->gplan = plan;
+
+	MemoryContextSwitchTo(oldcxt);
+}

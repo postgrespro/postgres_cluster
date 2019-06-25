@@ -18,6 +18,7 @@
 #include "access/hash.h"
 #include "access/htup_details.h"
 #include "access/nbtree.h"
+#include "access/sysattr.h"
 #include "bootstrap/bootstrap.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_am.h"
@@ -31,6 +32,7 @@
 #include "catalog/pg_operator.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_range.h"
+#include "catalog/pg_rewrite.h"
 #include "catalog/pg_statistic.h"
 #include "catalog/pg_transform.h"
 #include "catalog/pg_type.h"
@@ -3129,4 +3131,225 @@ get_range_subtype(Oid rangeOid)
 	}
 	else
 		return InvalidOid;
+}
+
+/*
+ * get_typ_name
+ *
+ *		Given the type OID, find the type name
+ *		It returns palloc'd copy of the name or NULL if the cache lookup fails...
+ */
+char *
+get_typ_name(Oid typid)
+{
+	HeapTuple	tp;
+
+	tp = SearchSysCache1(TYPEOID, ObjectIdGetDatum(typid));
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_type typtup = (Form_pg_type) GETSTRUCT(tp);
+		char	   *result;
+
+		result = pstrdup(NameStr(typtup->typname));
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
+		return NULL;
+}
+
+/*
+ * get_typ_namespace
+ *
+ *		Given the type OID, find the namespace
+ *		It returns InvalidOid if the cache lookup fails...
+ */
+Oid
+get_typ_namespace(Oid typid)
+{
+	HeapTuple	tp;
+
+	tp = SearchSysCache1(TYPEOID, ObjectIdGetDatum(typid));
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_type typtup = (Form_pg_type) GETSTRUCT(tp);
+		Oid			result;
+
+		result = typtup->typnamespace;
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
+		return InvalidOid;
+}
+
+/*
+ * get_typname_typid
+ *	  Given a type name and namespace OID, look up the type OID.
+ *
+ * Returns InvalidOid if there is no such type
+ */
+Oid
+get_typname_typid(const char *typname, Oid typnamespace)
+{
+	return GetSysCacheOid2(TYPENAMENSP,
+						   CStringGetDatum(typname),
+						   ObjectIdGetDatum(typnamespace));
+}
+
+/*
+ * get_funcid
+ *	  Given a function name, argument types and namespace OID, look up
+ * the function OID.
+ *
+ * Returns InvalidOid if there is no such function
+ */
+Oid
+get_funcid(const char *funcname, oidvector *argtypes, Oid funcnsp)
+{
+	return GetSysCacheOid3(PROCNAMEARGSNSP,
+						   CStringGetDatum(funcname),
+						   PointerGetDatum(argtypes),
+						   ObjectIdGetDatum(funcnsp));
+}
+
+/*
+ * get_collation_namespace
+ *		Returns the namespace id of a given pg_collation entry.
+ *
+ * Returns an Oid of the collation's namespace.
+ */
+Oid
+get_collation_namespace(Oid colloid)
+{
+	HeapTuple	tp;
+
+	tp = SearchSysCache1(COLLOID, ObjectIdGetDatum(colloid));
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_collation colltup = (Form_pg_collation) GETSTRUCT(tp);
+		Oid			result;
+
+		result = colltup->collnamespace;
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
+		return InvalidOid;
+}
+
+/*
+ * get_collation_encoding
+ *		Returns the encoding of a given pg_collation entry.
+ *
+ * Returns the collation's encoding, or -1 if entry does not exist.
+ */
+int32
+get_collation_encoding(Oid colloid)
+{
+	HeapTuple	tp;
+
+	tp = SearchSysCache1(COLLOID, ObjectIdGetDatum(colloid));
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_collation colltup = (Form_pg_collation) GETSTRUCT(tp);
+		int32		result;
+
+		result = colltup->collencoding;
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
+		return -1;
+}
+
+/*
+ * get_collid
+ *	  Given a collation name, encoding and namespace OID, look up
+ * the collation OID.
+ *
+ * Returns InvalidOid if there is no such collation
+ */
+Oid
+get_collid(const char *collname, int32 collencoding, Oid collnsp)
+{
+	return GetSysCacheOid3(COLLNAMEENCNSP,
+						   CStringGetDatum(collname),
+						   Int32GetDatum(collencoding),
+						   ObjectIdGetDatum(collnsp));
+}
+
+/*
+ * get_opnamespace
+ *	  Given an opno, find the namespace
+ *
+ * Returns InvalidOid if there is no such operator
+ */
+Oid
+get_opnamespace(Oid opno)
+{
+	HeapTuple	tp;
+
+	tp = SearchSysCache1(OPEROID, ObjectIdGetDatum(opno));
+	if (HeapTupleIsValid(tp))
+	{
+		Form_pg_operator optup = (Form_pg_operator) GETSTRUCT(tp);
+		Oid			result;
+
+		result = optup->oprnamespace;
+		ReleaseSysCache(tp);
+		return result;
+	}
+	else
+		return InvalidOid;
+}
+
+/*
+ * get_operid
+ *	  Given an operator name, argument types and namespace OID, look up
+ * the operator OID.
+ *
+ * Returns InvalidOid if there is no such operator
+ */
+Oid
+get_operid(const char *oprname, Oid oprleft, Oid oprright, Oid oprnsp)
+{
+	return GetSysCacheOid4(OPERNAMENSP,
+						   CStringGetDatum(oprname),
+						   ObjectIdGetDatum(oprleft),
+						   ObjectIdGetDatum(oprright),
+						   ObjectIdGetDatum(oprnsp));
+}
+
+/*
+ * Returns rule name or NULL, if it is not exists
+ */
+char *
+get_rule_name(Oid ruleoid, Oid *ev_class)
+{
+	Relation	pg_rewrite;
+	ScanKeyData entry[1];
+	SysScanDesc scan;
+	HeapTuple	tuple;
+	char	   *name = NULL;
+
+	Assert(ev_class != NULL);
+
+	pg_rewrite = heap_open(RewriteRelationId, AccessShareLock);
+	ScanKeyInit(&entry[0],
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(ruleoid));
+	scan = systable_beginscan(pg_rewrite, 0, false, NULL, 1, entry);
+	tuple = systable_getnext(scan);
+
+	if (HeapTupleIsValid(tuple))
+	{
+		name = pstrdup(NameStr(((Form_pg_rewrite) GETSTRUCT(tuple))->rulename));
+		*ev_class = ((Form_pg_rewrite) GETSTRUCT(tuple))->ev_class;
+	}
+
+	systable_endscan(scan);
+	heap_close(pg_rewrite, AccessShareLock);
+	return name;
 }

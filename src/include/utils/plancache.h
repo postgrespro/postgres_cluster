@@ -17,6 +17,7 @@
 
 #include "access/tupdesc.h"
 #include "nodes/params.h"
+#include "nodes/plannodes.h"
 #include "utils/queryenvironment.h"
 
 /* Forward declaration, to avoid including parsenodes.h here */
@@ -181,5 +182,6 @@ extern CachedPlan *GetCachedPlan(CachedPlanSource *plansource,
 			  bool useResOwner,
 			  QueryEnvironment *queryEnv);
 extern void ReleaseCachedPlan(CachedPlan *plan, bool useResOwner);
+extern void SetRemoteSubplan(CachedPlanSource *plansource, PlannedStmt *rstmt);
 
 #endif							/* PLANCACHE_H */

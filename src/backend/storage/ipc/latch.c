@@ -78,6 +78,11 @@ struct WaitEventSet
 	int			nevents_space;	/* maximum number of events in this set */
 
 	/*
+	 * L1-list of free events linked by "pos" and terminated by -1.
+	 */
+	int			free_events;
+
+	/*
 	 * Array, of nevents_space length, storing the definition of events this
 	 * set is waiting for.
 	 */
@@ -91,6 +96,11 @@ struct WaitEventSet
 	 */
 	Latch	   *latch;
 	int			latch_pos;
+
+#if defined (WITH_RSOCKET)
+	/* rpoll expects events to be waited on every rpoll() call, prepare once */
+	struct pollfd *rpollfds;
+#endif
 
 #if defined(WAIT_USE_EPOLL)
 	int			epoll_fd;
@@ -129,13 +139,20 @@ static void drainSelfPipe(void);
 #if defined(WAIT_USE_EPOLL)
 static void WaitEventAdjustEpoll(WaitEventSet *set, WaitEvent *event, int action);
 #elif defined(WAIT_USE_POLL)
-static void WaitEventAdjustPoll(WaitEventSet *set, WaitEvent *event);
+static void WaitEventAdjustPoll(WaitEventSet *set, WaitEvent *event, bool remove);
 #elif defined(WAIT_USE_WIN32)
-static void WaitEventAdjustWin32(WaitEventSet *set, WaitEvent *event);
+static void WaitEventAdjustWin32(WaitEventSet *set, WaitEvent *event, bool remove);
+#endif
+#if defined (WITH_RSOCKET)
+static void WaitEventAdjustRpoll(WaitEventSet *set, WaitEvent *event);
 #endif
 
 static inline int WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 					  WaitEvent *occurred_events, int nevents);
+#if defined (WITH_RSOCKET)
+static inline int WaitEventSetWaitBlockForRsocket(WaitEventSet *set,
+					  int cur_timeout, WaitEvent *occurred_events, int nevents);
+#endif
 
 /*
  * Initialize the process-local latch infrastructure.
@@ -336,8 +353,8 @@ int
 WaitLatch(volatile Latch *latch, int wakeEvents, long timeout,
 		  uint32 wait_event_info)
 {
-	return WaitLatchOrSocket(latch, wakeEvents, PGINVALID_SOCKET, timeout,
-							 wait_event_info);
+	return WaitLatchOrSocket(latch, wakeEvents, PGINVALID_SOCKET,
+							 timeout, wait_event_info);
 }
 
 /*
@@ -359,7 +376,9 @@ WaitLatchOrSocket(volatile Latch *latch, int wakeEvents, pgsocket sock,
 	int			ret = 0;
 	int			rc;
 	WaitEvent	event;
-	WaitEventSet *set = CreateWaitEventSet(CurrentMemoryContext, 3);
+	WaitEventSet *set;
+
+	set = CreateWaitEventSet(CurrentMemoryContext, 3);
 
 	if (wakeEvents & WL_TIMEOUT)
 		Assert(timeout >= 0);
@@ -562,6 +581,7 @@ CreateWaitEventSet(MemoryContext context, int nevents)
 
 	set->latch = NULL;
 	set->nevents_space = nevents;
+	set->free_events = -1;
 
 #if defined(WAIT_USE_EPOLL)
 #ifdef EPOLL_CLOEXEC
@@ -594,6 +614,49 @@ CreateWaitEventSet(MemoryContext context, int nevents)
 	return set;
 }
 
+#if defined (WITH_RSOCKET)
+/*
+ * Create a WaitEventSet with space for nevents different events to wait for.
+ *
+ * These events can then be efficiently waited upon together, using
+ * WaitEventSetWait().
+ */
+WaitEventSet *
+CreateWaitEventSetForRsocket(MemoryContext context, int nevents)
+{
+	WaitEventSet *set;
+	char	   *data;
+	Size		sz = 0;
+
+	/*
+	 * Use MAXALIGN size/alignment to guarantee that later uses of memory are
+	 * aligned correctly. E.g. epoll_event might need 8 byte alignment on some
+	 * platforms, but earlier allocations like WaitEventSet and WaitEvent
+	 * might not sized to guarantee that when purely using sizeof().
+	 */
+	sz += MAXALIGN(sizeof(WaitEventSet));
+	sz += MAXALIGN(sizeof(WaitEvent) * nevents);
+
+	sz += MAXALIGN(sizeof(struct pollfd) * nevents);
+
+	data = (char *) MemoryContextAllocZero(context, sz);
+
+	set = (WaitEventSet *) data;
+	data += MAXALIGN(sizeof(WaitEventSet));
+
+	set->events = (WaitEvent *) data;
+	data += MAXALIGN(sizeof(WaitEvent) * nevents);
+
+	set->rpollfds = (struct pollfd *) data;
+	data += MAXALIGN(sizeof(struct pollfd) * nevents);
+
+	set->latch = NULL;
+	set->nevents_space = nevents;
+
+	return set;
+}
+#endif
+
 /*
  * Free a previously created WaitEventSet.
  *
@@ -607,7 +670,9 @@ void
 FreeWaitEventSet(WaitEventSet *set)
 {
 #if defined(WAIT_USE_EPOLL)
-	close(set->epoll_fd);
+	/* If socket wasn't rsocket */
+	if (set->epoll_fd)
+		close(set->epoll_fd);
 #elif defined(WAIT_USE_WIN32)
 	WaitEvent  *cur_event;
 
@@ -667,6 +732,7 @@ AddWaitEventToSet(WaitEventSet *set, uint32 events, pgsocket fd, Latch *latch,
 				  void *user_data)
 {
 	WaitEvent  *event;
+	int			free_event;
 
 	/* not enough space */
 	Assert(set->nevents < set->nevents_space);
@@ -690,8 +756,19 @@ AddWaitEventToSet(WaitEventSet *set, uint32 events, pgsocket fd, Latch *latch,
 	if (fd == PGINVALID_SOCKET && (events & WL_SOCKET_MASK))
 		elog(ERROR, "cannot wait on socket event without a socket");
 
-	event = &set->events[set->nevents];
-	event->pos = set->nevents++;
+	free_event = set->free_events;
+	if (free_event >= 0)
+	{
+		event = &set->events[free_event];
+		set->free_events = event->pos;
+		event->pos = free_event;
+	}
+	else
+	{
+		event = &set->events[set->nevents];
+		event->pos = set->nevents;
+	}
+	set->nevents += 1;
 	event->fd = fd;
 	event->events = events;
 	event->user_data = user_data;
@@ -714,16 +791,45 @@ AddWaitEventToSet(WaitEventSet *set, uint32 events, pgsocket fd, Latch *latch,
 #endif
 	}
 
+#if defined (WITH_RSOCKET)
+	/* If socket is rsocket */
+	if (set->rpollfds)
+	{
+		WaitEventAdjustRpoll(set, event);
+		return event->pos;
+	}
+#endif
+
 	/* perform wait primitive specific initialization, if needed */
 #if defined(WAIT_USE_EPOLL)
 	WaitEventAdjustEpoll(set, event, EPOLL_CTL_ADD);
 #elif defined(WAIT_USE_POLL)
-	WaitEventAdjustPoll(set, event);
+	WaitEventAdjustPoll(set, event, false);
 #elif defined(WAIT_USE_WIN32)
-	WaitEventAdjustWin32(set, event);
+	WaitEventAdjustWin32(set, event, false);
 #endif
 
 	return event->pos;
+}
+
+/*
+ * Remove event with specified socket descriptor
+ */
+void
+DeleteWaitEvent(WaitEventSet *set, int pos)
+{
+	WaitEvent  *event;
+
+	Assert(pos < set->nevents_space);
+	event = &set->events[pos];
+
+#if defined(WAIT_USE_EPOLL)
+	WaitEventAdjustEpoll(set, event, EPOLL_CTL_DEL);
+#elif defined(WAIT_USE_POLL)
+	WaitEventAdjustPoll(set, event, true);
+#elif defined(WAIT_USE_WIN32)
+	WaitEventAdjustWin32(set, event, true);
+#endif
 }
 
 /*
@@ -737,7 +843,7 @@ ModifyWaitEvent(WaitEventSet *set, int pos, uint32 events, Latch *latch)
 {
 	WaitEvent  *event;
 
-	Assert(pos < set->nevents);
+	Assert(pos < set->nevents_space);
 
 	event = &set->events[pos];
 
@@ -771,12 +877,21 @@ ModifyWaitEvent(WaitEventSet *set, int pos, uint32 events, Latch *latch)
 		set->latch = latch;
 	}
 
+#if defined (WITH_RSOCKET)
+	/* If socket is rsocket */
+	if (set->rpollfds)
+	{
+		WaitEventAdjustRpoll(set, event);
+		return;
+	}
+#endif
+
 #if defined(WAIT_USE_EPOLL)
 	WaitEventAdjustEpoll(set, event, EPOLL_CTL_MOD);
 #elif defined(WAIT_USE_POLL)
-	WaitEventAdjustPoll(set, event);
+	WaitEventAdjustPoll(set, event, false);
 #elif defined(WAIT_USE_WIN32)
-	WaitEventAdjustWin32(set, event);
+	WaitEventAdjustWin32(set, event, false);
 #endif
 }
 
@@ -823,18 +938,42 @@ WaitEventAdjustEpoll(WaitEventSet *set, WaitEvent *event, int action)
 	 */
 	rc = epoll_ctl(set->epoll_fd, action, event->fd, &epoll_ev);
 
-	if (rc < 0)
+	/*
+	 * Skip throwing error in case of EPOLL_CTL_DEL. Upon connection error
+	 * libpq may or may not close the socket, so epfd can disappear.
+	 */
+	if (rc < 0 &&
+			!(action == EPOLL_CTL_DEL && (errno == EBADF || errno == EINVAL)))
 		ereport(ERROR,
 				(errcode_for_socket_access(),
 				 errmsg("epoll_ctl() failed: %m")));
+
+	if (action == EPOLL_CTL_DEL)
+	{
+		int pos = event->pos;
+		event->fd = PGINVALID_SOCKET;
+		set->nevents -= 1;
+		event->pos = set->free_events;
+		set->free_events = pos;
+	}
 }
 #endif
 
 #if defined(WAIT_USE_POLL)
 static void
-WaitEventAdjustPoll(WaitEventSet *set, WaitEvent *event)
+WaitEventAdjustPoll(WaitEventSet *set, WaitEvent *event, bool remove)
 {
-	struct pollfd *pollfd = &set->pollfds[event->pos];
+	int pos = event->pos;
+	struct pollfd *pollfd = &set->pollfds[pos];
+
+	if (remove)
+	{
+		set->nevents -= 1;
+		*pollfd = set->pollfds[set->nevents];
+		set->events[pos] = set->events[set->nevents];
+		event->pos = pos;
+		return;
+	}
 
 	pollfd->revents = 0;
 	pollfd->fd = event->fd;
@@ -865,9 +1004,25 @@ WaitEventAdjustPoll(WaitEventSet *set, WaitEvent *event)
 
 #if defined(WAIT_USE_WIN32)
 static void
-WaitEventAdjustWin32(WaitEventSet *set, WaitEvent *event)
+WaitEventAdjustWin32(WaitEventSet *set, WaitEvent *event, bool remove)
 {
-	HANDLE	   *handle = &set->handles[event->pos + 1];
+	int pos = event->pos;
+	HANDLE	   *handle = &set->handles[pos + 1];
+
+	if (remove)
+	{
+		Assert(event->fd != PGINVALID_SOCKET);
+
+		if (*handle != WSA_INVALID_EVENT)
+			WSACloseEvent(*handle);
+
+		set->nevents -= 1;
+		set->events[pos] = set->events[set->nevents];
+		*handle = set->handles[set->nevents + 1];
+		set->handles[set->nevents + 1] = WSA_INVALID_EVENT;
+		event->pos = pos;
+		return;
+	}
 
 	if (event->events == WL_LATCH_SET)
 	{
@@ -902,6 +1057,39 @@ WaitEventAdjustWin32(WaitEventSet *set, WaitEvent *event)
 
 		Assert(event->fd != PGINVALID_SOCKET);
 	}
+}
+#endif
+
+#if defined (WITH_RSOCKET)
+static void
+WaitEventAdjustRpoll(WaitEventSet *set, WaitEvent *event)
+{
+	struct pollfd *pollfd = &set->rpollfds[event->pos];
+
+	pollfd->revents = 0;
+	pollfd->fd = event->fd;
+
+	/* prepare pollfd entry once */
+	if (event->events == WL_LATCH_SET)
+	{
+		Assert(set->latch != NULL);
+		pollfd->events = POLLIN;
+	}
+	else if (event->events == WL_POSTMASTER_DEATH)
+	{
+		pollfd->events = POLLIN;
+	}
+	else
+	{
+		Assert(event->events & (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE));
+		pollfd->events = 0;
+		if (event->events & WL_SOCKET_READABLE)
+			pollfd->events |= POLLIN;
+		if (event->events & WL_SOCKET_WRITEABLE)
+			pollfd->events |= POLLOUT;
+	}
+
+	Assert(event->fd != PGINVALID_SOCKET);
 }
 #endif
 
@@ -997,8 +1185,14 @@ WaitEventSetWait(WaitEventSet *set, long timeout,
 		 * this file. If -1 is returned, a timeout has occurred, if 0 we have
 		 * to retry, everything >= 1 is the number of returned events.
 		 */
-		rc = WaitEventSetWaitBlock(set, cur_timeout,
-								   occurred_events, nevents);
+#if defined (WITH_RSOCKET)
+		if (set->rpollfds)
+			rc = WaitEventSetWaitBlockForRsocket(set, cur_timeout,
+												 occurred_events, nevents);
+		else
+#endif
+			rc = WaitEventSetWaitBlock(set, cur_timeout,
+									   occurred_events, nevents);
 
 		if (rc == -1)
 			break;				/* timeout occurred */
@@ -1296,7 +1490,7 @@ WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 	{
 		if (cur_event->reset)
 		{
-			WaitEventAdjustWin32(set, cur_event);
+			WaitEventAdjustWin32(set, cur_event, false);
 			cur_event->reset = false;
 		}
 
@@ -1454,6 +1648,124 @@ WaitEventSetWaitBlock(WaitEventSet *set, int cur_timeout,
 		}
 	}
 
+	return returned_events;
+}
+#endif
+
+#if defined (WITH_RSOCKET)
+
+/*
+ * Wait using rpoll().
+ *
+ * This allows to receive readiness notifications for several events at once,
+ * but requires iterating through all of set->rpollfds.
+ */
+static inline int
+WaitEventSetWaitBlockForRsocket(WaitEventSet *set, int cur_timeout,
+								WaitEvent *occurred_events, int nevents)
+{
+	int			returned_events = 0;
+	int			rc;
+	WaitEvent  *cur_event;
+	struct pollfd *cur_pollfd;
+
+	/* Sleep */
+	rc = pg_poll(set->rpollfds, set->nevents, (int) cur_timeout, true);
+
+	/* Check return code */
+	if (rc < 0)
+	{
+		/* EINTR is okay, otherwise complain */
+		if (errno != EINTR)
+		{
+			waiting = false;
+			ereport(ERROR,
+					(errcode_for_socket_access(),
+					 errmsg("poll() failed: %m")));
+		}
+		return 0;
+	}
+	else if (rc == 0)
+	{
+		/* timeout exceeded */
+		return -1;
+	}
+
+	for (cur_event = set->events, cur_pollfd = set->rpollfds;
+		 cur_event < (set->events + set->nevents) &&
+		 returned_events < nevents;
+		 cur_event++, cur_pollfd++)
+	{
+		/* no activity on this FD, skip */
+		if (cur_pollfd->revents == 0)
+			continue;
+
+		occurred_events->pos = cur_event->pos;
+		occurred_events->user_data = cur_event->user_data;
+		occurred_events->events = 0;
+
+		if (cur_event->events == WL_LATCH_SET &&
+			(cur_pollfd->revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL)))
+		{
+			/* There's data in the self-pipe, clear it. */
+			drainSelfPipe();
+
+			if (set->latch->is_set)
+			{
+				occurred_events->fd = PGINVALID_SOCKET;
+				occurred_events->events = WL_LATCH_SET;
+				occurred_events++;
+				returned_events++;
+			}
+		}
+		else if (cur_event->events == WL_POSTMASTER_DEATH &&
+			 (cur_pollfd->revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL)))
+		{
+			/*
+			 * We expect an POLLHUP when the remote end is closed, but because
+			 * we don't expect the pipe to become readable or to have any
+			 * errors either, treat those cases as postmaster death, too.
+			 *
+			 * As explained in the WAIT_USE_SELECT implementation, select(2)
+			 * may spuriously return. Be paranoid about that here too, a
+			 * spurious WL_POSTMASTER_DEATH would be painful.
+			 */
+			if (!PostmasterIsAlive())
+			{
+				occurred_events->fd = PGINVALID_SOCKET;
+				occurred_events->events = WL_POSTMASTER_DEATH;
+				occurred_events++;
+				returned_events++;
+			}
+		}
+		else if (cur_event->events & (WL_SOCKET_READABLE | WL_SOCKET_WRITEABLE))
+		{
+			int			errflags = POLLHUP | POLLERR | POLLNVAL;
+
+			Assert(cur_event->fd >= PGINVALID_SOCKET);
+
+			if ((cur_event->events & WL_SOCKET_READABLE) &&
+				(cur_pollfd->revents & (POLLIN | errflags)))
+			{
+				/* data available in socket, or EOF */
+				occurred_events->events |= WL_SOCKET_READABLE;
+			}
+
+			if ((cur_event->events & WL_SOCKET_WRITEABLE) &&
+				(cur_pollfd->revents & (POLLOUT | errflags)))
+			{
+				/* writeable, or EOF */
+				occurred_events->events |= WL_SOCKET_WRITEABLE;
+			}
+
+			if (occurred_events->events != 0)
+			{
+				occurred_events->fd = cur_event->fd;
+				occurred_events++;
+				returned_events++;
+			}
+		}
+	}
 	return returned_events;
 }
 #endif

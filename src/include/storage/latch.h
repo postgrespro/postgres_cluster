@@ -166,6 +166,7 @@ extern WaitEventSet *CreateWaitEventSet(MemoryContext context, int nevents);
 extern void FreeWaitEventSet(WaitEventSet *set);
 extern int AddWaitEventToSet(WaitEventSet *set, uint32 events, pgsocket fd,
 				  Latch *latch, void *user_data);
+extern void DeleteWaitEvent(WaitEventSet *set, int pos);
 extern void ModifyWaitEvent(WaitEventSet *set, int pos, uint32 events, Latch *latch);
 
 extern int WaitEventSetWait(WaitEventSet *set, long timeout,

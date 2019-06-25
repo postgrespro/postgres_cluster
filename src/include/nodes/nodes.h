@@ -607,6 +607,9 @@ extern void outDatum(struct StringInfoData *str, uintptr_t value,
 extern char *nodeToString(const void *obj);
 extern char *bmsToString(const struct Bitmapset *bms);
 
+extern bool set_portable_input(bool value);
+extern void set_portable_output(bool value);
+
 /*
  * nodes/{readfuncs.c,read.c}
  */
@@ -617,6 +620,7 @@ extern bool *readBoolCols(int numCols);
 extern int *readIntCols(int numCols);
 extern Oid *readOidCols(int numCols);
 extern int16 *readAttrNumberCols(int numCols);
+extern Oid read_oid_field(char **token, int *length);
 
 /*
  * nodes/copyfuncs.c
