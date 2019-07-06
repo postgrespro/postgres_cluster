@@ -368,14 +368,14 @@ GlobalSnapshotToXmin(GlobalCSN snapshot_global_csn)
  * GlobalSnapshotGenerate
  *
  * Generate GlobalCSN which is actually a local time. Also we are forcing
- * this time to be always increasing. Since now it is not uncommon to have
- * millions of read transactions per second we are trying to use nanoseconds
+ * this time to be always increasing.
+ * XXX since now it is not uncommon to have
+ * millions of read transactions per second should use nanoseconds
  * if such time resolution is available.
  */
 GlobalCSN
 GlobalSnapshotGenerate(bool locked)
 {
-	instr_time	current_time;
 	GlobalCSN	global_csn;
 
 	Assert(track_global_snapshots || global_snapshot_defer_time > 0);
@@ -383,8 +383,7 @@ GlobalSnapshotGenerate(bool locked)
 	/*
 	 * TODO: create some macro that add small random shift to current time.
 	 */
-	INSTR_TIME_SET_CURRENT(current_time);
-	global_csn = (GlobalCSN) INSTR_TIME_GET_NANOSEC(current_time);
+	global_csn = GetCurrentTimestamp() * 1000; /* nsec per usec */
 
 	/* TODO: change to atomics? */
 	if (!locked)
