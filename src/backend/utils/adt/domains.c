@@ -62,6 +62,16 @@ typedef struct DomainIOData
 
 
 /*
+ * In the case of logical replication we can update a tuple. Master sends an old
+ * and a new version of the tuple. If we use contraint with "NOT VALID" clause
+ * then old version of the tuple can violate the constraint but new version can
+ * satisfy the constraint condition. In this case we need to suppress constraint
+ * checking during restoring tuple from network connection.
+ */
+bool suppress_internal_consistency_checks = false;
+
+
+/*
  * domain_state_setup - initialize the cache for a new domain type.
  *
  * Note: we can't re-use the same cache struct for a new domain type,
@@ -132,6 +142,9 @@ domain_check_input(Datum value, bool isnull, DomainIOData *my_extra)
 {
 	ExprContext *econtext = my_extra->econtext;
 	ListCell   *l;
+
+	if (suppress_internal_consistency_checks)
+		return;
 
 	/* Make sure we have up-to-date constraints */
 	UpdateDomainConstraintRef(&my_extra->constraint_ref);

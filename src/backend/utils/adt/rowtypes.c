@@ -553,6 +553,9 @@ record_recv(PG_FUNCTION_ARGS)
 
 		/* Verify column datatype */
 		coltypoid = pq_getmsgint(buf, sizeof(Oid));
+		if (suppress_internal_consistency_checks)
+			coltypoid = column_type;
+
 		if (coltypoid != column_type)
 			ereport(ERROR,
 					(errcode(ERRCODE_DATATYPE_MISMATCH),
