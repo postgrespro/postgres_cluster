@@ -244,6 +244,15 @@ tuples_equal(TupleTableSlot *slot1, TupleTableSlot *slot2,
 		Form_pg_attribute att;
 		TypeCacheEntry *typentry;
 
+		/* The case of ALTER TABLE ... DROP COLUMN */
+		if (TupleDescAttr(slot1->tts_tupleDescriptor, attrnum)->attisdropped ||
+			TupleDescAttr(slot1->tts_tupleDescriptor, attrnum)->attgenerated)
+		{
+			Assert(slot1->tts_tupleDescriptor->attrs[attrnum].attisdropped ==
+					slot2->tts_tupleDescriptor->attrs[attrnum].attisdropped);
+			continue;
+		}
+
 		/*
 		 * If one value is NULL and other is not, then they are certainly not
 		 * equal
