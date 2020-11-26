@@ -555,7 +555,7 @@ MarkAsPrepared(GlobalTransaction gxact, bool lock_held)
  *		Locate the prepared transaction and mark it busy for COMMIT or PREPARE.
  */
 static GlobalTransaction
-LockGXact(const char *gid, Oid user)
+LockGXact(const char *gid, Oid user, bool missing_ok)
 {
 	int			i;
 
@@ -615,7 +615,8 @@ LockGXact(const char *gid, Oid user)
 
 	LWLockRelease(TwoPhaseStateLock);
 
-	ereport(ERROR,
+	if (!missing_ok)
+		ereport(ERROR,
 			(errcode(ERRCODE_UNDEFINED_OBJECT),
 			 errmsg("prepared transaction with identifier \"%s\" does not exist",
 					gid)));
@@ -1400,7 +1401,7 @@ StandbyTransactionIdIsPrepared(TransactionId xid)
  * FinishPreparedTransaction: execute COMMIT PREPARED or ROLLBACK PREPARED
  */
 void
-FinishPreparedTransaction(const char *gid, bool isCommit)
+FinishPreparedTransaction(const char *gid, bool isCommit, bool missing_ok)
 {
 	GlobalTransaction gxact;
 	PGPROC	   *proc;
@@ -1420,8 +1421,16 @@ FinishPreparedTransaction(const char *gid, bool isCommit)
 	/*
 	 * Validate the GID, and lock the GXACT to ensure that two backends do not
 	 * try to commit the same GID at once.
+	 *
+	 * missing_ok is multimaster support
 	 */
-	gxact = LockGXact(gid, GetUserId());
+	gxact = LockGXact(gid, GetUserId(), missing_ok);
+	if (gxact == NULL)
+	{
+		Assert(missing_ok);
+		return;
+	}
+
 	proc = &ProcGlobal->allProcs[gxact->pgprocno];
 	pgxact = &ProcGlobal->allPgXact[gxact->pgprocno];
 	xid = pgxact->xid;
