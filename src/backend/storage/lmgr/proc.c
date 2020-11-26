@@ -1486,6 +1486,22 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable)
 											   "Processes holding the lock: %s. Wait queue: %s.",
 											   lockHoldersNum, lock_holders_sbuf.data, lock_waiters_sbuf.data))));
 			}
+			else if (deadlock_state == DS_DISTRIBUTED_DEADLOCK)
+			{
+				/*
+				 * This message is a bit redundant with the error that will be
+				 * reported subsequently, but in some cases the error report
+				 * might not make it to the log (eg, if it's caught by an
+				 * exception handler), and we want to ensure all long-wait
+				 * events get logged.
+				 */
+				ereport(LOG,
+						(errmsg("process %d detected a distributed deadlock while waiting for %s on %s after %ld.%03d ms",
+								MyProcPid, modename, buf.data, msecs, usecs),
+						 (errdetail_log_plural("Process holding the lock: %s. Wait queue: %s.",
+											   "Processes holding the lock: %s. Wait queue: %s.",
+											   lockHoldersNum, lock_holders_sbuf.data, lock_waiters_sbuf.data))));
+			}
 
 			if (myWaitStatus == STATUS_WAITING)
 				ereport(LOG,
@@ -1510,7 +1526,8 @@ ProcSleep(LOCALLOCK *locallock, LockMethod lockMethodTable)
 				 * future-proofing, print a message if it looks like someone
 				 * else kicked us off the lock.
 				 */
-				if (deadlock_state != DS_HARD_DEADLOCK)
+				if (deadlock_state != DS_HARD_DEADLOCK &&
+					deadlock_state != DS_DISTRIBUTED_DEADLOCK)
 					ereport(LOG,
 							(errmsg("process %d failed to acquire %s on %s after %ld.%03d ms",
 									MyProcPid, modename, buf.data, msecs, usecs),
@@ -1727,7 +1744,8 @@ CheckDeadLock(void)
 	/* Run the deadlock check, and set deadlock_state for use by ProcSleep */
 	deadlock_state = DeadLockCheck(MyProc);
 
-	if (deadlock_state == DS_HARD_DEADLOCK)
+	if (deadlock_state == DS_HARD_DEADLOCK ||
+		deadlock_state == DS_DISTRIBUTED_DEADLOCK)
 	{
 		/*
 		 * Oops.  We have a deadlock.

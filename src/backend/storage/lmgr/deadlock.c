@@ -32,6 +32,7 @@
 #include "storage/proc.h"
 #include "utils/memutils.h"
 
+bool (*DetectGlobalDeadLock) (PGPROC *proc) = NULL;
 
 /*
  * One edge in the waits-for graph.
@@ -280,6 +281,8 @@ DeadLockCheck(PGPROC *proc)
 		return DS_SOFT_DEADLOCK;
 	else if (blocking_autovacuum_proc != NULL)
 		return DS_BLOCKED_BY_AUTOVACUUM;
+	else if (DetectGlobalDeadLock && DetectGlobalDeadLock(proc))
+		return DS_DISTRIBUTED_DEADLOCK;
 	else
 		return DS_NO_DEADLOCK;
 }

@@ -310,7 +310,6 @@ static void AtCommit_Memory(void);
 static void AtStart_Cache(void);
 static void AtStart_Memory(void);
 static void AtStart_ResourceOwner(void);
-static void CallXactCallbacks(XactEvent event);
 static void CallSubXactCallbacks(SubXactEvent event,
 								 SubTransactionId mySubid,
 								 SubTransactionId parentSubid);
@@ -2827,6 +2826,7 @@ StartTransactionCommand(void)
 		case TBLOCK_DEFAULT:
 			StartTransaction();
 			s->blockState = TBLOCK_STARTED;
+			CallXactCallbacks(XACT_EVENT_START);
 			break;
 
 			/*
@@ -2918,6 +2918,8 @@ void
 CommitTransactionCommand(void)
 {
 	TransactionState s = CurrentTransactionState;
+
+	CallXactCallbacks(XACT_EVENT_COMMIT_COMMAND);
 
 	if (s->chain)
 		SaveTransactionCharacteristics();
@@ -3536,7 +3538,7 @@ UnregisterXactCallback(XactCallback callback, void *arg)
 	}
 }
 
-static void
+void
 CallXactCallbacks(XactEvent event)
 {
 	XactCallbackItem *item;
@@ -5283,6 +5285,7 @@ StartParallelWorkerTransaction(char *tstatespace)
 
 	Assert(CurrentTransactionState->blockState == TBLOCK_DEFAULT);
 	StartTransaction();
+	CallXactCallbacks(XACT_EVENT_START);
 
 	tstate = (SerializedTransactionState *) tstatespace;
 	XactIsoLevel = tstate->xactIsoLevel;

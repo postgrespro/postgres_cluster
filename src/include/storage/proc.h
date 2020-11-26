@@ -296,6 +296,8 @@ extern PGDLLIMPORT int LockTimeout;
 extern PGDLLIMPORT int IdleInTransactionSessionTimeout;
 extern bool log_lock_waits;
 
+/* hook for extensions to catch distributed deadlock */
+extern PGDLLIMPORT bool (*DetectGlobalDeadLock) (PGPROC *proc);
 
 /*
  * Function Prototypes

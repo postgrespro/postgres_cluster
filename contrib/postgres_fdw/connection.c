@@ -713,6 +713,16 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 	HASH_SEQ_STATUS scan;
 	ConnCacheEntry *entry;
 
+	/* Do nothing for these (multimaster support) events */
+	switch (event)
+	{
+		case XACT_EVENT_START:
+		case XACT_EVENT_COMMIT_COMMAND:
+			return;
+		default:
+			break;
+	}
+
 	/* Quick exit if no connections were touched in this transaction. */
 	if (!xact_got_connection)
 		return;
@@ -861,6 +871,9 @@ pgfdw_xact_callback(XactEvent event, void *arg)
 					/* Disarm changing_xact_state if it all worked. */
 					entry->changing_xact_state = abort_cleanup_failure;
 					break;
+				case XACT_EVENT_START:
+				case XACT_EVENT_COMMIT_COMMAND:
+					Assert(false);
 			}
 		}
 
