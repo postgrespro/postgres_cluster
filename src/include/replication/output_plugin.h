@@ -140,6 +140,11 @@ typedef bool (*LogicalDecodeFilterByOriginCB) (struct LogicalDecodingContext *ct
 typedef void (*LogicalDecodeShutdownCB) (struct LogicalDecodingContext *ctx);
 
 /*
+ * Called when WAL sender caught up.
+ */
+typedef void (*LogicalDecodeCaughtUpCB) (struct LogicalDecodingContext * ctx);
+
+/*
  * Output plugin callbacks
  */
 typedef struct OutputPluginCallbacks
@@ -157,6 +162,7 @@ typedef struct OutputPluginCallbacks
 	LogicalDecodeAbortPreparedCB abort_prepared_cb;
 	LogicalDecodeFilterByOriginCB filter_by_origin_cb;
 	LogicalDecodeShutdownCB shutdown_cb;
+	LogicalDecodeCaughtUpCB caughtup_cb;
 } OutputPluginCallbacks;
 
 /* Functions in replication/logical/logical.c */

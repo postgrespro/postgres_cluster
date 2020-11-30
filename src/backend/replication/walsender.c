@@ -1380,6 +1380,7 @@ WalSndWaitForWal(XLogRecPtr loc)
 {
 	int			wakeEvents;
 	static XLogRecPtr RecentFlushPtr = InvalidXLogRecPtr;
+	bool		caughtup_cb_called = false;
 
 	/*
 	 * Fast path to avoid acquiring the spinlock in case we already know we
@@ -1459,6 +1460,15 @@ WalSndWaitForWal(XLogRecPtr loc)
 
 		/* Waiting for new WAL. Since we need to wait, we're now caught up. */
 		WalSndCaughtUp = true;
+		/*
+		 * Call cb only once: if it writes anyting, it'll probably call
+		 * WalSndWriteData who sets latch, thus creating busy loop.
+		 */
+		if (!caughtup_cb_called && logical_decoding_ctx)
+		{
+			LogicalDecodingCaughtUp(logical_decoding_ctx);
+			caughtup_cb_called = true;
+		}
 
 		/*
 		 * Try to flush any pending output to the client.
