@@ -17,6 +17,8 @@
 #include "replication/logical.h"
 #include "replication/origin.h"
 
+#include "storage/procarray.h"
+
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -36,6 +38,9 @@ typedef struct
 	bool		skip_empty_xacts;
 	bool		xact_wrote_changes;
 	bool		only_local;
+	bool		twophase_decoding;
+	bool		twophase_decode_with_catalog_changes;
+	int			decode_delay; /* seconds to sleep after every change record */
 } TestDecodingData;
 
 static void pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
@@ -48,7 +53,9 @@ static void pg_output_begin(LogicalDecodingContext *ctx,
 							ReorderBufferTXN *txn,
 							bool last_write);
 static void pg_decode_commit_txn(LogicalDecodingContext *ctx,
-								 ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
+					 			 ReorderBufferTXN *txn, XLogRecPtr commit_lsn);
+static void pg_decode_abort_txn(LogicalDecodingContext *ctx,
+					 ReorderBufferTXN *txn, XLogRecPtr abort_lsn);
 static void pg_decode_change(LogicalDecodingContext *ctx,
 							 ReorderBufferTXN *txn, Relation rel,
 							 ReorderBufferChange *change);
@@ -62,6 +69,18 @@ static void pg_decode_message(LogicalDecodingContext *ctx,
 							  ReorderBufferTXN *txn, XLogRecPtr message_lsn,
 							  bool transactional, const char *prefix,
 							  Size sz, const char *message);
+static bool pg_filter_prepare(LogicalDecodingContext *ctx,
+				  ReorderBufferTXN *txn,
+				  TransactionId xid, const char *gid);
+static void pg_decode_prepare_txn(LogicalDecodingContext *ctx,
+				  ReorderBufferTXN *txn,
+				  XLogRecPtr prepare_lsn);
+static void pg_decode_commit_prepared_txn(LogicalDecodingContext *ctx,
+				  ReorderBufferTXN *txn,
+				  XLogRecPtr commit_lsn);
+static void pg_decode_abort_prepared_txn(LogicalDecodingContext *ctx,
+				  ReorderBufferTXN *txn,
+				  XLogRecPtr abort_lsn);
 
 void
 _PG_init(void)
@@ -80,9 +99,14 @@ _PG_output_plugin_init(OutputPluginCallbacks *cb)
 	cb->change_cb = pg_decode_change;
 	cb->truncate_cb = pg_decode_truncate;
 	cb->commit_cb = pg_decode_commit_txn;
+	cb->abort_cb = pg_decode_abort_txn;
 	cb->filter_by_origin_cb = pg_decode_filter;
 	cb->shutdown_cb = pg_decode_shutdown;
 	cb->message_cb = pg_decode_message;
+	cb->filter_prepare_cb = pg_filter_prepare;
+	cb->prepare_cb = pg_decode_prepare_txn;
+	cb->commit_prepared_cb = pg_decode_commit_prepared_txn;
+	cb->abort_prepared_cb = pg_decode_abort_prepared_txn;
 }
 
 
@@ -102,6 +126,9 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 	data->include_timestamp = false;
 	data->skip_empty_xacts = false;
 	data->only_local = false;
+	data->twophase_decoding = false;
+	data->twophase_decode_with_catalog_changes = false;
+	data->decode_delay = 0;
 
 	ctx->output_plugin_private = data;
 
@@ -152,7 +179,6 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 		}
 		else if (strcmp(elem->defname, "skip-empty-xacts") == 0)
 		{
-
 			if (elem->arg == NULL)
 				data->skip_empty_xacts = true;
 			else if (!parse_bool(strVal(elem->arg), &data->skip_empty_xacts))
@@ -163,7 +189,6 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 		}
 		else if (strcmp(elem->defname, "only-local") == 0)
 		{
-
 			if (elem->arg == NULL)
 				data->only_local = true;
 			else if (!parse_bool(strVal(elem->arg), &data->only_local))
@@ -182,6 +207,41 @@ pg_decode_startup(LogicalDecodingContext *ctx, OutputPluginOptions *opt,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("could not parse value \"%s\" for parameter \"%s\"",
 								strVal(elem->arg), elem->defname)));
+		}
+		else if (strcmp(elem->defname, "twophase-decoding") == 0)
+		{
+			if (elem->arg == NULL)
+				data->twophase_decoding = true;
+			else if (!parse_bool(strVal(elem->arg), &data->twophase_decoding))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				  errmsg("could not parse value \"%s\" for parameter \"%s\"",
+						 strVal(elem->arg), elem->defname)));
+		}
+		else if (strcmp(elem->defname, "twophase-decode-with-catalog-changes") == 0)
+		{
+			if (elem->arg == NULL)
+				data->twophase_decode_with_catalog_changes = true;
+			else if (!parse_bool(strVal(elem->arg), &data->twophase_decode_with_catalog_changes))
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				  errmsg("could not parse value \"%s\" for parameter \"%s\"",
+						 strVal(elem->arg), elem->defname)));
+		}
+		else if (strcmp(elem->defname, "decode-delay") == 0)
+		{
+			if (elem->arg == NULL)
+				data->decode_delay = 2; /* default to 2 seconds */
+			else
+				data->decode_delay = pg_atoi(strVal(elem->arg),
+											 sizeof(int), 0);
+
+			if (data->decode_delay <= 0)
+				ereport(ERROR,
+						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				  errmsg("Specify positive value for parameter \"%s\","
+						 " you specified \"%s\"",
+						 elem->defname, strVal(elem->arg))));
 		}
 		else
 		{
@@ -243,6 +303,125 @@ pg_decode_commit_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 		appendStringInfo(ctx->out, "COMMIT %u", txn->xid);
 	else
 		appendStringInfoString(ctx->out, "COMMIT");
+
+	if (data->include_timestamp)
+		appendStringInfo(ctx->out, " (at %s)",
+						 timestamptz_to_str(txn->commit_time));
+
+	OutputPluginWrite(ctx, true);
+}
+
+/* ABORT callback */
+static void
+pg_decode_abort_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
+					 XLogRecPtr abort_lsn)
+{
+	TestDecodingData *data = ctx->output_plugin_private;
+
+	if (data->skip_empty_xacts && !data->xact_wrote_changes)
+		return;
+
+	OutputPluginPrepareWrite(ctx, true);
+	if (data->include_xids)
+		appendStringInfo(ctx->out, "ABORT " XID_FMT, txn->xid);
+	else
+		appendStringInfoString(ctx->out, "ABORT");
+
+	if (data->include_timestamp)
+		appendStringInfo(ctx->out, " (at %s)",
+						 timestamptz_to_str(txn->commit_time));
+
+	OutputPluginWrite(ctx, true);
+}
+
+/* Filter out unnecessary two-phase transactions */
+static bool
+pg_filter_prepare(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
+					TransactionId xid, const char *gid)
+{
+	TestDecodingData *data = ctx->output_plugin_private;
+
+	/* treat all transactions as one-phase */
+	if (!data->twophase_decoding)
+		return true;
+
+	if (txn && rbtxn_has_catalog_changes(txn) &&
+			!data->twophase_decode_with_catalog_changes)
+		return true;
+
+	/*
+	 * even if txn is NULL, decode since twophase_decoding is set
+	 */
+	return false;
+}
+
+/* PREPARE callback */
+static void
+pg_decode_prepare_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
+					XLogRecPtr prepare_lsn)
+{
+	TestDecodingData *data = ctx->output_plugin_private;
+
+	if (data->skip_empty_xacts && !data->xact_wrote_changes)
+		return;
+
+	OutputPluginPrepareWrite(ctx, true);
+
+	appendStringInfo(ctx->out, "PREPARE TRANSACTION %s",
+		quote_literal_cstr(txn->gid));
+
+	if (data->include_xids)
+		appendStringInfo(ctx->out, " " XID_FMT, txn->xid);
+
+	if (data->include_timestamp)
+		appendStringInfo(ctx->out, " (at %s)",
+						 timestamptz_to_str(txn->commit_time));
+
+	OutputPluginWrite(ctx, true);
+}
+
+/* COMMIT PREPARED callback */
+static void
+pg_decode_commit_prepared_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
+					XLogRecPtr commit_lsn)
+{
+	TestDecodingData *data = ctx->output_plugin_private;
+
+	if (!data->twophase_decoding)
+		return;
+
+	OutputPluginPrepareWrite(ctx, true);
+
+	appendStringInfo(ctx->out, "COMMIT PREPARED %s",
+		quote_literal_cstr(txn->gid));
+
+	if (data->include_xids)
+		appendStringInfo(ctx->out, " " XID_FMT, txn->xid);
+
+	if (data->include_timestamp)
+		appendStringInfo(ctx->out, " (at %s)",
+						 timestamptz_to_str(txn->commit_time));
+
+	OutputPluginWrite(ctx, true);
+}
+
+/* ABORT PREPARED callback */
+static void
+pg_decode_abort_prepared_txn(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
+					XLogRecPtr abort_lsn)
+{
+	TestDecodingData *data = ctx->output_plugin_private;
+
+	if (!data->twophase_decoding)
+		return;
+
+	OutputPluginPrepareWrite(ctx, true);
+
+	appendStringInfo(ctx->out, "ROLLBACK PREPARED %s",
+		quote_literal_cstr(txn->gid));
+
+	if (data->include_xids)
+		appendStringInfo(ctx->out, " " XID_FMT, txn->xid);
 
 	if (data->include_timestamp)
 		appendStringInfo(ctx->out, " (at %s)",
@@ -411,6 +590,10 @@ pg_decode_change(LogicalDecodingContext *ctx, ReorderBufferTXN *txn,
 
 	class_form = RelationGetForm(relation);
 	tupdesc = RelationGetDescr(relation);
+
+	/* if decode_delay is specified, sleep for those many seconds */
+	if (data->decode_delay > 0)
+		pg_usleep(data->decode_delay * 1000000L);
 
 	/* Avoid leaking memory by using and resetting our own context */
 	old = MemoryContextSwitchTo(data->context);

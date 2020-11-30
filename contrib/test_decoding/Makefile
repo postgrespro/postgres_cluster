@@ -32,3 +32,8 @@ endif
 installcheck-force:
 	$(pg_regress_installcheck) $(REGRESS)
 	$(pg_isolation_regress_installcheck) $(ISOLATION)
+
+temp-install: EXTRA_INSTALL=contrib/test_decoding
+
+2pc-check: temp-install
+	$(prove_check)

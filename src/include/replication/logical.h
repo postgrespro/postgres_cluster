@@ -86,6 +86,11 @@ typedef struct LogicalDecodingContext
 	bool		prepared_write;
 	XLogRecPtr	write_location;
 	TransactionId write_xid;
+
+	/*
+	 * Capabilities of the output plugin.
+	 */
+	bool		enable_twophase;
 } LogicalDecodingContext;
 
 

@@ -29,6 +29,7 @@
 #include "access/heapam.h"
 #include "access/heapam_xlog.h"
 #include "access/transam.h"
+#include "access/twophase.h"
 #include "access/xact.h"
 #include "access/xlog_internal.h"
 #include "access/xlogreader.h"
@@ -70,6 +71,8 @@ static void DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 						 xl_xact_parsed_commit *parsed, TransactionId xid);
 static void DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 						xl_xact_parsed_abort *parsed, TransactionId xid);
+static void DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
+						  xl_xact_parsed_prepare *parsed);
 
 /* common function to decode tuples */
 static void DecodeXLogTuple(char *data, Size len, ReorderBufferTupleBuf *tup);
@@ -281,16 +284,34 @@ DecodeXactOp(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 				break;
 			}
 		case XLOG_XACT_PREPARE:
+			{
+				xl_xact_parsed_prepare parsed;
 
-			/*
-			 * Currently decoding ignores PREPARE TRANSACTION and will just
-			 * decode the transaction when the COMMIT PREPARED is sent or
-			 * throw away the transaction's contents when a ROLLBACK PREPARED
-			 * is received. In the future we could add code to expose prepared
-			 * transactions in the changestream allowing for a kind of
-			 * distributed 2PC.
-			 */
-			ReorderBufferProcessXid(reorder, XLogRecGetXid(r), buf->origptr);
+				/* check that output plugin is capable of twophase decoding */
+				if (!ctx->enable_twophase)
+				{
+					ReorderBufferProcessXid(reorder, XLogRecGetXid(r), buf->origptr);
+					break;
+				}
+
+				/* ok, parse it */
+				ParsePrepareRecord(XLogRecGetInfo(buf->record),
+								   (xl_xact_prepare *) XLogRecGetData(buf->record),
+								   &parsed);
+
+				/* does output plugin want this particular transaction? */
+				if (ctx->callbacks.filter_prepare_cb &&
+					ReorderBufferPrepareNeedSkip(reorder, parsed.twophase_xid,
+												 parsed.twophase_gid))
+				{
+					ReorderBufferProcessXid(reorder, parsed.twophase_xid,
+											buf->origptr);
+					break;
+				}
+
+				DecodePrepare(ctx, buf, &parsed);
+				break;
+			}
 			break;
 		default:
 			elog(ERROR, "unexpected RM_XACT_ID record type: %u", info);
@@ -582,6 +603,24 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 			ReorderBufferAddInvalidations(ctx->reorder, xid, buf->origptr,
 										  parsed->nmsgs, parsed->msgs);
 		ReorderBufferXidSetCatalogChanges(ctx->reorder, xid, buf->origptr);
+		/*
+		 * Hack for 2PC decoding: since rbtxns were cleared after P replay
+		 * (this is actually reworked in the later community patch), we don't
+		 * know anymore which subxacts had catalog changes and which
+		 * hadn't. Mark all of them as catalog modifying to force
+		 * SnapBuildCommitTxn below remember them as committed in future
+		 * snapshots.
+		 */
+		if (TransactionIdIsValid(parsed->twophase_xid) &&
+			ctx->enable_twophase)
+		{
+			for (i = 0; i < parsed->nsubxacts; i++)
+			{
+				ReorderBufferXidSetCatalogChanges(ctx->reorder,
+												  parsed->subxacts[i],
+												  buf->origptr);
+			}
+		}
 	}
 
 	SnapBuildCommitTxn(ctx->snapshot_builder, buf->origptr, xid,
@@ -633,9 +672,73 @@ DecodeCommit(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 								 buf->origptr, buf->endptr);
 	}
 
+	if (TransactionIdIsValid(parsed->twophase_xid) &&
+		ctx->enable_twophase &&
+		ReorderBufferTxnIsPrepared(ctx->reorder,
+								   parsed->twophase_xid, parsed->twophase_gid))
+	{
+		Assert(xid == parsed->twophase_xid);
+		/* we are processing COMMIT PREPARED */
+		ReorderBufferFinishPrepared(ctx->reorder, xid, buf->origptr, buf->endptr,
+					commit_time, origin_id, origin_lsn, parsed->twophase_gid, true);
+	}
+	else
+	{
+		/* replay actions of all transaction + subtransactions in order */
+		ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
+							commit_time, origin_id, origin_lsn);
+	}
+}
+
+/*
+ * Decode PREPARE record. Similar logic as in COMMIT
+ */
+static void
+DecodePrepare(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
+			 xl_xact_parsed_prepare *parsed)
+{
+	XLogRecPtr	origin_lsn = parsed->origin_lsn;
+	TimestampTz	commit_time = parsed->origin_timestamp;
+	RepOriginId	origin_id = XLogRecGetOrigin(buf->record);
+	int			i;
+	TransactionId xid = parsed->twophase_xid;
+
+	/*
+	 * Process invalidation messages, even if we're not interested in the
+	 * transaction's contents, since the various caches need to always be
+	 * consistent.
+	 */
+	if (parsed->nmsgs > 0)
+	{
+		ReorderBufferAddInvalidations(ctx->reorder, xid, buf->origptr,
+									  parsed->nmsgs, parsed->msgs);
+		ReorderBufferXidSetCatalogChanges(ctx->reorder, xid, buf->origptr);
+	}
+
+	if (SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr) ||
+		(parsed->dbId != InvalidOid && parsed->dbId != ctx->slot->data.database) ||
+		ctx->fast_forward ||
+		FilterByOrigin(ctx, origin_id))
+	{
+		for (i = 0; i < parsed->nsubxacts; i++)
+		{
+			ReorderBufferForget(ctx->reorder, parsed->subxacts[i], buf->origptr);
+		}
+		ReorderBufferForget(ctx->reorder, xid, buf->origptr);
+
+		return;
+	}
+
+	/* tell the reorderbuffer about the surviving subtransactions */
+	for (i = 0; i < parsed->nsubxacts; i++)
+	{
+		ReorderBufferCommitChild(ctx->reorder, xid, parsed->subxacts[i],
+								 buf->origptr, buf->endptr);
+	}
+
 	/* replay actions of all transaction + subtransactions in order */
-	ReorderBufferCommit(ctx->reorder, xid, buf->origptr, buf->endptr,
-						commit_time, origin_id, origin_lsn);
+	ReorderBufferPrepare(ctx->reorder, xid, buf->origptr, buf->endptr,
+						 commit_time, origin_id, origin_lsn, parsed->twophase_gid);
 }
 
 /*
@@ -647,6 +750,32 @@ DecodeAbort(LogicalDecodingContext *ctx, XLogRecordBuffer *buf,
 			xl_xact_parsed_abort *parsed, TransactionId xid)
 {
 	int			i;
+	XLogRecPtr	origin_lsn = InvalidXLogRecPtr;
+	TimestampTz	commit_time = 0;
+	XLogRecPtr	origin_id = XLogRecGetOrigin(buf->record);
+
+	if (parsed->xinfo & XACT_XINFO_HAS_ORIGIN)
+	{
+		origin_lsn = parsed->origin_lsn;
+		commit_time = parsed->origin_timestamp;
+	}
+
+	/*
+	 * If it's ROLLBACK PREPARED then handle it via callbacks.
+	 */
+	if (TransactionIdIsValid(xid) &&
+		!SnapBuildXactNeedsSkip(ctx->snapshot_builder, buf->origptr) &&
+		parsed->dbId == ctx->slot->data.database &&
+		!ctx->fast_forward &&
+		!FilterByOrigin(ctx, origin_id) &&
+		ctx->enable_twophase &&
+		ReorderBufferTxnIsPrepared(ctx->reorder, xid, parsed->twophase_gid))
+	{
+		ReorderBufferFinishPrepared(ctx->reorder, xid, buf->origptr, buf->endptr,
+						commit_time, origin_id, origin_lsn,
+						parsed->twophase_gid, false);
+		return;
+	}
 
 	for (i = 0; i < parsed->nsubxacts; i++)
 	{
@@ -672,8 +801,16 @@ DecodeInsert(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	xl_heap_insert *xlrec;
 	ReorderBufferChange *change;
 	RelFileNode target_node;
+	Pointer		rec_data = (Pointer) XLogRecGetData(r);
+#ifdef XID_IS_64BIT
+	bool		isinit = (XLogRecGetInfo(r) & XLOG_HEAP_INIT_PAGE) != 0;
 
-	xlrec = (xl_heap_insert *) XLogRecGetData(r);
+	/* step over pd_xid_base */
+	if (isinit)
+		rec_data += sizeof(TransactionId);
+#endif
+
+	xlrec = (xl_heap_insert *) rec_data;
 
 	/*
 	 * Ignore insert records without new tuples (this does happen when
@@ -727,8 +864,16 @@ DecodeUpdate(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	ReorderBufferChange *change;
 	char	   *data;
 	RelFileNode target_node;
+	Pointer		rec_data = (Pointer) XLogRecGetData(r);
+#ifdef XID_IS_64BIT
+	bool		isinit = (XLogRecGetInfo(r) & XLOG_HEAP_INIT_PAGE) != 0;
 
-	xlrec = (xl_heap_update *) XLogRecGetData(r);
+	/* step over pd_xid_base */
+	if (isinit)
+		rec_data += sizeof(TransactionId);
+#endif
+
+	xlrec = (xl_heap_update *) rec_data;
 
 	/* only interested in our database */
 	XLogRecGetBlockTag(r, 0, &target_node, NULL, NULL);
@@ -767,6 +912,15 @@ DecodeUpdate(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 		/* caution, remaining data in record is not aligned */
 		data = XLogRecGetData(r) + SizeOfHeapUpdate;
 		datalen = XLogRecGetDataLen(r) - SizeOfHeapUpdate;
+
+#ifdef XID_IS_64BIT
+		/* step over pd_xid_base */
+		if (isinit)
+		{
+			data += sizeof(TransactionId);
+			datalen -= sizeof(TransactionId);
+		}
+#endif
 		tuplelen = datalen - SizeOfHeapHeader;
 
 		change->data.tp.oldtuple =
@@ -888,8 +1042,15 @@ DecodeMultiInsert(LogicalDecodingContext *ctx, XLogRecordBuffer *buf)
 	char	   *tupledata;
 	Size		tuplelen;
 	RelFileNode rnode;
+	Pointer		rec_data = (Pointer) XLogRecGetData(r);
+#ifdef XID_IS_64BIT
+	bool		isinit = (XLogRecGetInfo(r) & XLOG_HEAP_INIT_PAGE) != 0;
 
-	xlrec = (xl_heap_multi_insert *) XLogRecGetData(r);
+	/* step over pd_xid_base */
+	if (isinit)
+		rec_data += sizeof(TransactionId);
+#endif
+	xlrec = (xl_heap_multi_insert *) (rec_data);
 
 	/*
 	 * Ignore insert records without new tuples.  This happens when a
