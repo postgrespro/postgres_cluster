@@ -85,7 +85,7 @@
  * because they're passed down from the startup process, for better
  * synchronization.)
  */
-int			wal_receiver_status_interval;
+int			wal_receiver_status_interval = 0;
 int			wal_receiver_timeout;
 bool		hot_standby_feedback;
 

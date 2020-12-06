@@ -25,13 +25,13 @@ typedef enum
 } CRSSnapshotAction;
 
 /* global state */
-extern bool am_walsender;
+extern PGDLLIMPORT bool am_walsender;
 extern bool am_cascading_walsender;
 extern bool am_db_walsender;
 extern bool wake_wal_senders;
 
 /* user-settable parameters */
-extern int	max_wal_senders;
+extern PGDLLIMPORT int max_wal_senders;
 extern int	wal_sender_timeout;
 extern bool log_replication_commands;
 

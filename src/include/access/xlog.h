@@ -111,7 +111,7 @@ extern int	wal_keep_size_mb;
 extern int	max_slot_wal_keep_size_mb;
 extern int	XLOGbuffers;
 extern int	XLogArchiveTimeout;
-extern int	wal_retrieve_retry_interval;
+extern PGDLLIMPORT int	wal_retrieve_retry_interval;
 extern char *XLogArchiveCommand;
 extern bool EnableHotStandby;
 extern bool fullPageWrites;
